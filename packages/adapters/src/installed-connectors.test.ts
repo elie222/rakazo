@@ -663,6 +663,133 @@ describe("OpenAPI connector import", () => {
     });
   });
 
+  it("expands server variable defaults without mutating the document", () => {
+    const document = {
+      servers: [
+        {
+          url: "https://{host}:{port}/{version}/{version}{suffix}",
+          variables: {
+            host: { default: "api.example.test" },
+            port: { default: "8443" },
+            version: { default: "v1" },
+            suffix: { default: "" },
+          },
+        },
+      ],
+      paths: { "/items": { get: { operationId: "listItems" } } },
+    };
+    expect(importOpenApiDocument(document).baseUrl).toBe("https://api.example.test:8443/v1/v1");
+    expect(document.servers[0]!.url).toContain("{version}");
+  });
+
+  it("treats replacement defaults literally", () => {
+    expect(
+      importOpenApiDocument({
+        servers: [
+          { url: "https://api.example.test/{value}", variables: { value: { default: "$&" } } },
+        ],
+        paths: { "/items": { get: { operationId: "listItems" } } },
+      }).baseUrl,
+    ).toBe("https://api.example.test/$&");
+  });
+
+  it.each([undefined, {}, { default: 1 }, { default: null }])(
+    "rejects server variables without string defaults: %j",
+    (variable) => {
+      expect(() =>
+        importOpenApiDocument({
+          servers: [
+            { url: "https://api.example.test/{version}", variables: { version: variable } },
+          ],
+          paths: { "/items": { get: { operationId: "listItems" } } },
+        }),
+      ).toThrow("OpenAPI server variable must define a string default");
+    },
+  );
+
+  it("checks credentials after expanding server defaults", () => {
+    expect(() =>
+      importOpenApiDocument({
+        servers: [
+          {
+            url: "https://api.example.test/{version}",
+            variables: { version: { default: "v1?token=fake-secret" } },
+          },
+        ],
+        paths: { "/items": { get: { operationId: "listItems" } } },
+      }),
+    ).toThrow("encrypted credential field");
+  });
+
+  it.each([
+    ["http://93.184.216.34", "must use HTTPS"],
+    ["https://127.0.0.1", "private"],
+    ["https://user:password@93.184.216.34", "credentials"],
+  ])(
+    "checks expanded server destinations with the existing URL policy: %s",
+    async (destination, error) => {
+      const fetch = vi.fn().mockResolvedValue(
+        Response.json({
+          servers: [
+            { url: "{destination}/v1", variables: { destination: { default: destination } } },
+          ],
+          paths: { "/items": { get: { operationId: "listItems" } } },
+        }),
+      );
+      await expect(
+        prepareApiInstall({
+          source: "https://93.184.216.34/openapi.json",
+          config: { openApi: true, auth: { type: "none" } },
+          remote: { fetch },
+        }),
+      ).rejects.toThrow(error);
+      expect(fetch).toHaveBeenCalledOnce();
+    },
+  );
+
+  it("persists the expanded server URL and uses it for installed requests", async () => {
+    const fetch = vi.fn().mockResolvedValue(
+      Response.json({
+        servers: [
+          { url: "https://93.184.216.34/{version}", variables: { version: { default: "v1" } } },
+        ],
+        paths: { "/items": { get: { operationId: "listItems" } } },
+      }),
+    );
+    const prepared = await prepareApiInstall({
+      source: "https://93.184.216.34/openapi.json",
+      config: { openApi: true, auth: { type: "none" } },
+      remote: { fetch },
+    });
+    expect(prepared.source).toBe("https://93.184.216.34/v1");
+    const install = {
+      id: "api-server-defaults",
+      kind: "api",
+      source: prepared.source,
+      secretId: null,
+      createdAt: new Date(0),
+      config: JSON.parse(JSON.stringify(prepared.config)),
+    };
+    const prisma = { capabilityInstall: { findFirst: vi.fn().mockResolvedValue(install) } };
+    fetch.mockReset();
+    fetch.mockImplementation(async () => Response.json({ ok: true }));
+    const provider = new InstalledConnectorProvider(prisma as never, {} as never, { fetch });
+    const events = [];
+    for await (const event of provider.execute(
+      {
+        tool: "listItems",
+        args: {},
+        executionId: "listItems",
+        route: { connectorId: "installed", resourceId: install.id, toolName: "listItems" },
+      },
+      { spaceId: "space-1", userId: "user-1", signal: AbortSignal.timeout(5_000) } as never,
+    )) {
+      events.push(event);
+    }
+    expect(events).toContainEqual({ type: "result", data: { status: 200, data: { ok: true } } });
+    expect(String(fetch.mock.calls[0]![0])).toBe("https://93.184.216.34/v1/items");
+  });
+
   it("refuses ambiguous specs without stable operation ids", () => {
     expect(() =>
       importOpenApiDocument({
