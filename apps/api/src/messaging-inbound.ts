@@ -133,22 +133,28 @@ async function handleDirectEvent(
   if (existing && (await accountDeactivated(deps.prisma, existing.userId))) return;
   if (existing) {
     const command = parseMessagingCommand(event.content);
+    const releasesHeld = existing.outboundSinceInbound >= MESSAGING_DM_OUTBOUND_CAP;
     // Read what a YES or NO answers before the held replies below go out: one
-    // of them may be a request the person had not seen when they replied.
+    // of them may be a request the person had not seen when they replied. A
+    // redelivery of the reply that already released them answers nothing.
     const prompt =
-      command === "approve" || command === "decline"
-        ? await latestPrompt(deps, existing, existing.lastInboundAt)
+      (command === "approve" || command === "decline") && existing.capReleaseHandle !== event.handle
+        ? await latestPrompt(deps, existing)
         : null;
     // Any reply — even a content-free reaction — ends the consecutive-
     // outbound streak, but only real text wakes the bot. The conversation
     // id is refreshed from the webhook so outbound always has a thread.
     await deps.prisma.messagingIdentity.update({
       where: { id: existing.id },
-      data: { outboundSinceInbound: 0, lastInboundAt: new Date(), dmThreadId: event.threadId },
+      data: {
+        outboundSinceInbound: 0,
+        lastInboundAt: new Date(),
+        dmThreadId: event.threadId,
+        ...(releasesHeld ? { capReleaseHandle: event.handle } : {}),
+      },
     });
     // Replies held behind the consecutive-outbound cap can go now.
-    if (existing.outboundSinceInbound >= MESSAGING_DM_OUTBOUND_CAP)
-      await deps.delivery.send([{ identityId: existing.id }]);
+    if (releasesHeld) await deps.delivery.send([{ identityId: existing.id }]);
     if (!text && attachments.length === 0) return;
     // Owner commands are only parsed in the verified 1:1 conversation.
     if (command === "stop") {
@@ -562,36 +568,13 @@ async function stopOwnerWork(
   if (stop?.runIds.length) await finishThreadStop(deps, identity, target, stop);
 }
 
-/**
- * The newest message this line sent the person, as it stood when their reply arrived. None when
- * it was queued before their previous reply and only went out after it: it was held behind the
- * outbound cap and released by that reply (or by an earlier attempt at this same message), so
- * they had not seen it when they wrote.
- */
-async function latestPrompt(
-  deps: MessagingInboundDeps,
-  identity: IdentityRow,
-  previousInboundAt: Date | null,
-) {
-  const latest = await deps.prisma.messagingOutbound.findFirst({
+/** The newest message this line sent the person, as it stood when their reply arrived. */
+function latestPrompt(deps: MessagingInboundDeps, identity: IdentityRow) {
+  return deps.prisma.messagingOutbound.findFirst({
     where: { identityId: identity.id, kind: "dm" },
     orderBy: { createdAt: "desc" },
-    select: {
-      idempotencyKey: true,
-      createdAt: true,
-      updatedAt: true,
-      status: true,
-      providerHandle: true,
-    },
+    select: { idempotencyKey: true, createdAt: true, status: true, providerHandle: true },
   });
-  if (
-    latest &&
-    previousInboundAt &&
-    latest.createdAt <= previousInboundAt &&
-    latest.updatedAt > previousInboundAt
-  )
-    return null;
-  return latest;
 }
 
 type LatestPrompt = Awaited<ReturnType<typeof latestPrompt>>;
