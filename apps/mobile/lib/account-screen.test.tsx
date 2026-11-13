@@ -9,6 +9,8 @@ import { createRoot } from "react-dom/client";
 import { Alert } from "react-native";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import Account from "../app/(settings)/account";
+import General from "../app/(settings)/general";
+import Profile from "../app/(settings)/profile";
 import type * as Api from "./api";
 import { rpc } from "./api";
 import type * as ApiAuth from "./api-auth";
@@ -336,6 +338,7 @@ vi.mock("./live-notifications", () => ({
 const { styles } = vi.hoisted(() => ({ styles: new Proxy({}, { get: () => ({}) }) }));
 vi.mock("./native", () => ({
   native: new Proxy({}, { get: () => "#000" }),
+  useMobileTokens: () => ({}),
   useResolvedAppearance: () => "light",
   useThemedStyles: () => styles,
 }));
@@ -419,7 +422,7 @@ it("keeps bot style visible when the account has no saved style", async () => {
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
-  await act(async () => root?.render(<Account />));
+  await act(async () => root?.render(<General />));
 
   expect(container.querySelector('[aria-label="Appearance"]')).not.toBeNull();
   expect(container.textContent).toContain("Language");
@@ -430,7 +433,7 @@ it("keeps bot style visible when the account has no saved style", async () => {
 });
 
 it("saves an Original choice even when the saved style is absent", async () => {
-  const { screen } = await renderAccount();
+  const { screen } = await renderAccount(General);
   const picker = screen.querySelector('[aria-label="Bot style"]')!;
   const original = Array.from(picker.querySelectorAll("button")).find(
     (node) => node.textContent === "Original",
@@ -442,12 +445,12 @@ it("saves an Original choice even when the saved style is absent", async () => {
   expect(rpc).toHaveBeenCalledWith("preferences/update", { botAvatarSet: "organic" });
 });
 
-async function renderAccount() {
+async function renderAccount(Screen: () => ReactNode = Account) {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
-  await act(async () => root?.render(<Account />));
+  await act(async () => root?.render(<Screen />));
   const screen = container;
   const button = (name: string) =>
     Array.from(screen.querySelectorAll("button")).find((node) => node.textContent === name);
@@ -522,7 +525,7 @@ it("offers a store update beside the version only when one is available", async 
 
 it("shows a device haptics switch that follows and saves the local preference", async () => {
   haptics.enabled = false;
-  const view = await renderAccount();
+  const view = await renderAccount(General);
   const toggle = view.screen.querySelector<HTMLButtonElement>(
     '[role="switch"][aria-label="Haptics"]',
   );
@@ -536,14 +539,14 @@ it("shows a device haptics switch that follows and saves the local preference", 
 });
 
 it("requests the cached haptics loader on each settings visit without repeating it on rerenders", async () => {
-  const first = await renderAccount();
+  const first = await renderAccount(General);
   expect(haptics.load).toHaveBeenCalledOnce();
   await first.press("Haptics");
   expect(haptics.load).toHaveBeenCalledOnce();
   await act(async () => root?.unmount());
   root = undefined;
   first.screen.remove();
-  await renderAccount();
+  await renderAccount(General);
   expect(haptics.load).toHaveBeenCalledTimes(2);
 });
 
@@ -552,7 +555,7 @@ it("reflects a saved off choice recovered by the settings focus loader", async (
     haptics.enabled = false;
     for (const listener of haptics.listeners) listener();
   });
-  const view = await renderAccount();
+  const view = await renderAccount(General);
   expect(
     view.screen
       .querySelector('[role="switch"][aria-label="Haptics"]')
@@ -564,7 +567,7 @@ it("reflects a saved off choice recovered by the settings focus loader", async (
 
 it("keeps a failed off choice in memory and offers a native retry of that same choice", async () => {
   haptics.save.mockRejectedValueOnce(new Error("private device storage failure"));
-  const view = await renderAccount();
+  const view = await renderAccount(General);
   await view.press("Haptics");
   const toggle = view.screen.querySelector('[role="switch"][aria-label="Haptics"]');
   expect(toggle?.getAttribute("aria-checked")).toBe("false");
@@ -586,7 +589,7 @@ it("ignores a failed older toggle even when the latest choice has the same value
       fail = reject;
     }),
   );
-  const view = await renderAccount();
+  const view = await renderAccount(General);
   await view.press("Haptics");
   await view.press("Haptics");
   await view.press("Haptics");
@@ -598,7 +601,7 @@ it("ignores a failed older toggle even when the latest choice has the same value
 
 it("does not let an old retry overwrite a newer preference", async () => {
   haptics.save.mockRejectedValueOnce(new Error("save failed"));
-  const view = await renderAccount();
+  const view = await renderAccount(General);
   await view.press("Haptics");
   const retry = vi
     .mocked(Alert.alert)
@@ -617,7 +620,7 @@ it("reports a current failed save and can retry after the account screen closes"
       fail = reject;
     }),
   );
-  const view = await renderAccount();
+  const view = await renderAccount(General);
   await view.press("Haptics");
   await act(async () => root?.unmount());
   root = undefined;
@@ -638,12 +641,12 @@ it("keeps a late failure from an earlier settings visit silent after a newer sam
       fail = reject;
     }),
   );
-  const first = await renderAccount();
+  const first = await renderAccount(General);
   await first.press("Haptics");
   await act(async () => root?.unmount());
   root = undefined;
   first.screen.remove();
-  const second = await renderAccount();
+  const second = await renderAccount(General);
   await second.press("Haptics");
   await second.press("Haptics");
   expect(haptics.enabled).toBe(false);
@@ -653,7 +656,7 @@ it("keeps a late failure from an earlier settings visit silent after a newer sam
 });
 
 it("asks for the current password, shows a failed delete, and signs out after a successful one", async () => {
-  const view = await renderAccount();
+  const view = await renderAccount(Profile);
   await view.press("Delete account");
   const input = view.screen.querySelector<HTMLInputElement>('input[aria-label="Current password"]');
   expect(input?.type).toBe("password");
@@ -676,7 +679,7 @@ it("asks for the current password, shows a failed delete, and signs out after a 
 
 it("deletes with the password from the native prompt when one is shown", async () => {
   vi.mocked(promptAccountDeletion).mockReturnValueOnce(true);
-  const view = await renderAccount();
+  const view = await renderAccount(Profile);
   await view.press("Delete account");
   expect(view.screen.querySelector("section")).toBeNull();
   const [{ onSubmit }] = vi.mocked(promptAccountDeletion).mock.calls[0]!;
@@ -687,13 +690,23 @@ it("deletes with the password from the native prompt when one is shown", async (
 
 it("refreshes an expired sign-in proof and keeps the deletion dialog open", async () => {
   vi.mocked(fetchAccountSecurity).mockResolvedValue(
-    security({ hasPassword: false, freshOidcAuth: true, sso: { name: "Example SSO" } }),
+    security({
+      hasPassword: false,
+      freshOidcAuth: true,
+      sso: { name: "Example SSO" },
+      ssoLinked: true,
+    }),
   );
-  const view = await renderAccount();
+  const view = await renderAccount(Profile);
   await view.press("Delete account");
   // The proof expires while the dialog is open.
   vi.mocked(fetchAccountSecurity).mockResolvedValue(
-    security({ hasPassword: false, freshOidcAuth: false, sso: { name: "Example SSO" } }),
+    security({
+      hasPassword: false,
+      freshOidcAuth: false,
+      sso: { name: "Example SSO" },
+      ssoLinked: true,
+    }),
   );
   await view.press("Delete");
   expect(deleteAccount).not.toHaveBeenCalled();
@@ -707,7 +720,7 @@ it("deletes with a still-fresh sign-in proof", async () => {
   vi.mocked(fetchAccountSecurity).mockResolvedValue(
     security({ hasPassword: false, freshOidcAuth: true }),
   );
-  const view = await renderAccount();
+  const view = await renderAccount(Profile);
   await view.press("Delete account");
   await view.press("Delete");
   expect(deleteAccount).toHaveBeenCalledWith(undefined, undefined);
@@ -718,7 +731,7 @@ it("submits only a trimmed deletion code, never whitespace", async () => {
   vi.mocked(fetchAccountSecurity).mockResolvedValue(
     security({ hasPassword: false, emailDeletion: true }),
   );
-  const view = await renderAccount();
+  const view = await renderAccount(Profile);
   await view.press("Delete account");
   await view.press("Send deletion code");
   expect(requestAccountDeletionCode).toHaveBeenCalledOnce();
@@ -740,7 +753,7 @@ it.each([undefined, true, false])(
   "respects the password-change policy (%s) while keeping password deletion",
   async (passwordChangeEnabled) => {
     vi.mocked(fetchAccountSecurity).mockResolvedValue(security({ passwordChangeEnabled }));
-    const view = await renderAccount();
+    const view = await renderAccount(Profile);
     expect(Boolean(view.button("Change password"))).toBe(passwordChangeEnabled !== false);
     await view.press("Delete account");
     await view.type("Current password", "hunter2");
@@ -753,12 +766,12 @@ it("hides password change from an account without a password", async () => {
   vi.mocked(fetchAccountSecurity).mockResolvedValue(
     security({ hasPassword: false, passwordChangeEnabled: true }),
   );
-  const view = await renderAccount();
+  const view = await renderAccount(Profile);
   expect(view.button("Change password")).toBeUndefined();
 });
 
 it.each([false, true])(
-  "keeps account navigation free of server controls (stored owner: %s)",
+  "lists the settings in order, free of server controls (stored owner: %s)",
   async (isDeploymentOwner) => {
     account.me = { ...account.me, isDeploymentOwner };
     const events: string[] = [];
@@ -771,20 +784,19 @@ it.each([false, true])(
         (row) => row.textContent,
       );
       const links = [
-        "Artifacts",
-        "Models",
-        "Voice",
-        "Approvals",
-        "Vault",
         "Integrations",
         "Skills",
+        "Artifacts",
+        "General",
+        "Models",
+        "Approvals",
+        "Vault",
         "Memory",
+        "Voice",
         "Messaging",
-        "AI data sharing",
+        "Members",
       ];
-      const start = titles.indexOf("Artifacts");
-      expect(titles.slice(start, start + links.length)).toEqual(links);
-      expect(titles[start + links.length]).toBe("Advanced");
+      expect(titles).toEqual(["tester@example.test", "Usage", ...links]);
       const artifacts = view.button("Artifacts")!;
       expect(artifacts.getAttribute("role")).toBe("button");
       expect(artifacts.dataset.chevron).toBe("right");
@@ -793,6 +805,8 @@ it.each([false, true])(
       await view.press("Artifacts");
       expect(events).toEqual(["close", "/artifacts"]);
       for (const [title, href] of [
+        ["tester@example.test", "/profile"],
+        ["General", "/general"],
         ["Models", "/models"],
         ["Vault", "/vault"],
         ["Memory", "/memory"],
@@ -803,11 +817,9 @@ it.each([false, true])(
         expect(events).toEqual([href]);
       }
 
-      // The links wait while a deletion is in flight.
-      vi.mocked(deleteAccount).mockReturnValueOnce(new Promise(() => undefined));
-      await view.press("Delete account");
-      await view.type("Current password", "hunter2");
-      await view.press("Delete");
+      // The links wait while signing out.
+      vi.mocked(signOut).mockReturnValueOnce(new Promise(() => undefined));
+      await view.press("Sign out");
       expect(view.button("Artifacts")!.disabled).toBe(true);
     } finally {
       unregister();
@@ -820,11 +832,11 @@ it("lists trusted link sites only when there is one, each with a remove action",
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
-  await act(async () => root?.render(<Account />));
+  await act(async () => root?.render(<Profile />));
   expect(container.querySelector('[aria-label="Trusted sites"]')).toBeNull();
 
   trusted.sites = ["alice.github.io", "example.com"];
-  await act(async () => root?.render(<Account />));
+  await act(async () => root?.render(<Profile />));
   const group = container.querySelector('[aria-label="Trusted sites"]');
   expect(group?.textContent).toContain("alice.github.io");
   expect(group?.textContent).toContain("example.com");

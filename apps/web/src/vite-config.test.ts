@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
@@ -67,6 +68,22 @@ async function useStandInApi() {
 }
 
 describe("vite.config", () => {
+  it.each([undefined, "6300"])(
+    "reads the root environment port, with shell override %s",
+    async (shellPort) => {
+      const mode = `port-test-${randomUUID()}`;
+      const envFile = path.resolve(path.dirname(configFile), `../../.env.${mode}`);
+      cleanup.push(() => rm(envFile, { force: true }));
+      await writeFile(envFile, "WEB_PORT=6200\n", { flag: "wx" });
+      vi.stubEnv("WEB_PORT", shellPort);
+      vi.spyOn(process, "cwd").mockReturnValue(path.dirname(configFile));
+
+      const loaded = await loadConfigFromFile({ command: "serve", mode }, configFile);
+      expect(loaded?.config.server?.port).toBe(shellPort ? 6300 : 6200);
+      expect(loaded?.config.preview?.port).toBe(shellPort ? 6300 : 6200);
+    },
+  );
+
   it("loads and forwards only the device socket's upgrades", async () => {
     const loaded = await loadConfigFromFile({ command: "serve", mode: "production" }, configFile);
     const config = loaded?.config as UserConfig;

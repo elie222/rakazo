@@ -3,6 +3,7 @@ import type { ChatAlert, MessageBlock, ProductEvent } from "@rakazo/contracts";
 import {
   AnalyticsTrigger,
   hasThinkingActivityMarker,
+  STEP_SCREENSHOT_MIME_TYPES,
   ThreadActivityPayloadSchema,
 } from "@rakazo/contracts";
 import {
@@ -15,6 +16,7 @@ import {
   normalizeRunError,
   QUEUE_HOLDING_RUN_STATUSES,
   sanitizeJsonValue,
+  splitToolHistory,
 } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import { cancelRunsInTransaction } from "./cancel-runs.js";
@@ -44,11 +46,14 @@ import {
   RunHistoryWriteError,
 } from "./messages.js";
 import { isRecordNotFound } from "./prisma-errors.js";
+import type { RosterChange } from "./roster-changes.js";
+import { followRosterChanges, loadRosterScope, publishRosterChange } from "./roster-changes.js";
 import { createRowId } from "./row-id.js";
 import { deleteRunSecretsInTransaction } from "./run-secrets.js";
 import { isRunResponse, readRunTimingFields } from "./run-timing.js";
 import { RUN_TURN_CHECKPOINT_KIND } from "./run-turn-checkpoint.js";
 import { SpaceDeletionInProgressError, spaceTakesWork } from "./spaces.js";
+import { draftRecordingsOfLease } from "./teaching-recordings.js";
 import type { AnswerRunInput, PauseRunForInput, RunSecretWriter } from "./thread-ask.js";
 import { answerRunInput, pauseRunForInput } from "./thread-ask.js";
 import { clearThreadReads } from "./thread-reads.js";
@@ -60,11 +65,15 @@ import {
   hasChannelMessage,
 } from "./thread-steering.js";
 import type {
-  FinalizeComputerControlReleaseInput,
-  FinalizeComputerControlReleaseResult,
+  AnswerTakeoverRequestInput,
   PauseRunForTakeover,
+  ReleaseUserControlInput,
 } from "./thread-takeover.js";
-import { finalizeComputerControlRelease, pauseRunForTakeover } from "./thread-takeover.js";
+import {
+  answerTakeoverRequest,
+  pauseRunForTakeover,
+  releaseUserControl,
+} from "./thread-takeover.js";
 import { THREAD_LOCK_TRANSACTION_OPTIONS, withTransactionRetry } from "./transaction-retry.js";
 
 export { THREAD_LOCK_TRANSACTION_OPTIONS };
@@ -102,14 +111,16 @@ export interface ThreadEvents {
     spaceId: string,
     signal?: AbortSignal,
   ): AsyncGenerator<ChatAlert>;
+  publishRosterChange?(change: RosterChange): Promise<void>;
+  followRosterChanges?(userId: string, signal?: AbortSignal): AsyncGenerator<void>;
   answerRunInput(input: AnswerRunInput): Promise<boolean>;
   append(input: AppendEventInput): Promise<ProductEvent>;
   claimSteering(input: ClaimSteeringInput): Promise<ClaimedSteeringMessage[]>;
   clearThread(input: ClearThreadInput): Promise<ClearThreadResult>;
-  finalizeComputerControlRelease(
-    input: FinalizeComputerControlReleaseInput,
-  ): Promise<FinalizeComputerControlReleaseResult | false>;
+  answerTakeoverRequest(input: AnswerTakeoverRequestInput): Promise<boolean>;
+  draftRecordingsOfLease(input: { spaceId: string; leaseId: string }): Promise<string[]>;
   finalizeRun(input: FinalizeRunInput): Promise<FinalizeRunResult | false>;
+  releaseUserControl(input: ReleaseUserControlInput): Promise<boolean>;
   notify(threadId: string, seq: number, firstResponseRunId?: string): Promise<void>;
   pauseRunForInput(input: PauseRunForInput): Promise<FinalizeRunResult | false>;
   pauseRunForTakeover(input: PauseRunForTakeover): Promise<boolean | { continuationRunId: string }>;
@@ -128,6 +139,8 @@ export interface ClearThreadInput {
 export interface ClearThreadResult {
   event: ProductEvent;
   cancelledRunIds: string[];
+  /** Stored files of the cleared replies' kept screenshots, for the caller to remove. */
+  removedStorageKeys: string[];
   historyCompactionGeneration: number;
 }
 
@@ -150,6 +163,7 @@ export type FinalizeRunInput = FinalizeRunBase &
   (
     | {
         outcome: "completed";
+        /** Steps may carry their tool and kept calls; they are stored apart from the blocks. */
         blocks: MessageBlock[];
         markUnread?: boolean;
       }
@@ -185,6 +199,23 @@ export interface SendUserMessageInput {
     modelId: string;
     thinkingLevel: string | null;
   };
+  /**
+   * Runs in the send's transaction once its message and run exist. Returning false rolls the
+   * send back with SendClaimLostError, so a row the caller owns decides between two sends that
+   * must not both happen. A replayed send has already passed its claim and skips it.
+   */
+  claim?: (
+    tx: Prisma.TransactionClient,
+    sent: { messageId: string; runId: string | null },
+  ) => Promise<boolean>;
+}
+
+/** A send's claim was lost: another path already owns what it would have started. */
+export class SendClaimLostError extends Error {
+  override readonly name = "SendClaimLostError";
+  constructor() {
+    super("Another delivery already owns this message");
+  }
 }
 
 export interface SendUserMessageResult {
@@ -211,12 +242,18 @@ export function createThreadEvents(
       await realtime?.publish(`incoming-calls:${userId}`, "");
     },
     followIncomingCalls: (userId, signal) => followIncomingCallSignals(realtime, userId, signal),
+    publishRosterChange: (change) => publishRosterChange(realtime, change),
+    ...(realtime && {
+      followRosterChanges: (userId, signal) =>
+        followRosterChanges(realtime, userId, () => loadRosterScope(prisma, userId), signal),
+    }),
     answerRunInput: (input) => answerRunInput(prisma, input, realtime, options.runSecretWriter),
     append: (input) => appendEvent(prisma, input, realtime, options.analytics),
     claimSteering: (input) => claimSteering(prisma, input),
     clearThread: (input) => clearThread(prisma, input, realtime),
-    finalizeComputerControlRelease: (input) =>
-      finalizeComputerControlRelease(prisma, input, realtime),
+    answerTakeoverRequest: (input) => answerTakeoverRequest(prisma, input, realtime),
+    draftRecordingsOfLease: (input) => draftRecordingsOfLease(prisma, input, realtime),
+    releaseUserControl: (input) => releaseUserControl(prisma, input, realtime),
     finalizeRun: (input) => finalizeRun(prisma, input, realtime, options.analytics),
     notify: (threadId, seq, firstResponseRunId) =>
       notifyCommittedEvent(prisma, realtime, threadId, seq, firstResponseRunId),
@@ -278,6 +315,22 @@ export async function clearThread(
     const cleared = input.groupId
       ? { threadId: input.threadId }
       : { OR: [{ threadId: input.threadId }, { thread: helperThreads }] };
+    // A reply's kept screenshots belong to its messages, so they go with them.
+    const clearedRuns = await tx.message.findMany({
+      where: { ...cleared, runId: { not: null } },
+      select: { runId: true },
+      distinct: ["runId"],
+    });
+    const screenshots = await tx.artifact.findMany({
+      where: {
+        spaceId: input.spaceId,
+        mimeType: { in: STEP_SCREENSHOT_MIME_TYPES },
+        runId: { in: clearedRuns.flatMap((message) => (message.runId ? [message.runId] : [])) },
+      },
+      select: { id: true, storageKey: true },
+    });
+    if (screenshots.length > 0)
+      await tx.artifact.deleteMany({ where: { id: { in: screenshots.map((row) => row.id) } } });
     await tx.message.deleteMany({ where: cleared });
     await tx.event.deleteMany({ where: cleared });
     if (!input.groupId) {
@@ -325,6 +378,7 @@ export async function clearThread(
       userId: thread.userId,
       cancelledRunIds: runIds,
       historyCompactionGeneration: thread.historyCompactionGeneration,
+      removedStorageKeys: screenshots.map((row) => row.storageKey),
     };
   }, THREAD_LOCK_TRANSACTION_OPTIONS);
   await notifyRealtime(realtime, committed.event.threadId, committed.event.seq);
@@ -332,9 +386,8 @@ export async function clearThread(
     await realtime?.publish(`incoming-calls:${committed.userId}`, "").catch(() => undefined);
   // Legacy execution bindings point at runs of pre-lease releases, which kept writing
   // Computer.executionRunId. Clearing them inside the transaction reaches for the
-  // computer row while holding the thread row — the inverted half of a cycle with a
-  // concurrent finalizeComputerControlRelease, which locks the computer first and the
-  // thread second. This statement holds no other row, so it can wait out any holder.
+  // computer row while holding the thread row. This statement holds no other row, so it can
+  // wait out any holder.
   // The clear is already committed: a failed sweep leaves a stale binding for the idle pass
   // to clear, and must not report the clear itself as failed.
   if (committed.cancelledRunIds.length > 0) {
@@ -355,6 +408,7 @@ export async function clearThread(
     event: mapProductEvent(committed.event),
     cancelledRunIds: committed.cancelledRunIds,
     historyCompactionGeneration: committed.historyCompactionGeneration,
+    removedStorageKeys: committed.removedStorageKeys,
   };
 }
 
@@ -523,6 +577,11 @@ export async function sendUserMessage(
         });
         await tx.message.update({ where: { id: message.id }, data: { runId: busy.id } });
       }
+      if (
+        input.claim &&
+        !(await input.claim(tx, { messageId: message.id, runId: run?.id ?? busy?.id ?? null }))
+      )
+        throw new SendClaimLostError();
       const event = await appendEventInTransaction(tx, {
         spaceId: input.spaceId,
         threadId: input.threadId,
@@ -808,15 +867,18 @@ async function finalizeRunOnce(
       });
     }
     let firstResponse = false;
-    const replyBlocks =
+    // Clients get the blocks without the kept calls, in the message and in its event alike.
+    const { blocks: replyBlocks, toolHistory } = splitToolHistory(
       input.outcome === "completed"
         ? completedRunBlocks(input.blocks, writableRun?.startedAt ?? null, now)
-        : (input.partialReply ?? []);
+        : (input.partialReply ?? []),
+    );
     if (replyBlocks.length > 0) {
       const message = await createThreadMessageInTransaction(tx, {
         threadId: input.threadId,
         role: "bot",
         blocks: replyBlocks,
+        toolHistory,
         botId: input.botId,
         runId: input.runId,
         ...(input.outcome === "completed"

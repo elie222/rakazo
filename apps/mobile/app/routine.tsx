@@ -2,8 +2,8 @@ import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import type { Routine } from "@rakazo/contracts";
 import { defaultCronPreset, draftFromRoutine, emptyRoutineDraft } from "@rakazo/core";
-import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useRef, useState } from "react";
+import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Alert, BackHandler, ScrollView, Text, View } from "react-native";
 import { useBotEmail } from "../components/bot-email";
 import { GlassIconButton } from "../components/glass-icon-button";
@@ -51,6 +51,15 @@ export default function RoutineDetail() {
     origin?: string;
   }>();
   const router = useRouter();
+  const deletionContext = useMemo(() => ({ active: false }), [botId, routineId]);
+  useFocusEffect(
+    useCallback(() => {
+      deletionContext.active = true;
+      return () => {
+        deletionContext.active = false;
+      };
+    }, [deletionContext]),
+  );
   // Opened from the list, the routine is already known; it still reads again. A routine missing
   // from what was known before only counts as gone once that read answers.
   const {
@@ -96,7 +105,9 @@ export default function RoutineDetail() {
             if (creating) router.setParams({ routineId: saved.id });
             setEditing(false);
           }}
-          onDeleted={() => router.back()}
+          onDeleted={() => {
+            if (deletionContext.active) router.back();
+          }}
         />
       ) : botId && routine ? (
         <RoutineView

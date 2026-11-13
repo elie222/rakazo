@@ -73,6 +73,7 @@ const SANDBOX_NAMES: Record<Exclude<SandboxKind, "none" | "desktop" | "fake">, s
   novita: "Novita",
   railway: "Railway",
   wuying: "Wuying",
+  "local-vm": "Apple container",
 };
 const SANDBOX_PROVIDERS = Object.values(SANDBOX_NAMES);
 

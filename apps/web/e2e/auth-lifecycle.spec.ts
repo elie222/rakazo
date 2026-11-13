@@ -1,6 +1,12 @@
 import type { Request } from "@playwright/test";
 import { expect, test } from "@playwright/test";
-import { captureScreenshot, completeOnboarding, signup, signupThroughForm } from "./helpers";
+import {
+  captureScreenshot,
+  completeOnboarding,
+  openEmailSignIn,
+  signup,
+  signupThroughForm,
+} from "./helpers";
 
 test(
   "sign-up stays blank until session and sign-in options are ready",
@@ -151,6 +157,7 @@ test("logout protects bot deep links and sign-in restores the session", async ({
   const userName = "Auth Lifecycle";
 
   await page.goto("/sign-up");
+  await openEmailSignIn(page);
   await expect(page.getByLabel("Name")).toHaveAttribute("autocomplete", "name");
   await expect(page.getByLabel("Email")).toHaveAttribute("autocomplete", "username");
   await expect(page.getByLabel("Password", { exact: true })).toHaveAttribute(
@@ -207,6 +214,7 @@ test("logout protects bot deep links and sign-in restores the session", async ({
   await expect(page.getByRole("heading", { name: "Sign in to Rakazo" })).toBeVisible();
   await expect(page.getByText("Chief", { exact: true })).toHaveCount(0);
   await expect(page.getByText(userName, { exact: true })).toHaveCount(0);
+  await openEmailSignIn(page);
   await expect(page.getByLabel("Email")).toHaveAttribute("autocomplete", "username webauthn");
   await expect(page.getByLabel("Password", { exact: true })).toHaveAttribute(
     "autocomplete",
@@ -319,6 +327,7 @@ test("changes and recovers an email password", async ({ page }, testInfo) => {
 
   await page.getByRole("button", { name: new RegExp(userName, "i") }).click();
   await page.getByRole("button", { name: "Log out" }).click();
+  await openEmailSignIn(page);
   await expect(page.getByRole("link", { name: "Forgot password?" })).toBeVisible();
   await page.getByRole("link", { name: "Forgot password?" }).click();
   await expect(page.getByRole("heading", { name: "Reset your password" })).toBeVisible();
@@ -373,6 +382,7 @@ test("changes and recovers an email password", async ({ page }, testInfo) => {
   await page.getByRole("button", { name: "Reset password" }).click();
   await expect(page.getByText("Password updated")).toBeVisible();
   await page.getByRole("link", { name: "Sign in" }).click();
+  await openEmailSignIn(page);
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password", { exact: true }).fill(resetPassword);
   await page.getByRole("button", { name: "Sign in", exact: true }).click();

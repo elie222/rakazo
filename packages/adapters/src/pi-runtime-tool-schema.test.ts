@@ -1,3 +1,5 @@
+import type { ToolCall } from "@earendil-works/pi-ai";
+import { validateToolArguments } from "@earendil-works/pi-ai/utils/validation";
 import {
   FLEET_TOOL_NAMES,
   TICKET_COMMENT_MAX_LENGTH,
@@ -12,8 +14,237 @@ import {
   parametersFor,
   prepareFleetArguments,
 } from "./pi-runtime-tool-parameters.js";
+import { SCRATCHPAD_NOTES_MAX_LENGTH, SCRATCHPAD_TITLE_MAX_LENGTH } from "./scratchpad-tools.js";
 
 describe("jsonSchemaParameters", () => {
+  it.each(["number", "integer"])("preserves %s bounds through SDK validation", (type) => {
+    const field = { type, minimum: 0, maximum: 20 };
+    const inputSchema = {
+      type: "object",
+      properties: {
+        limit: field,
+        nested: { type: "object", properties: { value: field }, required: ["value"] },
+        values: { type: "array", items: field },
+        optional: field,
+        unconstrained: { type },
+      },
+      required: ["limit", "nested", "values", "unconstrained"],
+    };
+    const original = structuredClone(inputSchema);
+    const tool = { name: "bounded_input", description: "Use bounded input", inputSchema };
+    const parameters = parametersFor(tool);
+    const wire = JSON.parse(JSON.stringify(parameters));
+    expect(wire.properties.limit).toEqual(field);
+    expect(wire.properties.nested.properties.value).toEqual(field);
+    expect(wire.properties.values.items).toEqual(field);
+    expect(wire.properties.unconstrained).toEqual({ type });
+    const valid = { limit: 0, nested: { value: 20 }, values: [0, 20], unconstrained: 1000 };
+    const validate = (args: ToolCall["arguments"]) =>
+      validateToolArguments(
+        { ...tool, parameters },
+        { type: "toolCall", id: "bounds-test", name: tool.name, arguments: args },
+      );
+    expect(validate(valid)).toEqual(valid);
+    expect(parseConnectorToolArgs(inputSchema, validate(valid))).toEqual(valid);
+    for (const value of [-1, 21]) {
+      expect(() => validate({ ...valid, limit: value })).toThrow();
+      expect(() => validate({ ...valid, nested: { value } })).toThrow();
+      expect(() => validate({ ...valid, values: [value] })).toThrow();
+      expect(() => validate({ ...valid, optional: value })).toThrow();
+    }
+    expect(inputSchema).toEqual(original);
+  });
+
+  it.each([
+    {
+      field: { type: "string", minLength: 3, maxLength: 5 },
+      short: "ab",
+      empty: "",
+      valid: "abc",
+      long: "abcdef",
+    },
+    {
+      field: {
+        type: "object",
+        properties: { text: { type: "string", minLength: 3, maxLength: 5 } },
+        required: ["text"],
+      },
+      short: { text: "ab" },
+      empty: { text: "" },
+      valid: { text: "abc" },
+      long: { text: "abcdef" },
+    },
+    {
+      field: { type: "array", items: { type: "string", minLength: 3, maxLength: 5 } },
+      short: ["ab"],
+      empty: [""],
+      valid: ["abc"],
+      long: ["abcdef"],
+    },
+  ])("preserves string length bounds: $field", ({ field, short, empty, valid, long }) => {
+    const inputSchema = { type: "object", properties: { value: field }, required: ["value"] };
+    const original = structuredClone(inputSchema);
+    const tool = { name: "length_input", description: "Use string input", inputSchema };
+    const parameters = parametersFor(tool);
+    const validate = (value: typeof short | typeof valid | typeof long | typeof empty) =>
+      validateToolArguments(
+        { ...tool, parameters },
+        {
+          type: "toolCall",
+          id: "length-test",
+          name: tool.name,
+          arguments: { value },
+        },
+      );
+    expect(JSON.parse(JSON.stringify(parameters)).properties.value).toEqual(field);
+    expect(() => validate(short)).toThrow();
+    expect(() => validate(empty)).toThrow();
+    expect(() => validate(long)).toThrow();
+    expect(validate(valid)).toEqual({ value: valid });
+    expect(inputSchema).toEqual(original);
+  });
+
+  it("preserves zero and absent string minimums", () => {
+    const parameters = jsonSchemaParameters({
+      type: "object",
+      properties: {
+        zero: { type: "string", minLength: 0 },
+        plain: { type: "string" },
+      },
+      required: ["zero", "plain"],
+    });
+    expect(JSON.parse(JSON.stringify(parameters)).properties.zero.minLength).toBe(0);
+    expect(JSON.parse(JSON.stringify(parameters)).properties.plain).not.toHaveProperty("minLength");
+    expect(
+      validateToolArguments(
+        { name: "empty", description: "", parameters },
+        {
+          type: "toolCall",
+          id: "empty-test",
+          name: "empty",
+          arguments: { zero: "", plain: "" },
+        },
+      ),
+    ).toEqual({ zero: "", plain: "" });
+  });
+
+  it.each([
+    { field: { type: "integer" }, value: 1.5, normalizedCount: 1 },
+    {
+      field: { type: "array", items: { type: "integer" } },
+      value: [1.5, 2],
+      normalizedCount: [1, 2],
+    },
+    { field: { type: ["integer", "null"] }, value: 1.5, normalizedCount: 1 },
+    { field: { anyOf: [{ type: "integer" }, { type: "null" }] }, value: 1.5, normalizedCount: 1 },
+  ])(
+    "preserves integer fields through SDK normalization: $field",
+    ({ field, value, normalizedCount }) => {
+      const inputSchema = {
+        type: "object",
+        properties: { count: field, ratio: { type: "number" } },
+        required: ["count", "ratio"],
+      };
+      const original = structuredClone(inputSchema);
+      const tool = { name: "integer_input", description: "Use numeric input", inputSchema };
+      const parameters = parametersFor(tool);
+      const wire = JSON.parse(JSON.stringify(parameters));
+      const call: ToolCall = {
+        type: "toolCall",
+        id: "integer-test",
+        name: tool.name,
+        arguments: { count: value, ratio: 1.5 },
+      };
+      const normalized = validateToolArguments({ ...tool, parameters }, call);
+      expect(wire.properties.count).toEqual(
+        Array.isArray(field.type) ? { anyOf: field.type.map((type) => ({ type })) } : field,
+      );
+      expect(wire.properties.ratio).toEqual({ type: "number" });
+      // Keep the SDK's existing integer coercion rather than adding a new policy.
+      expect(normalized).toEqual({ count: normalizedCount, ratio: 1.5 });
+      expect(normalized.ratio).toBe(1.5);
+      expect(parseConnectorToolArgs(inputSchema, normalized)).toEqual(normalized);
+      expect(inputSchema).toEqual(original);
+      expect(call.arguments).toEqual({ count: value, ratio: 1.5 });
+    },
+  );
+
+  it.each(["property", "array item", "union alternative"])(
+    "preserves nested allOf constraints in a %s through SDK validation",
+    (position) => {
+      const composed = {
+        description: "A composed request body",
+        allOf: [
+          { type: "object", properties: { name: { type: "string" } }, required: ["name"] },
+          {
+            type: "object",
+            properties: { count: { type: "integer", minimum: 1 } },
+            required: ["count"],
+          },
+        ],
+      };
+      const field =
+        position === "array item"
+          ? { type: "array", items: composed }
+          : position === "union alternative"
+            ? { anyOf: [composed, { type: "null" }] }
+            : composed;
+      const inputSchema = { type: "object", properties: { body: field }, required: ["body"] };
+      const original = structuredClone(inputSchema);
+      const tool = { name: "composed_body", description: "Send a body", inputSchema };
+      const parameters = parametersFor(tool);
+      const wire = JSON.parse(JSON.stringify(parameters));
+      const wrap = (body: ToolCall["arguments"][string]) => ({
+        body: position === "array item" ? [body] : body,
+      });
+      const valid = wrap({ name: "sample", count: 2 });
+      const validate = (args: ToolCall["arguments"]) =>
+        validateToolArguments(
+          { name: tool.name, description: tool.description, parameters },
+          { type: "toolCall", id: "test-call", name: tool.name, arguments: args },
+        );
+      const invalidObjects: ToolCall["arguments"][] = [
+        { name: "sample" },
+        { count: 2 },
+        { name: "sample", count: 0 },
+      ];
+      expect(validate(valid)).toEqual(valid);
+      for (const schema of [inputSchema, wire]) {
+        expect(parseConnectorToolArgs(schema, valid)).toEqual(valid);
+        for (const invalid of [...invalidObjects, "text"]) {
+          expect(() => parseConnectorToolArgs(schema, wrap(invalid))).toThrow();
+        }
+      }
+      for (const invalid of invalidObjects) {
+        expect(() => validate(wrap(invalid))).toThrow();
+      }
+      expect(inputSchema).toEqual(original);
+    },
+  );
+
+  it("preserves allOf siblings and enriches nested string discriminators", () => {
+    const field = {
+      type: "object",
+      description: "An intersection with sibling constraints",
+      properties: { kind: { const: "entry" } },
+      required: ["kind"],
+      allOf: [{ properties: { count: { type: "number", minimum: 1 } }, required: ["count"] }],
+    };
+    const wire = JSON.parse(
+      JSON.stringify(
+        parametersFor({
+          name: "composed_body",
+          description: "Send a body",
+          inputSchema: { type: "object", properties: { body: field } },
+        }),
+      ),
+    );
+    expect(wire.properties.body).toEqual({
+      ...field,
+      properties: { kind: { type: "string", const: "entry", enum: ["entry"] } },
+    });
+  });
+
   it("uses a connected delete_bot schema instead of local archival parameters", () => {
     const schema = JSON.parse(
       JSON.stringify(
@@ -61,6 +292,10 @@ describe("jsonSchemaParameters", () => {
     ["ticket_update", "title", TICKET_TITLE_MAX_LENGTH, { id: "t1" }],
     ["ticket_update", "description", TICKET_DESCRIPTION_MAX_LENGTH, { id: "t1" }],
     ["ticket_comment", "body", TICKET_COMMENT_MAX_LENGTH, { id: "t1", body: "Ready" }],
+    ["scratchpad_add", "title", SCRATCHPAD_TITLE_MAX_LENGTH, { title: "Ship" }],
+    ["scratchpad_add", "notes", SCRATCHPAD_NOTES_MAX_LENGTH, { title: "Ship" }],
+    ["scratchpad_update", "title", SCRATCHPAD_TITLE_MAX_LENGTH, { itemId: "s1" }],
+    ["scratchpad_update", "notes", SCRATCHPAD_NOTES_MAX_LENGTH, { itemId: "s1" }],
   ] as const)("preserves the %s %s length limit on the model wire", (name, field, limit, base) => {
     const tool = builtinAgentTools.find((entry) => entry.name === name)!;
     const wire = JSON.parse(JSON.stringify(parametersFor(tool)));

@@ -45,9 +45,15 @@ import { shouldSkipPortableWorkspaceFile } from "./workspace-save-policy.js";
 export const MAX_SANDBOX_ERROR_RESPONSE_BYTES = 8 * 1024;
 export const MAX_SANDBOX_SUCCESS_RESPONSE_BYTES = 16 * 1024 * 1024;
 export const SCREEN_RELEASE_TIMEOUT_MS = 8_000;
-/** How long a computer that left a command unanswered gets to run a trivial one. */
+/** How long a computer gets to run a trivial health check. */
 export const HEALTH_CHECK_TIMEOUT_MS = 10_000;
+const HOME_UNWRITABLE = "unwritable";
+const HOME_CHECK = ["/bin/sh", "-c", `test -w . || echo ${HOME_UNWRITABLE}`];
 const SANDBOX_ERROR_RESPONSE_TIMEOUT_MS = 1_000;
+
+function unwritableHome() {
+  return new SandboxDamagedError({ cause: new Error("the computer cannot write its home folder") });
+}
 const SANDBOX_SUCCESS_RESPONSE_TIMEOUT_MS = 30_000;
 
 async function safeBody(res: Response, signal?: AbortSignal): Promise<string> {
@@ -209,15 +215,18 @@ export class DockerSandboxProvider implements SandboxProvider {
   }
 
   /**
-   * A computer that left a command unanswered runs a trivial one before it is used again. One
-   * that cannot is reported damaged, which has it stopped and started again.
+   * A computer must be able to write its home folder before it is used: a container started
+   * while the host could not see that folder runs with an empty one it cannot write. A computer
+   * that left a command unanswered must also answer this one in time. One that fails either is
+   * reported damaged, which has it stopped and started again.
    */
   async prepare(computer: ComputerRef, context: AdapterContext): Promise<void> {
-    if (!this.unresponsive.has(computer.id)) return;
     if (context.signal?.aborted) return withAbort(Promise.resolve(), context.signal);
     let check = this.healthChecks.get(computer.id);
     if (!check) {
-      const started = this.checkHealth(computer, context);
+      const started = this.unresponsive.has(computer.id)
+        ? this.checkHealth(computer, context)
+        : this.checkWritableHome(computer, context);
       check = started.finally(() => {
         if (this.healthChecks.get(computer.id) === check) this.healthChecks.delete(computer.id);
       });
@@ -228,25 +237,44 @@ export class DockerSandboxProvider implements SandboxProvider {
     await withAbort(check, context.signal);
   }
 
+  private async checkWritableHome(computer: ComputerRef, context: AdapterContext): Promise<void> {
+    const signal = AbortSignal.timeout(HEALTH_CHECK_TIMEOUT_MS);
+    if (!(await this.checkHome(computer, { ...context, signal })).writable) throw unwritableHome();
+  }
+
   /** Runs on its own deadline, so one caller stopping does not decide the others' check. */
   private async checkHealth(computer: ComputerRef, context: AdapterContext): Promise<void> {
     const stall = this.unresponsive.get(computer.id);
     const signal = AbortSignal.timeout(HEALTH_CHECK_TIMEOUT_MS);
-    let healthy = false;
+    let home: { ran: boolean; writable: boolean };
     try {
-      for await (const event of this.execute(
-        computer,
-        { argv: ["true"], timeoutMs: HEALTH_CHECK_TIMEOUT_MS },
-        { ...context, signal },
-      )) {
-        if (event.type === "exit") healthy = event.code === 0;
-      }
+      home = await this.checkHome(computer, { ...context, signal });
     } catch (error) {
       if (isSandboxGoneError(error)) throw error;
       throw new SandboxDamagedError({ cause: error });
     }
-    if (!healthy) throw new SandboxDamagedError();
+    if (!home.writable) throw unwritableHome();
+    if (!home.ran) throw new SandboxDamagedError();
     if (this.unresponsive.get(computer.id) === stall) this.unresponsive.delete(computer.id);
+  }
+
+  /**
+   * Whether a command ran, and whether the home folder every command starts in can be written.
+   * Only the command's own answer counts as unwritable; a command that could not run says nothing
+   * about the folder.
+   */
+  private async checkHome(computer: ComputerRef, context: AdapterContext) {
+    let code: number | undefined;
+    let answer = "";
+    for await (const event of this.execute(
+      computer,
+      { argv: HOME_CHECK, timeoutMs: HEALTH_CHECK_TIMEOUT_MS },
+      context,
+    )) {
+      if (event.type === "exit") code = event.code;
+      else if (event.type === "stdout") answer += event.data;
+    }
+    return { ran: code === 0, writable: code !== 0 || answer.trim() !== HOME_UNWRITABLE };
   }
 
   async *execute(

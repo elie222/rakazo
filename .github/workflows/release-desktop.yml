@@ -130,6 +130,19 @@ jobs:
         env:
           RAKAZO_ALLOW_DEV_SECRETS: "1"
           RAKAZO_DESKTOP_RELEASE: "1"
+      - name: Build the server bundle This computer downloads on Apple silicon
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ needs.validate.outputs.tag }}
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = arm64
+          # Published beside the app rather than inside it, so the download does not grow.
+          node scripts/build-server-bundle.mjs "$RUNNER_TEMP/server-bundle" \
+            "https://github.com/${GITHUB_REPOSITORY}/releases/download/${RELEASE_TAG}"
+          mkdir -p apps/desktop/build
+          cp "$RUNNER_TEMP/server-bundle/server-bundle.json" apps/desktop/build/server-bundle.json
 
       - name: Require macOS signing and notarization credentials
         if: runner.os == 'macOS'
@@ -251,6 +264,25 @@ jobs:
           grep -Fqx "provider: github" "$app/Contents/Resources/app-update.yml"
           grep -Fqx "owner: elie222" "$app/Contents/Resources/app-update.yml"
           grep -Fqx "repo: rakazo" "$app/Contents/Resources/app-update.yml"
+
+      - name: Verify and retain the server bundle the app names
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          set -euo pipefail
+          bundle="$RUNNER_TEMP/server-bundle/rakazo-server-darwin-arm64-$RELEASE_VERSION.tar.xz"
+          cmp "$RUNNER_TEMP/server-bundle/server-bundle.json" \
+            "apps/desktop/out/mac-universal/Rakazo.app/Contents/Resources/server-bundle.json"
+          node -e '
+            const [descriptor, file] = process.argv.slice(1);
+            const { sha256, size } = JSON.parse(require("node:fs").readFileSync(descriptor, "utf8"));
+            const bytes = require("node:fs").readFileSync(file);
+            const actual = require("node:crypto").createHash("sha256").update(bytes).digest("hex");
+            if (actual !== sha256 || bytes.length !== size) throw new Error("server-bundle.json does not match the bundle");
+          ' "$RUNNER_TEMP/server-bundle/server-bundle.json" "$bundle"
+          cp "$bundle" apps/desktop/out/
 
       - name: Verify packaged native dependencies
         if: runner.os == 'macOS'
@@ -419,6 +451,7 @@ jobs:
             apps/desktop/out/*.exe
             apps/desktop/out/latest*.yml
             apps/desktop/out/*.zip
+            apps/desktop/out/rakazo-server-*.tar.xz
           if-no-files-found: error
           compression-level: 0
           retention-days: 7
@@ -463,6 +496,7 @@ jobs:
           compgen -G 'release-artifacts/*.dmg' >/dev/null
           compgen -G 'release-artifacts/*.zip' >/dev/null
           compgen -G 'release-artifacts/*.AppImage' >/dev/null
+          test -s "release-artifacts/rakazo-server-darwin-arm64-$RELEASE_VERSION.tar.xz"
           for image in release-artifacts/*.AppImage; do
             if [[ ! -s "$image.sig" ]]; then
               echo "$image has no update signature." >&2

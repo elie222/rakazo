@@ -61,6 +61,7 @@ import { lastChatKey, lastChatOf, queryClient, spaceQueries, spaceSeedKey } from
 import type { Panel } from "../lib/right-panel-state";
 import { rightPanelStorageKey } from "../lib/right-panel-state";
 import { createSpaceRpc, selectedSpaceId } from "../lib/rpc";
+import { SpaceRpcProvider } from "../lib/space-rpc";
 import { markShellReady, useSpaceEpoch } from "../lib/space-switch";
 import { toolActivityPreference } from "../lib/tool-activity-preference";
 import { useDesktopBadge } from "../lib/use-desktop-badge";
@@ -68,6 +69,7 @@ import { errorText } from "../lib/user-error";
 import { HostComputerPrompt } from "./HostComputerPrompt";
 import { RoutineList } from "./RoutineList";
 import { ArchivedChats } from "./shell/archived-chats";
+import type { ChatMenuState, ChatMenuTarget } from "./shell/chat-context-menu";
 import { ChatContextMenu } from "./shell/chat-context-menu";
 import { ChatFindBar } from "./shell/chat-find-bar";
 import { ChatHeader } from "./shell/chat-header";
@@ -253,7 +255,7 @@ function SpaceShell() {
   const isMobileSidebar = useIsMobile();
   const pages = usePagesForChat();
   const miniSidebar = botsSidebarCollapsed && !isMobileSidebar;
-  const [botMenu, setBotMenu] = useState<{ kind: "bot" | "group"; id: string } | null>(null);
+  const [botMenu, setBotMenu] = useState<ChatMenuTarget | null>(null);
   const closeBotMenu = useCallback(() => setBotMenu(null), []);
   const currentSpaceId = selectedSpaceId() ?? bootstrapMe?.spaceId ?? null;
   // null: settings follow the space the app is showing.
@@ -428,7 +430,7 @@ function SpaceShell() {
     return true;
   }
   const openSpaceChatRef = useRef<(spaceId: string, path: string) => void>(() => {});
-  useSpaceBootstrap({
+  const rosterSignals = useSpaceBootstrap({
     rpc,
     roster,
     thread,
@@ -457,6 +459,7 @@ function SpaceShell() {
       },
       meId: userId,
       groupsRef,
+      roster: rosterSignals,
     },
   );
   const { speakingMessageId, speakMessage, callHoldsSpeaker } = useReadAloud({
@@ -924,6 +927,16 @@ function SpaceShell() {
         navigate={navigate}
       />
     ) : null;
+  const chatMenu: ChatMenuState = {
+    menu: botMenu,
+    setMenu: setBotMenu,
+    content: botMenuContent,
+    // Search can list a chat the roster doesn't hold; it has no menu to show.
+    has: (target) =>
+      target.kind === "bot"
+        ? bots.some((bot) => bot.id === target.id)
+        : groups.some((group) => group.id === target.id),
+  };
   const shell = (
     <BotsSidebarLayout
       userId={userId}
@@ -963,6 +976,7 @@ function SpaceShell() {
         navigate={navigate}
         setNewSpaceOpen={dialogs.setNewSpaceOpen}
         setCreateBotOpen={dialogs.setCreateBotOpen}
+        chatMenu={chatMenu}
         roster={
           <SidebarRoster
             mini={miniSidebar}
@@ -989,11 +1003,9 @@ function SpaceShell() {
             displayedRunError={composer.displayedRunError}
             draggedBotId={rosterDrop.draggedBotId}
             setDraggedBotId={rosterDrop.setDraggedBotId}
-            botMenu={botMenu}
-            setBotMenu={setBotMenu}
+            chatMenu={chatMenu}
             reorderRosterBot={roster.reorderRosterBot}
             activeSnapshot={activeSnapshot}
-            botMenuContent={botMenuContent}
           />
         }
         archived={
@@ -1136,6 +1148,7 @@ function SpaceShell() {
               callHoldsSpeaker={callHoldsSpeaker}
               onSpeak={speakMessage}
               onOpenComputer={computerControls.onOpenComputer}
+              onReleaseComputer={computerControls.onReleaseComputer}
               onOpenImportSetup={openImportSetup}
               rpc={rpc}
             />
@@ -1239,7 +1252,6 @@ function SpaceShell() {
         discardChatAttachments={composer.discardThreadAttachments}
         computer={computer}
         computerOpen={computerOpen}
-        booting={booting}
         computerPanel={
           active ? (
             <ComputerPanel
@@ -1396,7 +1408,6 @@ function SpaceShell() {
           composerRunning={composerRunning}
           sending={sending}
           booting={booting}
-          runStatus={snapshot?.run?.status}
           sendError={sendError}
           embeddedScreenUrl={computerControls.embeddedScreenUrl}
           screenFrameKey={computerState.screenFrameKey}
@@ -1410,9 +1421,6 @@ function SpaceShell() {
           onTakeControl={() => void openComputer(computerBot.id, true)}
           onStart={() => void openComputer(computerBot.id)}
           onRefreshTeaching={refreshActiveTeaching}
-          onRefreshComputer={async () => {
-            await computerControls.refreshComputerFor(computerBot.id);
-          }}
           onClose={() => setComputerOpen(false)}
         />
       ) : null}
@@ -1420,9 +1428,13 @@ function SpaceShell() {
   );
 
   // Empty chrome until the first bot list lands would flash "Select a bot" before the chat.
-  return initialBotsLoaded || initialLoadFailed ? (
-    <PagesProvider value={pages}>{shell}</PagesProvider>
-  ) : (
-    <PageLoading />
+  return (
+    <SpaceRpcProvider spaceId={shellSpaceId}>
+      {initialBotsLoaded || initialLoadFailed ? (
+        <PagesProvider value={pages}>{shell}</PagesProvider>
+      ) : (
+        <PageLoading />
+      )}
+    </SpaceRpcProvider>
   );
 }
