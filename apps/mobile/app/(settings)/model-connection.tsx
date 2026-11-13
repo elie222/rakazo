@@ -10,6 +10,7 @@ import {
   MAX_MODEL_MAX_TOKENS,
   matchCompatibleEndpointPreset,
   modelHeadersInput,
+  modelRoutingDirty,
   modelRoutingForm,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   savedCompatibleEndpointMatches,
@@ -305,11 +306,7 @@ export default function ModelConnection() {
     keyRequired: Boolean(endpointPreset),
   });
   const limitsDirty = maxTokens !== connectionMaxTokensField(provider, credential?.maxTokens);
-  const gatewayDirty =
-    accountId.trim() !== (credential?.accountId ?? "") ||
-    gatewayId.trim() !== (credential?.gatewayId ?? "") ||
-    projectId.trim() !== (credential?.projectId ?? "") ||
-    Boolean(projectId && region.trim() !== (credential?.region ?? "global"));
+  const gatewayDirty = modelRoutingDirty({ accountId, gatewayId, projectId, region }, credential);
   const gatewayOnlySave = needsRouting && Boolean(credential) && !apiKey.trim();
 
   function updateBaseUrl(nextBaseUrl: string) {

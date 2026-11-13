@@ -25,8 +25,23 @@ describe("project routing connection checks", () => {
       checked: true,
     },
     { name: "new key", routing: {}, input: { apiKey: "replacement-fixture-key" }, checked: true },
+    {
+      name: "corrupt saved material",
+      routing: {},
+      input: { apiKey: "replacement-fixture-key" },
+      checked: true,
+      stored: '{"kind":"api_key","key":17}',
+    },
+    {
+      name: "empty saved key",
+      routing: {},
+      input: { apiKey: "replacement-fixture-key" },
+      checked: true,
+      stored: '{"kind":"api_key","key":""}',
+    },
     { name: "legacy limits", routing: {}, input: { maxTokens: 4096 }, checked: false },
-  ])("checks only connection changes: $name", async ({ routing, input, checked }) => {
+  ])("checks only connection changes: $name", async (scenario) => {
+    const { routing, input, checked } = scenario;
     const check = vi.fn(async () => undefined);
     const saved = {
       id: "credential-fixture",
@@ -42,7 +57,9 @@ describe("project routing connection checks", () => {
       },
       secrets: {
         load: vi.fn(async () =>
-          JSON.stringify({ kind: "api_key", key: "fixture-model-key", ...routing }),
+          "stored" in scenario
+            ? scenario.stored
+            : JSON.stringify({ kind: "api_key", key: "fixture-model-key", ...routing }),
         ),
       },
       modelConnectionCheck: check,

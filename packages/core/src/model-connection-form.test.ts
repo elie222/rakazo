@@ -1,5 +1,5 @@
 import type { ModelCredential } from "@rakazo/contracts";
-import { modelRoutingForm } from "@rakazo/contracts";
+import { modelRoutingDirty, modelRoutingForm } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import type { ConnectionFormDraft } from "./model-connection-form.js";
 import {
@@ -407,6 +407,7 @@ describe("legacy project routing", () => {
     for (const apiKey of ["", "replacement-fixture-key"]) {
       const form = draft({ apiKey, projectId: "", region: "global", maxTokens: "4096" });
       expect(modelRoutingForm(selected.routingFields, form, saved).routingReady).toBe(true);
+      expect(modelRoutingDirty(form, saved)).toBe(false);
       const request = modelConnectRequest({
         form,
         selected: { ...selected, routingFields: [...selected.routingFields] },
@@ -422,6 +423,13 @@ describe("legacy project routing", () => {
   it("still requires complete routing for new or already project-scoped connections", () => {
     const form = draft({ projectId: "", region: "global" });
     expect(modelRoutingForm(selected.routingFields, form).routingReady).toBe(false);
+    expect(modelRoutingDirty({ ...form, projectId: "example-project" }, credential())).toBe(true);
+    expect(
+      modelRoutingDirty(
+        { ...form, projectId: "example-project", region: "us-central1" },
+        credential({ projectId: "example-project", region: "global" }),
+      ),
+    ).toBe(true);
     expect(
       modelRoutingForm(
         selected.routingFields,

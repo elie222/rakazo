@@ -11,7 +11,7 @@ import {
   DEFAULT_MODEL_CONTEXT_WINDOW,
   ModelHeaderRowsSchema,
   modelHeadersInput,
-  modelRoutingFieldsForSave,
+  modelRoutingInput,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   openAiCompatibleConnectReady,
   parseModelContextWindow,
@@ -275,13 +275,7 @@ export function modelConnectRequest(input: {
     input: {
       provider: selected.provider,
       ...(newKey ? { apiKey: newKey } : {}),
-      ...(selected.routingFields?.length
-        ? Object.fromEntries(
-            (modelRoutingFieldsForSave(selected.routingFields, form, credential) ?? []).map(
-              (field) => [field, (form[field] ?? "").trim()],
-            ),
-          )
-        : {}),
+      ...modelRoutingInput(selected.routingFields, form, credential),
       modelId: selected.id,
       // A limits-only save leaves the stored effort alone while the model and effort stay
       // put. Changing either sends the clamped level, including null, so the previous

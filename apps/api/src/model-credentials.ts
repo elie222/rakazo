@@ -345,12 +345,15 @@ export function createModelConnector(deps: RouterDeps, codexCatalog: CodexLiveCa
         }
       }
       const saved = parseModelSecret(plaintext);
-      const previous = previousPlaintext ? parseModelSecret(previousPlaintext) : undefined;
+      const replacingKey = Boolean(input.apiKey?.trim());
+      // A replacement key must still repair a decryptable but malformed saved secret.
+      const previous =
+        !replacingKey && previousPlaintext ? parseModelSecret(previousPlaintext) : undefined;
       const routingChanged =
         saved.kind === "api_key" &&
         (saved.projectId !== (previous?.kind === "api_key" ? previous.projectId : undefined) ||
           saved.region !== (previous?.kind === "api_key" ? previous.region : undefined));
-      if (input.apiKey?.trim() || routingChanged) {
+      if (replacingKey || routingChanged) {
         await verifyCatalogProviderApiKey(
           {
             provider: input.provider,

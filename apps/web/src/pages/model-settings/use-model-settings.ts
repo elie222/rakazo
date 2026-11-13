@@ -6,6 +6,7 @@ import {
   MAX_MODEL_CONTEXT_WINDOW,
   MAX_MODEL_MAX_TOKENS,
   matchCompatibleEndpointPreset,
+  modelRoutingDirty,
   savedCompatibleEndpointMatches,
 } from "@rakazo/contracts";
 import {
@@ -312,11 +313,7 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     !isOpenAiCompatible &&
     Boolean(credential) &&
     (maxTokens.trim() !== connectionMaxTokensField(provider, credential?.maxTokens) ||
-      (needsRouting &&
-        (accountId.trim() !== (credential?.accountId ?? "") ||
-          gatewayId.trim() !== (credential?.gatewayId ?? "") ||
-          projectId.trim() !== (credential?.projectId ?? "") ||
-          (projectId && region.trim() !== (credential?.region ?? "global")))));
+      (needsRouting && modelRoutingDirty({ accountId, gatewayId, projectId, region }, credential)));
 
   /** Opens a connection (by id) or a new one (null) for the provider. */
   function chooseProvider(

@@ -7,6 +7,7 @@ import {
   ModelHeaderRowsSchema,
   matchCompatibleEndpointPreset,
   modelHeadersInput,
+  modelRoutingInput,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   openAiCompatibleConnectReady,
   parseModelContextWindow,
@@ -89,7 +90,6 @@ export function useOnboardingModel({
     projectId,
     region,
     headerRows,
-    needsRouting,
     isOpenAiCompatible,
     maxImagesPerPrompt,
     maxTokens,
@@ -296,14 +296,12 @@ export function useOnboardingModel({
         await rpc.models.connect({
           provider,
           apiKey,
-          ...(needsRouting
-            ? Object.fromEntries(
-                (selected?.routingFields ?? []).map((field) => [
-                  field,
-                  { accountId, gatewayId, projectId, region }[field].trim(),
-                ]),
-              )
-            : {}),
+          ...modelRoutingInput(selected?.routingFields, {
+            accountId,
+            gatewayId,
+            projectId,
+            region,
+          }),
           modelId,
           label: selected?.providerName ?? provider,
         });
