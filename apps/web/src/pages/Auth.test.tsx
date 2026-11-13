@@ -30,6 +30,7 @@ vi.mock("@rakazo/ui-web", () => ({
       {children}
     </button>
   ),
+  LogoAvatar: () => <svg aria-hidden="true" data-rakazo-logo="" />,
   Input: (props: React.ComponentProps<"input">) => <input {...props} />,
   InputOTP: ({
     maxLength,
@@ -130,7 +131,7 @@ it.each(["in", "up"] as const)("offers SSO and hides credentials on %s", async (
   expect(host.textContent).toContain("Continue with Example");
   expect(host.querySelector("input")).toBeNull();
   const sso = host.querySelector("button")!;
-  expect(sso.dataset.variant).toBe("default");
+  expect(sso.dataset.variant).toBe("outline");
   expect(sso.className).toContain("w-full");
 });
 it("retries failed capabilities without exposing a password form", async () => {
@@ -153,11 +154,11 @@ it.each(["in", "up"] as const)("offers providers before the email form on %s", a
   const provider = button("Continue with Example");
   const emailChoice = button("Continue with email");
   expect(host.querySelector('input[name="email"]')).toBeNull();
-  expect(provider.dataset.variant).toBe("default");
+  expect(provider.dataset.variant).toBe("outline");
   expect(provider.className).toContain("w-full");
-  expect(emailChoice.dataset.variant).toBe("text");
-  expect(emailChoice.className).not.toContain("w-full");
-  expect(host.textContent).toContain("or");
+  expect(emailChoice.dataset.variant).toBe("outline");
+  expect(emailChoice.className).toContain("w-full");
+  expect(host.querySelector("[data-rakazo-logo]")).not.toBeNull();
   expect(
     provider.compareDocumentPosition(emailChoice) & Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
@@ -186,15 +187,15 @@ it("shows a configured provider beside the password form and hides the rest", as
   const apple = button("Continue with Apple");
   const emailChoice = button("Continue with email");
   expect(google.dataset.variant).toBe("outline");
-  expect(apple.dataset.variant).toBe("default");
+  expect(apple.dataset.variant).toBe("outline");
   expect(google.parentElement).toBe(apple.parentElement);
-  expect(google.parentElement?.className).toContain("sm:flex-row");
+  expect(google.parentElement?.className).toContain("flex-col");
   expect(google.querySelector("svg")).not.toBeNull();
   expect(apple.querySelector("svg")).not.toBeNull();
-  expect(emailChoice.dataset.variant).toBe("text");
-  expect(emailChoice.className).not.toContain("w-full");
+  expect(emailChoice.dataset.variant).toBe("outline");
+  expect(emailChoice.className).toContain("w-full");
   expect(host.textContent).toContain("Welcome back");
-  expect(host.textContent).toContain("or");
+  expect(host.querySelector("[data-rakazo-logo]")).not.toBeNull();
   await act(async () => google.click());
   expect(authClient.signIn.social).toHaveBeenCalledWith(
     expect.objectContaining({ provider: "google" }),

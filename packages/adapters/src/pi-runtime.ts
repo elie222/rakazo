@@ -447,6 +447,11 @@ export class PiAgentRuntime implements AgentRuntime {
         let activeStreamTarget = host.activeModel;
         // A tool result that ended the turn carries the reply the user must still see.
         let terminatedReply: string | undefined;
+        // Whether ending now would leave the user nothing: no text shown, no tools run, and the run
+        // may not stay silent. Such a run answers with the empty-response text, so an empty model
+        // reply is repeated first.
+        const wouldEndEmpty = () =>
+          !request.allowSilentEmpty && toolCalls === 0 && !streamed.trim();
         let fallbackState: FallbackStreamState = {
           request,
           getActive: () => activeStreamTarget,
@@ -457,6 +462,7 @@ export class PiAgentRuntime implements AgentRuntime {
           backupOutcomes: new Map(),
           selfRecoveries: 0,
           cutReplies: new WeakMap(),
+          retriesEmptyReply: wouldEndEmpty,
           stream: (target, ctx, options) => {
             if (hasCurrentImages && !target.model.input.includes("image")) {
               throw new Error(MODEL_IMAGE_INPUT_ERROR);
@@ -1268,7 +1274,7 @@ export class PiAgentRuntime implements AgentRuntime {
             streamed = fallback;
           } else if (toolWorkPendingFinal && !request.allowSilentEmpty) {
             throw new ModelOutputError(MISSING_TOOL_FINAL_RESPONSE_ERROR);
-          } else if (toolCalls === 0 && !request.allowSilentEmpty) {
+          } else if (wouldEndEmpty()) {
             streamed = request.emptyResponseText?.trim() || "No response. Try again.";
             queue.push({ type: "text", text: streamed });
           }
