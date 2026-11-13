@@ -19,6 +19,54 @@ import {
 } from "./thread-artifacts.js";
 
 describe("current-turn thread files", () => {
+  it.each([
+    ["reports\\draft.pdf", undefined, "draft.pdf"],
+    ["reports/nested\\draft.pdf", undefined, "draft.pdf"],
+    ["reports\\nested/draft.pdf", undefined, "draft.pdf"],
+    ["reports/draft.pdf", undefined, "draft.pdf"],
+    ["draft.pdf", undefined, "draft.pdf"],
+    ["reports\\draft.pdf", "  ", "draft.pdf"],
+    ["reports\\draft.pdf", "  Custom report.pdf  ", "Custom report.pdf"],
+  ])("names attachment %s with override %s as %s", async (filePath, name, expectedName) => {
+    const artifact = {
+      findFirst: vi.fn().mockResolvedValue(null),
+      create: vi.fn(async ({ data }) => ({ id: "artifact", ...data })),
+    };
+    const tx = { artifact, $queryRaw: vi.fn().mockResolvedValue([]) };
+    const put = vi.fn().mockResolvedValue({ id: "stored" });
+    const result = await attachWorkspaceFileToThread(
+      {
+        prisma: {
+          artifact,
+          $transaction: async (work: (client: typeof tx) => Promise<unknown>) => work(tx),
+        } as unknown as PrismaClient,
+        artifacts: { put } as unknown as ArtifactStore,
+      },
+      {
+        spaceId: "space",
+        userId: "owner",
+        botId: "bot",
+        runId: "run",
+        filePath,
+        name,
+        bytes: new Uint8Array([1, 2, 3]),
+        operationId: "op",
+      },
+    );
+    expect(put).toHaveBeenCalledWith(
+      expect.objectContaining({ name: expectedName, mimeType: "application/pdf" }),
+      expect.anything(),
+    );
+    expect(artifact.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ name: { equals: expectedName, mode: "insensitive" } }),
+      }),
+    );
+    expect(artifact.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ name: expectedName }) }),
+    );
+    expect(result.block).toMatchObject({ name: expectedName, mimeType: "application/pdf" });
+  });
   it("rejects generated output above a lower configured attachment limit before storage", async () => {
     const put = vi.fn();
     await expect(
