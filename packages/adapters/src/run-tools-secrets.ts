@@ -42,9 +42,9 @@ import type { ToolHandlers } from "./run-tool-gate.js";
 
 /** Saved credentials and protected input. */
 export const secretTools: ToolHandlers = {
-  async list_secrets(ctx, call) {
+  async list_secrets(ctx) {
     const { deps, run } = ctx;
-    return call.finish(await listBotSecrets(deps.prisma, deps.secretStore, run));
+    return listBotSecrets(deps.prisma, deps.secretStore, run);
   },
   async forget_secret(ctx, call) {
     const { deps, run } = ctx;
