@@ -325,6 +325,16 @@ describe("closeUnterminatedFence", () => {
       "```ts\r\ncode\r\n``` not closing\r\n\n```",
     );
   });
+
+  it("does not open a backtick fence whose info string has a backtick", () => {
+    for (const markdown of ["```npm``` is great\nmore", "```a`b\ntext", "   ``` `x`\ntext"]) {
+      expect(closeUnterminatedFence(markdown)).toBe(markdown);
+    }
+  });
+
+  it("still opens a tilde fence whose info string has a backtick", () => {
+    expect(closeUnterminatedFence("~~~ a`b\ncode")).toBe("~~~ a`b\ncode\n~~~");
+  });
 });
 
 describe("link labels", () => {
