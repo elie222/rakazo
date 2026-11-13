@@ -104,10 +104,27 @@ describe("stopProcess", () => {
 });
 
 describe("safeName", () => {
-  it.each(["基线", "优化后", "日本語", "한글", "مرحبا", "cafe\u0301", "हिन्दी", "𠮷"])(
+  it.each(["基线", "优化后", "日本語", "한글", "مرحبا", "हिन्दी", "𠮷"])(
     "preserves Unicode letters, numbers and combining marks in %s",
     (label) => expect(safeName(label)).toBe(label),
   );
+
+  it("keeps canonically equivalent labels distinct on disk", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "performance-unicode-label-"));
+    const labels = ["é", "e\u0301"];
+    try {
+      expect(safeName(labels[0]).normalize("NFC")).not.toBe(safeName(labels[1]).normalize("NFC"));
+      for (const label of labels) {
+        await writeFile(path.join(directory, `${safeName(label)}.json`), label);
+      }
+      expect(await readdir(directory)).toHaveLength(2);
+      for (const label of labels) {
+        expect(await readFile(path.join(directory, `${safeName(label)}.json`), "utf8")).toBe(label);
+      }
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
 
   it("retains existing ASCII naming and removes unsafe path characters", () => {
     expect(safeName("Baseline V2.0_test")).toBe("baseline-v2.0_test");
