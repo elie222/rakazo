@@ -4395,7 +4395,9 @@ describe("computer screen url", () => {
 
   it("returns the team screen limit without private provider details", async () => {
     const { response, updateMany } = await callScreenUrl(() =>
-      Promise.reject(new Error("cannot allocate another screen (limit 4): private provider detail")),
+      Promise.reject(
+        new Error("cannot allocate another screen (limit 4): private provider detail"),
+      ),
     );
     expect(response.status).toBe(409);
     await expect(response.json()).resolves.toEqual({

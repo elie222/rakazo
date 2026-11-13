@@ -92,7 +92,8 @@ export async function withComputerScreenAvailability<T>(
   try {
     return await work();
   } catch (error) {
-    if (isComputerScreenUnavailable(error)) return { error: computerScreenUnavailableMessage(error) };
+    if (isComputerScreenUnavailable(error))
+      return { error: computerScreenUnavailableMessage(error) };
     throw error;
   }
 }
