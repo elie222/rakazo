@@ -533,6 +533,8 @@ services:
       <<: *app-environment
       GRAPHILE_WORKER_CONCURRENCY:
       RUN_DRAIN_ENABLED:
+      # Bots' computers reach the API's tailnet tunnel here.
+      WEB_ORIGIN:
     volumes:
       - ../../data:/data
     depends_on:
