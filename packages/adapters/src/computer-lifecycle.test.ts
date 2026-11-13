@@ -2752,6 +2752,45 @@ describe("computer execution leases", () => {
     },
   );
 
+  it("retries a dedicated screen lease after a write conflict but not a busy computer", async () => {
+    const tx = {
+      $queryRaw: vi
+        .fn()
+        .mockResolvedValueOnce([{ id: "bot-1" }])
+        .mockResolvedValueOnce([{ id: "computer-1", scope: "dedicated" }])
+        .mockResolvedValueOnce([{ id: "run-1" }])
+        .mockResolvedValueOnce([]),
+      computerExecutionLease: {
+        updateManyAndReturn: vi.fn().mockResolvedValue([{ fence: 3 }]),
+        create: vi.fn(),
+      },
+      run: { aggregate: vi.fn() },
+    };
+    const conflict = Object.assign(new Error("write conflict"), { code: "P2034" });
+    const $transaction = vi
+      .fn()
+      .mockRejectedValueOnce(conflict)
+      .mockImplementation(async (work: (client: typeof tx) => unknown) => work(tx));
+    const prisma = { $transaction } as unknown as PrismaClient;
+    const input = {
+      computerId: "computer-1",
+      botId: "bot-1",
+      runId: "run-1",
+      workerId: "worker-1",
+      runFence: 1,
+    };
+
+    await expect(acquireDedicatedScreenLeaseFence(prisma, input)).resolves.toMatchObject({
+      fence: 3,
+    });
+    expect($transaction).toHaveBeenCalledTimes(2);
+
+    await expect(acquireDedicatedScreenLeaseFence(prisma, input)).rejects.toBeInstanceOf(
+      ComputerBusyError,
+    );
+    expect($transaction).toHaveBeenCalledTimes(3);
+  });
+
   it("acquires a team lease on a stale suspending computer", async () => {
     const prisma = leasePrisma({ scope: "team" });
     prisma.findUniqueOrThrow.mockResolvedValue({
