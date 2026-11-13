@@ -6,15 +6,15 @@ Replies return to the same chat app.
 **Settings → Messaging** shows the chat apps configured on your server. Self-hosted operators
 set them up using the [messaging setup guide](./self-host-integrations.md#messaging-apps).
 
-| Chat app | Direct messages | Groups and channels |
-| --- | --- | --- |
-| Microsoft Teams | Yes | Not supported |
-| Slack | Yes, after linking DMs | Workspace channels |
-| Telegram | Yes | Personal group linking; not broadcast channels |
-| iMessage and SMS (Sendblue) | Yes | Personal group linking for iMessage |
-| iMessage (Photon) | Yes | Not supported |
-| WhatsApp | Yes | Not supported |
-| Feishu/Lark | Yes | Not supported |
+| Chat app                    | Direct messages        | Groups and channels                            |
+| --------------------------- | ---------------------- | ---------------------------------------------- |
+| Microsoft Teams             | Yes                    | Not supported                                  |
+| Slack                       | Yes, after linking DMs | Workspace channels                             |
+| Telegram                    | Yes                    | Personal group linking; not broadcast channels |
+| iMessage and SMS (Sendblue) | Yes                    | Personal group linking for iMessage            |
+| iMessage (Photon)           | Yes                    | Not supported                                  |
+| WhatsApp                    | Yes                    | Not supported                                  |
+| Feishu/Lark                 | Yes                    | Not supported                                  |
 
 ## Link a bot to a chat app
 
