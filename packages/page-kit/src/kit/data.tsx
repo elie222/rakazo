@@ -1,5 +1,5 @@
 import type { CSSProperties, ReactNode } from "react";
-import { isValidElement, useContext, useEffect, useRef, useState } from "react";
+import { isValidElement, useCallback, useContext, useState } from "react";
 import { finite } from "./dataviz.js";
 import { Inline } from "./inline.js";
 import { objectItems } from "./items.js";
@@ -274,7 +274,9 @@ export type TableCell =
   | { text: ReactNode; tone?: Tone };
 
 function cellContent(cell: TableCell): ReactNode {
-  if (cell === null || typeof cell !== "object" || isValidElement(cell)) return cell as ReactNode;
+  if (cell === null || typeof cell !== "object" || isValidElement(cell) || Array.isArray(cell)) {
+    return cell as ReactNode;
+  }
   if (!("text" in cell)) return null;
   const tone = toneClass(cell.tone);
   return tone ? <span className={tone}>{cell.text}</span> : cell.text;
@@ -303,6 +305,7 @@ const LONG_TABLE = 15;
 const PAGE_ROWS = 200;
 
 function cellText(cell: TableCell): string {
+  if (Array.isArray(cell)) return cell.map((item) => cellText(item)).join("");
   if (typeof cell === "string" || typeof cell === "number") return String(cell);
   if (cell && typeof cell === "object" && !isValidElement(cell) && "text" in cell) {
     return cellText(cell.text as TableCell);
@@ -327,26 +330,37 @@ function sortKey(cell: TableCell): number | string {
 }
 
 /** Fades the edge a wide table can still scroll towards. */
-function useScrollEdges() {
-  const ref = useRef<HTMLDivElement>(null);
+function useScrollEdges(direction: string) {
   const [edges, setEdges] = useState({ start: false, end: false });
-  useEffect(() => {
-    const element = ref.current;
-    if (!element) return;
-    const update = () => {
-      const start = element.scrollLeft > 1;
-      const end = element.scrollLeft + element.clientWidth < element.scrollWidth - 1;
-      setEdges((old) => (old.start === start && old.end === end ? old : { start, end }));
-    };
-    update();
-    element.addEventListener("scroll", update, { passive: true });
-    const observer = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(update);
-    observer?.observe(element);
-    return () => {
-      element.removeEventListener("scroll", update);
-      observer?.disconnect();
-    };
-  }, []);
+  const ref = useCallback(
+    (element: HTMLDivElement | null) => {
+      if (!element) return;
+      const update = () => {
+        const max = Math.max(0, element.scrollWidth - element.clientWidth);
+        // The mask fades physical left/right edges. RTL offsets run from -max to zero.
+        const left = Math.min(
+          max,
+          Math.max(
+            0,
+            element.scrollLeft + (getComputedStyle(element).direction === "rtl" ? max : 0),
+          ),
+        );
+        const start = left > 1;
+        const end = left < max - 1;
+        setEdges((old) => (old.start === start && old.end === end ? old : { start, end }));
+      };
+      update();
+      element.addEventListener("scroll", update, { passive: true });
+      const observer =
+        typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(update);
+      observer?.observe(element);
+      return () => {
+        element.removeEventListener("scroll", update);
+        observer?.disconnect();
+      };
+    },
+    [direction],
+  );
   return { ref, edges };
 }
 
@@ -371,7 +385,7 @@ export function Table({
   const [sort, setSort] = useState<{ column: number; descending: boolean } | null>(null);
   const [query, setQuery] = useState("");
   const [limit, setLimit] = useState(PAGE_ROWS);
-  const scroll = useScrollEdges();
+  const scroll = useScrollEdges(words.dir);
   if (heads.length === 0 && body.length === 0) return null;
   const width = Math.max(heads.length, ...body.map((row) => row.length));
   const indexes = Array.from({ length: width }, (_, index) => index);

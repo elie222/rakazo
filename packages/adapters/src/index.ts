@@ -25,15 +25,26 @@ export {
   forgetBotSecret,
   getBotSecretMetadata,
   isSecretAlreadySaved,
+  LOGIN_ALREADY_SAVED,
+  LOGIN_CODE_REPEAT_WINDOW_MS,
+  LOGIN_CODE_TRIES,
+  LOGIN_CODES_USED_UP,
   listBotSecretMetadata,
+  listBotSecrets,
   listVaultItems,
+  loginCodeClaim,
   newVaultItemName,
   normalizeSecretDestination,
   pageUrlOrigin,
   relabelVaultItem,
+  resolveLoginFill,
   revealBotSecret,
+  SAVED_LOGIN_UNREADABLE,
   SPACE_VAULT_NOT_IN_USE,
   storeBotSecret,
+  UNKNOWN_BOTS,
+  UNSUPPORTED_ACCESS,
+  VAULT_CHANGED,
 } from "./bot-secrets.js";
 export * from "./browser-emulator.js";
 export * from "./browser-provider-factory.js";
@@ -70,6 +81,7 @@ export * from "./computer-workspace.js";
 export * from "./configured-sandbox.js";
 export * from "./connector-catalog.js";
 export * from "./connector-registry.js";
+export { purgeClearedConversationMemory } from "./conversation-memory-cleanup.js";
 export * from "./createos-sandbox.js";
 export * from "./current-time.js";
 export * from "./cursor-cloud-agent.js";
@@ -93,11 +105,14 @@ export * from "./fleet-tools.js";
 export * from "./github-webhook-emulator.js";
 export * from "./graphql-connectors.js";
 export * from "./group-handoff.js";
+export { HindsightMemoryProvider } from "./hindsight-memory-provider.js";
 export * from "./home.js";
 export * from "./home-object-store.js";
 export { HonchoMemoryProvider } from "./honcho-memory-provider.js";
 export * from "./host-aware-sandbox.js";
+export * from "./host-computer-device.js";
 export * from "./http-decisions.js";
+export * from "./inbound-delivery.js";
 export * from "./inbound-email.js";
 export * from "./incus-sandbox.js";
 export * from "./infisical-secret-store.js";
@@ -168,6 +183,7 @@ export { serializeToolResult } from "./pi-runtime-tools.js";
 export * from "./pi-session.js";
 export { shutdownPiTelemetry } from "./pi-telemetry.js";
 export * from "./pipedream-connector.js";
+export * from "./plan-limits.js";
 export * from "./plugin-connectors.js";
 export * from "./plugin-marketplace.js";
 export * from "./product-analytics.js";
@@ -208,8 +224,11 @@ export * from "./storage-migration.js";
 export * from "./strategic-initiative.js";
 export * from "./stripe-billing.js";
 export { SupermemoryMemoryProvider } from "./supermemory-memory-provider.js";
+export { T3CodeConnections } from "./t3code-connections.js";
 export * from "./task-catalog.js";
 export * from "./teaching-session.js";
+export * from "./team-chat.js";
+export * from "./team-chat-judge.js";
 export * from "./team-chat-messaging.js";
 export * from "./third-party-connector-emulator.js";
 export * from "./ticket-changes.js";
@@ -218,6 +237,14 @@ export { dispatcherFetch } from "./undici-fetch.js";
 export * from "./user-device-emulator.js";
 export * from "./user-device-gateway.js";
 export * from "./user-device-protocol.js";
+export { listVaultItemUses } from "./vault-activity.js";
+export {
+  migrateVaultValues,
+  openSealedVaultValue,
+  rotateVaultKeys,
+  vaultItemsNotUnderKeys,
+  vaultItemsUnderOlderKeys,
+} from "./vault-values.js";
 export * from "./voice-factory.js";
 export * from "./voice-model-connection.js";
 export * from "./wakeup.js";

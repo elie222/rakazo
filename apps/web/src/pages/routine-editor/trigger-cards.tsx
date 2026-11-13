@@ -29,6 +29,7 @@ import {
 import type { ReactNode } from "react";
 import { useId } from "react";
 import { BotEmailAddressField } from "../../components/BotEmailAddressField";
+import { InfoTooltip } from "../../components/InfoTooltip";
 import { authClient } from "../../lib/auth";
 import { useCopyText } from "../../lib/copy-text";
 import type { RoutineWatchDraft } from "../../lib/routine-draft";
@@ -72,7 +73,7 @@ export function WatchTriggerCard({
       </div>
       <div className="mt-3 space-y-3">
         <NativeSelect
-          size="sm"
+          className="w-full"
           aria-label={t`What to watch`}
           value={watch.kind}
           onChange={(event) =>
@@ -80,6 +81,7 @@ export function WatchTriggerCard({
           }
         >
           <NativeSelectOption value="files">{t`Files or folders on the computer`}</NativeSelectOption>
+          <NativeSelectOption value="http">{t`An HTTPS endpoint`}</NativeSelectOption>
           <NativeSelectOption value="command">{t`A command's output`}</NativeSelectOption>
           <NativeSelectOption value="tool">{t`An integration tool`}</NativeSelectOption>
         </NativeSelect>
@@ -95,9 +97,19 @@ export function WatchTriggerCard({
         {watch.kind === "command" ? (
           <Input
             aria-label={t`Command`}
-            placeholder="curl -s https://example.com/status"
+            placeholder="cat reports/status.json"
             value={watch.command}
             onChange={(e) => onChange({ ...watch, command: e.target.value })}
+            className="font-mono text-body-sm"
+          />
+        ) : null}
+        {watch.kind === "http" ? (
+          <Input
+            aria-label={t`HTTPS URL`}
+            type="url"
+            placeholder="https://example.com/status"
+            value={watch.url}
+            onChange={(e) => onChange({ ...watch, url: e.target.value })}
             className="font-mono text-body-sm"
           />
         ) : null}
@@ -118,15 +130,6 @@ export function WatchTriggerCard({
               className="font-mono text-body-sm"
             />
           </>
-        ) : null}
-        {watch.kind !== "files" ? (
-          <Input
-            aria-label={t`Fields that mark a change`}
-            placeholder={t`Fields to compare, e.g. id, modifiedTime (optional)`}
-            value={watch.track}
-            onChange={(e) => onChange({ ...watch, track: e.target.value })}
-            className="font-mono text-body-sm"
-          />
         ) : null}
         <label
           htmlFor={`${id}-every`}
@@ -158,17 +161,39 @@ export function WatchTriggerCard({
           />
           <Trans>minutes</Trans>
         </label>
-        <label
-          htmlFor={`${id}-loud`}
-          className="flex items-center gap-2 text-body text-muted-foreground"
-        >
-          <Switch
-            id={`${id}-loud`}
-            checked={watch.loud}
-            onCheckedChange={(loud) => onChange({ ...watch, loud })}
-          />
-          <Trans>Post "No changes" in chat</Trans>
-        </label>
+        {watch.kind !== "files" ? (
+          <label
+            htmlFor={`${id}-track`}
+            className="block space-y-1.5 text-body text-muted-foreground"
+          >
+            <span>
+              <Trans>Fields to compare (optional)</Trans>
+            </span>
+            <Input
+              id={`${id}-track`}
+              placeholder="id, modifiedTime"
+              value={watch.track}
+              onChange={(e) => onChange({ ...watch, track: e.target.value })}
+              className="font-mono text-body-sm"
+            />
+          </label>
+        ) : null}
+        <div className="flex items-center gap-2">
+          <label
+            htmlFor={`${id}-loud`}
+            className="flex items-center gap-2 text-body text-muted-foreground"
+          >
+            <Switch
+              id={`${id}-loud`}
+              checked={watch.loud}
+              onCheckedChange={(loud) => onChange({ ...watch, loud })}
+            />
+            <Trans>Report unchanged checks</Trans>
+          </label>
+          <InfoTooltip label={t`Report unchanged checks`}>
+            {t`Post a chat message when a check finds no changes. The routine won't run.`}
+          </InfoTooltip>
+        </div>
         {status ? (
           <p
             data-testid="routine-watch-status"

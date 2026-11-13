@@ -131,6 +131,7 @@ export function ThreadComposer({
   const inputRef = useRef<TextInputInstance>(null);
   const [saved] = useState(() => readComposerDraft(draftScope));
   const [draft, setDraft] = useState(saved.text);
+  const [emptyRowHeight, setEmptyRowHeight] = useState<number>();
   const draftRef = useRef(saved.text);
   const nativeSelection = useRef({ start: saved.text.length, end: saved.text.length });
   const completedSelection = useRef<number | null>(null);
@@ -242,6 +243,8 @@ export function ThreadComposer({
       pendingNativeEdit.current = null;
     },
     insert: (text) => {
+      // A delayed selection must not replay the edit from before the share.
+      pendingNativeEdit.current = null;
       const current = draftRef.current;
       draftRef.current = current ? `${current}\n${text}` : text;
       setDraft(draftRef.current);
@@ -430,9 +433,15 @@ export function ThreadComposer({
     justifyContent: "center",
   } as const;
 
+  // One line of text with its padding, as measured while the box is empty. The pills and attach
+  // button centre on it: the bar can grow past 44 (font scale, Android text metrics), and a fixed
+  // bottom margin would leave them high.
+  const lineHeight = Math.max(44, emptyRowHeight ?? 22 + 22 * textScale);
+  const pillInset = (lineHeight - composerPillStyle.height) / 2;
+
   const canSend = Boolean(draft.trim()) || selectedSkill !== null || attachmentIds.length > 0;
-  // Sending resets the box, which would drop words a provider is still transcribing.
-  const sendBlocked = sending || !canSend || dictation.status === "transcribing";
+  // Sending resets the box, which would drop a clip still recording or words still being transcribed.
+  const sendBlocked = sending || !canSend || dictation.status !== "idle";
 
   return (
     <>
@@ -579,7 +588,7 @@ export function ThreadComposer({
             accessible
             accessibilityRole="button"
             accessibilityLabel={t`Attach file`}
-            style={{ width: 44, height: 44 }}
+            style={{ width: 44, height: 44, marginBottom: (lineHeight - 44) / 2 }}
           >
             <GlassSurface
               shape="circle"
@@ -656,6 +665,9 @@ export function ThreadComposer({
             ) : null}
             <Pressable
               accessible={false}
+              onLayout={(event) => {
+                if (!draftRef.current) setEmptyRowHeight(event.nativeEvent.layout.height);
+              }}
               onPress={() => inputRef.current?.focus()}
               style={{
                 flexGrow: 1,
@@ -791,7 +803,7 @@ export function ThreadComposer({
               disabled={dictation.status === "transcribing"}
               hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
               onPress={toggleDictation}
-              style={{ marginBottom: 8 }}
+              style={{ marginBottom: pillInset }}
             >
               <GlassSurface
                 tint={dictation.status === "idle" ? undefined : tokens.foreground}
@@ -820,7 +832,7 @@ export function ThreadComposer({
               accessibilityLabel={t`Call`}
               hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
               onPress={() => void startVoiceCall()}
-              style={{ marginBottom: 8 }}
+              style={{ marginBottom: pillInset }}
             >
               <GlassSurface
                 tint={tokens.primary}
@@ -842,7 +854,7 @@ export function ThreadComposer({
               disabled={sendBlocked}
               hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
               onPress={() => void send()}
-              style={{ marginBottom: 8, opacity: sendBlocked ? 0.5 : 1 }}
+              style={{ marginBottom: pillInset, opacity: sendBlocked ? 0.5 : 1 }}
             >
               <GlassSurface
                 tint={tokens.primary}

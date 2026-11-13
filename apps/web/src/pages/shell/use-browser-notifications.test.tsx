@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { i18n } from "@lingui/core";
 import type { Bot, ChatAlert } from "@rakazo/contracts";
+import { TAKEOVER_COMPUTER_PENDING_STATE } from "@rakazo/core";
 import { act } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
@@ -8,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RpcClient } from "../../lib/rpc";
 import { useBrowserNotifications } from "./use-browser-notifications";
 
-type Frame = { type: "alert" | "heartbeat"; alert?: ChatAlert };
+type Frame = { type: "alert" | "roster" | "heartbeat"; alert?: ChatAlert };
 
 class FakeNotification {
   static permission: NotificationPermission = "granted";
@@ -76,6 +77,8 @@ const rpc = {
 
 const noBots: Bot[] = [];
 const bots = [{ id: "bot-b", name: "Scout", notifyOnFinish: true } as Bot];
+const groups: Array<{ id: string; snoozedUntil?: string | null }> = [{ id: "group-g" }];
+const roster = { changed: vi.fn(), lost: vi.fn() };
 
 function Harness({ botId, groupId }: { botId?: string; groupId?: string }) {
   hook = useBrowserNotifications(
@@ -87,9 +90,22 @@ function Harness({ botId, groupId }: { botId?: string; groupId?: string }) {
       activeGroupId: { current: groupId },
       openChat,
       meId: "user-1",
+      groupsRef: { current: groups },
+      roster,
     },
   );
   return null;
+}
+
+function reply(id: string, blocks: Array<Record<string, unknown>>, threadId = "thread-b") {
+  return {
+    id,
+    type: "thread.message.created" as const,
+    threadId,
+    seq: 5,
+    botId: "bot-b",
+    payload: { role: "bot" as const, blocks },
+  };
 }
 
 async function flush() {
@@ -128,6 +144,8 @@ beforeEach(() => {
   vi.stubGlobal("Notification", FakeNotification);
   FakeNotification.permission = "granted";
   FakeNotification.shown = [];
+  bots[0] = { id: "bot-b", name: "Scout", notifyOnFinish: true } as Bot;
+  groups[0] = { id: "group-g" };
   streams = [];
   signals = [];
   focused = true;
@@ -224,6 +242,21 @@ describe("useBrowserNotifications chat alerts", () => {
     expect(shown()).toHaveLength(1);
   });
 
+  it("passes roster signals on, and says when the stream that carries them drops", async () => {
+    roster.changed.mockClear();
+    roster.lost.mockClear();
+    await open({ botId: "bot-a" });
+    streams[0]!.push({ type: "roster" });
+    streams[0]!.push({ type: "heartbeat" });
+    await flush();
+    expect(roster.changed).toHaveBeenCalledTimes(1);
+    expect(roster.lost).not.toHaveBeenCalled();
+    streams[0]!.fail(new Error("network"));
+    await flush();
+    expect(roster.lost).toHaveBeenCalledTimes(1);
+    expect(shown()).toEqual([]);
+  });
+
   it("opens the chat from its own finished-run notification", async () => {
     const focus = vi.spyOn(window, "focus").mockImplementation(() => undefined);
     visible = false;
@@ -243,6 +276,41 @@ describe("useBrowserNotifications chat alerts", () => {
     expect(focus).toHaveBeenCalled();
     expect(openChat).toHaveBeenCalledWith({ botId: "bot-b", groupId: "group-g" });
     expect(notification!.closed).toBe(true);
+  });
+
+  it("announces a takeover once when the open chat is in the background", async () => {
+    visible = false;
+    await open({ botId: "bot-b" });
+    const event = {
+      id: "event-takeover-card",
+      type: "thread.message.created" as const,
+      threadId: "thread-b",
+      seq: 5,
+      botId: "bot-b",
+      payload: {
+        role: "bot" as const,
+        blocks: [
+          {
+            kind: "computer",
+            state: TAKEOVER_COMPUTER_PENDING_STATE,
+            text: "Sign in to continue.",
+          },
+        ],
+      },
+    };
+    act(() => hook.notifyBrowserForEvent(event, "thread-b", 4, true, "Scout", true, undefined));
+    await send({
+      kind: "takeover",
+      title: "Scout needs you on the screen",
+      body: "Sign in to continue.",
+    });
+    // Same tag, so the browser shows the alert in place of the card: one notification.
+    expect(shown().map(([, , tag]) => tag)).toEqual(["thread-b:takeover", "thread-b:takeover"]);
+    expect(shown().at(-1)).toEqual([
+      "Scout needs you on the screen",
+      "Sign in to continue.",
+      "thread-b:takeover",
+    ]);
   });
 
   it("closes the open chat's notifications when the shell unmounts", async () => {
@@ -280,6 +348,97 @@ describe("useBrowserNotifications chat alerts", () => {
     hook.flushPendingBrowserNotifications();
     expect(shown()).toEqual([]);
     root = createRoot(document.createElement("div"));
+  });
+
+  it("stays quiet for an ordinary reply in a snoozed open chat, and still announces a question", async () => {
+    const later = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    const earlier = new Date(Date.now() - 60 * 1000).toISOString();
+    visible = false;
+    bots[0] = { id: "bot-b", name: "Scout", notifyOnFinish: true, snoozedUntil: later } as Bot;
+    groups[0] = { id: "group-g", snoozedUntil: later };
+    await open({ botId: "bot-b" });
+    act(() =>
+      hook.notifyBrowserForEvent(
+        reply("plain-bot", [{ kind: "text", text: "The report is ready." }]),
+        "thread-b",
+        4,
+        true,
+        "Scout",
+        true,
+        undefined,
+      ),
+    );
+    act(() =>
+      hook.notifyBrowserForEvent(
+        reply("plain-group", [{ kind: "text", text: "Saturday works." }], "thread-g"),
+        "thread-g",
+        4,
+        true,
+        "Scout",
+        true,
+        "group-g",
+      ),
+    );
+    expect(shown()).toEqual([]);
+    act(() =>
+      hook.notifyBrowserForEvent(
+        reply("ask-bot", [{ kind: "ask", text: "Which repo?", status: "pending" }]),
+        "thread-b",
+        4,
+        true,
+        "Scout",
+        true,
+        undefined,
+      ),
+    );
+    act(() =>
+      hook.notifyBrowserForEvent(
+        reply("ask-group", [{ kind: "ask", text: "Which day?", status: "pending" }], "thread-g"),
+        "thread-g",
+        4,
+        true,
+        "Scout",
+        true,
+        "group-g",
+      ),
+    );
+    expect(shown().map((row) => row[2])).toEqual(["thread-b", "thread-g"]);
+    bots[0] = { id: "bot-b", name: "Scout", notifyOnFinish: true, snoozedUntil: earlier } as Bot;
+    groups[0] = { id: "group-g", snoozedUntil: earlier };
+    act(() =>
+      hook.notifyBrowserForEvent(
+        reply("woke-bot", [{ kind: "text", text: "Awake again." }]),
+        "thread-b",
+        4,
+        true,
+        "Scout",
+        true,
+        undefined,
+      ),
+    );
+    expect(shown().map((row) => row[1])).toContain("Awake again.");
+  });
+
+  it("drops a reply queued for permission when the chat is snoozed before permission arrives", async () => {
+    const later = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    FakeNotification.permission = "default";
+    visible = false;
+    await open({ botId: "bot-b" });
+    act(() =>
+      hook.notifyBrowserForEvent(
+        reply("held", [{ kind: "text", text: "Still working." }]),
+        "thread-b",
+        4,
+        true,
+        "Scout",
+        true,
+        undefined,
+      ),
+    );
+    bots[0] = { id: "bot-b", name: "Scout", notifyOnFinish: true, snoozedUntil: later } as Bot;
+    FakeNotification.permission = "granted";
+    act(() => hook.flushPendingBrowserNotifications());
+    expect(shown()).toEqual([]);
   });
 
   it("closes the stream when the shell unmounts", async () => {

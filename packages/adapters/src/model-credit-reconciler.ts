@@ -152,7 +152,9 @@ export function createModelCreditReconciler(deps: {
                 where: { id: call.runId },
                 select: { status: true, leaseExpiresAt: true, error: true },
               });
-              stoppedByUser = run?.status === "cancelled" && run.error == null;
+              // A deleted run cannot prove the call was not stopped by its user.
+              // Keep the conservative full-rate count until provider evidence replaces it.
+              stoppedByUser = !run || (run.status === "cancelled" && run.error == null);
               running =
                 !usage &&
                 (run?.status === "leased" || run?.status === "running") &&

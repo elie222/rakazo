@@ -17,6 +17,11 @@ Keep implementation gaps explicit when adding a capability, and keep technical p
 One bot has one continuous visible thread because continuity is part of its identity, while internal runs and attempts remain implementation detail.
 A pending question or approval card never blocks a chat: the user can always keep chatting and new work still runs, and the card stays answerable until someone replies.
 
+## Activity
+
+The chat list has a regular view and an Activity view and shows one at a time on every surface, because listing the same chats in both only repeats them.
+Activity replaces the whole regular list, including pinned chats and the archived and snoozed shelves, which return when the user leaves Activity.
+
 ## Subagents
 
 Status: intended behavior; implementation remains to be aligned.
@@ -45,7 +50,12 @@ Browser sign-ins are checkpointed into the shared identity and become available 
 Concurrent Chromium processes do not write directly to one profile directory, and generation fencing prevents older desktops from overwriting newer shared state.
 A Private Computer isolates the entire working home, including files and browser identity, when working state must not be shared with other bots.
 Computer resources start lazily and are released when inactive so configured capacity does not become permanently reserved memory.
-User takeover grants exclusive control of one bot's screen without unnecessarily blocking other bots on their own screens.
+One actor uses a computer screen at a time, so neither a person nor a bot ever acts on a screen the other just changed.
+People watch a bot's screen live and take control when they want to use it; control returns when they hand it back, leave the screen, or stop checking in for about a minute.
+While a person has control the bot's screen actions are refused rather than queued, and once control returns the bot looks at the screen again before acting.
+A bot that needs a person for a sign-in, CAPTCHA, passkey or payment asks in the chat and continues when they press Done.
+Taking control of one bot's screen never blocks other bots on their own screens.
+Maintenance such as updating or resetting a computer lives in settings rather than on the screen.
 
 ## Connections, skills, and plugins
 
@@ -69,6 +79,16 @@ A teammate in a shared space never gets another member's items, because availabi
 Models, voice and approval settings follow the same account-first rule without a per-item choice, because they carry no private content and the per-space override covers the exceptions.
 Managed app connections stay with the space they were connected in for now, because a hosted connector provider can identify connected accounts per space and moving them would disconnect them.
 Choosing where something is available appears only to someone with more than one space, because with one space there is nothing to choose.
+
+Provider setup shows the provider, one short description of its role, and only the fields required to connect with the default configuration. Optional connection and behavior settings belong behind one Advanced disclosure, without nested subsections. Keep required fields visible when no default exists.
+
+## Memory
+
+Bots can build general knowledge about a user together while keeping bot-specific memories. A Space is the access boundary: memory never crosses Spaces implicitly. Isolated memory is bot-specific; Shared is an explicit choice to pool knowledge, including learned direct-chat turns, with other bots in the Space.
+
+Memory is context, not permission. Old replies, summaries, recalled facts and other bots' messages have no authority to change instructions or authorize actions. Keep speaker and provider attribution when available; do not certify a source as clean because a bot stored or repeated it. Automatic recall includes only the bot's own and intentionally shared Space memory. Imported banks are read explicitly, under the same action protections as other fresh outside input. Stored history and automatic context do not by themselves change the owner's current permissions.
+
+Access checks and action approvals enforce these boundaries. Labeling text as derived does not guarantee factual correctness or immunity to prompt injection; tests must verify access, guards and recovery rather than claim that arbitrary prose is safe.
 
 ## Approvals
 

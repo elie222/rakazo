@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import type { BackgroundJobHandlers } from "@rakazo/adapter-kit";
+import { messagingSendJob, messagingSendJobKey } from "@rakazo/adapter-kit";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ABANDONED_SUSPEND_CLAIM_MS } from "./computer-idle.js";
@@ -22,15 +23,23 @@ function handlers(): BackgroundJobHandlers {
     "skill.teaching-expire": vi.fn(async () => undefined),
     "call.expire": vi.fn(async () => undefined),
     "history.compact": vi.fn(async () => undefined),
+    "memory.retain-turn": vi.fn(async () => undefined),
+    "memory.purge-history": vi.fn(async () => undefined),
+    "messaging.send": vi.fn(async () => undefined),
+    "messaging.reply": vi.fn(async () => undefined),
     "messaging.deliver": vi.fn(async () => undefined),
     "messaging.progress": vi.fn(async () => undefined),
     "messaging.credential-cleanup": vi.fn(async () => undefined),
+    "team_chat.engage": vi.fn(async () => undefined),
+    "team_chat.ambient": vi.fn(async () => undefined),
     "cloud_agent.poll": vi.fn(async () => undefined),
     "purchase.poll": vi.fn(async () => undefined),
     "media.poll": vi.fn(async () => undefined),
     "push.receipt": vi.fn(async () => undefined),
   };
 }
+
+const LAST_ATTEMPT = { number: 1, max: 1 };
 
 describe("InMemoryJobQueue", () => {
   afterEach(() => vi.useRealTimers());
@@ -94,7 +103,11 @@ describe("InMemoryJobQueue", () => {
     await vi.advanceTimersByTimeAsync(999);
     expect(target["run.continue"]).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1);
-    expect(target["run.continue"]).toHaveBeenCalledWith({ runId: "run-1" });
+    expect(target["run.continue"]).toHaveBeenCalledWith(
+      { runId: "run-1" },
+      undefined,
+      LAST_ATTEMPT,
+    );
     await queue.close();
   });
 
@@ -117,7 +130,11 @@ describe("InMemoryJobQueue", () => {
     });
     await vi.advanceTimersByTimeAsync(1_000);
     expect(target["computer.sleep"]).toHaveBeenCalledTimes(1);
-    expect(target["computer.sleep"]).toHaveBeenCalledWith({ computerId: "new" });
+    expect(target["computer.sleep"]).toHaveBeenCalledWith(
+      { computerId: "new" },
+      undefined,
+      LAST_ATTEMPT,
+    );
 
     await queue.enqueue({
       name: "computer.sleep",
@@ -128,6 +145,28 @@ describe("InMemoryJobQueue", () => {
     await queue.cancel("computer.sleep:2");
     await vi.advanceTimersByTimeAsync(1_000);
     expect(target["computer.sleep"]).toHaveBeenCalledTimes(1);
+    await queue.close();
+  });
+
+  it("keeps a transaction's jobs through a cancel its transaction may roll back", async () => {
+    vi.useFakeTimers();
+    const queue = new InMemoryJobQueue();
+    const target = handlers();
+    const tx = { $executeRawUnsafe: vi.fn(async () => 0) };
+    await queue.start(target);
+    const dueAt = new Date(Date.now() + 1_000);
+    await queue.enqueueIn(tx, messagingSendJob("kept", dueAt));
+    await queue.cancelIn(tx, messagingSendJobKey("kept"));
+
+    await vi.advanceTimersByTimeAsync(999);
+    expect(target["messaging.send"]).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    // Its handler finds the message settled, or sends it if that transaction rolled back.
+    expect(target["messaging.send"]).toHaveBeenCalledExactlyOnceWith(
+      { outboundId: "kept" },
+      undefined,
+      LAST_ATTEMPT,
+    );
     await queue.close();
   });
 
@@ -152,7 +191,11 @@ describe("InMemoryJobQueue", () => {
     expect(target["run.continue"]).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(4_000);
     expect(target["run.continue"]).toHaveBeenCalledTimes(1);
-    expect(target["run.continue"]).toHaveBeenCalledWith({ runId: "backed-off" });
+    expect(target["run.continue"]).toHaveBeenCalledWith(
+      { runId: "backed-off" },
+      undefined,
+      LAST_ATTEMPT,
+    );
     await queue.close();
   });
 
@@ -186,7 +229,11 @@ describe("InMemoryJobQueue", () => {
     expect(target["run.continue"]).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(4_000);
     expect(target["run.continue"]).toHaveBeenCalledTimes(1);
-    expect(target["run.continue"]).toHaveBeenCalledWith({ runId: "backed-off" });
+    expect(target["run.continue"]).toHaveBeenCalledWith(
+      { runId: "backed-off" },
+      undefined,
+      LAST_ATTEMPT,
+    );
     await queue.close();
   });
 
@@ -218,7 +265,11 @@ describe("InMemoryJobQueue", () => {
     });
     await vi.advanceTimersByTimeAsync(1_000);
     expect(target["run.continue"]).toHaveBeenCalledTimes(1);
-    expect(target["run.continue"]).toHaveBeenCalledWith({ runId: "revived" });
+    expect(target["run.continue"]).toHaveBeenCalledWith(
+      { runId: "revived" },
+      undefined,
+      LAST_ATTEMPT,
+    );
     await queue.close();
   });
 
@@ -242,7 +293,11 @@ describe("InMemoryJobQueue", () => {
     });
     await vi.advanceTimersByTimeAsync(1_000);
     expect(target["run.continue"]).toHaveBeenCalledTimes(1);
-    expect(target["run.continue"]).toHaveBeenCalledWith({ runId: "fresh" });
+    expect(target["run.continue"]).toHaveBeenCalledWith(
+      { runId: "fresh" },
+      undefined,
+      LAST_ATTEMPT,
+    );
     await queue.close();
   });
 
@@ -416,7 +471,11 @@ describe("InMemoryJobQueue", () => {
       },
     );
     await queue.close();
-    expect(target["run.continue"]).toHaveBeenCalledWith({ runId: "run-traced" });
+    expect(target["run.continue"]).toHaveBeenCalledWith(
+      { runId: "run-traced" },
+      undefined,
+      LAST_ATTEMPT,
+    );
     expect(sink.events.some((event) => event.message === "job.completed")).toBe(true);
     expect(
       sink.events.some(

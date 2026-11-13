@@ -956,7 +956,7 @@ describe("compactHistory", () => {
       expect.any(Object),
     );
     expect(harness.purgeHistory).toHaveBeenCalledWith(
-      { botId: "bot-1", generations: [0] },
+      { botId: "bot-1", threadId: "thread-1", generations: [0] },
       expect.any(Object),
     );
   });

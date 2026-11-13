@@ -9,7 +9,7 @@ import {
   VOICE_RESPONSE_TIMEOUT_MS,
   withAbort,
 } from "@rakazo/core";
-import { createAudioPlayer, setAudioModeAsync } from "expo-audio";
+import { createAudioPlayer, setAudioModeAsync, setIsAudioActiveAsync } from "expo-audio";
 import { File, Paths } from "expo-file-system";
 import type * as ExpoSpeech from "expo-speech";
 import { Platform } from "react-native";
@@ -127,14 +127,85 @@ subscribeConfirmedSpaceSwitch(() => {
   announcedSpeaker = undefined;
 });
 
-let playsInBackground = false;
+const READ_ALOUD_AUDIO = {
+  playsInSilentMode: true,
+  interruptionMode: "mixWithOthers",
+  shouldPlayInBackground: false,
+} as const;
 
-/**
- * A call keeps its replies playing while the screen is off; the microphone
- * foreground service is what keeps the app alive then.
- */
-export function setVoiceBackgroundPlayback(enabled: boolean): void {
-  playsInBackground = enabled;
+const CALL_AUDIO = {
+  playsInSilentMode: true,
+  interruptionMode: "mixWithOthers",
+  allowsRecording: true,
+  shouldPlayInBackground: true,
+} as const;
+
+const DICTATION_AUDIO = { playsInSilentMode: true, allowsRecording: true } as const;
+
+let audioDisabled = false;
+let onCall = false;
+let dictating = false;
+let audioModeChange: Promise<void> = Promise.resolve();
+
+function changeAudioMode(change: () => Promise<void>): Promise<void> {
+  const next = audioModeChange.then(change);
+  audioModeChange = next.catch(() => undefined);
+  return next;
+}
+
+async function activateAudio(): Promise<void> {
+  if (!audioDisabled) return;
+  await setIsAudioActiveAsync(true);
+  audioDisabled = false;
+}
+
+async function releaseAudio(): Promise<void> {
+  // This API also disables future players until explicitly enabled again.
+  audioDisabled = true;
+  await setIsAudioActiveAsync(false);
+}
+
+export function activateVoiceAudio(): Promise<void> {
+  return changeAudioMode(activateAudio);
+}
+
+export function callAudioActive(): boolean {
+  return onCall;
+}
+
+export function setCallAudio(active: boolean): Promise<void> {
+  onCall = active;
+  return changeAudioMode(async () => {
+    if (onCall !== active) return;
+    if (active) {
+      await activateAudio();
+      await setAudioModeAsync(CALL_AUDIO);
+      return;
+    }
+    if (dictating) {
+      await activateAudio();
+      await setAudioModeAsync(DICTATION_AUDIO);
+      return;
+    }
+    await setAudioModeAsync(READ_ALOUD_AUDIO);
+    if (Platform.OS === "ios" && !onCall && playback.status === "idle") {
+      await releaseAudio();
+    }
+  });
+}
+
+export function setDictationAudio(active: boolean): Promise<void> {
+  dictating = active;
+  return changeAudioMode(async () => {
+    if (onCall || dictating !== active) return;
+    if (active) {
+      await activateAudio();
+      await setAudioModeAsync(DICTATION_AUDIO);
+      return;
+    }
+    await setAudioModeAsync({ playsInSilentMode: true, allowsRecording: false });
+    if (Platform.OS === "ios" && playback.status === "idle") await releaseAudio();
+  });
 }
 
 // Queued playback runs speakText one call at a time, so a single Stop always reaches whatever is
@@ -635,10 +706,9 @@ async function playWithHtmlAudio(
 
 async function playWithNativeAudio(bytes: Uint8Array, session?: HostedSession): Promise<void> {
   if (session?.isStopped) return;
-  await setAudioModeAsync({
-    playsInSilentMode: true,
-    interruptionMode: "mixWithOthers",
-    shouldPlayInBackground: playsInBackground,
+  await changeAudioMode(async () => {
+    await activateAudio();
+    if (!onCall) await setAudioModeAsync(READ_ALOUD_AUDIO);
   });
   const file = new File(
     Paths.cache,
@@ -646,7 +716,7 @@ async function playWithNativeAudio(bytes: Uint8Array, session?: HostedSession): 
   );
   file.create({ overwrite: true });
   file.writeSync(bytesToBase64(bytes), { encoding: "base64" });
-  const player = createAudioPlayer({ uri: file.uri });
+  const player = createAudioPlayer({ uri: file.uri }, { keepAudioSessionActive: onCall });
   try {
     await new Promise<void>((resolve, reject) => {
       let settled = false;

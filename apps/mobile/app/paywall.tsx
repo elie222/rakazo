@@ -8,6 +8,7 @@ import {
   MODEL_CREDIT_AMOUNTS,
   ModelCreditAmountSchema,
 } from "@rakazo/contracts";
+import { canDeleteOrganization } from "@rakazo/core";
 import { botColors, botEyeColor, typeScale } from "@rakazo/ui-tokens";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import type { ComponentProps, ReactNode } from "react";
@@ -50,7 +51,11 @@ import { endCallBeforeSessionEnd } from "../lib/call-session";
 import { translucentColor } from "../lib/color";
 import { dateLocaleForUi } from "../lib/i18n";
 import { useMobileTokens } from "../lib/native";
-import { organizationSwitchActions, useOrganizations } from "../lib/organizations";
+import {
+  activeOrganization,
+  organizationSwitchActions,
+  useOrganizations,
+} from "../lib/organizations";
 import { confirmUnsentSendLoss } from "../lib/unsent-send-warning";
 import { errorText } from "../lib/user-error";
 
@@ -87,6 +92,10 @@ export default function Paywall() {
   const deletion = useAccountDeletion();
   const organizations = useOrganizations(!dismissible).data;
   const organizationAction = useOrganizationMenuAction(organizations);
+  const active = activeOrganization(organizations);
+  const deletableOrganization =
+    active && canDeleteOrganization(organizations?.organizations ?? [], active) ? active : null;
+
   useEffect(() => {
     if (deletion.error) Alert.alert(deletion.error);
   }, [deletion.error]);
@@ -199,12 +208,23 @@ export default function Paywall() {
         <MenuView
           actions={[
             ...organizationSwitchActions(organizations),
+            ...(deletableOrganization
+              ? [
+                  {
+                    id: "delete-organization",
+                    title: t`Delete organization`,
+                    attributes: { destructive: true },
+                  },
+                ]
+              : []),
             { id: "sign-out", title: t`Sign out` },
             { id: "delete", title: t`Delete account` },
           ]}
           onPressAction={({ nativeEvent }) => {
             if (pending || deletion.pending) return;
             if (nativeEvent.event === "delete") void deletion.request();
+            else if (nativeEvent.event === "delete-organization")
+              router.push("/organization?delete=1");
             else if (nativeEvent.event === "sign-out") void leave();
             else organizationAction(nativeEvent.event);
           }}

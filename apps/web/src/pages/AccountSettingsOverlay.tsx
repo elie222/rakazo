@@ -152,6 +152,7 @@ export function GeneralSettingsPanels({
   const [timezonePending, setTimezonePending] = useState(false);
   const [timezoneError, setTimezoneError] = useState<string | null>(null);
   const deviceTimezone = localTimezone();
+  const selectedTimezone = timezone ?? deviceTimezone;
 
   function chooseLocale(next: UiLocale) {
     if (next === locale) return;
@@ -270,7 +271,7 @@ export function GeneralSettingsPanels({
             />
           }
         />
-        {botAvatarSet && onBotAvatarSetChange ? (
+        {onBotAvatarSetChange ? (
           <SettingsRow
             label={
               <span id={botStyleLabelId}>
@@ -282,7 +283,7 @@ export function GeneralSettingsPanels({
                 <ToggleGroup
                   aria-labelledby={botStyleLabelId}
                   data-testid="bot-style-select"
-                  value={[botAvatarSet]}
+                  value={botAvatarSet ? [botAvatarSet] : []}
                   onValueChange={([next]) => {
                     if (!next || next === botAvatarSet) return;
                     setBotStyleError(null);
@@ -365,12 +366,12 @@ export function GeneralSettingsPanels({
                 <NativeSelect
                   aria-labelledby={timezoneId}
                   data-testid="timezone-select"
-                  value={timezone ?? deviceTimezone}
+                  value={selectedTimezone}
                   disabled={timezonePending}
                   onChange={(event) => void chooseTimezone(event.target.value)}
                   className="w-56 max-w-full"
                 >
-                  {timezoneOptions(timezone ?? deviceTimezone).map((zone) => (
+                  {timezoneOptions(selectedTimezone).map((zone) => (
                     <NativeSelectOption key={zone} value={zone}>
                       {zone.replaceAll("_", " ")}
                     </NativeSelectOption>
@@ -378,7 +379,7 @@ export function GeneralSettingsPanels({
                 </NativeSelect>
               }
             >
-              {!timezone || !sameTimeZone(timezone, deviceTimezone) ? (
+              {!sameTimeZone(selectedTimezone, deviceTimezone) ? (
                 <div className="mt-2 flex justify-end">
                   <Button
                     variant="outline"
