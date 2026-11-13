@@ -400,12 +400,10 @@ export default function VoiceSettings() {
         return;
       }
       setApiKey("");
-      // The key is gone; a failed read after it must not put the provider back or say the disconnect failed.
       const drop = (current: VoiceCredential[] = []) =>
         current.filter((entry) => entry.provider !== providerId);
       loadRevision.current += 1;
       setCredentials(drop);
-      // Its voices go with the key: picking one would only fail on the server.
       setVoices([]);
       await writeSaved(queryClient, voiceReads(target).credentials.queryKey, drop);
       await load(providerId).catch((err: unknown) => {

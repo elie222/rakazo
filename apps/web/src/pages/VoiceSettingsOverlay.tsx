@@ -309,7 +309,6 @@ export function VoiceSettingsOverlay({
         return;
       }
       setApiKey("");
-      // The key is gone; a failed read after it must not put the provider back or say the disconnect failed.
       const drop = (current: VoiceCredential[]) =>
         current.filter((entry) => entry.provider !== providerId);
       setCredentials(drop);
