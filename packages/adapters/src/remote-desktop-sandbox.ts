@@ -33,6 +33,8 @@ import { isSandboxGoneError, sandboxNotFoundError } from "./sandbox-errors.js";
 import { shouldSkipPortableWorkspaceFile } from "./workspace-save-policy.js";
 
 const DISPLAY_START = 20;
+/** The page tools are optional, so a stalled download gives up as Boat's and Daytona's do. */
+const PAGE_BROWSER_INSTALL_MS = 120_000;
 const REMOTE_WORKSPACE = "/home/user/rakazo-home";
 const REMOTE_BROWSER_PROFILES = `${REMOTE_WORKSPACE}/.browser-profiles`;
 
@@ -381,12 +383,18 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
         computer,
         `status=0; bash ${shellQuote(script)} || status=$?; rm -f -- ${shellQuote(script)}; exit "$status"`,
         context.signal,
+        PAGE_BROWSER_INSTALL_MS,
       );
       installed = result.exitCode === 0;
     } catch {
       context.signal.throwIfAborted();
     } finally {
-      await this.runSetupCommand(computer, `rm -f -- ${shellQuote(script)}`).catch(() => {});
+      await this.runSetupCommand(
+        computer,
+        `rm -f -- ${shellQuote(script)}`,
+        undefined,
+        10_000,
+      ).catch(() => {});
     }
     context.signal.throwIfAborted();
     if (!installed)
@@ -686,11 +694,12 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
     computer: ComputerRef,
     command: string,
     signal?: AbortSignal,
+    timeoutMs = boundedSandboxCommandTimeoutMs(undefined),
   ): Promise<CommandResult> {
     // The SDK's outer login shell can fail its logout hook under `set -e`, even after `exit 0`.
     return this.run(computer, `bash -c ${shellQuote(command)}`, {
       ...(signal ? { signal } : {}),
-      timeoutMs: boundedSandboxCommandTimeoutMs(undefined),
+      timeoutMs,
     });
   }
 

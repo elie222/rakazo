@@ -419,6 +419,28 @@ describe("instabox page tools", () => {
     },
   );
 
+  it("gives up on a stalled install after two minutes and keeps the desktop", async () => {
+    vi.useFakeTimers();
+    try {
+      const emulator = new InstaboxEmulator();
+      emulator.hangs = (command) => command.startsWith("bash -c 'status=0; bash ");
+      const { provider: create } = emulatedInstabox(emulator);
+      const provider = create();
+      const computer = await provider.provision(request, ctx);
+      let prepared = false;
+      const preparing = provider.prepare(computer, ctx).then(() => {
+        prepared = true;
+      });
+      await vi.advanceTimersByTimeAsync(119_000);
+      expect(prepared).toBe(false);
+      await vi.advanceTimersByTimeAsync(2_000);
+      await preparing;
+      expect(emulator.killedJobs).toEqual([expect.stringMatching(/^bash -c 'status=0; bash /)]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it.each(["exit", "rejection"])(
     "retries input cleanup after one transient %s",
     async (failure) => {
