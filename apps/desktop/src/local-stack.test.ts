@@ -939,6 +939,30 @@ describe("LocalStackController", () => {
     expect(calls.some((call) => call.args.includes("ps"))).toBe(true);
   });
 
+  it.each([true, false])(
+    "discovers partial stacks only when a service still runs: %s",
+    async (running) => {
+      const stackPath = path.join(root, "stack");
+      await mkdir(stackPath, { recursive: true });
+      await ensureStackToken(stackPath, fakeHex);
+      const stack = controller({}, (args) =>
+        args[0] === "inspect"
+          ? {
+              stdout: [
+                JSON.stringify({
+                  running: false,
+                  env: [`RAKAZO_DESKTOP_STACK_TOKEN=${fakeHex(32)}`],
+                }),
+                JSON.stringify({ running, env: [] }),
+              ].join("\n"),
+            }
+          : ok(args),
+      );
+      await expect(stack.rediscoverManagedStack()).resolves.toBe(running);
+      expect(stack.managedStackRunning()).toBe(running);
+    },
+  );
+
   it("rejects another stack on the selected Docker daemon", async () => {
     const stackPath = path.join(root, "stack");
     await mkdir(stackPath, { recursive: true });
