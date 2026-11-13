@@ -273,6 +273,10 @@ export class TailnetTunnelGateway {
       });
       ws.on("close", finish);
       ws.on("error", finish);
+      // A dialed connection arrives paused (see socks5Connect), and a data listener does not
+      // restart a stream paused on purpose. Without this a server that speaks first, such as
+      // SSH with its banner, is never heard.
+      upstream.resume();
     });
   }
 }

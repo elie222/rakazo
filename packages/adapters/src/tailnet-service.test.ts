@@ -81,7 +81,8 @@ async function rejection(promise: Promise<unknown>): Promise<PrivateNetworkError
 describe("TailnetService", () => {
   it("joins the bot as its own node on the owner's tailnet and dials through it", async () => {
     const { emulator, service } = await setup();
-    const socket = await service.dial(RUN, NAS, context());
+    // Handed over paused, as a real node's connection is; the reader resumes it.
+    const socket = (await service.dial(RUN, NAS, context())).resume();
     socket.write("hi");
     const [reply] = await once(socket, "data");
     expect(String(reply)).toBe("rakazo-home-lab-helper-helper:hi");
