@@ -38,7 +38,6 @@ export const TR_MESSAGES: Record<string, string> = {
   "A star on GitHub": "GitHub'da bir yıldız",
   "Questions? Just reply. I read every one.":
     "Sorunuz mu var? Yanıtlamanız yeterli. Her birini okuyorum.",
-  "Have any questions? Reply to this email.": "Sorunuz mu var? Bu e-postayı yanıtlayın.",
   Unsubscribe: "Abonelikten çık",
   "Invite a friend": "Bir arkadaşını davet et",
   "Invite a friend to Rakazo: they get {weeks} weeks free, and you earn a free month when they start a qualifying subscription with a new card.":
@@ -46,10 +45,6 @@ export const TR_MESSAGES: Record<string, string> = {
   "Open Rakazo": "Rakazo’yu açın",
   "and choose Invite friends for your link.":
     "ve bağlantınızı almak için Arkadaşlarını davet et’i seçin.",
-  "Have any questions? Just reply to this email.":
-    "Sorunuz mu var? Bu e-postayı yanıtlamanız yeterli.",
-  "If you're enjoying Rakazo,": "Rakazo’yu beğeniyorsanız",
-  "give us a star on GitHub": "GitHub’da bize bir yıldız verin",
   "We received your Rakazo plugin": "Rakazo eklentinizi aldık",
   "Thanks for submitting a plugin to the Rakazo marketplace.":
     "Rakazo pazaryerine eklenti gönderdiğiniz için teşekkürler.",

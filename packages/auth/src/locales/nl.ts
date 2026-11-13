@@ -37,16 +37,12 @@ export const NL_MESSAGES: Record<string, string> = {
     "Rakazo is open source. {star} helpt meer mensen het te vinden.",
   "A star on GitHub": "Een ster op GitHub",
   "Questions? Just reply. I read every one.": "Vragen? Antwoord gewoon. Ik lees elk bericht.",
-  "Have any questions? Reply to this email.": "Vragen? Beantwoord deze e-mail.",
   Unsubscribe: "Afmelden",
   "Invite a friend": "Nodig een vriend uit",
   "Invite a friend to Rakazo: they get {weeks} weeks free, and you earn a free month when they start a qualifying subscription with a new card.":
     "Nodig een vriend uit voor Rakazo: die krijgt {weeks} weken gratis, en jij verdient een gratis maand zodra die met een nieuwe kaart een geldig abonnement start.",
   "Open Rakazo": "Open Rakazo",
   "and choose Invite friends for your link.": "en kies Vrienden uitnodigen voor je link.",
-  "Have any questions? Just reply to this email.": "Vragen? Beantwoord gewoon deze e-mail.",
-  "If you're enjoying Rakazo,": "Vind je Rakazo fijn?",
-  "give us a star on GitHub": "Geef ons een ster op GitHub",
   "We received your Rakazo plugin": "We hebben je Rakazo-plug-in ontvangen",
   "Thanks for submitting a plugin to the Rakazo marketplace.":
     "Bedankt voor het insturen van een plug-in voor de Rakazo-marketplace.",

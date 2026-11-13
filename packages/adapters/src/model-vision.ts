@@ -1,6 +1,7 @@
 import type { Models } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { canonicalPiProviderId } from "@rakazo/contracts";
+import { CLAUDE_CODE_PROVIDER_ID, claudeCodeModel } from "./cli-models/claude-code/provider.js";
 import { DEFAULT_OPENROUTER_MODEL_ID } from "./deployment-model.js";
 import { liveModelSibling, withLiveImageInput } from "./pi-live-model.js";
 import { registerLocalProvider } from "./pi-local-provider.js";
@@ -77,6 +78,13 @@ function catalogModels(): Models {
   return catalogModelsCache;
 }
 
+function visionModel(provider: string, id: string) {
+  const models = catalogModels();
+  return provider === CLAUDE_CODE_PROVIDER_ID
+    ? claudeCodeModel(id, models)
+    : models.getModel(provider, id);
+}
+
 /**
  * Mirror Pi's scripted placeholder resolution so vision checks use the same
  * model the runtime will actually call.
@@ -111,7 +119,7 @@ export function modelAcceptsImageInput(
   if (acceptsImages && resolved.provider === OPENAI_COMPATIBLE_PROVIDER_ID) return true;
 
   const models = catalogModels();
-  let model = models.getModel(resolved.provider, resolved.id);
+  let model = visionModel(resolved.provider, resolved.id);
   if (
     !model &&
     resolved.provider !== "openrouter" &&
@@ -138,7 +146,7 @@ export function filterImageReturningComputerTools<T extends { name: string }>(
 export function knownModelImageInput(provider: string, modelId: string): boolean | undefined {
   const resolved = resolveModelRefForVisionCheck(provider, modelId);
   if (resolved.provider === OPENAI_COMPATIBLE_PROVIDER_ID) return undefined;
-  const model = catalogModels().getModel(resolved.provider, resolved.id);
+  const model = visionModel(resolved.provider, resolved.id);
   return model ? model.input.includes("image") : undefined;
 }
 
