@@ -17,6 +17,8 @@ import type { MobileBot, MobileBotSection, MobileGroup, MobileSpace } from "./mo
 import { removeFromSearchInbox } from "./search-inbox";
 import { promptSectionName } from "./section-name-prompt";
 import { currentSessionGeneration, loadSessionToken } from "./session";
+import { useConfirmationGuard } from "./use-confirmation-guard";
+import { useLeaveDeletedChat } from "./use-leave-deleted-chat";
 import { errorText } from "./user-error";
 
 /** Sends a request about a chat to that chat's space without switching to it. */
@@ -43,17 +45,21 @@ type ListUpdate<T> = Dispatch<SetStateAction<T[]>>;
 
 /** Row actions on inbox chats: read state, pin, archive, delete, organize and sections. */
 export function useInboxChatActions({
+  confirmationActive,
   loadBots,
   setBots,
   setGroups,
   setSpaces,
 }: {
+  confirmationActive?: boolean;
   loadBots: () => Promise<unknown>;
   setBots: ListUpdate<MobileBot>;
   setGroups: ListUpdate<MobileGroup>;
   setSpaces: ListUpdate<MobileSpace>;
 }) {
   const { t } = useLingui();
+  const leaveDeletedChat = useLeaveDeletedChat();
+  const beginDelete = useConfirmationGuard(confirmationActive);
   const [unreadOverrides, setUnreadOverrides] = useState<ReadonlyMap<string, boolean>>(
     () => new Map(),
   );
@@ -182,6 +188,8 @@ export function useInboxChatActions({
       }
       // The same confirmation as the chat's own menu; the row goes once the server deletes it.
       if (action === "delete") {
+        const confirmation = kind === "bot" ? beginDelete() : undefined;
+        if (kind === "bot" && !confirmation) return;
         const deleted = () => {
           notifyArchivedChatsChanged();
           void loadBots();
@@ -189,12 +197,25 @@ export function useInboxChatActions({
         // Capture fails only when the session or server changed; the delete is dropped quietly.
         let requestContext: ApiRequestContext | undefined;
         try {
-          requestContext = await chatRequestContext(chat.spaceId);
+          requestContext =
+            kind === "bot"
+              ? await captureApiRequestContext(chat.spaceId ?? selectedSpaceId())
+              : await chatRequestContext(chat.spaceId);
         } catch {
+          confirmation?.finish();
           return;
         }
         if (kind === "bot") {
-          confirmDeleteBot({ id: chat.id, name: chat.name }, deleted, undefined, requestContext);
+          void confirmDeleteBot(
+            { id: chat.id, name: chat.name },
+            (removedGroupIds, recoveryContext) => {
+              deleted();
+              void leaveDeletedChat(chat.id, removedGroupIds, recoveryContext);
+            },
+            confirmation!.current,
+            requestContext,
+            confirmation!.finish,
+          );
         } else confirmDeleteGroup({ id: chat.id, name: chat.name }, deleted, requestContext);
         return;
       }
@@ -202,7 +223,7 @@ export function useInboxChatActions({
         Alert.alert(t`Could not update chat`, errorText(err, t`Try again.`)),
       );
     },
-    [loadBots, sendReadState, t, updateChat],
+    [beginDelete, loadBots, leaveDeletedChat, sendReadState, t, updateChat],
   );
   const botAction = useCallback(
     (action: InboxRowAction, bot: MobileBot | SpaceBot) => void runRowAction("bot", bot, action),

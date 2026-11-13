@@ -293,7 +293,13 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     editSectionFromMenu,
     deleteSection,
     snoozeChat,
-  } = useInboxChatActions({ loadBots, setBots, setGroups, setSpaces });
+  } = useInboxChatActions({
+    confirmationActive: inboxShown,
+    loadBots,
+    setBots,
+    setGroups,
+    setSpaces,
+  });
 
   const { activity, activityStatus, clearActivity, activityRequestId, loadActivity } =
     useSpaceActivity({
