@@ -454,6 +454,7 @@ export class PiAgentRuntime implements AgentRuntime {
           selfRecoveries: 0,
           cutReplies: new WeakMap(),
           stream: (target, ctx, options) => {
+            rejectedRequest = undefined;
             if (hasCurrentImages && !target.model.input.includes("image")) {
               throw new Error(MODEL_IMAGE_INPUT_ERROR);
             }

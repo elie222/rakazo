@@ -9,7 +9,6 @@ export interface RejectedProviderRequest {
   provider: string;
   model: string;
   status: number;
-  endpoint?: string;
   requestId?: string;
   body?: ProviderRequestShape;
 }
@@ -143,7 +142,7 @@ export function summarizeProviderRequest(payload: unknown): ProviderRequestShape
     if (!CONTENT_KEYS.has(key)) describeSetting(key, value, params, 0);
   const shape: ProviderRequestShape = { keys: Object.keys(body).sort(), params };
   try {
-    shape.bytes = JSON.stringify(body).length;
+    shape.bytes = Buffer.byteLength(JSON.stringify(body));
   } catch {}
   if (Array.isArray(body.tools)) {
     const names = body.tools.flatMap(toolName);
@@ -155,22 +154,6 @@ export function summarizeProviderRequest(payload: unknown): ProviderRequestShape
   return shape;
 }
 
-/** The path only; segments that look like account, deployment or resource ids are masked. */
-export function endpointPath(url: string): string | undefined {
-  try {
-    return new URL(url).pathname
-      .split("/")
-      .map((segment) =>
-        /^[\da-f-]{16,}$/i.test(segment) || /\d{6,}/.test(segment) || segment.length > 64
-          ? ":id"
-          : segment,
-      )
-      .join("/");
-  } catch {
-    return undefined;
-  }
-}
-
 /**
  * Stream options that report each response: the request's shape when it was rejected with a
  * 4xx, and undefined when it was not, so only the latest attempt's rejection is kept.
@@ -180,8 +163,7 @@ export function withRejectedRequestCapture<O extends SimpleStreamOptions>(
   onRejected: (rejection: RejectedProviderRequest | undefined) => void,
 ): O {
   let payload: unknown;
-  let endpoint: string | undefined;
-  const { fetch, onPayload, onResponse } = options;
+  const { onPayload, onResponse } = options;
   return {
     ...options,
     onPayload: async (body, model) => {
@@ -189,16 +171,6 @@ export function withRejectedRequestCapture<O extends SimpleStreamOptions>(
       payload = replaced ?? body;
       return replaced;
     },
-    ...(fetch
-      ? {
-          fetch: (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
-            endpoint = endpointPath(
-              typeof input === "string" ? input : input instanceof URL ? input.href : input.url,
-            );
-            return fetch(input, init);
-          },
-        }
-      : {}),
     onResponse: async (response, model) => {
       if (response.status >= 400 && response.status < 500) {
         const headers = Object.fromEntries(
@@ -211,7 +183,6 @@ export function withRejectedRequestCapture<O extends SimpleStreamOptions>(
           provider: model.provider,
           model: model.id,
           status: response.status,
-          ...(endpoint ? { endpoint } : {}),
           ...(requestId ? { requestId } : {}),
           body: summarizeProviderRequest(payload),
         });

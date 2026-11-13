@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import type { RejectedProviderRequest } from "./provider-request-shape.js";
 import {
   attachRejectedRequest,
-  endpointPath,
   rejectedRequestOf,
   summarizeProviderRequest,
   withRejectedRequestCapture,
@@ -140,13 +139,11 @@ describe("summarizeProviderRequest", () => {
   });
 });
 
-describe("endpointPath", () => {
-  it("drops the host and query and masks id-like segments", () => {
-    expect(
-      endpointPath(
-        "https://gateway.example/v1/0123456789abcdef0123456789abcdef/gw/responses?key=sk-live-KEY-secret",
-      ),
-    ).toBe("/v1/:id/gw/responses");
+describe("request size", () => {
+  it("counts the encoded bytes, not characters", () => {
+    expect(summarizeProviderRequest({ messages: [{ role: "user", content: "é" }] })?.bytes).toBe(
+      Buffer.byteLength(JSON.stringify({ messages: [{ role: "user", content: "é" }] })),
+    );
   });
 });
 
@@ -156,16 +153,12 @@ describe("withRejectedRequestCapture", () => {
   async function send(status: number, headers: Record<string, string> = {}) {
     let rejection: RejectedProviderRequest | undefined;
     const base: SimpleStreamOptions = {
-      fetch: async () => new Response(null, { status }),
       onPayload: (body) => ({ ...(body as object), relabelled: true }),
     };
     const options = withRejectedRequestCapture(base, (value) => {
       rejection = value;
     });
     await options.onPayload?.(responsesBody, model);
-    await options.fetch?.("https://api.example/v1/responses?token=TOKEN-secret", {
-      headers: { authorization: "Bearer TOKEN-secret" },
-    });
     await options.onResponse?.({ status, headers }, model);
     return rejection;
   }
@@ -176,7 +169,6 @@ describe("withRejectedRequestCapture", () => {
       provider: "test-provider",
       model: "test-model",
       status: 400,
-      endpoint: "/v1/responses",
       requestId: "req_123",
       body: { params: { relabelled: true } },
     });
