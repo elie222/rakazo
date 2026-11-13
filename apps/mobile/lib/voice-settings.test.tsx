@@ -218,6 +218,31 @@ it("falls back to an available provider when the saved provider is hidden", asyn
   expect(container.textContent).not.toContain("Disconnect Self-hosted");
 });
 
+it("keeps selected voices when a hidden provider disconnects and the read fails", async () => {
+  state.load.mockResolvedValue(false);
+  const original = state.rpc.getMockImplementation()!;
+  let disconnected = false;
+  state.rpc.mockImplementation((proc: string, args?: { provider: string }) => {
+    if (proc === "voice/disconnect") {
+      disconnected = true;
+      return undefined;
+    }
+    if (proc === "voice/catalog" && disconnected) return Promise.reject({});
+    if (proc === "voice/credentials")
+      return [
+        { id: "selected", provider: "fish-audio", voiceId: "voice" },
+        { id: "hidden", provider: "openai-compatible", voiceId: "voice" },
+      ];
+    return original(proc, args);
+  });
+  await render();
+  expect(container.textContent).toContain("fish-audio voice");
+  await click("Disconnect Self-hosted");
+  expect(container.textContent).toContain("fish-audio voice");
+  expect(container.textContent).toContain("Could not load voice settings");
+  expect(container.textContent).not.toContain("Disconnect Self-hosted");
+});
+
 it("disables provider rows until the saved device preference has loaded", async () => {
   let finish!: (value: boolean) => void;
   state.load.mockReturnValue(

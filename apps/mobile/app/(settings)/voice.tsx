@@ -404,7 +404,7 @@ export default function VoiceSettings() {
         current.filter((entry) => entry.provider !== providerId);
       loadRevision.current += 1;
       setCredentials(drop);
-      setVoices([]);
+      if (providerId === selectedProvider.current) setVoices([]);
       await writeSaved(queryClient, voiceReads(target).credentials.queryKey, drop);
       await load(providerId).catch((err: unknown) => {
         if (!isCancelledError(err)) setError(errorText(err, t`Could not load voice settings`));
