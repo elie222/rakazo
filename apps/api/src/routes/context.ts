@@ -19,8 +19,10 @@ import {
   offeredCatalog,
   providerCatalogCache,
   providerLiveCatalogsForSpace,
+  runsOnHostedCredits,
   savedCatalogSelections,
   scriptedCatalogEntry,
+  spaceCanRunCatalogModel,
   validateConnectedModelChoice,
 } from "@rakazo/adapters";
 import type {
@@ -179,19 +181,17 @@ export function createRouterContext(deps: RouterDeps) {
       )
     )
       selected = await savedCatalogSelections(deps.prisma, actor.userId);
-    return offeredCatalog(merged, selected).map((entry) =>
-      entry.provider === auth.managedProvider
-        ? {
-            ...entry,
-            managed: true,
-            billing:
-              auth.secretIdByModel[entry.provider]?.[entry.id] ||
-              auth.secretIdByProvider[entry.provider]
-                ? entry.billing
-                : "Uses Rakazo credits",
-          }
-        : entry,
-    );
+    return offeredCatalog(merged, selected)
+      .filter((entry) => spaceCanRunCatalogModel(auth, entry))
+      .map((entry) =>
+        entry.provider === auth.managedProvider
+          ? {
+              ...entry,
+              managed: true,
+              billing: runsOnHostedCredits(auth, entry) ? "Uses Rakazo credits" : entry.billing,
+            }
+          : entry,
+      );
   };
 
   // Shown where a member chose no model, so the list names what actually runs.

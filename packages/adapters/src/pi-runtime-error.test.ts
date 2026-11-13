@@ -3,6 +3,7 @@ import {
   MODEL_CONTEXT_TOO_SMALL_ERROR,
   MODEL_CREDITS_EXHAUSTED_ERROR,
   MODEL_OUTPUT_LIMIT_ERROR,
+  MODEL_UNPRICED_FOR_CREDITS_ERROR,
   modelFallbackFailure,
 } from "@rakazo/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -110,6 +111,7 @@ describe("Pi runtime errors", () => {
     'openai-compatible API error (400): {"message":"example:27b is a decision model and only supports /v1/example (ref: <ref-id>)","type":"invalid_request_error","param":null,"code":null}',
     "Prompt tokens limit exceeded: 11298 > 992. To increase, visit https://openrouter.ai/settings/credits and upgrade to a paid account",
     MODEL_CREDITS_EXHAUSTED_ERROR,
+    MODEL_UNPRICED_FOR_CREDITS_ERROR,
     `400: {"type":"server_error","message":"Upstream request failed: This example model requires Global regions. Select Global in your workspace's Privacy settings to use it."}`,
     "400 checking third-party user token: Personal Access Tokens are not supported for this endpoint",
     `400 {"status":400,"title":"Bad Request","detail":"Function id 'example-function': DEGRADED function cannot be invoked"}`,

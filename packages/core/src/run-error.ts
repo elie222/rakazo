@@ -42,6 +42,10 @@ export const HOSTED_MODEL_CREDITS_REQUIRED_ERROR =
 export const MODEL_CREDITS_EXHAUSTED_ERROR =
   "Not enough model credits. Add credits in Billing or connect your own API key.";
 
+/** A model Rakazo credits cannot price, so only the member's own key can run it. */
+export const MODEL_UNPRICED_FOR_CREDITS_ERROR =
+  "This model has no reliable price. Connect your own API key to use it.";
+
 /** An operator-set usage ceiling; buying credits does not lift it. */
 export const MODEL_CREDIT_CAP_REACHED_ERROR = "Usage limit reached. Contact support to continue.";
 
@@ -118,6 +122,7 @@ const MODEL_CONNECTION_RUN_ERRORS = new Set([
   MISSING_MODEL_RUN_ERROR,
   HOSTED_MODEL_CREDITS_REQUIRED_ERROR,
   MODEL_CREDITS_EXHAUSTED_ERROR,
+  MODEL_UNPRICED_FOR_CREDITS_ERROR,
 ]);
 const APP_RUN_ERRORS = new Set([
   ...MODEL_OUTPUT_RUN_ERRORS,

@@ -31,7 +31,12 @@ import type { CodexLiveCatalog, CodexLiveReadOptions } from "./pi-codex-catalog.
 import { codexLiveListsModel } from "./pi-codex-catalog.js";
 import type { CatalogReads } from "./pi-live-catalog.js";
 import { liveCatalogEntry, providerLiveListsModel, readOnce } from "./pi-live-catalog.js";
-import { listPiCatalog, offeredCatalog, scriptedCatalogEntry } from "./pi-models.js";
+import {
+  creditsCanPriceModel,
+  listPiCatalog,
+  offeredCatalog,
+  scriptedCatalogEntry,
+} from "./pi-models.js";
 import { OPENAI_COMPATIBLE_PROVIDER_ID } from "./pi-openai-compatible-provider.js";
 
 export type ModelCredential = Awaited<ReturnType<typeof findModelCredential>>;
@@ -154,6 +159,26 @@ export type SpaceCatalogAuth = {
   secretIdByProvider: Partial<Record<string, string>>;
   secretIdByModel: Partial<Record<string, Partial<Record<string, string>>>>;
 };
+
+/** Whether this space would run the model on Rakazo credits rather than a member's own connection. */
+export function runsOnHostedCredits(
+  auth: SpaceCatalogAuth,
+  entry: { provider: string; id: string },
+): boolean {
+  return (
+    entry.provider === auth.managedProvider &&
+    !auth.secretIdByModel[entry.provider]?.[entry.id] &&
+    !auth.secretIdByProvider[entry.provider]
+  );
+}
+
+/** Credits refuse a model they cannot price; the member's own connection still runs it. */
+export function spaceCanRunCatalogModel(
+  auth: SpaceCatalogAuth,
+  entry: { provider: string; id: string },
+): boolean {
+  return !runsOnHostedCredits(auth, entry) || creditsCanPriceModel(entry);
+}
 
 /**
  * Auth kinds for the credentials `chooseModelCredential` would select in this space.
