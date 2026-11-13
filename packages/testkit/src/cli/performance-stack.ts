@@ -125,17 +125,23 @@ export function startPreview(env: NodeJS.ProcessEnv, port: number) {
 }
 
 export async function waitForUrl(url: string) {
-  const started = Date.now();
+  const deadline = Date.now() + 30_000;
   let detail = "no response";
-  while (Date.now() - started < 30_000) {
+  while (Date.now() < deadline) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), Math.max(0, deadline - Date.now()));
     try {
-      const response = await fetch(url);
+      const response = await fetch(url, { signal: controller.signal });
+      await response.body?.cancel();
       if (response.ok) return;
       detail = `HTTP ${response.status}`;
     } catch (error) {
       detail = error instanceof Error ? error.message : String(error);
+    } finally {
+      clearTimeout(timer);
     }
-    await abortableDelay(200);
+    const remaining = deadline - Date.now();
+    if (remaining > 0) await abortableDelay(Math.min(200, remaining));
   }
   throw new Error(`Timed out waiting for ${url}: ${detail}`);
 }
