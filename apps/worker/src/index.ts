@@ -1,3 +1,5 @@
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import type { JobPublisher, JobWorkerHost } from "@rakazo/adapter-kit";
 import { unwrapEnvFromKeyManager } from "@rakazo/adapters";
@@ -32,6 +34,7 @@ import {
   createRunRuntime,
   createRunSandbox,
   createRunSecretWriter,
+  createTailscaledNodeHost,
   createTicketChangeNotifier,
   drainRuns,
   ExpoPushProvider,
@@ -57,6 +60,7 @@ import {
   SpaceMemoryProviderResolver,
   sandboxProviderOptionsFromEnv,
   shutdownPiTelemetry,
+  TailnetService,
   UserDevices,
   userDeviceForwardSecret,
   WorkActivities,
@@ -145,6 +149,12 @@ async function main() {
       : new PiAgentRuntime({ sessionRoot: resolvePiSessionRoot(env.dataDir) });
   const sandboxProvider = resolveSandboxProvider(process.env);
   const sandboxOptions = sandboxProviderOptionsFromEnv(process.env);
+  // Runs here reach MCP servers on members' tailnets from bot nodes of this process's own.
+  const tailnet = new TailnetService({
+    prisma,
+    secretStore: secrets,
+    nodeHost: await createTailscaledNodeHost(join(tmpdir(), "rakazo-tailnet")),
+  });
   // Never poll inbound here: Telegram allows a single getUpdates consumer,
   // and that is the API process, which owns the inbound sink.
   const messagingPlatforms = messagingPlatformsFromEnv(messagingEnvFromProcess(process.env)).filter(
@@ -173,7 +183,7 @@ async function main() {
   const jobs: JobPublisher =
     inMemoryJobs ?? new RunJobPublisher(prisma, new GraphileJobPublisher(pool, prisma), runs);
   secretCleanupJobs = jobs;
-  const connectors = createConnectorRuntime(env, { prisma, secrets, events, jobs });
+  const connectors = createConnectorRuntime(env, { prisma, secrets, events, jobs, tailnet });
   const sandbox = await createRunSandbox(sandboxProvider, {
     ...sandboxOptions,
     supervisorUrl: process.env.SANDBOX_SUPERVISOR_URL ?? "http://127.0.0.1:7091",
@@ -314,6 +324,7 @@ async function main() {
         await secrets.close();
         await realtime.close();
         await connectors.mcp.close();
+        await tailnet.close();
         await connectors.installed.close();
         await bestEffort("disconnect database client", prisma.$disconnect());
         // Once the job hosts have stopped, only work they gave up on can still hold a

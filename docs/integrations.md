@@ -24,9 +24,10 @@ bot. From an app's page you can **Reconnect** it, rename an account, or **Uninst
 
 The **+** in **Integrations** adds tools that aren't in the catalog:
 
-- **MCP server**: any remote MCP server at an HTTPS address. **Browse MCP servers** searches a public
-  directory of them. A self-hosted server can also run local (stdio) MCP servers, which an admin
-  adds; see [Tools and integrations](./self-host-integrations.md).
+- **MCP server**: any remote MCP server at an HTTPS address, or one on your tailnet (see
+  [MCP servers on your tailnet](./tailnet.md#mcp-servers-on-your-tailnet)). **Browse MCP servers**
+  searches a public directory of them. A self-hosted server can also run local (stdio) MCP servers,
+  which an admin adds; see [Tools and integrations](./self-host-integrations.md).
 - **OpenAPI** and **GraphQL**: point at an API's description and the bot can call it.
 - **Executor**: a tool gateway that connects with one access token.
 - **From GitHub**: install a plugin from its repository. See [Build a plugin](./build-a-plugin.md).
@@ -77,4 +78,5 @@ For a service with only an API key or a website login, ask the bot to save it. S
 
 ## Machines on your tailnet
 
-To let a bot reach machines on your Tailscale network, see [Tailnet access](./tailnet.md).
+To let a bot reach machines and MCP servers on your Tailscale network, see
+[Tailnet access](./tailnet.md).

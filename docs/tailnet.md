@@ -62,6 +62,20 @@ the computer's activity.
 Only TCP to `*.ts.net` names and Tailscale addresses (`100.x`) works; ping and UDP don't. A bot
 can't accept connections from your tailnet, and it never routes other devices' traffic.
 
+## MCP servers on your tailnet
+
+In **Integrations**, add an MCP server whose address is on your tailnet, such as
+`http://homeassistant.tail1234.ts.net:8123/mcp` or `http://100.101.102.103:3000/mcp`, and give it
+to your bots as usual. Plain HTTP is fine there: your tailnet encrypts it.
+
+A bot calls the server from its own device on your tailnet, so its tools work only in your chats and
+routines, for bots with **Reach machines on your tailnet** turned on, and only where your tailnet's
+grants let the tag reach the server. Adding the server is your approval; its tool calls follow your
+[approval mode](./approvals.md) like any MCP server's, with no tailnet card.
+
+**Test connection** checks the server from one of your bots that uses it and has tailnet access.
+Use a token or API key header for these servers; OAuth sign-in isn't supported on a tailnet yet.
+
 ## Devices in your tailnet
 
 Each bot appears as its own device, named after the bot, such as `rakazo-home-lab-helper-abc123`,
@@ -88,5 +102,6 @@ Bots' computers reach the API at the server's `WEB_ORIGIN`. When that is a loopb
 `http://127.0.0.1:5173`, computers can't reach it, and tailnet access stays off. Reaching a local
 server from Docker computers isn't supported yet.
 
-Each API instance runs the devices for the tunnels it receives. With more than one API instance, a
-bot can have a device on each.
+The API runs devices for the tunnels it receives, and the API and worker each run devices for the
+MCP servers their runs call, so a bot can have a device on each. Every process checks its devices'
+access each minute, and takes off any whose bot was turned off elsewhere.

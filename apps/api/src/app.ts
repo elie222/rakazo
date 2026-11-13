@@ -501,7 +501,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   });
   const connectors = createConnectorRuntime(
     runtimeEnv,
-    { prisma, secrets, events, jobs },
+    { prisma, secrets, events, jobs, tailnet },
     {
       network: remoteConnectors,
       composio: composioOverride,

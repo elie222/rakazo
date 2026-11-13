@@ -29,6 +29,8 @@ type Node = {
   nodeId: string;
   scope: TailnetScope;
   botId: string;
+  /** The OAuth client it joined with; a replaced client takes the node off. */
+  clientKey: string;
   network: PrivateNetworkProvider;
   lastUsed: number;
 };
@@ -61,7 +63,7 @@ export class TailnetService {
     this.now = deps.now ?? Date.now;
     this.idleMs = deps.idleMs ?? DEFAULT_IDLE_MS;
     if (deps.nodeHost && deps.sweepMs !== 0) {
-      this.sweep = setInterval(() => void this.leaveIdle(), deps.sweepMs ?? SWEEP_MS);
+      this.sweep = setInterval(() => void this.tidy(), deps.sweepMs ?? SWEEP_MS);
       this.sweep.unref();
     }
   }
@@ -91,11 +93,16 @@ export class TailnetService {
     if (!config) throw new PrivateNetworkError("permission", TAILNET_NOT_CONNECTED_MESSAGE);
     const nodeId = tailnetNodeId(run);
     let node = this.nodes.get(nodeId);
+    if (node && node.clientKey !== clientKey(config)) {
+      await this.leave(node);
+      node = undefined;
+    }
     if (!node) {
       node = {
         nodeId,
         scope: { userId: run.userId, spaceId: run.spaceId },
         botId: run.botId,
+        clientKey: clientKey(config),
         network: new TailscaleNetwork(this.api(config), nodeHost),
         lastUsed: this.now(),
       };
@@ -138,12 +145,39 @@ export class TailnetService {
   }
 
   /** Visible for tests; runs on a timer otherwise. */
+  async tidy(): Promise<void> {
+    await Promise.all([this.leaveIdle(), this.leaveRevoked()]);
+  }
+
+  /** Visible for tests; part of `tidy`. */
   async leaveIdle(): Promise<void> {
     const cutoff = this.now() - this.idleMs;
     await Promise.all(
       [...this.nodes.values()]
         .filter((node) => node.lastUsed <= cutoff)
         .map((node) => this.leave(node)),
+    );
+  }
+
+  /**
+   * Take off nodes whose member turned the bot off, disconnected or replaced the client. The
+   * process that changed it does so at once; this reaches every other API and worker process.
+   */
+  async leaveRevoked(): Promise<void> {
+    await Promise.all(
+      [...this.nodes.values()].map(async (node) => {
+        let config: TailscaleConnectionConfig | undefined;
+        try {
+          config = await resolveRunTailnet({
+            prisma: this.deps.prisma,
+            secretStore: this.deps.secretStore,
+            run: { ...node.scope, botId: node.botId },
+          });
+        } catch {
+          return; // Unknown is not revoked; the next sweep checks again.
+        }
+        if (!config || clientKey(config) !== node.clientKey) await this.leave(node);
+      }),
     );
   }
 
@@ -166,9 +200,7 @@ export class TailnetService {
 
   /** One API client per OAuth client, so its access token is reused across bots. */
   private api(config: TailscaleConnectionConfig): TailscaleApi {
-    const key = createHash("sha256")
-      .update(JSON.stringify([config.clientId, config.clientSecret, config.tag]))
-      .digest("hex");
+    const key = clientKey(config);
     let api = this.apis.get(key);
     if (!api) {
       api = new TailscaleApi(config, { fetch: this.deps.fetch, now: this.deps.now });
@@ -176,6 +208,12 @@ export class TailnetService {
     }
     return api;
   }
+}
+
+function clientKey(config: TailscaleConnectionConfig): string {
+  return createHash("sha256")
+    .update(JSON.stringify([config.clientId, config.clientSecret, config.tag]))
+    .digest("hex");
 }
 
 /** Nodes are per member, Space and bot. */
