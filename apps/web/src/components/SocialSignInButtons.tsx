@@ -7,11 +7,13 @@ import { useState } from "react";
 
 function lastSignIn() {
   const prefix = `${LAST_SIGN_IN_COOKIE}=`;
-  const value = document.cookie
-    .split("; ")
-    .find((cookie) => cookie.startsWith(prefix))
-    ?.slice(prefix.length);
-  return lastSignInChoice(value ? decodeURIComponent(value) : null);
+  // Method ids are plain words, so the raw value is compared without decoding.
+  return lastSignInChoice(
+    document.cookie
+      .split("; ")
+      .find((cookie) => cookie.startsWith(prefix))
+      ?.slice(prefix.length),
+  );
 }
 
 function LastUsed() {
