@@ -206,7 +206,16 @@ function bracedObjects(source: string): { found: string[]; cutOff: boolean } {
       }
     }
   }
-  return { found, cutOff: openExports > 0 };
+  return {
+    found,
+    cutOff: starts.some(
+      (start) =>
+        start.export &&
+        /^\{\s*["'“‘]?(?:format|version|bots)["'“”‘’]?\s*:/.test(
+          source.slice(start.index, start.index + 80),
+        ),
+    ),
+  };
 }
 
 const isExportDocument = (value: unknown): value is Json =>

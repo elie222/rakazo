@@ -596,3 +596,11 @@ it("does not count nested list entries as separate export documents", () => {
   });
   expect(parseGrokBotExport(`\`\`\`json\n${source}\n\`\`\``)[0]?.skills).toHaveLength(60);
 });
+
+it("does not mistake an unfinished prose note for a truncated export", () => {
+  expect(
+    parseGrokBotExport(
+      'Note {note: remember this\n{"bots":[{"name":"Example","instructions":"Keep"}]}',
+    )[0]?.instructions,
+  ).toBe("Keep");
+});
