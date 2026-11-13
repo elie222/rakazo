@@ -186,7 +186,11 @@ export class TailnetTunnelGateway {
 
   /** Whether this upgrade is a tunnel; if so the gateway owns the socket from here. */
   matches(request: IncomingMessage): boolean {
-    return new URL(request.url ?? "/", "http://tunnel").pathname === TAILNET_CONNECT_PATH;
+    try {
+      return new URL(request.url ?? "/", "http://tunnel").pathname === TAILNET_CONNECT_PATH;
+    } catch {
+      return false;
+    }
   }
 
   handleUpgrade = (request: IncomingMessage, socket: Duplex, head: Buffer): void => {

@@ -517,3 +517,20 @@ describe("tailnet approvals at the gateway", () => {
     ).toBe("Connecting to nas.tail1234.ts.net:22 is blocked in your approval settings.");
   });
 });
+
+describe("upgrade matching", () => {
+  it("rejects malformed targets without throwing when tailnet is unavailable", async () => {
+    const { gateway: tunnel } = await gateway({
+      dial: async () => {
+        throw new Error("unavailable");
+      },
+    });
+    for (const url of ["//[", "//%", "http://[", "/other", undefined]) {
+      expect(tunnel.matches({ url } as IncomingMessage)).toBe(false);
+    }
+    expect(
+      tunnel.matches({ url: `${TAILNET_CONNECT_PATH}?host=example.test` } as IncomingMessage),
+    ).toBe(true);
+    tunnel.close();
+  });
+});

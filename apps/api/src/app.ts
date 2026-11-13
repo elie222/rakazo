@@ -1177,8 +1177,13 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     awaitIdle: inMemoryJobs ? () => inMemoryJobs.awaitIdle() : undefined,
     backgroundFailures: inMemoryJobs ? () => inMemoryJobs.failureCounts() : undefined,
     handleUpgrade: (request, socket, head) => {
-      if (tailnetTunnel.matches(request)) return tailnetTunnel.handleUpgrade(request, socket, head);
-      if (userDeviceHub) return userDeviceHub.handleUpgrade(request, socket, head);
+      try {
+        if (tailnetTunnel.matches(request))
+          return tailnetTunnel.handleUpgrade(request, socket, head);
+        if (userDeviceHub) return userDeviceHub.handleUpgrade(request, socket, head);
+      } catch (error) {
+        getLogger().error("upgrade dispatch failed", error);
+      }
       socket.destroy();
     },
     stop: async () => {
