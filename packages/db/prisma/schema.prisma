@@ -1260,6 +1260,8 @@ model Run {
   modelPinned          Boolean           @default(false)
   // A group message that named nobody reached this member; it may end without a reply.
   groupReplyOptional   Boolean           @default(false)
+  // The prompt and history replay version the run's latest attempt used, to compare outcomes across releases.
+  promptVersion        String?
   error                String?
   leaseOwner           String?
   leaseFence           Int               @default(0)
