@@ -47,3 +47,20 @@ it("translates the summary of a reply cut off at the output limit", () => {
     recovery: "model",
   });
 });
+
+it("translates the summary of an internal server error", () => {
+  i18n.load("de", {
+    "Something went wrong. Try again.": "Etwas ist schiefgelaufen. Versuche es erneut.",
+  });
+  i18n.activate("de");
+  expect(normalizeRunError("Internal server error", translateRunError, i18n.locale)).toMatchObject({
+    summary: "Etwas ist schiefgelaufen. Versuche es erneut.",
+    details: "Internal server error",
+  });
+});
+
+it("keeps the English summary of an internal server error when nothing is translated", () => {
+  expect(normalizeRunError("Internal server error", translateRunError, "en").summary).toBe(
+    "Something went wrong. Try again.",
+  );
+});

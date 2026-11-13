@@ -255,6 +255,8 @@ function setup(
     messagingOutbound: {
       count: async ({ where }: FindArgs) => query(outbound, { where }).length,
     },
+    // The conversation's ambient scheduling lock.
+    $executeRaw: async () => 0,
   };
   const prisma = {
     ...tables,

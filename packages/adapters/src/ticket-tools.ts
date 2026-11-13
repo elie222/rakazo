@@ -16,6 +16,7 @@ import {
   toTicketDto,
 } from "@rakazo/db";
 import type { TicketChangeNotifier } from "./ticket-changes.js";
+import { sliceWellFormed } from "./utf8.js";
 
 type TicketToolDeps = {
   prisma: PrismaClient;
@@ -87,7 +88,7 @@ function decodeTicketListCursor(
 
 function truncateDescription(value: string | null | undefined) {
   if (!value || value.length <= LIST_DESCRIPTION_CHARS) return value;
-  return `${value.slice(0, LIST_DESCRIPTION_CHARS - 1)}…`;
+  return `${sliceWellFormed(value, LIST_DESCRIPTION_CHARS - 1)}…`;
 }
 
 export async function listBoardTickets(

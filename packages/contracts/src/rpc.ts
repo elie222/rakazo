@@ -834,6 +834,8 @@ export const appContract = {
           reason: ComputerReleaseReasonSchema.optional(),
           /** The run a needs-you card answers; the release applies only while it waits on the caller. */
           runId: Id.optional(),
+          /** The lease this page took; a late release from an old page leaves newer control alone. */
+          leaseId: Id.optional(),
         }),
       )
       .output(z.object({ ok: z.literal(true) })),
@@ -1521,9 +1523,17 @@ export const appContract = {
     /**
      * Keeps this phone's live status card of the user's bots at work up to date. `following` is
      * false when the server cannot update the card or no bot is at work, so the app ends it.
+     * Omit `token` to check server support before creating a card; this does not follow work.
      */
     followWorkActivity: oc
-      .input(z.object({ token: z.string().regex(/^[a-fA-F0-9]{64,512}$/) }))
+      .input(
+        z.object({
+          token: z
+            .string()
+            .regex(/^[a-fA-F0-9]{64,512}$/)
+            .optional(),
+        }),
+      )
       .output(z.object({ following: z.boolean() })),
     /**
      * Lets the server start this phone's live status card when the user's bots get to work from
