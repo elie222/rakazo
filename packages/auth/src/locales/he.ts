@@ -24,15 +24,19 @@ export const HE_MESSAGES: Record<string, string> = {
   "Enter this code in Rakazo to confirm it's you:":
     "יש להזין את הקוד הזה ב-Rakazo כדי לאשר שזה באמת את/ה:",
   "Welcome to Rakazo": "ברוכים הבאים ל-Rakazo",
-  "Thanks for signing up for Rakazo.": "תודה שנרשמת ל-Rakazo.",
-  "Rakazo also has apps for": "ל-Rakazo יש גם אפליקציות עבור",
-  "Questions or ideas?": "שאלות או רעיונות?",
-  "Join us on Discord": "הצטרפו אלינו ב-Discord",
-  "Rakazo is open source. If you like it,": "Rakazo הוא קוד פתוח. אם הוא מוצא חן בעיניך,",
-  "a star on GitHub": "כוכב ב-GitHub",
-  "helps others find it.": "עוזר לאחרים למצוא אותו.",
-  "Want to run it on your own servers?": "רוצה להריץ אותו על השרתים שלך?",
-  "Self-host Rakazo": "אירוח עצמי של Rakazo",
+  "Welcome to Rakazo. The people who get the most out of it do three things:":
+    "ברוכים הבאים ל-Rakazo. מי שמפיקים ממנו הכי הרבה עושים שלושה דברים:",
+  "Get the apps": "להוריד את האפליקציות",
+  "Rakazo runs on {platforms}, so your bots can reach you wherever you are.":
+    "Rakazo זמין ל-{platforms}, כדי שהבוטים שלך יוכלו להשיג אותך בכל מקום.",
+  "Join the community": "להצטרף לקהילה",
+  "See what others are building, get help fast, and tell us what to build next on {discord}.":
+    "לראות מה אחרים בונים, לקבל עזרה מהר ולספר לנו ב-{discord} מה לבנות בהמשך.",
+  "Star us on GitHub": "לתת לנו כוכב ב-GitHub",
+  "Rakazo is open source. {star} helps more people find it.":
+    "Rakazo הוא קוד פתוח. {star} עוזר ליותר אנשים למצוא אותו.",
+  "A star on GitHub": "כוכב ב-GitHub",
+  "Questions? Just reply. I read every one.": "שאלות? פשוט להשיב לאימייל. אני קורא כל תשובה.",
   "Have any questions? Reply to this email.": "יש שאלות? אפשר להשיב לאימייל הזה.",
   Unsubscribe: "ביטול המינוי",
   "Invite a friend": "הזמנת חבר",
