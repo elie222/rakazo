@@ -3,6 +3,7 @@ import { useNavigation } from "expo-router";
 import { useLayoutEffect } from "react";
 import { Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useContentBottomInset } from "../lib/content-bottom-inset";
 import { useThemedStyles } from "../lib/native";
 import { createHomeStyles } from "./home-styles";
 
@@ -10,6 +11,7 @@ import { createHomeStyles } from "./home-styles";
 export function PickChatPane() {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
+  const contentBottomInset = useContentBottomInset();
   const styles = useThemedStyles(createHomeStyles);
   const { t } = useLingui();
   useLayoutEffect(() => {
@@ -23,7 +25,7 @@ export function PickChatPane() {
         styles.centered,
         {
           paddingTop: insets.top,
-          paddingBottom: insets.bottom,
+          paddingBottom: contentBottomInset,
           paddingLeft: insets.left,
           paddingRight: insets.right,
         },

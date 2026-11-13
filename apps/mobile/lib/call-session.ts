@@ -218,6 +218,14 @@ export function getSnapshot(): CallState | null {
   return state;
 }
 
+function getCallActiveSnapshot(): boolean {
+  return state !== null;
+}
+
+export function useCallActive(): boolean {
+  return useSyncExternalStore(subscribe, getCallActiveSnapshot, getCallActiveSnapshot);
+}
+
 export function useCallSession(): CallState | null {
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }
