@@ -57,7 +57,11 @@ function database() {
     Object.entries(where).every(([key, value]) => {
       if (key === "OR")
         return (value as Array<Record<string, unknown>>).some((branch) => matches(row, branch));
+      // As the vault's bot filter reads: no item is limited to chosen bots here.
+      if (key === "limits") return true;
+      if (key === "bots") return false;
       const actual = row[key as keyof Row];
+      if (value && typeof value === "object" && "not" in value) return actual !== value.not;
       if (value && typeof value === "object" && "in" in value)
         return (value.in as unknown[]).includes(actual);
       return actual === value;
