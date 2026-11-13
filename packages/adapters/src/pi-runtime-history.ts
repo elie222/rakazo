@@ -236,11 +236,11 @@ function replayedToolReply(
             {
               type: "text",
               // Without this a model reads a call to a tool it no longer has as one it never made.
-              text: offered.has(name)
-                ? seen
+              text: `${
+                seen
                   ? (stored.result ?? "").replace(IMAGE_NOT_KEPT, "[the screenshot you took:]")
                   : result.text
-                : `${result.text}\n[${name} is not available to you now.]`,
+              }${offered.has(name) ? "" : `\n[${name} is not available to you now.]`}`,
             },
             ...(seen ? [screenshot] : []),
           ],

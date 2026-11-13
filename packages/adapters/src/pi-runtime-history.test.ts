@@ -531,6 +531,44 @@ describe("replaying an earlier reply's tool steps", () => {
     });
   });
 
+  it("keeps the screenshot's own words when its tool is not offered now", () => {
+    const observed = {
+      ...toolReply,
+      images: [
+        { name: "screenshot", mimeType: "image/png" as const, data: new Uint8Array([1, 2]) },
+      ],
+      segments: [
+        {
+          steps: [
+            {
+              label: "Computer observe",
+              tool: "computer_observe",
+              count: 1,
+              calls: [
+                {
+                  arguments: "{}",
+                  result: "observed\n[image not kept]",
+                  image: { artifactId: "a1" },
+                },
+              ],
+              outcomes: { succeeded: 1 },
+            },
+          ],
+        },
+      ],
+    };
+    const [, result] = toHistory([observed], "", undefined, new Set(["read_file"]));
+    expect(result).toMatchObject({
+      content: [
+        {
+          type: "text",
+          text: "observed\n[the screenshot you took:]\n[computer_observe is not available to you now.]",
+        },
+        { type: "image" },
+      ],
+    });
+  });
+
   it("pairs every call with its result under a stable id made from the message", () => {
     const first = toHistory(history, "", undefined, OFFERED);
     expect(JSON.stringify(toHistory(history, "", undefined, OFFERED))).toBe(JSON.stringify(first));

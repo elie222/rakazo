@@ -194,6 +194,14 @@ describe("tool step outcomes", () => {
     });
   });
 
+  it("holds a result that arrives before its call is kept, for the call's handler", () => {
+    const reply = { toolStepCalls: new Map(), keptResultChars: 0 } as unknown as ReplyState;
+    const done = { ...base, result: { content: [{ type: "text", text: "fast" }] } };
+    keepToolStepResult(reply, done, []);
+    expect(reply.toolStepCalls.size).toBe(0);
+    expect(reply.earlyCompletions?.get("call-1")).toBe(done);
+  });
+
   it("marks a call that exited non-zero as failed, like its step's outcome", () => {
     const reply = {
       toolStepCalls: new Map([["call-1", { arguments: "{}" }]]),

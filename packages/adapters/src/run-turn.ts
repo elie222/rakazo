@@ -530,10 +530,14 @@ async function onToolCalled(ctx: RunContext, event: RuntimeEvent<"tool">): Promi
   reply.pendingToolNames.push(...callSteps);
   // A call that shows as its own step keeps what it was called with, for later turns to replay.
   const ownStep = callSteps.length === 1 && callSteps[0] === event.name;
-  if (ownStep)
+  const early = reply.earlyCompletions?.get(event.executionId);
+  reply.earlyCompletions?.delete(event.executionId);
+  if (ownStep) {
     reply.toolStepCalls.set(event.executionId, {
       arguments: keptToolArguments(event.args, ctx.secrets),
     });
+    if (early) keepToolStepResult(reply, early, ctx.secrets);
+  }
   reply.toolCalls.push(
     ...callSteps.map((name) => ({
       label: humanizeToolName(name),

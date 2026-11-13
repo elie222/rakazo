@@ -99,12 +99,20 @@ export function keptToolResult(
 
 /** Adds a finished call's result to the call its step keeps, within the reply's result budget. */
 export function keepToolStepResult(
-  reply: Pick<ReplyState, "toolStepCalls" | "keptResultChars" | "latestScreenshot">,
+  reply: Pick<
+    ReplyState,
+    "toolStepCalls" | "keptResultChars" | "latestScreenshot" | "earlyCompletions"
+  >,
   completion: AgentToolCompletion,
   secrets: string[],
 ): void {
   const call = reply.toolStepCalls.get(completion.executionId);
-  if (!call) return;
+  if (!call) {
+    // A fast call can finish before its own call event is handled; that handler keeps it then.
+    reply.earlyCompletions ??= new Map();
+    reply.earlyCompletions.set(completion.executionId, completion);
+    return;
+  }
   // An error, an error result or a non-zero exit, as the step's outcome counts it.
   const failed = toolCompletionOutcome(completion) === "failed" ? ({ failed: true } as const) : {};
   const left = TOOL_REPLY_RESULTS_MAX_CHARS - reply.keptResultChars;

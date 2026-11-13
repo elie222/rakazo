@@ -1,5 +1,6 @@
 import type {
   AdapterContext,
+  AgentToolCompletion,
   BrowserProvider,
   ComputerRef,
   ConnectorTool,
@@ -138,6 +139,8 @@ export interface ReplyState {
   toolStepCalls: Map<string, ToolStepCall>;
   /** Characters of results the reply has kept so far, against its budget. */
   keptResultChars: number;
+  /** Calls that finished before their call event was handled, kept once it is. */
+  earlyCompletions?: Map<string, AgentToolCompletion>;
   /** The last screenshot a kept call returned, saved with the reply for its later turns. */
   latestScreenshot?: { executionId: string; mimeType: AttachmentImageMimeType; data: Uint8Array };
   pendingProgress: string;
