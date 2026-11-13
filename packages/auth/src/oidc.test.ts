@@ -1902,6 +1902,14 @@ it.each([
       providerId === "google" ? "https://accounts.google.com" : "https://appleid.apple.com",
     );
     rows("user")[0]!.emailVerified = true;
+    const rawLink = await request("/link-social", {
+      ...input,
+      idToken: { token: jwt({ sub: "unbound", email, email_verified: true }) },
+    });
+    expect(rawLink.status).toBe(403);
+    expect(await rawLink.json()).toMatchObject({ message: "Browser sign-in required" });
+    expect(rows("account")).toHaveLength(1);
+    expect(rows("account")[0]!.providerId).toBe("credential");
     const provider = (await auth.$context).socialProviders.find((item) => item.id === providerId)!;
     provider.validateAuthorizationCode = async () => ({
       accessToken: "offline-token",

@@ -153,7 +153,7 @@ export function googleEmailVerified(profile: {
 }): boolean {
   return (
     profile.email_verified === true &&
-    (profile.email?.toLowerCase().endsWith("@gmail.com") === true ||
+    (["gmail.com", "googlemail.com"].includes(profile.email?.split("@")[1]?.toLowerCase() ?? "") ||
       (typeof profile.hd === "string" &&
         profile.hd.length > 0 &&
         profile.email?.split("@")[1]?.toLowerCase() === profile.hd.toLowerCase()))

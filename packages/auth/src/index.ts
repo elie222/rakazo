@@ -557,7 +557,7 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
       before: createAuthMiddleware(async (ctx) => {
         const providerId = requestProviderId(ctx);
         if (
-          ctx.path === "/sign-in/social" &&
+          (ctx.path === "/sign-in/social" || ctx.path === "/link-social") &&
           ctx.body?.idToken &&
           (providerId === "google" || providerId === "apple")
         )

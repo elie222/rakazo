@@ -167,6 +167,11 @@ it.each([
 it("requires Google authority over a verified mailbox", () => {
   expect(googleEmailVerified({ email: "user@example.test", email_verified: true })).toBe(false);
   expect(googleEmailVerified({ email: "user@gmail.com", email_verified: true })).toBe(true);
+  expect(googleEmailVerified({ email: "user@googlemail.com", email_verified: true })).toBe(true);
+  expect(googleEmailVerified({ email: "user@googlemail.com", email_verified: false })).toBe(false);
+  expect(
+    googleEmailVerified({ email: "user@googlemail.com.example.test", email_verified: true }),
+  ).toBe(false);
   expect(
     googleEmailVerified({ email: "user@example.test", email_verified: true, hd: "example.test" }),
   ).toBe(true);
