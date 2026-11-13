@@ -369,6 +369,7 @@ const ok: Script = (args) => {
   if (args[0] === "compose" && args[1] === "version") return { stdout: "2.29.0\n" };
   if (args[0] === "info") return { stdout: "27.1.1\n" };
   const subcommand = args[7];
+  if (subcommand === "ps") return { stdout: "fake-container-id\n" };
   if (subcommand === "pull") return { lines: ["app Pulled", "computer Pulled"] };
   if (subcommand === "up") return { lines: ["Container rakazo-web-1 Started"] };
   return {};
@@ -915,36 +916,15 @@ describe("LocalStackController", () => {
     expect(notified).toBe(1);
   });
 
-  it("does not rediscover through a probe that a successful stop outruns", async () => {
+  it("rediscovers through Docker without disclosing the management token", async () => {
     const stackPath = path.join(root, "stack");
     await mkdir(stackPath, { recursive: true });
-    const token = await ensureStackToken(stackPath, fakeHex);
-    let releaseStop: () => void = () => undefined;
-    const stopGate = new Promise<void>((resolve) => {
-      releaseStop = resolve;
-    });
-    let stopping: Promise<unknown> = Promise.resolve();
-    let probes = 0;
-    const stack = controller(
-      {
-        // The probe answers only after the stop settles, still claiming an older release.
-        probe: (_url, _signal, supplied) => {
-          if (supplied !== token) return Promise.resolve(null);
-          probes += 1;
-          return Promise.resolve(stopping).then(() => "v1.2.2" as string | null);
-        },
-      },
-      (args) => (args[7] === "stop" ? { wait: stopGate } : ok(args)),
-    );
-
-    const rediscovered = stack.rediscoverManagedStack();
-    stopping = stack.stop();
-    // Settle the stop only once the probe is pending; the token read can outlast a fixed delay.
-    await vi.waitFor(() => expect(probes).toBe(1));
-    releaseStop();
-    await stopping;
-    await expect(rediscovered).resolves.toBe(true);
-    expect(stack.managedStackRunning()).toBe(false);
+    await ensureStackToken(stackPath, fakeHex);
+    const probe = vi.fn();
+    const stack = controller({ probe });
+    await expect(stack.rediscoverManagedStack()).resolves.toBe(true);
+    expect(probe).not.toHaveBeenCalled();
+    expect(calls.some((call) => call.args.includes("ps"))).toBe(true);
   });
 
   it("does not rediscover while a stop is pending", async () => {

@@ -542,11 +542,29 @@ export class LocalStackController extends StackLifecycle {
   /**
    * Startup rediscovery behind a saved external server: the stack may be an older release
    * this app must not reuse, or one started before the computer-access settings changed, so
-   * any answer under our token records it. Only the menu's off-switch follows from this;
+   * inspect the managed Compose project locally without sending its token to a listener.
    * nothing starts or stops.
    */
-  async rediscoverManagedStack(url = this.currentWebUrl): Promise<boolean> {
-    return this.probeStack((probed) => probed !== null, url);
+  async rediscoverManagedStack(): Promise<boolean> {
+    const generation = this.stopGeneration;
+    if (this.stopInFlight()) return false;
+    const binary = resolveDockerBinary(this.deps.platform, this.deps.env, this.deps.exists);
+    if (binary === null || (await readStackToken(this.deps.stackDir)) === null) return false;
+    try {
+      const result = await this.compose(
+        binary,
+        ["ps", "--status", "running", "-q"],
+        HEALTH_POLL_INTERVAL_MS,
+      );
+      const running = result.code === 0 && result.stdout.trim().length > 0;
+      if (running && generation === this.stopGeneration && !this.managedStackMayRun) {
+        this.managedStackMayRun = true;
+        this.deps.onReuseConfirmed?.();
+      }
+      return running;
+    } catch {
+      return false;
+    }
   }
 
   /** One probe through the private identity; `matches` decides what counts and is returned. */
