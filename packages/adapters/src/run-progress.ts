@@ -369,9 +369,11 @@ export async function showNarrationStatus(
   // With live narration the bot's statuses come with its tool calls, so text it writes between
   // steps never shows as written: the status model words it as a status, or the line keeps
   // its last one.
-  const shown = openingAcknowledgementEnabled() ? "" : narrationStatusLine(note);
-  if (!shown) ctx.statusLive?.step(note, { fallback: false });
-  ctx.state.reply.narrationStatusShowing = Boolean(shown);
+  const live = openingAcknowledgementEnabled();
+  if (live) ctx.statusLive?.step(note, { fallback: false });
+  // The held text is cleared and the step's own line comes back until a status replaces it.
+  const shown = live ? (ctx.state.reply.lastActivityLine ?? "") : narrationStatusLine(note);
+  ctx.state.reply.narrationStatusShowing = !live && Boolean(shown);
   await deps.events.append({
     spaceId: run.spaceId,
     threadId: thread.id,

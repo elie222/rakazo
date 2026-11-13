@@ -319,6 +319,8 @@ async function streamProgress(ctx: RunContext, event: RuntimeEvent<"progress">) 
   // Tool status lines are not the model writing.
   if (!event.activity) ctx.state.toolCallStreak = { key: undefined, count: 0 };
   if (run.trigger === "routine" || isBackgroundRunTrigger(run.trigger)) return;
+  if (event.activity && event.text.trim())
+    reply.lastActivityLine = redactSecrets(event.text, ctx.secrets);
   // The bot's own note stays the working line until it writes again.
   if (event.activity && reply.narrationStatusShowing) return;
   // With a status model, a step's technical line is worded for the person instead of shown.

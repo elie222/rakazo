@@ -117,6 +117,8 @@ export interface ReplyState {
   textSinceLastStep: string;
   /** The working line shows a note; tool status lines wait until the bot writes again. */
   narrationStatusShowing: boolean;
+  /** The latest step's own status line, kept to restore it when held text is cleared. */
+  lastActivityLine?: string;
   /**
    * Tool calls that land mid-sentence wait here until the narration catches up to a
    * sentence boundary, so the step chips never render in the middle of a clause.
