@@ -55,31 +55,65 @@ describe("keyless HTTP web provider", () => {
     },
   );
 
-  it("uses the final response's MIME type after a redirect", async () => {
+  it.each([
+    "application/json",
+    "Application/JSON; charset=UTF-8",
+    "application/problem+json",
+    "application/vnd.api+json; charset=utf-8",
+    "model/gltf+json",
+  ])("preserves JSON values and formatting for %s", async (contentType) => {
+    const body = JSON.stringify(
+      {
+        path: "Use <project-root>/src",
+        entity: "&amp;",
+        spacing: "keep  spacing",
+        markup: "<title>not a page title</title><script>literal text</script>",
+      },
+      null,
+      2,
+    );
     const provider = new KeylessHttpWebProvider({
-      fetch: async (input) =>
-        String(input).endsWith("/start")
-          ? new Response(null, {
-              status: 302,
-              headers: { location: "/final", "content-type": "text/html" },
-            })
-          : new Response("Use <project-root>/src", {
-              headers: { "content-type": "text/plain; charset=UTF-8" },
-            }),
+      fetch: async () => new Response(body, { headers: { "content-type": contentType } }),
       resolveHostname: publicResolver,
     });
     await expect(
-      webFetchFromTool(provider, ctx, { url: "https://example.test/start" }),
-    ).resolves.toMatchObject({
-      url: "https://example.test/final",
-      text: "Use <project-root>/src",
+      webFetchFromTool(provider, ctx, { url: "https://example.test/data" }),
+    ).resolves.toEqual({
+      url: "https://example.test/data",
+      title: "Untitled",
+      text: body,
+      truncated: false,
     });
   });
 
-  it("paginates preserved plain text", async () => {
-    const body = "<x>  ".repeat(50);
+  it.each(["text/plain; charset=UTF-8", "application/json", "application/problem+json"])(
+    "uses the final response MIME type %s after a redirect",
+    async (contentType) => {
+      const provider = new KeylessHttpWebProvider({
+        fetch: async (input) =>
+          String(input).endsWith("/start")
+            ? new Response(null, {
+                status: 302,
+                headers: { location: "/final", "content-type": "text/html" },
+              })
+            : new Response("Use <project-root>/src", {
+                headers: { "content-type": contentType },
+              }),
+        resolveHostname: publicResolver,
+      });
+      await expect(
+        webFetchFromTool(provider, ctx, { url: "https://example.test/start" }),
+      ).resolves.toMatchObject({
+        url: "https://example.test/final",
+        text: "Use <project-root>/src",
+      });
+    },
+  );
+
+  it.each(["text/plain", "application/json"])("paginates preserved %s", async (contentType) => {
+    const body = JSON.stringify({ text: "<x>  ".repeat(50) });
     const provider = new KeylessHttpWebProvider({
-      fetch: async () => new Response(body, { headers: { "content-type": "text/plain" } }),
+      fetch: async () => new Response(body, { headers: { "content-type": contentType } }),
       resolveHostname: publicResolver,
     });
     await expect(
@@ -97,21 +131,24 @@ describe("keyless HTTP web provider", () => {
     ).resolves.toMatchObject({ text: body.slice(200), truncated: false });
   });
 
-  it("keeps the byte limit for plain text", async () => {
-    const provider = new KeylessHttpWebProvider({
-      fetch: async () =>
-        new Response("<x>".repeat(40), { headers: { "content-type": "text/plain" } }),
-      resolveHostname: publicResolver,
-      maxBufferBytes: 100,
-    });
-    await expect(
-      webFetchFromTool(provider, ctx, { url: "https://example.test/doc" }),
-    ).resolves.toEqual({
-      error: "Response is too large",
-    });
-  });
+  it.each(["text/plain", "application/json"])(
+    "keeps the byte limit for %s",
+    async (contentType) => {
+      const provider = new KeylessHttpWebProvider({
+        fetch: async () =>
+          new Response("<x>".repeat(40), { headers: { "content-type": contentType } }),
+        resolveHostname: publicResolver,
+        maxBufferBytes: 100,
+      });
+      await expect(
+        webFetchFromTool(provider, ctx, { url: "https://example.test/doc" }),
+      ).resolves.toEqual({
+        error: "Response is too large",
+      });
+    },
+  );
 
-  it("cancels an ongoing plain text read", async () => {
+  it.each(["text/plain", "application/json"])("cancels an ongoing %s read", async (contentType) => {
     const controller = new AbortController();
     let bodyStarted!: () => void;
     const started = new Promise<void>((resolve) => {
@@ -126,7 +163,7 @@ describe("keyless HTTP web provider", () => {
             },
           }),
           {
-            headers: { "content-type": "text/plain" },
+            headers: { "content-type": contentType },
           },
         ),
       resolveHostname: publicResolver,
@@ -142,7 +179,13 @@ describe("keyless HTTP web provider", () => {
   });
 
   it("still extracts HTML and does not treat similar media types as plain text", async () => {
-    for (const contentType of ["text/html; charset=utf-8", "text/plain-extra"]) {
+    for (const contentType of [
+      "text/html; charset=utf-8",
+      "text/plain-extra",
+      "application/jsonp",
+      "application/problem+json-extra",
+      "text/html; profile=application/json",
+    ]) {
       const provider = new KeylessHttpWebProvider({
         fetch: async () =>
           new Response("<title>Doc</title><p>hello <b>world</b></p>", {
