@@ -346,7 +346,10 @@ describePostgres("moving routines with the account timezone (PostgreSQL)", () =>
         await waitForBlockedOn(monitor, own[0]!.pid, "the zone save", deadline);
         await client.query('UPDATE routines SET "nextRunAt" = $2 WHERE id = $1', [
           routine.id,
-          claimed,
+          // node-postgres serializes Date in the process local zone; nextRunAt is
+          // TIMESTAMP without time zone, so a non-UTC host would store the local
+          // wall time and drop the offset. An ISO string is zone-independent.
+          claimed.toISOString(),
         ]);
         await client.query("COMMIT");
         await moving;

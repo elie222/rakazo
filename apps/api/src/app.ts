@@ -101,6 +101,7 @@ import {
   createDb,
   createPool,
   createThreadEvents,
+  databaseOutage,
   describeRowSecurity,
   IsolationError,
   installAuditEventStore,
@@ -161,7 +162,13 @@ import { pluginSubmissionRoutes } from "./plugin-submissions.js";
 import { sendReferralEmails } from "./referral-email.js";
 import { mountApiRequestBodyLimits, rpcBodyLimit } from "./request-body-limit.js";
 import { createRouter } from "./router.js";
-import { handleRpcError } from "./rpc-errors.js";
+import {
+  DATABASE_RETRY_AFTER_SECONDS,
+  failedOnDatabaseOutage,
+  handleHttpError,
+  handleRpcError,
+  requestHitDatabaseOutage,
+} from "./rpc-errors.js";
 import { mountScreenTarget } from "./screen-proxy.js";
 import { mountScriptAssets } from "./script-assets.js";
 import { createAuthResponseAudit } from "./security-audit.js";
@@ -830,6 +837,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     clientInterceptors: [onError((error, { path, signal }) => handleRpcError(error, path, signal))],
   });
   const app = new Hono();
+  app.onError(handleHttpError);
   const inFlight = trackInFlightRequests();
   app.use("*", inFlight.middleware);
   app.use("*", requestLogging(logger));
@@ -1048,8 +1056,13 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         },
       },
     });
-    if (matched) return c.newResponse(response.body, response);
-    await next();
+    if (!matched) return next();
+    const reply = c.newResponse(response.body, response);
+    if (requestHitDatabaseOutage())
+      reply.headers.set("Retry-After", String(DATABASE_RETRY_AFTER_SECONDS));
+    // A signed-in request that went through reached the database, so any outage is over.
+    else if (actor && reply.status < 500) databaseOutage.succeeded();
+    return reply;
   });
   mountAccountExportRoute(app, { prisma, auth, artifacts, home });
   mountAuditExportRoute(app, { prisma, sessionActor });
@@ -1237,11 +1250,10 @@ export function authLibraryLogger(event: string) {
   return {
     level: "error" as const,
     log: (_level: string, message: string, ...args: unknown[]) => {
-      const failure = {
-        event,
-        message,
-        error: args.find((arg): arg is Error => arg instanceof Error),
-      };
+      const error = args.find((arg): arg is Error => arg instanceof Error);
+      // The request answers 503, and the outage logs once for all of them.
+      if (error && failedOnDatabaseOutage(error)) return;
+      const failure = { event, message, error };
       const held = authLibraryFailures.getStore();
       if (held) held.push(failure);
       else logAuthLibraryFailure(failure, true);
@@ -1256,6 +1268,14 @@ export async function withAuthLibraryFailures(handle: () => Promise<Response>) {
   try {
     const response = await authLibraryFailures.run(failures, handle);
     crashed = response.status >= 500;
+    // The library answers its own 500 when the database is down; ask the client to retry.
+    if (response.status === 500 && requestHitDatabaseOutage())
+      return new Response("Service Unavailable", {
+        status: 503,
+        headers: { "Retry-After": String(DATABASE_RETRY_AFTER_SECONDS) },
+      });
+    // An auth request that went through read the database, so any outage is over.
+    if (response.status < 400 && !requestHitDatabaseOutage()) databaseOutage.succeeded();
     return response;
   } finally {
     for (const failure of failures) logAuthLibraryFailure(failure, crashed);
