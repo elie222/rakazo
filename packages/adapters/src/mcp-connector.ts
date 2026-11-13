@@ -73,6 +73,7 @@ import type { RemoteTransportDependencies } from "./remote-mcp.js";
 import { ConnectorRedirectError, isMcpSessionGoneError, mcpToolFields } from "./remote-mcp.js";
 import { isTailnetUrl } from "./tailnet-fetch.js";
 import type { TailnetService } from "./tailnet-service.js";
+import { botTailnetRoute } from "./tailnet-service.js";
 import { appendToolCompletionAudit } from "./tool-completion-audit.js";
 
 type SessionEntry = {
@@ -937,31 +938,14 @@ export class McpConnector implements ConnectorProvider {
     server: McpServer,
     context: AdapterContext,
   ): Promise<RemoteTransportDependencies> {
-    const tailnet = this.options.tailnet;
-    const botId = context.botId;
-    const bot = botId
-      ? await this.prisma.bot.findFirst({
-          where: { id: botId, spaceId: context.spaceId },
-          select: { name: true },
-        })
-      : null;
-    if (!tailnet || !botId || !bot) throw new Error(MCP_TAILNET_NO_BOT_MESSAGE);
-    const run = { userId: context.userId, spaceId: context.spaceId, botId, botName: bot.name };
-    return {
-      ...this.options.network,
-      tailnet: {
-        // The session outlives this run, so a later connection must not carry its signal.
-        dial: (destination, signal) =>
-          tailnet.dial(run, destination, {
-            operationId: `mcp-tailnet-${server.id}`,
-            traceId: `mcp-tailnet-${server.id}`,
-            spaceId: run.spaceId,
-            userId: run.userId,
-            botId,
-            signal,
-          }),
-      },
-    };
+    const route = botTailnetRoute(
+      this.options.tailnet,
+      this.prisma,
+      context,
+      `mcp-tailnet-${server.id}`,
+    );
+    if (!route) throw new Error(MCP_TAILNET_NO_BOT_MESSAGE);
+    return { ...this.options.network, tailnet: route };
   }
 
   /** Stop stdio processes nobody used for `idleMs`. Returns how many were stopped. */

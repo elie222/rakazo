@@ -41,6 +41,7 @@ import {
 } from "./network-address.js";
 import { createCheckedProxyDispatcher } from "./proxy-dispatcher.js";
 import type { TailnetRoute } from "./tailnet-fetch.js";
+import { createTailnetFetch, isTailnetUrl } from "./tailnet-fetch.js";
 import { dispatcherFetch, fetchPairedWithDispatcher } from "./undici-fetch.js";
 
 const DEFAULT_MAX_MCP_TOOLS = 250;
@@ -316,18 +317,8 @@ async function withRemoteMcpClient<T>(
   options: RemoteMcpOptions,
   run: (client: Client, signal: AbortSignal | undefined) => Promise<T>,
 ): Promise<T> {
-  const policy = { allowPrivateEndpoint: options.allowPrivateEndpoint };
-  const endpoint = await assertSafeRemoteUrl(
-    options.endpoint,
-    options.resolveHostname ?? resolveHostname,
-    policy,
-  );
+  const { endpoint, safeFetch } = await remoteEndpoint(options);
   const signal = combineSignals(options.signal, AbortSignal.timeout(MCP_TIMEOUT_MS));
-  const safeFetch = createSafeRemoteFetch(
-    options.fetch,
-    options.resolveHostname ?? resolveHostname,
-    policy,
-  );
   const transport = new StreamableHTTPClientTransport(endpoint, {
     requestInit: {
       headers: options.headers,
@@ -501,17 +492,7 @@ export class RemoteMcpSessionCache {
   }
 
   private async connectSession(key: string, options: RemoteMcpOptions): Promise<ScopedMcpSession> {
-    const policy = { allowPrivateEndpoint: options.allowPrivateEndpoint };
-    const endpoint = await assertSafeRemoteUrl(
-      options.endpoint,
-      options.resolveHostname ?? resolveHostname,
-      policy,
-    );
-    const safeFetch = createSafeRemoteFetch(
-      options.fetch,
-      options.resolveHostname ?? resolveHostname,
-      policy,
-    );
+    const { endpoint, safeFetch } = await remoteEndpoint(options);
     const transport = new StreamableHTTPClientTransport(endpoint, {
       requestInit: {
         headers: options.headers,
@@ -604,6 +585,42 @@ async function closeMcpSession(session: ScopedMcpSession): Promise<void> {
   ]);
   await session.client.close().catch(() => undefined);
   await session.safeFetch.close().catch(() => undefined);
+}
+
+/**
+ * Where an MCP client connects and the fetch it uses: a tailnet host through the bot's device
+ * when the caller has a tailnet route, otherwise a checked public (or allowed private) address.
+ */
+async function remoteEndpoint(
+  options: RemoteMcpOptions,
+): Promise<{ endpoint: URL; safeFetch: SafeRemoteFetch }> {
+  const tailnetUrl = options.tailnet ? tailnetEndpoint(options.endpoint) : undefined;
+  if (tailnetUrl && options.tailnet) {
+    return { endpoint: tailnetUrl, safeFetch: createTailnetFetch(options.tailnet) };
+  }
+  const policy = { allowPrivateEndpoint: options.allowPrivateEndpoint };
+  const resolve = options.resolveHostname ?? resolveHostname;
+  return {
+    endpoint: await assertSafeRemoteUrl(options.endpoint, resolve, policy),
+    safeFetch: createSafeRemoteFetch(options.fetch, resolve, policy),
+  };
+}
+
+/** A tailnet endpoint, or undefined for any other address. Plain HTTP is carried by the tailnet. */
+export function tailnetEndpoint(value: string): URL | undefined {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return undefined;
+  }
+  if (!isTailnetUrl(url)) return undefined;
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new Error("Connector URL must use HTTP or HTTPS");
+  }
+  if (url.username || url.password) throw new Error("Connector URL must not contain credentials");
+  if (url.hash) throw new Error("Connector URL must not contain a fragment");
+  return url;
 }
 
 /** A saved MCP endpoint is stored and shown in plaintext, so its credentials belong in headers. */

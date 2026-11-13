@@ -87,8 +87,9 @@ routines, for bots with **Reach machines on your tailnet** turned on, and only w
 grants let the tag reach the server. Adding the server is your approval; its tool calls follow your
 [approval mode](./approvals.md) like any MCP server's, with no tailnet card.
 
-**Test connection** checks the server from one of your bots that uses it and has tailnet access.
-Use a token or API key header for these servers; OAuth sign-in isn't supported on a tailnet yet.
+Rakazo checks the server from one of your bots with tailnet access when you add it, and
+**Test connection** does too, so turn access on for a bot first. Use a token or API key header for
+these servers; OAuth sign-in isn't supported on a tailnet yet.
 
 ## Devices in your tailnet
 

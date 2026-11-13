@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { assertMcpRemoteEndpoint } from "./mcp-servers.js";
 import type { RouterDeps } from "./router.js";
+import { TAILNET_CHECK_NEEDS_BOT, tailnetCheckRoute } from "./routes/tailnet.js";
 
 function deps(available: boolean | undefined) {
   return {
@@ -39,5 +40,47 @@ describe("MCP server URLs on a tailnet", () => {
     await expect(
       assertMcpRemoteEndpoint("http://100.101.102.103/mcp", routerDeps, options),
     ).rejects.toThrow();
+  });
+});
+
+describe("checking a tailnet MCP server while adding it", () => {
+  const ACTOR = {
+    userId: "alice",
+    spaceId: "home",
+    email: "alice@example.test",
+    isDeploymentOwner: false,
+  };
+  function routeDeps(botIds: string[] | null) {
+    return {
+      prisma: {
+        tailnetConnection: {
+          findUnique: async () => (botIds ? { tag: "tag:rakazo", botIds } : null),
+        },
+        bot: {
+          findFirst: async ({ where }: { where: { id: { in: string[] } } }) =>
+            where.id.in.includes("helper") ? { id: "helper" } : null,
+        },
+      } as never,
+      tailnet: {
+        service: { available: true, dial: async () => undefined as never },
+        serverOrigin: "https://rakazo.example.test",
+      } as never,
+    };
+  }
+
+  it("goes through one of the member's bots allowed on their tailnet", async () => {
+    expect(await tailnetCheckRoute(routeDeps(["helper"]), ACTOR, true)).toBeDefined();
+  });
+
+  it("asks for a bot with tailnet access when there is none", async () => {
+    for (const botIds of [null, [], ["gone"]]) {
+      await expect(tailnetCheckRoute(routeDeps(botIds), ACTOR, true)).rejects.toThrow(
+        TAILNET_CHECK_NEEDS_BOT,
+      );
+    }
+  });
+
+  it("leaves every other address to the usual checks", async () => {
+    expect(await tailnetCheckRoute(routeDeps(null), ACTOR, false)).toBeUndefined();
   });
 });

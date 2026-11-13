@@ -55,6 +55,8 @@ import {
   RemoteMcpSessionCache,
   readRemoteMcpResource,
 } from "./remote-mcp.js";
+import type { TailnetService } from "./tailnet-service.js";
+import { botTailnetRoute } from "./tailnet-service.js";
 
 const ModelHeaderName = HeaderName.refine(
   (name) => !isSensitiveHeader(name),
@@ -139,14 +141,17 @@ export class InstalledConnectorProvider implements ConnectorProvider {
     private readonly remote: RemoteConnectorDependencies = {},
     /** Instance flag letting every user reach loopback / LAN endpoints. */
     private readonly allowPrivateEndpoint = false,
+    /** Reaches MCP servers on the run's member's tailnet from the bot's own device. */
+    private readonly tailnet?: Pick<TailnetService, "available" | "dial">,
   ) {}
 
   /** Decided per request from the install owner's current standing, so an install saved
    * before an ownership change cannot keep reaching private endpoints. */
-  private async remoteFor(_context: AdapterContext): Promise<RemoteRequestPolicy> {
+  private async remoteFor(context: AdapterContext): Promise<RemoteRequestPolicy> {
     return {
       ...this.remote,
       allowPrivateEndpoint: this.allowPrivateEndpoint,
+      tailnet: botTailnetRoute(this.tailnet, this.prisma, context, "installed-mcp-tailnet"),
     };
   }
 

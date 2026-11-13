@@ -5,12 +5,13 @@ import type { AddressInfo } from "node:net";
 import { connect } from "node:net";
 import type { AdapterContext } from "@rakazo/adapter-kit";
 import { afterEach, describe, expect, it } from "vitest";
+import { InstalledConnectorProvider, verifyMcpInstall } from "./installed-connectors.js";
 import { MCP_TAILNET_NO_BOT_MESSAGE, McpConnector } from "./mcp-connector.js";
 import { EncryptedSecretStore } from "./secrets.js";
 import { saveTailnetConnection, setTailnetBotAccess } from "./tailnet-connections.js";
 import { tailnetDatabase } from "./tailnet-connections.test-support.js";
 import { FakeTailnetNodeHost, TailscaleApiEmulator } from "./tailnet-emulator.js";
-import { TailnetService } from "./tailnet-service.js";
+import { botTailnetRoute, TailnetService } from "./tailnet-service.js";
 
 const SECRET = "tskey-client-kTEST-secretvalue";
 const ALICE = { userId: "alice", spaceId: "home" };
@@ -121,7 +122,25 @@ async function setup(options: { tailnetBots?: string[] } = {}) {
   };
   const connector = new McpConnector(prisma as never, secretStore, { tailnet });
   closers.push(() => connector.close());
-  return { connector, emulator, callers, requests: mcp.requests };
+  // The same server added under Integrations, as an installed connector.
+  const install = {
+    id: "install-1",
+    kind: "mcp",
+    name: "Home lab",
+    source: SERVER.endpoint,
+    secretId: null,
+    createdAt: new Date(0),
+    config: { preset: "custom", auth: { type: "none" } },
+  };
+  const installed = new InstalledConnectorProvider(
+    { ...prisma, capabilityInstall: { findMany: async () => [install] } } as never,
+    secretStore,
+    {},
+    false,
+    tailnet,
+  );
+  closers.push(() => installed.close());
+  return { connector, installed, tailnet, db, emulator, callers, requests: mcp.requests };
 }
 
 function run(userId = "alice"): AdapterContext {
@@ -168,5 +187,35 @@ describe("MCP servers on a member's tailnet", () => {
       message: MCP_TAILNET_NO_BOT_MESSAGE,
     });
     expect(unreachable.requests).toEqual([]);
+  });
+});
+
+describe("MCP servers on a member's tailnet, added under Integrations", () => {
+  it("lists the server's tools from the run's bot device, and none from another member's run", async () => {
+    const { installed, callers, emulator } = await setup();
+    const tools = await installed.discoverTools(run());
+    expect(tools.map((tool) => tool.name)).toContain("status");
+    expect(new Set(callers)).toEqual(new Set(["rakazo-home-lab-helper-helper"]));
+    const devices = emulator.devices.size;
+    expect((await installed.discoverTools(run("bob"))).map((tool) => tool.name)).not.toContain(
+      "status",
+    );
+    expect(emulator.devices.size).toBe(devices);
+  });
+
+  it("checks a new server from one of the member's bots before it is added", async () => {
+    const { tailnet, db, callers } = await setup();
+    const route = botTailnetRoute(tailnet, db.prisma, { ...ALICE, botId: "helper" }, "check");
+    const verified = await verifyMcpInstall({
+      source: SERVER.endpoint,
+      config: { auth: { type: "none" } },
+      remote: { tailnet: route },
+    });
+    expect(verified.toolCount).toBe(1);
+    expect(callers).toContain("rakazo-home-lab-helper-helper");
+    // Without a route the address is a private one the server itself never reaches.
+    await expect(
+      verifyMcpInstall({ source: SERVER.endpoint, config: { auth: { type: "none" } } }),
+    ).rejects.toThrow();
   });
 });

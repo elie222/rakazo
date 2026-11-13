@@ -159,6 +159,7 @@ export function createConnectorRuntime(
     secrets,
     network,
     env.mcpAllowPrivateEndpoint,
+    deps.tailnet,
   );
   const integrationSettings = new IntegrationProviderSettings(prisma, secrets, env.encryptionKey, {
     composio:
