@@ -18,6 +18,7 @@ import {
 import type * as Db from "@rakazo/db";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { clearThread, planComputerSize } from "@rakazo/db";
+import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { describe, expect, it, vi } from "vitest";
 import {
   acquireComputerExecutionLease,
@@ -2015,7 +2016,7 @@ describe("Team Computer wake", () => {
     return { ref, prisma, sandbox, execute, findMany };
   }
 
-  async function boot(harness: ReturnType<typeof wakeHarness>) {
+  async function boot(harness: ReturnType<typeof wakeHarness>, bootContext = context) {
     const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-team-wake-"));
     try {
       return await provisionComputer(
@@ -2030,7 +2031,7 @@ describe("Team Computer wake", () => {
           dataDir,
         },
         "computer-1",
-        context,
+        bootContext,
       );
     } finally {
       await rm(dataDir, { recursive: true, force: true });
@@ -2278,13 +2279,50 @@ describe("Team Computer wake", () => {
     }
   });
 
-  it("still boots when the folder cleanup fails", async () => {
+  it("still boots and reports it when the folder cleanup fails", async () => {
     const harness = wakeHarness(
       "stopped",
       vi.fn().mockRejectedValue(new Error("database unavailable")),
     );
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
+    try {
+      await expect(boot(harness)).resolves.toEqual(harness.ref);
+    } finally {
+      installLogger(createLogger({ service: "test", level: "off", sinks: [] }));
+    }
 
-    await expect(boot(harness)).resolves.toEqual(harness.ref);
+    expect(sink.events).toContainEqual(
+      expect.objectContaining({ level: "error", message: "team bot folder cleanup" }),
+    );
+  });
+
+  it("does not report a folder cleanup the cancelled run cut short", async () => {
+    const run = new AbortController();
+    const harness = wakeHarness("stopped");
+    harness.execute.mockImplementation(async function* (_computer, request) {
+      if (isFolderListing(request)) {
+        run.abort();
+        throw new Error("command aborted");
+      }
+      yield { type: "exit" as const, code: 0 };
+    });
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
+    try {
+      await boot(harness, { ...context, signal: run.signal }).catch(() => undefined);
+    } finally {
+      installLogger(createLogger({ service: "test", level: "off", sinks: [] }));
+    }
+
+    expect(harness.execute).toHaveBeenCalledWith(
+      harness.ref,
+      expect.objectContaining({ argv: expect.arrayContaining(["bash"]) }),
+      expect.anything(),
+    );
+    expect(sink.events).not.toContainEqual(
+      expect.objectContaining({ message: "team bot folder cleanup" }),
+    );
   });
 });
 
