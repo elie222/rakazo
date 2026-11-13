@@ -308,6 +308,23 @@ describe("closeUnterminatedFence", () => {
     const markdown = "```ts\nconst value = 1;\n```\n\nDone";
     expect(closeUnterminatedFence(markdown)).toBe(markdown);
   });
+
+  it("closes a partial fence in CRLF text", () => {
+    expect(closeUnterminatedFence("```ts\r\nconst value = 1;\r\n")).toBe(
+      "```ts\r\nconst value = 1;\r\n\n```",
+    );
+  });
+
+  it("recognises the closing fence in CRLF text", () => {
+    const markdown = "```ts\r\nconst value = 1;\r\n```\r\n\r\nDone";
+    expect(closeUnterminatedFence(markdown)).toBe(markdown);
+  });
+
+  it("keeps a CRLF fence open while the closing line carries text", () => {
+    expect(closeUnterminatedFence("```ts\r\ncode\r\n``` not closing\r\n")).toBe(
+      "```ts\r\ncode\r\n``` not closing\r\n\n```",
+    );
+  });
 });
 
 describe("link labels", () => {
