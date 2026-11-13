@@ -1,7 +1,7 @@
 import { MenuView } from "@expo/ui/community/menu";
 import { useLingui } from "@lingui/react/macro";
 import type { NativeStackNavigationOptions } from "expo-router";
-import { useRouter } from "expo-router";
+import { useNavigationContainerRef, useRouter } from "expo-router";
 import { Alert, View } from "react-native";
 import { notifyArchivedChatsChanged } from "../lib/archived-chats";
 import { archiveBot, confirmClearConversation, confirmDeleteBot } from "../lib/bot-lifecycle";
@@ -22,6 +22,7 @@ export type BotProfileAction = {
 export function useBotProfileActions(botId: string, name: string): BotProfileAction[] {
   const { t } = useLingui();
   const router = useRouter();
+  const navigation = useNavigationContainerRef();
   const beginDelete = useConfirmationGuard();
   function leave() {
     router.dismissAll();
@@ -53,7 +54,12 @@ export function useBotProfileActions(botId: string, name: string): BotProfileAct
           { id: botId, name },
           () => {
             notifyArchivedChatsChanged();
-            if (confirmation.current()) leave();
+            // The profile may have been popped back to this bot's chat while deleting.
+            // Inspect the live route rather than the confirmation's expired screen visit.
+            const route = navigation.getCurrentRoute() as
+              | { params?: { botId?: string } }
+              | undefined;
+            if (route?.params?.botId === botId) leave();
           },
           confirmation.current,
           undefined,

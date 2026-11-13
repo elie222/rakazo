@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
   alert: vi.fn(),
   removeFromSearchInbox: vi.fn(),
   loadArchived: vi.fn(),
+  getCurrentRoute: vi.fn(),
   router: {
     push: vi.fn(),
     replace: vi.fn(),
@@ -81,6 +82,7 @@ vi.mock("expo-router", () => ({
   // The inbox stays focused here; expo-router reruns the effect when its callback changes.
   useFocusEffect: (effect: () => (() => void) | undefined) => useEffect(effect, [effect]),
   useRouter: () => mocks.router,
+  useNavigationContainerRef: () => ({ getCurrentRoute: mocks.getCurrentRoute }),
   useNavigation: () => ({ setOptions: vi.fn() }),
   useRoute: () => ({ key: "thread-1" }),
   useLocalSearchParams: () => ({ groupId: "group-b" }),
@@ -131,6 +133,7 @@ const flush = () => act(async () => undefined);
 
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  mocks.getCurrentRoute.mockReturnValue({ name: "bot-profile", params: { botId: "bot-b" } });
   mocks.rpc.mockReset();
   mocks.alert.mockReset();
   mocks.removeFromSearchInbox.mockReset();
@@ -377,6 +380,44 @@ describe("bot profile menu archive notifications", () => {
     await flush();
     expect(mocks.alert).toHaveBeenCalledTimes(2);
   });
+
+  it.each([
+    [{ name: "thread", params: { botId: "bot-b" } }, true],
+    [{ name: "bot-profile", params: { botId: "bot-b" } }, true],
+    [{ name: "thread", params: { botId: "other-bot" } }, false],
+    [{ name: "index" }, false],
+    [undefined, false],
+  ])(
+    "only leaves a deleted bot's current route after the profile unmounts (%j)",
+    async (route, shouldLeave) => {
+      const { listener, stop } = listenForArchiveChanges();
+      const action = renderActions();
+      let finish!: () => void;
+      mocks.rpc.mockResolvedValueOnce([]).mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            finish = resolve;
+          }),
+      );
+      action("Delete…").onPress();
+      await flush();
+      alertButton(0, "Keep memories").onPress!();
+      expect(mocks.rpc).toHaveBeenLastCalledWith("bots/remove", {
+        botId: "bot-b",
+        deleteMemories: false,
+      });
+      await act(async () => root.render(null));
+      mocks.getCurrentRoute.mockReturnValue(route);
+      await act(async () => finish());
+      expect(listener).toHaveBeenCalledOnce();
+      expect(left()).toBe(shouldLeave);
+      if (!shouldLeave) {
+        expect(mocks.router.dismissAll).not.toHaveBeenCalled();
+        expect(mocks.router.replace).not.toHaveBeenCalled();
+      }
+      stop();
+    },
+  );
 
   it("notifies after confirmed deletion succeeds", async () => {
     const { listener, stop } = listenForArchiveChanges();
