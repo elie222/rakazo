@@ -162,6 +162,7 @@ import { mountApiRequestBodyLimits, rpcBodyLimit } from "./request-body-limit.js
 import { createRouter } from "./router.js";
 import {
   DATABASE_RETRY_AFTER_SECONDS,
+  failedOnDatabaseOutage,
   handleHttpError,
   handleRpcError,
   requestHitDatabaseOutage,
@@ -1240,7 +1241,7 @@ export function authLibraryLogger(event: string) {
     log: (_level: string, message: string, ...args: unknown[]) => {
       const error = args.find((arg): arg is Error => arg instanceof Error);
       // The request answers 503, and the outage logs once for all of them.
-      if (error && databaseOutage.failed(error, event)) return;
+      if (error && failedOnDatabaseOutage(error)) return;
       const failure = { event, message, error };
       const held = authLibraryFailures.getStore();
       if (held) held.push(failure);
@@ -1256,6 +1257,12 @@ export async function withAuthLibraryFailures(handle: () => Promise<Response>) {
   try {
     const response = await authLibraryFailures.run(failures, handle);
     crashed = response.status >= 500;
+    // The library answers its own 500 when the database is down; ask the client to retry.
+    if (response.status === 500 && requestHitDatabaseOutage())
+      return new Response("Service Unavailable", {
+        status: 503,
+        headers: { "Retry-After": String(DATABASE_RETRY_AFTER_SECONDS) },
+      });
     return response;
   } finally {
     for (const failure of failures) logAuthLibraryFailure(failure, crashed);

@@ -6,7 +6,7 @@ import { createLogger, createTestSink, installLogger, runWithLogContext } from "
 import { requestLogging } from "@rakazo/logging/hono";
 import { Hono } from "hono";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { authLibraryLogger } from "./app.js";
+import { authLibraryLogger, withAuthLibraryFailures } from "./app.js";
 import { handleHttpError, handleRpcError, requestHitDatabaseOutage } from "./rpc-errors.js";
 
 let sink: TestSink;
@@ -60,6 +60,22 @@ describe("a request during a database outage", () => {
         .filter((event) => event.message === "http.request.completed")
         .map((event) => event.level),
     ).toEqual(["warn", "warn", "warn"]);
+  });
+
+  it("turns the auth library's own 500 during the outage into a 503", async () => {
+    const response = await runWithLogContext({}, () =>
+      withAuthLibraryFailures(async () => {
+        authLibraryLogger("auth.request.failed").log(
+          "error",
+          "INTERNAL_SERVER_ERROR",
+          unreachable(),
+        );
+        return new Response(null, { status: 500 });
+      }),
+    );
+    expect(response.status).toBe(503);
+    expect(response.headers.get("retry-after")).toBe("5");
+    expect(logged().filter((line) => line.includes("auth.request.failed"))).toEqual([]);
   });
 
   it("still answers 500 and logs any other failure", async () => {

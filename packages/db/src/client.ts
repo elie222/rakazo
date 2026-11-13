@@ -189,8 +189,9 @@ const UNAVAILABLE_KINDS = new Set([
 ]);
 /** Raw socket failures, which only count when the caller knows they came from a database connection. */
 const SOCKET_CODES = new Set(["ECONNREFUSED", "ECONNRESET", "ETIMEDOUT", "EPIPE", "ENOTFOUND"]);
+/** pg's own errors for a connection that died: `query_timeout` firing, or the socket closing. */
 const UNAVAILABLE_MESSAGE =
-  /read-only transaction|^Connection terminated|Can't reach database server/;
+  /read-only transaction|^Connection terminated|Can't reach database server|^Query read timeout$/;
 
 /**
  * Whether an error means the database is unavailable rather than that the work is wrong, so

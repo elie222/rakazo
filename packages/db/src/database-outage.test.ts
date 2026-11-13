@@ -38,6 +38,7 @@ describe("isDatabaseUnavailable", () => {
     ],
     ["a pool checkout timeout", new Error("timeout exceeded when trying to connect")],
     ["too many clients", new Error("sorry, too many clients already")],
+    ["a query on a connection that died", new Error("Query read timeout")],
     ["a dropped connection", new Error("Connection terminated unexpectedly")],
     [
       "an administrator shutdown",
