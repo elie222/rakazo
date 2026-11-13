@@ -92,6 +92,19 @@ function fakeRun(
   const copyEarlierFiles = vi.fn();
   const matches = (email: Row, where: Record<string, unknown>) => {
     const since = (where.receivedAt as { gt?: Date } | undefined)?.gt;
+    const sinceInclusive = (where.receivedAt as { gte?: Date } | undefined)?.gte;
+    const position = (
+      where.AND as
+        | Array<{ OR: Array<{ receivedAt: Date | { gt: Date }; id?: { gt: string } }> }>
+        | undefined
+    )?.[0]?.OR;
+    const afterPosition =
+      !position ||
+      position.some((clause) =>
+        clause.receivedAt instanceof Date
+          ? email.receivedAt.getTime() === clause.receivedAt.getTime() && email.id > clause.id!.gt
+          : email.receivedAt > clause.receivedAt.gt,
+      );
     const before = (where.receivedAt as { lt?: Date } | undefined)?.lt;
     const left = (where.id as { notIn?: string[] } | undefined)?.notIn;
     const or = where.OR as
@@ -108,6 +121,8 @@ function fakeRun(
       email.botId === where.botId &&
       !left?.includes(email.id) &&
       (!since || email.receivedAt > since) &&
+      (!sinceInclusive || email.receivedAt >= sinceInclusive) &&
+      afterPosition &&
       (!before || email.receivedAt < before) &&
       (!or || or.some((clause) => Object.entries(clause).some(matchesClause)))
     );
@@ -147,7 +162,7 @@ function fakeRun(
             where: Record<string, unknown>;
             skip?: number;
             take?: number;
-            orderBy: { receivedAt: "asc" | "desc" };
+            orderBy: Array<{ receivedAt?: "asc" | "desc"; id?: "asc" | "desc" }>;
           }) => {
             listed += 1;
             firstLook ??= Date.now();
@@ -163,8 +178,8 @@ function fakeRun(
               .filter((email) => matches(email, where))
               .sort(
                 (a, b) =>
-                  (orderBy.receivedAt === "asc" ? 1 : -1) *
-                  (a.receivedAt.getTime() - b.receivedAt.getTime()),
+                  (orderBy[0]?.receivedAt === "asc" ? 1 : -1) *
+                  (a.receivedAt.getTime() - b.receivedAt.getTime() || a.id.localeCompare(b.id)),
               )
               .slice(skip, take === undefined ? undefined : skip + take);
             read.push(...page.map((email) => email.id));
@@ -335,7 +350,29 @@ describe("read_email", () => {
     expect(found.map((email) => email.id)).toEqual(["old-hit"]);
     expect(JSON.stringify(hidden)).toBe(JSON.stringify(nothing));
     expect(JSON.stringify(hiddenNewest)).toBe(JSON.stringify(nothingNewest));
-    expect(nothing.nextSince).toBe(hour(251).toISOString());
+    expect(nothing.nextSince).toBe(`${hour(251).toISOString()}|filler-249`);
+  });
+
+  it("keeps unreturned same-time mail when following a hidden-search cursor", async () => {
+    const at = hour(1);
+    const { call } = fakeRun(
+      ["a", "b", "c"].map((id) =>
+        row({
+          id,
+          receivedAt: at,
+          text: "Pelican sighting",
+        }),
+      ),
+      { emailedCode: "482913" },
+    );
+    const first = await call({ query: "pelican", since: hour(0).toISOString(), limit: 1 });
+    const second = await call({ query: "pelican", since: first.nextSince, limit: 1 });
+    const third = await call({ query: "pelican", since: second.nextSince, limit: 1 });
+    expect(
+      [first, second, third].flatMap((result) =>
+        (result.emails as Array<{ id: string }>).map((email) => email.id),
+      ),
+    ).toEqual(["a", "b", "c"]);
   });
 
   it("reads each email once in a wait with an emailed code, and still finds new mail", async () => {

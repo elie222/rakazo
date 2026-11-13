@@ -104,6 +104,7 @@ export function readsBotInbox(input: {
   return (
     input.run.userId === input.bot.userId &&
     input.run.trigger !== "bot_message" &&
+    input.run.trigger !== "webhook" &&
     !input.thread.groupId &&
     !input.nonOwnerChatRun
   );
@@ -262,7 +263,7 @@ export function emailMayAnswer(email: Mail, rule: CodeRule): boolean {
   if (rule.mailbox === undefined) return true;
   const mailbox = rule.mailbox.toLowerCase();
   // Anyone with an address on the mailbox's own domain can send it mail that domain signs.
-  if (hostSite(domainOf(mailbox)) === rule.site) return false;
+  if (hostSite(domainOf(mailbox)) === hostSite(rule.site)) return false;
   return (email.recipients ?? []).some((address) => address.toLowerCase() === mailbox);
 }
 
@@ -316,7 +317,12 @@ export async function findEmailedCode(
   // site is neither read nor counted, however much there is; the limits are on mail that does,
   // and the search limit on the site's own, so other senders never hide the site's email. The
   // query only narrows what is read: emailMayAnswer decides each email, as for every other look.
-  const naming = await mailNaming(prisma, input.spaceId, site);
+  const inbox = await prisma.bot.findUnique({
+    where: { id: input.botId },
+    select: { spaceId: true },
+  });
+  if (!inbox) return undefined;
+  const naming = await mailNaming(prisma, inbox.spaceId, site);
   const fromSite: { id: string; key: string; receivedAt: Date }[] = [];
   let cursor: string | undefined;
   let read = 0;

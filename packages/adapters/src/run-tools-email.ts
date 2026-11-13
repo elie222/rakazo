@@ -48,11 +48,28 @@ const LATE_SAVE_MS = THREAD_LOCK_TRANSACTION_OPTIONS.timeout + POLL_MS;
  */
 const INBOX_FIELDS = new Set(["id", "receivedAt"]);
 
+// A timestamp alone remains valid; the id preserves a position within a receipt-time tie.
+const SinceSchema = z
+  .string()
+  .max(200)
+  .transform((value, ctx) => {
+    const [at, id, extra] = value.split("|");
+    if (
+      !z.iso.datetime({ offset: true }).safeParse(at).success ||
+      extra !== undefined ||
+      id === ""
+    ) {
+      ctx.addIssue({ code: "custom", message: "Expected an ISO time or nextSince cursor." });
+      return z.NEVER;
+    }
+    return { at: at!, id };
+  });
+
 const ReadEmailSchema = z
   .object({
     id: z.string().trim().min(1).max(100).optional(),
     query: z.string().trim().max(200).optional(),
-    since: z.iso.datetime({ offset: true }).optional(),
+    since: SinceSchema.optional(),
     before: z.iso.datetime({ offset: true }).optional(),
     waitSeconds: z.number().int().min(0).max(READ_EMAIL_MAX_WAIT_SECONDS).optional(),
     textOffset: z.number().int().min(0).optional(),
@@ -87,7 +104,8 @@ async function readInbox(ctx: RunContext, call: ToolCall) {
   if (!parsed.success) {
     return call.finish({ error: argsError(parsed.error) });
   }
-  const input = parsed.data;
+  const input = { ...parsed.data, since: parsed.data.since?.at };
+  const sinceId = parsed.data.since?.id;
   const { deps, bot, run } = ctx;
   // The inbox is the owner's mail: only their own runs of their own bot read it.
   if (run.userId !== bot.userId) return call.finish({ error: "Only the bot's owner can do that." });
@@ -186,12 +204,24 @@ async function readInbox(ctx: RunContext, call: ToolCall) {
   const startedAt = Date.now();
   const where = {
     botId: bot.id,
+    ...(sinceId && input.since
+      ? {
+          AND: [
+            {
+              OR: [
+                { receivedAt: { gt: new Date(input.since) } },
+                { receivedAt: new Date(input.since), id: { gt: sinceId } },
+              ],
+            },
+          ],
+        }
+      : {}),
     // Waiting is for mail to arrive, so what the bot sent never ends it.
     ...(input.waitSeconds ? { sent: false } : {}),
     ...(input.since || input.before
       ? {
           receivedAt: {
-            ...(input.since ? { gt: new Date(input.since) } : {}),
+            ...(input.since ? { [sinceId ? "gte" : "gt"]: new Date(input.since) } : {}),
             ...(input.before ? { lt: new Date(input.before) } : {}),
           },
         }
@@ -201,6 +231,7 @@ async function readInbox(ctx: RunContext, call: ToolCall) {
   // After since: the newest email already looked at, so candidates a search checked and dropped
   // are not checked again by this wait or by a caller following nextSince.
   let checkedTo: Date | undefined;
+  let checkedId: string | undefined;
   const select = {
     id: true,
     fromAddress: true,
@@ -213,7 +244,8 @@ async function readInbox(ctx: RunContext, call: ToolCall) {
     attachments: true,
   } as const;
   // After since, oldest first, so following nextSince reads every new email in order.
-  const orderBy = { receivedAt: input.since ? ("asc" as const) : ("desc" as const) };
+  const direction = input.since ? ("asc" as const) : ("desc" as const);
+  const orderBy = [{ receivedAt: direction }, { id: direction }];
   const fetchEmails = (args: { where: object; skip?: number; take: number }) =>
     deps.prisma.botEmailMessage.findMany({ ...args, orderBy, select });
   const inWindow = () => ({
@@ -264,7 +296,13 @@ async function readInbox(ctx: RunContext, call: ToolCall) {
       }
       if (page.length < SEARCH_CANDIDATES) break;
     }
-    if (input.since) checkedTo = readNewest ?? checkedTo;
+    if (input.since) {
+      const last = [...read].at(-1);
+      if (last) {
+        checkedId = last[0];
+        checkedTo = last[1];
+      }
+    }
     return matches;
   };
   // Asked again on every look: a Space's first key can appear while the bot waits.
@@ -298,6 +336,7 @@ async function readInbox(ctx: RunContext, call: ToolCall) {
     for (let again = 0; ; again++) {
       if (!(await sameCodes()) || dropped) {
         checkedTo = undefined;
+        checkedId = undefined;
         readNewest = undefined;
         read.clear();
       }
@@ -321,7 +360,12 @@ async function readInbox(ctx: RunContext, call: ToolCall) {
   // Where the next look starts, on the inbox's own clock: the newest email shown here, or the
   // caller's since when nothing new arrived.
   const newest = input.since ? emails.at(-1) : emails[0];
-  const nextSince = (checkedTo ?? newest?.receivedAt)?.toISOString() ?? input.since;
+  const nextAt = (checkedTo ?? newest?.receivedAt)?.toISOString();
+  const nextId = checkedId ?? newest?.id;
+  const nextSince =
+    nextAt && input.since && input.query && emailedCodes.length && nextId
+      ? `${nextAt}|${nextId}`
+      : (nextAt ?? (input.since ? `${input.since}${sinceId ? `|${sinceId}` : ""}` : undefined));
   const listed = emails.map((email) => ({
     id: email.id,
     from: sender(email),

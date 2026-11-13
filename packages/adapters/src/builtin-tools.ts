@@ -1108,7 +1108,7 @@ export const builtinAgentTools: ConnectorTool[] = [
         since: {
           type: "string",
           description:
-            "ISO time; only emails received after it, such as an earlier result's nextSince.",
+            "ISO time or an earlier result's nextSince cursor; reads emails after that position.",
         },
         before: {
           type: "string",

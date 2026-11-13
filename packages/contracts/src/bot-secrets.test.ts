@@ -1345,6 +1345,10 @@ describe("one-time code contracts", () => {
       ["with a no-break space", "482\u00a0913"],
       ["with a narrow no-break space", "482\u202f913"],
       ["with dots", "4.8.2.9.1.3"],
+      ...["\u200c", "\u200d", "\u2060", "\ufeff", "\u00ad"].map((separator) => [
+        `with format character ${separator.codePointAt(0)}`,
+        [..."482913"].join(separator),
+      ]),
       ["with a double space", "482  913"],
       ["on separate lines", "4\n8\n2\n9\n1\n3"],
       ["with a middle dot and an en dash", "48·29–13"],

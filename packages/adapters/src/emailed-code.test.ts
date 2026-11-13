@@ -24,6 +24,7 @@ import {
   EMAILED_CODE_WINDOW_MS,
   emailedCodeWindow,
   emailMayAnswer,
+  readsBotInbox,
   takeEmailedCode,
 } from "./emailed-code.js";
 import { readInboundEmail } from "./inbound-email.js";
@@ -88,6 +89,7 @@ function inbox(
     source?: ConnectedMailSource;
     /** The inbox is encrypted: its mail is found by the hashed words it holds, not by its text. */
     encrypted?: boolean;
+    inboxSpaceId?: string;
     /** Whether the bot may read the owner's connected mail for codes. */
     connectedMailCodes?: boolean;
     /** The owner turned that off after the attempt started. */
@@ -204,7 +206,8 @@ function inbox(
     ...(options.encrypted
       ? {
           $contentEncryption: () => ({
-            messageSearchTokens: async (_spaceId: string, text: string) => [hashedWords(text)],
+            messageSearchTokens: async (spaceId: string, text: string) =>
+              spaceId === (options.inboxSpaceId ?? "space-1") ? [hashedWords(text)] : [[-1]],
           }),
         }
       : {}),
@@ -309,6 +312,7 @@ function inbox(
     externalConversation: { findUnique: async () => null },
     bot: {
       findUnique: async () => ({
+        spaceId: options.inboxSpaceId ?? "space-1",
         connectedMailCodes: Boolean(options.connectedMailCodes) && !options.switchedOff,
       }),
     },
@@ -849,6 +853,23 @@ describe("a code emailed to the bot while its run waits on the card", () => {
     expect(read.length).toBeLessThanOrEqual(EMAIL_READ_LIMIT);
   });
 
+  it("uses the inbox Space's encryption index for a run in another Space", async () => {
+    const { deliver, answerRunInput } = inbox({ encrypted: true, inboxSpaceId: "inbox-space" });
+    expect(await deliver()).toBe(1);
+    expect(answerRunInput).toHaveBeenCalledWith(expect.objectContaining({ answer: CODE }));
+  });
+
+  it("denies mailbox access to webhook runs carrying the owner's user id", () => {
+    expect(
+      readsBotInbox({
+        run: { userId: bot.userId, trigger: "webhook" },
+        bot,
+        thread: { groupId: null },
+        nonOwnerChatRun: false,
+      }),
+    ).toBe(false);
+  });
+
   // BOUNDS: the read limit is on mail that names the site. The query asks for no other, so mail
   // that does not name it, however much, is neither read nor counted, whether the inbox is
   // encrypted (found by the hashed words it holds) or not (by its sender's address).
@@ -1194,6 +1215,7 @@ describe("a code emailed to the bot while its run waits on the card", () => {
 
   it.each<[string, Row]>([
     ["another bot's message", { trigger: "bot_message" }],
+    ["a webhook", { trigger: "webhook" }],
     ["a group", { thread: { groupId: "group-1", externalConversationId: null } }],
     [
       "a messaging channel",
@@ -1620,6 +1642,29 @@ describe("a code the site emailed to the mail the owner connected", () => {
     );
     expect(effects.get(CONNECTED_CLAIM)).toMatchObject({ runId: "run-1", kind: "emailed_code" });
     expect(effects.get("emailed-code:run:run-1:example.test")).toMatchObject({ runId: "run-1" });
+  });
+
+  it("leaves a subdomain mailbox's peer code for the owner's manual answer", async () => {
+    publishKeys();
+    const origin = "https://staff.example.test";
+    const card = codeCard(origin);
+    const message = await connectedMail({
+      from: "peer@staff.example.test",
+      to: "owner@staff.example.test",
+    });
+    const { deliver, ask, answerRunInput, effects, enqueue } = inbox({
+      emails: [],
+      cards: { "run-1": card },
+      mailbox: "owner@staff.example.test",
+      connectedMailCodes: true,
+      connected: { recent: async () => ({ messages: [message] }) },
+    });
+    expect(await deliver("run-1")).toBe(0);
+    expect(await ask("run-1", { inbox: false, connected: true, origin })).toBeUndefined();
+    expect(answerRunInput).not.toHaveBeenCalled();
+    expect(enqueue).not.toHaveBeenCalled();
+    expect([...effects.keys()]).toEqual(["emailed-code:page:request-run-1"]);
+    expect(card.status).toBe("pending");
   });
 
   it("asks the reader for the site's newest mail in the window, on one connection", async () => {

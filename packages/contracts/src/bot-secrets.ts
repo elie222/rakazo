@@ -313,8 +313,8 @@ export function oneTimeCodeWritings(code: string): string[] {
  */
 export const REDACTED_MARK = "[redacted]";
 
-// Whitespace (no-break and other Unicode spaces too), zero-width space, dots, dashes, middle dot.
-const SPELLING_SEPARATORS = String.raw`[\s\u200b.\p{Pd}\u00b7]*`;
+// Whitespace, invisible format characters, dots, dashes and middle dot.
+const SPELLING_SEPARATORS = String.raw`[\s\p{Cf}.\p{Pd}\u00b7]*`;
 
 /**
  * Email text with `code` hidden as its characters in order, in either case, with any run of
