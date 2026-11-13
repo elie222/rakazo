@@ -32,7 +32,6 @@ import {
   claimCheckoutLease,
   createBillingAccount,
   creditAccount,
-  expireModelCredits,
   extendByokTrialCheckout,
   hasBillingAccess,
   hasModelAccess,
@@ -52,6 +51,7 @@ import {
   replaceBillingCustomer,
   reserveByokTrialCheckout,
   syncBillingSnapshot,
+  unexpiredCreditAccount,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { applyAccessGrants } from "./access-grants.js";
@@ -615,9 +615,8 @@ export function createBillingService(deps: {
           await applyAccessGrants(prisma, { ...actor, organizationId }).catch((error) =>
             getLogger().error("access grant failed", error),
           );
-        await expireModelCredits(prisma, organizationId);
         const [credits, account, computerAllowance, days, hadTrial] = await Promise.all([
-          creditAccount(prisma, organizationId),
+          unexpiredCreditAccount(prisma, organizationId),
           billingAccountForOrganization(prisma, organizationId),
           deps.sandbox ? sandboxAllowance({ prisma, sandbox: deps.sandbox }, organizationId) : null,
           trialDays(organizationId),

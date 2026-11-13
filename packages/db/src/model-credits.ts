@@ -34,6 +34,22 @@ export async function creditAccount(prisma: PrismaClient, organizationId: string
   }
 }
 
+/** Reads never lock the wallet. Lapsed credits the reconciler has not expired yet are left out. */
+export async function unexpiredCreditAccount(
+  prisma: PrismaClient,
+  organizationId: string,
+  now = new Date(),
+) {
+  const [account, lapsed] = await Promise.all([
+    creditAccount(prisma, organizationId),
+    prisma.modelCreditLot.aggregate({
+      where: { organizationId, expiresAt: { lte: now }, availableMicros: { gt: 0n } },
+      _sum: { availableMicros: true },
+    }),
+  ]);
+  return { ...account, balanceMicros: account.balanceMicros - (lapsed._sum.availableMicros ?? 0n) };
+}
+
 /** Payment replay and refunds reconcile one durable grant; refunds can never be re-credited. */
 export async function reconcileCreditPurchase(
   prisma: PrismaClient,
@@ -252,7 +268,7 @@ export async function recordModelCreditReceipt(
     });
 }
 
-/** Also called by billing reads and the background reconciler when no new invoice arrives. */
+/** The background reconciler calls this when no new invoice arrives. */
 export async function expireModelCredits(
   prisma: PrismaClient,
   organizationId: string,
