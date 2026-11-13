@@ -224,6 +224,25 @@ describe("tool definitions", () => {
     );
   });
 
+  it("counts an unnamed tool as invalid and scans every schema position", () => {
+    const tools = summarizeProviderRequest({
+      tools: [
+        { type: "function", parameters: { type: "object" } },
+        {
+          type: "function",
+          name: "x",
+          parameters: {
+            type: "object",
+            dependencies: { a: { oneOf: [] } },
+            additionalItems: { $ref: "#" },
+          },
+        },
+      ],
+    })?.tools;
+    expect(tools?.invalidNames).toBe(1);
+    expect(tools?.lists[0]?.tools[1]).toMatch(/ uses=\$ref,dependencies,oneOf$/);
+  });
+
   it("counts a name declared twice in one list", () => {
     const tool = { type: "function", name: "x", parameters: { type: "object" } };
     expect(summarizeProviderRequest({ tools: [tool, tool] })?.tools?.duplicateNames).toBe(1);

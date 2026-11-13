@@ -125,10 +125,18 @@ const RISKY_SCHEMA_KEYWORDS = new Set([
   "prefixItems",
   "contains",
 ]);
-const SCHEMA_MAPS = ["properties", "patternProperties", "$defs", "definitions", "dependentSchemas"];
+const SCHEMA_MAPS = [
+  "properties",
+  "patternProperties",
+  "$defs",
+  "definitions",
+  "dependentSchemas",
+  "dependencies",
+];
 const SCHEMA_LISTS = ["anyOf", "oneOf", "allOf", "prefixItems"];
 const SCHEMA_VALUES = [
   "items",
+  "additionalItems",
   "additionalProperties",
   "not",
   "if",
@@ -176,6 +184,7 @@ function byteLength(value: unknown): number {
 
 interface ToolEntry {
   name: string;
+  invalidName: boolean;
   summary: string;
 }
 
@@ -185,7 +194,7 @@ interface ToolEntry {
  */
 function describeTools(tool: unknown): ToolEntry[] {
   const item = record(tool);
-  if (!item) return [{ name: "", summary: "?" }];
+  if (!item) return [{ name: "", invalidName: true, summary: "?" }];
   const declarations = item.functionDeclarations ?? item.function_declarations;
   if (Array.isArray(declarations)) return declarations.flatMap(describeTools);
   const definition = record(item.function) ?? item;
@@ -210,7 +219,9 @@ function describeTools(tool: unknown): ToolEntry[] {
     if (found.depth > 10) flags.push(`depth=${found.depth}`);
   }
   const label = name ? name.slice(0, MAX_TOOL_NAME) : "(unnamed)";
-  return [{ name, summary: `${label} ${flags.join(" ")}` }];
+  // Built-in tools such as a web search carry a type and no name.
+  const invalidName = name ? !VALID_TOOL_NAME.test(name) : !type || type === "function";
+  return [{ name, invalidName, summary: `${label} ${flags.join(" ")}` }];
 }
 
 function describeToolLists(body: Record<string, unknown>): ProviderRequestShape["tools"] {
@@ -234,12 +245,11 @@ function describeToolLists(body: Record<string, unknown>): ProviderRequestShape[
     all.push(...entries);
     return { at, tools: compact(entries.map((entry) => entry.summary)) };
   });
-  const names = all.map((entry) => entry.name).filter(Boolean);
   const omittedLists = Math.max(0, described.length - MAX_TOOL_LISTS);
   return {
     count: all.length,
-    maxNameLength: Math.max(0, ...names.map((name) => name.length)),
-    invalidNames: names.filter((name) => !VALID_TOOL_NAME.test(name)).length,
+    maxNameLength: all.reduce((longest, { name }) => Math.max(longest, name.length), 0),
+    invalidNames: all.filter((entry) => entry.invalidName).length,
     duplicateNames,
     ...(omittedLists ? { omittedLists } : {}),
     lists: described.slice(-MAX_TOOL_LISTS),
