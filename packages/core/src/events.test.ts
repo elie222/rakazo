@@ -1,3 +1,4 @@
+import type { MessageBlock } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import {
   appendTextSegment,
@@ -20,12 +21,14 @@ import {
   runFailureError,
   sanitizeJsonValue,
   sanitizeUtf16ForJson,
+  splitToolHistory,
   stripLiveStreamingProgress,
   toolNameFromLabel,
   trackToolCallStreak,
   trackToolNameStreak,
   withLiveStreamingProgress,
   withoutLastToolStepNotes,
+  withToolHistory,
   withToolStepOutcomes,
 } from "./events.js";
 import { modelFallbackFailure, normalizeRunError } from "./run-error.js";
@@ -1161,5 +1164,40 @@ describe("heldActivityLine", () => {
   it("drops a finished worker's status while another keeps working", () => {
     const both = heldActivityLine(undefined, "Checking availability", ["run-1", "run-2"]);
     expect(heldActivityLine(both, undefined, ["run-2"]).line).toBeUndefined();
+  });
+});
+
+describe("a reply's kept tool calls", () => {
+  it("split off the blocks as one entry per step and merge back unchanged", () => {
+    const kept = {
+      tool: "shell",
+      calls: [{ arguments: '{"command":"ls"}', result: "notes.txt" }],
+    };
+    const blocks = [
+      {
+        kind: "steps",
+        steps: [
+          { label: "Shell", count: 1, ...kept },
+          { label: "Web fetch", count: 2 },
+        ],
+      },
+      { kind: "text", text: "Done." },
+      { kind: "steps", steps: [{ label: "Shell", count: 1, ...kept }] },
+    ] as MessageBlock[];
+    const { blocks: shown, toolHistory } = splitToolHistory(blocks);
+    expect(JSON.stringify(shown)).not.toMatch(/"tool"|"calls"|notes\.txt/);
+    expect(toolHistory).toEqual({ steps: [kept, null, kept] });
+    expect(withToolHistory(shown, toolHistory)).toEqual([
+      {
+        kind: "steps",
+        steps: [
+          { label: "Shell", count: 1, ...kept },
+          { label: "Web fetch", count: 2 },
+        ],
+      },
+      { kind: "text", text: "Done." },
+      { kind: "steps", steps: [{ label: "Shell", count: 1, ...kept }] },
+    ]);
+    expect(splitToolHistory(shown).toolHistory).toBeUndefined();
   });
 });

@@ -6,6 +6,7 @@ import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   extraDisplayActionCommand,
+  extraDisplayInputCommand,
   observeExtraDisplayCommand,
   parseExtraDisplayObservation,
 } from "./extra-displays.js";
@@ -94,5 +95,33 @@ describe("extra display scroll", () => {
     expect(extraDisplayActionCommand(layout, { kind: "scroll", direction: "up", amount: 2 })).toBe(
       "DISPLAY=:3 xdotool click --repeat 2 4",
     );
+  });
+});
+
+describe("extra display text input", () => {
+  const layout = { display: ":3", displayNumber: 3 };
+
+  it.each([
+    "-1200",
+    "--help",
+    "- first item\n- second item",
+    "ordinary text",
+    "中文",
+    "single ' and double \" quotes",
+    "$(printf injected); `printf injected`",
+    "",
+  ])("passes %j as literal text on both input paths", async (text) => {
+    const bin = mkdtempSync(path.join(tmpdir(), "rakazo-input-bin-"));
+    cleanups.push(bin);
+    // Record argv after shell parsing, without sending input to a real desktop.
+    const tool = path.join(bin, "xdotool");
+    writeFileSync(tool, '#!/bin/sh\nprintf "%s\\0" "$@"\n');
+    chmodSync(tool, 0o755);
+    for (const command of [extraDisplayActionCommand, extraDisplayInputCommand]) {
+      const { stdout } = await run("sh", ["-c", command(layout, { kind: "clipboard", text })], {
+        env: { ...process.env, PATH: `${bin}:${process.env.PATH}` },
+      });
+      expect(stdout.split("\0")).toEqual(["type", "--", text, ""]);
+    }
   });
 });

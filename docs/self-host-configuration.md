@@ -60,9 +60,6 @@ CREATEOS_SANDBOX_API_KEY= # when SANDBOX_PROVIDER=createos
 BOAT_API_KEY=             # when SANDBOX_PROVIDER=boat
 ```
 
-`COMPUTER_TAKEOVER_TTL_MS` (default `900000`, 15 minutes) is how long a person's takeover of a bot's
-screen lasts before control expires.
-
 `STUCK_WORK_NOTIFY_AFTER_MS` (default `14400000`, 4 hours) is how long a queued run or an unanswered
 question may sit before the worker sends a "still waiting" reminder. `STUCK_WORK_EXPIRE_AFTER_MS`
 (default `86400000`, 24 hours) is how long before the worker stops it, leaves a status line in the

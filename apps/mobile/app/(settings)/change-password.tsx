@@ -14,6 +14,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeActionButton } from "../../components/native-action-button";
 import { changePassword } from "../../lib/api-auth";
 import { mobileTokens } from "../../lib/appearance";
+import { endCallBeforeSessionEnd } from "../../lib/call-session";
 import { native, useThemedStyles } from "../../lib/native";
 import { useSideInsets } from "../../lib/side-insets";
 import { errorText } from "../../lib/user-error";
@@ -53,6 +54,8 @@ export default function ChangePassword() {
     setPending(true);
     setError(null);
     try {
+      // Hang up while the session still exists, so the server records the call's end.
+      await endCallBeforeSessionEnd();
       await changePassword(currentPassword, newPassword);
       if (!mounted.current) return;
       setCurrentPassword("");

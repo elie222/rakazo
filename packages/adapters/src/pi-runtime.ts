@@ -318,6 +318,8 @@ export class PiAgentRuntime implements AgentRuntime {
         resumeHost = host;
         const allTools = toAgentTools(toolDefs, host);
         const toolsByAgentName = agentToolDefinitions(toolDefs);
+        // Replayed calls to tools the model no longer has say so in their results.
+        const offeredToolNames = new Set(allTools.map((tool) => tool.name));
         let tools = allTools;
         const seenSteeringIds: string[] = [];
         const initialSteering = request.claimSteering ? await request.claimSteering([]) : [];
@@ -340,6 +342,7 @@ export class PiAgentRuntime implements AgentRuntime {
             withoutSteeringMessages(request.history, initialSteering),
             request.prompt,
             request.sourceMessageId,
+            offeredToolNames,
           );
         const representedHistoryIds = new Set(
           restored
@@ -1112,7 +1115,9 @@ export class PiAgentRuntime implements AgentRuntime {
               const addedHistory = withoutSteeringMessages(request.history, initialSteering).filter(
                 (message) => message.id && !representedHistoryIds.has(message.id),
               );
-              agent.state.messages.push(...toHistory(addedHistory, ""));
+              agent.state.messages.push(
+                ...toHistory(addedHistory, "", undefined, offeredToolNames),
+              );
               for (const message of addedHistory)
                 if (message.id) representedHistoryIds.add(message.id);
               for (const item of initialSteering) {
@@ -1127,7 +1132,8 @@ export class PiAgentRuntime implements AgentRuntime {
                 });
               }
               // A run cannot continue from an assistant message. What trails here is this
-              // bot's own earlier text, which the restored transcript already carries.
+              // bot's own earlier reply, which the restored transcript already carries; a
+              // continue from its tool results would extend that old reply.
               for (let last = agent.state.messages.at(-1); isHistoryReply(last); ) {
                 agent.state.messages.pop();
                 last = agent.state.messages.at(-1);

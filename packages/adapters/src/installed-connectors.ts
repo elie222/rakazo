@@ -106,6 +106,7 @@ const ApiOperationSchema = z.object({
   }),
   readOnly: z.boolean().default(false),
   queryParameters: z.array(z.string().min(1).max(120)).default([]),
+  commaSeparatedQueryParameters: z.array(z.string().min(1).max(120)).optional(),
   headerParameters: z.array(ModelHeaderName).default([]),
 });
 
@@ -560,12 +561,18 @@ export function importOpenApiDocument(document: Record<string, unknown>): {
   baseUrl: string;
   operations: ApiOperation[];
 } {
-  const server = Array.isArray(document.servers) ? document.servers[0] : undefined;
-  const baseUrl =
-    server && typeof server === "object" && typeof (server as { url?: unknown }).url === "string"
-      ? String((server as { url: string }).url)
-      : "";
-  if (!baseUrl) throw new Error("OpenAPI document must define servers[0].url");
+  const server = asRecord(Array.isArray(document.servers) ? document.servers[0] : undefined);
+  if (typeof server?.url !== "string" || !server.url) {
+    throw new Error("OpenAPI document must define servers[0].url");
+  }
+  const variables = asRecord(server.variables);
+  const baseUrl = server.url.replace(/\{([^{}]+)\}/g, (_placeholder, name: string) => {
+    const variable = asRecord(variables?.[name]);
+    if (typeof variable?.default !== "string") {
+      throw new Error("OpenAPI server variable must define a string default");
+    }
+    return variable.default;
+  });
   assertNoSensitiveQuery(baseUrl);
   const paths = document.paths;
   if (!paths || typeof paths !== "object" || Array.isArray(paths)) {
@@ -585,6 +592,7 @@ export function importOpenApiDocument(document: Record<string, unknown>): {
       const properties: Record<string, unknown> = {};
       const required: string[] = [];
       const queryParameters: string[] = [];
+      const commaSeparatedQueryParameters: string[] = [];
       const headerParameters: string[] = [];
       for (const parameter of openApiParameters(
         document,
@@ -598,7 +606,15 @@ export function importOpenApiDocument(document: Record<string, unknown>): {
           typeof parameter.description === "string"
             ? { ...schema, description: parameter.description }
             : schema;
-        if (parameter.in === "query") queryParameters.push(parameter.name);
+        if (parameter.in === "query") {
+          queryParameters.push(parameter.name);
+          if (
+            (parameter.style === undefined || parameter.style === "form") &&
+            parameter.explode === false
+          ) {
+            commaSeparatedQueryParameters.push(parameter.name);
+          }
+        }
         if (parameter.in === "header") {
           if (isSensitiveHeader(parameter.name) || isTransportHeader(parameter.name)) {
             throw new Error(`OpenAPI operation ${id} contains unsafe header ${parameter.name}`);
@@ -633,6 +649,7 @@ export function importOpenApiDocument(document: Record<string, unknown>): {
         },
         readOnly: method === "get",
         queryParameters,
+        ...(commaSeparatedQueryParameters.length > 0 ? { commaSeparatedQueryParameters } : {}),
         headerParameters,
       });
       if (operations.length >= 100) break;
@@ -972,7 +989,11 @@ async function executeApiOperation(
     for (const [key, value] of Object.entries(args)) {
       if (consumed.has(key) || value == null) continue;
       if (Array.isArray(value)) {
-        for (const item of value) url.searchParams.append(key, String(item));
+        if (operation.commaSeparatedQueryParameters?.includes(key)) {
+          url.searchParams.set(key, value.map(String).join(","));
+        } else {
+          for (const item of value) url.searchParams.append(key, String(item));
+        }
       } else if (typeof value !== "object") {
         url.searchParams.set(key, String(value));
       }
@@ -983,7 +1004,11 @@ async function executeApiOperation(
       consumed.add(key);
       if (value == null) continue;
       if (Array.isArray(value)) {
-        for (const item of value) url.searchParams.append(key, String(item));
+        if (operation.commaSeparatedQueryParameters?.includes(key)) {
+          url.searchParams.set(key, value.map(String).join(","));
+        } else {
+          for (const item of value) url.searchParams.append(key, String(item));
+        }
       } else {
         url.searchParams.set(key, String(value));
       }
