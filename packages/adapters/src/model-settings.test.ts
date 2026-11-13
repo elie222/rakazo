@@ -18,6 +18,35 @@ const KEY = "sk-synthetic-key";
 const oauth = { type: "oauth" as const, access: "access", refresh: "refresh", expires: 1 };
 
 describe("stored model settings", () => {
+  it.each(["__proto__", "constructor", "toString"])(
+    "preserves settings for the model named %s",
+    (modelId) => {
+      const configured = withModelSettings(
+        parseModelSecret(
+          JSON.stringify({ kind: "openai_compatible", baseUrl: "https://models.example.test/v1" }),
+        ),
+        modelId,
+        { images: true, reasoning: true, maxTokens: 2000 },
+      );
+      const saved = parseModelSecret(serializeModelSecret(configured));
+      expect(Object.hasOwn(saved.models!, modelId)).toBe(true);
+      expect(saved.models?.[modelId]).toEqual({
+        images: true,
+        reasoning: true,
+        maxTokens: 2000,
+      });
+      expect(connectionModelSettings(saved, "openai-compatible", modelId)).toEqual(
+        saved.models?.[modelId],
+      );
+      expect(
+        credentialModelSettings(
+          { provider: "openai-compatible", modelSettings: saved.models },
+          modelId,
+        ),
+      ).toEqual(saved.models?.[modelId]);
+    },
+  );
+
   it("keep each model's settings through a round trip, dropping invalid ones", () => {
     const stored = parseModelSecret(
       JSON.stringify({

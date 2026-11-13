@@ -25,7 +25,7 @@ type StoredModelSettings = { models?: Record<string, ModelSettings> };
 
 function parsedModelSettings(value: unknown): StoredModelSettings {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
-  const models: Record<string, ModelSettings> = {};
+  const models: Record<string, ModelSettings> = Object.create(null);
   for (const [modelId, settings] of Object.entries(value)) {
     const parsed = ModelSettingsSchema.safeParse(settings);
     // An empty entry is kept: it means the model's card, not the connection's earlier values.
