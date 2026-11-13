@@ -4,7 +4,6 @@ import type {
   ArtifactStore,
   BackgroundJob,
   JobPublisher,
-  MessagingSurface,
   SandboxProvider,
 } from "@rakazo/adapter-kit";
 import { memoryRetainTurnJob, SandboxUnresponsiveError } from "@rakazo/adapter-kit";
@@ -22,11 +21,6 @@ import {
 } from "./conversation-memory.js";
 import { createRunExecutor } from "./executor.js";
 import { compactHistory } from "./history-compaction.js";
-import {
-  deliverMessagingOutbound,
-  mirrorMessagingOutbound,
-  mirrorMessagingProgress,
-} from "./messaging-delivery.js";
 import type { EncryptedSecretStore } from "./secrets.js";
 
 vi.mock("./conversation-memory.js", () => ({
@@ -38,11 +32,6 @@ vi.mock("./history-compaction.js", () => ({ compactHistory: vi.fn(async () => un
 vi.mock("./computer-control.js", async (importOriginal) => ({
   ...(await importOriginal<typeof ComputerControl>()),
   expireComputerControl: vi.fn(async () => false),
-}));
-vi.mock("./messaging-delivery.js", () => ({
-  deliverMessagingOutbound: vi.fn(async () => undefined),
-  mirrorMessagingOutbound: vi.fn(async () => undefined),
-  mirrorMessagingProgress: vi.fn(async () => undefined),
 }));
 
 const owner = { spaceId: "space-1", userId: "user-1" };
@@ -71,70 +60,80 @@ it("runs post-clear memory purge as its captured tenant after source rows are de
 });
 
 describe("createBackgroundJobHandlers", () => {
-  it("delivers directly when shutdown rejects a completed run's mirror job", async () => {
-    const enqueueError = new Error("Background job publisher is closing");
-    const jobs = {
-      enqueue: vi.fn(async () => {
-        throw enqueueError;
-      }),
-    } as unknown as JobPublisher;
-    const sink = createTestSink();
-    installLogger(createLogger({ service: "rakazo-worker", sinks: [sink] }));
-    const handlers = createBackgroundJobHandlers({
-      executor: {
-        continueRun: vi.fn(async () => undefined),
-      } as unknown as ReturnType<typeof createRunExecutor>,
-      prisma: { run: owned() } as unknown as PrismaClient,
-      sandbox: {} as unknown as SandboxProvider,
-      home: {} as unknown as AgentHomeStore,
-      artifacts: {} as unknown as ArtifactStore,
-      jobs,
-      events: {} as unknown as ThreadEvents,
-      workerId: "worker-1",
-      runtime: {} as unknown as AgentRuntime,
-      secretStore: {} as unknown as EncryptedSecretStore,
-      memoryProviders: { resolve: vi.fn(async () => null) },
-      messaging: {} as unknown as MessagingSurface,
+  function chatHandlers() {
+    const order: string[] = [];
+    const continueRun = vi.fn(async () => {
+      order.push("continue");
     });
+    const delivery = {
+      deliverRun: vi.fn(async (runId: string, _options?: { progress?: boolean }) => {
+        order.push(`deliver:${runId}`);
+      }),
+      sendJob: vi.fn(async () => undefined),
+      drainAll: vi.fn(async () => {
+        order.push("drain");
+      }),
+      reportFailure: vi.fn(),
+    };
+    const teamChat = {
+      engageJob: vi.fn(async () => undefined),
+      ambientJob: vi.fn(async () => undefined),
+    };
+    const handlers = createBackgroundJobHandlers({
+      executor: { continueRun },
+      prisma: { run: owned() },
+      workerId: "worker-1",
+      messagingDelivery: delivery,
+      teamChat,
+    } as unknown as Parameters<typeof createBackgroundJobHandlers>[0]);
+    return { handlers, delivery, teamChat, order };
+  }
 
+  it("sends what a run said once its turn ends, without failing the run when sending fails", async () => {
+    const { handlers, delivery, order } = chatHandlers();
     await handlers["run.continue"]({ runId: "run-1" });
+    expect(order).toEqual(["continue", "deliver:run-1"]);
 
-    expect(mirrorMessagingOutbound).toHaveBeenCalledWith(
-      expect.objectContaining({ prisma: expect.anything(), messaging: expect.anything(), jobs }),
-      "run-1",
+    const failure = new Error("chat app unavailable");
+    delivery.deliverRun.mockRejectedValueOnce(failure);
+    await expect(handlers["run.continue"]({ runId: "run-2" })).resolves.toBeUndefined();
+    expect(delivery.reportFailure).toHaveBeenCalledExactlyOnceWith(
+      "messaging reply delivery error",
+      failure,
     );
-    expect(deliverMessagingOutbound).toHaveBeenCalledWith(
-      expect.objectContaining({ prisma: expect.anything(), messaging: expect.anything(), jobs }),
-      {},
-      expect.objectContaining({ operationId: "messaging.deliver:drain" }),
-    );
-    expect(sink.events.some((event) => event.message === "messaging.deliver enqueue error")).toBe(
-      true,
-    );
-    installLogger(createLogger({ service: "rakazo-worker", level: "off", sinks: [] }));
   });
 
-  it("sends a running run's interim messages without marking the run mirrored", async () => {
-    vi.mocked(mirrorMessagingOutbound).mockClear();
-    const handlers = createBackgroundJobHandlers({
-      executor: {} as unknown as ReturnType<typeof createRunExecutor>,
-      prisma: { run: owned() } as unknown as PrismaClient,
-      sandbox: {} as unknown as SandboxProvider,
-      home: {} as unknown as AgentHomeStore,
-      artifacts: {} as unknown as ArtifactStore,
-      jobs: {} as unknown as JobPublisher,
-      events: {} as unknown as ThreadEvents,
-      workerId: "worker-1",
-      runtime: {} as unknown as AgentRuntime,
-      secretStore: {} as unknown as EncryptedSecretStore,
-      memoryProviders: { resolve: vi.fn(async () => null) },
-      messaging: {} as unknown as MessagingSurface,
+  it("sends a recorded chat message from its backup job with the job's attempt", async () => {
+    const { handlers, delivery } = chatHandlers();
+    await handlers["messaging.send"]({ outboundId: "outbound-1" }, undefined, {
+      number: 2,
+      max: 5,
     });
+    expect(delivery.sendJob).toHaveBeenCalledExactlyOnceWith("outbound-1", { number: 2, max: 5 });
+  });
 
-    await handlers["messaging.progress"]({ runId: "run-1" });
+  it("sends an ended run's reply from its backup job", async () => {
+    const { handlers, delivery } = chatHandlers();
+    await handlers["messaging.reply"]({ runId: "run-1" });
+    expect(delivery.deliverRun).toHaveBeenCalledExactlyOnceWith("run-1");
+  });
 
-    expect(mirrorMessagingProgress).toHaveBeenCalledWith(expect.anything(), "run-1");
-    expect(mirrorMessagingOutbound).not.toHaveBeenCalled();
+  it("drains the previous release's delivery jobs through the new path", async () => {
+    const { handlers, delivery, order } = chatHandlers();
+    await handlers["messaging.deliver"]({ runId: "run-1" });
+    await handlers["messaging.deliver"]({});
+    expect(order).toEqual(["deliver:run-1", "drain", "drain"]);
+
+    await handlers["messaging.progress"]({ runId: "run-2" });
+    expect(delivery.deliverRun).toHaveBeenLastCalledWith("run-2", { progress: true });
+  });
+
+  it("hands team-chat engagement and ambient decisions to team chat", async () => {
+    const { handlers, teamChat } = chatHandlers();
+    await handlers["team_chat.engage"]({ externalMessageId: "external-1" });
+    await handlers["team_chat.ambient"]({ conversationId: "conversation-1" });
+    expect(teamChat.engageJob).toHaveBeenCalledExactlyOnceWith("external-1");
+    expect(teamChat.ambientJob).toHaveBeenCalledExactlyOnceWith("conversation-1");
   });
 
   it("compacts the requested thread with the runtime, job publisher, and model key it was given", async () => {

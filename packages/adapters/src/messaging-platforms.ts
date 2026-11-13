@@ -364,20 +364,23 @@ export function messagingPlatformsFromEnv(
   // token the adapter accepts unsigned webhook posts. Encrypt key and
   // domain are optional (event encryption / open.feishu.cn vs open.larksuite.com).
   if (env.larkAppId && env.larkAppSecret && env.larkVerificationToken) {
+    // Webhook-only: ws/long-connection incoming would consume events so
+    // the HTTP webhook at /api/v1/messaging/webhook/lark never sees them.
+    const adapter = new LazyLarkAdapter({
+      ...(options.larkTransport ? { httpInstance: options.larkTransport } : {}),
+      appId: env.larkAppId,
+      appSecret: env.larkAppSecret,
+      verificationToken: env.larkVerificationToken,
+      // Explicit defaults prevent the adapter from rereading untrimmed process.env values.
+      encryptKey: env.larkEncryptKey ?? "",
+      domain: env.larkDomain?.toLowerCase() === "lark" ? Domain.Lark : Domain.Feishu,
+    });
     platforms.push({
       provider: "lark",
       capabilities: { direct: true, groups: false, receipt: null },
-      // Webhook-only: ws/long-connection incoming would consume events so
-      // the HTTP webhook at /api/v1/messaging/webhook/lark never sees them.
-      adapter: new LazyLarkAdapter({
-        ...(options.larkTransport ? { httpInstance: options.larkTransport } : {}),
-        appId: env.larkAppId,
-        appSecret: env.larkAppSecret,
-        verificationToken: env.larkVerificationToken,
-        // Explicit defaults prevent the adapter from rereading untrimmed process.env values.
-        encryptKey: env.larkEncryptKey ?? "",
-        domain: env.larkDomain?.toLowerCase() === "lark" ? Domain.Lark : Domain.Feishu,
-      }),
+      adapter,
+      postOnce: (threadId, message, idempotencyKey) =>
+        adapter.postMessage(threadId, message, idempotencyKey),
     });
   }
 

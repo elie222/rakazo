@@ -908,10 +908,19 @@ export interface BackgroundJobPayloads {
       source: { spaceId: string; userId: string; botId: string; threadId: string };
     };
   };
+  /** Backup for one recorded outgoing chat message, and the conversation queued behind it. */
+  "messaging.send": { outboundId: string };
+  /** Backup for recording and sending what an ended run said where its turn came from. */
+  "messaging.reply": { runId: string };
+  /** The previous release's outbox drain; drained by the new delivery path. */
   "messaging.deliver": { runId?: string };
-  /** A running chat-app run's interim messages; the run is not marked mirrored. */
+  /** The previous release's interim-message mirror; drained by the new delivery path. */
   "messaging.progress": { runId: string };
   "messaging.credential-cleanup": { installationId: string; ref: string };
+  /** Backup for answering one inbound team-chat message, and the end of its routine routing. */
+  "team_chat.engage": { externalMessageId: string };
+  /** Decide whether a conversation's unanswered team-chat messages need the bot. */
+  "team_chat.ambient": { conversationId: string };
   /** Reconcile durable remote-agent intent; scope is loaded from the database. */
   "cloud_agent.poll": { agentId: string };
   "purchase.poll": { purchaseId: string };
@@ -942,6 +951,8 @@ export type BackgroundJob = {
     replaceLockedBefore?: Date;
     /** Cap retried executions; omit to use the job queue's default. */
     maxAttempts?: number;
+    /** Jobs sharing a queue run one at a time, in order. */
+    queueName?: string;
   };
 }[BackgroundJobName];
 
@@ -950,10 +961,17 @@ export interface BackgroundJobExecution {
   onRunStarted(): void;
 }
 
+/** Which try this is, for a handler that settles its work differently on the last one. */
+export interface BackgroundJobAttempt {
+  number: number;
+  max: number;
+}
+
 export type BackgroundJobHandlers = {
   [Name in BackgroundJobName]: (
     payload: BackgroundJobPayloads[Name],
     execution?: BackgroundJobExecution,
+    attempt?: BackgroundJobAttempt,
   ) => Promise<void>;
 };
 

@@ -7,7 +7,6 @@ import type {
   BackgroundJobPayloads,
   JobPublisher,
   MediaGenerationProvider,
-  MessagingSurface,
   PaymentWalletProvider,
   SandboxProvider,
   SecretStore,
@@ -15,7 +14,6 @@ import type {
 import {
   memoryRetainTurnJob,
   memoryRetainTurnRecoveryJobKey,
-  messagingDeliverJob,
   SandboxRateLimitError,
   SandboxUnavailableError,
   SandboxUnresponsiveError,
@@ -40,13 +38,10 @@ import type { ExpoPushProvider } from "./expo-push.js";
 import { compactHistory } from "./history-compaction.js";
 import { pollMediaVideo } from "./media-video-poll.js";
 import type { MemoryProviderResolver } from "./memory-provider-factory.js";
-import {
-  deliverMessagingOutbound,
-  mirrorMessagingOutbound,
-  mirrorMessagingProgress,
-} from "./messaging-delivery.js";
+import type { MessagingDelivery } from "./messaging-delivery.js";
 import { pollPurchase } from "./purchase-poll.js";
 import { expireTaughtSkillTeaching } from "./teaching-session.js";
+import type { TeamChat } from "./team-chat.js";
 
 type Tenant = { spaceId: string; userId: string };
 
@@ -92,7 +87,8 @@ export function createBackgroundJobHandlers(deps: {
   memoryProviders: MemoryProviderResolver;
   deploymentModelKey?: string;
   deploymentModelConfigured?: boolean;
-  messaging?: MessagingSurface;
+  messagingDelivery?: MessagingDelivery;
+  teamChat?: TeamChat;
   cloudAgent?: CloudAgentConnection | null;
   userCloudAgents?: UserCloudAgents;
   paymentWallet?: PaymentWalletProvider | null;
@@ -100,32 +96,7 @@ export function createBackgroundJobHandlers(deps: {
   mediaGeneration?: MediaGenerationProvider;
   maxUploadSizeBytes?: number;
 }): BackgroundJobHandlers {
-  const messagingDeps = deps.messaging
-    ? {
-        prisma: deps.prisma,
-        messaging: deps.messaging,
-        events: deps.events,
-        jobs: deps.jobs,
-        artifacts: deps.artifacts,
-      }
-    : undefined;
-  // The outbox holds every Space's pending sends, so draining it is cross-tenant.
-  const drainMessaging = async () => {
-    if (!messagingDeps) return;
-    await runAsSystem("drain the messaging outbox across Spaces", () =>
-      deliverMessagingOutbound(
-        messagingDeps,
-        {},
-        {
-          operationId: "messaging.deliver:drain",
-          traceId: "messaging.deliver:drain",
-          spaceId: "",
-          userId: "",
-          signal: new AbortController().signal,
-        },
-      ),
-    );
-  };
+  const delivery = deps.messagingDelivery;
   const run = ({ runId }: { runId: string }) =>
     deps.prisma.run.findUnique({ where: { id: runId }, select: OWNER });
   const routine = ({ routineId }: { routineId: string }) =>
@@ -160,16 +131,18 @@ export function createBackgroundJobHandlers(deps: {
       if (execution)
         await deps.executor.continueRun(payload.runId, deps.workerId, execution.onRunStarted);
       else await deps.executor.continueRun(payload.runId, deps.workerId);
-      // Automatic messaging mirror: once the run's bot messages are durable,
-      // copy them into the outbox. Never let mirror failures fail the run.
-      if (messagingDeps) {
-        await mirrorMessagingOutbound(messagingDeps, payload.runId);
-        await deps.jobs.enqueue(messagingDeliverJob()).catch(async (error) => {
-          getLogger().error("messaging.deliver enqueue error", error);
-          await drainMessaging();
-        });
-      }
+      // The process that ran the turn sends what it said straight away. An ended run's reply
+      // job, scheduled with its status, covers a failure here; it never fails the run.
+      await delivery?.deliverRun(payload.runId).catch((error) => {
+        delivery.reportFailure("messaging reply delivery error", error);
+      });
     }),
+    "messaging.send": async ({ outboundId }, _execution, attempt) => {
+      await delivery?.sendJob(outboundId, attempt);
+    },
+    "messaging.reply": async ({ runId }) => {
+      await delivery?.deliverRun(runId);
+    },
     "messaging.credential-cleanup": async ({ installationId, ref }) => {
       await runAsSystem("clean up a retired messaging credential", async () => {
         const installation = await deps.prisma.messagingInstallation.findUnique({
@@ -183,16 +156,19 @@ export function createBackgroundJobHandlers(deps: {
         });
       });
     },
+    // The previous release's jobs, drained once by this one.
     "messaging.deliver": async ({ runId }) => {
-      if (runId && messagingDeps) {
-        await asOwner(run, () => mirrorMessagingOutbound(messagingDeps, runId))({ runId });
-      }
-      await drainMessaging();
+      if (runId) await delivery?.deliverRun(runId);
+      await delivery?.drainAll();
     },
     "messaging.progress": async ({ runId }) => {
-      if (!messagingDeps) return;
-      await asOwner(run, () => mirrorMessagingProgress(messagingDeps, runId))({ runId });
-      await drainMessaging();
+      await delivery?.deliverRun(runId, { progress: true });
+    },
+    "team_chat.engage": async ({ externalMessageId }) => {
+      await deps.teamChat?.engageJob(externalMessageId);
+    },
+    "team_chat.ambient": async ({ conversationId }) => {
+      await deps.teamChat?.ambientJob(conversationId);
     },
     "routine.wakeup": asOwner(routine, async (payload) => {
       await deps.executor.wakeRoutine(payload.routineId, payload.scheduledFor);
