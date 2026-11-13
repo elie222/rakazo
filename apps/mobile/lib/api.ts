@@ -790,7 +790,7 @@ async function request(
             cachedSpaceId = previousSpaceId;
             bumpSpaceSelectionGeneration();
             if (requestSessionGeneration === currentSessionGeneration()) {
-              await resumeSelectedSpaceNotifications(
+              void resumeSelectedSpaceNotifications(
                 previousSpaceId,
                 spaceSelectionGeneration,
               ).catch(() => undefined);

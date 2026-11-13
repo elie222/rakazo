@@ -1710,6 +1710,13 @@ describe("mobile API server and Space selection", () => {
 
     const pending = adoptDeletedSpaceFallback("space-fallback");
     await vi.waitFor(() => expect(tokenReadHeld).toBe(true));
+    let releaseResume!: () => void;
+    vi.mocked(resumeLiveNotifications).mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseResume = resolve;
+        }),
+    );
     vi.stubGlobal(
       "fetch",
       vi
@@ -1718,6 +1725,8 @@ describe("mobile API server and Space selection", () => {
         .mockRejectedValueOnce(new Error("Network unavailable")),
     );
     await expect(rpc("spaces/list")).rejects.toThrow("Network unavailable");
+    expect(resumeLiveNotifications).toHaveBeenCalledOnce();
+    releaseResume();
     releaseToken();
     await expect(pending).resolves.toBe(true);
     expect(selectedSpaceId()).toBe("space-fallback");
