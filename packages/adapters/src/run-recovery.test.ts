@@ -27,4 +27,44 @@ describe("run recovery blockers", () => {
     );
     expect([...blockers]).toEqual([["next-turn", "chat-turn"]]);
   });
+
+  it("holds bot messages and routines back while a person's run waits for the same bot", async () => {
+    const now = new Date();
+    const waitingForPeople = vi.fn(async () => [{ id: "chat", botId: "bot" }]);
+    const prisma = {
+      computerExecutionLease: { findMany: vi.fn(async () => []) },
+      run: { findMany: waitingForPeople },
+    } as unknown as PrismaClient;
+    const run = (id: string, trigger: string, botId = "bot") => ({
+      id,
+      botId,
+      trigger,
+      bot: { computerId: "computer" },
+    });
+    const blockers = await findRunRecoveryBlockers(
+      prisma,
+      [
+        run("peer-message", "bot_message"),
+        run("chat", "user"),
+        run("nightly", "routine"),
+        run("other-bot-peer-message", "bot_message", "other-bot"),
+      ],
+      now,
+    );
+    expect([...blockers]).toEqual([
+      ["peer-message", "chat"],
+      ["nightly", "chat"],
+    ]);
+    expect(waitingForPeople).toHaveBeenCalledExactlyOnceWith({
+      where: {
+        botId: { in: ["bot", "other-bot"] },
+        status: "queued",
+        trigger: { notIn: ["bot_message", "routine", "reaction", "helper"] },
+        OR: [{ wakeAt: null }, { wakeAt: { lte: now } }],
+      },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      distinct: ["botId"],
+      select: { id: true, botId: true },
+    });
+  });
 });

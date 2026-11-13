@@ -1,4 +1,9 @@
-import { BACKGROUND_HELPER_TRIGGER, isTerminal } from "@rakazo/core";
+import {
+  BACKGROUND_HELPER_TRIGGER,
+  isTerminal,
+  isUnattendedRunTrigger,
+  UNATTENDED_RUN_TRIGGERS,
+} from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { expireComputerExecutionLeases } from "@rakazo/db";
 import { EXECUTION_LEASE_MS } from "./computer-lifecycle.js";
@@ -11,7 +16,8 @@ type RecoveryRun = {
 };
 
 /**
- * Leave resource waits untouched so recovery preserves their age and execution history.
+ * Leave resource waits untouched so recovery preserves their age and execution history. A run
+ * no person is waiting on also waits while its bot has one somebody is.
  * A takeover hold whose run ended or was deleted is expired instead: leases have no relation
  * to runs, so nothing else would free the bot's computer before the hold lapses a day later.
  */
@@ -46,6 +52,27 @@ export async function findRunRecoveryBlockers(
         !abandoned.has(lease.runId),
     );
     if (lease) blockers.set(run.id, lease.runId);
+  }
+  // A free computer goes to the bot's run a person is waiting on, as when a run releases it.
+  const yielding = runs.filter(
+    (run) => isUnattendedRunTrigger(run.trigger) && !blockers.has(run.id),
+  );
+  const attended = yielding.length
+    ? await prisma.run.findMany({
+        where: {
+          botId: { in: [...new Set(yielding.map((run) => run.botId))] },
+          status: "queued",
+          trigger: { notIn: [...UNATTENDED_RUN_TRIGGERS, BACKGROUND_HELPER_TRIGGER] },
+          OR: [{ wakeAt: null }, { wakeAt: { lte: now } }],
+        },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        distinct: ["botId"],
+        select: { id: true, botId: true },
+      })
+    : [];
+  for (const run of yielding) {
+    const ahead = attended.find((waiting) => waiting.botId === run.botId);
+    if (ahead) blockers.set(run.id, ahead.id);
   }
   return blockers;
 }
