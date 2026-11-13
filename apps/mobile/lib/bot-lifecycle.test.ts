@@ -7,7 +7,8 @@ const { rpc, alert, removeFromSearchInbox, captureApiRequestContext } = vi.hoist
   alert: vi.fn(),
   removeFromSearchInbox: vi.fn(),
 }));
-vi.mock("./session", () => ({ currentSessionGeneration: () => 2 }));
+const session = vi.hoisted(() => ({ generation: 2 }));
+vi.mock("./session", () => ({ currentSessionGeneration: () => session.generation }));
 vi.mock("./api-server", () => ({}));
 vi.mock("./api-auth", () => ({}));
 vi.mock("./api-live", () => ({}));
@@ -21,6 +22,7 @@ import { confirmDeleteBot, confirmDeleteGroup, restoreArchivedBot } from "./bot-
 beforeEach(() => {
   i18n.load("en", {});
   i18n.activate("en");
+  session.generation = 2;
   vi.resetAllMocks();
   rpc.mockResolvedValue([]);
   captureApiRequestContext.mockResolvedValue({
@@ -320,4 +322,27 @@ it("does not open deletion confirmation for a replaced session", async () => {
   );
   expect(alert).not.toHaveBeenCalled();
   expect(finished).toHaveBeenCalledOnce();
+});
+
+it("does not update a replacement session after deletion completes", async () => {
+  captureApiRequestContext.mockResolvedValue({
+    apiBase: "https://example.test",
+    headers: {},
+    sessionGeneration: 2,
+  });
+  let resolve!: (value: unknown) => void;
+  rpc.mockResolvedValueOnce([]).mockImplementationOnce(
+    () =>
+      new Promise((done) => {
+        resolve = done;
+      }),
+  );
+  const deleted = vi.fn();
+  await confirmDeleteBot({ id: "bot-fixture", name: "Fixture" }, deleted);
+  alert.mock.calls[0]![2][1].onPress();
+  session.generation = 3;
+  resolve({ ok: true, removedGroupIds: [] });
+  await Promise.resolve();
+  expect(deleted).not.toHaveBeenCalled();
+  expect(removeFromSearchInbox).not.toHaveBeenCalled();
 });

@@ -137,7 +137,7 @@ name: Settings
     timeout: 15000
 - waitForAnimationToEnd:
     timeout: 3000
-- takeScreenshot: 14b-bot-delete-warning
+- takeScreenshot: 14-bot-delete-warning
 - tapOn: "Cancel"
 - openLink: "rakazo:///group-settings?groupId=${RAKAZO_SCREENSHOT_GROUP_ID}"
 - extendedWaitUntil:

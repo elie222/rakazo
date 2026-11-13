@@ -53,10 +53,12 @@ export async function confirmDeleteBot(
         { botId: bot.id, deleteMemories },
         { requestContext, skipSpaceAuthRecovery: true },
       );
+      if (!contextCurrent()) return;
       removeFromSearchInbox(bot.id);
       onDeleted(result.removedGroupIds ?? []);
     } catch (error) {
-      if (current()) Alert.alert(t`Could not delete bot`, errorText(error, t`Try again.`));
+      if (current() && contextCurrent())
+        Alert.alert(t`Could not delete bot`, errorText(error, t`Try again.`));
     } finally {
       finished();
     }
