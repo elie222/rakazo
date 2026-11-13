@@ -587,7 +587,19 @@ export function createRuntimeContextPolicy(
       });
       const kept = new Set(candidate.messages);
       const activeStart = currentMessage ? retained.indexOf(currentMessage) : 0;
-      if (retained.slice(activeStart).every((message) => kept.has(message))) selected = candidate;
+      if (retained.slice(activeStart).every((message) => kept.has(message))) {
+        selected = candidate;
+        if (sent) {
+          const fallback = selectContext(shortenOlderResults(false), selectionOptions);
+          // Whole results must not evict an otherwise stable prefix: signed thinking
+          // before the first shortened result still depends on that history.
+          if (
+            firstChange(sent.messages, candidate.messages) <
+            firstChange(sent.messages, fallback.messages)
+          )
+            selected = fallback;
+        }
+      }
     } catch (error) {
       if (!(error instanceof ContextBudgetError)) throw error;
     }
