@@ -201,8 +201,8 @@ test("provider errors stay centered below a contained stack", async ({ page }, t
   );
   await page.goto("/sign-in?error=account_not_linked");
   const form = page.locator("form");
-  const choices = form.getByRole("button", { name: /^Continue with/ });
-  await expect(choices).toHaveCount(4);
+  const choices = form.getByRole("button", { name: /^Continue with (Google|Apple|email)$/ });
+  await expect(choices).toHaveCount(3);
   const formBox = (await form.boundingBox())!;
   let previousBottom = 0;
   for (const choice of await choices.all()) {
@@ -212,10 +212,15 @@ test("provider errors stay centered below a contained stack", async ({ page }, t
     expect(box.y).toBeGreaterThanOrEqual(previousBottom);
     previousBottom = box.y + box.height;
   }
+  const sso = form.getByRole("button", { name: "Continue with Company", exact: true });
+  await expect(sso).toBeVisible();
+  const ssoBox = (await sso.boundingBox())!;
+  expect(ssoBox.y).toBeGreaterThanOrEqual(previousBottom);
+  expect(ssoBox.width).toBeLessThan(formBox.width * 0.7);
   const error = page.getByRole("alert");
   await expect(error).toBeVisible();
   const errorBox = (await error.boundingBox())!;
-  expect(errorBox.y).toBeGreaterThanOrEqual(previousBottom);
+  expect(errorBox.y).toBeGreaterThanOrEqual(ssoBox.y + ssoBox.height);
   expect(Math.abs(errorBox.x + errorBox.width / 2 - formBox.x - formBox.width / 2)).toBeLessThan(2);
   await expect(error).toHaveCSS("text-align", "center");
   await page.emulateMedia({ colorScheme: "dark" });

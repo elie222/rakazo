@@ -1,5 +1,6 @@
 import { Trans } from "@lingui/react/macro";
 import type { SignInProvider } from "@rakazo/contracts";
+import { signInProviderGroups } from "@rakazo/contracts";
 import { Button } from "@rakazo/ui-web";
 import { Mail } from "lucide-react";
 
@@ -15,9 +16,10 @@ export function SocialSignInButtons({
   onEmail?: () => void;
 }) {
   if (providers.length === 0 && !onEmail) return null;
+  const { primary, secondary } = signInProviderGroups(providers);
   return (
     <div className="flex w-full flex-col gap-3">
-      {providers.map((provider) => (
+      {primary.map((provider) => (
         <Button
           key={provider.id}
           type="button"
@@ -52,6 +54,19 @@ export function SocialSignInButtons({
           <Trans>Continue with email</Trans>
         </Button>
       ) : null}
+      {secondary.map((provider) => (
+        <Button
+          key={provider.id}
+          type="button"
+          variant="text"
+          size="sm"
+          disabled={disabled}
+          className="self-center text-muted-foreground hover:text-foreground"
+          onClick={() => onPress(provider.id)}
+        >
+          <Trans>Continue with {provider.name}</Trans>
+        </Button>
+      ))}
     </div>
   );
 }
