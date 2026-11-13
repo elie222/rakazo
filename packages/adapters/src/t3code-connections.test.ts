@@ -269,6 +269,30 @@ describe("T3 Code environments connected as MCP servers", () => {
     expect(await fresh.forActor(actor)).toBeNull();
   });
 
+  it("bounds work across branching cyclic and acyclic schema alternatives", async () => {
+    for (const cyclic of [true, false]) {
+      const f = fakes([server("t3")]);
+      const m = new T3McpEmulator();
+      const schema = m.tools[0]!.inputSchema as Record<string, unknown>;
+      const definitions: Record<string, unknown> = {};
+      for (let i = 0; i < 8; i++) {
+        definitions[`level${i}`] = {
+          anyOf: Array.from({ length: 16 }, () => ({
+            $ref: `#/$defs/level${cyclic ? 0 : i + 1}`,
+          })),
+        };
+      }
+      definitions.level8 = false;
+      schema.$defs = definitions;
+      schema.$ref = "#/$defs/level0";
+      const connections = new T3CodeConnections(f.prisma, f.oauth, {
+        ...f.transport,
+        fetch: m.fetch,
+      });
+      expect(await connections.forActor(actor)).toBeNull();
+    }
+  });
+
   it("picks the actor's connected T3 Code server, skipping others", async () => {
     const rows = [
       server("other-tool", { name: "Docs" }),
