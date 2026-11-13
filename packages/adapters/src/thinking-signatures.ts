@@ -5,9 +5,11 @@ import type { TranscriptContext } from "@earendil-works/pi-ai";
  * Rakazo rewrites earlier history between requests, so a replayed block can make the provider
  * reject the whole request. Anthropic can drop such blocks itself (thinking.block_binding), but
  * proxies like OpenCode reject that field, so the runtime retries without the earlier thinking.
+ * Encrypted reasoning only decrypts on the upstream that wrote it, so a router that sends the next
+ * call elsewhere (OpenRouter's auto model, or another host of the same model) rejects it too.
  */
 const MISMATCHED_SIGNATURE =
-  /invalid `?signature`? in `?thinking`? block|bound to a different conversation/i;
+  /invalid `?signature`? in `?thinking`? block|bound to a different conversation|invalid_encrypted_content/i;
 
 export function isThinkingSignatureMismatch(errorMessage: string | undefined): boolean {
   return !!errorMessage && MISMATCHED_SIGNATURE.test(errorMessage);
