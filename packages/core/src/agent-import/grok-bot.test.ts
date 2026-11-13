@@ -356,6 +356,12 @@ it("joins a skill split across parts, and resolves exact skill names first", () 
     `${JSON.stringify({ bots: [{ name: "Other", memories: ["x"] }] })}\n\n${pair}`,
   );
   expect(other!.skills.map((skill) => skill.instructions)).toEqual(["A.", "B."]);
+  // When an earlier part has one, it continues once and the other stays its own skill.
+  const earlier = JSON.stringify({
+    bots: [{ name: "Other", skills: [{ name: "Check", instructions: "Start." }] }],
+  });
+  const [again] = parseGrokBotExport(`${earlier}\n\n${pair}`);
+  expect(again!.skills.map((skill) => skill.instructions)).toEqual(["Start.\n\nA.", "B."]);
 });
 
 it("keeps skill names in any script", () => {
