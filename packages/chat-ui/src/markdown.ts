@@ -6,6 +6,10 @@ import LinkifyIt from "linkify-it";
 import type { ReactNode } from "react";
 import { createContext, useContext, useEffect, useSyncExternalStore } from "react";
 
+import remarkGfm from "remark-gfm";
+import remarkParse from "remark-parse";
+import { unified } from "unified";
+
 export type ChatMarkdownProps = {
   children: string;
   streaming?: boolean;
@@ -38,27 +42,78 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-// Code keeps its source exactly; existing links keep their text. A mention is never placed in them.
-const CODE_MARKDOWN =
-  "```[\\s\\S]*?(?:```|$)|~~~[\\s\\S]*?(?:~~~|$)|(?:^|\\n)(?: {4}|\\t)[^\\n]*|`[^`\\n]*`";
-const CODE = new RegExp(`(${CODE_MARKDOWN})`);
-const PROTECTED_MARKDOWN = new RegExp(`(${CODE_MARKDOWN}|!?\\[[^\\]\\n]*\\]\\([^)\\n]*\\))`);
+const mentionParser = unified().use(remarkParse).use(remarkGfm);
+
+type MentionTrees = Map<string, ReturnType<typeof mentionParser.parse> | null>;
+
+function rewriteOutsideCode(
+  text: string,
+  rewrite: (part: string) => string,
+  trees: MentionTrees,
+  skipLinks = false,
+) {
+  if (trees.get(text) === null) return text;
+  try {
+    const tree = trees.get(text) ?? mentionParser.parse(text);
+    trees.set(text, tree);
+    let result = "";
+    let offset = 0;
+    function visit(node: typeof tree | (typeof tree.children)[number]) {
+      if (
+        node.type === "link" ||
+        node.type === "code" ||
+        node.type === "inlineCode" ||
+        (skipLinks &&
+          ["link", "image", "linkReference", "imageReference", "definition"].includes(node.type))
+      ) {
+        const start = node.position?.start.offset;
+        const end = node.position?.end.offset;
+        if (start !== undefined && end !== undefined) {
+          const source = text.slice(start, end);
+          result +=
+            rewrite(text.slice(offset, start)) +
+            (!skipLinks &&
+            node.type === "link" &&
+            node.url.toLowerCase().startsWith(MENTION_URL_PREFIX)
+              ? rewrite(source)
+              : source);
+          offset = end;
+        }
+        return;
+      }
+      if ("children" in node) for (const child of node.children) visit(child);
+    }
+    visit(tree);
+    return result + rewrite(text.slice(offset));
+  } catch {
+    trees.set(text, null);
+    return text;
+  }
+}
 const MODEL_MENTION_LINK = /\[([^\]\n]*)\]\(\s*<?rakazo-mention:[^)\n]*\)/gi;
 const OPENS_WITH_BLOCK = /^\s*(#|>|\||```|~~~|[-*+]\s|\d+[.)]\s)/;
 
-function linkFirstName(text: string, name: string, link: string): string | undefined {
+function linkFirstName(
+  text: string,
+  name: string,
+  link: string,
+  trees: MentionTrees,
+): string | undefined {
   const pattern = new RegExp(`(^|[^\\p{L}\\p{N}_])${escapeRegExp(name)}(?![\\p{L}\\p{N}_])`, "u");
+  if (!pattern.test(text)) return undefined;
   let placed = false;
-  const result = text
-    .split(PROTECTED_MARKDOWN)
-    .map((part, index) => {
-      if (placed || index % 2 === 1) return part;
+  const result = rewriteOutsideCode(
+    text,
+    (part) => {
+      if (placed) return part;
       return part.replace(pattern, (_match, prefix: string) => {
         placed = true;
         return `${prefix}${link}`;
       });
-    })
-    .join("");
+    },
+    trees,
+    true,
+  );
   return placed ? result : undefined;
 }
 
@@ -70,12 +125,10 @@ export function withMentions(
   texts: readonly string[],
   mentions: readonly { id: string; name: string }[],
 ): string[] {
+  const trees: MentionTrees = new Map();
   // Only links placed here draw as mentions; ones already in the text keep just their name.
   const result = texts.map((text) =>
-    text
-      .split(CODE)
-      .map((part, index) => (index % 2 === 1 ? part : part.replace(MODEL_MENTION_LINK, "$1")))
-      .join(""),
+    rewriteOutsideCode(text, (part) => part.replace(MODEL_MENTION_LINK, "$1"), trees),
   );
   if (result.length === 0) return result;
   for (const mention of mentions) {
@@ -83,13 +136,15 @@ export function withMentions(
     if (!name) continue;
     const link = `[${name.replace(/[\\[\]*_`<>]/g, "\\$&")}](${MENTION_URL_PREFIX}${encodeURIComponent(mention.id)})`;
     const placed = result.some((text, index) => {
-      const linked = linkFirstName(text, name, link);
+      const linked = linkFirstName(text, name, link, trees);
       if (linked !== undefined) result[index] = linked;
       return linked !== undefined;
     });
     if (placed) continue;
-    const first = result[0]!;
-    result[0] = OPENS_WITH_BLOCK.test(first) ? `${link}\n\n${first}` : `${link} ${first}`;
+    const firstIndex = result.findIndex((text) => trees.get(text) !== null);
+    if (firstIndex === -1) continue;
+    const first = result[firstIndex]!;
+    result[firstIndex] = OPENS_WITH_BLOCK.test(first) ? `${link}\n\n${first}` : `${link} ${first}`;
   }
   return result;
 }
@@ -552,6 +607,7 @@ export function closeUnterminatedFence(markdown: string): string {
 
     const marker = match[1][0] as "`" | "~";
     if (!openFence) {
+      if (marker === "`" && (match[2] ?? "").includes("`")) continue;
       openFence = { marker, length: match[1].length };
       continue;
     }
