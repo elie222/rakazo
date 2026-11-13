@@ -922,7 +922,9 @@ export function useComputerControls({
           <Trans>Retry screen</Trans>
         </Button>
       )}
-      {screenFailure && computer?.state === "running" && computerBot ? (
+      {computerBot &&
+      ((screenFailure && computer?.state === "running") ||
+        (computer?.state === "error" && !allowanceUsed)) ? (
         <ComputerMaintenanceActions
           visibleRecover
           botId={computerBot.id}

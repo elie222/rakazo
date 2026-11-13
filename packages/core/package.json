@@ -74,6 +74,11 @@
       "development": "./src/egress.ts",
       "default": "./src/egress.ts"
     },
+    "./signup-attribution": {
+      "types": "./src/browser-signup-attribution.ts",
+      "development": "./src/browser-signup-attribution.ts",
+      "default": "./src/browser-signup-attribution.ts"
+    },
     "./query": {
       "types": "./src/query.ts",
       "development": "./src/query.ts",

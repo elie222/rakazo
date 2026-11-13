@@ -3,9 +3,14 @@ import { Button, Field, FieldLabel, Input } from "@rakazo/ui-web";
 import { useId, useState } from "react";
 import type { ConnectionMode } from "./ConnectionModeFields";
 import { ConnectionModeFields } from "./ConnectionModeFields";
+import { MemoryProviderAdvanced } from "./MemoryProviderAdvanced";
 import type { MemoryProviderConnectionDraft, MemoryProviderSettingsFormProps } from "./registry";
 
-export function SupermemorySettingsForm({ busy, onConnect }: MemoryProviderSettingsFormProps) {
+export function SupermemorySettingsForm({
+  busy,
+  onConnect,
+  advancedSettings,
+}: MemoryProviderSettingsFormProps) {
   const apiKeyId = useId();
   const [mode, setMode] = useState<ConnectionMode>("cloud");
   const [apiKey, setApiKey] = useState("");
@@ -25,14 +30,6 @@ export function SupermemorySettingsForm({ busy, onConnect }: MemoryProviderSetti
 
   return (
     <>
-      <ConnectionModeFields
-        busy={busy}
-        mode={mode}
-        onModeChange={setMode}
-        baseUrl={baseUrl}
-        onBaseUrlChange={setBaseUrl}
-      />
-
       <Field className="mt-4">
         <FieldLabel htmlFor={apiKeyId}>
           {mode === "cloud" ? <Trans>Organization API key</Trans> : <Trans>Instance API key</Trans>}
@@ -47,6 +44,17 @@ export function SupermemorySettingsForm({ busy, onConnect }: MemoryProviderSetti
           autoComplete="new-password"
         />
       </Field>
+
+      <MemoryProviderAdvanced>
+        {advancedSettings}
+        <ConnectionModeFields
+          busy={busy}
+          mode={mode}
+          onModeChange={setMode}
+          baseUrl={baseUrl}
+          onBaseUrlChange={setBaseUrl}
+        />
+      </MemoryProviderAdvanced>
 
       <Button
         type="button"

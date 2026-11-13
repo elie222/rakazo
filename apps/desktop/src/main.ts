@@ -14,6 +14,7 @@ import type {
 import type { BrowserWindow, Session } from "electron";
 import {
   app,
+  clipboard,
   desktopCapturer,
   dialog,
   ipcMain,
@@ -48,6 +49,7 @@ import type { ElectronAutoUpdater } from "./auto-update.js";
 import { DesktopUpdateController } from "./auto-update.js";
 import { createBadgeHandler } from "./badge.js";
 import { openBrowserAuth } from "./browser-auth.js";
+import { createClipboardHandler } from "./clipboard.js";
 import { appWindowTargets, desktop } from "./desktop-state.js";
 import { launchDockerApp, resolveDockerBinary, runDocker } from "./docker-cli.js";
 import type { StackChoice } from "./docker-move.js";
@@ -878,6 +880,10 @@ app.whenReady().then(async () => {
       speech.abort(event, session),
     );
   }
+  ipcMain.handle(
+    "desktop.clipboard.write",
+    createClipboardHandler(permissionTarget, (text) => clipboard.writeText(text)),
+  );
   ipcMain.handle("desktop.platform", () => process.platform);
   ipcMain.handle("desktop.passkeys.rpIds", () => passkeyRpIds);
   ipcMain.handle("desktop.monitoring.enabled", () => reportsErrors);

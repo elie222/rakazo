@@ -395,6 +395,11 @@ export async function isRunTainted(ctx: RunContext) {
   return state.tainted;
 }
 
+/** Fresh outside input applies the existing action protections for this run. */
+export async function markReadOutsideContent(ctx: RunContext) {
+  ctx.state.tainted = true;
+}
+
 /** A change landed after this attempt's snapshot; only a fresh run can apply the rewrite. */
 export const OWN_INSTRUCTIONS_CHANGED_ERROR =
   "Instructions changed since this run started, so your instructions were not saved. Ask the user to send their request again so a new run starts from the current instructions.";

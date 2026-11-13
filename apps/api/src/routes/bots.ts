@@ -59,6 +59,7 @@ import { createBotFromTemplate, listBotTemplates } from "../bot-templates.js";
 import { requireIdentityConfirmation } from "../identity-confirmation.js";
 import { managedAppCatalog } from "../onboarding.js";
 import type { RouterDeps } from "../router.js";
+import { purgeClearedThreadMemory } from "../thread-memory.js";
 import { loadMessagePage } from "../thread-message-pages.js";
 import type { RouterContext } from "./context.js";
 import { computerContext, modelSetup, THREAD_MESSAGE_PAGE_SIZE } from "./shared.js";
@@ -764,7 +765,7 @@ export function botsRoutes(ctx: RouterContext) {
         try {
           return await groupRepos.createGroup(context.actor, {
             name: duplicateBotName(source.name),
-            botIds: source.members.map((member) => member.bot.id),
+            botIds: source.members.flatMap((member) => (member.bot ? [member.bot.id] : [])),
           });
         } catch (error) {
           throw mapSpaceLifecycleError(error);
@@ -803,6 +804,18 @@ export function botsRoutes(ctx: RouterContext) {
         try {
           await stopCancelledGroupRuns(deps, context.actor, removed);
         } finally {
+          if (removed.memory) {
+            await purgeClearedThreadMemory(
+              deps,
+              context.actor,
+              {
+                kind: "group",
+                threadId: removed.memory.threadId,
+                memberBotIds: removed.memory.botIds,
+              },
+              removed.memory.generation,
+            ).catch((error) => getLogger().error("group memory cleanup", error));
+          }
           // The group row is already gone, so a retry could no longer find these.
           const cleanup = await Promise.allSettled(
             removed.artifactStorageKeys.map((storageKey) =>

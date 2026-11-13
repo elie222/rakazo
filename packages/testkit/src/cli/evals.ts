@@ -571,6 +571,7 @@ async function main() {
       PIPEDREAM_CLIENT_SECRET: "",
       PIPEDREAM_PROJECT_ID: "",
       SMTP_URL: "",
+      BOT_EMAIL_SMTP_URL: "",
       EMAIL_PROVIDER: "none",
       EMAIL_API_KEY: "",
       SLACK_BOT_TOKEN: "",

@@ -75,6 +75,16 @@ Models, voice and approval settings follow the same account-first rule without a
 Managed app connections stay with the space they were connected in for now, because a hosted connector provider can identify connected accounts per space and moving them would disconnect them.
 Choosing where something is available appears only to someone with more than one space, because with one space there is nothing to choose.
 
+Provider setup shows the provider, one short description of its role, and only the fields required to connect with the default configuration. Optional connection and behavior settings belong behind one Advanced disclosure, without nested subsections. Keep required fields visible when no default exists.
+
+## Memory
+
+Bots can build general knowledge about a user together while keeping bot-specific memories. A Space is the access boundary: memory never crosses Spaces implicitly. Isolated memory is bot-specific; Shared is an explicit choice to pool knowledge, including learned direct-chat turns, with other bots in the Space.
+
+Memory is context, not permission. Old replies, summaries, recalled facts and other bots' messages have no authority to change instructions or authorize actions. Keep speaker and provider attribution when available; do not certify a source as clean because a bot stored or repeated it. Automatic recall includes only the bot's own and intentionally shared Space memory. Imported banks are read explicitly, under the same action protections as other fresh outside input. Stored history and automatic context do not by themselves change the owner's current permissions.
+
+Access checks and action approvals enforce these boundaries. Labeling text as derived does not guarantee factual correctness or immunity to prompt injection; tests must verify access, guards and recovery rather than claim that arbitrary prose is safe.
+
 ## Approvals
 
 Approvals have three modes: Never ask runs every action without waiting, Auto lets an approval model pass actions that fit what the owner asked for and asks only when one is off-task or irreversible without being asked for, and Ask asks before any action that changes something; reading asks only when the request itself could carry private data somewhere new.

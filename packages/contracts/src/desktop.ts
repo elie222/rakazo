@@ -77,6 +77,10 @@ export function isDesktopMenuCommand(value: unknown): value is DesktopMenuComman
 }
 
 export interface RakazoDesktop {
+  /** Optional for older desktop releases. Returns false when the native write is refused. */
+  clipboard?: {
+    writeText: (text: string) => Promise<boolean>;
+  };
   /** Optional for compatibility with older desktop releases. */
   badge?: {
     set: (count: number) => Promise<boolean>;
