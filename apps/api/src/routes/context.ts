@@ -177,12 +177,16 @@ export function createRouterContext(deps: RouterDeps) {
           (auth.byProvider[entry.provider] ||
             auth.byModel[entry.provider] ||
             entry.provider === auth.managedProvider) &&
-          hiddenCatalogModel(entry),
+          (hiddenCatalogModel(entry) || !spaceCanRunCatalogModel(auth, entry)),
       )
     )
       selected = await savedCatalogSelections(deps.prisma, actor.userId);
+    // A saved choice stays listed so its role can still be edited; its runs ask for a key.
     return offeredCatalog(merged, selected)
-      .filter((entry) => spaceCanRunCatalogModel(auth, entry))
+      .filter(
+        (entry) =>
+          spaceCanRunCatalogModel(auth, entry) || selected?.has(`${entry.provider}:${entry.id}`),
+      )
       .map((entry) =>
         entry.provider === auth.managedProvider
           ? {

@@ -6,6 +6,7 @@ import {
   selectCompatibleModelCredential,
   usableModelId,
 } from "@rakazo/contracts";
+import { MODEL_UNPRICED_FOR_CREDITS_ERROR } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import {
   chooseModelCredential,
@@ -651,6 +652,8 @@ export async function validateBotModelChange(
       : await findConnectedModelCredential(deps.prisma, deps.secretStore, scope, provider, model);
     if (!credential) {
       if (hosted && isCatalogModelChoice(provider, model)) {
+        if (!creditsCanPriceModel({ provider, id: model }))
+          return { ok: false, error: MODEL_UNPRICED_FOR_CREDITS_ERROR };
         const allowed = listPiCatalog().find(
           (entry) => entry.provider === provider && entry.id === model,
         )?.thinkingLevels;
