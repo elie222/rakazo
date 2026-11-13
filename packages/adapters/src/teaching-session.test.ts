@@ -91,8 +91,15 @@ function recordingDeps(skill: ReturnType<typeof skillRow>) {
           findMany: vi.fn().mockResolvedValue([]),
         },
       },
-      events: { append: vi.fn(), notify: vi.fn(), finalizeComputerControlRelease: vi.fn() },
-      jobs: { enqueue: vi.fn().mockResolvedValue(undefined), cancel: vi.fn() },
+      events: {
+        append: vi.fn(),
+        notify: vi.fn(),
+        releaseUserControl: vi.fn().mockResolvedValue(true),
+      },
+      jobs: {
+        enqueue: vi.fn().mockResolvedValue(undefined),
+        cancel: vi.fn().mockResolvedValue(undefined),
+      },
       sandbox: { observe: vi.fn(), setScreenControl: vi.fn(), sendInput: vi.fn(), act: vi.fn() },
       home: {},
       dataDir: "/tmp",
@@ -166,10 +173,18 @@ describe("expireTaughtSkillTeaching", () => {
         controlHolder: "user",
         controlBotId: "bot-1",
         controlLeaseId: "lease-1",
+        spaceId: "space-1",
       },
     };
     deps.prisma.bot.findUnique = vi.fn().mockResolvedValue(bot);
     await expireTaughtSkillTeaching(deps as never, "skill-1");
+    expect(deps.events.releaseUserControl).toHaveBeenCalledWith({
+      spaceId: "space-1",
+      computerId: "computer-1",
+      botId: "bot-1",
+      leaseId: "lease-1",
+      reason: "released",
+    });
     expect(deps.jobs.cancel).toHaveBeenCalledWith("computer.control-expire:computer-1:lease-1");
     expect(tx.event.create).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -212,7 +227,7 @@ describe("expireTaughtSkillTeaching", () => {
     });
     await expireTaughtSkillTeaching(deps as never, "skill-1");
     expect(deps.jobs.cancel).not.toHaveBeenCalled();
-    expect(deps.events.finalizeComputerControlRelease).not.toHaveBeenCalled();
+    expect(deps.events.releaseUserControl).not.toHaveBeenCalled();
   });
 
   it("does not republish draft events once they already exist", async () => {

@@ -157,13 +157,6 @@ describe("expireStuckRun", () => {
         expect.objectContaining({ type: "run.cancelled", runId: "run-1" }),
       ]),
     );
-    expect(client.computer.updateMany).toHaveBeenCalledWith({
-      where: {
-        controlRunId: "run-1",
-        OR: [{ controlHolder: { not: "user" } }, { controlLeaseId: null }],
-      },
-      data: { controlRunId: null },
-    });
     expect(client.computerExecutionLease.updateMany).toHaveBeenCalledWith({
       where: { runId: "run-1" },
       data: { expiresAt: new Date(0) },

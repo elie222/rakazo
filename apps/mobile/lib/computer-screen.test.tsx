@@ -446,7 +446,7 @@ describe("computer screen", () => {
     });
     const view = await render();
     const release = Array.from(view.querySelectorAll("button")).find(
-      (button) => button.textContent === "Release",
+      (button) => button.textContent === "Hand back control",
     );
     expect(release).toBeDefined();
     await act(async () => release?.click());
@@ -794,7 +794,7 @@ describe("computer screen", () => {
     expect(scroll?.contains(view.querySelector("[data-keyboard-bar]"))).toBe(true);
   });
 
-  it("closes the keyboard as soon as Release is tapped, even if the release fails", async () => {
+  it("closes the keyboard as soon as Hand back is tapped, even if the release fails", async () => {
     const held = { ...botWorking, controlHolder: "user" as const, controlBotId: "bot-1" };
     respond({ ...held, busyBotName: null });
     let fail: (error: Error) => void = () => undefined;
@@ -814,7 +814,7 @@ describe("computer screen", () => {
     const bar = () => fullWindow?.querySelector<HTMLElement>("[data-keyboard-bar]");
     expect(bar()?.dataset.active).toBe("true");
     const release = Array.from(fullWindow?.querySelectorAll("button") ?? []).find(
-      (button) => button.textContent === "Release",
+      (button) => button.textContent === "Hand back control",
     );
     await act(async () => release?.click());
     expect(calls("computer/release")).toHaveLength(1);
@@ -823,6 +823,28 @@ describe("computer screen", () => {
     await act(async () => fail(new Error("offline")));
     await settle();
     expect(bar()?.dataset.active).toBe("true");
+  });
+
+  it("hands control back when the full window closes, and checks in often while holding it", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    try {
+      respond({ ...botWorking, controlHolder: "user", controlBotId: "bot-1", busyBotName: null });
+      const view = await render();
+      await act(async () => preview(view).click());
+      await settle();
+      const beats = calls("computer/heartbeat").length;
+      await act(async () => vi.advanceTimersByTime(15_000));
+      expect(calls("computer/heartbeat").length).toBeGreaterThan(beats);
+      expect(calls("computer/release")).toHaveLength(0);
+
+      await act(async () =>
+        view.querySelector<HTMLButtonElement>('[aria-label="Close computer"]')?.click(),
+      );
+      await settle();
+      expect(calls("computer/release")).toEqual([["computer/release", { botId: "bot-1" }]]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("loads the screen again when the app returns from the background", async () => {

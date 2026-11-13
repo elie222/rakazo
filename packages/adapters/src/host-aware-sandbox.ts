@@ -110,7 +110,6 @@ async function createBaseRunSandbox(
               controlUserId: null,
               controlLeaseExpiresAt: null,
               controlBotId: null,
-              controlRunId: null,
             },
           });
           if (quarantined.count === 0)

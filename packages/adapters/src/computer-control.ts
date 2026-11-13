@@ -1,5 +1,9 @@
 import type { AdapterContext, JobPublisher, SandboxProvider } from "@rakazo/adapter-kit";
-import { computerControlExpireJob, runContinueJob } from "@rakazo/adapter-kit";
+import {
+  computerControlExpireJob,
+  computerControlExpireJobKey,
+  runContinueJob,
+} from "@rakazo/adapter-kit";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { hasActiveComputerControl, recordComputerRunEnd } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -14,28 +18,14 @@ export {
   userControlHeldBy,
 } from "@rakazo/db";
 
-export const DEFAULT_TAKEOVER_LEASE_MS = 15 * 60 * 1000;
+/**
+ * A person keeps control while their page checks in; a page silent this long loses it. Clients
+ * check in every 15 seconds, and installed mobile apps every 60, so this leaves them a margin.
+ */
+export const CONTROL_LEASE_MS = 90_000;
 
-export function takeoverLeaseMs(): number {
-  const raw = Number(process.env.COMPUTER_TAKEOVER_TTL_MS ?? DEFAULT_TAKEOVER_LEASE_MS);
-  return Number.isFinite(raw) && raw >= 1_000 ? raw : DEFAULT_TAKEOVER_LEASE_MS;
-}
-
-/** User takeover of this bot with no run bound to it. Maintenance may claim it. */
-export function isIdleOwnComputerTakeover(
-  computer:
-    | {
-        controlHolder: string;
-        controlBotId: string | null;
-        controlRunId: string | null;
-      }
-    | null
-    | undefined,
-  botId: string,
-): boolean {
-  return Boolean(
-    computer?.controlHolder === "user" && computer.controlBotId === botId && !computer.controlRunId,
-  );
+export function controlLeaseExpiresAt(now = new Date()): Date {
+  return new Date(now.getTime() + CONTROL_LEASE_MS);
 }
 
 export function scheduleComputerControlExpiry(
@@ -61,7 +51,7 @@ export async function enqueueTakeoverContinuation(
 }
 
 export function teachingControlLeaseExpiresAt(teachingExpiresAt: Date, now = new Date()): Date {
-  return new Date(Math.max(now.getTime() + takeoverLeaseMs(), teachingExpiresAt.getTime()));
+  return new Date(Math.max(controlLeaseExpiresAt(now).getTime(), teachingExpiresAt.getTime()));
 }
 
 export async function extendActiveComputerControl(
@@ -122,7 +112,6 @@ export async function clearInactiveUserComputerControl(
       controlUserId: null,
       controlLeaseExpiresAt: null,
       controlBotId: null,
-      controlRunId: null,
     },
   });
   return cleared.count === 1;
@@ -165,73 +154,47 @@ export async function revokeScreenControl(
   }
 }
 
+type ControlDeps = {
+  prisma: PrismaClient;
+  sandbox: SandboxProvider;
+  jobs: JobPublisher;
+  events: ThreadEvents;
+};
+
+/** End this lease: the provider stops taking its input, then the holder row is cleared. */
+export async function releaseComputerControlLease(
+  deps: ControlDeps,
+  computer: Parameters<typeof revokeScreenControl>[1] & { spaceId: string },
+  botId: string | null,
+  leaseId: string,
+  context: AdapterContext,
+  reason: "released" | "expired" | "done" | "skipped",
+): Promise<boolean> {
+  await revokeScreenControl(deps, computer, context, leaseId);
+  const released = await deps.events.releaseUserControl({
+    spaceId: computer.spaceId,
+    computerId: computer.id,
+    botId,
+    leaseId,
+    reason,
+  });
+  if (released) {
+    await deps.jobs
+      .cancel(computerControlExpireJobKey(computer.id, leaseId))
+      .catch((error) => getLogger().error("computer control expiry cancellation", error));
+  }
+  return released;
+}
+
+/** Ends a lease its page stopped renewing; a renewed one is checked again when it would lapse. */
 export async function expireComputerControl(
-  deps: {
-    prisma: PrismaClient;
-    sandbox: SandboxProvider;
-    jobs: JobPublisher;
-    events: ThreadEvents;
-  },
+  deps: ControlDeps,
   computerId: string,
   leaseId: string,
   now = new Date(),
 ): Promise<boolean> {
   const computer = await deps.prisma.computer.findUnique({ where: { id: computerId } });
   if (!computer || computer.controlLeaseId !== leaseId) return false;
-  const botId = computer.controlBotId;
-  if (!botId) {
-    if (
-      computer.controlLeaseExpiresAt &&
-      computer.controlLeaseExpiresAt.getTime() > now.getTime()
-    ) {
-      await scheduleComputerControlExpiry(
-        deps.jobs,
-        computer.id,
-        leaseId,
-        computer.controlLeaseExpiresAt,
-      );
-      return false;
-    }
-    // Orphaned user control: revoke the provider stream, then clear this lease id.
-    if (computer.providerRef) {
-      const context: AdapterContext = {
-        operationId: "computer.control-expire",
-        traceId: "computer.control-expire",
-        spaceId: computer.spaceId,
-        userId: computer.userId,
-        signal: new AbortController().signal,
-      };
-      try {
-        await revokeScreenControl(deps, computer, context, leaseId);
-      } catch {
-        // Keep the lease id and try to reschedule so reconciler/status can retry.
-        try {
-          await scheduleComputerControlExpiry(
-            deps.jobs,
-            computer.id,
-            leaseId,
-            new Date(now.getTime() + 30_000),
-          );
-        } catch (error) {
-          getLogger().error("orphan computer control expiry reschedule", error);
-        }
-        return false;
-      }
-    }
-    const cleared = await deps.prisma.computer.updateMany({
-      where: { id: computer.id, controlLeaseId: leaseId },
-      data: {
-        controlHolder: "none",
-        controlLeaseId: null,
-        controlUserId: null,
-        controlLeaseExpiresAt: null,
-        controlBotId: null,
-        controlRunId: null,
-      },
-    });
-    return cleared.count === 1;
-  }
-
   if (computer.controlLeaseExpiresAt && computer.controlLeaseExpiresAt.getTime() > now.getTime()) {
     await scheduleComputerControlExpiry(
       deps.jobs,
@@ -241,36 +204,26 @@ export async function expireComputerControl(
     );
     return false;
   }
-
-  // Deny API input before touching the provider. Retaining the lease ID makes a
-  // failed provider revocation recoverable by the job retry or reconciler.
+  // Deny input before touching the provider; the kept lease id lets a failed revoke retry.
   const claimed = await deps.prisma.computer.updateMany({
     where: { id: computer.id, controlLeaseId: leaseId },
     data: { controlHolder: "none" },
   });
   if (claimed.count !== 1) return false;
-
-  if (computer.providerRef) {
-    const context: AdapterContext = {
-      operationId: "computer.control-expire",
-      traceId: "computer.control-expire",
-      spaceId: computer.spaceId,
-      userId: computer.userId,
-      botId,
-      signal: new AbortController().signal,
-    };
-    await revokeScreenControl(deps, computer, context, leaseId);
-  }
-
-  const released = await deps.events.finalizeComputerControlRelease({
+  const context: AdapterContext = {
+    operationId: "computer.control-expire",
+    traceId: "computer.control-expire",
     spaceId: computer.spaceId,
-    computerId: computer.id,
-    botId,
-    runId: computer.controlRunId,
+    userId: computer.userId,
+    ...(computer.controlBotId ? { botId: computer.controlBotId } : {}),
+    signal: new AbortController().signal,
+  };
+  return releaseComputerControlLease(
+    deps,
+    computer,
+    computer.controlBotId,
     leaseId,
-    holder: "none",
-    reason: "expired",
-  });
-  await enqueueTakeoverContinuation(deps.jobs, released ? released.runId : null);
-  return Boolean(released);
+    context,
+    "expired",
+  );
 }

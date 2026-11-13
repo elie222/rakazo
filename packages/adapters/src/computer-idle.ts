@@ -597,7 +597,6 @@ export async function sleepComputerIfIdle(
           controlUserId: null,
           controlLeaseExpiresAt: null,
           controlBotId: null,
-          controlRunId: null,
         },
       });
       if (cleared.count === 1) await recordComputerRunEnd(deps.prisma, computer, "gone");
@@ -702,7 +701,6 @@ export async function sleepComputerIfIdle(
       controlUserId: null,
       controlLeaseExpiresAt: null,
       controlBotId: null,
-      controlRunId: null,
     },
   });
   if (suspended.count !== 1) {
@@ -763,7 +761,6 @@ async function suspendStoppedComputer(
       controlUserId: null,
       controlLeaseExpiresAt: null,
       controlBotId: null,
-      controlRunId: null,
     },
   });
   if (suspended.count !== 1) return false;

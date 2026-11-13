@@ -40,7 +40,6 @@ import {
   expireComputerControl,
   hasActiveComputerControl,
   holdsUserControl,
-  isIdleOwnComputerTakeover,
   revokeScreenControl,
 } from "./computer-control.js";
 import { toComputerRef } from "./computer-support.js";
@@ -593,7 +592,6 @@ export async function provisionComputer(
                     controlUserId: null,
                     controlLeaseExpiresAt: null,
                     controlBotId: null,
-                    controlRunId: null,
                   }
                 : {}),
             }
@@ -1068,23 +1066,14 @@ export async function replaceComputer(
     throw new ComputerBusyError();
   const botId = context.botId;
   if (!botId) throw new Error("computer replacement requires a bot id");
-  // Leave a takeover a run is waiting on. Expiry would resume that run.
-  if (
-    options?.handBackIdleTakeover &&
-    existing.controlHolder === "user" &&
-    existing.controlBotId === botId &&
-    existing.controlRunId
-  ) {
-    throw new ComputerBusyError();
-  }
   // Only the person holding the screen can hand it back by resetting; another member's
   // session is never claimed out from under them.
   const handBackIdleTakeover =
     options?.handBackIdleTakeover === true &&
-    isIdleOwnComputerTakeover(existing, botId) &&
+    existing.controlHolder === "user" &&
+    existing.controlBotId === botId &&
     holdsUserControl(existing, context.userId);
   if (!handBackIdleTakeover && existing.controlLeaseId && !hasActiveComputerControl(existing)) {
-    if (options?.handBackIdleTakeover && existing.controlRunId) throw new ComputerBusyError();
     const expired = await expireComputerControl(deps, existing.id, existing.controlLeaseId);
     existing = await deps.prisma.computer.findUniqueOrThrow({ where: { id: computerId } });
     // Failed provider revoke keeps the lease for retry; do not wipe it and continue reset.
@@ -1145,7 +1134,6 @@ export async function replaceComputer(
         controlLeaseExpiresAt: existing.controlLeaseExpiresAt,
         controlBotId: existing.controlBotId,
         controlUserId: existing.controlUserId,
-        controlRunId: null,
       }
     : null;
   const now = new Date();
@@ -1168,7 +1156,6 @@ export async function replaceComputer(
           ? {
               controlHolder: "user" as const,
               controlBotId: botId,
-              controlRunId: null,
               controlLeaseId: existing.controlLeaseId,
             }
           : {
@@ -1190,7 +1177,6 @@ export async function replaceComputer(
               controlUserId: null,
               controlLeaseExpiresAt: null,
               controlBotId: null,
-              controlRunId: null,
             }
           : {}),
       },
@@ -1339,7 +1325,6 @@ export async function replaceComputer(
         controlUserId: null,
         controlLeaseExpiresAt: null,
         controlBotId: null,
-        controlRunId: null,
         // The replacement is a new machine; damage to the old one is no reason to hold it back.
         autoRecoveredAt: null,
         diskUsedBytes: null,

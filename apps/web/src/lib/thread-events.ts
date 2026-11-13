@@ -64,14 +64,14 @@ export function userHoldsComputerControl(
   );
 }
 
-/** True when a live bot run is blocking Take control (API would return 409). */
-export function computerTakeoverBlocked(
+/** True while a live bot run holds the computer, so a boot would be refused as busy. */
+export function computerBusyWithRun(
   computer: Pick<ComputerStatus, "busyBotName"> | null | undefined,
   runStatus?: string | null,
 ): boolean {
   if (!computer?.busyBotName) return false;
-  // waiting_takeover is the bot asking for control; terminal/idle clears the block even if
-  // busyBotName is briefly stale while the executor still holds the lease in finally.
+  // terminal/idle clears the block even if busyBotName is briefly stale while the executor still
+  // holds the lease in finally.
   if (!runStatus || runStatus === "waiting_takeover") return false;
   return isActive(runStatus as RunStatus);
 }
@@ -96,52 +96,23 @@ export function reduceComputerStatus(
   if (!isComputerStatusEvent(event)) return prev;
   if (event.botId !== prev.botId) return prev;
   if (event.type === "computer.takeover.requested") {
-    const retainedControl = event.payload.retainedControl === true;
-    const next = {
-      ...prev,
-      busyBotName: null,
-      takeoverRequested: true,
-      ...(retainedControl ? {} : { controlHolder: "none" as const, controlBotId: null }),
-    };
-    return prev.busyBotName === next.busyBotName &&
-      prev.takeoverRequested === next.takeoverRequested &&
-      prev.controlHolder === next.controlHolder &&
-      prev.controlBotId === next.controlBotId
+    return prev.takeoverRequested && prev.busyBotName === null
       ? prev
-      : next;
+      : { ...prev, takeoverRequested: true, busyBotName: null };
   }
   if (event.type === "computer.takeover.granted") {
-    const takeoverRequested = event.payload.takeoverRequested === true;
-    return prev.controlHolder === "user" &&
-      prev.controlBotId === event.botId &&
-      prev.takeoverRequested === takeoverRequested &&
-      prev.busyBotName === null
+    return prev.controlHolder === "user" && prev.controlBotId === event.botId
       ? prev
-      : {
-          ...prev,
-          controlHolder: "user",
-          controlBotId: event.botId,
-          takeoverRequested,
-          busyBotName: null,
-        };
+      : { ...prev, controlHolder: "user", controlBotId: event.botId };
   }
   if (event.type === "computer.takeover.released") {
-    const holder = event.payload.holder;
-    if (holder !== "bot" && holder !== "none") return prev;
-    return prev.controlHolder === holder &&
-      prev.controlBotId === null &&
-      !prev.takeoverRequested &&
-      prev.busyBotName === null &&
-      !prev.controlledByOther
+    // Answering the bot's request ends the request; handing back ends control.
+    if (event.payload.answered === true) {
+      return prev.takeoverRequested ? { ...prev, takeoverRequested: false } : prev;
+    }
+    return prev.controlHolder === "none" && prev.controlBotId === null && !prev.controlledByOther
       ? prev
-      : {
-          ...prev,
-          controlHolder: holder,
-          controlBotId: null,
-          takeoverRequested: false,
-          busyBotName: null,
-          controlledByOther: undefined,
-        };
+      : { ...prev, controlHolder: "none", controlBotId: null, controlledByOther: undefined };
   }
   const status = event.payload.status;
   if (!isComputerState(status)) return prev;

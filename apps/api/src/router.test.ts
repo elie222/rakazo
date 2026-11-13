@@ -4250,7 +4250,6 @@ describe("computer screen url", () => {
     controlLeaseId: null,
     controlLeaseExpiresAt: null,
     controlBotId: null,
-    controlRunId: null,
   };
 
   const callScreenUrl = async (
@@ -4421,19 +4420,20 @@ describe("computer terminal and file transfer", () => {
             controlLeaseId: null,
             controlLeaseExpiresAt: null,
             controlBotId: null,
-            controlRunId: null,
             ...computer,
           },
         }),
       },
       computer: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
       computerExecutionLease: { findUnique: vi.fn().mockResolvedValue(null) },
+      run: { findFirst: vi.fn().mockResolvedValue(null) },
     } as unknown as PrismaClient;
     const deps = {
       prisma,
       sandbox,
       home,
       jobs: { enqueue: vi.fn().mockResolvedValue(undefined) },
+      events: { append: vi.fn().mockResolvedValue(undefined) },
       env: {
         maxUploadSizeBytes,
         webOrigin: "http://127.0.0.1:5173",
@@ -4483,6 +4483,60 @@ describe("computer terminal and file transfer", () => {
       expect.anything(),
       "bots/bot-1",
       expect.anything(),
+    );
+  });
+
+  it("tells a second person the computer is busy instead of taking it from the first", async () => {
+    const { prisma, call } = setup({ ...controlled, controlUserId: "user-2" });
+    await expect(call("takeover", {})).resolves.toMatchObject({
+      status: 409,
+      body: { json: { message: "Someone else is using this computer" } },
+    });
+    expect(prisma.computer.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("gives control while the bot is working, for as long as the page checks in, and counts the change", async () => {
+    const { prisma, call } = setup();
+    const before = Date.now();
+    await expect(call("takeover", {})).resolves.toMatchObject({ status: 200 });
+    const grant = vi.mocked(prisma.computer.updateMany).mock.calls[0]![0];
+    expect(grant.data).toMatchObject({
+      controlHolder: "user",
+      controlBotId: "bot-1",
+      controlUserId: "user-1",
+      controlFence: { increment: 1 },
+    });
+    const expiresAt = (grant.data as { controlLeaseExpiresAt: Date }).controlLeaseExpiresAt;
+    expect(expiresAt.getTime() - before).toBeGreaterThanOrEqual(90_000);
+    expect(expiresAt.getTime() - Date.now()).toBeLessThanOrEqual(90_000);
+  });
+
+  it("renews the holder's control each time their page checks in", async () => {
+    const soon = new Date(Date.now() + 5_000);
+    const { prisma, call } = setup({
+      ...controlled,
+      controlUserId: "user-1",
+      controlLeaseExpiresAt: soon,
+    });
+    await expect(call("heartbeat", {})).resolves.toMatchObject({ status: 200 });
+    expect(prisma.computer.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: "computer-1",
+        controlHolder: "user",
+        controlLeaseId: "lease-1",
+        controlLeaseExpiresAt: { lt: expect.any(Date) },
+      },
+      data: { controlLeaseExpiresAt: expect.any(Date) },
+    });
+  });
+
+  it("does not renew someone else's control from a watcher's check-in", async () => {
+    const { prisma, call } = setup({ ...controlled, controlUserId: "user-2" });
+    await expect(call("heartbeat", {})).resolves.toMatchObject({ status: 200 });
+    expect(prisma.computer.updateMany).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: { controlLeaseExpiresAt: expect.any(Date) },
+      }),
     );
   });
 
@@ -10364,7 +10418,6 @@ describe("quarantined computer stop", () => {
         controlHolder: "none",
         controlLeaseId: null,
         controlBotId: null,
-        controlRunId: null,
         homeRevision: "saved",
         screenGeneration: 1,
       };

@@ -8,6 +8,7 @@ import { resolveBotWorkspacePath } from "./computer-support.js";
 import { FakeBrowserProvider } from "./fake-browser.js";
 import type * as PurchaseServiceModule from "./purchase-service.js";
 import { computerTools, pageBrowserTool } from "./run-tools-computer.js";
+import { PERSON_HANDED_BACK } from "./screen-turn.js";
 import { EncryptedSecretStore } from "./secrets.js";
 import { DESKTOP_HELD_FOR_TAKEOVER_MESSAGE } from "./takeover-resume.js";
 
@@ -25,6 +26,12 @@ vi.mock("./purchase-service.js", async (importOriginal) => ({
     redactions: [],
   }),
 }));
+
+/** A screen this run has not shared with a person. */
+const freshScreen = () => ({
+  unchangedVisualStreak: { count: 0 },
+  turn: { controlFence: undefined, mustLook: false },
+});
 
 const secret = 'zq"xv\\mk';
 const url = "https://example.test/echo";
@@ -44,12 +51,18 @@ async function runPageTool(name: string, args: Record<string, unknown> = {}) {
   const browser = new FakeBrowserProvider({ pages: { [url]: { title: `Echo ${secret}`, html } } });
   await browser.navigate(computer, { url }, context);
   const ctx = {
-    deps: { prisma: { taughtSkill: { findFirst: async () => null } } },
+    deps: {
+      prisma: {
+        taughtSkill: { findFirst: async () => null },
+        computer: { findUnique: async () => null },
+      },
+    },
     run: { spaceId: "space", botId: "b1" },
     bot: { id: "b1" },
     context,
     computer: {
       heldForTakeover: false,
+      stored: { id: "c1" },
       graphicalToolsAllowed: false,
       mode: "private",
       checkpoint: { markDirty: () => {} },
@@ -58,7 +71,7 @@ async function runPageTool(name: string, args: Record<string, unknown> = {}) {
     tools: { disabled: new Set<string>() },
     providers: { browser },
     secrets: new Set([secret]),
-    state: { screen: { unchangedVisualStreak: { count: 0 } } },
+    state: { screen: freshScreen() },
   };
   const call = { name, args, finish: async (result: unknown) => result };
   const result = (await pageBrowserTool(ctx as never, call as never)) as {
@@ -111,12 +124,18 @@ describe("page tools save a page's file downloads in the calling bot's own folde
       },
     });
     const ctx = {
-      deps: { prisma: { taughtSkill: { findFirst: async () => null } } },
+      deps: {
+        prisma: {
+          taughtSkill: { findFirst: async () => null },
+          computer: { findUnique: async () => null },
+        },
+      },
       run: { spaceId: "space", botId },
       bot: { id: botId },
       context,
       computer: {
         heldForTakeover: false,
+        stored: { id: "c1" },
         graphicalToolsAllowed: false,
         mode,
         checkpoint: { markDirty },
@@ -125,7 +144,7 @@ describe("page tools save a page's file downloads in the calling bot's own folde
       tools: { disabled: new Set<string>() },
       providers: { browser },
       secrets: new Set([nameSecret]),
-      state: { screen: { unchangedVisualStreak: { count: 0 } } },
+      state: { screen: freshScreen() },
     };
     const args =
       name === "browser_navigate"
@@ -180,14 +199,28 @@ describe("screen tools keep off the screen while a takeover holds it or teaching
     "browser_navigate",
   ];
 
-  async function runScreenTool(name: string, held: boolean, teaching: boolean) {
+  async function runScreenTool(
+    name: string,
+    held: boolean,
+    teaching: boolean,
+    screen = freshScreen(),
+    controlFence = 0,
+  ) {
     const act = vi.fn(async () => ({}));
     const observe = vi.fn(async () => ({}));
     const findFirst = vi.fn(async () => (teaching ? { id: "skill" } : null));
     const get = vi.fn(async () => computer);
+    // Nobody holds the screen now; the fence counts each time a person took it.
+    const findUnique = vi.fn(async () => ({
+      controlHolder: "none",
+      controlLeaseId: null,
+      controlLeaseExpiresAt: null,
+      controlBotId: null,
+      controlFence,
+    }));
     const ctx = {
       deps: {
-        prisma: { taughtSkill: { findFirst } },
+        prisma: { taughtSkill: { findFirst }, computer: { findUnique } },
         sandbox: { act, observe },
         events: { append: async () => {} },
       },
@@ -197,10 +230,12 @@ describe("screen tools keep off the screen while a takeover holds it or teaching
       context,
       computer: {
         heldForTakeover: held,
+        stored: { id: "c1" },
         mode: "private",
         checkpoint: { markDirty: () => {} },
         get,
       },
+      state: { screen },
       secrets: new Set<string>(),
     };
     const call = {
@@ -238,6 +273,18 @@ describe("screen tools keep off the screen while a takeover holds it or teaching
   it.each(["open_path", "launch_app"])("%s acts when the screen is free", async (name) => {
     expect((await runScreenTool(name, false, false)).act).toHaveBeenCalledOnce();
   });
+
+  it("looks again before acting once a person has used the screen in between", async () => {
+    const screen = freshScreen();
+    expect((await runScreenTool("launch_app", false, false, screen, 1)).act).toHaveBeenCalledOnce();
+    const after = await runScreenTool("launch_app", false, false, screen, 2);
+    expect(after.result).toEqual({ error: PERSON_HANDED_BACK });
+    expect(after.act).not.toHaveBeenCalled();
+    expect(
+      (await runScreenTool("computer_observe", false, false, screen, 2)).observe,
+    ).toHaveBeenCalledOnce();
+    expect((await runScreenTool("launch_app", false, false, screen, 2)).act).toHaveBeenCalledOnce();
+  });
 });
 
 describe("a run remembers the sites it typed an approved wallet purchase into", () => {
@@ -251,12 +298,19 @@ describe("a run remembers the sites it typed an approved wallet purchase into", 
     });
     await browser.navigate(computer, { url }, context);
     const ctx = {
-      deps: { prisma: { taughtSkill: { findFirst: async () => null } }, paymentWallet: {} },
+      deps: {
+        prisma: {
+          taughtSkill: { findFirst: async () => null },
+          computer: { findUnique: async () => null },
+        },
+        paymentWallet: {},
+      },
       run: { spaceId: "space", botId: "b1" },
       bot: { id: "b1" },
       context,
       computer: {
         heldForTakeover: false,
+        stored: { id: "c1" },
         mode: "private",
         checkpoint: { markDirty: () => {} },
         get: async () => computer,
@@ -264,7 +318,7 @@ describe("a run remembers the sites it typed an approved wallet purchase into", 
       tools: { disabled: new Set<string>() },
       providers: { browser },
       secrets: [],
-      state: { walletHosts, screen: { unchangedVisualStreak: { count: 0 } } },
+      state: { walletHosts, screen: freshScreen() },
     };
     const call = {
       name: "browser_act",
@@ -304,12 +358,20 @@ describe("browser_act types a saved card only where the user approved it", () =>
     });
     await browser.navigate(computer, { url }, context);
     const ctx = {
-      deps: { prisma: { ...db.prisma, taughtSkill: { findFirst: async () => null } }, secretStore },
+      deps: {
+        prisma: {
+          ...db.prisma,
+          taughtSkill: { findFirst: async () => null },
+          computer: { findUnique: async () => null },
+        },
+        secretStore,
+      },
       run: { ...scope, id: "run-1", botId: "b1" },
       bot: { id: "b1" },
       context,
       computer: {
         heldForTakeover: false,
+        stored: { id: "c1" },
         mode: "private",
         checkpoint: { markDirty: () => {} },
         get: async () => computer,
@@ -319,7 +381,7 @@ describe("browser_act types a saved card only where the user approved it", () =>
       secrets,
       state: {
         walletHosts,
-        screen: { unchangedVisualStreak: { count: 0 } },
+        screen: freshScreen(),
         reply: { pendingProgress: "", redactor: createStreamingRedactor([]) },
       },
     };
@@ -427,6 +489,7 @@ describe("browser_act fill_code", () => {
       deps: {
         prisma: {
           taughtSkill: { findFirst: async () => null },
+          computer: { findUnique: async () => null },
           secret: {
             findFirst: async ({ where }: { where: Record<string, unknown> }) =>
               rows.find((row) => matches(row, where)) ?? null,
@@ -450,6 +513,7 @@ describe("browser_act fill_code", () => {
       context,
       computer: {
         heldForTakeover: false,
+        stored: { id: "c1" },
         graphicalToolsAllowed: false,
         mode: "private",
         checkpoint: { markDirty: () => {} },
@@ -459,7 +523,7 @@ describe("browser_act fill_code", () => {
       providers: { browser },
       secrets: [] as string[],
       state: {
-        screen: { unchangedVisualStreak: { count: 0 } },
+        screen: freshScreen(),
         reply: {
           pendingProgress: "",
           redactor: { finish: () => "" },

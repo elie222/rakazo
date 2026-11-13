@@ -248,6 +248,7 @@ async function grantTakeover(
       controlLeaseExpiresAt: expiresAt,
       controlBotId: bot.id,
       controlUserId: actor.userId,
+      controlFence: { increment: 1 },
       state: "running",
     },
   });

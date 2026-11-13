@@ -10,50 +10,40 @@ import type { ComputerStatus } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 
-/** Mirrors computer.takeover: an execution lease blocks user control unless a takeover is pending. */
-export function executionBlocksUserTakeover(input: {
-  hasLease: boolean;
-  leaseExpiresAt: Date | null | undefined;
-  runStatus: string | null | undefined;
-  now?: number;
-  takeoverRequested?: boolean;
-}): boolean {
-  if (!input.hasLease) return false;
-  if (input.runStatus === "waiting_takeover" || input.takeoverRequested) return false;
-  const now = input.now ?? Date.now();
-  const leaseActive = Boolean(input.leaseExpiresAt && input.leaseExpiresAt.getTime() > now);
-  const runActive = Boolean(
-    input.runStatus && (ACTIVE_RUN_STATUSES as readonly string[]).includes(input.runStatus),
-  );
-  return leaseActive || runActive;
-}
-
-export async function resolveBusyBotName(
+/** What this bot is doing with its computer: which run holds it, and whether one waits for a person. */
+export async function resolveComputerWork(
   prisma: PrismaClient,
   input: {
     computerId: string | null | undefined;
     botId: string;
     botName: string;
   },
-): Promise<string | null> {
-  if (!input.computerId) return null;
-  const lease = await prisma.computerExecutionLease.findUnique({
-    where: { computerId_botId: { computerId: input.computerId, botId: input.botId } },
-    select: { expiresAt: true, runId: true, computer: { select: { controlRunId: true } } },
-  });
-  if (!lease) return null;
-  const run = await prisma.run.findUnique({
-    where: { id: lease.runId },
-    select: { status: true },
-  });
-  return executionBlocksUserTakeover({
-    hasLease: true,
-    leaseExpiresAt: lease.expiresAt,
-    runStatus: run?.status,
-    takeoverRequested: lease.computer.controlRunId === lease.runId,
-  })
-    ? input.botName
+): Promise<ComputerWork> {
+  if (!input.computerId) return { busyBotName: null, takeoverRequested: false };
+  const [lease, waiting] = await Promise.all([
+    prisma.computerExecutionLease.findUnique({
+      where: { computerId_botId: { computerId: input.computerId, botId: input.botId } },
+      select: { expiresAt: true, runId: true },
+    }),
+    prisma.run.findFirst({
+      where: { botId: input.botId, status: "waiting_takeover" },
+      select: { id: true },
+    }),
+  ]);
+  const run = lease
+    ? await prisma.run.findUnique({ where: { id: lease.runId }, select: { status: true } })
     : null;
+  const leaseActive = Boolean(lease && lease.expiresAt.getTime() > Date.now());
+  const runActive = Boolean(
+    run?.status && (ACTIVE_RUN_STATUSES as readonly string[]).includes(run.status),
+  );
+  const working = run?.status !== "waiting_takeover" && (leaseActive || runActive);
+  return { busyBotName: working ? input.botName : null, takeoverRequested: Boolean(waiting) };
+}
+
+export interface ComputerWork {
+  busyBotName: string | null;
+  takeoverRequested: boolean;
 }
 
 export function toComputerStatus(
@@ -64,7 +54,6 @@ export function toComputerStatus(
     scope: string;
     controlHolder: string;
     controlBotId?: string | null;
-    controlRunId?: string | null;
     homeRevision: string;
     maintenanceId?: string | null;
     diskUsedBytes?: bigint | null;
@@ -73,7 +62,7 @@ export function toComputerStatus(
     controlUserId?: string | null;
     userId?: string | null;
   } | null,
-  busyBotName: string | null = null,
+  work: ComputerWork = { busyBotName: null, takeoverRequested: false },
   shared = false,
   viewerId?: string,
 ): ComputerStatus {
@@ -112,12 +101,12 @@ export function toComputerStatus(
     state,
     controlHolder: (computer?.controlHolder ?? "none") as ComputerStatus["controlHolder"],
     controlBotId: computer?.controlBotId ?? null,
-    takeoverRequested: Boolean(computer?.controlRunId),
+    takeoverRequested: work.takeoverRequested,
     screenAvailable: !computer?.maintenanceId && (state === "running" || state === "booting"),
     screenWidth: screen.width,
     screenHeight: screen.height,
     homeRevision: computer?.homeRevision ?? null,
-    busyBotName,
+    busyBotName: work.busyBotName,
     canUpdate: computerSupportsUpdate(kind),
     terminalAvailable: computerSupportsTerminal(kind),
     ...(diskFull ? { diskFullPercent: diskPercent } : {}),

@@ -5,7 +5,7 @@ import type {
   JobPublisher,
   SandboxProvider,
 } from "@rakazo/adapter-kit";
-import { computerControlExpireJobKey, skillTeachingExpireJobKey } from "@rakazo/adapter-kit";
+import { skillTeachingExpireJobKey } from "@rakazo/adapter-kit";
 import type { Actor, MessageBlock, TaughtSkill } from "@rakazo/contracts";
 import type { SkillPlaybook, TeachRecordingEvent, TeachSnapshot } from "@rakazo/core";
 import {
@@ -19,7 +19,7 @@ import {
   createThreadMessageInTransaction,
   IsolationError,
 } from "@rakazo/db";
-import { revokeScreenControl } from "./computer-control.js";
+import { releaseComputerControlLease } from "./computer-control.js";
 import { scheduleComputerSleep } from "./computer-idle.js";
 import { toComputerRef } from "./computer-support.js";
 
@@ -301,7 +301,7 @@ async function releaseTeachingComputerControl(
       controlHolder: string;
       controlBotId: string | null;
       controlLeaseId: string | null;
-      controlRunId: string | null;
+      spaceId: string;
     } | null;
   },
   expectedLeaseId?: string | null,
@@ -315,23 +315,14 @@ async function releaseTeachingComputerControl(
     return;
   }
   if (!expectedLeaseId || computer.controlLeaseId !== expectedLeaseId) return;
-  const leaseId = computer.controlLeaseId;
-  await revokeScreenControl(
+  await releaseComputerControlLease(
     deps,
     computer,
+    bot.id,
+    computer.controlLeaseId,
     computerContext(actor, bot.id, "skills.release"),
-    leaseId,
+    "released",
   );
-  await deps.jobs.cancel(computerControlExpireJobKey(computer.id, leaseId));
-  await deps.events.finalizeComputerControlRelease({
-    spaceId: actor.spaceId,
-    computerId: computer.id,
-    botId: bot.id,
-    runId: computer.controlRunId,
-    leaseId,
-    holder: "bot",
-    reason: "released",
-  });
   await scheduleComputerSleep(deps.jobs, computer.id);
 }
 

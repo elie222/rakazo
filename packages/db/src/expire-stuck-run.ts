@@ -124,15 +124,6 @@ export async function expireStuckRun(
     where: { runId: input.runId, ...transientRunEventsWhere() },
   });
   await expireComputerExecutionLeases(tx, { runId: input.runId });
-  // A user lease still on this row is on the screen until release or revocation.
-  // Dropping controlRunId first makes maintenance treat the takeover as idle.
-  await tx.computer.updateMany({
-    where: {
-      controlRunId: input.runId,
-      OR: [{ controlHolder: { not: "user" } }, { controlLeaseId: null }],
-    },
-    data: { controlRunId: null },
-  });
   await tx.computer.updateMany({
     where: { executionRunId: input.runId },
     data: {
@@ -192,8 +183,8 @@ export async function endTakeoverWaits(
 
 /**
  * Whether the user has taken this bot's screen. Any control lease still on the row counts, even
- * an expired one or one mid-release: releasing it resumes the waiting run, which a cancel here
- * would prevent. Locks the computer row, so a concurrent takeover grant either lands first and
+ * an expired one or one mid-release: the person may still be finishing the step the run waits
+ * on, so it is not cancelled under them. Locks the computer row, so a concurrent takeover grant either lands first and
  * is seen here, or waits for this cancel.
  */
 async function userHasTakeoverScreen(

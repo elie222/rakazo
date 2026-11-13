@@ -37,8 +37,8 @@ import {
 import type { Panel } from "../../lib/right-panel-state";
 import type { createSpaceRpc } from "../../lib/rpc";
 import {
+  computerBusyWithRun,
   computerPanelNeedsScreen,
-  computerTakeoverBlocked,
   screenMissing,
   screenReadLoaded,
   userHoldsComputerControl,
@@ -718,7 +718,7 @@ export function useComputerControls({
 
   // Opening the computer while its bot was running was refused as busy; boot it once the run
   // ends, or the open window is left on a stopped computer with nothing to press.
-  const computerBlockedByRun = computerTakeoverBlocked(computer, runStatus);
+  const computerBlockedByRun = computerBusyWithRun(computer, runStatus);
   useEffect(() => {
     if (computerBlockedByRun) return;
     const botId = computer?.botId;
@@ -743,21 +743,39 @@ export function useComputerControls({
     return () => window.removeEventListener("keydown", onKey);
   }, [computerOpen]);
 
+  const hasControl = userHoldsComputerControl(computer, computerBot?.id);
   useEffect(() => {
     const heartbeatBotId = computerBot?.id ?? active?.id;
     if ((panel !== "computer" && !computerOpen) || !heartbeatBotId || computer?.state !== "running")
       return;
-    // A computer panel left open in a hidden window must not keep the computer awake.
+    // A screen left open in a hidden window must not keep the computer awake, but control lasts
+    // while the page checks in, so the person holding it keeps it from another tab.
     const ping = () => {
-      if (document.visibilityState !== "visible") return;
+      if (!hasControl && document.visibilityState !== "visible") return;
       void rpc.computer.heartbeat({ botId: heartbeatBotId }).catch((error) => {
         if (!isRetryableError(error)) window.clearInterval(timer);
       });
     };
-    const timer = window.setInterval(ping, 60_000);
+    const timer = window.setInterval(ping, hasControl ? 15_000 : 60_000);
     ping();
     return () => window.clearInterval(timer);
-  }, [panel, computerOpen, computerBot?.id, active?.id, computer?.state]);
+  }, [panel, computerOpen, computerBot?.id, active?.id, computer?.state, hasControl]);
+
+  // Control ends with the screen: closing it, switching chats, or leaving the page hands it back.
+  const heldBotId = hasControl && computerOpen ? computerBot?.id : undefined;
+  useEffect(() => {
+    if (!heldBotId) return;
+    const handBack = () =>
+      void rpc.computer
+        .release({ botId: heldBotId }, { context: { keepalive: true } })
+        .catch(() => undefined);
+    window.addEventListener("pagehide", handBack);
+    return () => {
+      window.removeEventListener("pagehide", handBack);
+      if (computerOpenRef.current && computerBotIdRef.current === heldBotId) return;
+      handBack();
+    };
+  }, [heldBotId]);
 
   /** Open the computer view. Only an explicit Take control asks for the lease. */
   async function openComputer(botId?: string, takeControl = false) {
@@ -785,12 +803,11 @@ export function useComputerControls({
       return true;
     }
     const needsTakeover = takeControl && !userHoldsComputerControl(targetComputer, id);
-    const blocked = computerTakeoverBlocked(targetComputer, runStatus);
     try {
       await bootComputer({
         botId: id,
-        takeControl: needsTakeover && !blocked,
-        showProgress: (needsTakeover && !blocked) || targetComputer?.state !== "running",
+        takeControl: needsTakeover,
+        showProgress: needsTakeover || targetComputer?.state !== "running",
         force: targetComputer?.state !== "running",
       });
       return true;
@@ -859,7 +876,6 @@ export function useComputerControls({
   );
 
   const embeddedScreenUrl = embeddableScreenUrl(screenUrl);
-  const hasControl = userHoldsComputerControl(computer, computerBot?.id);
   const hideScreenLoadError = computerErrorFromScreen && Boolean(embeddedScreenUrl);
   const screenFailure =
     Boolean(screenLoadError) ||

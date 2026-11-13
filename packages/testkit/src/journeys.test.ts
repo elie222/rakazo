@@ -367,7 +367,7 @@ describeJourneys("required product journeys", () => {
       const computer = await prisma.computer.findFirstOrThrow({
         where: { bots: { some: { id: bot.id } } },
       });
-      return computer.controlHolder === "user" && computer.controlRunId === runId;
+      return computer.controlHolder === "user" && computer.controlBotId === bot.id;
     });
 
     for (const proc of ["computer/update", "computer/recover", "computer/reset"] as const) {
@@ -382,7 +382,6 @@ describeJourneys("required product journeys", () => {
     });
     expect(computer.controlHolder).toBe("user");
     expect(computer.controlLeaseId).not.toBeNull();
-    expect(computer.controlRunId).toBe(runId);
     expect(
       await prisma.computerUpdate.count({
         where: { botId: bot.id, status: { in: ["queued", "running", "completed"] } },
@@ -850,7 +849,7 @@ describeJourneys("required product journeys", () => {
     expect(JSON.stringify(waiting.messages)).not.toMatch(/password|secret|token/i);
     await rpc(app, cookie, "computer/boot", { botId: bot.id });
     await rpc(app, cookie, "computer/takeover", { botId: bot.id });
-    await rpc(app, cookie, "computer/release", { botId: bot.id });
+    await rpc(app, cookie, "computer/release", { botId: bot.id, reason: "done" });
     const done = await waitFor(
       app,
       cookie,
@@ -958,91 +957,87 @@ describeJourneys("required product journeys", () => {
     ).toMatchObject({ runId: direct.run.id, fence: held.fence + 1 });
   });
 
-  it("4b: an expired takeover denies input and reconciles API and database state", async () => {
-    const previousTakeoverTtl = process.env.COMPUTER_TAKEOVER_TTL_MS;
-    process.env.COMPUTER_TAKEOVER_TTL_MS = "1000";
-    try {
-      const cookie = await signup(app, `takeover-expiry-j-${stamp}@rakazo.test`, "Expiry");
-      const bot = await rpc<Bot>(app, cookie, "bots/create", {
-        name: "Chief",
-        title: "",
-        description: "",
-        instructions: "",
-        notifyOnFinish: true,
-      });
-      await rpc(app, cookie, "threads/send", {
-        botId: bot.id,
-        text: "install the gsc cli and sign in",
-      });
-      const waiting = await waitFor(
-        app,
-        cookie,
-        bot.id,
-        (snap) => snap.run?.status === "waiting_takeover",
-      );
-      await rpc(app, cookie, "computer/boot", { botId: bot.id });
-      const lease = await rpc<{ leaseId: string; expiresAt: string }>(
-        app,
-        cookie,
-        "computer/takeover",
-        { botId: bot.id },
-      );
-      expect(new Date(lease.expiresAt).getTime() - Date.now()).toBeLessThanOrEqual(1000);
-      expect(
-        (await rpc<{ url: string | null }>(app, cookie, "computer/screenUrl", { botId: bot.id }))
-          .url,
-      ).toContain("view_only=false");
-      await rpc(app, cookie, "computer/input", {
-        botId: bot.id,
-        kind: "key",
-        payload: { key: "a" },
-      });
+  it("4b: control lapses when the page stops checking in, and the bot keeps waiting", async () => {
+    const cookie = await signup(app, `takeover-expiry-j-${stamp}@rakazo.test`, "Expiry");
+    const bot = await rpc<Bot>(app, cookie, "bots/create", {
+      name: "Chief",
+      title: "",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+    await rpc(app, cookie, "threads/send", {
+      botId: bot.id,
+      text: "install the gsc cli and sign in",
+    });
+    const waiting = await waitFor(
+      app,
+      cookie,
+      bot.id,
+      (snap) => snap.run?.status === "waiting_takeover",
+    );
+    await rpc(app, cookie, "computer/boot", { botId: bot.id });
+    const lease = await rpc<{ leaseId: string; expiresAt: string }>(
+      app,
+      cookie,
+      "computer/takeover",
+      { botId: bot.id },
+    );
+    expect(new Date(lease.expiresAt).getTime() - Date.now()).toBeLessThanOrEqual(90_000);
+    expect(
+      (await rpc<{ url: string | null }>(app, cookie, "computer/screenUrl", { botId: bot.id })).url,
+    ).toContain("view_only=false");
+    await rpc(app, cookie, "computer/input", {
+      botId: bot.id,
+      kind: "key",
+      payload: { key: "a" },
+    });
 
-      await waitForDatabase(async () => {
-        const storedBot = await prisma.bot.findUniqueOrThrow({
-          where: { id: bot.id },
-          include: { computer: true },
-        });
-        const computer = storedBot.computer!;
-        return computer.controlLeaseId === null && computer.controlHolder === "none";
+    // The page went quiet for a minute.
+    await prisma.computer.updateMany({
+      where: { controlLeaseId: lease.leaseId },
+      data: { controlLeaseExpiresAt: new Date(Date.now() - 1_000) },
+    });
+    expect(
+      (await rpc<{ controlHolder: string }>(app, cookie, "computer/status", { botId: bot.id }))
+        .controlHolder,
+    ).toBe("none");
+    await waitForDatabase(async () => {
+      const storedBot = await prisma.bot.findUniqueOrThrow({
+        where: { id: bot.id },
+        include: { computer: true },
       });
-
-      expect(
-        (await rpc<{ controlHolder: string }>(app, cookie, "computer/status", { botId: bot.id }))
-          .controlHolder,
-      ).toBe("none");
-      expect(
-        (await rpc<{ url: string | null }>(app, cookie, "computer/screenUrl", { botId: bot.id }))
-          .url,
-      ).toContain("view_only=true");
-      expect(
-        (
-          await raw(app, cookie, "computer/input", {
-            botId: bot.id,
-            kind: "key",
-            payload: { key: "b" },
-          })
-        ).status,
-      ).toBeGreaterThanOrEqual(400);
-      const done = await waitFor(
-        app,
-        cookie,
-        bot.id,
-        (snap) => !snap.run || ["completed", "failed", "cancelled"].includes(snap.run.status),
-      );
-      expect(JSON.stringify(done.messages).toLowerCase()).toMatch(/skipped/);
-      expect(JSON.stringify(done.messages).toLowerCase()).not.toMatch(/signed in/);
-      expect(done.run?.status ?? "completed").not.toBe("waiting_takeover");
-      expect(
-        await prisma.event.findFirst({
-          where: { runId: waiting.run?.id, type: "computer.takeover.released" },
-          orderBy: { createdAt: "desc" },
-        }),
-      ).toMatchObject({ payload: { reason: "expired" } });
-    } finally {
-      if (previousTakeoverTtl === undefined) delete process.env.COMPUTER_TAKEOVER_TTL_MS;
-      else process.env.COMPUTER_TAKEOVER_TTL_MS = previousTakeoverTtl;
-    }
+      return storedBot.computer?.controlLeaseId === null;
+    });
+    expect(
+      (await rpc<{ url: string | null }>(app, cookie, "computer/screenUrl", { botId: bot.id })).url,
+    ).toContain("view_only=true");
+    expect(
+      (
+        await raw(app, cookie, "computer/input", {
+          botId: bot.id,
+          kind: "key",
+          payload: { key: "b" },
+        })
+      ).status,
+    ).toBeGreaterThanOrEqual(400);
+    expect(
+      await prisma.event.findFirst({
+        where: { botId: bot.id, type: "computer.takeover.released" },
+        orderBy: { createdAt: "desc" },
+      }),
+    ).toMatchObject({ payload: { reason: "expired" } });
+    // Only Done or Skip answers the bot.
+    expect((await prisma.run.findUniqueOrThrow({ where: { id: waiting.run!.id } })).status).toBe(
+      "waiting_takeover",
+    );
+    await rpc(app, cookie, "computer/release", { botId: bot.id, reason: "skipped" });
+    await waitFor(
+      app,
+      cookie,
+      bot.id,
+      (snap) => !snap.run || ["completed", "failed", "cancelled"].includes(snap.run.status),
+    );
   });
 
   it("4c: a takeover authorizes input only on the controlled bot screen", async () => {
@@ -1193,11 +1188,31 @@ describeJourneys("required product journeys", () => {
       where: { id: computerId },
     });
     expect(afterOwnerRelease).toMatchObject({
-      controlHolder: "bot",
+      controlHolder: "none",
       controlBotId: null,
       controlLeaseId: null,
       controlLeaseExpiresAt: null,
     });
+    const releaseEvent = await prisma.event.findFirstOrThrow({
+      where: { botId: researcher.id, type: "computer.takeover.released" },
+      orderBy: { seq: "desc" },
+    });
+    expect(releaseEvent.payload).toMatchObject({
+      holder: "none",
+      leaseId: researcherLease.leaseId,
+      reason: "released",
+    });
+    // Handing back ends control only; the bot waits until its request is answered.
+    expect(
+      (
+        await prisma.run.findFirstOrThrow({
+          where: { botId: researcher.id },
+          orderBy: { createdAt: "desc" },
+        })
+      ).status,
+    ).toBe("waiting_takeover");
+
+    await rpc(app, cookie, "computer/release", { botId: researcher.id, reason: "done" });
     await waitFor(
       app,
       cookie,
@@ -1208,23 +1223,7 @@ describeJourneys("required product journeys", () => {
       await prisma.event.count({
         where: { botId: researcher.id, type: "computer.takeover.released" },
       }),
-    ).toBe(releaseEventsBefore + 1);
-    const releaseEvent = await prisma.event.findFirstOrThrow({
-      where: { botId: researcher.id, type: "computer.takeover.released" },
-      orderBy: { seq: "desc" },
-    });
-    expect(releaseEvent.payload).toMatchObject({
-      holder: "bot",
-      leaseId: researcherLease.leaseId,
-      reason: "released",
-    });
-
-    await rpc(app, cookie, "computer/release", { botId: researcher.id });
-    expect(
-      await prisma.event.count({
-        where: { botId: researcher.id, type: "computer.takeover.released" },
-      }),
-    ).toBe(releaseEventsBefore + 1);
+    ).toBe(releaseEventsBefore + 2);
   });
 
   it("4e: concurrent Team takeovers never return another bot's lease", async () => {
@@ -3337,7 +3336,7 @@ describeJourneys("required product journeys", () => {
       "computer/status",
       { botId: bot.id },
     );
-    expect(computerAfterStop.controlHolder).toBe("bot");
+    expect(computerAfterStop.controlHolder).toBe("none");
     expect(computerAfterStop.controlBotId).toBeNull();
     await rpc(app, cookie, "skills/updateDraft", {
       skillId: skill.id,

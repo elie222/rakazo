@@ -42,6 +42,7 @@ import { publishMessage } from "./run-messages.js";
 import { subagentMarksUnread } from "./run-notifications.js";
 import { secretPausedToolResult } from "./run-secret.js";
 import type { createRunTrustLoaders } from "./run-trust.js";
+import type { ScreenTurn } from "./screen-turn.js";
 import type { inferScript } from "./scripted-runtime.js";
 import type { LoopGuardStreak } from "./tool-loop.js";
 import type { ToolRefusal } from "./tool-refusal.js";
@@ -160,6 +161,7 @@ export interface EffectState {
 export interface ScreenState {
   lastFrameId: string | undefined;
   unchangedVisualStreak: UnchangedVisualStreak;
+  turn: ScreenTurn;
 }
 
 /** What one attempt changes while it runs. Every piece shares these objects by reference. */

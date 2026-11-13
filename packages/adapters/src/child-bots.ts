@@ -769,7 +769,6 @@ function releasedComputerLease() {
     controlUserId: null,
     controlLeaseExpiresAt: null,
     controlBotId: null,
-    controlRunId: null,
     executionRunId: null,
     executionBotId: null,
     executionLeaseExpiresAt: null,

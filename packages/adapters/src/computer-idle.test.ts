@@ -370,7 +370,6 @@ describe("sandbox idle", () => {
         controlUserId: null,
         controlLeaseExpiresAt: null,
         controlBotId: null,
-        controlRunId: null,
       },
     });
     expect(harness.events.append).toHaveBeenCalledWith(

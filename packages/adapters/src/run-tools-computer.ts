@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { setTimeout as sleep } from "node:timers/promises";
 import type { SandboxProvider } from "@rakazo/adapter-kit";
 import type { ComputerCommand } from "@rakazo/contracts";
 import { COMPUTER_COMMAND_OUTPUT_MAX_CHARS } from "@rakazo/contracts";
@@ -19,6 +20,7 @@ import {
   browserSnapshotFromTool,
   redactBrowserResult,
 } from "./browser-tools.js";
+import { hasActiveComputerControl } from "./computer-control.js";
 import { BACKGROUND_WORK_LAUNCH } from "./computer-idle.js";
 import {
   displayBotWorkspacePath,
@@ -50,6 +52,7 @@ import { builtinOffered } from "./run-instructions.js";
 import { computerScreenToolResult } from "./run-lifecycle.js";
 import type { ToolCall, ToolHandlers } from "./run-tool-gate.js";
 import { auditToolCall } from "./run-tool-gate.js";
+import { awaitScreenTurn } from "./screen-turn.js";
 import {
   isRunningShellCommand,
   observeShellCommand,
@@ -135,12 +138,34 @@ function formatObservation(
   return result;
 }
 
-async function screenBlocked(ctx: RunContext): Promise<string | undefined> {
+async function screenBlocked(ctx: RunContext, look = false): Promise<string | undefined> {
   if (ctx.computer.heldForTakeover) return DESKTOP_HELD_FOR_TAKEOVER_MESSAGE;
   if (await getActiveTeachingSession(ctx.deps.prisma, ctx.run.spaceId, ctx.run.botId)) {
     return "Teaching is in progress. Stop teaching before using the computer.";
   }
-  return undefined;
+  const { signal } = ctx.context;
+  return awaitScreenTurn({
+    turn: ctx.state.screen.turn,
+    look,
+    readControl: async () => {
+      const computer = await ctx.deps.prisma.computer.findUnique({
+        where: { id: ctx.computer.stored.id },
+        select: {
+          controlHolder: true,
+          controlLeaseId: true,
+          controlLeaseExpiresAt: true,
+          controlBotId: true,
+          controlFence: true,
+        },
+      });
+      if (!computer) return null;
+      return {
+        held: hasActiveComputerControl(computer) && computer.controlBotId === ctx.bot.id,
+        fence: computer.controlFence,
+      };
+    },
+    sleep: (ms) => sleep(ms, undefined, { signal }),
+  });
 }
 
 /**
@@ -182,7 +207,7 @@ function releaseUnpressedPayment(ctx: RunContext, call: ToolCall): Promise<void>
 export async function pageBrowserTool(ctx: RunContext, call: ToolCall) {
   const { deps, run, bot, context } = ctx;
   const { name, args } = call;
-  const blocked = await screenBlocked(ctx);
+  const blocked = await screenBlocked(ctx, name === "browser_snapshot");
   if (blocked) return call.finish({ error: blocked });
   if (name !== "browser_snapshot") ctx.computer.checkpoint.markDirty();
   // Pages can echo a filled login (e.g. a username field), so scrub every page result.
@@ -326,7 +351,7 @@ export const computerTools: ToolHandlers = {
   async computer_observe(ctx, call) {
     const { deps, context } = ctx;
     const { name } = call;
-    const blocked = await screenBlocked(ctx);
+    const blocked = await screenBlocked(ctx, true);
     if (blocked) return { error: blocked };
     return computerScreenToolResult(async () =>
       formatObservation(

@@ -62,11 +62,15 @@ import {
   hasChannelMessage,
 } from "./thread-steering.js";
 import type {
-  FinalizeComputerControlReleaseInput,
-  FinalizeComputerControlReleaseResult,
+  AnswerTakeoverRequestInput,
   PauseRunForTakeover,
+  ReleaseUserControlInput,
 } from "./thread-takeover.js";
-import { finalizeComputerControlRelease, pauseRunForTakeover } from "./thread-takeover.js";
+import {
+  answerTakeoverRequest,
+  pauseRunForTakeover,
+  releaseUserControl,
+} from "./thread-takeover.js";
 import { THREAD_LOCK_TRANSACTION_OPTIONS, withTransactionRetry } from "./transaction-retry.js";
 
 export { THREAD_LOCK_TRANSACTION_OPTIONS };
@@ -110,10 +114,9 @@ export interface ThreadEvents {
   append(input: AppendEventInput): Promise<ProductEvent>;
   claimSteering(input: ClaimSteeringInput): Promise<ClaimedSteeringMessage[]>;
   clearThread(input: ClearThreadInput): Promise<ClearThreadResult>;
-  finalizeComputerControlRelease(
-    input: FinalizeComputerControlReleaseInput,
-  ): Promise<FinalizeComputerControlReleaseResult | false>;
+  answerTakeoverRequest(input: AnswerTakeoverRequestInput): Promise<boolean>;
   finalizeRun(input: FinalizeRunInput): Promise<FinalizeRunResult | false>;
+  releaseUserControl(input: ReleaseUserControlInput): Promise<boolean>;
   notify(threadId: string, seq: number, firstResponseRunId?: string): Promise<void>;
   pauseRunForInput(input: PauseRunForInput): Promise<FinalizeRunResult | false>;
   pauseRunForTakeover(input: PauseRunForTakeover): Promise<boolean | { continuationRunId: string }>;
@@ -241,8 +244,8 @@ export function createThreadEvents(
     append: (input) => appendEvent(prisma, input, realtime, options.analytics),
     claimSteering: (input) => claimSteering(prisma, input),
     clearThread: (input) => clearThread(prisma, input, realtime),
-    finalizeComputerControlRelease: (input) =>
-      finalizeComputerControlRelease(prisma, input, realtime),
+    answerTakeoverRequest: (input) => answerTakeoverRequest(prisma, input, realtime),
+    releaseUserControl: (input) => releaseUserControl(prisma, input, realtime),
     finalizeRun: (input) => finalizeRun(prisma, input, realtime, options.analytics),
     notify: (threadId, seq, firstResponseRunId) =>
       notifyCommittedEvent(prisma, realtime, threadId, seq, firstResponseRunId),
@@ -358,9 +361,8 @@ export async function clearThread(
     await realtime?.publish(`incoming-calls:${committed.userId}`, "").catch(() => undefined);
   // Legacy execution bindings point at runs of pre-lease releases, which kept writing
   // Computer.executionRunId. Clearing them inside the transaction reaches for the
-  // computer row while holding the thread row — the inverted half of a cycle with a
-  // concurrent finalizeComputerControlRelease, which locks the computer first and the
-  // thread second. This statement holds no other row, so it can wait out any holder.
+  // computer row while holding the thread row. This statement holds no other row, so it can
+  // wait out any holder.
   // The clear is already committed: a failed sweep leaves a stale binding for the idle pass
   // to clear, and must not report the clear itself as failed.
   if (committed.cancelledRunIds.length > 0) {
