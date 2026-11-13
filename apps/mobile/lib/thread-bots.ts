@@ -31,6 +31,7 @@ export function useThreadBots({
       mounted.current = false;
     };
   }, []);
+  const mentionGroupsRefreshGeneration = useRef(0);
   const mentionGroupsAppliedGeneration = useRef(0);
   const mentionBotsRefreshGeneration = useRef(0);
   const mentionBotsAppliedGeneration = useRef(0);
@@ -48,21 +49,6 @@ export function useThreadBots({
       mounted.current &&
       activeTarget.current.botId === botId &&
       activeTarget.current.groupId === groupId;
-    const refreshGroups = async () => {
-      try {
-        const groups = await rpc("groups/list");
-        if (!isCurrent() || generation < mentionGroupsAppliedGeneration.current) return;
-        mentionGroupsAppliedGeneration.current = generation;
-        setMentionGroups(groups);
-        const next = groups.find((group) => group.id === groupId);
-        if (next?.name && next.name !== routeName.current) {
-          router.setParams({ name: next.name });
-        }
-      } catch {
-        // Retain the last known groups when a refresh fails.
-      }
-    };
-    const groupsRefresh = refreshGroups();
     try {
       const bots = await rpc("bots/list");
       // Apply any successful response that is still the newest applied so far.
@@ -87,10 +73,36 @@ export function useThreadBots({
       if (!saved || mentionBotsAppliedGeneration.current !== 0) return;
       if (!isCurrent() || targetBotId !== activeBotId.current) return;
       setMentionBots((current) => (current.length ? current : saved.bots));
-    } finally {
-      await groupsRefresh;
     }
   }, [botId, groupId, router]);
 
-  return { mentionBots, mentionBotsRef, mentionGroups, refreshMentionBots };
+  const refreshMentionGroups = useCallback(async () => {
+    if (!botId && !groupId) return;
+    const generation = ++mentionGroupsRefreshGeneration.current;
+    try {
+      const groups = await rpc("groups/list");
+      if (
+        !mounted.current ||
+        activeTarget.current.botId !== botId ||
+        activeTarget.current.groupId !== groupId ||
+        generation < mentionGroupsAppliedGeneration.current
+      )
+        return;
+      mentionGroupsAppliedGeneration.current = generation;
+      setMentionGroups(groups);
+      const next = groups.find((group) => group.id === groupId);
+      if (next?.name && next.name !== routeName.current) {
+        router.setParams({ name: next.name });
+      }
+    } catch {
+      // Retain the last known groups when a refresh fails.
+    }
+  }, [botId, groupId, router]);
+
+  // Focus refreshes both rosters; live bot events only need refreshMentionBots.
+  const refreshMentionRoster = useCallback(async () => {
+    await Promise.all([refreshMentionBots(), refreshMentionGroups()]);
+  }, [refreshMentionBots, refreshMentionGroups]);
+
+  return { mentionBots, mentionBotsRef, mentionGroups, refreshMentionBots, refreshMentionRoster };
 }

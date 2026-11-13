@@ -47,27 +47,43 @@ describe("thread roster refresh", () => {
     vi.unstubAllGlobals();
   });
 
+  it.each([{ botId: "bot-1" }, { groupId: "group-1" }])(
+    "refreshes only bots for live updates in %j",
+    async (target) => {
+      await act(async () => root.render(createElement(Thread, target)));
+      vi.mocked(rpc).mockClear();
+      await act(async () => {
+        await state.refreshMentionBots();
+        await state.refreshMentionBots();
+      });
+      expect(vi.mocked(rpc).mock.calls.map(([method]) => method)).toEqual([
+        "bots/list",
+        "bots/list",
+      ]);
+    },
+  );
+
   it("refreshes the group title and mention roster when returning from settings", async () => {
     let groups = [group("group-1", "Old name")];
     vi.mocked(rpc).mockImplementation(async (method) => (method === "groups/list" ? groups : []));
     await render();
     await act(async () => {
-      await state.refreshMentionBots();
+      await state.refreshMentionRoster();
     });
     expect(state.mentionGroups).toEqual(groups);
     expect(router.setParams).not.toHaveBeenCalled();
     groups = [group("group-1", "New name")];
     await act(async () => {
-      await state.refreshMentionBots();
+      await state.refreshMentionRoster();
     });
     expect(state.mentionGroups).toEqual(groups);
     expect(router.setParams).toHaveBeenCalledWith({ name: "New name" });
-    const refresh = state.refreshMentionBots;
+    const refresh = state.refreshMentionRoster;
     await render({ groupId: "group-1", name: "New name" });
-    expect(state.refreshMentionBots).toBe(refresh);
+    expect(state.refreshMentionRoster).toBe(refresh);
     router.setParams.mockClear();
     await act(async () => {
-      await state.refreshMentionBots();
+      await state.refreshMentionRoster();
     });
     expect(router.setParams).not.toHaveBeenCalled();
   });
@@ -80,7 +96,7 @@ describe("thread roster refresh", () => {
     });
     await act(async () => root.render(createElement(Thread, { botId: "bot-1", name: "Old bot" })));
     await act(async () => {
-      await state.refreshMentionBots();
+      await state.refreshMentionRoster();
     });
     expect(state.mentionBots).toEqual(bots);
     expect(router.setParams).toHaveBeenCalledWith({ name: "Renamed bot" });
@@ -91,12 +107,12 @@ describe("thread roster refresh", () => {
     vi.mocked(rpc).mockImplementation(async (method) => (method === "groups/list" ? groups : []));
     await render();
     await act(async () => {
-      await state.refreshMentionBots();
+      await state.refreshMentionRoster();
     });
     vi.mocked(rpc).mockRejectedValue(new Error("offline"));
     router.setParams.mockClear();
     await act(async () => {
-      await state.refreshMentionBots();
+      await state.refreshMentionRoster();
     });
     expect(state.mentionGroups).toEqual(groups);
     expect(router.setParams).not.toHaveBeenCalled();
@@ -109,9 +125,34 @@ describe("thread roster refresh", () => {
     });
     await render();
     await act(async () => {
-      await state.refreshMentionBots();
+      await state.refreshMentionRoster();
     });
     expect(router.setParams).toHaveBeenCalledWith({ name: "New name" });
+  });
+
+  it("keeps a pending focus group refresh independent of live bot refreshes", async () => {
+    const pending = deferred<MobileGroup[]>();
+    vi.mocked(rpc).mockImplementation(async (method) =>
+      method === "groups/list" ? pending.promise : [],
+    );
+    await render();
+    let refresh!: Promise<void>;
+    act(() => {
+      refresh = state.refreshMentionRoster();
+    });
+    await act(async () => {
+      await state.refreshMentionBots();
+      await state.refreshMentionBots();
+    });
+    expect(vi.mocked(rpc).mock.calls.filter(([method]) => method === "groups/list")).toHaveLength(
+      1,
+    );
+    await act(async () => {
+      pending.resolve([group("group-1", "Renamed")]);
+      await refresh;
+    });
+    expect(state.mentionGroups).toEqual([group("group-1", "Renamed")]);
+    expect(router.setParams).toHaveBeenCalledWith({ name: "Renamed" });
   });
 
   it("ignores an older successful response after a newer success", async () => {
@@ -125,8 +166,8 @@ describe("thread roster refresh", () => {
     let first!: Promise<void>;
     let second!: Promise<void>;
     act(() => {
-      first = state.refreshMentionBots();
-      second = state.refreshMentionBots();
+      first = state.refreshMentionRoster();
+      second = state.refreshMentionRoster();
     });
     await act(async () => {
       newer.resolve([group("group-1", "Newest")]);
@@ -151,8 +192,8 @@ describe("thread roster refresh", () => {
     let first!: Promise<void>;
     let second!: Promise<void>;
     act(() => {
-      first = state.refreshMentionBots();
-      second = state.refreshMentionBots();
+      first = state.refreshMentionRoster();
+      second = state.refreshMentionRoster();
     });
     await act(async () => {
       newer.reject(new Error("offline"));
@@ -174,7 +215,7 @@ describe("thread roster refresh", () => {
     await render();
     let refresh!: Promise<void>;
     act(() => {
-      refresh = state.refreshMentionBots();
+      refresh = state.refreshMentionRoster();
     });
     if (action === "switch") await render({ groupId: "group-2", name: "Other" });
     else {
