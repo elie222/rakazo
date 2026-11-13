@@ -383,6 +383,11 @@ msgstr "{label}, ниже"
 msgid "{label}, empty"
 msgstr "{label}, пусто"
 
+#. placeholder {0}: base.name
+#: apps/web/src/components/ModelCredits.tsx
+msgid "{memoryGb} GB of RAM and {usage}× the computer time of {0}. Time counts only while your bot uses its computer."
+msgstr ""
+
 #: apps/web/src/lib/relative-time.ts
 msgid "{minutes}m ago"
 msgstr "{minutes} мин назад"
@@ -854,6 +859,10 @@ msgstr "1 непрочитанный"
 msgid "3 hours"
 msgstr "3 часа"
 
+#: apps/web/src/components/ModelCredits.tsx
+msgid "A {times}× more powerful computer for your bot"
+msgstr ""
+
 #: apps/web/src/pages/shell/message-cards.tsx
 msgid "A bit of everything"
 msgstr "Всего понемногу"
@@ -970,7 +979,9 @@ msgid "Active: {name}"
 msgstr "Активна: {name}"
 
 #: apps/mobile/components/inbox-header.tsx
+#: apps/mobile/components/vault-item-sheet.tsx
 #: apps/mobile/lib/use-home-header.ts
+#: apps/web/src/components/vault/VaultItemActivity.tsx
 #: apps/web/src/pages/shell/sidebar-header.tsx
 msgid "Activity"
 msgstr "Активность"
@@ -1048,6 +1059,11 @@ msgstr "Добавьте ключ голосового провайдера и �
 msgid "Add an AI model to keep chatting"
 msgstr "Добавьте ИИ-модель, чтобы продолжить общение"
 
+#: apps/mobile/components/vault-item-editor.tsx
+#: apps/web/src/components/vault/VaultItemEditor.tsx
+msgid "Add an authenticator key"
+msgstr ""
+
 #: apps/web/src/pages/McpServersOverlay.tsx
 msgid "Add an HTTPS server URL."
 msgstr "Добавьте URL-адрес HTTPS-сервера."
@@ -1111,6 +1127,11 @@ msgstr "Добавить модель"
 msgid "Add open work"
 msgstr "Добавить задачу"
 
+#: apps/mobile/components/vault-item-editor.tsx
+#: apps/web/src/components/vault/VaultItemEditor.tsx
+msgid "Add other sites"
+msgstr ""
+
 #: apps/mobile/app/(settings)/profile.tsx
 #: apps/mobile/lib/passkey.ts
 #: apps/web/src/components/PasskeyOffer.tsx
@@ -1160,6 +1181,11 @@ msgstr "Добавить триггер"
 #: apps/web/src/pages/MessagingSettingsPanel.tsx
 msgid "Add workspace"
 msgstr "Добавить рабочее пространство"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "Added"
+msgstr ""
 
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/mobile/app/(settings)/plugin.tsx
@@ -1252,6 +1278,7 @@ msgid "All {price} goes to model usage."
 msgstr "Все {price} идут на использование моделей."
 
 #: apps/mobile/app/artifacts.tsx
+#: apps/mobile/components/vault-item-editor.tsx
 #: apps/web/src/components/integrations/agent-access.tsx
 #: apps/web/src/pages/Artifacts.tsx
 #: apps/web/src/pages/shell/agent-import-plan.tsx
@@ -1275,6 +1302,11 @@ msgstr "Все статусы"
 #: apps/web/src/pages/Artifacts.tsx
 msgid "All time"
 msgstr "За всё время"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "Allow"
+msgstr ""
 
 #: apps/mobile/lib/ai-consent.ts
 #: apps/web/src/components/ApprovalRulesSettings.tsx
@@ -1341,6 +1373,18 @@ msgstr "Уже подключено"
 msgid "Already have an account?"
 msgstr "У вас уже есть аккаунт?"
 
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "Already saved"
+msgstr ""
+
+#: apps/mobile/components/vault-item-editor.tsx
+#: apps/mobile/components/vault-item-sheet.tsx
+#: apps/web/src/components/vault/VaultItemDetail.tsx
+#: apps/web/src/components/vault/VaultItemEditor.tsx
+msgid "Also on"
+msgstr ""
+
 #: apps/mobile/app/(settings)/team-conversation.tsx
 #: apps/web/src/pages/ExternalConversationSettings.tsx
 msgid "Always act"
@@ -1404,6 +1448,11 @@ msgstr "Не удалось использовать импортированн�
 #: apps/web/src/pages/routine-editor/trigger-cards.tsx
 msgid "An integration tool"
 msgstr "Инструмент интеграции"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "And {more} more"
+msgstr ""
 
 #: apps/mobile/app/(settings)/general.tsx
 #: apps/mobile/lib/live-notifications.ts
@@ -1583,7 +1632,9 @@ msgid "archived"
 msgstr "в архиве"
 
 #: apps/mobile/app/(settings)/_layout.tsx
+#: apps/mobile/app/(settings)/vault.tsx
 #: apps/mobile/components/inbox-rows.tsx
+#: apps/web/src/components/vault/VaultItemAccess.tsx
 #: apps/web/src/pages/shell/archived-chats.tsx
 msgid "Archived"
 msgstr "В архиве"
@@ -1608,6 +1659,11 @@ msgstr "Артефакты"
 #: apps/web/src/components/ApprovalRulesSettings.tsx
 msgid "Ask"
 msgstr "Спрашивать"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "Ask first"
+msgstr ""
 
 #: apps/mobile/app/routines.tsx
 msgid "Ask this Bot in chat to set up a routine."
@@ -1642,6 +1698,10 @@ msgstr "в {time}"
 msgid "at {timeSelect}"
 msgstr "в {timeSelect}"
 
+#: apps/web/src/pages/shell/composer.tsx
+msgid "Attach as file"
+msgstr ""
+
 #: apps/mobile/components/thread-composer.tsx
 #: apps/web/src/pages/shell/composer.tsx
 msgid "Attach file"
@@ -1663,6 +1723,14 @@ msgstr "Аутентификация"
 #: apps/web/src/lib/model-connection-preflight.ts
 msgid "Authentication failed."
 msgstr "Аутентификация не удалась."
+
+#: apps/mobile/app/(settings)/vault.tsx
+#: apps/mobile/components/vault-item-editor.tsx
+#: apps/mobile/components/vault-item-sheet.tsx
+#: apps/web/src/components/vault/VaultItemDetail.tsx
+#: apps/web/src/components/vault/VaultItemEditor.tsx
+msgid "Authenticator key"
+msgstr ""
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/web/src/pages/model-settings/connection-controls.tsx
@@ -1728,6 +1796,7 @@ msgstr "Студия аватаров"
 #: apps/mobile/app/sign-in.tsx
 #: apps/mobile/components/add-custom-integration.tsx
 #: apps/mobile/components/integration-detail.tsx
+#: apps/mobile/components/vault-item-sheet.tsx
 #: apps/web/src/components/bot-templates/bot-templates-dialog.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 #: apps/web/src/components/integrations/skills-dialog.tsx
@@ -1805,6 +1874,11 @@ msgstr "Платёжный адрес"
 #: apps/web/src/components/ModelCredits.tsx
 msgid "Billing period"
 msgstr "Период оплаты"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "Block"
+msgstr ""
 
 #: apps/web/src/components/ApprovalRulesSettings.tsx
 msgid "Block"
@@ -1908,6 +1982,13 @@ msgstr "Модель бота"
 msgid "Both"
 msgstr "Оба варианта"
 
+#: apps/mobile/components/vault-item-editor.tsx
+#: apps/mobile/components/vault-item-sheet.tsx
+#: apps/web/src/components/vault/VaultItemAccess.tsx
+#: apps/web/src/components/vault/VaultItemDetail.tsx
+msgid "Bots"
+msgstr ""
+
 #: apps/web/src/components/ModelCredits.tsx
 msgid "Bots and browser automation"
 msgstr "Боты и автоматизация браузера"
@@ -1915,6 +1996,11 @@ msgstr "Боты и автоматизация браузера"
 #: apps/mobile/lib/bot-lifecycle.ts
 msgid "Bots and their own chats stay."
 msgstr "Боты и их собственные чаты сохранятся."
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "Bots can use each imported login until you change its Bots setting."
+msgstr ""
 
 #: apps/web/src/components/SharedSpaceRules.tsx
 msgid "Bots use the accounts of whoever messages them"
@@ -2336,6 +2422,15 @@ msgstr "Выбрать папку"
 msgid "Choose how to use Rakazo"
 msgstr "Выберите, как использовать Rakazo"
 
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "Chosen bots"
+msgstr ""
+
+#: apps/mobile/components/vault-item-editor.tsx
+msgid "Chosen bots"
+msgstr ""
+
 #: apps/mobile/components/vault-item-editor.tsx
 #: apps/mobile/components/vault-item-sheet.tsx
 #: apps/web/src/components/vault/VaultItemEditor.tsx
@@ -2740,6 +2835,10 @@ msgstr "Подключить API-ключ"
 msgid "Connect apps"
 msgstr "Подключить приложения"
 
+#: apps/web/src/pages/shell/agent-import-plan.tsx
+msgid "Connect it again"
+msgstr ""
+
 #: apps/web/src/pages/shell/message-cards.tsx
 msgid "Connect MCP server “{name}”"
 msgstr "Подключите MCP-сервер «{name}»"
@@ -2883,14 +2982,19 @@ msgstr "Продолжить в фоне"
 msgid "Continue to checkout"
 msgstr "Перейти к оплате"
 
-#. placeholder {0}: reset.sso.name
-#: apps/web/src/pages/Auth.tsx
+#. placeholder {0}: provider.name
+#: apps/web/src/components/SocialSignInButtons.tsx
 msgid "Continue with {0}"
 msgstr "Продолжить с {0}"
 
-#: apps/mobile/app/sign-in.tsx
+#: apps/mobile/components/social-sign-in-buttons.tsx
 msgid "Continue with {name}"
 msgstr "Продолжить с {name}"
+
+#: apps/mobile/components/social-sign-in-buttons.tsx
+#: apps/web/src/components/SocialSignInButtons.tsx
+msgid "Continue with email"
+msgstr ""
 
 #: apps/mobile/components/computer-keyboard-bar.tsx
 msgid "Control"
@@ -3309,6 +3413,11 @@ msgstr "Не удалось предоставить доступ"
 msgid "Could not hear that."
 msgstr "Не удалось расслышать."
 
+#: apps/mobile/app/(settings)/vault.tsx
+#: apps/web/src/components/VaultSettings.tsx
+msgid "Could not import"
+msgstr ""
+
 #: apps/web/src/pages/PluginsOverlay.tsx
 msgid "Could not install connector"
 msgstr "Не удалось установить коннектор"
@@ -3331,6 +3440,7 @@ msgid "Could not load"
 msgstr "Не удалось загрузить"
 
 #: apps/mobile/components/inbox-activity.tsx
+#: apps/web/src/components/vault/VaultItemActivity.tsx
 #: apps/web/src/pages/ActivityList.tsx
 msgid "Could not load activity"
 msgstr "Не удалось загрузить активность"
@@ -3360,6 +3470,11 @@ msgstr "Не удалось загрузить бота"
 #: apps/mobile/lib/use-home-inbox.ts
 msgid "Could not load bots"
 msgstr "Не удалось загрузить ботов"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "Could not load bots. Reload to try again."
+msgstr ""
 
 #: apps/web/src/pages/IntegrationSetup.tsx
 msgid "Could not load bots. Reload to try again."
@@ -4100,6 +4215,7 @@ msgstr "Создать раздел"
 msgid "Create space"
 msgstr "Создайте пространство"
 
+#: apps/mobile/app/sign-in.tsx
 #: apps/web/src/pages/Auth.tsx
 msgid "Create your Rakazo"
 msgstr "Создайте свой Rakazo"
@@ -4419,6 +4535,11 @@ msgstr "Удалить раздел"
 msgid "Delete space"
 msgstr "Удалить пространство"
 
+#: apps/mobile/app/(settings)/vault.tsx
+#: apps/web/src/components/vault/VaultImport.tsx
+msgid "Delete the exported file now. It holds your passwords unencrypted."
+msgstr ""
+
 #: apps/mobile/app/routine.tsx
 #: apps/mobile/app/routines.tsx
 msgid "Delete this routine?"
@@ -4680,6 +4801,7 @@ msgstr "У вас нет учетной записи?"
 #: apps/web/src/components/AccountDataSettings.tsx
 #: apps/web/src/components/ComputerCard.tsx
 #: apps/web/src/components/ToolActivityDisclosure.tsx
+#: apps/web/src/components/vault/VaultImport.tsx
 #: apps/web/src/lib/ticket-status.ts
 #: apps/web/src/pages/ActivityList.tsx
 #: apps/web/src/pages/shell/avatar-studio-popover.tsx
@@ -4883,6 +5005,11 @@ msgstr "Введите API-ключ перед тестом."
 msgid "Enter an HTTPS URL"
 msgstr "Введите HTTPS URL"
 
+#: apps/mobile/components/vault-item-editor.tsx
+#: apps/web/src/components/vault/VaultItemEditor.tsx
+msgid "Enter each site as an HTTPS address a login can be saved for."
+msgstr ""
+
 #: apps/web/src/components/ComputerProviderSettings.tsx
 msgid "Environment ID"
 msgstr "ID окружения"
@@ -4975,18 +5102,11 @@ msgstr "Каждый час на {minute}-й минуте"
 msgid "Every message"
 msgstr "Все сообщения"
 
+#: apps/mobile/components/routine-schedule-editor.tsx
 #: apps/mobile/lib/cron.ts
 #: apps/web/src/lib/cron.ts
 msgid "Every Monday"
 msgstr "Каждый понедельник"
-
-#: apps/mobile/components/routine-schedule-editor.tsx
-msgid "Every month"
-msgstr "Каждый месяц"
-
-#: apps/mobile/components/routine-schedule-editor.tsx
-msgid "Every week"
-msgstr "Каждую неделю"
 
 #: apps/web/src/components/SharedSpaceRules.tsx
 msgid "Everyone here sees its chats, bots and memory"
@@ -4999,6 +5119,11 @@ msgstr "Все в пространстве этого бота могут чит
 #: apps/web/src/pages/MessagingSettingsPanel.tsx
 msgid "Everyone in this bot's space can read the chats it gets from {linkApp}."
 msgstr "Все в пространстве этого бота могут читать чаты, которые он получает из {linkApp}."
+
+#. placeholder {0}: first.name
+#: apps/web/src/components/ModelCredits.tsx
+msgid "Everything in {0}"
+msgstr ""
 
 #: apps/mobile/app/new-group.tsx
 msgid "Ex: Project Falcon"
@@ -5378,6 +5503,10 @@ msgstr "Выдача…"
 msgid "GraphQL endpoint"
 msgstr "Конечная точка GraphQL"
 
+#: apps/web/src/pages/shell/agent-import.tsx
+msgid "Grok Bot"
+msgstr ""
+
 #: apps/mobile/app/_layout.tsx
 #: apps/mobile/app/(settings)/messaging.tsx
 #: apps/mobile/components/archived-bot-list.ios.tsx
@@ -5417,9 +5546,14 @@ msgstr "Настройки группы"
 msgid "Group updates"
 msgstr "Обновления группы"
 
-#: apps/web/src/pages/shell/dialogs.tsx
+#: packages/i18n/src/bot-removal.ts
 msgid "Groups left with fewer than two bots are deleted too, including their messages, files, and pages."
 msgstr "Группы, в которых осталось меньше двух ботов, тоже удаляются вместе с их сообщениями, файлами и страницами."
+
+#: apps/mobile/app/computer.tsx
+#: apps/web/src/pages/shell/computer-release-actions.tsx
+msgid "Hand back control"
+msgstr ""
 
 #: apps/mobile/components/CallCard.tsx
 #: apps/web/src/components/call/CallCard.tsx
@@ -5659,7 +5793,9 @@ msgstr "Ввод изображений не настроен для этой м
 msgid "Image upload area"
 msgstr "Область загрузки изображения"
 
+#: apps/mobile/app/(settings)/vault.tsx
 #: apps/web/src/components/AccountDataSettings.tsx
+#: apps/web/src/components/vault/VaultImport.tsx
 msgid "Import"
 msgstr "Импорт"
 
@@ -5667,6 +5803,12 @@ msgstr "Импорт"
 #: apps/web/src/pages/shell/agent-import.tsx
 msgid "Import an agent"
 msgstr "Импорт агента"
+
+#: apps/mobile/app/(settings)/vault.tsx
+#: apps/web/src/components/vault/VaultImport.tsx
+#: apps/web/src/components/VaultSettings.tsx
+msgid "Import CSV"
+msgstr ""
 
 #: apps/web/src/components/AccountDataSettings.tsx
 msgid "Import data"
@@ -5887,6 +6029,10 @@ msgstr "Перейти к исходному сообщению: {excerpt}"
 msgid "just now"
 msgstr "только что"
 
+#: apps/web/src/pages/shell/composer.tsx
+msgid "Keep inline"
+msgstr ""
+
 #: apps/mobile/lib/bot-lifecycle.ts
 #: apps/web/src/pages/shell/dialogs.tsx
 msgid "Keep memories"
@@ -5927,6 +6073,14 @@ msgstr "Название"
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
 msgid "Language"
 msgstr "Язык"
+
+#: apps/web/src/pages/shell/composer.tsx
+msgid "Large paste"
+msgstr ""
+
+#: apps/web/src/pages/shell/composer.tsx
+msgid "Large text pasted inline"
+msgstr ""
 
 #. placeholder {0}: new Date(state.checkedAt).toLocaleString()
 #: apps/web/src/pages/routine-editor/trigger-cards.tsx
@@ -5990,6 +6144,16 @@ msgstr "Лимит"
 msgid "Link"
 msgstr "Ссылка"
 
+#. placeholder {0}: provider.name
+#. placeholder {0}: security.sso.name === "SSO" ? t`SSO` : security.sso.name
+#: apps/mobile/app/(settings)/profile.tsx
+msgid "Link {0}"
+msgstr ""
+
+#: apps/web/src/components/AccountAccess.tsx
+msgid "Link {providerName}"
+msgstr ""
+
 #: apps/web/src/components/pages/PublicPageShell.tsx
 #: apps/web/src/components/pages/SharePopover.tsx
 msgid "Link copied"
@@ -5999,11 +6163,6 @@ msgstr "Ссылка скопирована"
 #: apps/web/src/pages/MessagingSettingsPanel.tsx
 msgid "Link DMs"
 msgstr "Привязать ЛС"
-
-#: apps/mobile/app/(settings)/profile.tsx
-#: apps/web/src/components/AccountAccess.tsx
-msgid "Link SSO"
-msgstr "Привязать SSO"
 
 #: apps/web/src/pages/Artifacts.tsx
 msgid "List view"
@@ -6561,6 +6720,7 @@ msgstr "Ежемесячные кредиты"
 msgid "Monthly credits expire at renewal. Top-ups do not expire."
 msgstr "Ежемесячные кредиты сгорают при продлении. Пополнения не сгорают."
 
+#: apps/mobile/components/routine-schedule-editor.tsx
 #: apps/web/src/lib/cron.ts
 msgid "Monthly on the 1st"
 msgstr "Ежемесячно 1-го числа"
@@ -6716,7 +6876,6 @@ msgstr "Требуется передача управления"
 #: apps/mobile/components/ComputerCard.tsx
 #: apps/web/src/components/ComputerCard.tsx
 #: apps/web/src/lib/roster-status.ts
-#: apps/web/src/pages/shell/computer-overlay.tsx
 msgid "Needs you"
 msgstr "Требуется ваше участие"
 
@@ -6896,6 +7055,11 @@ msgstr "Без авторизации"
 msgid "No authentication"
 msgstr "Нет аутентификации"
 
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "No bots"
+msgstr ""
+
 #: apps/web/src/components/integrations/agent-access.tsx
 msgid "No bots"
 msgstr "Нет ботов"
@@ -6968,6 +7132,15 @@ msgstr "Не найдено файлов OpenClaw, Hermes или докумен�
 #: apps/web/src/components/pages/PagesList.tsx
 msgid "No pages match “{query}”."
 msgstr "Нет страниц по запросу «{query}»."
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "No password"
+msgstr ""
+
+#: apps/web/src/components/ModelCredits.tsx
+msgid "No plan or key? Use credits"
+msgstr ""
 
 #: apps/mobile/app/artifact.tsx
 #: apps/mobile/components/video-preview.tsx
@@ -7042,6 +7215,11 @@ msgstr "Нет доступных инструментов."
 msgid "No trigger"
 msgstr "Нет триггера"
 
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "No website and password columns found."
+msgstr ""
+
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/mobile/app/(settings)/spending-limit.tsx
 #: apps/mobile/components/spending-limit-row.tsx
@@ -7103,6 +7281,16 @@ msgstr "Не сейчас"
 #: apps/mobile/lib/model-settings.ts
 msgid "Not Now"
 msgstr "Не сейчас"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "Not on an HTTPS site"
+msgstr ""
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "Not saved"
+msgstr ""
 
 #: apps/mobile/components/failed-send-bubble.tsx
 msgid "Not sent"
@@ -7399,6 +7587,10 @@ msgstr "Необязательно"
 msgid "Optional header value"
 msgstr "Необязательное значение заголовка"
 
+#: apps/mobile/components/social-sign-in-buttons.tsx
+msgid "or"
+msgstr ""
+
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "Or connect an API key"
 msgstr "Или подключите API-ключ"
@@ -7634,6 +7826,10 @@ msgstr "Ожидает"
 msgid "Permissions"
 msgstr "Разрешения"
 
+#: apps/mobile/app/sign-in.tsx
+msgid "Persistent AI teammates that do real work"
+msgstr ""
+
 #: apps/web/src/pages/shell/agent-import-plan.tsx
 msgid "Persona"
 msgstr "Личность"
@@ -7841,6 +8037,7 @@ msgstr "Защищённый ввод"
 msgid "Protocol"
 msgstr "Протокол"
 
+#: apps/mobile/app/(settings)/voice.tsx
 #: apps/web/src/pages/MemorySettingsOverlay.tsx
 #: apps/web/src/pages/onboarding/model-step.tsx
 #: apps/web/src/pages/VoiceSettingsOverlay.tsx
@@ -8108,14 +8305,6 @@ msgstr "Отклонено"
 msgid "Rejecting…"
 msgstr "Отклонение…"
 
-#: apps/mobile/app/computer.tsx
-msgid "Release"
-msgstr "Освободить управление"
-
-#: apps/web/src/pages/shell/computer-release-actions.tsx
-msgid "Release control"
-msgstr "Передать управление"
-
 #: apps/web/src/components/InstructionSettings.tsx
 #: apps/web/src/lib/client-update.ts
 msgid "Reload"
@@ -8296,6 +8485,11 @@ msgstr "Продление {day}"
 #: apps/web/src/pages/ScratchpadSection.tsx
 msgid "Reopen"
 msgstr "Открыть заново"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "Repeated in the file"
+msgstr ""
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/mobile/components/model-providers.tsx
@@ -8502,6 +8696,7 @@ msgstr "Возобновить уведомления"
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 #: apps/web/src/components/integrations/skills-dialog.tsx
 #: apps/web/src/components/PasskeySettings.tsx
+#: apps/web/src/components/vault/VaultItemActivity.tsx
 #: apps/web/src/pages/AdminAccessPage.tsx
 #: apps/web/src/pages/Auth.tsx
 #: apps/web/src/pages/Invite.tsx
@@ -8599,6 +8794,11 @@ msgstr "Задачи, которые выполняются, пока вас н�
 #: apps/web/src/components/markdown-copy.tsx
 msgid "Row"
 msgstr "Строка"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "Row {line}"
+msgstr ""
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/components/approval-settings-rows.tsx
@@ -8750,6 +8950,31 @@ msgstr "{name} сохранен локально."
 #: apps/web/src/pages/ScratchpadSection.tsx
 msgid "Saved, but list refresh failed"
 msgstr "Сохранено, но обновить список не удалось."
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "Saved, but this server can't ask you first."
+msgstr ""
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "Saved, but this server can't block bots yet."
+msgstr ""
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "Saved, but this server can't keep authenticator keys yet."
+msgstr ""
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "Saved, but this server can't limit an item to chosen bots."
+msgstr ""
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "Saved, but this server fills logins only on their own site."
+msgstr ""
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/mobile/lib/use-subscription-sign-in.ts
@@ -9252,14 +9477,18 @@ msgid "Sign in at <0>{0}</0>, then paste the code here."
 msgstr "Войдите на <0>{0}</0>, затем вставьте код сюда."
 
 #: apps/mobile/app/sign-in.tsx
+msgid "Sign in to continue to Rakazo"
+msgstr ""
+
+#: apps/mobile/app/sign-in.tsx
 #: apps/web/src/pages/Auth.tsx
 msgid "Sign in to Rakazo"
 msgstr "Войти в Rakazo"
 
 #: apps/mobile/lib/user-error.ts
 #: apps/web/src/lib/user-error.ts
-msgid "Sign in to your existing account to link SSO"
-msgstr "Войдите в существующий аккаунт, чтобы привязать SSO"
+msgid "Sign in to your account, then link this provider in settings"
+msgstr ""
 
 #: apps/mobile/app/sign-in.tsx
 #: apps/web/src/components/PasskeySignIn.tsx
@@ -9416,6 +9645,11 @@ msgstr "Отложить"
 msgid "Snoozed"
 msgstr "Отложенные"
 
+#: apps/mobile/app/(settings)/vault.tsx
+#: apps/web/src/components/VaultSettings.tsx
+msgid "Some logins may have been saved. Importing the file again skips them."
+msgstr ""
+
 #: apps/mobile/app/(settings)/skills.tsx
 #: apps/mobile/components/integration-plugins.tsx
 #: apps/web/src/components/integrations/skills-dialog.tsx
@@ -9430,6 +9664,11 @@ msgstr "Некоторые настройки не импортируются"
 #: apps/mobile/app/computer.tsx
 msgid "Something went wrong while it was starting. Try again in a moment."
 msgstr "При запуске что-то пошло не так. Попробуйте ещё раз чуть позже."
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/run-error.ts
+msgid "Something went wrong. Try again."
+msgstr ""
 
 #: apps/mobile/app/(settings)/approval-rule-add.tsx
 #: apps/mobile/app/(settings)/approvals.tsx
@@ -9531,6 +9770,7 @@ msgstr "Речевая модель"
 msgid "Spending limit"
 msgstr "Лимит расходов"
 
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/web/src/components/AccountAccess.tsx
 msgid "SSO"
 msgstr "SSO"
@@ -9547,6 +9787,10 @@ msgstr "Поставить звезду на GitHub"
 #: apps/web/src/pages/shell/computer-overlay.tsx
 msgid "Start"
 msgstr "Запустить"
+
+#: apps/web/src/components/ModelCredits.tsx
+msgid "Start {name} trial"
+msgstr ""
 
 #: apps/web/src/components/ModelCredits.tsx
 #: apps/web/src/pages/Paywall.tsx
@@ -9696,6 +9940,10 @@ msgstr "Подписаться за {annualPrice} в год"
 #: apps/web/src/components/ModelCredits.tsx
 msgid "Subscribe for {price} / month"
 msgstr "Подписаться за {price} / месяц"
+
+#: apps/web/src/components/ModelCredits.tsx
+msgid "Subscribe to {name}"
+msgstr ""
 
 #: apps/web/src/components/ModelCredits.tsx
 msgid "Subscribe to credits"
@@ -9885,6 +10133,10 @@ msgstr "Этот адрес недоступен"
 msgid "That doesn’t look like a URL"
 msgstr "Это не похоже на URL"
 
+#: apps/web/src/lib/agent-import-errors.ts
+msgid "That isn't a Grok Bot export. Paste the Bot's whole reply."
+msgstr ""
+
 #: apps/mobile/lib/endpoint.ts
 msgid "That URL did not look like a Rakazo server"
 msgstr "Этот адрес не похож на сервер Rakazo"
@@ -9935,11 +10187,11 @@ msgstr "Компьютер, на котором работают ваши бот
 msgid "The connection timed out."
 msgstr "Время ожидания соединения истекло."
 
-#: apps/web/src/pages/shell/dialogs.tsx
+#: packages/i18n/src/bot-removal.ts
 msgid "The group {names} will be deleted too, including its messages, files, and pages."
 msgstr "Группа {names} тоже будет удалена вместе с её сообщениями, файлами и страницами."
 
-#: apps/web/src/pages/shell/dialogs.tsx
+#: packages/i18n/src/bot-removal.ts
 msgid "The groups {names} will be deleted too, including their messages, files, and pages."
 msgstr "Группы {names} тоже будут удалены вместе с их сообщениями, файлами и страницами."
 
@@ -9977,6 +10229,10 @@ msgstr "Провайдер получил слишком много запрос
 #: apps/mobile/lib/run-error-presentation.ts
 msgid "The provider refused the key this bot used for its reply."
 msgstr "Провайдер отклонил ключ, который бот использовал для ответа."
+
+#: apps/web/src/lib/agent-import-errors.ts
+msgid "The reply looks cut off. Ask the Bot for the rest, then paste both."
+msgstr ""
 
 #: apps/mobile/app/computer.tsx
 #: apps/web/src/lib/computer-screen.ts
@@ -10071,6 +10327,11 @@ msgstr "Эта учётная запись деактивирована"
 msgid "This app needs its own sign-in setup to connect."
 msgstr "Для подключения этому приложению нужна собственная настройка входа."
 
+#: apps/mobile/components/vault-item-editor.tsx
+#: apps/web/src/components/vault/VaultItemEditor.tsx
+msgid "This authenticator key can't be read."
+msgstr ""
+
 #: apps/web/src/pages/shell/use-agent-import-source.ts
 msgid "This backup could not be read."
 msgstr "Не удалось прочитать эту резервную копию."
@@ -10078,6 +10339,11 @@ msgstr "Не удалось прочитать эту резервную коп�
 #: apps/web/src/pages/shell/agent-import-plan.tsx
 msgid "This bot"
 msgstr "Этот бот"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "This bot can't use this item. Change it in the Vault, or dismiss the request."
+msgstr ""
 
 #: apps/web/src/pages/shell/computer-view.tsx
 msgid "This bot runs on this computer, not a Linux desktop. Shell and files use your home folder."
@@ -10155,9 +10421,27 @@ msgstr "Будут удалены все версии этого артефак�
 msgid "This device"
 msgstr "Это устройство"
 
+#: apps/web/src/lib/agent-import-errors.ts
+msgid "This export is newer than Rakazo can read. Update Rakazo and try again."
+msgstr ""
+
+#: apps/web/src/lib/agent-import-errors.ts
+msgid "This export is too large to import."
+msgstr ""
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "This file can't be read as CSV."
+msgstr ""
+
 #: apps/web/src/components/ArtifactFileCard.tsx
 msgid "This file is not valid UTF-8 text."
 msgstr "Этот файл не является текстом в кодировке UTF-8."
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "This file is too large to import."
+msgstr ""
 
 #: apps/web/src/lib/agent-import-errors.ts
 msgid "This import was already used. Choose the files again."
@@ -10166,6 +10450,16 @@ msgstr "Этот импорт уже использован. Выберите ф
 #: apps/web/src/pages/Invite.tsx
 msgid "This invite link is no longer valid."
 msgstr "Эта ссылка-приглашение больше недействительна."
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "This item is blocked for bots. Allow it in the Vault, or dismiss the request."
+msgstr ""
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "This limits only this Space's bots. Your other Spaces choose for their own."
+msgstr ""
 
 #: apps/web/src/pages/HostComputerPrompt.tsx
 msgid "this Mac"
@@ -10287,6 +10581,11 @@ msgstr "Этот сервер уже подключен. Сначала откл
 msgid "This server's tool result does not fit the model. Turn off Keep tool results whole for that server, or choose another model."
 msgstr "Результат инструмента этого сервера не помещается в модель. Отключите «Сохранять результаты инструментов целиком» для этого сервера или выберите другую модель."
 
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "This Space keeps its own vault, so its bots can't use account items."
+msgstr ""
+
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/web/src/pages/model-settings/connection-controls.tsx
 msgid "This subscription sign-in is not available in Rakazo yet. Use a deployment credential or choose another provider."
@@ -10338,6 +10637,11 @@ msgstr "По"
 #: apps/web/src/pages/ActivityList.tsx
 msgid "To {0}"
 msgstr "По {0}"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "To add"
+msgstr ""
 
 #: apps/mobile/lib/board.ts
 #: apps/web/src/lib/ticket-status.ts
@@ -10620,6 +10924,11 @@ msgstr "Неподдерживаемый тип файла: {0}."
 msgid "Up"
 msgstr "Вверх"
 
+#: apps/mobile/components/vault-item-editor.tsx
+#: apps/web/src/components/vault/VaultItemEditor.tsx
+msgid "Up to {limit} sites."
+msgstr ""
+
 #: apps/web/src/components/DesktopUpdates.tsx
 msgid "Up to date"
 msgstr "Актуально"
@@ -10663,6 +10972,12 @@ msgstr "Ход обновления"
 #: apps/web/src/lib/client-update.ts
 msgid "Update required"
 msgstr "Требуется обновление"
+
+#: apps/mobile/app/(settings)/vault.tsx
+#: apps/mobile/lib/api.ts
+#: apps/web/src/components/VaultSettings.tsx
+msgid "Update your server to import logins."
+msgstr ""
 
 #: apps/mobile/lib/api.ts
 msgid "Update your server to use AI data sharing in this mobile version."
@@ -10759,6 +11074,11 @@ msgstr "Использовать собственный сервер"
 msgid "Use a found model"
 msgstr "Использовать найденную модель"
 
+#: apps/mobile/lib/user-error.ts
+#: apps/web/src/lib/user-error.ts
+msgid "Use an account with the same email address"
+msgstr ""
+
 #: apps/mobile/lib/endpoint.ts
 msgid "Use an http or https URL"
 msgstr "Используйте URL-адрес http или https."
@@ -10825,6 +11145,11 @@ msgstr "Используйте до 512 букв, цифр, _ или -."
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "Use your own key"
 msgstr "Использовать свой ключ"
+
+#: apps/mobile/components/vault-item-sheet.tsx
+#: apps/web/src/components/vault/VaultItemActivity.tsx
+msgid "Used {when} by {bot}"
+msgstr ""
 
 #: apps/web/src/pages/memory-providers/HonchoSettingsForm.tsx
 msgid "User peer"
@@ -10899,6 +11224,11 @@ msgstr "Переменные"
 msgid "Vault"
 msgstr "Хранилище"
 
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "Vault full"
+msgstr ""
+
 #: apps/mobile/components/add-custom-integration.tsx
 #: apps/web/src/pages/plugins/source-form.tsx
 msgid "Verify and add"
@@ -10930,6 +11260,7 @@ msgstr "Посмотреть исходный код"
 #: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/ai-data-sharing.tsx
 #: apps/mobile/app/(settings)/space.tsx
+#: apps/mobile/app/(settings)/voice.tsx
 #: apps/mobile/app/bot-settings.tsx
 #: apps/web/src/pages/settings-nav.ts
 #: apps/web/src/pages/shell/bot-settings-sections.tsx
@@ -11025,6 +11356,11 @@ msgstr "По выходным"
 #: apps/web/src/components/SpendingLimitSettings.tsx
 msgid "Weekly"
 msgstr "Еженедельно"
+
+#: apps/mobile/app/sign-in.tsx
+#: apps/web/src/pages/Auth.tsx
+msgid "Welcome back"
+msgstr ""
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/web/src/components/SignupSurvey.tsx
@@ -11125,6 +11461,10 @@ msgstr "Где должны работать боты?"
 msgid "Where your bots pay from."
 msgstr "Откуда ваши боты платят."
 
+#: apps/web/src/pages/shell/agent-import.tsx
+msgid "Which Bot?"
+msgstr ""
+
 #: apps/web/src/pages/settings-nav.ts
 msgid "Which LLMs your bots use."
 msgstr "Какие LLM используют ваши боты."
@@ -11196,6 +11536,10 @@ msgstr "Выполняется…"
 msgid "Works with"
 msgstr "Работает с"
 
+#: apps/web/src/components/ModelCredits.tsx
+msgid "Works with your ChatGPT or Claude plan, or an API key."
+msgstr ""
+
 #: apps/mobile/app/paywall.tsx
 #: apps/web/src/components/ModelCredits.tsx
 msgid "Works with your ChatGPT or Claude plan."
@@ -11261,12 +11605,6 @@ msgstr "Вы отклонили"
 #: apps/web/src/components/InviteDialog.tsx
 msgid "You get a free month when they start their trial with a new card."
 msgstr "Вы получите бесплатный месяц, когда друг начнёт пробный период с новой картой."
-
-#: apps/mobile/app/computer.tsx
-#: apps/mobile/lib/computer.ts
-#: apps/web/src/pages/shell/computer-overlay.tsx
-msgid "You have control"
-msgstr "Вы управляете"
 
 #: apps/mobile/app/paywall.tsx
 msgid "You're all set"
