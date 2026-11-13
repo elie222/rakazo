@@ -1547,6 +1547,149 @@ describe("createMessagingInboundHandler owner commands", () => {
     );
   });
 
+  it("does not let a YES approve a request held behind the outbound cap until that reply", async () => {
+    const deps = createDeps({
+      identity: {
+        id: "mi-1",
+        provider: "sendblue",
+        address: "+15551111111",
+        userId: "user-1",
+        spaceId: "ws-1",
+        botId: "bot-1",
+        outboundSinceInbound: MESSAGING_DM_OUTBOUND_CAP,
+      },
+    });
+    const connection = vi.fn(async () => ({
+      id: "ac-attacker",
+      requesterBotId: "bot-6",
+      targetBotId: "bot-1",
+      status: "pending",
+    }));
+    Object.assign(deps.prisma.agentConnection, {
+      findFirst: connection,
+      updateMany: vi.fn(async () => ({ count: 1 })),
+    });
+    sentPrompt(deps, "reply:msg-7:0", 120_000);
+    sentPrompt(deps, "connect:bot-6:bot-1", 60_000, "pending");
+    // Sending the held replies delivers the request the person never saw.
+    deps.send.mockImplementation(async () => {
+      for (const [index, row] of deps.outboundRows.entries()) {
+        if (row.status !== "pending") continue;
+        deps.outboundRows[index] = {
+          ...row,
+          status: "sent",
+          providerHandle: `handle-${row.idempotencyKey as string}`,
+        };
+      }
+    });
+    const handle = createMessagingInboundHandler(deps);
+    await handle({ ...dmEvent, content: "YES" });
+
+    expect(deps.send).toHaveBeenCalledWith([{ identityId: "mi-1" }]);
+    expect(deps.prisma.messagingIdentity.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ capReleaseHandle: dmEvent.handle }),
+      }),
+    );
+    expect(connection).not.toHaveBeenCalled();
+    expect(deps.prisma.agentConnection.updateMany).not.toHaveBeenCalled();
+    expect(deps.sendUserMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ blocks: [{ kind: "text", text: "YES" }] }),
+    );
+  });
+
+  it("does not let a redelivered YES approve the request its first attempt released", async () => {
+    const deps = createDeps({
+      identity: {
+        id: "mi-1",
+        provider: "sendblue",
+        address: "+15551111111",
+        userId: "user-1",
+        spaceId: "ws-1",
+        botId: "bot-1",
+        outboundSinceInbound: 0,
+        capReleaseHandle: dmEvent.handle,
+      },
+    });
+    const connection = vi.fn(async () => ({
+      id: "ac-1",
+      requesterBotId: "bot-6",
+      targetBotId: "bot-1",
+      status: "pending",
+    }));
+    Object.assign(deps.prisma.agentConnection, {
+      findFirst: connection,
+      updateMany: vi.fn(async () => ({ count: 1 })),
+    });
+    sentPrompt(deps, "connect:bot-6:bot-1");
+    const handle = createMessagingInboundHandler(deps);
+    await handle({ ...dmEvent, content: "YES" });
+
+    expect(connection).not.toHaveBeenCalled();
+    expect(deps.prisma.agentConnection.updateMany).not.toHaveBeenCalled();
+    expect(deps.sendUserMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ blocks: [{ kind: "text", text: "YES" }] }),
+    );
+  });
+
+  it("lets a later YES approve a request an earlier reply released", async () => {
+    const deps = createDeps({
+      identity: {
+        id: "mi-1",
+        provider: "sendblue",
+        address: "+15551111111",
+        userId: "user-1",
+        spaceId: "ws-1",
+        botId: "bot-1",
+        outboundSinceInbound: 0,
+        lastInboundAt: new Date(Date.now() - 30_000),
+        capReleaseHandle: "handle-earlier",
+      },
+    });
+    Object.assign(deps.prisma.agentConnection, {
+      findFirst: vi.fn(async () => ({
+        id: "ac-1",
+        requesterBotId: "bot-6",
+        targetBotId: "bot-1",
+        status: "pending",
+      })),
+      updateMany: vi.fn(async () => ({ count: 1 })),
+    });
+    sentPrompt(deps, "connect:bot-6:bot-1");
+    const handle = createMessagingInboundHandler(deps);
+    await handle({ ...dmEvent, content: "YES" });
+
+    expect(deps.prisma.agentConnection.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { status: "approved" } }),
+    );
+  });
+
+  it("still answers a delivered request when the reply also releases held replies", async () => {
+    const deps = createDeps({
+      identity: {
+        id: "mi-1",
+        provider: "sendblue",
+        address: "+15551111111",
+        userId: "user-1",
+        spaceId: "ws-1",
+        botId: "bot-1",
+        outboundSinceInbound: MESSAGING_DM_OUTBOUND_CAP,
+      },
+      invitedMember: { id: "cm-1", channelId: "ch-1", status: "invited", identityId: "mi-1" },
+    });
+    sentPrompt(deps, "invite:ch-1:mi-1");
+    const handle = createMessagingInboundHandler(deps);
+    await handle({ ...dmEvent, content: "YES" });
+
+    expect(deps.prisma.messagingChannelMember.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "cm-1", status: "invited" },
+        data: { status: "approved" },
+      }),
+    );
+    expect(deps.sendUserMessage).not.toHaveBeenCalled();
+  });
+
   it.each([
     ["the bot wrote since the invite", "reply"],
     ["the invite is more than a day old", "stale"],
