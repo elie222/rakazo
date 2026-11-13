@@ -22,7 +22,8 @@ vi.mock("./session", () => ({ currentSessionGeneration: () => 0 }));
 vi.mock("./api-server", () => ({}));
 vi.mock("./api-auth", () => ({}));
 vi.mock("./api-live", () => ({}));
-vi.mock("./api", () => ({ rpc, selectedSpaceId: () => "space-a" }));
+const space = vi.hoisted(() => ({ id: "space-a" }));
+vi.mock("./api", () => ({ rpc, selectedSpaceId: () => space.id }));
 vi.mock("./search-inbox", () => ({ removeFromSearchInbox: vi.fn() }));
 vi.mock("expo-router", () => ({
   Stack: { Screen: () => null },
@@ -125,6 +126,7 @@ const group = {
 let root: Root;
 let container: HTMLDivElement;
 beforeEach(() => {
+  space.id = "space-a";
   vi.clearAllMocks();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   container = document.createElement("div");
@@ -379,4 +381,13 @@ it("keeps a failed save visible after a successful refresh", async () => {
   const before = container.textContent;
   await act(async () => notifyArchivedChatsChanged());
   expect(container.textContent).toBe(before);
+});
+
+it("does not refresh an open group from another selected Space", async () => {
+  await act(async () => root.render(<GroupSettings />));
+  rpc.mockClear();
+  space.id = "space-b";
+  await act(async () => notifyArchivedChatsChanged());
+  expect(rpc).not.toHaveBeenCalled();
+  expect(switches()).toHaveLength(2);
 });

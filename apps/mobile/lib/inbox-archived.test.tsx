@@ -94,6 +94,7 @@ vi.mock("./api-server", () => ({}));
 vi.mock("./api-auth", () => ({}));
 vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
+  selectedSpaceId: () => "space-a",
   rpc: mocks.rpc,
   captureApiRequestContext: async () => ({ apiBase: "https://example.test", headers: {} }),
 }));
