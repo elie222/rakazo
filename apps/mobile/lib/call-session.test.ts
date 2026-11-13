@@ -1917,6 +1917,33 @@ describe("mobile call session on a timer", () => {
       expect(getSnapshot()?.phase).toBe("listening");
     });
 
+    it.each([false, true])(
+      "keeps the mic closed after a late send failure (guard: %s)",
+      async (duringGuard) => {
+        const fake = fakes({ onDevice: true });
+        const pending = deferred<string | undefined>();
+        fake.deps.send = () => pending.promise;
+        startCall({ botId: "bot-1", botName: "Ada", transcribe: false }, fake.deps);
+        await tick();
+        fake.hear("hello");
+        await tick();
+        fake.replyWith("message-1", "Hello there.");
+        await tick();
+        if (duringGuard) {
+          fake.speeches[0]?.resolve();
+          await tick(200);
+        }
+        pending.reject(new Error("send disconnected"));
+        await tick();
+        expect(getSnapshot()?.phase).toBe("speaking");
+        expect(fake.signals).toHaveLength(1);
+        if (!duringGuard) fake.speeches[0]?.resolve();
+        await tick(ECHO_GUARD_MS);
+        expect(getSnapshot()?.phase).toBe("listening");
+        expect(fake.signals).toHaveLength(2);
+      },
+    );
+
     it("handles mute and unmute cleanly across the Android echo guard window", async () => {
       const fake = fakes({ onDevice: true });
       startCall({ botId: "bot-1", botName: "Ada", transcribe: false }, fake.deps);

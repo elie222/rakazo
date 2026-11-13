@@ -672,6 +672,8 @@ async function handleTranscript(raw: string): Promise<void> {
 
 function failTurn(error: unknown): void {
   if (!(error instanceof ExpectedTurnFailure)) reportMobileError(error, "voice.turn");
+  // A reply delivered by the live feed already owns playback and microphone recovery.
+  if (state?.phase === "speaking") return;
   failures += 1;
   if (failures >= MAX_TURN_FAILURES) {
     endCall();
