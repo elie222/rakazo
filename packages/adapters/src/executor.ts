@@ -232,7 +232,11 @@ import {
 import { loadAgentTicketContext } from "./ticket-context.js";
 import { appendToolCompletionAudit, toolCompletionOutcome } from "./tool-completion-audit.js";
 import { toolResultFingerprint } from "./tool-loop.js";
-import { historyReplaysOutsideContent, keepToolStepResult } from "./tool-step-calls.js";
+import {
+  historyReplaysOutsideContent,
+  keepToolStepResult,
+  runReplaysToolHistory,
+} from "./tool-step-calls.js";
 import { restoreTurnCheckpoint } from "./turn-checkpoint.js";
 import { createWebProvider } from "./web-provider-factory.js";
 
@@ -758,11 +762,12 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                 speakers ? neutralizeSpeakerLabels(value) : value;
               const text = neutral(messageToAgentHistoryText(m));
               const partial = isPartialReplyClientNonce(m.clientNonce);
-              // A run for someone other than the owner (a channel, or another person in a team
-              // chat) replays the bot's earlier replies as everyone saw them, never what its
-              // tools returned.
+              // Runs for someone other than the owner replay replies as everyone saw them.
               const segments =
-                m.role === "user" || m.role === "system" || speaker || nonOwnerChatRun
+                m.role === "user" ||
+                m.role === "system" ||
+                speaker ||
+                !runReplaysToolHistory(run, nonOwnerChatRun)
                   ? undefined
                   : messageToAgentHistorySegments(m)?.map((segment) =>
                       "text" in segment

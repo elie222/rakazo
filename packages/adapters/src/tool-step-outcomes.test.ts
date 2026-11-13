@@ -10,6 +10,7 @@ import {
   keepToolStepResult,
   keptToolArguments,
   keptToolResult,
+  runReplaysToolHistory,
   saveLatestStepScreenshot,
   TOOL_CALL_TEXT_MAX_CHARS,
   TOOL_REPLY_RESULTS_MAX_CHARS,
@@ -192,6 +193,29 @@ describe("tool step outcomes", () => {
     expect(call!.image).toEqual({
       artifactId: "shot",
     });
+  });
+
+  it("redacts credentials a tool returned in JSON fields", () => {
+    const result = keptToolResult(
+      {
+        ...base,
+        result: {
+          content: [
+            { type: "text", text: '{"user":"ana","password":"hunter2","api_key":"k-123"}' },
+          ],
+        },
+      },
+      [],
+    );
+    expect(result).toBe('{"user":"ana","password":"[redacted]","api_key":"[redacted]"}');
+  });
+
+  it("replays tool calls only to the owner's own runs", () => {
+    expect(runReplaysToolHistory({ trigger: "user" }, false)).toBe(true);
+    expect(runReplaysToolHistory({ trigger: "messaging" }, false)).toBe(true);
+    // Another person in a chat, or another bot or connected agent, never gets them.
+    expect(runReplaysToolHistory({ trigger: "messaging" }, true)).toBe(false);
+    expect(runReplaysToolHistory({ trigger: "bot_message" }, false)).toBe(false);
   });
 
   it("holds a result that arrives before its call is kept, for the call's handler", () => {

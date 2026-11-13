@@ -30,8 +30,13 @@ export const IMAGE_NOT_KEPT = "[image not kept]";
  * ends with what matters) and saying how much was left out, so it never reads as unfinished.
  * Secrets are redacted in each kept part, with a margin so one cut at the edge is still caught.
  */
+/** A JSON field whose name says it holds a credential, with its string value. */
+const CREDENTIAL_FIELD =
+  /("[\w-]*(?:api[_-]?key|token|password|passwd|secret|authorization|credential)[\w-]*"\s*:\s*)"(?:[^"\\]|\\.)*"/gi;
+
 export function bounded(text: string, max: number, secrets: string[] = []): string {
-  const clean = (part: string) => sanitizeSensitiveText(redactSecrets(part, secrets));
+  const clean = (part: string) =>
+    sanitizeSensitiveText(redactSecrets(part, secrets)).replace(CREDENTIAL_FIELD, '$1"[redacted]"');
   if (text.length <= max) return clean(text);
   const margin = 200;
   const headLength = Math.floor(max * 0.7);
@@ -95,6 +100,15 @@ export function keptToolResult(
   }
   const whole = text.trim();
   return whole ? bounded(whole, max, secrets) : undefined;
+}
+
+/**
+ * Whether a run may replay the tool calls of this bot's earlier replies. A run for someone other
+ * than the owner (a channel, another person in a team chat) or started by another bot or connected
+ * agent sees those replies as everyone did: their output could otherwise be quoted back to them.
+ */
+export function runReplaysToolHistory(run: { trigger: string }, nonOwnerChatRun: boolean) {
+  return !nonOwnerChatRun && run.trigger !== "bot_message";
 }
 
 /** Adds a finished call's result to the call its step keeps, within the reply's result budget. */
