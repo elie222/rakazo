@@ -447,9 +447,9 @@ function grokSkills(bot: GrokBot) {
   return bot.skills.map((skill, index) => {
     const path = `skills/${skill.name || index + 1}`;
     const body = skill.instructions.replace(FRONTMATTER, "").trim();
-    if (!body) return { source: skill, path, item: null };
     const parsed = FRONTMATTER.test(skill.instructions) ? parseSkillMd(skill.instructions) : null;
     const front = parsed && !("error" in parsed) ? parsed : null;
+    if (!body && !front) return { source: skill, path, item: null };
     const fromFront = front?.description ?? "";
     const firstLine = body.split("\n").find((line) => line.trim()) ?? "";
     const description = oneLine(

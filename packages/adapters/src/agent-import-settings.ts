@@ -186,24 +186,27 @@ export function readGrokBotImportSettings(
   const skillNames = grokSkillNames(bot);
   const routines: ImportedRoutine[] = [];
   for (const [index, source] of bot.routines.entries()) {
+    const safeLabel = looksLikeCredential(source.name)
+      ? String(index + 1)
+      : source.name || String(index + 1);
     // A routine the Bot could not read in full is named, so the user knows it was left behind.
     if (!source.instruction) {
-      skipped.push({ path: `routines: ${source.name || index + 1}`, reason: "unsupported" });
-      continue;
-    }
-    if ([source.name, source.instruction].some(looksLikeCredential)) {
-      skipped.push({ path: `routines: ${source.name || index + 1}`, reason: "unsupported" });
+      skipped.push({ path: `routines: ${safeLabel}`, reason: "unsupported" });
       continue;
     }
     const cron = grokRoutineCron(source);
     if (!cron) continue;
+    if ([source.name, source.instruction].some(looksLikeCredential)) {
+      skipped.push({ path: `routines: ${safeLabel}`, reason: "unsupported" });
+      continue;
+    }
     const uses = source.skills.flatMap((name) => skillNames.get(name.toLowerCase()) ?? []);
     const prompt = uses.length
       ? `${source.instruction}\n\nUse these skills: ${uses.map((name) => `@${name}`).join(", ")}.`
       : source.instruction;
     const result = routine({ name: source.name }, prompt, cron, source.timeZone, false, false);
     if ("reason" in result) {
-      skipped.push({ path: `routines: ${source.name || index + 1}`, reason: result.reason });
+      skipped.push({ path: `routines: ${safeLabel}`, reason: result.reason });
     } else {
       routines.push({ ...result, id: `routine:${index}` });
     }
