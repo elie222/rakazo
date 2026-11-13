@@ -58,6 +58,7 @@ export default function ModelSettingsScreen() {
     setCredential(next);
     setEntry(nextEntry);
     setFields(modelSettingsFields(credentialModelSettings(next, modelId), nextEntry));
+    setError(null);
   }, [credentialId, modelId, t]);
 
   useFocusEffect(
