@@ -902,6 +902,37 @@ describe("TeamChat.ambientJob", () => {
     expect(chat.row(digest.id)?.status).toBe("ignored");
   });
 
+  it("decides the digest senders that are due, then the next one once its period passes", async () => {
+    const chat = setup({
+      conversation: {
+        automatedSenderPolicies: {
+          "due-bot": { name: "Due", mode: "rollup", rollupHours: 6 },
+          "later-bot": { name: "Later", mode: "rollup", rollupHours: 6 },
+        },
+      },
+    });
+    const laterJudgedAt = new Date(Date.now() - 2 * HOUR_MS);
+    chat.record({
+      kind: "ambient",
+      status: "ignored",
+      senderId: "later-bot",
+      senderIsBot: true,
+      judgedAt: laterJudgedAt,
+    });
+    const due = chat.ambient({ senderId: "due-bot", senderIsBot: true });
+    const later = chat.ambient({ senderId: "later-bot", senderIsBot: true });
+
+    await chat.teamChat.ambientJob(chat.conversation.id);
+
+    expect(chat.decide.mock.calls.map(([input]) => input.messages.map((m) => m.eventId))).toEqual([
+      [due.providerEventId],
+    ]);
+    expect(chat.statuses(due, later)).toEqual(["ignored", "observed"]);
+    expect(chat.jobs.get(`team_chat.ambient:${chat.conversation.id}`)?.availableAt).toEqual(
+      new Date(laterJudgedAt.getTime() + 6 * HOUR_MS),
+    );
+  });
+
   it("waits until the conversation has been quiet before deciding", async () => {
     const chat = setup();
     const createdAt = new Date(Date.now() - 1_000);

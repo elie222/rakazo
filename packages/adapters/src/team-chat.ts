@@ -370,18 +370,17 @@ export class TeamChat {
         ? undefined
         : await this.rollupSchedule(candidates, senderPolicies, now);
       const evaluated = rollups ? rollups.due : candidates;
+      // Digests whose period has not passed get a decision once the first of them is due.
+      const nextDueAt = rollups?.nextDueAt?.getTime() ?? Number.POSITIVE_INFINITY;
       const latest = evaluated.at(-1);
-      if (!latest) {
-        // Only digests whose period has not passed: decide once the first one is due.
-        if (rollups?.nextDueAt)
-          await this.deps.jobs.enqueue(teamChatAmbientJob(conversation.id, rollups.nextDueAt));
-        return;
-      }
-      const quietAt = latest.createdAt.getTime() + this.debounceMs;
-      if (quietAt > now.getTime()) {
-        await this.deps.jobs.enqueue(teamChatAmbientJob(conversation.id, new Date(quietAt)));
-        return;
-      }
+      const quietAt = latest ? latest.createdAt.getTime() + this.debounceMs : 0;
+      const nextAt = Math.min(
+        quietAt > now.getTime() ? quietAt : Number.POSITIVE_INFINITY,
+        nextDueAt,
+      );
+      if (Number.isFinite(nextAt))
+        await this.deps.jobs.enqueue(teamChatAmbientJob(conversation.id, new Date(nextAt)));
+      if (!latest || quietAt > now.getTime()) return;
       const judged = evaluated.slice(-AMBIENT_CONTEXT_MESSAGES);
       const actionable = [...judged]
         .reverse()
