@@ -3493,3 +3493,39 @@ describe("Pi runtime empty replies", () => {
     expect(events).not.toContainEqual({ type: "text", text: "No response. Try again." });
   });
 });
+
+describe("Pi runtime tool call ids", () => {
+  it("keeps results paired when a provider repeats or omits tool call ids", async () => {
+    const calls = (ids: string[]) =>
+      ids.map((id, index) => ({
+        type: "toolCall" as const,
+        id,
+        name: "write_effect",
+        arguments: { value: `${id}-${index}` },
+      }));
+    providerState.stream
+      .mockImplementationOnce(() =>
+        stream(primary, message(primary, calls(["call_0", "call_1"]), "toolUse")),
+      )
+      .mockImplementationOnce(() =>
+        stream(primary, message(primary, calls(["call_0", "", ""]), "toolUse")),
+      )
+      .mockImplementation(() =>
+        stream(primary, message(primary, [{ type: "text", text: "Done." }], "stop")),
+      );
+
+    const events = await run(request());
+
+    expect(events.at(-1)).toEqual({ type: "done", text: "Done." });
+    const last = providerState.stream.mock.calls.at(-1)![1] as Context;
+    const callIds = last.messages.flatMap((entry) =>
+      entry.role === "assistant"
+        ? entry.content.flatMap((part) => (part.type === "toolCall" ? [part.id] : []))
+        : [],
+    );
+    expect(callIds).toEqual(["call_0", "call_1", "call_0_1", "call_2", "call_3"]);
+    expect(
+      last.messages.flatMap((entry) => (entry.role === "toolResult" ? [entry.toolCallId] : [])),
+    ).toEqual(callIds);
+  });
+});
