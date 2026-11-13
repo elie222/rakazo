@@ -96,7 +96,7 @@ import { withPiTelemetry } from "./pi-telemetry.js";
 import { withPiThinkingActivity } from "./pi-thinking-activity.js";
 import { observedPiStream } from "./pi-usage.js";
 import type { RejectedProviderRequest } from "./provider-request-shape.js";
-import { attachRejectedRequest, rejectedRequestOf } from "./provider-request-shape.js";
+import { attachRejectedRequests, rejectedRequestsOf } from "./provider-request-shape.js";
 import type { RuntimeContextDecision } from "./runtime-context.js";
 import { createRuntimeContextPolicy } from "./runtime-context.js";
 import { deliverFinishedShells } from "./shell-command-stream.js";
@@ -109,6 +109,7 @@ import {
 } from "./turn-checkpoint.js";
 import { midTaskMessageFromPrompt, midTaskMessagePrompt } from "./user-progress.js";
 
+const MAX_REJECTED_REQUESTS = 5;
 const running = new Map<string, { controller: AbortController; work: Promise<void> }>();
 // Some OpenAI-compatible models return EOS immediately after a tool result
 // instead of taking another assistant turn. A bounded internal follow-up keeps
@@ -437,7 +438,7 @@ export class PiAgentRuntime implements AgentRuntime {
         };
         // The idle watchdog may clone a terminal message, preserving its content array.
         const providerFailures = new WeakSet<AssistantMessage["content"]>();
-        let rejectedRequest: RejectedProviderRequest | undefined;
+        const rejectedRequests: RejectedProviderRequest[] = [];
         const hasBackups = Boolean(request.fallbackModels?.length);
         let agent: Agent;
         let activeStreamTarget = host.activeModel;
@@ -454,7 +455,6 @@ export class PiAgentRuntime implements AgentRuntime {
           selfRecoveries: 0,
           cutReplies: new WeakMap(),
           stream: (target, ctx, options) => {
-            rejectedRequest = undefined;
             if (hasCurrentImages && !target.model.input.includes("image")) {
               throw new Error(MODEL_IMAGE_INPUT_ERROR);
             }
@@ -484,7 +484,8 @@ export class PiAgentRuntime implements AgentRuntime {
                       prepareContext,
                       onProviderError: (message) => providerFailures.add(message.content),
                       onRejectedRequest: (rejection) => {
-                        rejectedRequest = rejection;
+                        if (rejection && rejectedRequests.length < MAX_REJECTED_REQUESTS)
+                          rejectedRequests.push(rejection);
                       },
                     },
                   ),
@@ -1188,7 +1189,7 @@ export class PiAgentRuntime implements AgentRuntime {
           });
           // Only a rejection nothing explains needs its request's shape to be reproduced.
           throw failure.constructor === Error
-            ? attachRejectedRequest(failure, rejectedRequest)
+            ? attachRejectedRequests(failure, rejectedRequests)
             : failure;
         }
         // Only an assistant message can hold the answer a provider left off the deltas;
@@ -1268,7 +1269,7 @@ export class PiAgentRuntime implements AgentRuntime {
               ? new ModelAccountError(message)
               : error instanceof ModelOutputError
                 ? new ModelOutputError(message)
-                : attachRejectedRequest(new Error(message), rejectedRequestOf(error)),
+                : attachRejectedRequests(new Error(message), rejectedRequestsOf(error) ?? []),
         );
       } finally {
         stopThinking();

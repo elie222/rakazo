@@ -99,7 +99,7 @@ vi.mock("./pi-openai-compatible-provider.js", () => ({
 }));
 
 import { PiAgentRuntime } from "./pi-runtime.js";
-import { rejectedRequestOf } from "./provider-request-shape.js";
+import { rejectedRequestsOf } from "./provider-request-shape.js";
 
 function consume(model = { provider: "openai-codex", id: "gpt-test" }) {
   const runtime = new PiAgentRuntime();
@@ -139,8 +139,9 @@ describe("Pi runtime errors", () => {
     provider.rejectRequest = true;
     const error = await consume().catch((caught: unknown) => caught);
     expect(error).not.toBeInstanceOf(ModelAccountError);
-    const rejection = rejectedRequestOf(error);
-    expect(rejection).toMatchObject({
+    const rejection = rejectedRequestsOf(error);
+    expect(rejection).toHaveLength(1);
+    expect(rejection?.[0]).toMatchObject({
       provider: "openai-codex",
       model: "gpt-test",
       status: 400,

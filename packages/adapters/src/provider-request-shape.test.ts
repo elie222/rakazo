@@ -2,8 +2,8 @@ import type { Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { describe, expect, it } from "vitest";
 import type { RejectedProviderRequest } from "./provider-request-shape.js";
 import {
-  attachRejectedRequest,
-  rejectedRequestOf,
+  attachRejectedRequests,
+  rejectedRequestsOf,
   summarizeProviderRequest,
   withRejectedRequestCapture,
 } from "./provider-request-shape.js";
@@ -195,12 +195,13 @@ describe("withRejectedRequestCapture", () => {
   });
 });
 
-describe("attachRejectedRequest", () => {
-  it("carries a rejection on the error it is attached to only", () => {
-    const rejection = { provider: "p", model: "m", status: 400 };
-    const error = attachRejectedRequest(new Error("Bad Request"), rejection);
-    expect(rejectedRequestOf(error)).toBe(rejection);
-    expect(rejectedRequestOf(new Error("Bad Request"))).toBeUndefined();
-    expect(rejectedRequestOf(attachRejectedRequest(new Error("x"), undefined))).toBeUndefined();
+describe("attachRejectedRequests", () => {
+  it("carries every attempt's rejection on the error it is attached to only", () => {
+    const primary = { provider: "p", model: "m", status: 400 };
+    const backup = { provider: "b", model: "n", status: 404 };
+    const error = attachRejectedRequests(new Error("Bad Request"), [primary, backup]);
+    expect(rejectedRequestsOf(error)).toEqual([primary, backup]);
+    expect(rejectedRequestsOf(new Error("Bad Request"))).toBeUndefined();
+    expect(rejectedRequestsOf(attachRejectedRequests(new Error("x"), []))).toBeUndefined();
   });
 });

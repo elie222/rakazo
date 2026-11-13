@@ -198,16 +198,17 @@ export function withRejectedRequestCapture<O extends SimpleStreamOptions>(
   };
 }
 
-const rejections = new WeakMap<Error, RejectedProviderRequest>();
+const rejections = new WeakMap<Error, RejectedProviderRequest[]>();
 
-export function attachRejectedRequest<E extends Error>(
+/** Every attempt's rejection, so a fallback chain shows the primary's and each backup's. */
+export function attachRejectedRequests<E extends Error>(
   error: E,
-  rejection: RejectedProviderRequest | undefined,
+  rejected: readonly RejectedProviderRequest[],
 ): E {
-  if (rejection) rejections.set(error, rejection);
+  if (rejected.length) rejections.set(error, [...rejected]);
   return error;
 }
 
-export function rejectedRequestOf(error: unknown): RejectedProviderRequest | undefined {
+export function rejectedRequestsOf(error: unknown): RejectedProviderRequest[] | undefined {
   return error instanceof Error ? rejections.get(error) : undefined;
 }
