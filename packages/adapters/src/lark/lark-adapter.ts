@@ -330,10 +330,20 @@ function inboundText(
   type: string,
   mentions: NonNullable<LarkMessageEvent["message"]["mentions"]>,
 ): { text: string; parts?: LarkTextPart[] } {
-  const replaceMentions = (value: string) => {
-    for (const mention of mentions) value = value.replaceAll(mention.key, `@${mention.name}`);
-    return value;
-  };
+  const mentionNames = new Map(
+    mentions.filter((mention) => mention.key).map((mention) => [mention.key, `@${mention.name}`]),
+  );
+  const mentionPattern = mentionNames.size
+    ? new RegExp(
+        `(?:${[...mentionNames.keys()]
+          .sort((a, b) => b.length - a.length)
+          .map((key) => key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+          .join("|")})(?!\\w)`,
+        "g",
+      )
+    : null;
+  const replaceMentions = (value: string) =>
+    mentionPattern ? value.replace(mentionPattern, (key) => mentionNames.get(key) ?? key) : value;
   const plain = (value: string) => ({ text: replaceMentions(value) });
   if (type !== "text" && type !== "post") return plain("");
   try {
