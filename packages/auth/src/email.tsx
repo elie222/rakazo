@@ -151,19 +151,16 @@ export async function message(
           ) : null}
           <Section style={{ padding: "24px 32px" }}>
             {image ? null : (
-              <Text style={{ margin: "0 0 24px", fontSize: "20px", fontWeight: 600 }}>
-                <Img
-                  src={`${ASSETS}/mark.png`}
-                  alt=""
-                  width="28"
-                  height="28"
-                  style={{
-                    display: "inline-block",
-                    verticalAlign: "middle",
-                    marginInlineEnd: "8px",
-                  }}
-                />
-                <span style={{ verticalAlign: "middle" }}>rakazo</span>
+              // Text, not a hosted logo: self-hosted servers send these too, and must not call out.
+              <Text
+                style={{
+                  margin: "0 0 24px",
+                  fontSize: "22px",
+                  fontWeight: 600,
+                  letterSpacing: "-0.5px",
+                }}
+              >
+                rakazo
               </Text>
             )}
             {content}
@@ -199,9 +196,6 @@ export async function message(
 }
 
 export const linkStyle = { color: lightTokens.primary, textDecoration: "underline" };
-
-/** Images emails show, served by the marketing site. */
-export const ASSETS = "https://rakazo.com/email";
 
 /** The one action an email asks for. */
 export function Button({ href, children }: { href: string; children: ReactNode }) {
