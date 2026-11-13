@@ -284,7 +284,7 @@ const LOCAL_SETTINGS = (settings: Settings) =>
 
 // A wrapped read keeps the pool's checkout timeout and no run limit it did not
 // have before, instead of Prisma's 2s/5s transaction defaults.
-const WRAPPED_OPERATION_OPTIONS = { maxWait: 10_000, timeout: 300_000 };
+export const WRAPPED_OPERATION_OPTIONS = { maxWait: 10_000, timeout: 300_000 };
 
 type InternalParams = { transaction?: { kind?: string }; dataPath?: unknown[] };
 type RuntimeDataModel = { models: Record<string, { fields: Array<{ name: string }> }> };
