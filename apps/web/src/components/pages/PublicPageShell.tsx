@@ -18,7 +18,7 @@ export function PublicPageShell({ title, document }: { title: string; document: 
   return (
     <div
       data-page-print
-      className="flex h-full min-h-0 flex-col overflow-hidden bg-card text-foreground print:h-auto print:overflow-visible print:bg-transparent"
+      className="flex h-full min-h-0 flex-col overflow-auto bg-card text-foreground print:h-auto print:overflow-visible print:bg-transparent"
     >
       <header className="z-10 flex h-12 shrink-0 bg-card print:hidden items-center justify-between gap-3 pr-2 pl-3.5">
         <a
@@ -60,7 +60,7 @@ export function PublicPageShell({ title, document }: { title: string; document: 
         </div>
       ) : null}
       {/* Keep anchor scrolling below the header; expand the whole document when printing. */}
-      <div className="min-h-0 flex-1 overflow-auto print:overflow-visible">
+      <div className="min-h-32 flex-1 overflow-auto print:min-h-0 print:overflow-visible">
         <div className="min-h-full" style={{ height: height || undefined }}>
           {document !== null ? (
             <PageFrame document={document} title={title} interactive onHeight={setHeight} />
