@@ -33,7 +33,17 @@ import {
 } from "./approval-effect.js";
 import { automated, withAutomatedLabels } from "./automated-messages.js";
 import { withCloudflareAuth } from "./cloudflare-ai-gateway.js";
+import { imagePartCount } from "./context-pruning.js";
 import { neutralizeSpeakerLabels } from "./history-speakers.js";
+import {
+  boundedInRunCheckpoint,
+  compactedInRunContext,
+  inRunCheckpointBudgets,
+  inRunCheckpointPrompt,
+  inRunCheckpointRecoveryPrompt,
+  isInRunCheckpointPrompt,
+  shouldCreateInRunCheckpoint,
+} from "./in-run-checkpoint.js";
 import { estimatePiImageTokens } from "./pi-image-context.js";
 import {
   COMPUTER_MODE_TOOLS,
@@ -447,6 +457,63 @@ export class PiAgentRuntime implements AgentRuntime {
         let activeStreamTarget = host.activeModel;
         // A tool result that ended the turn carries the reply the user must still see.
         let terminatedReply: string | undefined;
+        let toolCalls = 0;
+        let checkpointPhase: "idle" | "summarizing" | "installing" | "recovering" = "idle";
+        let checkpointText = "";
+        let checkpointSource: Context | undefined;
+        let checkpointCount = 0;
+        let checkpointBaselineTokens: number | undefined;
+        let checkpointNeedsBaseline = false;
+        let checkpointDisabled = false;
+        let checkpointRecoveryLocked = false;
+        const maxInRunCheckpoints = 3;
+        const checkpointSummaryPending = () => checkpointPhase === "summarizing";
+        const resetCheckpointBaselineForTarget = () => {
+          checkpointBaselineTokens = undefined;
+          checkpointNeedsBaseline = checkpointCount > 0;
+        };
+        const claimRunSteering = async (): Promise<Message[]> => {
+          // A terminating tool result already ended the run, so claiming here would delete a
+          // message that no provider request can answer. Leave it queued for the next run.
+          if (!request.claimSteering || (terminatedReply && !host.pausePending)) return [];
+          const steering = await request.claimSteering([...seenSteeringIds]);
+          if (steering.length === 0) return [];
+          seenSteeringIds.push(...steering.map((item) => item.id));
+          for (const item of steering) representedHistoryIds.add(item.messageId);
+          if (steering.some((item) => item.images?.length && !item.imageFileFallback))
+            hasCurrentImages = true;
+          const messages = steering.map((item): Message => {
+            const images = toPiImages(item.images);
+            const text =
+              item.origin === "user"
+                ? midTaskMessagePrompt(
+                    steeringText(item),
+                    toolDefs.some((tool) => tool.name === "message_user"),
+                  )
+                : midTaskMessageFromPrompt(steeringText(item), item.origin);
+            return {
+              role: "user",
+              content: images.length ? [{ type: "text", text }, ...images] : text,
+              timestamp: Date.now(),
+            };
+          });
+          queue.push({
+            type: "steered",
+            fromRunUser: steering.some((item) => item.origin === "user"),
+          });
+          return messages;
+        };
+        const recoveredCheckpointContext = (messages: Message[]): Context => {
+          if (!checkpointSource) throw new Error("in-run compaction source is missing");
+          const lateMessages = messages
+            .slice(checkpointSource.messages.length)
+            .filter((message) => message.role === "user" && !isInRunCheckpointPrompt(message));
+          return {
+            ...checkpointSource,
+            messages: [...checkpointSource.messages, ...lateMessages],
+            tools: [],
+          };
+        };
         let fallbackState: FallbackStreamState = {
           request,
           getActive: () => activeStreamTarget,
@@ -478,7 +545,10 @@ export class PiAgentRuntime implements AgentRuntime {
                     (event) => queue.push(event),
                     target.config.callObserver ?? this.modelCallObserver,
                     {
-                      operationKind: request.usageOperationKind ?? "answer",
+                      operationKind:
+                        checkpointPhase === "summarizing"
+                          ? "compaction"
+                          : (request.usageOperationKind ?? "answer"),
                       userId: context?.userId,
                       runId: request.runId,
                     },
@@ -513,6 +583,7 @@ export class PiAgentRuntime implements AgentRuntime {
             host.model = target.model;
             agent.state.model = target.model;
             contextPolicy = contextPolicyFor(target);
+            resetCheckpointBaselineForTarget();
           },
           // A throwaway policy, so judging a backup leaves the active policy's sent transcript
           // alone. Cache use is recorded only on usage, which a throwaway never sees. The opening
@@ -525,6 +596,7 @@ export class PiAgentRuntime implements AgentRuntime {
             await request.onModelChange?.(target.config.provider, target.config.id);
             activeStreamTarget = target;
             contextPolicy = contextPolicyFor(target);
+            resetCheckpointBaselineForTarget();
             host.activeModel = target;
             // A backup keeps its own effort.
             const nextThinkingLevel = thinkingLevelFor(
@@ -559,6 +631,7 @@ export class PiAgentRuntime implements AgentRuntime {
           host.model = target.model;
           host.apiKey = target.credentials?.accessToken ?? target.apiKey;
           contextPolicy = contextPolicyFor(target);
+          resetCheckpointBaselineForTarget();
           if (agent) {
             agent.state.model = target.model;
             agent.state.thinkingLevel = thinkingLevelFor(target.model, target.config.thinkingLevel);
@@ -645,23 +718,56 @@ export class PiAgentRuntime implements AgentRuntime {
               ? async () => activeStreamTarget.credentials?.accessToken ?? activeStreamTarget.apiKey
               : async () => apiKey,
           finishTurn: async (turn, turnSignal) => {
-            await deliverFinishedShells(
-              // Steered, so the output reaches the next model request like a tool result. A
-              // follow-up waits until the model stops and then costs one model turn each.
-              (text) => {
-                agent.steer({
-                  role: "user",
-                  content: text,
-                  timestamp: Date.now(),
-                });
-              },
-              host.pendingShells,
-              turn,
-              turnSignal,
-            );
+            if (checkpointPhase !== "summarizing")
+              await deliverFinishedShells(
+                // Steered, so the output reaches the next model request like a tool result. A
+                // follow-up waits until the model stops and then costs one model turn each.
+                (text) => {
+                  agent.steer({
+                    role: "user",
+                    content: text,
+                    timestamp: Date.now(),
+                  });
+                },
+                host.pendingShells,
+                turn,
+                turnSignal,
+              );
+            if (
+              checkpointPhase === "summarizing" &&
+              (host.pausePending || signal.aborted || turnSignal?.aborted)
+            ) {
+              checkpointSource = undefined;
+              checkpointText = "";
+              return;
+            }
+            if (
+              checkpointPhase === "summarizing" &&
+              turn.message.role === "assistant" &&
+              turn.message.stopReason !== "error" &&
+              turn.message.stopReason !== "aborted" &&
+              !messageHasToolCall(turn.message) &&
+              boundedInRunCheckpoint(
+                assistantText(turn.message),
+                inRunCheckpointBudgets(
+                  activeStreamTarget.config.contextWindow ?? activeStreamTarget.model.contextWindow,
+                ).checkpointChars,
+              )
+            ) {
+              checkpointPhase = "installing";
+              return { action: "continue" as const };
+            }
+            if (checkpointPhase === "summarizing") {
+              checkpointText = "";
+              checkpointPhase = "recovering";
+              return { action: "continue" as const };
+            }
+            if (checkpointRecoveryLocked) {
+              for (const message of await claimRunSteering()) agent.steer(message);
+            }
           },
           prepareNextTurnWithContext: async (turn) => {
-            const update = computer
+            let update = computer
               ? {
                   context: {
                     ...turn.context,
@@ -678,37 +784,139 @@ export class PiAgentRuntime implements AgentRuntime {
                   ),
                 }
               : undefined;
-            if (!request.claimSteering) return update;
-            // The turn is ending at a terminating result that aborted the agent; no
-            // model request would answer a follow-up claimed now, and a completed run
-            // deletes its claimed steering. Leave the message queued for the next run.
-            if (terminatedReply && !host.pausePending) return update;
-            const steering = await request.claimSteering([...seenSteeringIds]);
-            if (steering.length === 0) return update;
-            seenSteeringIds.push(...steering.map((item) => item.id));
-            for (const item of steering) representedHistoryIds.add(item.messageId);
-            if (steering.some((item) => item.images?.length && !item.imageFileFallback))
-              hasCurrentImages = true;
-            const messages = steering.map((item): Message => {
-              const images = toPiImages(item.images);
-              const text =
-                item.origin === "user"
-                  ? midTaskMessagePrompt(
-                      steeringText(item),
-                      toolDefs.some((tool) => tool.name === "message_user"),
-                    )
-                  : midTaskMessageFromPrompt(steeringText(item), item.origin);
-              return {
-                role: "user",
-                content: images.length ? [{ type: "text", text }, ...images] : text,
-                timestamp: Date.now(),
+            if (checkpointRecoveryLocked) {
+              const checkpointContext = update?.context ?? turn.context;
+              agent.state.tools = tools;
+              checkpointRecoveryLocked = false;
+              update = {
+                ...update,
+                context: { ...checkpointContext, tools },
+                model: activeStreamTarget.model,
+                thinkingLevel: thinkingLevelFor(
+                  activeStreamTarget.model,
+                  activeStreamTarget.config.thinkingLevel,
+                ),
               };
-            });
-            // Ordered with the turn's other events, so the run can treat it as a turn boundary.
-            queue.push({
-              type: "steered",
-              fromRunUser: steering.some((item) => item.origin === "user"),
-            });
+            }
+            const checkpointDecision = contextPolicy.getDecision();
+            if (checkpointNeedsBaseline && checkpointDecision) {
+              checkpointBaselineTokens = checkpointDecision.estimatedInputTokens;
+              checkpointNeedsBaseline = false;
+            }
+            const contextWindow =
+              activeStreamTarget.config.contextWindow ?? activeStreamTarget.model.contextWindow;
+            const checkpointGrowthTokens = Math.min(
+              8_192,
+              Math.max(1_024, Math.floor(contextWindow * 0.1)),
+            );
+            if (
+              checkpointPhase === "idle" &&
+              !checkpointDisabled &&
+              checkpointCount < maxInRunCheckpoints &&
+              !host.pausePending &&
+              !terminatedReply &&
+              !host.toolCallBudget.exceeded &&
+              shouldCreateInRunCheckpoint({
+                decision: checkpointDecision,
+                model: activeStreamTarget.model,
+                configuredContextWindow: activeStreamTarget.config.contextWindow,
+                toolCalls,
+                disabled: request.inRunCheckpoint === "off",
+                minimumInputTokens:
+                  checkpointBaselineTokens === undefined
+                    ? undefined
+                    : checkpointBaselineTokens + checkpointGrowthTokens,
+              })
+            ) {
+              checkpointPhase = "summarizing";
+              checkpointText = "";
+              const checkpointContext = update?.context ?? turn.context;
+              checkpointSource = {
+                ...checkpointContext,
+                messages: [...checkpointContext.messages],
+                tools: [...(checkpointContext.tools ?? [])],
+              };
+              agent.state.tools = [];
+              return {
+                ...update,
+                context: {
+                  ...checkpointContext,
+                  messages: [...checkpointContext.messages],
+                  tools: [],
+                },
+                messages: [
+                  inRunCheckpointPrompt(inRunCheckpointBudgets(contextWindow).checkpointChars),
+                ],
+              };
+            }
+            if (checkpointPhase === "summarizing") {
+              const checkpointContext = update?.context ?? turn.context;
+              agent.state.tools = [];
+              return {
+                ...update,
+                context: { ...checkpointContext, tools: [] },
+              };
+            }
+            if (checkpointPhase === "installing") {
+              if (!checkpointSource) throw new Error("in-run compaction source is missing");
+              const lateMessages = turn.context.messages
+                .slice(checkpointSource.messages.length)
+                .filter((message) => message.role === "user");
+              const compacted = compactedInRunContext({
+                source: checkpointSource,
+                lateMessages,
+                tools,
+                summary: checkpointText,
+                contextWindow,
+                maxImages: activeStreamTarget.config.maxImagesPerPrompt,
+              });
+              agent.state.messages = compacted.messages;
+              agent.state.tools = tools;
+              hasCurrentImages = compacted.messages.some((message) => imagePartCount(message) > 0);
+              computerSpan = undefined;
+              computerFrom = compacted.messages.length;
+              mainFallbackState.messagesBeforeSwitch = undefined;
+              if (computerFallbackState) computerFallbackState.messagesBeforeSwitch = undefined;
+              checkpointPhase = "idle";
+              checkpointSource = undefined;
+              checkpointText = "";
+              checkpointCount += 1;
+              checkpointNeedsBaseline = true;
+              checkpointBaselineTokens = undefined;
+              toolCalls = 0;
+              contextPolicy = contextPolicyFor(activeStreamTarget);
+              update = {
+                ...update,
+                context: { ...compacted, tools },
+                model: activeStreamTarget.model,
+                thinkingLevel: thinkingLevelFor(
+                  activeStreamTarget.model,
+                  activeStreamTarget.config.thinkingLevel,
+                ),
+              };
+            }
+            if (checkpointPhase === "recovering") {
+              const recovered = recoveredCheckpointContext(turn.context.messages);
+              agent.state.messages = recovered.messages;
+              agent.state.tools = [];
+              checkpointDisabled = true;
+              checkpointRecoveryLocked = true;
+              checkpointPhase = "idle";
+              checkpointText = "";
+              checkpointSource = undefined;
+              contextPolicy = contextPolicyFor(activeStreamTarget);
+              return {
+                context: { ...recovered, tools: [] },
+                messages: [inRunCheckpointRecoveryPrompt()],
+                model: activeStreamTarget.model,
+                thinkingLevel: thinkingLevelFor(
+                  activeStreamTarget.model,
+                  activeStreamTarget.config.thinkingLevel,
+                ),
+              };
+            }
+            const messages = await claimRunSteering();
+            if (messages.length === 0) return update;
             // Returned rather than steered: Pi polls its steering queue once per turn before
             // this hook runs, and skips the poll after it when that one found a message, such
             // as a finished shell's output. Returned messages always go into the next request.
@@ -798,7 +1006,6 @@ export class PiAgentRuntime implements AgentRuntime {
 
         let streamed = "";
         let currentMessageStreamed = "";
-        let toolCalls = 0;
         let toolActivityShowing = false;
         let silentToolContinuations = 0;
         // A reply cut off by a dropped connection continues in the same bubble: no turn break,
@@ -824,6 +1031,10 @@ export class PiAgentRuntime implements AgentRuntime {
         // it counts as the final reply, including when the completed message omits it.
         let streamedBeforePendingFinal = 0;
         agent.subscribe(async (event) => {
+          const checkpointMessageEnd =
+            event.type === "message_end" &&
+            event.message.role === "assistant" &&
+            checkpointPhase !== "idle";
           if (event.type === "tool_execution_end" && isTerminatingReplyResult(event.result)) {
             terminatedReply = terminatingReplyText(event.result) ?? terminatedReply;
           }
@@ -843,7 +1054,12 @@ export class PiAgentRuntime implements AgentRuntime {
             // Before any copy is kept: the recording below, and the checkpoint and provider
             // payloads that reuse this same message object.
             redactAskUserDetailInMessage(event.message, request.secrets);
-            await piSession?.appendMessage(event.message);
+            if (checkpointMessageEnd) {
+              checkpointText = assistantText(event.message) || checkpointText;
+              currentMessageStreamed = "";
+            } else {
+              await piSession?.appendMessage(event.message);
+            }
           }
           if (event.type === "tool_execution_start") {
             stopThinking();
@@ -870,7 +1086,8 @@ export class PiAgentRuntime implements AgentRuntime {
             if (!joinCutReply) joinDropped = "";
             // A later message (after a finished shell or steering, not only a tool call)
             // must not run its text straight on from the previous one.
-            if (streamed && !joinCutReply) queue.push({ type: "turn" });
+            if (checkpointPhase === "idle" && streamed && !joinCutReply)
+              queue.push({ type: "turn" });
           }
           if (
             event.type === "message_update" &&
@@ -878,6 +1095,10 @@ export class PiAgentRuntime implements AgentRuntime {
           ) {
             const delta = event.assistantMessageEvent.delta;
             if (delta) {
+              if (checkpointPhase !== "idle") {
+                checkpointText += delta;
+                return;
+              }
               if (toolActivityShowing) {
                 // Real text replaces the activity line instead of appending to it.
                 toolActivityShowing = false;
@@ -897,6 +1118,7 @@ export class PiAgentRuntime implements AgentRuntime {
             }
           }
           if (event.type === "turn_end") {
+            if (checkpointPhase !== "idle") return;
             const messageText =
               event.message.role === "assistant" ? assistantText(event.message) : "";
             const hasToolCalls = messageHasToolCall(event.message);
@@ -939,6 +1161,7 @@ export class PiAgentRuntime implements AgentRuntime {
           }
           if (event.type === "message_end" && event.message.role === "assistant") {
             const text = assistantText(event.message);
+            if (checkpointMessageEnd) return;
             // The completed text can hold more of a continuation than arrived as deltas, so its
             // repeat of the cut reply is judged on all of it.
             if (
@@ -1155,6 +1378,42 @@ export class PiAgentRuntime implements AgentRuntime {
             signal.removeEventListener("abort", onAbort);
           }
         }
+        if (
+          checkpointSummaryPending() &&
+          checkpointSource &&
+          !host.pausePending &&
+          !signal.aborted &&
+          !terminatedReply &&
+          !host.toolCallBudget.exceeded
+        ) {
+          const recovery = inRunCheckpointRecoveryPrompt();
+          const recovered = recoveredCheckpointContext(agent.state.messages);
+          agent.state.messages = recovered.messages;
+          agent.state.tools = [];
+          checkpointSource = undefined;
+          checkpointText = "";
+          checkpointDisabled = true;
+          checkpointRecoveryLocked = true;
+          checkpointPhase = "idle";
+          contextPolicy = contextPolicyFor(activeStreamTarget);
+          signal.addEventListener("abort", onAbort, { once: true });
+          try {
+            await agent.prompt(
+              typeof recovery.content === "string"
+                ? recovery.content
+                : "Return a concise partial result without calling tools.",
+            );
+            await agent.waitForIdle();
+          } finally {
+            signal.removeEventListener("abort", onAbort);
+          }
+        }
+        if (checkpointSummaryPending() && (terminatedReply || host.toolCallBudget.exceeded)) {
+          agent.state.tools = tools;
+          checkpointSource = undefined;
+          checkpointText = "";
+          checkpointPhase = "idle";
+        }
         // A continuation that failed or stopped early still hands over what it wrote.
         releaseJoin();
 
@@ -1170,7 +1429,11 @@ export class PiAgentRuntime implements AgentRuntime {
           !budgetExceeded && terminalMessage ? providerFailureText(terminalMessage) : undefined;
         const error = outputCutFailed
           ? MODEL_OUTPUT_CUT_ERROR
-          : agent.state.errorMessage || providerFailure;
+          : agent.state.errorMessage ||
+            providerFailure ||
+            (checkpointSummaryPending() && !host.pausePending && !signal.aborted
+              ? "In-run compaction completed without a usable summary"
+              : undefined);
         // A turn ended at a terminating tool result leaves the abort's message on the
         // agent; the reply that result carries is the answer, not a failure.
         const endedAtToolResult = Boolean(terminatedReply) && !host.pausePending && !signal.aborted;
@@ -1211,6 +1474,7 @@ export class PiAgentRuntime implements AgentRuntime {
         // a trailing tool result is tool output, not the model's reply.
         if (
           !budgetExceeded &&
+          checkpointPhase === "idle" &&
           terminalMessage?.role === "assistant" &&
           !messageHasToolCall(terminalMessage)
         ) {
@@ -1252,14 +1516,14 @@ export class PiAgentRuntime implements AgentRuntime {
             queue.push({ type: "text", text: terminatedReply });
             streamed = terminatedReply;
           }
-        } else if (!host.pausePending && toolWorkPendingFinal) {
+        } else if (!host.pausePending && checkpointPhase === "idle" && toolWorkPendingFinal) {
           if (request.allowSilentEmpty) {
             // Scheduled/FYI runs may finish after tools with no user-visible text.
             streamed = "";
           } else {
             throw new ModelOutputError(MISSING_TOOL_FINAL_RESPONSE_ERROR);
           }
-        } else if (!streamed.trim() && !host.pausePending) {
+        } else if (!streamed.trim() && !host.pausePending && checkpointPhase === "idle") {
           streamed = "";
           const lastMessage = agent.state.messages.at(-1);
           const fallback = lastMessage?.role === "assistant" ? assistantText(lastMessage) : "";

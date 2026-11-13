@@ -151,6 +151,9 @@ describe("real Pi against an offline model HTTP endpoint", () => {
             { ...server.model, contextWindow: 8192, maxTokens: 1024 },
             {
               contextStrategy,
+              // Keep this exact two-request fixture focused on context bounding; in-run
+              // checkpoint behavior is covered by the dedicated long-loop replay.
+              inRunCheckpoint: "off",
               history: Array.from({ length: 100 }, (_, index) => ({
                 id: `old-${index}`,
                 role: "user" as const,
