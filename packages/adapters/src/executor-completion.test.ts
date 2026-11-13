@@ -218,6 +218,22 @@ describe("completionMarksUnread", () => {
     expect(completionMarksUnread("routine", text)).toBe(false);
   });
 
+  it("lets a webhook delivery finish silently, like a routine", () => {
+    expect(runAllowsSilentEmpty("webhook")).toBe(true);
+    const silent = stripNoResponseReply(NO_RESPONSE, [{ kind: "text", text: NO_RESPONSE }]);
+    const segments = completionMessageSegments(silent.blocks, {
+      allowSilentEmpty: runAllowsSilentEmpty("webhook"),
+    });
+    const blocks = finalBlocksAfterMidTurnProgress(segments, runAllowsSilentEmpty("webhook"));
+    expect(blocks).toEqual([]);
+    expect(
+      completionMarksUnread("webhook", completionNotificationBody(silent.assembled, blocks)),
+    ).toBe(false);
+    expect(completionMarksUnread("webhook", "Approval needed")).toBe(true);
+    expect(runReplyGuidance("webhook")).toBe(ROUTINE_SILENT_REPLY_GUIDANCE);
+    expect(runPromotesMidTurnNarration("webhook")).toBe(false);
+  });
+
   it("allows reaction silence without a bubble, fallback, or unread", () => {
     expect(runAllowsSilentEmpty("reaction")).toBe(true);
     const silent = stripNoResponseReply(NO_RESPONSE, [{ kind: "text", text: NO_RESPONSE }]);

@@ -298,7 +298,9 @@ export function completionMarksUnread(
 ): boolean {
   if (trigger === "bot_message") return userFacingPeerReply;
   if (isBackgroundRunTrigger(trigger)) return false;
-  return (trigger !== "routine" && trigger !== "reaction") || Boolean(text);
+  return (
+    (trigger !== "routine" && trigger !== "reaction" && trigger !== "webhook") || Boolean(text)
+  );
 }
 
 export function subagentMarksUnread(
@@ -310,6 +312,6 @@ export function subagentMarksUnread(
   return (
     status === "failed" ||
     (trigger === "bot_message" && userFacingPeerReply) ||
-    (trigger !== "routine" && trigger !== "bot_message")
+    (trigger !== "routine" && trigger !== "webhook" && trigger !== "bot_message")
   );
 }

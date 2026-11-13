@@ -42,6 +42,7 @@ import { recordPiTelemetryContent, withPiTelemetrySpan } from "./pi-telemetry.js
 import { VERBATIM_TOOL_RESULTS } from "./runtime-context.js";
 import { SCHEDULE_TOOL_NAMES } from "./schedule-tools.js";
 import type { FinishedShellCommand } from "./shell-command-stream.js";
+import { NO_RESPONSE } from "./silent-reply.js";
 import { textContentArg } from "./tool-text.js";
 import { isVerbatimMcpResult } from "./verbatim-mcp-result.js";
 import { positiveIntegerArg } from "./workspace-file-tools.js";
@@ -559,6 +560,12 @@ function toAgentTool(
                   new Set(options).size !== options.length
                 ) {
                   throw new Error("ask_user requires two to four unique, non-empty options");
+                }
+                if (typeof args.question !== "string" || args.question.trim().length === 0) {
+                  // A blank question is a card nobody can answer, not a way to end quietly.
+                  throw new Error(
+                    `ask_user requires a question for the person. To finish without a message where staying silent is allowed, reply exactly ${NO_RESPONSE} instead.`,
+                  );
                 }
                 host.pausePending = true;
                 host.queue.push({

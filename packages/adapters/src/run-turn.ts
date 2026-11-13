@@ -320,7 +320,8 @@ async function streamProgress(ctx: RunContext, event: RuntimeEvent<"progress">) 
   const { reply } = ctx.state;
   // Tool status lines are not the model writing.
   if (!event.activity) ctx.state.toolCallStreak = { key: undefined, count: 0 };
-  if (run.trigger === "routine" || isBackgroundRunTrigger(run.trigger)) return;
+  if (run.trigger === "routine" || run.trigger === "webhook" || isBackgroundRunTrigger(run.trigger))
+    return;
   // The bot's own note stays the working line until it writes again.
   if (event.activity && reply.narrationStatusShowing) return;
   // Flush batched text deltas first so an activity line cannot land
