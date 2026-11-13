@@ -502,7 +502,7 @@ describe("destroyBot", () => {
       { deleteMemories: false },
     );
 
-    expect(result).toEqual({ removedGroupIds: [] });
+    expect(result).toEqual({ removedGroupIds: [], alreadyRemoved: true });
     expect(transaction).toHaveBeenCalledOnce();
     expect(createDeletion).not.toHaveBeenCalled();
     expect(deleteBot).not.toHaveBeenCalled();

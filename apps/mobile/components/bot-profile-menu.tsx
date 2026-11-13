@@ -53,9 +53,9 @@ export function useBotProfileActions(botId: string, name: string): BotProfileAct
         if (!confirmation) return;
         void confirmDeleteBot(
           { id: botId, name },
-          (removedGroupIds) => {
+          (removedGroupIds, recoveryContext) => {
             notifyArchivedChatsChanged();
-            leaveDeletedChat(botId, removedGroupIds);
+            void leaveDeletedChat(botId, removedGroupIds, recoveryContext);
           },
           confirmation.current,
           undefined,

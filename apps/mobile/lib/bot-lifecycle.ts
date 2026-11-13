@@ -11,7 +11,7 @@ import { errorText } from "./user-error";
 
 export async function confirmDeleteBot(
   bot: { id: string; name: string },
-  onDeleted: (removedGroupIds: readonly string[]) => void,
+  onDeleted: (removedGroupIds: readonly string[], recoveryContext?: ApiRequestContext) => void,
   // False once the screen that asked has gone, so a late failure doesn't alert elsewhere.
   current: () => boolean = () => true,
   requestContext?: ApiRequestContext,
@@ -55,7 +55,8 @@ export async function confirmDeleteBot(
       );
       if (!contextCurrent()) return;
       removeFromSearchInbox(bot.id);
-      onDeleted(result.removedGroupIds ?? []);
+      if (result.alreadyRemoved) onDeleted(result.removedGroupIds ?? [], requestContext);
+      else onDeleted(result.removedGroupIds ?? []);
     } catch (error) {
       if (current() && contextCurrent())
         Alert.alert(t`Could not delete bot`, errorText(error, t`Try again.`));

@@ -775,10 +775,10 @@ export function botsRoutes(ctx: RouterContext) {
         return { ok: true as const };
       }),
       remove: authed.bots.remove.handler(async ({ context, input }) => {
-        const { removedGroupIds } = await removeBot(context.actor, input.botId, {
+        const result = await removeBot(context.actor, input.botId, {
           deleteMemories: input.deleteMemories,
         });
-        return { ok: true as const, removedGroupIds };
+        return { ok: true as const, ...result };
       }),
       removePreview: authed.bots.removePreview.handler(async ({ context, input }) => {
         const bot = await loadBotForRemoval(deps.prisma, repos, context.actor, input.botId);

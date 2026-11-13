@@ -525,3 +525,20 @@ it("leaves a dissolved group open beside the inbox after bot deletion", async ()
   expect(session.dismissAll).toHaveBeenCalledOnce();
   expect(session.replace).toHaveBeenCalledWith("/");
 });
+
+it.each([true, false])(
+  "checks the live group after a concurrent deletion (exists=%s)",
+  async (exists) => {
+    const h = await handlers(async () => (exists ? [{ id: "group-current" }] : []));
+    session.route = { name: "group-thread", params: { groupId: "group-current" } };
+    await h.runRowAction("bot", { id: "x", name: "Ada" }, "delete");
+    vi.mocked(confirmDeleteBot).mock.calls[0]![1]!([], {
+      apiBase: "",
+      headers: { "x-rakazo-space-id": "space-a" },
+      sessionGeneration: 1,
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(session.replace).toHaveBeenCalledTimes(exists ? 0 : 1);
+  },
+);

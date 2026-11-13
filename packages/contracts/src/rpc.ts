@@ -621,7 +621,13 @@ export const appContract = {
     remove: oc
       .input(z.object({ botId: Id, deleteMemories: z.boolean().default(false) }))
       // Optional for clients talking to older servers; current servers return committed group IDs.
-      .output(z.object({ ok: z.literal(true), removedGroupIds: z.array(Id).optional() })),
+      .output(
+        z.object({
+          ok: z.literal(true),
+          removedGroupIds: z.array(Id).optional(),
+          alreadyRemoved: z.boolean().optional(),
+        }),
+      ),
     /** Groups this delete removes because fewer than two active bots would remain. */
     removePreview: oc.input(botId).output(z.array(z.object({ id: Id, name: z.string() }))),
     emailAddress: oc.input(botId).output(BotEmailAddressSchema),

@@ -525,7 +525,7 @@ export async function destroyBot(
       };
     }, THREAD_LOCK_TRANSACTION_OPTIONS),
   );
-  if (!deletion) return { removedGroupIds: [] as string[] };
+  if (!deletion) return { removedGroupIds: [] as string[], alreadyRemoved: true };
   await Promise.allSettled(
     deletion.cancelledGroupRuns.map((run) => deps.jobs.cancel(runJobKey(run.id))),
   );

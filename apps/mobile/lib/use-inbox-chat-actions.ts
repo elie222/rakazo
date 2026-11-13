@@ -208,9 +208,9 @@ export function useInboxChatActions({
         if (kind === "bot") {
           void confirmDeleteBot(
             { id: chat.id, name: chat.name },
-            (removedGroupIds) => {
+            (removedGroupIds, recoveryContext) => {
               deleted();
-              leaveDeletedChat(chat.id, removedGroupIds);
+              void leaveDeletedChat(chat.id, removedGroupIds, recoveryContext);
             },
             confirmation!.current,
             requestContext,

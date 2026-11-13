@@ -346,3 +346,16 @@ it("does not update a replacement session after deletion completes", async () =>
   expect(deleted).not.toHaveBeenCalled();
   expect(removeFromSearchInbox).not.toHaveBeenCalled();
 });
+
+it("passes pinned recovery context when another request already removed the bot", async () => {
+  const context = { apiBase: "https://example.test", headers: {}, sessionGeneration: 2 };
+  captureApiRequestContext.mockResolvedValue(context);
+  rpc
+    .mockResolvedValueOnce([])
+    .mockResolvedValueOnce({ ok: true, removedGroupIds: [], alreadyRemoved: true });
+  const deleted = vi.fn();
+  await confirmDeleteBot({ id: "bot-fixture", name: "Fixture" }, deleted);
+  alert.mock.calls[0]![2][1].onPress();
+  await Promise.resolve();
+  expect(deleted).toHaveBeenCalledWith([], context);
+});
