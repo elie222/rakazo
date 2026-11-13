@@ -164,6 +164,23 @@ describe("startStatusLines", () => {
     live.close();
   });
 
+  it("stops every pending request when the run aborts", async () => {
+    let openingSignal: AbortSignal | undefined;
+    const run = new AbortController();
+    const t = target({
+      opening: (_request, signal) => {
+        openingSignal = signal;
+        return new Promise(() => {});
+      },
+      step: async () => undefined,
+    });
+    const live = startStatusLines({ ...t.target, signal: run.signal });
+    await vi.advanceTimersByTimeAsync(0);
+    run.abort();
+    expect(openingSignal?.aborted).toBe(true);
+    expect(live.active()).toBe(false);
+  });
+
   it("leaves the line to the bot's own note", async () => {
     const t = target({
       opening: async () => ["Reading your question"],

@@ -122,4 +122,9 @@ describe("pending sends", () => {
     ];
     expect(withoutUnsent(pending, ["First"])).toEqual([{ sentAt: 1_000, text: "Second" }]);
   });
+
+  it("leaves other sends alone when the failed one was already dropped", () => {
+    const pending = [{ sentAt: 1_000, text: "Second" }];
+    expect(withoutUnsent(pending, ["First"])).toEqual(pending);
+  });
 });

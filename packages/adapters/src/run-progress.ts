@@ -360,19 +360,22 @@ export async function showNarrationStatus(
   const { deps, run, runId, bot, thread } = ctx;
   if (
     !note ||
-    (keepLine && openingAcknowledgementEnabled()) ||
     ctx.scripted ||
     !runPromotesMidTurnNarration(run.trigger) ||
     isBackgroundRunTrigger(run.trigger)
   )
     return;
   // With live narration the bot's statuses come with its tool calls, so text it writes between
-  // steps never shows as written: the status model words it as a status, or the line keeps
-  // its last one.
+  // steps never shows as written. The reset below clears it from the live message either way.
   const live = openingAcknowledgementEnabled();
-  if (live) ctx.statusLive?.step(note, { fallback: false });
-  // The held text is cleared and the step's own line comes back until a status replaces it.
-  const shown = live ? (ctx.state.reply.lastActivityLine ?? "") : narrationStatusLine(note);
+  let shown: string;
+  if (!live) shown = narrationStatusLine(note);
+  // The step brought the model's own status: it stays the line.
+  else if (keepLine) shown = ctx.state.reply.lastActivityLine ?? "";
+  // A status model is already wording this step; the raw line never shows and its request stays.
+  else if (ctx.statusLive?.active()) shown = "";
+  // Otherwise the step's own line comes back until a status replaces it.
+  else shown = ctx.state.reply.lastActivityLine ?? "";
   ctx.state.reply.narrationStatusShowing = !live && Boolean(shown);
   await deps.events.append({
     spaceId: run.spaceId,

@@ -836,6 +836,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
               writer: statusLinesSetup,
               request: statusRequestText,
               ready: statusSecretsReady,
+              signal: runAbortController.signal,
               held: () => statusHeld(),
               show: (text) =>
                 deps.events.append({

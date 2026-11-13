@@ -96,8 +96,9 @@ export function withoutUnsent(
 ): PendingSend[] {
   const next = [...pending];
   for (const text of unsentTexts) {
+    // A send already dropped (its window passed) leaves the others alone.
     const index = next.findLastIndex((send) => send.text === text);
-    next.splice(index < 0 ? -1 : index, 1);
+    if (index >= 0) next.splice(index, 1);
   }
   return next;
 }

@@ -27,6 +27,8 @@ export type StatusLineTarget = {
    * status model before then. Without it, calls start at once.
    */
   ready?: Promise<unknown>;
+  /** The run's own abort: when it fires, every pending status request stops too. */
+  signal?: AbortSignal;
   /** Shows one status as the working line. */
   show(text: string): Promise<unknown>;
   /** Whether the bot's own note holds the working line right now. */
@@ -41,6 +43,7 @@ export type StatusLineTarget = {
  */
 export function startStatusLines(target: StatusLineTarget): LiveStatusLines {
   const abort = new AbortController();
+  const onRunAbort = () => close();
   let generation = 0;
   let closed = false;
   let hasWriter = false;
@@ -74,6 +77,15 @@ export function startStatusLines(target: StatusLineTarget): LiveStatusLines {
     },
     () => {},
   );
+  function close() {
+    closed = true;
+    stopRotation();
+    abort.abort();
+    target.signal?.removeEventListener("abort", onRunAbort);
+  }
+  if (target.signal?.aborted) close();
+  else target.signal?.addEventListener("abort", onRunAbort, { once: true });
+
   const opening = ++generation;
   void writer
     .then(async (writer) => {
@@ -115,10 +127,6 @@ export function startStatusLines(target: StatusLineTarget): LiveStatusLines {
       stopRotation();
       replaceCurrent();
     },
-    close() {
-      closed = true;
-      stopRotation();
-      abort.abort();
-    },
+    close,
   };
 }
