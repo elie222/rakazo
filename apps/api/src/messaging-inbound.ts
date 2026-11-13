@@ -1,6 +1,7 @@
 import type { JobPublisher, MessagingInboundMessage, SandboxProvider } from "@rakazo/adapter-kit";
-import { messagingDeliverJob, runContinueJob } from "@rakazo/adapter-kit";
-import { insertOutboundRows } from "@rakazo/adapters";
+import { runContinueJob, teamChatEngageJobKey } from "@rakazo/adapter-kit";
+import type { MessagingDelivery, OutboundLane } from "@rakazo/adapters";
+import { MESSAGING_DM_OUTBOUND_CAP, messagingWakeIdempotencyKey } from "@rakazo/adapters";
 import type { MessageBlock } from "@rakazo/contracts";
 import { ATTACHMENT_MAX_COUNT, isAttachmentAudioMimeType } from "@rakazo/contracts";
 import type { MessagingCommand } from "@rakazo/core";
@@ -26,6 +27,7 @@ import {
   crossSpaceCommunicationAllowed,
   normalizeMessagingLinkCode,
   redeemMessagingLinkCode,
+  SendClaimLostError,
   SpaceDeletionInProgressError,
   THREAD_LOCK_TRANSACTION_OPTIONS,
 } from "@rakazo/db";
@@ -33,23 +35,19 @@ import { getLogger } from "@rakazo/logging";
 import type { InboundAttachmentStore } from "./inbound-attachments.js";
 import { storeInboundAttachments } from "./inbound-attachments.js";
 import type { MessagingReceipts } from "./messaging-receipts.js";
-import {
-  MESSAGE_ROUTING_REARMED_REASON,
-  MESSAGE_ROUTING_REASON,
-  MESSAGE_ROUTING_RESERVATION_MS,
-} from "./team-chat-startup.js";
 import { cancelThreadRuns, finishThreadStop, STOPPED_BY_MESSAGE_NOTE } from "./thread-stop.js";
 import {
   deliverWebhookEvent,
   formatUntrustedDeliveryPayload,
   inboundEventName,
-  messagingWakeIdempotencyKey,
 } from "./webhook-inbound.js";
 
 export interface MessagingInboundDeps {
   prisma: PrismaClient;
   events: Pick<ThreadEvents, "sendUserMessage" | "notify">;
-  jobs: Pick<JobPublisher, "enqueue">;
+  jobs: Pick<JobPublisher, "enqueue" | "cancelIn">;
+  /** Records the replies this line sends, and sends them straight away. */
+  delivery: Pick<MessagingDelivery, "recordIn" | "send">;
   sandbox: SandboxProvider;
   provision: (
     request: MessagingIdentityRequest,
@@ -141,6 +139,9 @@ async function handleDirectEvent(
       where: { id: existing.id },
       data: { outboundSinceInbound: 0, lastInboundAt: new Date(), dmThreadId: event.threadId },
     });
+    // Replies held behind the consecutive-outbound cap can go now.
+    if (existing.outboundSinceInbound >= MESSAGING_DM_OUTBOUND_CAP)
+      await deps.delivery.send([{ identityId: existing.id }]);
     if (!text && attachments.length === 0) return;
     // Owner commands are only parsed in the verified 1:1 conversation.
     const command = parseMessagingCommand(event.content);
@@ -227,8 +228,8 @@ async function handleDirectEvent(
       // A failed or cancelled run may never be mirrored, and no reply is coming.
       if (run.status === "failed" || run.status === "cancelled") return true;
       if (!run.messagingMirroredAt) return false;
-      // Mirroring only queues the reply in the outbox. It has gone out once
-      // none of this run's queued rows are still waiting to be sent.
+      // Recording only queues the reply. It has gone out once none of this
+      // run's recorded rows are still waiting to be sent.
       const replies = await deps.prisma.message.findMany({
         where: { runId, role: "bot" },
         select: { id: true },
@@ -341,9 +342,9 @@ export async function wakeMessageRoutines(
     artifacts?: StoredAttachment[];
     unavailable?: string[];
     /**
-     * TeamChat external message id. When set, atomically reassert routine
-     * ownership before creating a run so a concurrent TeamChat agent claim
-     * cannot also deliver for the same provider event.
+     * TeamChat external message id. The wake claims the deferred message in the
+     * transaction that starts its run, so the agent can never also answer it.
+     * Returns true when the agent already had it.
      */
     externalMessageId?: string;
   },
@@ -368,31 +369,6 @@ export async function wakeMessageRoutines(
     orderBy: { updatedAt: "desc" },
   });
   if (routines.length === 0) return false;
-
-  if (options?.externalMessageId) {
-    // CAS: only deliver when agent ownership has not claimed the row. Holding
-    // message_routine_routing blocks TeamChat queue() from creating a parallel run.
-    const reserved = await deps.prisma.externalMessage.updateMany({
-      where: {
-        id: options.externalMessageId,
-        status: { in: ["deferred", "received", "observed"] },
-        OR: [
-          { engagementReason: null },
-          {
-            engagementReason: {
-              in: [MESSAGE_ROUTING_REASON, MESSAGE_ROUTING_REARMED_REASON],
-            },
-          },
-        ],
-      },
-      data: {
-        engagementReason: MESSAGE_ROUTING_REASON,
-        // Outlive a dead heartbeat so reconcile cannot promote to agent mid-wake.
-        nextAttemptAt: new Date(Date.now() + MESSAGE_ROUTING_RESERVATION_MS),
-      },
-    });
-    if (reserved.count !== 1) return false;
-  }
 
   const provider = inboundEventName(event.provider);
   const prompt = formatUntrustedDeliveryPayload(`[Messaging Event: ${provider}]`, {
@@ -422,25 +398,44 @@ export async function wakeMessageRoutines(
         }
       : {}),
   });
-  await deliverWebhookEvent(
-    { events: deps.events, jobs: deps.jobs },
-    {
-      bot: { id: target.botId, spaceId: target.spaceId, userId: target.userId },
-      threadId: target.threadId,
-    },
-    {
-      prompt,
-      artifacts: options?.artifacts,
-      routines,
-      source: "messaging",
-      idempotencyKey: messagingWakeIdempotencyKey(
-        options?.deliveryProvider ?? event.provider,
-        event.handle,
-      ),
-      // TeamChat channel wakes may share a live thread with an active chat run.
-      allowParallelRun: true,
-    },
-  );
+  const externalMessageId = options?.externalMessageId;
+  try {
+    await deliverWebhookEvent(
+      { events: deps.events, jobs: deps.jobs },
+      {
+        bot: { id: target.botId, spaceId: target.spaceId, userId: target.userId },
+        threadId: target.threadId,
+      },
+      {
+        prompt,
+        artifacts: options?.artifacts,
+        routines,
+        source: "messaging",
+        idempotencyKey: messagingWakeIdempotencyKey(
+          options?.deliveryProvider ?? event.provider,
+          event.handle,
+        ),
+        // TeamChat channel wakes may share a live thread with an active chat run.
+        allowParallelRun: true,
+        ...(externalMessageId
+          ? {
+              claim: async (tx: Prisma.TransactionClient) => {
+                const claimed = await tx.externalMessage.updateMany({
+                  where: { id: externalMessageId, status: "deferred" },
+                  data: { status: "ignored", engagementReason: "message_routine_wake" },
+                });
+                if (claimed.count !== 1) return false;
+                await deps.jobs.cancelIn(tx, teamChatEngageJobKey(externalMessageId));
+                return true;
+              },
+            }
+          : {}),
+      },
+    );
+  } catch (error) {
+    if (error instanceof SendClaimLostError) return true;
+    throw error;
+  }
   return true;
 }
 
@@ -513,6 +508,7 @@ async function tryRedeemLinkCode(
         select: { name: true },
       });
       await writeConfirmation(
+        deps,
         tx,
         { id: linked.identityId },
         linked.confirmationKey,
@@ -521,7 +517,7 @@ async function tryRedeemLinkCode(
     },
   );
   if (!redeemed) return false;
-  await enqueueDeliverJob(deps);
+  await deps.delivery.send([{ identityId: redeemed.identityId }]);
   return true;
 }
 
@@ -542,13 +538,10 @@ async function stopOwnerWork(
   const key = `command:stop:${identity.id}:${event.handle}`;
   const target = { kind: "bot", botId: identity.botId, threadId: thread.id } as const;
   const stop = await deps.prisma.$transaction(async (tx) => {
-    const receipt = await tx.messagingOutbound.createMany({
-      data: [
-        { idempotencyKey: key, kind: "dm", identityId: identity.id, body: "Nothing is running." },
-      ],
-      skipDuplicates: true,
-    });
-    if (receipt.count === 0) return null;
+    const receipt = await deps.delivery.recordIn(tx, { identityId: identity.id }, [
+      { idempotencyKey: key, kind: "dm", identityId: identity.id, body: "Nothing is running." },
+    ]);
+    if (receipt.length === 0) return null;
     const stop = await cancelThreadRuns(identity, target, { botId: identity.botId })(tx);
     if (stop.runIds.length) {
       await tx.messagingOutbound.update({
@@ -558,7 +551,7 @@ async function stopOwnerWork(
     }
     return stop;
   }, THREAD_LOCK_TRANSACTION_OPTIONS);
-  await enqueueDeliverJob(deps);
+  await deps.delivery.send([{ identityId: identity.id }]);
   if (stop?.runIds.length) await finishThreadStop(deps, identity, target, stop);
 }
 
@@ -572,7 +565,11 @@ export const TEXT_ANSWER_WINDOW_MS = 24 * 60 * 60 * 1000;
  */
 async function answeredRequest(deps: MessagingInboundDeps, identity: IdentityRow) {
   const latest = await deps.prisma.messagingOutbound.findFirst({
-    where: { identityId: identity.id, kind: "dm", status: { in: ["pending", "sent"] } },
+    where: {
+      identityId: identity.id,
+      kind: "dm",
+      status: { in: ["pending", "sending", "retry", "sent"] },
+    },
     orderBy: { createdAt: "desc" },
     select: { idempotencyKey: true, createdAt: true, status: true },
   });
@@ -621,6 +618,7 @@ async function applyOwnerCommand(
       // text as a normal message rather than overwriting the newer state.
       if (count === 0) return false;
       await writeConfirmation(
+        deps,
         tx,
         identity,
         `command:leave:${membership.id}`,
@@ -629,7 +627,7 @@ async function applyOwnerCommand(
       return true;
     });
     if (!claimed) return false;
-    await enqueueDeliverJob(deps);
+    await deps.delivery.send([{ identityId: identity.id }]);
     return true;
   }
 
@@ -649,6 +647,7 @@ async function applyOwnerCommand(
       // Swept out or answered elsewhere since the read: not ours to write.
       if (count === 0) return false;
       await writeConfirmation(
+        deps,
         tx,
         identity,
         key,
@@ -659,7 +658,7 @@ async function applyOwnerCommand(
       return true;
     });
     if (!claimed) return false;
-    await enqueueDeliverJob(deps);
+    await deps.delivery.send([{ identityId: identity.id }]);
     return true;
   }
 
@@ -684,47 +683,53 @@ async function applyOwnerCommand(
     });
     // Revoked or answered elsewhere since the read: not ours to write.
     if (count === 0) return false;
-    await writeConfirmation(
-      tx,
-      identity,
-      key,
-      approved
-        ? "Connection approved. Your agents can now message each other."
-        : "Connection declined.",
-    );
-    if (requesterIdentity) {
-      await writeConfirmation(
-        tx,
-        requesterIdentity,
-        connectedKey,
-        "Your connection request was accepted. Your agents can now message each other.",
-      );
-    }
+    const confirmations = [
+      {
+        identity,
+        key,
+        body: approved
+          ? "Connection approved. Your agents can now message each other."
+          : "Connection declined.",
+      },
+      ...(requesterIdentity
+        ? [
+            {
+              identity: requesterIdentity,
+              key: connectedKey,
+              body: "Your connection request was accepted. Your agents can now message each other.",
+            },
+          ]
+        : []),
+    ];
+    // In one order every writer agrees on, so two answers cannot deadlock on the two chats.
+    for (const confirmation of confirmations.toSorted((a, b) =>
+      a.identity.id.localeCompare(b.identity.id),
+    ))
+      await writeConfirmation(deps, tx, confirmation.identity, confirmation.key, confirmation.body);
     return true;
   });
   if (!claimed) return false;
-  await enqueueDeliverJob(deps);
+  await deps.delivery.send([
+    { identityId: identity.id },
+    ...(requesterIdentity ? [{ identityId: requesterIdentity.id }] : []),
+  ]);
   return true;
 }
 
-/** Delete-then-insert so the prior cycle's row cannot suppress the new confirmation. */
+/** Replaces the prior cycle's row, which would otherwise suppress the new confirmation. */
 async function writeConfirmation(
-  tx: Pick<Prisma.TransactionClient, "messagingOutbound">,
+  deps: Pick<MessagingInboundDeps, "delivery">,
+  tx: Prisma.TransactionClient,
   identity: { id: string },
   key: string,
   body: string,
 ): Promise<void> {
-  await tx.messagingOutbound.deleteMany({ where: { idempotencyKey: key } });
-  await tx.messagingOutbound.createMany({
-    data: [{ idempotencyKey: key, kind: "dm", identityId: identity.id, body }],
-    skipDuplicates: true,
-  });
-}
-
-async function enqueueDeliverJob(deps: MessagingInboundDeps): Promise<void> {
-  await deps.jobs.enqueue(messagingDeliverJob()).catch((error) => {
-    getLogger().error("messaging confirmation enqueue error", error);
-  });
+  await deps.delivery.recordIn(
+    tx,
+    { identityId: identity.id },
+    [{ idempotencyKey: key, kind: "dm", identityId: identity.id, body }],
+    { replace: true },
+  );
 }
 
 async function handleChannelEvent(
@@ -798,6 +803,7 @@ async function handleChannelEvent(
     eventRosterAt !== undefined && eventRosterAt.getTime() > Date.now() + ROSTER_TIME_SKEW_MS;
   const rosterAt = rosterTimeRejected ? undefined : eventRosterAt;
   const invited: IdentityRow[] = [];
+  const invites: OutboundInvite[] = [];
   let hasUnlinked = false;
   await deps.prisma.$transaction(async (tx) => {
     // A rejected time distrusts the event's membership entirely; its message content,
@@ -833,7 +839,7 @@ async function handleChannelEvent(
             data: { identityId: identity.id },
           });
           if (member.status === "invited") {
-            if (await queueInvite(tx, channel, identity)) invited.push(identity);
+            if (await queueInvite(tx, channel, identity, invites)) invited.push(identity);
           }
         }
         if (member.status === "left") {
@@ -843,7 +849,7 @@ async function handleChannelEvent(
             data: { status: "invited" },
           });
           if (identity) {
-            if (await queueInvite(tx, channel, identity)) invited.push(identity);
+            if (await queueInvite(tx, channel, identity, invites)) invited.push(identity);
           }
         }
         if (!identity) hasUnlinked = true;
@@ -861,7 +867,7 @@ async function handleChannelEvent(
         update: {},
       });
       if (identity) {
-        if (await queueInvite(tx, channel, identity)) invited.push(identity);
+        if (await queueInvite(tx, channel, identity, invites)) invited.push(identity);
       } else hasUnlinked = true;
     }
 
@@ -878,27 +884,34 @@ async function handleChannelEvent(
         data: { status: "left" },
       });
     }
+    // In one order every writer agrees on, so two groups inviting the same people cannot
+    // deadlock on their conversations.
+    for (const invite of invites.toSorted((a, b) => a.identityId.localeCompare(b.identityId)))
+      await deps.delivery.recordIn(tx, { identityId: invite.identityId }, [invite], {
+        replace: true,
+      });
   });
   for (const identity of invited) await announceInvite(deps, channel, identity);
+  if (invites.length > 0)
+    await deps.delivery.send(invites.map(({ identityId }) => ({ identityId })));
 
   if (hasUnlinked && !channel.introPostedAt) {
-    // Under the channel lock, so the intro never takes a position inside a
-    // mirrored reply's range and the drain's claim stays serialised with it.
-    await insertOutboundRows(deps.prisma, { identityId: null, threadId: channel.threadId }, [
-      {
-        idempotencyKey: `intro:${channel.id}`,
-        kind: "intro",
-        threadId: channel.threadId,
-        body: "Hi. This line hosts Rakazo personal agents. Some people in this group haven't messaged it yet; send any message to this line first if you want your own agent here.",
-      },
-    ]);
-    await deps.prisma.messagingChannel.update({
-      where: { id: channel.id },
-      data: { introPostedAt: new Date() },
+    const lane: OutboundLane = { identityId: null, threadId: channel.threadId };
+    await deps.prisma.$transaction(async (tx) => {
+      await deps.delivery.recordIn(tx, lane, [
+        {
+          idempotencyKey: `intro:${channel.id}`,
+          kind: "intro",
+          threadId: channel.threadId,
+          body: "Hi. This line hosts Rakazo personal agents. Some people in this group haven't messaged it yet; send any message to this line first if you want your own agent here.",
+        },
+      ]);
+      await tx.messagingChannel.update({
+        where: { id: channel.id },
+        data: { introPostedAt: new Date() },
+      });
     });
-    await deps.jobs.enqueue(messagingDeliverJob()).catch((error) => {
-      getLogger().error("messaging intro enqueue error", error);
-    });
+    await deps.delivery.send([lane]);
   }
 
   // A service message (a pin, a join) carries nothing for a bot to read.
@@ -971,29 +984,28 @@ async function handleChannelEvent(
   }
 }
 
+type OutboundInvite = { idempotencyKey: string; kind: "dm"; identityId: string; body: string };
+
+/**
+ * A returning member restarts the approval cycle, so the invite replaces the prior one, which
+ * would otherwise leave them with no prompt to answer.
+ */
 async function queueInvite(
-  db: Pick<PrismaClient, "messagingOutbound" | "user">,
+  db: Pick<PrismaClient, "user">,
   channel: { id: string; name: string | null },
   identity: IdentityRow,
+  invites: OutboundInvite[],
 ): Promise<boolean> {
   // A deactivated person is not invited anywhere.
   if (await accountDeactivated(db, identity.userId)) return false;
   const name = channel.name ?? "a group chat";
-  // A returning member restarts the approval cycle; clear the prior invite
-  // row or skipDuplicates would leave them with no prompt to answer.
-  await db.messagingOutbound.deleteMany({
-    where: { idempotencyKey: `invite:${channel.id}:${identity.id}` },
-  });
-  await db.messagingOutbound.createMany({
-    data: [
-      {
-        idempotencyKey: `invite:${channel.id}:${identity.id}`,
-        kind: "dm",
-        identityId: identity.id,
-        body: `"${name}" was linked to your Rakazo agent. Reply YES to let your agent join the conversation there, or NO to stay out.`,
-      },
-    ],
-    skipDuplicates: true,
+  const idempotencyKey = `invite:${channel.id}:${identity.id}`;
+  if (invites.some((invite) => invite.idempotencyKey === idempotencyKey)) return true;
+  invites.push({
+    idempotencyKey,
+    kind: "dm",
+    identityId: identity.id,
+    body: `"${name}" was linked to your Rakazo agent. Reply YES to let your agent join the conversation there, or NO to stay out.`,
   });
   return true;
 }
@@ -1018,9 +1030,6 @@ async function announceInvite(
     });
     await deps.events.notify(thread.id, note.seq).catch(() => undefined);
   }
-  await deps.jobs.enqueue(messagingDeliverJob()).catch((error) => {
-    getLogger().error("messaging invite enqueue error", error);
-  });
 }
 
 async function ownerFirstName(

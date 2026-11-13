@@ -6,7 +6,7 @@ import { runRuntimeEnvFromProcess } from "./run-runtime.js";
 
 // What the worker read inline before it shared the runtime builder with the API.
 function previousWorkerValues(source: NodeJS.ProcessEnv) {
-  const { key, configured } = resolveDeploymentModel(source);
+  const { key, configured, provider, model } = resolveDeploymentModel(source);
   return {
     dataDir: source.DATA_DIR ?? "./data",
     encryptionKey: resolveEncryptionKey(source),
@@ -14,6 +14,11 @@ function previousWorkerValues(source: NodeJS.ProcessEnv) {
     cursorApiKey: source.CURSOR_API_KEY,
     deploymentModelKey: key,
     deploymentModelConfigured: configured,
+    // The API's ambient team-chat judge settings, which the worker's jobs now use too.
+    defaultProvider: provider,
+    defaultModel: model,
+    teamChatJudgeProvider: source.TEAM_CHAT_JUDGE_PROVIDER?.trim() || undefined,
+    teamChatJudgeModel: source.TEAM_CHAT_JUDGE_MODEL?.trim() || undefined,
     mcpStdioEnabled: source.MCP_STDIO_ENABLED === "true",
     mcpStdioAllowedCommands: (source.MCP_STDIO_ALLOWED_COMMANDS ?? "")
       .split(",")
@@ -56,6 +61,8 @@ describe("runRuntimeEnvFromProcess", () => {
       PHONE_CALL_RING_SECONDS: "30",
       MAX_UPLOAD_SIZE_MB: "20",
       INBOUND_EMAIL_DOMAIN: " Bots.Example.Test ",
+      TEAM_CHAT_JUDGE_PROVIDER: " openrouter ",
+      TEAM_CHAT_JUDGE_MODEL: "small-model",
     },
     { NODE_ENV: "test", INBOUND_EMAIL_DOMAIN: "  ", PIPEDREAM_ENVIRONMENT: "staging" },
   ])("reads the values the worker read before (%#)", (source) => {

@@ -1,4 +1,5 @@
 import type { MessagingInboundMessage } from "@rakazo/adapter-kit";
+import { MessagingDelivery } from "@rakazo/adapters";
 import type { PrismaClient } from "@rakazo/db";
 import { createDb, createThreadEvents, runAsSystem } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -49,10 +50,24 @@ describe.skipIf(!enabled)("group roster versioning under concurrency (PostgreSQL
           transaction(work, { timeout: 20_000, ...options });
       },
     }) as PrismaClient;
+    const jobs = {
+      enqueue: vi.fn(async () => undefined),
+      enqueueIn: vi.fn(async () => undefined),
+      cancel: vi.fn(async () => undefined),
+      cancelIn: vi.fn(async () => undefined),
+    };
+    const recorder = new MessagingDelivery({
+      prisma: unhurried,
+      messaging: {} as never,
+      events: createThreadEvents(unhurried),
+      jobs,
+      artifacts: { get: vi.fn() },
+    });
     const inbound = createMessagingInboundHandler({
       prisma: unhurried,
       events: createThreadEvents(unhurried),
-      jobs: { enqueue: vi.fn().mockResolvedValue(undefined) },
+      jobs,
+      delivery: { recordIn: recorder.recordIn.bind(recorder), send: vi.fn(async () => undefined) },
       sandbox: {
         execute: vi.fn(async function* () {
           yield { type: "exit", code: 0 };

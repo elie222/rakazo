@@ -1,11 +1,11 @@
 import { createLogger, createTestSink, getLogger, installLogger } from "@rakazo/logging";
 import { describe, expect, it, vi } from "vitest";
-import { mainRole, withModelRoles } from "../../../packages/adapters/src/testing/model-roles.js";
 import {
   ModelTeamChatEngagementJudge as Judge,
   parseTeamChatEngagementDecision,
   renderTeamChatEngagementPrompt,
 } from "./team-chat-judge.js";
+import { mainRole, withModelRoles } from "./testing/model-roles.js";
 
 class ModelTeamChatEngagementJudge extends Judge {
   constructor(deps: ConstructorParameters<typeof Judge>[0]) {
