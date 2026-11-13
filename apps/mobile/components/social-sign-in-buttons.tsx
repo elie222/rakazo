@@ -105,13 +105,22 @@ export function SocialSignInButtons({
           onPress={() => onPress(provider.id)}
           style={{
             alignSelf: "center",
+            maxWidth: "100%",
             minHeight: 44,
             justifyContent: "center",
             marginTop: 8,
             opacity: disabled ? 0.45 : 1,
           }}
         >
-          <Text style={{ color: tokens.mutedForeground, fontSize: 14, fontWeight: "500" }}>
+          <Text
+            numberOfLines={1}
+            style={{
+              flexShrink: 1,
+              color: tokens.mutedForeground,
+              fontSize: 14,
+              fontWeight: "500",
+            }}
+          >
             {t`Continue with ${ph({ name: provider.name })}`}
           </Text>
         </Pressable>

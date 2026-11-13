@@ -61,10 +61,12 @@ export function SocialSignInButtons({
           variant="text"
           size="sm"
           disabled={disabled}
-          className="self-center text-muted-foreground hover:text-foreground"
+          className="max-w-full min-w-0 self-center text-muted-foreground hover:text-foreground"
           onClick={() => onPress(provider.id)}
         >
-          <Trans>Continue with {provider.name}</Trans>
+          <span className="truncate">
+            <Trans>Continue with {provider.name}</Trans>
+          </span>
         </Button>
       ))}
     </div>

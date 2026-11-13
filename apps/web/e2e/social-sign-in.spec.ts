@@ -226,3 +226,27 @@ test("provider errors stay centered below a contained stack", async ({ page }, t
   await page.emulateMedia({ colorScheme: "dark" });
   await captureScreenshot(page, testInfo, "sign-in-provider-error");
 });
+
+test("long organization names stay inside the sign-in card", async ({ page }) => {
+  await mockSignedOut(page, both);
+  const name = "Example organization with a deliberately long sign-in connection name".repeat(3);
+  await page.route("**/api/auth/capabilities", (route) =>
+    route.fulfill({
+      json: {
+        ...passwordOnly,
+        providers: [{ id: "oidc", name }, ...both],
+      },
+    }),
+  );
+  for (const width of [1280, 390]) {
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto("/sign-in");
+    const company = page.getByRole("button", { name: `Continue with ${name}`, exact: true });
+    await expect(company).toBeVisible();
+    const box = (await company.boundingBox())!;
+    const formBox = (await page.locator("form").boundingBox())!;
+    expect(box.x).toBeGreaterThanOrEqual(formBox.x);
+    expect(box.x + box.width).toBeLessThanOrEqual(formBox.x + formBox.width);
+    await expect(company.locator("span")).toHaveCSS("text-overflow", "ellipsis");
+  }
+});
