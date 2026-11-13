@@ -26,6 +26,9 @@ describe("inline mention completion", () => {
 
   it.each([
     ["研", "研究助手"],
+    ["نامه\u200c", "نامه\u200cنگار"],
+    ["क्\u200d", "क्\u200dष"],
+    ["リサーチ・", "リサーチ・ボット"],
     ["Ré", "Réviseur"],
     ["Re\u0301", "Réviseur"],
     ["מר", "מרים"],
@@ -45,7 +48,7 @@ describe("inline mention completion", () => {
     (prefix) => {
       const text = `ask @${prefix}, please`;
       const caret = 5 + [...prefix][0]!.length;
-      const query = composerMentionQuery(text, caret)!;
+      const query = composerMentionQuery(text, caret, caret, [{ name: `${prefix}Helper` }])!;
       expect(query).toEqual({ start: 4, end: 5 + prefix.length, query: text.slice(5, caret) });
       expect(completeComposerMention(text, query, { name: "Reviewer" })).toEqual({
         text: "ask @Reviewer, please",
@@ -53,6 +56,25 @@ describe("inline mention completion", () => {
       });
     },
   );
+
+  it.each([
+    ["ask @研究助手请回复", 6, ["研究助手"], 9],
+    ["ask @研究请回复", 6, ["研究助手"], 7],
+    ["ask @bo请回复", 6, ["Bot"], 7],
+    ["ask @リサーチ・ボットお願いします", 7, ["リサーチ・ボット"], 13],
+    ["ask @研请回复", 6, [], 6],
+  ] as const)("preserves adjacent CJK prose in %j", (text, caret, names, end) => {
+    const query = composerMentionQuery(
+      text,
+      caret,
+      caret,
+      names.map((name) => ({ name })),
+    )!;
+    expect(query).toMatchObject({ start: 4, end });
+    expect(completeComposerMention(text, query, { name: "Reviewer" }).text).toBe(
+      `ask @Reviewer${text.slice(end)}`,
+    );
+  });
 
   it.each(["email@bo", "@bo done", "ordinary text"])(
     "ignores nonqueries at the end of %j",
