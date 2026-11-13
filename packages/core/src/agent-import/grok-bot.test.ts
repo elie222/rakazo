@@ -604,3 +604,15 @@ it("does not mistake an unfinished prose note for a truncated export", () => {
     )[0]?.instructions,
   ).toBe("Keep");
 });
+
+it("rejects aggregate skill overflow while combining same-identity parts", () => {
+  const bots = Array.from({ length: 100 }, (_, part) => ({
+    export_id: "same",
+    name: "Example",
+    skills: Array.from({ length: 100 }, (_, index) => ({
+      name: `skill-${part}-${index}`,
+      instructions: "Do it",
+    })),
+  }));
+  expect(() => readGrokBotExportJson(JSON.stringify({ bots }))).toThrow(GrokBotExportError);
+});

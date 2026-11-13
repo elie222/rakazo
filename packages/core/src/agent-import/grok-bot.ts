@@ -401,20 +401,18 @@ function mergeBots(bots: readonly GrokBot[]): GrokBot[] {
           }
         : bot,
     );
-  }
-  const result = [...merged.values()];
-  if (
-    result.some((bot) =>
-      [bot.skills, bot.apps, bot.routines, bot.memories, bot.userFacts].some(
+    const current = merged.get(key)!;
+    if (
+      [current.skills, current.apps, current.routines, current.memories, current.userFacts].some(
         (items) => items.length > 100,
-      ),
+      )
     )
-  )
-    throw new GrokBotExportError("too_large");
-  return result;
+      throw new GrokBotExportError("too_large");
+  }
+  return [...merged.values()];
 }
 
-/** Refuses newer formats, then joins the Bots by name. */
+/** Refuses newer formats, then joins split parts by explicit identity. */
 function botsIn(documents: readonly Json[]): GrokBot[] {
   if (documents.some((document) => Number(document.version) > 1)) {
     throw new GrokBotExportError("newer_version");
