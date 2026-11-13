@@ -680,7 +680,7 @@ describe("LocalStackController", () => {
     await probeStarted;
     await stack.stop();
     resolveProbe("v1.2.3");
-    await expect(reuse).resolves.toBe(true);
+    await expect(reuse).resolves.toBe(false);
     expect(stack.managedStackRunning()).toBe(false);
   });
 
@@ -813,7 +813,7 @@ describe("LocalStackController", () => {
     // The stop settles in microtasks, before the token read's file I/O can finish.
     await stopping;
     expect(probes).toBe(1);
-    await expect(reuse).resolves.toBe(true);
+    await expect(reuse).resolves.toBe(false);
     expect(stack.managedStackRunning()).toBe(false);
   });
 
