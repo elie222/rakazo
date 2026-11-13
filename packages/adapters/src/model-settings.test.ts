@@ -1,4 +1,4 @@
-import { credentialModelSettings } from "@rakazo/core";
+import { credentialModelSettings, modelSettingsFields, modelSettingsRequest } from "@rakazo/core";
 import { describe, expect, it, vi } from "vitest";
 import { buildModelConnectPlaintext, modelCredentialDto } from "./model-connect.js";
 import {
@@ -449,5 +449,40 @@ it("keeps legacy image settings aligned between runtime and the credential DTO",
     expect(credentialModelSettings(dto, modelId).images).toBe(
       connectionModelSettings(secret, row.provider, modelId, row).images,
     );
+  }
+});
+
+it("preserves operator-enabled image input when saving a model's limits", () => {
+  vi.stubEnv("RAKAZO_OPENAI_COMPATIBLE_VISION_MODELS", "operator-vision-fixture");
+  try {
+    const modelId = "operator-vision-fixture";
+    const row = {
+      id: "fixture",
+      provider: "openai-compatible",
+      label: "Fixture",
+      defaultModel: modelId,
+    };
+    const secret = parseModelSecret(
+      JSON.stringify({ kind: "openai_compatible", baseUrl: "https://example.com/v1" }),
+    );
+    const dto = modelCredentialDto(row, serializeModelSecret(secret));
+    const fields = modelSettingsFields(credentialModelSettings(dto, modelId), undefined);
+    expect(fields.images).toBe(true);
+    expect(
+      modelSettingsRequest({
+        fields: { ...fields, maxTokens: "2000" },
+        provider: row.provider,
+        entry: undefined,
+      }),
+    ).toMatchObject({ status: "ready", settings: { images: true, maxTokens: 2000 } });
+    const disabled = modelCredentialDto(
+      row,
+      serializeModelSecret(withModelSettings(secret, modelId, { images: false })),
+    );
+    expect(modelSettingsFields(credentialModelSettings(disabled, modelId), undefined).images).toBe(
+      false,
+    );
+  } finally {
+    vi.unstubAllEnvs();
   }
 });

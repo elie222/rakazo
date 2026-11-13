@@ -341,16 +341,17 @@ export async function saveConnectionModelSettings(
         !enabledOpenAiCompatibleModelIds(secret, defaultModel).includes(input.modelId)
       )
         throw new ORPCError("BAD_REQUEST", { message: "Unknown model for that connection" });
-      const contextWindow =
-        input.settings.contextWindow ??
-        modelSettingsDefaults(
-          credential.provider,
-          catalogEntryFor(listPiCatalog(), credential.provider, input.modelId) ??
-            liveCatalogEntry(credential.provider, input.modelId),
-        ).contextWindow;
+      const defaults = modelSettingsDefaults(
+        credential.provider,
+        catalogEntryFor(listPiCatalog(), credential.provider, input.modelId) ??
+          liveCatalogEntry(credential.provider, input.modelId),
+      );
       if (
-        input.settings.maxTokens !== undefined &&
-        !modelOutputLeavesInputRoom(input.settings.maxTokens, contextWindow)
+        (input.settings.maxTokens !== undefined || input.settings.contextWindow !== undefined) &&
+        !modelOutputLeavesInputRoom(
+          input.settings.maxTokens ?? defaults.maxTokens,
+          input.settings.contextWindow ?? defaults.contextWindow,
+        )
       )
         throw new ORPCError("BAD_REQUEST", {
           message: "Maximum output tokens must be below the context limit.",

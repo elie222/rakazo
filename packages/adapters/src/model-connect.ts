@@ -31,6 +31,7 @@ import { CHATGPT_OAUTH_PROVIDER } from "./pi-oauth.js";
 import {
   OPENAI_COMPATIBLE_PROVIDER_ID,
   openAiCompatibleModel,
+  openAiCompatibleVisionModelIds,
   prepareOpenAiCompatibleConnect,
 } from "./pi-openai-compatible-provider.js";
 
@@ -371,6 +372,7 @@ export function modelCredentialDto(
   if (parsed.kind !== "openai_compatible") {
     return { ...compatibleCredential, authKind: modelCredentialAuthKind(parsed) };
   }
+  const operatorVisionModels = openAiCompatibleVisionModelIds();
   return {
     ...compatibleCredential,
     authKind: "openai_compatible",
@@ -393,7 +395,9 @@ export function modelCredentialDto(
       ? { enabledModelIds: enabledOpenAiCompatibleModelIds(parsed, row.defaultModel) }
       : {}),
     visionModelIds: enabledOpenAiCompatibleModelIds(parsed, row.defaultModel).filter(
-      (id) => connectionModelSettings(parsed, row.provider, id, row).images === true,
+      (id) =>
+        connectionModelSettings(parsed, row.provider, id, row).images ??
+        operatorVisionModels.has(id),
     ),
     ...(parsed.models ? { modelSettings: parsed.models } : {}),
     thinkingLevels: compatibleModelThinkingLevels(parsed, row.defaultModel ?? "custom", row),

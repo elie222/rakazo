@@ -209,12 +209,18 @@ export function modelSettingsRequest(input: {
   }
   if (fields.maxTokens.trim()) {
     const maxTokens = parseModelMaxTokens(fields.maxTokens.trim());
-    const window = settings.contextWindow ?? modelSettingsDefaults(provider, entry).contextWindow;
     if (maxTokens === undefined) return { status: "invalid", field: "maxTokens" };
-    if (!modelOutputLeavesInputRoom(maxTokens, window))
-      return { status: "invalid", field: "outputRoom" };
     settings.maxTokens = maxTokens;
   }
+  const defaults = modelSettingsDefaults(provider, entry);
+  if (
+    (settings.maxTokens !== undefined || settings.contextWindow !== undefined) &&
+    !modelOutputLeavesInputRoom(
+      settings.maxTokens ?? defaults.maxTokens,
+      settings.contextWindow ?? defaults.contextWindow,
+    )
+  )
+    return { status: "invalid", field: "outputRoom" };
   if (modelCapabilitiesConfigurable(provider, entry)) {
     settings.images = fields.images;
     settings.reasoning = fields.reasoning;

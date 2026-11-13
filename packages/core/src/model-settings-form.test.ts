@@ -162,6 +162,13 @@ describe("modelSettingsRequest", () => {
   it("keeps the output below the context the model runs with", () => {
     expect(
       modelSettingsRequest({
+        fields: { ...fields, contextWindow: "16000" },
+        provider: "zai",
+        entry: { contextWindow: 128000, maxTokens: 32000 },
+      }),
+    ).toEqual({ status: "invalid", field: "outputRoom" });
+    expect(
+      modelSettingsRequest({
         fields: { ...fields, maxTokens: "128000" },
         provider: "zai",
         entry: live,

@@ -6342,6 +6342,33 @@ describe("model settings", () => {
     }
   });
 
+  it("rejects a context-only override below the model's default output cap", async () => {
+    const known = listPiCatalog().find(
+      (entry) => entry.provider === "zai" && entry.contextWindow && entry.maxTokens,
+    )!;
+    for (const input of [
+      { provider: "zai", modelId: known.id, secret: "sk-synthetic-key" },
+      {
+        provider: "openai-compatible",
+        modelId: "served",
+        secret: JSON.stringify({
+          kind: "openai_compatible",
+          apiKey: "fake-key",
+          baseUrl: "https://example.com/v1",
+        }),
+      },
+    ]) {
+      const { call, deps } = settingsDeps(input.secret, input.modelId, input.provider);
+      const response = await call({
+        credentialId: "connection-1",
+        modelId: input.modelId,
+        settings: { contextWindow: 1 },
+      });
+      expect(response.status).toBe(400);
+      expect(deps.secrets.put).not.toHaveBeenCalled();
+    }
+  });
+
   it("caps how many models on one connection keep their own settings", async () => {
     const models = Object.fromEntries(
       Array.from({ length: MAX_MODEL_SETTINGS_PER_CONNECTION }, (_, index) => [
