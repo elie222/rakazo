@@ -61,20 +61,30 @@ entries on that pull request, or in a separate translation-only pull request onc
 
 ## Adding a UI language
 
-Web, the Electron-hosted UI and Expo mobile share one set of Lingui catalogs. To add a locale,
-register it in `lingui.config.ts`, `apps/web/src/lib/ui-locale.ts`, and
-`apps/web/src/lib/i18n.ts`, then run `pnpm intl:extract`, fill the new
-`packages/i18n/locales/<locale>/messages.po` catalog, and validate it with
-`pnpm intl:compile`. Commit the new catalog in the same pull request,
-since the app imports it and the sync workflow only updates catalogs that already exist. Keep message IDs, placeholders, JSX markers, and
-ICU plural branches intact; do not commit generated `*.js`/`*.mjs` catalog files.
+Web, the Electron-hosted UI and Expo mobile share one set of Lingui catalogs. Register a new
+locale in these places:
 
-To ship it on mobile too, add it to `apps/mobile/lib/ui-locale.ts`, import its catalog in
-`apps/mobile/lib/i18n.ts`, and add its plural rules to `apps/mobile/lib/plural-rules.ts`, since
-Hermes has no `Intl.PluralRules`.
-Update the locale unit tests and a UI E2E scenario for each supported surface. The marketing
-homepage in `apps/www` and the native Electron setup window have separate localization paths;
-scope and test those changes explicitly instead of assuming the web catalog covers them.
+- `AppLocaleSchema` in `packages/contracts/src/domain.ts` and `APP_LOCALE_LABELS` in
+  `packages/core/src/ui-locale.ts`. The web language list comes from the shared schema;
+  `apps/web/src/lib/ui-locale.ts` is not a separate registry.
+- `lingui.config.ts` and the catalog loaders in `apps/web/src/lib/i18n.ts`.
+- Mobile's `SHIPPED_LOCALES` in `apps/mobile/lib/ui-locale.ts` and catalog imports/map in
+  `apps/mobile/lib/i18n.ts`. Check the new language's rules in `apps/mobile/lib/plural-rules.ts`,
+  which supplies the fallback when Hermes has no `Intl.PluralRules`.
+- The PageKit locale list and `PAGE_MESSAGES` in `packages/page-kit/src/kit/labels.ts`, with a
+  message table in `packages/page-kit/src/kit/locales/`. Pages use these tables, not Lingui catalogs.
+
+Run `pnpm intl:extract`, fill the new `packages/i18n/locales/<locale>/messages.po` catalog,
+and validate it with `pnpm intl:compile`. Commit the new catalog in the same pull request,
+since the app imports it and the sync workflow only updates catalogs that already exist.
+Keep message IDs, placeholders, JSX markers, and ICU plural branches intact; do not commit
+generated `*.js`/`*.mjs` catalog files or unrelated changes to existing catalogs.
+
+Update the shared and platform locale tests, including normalization and plural rules, and a
+UI E2E scenario for each supported surface. The marketing homepage in `apps/www` and the
+native Electron setup window and menus (`apps/desktop/src/i18n.ts` and `locales/`) have
+separate localization paths; scope and test those changes explicitly instead of assuming the
+web catalog covers them.
 
 See [agent verification](docs/agent-verification.md) for the distinction between
 deterministic execution tests, computer replay, and real-model quality evals.
