@@ -1,5 +1,10 @@
 import { z } from "zod";
-import { BILLING_CANCELLATION_REASONS } from "./billing.js";
+import {
+  BILLING_CANCELLATION_REASONS,
+  ByokIntervalSchema,
+  ByokTierSchema,
+  PlanLayoutSchema,
+} from "./billing.js";
 import { SIGNUP_SURVEY_TEAM_SIZES, SIGNUP_SURVEY_USES } from "./domain.js";
 import { RUN_ERROR_KINDS, RunTriggerSchema } from "./runs.js";
 import { SignupAttribution } from "./signup-attribution.js";
@@ -18,12 +23,15 @@ export const AnalyticsScreen = z.enum([
   "bot_profile",
   "routine",
   "new_bot",
+  "plans",
 ]);
 export const AnalyticsSurface = z.enum(["web", "desktop", "ios", "android"]);
 export const AnalyticsScreenInput = z
   .object({
     screen: AnalyticsScreen,
     surface: AnalyticsSurface,
+    /** On the plans screen: the layout it showed. */
+    planLayout: PlanLayoutSchema.optional(),
   })
   .strict();
 export const AnalyticsBotSetting = z.enum([
@@ -56,6 +64,14 @@ const modelConnect = {
     .string()
     .regex(/^[a-z0-9][a-z0-9-]{0,63}$/)
     .optional(),
+};
+export const AnalyticsPlan = z.enum(["own_key", "credits"]);
+/** A paid plan and what it bills each period; credits bill monthly and have no tier. */
+const planTerms = {
+  plan: AnalyticsPlan,
+  tier: ByokTierSchema.optional(),
+  interval: ByokIntervalSchema,
+  amountCents: z.number().int().positive(),
 };
 export const AnalyticsEvent = z.discriminatedUnion("name", [
   SignupAttribution.extend({ name: z.literal("account_created") }).strict(),
@@ -91,6 +107,10 @@ export const AnalyticsEvent = z.discriminatedUnion("name", [
       teamSize: z.enum(SIGNUP_SURVEY_TEAM_SIZES).optional(),
     })
     .strict(),
+  z.object({ name: z.literal("checkout_opened"), ...planTerms }).strict(),
+  z.object({ name: z.literal("subscription_started"), ...planTerms, trial: z.boolean() }).strict(),
+  // A trial's end: its first payment, or access lost without one.
+  z.object({ name: z.literal("trial_ended"), ...planTerms, converted: z.boolean() }).strict(),
   // Only the fixed reason; the comment stays in the database.
   z
     .object({
