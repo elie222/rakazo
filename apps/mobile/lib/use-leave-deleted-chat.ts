@@ -9,14 +9,11 @@ export function useLeaveDeletedChat() {
       const route = navigation.getCurrentRoute() as
         | { name: string; params?: { botId?: string; groupId?: string } }
         | undefined;
+      // Artifacts uses the bot ID as an optional filter, not as the route's owner.
+      if (route?.name === "artifacts") return;
       if (
-        ((route?.name === "thread" || route?.name === "bot-profile") &&
-          route.params?.botId === botId) ||
-        ((route?.name === "thread" ||
-          route?.name === "group-thread" ||
-          route?.name === "group-settings") &&
-          route.params?.groupId &&
-          removedGroupIds.includes(route.params.groupId))
+        route?.params?.botId === botId ||
+        (route?.params?.groupId && removedGroupIds.includes(route.params.groupId))
       ) {
         router.dismissAll();
         router.replace("/");

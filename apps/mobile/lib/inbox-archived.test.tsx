@@ -391,6 +391,10 @@ describe("bot profile menu archive notifications", () => {
   it.each([
     [{ name: "thread", params: { botId: "bot-b" } }, true],
     [{ name: "bot-profile", params: { botId: "bot-b" } }, true],
+    ...["bot-settings", "bot-model", "computer", "routines", "routine"].map(
+      (name) => [{ name, params: { botId: "bot-b" } }, true] as const,
+    ),
+    [{ name: "pages", params: { groupId: "removed-group" } }, true],
     [{ name: "thread", params: { botId: "other-bot" } }, false],
     [{ name: "thread", params: { groupId: "removed-group" } }, true],
     [{ name: "group-settings", params: { groupId: "removed-group" } }, true],
