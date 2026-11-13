@@ -89,7 +89,13 @@ export function accountRoutes(ctx: RouterContext) {
     },
     analytics: {
       screen: authed.analytics.screen.handler(async ({ context, input }) => {
-        deps.analytics?.capture(context.actor.userId, { name: "screen_viewed", ...input });
+        deps.analytics?.capture(
+          context.actor.userId,
+          { name: "screen_viewed", ...input },
+          undefined,
+          // The server only sends a plan layout while the test runs, so it is the exposure.
+          input.planLayout ? { "plan-layout": input.planLayout } : undefined,
+        );
         return { ok: true as const };
       }),
     },
@@ -102,7 +108,13 @@ export function accountRoutes(ctx: RouterContext) {
           const record = await firstModelConnectAnalytics(deps, context.actor, "credits");
           record(undefined, { name: "model_connect_started" });
         }
-        return billing.selectFunding(context.actor, input.funding, input.client, input.interval);
+        return billing.selectFunding(
+          context.actor,
+          input.funding,
+          input.client,
+          input.interval,
+          input.tier,
+        );
       }),
       purchaseCredits: authed.billing.purchaseCredits.handler(async ({ context, input }) =>
         requireBilling(deps).purchaseCredits(context.actor, input),
