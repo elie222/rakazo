@@ -336,6 +336,7 @@ export default function Computer() {
     const leaseId = heldBotId ? takenLeases.current.get(heldBotId) : undefined;
     if (!heldBotId || !leaseId) return;
     return () => {
+      takenLeases.current.delete(heldBotId);
       void rpc("computer/release", { botId: heldBotId, leaseId }).catch(() => undefined);
     };
   }, [heldBotId]);
@@ -383,7 +384,9 @@ export default function Computer() {
     const action = refreshController.beginAction();
     setReleasing(true);
     try {
-      await rpc("computer/release", { botId, reason, leaseId: takenLeases.current.get(botId) });
+      // Hand back and I'm done end whatever control this person holds on the bot's screen.
+      takenLeases.current.delete(botId);
+      await rpc("computer/release", { botId, reason });
       if (!action.isActive()) return;
       setComputerOpen(false);
       await action.refresh().catch(() => undefined);

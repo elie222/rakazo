@@ -775,10 +775,12 @@ export function useComputerControls({
   useEffect(() => {
     const leaseId = heldBotId ? takenLeases.current.get(heldBotId) : undefined;
     if (!heldBotId || !leaseId) return;
-    const handBack = () =>
+    const handBack = () => {
+      takenLeases.current.delete(heldBotId);
       void rpc.computer
         .release({ botId: heldBotId, leaseId }, { context: { keepalive: true } })
         .catch(() => undefined);
+    };
     window.addEventListener("pagehide", handBack);
     return () => {
       window.removeEventListener("pagehide", handBack);
@@ -844,7 +846,9 @@ export function useComputerControls({
       });
     }
     try {
-      await rpc.computer.release({ botId, reason, leaseId: takenLeases.current.get(botId) });
+      // Hand back and I'm done end whatever control this person holds on the bot's screen.
+      takenLeases.current.delete(botId);
+      await rpc.computer.release({ botId, reason });
       if (computerBotIdRef.current !== botId && activeBotId.current !== botId) return;
       await refreshComputerFor(botId).catch(() => undefined);
       const groupId = activeGroupId.current;

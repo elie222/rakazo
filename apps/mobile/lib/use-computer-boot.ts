@@ -77,18 +77,14 @@ export function useComputerBoot(botId: string | undefined) {
       starting = false;
       if (!action.isActive()) return false;
       if (takeControl) {
-        const taken = await rpc("computer/takeover", { botId }).catch(async (err: unknown) => {
-          if (!(err instanceof Error && err.name === "TimeoutError")) throw err;
-          // The server may have granted control after the app stopped waiting: ask what it holds.
-          const status = await rpc("computer/status", { botId });
-          const held =
-            status.controlHolder === "user" &&
-            status.controlBotId === botId &&
-            !status.controlledByOther;
-          if (!held) throw err;
-          return null;
+        const takeover = () => rpc("computer/takeover", { botId });
+        // The server may have granted control after the app stopped waiting. Asking again returns
+        // that same lease to its holder, so the screen can hand it back when it closes.
+        const taken = await takeover().catch((err: unknown) => {
+          if (err instanceof Error && err.name === "TimeoutError") return takeover();
+          throw err;
         });
-        if (taken) takenLeases.current.set(botId, taken.leaseId);
+        takenLeases.current.set(botId, taken.leaseId);
       }
       if (!action.isActive()) return false;
       await action.refresh({ screenAttempts: SCREEN_URL_OPEN_ATTEMPTS });

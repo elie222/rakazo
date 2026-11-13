@@ -539,7 +539,12 @@ async function renderTakingControl() {
     return null;
   }
   await act(async () => root.render(<Controls />));
-  return { release, heartbeat, takeControl: () => controls.openComputer("bot-1", true) };
+  return {
+    release,
+    heartbeat,
+    takeControl: () => controls.openComputer("bot-1", true),
+    handBack: () => controls.releaseComputer(),
+  };
 }
 
 it("hands its lease back when the computer closes, and keeps it while open", async () => {
@@ -566,6 +571,18 @@ it("hands its lease back when the app leaves an open computer", async () => {
     { botId: "bot-1", leaseId: "lease-1" },
     { context: { keepalive: true } },
   );
+});
+
+it("hands back whatever control the person holds when Hand back is pressed", async () => {
+  const { release, takeControl, handBack } = await renderTakingControl();
+  await act(async () => {
+    await takeControl();
+  });
+  await act(async () => {
+    await handBack();
+  });
+  // Not scoped to this page's lease: the control may have come from another tab or teaching.
+  expect(release).toHaveBeenCalledWith({ botId: "bot-1", reason: undefined });
 });
 
 it("never ends control this page did not take, such as a newer tab's", async () => {

@@ -882,6 +882,19 @@ describe("computer screen", () => {
     ]);
   });
 
+  it("hands back whatever control it holds when Hand back is pressed", async () => {
+    respond({ ...botWorking, controlHolder: "user", controlBotId: "bot-1", busyBotName: null });
+    const view = await render();
+    await act(async () => preview(view).click());
+    await settle();
+    const handBack = Array.from(
+      view.querySelector("section")?.querySelectorAll("button") ?? [],
+    ).find((button) => button.textContent === "Hand back control");
+    await act(async () => handBack?.click());
+    await settle();
+    expect(calls("computer/release")[0]).toEqual(["computer/release", { botId: "bot-1" }]);
+  });
+
   it("never ends control it did not take, such as a newer page's", async () => {
     respond({ ...botWorking, controlHolder: "user", controlBotId: "bot-1", busyBotName: null });
     const view = await render();
@@ -1348,7 +1361,8 @@ describe("computer screen", () => {
       await act(async () => takeControlButtons(view)[0]?.click());
       await settle();
 
-      expect(calls("computer/takeover")).toHaveLength(1);
+      // A timed-out Take control asks once more, then reports the timeout.
+      expect(calls("computer/takeover")).toHaveLength(2);
       expect(calls("computer/boot")).toHaveLength(bootsBefore);
       expect(view.textContent).toContain("Request timed out");
       expect(view.textContent).not.toContain("Couldn't start the computer");
@@ -1356,13 +1370,16 @@ describe("computer screen", () => {
       expect(view.querySelector("section")).toBeNull();
     });
 
-    it("opens the screen when a timed-out Take control was granted after all", async () => {
+    it("keeps and later hands back a Take control the server granted after timing out", async () => {
       status = idle;
       const base = rpc.getMockImplementation()!;
+      let asked = 0;
       rpc.mockImplementation((method: string, ...rest: unknown[]) => {
         if (method !== "computer/takeover") return base(method, ...rest);
-        // The server granted control after the app stopped waiting for the answer.
+        asked += 1;
+        // The server granted control after the app stopped waiting for the first answer.
         status = { ...idle, controlHolder: "user", controlBotId: "bot-1" };
+        if (asked > 1) return Promise.resolve({ leaseId: "lease-1", expiresAt: "" });
         return Promise.reject(
           Object.defineProperty(new Error("Request timed out"), "name", {
             value: "TimeoutError",
@@ -1375,9 +1392,17 @@ describe("computer screen", () => {
 
       await act(async () => takeControlButtons(view)[0]?.click());
       await settle();
-
       expect(view.textContent).not.toContain("Request timed out");
       expect(view.querySelector("section")).not.toBeNull();
+
+      await act(async () =>
+        view.querySelector<HTMLButtonElement>('[aria-label="Close computer"]')?.click(),
+      );
+      await settle();
+      expect(calls("computer/release")).toContainEqual([
+        "computer/release",
+        { botId: "bot-1", leaseId: "lease-1" },
+      ]);
     });
 
     it("keeps following the boot after the request times out", async () => {
