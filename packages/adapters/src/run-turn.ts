@@ -548,8 +548,9 @@ async function onToolCalled(ctx: RunContext, event: RuntimeEvent<"tool">): Promi
   // A step without a note of its own replaces the earlier one in the live view, so its status
   // lines show again.
   if (!heldNote) reply.narrationStatusShowing = false;
-  // The status the model gave the call names the step in the finished reply too.
-  const status = heldNote ? undefined : event.status;
+  // The status the model gave the call names the step in the finished reply too, over any text
+  // held before it.
+  const status = event.status;
   if (status && runPromotesMidTurnNarration(run.trigger) && !ctx.allowSilentEmptyRun) {
     flushPendingTools(reply);
     reply.messageSegments = noteLastToolStep(reply.messageSegments, status);

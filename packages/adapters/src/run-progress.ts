@@ -250,14 +250,14 @@ export async function flushProgress(ctx: RunContext) {
   reply.lastProgressAt = Date.now();
 }
 
+/** An opening is one short line; anything longer waits for the long-turn budget like any note. */
+export const OPENING_ACKNOWLEDGEMENT_MAX_LENGTH = 200;
+
 /**
  * The bot's first words in a conversational turn, written before its first step, say what it
  * is about to do. They are posted at once, without waiting for the turn to grow long, so the
  * person knows the bot is on it.
  */
-/** An opening is one short line; anything longer waits for the long-turn budget like any note. */
-export const OPENING_ACKNOWLEDGEMENT_MAX_LENGTH = 200;
-
 export function isOpeningAcknowledgement(ctx: RunContext, openingText: boolean, text: string) {
   const { reply } = ctx.state;
   const firstStep = reply.toolCalls.at(-1)?.executionId;
