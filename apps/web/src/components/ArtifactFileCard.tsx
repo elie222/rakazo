@@ -297,14 +297,17 @@ function AudioArtifactPreview({
       current.url = URL.createObjectURL(new Blob([new Uint8Array(bytes)], { type: mimeType }));
       setState({ status: "ready", src: current.url });
     } catch {
-      if (!current.cancelled) setState({ status: "error" });
+      if (!current.cancelled) {
+        current.started = false;
+        setState({ status: "error" });
+      }
     }
   }
 
   return (
     <>
       <div className="flex items-center gap-3">
-        {state.status === "idle" || state.status === "loading" ? (
+        {state.status !== "ready" ? (
           <Button
             variant="ghost"
             size="icon-lg"
