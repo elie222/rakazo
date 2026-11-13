@@ -1,7 +1,7 @@
 import { useLingui } from "@lingui/react/macro";
 import { ChatMarkdown } from "@rakazo/chat-ui/native";
 import type { PeerConversation } from "@rakazo/core";
-import { displayName, loadPeerHistory, peerConversations } from "@rakazo/core";
+import { displayName, loadPeerHistory, newestPageCards, peerConversations } from "@rakazo/core";
 import { typeScale } from "@rakazo/ui-tokens";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -18,6 +18,7 @@ import {
 import { glassHeaderOptions } from "../components/glass-title";
 import { InlineImageAttachment } from "../components/inline-image-attachment";
 import { NativeActionButton } from "../components/native-action-button";
+import { NewestPageCards, PageCard } from "../components/pages/page-card";
 import { SheetCloseButton } from "../components/sheet-close-button";
 import { rpc } from "../lib/api";
 import { mobileTokens } from "../lib/appearance";
@@ -79,6 +80,12 @@ export default function PeerChat() {
   }, [botId, peerBotId, attempt]);
 
   const chat = state.kind === "ready" ? state.chat : null;
+  const newestPages = newestPageCards(
+    (chat?.messages ?? []).map((message) => ({
+      id: message.messageId,
+      blocks: message.blocks ?? [],
+    })),
+  );
   const peerName = displayName(chat?.peerBotName ?? params.peerBotName, t`Bot`);
   return (
     <View style={[styles.screen, sideInsets]}>
@@ -145,6 +152,7 @@ export default function PeerChat() {
                 key={`${item.messageId}-${index}`}
                 style={[
                   styles.message,
+                  item.blocks?.some((block) => block.kind === "page") && { width: "85%" },
                   sent ? styles.sent : styles.received,
                   hasInlineImages ? { gap: 8 } : bubbleStyle,
                 ]}
@@ -166,6 +174,14 @@ export default function PeerChat() {
                   </ChatMarkdown>
                 </View>
                 {item.blocks?.map((block, index) => {
+                  if (block.kind === "page")
+                    return (
+                      <NewestPageCards.Provider key={index} value={newestPages}>
+                        <PageCard block={block} messageId={item.messageId} />
+                      </NewestPageCards.Provider>
+                    );
+                  if (block.kind === "chart")
+                    return <Text key={index} style={styles.muted}>{`[chart: ${block.name}]`}</Text>;
                   if (block.kind !== "file" && block.kind !== "image") return null;
                   if (isInlineImageBlock(block))
                     return (

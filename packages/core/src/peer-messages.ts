@@ -1,6 +1,6 @@
 import type { MessageBlock } from "@rakazo/contracts";
 import { foldPeerReplies } from "./message-visibility.js";
-import { unreturnedPeerReplies } from "./peer-exchanges.js";
+import { isPeerReplyBlock, unreturnedPeerReplies } from "./peer-exchanges.js";
 
 /** The fields peer exchanges read, so web and mobile message shapes both fit. */
 type PeerSource = { id: string; createdAt: string; blocks: readonly MessageBlock[] };
@@ -62,9 +62,7 @@ export function peerMessagesFrom(messages: readonly PeerSource[]): PeerMessage[]
     const wake = marker?.blocks.find((block) => block.kind === "bot_message_received");
     if (wake?.kind !== "bot_message_received") continue;
     for (const reply of replies) {
-      const blocks = reply.blocks.filter(
-        (b) => b.kind === "text" || b.kind === "file" || b.kind === "image",
-      );
+      const blocks = reply.blocks.filter(isPeerReplyBlock);
       collected.push({
         messageId: reply.id,
         direction: "sent",
