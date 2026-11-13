@@ -1,4 +1,5 @@
 import Ionicons from "@react-native-vector-icons/ionicons";
+import { MaterialDesignIcons } from "@react-native-vector-icons/material-design-icons";
 import type { SymbolWeight } from "expo-symbols";
 import { SymbolView } from "expo-symbols";
 import type { ComponentProps } from "react";
@@ -13,7 +14,10 @@ export function NativeSymbol({
   weight = "medium",
 }: {
   ios: string;
-  android: ComponentProps<typeof Ionicons>["name"];
+  /** An Ionicons name, or a Material Design icon for glyphs Ionicons lacks. */
+  android:
+    | ComponentProps<typeof Ionicons>["name"]
+    | { material: ComponentProps<typeof MaterialDesignIcons>["name"] };
   size?: number;
   weight?: SymbolWeight;
   color?: ColorValue;
@@ -27,7 +31,13 @@ export function NativeSymbol({
       tintColor={tint}
       weight={weight}
       resizeMode="scaleAspectFit"
-      fallback={<Ionicons name={android} size={size} color={tint} />}
+      fallback={
+        typeof android === "string" ? (
+          <Ionicons name={android} size={size} color={tint} />
+        ) : (
+          <MaterialDesignIcons name={android.material} size={size} color={tint} />
+        )
+      }
     />
   );
 }

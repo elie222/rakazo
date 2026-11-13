@@ -41,6 +41,7 @@ if (!process.env.VERIFY_PROVIDERS) {
   delete process.env.EMAIL_PROVIDER;
   delete process.env.EMAIL_API_KEY;
   delete process.env.SMTP_URL;
+  delete process.env.BOT_EMAIL_SMTP_URL;
   if (!process.env.VERIFY_DATABASE) {
     delete process.env.DATABASE_URL;
     delete process.env.REALTIME_DATABASE_URL;

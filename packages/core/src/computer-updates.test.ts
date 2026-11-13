@@ -11,7 +11,10 @@ const update: ComputerUpdate = {
   status: "running",
   stage: "saving",
 };
-afterEach(() => vi.useRealTimers());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
 describe("computer update presentation", () => {
   it("keeps a newly started update when an older poll returns, and closing does not stop polling", async () => {
     vi.useFakeTimers();
@@ -58,6 +61,24 @@ describe("computer update presentation", () => {
     await Promise.resolve();
     expect(store.getSnapshot().updates).toEqual([]);
   });
+  it("polls quickly only while an update is in progress", async () => {
+    vi.useFakeTimers();
+    const list = vi.fn(async (): Promise<ComputerUpdate[]> => [{ ...update, status: "failed" }]);
+    const store = createComputerUpdates({
+      list,
+      start: async () => update,
+      dismiss: async () => {},
+    });
+    const stop = store.watch();
+    await vi.advanceTimersByTimeAsync(14_000);
+    expect(list).toHaveBeenCalledTimes(1);
+    list.mockResolvedValue([update]);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(list).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(1_500);
+    expect(list).toHaveBeenCalledTimes(3);
+    stop();
+  });
   it("stops polling on a 401 and resumes on the next watch", async () => {
     vi.useFakeTimers();
     const list = vi.fn(async (): Promise<ComputerUpdate[]> => {
@@ -94,6 +115,8 @@ describe("computer update presentation", () => {
   });
   it("keeps polling through other failures", async () => {
     vi.useFakeTimers();
+    // Failure retries wait between half and all of the backoff; pin the full wait.
+    vi.spyOn(Math, "random").mockReturnValue(0);
     const list = vi.fn(async (): Promise<ComputerUpdate[]> => {
       throw Object.assign(new Error("Unavailable"), { status: 503 });
     });

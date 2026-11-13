@@ -801,8 +801,8 @@ export function useComputerControls({
   }
   const openComputerRef = useRef(openComputer);
   openComputerRef.current = openComputer;
-  const onOpenComputer = useCallback((botId?: string) => {
-    void openComputerRef.current(botId);
+  const onOpenComputer = useCallback((botId?: string, takeControl?: boolean) => {
+    void openComputerRef.current(botId, takeControl);
   }, []);
 
   async function releaseComputer(reason?: ComputerReleaseReason) {
@@ -833,6 +833,30 @@ export function useComputerControls({
       setComputerErrorFromScreen(false);
     }
   }
+
+  /** Answers a needs-you card from the chat; a failure is the card's to show. */
+  async function answerTakeover(
+    botId: string,
+    runId: string | undefined,
+    reason: ComputerReleaseReason,
+  ) {
+    await rpc.computer.release({ botId, runId, reason });
+    const groupId = activeGroupId.current;
+    await Promise.all([
+      computerBotIdRef.current === botId || activeBotId.current === botId
+        ? refreshComputerFor(botId).catch(() => undefined)
+        : undefined,
+      // A group card may belong to a bot that is neither open nor active.
+      groupId ? refreshGroupThread(groupId).catch(() => undefined) : undefined,
+    ]);
+  }
+  const answerTakeoverRef = useRef(answerTakeover);
+  answerTakeoverRef.current = answerTakeover;
+  const onReleaseComputer = useCallback(
+    (botId: string, runId: string | undefined, reason: ComputerReleaseReason) =>
+      answerTakeoverRef.current(botId, runId, reason),
+    [],
+  );
 
   const embeddedScreenUrl = embeddableScreenUrl(screenUrl);
   const hasControl = userHoldsComputerControl(computer, computerBot?.id);
@@ -898,7 +922,9 @@ export function useComputerControls({
           <Trans>Retry screen</Trans>
         </Button>
       )}
-      {screenFailure && computer?.state === "running" && computerBot ? (
+      {computerBot &&
+      ((screenFailure && computer?.state === "running") ||
+        (computer?.state === "error" && !allowanceUsed)) ? (
         <ComputerMaintenanceActions
           visibleRecover
           botId={computerBot.id}
@@ -935,6 +961,7 @@ export function useComputerControls({
     computerBot,
     openComputer,
     onOpenComputer,
+    onReleaseComputer,
     releaseComputer,
     refreshComputerFor,
     holdComputerRecovery,

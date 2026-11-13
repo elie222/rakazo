@@ -13,6 +13,7 @@ for the sharing and persistence contract.
 | Managed remote desktop                                  | `e2b` / `novita` / `daytona` / `createos` / `boat` / `boxd` / `instabox` | `SANDBOX_SUPERVISOR_TOKEN` (published-images Compose), matching API key (and optional URL knobs for Daytona/CreateOS/Boat)            |
 | One pod per computer on your own cluster                | `SANDBOX_PROVIDER=kubernetes`                                            | API and worker running in the cluster, a namespace and a Role that can create, read, delete and exec into pods                        |
 | One app container per computer on your own Incus server | `SANDBOX_PROVIDER=incus`                                                 | Incus API address, a client certificate restricted to one project, and a route from the API, worker and web to the computers' network |
+| One VM per computer on an Apple silicon Mac             | `SANDBOX_PROVIDER=local-vm`                                              | macOS 26 or newer and Apple's `container` runtime with its system service started                                                     |
 
 Published-images [Compose](../infra/compose/docker-compose.images.yml) defaults to **`docker`**.
 It always starts the supervisor and requires `SANDBOX_SUPERVISOR_TOKEN`, including for `none`
@@ -60,9 +61,10 @@ Native file reads and workspace exports are limited to 8 MiB per file. A larger 
 - **Local computer access** in the app-managed Electron instance runs commands on Windows, macOS,
   or Linux through the native bridge. Bots can read/change local files and launch installed apps
   through OS commands, subject to your account and OS permissions. Portable file tools and
-  checkpoints remain scoped to bot workspaces; use commands for other local folders. Graphical
-  screen control is unavailable. Permission is remembered locally and can be revoked from the
-  app menu. Only enable this for a trusted personal instance: every bot on that instance can use
+  checkpoints remain scoped to bot workspaces; use commands for other local folders. On macOS and
+  Windows, the owner's own chats also get the paired-computer screen tools through the same bridge,
+  with the same per-app approval; routines and other people's messages do not. Permission is
+  remembered locally and can be revoked from the app menu. Only enable this for a trusted personal instance: every bot on that instance can use
   your account’s permissions.
 - **Desktop provider** (`SANDBOX_PROVIDER=desktop`) runs commands directly on the API/worker host,
   with only a minimal shell environment (no server secrets). The API and worker refuse it unless
@@ -158,16 +160,118 @@ not bill while running, so `COMPUTER_MAX_ACTIVE_MS` does not apply to them;
 
 ### Mounted home (optional)
 
-By default each computer's home is copied in when it starts and saved back when it stops. Set
-`KUBERNETES_SANDBOX_HOME_CLAIM` to the PersistentVolumeClaim that holds the API's `DATA_DIR` to
-mount `homes/<home key>` from it at the workspace instead, so the home is never copied, like a
-local Docker computer. The claim must be in the computer namespace, so in practice the computers
-run in the API's namespace. Because a ReadWriteOnce volume is attached to one node,
-`KUBERNETES_SANDBOX_HOME_COLOCATE_NAMESPACE` and `KUBERNETES_SANDBOX_HOME_COLOCATE_LABELS` (a JSON
-object) are required with it and become a required pod affinity to the pods that hold the volume,
-for example `{"app":"rakazo-api"}`. The pod gets `fsGroup: 1000`. An existing pod without the home
-volume keeps copying its files until it is stopped; its next fresh pod mounts the saved home. This applies only to the local home store; with
-`OBJECT_STORAGE_BUCKET` set, the home claim is ignored and homes are copied as usual.
+A bot can finish its reply while its computer is still saving a large workspace. Without a
+mounted home, saving copies files back to the server and may pause browsers. More CPU can make
+that copy faster, but it does not remove the copy or its exclusive save period.
+
+If the computer writes directly to the server's workspace directory, those files are already
+saved. This is a **mounted home**: only `DATA_DIR/homes/<home key>` is mounted at `/home/rakazo`.
+Run checkpoints record a revision without exporting files or changing the computer to
+`suspending`, so they do not interrupt its screen. An intentional stop or idle shutdown still
+closes the screen.
+
+This option applies to the local home store. With `OBJECT_STORAGE_BUCKET` configured, Rakazo
+ignores the home claim and continues copying workspaces. A mounted home retains the latest files;
+it is not an immutable snapshot or a backup. Keep encrypted, off-host backups of the data volume.
+
+#### Start with one shared claim
+
+The simplest layout puts the API, worker and computer pods in the same namespace. The API and
+worker mount the data claim at `DATA_DIR`; computers mount only their own subdirectory from that
+same claim. A new empty claim with the same name is **not** the same storage.
+
+For example, if the application namespace is `rakazo`, its data claim is `data`, and API pods
+have label `app=rakazo-api`, configure both API and worker with:
+
+```env
+SANDBOX_PROVIDER=kubernetes
+KUBERNETES_SANDBOX_NAMESPACE=rakazo
+KUBERNETES_SANDBOX_HOME_CLAIM=data
+KUBERNETES_SANDBOX_HOME_COLOCATE_NAMESPACE=rakazo
+KUBERNETES_SANDBOX_HOME_COLOCATE_LABELS={"app":"rakazo-api"}
+```
+
+Use your deployment's actual namespace, claim and API label. Move the computer Role and
+RoleBinding below to that namespace too; keep permissions scoped to the computer manager.
+If application and computer pods share a namespace, distinguish them by pod labels in network
+and admission policies. The computer pods carry `app.kubernetes.io/name=rakazo-computer`.
+
+The two `HOME_COLOCATE` settings are required. They keep computers on a node with the selected
+application pods. A ReadWriteOnce volume can be used by multiple pods on the same node; it does
+not mean one pod only. A ReadWriteOncePod claim is unsuitable for this shared layout. See
+[Kubernetes volume access modes](https://kubernetes.io/docs/concepts/storage/persistent-volumes/#access-modes).
+The directory must be writable by the computer image's uid/gid 1000. Rakazo sets `fsGroup: 1000`
+and mounts the exact `homes/<home key>` subpath, not the whole data directory.
+
+#### Keeping a separate computer namespace on k3s
+
+A pod cannot mount another namespace's claim. If computers must remain in `rakazo-sandboxes`,
+that namespace needs a claim exposing the **same underlying directory**, not a separately
+provisioned disk. This requires storage-specific administration.
+
+For a single-node k3s installation using a local directory, an administrator can create a static
+local PV and bind it to a claim in the computer namespace. Its `local.path` must be the existing
+application data directory, and its node affinity must identify the node that owns that directory.
+Keep the API/worker's existing volume and data intact. Use `Retain` on both PV references before
+making the second reference, so removing a claim cannot trigger deletion of the shared directory.
+Configure `HOME_CLAIM` with the computer-namespace claim, while `HOME_COLOCATE_NAMESPACE` and
+`HOME_COLOCATE_LABELS` continue to identify the application pods.
+
+This is two references to one directory, not two copies, extra capacity, or failover. Kubernetes
+does not coordinate their deletion as a pair. Record that relationship in your operations notes
+and never clean up the directory through either reference while the other still uses it. Do not
+apply this technique to a CSI volume by duplicating its volume handle; use the storage provider's
+supported sharing arrangement instead. See [local volume requirements](https://kubernetes.io/docs/concepts/storage/volumes/#local).
+
+Preserve the sandbox boundary when allowing the new volume. Admission should allow only the
+named home PVC, mounted at `/home/rakazo`, with a `subPath` exactly equal to
+`homes/` plus the pod's validated `rakazo-bot-id` label. Reject parent paths, a mount of the entire
+claim, other home keys, host paths, injected credentials, and privileged containers. Keep the
+service-account token disabled. These restrictions constrain the pods created by the trusted
+computer manager; they do not make that manager an untrusted tenant. Validate admission using
+server-side dry runs before replacing live pods.
+
+#### Move existing computers without losing their files
+
+1. Wait for bot jobs and manual computer sessions to finish. Stop each computer through Rakazo
+   and confirm its save succeeds. Do not delete an unmounted pod first: its newest files may
+   exist only inside that pod.
+2. Back up the data volume, including `homes` and `home-revisions`, and record checksums of
+   representative large files. Ensure the intended claim exposes that saved directory.
+3. Apply the mounted-home settings to both API and worker, along with the storage, placement,
+   access and admission policies for your namespace layout. Existing unmounted pods keep the
+   old copy behavior until they are stopped and recreated.
+4. Start one computer. Inspect its pod's volumes and mounts: the correct claim must appear at
+   `/home/rakazo` with that computer's `homes/<home key>` subpath. A successful boot alone does
+   not prove the home is mounted.
+5. Compare the saved file checksums. Write a small test file in the computer, stop and start it
+   through Rakazo, then verify that file again. Confirm that finishing a bot task no longer
+   disconnects the screen during its workspace checkpoint before moving the remaining computers.
+
+For rollback, stop computers cleanly before removing mounts or changing the storage mapping.
+Retain the shared directory and the backup. Removing the environment variable alone does not
+unmount an existing pod; Rakazo still detects its mounted home to avoid copying over live files.
+A replacement unmounted pod restores from the saved server directory.
+
+#### When a computer still feels slow
+
+Start with the operation that is waiting, rather than increasing every limit. A reasonable
+starting point for a browser computer is 2 CPU and 4Gi memory, adjusted to its workload. Budget
+for all concurrent computers **plus** the API, worker, database and the node's other workloads.
+Keep spare disk capacity for browser profiles, uploads and backups.
+
+| What you observe                                 | What to check next                                                                                                                              |
+| ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Computer is busy` as a task finishes            | Inspect the real pod mount; an old unmounted pod still exports its home. Also check for an active boot, recovery or another computer operation. |
+| Container restarts or `OOMKilled`                | Check pod events and memory usage. Increase the affected container's memory only after confirming memory pressure.                              |
+| CPU stays at its limit                           | Compare usage and CPU throttling with the configured limit; increasing that limit may help.                                                     |
+| A new pod stays `Pending`                        | Describe the pod: inspect quota, available resources, claim binding and affinity. A local disk cannot follow the pod to another node.           |
+| Screen reconnects but the computer stays running | Check the screen-proxy/WebSocket path and authorization separately from disk persistence.                                                       |
+
+Use `kubectl top pods -n <namespace>` for current CPU/memory and
+`kubectl describe pod -n <namespace> <computer-pod>` for scheduling and restart evidence.
+Repeat a small task and a large-file task separately, measuring startup, file operations and
+checkpoint time. A quick first reply does not mean the file operation or save has completed.
 
 The API and worker service account needs this in the computer namespace:
 
@@ -269,6 +373,33 @@ echo requests are refused among ICMPv6 messages to private addresses; DHCP and D
 allowed by Incus before any ACL rule. The IP filtering options stop
 a computer from spoofing addresses or sending router advertisements to the host. Set
 `INCUS_SANDBOX_PROJECT=rakazo` and the certificate and key from `rakazo.crt` and `rakazo.key`.
+
+## `local-vm`
+
+Each computer is one lightweight Linux VM on the Mac running Rakazo, started from the published
+computer image by Apple's [`container`](https://github.com/apple/container) runtime
+(Virtualization.framework). It needs Apple silicon and macOS 26 or newer, with the `container`
+system service started; no Docker, supervisor or socket is involved.
+
+| Variable                  | Default                                | Notes                                        |
+| ------------------------- | -------------------------------------- | -------------------------------------------- |
+| `LOCAL_VM_CLI`            | `container`                            | Path to the `container` CLI                  |
+| `LOCAL_VM_COMPUTER_IMAGE` | `ghcr.io/elie222/rakazo/computer:edge` | Must include `nft`; older images are refused |
+| `LOCAL_VM_CPUS`           | `2`                                    | CPUs of each VM                              |
+| `LOCAL_VM_MEMORY`         | `2g`                                   | Memory of each VM                            |
+
+Each start creates a VM and a network of its own, both named `rakazo-<uuid>`, labelled
+`rakazo.bot-id=<bot id>`; one carrying another bot's id is never reused or removed. The image's
+start command and every command run as uid 1000 with no capabilities and no privilege escalation.
+As with Incus, VMs are removed when they stop: the saved workspace is copied in when a computer
+starts and saved back when it stops. The API, worker and web reach the screen on the VM's address.
+
+Before a computer is used, Rakazo loads an nftables firewall into the VM as root and checks it is
+in place; if that fails, the VM is removed and the start fails. The firewall allows the public
+internet and DNS to the VM's gateway, and rejects everything else to the Mac, the LAN,
+link-local and cloud-metadata, CGNAT, multicast and other private addresses (the same list as the
+Incus ACL above). Incoming connections are dropped except from the Mac to the screen ports. The
+bot's uid 1000 cannot change it.
 
 ## `wuying`
 
@@ -498,6 +629,11 @@ memory. instabox also pauses a computer after 30 idle minutes, later than the de
 `SANDBOX_IDLE_MS`, so Rakazo normally stops it first. One key's computers share its account's
 limits on requests at once (API calls, and connections to screens and terminals), so a
 deployment with many active computers at the same time can see them slow down.
+
+New computers start at the computer size of the space's plan. Standard is instabox's default.
+Large and xlarge need an instabox plan that offers that size; otherwise the computer starts at
+the size it can have. A stopped computer moves to its plan's size when it next starts, which
+restarts it, so its running programs end. A running computer keeps its size.
 
 ## Verify a provider change
 

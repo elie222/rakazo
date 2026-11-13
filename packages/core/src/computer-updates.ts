@@ -36,7 +36,10 @@ export function createComputerUpdates(client: {
       if (epoch === generation) {
         clearTimeout(timer);
         if (failure === undefined || isRetryableError(failure)) {
-          const delay = retryDelayMs(failure, state.updates.length ? 1500 : 15000);
+          const inProgress = state.updates.some(
+            (item) => item.status === "queued" || item.status === "running",
+          );
+          const delay = retryDelayMs(failure, inProgress ? 1500 : 15000);
           timer = setTimeout(() => void poll(epoch), delay);
         }
       }

@@ -295,7 +295,13 @@ describe("requestUserCall security", () => {
       prisma,
       phoneCallsEnabled: true,
       events: { append: vi.fn(), notify: vi.fn(async () => undefined) } as unknown as ThreadEvents,
-      jobs: { enqueue: vi.fn(async () => undefined), cancel: vi.fn(), close: vi.fn() },
+      jobs: {
+        enqueue: vi.fn(async () => undefined),
+        enqueueIn: vi.fn(),
+        cancelIn: vi.fn(),
+        cancel: vi.fn(),
+        close: vi.fn(),
+      },
     };
     return { deps, tx, saved: () => saved };
   }
