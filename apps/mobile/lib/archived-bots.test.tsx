@@ -2,6 +2,7 @@
 
 vi.mock("./session", () => ({ currentSessionGeneration: () => 0 }));
 
+import { i18n } from "@lingui/core";
 import type { ReactNode } from "react";
 import { act, createElement, useEffect } from "react";
 import type { Root } from "react-dom/client";
@@ -116,6 +117,8 @@ describe("archived chat read failures", () => {
   let container: HTMLDivElement;
   let unregister: () => void;
   beforeEach(async () => {
+    i18n.load("en", {});
+    i18n.activate("en");
     vi.clearAllMocks();
     unregister = registerSettingsSheet(closeSettingsSheet);
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
