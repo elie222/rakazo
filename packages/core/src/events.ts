@@ -404,7 +404,8 @@ export function heldActivityLine(
   live: string | undefined,
   workers: readonly string[],
 ): HeldActivityLine {
-  const key = [...workers].sort().join(",");
+  // The same run can be listed twice (as the chat's run and among its active ones).
+  const key = [...new Set(workers)].sort().join(",");
   if (!key) return { workers: "" };
   const kept = previous?.workers === key ? previous.line : undefined;
   return { line: live ?? kept, workers: key };
