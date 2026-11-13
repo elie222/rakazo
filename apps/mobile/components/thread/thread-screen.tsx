@@ -18,7 +18,7 @@ import {
 } from "@rakazo/core";
 import { useFocusEffect, useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import { useHeaderHeight } from "expo-router/react-navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { I18nManager, Platform, View } from "react-native";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -27,6 +27,7 @@ import { rpc } from "../../lib/api";
 import { useAppForeground } from "../../lib/app-foreground";
 import { mobileTokens } from "../../lib/appearance";
 import type { MobileArtifactTarget } from "../../lib/artifact-open";
+import { CallKeyboardContext } from "../../lib/call-keyboard-context";
 import { useCallSession } from "../../lib/call-session";
 import { composerDraftScope } from "../../lib/composer-draft";
 import { cronLabels } from "../../lib/cron";
@@ -130,6 +131,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
   const requestedThreadId = typeof threadId === "string" && threadId ? threadId : undefined;
   const inGroup = Boolean(groupId);
   const call = useCallSession();
+  const rootAvoidsKeyboard = useContext(CallKeyboardContext);
   const onCall = Boolean(botId) && call?.botId === botId;
   // The composer floats over the list, which scrolls underneath; this keeps the newest message
   // clear of it. A read-only chat has no composer.
@@ -570,7 +572,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
   return (
     <View style={{ flex: 1 }}>
       <KeyboardAvoidingView
-        enabled={!call}
+        enabled={!rootAvoidsKeyboard}
         // Padding always settles to zero. "height" stays shrunk when the keyboard hides without
         // move frames, such as when a pushed screen closes with its own keyboard up.
         behavior="padding"
