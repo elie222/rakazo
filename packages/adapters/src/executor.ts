@@ -120,7 +120,11 @@ import { paymentWalletConnected } from "./payment-wallets.js";
 import { restoreComputerModels } from "./pi-runtime-computer-mode.js";
 import { promptVersion } from "./prompt-version.js";
 import { loadPurchaseRedactions } from "./purchase-service.js";
-import { loadReplyContext, messageToAgentHistoryText } from "./reply-context.js";
+import {
+  loadReplyContext,
+  messageToAgentHistorySegments,
+  messageToAgentHistoryText,
+} from "./reply-context.js";
 import { backOffRoutineAfterAccountError } from "./routine-backoff.js";
 import { lateRoutineRunDueAt, lateRoutineRunInstruction } from "./routine-lateness.js";
 import { lazyRunComputer } from "./run-computer.js";
@@ -197,6 +201,7 @@ import {
   loadCurrentTurnImages,
   missingTurnImagesInstruction,
   RECENT_TURN_IMAGE_TURNS,
+  withLatestStepScreenshot,
   withRecentTurnImages,
 } from "./run-turn-images.js";
 import { loadAgentScratchpadContext } from "./scratchpad-context.js";
@@ -227,6 +232,11 @@ import {
 import { loadAgentTicketContext } from "./ticket-context.js";
 import { appendToolCompletionAudit, toolCompletionOutcome } from "./tool-completion-audit.js";
 import { toolResultFingerprint } from "./tool-loop.js";
+import {
+  historyReplaysOutsideContent,
+  keepToolStepResult,
+  runReplaysToolHistory,
+} from "./tool-step-calls.js";
 import { restoreTurnCheckpoint } from "./turn-checkpoint.js";
 import { createWebProvider } from "./web-provider-factory.js";
 
@@ -625,6 +635,10 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                 sourceClientNonce: messagingSource?.clientNonce,
               }))
             : false);
+        const replaysToolHistory = runReplaysToolHistory(run.trigger, {
+          fromUser: messages.find((message) => message.id === run.sourceMessageId)?.role === "user",
+          nonOwnerChat: nonOwnerChatRun,
+        });
         const historySearchBeforeSeq =
           contextStrategy !== "current" && run.sourceMessageId
             ? (messages.find((message) => message.id === run.sourceMessageId)?.seq ??
@@ -748,9 +762,33 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             messages: [...messages].reverse().map((m) => {
               const speaker = historySpeaker(speakers, m);
               // In a group, turns from several speakers are joined, so no line may pose as a label.
-              const text = speakers
-                ? neutralizeSpeakerLabels(messageToAgentHistoryText(m))
-                : messageToAgentHistoryText(m);
+              const neutral = (value: string) =>
+                speakers ? neutralizeSpeakerLabels(value) : value;
+              const text = neutral(messageToAgentHistoryText(m));
+              const partial = isPartialReplyClientNonce(m.clientNonce);
+              // Runs for someone other than the owner replay replies as everyone saw them.
+              const segments =
+                m.role === "user" || m.role === "system" || speaker || !replaysToolHistory
+                  ? undefined
+                  : messageToAgentHistorySegments(m)?.map((segment) =>
+                      "text" in segment
+                        ? { text: neutral(segment.text) }
+                        : {
+                            steps: segment.steps.map((step) => ({
+                              ...step,
+                              ...(step.note ? { note: neutral(step.note) } : {}),
+                              ...(step.calls
+                                ? {
+                                    calls: step.calls.map((call) =>
+                                      call.result
+                                        ? { ...call, result: neutral(call.result) }
+                                        : call,
+                                    ),
+                                  }
+                                : {}),
+                            })),
+                          },
+                    );
               return {
                 id: m.id,
                 createdAt: m.createdAt?.toISOString(),
@@ -761,9 +799,10 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                   | "system",
                 ...(speaker ? { speaker } : {}),
                 waiting: m.steeringMessages.length > 0,
-                content: isPartialReplyClientNonce(m.clientNonce)
-                  ? `${text}\n\n${PARTIAL_REPLY_NOTE}`
-                  : text,
+                content: partial ? `${text}\n\n${PARTIAL_REPLY_NOTE}` : text,
+                ...(segments
+                  ? { segments: partial ? [...segments, { text: PARTIAL_REPLY_NOTE }] : segments }
+                  : {}),
               };
             }),
             summary: thread.historyCompactionSummary,
@@ -777,13 +816,16 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           summary: threadContext.summary,
           historyCompactedUpToSeq: threadContext.historyCompactedUpToSeq,
         });
-        let history = compactedHistory.history.map(({ id, role, content, createdAt, speaker }) => ({
-          id,
-          createdAt,
-          role,
-          content,
-          ...(speaker ? { speaker } : {}),
-        }));
+        let history = compactedHistory.history.map(
+          ({ id, role, content, createdAt, speaker, segments }) => ({
+            id,
+            createdAt,
+            role,
+            content,
+            ...(speaker ? { speaker } : {}),
+            ...(segments ? { segments } : {}),
+          }),
+        );
         const historyMessages = messages
           .filter((message) => message.steeringMessages.length === 0)
           .map((message) => ({
@@ -1377,7 +1419,10 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         // connectorReadRequiresApproval; approvals from earlier attempts are read back from effects.
         const searchResultUrls = new Set<string>();
         const initiallyTainted =
-          !ownerStartedRun || Boolean(turnCheckpoint) || Boolean(checkpointLoadError);
+          !ownerStartedRun ||
+          Boolean(turnCheckpoint) ||
+          Boolean(checkpointLoadError) ||
+          historyReplaysOutsideContent(history);
         // The creation intro only asks what the bot is for (see selectBuiltinToolsForRun),
         // so it gets no connector tools either.
         const tools =
@@ -1456,7 +1501,11 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             pendingTurnCheckpoints: new Map(),
             storedTurnCheckpoint,
           },
-          screen: { lastFrameId: undefined, unchangedVisualStreak: { count: 0 } },
+          screen: {
+            lastFrameId: undefined,
+            unchangedVisualStreak: { count: 0 },
+            turn: { controlFence: undefined, mustLook: false },
+          },
           toolCallStreak: { key: undefined, count: 0 },
           overLimitActionCalls: 0,
           toolResults: new Map(),
@@ -1688,10 +1737,14 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         // A text-only model keeps the [image:] marker. Putting image parts in
         // history makes the provider reject a follow-up that used to be text.
         const historyWithImages = modelSeesImages
-          ? await withRecentTurnImages(deps, history, historyMessages, context, {
-              skipMessageId: currentTurnMessage?.id,
-              maxImages: modelImageBudget,
-            })
+          ? await withLatestStepScreenshot(
+              deps,
+              await withRecentTurnImages(deps, history, historyMessages, context, {
+                skipMessageId: currentTurnMessage?.id,
+                maxImages: modelImageBudget,
+              }),
+              context,
+            )
           : history;
         const runtimeHistory = [...historicalContext, ...historyWithImages];
         // Without a roster a bot only knows the bots it spawned itself.
@@ -1987,6 +2040,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                   effects.pendingTurnCheckpoints.delete(completion.executionId);
                 const outcome = toolCompletionOutcome(completion);
                 if (outcome) state.reply.toolOutcomes.set(completion.executionId, outcome);
+                keepToolStepResult(state.reply, completion, runSecrets);
                 const audited = appendToolCompletionAudit(
                   deps,
                   {

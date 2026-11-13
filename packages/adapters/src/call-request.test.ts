@@ -126,6 +126,17 @@ describe("call_user", () => {
     ]);
     expect(newCallRequest({ reason: "", opening: "Hi" })).toEqual({ error: "reason is required." });
   });
+
+  it("does not split an emoji when it shortens the reason or opening", () => {
+    const request = newCallRequest({
+      reason: `${"r".repeat(119)}😀tail`,
+      opening: `${"o".repeat(239)}😀tail`,
+    });
+    if ("error" in request) throw new Error(request.error);
+    const block = request.blocks[0] as { reason: string; opening: string };
+    expect(block.reason).toBe("r".repeat(119));
+    expect(block.opening).toBe("o".repeat(239));
+  });
 });
 
 describe("settleCallRequest", () => {

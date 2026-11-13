@@ -355,6 +355,20 @@ describe("web tool clamps", () => {
     expect(clampMaxChars(999_999)).toBe(50_000);
   });
 
+  it("uses the defaults when a model sends null, an empty string or a boolean", () => {
+    for (const value of [null, "", "  ", true, false, {}, []]) {
+      expect(clampMaxResults(value)).toBe(5);
+      expect(clampMaxChars(value)).toBe(8_000);
+    }
+  });
+
+  it("still reads numbers and numeric strings", () => {
+    expect(clampMaxResults("3")).toBe(3);
+    expect(clampMaxChars("2000")).toBe(2_000);
+    expect(clampMaxResults(0)).toBe(1);
+    expect(clampMaxChars("0")).toBe(100);
+  });
+
   it("bounds offset and names the next read in a cut", () => {
     expect(clampOffset(undefined)).toBe(0);
     expect(clampOffset(-4)).toBe(0);
