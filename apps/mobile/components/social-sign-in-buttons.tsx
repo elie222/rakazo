@@ -13,17 +13,19 @@ export function SocialSignInButtons({
   disabled,
   onPress,
   onEmail,
+  onPasskey,
 }: {
   providers: SignInProvider[];
   disabled?: boolean;
   onPress: (providerId: string) => void;
   onEmail?: () => void;
+  onPasskey?: () => void;
 }) {
   const { t } = useLingui();
   const tokens = useMobileTokens();
   const scheme = useResolvedAppearance();
   const { width } = useWindowDimensions();
-  if (providers.length === 0 && !onEmail) return null;
+  if (providers.length === 0 && !onEmail && !onPasskey) return null;
   const { primary, secondary } = signInProviderGroups(providers);
   const row = primary.length > 1 && width >= 720;
   const dark = scheme === "dark";
@@ -76,27 +78,21 @@ export function SocialSignInButtons({
             <Text style={{ color: tokens.mutedForeground, fontSize: 13 }}>{t`or`}</Text>
             <View style={{ flex: 1, height: 1, backgroundColor: tokens.border }} />
           </View>
-          <Pressable
-            accessibilityRole="button"
+          <QuietChoice
+            label={t`Continue with email`}
+            mark={<MailMark color={tokens.mutedForeground} />}
             disabled={disabled}
             onPress={onEmail}
-            style={{
-              alignSelf: "center",
-              flexDirection: "row",
-              alignItems: "center",
-              gap: 6,
-              marginTop: 10,
-              minHeight: 32,
-              paddingHorizontal: 8,
-              opacity: disabled ? 0.45 : 1,
-            }}
-          >
-            <MailMark color={tokens.mutedForeground} />
-            <Text style={{ color: tokens.mutedForeground, fontSize: 14, fontWeight: "500" }}>
-              {t`Continue with email`}
-            </Text>
-          </Pressable>
+          />
         </>
+      ) : null}
+      {onPasskey ? (
+        <QuietChoice
+          label={t`Continue with passkey`}
+          mark={<KeyMark color={tokens.mutedForeground} />}
+          disabled={disabled}
+          onPress={onPasskey}
+        />
       ) : null}
       {secondary.map((provider) => (
         <Pressable
@@ -181,6 +177,57 @@ function Choice({
         {label}
       </Text>
     </Pressable>
+  );
+}
+
+function QuietChoice({
+  label,
+  mark,
+  disabled,
+  onPress,
+}: {
+  label: string;
+  mark: ReactNode;
+  disabled?: boolean;
+  onPress: () => void;
+}) {
+  const tokens = useMobileTokens();
+  return (
+    <Pressable
+      accessibilityRole="button"
+      disabled={disabled}
+      onPress={onPress}
+      style={{
+        alignSelf: "center",
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 6,
+        marginTop: 10,
+        minHeight: 32,
+        paddingHorizontal: 8,
+        opacity: disabled ? 0.45 : 1,
+      }}
+    >
+      {mark}
+      <Text style={{ color: tokens.mutedForeground, fontSize: 14, fontWeight: "500" }}>
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
+function KeyMark({ color }: { color: string }) {
+  return (
+    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="m15.5 7.5 2.3 2.3a1 1 0 0 0 1.4 0l2.1-2.1a1 1 0 0 0 0-1.4L19 4M21 2l-9.6 9.6"
+        stroke={color}
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <Path d="M7.5 21a5.5 5.5 0 1 0 0-11 5.5 5.5 0 0 0 0 11Z" stroke={color} strokeWidth="1.8" />
+    </Svg>
   );
 }
 
