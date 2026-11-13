@@ -228,9 +228,8 @@ describe("computer event reduction", () => {
       controlBotId: "bot-1",
       takeoverRequested: true,
     });
-    expect(
-      reduceComputerStatus(granted, event({ type: "computer.takeover.granted", payload: {} })),
-    ).toBe(granted);
+    // The event cannot say whose lease it is, so the holder's own lease waits for the status read.
+    expect(granted?.controlLeaseId).toBeUndefined();
   });
 
   it("ends control on hand back or expiry, and the request only once it is answered", () => {

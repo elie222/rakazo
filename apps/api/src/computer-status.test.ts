@@ -49,6 +49,26 @@ describe("toComputerStatus", () => {
     ).toMatchObject({ busyBotName: "Writer", takeoverRequested: true });
   });
 
+  it("tells only the person holding control their own lease", () => {
+    const computer = {
+      kind: "fake",
+      state: "running",
+      scope: "team",
+      controlHolder: "user",
+      controlBotId: "bot-1",
+      controlLeaseId: "lease-1",
+      controlUserId: "user-1",
+      userId: "owner",
+      homeRevision: "revision-1",
+    };
+    expect(toComputerStatus("bot-1", computer, undefined, true, "user-1").controlLeaseId).toBe(
+      "lease-1",
+    );
+    const watcher = toComputerStatus("bot-1", computer, undefined, true, "user-2");
+    expect(watcher.controlLeaseId).toBeUndefined();
+    expect(watcher.controlledByOther).toBe(true);
+  });
+
   it("sandbox-none-computer-status", () => {
     const stopped = toComputerStatus("bot-1", {
       kind: "none",

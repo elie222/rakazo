@@ -825,7 +825,7 @@ describe("computer screen", () => {
     expect(bar()?.dataset.active).toBe("true");
   });
 
-  /** Control this screen takes with Take control, under lease "lease-1". */
+  /** Control this screen takes with Take control; the server's status names its lease. */
   function respondTakingControl() {
     let held = false;
     rpc.mockImplementation(async (method: string) => {
@@ -835,7 +835,13 @@ describe("computer screen", () => {
       }
       if (method === "computer/status") {
         return held
-          ? { ...botWorking, controlHolder: "user", controlBotId: "bot-1", busyBotName: null }
+          ? {
+              ...botWorking,
+              controlHolder: "user",
+              controlBotId: "bot-1",
+              controlLeaseId: "lease-1",
+              busyBotName: null,
+            }
           : { ...botWorking, busyBotName: null };
       }
       if (method === "computer/screenUrl") return { url: "https://screen.example.test/embed" };
@@ -893,16 +899,6 @@ describe("computer screen", () => {
     await act(async () => handBack?.click());
     await settle();
     expect(calls("computer/release")[0]).toEqual(["computer/release", { botId: "bot-1" }]);
-  });
-
-  it("never ends control it did not take, such as a newer page's", async () => {
-    respond({ ...botWorking, controlHolder: "user", controlBotId: "bot-1", busyBotName: null });
-    const view = await render();
-    await act(async () => preview(view).click());
-    await settle();
-    act(() => root?.unmount());
-    root = undefined;
-    expect(calls("computer/release")).toEqual([]);
   });
 
   it("loads the screen again when the app returns from the background", async () => {
@@ -1361,8 +1357,7 @@ describe("computer screen", () => {
       await act(async () => takeControlButtons(view)[0]?.click());
       await settle();
 
-      // A timed-out Take control asks once more, then reports the timeout.
-      expect(calls("computer/takeover")).toHaveLength(2);
+      expect(calls("computer/takeover")).toHaveLength(1);
       expect(calls("computer/boot")).toHaveLength(bootsBefore);
       expect(view.textContent).toContain("Request timed out");
       expect(view.textContent).not.toContain("Couldn't start the computer");
@@ -1373,13 +1368,15 @@ describe("computer screen", () => {
     it("keeps and later hands back a Take control the server granted after timing out", async () => {
       status = idle;
       const base = rpc.getMockImplementation()!;
-      let asked = 0;
       rpc.mockImplementation((method: string, ...rest: unknown[]) => {
         if (method !== "computer/takeover") return base(method, ...rest);
-        asked += 1;
-        // The server granted control after the app stopped waiting for the first answer.
-        status = { ...idle, controlHolder: "user", controlBotId: "bot-1" };
-        if (asked > 1) return Promise.resolve({ leaseId: "lease-1", expiresAt: "" });
+        // The server granted control after the app stopped waiting for the answer.
+        status = {
+          ...idle,
+          controlHolder: "user",
+          controlBotId: "bot-1",
+          controlLeaseId: "lease-1",
+        };
         return Promise.reject(
           Object.defineProperty(new Error("Request timed out"), "name", {
             value: "TimeoutError",

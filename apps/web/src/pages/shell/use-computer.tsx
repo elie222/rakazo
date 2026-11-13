@@ -50,8 +50,6 @@ import { errorText } from "../../lib/user-error";
 // Caps the per-bot computer cache so a long session that opens many distinct bots
 // over time doesn't accumulate one entry per bot forever.
 const COMPUTER_CACHE_LIMIT = 20;
-// A remembered view shown on release must outlive the switch; an older one is read again.
-const VIEW_REUSE_MIN_REMAINING_MS = 60_000;
 
 type CachedComputer = { computer: ComputerStatus | null; screenUrl: string | null };
 
@@ -155,8 +153,6 @@ export function useComputerState({
   useEffect(() => {
     setHeldScreen(null);
   }, [computerOpen, panel]);
-  // Each bot's last read-only screen, which a release shows at once instead of after its call.
-  const viewScreenUrls = useRef(new Map<string, string>());
   // The Wuying URL a mounted frame signed in with, until its session ends. Reads keep it rather
   // than replace it, since each fresh login code signs the frame's session out.
   const liveWuyingUrl = useRef<string | null>(null);
@@ -452,21 +448,9 @@ export function useComputerState({
         }
         // A Wuying login code works once, so a cached one could only sign in as a spent code.
         cacheComputerFor(id, { screenUrl: screen.url?.startsWith("wuying:") ? null : screen.url });
-        if (proxiedScreenCapability(screen.url)?.policy === "view") {
-          viewScreenUrls.current.set(id, screen.url!);
-        }
       },
       fallbackError: t`Could not connect to the computer screen`,
     });
-  }
-
-  /** The bot's last read-only screen, while its capability still has time left. */
-  function viewScreenUrlFor(botId: string) {
-    const url = viewScreenUrls.current.get(botId) ?? null;
-    const capability = proxiedScreenCapability(url);
-    return capability && capability.expiresAt - Date.now() > VIEW_REUSE_MIN_REMAINING_MS
-      ? url
-      : null;
   }
 
   /** A retry the user pressed starts the visible screen's reconnects over. */
@@ -512,7 +496,6 @@ export function useComputerState({
     resetScreenReconnect,
     computerVisible,
     refreshComputerScreen,
-    viewScreenUrlFor,
   };
 }
 
@@ -577,7 +560,6 @@ export function useComputerControls({
     resetScreenReconnect,
     computerVisible,
     refreshComputerScreen,
-    viewScreenUrlFor,
   } = state;
   const [keepComputerRecovery, setKeepComputerRecovery] = useState(false);
   const recoveryHoldTimer = useRef<number | undefined>(undefined);
@@ -605,9 +587,6 @@ export function useComputerControls({
     setScreenLoadError(null);
   }, [computerBot?.id, screenUrl]);
   const computerBootEpoch = useRef(0);
-  /** The lease this page took for each bot's screen; a new one re-renders. */
-  const takenLeases = useRef(new Map<string, string>());
-  const [, setTakenLeaseVersion] = useState(0);
   const autoBooted = useRef<string | null>(null);
 
   async function bootComputer({
@@ -646,9 +625,7 @@ export function useComputerControls({
         }
       }
       if (takeControl) {
-        const { leaseId } = await rpc.computer.takeover({ botId: targetBotId });
-        takenLeases.current.set(targetBotId, leaseId);
-        setTakenLeaseVersion((version) => version + 1);
+        await rpc.computer.takeover({ botId: targetBotId });
         if (!stillThisBoot() || !stillThisBot()) return;
       }
       await refreshComputerFor(targetBotId);
@@ -772,25 +749,33 @@ export function useComputerControls({
   }, [panel, computerOpen, computerBot?.id, active?.id, computer?.state, hasControl]);
 
   // Control ends with the screen: closing it, switching chats, or leaving the page hands it back.
-  // Only the lease this page took: a late hand back from an old page never ends newer control.
-  // Control can show as held before Take control's answer records the lease, so both drive this.
+  // The server tells the holder their lease, from Take control or teaching alike; the hand back
+  // names it, so a late one from an old page never ends newer control.
   const heldBotId = hasControl && computerOpen ? computerBot?.id : undefined;
-  const heldLeaseId = heldBotId ? takenLeases.current.get(heldBotId) : undefined;
+  const heldLeaseId = heldBotId ? computer?.controlLeaseId : undefined;
   useEffect(() => {
-    const leaseId = heldLeaseId;
-    if (!heldBotId || !leaseId) return;
-    const handBack = () => {
-      takenLeases.current.delete(heldBotId);
+    if (!heldBotId || !heldLeaseId) return;
+    const handBack = () =>
       void rpc.computer
-        .release({ botId: heldBotId, leaseId }, { context: { keepalive: true } })
+        .release({ botId: heldBotId, leaseId: heldLeaseId }, { context: { keepalive: true } })
         .catch(() => undefined);
-    };
     window.addEventListener("pagehide", handBack);
     return () => {
       window.removeEventListener("pagehide", handBack);
       handBack();
     };
   }, [heldBotId, heldLeaseId]);
+
+  // A control event says the screen is held but not by whom; the status read says, and gives the
+  // holder their lease.
+  const controlBotNeedsRead =
+    computer?.controlHolder === "user" && !computer.controlledByOther && !computer.controlLeaseId
+      ? computer.botId
+      : undefined;
+  useEffect(() => {
+    if (!controlBotNeedsRead || !computerOpen) return;
+    void refreshComputerFor(controlBotNeedsRead).catch(() => undefined);
+  }, [controlBotNeedsRead, computerOpen]);
 
   /** Open the computer view. Only an explicit Take control asks for the lease. */
   async function openComputer(botId?: string, takeControl = false) {
@@ -840,18 +825,9 @@ export function useComputerControls({
   async function releaseComputer(reason?: ComputerReleaseReason) {
     const botId = computerBotIdRef.current ?? activeBotId.current;
     if (!botId) return;
-    // The read-only screen is safe to show at once; the release itself takes a while.
-    const view = computerBotIdRef.current === botId ? viewScreenUrlFor(botId) : null;
-    let controlScreen: string | null = null;
-    if (view) {
-      setScreenUrl((current) => {
-        controlScreen = current;
-        return view;
-      });
-    }
+    // Hand back and I'm done end whatever control this person holds on the bot's screen. Nothing
+    // changes here until the server answers; the screen then follows its state.
     try {
-      // Hand back and I'm done end whatever control this person holds on the bot's screen.
-      takenLeases.current.delete(botId);
       await rpc.computer.release({ botId, reason });
       if (computerBotIdRef.current !== botId && activeBotId.current !== botId) return;
       await refreshComputerFor(botId).catch(() => undefined);
@@ -860,8 +836,6 @@ export function useComputerControls({
         await refreshGroupThread(groupId).catch(() => undefined);
       }
     } catch {
-      // Control stays with this person, so their screen goes back to it.
-      if (view) setScreenUrl((current) => (current === view ? controlScreen : current));
       if (computerBotIdRef.current !== botId && activeBotId.current !== botId) return;
       setComputerError(t`Could not continue`);
       setComputerErrorFromScreen(false);

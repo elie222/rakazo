@@ -97,7 +97,6 @@ export default function Computer() {
     setBootFailed,
     refreshController,
     bootComputer,
-    takenLeases,
   } = useComputerBoot(botId);
   const [cleaningUp, setCleaningUp] = useState(false);
   const [screenError, setScreenError] = useState<string | null>(null);
@@ -329,17 +328,17 @@ export default function Computer() {
     return () => clearInterval(timer);
   }, [botId, computer?.state, foreground, hasControl]);
 
-  // Control ends with the screen: closing it, switching bots, or leaving hands it back.
-  // Only the lease this screen took: a late hand back never ends newer control.
-  // Control can show as held before Take control's answer records the lease, so both drive this.
+  // Control ends with the screen: closing it, switching bots, or leaving hands it back. The
+  // server tells the holder their lease, and the hand back names it, so a late one from an old
+  // screen never ends newer control.
   const heldBotId = hasControl && computerOpen ? botId : undefined;
-  const heldLeaseId = heldBotId ? takenLeases.current.get(heldBotId) : undefined;
+  const heldLeaseId = heldBotId ? computer?.controlLeaseId : undefined;
   useEffect(() => {
-    const leaseId = heldLeaseId;
-    if (!heldBotId || !leaseId) return;
+    if (!heldBotId || !heldLeaseId) return;
     return () => {
-      takenLeases.current.delete(heldBotId);
-      void rpc("computer/release", { botId: heldBotId, leaseId }).catch(() => undefined);
+      void rpc("computer/release", { botId: heldBotId, leaseId: heldLeaseId }).catch(
+        () => undefined,
+      );
     };
   }, [heldBotId, heldLeaseId]);
 
@@ -387,7 +386,6 @@ export default function Computer() {
     setReleasing(true);
     try {
       // Hand back and I'm done end whatever control this person holds on the bot's screen.
-      takenLeases.current.delete(botId);
       await rpc("computer/release", { botId, reason });
       if (!action.isActive()) return;
       setComputerOpen(false);

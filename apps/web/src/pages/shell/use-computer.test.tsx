@@ -398,58 +398,6 @@ it("keeps the replaced screen over its successor until that one connects", async
   expect(frames[0]!.dataset.src).toContain("/control/");
 });
 
-it("shows the remembered view at once on release and returns to control if it fails", async () => {
-  const pending = { reject: (_error: Error) => {} };
-  const release = vi.fn(
-    () =>
-      new Promise<never>((_resolve, reject) => {
-        pending.reject = reject;
-      }),
-  );
-  let controls!: ReturnType<typeof useComputerControls>;
-  function Controls() {
-    controls = useComputerControls({
-      rpc: { computer: { release, screenUrl } } as never,
-      state,
-      panel: "computer",
-      active: undefined,
-      bots: [],
-      botsRef: { current: [] },
-      activeBotId: { current: "bot-1" },
-      activeGroupId: { current: undefined },
-      runStatus: undefined,
-      sandboxProvider: undefined,
-      refreshThread: vi.fn(async () => ({}) as never),
-      refreshGroupThread: vi.fn(),
-      onUpgrade: vi.fn(),
-    });
-    return null;
-  }
-  await act(async () =>
-    root.render(
-      <>
-        <Harness />
-        <Controls />
-      </>,
-    ),
-  );
-  screenUrlFactory = () => proxied("view", "v1");
-  await read();
-  screenUrlFactory = () => proxied("control", "c1");
-  await read();
-  let released!: Promise<void>;
-  await act(async () => {
-    released = controls.releaseComputer();
-  });
-  expect(release).toHaveBeenCalled();
-  expect(state.screenUrl).toBe(proxied("view", "v1"));
-  await act(async () => {
-    pending.reject(new Error("offline"));
-    await released;
-  });
-  expect(state.screenUrl).toBe(proxied("control", "c1"));
-});
-
 it("closes the computer view on Escape, but not on the Escape that ends an IME composition", async () => {
   function Controls() {
     state = useComputerState({
@@ -502,6 +450,7 @@ async function renderTakingControl(
     state: "running",
     controlHolder: "user",
     controlBotId: "bot-1",
+    controlLeaseId: "lease-1",
   } as never;
   const release = vi.fn(async () => ({ ok: true }));
   const heartbeat = vi.fn(async () => ({ ok: true }));
@@ -547,8 +496,9 @@ async function renderTakingControl(
   return {
     release,
     heartbeat,
+    held,
     takeControl: () => controls.openComputer("bot-1", true),
-    handBack: () => controls.releaseComputer(),
+    handBack: (reason?: "done" | "skipped") => controls.releaseComputer(reason),
   };
 }
 
@@ -559,39 +509,6 @@ it("hands its lease back when the computer closes, and keeps it while open", asy
   });
   expect(heartbeat).toHaveBeenCalledWith({ botId: "bot-1" });
   expect(release).not.toHaveBeenCalled();
-  await act(async () => state.setComputerOpen(false));
-  expect(release).toHaveBeenCalledWith(
-    { botId: "bot-1", leaseId: "lease-1" },
-    { context: { keepalive: true } },
-  );
-});
-
-it("hands its lease back even when control showed as held before Take control answered", async () => {
-  let answer!: (value: { leaseId: string; expiresAt: string }) => void;
-  const { release, takeControl } = await renderTakingControl(
-    () =>
-      new Promise((resolve) => {
-        answer = resolve;
-      }),
-  );
-  let taking!: Promise<unknown>;
-  await act(async () => {
-    taking = takeControl();
-  });
-  // The granted event arrives first: the screen shows control as this person's.
-  await act(async () => {
-    state.commitComputer({
-      botId: "bot-1",
-      state: "running",
-      controlHolder: "user",
-      controlBotId: "bot-1",
-    } as never);
-    state.setComputerOpen(true);
-  });
-  await act(async () => {
-    answer({ leaseId: "lease-1", expiresAt: "" });
-    await taking;
-  });
   await act(async () => state.setComputerOpen(false));
   expect(release).toHaveBeenCalledWith(
     { botId: "bot-1", leaseId: "lease-1" },
@@ -611,6 +528,38 @@ it("hands its lease back when the app leaves an open computer", async () => {
   );
 });
 
+it("keeps control when the server refuses I'm done, and hands it back on close", async () => {
+  const { release, takeControl, handBack } = await renderTakingControl();
+  await act(async () => {
+    await takeControl();
+  });
+  release.mockRejectedValueOnce(new Error("The bot is waiting for someone else"));
+  await act(async () => {
+    await handBack("done");
+  });
+  // Nothing changed locally: the screen is still this person's, under the server's lease.
+  expect(state.computer).toMatchObject({ controlHolder: "user", controlLeaseId: "lease-1" });
+  await act(async () => state.setComputerOpen(false));
+  expect(release).toHaveBeenLastCalledWith(
+    { botId: "bot-1", leaseId: "lease-1" },
+    { context: { keepalive: true } },
+  );
+});
+
+it("hands back a teaching lease the server granted when the screen closes", async () => {
+  const { release, held } = await renderTakingControl();
+  // Teaching took control on the server; this page learns the lease from the computer's status.
+  await act(async () => {
+    state.commitComputer(held);
+    state.setComputerOpen(true);
+  });
+  await act(async () => state.setComputerOpen(false));
+  expect(release).toHaveBeenCalledWith(
+    { botId: "bot-1", leaseId: "lease-1" },
+    { context: { keepalive: true } },
+  );
+});
+
 it("hands back whatever control the person holds when Hand back is pressed", async () => {
   const { release, takeControl, handBack } = await renderTakingControl();
   await act(async () => {
@@ -621,21 +570,6 @@ it("hands back whatever control the person holds when Hand back is pressed", asy
   });
   // Not scoped to this page's lease: the control may have come from another tab or teaching.
   expect(release).toHaveBeenCalledWith({ botId: "bot-1", reason: undefined });
-});
-
-it("never ends control this page did not take, such as a newer tab's", async () => {
-  const { release } = await renderTakingControl();
-  await act(async () => {
-    state.commitComputer({
-      botId: "bot-1",
-      state: "running",
-      controlHolder: "user",
-      controlBotId: "bot-1",
-    } as never);
-    state.setComputerOpen(true);
-  });
-  await act(async () => state.setComputerOpen(false));
-  expect(release).not.toHaveBeenCalled();
 });
 
 it("offers Upgrade instead of a retry once the computer hours are spent", async () => {

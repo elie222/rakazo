@@ -101,18 +101,30 @@ export function reduceComputerStatus(
       : { ...prev, takeoverRequested: true, busyBotName: null };
   }
   if (event.type === "computer.takeover.granted") {
-    return prev.controlHolder === "user" && prev.controlBotId === event.botId
+    // The event does not say whose lease it is; the status read that follows does.
+    return prev.controlHolder === "user" &&
+      prev.controlBotId === event.botId &&
+      prev.controlLeaseId === event.payload.leaseId
       ? prev
-      : { ...prev, controlHolder: "user", controlBotId: event.botId };
+      : { ...prev, controlHolder: "user", controlBotId: event.botId, controlLeaseId: undefined };
   }
   if (event.type === "computer.takeover.released") {
     // Answering the bot's request ends the request; handing back ends control.
     if (event.payload.answered === true) {
       return prev.takeoverRequested ? { ...prev, takeoverRequested: false } : prev;
     }
-    return prev.controlHolder === "none" && prev.controlBotId === null && !prev.controlledByOther
+    return prev.controlHolder === "none" &&
+      prev.controlBotId === null &&
+      !prev.controlledByOther &&
+      !prev.controlLeaseId
       ? prev
-      : { ...prev, controlHolder: "none", controlBotId: null, controlledByOther: undefined };
+      : {
+          ...prev,
+          controlHolder: "none",
+          controlBotId: null,
+          controlledByOther: undefined,
+          controlLeaseId: undefined,
+        };
   }
   const status = event.payload.status;
   if (!isComputerState(status)) return prev;

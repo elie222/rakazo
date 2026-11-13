@@ -60,6 +60,7 @@ export function toComputerStatus(
     diskFreeBytes?: bigint | null;
     diskDismissedPercent?: number | null;
     controlUserId?: string | null;
+    controlLeaseId?: string | null;
     userId?: string | null;
   } | null,
   work: ComputerWork = { busyBotName: null, takeoverRequested: false },
@@ -69,6 +70,14 @@ export function toComputerStatus(
   const controlledByOther = Boolean(
     viewerId && computer?.controlHolder === "user" && !holdsUserControl(computer, viewerId),
   );
+  // Only the holder learns their lease, the one their screen hands back when it closes.
+  const ownLeaseId =
+    viewerId &&
+    computer?.controlHolder === "user" &&
+    computer.controlLeaseId &&
+    holdsUserControl(computer, viewerId)
+      ? computer.controlLeaseId
+      : undefined;
   const kind = (computer?.kind ?? "fake") as ComputerStatus["kind"];
   const state =
     kind === "none"
@@ -96,6 +105,7 @@ export function toComputerStatus(
     botId,
     ...(shared ? { shared } : {}),
     ...(controlledByOther ? { controlledByOther } : {}),
+    ...(ownLeaseId ? { controlLeaseId: ownLeaseId } : {}),
     mode: computer?.scope === "dedicated" ? "dedicated" : "team",
     kind,
     state,
