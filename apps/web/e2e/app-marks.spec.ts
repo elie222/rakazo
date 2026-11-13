@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { expect, test } from "@playwright/test";
-import { completeOnboarding, signup } from "./helpers";
+import { captureScreenshot, completeOnboarding, signup } from "./helpers";
 
 // Cached public catalog artwork keeps visual coverage offline and repeatable.
 const apps = ["gmail", "notion", "github"];
@@ -106,3 +106,66 @@ for (const theme of ["light", "dark"]) {
     }
   });
 }
+
+test("integration fallback icons preserve non-BMP initials", async ({ page }, testInfo) => {
+  await page.route("**/rpc/connections/catalog", (route) =>
+    route.fulfill({
+      json: {
+        json: [
+          {
+            connectorId: "fixture",
+            slug: "unicode",
+            name: "𠮷野",
+            logo: null,
+            connected: true,
+            noAuth: false,
+          },
+        ],
+      },
+    }),
+  );
+  await page.route("**/rpc/connections/list", (route) => route.fulfill({ json: { json: [] } }));
+  await page.route("**/rpc/connections/tools", (route) => route.fulfill({ json: { json: [] } }));
+  await page.route("**/rpc/marketplace/catalog", (route) =>
+    route.fulfill({
+      json: {
+        json: {
+          entries: [
+            {
+              id: "unicode",
+              name: "unicode",
+              displayName: "🦞 OpenClaw",
+              description: "Fixture integration",
+              keywords: [],
+              category: "productivity",
+              logo: null,
+              homepage: null,
+              domains: [],
+              registry: "fixture",
+              source: "https://example.test/plugin",
+              installedSource: "https://example.test/plugin",
+              hasConnector: true,
+              skillCount: 0,
+            },
+          ],
+          unavailableRegistries: [],
+          skippedEntries: 0,
+        },
+      },
+    }),
+  );
+  await signup(page, `unicode-icons-${Date.now()}@rakazo.test`, "password12", "Unicode Icons");
+  await completeOnboarding(page);
+  await page.getByRole("button", { name: "Connect apps", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Integrations", exact: true });
+  await expect(dialog.getByText("🦞", { exact: true })).toBeVisible();
+  await captureScreenshot(page, testInfo, "integrations-unicode-plugin");
+  await dialog.getByRole("button", { name: /^\d+ connected$/ }).click();
+  const tile = dialog.getByTestId("connection-tile-unicode");
+  await expect(tile.getByText("𠮷", { exact: true })).toBeVisible();
+  await tile.getByRole("button", { name: "Added", exact: true }).click();
+  await expect(
+    dialog.getByTestId("connection-detail").getByText("𠮷", { exact: true }),
+  ).toBeVisible();
+  await captureScreenshot(page, testInfo, "integrations-unicode-connector");
+});
