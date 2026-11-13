@@ -58,6 +58,17 @@ describe("Team Computer bot folders", () => {
     expect(resolveBotWorkspaceCwd("team", "bot-1", "/Users/me/project")).toBe("/Users/me/project");
   });
 
+  it("reads a leading ~ in a dedicated computer's shell cwd as the workspace root", () => {
+    const root = "/workspace";
+    const cwd = (requested: string | undefined) =>
+      workspaceCwd(root, resolveBotWorkspaceCwd("dedicated", "bot-1", requested));
+    expect(cwd("~")).toBe(root);
+    expect(cwd("~/src")).toBe(`${root}/src`);
+    expect(cwd("src")).toBe(`${root}/src`);
+    expect(cwd(undefined)).toBe(root);
+    expect(cwd("~user/src")).toBe(`${root}/~user/src`);
+  });
+
   it("tells the bot how its shell reaches the same shared folder as the file tools", () => {
     const shellDefaultCwd = resolveBotWorkspaceCwd("team", "bot-1", undefined) ?? "";
     const sharedForFileTools = resolveBotWorkspacePath("team", "bot-1", "shared/report.xlsx");

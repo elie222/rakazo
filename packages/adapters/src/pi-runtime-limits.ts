@@ -1,6 +1,7 @@
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { DEFAULT_MODEL_MAX_TOKENS } from "@rakazo/contracts";
 import { LOCAL_PROVIDER_ID } from "./pi-local-provider-id.js";
+import { sliceWellFormed } from "./utf8.js";
 
 /** Per-attempt wait for response headers; this does not cap active streaming duration. */
 export const MODEL_STREAM_TIMEOUT_MS = 120_000;
@@ -69,7 +70,7 @@ export function modelStreamIdleTimeoutMs(): number {
 export const TOOL_RESULT_TEXT_LIMIT = 12_000;
 
 export function clipToolResultText(text: string, limit: number = TOOL_RESULT_TEXT_LIMIT): string {
-  return text.length > limit ? `${text.slice(0, limit)}…` : text;
+  return text.length > limit ? `${sliceWellFormed(text, limit)}…` : text;
 }
 
 /**

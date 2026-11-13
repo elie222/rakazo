@@ -24,11 +24,11 @@ import {
 } from "./src/preview-middleware.js";
 import { rakazoPwa } from "./src/pwa/plugin.js";
 
-const webPort = Number(process.env.WEB_PORT ?? 5173);
 export default defineConfig(({ command, mode }) => {
   // Names this build in every API request; the dev server has none, so the handshake stays off.
   const buildId = command === "build" ? buildIdAt(new Date()) : "";
   const rootEnv = loadEnv(mode, path.resolve(import.meta.dirname, "../.."), "");
+  const webPort = Number(process.env.WEB_PORT ?? rootEnv.WEB_PORT ?? 5173);
   const settings = webServerSettings(
     (name) => process.env[name] ?? rootEnv[name],
     createServiceLogger({ service: "rakazo-web" }),
@@ -134,7 +134,7 @@ export default defineConfig(({ command, mode }) => {
     },
     preview: {
       host: "0.0.0.0",
-      port: Number(process.env.WEB_PORT ?? 5173),
+      port: webPort,
       allowedHosts,
       proxy,
     },

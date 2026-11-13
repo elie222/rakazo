@@ -654,7 +654,6 @@ describePostgres("Team Computer takeover recovery (PostgreSQL)", () => {
           controlLeaseId: null,
           controlLeaseExpiresAt: null,
           controlBotId: null,
-          controlRunId: null,
         },
       });
       await reconcileComputerUpdates(deps);
@@ -718,7 +717,6 @@ describePostgres("Team Computer takeover recovery (PostgreSQL)", () => {
             controlLeaseId: null,
             controlLeaseExpiresAt: null,
             controlBotId: null,
-            controlRunId: null,
           },
         });
         await reconcileComputerUpdates({ prisma, jobs });
