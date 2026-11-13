@@ -48,9 +48,11 @@ import {
   LOGIN_FIELD_LIMIT,
   LoginFieldInput,
   StoredBotSecretName,
+  VAULT_ACTIVITY_LIMIT,
   VaultPutInput,
   VaultRevealed,
   VaultRevealInput,
+  VaultUse,
 } from "./bot-secrets.js";
 import {
   BotTemplateListingSchema,
@@ -208,6 +210,7 @@ import { SearchQueryOutputSchema } from "./search.js";
 import { SecurityEventListInputSchema, SecurityEventSchema } from "./security-events.js";
 import { SettingsScopeSchema, SpaceSettingSchema, settingsScopeInput } from "./settings-scope.js";
 import { SpaceAvailabilitySchema } from "./space-availability.js";
+import { VaultImportInput, VaultImportResult } from "./vault-import.js";
 
 const botId = z.object({ botId: Id });
 const groupId = z.object({ groupId: Id });
@@ -1649,6 +1652,10 @@ export const appContract = {
     put: oc.input(VaultPutInput).output(BotSecretMetadata),
     /** Needs a recent identity confirmation on this session (IDENTITY_CONFIRMATION_REQUIRED). */
     reveal: oc.input(VaultRevealInput).output(VaultRevealed),
+    import: oc.input(VaultImportInput).output(VaultImportResult),
+    activity: oc
+      .input(settingsScopeInput.extend({ name: StoredBotSecretName }))
+      .output(z.array(VaultUse).max(VAULT_ACTIVITY_LIMIT)),
     remove: oc
       .input(settingsScopeInput.extend({ name: StoredBotSecretName }))
       .output(z.object({ ok: z.literal(true) })),

@@ -19,12 +19,13 @@ import type { EvalCase, Evidence, SettingsSnapshot } from "./cases.js";
 import { EMPTY_SETTINGS, wakesRoutines } from "./cases.js";
 import type { ClarificationBlock } from "./clarification.js";
 import { expectedClarificationText } from "./clarification.js";
+import { EvalFailure, judgeOutcome, observe, settle, withinDeadline } from "./grading.js";
 import type { DiagnosticToolObservation, HistoryDiagnostic } from "./history-observer.js";
 import type { EvalJudge } from "./judge.js";
 import type { CacheDecisionMeasurement, EvalPricing } from "./measurement.js";
 import { measureCalls } from "./measurement.js";
 import type { FailureCategory, TrialResult } from "./report.js";
-import { emptyTrial, redact } from "./report.js";
+import { emptyTrial, evidenceSnapshot, redact } from "./report.js";
 import { EvalServices } from "./services.js";
 import type { RoutineEvidence } from "./silence.js";
 import { SilenceObserver } from "./silence-observer.js";
@@ -74,15 +75,6 @@ export type TrialOptions = {
   ) => Promise<EvalApp>;
 };
 const WAITING_STATUSES = ["waiting_input", "waiting_approval", "paused"];
-
-class EvalFailure extends Error {
-  constructor(
-    readonly category: FailureCategory,
-    message: string,
-  ) {
-    super(message);
-  }
-}
 
 /** No coaching retries: scenario setup turns are intentional steps, never repair prompts. */
 export async function runTrial(
@@ -309,6 +301,12 @@ export async function runTrial(
       messaging.resetWitnesses();
       // Ask mode asks before any change, so the write stops at its approval card.
       if (scenario.approvalTool) await rpc(app, cookie, "autoReview/set", { mode: "ask" });
+      for (const tool of scenario.alwaysAllowTools ?? [])
+        await rpc(app, cookie, "approvalRules/set", {
+          effect: "always_allow",
+          matchKind: "tool",
+          matchValue: tool,
+        });
     };
     await setupActor();
     if (scenario.computerFiles?.length) {
@@ -1008,8 +1006,18 @@ export async function runTrial(
     ]);
     await captureTools();
     const finalStep = scenario.steps.length;
+    const historySummary =
+      scenario.history?.compact && seededThreadId
+        ? (
+            await prisma.thread.findUnique({
+              where: { id: seededThreadId },
+              select: { historyCompactionSummary: true },
+            })
+          )?.historyCompactionSummary
+        : undefined;
     const evidence: Evidence = {
       text: lastText,
+      ...(historySummary ? { historySummary } : {}),
       replies,
       memberReplies,
       routineRuns,
@@ -1069,61 +1077,14 @@ export async function runTrial(
         "memory-snapshot": evidence.memory,
       }).map(([key, value]) => [key, value === null ? null : redact(value, secrets)]),
     );
-    if (scenario.judge && result.criteria.every((c) => c.pass)) {
-      if (!options.judge) throw new EvalFailure("incomplete", "Semantic grading requires a judge");
-      try {
-        const judgment = await withinDeadline(
-          options.judge(
-            scenario.judge(evidence),
-            AbortSignal.timeout(Math.max(1, deadline - Date.now())),
-          ),
-          deadline,
-        );
-        result.judgment = { pass: judgment.pass, reason: redact(judgment.reason, secrets) };
-        result.criteria.push({ id: "semantic-outcome", pass: judgment.pass });
-      } catch (error) {
-        throw new EvalFailure(
-          "incomplete",
-          `Judge unavailable: ${error instanceof Error ? error.message : "Unknown judge failure"}`,
-        );
-      }
-    }
-    result.status =
-      result.criteria.length > 0 && result.criteria.every((c) => c.pass) ? "passed" : "failed";
-    result.category = result.status === "passed" ? null : "agent";
-    result.reason = result.status === "passed" ? null : "Outcome criteria failed";
-    if (result.status === "failed" && handles.harnessIssues?.length) {
-      if (scenario.shellUnneeded)
-        result.reason = `Outcome criteria failed after the bot chose a command the case does not need: ${handles.harnessIssues.join(" ")}`;
-      else {
-        result.category = "harness";
-        result.reason = handles.harnessIssues.join(" ");
-      }
-    }
-    if (scenario.observe) {
-      const observations: NonNullable<TrialResult["observations"]> = {};
-      for (const [key, value] of Object.entries(scenario.observe(evidence))) {
-        if (typeof value === "boolean") {
-          observations[key] = { present: value };
-          continue;
-        }
-        try {
-          if (!options.judge) throw new Error("no judge");
-          const judgment = await withinDeadline(
-            options.judge(value, AbortSignal.timeout(Math.max(1, deadline - Date.now()))),
-            deadline,
-          );
-          observations[key] = { present: judgment.pass, reason: redact(judgment.reason, secrets) };
-        } catch (error) {
-          // An ungraded behaviour is unknown, never counted as absent.
-          observations[key] = {
-            present: null,
-            reason: `Judge unavailable: ${error instanceof Error ? error.message : "Unknown judge failure"}`,
-          };
-        }
-      }
-      result.observations = observations;
-    }
+    // Kept so a new rubric can grade the trial again without running the bot.
+    if (scenario.judge || scenario.observe) result.evidence = evidenceSnapshot(evidence, secrets);
+    const grading = { judge: options.judge, deadline, secrets };
+    await judgeOutcome(scenario, evidence, result, grading);
+    if (handles.harnessIssues?.length) result.harnessIssues = [...handles.harnessIssues];
+    settle(scenario, result, handles.harnessIssues ?? []);
+    const observations = await observe(scenario, evidence, grading);
+    if (observations) result.observations = observations;
   } catch (error) {
     result.status = "failed";
     result.category = error instanceof EvalFailure ? error.category : phase;
@@ -1533,21 +1494,4 @@ export async function cleanupActors(
   }
   if (!stable) failures.push(new Error("Trial scope did not become idle"));
   if (failures.length) throw new Error("Trial work could not be stopped", { cause: failures });
-}
-
-async function withinDeadline<T>(work: Promise<T>, deadline: number): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    return await Promise.race([
-      work,
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(
-          () => reject(new Error("Background work exceeded trial deadline")),
-          Math.max(1, deadline - Date.now()),
-        );
-      }),
-    ]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
 }

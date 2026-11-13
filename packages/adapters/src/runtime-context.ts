@@ -13,6 +13,7 @@ import {
   selectContext,
   shortenToolResultText,
 } from "./context-selection.js";
+import { promptCacheDeclaredOff } from "./pi-local-provider-id.js";
 import {
   effectiveOutputReserve,
   operatorMaxTokens,
@@ -20,6 +21,9 @@ import {
 } from "./pi-runtime-limits.js";
 import { withoutThinkingFrom } from "./thinking-signatures.js";
 import { isVerbatimMcpResult, toolCallIdentity } from "./verbatim-mcp-result.js";
+
+/** Opens the recalled-memory history message, which context trimming keeps. */
+export const RECALLED_MEMORY_LEAD = "Memory recalled from earlier conversations.";
 
 /** Minimum whole-result window, unless the full model budget requires clipping. */
 const RECENT_TOOL_RESULTS_TO_KEEP = 3;
@@ -53,6 +57,29 @@ const REBUILD_MIN_SAVED_TOKENS = 16_384;
 const REBUILD_MAX_STALE_IMAGES = 8;
 /** A rebuild forced by the model's window leaves this share of it free for the next calls. */
 const REBUILD_HEADROOM = 0.25;
+/** Stale tokens that justify a rebuild when the provider's prompt cache is declared off. */
+const UNCACHED_REBUILD_MIN_SAVED_TOKENS = 3_000;
+/** Short earlier history is kept whole, instead of snapshots, when it fits this many tokens. */
+const SHORT_HISTORY_MAX_TOKENS = 16_384;
+/** With snapshots, the latest messages are still replayed whole. */
+const SNAPSHOT_RECENT_MESSAGES = 8;
+const SNAPSHOT_CATALOG_MAX_ENTRIES = 64;
+const SNAPSHOT_CATALOG_MAX_BYTES = 8192;
+/** The context policy's tuning, part of the prompt version so a change shows up in run outcomes. */
+export const CONTEXT_POLICY_SETTINGS = {
+  defaultStrategy: DEFAULT_CONTEXT_STRATEGY,
+  recentToolResultsToKeep: RECENT_TOOL_RESULTS_TO_KEEP,
+  verbatimToolResults: [...VERBATIM_TOOL_RESULTS],
+  unshortenedToolResults: [...UNSHORTENED_TOOL_RESULTS],
+  rebuildMinSavedTokens: REBUILD_MIN_SAVED_TOKENS,
+  rebuildMaxStaleImages: REBUILD_MAX_STALE_IMAGES,
+  rebuildHeadroom: REBUILD_HEADROOM,
+  uncachedRebuildMinSavedTokens: UNCACHED_REBUILD_MIN_SAVED_TOKENS,
+  shortHistoryMaxTokens: SHORT_HISTORY_MAX_TOKENS,
+  snapshotRecentMessages: SNAPSHOT_RECENT_MESSAGES,
+  snapshotCatalogMaxEntries: SNAPSHOT_CATALOG_MAX_ENTRIES,
+  snapshotCatalogMaxBytes: SNAPSHOT_CATALOG_MAX_BYTES,
+} as const;
 export interface Size {
   tokens: number;
   images: number;
@@ -63,16 +90,19 @@ export interface Size {
  * With cache writes at about 1.25 and reads at about 0.1 times the input price, rebuilding every
  * k calls costs least once stale content reaches about 5 × √(rebuilt size × growth per call), so
  * a run that adds a lot per call rebuilds rarely. `appends` counts calls appended since the
- * transcript was last rebuilt at `rebuiltTokens`.
+ * transcript was last rebuilt at `rebuiltTokens`. Without a prompt cache nothing is lost by
+ * rewriting the prefix, so a rebuild pays off as soon as enough stale content has built up.
  */
 export function rebuildPaysOff(
   kept: Size,
   fresh: Size,
   rebuiltTokens: number,
   appends: number,
+  cacheOff = false,
 ): boolean {
   const stale = kept.tokens - fresh.tokens;
   const growth = (kept.tokens - rebuiltTokens) / (appends + 1);
+  if (cacheOff && stale >= UNCACHED_REBUILD_MIN_SAVED_TOKENS) return true;
   return (
     (stale >= REBUILD_MIN_SAVED_TOKENS && stale * stale >= 25 * fresh.tokens * growth) ||
     kept.images - fresh.images >= REBUILD_MAX_STALE_IMAGES
@@ -373,7 +403,7 @@ export function createRuntimeContextPolicy(
     const historical = messages.slice(0, currentIndex);
     const historicalContent = historical.filter((message) => message.role !== "system");
     const shortHistoryAllowance = Math.min(
-      16384,
+      SHORT_HISTORY_MAX_TOKENS,
       Math.max(0, Math.floor((contextWindow - reserve - fixed) / 4)),
     );
     // Short originals can cost less than another lookup. Retain them when their
@@ -385,14 +415,14 @@ export function createRuntimeContextPolicy(
         options.imageTokens,
       ) <= shortHistoryAllowance;
     if (useSnapshots && !retainShortHistory) {
-      const old = historical.slice(0, Math.max(0, historical.length - 8));
+      const old = historical.slice(0, Math.max(0, historical.length - SNAPSHOT_RECENT_MESSAGES));
       let catalog = "";
       const maximum = Math.min(
-        8192,
+        SNAPSHOT_CATALOG_MAX_BYTES,
         Math.max(0, Math.floor((contextWindow - reserve - fixed) / 4)),
       );
       catalogIds = [];
-      for (const message of old.slice(-64).reverse()) {
+      for (const message of old.slice(-SNAPSHOT_CATALOG_MAX_ENTRIES).reverse()) {
         const stored = original(message);
         if (!stored?.id) continue;
         const entry = `[message ${stored.id}${stored.createdAt ? ` at ${stored.createdAt}` : ""}; ${stored.speaker ?? stored.role}] ${snapshot(stored.content)}\n`;
@@ -400,7 +430,7 @@ export function createRuntimeContextPolicy(
         catalog = entry + catalog;
         catalogIds.unshift(stored.id);
       }
-      const recentStart = Math.max(0, historical.length - 8);
+      const recentStart = Math.max(0, historical.length - SNAPSHOT_RECENT_MESSAGES);
       const earlierSystem = historical
         .slice(0, recentStart)
         .filter((message) => message.role === "system");
@@ -411,7 +441,8 @@ export function createRuntimeContextPolicy(
       ];
       protectedIndexes = messages.flatMap((message, index) =>
         message.role === "system" ||
-        (index >= earlierSystem.length + Math.min(8, historical.length) && message.role === "user")
+        (index >= earlierSystem.length + Math.min(SNAPSHOT_RECENT_MESSAGES, historical.length) &&
+          message.role === "user")
           ? [index]
           : [],
       );
@@ -442,9 +473,7 @@ export function createRuntimeContextPolicy(
         (message as Message & OriginalMetadata).rakazoHistory &&
         !(message as Message & OriginalMetadata).rakazoMessageId &&
         (text(message).startsWith("Rakazo-owned compacted context through message sequence ") ||
-          text(message).startsWith(
-            "Memory recalled from earlier conversations that fell outside the visible history.",
-          )),
+          text(message).startsWith(`${RECALLED_MEMORY_LEAD} `)),
     );
     for (const summary of summaries) {
       const required = protectedIndexes.map((index) => messages[index]!);
@@ -678,7 +707,13 @@ export function createRuntimeContextPolicy(
           append =
             overTokens(kept) ||
             overImages(kept) ||
-            !rebuildPaysOff(kept, fresh, previous.rebuiltTokens, previous.appends);
+            !rebuildPaysOff(
+              kept,
+              fresh,
+              previous.rebuiltTokens,
+              previous.appends,
+              promptCacheDeclaredOff(model.provider),
+            );
       }
       if (previous && appended && append) {
         const projection = [

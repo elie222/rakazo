@@ -24,6 +24,7 @@ import {
   isUniqueViolation,
   recordComputerRunEnd,
   recordComputerRunSeen,
+  THREAD_LOCK_TRANSACTION_OPTIONS,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { activeCodingAgent } from "./coding-agent-activity.js";
@@ -882,7 +883,7 @@ async function postComputerNote(
           payload: { messageId: message.id, role: "system", blocks },
         });
         return event.seq;
-      });
+      }, THREAD_LOCK_TRANSACTION_OPTIONS);
       if (seq !== undefined) await deps.events.notify(threadId, seq).catch(() => undefined);
     } catch (cause) {
       // A competing worker already wrote the same nonce. Other failures are retried next tick.

@@ -697,6 +697,10 @@ async function request(
       cancelResponseBody(res);
       throw new Error(t`Update your server to use AI data sharing in this mobile version.`);
     }
+    if (proc === "vault/import" && res.status === 404) {
+      cancelResponseBody(res);
+      throw new Error(t`Update your server to import logins.`);
+    }
     const parsed: { json?: unknown } = await readBoundedJsonResponse<{ json?: unknown }>(
       res,
       MAX_MOBILE_RPC_RESPONSE_BYTES,

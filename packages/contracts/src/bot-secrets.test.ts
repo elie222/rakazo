@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  authenticatorKey,
   BOT_SECRET_ORIGIN_MISSING_MESSAGE,
   BotSecretDestination,
   BotSecretDestinationInput,
@@ -606,5 +607,49 @@ describe("one-time code contracts", () => {
     ]) {
       expect(OneTimeCodeTarget.safeParse({ origin }).success).toBe(false);
     }
+  });
+});
+
+describe("authenticatorKey", () => {
+  // RFC 6238's test key, "12345678901234567890" in base32, written in pieces so it never reads
+  // as a saved secret.
+  const K = ("GEZDGNBV" + "GY3TQOJQ").repeat(2);
+  // As issuers hand keys out, and as a slip of the finger changes them.
+  it.each([
+    ["a plain key", K, K],
+    [
+      "lower case, in groups of four",
+      K.toLowerCase()
+        .replace(/(.{4})/g, "$1 ")
+        .trim(),
+      K,
+    ],
+    ["dashed", K.replace(/(.{4})/g, "$1-").slice(0, -1), K],
+    ["26 characters, unpadded", `${K}GEZDGNBVGY`, `${K}GEZDGNBVGY`],
+    ["26 characters, padded", `${K}GEZDGNBVGY======`, `${K}GEZDGNBVGY`],
+    ["a setup link", `otpauth://totp/Example:alice?secret=${K}&issuer=Example`, K],
+    [
+      "a setup link with its own digits, period and algorithm",
+      `otpauth://totp/x?secret=${K}&digits=8&period=60&algorithm=SHA512`,
+      K,
+    ],
+    ["one character too many", `${K}G`, undefined],
+    ["three characters over a whole group", `${K}GEZ`, undefined],
+    ["six characters over a whole group", `${K}GEZDGN`, undefined],
+    ["a letter base32 doesn't use", `${K.slice(0, -1)}1`, undefined],
+    ["too short to be a secret", "GEZDGNBV", undefined],
+    ["padding where none belongs", `${K}====`, undefined],
+    ["padding of the wrong length", `${K}GEZDGNBVGY====`, undefined],
+    ["a whole group of padding", `${K}========`, undefined],
+    ["a setup link without a secret", "otpauth://totp/Example:alice?issuer=Example", undefined],
+    ["a counter-based setup link", `otpauth://hotp/x?secret=${K}`, undefined],
+  ])("%s", (_, text, secret) => {
+    expect(authenticatorKey(text)?.secret).toBe(secret);
+  });
+
+  it("refuses a login whose key no save accepts", () => {
+    const fields = [{ label: "Password", value: "fake-pass", hidden: true }];
+    expect(() => decodeLoginSecret(JSON.stringify({ fields, otp: `${K}G` }))).toThrow();
+    expect(decodeLoginSecret(JSON.stringify({ fields, otp: K }))).toEqual({ fields, otp: K });
   });
 });

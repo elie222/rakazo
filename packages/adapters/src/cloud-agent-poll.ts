@@ -14,9 +14,8 @@ import { cloudAgentHttpsUrl } from "@rakazo/core";
 import type { CloudAgent } from "@rakazo/db";
 import { appendEventInTransaction, Prisma } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
-import { cloudAgentsEnabled } from "./cloud-agent-factory.js";
 import type { CloudAgentDeps } from "./cloud-agent-service.js";
-import { cloudAgentBlock, enqueueCloudAgent } from "./cloud-agent-service.js";
+import { cloudAgentBlock, cloudAgentFor, enqueueCloudAgent } from "./cloud-agent-service.js";
 import { cloudAgentLaunchSchema, cloudAgentPromptSchema } from "./cloud-agent-tools.js";
 
 const FOLLOWUP_SETTLE_MS = 5 * 60_000;
@@ -26,12 +25,10 @@ export async function pollCloudAgent(
   deps: CloudAgentDeps,
   payload: BackgroundJobPayloads["cloud_agent.poll"],
 ) {
-  const connection = deps.cloudAgent;
+  const stored = await deps.prisma.cloudAgent.findUnique({ where: { id: payload.agentId } });
+  if (!stored?.nextPollAt) return;
+  const connection = await cloudAgentFor(deps, stored);
   if (!connection) return;
-  const stored = await deps.prisma.cloudAgent.findFirst({
-    where: { id: payload.agentId, providerKey: connection.key },
-  });
-  if (!stored?.nextPollAt || !cloudAgentsEnabled(connection, stored.spaceId)) return;
   const token = randomUUID();
   const claimed = await deps.prisma.cloudAgent.updateMany({
     where: {

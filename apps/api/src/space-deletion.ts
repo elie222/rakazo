@@ -6,6 +6,7 @@ import type {
   SandboxProvider,
   SecretStore,
 } from "@rakazo/adapter-kit";
+import type { MemoryProviderResolver } from "@rakazo/adapters";
 import {
   destroyBot,
   forgetPageShareSecrets,
@@ -43,6 +44,7 @@ export type SpaceDeletionDeps = {
   sandbox: SandboxProvider;
   home: AgentHomeStore;
   jobs: JobPublisher;
+  memoryProviders: MemoryProviderResolver;
   artifacts: ArtifactStore;
   dataDir: string;
   messagingInstallations?: Parameters<typeof destroyBot>[0]["messagingInstallations"];
