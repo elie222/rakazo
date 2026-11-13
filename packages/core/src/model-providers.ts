@@ -9,11 +9,14 @@ import {
 } from "@rakazo/contracts";
 import { listSearch } from "./list-search.js";
 
-/** Bots that pick their own model ignore the space default and its changes. */
-export function botsWithOwnModel<T extends Pick<Bot, "modelProvider" | "modelId">>(
+/**
+ * Bots that pick their own model ignore the space default and its changes. Only those this member
+ * can change are listed, since only those they can move back to the default.
+ */
+export function botsWithOwnModel<T extends Pick<Bot, "modelProvider" | "modelId" | "canChange">>(
   bots: readonly T[],
 ): T[] {
-  return bots.filter((bot) => Boolean(bot.modelProvider && bot.modelId));
+  return bots.filter((bot) => bot.canChange !== false && Boolean(bot.modelProvider && bot.modelId));
 }
 
 /** Effort choices an OpenAI-compatible endpoint stores when reasoning is enabled. */

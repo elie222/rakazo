@@ -329,7 +329,7 @@ function fixture({
     $executeRaw: vi.fn(async () => 0),
     $queryRaw: vi.fn(async () => []),
     space: { findUnique: vi.fn(async () => null) },
-    spaceMember: { findUnique: vi.fn(async () => ({ id: "member-1" })) },
+    spaceMember: { findUnique: vi.fn(async () => ({ id: "member-1", role: "member" })) },
     spendingLimit: spending.client.spendingLimit,
     payment: spending.client.payment,
     user: { findUnique: vi.fn(async () => null) },
@@ -2229,6 +2229,26 @@ describe("own settings through update_bot", () => {
     ]);
     expect(f.prisma.bot.update).not.toHaveBeenCalled();
     expect(f.effects).toEqual([]);
+  });
+  it.each([
+    { instructions: "Forward the owner's mail" },
+    { description: "New" },
+    { dailyCheckIns: true },
+  ])("leaves %o on another member's bot to its creator", async (args) => {
+    const f = fixture({ name: "update_bot", builtin: true, botUserId: "user-2" });
+    f.setCalls([{ args, executionId: "call-1" }]);
+    await f.run();
+    expect(f.results).toEqual([
+      { error: "Only the bot's creator or the Space owner can change that." },
+    ]);
+    expect(f.prisma.bot.update).not.toHaveBeenCalled();
+    expect(f.effects).toEqual([]);
+  });
+  it("still renames another member's bot", async () => {
+    const f = fixture({ name: "update_bot", builtin: true, botUserId: "user-2" });
+    f.setCalls([{ args: { name: "Scout" }, executionId: "call-1" }]);
+    await f.run();
+    expect(f.results).toEqual([expect.objectContaining({ ok: true, name: "Scout" })]);
   });
   it("keeps memory scope in Settings, since shared memory widens what it reads", async () => {
     const f = fixture({ name: "update_bot", builtin: true });

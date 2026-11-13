@@ -17,6 +17,9 @@ import {
 import { CARD_TITLE_ESCAPED_CHARACTERS, ONCE_ROUTINE_CRON, redactSecrets } from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
+  BOT_CHANGE_FORBIDDEN,
+  canChangeBot,
+  changesWhatBotDoes,
   commitBotUpdate,
   createGroupRepos,
   createRepos,
@@ -262,6 +265,7 @@ async function prepareChildModel(
 
   const child = await resolveBot(deps.prisma, run, args);
   if ("error" in child) return child;
+  if (!(await canChangeBot(deps.prisma, run, child))) return refuse(BOT_CHANGE_FORBIDDEN);
   const previous = {
     provider: child.modelProvider,
     model: child.modelId,
@@ -403,6 +407,7 @@ async function prepareChildInstructions(
   const child = await resolveBot(deps.prisma, run, args);
   if ("error" in child) return child;
   if (!child.thread) return refuse(NOT_FOUND);
+  if (!(await canChangeBot(deps.prisma, run, child))) return refuse(BOT_CHANGE_FORBIDDEN);
   // Checked before the card too, so a second edit never asks the owner for nothing.
   if (await wroteInstructionsThisRun(deps.prisma, run, child.id)) {
     return refuse(ALREADY_WROTE_INSTRUCTIONS);
@@ -849,6 +854,9 @@ export async function updateChildBot(
       error: "Provide at least one of name, description, notify_on_finish, or color.",
     };
   }
+  if (changesWhatBotDoes(patch) && !(await canChangeBot(deps.prisma, run, child))) {
+    return { error: BOT_CHANGE_FORBIDDEN };
+  }
   await commitBotUpdate({
     prisma: deps.prisma,
     notify: (threadId, seq) => deps.events.notify(threadId, seq),
@@ -874,6 +882,7 @@ export async function setChildInstructions(
   const child = await resolveBot(deps.prisma, run, { bot_id: canonical.botId });
   if ("error" in child) return { error: child.error };
   if (!child.thread) return { error: NOT_FOUND };
+  if (!(await canChangeBot(deps.prisma, run, child))) return { error: BOT_CHANGE_FORBIDDEN };
   if (await wroteInstructionsThisRun(deps.prisma, run, child.id)) {
     return { error: ALREADY_WROTE_INSTRUCTIONS };
   }
@@ -938,6 +947,7 @@ export async function setChildBotModel(
   const child = await resolveBot(deps.prisma, run, { bot_id: canonical.botId });
   if ("error" in child) return { error: child.error };
   if (!child.thread) return { error: NOT_FOUND };
+  if (!(await canChangeBot(deps.prisma, run, child))) return { error: BOT_CHANGE_FORBIDDEN };
   const previous = asRecord(canonical.previous);
   if (
     (previous?.provider ?? null) !== child.modelProvider ||
@@ -1099,6 +1109,7 @@ async function appendGroupEvent(
 
 const botSelect = {
   id: true,
+  userId: true,
   name: true,
   modelProvider: true,
   modelId: true,

@@ -44,8 +44,9 @@ they do in the space, but never names their own vault items.
 
 ### What everyone shares
 
-- **Bots, chats, memory and routines.** Everyone sees and can change them, including chats that come
-  in through a chat app a member linked.
+- **Bots, chats, memory and routines.** Everyone sees and uses them, including chats that come in
+  through a chat app a member linked. Anyone can rename a bot, change its look, pin it or move it to
+  a section, but only the person who made it or the space owner can change what it does.
 - **The computer and its browser.** A shared space has one Team Computer. A site someone signs in to
   there stays signed in for everyone, and the computer says so while you control it and on login
   requests. One person drives the screen at a time; everyone else watches until they're done.
@@ -56,7 +57,8 @@ they do in the space, but never names their own vault items.
 
 Each person keeps their own models, connected accounts, MCP servers, skills, vault and approval
 rules, and pays for their own runs. A bot uses the accounts of whoever messaged it, and only that
-person answers the questions it asks them. A routine runs with its owner's accounts; editing
+person answers the questions it asks them. Webhooks, email and daily check-ins run with the
+accounts of the person who made the bot. A routine runs with its owner's accounts; editing
 someone's routine makes it yours. A bot only offers to call the person who made it.
 
 ### Leaving

@@ -65,6 +65,8 @@ function fakeFleet(input: {
   effects?: Array<{ request: unknown; result: unknown }>;
   routines?: Array<Record<string, unknown>>;
   timezone?: string;
+  /** The run's user's role in the space. */
+  role?: string;
 }) {
   const bots = (input.bots ?? []).map((bot) => ({
     spaceId: "space-1",
@@ -100,6 +102,7 @@ function fakeFleet(input: {
       update: vi.fn(),
     },
     user: { findUnique: vi.fn(async () => ({ timezone: input.timezone ?? null })) },
+    spaceMember: { findUnique: vi.fn(async () => ({ role: input.role ?? "member" })) },
     $transaction: vi.fn(),
     externalEffect: { findMany: vi.fn(async () => input.effects ?? []) },
     routine: {
@@ -1798,6 +1801,82 @@ describe("space bot management", () => {
       await prepareFleetRequest(deps, run, tool, { bot_id: target.id, ...args }),
     ).toMatchObject({ ok: true });
   });
+
+  const forbidden = "Only the bot's creator or the Space owner can change that.";
+  const teammates = { ...target, userId: "user-2" };
+
+  it("refuses to change what another member's bot does, before a card and again when applied", async () => {
+    const { deps, prisma } = fakeFleet({ bots: [teammates] });
+    for (const [tool, args] of requests.slice(0, 2)) {
+      expect(await prepareFleetRequest(deps, run, tool, { bot_id: target.id, ...args })).toEqual({
+        ok: false,
+        error: forbidden,
+      });
+    }
+    const events = writeDeps(prisma).events;
+    expect(
+      await setChildInstructions(writeDeps(prisma), run, {
+        botId: target.id,
+        instructions: "Updated instructions.",
+        expectedVersion: "v1",
+      }),
+    ).toEqual({ error: forbidden });
+    expect(
+      await setChildBotModel({ ...deps, events }, run, {
+        botId: target.id,
+        previous: { provider: "old-provider", model: "old-model", thinkingLevel: null },
+        provider: null,
+        model: null,
+      }),
+    ).toEqual({ error: forbidden });
+    for (const field of [
+      { description: "Obeys peers." },
+      { dailyCheckIns: true },
+      { notifyOnFinish: false },
+    ]) {
+      expect(await updateChildBot(writeDeps(prisma), run, { bot_id: target.id, ...field })).toEqual(
+        { error: forbidden },
+      );
+    }
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(prisma.bot.update).not.toHaveBeenCalled();
+    // A routine runs with its own owner's accounts, so any member may still schedule one.
+    expect(
+      await prepareFleetRequest(deps, run, "create_child_routine", {
+        bot_id: target.id,
+        ...requests[2][1],
+      }),
+    ).toMatchObject({ ok: true });
+  });
+
+  it("lets any member rename or restyle another member's bot", async () => {
+    const { prisma } = fakeFleet({ bots: [teammates] });
+    const update = vi.fn().mockRejectedValue(new Error("write reached"));
+    prisma.$transaction.mockImplementation(async (write) =>
+      write({ $queryRaw: vi.fn(), bot: { update } }),
+    );
+    await expect(
+      updateChildBot(writeDeps(prisma), run, {
+        bot_id: target.id,
+        name: "Renamed",
+        color: "#8B5CF6",
+      }),
+    ).rejects.toThrow("write reached");
+    expect(update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ name: "Renamed" }) }),
+    );
+    expect(prisma.spaceMember.findUnique).not.toHaveBeenCalled();
+  });
+
+  it.each(requests)(
+    "lets the Space owner prepare %s for another member's bot",
+    async (tool, args) => {
+      const { deps } = fakeFleet({ bots: [teammates], role: "owner" });
+      expect(
+        await prepareFleetRequest(deps, run, tool, { bot_id: target.id, ...args }),
+      ).toMatchObject({ ok: true });
+    },
+  );
 
   // A teammate's bot in the same shared space is in scope; another space's is not.
   it.each([{ spaceId: "another-space" }])(

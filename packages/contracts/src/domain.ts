@@ -121,6 +121,11 @@ export const BotSchema = z.object({
   replyMode: ReplyModeSchema.default("chat"),
   disabledBuiltinTools: z.array(z.string()).default([]),
   webhookConfigured: z.boolean(),
+  /**
+   * Whether the requesting member may change what the bot does, beyond its name and look: they
+   * made it or own the Space. Absent on older servers; treat that as true.
+   */
+  canChange: z.boolean().optional(),
   /** Present when created with an idempotency key (e.g. onboarding:first). */
   spawnKey: z.string().nullable(),
   /** The bot is ringing the user right now. */

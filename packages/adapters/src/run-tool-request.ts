@@ -1,7 +1,7 @@
 import type { ConnectorCall, ConnectorTool } from "@rakazo/adapter-kit";
 import { BOT_INSTRUCTIONS_MAX_LENGTH, BotSecretAuth, OneTimeCodeTarget } from "@rakazo/contracts";
 import { redactSecrets } from "@rakazo/core";
-import { runLoginKind } from "@rakazo/db";
+import { BOT_CHANGE_FORBIDDEN, canChangeBot, changesWhatBotDoes, runLoginKind } from "@rakazo/db";
 import { prepareAgentConnectionResponse } from "./agent-connections.js";
 import type { FleetCardSummary } from "./approval-ask.js";
 import type { TerminatingToolResult } from "./approval-effect.js";
@@ -677,6 +677,16 @@ async function prepareOwnBotUpdate(
   // A paged read never writes: the handler answers with the settings and names every other field
   // it left out, so the write checks below do not apply to those fields.
   if (argumentGiven(args.instructions_offset ?? args.instructionsOffset)) return undefined;
+  // A run for another member may rename or restyle this bot, nothing more: its unattended runs
+  // act with its creator's accounts (see canChangeBot). An image avatar is a color change.
+  const changes = Object.fromEntries(
+    Object.entries(args).filter(
+      ([key, value]) =>
+        argumentGiven(value) && key !== "artifact_id" && key !== "use_attached_image",
+    ),
+  );
+  if (changesWhatBotDoes(changes) && !(await canChangeBot(ctx.deps.prisma, run, ctx.bot)))
+    return refusal("bot_change_forbidden", BOT_CHANGE_FORBIDDEN);
   const settingsOnly = Object.keys(args).filter(
     (key) => !OWN_FIELDS.has(key) && argumentGiven(args[key]),
   );

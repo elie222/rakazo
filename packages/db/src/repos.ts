@@ -23,6 +23,7 @@ import {
   userVisibleMessages,
 } from "@rakazo/core";
 import { chooseBotAvatar } from "./bot-avatar-choice.js";
+import { canChangeBot } from "./bot-changes.js";
 import type { Prisma, PrismaClient } from "./client.js";
 import type { ComputerMode } from "./computers.js";
 import { ensureComputerRecord, parseComputerMode, teamComputerUserId } from "./computers.js";
@@ -30,6 +31,7 @@ import { createThreadMessageInTransaction } from "./messages.js";
 import { withNewestThreadMessages } from "./preview-messages.js";
 import { isUniqueViolation } from "./prisma-errors.js";
 import { BotSectionNameConflictError, IsolationError } from "./scope.js";
+import { isSpaceOwner } from "./space-members.js";
 import { lockSpaceForContentCreation } from "./spaces.js";
 import {
   activeRunSelection,
@@ -430,6 +432,9 @@ export function createRepos(
         for (const id of missing) checkedRunIds.add(id);
       };
       await classifyRunIds(candidateRunIds);
+      // Asked once, and only when another member made one of these bots.
+      const owner =
+        bots.some((bot) => bot.userId !== actor.userId) && (await isSpaceOwner(prisma, actor));
       return Promise.all(
         bots.map(async (bot) => {
           let messages = bot.thread?.messages ?? [];
@@ -481,7 +486,11 @@ export function createRepos(
                 : [],
             ),
           );
-          return { ...mapped, threadStatus: threadRunStatus(bot.runs, mapped.threadId) };
+          return {
+            ...mapped,
+            threadStatus: threadRunStatus(bot.runs, mapped.threadId),
+            canChange: owner || bot.userId === actor.userId,
+          };
         }),
       );
     },
@@ -716,7 +725,7 @@ export function createRepos(
           }
         }
       }
-      return mapBot(bot);
+      return { ...mapBot(bot), canChange: await canChangeBot(prisma, actor, bot) };
     },
 
     async reorderBots(actor: Actor, botIds: string[]): Promise<void> {
@@ -769,7 +778,7 @@ export function createRepos(
           });
         }),
       );
-      return mapBot(updated);
+      return { ...mapBot(updated), canChange: await canChangeBot(prisma, actor, updated) };
     },
   };
 }

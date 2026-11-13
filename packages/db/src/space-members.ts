@@ -92,15 +92,22 @@ export async function spaceIsShared(
   return (await db.spaceMember.count({ where: { spaceId }, take: 2 })) > 1;
 }
 
-export async function requireSpaceOwner(
+export async function isSpaceOwner(
   db: Pick<PrismaClient, "spaceMember">,
   input: SpaceRef,
-): Promise<void> {
+): Promise<boolean> {
   const membership = await db.spaceMember.findUnique({
     where: { spaceId_userId: { spaceId: input.spaceId, userId: input.userId } },
     select: { role: true },
   });
-  if (!membership || !isOwnerRole(membership.role)) throw new SpaceOwnerRequiredError();
+  return Boolean(membership && isOwnerRole(membership.role));
+}
+
+export async function requireSpaceOwner(
+  db: Pick<PrismaClient, "spaceMember">,
+  input: SpaceRef,
+): Promise<void> {
+  if (!(await isSpaceOwner(db, input))) throw new SpaceOwnerRequiredError();
 }
 
 function hashInviteToken(token: string): string {

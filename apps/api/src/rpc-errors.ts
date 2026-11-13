@@ -9,6 +9,7 @@ import {
 } from "@rakazo/adapter-kit";
 import { ComputerRecoveryRequiredError } from "@rakazo/adapters";
 import {
+  BotChangeForbiddenError,
   IsolationError,
   ProviderTransactionBusyError,
   SpaceDeletionInProgressError,
@@ -34,7 +35,7 @@ export function handleRpcError(
     getLogger().warn(`rpc ${path.join("/")} not found`, { "error.stack": error.stack });
     throw new ORPCError("NOT_FOUND", { message: error.message, cause: error });
   }
-  if (error instanceof SpaceOwnerRequiredError) {
+  if (error instanceof SpaceOwnerRequiredError || error instanceof BotChangeForbiddenError) {
     throw new ORPCError("FORBIDDEN", { message: error.message, cause: error });
   }
   // A Space being deleted takes no new work; the caller learns it, nothing failed.

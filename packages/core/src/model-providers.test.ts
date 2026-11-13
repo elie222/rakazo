@@ -27,6 +27,15 @@ it("counts only bots that pick both a provider and a model", () => {
   ).toHaveLength(1);
 });
 
+it("leaves out bots this member cannot change", () => {
+  expect(
+    botsWithOwnModel([
+      { modelProvider: "anthropic", modelId: "claude-opus-5-5", canChange: false },
+      { modelProvider: "anthropic", modelId: "claude-opus-5-5", canChange: true },
+    ]),
+  ).toEqual([{ modelProvider: "anthropic", modelId: "claude-opus-5-5", canChange: true }]);
+});
+
 describe("popularModelProvidersFirst", () => {
   it("lists the popular providers in curated order first, then the rest by name", () => {
     const providers = [

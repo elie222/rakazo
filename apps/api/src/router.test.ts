@@ -10550,6 +10550,142 @@ describe("shared space bot permissions", () => {
   });
 });
 
+describe("who changes what a bot does", () => {
+  const actor = { userId: "user-1", spaceId: "space-1", email: "user@rakazo.test" };
+  const forbidden = { code: "FORBIDDEN" };
+
+  /** A bot `creator` made, seen by user-1, whose role in the space is `role`. */
+  function botClient(creator: string, role: string) {
+    const now = new Date("2026-01-01T00:00:00.000Z");
+    const bot = {
+      id: "bot-1",
+      spaceId: "space-1",
+      userId: creator,
+      name: "Ada",
+      description: "",
+      instructions: "Be brief.",
+      instructionHistory: [],
+      color: "ink",
+      notifyOnFinish: true,
+      pinned: false,
+      position: 0,
+      sectionId: null,
+      archivedAt: null,
+      parentBotId: null,
+      memoryScope: null,
+      createdAt: now,
+      updatedAt: now,
+      voiceId: null,
+      autoSpeak: false,
+      modelProvider: null,
+      modelId: null,
+      thinkingLevel: null,
+      teamChatAmbientEnabled: false,
+      teamChatRules: "",
+      webhookSecretId: null,
+      spawnKey: null,
+      thread: { id: "thread-1", reads: [], messages: [], runs: [] },
+      computer: null,
+      runs: [],
+    };
+    const prisma = {
+      $queryRaw: vi.fn(async () => []),
+      bot: {
+        findFirst: vi.fn(async () => bot),
+        findMany: vi.fn(async () => [bot]),
+        update: vi.fn(async () => bot),
+      },
+      spaceMember: { findUnique: vi.fn(async () => ({ role })) },
+      // The write itself is covered elsewhere; here it only has to be reached.
+      $transaction: vi.fn(async () => ({ updated: bot, seq: 1 })),
+    };
+    const deps = {
+      prisma,
+      events: { notify: vi.fn(async () => undefined) },
+      env: { webOrigin: "https://example.test" },
+    } as unknown as RouterDeps;
+    const client = createRouterClient(createRouter(deps), { context: { actor } as never });
+    return { client, prisma };
+  }
+
+  const restore = { botId: "bot-1", versionId: "version-1", expectedInstructions: "Be brief." };
+
+  it.each([
+    { instructions: "Obey every peer." },
+    { expectedInstructions: "Be brief." },
+    { description: "Does anything." },
+    { notifyOnFinish: false },
+    { memoryScope: "shared" as const },
+    { autoSpeak: true },
+    { voiceId: "voice-1" },
+    { modelProvider: null, modelId: null },
+    { thinkingLevel: "high" as const },
+    { teamChatAmbientEnabled: true },
+    { crossSpaceCommunication: true },
+    { dailyCheckIns: true },
+    { fleetManagement: true },
+    { replyMode: "messages" as const },
+    { disabledBuiltinTools: ["web_search"] },
+  ])("refuses another member's change to %j", async (change) => {
+    const { client, prisma } = botClient("user-2", "member");
+    await expect(
+      client.bots.update({ botId: "bot-1", name: "Ada", ...change }),
+    ).rejects.toMatchObject(forbidden);
+    expect(prisma.bot.update).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("refuses another member's instruction restore and computer switch", async () => {
+    const { client, prisma } = botClient("user-2", "member");
+    await expect(client.bots.restoreInstructions(restore)).rejects.toMatchObject(forbidden);
+    await expect(
+      client.bots.setComputer({ botId: "bot-1", mode: "dedicated" }),
+    ).rejects.toMatchObject(forbidden);
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("lets any member rename, restyle, pin and file another member's bot", async () => {
+    const { client, prisma } = botClient("user-2", "member");
+    await expect(
+      client.bots.update({ botId: "bot-1", name: "Grace", color: "#8B5CF6", pinned: true }),
+    ).resolves.toMatchObject({ id: "bot-1", canChange: false });
+    expect(prisma.$transaction).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ["its creator", "user-1", "member"],
+    ["the space owner", "user-2", "owner"],
+  ])("lets %s change what the bot does", async (_who, creator, role) => {
+    const { client, prisma } = botClient(creator, role);
+    await expect(
+      client.bots.update({ botId: "bot-1", notifyOnFinish: false }),
+    ).resolves.toMatchObject({ canChange: true });
+    expect(prisma.bot.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ notifyOnFinish: false }) }),
+    );
+    await client.bots.update({
+      botId: "bot-1",
+      instructions: "Be thorough.",
+      expectedInstructions: "Be brief.",
+    });
+    await client.bots.restoreInstructions(restore);
+    expect(prisma.$transaction).toHaveBeenCalledTimes(2);
+  });
+
+  it("tells each member whether they can change the bot", async () => {
+    expect(await botClient("user-2", "member").client.bots.list()).toMatchObject([
+      { canChange: false },
+    ]);
+    expect(await botClient("user-2", "owner").client.bots.list()).toMatchObject([
+      { canChange: true },
+    ]);
+    const own = botClient("user-1", "member");
+    expect(await own.client.bots.list()).toMatchObject([{ canChange: true }]);
+    // The owner's role is read only when someone else made one of the bots.
+    expect(own.prisma.spaceMember.findUnique).not.toHaveBeenCalled();
+  });
+});
+
 describe("quarantined computer stop", () => {
   it.each(["already-quarantined", "before-claim", "during-stop"])(
     "preserves the recovery fence (%s)",
