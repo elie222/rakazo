@@ -102,7 +102,13 @@ export function accountRoutes(ctx: RouterContext) {
           const record = await firstModelConnectAnalytics(deps, context.actor, "credits");
           record(undefined, { name: "model_connect_started" });
         }
-        return billing.selectFunding(context.actor, input.funding, input.client, input.interval);
+        return billing.selectFunding(
+          context.actor,
+          input.funding,
+          input.client,
+          input.interval,
+          input.tier,
+        );
       }),
       purchaseCredits: authed.billing.purchaseCredits.handler(async ({ context, input }) =>
         requireBilling(deps).purchaseCredits(context.actor, input),

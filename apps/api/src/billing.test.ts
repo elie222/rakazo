@@ -3,7 +3,7 @@ import { BillingPaymentNotCompletedError } from "@rakazo/adapter-kit";
 import type { Actor } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
-import { createBillingService } from "./billing.js";
+import { createBillingService, planLayout } from "./billing.js";
 
 const actor: Actor = {
   userId: "user-1",
@@ -74,6 +74,16 @@ describe("billing status", () => {
       code: "PAYMENT_REQUIRED",
       status: 402,
     });
+  });
+});
+
+describe("plan layout", () => {
+  it("keeps each organization on one layout and splits organizations about evenly", () => {
+    const ids = Array.from({ length: 2000 }, (_, index) => `org-${index}`);
+    expect(ids.map(planLayout)).toEqual(ids.map(planLayout));
+    const tiers = ids.filter((id) => planLayout(id) === "tiers").length;
+    expect(tiers).toBeGreaterThan(900);
+    expect(tiers).toBeLessThan(1100);
   });
 });
 

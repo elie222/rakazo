@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
 import { ORPCError } from "@orpc/server";
 import type {
@@ -15,7 +16,14 @@ import {
   BillingPaymentNotCompletedError,
 } from "@rakazo/adapter-kit";
 import { sandboxAllowance, sandboxHoursLeft } from "@rakazo/adapters";
-import type { Actor, BillingStatus, ByokInterval, ByokTier } from "@rakazo/contracts";
+import type {
+  Actor,
+  AnalyticsEvent,
+  BillingStatus,
+  ByokInterval,
+  ByokTier,
+  PlanLayout,
+} from "@rakazo/contracts";
 import {
   BYOK_TIERS,
   ByokTierSchema,
@@ -85,6 +93,7 @@ export interface BillingService {
     funding: "byok" | "credits",
     client?: BillingClient,
     interval?: ByokInterval,
+    tier?: ByokTier,
   ): Promise<{ ok: true; url?: string }>;
   purchaseCredits(
     actor: Actor,
@@ -125,6 +134,29 @@ function byokTrialAvailable(
   ownerHadOne: boolean,
 ) {
   return !ownerHadOne && !account?.subscribedAt && !credits.byokFreeUntil;
+}
+
+/** Half of organizations see the plan choice as tiers, by a stable hash of their id. */
+export function planLayout(organizationId: string): PlanLayout {
+  return createHash("sha256").update(`plan-layout:${organizationId}`).digest()[0]! % 2
+    ? "tiers"
+    : "cards";
+}
+
+type PlanTerms = Omit<Extract<AnalyticsEvent, { name: "checkout_opened" }>, "name">;
+
+/** The plan a subscription bills, as analytics reports it; monthly credits include own-key. */
+function planTerms(live: BillingSubscriptionSnapshot): PlanTerms | null {
+  if (live.creditAmountCents)
+    return { plan: "credits", interval: "month", amountCents: live.creditAmountCents };
+  if (live.byokPlan && live.byokPriceCents)
+    return {
+      plan: "own_key",
+      tier: live.byokTier ?? "standard",
+      interval: live.byokInterval ?? "month",
+      amountCents: live.byokPriceCents,
+    };
+  return null;
 }
 
 /** A subscriber keeps the own-key price they signed up at until the subscription ends. */
@@ -245,6 +277,7 @@ export function createBillingService(deps: {
     }
     const live = snapshot;
     if (live) await reportCancellation(previous, live);
+    if (live) await reportPlanChange(previous, live);
     if (live && hasBillingAccess(live.status))
       await referrals.settle(previous.organizationId, live.cardFingerprint);
     if (!modelCredits || !live) return;
@@ -284,17 +317,43 @@ export function createBillingService(deps: {
         live.cancellationComment === (previous.cancellationComment ?? undefined))
     )
       return;
-    const owner = await prisma.member.findFirst({
-      where: { organizationId: previous.organizationId, role: { contains: "owner" } },
-      orderBy: { createdAt: "asc" },
-      select: { userId: true },
-    });
+    const owner = await ownerUserId(previous.organizationId);
     if (!owner) return;
-    analytics.capture(owner.userId, {
+    analytics.capture(owner, {
       name: "subscription_cancel_feedback",
       ...(live.cancellationReason ? { reason: live.cancellationReason } : {}),
       commented: Boolean(live.cancellationComment),
     });
+  }
+
+  /** Reports a new subscription, or the end of its trial, once per change a sync records. */
+  async function reportPlanChange(previous: BillingAccount, live: BillingSubscriptionSnapshot) {
+    const { analytics } = deps;
+    const started =
+      live.subscriptionId !== previous.subscriptionId && hasBillingAccess(live.status);
+    const trialEnded =
+      live.subscriptionId === previous.subscriptionId &&
+      previous.status === "trialing" &&
+      live.status !== "trialing";
+    const terms = planTerms(live);
+    if (!analytics || !terms || !(started || trialEnded)) return;
+    const owner = await ownerUserId(previous.organizationId);
+    if (!owner) return;
+    analytics.capture(
+      owner,
+      started
+        ? { name: "subscription_started", ...terms, trial: live.status === "trialing" }
+        : { name: "trial_ended", ...terms, converted: live.status === "active" },
+    );
+  }
+
+  async function ownerUserId(organizationId: string) {
+    const owner = await prisma.member.findFirst({
+      where: { organizationId, role: { contains: "owner" } },
+      orderBy: { createdAt: "asc" },
+      select: { userId: true },
+    });
+    return owner?.userId;
   }
 
   async function cancel(account: BillingAccount) {
@@ -427,7 +486,7 @@ export function createBillingService(deps: {
       organizationOwnerHadTrial(prisma, organizationId, "byok"),
     ]);
     try {
-      return await openCheckout(actor, account, async (customerId, underLease) => {
+      const session = await openCheckout(actor, account, async (customerId, underLease) => {
         // Expire the open sessions first: once none is payable none holds the trial, so a
         // failure after this step gives this attempt's hold back in full. A failure while
         // expiring keeps the earlier hold, since its session may still be payable.
@@ -468,6 +527,14 @@ export function createBillingService(deps: {
         if (hold) await extendByokTrialCheckout(prisma, organizationId, hold);
         return session;
       });
+      deps.analytics?.capture(actor.userId, {
+        name: "checkout_opened",
+        plan: "own_key",
+        tier,
+        interval,
+        amountCents,
+      });
+      return session;
     } catch (error) {
       if (!(error instanceof BillingCheckoutCompletedError)) throw error;
       await sync(account.customerId);
@@ -532,7 +599,7 @@ export function createBillingService(deps: {
   return {
     modelCreditsEnabled: modelCredits,
     referralsEnabled: referrals.enabled,
-    async selectFunding(actor, funding, client, interval) {
+    async selectFunding(actor, funding, client, interval, tier) {
       const { organizationId } = await managedOrganization(actor);
       // Choosing credits must see the balance left after any lapsed monthly credits expire.
       if (funding === "credits") await expireModelCredits(prisma, organizationId);
@@ -552,7 +619,7 @@ export function createBillingService(deps: {
         funding === "byok" &&
         !hasModelAccess({ ...account, mode: "byok" }, subscription?.status ?? null)
       )
-        return { ok: true, ...(await byokCheckout(actor, organizationId, client, interval)) };
+        return { ok: true, ...(await byokCheckout(actor, organizationId, client, interval, tier)) };
       await prisma.modelCreditAccount.update({
         where: { organizationId },
         data: {
@@ -582,6 +649,13 @@ export function createBillingService(deps: {
           where: { organizationId },
           data: { pendingCreditCheckout: true },
         });
+        if (input.monthly)
+          deps.analytics?.capture(actor.userId, {
+            name: "checkout_opened",
+            plan: "credits",
+            interval: "month",
+            amountCents: input.amountCents,
+          });
         return checkout;
       } catch (error) {
         if (error instanceof BillingCheckoutCompletedError)
@@ -652,6 +726,7 @@ export function createBillingService(deps: {
           byokAnnualPriceCents: byokTierPriceCents(tier, "year"),
           byokTier: tier,
           ...(offers.length ? { byokTiers: offers } : {}),
+          ...(offers.length > 1 ? { planLayout: planLayout(organizationId) } : {}),
           byokFreeUntil: freeUntil?.toISOString() ?? null,
           canManage: isOwner,
           trialAvailable:
