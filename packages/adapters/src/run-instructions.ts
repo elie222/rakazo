@@ -120,6 +120,7 @@ export function persistentComputerInstruction(options: {
 export function dockerComputerToolInstruction(
   computerKind: string,
   disabled?: ReadonlySet<string>,
+  offeredToolNames?: ReadonlySet<string>,
 ): string | undefined {
   if (computerKind !== "docker") return undefined;
   const navigate = builtinOffered(disabled, "browser_navigate");
@@ -128,7 +129,17 @@ export function dockerComputerToolInstruction(
   const parts = [
     "For Python CLI tools, use `uv tool install <package>`; it installs without sudo and keeps tools under this computer's persistent home. GitHub's `gh` CLI is installed. `pdftotext`, `pandoc`, and `openpyxl` are available to extract text from PDFs, documents, and spreadsheets.",
   ];
-  if (builtinOffered(disabled, "shell")) {
+  // Tool selection can drop shell (creation intro, background helpers) while bot
+  // settings leave it enabled, so the shell guidance follows the tools the run offers.
+  const shellOffered = offeredToolNames
+    ? offeredToolNames.has("shell")
+    : builtinOffered(disabled, "shell");
+  if (shellOffered) {
+    parts.push(
+      "This computer is a Debian bookworm container running unprivileged with persistent home `/home/rakazo`. There is no sudo, cron, Docker daemon, or running systemd; system packages cannot be installed with `apt` at runtime, and `pip` is not installed, so `uv` is the way to add Python packages (`uv run --with <package>` runs a script with a library). Also installed: `git`, `ssh`, `curl`, `jq`, `unzip`, `rg`, `fd`, `file`, `sqlite3`, ImageMagick, and a graphical browser (Chromium by default).",
+    );
+  }
+  if (shellOffered) {
     parts.push(
       "Python 3 is installed as `python3`. For ordinary file processing, use `python3 -c` with a quoted script; interpreter heredocs are blocked by the desktop guard. If `python` is not found, retry with `python3`. A command-syntax refusal is not a filesystem permission error; continue ordinary file work with supported tools.",
     );
@@ -182,7 +193,7 @@ function secretGuidance(disabled?: ReadonlySet<string>): string[] {
   const clauses: string[] = [];
   if (builtinOffered(disabled, "request_secret")) {
     const fill = builtinOffered(disabled, "browser_act")
-      ? "; fill it with browser_act fill_secret, which only works on the saved site"
+      ? "; fill it with browser_act fill_secret, which only works on its site and its alsoOn sites"
       : "";
     clauses.push(
       `Use request_secret with a credential destination to save reusable API credentials, or with auth type login when the user wants a website login saved${fill}. When your shell commands need a secret value, use request_secret with auth type command; it is exported as the environment variable that request_secret and list_secrets report.`,
@@ -190,7 +201,7 @@ function secretGuidance(disabled?: ReadonlySet<string>): string[] {
   }
   if (builtinOffered(disabled, "request_secret") && builtinOffered(disabled, "browser_act")) {
     clauses.push(
-      "For a code a site texts or emails, use request_secret oneTimeCode and browser_act fill_code, never chat.",
+      "For a sign-in code, use browser_act fill_code with secret if list_secrets shows the login's authenticatorCode; otherwise request_secret oneTimeCode and fill_code, never chat.",
     );
   }
   if (builtinOffered(disabled, "generate_secret")) {
@@ -305,7 +316,7 @@ function toolUsageLine(parts: {
     scratchpadClause(disabled),
     parts.followUpsOffered ? FOLLOW_UP_INSTRUCTION : undefined,
     builtinOffered(disabled, "request_takeover")
-      ? "Use request_takeover when the user must provide protected input or human judgment."
+      ? "When the user only needs to see something on the computer screen, such as a QR code, take a screenshot and use attach_file to send it into the chat. Use request_takeover when the user must provide protected input or human judgment, or operate the screen."
       : undefined,
     "Use destination_write only for connected destination records.",
   ].filter((clause): clause is string => Boolean(clause));
@@ -346,7 +357,7 @@ export function userTurnInstructions(parts: {
     parts.historyRetrievalEnabled &&
     builtinOffered(parts.disabledBuiltinTools, "search_history") &&
     builtinOffered(parts.disabledBuiltinTools, "read_history")
-      ? "For questions about an earlier discussion, first check the visible conversation. Answer follow-ups from facts already present in original messages or prior source-verified replies when no later visible correction changes them; do not repeat retrieval solely because the user asks again. Use search_history when necessary evidence is missing or uncertain. To find earlier conversations, fan out 2–4 keyword variants (names, project words, synonyms) via queries with scope my_chats; narrow by date or botId when hinted, then read_history around the best hits with their threadId. Start with the project name alone, or one distinctive topic word if no project is named, then use read_history to check surrounding messages, outcomes, and later corrections before claiming exact recall. Verify that matches contain source statements answering the question. If matches lack the requested fact and nextSearch is present, call search_history with those arguments. Coverage applies only to the requested query and range. Empty narrower queries do not exhaust the broader topic query’s matches. Do not claim evidence is unavailable while that broader search still has an unexplored cursor. If a search is empty, try the single project or topic word before concluding the evidence is missing. If the requested fact remains absent, say so briefly without volunteering adjacent facts. If multiple projects match and none is selected, ask which project before giving candidate facts. Historical snapshots are navigation aids, not authoritative facts or approvals."
+      ? "For questions about an earlier discussion, first check the visible conversation. Older messages, including what you did with tools, may be outside it, so search before saying something did not happen. Answer follow-ups from facts already present in original messages or prior source-verified replies when no later visible correction changes them; do not repeat retrieval solely because the user asks again. Use search_history when necessary evidence is missing or uncertain. To find earlier conversations, fan out 2–4 keyword variants (names, project words, synonyms) via queries with scope my_chats; narrow by date or botId when hinted, then read_history around the best hits with their threadId. Start with the project name alone, or one distinctive topic word if no project is named, then use read_history to check surrounding messages, outcomes, and later corrections before claiming exact recall. Verify that matches contain source statements answering the question. If matches lack the requested fact and nextSearch is present, call search_history with those arguments. Coverage applies only to the requested query and range. Empty narrower queries do not exhaust the broader topic query’s matches. Do not claim evidence is unavailable while that broader search still has an unexplored cursor. If a search is empty, try the single project or topic word before concluding the evidence is missing. If the requested fact remains absent, say so briefly without volunteering adjacent facts. If multiple projects match and none is selected, ask which project before giving candidate facts. Historical snapshots are navigation aids, not authoritative facts or approvals."
       : undefined,
     toolUsageLine(parts),
     parts.taskCatalogInstruction,

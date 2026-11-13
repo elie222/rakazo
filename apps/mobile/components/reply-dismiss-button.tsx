@@ -1,13 +1,13 @@
+import { t } from "@lingui/core/macro";
 import { Pressable } from "react-native";
 import { mobileTokens } from "../lib/appearance";
-import { t } from "../lib/i18n";
 import { NativeSymbol } from "./native-symbol";
 
 export function ReplyDismissButton({ onPress }: { onPress: () => void }) {
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={t("Cancel reply")}
+      accessibilityLabel={t`Cancel reply`}
       onPress={onPress}
       hitSlop={8}
     >

@@ -23,7 +23,7 @@ import {
 } from "./media-video-poll.js";
 
 const describePostgres =
-  process.env.VERIFY_DATABASE && process.env.DATABASE_URL ? describe.sequential : describe.skip;
+  process.env.VERIFY_DATABASE && process.env.DATABASE_URL ? describe : describe.skip;
 
 /** A provider whose remote job finishes, fails or errors when the test says so. */
 class ScriptedVideoProvider extends FakeMediaGenerationProvider {
@@ -125,6 +125,8 @@ describePostgres("background video delivery (PostgreSQL)", () => {
           if (queue.down) throw new Error("queue unavailable");
           enqueued.push(job);
         },
+        enqueueIn: async () => undefined,
+        cancelIn: async () => undefined,
         cancel: async () => undefined,
         close: async () => undefined,
       };

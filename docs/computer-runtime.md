@@ -60,13 +60,14 @@ The helper drives that Chromium through [agent-browser](https://github.com/verce
 
 Fake computers and explicit `BROWSER_PROVIDER=fake|emulator` use an in-process session for tests. These sessions are not the live logged-in browser. Browser mutations share the existing teaching guard and workspace checkpoint flow. `computer_observe`, batched `computer_act`, `open_path`, `launch_app`, `shell`, and file tools remain available according to the computer and model capabilities. Identical consecutive desktop frames keep their metadata but omit duplicate image bytes from model context. The tool result says the previous screenshot remains valid. After repeated identical visual actions leave the frame unchanged, computer_act refuses another copy of that action and points the agent at page text tools.
 
-Human input and agent input may coexist on distinct Team screens. “Take control” grants the user an exclusive control lease on that bot’s screen so the embedded viewer accepts input. For a Team bot, takeover is refused with HTTP 409 (“Stop the bot first”) while that bot holds a live computer execution lease or an active run, unless the run is `waiting_takeover` (the bot asked for protected input). Stop the bot first, then take control; after release, the agent may continue. `request_takeover` remains available when the model explicitly needs protected input or human judgment. On providers that do not bill while running, a waiting takeover keeps the computer awake for 30 minutes after the request so the login, 2FA, or CAPTCHA page is still open when the user arrives; after that the computer suspends while the run keeps waiting. Billed providers follow the normal idle timer, which the request restarts.
+Human input and agent input may coexist on distinct Team screens. “Take control” grants the user an exclusive control lease on that bot’s screen so the embedded viewer accepts input. For a Team bot, takeover is refused with HTTP 409 (“Stop the bot first”) while that bot holds a live computer execution lease or an active run, unless the run is `waiting_takeover` (the bot asked for protected input). Stop the bot first, then take control; after release, the agent may continue. When the user only needs to see something on the computer screen, such as a QR code, the bot takes a screenshot and uses `attach_file` to send it into the chat. `request_takeover` remains available when the user must provide protected input or human judgment, or operate the screen. On providers that do not bill while running, a waiting takeover keeps the computer awake for 30 minutes after the request so the login, 2FA, or CAPTCHA page is still open when the user arrives; after that the computer suspends while the run keeps waiting. Billed providers follow the normal idle timer, which the request restarts.
 
 ## Terminal and files
 
 The web and desktop computer view opens a terminal and a file browser from a dock over the screen. The dock's browser button hides those windows, keeping their sessions, so the whole screen is visible again.
 
 **Terminal**
+
 - The Activity view always shows what the bot did on its computer, live and from history. Each action is recorded as a `computer.command` event:
   - `shell` commands, with the redacted command and the tail of their output;
   - `write_file`, `attach_file`, `open_path`, and `launch_app`, as one line each, with the size for writes and the error if they failed.
@@ -81,6 +82,7 @@ The web and desktop computer view opens a terminal and a file browser from a doc
 - The fake provider serves an emulated shell from a loopback websocket gateway that speaks the same frame protocol. Tests can then drive the browser terminal through the sealed capability and web proxy without exposing a host shell.
 
 **Files**
+
 - Browsing and text preview work on stopped computers through the stored workspace.
 - While the Files window is visible, the open folder refreshes every few seconds and after each bot command, so changes from a shell or the bot appear without reopening.
 - Download needs a running computer.

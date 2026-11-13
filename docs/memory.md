@@ -36,6 +36,31 @@ their notes. In **Settings → Memory**, choose **Connect memory provider**:
 - **Honcho**: saves and recalls facts using Rakazo’s own peers. Optionally, enter a workspace
   and **User peer** to also recall what Honcho already knows about you. That existing peer stays
   read-only; Rakazo writes new facts to its own peers in the same workspace.
+- **Hindsight**: its cloud service, or your own server. Each bot keeps its own memory; with the
+  Shared scope, bots also share one memory for the Space, including learned direct-chat turns.
+  Bots learn from their conversations (their
+  own chats, group chats, and messages between bots) unless you turn off **Learn from
+  conversations**. Learning uses bounded excerpts from recent human messages and replies,
+  for both direct and group chats. Saves and conversation submissions share a thirty-second budget
+  across DNS and both banks. Failed submissions retry with stable operation IDs, while cleanup
+  remains active for partially accepted writes. Each cleanup attempt has a ten-second deadline and deletes per-turn documents
+  in bounded parallel batches. Failed cleanup is retried up to twelve times through the existing
+  queue, using the captured connection identity. Cleanup remains best effort if publication fails
+  or the process stops before the retry is queued. If the configured connection cannot be loaded,
+  cleanup cannot capture a safe retry identity either. Outages or writes pending beyond the polling
+  window can leave gaps or stale memories. If a submission response is uncertain, cleanup checks
+  continue through the bounded window. Unchanged conversations require only a local generation
+  check without resolving credentials; a later refusal cannot prove an earlier attempt stored
+  nothing. Disconnecting or changing
+  the connection stops cleanup on the old service; it does not delete data there. Bots can't forget a
+  single memory here. Deleting a bot with its memories removes that bot's retained conversation
+  sessions, including groups it left. Other bots' independently learned copies remain.
+  To let bots read memories another app keeps in the same Hindsight, list its banks
+  under **Recall from banks**; bots read those banks only through explicit recall, never automatic context, and never write to them. Names beginning with
+  `rakazo-` are reserved for Space isolation and cannot be imported. Bots can also ask
+  their own bot memory to answer a question by combining what it knows; reflection does not query
+  the Space's shared bank. Shared facts remain available through recall. Summaries of long chats stay in
+  Rakazo: Hindsight learns from the conversation itself, not from summaries of it.
 
 Once connected, **Default scope** decides what bots share in the provider:
 
@@ -44,6 +69,28 @@ Once connected, **Default scope** decides what bots share in the provider:
 
 Each bot's settings also gain a **Memory scope** under **Advanced**, so one bot can differ from the
 default.
+
+### Knowledge provenance (version 1)
+
+Learning and instruction authority are separate. A bot may learn from people, other bots and
+outside-derived replies in a conversation it can access. That knowledge stays in the receiving
+Space's private or deliberately shared memory. Learning does not grant access to another Space.
+
+The source policy is deliberately conservative:
+
+- Every bot message, old reply, summary and recalled memory is derived data. Reusing it never
+  certifies that its source was clean or makes it an owner instruction.
+- Conversation learning preserves speakers' names, and recall keeps provider attribution when
+  available. These identify sources; they do not grant authority or certify factual correctness.
+- Semantic recall and reflection remain derived even when the bank belongs to the same bot or
+  the provider omits its optional outside-bank attribution.
+- Automatic recall includes only bot-owned and deliberately shared Space banks. Imported banks require explicit recall and its fresh-input action protections.
+- Stored history and automatic recall do not change current owner permissions. Fresh outside
+  input, including explicit semantic recall and reflection, keeps existing action protections.
+
+There is no per-run clean flag or ancestry graph. This avoids both claiming that old replies can
+attest a clean source and making ordinary work wait on provenance bookkeeping. Cross-bot learning
+remains enabled, and sharing knowledge never bypasses the receiving Space's access checks.
 
 ## Open work
 

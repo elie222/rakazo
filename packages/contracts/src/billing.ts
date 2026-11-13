@@ -2,7 +2,9 @@ import * as z from "zod";
 import type { ComputerSize } from "./computer.js";
 import { ComputerSizeSchema } from "./computer.js";
 
-export const MODEL_CREDIT_AMOUNTS = [1000, 2000, 3000, 5000, 10000, 20000, 50000] as const;
+export const MODEL_CREDIT_AMOUNTS = [1000, 2000, 3000, 5000, 10000, 20000] as const;
+/** Amounts no longer offered that existing purchases and subscriptions may still carry. */
+export const RETIRED_MODEL_CREDIT_AMOUNTS = [50000] as const;
 
 /**
  * What an hour of a billed computer counts against the allowance, $0.20, whatever its size: above
@@ -81,6 +83,17 @@ export const DEFAULT_MONTHLY_CREDIT_AMOUNT = 3000;
 export const ModelCreditAmountSchema = z.union(
   MODEL_CREDIT_AMOUNTS.map((amount) => z.literal(amount)),
 );
+/** An amount a purchase or monthly plan may already carry, retired ones included. */
+export const HeldCreditAmountSchema = z.union(
+  [...MODEL_CREDIT_AMOUNTS, ...RETIRED_MODEL_CREDIT_AMOUNTS].map((amount) => z.literal(amount)),
+);
+export type HeldCreditAmount = z.infer<typeof HeldCreditAmountSchema>;
+
+/** The amounts to pick from, keeping a plan's retired amount so it still shows as chosen. */
+export function creditAmountChoices(current: HeldCreditAmount): HeldCreditAmount[] {
+  const offered: HeldCreditAmount[] = [...MODEL_CREDIT_AMOUNTS];
+  return offered.includes(current) ? offered : [...offered, current];
+}
 
 /** Where checkout returns: the mobile app's in-app browser instead of the web app. */
 export const BillingClientSchema = z.literal("mobile").optional();
@@ -155,8 +168,10 @@ export const BillingStatusSchema = z.object({
   currentPeriodEndsAt: z.string().nullable(),
   cancelAtPeriodEnd: z.boolean(),
   hasCustomer: z.boolean(),
-  /** Computer hours left this calendar month; absent when computers have no limit. */
+  /** Computer hours left in the current allowance period; absent when computers have no limit. */
   computerHoursLeft: z.number().nonnegative().nullable().optional(),
+  /** Next allowance renewal, distinct from a yearly subscription payment. */
+  computerHoursResetAt: z.string().nullable().optional(),
   /** Present once the organization has subscribed: its invite link and free months earned. */
   referral: z
     .object({ url: z.string().url(), rewards: z.number().int().nonnegative() })
@@ -164,6 +179,16 @@ export const BillingStatusSchema = z.object({
     .optional(),
 });
 export type BillingStatus = z.infer<typeof BillingStatusSchema>;
+
+/**
+ * The hosted-model credit balance, or null for a member who only runs on their own keys and
+ * subscriptions. A balance left after switching to an own key still pays, so it still counts.
+ */
+export function modelCreditsUsd(status: BillingStatus | null | undefined): number | null {
+  if (!status) return null;
+  const balance = status.balanceUsd ?? 0;
+  return status.funding === "credits" || balance > 0 ? balance : null;
+}
 
 /** A trial set to cancel, which gets no computer hours until it is renewed. */
 export function isCancelledTrial(status: BillingStatus): boolean {

@@ -1,11 +1,16 @@
 import { Trans } from "@lingui/react/macro";
 import { Button, Field, FieldError, FieldLabel, Input, Toggle } from "@rakazo/ui-web";
 import { useId, useState } from "react";
+import { MemoryProviderAdvanced } from "./MemoryProviderAdvanced";
 import type { MemoryProviderSettingsFormProps } from "./registry";
 import type { SerenityEndpointFieldError } from "./serenity-settings";
 import { SERENITY_ENDPOINT_PLACEHOLDER, serenityConnectionDraft } from "./serenity-settings";
 
-export function SerenitySettingsForm({ busy, onConnect }: MemoryProviderSettingsFormProps) {
+export function SerenitySettingsForm({
+  busy,
+  onConnect,
+  advancedSettings,
+}: MemoryProviderSettingsFormProps) {
   const endpointId = useId();
   const endpointErrorId = useId();
   const tokenId = useId();
@@ -70,43 +75,46 @@ export function SerenitySettingsForm({ busy, onConnect }: MemoryProviderSettings
         />
       </Field>
 
-      <Field className="mt-4">
-        <FieldLabel htmlFor={brainLabelId}>
-          <Trans>Brain label</Trans>
-        </FieldLabel>
-        <Input
-          id={brainLabelId}
-          value={brainLabel}
-          disabled={busy}
-          onChange={(event) => setBrainLabel(event.target.value)}
-          placeholder="personal"
-          autoComplete="off"
-        />
-      </Field>
+      <MemoryProviderAdvanced>
+        {advancedSettings}
+        <Field className="mt-4">
+          <FieldLabel htmlFor={brainLabelId}>
+            <Trans>Brain label</Trans>
+          </FieldLabel>
+          <Input
+            id={brainLabelId}
+            value={brainLabel}
+            disabled={busy}
+            onChange={(event) => setBrainLabel(event.target.value)}
+            placeholder="personal"
+            autoComplete="off"
+          />
+        </Field>
 
-      <Field className="mt-4" aria-labelledby={writesLabelId}>
-        <FieldLabel id={writesLabelId}>
-          <Trans>Allow writing</Trans>
-        </FieldLabel>
-        <div className="grid grid-cols-2 gap-1 rounded-lg bg-muted p-1">
-          <Toggle
-            pressed={!allowWrites}
-            disabled={busy}
-            onPressedChange={() => setAllowWrites(false)}
-            className="text-body-sm aria-pressed:bg-background aria-pressed:shadow-sm"
-          >
-            <Trans>Recall only</Trans>
-          </Toggle>
-          <Toggle
-            pressed={allowWrites}
-            disabled={busy}
-            onPressedChange={() => setAllowWrites(true)}
-            className="text-body-sm aria-pressed:bg-background aria-pressed:shadow-sm"
-          >
-            <Trans>Recall and write</Trans>
-          </Toggle>
-        </div>
-      </Field>
+        <Field className="mt-4" aria-labelledby={writesLabelId}>
+          <FieldLabel id={writesLabelId}>
+            <Trans>Allow writing</Trans>
+          </FieldLabel>
+          <div className="grid grid-cols-2 gap-1 rounded-lg bg-muted p-1">
+            <Toggle
+              pressed={!allowWrites}
+              disabled={busy}
+              onPressedChange={() => setAllowWrites(false)}
+              className="text-body-sm aria-pressed:bg-background aria-pressed:shadow-sm"
+            >
+              <Trans>Recall only</Trans>
+            </Toggle>
+            <Toggle
+              pressed={allowWrites}
+              disabled={busy}
+              onPressedChange={() => setAllowWrites(true)}
+              className="text-body-sm aria-pressed:bg-background aria-pressed:shadow-sm"
+            >
+              <Trans>Recall and write</Trans>
+            </Toggle>
+          </div>
+        </Field>
+      </MemoryProviderAdvanced>
 
       <Button
         type="button"

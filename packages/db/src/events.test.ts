@@ -2387,10 +2387,10 @@ describe("answerRunInput", () => {
 });
 
 describe("answerWaitingRunWithTextInTransaction", () => {
-  it.each(["latest", "older", "reaction"])(
-    "composer answers only the latest question; older cards still resume (case=%s)",
+  it.each(["latest", "older", "reaction", "reply", "unrelated-reply"])(
+    "composer answers only the latest question unless an older question is explicitly targeted (case=%s)",
     async (scenario) => {
-      const latest = scenario !== "older";
+      const latest = scenario !== "older" && scenario !== "reply";
       const tx = {
         $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
         message: {
@@ -2438,8 +2438,15 @@ describe("answerWaitingRunWithTextInTransaction", () => {
         answeredByUserId: "user-1",
         answer: "Paris",
       };
-      const result = await answerWaitingRunWithTextInTransaction(tx as never, answerInput);
-      if (latest) {
+      const result = await answerWaitingRunWithTextInTransaction(tx as never, {
+        ...answerInput,
+        ...(scenario === "reply"
+          ? { replyToMessageId: "message-1" }
+          : scenario === "unrelated-reply"
+            ? { replyToMessageId: "unrelated-message" }
+            : {}),
+      });
+      if (latest || scenario === "reply") {
         expect(result).toMatchObject({ threadId: "thread-1" });
       } else {
         expect(result).toBeNull();
@@ -2504,7 +2511,7 @@ describe("answerWaitingRunWithTextInTransaction", () => {
   });
 });
 
-describe("answerRunInput", () => {
+describe("answerRunInput approvals", () => {
   it("approves consequential actions without overwriting the task prompt", async () => {
     const fanout = new TestFanout();
     const tx = {
@@ -2639,6 +2646,76 @@ describe("answerRunInput", () => {
       ),
     ).resolves.toBe(false);
     expect(tx.externalEffect.update).not.toHaveBeenCalled();
+    expect(tx.run.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("leaves an Ask first sign-in to the run's own user in a group thread", async () => {
+    const effect = {
+      id: "effect-1",
+      kind: "browser_act",
+      status: "intended",
+      request: {
+        actions: [{ kind: "fill_secret", ref: "e1", secret: "work", field: "Password" }],
+        loginApproval: {
+          kind: "login",
+          login: "work",
+          site: "https://example.test",
+          title: "Work login",
+          fields: ["Password"],
+          savedAt: "2026-11-01T00:00:00.000Z",
+        },
+      },
+    };
+    const tx = {
+      $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
+      message: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "message-1",
+          blocks: [
+            {
+              kind: "ask",
+              approvalEffectId: "effect-1",
+              text: "Sign in to example.test with Work login?",
+              status: "pending",
+              actions: [
+                { id: "allow", label: "Allow once" },
+                { id: "deny", label: "Deny" },
+              ],
+            },
+          ],
+        }),
+        update: vi.fn(),
+      },
+      run: {
+        findFirst: vi.fn().mockResolvedValue({ botId: "bot-1", userId: "run-owner" }),
+        updateMany: vi.fn(),
+      },
+      task: { updateMany: vi.fn() },
+      externalEffect: { findFirst: vi.fn().mockResolvedValue(effect), update: vi.fn() },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+    } as unknown as PrismaClient;
+
+    // Another member of the group, for either answer: only the owner's runs use their vault.
+    for (const answer of ["allow", "deny"]) {
+      await expect(
+        answerRunInput(
+          prisma,
+          {
+            spaceId: "workspace-1",
+            threadId: "thread-1",
+            runId: "run-1",
+            messageId: "message-1",
+            answeredByUserId: "group-member",
+            answer,
+          },
+          new TestFanout(),
+        ),
+      ).resolves.toBe(false);
+    }
+    expect(tx.externalEffect.update).not.toHaveBeenCalled();
+    expect(tx.message.update).not.toHaveBeenCalled();
     expect(tx.run.updateMany).not.toHaveBeenCalled();
   });
 

@@ -182,6 +182,10 @@ function fixture(runId = "run-1") {
       create: vi.fn(async () => ({ id: "attempt-1" })),
       update: vi.fn(),
       updateMany: vi.fn(async () => ({ count: 1 })),
+      count: vi.fn(async () => 1),
+    },
+    steeringMessage: {
+      findFirst: vi.fn(async () => null),
     },
     thread: {
       findUniqueOrThrow: vi.fn(async () => ({ id: run.threadId, groupId: null })),

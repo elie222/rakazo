@@ -58,7 +58,7 @@ const lookup = (lookupUsage: ModelUsageLookup["lookupUsage"]): ModelUsageLookup 
 const reconcile = (
   call: Record<string, unknown>,
   usageLookup?: ModelUsageLookup,
-  run?: Record<string, unknown>,
+  run?: Record<string, unknown> | null,
 ) => {
   const { prisma, updateMany } = harness({ ...baseCall, ...call }, run);
   return createModelCreditReconciler({
@@ -173,13 +173,14 @@ describe("model credit reconciler", () => {
 
   it.each([
     ["the user stopped its run", { status: "cancelled", error: null }, 0.22],
+    ["the run was deleted", null, 0.22],
     ["a deploy or stalled stream aborted it", { status: "queued", error: null }, 0.04],
     [
       "the system cancelled a stuck run",
       { status: "cancelled", error: "Run stopped responding" },
       0.04,
     ],
-  ])("prices an aborted call at full rates only when %s", async (_case, run, costUsd) => {
+  ])("prices an aborted call safely when %s", async (_case, run, costUsd) => {
     await reconcile(
       {
         usage: {
@@ -251,6 +252,15 @@ describe("model credit reconciler", () => {
     expect(recordUsage).not.toHaveBeenCalled();
     await reconcile({ reconciliationAttempts: 5 });
     expect(charged()).toMatchObject({ costUsd: 0, inputTokens: null, outputTokens: null });
+  });
+
+  it("flags an unfinished paid service call for review instead of releasing its hold", async () => {
+    const updateMany = await reconcile({ provider: "services", reconciliationAttempts: 5 });
+    expect(recordUsage).not.toHaveBeenCalled();
+    expect(updateMany).toHaveBeenLastCalledWith({
+      where: { id: "entry-1", reconciliationState: "pending" },
+      data: { reconciliationState: "needs_review", nextReconcileAt: null },
+    });
   });
 
   it("keeps holding a call without a receipt while its run is still live", async () => {

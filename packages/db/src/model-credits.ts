@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
 import type { AgentUsage, BillingCreditPurchase } from "@rakazo/adapter-kit";
-import { MODEL_CREDITS_EXHAUSTED_ERROR } from "@rakazo/core";
+import { MODEL_CREDITS_EXHAUSTED_ERROR, MODEL_UNPRICED_FOR_CREDITS_ERROR } from "@rakazo/core";
 import type { PrismaClient } from "./client.js";
 import type { Prisma } from "./generated/prisma/client.js";
+import { enforceModelCreditCap } from "./model-credit-cap.js";
 import type { CreditAllocation } from "./model-credit-lots.js";
 import {
   allocateCreditLots,
@@ -31,6 +32,36 @@ export async function creditAccount(prisma: PrismaClient, organizationId: string
     // Empty-update upserts can race; the organization primary key is the only unique constraint.
     return prisma.modelCreditAccount.findUniqueOrThrow({ where: { organizationId } });
   }
+}
+
+/**
+ * Reads never lock the wallet. Lapsed credits the reconciler has not expired yet are left out,
+ * after the lot sync that expiry runs first, which spends the soonest-expiring lots.
+ */
+export async function unexpiredCreditAccount(
+  prisma: PrismaClient,
+  organizationId: string,
+  now = new Date(),
+) {
+  await creditAccount(prisma, organizationId);
+  const live = { organizationId, availableMicros: { gt: 0n } };
+  // One snapshot, so an expiry committing between the reads cannot be counted twice or missed.
+  const [account, lots, lapsed] = await prisma.$transaction(
+    (tx) =>
+      Promise.all([
+        tx.modelCreditAccount.findUniqueOrThrow({ where: { organizationId } }),
+        tx.modelCreditLot.aggregate({ where: live, _sum: { availableMicros: true } }),
+        tx.modelCreditLot.aggregate({
+          where: { ...live, expiresAt: { lte: now } },
+          _sum: { availableMicros: true },
+        }),
+      ]),
+    { isolationLevel: "RepeatableRead" },
+  );
+  const funded = account.balanceMicros > 0n ? account.balanceMicros : 0n;
+  const unsynced = (lots._sum.availableMicros ?? 0n) - funded;
+  const expiring = (lapsed._sum.availableMicros ?? 0n) - (unsynced > 0n ? unsynced : 0n);
+  return { ...account, balanceMicros: account.balanceMicros - (expiring > 0n ? expiring : 0n) };
 }
 
 /** Payment replay and refunds reconcile one durable grant; refunds can never be re-credited. */
@@ -112,18 +143,24 @@ export async function reserveModelCredits(
   now = new Date(),
 ) {
   if (!Number.isFinite(maxCostUsd) || maxCostUsd <= 0 || maxCostUsd > 10_000)
-    throw new Error("This model has no reliable price. Connect your own API key to use it.");
+    throw new Error(MODEL_UNPRICED_FOR_CREDITS_ERROR);
   const amountMicros = BigInt(Math.ceil(maxCostUsd * MICROS_PER_DOLLAR));
   const callId = attribution?.callId ?? randomUUID();
   const source = `call:${callId}`;
   return prisma.$transaction(async (tx) => {
-    await tx.$queryRaw`SELECT "organizationId" FROM model_credit_accounts WHERE "organizationId"=${organizationId} FOR UPDATE`;
+    // Piggyback the nullable cap lookup on the account lock we already take. No extra
+    // round trip, journal scan, or user lock for the normal uncapped path.
+    const [account] = await tx.$queryRaw<{ modelCreditCapMicros: bigint | null }[]>`
+      SELECT (SELECT "modelCreditCapMicros" FROM "user" WHERE id=${attribution?.userId ?? null}) AS "modelCreditCapMicros"
+      FROM model_credit_accounts WHERE "organizationId"=${organizationId} FOR UPDATE`;
     const existing = await tx.modelCreditEntry.findUnique({ where: { callId } });
     if (existing) {
       if (existing.organizationId !== organizationId)
         throw new Error("Model call belongs to another account");
       return existing.id;
     }
+    if (attribution?.userId && account?.modelCreditCapMicros != null)
+      await enforceModelCreditCap(tx, attribution.userId, amountMicros);
     await prepareCreditLots(tx, organizationId, now);
     await expireCreditLots(tx, organizationId, now);
     const reserved = await tx.modelCreditAccount.updateMany({
@@ -245,7 +282,7 @@ export async function recordModelCreditReceipt(
     });
 }
 
-/** Also called by billing reads and the background reconciler when no new invoice arrives. */
+/** The background reconciler calls this when no new invoice arrives. */
 export async function expireModelCredits(
   prisma: PrismaClient,
   organizationId: string,

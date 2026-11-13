@@ -20,7 +20,7 @@ const runtimeUrl = process.env.DATABASE_URL;
 const migrationUrl = process.env.DATABASE_MIGRATION_URL;
 const describePostgres =
   process.env.VERIFY_DATABASE && runtimeUrl && migrationUrl && runtimeUrl !== migrationUrl
-    ? describe.sequential
+    ? describe
     : describe.skip;
 
 describePostgres("tenant-scoped background jobs (PostgreSQL)", () => {
@@ -172,7 +172,13 @@ describePostgres("tenant-scoped background jobs (PostgreSQL)", () => {
     });
     const { handlers, seen, continueRun } = careless(app.prisma, pending, true);
     const realtime = new InMemoryRealtimeFanout();
-    const background = { enqueue: vi.fn(), cancel: vi.fn(), close: vi.fn() };
+    const background = {
+      enqueue: vi.fn(),
+      enqueueIn: vi.fn(),
+      cancelIn: vi.fn(),
+      cancel: vi.fn(),
+      close: vi.fn(),
+    };
     const starter = new RunStarter(realtime);
     const publisher = new RunJobPublisher(app.prisma, background, starter);
     const host = new RunWorkerHost(app.prisma, realtime, starter, { intervalMs: 25 });

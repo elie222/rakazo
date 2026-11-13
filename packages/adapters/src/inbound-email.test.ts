@@ -1,5 +1,5 @@
 import { generateKeyPairSync } from "node:crypto";
-import { dkimSign } from "mailauth";
+import { dkimSign, sealMessage } from "mailauth";
 import { describe, expect, it } from "vitest";
 import type { InboundEmailResolver } from "./inbound-email.js";
 import {
@@ -12,12 +12,10 @@ const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 20
 const privatePem = privateKey.export({ type: "pkcs8", format: "pem" }).toString();
 const publicDer = publicKey.export({ type: "spki", format: "der" }).toString("base64");
 
-/** DNS with one DKIM key, published for example.test and news.example.test as selector "s1". */
+/** DNS with one DKIM key, published as selector "s1" for each of these domains. */
+const KEYED_DOMAINS = ["example.test", "news.example.test", "relay.test", "other-relay.test"];
 const resolver: InboundEmailResolver = async (domain, rrtype) => {
-  if (
-    rrtype === "TXT" &&
-    (domain === "s1._domainkey.example.test" || domain === "s1._domainkey.news.example.test")
-  ) {
+  if (rrtype === "TXT" && KEYED_DOMAINS.some((keyed) => domain === `s1._domainkey.${keyed}`)) {
     return [[`v=DKIM1; k=rsa; p=${publicDer}`]];
   }
   throw Object.assign(new Error(`no ${rrtype} for ${domain}`), { code: "ENOTFOUND" });
@@ -48,6 +46,21 @@ async function signed(raw: string, signingDomain = "example.test", headerList?: 
 }
 
 const bytes = (raw: string) => new TextEncoder().encode(raw);
+
+/** The relay's ARC set, recording which server it saw deliver the message. */
+async function sealed(raw: string, spf: string, relay = "relay.test") {
+  const seal = await sealMessage(Buffer.from(raw), {
+    signingDomain: relay,
+    selector: "s1",
+    privateKey: privatePem,
+    authResults: `mx.${relay}; dkim=pass header.d=example.test; spf=none smtp.helo=mail.test; ${spf}`,
+    cv: "none",
+  });
+  return seal.toString() + raw;
+}
+
+/** How Microsoft 365 signs: no To or Cc. */
+const RECIPIENTS_UNSIGNED = "From:Date:Subject:Message-ID:MIME-Version";
 
 describe("readInboundEmail", () => {
   it("authenticates a message signed by its From domain", async () => {
@@ -216,8 +229,68 @@ describe("readInboundEmail", () => {
       { resolver },
     );
 
-    expect(toUnsigned.authenticated).toBe(false);
+    expect(toUnsigned).toMatchObject({
+      authenticated: false,
+      unauthenticatedReason: "signature leaves out required headers",
+    });
     expect(injected.authenticated).toBe(false);
+  });
+
+  it("rejects recipient-unsigned mail even with relay-sealed aligned SPF", async () => {
+    const original = await signed(message(plain), "example.test", RECIPIENTS_UNSIGNED);
+    for (const raw of [
+      original,
+      original.replace("To: Bot <helper@bots.test>", "To: Other <other@example.test>"),
+    ]) {
+      const email = await readInboundEmail(
+        bytes(await sealed(raw, "spf=pass smtp.mailfrom=ada@example.test")),
+        { resolver },
+      );
+      expect(email).toMatchObject({
+        authenticated: false,
+        unauthenticatedReason: "signature leaves out required headers",
+      });
+    }
+  });
+
+  it("does not authenticate recipient-unsigned mail resent from another server", async () => {
+    const recipientsUnsigned = await signed(message(plain), "example.test", RECIPIENTS_UNSIGNED);
+    const read = async (raw: string) =>
+      (
+        await readInboundEmail(bytes(raw), {
+          resolver,
+        })
+      ).authenticated;
+
+    // Replayed from someone else's server, sealed by another relay, or with a tampered seal.
+    expect(
+      await read(await sealed(recipientsUnsigned, "spf=pass smtp.mailfrom=eve@evil.test")),
+    ).toBe(false);
+    expect(
+      await read(await sealed(recipientsUnsigned, "spf=fail smtp.mailfrom=ada@example.test")),
+    ).toBe(false);
+    expect(
+      await read(
+        await sealed(
+          recipientsUnsigned,
+          "spf=pass smtp.mailfrom=ada@example.test",
+          "other-relay.test",
+        ),
+      ),
+    ).toBe(false);
+    const genuine = await sealed(recipientsUnsigned, "spf=pass smtp.mailfrom=ada@example.test");
+    expect(
+      await read(genuine.replace("spf=pass smtp.mailfrom=ada", "spf=pass smtp.mailfrom=eve")),
+    ).toBe(false);
+    // Without a signed Date, the age of the mail is unknown.
+    expect(
+      await read(
+        await sealed(
+          await signed(message(plain), "example.test", "From:Subject:Message-ID"),
+          "spf=pass smtp.mailfrom=ada@example.test",
+        ),
+      ),
+    ).toBe(false);
   });
 
   it("does not authenticate a subject the signature leaves out or one added on top", async () => {

@@ -1,11 +1,10 @@
-import type { BotAvatarSet } from "@rakazo/contracts";
-import type { AvatarEyes, BotColorDef, LogoAvatarActivity } from "@rakazo/core";
+import type { BotAvatarSet, BotColorDef } from "@rakazo/contracts";
+import { BOT_COLOR_LIST, BOT_COLORS } from "@rakazo/contracts";
+import type { AvatarEyes, LogoAvatarActivity } from "@rakazo/core";
 import {
   ACTIVE_RUN_STATUSES,
   avatarEyeRects,
   avatarIdentitySeed,
-  BOT_AVATAR_COLORS,
-  BOT_COLOR_LIST,
   botEyeTone,
   DEFAULT_BOT_AVATAR_COLOR,
   ORGANIC_AVATAR_EYES,
@@ -28,7 +27,7 @@ import { LogoAvatar } from "./logo-avatar.js";
 import "./styles.css";
 
 export type { BotColorDef };
-export { BOT_AVATAR_COLORS, BOT_COLOR_LIST, DEFAULT_BOT_AVATAR_COLOR, resolvePersonaColorDef };
+export { BOT_COLOR_LIST, BOT_COLORS, DEFAULT_BOT_AVATAR_COLOR, resolvePersonaColorDef };
 
 export const BOT_SHAPES = SHIPPED_BOT_AVATAR_SHAPES;
 export const SHIPPED_SHAPE_KEYS = SHIPPED_BOT_AVATAR_SHAPE_KEYS;

@@ -121,6 +121,7 @@ function baseProps(messages: readonly ThreadMessage[]): ComponentProps<typeof Tr
     speakingMessageId: null,
     onSpeak: vi.fn(),
     onOpenComputer: vi.fn(),
+    onReleaseComputer: vi.fn(),
     rpc,
   };
 }

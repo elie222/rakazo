@@ -2,7 +2,7 @@ import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { captureScreenshot, completeOnboarding, createNamedBot, rpc, signup } from "./helpers";
 
-/** Activity rows sit above `[data-sidebar-group]` bots; match their aria-label. */
+/** Match activity rows by their aria-label. */
 function activityRow(page: Page, botName: string) {
   return page.locator("aside").getByRole("button", {
     name: new RegExp(`^${botName}, `),
@@ -63,6 +63,8 @@ test("sidebar Working and Recent surface active and terminal runs", async ({ pag
   await activityToggle.click();
   await expect(activityToggle).toHaveAttribute("aria-pressed", "true");
   await expect(activityToggle).toHaveAttribute("data-activity-mode", "on");
+  // Activity replaces the bot list instead of repeating it below.
+  await expect(aside.locator("[data-sidebar-group]")).toHaveCount(0);
 
   // Remount ActivityList so the first poll sees the in-flight run (15s interval otherwise).
   await page.reload();
@@ -314,7 +316,10 @@ test("activity groups what needs you, what is working, and unread chats", async 
   await rpc(page, "threads/markUnread", { botId: writer });
   await page.getByPlaceholder("Message Head of Marketing").fill("ask me which city to use");
   await page.keyboard.press("Enter");
-  await expect(page.getByText("Which city should I use?", { exact: true })).toBeVisible();
+  // The sidebar row shows the same text as its preview once the run ends, so read the transcript.
+  await expect(
+    page.getByTestId("transcript").getByText("Which city should I use?", { exact: true }),
+  ).toBeVisible();
   const researcher = await createNamedBot(page, "Researcher");
   await page.getByPlaceholder("Message Researcher").fill("keep working until I stop you");
   await page.keyboard.press("Enter");

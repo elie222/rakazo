@@ -7,6 +7,7 @@ import {
   SandboxUnresponsiveError,
   VoiceAccountError,
 } from "@rakazo/adapter-kit";
+import { ComputerRecoveryRequiredError } from "@rakazo/adapters";
 import {
   IsolationError,
   ProviderTransactionBusyError,
@@ -80,6 +81,11 @@ export function handleRpcError(
   if (error instanceof SandboxAllowanceUsedError) {
     getLogger().warn(`rpc ${path.join("/")} computer allowance used up`);
     throw new ORPCError("FORBIDDEN", { message: error.message, cause: error });
+  }
+  // An unconfirmed stop leaves the computer isolated until the owner recovers it.
+  if (error instanceof ComputerRecoveryRequiredError) {
+    getLogger().warn(`rpc ${path.join("/")} computer requires recovery`);
+    throw new ORPCError("CONFLICT", { message: error.message, cause: error });
   }
   // A retry cannot fix a damaged computer; its message tells the user to Recover it.
   if (error instanceof SandboxDamagedError) {

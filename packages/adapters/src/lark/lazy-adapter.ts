@@ -73,8 +73,8 @@ export class LazyLarkAdapter extends LarkAdapterBase implements Adapter {
   async handleWebhook(request: Request, options?: WebhookOptions) {
     return (await this.load()).handleWebhook(request, options);
   }
-  async postMessage(threadId: string, message: AdapterPostableMessage) {
-    return (await this.load()).postMessage(threadId, message);
+  async postMessage(threadId: string, message: AdapterPostableMessage, idempotencyKey?: string) {
+    return (await this.load()).postMessage(threadId, message, idempotencyKey);
   }
   async editMessage(threadId: string, messageId: string, message: AdapterPostableMessage) {
     return (await this.load()).editMessage(threadId, messageId, message);

@@ -166,3 +166,24 @@ it("groups attention, work and unread chats under folding headers", async () => 
     vi.unstubAllGlobals();
   }
 });
+
+it("says there are no runs yet when nothing has happened", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  runs.list.mockImplementation(async () => ({ runs: [] }));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  try {
+    await act(async () =>
+      root.render(
+        <QueryClientProvider client={client}>
+          <ActivityList {...listProps} />
+        </QueryClientProvider>,
+      ),
+    );
+    await vi.waitFor(() => expect(container.textContent).toContain("No runs yet"));
+    await act(async () => root.unmount());
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});

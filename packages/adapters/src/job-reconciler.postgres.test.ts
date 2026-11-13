@@ -6,8 +6,7 @@ import { describe, expect, it } from "vitest";
 import { createJobReconciler, createPostgresReconciliationLeadership } from "./job-reconciler.js";
 
 const databaseUrl = process.env.DATABASE_URL;
-const describePostgres =
-  process.env.VERIFY_DATABASE && databaseUrl ? describe.sequential : describe.skip;
+const describePostgres = process.env.VERIFY_DATABASE && databaseUrl ? describe : describe.skip;
 
 describePostgres("job reconciliation leadership (PostgreSQL contract)", () => {
   it("elects one session and hands leadership to a follower after release", async () => {
@@ -68,6 +67,8 @@ describePostgres("bounded routine reconciliation (PostgreSQL contract)", () => {
         enqueue: async (job) => {
           published.push(job);
         },
+        enqueueIn: async () => undefined,
+        cancelIn: async () => undefined,
         cancel: async () => undefined,
         close: async () => undefined,
       };

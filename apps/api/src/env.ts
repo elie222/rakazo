@@ -17,7 +17,7 @@ import {
 } from "@rakazo/adapters";
 import type { OidcConfig } from "@rakazo/auth";
 import type { MinimumClientBuilds, NavLink } from "@rakazo/contracts";
-import { parseMinimumClientBuilds, parseNavLinks } from "@rakazo/contracts";
+import { isPrivateNetworkHost, parseMinimumClientBuilds, parseNavLinks } from "@rakazo/contracts";
 import { parseCrispWebsiteId } from "@rakazo/contracts/content-security-policy";
 import {
   attachmentCountFromEnv,
@@ -29,7 +29,7 @@ import {
   resolveSupervisorToken,
   uploadSizeFromEnv,
 } from "@rakazo/core";
-import { monitoringPseudonymSecret } from "@rakazo/logging";
+import { getLogger, monitoringPseudonymSecret } from "@rakazo/logging";
 
 export { resolveCloudAgentProvider, resolveSandboxProvider } from "@rakazo/adapters";
 
@@ -50,6 +50,8 @@ export interface AppEnv {
   authSecret: string;
   authUrl: string;
   webOrigin: string;
+  /** Extra browser origins trusted for sign-in and CORS, from `RAKAZO_EXTRA_AUTH_ORIGINS`. */
+  extraAuthOrigins: string[];
   /** `<TEAM_ID>.<bundle id>` of iOS apps that may use this domain's passkeys. */
   passkeyAppleAppIds: string[];
   /** SHA-256 signing certificate fingerprints of Android apps that may use this domain's passkeys. */
@@ -122,6 +124,7 @@ export interface AppEnv {
   expoAccessToken: string | undefined;
   apnsVoip?: ApnsVoipConfig;
   smtpUrl: string | undefined;
+  botEmailSmtpUrl?: string;
   emailProvider?: string;
   welcomeEmailEnabled?: boolean;
   emailApiKey?: string;
@@ -138,6 +141,9 @@ export interface AppEnv {
   slackClientSecret?: string;
   slackBotToken: string | undefined;
   slackSigningSecret: string | undefined;
+  teamsAppId?: string;
+  teamsAppPassword?: string;
+  teamsAppTenantId?: string;
   whatsappAccessToken: string | undefined;
   whatsappPhoneNumberId: string | undefined;
   whatsappAppSecret: string | undefined;
@@ -248,6 +254,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     authSecret,
     authUrl: resolveWebOrigin(source.BETTER_AUTH_URL, webOrigin, "BETTER_AUTH_URL"),
     webOrigin,
+    extraAuthOrigins: parseExtraAuthOrigins(source.RAKAZO_EXTRA_AUTH_ORIGINS),
     passkeyAppleAppIds: list(source.PASSKEY_APPLE_APP_IDS),
     passkeyAndroidCertFingerprints: androidCertFingerprints(source.PASSKEY_ANDROID_CERT_SHA256),
     privacyPolicyUrl: optional(source.PRIVACY_POLICY_URL),
@@ -310,6 +317,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     expoAccessToken: optional(source.EXPO_ACCESS_TOKEN),
     apnsVoip: apnsVoipConfig(source),
     smtpUrl: optional(source.SMTP_URL),
+    botEmailSmtpUrl: optional(source.BOT_EMAIL_SMTP_URL),
     emailProvider: optional(source.EMAIL_PROVIDER),
     emailApiKey: optional(source.EMAIL_API_KEY),
     emailFrom: optional(source.EMAIL_FROM),
@@ -324,6 +332,9 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     slackClientSecret: optional(source.SLACK_CLIENT_SECRET),
     slackBotToken: optional(source.SLACK_BOT_TOKEN),
     slackSigningSecret: optional(source.SLACK_SIGNING_SECRET),
+    teamsAppId: optional(source.TEAMS_APP_ID),
+    teamsAppPassword: optional(source.TEAMS_APP_PASSWORD),
+    teamsAppTenantId: optional(source.TEAMS_APP_TENANT_ID),
     whatsappAccessToken: optional(source.WHATSAPP_ACCESS_TOKEN),
     whatsappPhoneNumberId: optional(source.WHATSAPP_PHONE_NUMBER_ID),
     whatsappAppSecret: optional(source.WHATSAPP_APP_SECRET),
@@ -376,6 +387,31 @@ function resolveWebOrigin(value: string | undefined, fallback: string, name: str
     throw new Error(`${name} must be an absolute http(s) URL`);
   }
   return origin;
+}
+
+/**
+ * Comma-separated origins an operator adds for a second address of the same install (a tailnet
+ * or LAN URL). Only bare `https://` origins, or `http://` on loopback or a private network, are
+ * kept; anything else is dropped with a warning so a typo cannot widen trust.
+ */
+export function parseExtraAuthOrigins(value: string | undefined): string[] {
+  const origins = new Set<string>();
+  for (const raw of (value ?? "").split(/[\s,]+/).filter(Boolean)) {
+    try {
+      const url = new URL(raw);
+      const bare =
+        url.pathname === "/" && !url.search && !url.hash && !url.username && !url.password;
+      const allowed =
+        url.protocol === "https:" ||
+        (url.protocol === "http:" && isPrivateNetworkHost(url.hostname));
+      if (!bare || !allowed) throw new Error();
+      origins.add(url.origin);
+    } catch {
+      // The entry is not logged: it may carry credentials.
+      getLogger().warn("ignoring invalid RAKAZO_EXTRA_AUTH_ORIGINS entry");
+    }
+  }
+  return [...origins];
 }
 
 function required(source: NodeJS.ProcessEnv, key: string): string {

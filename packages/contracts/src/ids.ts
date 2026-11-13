@@ -12,16 +12,6 @@ export const ActorSchema = z.object({
 });
 export type Actor = z.infer<typeof ActorSchema>;
 
-export const BOT_COLORS = [
-  "#3EC5A8",
-  "#F5A03C",
-  "#6A6BF5",
-  "#9B5CF6",
-  "#3B82F6",
-  "#F2622A",
-  "#D9508A",
-] as const;
-
 export const RunStatus = z.enum([
   "queued",
   "leased",
@@ -64,9 +54,11 @@ export const SandboxKind = z.enum([
   "createos",
   "boat",
   "boxd",
+  "instabox",
   "railway",
   "kubernetes",
   "incus",
+  "local-vm",
   "wuying",
   "desktop",
   "fake",

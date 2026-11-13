@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { Api, Context, Message, Model } from "@earendil-works/pi-ai";
 import type { AgentRunRequest } from "@rakazo/adapter-kit";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ContextCacheTracker,
   estimateContextTokens,
@@ -138,6 +138,10 @@ function simulateRun(
     cacheTracker?: ContextCacheTracker;
     tick?: () => void;
     systemPrompt?: (step: number) => string;
+    /** The model's reasoning carries no signature, as from OpenAI-compatible providers. */
+    unsigned?: boolean;
+    /** The model the run talks to; the default is a hosted provider. */
+    model?: Model<Api>;
   } = {},
 ) {
   const policy = createRuntimeContextPolicy(input, undefined, {
@@ -152,7 +156,7 @@ function simulateRun(
         tools: [],
         messages: [...messages],
       },
-      model,
+      options.model ?? model,
     );
     sent.push(context);
     policy.onUsage({ inputTokens: 1000, outputTokens: 10, cacheReadTokens: 900 });
@@ -172,7 +176,9 @@ function simulateRun(
         {
           type: "thinking",
           thinking: `Plan step ${index}`,
-          thinkingSignature: prefixSignature(context, context.messages.length),
+          ...(options.unsigned
+            ? {}
+            : { thinkingSignature: prefixSignature(context, context.messages.length) }),
         },
         { type: "toolCall", id, name: step.tool, arguments: {} },
       ],
@@ -337,6 +343,22 @@ describe("append-only run transcript", () => {
     expect(sent.map(imageCount)).toEqual([0, 1, 2, 3, 4, 5, 2, 3, 4, 5, 2]);
     expect(rewrites(sent)).toEqual([6, 10]);
     for (const context of sent) expect(staleThinking(context)).toEqual([]);
+  });
+
+  it("keeps unsigned thinking through a rebuild", () => {
+    const input = request({
+      contextStrategy: "retrieval",
+      model: { provider: "synthetic-provider", id: "synthetic-model", contextWindow: 40_000 },
+    });
+    const steps: Step[] = Array.from({ length: 18 }, (_, index) => ({
+      tool: "shell" as const,
+      text: `output ${index} ${"synthetic shell output ".repeat(433)}`,
+    }));
+    const sent = simulateRun(input, steps, { unsigned: true });
+    const [first] = rewrites(sent);
+    expect(first).toBeDefined();
+    // Nothing the model wrote can be rejected, so the rebuild drops none of it.
+    expect(thinkingCount(sent[first!]!)).toBe(thinkingCount(sent[first! - 1]!) + 1);
   });
 
   it("rebuilds a browsing run only when dropping stale pages pays for the broken cache", () => {
@@ -753,5 +775,68 @@ describe("append-only run transcript boundaries", () => {
     expect(Math.max(...sent.map(imageCount))).toBe(9);
     expect(rewrites(sent)).toEqual([10, 18]);
     expect(imageCount(sent[10]!)).toBe(2);
+  });
+});
+
+describe("local prompt cache declared off", () => {
+  const local = { ...model, provider: "local" } as Model<Api>;
+  const pages: Step[] = Array.from({ length: 12 }, (_, index) => ({
+    tool: "browser_snapshot" as const,
+    text: `page ${index} ${"node ".repeat(1_200)}`,
+  }));
+  const lastPrompt = (provider: Model<Api>) =>
+    simulateRun(request({ contextStrategy: "current" }), pages, { model: provider }).at(-1)!;
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("keeps the append-only transcript when the setting is unset", () => {
+    const sent = simulateRun(request({ contextStrategy: "current" }), pages, { model: local });
+    expect(rewrites(sent)).toEqual([]);
+    expect(JSON.stringify(sent.at(-1))).not.toContain("Earlier page state trimmed");
+  });
+
+  it("trims stale page state once enough has built up when set to off", () => {
+    const cached = lastPrompt(local);
+    vi.stubEnv("RAKAZO_LOCAL_PROMPT_CACHE", "off");
+    const trimmed = lastPrompt(local);
+    expect(JSON.stringify(trimmed)).toContain("Earlier page state trimmed");
+    expect(estimateContextTokens(trimmed)).toBeLessThan(estimateContextTokens(cached) * 0.7);
+  });
+
+  it("does not shrink a prompt below the threshold", () => {
+    vi.stubEnv("RAKAZO_LOCAL_PROMPT_CACHE", "off");
+    const sent = simulateRun(request({ contextStrategy: "current" }), pages.slice(0, 2), {
+      model: local,
+    });
+    expect(rewrites(sent)).toEqual([]);
+  });
+
+  it("applies to the local provider only", () => {
+    vi.stubEnv("RAKAZO_LOCAL_PROMPT_CACHE", "off");
+    expect(rewrites(simulateRun(request({ contextStrategy: "current" }), pages))).toEqual([]);
+  });
+
+  it("keeps unsigned thinking on the rebuilds it triggers", () => {
+    vi.stubEnv("RAKAZO_LOCAL_PROMPT_CACHE", "off");
+    const sent = simulateRun(request({ contextStrategy: "current" }), pages, {
+      model: local,
+      unsigned: true,
+    });
+    expect(rewrites(sent).length).toBeGreaterThan(0);
+    expect(thinkingCount(sent.at(-1)!)).toBe(pages.length);
+  });
+});
+
+describe("rebuildPaysOff with the prompt cache off", () => {
+  const kept = { tokens: 60_000, images: 0 };
+  it("rebuilds from 3,000 stale tokens on, and never when nothing is stale", () => {
+    expect(rebuildPaysOff(kept, { tokens: 57_000, images: 0 }, 55_000, 4, true)).toBe(true);
+    expect(rebuildPaysOff(kept, { tokens: 57_001, images: 0 }, 55_000, 4, true)).toBe(false);
+    expect(rebuildPaysOff(kept, { tokens: 60_000, images: 0 }, 55_000, 4, true)).toBe(false);
+  });
+  it("leaves the cached cost balance alone by default", () => {
+    expect(rebuildPaysOff(kept, { tokens: 50_000, images: 0 }, 55_000, 4)).toBe(false);
   });
 });

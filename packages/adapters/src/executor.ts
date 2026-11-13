@@ -47,8 +47,7 @@ import { PARTIAL_REPLY_NOTE } from "./automated-messages.js";
 import { backgroundHelpersAllowed } from "./background-helpers.js";
 import { loadBotMessageContext } from "./bot-messages.js";
 import {
-  commandCredentialRedactions,
-  loadBotCommandEnvironment,
+  loadCommandVariables,
   loadLoginPasswordRedactions,
   loadRunCodeRedactions,
   loadRunLoginRedactions,
@@ -56,7 +55,8 @@ import {
 import { createBrowserProvider } from "./browser-provider-factory.js";
 import { partitionTools } from "./builtin-tool-bridge.js";
 import { agentConnectionTools, builtinAgentTools } from "./builtin-tools.js";
-import { cloudAgentsEnabled } from "./cloud-agent-factory.js";
+import { USER_CLOUD_AGENT_KEY_PREFIX } from "./cloud-agent-factory.js";
+import { cloudAgentForActor } from "./cloud-agent-service.js";
 import { mergeConnectedPlugins, needsLivePluginSync } from "./composio-connector.js";
 import { diskNoteInstruction, recordComputerDisk } from "./computer-disk.js";
 import { scheduleComputerSleep } from "./computer-idle.js";
@@ -115,6 +115,7 @@ import {
 } from "./model-selection.js";
 import { modelAcceptsImageInput } from "./model-vision.js";
 import { usesNativeShell } from "./native-shell.js";
+import { createPaidServiceProvider } from "./paid-services-factory.js";
 import { paymentWalletConnected } from "./payment-wallets.js";
 import { restoreComputerModels } from "./pi-runtime-computer-mode.js";
 import { loadPurchaseRedactions } from "./purchase-service.js";
@@ -220,7 +221,7 @@ import {
   recentThreadFilesInstruction,
 } from "./thread-artifacts.js";
 import { loadAgentTicketContext } from "./ticket-context.js";
-import { appendToolCompletionAudit } from "./tool-completion-audit.js";
+import { appendToolCompletionAudit, toolCompletionOutcome } from "./tool-completion-audit.js";
 import { toolResultFingerprint } from "./tool-loop.js";
 import { restoreTurnCheckpoint } from "./turn-checkpoint.js";
 import { createWebProvider } from "./web-provider-factory.js";
@@ -248,9 +249,9 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
   const contextStrategy = executorDeps.contextStrategy ?? DEFAULT_CONTEXT_STRATEGY;
   const web = executorDeps.web ?? createWebProvider();
   const mediaGeneration = executorDeps.mediaGeneration ?? createMediaGenerationProvider();
+  const paidServices = executorDeps.paidServices ?? createPaidServiceProvider();
   const browser =
     executorDeps.browser ?? createBrowserProvider(undefined, { sandbox: executorDeps.sandbox });
-  const cloudAgent = executorDeps.cloudAgent;
   const resolveConnectedModel = resolveConnectedRunModel.bind(undefined, executorDeps);
 
   // Run-scoped connector state (installed MCP sessions) outlives one attempt
@@ -559,7 +560,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           configuredMemory,
           savedSkills,
           agentSkills,
-          initialBotCommandEnvironment,
+          { env: initialBotCommandEnvironment, redactions: commandRedactions },
           savedLoginPasswordRedactions,
           purchaseRedactions,
           runLoginRedactions,
@@ -603,7 +604,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             spaceId: run.spaceId,
             userId: run.userId,
           }),
-          loadBotCommandEnvironment(deps.prisma, deps.secretStore, run),
+          loadCommandVariables(deps.prisma, deps.secretStore, run),
           loadLoginPasswordRedactions(deps.prisma, deps.secretStore, run),
           deps.paymentWallet ? loadPurchaseRedactions(deps, run) : [],
           loadRunLoginRedactions(deps.prisma, deps.secretStore, run, run.id),
@@ -632,7 +633,9 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
               thread.nextMessageSeq)
             : thread.nextMessageSeq;
         // Encoded forms too: read_file redacts with these values before any shell command runs.
-        runSecrets.push(...commandCredentialRedactions(initialBotCommandEnvironment));
+        // Read here only to hide the values and to tell the model the variables' names: no
+        // command has them yet, so nothing is recorded as used until the shell tool sends one.
+        runSecrets.push(...commandRedactions);
         // A login filled in an earlier run may still be on its page, and anything this run reads
         // or is given may contain it, so every run hides its saved passwords before the model runs.
         runSecrets.push(
@@ -714,6 +717,12 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         const discoveredPromise = deps.connector
           ? deps.connector.discoverTools(context)
           : Promise.resolve([]);
+        // A connection that cannot be read now leaves the cloud-agent tools out of this turn only.
+        const cloudAgentPromise = cloudAgentForActor(executorDeps, {
+          spaceId: run.spaceId,
+          userId: run.userId,
+          botIds: [bot.id],
+        }).catch(() => null);
         // Group threads and spaces several people share: who wrote each message, so the model can
         // tell the bots and the people apart. A personal space's direct chat stays plain turns.
         const people = await loadSpacePeople(
@@ -827,17 +836,22 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             ? `Update from ${peerMessage.fromBotName}: ${peerMessage.text}`
             : DELEGATED_EMPTY_NOTICE
           : undefined;
+        const capabilities = semanticMemory?.describe().capabilities;
+        const recallsEachRun = capabilities?.recallEachRun === true;
+        const compacted = thread.historyCompactedUpToSeq != null;
         const recallPromise =
           threadContext.includeSemanticRecall &&
           semanticMemory &&
           memoryScope &&
-          thread.historyCompactedUpToSeq != null
+          capabilities?.recallOnRequestOnly !== true &&
+          (compacted || recallsEachRun)
             ? semanticMemory.recall(
                 {
                   query: task.prompt,
+                  includeExternal: false,
                   scope: memoryScope,
                   botId: bot.id,
-                  historyGeneration: thread.historyCompactionGeneration,
+                  ...(compacted ? { historyGeneration: thread.historyCompactionGeneration } : {}),
                   limit: MAX_RECALLED_MEMORIES,
                 },
                 context,
@@ -874,10 +888,13 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         let recalledMemory = "";
         let recallSucceeded = false;
         if (recalled) {
-          if (recalled.ok && recalled.value.length > 0) {
-            recallSucceeded = true;
-            recalledMemory = formatRecalledMemory(recalled.value);
-          } else if (!recalled.ok) {
+          if (recalled.ok) {
+            const stored = recalled.value.filter((memory) => !memory.external);
+            recallSucceeded = stored.length > 0;
+            // Provider extraction and recall return derived knowledge, even when the original
+            // conversation was this bot's own. Storage cannot promote it to owner authority.
+            recalledMemory = stored.length ? formatRecalledMemory(stored) : "";
+          } else {
             getLogger().error("semantic memory recall failed", recalled.error);
           }
         }
@@ -885,7 +902,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           history = history.slice(
             -historyWindowSize({
               semanticMemoryEnabled: semanticMemoryEnabled && !thread.historyCompactionSummary,
-              compacted: thread.historyCompactedUpToSeq != null,
+              compacted,
               recallSucceeded,
             }),
           );
@@ -1198,7 +1215,12 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           (run.trigger === "user" || run.trigger === "follow_up") && run.sourceMessageId
             ? await deps.prisma.message.findUnique({
                 where: { id: run.sourceMessageId },
-                select: { clientNonce: true, role: true, blocks: true, threadId: true },
+                select: {
+                  clientNonce: true,
+                  role: true,
+                  blocks: true,
+                  threadId: true,
+                },
               })
             : null;
         // Calls carry no schema flag: the sending client encodes them in the clientNonce.
@@ -1241,6 +1263,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           botUserId: bot.userId,
         });
         let userComputer: UserComputerState;
+        let userComputerShell = false;
         let userComputerScreen = false;
         if (
           userComputerOwnerId &&
@@ -1250,10 +1273,30 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           const device = await deps.userDevices.connected(userComputerOwnerId).catch(() => null);
           if (device) {
             userComputer = "connected";
+            userComputerShell = !device.screenOnly;
             // The macOS and Windows desktops fetch a screen driver; Linux has none yet.
             userComputerScreen = device.platform === "darwin" || device.platform === "win32";
           } else userComputer = "offline";
         }
+        const cloudAgent = await cloudAgentPromise;
+        // Revocation blocks new instructions, but existing owned agents still need cleanup.
+        const cloudAgentCleanupEnabled = Boolean(
+          !cloudAgent &&
+            deps.userCloudAgents &&
+            (await deps.prisma.cloudAgent
+              .findFirst({
+                where: {
+                  spaceId: run.spaceId,
+                  userId: run.userId,
+                  providerKey: { startsWith: USER_CLOUD_AGENT_KEY_PREFIX },
+                },
+                select: { id: true },
+              })
+              .catch((error: unknown) => {
+                getLogger().warn("cloud_agent.cleanup_lookup_failed", { error });
+                return null;
+              })),
+        );
         const builtins = [
           ...selectBuiltinToolsForRun({
             ticketBoardEnabled: deps.ticketBoardEnabled,
@@ -1267,9 +1310,12 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             trigger: run.trigger,
             semanticMemoryEnabled,
             semanticMemoryForgets: Boolean(semanticMemory?.forget),
+            semanticMemoryReflects: Boolean(semanticMemory?.reflect),
             mediaImagesEnabled: Boolean(deps.artifacts && mediaGeneration?.capabilities.images),
             mediaVideoEnabled: Boolean(deps.artifacts && mediaGeneration?.capabilities.video),
-            cloudAgentEnabled: cloudAgentsEnabled(cloudAgent, run.spaceId),
+            paidServicesEnabled: Boolean(paidServices),
+            cloudAgentEnabled: Boolean(cloudAgent),
+            cloudAgentCleanupEnabled,
             paymentWalletEnabled,
             messagingChannelRun: nonOwnerChatRun,
             voiceCall,
@@ -1279,7 +1325,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
               : bot.disabledBuiltinTools,
             fleetManagement: bot.fleetManagement,
             followUpFromUser: sourceMessage?.role === "user",
-            userComputer: userComputer === "connected",
+            userComputer: userComputerShell,
             userComputerScreen,
             emailInbox,
             emailClaimable:
@@ -1320,6 +1366,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           ownerStartedRun,
           messagingChannelRun: nonOwnerChatRun,
           sourceMessage,
+          ownerChatMessageBlocks: nonOwnerChatRun ? undefined : messagingSource?.blocks,
           connectedPlugins,
         });
         // Outbound destinations this run may reach without asking. See outboundSiteGate and
@@ -1351,6 +1398,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         const dockerToolInstruction = dockerComputerToolInstruction(
           computerKind,
           disabledBuiltinTools,
+          new Set(tools.map((tool) => tool.name)),
         );
         const hostEnvironment =
           computerKind && usesNativeShell(computerKind)
@@ -1419,6 +1467,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           ownInstructionsBaseline: bot.instructions ?? "",
           earlierAttempt: undefined,
           walletHosts: new Set(),
+          vaultUses: new Set(),
           handedOff: false,
           terminalCheckpointComplete: false,
         };
@@ -1435,7 +1484,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
 
         const ctx: RunContext = {
           deps,
-          providers: { web, mediaGeneration, browser, cloudAgent },
+          providers: { web, mediaGeneration, paidServices, browser, cloudAgent },
           run,
           runId,
           workerId,
@@ -1495,7 +1544,10 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             approvedReplays: approvedEffectReplays,
           },
           trust: { ...trustLoaders, searchResultUrls },
-          memory: { semantic: semanticMemory, scope: memoryScope },
+          memory: {
+            semantic: semanticMemory,
+            scope: memoryScope,
+          },
           scripted,
           script,
           allowSilentEmptyRun,
@@ -1558,9 +1610,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             savedComputerMode?.mode,
           );
           if (checkpointModelResolver && !turnCheckpoint)
-            throw new Error(
-              "Pinned computer mode checkpoint cannot resume with the available tools",
-            );
+            throw new Error("Pinned computer mode checkpoint cannot be restored");
         }
         const approvalContinuation = turnCheckpoint
           ? undefined
@@ -1926,6 +1976,8 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                   effects.restoredPending = undefined;
                 if (!completion.paused)
                   effects.pendingTurnCheckpoints.delete(completion.executionId);
+                const outcome = toolCompletionOutcome(completion);
+                if (outcome) state.reply.toolOutcomes.set(completion.executionId, outcome);
                 const audited = appendToolCompletionAudit(
                   deps,
                   {

@@ -9,7 +9,7 @@ const runtimeUrl = process.env.DATABASE_URL;
 const migrationUrl = process.env.DATABASE_MIGRATION_URL;
 const describePostgres =
   process.env.VERIFY_DATABASE && runtimeUrl && migrationUrl && runtimeUrl !== migrationUrl
-    ? describe.sequential
+    ? describe
     : describe.skip;
 
 /** A raw SQL monitor, as the owner pool's connections provide. */
@@ -33,6 +33,8 @@ describePostgres("moving routines with the account timezone (PostgreSQL)", () =>
   let app: ReturnType<typeof createDb>;
   const jobs = {
     enqueue: vi.fn(async () => undefined),
+    enqueueIn: vi.fn(async () => undefined),
+    cancelIn: vi.fn(async () => undefined),
     cancel: vi.fn(async () => undefined),
     close: vi.fn(async () => undefined),
   };

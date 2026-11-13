@@ -1,3 +1,5 @@
+import { ph } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
 import { PageIcon } from "@rakazo/chat-ui/native";
 import type { MessageBlock, PageDetail } from "@rakazo/contracts";
 import { pageCardSuperseded } from "@rakazo/core";
@@ -6,7 +8,6 @@ import { createContext, useContext, useEffect, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
 import { currentApiBase } from "../../lib/api";
-import { useI18n } from "../../lib/i18n";
 import { useMobileTokens, useResolvedAppearance } from "../../lib/native";
 import { usePageCardDetail } from "../../lib/page-card-detail";
 import { pageCardState, pageDocument, pagePreviewLayout } from "../../lib/pages";
@@ -30,7 +31,7 @@ function PagePreview({
   failed: boolean;
   width: number;
 }) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const tokens = useMobileTokens();
   const theme = useResolvedAppearance();
   const [document, setDocument] = useState<string | null>(null);
@@ -38,7 +39,7 @@ function PagePreview({
   useEffect(() => {
     if (!detail) return;
     let active = true;
-    void pageDocument(currentApiBase(), detail.code, theme, t("This page couldn't be shown."))
+    void pageDocument(currentApiBase(), detail.code, theme, t`This page couldn't be shown.`)
       .then((html) => {
         if (!active) return;
         setDocument(html);
@@ -65,7 +66,7 @@ function PagePreview({
     >
       {unavailable ? (
         <Text style={[styles.unavailable, { color: tokens.mutedForeground }]}>
-          {t("This page couldn't load")}
+          {t`This page couldn't load`}
         </Text>
       ) : null}
       {document && !unavailable && width > 0 ? (
@@ -99,7 +100,7 @@ function PagePreview({
 /** A page in the chat: its live top half and a footer naming it. Opens the latest version. */
 export function PageCard({ block, messageId }: { block: PageBlock; messageId: string }) {
   const router = useRouter();
-  const { t } = useI18n();
+  const { t } = useLingui();
   const tokens = useMobileTokens();
   const [width, setWidth] = useState(0);
   const detail = usePageCardDetail(block);
@@ -110,7 +111,7 @@ export function PageCard({ block, messageId }: { block: PageBlock; messageId: st
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={t("Open {title}", { title: state.title })}
+      accessibilityLabel={t`Open ${ph({ title: state.title })}`}
       testID="page-card"
       onLayout={(event) => setWidth(event.nativeEvent.layout.width)}
       disabled={deleted}
@@ -138,7 +139,7 @@ export function PageCard({ block, messageId }: { block: PageBlock; messageId: st
             {state.title}
           </Text>
           <Text numberOfLines={1} style={[styles.kind, { color: tokens.mutedForeground }]}>
-            {deleted ? t("Deleted") : updatedBelow ? t("Updated below") : t("Page")}
+            {deleted ? t`Deleted` : updatedBelow ? t`Updated below` : t`Page`}
           </Text>
         </View>
       </View>
