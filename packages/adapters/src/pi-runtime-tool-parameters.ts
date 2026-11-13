@@ -460,8 +460,16 @@ export function jsonField(spec: unknown): ReturnType<typeof Type.String> {
   }
   const type = "type" in definition ? String(definition.type) : "string";
   if (type === "null") return Type.Null(options) as never;
-  if (type === "integer") return Type.Integer(options) as never;
-  if (type === "number") return Type.Number(options) as never;
+  if (type === "integer" || type === "number") {
+    const numericOptions = {
+      ...options,
+      ...(typeof definition.minimum === "number" ? { minimum: definition.minimum } : {}),
+      ...(typeof definition.maximum === "number" ? { maximum: definition.maximum } : {}),
+    };
+    return (
+      type === "integer" ? Type.Integer(numericOptions) : Type.Number(numericOptions)
+    ) as never;
+  }
   if (type === "boolean") return Type.Boolean(options) as never;
   if (type === "array") {
     const arrayOptions: FieldOptions & {
