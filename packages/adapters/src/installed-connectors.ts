@@ -106,6 +106,7 @@ const ApiOperationSchema = z.object({
   }),
   readOnly: z.boolean().default(false),
   queryParameters: z.array(z.string().min(1).max(120)).default([]),
+  formObjectQueryParameters: z.array(z.string().min(1).max(120)).optional(),
   commaSeparatedQueryParameters: z.array(z.string().min(1).max(120)).optional(),
   headerParameters: z.array(ModelHeaderName).default([]),
 });
@@ -557,6 +558,9 @@ function isCircular(root: unknown): boolean {
   return false;
 }
 
+const OPENAPI_SERVER_VARIABLE = /\{([^{}]+)\}/g;
+const MAX_OPENAPI_BASE_URL_LENGTH = 2_048;
+
 export function importOpenApiDocument(document: Record<string, unknown>): {
   baseUrl: string;
   operations: ApiOperation[];
@@ -566,13 +570,25 @@ export function importOpenApiDocument(document: Record<string, unknown>): {
     throw new Error("OpenAPI document must define servers[0].url");
   }
   const variables = asRecord(server.variables);
-  const baseUrl = server.url.replace(/\{([^{}]+)\}/g, (_placeholder, name: string) => {
+  const serverDefault = (name: string) => {
     const variable = asRecord(variables?.[name]);
     if (typeof variable?.default !== "string") {
       throw new Error("OpenAPI server variable must define a string default");
     }
     return variable.default;
-  });
+  };
+  // Repeating a long default can expand a small document into a huge URL,
+  // so measure the result before building it.
+  let length = server.url.length;
+  for (const [placeholder, name] of server.url.matchAll(OPENAPI_SERVER_VARIABLE)) {
+    length += serverDefault(name!).length - placeholder.length;
+  }
+  if (length > MAX_OPENAPI_BASE_URL_LENGTH) {
+    throw new Error(`OpenAPI server URL exceeds ${MAX_OPENAPI_BASE_URL_LENGTH} characters`);
+  }
+  const baseUrl = server.url.replace(OPENAPI_SERVER_VARIABLE, (_placeholder, name: string) =>
+    serverDefault(name),
+  );
   assertNoSensitiveQuery(baseUrl);
   const paths = document.paths;
   if (!paths || typeof paths !== "object" || Array.isArray(paths)) {
@@ -593,6 +609,7 @@ export function importOpenApiDocument(document: Record<string, unknown>): {
       const required: string[] = [];
       const queryParameters: string[] = [];
       const commaSeparatedQueryParameters: string[] = [];
+      const formObjectQueryParameters: string[] = [];
       const headerParameters: string[] = [];
       for (const parameter of openApiParameters(
         document,
@@ -608,6 +625,12 @@ export function importOpenApiDocument(document: Record<string, unknown>): {
             : schema;
         if (parameter.in === "query") {
           queryParameters.push(parameter.name);
+          if (
+            (parameter.style === undefined || parameter.style === "form") &&
+            schema.type === "object"
+          ) {
+            formObjectQueryParameters.push(parameter.name);
+          }
           if (
             (parameter.style === undefined || parameter.style === "form") &&
             parameter.explode === false
@@ -649,6 +672,7 @@ export function importOpenApiDocument(document: Record<string, unknown>): {
         },
         readOnly: method === "get",
         queryParameters,
+        ...(formObjectQueryParameters.length > 0 ? { formObjectQueryParameters } : {}),
         ...(commaSeparatedQueryParameters.length > 0 ? { commaSeparatedQueryParameters } : {}),
         headerParameters,
       });
@@ -988,6 +1012,7 @@ async function executeApiOperation(
   if (operation.method === "GET" || (operation.method === "DELETE" && !declaredDeleteBody)) {
     for (const [key, value] of Object.entries(args)) {
       if (consumed.has(key) || value == null) continue;
+      if (appendFormQueryObject(url, operation, key, value)) continue;
       if (Array.isArray(value)) {
         if (operation.commaSeparatedQueryParameters?.includes(key)) {
           url.searchParams.set(key, value.map(String).join(","));
@@ -1003,6 +1028,7 @@ async function executeApiOperation(
       const value = args[key];
       consumed.add(key);
       if (value == null) continue;
+      if (appendFormQueryObject(url, operation, key, value)) continue;
       if (Array.isArray(value)) {
         if (operation.commaSeparatedQueryParameters?.includes(key)) {
           url.searchParams.set(key, value.map(String).join(","));
@@ -1049,6 +1075,31 @@ async function executeApiOperation(
   } finally {
     await safeFetch.close().catch(() => undefined);
   }
+}
+
+/** Only imported form objects opt in; older installs keep their historical encoding. */
+function appendFormQueryObject(
+  url: URL,
+  operation: ApiOperation,
+  key: string,
+  value: unknown,
+): boolean {
+  if (!operation.formObjectQueryParameters?.includes(key)) return false;
+  const object = asRecord(value);
+  if (!object) return false;
+  const entries = Object.entries(object);
+  if (entries.some(([, field]) => field !== null && typeof field === "object")) {
+    throw new Error(`Query parameter ${key} must be a flat object`);
+  }
+  if (operation.commaSeparatedQueryParameters?.includes(key)) {
+    url.searchParams.set(
+      key,
+      entries.flatMap(([name, field]) => [name, String(field ?? "")]).join(","),
+    );
+  } else {
+    for (const [name, field] of entries) url.searchParams.append(name, String(field ?? ""));
+  }
+  return true;
 }
 
 function joinApiUrl(baseUrl: string, path: string): URL {

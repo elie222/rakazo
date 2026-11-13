@@ -1,5 +1,28 @@
 import { z } from "zod";
 
+export const signInProviderSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  presentation: z
+    .object({
+      variant: z.enum(["solid", "outline"]),
+      mark: z
+        .object({
+          viewBox: z.string().max(64),
+          paths: z
+            .array(
+              z.object({
+                d: z.string().max(4096),
+              }),
+            )
+            .max(8),
+        })
+        .optional(),
+    })
+    .optional(),
+});
+export type SignInProvider = z.infer<typeof signInProviderSchema>;
+
 export const authCapabilitiesSchema = z.object({
   sso: z
     .object({
@@ -7,6 +30,11 @@ export const authCapabilitiesSchema = z.object({
       availability: z.enum(["available", "unavailable", "checking"]),
     })
     .nullable(),
+  /**
+   * Sign-in buttons. Older servers omit it; clients then show `sso` alone.
+   * An empty list means this server configured none.
+   */
+  providers: z.array(signInProviderSchema).max(8).optional(),
   passwordAuth: z.boolean(),
   passwordReset: z.boolean(),
   resetUrl: z.string().url().nullable(),
@@ -22,12 +50,34 @@ export const authCapabilitiesSchema = z.object({
 });
 export type AuthCapabilities = z.infer<typeof authCapabilitiesSchema>;
 
+/**
+ * The buttons on sign-in. A server that lists `providers` wins, including an empty list.
+ * Older servers only had `sso`.
+ */
+export function signInProviders(capabilities: {
+  sso: { name: string } | null;
+  providers?: SignInProvider[] | undefined;
+}): SignInProvider[] {
+  if (capabilities.providers) return capabilities.providers;
+  return capabilities.sso ? [{ id: "oidc", name: capabilities.sso.name }] : [];
+}
+
+/** Organization SSO is secondary alongside personal providers, and prominent on SSO-only servers. */
+export function signInProviderGroups(providers: SignInProvider[]) {
+  const alongsidePersonal = providers.some((provider) => provider.id !== "oidc");
+  return {
+    primary: alongsidePersonal ? providers.filter((provider) => provider.id !== "oidc") : providers,
+    secondary: alongsidePersonal ? providers.filter((provider) => provider.id === "oidc") : [],
+  };
+}
+
 export const accountSecuritySchema = z.object({
   hasPassword: z.boolean(),
   // Older servers omit this field; clients treat omission as enabled.
   passwordChangeEnabled: z.boolean().optional(),
   freshOidcAuth: z.boolean(),
   ssoLinked: z.boolean(),
+  linkedProviderIds: z.array(z.string()).optional(),
   emailDeletion: z.boolean(),
   sso: z.object({ name: z.string().min(1) }).nullable(),
 });
@@ -79,4 +129,9 @@ export async function runWithIdentityConfirmation<T>(
     if (!isIdentityConfirmationRequired(error) || !(await confirm())) throw error;
   }
   return action();
+}
+
+/** Only organization SSO supports verifiable fresh authentication. */
+export function identityConfirmationProviders(security: AccountSecurity): SignInProvider[] {
+  return security.sso && security.ssoLinked ? [{ id: "oidc", name: security.sso.name }] : [];
 }

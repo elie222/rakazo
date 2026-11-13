@@ -6,6 +6,7 @@ import {
   captureScreenshot,
   completeOnboarding,
   openBotPanelTab,
+  openEmailSignIn,
   realSandboxTimeout,
   rpc,
   signup,
@@ -431,6 +432,7 @@ test("sign-in, spawn, and stop work in the shell", async ({ page }, testInfo) =>
 
   await page.context().clearCookies();
   await page.goto("/sign-in");
+  await openEmailSignIn(page);
   await page.getByPlaceholder("Your email address").fill(email);
   await page.getByPlaceholder("Password").fill("password12");
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
