@@ -113,6 +113,19 @@ function deps(
 }
 
 describe("messaging another bot", () => {
+  it("rejects an internal silent marker without delivering or waking a bot", async () => {
+    const harness = deps();
+    const result = await messageBot(harness.deps, run, sender, {
+      bot_id: "bot-target",
+      message: "  NO_RESPONSE  ",
+      intent: "fyi",
+    });
+    expect(result).toMatchObject({ ok: false, error: expect.stringContaining("silent") });
+    expect(harness.deps.prisma.$transaction).not.toHaveBeenCalled();
+    expect(harness.enqueue).not.toHaveBeenCalled();
+    expect(harness.notify).not.toHaveBeenCalled();
+  });
+
   beforeEach(() => vi.stubEnv("BOT_MESSAGE_MAX_HOPS", undefined));
   afterEach(() => vi.unstubAllEnvs());
 
@@ -719,6 +732,33 @@ describe("hardening", () => {
 });
 
 describe("automatic outcome return", () => {
+  it("does not relay a sentinel when returning an outcome to a peer request", async () => {
+    const harness = deps({
+      hopBlocks: [
+        {
+          kind: "bot_message_received",
+          fromBotId: "bot-target",
+          fromBotName: "Coordinator",
+          text: "status?",
+          hop: 1,
+          intent: "question",
+          returnToMessageId: "message-request",
+        },
+      ],
+    });
+    const returned = await returnBotMessageOutcome(
+      harness.deps,
+      { ...run, sourceMessageId: "message-source" },
+      sender,
+      "NO_RESPONSE",
+    );
+    expect(returned).toBe(true);
+    const written = JSON.stringify(harness.tx.message.create.mock.calls);
+    expect(written).toContain("Nothing new to add.");
+    expect(written).not.toContain("NO_RESPONSE");
+    expect(harness.enqueue).toHaveBeenCalledOnce();
+  });
+
   it("routes a delegated run's final text back to its coordinator", async () => {
     const harness = deps({
       hopBlocks: [

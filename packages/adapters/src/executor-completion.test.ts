@@ -17,6 +17,7 @@ import {
   emptyDelegatedToolTurnShouldFail,
   longWorkProgressGuidance,
   messagesModeReplyGuidance,
+  peerInformationalReplyMayBeSilent,
   REACTION_SILENT_REPLY_GUIDANCE,
   ROUTINE_SILENT_REPLY_GUIDANCE,
   runAllowsSilentEmpty,
@@ -301,6 +302,25 @@ describe("background ticket runs", () => {
     const steps = [{ kind: "steps" as const, steps: [{ label: "Ticket comment", count: 1 }] }];
     const blocks = finalBlocksAfterMidTurnProgress(steps, runAllowsSilentEmpty("tickets"));
     expect(blocks).toEqual([]);
+  });
+});
+
+describe("informational peer silent reply routing", () => {
+  it("suppresses NO_RESPONSE for explicit informational peer intents", () => {
+    for (const intent of ["status", "fyi", "result"]) {
+      expect(peerInformationalReplyMayBeSilent("bot_message", intent)).toBe(true);
+    }
+    const reply = stripNoResponseReply(NO_RESPONSE, [{ kind: "text", text: NO_RESPONSE }]);
+    expect(completionMessageSegments(reply.blocks, { allowSilentEmpty: true })).toEqual([]);
+  });
+
+  it("requires replies for requests, questions, and missing intents", () => {
+    expect(peerInformationalReplyMayBeSilent("bot_message", "request")).toBe(false);
+    expect(peerInformationalReplyMayBeSilent("bot_message", "question")).toBe(false);
+    expect(peerInformationalReplyMayBeSilent("bot_message", undefined)).toBe(false);
+    expect(peerInformationalReplyMayBeSilent("user", "fyi")).toBe(false);
+    const report = "WORK finished its daily digest.";
+    expect(stripNoResponseReply(report, [{ kind: "text", text: report }]).assembled).toBe(report);
   });
 });
 
