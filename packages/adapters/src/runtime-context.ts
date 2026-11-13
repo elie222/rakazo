@@ -59,6 +59,27 @@ const REBUILD_MAX_STALE_IMAGES = 8;
 const REBUILD_HEADROOM = 0.25;
 /** Stale tokens that justify a rebuild when the provider's prompt cache is declared off. */
 const UNCACHED_REBUILD_MIN_SAVED_TOKENS = 3_000;
+/** Short earlier history is kept whole, instead of snapshots, when it fits this many tokens. */
+const SHORT_HISTORY_MAX_TOKENS = 16_384;
+/** With snapshots, the latest messages are still replayed whole. */
+const SNAPSHOT_RECENT_MESSAGES = 8;
+const SNAPSHOT_CATALOG_MAX_ENTRIES = 64;
+const SNAPSHOT_CATALOG_MAX_BYTES = 8192;
+/** The context policy's tuning, part of the prompt version so a change shows up in run outcomes. */
+export const CONTEXT_POLICY_SETTINGS = {
+  defaultStrategy: DEFAULT_CONTEXT_STRATEGY,
+  recentToolResultsToKeep: RECENT_TOOL_RESULTS_TO_KEEP,
+  verbatimToolResults: [...VERBATIM_TOOL_RESULTS],
+  unshortenedToolResults: [...UNSHORTENED_TOOL_RESULTS],
+  rebuildMinSavedTokens: REBUILD_MIN_SAVED_TOKENS,
+  rebuildMaxStaleImages: REBUILD_MAX_STALE_IMAGES,
+  rebuildHeadroom: REBUILD_HEADROOM,
+  uncachedRebuildMinSavedTokens: UNCACHED_REBUILD_MIN_SAVED_TOKENS,
+  shortHistoryMaxTokens: SHORT_HISTORY_MAX_TOKENS,
+  snapshotRecentMessages: SNAPSHOT_RECENT_MESSAGES,
+  snapshotCatalogMaxEntries: SNAPSHOT_CATALOG_MAX_ENTRIES,
+  snapshotCatalogMaxBytes: SNAPSHOT_CATALOG_MAX_BYTES,
+} as const;
 export interface Size {
   tokens: number;
   images: number;
@@ -108,6 +129,22 @@ interface OriginalMetadata {
   rakazoHistory?: boolean;
   rakazoMessageId?: string;
   rakazoCreatedAt?: string;
+}
+/**
+ * Where the last `count` stored messages start. A reply replayed with its tool calls is several
+ * messages sharing one id, and a window that starts inside it would orphan a tool result.
+ */
+function storedMessagesStart(messages: Message[], count: number): number {
+  const id = (message: Message | undefined) =>
+    (message as (Message & OriginalMetadata) | undefined)?.rakazoMessageId;
+  let seen = 0;
+  for (let index = messages.length - 1; index >= 0; index--) {
+    const current = id(messages[index]);
+    if (current && current === id(messages[index - 1])) continue;
+    seen += 1;
+    if (seen === count) return index;
+  }
+  return 0;
 }
 function text(message: Message): string {
   if (typeof message.content === "string") return message.content;
@@ -351,6 +388,7 @@ export function createRuntimeContextPolicy(
     if (currentIndex < 0)
       currentIndex = messages.findLastIndex((message) => message.role === "user");
     if (currentIndex < 0) currentIndex = 0;
+    const currentMessage = messages[currentIndex];
     // Steering, follow-ups and finished shells arrive as user messages during the
     // run. Give each its own exchange so it does not push older history out:
     // a moved first message rewrites the provider's whole cached prefix.
@@ -382,7 +420,7 @@ export function createRuntimeContextPolicy(
     const historical = messages.slice(0, currentIndex);
     const historicalContent = historical.filter((message) => message.role !== "system");
     const shortHistoryAllowance = Math.min(
-      16384,
+      SHORT_HISTORY_MAX_TOKENS,
       Math.max(0, Math.floor((contextWindow - reserve - fixed) / 4)),
     );
     // Short originals can cost less than another lookup. Retain them when their
@@ -394,22 +432,23 @@ export function createRuntimeContextPolicy(
         options.imageTokens,
       ) <= shortHistoryAllowance;
     if (useSnapshots && !retainShortHistory) {
-      const old = historical.slice(0, Math.max(0, historical.length - 8));
+      const recentStart = storedMessagesStart(historical, SNAPSHOT_RECENT_MESSAGES);
+      const old = historical.slice(0, recentStart);
       let catalog = "";
       const maximum = Math.min(
-        8192,
+        SNAPSHOT_CATALOG_MAX_BYTES,
         Math.max(0, Math.floor((contextWindow - reserve - fixed) / 4)),
       );
       catalogIds = [];
-      for (const message of old.slice(-64).reverse()) {
+      for (const message of old.slice(-SNAPSHOT_CATALOG_MAX_ENTRIES).reverse()) {
         const stored = original(message);
-        if (!stored?.id) continue;
+        // A reply replayed with its tool calls spans several messages; list it once.
+        if (!stored?.id || catalogIds.includes(stored.id)) continue;
         const entry = `[message ${stored.id}${stored.createdAt ? ` at ${stored.createdAt}` : ""}; ${stored.speaker ?? stored.role}] ${snapshot(stored.content)}\n`;
         if (Buffer.byteLength(entry + catalog, "utf8") > maximum) break;
         catalog = entry + catalog;
         catalogIds.unshift(stored.id);
       }
-      const recentStart = Math.max(0, historical.length - 8);
       const earlierSystem = historical
         .slice(0, recentStart)
         .filter((message) => message.role === "system");
@@ -420,7 +459,7 @@ export function createRuntimeContextPolicy(
       ];
       protectedIndexes = messages.flatMap((message, index) =>
         message.role === "system" ||
-        (index >= earlierSystem.length + Math.min(8, historical.length) && message.role === "user")
+        (index >= earlierSystem.length + historical.length - recentStart && message.role === "user")
           ? [index]
           : [],
       );
@@ -539,19 +578,7 @@ export function createRuntimeContextPolicy(
           ],
         };
       });
-    const retained = shortenOlderResults(true);
-    // Fall back before selection can discard older progress to make room for whole results.
-    const retainedTokens = retained.reduce(
-      (total, message) =>
-        total +
-        estimateContextTokens(
-          providerContextPrefix("", [], [message]).messages[0],
-          options.imageTokens,
-        ),
-      fixed,
-    );
-    messages = retainedTokens <= contextWindow - reserve ? retained : shortenOlderResults(false);
-    const selected = selectContext(messages, {
+    const selectionOptions = {
       budget,
       strategy,
       protectedIndexes,
@@ -564,7 +591,35 @@ export function createRuntimeContextPolicy(
       ...(strategy === "retrieval"
         ? { earlier: { before: currentIndex, tokens: shortHistoryAllowance } }
         : {}),
-    });
+    };
+    const retained = shortenOlderResults(true);
+    let selected: ReturnType<typeof selectContext<Message>> | undefined;
+    try {
+      // Measure the context selection actually keeps, not history it will discard.
+      // Whole recent results must not crowd out any progress from the current run.
+      const candidate = selectContext(retained, {
+        ...selectionOptions,
+        truncateToolResults: false,
+      });
+      const kept = new Set(candidate.messages);
+      const activeStart = currentMessage ? retained.indexOf(currentMessage) : 0;
+      if (retained.slice(activeStart).every((message) => kept.has(message))) {
+        selected = candidate;
+        if (sent) {
+          const fallback = selectContext(shortenOlderResults(false), selectionOptions);
+          // Whole results must not evict an otherwise stable prefix: signed thinking
+          // before the first shortened result still depends on that history.
+          if (
+            firstChange(sent.messages, candidate.messages) <
+            firstChange(sent.messages, fallback.messages)
+          )
+            selected = fallback;
+        }
+      }
+    } catch (error) {
+      if (!(error instanceof ContextBudgetError)) throw error;
+    }
+    selected ??= selectContext(shortenOlderResults(false), selectionOptions);
     const shortenedStructuredResults = selected.messages.filter((message) => {
       if (message.role !== "toolResult") return false;
       try {

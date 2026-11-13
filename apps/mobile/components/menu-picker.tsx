@@ -98,6 +98,7 @@ export function MenuPicker({
   divider = false,
   plain = false,
   showLabel = true,
+  disabled = false,
 }: {
   label: string;
   choices: readonly MenuPickerChoice[];
@@ -107,6 +108,7 @@ export function MenuPicker({
   divider?: boolean;
   plain?: boolean;
   showLabel?: boolean;
+  disabled?: boolean;
 }) {
   const styles = useThemedStyles(createStyles);
   const tokens = useMobileTokens();
@@ -159,8 +161,14 @@ export function MenuPicker({
     );
   }
   const menu = (
-    <MenuPickerMenu choices={choices} label={label} onChange={onChange} value={value}>
-      <View {...row} style={rowStyle}>
+    <MenuPickerMenu
+      choices={choices}
+      disabled={disabled}
+      label={label}
+      onChange={onChange}
+      value={value}
+    >
+      <View {...row} style={[rowStyle, disabled && styles.disabled]}>
         {content}
       </View>
     </MenuPickerMenu>
@@ -194,5 +202,6 @@ function createStyles() {
     pressed: {
       backgroundColor: native.fillPressed,
     },
+    disabled: { opacity: 0.4 },
   });
 }

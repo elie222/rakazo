@@ -8,8 +8,8 @@ import { reconcileRefreshedThread, reduceThreadSnapshot } from "@rakazo/core";
 import { describe, expect, it } from "vitest";
 import {
   clearActiveThreadRuns,
+  computerBusyWithRun,
   computerPanelNeedsScreen,
-  computerTakeoverBlocked,
   reduceComputerStatus,
   screenMissing,
   screenReadLoaded,
@@ -42,9 +42,7 @@ describe("thread event reduction with web state", () => {
 
     expect(reconciled.snapshot.run?.status).toBe("waiting_takeover");
     expect(reconciled.computer?.busyBotName).toBeNull();
-    expect(computerTakeoverBlocked(reconciled.computer, reconciled.snapshot.run?.status)).toBe(
-      false,
-    );
+    expect(computerBusyWithRun(reconciled.computer, reconciled.snapshot.run?.status)).toBe(false);
   });
 
   it("clears active runs and their transient progress after stop", () => {
@@ -92,9 +90,7 @@ describe("thread event reduction with web state", () => {
     expect(reconciled.snapshot.run).toBeNull();
     expect(reconciled.snapshot.activeRuns).toEqual([]);
     expect(reconciled.computer?.busyBotName).toBeNull();
-    expect(computerTakeoverBlocked(reconciled.computer, reconciled.snapshot.run?.status)).toBe(
-      false,
-    );
+    expect(computerBusyWithRun(reconciled.computer, reconciled.snapshot.run?.status)).toBe(false);
   });
 
   it("keeps a failed run and its error so the thread can surface the failure", () => {
@@ -221,10 +217,10 @@ describe("computer event reduction", () => {
     expect(unknown).toBe(running);
   });
 
-  it("grants user control without overwriting the lifecycle state", () => {
+  it("grants user control without overwriting the lifecycle state or the bot's request", () => {
     const granted = reduceComputerStatus(
-      computer({ state: "suspended", controlHolder: "bot" }),
-      event({ type: "computer.takeover.granted", payload: { takeoverRequested: true } }),
+      computer({ state: "suspended", controlHolder: "none", takeoverRequested: true }),
+      event({ type: "computer.takeover.granted", payload: {} }),
     );
     expect(granted).toMatchObject({
       state: "suspended",
@@ -232,47 +228,38 @@ describe("computer event reduction", () => {
       controlBotId: "bot-1",
       takeoverRequested: true,
     });
-    expect(
-      reduceComputerStatus(
-        granted,
-        event({ type: "computer.takeover.granted", payload: { takeoverRequested: true } }),
-      ),
-    ).toBe(granted);
+    // The event cannot say whose lease it is, so the holder's own lease waits for the status read.
+    expect(granted?.controlLeaseId).toBeUndefined();
   });
 
-  it("applies the authoritative holder when a takeover is released or expires", () => {
+  it("ends control on hand back or expiry, and the request only once it is answered", () => {
     const initial = computer({
       state: "running",
       controlHolder: "user",
       controlBotId: "bot-1",
       takeoverRequested: true,
     });
-    const expired = reduceComputerStatus(
+    const handedBack = reduceComputerStatus(
       initial,
       event({
         type: "computer.takeover.released",
         payload: { holder: "none", reason: "expired" },
       }),
     );
-    const released = reduceComputerStatus(
-      initial,
-      event({
-        type: "computer.takeover.released",
-        payload: { holder: "bot", reason: "released" },
-      }),
-    );
-    expect(expired).toMatchObject({
-      state: "running",
+    expect(handedBack).toMatchObject({
       controlHolder: "none",
       controlBotId: null,
-      takeoverRequested: false,
+      takeoverRequested: true,
     });
-    expect(released).toMatchObject({
-      state: "running",
-      controlHolder: "bot",
-      controlBotId: null,
-      takeoverRequested: false,
-    });
+    expect(
+      reduceComputerStatus(
+        handedBack,
+        event({
+          type: "computer.takeover.released",
+          payload: { holder: "none", reason: "done", answered: true },
+        }),
+      ),
+    ).toMatchObject({ controlHolder: "none", takeoverRequested: false });
   });
 
   it("fills in controlBotId when a grant arrives after controlHolder is already user", () => {
@@ -304,15 +291,15 @@ describe("computer event reduction", () => {
     expect(released?.controlledByOther).toBeUndefined();
   });
 
-  it("treats a busy bot name as a blocked takeover", () => {
-    expect(computerTakeoverBlocked(computer({ busyBotName: "Writer" }), "running")).toBe(true);
-    expect(computerTakeoverBlocked(computer({ busyBotName: "Writer" }))).toBe(false);
-    expect(computerTakeoverBlocked(computer({ busyBotName: null }), "running")).toBe(false);
-    expect(computerTakeoverBlocked(null, "running")).toBe(false);
-    expect(computerTakeoverBlocked(computer({ busyBotName: "Writer" }), "waiting_takeover")).toBe(
+  it("treats a busy bot name as a live run holding the computer", () => {
+    expect(computerBusyWithRun(computer({ busyBotName: "Writer" }), "running")).toBe(true);
+    expect(computerBusyWithRun(computer({ busyBotName: "Writer" }))).toBe(false);
+    expect(computerBusyWithRun(computer({ busyBotName: null }), "running")).toBe(false);
+    expect(computerBusyWithRun(null, "running")).toBe(false);
+    expect(computerBusyWithRun(computer({ busyBotName: "Writer" }), "waiting_takeover")).toBe(
       false,
     );
-    expect(computerTakeoverBlocked(computer({ busyBotName: "Writer" }), "completed")).toBe(false);
+    expect(computerBusyWithRun(computer({ busyBotName: "Writer" }), "completed")).toBe(false);
   });
 
   it("ignores computer events that belong to a different bot", () => {
@@ -339,45 +326,44 @@ describe("computer event reduction", () => {
     ).toBe(prev);
   });
 
-  it("marks takeover requested and clears control unless the lease was retained", () => {
-    const busy = computer({ state: "running", busyBotName: "Writer", controlHolder: "bot" });
-    expect(
-      reduceComputerStatus(busy, event({ type: "computer.takeover.requested", payload: {} })),
-    ).toMatchObject({
-      busyBotName: null,
-      takeoverRequested: true,
-      controlHolder: "none",
-      controlBotId: null,
-    });
-    expect(
-      reduceComputerStatus(
-        computer({
-          state: "running",
-          controlHolder: "user",
-          controlBotId: "bot-1",
-          takeoverRequested: false,
-        }),
-        event({
-          type: "computer.takeover.requested",
-          payload: { retainedControl: true },
-        }),
-      ),
-    ).toMatchObject({
+  it("ignores the release of an earlier lease while this viewer holds a newer one", () => {
+    const holding = computer({
+      state: "running",
       controlHolder: "user",
       controlBotId: "bot-1",
-      takeoverRequested: true,
-      busyBotName: null,
+      controlLeaseId: "lease-2",
     });
     expect(
       reduceComputerStatus(
-        busy,
-        event({ type: "computer.takeover.granted", payload: { takeoverRequested: true } }),
+        holding,
+        event({
+          type: "computer.takeover.released",
+          payload: { holder: "none", leaseId: "lease-1", reason: "expired" },
+        }),
       ),
-    ).toMatchObject({
-      controlHolder: "user",
-      busyBotName: null,
-      takeoverRequested: true,
-    });
+    ).toBe(holding);
+    expect(
+      reduceComputerStatus(
+        holding,
+        event({
+          type: "computer.takeover.released",
+          payload: { holder: "none", leaseId: "lease-2", reason: "released" },
+        }),
+      ),
+    ).toMatchObject({ controlHolder: "none", controlLeaseId: undefined });
+  });
+
+  it("marks takeover requested without touching who holds the screen", () => {
+    const busy = computer({ state: "running", busyBotName: "Writer", controlHolder: "none" });
+    expect(
+      reduceComputerStatus(busy, event({ type: "computer.takeover.requested", payload: {} })),
+    ).toMatchObject({ busyBotName: null, takeoverRequested: true, controlHolder: "none" });
+    expect(
+      reduceComputerStatus(
+        computer({ state: "running", controlHolder: "user", controlBotId: "bot-1" }),
+        event({ type: "computer.takeover.requested", payload: {} }),
+      ),
+    ).toMatchObject({ controlHolder: "user", controlBotId: "bot-1", takeoverRequested: true });
   });
 
   it("only reconnects a running computer whose screen has no URL", () => {
