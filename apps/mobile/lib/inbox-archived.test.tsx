@@ -465,7 +465,7 @@ describe("group deletion archive notifications", () => {
       if (method === "groups/list") {
         return Promise.resolve([{ id: "group-b", name: "Group", members: [] }]);
       }
-      if (method === "bots/list") return Promise.resolve([]);
+      if (method === "bots/list" || method === "bots/listArchived") return Promise.resolve([]);
       return removeFails ? Promise.reject(new Error("offline")) : Promise.resolve({});
     });
     await act(async () => root.render(<GroupSettingsScreen />));

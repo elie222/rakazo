@@ -266,7 +266,13 @@ it("keeps members closed while a save is running", async () => {
 it("removes deleted bots from an open group picker after deletion completes", async () => {
   await act(async () => root.render(<GroupSettings />));
   rpc.mockImplementation(async (procedure: string) =>
-    procedure === "bots/list" ? bots.slice(1) : procedure === "bots/listArchived" ? [] : undefined,
+    procedure === "groups/list"
+      ? [group]
+      : procedure === "bots/list"
+        ? bots.slice(1)
+        : procedure === "bots/listArchived"
+          ? []
+          : undefined,
   );
   await act(async () => notifyArchivedChatsChanged());
   expect(switches().map((input) => input.getAttribute("aria-label"))).toEqual(["Writer"]);
@@ -277,19 +283,49 @@ it("removes deleted bots from an open group picker after deletion completes", as
 it("preserves archived membership when the bot is restored", async () => {
   await act(async () => root.render(<GroupSettings />));
   rpc.mockImplementation(async (procedure: string) =>
-    procedure === "bots/list"
-      ? bots.slice(1)
-      : procedure === "bots/listArchived"
-        ? [bots[0]]
-        : undefined,
+    procedure === "groups/list"
+      ? [group]
+      : procedure === "bots/list"
+        ? bots.slice(1)
+        : procedure === "bots/listArchived"
+          ? [bots[0]]
+          : undefined,
   );
   await act(async () => notifyArchivedChatsChanged());
   rpc.mockImplementation(async (procedure: string) =>
-    procedure === "bots/list" ? bots : procedure === "bots/listArchived" ? [] : undefined,
+    procedure === "groups/list"
+      ? [group]
+      : procedure === "bots/list"
+        ? bots
+        : procedure === "bots/listArchived"
+          ? []
+          : undefined,
   );
   await act(async () => notifyArchivedChatsChanged());
   expect(switches().map((input) => input.getAttribute("aria-label"))).toEqual([
     "Researcher",
     "Writer",
   ]);
+});
+
+it("ignores an older refresh after a deletion refresh completes", async () => {
+  await act(async () => root.render(<GroupSettings />));
+  let resolveOld!: (value: MobileBot[]) => void;
+  const old = new Promise<MobileBot[]>((resolve) => {
+    resolveOld = resolve;
+  });
+  rpc.mockImplementation(async (procedure: string) =>
+    procedure === "groups/list" ? [group] : procedure === "bots/list" ? old : [],
+  );
+  await act(async () => notifyArchivedChatsChanged());
+  rpc.mockImplementation(async (procedure: string) =>
+    procedure === "groups/list"
+      ? [{ ...group, members: group.members.slice(1) }]
+      : procedure === "bots/list"
+        ? bots.slice(1)
+        : [],
+  );
+  await act(async () => notifyArchivedChatsChanged());
+  await act(async () => resolveOld(bots));
+  expect(switches().map((input) => input.getAttribute("aria-label"))).toEqual(["Writer"]);
 });

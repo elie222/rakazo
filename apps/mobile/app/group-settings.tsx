@@ -29,48 +29,49 @@ export default function GroupSettingsScreen() {
 
   useEffect(() => {
     if (!groupId) return;
-    void Promise.all([
-      rpc("groups/list").then((groups) => groups.find((row) => row.id === groupId) ?? null),
-      rpc("bots/list"),
-    ])
-      .then(([nextGroup, nextBots]) => {
+    let generation = 0;
+    let baseline: MobileGroup | null = null;
+    async function load() {
+      const request = ++generation;
+      try {
+        const [groups, nextBots, archivedBots] = await Promise.all([
+          rpc("groups/list"),
+          rpc("bots/list"),
+          rpc("bots/listArchived", {}),
+        ]);
+        if (request !== generation) return;
+        const nextGroup = groups.find((row) => row.id === groupId);
         if (!nextGroup) throw new Error(t`Group not found`);
+        const ids = new Set([...nextBots, ...archivedBots].map((bot) => bot.id));
+        const previousMembers = new Set(baseline?.members.map((member) => member.botId));
+        const initial = baseline === null;
+        baseline = nextGroup;
         setGroup(nextGroup);
-        setName(nextGroup.name);
-        setSelected(nextGroup.members.map((member) => member.botId));
+        if (initial) setName(nextGroup.name);
+        setSelected((previous) =>
+          initial
+            ? nextGroup.members.map((member) => member.botId)
+            : [
+                ...new Set([
+                  ...previous.filter((id) => ids.has(id)),
+                  ...nextGroup.members
+                    .filter((member) => !previousMembers.has(member.botId))
+                    .map((member) => member.botId),
+                ]),
+              ],
+        );
         setBots(nextBots.filter((bot) => !bot.archivedAt));
-      })
-      .catch((err) => setError(errorText(err, t`Could not load group`)));
-  }, [groupId]);
-
-  useEffect(() => {
-    let active = true;
-    const unsubscribe = onArchivedChatsChanged(() => {
-      void Promise.all([rpc("bots/list"), rpc("bots/listArchived", {})])
-        .then(([nextBots, archivedBots]) => {
-          if (!active) return;
-          const available = nextBots.filter((bot) => !bot.archivedAt);
-          // Archiving retains membership; only permanently deleted bots are removed.
-          const ids = new Set([...nextBots, ...archivedBots].map((bot) => bot.id));
-          setBots(available);
-          setSelected((previous) => previous.filter((id) => ids.has(id)));
-          setGroup(
-            (previous) =>
-              previous && {
-                ...previous,
-                members: previous.members.filter((member) => ids.has(member.botId)),
-              },
-          );
-        })
-        .catch((err) => {
-          if (active) setError(errorText(err, t`Could not load group`));
-        });
-    });
+      } catch (err) {
+        if (request === generation) setError(errorText(err, t`Could not load group`));
+      }
+    }
+    void load();
+    const unsubscribe = onArchivedChatsChanged(() => void load());
     return () => {
-      active = false;
+      generation++;
       unsubscribe();
     };
-  }, []);
+  }, [groupId]);
 
   async function save() {
     if (!groupId || !group || pending) return;
