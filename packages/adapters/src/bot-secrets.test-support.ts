@@ -23,7 +23,10 @@ function matches(row: Row, where: Where): boolean {
   return Object.entries(where).every(([key, value]) => {
     if (key === "OR") return (value as Where[]).some((branch) => matches(row, branch));
     const field = row[key as keyof Row];
+    if (field instanceof Date && value instanceof Date) return field.getTime() === value.getTime();
     if (value && typeof value === "object" && "not" in value) return field !== value.not;
+    if (value && typeof value === "object" && "gt" in value)
+      return String(field) > String(value.gt);
     if (value && typeof value === "object" && "startsWith" in value)
       return String(field).startsWith(String(value.startsWith));
     if (value && typeof value === "object" && "path" in value) {
@@ -48,14 +51,30 @@ export function fakeDatabase() {
   // Spaces that customized "credentials" and so use their own vault.
   const ownVaults = new Set<string>();
   const vaultCredential = {
-    findFirst: vi.fn(
-      async ({ where }: { where: Where }) => rows.find((r) => matches(r, where)) ?? null,
-    ),
-    findMany: vi.fn(async ({ where, take }: { where: Where; take?: number }) =>
-      rows
-        .filter((row) => matches(row, where))
-        .sort((left, right) => left.name.localeCompare(right.name))
-        .slice(0, take ?? rows.length),
+    findFirst: vi.fn(async ({ where }: { where: Where }) => {
+      const row = rows.find((r) => matches(r, where));
+      return row ? { ...row } : null;
+    }),
+    findMany: vi.fn(
+      async ({
+        where,
+        take,
+        orderBy,
+      }: {
+        where: Where;
+        take?: number;
+        orderBy?: { id?: "asc"; name?: "asc" };
+      }) =>
+        rows
+          .filter((row) => matches(row, where))
+          // By id as Postgres compares text ids for a cursor; by name otherwise.
+          .sort((left, right) =>
+            orderBy?.id
+              ? Number(left.id > right.id) - Number(left.id < right.id)
+              : left.name.localeCompare(right.name),
+          )
+          .slice(0, take ?? rows.length)
+          .map((row) => ({ ...row })),
     ),
     count: vi.fn(
       async ({ where }: { where: Where }) => rows.filter((r) => matches(r, where)).length,
@@ -69,7 +88,7 @@ export function fakeDatabase() {
     }),
     updateMany: vi.fn(async ({ where, data }: { where: Where; data: Partial<Row> }) => {
       const matched = rows.filter((row) => matches(row, where));
-      for (const row of matched) Object.assign(row, data, { updatedAt: now() });
+      for (const row of matched) Object.assign(row, data, { updatedAt: data.updatedAt ?? now() });
       return { count: matched.length };
     }),
     deleteMany: vi.fn(async ({ where }: { where: Where }) => {

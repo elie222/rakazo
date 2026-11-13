@@ -226,6 +226,13 @@ export { dispatcherFetch } from "./undici-fetch.js";
 export * from "./user-device-emulator.js";
 export * from "./user-device-gateway.js";
 export * from "./user-device-protocol.js";
+export {
+  migrateVaultValues,
+  openSealedVaultValue,
+  rotateVaultKeys,
+  vaultItemsNotUnderKeys,
+  vaultItemsUnderOlderKeys,
+} from "./vault-values.js";
 export * from "./voice-factory.js";
 export * from "./voice-model-connection.js";
 export * from "./wakeup.js";
