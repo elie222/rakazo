@@ -108,7 +108,7 @@ function skipOutputValidation<T>(error: unknown): JsonSchemaValidator<T> {
 /** A copy of `schema` with `pattern` values that `new RegExp(pattern, "u")` rejects
  * removed. A `patternProperties` key is rewritten when dropping unnecessary identity
  * escapes leaves an equivalent unicode pattern; a key that cannot be kept is removed
- * and `additionalProperties: false` is removed with it so those names are not rejected.
+ * and `additionalProperties` is removed with it so those names are not rejected.
  * The original is left unchanged. */
 function withoutInvalidUnicodePatterns(schema: JsonSchemaType, dropped: string[]): JsonSchemaType {
   const copy = structuredClone(schema);
@@ -151,18 +151,20 @@ function repairPatternProperties(record: Record<string, unknown>, dropped: strin
       droppedKey = true;
       continue;
     }
-    if (normalized === key) continue;
+    // Ajv ignores a pattern key named `__proto__`. A group matches the same text.
+    const keyToStore = normalized === "__proto__" ? "(?:__proto__)" : normalized;
+    if (keyToStore === key) continue;
     const schema = properties[key];
     delete properties[key];
-    if (Object.hasOwn(properties, normalized)) {
-      dropped.push(key);
-      droppedKey = true;
+    if (Object.hasOwn(properties, keyToStore)) {
+      const existing = Object.getOwnPropertyDescriptor(properties, keyToStore)?.value;
+      setOwn(properties, keyToStore, { allOf: [existing, schema] });
       continue;
     }
-    properties[normalized] = schema;
+    setOwn(properties, keyToStore, schema);
   }
   if (Object.keys(properties).length === 0) delete record.patternProperties;
-  if (droppedKey && record.additionalProperties === false) delete record.additionalProperties;
+  if (droppedKey) delete record.additionalProperties;
 }
 
 /** `pattern` when it compiles with the unicode flag, or with identity escapes removed. */
@@ -179,7 +181,7 @@ function unicodeCompatiblePattern(pattern: string): string | undefined {
 function withoutUnnecessaryIdentityEscapes(pattern: string): string | undefined {
   let normalized = "";
   let inClass = false;
-  // The next character is the first member, where `^` negates and `]` is literal.
+  // `^` right after `[` negates. `]` ends the class, including an empty `[^]`.
   let atClassStart = false;
   for (let index = 0; index < pattern.length; index++) {
     const char = pattern.charAt(index);
@@ -197,6 +199,12 @@ function withoutUnnecessaryIdentityEscapes(pattern: string): string | undefined 
       atClassStart = true;
       continue;
     }
+    if (inClass && char === "]") {
+      normalized += char;
+      inClass = false;
+      atClassStart = false;
+      continue;
+    }
     if (inClass && atClassStart) {
       const negation = char === "^" && normalized.endsWith("[");
       normalized += char;
@@ -204,9 +212,17 @@ function withoutUnnecessaryIdentityEscapes(pattern: string): string | undefined 
       continue;
     }
     normalized += char;
-    if (inClass && char === "]") inClass = false;
   }
   return normalized;
+}
+
+function setOwn(record: Record<string, unknown>, key: string, value: unknown): void {
+  Object.defineProperty(record, key, {
+    value,
+    enumerable: true,
+    writable: true,
+    configurable: true,
+  });
 }
 
 function identityEscape(char: string, inClass: boolean): boolean {

@@ -275,6 +275,61 @@ describe("MCP output schema patterns", () => {
     expect(validate({ id: 1, "a{1}": 1 }).valid).toBe(false);
   });
 
+  it("does not apply additionalProperties to a pattern key that was dropped", () => {
+    const validate = createMcpJsonSchemaValidator().getValidator({
+      type: "object",
+      patternProperties: { "a{": { type: "number" } },
+      additionalProperties: { type: "string" },
+    });
+
+    expect(validate({ "a{1}": 1 })).toMatchObject({ valid: true });
+  });
+
+  it("checks every subschema when pattern keys normalize to the same key", () => {
+    const validate = createMcpJsonSchemaValidator().getValidator({
+      type: "object",
+      patternProperties: {
+        ":": { type: "string", minLength: 2 },
+        "\\:": { type: "string", maxLength: 3 },
+      },
+      additionalProperties: false,
+    });
+
+    expect(validate({ "a:b": "ok" })).toMatchObject({ valid: true });
+    expect(validate({ ":": "x" }).valid).toBe(false);
+    expect(validate({ "a:bcd": "long" }).valid).toBe(false);
+    expect(validate({ other: "ok" }).valid).toBe(false);
+  });
+
+  it("repairs an escaped dash after an empty negated class", () => {
+    const validate = createMcpJsonSchemaValidator().getValidator({
+      type: "object",
+      patternProperties: { "[^]\\-": { type: "number" } },
+      additionalProperties: false,
+    });
+
+    expect(validate({ "a-": 1 })).toMatchObject({ valid: true });
+    expect(validate({ "a-": "not-a-number" }).valid).toBe(false);
+    expect(validate({ other: 1 }).valid).toBe(false);
+  });
+
+  it("keeps a repaired __proto__ pattern key", () => {
+    const schema = {
+      type: "object" as const,
+      patternProperties: { "\\__proto__": { type: "number" } },
+    };
+    const open = createMcpJsonSchemaValidator().getValidator(schema);
+    const closed = createMcpJsonSchemaValidator().getValidator({
+      ...schema,
+      additionalProperties: false,
+    });
+
+    expect(open(JSON.parse('{"__proto__":1}'))).toMatchObject({ valid: true });
+    expect(open(JSON.parse('{"__proto__":"x"}')).valid).toBe(false);
+    expect(closed(JSON.parse('{"__proto__":1}'))).toMatchObject({ valid: true });
+    expect(closed(JSON.parse('{"other":1}')).valid).toBe(false);
+  });
+
   it("repairs an invalid pattern in a keyword-named dependent schema", () => {
     const dependent = {
       properties: { href: { type: "string", pattern: PAYPAL_STYLE_PATTERN } },
