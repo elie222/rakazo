@@ -474,10 +474,18 @@ export function ModelSettingsOverlay({
   const pageCredential = page
     ? credentials.find((entry) => entry.id === page.credentialId)
     : undefined;
+  const modelRemoved =
+    page?.kind === "model" &&
+    pageCredential &&
+    !loading &&
+    !providerModels(pageCredential).some((entry) => entry.id === page.modelId);
+  useEffect(() => {
+    if (modelRemoved && page) setPage({ kind: "provider", credentialId: page.credentialId });
+  }, [modelRemoved, page]);
   const body =
     page && pageCredential ? (
       <div ref={pageRef}>
-        {page.kind === "provider" ? (
+        {page.kind === "provider" || modelRemoved ? (
           <ProviderPage
             title={connected ? selectedConnectionName : connectionName(pageCredential)}
             connection={connectionPanel}

@@ -5,6 +5,7 @@ import { MAX_MODEL_CONTEXT_WINDOW, MAX_MODEL_MAX_TOKENS } from "@rakazo/contract
 import type { ModelSettingsFields } from "@rakazo/core";
 import {
   catalogEntryFor,
+  connectionModels,
   credentialModelSettings,
   modelCapabilitiesConfigurable,
   modelHasOwnSettings,
@@ -12,7 +13,7 @@ import {
   modelSettingsFields,
   modelSettingsRequest,
 } from "@rakazo/core";
-import { useFocusEffect, useLocalSearchParams, useNavigation } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import { useCallback, useLayoutEffect, useMemo, useState } from "react";
 import {
   AccessibilityInfo,
@@ -36,6 +37,7 @@ import { errorText } from "../../lib/user-error";
 export default function ModelSettingsScreen() {
   const styles = useThemedStyles(createModelsStyles);
   const navigation = useNavigation();
+  const router = useRouter();
   const { t } = useLingui();
   const {
     credentialId = "",
@@ -61,12 +63,17 @@ export default function ModelSettingsScreen() {
     ]);
     const next = credentials.find((item) => item.id === credentialId);
     if (!next) throw new Error(t`Connection not found`);
+    if (!connectionModels(next, catalog).some((entry) => entry.id === modelId)) {
+      setFields(null);
+      router.replace({ pathname: "/models", params: spaceId ? { spaceId } : {} });
+      return;
+    }
     const nextEntry = catalogEntryFor(catalog, next.provider, modelId);
     setCredential(next);
     setEntry(nextEntry);
     setFields(modelSettingsFields(credentialModelSettings(next, modelId), nextEntry));
     setError(null);
-  }, [credentialId, modelId, rpc, t]);
+  }, [credentialId, modelId, rpc, router, spaceId, t]);
 
   useFocusEffect(
     useCallback(() => {

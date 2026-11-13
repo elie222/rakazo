@@ -481,6 +481,28 @@ it("saves a model's own limits from its row, leaving the catalog's capabilities 
   }
 });
 
+it("returns to the provider list when a refresh removes the open model", async () => {
+  vi.mocked(rpc.me).mockResolvedValue(account("openai-compatible", "model-a"));
+  models.list.mockResolvedValue([compatibleEntry]);
+  models.credentials.mockResolvedValue([compatibleCredential]);
+  models.saveModelSettings.mockResolvedValue({ ok: true });
+  const view = await renderSettings();
+  try {
+    await rowMenu("Manage model");
+    expect(view.container.querySelector('[data-testid="model-settings-page"]')).not.toBeNull();
+    models.credentials.mockResolvedValue([
+      { ...compatibleCredential, modelId: "model-b", enabledModelIds: ["model-b"] },
+    ]);
+    await typeInto(labeled(view.container, "Maximum output tokens")!, "2000");
+    await click(buttons(view.container, "Save").find((entry) => entry.textContent === "Save"));
+    expect(view.container.querySelector('[data-testid="model-settings-page"]')).toBeNull();
+    expect(view.container.textContent).toContain("model-b");
+    expect(labeled(view.container, "Maximum output tokens")).toBeNull();
+  } finally {
+    await view.unmount();
+  }
+});
+
 it("resets a customized model to its defaults", async () => {
   models.list.mockResolvedValue([deepseekEntry]);
   models.credentials.mockResolvedValue([

@@ -21,9 +21,10 @@ import { modelPickerRequest } from "./model-picker-selection";
 import { queryClient } from "./query";
 
 const savedEndpoint = "https://models.example.test/v1";
-const { push, back, params, rpcCalls, saved } = vi.hoisted(() => ({
+const { push, back, replace, params, rpcCalls, saved } = vi.hoisted(() => ({
   push: vi.fn(),
   back: vi.fn(),
+  replace: vi.fn(),
   params: {} as { requestId?: string; spaceId?: string; credentialId?: string; modelId?: string },
   rpcCalls: [] as [
     string,
@@ -53,6 +54,7 @@ const { push, back, params, rpcCalls, saved } = vi.hoisted(() => ({
     needsModel: false,
   },
 }));
+const settingsRouter = { push, back, replace };
 
 vi.mock("./session", () => ({ currentSessionGeneration: () => 1 }));
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
@@ -156,7 +158,7 @@ vi.mock("./api", () => ({
   },
 }));
 vi.mock("expo-router", () => ({
-  useRouter: () => ({ push, back }),
+  useRouter: () => settingsRouter,
   useNavigation: () => ({ setOptions: vi.fn() }),
   useLocalSearchParams: () => params,
   useFocusEffect: (effect: () => (() => void) | undefined) => useEffect(effect, [effect]),
@@ -696,6 +698,28 @@ it("saves a model's own limits and capabilities from its Manage model screen", a
   } finally {
     delete params.credentialId;
     delete params.modelId;
+  }
+});
+
+it("leaves a removed model's settings and preserves the selected Space", async () => {
+  params.credentialId = "credential-fixture";
+  params.modelId = "removed-model";
+  params.spaceId = "space-override";
+  replace.mockClear();
+  try {
+    await remount(async () => {
+      await act(async () => root.render(createElement(ModelSettingsScreen)));
+    });
+    expect(replace).toHaveBeenCalledWith({
+      pathname: "/models",
+      params: { spaceId: "space-override" },
+    });
+    expect(field("Maximum output tokens")).toBeNull();
+    expect(rpcCalls.some(([procedure]) => procedure === "models/saveModelSettings")).toBe(false);
+  } finally {
+    delete params.credentialId;
+    delete params.modelId;
+    delete params.spaceId;
   }
 });
 
