@@ -181,12 +181,13 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     }, []),
   );
 
-  const { mentionBots, mentionBotsRef, mentionGroups, refreshMentionBots } = useThreadBots({
-    botId,
-    groupId,
-    name,
-    activeBotId,
-  });
+  const { mentionBots, mentionBotsRef, mentionGroups, refreshMentionBots, refreshMentionRoster } =
+    useThreadBots({
+      botId,
+      groupId,
+      name,
+      activeBotId,
+    });
   const {
     routines: mentionRoutines,
     connectors: mentionConnectors,
@@ -334,7 +335,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     botId,
     readOnly,
     notificationThreadId,
-    refreshMentionBots,
+    refreshMentionBots: refreshMentionRoster,
     markReadIfVisible,
     speakFinishedReplyRef,
   });
