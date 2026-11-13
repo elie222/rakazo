@@ -507,18 +507,102 @@ describe("Pi runtime transient model retries", () => {
     "Request timed out.",
     "Connection error.",
     MODEL_STREAM_IDLE_TIMEOUT_MESSAGE,
-  ])("does not retry after a tool call starts even if %s omits it", async (error) => {
-    const failure = message(primary, [], "error", error);
+  ])("redoes a call that failed with %s mid tool call, before any text", async (error) => {
+    const partialCall = {
+      type: "toolCall" as const,
+      id: "dropped-call",
+      name: "write_effect",
+      arguments: { value: "half" },
+    };
+    const failure = message(primary, [partialCall], "error", error);
+    const started = { ...failure, content: [], stopReason: "stop" as const };
+    providerState.stream
+      .mockImplementationOnce(() => {
+        const result = new AssistantMessageEventStream();
+        result.push({ type: "start", partial: started });
+        result.push({ type: "thinking_start", contentIndex: 0, partial: started });
+        result.push({ type: "toolcall_start", contentIndex: 1, partial: failure });
+        result.push({
+          type: "toolcall_delta",
+          contentIndex: 1,
+          delta: '{"value":"ha',
+          partial: failure,
+        });
+        result.push({ type: "error", reason: "error", error: failure });
+        result.end(failure);
+        return result;
+      })
+      .mockImplementationOnce((target: Model<"openai-completions">) =>
+        stream(
+          target,
+          message(
+            target,
+            [
+              {
+                type: "toolCall",
+                id: "whole-call",
+                name: "write_effect",
+                arguments: { value: "whole" },
+              },
+            ],
+            "toolUse",
+          ),
+        ),
+      )
+      .mockImplementation((target: Model<"openai-completions">) =>
+        stream(target, message(target, [{ type: "text", text: "Done." }], "stop")),
+      );
+    const appendMessage = vi.fn(async (_entry: AgentMessage) => undefined);
+    vi.spyOn(PiJsonlSessionRecorder.prototype, "start").mockResolvedValue({ appendMessage });
+    const input = request([{ provider: backupA.provider, id: backupA.id, apiKey: "backup-key" }]);
+
+    const events = await run(input, [], new PiAgentRuntime({ sessionRoot: "fixture-sessions" }));
+
+    expect(providerState.stream).toHaveBeenCalledTimes(3);
+    expect(vi.mocked(input.executeTool!).mock.calls.map(([, args]) => args)).toEqual([
+      { value: "whole" },
+    ]);
+    expect(events.at(-1)).toEqual({ type: "done", text: "Done." });
+    // The dropped call leaves nothing behind: no assistant message and no tool activity.
+    const assistantEntries = appendMessage.mock.calls
+      .map(([entry]) => entry)
+      .filter((entry) => entry.role === "assistant");
+    expect(assistantEntries).toHaveLength(2);
+    expect(JSON.stringify(assistantEntries)).not.toContain("dropped-call");
+    expect(
+      events.filter((event) => event.type === "progress" && event.text && event.activity),
+    ).toHaveLength(1);
+  });
+
+  it("keeps a failure mid tool call terminal once reply text was shown", async () => {
+    const failure = message(
+      primary,
+      [
+        { type: "text", text: "Saving it now." },
+        { type: "toolCall", id: "dropped-call", name: "write_effect", arguments: {} },
+      ],
+      "error",
+      "terminated",
+    );
     providerState.stream.mockImplementation(() => {
       const result = new AssistantMessageEventStream();
-      result.push({ type: "start", partial: failure });
-      result.push({ type: "toolcall_start", contentIndex: 0, partial: failure });
+      const started = { ...failure, content: [], stopReason: "stop" as const };
+      result.push({ type: "start", partial: started });
+      result.push({
+        type: "text_delta",
+        contentIndex: 0,
+        delta: "Saving it now.",
+        partial: failure,
+      });
+      result.push({ type: "toolcall_start", contentIndex: 1, partial: failure });
       result.push({ type: "error", reason: "error", error: failure });
       result.end(failure);
       return result;
     });
     const input = request([{ provider: backupA.provider, id: backupA.id, apiKey: "backup-key" }]);
-    await expect(run(input)).rejects.toThrow(error);
+
+    await expect(run(input)).rejects.toThrow("terminated");
+
     expect(providerState.stream).toHaveBeenCalledOnce();
     expect(providerState.delay).not.toHaveBeenCalled();
     expect(input.executeTool).not.toHaveBeenCalled();
@@ -1641,57 +1725,37 @@ describe("Pi runtime ordered model fallback", () => {
     expect(backupImageCounts.at(-1)).toBe(1);
   });
 
-  it.each([
-    {
-      label: "tool call",
-      content: [
+  it("switches without running a tool call that a failed response holds but never streamed", async () => {
+    const failure = message(
+      primary,
+      [
         {
-          type: "toolCall" as const,
+          type: "toolCall",
           id: "terminal-call",
           name: "write_effect",
           arguments: { value: "must not execute" },
         },
       ],
-    },
-  ])(
-    "does not switch when the terminal error contains partial $label without deltas",
-    async ({ content, label }) => {
-      const failure = message(primary, content, "error", "429 rate_limit_error");
-      providerState.stream.mockImplementation((target: Model<"openai-completions">) =>
-        target.provider === primary.provider
-          ? stream(target, failure)
-          : stream(target, message(target, [{ type: "text", text: "must not run" }], "stop")),
-      );
-      const input = request([{ provider: backupA.provider, id: backupA.id, apiKey: "backup-key" }]);
-      const events: Array<{ type: string; text?: string }> = [];
-      const runtime = new PiAgentRuntime();
-      const consume = async () => {
-        for await (const event of runtime.run(input, {
-          operationId: "operation",
-          traceId: "trace",
-          spaceId: "space",
-          userId: "user",
-          signal: new AbortController().signal,
-        })) {
-          events.push(event);
-        }
-      };
+      "error",
+      "429 rate_limit_error",
+    );
+    providerState.stream.mockImplementation((target: Model<"openai-completions">) =>
+      target.provider === primary.provider
+        ? stream(target, failure)
+        : stream(target, message(target, [{ type: "text", text: "from backup" }], "stop")),
+    );
+    const input = request([{ provider: backupA.provider, id: backupA.id, apiKey: "backup-key" }]);
 
-      await expect(consume()).rejects.toThrow(/429 rate_limit_error/);
+    const events = await run(input);
 
-      expect(providerState.stream).toHaveBeenCalledTimes(1);
-      if (label === "text") {
-        expect(events).toContainEqual(
-          expect.objectContaining({ type: "text", text: "terminal partial" }),
-        );
-      }
-      expect(input.executeTool).not.toHaveBeenCalled();
-      expect(events).not.toContainEqual(
-        expect.objectContaining({ type: "text", text: "must not run" }),
-      );
-      expect(label).toBeTruthy();
-    },
-  );
+    expect(
+      providerState.stream.mock.calls.map(
+        ([target]) => (target as Model<"openai-completions">).provider,
+      ),
+    ).toEqual([primary.provider, backupA.provider]);
+    expect(input.executeTool).not.toHaveBeenCalled();
+    expect(events.at(-1)).toEqual({ type: "done", text: "from backup" });
+  });
 
   it("does not switch because a tool failed", async () => {
     const input = request([
@@ -2722,9 +2786,12 @@ describe("Pi runtime output reservation recovery", () => {
     expect(input.executeTool).not.toHaveBeenCalled();
   });
 
-  it.each(["text", "toolCall"] as const)(
-    "does not retry a response with a partial %s block",
-    async (part) => {
+  it.each([
+    ["text", 1],
+    ["toolCall", 2],
+  ] as const)(
+    "with a partial %s block in the failed response calls the model %i time(s) and runs nothing",
+    async (part, calls) => {
       const input = limitedRequest();
       providerState.stream.mockImplementation((target) =>
         stream(
@@ -2747,7 +2814,8 @@ describe("Pi runtime output reservation recovery", () => {
         ),
       );
       await expect(run(input)).rejects.toThrow("This request requires more credits");
-      expect(providerState.stream).toHaveBeenCalledOnce();
+      // Text was shown, so it stays terminal; a tool call never ran, so the call is redone.
+      expect(providerState.stream).toHaveBeenCalledTimes(calls);
       expect(input.executeTool).not.toHaveBeenCalled();
     },
   );

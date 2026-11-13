@@ -498,6 +498,8 @@ export type OpenAiCompatibleModelsResponse = {
   object?: string;
   data?: Array<{ id?: string }>;
   models?: Array<{ id?: string }>;
+  has_more?: boolean;
+  last_id?: string | null;
 };
 
 /** Shared suffix: /models probe is optional when the user already knows a model id. */
@@ -646,25 +648,53 @@ export async function probeOpenAiCompatibleModels(
       ...opts,
       headers: input.headers,
     });
-    const response = await safeFetch(new URL("models", `${baseUrl.href}/`).href, {
-      headers,
-      redirect: "error",
-      signal: merged,
-    });
-    if (response.type === "opaqueredirect" || (response.status >= 300 && response.status < 400)) {
-      await response.body?.cancel().catch(() => undefined);
-      throw new Error(
-        `Model server redirects are not allowed. ${OPENAI_COMPAT_PROBE_HAND_FILL_HINT}`,
-      );
+    const modelsUrl = new URL("models", `${baseUrl.href}/`);
+    const ids: string[] = [];
+    const cursors = new Set<string>();
+    const { maxModelIds } = modelsProbeLimits(opts?.catalogProbe);
+    while (true) {
+      merged.throwIfAborted();
+      const response = await safeFetch(modelsUrl.href, {
+        headers,
+        redirect: "error",
+        signal: merged,
+      });
+      if (response.type === "opaqueredirect" || (response.status >= 300 && response.status < 400)) {
+        await response.body?.cancel().catch(() => undefined);
+        throw new Error(
+          `Model server redirects are not allowed. ${OPENAI_COMPAT_PROBE_HAND_FILL_HINT}`,
+        );
+      }
+      if (!response.ok) {
+        await response.body?.cancel().catch(() => undefined);
+        throw new Error(
+          `Model server returned ${response.status}. ${OPENAI_COMPAT_PROBE_HAND_FILL_HINT}`,
+        );
+      }
+      const body = await readBoundedJson(response, opts);
+      const pageIds = probeModelIds(body, opts);
+      if (ids.length + pageIds.length > maxModelIds) {
+        throw new Error("Model server returned too many or overly long model ids");
+      }
+      ids.push(...pageIds);
+      if (input.apiProtocol !== "anthropic-messages" || body.has_more !== true) return ids;
+      const cursor = typeof body.last_id === "string" ? body.last_id : "";
+      if (
+        !cursor.trim() ||
+        cursor.length > MAX_MODEL_ID_LENGTH ||
+        cursors.has(cursor) ||
+        !pageIds.length
+      ) {
+        throw new Error(
+          `Model server returned invalid pagination. ${OPENAI_COMPAT_PROBE_HAND_FILL_HINT}`,
+        );
+      }
+      if (ids.length >= maxModelIds) {
+        throw new Error("Model server returned too many or overly long model ids");
+      }
+      cursors.add(cursor);
+      modelsUrl.searchParams.set("after_id", cursor);
     }
-    if (!response.ok) {
-      await response.body?.cancel().catch(() => undefined);
-      throw new Error(
-        `Model server returned ${response.status}. ${OPENAI_COMPAT_PROBE_HAND_FILL_HINT}`,
-      );
-    }
-    const body = await readBoundedJson(response, opts);
-    return probeModelIds(body, opts);
   } catch (error) {
     const aborted =
       (error instanceof Error && error.name === "AbortError") ||

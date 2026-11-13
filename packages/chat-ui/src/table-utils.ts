@@ -124,8 +124,11 @@ export function parseNumericText(value: string): number | null {
   const trimmed = value.trim();
   if (!trimmed) return null;
   const negative = /^\(.*\)$/.test(trimmed);
-  const cleaned = trimmed.replace(/^\((.*)\)$/, "$1").replace(/[$€£%\s]/g, "");
-  if (!/^-?((\d{1,3}(,\d{3})+|\d+)(\.\d+)?|\.\d+)$/.test(cleaned)) return null;
+  const cleaned = trimmed
+    .replace(/^\((.*)\)$/, "$1")
+    .replace(/[$€£%\s]/g, "")
+    .replace(/\u2212/g, "-");
+  if (!/^[+-]?((\d{1,3}(,\d{3})+|\d+)(\.\d+)?|\.\d+)$/.test(cleaned)) return null;
   const n = Number(cleaned.replace(/,/g, ""));
   return Number.isFinite(n) ? (negative ? -Math.abs(n) : n) : null;
 }
