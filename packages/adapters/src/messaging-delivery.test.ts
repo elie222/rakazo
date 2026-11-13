@@ -42,6 +42,7 @@ type OutboundRecord = {
   body: string;
   status: string;
   providerHandle: string | null;
+  claimedAt?: Date | null;
   sourceMessageId: string | null;
   createdAt: Date;
   updatedAt: Date;
@@ -193,11 +194,12 @@ function matchesValue(value: unknown, condition: unknown): boolean {
   );
 }
 
-/** The where shapes the delivery queries use: equality, null, in/not/lt/gt, OR and NOT. */
+/** The where shapes the delivery queries use: equality, null, in/not/lt/gt, OR, AND and NOT. */
 function matches(record: object, where: Where = {}): boolean {
   const fields = record as Record<string, unknown>;
   return Object.entries(where).every(([key, condition]) => {
     if (key === "OR") return (condition as Where[]).some((part) => matches(record, part));
+    if (key === "AND") return (condition as Where[]).every((part) => matches(record, part));
     if (key === "NOT") return !matches(record, condition as Where);
     return matchesValue(fields[key], condition);
   });
@@ -1727,6 +1729,57 @@ describe("a claimed send and its backup job", () => {
       sends: 2,
       status: ["sent"],
     });
+  });
+
+  it("holds the conversation behind its own stale claim until the backup job resends it", async () => {
+    const t = setup();
+    const stale = new Date(Date.now() - MESSAGING_SEND_STALE_MS - 1_000);
+    // This release claimed the first message, then its sender died.
+    seedRow(t.world, {
+      id: "a-1",
+      status: "sent",
+      providerHandle: null,
+      claimedAt: stale,
+      updatedAt: stale,
+    });
+    seedRow(t.world, { id: "a-2", createdAt: new Date(1_001) });
+    await t.delivery.send([threadLane("t-a")]);
+    expect({ sends: bodies(t), status: statuses(t) }).toEqual({
+      sends: [],
+      status: ["in-flight", "pending"],
+    });
+
+    await t.delivery.sendJob("a-1", attempt(1));
+    expect({ sends: bodies(t), status: statuses(t) }).toEqual({
+      sends: ["a-1", "a-2"],
+      status: ["sent", "sent"],
+    });
+    expect(t.world.outbound.map((row) => row.claimedAt)).toEqual([null, null]);
+  });
+
+  it("gives its own stale claim whose job gave up a new job, never the previous release's", async () => {
+    const t = setup();
+    const old = new Date(Date.now() - 10 * 60_000);
+    seedRow(t.world, {
+      id: "ours",
+      threadId: "t-a",
+      status: "sent",
+      providerHandle: null,
+      claimedAt: old,
+      updatedAt: old,
+    });
+    seedRow(t.world, {
+      id: "theirs",
+      threadId: "t-b",
+      status: "sent",
+      providerHandle: null,
+      updatedAt: old,
+    });
+    await t.delivery.sweepStalled();
+    expect(sendJobs(t).map((job) => job.payload)).toEqual([{ outboundId: "ours" }]);
+
+    await t.delivery.sendJob("ours", attempt(1));
+    expect(bodies(t)).toEqual(["ours"]);
   });
 
   it("retries the bookkeeping of a message that went out instead of leaving it to be sent again", async () => {

@@ -409,6 +409,34 @@ describePostgres("chat delivery with Graphile backup jobs (PostgreSQL)", () => {
     ]);
   });
 
+  it("holds a conversation behind its own dead send until that send's job resends it, then sends the rest", async () => {
+    const target = lane();
+    const [first] = await record(target, ["died mid-send", "behind it"]);
+    // This release claimed the first message, then its process died: stale, but still its own.
+    await owner.query(
+      `UPDATE messaging_outbound
+       SET status = 'sent', "claimedAt" = (now() AT TIME ZONE 'UTC') - interval '10 minutes',
+         "updatedAt" = (now() AT TIME ZONE 'UTC') - interval '10 minutes'
+       WHERE id = $1`,
+      [first],
+    );
+    await owner.query(`DELETE FROM graphile_worker._private_jobs WHERE key = $1`, [
+      messagingSendJobKey(first!),
+    ]);
+    const { messaging, sent } = surface();
+    const current = delivery(messaging);
+    await current.send([target]);
+    expect(sent).toEqual([]);
+
+    // Its job gave up, so the safety sweep gives it a new one, which sends both in order.
+    for (let page = 0; page < 50 && !(await job(messagingSendJobKey(first!))); page += 1)
+      await current.sweepStalled();
+    expect((await job(messagingSendJobKey(first!)))?.identifier).toBe("messaging.send");
+    await current.sendJob(first!);
+    expect(sent).toEqual(["died mid-send", "behind it"]);
+    expect(await statuses(target.threadId)).toEqual(["died mid-send:sent", "behind it:sent"]);
+  });
+
   async function dmRun(status: "running" | "completed", reply: string) {
     seq += 2;
     const source = await system.message.create({

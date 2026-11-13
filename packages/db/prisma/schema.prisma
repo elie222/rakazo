@@ -2295,12 +2295,16 @@ model MessagingOutbound {
   /// pending, retry (its backup job retries it), sent or failed. Sent with no providerHandle: in flight.
   status          String   @default("pending")
   providerHandle  String?
+  /// Set while this release's claim is in flight. A stale claim without it is the previous
+  /// release's, which may well have gone out, so it is never sent again.
+  claimedAt       DateTime?
   sourceMessageId String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
   @@index([identityId, createdAt])
   @@index([threadId, createdAt])
+  @@index([claimedAt])
   @@index([status, updatedAt])
   @@map("messaging_outbound")
 }
