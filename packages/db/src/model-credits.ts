@@ -43,15 +43,21 @@ export async function unexpiredCreditAccount(
   organizationId: string,
   now = new Date(),
 ) {
+  await creditAccount(prisma, organizationId);
   const live = { organizationId, availableMicros: { gt: 0n } };
-  const [account, lots, lapsed] = await Promise.all([
-    creditAccount(prisma, organizationId),
-    prisma.modelCreditLot.aggregate({ where: live, _sum: { availableMicros: true } }),
-    prisma.modelCreditLot.aggregate({
-      where: { ...live, expiresAt: { lte: now } },
-      _sum: { availableMicros: true },
-    }),
-  ]);
+  // One snapshot, so an expiry committing between the reads cannot be counted twice or missed.
+  const [account, lots, lapsed] = await prisma.$transaction(
+    (tx) =>
+      Promise.all([
+        tx.modelCreditAccount.findUniqueOrThrow({ where: { organizationId } }),
+        tx.modelCreditLot.aggregate({ where: live, _sum: { availableMicros: true } }),
+        tx.modelCreditLot.aggregate({
+          where: { ...live, expiresAt: { lte: now } },
+          _sum: { availableMicros: true },
+        }),
+      ]),
+    { isolationLevel: "RepeatableRead" },
+  );
   const funded = account.balanceMicros > 0n ? account.balanceMicros : 0n;
   const unsynced = (lots._sum.availableMicros ?? 0n) - funded;
   const expiring = (lapsed._sum.availableMicros ?? 0n) - (unsynced > 0n ? unsynced : 0n);
