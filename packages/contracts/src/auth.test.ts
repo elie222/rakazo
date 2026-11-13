@@ -5,6 +5,7 @@ import {
   IDENTITY_CONFIRMATION_REQUIRED,
   legacyAuthCapabilitiesSchema,
   runWithIdentityConfirmation,
+  signInProviderGroups,
   signInProviders,
 } from "./auth.js";
 
@@ -138,4 +139,12 @@ it("passes other failures through without asking", async () => {
     runWithIdentityConfirmation(async () => Promise.reject(failure), confirm),
   ).rejects.toBe(failure);
   expect(confirm).not.toHaveBeenCalled();
+});
+
+it("keeps SSO prominent alone and secondary alongside personal providers", () => {
+  const sso = { id: "oidc", name: "Company" };
+  const personal = { id: "personal", name: "Personal" };
+  expect(signInProviderGroups([sso])).toEqual({ primary: [sso], secondary: [] });
+  expect(signInProviderGroups([sso, personal])).toEqual({ primary: [personal], secondary: [sso] });
+  expect(signInProviderGroups([])).toEqual({ primary: [], secondary: [] });
 });

@@ -189,6 +189,11 @@ test("shared page contents jump below the header and copy fallback", async ({
     fallbackBox.y + fallbackBox.height - 1,
   );
   await captureScreenshot(outside, testInfo, "page-public-contents-copy-fallback");
+  await outside.setViewportSize({ width: 320, height: 120 });
+  await target.scrollIntoViewIfNeeded();
+  await expect(target).toBeInViewport();
+  await captureScreenshot(outside, testInfo, "page-public-short-viewport");
+  await outside.setViewportSize({ width: 1280, height: 720 });
   await outside.emulateMedia({ media: "print" });
   await expect(outside.locator("header")).toBeHidden();
   await expect(fallback).toBeHidden();

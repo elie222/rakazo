@@ -38,7 +38,7 @@ it.each([false, true])(
     const scroll = frame.closest(".overflow-auto");
     expect(scroll).not.toBeNull();
     expect(scroll?.contains(document.querySelector("header"))).toBe(false);
-    expect(scroll?.classList.contains("min-h-0")).toBe(true);
+    expect(scroll?.classList.contains("min-h-32")).toBe(true);
     expect(scroll?.classList.contains("print:overflow-visible")).toBe(true);
     expect((frame.parentElement as HTMLElement).style.height).toBe("2100px");
     const shell = document.querySelector("[data-page-print]")!;
