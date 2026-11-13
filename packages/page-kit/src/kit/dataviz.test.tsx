@@ -373,6 +373,31 @@ describe("charts", () => {
     expect(mount(<SourceStamp source={{}} />).textContent).toBe("");
   });
 
+  it.each(["America/New_York", "America/Los_Angeles", "Asia/Tokyo"])(
+    "preserves date-only snapshots while localizing timestamps in %s",
+    (timeZone) => {
+      const DateTimeFormat = Intl.DateTimeFormat;
+      vi.spyOn(Intl, "DateTimeFormat").mockImplementation(
+        class extends DateTimeFormat {
+          constructor(locales?: Intl.LocalesArgument, options?: Intl.DateTimeFormatOptions) {
+            super(locales, { timeZone, ...options });
+          }
+        },
+      );
+
+      expect(mount(<SourceStamp source={{ asOf: "2026-10-30" }} />).textContent).toBe(
+        "As of Oct 30, 2026",
+      );
+      const timestamp = "2026-10-30T00:00:00Z";
+      const expected = new DateTimeFormat("en", { dateStyle: "medium", timeZone }).format(
+        Date.parse(timestamp),
+      );
+      expect(mount(<SourceStamp source={{ asOf: timestamp }} />).textContent).toBe(
+        `As of ${expected}`,
+      );
+    },
+  );
+
   it("formats figures with their unit and survives a formatter that throws", () => {
     expect(formatValue(30, "%")).toBe("30%");
     expect(formatValue(-12, "$")).toBe("-$12");

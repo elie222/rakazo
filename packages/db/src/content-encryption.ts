@@ -548,7 +548,14 @@ export function withContentEncryption(prisma: PrismaClient, ring: ContentKeyRing
         async $allOperations({ model, operation, args, query }) {
           if (model === "Space" && ["delete", "deleteMany"].includes(operation)) {
             const where = (args as RecordValue).where;
-            if (isRecord(where) && typeof where.id === "string") ring.forget(where.id);
+            if (isRecord(where) && typeof where.id === "string") {
+              ring.forget(where.id);
+              ring.forget(`vault:${where.id}`);
+            }
+          }
+          if (model === "User" && ["delete", "deleteMany"].includes(operation)) {
+            const where = (args as RecordValue).where;
+            if (isRecord(where) && typeof where.id === "string") ring.forget(`user:${where.id}`);
           }
           let next = await sealWrites(model, operation, (args ?? {}) as RecordValue);
           if (NO_ROWS.has(operation)) return query(next);
