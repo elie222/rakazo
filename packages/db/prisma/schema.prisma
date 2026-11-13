@@ -685,6 +685,8 @@ model Space {
   chatGroups                  ChatGroup[]
   botSecrets                  BotSecret[]
   vaultCredentials            VaultCredential[]
+  vaultCredentialBots         VaultCredentialBot[]
+  vaultCredentialLimits       VaultCredentialLimit[]
   externalConversations       ExternalConversation[]
   agentSecrets                AgentSecret[]
   board                       Board?
@@ -842,6 +844,7 @@ model AuditEvent {
 
   @@index([organizationId, createdAt])
   @@index([createdAt])
+  @@index([targetType, targetId, createdAt])
   @@map("audit_events")
 }
 
@@ -1022,6 +1025,7 @@ model Bot {
   runs              Run[]
   steeringMessages  SteeringMessage[]
   mcpServers        BotMcpServer[]
+  vaultCredentials  VaultCredentialBot[]
   agentImports      AgentImport[]
   groupMembers      ChatGroupMember[]
   botSecrets BotSecret[]
@@ -1183,6 +1187,9 @@ model Message {
   clientNonce      String?
   /// Blind-index search tokens for the encrypted blocks; NULL until the row is encrypted.
   searchTokens     Int[]
+  /// A bot reply's tool calls as sent and returned (JSON, see ToolHistorySchema), encrypted like
+  /// the blocks. Only the bot's runs read it: message reads leave it out unless they select it.
+  toolHistory      String?
   sourceRuns            Run[]             @relation("RunSourceMessage")
   externalTranscriptFor  ExternalMessage?
   steeringMessages SteeringMessage[]
@@ -1256,6 +1263,8 @@ model Run {
   modelPinned          Boolean           @default(false)
   // A group message that named nobody reached this member; it may end without a reply.
   groupReplyOptional   Boolean           @default(false)
+  // The prompt and history replay version the run's latest attempt used, to compare outcomes across releases.
+  promptVersion        String?
   error                String?
   leaseOwner           String?
   leaseFence           Int               @default(0)
@@ -1651,7 +1660,7 @@ model AgentImport {
   userId        String
   botId         String
   bot           Bot      @relation(fields: [botId], references: [id], onDelete: Cascade)
-  /// openclaw | hermes | document
+  /// openclaw | hermes | document | grok_bot
   source        String
   created       Json
   /// Idempotency: a retry with the same key and digest returns the same bot.
@@ -1843,7 +1852,6 @@ model Computer {
   controlLeaseId          String?
   controlLeaseExpiresAt   DateTime?
   controlBotId            String?
-  controlRunId            String?
   /// The person holding user control. A Space's members share its computers, never a lease.
   controlUserId           String?
   controlFence            Int                      @default(0)
@@ -2295,12 +2303,16 @@ model MessagingOutbound {
   /// pending, retry (its backup job retries it), sent or failed. Sent with no providerHandle: in flight.
   status          String   @default("pending")
   providerHandle  String?
+  /// Set while this release's claim is in flight. A stale claim without it is the previous
+  /// release's, which may well have gone out, so it is never sent again.
+  claimedAt       DateTime?
   sourceMessageId String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
   @@index([identityId, createdAt])
   @@index([threadId, createdAt])
+  @@index([claimedAt])
   @@index([status, updatedAt])
   @@map("messaging_outbound")
 }
@@ -2358,12 +2370,54 @@ model VaultCredential {
   origin     String
   auth       Json
   ciphertext String
+  policy     String   @default("allow")
+  /// Spaces where only the owner's bots in `bots` may use it; none chosen means none may.
+  limits     VaultCredentialLimit[]
+  bots       VaultCredentialBot[]
+  /// More HTTPS origins a login fills on, set only by its owner.
+  alsoOn     String[] @default([])
+  /// When a run used up its tries of this login's authenticator codes; none are typed until a save.
+  codesStoppedAt DateTime?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
   @@index([spaceId])
   // Unique index vault_credentials_userId_spaceId_name_key (NULLS NOT DISTINCT) is created in SQL.
   @@map("vault_credentials")
+}
+
+/// A bot its owner chose for a vault item. `spaceId` is the bot's Space, also for an item in the
+/// account vault, which each Space that uses it chooses its own bots for.
+model VaultCredentialBot {
+  id           String          @id @default(cuid())
+  credentialId String
+  credential   VaultCredential @relation(fields: [credentialId], references: [id], onDelete: Cascade)
+  botId        String
+  bot          Bot             @relation(fields: [botId], references: [id], onDelete: Cascade)
+  userId       String
+  spaceId      String
+  space        Space           @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  createdAt    DateTime        @default(now())
+
+  @@unique([credentialId, botId])
+  @@index([userId, spaceId, botId])
+  @@map("vault_credential_bots")
+}
+
+/// A Space where a vault item is limited to the bots chosen for it there. An item in the account
+/// vault is limited in each Space that uses it on its own.
+model VaultCredentialLimit {
+  id           String          @id @default(cuid())
+  credentialId String
+  credential   VaultCredential @relation(fields: [credentialId], references: [id], onDelete: Cascade)
+  userId       String
+  spaceId      String
+  space        Space           @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  createdAt    DateTime        @default(now())
+
+  @@unique([credentialId, spaceId])
+  @@index([userId, spaceId])
+  @@map("vault_credential_limits")
 }
 
 model ExternalConversation {
@@ -2418,6 +2472,7 @@ model ExternalMessage {
   @@unique([externalConversationId, providerEventId])
   @@index([externalConversationId, status, createdAt])
   @@index([externalConversationId, senderIsBot, createdAt])
+  @@index([externalConversationId, senderId, judgedAt])
   @@index([status, updatedAt])
   @@map("external_messages")
 }

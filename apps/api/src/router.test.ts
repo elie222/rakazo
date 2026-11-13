@@ -26,15 +26,18 @@ import {
   ModelSignInError,
   modelCredentialDto,
   parseModelSecret,
+  SAVED_LOGIN_UNREADABLE,
   screenLeaseIdForRun,
   serializeModelSecret,
 } from "@rakazo/adapters";
 import type { Actor, Bot, ProductEvent } from "@rakazo/contracts";
 import {
+  BLOCKED_ITEM_ANSWER,
   CONNECTOR_AUTH_UNAVAILABLE,
   MCP_OAUTH_CLIENT_REQUIRED,
   MODEL_KEY_FORMAT_ERROR,
   REPLY_QUOTE_MAX_LENGTH,
+  UNCHOSEN_ITEM_ANSWER,
 } from "@rakazo/contracts";
 import { openScreenCapability } from "@rakazo/core/node/screen-capability";
 import type { PrismaClient } from "@rakazo/db";
@@ -590,6 +593,28 @@ describe("account preferences", () => {
     },
   );
 
+  it.each([false, true])("checks work-card support before a token exists (%s)", async (enabled) => {
+    const { deps, actor } = preferencesDeps("robot");
+    const register = vi.fn().mockResolvedValue(false);
+    deps.workActivities = enabled ? { register, registerStarts: vi.fn() } : undefined;
+    const phone = createRouterClient(createRouter(deps), {
+      context: { actor, sessionId: "session-phone" } as never,
+    });
+
+    await expect(phone.notifications.followWorkActivity({})).resolves.toEqual({
+      following: enabled,
+    });
+    expect(register).not.toHaveBeenCalled();
+
+    // Token registration still reports whether there is work to follow.
+    const token = "ab".repeat(32);
+    await expect(phone.notifications.followWorkActivity({ token })).resolves.toEqual({
+      following: false,
+    });
+    if (enabled) expect(register).toHaveBeenCalledWith(actor.userId, "session-phone", token);
+    else expect(register).not.toHaveBeenCalled();
+  });
+
   it("ends only the calling session's push registration, keeping another session's", async () => {
     const { deps, actor } = preferencesDeps("robot");
     const calls: string[] = [];
@@ -1055,9 +1080,26 @@ describe("thread answer delivery", () => {
   });
 });
 
-describe("oversized one-time answer", () => {
-  it("says the answer is too long, without echoing it", async () => {
-    const answerRunInput = vi.fn().mockRejectedValue(new AnswerTooLongError());
+describe("answers the server can't save", () => {
+  it.each([
+    ["too long", new AnswerTooLongError(), "This answer is too long.", 400],
+    // The person blocked bots from the item while the request waited.
+    ["for a blocked item", new Error(BLOCKED_ITEM_ANSWER), BLOCKED_ITEM_ANSWER, 400],
+    [
+      "for an item chosen for other bots",
+      new Error(UNCHOSEN_ITEM_ANSWER),
+      UNCHOSEN_ITEM_ANSWER,
+      400,
+    ],
+    // The saved login it replaces can't be read for now: a retry may save it.
+    [
+      "held back by a saved login it can't read",
+      new Error(SAVED_LOGIN_UNREADABLE),
+      SAVED_LOGIN_UNREADABLE,
+      409,
+    ],
+  ])("says why one is %s, without echoing it", async (_, error, message, status) => {
+    const answerRunInput = vi.fn().mockRejectedValue(error);
     const enqueue = vi.fn();
     const prisma = {
       bot: {
@@ -1100,9 +1142,9 @@ describe("oversized one-time answer", () => {
       { prefix: "/rpc", context: { actor } },
     );
 
-    expect(response.status).toBe(400);
+    expect(response.status).toBe(status);
     const body = await response.text();
-    expect(body).toContain("This answer is too long.");
+    expect(body).toContain(message);
     expect(body).not.toContain("fake-code-");
     expect(enqueue).not.toHaveBeenCalled();
   });
@@ -4250,7 +4292,6 @@ describe("computer screen url", () => {
     controlLeaseId: null,
     controlLeaseExpiresAt: null,
     controlBotId: null,
-    controlRunId: null,
   };
 
   const callScreenUrl = async (
@@ -4421,19 +4462,31 @@ describe("computer terminal and file transfer", () => {
             controlLeaseId: null,
             controlLeaseExpiresAt: null,
             controlBotId: null,
-            controlRunId: null,
             ...computer,
           },
         }),
       },
-      computer: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      computer: {
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        findUniqueOrThrow: vi.fn(),
+      },
       computerExecutionLease: { findUnique: vi.fn().mockResolvedValue(null) },
+      run: { findFirst: vi.fn().mockResolvedValue(null) },
+      taughtSkill: { findFirst: vi.fn().mockResolvedValue(null) },
     } as unknown as PrismaClient;
     const deps = {
       prisma,
       sandbox,
       home,
-      jobs: { enqueue: vi.fn().mockResolvedValue(undefined) },
+      jobs: {
+        enqueue: vi.fn().mockResolvedValue(undefined),
+        cancel: vi.fn().mockResolvedValue(undefined),
+      },
+      events: {
+        append: vi.fn().mockResolvedValue(undefined),
+        releaseUserControl: vi.fn().mockResolvedValue(true),
+        answerTakeoverRequest: vi.fn().mockResolvedValue(true),
+      },
       env: {
         maxUploadSizeBytes,
         webOrigin: "http://127.0.0.1:5173",
@@ -4455,7 +4508,7 @@ describe("computer terminal and file transfer", () => {
       );
       return { status: response.status, body: await response.json() };
     };
-    return { sandbox, prisma, call };
+    return { sandbox, prisma, deps, call };
   }
 
   it("prepares an unused bot's folders before listing a running Team Computer", async () => {
@@ -4483,6 +4536,153 @@ describe("computer terminal and file transfer", () => {
       expect.anything(),
       "bots/bot-1",
       expect.anything(),
+    );
+  });
+
+  it("tells a second person the computer is busy instead of taking it from the first", async () => {
+    const { prisma, call } = setup({ ...controlled, controlUserId: "user-2" });
+    await expect(call("takeover", {})).resolves.toMatchObject({
+      status: 409,
+      body: { json: { message: "Someone else is using this computer" } },
+    });
+    expect(prisma.computer.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("gives control while the bot is working, for as long as the page checks in, and counts the change", async () => {
+    const { prisma, call } = setup();
+    const before = Date.now();
+    await expect(call("takeover", {})).resolves.toMatchObject({ status: 200 });
+    const grant = vi.mocked(prisma.computer.updateMany).mock.calls[0]![0];
+    expect(grant.data).toMatchObject({
+      controlHolder: "user",
+      controlBotId: "bot-1",
+      controlUserId: "user-1",
+      controlFence: { increment: 1 },
+    });
+    const expiresAt = (grant.data as { controlLeaseExpiresAt: Date }).controlLeaseExpiresAt;
+    expect(expiresAt.getTime() - before).toBeGreaterThanOrEqual(90_000);
+    expect(expiresAt.getTime() - Date.now()).toBeLessThanOrEqual(90_000);
+  });
+
+  it("never lets holding the screen answer a request the bot made to someone else", async () => {
+    const { prisma, deps, call } = setup({ ...controlled, controlUserId: "user-1" });
+    vi.mocked(prisma.run.findFirst).mockResolvedValue({ id: "run-1", userId: "user-2" } as never);
+    for (const reason of ["done", "skipped"]) {
+      await expect(call("release", { reason, runId: "run-1" })).resolves.toMatchObject({
+        status: 409,
+        body: { json: { message: "The bot is waiting for someone else" } },
+      });
+    }
+    expect(deps.events.answerTakeoverRequest).not.toHaveBeenCalled();
+    // A refused answer leaves this person's control as it was.
+    expect(deps.events.releaseUserControl).not.toHaveBeenCalled();
+  });
+
+  it("answers Done after the person's lease lapsed, ending that lease and granting nothing", async () => {
+    const lapsed = { ...controlled, controlUserId: "user-1", controlLeaseExpiresAt: new Date(0) };
+    const { prisma, deps, call } = setup(lapsed);
+    vi.mocked(prisma.run.findFirst).mockResolvedValue({ id: "run-1", userId: "user-1" } as never);
+    await expect(call("release", { reason: "done", runId: "run-1" })).resolves.toMatchObject({
+      status: 200,
+    });
+    // The lapsed lease is revoked and cleared before the answer lands; nothing is granted.
+    const released = vi.mocked(deps.events.releaseUserControl).mock.invocationCallOrder[0]!;
+    const answered = vi.mocked(deps.events.answerTakeoverRequest).mock.invocationCallOrder[0]!;
+    expect(deps.events.releaseUserControl).toHaveBeenCalledWith(
+      expect.objectContaining({ leaseId: "lease-1" }),
+    );
+    expect(released).toBeLessThan(answered);
+    expect(prisma.computer.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("leaves newer control alone when a late hand back names an older lease", async () => {
+    const { deps, call } = setup({ ...controlled, controlUserId: "user-1" });
+    await expect(call("release", { leaseId: "old-lease" })).resolves.toMatchObject({
+      status: 200,
+    });
+    expect(deps.events.releaseUserControl).not.toHaveBeenCalled();
+    await expect(call("release", { leaseId: "lease-1" })).resolves.toMatchObject({ status: 200 });
+    expect(deps.events.releaseUserControl).toHaveBeenCalledWith(
+      expect.objectContaining({ leaseId: "lease-1" }),
+    );
+  });
+
+  it("hands control back on I'm done even when nothing is waiting any more", async () => {
+    const { deps, call } = setup({ ...controlled, controlUserId: "user-1" });
+    await expect(call("release", { reason: "done" })).resolves.toMatchObject({ status: 200 });
+    expect(deps.events.releaseUserControl).toHaveBeenCalledWith(
+      expect.objectContaining({ leaseId: "lease-1" }),
+    );
+    expect(deps.events.answerTakeoverRequest).not.toHaveBeenCalled();
+  });
+
+  it("takes control afresh when the held lease lapsed before it could be renewed", async () => {
+    const { prisma, call } = setup({ ...controlled, controlUserId: "user-1" });
+    const held = (await prisma.bot.findFirst({} as never)) as unknown as { computer: object };
+    // The lease lapsed meanwhile: the renew finds nothing live, and the computer is free again.
+    vi.mocked(prisma.computer.updateMany).mockResolvedValueOnce({ count: 0 });
+    vi.mocked(prisma.bot.findFirst)
+      .mockResolvedValueOnce(held as never)
+      .mockResolvedValue({
+        ...held,
+        computer: {
+          ...held.computer,
+          controlHolder: "none",
+          controlLeaseId: null,
+          controlLeaseExpiresAt: null,
+          controlBotId: null,
+        },
+      } as never);
+    const response = await call("takeover", {});
+    expect(response).toMatchObject({ status: 200 });
+    expect((response.body as { json: { leaseId: string } }).json.leaseId).not.toBe("lease-1");
+    expect(vi.mocked(prisma.computer.updateMany).mock.calls[1]?.[0].data).toMatchObject({
+      controlHolder: "user",
+      controlUserId: "user-1",
+    });
+  });
+
+  it("returns the holder's own lease to a second Take control", async () => {
+    const held = { ...controlled, controlUserId: "user-1" };
+    const { prisma, call } = setup();
+    vi.mocked(prisma.computer.updateMany).mockResolvedValueOnce({ count: 0 });
+    vi.mocked(prisma.computer.findUniqueOrThrow).mockResolvedValue({
+      id: "computer-1",
+      ...held,
+    } as never);
+    await expect(call("takeover", {})).resolves.toMatchObject({
+      status: 200,
+      body: { json: { leaseId: "lease-1" } },
+    });
+  });
+
+  it("renews the holder's control each time their page checks in", async () => {
+    const soon = new Date(Date.now() + 5_000);
+    const { prisma, call } = setup({
+      ...controlled,
+      controlUserId: "user-1",
+      controlLeaseExpiresAt: soon,
+    });
+    await expect(call("heartbeat", {})).resolves.toMatchObject({ status: 200 });
+    expect(prisma.computer.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: "computer-1",
+        controlHolder: "user",
+        controlLeaseId: "lease-1",
+        // Only a live lease renews; a lapsed one is on its way to revocation.
+        controlLeaseExpiresAt: { gt: expect.any(Date) },
+      },
+      data: { controlLeaseExpiresAt: expect.any(Date) },
+    });
+  });
+
+  it("does not renew someone else's control from a watcher's check-in", async () => {
+    const { prisma, call } = setup({ ...controlled, controlUserId: "user-2" });
+    await expect(call("heartbeat", {})).resolves.toMatchObject({ status: 200 });
+    expect(prisma.computer.updateMany).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: { controlLeaseExpiresAt: expect.any(Date) },
+      }),
     );
   });
 
@@ -10364,7 +10564,6 @@ describe("quarantined computer stop", () => {
         controlHolder: "none",
         controlLeaseId: null,
         controlBotId: null,
-        controlRunId: null,
         homeRevision: "saved",
         screenGeneration: 1,
       };

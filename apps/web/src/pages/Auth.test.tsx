@@ -105,7 +105,9 @@ async function enter(input: Element | null, value: string) {
   });
 }
 function button(text: string) {
-  return [...host.querySelectorAll("button")].find((button) => button.textContent === text)!;
+  return [...host.querySelectorAll("button")].find(
+    (node) => node.textContent?.replace(/\s+/g, " ").trim() === text,
+  )!;
 }
 async function submit() {
   await act(async () => {
@@ -145,25 +147,69 @@ it("retries failed capabilities without exposing a password form", async () => {
   expect(fetchAuthCapabilities).toHaveBeenCalledTimes(2);
   expect(host.textContent).toContain("Continue with Example");
 });
-it.each(["in", "up"] as const)("puts quiet SSO below the primary action on %s", async (mode) => {
+it.each(["in", "up"] as const)("offers providers before the email form on %s", async (mode) => {
   vi.mocked(fetchAuthCapabilities).mockResolvedValue({ ...capabilities, passwordAuth: true });
   await render(mode);
-  const email = host.querySelector('input[name="email"]')!;
-  const password = host.querySelector('input[type="password"]')!;
-  const submit = host.querySelector('button[type="submit"]')!;
-  const sso = [...host.querySelectorAll("button")].find(
-    (button) => button.textContent === "Continue with Example",
-  )!;
-  for (const [first, second] of [
-    [email, password],
-    [password, submit],
-    [submit, sso],
-  ] as const) {
-    expect(first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-  }
-  expect(submit.getAttribute("data-variant")).toBe("default");
-  expect(sso.dataset.variant).toBe("link");
-  expect(sso.dataset.size).toBe("sm");
+  const provider = button("Continue with Example");
+  const emailChoice = button("Continue with email");
+  expect(host.querySelector('input[name="email"]')).toBeNull();
+  expect(provider.dataset.variant).toBe("default");
+  expect(provider.className).toContain("w-full");
+  expect(emailChoice.dataset.variant).toBe("text");
+  expect(emailChoice.className).not.toContain("w-full");
+  expect(host.textContent).toContain("or");
+  expect(
+    provider.compareDocumentPosition(emailChoice) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  await act(async () => emailChoice.click());
+  expect(host.querySelector('input[name="email"]')).not.toBeNull();
+  expect(button("Back")).toBeDefined();
+  await act(async () => button("Back").click());
+  expect(host.querySelector('input[name="email"]')).toBeNull();
+  expect(button("Continue with Example")).toBeDefined();
+});
+
+it("shows a configured provider beside the password form and hides the rest", async () => {
+  const mark = { viewBox: "0 0 24 24", paths: [{ d: "M1 1h2v2H1z" }] };
+  vi.mocked(fetchAuthCapabilities).mockResolvedValue({
+    ...capabilities,
+    passwordAuth: true,
+    sso: null,
+    providers: [
+      { id: "google", name: "Google", presentation: { variant: "outline", mark } },
+      { id: "apple", name: "Apple", presentation: { variant: "solid", mark } },
+    ],
+  });
+  await render();
+  expect(host.querySelector('input[name="email"]')).toBeNull();
+  const google = button("Continue with Google");
+  const apple = button("Continue with Apple");
+  const emailChoice = button("Continue with email");
+  expect(google.dataset.variant).toBe("outline");
+  expect(apple.dataset.variant).toBe("default");
+  expect(google.parentElement).toBe(apple.parentElement);
+  expect(google.parentElement?.className).toContain("sm:flex-row");
+  expect(google.querySelector("svg")).not.toBeNull();
+  expect(apple.querySelector("svg")).not.toBeNull();
+  expect(emailChoice.dataset.variant).toBe("text");
+  expect(emailChoice.className).not.toContain("w-full");
+  expect(host.textContent).toContain("Welcome back");
+  expect(host.textContent).toContain("or");
+  await act(async () => google.click());
+  expect(authClient.signIn.social).toHaveBeenCalledWith(
+    expect.objectContaining({ provider: "google" }),
+  );
+  await act(async () => emailChoice.click());
+  expect(host.querySelector('input[name="email"]')).not.toBeNull();
+  vi.mocked(fetchAuthCapabilities).mockResolvedValue({
+    ...capabilities,
+    passwordAuth: true,
+    sso: null,
+    providers: [],
+  });
+  await render("up");
+  expect(host.textContent).not.toContain("Continue with");
+  expect(host.querySelector('input[name="email"]')).not.toBeNull();
 });
 
 it("hides SSO in password recovery", async () => {

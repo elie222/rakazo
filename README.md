@@ -260,16 +260,21 @@ pnpm --filter @rakazo/desktop dev
 ```
 
 On first run the desktop app asks whether to run Rakazo on this computer or connect to an existing
-server. **This computer** installs and starts the published images with Docker Compose (the same
-files as `infra/compose/install-images.sh`) under the app's data directory, so it needs Docker
+server. **This computer** can run without Docker on Apple silicon Macs with macOS 26 or later
+when the build includes a server bundle. Fresh setups use this path: the app downloads the server
+and computer runtime as needed. Existing Docker setups are offered a move while Docker is running;
+choosing **Keep Docker** leaves them on Docker.
+
+Other builds and platforms use Docker Compose to install and start the published images (the same
+files as `infra/compose/install-images.sh`) under the app's data directory. This path needs Docker
 Desktop, OrbStack, or Docker Engine. Without one, setup offers the Docker Desktop download, opens
 an installed Docker app that is not running, and continues on its own once Docker answers. Installed
 builds pin the image tag to their own version; unpackaged builds pull `edge`. Developers running
 `pnpm dev` should pick **Existing instance** with `http://127.0.0.1:5173` instead. Public servers
 must use HTTPS; HTTP is accepted only for loopback and private LAN addresses (not link-local). The
 app verifies Rakazo's health endpoint before saving, and later launches go straight to that
-instance. The stack keeps running after the app quits; **Stop Local Stack** in the application
-menu turns it off.
+instance. The Docker stack keeps running after the app quits; the Docker-free server stops with the app.
+**Stop Local Stack** in the application menu stops the managed stack without quitting.
 
 On Linux the desktop app ships as an AppImage, which needs FUSE 2 (`libfuse.so.2`). Distributions
 that only include FUSE 3, such as Fedora Silverblue or Ubuntu 24.04, show
@@ -282,7 +287,7 @@ chmod +x Rakazo-*.AppImage
 ./Rakazo-*.AppImage --appimage-extract-and-run
 ```
 
-**This computer** looks for the `docker` CLI and does not detect Podman. To try another
+The Docker path of **This computer** looks for the `docker` CLI and does not detect Podman. To try another
 Docker-compatible CLI that supports the `compose` commands, set `RAKAZO_DOCKER_BINARY` to its path
 before starting the app.
 

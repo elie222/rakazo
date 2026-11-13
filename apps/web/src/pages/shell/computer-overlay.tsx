@@ -1,12 +1,6 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type {
-  Bot,
-  ComputerReleaseReason,
-  ComputerStatus,
-  Run,
-  TaughtSkill,
-} from "@rakazo/contracts";
+import type { Bot, ComputerReleaseReason, ComputerStatus, TaughtSkill } from "@rakazo/contracts";
 import { BotAvatar, Button } from "@rakazo/ui-web";
 import { X } from "lucide-react";
 import type { ReactNode } from "react";
@@ -19,7 +13,6 @@ import {
   desktopBridge,
   windowChromeKind,
 } from "../../lib/desktop";
-import { computerTakeoverBlocked } from "../../lib/thread-events";
 import { ComputerReleaseActions } from "./computer-release-actions";
 import { computerLabel, DesktopKindEmptyState } from "./computer-view";
 
@@ -33,7 +26,6 @@ type ComputerOverlayProps = {
   composerRunning: boolean;
   sending: boolean;
   booting: boolean;
-  runStatus?: Run["status"];
   sendError: string | null;
   embeddedScreenUrl: string | null;
   /** Changes to load the screen again in a new frame. */
@@ -61,7 +53,6 @@ export function ComputerOverlay({
   composerRunning,
   sending,
   booting,
-  runStatus,
   sendError,
   embeddedScreenUrl,
   screenFrameKey,
@@ -117,17 +108,6 @@ export function ComputerOverlay({
                 {computerLabel(computer?.mode, bot.name)}
               </span>
             )}
-            {!recordingSkill && hasControl ? (
-              computer?.takeoverRequested ? (
-                <span className="rounded-full bg-warning/15 px-[11px] py-1 text-body-sm text-warning">
-                  <Trans>Needs you</Trans>
-                </span>
-              ) : (
-                <span className="rounded-full bg-success/15 px-[11px] py-1 text-body-sm text-success">
-                  <Trans>You have control</Trans>
-                </span>
-              )
-            ) : null}
             {!recordingSkill && hasControl && computer?.shared ? (
               <span
                 data-testid="computer-shared-browser"
@@ -158,7 +138,7 @@ export function ComputerOverlay({
                 takeoverRequested={Boolean(computer?.takeoverRequested)}
                 onRelease={onRelease}
               />
-            ) : computer?.state === "running" && !computerTakeoverBlocked(computer, runStatus) ? (
+            ) : computer?.state === "running" ? (
               <Button
                 type="button"
                 variant="outline"
