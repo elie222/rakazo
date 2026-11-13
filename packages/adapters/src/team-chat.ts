@@ -94,6 +94,21 @@ const CONVERSATION = {
   thread: { select: { id: true } },
 } as const;
 
+const AMBIENT_CONVERSATION = {
+  ...CONVERSATION,
+  teamChatAmbientEnabled: true,
+  teamChatRules: true,
+  automatedSenderPolicies: true,
+} as const;
+
+type AmbientConversation = Prisma.ExternalConversationGetPayload<{
+  select: typeof AMBIENT_CONVERSATION;
+}>;
+
+type AmbientMessage = Prisma.ExternalMessageGetPayload<{
+  include: { externalConversation: { select: typeof CONVERSATION } };
+}>;
+
 /** The transcript-file nonce for one of a team-chat message's attachments. */
 export function teamChatAttachmentNonce(externalMessageId: string, index: number): string {
   return `teamchat-attachment:${externalMessageId}:${index}`;
@@ -296,19 +311,16 @@ export class TeamChat {
   }
 
   /**
-   * One conversation's ambient decision over its unanswered messages: ignore them, or start one
-   * run for the message that needs the bot, with the others as context.
+   * One conversation's ambient decision over its unanswered messages, a batch at a time, and the
+   * conversation's next one: at once while a backlog this pass moved on remains, else when the
+   * messages it left waiting need another look. One job per pass, since a second under the
+   * conversation's key would replace the first.
    */
   async ambientJob(conversationId: string): Promise<void> {
     await runAsSystem("decide on ambient team-chat messages", async () => {
       const conversation = await this.deps.prisma.externalConversation.findUnique({
         where: { id: conversationId },
-        select: {
-          ...CONVERSATION,
-          teamChatAmbientEnabled: true,
-          teamChatRules: true,
-          automatedSenderPolicies: true,
-        },
+        select: AMBIENT_CONVERSATION,
       });
       if (!conversation) return;
       const observed = await this.deps.prisma.externalMessage.findMany({
@@ -319,140 +331,156 @@ export class TeamChat {
       });
       if (observed.length === 0) return;
       const now = new Date();
-      // A backlog larger than one batch is decided a batch at a time.
-      if (observed.length === AMBIENT_BATCH_SIZE)
-        await this.deps.jobs.enqueue(teamChatAmbientJob(conversation.id, now));
-      if (!(await this.available(conversation))) {
-        await this.markIgnored(observed, now);
-        return;
-      }
-      for (const message of observed) await this.mirrorTranscript(message);
-      const policy = await this.deps.prisma.bot.findFirst({
-        where: { id: conversation.botId, archivedAt: null },
-        select: {
-          id: true,
-          spaceId: true,
-          userId: true,
-          name: true,
-          modelProvider: true,
-          modelId: true,
-          teamChatAmbientEnabled: true,
-          teamChatRules: true,
-        },
-      });
-      // An archived bot answers nothing more.
-      if (!policy) {
-        await this.markIgnored(observed, now);
-        return;
-      }
-      const ambientEnabled = conversation.teamChatAmbientEnabled ?? policy.teamChatAmbientEnabled;
-      // Blank room instructions follow the bot, as the settings screens show them.
-      const rules = conversation.teamChatRules || policy.teamChatRules;
-      const parsedPolicies = AutomatedSenderPoliciesSchema.safeParse(
-        conversation.automatedSenderPolicies,
-      );
-      const senderPolicies = parsedPolicies.success ? parsedPolicies.data : {};
-      if (!ambientEnabled) {
-        await this.markIgnored(observed, now);
-        return;
-      }
-      const ignored = observed.filter(
-        (message) =>
-          message.senderIsBot && (senderPolicies[message.senderId]?.mode ?? "ignore") === "ignore",
-      );
-      await this.markIgnored(ignored, now);
-      const candidates = observed.filter((message) => !ignored.includes(message));
-      if (candidates.length === 0) return;
-      const hasImmediateCandidate = candidates.some(
-        (message) => !message.senderIsBot || senderPolicies[message.senderId]?.mode !== "rollup",
-      );
-      const rollups = hasImmediateCandidate
-        ? undefined
-        : await this.rollupSchedule(candidates, senderPolicies, now);
-      const evaluated = rollups ? rollups.due : candidates;
-      // Digests whose period has not passed get a decision once the first of them is due.
-      const nextDueAt = rollups?.nextDueAt?.getTime() ?? Number.POSITIVE_INFINITY;
-      const latest = evaluated.at(-1);
-      const quietAt = latest ? latest.createdAt.getTime() + this.debounceMs : 0;
-      const nextAt = Math.min(
-        quietAt > now.getTime() ? quietAt : Number.POSITIVE_INFINITY,
-        nextDueAt,
-      );
+      const waitUntil = await this.decideAmbient(conversation, observed, now);
+      // A full batch that is all still waiting would only read itself again.
+      const backlog =
+        observed.length === AMBIENT_BATCH_SIZE &&
+        (await this.deps.prisma.externalMessage.count({
+          where: { id: { in: observed.map(({ id }) => id) }, status: "observed" },
+        })) < observed.length;
+      const nextAt = Math.min(backlog ? now.getTime() : Number.POSITIVE_INFINITY, waitUntil);
       if (Number.isFinite(nextAt))
         await this.deps.jobs.enqueue(teamChatAmbientJob(conversation.id, new Date(nextAt)));
-      if (!latest || quietAt > now.getTime()) return;
-      const judged = evaluated.slice(-AMBIENT_CONTEXT_MESSAGES);
-      const actionable = [...judged]
-        .reverse()
-        .find(
-          (message) => message.senderIsBot && senderPolicies[message.senderId]?.mode === "action",
-        );
-      const decision = actionable
-        ? {
-            act: true,
-            reason: `${actionable.senderName} is configured as actionable.`,
-            askedByEventId: actionable.providerEventId,
-          }
-        : this.deps.judge
-          ? await this.deps.judge.decide({
-              bot: policy,
+    });
+  }
+
+  /**
+   * Decides one batch: ignores it, or starts one run for the message that needs the bot, with the
+   * others as context. Returns when the messages it left waiting, for the conversation to go quiet
+   * or for a digest's period to pass, need another look.
+   */
+  private async decideAmbient(
+    conversation: AmbientConversation,
+    observed: AmbientMessage[],
+    now: Date,
+  ): Promise<number> {
+    const none = Number.POSITIVE_INFINITY;
+    if (!(await this.available(conversation))) {
+      await this.markIgnored(observed, now);
+      return none;
+    }
+    for (const message of observed) await this.mirrorTranscript(message);
+    const policy = await this.deps.prisma.bot.findFirst({
+      where: { id: conversation.botId, archivedAt: null },
+      select: {
+        id: true,
+        spaceId: true,
+        userId: true,
+        name: true,
+        modelProvider: true,
+        modelId: true,
+        teamChatAmbientEnabled: true,
+        teamChatRules: true,
+      },
+    });
+    // An archived bot answers nothing more.
+    if (!policy) {
+      await this.markIgnored(observed, now);
+      return none;
+    }
+    const ambientEnabled = conversation.teamChatAmbientEnabled ?? policy.teamChatAmbientEnabled;
+    // Blank room instructions follow the bot, as the settings screens show them.
+    const rules = conversation.teamChatRules || policy.teamChatRules;
+    const parsedPolicies = AutomatedSenderPoliciesSchema.safeParse(
+      conversation.automatedSenderPolicies,
+    );
+    const senderPolicies = parsedPolicies.success ? parsedPolicies.data : {};
+    if (!ambientEnabled) {
+      await this.markIgnored(observed, now);
+      return none;
+    }
+    const ignored = observed.filter(
+      (message) =>
+        message.senderIsBot && (senderPolicies[message.senderId]?.mode ?? "ignore") === "ignore",
+    );
+    await this.markIgnored(ignored, now);
+    const candidates = observed.filter((message) => !ignored.includes(message));
+    if (candidates.length === 0) return none;
+    const hasImmediateCandidate = candidates.some(
+      (message) => !message.senderIsBot || senderPolicies[message.senderId]?.mode !== "rollup",
+    );
+    const rollups = hasImmediateCandidate
+      ? undefined
+      : await this.rollupSchedule(candidates, senderPolicies, now);
+    const evaluated = rollups ? rollups.due : candidates;
+    // Digests whose period has not passed get a decision once the first of them is due.
+    const nextDueAt = rollups?.nextDueAt?.getTime() ?? none;
+    const latest = evaluated.at(-1);
+    const quietAt = latest ? latest.createdAt.getTime() + this.debounceMs : 0;
+    const waitUntil = Math.min(quietAt > now.getTime() ? quietAt : none, nextDueAt);
+    if (!latest || quietAt > now.getTime()) return waitUntil;
+    const judged = evaluated.slice(-AMBIENT_CONTEXT_MESSAGES);
+    const actionable = [...judged]
+      .reverse()
+      .find(
+        (message) => message.senderIsBot && senderPolicies[message.senderId]?.mode === "action",
+      );
+    const decision = actionable
+      ? {
+          act: true,
+          reason: `${actionable.senderName} is configured as actionable.`,
+          askedByEventId: actionable.providerEventId,
+        }
+      : this.deps.judge
+        ? await this.deps.judge.decide({
+            bot: policy,
+            channelId: conversation.conversationId,
+            channelName: conversation.displayName ?? undefined,
+            rules,
+            messages: judged.map((message) => ({
+              eventId: message.providerEventId,
+              senderId: message.senderId,
+              senderName: message.senderName,
+              content: message.content,
+            })),
+          })
+        : { act: false, reason: "Ambient engagement judge is unavailable." };
+    if (!decision.act) {
+      await this.markIgnored(evaluated, now);
+      return waitUntil;
+    }
+    const trigger =
+      judged.find((message) => message.providerEventId === decision.askedByEventId) ?? latest;
+    const promoted = await this.deps.prisma.$transaction(async (tx) => {
+      const claimed = await tx.externalMessage.updateMany({
+        where: { id: trigger.id, status: "observed" },
+        data: {
+          status: "received",
+          judgedAt: now,
+          engagementReason: decision.reason ?? null,
+          batchContext: JSON.stringify({
+            messageIds: judged.map(({ id }) => id),
+            prompt: teamChatAmbientPrompt({
+              provider: conversation.provider,
               channelId: conversation.conversationId,
-              channelName: conversation.displayName ?? undefined,
+              channelName: conversation.displayName,
               rules,
+              reason: decision.reason,
               messages: judged.map((message) => ({
-                eventId: message.providerEventId,
                 senderId: message.senderId,
                 senderName: message.senderName,
                 content: message.content,
               })),
-            })
-          : { act: false, reason: "Ambient engagement judge is unavailable." };
-      if (!decision.act) {
-        await this.markIgnored(evaluated, now);
-        return;
-      }
-      const trigger =
-        judged.find((message) => message.providerEventId === decision.askedByEventId) ?? latest;
-      const promoted = await this.deps.prisma.$transaction(async (tx) => {
-        const claimed = await tx.externalMessage.updateMany({
-          where: { id: trigger.id, status: "observed" },
-          data: {
-            status: "received",
-            judgedAt: now,
-            engagementReason: decision.reason ?? null,
-            batchContext: JSON.stringify({
-              messageIds: judged.map(({ id }) => id),
-              prompt: teamChatAmbientPrompt({
-                provider: conversation.provider,
-                channelId: conversation.conversationId,
-                channelName: conversation.displayName,
-                rules,
-                reason: decision.reason,
-                messages: judged.map((message) => ({
-                  senderId: message.senderId,
-                  senderName: message.senderName,
-                  content: message.content,
-                })),
-              }),
             }),
-          },
-        });
-        if (claimed.count !== 1) return false;
-        await this.deps.jobs.enqueueIn(
-          tx,
-          teamChatEngageJob(trigger.id, new Date(Date.now() + TEAM_CHAT_ENGAGE_BACKUP_MS)),
-        );
-        await tx.externalMessage.updateMany({
-          where: {
-            id: { in: evaluated.filter(({ id }) => id !== trigger.id).map(({ id }) => id) },
-            status: "observed",
-          },
-          data: { status: "ignored", judgedAt: now },
-        });
-        return true;
+          }),
+        },
       });
-      if (promoted) await this.startAgentRun(trigger.id, ["received"]);
+      if (claimed.count !== 1) return false;
+      await this.deps.jobs.enqueueIn(
+        tx,
+        teamChatEngageJob(trigger.id, new Date(Date.now() + TEAM_CHAT_ENGAGE_BACKUP_MS)),
+      );
+      await tx.externalMessage.updateMany({
+        where: {
+          id: { in: evaluated.filter(({ id }) => id !== trigger.id).map(({ id }) => id) },
+          status: "observed",
+        },
+        data: { status: "ignored", judgedAt: now },
+      });
+      return true;
     });
+    if (promoted) await this.startAgentRun(trigger.id, ["received"]);
+    return waitUntil;
   }
 
   /**

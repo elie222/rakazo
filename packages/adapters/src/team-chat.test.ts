@@ -168,6 +168,8 @@ function setup(
         query([...externalMessages.values()].map(withRelations), args)[0] ?? null,
       findMany: async (args: FindArgs) =>
         query([...externalMessages.values()].map(withRelations), args),
+      count: async (args: FindArgs) =>
+        query([...externalMessages.values()].map(withRelations), args).length,
       update: async ({ where, data }: { where: { id: string }; data: object }) => {
         const row = externalMessages.get(where.id);
         if (!row) throw new Error(`No external message ${where.id}`);
@@ -930,6 +932,65 @@ describe("TeamChat.ambientJob", () => {
     expect(chat.statuses(due, later)).toEqual(["ignored", "observed"]);
     expect(chat.jobs.get(`team_chat.ambient:${chat.conversation.id}`)?.availableAt).toEqual(
       new Date(laterJudgedAt.getTime() + 6 * HOUR_MS),
+    );
+  });
+
+  it("reaches a backlog behind a batch of digests at once, not at the next digest's due time", async () => {
+    const chat = setup({
+      conversation: {
+        automatedSenderPolicies: {
+          "due-bot": { name: "Due", mode: "rollup", rollupHours: 6 },
+          "later-bot": { name: "Later", mode: "rollup", rollupHours: 6 },
+        },
+      },
+    });
+    chat.record({
+      kind: "ambient",
+      status: "ignored",
+      senderId: "later-bot",
+      senderIsBot: true,
+      judgedAt: new Date(Date.now() - 2 * HOUR_MS),
+    });
+    const digests = Array.from({ length: 100 }, (_, index) =>
+      chat.ambient({ senderId: index % 2 ? "later-bot" : "due-bot", senderIsBot: true }),
+    );
+    const people = Array.from({ length: 20 }, () => chat.ambient());
+    const next = () => chat.jobs.get(`team_chat.ambient:${chat.conversation.id}`)?.availableAt;
+
+    await chat.teamChat.ambientJob(chat.conversation.id);
+    expect(next()!.getTime()).toBeLessThanOrEqual(Date.now());
+    await chat.teamChat.ambientJob(chat.conversation.id);
+
+    expect(new Set(chat.statuses(...digests, ...people))).toEqual(new Set(["ignored"]));
+    expect(chat.decide.mock.calls.at(-1)![0].messages.map((m) => m.eventId)).toEqual(
+      people.map(({ providerEventId }) => providerEventId),
+    );
+  });
+
+  it("does not reread a full batch that is all still waiting on its digest", async () => {
+    const chat = setup({
+      conversation: {
+        automatedSenderPolicies: {
+          "later-bot": { name: "Later", mode: "rollup", rollupHours: 6 },
+        },
+      },
+    });
+    const judgedAt = new Date(Date.now() - 2 * HOUR_MS);
+    chat.record({
+      kind: "ambient",
+      status: "ignored",
+      senderId: "later-bot",
+      senderIsBot: true,
+      judgedAt,
+    });
+    for (let index = 0; index < 101; index += 1)
+      chat.ambient({ senderId: "later-bot", senderIsBot: true });
+
+    await chat.teamChat.ambientJob(chat.conversation.id);
+
+    expect(chat.decide).not.toHaveBeenCalled();
+    expect(chat.jobs.get(`team_chat.ambient:${chat.conversation.id}`)?.availableAt).toEqual(
+      new Date(judgedAt.getTime() + 6 * HOUR_MS),
     );
   });
 
