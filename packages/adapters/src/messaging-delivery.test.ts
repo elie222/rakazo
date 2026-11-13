@@ -1123,17 +1123,35 @@ describe("connect invites", () => {
     expect(t.world.outbound).toEqual([]);
   });
 
-  it("never resends an invite when the provider call fails, since it may have arrived", async () => {
+  it("records an invite whose provider call failed as failed, and never resends it", async () => {
     const t = pendingInvite();
     t.sendToThread.mockRejectedValueOnce(new Error("provider down"));
     await t.delivery.record(dm, [invite]);
 
     expect(t.sendToThread).toHaveBeenCalledOnce();
+    // Failed, not sent: a YES or NO never answers a request that may not have arrived.
     expect(t.world.outbound).toEqual([
-      expect.objectContaining({ status: "sent", providerHandle: "" }),
+      expect.objectContaining({ status: "failed", providerHandle: null }),
     ]);
     expect(t.world.identities[0]!.outboundSinceInbound).toBe(0);
     expect(sendJobs(t)).toEqual([]);
+  });
+
+  it("leaves an invite to its backup job when the database is down before the provider call", async () => {
+    const t = pendingInvite();
+    const query = t.prisma.$queryRaw.getMockImplementation()!;
+    t.prisma.$queryRaw.mockImplementation(async (strings, ...values) => {
+      if (strings.join("").includes("agent_connections"))
+        throw Object.assign(new Error("cannot execute SELECT in a read-only transaction"), {
+          code: "25006",
+        });
+      return query(strings, ...values);
+    });
+    await t.delivery.record(dm, [invite]).catch(() => undefined);
+
+    expect(t.sendToThread).not.toHaveBeenCalled();
+    expect(statuses(t)).not.toContain("failed");
+    expect(sendJobs(t)).toHaveLength(1);
   });
 
   it("never resends an invite when its transaction times out", async () => {
@@ -1147,9 +1165,7 @@ describe("connect invites", () => {
     await t.delivery.record(dm, [invite]);
 
     expect(t.sendToThread).not.toHaveBeenCalled();
-    expect(t.world.outbound).toEqual([
-      expect.objectContaining({ status: "sent", providerHandle: "" }),
-    ]);
+    expect(statuses(t)).toEqual(["failed"]);
     expect(sendJobs(t)).toEqual([]);
   });
 });

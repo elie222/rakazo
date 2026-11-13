@@ -150,7 +150,7 @@ type IdentityRow = {
 
 /** What became of one claimed row's send. */
 type SendOutcome =
-  | { kind: "sent"; handle: string | null }
+  | { kind: "sent"; handle: string }
   | { kind: "failed" }
   /** Not sent and not failed: the conversation waits (the sendblue cap). */
   | { kind: "held" }
@@ -461,7 +461,7 @@ export class MessagingDelivery {
   private async settle(
     row: LaneRow,
     claimedAt: Date,
-    outcome: { kind: "sent"; handle: string | null } | { kind: "failed" },
+    outcome: { kind: "sent"; handle: string } | { kind: "failed" },
     attachmentName: string | null = null,
   ): Promise<boolean> {
     const giveUpAt = claimedAt.getTime() + MESSAGING_SEND_STALE_MS + 60_000;
@@ -550,7 +550,7 @@ export class MessagingDelivery {
   private async finish(
     row: LaneRow,
     claimedAt: Date,
-    outcome: { kind: "sent"; handle: string | null } | { kind: "failed" },
+    outcome: { kind: "sent"; handle: string } | { kind: "failed" },
     attachmentName: string | null = null,
   ): Promise<boolean> {
     return this.deps.prisma.$transaction(async (tx) => {
@@ -662,7 +662,7 @@ export class MessagingDelivery {
       const invitePair = connectInvitePair(row.idempotencyKey);
       if (invitePair) {
         const result = await this.sendConnectInvite(row, threadId, invitePair, context);
-        if (result.kind === "sent" && result.handle !== null) await this.countOutbound(identity);
+        if (result.kind === "sent") await this.countOutbound(identity);
         return result;
       }
       let attachment: MessagingOutboundAttachment | undefined;
@@ -739,9 +739,10 @@ export class MessagingDelivery {
    * blocks behind this lock, so it cannot commit (and delete the row) between the pending check
    * and the send. Only used for rare approval DMs.
    *
-   * At most once: a failure after the provider call, or an ambiguous transport error, settles the
-   * row as sent without a handle so it is never sent again. A lost invite is fine; reconnecting
-   * starts a fresh cycle.
+   * At most once: a provider error, or a failure once the provider call has started, settles the
+   * row as failed, so it is never sent again and a YES or NO never answers a request that may not
+   * have arrived. A lost invite is fine; reconnecting starts a fresh cycle. A database outage
+   * before the provider call leaves the row to its backup job.
    */
   private async sendConnectInvite(
     row: LaneRow,
@@ -749,6 +750,7 @@ export class MessagingDelivery {
     pair: { requesterBotId: string; targetBotId: string },
     context: AdapterContext,
   ): Promise<SendOutcome> {
+    let attempted = false;
     try {
       return await this.deps.prisma.$transaction(
         async (tx) => {
@@ -778,21 +780,18 @@ export class MessagingDelivery {
           });
           // Revoked between the claim and this lock.
           if (!outbound) return { kind: "failed" as const };
-          try {
-            const sent = await this.deps.messaging.sendToThread(
-              { threadId, body: row.body },
-              context,
-            );
-            return { kind: "sent" as const, handle: sent.handle };
-          } catch {
-            return { kind: "sent" as const, handle: null };
-          }
+          attempted = true;
+          const sent = await this.deps.messaging.sendToThread(
+            { threadId, body: row.body },
+            context,
+          );
+          return { kind: "sent" as const, handle: sent.handle };
         },
         { maxWait: 5_000, timeout: 20_000 },
       );
-    } catch {
-      // Lock or timeout after a possible accept.
-      return { kind: "sent", handle: null };
+    } catch (error) {
+      if (!attempted && isDatabaseUnavailable(error)) throw error;
+      return { kind: "failed" };
     }
   }
 
