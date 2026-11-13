@@ -102,7 +102,7 @@ describe("tool step outcomes", () => {
             count: 2,
             calls: [
               { arguments: '{"command":"ls"}', result: '{"stdout":"a\\n","code":0}' },
-              { arguments: '{"command":"npm -v"}', result: "npm: command not found" },
+              { arguments: '{"command":"npm -v"}', result: "npm: command not found", failed: true },
             ],
             outcomes: { succeeded: 1, failed: 1 },
           },
@@ -169,7 +169,13 @@ describe("tool step outcomes", () => {
               label: "Shell",
               tool: "shell",
               count: 1,
-              calls: [{ arguments: '{"command":"echo late-secret"}', result: "late-secret" }],
+              calls: [
+                {
+                  arguments: '{"command":"echo late-secret"}',
+                  result: "late-secret",
+                  image: { artifactId: "shot" },
+                },
+              ],
             },
           ],
         },
@@ -180,9 +186,13 @@ describe("tool step outcomes", () => {
     expect(block?.kind === "steps" && JSON.parse(block.steps[0]!.calls![0]!.arguments!)).toEqual({
       command: "echo [redacted]",
     });
+    // The kept screenshot stays with its call.
+    expect(block?.kind === "steps" && block.steps[0]!.calls![0]!.image).toEqual({
+      artifactId: "shot",
+    });
   });
 
-  it("keeps no more than a reply's result budget, leaving later results at least a line", () => {
+  it("keeps no more than a reply's result budget, then only how later calls ended", () => {
     const reply = { toolStepCalls: new Map(), keptResultChars: 0 } as unknown as ReplyState;
     const big = { content: [{ type: "text", text: "x".repeat(10_000) }] };
     const calls = Math.ceil(TOOL_REPLY_RESULTS_MAX_CHARS / TOOL_CALL_TEXT_MAX_CHARS) + 2;
@@ -190,10 +200,12 @@ describe("tool step outcomes", () => {
       reply.toolStepCalls.set(`call-${index}`, { arguments: "{}" });
       keepToolStepResult(reply, { ...base, executionId: `call-${index}`, result: big }, []);
     }
-    const kept = [...reply.toolStepCalls.values()].map((call) => call.result!.length);
-    expect(kept.slice(0, 3).every((length) => length >= TOOL_CALL_TEXT_MAX_CHARS)).toBe(true);
-    expect(kept.at(-1)).toBeLessThan(400);
-    expect(reply.keptResultChars).toBeLessThanOrEqual(TOOL_REPLY_RESULTS_MAX_CHARS + 1_000);
+    const kept = [...reply.toolStepCalls.values()].map((call) => call.result?.length);
+    expect(kept.slice(0, 3).every((length) => length! >= TOOL_CALL_TEXT_MAX_CHARS)).toBe(true);
+    expect(kept.at(-1)).toBeUndefined();
+    expect(reply.toolStepCalls.get(`call-${calls - 1}`)).toEqual({ arguments: "{}" });
+    // Each kept result may add its short "characters not kept" marker to its share.
+    expect(reply.keptResultChars).toBeLessThanOrEqual(TOOL_REPLY_RESULTS_MAX_CHARS + 100);
   });
 
   it("starts a run as having read outside content when history replays a kept outside result", () => {

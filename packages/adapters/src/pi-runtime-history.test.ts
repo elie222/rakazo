@@ -432,6 +432,35 @@ describe("replaying an earlier reply's tool steps", () => {
     });
   });
 
+  it("replays a call under the name its tool is offered as, and marks only its failed calls", () => {
+    const reply = {
+      ...toolReply,
+      segments: [
+        {
+          steps: [
+            {
+              label: "Café lookup",
+              tool: "café lookup",
+              count: 2,
+              calls: [
+                { arguments: "{}", result: "found" },
+                { arguments: "{}", result: "timed out", failed: true as const },
+              ],
+              outcomes: { succeeded: 1, failed: 1 },
+            },
+          ],
+        },
+      ],
+    };
+    const [call, first, second] = toHistory([reply], "", undefined, new Set(["cafe_lookup"]));
+    expect(
+      call?.role === "assistant" &&
+        call.content.map((part) => part.type === "toolCall" && part.name),
+    ).toEqual(["cafe_lookup", "cafe_lookup"]);
+    expect(first).toMatchObject({ isError: false, content: [{ text: "found" }] });
+    expect(second).toMatchObject({ isError: true, content: [{ text: "timed out" }] });
+  });
+
   it("replays an image result with how it ended and the bot's own next words, never its content", () => {
     const observed = {
       ...toolReply,

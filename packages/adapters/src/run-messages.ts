@@ -62,6 +62,7 @@ export function redactBlocks(blocks: MessageBlock[], secrets: string[]): Message
           ...(step.calls
             ? {
                 calls: step.calls.map((call) => ({
+                  ...call,
                   ...(call.arguments === undefined
                     ? {}
                     : { arguments: redactedArguments(call.arguments, secrets) }),

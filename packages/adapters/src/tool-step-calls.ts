@@ -11,7 +11,7 @@ import type { ReplyState } from "./run-context.js";
  * bound is applied once, when the reply is saved, so the replay of a reply never changes.
  */
 export const TOOL_CALL_TEXT_MAX_CHARS = 1_000;
-/** The most of all results one reply keeps; later results get what is left, at least a line. */
+/** The most of all results one reply keeps; later results get what is left, then none. */
 export const TOOL_REPLY_RESULTS_MAX_CHARS = 8_000;
 const TOOL_RESULT_MIN_CHARS = 200;
 /** Lists and nesting in arguments are kept generously; only pathological shapes are bounded. */
@@ -101,12 +101,19 @@ export function keepToolStepResult(
 ): void {
   const call = reply.toolStepCalls.get(completion.executionId);
   if (!call) return;
+  const failed = completion.error !== undefined ? ({ failed: true } as const) : {};
   const left = TOOL_REPLY_RESULTS_MAX_CHARS - reply.keptResultChars;
-  const max = Math.max(TOOL_RESULT_MIN_CHARS, Math.min(TOOL_CALL_TEXT_MAX_CHARS, left));
-  const result = keptToolResult(completion, secrets, max);
-  if (result === undefined) return;
-  reply.keptResultChars += result.length;
-  reply.toolStepCalls.set(completion.executionId, { ...call, result });
+  // Once the reply's budget is spent, later calls keep how they ended but not what they returned.
+  const result =
+    left >= TOOL_RESULT_MIN_CHARS
+      ? keptToolResult(completion, secrets, Math.min(TOOL_CALL_TEXT_MAX_CHARS, left))
+      : undefined;
+  if (result !== undefined) reply.keptResultChars += result.length;
+  reply.toolStepCalls.set(completion.executionId, {
+    ...call,
+    ...(result === undefined ? {} : { result }),
+    ...failed,
+  });
 }
 
 /**

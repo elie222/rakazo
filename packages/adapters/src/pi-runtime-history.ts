@@ -3,6 +3,7 @@ import type { AssistantMessage, Context, Message, ToolCall } from "@earendil-wor
 import type { AgentRunRequest, AgentSteeringMessage } from "@rakazo/adapter-kit";
 import { TOOL_STEP_CALLS_KEPT, toolStepOutcomeText } from "@rakazo/core";
 import { neutralizeSpeakerLabels } from "./history-speakers.js";
+import { normalizeAgentToolName } from "./pi-runtime-tools.js";
 import { bounded, IMAGE_NOT_KEPT, TOOL_CALL_TEXT_MAX_CHARS } from "./tool-step-calls.js";
 
 export function toPiImages(images: AgentRunRequest["currentTurnImages"]) {
@@ -55,13 +56,9 @@ type HistoryCommon = Pick<
 const REPLAYED_NOTE_MAX_CHARS = 300;
 
 /** A provider-safe tool name, from the name the step stored. */
+/** The name the tool is offered under, so a replayed call matches the tool the model has. */
 function replayedToolName(tool: string): string {
-  return (
-    tool
-      .trim()
-      .replace(/[^A-Za-z0-9_-]+/g, "_")
-      .slice(0, 64) || "tool"
-  );
+  return normalizeAgentToolName(tool.trim());
 }
 
 /** The steps a replay shows: every step that starts within the calls a reply keeps. */
@@ -119,7 +116,8 @@ function replayedResult(
   wordsAfter: string,
 ): { text: string; isError: boolean } {
   const outcome = toolStepOutcomeText(step);
-  const isError = outcome === "failed" || outcome === "stopped";
+  // A call in a step with mixed outcomes says itself whether it failed.
+  const isError = call.failed === true || outcome === "failed" || outcome === "stopped";
   const ended = outcome ? `${outcome.charAt(0).toUpperCase()}${outcome.slice(1)}.` : "Done.";
   if (typeof call.result !== "string" || !call.result) return { text: ended, isError };
   // Saved results are already bounded; this only holds imported ones to the same size.

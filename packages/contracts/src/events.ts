@@ -272,6 +272,8 @@ export const MessageBlock = z.discriminatedUnion("kind", [
               result: z.string().optional(),
               /** A screenshot the call returned, kept as a stored image. */
               image: z.object({ artifactId: z.string() }).optional(),
+              /** The call ended in an error; its result is that error. */
+              failed: z.literal(true).optional(),
             }),
           )
           .optional(),
