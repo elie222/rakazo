@@ -4,11 +4,15 @@ import {
   HISTORY_COMPACT_MAX_ATTEMPTS,
   historyCompactJob,
   historyCompactJobKey,
+  MESSAGING_SEND_MAX_ATTEMPTS,
   memoryPurgeHistoryJob,
   memoryRetainTurnJob,
-  messagingDeliverJob,
+  messagingSendJob,
   parseBackgroundJob,
+  RetryJobLaterError,
   routineRetryJob,
+  teamChatAmbientJob,
+  teamChatEngageJob,
 } from "./background-jobs.js";
 import type { BackgroundJobHandlers } from "./types.js";
 
@@ -25,9 +29,13 @@ function handlers(): BackgroundJobHandlers {
     "history.compact": vi.fn(async () => undefined),
     "memory.retain-turn": vi.fn(async () => undefined),
     "memory.purge-history": vi.fn(async () => undefined),
+    "messaging.send": vi.fn(async () => undefined),
+    "messaging.reply": vi.fn(async () => undefined),
     "messaging.deliver": vi.fn(async () => undefined),
     "messaging.progress": vi.fn(async () => undefined),
     "messaging.credential-cleanup": vi.fn(async () => undefined),
+    "team_chat.engage": vi.fn(async () => undefined),
+    "team_chat.ambient": vi.fn(async () => undefined),
     "cloud_agent.poll": vi.fn(async () => undefined),
     "purchase.poll": vi.fn(async () => undefined),
     "media.poll": vi.fn(async () => undefined),
@@ -54,20 +62,50 @@ describe("background job contracts", () => {
       parseBackgroundJob("memory.purge-history", { ...payload, connectionIdentity: undefined }),
     ).toThrow();
   });
-  it("validates and dispatches messaging.deliver", async () => {
+
+  it("dispatches a chat message's backup job with the attempt it is on", async () => {
     const target = handlers();
-    await dispatchBackgroundJob(target, "messaging.deliver", { runId: "run-1" });
-    expect(target["messaging.deliver"]).toHaveBeenCalledWith({ runId: "run-1" });
-    expect(messagingDeliverJob("run-1")).toEqual({
-      name: "messaging.deliver",
-      payload: { runId: "run-1" },
-      replaceKey: "messaging.deliver:run-1",
+    const attempt = { number: 2, max: MESSAGING_SEND_MAX_ATTEMPTS };
+    await dispatchBackgroundJob(
+      target,
+      "messaging.send",
+      { outboundId: "out-1" },
+      undefined,
+      attempt,
+    );
+    expect(target["messaging.send"]).toHaveBeenCalledWith(
+      { outboundId: "out-1" },
+      undefined,
+      attempt,
+    );
+    const due = new Date("2026-08-15T12:01:30.000Z");
+    expect(messagingSendJob("out-1", due)).toEqual({
+      name: "messaging.send",
+      payload: { outboundId: "out-1" },
+      availableAt: due,
+      replaceKey: "messaging.send:out-1",
+      maxAttempts: MESSAGING_SEND_MAX_ATTEMPTS,
     });
-    expect(messagingDeliverJob()).toEqual({
-      name: "messaging.deliver",
-      payload: {},
-      replaceKey: "messaging.deliver:drain",
+  });
+
+  it("keys team-chat jobs per message and queues ambient decisions per conversation", () => {
+    const due = new Date("2026-08-15T12:02:00.000Z");
+    expect(teamChatEngageJob("message-1", due)).toEqual({
+      name: "team_chat.engage",
+      payload: { externalMessageId: "message-1" },
+      availableAt: due,
+      replaceKey: "team_chat.engage:message-1",
     });
+    expect(teamChatAmbientJob("conversation-1", due)).toMatchObject({
+      replaceKey: "team_chat.ambient:conversation-1",
+      queueName: "team_chat.ambient:conversation-1",
+    });
+  });
+
+  it("carries the earliest time a job asked to be retried", () => {
+    const cause = new Error("rate limited");
+    const error = new RetryJobLaterError(30_000, { cause });
+    expect({ delayMs: error.delayMs, cause: error.cause }).toEqual({ delayMs: 30_000, cause });
   });
 
   it("validates and dispatches retired messaging credential cleanup", async () => {

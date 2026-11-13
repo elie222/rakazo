@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type {
   BackgroundJob,
+  BackgroundJobAttempt,
   BackgroundJobExecution,
   BackgroundJobHandlers,
   BackgroundJobName,
@@ -54,12 +55,16 @@ const payloadSchemas = {
       })
       .optional(),
   }),
+  "messaging.send": z.object({ outboundId: z.string().min(1) }),
+  "messaging.reply": z.object({ runId: z.string().min(1) }),
   "messaging.deliver": z.object({ runId: z.string().min(1).optional() }),
   "messaging.progress": z.object({ runId: z.string().min(1) }),
   "messaging.credential-cleanup": z.object({
     installationId: z.string().min(1),
     ref: z.string().min(1),
   }),
+  "team_chat.engage": z.object({ externalMessageId: z.string().min(1) }),
+  "team_chat.ambient": z.object({ conversationId: z.string().min(1) }),
   "cloud_agent.poll": z.object({ agentId: z.string().min(1) }),
   "purchase.poll": z.object({ purchaseId: z.string().min(1) }),
   "media.poll": z.object({ jobId: z.string().min(1) }),
@@ -82,14 +87,28 @@ export async function dispatchBackgroundJob(
   name: string,
   payload: unknown,
   execution?: BackgroundJobExecution,
+  attempt?: BackgroundJobAttempt,
 ): Promise<void> {
   const job = parseBackgroundJob(name, payload);
   const handler = handlers[job.name] as (
     payload: typeof job.payload,
     execution?: BackgroundJobExecution,
+    attempt?: BackgroundJobAttempt,
   ) => Promise<void>;
-  if (execution) await handler(job.payload, execution);
+  if (attempt) await handler(job.payload, execution, attempt);
+  else if (execution) await handler(job.payload, execution);
   else await handler(job.payload);
+}
+
+/** Thrown by a job to be tried again no sooner than `delayMs`, such as a provider's retry-after. */
+export class RetryJobLaterError extends Error {
+  override readonly name = "RetryJobLaterError";
+  constructor(
+    readonly delayMs: number,
+    options?: { cause?: unknown },
+  ) {
+    super(`Retry no sooner than ${delayMs}ms`, options);
+  }
 }
 
 export function runJobKey(runId: string): string {
@@ -193,25 +212,65 @@ export function historyCompactJobKey(threadId: string): string {
  */
 export const HISTORY_COMPACT_MAX_ATTEMPTS = 4;
 
+export function messagingSendJobKey(outboundId: string): string {
+  return `messaging.send:${outboundId}`;
+}
+
+/** Tries of one outgoing chat message's backup job before the message is declared lost. */
+export const MESSAGING_SEND_MAX_ATTEMPTS = 5;
+
 /**
- * Delivers the interim messages of a run a chat app started, while the run is still going. Few
- * attempts: each one drains the whole outbox, and the end-of-run mirror sends them anyway.
+ * Backup for one outgoing chat message, due once the send that recorded it has had its time.
+ * A clean failure moves it up; the job's retries carry on from there.
  */
-export function messagingProgressJob(runId: string): BackgroundJob {
+export function messagingSendJob(outboundId: string, availableAt: Date): BackgroundJob {
   return {
-    name: "messaging.progress",
-    payload: { runId },
-    replaceKey: `messaging.progress:${runId}`,
-    maxAttempts: 3,
+    name: "messaging.send",
+    payload: { outboundId },
+    availableAt,
+    replaceKey: messagingSendJobKey(outboundId),
+    maxAttempts: MESSAGING_SEND_MAX_ATTEMPTS,
   };
 }
 
-export function messagingDeliverJob(runId?: string, availableAt?: Date): BackgroundJob {
+export function messagingReplyJobKey(runId: string): string {
+  return `messaging.reply:${runId}`;
+}
+
+export function messagingReplyJob(runId: string, availableAt?: Date): BackgroundJob {
   return {
-    name: "messaging.deliver",
-    payload: runId ? { runId } : {},
-    replaceKey: `messaging.deliver:${runId ?? "drain"}`,
+    name: "messaging.reply",
+    payload: { runId },
+    replaceKey: messagingReplyJobKey(runId),
     ...(availableAt ? { availableAt } : {}),
+  };
+}
+
+export function teamChatEngageJobKey(externalMessageId: string): string {
+  return `team_chat.engage:${externalMessageId}`;
+}
+
+/** Backup for answering an inbound team-chat message, or the end of its routine routing. */
+export function teamChatEngageJob(externalMessageId: string, availableAt: Date): BackgroundJob {
+  return {
+    name: "team_chat.engage",
+    payload: { externalMessageId },
+    availableAt,
+    replaceKey: teamChatEngageJobKey(externalMessageId),
+  };
+}
+
+/**
+ * One conversation's ambient decision, due once it has been quiet. Each new message moves it
+ * later, and the queue keeps two decisions for one conversation from running at once.
+ */
+export function teamChatAmbientJob(conversationId: string, availableAt: Date): BackgroundJob {
+  return {
+    name: "team_chat.ambient",
+    payload: { conversationId },
+    availableAt,
+    replaceKey: `team_chat.ambient:${conversationId}`,
+    queueName: `team_chat.ambient:${conversationId}`,
   };
 }
 
