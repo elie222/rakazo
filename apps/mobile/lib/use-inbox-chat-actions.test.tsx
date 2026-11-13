@@ -20,9 +20,14 @@ const session = vi.hoisted(() => ({
   generation: 1,
   focused: true,
   alert: vi.fn(),
+  route: {} as { params?: { groupId?: string; botId?: string } },
+  dismissAll: vi.fn(),
+  replace: vi.fn(),
 }));
 
 vi.mock("expo-router", () => ({
+  useNavigationContainerRef: () => ({ getCurrentRoute: () => session.route }),
+  useRouter: () => ({ dismissAll: session.dismissAll, replace: session.replace }),
   useFocusEffect: (effect: () => () => void) =>
     useEffect(() => (session.focused ? effect() : undefined), [effect]),
 }));
@@ -62,6 +67,7 @@ let root: Root | undefined;
 const sent = (call: unknown[]) => call.slice(0, 2);
 
 beforeEach(() => {
+  session.route = {};
   session.focused = true;
   session.space = "space-a";
   session.generation = 1;
@@ -509,4 +515,13 @@ it("allows delete in a visible embedded inbox without route focus", async () => 
   await h.runRowAction("bot", { id: "x", name: "Ada" }, "delete");
   expect(confirmDeleteBot).toHaveBeenCalledOnce();
   expect(vi.mocked(confirmDeleteBot).mock.calls[0]![2]!()).toBe(true);
+});
+
+it("leaves a dissolved group open beside the inbox after bot deletion", async () => {
+  const h = await handlers(async () => []);
+  session.route = { params: { groupId: "group-removed" } };
+  await h.runRowAction("bot", { id: "x", name: "Ada" }, "delete");
+  vi.mocked(confirmDeleteBot).mock.calls[0]![1]!(["group-removed"]);
+  expect(session.dismissAll).toHaveBeenCalledOnce();
+  expect(session.replace).toHaveBeenCalledWith("/");
 });

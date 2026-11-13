@@ -1,6 +1,7 @@
 import { useLingui } from "@lingui/react/macro";
 import type { RpcInput, RpcPath, SpaceBot, SpaceGroup } from "@rakazo/contracts";
 import { createSnoozeQueue } from "@rakazo/core";
+import { useNavigationContainerRef, useRouter } from "expo-router";
 import type { Dispatch, SetStateAction } from "react";
 import { useCallback, useState } from "react";
 import { Alert } from "react-native";
@@ -57,6 +58,8 @@ export function useInboxChatActions({
   setSpaces: ListUpdate<MobileSpace>;
 }) {
   const { t } = useLingui();
+  const navigation = useNavigationContainerRef();
+  const router = useRouter();
   const beginDelete = useConfirmationGuard(confirmationActive);
   const [unreadOverrides, setUnreadOverrides] = useState<ReadonlyMap<string, boolean>>(
     () => new Map(),
@@ -206,7 +209,19 @@ export function useInboxChatActions({
         if (kind === "bot") {
           void confirmDeleteBot(
             { id: chat.id, name: chat.name },
-            deleted,
+            (removedGroupIds) => {
+              deleted();
+              const route = navigation.getCurrentRoute() as
+                | { params?: { botId?: string; groupId?: string } }
+                | undefined;
+              if (
+                route?.params?.botId === chat.id ||
+                (route?.params?.groupId && removedGroupIds.includes(route.params.groupId))
+              ) {
+                router.dismissAll();
+                router.replace("/");
+              }
+            },
             confirmation!.current,
             requestContext,
             confirmation!.finish,
@@ -218,7 +233,7 @@ export function useInboxChatActions({
         Alert.alert(t`Could not update chat`, errorText(err, t`Try again.`)),
       );
     },
-    [beginDelete, loadBots, sendReadState, t, updateChat],
+    [beginDelete, loadBots, navigation, router, sendReadState, t, updateChat],
   );
   const botAction = useCallback(
     (action: InboxRowAction, bot: MobileBot | SpaceBot) => void runRowAction("bot", bot, action),
