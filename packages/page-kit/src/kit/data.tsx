@@ -274,7 +274,9 @@ export type TableCell =
   | { text: ReactNode; tone?: Tone };
 
 function cellContent(cell: TableCell): ReactNode {
-  if (cell === null || typeof cell !== "object" || isValidElement(cell)) return cell as ReactNode;
+  if (cell === null || typeof cell !== "object" || isValidElement(cell) || Array.isArray(cell)) {
+    return cell as ReactNode;
+  }
   if (!("text" in cell)) return null;
   const tone = toneClass(cell.tone);
   return tone ? <span className={tone}>{cell.text}</span> : cell.text;
