@@ -292,7 +292,7 @@ export function createRunRuntime(
     mediaGeneration: deps.mediaGeneration,
     maxUploadSizeBytes: env.maxUploadSizeBytes,
   });
-  return { executor, jobHandlers, messagingDelivery, teamChat };
+  return { runtime, executor, jobHandlers, messagingDelivery, teamChat };
 }
 
 type JobReconcilerDeps = Parameters<typeof createJobReconciler>[0];

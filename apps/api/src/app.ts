@@ -467,7 +467,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   );
   const { mcpOAuth, mcp, pipedream, installed, integrationSettings, stack, userCloudAgents } =
     connectors;
-  const runtime =
+  const baseRuntime =
     runtimeOverride ??
     (env.agentRuntime === "scripted"
       ? new ScriptedAgentRuntime()
@@ -618,7 +618,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   const codexCatalog = new CodexCatalogCache();
   // One instance: chat runs submit videos and, in single-process mode, background polls finish them.
   const mediaGeneration = createMediaGenerationProvider();
-  const { executor, jobHandlers, messagingDelivery, teamChat } = createRunRuntime(
+  const { runtime, executor, jobHandlers, messagingDelivery, teamChat } = createRunRuntime(
     runtimeEnv,
     connectors,
     {
@@ -626,7 +626,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       mediaGeneration,
       contextStrategy,
       prisma,
-      runtime,
+      runtime: baseRuntime,
       codexCatalog,
       sandbox,
       memory,
