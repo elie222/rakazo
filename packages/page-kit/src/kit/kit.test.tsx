@@ -399,6 +399,7 @@ describe("page kit", () => {
 
   it("wraps wide diagram text and sizes labels and details with the same estimate", () => {
     expect(wrapText("日本語の処理手順", 6)).toEqual(["日本語", "の処理", "手順"]);
+    expect(wrapText("한".repeat(6).normalize("NFD"), 23)).toEqual(["한".repeat(6)]);
     expect(wrapText("अः".repeat(4), 4)).toEqual(["अःअः", "अःअः"]);
     expect(wrapText("😀".repeat(4), 4)).toEqual(["😀😀", "😀😀"]);
     expect(wrapText(`${"a".repeat(21)}日\u0301`, 23)).toEqual([`${"a".repeat(21)}日\u0301`]);

@@ -38,7 +38,7 @@ const textWidth = (text: string) =>
 export function wrapText(text: string, perLine: number): string[] {
   const lines: string[] = [];
   let line = "";
-  for (const word of text.split(/\s+/).filter(Boolean)) {
+  for (const word of text.normalize("NFC").split(/\s+/).filter(Boolean)) {
     let remainder = "";
     let width = 0;
     for (const character of word) {
