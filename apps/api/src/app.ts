@@ -435,13 +435,16 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   };
   const onEmailError = emailErrorLogger("transactional email delivery failed");
   const stripeBilling = stripeBillingConfigFromEnv(env);
+  const localBillingEmulator =
+    !billingOverride && !stripeBilling && env.billingEmulator
+      ? new BillingEmulator({ modelCredits: true })
+      : undefined;
+  if (localBillingEmulator && !isLocalhostOrLoopbackIp(env.apiHost)) {
+    throw new Error("BILLING_EMULATOR requires API_HOST to be a loopback host");
+  }
   const billingProvider: BillingProvider | undefined =
     billingOverride ??
-    (stripeBilling
-      ? new StripeBillingProvider(stripeBilling)
-      : env.billingEmulator
-        ? new BillingEmulator({ modelCredits: true })
-        : undefined);
+    (stripeBilling ? new StripeBillingProvider(stripeBilling) : localBillingEmulator);
   const billing = billingProvider
     ? createBillingService({
         prisma,
