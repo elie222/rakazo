@@ -1418,6 +1418,43 @@ it("opens the DeepInfra preset with a required key and prefills the model's capa
   }
 });
 
+it("keeps an output limit edited while a model search is still running", async () => {
+  HTMLElement.prototype.scrollTo = vi.fn();
+  models.list.mockResolvedValue([compatibleEntry]);
+  models.credentials.mockResolvedValue([]);
+  let finishSearch: (value: unknown) => void = () => undefined;
+  models.probeOpenAiCompatible.mockImplementation(
+    () => new Promise((resolve) => (finishSearch = resolve)),
+  );
+  const view = await renderSettings(false);
+  try {
+    await pick("Change Main model", "DeepInfra");
+    await typeInto(
+      view.container.querySelector('input[aria-label="API key"]') as HTMLInputElement,
+      "fake-fixture-key",
+    );
+    await click(buttons(view.container, "Find models")[0]);
+    const limit = view.container.querySelector<HTMLInputElement>(
+      'input[aria-label="Maximum output tokens"]',
+    );
+    if (!limit) throw new Error("Missing output limit field");
+    await typeInto(limit, "1000");
+    await act(async () => {
+      finishSearch({
+        models: ["small-model"],
+        details: [
+          { id: "small-model", supportsImages: false, reasoning: false, contextWindow: 2048 },
+        ],
+      });
+      for (let index = 0; index < 5; index += 1) await new Promise((done) => setTimeout(done, 0));
+    });
+    // 1000 already fits the 2048-token context, so the search result must not replace it.
+    expect(limit.value).toBe("1000");
+  } finally {
+    await view.unmount();
+  }
+});
+
 it("re-prefills the capabilities when another found model becomes the default", async () => {
   HTMLElement.prototype.scrollTo = vi.fn();
   models.list.mockResolvedValue([compatibleEntry]);

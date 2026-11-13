@@ -103,6 +103,9 @@ export default function ModelConnection() {
   const [reasoning, setReasoning] = useState(false);
   const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel | null>(null);
   const [maxTokens, setMaxTokens] = useState(String(DEFAULT_MODEL_MAX_TOKENS));
+  // A model search can finish after the person edits the output limit; prefill reads this.
+  const maxTokensRef = useRef(maxTokens);
+  maxTokensRef.current = maxTokens;
   const [contextWindow, setContextWindow] = useState(String(DEFAULT_MODEL_CONTEXT_WINDOW));
   const [supportsImages, setSupportsImages] = useState(false);
   const [maxImagesPerPrompt, setMaxImagesPerPrompt] = useState("");
@@ -398,7 +401,7 @@ export default function ModelConnection() {
       baseUrl: endpoint,
       modelId: nextModelId,
       probed: details.find((info) => info.id === nextModelId),
-      form: { reasoning, maxTokens, apiProtocol },
+      form: { reasoning, maxTokens: maxTokensRef.current, apiProtocol },
     });
     if (fields.reasoning !== undefined) setReasoning(fields.reasoning);
     if (fields.supportsImages !== undefined) setSupportsImages(fields.supportsImages);

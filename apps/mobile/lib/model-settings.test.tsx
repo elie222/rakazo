@@ -51,6 +51,8 @@ const { push, back, params, rpcCalls, saved } = vi.hoisted(() => ({
     // What the probe says about each found model; DeepInfra's listing carries it.
     probeDetails: undefined as object[] | undefined,
     failProbe: false,
+    // Holds the model search open until a test releases it.
+    holdProbe: undefined as Promise<void> | undefined,
   },
 }));
 
@@ -82,6 +84,7 @@ vi.mock("./api", () => ({
         needsModel: saved.needsModel,
       };
     if (procedure === "models/probeOpenAiCompatible") {
+      if (saved.holdProbe) await saved.holdProbe;
       if (saved.failProbe) throw new Error("offline");
       return {
         models: Array.from({ length: 11 }, (_, index) => `found-${index}`),
@@ -473,6 +476,24 @@ describe("DeepInfra capability prefill", () => {
   afterEach(() => {
     saved.probeDetails = undefined;
     saved.failProbe = false;
+    saved.holdProbe = undefined;
+  });
+
+  it("keeps an output limit edited while the model search is still running", async () => {
+    let release: () => void = () => undefined;
+    saved.holdProbe = new Promise((resolve) => (release = resolve));
+    saved.probeDetails = [
+      { id: "found-0", supportsImages: false, reasoning: false, contextWindow: 2048 },
+    ];
+    await openDeepInfra();
+    await change("Maximum output tokens", "1000");
+    await act(async () => {
+      release();
+      for (let index = 0; index < 5; index += 1) await new Promise((done) => setTimeout(done, 0));
+    });
+    // 1000 already fits the 2048-token context, so the search result must not replace it.
+    expect(field("Context limit")?.value).toBe("2048");
+    expect(field("Maximum output tokens")?.value).toBe("1000");
   });
 
   it("prefills the switches and limit from the picked model and sends them on connect", async () => {
