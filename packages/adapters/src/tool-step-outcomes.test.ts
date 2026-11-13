@@ -1,4 +1,5 @@
-import type { HistoryToolStep } from "@rakazo/contracts";
+import type { HistoryToolStep, RunTrigger } from "@rakazo/contracts";
+import { RUN_TRIGGERS } from "@rakazo/contracts";
 import { appendToolCallSegment } from "@rakazo/core";
 import { describe, expect, it, vi } from "vitest";
 import type { ReplyState, RunContext } from "./run-context.js";
@@ -210,12 +211,42 @@ describe("tool step outcomes", () => {
     expect(result).toBe('{"user":"ana","password":"[redacted]","api_key":"[redacted]"}');
   });
 
-  it("replays tool calls only to the owner's own runs", () => {
-    expect(runReplaysToolHistory({ trigger: "user" }, false)).toBe(true);
-    expect(runReplaysToolHistory({ trigger: "messaging" }, false)).toBe(true);
-    // Another person in a chat, or another bot or connected agent, never gets them.
-    expect(runReplaysToolHistory({ trigger: "messaging" }, true)).toBe(false);
-    expect(runReplaysToolHistory({ trigger: "bot_message" }, false)).toBe(false);
+  it("replays tool calls only to runs the owner started themselves, failing closed", () => {
+    const owner = { fromUser: true, nonOwnerChat: false };
+    // Every trigger, so a new one must be decided here; any not allowed gets plain step labels.
+    const expected: Record<RunTrigger, boolean> = {
+      user: true,
+      call_end: true,
+      follow_up: true,
+      messaging: true,
+      routine: false,
+      resume: false,
+      reaction: false,
+      spawn: false,
+      skill: false,
+      bot_message: false,
+      webhook: false,
+      cloud_agent: false,
+      purchase: false,
+      media: false,
+      created: false,
+      tickets: false,
+      helper: false,
+      helper_result: false,
+    };
+    expect(Object.keys(expected).sort()).toEqual([...RUN_TRIGGERS].sort());
+    for (const trigger of RUN_TRIGGERS)
+      expect([trigger, runReplaysToolHistory(trigger, owner)]).toEqual([
+        trigger,
+        expected[trigger],
+      ]);
+    expect(runReplaysToolHistory("a-trigger-added-later", owner)).toBe(false);
+    // A follow-up the bot queued, a channel, or another person in a team chat never gets them.
+    expect(runReplaysToolHistory("follow_up", { fromUser: false, nonOwnerChat: false })).toBe(
+      false,
+    );
+    for (const trigger of ["messaging", "user"])
+      expect(runReplaysToolHistory(trigger, { fromUser: true, nonOwnerChat: true })).toBe(false);
   });
 
   it("holds a result that arrives before its call is kept, for the call's handler", () => {

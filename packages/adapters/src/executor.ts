@@ -635,6 +635,10 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                 sourceClientNonce: messagingSource?.clientNonce,
               }))
             : false);
+        const replaysToolHistory = runReplaysToolHistory(run.trigger, {
+          fromUser: messages.find((message) => message.id === run.sourceMessageId)?.role === "user",
+          nonOwnerChat: nonOwnerChatRun,
+        });
         const historySearchBeforeSeq =
           contextStrategy !== "current" && run.sourceMessageId
             ? (messages.find((message) => message.id === run.sourceMessageId)?.seq ??
@@ -764,10 +768,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
               const partial = isPartialReplyClientNonce(m.clientNonce);
               // Runs for someone other than the owner replay replies as everyone saw them.
               const segments =
-                m.role === "user" ||
-                m.role === "system" ||
-                speaker ||
-                !runReplaysToolHistory(run, nonOwnerChatRun)
+                m.role === "user" || m.role === "system" || speaker || !replaysToolHistory
                   ? undefined
                   : messageToAgentHistorySegments(m)?.map((segment) =>
                       "text" in segment

@@ -103,12 +103,29 @@ export function keptToolResult(
 }
 
 /**
- * Whether a run may replay the tool calls of this bot's earlier replies. A run for someone other
- * than the owner (a channel, another person in a team chat) or started by another bot or connected
- * agent sees those replies as everyone did: their output could otherwise be quoted back to them.
+ * Whether a run may replay what this bot's earlier replies' tools were sent and returned. Only a
+ * run the owner started themselves, directly in their own chat or with their own team-chat
+ * message, gets them. Every other run (other bots, connected agents, channels, schedules,
+ * webhooks, other members, guests, and any trigger added later) sees those replies as everyone
+ * did, so tool output never reaches someone it wasn't for.
  */
-export function runReplaysToolHistory(run: { trigger: string }, nonOwnerChatRun: boolean) {
-  return !nonOwnerChatRun && run.trigger !== "bot_message";
+export function runReplaysToolHistory(
+  trigger: string,
+  source: { fromUser: boolean; nonOwnerChat: boolean },
+): boolean {
+  if (source.nonOwnerChat) return false;
+  switch (trigger) {
+    case "user":
+    case "call_end":
+      return true;
+    case "follow_up":
+      return source.fromUser;
+    case "messaging":
+      // Only the owner's own message: a channel or another person is nonOwnerChat above.
+      return true;
+    default:
+      return false;
+  }
 }
 
 /** Adds a finished call's result to the call its step keeps, within the reply's result budget. */
