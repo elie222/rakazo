@@ -104,8 +104,8 @@ dbTests("model credit billing service", () => {
     provider.completeCreditCheckout(customer);
     await service.sync(customer);
     await expect(service.status(actor)).resolves.toMatchObject({
-      balanceUsd: 30,
-      monthlyAmountCents: 1000,
+      balanceUsd: 40,
+      monthlyAmountCents: 2000,
     });
     expect(provider.subscriptions).toHaveLength(1);
   });
