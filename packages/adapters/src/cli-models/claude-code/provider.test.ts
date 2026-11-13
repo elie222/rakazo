@@ -14,26 +14,23 @@ import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { normalizeRunError } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { hostCredentialSource, resolveDeploymentModel } from "../../deployment-model.js";
+import { listPiCatalog } from "../../pi-models.js";
+import { normalizePiUsage } from "../../pi-usage.js";
 import {
-  CLAUDE_CODE_BILLING_REFUSAL,
-  CLAUDE_CODE_SHARED_REFUSAL,
-  claudeCodeAccessCheck,
-} from "./claude-code-access.js";
-import {
-  CLAUDE_CODE_NOT_INSTALLED_ERROR,
-  CLAUDE_CODE_SIGNED_OUT_ERROR,
-} from "./claude-code-cli.js";
+  PERSONAL_CLI_BILLING_REFUSAL,
+  PERSONAL_CLI_SHARED_REFUSAL,
+  personalCliAccessCheck,
+} from "../personal-access.js";
+import { CLAUDE_CODE_NOT_INSTALLED_ERROR, CLAUDE_CODE_SIGNED_OUT_ERROR } from "./cli.js";
 import {
   CLAUDE_CODE_PROVIDER_ID,
   claudeCodeProvider,
   registerClaudeCodeProvider,
   setClaudeCodeAccessCheck,
-} from "./claude-code-provider.js";
-import { hostCredentialSource, resolveDeploymentModel } from "./deployment-model.js";
-import { listPiCatalog } from "./pi-models.js";
-import { normalizePiUsage } from "./pi-usage.js";
+} from "./provider.js";
 
-const FAKE_CLI = fileURLToPath(new URL("./claude-code-fake-cli.test-support.mjs", import.meta.url));
+const FAKE_CLI = fileURLToPath(new URL("./fake-cli.test-support.mjs", import.meta.url));
 const MODEL_ID = "claude-sonnet-5";
 
 // Server secrets that must never reach the CLI. Fake values, checked for below.
@@ -392,6 +389,16 @@ describe.skipIf(process.platform === "win32")("Claude Code CLI provider", () => 
     expect(message.errorMessage).toBe(CLAUDE_CODE_SIGNED_OUT_ERROR);
   });
 
+  it.each(["hang-version", "hang-auth"])("cancels a stalled %s probe", async (scenario) => {
+    const cli = fakeClaude(scenario);
+    const controller = new AbortController();
+    const running = run(hello, { signal: controller.signal });
+    await vi.waitFor(() => expect(cli.started()).toBe(true));
+    controller.abort();
+    expect((await running).message.stopReason).toBe("aborted");
+    expect(await cli.survived()).toBe(false);
+  });
+
   it("stops the CLI when the run is interrupted", async () => {
     const cli = fakeClaude("hang");
     const controller = new AbortController();
@@ -449,8 +456,8 @@ describe.skipIf(process.platform === "win32")("Claude Code CLI provider", () => 
     expect((await run(hello)).message.errorMessage).toMatch(
       /only inside the Rakazo API and worker/,
     );
-    setClaudeCodeAccessCheck(async () => CLAUDE_CODE_SHARED_REFUSAL);
-    expect((await run(hello)).message.errorMessage).toBe(CLAUDE_CODE_SHARED_REFUSAL);
+    setClaudeCodeAccessCheck(async () => PERSONAL_CLI_SHARED_REFUSAL);
+    expect((await run(hello)).message.errorMessage).toBe(PERSONAL_CLI_SHARED_REFUSAL);
     expect(cli.started()).toBe(false);
   });
 });
@@ -496,7 +503,7 @@ describe("Claude Code deployment", () => {
   });
 });
 
-describe("claudeCodeAccessCheck", () => {
+describe("personalCliAccessCheck", () => {
   afterAll(() => {
     vi.unstubAllEnvs();
   });
@@ -513,32 +520,32 @@ describe("claudeCodeAccessCheck", () => {
 
   it("allows a single-account server and counts only people with accounts", async () => {
     const db = prisma(1);
-    expect(await claudeCodeAccessCheck({ prisma: db.client })()).toBeUndefined();
+    expect(await personalCliAccessCheck({ prisma: db.client })()).toBeUndefined();
     expect(db.count).toHaveBeenCalledWith({
       where: { deactivatedAt: null, NOT: { email: { endsWith: "@messaging.invalid" } } },
     });
   });
 
   it("refuses a server shared by more than one account", async () => {
-    expect(await claudeCodeAccessCheck({ prisma: prisma(2).client })()).toBe(
-      CLAUDE_CODE_SHARED_REFUSAL,
+    expect(await personalCliAccessCheck({ prisma: prisma(2).client })()).toBe(
+      PERSONAL_CLI_SHARED_REFUSAL,
     );
   });
 
   it("refuses at once when a second account appears", async () => {
     const db = prisma(1);
-    const check = claudeCodeAccessCheck({ prisma: db.client });
+    const check = personalCliAccessCheck({ prisma: db.client });
     expect(await check()).toBeUndefined();
     db.count.mockResolvedValue(2);
-    expect(await check()).toBe(CLAUDE_CODE_SHARED_REFUSAL);
+    expect(await check()).toBe(PERSONAL_CLI_SHARED_REFUSAL);
   });
 
   it("refuses a server that sells model usage", async () => {
-    expect(await claudeCodeAccessCheck({ prisma: prisma(1, true).client })()).toBe(
-      CLAUDE_CODE_BILLING_REFUSAL,
+    expect(await personalCliAccessCheck({ prisma: prisma(1, true).client })()).toBe(
+      PERSONAL_CLI_BILLING_REFUSAL,
     );
-    expect(await claudeCodeAccessCheck({ prisma: prisma(1).client, billingEnabled: true })()).toBe(
-      CLAUDE_CODE_BILLING_REFUSAL,
+    expect(await personalCliAccessCheck({ prisma: prisma(1).client, billingEnabled: true })()).toBe(
+      PERSONAL_CLI_BILLING_REFUSAL,
     );
   });
 });
@@ -546,11 +553,11 @@ describe("claudeCodeAccessCheck", () => {
 describe("Claude Code bridge sources", () => {
   it("never read, copy or forward the CLI's sign-in", () => {
     const sources = [
-      "claude-code-provider-id.ts",
-      "claude-code-provider.ts",
-      "claude-code-access.ts",
-      "claude-code-cli.ts",
-      "claude-code-stream.ts",
+      "provider-id.ts",
+      "provider.ts",
+      "../personal-access.ts",
+      "cli.ts",
+      "stream.ts",
     ].map((file) => readFileSync(fileURLToPath(new URL(`./${file}`, import.meta.url)), "utf8"));
     for (const source of sources) {
       expect(source).not.toMatch(

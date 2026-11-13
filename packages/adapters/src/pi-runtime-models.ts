@@ -9,7 +9,7 @@ import { clampThinkingLevel } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type { AgentRunRequest } from "@rakazo/adapter-kit";
 import { canonicalPiProviderId, usableModelId } from "@rakazo/contracts";
-import { registerClaudeCodeProvider } from "./claude-code-provider.js";
+import { registerClaudeCodeProvider } from "./cli-models/claude-code/provider.js";
 import { DEFAULT_OPENROUTER_MODEL_ID } from "./deployment-model.js";
 import { PiRuntimeCredentialStore, toOAuthCredential } from "./pi-credentials.js";
 import { liveModelSibling, withLiveImageInput } from "./pi-live-model.js";

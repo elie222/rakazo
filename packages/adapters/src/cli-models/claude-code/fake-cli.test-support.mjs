@@ -1,5 +1,5 @@
 // A stand-in for the `claude` CLI that speaks its stream-json protocol, for offline tests.
-// Usage: node claude-code-fake-cli.test-support.mjs <scenario> <record file> ...cli args
+// Usage: node fake-cli.test-support.mjs <scenario> <record file> ...cli args
 import { spawn } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { createInterface } from "node:readline";
@@ -11,7 +11,14 @@ const stream = (event) => out({ type: "stream_event", event });
 /** Prints a subcommand's output and exits once it is flushed. */
 const reply = (text, code = 0) => process.stdout.write(text, () => process.exit(code));
 
-if (args[0] === "--version") {
+if (
+  (scenario === "hang-version" && args[0] === "--version") ||
+  (scenario === "hang-auth" && args[0] === "auth")
+) {
+  writeFileSync(recordPath, JSON.stringify({ args }));
+  setTimeout(() => writeFileSync(`${recordPath}.survived`, ""), 1_000);
+  setInterval(() => {}, 1_000);
+} else if (args[0] === "--version") {
   reply(scenario === "old-version" ? "2.0.1 (Claude Code)\n" : "2.1.311 (Claude Code)\n");
 } else if (args[0] === "auth") {
   // The real command also names the account; the bridge must read only `loggedIn`.

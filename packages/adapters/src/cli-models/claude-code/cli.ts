@@ -144,8 +144,10 @@ export function startClaudeCode(
   });
   const exited = new Promise<number | null>((resolve) => child.once("close", resolve));
   // Spawning fails asynchronously, for example with ENOENT when the CLI is not on PATH.
-  const failed = new Promise<never>((_, reject) => child.once("error", reject));
-  failed.catch(() => {});
+  let spawnError: Error | undefined;
+  child.once("error", (error) => {
+    spawnError = error;
+  });
   // A broken pipe after the CLI exits surfaces as its exit; it must not crash the worker.
   child.stdin.on("error", () => {});
   const lines = createInterface({ input: child.stdout, crlfDelay: Number.POSITIVE_INFINITY })[
@@ -153,8 +155,18 @@ export function startClaudeCode(
   ]();
   return {
     async nextLine() {
-      const next = await Promise.race([lines.next(), failed]);
-      return next.done ? undefined : next.value;
+      if (spawnError) throw spawnError;
+      let onError: (error: Error) => void = () => {};
+      const failed = new Promise<never>((_, reject) => {
+        onError = reject;
+        child.once("error", onError);
+      });
+      try {
+        const next = await Promise.race([lines.next(), failed]);
+        return next.done ? undefined : next.value;
+      } finally {
+        child.off("error", onError);
+      }
     },
     write(line) {
       return new Promise((resolve, reject) => {
@@ -191,8 +203,10 @@ const PROBE_OUTPUT_LIMIT = 64 * 1024;
 function capture(
   args: string[],
   cwd: string,
+  signal?: AbortSignal,
 ): Promise<{ stdout: string; missing: boolean; timedOut: boolean }> {
-  return new Promise((resolve) => {
+  signal?.throwIfAborted();
+  return new Promise((resolve, reject) => {
     const child = spawn(CLAUDE_CODE_COMMAND, args, {
       cwd,
       env: claudeCodeEnv(),
@@ -206,16 +220,27 @@ function capture(
       timedOut = true;
       stopProcessTree(child);
     }, PROBE_TIMEOUT_MS);
+    const cleanup = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+    };
+    const onAbort = () => {
+      stopProcessTree(child);
+      cleanup();
+      reject(signal?.reason ?? new Error("Request was aborted"));
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+    if (signal?.aborted) onAbort();
     child.stdout.setEncoding("utf8");
     child.stdout.on("data", (chunk: string) => {
       if (stdout.length < PROBE_OUTPUT_LIMIT) stdout += chunk;
     });
     child.once("error", (error: NodeJS.ErrnoException) => {
-      clearTimeout(timer);
+      cleanup();
       resolve({ stdout, missing: error.code === "ENOENT", timedOut });
     });
     child.once("close", () => {
-      clearTimeout(timer);
+      cleanup();
       resolve({ stdout, missing: false, timedOut });
     });
   });
@@ -247,14 +272,15 @@ const ready = new Map<string, number>();
  * `claude auth status`; the account details it prints are ignored. A probe that times out or
  * prints something unexpected does not block the request: the CLI then reports its own error.
  */
-export async function checkClaudeCode(): Promise<void> {
+export async function checkClaudeCode(signal?: AbortSignal): Promise<void> {
+  signal?.throwIfAborted();
   const env = claudeCodeEnv();
   // A different PATH, home or config directory can mean a different CLI or sign-in.
   const key = JSON.stringify(env);
   const checkedAt = ready.get(key);
   if (checkedAt !== undefined && Date.now() - checkedAt < READY_CACHE_MS) return;
   const cwd = await claudeCodeWorkdir();
-  const version = await capture(["--version"], cwd);
+  const version = await capture(["--version"], cwd, signal);
   if (version.missing) throw new Error(CLAUDE_CODE_NOT_INSTALLED_ERROR);
   const installed = /(\d+\.\d+\.\d+)/.exec(version.stdout)?.[1];
   if (installed && !versionAtLeast(installed, CLAUDE_CODE_MIN_VERSION)) {
@@ -262,7 +288,7 @@ export async function checkClaudeCode(): Promise<void> {
       `Claude Code ${installed} on this server is older than ${CLAUDE_CODE_MIN_VERSION}. Run \`claude update\`.`,
     );
   }
-  const status = await capture(["auth", "status", "--json"], cwd);
+  const status = await capture(["auth", "status", "--json"], cwd, signal);
   if (status.missing) throw new Error(CLAUDE_CODE_NOT_INSTALLED_ERROR);
   let loggedIn: unknown;
   try {

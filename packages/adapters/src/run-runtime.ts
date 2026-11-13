@@ -11,8 +11,11 @@ import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { createSecurityEventPruner, securityEventRetentionDays } from "@rakazo/db";
 import { auditLogConfig, createAuditLogReconciler } from "./audit-forwarding.js";
 import { createBackgroundJobHandlers } from "./background-job-handlers.js";
-import { claudeCodeAccessCheck } from "./claude-code-access.js";
-import { CLAUDE_CODE_PROVIDER_ID, setClaudeCodeAccessCheck } from "./claude-code-provider.js";
+import {
+  CLAUDE_CODE_PROVIDER_ID,
+  setClaudeCodeAccessCheck,
+} from "./cli-models/claude-code/provider.js";
+import { personalCliAccessCheck } from "./cli-models/personal-access.js";
 import { reconcileCloudAgents } from "./cloud-agent-service.js";
 import type { ComposioProvider } from "./composio-connector.js";
 import { ComposioConnector, isComposioEnabled } from "./composio-connector.js";
@@ -209,7 +212,7 @@ export function createRunRuntime(
   const { messaging, isMessagingInstallationActive, ...executorDeps } = deps;
   if (resolveDeploymentModel().provider === CLAUDE_CODE_PROVIDER_ID) {
     setClaudeCodeAccessCheck(
-      claudeCodeAccessCheck({ prisma: deps.prisma, billingEnabled: deps.billingEnabled }),
+      personalCliAccessCheck({ prisma: deps.prisma, billingEnabled: deps.billingEnabled }),
     );
   }
   const messagingDelivery = messaging

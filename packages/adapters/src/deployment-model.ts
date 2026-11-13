@@ -3,7 +3,7 @@ import type { ModelUsageLookup } from "@rakazo/adapter-kit";
 import {
   CLAUDE_CODE_CREDENTIAL_SOURCE,
   CLAUDE_CODE_PROVIDER_ID,
-} from "./claude-code-provider-id.js";
+} from "./cli-models/claude-code/provider-id.js";
 import { OpenRouterUsageLookup } from "./openrouter-usage.js";
 import { LOCAL_PROVIDER_ID, localModelIds } from "./pi-local-provider-id.js";
 

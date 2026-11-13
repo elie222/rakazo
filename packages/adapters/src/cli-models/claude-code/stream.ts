@@ -27,7 +27,8 @@ import {
   splitErrorToolResultImages,
   transformMessages,
 } from "@earendil-works/pi-ai/api/transform-messages";
-import type { ClaudeCodeProcess } from "./claude-code-cli.js";
+import { sanitizeSensitiveText } from "../../pi-runtime-errors.js";
+import type { ClaudeCodeProcess } from "./cli.js";
 import {
   CLAUDE_CODE_NOT_INSTALLED_ERROR,
   CLAUDE_CODE_SIGNED_OUT_ERROR,
@@ -35,8 +36,7 @@ import {
   claudeCodeEnv,
   claudeCodeWorkdir,
   startClaudeCode,
-} from "./claude-code-cli.js";
-import { sanitizeSensitiveText } from "./pi-runtime-errors.js";
+} from "./cli.js";
 
 /** The CLI lists each MCP tool as `mcp__<server>__<tool>`. */
 const TOOL_SERVER = "rakazo";
@@ -342,7 +342,6 @@ function checkInit(event: Record<string, unknown>, expectTools: boolean): void {
 
 interface OpenBlock {
   index: number;
-  kind: "text" | "thinking" | "toolCall";
   json: string;
 }
 
@@ -373,7 +372,7 @@ export function streamClaudeCode(
     options.signal?.addEventListener("abort", stop, { once: true });
     try {
       await options.assertAllowed?.();
-      await checkClaudeCode();
+      await checkClaudeCode(options.signal);
       if (options.signal?.aborted) throw new Aborted("Request was aborted");
       const system = getCurrentSystemPrompt(context.messages);
       const tools = getCurrentTools(context.messages);
@@ -522,11 +521,11 @@ export function streamClaudeCode(
             const contentIndex = output.content.length;
             if (block.type === "text") {
               output.content.push({ type: "text", text: "" });
-              blocks.set(index, { index: contentIndex, kind: "text", json: "" });
+              blocks.set(index, { index: contentIndex, json: "" });
               stream.push({ type: "text_start", contentIndex, partial: output });
             } else if (block.type === "thinking") {
               output.content.push({ type: "thinking", thinking: "", thinkingSignature: "" });
-              blocks.set(index, { index: contentIndex, kind: "thinking", json: "" });
+              blocks.set(index, { index: contentIndex, json: "" });
               stream.push({ type: "thinking_start", contentIndex, partial: output });
             } else if (block.type === "redacted_thinking") {
               output.content.push({
@@ -550,7 +549,7 @@ export function streamClaudeCode(
                 name: name.startsWith(TOOL_PREFIX) ? name.slice(TOOL_PREFIX.length) : name,
                 arguments: {},
               });
-              blocks.set(index, { index: contentIndex, kind: "toolCall", json: "" });
+              blocks.set(index, { index: contentIndex, json: "" });
               stream.push({ type: "toolcall_start", contentIndex, partial: output });
             }
             break;

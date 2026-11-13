@@ -7,10 +7,10 @@ import type {
   SimpleStreamOptions,
   TranscriptContext,
 } from "@earendil-works/pi-ai";
-import { createProvider } from "@earendil-works/pi-ai";
-import { CLAUDE_CODE_PROVIDER_ID } from "./claude-code-provider-id.js";
-import { streamClaudeCode } from "./claude-code-stream.js";
-import { resolveDeploymentModel } from "./deployment-model.js";
+import { createProvider, lazyStream } from "@earendil-works/pi-ai";
+import { resolveDeploymentModel } from "../../deployment-model.js";
+import type { PersonalCliAccessCheck } from "../personal-access.js";
+import { CLAUDE_CODE_PROVIDER_ID } from "./provider-id.js";
 
 export { CLAUDE_CODE_PROVIDER_ID };
 
@@ -18,13 +18,10 @@ const CLAUDE_CODE_API = "claude-code-cli";
 const DEFAULT_CONTEXT_WINDOW = 200_000;
 const DEFAULT_MAX_TOKENS = 32_000;
 
-/** Why this server may not run models through the CLI right now, or undefined when it may. */
-export type ClaudeCodeAccessCheck = () => Promise<string | undefined>;
-
-let accessCheck: ClaudeCodeAccessCheck | undefined;
+let accessCheck: PersonalCliAccessCheck | undefined;
 
 /** Installed by the run runtime, which can see billing and accounts; until then every call is refused. */
-export function setClaudeCodeAccessCheck(check: ClaudeCodeAccessCheck | undefined): void {
+export function setClaudeCodeAccessCheck(check: PersonalCliAccessCheck | undefined): void {
   accessCheck = check;
 }
 
@@ -56,7 +53,10 @@ function claudeCodeModel(id: string, models: Models): Model<Api> {
 }
 
 function stream(model: Model<Api>, context: TranscriptContext, options?: SimpleStreamOptions) {
-  return streamClaudeCode(model, context, { ...options, assertAllowed });
+  return lazyStream(model, async () => {
+    const { streamClaudeCode } = await import("./stream.js");
+    return streamClaudeCode(model, context, { ...options, assertAllowed });
+  });
 }
 
 /**
