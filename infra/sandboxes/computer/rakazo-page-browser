@@ -2412,11 +2412,14 @@ def purchase_refusal(step: dict[str, Any], site: str, buying: dict[str, Any] | N
     and total still say what the card showed. An earlier step may have changed the page since the caller asked."""
     if not buying:
         return None
+    if buying.get("amount") == "?" or buying.get("total") == "?":
+        return {"ok": False, "completed": completed, "uncertain": False,
+                "error": "The checkout total is ambiguous. Ask the user to verify the price and complete the payment manually."}
     approved = step.get("approved") is True and step.get("site") == site
     # A total the card showed beside the button (empty when it showed none) must still be the page's.
     changed = approved and any(key in step and shown(step[key]) != shown(buying.get(key, ""))
                                for key in ("label", "amount", "total"))
-    if approved and not changed and buying.get("amount") != "?" and buying.get("total") != "?":
+    if approved and not changed:
         return None
     return {"ok": False, "completed": completed, "uncertain": False, "purchase": {**buying, "site": site},
             "error": PURCHASE_CHANGED if changed else PURCHASE_REFUSED}
