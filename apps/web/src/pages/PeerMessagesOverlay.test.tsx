@@ -44,10 +44,18 @@ vi.mock("./shell/message-cards", () => ({
   ChartBlockView: ({ name }: { name: string }) => <div data-testid="peer-chart">{name}</div>,
 }));
 vi.mock("../components/pages/PageBlockCard", () => ({
-  PageBlockCard: ({ block, updated }: { block: { title: string }; updated: boolean }) => (
-    <div data-testid="peer-page" data-updated={updated}>
+  PageBlockCard: ({
+    block,
+    updated,
+    onOpen,
+  }: {
+    block: { title: string };
+    updated: boolean;
+    onOpen?: () => void;
+  }) => (
+    <button type="button" onClick={onOpen} data-testid="peer-page" data-updated={updated}>
       {block.title}
-    </div>
+    </button>
   ),
 }));
 
@@ -76,7 +84,7 @@ function exchange(count: number) {
   }));
 }
 
-async function open() {
+async function open(onClose = () => undefined) {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const container = document.createElement("div");
   document.body.append(container);
@@ -93,7 +101,7 @@ async function open() {
           peerBotId="peer"
           peerBotName="Researcher"
           peerBotColor="green"
-          onClose={() => undefined}
+          onClose={onClose}
         />
       </QueryClientProvider>,
     ),
@@ -201,7 +209,10 @@ it("shows chart-only and page-only replies and marks older page cards", async ()
     ],
     olderCursor: null,
   });
-  const { transcript } = await open();
+  const close = vi.fn();
+  const { transcript } = await open(close);
+  act(() => transcript.querySelector<HTMLButtonElement>('[data-testid="peer-page"]')?.click());
+  expect(close).toHaveBeenCalledOnce();
   expect(transcript.querySelector('[data-testid="peer-chart"]')?.textContent).toBe("Daily chart");
   expect(
     [...transcript.querySelectorAll('[data-testid="peer-page"]')].map((node) => [

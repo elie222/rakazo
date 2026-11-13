@@ -230,6 +230,7 @@ export function PeerMessagesOverlay({
                           <PageBlockCard
                             key={index}
                             block={block}
+                            onOpen={onClose}
                             updated={pageCardSuperseded(newestPages, peerMessage.messageId, block)}
                           />
                         ) : null,
