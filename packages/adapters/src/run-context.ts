@@ -1,5 +1,6 @@
 import type {
   AdapterContext,
+  AgentToolCompletion,
   BrowserProvider,
   ComputerRef,
   ConnectorTool,
@@ -9,7 +10,13 @@ import type {
   SemanticMemoryProvider,
   WebProvider,
 } from "@rakazo/adapter-kit";
-import type { ComputerMode, MessageBlock, ReplyMode } from "@rakazo/contracts";
+import type {
+  AttachmentImageMimeType,
+  ComputerMode,
+  MessageBlock,
+  ReplyMode,
+  ToolStepCall,
+} from "@rakazo/contracts";
 import type { ToolStepOutcome } from "@rakazo/core";
 import { createStreamingRedactor } from "@rakazo/core";
 import { toolEffectIdempotencyKey } from "@rakazo/core/node/approval-effect-key";
@@ -125,9 +132,17 @@ export interface ReplyState {
    */
   pendingToolNames: string[];
   /** Every step label a call made, in call order, so its outcome can be saved on its step. */
-  toolCalls: { label: string; executionId: string }[];
+  toolCalls: { label: string; executionId: string; tool?: string }[];
   /** How each finished call ended, by execution id. */
   toolOutcomes: Map<string, ToolStepOutcome>;
+  /** What each call that shows as its own step was called with and returned, by execution id. */
+  toolStepCalls: Map<string, ToolStepCall>;
+  /** Characters of results the reply has kept so far, against its budget. */
+  keptResultChars: number;
+  /** Calls that finished before their call event was handled, kept once it is. */
+  earlyCompletions?: Map<string, AgentToolCompletion>;
+  /** The last screenshot a kept call returned, saved with the reply for its later turns. */
+  latestScreenshot?: { executionId: string; mimeType: AttachmentImageMimeType; data: Uint8Array };
   pendingProgress: string;
   lastProgressAt: number;
   hasStreamedText: boolean;

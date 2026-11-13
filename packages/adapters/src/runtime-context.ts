@@ -130,6 +130,22 @@ interface OriginalMetadata {
   rakazoMessageId?: string;
   rakazoCreatedAt?: string;
 }
+/**
+ * Where the last `count` stored messages start. A reply replayed with its tool calls is several
+ * messages sharing one id, and a window that starts inside it would orphan a tool result.
+ */
+function storedMessagesStart(messages: Message[], count: number): number {
+  const id = (message: Message | undefined) =>
+    (message as (Message & OriginalMetadata) | undefined)?.rakazoMessageId;
+  let seen = 0;
+  for (let index = messages.length - 1; index >= 0; index--) {
+    const current = id(messages[index]);
+    if (current && current === id(messages[index - 1])) continue;
+    seen += 1;
+    if (seen === count) return index;
+  }
+  return 0;
+}
 function text(message: Message): string {
   if (typeof message.content === "string") return message.content;
   return message.content
@@ -416,7 +432,8 @@ export function createRuntimeContextPolicy(
         options.imageTokens,
       ) <= shortHistoryAllowance;
     if (useSnapshots && !retainShortHistory) {
-      const old = historical.slice(0, Math.max(0, historical.length - SNAPSHOT_RECENT_MESSAGES));
+      const recentStart = storedMessagesStart(historical, SNAPSHOT_RECENT_MESSAGES);
+      const old = historical.slice(0, recentStart);
       let catalog = "";
       const maximum = Math.min(
         SNAPSHOT_CATALOG_MAX_BYTES,
@@ -425,13 +442,13 @@ export function createRuntimeContextPolicy(
       catalogIds = [];
       for (const message of old.slice(-SNAPSHOT_CATALOG_MAX_ENTRIES).reverse()) {
         const stored = original(message);
-        if (!stored?.id) continue;
+        // A reply replayed with its tool calls spans several messages; list it once.
+        if (!stored?.id || catalogIds.includes(stored.id)) continue;
         const entry = `[message ${stored.id}${stored.createdAt ? ` at ${stored.createdAt}` : ""}; ${stored.speaker ?? stored.role}] ${snapshot(stored.content)}\n`;
         if (Buffer.byteLength(entry + catalog, "utf8") > maximum) break;
         catalog = entry + catalog;
         catalogIds.unshift(stored.id);
       }
-      const recentStart = Math.max(0, historical.length - SNAPSHOT_RECENT_MESSAGES);
       const earlierSystem = historical
         .slice(0, recentStart)
         .filter((message) => message.role === "system");
@@ -442,8 +459,7 @@ export function createRuntimeContextPolicy(
       ];
       protectedIndexes = messages.flatMap((message, index) =>
         message.role === "system" ||
-        (index >= earlierSystem.length + Math.min(SNAPSHOT_RECENT_MESSAGES, historical.length) &&
-          message.role === "user")
+        (index >= earlierSystem.length + historical.length - recentStart && message.role === "user")
           ? [index]
           : [],
       );

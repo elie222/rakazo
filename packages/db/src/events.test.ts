@@ -1,5 +1,9 @@
 import type { RealtimeFanout } from "@rakazo/adapter-kit";
-import { BOT_SECRET_VALUE_MAX_LENGTH, encodeLoginSecret } from "@rakazo/contracts";
+import {
+  BOT_SECRET_VALUE_MAX_LENGTH,
+  encodeLoginSecret,
+  STEP_SCREENSHOT_MIME_TYPES,
+} from "@rakazo/contracts";
 import {
   TAKEOVER_COMPUTER_DONE_STATE,
   TAKEOVER_COMPUTER_PENDING_STATE,
@@ -557,19 +561,38 @@ describe("thread lock transaction budget", () => {
       },
       run: { findMany: vi.fn().mockResolvedValue([]) },
       computerExecutionLease: { updateMany: vi.fn() },
-      message: { deleteMany: vi.fn() },
+      message: {
+        deleteMany: vi.fn(),
+        findMany: vi.fn().mockResolvedValue([{ runId: "run-1" }]),
+      },
+      artifact: {
+        findMany: vi.fn().mockResolvedValue([{ id: "shot-1", storageKey: "key-1" }]),
+        deleteMany: vi.fn(),
+      },
       event: { deleteMany: vi.fn(), create: vi.fn().mockResolvedValue(event(1)) },
       bot: { update: vi.fn() },
     };
     const $transaction = vi.fn(async (work: (client: typeof tx) => unknown) => work(tx));
 
-    await clearThread({ $transaction } as unknown as PrismaClient, {
+    const result = await clearThread({ $transaction } as unknown as PrismaClient, {
       spaceId: "workspace-1",
       threadId: "thread-1",
       botId: "bot-1",
     });
 
     expect($transaction).toHaveBeenCalledWith(expect.any(Function), budget);
+    // The cleared replies' kept screenshots go with them; the caller removes their files.
+    expect(tx.artifact.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          spaceId: "workspace-1",
+          mimeType: { in: STEP_SCREENSHOT_MIME_TYPES },
+          runId: { in: ["run-1"] },
+        }),
+      }),
+    );
+    expect(tx.artifact.deleteMany).toHaveBeenCalledWith({ where: { id: { in: ["shot-1"] } } });
+    expect(result.removedStorageKeys).toEqual(["key-1"]);
   });
 
   it("pauses a run for input with the explicit budget", async () => {
@@ -5062,6 +5085,7 @@ describe("clearThread", () => {
       computerExecutionLease: { updateMany: vi.fn() },
       computer: { updateMany: vi.fn() },
       message: { deleteMany: vi.fn(), findMany: vi.fn(async () => []) },
+      artifact: { findMany: vi.fn(async () => []), deleteMany: vi.fn() },
       event: {
         deleteMany: vi.fn(),
         create: vi.fn().mockResolvedValue({ ...event(0), type: "thread.cleared" }),
@@ -5117,6 +5141,7 @@ describe("clearThread", () => {
       computerExecutionLease: { updateMany: vi.fn() },
       computer: { updateMany: vi.fn() },
       message: { deleteMany: vi.fn(), findMany: vi.fn(async () => []) },
+      artifact: { findMany: vi.fn(async () => []), deleteMany: vi.fn() },
       event: {
         deleteMany: vi.fn(),
         create: vi.fn().mockResolvedValue({
@@ -5212,6 +5237,7 @@ describe("clearThread", () => {
       computerExecutionLease: { updateMany: vi.fn() },
       computer: { updateMany: vi.fn() },
       message: { deleteMany: vi.fn(), findMany: vi.fn(async () => []) },
+      artifact: { findMany: vi.fn(async () => []), deleteMany: vi.fn() },
       event: {
         deleteMany: vi.fn(),
         create: vi.fn().mockResolvedValue({
