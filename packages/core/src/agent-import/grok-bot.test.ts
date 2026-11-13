@@ -315,6 +315,32 @@ it("rejects oversized collections before allocating import names", () => {
   ).toThrow(GrokBotExportError);
 });
 
+it("joins a skill split across parts, and resolves exact skill names first", () => {
+  const first = JSON.stringify({
+    bots: [
+      {
+        name: "Example",
+        skills: [
+          { name: "Review", description: "Weekly review", instructions: "1. Collect." },
+          { name: "a b", description: "First", instructions: "One." },
+          { name: "a-b", description: "Second", instructions: "Two." },
+        ],
+      },
+    ],
+  });
+  const second = JSON.stringify({
+    bots: [{ name: "Example", skills: [{ name: "Review", instructions: "2. Report." }] }],
+  });
+  const [bot] = parseGrokBotExport(`${first}\n\n${second}`);
+  expect(bot!.skills.map((skill) => [skill.name, skill.instructions])).toEqual([
+    ["Review", "1. Collect.\n\n2. Report."],
+    ["a b", "One."],
+    ["a-b", "Two."],
+  ]);
+  const names = grokSkillNames(bot!);
+  expect([names.get("a b"), names.get("a-b")]).toEqual(["a-b", "a-b-2"]);
+});
+
 it("keeps skill names in any script", () => {
   const [bot] = parseGrokBotExport(
     JSON.stringify({
