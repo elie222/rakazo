@@ -20,7 +20,7 @@ const session = vi.hoisted(() => ({
   generation: 1,
   focused: true,
   alert: vi.fn(),
-  route: {} as { params?: { groupId?: string; botId?: string } },
+  route: {} as { name?: string; params?: { groupId?: string; botId?: string } },
   dismissAll: vi.fn(),
   replace: vi.fn(),
 }));
@@ -519,7 +519,7 @@ it("allows delete in a visible embedded inbox without route focus", async () => 
 
 it("leaves a dissolved group open beside the inbox after bot deletion", async () => {
   const h = await handlers(async () => []);
-  session.route = { params: { groupId: "group-removed" } };
+  session.route = { name: "group-thread", params: { groupId: "group-removed" } };
   await h.runRowAction("bot", { id: "x", name: "Ada" }, "delete");
   vi.mocked(confirmDeleteBot).mock.calls[0]![1]!(["group-removed"]);
   expect(session.dismissAll).toHaveBeenCalledOnce();

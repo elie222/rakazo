@@ -7,11 +7,16 @@ export function useLeaveDeletedChat() {
   return useCallback(
     (botId: string, removedGroupIds: readonly string[]) => {
       const route = navigation.getCurrentRoute() as
-        | { params?: { botId?: string; groupId?: string } }
+        | { name: string; params?: { botId?: string; groupId?: string } }
         | undefined;
       if (
-        route?.params?.botId === botId ||
-        (route?.params?.groupId && removedGroupIds.includes(route.params.groupId))
+        ((route?.name === "thread" || route?.name === "bot-profile") &&
+          route.params?.botId === botId) ||
+        ((route?.name === "thread" ||
+          route?.name === "group-thread" ||
+          route?.name === "group-settings") &&
+          route.params?.groupId &&
+          removedGroupIds.includes(route.params.groupId))
       ) {
         router.dismissAll();
         router.replace("/");

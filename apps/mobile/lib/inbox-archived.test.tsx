@@ -395,6 +395,7 @@ describe("bot profile menu archive notifications", () => {
     [{ name: "thread", params: { groupId: "removed-group" } }, true],
     [{ name: "group-settings", params: { groupId: "removed-group" } }, true],
     [{ name: "thread", params: { groupId: "retained-group" } }, false],
+    [{ name: "artifacts", params: { botId: "bot-b" } }, false],
     [{ name: "index" }, false],
     [undefined, false],
   ])(
