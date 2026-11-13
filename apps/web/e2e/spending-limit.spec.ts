@@ -55,3 +55,59 @@ test("shows the spending limit once a card is saved, sets a monthly limit, and l
   await expect(reopened.getByTestId("spending-limit")).toContainText("$23.40 spent this month");
   await captureScreenshot(page, testInfo, "spending-limit-payments");
 });
+
+test("shows zero- and three-decimal currencies in payment history", async ({ page }, testInfo) => {
+  await signup(page, `spending-currencies-${Date.now()}@rakazo.test`, "password12", "Spender");
+  await completeOnboarding(page);
+  await page.route("**/rpc/spendingLimit/get", (route) =>
+    route.fulfill({ json: { json: { shown: true, limit: null, spent: 0 } } }),
+  );
+  await page.route("**/rpc/spendingLimit/payments", (route) =>
+    route.fulfill({
+      json: {
+        json: [
+          {
+            id: "jpy",
+            site: "yen.example.test",
+            amount: 1000,
+            currency: "jpy",
+            botName: null,
+            createdAt: new Date().toISOString(),
+          },
+          {
+            id: "kwd",
+            site: "dinar.example.test",
+            amount: 1234,
+            currency: "kwd",
+            botName: null,
+            createdAt: new Date().toISOString(),
+          },
+          {
+            id: "usd",
+            site: "dollar.example.test",
+            amount: 2340,
+            currency: "usd",
+            botName: null,
+            createdAt: new Date().toISOString(),
+          },
+        ],
+      },
+    }),
+  );
+  const settings = await openUserSettings(page);
+  await settings.getByTestId("settings-nav-confirmations").click();
+  const payments = settings.getByTestId("spending-payments");
+  await expect(
+    payments.getByRole("listitem").filter({ hasText: "yen.example.test" }),
+  ).toContainText("¥1,000");
+  await expect(
+    payments.getByRole("listitem").filter({ hasText: "dinar.example.test" }),
+  ).toContainText("KWD");
+  await expect(
+    payments.getByRole("listitem").filter({ hasText: "dinar.example.test" }),
+  ).toContainText("1.234");
+  await expect(
+    payments.getByRole("listitem").filter({ hasText: "dollar.example.test" }),
+  ).toContainText("$23.40");
+  await captureScreenshot(page, testInfo, "spending-payment-currencies");
+});

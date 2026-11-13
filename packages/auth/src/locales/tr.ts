@@ -24,15 +24,20 @@ export const TR_MESSAGES: Record<string, string> = {
   "Enter this code in Rakazo to confirm it's you:":
     "Siz olduğunuzu onaylamak için bu kodu Rakazo’ya girin:",
   "Welcome to Rakazo": "Rakazo’ya hoş geldiniz",
-  "Thanks for signing up for Rakazo.": "Rakazo’ya kaydolduğunuz için teşekkürler.",
-  "Rakazo also has apps for": "Rakazo’nun şu platformlar için de uygulamaları var:",
-  "Questions or ideas?": "Sorularınız veya fikirleriniz mi var?",
-  "Join us on Discord": "Discord’da bize katılın",
-  "Rakazo is open source. If you like it,": "Rakazo açık kaynaklıdır. Beğendiyseniz",
-  "a star on GitHub": "GitHub’da vereceğiniz bir yıldız",
-  "helps others find it.": "başkalarının da onu bulmasına yardımcı olur.",
-  "Want to run it on your own servers?": "Kendi sunucularınızda çalıştırmak mı istiyorsunuz?",
-  "Self-host Rakazo": "Rakazo’yu kendiniz barındırın",
+  "Welcome to Rakazo. The people who get the most out of it do three things:":
+    "Rakazo'ya hoş geldiniz. Rakazo'dan en çok verimi alanlar üç şey yapıyor:",
+  "Get the apps": "Uygulamaları indirin",
+  "Rakazo runs on {platforms}, so your bots can reach you wherever you are.":
+    "Rakazo {platforms} üzerinde çalışır; böylece botlarınız size her yerde ulaşabilir.",
+  "Join the community": "Topluluğa katılın",
+  "See what others are building, get help fast, and tell us what to build next on {discord}.":
+    "Başkalarının neler yaptığını görün, hızlıca yardım alın ve sırada ne yapmamız gerektiğini {discord} üzerinden bize söyleyin.",
+  "Star us on GitHub": "GitHub'da bize yıldız verin",
+  "Rakazo is open source. {star} helps more people find it.":
+    "Rakazo açık kaynaklıdır. {star} daha fazla kişinin onu bulmasına yardımcı olur.",
+  "A star on GitHub": "GitHub'da bir yıldız",
+  "Questions? Just reply. I read every one.":
+    "Sorunuz mu var? Yanıtlamanız yeterli. Her birini okuyorum.",
   "Have any questions? Reply to this email.": "Sorunuz mu var? Bu e-postayı yanıtlayın.",
   Unsubscribe: "Abonelikten çık",
   "Invite a friend": "Bir arkadaşını davet et",
