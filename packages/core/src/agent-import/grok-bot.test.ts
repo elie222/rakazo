@@ -261,13 +261,24 @@ describe("a Grok Bot as an import plan", () => {
           instructions:
             "---\nname: mac-notes\ndescription: Edit Apple Notes\nplatforms: [macos]\n---\n\nOpen Notes.",
         },
+        {
+          name: "Deploy",
+          description: "",
+          instructions:
+            "---\nname: deploy\ndescription: Ship it\nmetadata:\n  openclaw:\n    requires:\n      env: [DEPLOY_TOKEN]\n---\n\nRun the deploy.",
+        },
       ],
     });
     expect(parsed.memory[0]!.content).toBe("- Release steps:\n  1. Tag\n  2. Publish\n");
-    const [skill] = parsed.skills;
-    expect(skill!.content).toContain("platforms:");
-    expect(skill!.description).toBe("Edit Apple Notes");
-    expect(skill!.status.kind).not.toBe("ready");
+    const [mac, deploy] = parsed.skills;
+    expect(mac!.name).toBe("mac-notes");
+    expect(mac!.description).toBe("Edit Apple Notes");
+    expect(mac!.status.kind).toBe("unsupported");
+    // Nested metadata survives byte for byte, so its requirement still shows.
+    expect(deploy!.content).toContain(
+      "metadata:\n  openclaw:\n    requires:\n      env: [DEPLOY_TOKEN]",
+    );
+    expect(deploy!.status.kind).toBe("needs_setup");
   });
 
   it("flags key-shaped text and lists a skill with no text as skipped", () => {

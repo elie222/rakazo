@@ -10,7 +10,7 @@ import {
 import { buildSkillMd, parseSkillMd } from "../agent-skill.js";
 import { nextCronDateAcrossStrict } from "../cron.js";
 import type { AgentImportParse } from "./shared.js";
-import { freeName, memoryItem, skillItem } from "./shared.js";
+import { freeName, memoryItem, renameSkillMd, skillItem } from "./shared.js";
 
 export const GROK_BOT_EXPORT_FORMAT = "grok-bot-export";
 /** Raw pasted reply or chosen files, before one Bot is picked. */
@@ -441,7 +441,6 @@ function grokSkills(bot: GrokBot) {
     const body = skill.instructions.replace(FRONTMATTER, "").trim();
     if (!body) return { source: skill, path, item: null };
     const parsed = FRONTMATTER.test(skill.instructions) ? parseSkillMd(skill.instructions) : null;
-    // Its metadata (requirements, platforms) stays, so setup needs still show.
     const front = parsed && !("error" in parsed) ? parsed : null;
     const fromFront = front?.description ?? "";
     const firstLine = body.split("\n").find((line) => line.trim()) ?? "";
@@ -451,8 +450,12 @@ function grokSkills(bot: GrokBot) {
     const name = freeName(slug(skill.name) || `skill-${index + 1}`, used, "");
     let item: AgentImportSkill | null = null;
     try {
-      const markdown = buildSkillMd({ name, description, body, frontmatter: front?.frontmatter });
-      item = skillItem(`skills:${name}`, `${markdown}\n`);
+      // A complete SKILL.md keeps every byte but its name, so nested metadata (requirements,
+      // platforms) still marks what it needs; the frontmatter parser would flatten it.
+      const markdown = front
+        ? renameSkillMd(skill.instructions, name)
+        : `${buildSkillMd({ name, description, body })}\n`;
+      item = skillItem(`skills:${name}`, markdown);
     } catch {
       item = null;
     }
