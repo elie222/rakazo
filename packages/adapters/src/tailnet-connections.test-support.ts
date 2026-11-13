@@ -9,8 +9,12 @@ type Row = {
   botIds: string[];
 };
 type Where = { spaceId_userId: { spaceId: string; userId: string } };
+type ById = { id: string };
 
-/** tailnet_connections keyed by (spaceId, userId), plus the Space's bots. */
+/**
+ * tailnet_connections keyed by (spaceId, userId), plus the Space's bots. Writes take only `{ id }`,
+ * as secret persistence needs: it finds the replaced value with findMany.
+ */
 export function tailnetDatabase(bots: Array<{ id: string; spaceId: string }> = []) {
   const rows = new Map<string, Row>();
   const key = (where: Where) => `${where.spaceId_userId.spaceId}/${where.spaceId_userId.userId}`;
@@ -18,23 +22,32 @@ export function tailnetDatabase(bots: Array<{ id: string; spaceId: string }> = [
     row
       ? (Object.fromEntries(Object.keys(select).map((name) => [name, row[name as keyof T]])) as T)
       : null;
+  const byId = (where: ById) => {
+    if (!("id" in where)) throw new Error("Write tailnet connections by id");
+    const entry = [...rows].find(([, row]) => row.id === where.id);
+    return entry;
+  };
   const tailnetConnection = {
     findUnique: async ({ where, select }: { where: Where; select: Record<string, boolean> }) =>
       pick(rows.get(key(where)), select),
     upsert: async (args: {
-      where: Where;
+      where: ById;
       create: Omit<Row, "botIds">;
       update: Partial<Row>;
       select: Record<string, boolean>;
     }) => {
-      const current = rows.get(key(args.where));
-      const next = current ? { ...current, ...args.update } : { ...args.create, botIds: [] };
-      rows.set(key(args.where), next);
+      const current = byId(args.where);
+      const next = current
+        ? { ...current[1], ...args.update }
+        : { ...args.create, botIds: [] as string[] };
+      rows.set(current?.[0] ?? `${next.spaceId}/${next.userId}`, next);
       return pick(next, args.select);
     },
-    update: async (args: { where: Where; data: Partial<Row>; select: Record<string, boolean> }) => {
-      const next = { ...(rows.get(key(args.where)) as Row), ...args.data };
-      rows.set(key(args.where), next);
+    update: async (args: { where: ById; data: Partial<Row>; select: Record<string, boolean> }) => {
+      const current = byId(args.where);
+      if (!current) throw new Error("No tailnet connection with this id");
+      const next = { ...current[1], ...args.data };
+      rows.set(current[0], next);
       return pick(next, args.select);
     },
     deleteMany: async ({ where }: { where: { spaceId: string; userId: string } }) => ({

@@ -48,6 +48,8 @@ export async function saveTailnetConnection(input: {
   const where = { spaceId_userId: { spaceId: scope.spaceId, userId: scope.userId } };
   const existing = await prisma.tailnetConnection.findUnique({ where, select: { id: true } });
   const id = existing?.id ?? randomBytes(12).toString("hex");
+  // Writes go by id: secret persistence finds the replaced value with findMany, which takes no
+  // compound unique key.
   const stored = await secretStore.put(
     JSON.stringify(config),
     {
@@ -66,7 +68,7 @@ export async function saveTailnetConnection(input: {
     { id, ciphertext: stored.ciphertext },
     () =>
       prisma.tailnetConnection.upsert({
-        where,
+        where: { id },
         create: { id, ...scope, tag: config.tag, ciphertext: stored.ciphertext },
         update: { tag: config.tag, ciphertext: stored.ciphertext },
         select: { tag: true, botIds: true },
@@ -103,7 +105,7 @@ export async function setTailnetBotAccess(input: {
   const where = { spaceId_userId: { spaceId: input.scope.spaceId, userId: input.scope.userId } };
   const current = await input.prisma.tailnetConnection.findUnique({
     where,
-    select: { botIds: true },
+    select: { id: true, botIds: true },
   });
   if (!current) return null;
   if (input.enabled) {
@@ -114,8 +116,9 @@ export async function setTailnetBotAccess(input: {
     if (!bot) throw new TailnetBotNotFoundError();
   }
   const others = current.botIds.filter((id) => id !== input.botId);
+  // By id, as in saveTailnetConnection.
   return await input.prisma.tailnetConnection.update({
-    where,
+    where: { id: current.id },
     data: { botIds: input.enabled ? [...others, input.botId] : others },
     select: { tag: true, botIds: true },
   });
