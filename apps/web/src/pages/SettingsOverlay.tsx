@@ -136,7 +136,7 @@ export function SettingsOverlay({
   const panelBusy = memoryBusy || voiceBusy;
   // Only a space's own page binds to it; every other section, memory included, acts on the
   // space the app is showing.
-  const spaceId = section === "space" ? (space?.id ?? null) : null;
+  const spaceId = section === "space" ? (space?.id ?? null) : undefined;
   const releaseComputerRecovery = useCallback(() => {
     window.clearTimeout(recoveryHoldTimer.current);
     recoveryHoldTimer.current = undefined;

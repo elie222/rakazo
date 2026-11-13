@@ -5,6 +5,7 @@ import {
   IDENTITY_CONFIRMATION_REQUIRED,
   legacyAuthCapabilitiesSchema,
   runWithIdentityConfirmation,
+  signInProviders,
 } from "./auth.js";
 
 it("requires explicit password and SSO capabilities", () => {
@@ -19,6 +20,33 @@ it("requires explicit password and SSO capabilities", () => {
       sso: { name: "SSO", availability: "checking" },
     }).passwordAuth,
   ).toBe(false);
+});
+
+it("lists sign-in providers and falls back to the older SSO field", () => {
+  const base = { passwordAuth: true, passwordReset: false, resetUrl: null, sso: null };
+  expect(signInProviders(authCapabilitiesSchema.parse(base))).toEqual([]);
+  expect(
+    signInProviders(
+      authCapabilitiesSchema.parse({
+        ...base,
+        sso: { name: "SSO", availability: "available" },
+      }),
+    ),
+  ).toEqual([{ id: "oidc", name: "SSO" }]);
+  const providers = [
+    { id: "google", name: "Google" },
+    { id: "apple", name: "Apple" },
+  ];
+  expect(signInProviders(authCapabilitiesSchema.parse({ ...base, providers }))).toEqual(providers);
+  expect(
+    signInProviders(
+      authCapabilitiesSchema.parse({
+        ...base,
+        sso: { name: "SSO", availability: "available" },
+        providers: [],
+      }),
+    ),
+  ).toEqual([]);
 });
 
 it("treats email code sign-in as an optional boolean capability", () => {

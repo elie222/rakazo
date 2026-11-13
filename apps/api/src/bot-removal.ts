@@ -30,6 +30,7 @@ export function createBotRemoval(deps: RouterDeps, repos: ReturnType<typeof crea
         sandbox: deps.sandbox,
         home: deps.home,
         jobs: deps.jobs,
+        memoryProviders: deps.memoryProviders,
         artifacts: deps.artifacts,
         secretStore: deps.secrets,
         dataDir: deps.dataDir,

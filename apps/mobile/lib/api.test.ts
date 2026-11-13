@@ -1,6 +1,7 @@
 import { getArtifactById } from "./artifacts";
 
 vi.mock("./ai-consent", () => ({ promptAiConsent: vi.fn() }));
+vi.mock("react-native", () => ({ Platform: { OS: "ios" } }));
 
 import type { RpcInput } from "@rakazo/contracts";
 import { isServerUnreachable } from "@rakazo/core";
@@ -266,6 +267,16 @@ describe("mobile API requests", () => {
       }),
     );
     await expect(rpc("bots/get", { botId: "missing" })).rejects.toThrow("Bot does not exist");
+  });
+
+  it("asks to update a server from before vault import", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(null, { status: 404 })),
+    );
+    await expect(rpc("vault/import", { rows: [] } as never)).rejects.toThrow(
+      new Error("Update your server to import logins."),
+    );
   });
 
   it("shows the server's message instead of the procedure name", async () => {

@@ -38,7 +38,7 @@ function fixture(items = [entry]) {
   } as unknown as Parameters<typeof connectApp>[0];
   const catalog = vi.fn(async () => items);
   const providers = [
-    { describe: () => ({ id: "fake" }), catalog },
+    { describe: () => ({ id: items[0]?.connectorId }), catalog },
   ] as unknown as ManagedConnectorProvider[];
   const context = {
     spaceId: "space",
@@ -145,4 +145,33 @@ it("treats an app connected through a later provider as connected", async () => 
   const result = await connectApp(f.deps, providers, f.context, f.target, "Gmail", "effect");
   expect(result).toMatchObject({ status: "connected" });
   expect(stored).toHaveLength(0);
+});
+
+describe("connected apps that need reconnecting", () => {
+  it.each([false, true])("handles provider reconnect requirement %s", async (reconnect) => {
+    const f = fixture([{ ...entry, connected: true }]);
+    const needsReconnect = vi.fn(async () => reconnect);
+    f.providers[0]!.needsReconnect = needsReconnect;
+    expect(await f.call()).toMatchObject({ status: reconnect ? "pending" : "connected" });
+    expect(needsReconnect).toHaveBeenCalledWith(f.context, entry.slug);
+    expect(stored.map((message) => message.blocks)).toEqual(
+      reconnect ? [[expect.objectContaining({ connectorId: "fake", status: "pending" })]] : [],
+    );
+  });
+  it("tells the bot to reconnect and reuses the pending card on replay", async () => {
+    const f = fixture([{ ...entry, connected: true }]);
+    f.providers[0]!.needsReconnect = async () => true;
+    expect(await f.call()).toMatchObject({
+      status: "pending",
+      message:
+        "Connection card shown. The saved connection gives this app no tools, so the user must reconnect it. Wait for them to do so.",
+    });
+    expect(await f.call("Gmail", "another-effect")).toMatchObject({
+      status: "pending",
+      message:
+        "Connection card already shown. The saved connection gives this app no tools, so the user must reconnect it. Wait for them to do so.",
+    });
+    expect(stored).toHaveLength(1);
+    expect(stored[0]?.blocks[0]).toMatchObject({ status: "pending" });
+  });
 });

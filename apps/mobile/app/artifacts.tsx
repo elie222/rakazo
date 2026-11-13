@@ -79,6 +79,8 @@ export default function ArtifactsScreen() {
   const [searchPageFailed, setSearchPageFailed] = useState(false);
   const loadingMoreRef = useRef(false);
   const generationRef = useRef(0);
+  const loadingPageRef = useRef(false);
+  const [loadingPage, setLoadingPage] = useState(false);
   const autoFetchedCursorRef = useRef<string | null>(null);
   const activeBotIdRef = useRef(activeBotId);
   const madeByBotsRef = useRef(madeByBots);
@@ -111,6 +113,8 @@ export default function ArtifactsScreen() {
   const load = useCallback(
     async (botId: string | null, madeByBots: boolean, mode: "replace" | "refresh") => {
       const generation = ++generationRef.current;
+      loadingPageRef.current = true;
+      setLoadingPage(true);
       loadingMoreRef.current = false;
       setLoadingMore(false);
       autoFetchedCursorRef.current = null;
@@ -131,8 +135,11 @@ export default function ArtifactsScreen() {
         setNext(page.nextCursor ? { cursor: page.nextCursor, botId, madeByBots } : null);
       } catch (error) {
         if (generation !== generationRef.current) return;
-        if (mode === "replace") {
-          setLoadError(errorText(error, t`Could not load artifacts.`));
+        setLoadError(errorText(error, t`Could not load artifacts.`));
+      } finally {
+        if (generation === generationRef.current) {
+          loadingPageRef.current = false;
+          setLoadingPage(false);
         }
       }
     },
@@ -150,7 +157,7 @@ export default function ArtifactsScreen() {
   );
 
   const loadMore = useCallback(async () => {
-    if (!nextCursor || loadingMoreRef.current) return;
+    if (!nextCursor || loadingMoreRef.current || loadingPageRef.current) return;
     const generation = generationRef.current;
     loadingMoreRef.current = true;
     setLoadingMore(true);
@@ -197,9 +204,10 @@ export default function ArtifactsScreen() {
           style: "destructive",
           onPress: () =>
             void removeArtifact(item.id)
-              .then(() =>
-                setItems((current) => current?.filter((row) => row.id !== item.id) ?? current),
-              )
+              .then(() => {
+                setItems((current) => current?.filter((row) => row.id !== item.id) ?? current);
+                void load(activeBotIdRef.current, madeByBotsRef.current, "refresh");
+              })
               .catch((error: unknown) =>
                 Alert.alert(t`Could not delete this artifact`, errorText(error, t`Try again.`)),
               ),
@@ -222,12 +230,29 @@ export default function ArtifactsScreen() {
   }, [query, activeBotId, madeByBots]);
 
   useEffect(() => {
-    if (searchPageFailed || !queryActive || !nextCursor || loadingMore || items === null) return;
+    if (
+      loadingPage ||
+      searchPageFailed ||
+      !queryActive ||
+      !nextCursor ||
+      loadingMore ||
+      items === null
+    )
+      return;
     if (filtered && filtered.length > 0) return;
     if (autoFetchedCursorRef.current === nextCursor) return;
     autoFetchedCursorRef.current = nextCursor;
     void loadMore();
-  }, [filtered, items, loadMore, loadingMore, nextCursor, queryActive, searchPageFailed]);
+  }, [
+    filtered,
+    items,
+    loadMore,
+    loadingMore,
+    loadingPage,
+    nextCursor,
+    queryActive,
+    searchPageFailed,
+  ]);
 
   useEffect(() => {
     void load(activeBotId, madeByBots, "replace");

@@ -3,6 +3,7 @@ import type {
   ByokTier,
   CacheCapabilities as ConnectionCacheCapabilities,
   ConnectionCatalogItem,
+  HistoryToolStep,
   ModelApiProtocol,
   PurchaseCardField,
   SandboxKind,
@@ -414,6 +415,12 @@ export interface SemanticMemoryCapabilities {
   save: true;
   purgeHistory: true;
   sharedScope: true;
+  /** Recall before every run, not only once thread history is compacted. */
+  recallEachRun?: true;
+  /** Never recall before a run: the bot recalls only through its memory tools. */
+  recallOnRequestOnly?: true;
+  /** purgeHistory removes what was learned in a chat by thread, so clearing any chat calls it. */
+  purgesByThread?: true;
 }
 
 export interface SemanticMemoryResult {
@@ -426,6 +433,8 @@ export interface SemanticMemoryResult {
   provenance?: string;
   /** Provider entity/namespace the fact was recalled from, when scoped. */
   entity?: string;
+  /** Additional outside-source attribution. All semantic recall is derived data, even without this marker. */
+  external?: true;
 }
 
 export interface SemanticMemoryForgetRequest {
@@ -444,6 +453,8 @@ export type SemanticMemoryResponse<T = void> =
 
 export interface SemanticMemoryRecallRequest {
   query: string;
+  /** Automatic context excludes imported sources; explicit reads may include them. */
+  includeExternal?: boolean;
   scope: DurableMemoryScope;
   botId: string;
   /** Omit until a thread has compacted history; the provider can then skip that namespace. */
@@ -460,7 +471,43 @@ export interface SemanticMemorySaveRequest {
 
 export interface SemanticMemoryPurgeHistoryRequest {
   botId: string;
+  threadId: string;
   generations: number[];
+}
+
+export interface SemanticMemoryConversationTurn {
+  role: "user" | "assistant";
+  content: string;
+  /** ISO 8601. */
+  timestamp: string;
+  /** Who said it, when not the person or this bot: another bot in a group chat or a bot message. */
+  speaker?: string;
+}
+
+/**
+ * The new messages of one finished turn; earlier turns were sent before. They are data for
+ * learning, including replies influenced by outside sources. Recalling the resulting knowledge
+ * must preserve derived provenance rather than granting it instruction authority.
+ */
+export interface SemanticMemoryConversationRequest {
+  botId: string;
+  botName: string;
+  userName: string;
+  /** The bot's own chat with its person, or a group chat with other bots. */
+  conversation: "direct" | "group";
+  /** The bot's effective memory scope; shared also pools the turn with the Space's other bots. */
+  scope: DurableMemoryScope;
+  threadId: string;
+  /** Thread history generation; purgeHistory with this threadId and generation removes it. */
+  generation: number;
+  runId: string;
+  turns: SemanticMemoryConversationTurn[];
+}
+
+/** Reflects over the bot's own memory only. */
+export interface SemanticMemoryReflectRequest {
+  query: string;
+  botId: string;
 }
 
 export type SemanticMemoryForgetResponse = SemanticMemoryResponse<{
@@ -586,6 +633,11 @@ export interface AgentRunRequest {
      * "[speaker]: ".
      */
     speaker?: string;
+    /**
+     * This bot's own reply in order, its tool steps apart from its text, set when it used
+     * tools. A runtime that can replay tool calls reads it instead of `content`.
+     */
+    segments?: Array<{ text: string } | { steps: HistoryToolStep[] }>;
     /** Images attached to this message, hydrated only for recent user turns. */
     images?: AgentInputImage[];
   }>;
@@ -832,10 +884,49 @@ export interface BackgroundJobPayloads {
   /** The bot's call rang out: mark it missed if nobody answered. */
   "call.expire": { threadId: string; callId: string };
   "history.compact": { threadId: string; userId?: string };
+  /** Retry a failed post-clear purge without relying on deleted thread/run rows. */
+  "memory.purge-history": {
+    spaceId: string;
+    userId: string;
+    botId: string;
+    threadId: string;
+    generations: number[];
+    connectionIdentity: string;
+  };
+  /**
+   * `messageIds`: what the person sent while the run worked, which the run also answered.
+   * `pending`: cleanup captured before submission. `unconfirmed` keeps checking through the
+   * cleanup window if the submission response was lost; otherwise poll the provider token until
+   * settled, or just retry the purge when no token is needed. Purge the captured generation if
+   * the chat was cleared. `checks` bounds the window. Captured source identifiers survive group
+   * deletion; connectionIdentity prevents a replacement from handling the old operation.
+   */
+  "memory.retain-turn": {
+    runId: string;
+    messageIds?: string[];
+    pending?: {
+      token?: string;
+      /** Submission may have started but its response was not durably handed off. */
+      unconfirmed?: true;
+      generation: number;
+      checks: number;
+      connectionIdentity: string;
+      source: { spaceId: string; userId: string; botId: string; threadId: string };
+    };
+  };
+  /** Backup for one recorded outgoing chat message, and the conversation queued behind it. */
+  "messaging.send": { outboundId: string };
+  /** Backup for recording and sending what an ended run said where its turn came from. */
+  "messaging.reply": { runId: string };
+  /** The previous release's outbox drain; drained by the new delivery path. */
   "messaging.deliver": { runId?: string };
-  /** A running chat-app run's interim messages; the run is not marked mirrored. */
+  /** The previous release's interim-message mirror; drained by the new delivery path. */
   "messaging.progress": { runId: string };
   "messaging.credential-cleanup": { installationId: string; ref: string };
+  /** Backup for answering one inbound team-chat message, and the end of its routine routing. */
+  "team_chat.engage": { externalMessageId: string };
+  /** Decide whether a conversation's unanswered team-chat messages need the bot. */
+  "team_chat.ambient": { conversationId: string };
   /** Reconcile durable remote-agent intent; scope is loaded from the database. */
   "cloud_agent.poll": { agentId: string };
   "purchase.poll": { purchaseId: string };
@@ -866,6 +957,8 @@ export type BackgroundJob = {
     replaceLockedBefore?: Date;
     /** Cap retried executions; omit to use the job queue's default. */
     maxAttempts?: number;
+    /** Jobs sharing a queue run one at a time, in order. */
+    queueName?: string;
   };
 }[BackgroundJobName];
 
@@ -874,10 +967,17 @@ export interface BackgroundJobExecution {
   onRunStarted(): void;
 }
 
+/** Which try this is, for a handler that settles its work differently on the last one. */
+export interface BackgroundJobAttempt {
+  number: number;
+  max: number;
+}
+
 export type BackgroundJobHandlers = {
   [Name in BackgroundJobName]: (
     payload: BackgroundJobPayloads[Name],
     execution?: BackgroundJobExecution,
+    attempt?: BackgroundJobAttempt,
   ) => Promise<void>;
 };
 
@@ -1425,6 +1525,11 @@ export interface AutoReviewRequest {
    * tool results or inbound messages, so injected text cannot argue for the site.
    */
   newSite?: boolean;
+  /**
+   * A save to the bot's memory after the run took in outside content. The bot reads saved memory
+   * as trusted context in every later run, so the saved text is judged as a standing instruction.
+   */
+  memoryWrite?: boolean;
 }
 
 export interface AutoReviewResult {

@@ -1103,14 +1103,14 @@ function watchReplies(
         failure = undefined;
       } catch (error) {
         if (controller.signal.aborted) return;
-        // A 4xx other than 408/429 is the server's answer; asking again only polls it. Without
-        // a first snapshot the microphone stays shut, so the call cannot go on: hang it up, from
-        // the caller's side so the server is told. A first load that keeps failing ends it too,
-        // after as many tries as a run of failed turns.
+        // A 4xx other than 408/429 is the server's answer; asking again only polls it. The
+        // call cannot go on without the feed, whether or not a snapshot is already on screen:
+        // hang it up, from the caller's side so the server is told. A first load that keeps
+        // failing ends it too, after as many tries as a run of failed turns.
         const giveUp =
           !isRetryableError(error) || (!snapshot && ++firstLoadFailures >= MAX_TURN_FAILURES);
         if (giveUp) {
-          if (!snapshot && callId === watchedCallId) endCall();
+          if (callId === watchedCallId) endCall();
           return;
         }
         retry = Math.min(FEED_RETRY_MAX_MS, retry * 2);
