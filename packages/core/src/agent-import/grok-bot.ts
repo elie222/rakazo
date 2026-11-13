@@ -319,12 +319,31 @@ function mergeBots(bots: readonly GrokBot[]): GrokBot[] {
   }
   const result = [...merged.values()];
   for (const bot of result) {
-    const names = new Set<string>();
+    const routines = new Map<string, GrokBotRoutine>();
     for (const routine of bot.routines) {
-      const name = routine.name.toLowerCase();
-      if (name && names.has(name)) throw new GrokBotExportError("not_export");
-      if (name) names.add(name);
+      const key = JSON.stringify([
+        routine.name.toLowerCase(),
+        routine.trigger,
+        routine.cron,
+        routine.when,
+        routine.timeZone,
+        routine.details,
+      ]);
+      const previous = routines.get(key);
+      routines.set(
+        key,
+        previous
+          ? {
+              ...routine,
+              instruction: [
+                ...new Set([previous.instruction, routine.instruction].filter(Boolean)),
+              ].join("\n\n"),
+              skills: [...new Set([...previous.skills, ...routine.skills])],
+            }
+          : routine,
+      );
     }
+    bot.routines = [...routines.values()];
   }
   if (
     result.some((bot) =>

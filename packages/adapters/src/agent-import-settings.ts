@@ -227,6 +227,8 @@ export function readGrokBotImportSettings(
     let url: URL | null = null;
     try {
       url = new URL(app.mcpUrl);
+      if (url.pathname.split("/").some((part) => KEY_LIKE_SEGMENT.test(decodeURIComponent(part))))
+        url = null;
     } catch {
       url = null;
     }

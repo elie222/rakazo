@@ -360,12 +360,16 @@ it("keeps contractions when repairing curly single quote delimiters", () => {
   ).toBe("don’t forget");
 });
 
-it("refuses conflicting fragments of a named routine instead of creating duplicate schedules", () => {
+it("combines instructions for fragments of the same scheduled routine", () => {
   const bots = ["First part", "Second part"].map((instruction) => ({
     name: "Example",
     routines: [{ name: "Daily", instruction, cron: "0 8 * * *" }],
   }));
-  expect(() => readGrokBotExportJson(JSON.stringify({ bots }))).toThrow(GrokBotExportError);
+  expect(
+    readGrokBotExportJson(JSON.stringify({ bots }))[0]?.routines.map(
+      (routine) => routine.instruction,
+    ),
+  ).toEqual(["First part\n\nSecond part"]);
 });
 
 it("keeps later instructions when the first split part has none", () => {
