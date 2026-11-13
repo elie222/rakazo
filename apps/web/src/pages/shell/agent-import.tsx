@@ -339,7 +339,10 @@ export function AgentImportForm({
             title={<Trans>Another assistant</Trans>}
             prompt={AGENT_IMPORT_PROMPT}
             reply={reply}
-            onReplyChange={setReply}
+            onReplyChange={(reply) => {
+              stopReading();
+              setReply(reply);
+            }}
             accept=".md,text/markdown"
             busy={busy}
             onContinue={() => void previewDocument(reply)}
