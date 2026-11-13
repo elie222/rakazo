@@ -111,7 +111,7 @@ describe("safeName", () => {
 
   it("keeps canonically equivalent labels distinct on disk", async () => {
     const directory = await mkdtemp(path.join(tmpdir(), "performance-unicode-label-"));
-    const labels = ["é", "e\u0301"];
+    const labels = ["é", "e\u0301"] as const;
     try {
       expect(safeName(labels[0]).normalize("NFC")).not.toBe(safeName(labels[1]).normalize("NFC"));
       for (const label of labels) {
