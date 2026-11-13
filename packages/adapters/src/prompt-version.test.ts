@@ -10,7 +10,7 @@ describe("prompt version", () => {
 
   it("changes when a template or the history format changes", () => {
     const parts = promptVersionParts();
-    expect(promptVersionOf({ ...parts, voiceCall: `${parts.voiceCall} ` })).not.toBe(
+    expect(promptVersionOf({ ...parts, computerUse: `${parts.computerUse} ` })).not.toBe(
       PROMPT_VERSION,
     );
     expect(promptVersionOf({ ...parts, historyFormat: parts.historyFormat + 1 })).not.toBe(

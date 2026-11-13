@@ -1,4 +1,4 @@
--- Outcome rates of finished runs by the prompt version they used, newest version first.
+-- Outcome rates of runs finished in the last `days` days (default 7), by prompt version, newest first.
 --   psql "$DATABASE_URL" -v days=7 -f scripts/prompt-version-outcomes.sql
 -- Reads only run statuses and message block kinds, which stay plain when content is encrypted.
 \if :{?days}
@@ -7,17 +7,19 @@
 \endif
 
 WITH recent AS (
-  SELECT id, status, "promptVersion", "createdAt"
+  SELECT id, status, "promptVersion", "completedAt"
   FROM runs
   WHERE "promptVersion" IS NOT NULL
     AND status IN ('completed', 'failed', 'cancelled')
-    AND "createdAt" > now() - make_interval(days => :days)
+    AND "completedAt" > now() - make_interval(days => :days)
 ),
 blocks AS (
   SELECT
     m."runId",
     bool_or(b ->> 'kind' = 'steps') AS used_tools,
-    bool_or(b ->> 'kind' = 'text') AS replied,
+    -- A mid-turn progress note is not the run's reply.
+    bool_or(b ->> 'kind' = 'text' AND coalesce(m."clientNonce", '') NOT LIKE 'user-progress:%')
+      AS replied,
     count(*) FILTER (WHERE b ->> 'kind' = 'ask') AS asks
   FROM messages m
   JOIN recent r ON r.id = m."runId"
@@ -29,7 +31,7 @@ blocks AS (
 )
 SELECT
   r."promptVersion" AS version,
-  min(r."createdAt")::date AS first_seen,
+  min(r."completedAt")::date AS first_seen,
   count(*) AS runs,
   round(100.0 * avg((r.status = 'failed')::int), 1) AS failed_pct,
   round(100.0 * avg((r.status = 'cancelled')::int), 1) AS cancelled_pct,

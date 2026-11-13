@@ -137,7 +137,10 @@ import { APPROVED_EFFECT_REPLAY_ORDER, buildApprovalContinuation } from "./run-e
 import {
   BOT_DIRECTORY_LIMIT,
   botEmailInstruction,
+  COMPUTER_USE_INSTRUCTION,
   dockerComputerToolInstruction,
+  hostComputerInstruction,
+  PRIVATE_WORKSPACE_INSTRUCTION,
   persistentComputerInstruction,
   runIdentityInstruction,
   threadContextForRun,
@@ -1418,16 +1421,11 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                 )
                 .catch(() => undefined)
             : undefined;
-        const hostShell = hostEnvironment
-          ? `Home: ${JSON.stringify(hostEnvironment.home)}. Shell: ${JSON.stringify(hostEnvironment.shell)}. The shell tool executes commands with that shell. Use its native syntax, paths and installed tools; do not assume Linux or bash.`
+        const hostInstruction = hostEnvironment
+          ? hostComputerInstruction(computerKind, hostEnvironment)
           : undefined;
-        const hostInstruction = !hostEnvironment
-          ? undefined
-          : computerKind === "wuying"
-            ? `Commands run on a Windows cloud computer. ${hostShell} Files outside the bot workspace can be accessed through commands. The screen shows the Windows desktop; use the graphical tools for apps without a command line.`
-            : `Commands run on the user's ${hostEnvironment.platform} computer with their account permissions. ${hostShell} Local files outside the bot workspace can be accessed through commands. App launching is available through OS commands; graphical screen control is unavailable.`;
         const computerInstruction = [
-          "Use the computer only when the task needs files, commands, a browser, or an installed application. Answer directly from the conversation when sufficient; use connected tools for app data. A website with no connected app is still yours to use in the computer's browser, now and in scheduled routines, so a missing connection alone is never a reason to decline. Do not inspect the computer just to prepare for an unrelated task. If what you are about to buy, send or submit differs from what the user confirmed, such as a changed item or total, show the difference and confirm again first.",
+          COMPUTER_USE_INSTRUCTION,
           hostInstruction
             ? `${baseComputerInstruction} ${hostInstruction}`
             : dockerToolInstruction
@@ -1440,7 +1438,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         const workspaceInstruction =
           computerMode === "team"
             ? teamWorkspaceInstruction(bot.id)
-            : "This entire computer workspace is your private home. Relative file paths and shell working directories start at its root.";
+            : PRIVATE_WORKSPACE_INSTRUCTION;
 
         const reply = await createReplyState(deps, run, runSecrets);
         const script = scripted ? inferScript(task.prompt, takeoverResume?.checkpoint) : undefined;
