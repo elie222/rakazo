@@ -1936,9 +1936,9 @@ PURCHASE_HELPERS = r"""
   const NUMBER = "[.,]*\\d(?:[\\d.,]|[ \\u00a0\\u202f](?=\\d{3}))*";
   const MONEY = new RegExp(`(?:[$€£₪¥]\\s?${NUMBER}|${NUMBER}\\s?(?:[$€£₪¥]|USD|EUR|GBP|ILS|NIS|ש"ח|ש״ח)|(?:USD|EUR|GBP|ILS|NIS)\\s?${NUMBER})`, "gi");
   const TOTAL = /(?<!sub)total|amount due|balance due|to pay|you pay|סה[״"'׳]?כ|סך[\s-]*הכל|לתשלום/i;
-  const moneyIn = (text, last) => {
+  const moneyIn = (text) => {
     const found = String(text).match(MONEY);
-    if (last && found?.length > 1) return "?";
+    if (found?.length > 1) return "?";
     return found ? found[0].replace(/[.,\s]+$/, "").slice(0, 40) : "";
   };
   // The amount next to the last total line; multiple prices on one line are ambiguous.
@@ -1947,7 +1947,7 @@ PURCHASE_HELPERS = r"""
     let found = "";
     lines.forEach((line, i) => {
       if (!TOTAL.test(line.slice(0, 200))) return;
-      found = moneyIn(line.slice(0, 200), true) || moneyIn(lines[i + 1] || "", false) || found;
+      found = moneyIn(line.slice(0, 200)) || moneyIn(lines[i + 1] || "") || found;
     });
     return found;
   }
@@ -2072,7 +2072,7 @@ PURCHASE_HELPERS = r"""
   // A button that names another amount than the page's total also reports the total, which the spending
   // limit counts if larger. `items`: the order lines the page lists, when it lists any.
   function shownPurchase(reason, label, words = [label]) {
-    const named = words.map((word) => moneyIn(word, false)).find(Boolean) || "";
+    const named = words.map((word) => moneyIn(word)).find(Boolean) || "";
     const total = totalShown();
     const items = orderItems();
     return { reason, label: cut(label, 80), amount: named || total, amountFrom: named ? "button" : "page",
