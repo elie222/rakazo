@@ -2029,6 +2029,8 @@ export const LOGIN_CODE_CHANGED =
   "The authenticator moved on to its next code before this one could be typed, so nothing was typed. Call browser_act again.";
 export const LOGIN_REMOVED =
   "This login is no longer saved, so nothing was typed. Use request_secret with oneTimeCode to ask the user for the code.";
+export const LOGIN_VALUE_CHANGED =
+  "This login changed before its code could be typed, so nothing was typed. Call browser_act again.";
 export const CODE_ALREADY_TYPED =
   "This code was already typed in this run. Wait for the authenticator's next code, then call fill_code again.";
 
@@ -2056,6 +2058,7 @@ export const LOGIN_CODES_USED_UP = `A site asked for this login's authenticator 
  *   attempts reload to hide. Codes of an earlier value are never counted again.
  * A claim of a code:
  * - is refused with LOGIN_REMOVED when the login was removed since the fill read it;
+ * - is refused with LOGIN_VALUE_CHANGED when the login value changed since the fill read it;
  * - is refused with LOGIN_CODES_USED_UP while the login is stopped, for every run and value;
  * - is refused with CODE_ALREADY_TYPED when this run claimed the same code of this value;
  * - else counts `asked`: this code, plus the run's earlier codes of this value walking back
@@ -2063,8 +2066,7 @@ export const LOGIN_CODES_USED_UP = `A site asked for this login's authenticator 
  *   asked again, which is what a refusal looks like from here; the backend can't see whether
  *   a site took a code). A code outside the window starts over, so a working key is used as
  *   often as runs need;
- * - past LOGIN_CODE_TRIES is refused with LOGIN_CODES_USED_UP (only reached for a value the
- *   owner has replaced, whose codes stop nothing);
+ * - past LOGIN_CODE_TRIES is refused with LOGIN_CODES_USED_UP;
  * - else is written, and when `asked` reaches LOGIN_CODE_TRIES with the saved value still the
  *   one the code came from, the login is stopped at this claim's time, keeping `updatedAt` so
  *   an approval given for the login holds. Parallel claims are serialised by the lock, so at
@@ -2142,6 +2144,7 @@ export function loginCodeClaim(input: {
       });
       // The owner removed the login since this run read it.
       if (!current) return LOGIN_REMOVED;
+      if (current.ciphertext !== input.login.ciphertext) return LOGIN_VALUE_CHANGED;
       // Another run stopped the login since this one read it.
       if (current.codesStoppedAt) return LOGIN_CODES_USED_UP;
       if (spent.some((row) => row.id === id)) return CODE_ALREADY_TYPED;
@@ -2166,7 +2169,7 @@ export function loginCodeClaim(input: {
       // The last code a site keeps asking for stops the login, but only for the value it came
       // from: a key saved since may be right. The time it was saved stays, so an approval given
       // for it holds.
-      if (repeats >= LOGIN_CODE_TRIES && current.ciphertext === input.login.ciphertext) {
+      if (repeats >= LOGIN_CODE_TRIES) {
         await tx.vaultCredential.updateMany({
           where: { id: input.login.id, ciphertext: current.ciphertext },
           data: { codesStoppedAt: at, updatedAt: current.updatedAt },

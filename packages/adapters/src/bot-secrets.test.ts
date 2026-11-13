@@ -15,6 +15,7 @@ import {
   LOGIN_CODE_TRIES,
   LOGIN_CODES_USED_UP,
   LOGIN_REMOVED,
+  LOGIN_VALUE_CHANGED,
   listBotSecrets,
   loadLoginPasswordRedactions,
   loadRunCodeRedactions,
@@ -1729,7 +1730,10 @@ describe("loginCodeClaim", () => {
         at: number;
         run?: string;
         stale?: true;
-        refused?: typeof LOGIN_CODES_USED_UP | typeof CODE_ALREADY_TYPED;
+        refused?:
+          | typeof LOGIN_CODES_USED_UP
+          | typeof CODE_ALREADY_TYPED
+          | typeof LOGIN_VALUE_CHANGED;
         stopped?: boolean;
         uncertain?: true;
       }
@@ -1798,13 +1802,13 @@ describe("loginCodeClaim", () => {
       ],
     },
     {
-      name: "a code of the old key typed after the owner's save never stops the new one",
+      name: "codes from a replaced key are refused without spending an attempt or stopping the new key",
       steps: [
         { at: 0, stopped: false },
         { at: 30_000, stopped: false },
         { save: "value", stopped: false },
-        { at: 60_000, stale: true, stopped: false },
-        { at: 90_000, stale: true, refused: LOGIN_CODES_USED_UP, stopped: false },
+        { at: 60_000, stale: true, refused: LOGIN_VALUE_CHANGED, stopped: false },
+        { at: 90_000, stale: true, refused: LOGIN_VALUE_CHANGED, stopped: false },
         { at: 90_000, stopped: false },
       ],
     },
