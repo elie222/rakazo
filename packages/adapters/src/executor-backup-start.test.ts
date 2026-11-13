@@ -4,6 +4,7 @@ import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
 import { createRunExecutor } from "./executor.js";
 import { serializeModelSecret } from "./model-secret.js";
 import { OAUTH_RECONNECT_REQUIRED_ERROR } from "./pi-oauth.js";
+import { PROMPT_VERSION } from "./prompt-version.js";
 import { withModelRoles } from "./testing/model-roles.js";
 
 vi.mock("./computer-lifecycle.js", async (importOriginal) => ({
@@ -271,7 +272,11 @@ describe("a main model that cannot start runs on the member's backup", () => {
       apiKey: "fake-backup-key",
     });
     expect(request?.fallbackModels).toEqual([]);
-    expect(run).toMatchObject({ modelProvider: BACKUP.provider, modelId: BACKUP.modelId });
+    expect(run).toMatchObject({
+      modelProvider: BACKUP.provider,
+      modelId: BACKUP.modelId,
+      promptVersion: PROMPT_VERSION,
+    });
     expect(finalizeRun).not.toHaveBeenCalledWith(expect.objectContaining({ outcome: "failed" }));
   });
 

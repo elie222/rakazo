@@ -119,6 +119,7 @@ import { usesNativeShell } from "./native-shell.js";
 import { createPaidServiceProvider } from "./paid-services-factory.js";
 import { paymentWalletConnected } from "./payment-wallets.js";
 import { restoreComputerModels } from "./pi-runtime-computer-mode.js";
+import { PROMPT_VERSION } from "./prompt-version.js";
 import { loadPurchaseRedactions } from "./purchase-service.js";
 import { loadReplyContext, messageToAgentHistoryText } from "./reply-context.js";
 import { backOffRoutineAfterAccountError } from "./routine-backoff.js";
@@ -1003,12 +1004,13 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         runSecrets.push(...resolved.redact);
         // A pin stays as it was created. Unpinned runs still record the model they
         // used; modelPinned is what keeps that record from becoming the next choice.
-        if (!run.modelPinned) {
-          await deps.prisma.run.updateMany({
-            where: { id: runId, status: "running", leaseOwner: workerId, leaseFence: fence },
-            data: { modelProvider: runModelProvider, modelId: runModelId },
-          });
-        }
+        await deps.prisma.run.updateMany({
+          where: { id: runId, status: "running", leaseOwner: workerId, leaseFence: fence },
+          data: {
+            promptVersion: PROMPT_VERSION,
+            ...(run.modelPinned ? {} : { modelProvider: runModelProvider, modelId: runModelId }),
+          },
+        });
 
         if (!bot.computer) throw new Error("Bot has no computer");
         const storedComputer = bot.computer;

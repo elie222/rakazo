@@ -59,6 +59,17 @@ const REBUILD_MAX_STALE_IMAGES = 8;
 const REBUILD_HEADROOM = 0.25;
 /** Stale tokens that justify a rebuild when the provider's prompt cache is declared off. */
 const UNCACHED_REBUILD_MIN_SAVED_TOKENS = 3_000;
+/** The context policy's tuning, part of the prompt version so a change shows up in run outcomes. */
+export const CONTEXT_POLICY_SETTINGS = {
+  defaultStrategy: DEFAULT_CONTEXT_STRATEGY,
+  recentToolResultsToKeep: RECENT_TOOL_RESULTS_TO_KEEP,
+  verbatimToolResults: [...VERBATIM_TOOL_RESULTS],
+  unshortenedToolResults: [...UNSHORTENED_TOOL_RESULTS],
+  rebuildMinSavedTokens: REBUILD_MIN_SAVED_TOKENS,
+  rebuildMaxStaleImages: REBUILD_MAX_STALE_IMAGES,
+  rebuildHeadroom: REBUILD_HEADROOM,
+  uncachedRebuildMinSavedTokens: UNCACHED_REBUILD_MIN_SAVED_TOKENS,
+} as const;
 export interface Size {
   tokens: number;
   images: number;
