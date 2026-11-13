@@ -37,7 +37,7 @@ const composioSdkState = vi.hoisted(() => ({
     resultType?: "completed" | "failed" | "blocked";
   },
   failTools: null as null | string[],
-  rawToolQueries: [] as Array<{ toolkits: string[]; limit?: number }>,
+  rawToolQueries: [] as Array<{ toolkit_slug: string; limit: number; cursor?: string }>,
   logIds: null as null | string[],
   connectedAccounts: {
     list: async (_query?: Record<string, unknown>) => ({ items: [] as Array<{ id: string }> }),
@@ -77,15 +77,24 @@ vi.mock("@composio/core", () => ({
       },
     };
 
-    readonly tools = {
-      getRawComposioTools: async (query: { toolkits: string[]; limit?: number }) => {
-        composioSdkState.rawToolQueries.push(query);
-        return [
-          { slug: "GMAIL_SEND_EMAIL", name: "Send email", description: "Send an email" },
-          { slug: "GMAIL_FETCH_EMAILS", name: "Fetch emails", description: "Fetch emails" },
-        ];
-      },
-    };
+    getClient() {
+      return {
+        tools: {
+          list: async (query: { toolkit_slug: string; limit: number; cursor?: string }) => {
+            composioSdkState.rawToolQueries.push(query);
+            const offset = Number(query.cursor ?? 0);
+            const end = Math.min(offset + query.limit, 250);
+            return {
+              items: Array.from({ length: end - offset }, (_, index) => ({
+                slug: `GMAIL_ACTION_${offset + index}`,
+                description: "An action",
+              })),
+              next_cursor: end < 250 ? String(end) : null,
+            };
+          },
+        },
+      };
+    }
 
     readonly connectedAccounts = {
       list: (query?: Record<string, unknown>) => composioSdkState.connectedAccounts.list(query),
@@ -174,9 +183,9 @@ describe("composio app tools", () => {
       },
       "gmail",
     );
-    expect(tools.map((tool) => tool.name)).toEqual(["GMAIL_SEND_EMAIL", "GMAIL_FETCH_EMAILS"]);
-    expect(composioSdkState.rawToolQueries.at(-1)?.toolkits).toHaveLength(1);
-    expect(composioSdkState.rawToolQueries.at(-1)?.toolkits[0]?.toLowerCase()).toBe("gmail");
+    expect(tools).toHaveLength(250);
+    expect(tools.at(-1)?.name).toBe("GMAIL_ACTION_249");
+    expect(composioSdkState.rawToolQueries.at(-1)?.toolkit_slug.toLowerCase()).toBe("gmail");
   });
 });
 
