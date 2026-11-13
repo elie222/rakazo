@@ -477,6 +477,7 @@ export function jsonField(spec: unknown): ReturnType<typeof Type.String> {
   if (type === "object") return jsonSchemaParameters(definition, options) as never;
   return Type.String({
     ...options,
+    ...(typeof definition.minLength === "number" ? { minLength: definition.minLength } : {}),
     ...(typeof definition.maxLength === "number" ? { maxLength: definition.maxLength } : {}),
   });
 }

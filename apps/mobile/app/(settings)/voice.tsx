@@ -10,20 +10,12 @@ import { fetchFresh, writeSaved } from "@rakazo/core/query";
 import { isCancelledError } from "@tanstack/react-query";
 import { useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useCallback, useMemo, useRef, useState } from "react";
-import {
-  ActivityIndicator,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
+import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LoadFailure } from "../../components/load-failure";
+import { MenuPicker } from "../../components/menu-picker";
 import { NativeActionButton } from "../../components/native-action-button";
 import { NativeSwitch } from "../../components/native-switch";
-import { Checkmark } from "../../components/row-accessories";
 import { mobileTokens } from "../../lib/appearance";
 import {
   loadCallGreetingEnabled,
@@ -42,6 +34,8 @@ import { settingsRpc, settingsTarget } from "../../lib/settings-target";
 import { useSideInsets } from "../../lib/side-insets";
 import { errorText } from "../../lib/user-error";
 import { speakText } from "../../lib/voice";
+
+const DEVICE_CHOICE = "device";
 
 type VoiceField = "voiceId" | "speechModel" | "baseUrl" | "ttsModel" | "sttModel";
 
@@ -450,6 +444,7 @@ export default function VoiceSettings() {
   }
 
   async function chooseVoice(nextVoiceId: string) {
+    if (pending !== null) return;
     loadRevision.current++;
     setVoiceId(nextVoiceId);
     setPending("voice");
@@ -481,6 +476,10 @@ export default function VoiceSettings() {
     }
   }
 
+  const providerChoices = [
+    ...(deviceSettings ? [{ key: DEVICE_CHOICE, label: t`This device` }] : []),
+    ...catalog.map((entry) => ({ key: entry.id, label: entry.name })),
+  ];
   const failure = error ?? loadError;
   const shownError = error ?? (status ? loadError : null);
 
@@ -504,51 +503,18 @@ export default function VoiceSettings() {
         ) : shownError ? (
           <Text style={styles.error}>{shownError}</Text>
         ) : null}
-        {deviceSettings ? (
+        {providerChoices.length ? (
           <View style={styles.group}>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityState={{ selected: deviceVoice }}
+            <MenuPicker
+              label={t`Provider`}
               disabled={pending !== null || !deviceVoiceReady}
-              onPress={() => void toggleDeviceVoice()}
-              style={({ pressed }) => [
-                styles.groupRow,
-                (pending !== null || !deviceVoiceReady) && styles.disabled,
-                pressed && styles.pressed,
-              ]}
-            >
-              <View style={styles.rowCopy}>
-                <Text style={styles.cardTitle}>{t`This device`}</Text>
-              </View>
-              {deviceVoice ? <Checkmark /> : null}
-            </Pressable>
-          </View>
-        ) : null}
-        {catalog.length ? (
-          <View style={styles.group}>
-            {catalog.map((entry, index) => {
-              const chosen = deviceVoiceReady && !deviceVoice && provider === entry.id;
-              return (
-                <Pressable
-                  key={entry.id}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: chosen }}
-                  disabled={pending !== null || !deviceVoiceReady}
-                  onPress={() => void chooseProvider(entry.id)}
-                  style={({ pressed }) => [
-                    styles.groupRow,
-                    index > 0 && styles.groupDivider,
-                    (pending !== null || !deviceVoiceReady) && styles.disabled,
-                    pressed && styles.pressed,
-                  ]}
-                >
-                  <View style={styles.rowCopy}>
-                    <Text style={styles.cardTitle}>{entry.name}</Text>
-                  </View>
-                  {chosen ? <Checkmark /> : null}
-                </Pressable>
-              );
-            })}
+              choices={providerChoices}
+              value={deviceVoice ? DEVICE_CHOICE : provider}
+              onChange={(key) => {
+                if (key === (deviceVoice ? DEVICE_CHOICE : provider)) return;
+                void (key === DEVICE_CHOICE ? toggleDeviceVoice() : chooseProvider(key));
+              }}
+            />
           </View>
         ) : null}
         {/* Connections belong to the account, so a space never removes them. */}
@@ -662,25 +628,14 @@ export default function VoiceSettings() {
               </>
             ) : null}
             {voices.length ? (
-              <View style={[styles.group, styles.voices]}>
-                {voices.map((voice, index) => (
-                  <Pressable
-                    key={voice.id}
-                    accessibilityRole="button"
-                    accessibilityState={{ selected: voiceId === voice.id }}
-                    disabled={pending !== null}
-                    onPress={() => void chooseVoice(voice.id)}
-                    style={({ pressed }) => [
-                      styles.groupRow,
-                      index > 0 && styles.groupDivider,
-                      pending !== null && styles.disabled,
-                      pressed && styles.pressed,
-                    ]}
-                  >
-                    <Text style={styles.voiceLabel}>{voice.label}</Text>
-                    {voiceId === voice.id ? <Checkmark /> : null}
-                  </Pressable>
-                ))}
+              <View style={styles.group}>
+                <MenuPicker
+                  label={t`Voice`}
+                  disabled={pending !== null}
+                  choices={voices.map((voice) => ({ key: voice.id, label: voice.label }))}
+                  value={voiceId}
+                  onChange={(key) => void chooseVoice(key)}
+                />
               </View>
             ) : null}
           </>
@@ -766,7 +721,5 @@ function createVoiceStyles() {
     },
     disabled: { opacity: 0.4 },
     pressed: { opacity: 0.7 },
-    voices: { marginTop: 12 },
-    voiceLabel: { flex: 1, color: native.label, fontSize: 16 },
   });
 }
