@@ -8,6 +8,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import GroupSettings from "../app/group-settings";
 import { BotMemberPicker } from "../components/bot-member-picker";
+import { notifyArchivedChatsChanged } from "./archived-chats";
 import type { MobileBot, MobileGroup } from "./mobile-types";
 
 const { rpc, back, push, replace } = vi.hoisted(() => ({
@@ -247,4 +248,15 @@ it("keeps members closed while a save is running", async () => {
   expect(openButtons()).toHaveLength(2);
   expect(openButtons().every((button) => button.disabled)).toBe(true);
   await act(async () => finish());
+});
+
+it("removes deleted bots from an open group picker after deletion completes", async () => {
+  await act(async () => root.render(<GroupSettings />));
+  rpc.mockImplementation(async (procedure: string) =>
+    procedure === "bots/list" ? bots.slice(1) : undefined,
+  );
+  await act(async () => notifyArchivedChatsChanged());
+  expect(switches().map((input) => input.getAttribute("aria-label"))).toEqual(["Writer"]);
+  await click("Show all");
+  expect(switches().map((input) => input.getAttribute("aria-label"))).toEqual(["Writer", "Runner"]);
 });

@@ -7,7 +7,7 @@ import { BotMemberPicker } from "../components/bot-member-picker";
 import { glassHeaderOptions } from "../components/glass-title";
 import { NativeActionButton } from "../components/native-action-button";
 import { rpc } from "../lib/api";
-import { notifyArchivedChatsChanged } from "../lib/archived-chats";
+import { notifyArchivedChatsChanged, onArchivedChatsChanged } from "../lib/archived-chats";
 import { confirmDeleteGroup } from "../lib/bot-lifecycle";
 import type { MobileBot, MobileGroup } from "../lib/mobile-types";
 import { native, useMobileTokens } from "../lib/native";
@@ -42,6 +42,34 @@ export default function GroupSettingsScreen() {
       })
       .catch((err) => setError(errorText(err, t`Could not load group`)));
   }, [groupId]);
+
+  useEffect(() => {
+    let active = true;
+    const unsubscribe = onArchivedChatsChanged(() => {
+      void rpc("bots/list")
+        .then((nextBots) => {
+          if (!active) return;
+          const available = nextBots.filter((bot) => !bot.archivedAt);
+          const ids = new Set(available.map((bot) => bot.id));
+          setBots(available);
+          setSelected((previous) => previous.filter((id) => ids.has(id)));
+          setGroup(
+            (previous) =>
+              previous && {
+                ...previous,
+                members: previous.members.filter((member) => ids.has(member.botId)),
+              },
+          );
+        })
+        .catch((err) => {
+          if (active) setError(errorText(err, t`Could not load group`));
+        });
+    });
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, []);
 
   async function save() {
     if (!groupId || !group || pending) return;
