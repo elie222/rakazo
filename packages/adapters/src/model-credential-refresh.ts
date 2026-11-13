@@ -32,6 +32,9 @@ const REFRESH_KICK_TIMEOUT_MS = 30_000;
  */
 const RUNTIME_REFRESH_BACKSTOP_MS = REFRESH_REQUEST_TIMEOUT_MS + 5_000;
 
+/** Settings saves racing a retirement each restart it; past this the retirement gives up. */
+const RETIRE_ATTEMPTS = 3;
+
 const modelCredentialLocks = new Map<string, Promise<void>>();
 
 /** Concurrent runs and refresh kicks must not double-refresh or clobber each other's token write. */
@@ -66,18 +69,20 @@ export function retireToReconnectMarker(
   scope: { userId: string; spaceId: string },
   credential: { id: string; secretId: string },
 ) {
-  return async (
-    _reason: ModelCredentialRetireReason,
-    _detail: string | undefined,
-    failed?: ModelCredentialFailedState,
-  ): Promise<boolean> => {
-    const previous = (
+  const readStored = async () =>
+    (
       await prisma.secret.findFirst({
         where: { id: credential.secretId, userId: scope.userId, spaceId: null },
         select: { ciphertext: true },
       })
     )?.ciphertext;
-    // Read when retiring, so settings saved since the run began are kept.
+  const failedMatcher = (failed: ModelCredentialFailedState) =>
+    matchesFailedOAuthSecret(
+      (ciphertext, secretId) => secretStore.load(ciphertext, secretId),
+      failed,
+    );
+  /** One attempt: replace the copy read at its start, keeping that copy's settings. */
+  const attempt = async (previous: string | undefined, failed?: ModelCredentialFailedState) => {
     let kept: KeptModelSettings = {};
     if (previous) {
       try {
@@ -103,6 +108,7 @@ export function retireToReconnectMarker(
       },
       { recordId: credential.secretId },
     );
+    const matchesFailed = failed ? failedMatcher(failed) : undefined;
     let replaced = false;
     try {
       const retired = await retireModelCredential(prisma, {
@@ -110,18 +116,31 @@ export function retireToReconnectMarker(
         credentialId: credential.id,
         secretId: credential.secretId,
         replacementCiphertext: replacement.ciphertext,
-        matchesFailedSecret: failed
-          ? matchesFailedOAuthSecret(
-              (ciphertext, secretId) => secretStore.load(ciphertext, secretId),
-              failed,
-            )
-          : undefined,
+        // A settings save since the read changes the copy, so its settings are never dropped.
+        matchesFailedSecret:
+          previous === undefined
+            ? matchesFailed
+            : async (secret) =>
+                secret.ciphertext === previous && (!matchesFailed || (await matchesFailed(secret))),
       });
       replaced = retired && previous !== undefined;
       return retired;
     } finally {
       const unused = replaced ? previous : replacement.ciphertext;
       if (unused) await secretStore.delete(unused, credential.secretId).catch(() => undefined);
+    }
+  };
+  return async (
+    _reason: ModelCredentialRetireReason,
+    _detail: string | undefined,
+    failed?: ModelCredentialFailedState,
+  ): Promise<boolean> => {
+    let previous = await readStored();
+    for (let tries = 1; ; tries++) {
+      if (await attempt(previous, failed)) return true;
+      const current = await readStored();
+      if (current === previous || tries >= RETIRE_ATTEMPTS) return false;
+      previous = current;
     }
   };
 }

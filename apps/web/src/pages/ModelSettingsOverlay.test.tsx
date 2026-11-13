@@ -274,7 +274,7 @@ const manage = () => rowMenu("Manage provider");
 function titles(container: HTMLElement) {
   return [
     ...container.querySelectorAll(
-      '[data-testid="model-connection-title"], [data-testid="model-settings-page-title"]',
+      '[data-testid="model-connection-title"], [data-testid="settings-page-title"]',
     ),
   ].map((entry) => entry.textContent);
 }

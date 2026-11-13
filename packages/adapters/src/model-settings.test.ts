@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import { buildModelConnectPlaintext, modelCredentialDto } from "./model-connect.js";
-import { persistRefreshedModelCredential } from "./model-credential-refresh.js";
+import {
+  persistRefreshedModelCredential,
+  retireToReconnectMarker,
+} from "./model-credential-refresh.js";
 import { keptModelSettings, parseModelSecret, serializeModelSecret } from "./model-secret.js";
 import { withLiveModelSettings } from "./model-selection.js";
 import { connectionModelSettings, withModelSettings } from "./model-settings.js";
@@ -142,6 +145,61 @@ describe("a token a run refreshed", () => {
     const { persist, tx } = store(JSON.stringify({ ...oauth, expires: 10 }));
     await persist({ type: "oauth", access: "older", refresh: "refresh", expires: 5 });
     expect(tx.secret.update).not.toHaveBeenCalled();
+  });
+});
+
+describe("retiring a rejected sign-in", () => {
+  it("keeps settings saved while it was retiring", async () => {
+    const plaintexts = new Map<string, string>();
+    const signedIn = (settings: object) =>
+      serializeModelSecret(
+        withModelSettings(parseModelSecret(JSON.stringify(oauth)), LISTED_ONLY, settings),
+      );
+    plaintexts.set("first", signedIn({ images: true }));
+    const row = { id: "secret-1", ciphertext: "first" };
+    let puts = 0;
+    const secretStore = {
+      load: vi.fn(async (ciphertext: string) => plaintexts.get(ciphertext)!),
+      put: vi.fn(async (plaintext: string) => {
+        puts += 1;
+        // A settings save lands after the first attempt read the stored copy.
+        if (puts === 1) {
+          plaintexts.set("saved", signedIn({ images: true, reasoning: true }));
+          row.ciphertext = "saved";
+        }
+        const ciphertext = `marker-${puts}`;
+        plaintexts.set(ciphertext, plaintext);
+        return { id: "secret-1", ciphertext };
+      }),
+      delete: vi.fn(async () => undefined),
+    };
+    const client = {
+      userModelCredential: {
+        findFirst: vi.fn(async () => ({ id: "credential-1", secretId: "secret-1" })),
+      },
+      secret: {
+        findFirst: vi.fn(async () => ({ ...row })),
+        update: vi.fn(async ({ data }: { data: { ciphertext: string } }) => {
+          row.ciphertext = data.ciphertext;
+        }),
+      },
+    };
+    const prisma = {
+      ...client,
+      $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(client)),
+    };
+    const retire = retireToReconnectMarker(
+      prisma as never,
+      secretStore as never,
+      { userId: "user-1", spaceId: "space-1" },
+      { id: "credential-1", secretId: "secret-1" },
+    );
+    expect(await retire("refresh_rejected" as never, undefined)).toBe(true);
+    expect(parseModelSecret(plaintexts.get(row.ciphertext)!)).toMatchObject({
+      kind: "oauth",
+      reconnectRequired: true,
+      models: { [LISTED_ONLY]: { images: true, reasoning: true } },
+    });
   });
 });
 

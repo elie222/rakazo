@@ -2,50 +2,13 @@ import { Plural, Trans, useLingui } from "@lingui/react/macro";
 import type { ModelSettings } from "@rakazo/contracts";
 import type { ConnectionModel } from "@rakazo/core";
 import { modelSettingsTags } from "@rakazo/core";
-import { Button, ListSearchInput, SectionHeading } from "@rakazo/ui-web";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ListSearchInput, SectionHeading } from "@rakazo/ui-web";
+import { ChevronRight } from "lucide-react";
 import type { ReactNode } from "react";
+import { SettingsPageHeader } from "../../components/SettingsPageHeader";
 import { useListSearch } from "../../lib/use-list-search";
 
 type ProviderModel = ConnectionModel;
-
-/** The top of a page opened in place of the model list; Back returns to where it came from. */
-export function ModelSettingsPageHeader({
-  title,
-  subtitle,
-  onBack,
-}: {
-  title: ReactNode;
-  subtitle?: ReactNode;
-  onBack: () => void;
-}) {
-  const { t } = useLingui();
-  return (
-    <div className="mb-6 flex min-w-0 items-center gap-2">
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon-sm"
-        className="-ms-2 shrink-0 text-muted-foreground"
-        aria-label={t`Back`}
-        onClick={onBack}
-      >
-        <ChevronLeft className="rtl:rotate-180" />
-      </Button>
-      <div className="flex min-w-0 items-baseline gap-2">
-        <h3
-          data-testid="model-settings-page-title"
-          className="truncate text-heading3 font-medium text-foreground"
-        >
-          {title}
-        </h3>
-        {subtitle ? (
-          <span className="truncate text-body-sm text-muted-foreground">{subtitle}</span>
-        ) : null}
-      </div>
-    </div>
-  );
-}
 
 /** What a model's own settings change, in a few words; nothing when it follows its card. */
 function useSettingsSummary() {
@@ -85,7 +48,9 @@ export function ProviderPage({
   });
   return (
     <div data-testid="model-provider-page">
-      <ModelSettingsPageHeader title={title} onBack={onBack} />
+      <div className="mb-6">
+        <SettingsPageHeader title={title} onBack={onBack} />
+      </div>
       {connection}
       {models.length ? (
         <section className="mt-8" data-testid="model-provider-models">

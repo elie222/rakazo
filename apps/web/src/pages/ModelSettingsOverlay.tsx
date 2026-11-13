@@ -22,6 +22,7 @@ import { X } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import { ConfirmDialog } from "../components/ConfirmDialog";
+import { SettingsPageHeader } from "../components/SettingsPageHeader";
 import type { ModelCredential } from "../lib/model-auth";
 import { useSpaceQueries } from "../lib/query";
 import type { ModelRoleConnectIntent } from "./ModelRoleSettings";
@@ -29,11 +30,7 @@ import { ModelRoleSettings, useModelRole } from "./ModelRoleSettings";
 import { CompatibleModelFields } from "./model-settings/compatible-model-fields";
 import { CompatibleKeyControls, ConnectionControls } from "./model-settings/connection-controls";
 import { ModelSettingsPanel } from "./model-settings/model-settings-panel";
-import {
-  ModelSettingsPageHeader,
-  ProviderModelCount,
-  ProviderPage,
-} from "./model-settings/provider-page";
+import { ProviderModelCount, ProviderPage } from "./model-settings/provider-page";
 import { ConnectionNameField, ProvidersSection } from "./model-settings/providers-section";
 import type { ConnectableProvider } from "./model-settings/role-model-picker";
 import { SpaceBotsModelButton } from "./model-settings/space-bots-model";
@@ -490,15 +487,17 @@ export function ModelSettingsOverlay({
           />
         ) : (
           <div data-testid="model-settings-page">
-            <ModelSettingsPageHeader
-              title={catalogEntry(pageCredential.provider, page.modelId)?.label ?? page.modelId}
-              subtitle={connectionName(pageCredential)}
-              onBack={() =>
-                page.back?.kind === "provider"
-                  ? openProvider(page.back.credentialId)
-                  : setPage(page.back)
-              }
-            />
+            <div className="mb-6">
+              <SettingsPageHeader
+                title={catalogEntry(pageCredential.provider, page.modelId)?.label ?? page.modelId}
+                subtitle={connectionName(pageCredential)}
+                onBack={() =>
+                  page.back?.kind === "provider"
+                    ? openProvider(page.back.credentialId)
+                    : setPage(page.back)
+                }
+              />
+            </div>
             <ModelSettingsPanel
               key={`${pageCredential.id}:${page.modelId}`}
               credential={pageCredential}

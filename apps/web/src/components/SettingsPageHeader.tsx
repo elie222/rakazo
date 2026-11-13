@@ -4,10 +4,10 @@ import { ArrowLeft } from "lucide-react";
 import type { ReactNode } from "react";
 
 /**
- * The top of an item or form opened inside Settings → Vault, in place of the list: Back returns
- * to where it came from, so nothing opens a dialog over the Settings dialog.
+ * The top of a page opened inside Settings in place of a list: Back returns to where it came
+ * from, so nothing opens a dialog over the Settings dialog.
  */
-export function VaultPageHeader({
+export function SettingsPageHeader({
   title,
   subtitle,
   leading,
@@ -26,7 +26,7 @@ export function VaultPageHeader({
         variant="ghost"
         size="icon-sm"
         aria-label={t`Back`}
-        data-testid="vault-back"
+        data-testid="settings-back"
         // The list was the focus before; the page starts from its way back.
         autoFocus
         className="-ms-2 shrink-0 text-muted-foreground"
@@ -36,7 +36,12 @@ export function VaultPageHeader({
       </Button>
       {leading}
       <div className="min-w-0">
-        <h3 className="truncate text-body-lg font-medium text-foreground">{title}</h3>
+        <h3
+          data-testid="settings-page-title"
+          className="truncate text-body-lg font-medium text-foreground"
+        >
+          {title}
+        </h3>
         {subtitle ? <p className="text-body-sm text-muted-foreground">{subtitle}</p> : null}
       </div>
     </div>

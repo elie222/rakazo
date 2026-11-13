@@ -265,7 +265,7 @@ describe("an item's uses", () => {
     await render();
     await click(rowNamed("visa"));
     expect(find("vault-item-activity")).toBeNull();
-    await click("vault-back");
+    await click("settings-back");
     await click(rowNamed("github"));
     expect(vault.activity).toHaveBeenLastCalledWith(
       { scope: "account", name: "github" },
@@ -282,7 +282,7 @@ describe("an item's uses", () => {
         (row) => row.textContent,
       ),
     ).toEqual(["Research botgithub.com2h ago", "Helper2h ago"]);
-    await click("vault-back");
+    await click("settings-back");
     expect(find("vault-item-uses")).toBeNull();
     expect(byTestId("vault-item-activity").textContent).toBe("Used 2h ago by Research bot");
   });
@@ -342,7 +342,7 @@ describe("an item bots may not use", () => {
       policy: "allow",
     });
     // A contact isn't secret, so it has no choice.
-    await click("vault-back");
+    await click("settings-back");
     await click(rowNamed("home"));
     await click("vault-item-edit");
     expect(find("vault-item-access")).toBeNull();
@@ -740,13 +740,13 @@ describe("a login that asks first", () => {
     await click("vault-editor-save");
     expect(vault.put.mock.lastCall?.[0]).toMatchObject({ policy: "allow" });
     // An API key can't ask first.
-    await click("vault-back");
+    await click("settings-back");
     await click(rowNamed("custom"));
     await click("vault-item-edit");
     expect(pressed().map(([label]) => label)).toEqual(["Allow", "Block"]);
     // A server from before Ask first drops it: the item is saved without it, and opens saying so.
-    await click("vault-back");
-    await click("vault-back");
+    await click("settings-back");
+    await click("settings-back");
     vault.put.mockResolvedValue({ ...rows[0]!, policy: undefined });
     await startNew("login");
     await type(field("Site"), "https://github.com");
@@ -1336,7 +1336,7 @@ describe("VaultSettings item details", () => {
     // And when the detail closes and opens again.
     await click("vault-item-show");
     expect(byTestId("vault-item-otp").textContent).toBe(`Authenticator key${otp}`);
-    await click("vault-back");
+    await click("settings-back");
     await click(rowNamed("github"));
     expect(document.body.innerHTML).not.toContain("GEZDGNBVGY3TQOJQ");
     expect(byTestId("vault-item-otp").textContent).toBe("Authenticator key••••••••");
