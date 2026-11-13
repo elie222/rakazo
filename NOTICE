@@ -1,7 +1,7 @@
 Rakazo includes third-party code under the notices below.
 
 Importing a Grok Bot (packages/core/src/agent-import/grok-bot.ts) adapts the
-export prompt, reply repairs, credential refusal and export reading of
+export prompt, reply repairs and export reading of
 OpenMausBot's shared/grok-import.ts, https://github.com/milind-soni/OpenMausBot,
 Copyright 2026 Milind Soni and OpenMausBot contributors, used under the Apache
 License, Version 2.0.

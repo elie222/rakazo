@@ -107,18 +107,32 @@ describe("reading a Grok Bot's reply", () => {
     ]);
   });
 
-  it("refuses an export with credential fields, but reads app header names", () => {
-    expect(errorCode('{"bots":[{"name":"A","apps":[{"name":"x","api_key":"k"}]}]}')).toBe(
-      "credentials",
-    );
+  it("reads ordinary field names and keeps only the fields it uses", () => {
     const [bot] = parseGrokBotExport(
-      '{"bots":[{"name":"A","apps":[{"name":"x","headers":{"Authorization":"x"}}]}]}',
+      JSON.stringify({
+        bots: [
+          {
+            name: "A",
+            memories: [{ key: "tz", text: "Time zone: PST" }],
+            apps: [{ name: "Gmail", auth: "oauth", headers: { Authorization: "x" } }],
+          },
+        ],
+      }),
     );
-    expect(bot!.apps[0]!.headerNames).toEqual(["Authorization"]);
+    expect(bot!.memories).toEqual(["Time zone: PST"]);
+    expect(bot!.apps).toEqual([
+      { name: "Gmail", mcpUrl: "", transport: "", headerNames: ["Authorization"] },
+    ]);
   });
 
   it("says why a reply cannot be read", () => {
     expect(errorCode('{"format":"grok-bot-export","bots":[{"name":"A"')).toBe("cut_off");
+    // A complete first part does not hide a later part that never closed.
+    expect(
+      errorCode(
+        `${exportOf(bramble)}\n\nPart 2:\n{"format":"grok-bot-export","bots":[{"name":"Bramble"`,
+      ),
+    ).toBe("cut_off");
     expect(errorCode("Sure, I can help with that!")).toBe("not_export");
     expect(errorCode(exportOf(bramble).replace('"version":1', '"version":2'))).toBe(
       "newer_version",

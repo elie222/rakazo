@@ -702,6 +702,11 @@ describe("Grok Bot export", () => {
             { name: "Gmail" },
             // Built from parts so no scanner mistakes this file for a leak.
             { name: ["gh", "p_", "Ab3dE5gH7jK9mN1pQ2rS4tU6vW8xY0zAb3dE5"].join("") },
+            {
+              name: "Headed",
+              mcp_url: "https://mcp.example.com/mcp",
+              headers: { [["gh", "p_", "Ab3dE5gH7jK9mN1pQ2rS4tU6vW8xY0zAb3dE5"].join("")]: "" },
+            },
           ],
         },
       ],
@@ -739,6 +744,7 @@ describe("Grok Bot export", () => {
       { path: "apps: Keyed", reason: "unsupported" },
       { path: "apps: Gmail", reason: "reconnect" },
       { path: "apps: 6", reason: "unsupported" },
+      { path: "apps: 7", reason: "unsupported" },
     ]);
     expect(settings.model).toBeNull();
     expect(settings.apiKeys).toEqual([]);

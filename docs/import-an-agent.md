@@ -29,8 +29,7 @@ Grok Bot has no export button, so each Bot writes down its own setup:
    When one reply holds several Bots, pick the one to import; import each Bot separately.
 
 Exports written for Hermes Agent's or OpenMausBot's Grok Bot importers use the same format and
-import here too. A reply with password or key fields in it is refused whole; ask the Bot to write
-it again without them.
+import here too.
 
 Routines on a schedule come over paused. Turn each one off in Grok Bot before you turn it on here,
 so it doesn't run twice. Routines that start on an event (Slack, GitHub, email, a webhook), or

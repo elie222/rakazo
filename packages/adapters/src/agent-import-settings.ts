@@ -207,8 +207,8 @@ export function readGrokBotImportSettings(
 
   const mcpServers: ImportedMcpServer[] = [];
   for (const [index, app] of bot.apps.entries()) {
-    // An app name with a key in it never becomes a server name, nor appears in the preview.
-    if (looksLikeCredential(app.name)) {
+    // A name or header name with a key in it never becomes server settings or preview text.
+    if ([app.name, ...app.headerNames].some(looksLikeCredential)) {
       skipped.push({ path: `apps: ${index + 1}`, reason: "unsupported" });
       continue;
     }

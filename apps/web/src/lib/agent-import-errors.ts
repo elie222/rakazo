@@ -49,8 +49,6 @@ export function grokBotErrorText(code: GrokBotExportErrorCode): string {
       return t`The reply looks cut off. Ask the Bot for the rest, then paste both.`;
     case "too_large":
       return t`These files are too large to import.`;
-    case "credentials":
-      return t`It has passwords or keys in it. Ask the Bot to write it again without them.`;
     case "newer_version":
       return t`This export is newer than Rakazo can read. Update Rakazo and try again.`;
   }

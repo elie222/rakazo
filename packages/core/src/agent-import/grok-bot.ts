@@ -1,6 +1,6 @@
 // Reads the grok-bot-export v1 document a Grok Bot writes about itself. The export prompt,
-// reply repairs, credential refusal and export reading adapt OpenMausBot (Apache-2.0), which
-// adapts Hermes' agent-importers plugin (MIT); see NOTICE. Exports written for either import here.
+// reply repairs and export reading adapt OpenMausBot (Apache-2.0), which adapts Hermes'
+// agent-importers plugin (MIT); see NOTICE. Exports written for either import here.
 import type { AgentImportMemory, AgentImportSkill } from "@rakazo/contracts";
 import {
   AGENT_IMPORT_MAX_TOTAL_LENGTH,
@@ -63,12 +63,7 @@ Rules:
 - If it is too long for one message or file, split it into several documents of this same shape with the same bot name, each holding a part the others do not.
 `;
 
-export type GrokBotExportErrorCode =
-  | "not_export"
-  | "cut_off"
-  | "too_large"
-  | "credentials"
-  | "newer_version";
+export type GrokBotExportErrorCode = "not_export" | "cut_off" | "too_large" | "newer_version";
 
 export class GrokBotExportError extends Error {
   readonly code: GrokBotExportErrorCode;
@@ -133,26 +128,9 @@ function oneLine(value: string): string {
 
 /** Failed brace matches before a reply stops being searched: each one scans to its end. */
 const MAX_UNBALANCED = 50;
-const CREDENTIAL_KEY =
-  /(?:^|_)(?:api_?key|apikey|token|secret|passwd|passphrase|credentials?|auth|authorization|bearer|cookies?|private_?key|access_?key|session_?(?:id|key|token))(?:_|$)|key$/i;
-/** An app's named value slots: only their names are ever read, so they are not refused. */
-const APP_VALUE_SLOTS = new Set(["headers", "env", "environment"]);
 const BOT_FIELDS = ["instructions", "memories", "user_facts", "skills", "routines", "apps"];
-
-function isCredentialKey(key: string): boolean {
-  if (/password/i.test(key)) return true;
-  return CREDENTIAL_KEY.test(key.replace(/([a-z0-9])([A-Z])/g, "$1_$2").replace(/[\s-]+/g, "_"));
-}
-
-function hasCredentialKey(value: unknown, inApps = false): boolean {
-  if (Array.isArray(value)) return value.some((item) => hasCredentialKey(item, inApps));
-  if (!isObject(value)) return false;
-  return Object.entries(value).some(([key, child]) => {
-    if (inApps && APP_VALUE_SLOTS.has(key)) return false;
-    const apps = key === "apps" || key === "plugins" || key === "integrations";
-    return isCredentialKey(key) || hasCredentialKey(child, apps);
-  });
-}
+/** The start of an export document; one left unclosed means the reply was cut off. */
+const EXPORT_START = /^\{\s*"(?:format|version|bots)"/;
 
 /** Commas right before `}` or `]`, outside strings: what a chat window leaves behind. */
 function dropTrailingCommas(source: string): string {
@@ -186,9 +164,13 @@ function looseJson(source: string): unknown {
   return undefined;
 }
 
-/** Every top-level `{…}` in a reply, by brace matching that skips JSON strings. */
-function bracedObjects(source: string): string[] {
+/**
+ * Every top-level `{…}` in a reply, by brace matching that skips JSON strings, and whether an
+ * export document was left unclosed.
+ */
+function bracedObjects(source: string): { found: string[]; cutOff: boolean } {
   const found: string[] = [];
+  let cutOff = false;
   let unbalanced = 0;
   let at = source.indexOf("{");
   while (at >= 0 && unbalanced < MAX_UNBALANCED) {
@@ -209,13 +191,14 @@ function bracedObjects(source: string): string[] {
     }
     if (end < 0) {
       unbalanced += 1;
+      cutOff ||= EXPORT_START.test(source.slice(at, at + 40));
       at = source.indexOf("{", at + 1);
     } else {
       found.push(source.slice(at, end + 1));
       at = source.indexOf("{", end + 1);
     }
   }
-  return found;
+  return { found, cutOff };
 }
 
 const isExportDocument = (value: unknown): value is Json =>
@@ -237,7 +220,10 @@ function documentsIn(source: string): Json[] {
     if (Array.isArray(whole) && whole.length > 0 && whole.every(looksLikeBot)) {
       return [{ bots: whole }];
     }
-    const documents = bracedObjects(version).map(looseJson).filter(isExportDocument);
+    const { found, cutOff } = bracedObjects(version);
+    // A part that never closed would leave its setup out, so the reply is cut off.
+    if (cutOff) throw new GrokBotExportError("cut_off");
+    const documents = found.map(looseJson).filter(isExportDocument);
     if (documents.length > 0) return documents;
   }
   return [];
@@ -341,11 +327,8 @@ function mergeBots(bots: readonly GrokBot[]): GrokBot[] {
   return [...merged.values()];
 }
 
-/** Refuses credential-shaped keys and newer formats, then joins the Bots by name. */
+/** Refuses newer formats, then joins the Bots by name. */
 function botsIn(documents: readonly Json[]): GrokBot[] {
-  if (documents.some((document) => hasCredentialKey(document))) {
-    throw new GrokBotExportError("credentials");
-  }
   if (documents.some((document) => typeof document.version === "number" && document.version > 1)) {
     throw new GrokBotExportError("newer_version");
   }
@@ -359,7 +342,8 @@ function botsIn(documents: readonly Json[]): GrokBot[] {
 
 /**
  * The Bots in a reply or file: a bare document, a fenced one, or several with chat text
- * around them. A document with credential-shaped keys is refused whole.
+ * around them. Key-shaped text the reader keeps is flagged or screened later, never silently
+ * imported.
  */
 export function parseGrokBotExport(source: string): GrokBot[] {
   if (source.length > GROK_BOT_REPLY_MAX_LENGTH) throw new GrokBotExportError("too_large");
