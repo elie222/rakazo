@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { buildModelConnectPlaintext, modelCredentialDto } from "./model-connect.js";
 import { persistRefreshedModelCredential } from "./model-credential-refresh.js";
 import { keptModelSettings, parseModelSecret, serializeModelSecret } from "./model-secret.js";
+import { withLiveModelSettings } from "./model-selection.js";
 import { connectionModelSettings, withModelSettings } from "./model-settings.js";
 import { modelAcceptsImageInput } from "./model-vision.js";
 import { liveCatalogEntry } from "./pi-live-catalog.js";
@@ -263,6 +264,22 @@ describe("listed-only models", () => {
     const entry = liveCatalogEntry("zai", LISTED_ONLY, { images: true, reasoning: true });
     expect(entry).toMatchObject({ images: true, reasoning: true });
     expect(entry?.thinkingLevels?.length).toBeGreaterThan(1);
+  });
+
+  it("show the serving connection's settings in the catalog, but never over an account's answer", () => {
+    const listed = liveCatalogEntry("zai", LISTED_ONLY)!;
+    const account = { ...listed, provider: "openai-codex", images: false };
+    const auth = {
+      secretIdByProvider: { zai: "secret-zai", "openai-codex": "secret-codex" },
+      secretIdByModel: {},
+      modelSettingsBySecretId: {
+        "secret-zai": { [LISTED_ONLY]: { images: true } },
+        "secret-codex": { [LISTED_ONLY]: { images: true } },
+      },
+    };
+    const [zai, codex] = withLiveModelSettings(auth, [listed, account]);
+    expect(zai?.images).toBe(true);
+    expect(codex).toBe(account);
   });
 
   it("follow their setting for image input while known models follow the catalog", () => {

@@ -169,10 +169,7 @@ export function createRouterContext(deps: RouterDeps) {
     let selected = providerLive.size
       ? await savedCatalogSelections(deps.prisma, actor.userId)
       : undefined;
-    const merged = await withLiveModelSettings(
-      deps.prisma,
-      deps.secrets,
-      actor.userId,
+    const merged = withLiveModelSettings(
       auth,
       applyProviderLiveCatalog(codexMerged, auth, providerLive, selected),
     );

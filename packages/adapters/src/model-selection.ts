@@ -1,6 +1,6 @@
 import type { SecretStore } from "@rakazo/adapter-kit";
 import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
-import type { Actor } from "@rakazo/contracts";
+import type { Actor, ModelSettings } from "@rakazo/contracts";
 import {
   canonicalPiProviderId,
   selectCompatibleModelCredential,
@@ -32,7 +32,7 @@ import {
 } from "./pi-catalog-availability.js";
 import type { CodexLiveCatalog, CodexLiveReadOptions } from "./pi-codex-catalog.js";
 import { codexLiveListsModel } from "./pi-codex-catalog.js";
-import type { CatalogReads, CatalogSpaceAuth } from "./pi-live-catalog.js";
+import type { CatalogReads } from "./pi-live-catalog.js";
 import { liveCatalogEntry, providerLiveListsModel, readOnce } from "./pi-live-catalog.js";
 import type { PiCatalogEntry } from "./pi-models.js";
 import {
@@ -41,6 +41,7 @@ import {
   offeredCatalog,
   scriptedCatalogEntry,
 } from "./pi-models.js";
+import { CHATGPT_OAUTH_PROVIDER } from "./pi-oauth.js";
 import { OPENAI_COMPATIBLE_PROVIDER_ID } from "./pi-openai-compatible-provider.js";
 
 export type ModelCredential = Awaited<ReturnType<typeof findModelCredential>>;
@@ -162,6 +163,8 @@ export type SpaceCatalogAuth = {
    */
   secretIdByProvider: Partial<Record<string, string>>;
   secretIdByModel: Partial<Record<string, Partial<Record<string, string>>>>;
+  /** Each read connection's per-model settings, so the catalog need not decrypt it again. */
+  modelSettingsBySecretId?: Partial<Record<string, Record<string, ModelSettings>>>;
 };
 
 /** Whether this space would run the model on Rakazo credits rather than a member's own connection. */
@@ -280,6 +283,7 @@ export async function modelCredentialAuthKindsForSpace(
     byModel: {},
     secretIdByProvider: {},
     secretIdByModel: {},
+    modelSettingsBySecretId: {},
   };
   if (hosted && hostedProvider) empty.byProvider[hostedProvider] = "api_key";
   if (selections.length === 0) return empty;
@@ -299,7 +303,11 @@ export async function modelCredentialAuthKindsForSpace(
     const ciphertext = ciphertextById.get(secretId);
     if (!ciphertext) return undefined;
     try {
-      return modelCredentialAuthKindFromPlaintext(await secretStore.load(ciphertext, secretId));
+      const plaintext = await secretStore.load(ciphertext, secretId);
+      const kind = modelCredentialAuthKindFromPlaintext(plaintext);
+      const models = modelSettingsOf(plaintext);
+      if (models) empty.modelSettingsBySecretId![secretId] = models;
+      return kind;
     } catch (error) {
       if (error instanceof SecretStoreUnavailableError) throw error;
       return undefined;
@@ -436,44 +444,31 @@ export function loadStoredModelSecret(
   });
 }
 
+function modelSettingsOf(plaintext: string) {
+  try {
+    return parseModelSecret(plaintext).models;
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * Listed-only models as the settings saved on the connection that serves each describe them.
- * Bundled models keep the catalog's answer.
+ * Bundled models keep the catalog's answer, and an account catalog's answer stays.
  */
-export async function withLiveModelSettings(
-  prisma: Pick<PrismaClient, "secret">,
-  secrets: Pick<SecretStore, "load">,
-  userId: string,
-  auth: Pick<CatalogSpaceAuth, "secretIdByProvider" | "secretIdByModel">,
+export function withLiveModelSettings(
+  auth: Pick<
+    SpaceCatalogAuth,
+    "secretIdByProvider" | "secretIdByModel" | "modelSettingsBySecretId"
+  >,
   catalog: PiCatalogEntry[],
-): Promise<PiCatalogEntry[]> {
-  const secretIdFor = (entry: PiCatalogEntry) =>
-    entry.live
-      ? (auth.secretIdByModel?.[entry.provider]?.[entry.id] ??
-        auth.secretIdByProvider?.[entry.provider])
-      : undefined;
-  const ids = [...new Set(catalog.flatMap((entry) => secretIdFor(entry) ?? []))];
-  if (ids.length === 0) return catalog;
-  const rows = await prisma.secret.findMany({
-    where: { id: { in: ids }, userId, spaceId: null },
-    select: { id: true, ciphertext: true },
-  });
-  const stored = new Map<string, StoredModelSecret>();
-  await Promise.all(
-    rows.map(async (row) => {
-      try {
-        stored.set(row.id, parseModelSecret(await secrets.load(row.ciphertext, row.id)));
-      } catch {
-        // An unreadable connection describes none of its models.
-      }
-    }),
-  );
+): PiCatalogEntry[] {
   return catalog.map((entry) => {
-    const secretId = secretIdFor(entry);
-    const secret = secretId ? stored.get(secretId) : undefined;
-    if (!secret) return entry;
-    const settings = connectionModelSettings(secret, entry.provider, entry.id);
-    if (settings.images === undefined && settings.reasoning === undefined) return entry;
+    if (!entry.live || entry.provider === CHATGPT_OAUTH_PROVIDER) return entry;
+    const secretId =
+      auth.secretIdByModel[entry.provider]?.[entry.id] ?? auth.secretIdByProvider[entry.provider];
+    const settings = secretId ? auth.modelSettingsBySecretId?.[secretId]?.[entry.id] : undefined;
+    if (settings?.images === undefined && settings?.reasoning === undefined) return entry;
     const described = liveCatalogEntry(entry.provider, entry.id, settings);
     return described
       ? {
