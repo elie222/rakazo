@@ -40,7 +40,7 @@ function dropSideDatabase() {
 function importDump(sql: string) {
   return compose(
     psql(["-d", SIDE_DATABASE, "-X", "--set=ON_ERROR_STOP=on", "--single-transaction", "--file=-"]),
-    { input: sql, stdio: ["pipe", "pipe", "pipe"], timeout: 60_000 },
+    { input: sql, stdio: ["pipe", "ignore", "ignore"], timeout: 60_000 },
   );
 }
 
