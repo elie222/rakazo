@@ -92,10 +92,12 @@ export function spendingPeriodStart(
 /** An amount in minor units as money, such as "$12.50". */
 export function formatMinorAmount(amount: number, currency: string, locale = "en-US"): string {
   try {
-    return new Intl.NumberFormat(locale, {
+    const formatter = new Intl.NumberFormat(locale, {
       style: "currency",
       currency: currency.toUpperCase(),
-    }).format(amount / 100);
+    });
+    const digits = formatter.resolvedOptions().maximumFractionDigits ?? 2;
+    return formatter.format(amount / 10 ** digits);
   } catch {
     return `${(amount / 100).toFixed(2)} ${currency.toUpperCase()}`;
   }
