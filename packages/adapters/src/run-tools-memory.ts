@@ -39,9 +39,12 @@ export function withoutBlankFields(args: Record<string, unknown>): Record<string
   );
 }
 
-async function readHistoryTool(ctx: RunContext, call: ToolCall) {
+export async function readHistoryTool(
+  ctx: RunContext,
+  name: string,
+  args: Record<string, unknown>,
+) {
   const { deps, run } = ctx;
-  const { name, args } = call;
   const crossChat =
     name === "search_history"
       ? args.scope === "my_chats"
@@ -62,21 +65,21 @@ async function readHistoryTool(ctx: RunContext, call: ToolCall) {
   let response: Awaited<ReturnType<typeof searchHistory | typeof readHistory>>;
   if (name === "search_history") {
     const parsed = HistorySearchInputSchema.safeParse(given);
-    if (!parsed.success) return call.finish({ error: argsError(parsed.error) });
+    if (!parsed.success) return { error: argsError(parsed.error) };
     response = await searchHistory(deps.prisma, scope, parsed.data);
   } else {
     const parsed = HistoryReadInputSchema.safeParse(given);
-    if (!parsed.success) return call.finish({ error: argsError(parsed.error) });
+    if (!parsed.success) return { error: argsError(parsed.error) };
     response = await readHistory(deps.prisma, scope, parsed.data);
   }
   const redacted = redactConnectorPayload(response, ctx.secrets);
   // Redaction can expand short synthetic credentials; never let Pi clip the JSON.
   if (Buffer.byteLength(JSON.stringify(redacted), "utf8") > 11_000) {
-    return call.finish({
+    return {
       untrusted: true,
       error:
         "Redacted history exceeds the response budget. Retry with limit 1 or a narrower linked run.",
-    });
+    };
   }
   // Files the bot can now see are copied before its next computer tool.
   ctx.computer.copyEarlierFiles(
@@ -90,7 +93,15 @@ async function readHistoryTool(ctx: RunContext, call: ToolCall) {
       })),
     ),
   );
-  return call.finish(redacted);
+  return redacted;
+}
+
+async function approvedHistoryTool(ctx: RunContext, call: ToolCall) {
+  // Keep decrypted conversation content out of the unencrypted approval record.
+  const acknowledgement = { ok: true };
+  const settled = await call.finish(acknowledgement);
+  if (settled !== acknowledgement) return settled;
+  return readHistoryTool(ctx, call.name, call.args);
 }
 
 /** Memory documents, semantic memory and thread history. */
@@ -179,8 +190,8 @@ export const memoryTools: ToolHandlers = {
       ),
     );
   },
-  search_history: readHistoryTool,
-  read_history: readHistoryTool,
+  search_history: approvedHistoryTool,
+  read_history: approvedHistoryTool,
   async save_memory(ctx, call) {
     const { bot, context } = ctx;
     const { args } = call;

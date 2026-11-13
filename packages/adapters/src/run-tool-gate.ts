@@ -78,6 +78,7 @@ import type { ToolRequest } from "./run-tool-request.js";
 import { BUILTIN_AGENT_TOOL_NAMES, READ_ONLY_AGENT_TOOLS } from "./run-tool-selection.js";
 import { callMediaTool } from "./run-tools-files.js";
 import { callPaidService, trustSearchResult } from "./run-tools-integrations.js";
+import { readHistoryTool } from "./run-tools-memory.js";
 import { USER_COMPUTER_TOOLS, userComputerGate } from "./run-tools-user-computer.js";
 import { connectorTrustKeys } from "./run-trust.js";
 import { watchFromTool } from "./schedule-tools.js";
@@ -604,6 +605,8 @@ export async function gateToolCall(
       if (applied.effect.status === "completed") {
         if (name === "list_secrets")
           return { result: await listBotSecrets(deps.prisma, deps.secretStore, run) };
+        if (name === "read_history" || name === "search_history")
+          return { result: await readHistoryTool(ctx, name, args) };
         trustSearchResult(ctx, name, gate.result);
       }
       if (name === "request_secret") {
@@ -746,6 +749,8 @@ function createToolCall(
           if (current.status === "completed") {
             if (name === "list_secrets")
               return listBotSecrets(deps.prisma, deps.secretStore, ctx.run);
+            if (name === "read_history" || name === "search_history")
+              return readHistoryTool(ctx, name, args);
             trustSearchResult(ctx, name, retryGate.result);
           }
           return retryGate.result;

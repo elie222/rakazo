@@ -12,6 +12,7 @@ import type { ActionApprovalRule } from "@rakazo/core";
 import { inboundRoutineBlock } from "@rakazo/core";
 import { approvalEffectKey, toolEffectIdempotencyKey } from "@rakazo/core/node/approval-effect-key";
 import type { PrismaClient } from "@rakazo/db";
+import * as HistoryRetrieval from "@rakazo/db";
 import { createPendingSteeringRun, sendUserMessage } from "@rakazo/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DENIED_ACTION_ERROR, isApprovalPausedResult } from "./approval-effect.js";
@@ -5153,6 +5154,75 @@ it.each([
       if (persist) {
         expect(read).toHaveBeenCalledTimes(2);
         expect(f.results.at(-1)).toEqual([]);
+      } else expect(f.results.at(-1)).toMatchObject({ uncertain: true });
+      expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+    } finally {
+      read.mockRestore();
+    }
+  },
+);
+
+it.each(
+  ["read_history", "search_history"].flatMap((name) =>
+    [
+      { persist: true, claimRace: false },
+      { persist: true, claimRace: true },
+      { persist: false, claimRace: false },
+    ].map((state) => ({ name, ...state })),
+  ),
+)(
+  "keeps $name content out of approval records, persistence: $persist, claim race: $claimRace",
+  async ({ name, persist, claimRace }) => {
+    const response = { untrusted: true, messages: [{ text: "Private fixture conversation" }] };
+    const read = vi
+      .spyOn(HistoryRetrieval, name === "read_history" ? "readHistory" : "searchHistory")
+      .mockResolvedValue(response as never);
+    try {
+      const f = fixture({
+        name,
+        builtin: true,
+        rules: [{ effect: "require_approval", matchKind: "tool", matchValue: name }],
+      });
+      f.setCalls([
+        {
+          args: name === "read_history" ? { messageId: "message-1" } : { query: "fixture" },
+          executionId: "history-read",
+        },
+      ]);
+      await f.run();
+      expect(read).not.toHaveBeenCalled();
+      f.effects[0]!.status = "approved";
+      const update = f.prisma.externalEffect.updateMany;
+      const original = update.getMockImplementation()!;
+      if (!persist)
+        update.mockImplementation(async (input) =>
+          input.data.status === "completed" ? { count: 0 } : original(input),
+        );
+      await f.run();
+      expect(JSON.stringify(f.effects)).not.toContain("Private fixture conversation");
+      if (persist) {
+        expect(f.effects[0]).toMatchObject({ status: "completed", result: { ok: true } });
+        expect(f.results.at(-1)).toEqual(response);
+        read.mockResolvedValue({ untrusted: true, messages: [] } as never);
+      } else {
+        expect(read).not.toHaveBeenCalled();
+        expect(f.results.at(-1)).toMatchObject({ uncertain: true });
+      }
+      update.mockImplementation(original);
+      if (claimRace) {
+        f.effects[0]!.status = "approved";
+        update.mockImplementation(async (input) => {
+          if (input.where.status === "approved" && input.data.status === "executing") {
+            f.effects[0]!.status = "completed";
+            return { count: 0 };
+          }
+          return original(input);
+        });
+      }
+      await f.run();
+      if (persist) {
+        expect(read).toHaveBeenCalledTimes(2);
+        expect(f.results.at(-1)).toEqual({ untrusted: true, messages: [] });
       } else expect(f.results.at(-1)).toMatchObject({ uncertain: true });
       expect(f.pauseRunForInput).toHaveBeenCalledOnce();
     } finally {
