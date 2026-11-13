@@ -91,7 +91,7 @@ Gmail、Slack、GitHub、Notion、Linear 等数千个应用，以及你自己的
 
 ### 全平台可用
 
-网页、桌面端、iPhone 和 Android，连接同一台服务器。
+网页、桌面端、iPhone、iPad 和 Android，连接同一台服务器。
 
 <img src="./docs/screenshots/readme/mobile.png" alt="iPhone 上的机器人列表和聊天" width="100%">
 
@@ -243,15 +243,19 @@ pnpm --filter @rakazo/desktop dev
 ```
 
 首次运行时，桌面应用会询问是在这台电脑上运行 Rakazo，还是连接现有服务器。
-选择 **This computer**（这台电脑）会在应用数据目录中，通过 Docker Compose 安装并启动已发布镜像，
-使用的文件与 `infra/compose/install-images.sh` 相同。
-因此需要先安装 Docker Desktop、OrbStack 或 Docker Engine；未安装时，应用会提供相应链接。
-已安装的发行版将镜像标签固定为自身版本，未打包的开发版本则拉取 `edge`。
+选择 **This computer**（这台电脑）时，搭载 Apple 芯片、运行 macOS 26 或更高版本且构建包含服务器包的 Mac
+可以不使用 Docker。全新设置默认采用此方式，由应用按需下载服务器和计算机运行时。
+已有 Docker 服务栈且 Docker 正在运行时，应用会询问是否迁移；选择 **Keep Docker** 会继续使用 Docker。
+
+其他构建和平台通过 Docker Compose 在应用数据目录中安装并启动已发布镜像，
+使用的文件与 `infra/compose/install-images.sh` 相同。这一路径需要 Docker Desktop、OrbStack 或 Docker Engine；
+未安装时，应用会提供下载链接。已安装的发行版将镜像标签固定为自身版本，未打包的开发版本则拉取 `edge`。
 
 运行 `pnpm dev` 的开发者应选择 **Existing instance**（现有实例），地址填写终端打印的地址（默认为 `http://127.0.0.1:5173`）。
 公共服务器必须使用 HTTPS；只有回环地址和局域网私有地址允许 HTTP，不包括链路本地地址。
 应用会在保存地址前检查 Rakazo 的健康检查端点，之后启动时直接连接该实例。
-退出应用后，服务仍会继续运行；可通过应用菜单中的 **Stop Local Stack**（停止本地服务栈）将其关闭。
+退出应用后，Docker 服务栈仍会继续运行；不使用 Docker 的服务器则随应用停止。
+可通过应用菜单中的 **Stop Local Stack**（停止本地服务栈）停止受管服务栈，而无需退出应用。
 
 在 Linux 上，桌面应用以 AppImage 形式发布，需要 FUSE 2（`libfuse.so.2`）。只包含 FUSE 3 的发行版（例如 Fedora Silverblue 或 Ubuntu 24.04）会报错
 `dlopen(): error loading libfuse.so.2`。请安装 FUSE 2 库（Fedora 上为 `fuse-libs`，Ubuntu 24.04 上为 `libfuse2t64`，较早的 Ubuntu 和 Debian 上为 `libfuse2`），或者不借助 FUSE 运行 AppImage：
@@ -261,7 +265,7 @@ chmod +x Rakazo-*.AppImage
 ./Rakazo-*.AppImage --appimage-extract-and-run
 ```
 
-**This computer** 会查找 `docker` CLI，但不会自动识别 Podman。若要尝试另一个支持 `compose` 命令的
+**This computer** 的 Docker 路径会查找 `docker` CLI，但不会自动识别 Podman。若要尝试另一个支持 `compose` 命令的
 Docker 兼容 CLI，请在启动应用前把 `RAKAZO_DOCKER_BINARY` 设为该 CLI 的路径。
 
 使用应用菜单中的 **Change Rakazo Server…**（更换 Rakazo 服务器）重新选择服务器。

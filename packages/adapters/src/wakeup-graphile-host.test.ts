@@ -3,11 +3,14 @@ import type { BackgroundJobHandlers } from "@rakazo/adapter-kit";
 import {
   HISTORY_COMPACT_MAX_ATTEMPTS,
   historyCompactJob,
-  messagingDeliverJob,
+  messagingReplyJob,
+  teamChatAmbientJob,
 } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
+import { DatabaseOutage, databaseCapacityBackoffMs } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger, wrapJobPayload } from "@rakazo/logging";
-import type { Runner } from "graphile-worker";
+import type * as GraphileWorker from "graphile-worker";
+import type { JobHelpers, Runner } from "graphile-worker";
 import { makeWorkerUtils } from "graphile-worker";
 import type { Pool } from "pg";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -22,7 +25,8 @@ vi.mock("node:v8", () => ({
   })),
 }));
 
-vi.mock("graphile-worker", () => ({
+vi.mock("graphile-worker", async (importOriginal) => ({
+  ...(await importOriginal<typeof GraphileWorker>()),
   run: (...args: unknown[]) => run(...args),
   makeWorkerUtils: vi.fn(),
 }));
@@ -31,7 +35,6 @@ import { RunExecutionHost } from "./run-execution.js";
 import {
   createReservedGraphileJobWorkerHost,
   createRoutineRetryNoticeReconciler,
-  databaseCapacityBackoffMs,
   GraphileJobPublisher,
   GraphileJobWorkerHost,
 } from "./wakeup.js";
@@ -47,9 +50,15 @@ function handlers(): BackgroundJobHandlers {
     "skill.teaching-expire": vi.fn(async () => undefined),
     "call.expire": vi.fn(async () => undefined),
     "history.compact": vi.fn(async () => undefined),
+    "memory.retain-turn": vi.fn(async () => undefined),
+    "memory.purge-history": vi.fn(async () => undefined),
+    "messaging.send": vi.fn(async () => undefined),
+    "messaging.reply": vi.fn(async () => undefined),
     "messaging.deliver": vi.fn(async () => undefined),
     "messaging.progress": vi.fn(async () => undefined),
     "messaging.credential-cleanup": vi.fn(async () => undefined),
+    "team_chat.engage": vi.fn(async () => undefined),
+    "team_chat.ambient": vi.fn(async () => undefined),
     "cloud_agent.poll": vi.fn(async () => undefined),
     "purchase.poll": vi.fn(async () => undefined),
     "media.poll": vi.fn(async () => undefined),
@@ -133,9 +142,12 @@ async function landJobWrite(pool: Pool, name: string, values: unknown[]) {
   }
 }
 
-/** The task helpers Graphile always passes; the host reads the job id from them. */
+/**
+ * What Graphile hands a task besides its payload: the job id the host tracks its write by,
+ * on a first try of the default 25.
+ */
 function jobHelpers(id: string) {
-  return { job: { id } };
+  return { job: { id, attempts: 1, max_attempts: 25 } } as unknown as JobHelpers;
 }
 
 const tooMany = Object.assign(new Error("sorry, too many clients already"), { code: "53300" });
@@ -200,9 +212,20 @@ describe("GraphileJobPublisher.enqueue", () => {
   it("leaves the queue default when the job sets no cap", async () => {
     const addJob = vi.fn(async (..._args: unknown[]) => undefined);
     const publisher = publisherWith(addJob);
-    await publisher.enqueue(messagingDeliverJob("run-1"));
+    await publisher.enqueue(messagingReplyJob("run-1"));
     const options = addJob.mock.calls[0]?.[2] as { maxAttempts?: number } | undefined;
     expect(options?.maxAttempts).toBeUndefined();
+    await publisher.close();
+  });
+
+  it("forwards the job's queue so one conversation's jobs run one at a time", async () => {
+    const addJob = vi.fn(async (..._args: unknown[]) => undefined);
+    const publisher = publisherWith(addJob);
+    await publisher.enqueue(teamChatAmbientJob("conversation-1", new Date()));
+    await publisher.enqueue(historyCompactJob("thread-1"));
+    expect(
+      addJob.mock.calls.map(([, , spec]) => (spec as { queueName?: string }).queueName),
+    ).toEqual(["team_chat.ambient:conversation-1", undefined]);
     await publisher.close();
   });
 
@@ -441,6 +464,7 @@ describe("reserved Graphile workloads", () => {
       expect(target["run.continue"]).toHaveBeenLastCalledWith(
         { runId: "legacy-chat" },
         { onRunStarted: expect.any(Function) },
+        { number: 1, max: 25 },
       );
     } finally {
       await host.stop();
@@ -1486,7 +1510,20 @@ describe("GraphileJobWorkerHost runner lifecycle", () => {
     }
   });
 
-  it("backs off then restarts when runner.promise rejects with 53300", async () => {
+  it.each([
+    ["out of connections", tooMany],
+    [
+      "read-only during a failover",
+      Object.assign(new Error("cannot execute UPDATE in a read-only transaction"), {
+        code: "25006",
+      }),
+    ],
+    [
+      "refusing connections",
+      Object.assign(new Error("connect ECONNREFUSED 127.0.0.1:5432"), { code: "ECONNREFUSED" }),
+    ],
+    ["dropping its connection", new Error("Connection terminated unexpectedly")],
+  ])("backs off then restarts when the runner stops with the database %s", async (_, error) => {
     const first = mockRunner();
     const second = mockRunner();
     run.mockResolvedValueOnce(first.runner).mockResolvedValueOnce(second.runner);
@@ -1495,12 +1532,13 @@ describe("GraphileJobWorkerHost runner lifecycle", () => {
       sleep: async (ms) => {
         sleeps.push(ms);
       },
+      outage: new DatabaseOutage(),
     });
 
     await host.start(handlers());
     expect(run).toHaveBeenCalledTimes(1);
 
-    first.rejectLife(tooMany);
+    first.rejectLife(error);
     await vi.waitFor(() => expect(run).toHaveBeenCalledTimes(2));
     expect(sleeps).toEqual([200]);
 
@@ -1551,7 +1589,7 @@ describe("GraphileJobWorkerHost runner lifecycle", () => {
     expect(recovered.runner.stop).toHaveBeenCalled();
   });
 
-  it("does not restart when runner.promise rejects for a non-53300 error", async () => {
+  it("does not restart when the runner fails for a reason other than the database", async () => {
     const first = mockRunner();
     run.mockResolvedValueOnce(first.runner);
     const host = new GraphileJobWorkerHost({} as Pool, {

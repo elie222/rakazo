@@ -120,6 +120,7 @@ export function persistentComputerInstruction(options: {
 export function dockerComputerToolInstruction(
   computerKind: string,
   disabled?: ReadonlySet<string>,
+  offeredToolNames?: ReadonlySet<string>,
 ): string | undefined {
   if (computerKind !== "docker") return undefined;
   const navigate = builtinOffered(disabled, "browser_navigate");
@@ -128,7 +129,17 @@ export function dockerComputerToolInstruction(
   const parts = [
     "For Python CLI tools, use `uv tool install <package>`; it installs without sudo and keeps tools under this computer's persistent home. GitHub's `gh` CLI is installed. `pdftotext`, `pandoc`, and `openpyxl` are available to extract text from PDFs, documents, and spreadsheets.",
   ];
-  if (builtinOffered(disabled, "shell")) {
+  // Tool selection can drop shell (creation intro, background helpers) while bot
+  // settings leave it enabled, so the shell guidance follows the tools the run offers.
+  const shellOffered = offeredToolNames
+    ? offeredToolNames.has("shell")
+    : builtinOffered(disabled, "shell");
+  if (shellOffered) {
+    parts.push(
+      "This computer is a Debian bookworm container running unprivileged with persistent home `/home/rakazo`. There is no sudo, cron, Docker daemon, or running systemd; system packages cannot be installed with `apt` at runtime, and `pip` is not installed, so `uv` is the way to add Python packages (`uv run --with <package>` runs a script with a library). Also installed: `git`, `ssh`, `curl`, `jq`, `unzip`, `rg`, `fd`, `file`, `sqlite3`, ImageMagick, and a graphical browser (Chromium by default).",
+    );
+  }
+  if (shellOffered) {
     parts.push(
       "Python 3 is installed as `python3`. For ordinary file processing, use `python3 -c` with a quoted script; interpreter heredocs are blocked by the desktop guard. If `python` is not found, retry with `python3`. A command-syntax refusal is not a filesystem permission error; continue ordinary file work with supported tools.",
     );
@@ -305,7 +316,7 @@ function toolUsageLine(parts: {
     scratchpadClause(disabled),
     parts.followUpsOffered ? FOLLOW_UP_INSTRUCTION : undefined,
     builtinOffered(disabled, "request_takeover")
-      ? "Use request_takeover when the user must provide protected input or human judgment."
+      ? "When the user only needs to see something on the computer screen, such as a QR code, take a screenshot and use attach_file to send it into the chat. Use request_takeover when the user must provide protected input or human judgment, or operate the screen."
       : undefined,
     "Use destination_write only for connected destination records.",
   ].filter((clause): clause is string => Boolean(clause));

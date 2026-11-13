@@ -218,7 +218,8 @@ function screenClaimGtkLines(display: string, log: string) {
     "  screen_gtk_pid=$!",
     "  screen_gtk_ready=0",
     "  for i in $(seq 1 50); do",
-    '    screen_live "$screen_gtk_pid" xdg-desktop-portal-gtk || break',
+    // Right after the fork the pid still runs the shell or nohup until it execs the portal.
+    '    screen_starting "$screen_gtk_pid" xdg-desktop-portal-gtk || break',
     "    if dbus-send --session --print-reply --dest=org.freedesktop.DBus \\",
     "        /org/freedesktop/DBus org.freedesktop.DBus.NameHasOwner \\",
     "        string:org.freedesktop.impl.portal.desktop.gtk 2>/dev/null | grep -q 'boolean true'; then",
@@ -235,15 +236,38 @@ function screenClaimGtkLines(display: string, log: string) {
     "    echo 'screen file chooser did not claim the bus' >&2",
     "    exit 1",
     "  fi",
-    '  printf %s "$screen_gtk_pid" >"$screen_gtk_pid_file"',
+    '  screen_record "$screen_gtk_pid" "$screen_gtk_pid_file"',
     "}",
   ];
 }
 
 // Pid files outlive the container, and the kernel reuses the numbers.
-// Same shape as browser_matches: a live pid is ours only when its executable still is.
+// Trust a recorded pid only when its start time and executable still match.
 function screenSessionMatchers() {
   return [
+    "screen_starttime() {",
+    '  screen_stat=$(cat "/proc/$1/stat" 2>/dev/null) || return 1',
+    '  case "$screen_stat" in',
+    "    *')'*) ;;",
+    "    *) return 1 ;;",
+    "  esac",
+    // Field 22 of stat is field 20 after the last ')'. $20 is not that field.
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: shell parameter expansion
+    "  screen_rest=${screen_stat##*)}",
+    "  set -f",
+    "  set -- $screen_rest",
+    "  set +f",
+    '  [ "$#" -ge 20 ] || return 1',
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: shell parameter expansion
+    "  case \"${20}\" in ''|*[!0-9]*) return 1 ;; esac",
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: shell parameter expansion
+    "  screen_starttime_value=${20}",
+    "}",
+    "screen_record() {",
+    '  screen_starttime "$1" || return 1',
+    '  printf \'%s %s\\n\' "$1" "$screen_starttime_value" >"$2"',
+    "}",
+    // A pid this script just forked. Start time is recorded after the claim.
     "screen_live() {",
     "  case \"$1\" in ''|*[!0-9]*|0|1) return 1 ;; esac",
     '  kill -0 "$1" 2>/dev/null || return 1',
@@ -252,18 +276,43 @@ function screenSessionMatchers() {
     "  esac",
     "  return 1",
     "}",
+    "screen_starting() {",
+    '  kill -0 "$1" 2>/dev/null || return 1',
+    '  case "$(readlink "/proc/$1/exe" 2>/dev/null || true)" in',
+    '    */"$2"|"$2"|*/bash|*/dash|*/sh|*/nohup) return 0 ;;',
+    "  esac",
+    "  return 1",
+    "}",
     "screen_recorded() {",
     '  [ -r "$1" ] || return 1',
-    '  screen_recorded_pid=$(cat "$1" 2>/dev/null || true)',
-    '  screen_live "$screen_recorded_pid" "$2"',
+    "  screen_recorded_exe=$2",
+    '  screen_line=$(cat "$1" 2>/dev/null || true)',
+    '  case "$screen_line" in',
+    "    *' '*) ;;",
+    "    *) return 1 ;;",
+    "  esac",
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: shell parameter expansion
+    "  screen_recorded_pid=${screen_line%% *}",
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: shell parameter expansion
+    "  screen_recorded_start=${screen_line#* }",
+    '  case "$screen_recorded_start" in',
+    "    *' '*) return 1 ;;",
+    "  esac",
+    "  case \"$screen_recorded_pid\" in ''|*[!0-9]*|0|1) return 1 ;; esac",
+    "  case \"$screen_recorded_start\" in ''|*[!0-9]*) return 1 ;; esac",
+    '  kill -0 "$screen_recorded_pid" 2>/dev/null || return 1',
+    '  screen_starttime "$screen_recorded_pid" || return 1',
+    '  [ "$screen_starttime_value" = "$screen_recorded_start" ] || return 1',
+    '  case "$(readlink "/proc/$screen_recorded_pid/exe" 2>/dev/null || true)" in',
+    '    */"$screen_recorded_exe"|"$screen_recorded_exe") return 0 ;;',
+    '    */"$screen_recorded_exe (deleted)"|"$screen_recorded_exe (deleted)") return 0 ;;',
+    "  esac",
+    "  return 1",
     "}",
     "screen_stop_recorded() {",
-    '  if [ -r "$1" ]; then',
-    '    screen_pid=$(cat "$1" 2>/dev/null || true)',
-    '    if screen_live "$screen_pid" "$2"; then',
-    '      kill "$screen_pid" 2>/dev/null || true',
-    '      kill -KILL "$screen_pid" 2>/dev/null || true',
-    "    fi",
+    '  if screen_recorded "$1" "$2"; then',
+    '    kill "$screen_recorded_pid" 2>/dev/null || true',
+    '    kill -KILL "$screen_recorded_pid" 2>/dev/null || true',
     "  fi",
     '  rm -f "$1"',
     "}",
@@ -297,12 +346,12 @@ function renderStartScreenSessionCommand(index: number | undefined, env: Desktop
     // biome-ignore lint/suspicious/noTemplateCurlyInString: generated shell parameter expansion
     '      if [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ] || [ -z "${DBUS_SESSION_BUS_PID:-}" ]; then echo \'screen session bus did not start\' >&2; exit 1; fi',
     '      printf \'export DBUS_SESSION_BUS_ADDRESS=%q\\nexport DBUS_SESSION_BUS_PID=%q\\n\' "$DBUS_SESSION_BUS_ADDRESS" "$DBUS_SESSION_BUS_PID" >"$screen_bus_file"',
-    '      printf %s "$DBUS_SESSION_BUS_PID" >"$screen_dbus_pid_file"',
+    '      screen_record "$DBUS_SESSION_BUS_PID" "$screen_dbus_pid_file"',
     `      ${screenActivationLine(layout.display)}`,
     '      if [ "$screen_portals" -eq 1 ]; then',
     "        screen_claim_gtk",
     `        ${portalStartLine(DESKTOP_PORTAL, layout.display, paths.portalLog)}`,
-    '        printf %s "$!" >"$screen_portal_pid_file"',
+    '        screen_record "$!" "$screen_portal_pid_file"',
     "      fi",
     "      unset DBUS_SESSION_BUS_ADDRESS DBUS_SESSION_BUS_PID",
     "    fi",
@@ -315,7 +364,7 @@ function renderStartScreenSessionCommand(index: number | undefined, env: Desktop
     "      fi",
     '      if ! screen_recorded "$screen_portal_pid_file" xdg-desktop-portal; then',
     `        ${portalStartLine(DESKTOP_PORTAL, layout.display, paths.portalLog)}`,
-    '        printf %s "$!" >"$screen_portal_pid_file"',
+    '        screen_record "$!" "$screen_portal_pid_file"',
     "      fi",
     "    fi",
     "    unset DBUS_SESSION_BUS_ADDRESS DBUS_SESSION_BUS_PID",
@@ -752,7 +801,10 @@ function renderEnsureScreenCommand(
           `  if [ -f /etc/rakazo/fluxbox/init ]; then cp /etc/rakazo/fluxbox/init ${fluxHome}/.fluxbox/init; else printf "session.screen0.toolbar.visible: false\\n" >${fluxHome}/.fluxbox/init; fi`,
           `  cp /etc/rakazo/fluxbox/apps ${fluxHome}/.fluxbox/apps 2>/dev/null || true`,
           `  printf '\\nsession.menuFile: %s\\n' ${fluxHome}/.fluxbox/menu >>${fluxHome}/.fluxbox/init`,
-          `  HOME=${shellQuote(env.homeDir)} CHROME_USER_DATA_DIR=${shellQuote(profile)} BROWSER=${browserLauncherPath(layout.displayNumber)} DISPLAY=${layout.display} nohup fluxbox -rc ${fluxHome}/.fluxbox/init 8>&- 9>&- </dev/null >${log}-fluxbox.log 2>&1 &`,
+          // A stock image's style sets its wallpaper through fbsetbg, which opens an error dialog
+          // on the screen when no wallpaper tool is installed. Paint the computer image's color.
+          `  mkdir -p ${fluxHome}/bin && printf '#!/bin/sh\\nexec xsetroot -solid "#111113"\\n' >${fluxHome}/bin/fbsetbg && chmod +x ${fluxHome}/bin/fbsetbg`,
+          `  PATH=${fluxHome}/bin:$PATH HOME=${shellQuote(env.homeDir)} CHROME_USER_DATA_DIR=${shellQuote(profile)} BROWSER=${browserLauncherPath(layout.displayNumber)} DISPLAY=${layout.display} nohup fluxbox -rc ${fluxHome}/.fluxbox/init 8>&- 9>&- </dev/null >${log}-fluxbox.log 2>&1 &`,
           "fi",
         ];
   const targetFile = `${TARGETS}/view-${layout.displayNumber}`;
@@ -856,7 +908,8 @@ export function interactiveScreenCommand(
     `if ! { [ -f ${tokenFile} ] && [ "$(cat ${tokenFile})" = ${shellQuote(controlToken)} ] && [ -S ${socket} ] && pgrep -f ${process} >/dev/null; }; then`,
     stopProcesses,
     `mkdir -p ${TARGETS} /tmp/rakazo/sockets`,
-    `nohup x11vnc -display ${layout.display} -forever -shared -nopw -rfbport 0 -unixsock ${socket} -xkb -ncache 0 8>&- 9>&- </dev/null >/tmp/rakazo/x11vnc-control-${layout.displayNumber}.log 2>&1 &`,
+    // A person is typing here: shorter polling and batching show input sooner.
+    `nohup x11vnc -display ${layout.display} -forever -shared -nopw -rfbport 0 -unixsock ${socket} -xkb -ncache 0 -wait 5 -defer 5 8>&- 9>&- </dev/null >/tmp/rakazo/x11vnc-control-${layout.displayNumber}.log 2>&1 &`,
     `for i in $(seq 1 50); do [ -S ${socket} ] && pgrep -f ${process} >/dev/null && break; sleep 0.1; done`,
     `[ -S ${socket} ] && pgrep -f ${process} >/dev/null || exit 1`,
     `printf %s ${shellQuote(controlToken)} >${tokenFile}`,

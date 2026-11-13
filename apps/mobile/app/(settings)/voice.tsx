@@ -4,6 +4,7 @@ import {
   DEFAULT_COMPATIBLE_STT_MODEL,
   DEFAULT_COMPATIBLE_TTS_MODEL,
   OPENAI_COMPATIBLE_PROVIDER_ID,
+  voiceConnectionForm,
 } from "@rakazo/contracts";
 import { fetchFresh, writeSaved } from "@rakazo/core/query";
 import { isCancelledError } from "@tanstack/react-query";
@@ -349,7 +350,12 @@ export default function VoiceSettings() {
 
   const selfHosted = selected?.id === OPENAI_COMPATIBLE_PROVIDER_ID;
   const keyless = Boolean(selected?.keyless);
-  const canConnect = keyless || (selfHosted ? Boolean(baseUrl.trim()) : apiKey.trim().length >= 8);
+  const { keyOptional, linked, canConnect } = voiceConnectionForm({
+    entry: selected,
+    credential,
+    apiKey,
+    baseUrl,
+  });
 
   async function connect() {
     if (!selected || !canConnect) return;
@@ -558,7 +564,7 @@ export default function VoiceSettings() {
                 textContentType="URL"
               />
             ) : null}
-            {keyless ? null : (
+            {keyless || linked ? null : (
               <TextInput
                 accessibilityLabel={t`API key`}
                 autoCapitalize="none"
@@ -568,7 +574,7 @@ export default function VoiceSettings() {
                 value={apiKey}
                 onChangeText={setApiKey}
                 placeholder={
-                  selfHosted
+                  selfHosted || keyOptional
                     ? t`Optional`
                     : credential
                       ? t`Paste a replacement key`
@@ -606,7 +612,7 @@ export default function VoiceSettings() {
                 />
               </>
             ) : null}
-            {keyless && credential ? null : (
+            {(keyless && credential) || linked ? null : (
               <NativeActionButton
                 disabled={pending !== null || !canConnect}
                 label={

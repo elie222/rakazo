@@ -3,29 +3,91 @@ import {
   MODEL_CONTEXT_TOO_SMALL_ERROR,
   MODEL_CREDITS_EXHAUSTED_ERROR,
   MODEL_OUTPUT_LIMIT_ERROR,
+  MODEL_UNPRICED_FOR_CREDITS_ERROR,
   modelFallbackFailure,
 } from "@rakazo/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const provider = vi.hoisted(() => ({ errorMessage: "" }));
+const provider = vi.hoisted(() => ({ errorMessage: "", rejectRequest: false }));
 
 vi.mock("@earendil-works/pi-agent-core", () => ({
   Agent: class {
     state = { errorMessage: provider.errorMessage, messages: [] };
+    constructor(
+      private readonly options: {
+        streamFn: (model: unknown, context: unknown, options: unknown) => AsyncIterable<unknown>;
+      },
+    ) {}
 
     subscribe() {}
-    async prompt() {}
+    async prompt() {
+      if (!provider.rejectRequest) return;
+      const stream = this.options.streamFn(
+        undefined,
+        { systemPrompt: "SYSTEM-PROMPT-secret", messages: [] },
+        {},
+      );
+      for await (const _event of stream) {
+        // Drain the request so its response hooks run.
+      }
+    }
     async waitForIdle() {}
     abort() {}
   },
 }));
 
-vi.mock("@earendil-works/pi-ai/providers/all", () => ({
-  builtinModels: () => ({
-    getModel: () => ({ provider: "openai-codex", id: "gpt-test" }),
-    streamSimple: vi.fn(),
-  }),
-}));
+vi.mock("@earendil-works/pi-ai/providers/all", async () => {
+  const { AssistantMessageEventStream } = await import("@earendil-works/pi-ai/utils/event-stream");
+  return {
+    builtinModels: () => ({
+      getModel: () => ({
+        provider: "openai-codex",
+        id: "gpt-test",
+        api: "openai-codex-responses",
+        input: ["text"],
+        contextWindow: 200_000,
+        maxTokens: 32_000,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      }),
+      streamSimple: (
+        model: { provider: string; id: string },
+        _context: unknown,
+        options: {
+          onPayload?: (body: unknown, model: unknown) => unknown;
+          onResponse?: (response: unknown, model: unknown) => unknown;
+        },
+      ) => {
+        const stream = new AssistantMessageEventStream();
+        void (async () => {
+          await options.onPayload?.(
+            {
+              model: model.id,
+              instructions: "SYSTEM-PROMPT-secret",
+              input: [{ role: "user", content: [{ type: "input_text", text: "PROMPT-secret" }] }],
+              reasoning: { effort: "high" },
+            },
+            model,
+          );
+          await options.onResponse?.({ status: 400, headers: {} }, model);
+          const error = {
+            role: "assistant",
+            content: [],
+            stopReason: "error",
+            errorMessage: '{"detail":"Bad Request"}',
+            api: "openai-codex-responses",
+            provider: model.provider,
+            model: model.id,
+            usage: {},
+            timestamp: 0,
+          };
+          stream.push({ type: "error", reason: "error", error } as never);
+          stream.end(error as never);
+        })();
+        return stream;
+      },
+    }),
+  };
+});
 
 vi.mock("./pi-local-provider.js", () => ({
   registerLocalProvider: (models: unknown) => models,
@@ -38,6 +100,7 @@ vi.mock("./pi-openai-compatible-provider.js", () => ({
 }));
 
 import { PiAgentRuntime } from "./pi-runtime.js";
+import { rejectedRequestsOf } from "./provider-request-shape.js";
 
 function consume(model = { provider: "openai-codex", id: "gpt-test" }) {
   const runtime = new PiAgentRuntime();
@@ -69,6 +132,26 @@ function consume(model = { provider: "openai-codex", id: "gpt-test" }) {
 describe("Pi runtime errors", () => {
   beforeEach(() => {
     provider.errorMessage = "Request was aborted by policy";
+    provider.rejectRequest = false;
+  });
+
+  it("attaches the shape of a request a provider rejected for no known reason", async () => {
+    provider.errorMessage = '{"detail":"Bad Request"}';
+    provider.rejectRequest = true;
+    const error = await consume().catch((caught: unknown) => caught);
+    expect(error).not.toBeInstanceOf(ModelAccountError);
+    const rejection = rejectedRequestsOf(error);
+    expect(rejection).toHaveLength(1);
+    expect(rejection?.[0]).toMatchObject({
+      provider: "openai-codex",
+      model: "gpt-test",
+      status: 400,
+      body: {
+        params: { model: "gpt-test", "reasoning.effort": "high" },
+        messages: { count: 1, items: ["user:input_text"] },
+      },
+    });
+    expect(JSON.stringify(rejection)).not.toMatch(/secret/);
   });
 
   it("propagates provider failures instead of completing with error text", async () => {
@@ -110,10 +193,13 @@ describe("Pi runtime errors", () => {
     'openai-compatible API error (400): {"message":"example:27b is a decision model and only supports /v1/example (ref: <ref-id>)","type":"invalid_request_error","param":null,"code":null}',
     "Prompt tokens limit exceeded: 11298 > 992. To increase, visit https://openrouter.ai/settings/credits and upgrade to a paid account",
     MODEL_CREDITS_EXHAUSTED_ERROR,
+    MODEL_UNPRICED_FOR_CREDITS_ERROR,
     `400: {"type":"server_error","message":"Upstream request failed: This example model requires Global regions. Select Global in your workspace's Privacy settings to use it."}`,
     "400 checking third-party user token: Personal Access Tokens are not supported for this endpoint",
     `400 {"status":400,"title":"Bad Request","detail":"Function id 'example-function': DEGRADED function cannot be invoked"}`,
     'OAuth refresh failed for anthropic: Anthropic token refresh request failed. url=https://example.invalid/v1/oauth/token; details=Error: HTTP request failed. status=400; body={"error": "invalid_grant", "error_description": "Refresh token not found or invalid"}',
+    '400 {"message":"Provider returned error","code":400,"metadata":{"raw":"{\\"error\\":{\\"message\\":\\"example upstream failure\\"}}","provider_name":"ExampleUpstream","is_byok":false}}',
+    '400 {"type":"error","error":{"type":"invalid_request_error","message":"Invalid effort level: max"},"request_id":"req_example"}',
   ])("marks a provider account failure the user can fix: %s", async (message) => {
     provider.errorMessage = message;
     const failure = consume();
@@ -128,6 +214,7 @@ describe("Pi runtime errors", () => {
     "This request was blocked as it seems to violate Anthropic's Terms of Service restrictions on reverse engineering or duplicating model outputs.",
     "Provider returned an empty response",
     "Cyber safeguards flagged this message. If this is legitimate security work, you can apply for the Cyber Verification Program: https://support.claude.com/en/articles/<article-id>",
+    "This request triggered cyber-related safeguards. To learn about the Cyber Verification Program, see https://support.claude.com/en/articles/<article-id>",
     'unexpected tokens remaining in message header: Some("to=functions.example")',
     'HarmonyError: unexpected tokens remaining in message header: Some("analysis")',
     '500: {"message":"unexpected tokens remaining in message header: Some(\\"analysis\\")"}',
@@ -187,6 +274,8 @@ describe("Pi runtime errors", () => {
     "Incomplete JSON segment at the end",
     "OpenCode rejected this chat session. Send the message again.",
     "The upstream model provider could not complete this request. Please retry shortly.",
+    "JSON error injected into SSE stream",
+    "Anthropic stream ended before message_stop",
     "server_error: The model failed to generate a response.",
     '400 data: {"error":{"code":"invalid_parameter_error","param":null,"message":"Download multimodal file timed out","type":"invalid_request_error"},"id":"chatcmpl-example"}\n\n',
   ])("keeps a dropped connection transient: %s", async (message) => {

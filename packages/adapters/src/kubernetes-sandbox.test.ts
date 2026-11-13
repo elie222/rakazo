@@ -9,6 +9,7 @@ import { describe, expect, it, vi } from "vitest";
 import { encodeTarEntry, TarReader } from "./exec-computer.js";
 import type { KubernetesSandboxSdk } from "./kubernetes-sandbox.js";
 import { KubernetesSandboxProvider } from "./kubernetes-sandbox.js";
+import { isSandboxGoneError } from "./sandbox-errors.js";
 import { assertSandboxWorkspaceContract, provisionPrepared } from "./sandbox-test-support.js";
 
 const TAR_END = Buffer.alloc(1024);
@@ -157,6 +158,74 @@ describe("KubernetesSandboxProvider", () => {
     );
     await assertSandboxWorkspaceContract(provider, provisioned, context);
     await provider.destroy(provisioned, context);
+  });
+
+  describe("when the exec connection is refused", () => {
+    class SocketErrorEvent {
+      readonly #status: number;
+      constructor(status: number) {
+        this.#status = status;
+      }
+      get error() {
+        return new Error(`Unexpected server response: ${this.#status}`);
+      }
+    }
+
+    it("keeps the reason", async () => {
+      expect(JSON.stringify(new SocketErrorEvent(503))).toBe("{}");
+      const failure = await providerFor({}, vi.fn().mockRejectedValue(new SocketErrorEvent(503)))
+        .prepare(computer, context)
+        .catch((error: unknown) => error);
+
+      expect(failure).toMatchObject({ message: "Unexpected server response: 503" });
+      expect(isSandboxGoneError(failure)).toBe(false);
+    });
+
+    it.each([
+      ["missing", undefined],
+      ["failed", { status: { phase: "Failed" } }],
+      ["succeeded", { status: { phase: "Succeeded" } }],
+      ["deleting", { ...readyPod, metadata: { deletionTimestamp: new Date() } }],
+    ])("reports a %s pod as a computer that is gone", async (_state, pod) => {
+      const reason = new Error("Unexpected server response: 404");
+      const readNamespacedPod = pod
+        ? vi.fn().mockResolvedValue(pod)
+        : vi.fn().mockRejectedValue(Object.assign(new Error("missing"), { code: 404 }));
+      const failure = await providerFor(
+        { readNamespacedPod },
+        vi.fn().mockRejectedValue({ error: reason }),
+      )
+        .prepare(computer, context)
+        .catch((error: unknown) => error);
+
+      expect(isSandboxGoneError(failure)).toBe(true);
+      expect(failure).toMatchObject({ message: "Kubernetes computer pod no longer exists" });
+      expect((failure as Error).cause).toBe(reason);
+      expect(readNamespacedPod).toHaveBeenCalledWith(
+        { name: "pod", namespace: "rakazo-sandboxes" },
+        expect.anything(),
+      );
+    });
+
+    it.each(["running", "read fails"])(
+      "keeps the original 404 when the pod is %s",
+      async (state) => {
+        const reason = new Error("Unexpected server response: 404");
+        const readNamespacedPod =
+          state === "running"
+            ? vi.fn().mockResolvedValue(readyPod)
+            : vi.fn().mockRejectedValue(new Error("API unavailable"));
+        const failure = await providerFor(
+          { readNamespacedPod },
+          vi.fn().mockRejectedValue({ error: reason }),
+        )
+          .prepare(computer, context)
+          .catch((error: unknown) => error);
+
+        expect(failure).toBe(reason);
+        expect(isSandboxGoneError(failure)).toBe(false);
+      },
+    );
   });
 
   it("validates the immutable computer image without package installation", async () => {
@@ -880,12 +949,17 @@ describe("KubernetesSandboxProvider", () => {
     ]);
   });
 
-  it("imports every file through one tar exec", async () => {
+  it("imports large files through bounded chunks in one tar exec", async () => {
     const stdinChunks: Buffer[] = [];
+    const large = Buffer.alloc(64 * 1024 * 1024, 0xa5);
+    let largestChunk = 0;
     const exec = vi.fn(async (...args: Parameters<Exec["exec"]>) => {
       const stdin = args[6];
       if (stdin) {
-        stdin.on("data", (data: Buffer) => stdinChunks.push(Buffer.from(data)));
+        stdin.on("data", (data: Buffer) => {
+          largestChunk = Math.max(largestChunk, data.length);
+          stdinChunks.push(data);
+        });
         stdin.on("end", () => args[8]?.({ status: "Success" }));
       } else {
         queueMicrotask(() => args[8]?.({ status: "Success" }));
@@ -897,15 +971,19 @@ describe("KubernetesSandboxProvider", () => {
     async function* files() {
       yield { path: "one", content: Buffer.from("1") };
       yield { path: `${"d/".repeat(60)}two`, content: Buffer.from("2"), executable: true };
+      yield { path: "large.bin", content: large };
     }
     await providerFor({}, exec).importWorkspace(computer, files(), context);
     const tarCalls = exec.mock.calls.filter((call) => (call[3] as string[]).includes("tar"));
     expect(tarCalls).toHaveLength(1);
-    const reader = new TarReader(1024);
+    expect(largestChunk).toBeLessThanOrEqual(1024 * 1024);
+    const reader = new TarReader(large.length);
     const read = reader.push(Buffer.concat(stdinChunks));
+    expect(Buffer.from(read[2]!.content).equals(large)).toBe(true);
     expect(read.map((file) => [file.path, file.executable])).toEqual([
       ["one", undefined],
       [`${"d/".repeat(60)}two`, true],
+      ["large.bin", undefined],
     ]);
   });
 

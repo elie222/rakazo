@@ -336,6 +336,7 @@ describe("thread composer isolation", () => {
     disk.full = false;
     disk.moveFails = false;
     appState.listeners.clear();
+    dictation.status = "idle";
     mentionApi.generation = 1;
     mentionApi.rpc.mockReset().mockResolvedValue([]);
     mentionApi.capture.mockReset().mockImplementation(async () => ({
@@ -1211,6 +1212,28 @@ describe("thread composer isolation", () => {
     type("Remind me to buy milk!");
     act(() => dictation.onWords("to buy milk and eggs"));
     expect(container.querySelector("input")!.value).toBe("Remind me to buy milk!");
+  });
+
+  function sendButton() {
+    return container.querySelector<HTMLButtonElement>('button[aria-label="Send"]')!;
+  }
+
+  it("keeps Send disabled while a dictation is still recording", () => {
+    dictation.status = "listening";
+    type("Please check");
+    const send = sendButton();
+    expect(send.disabled).toBe(true);
+    act(() => send.click());
+    expect(props.send).not.toHaveBeenCalled();
+  });
+
+  it("keeps Send disabled while dictating a message that is only an attachment", () => {
+    dictation.status = "listening";
+    render({ attachmentIds: ["file-1"] });
+    const send = sendButton();
+    expect(send.disabled).toBe(true);
+    act(() => send.click());
+    expect(props.send).not.toHaveBeenCalled();
   });
 
   it("adds a provider's transcript after text typed while it recorded", () => {

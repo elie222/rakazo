@@ -158,9 +158,14 @@ if [[ "$*" == *" ps --all --quiet "* ]]; then
   awk -v prefix="$service-" 'index($1, prefix) == 1 { print $1 }' "$containers"
 fi
 if [[ "$*" == *" --scale "* ]]; then
+  target="$*"
+  target="\${target#*--scale $service=}"
+  target="\${target%% *}"
   name="$service-new"
-  while grep -q "^$name " "$containers"; do name="\${name}x"; done
-  echo "$name unless-stopped running" >>"$containers"
+  for (( count = $(grep -c "^$service-" "$containers"); count < target; count++ )); do
+    while grep -q "^$name " "$containers"; do name="\${name}x"; done
+    echo "$name unless-stopped running" >>"$containers"
+  done
 fi
 if [[ "$1" == rm ]]; then
   for name in "\${@:2}"; do sed -i.bak "/^$name /d" "$containers"; done
@@ -594,6 +599,50 @@ describe("production deploy script", () => {
     expect(removed).toBeGreaterThan(replaced);
     expect(commands.slice(replaced).some((line) => line.includes("--scale worker"))).toBe(false);
     expect(commands.slice(removed)).toContain(`${COMPOSE} up -d --no-deps --wait worker`);
+  });
+
+  it("starts the configured number of API and worker containers beside the old ones", () => {
+    const deploy = fixture();
+    write(
+      path.join(deploy.checkout, ".env"),
+      "RAKAZO_HOST=app.example.test\nRAKAZO_API_REPLICAS=2\nRAKAZO_WORKER_REPLICAS=3\n",
+    );
+    commit(deploy.upstream, "next");
+    expect(deploy.run().status).toBe(0);
+    const commands = rollout(deploy.commands());
+    const health = (name: string) =>
+      `docker inspect --format {{.State.Status}}{{if .State.Health}} {{.State.Health.Status}}{{end}} ${name}`;
+    const apiStarted = commands.indexOf(
+      `${COMPOSE} up -d --no-deps --no-recreate --scale api=3 api`,
+    );
+    expect(commands.slice(apiStarted + 2, apiStarted + 5)).toEqual([
+      health("api-new"),
+      health("api-newx"),
+      "docker stop --time 30 api-old",
+    ]);
+    expect(commands).toContain(`${COMPOSE} up -d --no-deps --no-recreate --scale web=2 web`);
+    const workerStarted = commands.indexOf(
+      `${COMPOSE} up -d --no-deps --no-recreate --scale worker=4 worker`,
+    );
+    expect(commands.slice(workerStarted + 2, workerStarted + 6)).toEqual([
+      health("worker-new"),
+      health("worker-newx"),
+      health("worker-newxx"),
+      "docker update --restart no worker-old",
+    ]);
+  });
+
+  it("refuses a replica count below one before deploying", () => {
+    const deploy = fixture();
+    write(
+      path.join(deploy.checkout, ".env"),
+      "RAKAZO_HOST=app.example.test\nRAKAZO_API_REPLICAS=0\n",
+    );
+    commit(deploy.upstream, "next");
+    const result = deploy.run();
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("must be whole numbers of at least 1");
+    expect(deploy.commands().some((line) => line.includes(" up "))).toBe(false);
   });
 
   it("keeps the old container serving when the new one fails its health check", () => {

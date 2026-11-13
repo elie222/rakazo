@@ -10,6 +10,7 @@ import {
   DEFAULT_COMPATIBLE_STT_MODEL,
   DEFAULT_COMPATIBLE_TTS_MODEL,
   OPENAI_COMPATIBLE_PROVIDER_ID,
+  voiceConnectionForm,
 } from "@rakazo/contracts";
 import { fetchFresh } from "@rakazo/core/query";
 import {
@@ -28,6 +29,7 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { XIcon } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useCallSession } from "../lib/call-session";
 import { useSpaceQueries } from "../lib/query";
 import { useBoundSpaceId, useSpaceRpc } from "../lib/space-rpc";
 import { speaker } from "../lib/tts";
@@ -50,7 +52,7 @@ export function VoiceSettingsOverlay({
   scope: SettingsScope;
 }) {
   const rpc = useSpaceRpc();
-  const spaceId = useBoundSpaceId();
+  const spaceId = useBoundSpaceId() ?? null;
   const queries = useSpaceQueries();
   const queryClient = useQueryClient();
   const scoped = { input: { scope } };
@@ -69,6 +71,7 @@ export function VoiceSettingsOverlay({
     return { catalog, credentials, status, provider, credential, voices };
   });
   const { t } = useLingui();
+  const call = useCallSession();
   const apiKeyId = useId();
   const voiceSelectId = useId();
   const speechModelId = useId();
@@ -230,7 +233,12 @@ export function VoiceSettingsOverlay({
   // Connections are managed from the account; a Space can still connect one it lacks.
   const managesConnection = scope === "account" || !credential;
   const keyless = Boolean(selected?.keyless);
-  const canConnect = keyless || (selfHosted ? Boolean(baseUrl.trim()) : apiKey.trim().length >= 8);
+  const { keyOptional, linked, canConnect } = voiceConnectionForm({
+    entry: selected,
+    credential,
+    apiKey,
+    baseUrl,
+  });
 
   async function connectKey() {
     if (!selected || !canConnect) return;
@@ -358,6 +366,8 @@ export function VoiceSettingsOverlay({
   }
 
   async function testVoice() {
+    // The sample uses the call's speaker, so it would cut off the reply.
+    if (call) return;
     setError(null);
     setNotice(null);
     markPending("test");
@@ -446,7 +456,7 @@ export function VoiceSettingsOverlay({
                   />
                 </Field>
               ) : null}
-              {keyless ? null : (
+              {keyless || linked ? null : (
                 <Field className="mt-5">
                   <FieldLabel htmlFor={apiKeyId}>
                     <Trans>API key</Trans>
@@ -458,7 +468,7 @@ export function VoiceSettingsOverlay({
                     value={apiKey}
                     onChange={(event) => setApiKey(event.target.value)}
                     placeholder={
-                      selfHosted
+                      selfHosted || keyOptional
                         ? t`Optional`
                         : credential
                           ? t`Paste a replacement key`
@@ -505,7 +515,7 @@ export function VoiceSettingsOverlay({
                   </Field>
                 </>
               ) : null}
-              {keyless && credential ? null : (
+              {(keyless && credential) || linked ? null : (
                 <Button
                   type="button"
                   className="mt-3"
@@ -631,7 +641,7 @@ export function VoiceSettingsOverlay({
                 type="button"
                 variant="secondary"
                 className="mt-4"
-                disabled={busy || !status?.ready}
+                disabled={busy || !status?.ready || call !== null}
                 onClick={() => void testVoice()}
               >
                 {pending === "test" ? <Trans>Playing…</Trans> : <Trans>Hear a sample</Trans>}
