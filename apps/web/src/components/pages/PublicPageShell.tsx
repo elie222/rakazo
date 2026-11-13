@@ -18,9 +18,9 @@ export function PublicPageShell({ title, document }: { title: string; document: 
   return (
     <div
       data-page-print
-      className="flex min-h-dvh flex-col bg-card text-foreground print:bg-transparent"
+      className="flex h-full min-h-0 flex-col overflow-auto bg-card text-foreground print:h-auto print:overflow-visible print:bg-transparent"
     >
-      <header className="sticky top-0 z-10 flex h-12 shrink-0 bg-card print:hidden items-center justify-between gap-3 pr-2 pl-3.5">
+      <header className="z-10 flex h-12 shrink-0 bg-card print:hidden items-center justify-between gap-3 pr-2 pl-3.5">
         <a
           href="/"
           target="_blank"
@@ -53,20 +53,19 @@ export function PublicPageShell({ title, document }: { title: string; document: 
         </nav>
       </header>
       {copyFailed ? (
-        <div className="sticky top-12 z-10 bg-card px-3.5 pb-3 print:hidden">
+        <div className="z-10 shrink-0 bg-card px-3.5 pb-3 print:hidden">
           <div className="mx-auto max-w-[480px]">
             <ManualCopy url={window.location.href} />
           </div>
         </div>
       ) : null}
-      {/* The frame grows to the page, so the page scrolls with this document and prints whole. */}
-      <div
-        className="min-h-[calc(100dvh-48px)] print:min-h-0"
-        style={{ height: height || undefined }}
-      >
-        {document !== null ? (
-          <PageFrame document={document} title={title} interactive onHeight={setHeight} />
-        ) : null}
+      {/* Keep anchor scrolling below the header; expand the whole document when printing. */}
+      <div className="min-h-32 flex-1 overflow-auto print:min-h-0 print:overflow-visible">
+        <div className="min-h-full" style={{ height: height || undefined }}>
+          {document !== null ? (
+            <PageFrame document={document} title={title} interactive onHeight={setHeight} />
+          ) : null}
+        </div>
       </div>
     </div>
   );
