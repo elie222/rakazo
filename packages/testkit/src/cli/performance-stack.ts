@@ -136,7 +136,9 @@ export async function waitForUrl(url: string) {
       if (response.ok) return;
       detail = `HTTP ${response.status}`;
     } catch (error) {
-      detail = error instanceof Error ? error.message : String(error);
+      if (!controller.signal.aborted) {
+        detail = error instanceof Error ? error.message : String(error);
+      }
     } finally {
       clearTimeout(timer);
     }

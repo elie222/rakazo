@@ -142,7 +142,7 @@ describe("waitForUrl", () => {
     await vi.advanceTimersByTimeAsync(30_000);
     expect(fetcher).toHaveBeenCalledTimes(2);
     expect(signal?.aborted).toBe(true);
-    expect(await result).toBeInstanceOf(Error);
+    expect(await result).toMatchObject({ message: expect.stringContaining("refused") });
     expect(vi.getTimerCount()).toBe(0);
   });
 
