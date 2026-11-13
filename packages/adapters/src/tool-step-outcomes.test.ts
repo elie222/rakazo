@@ -1,6 +1,6 @@
 import { appendToolCallSegment } from "@rakazo/core";
-import { describe, expect, it } from "vitest";
-import type { ReplyState } from "./run-context.js";
+import { describe, expect, it, vi } from "vitest";
+import type { ReplyState, RunContext } from "./run-context.js";
 import { redactBlocks } from "./run-messages.js";
 import { withReplyToolOutcomes } from "./run-progress.js";
 import { toolCompletionOutcome } from "./tool-completion-audit.js";
@@ -9,6 +9,7 @@ import {
   keepToolStepResult,
   keptToolArguments,
   keptToolResult,
+  saveLatestStepScreenshot,
   TOOL_CALL_TEXT_MAX_CHARS,
   TOOL_REPLY_RESULTS_MAX_CHARS,
 } from "./tool-step-calls.js";
@@ -231,5 +232,62 @@ describe("tool step outcomes", () => {
     ).toBe(false);
     expect(historyReplaysOutsideContent(reply("web_fetch", { arguments: "{}" }))).toBe(false);
     expect(historyReplaysOutsideContent([{ role: "user", content: "Hi" }])).toBe(false);
+  });
+
+  it("saves the reply's last screenshot as a hidden artifact and points its call at it", async () => {
+    const reply = {
+      toolStepCalls: new Map([
+        ["call-1", { arguments: "{}" }],
+        ["call-2", { arguments: "{}" }],
+      ]),
+      keptResultChars: 0,
+    } as unknown as ReplyState;
+    const shot = (byte: number) => ({
+      content: [
+        { type: "text", text: "computer observed" },
+        { type: "image", data: Buffer.from([byte]).toString("base64"), mimeType: "image/png" },
+      ],
+    });
+    keepToolStepResult(reply, { ...base, name: "computer_observe", result: shot(1) }, []);
+    keepToolStepResult(
+      reply,
+      { ...base, name: "computer_observe", executionId: "call-2", result: shot(2) },
+      [],
+    );
+    // Only the latest screenshot of the reply is kept.
+    expect(reply.latestScreenshot).toMatchObject({ executionId: "call-2", mimeType: "image/png" });
+    const create = vi.fn(async ({ data }: { data: { mimeType: string } }) => ({
+      id: "shot-1",
+      ...data,
+    }));
+    const put = vi.fn(async () => ({ id: "storage-1" }));
+    const ctx = {
+      deps: {
+        prisma: { artifact: { findFirst: vi.fn(async () => null), create } },
+        artifacts: { put, remove: vi.fn() },
+      },
+      run: { spaceId: "space-1", userId: "user-1" },
+      bot: { id: "bot-1" },
+      thread: { groupId: null },
+      runId: "run-1",
+      state: { reply },
+    } as unknown as RunContext;
+    await saveLatestStepScreenshot(ctx);
+    expect(put).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mimeType: "image/png;profile=step-screenshot",
+        bytes: new Uint8Array([2]),
+      }),
+      expect.anything(),
+    );
+    expect(create.mock.calls[0]![0].data).toMatchObject({
+      spaceId: "space-1",
+      botId: "bot-1",
+      runId: "run-1",
+      mimeType: "image/png;profile=step-screenshot",
+    });
+    expect(reply.toolStepCalls.get("call-2")).toMatchObject({ image: { artifactId: "shot-1" } });
+    expect(reply.toolStepCalls.get("call-1")?.image).toBeUndefined();
+    expect(reply.latestScreenshot).toBeUndefined();
   });
 });

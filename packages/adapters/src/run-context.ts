@@ -9,7 +9,12 @@ import type {
   SemanticMemoryProvider,
   WebProvider,
 } from "@rakazo/adapter-kit";
-import type { ComputerMode, MessageBlock, ReplyMode } from "@rakazo/contracts";
+import type {
+  AttachmentImageMimeType,
+  ComputerMode,
+  MessageBlock,
+  ReplyMode,
+} from "@rakazo/contracts";
 import type { ToolStepCall, ToolStepOutcome } from "@rakazo/core";
 import { createStreamingRedactor } from "@rakazo/core";
 import { toolEffectIdempotencyKey } from "@rakazo/core/node/approval-effect-key";
@@ -132,6 +137,8 @@ export interface ReplyState {
   toolStepCalls: Map<string, ToolStepCall>;
   /** Characters of results the reply has kept so far, against its budget. */
   keptResultChars: number;
+  /** The last screenshot a kept call returned, saved with the reply for its later turns. */
+  latestScreenshot?: { executionId: string; mimeType: AttachmentImageMimeType; data: Uint8Array };
   pendingProgress: string;
   lastProgressAt: number;
   hasStreamedText: boolean;

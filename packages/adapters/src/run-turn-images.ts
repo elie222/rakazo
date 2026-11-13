@@ -1,6 +1,10 @@
 import type { AgentRunRequest, AgentSteeringMessage } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
-import { ATTACHMENT_MAX_BYTES, isAttachmentImageMimeType } from "@rakazo/contracts";
+import {
+  ATTACHMENT_MAX_BYTES,
+  isAttachmentImageMimeType,
+  storedImageMimeType,
+} from "@rakazo/contracts";
 import { blocksToAgentHistoryText } from "@rakazo/core";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { loadReplyContext } from "./reply-context.js";
@@ -443,7 +447,9 @@ export async function withLatestStepScreenshot(
       where: { id: artifactId, spaceId: context.spaceId },
       select: { storageKey: true, mimeType: true, size: true },
     });
-    if (!row || !isAttachmentImageMimeType(row.mimeType)) return history;
+    // A screenshot the reply kept, or an image attachment (seeded fixtures use one).
+    const mimeType = row && storedImageMimeType(row.mimeType);
+    if (!row || !mimeType) return history;
     const declared = declaredArtifactBytes(row.size);
     if (declared !== undefined && declared > maxBytes) return history;
     let data: Uint8Array;
@@ -454,11 +460,7 @@ export async function withLatestStepScreenshot(
       return history;
     }
     if (data.byteLength > maxBytes) return history;
-    const image = {
-      name: "screenshot",
-      mimeType: row.mimeType as "image/jpeg" | "image/png" | "image/webp" | "image/gif",
-      data,
-    };
+    const image = { name: "screenshot", mimeType, data };
     return history.map((item, at) => (at === index ? { ...item, images: [image] } : item));
   }
   return history;

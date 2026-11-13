@@ -8,7 +8,6 @@ import {
   attachmentMaxCount,
   attachmentSizeLabel,
   isAttachmentAudioMimeType,
-  MCP_APP_MIME_TYPE,
 } from "@rakazo/contracts";
 import {
   AttachmentValidationError,
@@ -19,7 +18,13 @@ import {
   validateAttachmentMimeType,
 } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
-import { IsolationError, isRecordNotFound, Prisma, withResolvedArtifactVersion } from "@rakazo/db";
+import {
+  HIDDEN_ARTIFACT_MIME_TYPES,
+  IsolationError,
+  isRecordNotFound,
+  Prisma,
+  withResolvedArtifactVersion,
+} from "@rakazo/db";
 
 export async function createOwnedArtifact(
   deps: {
@@ -410,7 +415,7 @@ export async function listSpaceArtifacts(
     WITH scoped AS (
       SELECT * FROM "artifacts"
       WHERE "spaceId" = ${actor.spaceId} ${botFilter}
-        AND "createdAt" <= ${asOf} AND "mimeType" <> ${MCP_APP_MIME_TYPE}
+        AND "createdAt" <= ${asOf} AND "mimeType" NOT IN (${Prisma.join(HIDDEN_ARTIFACT_MIME_TYPES)})
     ),
     latest AS (
       SELECT DISTINCT ON (COALESCE("rootArtifactId", id))

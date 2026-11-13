@@ -3,6 +3,7 @@ import type { ChatAlert, MessageBlock, ProductEvent } from "@rakazo/contracts";
 import {
   AnalyticsTrigger,
   hasThinkingActivityMarker,
+  STEP_SCREENSHOT_MIME_TYPES,
   ThreadActivityPayloadSchema,
 } from "@rakazo/contracts";
 import {
@@ -137,6 +138,8 @@ export interface ClearThreadInput {
 export interface ClearThreadResult {
   event: ProductEvent;
   cancelledRunIds: string[];
+  /** Stored files of the cleared replies' kept screenshots, for the caller to remove. */
+  removedStorageKeys: string[];
   historyCompactionGeneration: number;
 }
 
@@ -310,6 +313,22 @@ export async function clearThread(
     const cleared = input.groupId
       ? { threadId: input.threadId }
       : { OR: [{ threadId: input.threadId }, { thread: helperThreads }] };
+    // A reply's kept screenshots belong to its messages, so they go with them.
+    const clearedRuns = await tx.message.findMany({
+      where: { ...cleared, runId: { not: null } },
+      select: { runId: true },
+      distinct: ["runId"],
+    });
+    const screenshots = await tx.artifact.findMany({
+      where: {
+        spaceId: input.spaceId,
+        mimeType: { in: STEP_SCREENSHOT_MIME_TYPES },
+        runId: { in: clearedRuns.flatMap((message) => (message.runId ? [message.runId] : [])) },
+      },
+      select: { id: true, storageKey: true },
+    });
+    if (screenshots.length > 0)
+      await tx.artifact.deleteMany({ where: { id: { in: screenshots.map((row) => row.id) } } });
     await tx.message.deleteMany({ where: cleared });
     await tx.event.deleteMany({ where: cleared });
     if (!input.groupId) {
@@ -357,6 +376,7 @@ export async function clearThread(
       userId: thread.userId,
       cancelledRunIds: runIds,
       historyCompactionGeneration: thread.historyCompactionGeneration,
+      removedStorageKeys: screenshots.map((row) => row.storageKey),
     };
   }, THREAD_LOCK_TRANSACTION_OPTIONS);
   await notifyRealtime(realtime, committed.event.threadId, committed.event.seq);
@@ -386,6 +406,7 @@ export async function clearThread(
     event: mapProductEvent(committed.event),
     cancelledRunIds: committed.cancelledRunIds,
     historyCompactionGeneration: committed.historyCompactionGeneration,
+    removedStorageKeys: committed.removedStorageKeys,
   };
 }
 

@@ -1,10 +1,13 @@
 import type { AgentRunRequest, AgentToolCompletion } from "@rakazo/adapter-kit";
+import { storedImageMimeType } from "@rakazo/contracts";
 import type { ToolStepCall } from "@rakazo/core";
 import { redactSecrets, toolResultTaintsRun } from "@rakazo/core";
+import { getLogger } from "@rakazo/logging";
 import { redactToolArgsForReview } from "./auto-review.js";
 import { sanitizeConnectorError } from "./connector-safety.js";
 import { sanitizeSensitiveText } from "./pi-runtime-errors.js";
-import type { ReplyState } from "./run-context.js";
+import type { ReplyState, RunContext } from "./run-context.js";
+import { storeStepScreenshot } from "./thread-artifacts.js";
 
 /**
  * The most of one call's result, or of any one text in its arguments, kept for later turns. The
@@ -95,7 +98,7 @@ export function keptToolResult(
 
 /** Adds a finished call's result to the call its step keeps, within the reply's result budget. */
 export function keepToolStepResult(
-  reply: Pick<ReplyState, "toolStepCalls" | "keptResultChars">,
+  reply: Pick<ReplyState, "toolStepCalls" | "keptResultChars" | "latestScreenshot">,
   completion: AgentToolCompletion,
   secrets: string[],
 ): void {
@@ -109,6 +112,8 @@ export function keepToolStepResult(
       ? keptToolResult(completion, secrets, Math.min(TOOL_CALL_TEXT_MAX_CHARS, left))
       : undefined;
   if (result !== undefined) reply.keptResultChars += result.length;
+  const image = screenshotOf(completion);
+  if (image) reply.latestScreenshot = { executionId: completion.executionId, ...image };
   reply.toolStepCalls.set(completion.executionId, {
     ...call,
     ...(result === undefined ? {} : { result }),
@@ -134,4 +139,50 @@ export function historyReplaysOutsideContent(history: AgentRunRequest["history"]
         ),
     ),
   );
+}
+
+/** The image a call returned (a screenshot), when it is one this product stores. */
+function screenshotOf(completion: AgentToolCompletion) {
+  if (completion.paused || completion.error !== undefined || SECRET_TOOL.test(completion.name))
+    return undefined;
+  const content = (completion.result as { content?: unknown } | undefined)?.content;
+  if (!Array.isArray(content)) return undefined;
+  const part = content.findLast((item: { type?: unknown }) => item?.type === "image") as
+    | { data?: unknown; mimeType?: unknown }
+    | undefined;
+  const mimeType =
+    typeof part?.mimeType === "string" ? storedImageMimeType(part.mimeType) : undefined;
+  if (!mimeType || typeof part?.data !== "string") return undefined;
+  return { mimeType, data: new Uint8Array(Buffer.from(part.data, "base64")) };
+}
+
+/**
+ * Saves the screenshot the reply's last image-returning call took, and points that call at it, so
+ * a later turn replays the reply with the image as the bot saw it. Saved once, with the reply, so
+ * the stored reply (and its replay) never changes afterwards. A failed save leaves the call as
+ * `[image not kept]`, as before.
+ */
+export async function saveLatestStepScreenshot(ctx: RunContext): Promise<void> {
+  const { reply } = ctx.state;
+  const shot = reply.latestScreenshot;
+  reply.latestScreenshot = undefined;
+  const call = shot && reply.toolStepCalls.get(shot.executionId);
+  if (!shot || !call || !ctx.deps.artifacts) return;
+  try {
+    const artifactId = await storeStepScreenshot(
+      { prisma: ctx.deps.prisma, artifacts: ctx.deps.artifacts },
+      {
+        spaceId: ctx.run.spaceId,
+        userId: ctx.run.userId,
+        botId: ctx.bot.id,
+        groupId: ctx.thread.groupId ?? undefined,
+        runId: ctx.runId,
+        operationId: `${ctx.runId}:${shot.executionId}:screenshot`,
+        image: shot,
+      },
+    );
+    reply.toolStepCalls.set(shot.executionId, { ...call, image: { artifactId } });
+  } catch (error) {
+    getLogger().error("step screenshot save", error);
+  }
 }

@@ -110,7 +110,11 @@ import {
   toolResultFingerprint,
 } from "./tool-loop.js";
 import type { ToolRefusal } from "./tool-refusal.js";
-import { keepToolStepResult, keptToolArguments } from "./tool-step-calls.js";
+import {
+  keepToolStepResult,
+  keptToolArguments,
+  saveLatestStepScreenshot,
+} from "./tool-step-calls.js";
 import {
   assistantTurnSeparator,
   botMessageOutcomeFromMidTurn,
@@ -631,6 +635,7 @@ async function stopStuckToolLoop(ctx: RunContext, toolName: string, refusal?: To
   ctx.runtimeAbortController.abort();
   ctx.tools.approvedReplays.assertDrained();
   flushPendingTools(reply);
+  await saveLatestStepScreenshot(ctx);
   // Calls that had not finished when the loop was stopped never ran to the end.
   reply.messageSegments = withReplyToolOutcomes(reply, "stopped");
   if (!(await renewRunLease(deps, runId, workerId, fence))) return;
@@ -883,6 +888,7 @@ export async function completeRun(ctx: RunContext) {
     reply.currentTextSegment = reply.assembled;
   }
   flushPendingTools(reply);
+  await saveLatestStepScreenshot(ctx);
   reply.messageSegments = withReplyToolOutcomes(reply);
   // Silent-allowed runs can choose an explicit NO_RESPONSE or finish empty.
   // Other runs still drop a stray sentinel at the edges of a real reply.

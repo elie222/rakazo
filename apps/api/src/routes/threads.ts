@@ -1,5 +1,5 @@
 import { ORPCError } from "@orpc/server";
-import { runContinueJob, runJobKey } from "@rakazo/adapter-kit";
+import { createAdapterContext, runContinueJob, runJobKey } from "@rakazo/adapter-kit";
 import { settleCallRequest } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import {
@@ -322,14 +322,25 @@ export function threadsRoutes(ctx: RouterContext) {
         const target = await resolveThreadTarget(deps.prisma, context.actor, input);
         const contextBotId = target.kind === "bot" ? target.botId : target.memberBotIds[0];
         if (!contextBotId) throw new IsolationError();
-        const { cancelledRunIds, historyCompactionGeneration } = await deps.events.clearThread({
-          spaceId: context.actor.spaceId,
-          threadId: target.threadId,
-          botId: contextBotId,
-          ...(target.kind === "group" ? { groupId: target.groupId } : {}),
-        });
+        const { cancelledRunIds, historyCompactionGeneration, removedStorageKeys } =
+          await deps.events.clearThread({
+            spaceId: context.actor.spaceId,
+            threadId: target.threadId,
+            botId: contextBotId,
+            ...(target.kind === "group" ? { groupId: target.groupId } : {}),
+          });
         await Promise.all(
           cancelledRunIds.map((runId) => deps.jobs.cancel(runJobKey(runId)).catch(() => undefined)),
+        );
+        const removal = createAdapterContext(
+          context.actor,
+          contextBotId,
+          `thread-clear:${target.threadId}`,
+        );
+        await Promise.all(
+          removedStorageKeys.map((storageKey) =>
+            deps.artifacts.remove(storageKey, removal).catch(() => undefined),
+          ),
         );
         await purgeClearedThreadMemory(deps, context.actor, target, historyCompactionGeneration);
         return { ok: true as const };
