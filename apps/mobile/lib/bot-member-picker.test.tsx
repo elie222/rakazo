@@ -330,3 +330,22 @@ it("ignores an older refresh after a deletion refresh completes", async () => {
   await act(async () => resolveOld(bots));
   expect(switches().map((input) => input.getAttribute("aria-label"))).toEqual(["Writer"]);
 });
+
+it("shows refreshed members while collapsed and adopts an unedited server rename", async () => {
+  await act(async () => root.render(<GroupSettings />));
+  rpc.mockImplementation(async (procedure: string) =>
+    procedure === "groups/list"
+      ? [{ ...group, name: "Renamed", members: bots.map((bot) => ({ botId: bot.id })) }]
+      : procedure === "bots/list"
+        ? bots
+        : [],
+  );
+  await act(async () => notifyArchivedChatsChanged());
+  expect(switches().map((input) => input.getAttribute("aria-label"))).toEqual([
+    "Researcher",
+    "Writer",
+    "Runner",
+  ]);
+  await click("Save");
+  expect(rpc).not.toHaveBeenCalledWith("groups/update", expect.anything());
+});

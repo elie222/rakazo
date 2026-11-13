@@ -44,10 +44,11 @@ export default function GroupSettingsScreen() {
         ]);
         const previousMembers = new Set(baseline?.members.map((member) => member.botId));
         const initial = baseline === null;
+        const previousName = baseline?.name;
         baseline = nextGroup;
         setError(null);
         setGroup(nextGroup);
-        if (initial) setName(nextGroup.name);
+        setName((previous) => (initial || previous === previousName ? nextGroup.name : previous));
         setSelected((previous) =>
           initial
             ? nextGroup.members.map((member) => member.botId)
