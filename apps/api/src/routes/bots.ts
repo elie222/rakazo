@@ -731,6 +731,8 @@ export function botsRoutes(ctx: RouterContext) {
           });
           return updated;
         } catch (error) {
+          // Removing the bot mid-switch also deletes its dedicated computer.
+          if (isRecordNotFound(error)) throw new ORPCError("NOT_FOUND");
           throw mapSpaceLifecycleError(error);
         } finally {
           await deps.prisma.bot.updateMany({
