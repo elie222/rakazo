@@ -404,7 +404,9 @@ function LayoutContent() {
                           {/* Sheets and modals cover the window, so the chat list is not beside them. */}
                           {options.presentation && options.presentation !== "card" ? (
                             <InboxBesideContext.Provider value={false}>
-                              <CallKeyboardContext.Provider value={false}>
+                              <CallKeyboardContext.Provider
+                                value={Platform.OS === "ios" ? false : call}
+                              >
                                 {children}
                               </CallKeyboardContext.Provider>
                             </InboxBesideContext.Provider>
