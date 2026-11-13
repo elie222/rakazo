@@ -560,6 +560,26 @@ it("hands back a teaching lease the server granted when the screen closes", asyn
   );
 });
 
+it("checks in only while the page is visible, so a forgotten tab lets control lapse", async () => {
+  const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+  try {
+    const { heartbeat, held } = await renderTakingControl();
+    await act(async () => {
+      state.commitComputer(held);
+      state.setComputerOpen(true);
+    });
+    expect(heartbeat).not.toHaveBeenCalled();
+
+    visibility.mockReturnValue("visible");
+    await act(async () => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    expect(heartbeat).toHaveBeenCalledWith({ botId: "bot-1" });
+  } finally {
+    visibility.mockRestore();
+  }
+});
+
 it("hands back whatever control the person holds when Hand back is pressed", async () => {
   const { release, takeControl, handBack } = await renderTakingControl();
   await act(async () => {

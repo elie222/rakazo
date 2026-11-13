@@ -732,10 +732,10 @@ export function useComputerControls({
     const heartbeatBotId = computerBot?.id ?? active?.id;
     if ((panel !== "computer" && !computerOpen) || !heartbeatBotId || computer?.state !== "running")
       return;
-    // A screen left open in a hidden window must not keep the computer awake, but control lasts
-    // while the page checks in, so the person holding it keeps it from another tab.
+    // Only a visible page checks in: a forgotten tab neither keeps the computer awake nor holds
+    // control, which lapses about a minute and a half after it was hidden.
     const ping = () => {
-      if (!hasControl && document.visibilityState !== "visible") return;
+      if (document.visibilityState !== "visible") return;
       void rpc.computer.heartbeat({ botId: heartbeatBotId }).catch((error) => {
         if (!isRetryableError(error)) window.clearInterval(timer);
       });
@@ -745,7 +745,12 @@ export function useComputerControls({
       hasControl ? COMPUTER_CONTROL_HEARTBEAT_MS : COMPUTER_HEARTBEAT_MS,
     );
     ping();
-    return () => window.clearInterval(timer);
+    // Coming back checks in at once, so a short visit elsewhere keeps control.
+    document.addEventListener("visibilitychange", ping);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", ping);
+    };
   }, [panel, computerOpen, computerBot?.id, active?.id, computer?.state, hasControl]);
 
   // Control ends with the screen: closing it, switching chats, or leaving the page hands it back.

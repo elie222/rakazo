@@ -409,15 +409,8 @@ export async function touchRunningComputer(
     controlLeaseExpiresAt?: Date | null;
   },
 ): Promise<void> {
-  const activeControl = hasActiveComputerControl({
-    controlHolder: computer.controlHolder ?? "none",
-    controlLeaseId: computer.controlLeaseId ?? null,
-    controlLeaseExpiresAt: computer.controlLeaseExpiresAt ?? null,
-  });
-  if (
-    activeLimitReached(deps.sandbox, toComputerRef(computer), computer.runningSince) &&
-    !activeControl
-  ) {
+  // A person's control keeps an idle computer up, but never past its lifetime limit.
+  if (activeLimitReached(deps.sandbox, toComputerRef(computer), computer.runningSince)) {
     scheduleComputerSleep(deps.jobs, computer.id, new Date(Date.now()));
     return;
   }
@@ -478,16 +471,14 @@ export async function sleepComputerIfIdle(
   }
   // Past the lifetime limit only a run executing right now, or a coding agent CLI still writing
   // its session, holds the computer up. Waiting runs and other background work start it again
-  // when they next need it. A user in control is left alone: control leases expire on their
-  // own, and that release resumes the waiting run.
-  // Otherwise a run waiting for takeover holds an unbilled computer for TAKEOVER_IDLE_GRACE_MS.
-  // Once its organization has spent this period's allowance, nothing but a user still in control,
-  // not even a working coding agent, holds the computer up.
+  // when they next need it. Otherwise a run waiting for takeover holds an unbilled computer for
+  // TAKEOVER_IDLE_GRACE_MS. Once its organization has spent this period's allowance, nothing holds
+  // the computer up. A person's control holds an idle computer up, but never past those limits;
+  // stopping the computer then ends the control and any recording under it.
   const activeControl = hasActiveComputerControl(computer);
-  const allowanceUsed = !activeControl && (await sandboxAllowanceUsedUp(deps, computer));
+  const allowanceUsed = await sandboxAllowanceUsedUp(deps, computer);
   const limitReached =
-    allowanceUsed ||
-    (activeLimitReached(deps.sandbox, ref, computer.runningSince) && !activeControl);
+    allowanceUsed || activeLimitReached(deps.sandbox, ref, computer.runningSince);
   const activeStatuses = limitReached
     ? EXECUTING_RUN_STATUSES
     : activeControl
