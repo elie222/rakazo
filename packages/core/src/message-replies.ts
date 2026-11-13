@@ -1,5 +1,6 @@
 import type { MessageAuthor, MessageBlock, ReplyPreview } from "@rakazo/contracts";
 import { MessageAuthorSchema, ReplyPreviewSchema } from "@rakazo/contracts";
+import { isQuestionAskBlock } from "./ask-replies.js";
 import { displayName } from "./display-name.js";
 import { plainTextFromMarkdown } from "./markdown-plain.js";
 import { messageReaction } from "./message-reactions.js";
@@ -152,6 +153,11 @@ export function previewMessageText(
     .join(" ")
     .trim();
   if (text) return text;
+  for (const block of message.blocks) {
+    if (block.kind === "ask" && isQuestionAskBlock(block) && block.text.trim()) {
+      return block.text.trim();
+    }
+  }
   const attachment = replyAttachment(message.blocks);
   if (attachment)
     return attachment.kind === "image" ? labels.photo : attachment.name || labels.attachment;
