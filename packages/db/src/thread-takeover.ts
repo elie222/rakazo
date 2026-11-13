@@ -168,7 +168,6 @@ export async function answerTakeoverRequest(
   return true;
 }
 
-/** Clear a person's control of a computer, if this lease still holds it, and say so in chat. */
 /**
  * Clear a person's control of a computer, if this lease still holds it, and say so in chat. A
  * teaching recording made under the lease ends with it, saved as a draft.
