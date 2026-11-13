@@ -1,7 +1,7 @@
 import { ph, t } from "@lingui/core/macro";
 import { Alert } from "react-native";
 import type { ApiRequestContext } from "./api";
-import { rpc } from "./api";
+import { captureApiRequestContext, rpc } from "./api";
 import { notifyArchivedChatsChanged } from "./archived-chats";
 import { notifyConversationCleared } from "./conversation-cleared";
 import { removeFromSearchInbox } from "./search-inbox";
@@ -9,15 +9,21 @@ import { errorText } from "./user-error";
 
 export async function confirmDeleteBot(
   bot: { id: string; name: string },
-  onDeleted: (affectedGroupIds: readonly string[]) => void,
+  onDeleted: (removedGroupIds: readonly string[]) => void,
   // False once the screen that asked has gone, so a late failure doesn't alert elsewhere.
   current: () => boolean = () => true,
   requestContext?: ApiRequestContext,
   finished: () => void = () => {},
 ) {
+  try {
+    requestContext ??= await captureApiRequestContext();
+  } catch (error) {
+    if (current()) Alert.alert(t`Could not delete bot`, errorText(error, t`Try again.`));
+    finished();
+    return;
+  }
   // Native alerts cannot update their message: resolve the preview before opening one.
   let groupWarning = "";
-  let affectedGroupIds: string[] = [];
   try {
     const groups = requestContext
       ? await rpc(
@@ -26,7 +32,6 @@ export async function confirmDeleteBot(
           { requestContext, skipSpaceAuthRecovery: true },
         )
       : await rpc("bots/removePreview", { botId: bot.id });
-    affectedGroupIds = groups.map((group) => group.id);
     const names = groups.map((group) => group.name).join(", ");
     if (groups.length === 1) {
       groupWarning = t`The group ${ph({ names })} will be deleted too, including its messages, files, and pages.`;
@@ -45,17 +50,13 @@ export async function confirmDeleteBot(
   const remove = async (deleteMemories: boolean) => {
     try {
       if (!current()) return;
-      if (requestContext) {
-        await rpc(
-          "bots/remove",
-          { botId: bot.id, deleteMemories },
-          { requestContext, skipSpaceAuthRecovery: true },
-        );
-      } else {
-        await rpc("bots/remove", { botId: bot.id, deleteMemories });
-      }
+      const result = await rpc(
+        "bots/remove",
+        { botId: bot.id, deleteMemories },
+        { requestContext, skipSpaceAuthRecovery: true },
+      );
       removeFromSearchInbox(bot.id);
-      onDeleted(affectedGroupIds);
+      onDeleted(result.removedGroupIds ?? []);
     } catch (error) {
       if (current()) Alert.alert(t`Could not delete bot`, errorText(error, t`Try again.`));
     } finally {

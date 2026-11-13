@@ -195,7 +195,10 @@ export function useInboxChatActions({
         // Capture fails only when the session or server changed; the delete is dropped quietly.
         let requestContext: ApiRequestContext | undefined;
         try {
-          requestContext = await chatRequestContext(chat.spaceId);
+          requestContext =
+            kind === "bot"
+              ? await captureApiRequestContext(chat.spaceId ?? selectedSpaceId())
+              : await chatRequestContext(chat.spaceId);
         } catch {
           confirmation?.finish();
           return;

@@ -31,9 +31,9 @@ vi.mock("./api-server", () => ({}));
 vi.mock("./api-auth", () => ({}));
 vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
-  captureApiRequestContext: vi.fn(async () => ({
+  captureApiRequestContext: vi.fn(async (spaceId = session.space) => ({
     apiBase: "",
-    headers: { authorization: "Bearer token", "x-rakazo-space-id": session.space },
+    headers: { authorization: "Bearer token", "x-rakazo-space-id": spaceId },
     sessionGeneration: session.generation,
   })),
   currentApiBase: () => "",
@@ -287,7 +287,11 @@ it.each([
     expect(h.loadBots).not.toHaveBeenCalled();
     expect(vi.mocked(confirm).mock.calls[0]![0]).toEqual({ id: "x", name: "Ada" });
     // A chat in the selected space is deleted with the session's own space.
-    expect(vi.mocked(confirm).mock.calls[0]![kind === "bot" ? 3 : 2]).toBeUndefined();
+    if (kind === "bot")
+      expect(vi.mocked(confirm).mock.calls[0]![3]).toMatchObject({
+        headers: { "x-rakazo-space-id": "space-a" },
+      });
+    else expect(vi.mocked(confirm).mock.calls[0]![2]).toBeUndefined();
     vi.mocked(confirm).mock.calls[0]![1]!([]);
     expect(h.loadBots).toHaveBeenCalledTimes(1);
   },

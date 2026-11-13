@@ -91,7 +91,10 @@ vi.mock("expo-router", () => ({
 vi.mock("./api-server", () => ({}));
 vi.mock("./api-auth", () => ({}));
 vi.mock("./api-live", () => ({}));
-vi.mock("./api", () => ({ rpc: mocks.rpc }));
+vi.mock("./api", () => ({
+  rpc: mocks.rpc,
+  captureApiRequestContext: async () => ({ apiBase: "https://example.test", headers: {} }),
+}));
 vi.mock("./native", () => ({
   native: { tertiaryLabel: "tertiary" },
   useThemedStyles: (factory: () => unknown) => useMemo(factory, [factory]),
@@ -369,6 +372,7 @@ describe("bot profile menu archive notifications", () => {
     );
     action("Delete…").onPress();
     action("Delete…").onPress();
+    await flush();
     expect(mocks.rpc).toHaveBeenCalledTimes(1);
     finish([]);
     await flush();
@@ -397,20 +401,24 @@ describe("bot profile menu archive notifications", () => {
       const action = renderActions();
       let finish!: () => void;
       mocks.rpc
-        .mockResolvedValueOnce([{ id: "removed-group", name: "Fixture group" }])
+        .mockResolvedValueOnce([{ id: "retained-group", name: "Outdated preview" }])
         .mockImplementationOnce(
           () =>
-            new Promise<void>((resolve) => {
-              finish = resolve;
+            new Promise((resolve) => {
+              finish = () => resolve({ ok: true, removedGroupIds: ["removed-group"] });
             }),
         );
       action("Delete…").onPress();
       await flush();
       alertButton(0, "Keep memories").onPress!();
-      expect(mocks.rpc).toHaveBeenLastCalledWith("bots/remove", {
-        botId: "bot-b",
-        deleteMemories: false,
-      });
+      expect(mocks.rpc).toHaveBeenLastCalledWith(
+        "bots/remove",
+        {
+          botId: "bot-b",
+          deleteMemories: false,
+        },
+        expect.objectContaining({ skipSpaceAuthRecovery: true }),
+      );
       await act(async () => root.render(null));
       mocks.getCurrentRoute.mockReturnValue(route);
       await act(async () => finish());
@@ -433,10 +441,14 @@ describe("bot profile menu archive notifications", () => {
     expect(listener).not.toHaveBeenCalled();
     alertButton(0, "Keep memories").onPress!();
     await flush();
-    expect(mocks.rpc).toHaveBeenCalledWith("bots/remove", {
-      botId: "bot-b",
-      deleteMemories: false,
-    });
+    expect(mocks.rpc).toHaveBeenCalledWith(
+      "bots/remove",
+      {
+        botId: "bot-b",
+        deleteMemories: false,
+      },
+      expect.objectContaining({ skipSpaceAuthRecovery: true }),
+    );
     expect(listener).toHaveBeenCalledOnce();
     expect(left()).toBe(true);
     stop();

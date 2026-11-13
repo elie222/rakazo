@@ -1,14 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { rpc, alert, removeFromSearchInbox } = vi.hoisted(() => ({
+const { rpc, alert, removeFromSearchInbox, captureApiRequestContext } = vi.hoisted(() => ({
   rpc: vi.fn(),
+  captureApiRequestContext: vi.fn(),
   alert: vi.fn(),
   removeFromSearchInbox: vi.fn(),
 }));
 vi.mock("./api-server", () => ({}));
 vi.mock("./api-auth", () => ({}));
 vi.mock("./api-live", () => ({}));
-vi.mock("./api", () => ({ rpc }));
+vi.mock("./api", () => ({ rpc, captureApiRequestContext }));
 vi.mock("./search-inbox", () => ({ removeFromSearchInbox }));
 vi.mock("react-native", () => ({ Alert: { alert } }));
 vi.mock("./user-error", () => ({ errorText: () => "Try again." }));
@@ -18,6 +19,10 @@ import { confirmDeleteBot, confirmDeleteGroup, restoreArchivedBot } from "./bot-
 beforeEach(() => {
   vi.resetAllMocks();
   rpc.mockResolvedValue([]);
+  captureApiRequestContext.mockResolvedValue({
+    apiBase: "https://example.test",
+    headers: { "x-rakazo-space-id": "space-a" },
+  });
 });
 describe("archived bot lifecycle", () => {
   it("waits for restore and propagates failure instead of opening a writable chat", async () => {
@@ -29,7 +34,11 @@ describe("archived bot lifecycle", () => {
   });
   it("cancel never removes a bot, and both deletion choices are destructive", async () => {
     await confirmDeleteBot({ id: "bot-fixture", name: "Fixture" }, vi.fn());
-    expect(rpc).toHaveBeenCalledExactlyOnceWith("bots/removePreview", { botId: "bot-fixture" });
+    expect(rpc).toHaveBeenCalledExactlyOnceWith(
+      "bots/removePreview",
+      { botId: "bot-fixture" },
+      expect.objectContaining({ skipSpaceAuthRecovery: true }),
+    );
     const buttons = alert.mock.calls[0]![2];
     expect(buttons.map((button: { style: string }) => button.style)).toEqual([
       "cancel",
@@ -43,10 +52,14 @@ describe("archived bot lifecycle", () => {
     await confirmDeleteBot({ id: "bot-fixture", name: "Fixture" }, deleted);
     await alert.mock.calls[0]![2][1].onPress();
     await Promise.resolve();
-    expect(rpc).toHaveBeenCalledWith("bots/remove", {
-      botId: "bot-fixture",
-      deleteMemories: false,
-    });
+    expect(rpc).toHaveBeenCalledWith(
+      "bots/remove",
+      {
+        botId: "bot-fixture",
+        deleteMemories: false,
+      },
+      expect.objectContaining({ skipSpaceAuthRecovery: true }),
+    );
     expect(removeFromSearchInbox).toHaveBeenCalledWith("bot-fixture");
     expect(deleted).toHaveBeenCalledOnce();
   });
@@ -130,7 +143,11 @@ describe("bot deletion preview", () => {
     rpc.mockResolvedValueOnce(groups);
     await confirmDeleteBot({ id: "bot-fixture", name: "Fixture" }, vi.fn());
     expect(alert.mock.calls[0]![1]).toContain(warning);
-    expect(rpc).toHaveBeenCalledExactlyOnceWith("bots/removePreview", { botId: "bot-fixture" });
+    expect(rpc).toHaveBeenCalledExactlyOnceWith(
+      "bots/removePreview",
+      { botId: "bot-fixture" },
+      expect.objectContaining({ skipSpaceAuthRecovery: true }),
+    );
   });
 
   it("leaves the description unchanged when no groups are removed", async () => {
@@ -150,6 +167,7 @@ describe("bot deletion preview", () => {
     );
     const pending = confirmDeleteBot({ id: "bot-fixture", name: "Fixture" }, vi.fn());
     expect(alert).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(rpc).toHaveBeenCalledOnce());
     resolve([]);
     await pending;
     expect(alert).toHaveBeenCalledOnce();
@@ -165,10 +183,14 @@ describe("bot deletion preview", () => {
     );
     alert.mock.calls[0]![2][2].onPress();
     await vi.waitFor(() => expect(deleted).toHaveBeenCalledOnce());
-    expect(rpc).toHaveBeenLastCalledWith("bots/remove", {
-      botId: "bot-fixture",
-      deleteMemories: true,
-    });
+    expect(rpc).toHaveBeenLastCalledWith(
+      "bots/remove",
+      {
+        botId: "bot-fixture",
+        deleteMemories: true,
+      },
+      expect.objectContaining({ skipSpaceAuthRecovery: true }),
+    );
   });
 
   it.each([false, true])(
@@ -187,6 +209,7 @@ describe("bot deletion preview", () => {
         vi.fn(),
         () => current,
       );
+      await vi.waitFor(() => expect(rpc).toHaveBeenCalledOnce());
       current = false;
       finish();
       await pending;
@@ -215,3 +238,64 @@ it.each(["cancel", "dismiss", "success", "failure", "stale"] as const)(
     await vi.waitFor(() => expect(finished).toHaveBeenCalledOnce());
   },
 );
+
+it("pins default preview and deletion to the initial Space despite selection changes", async () => {
+  const context = { apiBase: "https://example.test", headers: { "x-rakazo-space-id": "space-a" } };
+  captureApiRequestContext.mockResolvedValueOnce(context);
+  let finish!: (groups: unknown[]) => void;
+  rpc.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const pending = confirmDeleteBot({ id: "fixture", name: "Fixture" }, vi.fn());
+  await vi.waitFor(() => expect(rpc).toHaveBeenCalledOnce());
+  captureApiRequestContext.mockResolvedValue({
+    ...context,
+    headers: { "x-rakazo-space-id": "space-b" },
+  });
+  finish([]);
+  await pending;
+  alert.mock.calls[0]![2][1].onPress();
+  await vi.waitFor(() => expect(rpc).toHaveBeenCalledTimes(2));
+  expect(captureApiRequestContext).toHaveBeenCalledOnce();
+  expect(rpc.mock.calls.every((call) => call[2]?.requestContext === context)).toBe(true);
+});
+
+it("does not offer deletion when initial context capture fails", async () => {
+  captureApiRequestContext.mockRejectedValueOnce(new Error("session changed"));
+  const finished = vi.fn();
+  await confirmDeleteBot(
+    { id: "fixture", name: "Fixture" },
+    vi.fn(),
+    () => true,
+    undefined,
+    finished,
+  );
+  expect(rpc).not.toHaveBeenCalled();
+  expect(finished).toHaveBeenCalledOnce();
+  expect(alert.mock.calls.some((call) => call[0] === "Delete Fixture?")).toBe(false);
+});
+
+it.each(["failed", "changed"] as const)(
+  "reports actual removed groups when the preview %s",
+  async (preview) => {
+    const deleted = vi.fn();
+    if (preview === "failed") rpc.mockRejectedValueOnce(new Error("offline"));
+    else rpc.mockResolvedValueOnce([{ id: "retained-group", name: "Retained" }]);
+    rpc.mockResolvedValueOnce({ ok: true, removedGroupIds: ["actually-removed"] });
+    await confirmDeleteBot({ id: "fixture", name: "Fixture" }, deleted);
+    alert.mock.calls[0]![2][1].onPress();
+    await vi.waitFor(() => expect(deleted).toHaveBeenCalledWith(["actually-removed"]));
+  },
+);
+
+it("does not treat an old server's preview as a deletion result", async () => {
+  const deleted = vi.fn();
+  rpc.mockResolvedValueOnce([{ id: "preview-group", name: "Preview" }]);
+  rpc.mockResolvedValueOnce({ ok: true });
+  await confirmDeleteBot({ id: "fixture", name: "Fixture" }, deleted);
+  alert.mock.calls[0]![2][1].onPress();
+  await vi.waitFor(() => expect(deleted).toHaveBeenCalledWith([]));
+});
