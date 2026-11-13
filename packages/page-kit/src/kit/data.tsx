@@ -312,7 +312,7 @@ function cellText(cell: TableCell): string {
   }
   if (isValidElement(cell)) {
     const children = (cell.props as { children?: unknown }).children;
-    return typeof children === "string" || typeof children === "number" ? String(children) : "";
+    return cellText(children as TableCell);
   }
   return "";
 }
