@@ -9,7 +9,7 @@ import {
   TemporarilyUnavailableError,
   TooManyRequestsError,
 } from "@modelcontextprotocol/sdk/server/auth/errors.js";
-import { McpError } from "@modelcontextprotocol/sdk/types.js";
+import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 import type {
   AdapterContext,
   ConnectorCall,
@@ -190,6 +190,24 @@ const REJECTED_TOKEN_CODES = new Set([-32302]);
 
 function isRejectedTokenError(error: unknown): boolean {
   return error instanceof McpError && REJECTED_TOKEN_CODES.has(error.code);
+}
+
+/** Whether a failed call left its session usable: the connection is still up and the
+ * failure came from the server's own JSON-RPC error or the run's cancellation, not from the
+ * transport or a token the server stopped accepting. A server silent for the whole tool
+ * timeout is treated as hung and restarted. */
+function keepsMcpSession(
+  session: McpSession | undefined,
+  error: unknown,
+  signal: AbortSignal,
+): boolean {
+  if (!session?.open) return false;
+  if (signal.aborted) return true;
+  return (
+    error instanceof McpError &&
+    error.code !== ErrorCode.RequestTimeout &&
+    !isRejectedTokenError(error)
+  );
 }
 
 /** A redacted connect failure that keeps whether it was expected, which its message loses. */
@@ -686,9 +704,11 @@ export class McpConnector implements ConnectorProvider {
     let material: OAuthMaterial | undefined;
     let launchSecrets: string[] = [];
     const sessionKey = this.sessionKey(assignment.server, context);
+    let used: McpSession | undefined;
     try {
       const toolName = call.route.toolName;
       const result = await this.withSession(assignment.server, context, (session) => {
+        used = session;
         material = this.sessions.get(sessionKey)?.material;
         launchSecrets = this.sessions.get(sessionKey)?.launchSecrets ?? [];
         return session.callTool(toolName, call.args, { signal: context.signal });
@@ -707,9 +727,13 @@ export class McpConnector implements ConnectorProvider {
       );
       if (app) yield { type: "app", app };
     } catch (error) {
-      // A thrown call means the transport or auth broke; drop the session so the next call reconnects.
       const secrets = [...(material ? oauthMaterialSecrets(material) : []), ...launchSecrets];
-      await this.evict(sessionKey);
+      // Drop a broken, hung or unauthorized connection, so the next call reconnects. A
+      // cancelled run or the server's own error leaves a stdio process and the server's
+      // session state in place. A session another call already replaced stays replaced:
+      // evicting the key then would close the fresh one.
+      const replaced = used !== undefined && this.sessions.get(sessionKey)?.session !== used;
+      if (!replaced && !keepsMcpSession(used, error, context.signal)) await this.evict(sessionKey);
       yield { type: "error", message: sanitizeConnectorError(error, secrets) };
     }
   }
