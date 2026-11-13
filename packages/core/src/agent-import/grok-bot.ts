@@ -230,7 +230,7 @@ function readApp(app: unknown): GrokBotApp[] {
   return [
     {
       name: oneLine(name),
-      mcpUrl: first(record.mcp_url, record.mcpUrl, record.url),
+      mcpUrl: first(record.mcp_url, record.mcpUrl),
       transport: first(record.transport, record.type).toLowerCase(),
       headerNames: isObject(record.headers) ? Object.keys(record.headers) : [],
     },

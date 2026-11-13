@@ -399,3 +399,12 @@ it("repairs each split document even when an earlier part already parses", () =>
   );
   expect(parseGrokBotExport(`${first}\n${second}`)[0]?.instructions).toBe("First\n\nSecond");
 });
+
+it("does not treat an app website as an MCP endpoint", () => {
+  const [bot] = readGrokBotExportJson(
+    JSON.stringify({
+      bots: [{ name: "Example", apps: [{ name: "Calendar", url: "https://example.com" }] }],
+    }),
+  );
+  expect(bot?.apps[0]?.mcpUrl).toBe("");
+});
