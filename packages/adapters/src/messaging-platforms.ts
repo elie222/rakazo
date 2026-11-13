@@ -522,6 +522,13 @@ function splitKeepingPairs(body: string): string[] {
 
 const telegramFormat = new TelegramFormatConverter();
 
+/** Plain text drops a link's address, so write it after the label first. */
+function withLinkAddresses(markdown: string): string {
+  return markdown.replace(/(?<!!)\[([^\]]+)\]\(([^)\s]+)\)/g, (_, label: string, url: string) =>
+    label === url ? url : `${label} (${url})`,
+  );
+}
+
 function splitTelegramPart(body: string, literal = false): string[] {
   const markdown = literal ? escapeMarkdownV2(body) : body;
   const plainText = literal ? body : markdownToPlainText(body);
@@ -537,7 +544,9 @@ function splitTelegramPart(body: string, literal = false): string[] {
 
   // Parse before splitting: cutting Markdown can turn code into prose and
   // consume literal backslashes. Oversized formatted replies use escaped text.
-  if (!literal && plainText !== body) return splitTelegramPart(plainText, true);
+  if (!literal && plainText !== body) {
+    return splitTelegramPart(markdownToPlainText(withLinkAddresses(body)), true);
+  }
 
   const parts = splitKeepingPairs(body);
   if (parts.length > 1) return parts.flatMap((part) => splitTelegramPart(part, literal));
