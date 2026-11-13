@@ -1,7 +1,10 @@
 import { spawn } from "node:child_process";
 import { once } from "node:events";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { benchmarkEnvironment, stopProcess } from "./cli/performance-stack.js";
+import { benchmarkEnvironment, safeName, stopProcess } from "./cli/performance-stack.js";
 
 describe("benchmarkEnvironment", () => {
   afterEach(() => vi.unstubAllEnvs());
@@ -98,4 +101,37 @@ describe("stopProcess", () => {
     },
     10_000,
   );
+});
+
+describe("safeName", () => {
+  it.each(["基线", "优化后", "日本語", "한글", "مرحبا", "cafe\u0301", "हिन्दी", "𠮷"])(
+    "preserves Unicode letters, numbers and combining marks in %s",
+    (label) => expect(safeName(label)).toBe(label),
+  );
+
+  it("retains existing ASCII naming and removes unsafe path characters", () => {
+    expect(safeName("Baseline V2.0_test")).toBe("baseline-v2.0_test");
+    expect(safeName("../基线\\优化后: *?<>|\u0000")).toBe("..-基线-优化后-");
+    expect(safeName("中文／路径")).toBe("中文-路径");
+    expect(safeName("a/b")).toBe(safeName("a?b"));
+  });
+
+  it("writes distinct reports for different Chinese labels", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "performance-label-"));
+    const labels = ["基线", "优化后"];
+    try {
+      for (const label of labels) {
+        for (const extension of ["json", "md"]) {
+          await writeFile(path.join(directory, `${safeName(label)}.${extension}`), label);
+        }
+        await writeFile(path.join(directory, `web-chat-${safeName(label)}.json`), label);
+      }
+      expect(await readdir(directory)).toHaveLength(6);
+      for (const label of labels) {
+        expect(await readFile(path.join(directory, `${safeName(label)}.json`), "utf8")).toBe(label);
+      }
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
 });
