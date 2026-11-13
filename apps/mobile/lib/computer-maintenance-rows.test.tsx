@@ -7,14 +7,15 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useComputerMaintenanceRows } from "../components/computer-maintenance-actions";
 
-const { rpc, alert, start } = vi.hoisted(() => ({
+const { rpc, alert, start, subscribe } = vi.hoisted(() => ({
+  subscribe: vi.fn((_listener: () => void) => () => undefined),
   rpc: vi.fn(),
   alert: vi.fn(),
   start: vi.fn(async () => undefined),
 }));
 vi.mock("./api", () => ({ rpc }));
 vi.mock("./computer-updates", () => ({
-  computerUpdates: { start, subscribe: () => () => undefined },
+  computerUpdates: { start, subscribe },
 }));
 vi.mock("expo-router", () => ({
   useFocusEffect: (effect: () => void) => useEffect(effect, [effect]),
@@ -40,7 +41,7 @@ describe("computer maintenance rows", () => {
   let root: Root;
   let container: HTMLDivElement;
   const status = (patch: Partial<ComputerStatus>) =>
-    ({ state: "running", canUpdate: true, ...patch }) as ComputerStatus;
+    ({ botId: "bot-fixture", state: "running", canUpdate: true, ...patch }) as ComputerStatus;
   const button = (name: string) =>
     [...container.querySelectorAll("button")].find((item) => item.textContent === name);
 
@@ -92,6 +93,23 @@ describe("computer maintenance rows", () => {
     );
     await act(async () => reset.onPress());
     expect(container.textContent).toContain("Reset failed");
+  });
+
+  it("ignores a status read that a newer one superseded", async () => {
+    const reads: Array<(value: ComputerStatus) => void> = [];
+    rpc.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          reads.push(resolve);
+        }),
+    );
+    await act(async () => root.render(createElement(Rows)));
+    // A finished update re-reads status while the first read is still out.
+    const listener = subscribe.mock.lastCall![0] as () => void;
+    await act(async () => listener());
+    await act(async () => reads[1]!(status({ busyBotName: null })));
+    await act(async () => reads[0]!(status({ busyBotName: "Other" })));
+    expect(button("Reset computer")!.disabled).toBe(false);
   });
 
   it("shows nothing without a computer", async () => {

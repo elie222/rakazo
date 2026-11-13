@@ -28,7 +28,8 @@ export function ComputerMaintenanceActions({
   const [confirmAction, setConfirmAction] = useState<"reset" | "recover" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  if (!computer) return null;
+  // The shared status can belong to another bot's open computer; acting on this bot needs its own.
+  if (computer?.botId !== botId) return null;
 
   const busy = Boolean(computer.busyBotName) || computer.state === "booting";
   const showReset =

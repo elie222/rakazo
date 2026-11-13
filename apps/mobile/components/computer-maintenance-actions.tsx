@@ -2,7 +2,7 @@ import { useLingui } from "@lingui/react/macro";
 import type { ComputerStatus } from "@rakazo/contracts";
 import { useFocusEffect } from "expo-router";
 import type { ReactElement } from "react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert } from "react-native";
 import { rpc } from "../lib/api";
 import { computerUpdates } from "../lib/computer-updates";
@@ -16,10 +16,13 @@ export function useComputerMaintenanceRows(botId: string | undefined): ReactElem
   const [pending, setPending] = useState<"reset" | "update" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const latestRead = useRef(0);
   const refresh = useCallback(async () => {
+    const read = ++latestRead.current;
     if (!botId) return;
     // A stale status could offer an action the computer can no longer take.
-    setComputer(await rpc("computer/status", { botId }).catch(() => null));
+    const next = await rpc("computer/status", { botId }).catch(() => null);
+    if (read === latestRead.current) setComputer(next);
   }, [botId]);
 
   useFocusEffect(
@@ -30,7 +33,7 @@ export function useComputerMaintenanceRows(botId: string | undefined): ReactElem
   // A queued update or recovery reports progress here; its status changes with it.
   useEffect(() => computerUpdates.subscribe(() => void refresh()), [refresh]);
 
-  if (!botId || !computer) return [];
+  if (!botId || !computer || computer.botId !== botId) return [];
   const busy = Boolean(computer.busyBotName) || computer.state === "booting" || pending !== null;
 
   async function run(action: "reset" | "update") {
