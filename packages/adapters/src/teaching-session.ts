@@ -202,12 +202,25 @@ async function finalizeTeachingRecording(
   skillId: string,
   reason: "stopped" | "expired",
   stopSnapshot?: TeachSnapshot,
-): Promise<{ skill: TaughtSkillRow; stopped: { threadId: string; seq: number } | null }> {
+  boundToLease?: string,
+): Promise<{
+  skill: TaughtSkillRow;
+  stopped: { threadId: string; seq: number } | null;
+  ended: boolean;
+}> {
   return deps.prisma.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT id FROM taught_skills WHERE id = ${skillId} FOR UPDATE`;
     const skill = await tx.taughtSkill.findUniqueOrThrow({ where: { id: skillId } });
+    // Ending a recording with its lease touches only a recording still bound to that lease.
+    if (
+      boundToLease !== undefined &&
+      (skill.status !== "recording" ||
+        parseRecording(skill.recording).controlLeaseId !== boundToLease)
+    ) {
+      return { skill, stopped: null, ended: false };
+    }
     if (skill.status === "draft" || skill.status === "saved") {
-      return { skill, stopped: null };
+      return { skill, stopped: null, ended: true };
     }
     if (skill.status !== "recording" && skill.status !== "drafting") {
       throw new Error("Teaching session is not active");
@@ -248,7 +261,7 @@ async function finalizeTeachingRecording(
       });
       stopped = { threadId: bot.thread.id, seq: event.seq };
     }
-    return { skill: updated, stopped };
+    return { skill: updated, stopped, ended: true };
   });
 }
 
@@ -429,14 +442,14 @@ export async function completeTeachingSession(
   skillId: string,
   reason: "stopped" | "expired",
   stopSnapshot?: TeachSnapshot,
+  boundToLease?: string,
 ): Promise<TaughtSkillRow> {
-  const { skill: finalized, stopped } = await finalizeTeachingRecording(
-    deps,
-    actor,
-    skillId,
-    reason,
-    stopSnapshot,
-  );
+  const {
+    skill: finalized,
+    stopped,
+    ended,
+  } = await finalizeTeachingRecording(deps, actor, skillId, reason, stopSnapshot, boundToLease);
+  if (!ended) return finalized;
   const bot = await deps.prisma.bot.findUnique({
     where: { id: finalized.botId },
     include: { thread: true, computer: true },
@@ -503,17 +516,26 @@ export async function expireComputerControlAndTeaching(
     where: { id: computerId },
     select: { controlLeaseId: true, controlBotId: true },
   });
-  const released = await expireComputerControl(deps, computerId, leaseId);
-  // A bot has at most one recording, and it needs that bot's screen.
+  // Pick the recording before releasing: only the one bound to this very lease ends with it, never
+  // a recording someone starts once the screen is free.
   const botId = computer?.controlLeaseId === leaseId ? computer.controlBotId : null;
-  if (!released || !botId) return released;
-  const recording = await deps.prisma.taughtSkill.findFirst({
-    where: { botId, status: "recording" },
-  });
-  if (!recording) return released;
+  const candidate = botId
+    ? await deps.prisma.taughtSkill.findFirst({ where: { botId, status: "recording" } })
+    : null;
+  const recording =
+    candidate && parseRecording(candidate.recording).controlLeaseId === leaseId ? candidate : null;
+  const released = await expireComputerControl(deps, computerId, leaseId);
+  if (!released || !recording) return released;
   const actor = { spaceId: recording.spaceId, userId: recording.userId } as Actor;
-  await completeTeachingSession(deps, actor, recording.id, "expired");
-  await deps.jobs.cancel(skillTeachingExpireJobKey(recording.id));
+  const ended = await completeTeachingSession(
+    deps,
+    actor,
+    recording.id,
+    "expired",
+    undefined,
+    leaseId,
+  );
+  if (ended.status !== "recording") await deps.jobs.cancel(skillTeachingExpireJobKey(recording.id));
   return released;
 }
 
