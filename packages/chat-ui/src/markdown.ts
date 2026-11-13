@@ -44,9 +44,16 @@ function escapeRegExp(value: string): string {
 
 const mentionParser = unified().use(remarkParse).use(remarkGfm);
 
-// Slice the original source rather than serializing the tree, so code stays byte-for-byte intact.
-function rewriteOutsideCode(text: string, rewrite: (part: string) => string, skipLinks = false) {
-  const tree = mentionParser.parse(text);
+type MentionTrees = Map<string, ReturnType<typeof mentionParser.parse>>;
+
+function rewriteOutsideCode(
+  text: string,
+  rewrite: (part: string) => string,
+  trees: MentionTrees,
+  skipLinks = false,
+) {
+  const tree = trees.get(text) ?? mentionParser.parse(text);
+  trees.set(text, tree);
   let result = "";
   let offset = 0;
   function visit(node: typeof tree | (typeof tree.children)[number]) {
@@ -72,8 +79,14 @@ function rewriteOutsideCode(text: string, rewrite: (part: string) => string, ski
 const MODEL_MENTION_LINK = /\[([^\]\n]*)\]\(\s*<?rakazo-mention:[^)\n]*\)/gi;
 const OPENS_WITH_BLOCK = /^\s*(#|>|\||```|~~~|[-*+]\s|\d+[.)]\s)/;
 
-function linkFirstName(text: string, name: string, link: string): string | undefined {
+function linkFirstName(
+  text: string,
+  name: string,
+  link: string,
+  trees: MentionTrees,
+): string | undefined {
   const pattern = new RegExp(`(^|[^\\p{L}\\p{N}_])${escapeRegExp(name)}(?![\\p{L}\\p{N}_])`, "u");
+  if (!pattern.test(text)) return undefined;
   let placed = false;
   const result = rewriteOutsideCode(
     text,
@@ -84,6 +97,7 @@ function linkFirstName(text: string, name: string, link: string): string | undef
         return `${prefix}${link}`;
       });
     },
+    trees,
     true,
   );
   return placed ? result : undefined;
@@ -97,9 +111,10 @@ export function withMentions(
   texts: readonly string[],
   mentions: readonly { id: string; name: string }[],
 ): string[] {
+  const trees: MentionTrees = new Map();
   // Only links placed here draw as mentions; ones already in the text keep just their name.
   const result = texts.map((text) =>
-    rewriteOutsideCode(text, (part) => part.replace(MODEL_MENTION_LINK, "$1")),
+    rewriteOutsideCode(text, (part) => part.replace(MODEL_MENTION_LINK, "$1"), trees),
   );
   if (result.length === 0) return result;
   for (const mention of mentions) {
@@ -107,7 +122,7 @@ export function withMentions(
     if (!name) continue;
     const link = `[${name.replace(/[\\[\]*_`<>]/g, "\\$&")}](${MENTION_URL_PREFIX}${encodeURIComponent(mention.id)})`;
     const placed = result.some((text, index) => {
-      const linked = linkFirstName(text, name, link);
+      const linked = linkFirstName(text, name, link, trees);
       if (linked !== undefined) result[index] = linked;
       return linked !== undefined;
     });
