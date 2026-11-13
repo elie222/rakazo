@@ -132,7 +132,7 @@ export async function waitForUrl(url: string) {
     const timer = setTimeout(() => controller.abort(), Math.max(0, deadline - Date.now()));
     try {
       const response = await fetch(url, { signal: controller.signal });
-      await response.body?.cancel();
+      void response.body?.cancel().catch(() => {});
       if (response.ok) return;
       detail = `HTTP ${response.status}`;
     } catch (error) {

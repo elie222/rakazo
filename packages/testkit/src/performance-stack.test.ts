@@ -165,3 +165,16 @@ describe("waitForUrl", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 });
+
+describe("readiness body cleanup", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("accepts successful headers when body cancellation rejects", async () => {
+    const cancel = vi.fn().mockRejectedValue(new Error("body failed"));
+    const fetcher = vi.fn().mockResolvedValue({ ok: true, body: { cancel } });
+    vi.stubGlobal("fetch", fetcher);
+    await expect(waitForUrl("http://localhost/ready")).resolves.toBeUndefined();
+    expect(fetcher).toHaveBeenCalledOnce();
+    expect(cancel).toHaveBeenCalledOnce();
+  });
+});
