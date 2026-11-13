@@ -1,7 +1,7 @@
 import { lookup } from "node:dns/promises";
 import type { LookupFunction } from "node:net";
 import { isDeepStrictEqual } from "node:util";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import {
   StreamableHTTPClientTransport,
   StreamableHTTPError,
@@ -32,6 +32,7 @@ import {
   mcpToolAppResourceUri,
   mcpToolVisibleToModel,
 } from "./mcp-app.js";
+import { createMcpClient } from "./mcp-output-schema.js";
 import { limitMcpResponseBody } from "./mcp-response-limit.js";
 import type { ResolvedAddress, ResolveHostname } from "./network-address.js";
 import {
@@ -132,7 +133,7 @@ export async function listRemoteMcpTools(options: RemoteMcpOptions): Promise<Con
 }
 
 function newMcpClient(): Client {
-  return new Client(
+  return createMcpClient(
     { name: "rakazo", version: "0.1.0" },
     { capabilities: MCP_APP_CLIENT_CAPABILITIES },
   );
