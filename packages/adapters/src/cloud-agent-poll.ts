@@ -159,9 +159,13 @@ export async function pollCloudAgent(
           followupDispatchedAt: null,
         });
       } else {
+        // The card stops polling once it finishes, so a run started since then, as by a person in
+        // the provider, is newer than the run it knows. Recovery compares against the newest run
+        // at send time, or it would take that run for this follow-up and drop the follow-up.
+        const { latestRunId = agent.latestRunId } = await provider.get(agent.remoteId, context);
         const marked = await deps.prisma.cloudAgent.updateMany({
           where: fence(agent),
-          data: { followupDispatchedAt: new Date() },
+          data: { followupDispatchedAt: new Date(), latestRunId },
         });
         if (!marked.count) return;
         try {
@@ -170,7 +174,7 @@ export async function pollCloudAgent(
             cloudAgentPromptSchema.parse(agent.followup),
             context,
           );
-          if (!snapshot.latestRunId || snapshot.latestRunId === agent.latestRunId)
+          if (!snapshot.latestRunId || snapshot.latestRunId === latestRunId)
             throw new Error("Cloud agent follow-up did not identify a new run");
           await finishPoll(deps, agent, {
             ...snapshotData(snapshot),
