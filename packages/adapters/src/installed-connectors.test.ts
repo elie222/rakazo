@@ -995,6 +995,106 @@ describe("OpenAPI connector import", () => {
     ).toThrow("unsafe header Authorization");
   });
 
+  it.each(["get", "delete", "post", "put", "patch"])(
+    "honors form query array explode settings for %s requests after import",
+    async (method) => {
+      const arraySchema = { type: "array", items: { type: "string" } };
+      const document = {
+        openapi: "3.1.0",
+        servers: [{ url: "https://93.184.216.34/v1" }],
+        components: {
+          parameters: {
+            tags: { name: "tags", in: "query", explode: false, schema: arraySchema },
+          },
+        },
+        paths: {
+          "/items": {
+            parameters: [{ $ref: "#/components/parameters/tags" }],
+            [method]: {
+              operationId: "items",
+              parameters: [
+                {
+                  name: "explicit",
+                  in: "query",
+                  style: "form",
+                  explode: false,
+                  schema: arraySchema,
+                },
+                { name: "defaults", in: "query", schema: arraySchema },
+                { name: "expanded", in: "query", explode: true, schema: arraySchema },
+                { name: "empty", in: "query", explode: false, schema: arraySchema },
+                { name: "scalar", in: "query", explode: false, schema: { type: "string" } },
+              ],
+            },
+          },
+        },
+      };
+      const fetch = vi.fn().mockResolvedValue(Response.json(document));
+      const prepared = await prepareApiInstall({
+        source: "https://93.184.216.34/openapi.json",
+        config: { openApi: true, auth: { type: "none" } },
+        remote: { fetch },
+      });
+      const install = {
+        id: "api-query-arrays",
+        kind: "api",
+        source: prepared.source,
+        secretId: null,
+        createdAt: new Date(0),
+        config: JSON.parse(JSON.stringify(prepared.config)),
+      };
+      const prisma = { capabilityInstall: { findFirst: vi.fn().mockResolvedValue(install) } };
+      fetch.mockReset();
+      fetch.mockImplementation(async () => Response.json({ ok: true }));
+      const provider = new InstalledConnectorProvider(prisma as never, {} as never, { fetch });
+      const values = ["alpha", "two words", "a&b"];
+      const args = {
+        tags: values,
+        explicit: values,
+        defaults: values,
+        expanded: values,
+        empty: [],
+        scalar: "one",
+      };
+      for await (const _event of provider.execute(
+        {
+          tool: "items",
+          args,
+          executionId: "items",
+          route: { connectorId: "installed", resourceId: install.id, toolName: "items" },
+        },
+        { spaceId: "space-1", userId: "user-1", signal: AbortSignal.timeout(5_000) } as never,
+      )) {
+        // Inspect the actual request after persisted config has been parsed again.
+      }
+      expect(fetch).toHaveBeenCalledOnce();
+      const [url, init] = fetch.mock.lastCall as [URL, RequestInit];
+      expect(url.searchParams.getAll("tags")).toEqual([values.join(",")]);
+      expect(url.searchParams.getAll("explicit")).toEqual([values.join(",")]);
+      expect(url.searchParams.getAll("defaults")).toEqual(values);
+      expect(url.searchParams.getAll("expanded")).toEqual(values);
+      expect(url.searchParams.getAll("empty")).toEqual([""]);
+      expect(url.searchParams.getAll("scalar")).toEqual(["one"]);
+      expect(init.body).toBe(["get", "delete"].includes(method) ? undefined : "{}");
+
+      // Previously installed connectors have no serialization metadata.
+      delete install.config.operations[0].commaSeparatedQueryParameters;
+      for await (const _event of provider.execute(
+        {
+          tool: "items",
+          args,
+          executionId: "legacy-items",
+          route: { connectorId: "installed", resourceId: install.id, toolName: "items" },
+        },
+        { spaceId: "space-1", userId: "user-1", signal: AbortSignal.timeout(5_000) } as never,
+      )) {
+        // Retain the historical repeated-key format until the source is reimported.
+      }
+      const [legacyUrl] = fetch.mock.lastCall as [URL, RequestInit];
+      expect(legacyUrl.searchParams.getAll("tags")).toEqual(values);
+    },
+  );
+
   it("sends shared $ref parameters where the spec declares them", async () => {
     const document = {
       openapi: "3.1.0",
