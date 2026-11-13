@@ -5,13 +5,16 @@ import type { AddressInfo } from "node:net";
 import { duplexPair } from "node:stream";
 import { PrivateNetworkError } from "@rakazo/adapter-kit";
 import { TAILNET_CONNECT_PATH } from "@rakazo/contracts";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import WebSocket from "ws";
-import type { TailnetTunnelDeps, TailnetTunnelRecord } from "./tailnet-tunnel.js";
+import { tailnetHelper } from "./page-browser-install.js";
+import type { TailnetPrincipal, TailnetTunnelDeps, TailnetTunnelRecord } from "./tailnet-tunnel.js";
 import {
   createTailnetApprovals,
   createTailnetCommandAccess,
+  openComputerTailnetPass,
   openTailnetTunnelToken,
+  sealComputerTailnetPass,
   sealTailnetTunnelToken,
   TailnetTunnelGateway,
   tailnetServerOrigin,
@@ -59,10 +62,13 @@ async function gateway(overrides: Partial<TailnetTunnelDeps> = {}) {
   });
   await new Promise<void>((resolve) => server?.listen(0, "127.0.0.1", resolve));
   const port = (server.address() as AddressInfo).port;
-  const connect = (options: { token?: string; host?: string; port?: string } = {}) => {
+  const connect = (
+    options: { token?: string; host?: string; port?: string; bot?: string } = {},
+  ) => {
     const query = new URLSearchParams({
       host: options.host ?? "nas.tail1234.ts.net",
       port: options.port ?? "22",
+      ...(options.bot === undefined ? {} : { bot: options.bot }),
     });
     return new WebSocket(`ws://127.0.0.1:${port}${TAILNET_CONNECT_PATH}?${query}`, {
       headers: {
@@ -200,12 +206,171 @@ describe("TailnetTunnelGateway", () => {
     first.close();
   });
 
-  it("closes a run's tunnels when it ends", async () => {
-    const { connect, gateway: tunnels } = await gateway();
+  it("closes a run's tunnels once it ends", async () => {
+    let active = true;
+    const { connect } = await gateway({
+      activeRun: async (claims) => (active && claims.runId === "run1" ? RUN : undefined),
+      recheckMs: 10,
+    });
     const socket = connect();
     await once(socket, "open");
-    tunnels.closeRun("run1");
+    active = false;
     await once(socket, "close");
+  });
+});
+
+describe("tailnet tunnels from a computer's browsers", () => {
+  const PASS = { computerId: "computer1", boot: "2026-11-13T06:00:00.000Z" };
+  const MEMBER = { userId: "alice", spaceId: "home", botId: "helper", botName: "Helper" };
+
+  it("round-trips a computer pass and refuses tampering and run tokens", () => {
+    const pass = sealComputerTailnetPass(PASS, KEY);
+    expect(openComputerTailnetPass(pass, KEY)).toEqual(PASS);
+    expect(openComputerTailnetPass(pass, tailnetTunnelKey("another-key"))).toBeUndefined();
+    const [prefix, , mac] = pass.split(".");
+    const other = Buffer.from(JSON.stringify(["computer2", PASS.boot])).toString("base64url");
+    expect(openComputerTailnetPass(`${prefix}.${other}.${mac}`, KEY)).toBeUndefined();
+    expect(openComputerTailnetPass(sealTailnetTunnelToken(CLAIMS, KEY), KEY)).toBeUndefined();
+    expect(openTailnetTunnelToken(pass, KEY)).toBeUndefined();
+  });
+
+  async function browser(
+    screen: TailnetTunnelDeps["screen"],
+    extra: Partial<TailnetTunnelDeps> = {},
+  ) {
+    const authorize = vi.fn(async () => true as const);
+    const dial = vi.fn(async () => {
+      const [client, service] = duplexPair();
+      service.on("data", (chunk) => service.write(chunk));
+      return client;
+    });
+    const tunnels = await gateway({ screen, authorize, dial, recheckMs: 10, ...extra });
+    const open = (bot = "helper", pass = sealComputerTailnetPass(PASS, KEY)) =>
+      tunnels.connect({ token: pass, bot });
+    return { ...tunnels, authorize, dial, open };
+  }
+
+  it("lets a member holding the screen browse their tailnet without approval, unrecorded", async () => {
+    const { open, authorize, dial, records } = await browser(async (pass, botId) =>
+      pass.computerId === "computer1" && botId === "helper"
+        ? { kind: "member", member: MEMBER }
+        : undefined,
+    );
+    const socket = open();
+    await once(socket, "open");
+    expect(authorize).not.toHaveBeenCalled();
+    expect(dial).toHaveBeenCalledWith(
+      MEMBER,
+      { host: "nas.tail1234.ts.net", port: 22 },
+      expect.objectContaining({ userId: "alice", botId: "helper" }),
+    );
+    socket.close();
+    await once(socket, "close");
+    expect(records).toEqual([]);
+  });
+
+  it("holds a bot's browser to its run's approvals", async () => {
+    const reason = "Ask to connect to nas.tail1234.ts.net:22 with tailnet_connect first.";
+    const authorize = vi.fn(async () => reason);
+    const { open, records } = await browser(
+      async () => ({ kind: "run", run: { ...RUN, runId: "run1" } }),
+      { authorize },
+    );
+    expect(await refusal(open())).toEqual({ status: 403, body: reason });
+    expect(authorize).toHaveBeenCalledWith(
+      { ...RUN, runId: "run1" },
+      { host: "nas.tail1234.ts.net", port: 22 },
+    );
+    expect(records[0]).toMatchObject({ outcome: "refused", reason });
+  });
+
+  it("closes a member's tunnels once they no longer hold the screen, before a bot could reuse them", async () => {
+    let holder: TailnetPrincipal | undefined = { kind: "member", member: MEMBER };
+    const { open } = await browser(async () => holder);
+    const socket = open();
+    await once(socket, "open");
+    // The member hands the screen back and the bot's run carries on.
+    holder = { kind: "run", run: { ...RUN, runId: "run1" } };
+    await once(socket, "close");
+  });
+
+  it("refuses a screen nobody is using, a forged pass and a missing bot", async () => {
+    const { open, dial } = await browser(async () => undefined);
+    const idle = await refusal(open());
+    expect(idle.status).toBe(401);
+    expect(idle.body).toContain("while its bot is working, or while you control its screen");
+    expect((await refusal(open("helper", "rcp1.forged.pass"))).status).toBe(401);
+    expect((await refusal(open(""))).status).toBe(401);
+    expect(dial).not.toHaveBeenCalled();
+  });
+});
+
+describe("a computer's browser proxy", () => {
+  const BOOT = new Date("2026-11-13T06:00:00.000Z");
+  const prisma = {
+    tailnetConnection: {
+      findUnique: async ({ where }: { where: { spaceId_userId: { userId: string } } }) =>
+        where.spaceId_userId.userId === "alice" ? { botIds: ["helper"] } : null,
+    },
+    computer: { findUnique: async () => ({ runningSince: BOOT }) },
+  } as never;
+  const context = {
+    operationId: "op",
+    traceId: "op",
+    spaceId: "home",
+    userId: "alice",
+    signal: new AbortController().signal,
+  };
+  function setup(exitCodes: number[] = [0]) {
+    const runs: Array<{ argv: string[]; env?: Record<string, string> }> = [];
+    const sandbox = {
+      async *execute(
+        _computer: unknown,
+        request: { argv: string[]; env?: Record<string, string> },
+      ) {
+        runs.push(request);
+        yield { type: "exit" as const, code: exitCodes.shift() ?? 0 };
+      },
+    };
+    const access = createTailnetCommandAccess({
+      prisma,
+      encryptionKey: "test-only-encryption-key",
+      serverOrigin: "https://rakazo.example.test",
+      available: true,
+    });
+    const prepare = (userId = "alice") =>
+      access.prepareComputer({
+        sandbox,
+        computerId: "computer1",
+        computer: { kind: "docker", providerRef: "c1" } as never,
+        member: { userId, spaceId: "home", botId: "helper" },
+        context,
+      });
+    return { runs, prepare };
+  }
+
+  it("starts once per computer start, with the pass and helper only in the environment", async () => {
+    const { runs, prepare } = setup();
+    await prepare();
+    await prepare();
+    expect(runs).toHaveLength(1);
+    const [started] = runs;
+    expect(started?.argv.join(" ")).not.toContain("rcp1.");
+    expect(started?.env?.RAKAZO_NET_URL).toBe("https://rakazo.example.test/api/tailnet/connect");
+    expect(openComputerTailnetPass(started?.env?.RAKAZO_NET_PASS ?? "", KEY)).toEqual({
+      computerId: "computer1",
+      boot: BOOT.toISOString(),
+    });
+    expect(started?.env?.RAKAZO_NET_HELPER).toBe(tailnetHelper().base64);
+  });
+
+  it("does nothing for a member who has not let the bot on, and retries a failed start", async () => {
+    const { runs, prepare } = setup([1, 0]);
+    await prepare("bob");
+    expect(runs).toHaveLength(0);
+    await prepare();
+    await prepare();
+    expect(runs).toHaveLength(2);
   });
 });
 

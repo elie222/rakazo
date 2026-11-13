@@ -21,10 +21,12 @@ import os
 import socket
 import socketserver
 import ssl
+import json
 import struct
 import subprocess
 import sys
 import threading
+import time
 from urllib.parse import urlencode, urlsplit
 
 WS_GUID = b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
@@ -32,6 +34,15 @@ CHUNK = 64 * 1024
 MAX_HEAD = 64 * 1024
 TAILNET_V4 = ipaddress.ip_network("100.64.0.0/10")
 TAILNET_V6 = ipaddress.ip_network("fd7a:115c:a1e0::/48")
+# The browser on display N sends tailnet hosts to 127.0.0.1:SCREEN_PORT_BASE+N (see the screen's
+# browser launcher), and screen setup names the bot of display N in SCREEN_BOT_FILE.
+SCREEN_PORT_BASE = 20000
+SCREEN_BOT_FILE = "/tmp/rakazo/screen-bot-{}"
+SCREEN_DIR = "/tmp/rakazo/tailnet"
+SCREEN_PASS = os.path.join(SCREEN_DIR, "pass.json")
+SCREEN_HELPER = os.path.join(SCREEN_DIR, "rakazo-net")
+SCREEN_PID = os.path.join(SCREEN_DIR, "screens.pid")
+SCREEN_SCAN_SECONDS = 2
 
 
 class TunnelError(Exception):
@@ -79,8 +90,8 @@ class Tunnel:
         self.closed = False
 
     @classmethod
-    def open(cls, host, port):
-        url, token = tunnel_config()
+    def open(cls, host, port, config=None, extra=None):
+        url, token = config or tunnel_config()
         secure = url.scheme in ("https", "wss")
         if url.scheme not in ("http", "https", "ws", "wss") or not url.hostname:
             raise TunnelError("RAKAZO_NET_URL is not a valid tunnel address.")
@@ -93,7 +104,8 @@ class Tunnel:
         if secure:
             sock = ssl.create_default_context().wrap_socket(sock, server_hostname=url.hostname)
         key = base64.b64encode(os.urandom(16)).decode()
-        target = f"{url.path or '/'}?{urlencode({'host': host, 'port': str(port)})}"
+        query = {"host": host, "port": str(port), **(extra or {})}
+        target = f"{url.path or '/'}?{urlencode(query)}"
         host_header = url.netloc.rpartition("@")[2]
         request = (
             f"GET {target} HTTP/1.1\r\nHost: {host_header}\r\nUpgrade: websocket\r\n"
@@ -341,6 +353,110 @@ class ProxyHandler(socketserver.BaseRequestHandler):
         relay_sockets(self.request, remote)
 
 
+class ScreenProxyHandler(ProxyHandler):
+    """The browser of one display: only tailnet hosts, through the tunnel, as that screen's bot."""
+
+    display = 0
+
+    def upstream(self, host, port):
+        if not is_tailnet_host(host):
+            raise TunnelError("Only tailnet hosts go through this proxy.")
+        try:
+            with open(SCREEN_PASS) as file:
+                saved = json.load(file)
+            with open(SCREEN_BOT_FILE.format(self.display)) as file:
+                bot = file.read().strip()
+        except (OSError, ValueError):
+            raise TunnelError("Tailnet access is off for this screen.") from None
+        if not bot or not isinstance(saved, dict):
+            raise TunnelError("Tailnet access is off for this screen.")
+        config = (urlsplit(str(saved.get("url", ""))), str(saved.get("pass", "")))
+        return Tunnel.open(host, port, config, {"bot": bot})
+
+
+def screen_displays():
+    prefix = os.path.basename(SCREEN_BOT_FILE.format(""))
+    folder = os.path.dirname(SCREEN_BOT_FILE)
+    try:
+        names = os.listdir(folder)
+    except OSError:
+        return []
+    return [int(name[len(prefix) :]) for name in names if name.startswith(prefix) and name[len(prefix) :].isdigit()]
+
+
+def command_screens_serve():
+    """Serve every screen's browser proxy, adding displays as screens start."""
+    socketserver.ThreadingTCPServer.allow_reuse_address = True
+    servers = {}
+    while True:
+        for display in screen_displays():
+            port = SCREEN_PORT_BASE + display
+            if display in servers or port > 65535:
+                continue
+            handler = type(f"Screen{display}", (ScreenProxyHandler,), {"display": display})
+            try:
+                server = socketserver.ThreadingTCPServer(("127.0.0.1", port), handler)
+            except OSError as error:
+                print(f"rakazo-net: display {display}: {error}", file=sys.stderr, flush=True)
+                continue
+            server.daemon_threads = True
+            threading.Thread(target=server.serve_forever, daemon=True).start()
+            servers[display] = server
+        time.sleep(SCREEN_SCAN_SECONDS)
+
+
+def screens_running(version):
+    """Whether this version's proxy daemon is already serving."""
+    try:
+        with open(SCREEN_PID) as file:
+            pid, running_version = file.read().split()
+        with open(f"/proc/{int(pid)}/cmdline", "rb") as file:
+            cmdline = file.read()
+    except (OSError, ValueError):
+        return False
+    if b"screens-serve" not in cmdline:
+        return False
+    if running_version == version:
+        return True
+    try:
+        os.kill(int(pid), 15)
+    except OSError:
+        pass
+    return False
+
+
+def command_screens_start():
+    """Save this computer's pass and start the browsers' proxy, from RAKAZO_NET_URL/_PASS."""
+    url = os.environ.get("RAKAZO_NET_URL", "")
+    computer_pass = os.environ.get("RAKAZO_NET_PASS", "")
+    if not url or not computer_pass:
+        raise TunnelError("Tailnet access is off for this computer.")
+    os.makedirs(SCREEN_DIR, mode=0o700, exist_ok=True)
+    with open(os.path.abspath(__file__), "rb") as file:
+        helper = file.read()
+    version = hashlib.sha256(helper).hexdigest()[:16]
+    for path, content, mode in (
+        (SCREEN_PASS, json.dumps({"url": url, "pass": computer_pass}).encode(), 0o600),
+        (SCREEN_HELPER, helper, 0o700),
+    ):
+        partial = f"{path}.{os.getpid()}"
+        with open(os.open(partial, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, mode), "wb") as file:
+            file.write(content)
+        os.replace(partial, path)
+    if screens_running(version):
+        return
+    with open(os.path.join(SCREEN_DIR, "screens.log"), "ab") as log:
+        daemon = subprocess.Popen(
+            [sys.executable, "-I", SCREEN_HELPER, "screens-serve"],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=log,
+            start_new_session=True,
+        )
+    with open(SCREEN_PID, "w") as file:
+        file.write(f"{daemon.pid} {version}")
+
+
 def relay_sockets(left, right):
     def copy(source, target):
         try:
@@ -393,6 +509,13 @@ def main(argv):
             return 0
         if len(argv) == 3 and argv[0] == "forward":
             command_forward(argv[1], argv[2])
+            return 0
+        # Internal: Rakazo starts these for the computer's browsers.
+        if argv == ["screens-start"]:
+            command_screens_start()
+            return 0
+        if argv == ["screens-serve"]:
+            command_screens_serve()
             return 0
     except TunnelError as error:
         print(f"rakazo-net: {error}", file=sys.stderr)

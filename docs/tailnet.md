@@ -56,8 +56,22 @@ saves it in **Settings → Approvals**, where you can change it to **Block**. Yo
 [approval mode](./approvals.md) applies as it does to any action.
 
 The bot then connects from its shell with `rakazo-net`: HTTP(S) through `rakazo-net run`, SSH
-through `rakazo-net nc`, and other clients through a forwarded local port. Each connection shows in
-the computer's activity.
+through `rakazo-net nc`, and other clients through a forwarded local port. Its browser opens
+tailnet pages directly. Each connection shows in the computer's activity.
+
+## Browse your tailnet on the computer
+
+While you control a bot's screen, its browser opens tailnet addresses such as
+`https://nas.tail1234.ts.net` through your connection and that bot's device, with no approval cards:
+you are browsing, not the bot. It works for bots with **Reach machines on your tailnet** turned on.
+When you hand the screen back, those connections close, and the bot's own browsing needs its
+approvals again.
+
+Every other address goes out directly, as before.
+
+In a shared space, the computer's browsers serve whoever is using the screen at that moment. Other
+members' bots on the same computer can reach your tailnet through it only while you control a
+screen or your bot is working there.
 
 Only TCP to `*.ts.net` names and Tailscale addresses (`100.x`) works; ping and UDP don't. A bot
 can't accept connections from your tailnet, and it never routes other devices' traffic.

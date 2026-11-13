@@ -1,6 +1,6 @@
 import { ORPCError } from "@orpc/server";
 import { PrivateNetworkError } from "@rakazo/adapter-kit";
-import type { TailnetService } from "@rakazo/adapters";
+import type { TailnetCommandAccess, TailnetService } from "@rakazo/adapters";
 import {
   getTailnetConnection,
   removeTailnetConnection,
@@ -17,6 +17,8 @@ export type TailnetRouteDeps = {
   service: Pick<TailnetService, "available" | "verify" | "disconnect">;
   /** This server's origin as bots' computers reach it; absent when they can't. */
   serverOrigin: string | undefined;
+  /** Gives a computer's browsers their tailnet proxy when a member takes control of a screen. */
+  computers?: Pick<TailnetCommandAccess, "prepareComputer">;
 };
 
 /**

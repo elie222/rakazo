@@ -2,7 +2,7 @@ import type { ChildProcess } from "node:child_process";
 import { execFile, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import type { Server } from "node:http";
 import { createServer } from "node:http";
 import type { AddressInfo, Server as NetServer } from "node:net";
@@ -17,6 +17,7 @@ import { BACKGROUND_WORK_LAUNCH } from "./computer-idle.js";
 import { tailnetHelper } from "./page-browser-install.js";
 import type { TailnetTunnelDeps } from "./tailnet-tunnel.js";
 import {
+  sealComputerTailnetPass,
   sealTailnetTunnelToken,
   TailnetTunnelGateway,
   tailnetTunnelKey,
@@ -99,6 +100,11 @@ beforeAll(async () => {
   const deps: TailnetTunnelDeps = {
     key: KEY,
     activeRun: async (claims) => (claims.runId === "run1" ? RUN : undefined),
+    // The member holds control of the helper bot's screen on computer1.
+    screen: async (pass, botId) =>
+      pass.computerId === "computer1" && botId === "helper"
+        ? { kind: "member", member: { userId: "alice", spaceId: "home", botId, botName: "Helper" } }
+        : undefined,
     authorize: async () => refuse ?? true,
     dial: async (_run, destination) => {
       const local = services.get(tailnetDestinationKey(destination));
@@ -227,6 +233,106 @@ describe("rakazo-net", () => {
       env: { PATH: process.env.PATH },
     }).catch((error: { stderr: string }) => error);
     expect(stderr).toBe("rakazo-net: Tailnet access is off for this bot.\n");
+  });
+});
+
+describe("rakazo-net's proxy for a computer's browsers", () => {
+  /**
+   * The proxy serves every screen from fixed paths under /tmp/rakazo; here they point into a
+   * temporary folder, and the proxy for display 7 listens on a free port.
+   */
+  async function screens(bot: string) {
+    const dir = await mkdtemp(join(tmpdir(), "rkz-screens-"));
+    const free = createNetServer();
+    await new Promise<void>((resolve) => free.listen(0, "127.0.0.1", resolve));
+    const proxyPort = port(free);
+    await new Promise((resolve) => free.close(resolve));
+    await writeFile(join(dir, "screen-bot-7"), bot);
+    await writeFile(
+      join(dir, "pass.json"),
+      JSON.stringify({
+        url: `http://127.0.0.1:${gatewayPort}${TAILNET_CONNECT_PATH}`,
+        pass: sealComputerTailnetPass({ computerId: "computer1", boot: "boot1" }, KEY),
+      }),
+    );
+    const serve = [
+      "import importlib.machinery, os, sys",
+      `net = importlib.machinery.SourceFileLoader("rakazo_net", ${JSON.stringify(HELPER)}).load_module()`,
+      `net.SCREEN_BOT_FILE = os.path.join(${JSON.stringify(dir)}, "screen-bot-{}")`,
+      `net.SCREEN_PASS = os.path.join(${JSON.stringify(dir)}, "pass.json")`,
+      `net.SCREEN_PORT_BASE = ${proxyPort - 7}`,
+      "net.SCREEN_SCAN_SECONDS = 0.05",
+      "net.command_screens_serve()",
+    ].join("\n");
+    const child = spawn("python3", ["-c", serve], { env: { PATH: process.env.PATH } });
+    children.push(child);
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      const ready = await new Promise<boolean>((resolve) => {
+        const probe = connect(proxyPort, "127.0.0.1");
+        probe.once("connect", () => resolve(true)).once("error", () => resolve(false));
+        probe.once("connect", () => probe.destroy());
+      });
+      if (ready) break;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    /** One HTTP request to the proxy, as a browser sends it, and the whole reply. */
+    const request = async (head: string, body = "") => {
+      const socket = connect(proxyPort, "127.0.0.1");
+      await once(socket, "connect");
+      socket.write(head + body);
+      if (body) socket.end();
+      let reply = "";
+      socket.setEncoding("utf8");
+      for await (const chunk of socket) reply += chunk;
+      return reply;
+    };
+    return {
+      request,
+      async close() {
+        child.kill();
+        await rm(dir, { recursive: true, force: true });
+      },
+    };
+  }
+
+  it("carries a browser's tailnet requests as the screen's bot, for whoever uses it", async () => {
+    const proxy = await screens("helper");
+    try {
+      const page = await proxy.request(
+        "GET http://web.tail1234.ts.net/page HTTP/1.1\r\nHost: web.tail1234.ts.net\r\n\r\n",
+      );
+      expect(page).toContain("tailnet web /page");
+      const tunnelled = await proxy.request(
+        "CONNECT nas.tail1234.ts.net:7 HTTP/1.1\r\nHost: nas.tail1234.ts.net:7\r\n\r\n",
+        "via the browser",
+      );
+      expect(tunnelled).toBe("HTTP/1.1 200 Connection Established\r\n\r\nvia the browser");
+    } finally {
+      await proxy.close();
+    }
+  });
+
+  it("refuses hosts off the tailnet, and screens nobody may use", async () => {
+    const proxy = await screens("helper");
+    try {
+      const off = await proxy.request(
+        "CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\n\r\n",
+      );
+      expect(off).toContain("403 Forbidden");
+      expect(off).toContain("Only tailnet hosts go through this proxy.");
+    } finally {
+      await proxy.close();
+    }
+    const elsewhere = await screens("another-bot");
+    try {
+      const refused = await elsewhere.request(
+        "CONNECT nas.tail1234.ts.net:7 HTTP/1.1\r\nHost: nas.tail1234.ts.net:7\r\n\r\n",
+      );
+      expect(refused).toContain("403 Forbidden");
+      expect(refused).toContain("while its bot is working, or while you control its screen");
+    } finally {
+      await elsewhere.close();
+    }
   });
 });
 
