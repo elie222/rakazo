@@ -1,6 +1,13 @@
 import { lookup } from "node:dns/promises";
 import type { LookupFunction } from "node:net";
-import type { Model, MutableModels, Provider, ProviderStreams } from "@earendil-works/pi-ai";
+import type {
+  Api,
+  AssistantMessageEventStream,
+  Model,
+  MutableModels,
+  Provider,
+  ProviderStreams,
+} from "@earendil-works/pi-ai";
 import { createProvider } from "@earendil-works/pi-ai";
 import { anthropicMessagesApi } from "@earendil-works/pi-ai/api/anthropic-messages.lazy";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
@@ -36,7 +43,12 @@ import {
   OPENAI_COMPATIBLE_PROVIDER_ID,
   PRIVATE_MODEL_ENDPOINT_MESSAGE,
 } from "./openai-compatible-url.js";
-import { MODEL_CONNECT_TIMEOUT_MS, modelConnectTimeoutMs } from "./pi-runtime-limits.js";
+import {
+  MODEL_CONNECT_TIMEOUT_MS,
+  MODEL_STREAM_AGENT_TIMEOUTS,
+  modelConnectTimeoutMs,
+} from "./pi-runtime-limits.js";
+import { splitLeadingThinkBlock } from "./pi-think-tags.js";
 import { guardToolCallNames } from "./pi-tool-call-guard.js";
 import { createCheckedProxyDispatcher } from "./proxy-dispatcher.js";
 import { dispatcherFetch, fetchPairedWithDispatcher } from "./undici-fetch.js";
@@ -160,17 +172,28 @@ function openAiCompatibleProvider(
         : openAICompletionsApi();
   // Guard the fetch the caller supplied (the runtime's seam for tests) or the
   // dispatcher-matched default; never the bare global.
+  const streamPolicy = { ...policy, modelStream: true };
+  // Only chat completions carries thoughts inside the answer text; the other protocols have
+  // their own reasoning blocks.
+  const answerOnly = (model: Model<Api>, stream: AssistantMessageEventStream) =>
+    model.api === "openai-completions" ? splitLeadingThinkBlock(stream) : stream;
   const safeApi: ProviderStreams = {
     stream: (model, context, options) =>
-      api(model.api).stream(model, context, {
-        ...options,
-        fetch: createOpenAiCompatibleFetch(options?.fetch, undefined, policy),
-      }),
+      answerOnly(
+        model,
+        api(model.api).stream(model, context, {
+          ...options,
+          fetch: createOpenAiCompatibleFetch(options?.fetch, undefined, streamPolicy),
+        }),
+      ),
     streamSimple: (model, context, options) =>
-      api(model.api).streamSimple(model, context, {
-        ...options,
-        fetch: createOpenAiCompatibleFetch(options?.fetch, undefined, policy),
-      }),
+      answerOnly(
+        model,
+        api(model.api).streamSimple(model, context, {
+          ...options,
+          fetch: createOpenAiCompatibleFetch(options?.fetch, undefined, streamPolicy),
+        }),
+      ),
   };
   return createProvider({
     id: OPENAI_COMPATIBLE_PROVIDER_ID,
@@ -251,7 +274,11 @@ function requestCarriesAuthorization(input: RequestInfo | URL, init?: RequestIni
 export function createOpenAiCompatibleFetch(
   baseFetch: typeof globalThis.fetch = dispatcherFetch,
   resolve: ResolveHostname = resolveHostname,
-  opts?: OpenAiCompatibleUrlPolicy & { headers?: Record<string, string> },
+  opts?: OpenAiCompatibleUrlPolicy & {
+    headers?: Record<string, string>;
+    /** Model streams leave both waits to the runtime's own timeouts. */
+    modelStream?: boolean;
+  },
 ): typeof globalThis.fetch {
   return async (input, init) => {
     const rawUrl = input instanceof Request ? input.url : String(input);
@@ -268,9 +295,11 @@ export function createOpenAiCompatibleFetch(
       );
     }
     const hostname = url.hostname.replace(/^\[|\]$/g, "");
+    const responseTimeouts = opts?.modelStream ? MODEL_STREAM_AGENT_TIMEOUTS : undefined;
     // Local model servers stay on the direct route; public endpoints honor HTTP(S)_PROXY.
     const dispatcher: Dispatcher = isPrivateOpenAiCompatibleHostname(hostname)
       ? new Agent({
+          ...responseTimeouts,
           connect: {
             timeout: modelConnectTimeoutMs(),
             ...(ipVersion(hostname) === 0
@@ -282,6 +311,7 @@ export function createOpenAiCompatibleFetch(
           resolve,
           openAiCompatibleAddressCheck(url, opts),
           modelConnectTimeoutMs(),
+          responseTimeouts,
         );
     // Node's fetch rejects this package Agent. Use its matching fetch;
     // a caller-supplied fetch stays in charge.

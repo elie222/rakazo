@@ -88,13 +88,6 @@ export function computerPanelNeedsScreen(
   return state === "running" && !screenUrl;
 }
 
-export function computerPanelNeedsMaintenance(
-  state: ComputerStatus["state"] | undefined,
-  booting: boolean,
-): boolean {
-  return !booting && state === "error";
-}
-
 export function reduceComputerStatus(
   prev: ComputerStatus | null,
   event: ProductEvent,

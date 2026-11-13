@@ -569,6 +569,8 @@ function recordingJobs() {
     enqueue: async (job) => {
       enqueued.push(job);
     },
+    enqueueIn: async () => undefined,
+    cancelIn: async () => undefined,
     cancel: async () => undefined,
     close: async () => undefined,
   };
@@ -773,6 +775,24 @@ describe("expo push receipts", () => {
     );
   });
 
+  it.each([
+    { code: "ProviderError", level: "warn" },
+    { code: "MessageRateExceeded", level: "warn" },
+    { code: "InvalidCredentials", level: "error" },
+    { code: "MessageTooBig", level: "error" },
+  ])("logs a $code receipt at $level", async ({ code, level }) => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
+    const { push, receipt } = await deliveredTicket();
+    fakeExpo([], { "ticket-1": { status: "error", message: code, details: { error: code } } });
+
+    await push.checkReceipt(receipt);
+
+    expect(
+      sink.events.filter((event) => event.message === `expo push receipt error: ${code}`),
+    ).toEqual([expect.objectContaining({ level })]);
+  });
+
   it("keeps a token the device registered after the unregistered send", async () => {
     const { tokens, push, receipt } = await deliveredTicket();
     await tokens.save("user-1", "ExponentPushToken[new]");
@@ -915,6 +935,7 @@ it("uses data-only delivery only for Android builds that registered sender suppo
   );
   expect(request).not.toHaveProperty("title");
   expect(request).not.toHaveProperty("body");
+  expect(request).not.toHaveProperty("tag");
   expect(request.data).toMatchObject({
     notificationTitle: "Marketing",
     notificationBody: "Draft ready",

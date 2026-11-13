@@ -162,13 +162,20 @@ test("settings shell is two-pane and deep-links Models Memory Voice Usage", asyn
   await memory.getByLabel("Provider").selectOption("serenity");
   await expect(memory.getByLabel("MCP endpoint")).toBeVisible();
   await expect(memory.getByLabel("Bearer token")).toBeVisible();
-  await expect(memory.getByRole("button", { name: "Recall only" })).toBeVisible();
+  await expect(memory.getByRole("button", { name: "Recall only" })).not.toBeVisible();
   await captureScreenshot(page, testInfo, "settings-shell-memory-serenity");
+  await memory.getByRole("button", { name: "Advanced", exact: true }).click();
+  await expect(memory.getByRole("button", { name: "Recall only" })).toBeVisible();
+  await captureScreenshot(page, testInfo, "settings-shell-memory-serenity-advanced");
 
   await settings.getByTestId("settings-nav-voice").click();
   await expect(settings).toHaveAttribute("data-settings-section", "voice");
   await expect(settings.getByTestId("voice-settings")).toBeVisible();
   await captureScreenshot(page, testInfo, "settings-shell-voice");
+  const voice = settings.getByTestId("voice-settings");
+  await voice.getByLabel("Provider", { exact: true }).selectOption("xai");
+  await expect(voice.getByLabel("API key", { exact: true })).toBeVisible();
+  await captureScreenshot(page, testInfo, "settings-shell-voice-xai");
 
   await page.getByRole("button", { name: "Close voice settings" }).click();
   await expect(page.getByTestId("user-settings")).toHaveCount(0);
@@ -191,6 +198,9 @@ test("Honcho memory settings empty and filled", async ({ page }, testInfo) => {
   await memory.getByRole("button", { name: "Connect memory provider", exact: true }).click();
   await memory.getByLabel("Provider").selectOption("honcho");
   await expect(memory.getByLabel("API key", { exact: true })).toBeVisible();
+  await expect(memory.getByLabel("Workspace", { exact: true })).not.toBeVisible();
+  await captureScreenshot(page, testInfo, "memory-honcho-simple");
+  await memory.getByRole("button", { name: "Advanced", exact: true }).click();
   await expect(memory.getByLabel("Workspace", { exact: true })).toBeVisible();
   await expect(memory.getByLabel("User peer", { exact: true })).toHaveCount(0);
   await expect(memory.getByRole("button", { name: "Connect", exact: true })).toBeDisabled();
@@ -240,15 +250,65 @@ test("Honcho memory settings empty and filled", async ({ page }, testInfo) => {
   await scrollToTop();
   await expect(memory.getByLabel("Organization API key", { exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "memory-supermemory-cloud");
+  await memory.getByRole("button", { name: "Advanced", exact: true }).click();
   await memory.getByRole("button", { name: "Self-hosted", exact: true }).click();
   await expect(memory.getByLabel("Base URL", { exact: true })).toHaveValue("");
   await expect(memory.getByLabel("Instance API key", { exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "memory-supermemory-local");
 
+  await memory.getByLabel("Provider").selectOption("hindsight");
+  await scrollToTop();
+  await expect(memory.getByLabel("API key", { exact: true })).toBeVisible();
+  await expect(memory.getByLabel("Recall from banks", { exact: true })).not.toBeVisible();
+  await expect(memory.getByRole("button", { name: "Self-hosted", exact: true })).not.toBeVisible();
+  await memory.getByLabel("API key", { exact: true }).fill("hindsight-test-key");
+  await expect(memory.getByRole("button", { name: "Connect", exact: true })).toBeEnabled();
+  await captureScreenshot(page, testInfo, "memory-hindsight-simple");
+  await memory.getByRole("button", { name: "Advanced", exact: true }).click();
+  const learn = memory.getByRole("switch", { name: "Learn from conversations" });
+  await expect(learn).toBeChecked();
+  await memory.getByLabel("Recall from banks", { exact: true }).fill("other-app");
+  await learn.evaluate((element) => element.scrollIntoView({ block: "center" }));
+  await captureScreenshot(page, testInfo, "memory-hindsight-cloud");
+  await memory.getByLabel("API key", { exact: true }).fill("");
+  await memory.getByRole("button", { name: "Self-hosted", exact: true }).click();
+  await memory.getByLabel("Base URL", { exact: true }).fill("http://hindsight.example.test:8888");
+  const connect = memory.getByRole("button", { name: "Connect", exact: true });
+  await expect(connect).toBeEnabled();
+  await connect.evaluate((element) => element.scrollIntoView({ block: "center" }));
+  await captureScreenshot(page, testInfo, "memory-hindsight-local");
+  await expect(memory.getByRole("switch", { name: "Recall automatically" })).toBeChecked();
+  await expect(memory.getByRole("button", { name: "Medium", exact: true })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await expect(memory.getByRole("button", { name: "Summaries", exact: true })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  const skipUnrelated = memory.getByRole("switch", { name: "Skip unrelated memories" });
+  await expect(skipUnrelated).not.toBeChecked();
+  // The section opens with an animation, so scroll again until it has reached its full height.
+  await expect(async () => {
+    await memory.locator(".rk-scroll").evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+    });
+    await expect(skipUnrelated).toBeInViewport({ timeout: 300 });
+  }).toPass();
+  await captureScreenshot(page, testInfo, "memory-hindsight-advanced");
+  await skipUnrelated.click();
+  await memory.getByRole("button", { name: "High", exact: true }).click();
+  await expect(skipUnrelated).toBeChecked();
+  await expect(memory.getByRole("button", { name: "High", exact: true })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+
   await page.emulateMedia({ colorScheme: "dark" });
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   await memory.getByLabel("Provider").selectOption("honcho");
   await scrollToTop();
+  await memory.getByRole("button", { name: "Advanced", exact: true }).click();
   await expect(memory.getByRole("button", { name: "Cloud", exact: true })).toHaveAttribute(
     "aria-pressed",
     "true",

@@ -23,7 +23,7 @@
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",
-    "check": "expo install --check && tsc --noEmit -p tsconfig.json",
+    "check": "cross-env EXPO_OFFLINE=1 expo install --check && tsc --noEmit -p tsconfig.json",
     "test": "vitest run --root ../.. apps/mobile/lib",
     "test:e2e": "maestro test .maestro/smoke.yaml"
   },
@@ -95,6 +95,8 @@
     "@types/node": "24.19.2",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
+    "cross-env": "10.1.0",
+    "eas-cli": "27.5.0",
     "typescript": "6.0.3",
     "vitest": "5.1.0"
   }

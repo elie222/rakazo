@@ -57,6 +57,8 @@ import {
   withoutThinkingBlocks,
   withoutThinkingFrom,
 } from "./thinking-signatures.js";
+import type { PacerSlot } from "./token-pacer.js";
+import { pacerTokensPerMinute, sharedTokenPacer } from "./token-pacer.js";
 
 const MODEL_PROVIDER_RETRY_DELAYS_MS = [2_000, 8_000, 20_000] as const;
 
@@ -502,6 +504,27 @@ export function fallbackAwareModelStream(
         sentTarget.model.contextWindow,
         operatorMaxTokens(sentTarget.model),
       );
+      // Wait only as long as RAKAZO_LOCAL_TOKENS_PER_MINUTE needs (token-pacer.ts).
+      let paceSlot: PacerSlot | undefined;
+      const paceLimit = pacerTokensPerMinute(target.config.provider);
+      if (paceLimit !== undefined) {
+        const paced = await sharedTokenPacer.acquire(
+          `${target.config.provider}|${sentTarget.model.baseUrl}`,
+          estimateModelContextTokens(requestContext(), estimatePiImageTokens),
+          paceLimit,
+          signal,
+        );
+        paceSlot = paced.slot;
+        // Time spent pacing is not model time: keep it out of the request budget.
+        startedAt += paced.waitedMs;
+        if (paced.waitedMs >= 1_000) {
+          getLogger().info("model.pacer.wait", {
+            runId: state.request.runId,
+            provider: target.config.provider,
+            waitedMs: paced.waitedMs,
+          });
+        }
+      }
       try {
         const apiKey = target.credentials?.accessToken ?? target.apiKey;
         const reasoning = thinkingLevel === "off" ? undefined : thinkingLevel;
@@ -516,11 +539,16 @@ export function fallbackAwareModelStream(
               : attemptOptions,
         );
       } catch (error) {
+        paceSlot?.release();
         finishWithThrownError(target, error);
         return;
       }
       try {
         for await (const event of stream) {
+          if (event.type === "error") paceSlot?.release();
+          if (event.type === "done") {
+            paceSlot?.settle(event.message.usage.input + event.message.usage.cacheRead);
+          }
           if (event.type === "error") {
             recordFailure(target, event.error.errorMessage ?? "Model request failed.");
             let terminalEvent = event;

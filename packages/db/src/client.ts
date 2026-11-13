@@ -140,6 +140,72 @@ export function isPoolCheckoutTimeout(error: unknown): boolean {
   return error instanceof Error && error.message === "timeout exceeded when trying to connect";
 }
 
+/**
+ * Postgres codes, Prisma codes and pg driver adapter error kinds that say the database cannot
+ * take the work right now: read-only during a failover, shutting down or starting up, out of
+ * connections, or not reachable.
+ */
+const UNAVAILABLE_CODES = new Set([
+  "25006",
+  "53300",
+  "57P01",
+  "57P02",
+  "57P03",
+  "08000",
+  "08001",
+  "08003",
+  "08004",
+  "08006",
+  "P1001",
+  "P1002",
+  "P1017",
+  "P2024",
+  "P2037",
+]);
+const UNAVAILABLE_KINDS = new Set([
+  "DatabaseNotReachable",
+  "ConnectionClosed",
+  "SocketTimeout",
+  "TooManyConnections",
+]);
+/** Raw socket failures, which only count when the caller knows they came from a database connection. */
+const SOCKET_CODES = new Set(["ECONNREFUSED", "ECONNRESET", "ETIMEDOUT", "EPIPE", "ENOTFOUND"]);
+const UNAVAILABLE_MESSAGE =
+  /read-only transaction|^Connection terminated|Can't reach database server/;
+
+/**
+ * Whether an error means the database is unavailable rather than that the work is wrong, so
+ * callers back off and wait instead of failing the work. Follows causes, Prisma's driver adapter
+ * error and aggregated connection attempts. Socket errors also come from other services, so they
+ * count only with `fromDatabaseConnection`.
+ */
+export function isDatabaseUnavailable(
+  error: unknown,
+  options: { fromDatabaseConnection?: boolean } = {},
+): boolean {
+  if (isTooManyDatabaseConnections(error)) return true;
+  const seen = new Set<unknown>();
+  const pending: unknown[] = [error];
+  while (pending.length > 0) {
+    const current = pending.pop();
+    if (!current || typeof current !== "object" || seen.has(current)) continue;
+    seen.add(current);
+    if (isPoolCheckoutTimeout(current)) return true;
+    const fields = current as Record<string, unknown>;
+    for (const key of ["code", "originalCode"]) {
+      const code = fields[key];
+      if (typeof code !== "string") continue;
+      if (UNAVAILABLE_CODES.has(code)) return true;
+      if (options.fromDatabaseConnection && SOCKET_CODES.has(code)) return true;
+    }
+    if (typeof fields.kind === "string" && UNAVAILABLE_KINDS.has(fields.kind)) return true;
+    if (current instanceof Error && UNAVAILABLE_MESSAGE.test(current.message)) return true;
+    pending.push(fields.cause, fields.meta, fields.driverAdapterError);
+    if (Array.isArray(fields.errors)) pending.push(...fields.errors);
+  }
+  return false;
+}
+
 export async function retryOnTooManyConnections<T>(
   operation: () => Promise<T>,
   options: {

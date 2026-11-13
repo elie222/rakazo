@@ -310,6 +310,12 @@ export async function runTrial(
       messaging.resetWitnesses();
       // Ask mode asks before any change, so the write stops at its approval card.
       if (scenario.approvalTool) await rpc(app, cookie, "autoReview/set", { mode: "ask" });
+      for (const tool of scenario.alwaysAllowTools ?? [])
+        await rpc(app, cookie, "approvalRules/set", {
+          effect: "always_allow",
+          matchKind: "tool",
+          matchValue: tool,
+        });
     };
     await setupActor();
     if (scenario.computerFiles?.length) {
@@ -1009,8 +1015,18 @@ export async function runTrial(
     ]);
     await captureTools();
     const finalStep = scenario.steps.length;
+    const historySummary =
+      scenario.history?.compact && seededThreadId
+        ? (
+            await prisma.thread.findUnique({
+              where: { id: seededThreadId },
+              select: { historyCompactionSummary: true },
+            })
+          )?.historyCompactionSummary
+        : undefined;
     const evidence: Evidence = {
       text: lastText,
+      ...(historySummary ? { historySummary } : {}),
       replies,
       memberReplies,
       routineRuns,

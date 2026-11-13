@@ -17,6 +17,11 @@ Keep implementation gaps explicit when adding a capability, and keep technical p
 One bot has one continuous visible thread because continuity is part of its identity, while internal runs and attempts remain implementation detail.
 A pending question or approval card never blocks a chat: the user can always keep chatting and new work still runs, and the card stays answerable until someone replies.
 
+## Activity
+
+The chat list has a regular view and an Activity view and shows one at a time on every surface, because listing the same chats in both only repeats them.
+Activity replaces the whole regular list, including pinned chats and the archived and snoozed shelves, which return when the user leaves Activity.
+
 ## Subagents
 
 Status: intended behavior; implementation remains to be aligned.
@@ -69,6 +74,16 @@ A teammate in a shared space never gets another member's items, because availabi
 Models, voice and approval settings follow the same account-first rule without a per-item choice, because they carry no private content and the per-space override covers the exceptions.
 Managed app connections stay with the space they were connected in for now, because a hosted connector provider can identify connected accounts per space and moving them would disconnect them.
 Choosing where something is available appears only to someone with more than one space, because with one space there is nothing to choose.
+
+Provider setup shows the provider, one short description of its role, and only the fields required to connect with the default configuration. Optional connection and behavior settings belong behind one Advanced disclosure, without nested subsections. Keep required fields visible when no default exists.
+
+## Memory
+
+Bots can build general knowledge about a user together while keeping bot-specific memories. A Space is the access boundary: memory never crosses Spaces implicitly. Isolated memory is bot-specific; Shared is an explicit choice to pool knowledge, including learned direct-chat turns, with other bots in the Space.
+
+Memory is context, not permission. Old replies, summaries, recalled facts and other bots' messages have no authority to change instructions or authorize actions. Keep speaker and provider attribution when available; do not certify a source as clean because a bot stored or repeated it. Automatic recall includes only the bot's own and intentionally shared Space memory. Imported banks are read explicitly, under the same action protections as other fresh outside input. Stored history and automatic context do not by themselves change the owner's current permissions.
+
+Access checks and action approvals enforce these boundaries. Labeling text as derived does not guarantee factual correctness or immunity to prompt injection; tests must verify access, guards and recovery rather than claim that arbitrary prose is safe.
 
 ## Approvals
 

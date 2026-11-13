@@ -1,6 +1,7 @@
 import { MODEL_KEY_FORMAT_ERROR } from "@rakazo/contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { defaultCatalogModelId } from "./model-selection.js";
+import type { SpaceCatalogAuth } from "./model-selection.js";
+import { defaultCatalogModelId, spaceCanRunCatalogModel } from "./model-selection.js";
 import { modelAcceptsImageInput } from "./model-vision.js";
 import { COMPATIBLE_ENDPOINT_PRESETS } from "./openai-compatible-url.js";
 import {
@@ -582,6 +583,48 @@ describe("models agents can run", () => {
       { provider: "openrouter", id: "fixture/model:batch" },
     ];
     expect(offeredCatalog(entries, new Set(["google:gemini-2.5-flash"]))).toEqual([entries[0]]);
+  });
+
+  describe("models Rakazo credits cannot price", () => {
+    const credits: SpaceCatalogAuth = {
+      managedProvider: "openrouter",
+      byProvider: { openrouter: "api_key" },
+      byModel: {},
+      secretIdByProvider: {},
+      secretIdByModel: {},
+    };
+    const ownKey: SpaceCatalogAuth = {
+      byProvider: { openrouter: "api_key" },
+      byModel: {},
+      secretIdByProvider: { openrouter: "personal-secret" },
+      secretIdByModel: {},
+    };
+
+    it.each(["openrouter/free", "openrouter/pareto-code", "auto", "google/gemma-4-31b-it:free"])(
+      "keeps %s for an own key but not on credits",
+      (id) => {
+        const entry = { provider: "openrouter", id };
+        expect(spaceCanRunCatalogModel(credits, entry)).toBe(false);
+        expect(spaceCanRunCatalogModel(ownKey, entry)).toBe(true);
+        expect(
+          spaceCanRunCatalogModel(
+            { ...credits, secretIdByModel: { openrouter: { [id]: "model-secret" } } },
+            entry,
+          ),
+        ).toBe(true);
+      },
+    );
+
+    it("offers priced models on credits", () => {
+      const entry = { provider: "openrouter", id: "anthropic/claude-haiku-5.5" };
+      expect(spaceCanRunCatalogModel(credits, entry)).toBe(true);
+    });
+
+    it("treats a live id the registry does not price as unpriced on credits", () => {
+      expect(spaceCanRunCatalogModel(credits, { provider: "openrouter", id: "fixture/live" })).toBe(
+        false,
+      );
+    });
   });
 
   it("judges live ids the catalog does not bundle by their id", () => {

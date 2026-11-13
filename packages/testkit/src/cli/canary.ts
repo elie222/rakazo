@@ -13,11 +13,12 @@ async function main() {
     !process.env.E2B_API_KEY &&
     !process.env.BOAT_API_KEY &&
     !process.env.BOXD_API_KEY &&
+    !process.env.INSTABOX_API_KEY &&
     !process.env.NOVITA_API_KEY &&
     !runOpenRouter
   ) {
     throw new Error(
-      "E2B_API_KEY, BOAT_API_KEY, BOXD_API_KEY, NOVITA_API_KEY, or OPENROUTER_API_KEY is required for live provider canaries",
+      "E2B_API_KEY, BOAT_API_KEY, BOXD_API_KEY, INSTABOX_API_KEY, NOVITA_API_KEY, or OPENROUTER_API_KEY is required for live provider canaries",
     );
   }
 
