@@ -1,3 +1,5 @@
+import { sliceWellFormed } from "./utf8.js";
+
 export const DEFAULT_WEB_SEARCH_MAX_RESULTS = 5;
 export const MAX_WEB_SEARCH_RESULTS = 10;
 export const DEFAULT_WEB_FETCH_MAX_CHARS = 8_000;
@@ -39,13 +41,14 @@ export function pageWindow(
   maxOffset = MAX_WEB_FETCH_OFFSET,
 ) {
   if (rest.length <= maxChars) return { text: rest, truncated: false };
-  const next = offset + maxChars;
+  const text = sliceWellFormed(rest, maxChars);
+  const next = offset + text.length;
   const note =
-    maxChars > 0 && next <= maxOffset
+    text.length > 0 && next <= maxOffset
       ? `continue with offset ${next}`
       : "stopped at the read limit";
   return {
-    text: `${rest.slice(0, maxChars)}\n\n[Content truncated; ${note}]`,
+    text: `${text}\n\n[Content truncated; ${note}]`,
     truncated: true,
   };
 }
