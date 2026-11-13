@@ -1,5 +1,5 @@
--- Additive vault access settings. The legacy access guard migration prevents older
--- runtime connections from using the vault without enforcing these settings.
+-- Additive vault access settings. The legacy access guard migration hides restricted items
+-- from older runtime connections while keeping unrestricted items usable.
 CREATE TABLE "vault_credential_limits" (
   "id" TEXT NOT NULL,
   "credentialId" TEXT NOT NULL,

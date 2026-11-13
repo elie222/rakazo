@@ -1,12 +1,38 @@
--- Legacy binaries cannot enforce item policies. Hide all vault rows from them, even in a
--- system context, during rollout and rollback. New connections attest support alongside
--- their tenant/system settings. This deliberately disables the legacy vault until upgraded.
--- RESTRICTIVE intersects every permissive tenant and system policy, including writes.
-CREATE POLICY vault_credentials_access_version ON "vault_credentials" AS RESTRICTIVE
-  USING (current_setting('app.vault_access_version', true) = '1');
+-- Old binaries may keep using unrestricted items. They cannot enforce restrictions,
+-- so hide restricted items on reads AND writes, including in a system context.
+-- Read limits as the table owner: tenant RLS must not hide another Space's limit
+-- from an old writer that could otherwise overwrite the shared account item.
+CREATE FUNCTION app_vault_item_unrestricted(credential_id text) RETURNS boolean
+  LANGUAGE sql STABLE SECURITY DEFINER
+  SET search_path = pg_catalog, pg_temp
+  AS $$
+    SELECT NOT EXISTS (
+      SELECT 1 FROM public.vault_credential_limits WHERE "credentialId" = credential_id
+    )
+  $$;
 
--- A legacy run must not fall back to a run-only login/code instead of checking the vault.
+CREATE POLICY vault_credentials_access_version ON "vault_credentials" AS RESTRICTIVE
+  USING (current_setting('app.vault_access_version', true) = '1'
+    OR ("policy" = 'allow' AND app_vault_item_unrestricted("id")));
+
+-- Run-only secrets do not identify their source item (and codes have no item name).
+-- An old worker must not bypass a hidden item by reading or saving a run-only
+-- replacement. Fence these rows only for owners with a restricted item in their
+-- account or this Space's vault. Other owners/Spaces and non-run secrets work as before.
+-- SECURITY DEFINER also avoids recursion through the vault's restrictive policy.
+CREATE FUNCTION app_vault_run_unrestricted(owner_id text, space_id text) RETURNS boolean
+  LANGUAGE sql STABLE SECURITY DEFINER
+  SET search_path = pg_catalog, pg_temp
+  AS $$
+    SELECT NOT EXISTS (
+      SELECT 1 FROM public.vault_credentials v
+      WHERE v."userId" = owner_id AND (v."spaceId" IS NULL OR v."spaceId" = space_id)
+        AND (v."policy" <> 'allow' OR NOT public.app_vault_item_unrestricted(v.id))
+    )
+  $$;
+
 CREATE POLICY secrets_vault_access_version ON "secrets" AS RESTRICTIVE
   USING ("kind" NOT LIKE 'run-login:%' AND "kind" NOT LIKE 'run-code:%'
     AND "kind" NOT LIKE 'run-code-spent:%' AND "kind" NOT LIKE 'run-secret:%'
-    OR current_setting('app.vault_access_version', true) = '1');
+    OR current_setting('app.vault_access_version', true) = '1'
+    OR app_vault_run_unrestricted("userId", "spaceId"));
