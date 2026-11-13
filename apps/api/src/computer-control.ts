@@ -176,23 +176,24 @@ export async function answerComputerRequest(
   return waiting.id;
 }
 
-/** Keep this lease while its page checks in. */
+/** Keep this lease while its page checks in. Resolves whether it was still live to keep. */
 export async function renewComputerControl(
   deps: ControlDeps,
   computerId: string,
   leaseId: string,
   expiresAt: Date,
-): Promise<void> {
-  await deps.prisma.computer.updateMany({
+): Promise<boolean> {
+  const renewed = await deps.prisma.computer.updateMany({
     where: {
       id: computerId,
       controlHolder: "user",
       controlLeaseId: leaseId,
       // A lapsed lease is being revoked; only a live one is renewed.
-      controlLeaseExpiresAt: { gt: new Date(), lt: expiresAt },
+      controlLeaseExpiresAt: { gt: new Date() },
     },
     data: { controlLeaseExpiresAt: expiresAt },
   });
+  return renewed.count === 1;
 }
 
 /** The run of this bot that asked a person for help on its screen and still waits. */
@@ -369,8 +370,13 @@ export async function takeComputerControl(
   assertNotAnotherPersonsControl(bot.computer, actor);
   if (holdsComputerControl(bot.computer, bot.id, actor)) {
     const expiresAt = controlLeaseExpiresAt();
-    await renewComputerControl(deps, bot.computer.id, bot.computer.controlLeaseId!, expiresAt);
-    return { leaseId: bot.computer.controlLeaseId!, expiresAt: expiresAt.toISOString() };
+    const leaseId = bot.computer.controlLeaseId!;
+    if (await renewComputerControl(deps, bot.computer.id, leaseId, expiresAt)) {
+      return { leaseId, expiresAt: expiresAt.toISOString() };
+    }
+    // The lease lapsed or was handed back meanwhile: take control afresh.
+    bot = await repos.getBot(actor, botId);
+    if (!bot.computer) throw new IsolationError();
   }
   // This person's control of another bot's screen on a shared computer ends first.
   if (hasActiveComputerControl(bot.computer) && bot.computer.controlBotId) {
@@ -409,8 +415,9 @@ export async function takeComputerControl(
     // A second Take control from the holder, such as a double tap, keeps their lease.
     if (holdsComputerControl(current, bot.id, actor)) {
       const renewed = controlLeaseExpiresAt();
-      await renewComputerControl(deps, computerId, current.controlLeaseId!, renewed);
-      return { leaseId: current.controlLeaseId!, expiresAt: renewed.toISOString() };
+      if (await renewComputerControl(deps, computerId, current.controlLeaseId!, renewed)) {
+        return { leaseId: current.controlLeaseId!, expiresAt: renewed.toISOString() };
+      }
     }
     assertNotAnotherPersonsControl(current, actor);
     throw new ORPCError("CONFLICT", { message: "Computer is busy" });

@@ -177,6 +177,46 @@ describe("expireStuckRun", () => {
     });
   });
 
+  describe("a takeover wait whose bot's screen someone holds", () => {
+    function holdingScreen(controlUserId: string) {
+      const client = tx({ status: "waiting_takeover" });
+      client.$queryRaw.mockImplementation((async (sql: TemplateStringsArray) =>
+        sql.join("").includes('"controlLeaseId"')
+          ? [
+              {
+                botId: "bot-1",
+                userId: "user-1",
+                controlBotId: "bot-1",
+                controlLeaseId: "lease-1",
+                controlUserId,
+                computerUserId: "user-1",
+              },
+            ]
+          : []) as never);
+      return client;
+    }
+    const expire = (client: ReturnType<typeof tx>) =>
+      expireStuckRun(client as unknown as Prisma.TransactionClient, {
+        runId: "run-1",
+        threadId: "thread-1",
+        status: "waiting_takeover",
+        updatedAt,
+        now,
+      });
+
+    it("keeps waiting while the person it asked is on the screen", async () => {
+      const client = holdingScreen("user-1");
+      await expect(expire(client)).resolves.toBeNull();
+      expect(client.run.updateMany).not.toHaveBeenCalled();
+    });
+
+    it("ends the wait when only another member holds the screen", async () => {
+      const client = holdingScreen("user-2");
+      await expect(expire(client)).resolves.not.toBeNull();
+      expect(client.run.updateMany).toHaveBeenCalled();
+    });
+  });
+
   it("denies the effect behind an unanswered approval card", async () => {
     const client = tx({ status: "waiting_input", openCardEffectId: "effect-1" });
     await expireStuckRun(client as unknown as Prisma.TransactionClient, {

@@ -182,23 +182,36 @@ export async function endTakeoverWaits(
 }
 
 /**
- * Whether the user has taken this bot's screen. Any control lease still on the row counts, even
- * an expired one or one mid-release: the person may still be finishing the step the run waits
- * on, so it is not cancelled under them. Locks the computer row, so a concurrent takeover grant either lands first and
- * is seen here, or waits for this cancel.
+ * Whether the person the run asked has taken this bot's screen. Any lease of theirs still on the
+ * row counts, even an expired one or one mid-release: they may still be finishing the step the run
+ * waits on, so it is not cancelled under them. Locks the computer row, so a concurrent takeover
+ * grant either lands first and is seen here, or waits for this cancel.
  */
 async function userHasTakeoverScreen(
   tx: Prisma.TransactionClient,
   runId: string,
 ): Promise<boolean> {
   const [computer] = await tx.$queryRaw<
-    Array<{ botId: string; controlBotId: string | null; controlLeaseId: string | null }>
+    Array<{
+      botId: string;
+      userId: string;
+      controlBotId: string | null;
+      controlLeaseId: string | null;
+      controlUserId: string | null;
+      computerUserId: string;
+    }>
   >`
-    SELECT r."botId", c."controlBotId", c."controlLeaseId"
+    SELECT r."botId", r."userId", c."controlBotId", c."controlLeaseId", c."controlUserId",
+      c."userId" AS "computerUserId"
     FROM runs r
     JOIN bots b ON b.id = r."botId"
     JOIN computers c ON c.id = b."computerId"
     WHERE r.id = ${runId}
     FOR UPDATE OF c`;
-  return Boolean(computer?.controlLeaseId && computer.controlBotId === computer.botId);
+  // Only the person the run asked counts: another member on the screen is not doing its step.
+  return Boolean(
+    computer?.controlLeaseId &&
+      computer.controlBotId === computer.botId &&
+      (computer.controlUserId ?? computer.computerUserId) === computer.userId,
+  );
 }

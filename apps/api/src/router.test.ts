@@ -4594,6 +4594,32 @@ describe("computer terminal and file transfer", () => {
     expect(deps.events.answerTakeoverRequest).not.toHaveBeenCalled();
   });
 
+  it("takes control afresh when the held lease lapsed before it could be renewed", async () => {
+    const { prisma, call } = setup({ ...controlled, controlUserId: "user-1" });
+    const held = (await prisma.bot.findFirst({} as never)) as unknown as { computer: object };
+    // The lease lapsed meanwhile: the renew finds nothing live, and the computer is free again.
+    vi.mocked(prisma.computer.updateMany).mockResolvedValueOnce({ count: 0 });
+    vi.mocked(prisma.bot.findFirst)
+      .mockResolvedValueOnce(held as never)
+      .mockResolvedValue({
+        ...held,
+        computer: {
+          ...held.computer,
+          controlHolder: "none",
+          controlLeaseId: null,
+          controlLeaseExpiresAt: null,
+          controlBotId: null,
+        },
+      } as never);
+    const response = await call("takeover", {});
+    expect(response).toMatchObject({ status: 200 });
+    expect((response.body as { json: { leaseId: string } }).json.leaseId).not.toBe("lease-1");
+    expect(vi.mocked(prisma.computer.updateMany).mock.calls[1]?.[0].data).toMatchObject({
+      controlHolder: "user",
+      controlUserId: "user-1",
+    });
+  });
+
   it("returns the holder's own lease to a second Take control", async () => {
     const held = { ...controlled, controlUserId: "user-1" };
     const { prisma, call } = setup();
@@ -4622,7 +4648,7 @@ describe("computer terminal and file transfer", () => {
         controlHolder: "user",
         controlLeaseId: "lease-1",
         // Only a live lease renews; a lapsed one is on its way to revocation.
-        controlLeaseExpiresAt: { gt: expect.any(Date), lt: expect.any(Date) },
+        controlLeaseExpiresAt: { gt: expect.any(Date) },
       },
       data: { controlLeaseExpiresAt: expect.any(Date) },
     });
