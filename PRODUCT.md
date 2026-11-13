@@ -50,7 +50,12 @@ Browser sign-ins are checkpointed into the shared identity and become available 
 Concurrent Chromium processes do not write directly to one profile directory, and generation fencing prevents older desktops from overwriting newer shared state.
 A Private Computer isolates the entire working home, including files and browser identity, when working state must not be shared with other bots.
 Computer resources start lazily and are released when inactive so configured capacity does not become permanently reserved memory.
-User takeover grants exclusive control of one bot's screen without unnecessarily blocking other bots on their own screens.
+One actor uses a computer screen at a time, so neither a person nor a bot ever acts on a screen the other just changed.
+People watch a bot's screen live and take control when they want to use it; control returns when they hand it back, leave the screen, or stop checking in for about a minute.
+While a person has control the bot's screen actions are refused rather than queued, and once control returns the bot looks at the screen again before acting.
+A bot that needs a person for a sign-in, CAPTCHA, passkey or payment asks in the chat and continues when they press Done.
+Taking control of one bot's screen never blocks other bots on their own screens.
+Maintenance such as updating or resetting a computer lives in settings rather than on the screen.
 
 ## Connections, skills, and plugins
 

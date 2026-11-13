@@ -398,58 +398,6 @@ it("keeps the replaced screen over its successor until that one connects", async
   expect(frames[0]!.dataset.src).toContain("/control/");
 });
 
-it("shows the remembered view at once on release and returns to control if it fails", async () => {
-  const pending = { reject: (_error: Error) => {} };
-  const release = vi.fn(
-    () =>
-      new Promise<never>((_resolve, reject) => {
-        pending.reject = reject;
-      }),
-  );
-  let controls!: ReturnType<typeof useComputerControls>;
-  function Controls() {
-    controls = useComputerControls({
-      rpc: { computer: { release, screenUrl } } as never,
-      state,
-      panel: "computer",
-      active: undefined,
-      bots: [],
-      botsRef: { current: [] },
-      activeBotId: { current: "bot-1" },
-      activeGroupId: { current: undefined },
-      runStatus: undefined,
-      sandboxProvider: undefined,
-      refreshThread: vi.fn(async () => ({}) as never),
-      refreshGroupThread: vi.fn(),
-      onUpgrade: vi.fn(),
-    });
-    return null;
-  }
-  await act(async () =>
-    root.render(
-      <>
-        <Harness />
-        <Controls />
-      </>,
-    ),
-  );
-  screenUrlFactory = () => proxied("view", "v1");
-  await read();
-  screenUrlFactory = () => proxied("control", "c1");
-  await read();
-  let released!: Promise<void>;
-  await act(async () => {
-    released = controls.releaseComputer();
-  });
-  expect(release).toHaveBeenCalled();
-  expect(state.screenUrl).toBe(proxied("view", "v1"));
-  await act(async () => {
-    pending.reject(new Error("offline"));
-    await released;
-  });
-  expect(state.screenUrl).toBe(proxied("control", "c1"));
-});
-
 it("closes the computer view on Escape, but not on the Escape that ends an IME composition", async () => {
   function Controls() {
     state = useComputerState({
@@ -488,6 +436,160 @@ it("closes the computer view on Escape, but not on the Escape that ends an IME c
   expect(state.computerOpen).toBe(true);
   await press();
   expect(state.computerOpen).toBe(false);
+});
+
+/** Renders the computer controls for bot-1 with a running computer this page can take. */
+async function renderTakingControl(
+  takeover: () => Promise<{ leaseId: string; expiresAt: string }> = async () => ({
+    leaseId: "lease-1",
+    expiresAt: "",
+  }),
+) {
+  const held = {
+    botId: "bot-1",
+    state: "running",
+    controlHolder: "user",
+    controlBotId: "bot-1",
+    controlLeaseId: "lease-1",
+  } as never;
+  const release = vi.fn(async () => ({ ok: true }));
+  const heartbeat = vi.fn(async () => ({ ok: true }));
+  const rpc = {
+    computer: {
+      release,
+      heartbeat,
+      boot: vi.fn(async () => held),
+      takeover: vi.fn(takeover),
+      screenUrl: vi.fn(async () => ({ url: null })),
+    },
+  } as never;
+  const bot = { id: "bot-1" } as never;
+  let controls!: ReturnType<typeof useComputerControls>;
+  function Controls() {
+    state = useComputerState({
+      rpc,
+      panel: null,
+      activeId: "bot-1",
+      activeBotId: { current: "bot-1" },
+    });
+    controls = useComputerControls({
+      rpc,
+      state,
+      panel: null,
+      active: bot,
+      bots: [bot],
+      botsRef: { current: [bot] },
+      activeBotId: { current: "bot-1" },
+      activeGroupId: { current: undefined },
+      runStatus: undefined,
+      sandboxProvider: undefined,
+      refreshThread: vi.fn(async () => {
+        state.commitComputer(held);
+        return {} as never;
+      }),
+      refreshGroupThread: vi.fn(),
+      onUpgrade: vi.fn(),
+    });
+    return null;
+  }
+  await act(async () => root.render(<Controls />));
+  return {
+    release,
+    heartbeat,
+    held,
+    takeControl: () => controls.openComputer("bot-1", true),
+    handBack: (reason?: "done" | "skipped") => controls.releaseComputer(reason),
+  };
+}
+
+it("hands its lease back when the computer closes, and keeps it while open", async () => {
+  const { release, heartbeat, takeControl } = await renderTakingControl();
+  await act(async () => {
+    await takeControl();
+  });
+  expect(heartbeat).toHaveBeenCalledWith({ botId: "bot-1" });
+  expect(release).not.toHaveBeenCalled();
+  await act(async () => state.setComputerOpen(false));
+  expect(release).toHaveBeenCalledWith(
+    { botId: "bot-1", leaseId: "lease-1" },
+    { context: { keepalive: true } },
+  );
+});
+
+it("hands its lease back when the app leaves an open computer", async () => {
+  const { release, takeControl } = await renderTakingControl();
+  await act(async () => {
+    await takeControl();
+  });
+  await act(async () => root.render(null));
+  expect(release).toHaveBeenCalledWith(
+    { botId: "bot-1", leaseId: "lease-1" },
+    { context: { keepalive: true } },
+  );
+});
+
+it("keeps control when the server refuses I'm done, and hands it back on close", async () => {
+  const { release, takeControl, handBack } = await renderTakingControl();
+  await act(async () => {
+    await takeControl();
+  });
+  release.mockRejectedValueOnce(new Error("The bot is waiting for someone else"));
+  await act(async () => {
+    await handBack("done");
+  });
+  // Nothing changed locally: the screen is still this person's, under the server's lease.
+  expect(state.computer).toMatchObject({ controlHolder: "user", controlLeaseId: "lease-1" });
+  await act(async () => state.setComputerOpen(false));
+  expect(release).toHaveBeenLastCalledWith(
+    { botId: "bot-1", leaseId: "lease-1" },
+    { context: { keepalive: true } },
+  );
+});
+
+it("hands back a teaching lease the server granted when the screen closes", async () => {
+  const { release, held } = await renderTakingControl();
+  // Teaching took control on the server; this page learns the lease from the computer's status.
+  await act(async () => {
+    state.commitComputer(held);
+    state.setComputerOpen(true);
+  });
+  await act(async () => state.setComputerOpen(false));
+  expect(release).toHaveBeenCalledWith(
+    { botId: "bot-1", leaseId: "lease-1" },
+    { context: { keepalive: true } },
+  );
+});
+
+it("checks in only while the page is visible, so a forgotten tab lets control lapse", async () => {
+  const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+  try {
+    const { heartbeat, held } = await renderTakingControl();
+    await act(async () => {
+      state.commitComputer(held);
+      state.setComputerOpen(true);
+    });
+    expect(heartbeat).not.toHaveBeenCalled();
+
+    visibility.mockReturnValue("visible");
+    await act(async () => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    expect(heartbeat).toHaveBeenCalledWith({ botId: "bot-1" });
+  } finally {
+    visibility.mockRestore();
+  }
+});
+
+it("hands back whatever control the person holds when Hand back is pressed", async () => {
+  const { release, takeControl, handBack } = await renderTakingControl();
+  await act(async () => {
+    await takeControl();
+  });
+  await act(async () => {
+    await handBack();
+  });
+  // Not scoped to this page's lease: the control may have come from another tab or teaching.
+  expect(release).toHaveBeenCalledWith({ botId: "bot-1", reason: undefined });
 });
 
 it("offers Upgrade instead of a retry once the computer hours are spent", async () => {
