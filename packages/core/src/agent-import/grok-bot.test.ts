@@ -215,7 +215,10 @@ describe("a Grok Bot as an import plan", () => {
       ["weekly-account-health", "Use for the Monday account review."],
     ]);
     expect(grokSkillNames(bot!)).toEqual(
-      new Map([["weekly account health", "weekly-account-health"]]),
+      new Map([
+        ["weekly account health", "weekly-account-health"],
+        ["weekly-account-health", "weekly-account-health"],
+      ]),
     );
   });
 
@@ -308,5 +311,16 @@ it("rejects oversized collections before allocating import names", () => {
   }
   expect(() =>
     readGrokBotExportJson(JSON.stringify({ bots: Array(101).fill({ name: "same" }) })),
+  ).toThrow(GrokBotExportError);
+});
+
+it("rejects explicit unrelated formats and newer string versions", () => {
+  expect(() =>
+    readGrokBotExportJson(JSON.stringify({ format: "other", bots: [{ name: "Example" }] })),
+  ).toThrow(GrokBotExportError);
+  expect(() =>
+    readGrokBotExportJson(
+      JSON.stringify({ format: "grok-bot-export", version: "2", bots: [{ name: "Example" }] }),
+    ),
   ).toThrow(GrokBotExportError);
 });

@@ -7,6 +7,7 @@ import {
   BOT_DESCRIPTION_MAX_LENGTH,
   BOT_NAME_MAX_LENGTH,
 } from "@rakazo/contracts";
+import JSON5 from "json5";
 import { buildSkillMd, parseSkillMd } from "../agent-skill.js";
 import { nextCronDateAcrossStrict } from "../cron.js";
 import type { AgentImportParse } from "./shared.js";
@@ -133,35 +134,12 @@ const BOT_FIELDS = ["instructions", "memories", "user_facts", "skills", "routine
 const EXPORT_START = /^\{\s*"(?:format|version|bots)"/;
 
 /** Commas right before `}` or `]`, outside strings: what a chat window leaves behind. */
-function dropTrailingCommas(source: string): string {
-  let out = "";
-  let quoted = false;
-  let escaped = false;
-  for (let index = 0; index < source.length; index += 1) {
-    const char = source[index]!;
-    if (quoted) {
-      if (escaped) escaped = false;
-      else if (char === "\\") escaped = true;
-      else if (char === '"') quoted = false;
-    } else if (char === '"') {
-      quoted = true;
-    } else if (char === "," && /^\s*[}\]]/.test(source.slice(index + 1, index + 200))) {
-      continue;
-    }
-    out += char;
-  }
-  return out;
-}
-
 function looseJson(source: string): unknown {
-  for (const attempt of [source, dropTrailingCommas(source)]) {
-    try {
-      return JSON.parse(attempt) as unknown;
-    } catch {
-      // The next repair.
-    }
+  try {
+    return JSON5.parse(source) as unknown;
+  } catch {
+    return undefined;
   }
-  return undefined;
 }
 
 /**
@@ -495,7 +473,12 @@ function grokSkills(bot: GrokBot) {
 export function grokSkillNames(bot: GrokBot): Map<string, string> {
   return new Map(
     grokSkills(bot).flatMap(({ source, item }) =>
-      item ? [[source.name.toLowerCase(), item.name] as const] : [],
+      item
+        ? [
+            [source.name.toLowerCase(), item.name] as const,
+            [item.name.toLowerCase(), item.name] as const,
+          ]
+        : [],
     ),
   );
 }
