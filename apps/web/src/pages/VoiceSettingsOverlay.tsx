@@ -29,6 +29,7 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { XIcon } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useCallSession } from "../lib/call-session";
 import { useSpaceQueries } from "../lib/query";
 import { useBoundSpaceId, useSpaceRpc } from "../lib/space-rpc";
 import { speaker } from "../lib/tts";
@@ -70,6 +71,7 @@ export function VoiceSettingsOverlay({
     return { catalog, credentials, status, provider, credential, voices };
   });
   const { t } = useLingui();
+  const call = useCallSession();
   const apiKeyId = useId();
   const voiceSelectId = useId();
   const speechModelId = useId();
@@ -375,6 +377,8 @@ export function VoiceSettingsOverlay({
   }
 
   async function testVoice() {
+    // The sample uses the call's speaker, so it would cut off the reply.
+    if (call) return;
     setError(null);
     setNotice(null);
     markPending("test");
@@ -648,7 +652,7 @@ export function VoiceSettingsOverlay({
                 type="button"
                 variant="secondary"
                 className="mt-4"
-                disabled={busy || !status?.ready}
+                disabled={busy || !status?.ready || call !== null}
                 onClick={() => void testVoice()}
               >
                 {pending === "test" ? <Trans>Playing…</Trans> : <Trans>Hear a sample</Trans>}
