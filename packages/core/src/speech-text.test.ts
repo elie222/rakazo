@@ -293,6 +293,35 @@ describe("spokenDecision", () => {
 
   it("accepts accented sí", () => expect(spokenDecision("sí")).toBe("yes"));
 
+  it.each([
+    "okay, do not",
+    "sure, cancel that",
+    "yes but cancel it",
+    "yes please don't",
+    "ok stop",
+    "yeah nah",
+    "sí, mejor no",
+  ])("does not pick a side when %j says both yes and no", (text) =>
+    expect(spokenDecision(text)).toBeNull(),
+  );
+
+  it("still hears a plain yes or no that carries a polite extra", () => {
+    expect(spokenDecision("yes please")).toBe("yes");
+    expect(spokenDecision("ok, thanks")).toBe("yes");
+    expect(spokenDecision("no thanks")).toBe("no");
+  });
+
+  it("keeps a refusal that repeats the action as a no", () => {
+    expect(spokenDecision("don't do it")).toBe("no");
+    expect(spokenDecision("no, do it later")).toBe("no");
+  });
+
+  it("hears a curly apostrophe like a straight one", () => {
+    expect(spokenDecision("don’t")).toBe("no");
+    expect(spokenDecision("don’t do it")).toBe("no");
+    expect(spokenDecision("don't")).toBe("no");
+  });
+
   it("does not hear a yes in a Spanish condition, question or instruction", () => {
     expect(spokenDecision("si puedes, revisa los logs")).toBeNull();
     expect(spokenDecision("sino revisa el deploy")).toBeNull();
