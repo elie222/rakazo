@@ -17,6 +17,9 @@ import {
 import { CARD_TITLE_ESCAPED_CHARACTERS, ONCE_ROUTINE_CRON, redactSecrets } from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
+  BOT_CHANGE_FORBIDDEN,
+  canChangeBot,
+  changesWhatBotDoes,
   commitBotUpdate,
   createGroupRepos,
   createRepos,
@@ -262,6 +265,7 @@ async function prepareChildModel(
 
   const child = await resolveBot(deps.prisma, run, args);
   if ("error" in child) return child;
+  if (!(await canChangeBot(deps.prisma, run, child))) return refuse(BOT_CHANGE_FORBIDDEN);
   const previous = {
     provider: child.modelProvider,
     model: child.modelId,
@@ -403,6 +407,7 @@ async function prepareChildInstructions(
   const child = await resolveBot(deps.prisma, run, args);
   if ("error" in child) return child;
   if (!child.thread) return refuse(NOT_FOUND);
+  if (!(await canChangeBot(deps.prisma, run, child))) return refuse(BOT_CHANGE_FORBIDDEN);
   // Checked before the card too, so a second edit never asks the owner for nothing.
   if (await wroteInstructionsThisRun(deps.prisma, run, child.id)) {
     return refuse(ALREADY_WROTE_INSTRUCTIONS);
@@ -795,6 +800,34 @@ export async function updateFleetGroup(
 const CHILD_CHANGED = "child changed; read it again with list_fleet";
 const ALREADY_WROTE_INSTRUCTIONS = "You already changed this bot's instructions in this run.";
 
+function childBotProfile(args: Record<string, unknown>) {
+  return {
+    dailyCheckIns: argumentGiven(args.dailyCheckIns) ? args.dailyCheckIns : undefined,
+    name: argumentGiven(args.name) ? args.name : undefined,
+    description: argumentGiven(args.description) ? args.description : undefined,
+    notifyOnFinish: argumentGiven(args.notifyOnFinish)
+      ? args.notifyOnFinish
+      : argumentGiven(args.notify_on_finish)
+        ? args.notify_on_finish
+        : undefined,
+  };
+}
+
+/**
+ * Why `update_bot` with `bot_id` may not change that bot, checked before any approval card so a
+ * member is never asked to approve a change that would be refused. The handler checks again.
+ */
+export async function childBotChangeRefusal(
+  prisma: PrismaClient,
+  run: FleetRun,
+  args: Record<string, unknown>,
+): Promise<string | undefined> {
+  if (!changesWhatBotDoes(childBotProfile(args))) return undefined;
+  const child = await resolveBot(prisma, run, { bot_id: args.bot_id });
+  if ("error" in child) return undefined;
+  return (await canChangeBot(prisma, run, child)) ? undefined : BOT_CHANGE_FORBIDDEN;
+}
+
 /** `update_bot` with `bot_id`: the profile fields of another bot in the space. */
 export async function updateChildBot(
   deps: Pick<FleetDeps, "prisma" | "events"> & { runSecrets: readonly string[] },
@@ -807,16 +840,7 @@ export async function updateChildBot(
   if (argumentGiven(args.instructions)) {
     return { error: "Change another bot's instructions with set_child_instructions." };
   }
-  const profile = {
-    dailyCheckIns: argumentGiven(args.dailyCheckIns) ? args.dailyCheckIns : undefined,
-    name: argumentGiven(args.name) ? args.name : undefined,
-    description: argumentGiven(args.description) ? args.description : undefined,
-    notifyOnFinish: argumentGiven(args.notifyOnFinish)
-      ? args.notifyOnFinish
-      : argumentGiven(args.notify_on_finish)
-        ? args.notify_on_finish
-        : undefined,
-  };
+  const profile = childBotProfile(args);
   const credential = credentialField(
     { name: profile.name, description: profile.description },
     deps.runSecrets,
@@ -849,6 +873,9 @@ export async function updateChildBot(
       error: "Provide at least one of name, description, notify_on_finish, or color.",
     };
   }
+  if (changesWhatBotDoes(patch) && !(await canChangeBot(deps.prisma, run, child))) {
+    return { error: BOT_CHANGE_FORBIDDEN };
+  }
   await commitBotUpdate({
     prisma: deps.prisma,
     notify: (threadId, seq) => deps.events.notify(threadId, seq),
@@ -874,6 +901,7 @@ export async function setChildInstructions(
   const child = await resolveBot(deps.prisma, run, { bot_id: canonical.botId });
   if ("error" in child) return { error: child.error };
   if (!child.thread) return { error: NOT_FOUND };
+  if (!(await canChangeBot(deps.prisma, run, child))) return { error: BOT_CHANGE_FORBIDDEN };
   if (await wroteInstructionsThisRun(deps.prisma, run, child.id)) {
     return { error: ALREADY_WROTE_INSTRUCTIONS };
   }
@@ -938,6 +966,7 @@ export async function setChildBotModel(
   const child = await resolveBot(deps.prisma, run, { bot_id: canonical.botId });
   if ("error" in child) return { error: child.error };
   if (!child.thread) return { error: NOT_FOUND };
+  if (!(await canChangeBot(deps.prisma, run, child))) return { error: BOT_CHANGE_FORBIDDEN };
   const previous = asRecord(canonical.previous);
   if (
     (previous?.provider ?? null) !== child.modelProvider ||
@@ -1099,6 +1128,7 @@ async function appendGroupEvent(
 
 const botSelect = {
   id: true,
+  userId: true,
   name: true,
   modelProvider: true,
   modelId: true,

@@ -39,7 +39,7 @@ export type MobileBot = Pick<
   | "crossSpaceCommunication"
   | "dailyCheckIns"
 > &
-  Partial<Pick<Bot, "parentBotId" | "spaceId" | "instructions" | "snoozedUntil">>;
+  Partial<Pick<Bot, "parentBotId" | "spaceId" | "instructions" | "snoozedUntil" | "canChange">>;
 export type MobileBotSection = BotSection;
 export type MobileMe = Pick<
   Me,

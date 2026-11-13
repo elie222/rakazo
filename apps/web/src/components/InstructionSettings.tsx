@@ -19,6 +19,7 @@ export function InstructionSettings({ bot }: { bot: Bot }) {
   const [pending, setPending] = useState(false);
   const [conflict, setConflict] = useState(false);
   const [error, setError] = useState("");
+  const locked = bot.canChange === false;
   if (bot !== previousBot) {
     setPreviousBot(bot);
     if (instructions === baseline) {
@@ -81,7 +82,7 @@ export function InstructionSettings({ bot }: { bot: Bot }) {
                   </Disclosure>
                   <Button
                     variant="outline"
-                    disabled={pending}
+                    disabled={pending || locked}
                     onClick={() =>
                       void save(() =>
                         rpc.bots.restoreInstructions({
@@ -105,7 +106,7 @@ export function InstructionSettings({ bot }: { bot: Bot }) {
         className="font-normal min-h-20 max-h-96 resize-none field-sizing-content text-foreground rounded-xl border-transparent bg-muted/50 p-4 shadow-none"
         value={instructions}
         maxLength={BOT_INSTRUCTIONS_MAX_LENGTH}
-        disabled={pending}
+        disabled={pending || locked}
         onChange={(event) => setInstructions(event.target.value)}
         onBlur={() => {
           if (!conflict && instructions !== current.instructions)

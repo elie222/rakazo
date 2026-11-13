@@ -1,7 +1,7 @@
 import type { ConnectorCall, ConnectorTool } from "@rakazo/adapter-kit";
 import { BOT_INSTRUCTIONS_MAX_LENGTH, BotSecretAuth, OneTimeCodeTarget } from "@rakazo/contracts";
 import { redactSecrets } from "@rakazo/core";
-import { runLoginKind } from "@rakazo/db";
+import { BOT_CHANGE_FORBIDDEN, canChangeBot, changesWhatBotDoes, runLoginKind } from "@rakazo/db";
 import { prepareAgentConnectionResponse } from "./agent-connections.js";
 import type { FleetCardSummary } from "./approval-ask.js";
 import type { TerminatingToolResult } from "./approval-effect.js";
@@ -21,7 +21,12 @@ import {
 import { listVaultItems } from "./bot-secrets.js";
 import { validCloudAgentArgs } from "./cloud-agent-tools.js";
 import { sanitizeConnectorError } from "./connector-safety.js";
-import { isFleetApprovalTool, modelLabel, prepareFleetRequest } from "./fleet-tools.js";
+import {
+  childBotChangeRefusal,
+  isFleetApprovalTool,
+  modelLabel,
+  prepareFleetRequest,
+} from "./fleet-tools.js";
 import { assertConnectorToolArgs, CATALOG_EXECUTE } from "./lazy-tool-catalog.js";
 import { paidRequestEffect, restorePaidRequest } from "./paid-request.js";
 import type { PurchaseApproval } from "./purchase-gate.js";
@@ -462,6 +467,10 @@ export async function prepareToolRequest(
     args = prepared.canonical;
     request.fleetSummary = prepared.summary;
   }
+  if (name === "update_bot" && argumentGiven(args.bot_id)) {
+    const refused = await childBotChangeRefusal(deps.prisma, ctx.fleetRun, args);
+    if (refused) return refusal("bot_change_forbidden", refused);
+  }
   if (name === "respond_agent_connection") {
     if (nextApprovedTool !== name) {
       const pending = await prepareAgentConnectionResponse(
@@ -634,6 +643,25 @@ async function currentModelNames(
 }
 
 /**
+ * A run for another member may rename or restyle this bot, nothing more: its unattended runs act
+ * with its creator's accounts (see canChangeBot). An image avatar is a color change.
+ */
+async function ownBotChangeRefusal(
+  ctx: RunContext,
+  args: Record<string, unknown>,
+): Promise<PrepareRefusal | undefined> {
+  const changes = Object.fromEntries(
+    Object.entries(args).filter(
+      ([key, value]) =>
+        argumentGiven(value) && key !== "artifact_id" && key !== "use_attached_image",
+    ),
+  );
+  if (changesWhatBotDoes(changes) && !(await canChangeBot(ctx.deps.prisma, ctx.run, ctx.bot)))
+    return refusal("bot_change_forbidden", BOT_CHANGE_FORBIDDEN);
+  return undefined;
+}
+
+/**
  * `update_bot` on this bot itself. Under Never ask instructions are written at once; otherwise
  * they go through approval like any other action, and outside runs cannot change them.
  */
@@ -644,6 +672,10 @@ async function prepareOwnBotUpdate(
   const { run } = ctx;
   const { executionId, nextApprovedTool } = request;
   if (nextApprovedTool === "update_bot") {
+    // A card approved before the bot's creator rule, or by a member who has since lost it, still
+    // may not change what the bot does.
+    const refused = await ownBotChangeRefusal(ctx, request.args);
+    if (refused) return refused;
     // The approved replay runs the stored request.
     request.heldForApproval = typeof request.args.previousInstructions === "string";
     return undefined;
@@ -677,6 +709,8 @@ async function prepareOwnBotUpdate(
   // A paged read never writes: the handler answers with the settings and names every other field
   // it left out, so the write checks below do not apply to those fields.
   if (argumentGiven(args.instructions_offset ?? args.instructionsOffset)) return undefined;
+  const refused = await ownBotChangeRefusal(ctx, args);
+  if (refused) return refused;
   const settingsOnly = Object.keys(args).filter(
     (key) => !OWN_FIELDS.has(key) && argumentGiven(args[key]),
   );

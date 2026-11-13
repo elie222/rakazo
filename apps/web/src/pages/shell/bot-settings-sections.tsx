@@ -27,9 +27,11 @@ type MemoryScope = "isolated" | "shared" | null;
 export function ComputerModePicker({
   value,
   onChange,
+  disabled = false,
 }: {
   value: ComputerMode;
   onChange: (value: ComputerMode) => void;
+  disabled?: boolean;
 }) {
   return (
     <div className="grid grid-cols-2 gap-2">
@@ -38,6 +40,7 @@ export function ComputerModePicker({
           key={mode}
           variant="outline"
           pressed={value === mode}
+          disabled={disabled}
           onPressedChange={(pressed) => {
             if (pressed) onChange(mode);
           }}
@@ -81,10 +84,12 @@ export function NotificationsSection({
   ids,
   notifyOnFinish,
   onNotifyOnFinishChange,
+  disabled = false,
 }: {
   ids: string;
   notifyOnFinish: boolean;
   onNotifyOnFinishChange: (checked: boolean) => void;
+  disabled?: boolean;
 }) {
   return (
     <section className="mt-6">
@@ -105,6 +110,7 @@ export function NotificationsSection({
           id={`${ids}-notify-finish`}
           checked={notifyOnFinish}
           aria-labelledby={`${ids}-notify-finish-label`}
+          disabled={disabled}
           onCheckedChange={onNotifyOnFinishChange}
         />
       </div>
@@ -124,6 +130,7 @@ export function ModelSection({
   thinkingLevel,
   defaultThinkingLevel,
   onThinkingLevelChange,
+  disabled = false,
 }: {
   ids: string;
   containerRef: RefObject<HTMLDivElement | null>;
@@ -135,6 +142,7 @@ export function ModelSection({
   thinkingLevel: string;
   defaultThinkingLevel: ThinkingLevel;
   onThinkingLevelChange: (level: string) => void;
+  disabled?: boolean;
 }) {
   const { t } = useLingui();
   return (
@@ -163,6 +171,7 @@ export function ModelSection({
               choices={choices}
               value={value}
               onChange={onModelChange}
+              disabled={disabled}
             />
           </div>
         </div>
@@ -176,6 +185,7 @@ export function ModelSection({
               id={`${ids}-thinking`}
               className="max-w-2/3"
               value={thinkingLevel}
+              disabled={disabled}
               onChange={(event) => onThinkingLevelChange(event.target.value)}
             >
               <NativeSelectOption value="">
@@ -201,6 +211,7 @@ export function ComputerGroup({
   memoryScope,
   onMemoryScopeChange,
   actions,
+  disabled = false,
 }: {
   computerMode: ComputerMode;
   onComputerModeChange: (mode: ComputerMode) => void;
@@ -208,11 +219,16 @@ export function ComputerGroup({
   memoryScope: MemoryScope;
   onMemoryScopeChange: (scope: MemoryScope) => void;
   actions?: ReactNode;
+  disabled?: boolean;
 }) {
   const { t } = useLingui();
   return (
     <BotPanelGroup label={t`Computer`} plain>
-      <ComputerModePicker value={computerMode} onChange={onComputerModeChange} />
+      <ComputerModePicker
+        value={computerMode}
+        onChange={onComputerModeChange}
+        disabled={disabled}
+      />
       {memoryProviderConfigured ? (
         <div className="mt-4 text-body text-foreground">
           <Trans>Memory scope</Trans>
@@ -229,6 +245,7 @@ export function ComputerGroup({
                 variant="outline"
                 size="sm"
                 pressed={memoryScope === option.value}
+                disabled={disabled}
                 onPressedChange={(pressed) => {
                   if (pressed) onMemoryScopeChange(option.value);
                 }}
@@ -252,6 +269,7 @@ export function VoiceGroup({
   voices,
   voiceId,
   onVoiceIdChange,
+  disabled = false,
 }: {
   ids: string;
   autoSpeak: boolean;
@@ -259,6 +277,7 @@ export function VoiceGroup({
   voices: ReadonlyArray<{ id: string; label: string }> | undefined;
   voiceId: string;
   onVoiceIdChange: (voiceId: string) => void;
+  disabled?: boolean;
 }) {
   const { t } = useLingui();
   return (
@@ -273,6 +292,7 @@ export function VoiceGroup({
         <Switch
           id={`${ids}-auto-speak`}
           checked={autoSpeak}
+          disabled={disabled}
           onCheckedChange={(checked) => onAutoSpeakChange(checked)}
         />
       </label>
@@ -286,6 +306,7 @@ export function VoiceGroup({
             id={`${ids}-voice`}
             className="max-w-2/3"
             value={voiceId}
+            disabled={disabled}
             onChange={(event) => onVoiceIdChange(event.target.value)}
           >
             <NativeSelectOption value="">{t`Account default`}</NativeSelectOption>
@@ -310,6 +331,7 @@ export function PermissionsGroup({
   onCrossSpaceCommunicationChange,
   fleetManagement,
   onFleetManagementChange,
+  disabled = false,
 }: {
   ids: string;
   saving: boolean;
@@ -319,6 +341,7 @@ export function PermissionsGroup({
   onCrossSpaceCommunicationChange: (checked: boolean) => void;
   fleetManagement: boolean;
   onFleetManagementChange: (checked: boolean) => void;
+  disabled?: boolean;
 }) {
   const { t } = useLingui();
   return (
@@ -330,7 +353,7 @@ export function PermissionsGroup({
         <Switch
           id={`${ids}-daily-check-ins`}
           checked={dailyCheckIns}
-          disabled={saving}
+          disabled={saving || disabled}
           onCheckedChange={onDailyCheckInsChange}
         />
       </div>
@@ -341,7 +364,7 @@ export function PermissionsGroup({
         <Switch
           id={`${ids}-cross-space`}
           checked={crossSpaceCommunication}
-          disabled={saving}
+          disabled={saving || disabled}
           onCheckedChange={onCrossSpaceCommunicationChange}
         />
       </div>
@@ -352,7 +375,7 @@ export function PermissionsGroup({
         <Switch
           id={`${ids}-fleet-management`}
           checked={fleetManagement}
-          disabled={saving}
+          disabled={saving || disabled}
           onCheckedChange={onFleetManagementChange}
         />
       </div>
@@ -365,11 +388,13 @@ export function RepliesGroup({
   saving,
   replyMode,
   onReplyModeChange,
+  disabled = false,
 }: {
   ids: string;
   saving: boolean;
   replyMode: ReplyMode;
   onReplyModeChange: (mode: ReplyMode) => void;
+  disabled?: boolean;
 }) {
   const { t } = useLingui();
   return (
@@ -379,7 +404,7 @@ export function RepliesGroup({
         aria-label={t`Replies`}
         className="w-full"
         value={replyMode}
-        disabled={saving}
+        disabled={saving || disabled}
         onChange={(event) => onReplyModeChange(event.target.value as ReplyMode)}
       >
         <NativeSelectOption value="chat">{t`Chat`}</NativeSelectOption>
@@ -394,12 +419,14 @@ export function DescriptionGroup({
   description,
   onDescriptionChange,
   onCommit,
+  disabled = false,
 }: {
   ids: string;
   description: string;
   onDescriptionChange: (description: string) => void;
   /** Saves the description when the field loses focus. */
   onCommit: () => void;
+  disabled?: boolean;
 }) {
   const { t } = useLingui();
   return (
@@ -409,6 +436,7 @@ export function DescriptionGroup({
         aria-label={t`How other bots see it`}
         value={description}
         maxLength={BOT_DESCRIPTION_MAX_LENGTH}
+        disabled={disabled}
         onChange={(e) => onDescriptionChange(e.target.value)}
         onBlur={onCommit}
         placeholder={t`What this bot is for`}
@@ -424,11 +452,13 @@ export function ToolsGroup({
   disabledBuiltinTools,
   onDisable,
   onEnable,
+  disabled = false,
 }: {
   ids: string;
   disabledBuiltinTools: string[];
   onDisable: (name: string) => void;
   onEnable: (name: string) => void;
+  disabled?: boolean;
 }) {
   const { t } = useLingui();
   return (
@@ -440,6 +470,7 @@ export function ToolsGroup({
               id={`${ids}-disabled-tools`}
               aria-label={t`Disable a tool`}
               value=""
+              disabled={disabled}
               onChange={(event) => onDisable(event.target.value)}
               className="w-full"
             >
@@ -465,6 +496,7 @@ export function ToolsGroup({
                 size="icon-xs"
                 aria-label={t`Enable ${humanizeTool(toolName)}`}
                 title={t`Enable ${humanizeTool(toolName)}`}
+                disabled={disabled}
                 onClick={() => onEnable(toolName)}
               >
                 <X className="size-4" />

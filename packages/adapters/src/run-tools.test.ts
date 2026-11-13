@@ -47,7 +47,7 @@ function dispatchContext(tainted: boolean) {
       },
     },
     run: { userId: "user-1" },
-    bot: { id: "bot-1" },
+    bot: { id: "bot-1", userId: "user-1" },
     thread: { id: "thread-1" },
     source: { ownerStartedRun: true },
     runId: "run-1",

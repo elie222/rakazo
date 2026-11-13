@@ -210,6 +210,7 @@ export default function BotProfile() {
           <SettingsSwitch
             key="notifications"
             label={t`Notifications`}
+            disabled={bot.canChange === false}
             value={bot.notifyOnFinish}
             onChange={setNotifyOnFinish}
           />

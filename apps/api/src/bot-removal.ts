@@ -1,7 +1,7 @@
 import { destroyBot } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import type { createRepos } from "@rakazo/db";
-import { requireSpaceOwner } from "@rakazo/db";
+import { canChangeBot, SpaceOwnerRequiredError } from "@rakazo/db";
 import type { RouterDeps } from "./router.js";
 
 /** A bot this actor may remove: theirs or the owner's, in this space, archived included. */
@@ -13,7 +13,7 @@ export async function loadBotForRemoval(
 ) {
   const bot = await repos.getBot(actor, botId, { includeArchived: true });
   // Any member can archive; only the bot's creator or the space owner deletes for good.
-  if (bot.userId !== actor.userId) await requireSpaceOwner(prisma, actor);
+  if (!(await canChangeBot(prisma, actor, bot))) throw new SpaceOwnerRequiredError();
   return bot;
 }
 

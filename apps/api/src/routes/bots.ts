@@ -57,6 +57,7 @@ import {
   BotSectionNameConflictError,
   botProfileLabelsChanged,
   ComputerLimitError,
+  changesWhatBotDoes,
   commitBotUpdate,
   expireComputerExecutionLeases,
   InstructionConflictError,
@@ -64,6 +65,7 @@ import {
   isRecordNotFound,
   recordComputerRunEnd,
   recordSecurityEvent,
+  requireBotChange,
   restoreBotUnderComputerQuota,
   SpaceDeletionInProgressError,
   settingsTarget,
@@ -548,6 +550,7 @@ export function botsRoutes(ctx: RouterContext) {
       }),
       update: authed.bots.update.handler(async ({ context, input }) => {
         const existing = await repos.getBot(context.actor, input.botId);
+        if (changesWhatBotDoes(input)) await requireBotChange(deps.prisma, context.actor, existing);
         if (input.sectionId) {
           const section = await deps.prisma.botSection.findFirst({
             where: {
@@ -644,6 +647,7 @@ export function botsRoutes(ctx: RouterContext) {
       }),
       restoreInstructions: authed.bots.restoreInstructions.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
+        await requireBotChange(deps.prisma, context.actor, bot);
         if (!bot.thread) throw new IsolationError();
         try {
           await commitBotUpdate({
@@ -665,6 +669,7 @@ export function botsRoutes(ctx: RouterContext) {
       }),
       setComputer: authed.bots.setComputer.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
+        await requireBotChange(deps.prisma, context.actor, bot);
         if (!bot.computer) throw new IsolationError();
         const currentMode = bot.computer.scope === "dedicated" ? "dedicated" : "team";
         if (currentMode === input.mode) {

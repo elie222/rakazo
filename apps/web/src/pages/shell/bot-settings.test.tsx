@@ -510,3 +510,40 @@ it("defaults daily check-ins on and saves the opt-out", async () => {
   await flush();
   expect(onSave).toHaveBeenCalledWith({ dailyCheckIns: false });
 });
+
+it("leaves only the name and look editable on a bot the viewer cannot change", async () => {
+  const onSave = vi.fn<(patch: SavePatch) => Promise<void>>(async () => undefined);
+  await renderSettings(onSave, { ...bot, canChange: false });
+  const restricted = [
+    "-notify-finish",
+    "-model",
+    "-auto-speak",
+    "-daily-check-ins",
+    "-cross-space",
+    "-fleet-management",
+    "-reply-mode",
+    "-instructions",
+    "-description",
+    "-disabled-tools",
+    "-disabled-remember",
+  ].map((suffix) => container.querySelector<HTMLButtonElement>(`[id$="${suffix}"]`));
+  for (const control of restricted) expect(control?.disabled).toBe(true);
+  for (const mode of ["Team", "Private"]) {
+    const toggle = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === mode,
+    );
+    expect(toggle?.disabled).toBe(true);
+  }
+
+  const edit = container.querySelector<HTMLButtonElement>('[aria-label="Edit name"]')!;
+  expect(edit.disabled).toBe(false);
+  await act(async () => edit.click());
+  const input = container.querySelector<HTMLInputElement>('[aria-label="Name"]')!;
+  await act(async () => setField(input, "Grace"));
+  await act(async () =>
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
+  );
+  await flush();
+  // Only what any member may change goes to the server.
+  expect(onSave).toHaveBeenCalledWith({ name: "Grace" });
+});

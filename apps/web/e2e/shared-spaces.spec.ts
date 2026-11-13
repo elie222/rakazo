@@ -1,6 +1,6 @@
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
-import { captureScreenshot, completeOnboarding, rpc, signup } from "./helpers";
+import { captureScreenshot, completeOnboarding, openBotPanelTab, rpc, signup } from "./helpers";
 
 async function openBotInSpace(page: Page, spaceId: string, botId: string, name: string) {
   await page.evaluate((id) => localStorage.setItem("rakazo:space-id", id), spaceId);
@@ -110,6 +110,20 @@ test("an owner invites someone by link and both see the space's members", async 
   await send(inviteePage, "Make it vegetarian please");
   await expect(inviteePage.getByText("Ada Owner", { exact: true })).toBeVisible();
   await captureScreenshot(inviteePage, testInfo, "shared-thread-invitee");
+  // Bob can rename Ada's bot but not change what it does, since its unattended runs use her accounts.
+  await openBotPanelTab(inviteePage, "Advanced");
+  const familySettings = inviteePage.getByTestId("bot-settings");
+  await expect(
+    familySettings.getByRole("button", { name: "Edit name", exact: true }),
+  ).toBeEnabled();
+  await expect(
+    familySettings.getByRole("textbox", { name: "How other bots see it", exact: true }),
+  ).toBeDisabled();
+  await expect(
+    familySettings.getByRole("switch", { name: "When it finishes or needs input", exact: true }),
+  ).toBeDisabled();
+  await captureScreenshot(inviteePage, testInfo, "shared-bot-settings-invitee");
+  await inviteePage.getByRole("button", { name: "Close panel" }).click();
   await ownerPage.reload();
   await expect(ownerPage.getByText("Bob Invitee", { exact: true })).toBeVisible();
   await captureScreenshot(ownerPage, testInfo, "shared-thread-owner");

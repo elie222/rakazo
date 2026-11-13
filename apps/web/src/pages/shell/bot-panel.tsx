@@ -116,6 +116,8 @@ export function BotSettings({
 }) {
   const { t } = useLingui();
   const ids = useId();
+  // Another member's bot: only its name and look can change here.
+  const locked = bot.canChange === false;
   const modelRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (focusModel && tab === "settings") {
@@ -357,23 +359,28 @@ export function BotSettings({
         nextAvatarSet !== acceptedAutomatic.current.avatarSet
           ? { avatarSet: nextAvatarSet }
           : {}),
-        notifyOnFinish: nextNotify,
-        computerMode,
-        memoryScope,
-        autoSpeak,
-        voiceId: voiceId || null,
-        modelProvider: selected?.provider ?? null,
-        modelId: selected?.modelId ?? null,
-        ...(modelMetaReady &&
-        (thinkingOptions.length > 0 ||
-          (selected?.provider ?? null) !== bot.modelProvider ||
-          (selected?.modelId ?? null) !== bot.modelId)
-          ? {
-              thinkingLevel: thinkingOptions.length
-                ? ((thinkingLevel || null) as ThinkingLevel | null)
-                : null,
-            }
-          : {}),
+        // The server refuses the rest from a member who cannot change what the bot does.
+        ...(locked
+          ? {}
+          : {
+              notifyOnFinish: nextNotify,
+              computerMode,
+              memoryScope,
+              autoSpeak,
+              voiceId: voiceId || null,
+              modelProvider: selected?.provider ?? null,
+              modelId: selected?.modelId ?? null,
+              ...(modelMetaReady &&
+              (thinkingOptions.length > 0 ||
+                (selected?.provider ?? null) !== bot.modelProvider ||
+                (selected?.modelId ?? null) !== bot.modelId)
+                ? {
+                    thinkingLevel: thinkingOptions.length
+                      ? ((thinkingLevel || null) as ThinkingLevel | null)
+                      : null,
+                  }
+                : {}),
+            }),
       };
       const requestedTools = patchOverrides?.disabledBuiltinTools;
       const baseTools = patchOverrides?.baseDisabledBuiltinTools ?? [];
@@ -558,6 +565,7 @@ export function BotSettings({
           <NotificationsSection
             ids={ids}
             notifyOnFinish={notifyOnFinish}
+            disabled={locked}
             onNotifyOnFinishChange={(checked) => {
               setNotifyOnFinish(checked);
               void enqueueSave({ notifyOnFinish: checked });
@@ -588,6 +596,7 @@ export function BotSettings({
               thinkingLevel={thinkingLevel}
               defaultThinkingLevel={defaultThinkingLevel}
               onThinkingLevelChange={setThinkingLevel}
+              disabled={locked}
             />
             <ComputerGroup
               computerMode={computerMode}
@@ -596,6 +605,7 @@ export function BotSettings({
               memoryScope={memoryScope}
               onMemoryScopeChange={setMemoryScope}
               actions={computerActions}
+              disabled={locked}
             />
             <VoiceGroup
               ids={ids}
@@ -604,10 +614,12 @@ export function BotSettings({
               voices={voices}
               voiceId={voiceId}
               onVoiceIdChange={setVoiceId}
+              disabled={locked}
             />
             <PermissionsGroup
               ids={ids}
               saving={saving}
+              disabled={locked}
               dailyCheckIns={dailyCheckIns}
               onDailyCheckInsChange={(checked) => {
                 setDailyCheckIns(checked);
@@ -627,6 +639,7 @@ export function BotSettings({
             <RepliesGroup
               ids={ids}
               saving={saving}
+              disabled={locked}
               replyMode={replyMode}
               onReplyModeChange={(next) => {
                 setReplyMode(next);
@@ -639,10 +652,12 @@ export function BotSettings({
               description={description}
               onDescriptionChange={setDescription}
               onCommit={() => void enqueueSave()}
+              disabled={locked}
             />
             <ToolsGroup
               ids={ids}
               disabledBuiltinTools={disabledBuiltinTools}
+              disabled={locked}
               onDisable={disableBuiltinTool}
               onEnable={(toolName) => {
                 const next = disabledBuiltinTools.filter((entry) => entry !== toolName);

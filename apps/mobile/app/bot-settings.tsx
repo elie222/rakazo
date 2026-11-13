@@ -476,6 +476,8 @@ export default function BotSettingsScreen() {
       (selectedModel?.modelId ?? null) !== (bot.modelId ?? null) ||
       (thinkingLevel || null) !== (bot.thinkingLevel ?? null));
 
+  // Another member's bot: only its name and look can change here.
+  const locked = bot?.canChange === false;
   const hasVoiceMenu = !voiceError && voices.length > 1;
   const voiceRowContent = (
     <SettingsRow
@@ -576,6 +578,7 @@ export default function BotSettingsScreen() {
           <SettingsGroup label={t`Notifications`}>
             <SettingsSwitch
               label={t`When it finishes or needs input`}
+              disabled={locked}
               value={notifyOnFinish}
               onChange={(value) => notifySave.update(value)}
             />
@@ -614,6 +617,7 @@ export default function BotSettingsScreen() {
                 choices={modelChoices}
                 label={t`Model`}
                 showLabel={false}
+                disabled={locked}
                 onChange={selectModel}
                 onPress={
                   modelChoices.length > MODEL_SEARCH_THRESHOLD
@@ -630,6 +634,7 @@ export default function BotSettingsScreen() {
                 <MenuPicker
                   choices={thinkingChoices}
                   label={t`Thinking`}
+                  disabled={locked}
                   onChange={setThinkingLevel}
                   value={thinkingLevel}
                 />
@@ -637,13 +642,19 @@ export default function BotSettingsScreen() {
             </SettingsGroup>
             <SettingsGroup label={t`Computer`}>
               <View style={styles.cardContent}>
-                <ComputerModePicker plain value={computerMode} onChange={setComputerMode} />
+                <ComputerModePicker
+                  plain
+                  disabled={locked}
+                  value={computerMode}
+                  onChange={setComputerMode}
+                />
               </View>
               {computerMaintenanceRows}
             </SettingsGroup>
             <SettingsGroup label={t`Voice`}>
               <SettingsSwitch
                 label={t`Read replies aloud`}
+                disabled={locked}
                 onChange={setAutoSpeak}
                 value={autoSpeak}
               />
@@ -652,6 +663,7 @@ export default function BotSettingsScreen() {
             <SettingsGroup label={t`Permissions`}>
               <SettingsSwitch
                 label={t`Daily check-ins on unfinished work`}
+                disabled={locked}
                 value={dailyCheckIns}
                 onChange={(value) => {
                   if (!botId) return;
@@ -661,6 +673,7 @@ export default function BotSettingsScreen() {
               />
               <SettingsSwitch
                 label={t`Allow cross-space bot communication`}
+                disabled={locked}
                 value={crossSpaceCommunication}
                 onChange={(value) => {
                   if (!botId) return;
@@ -670,6 +683,7 @@ export default function BotSettingsScreen() {
               />
               <SettingsSwitch
                 label={t`Manage other bots`}
+                disabled={locked}
                 onChange={(value) => {
                   if (!botId) return;
                   setError(null);
@@ -686,6 +700,7 @@ export default function BotSettingsScreen() {
                 ]}
                 label={t`Replies`}
                 showLabel={false}
+                disabled={locked}
                 onChange={(value) => {
                   if (!botId) return;
                   setError(null);
@@ -708,6 +723,7 @@ export default function BotSettingsScreen() {
                   <View style={{ width: 44 }}>
                     <MenuPickerMenu
                       label={t`Instruction history`}
+                      disabled={locked}
                       value=""
                       choices={bot.instructionHistory.map((version) => ({
                         key: version.id,
@@ -764,6 +780,7 @@ export default function BotSettingsScreen() {
               <GrowingTextInput
                 label={t`Instructions`}
                 maxLength={BOT_INSTRUCTIONS_MAX_LENGTH}
+                editable={!locked}
                 value={instructions}
                 onChangeText={setInstructions}
                 backgroundColor={native.groupedCell}
@@ -773,6 +790,7 @@ export default function BotSettingsScreen() {
             <SettingsGroup label={t`How other bots see it`}>
               <GrowingTextInput
                 label={t`How other bots see it`}
+                editable={!locked}
                 value={description}
                 maxLength={BOT_DESCRIPTION_MAX_LENGTH}
                 onChangeText={setDescription}
