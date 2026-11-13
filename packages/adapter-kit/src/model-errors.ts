@@ -116,6 +116,8 @@ export function isRetryableProviderUnavailable(error: unknown): boolean {
     )
   )
     return true;
+  // A device sign-in service reports a failure it asks the client to retry as a 400.
+  if (/"error"\s*:\s*"request_failed"/.test(text)) return true;
   if (statuses.has(400)) return false;
   // The ChatGPT subscription (Codex) runtime reports an exhausted usage window without a status.
   if (/you have hit your chatgpt usage limit/.test(text)) return true;
@@ -162,7 +164,7 @@ export function isRetryableProviderUnavailable(error: unknown): boolean {
   )
     return true;
   if ([...statuses].some((status) => status >= 400 && status < 600)) return false;
-  return /rate.?limit|too many requests|resource.?exhausted|request limit reached|quota|overload|capacity|temporarily unavailable|service unavailable|retry[- ](?:after|delay)|server[ _]error|upstream error|an error occurred while processing your request|could not complete this request\. please retry|gateway timeout|timed? out|timeout|connection (?:error|reset|refused)|network[ _]error|max retries exceeded|stream ended without finish_reason|stream interrupted|incomplete json segment at the end|\bterminated\b|fetch failed|socket hang up|econnreset|econnrefused|etimedout|websocket closed/.test(
+  return /rate.?limit|too many requests|resource.?exhausted|request limit reached|quota|overload|capacity|temporarily unavailable|service unavailable|retry[- ](?:after|delay)|server[ _]error|upstream error|an error occurred while processing your request|could not complete this request\. please retry|gateway timeout|timed? out|timeout|connection (?:error|reset|refused)|network[ _]error|max retries exceeded|stream ended (?:without finish_reason|before \w+)|json error injected into sse stream|stream interrupted|incomplete json segment at the end|\bterminated\b|fetch failed|socket hang up|econnreset|econnrefused|etimedout|websocket closed/.test(
     text,
   );
 }

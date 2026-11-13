@@ -473,6 +473,7 @@ describe("normalizeRunError", () => {
       '400 {"type":"error","error":{"type":"api_error","message":"Upstream request failed: [api_error] Upstream response was not valid JSON"}}',
       "Codex error: This content was flagged for possible cybersecurity risk. If this seems wrong, try rephrasing your request.",
       "Cyber safeguards flagged this message. If this is legitimate security work, you can apply for the Cyber Verification Program: https://support.claude.com/en/articles/<article-id>",
+      "This request triggered cyber-related safeguards. To learn about the Cyber Verification Program, see https://support.claude.com/en/articles/<article-id>",
       MODEL_OUTPUT_LIMIT_ERROR,
       "Upstream error from Example: HttpError: HTTP 400: Tool calls cutoff by max_tokens.",
     ])("calls unusable model output what it is: %s", (details) => {
@@ -524,6 +525,17 @@ describe("normalizeRunError", () => {
       "TypeError: Cannot read properties of undefined (reading 'content')",
     ])("leaves requests we built and unknown shapes unattributed: %s", (details) => {
       expect(normalizeRunError(details).kind).toBeUndefined();
+    });
+
+    it.each([
+      '400 {"message":"Provider returned error","code":400,"metadata":{"raw":"{\\"error\\":{\\"message\\":\\"example upstream failure\\"}}","provider_name":"ExampleUpstream","is_byok":false}}',
+      '400 {"type":"error","error":{"type":"invalid_request_error","message":"Invalid effort level: max"},"request_id":"req_example"}',
+    ])("suggests another model when the provider refuses this one's request: %s", (details) => {
+      expect(normalizeRunError(details)).toMatchObject({
+        summary: "The model provider returned an error.",
+        recovery: "model",
+        status: 400,
+      });
     });
   });
 });

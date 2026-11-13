@@ -38,6 +38,14 @@ describe("transient model errors", () => {
     ["service unavailable", { status: 503, message: "service unavailable" }],
     ["bad gateway", new Error("502 Bad Gateway")],
     ["empty truncated stream", new Error("Stream ended without finish_reason")],
+    ["stream ended before its stop event", new Error("Anthropic stream ended before message_stop")],
+    ["error injected into the stream", new Error("JSON error injected into SSE stream")],
+    [
+      "sign-in service asking for a retry",
+      new Error(
+        '400 Bad Request: {"error":"request_failed","error_description":"The request failed to be processed, please try again"}',
+      ),
+    ],
     ["dropped fetch body", new TypeError("terminated")],
     [
       "interrupted upstream stream",
