@@ -9,7 +9,6 @@ import {
   isRunWorking,
   liveActivityLine,
   liveMessageComposing,
-  memberName,
   newClientId,
   newestPageCards,
   otherAuthor,
@@ -49,6 +48,7 @@ import { useThreadSnapshot } from "../../lib/thread-history";
 import { threadKeyboardAvoidance } from "../../lib/thread-keyboard-offset";
 import { useThreadListScroll } from "../../lib/thread-list-scroll";
 import { useThreadMentionCatalog } from "../../lib/thread-mention-catalog";
+import { botDisplayName } from "../../lib/thread-message-text";
 import { useThreadPaging } from "../../lib/thread-paging";
 import { useThreadRead } from "../../lib/thread-read";
 import {
@@ -624,7 +624,9 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
                 ? (otherAuthor(replyTarget.author, userId)?.name ??
                   channelMessageSender(replyTarget.blocks) ??
                   t`You`)
-                : (memberName(snap?.members, replyTarget?.botId) ?? displayName ?? t`Bot`)
+                : (botDisplayName(snap?.members, mentionBots, replyTarget?.botId) ??
+                  displayName ??
+                  t`Bot`)
             }
             replyQuote={replyQuote}
             threadTarget={artifactTarget}
