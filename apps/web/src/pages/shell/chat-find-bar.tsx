@@ -11,15 +11,18 @@ const REFRESH_MS = 250;
 
 /**
  * Centers the match itself in each scrolling box from the innermost out to the transcript, since
- * it may sit deep in a tall code block or a capped detail that scrolls on its own.
+ * it may sit deep in a tall or wide code block or a capped detail that scrolls on its own.
  */
 function reveal(range: Range) {
   const scroller = range.startContainer.parentElement?.closest('[data-testid="transcript"]');
   if (!scroller) return;
   for (let box = range.startContainer.parentElement; box; box = box.parentElement) {
+    const match = range.getBoundingClientRect();
+    const view = box.getBoundingClientRect();
+    if (box.scrollWidth > box.clientWidth && (match.left < view.left || match.right > view.right)) {
+      box.scrollLeft += match.left - view.left - (view.width - match.width) / 2;
+    }
     if (box === scroller || box.scrollHeight > box.clientHeight) {
-      const match = range.getBoundingClientRect();
-      const view = box.getBoundingClientRect();
       box.scrollTop += match.top - view.top - (view.height - match.height) / 2;
     }
     if (box === scroller) break;

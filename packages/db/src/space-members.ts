@@ -607,6 +607,9 @@ async function departSpace(
           await tx.mcpServerSpace.deleteMany({ where: own });
           await tx.capabilityInstallSpace.deleteMany({ where: own });
           await tx.agentSkillSpace.deleteMany({ where: own });
+          // The bots they chose here for their account vault's items. An item they limited here
+          // stays limited, so rejoining never opens it to every bot.
+          await tx.vaultCredentialBot.deleteMany({ where: own });
           await tx.mcpOAuthSession.deleteMany({ where: own });
           await tx.modelOAuthSession.deleteMany({ where: own });
           await tx.connection.deleteMany({ where: own });

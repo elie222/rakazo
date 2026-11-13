@@ -58,6 +58,7 @@ export type CompactedHistoryMessage = {
   content: string;
   /** Set on a message by someone other than this bot or a direct chat's user; see AgentRunRequest.history. */
   speaker?: string;
+  segments?: AgentRunRequest["history"][number]["segments"];
   /** Still waiting for its own run: covered by the summary check, never sent as history. */
   waiting?: boolean;
 };

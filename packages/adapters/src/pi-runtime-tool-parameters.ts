@@ -409,6 +409,11 @@ function enumUnion(values: readonly unknown[], options: FieldOptions = {}) {
 export function jsonField(spec: unknown): ReturnType<typeof Type.String> {
   const definition = spec && typeof spec === "object" ? (spec as Record<string, unknown>) : {};
   const options = fieldOptions(definition);
+  // Nested intersections need the same preservation as root schemas; otherwise an
+  // allOf-only field falls back to string and loses its sibling constraints.
+  if (Array.isArray(definition.allOf)) {
+    return jsonSchemaParameters(definition, options) as never;
+  }
   if (Array.isArray(definition.enum) && definition.enum.length > 0) {
     if (definition.enum.every((value) => typeof value === "string")) {
       return stringEnum(definition.enum as string[], options) as never;
@@ -455,7 +460,16 @@ export function jsonField(spec: unknown): ReturnType<typeof Type.String> {
   }
   const type = "type" in definition ? String(definition.type) : "string";
   if (type === "null") return Type.Null(options) as never;
-  if (type === "number" || type === "integer") return Type.Number(options) as never;
+  if (type === "integer" || type === "number") {
+    const numericOptions = {
+      ...options,
+      ...(typeof definition.minimum === "number" ? { minimum: definition.minimum } : {}),
+      ...(typeof definition.maximum === "number" ? { maximum: definition.maximum } : {}),
+    };
+    return (
+      type === "integer" ? Type.Integer(numericOptions) : Type.Number(numericOptions)
+    ) as never;
+  }
   if (type === "boolean") return Type.Boolean(options) as never;
   if (type === "array") {
     const arrayOptions: FieldOptions & {
@@ -471,6 +485,7 @@ export function jsonField(spec: unknown): ReturnType<typeof Type.String> {
   if (type === "object") return jsonSchemaParameters(definition, options) as never;
   return Type.String({
     ...options,
+    ...(typeof definition.minLength === "number" ? { minLength: definition.minLength } : {}),
     ...(typeof definition.maxLength === "number" ? { maxLength: definition.maxLength } : {}),
   });
 }

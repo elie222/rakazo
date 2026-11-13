@@ -6,6 +6,7 @@ import {
   BUILTIN_AGENT_SKILLS,
   isCatalogModelChoice,
   readAgentImportSettings,
+  readGrokBotImportSettings,
 } from "@rakazo/adapters";
 import type {
   Actor,
@@ -34,6 +35,7 @@ import {
   combineImportedInstructions,
   parseAgentImport,
   readAgentImportFolder,
+  readGrokBotExportJson,
   renameRoutineSkillMentions,
   resolveAgentImportNames,
 } from "@rakazo/core";
@@ -179,16 +181,25 @@ async function buildPlan(
   const base = parsePlan(files, input.skillFiles);
   const taken = await takenNames(services.prisma, actor);
   const plan = resolveAgentImportNames(base, taken);
-  const folder =
-    base.source === "document" ? null : readAgentImportFolder(files, { includeSecrets });
   const routineInputs = new Map<string, CreateRoutineInputType>();
   const mcpConfigs = new Map<string, ImportedMcpServer & { slug: string }>();
   const connectedKeyIds = new Set<string>();
-  if (!folder) return { plan, settings: null, routineInputs, mcpConfigs, connectedKeyIds };
-  const settings = readAgentImportSettings(folder, {
-    includeSecrets,
-    stdioAllowed: await services.stdioAllowed(actor),
-  });
+  let settings: Built["settings"];
+  if (base.source === "grok_bot") {
+    // parsePlan has checked that this file holds exactly one Bot.
+    const [bot] = readGrokBotExportJson(files[0]?.content ?? "");
+    settings = bot ? readGrokBotImportSettings(bot) : null;
+  } else {
+    const folder =
+      base.source === "document" ? null : readAgentImportFolder(files, { includeSecrets });
+    settings = folder
+      ? readAgentImportSettings(folder, {
+          includeSecrets,
+          stdioAllowed: await services.stdioAllowed(actor),
+        })
+      : null;
+  }
+  if (!settings) return { plan, settings: null, routineInputs, mcpConfigs, connectedKeyIds };
 
   let model: AgentImportPlan["model"] = null;
   if (settings.model) {
@@ -223,6 +234,14 @@ async function buildPlan(
     };
   });
 
+  const originalSkillNames = new Map(base.skills.map((skill) => [skill.id, skill.name]));
+  const previewSkillNames = new Map<string, string>([
+    ...taken.skillNames.map((name): [string, string] => [name, name]),
+    ...plan.skills.flatMap((skill): [string, string][] => {
+      const original = originalSkillNames.get(skill.id);
+      return original ? [[original, skill.name]] : [];
+    }),
+  ]);
   const fallbackZone = await savedTimeZone(services.prisma, actor);
   const routines = settings.routines.flatMap((routine) => {
     const timezone = routine.timezone ?? fallbackZone;
@@ -236,7 +255,8 @@ async function buildPlan(
       active: false,
     });
     if (!parsed.success) {
-      skipped.push({ path: `cron/jobs.json: ${routine.title}`, reason: "unsupported" });
+      const file = base.source === "grok_bot" ? "routines" : "cron/jobs.json";
+      skipped.push({ path: `${file}: ${routine.title}`, reason: "unsupported" });
       return [];
     }
     routineInputs.set(routine.id, parsed.data);
@@ -244,7 +264,7 @@ async function buildPlan(
       {
         id: routine.id,
         title: routine.title,
-        content: `${routine.cron} (${timezone})\n\n${routine.prompt}`,
+        content: `${routine.cron} (${timezone})\n\n${renameRoutineSkillMentions(routine.prompt, previewSkillNames)}`,
         warnings: routine.warnings,
         status: { kind: "needs_setup" as const, needs: [{ kind: "turn_on" as const }] },
       },
