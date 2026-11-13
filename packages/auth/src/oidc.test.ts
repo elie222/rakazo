@@ -1885,5 +1885,7 @@ it("reports only the authenticated user's linked provider ids", async () => {
   });
   const response = await request("/account-security");
   expect(response.status).toBe(200);
-  expect((await response.json()).linkedProviderIds).toEqual(["oidc", "social-example"]);
+  expect(await response.json()).toMatchObject({
+    linkedProviderIds: ["oidc", "social-example"],
+  });
 });
