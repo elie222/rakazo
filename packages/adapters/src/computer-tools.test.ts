@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { builtinAgentTools } from "./builtin-tools.js";
+import { builtinAgentTools } from "./builtin.tool-definition.js";
 import { computerObservation } from "./computer-support.js";
 import type { UnchangedVisualStreak } from "./computer-tools.js";
 import {

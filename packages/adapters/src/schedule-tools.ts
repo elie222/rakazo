@@ -18,7 +18,7 @@ import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { Prisma, runAsSystemInTransaction } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 
-import { localDateTime } from "./current-time.js";
+import { localDateTime } from "./current-time.prompt.js";
 import { finishRoutineHandover } from "./routine-handover.js";
 import { validateRoutineWatch } from "./routine-watch.js";
 

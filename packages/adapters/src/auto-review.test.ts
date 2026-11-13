@@ -3,7 +3,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   autoReviewMinConfidence,
   autoReviewTimeoutMs,
-  buildAutoReviewPrompt,
   isAutoReviewCheckerConfigured,
   LlmAutoReviewProvider,
   parseAutoReviewJudgeText,
@@ -12,6 +11,7 @@ import {
   resolveAutoReviewProviderKind,
   runAutoReviewJudge,
 } from "./auto-review.js";
+import { buildAutoReviewPrompt } from "./auto-review.prompt.js";
 
 describe("resolveAutoReviewChecker", () => {
   it("prefers explicit env overrides", () => {

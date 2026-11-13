@@ -81,7 +81,7 @@ import {
   runAllowsSilentEmpty,
   runPromotesMidTurnNarration,
   TOOL_STEPS_WITHOUT_RESPONSE,
-} from "./run-replies.js";
+} from "./run-replies.prompt.js";
 import { scheduleRoutineRetry } from "./run-routines.js";
 import { applyTool } from "./run-tools.js";
 import { withRuntimeCleanup } from "./runtime-stream.js";

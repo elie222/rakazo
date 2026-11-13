@@ -1,6 +1,7 @@
 export * from "./advisory-lock.js";
 export * from "./agent-connections.js";
 export * from "./agent-environment.js";
+export { formatAgentEnvironmentInstruction } from "./agent-environment.prompt.js";
 export * from "./agent-import-settings.js";
 export * from "./ai-consent.js";
 export type { ApnsVoipConfig } from "./apns-voip.js";
@@ -13,6 +14,15 @@ export * from "./artifact-store-factory.js";
 export * from "./artifacts.js";
 export * from "./audit-forwarding.js";
 export * from "./auto-review.js";
+export {
+  AUTO_REVIEW_ASK,
+  AUTO_REVIEW_PASS,
+  buildAutoReviewPrompt,
+  MAX_OWNER_WORDS_CHARS,
+  MEMORY_WRITE_ASK,
+  MEMORY_WRITE_PASS,
+  truncateReviewText,
+} from "./auto-review.prompt.js";
 export * from "./auto-review-factory.js";
 export * from "./aws-kms-key-provider.js";
 export { returnHelperOutcome, startBackgroundHelper } from "./background-helpers.js";
@@ -49,9 +59,9 @@ export {
 export * from "./browser-emulator.js";
 export * from "./browser-provider-factory.js";
 export * from "./browser-tools.js";
+export * from "./builtin.tool-definition.js";
 export * from "./builtin-skills.js";
 export * from "./builtin-tool-bridge.js";
-export * from "./builtin-tools.js";
 export { loadUserIncomingCalls, settleCallRequest } from "./call-request.js";
 export * from "./cartesia-voice.js";
 export * from "./chat-sdk-surface.js";
@@ -75,15 +85,22 @@ export * from "./computer-provider-descriptor.js";
 export * from "./computer-provider-registry.js";
 export * from "./computer-screens.js";
 export * from "./computer-support.js";
+export { teamWorkspaceInstruction } from "./computer-support.prompt.js";
 export * from "./computer-tools.js";
 export * from "./computer-update.js";
 export * from "./computer-workspace.js";
 export * from "./configured-sandbox.js";
 export * from "./connector-catalog.js";
 export * from "./connector-registry.js";
+export {
+  CUT_REPLY_CONTINUATION_PROMPT,
+  cutReplyAtLimitPrompt,
+  SILENT_ALLOWED_TOOL_CONTINUATION_PROMPT,
+  SILENT_TOOL_CONTINUATION_PROMPT,
+} from "./continuation.prompt.js";
 export { purgeClearedConversationMemory } from "./conversation-memory-cleanup.js";
 export * from "./createos-sandbox.js";
-export * from "./current-time.js";
+export * from "./current-time.prompt.js";
 export * from "./cursor-cloud-agent.js";
 export * from "./decision-models.js";
 export * from "./deployment-model.js";
@@ -135,11 +152,8 @@ export * from "./mcp-transport.js";
 export * from "./media-generation-factory.js";
 export * from "./media-generation-provider.js";
 export * from "./media-video-poll.js";
-export {
-  AGENT_MEMORY_MAX_BYTES,
-  buildAgentMemoryPrompt,
-  readAgentMemory,
-} from "./memory-context.js";
+export { readAgentMemory } from "./memory-context.js";
+export { AGENT_MEMORY_MAX_BYTES, buildAgentMemoryPrompt } from "./memory-context.prompt.js";
 export * from "./memory-provider-factory.js";
 export * from "./messaging-composition.js";
 export * from "./messaging-context.js";
@@ -226,9 +240,11 @@ export * from "./stripe-billing.js";
 export { SupermemoryMemoryProvider } from "./supermemory-memory-provider.js";
 export { T3CodeConnections } from "./t3code-connections.js";
 export * from "./task-catalog.js";
+export { TASK_CATALOG_GUIDANCE } from "./task-catalog.prompt.js";
 export * from "./teaching-session.js";
 export * from "./team-chat.js";
 export * from "./team-chat-judge.js";
+export { renderTeamChatEngagementPrompt } from "./team-chat-judge.prompt.js";
 export * from "./team-chat-messaging.js";
 export * from "./third-party-connector-emulator.js";
 export * from "./ticket-changes.js";

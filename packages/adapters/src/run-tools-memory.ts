@@ -5,7 +5,7 @@ import {
   MEMORY_INDEX_PATH,
 } from "@rakazo/contracts";
 import { readHistory, searchHistory } from "@rakazo/db";
-import { sharedMemorySaveError } from "./builtin-tools.js";
+import { sharedMemorySaveError } from "./builtin.tool-definition.js";
 import { redactConnectorPayload } from "./connector-safety.js";
 import { MAX_RECALLED_MEMORIES } from "./history-compaction.js";
 import { editMemory } from "./memory-tools.js";

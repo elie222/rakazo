@@ -49,7 +49,7 @@ import { purchaseApprovalOf } from "./purchase-gate.js";
 import { resolvePurchaseCardFill, resolvePurchasePayTokenFill } from "./purchase-service.js";
 import type { RunContext } from "./run-context.js";
 import { addRunSecrets, recordVaultUse } from "./run-context.js";
-import { builtinOffered } from "./run-instructions.js";
+import { builtinOffered } from "./run-instructions.prompt.js";
 import { computerScreenToolResult } from "./run-lifecycle.js";
 import type { ToolCall, ToolHandlers } from "./run-tool-gate.js";
 import { auditToolCall } from "./run-tool-gate.js";

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { builtinAgentTools } from "./builtin-tools.js";
+import { builtinAgentTools } from "./builtin.tool-definition.js";
 import { parseConnectorToolArgs } from "./lazy-tool-catalog.js";
 import { jsonField, jsonSchemaParameters, parametersFor } from "./pi-runtime-tool-parameters.js";
 import { prepareRequestSecretArguments } from "./pi-runtime-tools.js";

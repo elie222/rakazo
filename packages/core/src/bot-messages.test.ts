@@ -1,22 +1,24 @@
 import { BOT_DESCRIPTION_MAX_LENGTH } from "@rakazo/contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  BOT_DELIBERATION_GUIDANCE,
   BOT_DIRECTORY_DESCRIPTIONS_MAX_LENGTH,
   BOT_MESSAGE_MAX_LENGTH,
   botMessageAllowsSilence,
   botMessageHopExhausted,
   botMessageMaxHops,
-  buildBotMessageWakePrompt,
   clampBotMessage,
   DEFAULT_BOT_MESSAGE_MAX_HOPS,
-  formatBotRosterLines,
   nextBotMessageHop,
+  resolveBotAddress,
+} from "./bot-messages.js";
+import {
+  BOT_DELIBERATION_GUIDANCE,
+  buildBotMessageWakePrompt,
+  formatBotRosterLines,
   renderBotDirectory,
   renderBotGroupDirectory,
   renderGroupMembersContext,
-  resolveBotAddress,
-} from "./bot-messages.js";
+} from "./bot-messages.prompt.js";
 
 const bots = [
   { id: "b_1", name: "Researcher" },

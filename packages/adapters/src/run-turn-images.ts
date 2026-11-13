@@ -8,7 +8,8 @@ import {
 import { blocksToAgentHistoryText } from "@rakazo/core";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { loadReplyContext } from "./reply-context.js";
-import { currentTurnFilesInstruction, listCurrentTurnFiles } from "./thread-artifacts.js";
+import { listCurrentTurnFiles } from "./thread-artifacts.js";
+import { currentTurnFilesInstruction } from "./thread-artifacts.prompt.js";
 
 const TURN_ATTACHMENT_UNAVAILABLE =
   "An attachment in this message could not be loaded. Tell the user the attachment was unavailable and do not guess its contents.";

@@ -11,13 +11,13 @@ import {
   withAutomatedLabels,
 } from "./automated-messages.js";
 import {
+  SILENT_ALLOWED_TOOL_CONTINUATION_PROMPT,
+  SILENT_TOOL_CONTINUATION_PROMPT,
+} from "./continuation.prompt.js";
+import {
   OPENAI_COMPATIBLE_PROVIDER_ID,
   registerOpenAiCompatibleRuntime,
 } from "./pi-openai-compatible-provider.js";
-import {
-  SILENT_ALLOWED_TOOL_CONTINUATION_PROMPT,
-  SILENT_TOOL_CONTINUATION_PROMPT,
-} from "./pi-runtime.js";
 import { reliableModelStream } from "./pi-runtime-stream.js";
 import { formatFinishedShellCommand } from "./shell-command-stream.js";
 

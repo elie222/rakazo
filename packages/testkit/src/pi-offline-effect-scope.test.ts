@@ -1,6 +1,6 @@
 import { PiAgentRuntime } from "@rakazo/adapters";
 import { expect, it, vi } from "vitest";
-import { builtinAgentTools } from "../../adapters/src/builtin-tools.js";
+import { builtinAgentTools } from "../../adapters/src/builtin.tool-definition.js";
 import { recordEffect, runScopedToolExecutionId } from "../../adapters/src/run-effects.js";
 import { startModelEmulator } from "./model-emulator.js";
 

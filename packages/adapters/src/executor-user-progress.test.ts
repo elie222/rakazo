@@ -16,7 +16,10 @@ import { createJobReconciler } from "./job-reconciler.js";
 import type * as ModelVisionModule from "./model-vision.js";
 import type * as RunNotificationsModule from "./run-notifications.js";
 import { notifyRun } from "./run-notifications.js";
-import { GROUP_UNADDRESSED_REPLY_GUIDANCE, messagesModeReplyGuidance } from "./run-replies.js";
+import {
+  GROUP_UNADDRESSED_REPLY_GUIDANCE,
+  messagesModeReplyGuidance,
+} from "./run-replies.prompt.js";
 import { PEER_NOTHING_NEW_REPLY } from "./silent-reply.js";
 import { MID_TURN_PROGRESS_MIN_TURN_AGE_MS, userProgressClientNonce } from "./user-progress.js";
 

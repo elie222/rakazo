@@ -1,12 +1,14 @@
 import { createHash } from "node:crypto";
+import { fileURLToPath } from "node:url";
 import { FLEET_WRITE_TOOL_NAMES, RUN_TRIGGERS } from "@rakazo/contracts";
 import {
   messagingChannelPrivacyBlock,
   messagingDmSurfaceNote,
   nonOwnerChatPrivacyBlock,
 } from "@rakazo/core";
-import { builtinAgentTools } from "./builtin-tools.js";
-import { teamWorkspaceInstruction } from "./computer-support.js";
+import { promptSourceVersion } from "@rakazo/core/node/prompt-source-version";
+import { builtinAgentTools } from "./builtin.tool-definition.js";
+import { teamWorkspaceInstruction } from "./computer-support.prompt.js";
 import { HISTORY_FORMAT_VERSION } from "./pi-runtime-history.js";
 import { messageToAgentHistoryText } from "./reply-context.js";
 import {
@@ -19,10 +21,13 @@ import {
   runIdentityInstruction,
   userTurnInstructions,
   voiceCallInstruction,
-} from "./run-instructions.js";
-import { GROUP_UNADDRESSED_REPLY_GUIDANCE, runReplyGuidance } from "./run-replies.js";
+} from "./run-instructions.prompt.js";
+import { GROUP_UNADDRESSED_REPLY_GUIDANCE, runReplyGuidance } from "./run-replies.prompt.js";
 import { CONTEXT_POLICY_SETTINGS } from "./runtime-context.js";
-import { TASK_CATALOG_GUIDANCE } from "./task-catalog.js";
+import { TASK_CATALOG_GUIDANCE } from "./task-catalog.prompt.js";
+
+// Replaced by the server bundler; development reads the same authored files once.
+declare const __RAKAZO_PROMPT_SOURCE_VERSION__: string;
 
 /**
  * Everything we change when tuning a bot's behavior, rendered from fixed placeholders: the system
@@ -36,6 +41,10 @@ export function promptVersionParts() {
   const toolSets = [undefined, allTools];
   const host = { home: "/home", shell: "sh", platform: "linux" };
   return {
+    sources:
+      typeof __RAKAZO_PROMPT_SOURCE_VERSION__ === "string"
+        ? __RAKAZO_PROMPT_SOURCE_VERSION__
+        : promptSourceVersion(fileURLToPath(new URL("../../../", import.meta.url))),
     historyFormat: HISTORY_FORMAT_VERSION,
     context: CONTEXT_POLICY_SETTINGS,
     tools: builtinAgentTools.map((tool) => [tool.name, tool.description, tool.inputSchema]),

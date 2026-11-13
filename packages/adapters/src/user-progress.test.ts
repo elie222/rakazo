@@ -1,8 +1,8 @@
 import type { MessageBlock } from "@rakazo/contracts";
 import { isToolActivityBlock } from "@rakazo/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { builtinAgentTools } from "./builtin-tools.js";
-import { longWorkProgressGuidance } from "./run-replies.js";
+import { builtinAgentTools } from "./builtin.tool-definition.js";
+import { longWorkProgressGuidance } from "./run-replies.prompt.js";
 import {
   assistantTurnSeparator,
   botMessageOutcomeFromMidTurn,
