@@ -24,22 +24,36 @@ const LOOP_ROOM = 36;
 /** Node accents for `series` 0 to 4, in chart colour order. */
 const SERIES_COLORS = ["--rk-c1", "--rk-c2", "--rk-c3", "--rk-c4", "--rk-c5"];
 
+// Estimate full-width glyphs as two Latin characters, consistently for wrapping and sizing.
+const wideGlyph =
+  /[\u1100-\u115f\u2329\u232a\u2e80-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe10-\ufe19\ufe30-\ufe6f\uff01-\uff60\uffe0-\uffe6\u{20000}-\u{3fffd}]/u;
+const characterWidth = (character: string) => (wideGlyph.test(character) ? 2 : 1);
+const textWidth = (text: string) =>
+  [...text].reduce((width, character) => width + characterWidth(character), 0);
+
 /** Greedy word wrap; a word longer than a line is split rather than clipped. */
 export function wrapText(text: string, perLine: number): string[] {
   const lines: string[] = [];
   let line = "";
-  for (let word of text.split(/\s+/).filter(Boolean)) {
-    while (word.length > perLine) {
-      if (line) lines.push(line);
-      line = "";
-      lines.push(word.slice(0, perLine));
-      word = word.slice(perLine);
+  for (const word of text.split(/\s+/).filter(Boolean)) {
+    let remainder = "";
+    let width = 0;
+    for (const character of word) {
+      const nextWidth = characterWidth(character);
+      if (remainder && width + nextWidth > perLine) {
+        if (line) lines.push(line);
+        line = "";
+        lines.push(remainder);
+        remainder = "";
+        width = 0;
+      }
+      remainder += character;
+      width += nextWidth;
     }
-    if (!word) continue;
-    if (line && line.length + 1 + word.length > perLine) {
+    if (line && textWidth(line) + 1 + width > perLine) {
       lines.push(line);
-      line = word;
-    } else line = line ? `${line} ${word}` : word;
+      line = remainder;
+    } else line = line ? `${line} ${remainder}` : remainder;
   }
   if (line) lines.push(line);
   return lines.length ? lines : [""];
@@ -72,15 +86,15 @@ export function layoutDiagram(
     if (!node || typeof node.id !== "string" || byId.has(node.id)) continue;
     const labelLines = wrapText(String(node.label ?? node.id), perLabel);
     const detailLines = node.detail ? wrapText(String(node.detail), perDetail) : [];
-    const textWidth = Math.max(
-      ...labelLines.map((line) => line.length * LABEL_CHAR),
-      ...detailLines.map((line) => line.length * DETAIL_CHAR),
+    const measuredWidth = Math.max(
+      ...labelLines.map((line) => textWidth(line) * LABEL_CHAR),
+      ...detailLines.map((line) => textWidth(line) * DETAIL_CHAR),
     );
     byId.set(node.id, {
       ...node,
       labelLines,
       detailLines,
-      width: Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, Math.ceil(textWidth + PAD_X * 2))),
+      width: Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, Math.ceil(measuredWidth + PAD_X * 2))),
       height: PAD_Y * 2 + labelLines.length * LABEL_LINE + detailLines.length * DETAIL_LINE,
       layer: 0,
       x: 0,
