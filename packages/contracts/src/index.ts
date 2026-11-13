@@ -50,6 +50,7 @@ export * from "./signup-attribution.js";
 export * from "./space-availability.js";
 export * from "./terminal.js";
 export * from "./user-devices.js";
+export * from "./vault-import.js";
 export * from "./vault-items.js";
 export * from "./voice-connection-ui.js";
 export * from "./voice-errors.js";

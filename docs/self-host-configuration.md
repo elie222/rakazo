@@ -59,9 +59,6 @@ CREATEOS_SANDBOX_API_KEY= # when SANDBOX_PROVIDER=createos
 BOAT_API_KEY=             # when SANDBOX_PROVIDER=boat
 ```
 
-`COMPUTER_TAKEOVER_TTL_MS` (default `900000`, 15 minutes) is how long a person's takeover of a bot's
-screen lasts before control expires.
-
 `STUCK_WORK_NOTIFY_AFTER_MS` (default `14400000`, 4 hours) is how long a queued run or an unanswered
 question may sit before the worker sends a "still waiting" reminder. `STUCK_WORK_EXPIRE_AFTER_MS`
 (default `86400000`, 24 hours) is how long before the worker stops it, leaves a status line in the
@@ -146,7 +143,7 @@ rows, plus the user's own account-level credentials. A query that leaves out its
 returns nothing from other Spaces. A background job that acts for one run, routine, computer,
 skill, thread or cloud agent runs as that row's Space and user, so agent tools get the same
 backstop. Security events are written and read only in system scope. Reconcilers, queue sweeps,
-the messaging outbox drain and webhooks run in a named system scope (`runAsSystem` in
+chat delivery and webhooks run in a named system scope (`runAsSystem` in
 `packages/db`). That scope also sends a key derived from the app login's password, which
 `pnpm db:migrate` registers, so SQL that runs for one Space cannot switch itself into system scope.
 An app login without a password in `DATABASE_URL` has no key, and `pnpm db:migrate` warns. The job queue's tables (`graphile_worker`) hold job metadata, not Space content:

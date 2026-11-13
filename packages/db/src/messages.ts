@@ -1,4 +1,5 @@
-import type { MessageAuthor, MessageBlock } from "@rakazo/contracts";
+import type { MessageAuthor, MessageBlock, ToolHistory } from "@rakazo/contracts";
+import { splitToolHistory } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "./client.js";
 import { markThreadUnreadForMembers } from "./thread-reads.js";
 import { THREAD_LOCK_TRANSACTION_OPTIONS, withTransactionRetry } from "./transaction-retry.js";
@@ -8,13 +9,13 @@ import { THREAD_LOCK_TRANSACTION_OPTIONS, withTransactionRetry } from "./transac
  * `steeringMessages` is non-empty for a message still waiting for its own run, which the caller
  * leaves out of this run's history.
  */
-export function loadRunHistoryMessages(
+export async function loadRunHistoryMessages(
   prisma: PrismaClient,
-  run: { id: string; threadId: string; botId: string },
+  run: { id: string; threadId: string; botId: string; userId: string },
   limit: number,
   channelId?: string,
 ) {
-  return prisma.message.findMany({
+  const messages = await prisma.message.findMany({
     where: {
       threadId: run.threadId,
       ...(channelId
@@ -39,6 +40,8 @@ export function loadRunHistoryMessages(
       botId: true,
       runId: true,
       blocks: true,
+      // Only the bot's own runs read this: it is what its earlier tool calls were sent and returned.
+      toolHistory: true,
       authorUserId: true,
       createdAt: true,
       replyToMessageId: true,
@@ -48,6 +51,32 @@ export function loadRunHistoryMessages(
       steeringMessages: { where: { botId: run.botId, runId: null }, select: { id: true } },
     },
   });
+  return withOwnToolHistory(prisma, run, messages);
+}
+
+/**
+ * Keeps a reply's tool history only for runs of the same bot started by the same person: in a
+ * shared space another member's run of the bot sees the reply as everyone does, never what its
+ * tools read (an owner's inbox, say).
+ */
+async function withOwnToolHistory<
+  M extends { runId: string | null; botId: string | null; toolHistory: string | null },
+>(prisma: PrismaClient, run: { botId: string; userId: string }, messages: M[]): Promise<M[]> {
+  const runIds = [...new Set(messages.flatMap((m) => (m.toolHistory && m.runId ? [m.runId] : [])))];
+  if (!runIds.length) return messages;
+  const owners = new Map(
+    (
+      await prisma.run.findMany({
+        where: { id: { in: runIds } },
+        select: { id: true, userId: true },
+      })
+    ).map((row) => [row.id, row.userId]),
+  );
+  return messages.map((m) =>
+    m.toolHistory && !(m.botId === run.botId && m.runId && owners.get(m.runId) === run.userId)
+      ? { ...m, toolHistory: null }
+      : m,
+  );
 }
 
 /** Marks the bot message that keeps the reply text of a run that failed partway through it. */
@@ -63,6 +92,8 @@ export interface CreateThreadMessageInput {
   threadId: string;
   role: "user" | "bot" | "system";
   blocks: MessageBlock[];
+  /** A bot reply's tool calls as sent and returned, for its later runs only. */
+  toolHistory?: ToolHistory;
   botId?: string;
   /** The signed-in person who wrote a user message; null when the sender is not a known user. */
   authorUserId?: string;
@@ -108,12 +139,16 @@ export async function createThreadMessageInTransaction(
       exceptUserId: input.authorUserId,
     });
   }
+  // Kept calls never stay in the blocks clients read; they go in their own encrypted column.
+  const split = splitToolHistory(input.blocks);
+  const toolHistory = input.toolHistory ?? split.toolHistory;
   return tx.message.create({
     data: {
       threadId: input.threadId,
       seq: thread.nextMessageSeq - 1,
       role: input.role,
-      blocks: input.blocks as Prisma.InputJsonValue,
+      blocks: split.blocks as Prisma.InputJsonValue,
+      ...(toolHistory ? { toolHistory: JSON.stringify(toolHistory) } : {}),
       botId: input.botId,
       authorUserId: input.authorUserId,
       replyToMessageId: input.replyToMessageId,

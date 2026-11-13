@@ -1201,6 +1201,7 @@ msgstr "Incluye"
 #: apps/mobile/components/routine-schedule-editor.tsx
 #: apps/web/src/lib/cron.ts
 #: apps/web/src/pages/McpServerForm.tsx
+#: apps/web/src/pages/memory-providers/MemoryProviderAdvanced.tsx
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
 #: apps/web/src/pages/ModelSettingsOverlay.tsx
 #: apps/web/src/pages/onboarding/model-step.tsx
@@ -1384,6 +1385,14 @@ msgstr "Importe"
 msgid "An API key is stored for this provider, not a subscription sign-in."
 msgstr "Hay una clave de API guardada para este proveedor, no un inicio de sesión por suscripción."
 
+#: apps/web/src/pages/MemorySettingsOverlay.tsx
+msgid "An external memory service for storing and recalling context across chats."
+msgstr "Un servicio de memoria externo para guardar y recordar contexto entre chats."
+
+#: apps/web/src/pages/routine-editor/trigger-cards.tsx
+msgid "An HTTPS endpoint"
+msgstr "Un endpoint HTTPS"
+
 #: apps/web/src/lib/agent-import-errors.ts
 msgid "An imported API key could not be checked. Try again."
 msgstr "No se pudo comprobar una clave de API importada. Vuelve a intentarlo."
@@ -1412,7 +1421,6 @@ msgstr "Otro asistente"
 
 #: apps/mobile/components/IncomingCall.tsx
 #: apps/mobile/lib/incoming-calls.ts
-#: apps/web/src/components/AskCard.tsx
 msgid "Answer"
 msgstr "Responder"
 
@@ -1467,6 +1475,7 @@ msgstr "Cualquiera con el enlace"
 #: apps/web/src/components/SecretAskCard.tsx
 #: apps/web/src/components/vault/kinds.tsx
 #: apps/web/src/lib/localized-provider-hint.ts
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 #: apps/web/src/pages/memory-providers/HonchoSettingsForm.tsx
 #: apps/web/src/pages/model-settings/compatible-key-field.tsx
 #: apps/web/src/pages/model-settings/connection-controls.tsx
@@ -2679,6 +2688,7 @@ msgstr "Confirma que la URL es accesible desde esta sesión del navegador y vuel
 #: apps/mobile/lib/app-connect.ts
 #: apps/web/src/components/integrations/IntegrationSetup.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 #: apps/web/src/pages/memory-providers/HonchoSettingsForm.tsx
 #: apps/web/src/pages/memory-providers/SerenitySettingsForm.tsx
 #: apps/web/src/pages/memory-providers/SupermemorySettingsForm.tsx
@@ -2792,6 +2802,7 @@ msgstr "Conectado."
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 #: apps/web/src/pages/McpServersOverlay.tsx
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 #: apps/web/src/pages/memory-providers/HonchoSettingsForm.tsx
 #: apps/web/src/pages/memory-providers/SerenitySettingsForm.tsx
 #: apps/web/src/pages/memory-providers/SupermemorySettingsForm.tsx
@@ -2885,14 +2896,14 @@ msgstr "Continuar con {name}"
 msgid "Control"
 msgstr "Control"
 
-#: apps/mobile/lib/ai-consent.ts
-msgid "Conversation summaries, memories, searches and bot and Space IDs are sent to store and recall context."
-msgstr "Los resúmenes de conversaciones, las memorias, las búsquedas y los ID de bots y espacios se envían para guardar y recuperar el contexto."
-
 #: apps/mobile/app/(settings)/messaging.tsx
 #: apps/web/src/pages/MessagingSettingsPanel.tsx
 msgid "Conversations"
 msgstr "Conversaciones"
+
+#: apps/mobile/lib/ai-consent.ts
+msgid "Conversations, names, memories, searches and bot and Space IDs are sent to store and recall context."
+msgstr "Las conversaciones, los nombres, las memorias, las búsquedas y los ID de bots y Espacios se envían para guardar y recordar contexto."
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/mobile/components/code-copy-button.tsx
@@ -3870,11 +3881,6 @@ msgstr "No se pudo comenzar el inicio de sesión"
 msgid "Could not start teaching"
 msgstr "No se pudo iniciar la enseñanza"
 
-#: apps/mobile/components/computer-maintenance-actions.tsx
-#: apps/web/src/components/ComputerMaintenanceActions.tsx
-msgid "Could not stop computer"
-msgstr "No se pudo detener la computadora"
-
 #: apps/mobile/components/AskActions.tsx
 msgid "Could not submit answer"
 msgstr "No se pudo enviar la respuesta"
@@ -4748,10 +4754,6 @@ msgstr "Editar"
 msgid "Edit avatar"
 msgstr "Editar avatar"
 
-#: apps/web/src/components/AskCard.tsx
-msgid "Edit first"
-msgstr "Editar primero"
-
 #: apps/mobile/app/(settings)/profile.tsx
 #: apps/mobile/app/bot-settings.tsx
 #: apps/mobile/components/name-dialog-compose.tsx
@@ -4876,6 +4878,10 @@ msgstr "Introduce un importe"
 #: apps/web/src/lib/model-connection-preflight.ts
 msgid "Enter an API key before testing."
 msgstr "Introduce una clave de API antes de probar."
+
+#: apps/web/src/lib/routine-draft.ts
+msgid "Enter an HTTPS URL"
+msgstr "Introduce una URL HTTPS"
 
 #: apps/web/src/components/ComputerProviderSettings.tsx
 msgid "Environment ID"
@@ -5107,12 +5113,8 @@ msgid "Failure handling"
 msgstr "Manejo de fallos"
 
 #: apps/web/src/pages/routine-editor/trigger-cards.tsx
-msgid "Fields that mark a change"
-msgstr "Campos que indican un cambio"
-
-#: apps/web/src/pages/routine-editor/trigger-cards.tsx
-msgid "Fields to compare, e.g. id, modifiedTime (optional)"
-msgstr "Campos para comparar, p. ej. id, modifiedTime (opcional)"
+msgid "Fields to compare (optional)"
+msgstr "Campos para comparar (opcional)"
 
 #: apps/mobile/components/thread/message-bubble.tsx
 #: apps/mobile/lib/search-sheet.ts
@@ -5532,6 +5534,7 @@ msgstr "Ocultar la transcripción"
 
 #: apps/mobile/lib/thinking-level.ts
 #: apps/web/src/lib/ticket-priority.ts
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
 #: apps/web/src/pages/onboarding/model-step.tsx
 msgid "High"
@@ -5600,6 +5603,10 @@ msgstr "¿Cómo usarás Rakazo?"
 #: apps/mobile/components/compatible-endpoint-form.tsx
 msgid "http://127.0.0.1:8000/v1"
 msgstr "http://127.0.0.1:8000/v1"
+
+#: apps/web/src/pages/routine-editor/trigger-cards.tsx
+msgid "HTTPS URL"
+msgstr "URL HTTPS"
 
 #: apps/mobile/components/add-custom-integration.tsx
 msgid "https://example.com/graphql"
@@ -5935,6 +5942,10 @@ msgstr "Última comprobación {0}: sin cambios"
 msgid "Later"
 msgstr "Más tarde"
 
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Learn from conversations"
+msgstr "Aprender de las conversaciones"
+
 #: apps/mobile/app/(settings)/messaging.tsx
 #: apps/mobile/app/space-members.tsx
 #: apps/web/src/components/SpaceMembersSettings.tsx
@@ -5963,10 +5974,6 @@ msgstr "Izquierda"
 #: apps/web/src/components/ComputerDeviceSettings.tsx
 msgid "Let bots use this computer"
 msgstr "Permitir que los bots usen esta computadora"
-
-#: apps/web/src/pages/MemorySettingsOverlay.tsx
-msgid "Lets bots save and recall facts by meaning, alongside MEMORY.md."
-msgstr "Permite a los bots guardar y recordar datos por significado, además de MEMORY.md."
 
 #: apps/mobile/app/(settings)/general.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
@@ -6148,6 +6155,7 @@ msgstr "Parece contener una clave"
 
 #: apps/mobile/lib/thinking-level.ts
 #: apps/web/src/lib/ticket-priority.ts
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
 #: apps/web/src/pages/onboarding/model-step.tsx
 msgid "Low"
@@ -6277,6 +6285,7 @@ msgid "MCP servers"
 msgstr "Servidores MCP"
 
 #: apps/mobile/lib/thinking-level.ts
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
 #: apps/web/src/pages/onboarding/model-step.tsx
 msgid "Medium"
@@ -6570,11 +6579,6 @@ msgstr "Más"
 #: apps/web/src/pages/plugins/plugin-browse.tsx
 msgid "More apps"
 msgstr "Más apps"
-
-#: apps/mobile/components/computer-maintenance-actions.tsx
-#: apps/web/src/components/ComputerMaintenanceActions.tsx
-msgid "More computer actions"
-msgstr "Más acciones de computadora"
 
 #: apps/mobile/lib/bot-template-copy.ts
 #: apps/web/src/components/bot-templates/bot-template-copy.ts
@@ -7748,8 +7752,8 @@ msgid "Plugins"
 msgstr "Plugins"
 
 #: apps/web/src/pages/routine-editor/trigger-cards.tsx
-msgid "Post \"No changes\" in chat"
-msgstr "Publicar «Sin cambios» en el chat"
+msgid "Post a chat message when a check finds no changes. The routine won't run."
+msgstr "Publica un mensaje en el chat cuando una comprobación no encuentre cambios. La rutina no se ejecutará."
 
 #: apps/mobile/lib/bot-template-copy.ts
 #: apps/web/src/components/bot-templates/bot-template-copy.ts
@@ -7933,6 +7937,18 @@ msgstr "Esfuerzo de razonamiento"
 msgid "Recall and write"
 msgstr "Recordar y escribir"
 
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Recall automatically"
+msgstr "Recordar automáticamente"
+
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Recall depth"
+msgstr "Profundidad de recuerdo"
+
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Recall from banks"
+msgstr "Recordar de los bancos"
+
 #: apps/web/src/pages/memory-providers/HonchoSettingsForm.tsx
 msgid "Recall from this peer; save to Rakazo’s own peers."
 msgstr "Consultar este peer; guardar en los propios peers de Rakazo."
@@ -7990,14 +8006,12 @@ msgstr "Grabación iniciada. Actualiza la vista para continuar."
 msgid "Recording: {0}"
 msgstr "Grabando: {0}"
 
-#: apps/mobile/components/computer-maintenance-actions.tsx
 #: apps/mobile/components/computer-update-progress.tsx
 #: apps/web/src/components/ComputerMaintenanceActions.tsx
 #: apps/web/src/components/ComputerUpdateProgress.tsx
 msgid "Recover computer"
 msgstr "Recuperar computadora"
 
-#: apps/mobile/components/computer-maintenance-actions.tsx
 #: apps/web/src/components/ComputerMaintenanceActions.tsx
 msgid "Recover computer?"
 msgstr "¿Recuperar el ordenador?"
@@ -8030,17 +8044,11 @@ msgstr "Falló la recuperación"
 msgid "Recovery is unavailable until the previous operation has stopped."
 msgstr "La recuperación no está disponible hasta que se detenga la operación anterior."
 
-#: apps/mobile/components/computer-maintenance-actions.tsx
 #: apps/mobile/components/computer-update-progress.tsx
 #: apps/web/src/components/ComputerMaintenanceActions.tsx
 #: apps/web/src/components/ComputerUpdateProgress.tsx
 msgid "Recovery restores the last saved workspace. Unsaved work may be lost."
 msgstr "La recuperación restaura el último espacio de trabajo guardado. El trabajo no guardado puede perderse."
-
-#: apps/mobile/components/computer-maintenance-actions.tsx
-#: apps/web/src/components/ComputerMaintenanceActions.tsx
-msgid "Recreate a computer that is not working."
-msgstr "Recrear un ordenador que no funciona."
 
 #: apps/mobile/components/computer-update-progress.tsx
 #: apps/web/src/components/ComputerUpdateProgress.tsx
@@ -8343,6 +8351,10 @@ msgstr "Respuesta cancelada"
 msgid "Replying to {0}"
 msgstr "Respondiendo a {0}"
 
+#: apps/web/src/pages/routine-editor/trigger-cards.tsx
+msgid "Report unchanged checks"
+msgstr "Informar de comprobaciones sin cambios"
+
 #: apps/mobile/lib/user-error.ts
 #: apps/web/src/lib/user-error.ts
 msgid "Request a new code"
@@ -8413,6 +8425,7 @@ msgstr "Se restablece el {date}."
 msgid "Resets in {reset}"
 msgstr "Se reinicia en {reset}"
 
+#: apps/mobile/components/computer-maintenance-actions.tsx
 #: apps/web/src/components/ComputerMaintenanceActions.tsx
 msgid "Resetting…"
 msgstr "Restableciendo…"
@@ -8447,11 +8460,6 @@ msgstr "Restaurar"
 #: apps/web/src/pages/shell/archived-chats.tsx
 msgid "Restore {name}"
 msgstr "Restaurar {name}"
-
-#: apps/mobile/components/computer-maintenance-actions.tsx
-#: apps/web/src/components/ComputerMaintenanceActions.tsx
-msgid "Restore the last saved workspace."
-msgstr "Restaurar el último espacio de trabajo guardado."
 
 #: apps/mobile/components/computer-maintenance-actions.tsx
 #: apps/web/src/components/ComputerMaintenanceActions.tsx
@@ -8722,11 +8730,6 @@ msgstr "Guardar la mía"
 msgid "Save section name"
 msgstr "Guardar nombre de la sección"
 
-#: apps/mobile/components/computer-maintenance-actions.tsx
-#: apps/web/src/components/ComputerMaintenanceActions.tsx
-msgid "Save the workspace and install current software."
-msgstr "Guardar el espacio de trabajo e instalar el software actual."
-
 #: apps/mobile/components/secret-ask-sheet.tsx
 #: apps/web/src/components/vault/VaultItemEditor.tsx
 msgid "Save to Vault"
@@ -8961,7 +8964,6 @@ msgid "Send <0>{linkCode}</0> to <1>{linkAddress}</1> from {linkApp} within 10 m
 msgstr "Envía <0>{linkCode}</0> a <1>{linkAddress}</1> desde {linkApp} en los próximos 10 minutos."
 
 #: apps/mobile/components/thread/ask-block.tsx
-#: apps/web/src/components/AskCard.tsx
 msgid "Send answer"
 msgstr "Enviar respuesta"
 
@@ -8974,10 +8976,6 @@ msgstr "Enviar como archivo"
 #: apps/web/src/components/AccountAccess.tsx
 msgid "Send deletion code"
 msgstr "Enviar código de eliminación"
-
-#: apps/web/src/components/AskCard.tsx
-msgid "Send it"
-msgstr "Enviarlo"
 
 #: apps/web/src/components/composer/HoldToTalk.tsx
 msgid "Send recording"
@@ -9374,6 +9372,10 @@ msgstr "Omitir"
 msgid "Skip or deploy key"
 msgstr "Omitir o desplegar clave"
 
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Skip unrelated memories"
+msgstr "Omitir memorias no relacionadas"
+
 #: apps/mobile/components/ComputerCard.tsx
 #: apps/web/src/components/ComputerCard.tsx
 msgid "Skipped"
@@ -9633,11 +9635,6 @@ msgstr "Pasos"
 msgid "Stop"
 msgstr "Detener"
 
-#: apps/mobile/components/computer-maintenance-actions.tsx
-#: apps/web/src/components/ComputerMaintenanceActions.tsx
-msgid "Stop computer"
-msgstr "Detener computadora"
-
 #: apps/mobile/components/thread-composer.tsx
 msgid "Stop dictating"
 msgstr "Dejar de dictar"
@@ -9659,10 +9656,6 @@ msgstr "Detenido"
 #: apps/web/src/lib/browser-notifications.ts
 msgid "Stopped."
 msgstr "Detenido."
-
-#: apps/web/src/components/ComputerMaintenanceActions.tsx
-msgid "Stopping…"
-msgstr "Deteniendo…"
 
 #: apps/web/src/pages/McpServerForm.tsx
 msgid "Stored encrypted"
@@ -9715,6 +9708,14 @@ msgstr "Suscribirse con tu propia IA"
 #: apps/web/src/pages/Paywall.tsx
 msgid "Subscription required"
 msgstr "Se requiere una suscripción"
+
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Summaries"
+msgstr "Resúmenes"
+
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Summaries and facts"
+msgstr "Resúmenes y datos"
 
 #: apps/mobile/lib/cron.ts
 #: apps/web/src/lib/cron.ts
@@ -10542,7 +10543,6 @@ msgid "Type without recording"
 msgstr "Escribir sin grabar"
 
 #: apps/mobile/components/thread/ask-block.tsx
-#: apps/web/src/components/AskCard.tsx
 msgid "Type your answer"
 msgstr "Escribe tu respuesta"
 
@@ -10690,6 +10690,7 @@ msgstr "Actualizando la computadora de {name}"
 msgid "Updating Team Computer"
 msgstr "Actualizando Team Computer"
 
+#: apps/mobile/components/computer-maintenance-actions.tsx
 #: apps/web/src/components/ComputerMaintenanceActions.tsx
 msgid "Updating…"
 msgstr "Actualizando…"
@@ -10925,10 +10926,6 @@ msgstr "Ver todo"
 msgid "View source"
 msgstr "Ver código fuente"
 
-#: apps/web/src/components/SidebarFooter.tsx
-msgid "View usage"
-msgstr "Ver uso"
-
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/ai-data-sharing.tsx
@@ -11063,6 +11060,10 @@ msgstr "¿Qué debe hacer esta rutina cada vez que se ejecute?"
 #: apps/web/src/pages/shell/bot-settings-sections.tsx
 msgid "What this bot is for"
 msgstr "Para qué es este bot"
+
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "What to recall"
+msgstr "Qué recordar"
 
 #: apps/web/src/components/teach/SkillDraftCard.tsx
 msgid "What to return"
@@ -11297,6 +11298,11 @@ msgstr "Hoy se cobrará {price} a tu tarjeta, menos la parte no usada de este me
 #: apps/web/src/components/ModelCredits.tsx
 msgid "Your card is charged the prorated difference today."
 msgstr "Hoy se cobra en tu tarjeta la diferencia prorrateada."
+
+#: apps/mobile/app/(settings)/billing.tsx
+#: apps/web/src/components/ModelCredits.tsx
+msgid "Your card was not charged"
+msgstr "No se hizo ningún cargo a tu tarjeta"
 
 #: apps/mobile/app/computer.tsx
 #: apps/web/src/pages/Shell.tsx

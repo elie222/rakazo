@@ -4,9 +4,17 @@ import type {
   AgentImportWarning,
   McpServerConfigInput,
 } from "@rakazo/contracts";
-import { isValidTimeZone, McpServerConfigInput as McpServerConfigSchema } from "@rakazo/contracts";
+import {
+  AGENT_IMPORT_MAX_FILE_LENGTH,
+  isValidTimeZone,
+  McpServerConfigInput as McpServerConfigSchema,
+} from "@rakazo/contracts";
+import type { GrokBot } from "@rakazo/core";
 import {
   AGENT_IMPORT_PROVIDER_KEYS,
+  grokRoutineCron,
+  grokSkillNames,
+  looksLikeCredential,
   mcpServerImportable,
   nextCronDateAcrossStrict,
   normalizeImportProvider,
@@ -24,7 +32,7 @@ import { isCatalogProviderBaseUrl, listPiCatalog } from "./pi-models.js";
 type Json = Record<string, unknown>;
 type Skipped = {
   path: string;
-  reason: "builtin" | "unsupported" | "invalid_file";
+  reason: "builtin" | "unsupported" | "invalid_file" | "reconnect";
 };
 
 export type ImportedModel = {
@@ -166,6 +174,103 @@ export function readAgentImportSettings(
   }
 
   return { model, mcpServers, routines, apiKeys, skipped, keyValues };
+}
+
+/** A path segment this long and mixed reads as a key: the address would carry it. */
+const KEY_LIKE_SEGMENT = /^(?=.*\d)(?=.*[a-zA-Z])[A-Za-z0-9_-]{24,}$/;
+
+/**
+ * A Grok Bot's routines and connected apps, from the export it wrote. It has no model to
+ * choose and the export never holds keys. Routines on an event stay in its memory note.
+ */
+export function readGrokBotImportSettings(
+  bot: GrokBot,
+): AgentImportSettings & { keyValues: Map<string, string> } {
+  const skipped: Skipped[] = [];
+  const skillNames = grokSkillNames(bot);
+  const routines: ImportedRoutine[] = [];
+  for (const [index, source] of bot.routines.entries()) {
+    const safeLabel = looksLikeCredential(source.name)
+      ? String(index + 1)
+      : source.name || String(index + 1);
+    // A routine the Bot could not read in full is named, so the user knows it was left behind.
+    if (!source.instruction) {
+      skipped.push({ path: `routines: ${safeLabel}`, reason: "unsupported" });
+      continue;
+    }
+    const cron = grokRoutineCron(source);
+    if (!cron) continue;
+    if ([source.name, source.instruction, source.details, source.when].some(looksLikeCredential)) {
+      skipped.push({ path: `routines: ${safeLabel}`, reason: "unsupported" });
+      continue;
+    }
+    const uses = source.skills.flatMap((name) => skillNames.get(name.toLowerCase()) ?? []);
+    const instruction = [source.instruction, source.details, source.when]
+      .filter(Boolean)
+      .join("\n\n");
+    if (instruction.length > AGENT_IMPORT_MAX_FILE_LENGTH) {
+      skipped.push({ path: `routines: ${safeLabel}`, reason: "unsupported" });
+      continue;
+    }
+    const prompt = uses.length
+      ? `${instruction}\n\nUse these skills: ${uses.map((name) => `@${name}`).join(", ")}.`
+      : instruction;
+    const result = routine({ name: source.name }, prompt, cron, source.timeZone, false, false);
+    if ("reason" in result) {
+      skipped.push({ path: `routines: ${safeLabel}`, reason: result.reason });
+    } else {
+      routines.push({ ...result, id: `routine:${index}` });
+    }
+  }
+
+  const mcpServers: ImportedMcpServer[] = [];
+  for (const [index, app] of bot.apps.entries()) {
+    // A name or header name with a key in it never becomes server settings or preview text.
+    if ([app.name, ...app.headerNames].some(looksLikeCredential)) {
+      skipped.push({ path: `apps: ${index + 1}`, reason: "unsupported" });
+      continue;
+    }
+    const path = `apps: ${app.name}`;
+    if (!app.mcpUrl) {
+      skipped.push({ path, reason: "reconnect" });
+      continue;
+    }
+    let url: URL | null = null;
+    try {
+      url = new URL(app.mcpUrl);
+      if (
+        [...url.hostname.split("."), ...decodeURIComponent(url.pathname).split("/")].some((part) =>
+          KEY_LIKE_SEGMENT.test(part),
+        )
+      )
+        url = null;
+    } catch {
+      url = null;
+    }
+    // Only a remote address that carries no key can come over.
+    const server =
+      url?.protocol === "https:" &&
+      ["", "sse", "http", "streamable_http", "streamable-http"].includes(app.transport) &&
+      !url.search &&
+      !url.hash &&
+      !url.username &&
+      !url.password &&
+      !looksLikeCredential(app.mcpUrl)
+        ? mcpServer(
+            app.name,
+            {
+              url: app.mcpUrl,
+              transport: app.transport,
+              headers: Object.fromEntries(app.headerNames.map((name) => [name, ""])),
+            },
+            () => false,
+          )
+        : null;
+    if (server) mcpServers.push({ ...server, id: `mcp:${index}` });
+    else skipped.push({ path, reason: "unsupported" });
+  }
+
+  return { model: null, mcpServers, routines, apiKeys: [], skipped, keyValues: new Map() };
 }
 
 /**

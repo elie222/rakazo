@@ -78,7 +78,6 @@ function runDigest(
     statuses?: object[][];
     fork?: boolean;
     steps?: Record<string, object[]>;
-    deadline?: number;
   },
   ...args: string[]
 ) {
@@ -96,8 +95,6 @@ function runDigest(
         CALLS: callsPath,
         POLLS: join(root, "polls"),
         PR_DIGEST_POLL: "1",
-        // Longer than the spawn timeout, so a watch that fails to wake errors out.
-        PR_DIGEST_DEADLINE: String(fixture.deadline ?? 60),
         PR_DIGEST_SEEN_DIR: join(root, "seen"),
       },
       encoding: "utf8",
@@ -360,7 +357,18 @@ describe("pr-digest", () => {
 
     it("keeps waiting on a failure that was already there", () => {
       const started = Date.now();
-      const result = runDigest({ checks: [[failed, running]], deadline: 3 }, "--watch", "1");
+      const passed = { ...running, status: "completed", conclusion: "success" };
+      const result = runDigest(
+        {
+          checks: [
+            [failed, running],
+            [failed, running],
+            [failed, passed],
+          ],
+        },
+        "--watch",
+        "1",
+      );
       expect(result.status).toBe(10);
       expect(Date.now() - started).toBeGreaterThanOrEqual(2_000);
     });

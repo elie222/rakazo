@@ -1,5 +1,4 @@
 import type { AgentRunRequest, AgentRuntimeEvent, BackgroundJob } from "@rakazo/adapter-kit";
-import { messagingProgressJob } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
 import type { AppendEventInput, Prisma } from "@rakazo/db";
 import {
@@ -332,6 +331,9 @@ async function runTurn(
   });
   const pauseRunForInput = vi.fn(async () => ({ continuationRunId: null }));
   const jobs = { enqueue: vi.fn(async (_job: BackgroundJob) => undefined) };
+  const messagingDelivery = {
+    deliverRun: vi.fn(async (_runId: string, _options?: { progress?: boolean }) => undefined),
+  };
   vision.seesImages = options.graphical ?? false;
   const executor = createRunExecutor({
     deploymentModelKey: "fixture-model-key",
@@ -358,6 +360,7 @@ async function runTurn(
     memoryProviders: { resolve: async () => null },
     events: { append, finalizeRun, pauseRunForInput, notify: vi.fn(async () => undefined) },
     jobs,
+    messagingDelivery,
     secrets,
     ...(options.graphical
       ? {
@@ -387,7 +390,7 @@ async function runTurn(
     prisma,
     runtimeRun,
     run,
-    jobs,
+    messagingDelivery,
   };
 }
 
@@ -692,7 +695,16 @@ describe("notes that can't be posted as messages", () => {
     expect(finalText(finalizeRun)).toBe("Saved.");
     expect(finalizeRun.mock.calls[0]![0].blocks).toContainEqual({
       kind: "steps",
-      steps: [{ label: "Save event", count: 1, note: "The meeting is with Anna." }],
+      steps: [
+        {
+          label: "Save event",
+          tool: "save_event",
+          count: 1,
+          note: "The meeting is with Anna.",
+          // What the call was made with, for a later turn to replay.
+          calls: [{ arguments: "{}" }],
+        },
+      ],
     });
   });
 
@@ -865,10 +877,8 @@ describe("notes that can't be posted as messages", () => {
 });
 
 describe("interim messages in a chat app", () => {
-  const sentOn = (jobs: Awaited<ReturnType<typeof runTurn>>["jobs"]) =>
-    jobs.enqueue.mock.calls
-      .filter(([job]) => job.name === "messaging.progress")
-      .map(([job]) => job);
+  const sentOn = (delivery: Awaited<ReturnType<typeof runTurn>>["messagingDelivery"]) =>
+    delivery.deliverRun.mock.calls;
   const texts = (messages: Awaited<ReturnType<typeof runTurn>>["messages"]) =>
     messages.map((message) =>
       message.blocks.map((block) => ("text" in block ? block.text : "")).join(""),
@@ -886,19 +896,19 @@ describe("interim messages in a chat app", () => {
           yield { type: "done", text: "" };
         },
       });
-      return { messages: texts(turn.messages), jobs: sentOn(turn.jobs) };
+      return { messages: texts(turn.messages), sends: sentOn(turn.messagingDelivery) };
     };
     const chat = await run({ trigger: "messaging", directChat: true });
     expect(chat.messages).toEqual(["Checking the logs.", "Still looking."]);
-    expect(chat.jobs).toEqual(Array(2).fill(messagingProgressJob("run-1")));
+    expect(chat.sends).toEqual(Array(2).fill(["run-1", { progress: true }]));
     // A group run posts once, when it ends; an in-app run has no chat app to reach.
     const group = await run({ trigger: "messaging" });
-    expect(group).toEqual({ messages: chat.messages, jobs: [] });
-    expect((await run({ trigger: "user" })).jobs).toEqual([]);
+    expect(group).toEqual({ messages: chat.messages, sends: [] });
+    expect((await run({ trigger: "user" })).sends).toEqual([]);
   });
 
   it("sends a note posted on a long turn on at once", async () => {
-    const { messages, jobs } = await runTurn(
+    const { messages, messagingDelivery } = await runTurn(
       "All done.",
       false,
       ["Opening the report."],
@@ -907,7 +917,7 @@ describe("interim messages in a chat app", () => {
       { trigger: "messaging", directChat: true, startedAt: new Date(Date.now() - 120_000) },
     );
     expect(texts(messages)).toEqual(["Opening the report."]);
-    expect(sentOn(jobs)).toEqual([messagingProgressJob("run-1")]);
+    expect(sentOn(messagingDelivery)).toEqual([["run-1", { progress: true }]]);
   });
 });
 

@@ -109,6 +109,8 @@ describePostgres("cloud agent lifecycle and recovery (PostgreSQL + Cursor emulat
     const enqueue = vi.fn(async (_job: BackgroundJob) => undefined);
     const jobs: JobPublisher = {
       enqueue,
+      enqueueIn: async () => undefined,
+      cancelIn: async () => undefined,
       cancel: async () => undefined,
       close: async () => undefined,
     };
