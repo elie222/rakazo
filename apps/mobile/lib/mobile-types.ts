@@ -11,7 +11,7 @@ import type {
   ThreadSnapshot,
 } from "@rakazo/contracts";
 import type { LiveThreadMessage, LiveThreadRun, ThreadHistory } from "@rakazo/core";
-import { channelMessageLine, prependThreadHistoryPage } from "@rakazo/core";
+import { channelMessageLine, emailDisplayText, prependThreadHistoryPage } from "@rakazo/core";
 
 export type MobileBot = Pick<
   Bot,
@@ -145,6 +145,7 @@ export function blockText(message: MobileMessage) {
   return message.blocks
     .map((block) => {
       if (block.kind === "channel_message") return channelMessageLine(block);
+      if (block.kind === "email") return emailDisplayText(block);
       if (block.kind === "cloud_agent")
         return `${block.title}: ${block.status}${block.prUrl ? ` ${block.prUrl}` : ""}`;
       if (block.kind === "subagent") {

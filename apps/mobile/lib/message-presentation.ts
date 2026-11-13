@@ -1,6 +1,10 @@
 import type { MessageBlock } from "@rakazo/contracts";
 import { isRetiredImportSetup, isToolActivityBlock } from "@rakazo/core";
-import { MAX_QUOTABLE_SOURCE_LENGTH, visibleTextFromMarkdown } from "@rakazo/core/message-quote";
+import {
+  MAX_QUOTABLE_SOURCE_LENGTH,
+  messageQuoteSources,
+  visibleTextFromMarkdown,
+} from "@rakazo/core/message-quote";
 
 export function isCenteredAgentEvent(blocks: readonly MessageBlock[]): boolean {
   return blocks.some(
@@ -117,14 +121,15 @@ export function quotableMessageSegments(
   if (cached) return cached;
   const segments: string[] = [];
   let sourceLength = 0;
-  for (const block of blocks) {
-    if (block.kind !== "text" || !block.text) continue;
-    sourceLength += block.text.length;
+  // The server's own quote sources, so a selection here is one it accepts.
+  for (const source of messageQuoteSources(blocks, role === "user" ? "plain-text" : "markdown")) {
+    if (!source.text) continue;
+    sourceLength += source.text.length;
     if (sourceLength > MAX_QUOTABLE_SOURCE_LENGTH) {
       segments.length = 0;
       break;
     }
-    const text = role === "user" ? block.text : visibleTextFromMarkdown(block.text);
+    const text = source.markdown ? visibleTextFromMarkdown(source.text) : source.text;
     if (text.trim()) segments.push(text);
   }
   let byRole = quotableSegmentsCache.get(blocks);

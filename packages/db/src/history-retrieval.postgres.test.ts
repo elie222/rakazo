@@ -53,7 +53,7 @@ postgres("history retrieval (PostgreSQL)", () => {
         jsonb_build_array(jsonb_build_object('kind','text','text', CASE WHEN n = 100 THEN 'exports use batching' ELSE 'filler exchange ' || n END))
         FROM generate_series(1,10000) n;
       CREATE INDEX synthetic_history_fts ON messages USING GIN (to_tsvector('simple',jsonb_path_query_array(blocks,
-        '$[*] ? (@.kind == "text" || @.kind == "channel_message" || @.kind == "bot_message_received" || @.kind == "bot_message_sent" || @.kind == "handoff").text')::text || jsonb_path_query_array(blocks, '$[*] ? (@.kind == "subagent").task')::text || jsonb_path_query_array(blocks, '$[*] ? (@.kind == "subagent").result')::text || translate(jsonb_path_query_array(blocks, '$[*] ? (@.kind == "file" || @.kind == "image").name')::text, '._-', '   ') || jsonb_path_query_array(blocks, '$[*] ? (@.kind == "steps").steps[*].label')::text || jsonb_path_query_array(blocks, '$[*] ? (@.kind == "steps").steps[*].note')::text));
+        '$[*] ? (@.kind == "text" || @.kind == "channel_message" || @.kind == "bot_message_received" || @.kind == "bot_message_sent" || @.kind == "handoff" || @.kind == "email").text')::text || jsonb_path_query_array(blocks, '$[*] ? (@.kind == "email").subject')::text || jsonb_path_query_array(blocks, '$[*] ? (@.kind == "subagent").task')::text || jsonb_path_query_array(blocks, '$[*] ? (@.kind == "subagent").result')::text || translate(jsonb_path_query_array(blocks, '$[*] ? (@.kind == "file" || @.kind == "image").name')::text, '._-', '   ') || jsonb_path_query_array(blocks, '$[*] ? (@.kind == "steps").steps[*].label')::text || jsonb_path_query_array(blocks, '$[*] ? (@.kind == "steps").steps[*].note')::text));
       CREATE INDEX synthetic_history_seq ON messages ("threadId",seq);
       ${toolWorkIndex}
       ANALYZE messages;
@@ -204,6 +204,34 @@ postgres("history retrieval (PostgreSQL)", () => {
     );
     expect(JSON.stringify(explained.rows[0]["QUERY PLAN"])).toContain("synthetic_history_fts");
     await pool.query(`DELETE FROM messages WHERE id = 'steps-reply'`);
+  });
+  it("finds an owner's email by its subject and by its body", async () => {
+    await pool.query(
+      `INSERT INTO messages VALUES ('owner-email', 'synthetic-thread', 10001, 'user', NULL, NULL,
+      '2026-03-01T00:00:00Z', $1::jsonb)`,
+      [
+        JSON.stringify([
+          {
+            kind: "email",
+            emailId: "email-1",
+            from: "owner@example.com",
+            to: ["bot@example.com"],
+            subject: "Marbleworth invoice",
+            text: "Please file it under Zephyrine.",
+          },
+        ]),
+      ],
+    );
+    for (const [query, shown] of [
+      ["marbleworth", '"subject": "Marbleworth invoice"'],
+      ["zephyrine", '"text": "Please file it under Zephyrine."'],
+    ] as const) {
+      const results = await searchHistory(prisma, scope, { query });
+      expect(results.messages.map((message) => message.messageId)).toEqual(["owner-email"]);
+      // The bot reads it in its owner-email frame, around the words that matched.
+      expect(results.messages[0]!.text).toContain(shown);
+    }
+    await pool.query(`DELETE FROM messages WHERE id = 'owner-email'`);
   });
   it("keeps a reply made only of tool steps when search is narrowed to bot replies", async () => {
     await pool.query(

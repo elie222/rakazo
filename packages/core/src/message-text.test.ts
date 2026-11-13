@@ -2,11 +2,24 @@ import type { ThreadMessage } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import { copyableMessageText, selectableMessageText } from "./message-text.js";
 
+const EMAIL: ThreadMessage["blocks"][number] = {
+  kind: "email",
+  emailId: "email-1",
+  from: "Owner <owner@example.test>",
+  to: ["bot@bots.example.test"],
+  subject: "Weekly plan",
+  text: "Send me the **plan**.\n",
+};
+
 function message(blocks: ThreadMessage["blocks"]): ThreadMessage {
   return { id: "m_1", threadId: "t_1", seq: 1, role: "bot", blocks, createdAt: "2026-08-29" };
 }
 
 describe("copyableMessageText", () => {
+  it("copies an owner's email as the chat shows it", () => {
+    expect(copyableMessageText(message([EMAIL]))).toBe("✉︎ Weekly plan\nSend me the **plan**.");
+  });
+
   it("joins text, progress, and ask blocks without chrome", () => {
     expect(
       copyableMessageText(

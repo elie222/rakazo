@@ -1,3 +1,5 @@
+import type { MessageBlock } from "@rakazo/contracts";
+import { ownerEmailPrompt } from "@rakazo/core";
 import { describe, expect, it, vi } from "vitest";
 import type { Prisma, PrismaClient } from "./client.js";
 import {
@@ -357,6 +359,27 @@ describe("local history retrieval", () => {
         { kind: "progress", text: "trace" },
       ]),
     ).toBe("visible");
+  });
+  it("keeps an owner email's subject and body in message and search text, framed in reads", () => {
+    const blocks = [
+      {
+        kind: "email",
+        emailId: "e1",
+        from: "owner@example.com",
+        to: ["bot@example.com"],
+        subject: "Book the Lisbon flights",
+        text: "",
+      },
+    ];
+    expect(historyMessageText(blocks)).toBe("Book the Lisbon flights");
+    // A read gives the bot the email in its owner-email frame, as agent history does.
+    expect(historyReadText(blocks)).toBe(
+      ownerEmailPrompt(blocks[0] as Extract<MessageBlock, { kind: "email" }>),
+    );
+    expect(historyReadText(blocks)).toContain('"subject": "Book the Lisbon flights"');
+    expect(historySearchText([{ ...blocks[0], text: "Window seats." }])).toBe(
+      "Book the Lisbon flights\nWindow seats.",
+    );
   });
   it("returns an earlier reply's tool steps to the bot but keeps them out of message text", () => {
     const blocks = [

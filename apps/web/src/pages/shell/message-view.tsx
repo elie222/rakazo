@@ -10,7 +10,12 @@ import type {
   ThreadMessage,
 } from "@rakazo/contracts";
 import type { ChildBotBlock, PeerExchange } from "@rakazo/core";
-import { isPeerReceiptBlocks, isToolActivityBlock, otherAuthor } from "@rakazo/core";
+import {
+  emailDisplayText,
+  isPeerReceiptBlocks,
+  isToolActivityBlock,
+  otherAuthor,
+} from "@rakazo/core";
 import { BotAvatar, Button, cn, resolvePersonaColorDef } from "@rakazo/ui-web";
 import { UserRound } from "lucide-react";
 import { memo, useCallback, useMemo } from "react";
@@ -242,7 +247,9 @@ export const MessageView = memo(function MessageView({
   );
   // Anchored below the speaker and reply line so the rail centers on the bubble itself.
   // A message with text and attachments anchors it on its first text bubble.
-  const textAnchorIndex = message.blocks.findIndex((block) => block.kind === "text");
+  const textAnchorIndex = message.blocks.findIndex(
+    (block) => block.kind === "text" || block.kind === "email",
+  );
   const hoverAnchorIndex =
     textAnchorIndex === -1
       ? message.blocks.findIndex((block) => block.kind === "ask")
@@ -563,6 +570,25 @@ export const MessageView = memo(function MessageView({
                   mimeType={block.mimeType}
                   size={block.size}
                 />
+              </div>
+            );
+          }
+          if (block.kind === "email") {
+            // The owner's email that started the bot: its subject and words, as they wrote them.
+            return (
+              <div
+                key={i}
+                className="relative flex w-fit max-w-full justify-end [@media(hover:none)]:w-full [@media(hover:none)]:flex-wrap"
+              >
+                <div
+                  data-testid="message-user-email"
+                  data-quote-message-id={quoteMessageId}
+                  className="max-w-full whitespace-pre-wrap wrap-anywhere rounded-2xl bg-chat-user px-[18px] py-3 text-body-lg text-chat-user-foreground"
+                  dir="auto"
+                >
+                  <LinkifiedText onOpenPage={openPage}>{emailDisplayText(block)}</LinkifiedText>
+                </div>
+                {i === hoverAnchorIndex ? hoverActions : null}
               </div>
             );
           }
