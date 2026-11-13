@@ -271,6 +271,9 @@ describe("previewMessageText", () => {
     ];
     expect(previewMessageText({ role: "bot", blocks }, labels)).toBe("Channel context");
     expect(messageReplyPreview(blocks, "bot").text).toBe("Channel context");
+    expect(
+      messageReplyPreview([...blocks, { kind: "text", text: "Primary context" }], "bot").text,
+    ).toBe("Primary context");
   });
 
   it("keeps mixed-card question previews stable after sending", () => {

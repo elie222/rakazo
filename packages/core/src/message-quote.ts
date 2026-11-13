@@ -132,7 +132,8 @@ export function deriveMessageQuote(
 /** A compact server-owned preview; text takes priority over cards and attachments. */
 export function messageReplyExcerpt(blocks: MessageBlock[], role: string): string {
   for (const block of [
-    ...blocks.filter((block) => block.kind === "text" || block.kind === "channel_message"),
+    ...blocks.filter((block) => block.kind === "text"),
+    ...blocks.filter((block) => block.kind === "channel_message"),
     ...blocks.filter(isQuestionAskBlock),
     ...blocks.filter(
       (block) =>
