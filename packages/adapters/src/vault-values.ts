@@ -85,10 +85,9 @@ export async function openSealedVaultValue(
   if (!keyId) throw new ContentDecryptionError("Vault item names no key");
   const ring = ringOf(prisma);
   const lookup = ring.byId(keyId).catch(async (error: unknown) => {
-    // A key its vault no longer has is damaged data, not a key manager outage; listing the
-    // vault's keys fails in an outage too, which then stands. Listed from the store, since another
-    // process may have just added the key.
-    if (!(await ring.allFresh(keyScope(row))).some((stored) => stored.id === keyId))
+    // Check existence without unwrapping unrelated versions: missing keys are damaged data,
+    // while an existing key that cannot unwrap retains the key manager's error.
+    if (!(await prisma.spaceKey.findUnique({ where: { id: keyId }, select: { id: true } })))
       throw new ContentDecryptionError("Vault item names a key that no longer exists");
     throw error;
   });
@@ -144,9 +143,21 @@ export async function migrateVaultValues(
     failed: 0,
     notMigrated: 0,
   };
-  // A vault's keys, read from the store for each item rather than from this process's cache:
-  // another process may have rotated the vault since, and items must move to its newest version.
-  const keysOf = (scope: string) => interruptible(ringOf(prisma).allFresh(scope), context.signal);
+  // Read only the newest record, then unwrap only that key. A cached current version can be
+  // stale after another process rotates; loading every historical version also needlessly
+  // depends on master keys that the current value does not use.
+  const newestOf = (scope: string) =>
+    interruptible(
+      (async () => {
+        const key = await prisma.spaceKey.findFirst({
+          where: { spaceId: scope },
+          orderBy: { version: "desc" },
+          select: { id: true },
+        });
+        return key ? ringOf(prisma).byId(key.id) : undefined;
+      })(),
+      context.signal,
+    );
   let cursor = "";
   while (true) {
     context.signal.throwIfAborted();
@@ -183,7 +194,7 @@ export async function migrateVaultValues(
       let status: "migrated" | "concurrent" | "failed";
       try {
         const scope = keyScope(row);
-        const newest = options.mode === "reencrypt" ? (await keysOf(scope)).at(-1) : undefined;
+        const newest = options.mode === "reencrypt" ? await newestOf(scope) : undefined;
         if (keyId && (options.mode === "encrypt" || keyId === newest?.id)) {
           // Already under its vault's key (its newest, to re-encrypt): read, never rewritten, so
           // an unreadable item is reported.
@@ -204,7 +215,7 @@ export async function migrateVaultValues(
           next = (await store.put(plaintext, context, { recordId: row.id })).ciphertext;
         else if (options.mode === "encrypt") {
           const key =
-            (await keysOf(scope)).at(-1) ??
+            (await newestOf(scope)) ??
             (await interruptible(ringOf(prisma).current(scope, context.signal), context.signal));
           next = encryptText(key, location(row), plaintext);
         }
@@ -274,32 +285,7 @@ export async function vaultItemsNotUnderKeys(
 export async function vaultItemsUnderOlderKeys(
   prisma: PrismaClient,
 ): Promise<{ older: number; damaged: number }> {
-  type Key = { id: string; spaceId: string; version: number };
-  const newest = new Map<string, Key>();
-  const keys = new Map<string, Key | null>();
-  const learn = (key: Key) => {
-    keys.set(key.id, key);
-    if ((newest.get(key.spaceId)?.version ?? 0) < key.version) newest.set(key.spaceId, key);
-  };
-  for (const key of await prisma.spaceKey.findMany({
-    where: { OR: [{ spaceId: { startsWith: "user:" } }, { spaceId: { startsWith: "vault:" } }] },
-    select: { id: true, spaceId: true, version: true },
-  }))
-    learn(key);
-  // The keys and the items are read without a snapshot between them, so a key named by an item
-  // and not listed may have been created meanwhile (a vault's first key by `migrate`, a version
-  // by `rotate`); it is looked up before the item is called damaged, and since it may be a newer
-  // version than the listed ones, items are judged once every key is known.
-  const learned = async (id: string) => {
-    if (keys.has(id)) return;
-    const key = await prisma.spaceKey.findUnique({
-      where: { id },
-      select: { id: true, spaceId: true, version: true },
-    });
-    if (key) learn(key);
-    else keys.set(id, null);
-  };
-  const items = new Map<string, { scope: string; keyId: string | undefined; count: number }>();
+  const count = { older: 0, damaged: 0 };
   let cursor = "";
   while (true) {
     const batch = await prisma.vaultCredential.findMany({
@@ -308,21 +294,32 @@ export async function vaultItemsUnderOlderKeys(
       take: 1000,
       select: { id: true, userId: true, spaceId: true, ciphertext: true },
     });
+    if (!batch.length) break;
+    // Both result sets are bounded by this batch, regardless of vault count or key history.
+    const ids = [...new Set(batch.flatMap((row) => ciphertextKeyId(row.ciphertext) ?? []))];
+    const scopes = [...new Set(batch.map(keyScope))];
+    const [records, versions] = await Promise.all([
+      prisma.spaceKey.findMany({
+        where: { id: { in: ids } },
+        select: { id: true, spaceId: true, version: true },
+      }),
+      prisma.spaceKey.groupBy({
+        by: ["spaceId"],
+        where: { spaceId: { in: scopes } },
+        _max: { version: true },
+      }),
+    ]);
+    const keys = new Map(records.map((key) => [key.id, key]));
+    const newest = new Map(versions.map((key) => [key.spaceId, key._max.version]));
     for (const row of batch) {
       const keyId = ciphertextKeyId(row.ciphertext);
-      if (keyId) await learned(keyId);
+      const key = keyId ? keys.get(keyId) : undefined;
       const scope = keyScope(row);
-      const under = `${scope} ${keyId ?? ""}`;
-      items.set(under, { scope, keyId, count: (items.get(under)?.count ?? 0) + 1 });
+      if (!key || key.spaceId !== scope) count.damaged++;
+      else if (key.version < (newest.get(scope) ?? key.version)) count.older++;
     }
     if (batch.length < 1000) break;
     cursor = batch.at(-1)!.id;
-  }
-  const count = { older: 0, damaged: 0 };
-  for (const { scope, keyId, count: n } of items.values()) {
-    const key = keyId ? keys.get(keyId) : undefined;
-    if (key?.spaceId !== scope) count.damaged += n;
-    else if (key.id !== newest.get(scope)?.id) count.older += n;
   }
   return count;
 }

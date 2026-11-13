@@ -1069,7 +1069,8 @@ describe("tickRoutineWatch on a computer", () => {
     // The login is under a vault key the key manager can't unwrap right now.
     const outage = () => Promise.reject(new Error("fake key manager outage"));
     Object.assign(deps.prisma, {
-      $contentEncryption: () => ({ ring: { byId: outage, all: outage, allFresh: outage } }),
+      $contentEncryption: () => ({ ring: { byId: outage, all: outage } }),
+      spaceKey: { findUnique: async () => ({ id: "key" }) },
     });
     const warn = vi.spyOn(Logging.getLogger(), "warn");
     try {
@@ -1119,7 +1120,8 @@ describe("tickRoutineWatch on a computer", () => {
     // The variable is under a vault key the key manager can't unwrap right now.
     const outage = () => Promise.reject(new Error("fake key manager outage"));
     Object.assign(deps.prisma, {
-      $contentEncryption: () => ({ ring: { byId: outage, all: outage, allFresh: outage } }),
+      $contentEncryption: () => ({ ring: { byId: outage, all: outage } }),
+      spaceKey: { findUnique: async () => ({ id: "key" }) },
     });
     const warn = vi.spyOn(Logging.getLogger(), "warn");
     try {

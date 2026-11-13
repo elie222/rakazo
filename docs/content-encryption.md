@@ -120,8 +120,10 @@ Protects against:
   or spaces: the moved value fails to decrypt.
 - Deleted spaces and members: deleting a space deletes its keys, its own
   vault's included, and deleting a member deletes their account vault's key
-  (database triggers), so ciphertext left in unvacuumed pages, WAL or orphaned
-  files is unreadable. Items in a Space's own vault from a member who is
+  (database triggers), so remaining ciphertext cannot be opened using the live
+  key table after cached keys expire. This does not erase older copies of wrapped
+  keys in backups, WAL or unvacuumed pages; a retained master key can still open
+  those copies. Items in a Space's own vault from a member who is
   deleted, leaves or is removed stay under that Space's vault key until the
   Space is deleted. Vault items still in
   the `ENCRYPTION_KEY` format, and copies left from before `migrate` moved them,
@@ -136,8 +138,9 @@ Does not protect against:
   provider, the master keys live in the same environment as `DATABASE_URL`;
   keep backups and environment secrets apart, or put the master keys in a key
   management service (see below).
-- Backups taken before a space was deleted or a master key was rotated: they
-  hold the old wrapped keys, which the old master key still unwraps. Retire an
+- Backups, WAL or old pages retaining wrapped keys from before a Space or
+  member was deleted, or a master key was rotated: the corresponding master
+  key still unwraps them. Retire an
   old master key only after every backup made with it has expired.
 - Metadata: names, ids, timestamps, sizes, block kinds and the search-token
   patterns described above.

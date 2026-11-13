@@ -86,16 +86,39 @@ function encryptedDatabase(encryptWrites = true) {
     $contentEncryption: () => ({ ring }),
     // Each vault key's scope once, after the cursor, as GROUP BY returns them.
     spaceKey: {
-      groupBy: async ({ where, take }: { where: { spaceId: { gt: string } }; take: number }) =>
+      groupBy: async ({
+        where,
+        take,
+      }: {
+        where: { spaceId: { gt?: string; in?: string[] } };
+        take?: number;
+      }) =>
         [...new Set(keys.map((key) => key.spaceId))]
-          .filter((spaceId) => /^(user|vault):/.test(spaceId) && spaceId > where.spaceId.gt)
+          .filter(
+            (spaceId) =>
+              /^(user|vault):/.test(spaceId) &&
+              (where.spaceId.in
+                ? where.spaceId.in.includes(spaceId)
+                : spaceId > (where.spaceId.gt ?? "")),
+          )
           .sort()
           .slice(0, take)
-          .map((spaceId) => ({ spaceId })),
-      findMany: async () =>
-        [...keys]
-          .sort((a, b) => a.version - b.version)
+          .map((spaceId) => ({
+            spaceId,
+            _max: {
+              version: Math.max(
+                ...keys.filter((key) => key.spaceId === spaceId).map((key) => key.version),
+              ),
+            },
+          })),
+      findMany: async ({ where }: { where: { id: { in: string[] } } }) =>
+        keys
+          .filter((key) => where.id.in.includes(key.id))
           .map(({ id, spaceId, version }) => ({ id, spaceId, version })),
+      findFirst: async ({ where }: { where: { spaceId: string } }) =>
+        [...keys]
+          .filter((key) => key.spaceId === where.spaceId)
+          .sort((a, b) => b.version - a.version)[0] ?? null,
       findUnique: async ({ where }: { where: { id: string } }) => {
         const key = keys.find((stored) => stored.id === where.id);
         return key ? { id: key.id, spaceId: key.spaceId, version: key.version } : null;
@@ -1057,6 +1080,7 @@ describe("moving vault values to the envelope keys", () => {
     await db.migrate();
     const other = db.otherProcess();
     expect(await other.migrate("reencrypt")).toMatchObject({ verified: 2, migrated: 0 });
+    await other.ring.all("user:user-1"); // a normal save warms the current-version cache
     const keyOf = (name: string) => ciphertextKeyId(row(db, name).ciphertext);
     const versionOf = (name: string) => db.keys.find((key) => key.id === keyOf(name))?.version;
     return { db, other, versionOf };
@@ -1131,10 +1155,54 @@ describe("moving vault values to the envelope keys", () => {
     "%s fails only the item whose vault keys could not be read once",
     async (mode) => {
       const { db } = await twoItems(mode);
-      vi.spyOn(db.ring, "allFresh").mockRejectedValueOnce(new Error("database unavailable"));
+      vi.spyOn(db.prisma.spaceKey, "findFirst").mockRejectedValueOnce(
+        new Error("database unavailable"),
+      );
       expect(await db.migrate(mode)).toMatchObject({ migrated: 1, failed: 1 });
     },
   );
+
+  it("migrates using only the newest key even when an unused historical key cannot unwrap", async () => {
+    const db = encryptedDatabase();
+    await save(db, login, loginValue());
+    await db.migrate();
+    const old = db.keys[0]!;
+    await db.ring.rotate("user:user-1");
+    const { ciphertext } = await secretStore.put(loginValue(), context, { recordId: "legacy" });
+    db.rows().push({ ...row(db, "site"), id: "legacy", name: "legacy", ciphertext });
+    // The existing sealed item still needs the old key, so remove it from this migration.
+    db.rows().splice(db.rows().indexOf(row(db, "site")), 1);
+    db.ring.clear();
+    const unwrap = db.provider.unwrap.bind(db.provider);
+    const calls = vi.spyOn(db.provider, "unwrap").mockImplementation((record, context) => {
+      if (record === old || record.wrappedKey === old.wrappedKey) throw new Error("retired key");
+      return unwrap(record, context);
+    });
+    expect(await db.migrate()).toMatchObject({ migrated: 1, failed: 0 });
+    expect(calls).toHaveBeenCalledTimes(1);
+    expect(ciphertextKeyId(row(db, "legacy").ciphertext)).toBe(db.keys[1]!.id);
+  });
+
+  it("bounds status metadata queries to each item batch", async () => {
+    const db = encryptedDatabase();
+    await save(db, login, loginValue());
+    await db.migrate();
+    const source = row(db, "site");
+    for (let i = 0; i < 1001; i++)
+      db.rows().push({
+        ...source,
+        id: `batch-${i.toString().padStart(4, "0")}`,
+        userId: `member-${i}`,
+      });
+    const records = vi.spyOn(db.prisma.spaceKey, "findMany");
+    const groups = vi.spyOn(db.prisma.spaceKey, "groupBy");
+    expect(await vaultItemsUnderOlderKeys(db.prisma)).toEqual({ older: 0, damaged: 1001 });
+    expect(records).toHaveBeenCalledTimes(2);
+    expect(groups).toHaveBeenCalledTimes(2);
+    for (const [args] of records.mock.calls) expect(args?.where?.id).toHaveProperty("in");
+    for (const [args] of groups.mock.calls)
+      expect((args.where!.spaceId as { in: string[] }).in.length).toBeLessThanOrEqual(1000);
+  });
 
   it("reports a key manager outage, not a missing key, for a version another process created", async () => {
     const { db, other } = await cachedElsewhere();
@@ -1189,8 +1257,7 @@ describe("moving vault values to the envelope keys", () => {
     expect(await vaultItemsUnderOlderKeys(db.prisma)).toEqual({ older: 0, damaged: 0 });
   });
 
-  // `status` lists the vault keys, then the items, with no snapshot between them, so a key
-  // created meanwhile is looked up before an item under it is called damaged.
+  // Read key metadata after the item batch so keys created before those items are visible.
   it.each([
     [
       "migrate creates a vault's first key",
@@ -1231,13 +1298,12 @@ describe("moving vault values to the envelope keys", () => {
       const db = encryptedDatabase();
       await save(db, login, loginValue());
       if (when === "after migrate") await db.migrate();
-      const listing = db.prisma.spaceKey.findMany;
-      vi.spyOn(db.prisma.spaceKey, "findMany").mockImplementationOnce((async (
+      const listing = db.prisma.vaultCredential.findMany;
+      vi.spyOn(db.prisma.vaultCredential, "findMany").mockImplementationOnce((async (
         ...args: unknown[]
       ) => {
-        const keys = await Reflect.apply(listing, db.prisma.spaceKey, args);
         await change(db);
-        return keys;
+        return Reflect.apply(listing, db.prisma.vaultCredential, args);
       }) as never);
       expect(await vaultItemsUnderOlderKeys(db.prisma)).toEqual(expected);
     },
