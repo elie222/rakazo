@@ -41,10 +41,13 @@ describe("signup policy", () => {
     expect(emailAllowed("eviyou@example.com", list)).toBe(false);
   });
 
-  it("reads the domain after the last @, not the first", () => {
+  it("does not match a domain to an address with more than one @", () => {
     const list = parseAllowlist("@company.com");
     expect(emailAllowed("evil@company.com@evil.test", list)).toBe(false);
-    expect(emailAllowed("a@b@company.com", list)).toBe(true);
+    expect(emailAllowed("a@b@company.com", list)).toBe(false);
+    expect(emailAllowed("@@company.com", list)).toBe(false);
+    expect(emailAllowed("a@company.com", list)).toBe(true);
+    expect(emailAllowed("a@b@company.com", parseAllowlist("a@b@company.com"))).toBe(true);
     expect(emailAllowed("no-at-sign", list)).toBe(false);
     expect(emailAllowed("company.com", list)).toBe(false);
     expect(emailAllowed("@company.com", list)).toBe(true);

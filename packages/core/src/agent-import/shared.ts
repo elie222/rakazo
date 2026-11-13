@@ -113,9 +113,9 @@ export function renameSkillMd(content: string, name: string): string {
   if (!match) return content;
   const head = match[1]!;
   const body = match[2]!;
-  const line = /^name[ \t]*:[ \t]*(.*?)[ \t]*(\r?)$/m.exec(body);
+  const line = /^name[ \t]*:([^\r\n]*)(\r?)$/m.exec(body);
   if (!line) return content;
-  const value = line[1]!;
+  const value = line[1]!.trim();
   const start = line.index + line[0].indexOf(":") + 1;
   let end = line.index + line[0].length - line[2]!.length;
   let replacement = ` ${yamlScalar(name)}`;

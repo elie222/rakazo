@@ -1222,6 +1222,139 @@ describe("OpenAPI connector import", () => {
     },
   );
 
+  it.each(["get", "delete", "post", "put", "patch"])(
+    "serializes flat form query objects for %s after import",
+    async (method) => {
+      const objectSchema = { type: "object", additionalProperties: true };
+      const document = {
+        openapi: "3.1.0",
+        servers: [{ url: "https://93.184.216.34/v1" }],
+        components: {
+          parameters: {
+            filter: { name: "filter", in: "query", schema: objectSchema },
+          },
+        },
+        paths: {
+          "/items": {
+            [method]: {
+              operationId: "items",
+              parameters: [
+                { $ref: "#/components/parameters/filter" },
+                {
+                  name: "compact",
+                  in: "query",
+                  style: "form",
+                  explode: false,
+                  schema: objectSchema,
+                },
+                {
+                  name: "expanded",
+                  in: "query",
+                  style: "form",
+                  explode: true,
+                  schema: objectSchema,
+                },
+                { name: "empty", in: "query", schema: objectSchema },
+                { name: "tags", in: "query", schema: { type: "array", items: { type: "string" } } },
+                { name: "limit", in: "query", schema: { type: "integer" } },
+              ],
+              ...(!["get", "delete"].includes(method)
+                ? {
+                    requestBody: {
+                      content: {
+                        "application/json": { schema: { type: "object" } },
+                      },
+                    },
+                  }
+                : {}),
+            },
+          },
+        },
+      };
+      const fetch = vi.fn().mockResolvedValue(Response.json(document));
+      const prepared = await prepareApiInstall({
+        source: "https://93.184.216.34/openapi.json",
+        config: { openApi: true, auth: { type: "none" } },
+        remote: { fetch },
+      });
+      const install = {
+        id: "api-query-objects",
+        kind: "api",
+        source: prepared.source,
+        secretId: null,
+        createdAt: new Date(0),
+        config: JSON.parse(JSON.stringify(prepared.config)),
+      };
+      const prisma = { capabilityInstall: { findFirst: vi.fn().mockResolvedValue(install) } };
+      fetch.mockReset();
+      fetch.mockImplementation(async () => Response.json({ ok: true }));
+      const provider = new InstalledConnectorProvider(prisma as never, {} as never, { fetch });
+      const args = {
+        filter: { name: "two words & /", active: false, count: 0 },
+        compact: { role: "admin", firstName: "Alex" },
+        expanded: { enabled: true },
+        empty: {},
+        tags: ["a", "b"],
+        limit: 2,
+        ...(!["get", "delete"].includes(method) ? { body: { nested: { keep: true } } } : {}),
+      };
+      for await (const _event of provider.execute(
+        {
+          tool: "items",
+          args,
+          executionId: "objects",
+          route: { connectorId: "installed", resourceId: install.id, toolName: "items" },
+        },
+        { spaceId: "space-1", userId: "user-1", signal: AbortSignal.timeout(5_000) } as never,
+      )) {
+      }
+      expect(fetch).toHaveBeenCalledOnce();
+      const [url, init] = fetch.mock.lastCall as [URL, RequestInit];
+      expect(Object.fromEntries(url.searchParams)).toEqual({
+        name: "two words & /",
+        active: "false",
+        count: "0",
+        compact: "role,admin,firstName,Alex",
+        enabled: "true",
+        tags: "b",
+        limit: "2",
+      });
+      expect(url.searchParams.getAll("tags")).toEqual(["a", "b"]);
+      expect(init.body).toBe(
+        ["get", "delete"].includes(method) ? undefined : JSON.stringify(args.body),
+      );
+      const execute = async (nextArgs: Record<string, unknown>) => {
+        const events = [];
+        for await (const event of provider.execute(
+          {
+            tool: "items",
+            args: nextArgs,
+            executionId: "object-check",
+            route: { connectorId: "installed", resourceId: install.id, toolName: "items" },
+          },
+          { spaceId: "space-1", userId: "user-1", signal: AbortSignal.timeout(5_000) } as never,
+        )) {
+          events.push(event);
+        }
+        return events;
+      };
+      for (const field of [{ nested: true }, ["nested"]]) {
+        fetch.mockClear();
+        expect(await execute({ filter: { field } })).toContainEqual({
+          type: "error",
+          message: "Query parameter filter must be a flat object",
+        });
+        expect(fetch).not.toHaveBeenCalled();
+      }
+      delete install.config.operations[0].formObjectQueryParameters;
+      await execute({ filter: { name: "legacy" } });
+      const [legacyUrl] = fetch.mock.lastCall as [URL, RequestInit];
+      expect(legacyUrl.searchParams.get("filter")).toBe(
+        ["get", "delete"].includes(method) ? null : "[object Object]",
+      );
+    },
+  );
+
   it("sends shared $ref parameters where the spec declares them", async () => {
     const document = {
       openapi: "3.1.0",

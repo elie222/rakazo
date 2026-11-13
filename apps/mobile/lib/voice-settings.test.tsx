@@ -50,6 +50,34 @@ vi.mock("./native", () => ({ native: {}, useThemedStyles: (factory: () => unknow
 vi.mock("../components/row-accessories", () => ({
   Checkmark: () => <span data-testid="checkmark" />,
 }));
+vi.mock("../components/menu-picker", () => ({
+  MenuPicker: ({
+    choices,
+    value,
+    onChange,
+    disabled,
+  }: {
+    disabled?: boolean;
+    choices: { key: string; label: string }[];
+    value: string;
+    onChange: (key: string) => void;
+  }) => (
+    <div>
+      {choices.map((choice) => (
+        <button
+          key={choice.key}
+          type="button"
+          disabled={disabled}
+          aria-pressed={choice.key === value}
+          onClick={() => onChange(choice.key)}
+        >
+          {choice.label}
+          {choice.key === value ? <span data-testid="checkmark" /> : null}
+        </button>
+      ))}
+    </div>
+  ),
+}));
 vi.mock("../components/native-switch", () => ({ NativeSwitch: () => null }));
 vi.mock("react-native-safe-area-context", () => ({
   SafeAreaView: ({ children }: { children: ReactNode }) => <div>{children}</div>,
@@ -172,7 +200,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it("selects only This device and hides all provider controls until it is turned off", async () => {
+it("selects only This device and hides provider controls until a provider is chosen", async () => {
   await render();
   selected("This device");
   for (const entry of catalog) unselected(entry.name);
@@ -181,7 +209,7 @@ it("selects only This device and hides all provider controls until it is turned 
   expect(container.textContent).not.toContain("Disconnect");
   expect(container.textContent).not.toContain("Speech model");
   expect(container.textContent).not.toContain("fish-audio voice");
-  await click("This device");
+  await click("Fish Audio");
   selected("Fish Audio");
   unselected("This device");
   expect(container.querySelector('input[aria-label="API key"]')).not.toBeNull();
@@ -191,6 +219,20 @@ it("selects only This device and hides all provider controls until it is turned 
   expect(container.textContent).toContain("Replace key");
   expect(container.textContent).toContain("Disconnect");
   expect(container.textContent).toContain("fish-audio voice");
+});
+
+it.each([true, false])("ignores reselecting the current provider (device: %s)", async (device) => {
+  state.load.mockResolvedValue(device);
+  await render();
+  const label = device ? "This device" : "Fish Audio";
+  selected(label);
+  state.rpc.mockClear();
+
+  await click(label);
+
+  expect(state.save).not.toHaveBeenCalled();
+  expect(state.rpc).not.toHaveBeenCalled();
+  selected(label);
 });
 
 it("falls back to an available provider when the saved provider is hidden", async () => {
@@ -215,6 +257,31 @@ it("falls back to an available provider when the saved provider is hidden", asyn
   });
   await click("Disconnect Self-hosted");
   expect(state.rpc).toHaveBeenCalledWith("voice/disconnect", { provider: "openai-compatible" });
+  expect(container.textContent).not.toContain("Disconnect Self-hosted");
+});
+
+it("keeps selected voices when a hidden provider disconnects and the read fails", async () => {
+  state.load.mockResolvedValue(false);
+  const original = state.rpc.getMockImplementation()!;
+  let disconnected = false;
+  state.rpc.mockImplementation((proc: string, args?: { provider: string }) => {
+    if (proc === "voice/disconnect") {
+      disconnected = true;
+      return undefined;
+    }
+    if (proc === "voice/catalog" && disconnected) return Promise.reject({});
+    if (proc === "voice/credentials")
+      return [
+        { id: "selected", provider: "fish-audio", voiceId: "voice" },
+        { id: "hidden", provider: "openai-compatible", voiceId: "voice" },
+      ];
+    return original(proc, args);
+  });
+  await render();
+  expect(container.textContent).toContain("fish-audio voice");
+  await click("Disconnect Self-hosted");
+  expect(container.textContent).toContain("fish-audio voice");
+  expect(container.textContent).toContain("Could not load voice settings");
   expect(container.textContent).not.toContain("Disconnect Self-hosted");
 });
 
@@ -268,7 +335,7 @@ it("keeps the device selected if saving its preference fails", async () => {
   expect(container.querySelector("input")).toBeNull();
   expect(state.rpc).not.toHaveBeenCalledWith("voice/setVoice", expect.anything());
   expect(container.textContent).toContain("Could not save that preference");
-  await click("This device");
+  await click("Fish Audio");
   selected("Fish Audio");
 });
 
@@ -289,7 +356,7 @@ it.each([true, false])(
     if (device) {
       selected("This device");
       expect(state.save.mock.calls).toEqual([[false], [true]]);
-      await click("This device");
+      await click("Fish Audio");
     } else {
       expect(state.save.mock.calls).toEqual([[false]]);
     }
@@ -323,6 +390,27 @@ it("clears stale voices if the refresh fails after activating a provider", async
   expect(container.textContent).not.toContain("fish-audio voice");
   expect(container.textContent).toContain("Could not load voice settings");
   expect(state.save.mock.calls).toEqual([[false]]);
+});
+
+it("keeps a disconnect when the read after it fails", async () => {
+  state.load.mockResolvedValue(false);
+  await render();
+  const original = state.rpc.getMockImplementation()!;
+  state.rpc.mockImplementation((proc: string, args?: { provider: string }) => {
+    if (proc === "voice/disconnect") return undefined;
+    // A body without a message, so the text shown is the caller's own fallback.
+    if (proc === "voice/catalog") return Promise.reject({});
+    return original(proc, args);
+  });
+  expect(container.textContent).toContain("fish-audio voice");
+  await click("Disconnect");
+  expect(state.rpc).toHaveBeenCalledWith("voice/disconnect", { provider: "fish-audio" });
+  // Its voices go with the key: picking one would only fail on the server.
+  expect(container.textContent).not.toContain("fish-audio voice");
+  expect(container.textContent).toContain("Could not load voice settings");
+  expect(container.textContent).not.toContain("Could not disconnect");
+  expect(container.textContent).not.toContain("Disconnect");
+  expect(container.textContent).toContain("Connect");
 });
 
 it("edits a Space's override in that Space, leaving this device's voice and sounds out", async () => {
