@@ -124,6 +124,8 @@ type ModelCredentialInput = {
   signal?: AbortSignal;
   /** Becomes the main model only while there is none. */
   keepExistingDefault?: boolean;
+  /** The stored copy whose settings this replacement preserves. */
+  expectedSecret?: { id: string; ciphertext: string | null };
 };
 
 export async function prepareModelCredential(
@@ -216,6 +218,17 @@ async function writeModelCredential(
   // A connection removed while this save was in flight stays removed.
   if (input.credentialId && !existing)
     throw new ORPCError("NOT_FOUND", { message: "Connection not found" });
+  if (existing && input.expectedSecret) {
+    const current = await tx.secret.findFirst({
+      where: { id: existing.secretId, userId: actor.userId, spaceId: null },
+      select: { ciphertext: true },
+    });
+    if (
+      existing.secretId !== input.expectedSecret.id ||
+      (current?.ciphertext ?? null) !== input.expectedSecret.ciphertext
+    )
+      throw new ORPCError("CONFLICT", { message: "Model credentials changed; retry." });
+  }
   throwIfAborted(input.signal);
   const secret = await tx.secret.create({
     data: {
@@ -368,27 +381,32 @@ export async function saveConnectionModelSettings(
   if (!saved) throw new ORPCError("NOT_FOUND", { message: "Connection not found" });
 }
 
-/** Signing a connection in again keeps the settings saved for its models. */
-export async function keptModelSettingsOf(
+/** Keep settings and their source together so a reconnect cannot overwrite a newer save. */
+export async function prepareModelReconnectSettings(
   deps: RouterDeps,
   actor: Actor,
   credential: { secretId: string } | null,
 ) {
-  if (!credential) return {};
+  if (!credential) return { settings: {}, expectedSecret: undefined };
   const row = await deps.prisma.secret.findFirst({
     where: { id: credential.secretId, userId: actor.userId, spaceId: null },
     select: { ciphertext: true },
   });
-  if (!row) return {};
-  try {
-    return keptModelSettings(
-      parseModelSecret(await deps.secrets.load(row.ciphertext, credential.secretId)),
-    );
-  } catch (error) {
-    // An outage must not replace settings it could not read; a corrupt copy has none to keep.
-    if (error instanceof SecretStoreUnavailableError) throw error;
-    return {};
+  let settings: ReturnType<typeof keptModelSettings> = {};
+  if (row) {
+    try {
+      settings = keptModelSettings(
+        parseModelSecret(await deps.secrets.load(row.ciphertext, credential.secretId)),
+      );
+    } catch (error) {
+      // An outage must not replace settings it could not read; a corrupt copy has none to keep.
+      if (error instanceof SecretStoreUnavailableError) throw error;
+    }
   }
+  return {
+    settings,
+    expectedSecret: { id: credential.secretId, ciphertext: row?.ciphertext ?? null },
+  };
 }
 
 export function throwIfAborted(signal?: AbortSignal) {
@@ -403,6 +421,7 @@ export function createModelConnector(deps: RouterDeps, codexCatalog: CodexLiveCa
   ) => {
     const credential = await modelConnectionTarget(deps, actor, input.provider, input.credentialId);
     let plaintext: string;
+    let expectedSecret: ModelCredentialInput["expectedSecret"];
     try {
       let previousPlaintext: string | undefined;
       let omitVisionModelIds = false;
@@ -411,6 +430,7 @@ export function createModelConnector(deps: RouterDeps, codexCatalog: CodexLiveCa
           where: { id: credential.secretId, userId: actor.userId, spaceId: null },
           select: { ciphertext: true },
         });
+        expectedSecret = { id: credential.secretId, ciphertext: secret?.ciphertext ?? null };
         if (secret) {
           try {
             previousPlaintext = await deps.secrets.load(secret.ciphertext, credential.secretId);
@@ -466,19 +486,23 @@ export function createModelConnector(deps: RouterDeps, codexCatalog: CodexLiveCa
     if (input.provider === OPENAI_COMPATIBLE_PROVIDER_ID) {
       // Known race: this runs before persistModelCredential's transaction, so a pin saved in
       // between can fall outside the stored list and fail at run time. Concurrent saves of
-      // the same connection are last-write-wins.
+      // the same connection are rejected when their source secret changes.
       const saved = parseModelSecret(plaintext);
       if (credential)
         await assertNoDanglingModelPins(deps, actor, credential, saved, input.modelId ?? "");
     }
-    return { plaintext, credential };
+    return { plaintext, credential, expectedSecret };
   };
   const connectModelCredential = async (
     actor: Actor,
     input: ModelConnectInput,
     signal: AbortSignal | undefined,
   ) => {
-    const { plaintext, credential } = await verifyModelConnection(actor, input, signal);
+    const { plaintext, credential, expectedSecret } = await verifyModelConnection(
+      actor,
+      input,
+      signal,
+    );
     return persistModelCredential(
       deps,
       actor,
@@ -486,6 +510,7 @@ export function createModelConnector(deps: RouterDeps, codexCatalog: CodexLiveCa
         provider: input.provider,
         credentialId: credential?.id ?? null,
         plaintext,
+        expectedSecret,
         label: input.label,
         modelId: input.modelId,
         // openai-compatible keeps its effort inside the stored endpoint

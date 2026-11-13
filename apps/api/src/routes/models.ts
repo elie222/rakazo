@@ -53,10 +53,10 @@ import { markExpectedFailure } from "@rakazo/logging/hono";
 import { mayUsePrivateEndpoint } from "../mcp-servers.js";
 import { firstModelConnectAnalytics } from "../model-connect-analytics.js";
 import {
-  keptModelSettingsOf,
   modelConnectionTarget,
   persistModelCredential,
   prepareAllowedThinkingLevels,
+  prepareModelReconnectSettings,
   saveConnectionModelSettings,
   throwIfAborted,
 } from "../model-credentials.js";
@@ -84,6 +84,7 @@ export function modelsRoutes(ctx: RouterContext) {
         // Read before the save: it only counts a member's first connection.
         const record = await firstModelConnectAnalytics(deps, actor, "oauth");
         const target = await modelConnectionTarget(deps, actor, login.provider, login.credentialId);
+        const retained = await prepareModelReconnectSettings(deps, actor, target);
         const saved = await persistModelCredential(
           deps,
           actor,
@@ -93,8 +94,9 @@ export function modelsRoutes(ctx: RouterContext) {
             plaintext: serializeModelSecret({
               kind: "oauth",
               credential: login.credential,
-              ...(await keptModelSettingsOf(deps, actor, target)),
+              ...retained.settings,
             }),
+            expectedSecret: retained.expectedSecret,
             // A second account is told apart by the email it signed in with.
             label:
               oauthCredentialEmail(login.credential) ??

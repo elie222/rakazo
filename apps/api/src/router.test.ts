@@ -52,7 +52,7 @@ import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mainRole, withModelRoles } from "../../../packages/adapters/src/testing/model-roles.js";
 import { providerScopeKey } from "./connection-flows.js";
-import { keptModelSettingsOf } from "./model-credentials.js";
+import { createModelConnector, prepareModelReconnectSettings } from "./model-credentials.js";
 import type { RouterDeps } from "./router.js";
 import {
   botIntroPrompt,
@@ -5552,6 +5552,7 @@ describe("model credential persistence", () => {
           userVoiceCredential: { count: vi.fn().mockResolvedValue(0) },
           userModelPreference: deps.prisma.userModelPreference,
           secret: {
+            findFirst: vi.fn().mockResolvedValue(null),
             create: vi.fn().mockResolvedValue({ id: "new-secret" }),
             deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
           },
@@ -5969,6 +5970,7 @@ describe("model credential persistence", () => {
           userVoiceCredential: { count: vi.fn().mockResolvedValue(0) },
           userModelPreference: deps.prisma.userModelPreference,
           secret: {
+            findFirst: vi.fn().mockResolvedValue(null),
             create: vi.fn().mockResolvedValue({ id: "new-secret" }),
             deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
           },
@@ -6213,6 +6215,52 @@ describe("model settings", () => {
     isDeploymentOwner: true,
   } satisfies Actor;
 
+  it.each(["settings", "connection"])(
+    "rejects a connection save when its source %s changes before commit",
+    async (change) => {
+      let secretId = "secret-original";
+      let ciphertext = "sealed-original";
+      const connection = () => ({ id: "connection-1", provider: "zai", secretId });
+      const readSecret = vi.fn(async () => ({ ciphertext }));
+      const create = vi.fn();
+      const tx = {
+        userModelCredential: { findFirst: vi.fn(async () => connection()) },
+        secret: { findFirst: readSecret, create },
+      };
+      const deps = {
+        prisma: {
+          userModelCredential: { findFirst: vi.fn(async () => connection()) },
+          secret: { findFirst: readSecret },
+          $transaction: vi.fn(async (fn: (client: typeof tx) => unknown) => fn(tx)),
+        },
+        secrets: {
+          load: vi.fn(async () =>
+            JSON.stringify({
+              kind: "api_key",
+              key: "fake-original-key",
+              models: { "model-fixture": { maxTokens: 2000 } },
+            }),
+          ),
+          put: vi.fn(async () => {
+            if (change === "settings") ciphertext = "sealed-new-settings";
+            else secretId = "secret-new-connection";
+            return { id: "secret-prepared", ciphertext: "sealed-stale-replacement" };
+          }),
+        },
+        env: { defaultModel: "model-fixture" },
+      } as unknown as RouterDeps;
+      const connector = createModelConnector(deps, { read: vi.fn() } as never);
+      await expect(
+        connector.connectModelCredential(
+          actor,
+          { provider: "zai", credentialId: "connection-1", modelId: "model-fixture" },
+          undefined,
+        ),
+      ).rejects.toMatchObject({ code: "CONFLICT" });
+      expect(create).not.toHaveBeenCalled();
+    },
+  );
+
   function settingsDeps(stored: string, defaultModel = "served", provider = "zai") {
     let plaintext = stored;
     const tx = {
@@ -6285,11 +6333,16 @@ describe("model settings", () => {
     Object.assign(deps.prisma, {
       secret: { findFirst: vi.fn(async () => ({ ciphertext: "sealed" })) },
     });
-    await expect(keptModelSettingsOf(deps, actor, { secretId: "secret-1" })).rejects.toBeInstanceOf(
-      SecretStoreUnavailableError,
-    );
+    await expect(
+      prepareModelReconnectSettings(deps, actor, { secretId: "secret-1" }),
+    ).rejects.toBeInstanceOf(SecretStoreUnavailableError);
     deps.secrets.load = vi.fn(async () => "not json {");
-    await expect(keptModelSettingsOf(deps, actor, { secretId: "secret-1" })).resolves.toEqual({});
+    await expect(
+      prepareModelReconnectSettings(deps, actor, { secretId: "secret-1" }),
+    ).resolves.toEqual({
+      settings: {},
+      expectedSecret: { id: "secret-1", ciphertext: "sealed" },
+    });
   });
 
   it("saves one model's settings on the connection without touching its key", async () => {
