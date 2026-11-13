@@ -134,15 +134,19 @@ export default function ModelConnection() {
     setSavedNotice(null);
   }
 
+  const loadGeneration = useRef(0);
+
   const load = useCallback(
     async (preferred: ModelSelection = {}) => {
       if (!request) throw new Error(t`Could not load model settings`);
+      const generation = ++loadGeneration.current;
       setError(null);
       const [nextMe, nextCatalog, nextCredentials] = await Promise.all([
         rpc("me"),
         rpc("models/list"),
         rpc("models/credentials"),
       ]);
+      if (generation !== loadGeneration.current) return nextMe;
       const nextProvider = request.provider;
       const nextCredential = nextCredentials.find((entry) => entry.id === credentialIdRef.current);
       const nextModel = connectionFormModelId({
@@ -427,6 +431,7 @@ export default function ModelConnection() {
       const saved = await rpc("models/connect", connect.input, {
         timeoutMs: MODEL_CONNECT_TIMEOUT_MS,
       });
+      ++loadGeneration.current;
       credentialIdRef.current = saved.id;
       setCredentialId(saved.id);
       // The mutation has saved this connection even if the follow-up reads fail.
