@@ -1,4 +1,4 @@
-import type { ComputerSize } from "@rakazo/contracts";
+import type { ComputerSize, WeatherForecast } from "@rakazo/contracts";
 import type {
   AdapterContext,
   AdapterDescriptor,
@@ -671,6 +671,27 @@ export interface WebFetchProvider {
 /** Convenience when one adapter owns both search and fetch. */
 export interface WebProvider extends WebSearchProvider, WebFetchProvider {
   describe(): AdapterDescriptor<WebSearchCapabilities & WebFetchCapabilities>;
+}
+
+/** Where to look up weather: a place name, or coordinates. */
+export interface WeatherRequest {
+  /** A place name, as a person would write it ("Lisbon", "Springfield, Illinois"). */
+  location?: string;
+  latitude?: number;
+  longitude?: number;
+  /** Daily rows wanted, 1 to 10. */
+  days?: number;
+  signal?: AbortSignal;
+}
+
+/**
+ * Provider-neutral weather lookup. Builtin `weather_forecast` routes here so the data source
+ * (keyless Open-Meteo by default) can be swapped without changing the tool or the card. A
+ * provider throws an Error whose message is safe to show the bot when it cannot answer.
+ */
+export interface WeatherProvider {
+  describe(): AdapterDescriptor<{ keyless: boolean }>;
+  forecast(request: WeatherRequest, context: AdapterContext): Promise<WeatherForecast>;
 }
 
 /**

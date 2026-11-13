@@ -505,6 +505,48 @@ const team: Scenario = {
   ],
 };
 
+/** A fixed forecast: 08:31 UTC on 15 January, one hour of each kind, seven days. */
+function forecastFixture(): Extract<MessageBlock, { kind: "weather" }>["forecast"] {
+  const hour = 3_600_000;
+  const day = 24 * hour;
+  const asOfMs = Date.UTC(2026, 0, 15, 8, 31);
+  const hourStart = Math.floor(asOfMs / hour) * hour;
+  const midnight = Math.floor(asOfMs / day) * day;
+  const codes = [0, 2, 61, 3, 71, 95, 45];
+  return {
+    locationLabel: "Lisbon, Portugal",
+    timeZone: "UTC",
+    asOfMs,
+    current: { code: 0, isDay: true, temperatureC: 8, apparentC: 7.6, humidity: 68, windKph: 12 },
+    hours: Array.from({ length: 30 }, (_, i) => ({
+      startMs: hourStart + i * hour,
+      code: codes[Math.floor(i / 5) % codes.length] ?? 0,
+      isDay: (i + 8) % 24 >= 7 && (i + 8) % 24 < 18,
+      temperatureC: 7 + Math.round(Math.sin(i / 4) * 3),
+      precipChance: i % 7 === 3 ? 60 : 5,
+    })),
+    days: Array.from({ length: 7 }, (_, i) => ({
+      startMs: midnight + i * day,
+      code: codes[i % codes.length] ?? 0,
+      maxC: 9 - (i % 3),
+      minC: 4 - (i % 4),
+      precipChance: i === 2 ? 45 : 10,
+      precipMm: i === 2 ? 3.2 : 0,
+    })),
+    attribution: { name: "Weather data", url: "https://example.test/weather" },
+  };
+}
+
+const weather: Scenario = {
+  id: "weather",
+  label: "Weather",
+  messages: [
+    user("What's the weather in Lisbon?"),
+    bot([{ kind: "weather", forecast: forecastFixture() }]),
+    say("Clear and cold this morning, with rain likely on Sunday."),
+  ],
+};
+
 const rich: Scenario = {
   id: "rich",
   label: "Rich content",
@@ -680,6 +722,7 @@ const SCENARIOS: Scenario[] = [
   working,
   team,
   rich,
+  weather,
   calls,
 ];
 

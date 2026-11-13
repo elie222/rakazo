@@ -610,6 +610,7 @@ export const Transcript = memo(function Transcript({
                                 (block) =>
                                   block.kind === "app_connect" ||
                                   block.kind === "page" ||
+                                  block.kind === "weather" ||
                                   block.kind === "computer",
                               ) || pageView.pages.has(message.id)
                                 ? "w-full"

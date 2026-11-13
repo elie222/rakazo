@@ -549,3 +549,31 @@ it("retains legacy unknown-field stripping for model connections", () => {
     apiKey: "fake-key",
   });
 });
+
+describe("weather forecast block", () => {
+  const forecast = {
+    locationLabel: "Lisbon, Portugal",
+    timeZone: "Europe/Rome",
+    asOfMs: 1_768_000_000_000,
+    current: { code: 0, isDay: true, temperatureC: 8, apparentC: 7, humidity: 68, windKph: 12 },
+    hours: [],
+    days: [
+      { startMs: 1_768_000_000_000, code: 0, maxC: 9, minC: 4, precipChance: 10, precipMm: 0 },
+    ],
+    attribution: { name: "Weather data", url: "https://example.test/weather" },
+  };
+
+  it("accepts a forecast and refuses an unknown time zone or a non-https attribution link", () => {
+    expect(MessageBlock.safeParse({ kind: "weather", forecast }).success).toBe(true);
+    expect(
+      MessageBlock.safeParse({ kind: "weather", forecast: { ...forecast, timeZone: "Not/AZone" } })
+        .success,
+    ).toBe(false);
+    expect(
+      MessageBlock.safeParse({
+        kind: "weather",
+        forecast: { ...forecast, attribution: { name: "x", url: "javascript:alert(1)" } },
+      }).success,
+    ).toBe(false);
+  });
+});

@@ -42,6 +42,7 @@ vi.mock("../components/message-caption", () => ({
   MessageCaption: ({ text }: { text: string }) => <span>{text}</span>,
 }));
 vi.mock("../components/pages/page-card", () => ({ PageCard: () => null }));
+vi.mock("../components/weather/weather-card", () => ({ WeatherCard: () => null }));
 vi.mock("../components/thread/mcp-app-card", () => ({ McpAppCard: () => null }));
 vi.mock("../components/ComputerCard", () => ({
   ComputerCard: ({ onOpen }: { onOpen: () => void }) => {

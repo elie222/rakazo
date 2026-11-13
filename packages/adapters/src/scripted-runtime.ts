@@ -240,6 +240,19 @@ export function inferScript(
       },
     ];
   }
+  const weather = /^(?:@\S+\s+)?call weather_forecast with (.+?)(?:\nthen say ([\s\S]+))?$/s.exec(
+    words.trim(),
+  );
+  const weatherArgs = weather ? jsonObject(weather[1]!) : undefined;
+  if (weather && weatherArgs) {
+    return [
+      {
+        assistant: weather[2],
+        toolCalls: [{ name: "weather_forecast", args: weatherArgs }],
+        complete: true,
+      },
+    ];
+  }
   if (lower.includes("can you check my gmail inbox?")) {
     return [
       {

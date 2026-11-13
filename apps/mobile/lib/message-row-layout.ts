@@ -25,6 +25,7 @@ export function messageRowLayout(
       block.kind === "mcp_approval" ||
       block.kind === "app" ||
       block.kind === "page" ||
+      block.kind === "weather" ||
       (block.kind === "ask" &&
         block.status !== "answered" &&
         Boolean(block.actions?.length) &&

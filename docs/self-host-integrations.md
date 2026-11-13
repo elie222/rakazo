@@ -27,6 +27,13 @@ servers. Anonymous access is rate limited per IP address; set `KEENABLE_API_KEY`
 worker to send a key and lift those limits. Errors, per-bot disabled tools and the way back to
 the default work as described for Parallel.
 
+## Weather
+
+The builtin `weather_forecast` tool looks a place up and shows a weather card in the chat. It uses
+the keyless [Open-Meteo](https://open-meteo.com) service, which needs no account or API key; only
+the place name or coordinates the bot asks about leave your server. To use your own Open-Meteo
+instance, set `OPEN_METEO_GEOCODING_URL` and `OPEN_METEO_FORECAST_URL` on the worker.
+
 ## Self-hosted memory
 
 Supermemory, Honcho and Hindsight can run on your own network. In **Settings → Memory**, open **Advanced**, choose **Self-hosted**

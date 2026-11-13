@@ -54,6 +54,7 @@ import { MessageCaption } from "../message-caption";
 import { NativeSymbol } from "../native-symbol";
 import { PageCard } from "../pages/page-card";
 import { PeerReceiptLine } from "../peer-receipt-line";
+import { WeatherCard } from "../weather/weather-card";
 import { AskBlock } from "./ask-block";
 import { McpAppCard } from "./mcp-app-card";
 import type { MessageRowActions } from "./message-row";
@@ -143,7 +144,12 @@ function MessageBubbleWithMentions({
 
 /** Blocks drawn as their own card between the message's text pieces. */
 function isOwnCardBlock(block: MessageBlock): boolean {
-  return isSpecialMessageBlock(block) || block.kind === "page" || block.kind === "app";
+  return (
+    isSpecialMessageBlock(block) ||
+    block.kind === "page" ||
+    block.kind === "app" ||
+    block.kind === "weather"
+  );
 }
 
 function MessageBubbleBody(props: ComponentProps<typeof MessageBubbleContent>) {
@@ -163,6 +169,8 @@ function MessageBubbleBody(props: ComponentProps<typeof MessageBubbleContent>) {
     const first = blocks[0]!;
     if (first.kind === "page")
       return <PageCard key={`page-${index}`} block={first} messageId={message.id} />;
+    if (first.kind === "weather")
+      return <WeatherCard key={`weather-${index}`} forecast={first.forecast} />;
     if (first.kind === "app")
       return (
         <McpAppCard
