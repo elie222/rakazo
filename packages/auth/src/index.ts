@@ -406,17 +406,22 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
           if (current && current.session.token !== reauthentication?.reauthSessionToken)
             return { error: "REAUTHENTICATION_REQUIRED" };
         }
-        if (providerId === "google" || providerId === "apple") {
-          const verified = user.emailVerified === true;
-          const email = String(user.email ?? "").toLowerCase();
-          if (isMessagingEmail(email)) return { error: "EMAIL_NOT_AVAILABLE" };
-          if (source.action === "create-user") {
-            const policy = await admission();
-            if (!policy.enabled) return { error: "REGISTRATION_CLOSED" };
-            if (!emailAllowed(email, policy.allowlist)) return { error: "EMAIL_NOT_ALLOWED" };
-            if (!verified) return { error: "EMAIL_VERIFICATION_REQUIRED" };
-            return;
-          }
+        const builtinSocial = providerId === "google" || providerId === "apple";
+        if (!builtinSocial && providerId !== "oidc") return;
+        const verified = user.emailVerified === true;
+        const email = String(user.email ?? "").toLowerCase();
+        if (isMessagingEmail(email)) return { error: "EMAIL_NOT_AVAILABLE" };
+        if (source.action === "create-user") {
+          const policy = await admission();
+          const bypassAllowlist = providerId === "oidc" && env.oidc?.allowSignupBypass;
+          if (!policy.enabled) return { error: "REGISTRATION_CLOSED" };
+          if (!bypassAllowlist && !emailAllowed(email, policy.allowlist))
+            return { error: "EMAIL_NOT_ALLOWED" };
+          if (!verified && (builtinSocial || (!bypassAllowlist && policy.allowlist.length > 0)))
+            return { error: "EMAIL_VERIFICATION_REQUIRED" };
+          return;
+        }
+        if (builtinSocial) {
           // A verified provider email may join an account whose address is already verified.
           if (source.action === "link-account") {
             if (!verified) return { error: "unable_to_link_account" };
@@ -426,10 +431,6 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
           }
           return;
         }
-        if (providerId !== "oidc") return;
-        const verified = user.emailVerified === true;
-        const email = String(user.email ?? "").toLowerCase();
-        if (isMessagingEmail(email)) return { error: "EMAIL_NOT_AVAILABLE" };
         if (source.action === "link-account") {
           if (!verified) return { error: "unable_to_link_account" };
           // Without a link request, this is sign-in finding an account with the same email.
@@ -446,15 +447,6 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
               (env.email || (await sessionForAuthHook(ctx))?.user.id !== target.id))
           )
             return { error: "unable_to_link_account" };
-          return;
-        }
-        if (source.action === "create-user") {
-          const policy = await admission();
-          if (!policy.enabled) return { error: "REGISTRATION_CLOSED" };
-          if (!env.oidc?.allowSignupBypass && !emailAllowed(email, policy.allowlist))
-            return { error: "EMAIL_NOT_ALLOWED" };
-          if (!env.oidc?.allowSignupBypass && policy.allowlist.length > 0 && !verified)
-            return { error: "EMAIL_VERIFICATION_REQUIRED" };
           return;
         }
         if (source.action === "sign-in" && user.id) {

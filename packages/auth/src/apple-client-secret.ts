@@ -34,8 +34,8 @@ export function appleSigningKey(pem: string): KeyObject {
   let key: KeyObject;
   try {
     key = createPrivateKey(normalizeApplePrivateKey(pem));
-  } catch {
-    throw new Error("APPLE_PRIVATE_KEY must be a PKCS#8 PEM private key");
+  } catch (cause) {
+    throw new Error("APPLE_PRIVATE_KEY must be a PKCS#8 PEM private key", { cause });
   }
   if (key.asymmetricKeyType !== "ec" || key.asymmetricKeyDetails?.namedCurve !== "prime256v1") {
     throw new Error("APPLE_PRIVATE_KEY must be a P-256 private key");

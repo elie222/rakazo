@@ -2164,15 +2164,29 @@ describe.each(["google", "apple"] as const)("%s ordinary OAuth boundary", (provi
 });
 
 it.each([
-  ["google", "ios"],
-  ["apple", "android"],
+  ["google", "ios", "open"],
+  ["apple", "android", "open"],
+  ["google", "ios", "closed"],
+  ["apple", "android", "closed"],
+  ["google", "ios", "allowlist"],
+  ["apple", "android", "allowlist"],
 ])(
-  "preserves %s signup attribution from the originating %s request",
-  async (providerId, surface) => {
+  "preserves %s %s attribution and enforces %s signup policy",
+  async (providerId, surface, policy) => {
     const pem = generateKeyPairSync("ec", { namedCurve: "prime256v1" })
       .privateKey.export({ type: "pkcs8", format: "pem" })
       .toString();
     setup({
+      signupsEnabled: policy === "closed" ? "false" : "true",
+      signupAllowlist: policy === "allowlist" ? "allowed@example.test" : "",
+      oidc: {
+        issuer,
+        clientId: "test-client",
+        clientSecret: "test-secret",
+        name: "SSO",
+        allowSignupBypass: true,
+        scopes: ["openid", "email", "profile"],
+      },
       social: {
         providers: [
           {
@@ -2231,6 +2245,15 @@ it.each([
     const response = await request(
       `/callback/${providerId}?code=offline-code&state=${authorization.searchParams.get("state")}`,
     );
+    if (policy !== "open") {
+      expect(response.headers.get("location")).toContain(
+        policy === "closed" ? "error=REGISTRATION_CLOSED" : "error=EMAIL_NOT_ALLOWED",
+      );
+      expect(rows("user")).toHaveLength(0);
+      expect(rows("account")).toHaveLength(0);
+      expect(rows("session")).toHaveLength(0);
+      return;
+    }
     expect(response.headers.get("location")).toBe(`${origin}/app`);
     expect(rows("user")).toHaveLength(1);
     expect(rows("user")[0]).toMatchObject({

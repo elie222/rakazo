@@ -5,6 +5,7 @@ import {
   APPLE_CLIENT_SECRET_AUDIENCE,
   APPLE_CLIENT_SECRET_LIFETIME_SECONDS,
   APPLE_CLIENT_SECRET_MAX_AGE_SECONDS,
+  appleSigningKey,
   createAppleClientSecretCache,
   signAppleClientSecret,
 } from "./apple-client-secret.js";
@@ -82,3 +83,15 @@ it("provides a valid first secret and renews at the refresh margin without timer
   now = new Date(now.getTime() + 100_000);
   expect(cache.current()).not.toBe(first);
 });
+
+it.each(["not a key", "-----BEGIN PRIVATE KEY-----\ntruncated\n-----END PRIVATE KEY-----"])(
+  "preserves the parsing cause without including key material in the outer error",
+  (invalidKey) => {
+    expect(() => appleSigningKey(invalidKey)).toThrow(
+      expect.objectContaining({
+        message: "APPLE_PRIVATE_KEY must be a PKCS#8 PEM private key",
+        cause: expect.any(Error),
+      }),
+    );
+  },
+);
