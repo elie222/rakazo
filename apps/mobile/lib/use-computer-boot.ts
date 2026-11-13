@@ -10,6 +10,7 @@ import { computerBootErrorDetail, errorText } from "./user-error";
 export function useComputerBoot(botId: string | undefined) {
   /** The lease this screen took for each bot, so a late hand back never ends newer control. */
   const takenLeases = useRef(new Map<string, string>());
+  const [, setTakenLeaseVersion] = useState(0);
   const { t } = useLingui();
   const [computer, setComputer] = useState<ComputerStatus | null>(null);
   const [screenUrl, setScreenUrl] = useState<string | null>(null);
@@ -85,6 +86,7 @@ export function useComputerBoot(botId: string | undefined) {
           throw err;
         });
         takenLeases.current.set(botId, taken.leaseId);
+        setTakenLeaseVersion((version) => version + 1);
       }
       if (!action.isActive()) return false;
       await action.refresh({ screenAttempts: SCREEN_URL_OPEN_ATTEMPTS });

@@ -331,15 +331,17 @@ export default function Computer() {
 
   // Control ends with the screen: closing it, switching bots, or leaving hands it back.
   // Only the lease this screen took: a late hand back never ends newer control.
+  // Control can show as held before Take control's answer records the lease, so both drive this.
   const heldBotId = hasControl && computerOpen ? botId : undefined;
+  const heldLeaseId = heldBotId ? takenLeases.current.get(heldBotId) : undefined;
   useEffect(() => {
-    const leaseId = heldBotId ? takenLeases.current.get(heldBotId) : undefined;
+    const leaseId = heldLeaseId;
     if (!heldBotId || !leaseId) return;
     return () => {
       takenLeases.current.delete(heldBotId);
       void rpc("computer/release", { botId: heldBotId, leaseId }).catch(() => undefined);
     };
-  }, [heldBotId]);
+  }, [heldBotId, heldLeaseId]);
 
   /** Open the full window. Only an explicit Take control asks for the lease. */
   async function openComputer({ takeControl }: { takeControl: boolean }) {

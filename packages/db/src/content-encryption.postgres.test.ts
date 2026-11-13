@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import type { MessageBlock } from "@rakazo/contracts";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type { PrismaClient } from "./client.js";
+import type { Prisma, PrismaClient } from "./client.js";
 import { createDb } from "./client.js";
 import { ContentDecryptionError } from "./content-crypto.js";
 import { contentEncryptionOf } from "./content-encryption.js";
@@ -514,6 +514,58 @@ describePostgres("content encryption (PostgreSQL)", () => {
       expect(await count()).toBe(1);
       await prisma.space.delete({ where: { id: doomed } });
       expect(await count()).toBe(0);
+    }));
+
+  it("leaves no vault key behind for a member or Space deleted while it is created", () =>
+    runAsSystem("test fixture", async () => {
+      const ring = contentEncryptionOf(prisma)!.ring;
+      const goneSpace = `enc-gone-space-${suffix}`;
+      const goneUser = `enc-gone-user-${suffix}`;
+      await prisma.space.create({ data: { id: goneSpace, organizationId, name: "Gone" } });
+      await prisma.user.create({
+        data: {
+          id: goneUser,
+          name: "Gone",
+          email: `${goneUser}@rakazo.test`,
+          emailVerified: false,
+        },
+      });
+      const keys = async (scope: string) =>
+        (await raw.query(`SELECT count(*)::int AS n FROM space_keys WHERE "spaceId" = $1`, [scope]))
+          .rows[0].n;
+      const waitingOnLock = async () =>
+        (
+          await raw.query(
+            `SELECT count(*)::int AS n FROM pg_stat_activity
+             WHERE datname = current_database() AND wait_event_type = 'Lock'
+               AND query LIKE '%INSERT INTO space_keys%'`,
+          )
+        ).rows[0].n > 0;
+      const deletions: Array<[string, (tx: Prisma.TransactionClient) => Promise<unknown>]> = [
+        [`vault:${goneSpace}`, (tx) => tx.space.delete({ where: { id: goneSpace } })],
+        [`user:${goneUser}`, (tx) => tx.user.delete({ where: { id: goneUser } })],
+      ];
+      for (const [scope, remove] of deletions) {
+        let created: Promise<string> = Promise.resolve("not started");
+        // The deletion has run its key-shredding trigger but not committed when the key is
+        // created. It commits once the key is in, or once creating it waits on the owner.
+        await prisma.$transaction(
+          async (tx) => {
+            await remove(tx);
+            created = ring.current(scope).then(
+              () => "created",
+              () => "refused",
+            );
+            for (let tries = 0; tries < 100; tries++) {
+              if (await Promise.race([created.then(() => true), waitingOnLock()])) break;
+              await new Promise((resolve) => setTimeout(resolve, 20));
+            }
+          },
+          { timeout: 15_000 },
+        );
+        expect(await keys(scope)).toBe(0);
+        expect(await created).toBe("refused");
+      }
     }));
 
   // Its own space, so key counts and searches see only these rows. Global steps

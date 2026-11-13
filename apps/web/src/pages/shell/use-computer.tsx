@@ -605,8 +605,9 @@ export function useComputerControls({
     setScreenLoadError(null);
   }, [computerBot?.id, screenUrl]);
   const computerBootEpoch = useRef(0);
-  /** The lease this page took for each bot's screen. */
+  /** The lease this page took for each bot's screen; a new one re-renders. */
   const takenLeases = useRef(new Map<string, string>());
+  const [, setTakenLeaseVersion] = useState(0);
   const autoBooted = useRef<string | null>(null);
 
   async function bootComputer({
@@ -647,6 +648,7 @@ export function useComputerControls({
       if (takeControl) {
         const { leaseId } = await rpc.computer.takeover({ botId: targetBotId });
         takenLeases.current.set(targetBotId, leaseId);
+        setTakenLeaseVersion((version) => version + 1);
         if (!stillThisBoot() || !stillThisBot()) return;
       }
       await refreshComputerFor(targetBotId);
@@ -771,9 +773,11 @@ export function useComputerControls({
 
   // Control ends with the screen: closing it, switching chats, or leaving the page hands it back.
   // Only the lease this page took: a late hand back from an old page never ends newer control.
+  // Control can show as held before Take control's answer records the lease, so both drive this.
   const heldBotId = hasControl && computerOpen ? computerBot?.id : undefined;
+  const heldLeaseId = heldBotId ? takenLeases.current.get(heldBotId) : undefined;
   useEffect(() => {
-    const leaseId = heldBotId ? takenLeases.current.get(heldBotId) : undefined;
+    const leaseId = heldLeaseId;
     if (!heldBotId || !leaseId) return;
     const handBack = () => {
       takenLeases.current.delete(heldBotId);
@@ -786,7 +790,7 @@ export function useComputerControls({
       window.removeEventListener("pagehide", handBack);
       handBack();
     };
-  }, [heldBotId]);
+  }, [heldBotId, heldLeaseId]);
 
   /** Open the computer view. Only an explicit Take control asks for the lease. */
   async function openComputer(botId?: string, takeControl = false) {

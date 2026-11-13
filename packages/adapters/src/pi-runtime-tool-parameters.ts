@@ -409,6 +409,11 @@ function enumUnion(values: readonly unknown[], options: FieldOptions = {}) {
 export function jsonField(spec: unknown): ReturnType<typeof Type.String> {
   const definition = spec && typeof spec === "object" ? (spec as Record<string, unknown>) : {};
   const options = fieldOptions(definition);
+  // Nested intersections need the same preservation as root schemas; otherwise an
+  // allOf-only field falls back to string and loses its sibling constraints.
+  if (Array.isArray(definition.allOf)) {
+    return jsonSchemaParameters(definition, options) as never;
+  }
   if (Array.isArray(definition.enum) && definition.enum.length > 0) {
     if (definition.enum.every((value) => typeof value === "string")) {
       return stringEnum(definition.enum as string[], options) as never;

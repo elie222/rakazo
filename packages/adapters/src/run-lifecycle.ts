@@ -19,6 +19,7 @@ import { getLogger } from "@rakazo/logging";
 import { sanitizedError } from "@rakazo/logging/monitoring";
 import { returnHelperOutcome } from "./background-helpers.js";
 import { returnBotMessageOutcome } from "./bot-messages.js";
+import { VaultKeyUnavailableError } from "./bot-secrets.js";
 import { sleepDeferReason } from "./computer-idle.js";
 import type { ComputerExecutionLease } from "./computer-lifecycle.js";
 import { ComputerBusyError, releaseComputerExecutionLease } from "./computer-lifecycle.js";
@@ -470,12 +471,13 @@ export async function retryRunSetup(
   const retryForever = computerBusy || isTooManyDatabaseConnections(setupError);
   const setupMessage = redactSecrets(userRunError(setupError), runSecrets);
   const reportedSetupError = sanitizedError(setupError, (text) => redactSecrets(text, runSecrets));
-  // An outage at the computer provider, or a paused turn's tool going offline, is retried like
-  // any setup failure, but is not a Rakazo bug to report.
+  // An outage at the computer provider or the key manager, or a paused turn's tool going
+  // offline, is retried like any setup failure, but is not a Rakazo bug to report.
   const providerOutage =
     setupError instanceof SandboxUnavailableError ||
     setupError instanceof SandboxUnresponsiveError ||
-    setupError instanceof PausedTurnToolsUnavailableError;
+    setupError instanceof PausedTurnToolsUnavailableError ||
+    setupError instanceof VaultKeyUnavailableError;
   // A lost lease aborted setup on purpose; whatever that interrupted is not a failure.
   if (providerOutage || !plan.leaseValid) {
     getLogger().warn("run setup failed", { error: reportedSetupError });

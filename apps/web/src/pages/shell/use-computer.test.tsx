@@ -491,7 +491,12 @@ it("closes the computer view on Escape, but not on the Escape that ends an IME c
 });
 
 /** Renders the computer controls for bot-1 with a running computer this page can take. */
-async function renderTakingControl() {
+async function renderTakingControl(
+  takeover: () => Promise<{ leaseId: string; expiresAt: string }> = async () => ({
+    leaseId: "lease-1",
+    expiresAt: "",
+  }),
+) {
   const held = {
     botId: "bot-1",
     state: "running",
@@ -505,7 +510,7 @@ async function renderTakingControl() {
       release,
       heartbeat,
       boot: vi.fn(async () => held),
-      takeover: vi.fn(async () => ({ leaseId: "lease-1", expiresAt: "" })),
+      takeover: vi.fn(takeover),
       screenUrl: vi.fn(async () => ({ url: null })),
     },
   } as never;
@@ -554,6 +559,39 @@ it("hands its lease back when the computer closes, and keeps it while open", asy
   });
   expect(heartbeat).toHaveBeenCalledWith({ botId: "bot-1" });
   expect(release).not.toHaveBeenCalled();
+  await act(async () => state.setComputerOpen(false));
+  expect(release).toHaveBeenCalledWith(
+    { botId: "bot-1", leaseId: "lease-1" },
+    { context: { keepalive: true } },
+  );
+});
+
+it("hands its lease back even when control showed as held before Take control answered", async () => {
+  let answer!: (value: { leaseId: string; expiresAt: string }) => void;
+  const { release, takeControl } = await renderTakingControl(
+    () =>
+      new Promise((resolve) => {
+        answer = resolve;
+      }),
+  );
+  let taking!: Promise<unknown>;
+  await act(async () => {
+    taking = takeControl();
+  });
+  // The granted event arrives first: the screen shows control as this person's.
+  await act(async () => {
+    state.commitComputer({
+      botId: "bot-1",
+      state: "running",
+      controlHolder: "user",
+      controlBotId: "bot-1",
+    } as never);
+    state.setComputerOpen(true);
+  });
+  await act(async () => {
+    answer({ leaseId: "lease-1", expiresAt: "" });
+    await taking;
+  });
   await act(async () => state.setComputerOpen(false));
   expect(release).toHaveBeenCalledWith(
     { botId: "bot-1", leaseId: "lease-1" },

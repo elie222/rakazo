@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { onError } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/fetch";
-import { finishRoutineHandover } from "@rakazo/adapters";
+import { finishRoutineHandover, listVaultItems } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import {
@@ -407,6 +407,21 @@ describePostgres("shared spaces: invites and membership (PostgreSQL)", () => {
       },
     });
     await system.notificationPreference.create({ data: { spaceId: home, userId: invitee.id } });
+    // An item of their account vault limited here to a bot; the item stays theirs.
+    const item = await system.vaultCredential.create({
+      data: {
+        id: randomUUID(),
+        userId: invitee.id,
+        spaceId: null,
+        name: "pantry-api",
+        origin: "https://pantry.example.test",
+        auth: { type: "bearer" },
+        ciphertext: "fake-ciphertext",
+      },
+    });
+    const limited = { credentialId: item.id, spaceId: home, userId: invitee.id };
+    await system.vaultCredentialLimit.create({ data: limited });
+    await system.vaultCredentialBot.create({ data: { ...limited, botId: bot.id } });
     // Their own Space is not touched.
     const ownConnection = await system.connection.create({
       data: {
@@ -477,6 +492,12 @@ describePostgres("shared spaces: invites and membership (PostgreSQL)", () => {
     await expect(system.mcpServer.count({ where: leftover })).resolves.toBe(0);
     await expect(system.botMcpServer.count({ where: leftover })).resolves.toBe(0);
     await expect(system.notificationPreference.count({ where: leftover })).resolves.toBe(0);
+    // The bots they chose here go with the bots, but the item stays limited here.
+    await expect(system.vaultCredentialLimit.count({ where: leftover })).resolves.toBe(1);
+    await expect(system.vaultCredentialBot.count({ where: leftover })).resolves.toBe(0);
+    await expect(
+      system.vaultCredential.findUnique({ where: { id: item.id } }),
+    ).resolves.not.toBeNull();
     await expect(
       system.actionApprovalRule.count({ where: { spaceId: home, createdByUserId: invitee.id } }),
     ).resolves.toBe(0);
@@ -489,6 +510,26 @@ describePostgres("shared spaces: invites and membership (PostgreSQL)", () => {
     await expect(
       system.auditEvent.count({ where: { spaceId: home, action: "space.member.removed" } }),
     ).resolves.toBe(1);
+
+    // Rejoining doesn't open the item to every bot: it stays limited here, to none of them.
+    await call(invitee.actor, "spaces/invites/accept", { token: await invite(owner, home) });
+    const fresh = await system.bot.create({
+      data: { spaceId: home, userId: invitee.id, name: "Shopper", color: "test" },
+    });
+    const items = (botId?: string) =>
+      runAsTenant({ userId: invitee.id, spaceId: home }, () =>
+        listVaultItems(
+          prisma,
+          { load: async () => "" },
+          { userId: invitee.id, spaceId: home, ...(botId && { botId }) },
+          undefined,
+          false,
+        ),
+      );
+    expect(await items()).toEqual([
+      expect.objectContaining({ name: "pantry-api", allBots: false, botIds: [] }),
+    ]);
+    expect(await items(fresh.id)).toEqual([]);
   });
 
   it("cancels a removed member's unfinished runs so nothing keeps running as them", async () => {

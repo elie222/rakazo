@@ -1,6 +1,7 @@
 import type { ConnectorCall, ConnectorTool } from "@rakazo/adapter-kit";
-import { BOT_INSTRUCTIONS_MAX_LENGTH, BotSecretAuth } from "@rakazo/contracts";
+import { BOT_INSTRUCTIONS_MAX_LENGTH, BotSecretAuth, OneTimeCodeTarget } from "@rakazo/contracts";
 import { redactSecrets } from "@rakazo/core";
+import { runLoginKind } from "@rakazo/db";
 import { prepareAgentConnectionResponse } from "./agent-connections.js";
 import type { FleetCardSummary } from "./approval-ask.js";
 import type { TerminatingToolResult } from "./approval-effect.js";
@@ -51,8 +52,15 @@ import { SCHEDULE_TOOL_NAMES } from "./schedule-tools.js";
 import { SKILL_TOOL_NAMES } from "./skill-tools.js";
 import { refusal } from "./tool-refusal.js";
 import { argumentGiven, dropUnchangedOwnBotArgs } from "./update-bot-patch.js";
-import type { VaultCardUse } from "./vault-card-use.js";
-import { cardUseSummary, requestedCardUse, vaultCardUseOf } from "./vault-card-use.js";
+import type { VaultCardUse, VaultLoginUse } from "./vault-card-use.js";
+import {
+  cardUseSummary,
+  loginUseSummary,
+  requestedCardUse,
+  requestedLoginFills,
+  vaultCardUseOf,
+  vaultLoginUseOf,
+} from "./vault-card-use.js";
 
 /** A tool call resolved to the tool it runs and the exact request an approval covers. */
 export interface ToolRequest {
@@ -76,6 +84,8 @@ export interface ToolRequest {
   purchase: PurchaseApproval | undefined;
   /** This page tool call types a saved card into a checkout, which a person approves each time. */
   cardUse: VaultCardUse | undefined;
+  /** This browser_act call signs in with a saved login that asks first, approved like a card. */
+  loginUse: VaultLoginUse | undefined;
 }
 
 type ToolError = { error: string };
@@ -297,7 +307,69 @@ export async function resolveToolRequest(
     heldForApproval: false,
     purchase: undefined,
     cardUse: undefined,
+    loginUse: undefined,
   };
+}
+
+/**
+ * The saved login that asks first this browser_act call fills: every field it fills, on the one
+ * of its sites it fills there, as saved now. A replay keeps the approval the user answered.
+ */
+async function askingLoginUse(
+  ctx: RunContext,
+  actions: unknown,
+  /** The user's answer this call replays; its approval for a login, if any, is `given`. */
+  replay: boolean,
+  given: unknown,
+): Promise<VaultLoginUse | ToolError | undefined> {
+  const { deps, run } = ctx;
+  const asking: VaultLoginUse[] = [];
+  for (const [login, fields] of requestedLoginFills(actions)) {
+    // This run's login that wasn't saved is what the person just typed, and is filled instead.
+    const kind = runLoginKind(run.id, login);
+    if (
+      await deps.prisma.secret.count({ where: { userId: run.userId, spaceId: run.spaceId, kind } })
+    )
+      continue;
+    // A login's title never comes from its value, so it isn't decrypted here.
+    const [item] = await listVaultItems(deps.prisma, deps.secretStore, run, login, false);
+    if (item?.policy !== "ask" || BotSecretAuth.safeParse(item.auth).data?.type !== "login")
+      continue;
+    const savedAt = item.updatedAt.toISOString();
+    // Where it fills: the page's site when that is one of its others, as the fill reads it.
+    const url = ctx.state.pageUrl;
+    const page = url && URL.canParse(url) ? new URL(url).origin : "";
+    const site = item.alsoOn?.includes(page) ? page : item.origin;
+    // Saved where no approval can name, as under older rules, it is never typed: the fill refuses.
+    if (![item.origin, site].every((origin) => OneTimeCodeTarget.safeParse({ origin }).success))
+      continue;
+    asking.push({
+      kind: "login",
+      login,
+      site,
+      title: item.title,
+      fields,
+      savedAt,
+    });
+  }
+  const [wanted] = asking;
+  if (!wanted) return undefined;
+  if (asking.length > 1)
+    return { error: "Sign in with one saved login that asks first per browser_act call." };
+  const approved = replay ? vaultLoginUseOf(given) : undefined;
+  if (!approved && !replay) return wanted;
+  // An answer given for something else, such as before the login asked first, never covers it.
+  if (!approved)
+    return {
+      error:
+        "This signs in with a saved login the user has not approved, so nothing was typed. Call the tool again; that asks the user.",
+    };
+  if (approved.login !== wanted.login || approved.fields.join("\n") !== wanted.fields.join("\n"))
+    return {
+      error:
+        "This signs in with a saved login the user has not approved for these fields, so nothing was typed. Call the tool again; that asks the user.",
+    };
+  return approved;
 }
 
 /**
@@ -411,7 +483,12 @@ export async function prepareToolRequest(
   if (PURCHASE_CHECKED_TOOLS.has(name)) {
     // The approval is written here from what the page says; a model-supplied one is dropped, and an
     // approved replay keeps the one the user saw.
-    const { purchaseApproval: given, cardApproval: givenCard, ...rest } = args;
+    const {
+      purchaseApproval: given,
+      cardApproval: givenCard,
+      loginApproval: givenLogin,
+      ...rest
+    } = args;
     const approved = nextApprovedTool === name ? purchaseApprovalOf(given) : undefined;
     args = approved ? { ...rest, purchaseApproval: given } : rest;
     // A saved card is typed only into the checkout a person approved: the approval names the card
@@ -439,6 +516,15 @@ export async function prepareToolRequest(
       request.cardUse = cardUse;
       request.fleetSummary = cardUseSummary(cardUse);
     }
+    const loginUse =
+      name === "browser_act"
+        ? await askingLoginUse(ctx, rest.actions, nextApprovedTool === name, givenLogin)
+        : undefined;
+    if (loginUse && "error" in loginUse) return loginUse;
+    if (loginUse && request.cardUse)
+      return {
+        error: "Type a saved card and sign in with a saved login in separate browser_act calls.",
+      };
     // A desktop press has no check on the page right before it, as a browser_act click does: one the user
     // approved goes ahead only while the page still shows what the card did. A card that named nothing
     // (the check failed) has nothing to compare.
@@ -461,6 +547,16 @@ export async function prepareToolRequest(
         );
     }
     const purchase = approved ?? (await detectPurchase(ctx, name, rest));
+    // One card asks one question: a sign-in is never approved under a payment's.
+    if (loginUse && purchase)
+      return {
+        error: "Sign in with a saved login and complete a purchase in separate browser_act calls.",
+      };
+    if (loginUse) {
+      args = { ...args, loginApproval: loginUse };
+      request.loginUse = loginUse;
+      request.fleetSummary = loginUseSummary(loginUse);
+    }
     // An approval given for something else never covers a purchase: the call is made again and asks.
     if (purchase && !approved && nextApprovedTool === name)
       return refusal(
@@ -478,7 +574,14 @@ export async function prepareToolRequest(
           : purchaseCardSummary(purchase);
       }
     }
-    if (purchase || request.cardUse || given !== undefined || givenCard !== undefined)
+    if (
+      purchase ||
+      request.cardUse ||
+      request.loginUse ||
+      given !== undefined ||
+      givenCard !== undefined ||
+      givenLogin !== undefined
+    )
       request.effectRequest = args;
   }
   request.args = args;
