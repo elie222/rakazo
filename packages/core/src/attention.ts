@@ -15,27 +15,18 @@ export function attentionKindForBlock(block: MessageBlock): AttentionBlockKind |
   return "question";
 }
 
-function actionTone(id: string): AttentionAction["tone"] {
-  if (id === "deny") return "danger";
-  if (id === "allow" || id === "choice-1") return "primary";
-  return "secondary";
-}
-
-/** Inline answers the inbox can send through `threads.answer`. Secret cards have none. */
+/** Inline answers the inbox can send through `threads.answer`. Secret and approval cards open in chat. */
 export function attentionActionsForBlock(block: MessageBlock): AttentionAction[] {
   if (block.kind !== "ask" || block.status === "answered" || block.dismissed) return [];
   if (isSecretAskBlock(block)) return [];
-  const approval = isApprovalAskBlock(block);
-  // A payment's receipt and total only live in the chat; a truncated inbox preview must
-  // not offer to approve it blind.
-  if (approval && block.receipt) return [];
+  // The inbox abbreviates arguments. Approval requires the complete card in chat.
+  if (isApprovalAskBlock(block)) return [];
   return (block.actions ?? []).map((action) => ({
     id: action.id,
-    // An approval label interpolates the site it allows; existing cards have no length cap.
+    // Keep question labels within the attention action contract.
     label: truncatePlainText(action.label, 120),
     answer: action.id,
-    // Only an approval has a recommended answer; a question's choices are equal.
-    tone: approval ? actionTone(action.id) : ("secondary" as const),
+    tone: "secondary" as const,
   }));
 }
 

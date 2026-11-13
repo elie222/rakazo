@@ -74,6 +74,9 @@ test("Needs you collects questions, approvals, takeovers and failures, and answe
   await expect(page.getByTestId("attention-item-approval")).toContainText(
     "Review before web_fetch",
   );
+  const approval = page.getByTestId("attention-item-approval");
+  await expect(approval.getByRole("button", { name: /Allow|Always|Deny/ })).toHaveCount(0);
+  await expect(approval.getByRole("button", { name: "Open chat" })).toBeVisible();
   await expect(page.getByTestId("attention-item-takeover")).toContainText(
     "Sign-in Bot needs the screen",
   );
@@ -88,4 +91,6 @@ test("Needs you collects questions, approvals, takeovers and failures, and answe
   await page.getByRole("button", { name: "Seoul", exact: true }).click();
   await expect(page.getByTestId("attention-item-question")).toHaveCount(0, { timeout: 30_000 });
   await captureScreenshot(page, testInfo, "needs-you-after-answer");
+  await approval.getByRole("button", { name: "Open chat" }).click();
+  await expect(page).toHaveURL(new RegExp(approvalBot.id));
 });

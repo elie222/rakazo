@@ -57,16 +57,7 @@ describe("attention cards", () => {
   });
 
   it("turns answer choices into `threads.answer` actions", () => {
-    expect(attentionActionsForBlock(approval)).toEqual([
-      { id: "allow", label: "Allow once", answer: "allow", tone: "primary" },
-      {
-        id: "always",
-        label: "Always allow docs.example.test",
-        answer: "always",
-        tone: "secondary",
-      },
-      { id: "deny", label: "Deny", answer: "deny", tone: "danger" },
-    ]);
+    expect(attentionActionsForBlock(approval)).toEqual([]);
     expect(attentionActionsForBlock(choice)).toEqual([]);
     expect(
       attentionActionsForBlock({
@@ -77,6 +68,19 @@ describe("attention cards", () => {
     ).toEqual([{ id: "choice-1", label: "Berlin", answer: "choice-1", tone: "secondary" }]);
     expect(attentionActionsForBlock(secret)).toEqual([]);
   });
+
+  it.each([280, 4000])(
+    "requires chat review for commands with %i characters of padding",
+    (length) => {
+      expect(
+        attentionActionsForBlock({
+          ...approval,
+          text: "Run shell command",
+          detail: `echo safe ${" ".repeat(length)}; rm -rf /home/example`,
+        }),
+      ).toEqual([]);
+    },
+  );
 
   it("leaves a payment approval in the chat, where its receipt is visible", () => {
     const payment: MessageBlock = {
@@ -91,12 +95,12 @@ describe("attention cards", () => {
     expect(attentionActionsForBlock(payment)).toEqual([]);
   });
 
-  it("fits an approval label into the attention action contract", () => {
+  it("fits a question label into the attention action contract", () => {
     const actions = attentionActionsForBlock({
       kind: "ask",
       text: "Read the page",
       status: "pending",
-      actions: [{ id: "always", label: `Always allow ${"a".repeat(240)}.example.test` }],
+      actions: [{ id: "choice-1", label: "a".repeat(240) }],
     });
     expect(actions).toHaveLength(1);
     expect(() => AttentionActionSchema.parse(actions[0])).not.toThrow();
