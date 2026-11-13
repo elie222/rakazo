@@ -397,6 +397,32 @@ describe("page kit", () => {
     expect(wrapText("supercalifragilistic", 8)).toEqual(["supercal", "ifragili", "stic"]);
   });
 
+  it("wraps wide diagram text and sizes labels and details with the same estimate", () => {
+    expect(wrapText("日本語の処理手順", 6)).toEqual(["日本語", "の処理", "手順"]);
+    expect(wrapText("API 日本語", 7)).toEqual(["API", "日本語"]);
+    expect(wrapText("中文ＡＢ", 4)).toEqual(["中文", "ＡＢ"]);
+    const [node] = layoutDiagram(
+      [{ id: "step", label: "日本語".repeat(8), detail: "中文".repeat(15) }],
+      [],
+      true,
+      false,
+    ).nodes;
+    expect(node!.labelLines.every((line) => [...line].length <= 11)).toBe(true);
+    expect(node!.detailLines.every((line) => [...line].length <= 13)).toBe(true);
+    expect(node!.width).toBe(208);
+    expect(node!.height).toBe(20 + 3 * 19 + 3 * 17);
+    const [short] = layoutDiagram([{ id: "short", label: "日本語の処理" }], [], false, false).nodes;
+    expect(short!.width).toBe(122);
+    const [english] = layoutDiagram(
+      [{ id: "en", label: "Review changes" }],
+      [],
+      false,
+      false,
+    ).nodes;
+    expect(english!.width).toBe(138);
+    expect(english!.labelLines).toEqual(["Review changes"]);
+  });
+
   it("marks only the chosen segment pressed and accepts plain string options", () => {
     const markup = html(
       <Segmented options={["7d", { value: "30d", label: "Last 30 days" }]} value="30d" />,
