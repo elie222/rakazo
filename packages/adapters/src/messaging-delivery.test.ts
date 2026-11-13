@@ -2,6 +2,7 @@ import type {
   AdapterContext,
   BackgroundJob,
   JobTransaction,
+  MessagingInstallProvider,
   MessagingPlatformDescriptor,
   MessagingSendRequest,
   MessagingSendResult,
@@ -19,6 +20,7 @@ import { SpaceDeletionInProgressError } from "@rakazo/db";
 import type { Adapter } from "chat";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ChatSdkMessagingSurface, MessagingSendError } from "./chat-sdk-surface.js";
+import { InstalledMessagingSurface } from "./installed-messaging-surface.js";
 import type { MessagingDeliveryDeps, OutboundLane, OutboundRow } from "./messaging-delivery.js";
 import {
   applyMessagingOutboundStatus,
@@ -42,6 +44,7 @@ type OutboundRecord = {
   body: string;
   status: string;
   providerHandle: string | null;
+  claimedAt?: Date | null;
   sourceMessageId: string | null;
   createdAt: Date;
   updatedAt: Date;
@@ -193,11 +196,12 @@ function matchesValue(value: unknown, condition: unknown): boolean {
   );
 }
 
-/** The where shapes the delivery queries use: equality, null, in/not/lt/gt, OR and NOT. */
+/** The where shapes the delivery queries use: equality, null, in/not/lt/gt, OR, AND and NOT. */
 function matches(record: object, where: Where = {}): boolean {
   const fields = record as Record<string, unknown>;
   return Object.entries(where).every(([key, condition]) => {
     if (key === "OR") return (condition as Where[]).some((part) => matches(record, part));
+    if (key === "AND") return (condition as Where[]).every((part) => matches(record, part));
     if (key === "NOT") return !matches(record, condition as Where);
     return matchesValue(fields[key], condition);
   });
@@ -1729,6 +1733,57 @@ describe("a claimed send and its backup job", () => {
     });
   });
 
+  it("holds the conversation behind its own stale claim until the backup job resends it", async () => {
+    const t = setup();
+    const stale = new Date(Date.now() - MESSAGING_SEND_STALE_MS - 1_000);
+    // This release claimed the first message, then its sender died.
+    seedRow(t.world, {
+      id: "a-1",
+      status: "sent",
+      providerHandle: null,
+      claimedAt: stale,
+      updatedAt: stale,
+    });
+    seedRow(t.world, { id: "a-2", createdAt: new Date(1_001) });
+    await t.delivery.send([threadLane("t-a")]);
+    expect({ sends: bodies(t), status: statuses(t) }).toEqual({
+      sends: [],
+      status: ["in-flight", "pending"],
+    });
+
+    await t.delivery.sendJob("a-1", attempt(1));
+    expect({ sends: bodies(t), status: statuses(t) }).toEqual({
+      sends: ["a-1", "a-2"],
+      status: ["sent", "sent"],
+    });
+    expect(t.world.outbound.map((row) => row.claimedAt)).toEqual([null, null]);
+  });
+
+  it("gives its own stale claim whose job gave up a new job, never the previous release's", async () => {
+    const t = setup();
+    const old = new Date(Date.now() - 10 * 60_000);
+    seedRow(t.world, {
+      id: "ours",
+      threadId: "t-a",
+      status: "sent",
+      providerHandle: null,
+      claimedAt: old,
+      updatedAt: old,
+    });
+    seedRow(t.world, {
+      id: "theirs",
+      threadId: "t-b",
+      status: "sent",
+      providerHandle: null,
+      updatedAt: old,
+    });
+    await t.delivery.sweepStalled();
+    expect(sendJobs(t).map((job) => job.payload)).toEqual([{ outboundId: "ours" }]);
+
+    await t.delivery.sendJob("ours", attempt(1));
+    expect(bodies(t)).toEqual(["ours"]);
+  });
+
   it("retries the bookkeeping of a message that went out instead of leaving it to be sent again", async () => {
     vi.useFakeTimers();
     const t = setup();
@@ -1825,12 +1880,12 @@ describe("a claimed send and its backup job", () => {
 describe("when a send fails", () => {
   it("moves a cleanly failed message's backup job up to now and holds the rest of the conversation", async () => {
     const t = setup();
+    const before = Date.now();
     const [first, second] = await t.record(threadLane("t-a"), [
       post("t-a", "a-1"),
       post("t-a", "a-2"),
     ]);
     t.sendToThread.mockRejectedValueOnce(new Error("messaging provider 500"));
-    const before = Date.now();
     await t.delivery.send([threadLane("t-a")]);
 
     expect(t.sendToThread).toHaveBeenCalledOnce();
@@ -1873,6 +1928,23 @@ describe("when a send fails", () => {
     expect(bodies(t)).toEqual(["a-1", "a-2"]);
     expect(statuses(t)).toEqual(["failed", "sent"]);
     expect(sendJobs(t)).toEqual([]);
+  });
+
+  it("fails a team-chat reply whose workspace was removed on its first try, without retries", async () => {
+    const surface = vi.fn();
+    const installed = new InstalledMessagingSurface(
+      { get: vi.fn(async () => null), getById: vi.fn(async () => null), removeWorkspace: vi.fn() },
+      { provider: "slack", surface } as unknown as MessagingInstallProvider,
+    );
+    const t = setup({ messaging: installed });
+    const lane = threadLane("slack~removed:C1:1700.1");
+    const [id] = await t.record(lane, [post("slack~removed:C1:1700.1", "could not complete")]);
+
+    await t.delivery.sendJob(id!, attempt(1));
+
+    expect(statuses(t)).toEqual(["failed"]);
+    expect(sendJobs(t)).toEqual([]);
+    expect(surface).not.toHaveBeenCalled();
   });
 
   it("hands a failure inside the backup job back to the job queue", async () => {

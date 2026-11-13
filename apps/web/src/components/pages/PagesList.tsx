@@ -129,6 +129,10 @@ function OwnerPages({ botId, groupId }: { botId?: string; groupId?: string }) {
             onFocus={(event) => event.currentTarget.select()}
             onBlur={commitRename}
             onKeyDown={(event) => {
+              if (event.nativeEvent.isComposing || event.keyCode === 229) {
+                if (event.key === "Escape") event.stopPropagation();
+                return;
+              }
               if (event.key === "Enter") commitRename();
               if (event.key === "Escape") {
                 event.stopPropagation();

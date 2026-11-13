@@ -1,4 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
+import { BOT_COLOR_LIST, signInProviders } from "@rakazo/contracts";
 import {
   credentialIssue,
   MAX_PASSWORD_LENGTH,
@@ -6,10 +7,20 @@ import {
   signupRequiresEmailVerification,
   suggestEmailCorrection,
 } from "@rakazo/core";
-import { Button, Input, InputOTP, InputOTPGroup, InputOTPSlot, Label } from "@rakazo/ui-web";
+import {
+  Button,
+  Input,
+  InputOTP,
+  InputOTPGroup,
+  InputOTPSlot,
+  Label,
+  LogoAvatar,
+} from "@rakazo/ui-web";
+import { ChevronLeft } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { PasskeySignIn } from "../components/PasskeySignIn";
+import { SocialSignInButtons } from "../components/SocialSignInButtons";
 import { authClient } from "../lib/auth";
 import type { AuthCapabilities } from "../lib/auth-capabilities";
 import { fetchAuthCapabilities } from "../lib/auth-capabilities";
@@ -54,14 +65,25 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
   const [capabilityAttempt, setCapabilityAttempt] = useState(0);
   const [codeSent, setCodeSent] = useState(false);
   const [code, setCode] = useState("");
+  const [emailStep, setEmailStep] = useState(false);
   const useCode = Boolean(reset?.passwordAuth && reset.emailCode) && mode !== "forgot";
   // A blank password asks for an emailed code, so code-only accounts need no toggle.
   const codeMode = useCode && !password;
   const codeStep = useCode && codeSent;
+  const providers = reset ? signInProviders(reset) : [];
+  const chooser = Boolean(
+    reset?.passwordAuth && providers.length > 0 && !emailStep && mode !== "forgot" && !codeStep,
+  );
+  // The chooser and the email step share a card. A server with no providers keeps today's form.
+  const presented = Boolean(
+    reset?.passwordAuth && providers.length > 0 && mode !== "forgot" && !sent && !codeStep,
+  );
   const passwordFieldId = mode === "in" ? "current-password" : "new-password";
   const title =
     sent || codeStep ? (
       <Trans>Check your email</Trans>
+    ) : presented && mode === "in" ? (
+      <Trans>Welcome back</Trans>
     ) : mode === "in" ? (
       <Trans>Sign in to Rakazo</Trans>
     ) : mode === "up" ? (
@@ -69,6 +91,10 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
     ) : (
       <Trans>Reset your password</Trans>
     );
+
+  useEffect(() => {
+    setEmailStep(false);
+  }, [mode]);
 
   useEffect(() => {
     setReset(null);
@@ -207,14 +233,14 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
     setError(null);
   }
 
-  async function signInWithSso() {
+  async function signInWithProvider(provider: string) {
     setError(null);
     try {
       const result = await runSsoFlow(
         (disableRedirect, callbackURL) =>
           authClient.signIn.social({
             disableRedirect,
-            provider: "oidc",
+            provider,
             newUserCallbackURL: callbackURL(newAccountDestination(next)),
             callbackURL: callbackURL(next ?? "/app"),
             errorCallbackURL: callbackURL("/sign-in"),
@@ -232,7 +258,28 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
   }
 
   return (
-    <AuthFrame onSubmit={submit} title={title}>
+    <AuthFrame
+      onSubmit={submit}
+      title={title}
+      surface={presented}
+      leading={
+        presented && emailStep ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground hover:text-foreground"
+            onClick={() => {
+              setError(null);
+              setEmailStep(false);
+            }}
+          >
+            <ChevronLeft />
+            <Trans>Back</Trans>
+          </Button>
+        ) : null
+      }
+    >
       {sent ? (
         <div className="w-full text-center">
           <Link to={`/sign-in${nextQuery}`} className="font-medium text-foreground">
@@ -255,22 +302,60 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
               </Button>
             </div>
           ) : null}
-          {reset?.sso && !reset.passwordAuth && mode !== "forgot" ? (
-            <Button
-              type="button"
+          {!reset?.passwordAuth && mode !== "forgot" ? (
+            <SocialSignInButtons
+              providers={providers}
               disabled={pending}
-              className={submitClass}
-              onClick={() => void signInWithSso()}
-            >
-              <Trans>Continue with {reset.sso.name}</Trans>
-            </Button>
+              onPress={(providerId) => void signInWithProvider(providerId)}
+            />
           ) : null}
           {error && !reset?.passwordAuth ? (
-            <p role="alert" className="mt-3 text-body text-destructive">
+            <p
+              role="alert"
+              className="mx-auto mt-4 w-full max-w-sm text-center text-body-sm text-destructive"
+            >
               {error}
             </p>
           ) : null}
-          {reset?.passwordAuth ? (
+          {chooser ? (
+            <>
+              <SocialSignInButtons
+                providers={providers}
+                disabled={pending}
+                onPress={(providerId) => void signInWithProvider(providerId)}
+                onEmail={() => {
+                  setError(null);
+                  setEmailStep(true);
+                }}
+              />
+              {error ? (
+                <p
+                  role="alert"
+                  className="mx-auto mt-4 w-full max-w-sm text-center text-body-sm text-destructive"
+                >
+                  {error}
+                </p>
+              ) : null}
+              <p className="mt-8 text-center text-muted-foreground">
+                {mode === "in" ? (
+                  <>
+                    <Trans>Don’t have an account?</Trans>{" "}
+                    <Link to={`/sign-up${nextQuery}`} className="font-medium text-foreground">
+                      <Trans>Sign up</Trans>
+                    </Link>
+                  </>
+                ) : (
+                  <>
+                    <Trans>Already have an account?</Trans>{" "}
+                    <Link to={`/sign-in${nextQuery}`} className="font-medium text-foreground">
+                      <Trans>Sign in</Trans>
+                    </Link>
+                  </>
+                )}
+              </p>
+            </>
+          ) : null}
+          {reset?.passwordAuth && !chooser ? (
             <>
               {mode === "up" && !codeStep ? (
                 <div className="mb-4 w-full">
@@ -419,20 +504,8 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
                   <Trans>Back</Trans>
                 </Button>
               ) : null}
-              {reset.sso && mode !== "forgot" && !codeStep ? (
-                <Button
-                  type="button"
-                  variant="link"
-                  size="sm"
-                  disabled={pending}
-                  className="mt-3 text-muted-foreground"
-                  onClick={() => void signInWithSso()}
-                >
-                  <Trans>Continue with {reset.sso.name}</Trans>
-                </Button>
-              ) : null}
               {codeStep ? null : (
-                <p className="mt-8 text-muted-foreground">
+                <p className="mt-8 text-center text-muted-foreground">
                   {mode === "in" ? (
                     <>
                       <Trans>Don’t have an account?</Trans>{" "}
@@ -547,10 +620,14 @@ export function PasswordResetPage() {
 
 export function AuthFrame({
   title,
+  surface = false,
+  leading,
   onSubmit,
   children,
 }: {
   title: React.ReactNode;
+  surface?: boolean;
+  leading?: React.ReactNode;
   onSubmit: (event: React.FormEvent) => void;
   children: React.ReactNode;
 }) {
@@ -564,17 +641,32 @@ export function AuthFrame({
         <WindowChrome />
       </div>
       <div className="flex flex-1 items-center justify-center px-6 pb-16">
-        <form onSubmit={onSubmit} className="flex w-full max-w-[460px] flex-col items-center">
-          <div className="flex h-[74px] w-[74px] items-center justify-center gap-[11px] rounded-full bg-muted">
-            <span className="h-5 w-[9px] rounded-full bg-primary" />
-            <span className="h-5 w-[9px] rounded-full bg-primary" />
+        <form
+          onSubmit={onSubmit}
+          className={
+            surface
+              ? "flex w-full max-w-[520px] flex-col rounded-3xl border border-border bg-card px-8 pt-8 pb-9 shadow-sm"
+              : "flex w-full max-w-[460px] flex-col items-center"
+          }
+        >
+          {leading ? <div className="mb-4 self-start">{leading}</div> : null}
+          <div className={surface ? "flex w-full flex-col items-center" : "contents"}>
+            <LogoAvatar
+              size={74}
+              avatarValue={BOT_COLOR_LIST.find((color) => color.id === "orange")?.hex}
+              motion={false}
+            />
+            <h1
+              aria-live="polite"
+              className={
+                surface
+                  ? "mt-5 mb-6 text-balance text-center text-display font-medium tracking-tight"
+                  : "mt-7 mb-9 text-balance text-center text-display font-medium tracking-tight"
+              }
+            >
+              {title}
+            </h1>
           </div>
-          <h1
-            aria-live="polite"
-            className="mb-9 mt-7 text-balance text-center text-display font-medium tracking-tight"
-          >
-            {title}
-          </h1>
           {children}
         </form>
       </div>
