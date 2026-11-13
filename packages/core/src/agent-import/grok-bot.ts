@@ -130,8 +130,11 @@ function oneLine(value: string): string {
 }
 
 const BOT_FIELDS = ["instructions", "memories", "user_facts", "skills", "routines", "apps"];
-/** The start of an export document; one left unclosed means the reply was cut off. */
-const EXPORT_START = /^\{\s*["'“‘]?(?:format|version|bots)["'“”‘’]?\s*:/;
+/**
+ * The first property of an export document, after any whitespace following its `{`. Sticky,
+ * so each brace reads only its own whitespace run and the scan stays linear.
+ */
+const EXPORT_START = /\s*["'“‘]?(?:format|version|bots)["'“”‘’]?\s*:/y;
 
 /** Tolerates JSON5 syntax in pasted replies. Uploaded normalized documents use strict JSON. */
 function looseJson(source: string): unknown {
@@ -151,22 +154,29 @@ function bracedObjects(source: string): { found: string[]; cutOff: boolean } {
   const starts: { index: number; export: boolean }[] = [];
   let quote: string | null = null;
   let candidates = 0;
+  // Quotes delimit strings only inside an export: a brace in chat text (`{Sam's bot}`) is prose.
+  let openExports = 0;
   for (let index = 0; index < source.length; index += 1) {
     const char = source[index];
     if (quote) {
       if (char === "\\") index += 1;
       else if (char === quote) quote = null;
-    } else if (starts.length && (char === '"' || char === "'")) quote = char;
+    } else if (openExports > 0 && (char === '"' || char === "'")) quote = char;
     else if (char === "{") {
-      const candidate = EXPORT_START.test(source.slice(index, index + 80));
+      EXPORT_START.lastIndex = index + 1;
+      const candidate = EXPORT_START.test(source);
       if (candidate && ++candidates > 100) throw new GrokBotExportError("too_large");
+      if (candidate) openExports += 1;
       starts.push({ index, export: candidate });
     } else if (char === "}") {
       const start = starts.pop();
-      if (start?.export) found.push(source.slice(start.index, index + 1));
+      if (start?.export) {
+        openExports -= 1;
+        found.push(source.slice(start.index, index + 1));
+      }
     }
   }
-  return { found, cutOff: starts.some((start) => start.export) };
+  return { found, cutOff: openExports > 0 };
 }
 
 const isExportDocument = (value: unknown): value is Json =>
@@ -277,6 +287,13 @@ function readBot(bot: Json): GrokBot {
   };
 }
 
+/** Two parts of one text: the fuller part when one holds the other, else both in order. */
+function joinParts(earlier: string, later: string): string {
+  if (earlier.includes(later)) return earlier;
+  if (later.includes(earlier)) return later;
+  return `${earlier}\n\n${later}`;
+}
+
 /**
  * Split parts join only by explicit export identity: lists join, dropping exact repeats, instructions join their distinct
  * parts, and other fields keep the last non-empty value, so a split or repeated export brings
@@ -286,6 +303,30 @@ function mergeBots(bots: readonly GrokBot[]): GrokBot[] {
   const union = <T>(mine: T[], theirs: T[]) => [
     ...new Map([...mine, ...theirs].map((item) => [JSON.stringify(item), item])).values(),
   ];
+  // A later part naming a skill again continues it; skills within one part stay apart.
+  const joinSkills = (mine: GrokBotSkill[], theirs: GrokBotSkill[]) => {
+    const skills = [...mine];
+    const continued = new Set<number>();
+    for (const skill of theirs) {
+      // Each earlier part's skill is continued at most once; this part's own skills stay apart.
+      const at = mine.findIndex(
+        (item, index) =>
+          !continued.has(index) && item.name.toLowerCase() === skill.name.toLowerCase(),
+      );
+      if (at >= 0) continued.add(at);
+      const earlier = skills[at];
+      if (!earlier) {
+        skills.push(skill);
+        continue;
+      }
+      skills[at] = {
+        name: earlier.name,
+        description: earlier.description || skill.description,
+        instructions: joinParts(earlier.instructions, skill.instructions),
+      };
+    }
+    return skills;
+  };
   const merged = new Map<string | symbol, GrokBot>();
   for (const bot of bots) {
     const key = bot.exportId || Symbol();
@@ -298,14 +339,10 @@ function mergeBots(bots: readonly GrokBot[]): GrokBot[] {
             name: into.name,
             title: bot.title || into.title,
             description: bot.description || into.description,
-            instructions: into.instructions.includes(bot.instructions)
-              ? into.instructions
-              : bot.instructions.includes(into.instructions)
-                ? bot.instructions
-                : `${into.instructions}\n\n${bot.instructions}`,
+            instructions: joinParts(into.instructions, bot.instructions),
             memories: union(into.memories, bot.memories),
             userFacts: union(into.userFacts, bot.userFacts),
-            skills: union(into.skills, bot.skills),
+            skills: joinSkills(into.skills, bot.skills),
             routines: union(into.routines, bot.routines),
             apps: union(into.apps, bot.apps),
           }
@@ -476,18 +513,18 @@ function grokSkills(bot: GrokBot) {
   });
 }
 
-/** Lowercase name in the export → the name the skill is saved under. */
+/**
+ * Lowercase name in the export → the name the skill is saved under. A saved name is also
+ * accepted, but never over a skill the export itself calls by that name.
+ */
 export function grokSkillNames(bot: GrokBot): Map<string, string> {
-  return new Map(
-    grokSkills(bot).flatMap(({ source, item }) =>
-      item
-        ? [
-            [source.name.toLowerCase(), item.name] as const,
-            [item.name.toLowerCase(), item.name] as const,
-          ]
-        : [],
-    ),
-  );
+  const saved = grokSkills(bot).flatMap(({ source, item }) => (item ? [{ source, item }] : []));
+  const names = new Map(saved.map(({ source, item }) => [source.name.toLowerCase(), item.name]));
+  for (const { item } of saved) {
+    const alias = item.name.toLowerCase();
+    if (!names.has(alias)) names.set(alias, item.name);
+  }
+  return names;
 }
 
 /** One bullet per entry; an entry's own lines stay, indented under it. */

@@ -41,6 +41,15 @@ describe("signup policy", () => {
     expect(emailAllowed("eviyou@example.com", list)).toBe(false);
   });
 
+  it("reads the domain after the last @, not the first", () => {
+    const list = parseAllowlist("@company.com");
+    expect(emailAllowed("evil@company.com@evil.test", list)).toBe(false);
+    expect(emailAllowed("a@b@company.com", list)).toBe(true);
+    expect(emailAllowed("no-at-sign", list)).toBe(false);
+    expect(emailAllowed("company.com", list)).toBe(false);
+    expect(emailAllowed("@company.com", list)).toBe(true);
+  });
+
   it("recognizes internal messaging addresses in any case", () => {
     expect(isMessagingEmail(" MSG-1@Messaging.Invalid ")).toBe(true);
     expect(isMessagingEmail("msg-1@messaging.invalid.example.com")).toBe(false);

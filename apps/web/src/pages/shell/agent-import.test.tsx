@@ -581,3 +581,40 @@ describe("a Grok Bot reply with several Bots", () => {
     expect(grok.textContent).not.toContain("Which Bot?");
   });
 });
+
+describe("choosing Grok Bot files", () => {
+  it("disables Continue while the chosen files are read", async () => {
+    container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+    await act(async () => {
+      root!.render(<AgentImportForm onClose={() => undefined} onCreated={() => undefined} />);
+    });
+    const grok = container.querySelector('[data-testid="agent-import-grok"]')!;
+    const reply = grok.querySelector<HTMLTextAreaElement>("textarea")!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(
+        reply,
+        "an earlier reply",
+      );
+      reply.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    const button = (label: string) =>
+      [...grok.querySelectorAll("button")].find((item) => item.textContent === label)!;
+    expect(button("Continue").disabled).toBe(false);
+
+    let finish!: (text: string) => void;
+    const file = new File(["{}"], "grok-bot-export-a.json", { type: "application/json" });
+    Object.defineProperty(file, "text", {
+      value: () => new Promise<string>((resolve) => (finish = resolve)),
+    });
+    const input = grok.querySelector<HTMLInputElement>('[data-testid="agent-import-grok-file"]')!;
+    await act(async () => {
+      Object.defineProperty(input, "files", { configurable: true, value: [file] });
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(button("Continue").disabled).toBe(true);
+    expect(button("Choose file").disabled).toBe(true);
+    await act(async () => finish("not an export"));
+  });
+});

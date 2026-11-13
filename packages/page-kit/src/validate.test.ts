@@ -255,6 +255,26 @@ describe("checkPageSource", () => {
     ).toEqual({ ok: true, code: expect.any(String) });
   });
 
+  it.each([
+    "function () { return <Status />; }",
+    "() => <Status />",
+    "() => React.createElement(Status, null)",
+  ])("accepts a harmless kit-name helper before default export %s", (exported) => {
+    expect(
+      checkPageSource(
+        `function Status() { return <Text>Ready</Text>; }\nexport default ${exported};`,
+      ),
+    ).toEqual({ ok: true, code: expect.any(String) });
+  });
+
+  it("still rejects a recursive helper before an anonymous default export", () => {
+    expect(
+      checkPageSource(
+        "function Status() { return <Status />; }\nexport default function () { return <Status />; }",
+      ).ok,
+    ).toBe(false);
+  });
+
   it("limits a page's size in bytes, not characters, before parsing it", () => {
     const head = "const App = () => <Text>x</Text>;\n// ";
     const room = PAGE_SOURCE_MAX_BYTES - new TextEncoder().encode(page(head)).byteLength;

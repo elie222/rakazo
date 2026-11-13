@@ -39,7 +39,8 @@ members list).
 
 Whoever opens the link sees what sharing means and chooses **Join**. They join that space only: it
 shows up in their space list next to their own spaces, and your other spaces stay private. They
-don't join your organization, take a seat, or appear in its audit log.
+don't join your organization or take a seat. Its [audit log](./self-host-audit-log.md) records what
+they do in the space, but never names their own vault items.
 
 ### What everyone shares
 

@@ -27,10 +27,14 @@ export function selfRenderingKitNames(
       return;
     const name = text(index);
     if (!KIT.has(name) || found.some((entry) => entry.name === name)) return;
-    // Its body runs until the next top-level declaration.
+    // Exports also end the scan: an anonymous default export has no declaration name.
     for (let at = index + 1; at < tokens.length; at++) {
       const next = tokens[at]!;
-      if (next.identifierRole === IdentifierRole.TopLevelDeclaration) break;
+      if (
+        next.identifierRole === IdentifierRole.TopLevelDeclaration ||
+        next.type === TokenType._export
+      )
+        break;
       const used =
         (next.type === TokenType.jsxName && tokens[at - 1]?.type === TokenType.jsxTagStart) ||
         (next.type === TokenType.name &&

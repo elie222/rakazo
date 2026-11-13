@@ -321,6 +321,86 @@ it("rejects oversized collections before allocating import names", () => {
   ).toThrow(GrokBotExportError);
 });
 
+it("joins a skill split across parts, and resolves exact skill names first", () => {
+  const first = JSON.stringify({
+    bots: [
+      {
+        export_id: "example",
+        name: "Example",
+        skills: [
+          { name: "Review", description: "Weekly review", instructions: "1. Collect." },
+          { name: "a b", description: "First", instructions: "One." },
+          { name: "a-b", description: "Second", instructions: "Two." },
+        ],
+      },
+    ],
+  });
+  const second = JSON.stringify({
+    bots: [
+      {
+        export_id: "example",
+        name: "Example",
+        skills: [{ name: "Review", instructions: "2. Report." }],
+      },
+    ],
+  });
+  const [bot] = parseGrokBotExport(`${first}\n\n${second}`);
+  expect(bot!.skills.map((skill) => [skill.name, skill.instructions])).toEqual([
+    ["Review", "1. Collect.\n\n2. Report."],
+    ["a b", "One."],
+    ["a-b", "Two."],
+  ]);
+  const names = grokSkillNames(bot!);
+  expect([names.get("a b"), names.get("a-b")]).toEqual(["a-b", "a-b-2"]);
+
+  // Two same-named skills in one later part stay two skills.
+  const pair = JSON.stringify({
+    bots: [
+      {
+        export_id: "other",
+        name: "Other",
+        skills: [
+          { name: "Check", instructions: "A." },
+          { name: "Check", instructions: "B." },
+        ],
+      },
+    ],
+  });
+  const [other] = parseGrokBotExport(
+    `${JSON.stringify({ bots: [{ export_id: "other", name: "Other", memories: ["x"] }] })}\n\n${pair}`,
+  );
+  expect(other!.skills.map((skill) => skill.instructions)).toEqual(["A.", "B."]);
+  // When an earlier part has one, it continues once and the other stays its own skill.
+  const earlier = JSON.stringify({
+    bots: [
+      { export_id: "other", name: "Other", skills: [{ name: "Check", instructions: "Start." }] },
+    ],
+  });
+  const [again] = parseGrokBotExport(`${earlier}\n\n${pair}`);
+  expect(again!.skills.map((skill) => skill.instructions)).toEqual(["Start.\n\nA.", "B."]);
+});
+
+it("keeps skill names in any script", () => {
+  const [bot] = parseGrokBotExport(
+    JSON.stringify({
+      bots: [
+        {
+          name: "Example",
+          skills: [
+            { name: "日报", description: "Daily report", instructions: "Write it." },
+            { name: "Отчёт", description: "Weekly report", instructions: "Write it." },
+          ],
+        },
+      ],
+    }),
+  );
+  const parsed = parseAgentImport([
+    { path: GROK_BOT_EXPORT_PATH, content: grokBotExportJson(bot!) },
+  ]);
+  if ("error" in parsed) throw new Error(parsed.error);
+  expect(parsed.skills.map((skill) => skill.name)).toEqual(["日报", "отчет"]);
+});
+
 it("rejects explicit unrelated formats and newer string versions", () => {
   expect(() =>
     readGrokBotExportJson(JSON.stringify({ format: "other", bots: [{ name: "Example" }] })),
@@ -330,6 +410,13 @@ it("rejects explicit unrelated formats and newer string versions", () => {
       JSON.stringify({ format: "grok-bot-export", version: "2", bots: [{ name: "Example" }] }),
     ),
   ).toThrow(GrokBotExportError);
+});
+
+it("finds an indented export and ignores apostrophes in chat braces", () => {
+  const indented = `{${" ".repeat(120)}"format": "grok-bot-export", "bots": [{"name": "Wren", "instructions": "Sam's rules."}]}`;
+  expect(parseGrokBotExport(`Here it is:\n\`\`\`json\n${indented}\n\`\`\``)[0]?.name).toBe("Wren");
+  const reply = `Notes on {Sam's bot}:\n\`\`\`json\n{"format": "grok-bot-export", "bots": [{"name": "Bramble", "instructions": "Use Sam's calendar."}]}\n\`\`\``;
+  expect(parseGrokBotExport(reply)[0]?.instructions).toBe("Use Sam's calendar.");
 });
 
 it("reads braces inside JSON5 strings in fenced replies", () => {

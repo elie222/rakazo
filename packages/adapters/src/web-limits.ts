@@ -6,14 +6,20 @@ export const MIN_WEB_FETCH_MAX_CHARS = 100;
 /** Highest offset web_fetch accepts. A keyless page fits in this many characters. */
 export const MAX_WEB_FETCH_OFFSET = 5 * 1024 * 1024;
 
+function toNumber(value: unknown): number {
+  if (typeof value === "number") return value;
+  if (typeof value === "string" && value.trim() !== "") return Number(value);
+  return Number.NaN;
+}
+
 export function clampMaxResults(value: unknown): number {
-  const n = typeof value === "number" ? value : Number(value);
+  const n = toNumber(value);
   if (!Number.isFinite(n)) return DEFAULT_WEB_SEARCH_MAX_RESULTS;
   return Math.min(MAX_WEB_SEARCH_RESULTS, Math.max(1, Math.floor(n)));
 }
 
 export function clampOffset(value: unknown): number {
-  const n = typeof value === "number" ? value : Number(value);
+  const n = toNumber(value);
   if (!Number.isFinite(n) || n <= 0) return 0;
   const offset = Math.floor(n);
   if (offset > MAX_WEB_FETCH_OFFSET) {
@@ -45,7 +51,7 @@ export function pageWindow(
 }
 
 export function clampMaxChars(value: unknown): number {
-  const n = typeof value === "number" ? value : Number(value);
+  const n = toNumber(value);
   if (!Number.isFinite(n)) return DEFAULT_WEB_FETCH_MAX_CHARS;
   return Math.min(MAX_WEB_FETCH_MAX_CHARS, Math.max(MIN_WEB_FETCH_MAX_CHARS, Math.floor(n)));
 }
