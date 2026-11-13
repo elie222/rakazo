@@ -230,6 +230,70 @@ describe("MCP connector session cache", () => {
     }
   });
 
+  it.each([false, true])(
+    "retries a credential change during connection (repeated: %s)",
+    async (repeated) => {
+      const state = {
+        failNext: false,
+        initializations: 0,
+        headers: [] as Record<string, string>[],
+        calls: [] as string[],
+      };
+      let changed: (ref: string) => void = () => {};
+      let token = "initial";
+      const fetch = mcpFetch(state);
+      vi.stubGlobal("fetch", async (input: string | URL | Request, init?: RequestInit) => {
+        const result = await fetch(input, init);
+        if (state.initializations === 1 || repeated) {
+          token = "rotated";
+          changed("secret-ref");
+        }
+        return result;
+      });
+      const assignment = { ...ASSIGNMENT, server: { ...SERVER, secretId: "secret-1" } };
+      const connector = new McpConnector(
+        {
+          mcpServer: NO_SHARED_SERVERS,
+          botMcpServer: { findMany: async () => [assignment], findFirst: async () => assignment },
+          secret: { findFirst: async () => ({ id: "secret-1", ciphertext: "secret-ref" }) },
+        } as never,
+        {
+          load: async () => JSON.stringify({ headers: { Authorization: `Bearer ${token}` } }),
+          onChange: (listener: typeof changed) => {
+            changed = listener;
+            return () => {};
+          },
+        } as never,
+        { network: TEST_NETWORK },
+      );
+      const context = {
+        operationId: "test",
+        traceId: "test",
+        spaceId: "w1",
+        userId: "u1",
+        botId: "bot-1",
+        signal: new AbortController().signal,
+      };
+      const close = vi.spyOn(McpSession.prototype, "close");
+      try {
+        const tools = await connector.discoverTools(context);
+        expect(state.initializations).toBe(2);
+        expect(state.calls).toEqual([]);
+        if (repeated) {
+          expect(tools).toEqual(unavailableOnly());
+          expect(close).toHaveBeenCalledTimes(2);
+        } else {
+          expect(tools).toMatchObject([{ name: "mcp__demo__echo" }]);
+          expect(close).toHaveBeenCalledTimes(1);
+          expect(state.headers.at(-1)?.authorization).toBe("Bearer rotated");
+        }
+      } finally {
+        await connector.close();
+        close.mockRestore();
+      }
+    },
+  );
+
   it("keeps sessions across unchanged TTL reads and reconnects on observed rotation", async () => {
     vi.useFakeTimers();
     const fake = infisicalFake();

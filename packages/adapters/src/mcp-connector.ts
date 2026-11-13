@@ -90,6 +90,12 @@ type SessionEntry = {
   /** Resolved credential values the child may echo in errors or tool output. */
   launchSecrets?: string[];
 };
+class McpSecretChangedError extends Error {
+  constructor() {
+    super("Secret changed during MCP connection; retry");
+  }
+}
+
 type PendingSession = {
   revision: number;
   promise: Promise<McpSession>;
@@ -924,7 +930,15 @@ export class McpConnector implements ConnectorProvider {
   ): Promise<T> {
     const sessionKey = this.sessionKey(server, context);
     for (let attempt = 0; ; attempt += 1) {
-      const session = await this.sessionFor(server, context);
+      let session: McpSession;
+      try {
+        session = await this.sessionFor(server, context);
+      } catch (error) {
+        // No tool has run yet: reconnect once with the current credentials.
+        context.signal.throwIfAborted();
+        if (attempt !== 0 || !(error instanceof McpSecretChangedError)) throw error;
+        continue;
+      }
       this.inFlight.set(session, (this.inFlight.get(session) ?? 0) + 1);
       // A session in use is never reaped as idle.
       const entry = this.sessions.get(sessionKey);
@@ -1019,7 +1033,7 @@ export class McpConnector implements ConnectorProvider {
       }) => {
         if (this.connecting.get(sessionKey)?.invalidated) {
           await closeEntry({ session, credentialDir });
-          throw new Error("Secret changed during MCP connection; retry");
+          throw new McpSecretChangedError();
         }
         connected = {
           session,
