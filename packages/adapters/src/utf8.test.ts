@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { byteLength, truncateUtf8 } from "./utf8.js";
+import { byteLength, sliceWellFormed, truncateUtf8 } from "./utf8.js";
 
 describe("byteLength", () => {
   it("counts UTF-8 bytes", () => {
@@ -51,5 +51,19 @@ describe("truncateUtf8", () => {
     expect(truncateUtf8("", 10)).toBe("");
     expect(truncateUtf8("\ud800", 2)).toBe("");
     expect(truncateUtf8("\ud800", 3)).toBe("\ud800");
+  });
+});
+
+describe("sliceWellFormed", () => {
+  it.each([
+    ["ab😀cd", 2, "ab"],
+    ["ab😀cd", 3, "ab"],
+    ["ab😀cd", 4, "ab😀"],
+    ["ab😀cd", 10, "ab😀cd"],
+    ["😀", 1, ""],
+    ["a\ud800b", 2, "a\ud800"],
+    ["abc", 0, ""],
+  ])("cuts %j at %i without splitting a surrogate pair", (value, end, expected) => {
+    expect(sliceWellFormed(value, end)).toBe(expected);
   });
 });

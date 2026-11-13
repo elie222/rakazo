@@ -250,7 +250,10 @@ describe("spawned bot archival", () => {
           task: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
           routine: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
           computerExecutionLease: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
-          computer: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
+          computer: {
+            updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+            findMany: vi.fn().mockResolvedValue([]),
+          },
           bot: { update: vi.fn().mockResolvedValue({}) },
         }),
       ),
@@ -304,7 +307,10 @@ describe("destroyBot", () => {
           deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
         },
         computerExecutionLease: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
-        computer: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
+        computer: {
+          updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+          findMany: vi.fn().mockResolvedValue([]),
+        },
         $executeRaw: vi.fn().mockResolvedValue(0),
         botDeletion: { create: vi.fn().mockResolvedValue({}) },
         bot: { delete: vi.fn().mockResolvedValue({}) },
@@ -370,7 +376,7 @@ describe("destroyBot", () => {
           deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
         },
         computerExecutionLease: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
-        computer: { updateMany: releaseComputers },
+        computer: { updateMany: releaseComputers, findMany: vi.fn().mockResolvedValue([]) },
         $executeRaw: executeRaw,
         botDeletion: { create: createDeletion },
         bot: { delete: deleteBot },
@@ -524,7 +530,10 @@ describe("destroyBot", () => {
           deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
         },
         computerExecutionLease: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
-        computer: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
+        computer: {
+          updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+          findMany: vi.fn().mockResolvedValue([]),
+        },
         $executeRaw: vi.fn().mockResolvedValue(1),
         botDeletion: { create: vi.fn().mockResolvedValue({}) },
         bot: { delete: vi.fn().mockResolvedValue({}) },
@@ -881,7 +890,10 @@ describe("destroyBot", () => {
           chatGroupMember: { deleteMany: vi.fn().mockResolvedValue({ count: 1 }) },
           run: { findMany: vi.fn().mockResolvedValue([]) },
           computerExecutionLease: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
-          computer: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
+          computer: {
+            updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+            findMany: vi.fn().mockResolvedValue([]),
+          },
           botDeletion: { create: vi.fn().mockResolvedValue({}) },
           bot: { delete: vi.fn().mockResolvedValue({}) },
         }),
@@ -2285,7 +2297,10 @@ describe("archiveBot", () => {
         secret: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
         routine: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
         computerExecutionLease: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
-        computer: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
+        computer: {
+          updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+          findMany: vi.fn().mockResolvedValue([]),
+        },
         bot: { update: vi.fn().mockResolvedValue({}) },
       };
       const cancel = vi.fn().mockResolvedValue(undefined);
@@ -2359,7 +2374,10 @@ describe("archiveBot", () => {
         secret: { findMany: vi.fn().mockResolvedValue([]), deleteMany: deleteSecrets },
         routine: { updateMany: disableRoutines },
         computerExecutionLease: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
-        computer: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
+        computer: {
+          updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+          findMany: vi.fn().mockResolvedValue([]),
+        },
         bot: { update: updateBot },
       }),
     );
@@ -2436,7 +2454,10 @@ describe("archiveBot", () => {
         task: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
         routine: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
         computerExecutionLease: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
-        computer: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+        computer: {
+          updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+          findMany: vi.fn().mockResolvedValue([]),
+        },
         bot: { update: vi.fn().mockResolvedValue({}) },
       }),
     );
@@ -2504,7 +2525,10 @@ describe("archiveBot", () => {
         task: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
         routine: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
         computerExecutionLease: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
-        computer: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
+        computer: {
+          updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+          findMany: vi.fn().mockResolvedValue([]),
+        },
         bot: { update: vi.fn().mockResolvedValue({}) },
       }),
     );
@@ -2556,7 +2580,11 @@ describe("archiveBot", () => {
     "archives a bot whose dedicated computer is damaged without clearing %s state",
     async (state) => {
       const stop = vi.fn().mockResolvedValue(undefined);
-      const updates = { updateMany: vi.fn().mockResolvedValue({ count: 1 }), update: vi.fn() };
+      const updates = {
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        findMany: vi.fn().mockResolvedValue([]),
+        update: vi.fn(),
+      };
       const computer = { id: "c-1", homeKey: "bot-1", providerRef: "p-1", state };
       const tx = { ...noGroupMemberships(), run: updates, task: updates, routine: updates };
       Object.assign(tx, { computerExecutionLease: updates, computer: updates, bot: updates });
@@ -2617,7 +2645,10 @@ describe("archiveBot", () => {
           task: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
           routine: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
           computerExecutionLease: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
-          computer: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
+          computer: {
+            updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+            findMany: vi.fn().mockResolvedValue([]),
+          },
           bot: { update: vi.fn().mockResolvedValue({}) },
         }),
       );
@@ -2725,7 +2756,10 @@ function deletionPrisma(team: { id: string }) {
         deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
       },
       computerExecutionLease: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
-      computer: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
+      computer: {
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+        findMany: vi.fn().mockResolvedValue([]),
+      },
       botDeletion: { create: vi.fn().mockResolvedValue({}) },
       bot: { delete: vi.fn().mockResolvedValue({}) },
     }),

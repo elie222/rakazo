@@ -1,17 +1,20 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
-import type { ContactFields, VaultKind, VaultRevealed } from "@rakazo/contracts";
-import { commandVariableName } from "@rakazo/contracts";
+import type { ContactFields, VaultKind, VaultPolicy, VaultRevealed } from "@rakazo/contracts";
+import { commandVariableName, decodeLoginSecret, VAULT_ALSO_ON_LIMIT } from "@rakazo/contracts";
+import { vaultAccessControls, vaultLoginSave } from "@rakazo/core";
+import { secretAnswerErrorText, vaultPolicyLabels } from "@rakazo/i18n/vault";
 import type { ReactNode } from "react";
 import { useRef, useState } from "react";
 import type { TextInputInstance, TextInputProps } from "react-native";
 import { Modal, Platform, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { mobileTokens } from "../lib/appearance";
+import type { MobileBot } from "../lib/mobile-types";
 import { useThemedStyles } from "../lib/native";
 import { useSecretSheetClose } from "../lib/secret-sheet-close";
 import { errorText } from "../lib/user-error";
-import type { ApiAuthType, VaultDraft, VaultItem, VaultSave } from "../lib/vault";
+import type { ApiAuthType, VaultBots, VaultDraft, VaultItem, VaultSave } from "../lib/vault";
 import {
   draftSave,
   emptyDraft,
@@ -25,6 +28,9 @@ import type { LoginFieldRow } from "./login-fields-editor";
 import { LoginFieldsEditor } from "./login-fields-editor";
 import { MenuPicker } from "./menu-picker";
 import { NativeActionButton } from "./native-action-button";
+import { NativeSegmentedControl } from "./native-segmented-control";
+import { NativeSymbol } from "./native-symbol";
+import { SettingsRow } from "./settings-group";
 
 type ContactKey = keyof ContactFields;
 
@@ -40,6 +46,8 @@ export function VaultItemEditor({
   ask,
   title,
   contacts = [],
+  bots,
+  botsNote,
   onClose,
   onSave,
 }: {
@@ -54,8 +62,11 @@ export function VaultItemEditor({
   /** Saved contacts a card can be billed to. */
   contacts?: readonly { key: string; label: string }[];
   onClose: () => void;
-  /** Rejects when nothing was saved. */
-  onSave: (save: VaultSave) => Promise<void>;
+  /** The owner's bots in this Space; left out when the server can't limit an item to some. */
+  bots?: readonly MobileBot[];
+  /** Said under the bots when only some may use it, or when this Space's can't be chosen. */
+  botsNote?: string;
+  onSave: (save: VaultSave, policy?: VaultPolicy, access?: VaultBots) => Promise<void>;
 }) {
   const { t } = useLingui();
   const styles = useThemedStyles(createStyles);
@@ -75,8 +86,39 @@ export function VaultItemEditor({
   });
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const savedPolicy = item?.policy ?? "allow";
+  const [policy, setPolicy] = useState<VaultPolicy>(savedPolicy);
+  const policyLabels = vaultPolicyLabels();
+  const savedAccess = { allBots: item?.allBots ?? true, botIds: item?.botIds ?? [] };
+  const [access, setAccess] = useState<VaultBots>(savedAccess);
+  const accessChanged =
+    access.allBots !== savedAccess.allBots || access.botIds.join() !== savedAccess.botIds.join();
+  // The same rules as the web's editor; a request saves under the bot's name and sets nothing.
+  const controls = ask
+    ? { policies: [], picker: false, note: undefined }
+    : vaultAccessControls({
+        kind,
+        policy,
+        access: bots ? access : undefined,
+        bots: bots ?? [],
+        note: botsNote,
+      });
+  const toggleBot = (id: string) =>
+    setAccess((prev) => ({
+      ...prev,
+      botIds: prev.botIds.includes(id)
+        ? prev.botIds.filter((botId) => botId !== id)
+        : [...prev.botIds, id],
+    }));
+  const savedAlsoOn = item?.alsoOn?.join(", ") ?? "";
+  const [alsoOn, setAlsoOn] = useState(savedAlsoOn);
+  const savedOtp = revealed && "fields" in revealed ? (revealed.otp ?? "") : "";
+  const [otp, setOtp] = useState(savedOtp);
+  const [otpShown, setOtpShown] = useState(Boolean(otp));
+  const [alsoOnShown, setAlsoOnShown] = useState(Boolean(savedAlsoOn));
   const update = (change: Partial<VaultDraft>) => setDraft((prev) => ({ ...prev, ...change }));
-  const clear = () =>
+  const clear = () => {
+    setOtp("");
     setDraft((prev) => ({
       ...prev,
       value: "",
@@ -84,8 +126,27 @@ export function VaultItemEditor({
       cvc: "",
       fields: prev.fields.map((field) => ({ ...field, value: field.hidden ? "" : field.value })),
     }));
+  };
   const { close, closing, endEditing } = useSecretSheetClose(inputs, clear, onClose);
-  const save = draftSave(kind, draft, item);
+  const draftChange = draftSave(kind, draft, item);
+  const login = kind === "login" && !ask;
+  // The same rules as the web's editor; a chat card's answer is saved as typed.
+  const loginSave = login
+    ? vaultLoginSave({
+        fields: draftChange?.value ? decodeLoginSecret(draftChange.value).fields : undefined,
+        otp,
+        savedOtp,
+        alsoOn,
+        savedAlsoOn,
+        asking: false,
+      })
+    : undefined;
+  const keyUnreadable = loginSave?.keyUnreadable ?? false;
+  const typedSites = loginSave?.sites ?? [];
+  const save: VaultSave | undefined =
+    !loginSave || !draftChange
+      ? draftChange
+      : loginSave.save && { ...draftChange, ...loginSave.save };
   const editable = !submitting && !closing;
   // A save in flight keeps the sheet open, so its failure is still shown here.
   const cancel = () => {
@@ -94,14 +155,25 @@ export function VaultItemEditor({
 
   async function submit() {
     if (submitting || !save) return;
+    const typedKey = otp;
     clear();
     setSubmitting(true);
     setError(null);
     try {
-      await onSave(save);
+      await onSave(
+        save,
+        policy !== savedPolicy ? policy : undefined,
+        bots && accessChanged ? access : undefined,
+      );
       close();
     } catch (err) {
-      setError(ask ? t`Could not send answer` : errorText(err, t`Could not save`));
+      // Kept, so saving again after fixing the password doesn't remove the key.
+      setOtp(typedKey);
+      setError(
+        ask
+          ? secretAnswerErrorText(err, t`Could not send answer`)
+          : errorText(err, t`Could not save`),
+      );
     } finally {
       setSubmitting(false);
     }
@@ -228,6 +300,54 @@ export function VaultItemEditor({
                 onEndEditing={endEditing}
                 onSubmit={() => void submit()}
               />
+              {ask || !(otpShown || alsoOnShown) ? null : (
+                <View style={styles.group}>
+                  {otpShown
+                    ? field(t`Authenticator key`, otp, setOtp, {
+                        // After the login's fields, so closing the sheet empties it with them.
+                        slot: draft.fields.length,
+                        secureTextEntry: true,
+                        autoCapitalize: "none",
+                        autoComplete: "off",
+                        textContentType: "none",
+                      })
+                    : null}
+                  {otpShown && alsoOnShown ? <View style={styles.separator} /> : null}
+                  {alsoOnShown
+                    ? field(t`Also on`, alsoOn, setAlsoOn, {
+                        placeholder: "https://login.example.com",
+                        keyboardType: "url",
+                        autoCapitalize: "none",
+                      })
+                    : null}
+                </View>
+              )}
+              {keyUnreadable ? (
+                <Text style={styles.error}>{t`This authenticator key can't be read.`}</Text>
+              ) : null}
+              {login && typedSites === "invalid" ? (
+                <Text
+                  style={styles.error}
+                >{t`Enter each site as an HTTPS address a login can be saved for.`}</Text>
+              ) : login && typedSites === "too_many" ? (
+                <Text style={styles.error}>
+                  {t`Up to ${ph({ limit: VAULT_ALSO_ON_LIMIT })} sites.`}
+                </Text>
+              ) : null}
+              {ask || otpShown ? null : (
+                <NativeActionButton
+                  label={t`Add an authenticator key`}
+                  onPress={() => setOtpShown(true)}
+                  prominence="plain"
+                />
+              )}
+              {ask || alsoOnShown ? null : (
+                <NativeActionButton
+                  label={t`Add other sites`}
+                  onPress={() => setAlsoOnShown(true)}
+                  prominence="plain"
+                />
+              )}
             </>
           ) : null}
 
@@ -415,6 +535,60 @@ export function VaultItemEditor({
               })}
             </View>
           )}
+          {controls.policies.length || controls.picker || controls.note ? (
+            <View style={styles.group}>
+              {controls.policies.length ? (
+                <View style={styles.row}>
+                  <Text style={styles.label}>{t`Bots`}</Text>
+                  <NativeSegmentedControl
+                    accessibilityLabel={t`Bots`}
+                    disabled={!editable}
+                    value={policy}
+                    onChange={setPolicy}
+                    options={controls.policies.map((option) => ({
+                      value: option,
+                      label: policyLabels[option],
+                    }))}
+                  />
+                </View>
+              ) : null}
+              {controls.picker ? (
+                <View style={styles.row}>
+                  {controls.policies.length ? null : <Text style={styles.label}>{t`Bots`}</Text>}
+                  <NativeSegmentedControl
+                    accessibilityLabel={t`Bots`}
+                    disabled={!editable}
+                    value={access.allBots ? "all" : "chosen"}
+                    onChange={(value) =>
+                      setAccess((prev) => ({ ...prev, allBots: value === "all" }))
+                    }
+                    options={[
+                      { value: "all", label: t`All bots` },
+                      { value: "chosen", label: t`Chosen bots` },
+                    ]}
+                  />
+                </View>
+              ) : null}
+              {controls.picker && !access.allBots
+                ? (bots ?? []).map((bot) => (
+                    <SettingsRow
+                      key={bot.id}
+                      title={bot.name}
+                      accessibilityRole="checkbox"
+                      accessibilityState={{ checked: access.botIds.includes(bot.id) }}
+                      disabled={!editable}
+                      onPress={() => toggleBot(bot.id)}
+                      trailing={
+                        access.botIds.includes(bot.id) ? (
+                          <NativeSymbol ios="checkmark" android="checkmark" size={16} />
+                        ) : null
+                      }
+                    />
+                  ))
+                : null}
+              {controls.note ? <Text style={styles.label}>{controls.note}</Text> : null}
+            </View>
+          ) : null}
           {error ? (
             <Text accessibilityRole="alert" style={styles.error}>
               {error}

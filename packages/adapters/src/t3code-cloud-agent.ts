@@ -166,10 +166,10 @@ export class T3CodeCloudAgentProvider implements CloudAgentProvider {
   }
 
   async get(id: string, context: AdapterContext, runId?: string): Promise<CloudAgentSnapshot> {
-    const first = await this.inspect(id, context.signal, runId);
+    const first = await this.statusRead(id, context.signal, runId);
     if (!first.held) return first.snapshot;
     // Read again, so a moment between two runs is not taken for a hold.
-    const { snapshot, held } = await this.inspect(id, context.signal, runId);
+    const { snapshot, held } = await this.statusRead(id, context.signal, runId);
     if (!held || snapshot.latestRunId !== first.snapshot.latestRunId) return snapshot;
     // A hold lasts until something in T3 Code releases it, so the agent ends here, and its run
     // leaves the queue so it cannot start later unobserved. A run that started meanwhile is read
@@ -183,7 +183,9 @@ export class T3CodeCloudAgentProvider implements CloudAgentProvider {
       if (error instanceof CloudAgentRequestRejected && error.reason === "invalid") return true;
       throw error;
     });
-    return dropped ? { ...snapshot, status: "failed" } : this.read(id, context.signal, runId);
+    return dropped
+      ? { ...snapshot, status: "failed" }
+      : (await this.statusRead(id, context.signal, runId)).snapshot;
   }
 
   async reply(
@@ -214,26 +216,38 @@ export class T3CodeCloudAgentProvider implements CloudAgentProvider {
   async cancel(id: string, context: AdapterContext, runId?: string): Promise<CloudAgentSnapshot> {
     // Without a run id the newest run is the target: the poll worker omits it only while a
     // follow-up it sent may not have been recorded yet, and once recorded that run is the newest.
-    const { snapshot, queued } = await this.inspect(id, context.signal, runId);
+    const { snapshot, queued } = await this.statusRead(id, context.signal, runId);
     if (snapshot.status !== "running") return snapshot;
     const target = snapshot.latestRunId;
     // Only the tracked run is stopped, which after a finished run is the newer run the card
     // followed: a thread-wide Stop would also hold every queued message and end other work. A
     // queued run that started meanwhile is refused by the queue; the read still shows it
-    // running, so the caller's next cancel interrupts it.
-    if (queued)
-      await this.call(
-        "t3_queue",
-        { action: "cancel", threadId: id, queuedRunId: target },
-        context.signal,
-        notQueued,
-      );
-    else await this.call("t3_thread_interrupt", { threadId: id, runId: target }, context.signal);
+    // running, so the caller's next cancel interrupts it. A stop T3 Code refuses, as on a
+    // thread above this connection's access, is asked again while the run lasts; the read below
+    // still ends a run T3 Code holds.
+    await (queued
+      ? this.call(
+          "t3_queue",
+          { action: "cancel", threadId: id, queuedRunId: target },
+          context.signal,
+          notQueued,
+        )
+      : this.call("t3_thread_interrupt", { threadId: id, runId: target }, context.signal)
+    ).catch(refused);
     return this.get(id, context, target);
   }
 
   private async read(id: string, signal: AbortSignal, runId?: string) {
     return (await this.inspect(id, signal, runId)).snapshot;
+  }
+
+  /** A status read T3 Code refuses is refused on every poll, so the agent ends as if it were gone. */
+  private statusRead(id: string, signal: AbortSignal, runId?: string) {
+    return this.inspect(id, signal, runId).catch((error: unknown) => {
+      throw error instanceof CloudAgentRequestRejected && error.reason === "invalid"
+        ? new CloudAgentRequestRejected("not_found")
+        : error;
+    });
   }
 
   private async inspect(id: string, signal: AbortSignal, runId?: string) {
@@ -392,6 +406,11 @@ function failureOf(content: unknown): Failure | undefined {
   } catch {
     return undefined;
   }
+}
+
+/** Lets the caller read what happened after a request T3 Code refused before running it. */
+function refused(error: unknown) {
+  if (!(error instanceof CloudAgentRequestRejected) || error.reason !== "invalid") throw error;
 }
 
 /** A queue change refused because the run is no longer queued. */

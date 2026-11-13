@@ -67,6 +67,16 @@ describe("sitesInText", () => {
     ).toEqual(["203.0.113.7", "example.com", "example.org"]);
   });
 
+  it.each([
+    "visit **https://example.com**",
+    "visit *https://example.com*",
+    "visit ~~https://example.com~~",
+    "visit **https://example.com/docs**",
+    "visit **https://example.com**.",
+  ])("names the site in a link wrapped in emphasis: %s", (text) => {
+    expect([...sitesInText(text)]).toEqual(["example.com"]);
+  });
+
   it("trusts only a link's host, not domains in its path or query", () => {
     expect([
       ...sitesInText("Summarize https://forum.example.org/topic/attacker.com?next=evil.net"),
