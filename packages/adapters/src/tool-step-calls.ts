@@ -1,6 +1,6 @@
-import type { AgentToolCompletion } from "@rakazo/adapter-kit";
+import type { AgentRunRequest, AgentToolCompletion } from "@rakazo/adapter-kit";
 import type { ToolStepCall } from "@rakazo/core";
-import { redactSecrets } from "@rakazo/core";
+import { redactSecrets, toolResultTaintsRun } from "@rakazo/core";
 import { redactToolArgsForReview } from "./auto-review.js";
 import { sanitizeConnectorError } from "./connector-safety.js";
 import { sanitizeSensitiveText } from "./pi-runtime-errors.js";
@@ -107,4 +107,24 @@ export function keepToolStepResult(
   if (result === undefined) return;
   reply.keptResultChars += result.length;
   reply.toolStepCalls.set(completion.executionId, { ...call, result });
+}
+
+/**
+ * Whether replayed history hands the model a kept result (or screenshot) from a tool that reads
+ * outside content. Such text could carry injected instructions, so the run starts as one that has
+ * read outside content, as if the call had just run.
+ */
+export function historyReplaysOutsideContent(history: AgentRunRequest["history"]): boolean {
+  return history.some((entry) =>
+    entry.segments?.some(
+      (segment) =>
+        "steps" in segment &&
+        segment.steps.some(
+          (step) =>
+            step.tool !== undefined &&
+            toolResultTaintsRun(step.tool) &&
+            step.calls?.some((call) => call.result !== undefined || call.image !== undefined),
+        ),
+    ),
+  );
 }

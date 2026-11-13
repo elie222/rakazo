@@ -5,6 +5,7 @@ import { redactBlocks } from "./run-messages.js";
 import { withReplyToolOutcomes } from "./run-progress.js";
 import { toolCompletionOutcome } from "./tool-completion-audit.js";
 import {
+  historyReplaysOutsideContent,
   keepToolStepResult,
   keptToolArguments,
   keptToolResult,
@@ -193,5 +194,30 @@ describe("tool step outcomes", () => {
     expect(kept.slice(0, 3).every((length) => length >= TOOL_CALL_TEXT_MAX_CHARS)).toBe(true);
     expect(kept.at(-1)).toBeLessThan(400);
     expect(reply.keptResultChars).toBeLessThanOrEqual(TOOL_REPLY_RESULTS_MAX_CHARS + 1_000);
+  });
+
+  it("starts a run as having read outside content when history replays a kept outside result", () => {
+    const reply = (tool: string, call: Record<string, unknown>) => [
+      {
+        role: "assistant" as const,
+        content: "Done.",
+        segments: [{ steps: [{ label: "Step", count: 1, tool, calls: [call] }] }],
+      },
+    ];
+    // A fetched page's text could carry injected instructions into the later turn.
+    expect(
+      historyReplaysOutsideContent(reply("web_fetch", { arguments: "{}", result: "<page text>" })),
+    ).toBe(true);
+    expect(
+      historyReplaysOutsideContent(
+        reply("computer_observe", { arguments: "{}", image: { artifactId: "a" } }),
+      ),
+    ).toBe(true);
+    // The bot's own state, or a call with nothing kept, adds no outside text.
+    expect(
+      historyReplaysOutsideContent(reply("schedule_list", { arguments: "{}", result: "[]" })),
+    ).toBe(false);
+    expect(historyReplaysOutsideContent(reply("web_fetch", { arguments: "{}" }))).toBe(false);
+    expect(historyReplaysOutsideContent([{ role: "user", content: "Hi" }])).toBe(false);
   });
 });
