@@ -288,6 +288,7 @@ These work on your own deployment and are not yet on Rakazo Cloud. Each turns on
 - **Image and video generation.** \`MEDIA_GENERATION_PROVIDER=fal\`, \`MEDIA_GENERATION_API_KEY\`, and an image or video model (\`MEDIA_GENERATION_IMAGE_MODEL\`, \`MEDIA_GENERATION_VIDEO_MODEL\`).
 - **Purchases with Stripe Link.** \`PAYMENT_WALLET_PROVIDER=link\`. Each purchase waits for your approval in Link.
 - **Cursor cloud agents.** \`CLOUD_AGENT_PROVIDER=cursor\`, \`CURSOR_API_KEY\`, and \`CLOUD_AGENT_SPACE_ID\`.
+- **Ticket board.** \`TICKET_BOARD_ENABLED=true\`.
 - **Local models and local MCP servers.** \`RAKAZO_LOCAL_MODELS\`, and \`MCP_STDIO_ENABLED\` with \`MCP_STDIO_ALLOWED_COMMANDS\`.
 
 The [full guide](${DOCS_URL}) lists every setting for each one.

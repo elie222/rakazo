@@ -84,6 +84,7 @@ function SettingsFixture() {
         timezone="UTC"
         onTimezoneChange={async () => {}}
         labs={[]}
+        labsAvailable={[]}
         onLabsChange={async () => {}}
         onClose={() => {}}
         section="general"

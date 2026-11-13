@@ -211,6 +211,7 @@ export function SettingsOverlays({
             void refreshSpaces().catch(() => undefined);
           }}
           labs={parseLabs(bootstrapMe?.labs)}
+          labsAvailable={parseLabs(bootstrapMe?.labsAvailable)}
           onLabsChange={async (labs) => {
             const previous = parseLabs(bootstrapMe?.labs);
             const apply = (next: LabFeature[]) => {

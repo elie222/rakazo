@@ -1,6 +1,6 @@
 import { useLingui } from "@lingui/react/macro";
 import type { LabFeature } from "@rakazo/contracts";
-import { LAB_FEATURES, withLab } from "@rakazo/contracts";
+import { withLab } from "@rakazo/contracts";
 import { useFocusEffect } from "expo-router";
 import { useCallback, useRef, useState } from "react";
 import { Alert, ScrollView } from "react-native";
@@ -19,15 +19,20 @@ export default function Labs() {
   const styles = useThemedStyles(createSettingsPageStyles);
   const stacked = useStackedSettings();
   const [labs, setLabs] = useState<MobileMe["labs"] | null>(null);
+  const [available, setAvailable] = useState<MobileMe["labsAvailable"]>([]);
   const saveRequest = useRef(0);
-  const labels: Record<LabFeature, string> = { board: t`Board` };
+  const copy: Record<LabFeature, { title: string; detail: string }> = {
+    board: { title: t`Board`, detail: t`A kanban board of tickets your bots can work on` },
+  };
 
   useFocusEffect(
     useCallback(() => {
       let active = true;
       void rpc("me")
         .then((me) => {
-          if (active) setLabs(me.labs);
+          if (!active) return;
+          setLabs(me.labs);
+          setAvailable(me.labsAvailable);
         })
         .catch(() => undefined);
       return () => {
@@ -63,10 +68,11 @@ export default function Labs() {
       >
         {labs ? (
           <SettingsGroup>
-            {LAB_FEATURES.map((feature) => (
+            {available.map((feature) => (
               <SettingsSwitch
                 key={feature}
-                label={labels[feature]}
+                label={copy[feature].title}
+                detail={copy[feature].detail}
                 value={labs.includes(feature)}
                 onChange={(enabled) => toggle(feature, enabled)}
               />

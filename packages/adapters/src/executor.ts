@@ -1,7 +1,7 @@
 import type { AgentRunRequest, ComputerRef, SemanticMemoryProvider } from "@rakazo/adapter-kit";
 import { DEFAULT_CONTEXT_STRATEGY, runContinueJob } from "@rakazo/adapter-kit";
 import type { MessageBlock, RunStatus } from "@rakazo/contracts";
-import { disabledBuiltinToolSet, hasLab } from "@rakazo/contracts";
+import { disabledBuiltinToolSet, hasLab, resolveLabs } from "@rakazo/contracts";
 import {
   BACKGROUND_HELPER_TRIGGER,
   botMessageAllowsSilence,
@@ -649,7 +649,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           fromUser: messages.find((message) => message.id === run.sourceMessageId)?.role === "user",
           nonOwnerChat: nonOwnerChatRun,
         });
-        const ticketBoardEnabled = hasLab(ownerLabs, "board");
+        const ticketBoardEnabled = hasLab(resolveLabs(ownerLabs, deps.deploymentLabs), "board");
         const historySearchBeforeSeq =
           contextStrategy !== "current" && run.sourceMessageId
             ? (messages.find((message) => message.id === run.sourceMessageId)?.seq ??

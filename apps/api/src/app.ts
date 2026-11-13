@@ -366,6 +366,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     boardEvents,
     jobs,
     prisma,
+    deploymentLabs: env.deploymentLabs,
   });
   const hostComputer = sandboxProviderOptionsFromEnv();
   const sandbox: SandboxProvider =
@@ -786,6 +787,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     },
     env: {
       inboundEmailDomain: env.inboundEmail?.domain,
+      deploymentLabs: env.deploymentLabs,
       phoneCallsEnabled: env.phoneCallsEnabled,
       phoneCallRingSeconds: env.phoneCallRingSeconds,
       navLinks: env.navLinks,

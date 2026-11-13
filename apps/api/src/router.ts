@@ -35,7 +35,7 @@ import type {
   WorkActivities,
 } from "@rakazo/adapters";
 import type { Auth } from "@rakazo/auth";
-import type { ModelCredential, NavLink } from "@rakazo/contracts";
+import type { LabFeature, ModelCredential, NavLink } from "@rakazo/contracts";
 import type { BoardEvents, PrismaClient, ThreadEvents } from "@rakazo/db";
 import type { BillingService } from "./billing.js";
 import { accountRoutes } from "./routes/account.js";
@@ -137,6 +137,8 @@ export interface RouterDeps {
     inboundEmailDomain?: string;
     navLinks?: NavLink[];
     adminEmails?: string[];
+    /** Labs features this deployment turns on for every account. */
+    deploymentLabs?: LabFeature[];
     phoneCallsEnabled?: boolean;
     phoneCallRingSeconds?: number;
     maxUploadSizeBytes?: number;

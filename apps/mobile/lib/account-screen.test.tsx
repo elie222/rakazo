@@ -396,7 +396,13 @@ let container: HTMLDivElement | undefined;
 
 beforeEach(() => {
   vi.clearAllMocks();
-  account.me = { userId: "user-1", name: "Tester", email: "tester@example.test" };
+  account.me = {
+    userId: "user-1",
+    name: "Tester",
+    email: "tester@example.test",
+    labs: [],
+    labsAvailable: ["board"],
+  };
   account.rules = [];
   account.messaging = { enabled: true };
   account.plans = [];
@@ -893,6 +899,14 @@ it("shows the Board shortcut only to accounts that turned it on in Labs", async 
 
   account.me = { ...account.me, labs: ["board"] };
   expect(titles(await renderAccount())).toContain("Board");
+});
+
+it("hides Labs when the server turns every feature on for everyone", async () => {
+  account.me = { ...account.me, labs: ["board"], labsAvailable: [] };
+  const view = await renderAccount();
+  const titles = Array.from(view.screen.querySelectorAll("[data-row]"), (row) => row.textContent);
+  expect(titles).not.toContain("Labs");
+  expect(titles).toContain("Board");
 });
 
 it("saves a Labs switch at once and turns it back off when the save fails", async () => {

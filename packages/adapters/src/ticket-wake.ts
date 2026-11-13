@@ -1,12 +1,18 @@
 import type { JobPublisher } from "@rakazo/adapter-kit";
 import { runContinueJob } from "@rakazo/adapter-kit";
-import { hasLab, isTicketCompletedStatus, TicketStatusSchema } from "@rakazo/contracts";
+import type { LabFeature } from "@rakazo/contracts";
+import {
+  hasLab,
+  isTicketCompletedStatus,
+  resolveLabs,
+  TicketStatusSchema,
+} from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 
 /** Assignment wakes only its current owner, without posting a chat message. */
 export async function wakeTicketAssignee(
-  deps: { prisma: PrismaClient; jobs: JobPublisher },
+  deps: { prisma: PrismaClient; jobs: JobPublisher; deploymentLabs?: readonly LabFeature[] },
   input: { spaceId: string; ticketId: string; botId: string },
 ): Promise<void> {
   const run = await deps.prisma.$transaction(async (tx) => {
@@ -23,7 +29,7 @@ export async function wakeTicketAssignee(
     });
     if (!bot?.thread) return null;
     const owner = await tx.user.findUnique({ where: { id: bot.userId }, select: { labs: true } });
-    if (!hasLab(owner?.labs, "board")) return null;
+    if (!hasLab(resolveLabs(owner?.labs, deps.deploymentLabs), "board")) return null;
     const task = await tx.task.create({
       data: {
         spaceId: input.spaceId,

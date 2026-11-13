@@ -1,6 +1,7 @@
 import { phoneCallSettings, resolveEncryptionKey, uploadSizeFromEnv } from "@rakazo/core";
 import { describe, expect, it } from "vitest";
 import { resolveDeploymentModel } from "./deployment-model.js";
+import { deploymentLabsFromEnv } from "./labs-env.js";
 import { mcpStdioOptionsFromEnv } from "./mcp-connector.js";
 import { runRuntimeEnvFromProcess } from "./run-runtime.js";
 
@@ -30,6 +31,7 @@ function previousWorkerValues(source: NodeJS.ProcessEnv) {
     pipedreamClientSecret: source.PIPEDREAM_CLIENT_SECRET,
     pipedreamProjectId: source.PIPEDREAM_PROJECT_ID,
     pipedreamEnvironment: source.PIPEDREAM_ENVIRONMENT,
+    deploymentLabs: deploymentLabsFromEnv(source),
     ...phoneCallSettings(source),
     maxUploadSizeBytes: uploadSizeFromEnv(source),
     inboundEmailDomain: source.INBOUND_EMAIL_DOMAIN?.trim().toLowerCase() || undefined,
@@ -55,6 +57,7 @@ describe("runRuntimeEnvFromProcess", () => {
       PIPEDREAM_CLIENT_SECRET: "secret",
       PIPEDREAM_PROJECT_ID: "project",
       PIPEDREAM_ENVIRONMENT: "production",
+      TICKET_BOARD_ENABLED: "true",
       PHONE_CALLS_ENABLED: "true",
       PHONE_CALL_RING_SECONDS: "30",
       MAX_UPLOAD_SIZE_MB: "20",

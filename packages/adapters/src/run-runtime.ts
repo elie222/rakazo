@@ -6,6 +6,7 @@ import type {
   MessagingSurface,
   SecretStore,
 } from "@rakazo/adapter-kit";
+import type { LabFeature } from "@rakazo/contracts";
 import { phoneCallSettings, resolveEncryptionKey, uploadSizeFromEnv } from "@rakazo/core";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { createSecurityEventPruner, securityEventRetentionDays } from "@rakazo/db";
@@ -25,6 +26,7 @@ import type { RemoteConnectorDependencies } from "./installed-connectors.js";
 import { InstalledConnectorProvider } from "./installed-connectors.js";
 import { IntegrationProviderSettings } from "./integration-provider-settings.js";
 import { createJobReconciler } from "./job-reconciler.js";
+import { deploymentLabsFromEnv } from "./labs-env.js";
 import { McpConnector, mcpStdioOptionsFromEnv } from "./mcp-connector.js";
 import { McpOAuthBroker } from "./mcp-oauth.js";
 import { reconcileMediaVideos } from "./media-video-poll.js";
@@ -64,6 +66,7 @@ export interface RunRuntimeEnv extends PipedreamEnvironmentValues {
   mcpStdioAllowedCommands: string[];
   mcpStdio: ReturnType<typeof mcpStdioOptionsFromEnv>;
   mcpAllowPrivateEndpoint: boolean;
+  deploymentLabs: LabFeature[];
   phoneCallsEnabled: boolean;
   phoneCallRingSeconds: number;
   phoneCallCooldownMinutes: number;
@@ -98,6 +101,7 @@ export function runRuntimeEnvFromProcess(source: NodeJS.ProcessEnv): RunRuntimeE
     pipedreamClientSecret: source.PIPEDREAM_CLIENT_SECRET,
     pipedreamProjectId: source.PIPEDREAM_PROJECT_ID,
     pipedreamEnvironment: source.PIPEDREAM_ENVIRONMENT,
+    deploymentLabs: deploymentLabsFromEnv(source),
     ...phoneCallSettings(source),
     maxUploadSizeBytes: uploadSizeFromEnv(source),
     inboundEmailDomain: source.INBOUND_EMAIL_DOMAIN?.trim().toLowerCase() || undefined,
@@ -181,6 +185,7 @@ type SetByRunRuntime =
   | "deploymentModelKey"
   | "deploymentModelConfigured"
   | "dataDir"
+  | "deploymentLabs"
   | "phoneCallsEnabled"
   | "phoneCallRingSeconds"
   | "phoneCallCooldownMinutes"
@@ -253,6 +258,7 @@ export function createRunRuntime(
     deploymentModelKey: env.deploymentModelKey,
     deploymentModelConfigured: env.deploymentModelConfigured,
     dataDir: env.dataDir,
+    deploymentLabs: env.deploymentLabs,
     phoneCallsEnabled: env.phoneCallsEnabled,
     phoneCallRingSeconds: env.phoneCallRingSeconds,
     phoneCallCooldownMinutes: env.phoneCallCooldownMinutes,

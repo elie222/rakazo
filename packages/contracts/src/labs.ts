@@ -10,6 +10,14 @@ export function parseLabs(stored: readonly string[] | null | undefined): LabFeat
   return LAB_FEATURES.filter((feature) => stored?.includes(feature));
 }
 
+/** The account's own choices plus the features its deployment turns on for everyone. */
+export function resolveLabs(
+  stored: readonly string[] | null | undefined,
+  deployment: readonly LabFeature[] = [],
+): LabFeature[] {
+  return LAB_FEATURES.filter((feature) => deployment.includes(feature) || hasLab(stored, feature));
+}
+
 export function hasLab(stored: readonly string[] | null | undefined, feature: LabFeature) {
   return Boolean(stored?.includes(feature));
 }

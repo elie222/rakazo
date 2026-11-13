@@ -874,6 +874,7 @@ function SpaceShell() {
         computersAreUnavailable(bootstrapMe?.sandboxProvider),
       billing: bootstrapMe?.billingEnabled === true,
       updates: Boolean(desktopBridge()?.update),
+      labs: Boolean(bootstrapMe?.labsAvailable.length),
     },
     onNewBot: () => dialogs.setCreateBotOpen(true),
     onNewGroup: () => setPanel("create-group"),

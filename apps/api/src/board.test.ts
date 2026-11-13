@@ -83,7 +83,31 @@ it("refuses a signed-out caller before querying the board", async () => {
   expect(findUnique).not.toHaveBeenCalled();
 });
 
-function meDeps(labs: string[]) {
+it("serves the board to every account without reading labs when the deployment turns it on", async () => {
+  const userLookup = vi.fn();
+  const prisma = {
+    user: { findUnique: userLookup },
+    board: {
+      findUnique: vi.fn(async () => ({
+        id: "board-1",
+        spaceId: actor.spaceId,
+        name: "Board",
+        ticketPrefix: "RAK",
+        nextNumber: 1,
+        createdAt: new Date(0),
+        updatedAt: new Date(0),
+      })),
+    },
+  };
+  const client = createRouterClient(
+    createRouter({ prisma, env: { deploymentLabs: ["board"] } } as unknown as RouterDeps),
+    { context: { actor } },
+  );
+  await expect(client.boards.get()).resolves.toBeDefined();
+  expect(userLookup).not.toHaveBeenCalled();
+});
+
+function meDeps(labs: string[], deploymentLabs: string[] = []) {
   let saved = labs;
   const update = vi.fn(async ({ data }: { data: { labs?: string[] } }) => {
     if (data.labs) saved = data.labs;
@@ -107,7 +131,12 @@ function meDeps(labs: string[]) {
   };
   const deps = {
     prisma,
-    env: { defaultProvider: "fake", defaultModel: "fake-model", sandboxProvider: "fake" },
+    env: {
+      defaultProvider: "fake",
+      defaultModel: "fake-model",
+      sandboxProvider: "fake",
+      deploymentLabs,
+    },
   } as unknown as RouterDeps;
   return { client: createRouterClient(createRouter(deps), { context: { actor } }), update };
 }
@@ -118,7 +147,20 @@ it.each([
   [["retired", "board"], ["board"], true],
 ])("reports the account's labs in me (%j)", async (stored, labs, ticketBoardEnabled) => {
   const { client } = meDeps(stored);
-  await expect(client.me()).resolves.toMatchObject({ labs, ticketBoardEnabled });
+  await expect(client.me()).resolves.toMatchObject({
+    labs,
+    labsAvailable: ["board"],
+    ticketBoardEnabled,
+  });
+});
+
+it("reports a feature the deployment turns on as on and not switchable", async () => {
+  const { client } = meDeps([], ["board"]);
+  await expect(client.me()).resolves.toMatchObject({
+    labs: ["board"],
+    labsAvailable: [],
+    ticketBoardEnabled: true,
+  });
 });
 
 it("saves the account's labs once each and reports them back", async () => {

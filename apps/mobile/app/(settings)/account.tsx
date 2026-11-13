@@ -348,11 +348,15 @@ export default function Account() {
                   } as const,
                 ]
               : []),
-            {
-              title: t`Labs`,
-              href: "/labs",
-              icon: { ios: "flask", android: "flask-outline" },
-            } as const,
+            ...(me?.labsAvailable.length
+              ? [
+                  {
+                    title: t`Labs`,
+                    href: "/labs",
+                    icon: { ios: "flask", android: "flask-outline" },
+                  } as const,
+                ]
+              : []),
           ].map(settingsLink)}
         </SettingsGroup>
 

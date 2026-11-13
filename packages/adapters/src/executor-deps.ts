@@ -18,6 +18,7 @@ import type {
   TransactionalEmailProvider,
   WebProvider,
 } from "@rakazo/adapter-kit";
+import type { LabFeature } from "@rakazo/contracts";
 import type { PrismaClient, RunLease, ThreadEvents } from "@rakazo/db";
 import type { CloudAgentConnection, UserCloudAgents } from "./cloud-agent-factory.js";
 import type { MemoryProviderResolver } from "./memory-provider-factory.js";
@@ -56,6 +57,8 @@ export interface ExecutorDeps {
   jobs: JobPublisher;
   /** Publishes board-change signals and wakes ticket owners; absent disables both. */
   onTicketChange?: TicketChangeNotifier;
+  /** Labs features this deployment turns on for every account. */
+  deploymentLabs?: readonly LabFeature[];
   phoneCallsEnabled?: boolean;
   /** The domain bot email addresses are on; absent when this server receives no email. */
   inboundEmailDomain?: string;

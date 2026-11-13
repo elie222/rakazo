@@ -1,15 +1,17 @@
 import { useLingui } from "@lingui/react/macro";
 import type { LabFeature } from "@rakazo/contracts";
-import { LAB_FEATURES, withLab } from "@rakazo/contracts";
+import { withLab } from "@rakazo/contracts";
 import { Label, Switch } from "@rakazo/ui-web";
 import { useId, useState } from "react";
 import { SettingsGroup, SettingsRow } from "../components/SettingsRows";
 
 export function LabsSettingsPanel({
   labs,
+  available,
   onLabsChange,
 }: {
   labs: readonly LabFeature[];
+  available: readonly LabFeature[];
   /** Saves the whole list; rejects after rolling back. */
   onLabsChange: (labs: LabFeature[]) => Promise<void>;
 }) {
@@ -17,7 +19,9 @@ export function LabsSettingsPanel({
   const id = useId();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const labels: Record<LabFeature, string> = { board: t`Board` };
+  const copy: Record<LabFeature, { title: string; description: string }> = {
+    board: { title: t`Board`, description: t`A kanban board of tickets your bots can work on` },
+  };
 
   async function toggle(feature: LabFeature, enabled: boolean) {
     setPending(true);
@@ -34,17 +38,29 @@ export function LabsSettingsPanel({
   return (
     <div className="space-y-2">
       <SettingsGroup data-testid="settings-labs">
-        {LAB_FEATURES.map((feature) => (
+        {available.map((feature) => (
           <SettingsRow
             key={feature}
             label={
-              <Label htmlFor={`${id}-${feature}`} className="text-body font-normal text-foreground">
-                {labels[feature]}
-              </Label>
+              <>
+                <Label
+                  htmlFor={`${id}-${feature}`}
+                  className="text-body font-normal text-foreground"
+                >
+                  {copy[feature].title}
+                </Label>
+                <p
+                  id={`${id}-${feature}-description`}
+                  className="mt-0.5 text-body-sm text-muted-foreground"
+                >
+                  {copy[feature].description}
+                </p>
+              </>
             }
             control={
               <Switch
                 id={`${id}-${feature}`}
+                aria-describedby={`${id}-${feature}-description`}
                 data-testid={`lab-${feature}-toggle`}
                 checked={labs.includes(feature)}
                 disabled={pending}

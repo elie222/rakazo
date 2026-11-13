@@ -54,7 +54,7 @@ async function render(props: React.ComponentProps<typeof LabsSettingsPanel>) {
 
 it("turns Board on by saving the whole Labs list", async () => {
   const onLabsChange = vi.fn(async () => undefined);
-  const container = await render({ labs: [], onLabsChange });
+  const container = await render({ labs: [], available: ["board"], onLabsChange });
   expect(container.textContent).toContain("Board");
   const toggle = container.querySelector<HTMLButtonElement>('[data-testid="lab-board-toggle"]');
   expect(toggle?.getAttribute("aria-checked")).toBe("false");
@@ -69,7 +69,7 @@ it("turns Board off and shows an error when the save fails", async () => {
   const onLabsChange = vi.fn(async () => {
     throw new Error("offline");
   });
-  const container = await render({ labs: ["board"], onLabsChange });
+  const container = await render({ labs: ["board"], available: ["board"], onLabsChange });
 
   await act(async () =>
     container.querySelector<HTMLButtonElement>('[data-testid="lab-board-toggle"]')?.click(),

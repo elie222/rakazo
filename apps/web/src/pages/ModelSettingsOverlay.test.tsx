@@ -220,6 +220,7 @@ function account(provider: string, modelId: string) {
     billingEnabled: false,
     labs: [],
     ticketBoardEnabled: false,
+    labsAvailable: [],
     navLinks: [],
     phoneCallsEnabled: false,
   };
