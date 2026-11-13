@@ -927,6 +927,18 @@ describe("LocalStackController", () => {
     expect(calls.some((call) => call.args.includes("ps"))).toBe(true);
   });
 
+  it.each([
+    { code: 0, stdout: "" },
+    { code: 1, stdout: "fake-container-id" },
+  ])("does not advertise a stopped stack or a failed container query: %j", async (reply) => {
+    const stackPath = path.join(root, "stack");
+    await mkdir(stackPath, { recursive: true });
+    await ensureStackToken(stackPath, fakeHex);
+    const stack = controller({}, (args) => (args[7] === "ps" ? reply : ok(args)));
+    await expect(stack.rediscoverManagedStack()).resolves.toBe(false);
+    expect(stack.managedStackRunning()).toBe(false);
+  });
+
   it("does not rediscover while a stop is pending", async () => {
     const stackPath = path.join(root, "stack");
     await mkdir(stackPath, { recursive: true });
