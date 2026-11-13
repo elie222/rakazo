@@ -231,16 +231,20 @@ describe("MCP connector session cache", () => {
   });
 
   it.each([
-    { repeated: false, rejectSetup: false },
-    { repeated: true, rejectSetup: false },
-    { repeated: false, rejectSetup: true },
-    { repeated: true, rejectSetup: true },
+    { repeated: false, rejectSetup: false, lostSessions: 0 },
+    { repeated: true, rejectSetup: false, lostSessions: 0 },
+    { repeated: false, rejectSetup: true, lostSessions: 0 },
+    { repeated: true, rejectSetup: true, lostSessions: 0 },
+    { repeated: false, rejectSetup: false, lostSessions: 1 },
+    { repeated: false, rejectSetup: true, lostSessions: 1 },
+    { repeated: false, rejectSetup: false, lostSessions: 2 },
   ])(
-    "retries a credential change during connection (repeated: $repeated, rejected: $rejectSetup)",
-    async ({ repeated, rejectSetup }) => {
+    "retries a credential change during connection (repeated: $repeated, rejected: $rejectSetup, lost sessions: $lostSessions)",
+    async ({ repeated, rejectSetup, lostSessions }) => {
       const state = {
         failNext: false,
         initializations: 0,
+        sessionNotFound: lostSessions,
         headers: [] as Record<string, string>[],
         calls: [] as string[],
       };
@@ -283,14 +287,14 @@ describe("MCP connector session cache", () => {
       const close = vi.spyOn(McpSession.prototype, "close");
       try {
         const tools = await connector.discoverTools(context);
-        expect(state.initializations).toBe(2);
+        expect(state.initializations).toBe(lostSessions > 0 ? 3 : 2);
         expect(state.calls).toEqual([]);
-        if (repeated) {
+        if (repeated || lostSessions > 1) {
           expect(tools).toEqual(unavailableOnly());
-          expect(close).toHaveBeenCalledTimes(2);
+          expect(close).toHaveBeenCalledTimes(state.initializations);
         } else {
+          expect(close).toHaveBeenCalledTimes(state.initializations - 1);
           expect(tools).toMatchObject([{ name: "mcp__demo__echo" }]);
-          expect(close).toHaveBeenCalledTimes(1);
           expect(state.headers.at(-1)?.authorization).toBe("Bearer rotated");
         }
       } finally {

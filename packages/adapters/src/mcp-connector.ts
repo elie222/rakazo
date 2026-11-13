@@ -929,14 +929,17 @@ export class McpConnector implements ConnectorProvider {
     use: (session: McpSession) => Promise<T>,
   ): Promise<T> {
     const sessionKey = this.sessionKey(server, context);
-    for (let attempt = 0; ; attempt += 1) {
+    let retriedRotation = false;
+    let retriedSessionLoss = false;
+    for (;;) {
       let session: McpSession;
       try {
         session = await this.sessionFor(server, context);
       } catch (error) {
         // No tool has run yet: reconnect once with the current credentials.
         context.signal.throwIfAborted();
-        if (attempt !== 0 || !(error instanceof McpSecretChangedError)) throw error;
+        if (retriedRotation || !(error instanceof McpSecretChangedError)) throw error;
+        retriedRotation = true;
         continue;
       }
       this.inFlight.set(session, (this.inFlight.get(session) ?? 0) + 1);
@@ -946,7 +949,9 @@ export class McpConnector implements ConnectorProvider {
       try {
         return await use(session);
       } catch (error) {
-        if (attempt !== 0 || !isMcpSessionGoneError(error)) throw error;
+        context.signal.throwIfAborted();
+        if (retriedSessionLoss || !isMcpSessionGoneError(error)) throw error;
+        retriedSessionLoss = true;
         // Stop reusing the expired session immediately, but let its other requests
         // receive their own responses before closing the shared SDK client.
         if (this.sessions.get(sessionKey)?.session === session) this.sessions.delete(sessionKey);
