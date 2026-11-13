@@ -53,6 +53,7 @@ import { passkeyRelyingParty } from "./passkey.js";
 import type { AppleProviderConfig, GoogleProviderConfig, SocialAuthConfig } from "./social.js";
 import {
   appleUserInfo,
+  googleEmailVerified,
   isBuiltinAuthorizationURL,
   requestProviderId,
   socialTrustedOrigins,
@@ -263,25 +264,6 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
     (provider): provider is AppleProviderConfig => provider.id === "apple",
   );
   const appleSecret = apple ? createAppleClientSecretCache(apple) : undefined;
-  let appleRefreshTimer: ReturnType<typeof setTimeout> | undefined;
-  const scheduleAppleRefresh = (failed = false) => {
-    if (!appleSecret) return;
-    clearTimeout(appleRefreshTimer);
-    const wait = failed ? 60_000 : Math.max(1_000, appleSecret.refreshIn());
-    appleRefreshTimer = setTimeout(() => {
-      void appleSecret.current().then(
-        () => scheduleAppleRefresh(false),
-        () => scheduleAppleRefresh(true),
-      );
-    }, wait);
-    appleRefreshTimer.unref?.();
-  };
-  if (appleSecret) {
-    void appleSecret.current().then(
-      () => scheduleAppleRefresh(false),
-      () => scheduleAppleRefresh(true),
-    );
-  }
   // Better Auth's own token key, so every stored token shares one cipher and key.
   let authContext: Promise<{ secretConfig: TokenKey }> | undefined;
   const tokenKey = async () => (await authContext!).secretConfig;
@@ -296,13 +278,13 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
     logger: env.logger,
     secret: env.secret,
     baseURL: env.baseURL,
-    trustedOrigins: [
+    trustedOrigins: (request) => [
       ...buildTrustedOrigins({
         origins: [env.webOrigin, env.baseURL],
         extraOrigins: env.extraOrigins,
       }),
       APP_SCHEME_ORIGIN,
-      ...socialTrustedOrigins(env.social),
+      ...socialTrustedOrigins(env.social, request),
     ],
     account: {
       accountLinking: { enabled: true, disableImplicitLinking: true, trustedProviders: [] },
@@ -328,8 +310,12 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
             google: {
               clientId: google.clientId,
               clientSecret: google.clientSecret,
-              mapProfileToUser: (profile: { email_verified?: boolean }) => ({
-                emailVerified: profile.email_verified === true,
+              mapProfileToUser: async (profile) => ({
+                // An explicit link already proves control of the local account through
+                // signed OAuth state; historical mailbox proof alone never admits signup.
+                emailVerified:
+                  googleEmailVerified(profile) ||
+                  (profile.email_verified === true && Boolean((await getOAuthState())?.link)),
               }),
             },
           }
@@ -339,7 +325,7 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
             apple: {
               clientId: apple.clientId,
               get clientSecret() {
-                return appleSecret.peek() ?? "";
+                return appleSecret.current();
               },
               ...(apple.bundleId
                 ? {
@@ -567,7 +553,7 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
     hooks: {
       before: createAuthMiddleware(async (ctx) => {
         const providerId = requestProviderId(ctx);
-        if (appleSecret && providerId === "apple") await appleSecret.current();
+
         const socialLinking = trustedSocialLinking(
           ctx.path === "/callback/:id" || ctx.body?.idToken ? providerId : undefined,
         );
@@ -973,7 +959,6 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
       consumeAccountExportToken((await auth.$context).internalAdapter, token),
     disposeOidcDiscovery: () => {
       discovery?.dispose();
-      clearTimeout(appleRefreshTimer);
     },
   });
 }

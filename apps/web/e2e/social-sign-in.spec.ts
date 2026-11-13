@@ -131,3 +131,18 @@ test("chooser stacks the providers on a phone", async ({ page }, testInfo) => {
   expect(googleBox && appleBox && Math.abs(googleBox.width - appleBox.width) < 2).toBeTruthy();
   await captureScreenshot(page, testInfo, "sign-in-chooser-mobile");
 });
+
+test("provider-only sign-in keeps both provider actions as buttons", async ({ page }, testInfo) => {
+  await mockSignedOut(page, both);
+  await page.route("**/api/auth/capabilities", (route) =>
+    route.fulfill({ json: { ...passwordOnly, passwordAuth: false, providers: both } }),
+  );
+  await page.goto("/sign-in");
+  for (const name of ["Continue with Google", "Continue with Apple"]) {
+    const button = page.getByRole("button", { name });
+    await expect(button).toBeVisible();
+    expect((await button.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  }
+  await expect(page.getByLabel("Password", { exact: true })).toHaveCount(0);
+  await captureScreenshot(page, testInfo, "sign-in-provider-only");
+});

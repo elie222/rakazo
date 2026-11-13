@@ -228,3 +228,12 @@ it("clears saved drafts and the returning-user mark only once the account is del
     localStorage.clear();
   }
 });
+
+it("links the selected dedicated provider through the authenticated desktop flow", async () => {
+  vi.mocked(runSsoFlow).mockImplementation(async (begin) => begin(true, (url) => `popup:${url}`));
+  await act(async () => root.render(<LinkSsoRow provider={{ id: "google", name: "Google" }} />));
+  await click("Link Google");
+  expect(authClient.linkSocial).toHaveBeenCalledWith(
+    expect.objectContaining({ provider: "google", disableRedirect: true }),
+  );
+});

@@ -1,6 +1,6 @@
 import { MenuView } from "@expo/ui/community/menu";
 import { useLingui } from "@lingui/react/macro";
-import type { AccountSecurity } from "@rakazo/contracts";
+import type { AccountSecurity, SignInProvider } from "@rakazo/contracts";
 import { accountDisplay, displayName } from "@rakazo/core";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -48,6 +48,7 @@ export default function Profile() {
   const styles = useThemedStyles(createSettingsPageStyles);
   const stacked = useStackedSettings();
   const colorScheme = useResolvedAppearance();
+  const [providers, setProviders] = useState<SignInProvider[]>([]);
   const [me, setMe] = useState<MobileMe | null>(null);
   const account = accountDisplay(me ?? {}, t`Your account`);
   const [nameDialogOpen, setNameDialogOpen] = useState(false);
@@ -116,6 +117,7 @@ export default function Profile() {
       .catch(() => undefined);
     void passwordResetCapabilities()
       .then(async (capabilities) => {
+        setProviders((capabilities.providers ?? []).filter((provider) => provider.id !== "oidc"));
         if (await passkeysAvailable(capabilities)) await loadPasskeys();
       })
       .catch(() => undefined);
@@ -195,7 +197,7 @@ export default function Profile() {
           />
         </SettingsGroup>
 
-        {(security?.sso && !security.ssoLinked) || canChangePassword ? (
+        {(security?.sso && !security.ssoLinked) || providers.length > 0 || canChangePassword ? (
           <SettingsGroup>
             {security?.sso && !security.ssoLinked ? (
               <SettingsRow
@@ -211,6 +213,20 @@ export default function Profile() {
                 }
               />
             ) : null}
+            {providers.map((provider) => (
+              <SettingsRow
+                key={provider.id}
+                accessibilityRole="button"
+                chevron="right"
+                disabled={pending}
+                title={t`Link ${provider.name}`}
+                onPress={() =>
+                  void securityAction(async () => {
+                    await continueWithSso("link", provider.id);
+                  })
+                }
+              />
+            ))}
             {canChangePassword ? (
               <SettingsRow
                 accessibilityRole="button"

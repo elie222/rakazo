@@ -233,7 +233,10 @@ APPLE_APP_BUNDLE_IDENTIFIER=com.example.app
 Leave a pair empty to keep that provider off. `APPLE_PRIVATE_KEY` is the contents of the Sign in
 with Apple `.p8` file. A line break in the env value can be a real newline or the two characters
 `\n`. To mount the file instead, set `APPLE_PRIVATE_KEY_FILE` to its path and leave
-`APPLE_PRIVATE_KEY` empty. Set one of them, not both.
+`APPLE_PRIVATE_KEY` empty. Set one of them, not both. In every Compose variant, this path is
+inside the API container: add an override for the `api` service with a read-only bind mount,
+for example `./secrets/apple.p8:/run/secrets/apple.p8:ro`, and set
+`APPLE_PRIVATE_KEY_FILE=/run/secrets/apple.p8`. The base Compose files do not mount host keys.
 
 The API signs Apple's client secret itself (ES256, from the key, team id, and key id), caches
 it, and signs a new one before it expires. Apple refuses a secret dated more than six months
@@ -253,18 +256,21 @@ redirect URI. The key is created under Keys with Sign in with Apple enabled; its
 with the API's other secrets.
 
 `APPLE_APP_BUNDLE_IDENTIFIER` is the iOS app's bundle id. Set it so the iPhone app can use the
-system Sign in with Apple sheet. Without it, Apple sign-in still works in the browser. The App
+system Sign in with Apple sheet with the API bundled into the app. Custom servers always use
+browser OAuth; server capabilities cannot request a native token. Without it, Apple sign-in still works in the browser. The App
 Store requires Apple sign-in on a build that also offers Google, so enable both for that app.
 Android and the web app use the system browser for either provider. Secrets stay on the API; the
 sign-in screen only learns which providers are enabled.
 
 Someone who already has an account can sign in with Apple when Apple's email and the
 account's email are both verified. Google and generic OpenID Connect require the existing
-account's authenticated linking flow; a Google verification claim alone does not prove current
+account's authenticated linking flow in account settings (Link Google or Link SSO); a Google verification claim alone does not prove current
 control of a mailbox hosted elsewhere.
 
 Signup through Google or Apple follows the same closed registration and allowlist as email
-signup. The provider email has to be verified when an allowlist is set.
+signup. The provider email has to be verified when an allowlist is set. Google verification
+counts only for Gmail or a matching verified Workspace domain. Other Google mailboxes cannot
+satisfy an allowlist through social signup; verify an account through email and link it in settings.
 
 ## Directory provisioning (SCIM)
 

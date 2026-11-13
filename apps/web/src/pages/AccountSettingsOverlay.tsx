@@ -31,7 +31,7 @@ import {
 } from "@rakazo/ui-web/components/ui/table";
 import type { RefObject } from "react";
 import { useId, useRef, useState } from "react";
-import { AccountAccess, LinkSsoRow } from "../components/AccountAccess";
+import { AccountAccess, LinkProviderRows, LinkSsoRow } from "../components/AccountAccess";
 import { AccountDataSettings } from "../components/AccountDataSettings";
 import { SuccessPop } from "../components/ai/primitives";
 import { ComputerDeviceSettings } from "../components/ComputerDeviceSettings";
@@ -50,7 +50,6 @@ import { botsSidebarDensityPreference } from "../lib/bots-sidebar-density-pref";
 import { composerEnterToSendPreference } from "../lib/composer-enter-to-send-pref";
 import { getActiveUiLocale, setUiLocale } from "../lib/i18n";
 import { localTimezone, sameTimeZone, timezoneOptions } from "../lib/local-timezone";
-import { usePasskeysSupported } from "../lib/passkeys";
 import { remoteImagesPreference } from "../lib/remote-images-preference";
 import { responseStreamingPreference } from "../lib/response-streaming";
 import { toolActivityPreference } from "../lib/tool-activity-preference";
@@ -147,7 +146,6 @@ export function GeneralSettingsPanels({
   const showPassword = Boolean(
     accountSecurity?.hasPassword && accountSecurity.passwordChangeEnabled !== false,
   );
-  const passkeysSupported = usePasskeysSupported();
   const canLinkSso = Boolean(accountSecurity?.sso && !accountSecurity.ssoLinked);
   const [timezonePending, setTimezonePending] = useState(false);
   const [timezoneError, setTimezoneError] = useState<string | null>(null);
@@ -471,13 +469,12 @@ export function GeneralSettingsPanels({
       <TrustedLinkSitesSettings />
       <ComputerDeviceSettings />
 
-      {showPassword || passkeysSupported || canLinkSso ? (
-        <SettingsGroup title={<Trans>Security</Trans>}>
-          {showPassword ? <ChangePasswordRow email={email} /> : null}
-          {canLinkSso ? <LinkSsoRow /> : null}
-          <PasskeySettings />
-        </SettingsGroup>
-      ) : null}
+      <SettingsGroup title={<Trans>Security</Trans>}>
+        {showPassword ? <ChangePasswordRow email={email} /> : null}
+        {canLinkSso ? <LinkSsoRow /> : null}
+        <LinkProviderRows />
+        <PasskeySettings />
+      </SettingsGroup>
 
       <SettingsGroup title={<Trans>Data</Trans>} data-testid="account-data">
         <AccountDataSettings onImported={onAccountImported} onImportAgent={onImportAgent} />

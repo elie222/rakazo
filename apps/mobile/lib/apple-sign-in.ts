@@ -1,5 +1,8 @@
 import { t } from "@lingui/core/macro";
+import type * as AppleAuthentication from "expo-apple-authentication";
+import { currentApiBase } from "./api";
 import { signInWithIdentityToken } from "./api-auth";
+import { DEFAULT_API } from "./server-config";
 import { continueWithSso } from "./sso";
 
 /** Native sign-in for a provider that asked for it. Anything else uses the browser. */
@@ -13,8 +16,16 @@ export function continueWithNativeSignIn(providerId: string): Promise<boolean> {
  * device where it is unavailable, uses the same browser session as other providers.
  */
 export async function continueWithApple(): Promise<boolean> {
+  // Capabilities from a custom server cannot authorize disclosure of a bundle-scoped token.
+  if (currentApiBase() !== DEFAULT_API || !DEFAULT_API.startsWith("https://"))
+    return continueWithSso("sign-in", "apple");
+  let apple: typeof AppleAuthentication;
   try {
-    const apple = await import("expo-apple-authentication");
+    apple = await import("expo-apple-authentication");
+  } catch {
+    return continueWithSso("sign-in", "apple");
+  }
+  try {
     if (!(await apple.isAvailableAsync())) return continueWithSso("sign-in", "apple");
     const credential = await apple.signInAsync({
       requestedScopes: [

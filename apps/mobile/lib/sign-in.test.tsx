@@ -254,7 +254,7 @@ it.each(["in", "up"])(
     });
     await render();
     expect(ssoButtons()).toHaveLength(1);
-    expect(ssoButtons()[0]!.dataset.prominence).toBe("primary");
+    expect(ssoButtons()[0]!.disabled).toBe(false);
     expect(host.querySelector('button[data-prominence="quiet"]')).toBeNull();
     expect(host.querySelector("input")).toBeNull();
   },

@@ -77,51 +77,27 @@ export function signAppleClientSecret(
   return { token: `${signingInput}.${base64url(signature)}`, expiresAt: new Date(exp * 1000) };
 }
 
-/**
- * One in-flight signature, reused until the refresh margin. Callers that arrive together share it.
- */
+/** Synchronous signing keeps even the first provider read valid; no refresh timer is needed. */
 export function createAppleClientSecretCache(
   input: AppleClientSecretInput,
   options?: {
     now?: () => Date;
-    sign?: (input: AppleClientSecretInput, now: Date) => Promise<SignedAppleClientSecret>;
     lifetimeSeconds?: number;
     refreshMarginSeconds?: number;
   },
 ) {
   const now = options?.now ?? (() => new Date());
-  const lifetimeSeconds = options?.lifetimeSeconds ?? APPLE_CLIENT_SECRET_LIFETIME_SECONDS;
-  const sign =
-    options?.sign ??
-    ((value: AppleClientSecretInput, at: Date) =>
-      Promise.resolve(signAppleClientSecret(value, at, lifetimeSeconds)));
-  const marginMs =
+  const margin =
     (options?.refreshMarginSeconds ?? APPLE_CLIENT_SECRET_REFRESH_MARGIN_SECONDS) * 1000;
   let cached: SignedAppleClientSecret | undefined;
-  let pending: Promise<SignedAppleClientSecret> | undefined;
-
-  const fresh = (at: Date) =>
-    Boolean(cached && cached.expiresAt.getTime() - marginMs > at.getTime());
-
-  function current(at = now()): Promise<string> {
-    if (fresh(at) && cached) return Promise.resolve(cached.token);
-    pending ??= sign(input, at)
-      .then((signed) => {
-        cached = signed;
-        return signed;
-      })
-      .finally(() => {
-        pending = undefined;
-      });
-    return pending.then((signed) => signed.token);
-  }
-
   return {
-    current,
-    peek: () => cached?.token,
-    /** How long the cached secret stays outside the refresh margin. Zero when none is cached. */
-    refreshIn: (at = now()) =>
-      cached ? Math.max(0, cached.expiresAt.getTime() - marginMs - at.getTime()) : 0,
+    current() {
+      const at = now();
+      if (!cached || cached.expiresAt.getTime() - margin <= at.getTime()) {
+        cached = signAppleClientSecret(input, at, options?.lifetimeSeconds);
+      }
+      return cached.token;
+    },
   };
 }
 

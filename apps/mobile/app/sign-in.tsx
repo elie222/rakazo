@@ -146,8 +146,6 @@ export default function SignIn() {
   if (hasSession) return <Redirect href={hasIncomingShare() ? "/share" : "/"} />;
 
   const providers = reset ? signInProviders(reset) : [];
-  const primaryProvider = reset && !reset.passwordAuth ? providers[0] : undefined;
-  const linkProviders = primaryProvider ? providers.slice(1) : providers;
   const codeFlow = Boolean(reset?.passwordAuth && reset.emailCode && mode !== "forgot");
   // A blank password asks for an emailed code, so code-only accounts need no toggle.
   const usingCode = codeFlow && (codeSent || !password);
@@ -395,20 +393,12 @@ export default function SignIn() {
                         style={{ marginTop: 16 }}
                       />
                     ) : null}
-                    {primaryProvider && mode !== "forgot" ? (
-                      <NativeActionButton
-                        label={t`Continue with ${ph({ name: primaryProvider.name })}`}
-                        disabled={pending}
-                        onPress={() => void startProvider(primaryProvider)}
-                        style={{ marginTop: 16 }}
-                      />
-                    ) : null}
                     {!reset?.passwordAuth && mode !== "forgot" ? (
                       <SocialSignInButtons
-                        providers={linkProviders}
+                        providers={providers}
                         disabled={pending}
                         onPress={(providerId) => {
-                          const provider = linkProviders.find((item) => item.id === providerId);
+                          const provider = providers.find((item) => item.id === providerId);
                           if (provider) void startProvider(provider);
                         }}
                       />

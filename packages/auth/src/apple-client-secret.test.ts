@@ -68,47 +68,17 @@ it("refuses a key that cannot sign for Apple", () => {
   expect(() => signAppleClientSecret({ ...input, privateKey: rsa.toString() })).toThrow(/P-256/);
 });
 
-it("keeps a cached secret until the refresh margin, then signs a new one", async () => {
+it("provides a valid first secret and renews at the refresh margin without timers", () => {
   let now = new Date("2026-01-01T00:00:00Z");
-  let signed = 0;
   const cache = createAppleClientSecretCache(input, {
     now: () => now,
-    lifetimeSeconds: 1_000,
+    lifetimeSeconds: 1000,
     refreshMarginSeconds: 100,
-    sign: async (_value, at) => {
-      signed += 1;
-      return { token: `secret-${signed}`, expiresAt: new Date(at.getTime() + 1_000_000) };
-    },
   });
-  expect(await cache.current()).toBe("secret-1");
+  const first = cache.current();
+  expect(first.split(".")).toHaveLength(3);
   now = new Date(now.getTime() + 800_000);
-  expect(await cache.current()).toBe("secret-1");
-  expect(signed).toBe(1);
-  now = new Date("2026-01-01T00:00:00Z");
-  now = new Date(now.getTime() + 900_000);
-  expect(await cache.current()).toBe("secret-2");
-  expect(signed).toBe(2);
-  expect(cache.peek()).toBe("secret-2");
-});
-
-it("shares one signature across callers that arrive together", async () => {
-  let signed = 0;
-  let release: () => void = () => undefined;
-  const gate = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  const cache = createAppleClientSecretCache(input, {
-    refreshMarginSeconds: 10,
-    sign: async () => {
-      signed += 1;
-      await gate;
-      return { token: "shared", expiresAt: new Date(Date.now() + 60_000_000) };
-    },
-  });
-  const pending = Promise.all([cache.current(), cache.current()]);
-  release();
-  await expect(pending).resolves.toEqual(["shared", "shared"]);
-  expect(signed).toBe(1);
-  expect(await cache.current()).toBe("shared");
-  expect(signed).toBe(1);
+  expect(cache.current()).toBe(first);
+  now = new Date(now.getTime() + 100_000);
+  expect(cache.current()).not.toBe(first);
 });

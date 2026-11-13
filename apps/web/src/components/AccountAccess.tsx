@@ -1,9 +1,10 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { AccountSecurity } from "@rakazo/contracts";
+import type { AccountSecurity, SignInProvider } from "@rakazo/contracts";
 import { Button, Input, Label } from "@rakazo/ui-web";
 import { useEffect, useState } from "react";
 import { fetchAccountSecurity, requestAccountDeletionCode } from "../lib/account-security";
 import { authClient } from "../lib/auth";
+import { fetchAuthCapabilities } from "../lib/auth-capabilities";
 import { clearComposerDrafts } from "../lib/composer-draft";
 import { forgetSignedIn } from "../lib/returning-user";
 import { runSsoFlow } from "../lib/sso-flow";
@@ -211,7 +212,11 @@ export function DeleteAccountForm({
 }
 
 /** Links the organization's SSO identity to an account that signed up another way. */
-export function LinkSsoRow() {
+export function LinkSsoRow({
+  provider = { id: "oidc", name: "SSO" },
+}: {
+  provider?: SignInProvider;
+}) {
   const { t } = useLingui();
   const [error, setError] = useState<string | null>(() => {
     const code = redirectError("link");
@@ -226,7 +231,7 @@ export function LinkSsoRow() {
         (disableRedirect, callbackURL) =>
           authClient.linkSocial({
             disableRedirect,
-            provider: "oidc",
+            provider: provider.id,
             callbackURL: callbackURL(returnTo),
             errorCallbackURL: callbackURL(failed),
           }),
@@ -239,10 +244,10 @@ export function LinkSsoRow() {
   }
   return (
     <SettingsRow
-      label={<Trans>SSO</Trans>}
+      label={provider.name}
       control={
         <Button variant="secondary" size="sm" onClick={() => void link()}>
-          <Trans>Link SSO</Trans>
+          <Trans>Link {provider.name}</Trans>
         </Button>
       }
     >
@@ -253,6 +258,23 @@ export function LinkSsoRow() {
       ) : null}
     </SettingsRow>
   );
+}
+
+export function LinkProviderRows() {
+  const [providers, setProviders] = useState<SignInProvider[]>([]);
+  useEffect(() => {
+    let active = true;
+    void fetchAuthCapabilities()
+      .then((capabilities) => {
+        if (active)
+          setProviders((capabilities.providers ?? []).filter((provider) => provider.id !== "oidc"));
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, []);
+  return providers.map((provider) => <LinkSsoRow key={provider.id} provider={provider} />);
 }
 
 const LINK_RETURN = "sso-link";

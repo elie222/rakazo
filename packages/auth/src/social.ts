@@ -138,14 +138,31 @@ export function isBuiltinAuthorizationURL(providerId: string, value: string): bo
   return url?.origin === expected.origin && url.pathname === expected.pathname;
 }
 
-/** Origins a provider posts back from. Included only while that provider is configured. */
-export function socialTrustedOrigins(social: SocialAuthConfig | undefined): string[] {
-  const origins: string[] = [];
-  for (const provider of social?.providers ?? []) {
-    if (provider.id === "google") origins.push("https://accounts.google.com");
-    if (provider.id === "apple") origins.push("https://appleid.apple.com");
-  }
-  return origins;
+/** Only Apple's form POST callback needs the provider origin. OAuth state checks still apply. */
+export function socialTrustedOrigins(
+  social: SocialAuthConfig | undefined,
+  request?: Request,
+): string[] {
+  return social?.providers.some((provider) => provider.id === "apple") &&
+    request?.method === "POST" &&
+    new URL(request.url).pathname === "/api/auth/callback/apple"
+    ? ["https://appleid.apple.com"]
+    : [];
+}
+
+/** Google is authoritative for Gmail and verified Workspace addresses, not third-party mailboxes. */
+export function googleEmailVerified(profile: {
+  email?: string;
+  email_verified?: boolean;
+  hd?: string;
+}): boolean {
+  return (
+    profile.email_verified === true &&
+    (profile.email?.toLowerCase().endsWith("@gmail.com") === true ||
+      (typeof profile.hd === "string" &&
+        profile.hd.length > 0 &&
+        profile.email?.split("@")[1]?.toLowerCase() === profile.hd.toLowerCase()))
+  );
 }
 
 /**

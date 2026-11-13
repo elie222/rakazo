@@ -2,9 +2,11 @@ import { generateKeyPairSync } from "node:crypto";
 import { expect, it } from "vitest";
 import {
   appleUserInfo,
+  googleEmailVerified,
   isBuiltinAuthorizationURL,
   publicSignInProviders,
   socialAuthFromFields,
+  socialTrustedOrigins,
   trustedSocialLinking,
 } from "./social.js";
 
@@ -151,3 +153,47 @@ it("never treats client-supplied Apple email as a verified token claim", async (
 function jwt(payload: Record<string, unknown>): string {
   return `header.${Buffer.from(JSON.stringify(payload)).toString("base64url")}.sig`;
 }
+
+it("requires Google authority over a verified mailbox", () => {
+  expect(googleEmailVerified({ email: "user@example.test", email_verified: true })).toBe(false);
+  expect(googleEmailVerified({ email: "user@gmail.com", email_verified: true })).toBe(true);
+  expect(
+    googleEmailVerified({ email: "user@example.test", email_verified: true, hd: "example.test" }),
+  ).toBe(true);
+  expect(
+    googleEmailVerified({ email: "user@other.test", email_verified: true, hd: "example.test" }),
+  ).toBe(false);
+  expect(googleEmailVerified({ email: "user@gmail.com", email_verified: false })).toBe(false);
+});
+it("trusts only the configured Apple POST callback origin", () => {
+  const social = socialAuthFromFields({
+    appleClientId: "service",
+    appleTeamId: "team",
+    appleKeyId: "key",
+    applePrivateKey: pem,
+  });
+  for (const path of [
+    "/api/auth/sign-in/social",
+    "/api/auth/link-social",
+    "/api/auth/callback/google",
+  ]) {
+    expect(
+      socialTrustedOrigins(
+        social,
+        new Request(`https://app.example.test${path}`, { method: "POST" }),
+      ),
+    ).toEqual([]);
+  }
+  expect(
+    socialTrustedOrigins(
+      social,
+      new Request("https://app.example.test/api/auth/callback/apple", { method: "POST" }),
+    ),
+  ).toEqual(["https://appleid.apple.com"]);
+  expect(
+    socialTrustedOrigins(
+      undefined,
+      new Request("https://app.example.test/api/auth/callback/apple", { method: "POST" }),
+    ),
+  ).toEqual([]);
+});

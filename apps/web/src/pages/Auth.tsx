@@ -63,8 +63,6 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
   const codeMode = useCode && !password;
   const codeStep = useCode && codeSent;
   const providers = reset ? signInProviders(reset) : [];
-  const primaryProvider = reset && !reset.passwordAuth ? providers[0] : undefined;
-  const linkProviders = primaryProvider ? providers.slice(1) : providers;
   const chooser = Boolean(
     reset?.passwordAuth && providers.length > 0 && !emailStep && mode !== "forgot" && !codeStep,
   );
@@ -302,19 +300,9 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
               </Button>
             </div>
           ) : null}
-          {primaryProvider && mode !== "forgot" ? (
-            <Button
-              type="button"
-              disabled={pending}
-              className={submitClass}
-              onClick={() => void signInWithProvider(primaryProvider.id)}
-            >
-              <Trans>Continue with {primaryProvider.name}</Trans>
-            </Button>
-          ) : null}
           {!reset?.passwordAuth && mode !== "forgot" ? (
             <SocialSignInButtons
-              providers={linkProviders}
+              providers={providers}
               disabled={pending}
               onPress={(providerId) => void signInWithProvider(providerId)}
             />

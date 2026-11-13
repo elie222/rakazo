@@ -24,6 +24,7 @@ import {
 import { clearSpace } from "./api-server";
 import { getActiveUiLocale } from "./i18n";
 import { resumeLiveNotifications } from "./live-notifications";
+import { DEFAULT_API } from "./server-config";
 import { serverHeaders } from "./server-headers";
 import {
   clearSessionToken,
@@ -110,6 +111,8 @@ export function signInWithIdentityToken(
   token: string,
   user?: { name?: { firstName?: string; lastName?: string }; email?: string },
 ) {
+  if (currentApiBase() !== DEFAULT_API || !DEFAULT_API.startsWith("https://"))
+    throw new Error(t`Could not continue`);
   return authenticate(
     "sign-in/social",
     { provider, idToken: { token, ...(user ? { user } : {}) } },

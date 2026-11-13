@@ -1,5 +1,6 @@
 import { isAvailableAsync, signInAsync } from "expo-apple-authentication";
 import { beforeEach, expect, it, vi } from "vitest";
+import { currentApiBase } from "./api";
 import { signInWithIdentityToken } from "./api-auth";
 import { continueWithApple } from "./apple-sign-in";
 import { continueWithSso } from "./sso";
@@ -9,11 +10,14 @@ vi.mock("expo-apple-authentication", () => ({
   signInAsync: vi.fn(),
   AppleAuthenticationScope: { FULL_NAME: 0, EMAIL: 1 },
 }));
+vi.mock("./api", () => ({ currentApiBase: vi.fn(() => "https://api.example.test") }));
+vi.mock("./server-config", () => ({ DEFAULT_API: "https://api.example.test" }));
 vi.mock("./api-auth", () => ({ signInWithIdentityToken: vi.fn() }));
 vi.mock("./sso", () => ({ continueWithSso: vi.fn() }));
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(currentApiBase).mockReturnValue("https://api.example.test");
   vi.mocked(isAvailableAsync).mockResolvedValue(true);
   vi.mocked(signInWithIdentityToken).mockResolvedValue({ verificationRequired: false });
   vi.mocked(continueWithSso).mockResolvedValue(true);
@@ -46,4 +50,24 @@ it("treats a dismissed sheet as a cancelled sign-in", async () => {
   );
   await expect(continueWithApple()).resolves.toBe(false);
   expect(signInWithIdentityToken).not.toHaveBeenCalled();
+});
+
+it("keeps native credentials away from custom servers", async () => {
+  vi.mocked(currentApiBase).mockReturnValue("https://custom.example.test");
+  await expect(continueWithApple()).resolves.toBe(true);
+  expect(signInAsync).not.toHaveBeenCalled();
+  expect(signInWithIdentityToken).not.toHaveBeenCalled();
+  expect(continueWithSso).toHaveBeenCalledWith("sign-in", "apple");
+});
+it("propagates sheet failures without a browser retry", async () => {
+  vi.mocked(signInAsync).mockRejectedValue(new Error("sheet failed"));
+  await expect(continueWithApple()).rejects.toThrow("sheet failed");
+  expect(continueWithSso).not.toHaveBeenCalled();
+});
+
+it("propagates server errors without retrying in a browser", async () => {
+  vi.mocked(signInAsync).mockResolvedValue({ identityToken: "identity-token" } as never);
+  vi.mocked(signInWithIdentityToken).mockRejectedValue(new Error("server refused"));
+  await expect(continueWithApple()).rejects.toThrow("server refused");
+  expect(continueWithSso).not.toHaveBeenCalled();
 });
