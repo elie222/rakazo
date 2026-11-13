@@ -707,6 +707,35 @@ describe("OpenAPI connector import", () => {
     },
   );
 
+  it("rejects server URLs that expand past the length limit before building them", () => {
+    const document = {
+      servers: [
+        {
+          url: `https://api.example.test/${"{big}".repeat(1_000)}`,
+          variables: { big: { default: "a".repeat(400_000) } },
+        },
+      ],
+      paths: { "/items": { get: { operationId: "listItems" } } },
+    };
+    expect(() => importOpenApiDocument(document)).toThrow(
+      "OpenAPI server URL exceeds 2048 characters",
+    );
+  });
+
+  it("accepts server URLs at the length limit", () => {
+    const prefix = "https://api.example.test/";
+    const baseUrl = importOpenApiDocument({
+      servers: [
+        {
+          url: `${prefix}{path}`,
+          variables: { path: { default: "a".repeat(2_048 - prefix.length) } },
+        },
+      ],
+      paths: { "/items": { get: { operationId: "listItems" } } },
+    }).baseUrl;
+    expect(baseUrl).toHaveLength(2_048);
+  });
+
   it("checks credentials after expanding server defaults", () => {
     expect(() =>
       importOpenApiDocument({
