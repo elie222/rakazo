@@ -20,6 +20,27 @@ describe("sanitizeModelConnectionError", () => {
       "sk-secretkey1234567890",
     );
   });
+
+  it.each([
+    ["a JSON error body", 'Invalid {"api_key": "EXAMPLE_PLACEHOLDER"}', "EXAMPLE_PLACEHOLDER"],
+    [
+      "a camel-case key with spaces around =",
+      "apiKey = EXAMPLE_PLACEHOLDER",
+      "EXAMPLE_PLACEHOLDER",
+    ],
+    ["a bearer token with base64 characters", "Bearer EXAMPLE+PLACE/HOLDER==", "PLACE/HOLDER"],
+    ["a single-quoted value", "api-key: 'EXAMPLE_PLACEHOLDER'", "EXAMPLE_PLACEHOLDER"],
+  ])("redacts the whole secret in %s", (_label, raw, secret) => {
+    const cleaned = sanitizeModelConnectionError(raw);
+    expect(cleaned).not.toContain(secret);
+    expect(cleaned).toContain("•••");
+  });
+
+  it("keeps the text around a redacted JSON value", () => {
+    expect(sanitizeModelConnectionError('{"api_key": "EXAMPLE_PLACEHOLDER", "code": 401}')).toBe(
+      '{"•••", "code": 401}',
+    );
+  });
 });
 
 describe("classifyModelConnectionFailure", () => {

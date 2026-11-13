@@ -21,8 +21,8 @@ type StoredModelAuthKind = NonNullable<ModelCredential["authKind"]>;
 
 const SECRET_PATTERNS: RegExp[] = [
   /\bsk-[a-zA-Z0-9_-]{8,}\b/g,
-  /\bBearer\s+[a-zA-Z0-9._-]+\b/gi,
-  /\bapi[_-]?key[=:]\s*\S+/gi,
+  /\bBearer\s+[\w.~+/=-]+/gi,
+  /\bapi[_-]?key["']?\s*[=:]\s*["']?[^\s"',}]+/gi,
 ];
 
 /** Strip patterns that look like credentials from user-visible errors. */
