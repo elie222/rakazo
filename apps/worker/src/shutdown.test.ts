@@ -1,8 +1,9 @@
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { stopWithin } from "./shutdown.js";
 
 afterEach(() => {
+  vi.useRealTimers();
   installLogger(createLogger({ service: "test", level: "off", sinks: [] }));
 });
 
@@ -22,12 +23,15 @@ describe("stopWithin", () => {
   it("returns with a warning when the step stalls", async () => {
     const sink = createTestSink();
     installLogger(createLogger({ service: "test", sinks: [sink] }));
-    const stalled = new Promise(() => undefined);
-    const returned = await Promise.race([
-      stopWithin(stalled, "stalled step", 20).then(() => "returned" as const),
-      new Promise<"hung">((resolve) => setTimeout(() => resolve("hung"), 2_000)),
-    ]);
-    expect(returned).toBe("returned");
+    vi.useFakeTimers();
+    let returned = false;
+    void stopWithin(new Promise(() => undefined), "stalled step", 20).then(() => {
+      returned = true;
+    });
+    await vi.advanceTimersByTimeAsync(19);
+    expect(returned).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(returned).toBe(true);
     expect(sink.events).toEqual([
       expect.objectContaining({
         level: "warn",
@@ -42,8 +46,13 @@ describe("stopWithin", () => {
     const step = new Promise<void>((_resolve, reject) => {
       rejectStep = reject;
     });
-    await stopWithin(step, "late failure", 20);
+    vi.useFakeTimers();
+    const stopped = stopWithin(step, "late failure", 20);
+    await vi.advanceTimersByTimeAsync(20);
+    await stopped;
+    vi.useRealTimers();
     rejectStep(new Error("arrived after the bound"));
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    // Node reports an unhandled rejection once the event loop turns; vitest fails on it.
+    await new Promise((resolve) => setImmediate(resolve));
   });
 });

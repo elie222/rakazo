@@ -1,4 +1,3 @@
-import { setTimeout as sleep } from "node:timers/promises";
 import type {
   BackgroundJob,
   BackgroundJobAttempt,
@@ -237,11 +236,59 @@ function abandonment() {
   return state;
 }
 
+/** Thrown for a claim that returned after the stop gave up on its runner; its handler never ran. */
+class JobNotStartedError extends Error {
+  constructor(
+    /** Whether the claim's attempt was given back, so the job has not used one up. */
+    readonly attemptReturned: boolean,
+  ) {
+    super("The worker stopped before this job started");
+  }
+}
+
+/**
+ * Unlocks a claimed job whose handler never ran and gives back the attempt the claim counted,
+ * as Graphile does for jobs its local queue returns (dist/sql/returnJobs.js of graphile-worker
+ * 0.18.0). Graphile's failure write that follows only touches a job this runner still locks, so
+ * it then leaves the job as it is: available again, without backoff and with its attempts intact.
+ */
+async function returnUnstartedJob(helpers: JobHelpers): Promise<boolean> {
+  const lockedBy = helpers.job.locked_by;
+  if (!lockedBy) return false;
+  try {
+    await helpers.withPgClient((client) =>
+      client.query(
+        `with j as (
+           update graphile_worker._private_jobs as jobs
+           set attempts = greatest(0, attempts - 1), locked_by = null, locked_at = null
+           where id = $1::bigint and locked_by = $2::text
+           returning job_queue_id
+         )
+         update graphile_worker._private_job_queues as job_queues
+         set locked_by = null, locked_at = null
+         from j
+         where job_queues.id = j.job_queue_id and job_queues.locked_by = $2::text`,
+        [helpers.job.id, lockedBy],
+      ),
+    );
+    return true;
+  } catch {
+    // Graphile's failure write still unlocks the job, at the cost of the attempt.
+    return false;
+  }
+}
+
+/** A plain timer, so fake timers in tests control it. */
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 /**
  * Graphile writes a job's completion or failure as one prepared statement per
  * batch: complete_job, complete_jobs or complete_job_q for completions, fail_job,
- * fail_job_q or fail_jobs for failures, each suffixed /{schema} (dist/sql/
- * completeJobs.js and dist/sql/failJobs.js of graphile-worker 0.18.0). Claims,
+ * fail_job_q or fail_jobs for failures, and return_job or return_job_q for jobs its
+ * local queue claimed and hands back unstarted, each suffixed /{schema} (dist/sql/
+ * completeJobs.js, failJobs.js and returnJobs.js of graphile-worker 0.18.0). Claims,
  * lock resets and the notify listener use other statement names, and this
  * repository's own queue statements are unnamed, so these prefixes identify
  * exactly the job writes. An unrecognised shape yields no ids, which reads as a
@@ -264,6 +311,11 @@ function jobWriteJobIds(config: unknown): string[] | undefined {
     return specs.every((spec) => isJobId((spec as { jobId?: unknown } | null)?.jobId))
       ? specs.map((spec) => String((spec as { jobId: unknown }).jobId))
       : undefined;
+  }
+  if (name.startsWith("return_job/") || name.startsWith("return_job_q/")) {
+    // values: [poolId, id array].
+    const ids = values[1];
+    return Array.isArray(ids) && ids.every(isJobId) ? ids.map((id) => String(id)) : undefined;
   }
   // Complete statements pass one id or the id array first; fail_jobs the id array.
   if (
@@ -380,7 +432,7 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
   private wakeSleep: (() => void) | undefined;
   private readonly executions = new RunExecutionHost();
   private readonly running = new Set<{ name: BackgroundJobName }>();
-  /** Jobs whose completion or failure write Graphile has not landed yet. */
+  /** Jobs whose completion, failure or return write Graphile has not landed yet. */
   private readonly owedWrites = new Set<string>();
   /** Set while stopping: re-arms the stop deadline when outstanding work changes. */
   private rearmStopDeadline: (() => void) | undefined;
@@ -523,7 +575,8 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
       this.superviseTask = undefined;
       this.handlers = undefined;
     }
-    if (busy) getLogger().info("jobs.drained", { "jobs.drain_ms": Date.now() - started });
+    if (busy || ranSinceStop)
+      getLogger().info("jobs.drained", { "jobs.drain_ms": Date.now() - started });
   }
 
   /** Work whose loss would leave a job locked or a run unfinished. */
@@ -562,9 +615,10 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
         .map((name) => [
           this.options.workload === "interactive" ? INTERACTIVE_RUN_TASK : name,
           async (payload: unknown, helpers: JobHelpers) => {
-            // A claim that returns after the stop gave up on this runner must not start:
-            // Graphile fails the job at once, and a retry elsewhere would overlap its handler.
-            if (abandoned.abandoned) throw new Error("The worker stopped before this job started");
+            // A claim that returns after the stop gave up on this runner must not start: a retry
+            // elsewhere would overlap its handler. It goes back unused, as if never claimed.
+            if (abandoned.abandoned)
+              throw new JobNotStartedError(await returnUnstartedJob(helpers));
             const unpacked = unwrapJobPayload(payload);
             const attempt = { number: helpers.job.attempts, max: helpers.job.max_attempts };
             const execute = (execution?: BackgroundJobExecution) =>
@@ -585,22 +639,30 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
               this.outage.succeeded();
             } catch (error) {
               // Graphile's backoff is added to the job's run_at, so moving run_at first keeps the
-              // retry no sooner than the delay the job asked for.
-              if (error instanceof RetryJobLaterError)
-                await helpers.withPgClient((client) =>
-                  client.query(
+              // retry no sooner than the delay the job asked for. The update stays inside the
+              // job's lifetime: a checkout that stalls past a stop that gave up neither holds
+              // the job nor writes once it is back.
+              if (error instanceof RetryJobLaterError) {
+                const retryLater = helpers.withPgClient(async (client) => {
+                  if (abandoned.abandoned) return;
+                  await client.query(
                     `update graphile_worker._private_jobs
                      set run_at = greatest(run_at, now() + $2::int * interval '1 millisecond')
                      where id = $1::bigint`,
                     [helpers.job.id, Math.ceil(error.delayMs)],
-                  ),
-                );
+                  );
+                });
+                retryLater.catch(() => undefined);
+                await Promise.race([retryLater, abandoned.promise]);
+              }
               throw error;
             } finally {
               this.running.delete(job);
               // Graphile queues this job's completion or failure write the moment
-              // this wrapper settles; it lands through the wrapped runner pool.
-              this.owedWrites.add(helpers.job.id);
+              // this wrapper settles; it lands through the wrapped runner pool. Once a
+              // stop gave up, the write is left to the crash paths, and a restarted
+              // session must not wait for it.
+              if (!abandoned.abandoned) this.owedWrites.add(helpers.job.id);
             }
           },
         ]),
@@ -631,7 +693,16 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
       },
     });
     runner.events.on("job:failed", ({ job, error }) => {
+      // Graphile counts the attempt from memory; a returned one was not used up.
+      if (error instanceof JobNotStartedError && error.attemptReturned) return;
       recordHistoryCompactAttemptsExhausted(job, error);
+    });
+    // The local queue hands claimed jobs it never started back to the database, also when
+    // the stop deactivates it; until that write lands they stay locked like a running job.
+    runner.events.on("localQueue:returnJobs", ({ jobs }) => {
+      if (abandoned.abandoned) return;
+      for (const job of jobs) this.owedWrites.add(job.id);
+      this.rearmStopDeadline?.();
     });
     if (this.stopping) {
       await runner.stop().catch(() => undefined);

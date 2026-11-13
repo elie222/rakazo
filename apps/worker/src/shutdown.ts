@@ -1,4 +1,3 @@
-import { setTimeout as sleep } from "node:timers/promises";
 import { getLogger } from "@rakazo/logging";
 
 /** How long a shutdown step that is not the drain of running work may hold the exit. */
@@ -19,7 +18,8 @@ export async function stopWithin(
   step.catch(() => undefined); // A late failure after the bound wins must not stay unhandled.
   const timedOut = await Promise.race([
     step.then(() => false as const),
-    sleep(timeoutMs).then(() => true as const),
+    // A plain timer, so fake timers in tests control it.
+    new Promise<true>((resolve) => setTimeout(() => resolve(true), timeoutMs)),
   ]);
   if (timedOut) getLogger().warn("worker.shutdown_step_timed_out", { step: label });
 }
