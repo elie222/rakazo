@@ -6,6 +6,7 @@ import {
   DEPLOYMENT_MODEL_SETTINGS,
   deploymentConnection,
   deploymentConnectionSecret,
+  deploymentServedModels,
   deploymentServes,
   deploymentStandIn,
   findConnectedModelCredential,
@@ -155,6 +156,14 @@ export async function aiConsentStatus(
           defaults: { deployment },
         });
       }),
+    );
+    // Helpers can choose any deployment-served model, even if no bot or role uses it yet.
+    selected.push(
+      ...deploymentServedModels(deploymentModels).map((model) => ({
+        ...model,
+        credential: null,
+        thinkingLevel: null,
+      })),
     );
     // Connected models remain reachable by helpers during a targeted bot run.
     for (const preference of preferences)

@@ -434,3 +434,42 @@ it("names the deployment's endpoint for a model the member's own endpoint doesn'
       .map((recipient) => recipient.name),
   ).toEqual([expect.stringContaining("https://deployment.example.test")]);
 });
+
+it("includes unused deployment helper recipients and their endpoint origins on targeted sends", async () => {
+  const { deps, actor } = setup();
+  deps.env = {
+    ...deps.env,
+    agentRuntime: "pi",
+    defaultProvider: "openrouter",
+    defaultModel: "fixture/default",
+  } as never;
+  vi.mocked(deps.prisma.deploymentSettings.findUnique).mockResolvedValue({
+    defaultModelProvider: "openrouter",
+    defaultModelId: "fixture/default",
+    allowedModels: "anthropic:fixture/helper,openai-compatible:fixture/helper",
+    modelConnections: [
+      { provider: "anthropic", ciphertext: "fixture-key", models: ["fixture/helper"] },
+      { provider: "openai-compatible", ciphertext: "fixture-endpoint", models: ["fixture/helper"] },
+    ],
+  } as never);
+  deps.secrets = {
+    load: vi.fn().mockResolvedValue(
+      JSON.stringify({
+        kind: "openai_compatible",
+        baseUrl: "https://helpers.example.test/v1",
+        apiKey: "fixture-key",
+      }),
+    ),
+  } as never;
+  const status = await aiConsentStatus(deps, actor, { botId: "bot", uses: ["model"] });
+  expect(status.recipients).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ name: "Anthropic", allowed: false }),
+      expect.objectContaining({
+        name: expect.stringContaining("https://helpers.example.test"),
+        allowed: false,
+      }),
+    ]),
+  );
+  expect(JSON.stringify(status)).not.toContain("fixture-key");
+});
