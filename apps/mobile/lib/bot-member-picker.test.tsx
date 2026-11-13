@@ -352,3 +352,17 @@ it("shows refreshed members while collapsed and adopts an unedited server rename
   await click("Save");
   expect(rpc).not.toHaveBeenCalledWith("groups/update", expect.anything());
 });
+
+it("does not overwrite a refreshed member order when saving", async () => {
+  await act(async () => root.render(<GroupSettings />));
+  rpc.mockImplementation(async (procedure: string) =>
+    procedure === "groups/list"
+      ? [{ ...group, members: [...group.members].reverse() }]
+      : procedure === "bots/list"
+        ? bots
+        : [],
+  );
+  await act(async () => notifyArchivedChatsChanged());
+  await click("Save");
+  expect(rpc).not.toHaveBeenCalledWith("groups/update", expect.anything());
+});

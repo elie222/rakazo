@@ -54,15 +54,13 @@ export default function GroupSettingsScreen() {
             ? nextGroup.members.map((member) => member.botId)
             : [
                 ...new Set([
-                  ...previous.filter(
-                    (id) =>
-                      ids.has(id) &&
-                      (!previousMembers.has(id) ||
-                        nextGroup.members.some((member) => member.botId === id)),
-                  ),
                   ...nextGroup.members
-                    .filter((member) => !previousMembers.has(member.botId))
+                    .filter(
+                      (member) =>
+                        !previousMembers.has(member.botId) || previous.includes(member.botId),
+                    )
                     .map((member) => member.botId),
+                  ...previous.filter((id) => !previousMembers.has(id) && ids.has(id)),
                 ]),
               ],
         );
