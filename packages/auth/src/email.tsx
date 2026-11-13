@@ -3,12 +3,14 @@ import type { TransactionalEmail } from "@rakazo/adapter-kit";
 import { displayName, matchUiLocale, textDirectionForLocale, translate } from "@rakazo/core";
 import { webLightTokens as lightTokens, webDarkTokens } from "@rakazo/ui-tokens";
 import type { ReactNode } from "react";
+import { Fragment } from "react";
 import {
   Body,
   Container,
   Head,
   Hr,
   Html,
+  Img,
   Link,
   render,
   Section,
@@ -102,6 +104,7 @@ export async function message(
   subject: string,
   content: ReactNode,
   unsubscribeUrl?: string,
+  image?: { src: string; alt: string },
 ): Promise<TransactionalEmail> {
   const html = await render(
     <Html lang={locale} dir={textDirectionForLocale(locale)}>
@@ -110,7 +113,7 @@ export async function message(
         <meta name="supported-color-schemes" content="light dark" />
         <style>{`@media (prefers-color-scheme: dark) {
           .email-body, .email-body > table > tbody > tr > td { background-color: ${webDarkTokens.background} !important; }
-          .email-card { background-color: ${webDarkTokens.dialog} !important; color: ${webDarkTokens.foreground} !important; border-color: ${webDarkTokens.primary} !important; }
+          .email-card { background-color: ${webDarkTokens.dialog} !important; color: ${webDarkTokens.foreground} !important; border-color: ${webDarkTokens.border} !important; }
           .email-card p, .email-card a { color: ${webDarkTokens.foreground} !important; }
         }`}</style>
       </Head>
@@ -130,21 +133,32 @@ export async function message(
             maxWidth: "520px",
             backgroundColor: lightTokens.dialog,
             color: lightTokens.foreground,
-            borderRadius: "8px",
-            borderTop: `3px solid ${lightTokens.primary}`,
+            borderRadius: "12px",
+            border: `1px solid ${lightTokens.border}`,
+            overflow: "hidden",
           }}
         >
-          <Section style={{ padding: "20px 28px 24px" }}>
-            <Text
-              style={{
-                margin: "0 0 24px",
-                fontSize: "22px",
-                fontWeight: 600,
-                letterSpacing: "-0.5px",
-              }}
-            >
-              rakazo
-            </Text>
+          {image ? (
+            <Img
+              src={image.src}
+              alt={image.alt}
+              width="520"
+              style={{ width: "100%", height: "auto" }}
+            />
+          ) : null}
+          <Section style={{ padding: "24px 32px" }}>
+            {image ? null : (
+              <Text
+                style={{
+                  margin: "0 0 24px",
+                  fontSize: "22px",
+                  fontWeight: 600,
+                  letterSpacing: "-0.5px",
+                }}
+              >
+                rakazo
+              </Text>
+            )}
             {content}
             {unsubscribeUrl ? (
               <>
@@ -178,6 +192,17 @@ export async function message(
 }
 
 export const linkStyle = { color: lightTokens.primary, textDecoration: "underline" };
+
+/** Places each `{key}` of a translated sentence as its node, so links sit where the language puts them. */
+export function withNodes(
+  sentence: string,
+  nodes: Readonly<Record<string, ReactNode>>,
+): ReactNode[] {
+  return sentence.split(/\{(\w+)\}/).map((part, index) => (
+    // split puts each captured key at an odd index.
+    <Fragment key={`${index}${part}`}>{index % 2 ? nodes[part] : part}</Fragment>
+  ));
+}
 
 export function verificationEmail(
   email: string,
