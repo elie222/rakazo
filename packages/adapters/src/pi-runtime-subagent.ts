@@ -128,6 +128,8 @@ export async function executeSubagent(
   );
   const nestedHost: ToolHost = {
     ...host,
+    // The helper's transcript renames its own calls; they must not remap the main agent's ids.
+    providerToolCallIds: new Map(),
     activeModel: {
       config: requestModel,
       models: selectedModel.models,
@@ -234,7 +236,7 @@ export async function executeSubagent(
         requestModel.cacheCapabilities?.retentionMode,
       ),
   };
-  const toolCallIds = { used: new Set<string>(), provider: host.providerToolCallIds };
+  const toolCallIds = { used: new Set<string>(), provider: nestedHost.providerToolCallIds };
   nested = new Agent({
     finishTurn: async (turn, turnSignal) => {
       await deliverFinishedShells(

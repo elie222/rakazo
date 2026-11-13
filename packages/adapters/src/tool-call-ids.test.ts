@@ -27,8 +27,6 @@ describe("tool call ids", () => {
       new Map([
         ["call_0_1", "call_0"],
         ["call_0_2", "call_0"],
-        ["call_1", ""],
-        ["call_2", ""],
       ]),
     );
   });

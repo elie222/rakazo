@@ -2,8 +2,9 @@ import type { AssistantMessage, Message } from "@earendil-works/pi-ai";
 import { AssistantMessageEventStream } from "@earendil-works/pi-ai/utils/event-stream";
 
 /**
- * A run's tool call ids. `provider` maps each id renamed here back to the id the provider sent,
- * which stays the call's execution identity for effect idempotency and approvals.
+ * A run's tool call ids. `provider` maps each repeated id renamed here back to the id the
+ * provider sent, which stays the call's execution identity for effect idempotency and approvals,
+ * as it was before the rename.
  */
 export interface RunToolCallIds {
   used: Set<string>;
@@ -60,8 +61,10 @@ export function withUniqueToolCallIds(
     while (ids.used.has(`${base}_${suffix}`)) suffix++;
     const id = `${base}_${suffix}`;
     ids.used.add(id);
-    ids.provider.set(id, part.id);
     changed = true;
+    // A call that had no id is identified by its new one, which the transcript keeps across a resume.
+    if (!part.id) return { ...part, id };
+    ids.provider.set(id, part.id);
     return { ...part, id, providerCallId: part.id };
   });
   return changed ? { ...message, content } : message;
