@@ -6,6 +6,10 @@ import LinkifyIt from "linkify-it";
 import type { ReactNode } from "react";
 import { createContext, useContext, useEffect, useSyncExternalStore } from "react";
 
+import remarkGfm from "remark-gfm";
+import remarkParse from "remark-parse";
+import { unified } from "unified";
+
 export type ChatMarkdownProps = {
   children: string;
   streaming?: boolean;
@@ -38,27 +42,50 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-// Code keeps its source exactly; existing links keep their text. A mention is never placed in them.
-const CODE_MARKDOWN =
-  "```[\\s\\S]*?(?:```|$)|~~~[\\s\\S]*?(?:~~~|$)|(?:^|\\n)(?: {4}|\\t)[^\\n]*|`[^`\\n]*`";
-const CODE = new RegExp(`(${CODE_MARKDOWN})`);
-const PROTECTED_MARKDOWN = new RegExp(`(${CODE_MARKDOWN}|!?\\[[^\\]\\n]*\\]\\([^)\\n]*\\))`);
+const mentionParser = unified().use(remarkParse).use(remarkGfm);
+
+// Slice the original source rather than serializing the tree, so code stays byte-for-byte intact.
+function rewriteOutsideCode(text: string, rewrite: (part: string) => string, skipLinks = false) {
+  const tree = mentionParser.parse(text);
+  let result = "";
+  let offset = 0;
+  function visit(node: typeof tree | (typeof tree.children)[number]) {
+    if (
+      node.type === "code" ||
+      node.type === "inlineCode" ||
+      (skipLinks &&
+        ["link", "image", "linkReference", "imageReference", "definition"].includes(node.type))
+    ) {
+      const start = node.position?.start.offset;
+      const end = node.position?.end.offset;
+      if (start !== undefined && end !== undefined) {
+        result += rewrite(text.slice(offset, start)) + text.slice(start, end);
+        offset = end;
+      }
+      return;
+    }
+    if ("children" in node) for (const child of node.children) visit(child);
+  }
+  visit(tree);
+  return result + rewrite(text.slice(offset));
+}
 const MODEL_MENTION_LINK = /\[([^\]\n]*)\]\(\s*<?rakazo-mention:[^)\n]*\)/gi;
 const OPENS_WITH_BLOCK = /^\s*(#|>|\||```|~~~|[-*+]\s|\d+[.)]\s)/;
 
 function linkFirstName(text: string, name: string, link: string): string | undefined {
   const pattern = new RegExp(`(^|[^\\p{L}\\p{N}_])${escapeRegExp(name)}(?![\\p{L}\\p{N}_])`, "u");
   let placed = false;
-  const result = text
-    .split(PROTECTED_MARKDOWN)
-    .map((part, index) => {
-      if (placed || index % 2 === 1) return part;
+  const result = rewriteOutsideCode(
+    text,
+    (part) => {
+      if (placed) return part;
       return part.replace(pattern, (_match, prefix: string) => {
         placed = true;
         return `${prefix}${link}`;
       });
-    })
-    .join("");
+    },
+    true,
+  );
   return placed ? result : undefined;
 }
 
@@ -72,10 +99,7 @@ export function withMentions(
 ): string[] {
   // Only links placed here draw as mentions; ones already in the text keep just their name.
   const result = texts.map((text) =>
-    text
-      .split(CODE)
-      .map((part, index) => (index % 2 === 1 ? part : part.replace(MODEL_MENTION_LINK, "$1")))
-      .join(""),
+    rewriteOutsideCode(text, (part) => part.replace(MODEL_MENTION_LINK, "$1")),
   );
   if (result.length === 0) return result;
   for (const mention of mentions) {

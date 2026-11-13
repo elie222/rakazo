@@ -437,6 +437,34 @@ describe("withMentions", () => {
     ]);
   });
 
+  it.each([
+    "``Planner `literal` example``",
+    "`Planner\nexample`",
+    "````md\n```\nPlanner\n```\n````",
+    "~~~~md\n~~~\nPlanner\n~~~\n~~~~",
+    "> ```\n> Planner\n> ```",
+  ])("preserves code source and links later prose: %s", (code) => {
+    expect(withMentions([`${code}\n\nPlanner is ready.`], [planner])).toEqual([
+      `${code}\n\n${link} is ready.`,
+    ]);
+  });
+
+  it("keeps an unclosed streaming fence intact and prepends the mention", () => {
+    const code = "```md\nPlanner\n\nPlanner is ready.";
+    expect(withMentions([code], [planner])).toEqual([`${link}\n\n${code}`]);
+  });
+
+  it.each([
+    "``[Planner](rakazo-mention:bot-1) `literal` ``",
+    "`[Planner](rakazo-mention:bot-1)\nexample`",
+    "````md\n```\n[Planner](rakazo-mention:bot-1)\n```\n````",
+    "~~~~md\n~~~\n[Planner](rakazo-mention:bot-1)\n~~~\n~~~~",
+  ])("does not strip model mention links inside code: %s", (code) => {
+    expect(withMentions([`${code}\n\nPlanner is ready.`], [planner])).toEqual([
+      `${code}\n\n${link} is ready.`,
+    ]);
+  });
+
   it("keeps a mention link already in the text as its name", () => {
     expect(withMentions(["[Planner](rakazo-mention:bot-1) is ready."], [planner])).toEqual([
       `${link} is ready.`,
