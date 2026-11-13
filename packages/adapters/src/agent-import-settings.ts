@@ -227,7 +227,11 @@ export function readGrokBotImportSettings(
     let url: URL | null = null;
     try {
       url = new URL(app.mcpUrl);
-      if (url.pathname.split("/").some((part) => KEY_LIKE_SEGMENT.test(decodeURIComponent(part))))
+      if (
+        [...url.hostname.split("."), ...decodeURIComponent(url.pathname).split("/")].some((part) =>
+          KEY_LIKE_SEGMENT.test(part),
+        )
+      )
         url = null;
     } catch {
       url = null;
@@ -240,7 +244,6 @@ export function readGrokBotImportSettings(
       !url.hash &&
       !url.username &&
       !url.password &&
-      !url.pathname.split("/").some((part) => KEY_LIKE_SEGMENT.test(part)) &&
       !looksLikeCredential(app.mcpUrl)
         ? mcpServer(
             app.name,

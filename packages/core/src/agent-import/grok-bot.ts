@@ -133,7 +133,7 @@ const BOT_FIELDS = ["instructions", "memories", "user_facts", "skills", "routine
 /** The start of an export document; one left unclosed means the reply was cut off. */
 const EXPORT_START = /^\{\s*"(?:format|version|bots)"/;
 
-/** Commas right before `}` or `]`, outside strings: what a chat window leaves behind. */
+/** Tolerates JSON5 syntax in pasted replies. Uploaded normalized documents use strict JSON. */
 function looseJson(source: string): unknown {
   try {
     return JSON5.parse(source) as unknown;
