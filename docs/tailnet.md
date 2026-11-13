@@ -88,8 +88,9 @@ grants let the tag reach the server. Adding the server is your approval; its too
 [approval mode](./approvals.md) like any MCP server's, with no tailnet card.
 
 Rakazo checks the server from one of your bots with tailnet access when you add it, and
-**Test connection** does too, so turn access on for a bot first. Use a token or API key header for
-these servers; OAuth sign-in isn't supported on a tailnet yet.
+**Test connection** does too, so turn access on for a bot first. Signing in with OAuth goes through
+that bot's device as well; the sign-in page opens in your own browser, so the device you sign in on
+must be on your tailnet too.
 
 ## Devices in your tailnet
 
