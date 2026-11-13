@@ -5,6 +5,7 @@ import {
   artifactTypeLabel,
   attachmentExtensionForMimeType,
   attachmentsForBot,
+  blocksToAgentHistorySegments,
   blocksToAgentHistoryText,
   decodeAttachmentBase64,
   inferAttachmentMimeType,
@@ -536,5 +537,24 @@ describe("tool step history", () => {
 
   it("renders nothing for an empty steps block", () => {
     expect(blocksToAgentHistoryText([{ kind: "steps", steps: [] }])).toBe("");
+  });
+
+  it("splits a reply at its tool steps, in order, rendering the rest as the text form does", () => {
+    const steps = [{ label: "Shell", tool: "shell", count: 1, note: "Checking." }];
+    const blocks = [
+      { kind: "text", text: "First." },
+      { kind: "steps", steps },
+      { kind: "steps", steps: [{ count: 1 }] },
+      { kind: "text", text: "Done." },
+      { kind: "image", name: "shot.png" },
+    ] as unknown as MessageBlock[];
+    expect(blocksToAgentHistorySegments(blocks)).toEqual([
+      { text: "First." },
+      { steps },
+      { text: "Done.\n[image: shot.png]" },
+    ]);
+    expect(blocksToAgentHistorySegments([{ kind: "text", text: "Hi." }])).toEqual([
+      { text: "Hi." },
+    ]);
   });
 });
