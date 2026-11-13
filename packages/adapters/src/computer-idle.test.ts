@@ -5,6 +5,7 @@ import { FetchError } from "@boatdev/sdk";
 import type { AgentHomeStore, JobPublisher, SandboxProvider } from "@rakazo/adapter-kit";
 import {
   SandboxDamagedError,
+  SandboxProviderAccountError,
   SandboxRateLimitError,
   SandboxUnavailableError,
   SandboxUnresponsiveError,
@@ -317,6 +318,28 @@ describe("sandbox idle", () => {
     expect(harness.sandbox.stop).not.toHaveBeenCalled();
     expect(harness.sandbox.keepAlive).toHaveBeenCalledOnce();
     expect(harness.jobs.enqueue).toHaveBeenCalledOnce();
+  });
+
+  it("leaves a heartbeat the provider fails after checkpointing to the next idle check", async () => {
+    const harness = idleHarness({ backgroundWorkProbeCodes: [1, 0] });
+    harness.sandbox.keepAlive.mockRejectedValueOnce(
+      new SandboxUnresponsiveError("provider request failed (HTTP 500)"),
+    );
+
+    await expect(sleepComputerIfIdle(harness.deps, harness.computer.id)).resolves.toBeUndefined();
+
+    expect(harness.sandbox.stop).not.toHaveBeenCalled();
+    expect(harness.jobs.enqueue).toHaveBeenCalledOnce();
+  });
+
+  it("reports the provider account refusing the heartbeat after checkpointing", async () => {
+    const harness = idleHarness({ backgroundWorkProbeCodes: [1, 0] });
+    harness.sandbox.keepAlive.mockRejectedValueOnce(new SandboxProviderAccountError());
+
+    await expect(sleepComputerIfIdle(harness.deps, harness.computer.id)).rejects.toBeInstanceOf(
+      SandboxProviderAccountError,
+    );
+    expect(harness.sandbox.stop).not.toHaveBeenCalled();
   });
 
   it("uses provider-native idle inspection instead of retaining emulator computers", async () => {
