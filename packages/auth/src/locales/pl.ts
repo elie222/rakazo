@@ -37,17 +37,12 @@ export const PL_MESSAGES: Record<string, string> = {
   "A star on GitHub": "Gwiazdka na GitHubie",
   "Questions? Just reply. I read every one.":
     "Masz pytania? Po prostu odpowiedz. Czytam każdą wiadomość.",
-  "Have any questions? Reply to this email.": "Masz pytania? Odpowiedz na tę wiadomość.",
   Unsubscribe: "Zrezygnuj z otrzymywania wiadomości",
   "Invite a friend": "Zaproś znajomego",
   "Invite a friend to Rakazo: they get {weeks} weeks free, and you earn a free month when they start a qualifying subscription with a new card.":
     "Zaproś znajomego do Rakazo: otrzyma {weeks} tyg. za darmo, a Ty zyskasz bezpłatny miesiąc, gdy rozpocznie subskrypcję spełniającą warunki z użyciem nowej karty.",
   "Open Rakazo": "Otwórz Rakazo",
   "and choose Invite friends for your link.": "i wybierz Zaproś znajomych, aby otrzymać swój link.",
-  "Have any questions? Just reply to this email.":
-    "Masz pytania? Po prostu odpowiedz na tę wiadomość.",
-  "If you're enjoying Rakazo,": "Jeśli lubisz korzystać z Rakazo,",
-  "give us a star on GitHub": "daj nam gwiazdkę na GitHub",
   "We received your Rakazo plugin": "Otrzymaliśmy Twoją wtyczkę do Rakazo",
   "Thanks for submitting a plugin to the Rakazo marketplace.":
     "Dziękujemy za zgłoszenie wtyczki do katalogu Rakazo.",

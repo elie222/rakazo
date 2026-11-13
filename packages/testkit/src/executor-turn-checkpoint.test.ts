@@ -538,8 +538,11 @@ describe("executor paused transcript", () => {
           },
           {
             expect(request) {
-              const results = request.messages.filter((m) => m.tool_call_id === "reused");
-              expect(results).toHaveLength(2);
+              // The repeated id is renamed so each result stays paired with its own call.
+              const results = request.messages.filter(
+                (m) => m.tool_call_id === "reused" || m.tool_call_id === "reused_1",
+              );
+              expect(results.map((m) => m.tool_call_id)).toEqual(["reused", "reused_1"]);
               for (const result of results)
                 expect(result.content).toContain("fixture-approved-result");
             },
@@ -566,10 +569,9 @@ describe("executor paused transcript", () => {
             const pendingMessage = saved.messages.findLast(
               (message: { role: string }) => message.role === "assistant",
             );
-            pendingMessage.content.find((call: { id: string }) => call.id === "reused").arguments =
-              {
-                content: "different-content",
-              };
+            pendingMessage.content.find(
+              (call: { type: string }) => call.type === "toolCall",
+            ).arguments = { content: "different-content" };
             checkpoint.result = JSON.stringify(saved);
             state.task.prompt = "Write different-content instead.";
             state.run.status = "queued";

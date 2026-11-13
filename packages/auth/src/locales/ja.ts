@@ -39,17 +39,12 @@ export const JA_MESSAGES: Record<string, string> = {
   "A star on GitHub": "GitHub のスター",
   "Questions? Just reply. I read every one.":
     "質問があれば、このメールに返信してください。すべて読んでいます。",
-  "Have any questions? Reply to this email.": "ご質問があれば、このメールに返信してください。",
   Unsubscribe: "配信停止",
   "Invite a friend": "友だちを招待",
   "Invite a friend to Rakazo: they get {weeks} weeks free, and you earn a free month when they start a qualifying subscription with a new card.":
     "友だちをRakazoに招待しましょう。友だちは{weeks}週間無料で使え、新しいカードで対象のサブスクリプションを始めると、あなたは1か月無料になります。",
   "Open Rakazo": "Rakazoを開き",
   "and choose Invite friends for your link.": "「友だちを招待」を選ぶとリンクを取得できます。",
-  "Have any questions? Just reply to this email.":
-    "ご質問があれば、このメールに返信するだけでOKです。",
-  "If you're enjoying Rakazo,": "Rakazoを気に入っていただけたら、",
-  "give us a star on GitHub": "GitHubでスターをお願いします",
   "We received your Rakazo plugin": "Rakazoプラグインを受け付けました",
   "Thanks for submitting a plugin to the Rakazo marketplace.":
     "Rakazoマーケットプレイスにプラグインを申請いただきありがとうございます。",
