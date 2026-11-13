@@ -318,8 +318,11 @@ export const ModelConnectInputSchema = z
         path: ["apiKey"],
       });
     }
-    // An existing connection can update its output limit without a new key.
-    if (!apiKey && value.maxTokens === undefined) {
+    // Existing connections can update limits or explicitly targeted routing without a new key.
+    const updatesRouting =
+      Boolean(value.credentialId) &&
+      ModelRoutingFieldSchema.options.some((field) => value[field] !== undefined);
+    if (!apiKey && value.maxTokens === undefined && !updatesRouting) {
       ctx.addIssue({
         code: "custom",
         message: "API key must contain at least 8 characters",

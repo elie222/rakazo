@@ -205,6 +205,27 @@ describe("contracts", () => {
     ).toBe(false);
   });
 
+  it.each(["accountId", "gatewayId", "projectId", "region"])(
+    "accepts a routing-only %s update only for a targeted connection",
+    (field) => {
+      const input = { provider: "example-provider", [field]: "example-route" };
+      expect(
+        ModelConnectInputSchema.safeParse({ ...input, credentialId: "credential-fixture" }).success,
+      ).toBe(true);
+      expect(ModelConnectInputSchema.safeParse(input).success).toBe(false);
+      expect(ModelConnectInputSchema.safeParse({ ...input, credentialId: null }).success).toBe(
+        false,
+      );
+      expect(
+        ModelConnectInputSchema.safeParse({
+          ...input,
+          credentialId: "credential-fixture",
+          [field]: "../invalid",
+        }).success,
+      ).toBe(false);
+    },
+  );
+
   it("accepts optional persisted duration only on valid steps blocks", () => {
     expect(
       MessageBlock.parse({

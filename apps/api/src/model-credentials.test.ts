@@ -1,5 +1,6 @@
 import type { CodexLiveCatalog } from "@rakazo/adapters";
-import type { Actor, ModelConnectInput } from "@rakazo/contracts";
+import type { Actor } from "@rakazo/contracts";
+import { ModelConnectInputSchema } from "@rakazo/contracts";
 import { describe, expect, it, vi } from "vitest";
 import { createModelConnector } from "./model-credentials.js";
 import type { RouterDeps } from "./router.js";
@@ -67,12 +68,12 @@ describe("project routing connection checks", () => {
     const connector = createModelConnector(deps, {} as CodexLiveCatalog);
     await connector.verifyModelConnection(
       { userId: "user-fixture", spaceId: "space-fixture" } as Actor,
-      {
+      ModelConnectInputSchema.parse({
         provider: saved.provider,
         credentialId: saved.id,
         modelId: "gemini-4-hydrogen",
         ...input,
-      } as ModelConnectInput,
+      }),
       undefined,
     );
     expect(check).toHaveBeenCalledTimes(checked ? 1 : 0);
