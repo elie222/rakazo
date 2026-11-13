@@ -624,6 +624,37 @@ describe("data display", () => {
     expect(root.querySelectorAll(".rk-spark polyline")).toHaveLength(1);
   });
 
+  it.each(["ltr", "rtl"])("fades the physical hidden edges in %s tables", (direction) => {
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(100);
+    vi.spyOn(HTMLElement.prototype, "scrollWidth", "get").mockReturnValue(300);
+    vi.spyOn(window, "getComputedStyle").mockReturnValue({ direction } as CSSStyleDeclaration);
+    const container = mount(<Table columns={["Name"]} rows={[["Alpha"]]} />);
+    const scroll = container.querySelector<HTMLDivElement>(".rk-table-scroll")!;
+    const edges = () => [
+      scroll.hasAttribute("data-fade-start"),
+      scroll.hasAttribute("data-fade-end"),
+    ];
+    const move = (left: number) =>
+      act(() => {
+        scroll.scrollLeft = left;
+        scroll.dispatchEvent(new Event("scroll"));
+      });
+    const rtl = direction === "rtl";
+    expect(edges()).toEqual([rtl, !rtl]);
+    move(rtl ? -100 : 100);
+    expect(edges()).toEqual([true, true]);
+    move(rtl ? -200 : 200);
+    expect(edges()).toEqual([!rtl, rtl]);
+    // Elastic overscroll must not light up the edge already reached.
+    move(rtl ? -220 : 220);
+    expect(edges()).toEqual([!rtl, rtl]);
+    move(rtl ? 20 : -20);
+    expect(edges()).toEqual([rtl, !rtl]);
+    vi.spyOn(HTMLElement.prototype, "scrollWidth", "get").mockReturnValue(100);
+    move(0);
+    expect(edges()).toEqual([false, false]);
+  });
+
   it.each([false, true])(
     "tracks scroll edges when an empty table appears (strict: %s)",
     (strict) => {

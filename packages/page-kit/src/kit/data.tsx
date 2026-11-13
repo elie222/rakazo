@@ -332,8 +332,14 @@ function useScrollEdges() {
   const ref = useCallback((element: HTMLDivElement | null) => {
     if (!element) return;
     const update = () => {
-      const start = element.scrollLeft > 1;
-      const end = element.scrollLeft + element.clientWidth < element.scrollWidth - 1;
+      const max = Math.max(0, element.scrollWidth - element.clientWidth);
+      // The mask fades physical left/right edges. RTL offsets run from -max to zero.
+      const left = Math.min(
+        max,
+        Math.max(0, element.scrollLeft + (getComputedStyle(element).direction === "rtl" ? max : 0)),
+      );
+      const start = left > 1;
+      const end = left < max - 1;
       setEdges((old) => (old.start === start && old.end === end ? old : { start, end }));
     };
     update();
