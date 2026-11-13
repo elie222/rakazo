@@ -5,14 +5,46 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SRC="${1:?usage: restore.sh backups/<stamp>}"
 compose=(docker compose -f "$ROOT/infra/compose/docker-compose.yml")
 # Compose resolves its default env file relative to the compose file, not the
-# repo root; point it at the root .env when one exists (vars may also come
+# repo [redacted]; point it at the [redacted] .env when one exists (vars may also come
 # from the environment, so its absence is not an error).
 if [[ -f "$ROOT/.env" ]]; then compose=(docker compose --env-file "$ROOT/.env" -f "$ROOT/infra/compose/docker-compose.yml"); fi
+# An explicit data source: a host directory or a docker volume name.
+DATA_SOURCE="${RAKAZO_RESTORE_DATA_SOURCE:-${RAKAZO_BACKUP_DATA_SOURCE:-}}"
+COMPOSE_PROJECT="${RAKAZO_COMPOSE_PROJECT:-}"
+HELPER_IMAGE="${RAKAZO_BACKUP_HELPER_IMAGE:-alpine:latest}"
+# shellcheck source=scripts/lib/data-source.sh
+source "$ROOT/scripts/lib/data-source.sh"
+
+log() { printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"; }
+die() { printf 'restore failed: %s\n' "$*" >&2; exit 1; }
+
 [[ -f "$SRC/rakazo.sql" ]] || { echo "missing rakazo.sql" >&2; exit 1; }
-[[ ! -L "$ROOT/data" && ( ! -e "$ROOT/data" || -d "$ROOT/data" ) ]] || {
-  echo "data must be a directory, not a symlink" >&2
-  exit 1
-}
+
+# ------------------------------------------------------- data source lookup
+# The restore has to write where the application reads from. A compose
+# deployment keeps that data in a named volume mounted at /data, NOT in
+# $ROOT/data: writing the restored tree into a host directory that the
+# containers do not mount would report a successful restore while the live
+# application kept its old data. So resolve the same way backup.sh does and
+# fail loudly when nothing can be found.
+resolved="$(resolve_data_source || true)"
+DATA_KIND=""
+DATA_PATH=""
+if [[ -n "$resolved" ]]; then
+  DATA_KIND="${resolved%% *}"
+  DATA_PATH="${resolved#* }"
+fi
+if [[ -z "$DATA_KIND" ]]; then
+  die "no data source found: \$ROOT/data does not exist and no running container exposes a /data volume. Set RAKAZO_RESTORE_DATA_SOURCE to the directory or docker volume holding the data."
+fi
+if [[ "$DATA_KIND" == "dir" ]]; then
+  [[ ! -L "$DATA_PATH" && -d "$DATA_PATH" ]] || {
+    echo "data must be a directory, not a symlink" >&2
+    exit 1
+  }
+fi
+log "restoring into $DATA_KIND $DATA_PATH"
+
 STAGE=""
 STOP_ON_FAILURE=0
 cleanup() {
@@ -63,13 +95,33 @@ done
 # the application. -f is required for psql's single-transaction mode.
 "${compose[@]}" exec -T postgres psql -X -U rakazo -d rakazo \
   --set=ON_ERROR_STOP=on --single-transaction --file=- < "$SRC/rakazo.sql"
+
 if [[ -n "$STAGE" && -d "$STAGE/data" ]]; then
-  if [[ -e "$ROOT/data" ]]; then
+  if [[ "$DATA_KIND" == "dir" ]]; then
+    # A host directory: keep the previous tree aside so it can be recovered,
+    # then move the restored tree into place.
+    if [[ -e "$DATA_PATH" ]]; then
+      ROLLBACK="$(mktemp -d "$ROOT/data.rollback.XXXXXX")"
+      mv "$DATA_PATH" "$ROLLBACK/data"
+      echo "Previous data preserved at $ROLLBACK/data"
+    fi
+    mv "$STAGE/data" "$DATA_PATH"
+  else
+    # A named volume: the previous contents are archived to the host first,
+    # because a volume cannot be moved aside the way a directory can.
     ROLLBACK="$(mktemp -d "$ROOT/data.rollback.XXXXXX")"
-    mv "$ROOT/data" "$ROLLBACK/data"
-    echo "Previous data preserved at $ROLLBACK/data"
+    docker run --rm -v "${DATA_PATH}:/data:ro" -v "${ROLLBACK}:/out" "$HELPER_IMAGE" \
+      sh -c 'tar -czf /out/data-previous.tgz -C /data . 2>/dev/null || true'
+    echo "Previous volume contents preserved at $ROLLBACK/data-previous.tgz"
+    # Copy the restored tree in first, then remove what the backup did not
+    # contain, so the volume is never left empty if the copy fails.
+    docker run --rm -v "${DATA_PATH}:/data" -v "${STAGE}/data:/src:ro" "$HELPER_IMAGE" \
+      sh -c 'cp -a /src/. /data/ && for entry in /data/* /data/.[!.]*; do
+               [ -e "$entry" ] || continue
+               name=$(basename "$entry")
+               [ -e "/src/$name" ] || rm -rf "$entry"
+             done'
   fi
-  mv "$STAGE/data" "$ROOT/data"
 fi
 "${compose[@]}" up -d
 STOP_ON_FAILURE=0

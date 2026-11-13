@@ -12,10 +12,55 @@ English | [简体中文](./zh-CN/self-host-backups.md)
 ```
 
 This dumps Postgres (`pg_dump`) and archives `data/` into `backups/<stamp>/`. Backup
-directories have mode `0700`, and both artifacts have mode `0600`, including on reused paths.
-A missing `data/` or `RAKAZO_BACKUP_SKIP_HOMES=1` produces an empty archive that restore treats
-as omitted homes. Database or archive errors fail the backup. Discard the output directory of
-any failed run.
+directories have mode `0700`, and every artifact has mode `0600`, including on reused paths.
+Database or archive errors fail the backup. Discard the output directory of any failed run.
+
+### The data directory is mandatory
+
+The data directory holds the **artifact blobs**: the files behind every chat attachment, stored
+as `data/artifacts/<spaceId>/<storageKey>`. The `artifacts` rows in Postgres only point at
+those files.
+
+The script used to write an **empty** archive whenever `data/` did not exist, and still report
+success. That is exactly the case for a Compose deployment that keeps the data in a named
+volume mounted at `/data`, because there is no `data/` directory in the checkout at all. A
+backup taken that way was worthless: on 2026-11-05 a restore from such a set re-created the
+`artifacts` **rows** in Postgres with no matching **blobs** on disk, and every attachment
+created before 2026-11-06 became permanently unrecoverable.
+
+So the script now **fails loudly** (non-zero exit) when it cannot archive the data directory.
+The only way to accept a data-less backup is the explicit escape hatch
+`RAKAZO_BACKUP_SKIP_HOMES=1`, and the manifest then states that no artifact blob is
+recoverable from that backup.
+
+### Where the data comes from
+
+The script resolves the data source in this order:
+
+1. `RAKAZO_BACKUP_DATA_SOURCE` — an explicit host directory or docker volume name.
+2. `$ROOT/data` — a source checkout, which binds `data/` into the containers.
+3. A running container of the Compose project that mounts a volume (or a bind) at `/data`.
+   The volume is read through a throwaway container, so no host path is needed and the volume
+   is never modified.
+
+Set `RAKAZO_BACKUP_COMPOSE_PROJECT` when the project name cannot be derived from the running
+containers, and `RAKAZO_BACKUP_HELPER_IMAGE` to pick the image used for the throwaway
+container (default `alpine:latest`).
+
+### Verification and the manifest
+
+Before reporting success the script verifies the backup and writes `MANIFEST` next to the
+artifacts:
+
+- the database dump is non-empty and passes `pg_restore --list`, so it is restorable and not
+  merely present;
+- the archive lists a non-zero number of artifact blob files;
+- the number of artifact blob files inside the archive **equals** the number on disk.
+
+Any failed check exits non-zero and names the check that failed. The manifest records the
+stamp, the creation time, the tool versions, the sha256 of every artifact, the artifact row
+count, the blob count in the archive, and — explicitly — how many artifact rows have **no**
+blob on disk and are therefore not recoverable from the backup.
 
 ## Restore
 
@@ -47,6 +92,25 @@ need that rollback. This script does not consume the production snapshot's custo
 
 ```bash
 ./scripts/restore.sh backups/<stamp>
+```
+
+### The artifact-blob caveat on restore
+
+Restoring `rakazo.sql` alone recreates the `artifacts` rows in Postgres **without** the
+attachment files. The rows then point at blobs that do not exist and the attachments are
+broken. Always restore `homes.tgz` from the same backup as the SQL dump, and check
+`MANIFEST` first: it lists the rows that have no blob on disk even in the backup itself. Those
+attachments cannot be recovered by any restore; they were already missing from the live
+system.
+
+### Self-test
+
+`scripts/backup.test.sh` fakes both layouts (a source checkout and a Compose deployment with a
+named volume) and asserts that the script archives the data when it is present and **fails
+loudly** when it is missing. It needs no Docker daemon and no database.
+
+```bash
+./scripts/backup.test.sh
 ```
 
 ## Production backups

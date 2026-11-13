@@ -40,6 +40,8 @@ function fixture() {
   for (const script of [
     "scripts/backup.sh",
     "scripts/restore.sh",
+    // backup.sh and restore.sh share one resolver; the fixture has to install it.
+    "scripts/lib/data-source.sh",
     "infra/compose/backup-prod.sh",
     "infra/compose/backup-drill.sh",
   ]) {
@@ -67,9 +69,12 @@ if (args[0] === "inspect") {
 } else if (args.includes("pg_dump")) {
   if (process.env.FAIL_DUMP === "1") process.exit(2);
   console.log("CREATE TABLE example (id integer);");
-} else if (args.includes("sh") && args.at(-1).startsWith("pg_restore --list ")) {
+} else if (args.includes("sh") && args.at(-1).includes("pg_restore --list")) {
   fs.readFileSync(0);
   if (process.env.FAIL_VERIFY === "1") process.exit(1);
+  // The backup verifies the dump before declaring success, and a valid archive
+  // lists entries. An empty listing means the dump is not a real archive.
+  console.log("fake table of contents entry");
 } else if (args.includes("sh")) {
   if (!args.at(-1).startsWith("pg_dump ")) process.exit(91);
   if (process.env.FAIL_DUMP === "1") process.exit(2);
@@ -426,12 +431,23 @@ describe("development backup failures", () => {
     expect(f.commands()).toEqual([]);
   });
 
-  it.each(["absent", "skipped"])("allows an empty archive when data is %s", (scenario) => {
+  it("fails loudly when the data directory is absent", () => {
+    // A backup that cannot archive the data directory used to write an EMPTY
+    // homes.tgz and report success. On 2026-11-05 a restore from such a set
+    // re-created the artifact ROWS with no matching BLOBS, and every attachment
+    // created before 2026-11-06 became unrecoverable.
     const f = fixture();
-    if (scenario === "skipped") write(path.join(f.checkout, "data/home.txt"), "example home");
-    const result = f.run("scripts/backup.sh", ["example"], {
-      RAKAZO_BACKUP_SKIP_HOMES: scenario === "skipped" ? "1" : "0",
-    });
+    const result = f.run("scripts/backup.sh", ["example"]);
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("no data directory found");
+    expect(result.stdout).not.toContain("Backup written");
+    expect(existsSync(path.join(f.checkout, "backups/example/homes.tgz"))).toBe(false);
+  });
+
+  it("allows an empty archive when the data is explicitly skipped", () => {
+    const f = fixture();
+    write(path.join(f.checkout, "data/home.txt"), "example home");
+    const result = f.run("scripts/backup.sh", ["example"], { RAKAZO_BACKUP_SKIP_HOMES: "1" });
     expect(result.status, result.stderr).toBe(0);
     expect(contents(path.join(f.checkout, "backups/example/homes.tgz"))).toBe("");
   });
