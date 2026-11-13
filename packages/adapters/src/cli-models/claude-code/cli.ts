@@ -24,6 +24,19 @@ const PASSTHROUGH_ENV = new Set([
   "SHELL",
   "LANG",
   "LANGUAGE",
+  "LC_ALL",
+  "LC_COLLATE",
+  "LC_CTYPE",
+  "LC_MESSAGES",
+  "LC_MONETARY",
+  "LC_NUMERIC",
+  "LC_TIME",
+  "LC_ADDRESS",
+  "LC_IDENTIFICATION",
+  "LC_MEASUREMENT",
+  "LC_NAME",
+  "LC_PAPER",
+  "LC_TELEPHONE",
   "TZ",
   "TMPDIR",
   "XDG_CONFIG_HOME",
@@ -79,7 +92,7 @@ export function claudeCodeEnv(
 ): Record<string, string> {
   const env: Record<string, string> = {};
   for (const [key, value] of Object.entries(source)) {
-    if (value !== undefined && (PASSTHROUGH_ENV.has(key) || key.startsWith("LC_"))) {
+    if (value !== undefined && PASSTHROUGH_ENV.has(key)) {
       env[key] = value;
     }
   }
@@ -94,20 +107,19 @@ export function claudeCodeWorkdir(): Promise<string> {
   return workdir;
 }
 
-const KILL_GRACE_MS = 2_000;
+const stoppedProcesses = new WeakSet<ChildProcess>();
 
-/** Ends the CLI and anything it started, such as the tool inventory server. */
+/** The CLI owns no persistent state; stop its group immediately after the model turn. */
 function stopProcessTree(child: ChildProcess): void {
-  const kill = (signal: NodeJS.Signals) => {
-    try {
-      if (process.platform !== "win32" && child.pid) process.kill(-child.pid, signal);
-      else child.kill(signal);
-    } catch {
-      // Already gone.
-    }
-  };
-  kill("SIGTERM");
-  setTimeout(() => kill("SIGKILL"), KILL_GRACE_MS).unref();
+  if (stoppedProcesses.has(child)) return;
+  stoppedProcesses.add(child);
+  if (child.exitCode !== null || child.signalCode !== null) return;
+  try {
+    if (process.platform !== "win32" && child.pid) process.kill(-child.pid, "SIGKILL");
+    else child.kill("SIGKILL");
+  } catch {
+    // Already gone.
+  }
 }
 
 export interface ClaudeCodeProcess {

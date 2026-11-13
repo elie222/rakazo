@@ -83,7 +83,7 @@ interface Frame {
 
 /** Anthropic tool-use ids allow letters, digits, `_` and `-`, up to 64 characters. */
 function normalizeToolCallId(id: string): string {
-  return id.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 64);
+  return createHash("sha256").update(id).digest("hex");
 }
 
 function imageBlock(image: ImageContent): Block {
@@ -477,6 +477,20 @@ export function streamClaudeCode(
         started = true;
         stream.push({ type: "start", partial: output });
       };
+      let messageComplete = false;
+      const finish = () => {
+        start();
+        if (output.stopReason === "error") {
+          stream.push({ type: "error", reason: "error", error: output });
+        } else {
+          stream.push({
+            type: "done",
+            reason: output.stopReason as "stop" | "length" | "toolUse",
+            message: output,
+          });
+        }
+        stream.end();
+      };
       for (;;) {
         const event = await read();
         if (!event) throw await exitError(child, "before replying");
@@ -501,7 +515,9 @@ export function streamClaudeCode(
                   : String(event.subtype ?? "");
             throw apiError(undefined, detail, event.api_error_status);
           }
-          throw new Error("Claude Code finished without a reply.");
+          if (!messageComplete) throw new Error("Claude Code finished without a reply.");
+          finish();
+          return;
         }
         if (event.type !== "stream_event") continue;
         const native = (event.event ?? {}) as Record<string, unknown>;
@@ -641,18 +657,12 @@ export function streamClaudeCode(
             break;
           }
           case "message_stop": {
-            start();
-            if (output.stopReason === "error") {
-              stream.push({ type: "error", reason: "error", error: output });
-            } else {
-              stream.push({
-                type: "done",
-                reason: output.stopReason as "stop" | "length" | "toolUse",
-                message: output,
-              });
+            messageComplete = true;
+            if (output.stopReason === "toolUse" || output.stopReason === "error") {
+              finish();
+              return;
             }
-            stream.end();
-            return;
+            break;
           }
         }
       }

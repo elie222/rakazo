@@ -40,6 +40,7 @@ const SERVER_SECRETS = {
   ANTHROPIC_BASE_URL: "https://relay.example.invalid",
   CLAUDE_CODE_OAUTH_TOKEN: "fake-oauth-token",
   OPENROUTER_API_KEY: "sk-fake-openrouter-key",
+  LC_INTERNAL_TOKEN: "fake-locale-prefixed-secret",
   DATABASE_URL: "postgres://user:fake-password@db.example.invalid/rakazo",
 };
 
@@ -241,6 +242,15 @@ describe.skipIf(process.platform === "win32")("Claude Code CLI provider", () => 
     });
   });
 
+  it("reports a final result error after the streamed reply", async () => {
+    fakeClaude("late-error");
+    const { events, message } = await run(hello);
+    expect(message.stopReason).toBe("error");
+    expect(message.errorMessage).toContain("503");
+    expect(events.some((event) => event.type === "done")).toBe(false);
+    expect(events.at(-1)?.type).toBe("error");
+  });
+
   it("hands a tool call back to Rakazo and stops the CLI before it goes on", async () => {
     const cli = fakeClaude("tool");
     const { events, message } = await run(hello);
@@ -328,6 +338,46 @@ describe.skipIf(process.platform === "win32")("Claude Code CLI provider", () => 
         },
       },
     ]);
+  });
+
+  it("keeps distinct historical tool calls paired with their results", async () => {
+    const cli = fakeClaude("reply");
+    const ids = ["call/a", "call_a", `${"x".repeat(70)}a`, `${"x".repeat(70)}b`];
+    const previous = (await run(hello)).message;
+    await run({
+      ...hello,
+      messages: [
+        { role: "user", content: "Look these up", timestamp: 1 },
+        {
+          ...previous,
+          provider: "another-provider",
+          content: ids.map((id) => ({
+            type: "toolCall" as const,
+            id,
+            name: "lookup",
+            arguments: {},
+          })),
+          stopReason: "toolUse",
+        },
+        ...ids.map((id, index) => ({
+          role: "toolResult" as const,
+          toolCallId: id,
+          toolName: "lookup",
+          content: [{ type: "text" as const, text: `Result ${index}` }],
+          isError: false,
+          timestamp: 3,
+        })),
+      ],
+    });
+    const frames = cli.read().frames as {
+      message: { content: { id?: string; tool_use_id?: string }[] };
+    }[];
+    const calls = frames[1]!.message.content.map((block) => block.id);
+    const results = frames[2]!.message.content.map((block) => block.tool_use_id);
+    expect(calls).toHaveLength(ids.length);
+    expect(new Set(calls).size).toBe(ids.length);
+    for (const id of calls) expect(id).toMatch(/^[a-zA-Z0-9_-]{1,64}$/);
+    expect(results).toEqual(calls);
   });
 
   it("fails clearly when the CLI cannot replay history", async () => {

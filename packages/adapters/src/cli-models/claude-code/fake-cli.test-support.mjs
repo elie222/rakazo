@@ -113,6 +113,7 @@ async function chat() {
   };
 
   switch (scenario) {
+    case "late-error":
     case "reply": {
       stream({
         type: "message_start",
@@ -148,10 +149,17 @@ async function chat() {
         usage: { output_tokens: 7 },
       });
       stream({ type: "message_stop" });
-      out({ type: "result", subtype: "success", is_error: false, num_turns: 1 });
+      out({
+        type: "result",
+        subtype: "success",
+        is_error: scenario === "late-error",
+        num_turns: 1,
+        ...(scenario === "late-error" ? { result: "API Error: 503 final result failed" } : {}),
+      });
       break;
     }
     case "tool": {
+      process.on("SIGTERM", () => {});
       stream({ type: "message_start", message: { id: "msg_2", usage } });
       stream({
         type: "content_block_start",
