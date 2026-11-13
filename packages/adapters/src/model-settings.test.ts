@@ -29,7 +29,10 @@ describe("stored model settings", () => {
         },
       }),
     );
-    expect(stored.models).toEqual({ [LISTED_ONLY]: { images: true, maxTokens: 8_000 } });
+    expect(stored.models).toEqual({
+      [LISTED_ONLY]: { images: true, maxTokens: 8_000 },
+      empty: {},
+    });
     expect(parseModelSecret(serializeModelSecret(stored))).toEqual(stored);
   });
 
@@ -240,6 +243,20 @@ describe("saving an OpenAI-compatible connection", () => {
 });
 
 describe("connectionModelSettings", () => {
+  it("returns a cleared model to its card, not to the connection's earlier values", () => {
+    const legacy = parseModelSecret(
+      JSON.stringify({ kind: "api_key", key: KEY, maxTokens: 2_048 }),
+    );
+    const cleared = withModelSettings(
+      withModelSettings(legacy, "glm-5.3", { maxTokens: 4_000 }),
+      "glm-5.3",
+      {},
+    );
+    expect(connectionModelSettings(cleared, "zai", "glm-5.3")).toEqual({});
+    expect(connectionModelSettings(cleared, "zai", "glm-5.3-flash")).toEqual({ maxTokens: 2_048 });
+    expect(parseModelSecret(serializeModelSecret(cleared)).models).toEqual({ "glm-5.3": {} });
+  });
+
   it("prefers a model's own settings over the connection's earlier values", () => {
     const secret = withModelSettings(
       parseModelSecret(JSON.stringify({ kind: "api_key", key: KEY, maxTokens: 2_048 })),

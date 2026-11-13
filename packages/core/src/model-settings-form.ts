@@ -68,6 +68,14 @@ export function catalogEntryFor<T extends Pick<ModelCatalogEntry, "provider" | "
   );
 }
 
+/** Whether a model on this connection has settings of its own, not just its card's. */
+export function modelHasOwnSettings(
+  credential: Pick<ModelCredential, "modelSettings">,
+  modelId: string,
+): boolean {
+  return Object.keys(credential.modelSettings?.[modelId] ?? {}).length > 0;
+}
+
 /** One model a connection runs, with the settings saved for it. */
 export type ConnectionModel = { id: string; label: string; settings?: ModelSettings };
 
@@ -89,7 +97,7 @@ export function connectionModels(
   const withSettings = (id: string, label: string) => ({
     id,
     label,
-    ...(credential.modelSettings?.[id] ? { settings: credential.modelSettings[id] } : {}),
+    ...(modelHasOwnSettings(credential, id) ? { settings: credential.modelSettings?.[id] } : {}),
   });
   const models =
     credential.provider === OPENAI_COMPATIBLE_PROVIDER_ID

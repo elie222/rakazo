@@ -5,6 +5,7 @@ import type { ModelSettingsFields as Fields } from "@rakazo/core";
 import {
   credentialModelSettings,
   modelCapabilitiesConfigurable,
+  modelHasOwnSettings,
   modelSettingsDefaults,
   modelSettingsFields,
   modelSettingsRequest,
@@ -41,7 +42,7 @@ export function ModelSettingsPanel({
   const capabilities = modelCapabilitiesConfigurable(provider, entry);
   const dirty = (Object.keys(fields) as (keyof Fields)[]).some((key) => fields[key] !== saved[key]);
 
-  const customized = Boolean(credential.modelSettings?.[modelId]);
+  const customized = modelHasOwnSettings(credential, modelId);
 
   const update = (patch: Partial<Fields>) => {
     setEdited({ ...fields, ...patch });

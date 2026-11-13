@@ -338,16 +338,13 @@ export async function saveConnectionModelSettings(
         !enabledOpenAiCompatibleModelIds(secret, defaultModel).includes(input.modelId)
       )
         throw new ORPCError("BAD_REQUEST", { message: "Unknown model for that connection" });
-      const saved = secret.models ?? {};
-      if (
-        Object.keys(input.settings).length > 0 &&
-        !Object.hasOwn(saved, input.modelId) &&
-        Object.keys(saved).length >= MAX_MODEL_SETTINGS_PER_CONNECTION
-      )
+      const next = withModelSettings(secret, input.modelId, input.settings);
+      const count = (value: typeof secret) => Object.keys(value.models ?? {}).length;
+      if (count(next) > MAX_MODEL_SETTINGS_PER_CONNECTION && count(next) > count(secret))
         throw new ORPCError("BAD_REQUEST", {
           message: "Too many models on this connection have their own settings",
         });
-      return withModelSettings(secret, input.modelId, input.settings);
+      return next;
     },
   );
   if (!saved) throw new ORPCError("NOT_FOUND", { message: "Connection not found" });

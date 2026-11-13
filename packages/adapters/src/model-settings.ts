@@ -41,14 +41,30 @@ function savedModelSettings(
   return settings;
 }
 
-/** Store one model's settings on the connection; empty settings return it to the model card. */
+/**
+ * Store one model's settings on the connection. Empty settings return it to the model card: the
+ * entry goes away, unless values saved for the whole connection would apply to it instead.
+ */
 export function withModelSettings<T extends StoredModelSecret>(
   secret: T,
   modelId: string,
   settings: ModelSettings,
 ): T {
   const { [modelId.trim()]: _replaced, ...others } = secret.models ?? {};
-  const models =
-    Object.keys(settings).length > 0 ? { ...others, [modelId.trim()]: settings } : others;
+  const keep = Object.keys(settings).length > 0 || hasConnectionWideSettings(secret);
+  const models = keep ? { ...others, [modelId.trim()]: settings } : others;
   return { ...secret, models: Object.keys(models).length > 0 ? models : undefined };
+}
+
+function hasConnectionWideSettings(secret: StoredModelSecret): boolean {
+  return (
+    secret.maxTokens !== undefined ||
+    (secret.kind !== "oauth" && secret.contextWindow !== undefined) ||
+    (secret.kind === "openai_compatible" &&
+      (secret.reasoning !== undefined ||
+        secret.maxImagesPerPrompt !== undefined ||
+        // Without a per-model list, the connection's earlier image answer can still apply.
+        secret.visionModelIds === undefined ||
+        secret.visionModelIds.length > 0))
+  );
 }

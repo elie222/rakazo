@@ -7,6 +7,7 @@ import {
   catalogEntryFor,
   credentialModelSettings,
   modelCapabilitiesConfigurable,
+  modelHasOwnSettings,
   modelSettingsDefaults,
   modelSettingsFields,
   modelSettingsRequest,
@@ -210,7 +211,7 @@ export default function ModelSettingsScreen() {
             style={{ marginTop: 12 }}
           />
         ) : null}
-        {credential.modelSettings?.[modelId] ? (
+        {modelHasOwnSettings(credential, modelId) ? (
           <NativeActionButton
             disabled={pending}
             fill={false}

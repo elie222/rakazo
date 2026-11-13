@@ -188,7 +188,7 @@ describe("connectionModels", () => {
 
   it("lists the catalog models this connection serves, customized ones first", () => {
     expect(
-      connectionModels(credential({ modelSettings: { c: { images: true } } }), catalog),
+      connectionModels(credential({ modelSettings: { c: { images: true }, a: {} } }), catalog),
     ).toEqual([
       { id: "c", label: "C", settings: { images: true } },
       { id: "a", label: "A" },

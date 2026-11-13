@@ -28,8 +28,8 @@ function parsedModelSettings(value: unknown): StoredModelSettings {
   const models: Record<string, ModelSettings> = {};
   for (const [modelId, settings] of Object.entries(value)) {
     const parsed = ModelSettingsSchema.safeParse(settings);
-    if (modelId.trim() && parsed.success && Object.keys(parsed.data).length > 0)
-      models[modelId] = parsed.data;
+    // An empty entry is kept: it means the model's card, not the connection's earlier values.
+    if (modelId.trim() && parsed.success) models[modelId] = parsed.data;
   }
   return Object.keys(models).length > 0 ? { models } : {};
 }
