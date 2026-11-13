@@ -62,6 +62,15 @@ export function signInProviders(capabilities: {
   return capabilities.sso ? [{ id: "oidc", name: capabilities.sso.name }] : [];
 }
 
+/** Organization SSO is secondary alongside personal providers, and prominent on SSO-only servers. */
+export function signInProviderGroups(providers: SignInProvider[]) {
+  const alongsidePersonal = providers.some((provider) => provider.id !== "oidc");
+  return {
+    primary: alongsidePersonal ? providers.filter((provider) => provider.id !== "oidc") : providers,
+    secondary: alongsidePersonal ? providers.filter((provider) => provider.id === "oidc") : [],
+  };
+}
+
 export const accountSecuritySchema = z.object({
   hasPassword: z.boolean(),
   // Older servers omit this field; clients treat omission as enabled.
