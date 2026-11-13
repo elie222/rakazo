@@ -171,6 +171,23 @@ vi.mock("@composio/core", () => ({
 }));
 
 describe("composio app tools", () => {
+  it("does not fetch tools for an aborted request", async () => {
+    const signal = AbortSignal.abort(new Error("Cancelled"));
+    const before = composioSdkState.rawToolQueries.length;
+    await expect(
+      new ComposioConnector().listAppTools(
+        {
+          operationId: "app-tools",
+          traceId: "app-tools",
+          spaceId: "workspace",
+          userId: "user-1",
+          signal,
+        },
+        "gmail",
+      ),
+    ).rejects.toThrow("Cancelled");
+    expect(composioSdkState.rawToolQueries).toHaveLength(before);
+  });
   it("lists the app's own actions rather than the session's search tools", async () => {
     composioToolkitDirectory.invalidate();
     const tools = await new ComposioConnector().listAppTools(

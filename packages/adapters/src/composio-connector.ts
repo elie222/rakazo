@@ -44,7 +44,10 @@ export type ComposioClient = {
   };
   getClient(): {
     tools: {
-      list(query: { toolkit_slug: string; limit: number; cursor?: string }): Promise<{
+      list(
+        query: { toolkit_slug: string; limit: number; cursor?: string },
+        options?: { signal?: AbortSignal },
+      ): Promise<{
         items: unknown[];
         next_cursor?: string | null;
       }>;
@@ -606,16 +609,18 @@ export class ComposioConnector implements ComposioProvider {
   }
 
   /** The app's own actions, not the session tools that only search and run them. */
-  async listAppTools(_context: AdapterContext, externalId: string): Promise<ConnectorTool[]> {
+  async listAppTools(context: AdapterContext, externalId: string): Promise<ConnectorTool[]> {
+    context.signal.throwIfAborted();
     const [toolkit] = await this.canonicalizeToolkits([externalId]);
     if (!toolkit) return [];
     const composio = await this.sdk();
     const tools: unknown[] = [];
     let cursor: string | undefined;
     do {
+      context.signal.throwIfAborted();
       const page = await composio
         .getClient()
-        .tools.list({ toolkit_slug: toolkit, limit: 200, cursor });
+        .tools.list({ toolkit_slug: toolkit, limit: 200, cursor }, { signal: context.signal });
       tools.push(...page.items);
       cursor = page.next_cursor ?? undefined;
     } while (cursor);
