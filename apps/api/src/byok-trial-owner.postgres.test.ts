@@ -468,11 +468,14 @@ dbTests("own-key trial hold lifecycle", () => {
     // The older request runs on an API instance with a one-connection pool, and its own
     // checkout call fails, as an aborted one does.
     const stalled = createDb(process.env.DATABASE_URL!, { poolMax: 1, applicationName: "stalled" });
+    // Its own name, so the wait below counts only this write and no other test's.
+    const expiry = createDb(process.env.DATABASE_URL!, { poolMax: 1, applicationName: "expiry" });
     const olderService = createBillingService({
       prisma: asSystem(stalled.prisma),
       provider: failingByokCheckout(provider),
       webOrigin: "https://example.test",
     });
+    let expiryWrite: Promise<unknown> | undefined;
     const blocker = await db.pool.connect();
     try {
       await service.selectFunding(owner.first.actor, "byok");
@@ -491,17 +494,31 @@ dbTests("own-key trial hold lifecycle", () => {
           { interval: 10, timeout: 5_000 },
         )
         .toBe(1);
-      // The lease lapses during the wait; the write waits for the lease row once that is locked.
-      void prisma.billingAccount
-        .updateMany({
+      // The lease lapses during the wait: the expiry write queues on the lease row the older
+      // request's transaction holds while its hold write waits, so the lapse is already
+      // bound to land mid-write. Wait until the write reached that queue instead of pacing
+      // it with a fixed delay a loaded runner can invalidate. The newer request needs no
+      // such wait: while the lease reads valid, its claim is refused and retried, not
+      // queued behind the holder.
+      const expiryWriteQueued = () =>
+        db.pool
+          .query(
+            `SELECT 1 FROM pg_stat_activity
+              WHERE application_name = 'expiry' AND wait_event_type = 'Lock'
+                AND query LIKE 'UPDATE%billing_accounts%'`,
+          )
+          .then((result) => result.rowCount);
+      expiryWrite = asSystem(expiry.prisma)
+        .billingAccount.updateMany({
           where: { organizationId: owner.first.organizationId },
           data: { checkoutLeaseExpiresAt: new Date(0) },
         })
-        .then();
+        // A failure here shows as a wrong lease below; teardown waits for it either way.
+        .catch(() => undefined);
       const newer = service.selectFunding(owner.first.actor, "byok");
       // Unrelated work queued on the older instance's pool delays its next statement.
       const queued = stalled.pool.query("SELECT pg_sleep(2)");
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await expect.poll(expiryWriteQueued, { interval: 10, timeout: 5_000 }).toBe(1);
       await blocker.query("COMMIT");
       await newer;
       const first = await customerOf(owner.first.organizationId);
@@ -517,6 +534,9 @@ dbTests("own-key trial hold lifecycle", () => {
       blocker.release();
       await stalled.prisma.$disconnect();
       await stalled.pool.end();
+      await expiryWrite;
+      await expiry.prisma.$disconnect();
+      await expiry.pool.end();
     }
   }, 20_000);
 
