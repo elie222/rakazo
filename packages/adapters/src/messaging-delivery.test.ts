@@ -1830,6 +1830,7 @@ describe("when a send fails", () => {
       post("t-a", "a-2"),
     ]);
     t.sendToThread.mockRejectedValueOnce(new Error("messaging provider 500"));
+    const secondBackupAt = backupJob(t, second!)!.availableAt!.getTime();
     const before = Date.now();
     await t.delivery.send([threadLane("t-a")]);
 
@@ -1839,9 +1840,7 @@ describe("when a send fails", () => {
     const retry = backupJob(t, first!)!.availableAt!.getTime();
     expect(retry).toBeGreaterThanOrEqual(before);
     expect(retry).toBeLessThanOrEqual(Date.now());
-    expect(backupJob(t, second!)!.availableAt!.getTime()).toBeGreaterThanOrEqual(
-      before + MESSAGING_SEND_BACKUP_MS,
-    );
+    expect(backupJob(t, second!)!.availableAt!.getTime()).toBe(secondBackupAt);
   });
 
   it("moves the backup job to the provider's retry-after", async () => {
