@@ -7,6 +7,7 @@ import {
   VAULT_IMPORT_FILE_LIMIT,
   VaultImportInput,
   vaultImportCounts,
+  vaultImportOrigin,
   vaultImportProblems,
 } from "./vault-import.js";
 
@@ -168,6 +169,22 @@ describe("parseVaultCsv", () => {
         { line: 6, label: "empty.example.com", reason: "noPassword" },
       ],
     });
+  });
+
+  it.each(["1", "3.14", "2.0.1", "12345", "localhost.", "intranet.", "com."])(
+    "reads %j as no site: a number or a one-word host is not an address",
+    (cell) => {
+      expect(vaultImportOrigin(cell)).toBeUndefined();
+    },
+  );
+
+  it.each([
+    ["192.168.1.1", "https://192.168.1.1"],
+    ["192.168.1.1:8443/admin", "https://192.168.1.1:8443"],
+    ["example.com.", "https://example.com"],
+    ["www.example.com/login", "https://www.example.com"],
+  ])("still reads %j as a site", (cell, origin) => {
+    expect(vaultImportOrigin(cell)).toBe(origin);
   });
 
   it("numbers rows by the file's line they start on, past blank lines and notes on several", () => {
