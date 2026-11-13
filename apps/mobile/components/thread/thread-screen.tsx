@@ -136,7 +136,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
   // The composer floats over the list, which scrolls underneath; this keeps the newest message
   // clear of it. A read-only chat has no composer.
   const [dockHeight, setDockHeight] = useState(0);
-  const bottomInset = Math.max(dockHeight, readOnly ? insets.bottom : 0);
+  const bottomInset = Math.max(dockHeight, readOnly && !rootAvoidsKeyboard ? insets.bottom : 0);
   const activeBotId = useRef(botId);
   activeBotId.current = botId;
   const activeGroupId = useRef(groupId);

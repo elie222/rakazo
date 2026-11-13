@@ -127,6 +127,7 @@ export function CallCard() {
   }, [call?.botId, call?.botName, call?.phase]);
 
   if (!call) return null;
+  const recentExchanges = call.exchanges.slice(-TRANSCRIPT_LINES);
   return (
     <GlassSurface
       shape="roundedRectangle"
@@ -204,23 +205,24 @@ export function CallCard() {
       </View>
       {call.transcriptOpen ? (
         <View style={[styles.transcript, { borderTopColor: tokens.border }]}>
-          {call.exchanges.slice(-TRANSCRIPT_LINES).map((exchange, index) => (
-            <Text
-              key={`${exchange.role}-${index + 1}-${exchange.text.slice(0, 24)}`}
-              numberOfLines={1}
-              style={[
-                styles.line,
-                { color: exchange.role === "bot" ? tokens.foreground : tokens.mutedForeground },
-              ]}
-            >
-              {exchange.text}
-            </Text>
-          ))}
-          {call.caption || call.heard ? (
-            <Text numberOfLines={1} style={[styles.line, { color: tokens.mutedForeground }]}>
-              {call.caption || call.heard}
-            </Text>
-          ) : null}
+          {Array.from({ length: TRANSCRIPT_LINES }, (_, index) => {
+            const exchange = recentExchanges[index];
+            return (
+              <Text
+                key={`transcript-${index + 1}`}
+                numberOfLines={1}
+                style={[
+                  styles.line,
+                  { color: exchange?.role === "bot" ? tokens.foreground : tokens.mutedForeground },
+                ]}
+              >
+                {exchange?.text || " "}
+              </Text>
+            );
+          })}
+          <Text numberOfLines={1} style={[styles.line, { color: tokens.mutedForeground }]}>
+            {call.caption || call.heard || " "}
+          </Text>
         </View>
       ) : null}
     </GlassSurface>
