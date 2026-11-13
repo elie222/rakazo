@@ -2,6 +2,7 @@ import { GROK_BOT_EXPORT_PATH } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import type { GrokBot } from "./index.js";
 import {
+  combineImportedInstructions,
   GROK_BOT_EXPORT_PROMPT,
   GrokBotExportError,
   grokBotExportJson,
@@ -365,4 +366,27 @@ it("refuses conflicting fragments of a named routine instead of creating duplica
     routines: [{ name: "Daily", instruction, cron: "0 8 * * *" }],
   }));
   expect(() => readGrokBotExportJson(JSON.stringify({ bots }))).toThrow(GrokBotExportError);
+});
+
+it("keeps later instructions when the first split part has none", () => {
+  const [bot] = readGrokBotExportJson(
+    JSON.stringify({
+      bots: [
+        { name: "Example", memories: ["Remember"] },
+        { name: "Example", instructions: "Follow these rules" },
+      ],
+    }),
+  );
+  expect(bot?.instructions).toBe("Follow these rules");
+});
+it("preserves an opening instructions heading in exported rules", () => {
+  expect(
+    combineImportedInstructions([
+      {
+        title: "Instructions",
+        content: "# Instructions for incidents\n\nFollow the runbook",
+        role: "working",
+      },
+    ]),
+  ).toBe("# Instructions for incidents\n\nFollow the runbook");
 });

@@ -294,7 +294,7 @@ export function useAgentImportSource() {
   async function previewGrokBot(bot: GrokBot, read = ++latestRead.current) {
     const content = grokBotExportJson(bot);
     if (content.length > GROK_BOT_EXPORT_MAX_LENGTH) {
-      setError(t`These files are too large to import.`);
+      setError(grokBotErrorText("too_large"));
       setBusy(false);
       return;
     }
@@ -311,7 +311,7 @@ export function useAgentImportSource() {
       return;
     }
     if (chosen.reduce((sum, file) => sum + file.size, 0) > GROK_BOT_REPLY_MAX_LENGTH * 4) {
-      setError(t`These files are too large to import.`);
+      setError(grokBotErrorText("too_large"));
       setBusy(false);
       return;
     }

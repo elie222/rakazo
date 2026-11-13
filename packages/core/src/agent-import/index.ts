@@ -413,7 +413,7 @@ function withoutFileTitle(file: string, content: string): string {
   const text = content.replace(/\r\n?/g, "\n").trim();
   const name = file.split("/").at(-1) ?? file;
   const first = text.split("\n", 1)[0] ?? "";
-  if (/^#\s/.test(first) && first.replace(/^#\s+/, "").startsWith(name)) {
+  if (name.endsWith(".md") && /^#\s/.test(first) && first.replace(/^#\s+/, "").startsWith(name)) {
     return text.slice(first.length).trim();
   }
   return text;
