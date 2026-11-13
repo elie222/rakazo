@@ -1780,13 +1780,15 @@ it("uses a signed Apple secret on Better Auth's first and renewed token exchange
 });
 
 it.each([
-  ["google", ""],
-  ["google", "example.test"],
-  ["apple", ""],
-  ["apple", "example.test"],
+  ["google", "", true],
+  ["google", "example.test", true],
+  ["apple", "", false],
+  ["apple", "example.test", false],
+  ["apple", "", true],
+  ["apple", "example.test", true],
 ])(
   "rejects unproven %s mailbox ownership with allowlist %j",
-  async (providerId, signupAllowlist) => {
+  async (providerId, signupAllowlist, verifiedClaim) => {
     const pem = generateKeyPairSync("ec", { namedCurve: "prime256v1" })
       .privateKey.export({ type: "pkcs8", format: "pem" })
       .toString();
@@ -1820,7 +1822,7 @@ it.each([
         token: jwt({
           sub: "former-owner",
           email: "former@example.test",
-          email_verified: providerId === "google",
+          email_verified: verifiedClaim,
           name: "Test",
         }),
       },
@@ -2054,6 +2056,23 @@ describe.each(["google", "apple"] as const)("%s bound identity confirmation", (p
     });
     expect((await request("/delete-user", {})).status).toBe(200);
     expect(rows("user")).toHaveLength(0);
+  });
+  it("never takes over a verified local account by matching a provider email", async () => {
+    await linked();
+    rows("account")[0]!.providerId = "credential";
+    const sessions = rows("session").length;
+    cookies = "";
+    const response = await request("/sign-in/social", {
+      provider: providerId,
+      callbackURL: `${origin}/app`,
+    });
+    const url = new URL(((await response.json()) as { url: string }).url);
+    expect((await callback(url, "former-owner")).headers.get("location")).toContain("error=");
+    expect(rows("user")).toHaveLength(1);
+    expect(rows("account")).toHaveLength(1);
+    expect(rows("account")[0]!.providerId).toBe("credential");
+    expect(rows("session")).toHaveLength(sessions);
+    expect(await (await request("/get-session")).json()).toBeNull();
   });
   it.each([6, 11])(
     "allows ordinary sign-in only within the OAuth window (%i minutes)",

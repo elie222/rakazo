@@ -58,7 +58,6 @@ import {
   publicSignInProviders,
   requestProviderId,
   socialTrustedOrigins,
-  trustedSocialLinking,
 } from "./social.js";
 import { socialReauthentication } from "./social-reauthentication.js";
 import type { TokenKey } from "./token-storage.js";
@@ -335,8 +334,8 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
                     audience: [apple.clientId, apple.bundleId],
                   }
                 : {}),
-              getUserInfo: (token: Parameters<typeof appleUserInfo>[1]) =>
-                appleUserInfo(prisma, token),
+              getUserInfo: async (token: Parameters<typeof appleUserInfo>[1]) =>
+                appleUserInfo(prisma, token, Boolean((await getOAuthState())?.link)),
             },
           }
         : {}),
@@ -566,9 +565,6 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
       before: createAuthMiddleware(async (ctx) => {
         const providerId = requestProviderId(ctx);
 
-        const socialLinking = trustedSocialLinking(
-          ctx.path === "/callback/:id" || ctx.body?.idToken ? providerId : undefined,
-        );
         if (ctx.path === "/sign-in/social") {
           await addOAuthServerContext({
             signupAttribution: signupAttributionFromHeaders(ctx.headers),
@@ -698,7 +694,7 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
         return {
           context: {
             context: {
-              ...(policy || directoryClaim || socialLinking
+              ...(policy || directoryClaim
                 ? {
                     options: {
                       ...(policy ? { emailAndPassword: { requireEmailVerification } } : {}),
@@ -712,7 +708,6 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
                             },
                           }
                         : {}),
-                      ...(socialLinking ? { account: { accountLinking: socialLinking } } : {}),
                     },
                   }
                 : {}),

@@ -262,17 +262,17 @@ Store requires Apple sign-in on a build that also offers Google, so enable both 
 Android and the web app use the system browser for either provider. Secrets stay on the API; the
 sign-in screen only learns which providers are enabled.
 
-Someone who already has an account can sign in with Apple when Apple's email and the
-account's email are both verified. Google and generic OpenID Connect require the existing
-account's authenticated linking flow in account settings (Link Google or Link SSO); a Google verification claim alone does not prove current
-control of a mailbox hosted elsewhere.
+Existing accounts connect Google, Apple, or generic OpenID Connect through authenticated
+linking in account settings. Matching provider and account emails never implicitly link them:
+historical provider verification does not prove current control of a mailbox hosted elsewhere.
 
 Linking requires the provider's verified email to match the verified Rakazo email. A different
 provider address, including Apple's Hide My Email relay address, cannot be linked to that account.
 
 Signup through Google or Apple follows the same closed registration and allowlist as email
 signup. The provider email must be verified before any social account is created. Google verification
-counts only for Gmail or a matching verified Workspace domain. Other Google mailboxes cannot
+counts only for Gmail or a matching verified Workspace domain. Apple verification counts only for
+Apple-managed mailboxes and relay addresses. Other provider mailboxes cannot
 create an account through social signup; verify an account through email and link it in settings.
 
 ## Directory provisioning (SCIM)

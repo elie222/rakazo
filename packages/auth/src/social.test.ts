@@ -7,7 +7,6 @@ import {
   publicSignInProviders,
   socialAuthFromFields,
   socialTrustedOrigins,
-  trustedSocialLinking,
 } from "./social.js";
 import { socialPresentation } from "./social-presentation.js";
 
@@ -104,13 +103,6 @@ it("recognizes only the enabled provider's authorization endpoint", () => {
   expect(isBuiltinAuthorizationURL("oidc", "https://appleid.apple.com/auth/authorize")).toBe(false);
 });
 
-it("never enables implicit Google linking from a verified email claim", () => {
-  expect(trustedSocialLinking("google")).toBeUndefined();
-  expect(trustedSocialLinking("apple")?.trustedProviders).toEqual(["apple"]);
-  expect(trustedSocialLinking("oidc")).toBeUndefined();
-  expect(trustedSocialLinking(undefined)).toBeUndefined();
-});
-
 it("fills a later Apple sign-in from the stored account when the token omits the email", async () => {
   const token = jwt({ sub: "subject-1" });
   const prisma = {
@@ -136,7 +128,7 @@ it("fills a later Apple sign-in from the stored account when the token omits the
       { idToken: withEmail, user: { name: { firstName: "Ada", lastName: "Lovelace" } } },
     ),
   ).resolves.toMatchObject({
-    user: { email: "new@example.test", emailVerified: true, name: "Ada Lovelace" },
+    user: { email: "new@example.test", emailVerified: false, name: "Ada Lovelace" },
   });
 });
 
@@ -154,6 +146,30 @@ it("never treats client-supplied Apple email as a verified token claim", async (
 function jwt(payload: Record<string, unknown>): string {
   return `header.${Buffer.from(JSON.stringify(payload)).toString("base64url")}.sig`;
 }
+
+it.each([
+  ["user@icloud.com", true],
+  ["user@me.com", true],
+  ["user@mac.com", true],
+  ["relay@privaterelay.appleid.com", true],
+  ["relay@private.icloud.com", true],
+  ["former@example.test", false],
+  ["former@icloud.com.example.test", false],
+])("requires Apple authority over mailbox %s", async (email, expected) => {
+  const prisma = { account: { findFirst: async () => null } };
+  const token = { idToken: jwt({ sub: "subject", email, email_verified: true }) };
+  expect((await appleUserInfo(prisma, token))?.user.emailVerified).toBe(expected);
+  expect((await appleUserInfo(prisma, token, true))?.user.emailVerified).toBe(true);
+  expect(
+    (
+      await appleUserInfo(
+        prisma,
+        { idToken: jwt({ sub: "subject", email, email_verified: false }) },
+        true,
+      )
+    )?.user.emailVerified,
+  ).toBe(false);
+});
 
 it("requires Google authority over a verified mailbox", () => {
   expect(googleEmailVerified({ email: "user@example.test", email_verified: true })).toBe(false);

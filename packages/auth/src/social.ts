@@ -169,18 +169,6 @@ export function googleEmailVerified(profile: {
   );
 }
 
-/**
- * Better Auth links a verified email only for Apple, and only on the request that
- * finishes sign-in. Other providers, including generic OpenID Connect, keep implicit linking off.
- */
-export function trustedSocialLinking(
-  providerId: string | undefined,
-): { enabled: true; disableImplicitLinking: false; trustedProviders: string[] } | undefined {
-  // Google email_verified can be stale for mailboxes Google does not manage.
-  if (providerId !== "apple") return undefined;
-  return { enabled: true, disableImplicitLinking: false, trustedProviders: [providerId] };
-}
-
 export function requestProviderId(ctx: {
   path?: string;
   params?: Record<string, unknown>;
@@ -205,14 +193,26 @@ interface AppleIdentityToken {
  * Apple includes the email on the first authorization and often omits it later.
  * A returning account keeps the address already stored for that subject.
  */
-export async function appleUserInfo(prisma: AppleAccountLookup, token: AppleIdentityToken) {
+export async function appleUserInfo(
+  prisma: AppleAccountLookup,
+  token: AppleIdentityToken,
+  authenticatedLink = false,
+) {
   if (!token.idToken) return null;
   const profile = jwtPayload(token.idToken);
   const subject = profile?.sub;
   if (!profile || typeof subject !== "string" || !subject.trim()) return null;
   const claimEmail = typeof profile.email === "string" ? profile.email.trim() : undefined;
   let email = claimEmail || undefined;
-  let emailVerified = profile.email_verified === true || profile.email_verified === "true";
+  const verifiedClaim = profile.email_verified === true || profile.email_verified === "true";
+  // Historical verification of an external mailbox does not establish current ownership.
+  const domain = claimEmail?.split("@")[1]?.toLowerCase();
+  const managedMailbox =
+    domain !== undefined &&
+    ["icloud.com", "me.com", "mac.com", "privaterelay.appleid.com", "private.icloud.com"].includes(
+      domain,
+    );
+  let emailVerified = verifiedClaim && (managedMailbox || authenticatedLink);
   let storedName = "";
   if (!email) {
     const account = await prisma.account.findFirst({
