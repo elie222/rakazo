@@ -25,13 +25,11 @@ export async function confirmDeleteBot(
   // Native alerts cannot update their message: resolve the preview before opening one.
   let groupWarning = "";
   try {
-    const groups = requestContext
-      ? await rpc(
-          "bots/removePreview",
-          { botId: bot.id },
-          { requestContext, skipSpaceAuthRecovery: true },
-        )
-      : await rpc("bots/removePreview", { botId: bot.id });
+    const groups = await rpc(
+      "bots/removePreview",
+      { botId: bot.id },
+      { requestContext, skipSpaceAuthRecovery: true },
+    );
     const names = groups.map((group) => group.name).join(", ");
     if (groups.length === 1) {
       groupWarning = t`The group ${ph({ names })} will be deleted too, including its messages, files, and pages.`;
