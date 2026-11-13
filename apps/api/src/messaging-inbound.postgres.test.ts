@@ -241,25 +241,44 @@ describe.skipIf(!enabled)("group roster versioning under concurrency (PostgreSQL
 });
 
 /**
- * A connection request whose send failed never reached the person, so their next YES, meant for
- * whatever they saw last, must not approve it.
+ * A YES answers a connection request only when the newest message the person was sent is that
+ * request, confirmed delivered. A request whose send failed, or may have arrived before its send
+ * failed, answers nothing, and an older request must not take the YES in its place.
  */
-describe.skipIf(!enabled)("a connection request that failed to send (PostgreSQL)", () => {
-  const addresses = { target: `target-${randomUUID()}`, requester: `requester-${randomUUID()}` };
+describe.skipIf(!enabled)("connection requests whose send failed (PostgreSQL)", () => {
+  const addresses: string[] = [];
+  const provisioned: Array<{ userId: string; spaceId: string }> = [];
   let db: ReturnType<typeof createDb>;
   let system: PrismaClient;
-  const provisioned: Array<{ userId: string; spaceId: string }> = [];
+  /** While set, every transaction gets this timeout instead of its own. */
+  let squeezeMs: number | null = null;
+  let squeezed: PrismaClient;
+  const jobs = {
+    enqueue: vi.fn(async () => undefined),
+    enqueueIn: vi.fn(async () => undefined),
+    cancel: vi.fn(async () => undefined),
+    cancelIn: vi.fn(async () => undefined),
+  };
 
   beforeAll(() => {
     db = createDb(databaseUrl!);
     system = asSystem(db.prisma);
+    squeezed = new Proxy(system, {
+      get(target, key) {
+        if (key !== "$transaction") return Reflect.get(target, key);
+        const transaction = Reflect.get(target, "$transaction").bind(target) as (
+          work: unknown,
+          options?: Record<string, unknown>,
+        ) => unknown;
+        return (work: unknown, options?: Record<string, unknown>) =>
+          transaction(work, squeezeMs === null ? options : { ...options, timeout: squeezeMs });
+      },
+    }) as PrismaClient;
   });
 
   afterAll(async () => {
     if (!db) return;
-    await system.messagingIdentity.deleteMany({
-      where: { address: { in: Object.values(addresses) } },
-    });
+    await system.messagingIdentity.deleteMany({ where: { address: { in: addresses } } });
     for (const { userId, spaceId } of provisioned) {
       await system.organization.deleteMany({ where: { id: spaceId } });
       await system.user.deleteMany({ where: { id: userId } });
@@ -268,61 +287,65 @@ describe.skipIf(!enabled)("a connection request that failed to send (PostgreSQL)
     await db.pool.end();
   });
 
-  it("does not let a later YES approve it", async () => {
-    const provision = async (address: string) => {
-      const bot = await runAsSystem("connection fixture", () =>
-        provisionMessagingIdentity(
-          db.prisma,
-          { provider: "telegram", address },
-          { signupsEnabled: undefined, signupAllowlist: undefined },
-        ),
-      );
-      provisioned.push(bot);
-      await system.bot.update({
-        where: { id: bot.botId },
-        data: { crossSpaceCommunication: true },
-      });
-      const identity = await system.messagingIdentity.update({
-        where: { botId: bot.botId },
-        data: { dmThreadId: `telegram:${address}` },
-      });
-      return { ...identity, threadId: bot.threadId };
-    };
-    const target = await provision(addresses.target);
-    const requester = await provision(addresses.requester);
-    const connection = await system.agentConnection.create({
+  async function provision(name: string) {
+    const address = `${name}-${randomUUID()}`;
+    addresses.push(address);
+    const bot = await runAsSystem("connection fixture", () =>
+      provisionMessagingIdentity(
+        db.prisma,
+        { provider: "telegram", address },
+        { signupsEnabled: undefined, signupAllowlist: undefined },
+      ),
+    );
+    provisioned.push(bot);
+    await system.bot.update({ where: { id: bot.botId }, data: { crossSpaceCommunication: true } });
+    const identity = await system.messagingIdentity.update({
+      where: { botId: bot.botId },
+      data: { dmThreadId: `telegram:${address}` },
+    });
+    return { ...identity, threadId: bot.threadId };
+  }
+
+  type Identity = Awaited<ReturnType<typeof provision>>;
+
+  function requestConnection(requester: Identity, target: Identity) {
+    return system.agentConnection.create({
       data: { requesterBotId: requester.botId, targetBotId: target.botId, status: "pending" },
     });
-    // What the person saw last: their bot asking them something.
-    await system.messagingOutbound.create({
+  }
+
+  /** A message the person was sent and saw, a minute ago. */
+  function delivered(target: Identity, idempotencyKey: string, body: string) {
+    return system.messagingOutbound.create({
       data: {
-        idempotencyKey: `msg:earlier-${randomUUID()}`,
+        idempotencyKey,
         kind: "dm",
         identityId: target.id,
-        body: "Shall I book the table?",
+        body,
         status: "sent",
-        providerHandle: "h-earlier",
+        providerHandle: `h-${randomUUID()}`,
         createdAt: new Date(Date.now() - 60_000),
       },
     });
-    const jobs = {
-      enqueue: vi.fn(async () => undefined),
-      enqueueIn: vi.fn(async () => undefined),
-      cancel: vi.fn(async () => undefined),
-      cancelIn: vi.fn(async () => undefined),
-    };
-    const sendToThread = vi.fn(async () => {
-      throw new Error("provider down");
-    });
-    const delivery = new MessagingDelivery({
-      prisma: system,
+  }
+
+  function delivery(sendToThread: () => Promise<{ handle: string }>) {
+    return new MessagingDelivery({
+      prisma: squeezed,
       messaging: { platforms: () => [], sendToThread } as unknown as MessagingSurface,
       events: createThreadEvents(system),
       jobs,
       artifacts: { get: vi.fn() },
     });
-    await runAsSystem("connection request", () =>
-      delivery.record({ identityId: target.id }, [
+  }
+
+  function sendRequest(
+    sender: MessagingDelivery,
+    requester: Identity,
+    target: Identity,
+  ): Promise<void> {
+    return runAsSystem("connection request", () =>
+      sender.record({ identityId: target.id }, [
         {
           idempotencyKey: `connect:${requester.botId}:${target.botId}`,
           kind: "dm",
@@ -331,41 +354,61 @@ describe.skipIf(!enabled)("a connection request that failed to send (PostgreSQL)
         },
       ]),
     );
-    expect(sendToThread).toHaveBeenCalledOnce();
+  }
 
+  /** The person replies YES; returns the message it became, if it reached the bot as one. */
+  async function replyYes(target: Identity) {
+    const recorder = delivery(async () => ({ handle: "unused" }));
     const inbound = createMessagingInboundHandler({
       prisma: system,
       events: createThreadEvents(system),
       jobs,
-      delivery: { recordIn: delivery.recordIn.bind(delivery), send: vi.fn(async () => undefined) },
+      delivery: { recordIn: recorder.recordIn.bind(recorder), send: vi.fn(async () => undefined) },
       sandbox: {} as never,
       provision: vi.fn(),
       openSignup: false,
       signupPolicy: { signupsEnabled: undefined, signupAllowlist: undefined },
     });
     const handle = `in-${randomUUID()}`;
+    const address = target.dmThreadId!.slice("telegram:".length);
     await runAsSystem("the person's YES", () =>
       inbound({
         type: "message",
         provider: "telegram",
         handle,
-        threadId: `telegram:${addresses.target}`,
+        threadId: target.dmThreadId!,
         isDirect: true,
-        from: addresses.target,
+        from: address,
         fromLabel: null,
         channelName: null,
-        participants: [addresses.target],
+        participants: [address],
         content: "YES",
         mediaUrl: null,
       }),
     );
+    return system.message.findFirst({
+      where: { clientNonce: `messaging:telegram:${handle}` },
+      select: { threadId: true, blocks: true },
+    });
+  }
 
-    expect(
-      await system.agentConnection.findUniqueOrThrow({
-        where: { id: connection.id },
-        select: { status: true },
-      }),
-    ).toEqual({ status: "pending" });
+  const statusOf = async (id: string) =>
+    (await system.agentConnection.findUniqueOrThrow({ where: { id }, select: { status: true } }))
+      .status;
+
+  it("does not let a YES after a failed send approve that request", async () => {
+    const target = await provision("target");
+    const requester = await provision("requester");
+    const connection = await requestConnection(requester, target);
+    await delivered(target, `msg:earlier-${randomUUID()}`, "Shall I book the table?");
+    const sendToThread = vi.fn(async (): Promise<{ handle: string }> => {
+      throw new Error("provider down");
+    });
+    await sendRequest(delivery(sendToThread), requester, target);
+    expect(sendToThread).toHaveBeenCalledOnce();
+
+    const yes = await replyYes(target);
+    expect(await statusOf(connection.id)).toBe("pending");
     expect(
       await system.messagingOutbound.findMany({
         where: { identityId: target.id, idempotencyKey: { startsWith: "connect:" } },
@@ -373,11 +416,49 @@ describe.skipIf(!enabled)("a connection request that failed to send (PostgreSQL)
       }),
     ).toEqual([{ status: "failed" }]);
     // The YES reached the bot as an ordinary message instead.
+    expect(yes).toEqual({ threadId: target.threadId, blocks: [{ kind: "text", text: "YES" }] });
+  });
+
+  it("does not let an older request take a YES meant for a newer one that arrived but failed", async () => {
+    const target = await provision("target");
+    const attacker = await provision("attacker");
+    const trusted = await provision("trusted");
+    const attackerConnection = await requestConnection(attacker, target);
+    await delivered(
+      target,
+      `connect:${attacker.botId}:${target.botId}`,
+      "Mallory wants to connect. Reply YES to allow, NO to decline.",
+    );
+    const trustedConnection = await requestConnection(trusted, target);
+    // The provider accepts the trusted request, but only after its send's transaction timed out.
+    let arrived!: () => void;
+    const reached = new Promise<void>((resolve) => {
+      arrived = resolve;
+    });
+    const sendToThread = vi.fn(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1_500));
+      arrived();
+      return { handle: "h-trusted" };
+    });
+    squeezeMs = 500;
+    try {
+      await sendRequest(delivery(sendToThread), trusted, target);
+    } finally {
+      squeezeMs = null;
+    }
+    await reached;
     expect(
-      await system.message.findFirst({
-        where: { clientNonce: `messaging:telegram:${handle}` },
-        select: { threadId: true, blocks: true },
+      await system.messagingOutbound.findUniqueOrThrow({
+        where: { idempotencyKey: `connect:${trusted.botId}:${target.botId}` },
+        select: { status: true },
       }),
-    ).toEqual({ threadId: target.threadId, blocks: [{ kind: "text", text: "YES" }] });
+    ).toEqual({ status: "failed" });
+
+    const yes = await replyYes(target);
+    expect({
+      attacker: await statusOf(attackerConnection.id),
+      trusted: await statusOf(trustedConnection.id),
+    }).toEqual({ attacker: "pending", trusted: "pending" });
+    expect(yes).toEqual({ threadId: target.threadId, blocks: [{ kind: "text", text: "YES" }] });
   });
 });

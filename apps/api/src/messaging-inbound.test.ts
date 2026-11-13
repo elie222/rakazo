@@ -287,14 +287,15 @@ function createDeps(
         async ({
           where,
         }: {
-          where: { identityId: string; kind: string; status: { in: string[] } };
+          where: { identityId: string; kind: string; status?: { in: string[] } };
         }) =>
           outboundRows
             .filter(
               (row) =>
                 row.identityId === where.identityId &&
                 row.kind === where.kind &&
-                where.status.in.includes((row.status as string | undefined) ?? "pending"),
+                (!where.status ||
+                  where.status.in.includes((row.status as string | undefined) ?? "pending")),
             )
             .toSorted(
               (a, b) => (b.createdAt as Date).getTime() - (a.createdAt as Date).getTime(),
@@ -1349,7 +1350,7 @@ function sentPrompt(
   deps: { outboundRows: Array<Record<string, unknown>> },
   idempotencyKey: string,
   ageMs = 60_000,
-  state: "sent" | "pending" | "retry" | "in flight" = "sent",
+  state: "sent" | "pending" | "retry" | "in flight" | "failed" = "sent",
 ) {
   deps.outboundRows.push({
     idempotencyKey,
@@ -1497,6 +1498,30 @@ describe("createMessagingInboundHandler owner commands", () => {
     expect(deps.sendUserMessage).not.toHaveBeenCalled();
   });
 
+  it("does not let an older request take a YES once a newer prompt failed to send", async () => {
+    const deps = createDeps();
+    const connection = vi.fn(async () => ({
+      id: "ac-attacker",
+      requesterBotId: "bot-6",
+      targetBotId: "bot-1",
+      status: "pending",
+    }));
+    Object.assign(deps.prisma.agentConnection, {
+      findFirst: connection,
+      updateMany: vi.fn(async () => ({ count: 1 })),
+    });
+    sentPrompt(deps, "connect:bot-6:bot-1", 120_000);
+    sentPrompt(deps, "connect:bot-9:bot-1", 60_000, "failed");
+    const handle = createMessagingInboundHandler(deps);
+    await handle({ ...dmEvent, content: "YES" });
+
+    expect(connection).not.toHaveBeenCalled();
+    expect(deps.prisma.agentConnection.updateMany).not.toHaveBeenCalled();
+    expect(deps.sendUserMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ blocks: [{ kind: "text", text: "YES" }] }),
+    );
+  });
+
   it("does not approve a connection whose request is still on its way", async () => {
     const deps = createDeps();
     const connection = vi.fn(async () => ({
@@ -1544,7 +1569,7 @@ describe("createMessagingInboundHandler owner commands", () => {
     );
   });
 
-  it.each(["pending", "retry", "in flight"] as const)(
+  it.each(["pending", "retry", "in flight", "failed"] as const)(
     "answers the delivered question, not a request still %s",
     async (status) => {
       const deps = createDeps({
@@ -1560,7 +1585,7 @@ describe("createMessagingInboundHandler owner commands", () => {
     },
   );
 
-  it.each(["pending", "retry", "in flight"] as const)(
+  it.each(["pending", "retry", "in flight", "failed"] as const)(
     "treats YES as a reply once the bot has answered, even while that answer is %s",
     async (status) => {
       const deps = createDeps({
