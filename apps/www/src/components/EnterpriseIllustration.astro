@@ -1,0 +1,315 @@
+---
+import type { EnterpriseFeatureKind } from "../enterprise";
+import githubLogo from "./brand-logos/github.svg?raw";
+import chatgptLogo from "./provider-logos/chatgpt.svg?raw";
+import claudeLogo from "./provider-logos/claude.svg?raw";
+import grokLogo from "./provider-logos/grok.svg?raw";
+import lmStudioLogo from "./provider-logos/lmstudio.svg?raw";
+import ollamaLogo from "./provider-logos/ollama.svg?raw";
+import openRouterLogo from "./provider-logos/openrouter.svg?raw";
+
+interface Props {
+  kind: EnterpriseFeatureKind;
+}
+
+const { kind } = Astro.props;
+const MODEL_LOGOS = [claudeLogo, chatgptLogo, ollamaLogo, openRouterLogo, lmStudioLogo, grokLogo];
+const PEOPLE = [
+  { name: "Maya Chen", on: true },
+  { name: "Jon Reyes", on: true },
+  { name: "Priya Shah", on: false },
+];
+const AUDIT_ROWS = [
+  { time: "09:14", actor: "Inbox", action: "tool.call" },
+  { time: "09:15", actor: "maya", action: "approval.decided" },
+  { time: "09:21", actor: "jon", action: "credential.changed" },
+];
+const PODS = ["coding-agent", "inbox-manager", "expense-manager"];
+const SPACES = [
+  { name: "Work", bots: ["chief-of-staff", "sales-outbound"] },
+  { name: "Client", bots: ["account-manager", "paid-media"] },
+];
+const LOCK = "M7 11V8a5 5 0 0 1 10 0v3M6 11h12a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-7a1 1 0 0 1 1-1Z";
+const CHECK = "m5 12.5 4.5 4.5L19 7.5";
+---
+
+<div class:list={["enterprise-art", `enterprise-art--${kind}`]} aria-hidden="true">
+  {kind === "sso" ? (
+    <div class="art-window art-sso">
+      <div class="art-sso__field"><svg viewBox="0 0 24 24"><path d={LOCK} /></svg>identity.example.com</div>
+      <span class="art-sso__button">
+        <svg viewBox="0 0 24 24"><circle cx="8" cy="15" r="4" /><path d="m11 12 8-8m-3 3 2.5 2.5M14 9l2 2" /></svg>
+        Continue with SSO
+      </span>
+    </div>
+  ) : kind === "scim" ? (
+    <div class="art-window">
+      {PEOPLE.map((person) => (
+        <div class:list={["art-row", !person.on && "art-row--off"]}>
+          <span class="art-person">{person.name[0]}</span>
+          {person.name}
+          <span class:list={["art-switch", person.on && "art-switch--on"]}><i /></span>
+        </div>
+      ))}
+    </div>
+  ) : kind === "audit" ? (
+    <div class="art-window art-audit">
+      {AUDIT_ROWS.map((row) => (
+        <div class="art-row"><time>{row.time}</time><b>{row.actor}</b><code>{row.action}</code></div>
+      ))}
+    </div>
+  ) : kind === "encryption" ? (
+    <div class="art-encryption">
+      <span class="art-encryption__key">
+        <svg viewBox="0 0 24 24"><circle cx="8" cy="15" r="4" /><path d="m11 12 8-8m-3 3 2.5 2.5M14 9l2 2" /></svg>
+      </span>
+      <svg class="art-encryption__wires" viewBox="0 0 40 96" preserveAspectRatio="none"><path d="M0 48h14M14 48V14h26M14 48h26M14 48v34h26" /></svg>
+      <div class="art-encryption__rows">
+        {["rkz1:k2:9fQa7c", "rkz1:k2:Xw41eB", "rkz1:k2:m0Tz8d"].map((value) => (
+          <span><svg viewBox="0 0 24 24"><path d={LOCK} /></svg><code>{value}…</code></span>
+        ))}
+      </div>
+    </div>
+  ) : kind === "approvals" ? (
+    <div class="art-window art-approval">
+      <div class="art-approval__ask">
+        <img src="/brand/job-bots/inbox-manager.webp" alt="" width="28" height="28" loading="lazy" />
+        <span><b>Send email</b>to finance@example.com</span>
+      </div>
+      <div class="art-approval__actions"><span class="art-approval__allow">Allow once</span><span>Deny</span></div>
+    </div>
+  ) : kind === "infrastructure" ? (
+    <div class="art-cluster">
+      <span class="art-cluster__label">
+        <svg viewBox="0 0 24 24"><path d="M12 3 4 7.5v9L12 21l8-4.5v-9L12 3Zm0 0v18M4 7.5l8 4.5 8-4.5" /></svg>
+        your-cluster
+      </span>
+      <div class="art-cluster__pods">
+        {PODS.map((bot) => (
+          <span><img src={`/brand/job-bots/${bot}.webp`} alt="" width="40" height="40" loading="lazy" /><i /></span>
+        ))}
+      </div>
+    </div>
+  ) : kind === "models" ? (
+    <div class="art-models">
+      {MODEL_LOGOS.map((logo) => <span><Fragment set:html={logo} /></span>)}
+    </div>
+  ) : kind === "spaces" ? (
+    <div class="art-spaces">
+      {SPACES.map((space) => (
+        <div class="art-window">
+          <span class="art-label">{space.name}</span>
+          <div class="art-spaces__bots">
+            {space.bots.map((bot) => <img src={`/brand/job-bots/${bot}.webp`} alt="" width="36" height="36" loading="lazy" />)}
+          </div>
+        </div>
+      ))}
+    </div>
+  ) : (
+    <div class="art-window art-source">
+      <div class="art-source__repo"><Fragment set:html={githubLogo} />elie222/rakazo</div>
+      <div class="art-row"><svg viewBox="0 0 24 24"><path d={CHECK} /></svg>Apache-2.0</div>
+      <div class="art-row"><svg viewBox="0 0 24 24"><path d={CHECK} /></svg>No seat fee</div>
+    </div>
+  )}
+</div>
+
+<style>
+  .enterprise-art {
+    height: 168px;
+    margin: -26px -26px 24px;
+    border-bottom: 1px solid var(--line);
+    background: radial-gradient(120% 100% at 50% 100%, var(--accent-soft), var(--surface-soft) 85%);
+    color: var(--ink);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    overflow: hidden;
+    user-select: none;
+    pointer-events: none;
+    font-size: 12px;
+    line-height: 1.4;
+  }
+  .enterprise-art--sso { --accent: var(--blue); --accent-soft: var(--blue-soft-2); }
+  .enterprise-art--scim { --accent: var(--indigo); --accent-soft: var(--indigo-soft); }
+  .enterprise-art--audit { --accent: var(--green); --accent-soft: var(--green-soft); }
+  .enterprise-art--encryption { --accent: var(--violet); --accent-soft: var(--violet-soft); }
+  .enterprise-art--approvals { --accent: var(--amber); --accent-soft: var(--amber-soft); }
+  .enterprise-art--infrastructure { --accent: var(--teal); --accent-soft: var(--teal-soft); }
+  .enterprise-art--models { --accent: var(--coral); --accent-soft: var(--coral-soft); }
+  .enterprise-art--spaces { --accent: var(--rose); --accent-soft: var(--rose-soft); }
+  .enterprise-art--source { --accent: var(--ink); --accent-soft: var(--line-2); }
+  svg { flex: none; width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; }
+  img { border-radius: 50%; background: var(--surface); }
+
+  .art-window {
+    width: 100%;
+    max-width: 240px;
+    padding: 14px;
+    border: 1px solid var(--line-2);
+    border-radius: 10px;
+    background: var(--surface);
+    box-shadow: var(--shadow-soft);
+  }
+  .art-label { display: block; margin-bottom: 8px; color: var(--muted-2); font-size: 11px; }
+  .art-row { display: flex; align-items: center; gap: 9px; padding: 6px 0; }
+  .art-row + .art-row { border-top: 1px solid var(--line); }
+  .art-row svg { color: var(--accent); }
+  .art-row--off { color: var(--muted); }
+
+  .art-sso { display: grid; gap: 10px; }
+  .art-sso__field {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border: 1px solid var(--line-2);
+    border-radius: 8px;
+    color: var(--muted-2);
+  }
+  .art-sso__field svg { color: var(--accent); }
+  .art-sso__button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 9px;
+    border-radius: 8px;
+    background: var(--accent);
+    color: var(--surface);
+    font-weight: 600;
+  }
+
+  .art-person {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .art-row--off .art-person { background: var(--surface-soft); color: var(--muted); }
+  .art-switch { width: 26px; height: 15px; margin-left: auto; padding: 2px; border-radius: 999px; background: var(--line-2); }
+  .art-switch i { display: block; width: 11px; height: 11px; border-radius: 50%; background: var(--surface); }
+  .art-switch--on { background: var(--accent); }
+  .art-switch--on i { margin-left: auto; }
+
+  .art-audit time { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .art-audit b { font-weight: 600; }
+  .art-audit code { margin-left: auto; color: var(--accent); }
+
+  .art-encryption { display: flex; align-items: center; }
+  .art-encryption__key {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 48px;
+    height: 48px;
+    border-radius: 14px;
+    background: var(--accent);
+    color: var(--surface);
+    box-shadow: 0 8px 20px -8px var(--accent);
+  }
+  .art-encryption__key svg { width: 24px; height: 24px; }
+  .art-encryption__wires { width: 40px; height: 96px; color: var(--accent); opacity: 0.5; stroke-width: 1.5; }
+  .art-encryption__rows { display: grid; gap: 8px; }
+  .art-encryption__rows span {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 6px 10px;
+    border: 1px solid var(--line-2);
+    border-radius: 8px;
+    background: var(--surface);
+    box-shadow: var(--shadow-soft);
+    color: var(--muted-2);
+  }
+  .art-encryption__rows svg { width: 13px; height: 13px; color: var(--accent); }
+
+  .art-approval { display: grid; gap: 12px; }
+  .art-approval__ask { display: flex; align-items: center; gap: 10px; }
+  .art-approval__ask span { display: grid; color: var(--muted-2); }
+  .art-approval__ask b { color: var(--ink); font-size: 13px; font-weight: 600; }
+  .art-approval__actions { display: flex; gap: 8px; }
+  .art-approval__actions span {
+    flex: 1;
+    padding: 7px;
+    border: 1px solid var(--line-2);
+    border-radius: 8px;
+    text-align: center;
+    font-weight: 500;
+  }
+  .art-approval__actions .art-approval__allow { border-color: var(--accent); background: var(--accent); color: var(--surface); }
+
+  .art-cluster {
+    position: relative;
+    padding: 22px 18px 16px;
+    border: 1.5px dashed var(--accent);
+    border-radius: 16px;
+  }
+  .art-cluster__label {
+    position: absolute;
+    top: -11px;
+    left: 14px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 8px;
+    border-radius: 6px;
+    background: var(--accent);
+    color: var(--surface);
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .art-cluster__label svg { width: 13px; height: 13px; }
+  .art-cluster__pods { display: flex; gap: 10px; }
+  .art-cluster__pods span {
+    position: relative;
+    display: flex;
+    padding: 9px;
+    border: 1px solid var(--line-2);
+    border-radius: 12px;
+    background: var(--surface);
+    box-shadow: var(--shadow-soft);
+  }
+  .art-cluster__pods i {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--success);
+    box-shadow: 0 0 0 2px var(--surface);
+  }
+
+  .art-models { display: grid; grid-template-columns: repeat(3, 44px); gap: 10px; }
+  .art-models span {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    border: 1px solid var(--line-2);
+    border-radius: 11px;
+    background: var(--surface);
+    box-shadow: var(--shadow-soft);
+  }
+  .art-models :global(svg) { width: 22px; height: 22px; }
+
+  .art-spaces { display: flex; gap: 12px; }
+  .art-spaces .art-window { width: auto; padding: 12px 14px; }
+  .art-spaces .art-window + .art-window { border-color: var(--accent); }
+  .art-spaces__bots { display: flex; }
+  .art-spaces__bots img { box-shadow: 0 0 0 2px var(--surface); }
+  .art-spaces__bots img + img { margin-left: -8px; }
+
+  .art-source__repo { display: flex; align-items: center; gap: 8px; padding-bottom: 8px; border-bottom: 1px solid var(--line); font-weight: 600; }
+  .art-source__repo :global(svg) { width: 18px; height: 18px; }
+</style>

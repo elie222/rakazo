@@ -134,6 +134,28 @@ describe("pipedreamConfigFromEnv", () => {
 });
 
 describe("PipedreamConnector", () => {
+  describe("needsReconnect", () => {
+    const row = (providerRef?: string, externalId = "gmail") => ({
+      id: "row",
+      connectorId: "pipedream",
+      externalId,
+      displayName: "Gmail",
+      providerRef,
+    });
+    it.each([
+      ["a row names the account", [row("apn_1")], false],
+      ["a row holds only the app slug", [row("gmail")], true],
+      ["a row has no reference", [row()], true],
+      ["no row at all", [], true],
+      ["only another app has an account", [row("apn_2", "slack")], true],
+    ])("%s", async (_name, connectedConnections, expected) => {
+      const connector = new PipedreamConnector(FAKE_CONFIG);
+      expect(await connector.needsReconnect({ ...context, connectedConnections }, "gmail")).toBe(
+        expected,
+      );
+    });
+  });
+
   afterEach(() => vi.unstubAllGlobals());
 
   it.each([

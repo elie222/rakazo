@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { MessagingInboundMessage } from "@rakazo/adapter-kit";
+import { MessagingDelivery } from "@rakazo/adapters";
 import type { PrismaClient } from "@rakazo/db";
 import {
   asSystem,
@@ -49,12 +50,26 @@ describe.skipIf(!enabled)("a linked owner's stop command (PostgreSQL)", () => {
       ),
     );
     transaction = vi.fn((...args: unknown[]) => Reflect.apply(prisma.$transaction, prisma, args));
+    const jobs = {
+      enqueue: vi.fn(async () => undefined),
+      enqueueIn: vi.fn(async () => undefined),
+      cancel: vi.fn(async () => undefined),
+      cancelIn: vi.fn(async () => undefined),
+    };
+    const recorder = new MessagingDelivery({
+      prisma,
+      messaging: {} as never,
+      events: createThreadEvents(prisma),
+      jobs,
+      artifacts: { get: vi.fn() },
+    });
     const inbound = createMessagingInboundHandler({
       prisma: new Proxy(prisma, {
         get: (target, key) => (key === "$transaction" ? transaction : Reflect.get(target, key)),
       }),
       events: createThreadEvents(prisma),
-      jobs: { enqueue: vi.fn().mockResolvedValue(undefined) },
+      jobs,
+      delivery: { recordIn: recorder.recordIn.bind(recorder), send: vi.fn(async () => undefined) },
       sandbox: sandbox as never,
       provision: vi.fn(),
       openSignup: false,

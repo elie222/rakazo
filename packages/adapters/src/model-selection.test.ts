@@ -217,7 +217,10 @@ describe("space catalog auth", () => {
     const preferenceFindMany = vi.fn().mockResolvedValue(options.preferences);
     const secretFindMany = vi.fn().mockResolvedValue(options.secrets);
     const prisma = {
-      userModelCredential: { findMany: credentialFindMany },
+      userModelCredential: {
+        findMany: credentialFindMany,
+        findFirst: vi.fn().mockResolvedValue(null),
+      },
       userModelPreference: { findMany: preferenceFindMany },
       secret: { findMany: secretFindMany },
     } as unknown as PrismaClient;
@@ -244,7 +247,7 @@ describe("space catalog auth", () => {
         preferences: [],
         secrets: [{ id: "personal-secret", ciphertext: "fixture-ciphertext" }],
       });
-      // A balance does not replace a key the member connected outside credits mode.
+      // Funding never replaces a key the member connected.
       Object.assign(prisma.userModelCredential, {
         findFirst: vi.fn().mockResolvedValue({ id: "personal" }),
       });
@@ -258,15 +261,9 @@ describe("space catalog auth", () => {
       const load = vi.fn().mockResolvedValue("fixture-personal-key");
       const auth = await modelCredentialAuthKindsForSpace(prisma, { load }, scope, "openrouter");
       expect(auth.byProvider.openrouter).toBe("api_key");
-      if (mode === "credits") {
-        expect(auth.managedProvider).toBe("openrouter");
-        expect(auth.secretIdByProvider?.openrouter).toBeUndefined();
-        expect(load).not.toHaveBeenCalled();
-      } else {
-        expect(auth.managedProvider).toBeUndefined();
-        expect(auth.secretIdByProvider?.openrouter).toBe("personal-secret");
-        expect(load).toHaveBeenCalledOnce();
-      }
+      expect(auth.managedProvider).toBeUndefined();
+      expect(auth.secretIdByProvider?.openrouter).toBe("personal-secret");
+      expect(load).toHaveBeenCalledOnce();
     } finally {
       vi.unstubAllEnvs();
     }

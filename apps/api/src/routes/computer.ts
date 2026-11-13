@@ -69,6 +69,25 @@ import { executionBlocksUserTakeover } from "../computer-status.js";
 import type { RouterContext } from "./context.js";
 import { computerContext } from "./shared.js";
 
+/** The run paused for a person to take over this bot's computer, and who it waits on. */
+async function waitingTakeoverRun(
+  deps: RouterContext["deps"],
+  spaceId: string,
+  computerId: string,
+  botId: string,
+) {
+  const lease = await deps.prisma.computerExecutionLease.findUnique({
+    where: { computerId_botId: { computerId, botId } },
+    select: { runId: true },
+  });
+  if (!lease) return null;
+  const run = await deps.prisma.run.findUnique({
+    where: { id: lease.runId, spaceId },
+    select: { id: true, botId: true, status: true, userId: true },
+  });
+  return run?.botId === botId && run.status === "waiting_takeover" ? run : null;
+}
+
 const MAX_COMPUTER_TEXT_FILE_BYTES = 2 * 1024 * 1024;
 
 /** Each command writes a running and a done event, so this keeps about 100 commands. */
@@ -509,7 +528,34 @@ export function computerRoutes(ctx: RouterContext) {
       release: authed.computer.release.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
         if (bot.computer) assertNotAnotherPersonsControl(bot.computer, context.actor);
-        await releaseComputerControl(deps, context.actor, input.botId, input.reason);
+        // A needs-you card answers its own run, before or after the person opens the screen.
+        if (input.runId) {
+          const waiting = bot.computer
+            ? await waitingTakeoverRun(deps, context.actor.spaceId, bot.computer.id, bot.id)
+            : null;
+          if (waiting?.id !== input.runId) {
+            throw new ORPCError("CONFLICT", { message: "The bot is no longer waiting" });
+          }
+          // The person it asked, or whoever already holds the screen bound to this run.
+          const drivesThisRun =
+            bot.computer?.controlHolder === "user" &&
+            bot.computer.controlUserId === context.actor.userId &&
+            bot.computer.controlRunId === waiting.id;
+          if (waiting.userId !== context.actor.userId && !drivesThisRun) {
+            throw new ORPCError("CONFLICT", { message: "The bot is waiting for someone else" });
+          }
+        }
+        const released = await releaseComputerControl(
+          deps,
+          context.actor,
+          input.botId,
+          input.reason,
+          input.runId,
+        );
+        // The card waits for its answer to land, so one that changed nothing must say so.
+        if (input.runId && !released) {
+          throw new ORPCError("CONFLICT", { message: "Could not continue" });
+        }
         return { ok: true as const };
       }),
       input: authed.computer.input.handler(async ({ context, input }) => {
@@ -834,6 +880,30 @@ export function computerRoutes(ctx: RouterContext) {
             session.headers,
           ),
         };
+      }),
+      preview: authed.computer.preview.handler(async ({ context, input }) => {
+        const bot = await repos.getBot(context.actor, input.botId);
+        const computer = bot.computer;
+        if (!computer?.providerRef || computer.state !== "running") return { image: null };
+        // A card shows the screen only while its run waits, before and after the capture.
+        const stillWaiting = async () =>
+          !input.runId ||
+          (await waitingTakeoverRun(deps, context.actor.spaceId, computer.id, bot.id))?.id ===
+            input.runId;
+        if (!(await stillWaiting())) return { image: null };
+        const observation = await deps.sandbox
+          .observe(
+            toComputerRef(computer),
+            await computerScreenContext(deps.prisma, context.actor, computer.id, bot.id, "screen"),
+          )
+          .catch(async (error: unknown) => {
+            if (isSandboxGoneError(error)) return clearGoneSandbox(deps, computer, error);
+            getLogger().warn("computer.preview_failed", { error });
+            return null;
+          });
+        if (!observation || !(await stillWaiting())) return { image: null };
+        const data = Buffer.from(observation.image).toString("base64");
+        return { image: `data:${observation.mimeType};base64,${data}` };
       }),
       heartbeat: authed.computer.heartbeat.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);

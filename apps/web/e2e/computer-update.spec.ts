@@ -32,51 +32,26 @@ test("computer maintenance shows durable background progress and failure recover
     updates = [updating];
     return route.fulfill({ json: { json: updating } });
   });
-  let finishRecovery: (() => void) | undefined;
-  let holdRecovery = false;
-  await page.route("**/rpc/computer/recover", async (route) => {
-    if (holdRecovery) {
-      await new Promise<void>((resolve) => {
-        finishRecovery = resolve;
-      });
-    }
+  await page.route("**/rpc/computer/recover", (route) => {
     updates = [{ ...updating, id: "recovery-example", action: "recover", stage: "preparing" }];
     return route.fulfill({ json: { json: updates[0] } });
   });
   await openBotPanelTab(page, "Computer");
   await expect(page.getByTestId("computer-preview")).toBeVisible();
-  await page.getByTestId("computer-preview").hover();
-  await page.getByTestId("computer-preview-open").click();
-  await page.getByTestId("computer-more-button").click();
-  await expect(page.getByText("Recreate a computer that is not working.")).toBeVisible();
-  await expect(page.getByText("Restore the last saved workspace.", { exact: true })).toBeVisible();
-  await expect(page.getByText("Save the workspace and install current software.")).toBeVisible();
-  await captureScreenshot(page, testInfo, "computer-maintenance-menu");
-  await page.getByRole("menuitem", { name: "Recover computer", exact: true }).click();
-  const recoveryConfirmation = page.getByRole("alertdialog");
-  await expect(recoveryConfirmation.getByRole("heading")).toHaveText("Recover computer?");
-  await captureScreenshot(page, testInfo, "computer-maintenance-recover-confirmation");
-  await recoveryConfirmation.getByRole("button", { name: "Cancel", exact: true }).click();
-  await page.getByTestId("computer-more-button").click();
-  await page.getByRole("menuitem", { name: "Reset computer", exact: true }).click();
+  await openBotPanelTab(page, "Advanced");
+  const settings = page.getByTestId("bot-settings");
+  const reset = settings.getByRole("button", { name: "Reset computer", exact: true });
+  await expect(reset).toBeVisible();
+  await expect(settings.getByRole("button", { name: "Stop computer" })).toHaveCount(0);
+  await expect(settings.getByRole("button", { name: "Recover computer" })).toHaveCount(0);
+  await reset.scrollIntoViewIfNeeded();
+  await captureScreenshot(page, testInfo, "computer-maintenance-settings");
+  await reset.click();
   const resetConfirmation = page.getByRole("alertdialog");
+  await expect(resetConfirmation.getByRole("heading")).toHaveText("Reset computer?");
   await captureScreenshot(page, testInfo, "computer-maintenance-reset-confirmation");
   await resetConfirmation.getByRole("button", { name: "Cancel", exact: true }).click();
-  await page.getByTestId("computer-more-button").click();
-  await page.getByRole("menuitem", { name: "Recover computer", exact: true }).click();
-  holdRecovery = true;
-  await recoveryConfirmation.getByRole("button", { name: "Recover computer", exact: true }).click();
-  await expect(recoveryConfirmation.getByRole("button", { name: "Recovering…" })).toBeDisabled();
-  await expect.poll(() => finishRecovery).toBeDefined();
-  finishRecovery!();
-  holdRecovery = false;
-  await expect(recoveryConfirmation).not.toBeVisible();
-  const recoveryProgress = page.getByTestId("computer-update-dialog");
-  await recoveryProgress.getByRole("button", { name: "Continue in Background" }).click();
-  updates = [];
-  await expect(page.getByRole("button", { name: /Recovering Team Computer/ })).toHaveCount(0);
-  await page.getByTestId("computer-more-button").click();
-  await page.getByRole("menuitem", { name: "Update computer", exact: true }).click();
+  await settings.getByRole("button", { name: "Update computer", exact: true }).click();
   const dialog = page.getByTestId("computer-update-dialog");
   await expect(dialog).toBeVisible();
   await expect(dialog.getByRole("heading")).toHaveText("Updating Team Computer");

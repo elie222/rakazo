@@ -49,6 +49,7 @@ import {
   MEMORY_JUDGE_VERSION,
 } from "../evals/memory.js";
 import {
+  loadRecallCases,
   RECALL_EVAL_CASES,
   RECALL_FIXTURE_VERSION,
   RECALL_JUDGE_CALIBRATION,
@@ -101,8 +102,8 @@ async function main() {
       output: { type: "string", default: "test-report/evals/report.json" },
     },
   });
-  if (values["cases-file"] && values.suite !== "tool-choice")
-    throw new Error("--cases-file adds tool-choice cases; use --suite tool-choice");
+  if (values["cases-file"] && values.suite !== "tool-choice" && values.suite !== "recall")
+    throw new Error("--cases-file adds tool-choice or recall cases; use one of those suites");
   const replyMode = ReplyModeSchema.safeParse(values["reply-mode"] ?? "chat");
   if (!replyMode.success) throw new Error("Unknown reply mode; use chat or messages");
   if (values["reply-mode"] && values.suite === "approval")
@@ -171,7 +172,9 @@ async function main() {
     );
   const suite = suites[values.suite!]!;
   const suiteJudge = suite.judge;
-  const extraCases = values["cases-file"] ? loadToolChoiceCases(values["cases-file"]) : [];
+  const extraCases = values["cases-file"]
+    ? (values.suite === "recall" ? loadRecallCases : loadToolChoiceCases)(values["cases-file"])
+    : [];
   const cases = [...suite.cases, ...extraCases];
   const fixtureVersion = extraCases.length
     ? `${suite.fixtureVersion}+${extraCases.length}-local`
@@ -209,7 +212,15 @@ async function main() {
         }),
       ),
     )
-    .flat();
+    .flat()
+    // Only the current strategy compacts, so a compaction case under another one cannot run.
+    .filter(
+      (trial) =>
+        trial.strategy === "current" ||
+        !selected.find((c) => c.id === trial.caseId)?.history?.compact,
+    );
+  if (!trials.length)
+    throw new Error("Compaction cases run only under the current strategy; add --strategy current");
   const output = path.resolve(values.output!);
   let budget: SpendBudget | undefined;
   let probeTotals: { costUsd: number | null; modelCalls: number } | undefined;
@@ -560,6 +571,7 @@ async function main() {
       PIPEDREAM_CLIENT_SECRET: "",
       PIPEDREAM_PROJECT_ID: "",
       SMTP_URL: "",
+      BOT_EMAIL_SMTP_URL: "",
       EMAIL_PROVIDER: "none",
       EMAIL_API_KEY: "",
       SLACK_BOT_TOKEN: "",
