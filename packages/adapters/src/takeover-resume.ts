@@ -19,17 +19,17 @@ export function takeoverResumeFromRelease(reason: unknown): {
   checkpoint: TakeoverResumeCheckpoint;
   promptNote: string;
 } {
-  if (reason === "skipped" || reason === "expired") {
+  if (reason === "skipped") {
     return {
       checkpoint: "takeover-skipped",
       promptNote:
-        "The takeover ended without the user completing it. Continue without assuming that step was done. Do not request takeover again for this same step unless you still cannot proceed.",
+        "The user skipped this step. Continue without assuming that step was done. Take a fresh screenshot before acting on the screen. Do not request takeover again for this same step unless you still cannot proceed.",
     };
   }
   return {
     checkpoint: "takeover",
     promptNote:
-      "The user handed the computer back. Continue using the current screen state. Do not request takeover again for this same step.",
+      "The user finished on the computer. Take a fresh screenshot before acting on the screen. Do not request takeover again for this same step.",
   };
 }
 

@@ -53,7 +53,9 @@ async function prepareImage(
   const mimeType = inferAttachmentMimeType(name, sourceMimeType ?? undefined);
   // Preserve animation and transparency in GIF and WebP images.
   if (mimeType === "image/gif" || mimeType === "image/webp") return { uri, name, mimeType };
-  if (!width || !height || Math.max(width, height) <= ATTACHMENT_IMAGE_MAX_EDGE) {
+  const needsResize = width && height && Math.max(width, height) > ATTACHMENT_IMAGE_MAX_EDGE;
+  // Unsupported photo formats (such as HEIC) need conversion even when already small.
+  if (!needsResize && mimeType) {
     return { uri, name, mimeType };
   }
   const manipulator = loadImageManipulator();
@@ -62,11 +64,13 @@ async function prepareImage(
     mimeType === "image/png" ? manipulator.SaveFormat.PNG : manipulator.SaveFormat.JPEG;
   try {
     const context = manipulator.ImageManipulator.manipulate(uri);
-    context.resize(
-      width >= height
-        ? { width: ATTACHMENT_IMAGE_MAX_EDGE }
-        : { height: ATTACHMENT_IMAGE_MAX_EDGE },
-    );
+    if (needsResize) {
+      context.resize(
+        width >= height
+          ? { width: ATTACHMENT_IMAGE_MAX_EDGE }
+          : { height: ATTACHMENT_IMAGE_MAX_EDGE },
+      );
+    }
     const image = await context.renderAsync();
     const saved = await image.saveAsync({ compress: ATTACHMENT_IMAGE_QUALITY, format });
     return {

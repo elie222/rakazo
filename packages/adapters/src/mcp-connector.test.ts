@@ -18,7 +18,7 @@ import { MCP_CLOSE_TIMEOUT_MS } from "./mcp-close.js";
 import { allowlistDrift, McpConnector } from "./mcp-connector.js";
 import type { McpOAuthBroker, OAuthMaterial } from "./mcp-oauth.js";
 import { StoredMcpOAuthProvider } from "./mcp-oauth.js";
-import { McpSession } from "./mcp-transport.js";
+import { MCP_TOOL_TIMEOUT_MS, McpSession } from "./mcp-transport.js";
 import { InMemoryRealtimeFanout } from "./realtime.js";
 import { checkRoutineWatch, validateRoutineWatch } from "./routine-watch.js";
 import { migrateSecrets } from "./secret-migration.js";
@@ -91,6 +91,10 @@ function mcpFetch(
       annotations?: { readOnlyHint?: boolean };
     }>;
     calls?: string[];
+    /** Answer tool calls with a JSON-RPC error, as a server whose tool failed. */
+    rpcError?: boolean;
+    /** Hold tool calls until the request is aborted, as a slow tool. */
+    holdCalls?: boolean;
   },
   expectedUrl = "https://mcp.example.test/mcp",
 ) {
@@ -138,6 +142,18 @@ function mcpFetch(
     }
     if (message.method === "tools/call") {
       if (message.params?.name) state.calls?.push(message.params.name);
+      if (state.holdCalls)
+        return new Promise<Response>((_, reject) => {
+          const signal = request.signal;
+          if (signal.aborted) reject(signal.reason);
+          signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+        });
+      if (state.rpcError)
+        return Response.json({
+          jsonrpc: "2.0",
+          id: message.id,
+          error: { code: -32603, message: "upstream failed" },
+        });
       return Response.json({
         jsonrpc: "2.0",
         id: message.id,
@@ -1999,6 +2015,124 @@ describe("MCP connector session cache", () => {
     expect(state.initializations).toBe(2);
 
     await connector.close();
+  });
+
+  it.each(["the server's own error", "a cancelled run"] as const)(
+    "keeps a healthy session after a call fails with %s",
+    async (scenario) => {
+      const state = {
+        failNext: false,
+        initializations: 0,
+        rpcError: false,
+        holdCalls: false,
+        calls: [] as string[],
+      };
+      vi.stubGlobal("fetch", mcpFetch(state));
+      const prisma = {
+        mcpServer: NO_SHARED_SERVERS,
+        botMcpServer: {
+          findMany: vi.fn().mockResolvedValue([ASSIGNMENT]),
+          findFirst: vi.fn().mockResolvedValue(ASSIGNMENT),
+        },
+      };
+      const connector = new McpConnector(prisma as never, {} as never, {
+        network: TEST_NETWORK,
+      });
+      const contextWith = (signal: AbortSignal) =>
+        ({ spaceId: "w1", userId: "u1", botId: "bot-1", signal }) as never;
+      const call = {
+        tool: "mcp__demo__echo",
+        args: {},
+        route: { connectorId: "mcp", resourceId: "server-1", toolName: "echo" },
+      } as never;
+
+      await connector.discoverTools(contextWith(new AbortController().signal));
+      expect(state.initializations).toBe(1);
+
+      const run = new AbortController();
+      if (scenario === "a cancelled run") state.holdCalls = true;
+      else state.rpcError = true;
+      const failed: unknown[] = [];
+      const failing = (async () => {
+        for await (const event of connector.execute(call, contextWith(run.signal)))
+          failed.push(event);
+      })();
+      if (scenario === "a cancelled run") {
+        await vi.waitFor(() => expect(state.calls).toEqual(["echo"]));
+        run.abort(new Error("Run cancelled"));
+      }
+      await failing;
+      expect(failed).toMatchObject([{ type: "error" }]);
+
+      state.holdCalls = false;
+      state.rpcError = false;
+      const events: unknown[] = [];
+      for await (const event of connector.execute(call, contextWith(new AbortController().signal)))
+        events.push(event);
+      expect(events).toMatchObject([{ type: "result" }]);
+      expect(state.initializations).toBe(1);
+
+      await connector.close();
+    },
+  );
+
+  it("restarts a server silent for the whole tool timeout, but not one a later call replaced", async () => {
+    vi.useFakeTimers();
+    const state = { failNext: false, initializations: 0, holdCalls: true, calls: [] as string[] };
+    vi.stubGlobal("fetch", mcpFetch(state));
+    const prisma = {
+      mcpServer: NO_SHARED_SERVERS,
+      botMcpServer: {
+        findMany: vi.fn().mockResolvedValue([ASSIGNMENT]),
+        findFirst: vi.fn().mockResolvedValue(ASSIGNMENT),
+      },
+    };
+    const connector = new McpConnector(prisma as never, {} as never, { network: TEST_NETWORK });
+    const context = {
+      spaceId: "w1",
+      userId: "u1",
+      botId: "bot-1",
+      signal: new AbortController().signal,
+    } as never;
+    const execute = async () => {
+      const events: unknown[] = [];
+      for await (const event of connector.execute(
+        {
+          tool: "mcp__demo__echo",
+          args: {},
+          route: { connectorId: "mcp", resourceId: "server-1", toolName: "echo" },
+        } as never,
+        context,
+      ))
+        events.push(event);
+      return events;
+    };
+    try {
+      await connector.discoverTools(context);
+      expect(state.initializations).toBe(1);
+      // Two calls hang on the first session; the second starts halfway through the first's wait.
+      const first = execute();
+      await vi.waitFor(() => expect(state.calls).toHaveLength(1));
+      await vi.advanceTimersByTimeAsync(MCP_TOOL_TIMEOUT_MS / 2);
+      const second = execute();
+      await vi.waitFor(() => expect(state.calls).toHaveLength(2));
+      await vi.advanceTimersByTimeAsync(MCP_TOOL_TIMEOUT_MS / 2);
+      expect(await first).toMatchObject([{ type: "error" }]);
+
+      // The hung session was dropped, so the next call starts a fresh one.
+      state.holdCalls = false;
+      expect(await execute()).toMatchObject([{ type: "result" }]);
+      expect(state.initializations).toBe(2);
+
+      // The second call times out on the old session and leaves the fresh one alone.
+      await vi.advanceTimersByTimeAsync(MCP_TOOL_TIMEOUT_MS);
+      expect(await second).toMatchObject([{ type: "error" }]);
+      expect(await execute()).toMatchObject([{ type: "result" }]);
+      expect(state.initializations).toBe(2);
+    } finally {
+      await connector.close();
+      vi.useRealTimers();
+    }
   });
 
   it("retries a call once on a fresh session when the server expired the cached one", async () => {
