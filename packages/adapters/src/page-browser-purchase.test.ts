@@ -352,7 +352,7 @@ describe("purchase detection in the page helper", () => {
     "refuses conflicting prices in button descriptions: %s",
     (title) => {
       const checkout = page(`<button title="${title}">Pay $.99</button>`);
-      expect(checkout.intent("Pay $.99")?.amount).toBe("?");
+      expect(checkout.intent(title)?.amount).toBe("?");
     },
   );
 
