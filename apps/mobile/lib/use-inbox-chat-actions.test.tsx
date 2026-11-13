@@ -542,3 +542,34 @@ it.each([true, false])(
     expect(session.replace).toHaveBeenCalledTimes(exists ? 0 : 1);
   },
 );
+
+it("preserves another Space's open group after concurrent deletion", async () => {
+  const h = await handlers(async () => []);
+  session.route = { name: "group-thread", params: { groupId: "other-group" } };
+  await h.runRowAction("bot", { id: "x", name: "Ada" }, "delete");
+  session.space = "space-b";
+  vi.mocked(confirmDeleteBot).mock.calls[0]![1]!([], {
+    apiBase: "",
+    headers: { "x-rakazo-space-id": "space-a" },
+    sessionGeneration: 1,
+  });
+  await Promise.resolve();
+  expect(session.replace).not.toHaveBeenCalled();
+});
+
+it("preserves an archived group after concurrent deletion", async () => {
+  const h = await handlers(async (procedure) =>
+    procedure === "groups/listArchived" ? [{ id: "archived-group" }] : [],
+  );
+  session.route = { name: "group-thread", params: { groupId: "archived-group" } };
+  await h.runRowAction("bot", { id: "x", name: "Ada" }, "delete");
+  vi.mocked(confirmDeleteBot).mock.calls[0]![1]!([], {
+    apiBase: "",
+    headers: { "x-rakazo-space-id": "space-a" },
+    sessionGeneration: 1,
+  });
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+  expect(session.replace).not.toHaveBeenCalled();
+});

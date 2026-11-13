@@ -2,7 +2,7 @@ import { useNavigationContainerRef, useRouter } from "expo-router";
 import { useCallback } from "react";
 
 import type { ApiRequestContext } from "./api";
-import { rpc } from "./api";
+import { rpc, selectedSpaceId } from "./api";
 import { currentSessionGeneration } from "./session";
 
 export function useLeaveDeletedChat() {
@@ -26,12 +26,15 @@ export function useLeaveDeletedChat() {
       ) {
         const groupId = route.params.groupId;
         try {
-          const groups = await rpc(
-            "groups/list",
-            {},
-            { requestContext: recoveryContext, skipSpaceAuthRecovery: true },
-          );
-          if (groups.some((group) => group.id === groupId)) return;
+          const spaceId = recoveryContext.headers["x-rakazo-space-id"];
+          if (!spaceId || selectedSpaceId() !== spaceId) return;
+          const options = { requestContext: recoveryContext, skipSpaceAuthRecovery: true };
+          const [groups, archived] = await Promise.all([
+            rpc("groups/list", {}, options),
+            rpc("groups/listArchived", {}, options),
+          ]);
+          if (selectedSpaceId() !== spaceId) return;
+          if ([...groups, ...archived].some((group) => group.id === groupId)) return;
           if (
             recoveryContext.sessionGeneration !== undefined &&
             recoveryContext.sessionGeneration !== currentSessionGeneration()
