@@ -677,19 +677,22 @@ export class TeamChat {
       },
     });
     if (pending.length === 0) return NO_WAITING_DIGESTS;
-    const decided = await this.deps.prisma.externalMessage.groupBy({
-      by: ["senderId"],
-      where: {
-        externalConversationId: conversationId,
-        senderIsBot: true,
-        senderId: { in: pending.map(({ senderId }) => senderId) },
-        judgedAt: { not: null },
-      },
-      _max: { judgedAt: true },
-    });
+    // Each sender's latest decision, one index lookup apiece, however long its history.
+    const decided = await this.deps.prisma.$queryRaw<
+      Array<{ senderId: string; judgedAt: Date | null }>
+    >`
+      SELECT s."senderId", last."judgedAt"
+      FROM unnest(${pending.map(({ senderId }) => senderId)}::text[]) AS s("senderId")
+      LEFT JOIN LATERAL (
+        SELECT "judgedAt" FROM external_messages
+        WHERE "externalConversationId" = ${conversationId} AND "senderId" = s."senderId"
+          AND "senderIsBot" AND "judgedAt" IS NOT NULL
+        ORDER BY "judgedAt" DESC
+        LIMIT 1
+      ) AS last ON true`;
     const waiting: WaitingDigests = { senders: [], nextDueAt: Number.POSITIVE_INFINITY };
     for (const { senderId } of pending) {
-      const last = decided.find((row) => row.senderId === senderId)?._max.judgedAt;
+      const last = decided.find((row) => row.senderId === senderId)?.judgedAt;
       const dueAt =
         (last?.getTime() ?? 0) + (policies[senderId]?.rollupHours ?? 0) * 60 * 60 * 1000;
       if (dueAt <= now.getTime()) continue;

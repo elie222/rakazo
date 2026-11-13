@@ -2422,6 +2422,7 @@ model ExternalMessage {
   @@unique([externalConversationId, providerEventId])
   @@index([externalConversationId, status, createdAt])
   @@index([externalConversationId, senderIsBot, createdAt])
+  @@index([externalConversationId, senderId, judgedAt])
   @@index([status, updatedAt])
   @@map("external_messages")
 }

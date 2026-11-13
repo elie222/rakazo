@@ -169,17 +169,14 @@ function setup(
         query([...externalMessages.values()].map(withRelations), args)[0] ?? null,
       findMany: async (args: FindArgs) =>
         query([...externalMessages.values()].map(withRelations), args),
-      groupBy: async ({ where }: { by: ["senderId"]; where: Where }) => {
-        const groups = new Map<string, Date | null>();
-        for (const row of query([...externalMessages.values()].map(withRelations), { where })) {
-          const last = groups.get(row.senderId) ?? null;
-          groups.set(
-            row.senderId,
-            row.judgedAt && (!last || row.judgedAt > last) ? row.judgedAt : last,
-          );
-        }
-        return [...groups].map(([senderId, judgedAt]) => ({ senderId, _max: { judgedAt } }));
-      },
+      groupBy: async ({ where }: { by: ["senderId"]; where: Where }) =>
+        [
+          ...new Set(
+            query([...externalMessages.values()].map(withRelations), { where }).map(
+              (row) => row.senderId,
+            ),
+          ),
+        ].map((senderId) => ({ senderId })),
       update: async ({ where, data }: { where: { id: string }; data: object }) => {
         const row = externalMessages.get(where.id);
         if (!row) throw new Error(`No external message ${where.id}`);
@@ -202,6 +199,22 @@ function setup(
     artifact: { findMany: async (args: FindArgs) => query(artifacts, args) },
     // The conversation's ambient scheduling lock.
     $executeRaw: async () => 0,
+    /** Each digest sender's latest decision in a conversation. */
+    $queryRaw: async (_sql: TemplateStringsArray, senders: string[], conversationId: string) =>
+      senders.map((senderId) => ({
+        senderId,
+        judgedAt:
+          [...externalMessages.values()]
+            .filter(
+              (row) =>
+                row.externalConversationId === conversationId &&
+                row.senderId === senderId &&
+                row.senderIsBot &&
+                row.judgedAt,
+            )
+            .map((row) => row.judgedAt!)
+            .sort((a, b) => b.getTime() - a.getTime())[0] ?? null,
+      })),
   };
   const prisma = {
     ...tables,
