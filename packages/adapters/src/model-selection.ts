@@ -22,7 +22,7 @@ import { compatibleModelThinkingLevels } from "./model-connect.js";
 import type { StoredModelSecret } from "./model-secret.js";
 import { parseModelSecret } from "./model-secret.js";
 import { connectionModelSettings } from "./model-settings.js";
-import { modelAcceptsImageInput } from "./model-vision.js";
+import { catalogKnowsModel, modelAcceptsImageInput } from "./model-vision.js";
 import type { ModelCredentialAuthKind } from "./pi-catalog-availability.js";
 import {
   catalogModelAvailableForAuth,
@@ -406,6 +406,8 @@ export async function connectedModelSeesImages(
   credential: ModelCredential,
   catalogImages?: boolean,
 ): Promise<boolean> {
+  if (catalogImages !== undefined || catalogKnowsModel(provider, modelId))
+    return modelAcceptsImageInput(provider, modelId, catalogImages);
   const settings = credential
     ? await loadModelSecret(deps.prisma, deps.secretStore, userId, credential.secretId).then(
         (secret) => (secret ? connectionModelSettings(secret, provider, modelId, credential) : {}),
