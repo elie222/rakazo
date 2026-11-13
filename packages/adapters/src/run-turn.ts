@@ -4,6 +4,7 @@ import {
   historyCompactJob,
   ModelAccountError,
   ModelOutputError,
+  memoryRetainTurnJob,
   runContinueJob,
   SandboxAllowanceUsedError,
   SandboxProviderAccountError,
@@ -17,6 +18,7 @@ import {
   humanizeToolName,
   isBackgroundRunTrigger,
   MISSING_TOOL_FINAL_RESPONSE_ERROR,
+  normalizeRunError,
   redactSecrets,
   redactSecretsAfter,
   TAKEOVER_COMPUTER_PENDING_STATE,
@@ -33,12 +35,14 @@ import { returnBotMessageOutcome } from "./bot-messages.js";
 import { scheduleComputerSleep } from "./computer-idle.js";
 import { holdComputerExecutionLeaseForTakeover } from "./computer-lifecycle.js";
 import { resolveBotWorkspacePath } from "./computer-support.js";
+import { answeredSteeringMessageIds, retainsConversationTurn } from "./conversation-memory.js";
 import {
   COMPACTION_BATCH_SIZE,
   HISTORY_WINDOW_SIZE,
   shouldEnqueueCompaction,
 } from "./history-compaction.js";
 import { connectorStepNames } from "./pi-runtime-tools.js";
+import { rejectedRequestsOf } from "./provider-request-shape.js";
 import {
   backOffRoutineAfterAccountError,
   clearRoutineBackoff,
@@ -636,6 +640,7 @@ async function stopStuckToolLoop(ctx: RunContext, toolName: string, refusal?: To
       ? overLimitStopText(humanName, overLimit)
       : loopGuardStopText(humanName, ctx.state.toolCallStreak);
   await ctx.settleRunningHelpers();
+  const answeredMessageIds = await conversationRetentionMessages(ctx);
   const stopped = await deps.events.finalizeRun({
     spaceId: run.spaceId,
     threadId: thread.id,
@@ -649,6 +654,7 @@ async function stopStuckToolLoop(ctx: RunContext, toolName: string, refusal?: To
     blocks: isBackgroundRunTrigger(run.trigger) ? [] : [{ kind: "text", text: stuckText }],
   });
   if (!stopped) return;
+  await enqueueConversationRetention(ctx, answeredMessageIds);
   const stoppedForOverLimit = overLimit >= MAX_CONSECUTIVE_OVER_LIMIT_ACTION_CALLS;
   logLoopGuardStop(
     {
@@ -760,6 +766,31 @@ async function groupSilenceStillAllowed(ctx: RunContext) {
     select: { id: true },
   });
   return !earlier;
+}
+
+/** Finalization deletes steering claims, so collect them before either completion path. */
+async function conversationRetentionMessages(ctx: RunContext): Promise<string[] | undefined> {
+  const { run, thread } = ctx;
+  if (
+    !retainsConversationTurn({
+      trigger: run.trigger,
+      sourceMessageId: run.sourceMessageId,
+      runBotId: run.botId,
+      threadBotId: thread.botId,
+      threadGroupId: thread.groupId,
+      nonOwnerChatRun: ctx.source.messagingChannelRun,
+      provider: ctx.memory.semantic,
+    })
+  )
+    return undefined;
+  return answeredSteeringMessageIds(ctx.deps, ctx.runId);
+}
+
+async function enqueueConversationRetention(ctx: RunContext, messageIds: string[] | undefined) {
+  if (!messageIds) return;
+  await ctx.deps.jobs
+    .enqueue(memoryRetainTurnJob(ctx.runId, messageIds))
+    .catch((error) => getLogger().error("memory.retain-turn enqueue failed", error));
 }
 
 /** The turn ended: apply a scripted runtime's files and memory, then finalize the reply. */
@@ -916,6 +947,7 @@ export async function completeRun(ctx: RunContext) {
     ctx.source.peerMessage?.repliesToRequest === true,
   );
   await ctx.settleRunningHelpers();
+  const answeredMessageIds = await conversationRetentionMessages(ctx);
   const completed = await deps.events.finalizeRun({
     spaceId: run.spaceId,
     threadId: thread.id,
@@ -972,6 +1004,7 @@ export async function completeRun(ctx: RunContext) {
       runId: run.id,
     });
   }
+  await enqueueConversationRetention(ctx, answeredMessageIds);
   // Last, and never fatal: the run is already finalized, so a failure here must not reach
   // the failure path, where a second finalizeRun would match no rows and silently
   // skip the completion notification.
@@ -1006,6 +1039,21 @@ export function handoffEndedTurn(state: Pick<RunState, "handedOff">, error: unkn
     error instanceof ModelOutputError &&
     error.message === MISSING_TOOL_FINAL_RESPONSE_ERROR
   );
+}
+
+/**
+ * Groups failures by provider and the kind and status the provider reported, never by message
+ * text, which quotes ids and user content.
+ */
+function runFailureFingerprint(provider: string, message: string): string[] {
+  const { kind, status } = normalizeRunError(message);
+  return ["run.failed", provider || "unknown", kind ?? "unclassified", String(status ?? "none")];
+}
+
+/** The shape of a request the provider rejected for a reason nothing classified. */
+function requestDetails(error: unknown): { "error.details"?: string } {
+  const rejected = rejectedRequestsOf(error);
+  return rejected ? { "error.details": JSON.stringify({ providerRequests: rejected }) } : {};
 }
 
 /** The turn failed: keep the reply streamed so far, record the error, and retry or notify. */
@@ -1093,6 +1141,8 @@ export async function failRun(
       {
         "run.outcome": "failed",
         ...model.active,
+        "error.fingerprint": runFailureFingerprint(model.active["model.provider"], message),
+        ...requestDetails(error),
       },
     );
   }

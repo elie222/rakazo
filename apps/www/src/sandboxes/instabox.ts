@@ -96,7 +96,7 @@ export const instabox: Sandbox = {
     {
       heading: "What a Rakazo computer costs on InstaBox",
       paragraphs: [
-        `${METHOD_NOTE} Rakazo's InstaBox computers are bigger: Rakazo doesn't pick a size, so every computer gets the plan's default, ${shape}, about ${rateUsd(hour)} an hour. The table compares that size. On Pro, the $${INSTABOX.proFee} fee comes back as usage credit, enough for about ${creditHours} hours of it a month, shared by every computer on the account.`,
+        `${METHOD_NOTE} Rakazo's InstaBox computers are bigger: Rakazo's standard size, ${shape}, is also InstaBox's default, about ${rateUsd(hour)} an hour. The table compares that size. On Pro, the $${INSTABOX.proFee} fee comes back as usage credit, enough for about ${creditHours} hours of it a month, shared by every computer on the account.`,
       ],
       table: {
         caption: `One ${shape} computer a month`,
@@ -160,7 +160,8 @@ export const instabox: Sandbox = {
       heading: "Limits",
       bullets: [
         "The free plan allows one machine, paused ones included, which fits one person's bots in one space. More computers need a paid plan.",
-        `You can't choose a size or a region from Rakazo. Every computer gets the plan's default ${shape}.`,
+        `Computers run at Rakazo's standard size, ${shape}, unless the deployment's own-key plan tiers give a larger one. 8 vCPU / 16 GB needs a paid InstaBox plan, and 16 vCPU / 32 GB needs Builder or above. Moving an existing computer to another size restarts it, so its running programs end.`,
+        "You can't choose a region from Rakazo.",
         "InstaBox also pauses a computer after 30 idle minutes on its own. Rakazo's default idle stop, after 10 minutes, normally comes first.",
         "Rakazo creates every InstaBox computer without your account's vault, so secrets saved on that InstaBox account never reach a bot's computer. Anything a bot needs has to come through Rakazo.",
         "The desktop is served on the computer's public HTTPS address, and every screen and terminal needs its own token.",

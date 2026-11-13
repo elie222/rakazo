@@ -112,17 +112,18 @@ export function assertNotAnotherPersonsControl(
   }
 }
 
-/** Hand the user's screen control for this bot back, continuing any run waiting on it. */
+/** Hand the user's screen control for this bot back, continuing any run waiting on it.
+ * Resolves true only when this call finalized a release. */
 export async function releaseComputerControl(
   deps: RouterDeps,
   actor: Actor,
   botId: string,
   reason?: ComputerReleaseReason,
   expectedRunId?: string,
-): Promise<void> {
+): Promise<boolean> {
   let bot = await createRepos(deps.prisma).getBot(actor, botId);
   if (!bot.computer) {
-    if (expectedRunId !== undefined) return;
+    if (expectedRunId !== undefined) return false;
     throw new IsolationError();
   }
   const unopenedTakeover =
@@ -144,17 +145,18 @@ export async function releaseComputerControl(
     if (released) {
       await enqueueTakeoverContinuation(deps.jobs, released.runId);
       scheduleComputerSleep(deps.jobs, bot.computer.id);
-      return;
+      return true;
     }
     bot = await createRepos(deps.prisma).getBot(actor, botId);
-    if (!bot.computer) return;
+    if (!bot.computer) return false;
   }
   const controlBotId = bot.computer.controlBotId;
   const controlLeaseId = bot.computer.controlLeaseId;
-  if (bot.computer.controlHolder !== "user" || !controlBotId || controlBotId !== bot.id) return;
+  if (bot.computer.controlHolder !== "user" || !controlBotId || controlBotId !== bot.id)
+    return false;
   // Read with the lease released below, so control someone took meanwhile is never ended.
-  if (!holdsUserControl(bot.computer, actor.userId)) return;
-  if (expectedRunId !== undefined && bot.computer.controlRunId !== expectedRunId) return;
+  if (!holdsUserControl(bot.computer, actor.userId)) return false;
+  if (expectedRunId !== undefined && bot.computer.controlRunId !== expectedRunId) return false;
   if (!hasActiveComputerControl(bot.computer) || !controlLeaseId) {
     // Stale controlHolder=user. Prefer expiry (revokes provider control). If a lease id
     // remains after a failed revoke, keep it so reconciliation can retry.
@@ -163,7 +165,7 @@ export async function releaseComputerControl(
     } else {
       await clearInactiveUserComputerControl(deps.prisma, bot.computer.id);
     }
-    return;
+    return false;
   }
   await revokeScreenControl(
     deps,
@@ -181,7 +183,7 @@ export async function releaseComputerControl(
     holder: "bot",
     reason: reason ?? "released",
   });
-  if (!released) return;
+  if (!released) return false;
   // The lease-specific key makes this cancellation safe after a replacement takeover.
   await deps.jobs
     .cancel(computerControlExpireJobKey(bot.computer.id, controlLeaseId))
@@ -193,6 +195,7 @@ export async function releaseComputerControl(
 
   await enqueueTakeoverContinuation(deps.jobs, released.runId);
   scheduleComputerSleep(deps.jobs, bot.computer.id);
+  return true;
 }
 
 export async function runComputerReplace(

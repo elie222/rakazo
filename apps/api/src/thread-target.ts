@@ -18,6 +18,7 @@ import {
   BACKGROUND_HELPER_TRIGGER,
   callIdFromClientNonce,
   isConversationalRun,
+  isQuestionAskBlock,
   MODEL_REQUIRED_SEND_ERROR,
   memberMessageAlerts,
   mentionedGroupBotIds,
@@ -547,10 +548,18 @@ export async function sendThreadMessage(
       let replyQuote: string | undefined;
       let replyPreview: ReplyPreview | null | undefined;
       let repliedBotId: string | undefined;
+      let repliedQuestionRunId: string | undefined;
       if (input.replyToMessageId) {
         const reply = await tx.message.findFirst({
           where: { id: input.replyToMessageId, threadId: target.threadId },
-          select: { id: true, blocks: true, role: true, botId: true, authorUserId: true },
+          select: {
+            id: true,
+            blocks: true,
+            role: true,
+            botId: true,
+            authorUserId: true,
+            runId: true,
+          },
         });
         // A missing target must not lose the send or retain an unverified id.
         // The empty server-owned quote preserves the unavailable state after reload.
@@ -563,6 +572,15 @@ export async function sendThreadMessage(
           const parsed = MessageBlockSchema.array().safeParse(reply.blocks);
           replyPreview = null;
           if (parsed.success) {
+            if (
+              reply.role === "bot" &&
+              parsed.data.some(
+                (block) =>
+                  block.kind === "ask" && isQuestionAskBlock(block) && block.status !== "answered",
+              )
+            ) {
+              repliedQuestionRunId = reply.runId ?? undefined;
+            }
             replyPreview = messageReplyPreview(
               parsed.data,
               reply.role as ReplyPreview["role"],
@@ -595,6 +613,25 @@ export async function sendThreadMessage(
           }
         }
       }
+
+      const composerAnswerInput = (message: { id: string; seq: number }) => ({
+        spaceId: actor.spaceId,
+        threadId: target.threadId,
+        answeredByUserId: actor.userId,
+        answer: input.text ?? "",
+        beforeMessageSeq: message.seq,
+        ...(replyToMessageId ? { replyToMessageId } : {}),
+        answerMessageId: message.id,
+      });
+      const targetedQuestionRun = (
+        runs: readonly { id: string; status: string; userId: string }[],
+      ) =>
+        runs.find(
+          (run) =>
+            run.id === repliedQuestionRunId &&
+            run.status === "waiting_input" &&
+            run.userId === actor.userId,
+        )?.id;
 
       if (target.kind === "bot") {
         const mentionTargets = splitMentionTargets(input.mentions);
@@ -656,28 +693,24 @@ export async function sendThreadMessage(
           throw new ORPCError("BAD_REQUEST", { message: MODEL_REQUIRED_SEND_ERROR });
         }
         const answered: typeof activeRuns = [];
+        const targetedRunId = targetedQuestionRun(activeRuns);
         // Someone else's question stays on its card; this message starts the sender's own run.
         for (const run of activeRuns.filter(
           (run) => !stopping && run.status === "waiting_input" && run.userId === actor.userId,
         )) {
+          if (targetedRunId && run.id !== targetedRunId) continue;
           if (
             await answerWaitingRunWithTextInTransaction(tx, {
-              spaceId: actor.spaceId,
-              threadId: target.threadId,
+              ...composerAnswerInput(message),
               runId: run.id,
-              answeredByUserId: actor.userId,
-              answer: input.text ?? "",
-              beforeMessageSeq: message.seq,
             })
           )
             answered.push({ ...run, status: "queued" });
           else
             await retireWaitingQuestionInTransaction(tx, {
-              spaceId: actor.spaceId,
-              threadId: target.threadId,
+              ...composerAnswerInput(message),
               botId: target.botId,
               runId: run.id,
-              answer: input.text ?? "",
             });
         }
         if (answered.length) {
@@ -941,17 +974,14 @@ export async function sendThreadMessage(
       const rank = (candidate: (typeof activeRuns)[number]) =>
         steersMessageFrom(candidate, actor) ? 2 : steersUserMessage(candidate) ? 1 : 0;
       const answeredByBotId = new Map<string, Array<(typeof activeRuns)[number]>>();
+      const targetedRunId = targetedQuestionRun(activeRuns);
       for (const run of activeRuns) {
         if (run.status === "waiting_input") {
           // Someone else's question stays on its card; this message starts the sender's own run.
-          if (run.userId !== actor.userId) continue;
+          if (run.userId !== actor.userId || (targetedRunId && run.id !== targetedRunId)) continue;
           const answered = await answerWaitingRunWithTextInTransaction(tx, {
-            spaceId: actor.spaceId,
-            threadId: target.threadId,
+            ...composerAnswerInput(message),
             runId: run.id,
-            answeredByUserId: actor.userId,
-            answer: input.text ?? "",
-            beforeMessageSeq: message.seq,
           });
           if (answered) {
             const queuedForBot = answeredByBotId.get(run.botId) ?? [];
@@ -959,11 +989,9 @@ export async function sendThreadMessage(
             answeredByBotId.set(run.botId, queuedForBot);
           } else {
             await retireWaitingQuestionInTransaction(tx, {
-              spaceId: actor.spaceId,
-              threadId: target.threadId,
+              ...composerAnswerInput(message),
               botId: run.botId,
               runId: run.id,
-              answer: input.text ?? "",
             });
           }
           continue;

@@ -320,7 +320,6 @@ export class ExpoPushProvider implements NotificationProvider {
     const shared = {
       to: token,
       collapseId: message.threadId,
-      tag: message.threadId,
       ...(message.badge === undefined ? {} : { badge: message.badge }),
     };
     const urgent =
@@ -330,6 +329,8 @@ export class ExpoPushProvider implements NotificationProvider {
         ? {
             ...shared,
             ...(urgent ? { priority: "high" } : {}),
+            // No `tag`: Expo turns it into a visible notification, which Android then draws
+            // blank in the background instead of handing the data to SenderPush.
             data: {
               ...data,
               notificationTitle: title,
@@ -339,6 +340,7 @@ export class ExpoPushProvider implements NotificationProvider {
           }
         : {
             ...shared,
+            tag: message.threadId,
             title,
             body: text,
             data,
