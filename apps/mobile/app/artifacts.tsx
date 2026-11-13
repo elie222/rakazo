@@ -79,6 +79,7 @@ export default function ArtifactsScreen() {
   const [searchPageFailed, setSearchPageFailed] = useState(false);
   const loadingMoreRef = useRef(false);
   const generationRef = useRef(0);
+  const loadingPageRef = useRef(false);
   const autoFetchedCursorRef = useRef<string | null>(null);
   const activeBotIdRef = useRef(activeBotId);
   const madeByBotsRef = useRef(madeByBots);
@@ -111,6 +112,7 @@ export default function ArtifactsScreen() {
   const load = useCallback(
     async (botId: string | null, madeByBots: boolean, mode: "replace" | "refresh") => {
       const generation = ++generationRef.current;
+      loadingPageRef.current = true;
       loadingMoreRef.current = false;
       setLoadingMore(false);
       autoFetchedCursorRef.current = null;
@@ -131,8 +133,9 @@ export default function ArtifactsScreen() {
         setNext(page.nextCursor ? { cursor: page.nextCursor, botId, madeByBots } : null);
       } catch (error) {
         if (generation !== generationRef.current) return;
-        // A refresh can supersede a replace load before any items are available.
         setLoadError(errorText(error, t`Could not load artifacts.`));
+      } finally {
+        if (generation === generationRef.current) loadingPageRef.current = false;
       }
     },
     [t],
@@ -149,7 +152,7 @@ export default function ArtifactsScreen() {
   );
 
   const loadMore = useCallback(async () => {
-    if (!nextCursor || loadingMoreRef.current) return;
+    if (!nextCursor || loadingMoreRef.current || loadingPageRef.current) return;
     const generation = generationRef.current;
     loadingMoreRef.current = true;
     setLoadingMore(true);
@@ -198,7 +201,6 @@ export default function ArtifactsScreen() {
             void removeArtifact(item.id)
               .then(() => {
                 setItems((current) => current?.filter((row) => row.id !== item.id) ?? current);
-                // Invalidate reads started before deletion and refresh the current filter.
                 void load(activeBotIdRef.current, madeByBotsRef.current, "refresh");
               })
               .catch((error: unknown) =>
