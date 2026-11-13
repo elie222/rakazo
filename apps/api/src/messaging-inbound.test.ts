@@ -1349,14 +1349,15 @@ function sentPrompt(
   deps: { outboundRows: Array<Record<string, unknown>> },
   idempotencyKey: string,
   ageMs = 60_000,
-  status = "sent",
+  state: "sent" | "pending" | "retry" | "in flight" = "sent",
 ) {
   deps.outboundRows.push({
     idempotencyKey,
     kind: "dm",
     identityId: "mi-1",
     body: "Reply YES to allow, NO to decline.",
-    status,
+    status: state === "in flight" ? "sent" : state,
+    providerHandle: state === "sent" ? `handle-${idempotencyKey}` : null,
     createdAt: new Date(Date.now() - ageMs),
   });
 }
@@ -1496,6 +1497,31 @@ describe("createMessagingInboundHandler owner commands", () => {
     expect(deps.sendUserMessage).not.toHaveBeenCalled();
   });
 
+  it("does not approve a connection whose request is still on its way", async () => {
+    const deps = createDeps();
+    const connection = vi.fn(async () => ({
+      id: "ac-1",
+      requesterBotId: "bot-9",
+      targetBotId: "bot-1",
+      status: "pending",
+    }));
+    Object.assign(deps.prisma.agentConnection, {
+      findFirst: connection,
+      updateMany: vi.fn(async () => ({ count: 1 })),
+    });
+    sentPrompt(deps, "invite:ch-0:mi-1", 120_000);
+    sentPrompt(deps, "connect:bot-9:bot-1", 60_000, "in flight");
+    const handle = createMessagingInboundHandler(deps);
+    await handle({ ...dmEvent, content: "YES" });
+
+    expect(connection).not.toHaveBeenCalled();
+    expect(deps.prisma.agentConnection.updateMany).not.toHaveBeenCalled();
+    expect(deps.prisma.messagingChannelMember.updateMany).not.toHaveBeenCalled();
+    expect(deps.sendUserMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ blocks: [{ kind: "text", text: "YES" }] }),
+    );
+  });
+
   it.each([
     ["the bot wrote since the invite", "reply"],
     ["the invite is more than a day old", "stale"],
@@ -1518,7 +1544,7 @@ describe("createMessagingInboundHandler owner commands", () => {
     );
   });
 
-  it.each(["pending", "retry"])(
+  it.each(["pending", "retry", "in flight"] as const)(
     "answers the delivered question, not a request still %s",
     async (status) => {
       const deps = createDeps({
@@ -1534,7 +1560,7 @@ describe("createMessagingInboundHandler owner commands", () => {
     },
   );
 
-  it.each(["pending", "retry"])(
+  it.each(["pending", "retry", "in flight"] as const)(
     "treats YES as a reply once the bot has answered, even while that answer is %s",
     async (status) => {
       const deps = createDeps({

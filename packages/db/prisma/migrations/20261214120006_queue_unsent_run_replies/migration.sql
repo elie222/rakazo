@@ -2,7 +2,9 @@
 -- without their reply recorded, and delegated replies to a team-chat thread not yet relayed. The
 -- run-end trigger (20261214120000_run_reply_delivery_job) only covers runs that end from now on.
 -- Each run's reply job records and sends its reply once; a job already queued is kept. The jobs
--- wait until the previous release has stopped, and skip a reply its recovery delivered meanwhile.
+-- wait until the previous release has stopped. A reply its recovery delivered meanwhile is not
+-- sent again: 1:1 and group replies reuse that release's outbound keys, and a delegated reply
+-- checks the run's relay marker.
 -- Fresh installations create Graphile's schema after application migrations, and have no runs.
 DO $$ BEGIN
   IF to_regnamespace('graphile_worker') IS NULL THEN
@@ -10,7 +12,7 @@ DO $$ BEGIN
   END IF;
   PERFORM graphile_worker.add_job(
     'messaging.reply',
-    json_build_object('runId', r.id, 'previousRelease', true),
+    json_build_object('runId', r.id),
     run_at => now() + interval '10 minutes',
     job_key => 'messaging.reply:' || r.id,
     job_key_mode => 'unsafe_dedupe'
@@ -26,7 +28,7 @@ DO $$ BEGIN
   ) THEN
     PERFORM graphile_worker.add_job(
       'messaging.reply',
-      json_build_object('runId', r.id, 'previousRelease', true),
+      json_build_object('runId', r.id),
       run_at => now() + interval '10 minutes',
       job_key => 'messaging.reply:' || r.id,
       job_key_mode => 'unsafe_dedupe'

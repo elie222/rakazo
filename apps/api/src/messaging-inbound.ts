@@ -562,7 +562,8 @@ export const TEXT_ANSWER_WINDOW_MS = 24 * 60 * 60 * 1000;
 /**
  * The one request a bare YES or NO answers: the request whose prompt is the newest message this
  * line delivered to the person, sent within the answer window and still pending. Anything said since,
- * by the bot or the product, makes the reply an ordinary message.
+ * by the bot or the product, makes the reply an ordinary message. A prompt still on its way (claimed,
+ * with no provider handle yet) has not been seen, so it answers nothing and shadows older prompts.
  */
 async function answeredRequest(deps: MessagingInboundDeps, identity: IdentityRow) {
   const latest = await deps.prisma.messagingOutbound.findFirst({
@@ -572,10 +573,11 @@ async function answeredRequest(deps: MessagingInboundDeps, identity: IdentityRow
       status: { in: ["pending", "retry", "sent"] },
     },
     orderBy: { createdAt: "desc" },
-    select: { idempotencyKey: true, createdAt: true, status: true },
+    select: { idempotencyKey: true, createdAt: true, status: true, providerHandle: true },
   });
   if (
     latest?.status !== "sent" ||
+    latest.providerHandle === null ||
     Date.now() - latest.createdAt.getTime() > TEXT_ANSWER_WINDOW_MS
   ) {
     return null;

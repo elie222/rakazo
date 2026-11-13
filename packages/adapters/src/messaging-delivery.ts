@@ -269,12 +269,8 @@ export class MessagingDelivery {
    * Records and sends what a run said where its turn came from: a 1:1 chat or group, the
    * team-chat thread that started it, or the thread a delegation chain started in. `progress`
    * sends a running 1:1 run's interim messages; everything else waits for the run to pause or end.
-   * `previousRelease` skips what the previous release's recovery delivered in the meantime.
    */
-  async deliverRun(
-    runId: string,
-    options: { progress?: boolean; previousRelease?: boolean } = {},
-  ): Promise<void> {
+  async deliverRun(runId: string, options: { progress?: boolean } = {}): Promise<void> {
     await runAsSystem("deliver what a run said", async () => {
       const run = await this.deps.prisma.run.findUnique({
         where: { id: runId },
@@ -298,7 +294,6 @@ export class MessagingDelivery {
           if (lane) lanes.push(lane);
         }
       } else if (run.trigger === "messaging") {
-        if (options.previousRelease && run.messagingMirroredAt) return;
         const channelBlock = ((run.sourceMessage?.blocks ?? []) as MessageBlock[]).find(
           (block): block is Extract<MessageBlock, { kind: "channel_message" }> =>
             block.kind === "channel_message",
@@ -321,8 +316,7 @@ export class MessagingDelivery {
         if (direct) lanes.push(direct);
         if (
           (run.status === "completed" || run.status === "failed") &&
-          run.thread.externalConversation?.botId === run.botId &&
-          !(options.previousRelease && (await this.relayedByPreviousRelease(runId)))
+          run.thread.externalConversation?.botId === run.botId
         ) {
           const delegated = await this.recordDelegatedReply(run);
           if (delegated) lanes.push(delegated);
@@ -1164,8 +1158,9 @@ export class MessagingDelivery {
         origin.replyThreadId,
       ),
     };
-    await this.deps.prisma.$transaction((tx) =>
-      this.recordIn(tx, lane, [
+    const recorded = await this.deps.prisma.$transaction(async (tx) => {
+      if (!(await claimPreviousReleaseRelay(tx, run.id))) return false;
+      await this.recordIn(tx, lane, [
         {
           idempotencyKey: `team-chat-run:${run.id}`,
           kind: "team",
@@ -1173,20 +1168,10 @@ export class MessagingDelivery {
           body,
           sourceMessageId: reply?.id ?? run.sourceMessageId,
         },
-      ]),
-    );
-    return lane;
-  }
-
-  /**
-   * Whether the previous release already posted this delegated reply. Its marker column goes in a
-   * deferred migration, so the read works with or without it.
-   */
-  private async relayedByPreviousRelease(runId: string): Promise<boolean> {
-    const [row] = await this.deps.prisma.$queryRaw<Array<{ relayed: boolean }>>`
-      SELECT (to_jsonb(r) ->> 'teamChatMirroredAt') IS NOT NULL AS relayed
-      FROM runs AS r WHERE r.id = ${runId}`;
-    return row?.relayed ?? false;
+      ]);
+      return true;
+    });
+    return recorded ? lane : undefined;
   }
 
   private async findExternalOrigin(sourceMessageId: string | null) {
@@ -1228,6 +1213,26 @@ async function lockLane(tx: Prisma.TransactionClient, lane: OutboundLane): Promi
   else
     await tx.$queryRaw`SELECT id FROM messaging_identities WHERE id = ${lane.identityId} FOR UPDATE`;
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`messaging_outbound:${laneKey(lane)}`}, 0))`;
+}
+
+/**
+ * The previous release relays a delegated reply with no outbound row and then marks the run, so
+ * this release checks that marker and sets it in the transaction that records its own relay:
+ * false when that release already posted the reply. The run's row lock keeps the column until
+ * commit; its deferred drop first carries every marker into a row under the relay's key.
+ */
+async function claimPreviousReleaseRelay(
+  tx: Prisma.TransactionClient,
+  runId: string,
+): Promise<boolean> {
+  const [run] = await tx.$queryRaw<Array<{ tracked: boolean; relayed: boolean }>>`
+    SELECT to_jsonb(r) ? 'teamChatMirroredAt' AS tracked,
+      (to_jsonb(r) ->> 'teamChatMirroredAt') IS NOT NULL AS relayed
+    FROM runs AS r WHERE r.id = ${runId} FOR UPDATE`;
+  if (!run?.tracked) return true;
+  if (run.relayed) return false;
+  await tx.$executeRaw`UPDATE runs SET "teamChatMirroredAt" = now() AT TIME ZONE 'UTC' WHERE id = ${runId}`;
+  return true;
 }
 
 function laneKey(lane: OutboundLane): string {

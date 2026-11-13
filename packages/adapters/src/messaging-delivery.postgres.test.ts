@@ -591,13 +591,9 @@ describePostgres("chat delivery with Graphile backup jobs (PostgreSQL)", () => {
          FROM graphile_worker._private_jobs WHERE key = ANY($1::text[])`,
         [[left.id, delivered.id, old.id].map(messagingReplyJobKey)],
       );
-      // Due once the previous release has stopped, and told to skip what it delivered meanwhile.
+      // Due once the previous release has stopped.
       expect(rows).toEqual([
-        {
-          key: messagingReplyJobKey(left.id),
-          payload: { runId: left.id, previousRelease: true },
-          due: true,
-        },
+        { key: messagingReplyJobKey(left.id), payload: { runId: left.id }, due: true },
       ]);
     } finally {
       await client.query("ROLLBACK");

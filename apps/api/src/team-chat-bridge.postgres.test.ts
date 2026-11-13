@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import type {
   BackgroundJob,
   MessagingInboundMessage,
@@ -119,6 +121,49 @@ describePostgres("team chat engagement through Graphile jobs (PostgreSQL)", () =
 
   function row(id: string) {
     return system.externalMessage.findUniqueOrThrow({ where: { id } });
+  }
+
+  async function nextSeq(threadId: string) {
+    const thread = await system.thread.update({
+      where: { id: threadId },
+      data: { nextMessageSeq: { increment: 1 } },
+      select: { nextMessageSeq: true },
+    });
+    return thread.nextMessageSeq;
+  }
+
+  async function reply(threadId: string, runId: string, text: string) {
+    return system.message.create({
+      data: {
+        threadId,
+        seq: await nextSeq(threadId),
+        role: "bot",
+        botId: identity.botId,
+        runId,
+        blocks: [{ kind: "text", text }],
+      },
+    });
+  }
+
+  /** Delivery whose provider records each post. */
+  function replies() {
+    const sent: Array<{ threadId: string; body: string }> = [];
+    const messaging = {
+      platforms: () => [],
+      sendToThread: vi.fn(async (request: { threadId: string; body: string }) => {
+        sent.push({ threadId: request.threadId, body: request.body });
+        return { handle: `1700.${sent.length + 1}` };
+      }),
+    } as unknown as MessagingSurface;
+    const delivery = () =>
+      new MessagingDelivery({
+        prisma: system,
+        messaging,
+        events,
+        jobs,
+        artifacts: { get: vi.fn() },
+      });
+    return { delivery, sent };
   }
 
   it("starts a mention's run in the process that receives it and removes its backup job", async () => {
@@ -256,26 +301,108 @@ describePostgres("team chat engagement through Graphile jobs (PostgreSQL)", () =
         blocks: [{ kind: "text", text: "Release looks good." }],
       },
     });
-    const sent: Array<{ threadId: string; body: string }> = [];
-    const messaging = {
-      platforms: () => [],
-      sendToThread: vi.fn(async (request: { threadId: string; body: string }) => {
-        sent.push({ threadId: request.threadId, body: request.body });
-        return { handle: "1700.2" };
-      }),
-    } as unknown as MessagingSurface;
-    const delivery = () =>
-      new MessagingDelivery({
-        prisma: system,
-        messaging,
-        events,
-        jobs,
-        artifacts: { get: vi.fn() },
-      });
+    const { delivery, sent } = replies();
     // The finishing process and the run's reply job both deliver it.
     await Promise.all([delivery().deliverRun(runId!), delivery().deliverRun(runId!)]);
     expect(sent).toEqual([{ threadId: "slack:C-1:1700.1", body: "Release looks good." }]);
     expect((await row(received.externalMessageId)).status).toBe("delivered");
+  });
+
+  it("relays a delegated reply once, past the previous release's marker and its deferred drop", async () => {
+    const received = await runAsSystem("teamchat delegation", () =>
+      bridge().receive(message({ replyThreadId: "1800.1" })),
+    );
+    const { runId } = await row(received.externalMessageId);
+    const asked = await reply(received.threadId, runId!, "Asking the research bot.");
+    const delegated = async (text: string) => {
+      const source = await system.message.create({
+        data: {
+          threadId: received.threadId,
+          seq: await nextSeq(received.threadId),
+          role: "user",
+          blocks: [{ kind: "text", text: "Look into the release." }],
+          replyToMessageId: asked.id,
+        },
+      });
+      const task = await system.task.create({
+        data: {
+          spaceId: identity.spaceId,
+          botId: identity.botId,
+          userId: identity.userId,
+          threadId: received.threadId,
+          prompt: "delegated",
+          status: "completed",
+        },
+      });
+      const run = await system.run.create({
+        data: {
+          spaceId: identity.spaceId,
+          botId: identity.botId,
+          userId: identity.userId,
+          threadId: received.threadId,
+          taskId: task.id,
+          status: "completed",
+          trigger: "bot_message",
+          sourceMessageId: source.id,
+        },
+      });
+      await reply(received.threadId, run.id, text);
+      return run.id;
+    };
+    const byPrevious = await delegated("Posted by the previous release.");
+    const unposted = await delegated("Not posted yet.");
+    const afterDrop = await delegated("Ended after the drop.");
+    const marker = async (id: string) =>
+      (
+        await owner.query<{ marked: boolean }>(
+          `SELECT "teamChatMirroredAt" IS NOT NULL AS marked FROM runs WHERE id = $1`,
+          [id],
+        )
+      ).rows[0]?.marked;
+    const migration = readFileSync(
+      fileURLToPath(
+        new URL(
+          "../../../packages/db/prisma/migrations/20261214120100_drop_hand_rolled_delivery_state/migration.sql",
+          import.meta.url,
+        ),
+      ),
+      "utf8",
+    );
+    const { delivery, sent } = replies();
+
+    // While the previous release still runs: its marker stops this release, and this release's
+    // own relay sets it so the previous release's bridge passes it over.
+    await owner.query(`ALTER TABLE runs ADD COLUMN "teamChatMirroredAt" TIMESTAMP(3)`);
+    await owner.query(
+      `UPDATE runs SET "teamChatMirroredAt" = now() AT TIME ZONE 'UTC' WHERE id = $1`,
+      [byPrevious],
+    );
+    await delivery().deliverRun(byPrevious);
+    await Promise.all([delivery().deliverRun(unposted), delivery().deliverRun(unposted)]);
+    expect(sent).toEqual([{ threadId: "slack:C-1:1800.1", body: "Not posted yet." }]);
+    expect(await marker(unposted)).toBe(true);
+
+    // The deferred drop, with the columns it drops put back.
+    await owner.query(
+      `ALTER TABLE messaging_outbound ADD COLUMN "attempts" INTEGER, ADD COLUMN "nextAttemptAt" TIMESTAMP(3)`,
+    );
+    await owner.query(
+      `ALTER TABLE external_messages ADD COLUMN "attempts" INTEGER, ADD COLUMN "nextAttemptAt" TIMESTAMP(3),
+         ADD COLUMN "lastError" TEXT, ADD COLUMN "providerReplyHandle" TEXT, ADD COLUMN "deliveredAt" TIMESTAMP(3)`,
+    );
+    await owner.query(migration);
+    expect(
+      await system.messagingOutbound.findUnique({
+        where: { idempotencyKey: `team-chat-run:${byPrevious}` },
+        select: { status: true, providerHandle: true, identityId: true, threadId: true },
+      }),
+    ).toEqual({ status: "sent", providerHandle: "", identityId: null, threadId: null });
+
+    // A reply job still pending after the drop finds the carried row; a new relay goes out once.
+    await delivery().deliverRun(byPrevious);
+    await delivery().deliverRun(afterDrop);
+    await delivery().deliverRun(afterDrop);
+    expect(sent.map((post) => post.body)).toEqual(["Not posted yet.", "Ended after the drop."]);
   });
 
   it("decides a quiet conversation's ambient messages in one queued job", async () => {

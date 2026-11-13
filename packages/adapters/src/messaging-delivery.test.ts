@@ -449,9 +449,12 @@ function createPrisma(world: World, jobs: ReturnType<typeof createJobs>) {
     },
     $queryRaw: vi.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
       const sql = strings.join("?");
+      // The previous release's relay marker; a run without the key models the dropped column.
       if (sql.includes("teamChatMirroredAt")) {
         const run = world.runs.find((candidate) => candidate.id === values[0]);
-        return run ? [{ relayed: Boolean(run.teamChatMirroredAt) }] : [];
+        return run
+          ? [{ tracked: "teamChatMirroredAt" in run, relayed: Boolean(run.teamChatMirroredAt) }]
+          : [];
       }
       if (sql.includes("FROM bots")) {
         return [...new Set(values as string[])].sort().flatMap((id) => {
@@ -467,7 +470,13 @@ function createPrisma(world: World, jobs: ReturnType<typeof createJobs>) {
       }
       throw new Error(`Unexpected query: ${sql}`);
     }),
-    $executeRaw: vi.fn(async () => 1),
+    $executeRaw: vi.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
+      if (strings.join("?").includes(`SET "teamChatMirroredAt"`)) {
+        const run = world.runs.find((candidate) => candidate.id === values[0]);
+        if (run) run.teamChatMirroredAt = new Date();
+      }
+      return 1;
+    }),
   };
   const $transaction = vi.fn(async (fn: (tx: typeof prisma) => Promise<unknown>) => {
     const saved = structuredClone({
@@ -2166,44 +2175,92 @@ describe("conversation order", () => {
   });
 });
 
-describe("the previous release's catch-up reply jobs", () => {
-  it("skips a 1:1 reply the previous release mirrored in the meantime", async () => {
+describe("replies the previous release delivered", () => {
+  it("does not resend a 1:1 reply the previous release mirrored under the same key", async () => {
     const t = setup();
     linkProvider(t.world, TELEGRAM);
     addRun(t.world, { replies: [text("m-1", "already out")] });
     t.world.runs[0]!.messagingMirroredAt = new Date();
-    await t.delivery.deliverRun("run-1", { previousRelease: true });
+    seedRow(t.world, {
+      id: "old-1",
+      idempotencyKey: "msg:m-1",
+      kind: "dm",
+      identityId: "mi-1",
+      threadId: null,
+      status: "sent",
+      providerHandle: "h-old",
+    });
+    await t.delivery.deliverRun("run-1");
 
-    expect({ rows: t.world.outbound, sends: bodies(t) }).toEqual({ rows: [], sends: [] });
+    expect({ rows: t.world.outbound.length, sends: bodies(t) }).toEqual({ rows: 1, sends: [] });
   });
 
-  it("skips a delegated reply the previous release posted, and sends one it did not", async () => {
-    for (const relayed of [true, false]) {
-      const t = setup();
-      addRun(t.world, {
-        id: "run-a",
-        threadId: "thread-slack",
-        replies: [text("a-msg", "Asking around.")],
-      });
-      t.world.externalMessages.push({
-        id: "em-1",
-        runId: "run-a",
-        kind: "direct",
-        status: "delivered",
-        replyThreadId: null,
-        externalConversation: { conversationId: "slack:C1" },
-      });
-      addRun(t.world, {
-        id: "run-b",
-        threadId: "thread-slack",
-        trigger: "bot_message",
-        replyTo: "a-msg",
-        replies: [text("b-msg", "Found it.")],
-      });
-      t.world.runs[1]!.teamChatMirroredAt = relayed ? new Date() : null;
-      await t.delivery.deliverRun("run-b", { previousRelease: true });
+  /** A run in a team-chat thread that another bot's team-chat run delegated to. */
+  function delegated(t: Setup, marker: Date | null | "dropped") {
+    addRun(t.world, {
+      id: "run-a",
+      threadId: "thread-slack",
+      replies: [text("a-msg", "Asking around.")],
+    });
+    t.world.externalMessages.push({
+      id: "em-1",
+      runId: "run-a",
+      kind: "direct",
+      status: "delivered",
+      replyThreadId: null,
+      externalConversation: { conversationId: "slack:C1" },
+    });
+    addRun(t.world, {
+      id: "run-b",
+      threadId: "thread-slack",
+      trigger: "bot_message",
+      replyTo: "a-msg",
+      replies: [text("b-msg", "Found it.")],
+    });
+    if (marker !== "dropped") t.world.runs[1]!.teamChatMirroredAt = marker;
+  }
+  const teamSends = (t: Setup) =>
+    requests(t).filter((request) => request.threadId.startsWith("slack:"));
 
-      expect(t.world.outbound.filter((row) => row.kind === "team")).toHaveLength(relayed ? 0 : 1);
+  it("skips a delegated reply the previous release posted, from any job", async () => {
+    const t = setup();
+    delegated(t, new Date());
+    await t.delivery.deliverRun("run-b");
+
+    expect(t.world.outbound.filter((row) => row.kind === "team")).toEqual([]);
+    expect(teamSends(t)).toEqual([]);
+  });
+
+  it("marks a delegated reply it relays, so the previous release does not post it too", async () => {
+    const t = setup();
+    delegated(t, null);
+    await t.delivery.deliverRun("run-b");
+
+    expect(teamSends(t)).toEqual([expect.objectContaining({ threadId: "slack:C1" })]);
+    expect(t.world.runs[1]!.teamChatMirroredAt).toBeInstanceOf(Date);
+    // Its run-end job, or a second process, finds the marker and records nothing more.
+    await t.delivery.deliverRun("run-b");
+    expect(t.world.outbound.filter((row) => row.kind === "team")).toHaveLength(1);
+    expect(teamSends(t)).toHaveLength(1);
+  });
+
+  it("finds the carried row once the marker column is gone", async () => {
+    for (const carried of [true, false]) {
+      const t = setup();
+      delegated(t, "dropped");
+      if (carried)
+        seedRow(t.world, {
+          id: "relayed:run-b",
+          idempotencyKey: "team-chat-run:run-b",
+          kind: "team",
+          threadId: null,
+          body: "",
+          status: "sent",
+          providerHandle: "",
+        });
+      await t.delivery.deliverRun("run-b");
+
+      expect(teamSends(t)).toHaveLength(carried ? 0 : 1);
     }
   });
 });

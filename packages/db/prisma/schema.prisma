@@ -2292,7 +2292,7 @@ model MessagingOutbound {
   /// Group, intro and team rows post straight to this provider thread id.
   threadId        String?
   body            String
-  /// pending, sending, retry (its backup job retries it), sent or failed.
+  /// pending, retry (its backup job retries it), sent or failed. Sent with no providerHandle: in flight.
   status          String   @default("pending")
   providerHandle  String?
   sourceMessageId String?

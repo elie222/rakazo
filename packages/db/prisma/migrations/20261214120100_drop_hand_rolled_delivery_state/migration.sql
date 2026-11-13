@@ -9,6 +9,17 @@ ALTER TABLE "external_messages"
   DROP COLUMN "lastError",
   DROP COLUMN "providerReplyHandle",
   DROP COLUMN "deliveredAt";
+-- A delegated reply that release relayed has no outbound row, only this marker. Carried into a sent
+-- row under the key a relay records with, so a reply job still waiting does not post it again. The
+-- row names no conversation, so no sender ever picks it up.
+INSERT INTO "messaging_outbound"
+  ("id", "idempotencyKey", "kind", "body", "status", "providerHandle", "createdAt", "updatedAt")
+SELECT 'relayed:' || r.id, 'team-chat-run:' || r.id, 'team', '', 'sent', '',
+  r."teamChatMirroredAt", r."teamChatMirroredAt"
+FROM runs AS r
+WHERE r.trigger = 'bot_message' AND r.status IN ('completed', 'failed')
+  AND r."teamChatMirroredAt" IS NOT NULL
+ON CONFLICT ("idempotencyKey") DO NOTHING;
 ALTER TABLE "runs" DROP COLUMN "teamChatMirroredAt";
 -- Jobs only that release published; their work is the new delivery path's now.
 DO $$ BEGIN

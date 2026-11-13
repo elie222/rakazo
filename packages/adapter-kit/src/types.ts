@@ -910,11 +910,8 @@ export interface BackgroundJobPayloads {
   };
   /** Backup for one recorded outgoing chat message, and the conversation queued behind it. */
   "messaging.send": { outboundId: string };
-  /**
-   * Backup for recording and sending what an ended run said where its turn came from.
-   * `previousRelease`: queued for a run the previous release may still have delivered itself.
-   */
-  "messaging.reply": { runId: string; previousRelease?: boolean };
+  /** Backup for recording and sending what an ended run said where its turn came from. */
+  "messaging.reply": { runId: string };
   /** The previous release's outbox drain; drained by the new delivery path. */
   "messaging.deliver": { runId?: string };
   /** The previous release's interim-message mirror; drained by the new delivery path. */

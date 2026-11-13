@@ -140,8 +140,8 @@ export function createBackgroundJobHandlers(deps: {
     "messaging.send": async ({ outboundId }, _execution, attempt) => {
       await delivery?.sendJob(outboundId, attempt);
     },
-    "messaging.reply": async ({ runId, previousRelease }) => {
-      await delivery?.deliverRun(runId, { previousRelease });
+    "messaging.reply": async ({ runId }) => {
+      await delivery?.deliverRun(runId);
     },
     "messaging.credential-cleanup": async ({ installationId, ref }) => {
       await runAsSystem("clean up a retired messaging credential", async () => {
