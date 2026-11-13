@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import type { SecretStore } from "@rakazo/adapter-kit";
-import type { TailscaleConnectionConfig } from "@rakazo/contracts";
-import { TailscaleConnectionConfigSchema } from "@rakazo/contracts";
+import type { TailnetConnectionConfig } from "@rakazo/contracts";
+import { TailnetConnectionConfigSchema } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { persistPreparedSecret } from "./secret-persistence.js";
 
@@ -39,11 +39,11 @@ export async function saveTailnetConnection(input: {
   prisma: PrismaClient;
   secretStore: SecretStore;
   scope: TailnetScope;
-  config: TailscaleConnectionConfig;
-  verify: (config: TailscaleConnectionConfig) => Promise<void>;
+  config: TailnetConnectionConfig;
+  verify: (config: TailnetConnectionConfig) => Promise<void>;
 }): Promise<TailnetConnectionView> {
   const { prisma, secretStore, scope } = input;
-  const config = TailscaleConnectionConfigSchema.parse(input.config);
+  const config = TailnetConnectionConfigSchema.parse(input.config);
   await input.verify(config);
   const where = { spaceId_userId: { spaceId: scope.spaceId, userId: scope.userId } };
   const existing = await prisma.tailnetConnection.findUnique({ where, select: { id: true } });
@@ -132,7 +132,7 @@ export async function resolveRunTailnet(input: {
   prisma: TailnetPrisma;
   secretStore: SecretStore;
   run: { userId: string; spaceId: string; botId: string };
-}): Promise<TailscaleConnectionConfig | undefined> {
+}): Promise<TailnetConnectionConfig | undefined> {
   const { run } = input;
   const row = await input.prisma.tailnetConnection.findUnique({
     where: { spaceId_userId: { spaceId: run.spaceId, userId: run.userId } },
@@ -140,5 +140,5 @@ export async function resolveRunTailnet(input: {
   });
   if (!row?.botIds.includes(run.botId)) return undefined;
   const plaintext = await input.secretStore.load(row.ciphertext, row.id);
-  return TailscaleConnectionConfigSchema.parse(JSON.parse(plaintext));
+  return TailnetConnectionConfigSchema.parse(JSON.parse(plaintext));
 }

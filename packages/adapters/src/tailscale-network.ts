@@ -1,7 +1,7 @@
 import type { Duplex } from "node:stream";
 import type { AdapterContext, PrivateNetworkProvider } from "@rakazo/adapter-kit";
 import { PrivateNetworkError } from "@rakazo/adapter-kit";
-import type { TailnetDestination, TailscaleConnectionConfig } from "@rakazo/contracts";
+import type { TailnetConnectionConfig, TailnetDestination } from "@rakazo/contracts";
 import { isTailnetHost } from "@rakazo/contracts";
 import { combineSignals } from "./connector-safety.js";
 
@@ -42,7 +42,7 @@ export class TailscaleApi {
   private readonly now: () => number;
 
   constructor(
-    private readonly config: TailscaleConnectionConfig,
+    private readonly config: TailnetConnectionConfig,
     deps: { fetch?: Fetch; now?: () => number } = {},
   ) {
     this.fetch = deps.fetch ?? ((input, init) => fetch(input, init));

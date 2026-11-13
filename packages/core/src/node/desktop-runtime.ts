@@ -421,7 +421,7 @@ export function screenBotPath(displayNumber: number | string) {
 }
 
 /**
- * Proxy auto-config for a screen's browser: `*.ts.net` names and Tailscale addresses go to the
+ * Proxy auto-config for a screen's browser: `*.ts.net` names and tailnet addresses go to the
  * display's rakazo-net proxy, which tunnels them through Rakazo; everything else is direct.
  * Only the host is matched, so the browser never resolves a tailnet name itself.
  */

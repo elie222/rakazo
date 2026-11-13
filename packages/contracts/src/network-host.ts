@@ -189,17 +189,17 @@ export function isPrivateNetworkHost(hostname: string): boolean {
   return ipVersion(host) !== 0 && isPrivateNetworkAddress(host);
 }
 
-/** 100.64.0.0/10, where Tailscale numbers its nodes. */
+/** 100.64.0.0/10, where a tailnet numbers its nodes. */
 const TAILNET_IPV4 = ranges([["100.64.0.0", 10]]);
-/** 100.100.100.0/24 is Tailscale's own resolver and metadata, served inside every node. */
+/** 100.100.100.0/24 is the tailnet's own resolver and metadata, served inside every node. */
 const TAILNET_SERVICE_IPV4 = ranges([["100.100.100.0", 24]]);
-/** fd7a:115c:a1e0::/48, Tailscale's IPv6 range. */
+/** fd7a:115c:a1e0::/48, a tailnet's IPv6 range. */
 const TAILNET_IPV6_PREFIX = [0xfd7a, 0x115c, 0xa1e0];
 /** fd7a:115c:a1e0::53, the IPv6 address of the same resolver. */
 const TAILNET_SERVICE_IPV6 = [0xfd7a, 0x115c, 0xa1e0, 0, 0, 0, 0, 0x53];
 
 /**
- * A tailnet peer's address: 100.64.0.0/10 or fd7a:115c:a1e0::/48, without Tailscale's own service
+ * A tailnet peer's address: 100.64.0.0/10 or fd7a:115c:a1e0::/48, without the tailnet's own service
  * addresses, which every node answers itself. Literal forms only; IPv4-mapped IPv6 and zones are
  * refused.
  */

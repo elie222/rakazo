@@ -5,7 +5,7 @@ import { delimiter, join } from "node:path";
 import type { Duplex } from "node:stream";
 import type { AdapterContext, PrivateNetworkProvider, SecretStore } from "@rakazo/adapter-kit";
 import { PrivateNetworkError } from "@rakazo/adapter-kit";
-import type { TailnetDestination, TailscaleConnectionConfig } from "@rakazo/contracts";
+import type { TailnetConnectionConfig, TailnetDestination } from "@rakazo/contracts";
 import { tailnetNodeAttributes, tailnetNodeHostname } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -21,7 +21,7 @@ const SWEEP_MS = 60_000;
 
 export const TAILNET_UNAVAILABLE_MESSAGE = "This server can't put bots on a tailnet.";
 export const TAILNET_NOT_CONNECTED_MESSAGE =
-  "Tailnet access is off for this bot. Connect Tailscale and turn it on in the bot's settings.";
+  "Tailnet access is off for this bot. Connect your tailnet and turn it on in the bot's settings.";
 
 export type TailnetRun = { userId: string; spaceId: string; botId: string; botName: string };
 
@@ -73,7 +73,7 @@ export class TailnetService {
   }
 
   /** The OAuth client is checked by minting and revoking a short key. */
-  async verify(config: TailscaleConnectionConfig, signal: AbortSignal): Promise<void> {
+  async verify(config: TailnetConnectionConfig, signal: AbortSignal): Promise<void> {
     await this.api(config).verify(signal);
   }
 
@@ -166,7 +166,7 @@ export class TailnetService {
   async leaveRevoked(): Promise<void> {
     await Promise.all(
       [...this.nodes.values()].map(async (node) => {
-        let config: TailscaleConnectionConfig | undefined;
+        let config: TailnetConnectionConfig | undefined;
         try {
           config = await resolveRunTailnet({
             prisma: this.deps.prisma,
@@ -199,7 +199,7 @@ export class TailnetService {
   }
 
   /** One API client per OAuth client, so its access token is reused across bots. */
-  private api(config: TailscaleConnectionConfig): TailscaleApi {
+  private api(config: TailnetConnectionConfig): TailscaleApi {
     const key = clientKey(config);
     let api = this.apis.get(key);
     if (!api) {
@@ -210,7 +210,7 @@ export class TailnetService {
   }
 }
 
-function clientKey(config: TailscaleConnectionConfig): string {
+function clientKey(config: TailnetConnectionConfig): string {
   return createHash("sha256")
     .update(JSON.stringify([config.clientId, config.clientSecret, config.tag]))
     .digest("hex");
