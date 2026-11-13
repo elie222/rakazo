@@ -523,3 +523,21 @@ it("preserves internal newline runs and leading indentation", () => {
     content.slice(1, -1),
   );
 });
+
+it("ignores whitespace-only instructions without stripping code indentation", () => {
+  expect(
+    combineImportedInstructions([{ title: "Instructions", content: " \t \n", role: "working" }]),
+  ).toBe("");
+  expect(
+    combineImportedInstructions([
+      { title: "Instructions", content: "    code  ", role: "working" },
+    ]),
+  ).toBe("    code");
+});
+it("reads a fenced export with a leading JSON5 comment", () => {
+  expect(
+    parseGrokBotExport(
+      '```json\n{// exported setup\nbots:[{name:"Example",instructions:"Keep"}]}\n```',
+    )[0]?.instructions,
+  ).toBe("Keep");
+});

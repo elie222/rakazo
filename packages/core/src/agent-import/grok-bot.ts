@@ -135,7 +135,7 @@ const BOT_FIELDS = ["instructions", "memories", "user_facts", "skills", "routine
  * The first property of an export document, after any whitespace following its `{`. Sticky,
  * so each brace reads only its own whitespace run and the scan stays linear.
  */
-const EXPORT_START = /\s*["'“‘]?[\p{L}_][\p{L}\p{N}_-]*["'“”‘’]?\s*:/uy;
+const EXPORT_START = /\s*(?:["'“‘]?[\p{L}_][\p{L}\p{N}_-]*["'“”‘’]?\s*:|\/\/|\/\*)/uy;
 
 /** Tolerates JSON5 syntax in pasted replies. Uploaded normalized documents use strict JSON. */
 function looseJson(source: string): unknown {
