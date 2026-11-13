@@ -377,7 +377,7 @@ function mergeBots(bots: readonly GrokBot[]): GrokBot[] {
   const merged = new Map<string | symbol, GrokBot>();
   const instructionParts = new Map<string | symbol, Set<string>>();
   for (const bot of bots) {
-    const key = bot.exportId || Symbol();
+    const key = bot.exportId ? JSON.stringify([bot.exportId, bot.name.toLowerCase()]) : Symbol();
     const into = merged.get(key);
     const parts = instructionParts.get(key) ?? new Set<string>();
     const repeated = parts.has(bot.instructions);

@@ -616,3 +616,14 @@ it("rejects aggregate skill overflow while combining same-identity parts", () =>
   }));
   expect(() => readGrokBotExportJson(JSON.stringify({ bots }))).toThrow(GrokBotExportError);
 });
+
+it("keeps differently named bots separate even when an export ID is reused", () => {
+  const bots = [
+    { export_id: "reused", name: "First", instructions: "One" },
+    { export_id: "reused", name: "Second", instructions: "Two" },
+  ];
+  expect(readGrokBotExportJson(JSON.stringify({ bots })).map((bot) => bot.instructions)).toEqual([
+    "One",
+    "Two",
+  ]);
+});
