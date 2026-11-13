@@ -29,7 +29,9 @@ import {
   cancelDeactivatedAccountRuns,
   cancelRunsInTransaction,
   createPendingSteeringRun,
+  databaseOutage,
   effectiveMemoryScope,
+  isDatabaseUnavailable,
   isPartialReplyClientNonce,
   loadRunHistoryMessages,
   loadRunTurnCheckpoint,
@@ -37,6 +39,7 @@ import {
   RunHistoryWriteError,
   readRunTimingFields,
   recordUsage,
+  retryWhileDatabaseUnavailable,
   settleReleasedTakeoverCards,
   teamChatRunFromOwner,
 } from "@rakazo/db";
@@ -195,7 +198,13 @@ import { historyMyChatsAllowed } from "./run-tools-memory.js";
 import type { UserComputerState } from "./run-tools-user-computer.js";
 import { USER_COMPUTER_SHELL_TOOL, userComputerOwner } from "./run-tools-user-computer.js";
 import { createRunTrustLoaders } from "./run-trust.js";
-import { completeRun, consumeRunEvents, failRun, handoffEndedTurn } from "./run-turn.js";
+import {
+  completeRun,
+  consumeRunEvents,
+  failRun,
+  handoffEndedTurn,
+  requeueRunAfterDatabaseOutage,
+} from "./run-turn.js";
 import {
   claimRunSteering,
   loadCurrentTurnImages,
@@ -277,11 +286,15 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
   // owns the run finalizes it. A fenced-out attempt must not end the run's
   // state while a newer attempt of this run still needs it; whether it may end
   // it depends on the run row, not on this attempt. A rejected finalizeRun left
-  // the run unfinished, so its state survives the retry.
+  // the run unfinished, so its state survives the retry. The write is fenced by the
+  // lease, so it waits out a database failover instead of losing the run's outcome.
   const events: ThreadEvents = {
     ...executorDeps.events,
     finalizeRun: async (input) => {
-      const result = await executorDeps.events.finalizeRun(input);
+      const result = await retryWhileDatabaseUnavailable(
+        () => executorDeps.events.finalizeRun(input),
+        { source: "run finalize", signal: executorDeps.shutdownSignal },
+      );
       if (result || (await runEndedForThisWorker(executorDeps.prisma, input))) {
         endRunConnectorState(input.runId);
       }
@@ -484,8 +497,9 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
               runAbortController?.abort();
             }
           })
-          .catch(() => {
-            if (lease.completed) return;
+          .catch((error) => {
+            // The lease outlasts a failover; the next beat renews it.
+            if (lease.completed || databaseOutage.failed(error, "run lease renewal")) return;
             lease.valid = false;
             runAbortController?.abort();
           });
@@ -2095,6 +2109,10 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             } catch (completionError) {
               caughtError = completionError;
             }
+          }
+          if (isDatabaseUnavailable(caughtError)) {
+            await requeueRunAfterDatabaseOutage(ctx);
+            return;
           }
           await failRun(ctx, caughtError, {
             ownCredential: resolved.ownCredential,
