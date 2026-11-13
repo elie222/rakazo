@@ -1279,6 +1279,62 @@ describe("built-in public compatible host", () => {
       }
     });
 
+    it("bounds aggregate response bytes across metadata pages", async () => {
+      let page = 0;
+      const transport = vi.fn(async (url: RequestInfo | URL) =>
+        String(url).endsWith("/v1/me")
+          ? Response.json({})
+          : Response.json({
+              data: [
+                {
+                  id: `model-${++page}`,
+                  metadata: { tags: ["chat"], extra: "x".repeat(1_500_000) },
+                },
+              ],
+              has_more: true,
+              last_id: `cursor-${page}`,
+            }),
+      );
+      await expect(
+        probeOpenAiCompatibleModelList(
+          { baseUrl: deepInfra, apiKey: "fake-key", apiProtocol: "anthropic-messages" },
+          transport,
+        ),
+      ).rejects.toThrow("response is too large");
+      expect(page).toBe(6);
+    });
+
+    it("bounds raw metadata entry counts even when entries have no IDs", async () => {
+      const transport = vi.fn(async (url: RequestInfo | URL) =>
+        String(url).endsWith("/v1/me")
+          ? Response.json({})
+          : Response.json({
+              data: [{ id: "model" }, ...Array.from({ length: 4000 }, () => ({}))],
+            }),
+      );
+      await expect(
+        probeOpenAiCompatibleModelList({ baseUrl: deepInfra, apiKey: "fake-key" }, transport),
+      ).rejects.toThrow("too many or overly long model ids");
+    });
+
+    it("bounds pagination for generic servers without retaining their metadata", async () => {
+      let page = 0;
+      const transport = vi.fn(async () =>
+        Response.json({
+          data: [{ id: `model-${++page}`, metadata: { tags: ["embed"], extra: "x".repeat(1024) } }],
+          has_more: true,
+          last_id: `cursor-${page}`,
+        }),
+      );
+      await expect(
+        probeOpenAiCompatibleModelList(
+          { baseUrl: "https://other.test/v1", apiProtocol: "anthropic-messages" },
+          transport,
+        ),
+      ).rejects.toThrow("too many or overly long model ids");
+      expect(page).toBe(100);
+    });
+
     it("reads DeepInfra metadata only for the DeepInfra preset", async () => {
       const transport = vi.fn(async () => Response.json(listing));
       await expect(

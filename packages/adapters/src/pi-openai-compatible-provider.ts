@@ -545,10 +545,11 @@ function probeModelIds(
 async function readBoundedJson(
   response: Response,
   opts?: { catalogProbe?: boolean },
+  budget?: { remaining: number },
 ): Promise<OpenAiCompatibleModelsResponse> {
   const { maxBytes } = modelsProbeLimits(opts?.catalogProbe);
   const declaredSize = Number(response.headers.get("content-length") ?? 0);
-  if (declaredSize > maxBytes) {
+  if (declaredSize > Math.min(maxBytes, budget?.remaining ?? maxBytes)) {
     await response.body?.cancel().catch(() => undefined);
     throw new Error(`Model server response is too large. ${OPENAI_COMPAT_PROBE_HAND_FILL_HINT}`);
   }
@@ -565,7 +566,8 @@ async function readBoundedJson(
     const { done, value } = await reader.read();
     if (done) break;
     bytes += value.byteLength;
-    if (bytes > maxBytes) {
+    if (budget) budget.remaining -= value.byteLength;
+    if (bytes > maxBytes || (budget && budget.remaining < 0)) {
       await reader.cancel().catch(() => undefined);
       throw new Error(`Model server response is too large. ${OPENAI_COMPAT_PROBE_HAND_FILL_HINT}`);
     }
@@ -674,12 +676,17 @@ export async function probeOpenAiCompatibleModelList(
     });
     const modelsUrl = new URL("models", `${baseUrl.href}/`);
     const ids: string[] = [];
-    // Listing entries from every page, for servers whose entries describe each model.
-    const entries: unknown[] = [];
+    const readMetadata = isDeepInfraBaseUrl(baseUrl.href);
+    // Retain only validated capabilities, never response bodies or arbitrary metadata.
+    const modelDetails = new Map<string, OpenAiCompatibleModelInfo | undefined>();
+    let metadataEntries = 0;
     const cursors = new Set<string>();
-    const { maxModelIds } = modelsProbeLimits(opts?.catalogProbe);
+    const { maxModelIds, maxBytes } = modelsProbeLimits(opts?.catalogProbe);
+    const budget = { remaining: maxBytes * 4 };
+    let pages = 0;
     while (true) {
       merged.throwIfAborted();
+      if (++pages > 100) throw new Error("Model server returned too many or overly long model ids");
       const response = await safeFetch(modelsUrl.href, {
         headers,
         redirect: "error",
@@ -697,16 +704,31 @@ export async function probeOpenAiCompatibleModelList(
           `Model server returned ${response.status}. ${OPENAI_COMPAT_PROBE_HAND_FILL_HINT}`,
         );
       }
-      const body = await readBoundedJson(response, opts);
+      const body = await readBoundedJson(response, opts, budget);
       const pageIds = probeModelIds(body, opts);
       if (ids.length + pageIds.length > maxModelIds) {
         throw new Error("Model server returned too many or overly long model ids");
       }
       ids.push(...pageIds);
-      if (Array.isArray(body.data)) entries.push(...body.data);
+      if (readMetadata && Array.isArray(body.data)) {
+        metadataEntries += body.data.length;
+        if (metadataEntries > maxModelIds) {
+          throw new Error("Model server returned too many or overly long model ids");
+        }
+        const page = deepInfraModelList(body.data, pageIds);
+        const details = new Map(page.details.map((info) => [info.id, info]));
+        for (const id of page.models) {
+          if (!modelDetails.has(id) || (details.has(id) && !modelDetails.get(id))) {
+            modelDetails.set(id, details.get(id));
+          }
+        }
+      }
       if (input.apiProtocol !== "anthropic-messages" || body.has_more !== true) {
-        return isDeepInfraBaseUrl(baseUrl.href) && entries.length > 0
-          ? deepInfraModelList(entries as Parameters<typeof deepInfraModelList>[0], ids)
+        return readMetadata && metadataEntries > 0
+          ? {
+              models: [...modelDetails.keys()],
+              details: [...modelDetails.values()].filter((info) => info !== undefined),
+            }
           : { models: ids };
       }
       const cursor = typeof body.last_id === "string" ? body.last_id : "";
