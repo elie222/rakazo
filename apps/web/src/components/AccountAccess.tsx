@@ -1,5 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { AccountSecurity } from "@rakazo/contracts";
+import type { AccountSecurity, SignInProvider } from "@rakazo/contracts";
+import { identityConfirmationProviders } from "@rakazo/contracts";
 import { Button, Input, Label } from "@rakazo/ui-web";
 import { useEffect, useState } from "react";
 import { fetchAccountSecurity, requestAccountDeletionCode } from "../lib/account-security";
@@ -116,8 +117,9 @@ export function DeleteAccountForm({
             </div>
           ) : (
             <>
-              {security.sso ? (
+              {identityConfirmationProviders(security).map((provider) => (
                 <Button
+                  key={provider.id}
                   variant="outline"
                   disabled={pending}
                   onClick={() =>
@@ -127,7 +129,7 @@ export function DeleteAccountForm({
                         (disableRedirect, callbackURL) =>
                           authClient.signIn.social({
                             disableRedirect,
-                            provider: "oidc",
+                            provider: provider.id,
                             additionalData: { reauthenticate: true },
                             callbackURL: callbackURL(returnTo),
                             errorCallbackURL: callbackURL(returnTo),
@@ -141,7 +143,7 @@ export function DeleteAccountForm({
                 >
                   <Trans>Sign in again</Trans>
                 </Button>
-              ) : null}
+              ))}
               {security.emailDeletion ? (
                 <Button
                   variant="outline"
@@ -211,38 +213,47 @@ export function DeleteAccountForm({
 }
 
 /** Links the organization's SSO identity to an account that signed up another way. */
-export function LinkSsoRow() {
+export function LinkSsoRow({
+  provider: suppliedProvider,
+  onSecurity,
+}: {
+  provider?: SignInProvider;
+  onSecurity?: (security: AccountSecurity) => void;
+}) {
   const { t } = useLingui();
+  const provider = suppliedProvider ?? { id: "oidc", name: t`SSO` };
+  const providerName = provider.id === "oidc" && provider.name === "SSO" ? t`SSO` : provider.name;
   const [error, setError] = useState<string | null>(() => {
-    const code = redirectError("link");
+    const code = redirectError("link", provider.id);
     return code ? authErrorText({ code }, t`Could not continue`) : null;
   });
   async function link() {
     setError(null);
     const returnTo = ssoReturnURL(false);
-    const failed = ssoReturnURL(true);
+    const failed = ssoReturnURL(true, provider.id);
     try {
       const result = await runSsoFlow(
         (disableRedirect, callbackURL) =>
           authClient.linkSocial({
             disableRedirect,
-            provider: "oidc",
+            provider: provider.id,
             callbackURL: callbackURL(returnTo),
             errorCallbackURL: callbackURL(failed),
           }),
         [returnTo, failed],
       );
       if (result.error) setError(authErrorText(result.error, t`Could not continue`));
+      else if (onSecurity) onSecurity(await fetchAccountSecurity());
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : t`Could not continue`);
     }
   }
   return (
     <SettingsRow
-      label={<Trans>SSO</Trans>}
+      label={providerName}
       control={
         <Button variant="secondary" size="sm" onClick={() => void link()}>
-          <Trans>Link SSO</Trans>
+          <Trans>Link {providerName}</Trans>
         </Button>
       }
     >
@@ -258,16 +269,19 @@ export function LinkSsoRow() {
 const LINK_RETURN = "sso-link";
 
 /** This page without an earlier redirect's result; a failed link's return is marked as one. */
-function ssoReturnURL(failedLink: boolean): string {
+function ssoReturnURL(failedLink: boolean, providerId = "oidc"): string {
   const url = new URL(window.location.href);
   url.searchParams.delete("error");
   url.searchParams.delete(LINK_RETURN);
-  if (failedLink) url.searchParams.set(LINK_RETURN, "1");
+  if (failedLink) url.searchParams.set(LINK_RETURN, providerId);
   return url.href;
 }
 
 /** The error an SSO redirect came back with, for the flow that started it. */
-function redirectError(flow: "link" | "delete"): string | null {
+function redirectError(flow: "link" | "delete", providerId = "oidc"): string | null {
   const params = new URLSearchParams(window.location.search);
+  const marker = params.get(LINK_RETURN);
+  if (flow === "link" && marker !== providerId && !(marker === "1" && providerId === "oidc"))
+    return null;
   return params.has(LINK_RETURN) === (flow === "link") ? params.get("error") : null;
 }

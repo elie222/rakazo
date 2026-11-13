@@ -22,6 +22,8 @@ const state = vi.hoisted(() => ({
     height: number | undefined;
   }>,
   file: vi.fn(),
+  readBytes: vi.fn(),
+  close: vi.fn(),
   info: vi.fn(),
   manipulate: vi.fn(),
   resize: vi.fn(),
@@ -34,9 +36,13 @@ const state = vi.hoisted(() => ({
 }));
 
 vi.mock("expo-file-system", () => ({
+  FileMode: { ReadOnly: "r" },
   File: class {
     constructor(private uri: string) {
       state.file(uri);
+    }
+    open() {
+      return { readBytes: state.readBytes, close: state.close };
     }
     info() {
       return state.info();
@@ -98,6 +104,8 @@ beforeEach(async () => {
   asset();
   state.assets = [state.asset];
   state.file.mockReset();
+  state.readBytes.mockReset().mockResolvedValue(png(false));
+  state.close.mockReset();
   state.info.mockReset().mockReturnValue({ size: 2 * 1024 * 1024 });
   state.manipulate.mockReset();
   state.resize.mockReset();
@@ -153,8 +161,15 @@ describe("image attachment preparation", () => {
     });
   });
 
-  it("leaves a small image untouched", async () => {
-    asset({ width: 1000, height: 800 });
+  it.each(["jpeg", "png"])("leaves a small %s image untouched", async (format) => {
+    const extension = format === "jpeg" ? "jpg" : "png";
+    asset({
+      uri: `file:///fake/photo.${extension}`,
+      fileName: `photo.${extension}`,
+      mimeType: `image/${format}`,
+      width: 1000,
+      height: 800,
+    });
 
     const result = await pickFromLibrary();
 
@@ -162,10 +177,70 @@ describe("image attachment preparation", () => {
     expect(state.file).toHaveBeenCalledWith(state.asset.uri);
     expect(state.base64).toHaveBeenCalledWith(state.asset.uri);
     expect(result.attachments[0]).toMatchObject({
-      name: "photo.jpg",
-      previewUri: "file:///fake/photo.jpg",
+      name: `photo.${extension}`,
+      previewUri: state.asset.uri,
     });
   });
+
+  it.each([
+    ["heic", 1000, 800],
+    ["heif", 1600, 1200],
+    ["heic", undefined, undefined],
+  ])("converts a %s photo without enlarging it (%s x %s)", async (extension, width, height) => {
+    asset({
+      uri: `file:///fake/photo.${extension}`,
+      fileName: `photo.${extension}`,
+      mimeType: `image/${extension}`,
+      width,
+      height,
+    });
+
+    const result = await pickFromLibrary();
+
+    expect(state.manipulate).toHaveBeenCalledExactlyOnceWith(state.asset.uri);
+    expect(state.resize).not.toHaveBeenCalled();
+    expect(state.save).toHaveBeenCalledWith({ compress: 0.7, format: "jpeg" });
+    expect(result.skipped).toEqual([]);
+    expect(result.attachments[0]).toMatchObject({
+      name: "photo.jpg",
+      mimeType: "image/jpeg",
+      previewUri: "file:///fake/photo-resized.jpg",
+    });
+  });
+
+  it("converts a small camera HEIC photo without resizing", async () => {
+    asset({ fileName: "photo.heic", mimeType: "image/heic", width: 800, height: 600 });
+
+    const result = await takePhoto();
+
+    expect(state.resize).not.toHaveBeenCalled();
+    expect(result.skipped).toEqual([]);
+    expect(result.attachments[0]).toMatchObject({ name: "photo.jpg", mimeType: "image/jpeg" });
+  });
+
+  it("still resizes a large HEIC photo while converting it", async () => {
+    asset({ fileName: "photo.heic", mimeType: "image/heic" });
+
+    const result = await pickFromLibrary();
+
+    expect(state.resize).toHaveBeenCalledWith({ width: 1600 });
+    expect(result.skipped).toEqual([]);
+    expect(result.attachments[0]).toMatchObject({ name: "photo.jpg", mimeType: "image/jpeg" });
+  });
+
+  it.each(["missing", "failed"])(
+    "skips an unconverted small HEIC when conversion is %s",
+    async (failure) => {
+      asset({ fileName: "photo.heic", mimeType: "image/heic", width: 800, height: 600 });
+      if (failure === "missing") state.optionalNativeModule.mockReturnValue(null);
+      else state.render.mockRejectedValue(new Error("conversion failed"));
+
+      const result = await pickFromLibrary();
+
+      expect(result.attachments).toEqual([]);
+      expect(result.skipped).toEqual([{ name: "photo.heic", reason: "unsupported type" }]);
+    },
+  );
 
   it("resizes a wide image by width", async () => {
     const result = await pickFromLibrary();
@@ -367,4 +442,29 @@ describe("unreadable picks", () => {
     expect(result.attachments).toEqual([]);
     expect(result.skipped).toEqual([{ name: "photo.jpg", reason: "could not read" }]);
   });
+});
+
+function png(animated: boolean) {
+  const bytes = new Uint8Array(animated ? 61 : 41);
+  bytes.set([137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82]);
+  if (animated) bytes.set([0, 0, 0, 8, 97, 99, 84, 76, 0, 0, 0, 2], 33);
+  bytes.set([0, 0, 0, 0, 73, 68, 65, 84], animated ? 53 : 33);
+  return bytes;
+}
+
+it("preserves a large APNG and closes the bounded header read", async () => {
+  asset({ fileName: "animation.png", mimeType: "image/png" });
+  state.readBytes.mockResolvedValue(png(true));
+  const result = await pickFromLibrary();
+  expect(state.manipulate).not.toHaveBeenCalled();
+  expect(result.attachments[0]?.previewUri).toBe(state.asset.uri);
+  expect(state.readBytes).toHaveBeenCalledWith(64 * 1024);
+  expect(state.close).toHaveBeenCalledOnce();
+});
+it("preserves PNG and closes the handle when inspection fails", async () => {
+  asset({ fileName: "animation.png", mimeType: "image/png" });
+  state.readBytes.mockRejectedValue(new Error("unreadable header"));
+  expect((await pickFromLibrary()).attachments[0]?.previewUri).toBe(state.asset.uri);
+  expect(state.manipulate).not.toHaveBeenCalled();
+  expect(state.close).toHaveBeenCalledOnce();
 });

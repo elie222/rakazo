@@ -442,13 +442,14 @@ async function runJob(
   }
 }
 
-/** Retries the kill, then pauses the computer. Only a delivered signal counts as stopped. */
+/** Retries a kill that fails, then pauses the computer. */
 async function confirmJobStopped(job: InstaboxJob, pause: () => Promise<void>): Promise<void> {
   let cause: unknown;
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      if (await job.kill()) return;
-      cause = new Error("instabox job kill was not confirmed");
+      // false: every process had already exited, so the job is stopped either way.
+      await job.kill();
+      return;
     } catch (failure) {
       cause = failure;
     }

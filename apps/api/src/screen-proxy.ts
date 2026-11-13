@@ -54,7 +54,7 @@ export function mountScreenTarget(app: Hono, prisma: PrismaClient, secret: strin
       !computer ||
       computer.screenGeneration !== scope.computerGeneration ||
       !computer.providerRef ||
-      !["running", "booting"].includes(computer.state) ||
+      !["running", "booting", "suspending"].includes(computer.state) ||
       (target.interactive &&
         (!hasActiveComputerControl(computer) ||
           !scope.controlLeaseId ||

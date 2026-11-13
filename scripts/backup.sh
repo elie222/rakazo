@@ -22,7 +22,7 @@ for artifact in "$OUT/rakazo.sql" "$OUT/homes.tgz"; do
     chmod 600 "$artifact"
   fi
 done
-"${compose[@]}" exec -T postgres pg_dump -U rakazo rakazo > "$OUT/rakazo.sql"
+"${compose[@]}" exec -T postgres sh -c 'exec pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB"' > "$OUT/rakazo.sql"
 if [[ "${RAKAZO_BACKUP_SKIP_HOMES:-0}" == "1" ]] || [[ ! -e "$ROOT/data" && ! -L "$ROOT/data" ]]; then
   tar -czf "$OUT/homes.tgz" --files-from /dev/null
 else

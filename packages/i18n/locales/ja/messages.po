@@ -1201,6 +1201,7 @@ msgstr "追加されるもの"
 #: apps/mobile/components/routine-schedule-editor.tsx
 #: apps/web/src/lib/cron.ts
 #: apps/web/src/pages/McpServerForm.tsx
+#: apps/web/src/pages/memory-providers/MemoryProviderAdvanced.tsx
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
 #: apps/web/src/pages/ModelSettingsOverlay.tsx
 #: apps/web/src/pages/onboarding/model-step.tsx
@@ -1384,6 +1385,14 @@ msgstr "金額"
 msgid "An API key is stored for this provider, not a subscription sign-in."
 msgstr "このプロバイダーにはサブスクリプションのログインではなく、APIキーが保存されています。"
 
+#: apps/web/src/pages/MemorySettingsOverlay.tsx
+msgid "An external memory service for storing and recalling context across chats."
+msgstr "チャットをまたいでコンテキストを保存・参照する外部のメモリサービスです。"
+
+#: apps/web/src/pages/routine-editor/trigger-cards.tsx
+msgid "An HTTPS endpoint"
+msgstr "HTTPSエンドポイント"
+
 #: apps/web/src/lib/agent-import-errors.ts
 msgid "An imported API key could not be checked. Try again."
 msgstr "インポートしたAPIキーを確認できませんでした。もう一度お試しください。"
@@ -1412,7 +1421,6 @@ msgstr "他のアシスタント"
 
 #: apps/mobile/components/IncomingCall.tsx
 #: apps/mobile/lib/incoming-calls.ts
-#: apps/web/src/components/AskCard.tsx
 msgid "Answer"
 msgstr "回答"
 
@@ -1467,6 +1475,7 @@ msgstr "リンクを知っている全員"
 #: apps/web/src/components/SecretAskCard.tsx
 #: apps/web/src/components/vault/kinds.tsx
 #: apps/web/src/lib/localized-provider-hint.ts
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 #: apps/web/src/pages/memory-providers/HonchoSettingsForm.tsx
 #: apps/web/src/pages/model-settings/compatible-key-field.tsx
 #: apps/web/src/pages/model-settings/connection-controls.tsx
@@ -2679,6 +2688,7 @@ msgstr "このブラウザセッションからURLにアクセスできること
 #: apps/mobile/lib/app-connect.ts
 #: apps/web/src/components/integrations/IntegrationSetup.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 #: apps/web/src/pages/memory-providers/HonchoSettingsForm.tsx
 #: apps/web/src/pages/memory-providers/SerenitySettingsForm.tsx
 #: apps/web/src/pages/memory-providers/SupermemorySettingsForm.tsx
@@ -2792,6 +2802,7 @@ msgstr "接続しました。"
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 #: apps/web/src/pages/McpServersOverlay.tsx
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 #: apps/web/src/pages/memory-providers/HonchoSettingsForm.tsx
 #: apps/web/src/pages/memory-providers/SerenitySettingsForm.tsx
 #: apps/web/src/pages/memory-providers/SupermemorySettingsForm.tsx
@@ -2885,14 +2896,14 @@ msgstr "{name}で続行"
 msgid "Control"
 msgstr "Control"
 
-#: apps/mobile/lib/ai-consent.ts
-msgid "Conversation summaries, memories, searches and bot and Space IDs are sent to store and recall context."
-msgstr "会話の要約、メモリ、検索、ボットとスペースのIDが、コンテキストの保存と呼び出しのために送信されます。"
-
 #: apps/mobile/app/(settings)/messaging.tsx
 #: apps/web/src/pages/MessagingSettingsPanel.tsx
 msgid "Conversations"
 msgstr "会話"
+
+#: apps/mobile/lib/ai-consent.ts
+msgid "Conversations, names, memories, searches and bot and Space IDs are sent to store and recall context."
+msgstr "コンテキストの保存と参照のために、会話、名前、メモリ、検索内容、ボットとSpaceのIDが送信されます。"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/mobile/components/code-copy-button.tsx
@@ -3870,11 +3881,6 @@ msgstr "ログインを開始できませんでした"
 msgid "Could not start teaching"
 msgstr "ティーチングを開始できませんでした"
 
-#: apps/mobile/components/computer-maintenance-actions.tsx
-#: apps/web/src/components/ComputerMaintenanceActions.tsx
-msgid "Could not stop computer"
-msgstr "コンピューターを停止できませんでした"
-
 #: apps/mobile/components/AskActions.tsx
 msgid "Could not submit answer"
 msgstr "回答を送信できませんでした"
@@ -4748,10 +4754,6 @@ msgstr "編集"
 msgid "Edit avatar"
 msgstr "アバターを編集"
 
-#: apps/web/src/components/AskCard.tsx
-msgid "Edit first"
-msgstr "先に編集"
-
 #: apps/mobile/app/(settings)/profile.tsx
 #: apps/mobile/app/bot-settings.tsx
 #: apps/mobile/components/name-dialog-compose.tsx
@@ -4876,6 +4878,10 @@ msgstr "金額を入力してください"
 #: apps/web/src/lib/model-connection-preflight.ts
 msgid "Enter an API key before testing."
 msgstr "テストする前にAPIキーを入力してください。"
+
+#: apps/web/src/lib/routine-draft.ts
+msgid "Enter an HTTPS URL"
+msgstr "HTTPSのURLを入力してください"
 
 #: apps/web/src/components/ComputerProviderSettings.tsx
 msgid "Environment ID"
@@ -5107,12 +5113,8 @@ msgid "Failure handling"
 msgstr "失敗時の対応"
 
 #: apps/web/src/pages/routine-editor/trigger-cards.tsx
-msgid "Fields that mark a change"
-msgstr "変更とみなすフィールド"
-
-#: apps/web/src/pages/routine-editor/trigger-cards.tsx
-msgid "Fields to compare, e.g. id, modifiedTime (optional)"
-msgstr "比較するフィールド（例: id, modifiedTime）（任意）"
+msgid "Fields to compare (optional)"
+msgstr "比較するフィールド（任意）"
 
 #: apps/mobile/components/thread/message-bubble.tsx
 #: apps/mobile/lib/search-sheet.ts
@@ -5532,6 +5534,7 @@ msgstr "文字起こしを非表示"
 
 #: apps/mobile/lib/thinking-level.ts
 #: apps/web/src/lib/ticket-priority.ts
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
 #: apps/web/src/pages/onboarding/model-step.tsx
 msgid "High"
@@ -5600,6 +5603,10 @@ msgstr "Rakazoをどのように使いますか？"
 #: apps/mobile/components/compatible-endpoint-form.tsx
 msgid "http://127.0.0.1:8000/v1"
 msgstr "http://127.0.0.1:8000/v1"
+
+#: apps/web/src/pages/routine-editor/trigger-cards.tsx
+msgid "HTTPS URL"
+msgstr "HTTPS URL"
 
 #: apps/mobile/components/add-custom-integration.tsx
 msgid "https://example.com/graphql"
@@ -5935,6 +5942,10 @@ msgstr "前回の確認 {0}: 変更なし"
 msgid "Later"
 msgstr "後で"
 
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Learn from conversations"
+msgstr "会話から学習"
+
 #: apps/mobile/app/(settings)/messaging.tsx
 #: apps/mobile/app/space-members.tsx
 #: apps/web/src/components/SpaceMembersSettings.tsx
@@ -5963,10 +5974,6 @@ msgstr "左"
 #: apps/web/src/components/ComputerDeviceSettings.tsx
 msgid "Let bots use this computer"
 msgstr "ボットにこのコンピューターの使用を許可"
-
-#: apps/web/src/pages/MemorySettingsOverlay.tsx
-msgid "Lets bots save and recall facts by meaning, alongside MEMORY.md."
-msgstr "MEMORY.md に加えて、ボットが意味に基づいて事実を保存・想起できるようにします。"
 
 #: apps/mobile/app/(settings)/general.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
@@ -6148,6 +6155,7 @@ msgstr "キーが含まれているようです"
 
 #: apps/mobile/lib/thinking-level.ts
 #: apps/web/src/lib/ticket-priority.ts
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
 #: apps/web/src/pages/onboarding/model-step.tsx
 msgid "Low"
@@ -6277,6 +6285,7 @@ msgid "MCP servers"
 msgstr "MCPサーバー"
 
 #: apps/mobile/lib/thinking-level.ts
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
 #: apps/web/src/pages/onboarding/model-step.tsx
 msgid "Medium"
@@ -6570,11 +6579,6 @@ msgstr "その他"
 #: apps/web/src/pages/plugins/plugin-browse.tsx
 msgid "More apps"
 msgstr "その他のアプリ"
-
-#: apps/mobile/components/computer-maintenance-actions.tsx
-#: apps/web/src/components/ComputerMaintenanceActions.tsx
-msgid "More computer actions"
-msgstr "コンピューターのその他の操作"
 
 #: apps/mobile/lib/bot-template-copy.ts
 #: apps/web/src/components/bot-templates/bot-template-copy.ts
@@ -7748,8 +7752,8 @@ msgid "Plugins"
 msgstr "プラグイン"
 
 #: apps/web/src/pages/routine-editor/trigger-cards.tsx
-msgid "Post \"No changes\" in chat"
-msgstr "チャットに「変更なし」と投稿"
+msgid "Post a chat message when a check finds no changes. The routine won't run."
+msgstr "確認で変更が見つからなかったときにチャットメッセージを投稿します。ルーティンは実行されません。"
 
 #: apps/mobile/lib/bot-template-copy.ts
 #: apps/web/src/components/bot-templates/bot-template-copy.ts
@@ -7933,6 +7937,18 @@ msgstr "推論レベル"
 msgid "Recall and write"
 msgstr "参照と書き込み"
 
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Recall automatically"
+msgstr "自動的に参照"
+
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Recall depth"
+msgstr "参照の深さ"
+
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Recall from banks"
+msgstr "参照するバンク"
+
 #: apps/web/src/pages/memory-providers/HonchoSettingsForm.tsx
 msgid "Recall from this peer; save to Rakazo’s own peers."
 msgstr "このピアから呼び出し、Rakazo専用のピアに保存します。"
@@ -7990,14 +8006,12 @@ msgstr "録画を開始しました。表示を更新して続行してくださ
 msgid "Recording: {0}"
 msgstr "録画中: {0}"
 
-#: apps/mobile/components/computer-maintenance-actions.tsx
 #: apps/mobile/components/computer-update-progress.tsx
 #: apps/web/src/components/ComputerMaintenanceActions.tsx
 #: apps/web/src/components/ComputerUpdateProgress.tsx
 msgid "Recover computer"
 msgstr "コンピューターを復旧"
 
-#: apps/mobile/components/computer-maintenance-actions.tsx
 #: apps/web/src/components/ComputerMaintenanceActions.tsx
 msgid "Recover computer?"
 msgstr "コンピューターを復旧しますか？"
@@ -8030,17 +8044,11 @@ msgstr "復旧に失敗しました"
 msgid "Recovery is unavailable until the previous operation has stopped."
 msgstr "前の操作が停止するまで復旧できません。"
 
-#: apps/mobile/components/computer-maintenance-actions.tsx
 #: apps/mobile/components/computer-update-progress.tsx
 #: apps/web/src/components/ComputerMaintenanceActions.tsx
 #: apps/web/src/components/ComputerUpdateProgress.tsx
 msgid "Recovery restores the last saved workspace. Unsaved work may be lost."
 msgstr "復旧すると最後に保存されたワークスペースが復元されます。保存されていない作業は失われる可能性があります。"
-
-#: apps/mobile/components/computer-maintenance-actions.tsx
-#: apps/web/src/components/ComputerMaintenanceActions.tsx
-msgid "Recreate a computer that is not working."
-msgstr "動作していないコンピューターを再作成します。"
 
 #: apps/mobile/components/computer-update-progress.tsx
 #: apps/web/src/components/ComputerUpdateProgress.tsx
@@ -8343,6 +8351,10 @@ msgstr "返信をキャンセルしました"
 msgid "Replying to {0}"
 msgstr "{0}に返信中"
 
+#: apps/web/src/pages/routine-editor/trigger-cards.tsx
+msgid "Report unchanged checks"
+msgstr "変更なしの確認を報告"
+
 #: apps/mobile/lib/user-error.ts
 #: apps/web/src/lib/user-error.ts
 msgid "Request a new code"
@@ -8413,6 +8425,7 @@ msgstr "{date}にリセットされます。"
 msgid "Resets in {reset}"
 msgstr "{reset}後にリセット"
 
+#: apps/mobile/components/computer-maintenance-actions.tsx
 #: apps/web/src/components/ComputerMaintenanceActions.tsx
 msgid "Resetting…"
 msgstr "リセット中…"
@@ -8447,11 +8460,6 @@ msgstr "復元"
 #: apps/web/src/pages/shell/archived-chats.tsx
 msgid "Restore {name}"
 msgstr "{name}を復元"
-
-#: apps/mobile/components/computer-maintenance-actions.tsx
-#: apps/web/src/components/ComputerMaintenanceActions.tsx
-msgid "Restore the last saved workspace."
-msgstr "最後に保存されたワークスペースを復元します。"
 
 #: apps/mobile/components/computer-maintenance-actions.tsx
 #: apps/web/src/components/ComputerMaintenanceActions.tsx
@@ -8722,11 +8730,6 @@ msgstr "自分の版を保存"
 msgid "Save section name"
 msgstr "セクション名を保存"
 
-#: apps/mobile/components/computer-maintenance-actions.tsx
-#: apps/web/src/components/ComputerMaintenanceActions.tsx
-msgid "Save the workspace and install current software."
-msgstr "ワークスペースを保存して、最新のソフトウェアをインストールします。"
-
 #: apps/mobile/components/secret-ask-sheet.tsx
 #: apps/web/src/components/vault/VaultItemEditor.tsx
 msgid "Save to Vault"
@@ -8961,7 +8964,6 @@ msgid "Send <0>{linkCode}</0> to <1>{linkAddress}</1> from {linkApp} within 10 m
 msgstr "{linkApp}から10分以内に<0>{linkCode}</0>を<1>{linkAddress}</1>に送信してください。"
 
 #: apps/mobile/components/thread/ask-block.tsx
-#: apps/web/src/components/AskCard.tsx
 msgid "Send answer"
 msgstr "回答を送信"
 
@@ -8974,10 +8976,6 @@ msgstr "ファイルとして送信"
 #: apps/web/src/components/AccountAccess.tsx
 msgid "Send deletion code"
 msgstr "削除コードを送信"
-
-#: apps/web/src/components/AskCard.tsx
-msgid "Send it"
-msgstr "送信する"
 
 #: apps/web/src/components/composer/HoldToTalk.tsx
 msgid "Send recording"
@@ -9374,6 +9372,10 @@ msgstr "スキップ"
 msgid "Skip or deploy key"
 msgstr "スキップまたはデプロイキーを使用"
 
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Skip unrelated memories"
+msgstr "無関係なメモリをスキップ"
+
 #: apps/mobile/components/ComputerCard.tsx
 #: apps/web/src/components/ComputerCard.tsx
 msgid "Skipped"
@@ -9633,11 +9635,6 @@ msgstr "手順"
 msgid "Stop"
 msgstr "停止"
 
-#: apps/mobile/components/computer-maintenance-actions.tsx
-#: apps/web/src/components/ComputerMaintenanceActions.tsx
-msgid "Stop computer"
-msgstr "コンピューターを停止"
-
 #: apps/mobile/components/thread-composer.tsx
 msgid "Stop dictating"
 msgstr "音声入力を停止"
@@ -9659,10 +9656,6 @@ msgstr "停止済み"
 #: apps/web/src/lib/browser-notifications.ts
 msgid "Stopped."
 msgstr "停止しました。"
-
-#: apps/web/src/components/ComputerMaintenanceActions.tsx
-msgid "Stopping…"
-msgstr "停止中…"
 
 #: apps/web/src/pages/McpServerForm.tsx
 msgid "Stored encrypted"
@@ -9715,6 +9708,14 @@ msgstr "自分の AI で申し込む"
 #: apps/web/src/pages/Paywall.tsx
 msgid "Subscription required"
 msgstr "サブスクリプションが必要です"
+
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Summaries"
+msgstr "要約"
+
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Summaries and facts"
+msgstr "要約と事実"
 
 #: apps/mobile/lib/cron.ts
 #: apps/web/src/lib/cron.ts
@@ -10542,7 +10543,6 @@ msgid "Type without recording"
 msgstr "録画せずに入力"
 
 #: apps/mobile/components/thread/ask-block.tsx
-#: apps/web/src/components/AskCard.tsx
 msgid "Type your answer"
 msgstr "回答を入力"
 
@@ -10690,6 +10690,7 @@ msgstr "{name}のコンピューターを更新中"
 msgid "Updating Team Computer"
 msgstr "チームのコンピューターを更新中"
 
+#: apps/mobile/components/computer-maintenance-actions.tsx
 #: apps/web/src/components/ComputerMaintenanceActions.tsx
 msgid "Updating…"
 msgstr "更新中…"
@@ -10925,10 +10926,6 @@ msgstr "すべて表示"
 msgid "View source"
 msgstr "ソースを表示"
 
-#: apps/web/src/components/SidebarFooter.tsx
-msgid "View usage"
-msgstr "使用量を表示"
-
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/ai-data-sharing.tsx
@@ -11063,6 +11060,10 @@ msgstr "このルーティンは実行のたびに何をしますか？"
 #: apps/web/src/pages/shell/bot-settings-sections.tsx
 msgid "What this bot is for"
 msgstr "このボットの用途"
+
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "What to recall"
+msgstr "参照する内容"
 
 #: apps/web/src/components/teach/SkillDraftCard.tsx
 msgid "What to return"
@@ -11297,6 +11298,11 @@ msgstr "本日カードに{price}が請求されます（今月の未使用分�
 #: apps/web/src/components/ModelCredits.tsx
 msgid "Your card is charged the prorated difference today."
 msgstr "日割りの差額が本日カードに請求されます。"
+
+#: apps/mobile/app/(settings)/billing.tsx
+#: apps/web/src/components/ModelCredits.tsx
+msgid "Your card was not charged"
+msgstr "カードへの請求は行われていません"
 
 #: apps/mobile/app/computer.tsx
 #: apps/web/src/pages/Shell.tsx

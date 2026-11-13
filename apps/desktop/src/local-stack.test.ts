@@ -1,11 +1,12 @@
 import { mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RunDocker, RunDockerResult } from "./docker-cli.js";
 import type { LocalStackDeps } from "./local-stack.js";
 import {
   COMPOSE_WAIT_TIMEOUT_S,
+  defaultSleep,
   ensureStackEnv,
   ensureStackToken,
   initialStackState,
@@ -27,6 +28,42 @@ import {
 
 const COMPOSE_DIR = path.resolve(import.meta.dirname, "..", "..", "..", "infra", "compose");
 const fakeHex = (bytes: number) => "ab".repeat(bytes);
+
+describe("defaultSleep", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it("resolves immediately without scheduling a timer when already aborted", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const done = vi.fn();
+    const sleeping = defaultSleep(2_000, controller.signal).then(done);
+    await Promise.resolve();
+    expect(done).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(0);
+    await sleeping;
+  });
+
+  it("waits the requested duration without an abort", async () => {
+    const done = vi.fn();
+    const sleeping = defaultSleep(2_000, new AbortController().signal).then(done);
+    await vi.advanceTimersByTimeAsync(1_999);
+    expect(done).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    await sleeping;
+    expect(done).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("clears the timer when aborted during the wait", async () => {
+    const controller = new AbortController();
+    const sleeping = defaultSleep(2_000, controller.signal);
+    await vi.advanceTimersByTimeAsync(100);
+    controller.abort();
+    await sleeping;
+    expect(vi.getTimerCount()).toBe(0);
+  });
+});
 
 describe("stack locations", () => {
   it("keeps the compose project under user data", () => {

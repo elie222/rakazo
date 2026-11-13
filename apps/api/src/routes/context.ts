@@ -19,8 +19,10 @@ import {
   offeredCatalog,
   providerCatalogCache,
   providerLiveCatalogsForSpace,
+  runsOnHostedCredits,
   savedCatalogSelections,
   scriptedCatalogEntry,
+  spaceCanRunCatalogModel,
   validateConnectedModelChoice,
 } from "@rakazo/adapters";
 import type {
@@ -175,23 +177,25 @@ export function createRouterContext(deps: RouterDeps) {
           (auth.byProvider[entry.provider] ||
             auth.byModel[entry.provider] ||
             entry.provider === auth.managedProvider) &&
-          hiddenCatalogModel(entry),
+          (hiddenCatalogModel(entry) || !spaceCanRunCatalogModel(auth, entry)),
       )
     )
       selected = await savedCatalogSelections(deps.prisma, actor.userId);
-    return offeredCatalog(merged, selected).map((entry) =>
-      entry.provider === auth.managedProvider
-        ? {
-            ...entry,
-            managed: true,
-            billing:
-              auth.secretIdByModel[entry.provider]?.[entry.id] ||
-              auth.secretIdByProvider[entry.provider]
-                ? entry.billing
-                : "Uses Rakazo credits",
-          }
-        : entry,
-    );
+    // A saved choice stays listed so its role can still be edited; its runs ask for a key.
+    return offeredCatalog(merged, selected)
+      .filter(
+        (entry) =>
+          spaceCanRunCatalogModel(auth, entry) || selected?.has(`${entry.provider}:${entry.id}`),
+      )
+      .map((entry) =>
+        entry.provider === auth.managedProvider
+          ? {
+              ...entry,
+              managed: true,
+              billing: runsOnHostedCredits(auth, entry) ? "Uses Rakazo credits" : entry.billing,
+            }
+          : entry,
+      );
   };
 
   // Shown where a member chose no model, so the list names what actually runs.

@@ -47,8 +47,7 @@ import { PARTIAL_REPLY_NOTE } from "./automated-messages.js";
 import { backgroundHelpersAllowed } from "./background-helpers.js";
 import { loadBotMessageContext } from "./bot-messages.js";
 import {
-  commandCredentialRedactions,
-  loadBotCommandEnvironment,
+  loadCommandVariables,
   loadLoginPasswordRedactions,
   loadRunCodeRedactions,
   loadRunLoginRedactions,
@@ -56,7 +55,8 @@ import {
 import { createBrowserProvider } from "./browser-provider-factory.js";
 import { partitionTools } from "./builtin-tool-bridge.js";
 import { agentConnectionTools, builtinAgentTools } from "./builtin-tools.js";
-import { cloudAgentsEnabled } from "./cloud-agent-factory.js";
+import { USER_CLOUD_AGENT_KEY_PREFIX } from "./cloud-agent-factory.js";
+import { cloudAgentForActor } from "./cloud-agent-service.js";
 import { mergeConnectedPlugins, needsLivePluginSync } from "./composio-connector.js";
 import { diskNoteInstruction, recordComputerDisk } from "./computer-disk.js";
 import { scheduleComputerSleep } from "./computer-idle.js";
@@ -118,8 +118,13 @@ import { usesNativeShell } from "./native-shell.js";
 import { createPaidServiceProvider } from "./paid-services-factory.js";
 import { paymentWalletConnected } from "./payment-wallets.js";
 import { restoreComputerModels } from "./pi-runtime-computer-mode.js";
+import { promptVersion } from "./prompt-version.js";
 import { loadPurchaseRedactions } from "./purchase-service.js";
-import { loadReplyContext, messageToAgentHistoryText } from "./reply-context.js";
+import {
+  loadReplyContext,
+  messageToAgentHistorySegments,
+  messageToAgentHistoryText,
+} from "./reply-context.js";
 import { backOffRoutineAfterAccountError } from "./routine-backoff.js";
 import { lateRoutineRunDueAt, lateRoutineRunInstruction } from "./routine-lateness.js";
 import { lazyRunComputer } from "./run-computer.js";
@@ -135,7 +140,10 @@ import { APPROVED_EFFECT_REPLAY_ORDER, buildApprovalContinuation } from "./run-e
 import {
   BOT_DIRECTORY_LIMIT,
   botEmailInstruction,
+  COMPUTER_USE_INSTRUCTION,
   dockerComputerToolInstruction,
+  hostComputerInstruction,
+  PRIVATE_WORKSPACE_INSTRUCTION,
   persistentComputerInstruction,
   runIdentityInstruction,
   threadContextForRun,
@@ -193,6 +201,7 @@ import {
   loadCurrentTurnImages,
   missingTurnImagesInstruction,
   RECENT_TURN_IMAGE_TURNS,
+  withLatestStepScreenshot,
   withRecentTurnImages,
 } from "./run-turn-images.js";
 import { loadAgentScratchpadContext } from "./scratchpad-context.js";
@@ -223,6 +232,11 @@ import {
 import { loadAgentTicketContext } from "./ticket-context.js";
 import { appendToolCompletionAudit, toolCompletionOutcome } from "./tool-completion-audit.js";
 import { toolResultFingerprint } from "./tool-loop.js";
+import {
+  historyReplaysOutsideContent,
+  keepToolStepResult,
+  runReplaysToolHistory,
+} from "./tool-step-calls.js";
 import { restoreTurnCheckpoint } from "./turn-checkpoint.js";
 import { createWebProvider } from "./web-provider-factory.js";
 
@@ -252,7 +266,6 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
   const paidServices = executorDeps.paidServices ?? createPaidServiceProvider();
   const browser =
     executorDeps.browser ?? createBrowserProvider(undefined, { sandbox: executorDeps.sandbox });
-  const cloudAgent = executorDeps.cloudAgent;
   const resolveConnectedModel = resolveConnectedRunModel.bind(undefined, executorDeps);
 
   // Run-scoped connector state (installed MCP sessions) outlives one attempt
@@ -561,7 +574,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           configuredMemory,
           savedSkills,
           agentSkills,
-          initialBotCommandEnvironment,
+          { env: initialBotCommandEnvironment, redactions: commandRedactions },
           savedLoginPasswordRedactions,
           purchaseRedactions,
           runLoginRedactions,
@@ -605,7 +618,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             spaceId: run.spaceId,
             userId: run.userId,
           }),
-          loadBotCommandEnvironment(deps.prisma, deps.secretStore, run),
+          loadCommandVariables(deps.prisma, deps.secretStore, run),
           loadLoginPasswordRedactions(deps.prisma, deps.secretStore, run),
           deps.paymentWallet ? loadPurchaseRedactions(deps, run) : [],
           loadRunLoginRedactions(deps.prisma, deps.secretStore, run, run.id),
@@ -622,6 +635,10 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                 sourceClientNonce: messagingSource?.clientNonce,
               }))
             : false);
+        const replaysToolHistory = runReplaysToolHistory(run.trigger, {
+          fromUser: messages.find((message) => message.id === run.sourceMessageId)?.role === "user",
+          nonOwnerChat: nonOwnerChatRun,
+        });
         const historySearchBeforeSeq =
           contextStrategy !== "current" && run.sourceMessageId
             ? (messages.find((message) => message.id === run.sourceMessageId)?.seq ??
@@ -634,7 +651,9 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
               thread.nextMessageSeq)
             : thread.nextMessageSeq;
         // Encoded forms too: read_file redacts with these values before any shell command runs.
-        runSecrets.push(...commandCredentialRedactions(initialBotCommandEnvironment));
+        // Read here only to hide the values and to tell the model the variables' names: no
+        // command has them yet, so nothing is recorded as used until the shell tool sends one.
+        runSecrets.push(...commandRedactions);
         // A login filled in an earlier run may still be on its page, and anything this run reads
         // or is given may contain it, so every run hides its saved passwords before the model runs.
         runSecrets.push(
@@ -716,6 +735,12 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         const discoveredPromise = deps.connector
           ? deps.connector.discoverTools(context)
           : Promise.resolve([]);
+        // A connection that cannot be read now leaves the cloud-agent tools out of this turn only.
+        const cloudAgentPromise = cloudAgentForActor(executorDeps, {
+          spaceId: run.spaceId,
+          userId: run.userId,
+          botIds: [bot.id],
+        }).catch(() => null);
         // Group threads and spaces several people share: who wrote each message, so the model can
         // tell the bots and the people apart. A personal space's direct chat stays plain turns.
         const people = await loadSpacePeople(
@@ -737,9 +762,33 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             messages: [...messages].reverse().map((m) => {
               const speaker = historySpeaker(speakers, m);
               // In a group, turns from several speakers are joined, so no line may pose as a label.
-              const text = speakers
-                ? neutralizeSpeakerLabels(messageToAgentHistoryText(m))
-                : messageToAgentHistoryText(m);
+              const neutral = (value: string) =>
+                speakers ? neutralizeSpeakerLabels(value) : value;
+              const text = neutral(messageToAgentHistoryText(m));
+              const partial = isPartialReplyClientNonce(m.clientNonce);
+              // Runs for someone other than the owner replay replies as everyone saw them.
+              const segments =
+                m.role === "user" || m.role === "system" || speaker || !replaysToolHistory
+                  ? undefined
+                  : messageToAgentHistorySegments(m)?.map((segment) =>
+                      "text" in segment
+                        ? { text: neutral(segment.text) }
+                        : {
+                            steps: segment.steps.map((step) => ({
+                              ...step,
+                              ...(step.note ? { note: neutral(step.note) } : {}),
+                              ...(step.calls
+                                ? {
+                                    calls: step.calls.map((call) =>
+                                      call.result
+                                        ? { ...call, result: neutral(call.result) }
+                                        : call,
+                                    ),
+                                  }
+                                : {}),
+                            })),
+                          },
+                    );
               return {
                 id: m.id,
                 createdAt: m.createdAt?.toISOString(),
@@ -750,9 +799,10 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                   | "system",
                 ...(speaker ? { speaker } : {}),
                 waiting: m.steeringMessages.length > 0,
-                content: isPartialReplyClientNonce(m.clientNonce)
-                  ? `${text}\n\n${PARTIAL_REPLY_NOTE}`
-                  : text,
+                content: partial ? `${text}\n\n${PARTIAL_REPLY_NOTE}` : text,
+                ...(segments
+                  ? { segments: partial ? [...segments, { text: PARTIAL_REPLY_NOTE }] : segments }
+                  : {}),
               };
             }),
             summary: thread.historyCompactionSummary,
@@ -766,13 +816,16 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           summary: threadContext.summary,
           historyCompactedUpToSeq: threadContext.historyCompactedUpToSeq,
         });
-        let history = compactedHistory.history.map(({ id, role, content, createdAt, speaker }) => ({
-          id,
-          createdAt,
-          role,
-          content,
-          ...(speaker ? { speaker } : {}),
-        }));
+        let history = compactedHistory.history.map(
+          ({ id, role, content, createdAt, speaker, segments }) => ({
+            id,
+            createdAt,
+            role,
+            content,
+            ...(speaker ? { speaker } : {}),
+            ...(segments ? { segments } : {}),
+          }),
+        );
         const historyMessages = messages
           .filter((message) => message.steeringMessages.length === 0)
           .map((message) => ({
@@ -829,17 +882,22 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             ? `Update from ${peerMessage.fromBotName}: ${peerMessage.text}`
             : DELEGATED_EMPTY_NOTICE
           : undefined;
+        const capabilities = semanticMemory?.describe().capabilities;
+        const recallsEachRun = capabilities?.recallEachRun === true;
+        const compacted = thread.historyCompactedUpToSeq != null;
         const recallPromise =
           threadContext.includeSemanticRecall &&
           semanticMemory &&
           memoryScope &&
-          thread.historyCompactedUpToSeq != null
+          capabilities?.recallOnRequestOnly !== true &&
+          (compacted || recallsEachRun)
             ? semanticMemory.recall(
                 {
                   query: task.prompt,
+                  includeExternal: false,
                   scope: memoryScope,
                   botId: bot.id,
-                  historyGeneration: thread.historyCompactionGeneration,
+                  ...(compacted ? { historyGeneration: thread.historyCompactionGeneration } : {}),
                   limit: MAX_RECALLED_MEMORIES,
                 },
                 context,
@@ -876,10 +934,13 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         let recalledMemory = "";
         let recallSucceeded = false;
         if (recalled) {
-          if (recalled.ok && recalled.value.length > 0) {
-            recallSucceeded = true;
-            recalledMemory = formatRecalledMemory(recalled.value);
-          } else if (!recalled.ok) {
+          if (recalled.ok) {
+            const stored = recalled.value.filter((memory) => !memory.external);
+            recallSucceeded = stored.length > 0;
+            // Provider extraction and recall return derived knowledge, even when the original
+            // conversation was this bot's own. Storage cannot promote it to owner authority.
+            recalledMemory = stored.length ? formatRecalledMemory(stored) : "";
+          } else {
             getLogger().error("semantic memory recall failed", recalled.error);
           }
         }
@@ -887,7 +948,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           history = history.slice(
             -historyWindowSize({
               semanticMemoryEnabled: semanticMemoryEnabled && !thread.historyCompactionSummary,
-              compacted: thread.historyCompactedUpToSeq != null,
+              compacted,
               recallSucceeded,
             }),
           );
@@ -1200,7 +1261,12 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           (run.trigger === "user" || run.trigger === "follow_up") && run.sourceMessageId
             ? await deps.prisma.message.findUnique({
                 where: { id: run.sourceMessageId },
-                select: { clientNonce: true, role: true, blocks: true, threadId: true },
+                select: {
+                  clientNonce: true,
+                  role: true,
+                  blocks: true,
+                  threadId: true,
+                },
               })
             : null;
         // Calls carry no schema flag: the sending client encodes them in the clientNonce.
@@ -1258,6 +1324,25 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             userComputerScreen = device.platform === "darwin" || device.platform === "win32";
           } else userComputer = "offline";
         }
+        const cloudAgent = await cloudAgentPromise;
+        // Revocation blocks new instructions, but existing owned agents still need cleanup.
+        const cloudAgentCleanupEnabled = Boolean(
+          !cloudAgent &&
+            deps.userCloudAgents &&
+            (await deps.prisma.cloudAgent
+              .findFirst({
+                where: {
+                  spaceId: run.spaceId,
+                  userId: run.userId,
+                  providerKey: { startsWith: USER_CLOUD_AGENT_KEY_PREFIX },
+                },
+                select: { id: true },
+              })
+              .catch((error: unknown) => {
+                getLogger().warn("cloud_agent.cleanup_lookup_failed", { error });
+                return null;
+              })),
+        );
         const builtins = [
           ...selectBuiltinToolsForRun({
             ticketBoardEnabled: deps.ticketBoardEnabled,
@@ -1271,10 +1356,12 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             trigger: run.trigger,
             semanticMemoryEnabled,
             semanticMemoryForgets: Boolean(semanticMemory?.forget),
+            semanticMemoryReflects: Boolean(semanticMemory?.reflect),
             mediaImagesEnabled: Boolean(deps.artifacts && mediaGeneration?.capabilities.images),
             mediaVideoEnabled: Boolean(deps.artifacts && mediaGeneration?.capabilities.video),
             paidServicesEnabled: Boolean(paidServices),
-            cloudAgentEnabled: cloudAgentsEnabled(cloudAgent, run.spaceId),
+            cloudAgentEnabled: Boolean(cloudAgent),
+            cloudAgentCleanupEnabled,
             paymentWalletEnabled,
             messagingChannelRun: nonOwnerChatRun,
             voiceCall,
@@ -1325,13 +1412,17 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           ownerStartedRun,
           messagingChannelRun: nonOwnerChatRun,
           sourceMessage,
+          ownerChatMessageBlocks: nonOwnerChatRun ? undefined : messagingSource?.blocks,
           connectedPlugins,
         });
         // Outbound destinations this run may reach without asking. See outboundSiteGate and
         // connectorReadRequiresApproval; approvals from earlier attempts are read back from effects.
         const searchResultUrls = new Set<string>();
         const initiallyTainted =
-          !ownerStartedRun || Boolean(turnCheckpoint) || Boolean(checkpointLoadError);
+          !ownerStartedRun ||
+          Boolean(turnCheckpoint) ||
+          Boolean(checkpointLoadError) ||
+          historyReplaysOutsideContent(history);
         // The creation intro only asks what the bot is for (see selectBuiltinToolsForRun),
         // so it gets no connector tools either.
         const tools =
@@ -1375,16 +1466,11 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                 )
                 .catch(() => undefined)
             : undefined;
-        const hostShell = hostEnvironment
-          ? `Home: ${JSON.stringify(hostEnvironment.home)}. Shell: ${JSON.stringify(hostEnvironment.shell)}. The shell tool executes commands with that shell. Use its native syntax, paths and installed tools; do not assume Linux or bash.`
+        const hostInstruction = hostEnvironment
+          ? hostComputerInstruction(computerKind, hostEnvironment)
           : undefined;
-        const hostInstruction = !hostEnvironment
-          ? undefined
-          : computerKind === "wuying"
-            ? `Commands run on a Windows cloud computer. ${hostShell} Files outside the bot workspace can be accessed through commands. The screen shows the Windows desktop; use the graphical tools for apps without a command line.`
-            : `Commands run on the user's ${hostEnvironment.platform} computer with their account permissions. ${hostShell} Local files outside the bot workspace can be accessed through commands. App launching is available through OS commands; graphical screen control is unavailable.`;
         const computerInstruction = [
-          "Use the computer only when the task needs files, commands, a browser, or an installed application. Answer directly from the conversation when sufficient; use connected tools for app data. A website with no connected app is still yours to use in the computer's browser, now and in scheduled routines, so a missing connection alone is never a reason to decline. Do not inspect the computer just to prepare for an unrelated task. If what you are about to buy, send or submit differs from what the user confirmed, such as a changed item or total, show the difference and confirm again first.",
+          COMPUTER_USE_INSTRUCTION,
           hostInstruction
             ? `${baseComputerInstruction} ${hostInstruction}`
             : dockerToolInstruction
@@ -1397,7 +1483,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         const workspaceInstruction =
           computerMode === "team"
             ? teamWorkspaceInstruction(bot.id)
-            : "This entire computer workspace is your private home. Relative file paths and shell working directories start at its root.";
+            : PRIVATE_WORKSPACE_INSTRUCTION;
 
         const reply = await createReplyState(deps, run, runSecrets);
         const script = scripted ? inferScript(task.prompt, takeoverResume?.checkpoint) : undefined;
@@ -1415,7 +1501,11 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             pendingTurnCheckpoints: new Map(),
             storedTurnCheckpoint,
           },
-          screen: { lastFrameId: undefined, unchangedVisualStreak: { count: 0 } },
+          screen: {
+            lastFrameId: undefined,
+            unchangedVisualStreak: { count: 0 },
+            turn: { controlFence: undefined, mustLook: false },
+          },
           toolCallStreak: { key: undefined, count: 0 },
           overLimitActionCalls: 0,
           toolResults: new Map(),
@@ -1425,6 +1515,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           ownInstructionsBaseline: bot.instructions ?? "",
           earlierAttempt: undefined,
           walletHosts: new Set(),
+          vaultUses: new Set(),
           handedOff: false,
           terminalCheckpointComplete: false,
         };
@@ -1501,7 +1592,10 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             approvedReplays: approvedEffectReplays,
           },
           trust: { ...trustLoaders, searchResultUrls },
-          memory: { semantic: semanticMemory, scope: memoryScope },
+          memory: {
+            semantic: semanticMemory,
+            scope: memoryScope,
+          },
           scripted,
           script,
           allowSilentEmptyRun,
@@ -1643,10 +1737,14 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         // A text-only model keeps the [image:] marker. Putting image parts in
         // history makes the provider reject a follow-up that used to be text.
         const historyWithImages = modelSeesImages
-          ? await withRecentTurnImages(deps, history, historyMessages, context, {
-              skipMessageId: currentTurnMessage?.id,
-              maxImages: modelImageBudget,
-            })
+          ? await withLatestStepScreenshot(
+              deps,
+              await withRecentTurnImages(deps, history, historyMessages, context, {
+                skipMessageId: currentTurnMessage?.id,
+                maxImages: modelImageBudget,
+              }),
+              context,
+            )
           : history;
         const runtimeHistory = [...historicalContext, ...historyWithImages];
         // Without a roster a bot only knows the bots it spawned itself.
@@ -1740,6 +1838,16 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
 
         try {
           if (checkpointLoadError) throw checkpointLoadError;
+          // Recorded only once setup is done, so a setup failure is not charged to the prompt.
+          // A label for comparing releases: failing to record it never fails the run.
+          await Promise.resolve()
+            .then(() =>
+              deps.prisma.run.updateMany({
+                where: { id: runId, status: "running", leaseOwner: workerId, leaseFence: fence },
+                data: { promptVersion: promptVersion() },
+              }),
+            )
+            .catch((error: unknown) => getLogger().warn("run.prompt_version_failed", { error }));
           const runtimeEvents = deps.runtime.run(
             {
               botId: bot.id,
@@ -1932,6 +2040,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                   effects.pendingTurnCheckpoints.delete(completion.executionId);
                 const outcome = toolCompletionOutcome(completion);
                 if (outcome) state.reply.toolOutcomes.set(completion.executionId, outcome);
+                keepToolStepResult(state.reply, completion, runSecrets);
                 const audited = appendToolCompletionAudit(
                   deps,
                   {
