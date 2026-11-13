@@ -62,7 +62,6 @@ import {
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { applyAccessGrants } from "./access-grants.js";
-import type { Experiments } from "./experiments.js";
 import { createExperiments } from "./experiments.js";
 import { createReferrals } from "./referrals.js";
 
@@ -190,7 +189,7 @@ export function createBillingService(deps: {
   /** The session cookie lives on the web origin, which also proxies /api to this server. */
   webOrigin: string;
   analytics?: ProductAnalytics;
-  experiments?: Experiments;
+  experiments?: ReturnType<typeof createExperiments>;
 }): BillingService {
   const { prisma, provider } = deps;
   const experiments = deps.experiments ?? createExperiments(undefined);
@@ -271,8 +270,16 @@ export function createBillingService(deps: {
       return;
     }
     const live = snapshot;
-    if (live) await reportCancellation(previous, live);
-    if (live) await reportPlanChange(previous, live);
+    // Measurement never decides whether a paid plan activates.
+    if (live)
+      try {
+        await reportCancellation(previous, live);
+        await reportPlanChange(previous, live);
+      } catch (error) {
+        getLogger().warn("billing analytics failed", {
+          "error.message": error instanceof Error ? error.message : String(error),
+        });
+      }
     if (live && hasBillingAccess(live.status))
       await referrals.settle(previous.organizationId, live.cardFingerprint);
     if (!modelCredits || !live) return;
