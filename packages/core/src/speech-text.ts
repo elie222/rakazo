@@ -257,17 +257,23 @@ export function speechFromBlocks(blocks: MessageBlock[]): string {
 
 // Without its accent "si" is Spanish for "if", so only "sí" says yes. `\b` only knows
 // ASCII letters, so a word ends wherever no letter or digit follows.
-const YES =
-  /^¡?(yes|yeah|yep|yup|ok|okay|sure|do it|go ahead|approve|confirmed|affirmative|sí|vale|okey|de acuerdo|adelante|hazlo|confirmo|aprobado)(?![\p{L}\p{N}])/iu;
-const NO =
-  /^¡?(no|nope|nah|cancel|stop|don't|do not|reject|deny|negative|cancela|cancelar|cancélalo|rechaza|rechazado|mejor no|detente)(?![\p{L}\p{N}])/iu;
+const YES_WORDS =
+  "yes|yeah|yep|yup|ok|okay|sure|do it|go ahead|approve|confirmed|affirmative|sí|vale|okey|de acuerdo|adelante|hazlo|confirmo|aprobado";
+const NO_WORDS =
+  "no|nope|nah|cancel|stop|don't|do not|reject|deny|negative|cancela|cancelar|cancélalo|rechaza|rechazado|mejor no|detente";
+const WORD_END = "(?![\\p{L}\\p{N}])";
+const YES = new RegExp(`^¡?(${YES_WORDS})${WORD_END}`, "iu");
+const NO = new RegExp(`^¡?(${NO_WORDS})${WORD_END}`, "iu");
+const NO_ANYWHERE = new RegExp(`(?<![\\p{L}\\p{N}])(${NO_WORDS})${WORD_END}`, "iu");
 
 /** Consent must never be inferred from a sentence that merely contained "sure". */
 export function spokenDecision(transcript: string): "yes" | "no" | null {
-  const text = transcript.trim();
+  const text = transcript.trim().replace(/[\u2018\u2019]/g, "'");
   // A question ("¿Sí? ¿Cuáles?") is not an answer.
   if (!text || /[?¿]/.test(text) || text.split(/\s+/).length > 6) return null;
-  if (YES.test(text)) return "yes";
+  // "okay, do not" opens with a yes and means no. Only a yes can be wrong in a way that acts, so
+  // a yes that also says no is no answer; a no that says "do it" ("don't do it") stays a no.
+  if (YES.test(text)) return NO_ANYWHERE.test(text) ? null : "yes";
   if (NO.test(text)) return "no";
   return null;
 }
