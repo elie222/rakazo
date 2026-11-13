@@ -45,11 +45,11 @@ import { reconcilePurchases } from "./purchase-poll.js";
 import type { SecretCleanupDeps } from "./secret-cleanup.js";
 import { createStrategicInitiativeReconciler } from "./strategic-initiative.js";
 import { T3CodeConnections } from "./t3code-connections.js";
-import { TeamChat } from "./team-chat.js";
-import { ModelTeamChatEngagementJudge } from "./team-chat-judge.js";
 import type { TailnetService } from "./tailnet-service.js";
 import { tailscaledInstalled } from "./tailnet-service.js";
 import { createTailnetCommandAccess, tailnetServerOrigin } from "./tailnet-tunnel.js";
+import { TeamChat } from "./team-chat.js";
+import { ModelTeamChatEngagementJudge } from "./team-chat-judge.js";
 import { createWebProvider } from "./web-provider-factory.js";
 
 /**

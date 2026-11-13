@@ -98,7 +98,12 @@ describe("migration persistence", () => {
   });
   it("moves a vault value under its vault key to Infisical through the vault's reader", async () => {
     const f = fixture();
-    for (const rows of [f.tables.secret, f.tables.botSecret, f.tables.integrationProviderConfig])
+    for (const rows of [
+      f.tables.secret,
+      f.tables.botSecret,
+      f.tables.tailnetConnection,
+      f.tables.integrationProviderConfig,
+    ])
       rows.length = 0;
     const keys: SpaceKeyRecord[] = [];
     const provider = new LocalKeyProvider([{ id: "test", key: randomBytes(32) }]);
