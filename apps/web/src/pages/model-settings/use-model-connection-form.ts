@@ -57,6 +57,8 @@ export function useModelConnectionForm({
   const [apiKey, setApiKey] = useState("");
   const [accountId, setAccountId] = useState("");
   const [gatewayId, setGatewayId] = useState("");
+  const [projectId, setProjectId] = useState("");
+  const [region, setRegion] = useState("global");
   const [baseUrl, setBaseUrl] = useState("");
   const [apiProtocol, setApiProtocol] = useState<ModelApiProtocol>("chat-completions");
   const [headerRows, setHeaderRows] = useState<ModelHeaderRow[] | null>(null);
@@ -86,10 +88,16 @@ export function useModelConnectionForm({
   const selected = modelsForProvider.find((entry) => entry.id === modelId) ?? modelsForProvider[0];
   const isOpenAiCompatible = provider === OPENAI_COMPATIBLE_PROVIDER_ID;
   // The catalog names the IDs a provider needs besides its key.
-  const { needsRouting, needsGateway, routingReady } = modelRoutingForm(selected?.routingFields, {
-    accountId,
-    gatewayId,
-  });
+  const { needsRouting, needsGateway, needsProject, routingReady } = modelRoutingForm(
+    selected?.routingFields,
+    {
+      accountId,
+      gatewayId,
+      projectId,
+      region,
+    },
+    credential,
+  );
 
   function applyFields(fields: ConnectionFormFields) {
     setEnabledModelIds(fields.enabledModelIds);
@@ -103,6 +111,8 @@ export function useModelConnectionForm({
     setMaxImagesPerPrompt(fields.maxImagesPerPrompt);
     setAccountId(fields.accountId);
     setGatewayId(fields.gatewayId);
+    setProjectId(fields.projectId ?? "");
+    setRegion(fields.region ?? "global");
   }
 
   function invalidatePreflight() {
@@ -257,10 +267,13 @@ export function useModelConnectionForm({
     enabledModelIds,
     error,
     gatewayId,
+    projectId,
+    region,
     headerRows,
     invalidatePreflight,
     needsRouting,
     needsGateway,
+    needsProject,
     isOpenAiCompatible,
     maxImagesPerPrompt,
     maxTokens,
@@ -287,6 +300,8 @@ export function useModelConnectionForm({
     setEnabledModelIds,
     setError,
     setGatewayId,
+    setProjectId,
+    setRegion,
     setHeaderRows,
     setMaxImagesPerPrompt,
     setMaxTokens,

@@ -100,6 +100,8 @@ export const ModelCredentialSchema = z.object({
   apiProtocol: ModelApiProtocolSchema.optional(),
   accountId: z.string().optional(),
   gatewayId: z.string().optional(),
+  projectId: z.string().optional(),
+  region: z.string().optional(),
   modelId: z.string().optional(),
   reasoning: z.boolean().optional(),
   thinkingLevel: ThinkingLevelSchema.nullable().optional(),
@@ -162,7 +164,7 @@ export const MAX_MODEL_CONNECTION_LABEL = 80;
 export const ModelConnectionLabelSchema = z.string().trim().min(1).max(MAX_MODEL_CONNECTION_LABEL);
 
 /** Ids a provider needs besides its key to route requests, like an account. */
-export const ModelRoutingFieldSchema = z.enum(["accountId", "gatewayId"]);
+export const ModelRoutingFieldSchema = z.enum(["accountId", "gatewayId", "projectId", "region"]);
 export type ModelRoutingField = z.infer<typeof ModelRoutingFieldSchema>;
 
 /** Routing ids are substituted into a URL path, so only a single path segment is accepted. */
@@ -183,15 +185,63 @@ export function modelRoutingReady(
   return (fields ?? []).every((field) => modelRoutingId(values[field]) !== undefined);
 }
 
+/** An existing key-only connection may keep its original route until a project is supplied. */
+function modelRoutingFieldsForSave(
+  fields: readonly ModelRoutingField[] | undefined,
+  values: Partial<Record<ModelRoutingField, string>>,
+  existing?: Pick<ModelCredential, "projectId" | "region">,
+): readonly ModelRoutingField[] | undefined {
+  if (
+    fields?.includes("projectId") &&
+    existing &&
+    !existing.projectId &&
+    !existing.region &&
+    !values.projectId?.trim() &&
+    (!values.region?.trim() || values.region.trim() === "global")
+  )
+    return fields.filter((field) => field !== "projectId" && field !== "region");
+  return fields;
+}
+
+/** Serialize the same routing fields that the form requires, including legacy edits. */
+export function modelRoutingInput(
+  fields: readonly ModelRoutingField[] | undefined,
+  values: Partial<Record<ModelRoutingField, string>>,
+  existing?: Pick<ModelCredential, "projectId" | "region">,
+): Partial<Record<ModelRoutingField, string>> {
+  return Object.fromEntries(
+    (modelRoutingFieldsForSave(fields, values, existing) ?? []).map((field) => [
+      field,
+      (values[field] ?? "").trim(),
+    ]),
+  );
+}
+
+export function modelRoutingDirty(
+  values: Partial<Record<ModelRoutingField, string>>,
+  existing?: Partial<Record<ModelRoutingField, string>>,
+): boolean {
+  return (
+    (["accountId", "gatewayId", "projectId"] as const).some(
+      (field) => (values[field]?.trim() ?? "") !== (existing?.[field] ?? ""),
+    ) ||
+    Boolean(
+      values.projectId?.trim() && (values.region?.trim() ?? "") !== (existing?.region ?? "global"),
+    )
+  );
+}
+
 /** What a connection form shows and requires for the routing ids a catalog entry names. */
 export function modelRoutingForm(
   fields: readonly ModelRoutingField[] | undefined,
   values: Partial<Record<ModelRoutingField, string>>,
-): { needsRouting: boolean; needsGateway: boolean; routingReady: boolean } {
+  existing?: Pick<ModelCredential, "projectId" | "region">,
+): { needsRouting: boolean; needsGateway: boolean; needsProject: boolean; routingReady: boolean } {
   return {
     needsRouting: Boolean(fields?.length),
     needsGateway: Boolean(fields?.includes("gatewayId")),
-    routingReady: modelRoutingReady(fields, values),
+    needsProject: Boolean(fields?.includes("projectId")),
+    routingReady: modelRoutingReady(modelRoutingFieldsForSave(fields, values, existing), values),
   };
 }
 
@@ -202,6 +252,8 @@ export const ModelConnectInputSchema = z
     apiKey: z.string().optional(),
     accountId: z.string().optional(),
     gatewayId: z.string().optional(),
+    projectId: z.string().optional(),
+    region: z.string().optional(),
     headers: ModelHeadersSchema.optional(),
     baseUrl: z.string().optional(),
     apiProtocol: ModelApiProtocolSchema.optional(),
@@ -266,8 +318,11 @@ export const ModelConnectInputSchema = z
         path: ["apiKey"],
       });
     }
-    // An existing connection can update its output limit without a new key.
-    if (!apiKey && value.maxTokens === undefined) {
+    // Existing connections can update limits or explicitly targeted routing without a new key.
+    const updatesRouting =
+      Boolean(value.credentialId) &&
+      ModelRoutingFieldSchema.options.some((field) => value[field] !== undefined);
+    if (!apiKey && value.maxTokens === undefined && !updatesRouting) {
       ctx.addIssue({
         code: "custom",
         message: "API key must contain at least 8 characters",

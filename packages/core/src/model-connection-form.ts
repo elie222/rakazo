@@ -11,6 +11,7 @@ import {
   DEFAULT_MODEL_CONTEXT_WINDOW,
   ModelHeaderRowsSchema,
   modelHeadersInput,
+  modelRoutingInput,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   openAiCompatibleConnectReady,
   parseModelContextWindow,
@@ -25,7 +26,10 @@ import {
   pickCatalogModelId,
 } from "./model-providers.js";
 
-type CatalogModel = Pick<ModelCatalogEntry, "provider" | "id" | "recommended" | "thinkingLevels">;
+type CatalogModel = Pick<
+  ModelCatalogEntry,
+  "provider" | "id" | "recommended" | "thinkingLevels" | "routingFields"
+>;
 type DefaultModel = { defaultProvider: string | null; defaultModel: string | null };
 
 /** What a connection form edits, as the strings and toggles its fields hold. */
@@ -41,6 +45,8 @@ export type ConnectionFormFields = {
   maxImagesPerPrompt: string;
   accountId: string;
   gatewayId: string;
+  projectId?: string;
+  region?: string;
 };
 
 /**
@@ -90,6 +96,8 @@ export function connectionFormFields(input: {
     | "maxImagesPerPrompt"
     | "accountId"
     | "gatewayId"
+    | "projectId"
+    | "region"
   >;
   /** Prefills a new OpenAI-compatible connection, such as a hosted preset. */
   presetBaseUrl?: string;
@@ -116,6 +124,11 @@ export function connectionFormFields(input: {
     maxImagesPerPrompt: String(credential?.maxImagesPerPrompt ?? ""),
     accountId: credential?.accountId ?? "",
     gatewayId: credential?.gatewayId ?? "",
+    ...(catalog.some(
+      (entry) => entry.provider === provider && entry.routingFields?.includes("projectId"),
+    )
+      ? { projectId: credential?.projectId ?? "", region: credential?.region ?? "global" }
+      : {}),
   };
 }
 
@@ -176,7 +189,7 @@ export function modelConnectRequest(input: {
     ModelCatalogEntry,
     "provider" | "providerName" | "id" | "thinkingLevels" | "routingFields"
   >;
-  credential?: Pick<ModelCredential, "modelId" | "thinkingLevel">;
+  credential?: Pick<ModelCredential, "modelId" | "thinkingLevel" | "projectId" | "region">;
   credentialId: string | null;
   settingsOnly?: boolean;
   makeDefault?: { makeDefault: boolean; scope: SettingsScope };
@@ -262,9 +275,7 @@ export function modelConnectRequest(input: {
     input: {
       provider: selected.provider,
       ...(newKey ? { apiKey: newKey } : {}),
-      ...(selected.routingFields?.length
-        ? { accountId: form.accountId.trim(), gatewayId: form.gatewayId.trim() }
-        : {}),
+      ...modelRoutingInput(selected.routingFields, form, credential),
       modelId: selected.id,
       // A limits-only save leaves the stored effort alone while the model and effort stay
       // put. Changing either sends the clamped level, including null, so the previous

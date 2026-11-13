@@ -358,6 +358,8 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
         provider,
         id: modelId,
         apiKey: auth.apiKey,
+        projectId: parsed.projectId,
+        region: parsed.region,
         ...limit,
         ...context,
       },

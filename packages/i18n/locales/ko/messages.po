@@ -7832,6 +7832,9 @@ msgstr "프로필"
 msgid "Program: {name}"
 msgstr "프로그램: {name}"
 
+msgid "Project ID"
+msgstr "프로젝트 ID"
+
 #: apps/web/src/components/teach/TeachRecordingChrome.tsx
 msgid "Protected input"
 msgstr "보호된 입력"

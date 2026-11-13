@@ -630,7 +630,8 @@ describe("models agents can run", () => {
   });
 
   it.each([
-    ["google", "gemini-3.8-flash"],
+    ["google", "gemini-4-hydrogen"],
+    ["google-vertex", "gemini-4-hydrogen"],
     ["groq", "openai/gpt-oss-120b"],
     ["minimax", "MiniMax-M3"],
   ])("connects %s to %s when no model is chosen", (provider, model) => {

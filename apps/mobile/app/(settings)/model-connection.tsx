@@ -10,6 +10,7 @@ import {
   MAX_MODEL_MAX_TOKENS,
   matchCompatibleEndpointPreset,
   modelHeadersInput,
+  modelRoutingDirty,
   modelRoutingForm,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   savedCompatibleEndpointMatches,
@@ -90,6 +91,8 @@ export default function ModelConnection() {
   const [apiKey, setApiKey] = useState("");
   const [accountId, setAccountId] = useState("");
   const [gatewayId, setGatewayId] = useState("");
+  const [projectId, setProjectId] = useState("");
+  const [region, setRegion] = useState("global");
   const [baseUrl, setBaseUrl] = useState("");
   const [apiProtocol, setApiProtocol] = useState<ModelApiProtocol>("chat-completions");
   const [headerRows, setHeaderRows] = useState<ModelHeaderRow[] | null>(null);
@@ -181,6 +184,8 @@ export default function ModelConnection() {
       setMaxImagesPerPrompt(fields.maxImagesPerPrompt);
       setAccountId(fields.accountId);
       setGatewayId(fields.gatewayId);
+      setProjectId(fields.projectId ?? "");
+      setRegion(fields.region ?? "global");
       return nextMe;
     },
     [request, rpc, t],
@@ -269,10 +274,16 @@ export default function ModelConnection() {
     if (selectedProviderLabel) navigation.setOptions({ title: selectedProviderLabel });
   }, [navigation, selectedProviderLabel]);
   const isOpenAiCompatible = provider === OPENAI_COMPATIBLE_PROVIDER_ID;
-  const { needsRouting, needsGateway, routingReady } = modelRoutingForm(selected?.routingFields, {
-    accountId,
-    gatewayId,
-  });
+  const { needsRouting, needsGateway, needsProject, routingReady } = modelRoutingForm(
+    selected?.routingFields,
+    {
+      accountId,
+      gatewayId,
+      projectId,
+      region,
+    },
+    credential,
+  );
   const compatibleRows = compatibleModelRows(
     savedCompatibleModelIds(credential, baseUrl),
     enabledModelIds,
@@ -295,9 +306,7 @@ export default function ModelConnection() {
     keyRequired: Boolean(endpointPreset),
   });
   const limitsDirty = maxTokens !== connectionMaxTokensField(provider, credential?.maxTokens);
-  const gatewayDirty =
-    accountId.trim() !== (credential?.accountId ?? "") ||
-    gatewayId.trim() !== (credential?.gatewayId ?? "");
+  const gatewayDirty = modelRoutingDirty({ accountId, gatewayId, projectId, region }, credential);
   const gatewayOnlySave = needsRouting && Boolean(credential) && !apiKey.trim();
 
   function updateBaseUrl(nextBaseUrl: string) {
@@ -419,6 +428,8 @@ export default function ModelConnection() {
         maxImagesPerPrompt,
         accountId,
         gatewayId,
+        projectId,
+        region,
       },
       selected,
       credential,
@@ -736,35 +747,39 @@ export default function ModelConnection() {
           <View style={styles.keySection}>
             {needsRouting ? (
               <>
-                <Text style={styles.sectionTitle}>{t`Account ID`}</Text>
+                <Text style={styles.sectionTitle}>
+                  {needsProject ? t`Project ID` : t`Account ID`}
+                </Text>
                 <TextInput
-                  accessibilityLabel={t`Account ID`}
+                  accessibilityLabel={needsProject ? t`Project ID` : t`Account ID`}
                   autoCapitalize="none"
                   autoCorrect={false}
                   autoComplete="off"
                   editable={!busy}
                   onChangeText={(value) => {
-                    setAccountId(value);
+                    (needsProject ? setProjectId : setAccountId)(value);
                     clearFeedback();
                   }}
                   style={styles.keyInput}
-                  value={accountId}
+                  value={needsProject ? projectId : accountId}
                 />
-                {needsGateway ? (
+                {needsGateway || needsProject ? (
                   <>
-                    <Text style={styles.sectionTitle}>{t`Gateway ID`}</Text>
+                    <Text style={styles.sectionTitle}>
+                      {needsProject ? t`Region` : t`Gateway ID`}
+                    </Text>
                     <TextInput
-                      accessibilityLabel={t`Gateway ID`}
+                      accessibilityLabel={needsProject ? t`Region` : t`Gateway ID`}
                       autoCapitalize="none"
                       autoCorrect={false}
                       autoComplete="off"
                       editable={!busy}
                       onChangeText={(value) => {
-                        setGatewayId(value);
+                        (needsProject ? setRegion : setGatewayId)(value);
                         clearFeedback();
                       }}
                       style={styles.keyInput}
-                      value={gatewayId}
+                      value={needsProject ? region : gatewayId}
                     />
                   </>
                 ) : null}

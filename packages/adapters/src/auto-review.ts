@@ -380,6 +380,8 @@ export async function runAutoReviewJudge(
             apiKey: input.oauth ? undefined : input.apiKey,
             accountId: input.accountId,
             gatewayId: input.gatewayId,
+            projectId: input.projectId,
+            region: input.region,
             baseUrl: input.baseUrl,
             headers: input.headers,
             allowPrivateEndpoint: input.allowPrivateEndpoint,
@@ -466,6 +468,8 @@ export type LlmAutoReviewOptions = {
   apiKey?: string;
   accountId?: string;
   gatewayId?: string;
+  projectId?: string;
+  region?: string;
   baseUrl?: string;
   headers?: Record<string, string>;
   allowPrivateEndpoint?: boolean;
