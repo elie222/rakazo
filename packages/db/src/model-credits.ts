@@ -34,20 +34,28 @@ export async function creditAccount(prisma: PrismaClient, organizationId: string
   }
 }
 
-/** Reads never lock the wallet. Lapsed credits the reconciler has not expired yet are left out. */
+/**
+ * Reads never lock the wallet. Lapsed credits the reconciler has not expired yet are left out,
+ * after the lot sync that expiry runs first, which spends the soonest-expiring lots.
+ */
 export async function unexpiredCreditAccount(
   prisma: PrismaClient,
   organizationId: string,
   now = new Date(),
 ) {
-  const [account, lapsed] = await Promise.all([
+  const live = { organizationId, availableMicros: { gt: 0n } };
+  const [account, lots, lapsed] = await Promise.all([
     creditAccount(prisma, organizationId),
+    prisma.modelCreditLot.aggregate({ where: live, _sum: { availableMicros: true } }),
     prisma.modelCreditLot.aggregate({
-      where: { organizationId, expiresAt: { lte: now }, availableMicros: { gt: 0n } },
+      where: { ...live, expiresAt: { lte: now } },
       _sum: { availableMicros: true },
     }),
   ]);
-  return { ...account, balanceMicros: account.balanceMicros - (lapsed._sum.availableMicros ?? 0n) };
+  const funded = account.balanceMicros > 0n ? account.balanceMicros : 0n;
+  const unsynced = (lots._sum.availableMicros ?? 0n) - funded;
+  const expiring = (lapsed._sum.availableMicros ?? 0n) - (unsynced > 0n ? unsynced : 0n);
+  return { ...account, balanceMicros: account.balanceMicros - (expiring > 0n ? expiring : 0n) };
 }
 
 /** Payment replay and refunds reconcile one durable grant; refunds can never be re-credited. */

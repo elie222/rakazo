@@ -167,6 +167,18 @@ dbTests("model credits ledger", () => {
     await expireModelCredits(prisma, organizationId, renewal);
     expect(await balance()).toBe(read.balanceMicros);
   });
+  it("reads the balance the expiry leaves when spending outran the credit lots", async () => {
+    await grant("topup", 2000);
+    await grant("monthly", 1000, renewal);
+    await prisma.modelCreditAccount.update({
+      where: { organizationId },
+      data: { balanceMicros: { decrement: 5_000_000n } },
+    });
+    const read = await unexpiredCreditAccount(prisma, organizationId, renewal);
+    expect(read.balanceMicros).toBe(20_000_000n);
+    await expireModelCredits(prisma, organizationId, renewal);
+    expect(await balance()).toBe(read.balanceMicros);
+  });
   it("renews without accumulating old monthly credits or refilling an expired invoice replay", async () => {
     await grant("monthly", 1000, renewal);
     await grant("topup", 2000);
