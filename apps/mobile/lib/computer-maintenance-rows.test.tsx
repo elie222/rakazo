@@ -32,8 +32,8 @@ vi.mock("../components/settings-group", () => ({
   }) => createElement("button", { type: "button", onClick: onPress, disabled }, title),
 }));
 
-function Rows({ onError }: { onError: (message: string | null) => void }) {
-  return createElement("div", null, ...useComputerMaintenanceRows("bot-fixture", onError));
+function Rows() {
+  return createElement("div", null, ...useComputerMaintenanceRows("bot-fixture"));
 }
 
 describe("computer maintenance rows", () => {
@@ -55,7 +55,7 @@ describe("computer maintenance rows", () => {
     rpc.mockImplementation(async (procedure: string) =>
       procedure === "computer/status" ? status({}) : undefined,
     );
-    await act(async () => root.render(createElement(Rows, { onError: vi.fn() })));
+    await act(async () => root.render(createElement(Rows)));
     expect([...container.querySelectorAll("button")].map((item) => item.textContent)).toEqual([
       "Update computer",
       "Reset computer",
@@ -75,14 +75,28 @@ describe("computer maintenance rows", () => {
 
   it("hides Update for a computer that cannot update and disables rows while busy", async () => {
     rpc.mockResolvedValue(status({ canUpdate: false, busyBotName: "Other" }));
-    await act(async () => root.render(createElement(Rows, { onError: vi.fn() })));
+    await act(async () => root.render(createElement(Rows)));
     expect(button("Update computer")).toBeUndefined();
     expect(button("Reset computer")!.disabled).toBe(true);
   });
 
+  it("shows a failed action's error in the group", async () => {
+    rpc.mockImplementation(async (procedure: string) => {
+      if (procedure === "computer/status") return status({});
+      throw new Error("Reset failed");
+    });
+    await act(async () => root.render(createElement(Rows)));
+    await act(async () => button("Reset computer")!.click());
+    const reset = alert.mock.lastCall![2].find(
+      (action: { text: string }) => action.text === "Reset",
+    );
+    await act(async () => reset.onPress());
+    expect(container.textContent).toContain("Reset failed");
+  });
+
   it("shows nothing without a computer", async () => {
     rpc.mockRejectedValue(new Error("offline"));
-    await act(async () => root.render(createElement(Rows, { onError: vi.fn() })));
+    await act(async () => root.render(createElement(Rows)));
     expect(container.querySelectorAll("button")).toHaveLength(0);
   });
 });

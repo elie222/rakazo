@@ -10,14 +10,11 @@ import { errorText } from "../lib/user-error";
 import { SettingsRow } from "./settings-group";
 
 /** Update and Reset rows for a bot's Computer settings group. */
-export function useComputerMaintenanceRows(
-  botId: string | undefined,
-  onError: (message: string | null) => void,
-): ReactElement[] {
+export function useComputerMaintenanceRows(botId: string | undefined): ReactElement[] {
   const { t } = useLingui();
   const [computer, setComputer] = useState<ComputerStatus | null>(null);
   const [pending, setPending] = useState<"reset" | "update" | null>(null);
-  const confirmReset = useConfirmComputerReset();
+  const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     if (!botId) return;
@@ -39,13 +36,13 @@ export function useComputerMaintenanceRows(
   async function run(action: "reset" | "update") {
     if (!botId || busy) return;
     setPending(action);
-    onError(null);
+    setError(null);
     try {
       if (action === "reset") await rpc("computer/reset", { botId });
       else await computerUpdates.start(botId);
       await refresh();
     } catch (err) {
-      onError(errorText(err, t`Could not update computer`));
+      setError(errorText(err, t`Could not update computer`));
     } finally {
       setPending(null);
     }
@@ -73,20 +70,19 @@ export function useComputerMaintenanceRows(
       dimmed={busy}
       destructive
       title={pending === "reset" ? t`Resetting…` : t`Reset computer`}
-      onPress={() => confirmReset(() => void run("reset"))}
+      onPress={() =>
+        Alert.alert(
+          t`Reset computer?`,
+          t`Restore the last saved workspace. Unsaved work on the computer is lost.`,
+          [
+            { text: t`Cancel`, style: "cancel" },
+            { text: t`Reset`, style: "destructive", onPress: () => void run("reset") },
+          ],
+        )
+      }
     />,
+    ...(error
+      ? [<SettingsRow key="error" accessibilityRole="alert" destructive title={error} />]
+      : []),
   ];
-}
-
-export function useConfirmComputerReset() {
-  const { t } = useLingui();
-  return (onConfirm: () => void) =>
-    Alert.alert(
-      t`Reset computer?`,
-      t`Restore the last saved workspace. Unsaved work on the computer is lost.`,
-      [
-        { text: t`Cancel`, style: "cancel" },
-        { text: t`Reset`, style: "destructive", onPress: onConfirm },
-      ],
-    );
 }

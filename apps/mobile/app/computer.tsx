@@ -32,7 +32,6 @@ import {
 } from "react-native-safe-area-context";
 import { WebView } from "react-native-webview";
 import { ComputerKeyboardBar } from "../components/computer-keyboard-bar";
-import { useConfirmComputerReset } from "../components/computer-maintenance-actions";
 import { ComputerModePicker } from "../components/computer-mode-picker";
 import { GlassIconButton } from "../components/glass-icon-button";
 import { NativeActionButton } from "../components/native-action-button";
@@ -176,8 +175,6 @@ export default function Computer() {
   }, [label, navigation]);
 
   const refresh = refreshController.refresh;
-  const confirmReset = useConfirmComputerReset();
-  const [resetting, setResetting] = useState(false);
 
   useEffect(() => {
     setComputer(null);
@@ -447,32 +444,6 @@ export default function Computer() {
     />
   ) : null;
 
-  // Reset can fix the computer's own screen, not this device's route to it.
-  const resetScreenAction =
-    !unreachableScreen &&
-    screenOriginError &&
-    screenError &&
-    computer?.state === "running" &&
-    botId ? (
-      <NativeActionButton
-        style={{ marginBottom: 16 }}
-        label={resetting ? t`Resetting…` : t`Reset computer`}
-        prominence="secondary"
-        size="default"
-        disabled={resetting || Boolean(computer.busyBotName)}
-        onPress={() =>
-          confirmReset(() => {
-            if (resetting) return;
-            setResetting(true);
-            void rpc("computer/reset", { botId })
-              .then(() => reloadScreen())
-              .catch((err: unknown) => setError(errorText(err, t`Could not update computer`)))
-              .finally(() => setResetting(false));
-          })
-        }
-      />
-    ) : null;
-
   return (
     // The full window's Modal is a child of this scroll view. A tap there, on Close or on the
     // native keyboard bar, must never just dismiss the computer keyboard; only the bar closes it.
@@ -500,7 +471,6 @@ export default function Computer() {
         </Text>
       ) : null}
       {retryScreenAction}
-      {resetScreenAction}
       {allowanceUsed ? (
         <NativeActionButton
           label={t`Upgrade`}
@@ -771,7 +741,6 @@ export default function Computer() {
                     {placeholder}
                   </Text>
                   {retryScreenAction}
-                  {resetScreenAction}
                 </View>
               )}
             </View>
