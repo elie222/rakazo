@@ -4,6 +4,7 @@ import { isQuestionAskBlock } from "./ask-kind.js";
 import { displayName } from "./display-name.js";
 import { plainTextFromMarkdown } from "./markdown-plain.js";
 import { messageReaction } from "./message-reactions.js";
+import { isDeliveryMessage } from "./message-visibility.js";
 
 /** Bound the source considered when deriving a reply excerpt. */
 export const MAX_QUOTABLE_SOURCE_LENGTH = 100_000;
@@ -153,6 +154,7 @@ export function previewMessageText(
   message: { role: string; blocks: MessageBlock[] },
   labels: { photo: string; attachment: string; message: string },
 ): string {
+  if (isDeliveryMessage(message.blocks)) return labels.message;
   const text = message.blocks
     .map((block) => {
       if (block.kind === "channel_message") return block.text;

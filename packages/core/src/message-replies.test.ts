@@ -257,6 +257,12 @@ describe("previewMessageText", () => {
     );
   });
 
+  it("does not expose delivery questions in local reply previews", () => {
+    const blocks: MessageBlock[] = [{ kind: "delivery" }, { kind: "ask", text: "Hidden question" }];
+    expect(previewMessageText({ role: "bot", blocks }, labels)).toBe(labels.message);
+    expect(messageReplyPreview(blocks, "bot").text).toBe("");
+  });
+
   it("keeps channel text ahead of ordinary questions after sending", () => {
     const blocks: MessageBlock[] = [
       { kind: "ask", text: "Which release?" },
