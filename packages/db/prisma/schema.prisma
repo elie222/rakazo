@@ -1849,7 +1849,6 @@ model Computer {
   controlLeaseId          String?
   controlLeaseExpiresAt   DateTime?
   controlBotId            String?
-  controlRunId            String?
   /// The person holding user control. A Space's members share its computers, never a lease.
   controlUserId           String?
   controlFence            Int                      @default(0)

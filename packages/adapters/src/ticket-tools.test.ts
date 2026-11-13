@@ -100,6 +100,19 @@ describe("ticket tools", () => {
     expect(listed.description.endsWith("…")).toBe(true);
   });
 
+  it("does not split an emoji when it shortens a description", async () => {
+    const description = `${"x".repeat(198)}😀tail`;
+    const findMany = vi.fn(async () => [ticket({ number: 2, description })]);
+    const prisma = { ...boardSpace(), ticket: { findMany } };
+
+    const result = await listBoardTickets({ prisma, ticketBoardEnabled: true } as never, {
+      spaceId: "ws",
+    });
+
+    const listed = (result as { tickets: { description: string }[] }).tickets[0]!;
+    expect(listed.description).toBe(`${"x".repeat(198)}…`);
+  });
+
   it("pages older tickets with a cursor and rejects a bad one", async () => {
     const rows = Array.from({ length: 51 }, (_, index) =>
       ticket({

@@ -1,3 +1,4 @@
+import { TAKEOVER_COMPUTER_PENDING_STATE } from "@rakazo/core";
 import type { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { PrismaClient } from "./client.js";
@@ -5,7 +6,7 @@ import { createDb, Prisma } from "./client.js";
 import { clearThread } from "./events.js";
 import { provisionMessagingIdentity } from "./messaging.js";
 import { asSystem, runAsSystem, runAsTenant } from "./row-security.js";
-import { finalizeComputerControlRelease } from "./thread-takeover.js";
+import { answerTakeoverRequest } from "./thread-takeover.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 const describePostgres =
@@ -195,27 +196,27 @@ describePostgres("thread row before run rows for clear and control release (Post
         startedAt: new Date(),
       },
     });
+    // The run asked for help with a card, as a paused run always has.
+    const cardSeq = await system.thread.update({
+      where: { id: threadId },
+      data: { nextMessageSeq: { increment: 1 } },
+      select: { nextMessageSeq: true },
+    });
+    await system.message.create({
+      data: {
+        threadId,
+        botId,
+        runId: run.id,
+        seq: cardSeq.nextMessageSeq - 1,
+        role: "bot",
+        blocks: [{ kind: "computer", state: TAKEOVER_COMPUTER_PENDING_STATE, text: "Sign in." }],
+      },
+    });
     return run.id;
   }
 
-  it("release blocks on the thread row without holding the control run", async () => {
+  it("answering a takeover blocks on the thread row without holding the waiting run", async () => {
     const runId = await createWaitingTakeoverRun();
-    stamp += 1;
-    const computer = await system.computer.create({
-      data: {
-        spaceId,
-        userId,
-        scope: "dedicated",
-        scopeKey: `thread-run-lock-${address}-${stamp}`,
-        homeKey: `thread-run-lock-home-${address}-${stamp}`,
-        kind: "fake",
-        controlHolder: "user",
-        controlBotId: botId,
-        controlLeaseId: "lease-1",
-        controlLeaseExpiresAt: new Date(Date.now() + 60_000),
-        controlRunId: runId,
-      },
-    });
 
     const holder = holdRow("threads", threadId);
     let probe: Probe | undefined;
@@ -224,21 +225,11 @@ describePostgres("thread row before run rows for clear and control release (Post
       const xactId = await holder.lockTaken;
       probe = await connectProbe();
       work = runAsTenant({ spaceId, userId }, () =>
-        finalizeComputerControlRelease(prisma, {
-          spaceId,
-          computerId: computer.id,
-          botId,
-          runId,
-          leaseId: "lease-1",
-          holder: "none",
-          reason: "done",
-        }),
+        answerTakeoverRequest(prisma, { spaceId, botId, runId, reason: "done" }),
       );
       work.catch(() => undefined);
 
       await untilBlocked(probe, xactId);
-      // The release passed its first row and now queues on the thread row.
-      expect(await probe.rowLocked("computers", computer.id)).toBe(true);
       // The run row stays free the whole time: taking it before the thread row is
       // the inverted half of the old cycle.
       for (let sample = 0; sample < SAMPLE_COUNT; sample++) {
@@ -249,14 +240,7 @@ describePostgres("thread row before run rows for clear and control release (Post
 
       holder.open();
       await holder.done;
-      const released = await work;
-      expect(released).toEqual({ runId });
-      expect(await system.computer.findUnique({ where: { id: computer.id } })).toMatchObject({
-        controlHolder: "none",
-        controlLeaseId: null,
-        controlBotId: null,
-        controlRunId: null,
-      });
+      expect(await work).toBe(true);
       expect(await system.run.findUnique({ where: { id: runId } })).toMatchObject({
         status: "queued",
         checkpoint: "takeover",

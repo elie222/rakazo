@@ -25,7 +25,7 @@ import {
   withTransactionRetry,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
-import { releaseComputerControl } from "../computer-control.js";
+import { answerComputerRequest } from "../computer-control.js";
 import type { RouterDeps } from "../router.js";
 import { createRoutineTestRun, routineTestRunNonce, routineTestTarget } from "../routines.js";
 import { assertTeachingSendAllowed } from "../taught-skills.js";
@@ -90,7 +90,11 @@ export function takeoverReleaser(deps: RouterDeps, actor: Actor, target: ThreadT
               select: { botId: true },
             })
           )?.botId;
-    if (botId) await releaseComputerControl(deps, actor, botId, "done", runId);
+    if (!botId) return;
+    // A reply from someone the bot did not ask still steers it, but answers nothing.
+    await answerComputerRequest(deps, actor, botId, "done", runId).catch((error: unknown) => {
+      if (!(error instanceof ORPCError)) throw error;
+    });
   };
 }
 
