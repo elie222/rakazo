@@ -38,8 +38,20 @@ describe("sanitizeModelConnectionError", () => {
 
   it("keeps the text around a redacted JSON value", () => {
     expect(sanitizeModelConnectionError('{"api_key": "EXAMPLE_PLACEHOLDER", "code": 401}')).toBe(
-      '{"•••", "code": 401}',
+      '{"•••, "code": 401}',
     );
+  });
+
+  it.each([
+    ["a quoted value with a space", '{"api_key": "EXAMPLE PLACEHOLDER"}', "PLACEHOLDER"],
+    [
+      "a quoted value with a comma and brace",
+      'api_key: "EX,AMPLE}PLACEHOLDER" rest',
+      "PLACEHOLDER",
+    ],
+    ["a single-quoted value with a space", "api_key='EXAMPLE PLACEHOLDER'", "PLACEHOLDER"],
+  ])("redacts the whole quoted value in %s", (_label, raw, secret) => {
+    expect(sanitizeModelConnectionError(raw)).not.toContain(secret);
   });
 });
 
