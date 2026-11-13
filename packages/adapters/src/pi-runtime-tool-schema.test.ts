@@ -18,6 +18,79 @@ import { SCRATCHPAD_NOTES_MAX_LENGTH, SCRATCHPAD_TITLE_MAX_LENGTH } from "./scra
 
 describe("jsonSchemaParameters", () => {
   it.each([
+    {
+      field: { type: "string", minLength: 3, maxLength: 5 },
+      short: "ab",
+      empty: "",
+      valid: "abc",
+      long: "abcdef",
+    },
+    {
+      field: {
+        type: "object",
+        properties: { text: { type: "string", minLength: 3, maxLength: 5 } },
+        required: ["text"],
+      },
+      short: { text: "ab" },
+      empty: { text: "" },
+      valid: { text: "abc" },
+      long: { text: "abcdef" },
+    },
+    {
+      field: { type: "array", items: { type: "string", minLength: 3, maxLength: 5 } },
+      short: ["ab"],
+      empty: [""],
+      valid: ["abc"],
+      long: ["abcdef"],
+    },
+  ])("preserves string length bounds: $field", ({ field, short, empty, valid, long }) => {
+    const inputSchema = { type: "object", properties: { value: field }, required: ["value"] };
+    const original = structuredClone(inputSchema);
+    const tool = { name: "length_input", description: "Use string input", inputSchema };
+    const parameters = parametersFor(tool);
+    const validate = (value: typeof short | typeof valid | typeof long | typeof empty) =>
+      validateToolArguments(
+        { ...tool, parameters },
+        {
+          type: "toolCall",
+          id: "length-test",
+          name: tool.name,
+          arguments: { value },
+        },
+      );
+    expect(JSON.parse(JSON.stringify(parameters)).properties.value).toEqual(field);
+    expect(() => validate(short)).toThrow();
+    expect(() => validate(empty)).toThrow();
+    expect(() => validate(long)).toThrow();
+    expect(validate(valid)).toEqual({ value: valid });
+    expect(inputSchema).toEqual(original);
+  });
+
+  it("preserves zero and absent string minimums", () => {
+    const parameters = jsonSchemaParameters({
+      type: "object",
+      properties: {
+        zero: { type: "string", minLength: 0 },
+        plain: { type: "string" },
+      },
+      required: ["zero", "plain"],
+    });
+    expect(JSON.parse(JSON.stringify(parameters)).properties.zero.minLength).toBe(0);
+    expect(JSON.parse(JSON.stringify(parameters)).properties.plain).not.toHaveProperty("minLength");
+    expect(
+      validateToolArguments(
+        { name: "empty", description: "", parameters },
+        {
+          type: "toolCall",
+          id: "empty-test",
+          name: "empty",
+          arguments: { zero: "", plain: "" },
+        },
+      ),
+    ).toEqual({ zero: "", plain: "" });
+  });
+
+  it.each([
     { field: { type: "integer" }, value: 1.5, normalizedCount: 1 },
     {
       field: { type: "array", items: { type: "integer" } },
