@@ -247,31 +247,27 @@ class JobNotStartedError extends Error {
 }
 
 /**
- * Unlocks a claimed job whose handler never ran and gives back the attempt the claim counted,
- * as Graphile does for jobs its local queue returns (dist/sql/returnJobs.js of graphile-worker
- * 0.18.0). Graphile's failure write that follows only touches a job this runner still locks, so
- * it then leaves the job as it is: available again, without backoff and with its attempts intact.
+ * Gives back the attempt a claim counted for a job whose handler never ran, as Graphile does
+ * for jobs its local queue returns (dist/sql/returnJobs.js of graphile-worker 0.18.0). The job
+ * stays locked: the lock names this runner's pool, not the claim, so unlocking here would let a
+ * newer claim of the job by the same pool take it before Graphile's failure write that follows,
+ * and that write would then fail the newer claim. The failure write releases the job with the
+ * usual backoff for the attempts it has left. Matching the attempt count too limits the give-back
+ * to this claim. Returns whether it matched a row.
  */
-async function returnUnstartedJob(helpers: JobHelpers): Promise<boolean> {
-  const lockedBy = helpers.job.locked_by;
+async function returnUnstartedAttempt(helpers: JobHelpers): Promise<boolean> {
+  const { id, locked_by: lockedBy, attempts } = helpers.job;
   if (!lockedBy) return false;
   try {
-    await helpers.withPgClient((client) =>
+    const { rowCount } = await helpers.withPgClient((client) =>
       client.query(
-        `with j as (
-           update graphile_worker._private_jobs as jobs
-           set attempts = greatest(0, attempts - 1), locked_by = null, locked_at = null
-           where id = $1::bigint and locked_by = $2::text
-           returning job_queue_id
-         )
-         update graphile_worker._private_job_queues as job_queues
-         set locked_by = null, locked_at = null
-         from j
-         where job_queues.id = j.job_queue_id and job_queues.locked_by = $2::text`,
-        [helpers.job.id, lockedBy],
+        `update graphile_worker._private_jobs
+         set attempts = greatest(0, attempts - 1)
+         where id = $1::bigint and locked_by = $2::text and attempts = $3::int`,
+        [id, lockedBy, attempts],
       ),
     );
-    return true;
+    return rowCount === 1;
   } catch {
     // Graphile's failure write still unlocks the job, at the cost of the attempt.
     return false;
@@ -345,13 +341,14 @@ function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
 /**
  * The pool the runner gets, so the host learns the moment Graphile's job writes
  * become durable: a write's statement resolving through a checked-out client
- * means the jobs it carries have settled in the database. Everything else,
+ * means the jobs it carries have settled in the database. `onWriteSent` sees each
+ * statement as it goes out and returns what to call once it lands. Everything else,
  * including pg-pool's internal callback-form checkouts (pool.query, the notify
  * listener), passes through untouched.
  */
 function poolObservingJobWrites(
   pool: Pool,
-  onWritesLanded: (ids: readonly string[]) => void,
+  onWriteSent: (ids: readonly string[]) => () => void,
 ): Pool {
   return new Proxy(pool, {
     get(target, property) {
@@ -360,7 +357,7 @@ function poolObservingJobWrites(
           const checkout = target.connect.bind(target) as (...a: unknown[]) => unknown;
           if (typeof args[0] === "function") return checkout(...args);
           return (checkout() as Promise<PoolClient>).then((client) =>
-            clientObservingJobWrites(client, onWritesLanded),
+            clientObservingJobWrites(client, onWriteSent),
           );
         };
       }
@@ -371,22 +368,20 @@ function poolObservingJobWrites(
 
 function clientObservingJobWrites(
   client: PoolClient,
-  onWritesLanded: (ids: readonly string[]) => void,
+  onWriteSent: (ids: readonly string[]) => () => void,
 ): PoolClient {
   return new Proxy(client, {
     get(target, property) {
       if (property === "query") {
         return (config: unknown, ...rest: unknown[]) => {
           const ids = jobWriteJobIds(config);
+          const landed = ids && onWriteSent(ids);
           const query = target.query.bind(target) as (...args: unknown[]) => unknown;
           const result = query(config, ...rest);
           // Only a resolved statement has landed; a failed one retries, and its
           // ids must stay owed until a retry succeeds.
-          if (ids !== undefined && isPromiseLike(result)) {
-            void Promise.resolve(result).then(
-              () => onWritesLanded(ids),
-              () => undefined,
-            );
+          if (landed && isPromiseLike(result)) {
+            void Promise.resolve(result).then(landed, () => undefined);
           }
           return result;
         };
@@ -432,8 +427,13 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
   private wakeSleep: (() => void) | undefined;
   private readonly executions = new RunExecutionHost();
   private readonly running = new Set<{ name: BackgroundJobName }>();
-  /** Jobs whose completion, failure or return write Graphile has not landed yet. */
-  private readonly owedWrites = new Set<string>();
+  /**
+   * Jobs whose completion, failure or return write Graphile has not landed yet, each with a
+   * token for the claim that owes it: once a write commits, the job can be claimed again
+   * before that statement's response arrives, and the response must not clear the newer
+   * claim's write.
+   */
+  private readonly owedWrites = new Map<string, object>();
   /** Set while stopping: re-arms the stop deadline when outstanding work changes. */
   private rearmStopDeadline: (() => void) | undefined;
   /** Rejects once the drain deadline passes, failing every job still running. */
@@ -461,7 +461,7 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
       outage?: DatabaseOutage;
     } = {},
   ) {
-    this.runnerPool = poolObservingJobWrites(pgPool, (ids) => this.noteWritesLanded(ids));
+    this.runnerPool = poolObservingJobWrites(pgPool, (ids) => this.noteWriteSent(ids));
   }
 
   private get outage(): DatabaseOutage {
@@ -584,12 +584,21 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
     return this.running.size > 0 || this.executions.activeCount > 0 || this.owedWrites.size > 0;
   }
 
-  private noteWritesLanded(ids: readonly string[]): void {
-    let removed = false;
-    for (const id of ids) {
-      if (this.owedWrites.delete(id)) removed = true;
-    }
-    if (removed) this.rearmStopDeadline?.();
+  /**
+   * A job write leaves for the database. It belongs to the claims that owe a write for its
+   * jobs now: a newer claim can only follow once this write committed.
+   */
+  private noteWriteSent(ids: readonly string[]): () => void {
+    const claims = ids.map((id) => [id, this.owedWrites.get(id)] as const);
+    return () => {
+      let removed = false;
+      for (const [id, claim] of claims) {
+        if (claim === undefined || this.owedWrites.get(id) !== claim) continue;
+        this.owedWrites.delete(id);
+        removed = true;
+      }
+      if (removed) this.rearmStopDeadline?.();
+    };
   }
 
   private runningBindings() {
@@ -616,9 +625,9 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
           this.options.workload === "interactive" ? INTERACTIVE_RUN_TASK : name,
           async (payload: unknown, helpers: JobHelpers) => {
             // A claim that returns after the stop gave up on this runner must not start: a retry
-            // elsewhere would overlap its handler. It goes back unused, as if never claimed.
+            // elsewhere would overlap its handler. Its attempt goes back unused.
             if (abandoned.abandoned)
-              throw new JobNotStartedError(await returnUnstartedJob(helpers));
+              throw new JobNotStartedError(await returnUnstartedAttempt(helpers));
             const unpacked = unwrapJobPayload(payload);
             const attempt = { number: helpers.job.attempts, max: helpers.job.max_attempts };
             const execute = (execution?: BackgroundJobExecution) =>
@@ -645,11 +654,18 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
               if (error instanceof RetryJobLaterError) {
                 const retryLater = helpers.withPgClient(async (client) => {
                   if (abandoned.abandoned) return;
+                  // Only this claim's row: once the stop gives up, Graphile's failure write may
+                  // unlock the job and a later claim take it before this statement executes.
                   await client.query(
                     `update graphile_worker._private_jobs
                      set run_at = greatest(run_at, now() + $2::int * interval '1 millisecond')
-                     where id = $1::bigint`,
-                    [helpers.job.id, Math.ceil(error.delayMs)],
+                     where id = $1::bigint and locked_by = $3::text and attempts = $4::int`,
+                    [
+                      helpers.job.id,
+                      Math.ceil(error.delayMs),
+                      helpers.job.locked_by,
+                      helpers.job.attempts,
+                    ],
                   );
                 });
                 retryLater.catch(() => undefined);
@@ -662,7 +678,7 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
               // this wrapper settles; it lands through the wrapped runner pool. Once a
               // stop gave up, the write is left to the crash paths, and a restarted
               // session must not wait for it.
-              if (!abandoned.abandoned) this.owedWrites.add(helpers.job.id);
+              if (!abandoned.abandoned) this.owedWrites.set(helpers.job.id, {});
             }
           },
         ]),
@@ -701,7 +717,7 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
     // the stop deactivates it; until that write lands they stay locked like a running job.
     runner.events.on("localQueue:returnJobs", ({ jobs }) => {
       if (abandoned.abandoned) return;
-      for (const job of jobs) this.owedWrites.add(job.id);
+      for (const job of jobs) this.owedWrites.set(job.id, {});
       this.rearmStopDeadline?.();
     });
     if (this.stopping) {
