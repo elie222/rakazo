@@ -13,6 +13,7 @@ it("returns secret previews without persisting decrypted content in an effect re
   vi.mocked(listBotSecrets).mockResolvedValue(preview as never);
   const finish = vi.fn();
   const handler = secretTools.list_secrets;
+  if (!handler) throw new Error("Missing list_secrets handler");
   const ctx = { deps: { prisma: {}, secretStore: {} }, run: { id: "run-1" } };
   expect(
     await handler(
