@@ -122,7 +122,7 @@ function forwardRequests(api: string): Middleware {
       },
       (incoming) => {
         res.writeHead(incoming.statusCode ?? 502, withoutHopHeaders(incoming.rawHeaders));
-        incoming.pipe(res);
+        pipeline(incoming, res).catch(() => res.destroy());
       },
     );
     upstream.on("error", () => {
