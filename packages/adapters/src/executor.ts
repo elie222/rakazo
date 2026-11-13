@@ -1078,6 +1078,20 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             computerUse.screenRelease = { computer, context, keepWarm: false };
             recordComputerDisk(deps, storedComputer.id, computer, context);
             scheduleComputerSleep(deps.jobs, storedComputer.id);
+            // The browsers' tailnet proxy, in the background: tools never wait for it.
+            void deps.tailnet
+              ?.prepareComputer({
+                sandbox: deps.sandbox,
+                computerId: storedComputer.id,
+                computer,
+                member: { userId: run.userId, spaceId: run.spaceId, botId: bot.id },
+                context,
+              })
+              .catch((error: unknown) =>
+                getLogger().warn("tailnet browser proxy not prepared", {
+                  error: error instanceof Error ? error.message : String(error),
+                }),
+              );
             // Earlier attachments wait for the computer's first use; every start copies them
             // again, so they need no checkpoint, and each copy logs and skips its own failure.
             if (artifacts) {

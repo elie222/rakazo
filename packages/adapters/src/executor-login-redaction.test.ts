@@ -484,6 +484,7 @@ describe("tailnet settings in shell commands", () => {
       {
         savedLogin: false,
         tailnet: {
+          prepareComputer: async () => undefined,
           environment: async (run) => {
             asked.push(run);
             return {
@@ -515,7 +516,10 @@ describe("tailnet settings in shell commands", () => {
   it("refuses tailnet_connect in a run whose member didn't allow the bot", async () => {
     const { toolResults } = await runAfterFill(
       [{ name: "tailnet_connect", args: { host: "nas.tail1234.ts.net", port: 22 } }],
-      { savedLogin: false, tailnet: { environment: async () => undefined } },
+      {
+        savedLogin: false,
+        tailnet: { environment: async () => undefined, prepareComputer: async () => undefined },
+      },
     );
     expect(JSON.stringify(toolResults)).toContain(
       "Tailnet access is off for this bot. Connect Tailscale and turn it on in the bot's settings.",
@@ -528,6 +532,7 @@ describe("tailnet settings in shell commands", () => {
       {
         savedLogin: false,
         tailnet: {
+          prepareComputer: async () => undefined,
           environment: async () => ({
             RAKAZO_NET_URL: "https://rakazo.example.test/api/tailnet/connect",
             RAKAZO_NET_TOKEN: TOKEN,
@@ -545,7 +550,7 @@ describe("tailnet settings in shell commands", () => {
   it("runs commands without tunnel settings when the bot is not on a tailnet", async () => {
     const { commands } = await runAfterFill([{ name: "shell", args: { command: "env" } }], {
       savedLogin: false,
-      tailnet: { environment: async () => undefined },
+      tailnet: { environment: async () => undefined, prepareComputer: async () => undefined },
     });
     expect(shellCommand(commands)?.env).not.toHaveProperty("RAKAZO_NET_TOKEN");
   });

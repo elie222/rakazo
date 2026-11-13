@@ -1,7 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
-import type { AdapterContext } from "@rakazo/adapter-kit";
+import type { AdapterContext, ComputerRef, SandboxProvider } from "@rakazo/adapter-kit";
 import { PrivateNetworkError } from "@rakazo/adapter-kit";
 import type { TailnetDestination } from "@rakazo/contracts";
 import {
@@ -22,7 +22,10 @@ import { PASSED_EFFECT_STATUSES } from "./run-effects.js";
 import type { TailnetRun } from "./tailnet-service.js";
 
 const TOKEN_PREFIX = "rtn1";
+const PASS_PREFIX = "rcp1";
 const DIAL_TIMEOUT_MS = 20_000;
+/** How often open tunnels check that whoever opened them still may; the rest close. */
+const RECHECK_MS = 5_000;
 /** Pause reading the far side while this much is waiting to go out to the computer. */
 const SEND_HIGH_WATER = 1 << 20;
 /** Open tunnels one run may hold at once. */
@@ -87,8 +90,47 @@ function signature(payload: string, key: Buffer): string {
   return createHmac("sha256", key).update(payload).digest("base64url");
 }
 
+/**
+ * A computer's pass, for its browsers' proxy. It names only the computer and the start it was
+ * issued for; each tunnel decides live who is using the screen, so the pass grants nothing alone.
+ */
+export type ComputerTailnetPass = { computerId: string; boot: string };
+
+export function sealComputerTailnetPass(pass: ComputerTailnetPass, key: Buffer): string {
+  const payload = Buffer.from(JSON.stringify([pass.computerId, pass.boot])).toString("base64url");
+  return `${PASS_PREFIX}.${payload}.${signature(`${PASS_PREFIX}.${payload}`, key)}`;
+}
+
+export function openComputerTailnetPass(
+  value: string,
+  key: Buffer,
+): ComputerTailnetPass | undefined {
+  const [prefix, payload, mac, extra] = value.split(".");
+  if (prefix !== PASS_PREFIX || !payload || !mac || extra !== undefined) return undefined;
+  const expected = Buffer.from(signature(`${PASS_PREFIX}.${payload}`, key));
+  const actual = Buffer.from(mac);
+  if (expected.length !== actual.length || !timingSafeEqual(expected, actual)) return undefined;
+  try {
+    const [computerId, boot] = JSON.parse(
+      Buffer.from(payload, "base64url").toString("utf8"),
+    ) as unknown[];
+    if (typeof computerId !== "string" || typeof boot !== "string") return undefined;
+    return { computerId, boot };
+  } catch {
+    return undefined;
+  }
+}
+
 /** An active run behind a token, with what the gateway needs to dial for it and record it. */
 export type TailnetTunnelRun = TailnetRun & { runId: string; threadId: string };
+
+/**
+ * Who a tunnel acts for: a bot's run, whose approvals apply and whose thread records it, or a
+ * member holding control of a bot's screen, who is browsing for themselves.
+ */
+export type TailnetPrincipal =
+  | { kind: "run"; run: TailnetTunnelRun }
+  | { kind: "member"; member: TailnetRun };
 
 /** One finished tunnel, for the run's activity. */
 export type TailnetTunnelRecord = {
@@ -106,6 +148,8 @@ export type TailnetTunnelDeps = {
   key: Buffer;
   /** The run behind a token, if it is still active and its claims still match. */
   activeRun: (claims: TailnetTunnelClaims) => Promise<Omit<TailnetTunnelRun, "runId"> | undefined>;
+  /** Who is using this bot's screen on the pass's computer right now, if anyone may. */
+  screen?: (pass: ComputerTailnetPass, botId: string) => Promise<TailnetPrincipal | undefined>;
   /** Whether this run may reach this destination now. A string refuses with that reason. */
   authorize: (
     run: TailnetRun & { runId: string },
@@ -119,6 +163,12 @@ export type TailnetTunnelDeps = {
   record?: (record: TailnetTunnelRecord) => void;
   now?: () => number;
   maxPerRun?: number;
+  recheckMs?: number;
+};
+
+type TunnelGroup = {
+  tunnels: Set<{ close(): void }>;
+  timer?: ReturnType<typeof setInterval>;
 };
 
 /**
@@ -128,7 +178,8 @@ export type TailnetTunnelDeps = {
  */
 export class TailnetTunnelGateway {
   private readonly wss = new WebSocketServer({ noServer: true, maxPayload: 1 << 20 });
-  private readonly open = new Map<string, Set<{ close(): void }>>();
+  /** Open tunnels by who opened them, with the check that closes them once that ends. */
+  private readonly open = new Map<string, TunnelGroup>();
   private closed = false;
 
   constructor(private readonly deps: TailnetTunnelDeps) {}
@@ -150,27 +201,67 @@ export class TailnetTunnelGateway {
       .finally(() => socket.off("error", onError));
   };
 
-  /** Close every tunnel of a run, such as when it ends. */
-  closeRun(runId: string): void {
-    for (const tunnel of this.open.get(runId) ?? []) tunnel.close();
-  }
-
   close(): void {
     this.closed = true;
-    for (const runId of this.open.keys()) this.closeRun(runId);
+    for (const key of [...this.open.keys()]) this.closeGroup(key);
     this.wss.close();
+  }
+
+  private closeGroup(key: string): void {
+    const group = this.open.get(key);
+    if (!group) return;
+    for (const tunnel of [...group.tunnels]) tunnel.close();
+  }
+
+  /** Who opens this tunnel, and how to tell later that they still may. */
+  private async principal(
+    request: IncomingMessage,
+    url: URL,
+  ): Promise<{ principal: TailnetPrincipal; current: () => Promise<boolean> } | undefined> {
+    const now = this.deps.now ?? Date.now;
+    const token = /^Bearer (\S+)$/.exec(request.headers.authorization ?? "")?.[1] ?? "";
+    const pass = openComputerTailnetPass(token, this.deps.key);
+    if (pass) {
+      const botId = url.searchParams.get("bot") ?? "";
+      const screen = this.deps.screen;
+      if (!botId || !screen) return undefined;
+      const principal = await screen(pass, botId);
+      if (!principal) return undefined;
+      const key = groupKey(principal);
+      return {
+        principal,
+        current: async () => {
+          const still = await screen(pass, botId);
+          return Boolean(still && groupKey(still) === key);
+        },
+      };
+    }
+    const claims = openTailnetTunnelToken(token, this.deps.key, now());
+    const run = claims ? await this.deps.activeRun(claims) : undefined;
+    if (!claims || !run) return undefined;
+    return {
+      principal: { kind: "run", run: { ...run, runId: claims.runId } },
+      current: async () =>
+        openTailnetTunnelToken(token, this.deps.key, now()) !== undefined &&
+        (await this.deps.activeRun(claims)) !== undefined,
+    };
   }
 
   private async accept(request: IncomingMessage, socket: Duplex, head: Buffer): Promise<void> {
     const now = this.deps.now ?? Date.now;
     const url = new URL(request.url ?? "/", "http://tunnel");
     if (this.closed) return refuse(socket, 503, "The server is shutting down.");
-    const token = /^Bearer (\S+)$/.exec(request.headers.authorization ?? "")?.[1];
-    const claims = token ? openTailnetTunnelToken(token, this.deps.key, now()) : undefined;
-    const run = claims ? await this.deps.activeRun(claims) : undefined;
-    if (!claims || !run) {
-      return refuse(socket, 401, "This command's tailnet access has ended. Run it again.");
+    const opened = await this.principal(request, url);
+    if (!opened) {
+      return refuse(
+        socket,
+        401,
+        url.searchParams.has("bot")
+          ? "Tailnet access in this browser works while its bot is working, or while you control its screen."
+          : "This command's tailnet access has ended. Run it again.",
+      );
     }
+    const { principal } = opened;
     const destination = parseTailnetDestination(
       url.searchParams.get("host") ?? "",
       url.searchParams.get("port") ?? "",
@@ -182,14 +273,14 @@ export class TailnetTunnelGateway {
         "Only tailnet hosts (*.ts.net or 100.x addresses) can be reached.",
       );
     }
-    const runWithId = { ...run, runId: claims.runId };
     const started = now();
     const record = (
       outcome: TailnetTunnelRecord["outcome"],
       extra: Partial<TailnetTunnelRecord> = {},
-    ) =>
+    ) => {
+      if (principal.kind !== "run") return;
       this.deps.record?.({
-        run: runWithId,
+        run: principal.run,
         destination,
         outcome,
         bytesSent: 0,
@@ -197,24 +288,31 @@ export class TailnetTunnelGateway {
         durationMs: now() - started,
         ...extra,
       });
-    const open = this.open.get(claims.runId) ?? new Set<{ close(): void }>();
-    if (open.size >= (this.deps.maxPerRun ?? TAILNET_TUNNELS_PER_RUN)) {
+    };
+    const key = groupKey(principal);
+    if (
+      (this.open.get(key)?.tunnels.size ?? 0) >= (this.deps.maxPerRun ?? TAILNET_TUNNELS_PER_RUN)
+    ) {
       record("refused", { reason: "Too many open tailnet connections." });
       return refuse(socket, 429, "Too many open tailnet connections. Close some and retry.");
     }
-    const allowed = await this.deps.authorize(runWithId, destination);
+    // A member browsing for themselves needs no approval; a bot's run needs its own.
+    const allowed =
+      principal.kind === "run" ? await this.deps.authorize(principal.run, destination) : true;
     if (allowed !== true) {
       record("refused", { reason: allowed });
       return refuse(socket, 403, allowed);
     }
+    const identity = principal.kind === "run" ? principal.run : principal.member;
+    const operationId = principal.kind === "run" ? principal.run.runId : `screen-${identity.botId}`;
     let upstream: Duplex;
     try {
-      upstream = await this.deps.dial(run, destination, {
-        operationId: claims.runId,
-        traceId: claims.runId,
-        spaceId: run.spaceId,
-        userId: run.userId,
-        botId: run.botId,
+      upstream = await this.deps.dial(identity, destination, {
+        operationId,
+        traceId: operationId,
+        spaceId: identity.spaceId,
+        userId: identity.userId,
+        botId: identity.botId,
         signal: AbortSignal.timeout(DIAL_TIMEOUT_MS),
       });
     } catch (error) {
@@ -231,16 +329,15 @@ export class TailnetTunnelGateway {
     }
     this.wss.handleUpgrade(request, socket, head, (ws) => {
       const tunnel = { close: () => ws.terminate() };
-      open.add(tunnel);
-      this.open.set(claims.runId, open);
+      const group = this.join(key, opened.current);
+      group.tunnels.add(tunnel);
       let bytesSent = 0;
       let bytesReceived = 0;
       let finished = false;
       const finish = () => {
         if (finished) return;
         finished = true;
-        open.delete(tunnel);
-        if (open.size === 0 && this.open.get(claims.runId) === open) this.open.delete(claims.runId);
+        this.leave(key, group, tunnel);
         upstream.destroy();
         ws.terminate();
         record("closed", { bytesSent, bytesReceived });
@@ -279,6 +376,48 @@ export class TailnetTunnelGateway {
       upstream.resume();
     });
   }
+
+  /** The group for this principal, checking every few seconds that it still may tunnel. */
+  private join(key: string, current: () => Promise<boolean>): TunnelGroup {
+    let group = this.open.get(key);
+    if (group) return group;
+    const created: TunnelGroup = { tunnels: new Set() };
+    let checking = false;
+    created.timer = setInterval(() => {
+      if (checking) return;
+      checking = true;
+      void current()
+        .then((still) => {
+          if (!still) this.closeGroup(key);
+        })
+        .catch((error: unknown) =>
+          getLogger().warn("tailnet tunnel recheck failed", {
+            error: error instanceof Error ? error.message : String(error),
+          }),
+        )
+        .finally(() => {
+          checking = false;
+        });
+    }, this.deps.recheckMs ?? RECHECK_MS);
+    created.timer.unref?.();
+    group = created;
+    this.open.set(key, group);
+    return group;
+  }
+
+  private leave(key: string, group: TunnelGroup, tunnel: { close(): void }): void {
+    group.tunnels.delete(tunnel);
+    if (group.tunnels.size > 0 || this.open.get(key) !== group) return;
+    clearInterval(group.timer);
+    this.open.delete(key);
+  }
+}
+
+/** Tunnels group by who opened them: one run, or one member on one bot's screen. */
+function groupKey(principal: TailnetPrincipal): string {
+  return principal.kind === "run"
+    ? `run:${principal.run.runId}`
+    : `member:${principal.member.spaceId}:${principal.member.userId}:${principal.member.botId}`;
 }
 
 function refuse(socket: Duplex, status: number, message: string): void {
@@ -302,6 +441,20 @@ const STATUS_TEXT: Record<number, string> = {
 /** How long a command's tunnel token lasts; the run ending revokes it sooner. */
 const HOUR_MS = 60 * 60_000;
 const COMMAND_TOKEN_TTL_MS = 12 * HOUR_MS;
+/** A computer prepared this recently is not prepared again; a restart is a new start anyway. */
+const COMPUTER_PREPARED_MS = 10 * 60_000;
+
+/**
+ * Installs rakazo-net where the computer's browsers' proxy runs it, and starts that proxy with
+ * this computer's pass. The values arrive in the environment, never on a command line.
+ */
+const SCREENS_START = [
+  "set -eu",
+  "helper=$(mktemp /tmp/rakazo-net.XXXXXX)",
+  "trap 'rm -f \"$helper\"' EXIT",
+  'printf %s "$RAKAZO_NET_HELPER" | base64 -d >"$helper"',
+  'python3 -I "$helper" screens-start',
+].join("\n");
 
 /**
  * The tunnel settings a run's shell commands get, when its member let this bot onto their
@@ -309,7 +462,7 @@ const COMMAND_TOKEN_TTL_MS = 12 * HOUR_MS;
  * `rakazo-net` then says tailnet access is off.
  */
 export function createTailnetCommandAccess(deps: {
-  prisma: Pick<PrismaClient, "tailnetConnection">;
+  prisma: Pick<PrismaClient, "tailnetConnection" | "computer">;
   encryptionKey: string;
   /** This server's origin as bots' computers reach it; absent when they can't. */
   serverOrigin: string | undefined;
@@ -319,14 +472,57 @@ export function createTailnetCommandAccess(deps: {
 }): TailnetCommandAccess {
   const key = tailnetTunnelKey(deps.encryptionKey);
   const url = deps.serverOrigin ? new URL(TAILNET_CONNECT_PATH, deps.serverOrigin).href : undefined;
+  const now = deps.now ?? Date.now;
+  const prepared = new Map<string, number>();
+  const allowed = async (member: { userId: string; spaceId: string; botId: string }) => {
+    if (!url || !(await deps.available)) return false;
+    const connection = await deps.prisma.tailnetConnection.findUnique({
+      where: { spaceId_userId: { spaceId: member.spaceId, userId: member.userId } },
+      select: { botIds: true },
+    });
+    return Boolean(connection?.botIds.includes(member.botId));
+  };
   return {
-    async environment(run) {
-      if (!url || !(await deps.available)) return undefined;
-      const connection = await deps.prisma.tailnetConnection.findUnique({
-        where: { spaceId_userId: { spaceId: run.spaceId, userId: run.userId } },
-        select: { botIds: true },
+    async prepareComputer({ sandbox, computerId, computer, member, context }) {
+      if (!url || !(await allowed(member))) return;
+      const row = await deps.prisma.computer.findUnique({
+        where: { id: computerId },
+        select: { runningSince: true },
       });
-      if (!connection?.botIds.includes(run.botId)) return undefined;
+      if (!row) return;
+      const boot = row.runningSince?.toISOString() ?? "";
+      const cacheKey = `${computerId} ${boot}`;
+      if ((prepared.get(cacheKey) ?? 0) > now()) return;
+      prepared.set(cacheKey, now() + COMPUTER_PREPARED_MS);
+      const helper = tailnetHelper();
+      let code: number | undefined;
+      let output = "";
+      try {
+        for await (const event of sandbox.execute(
+          computer,
+          {
+            argv: ["bash", "-c", SCREENS_START],
+            env: {
+              RAKAZO_NET_URL: url,
+              RAKAZO_NET_PASS: sealComputerTailnetPass({ computerId, boot }, key),
+              RAKAZO_NET_HELPER: helper.base64,
+            },
+            timeoutMs: 30_000,
+          },
+          context,
+        )) {
+          if (event.type === "exit") code = event.code;
+          else output = `${output}${event.data}`.slice(-2_000);
+        }
+      } finally {
+        if (code !== 0) prepared.delete(cacheKey);
+      }
+      if (code !== 0) {
+        getLogger().warn("tailnet browser proxy did not start", { code, output: output.trim() });
+      }
+    },
+    async environment(run) {
+      if (!url || !(await allowed(run))) return undefined;
       // Rounded up to the hour, so a run's commands share a token and its redaction.
       const expiresAt =
         Math.ceil(((deps.now ?? Date.now)() + COMMAND_TOKEN_TTL_MS) / HOUR_MS) * HOUR_MS;
@@ -343,6 +539,17 @@ export function createTailnetCommandAccess(deps: {
 }
 
 export interface TailnetCommandAccess {
+  /**
+   * Give a computer's browsers their tailnet proxy, when this member let this bot on. The proxy
+   * carries the computer's pass; each connection is decided by who uses the screen then.
+   */
+  prepareComputer(input: {
+    sandbox: Pick<SandboxProvider, "execute">;
+    computerId: string;
+    computer: ComputerRef;
+    member: { userId: string; spaceId: string; botId: string };
+    context: AdapterContext;
+  }): Promise<void>;
   environment(run: { runId: string; userId: string; spaceId: string; botId: string }): Promise<
     | {
         RAKAZO_NET_URL: string;

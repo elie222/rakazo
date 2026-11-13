@@ -47,6 +47,7 @@ import {
   createRunSecretWriter,
   createSecretStore,
   createTailnetApprovals,
+  createTailnetCommandAccess,
   createTailscaledNodeHost,
   createTicketChangeNotifier,
   EmailEmulator,
@@ -749,7 +750,16 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   );
 
   const router = createRouter({
-    tailnet: { service: tailnet, serverOrigin: runtimeEnv.tailnetServerOrigin },
+    tailnet: {
+      service: tailnet,
+      serverOrigin: runtimeEnv.tailnetServerOrigin,
+      computers: createTailnetCommandAccess({
+        prisma,
+        encryptionKey: env.encryptionKey,
+        serverOrigin: runtimeEnv.tailnetServerOrigin,
+        available: tailnet.available,
+      }),
+    },
     speechSummary:
       env.voiceSummaryMinChars === undefined
         ? undefined

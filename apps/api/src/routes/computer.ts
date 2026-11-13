@@ -31,6 +31,7 @@ import {
   toComputerRef,
   touchRunningComputer,
 } from "@rakazo/adapters";
+import type { Actor } from "@rakazo/contracts";
 import {
   attachmentMaxBytes,
   attachmentSizeLabel,
@@ -76,6 +77,20 @@ const COMPUTER_COMMAND_HISTORY_EVENTS = 200;
 
 export function computerRoutes(ctx: RouterContext) {
   const { deps, repos, taughtSkills, authed } = ctx;
+  /** Gives the screen's browser its tailnet proxy once the member holds control of it. */
+  const prepareTailnetBrowser = async (actor: Actor, botId: string) => {
+    if (!deps.tailnet?.computers) return;
+    const bot = await repos.getBot(actor, botId);
+    const computer = bot.computer;
+    if (!computer?.providerRef || computer.state !== "running") return;
+    await deps.tailnet.computers.prepareComputer({
+      sandbox: deps.sandbox,
+      computerId: computer.id,
+      computer: toComputerRef(computer),
+      member: { userId: actor.userId, spaceId: actor.spaceId, botId: bot.id },
+      context: computerContext(actor, bot.id, "takeover"),
+    });
+  };
   return {
     computer: {
       status: authed.computer.status.handler(async ({ context, input }) =>
@@ -341,9 +356,16 @@ export function computerRoutes(ctx: RouterContext) {
         }
         return { ok: true as const };
       }),
-      takeover: authed.computer.takeover.handler(async ({ context, input }) =>
-        takeComputerControl(deps, context.actor, input.botId),
-      ),
+      takeover: authed.computer.takeover.handler(async ({ context, input }) => {
+        const granted = await takeComputerControl(deps, context.actor, input.botId);
+        // Browsing the member's tailnet from this screen, in the background: control never waits.
+        void prepareTailnetBrowser(context.actor, input.botId).catch((error: unknown) =>
+          getLogger().warn("tailnet browser proxy not prepared", {
+            error: error instanceof Error ? error.message : String(error),
+          }),
+        );
+        return granted;
+      }),
       release: authed.computer.release.handler(async ({ context, input }) => {
         // Handing back also ends a teaching recording made under this control, saved as a draft.
         const handBack = async () => {
