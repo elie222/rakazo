@@ -33,6 +33,8 @@ describePostgres("moving routines with the account timezone (PostgreSQL)", () =>
   let app: ReturnType<typeof createDb>;
   const jobs = {
     enqueue: vi.fn(async () => undefined),
+    enqueueIn: vi.fn(async () => undefined),
+    cancelIn: vi.fn(async () => undefined),
     cancel: vi.fn(async () => undefined),
     close: vi.fn(async () => undefined),
   };

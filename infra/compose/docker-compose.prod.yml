@@ -47,16 +47,14 @@ x-app-environment: &app-environment # Runtime
   RAKAZO_MESSAGE_USER_MAX_CHARS:
   RAKAZO_OPENING_ACKNOWLEDGEMENT:
   TEACH_RECORDING_TTL_MS:
+  STUCK_WORK_NOTIFY_AFTER_MS:
+  STUCK_WORK_EXPIRE_AFTER_MS:
   PHONE_CALLS_ENABLED:
   PHONE_CALL_RING_SECONDS:
   PHONE_CALL_COOLDOWN_MINUTES:
   # The worker names each bot's address to it and sends its email; the API receives the mail.
   INBOUND_EMAIL_DOMAIN:
-  EMAIL_PROVIDER:
-  EMAIL_API_KEY:
-  SMTP_URL:
-  EMAIL_FROM:
-  EMAIL_REPLY_TO:
+  BOT_EMAIL_SMTP_URL:
   RAKAZO_SECRETS_ALLOW_PRIVATE_HTTP:
   EXPO_ACCESS_TOKEN:
   APNS_VOIP_KEY_ID:
@@ -119,6 +117,8 @@ x-app-environment: &app-environment # Runtime
   RAKAZO_LOCAL_REASONING_MODELS:
   RAKAZO_LOCAL_CONTEXT_WINDOW:
   RAKAZO_LOCAL_MAX_TOKENS:
+  RAKAZO_LOCAL_TOKENS_PER_MINUTE:
+  RAKAZO_LOCAL_PROMPT_CACHE:
   RAKAZO_OPENAI_COMPATIBLE_VISION_MODELS:
   RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC:
   RAKAZO_OPENAI_COMPAT_PRIVATE_HOSTS:
@@ -279,6 +279,8 @@ x-app-environment: &app-environment # Runtime
   TEAMS_APP_TENANT_ID:
   SLACK_BOT_TOKEN:
   SLACK_SIGNING_SECRET:
+  TEAM_CHAT_JUDGE_PROVIDER:
+  TEAM_CHAT_JUDGE_MODEL:
   WHATSAPP_ACCESS_TOKEN:
   WHATSAPP_PHONE_NUMBER_ID:
   WHATSAPP_APP_SECRET:
@@ -472,6 +474,8 @@ services:
     # Chat runs execute in the API that receives them, so it gets the worker's headroom.
     pids_limit: 512
     mem_limit: ${RAKAZO_API_MEMORY_LIMIT:-2g}
+    deploy:
+      replicas: ${RAKAZO_API_REPLICAS:-1}
     environment:
       <<: *app-environment
       # Sign-in, sessions, billing and inbound webhooks: API only.
@@ -504,8 +508,12 @@ services:
       SENTRY_BROWSER_DSN: ${SENTRY_BROWSER_DSN:-}
       PRIVACY_POLICY_URL:
       INBOUND_EMAIL_SECRET:
-      INBOUND_EMAIL_RELAY_ARC_DOMAIN:
       WELCOME_EMAIL_ENABLED:
+      EMAIL_PROVIDER:
+      EMAIL_API_KEY:
+      SMTP_URL:
+      EMAIL_FROM:
+      EMAIL_REPLY_TO:
       STRIPE_SECRET_KEY:
       STRIPE_WEBHOOK_SECRET:
       STRIPE_PRICE_ID:
@@ -513,8 +521,6 @@ services:
       INTEGRATIONS_CATALOG_URL:
       TEAM_CHAT_BOT_ID:
       SLACK_RAKAZO_BOT_ID:
-      TEAM_CHAT_JUDGE_PROVIDER:
-      TEAM_CHAT_JUDGE_MODEL:
       SPACE_TEARDOWN_TIMEOUT_MS:
       RAKAZO_MIN_CLIENT_BUILD:
       RAKAZO_NAV_LINKS:
@@ -578,6 +584,8 @@ services:
       - ALL
     pids_limit: 512
     mem_limit: ${RAKAZO_WORKER_MEMORY_LIMIT:-2g}
+    deploy:
+      replicas: ${RAKAZO_WORKER_REPLICAS:-1}
     environment:
       <<: *app-environment
       GRAPHILE_WORKER_CONCURRENCY:

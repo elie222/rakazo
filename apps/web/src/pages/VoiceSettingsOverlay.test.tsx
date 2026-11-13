@@ -17,8 +17,12 @@ const voice = vi.hoisted(() => ({
   setSpeechModel: vi.fn(),
 }));
 
-const { speak } = vi.hoisted(() => ({ speak: vi.fn(async () => undefined) }));
+const { speak, activeCall } = vi.hoisted(() => ({
+  speak: vi.fn(async () => undefined),
+  activeCall: { current: null as { phase: string } | null },
+}));
 vi.mock("../lib/tts.js", () => ({ speaker: { speak, state: {} } }));
+vi.mock("../lib/call-session", () => ({ useCallSession: () => activeCall.current }));
 vi.mock("../lib/rpc", () => ({
   rpc: { voice },
   rpcForSpace: () => ({ voice }),
@@ -608,6 +612,40 @@ it.each([null, "space-edited"])("plays a sample for the bound space %s", async (
       ),
     );
   } finally {
+    await act(async () => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("does not play a sample during a call", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  speak.mockClear();
+  activeCall.current = { phase: "speaking" };
+  voice.catalog.mockResolvedValue([
+    { id: "fish-audio", name: "Fish Audio", description: "", transcribe: true },
+  ]);
+  voice.credentials.mockResolvedValue([fish]);
+  voice.status.mockResolvedValue({ ready: true, provider: fish.provider });
+  voice.voices.mockResolvedValue([{ id: fish.voiceId, label: "Aria" }]);
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(async () => {
+      root.render(
+        withQueries(<VoiceSettingsOverlay embedded scope="account" onClose={() => undefined} />),
+      );
+    });
+    const sample = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Hear a sample",
+    );
+    if (!sample) throw new Error("Missing sample button");
+    expect(sample.disabled).toBe(true);
+    await act(async () => sample.click());
+    expect(speak).not.toHaveBeenCalled();
+  } finally {
+    activeCall.current = null;
     await act(async () => root.unmount());
     container.remove();
     vi.unstubAllGlobals();

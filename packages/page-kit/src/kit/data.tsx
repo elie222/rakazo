@@ -1,5 +1,5 @@
 import type { CSSProperties, ReactNode } from "react";
-import { isValidElement, useContext, useEffect, useRef, useState } from "react";
+import { isValidElement, useCallback, useContext, useState } from "react";
 import { finite } from "./dataviz.js";
 import { Inline } from "./inline.js";
 import { objectItems } from "./items.js";
@@ -328,10 +328,8 @@ function sortKey(cell: TableCell): number | string {
 
 /** Fades the edge a wide table can still scroll towards. */
 function useScrollEdges() {
-  const ref = useRef<HTMLDivElement>(null);
   const [edges, setEdges] = useState({ start: false, end: false });
-  useEffect(() => {
-    const element = ref.current;
+  const ref = useCallback((element: HTMLDivElement | null) => {
     if (!element) return;
     const update = () => {
       const start = element.scrollLeft > 1;

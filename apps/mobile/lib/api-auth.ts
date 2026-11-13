@@ -5,8 +5,10 @@ import {
   authCapabilitiesSchema,
   legacyAccountSecurity,
   legacyAuthCapabilitiesSchema,
+  SIGNUP_SURFACE_HEADER,
 } from "@rakazo/contracts";
 import { displayName, signupRequiresEmailVerification } from "@rakazo/core";
+import { Platform } from "react-native";
 import type { PendingSignOut } from "./api";
 import {
   authHeaders,
@@ -48,6 +50,7 @@ async function postAuth(path: string, input: Record<string, string>, apiBase = c
         "content-type": "application/json",
         origin: "rakazo://",
         "accept-language": getActiveUiLocale(),
+        [SIGNUP_SURFACE_HEADER]: Platform.OS,
       },
       body: JSON.stringify(input),
     },

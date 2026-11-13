@@ -56,7 +56,8 @@ import {
 import { createBrowserProvider } from "./browser-provider-factory.js";
 import { partitionTools } from "./builtin-tool-bridge.js";
 import { agentConnectionTools, builtinAgentTools } from "./builtin-tools.js";
-import { cloudAgentsEnabled } from "./cloud-agent-factory.js";
+import { USER_CLOUD_AGENT_KEY_PREFIX } from "./cloud-agent-factory.js";
+import { cloudAgentForActor } from "./cloud-agent-service.js";
 import { mergeConnectedPlugins, needsLivePluginSync } from "./composio-connector.js";
 import { diskNoteInstruction, recordComputerDisk } from "./computer-disk.js";
 import { scheduleComputerSleep } from "./computer-idle.js";
@@ -257,7 +258,6 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
   const paidServices = executorDeps.paidServices ?? createPaidServiceProvider();
   const browser =
     executorDeps.browser ?? createBrowserProvider(undefined, { sandbox: executorDeps.sandbox });
-  const cloudAgent = executorDeps.cloudAgent;
   const resolveConnectedModel = resolveConnectedRunModel.bind(undefined, executorDeps);
 
   // Run-scoped connector state (installed MCP sessions) outlives one attempt
@@ -722,6 +722,12 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         const discoveredPromise = deps.connector
           ? deps.connector.discoverTools(context)
           : Promise.resolve([]);
+        // A connection that cannot be read now leaves the cloud-agent tools out of this turn only.
+        const cloudAgentPromise = cloudAgentForActor(executorDeps, {
+          spaceId: run.spaceId,
+          userId: run.userId,
+          botIds: [bot.id],
+        }).catch(() => null);
         // Group threads and spaces several people share: who wrote each message, so the model can
         // tell the bots and the people apart. A personal space's direct chat stays plain turns.
         const people = await loadSpacePeople(
@@ -880,17 +886,22 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             ? `Update from ${peerMessage.fromBotName}: ${peerMessage.text}`
             : DELEGATED_EMPTY_NOTICE
           : undefined;
+        const capabilities = semanticMemory?.describe().capabilities;
+        const recallsEachRun = capabilities?.recallEachRun === true;
+        const compacted = thread.historyCompactedUpToSeq != null;
         const recallPromise =
           threadContext.includeSemanticRecall &&
           semanticMemory &&
           memoryScope &&
-          thread.historyCompactedUpToSeq != null
+          capabilities?.recallOnRequestOnly !== true &&
+          (compacted || recallsEachRun)
             ? semanticMemory.recall(
                 {
                   query: task.prompt,
+                  includeExternal: false,
                   scope: memoryScope,
                   botId: bot.id,
-                  historyGeneration: thread.historyCompactionGeneration,
+                  ...(compacted ? { historyGeneration: thread.historyCompactionGeneration } : {}),
                   limit: MAX_RECALLED_MEMORIES,
                 },
                 context,
@@ -927,10 +938,13 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         let recalledMemory = "";
         let recallSucceeded = false;
         if (recalled) {
-          if (recalled.ok && recalled.value.length > 0) {
-            recallSucceeded = true;
-            recalledMemory = formatRecalledMemory(recalled.value);
-          } else if (!recalled.ok) {
+          if (recalled.ok) {
+            const stored = recalled.value.filter((memory) => !memory.external);
+            recallSucceeded = stored.length > 0;
+            // Provider extraction and recall return derived knowledge, even when the original
+            // conversation was this bot's own. Storage cannot promote it to owner authority.
+            recalledMemory = stored.length ? formatRecalledMemory(stored) : "";
+          } else {
             getLogger().error("semantic memory recall failed", recalled.error);
           }
         }
@@ -938,7 +952,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           history = history.slice(
             -historyWindowSize({
               semanticMemoryEnabled: semanticMemoryEnabled && !thread.historyCompactionSummary,
-              compacted: thread.historyCompactedUpToSeq != null,
+              compacted,
               recallSucceeded,
             }),
           );
@@ -1252,7 +1266,12 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           (run.trigger === "user" || run.trigger === "follow_up") && run.sourceMessageId
             ? await deps.prisma.message.findUnique({
                 where: { id: run.sourceMessageId },
-                select: { clientNonce: true, role: true, blocks: true, threadId: true },
+                select: {
+                  clientNonce: true,
+                  role: true,
+                  blocks: true,
+                  threadId: true,
+                },
               })
             : null;
         // Calls carry no schema flag: the sending client encodes them in the clientNonce.
@@ -1310,6 +1329,25 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             userComputerScreen = device.platform === "darwin" || device.platform === "win32";
           } else userComputer = "offline";
         }
+        const cloudAgent = await cloudAgentPromise;
+        // Revocation blocks new instructions, but existing owned agents still need cleanup.
+        const cloudAgentCleanupEnabled = Boolean(
+          !cloudAgent &&
+            deps.userCloudAgents &&
+            (await deps.prisma.cloudAgent
+              .findFirst({
+                where: {
+                  spaceId: run.spaceId,
+                  userId: run.userId,
+                  providerKey: { startsWith: USER_CLOUD_AGENT_KEY_PREFIX },
+                },
+                select: { id: true },
+              })
+              .catch((error: unknown) => {
+                getLogger().warn("cloud_agent.cleanup_lookup_failed", { error });
+                return null;
+              })),
+        );
         const builtins = [
           ...selectBuiltinToolsForRun({
             ticketBoardEnabled: deps.ticketBoardEnabled,
@@ -1323,10 +1361,12 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             trigger: run.trigger,
             semanticMemoryEnabled,
             semanticMemoryForgets: Boolean(semanticMemory?.forget),
+            semanticMemoryReflects: Boolean(semanticMemory?.reflect),
             mediaImagesEnabled: Boolean(deps.artifacts && mediaGeneration?.capabilities.images),
             mediaVideoEnabled: Boolean(deps.artifacts && mediaGeneration?.capabilities.video),
             paidServicesEnabled: Boolean(paidServices),
-            cloudAgentEnabled: cloudAgentsEnabled(cloudAgent, run.spaceId),
+            cloudAgentEnabled: Boolean(cloudAgent),
+            cloudAgentCleanupEnabled,
             paymentWalletEnabled,
             messagingChannelRun: nonOwnerChatRun,
             voiceCall,
@@ -1377,6 +1417,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           ownerStartedRun,
           messagingChannelRun: nonOwnerChatRun,
           sourceMessage,
+          ownerChatMessageBlocks: nonOwnerChatRun ? undefined : messagingSource?.blocks,
           connectedPlugins,
         });
         // Outbound destinations this run may reach without asking. See outboundSiteGate and
@@ -1554,7 +1595,10 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             approvedReplays: approvedEffectReplays,
           },
           trust: { ...trustLoaders, searchResultUrls },
-          memory: { semantic: semanticMemory, scope: memoryScope },
+          memory: {
+            semantic: semanticMemory,
+            scope: memoryScope,
+          },
           scripted,
           script,
           allowSilentEmptyRun,

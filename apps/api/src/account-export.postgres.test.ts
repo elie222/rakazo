@@ -500,6 +500,7 @@ describePostgres("account export (PostgreSQL)", () => {
           home: new LocalAgentHomeStore(root),
           sandbox: noop as SandboxProvider,
           jobs: noop as JobPublisher,
+          memoryProviders: { resolve: async () => null },
           dataDir: root,
           maxArtifactBytes: 1024 * 1024,
         },
