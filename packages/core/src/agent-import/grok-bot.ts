@@ -474,13 +474,19 @@ function bullets(lines: readonly string[]): string {
   return `${lines.map((line) => `- ${line.replace(/\r?\n/g, "\n  ")}`).join("\n")}\n`;
 }
 
+/** Each routine with every setting the export gave, so it can be set up again by hand. */
 function routinesToSetUp(routines: readonly GrokBotRoutine[]): string {
-  const blocks = routines.map(
-    (routine) =>
-      `## ${routine.name || "Routine"}\n\n- Trigger: ${routine.trigger || "unknown"}\n- Details: ${
-        routine.details || routine.when || "none"
-      }\n\n${routine.instruction}\n`,
-  );
+  const blocks = routines.map((routine) => {
+    const fields = [
+      ["Trigger", routine.trigger || "unknown"],
+      ["Details", routine.details],
+      ["Schedule", routine.when],
+      ["Cron", routine.cron],
+      ["Time zone", routine.timeZone],
+      ["Skills", routine.skills.join(", ")],
+    ].flatMap(([label, value]) => (value ? [`- ${label}: ${value}`] : []));
+    return `## ${routine.name || "Routine"}\n\n${fields.join("\n")}\n\n${routine.instruction}\n`;
+  });
   return `# Grok Bot routines to set up again\n\nThese run on an event, or on a schedule that could not be read.\n\n${blocks.join("\n")}`;
 }
 

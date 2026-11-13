@@ -230,6 +230,8 @@ describe("a Grok Bot as an import plan", () => {
             name: "Standup",
             instruction: "Post the standup.",
             schedule_text: "every weekday at 9",
+            timezone: "Europe/Lisbon",
+            skills: ["notes"],
           },
         ],
       }),
@@ -240,7 +242,9 @@ describe("a Grok Bot as an import plan", () => {
       ["USER.md", "- Name: Sam\n"],
       [
         "grok-bot-routines.md",
-        expect.stringContaining("- Details: every weekday at 9\n\nPost the standup."),
+        expect.stringContaining(
+          "- Schedule: every weekday at 9\n- Time zone: Europe/Lisbon\n- Skills: notes\n\nPost the standup.",
+        ),
       ],
     ]);
   });
