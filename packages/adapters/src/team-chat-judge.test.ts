@@ -198,11 +198,12 @@ describe("team chat engagement judge", () => {
     expect(run).not.toHaveBeenCalled();
   });
 
-  it("refreshes a running judge's sign-in through the locked re-read", async () => {
+  it("refreshes a running judge's sign-in through the locked re-read, with its model's limits", async () => {
     const stored = (access: string, expires: number) =>
       JSON.stringify({
         kind: "oauth",
         credential: { type: "oauth", access, refresh: `refresh-${access}`, expires },
+        models: { "model-fixture": { contextWindow: 64_000 } },
       });
     // Another process already rotated the stored copy, so the locked refresh adopts it.
     const ciphertext = "start";
@@ -236,17 +237,20 @@ describe("team chat engagement judge", () => {
     ]);
     const providerRefresh = vi.fn(async () => undefined);
     let midRun: unknown;
+    let contextWindow: unknown;
     const judge = new ModelTeamChatEngagementJudge({
       prisma: prisma as never,
       runtime: {
         run: async function* (request: {
           model: {
+            contextWindow?: number;
             oauth?: {
               credential: Record<string, unknown>;
               refresh?: (held: unknown, refresh: unknown) => Promise<unknown>;
             };
           };
         }) {
+          contextWindow = request.model.contextWindow;
           const oauth = request.model.oauth;
           midRun = await oauth?.refresh?.({ ...oauth.credential, expires: 1 }, providerRefresh);
           yield { type: "done", text: '{"act":false}' };
@@ -277,6 +281,7 @@ describe("team chat engagement judge", () => {
     });
     expect(prisma.$transaction).toHaveBeenCalledOnce();
     expect(midRun).toMatchObject({ access: "rotated" });
+    expect(contextWindow).toBe(64_000);
     expect(providerRefresh).not.toHaveBeenCalled();
   });
 

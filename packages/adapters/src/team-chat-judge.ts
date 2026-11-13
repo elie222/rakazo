@@ -284,15 +284,13 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
     );
     const parsed = auth.secret;
     const modelSettings = connectionModelSettings(parsed, provider, modelId, credential);
-    const limit =
-      modelSettings.maxTokens !== undefined ? { maxTokens: modelSettings.maxTokens } : {};
-    const context =
-      parsed.kind === "oauth"
-        ? {}
-        : {
-            cacheCapabilities: parsed.cacheCapabilities,
-            contextWindow: modelSettings.contextWindow,
-          };
+    const limit = {
+      ...(modelSettings.maxTokens !== undefined ? { maxTokens: modelSettings.maxTokens } : {}),
+      ...(modelSettings.contextWindow !== undefined
+        ? { contextWindow: modelSettings.contextWindow }
+        : {}),
+    };
+    const context = parsed.kind === "oauth" ? {} : { cacheCapabilities: parsed.cacheCapabilities };
     if (parsed.kind === "oauth") {
       return {
         model: {
