@@ -74,15 +74,30 @@ vi.mock("@rakazo/ui-web", async (importOriginal) => ({
   cn: (...values: unknown[]) => values.filter(Boolean).join(" "),
 }));
 
+vi.mock("../lib/auth-capabilities", () => ({
+  fetchAuthCapabilities: vi.fn(async () => ({
+    providers: [{ id: "social-one", name: "Provider" }],
+  })),
+}));
+vi.mock("../lib/passkeys", () => ({
+  usePasskeysSupported: () => false,
+  usePasskeysVersion: () => 0,
+}));
 const accountPolicy = vi.hoisted(() => ({
+  hasPassword: true,
+  linkedProviderIds: undefined as string[] | undefined,
   passwordChangeEnabled: undefined as boolean | undefined,
 }));
 vi.mock("../components/AccountAccess", () => ({
+  LinkSsoRow: ({ provider }: { provider: { name: string } }) => (
+    <button type="button">Link {provider.name}</button>
+  ),
   AccountAccess: ({ onSecurity }: { onSecurity: (value: AccountSecurity) => void }) => {
     useEffect(
       () =>
         onSecurity({
-          hasPassword: true,
+          hasPassword: accountPolicy.hasPassword,
+          linkedProviderIds: accountPolicy.linkedProviderIds,
           passwordChangeEnabled: accountPolicy.passwordChangeEnabled,
           freshOidcAuth: false,
           ssoLinked: false,
@@ -641,3 +656,24 @@ it("keeps bot style available without a saved value and saves an explicit Origin
     vi.unstubAllGlobals();
   }
 });
+
+it.each([undefined, ["social-one"], []])(
+  "gates the Security group on loaded, available contents (%s)",
+  async (linkedProviderIds) => {
+    accountPolicy.hasPassword = false;
+    accountPolicy.linkedProviderIds = linkedProviderIds;
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    try {
+      await act(async () => root.render(<GeneralSettingsPanels name="Test" />));
+      expect(container.textContent?.includes("Security")).toBe(linkedProviderIds?.length === 0);
+      expect(container.textContent?.includes("Link Provider")).toBe(
+        linkedProviderIds?.length === 0,
+      );
+    } finally {
+      await act(async () => root.unmount());
+      accountPolicy.hasPassword = true;
+      accountPolicy.linkedProviderIds = undefined;
+    }
+  },
+);
