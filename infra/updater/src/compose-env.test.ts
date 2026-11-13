@@ -54,6 +54,7 @@ const NOT_PASSED: Record<string, string> = {
   NODE_OPTIONS: "Node's own startup flags, read to match its proxy switch; never set by Compose",
   AWS_KMS_PROFILE: "for maintainer laptops; servers use AWS_KMS_ACCESS_KEY_ID and its secret",
   GIT_SHA: "baked into the image at build time; a pass-through entry would unset it",
+  PATH: "the image's own search path, where tailscaled is found; a pass-through entry would unset it",
   SHELL: "host shell for the desktop computer, which only the Electron app runs",
   CLOUDFLARE_ACCOUNT_ID: "written into Pi's environment from stored gateway settings",
   CLOUDFLARE_GATEWAY_ID: "written into Pi's environment from stored gateway settings",
