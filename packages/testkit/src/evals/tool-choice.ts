@@ -1,6 +1,6 @@
-import { readFileSync } from "node:fs";
 import { z } from "zod";
 import type { Criterion, EvalCase, Evidence } from "./cases.js";
+import { readCasesFile } from "./cases.js";
 
 export const TOOL_CHOICE_FIXTURE_VERSION = "tool-choice-v1";
 
@@ -196,12 +196,5 @@ export function toolChoiceEvalCase(definition: ToolChoiceCase): EvalCase {
 
 /** Reads extra cases (JSON array or one JSON object per line) from a file kept outside the repo. */
 export function loadToolChoiceCases(file: string): EvalCase[] {
-  const text = readFileSync(file, "utf8").trim();
-  const raw: unknown[] = text.startsWith("[")
-    ? (JSON.parse(text) as unknown[])
-    : text
-        .split("\n")
-        .filter((line) => line.trim())
-        .map((line) => JSON.parse(line) as unknown);
-  return raw.map((entry) => toolChoiceEvalCase(ToolChoiceCaseSchema.parse(entry)));
+  return readCasesFile(file).map((entry) => toolChoiceEvalCase(ToolChoiceCaseSchema.parse(entry)));
 }

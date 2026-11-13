@@ -3,6 +3,7 @@ import { Button, Field, FieldError, FieldLabel, Input } from "@rakazo/ui-web";
 import { useId, useState } from "react";
 import type { ConnectionMode } from "./ConnectionModeFields";
 import { ConnectionModeFields } from "./ConnectionModeFields";
+import { MemoryProviderAdvanced } from "./MemoryProviderAdvanced";
 import type { MemoryProviderConnectionDraft, MemoryProviderSettingsFormProps } from "./registry";
 
 const RESOURCE_ID_PATTERN = /^[A-Za-z0-9_-]{0,512}$/;
@@ -11,7 +12,11 @@ function isReservedPeerId(value: string): boolean {
   return value === "rakazo-shared" || value.startsWith("bot-");
 }
 
-export function HonchoSettingsForm({ busy, onConnect }: MemoryProviderSettingsFormProps) {
+export function HonchoSettingsForm({
+  busy,
+  onConnect,
+  advancedSettings,
+}: MemoryProviderSettingsFormProps) {
   const apiKeyId = useId();
   const workspaceId = useId();
   const workspaceErrorId = useId();
@@ -49,14 +54,6 @@ export function HonchoSettingsForm({ busy, onConnect }: MemoryProviderSettingsFo
 
   return (
     <>
-      <ConnectionModeFields
-        busy={busy}
-        mode={mode}
-        onModeChange={setMode}
-        baseUrl={baseUrl}
-        onBaseUrlChange={setBaseUrl}
-      />
-
       <Field className="mt-4">
         <FieldLabel htmlFor={apiKeyId}>
           <Trans>API key</Trans>
@@ -73,59 +70,71 @@ export function HonchoSettingsForm({ busy, onConnect }: MemoryProviderSettingsFo
         />
       </Field>
 
-      <Field className="mt-4" data-invalid={workspaceValid ? undefined : true}>
-        <FieldLabel htmlFor={workspaceId}>
-          <Trans>Workspace</Trans>
-        </FieldLabel>
-        <Input
-          id={workspaceId}
-          value={workspace}
-          disabled={busy}
-          aria-invalid={workspaceValid ? undefined : true}
-          aria-describedby={workspaceValid ? undefined : workspaceErrorId}
-          onChange={(event) => setWorkspace(event.target.value)}
-          placeholder="rakazo-<space>"
-          maxLength={512}
-          autoComplete="off"
+      <MemoryProviderAdvanced>
+        {advancedSettings}
+        <ConnectionModeFields
+          busy={busy}
+          mode={mode}
+          onModeChange={setMode}
+          baseUrl={baseUrl}
+          onBaseUrlChange={setBaseUrl}
         />
-        {!workspaceValid ? (
-          <FieldError id={workspaceErrorId}>
-            <Trans>Use up to 512 letters, digits, _ or -.</Trans>
-          </FieldError>
-        ) : null}
-      </Field>
-
-      {showUserPeer ? (
-        <Field className="mt-4" data-invalid={userPeerValid ? undefined : true}>
-          <FieldLabel htmlFor={userPeerId}>
-            <Trans>User peer</Trans>
+        <Field className="mt-4" data-invalid={workspaceValid ? undefined : true}>
+          <FieldLabel htmlFor={workspaceId}>
+            <Trans>Workspace</Trans>
           </FieldLabel>
           <Input
-            id={userPeerId}
-            value={userPeer}
+            id={workspaceId}
+            value={workspace}
             disabled={busy}
-            aria-invalid={userPeerValid ? undefined : true}
-            aria-describedby={
-              userPeerValid ? userPeerDescriptionId : `${userPeerDescriptionId} ${userPeerErrorId}`
-            }
-            onChange={(event) => setUserPeer(event.target.value)}
+            aria-invalid={workspaceValid ? undefined : true}
+            aria-describedby={workspaceValid ? undefined : workspaceErrorId}
+            onChange={(event) => setWorkspace(event.target.value)}
+            placeholder="rakazo-<space>"
             maxLength={512}
             autoComplete="off"
           />
-          <p id={userPeerDescriptionId} className="mt-2 text-body-sm text-muted-foreground">
-            <Trans>Recall from this peer; save to Rakazo’s own peers.</Trans>
-          </p>
-          {!userPeerValid ? (
-            <FieldError id={userPeerErrorId}>
-              {userPeerFormatValid ? (
-                <Trans>rakazo-shared and IDs starting with bot- are reserved for Rakazo.</Trans>
-              ) : (
-                <Trans>Use up to 512 letters, digits, _ or -.</Trans>
-              )}
+          {!workspaceValid ? (
+            <FieldError id={workspaceErrorId}>
+              <Trans>Use up to 512 letters, digits, _ or -.</Trans>
             </FieldError>
           ) : null}
         </Field>
-      ) : null}
+
+        {showUserPeer ? (
+          <Field className="mt-4" data-invalid={userPeerValid ? undefined : true}>
+            <FieldLabel htmlFor={userPeerId}>
+              <Trans>User peer</Trans>
+            </FieldLabel>
+            <Input
+              id={userPeerId}
+              value={userPeer}
+              disabled={busy}
+              aria-invalid={userPeerValid ? undefined : true}
+              aria-describedby={
+                userPeerValid
+                  ? userPeerDescriptionId
+                  : `${userPeerDescriptionId} ${userPeerErrorId}`
+              }
+              onChange={(event) => setUserPeer(event.target.value)}
+              maxLength={512}
+              autoComplete="off"
+            />
+            <p id={userPeerDescriptionId} className="mt-2 text-body-sm text-muted-foreground">
+              <Trans>Recall from this peer; save to Rakazo’s own peers.</Trans>
+            </p>
+            {!userPeerValid ? (
+              <FieldError id={userPeerErrorId}>
+                {userPeerFormatValid ? (
+                  <Trans>rakazo-shared and IDs starting with bot- are reserved for Rakazo.</Trans>
+                ) : (
+                  <Trans>Use up to 512 letters, digits, _ or -.</Trans>
+                )}
+              </FieldError>
+            ) : null}
+          </Field>
+        ) : null}
+      </MemoryProviderAdvanced>
 
       <Button
         type="button"

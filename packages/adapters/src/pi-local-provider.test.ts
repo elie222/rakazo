@@ -12,6 +12,7 @@ const ENV_KEYS = [
   "RAKAZO_LOCAL_MODELS_URL",
   "RAKAZO_LOCAL_CONTEXT_WINDOW",
   "RAKAZO_LOCAL_MAX_TOKENS",
+  "RAKAZO_LOCAL_TOKENS_PER_MINUTE",
   "RAKAZO_LOCAL_REASONING_MODELS",
 ] as const;
 
@@ -104,6 +105,14 @@ describe("local model provider", () => {
 
     process.env.RAKAZO_LOCAL_MAX_TOKENS = "-1";
     expect(() => localProvider()).toThrow(/RAKAZO_LOCAL_MAX_TOKENS must be a positive integer/);
+    delete process.env.RAKAZO_LOCAL_MAX_TOKENS;
+
+    for (const bad of ["abc", "-5", "0", "3.7"]) {
+      process.env.RAKAZO_LOCAL_TOKENS_PER_MINUTE = bad;
+      expect(() => localProvider(), `tokens per minute "${bad}"`).toThrow(
+        /RAKAZO_LOCAL_TOKENS_PER_MINUTE must be a positive integer/,
+      );
+    }
   });
 
   it("marks only the exact model ids the operator declares as reasoning", () => {

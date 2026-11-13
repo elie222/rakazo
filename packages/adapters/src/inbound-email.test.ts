@@ -61,7 +61,6 @@ async function sealed(raw: string, spf: string, relay = "relay.test") {
 
 /** How Microsoft 365 signs: no To or Cc. */
 const RECIPIENTS_UNSIGNED = "From:Date:Subject:Message-ID:MIME-Version";
-const SENT = Date.parse("2026-11-05T10:00:00Z");
 
 describe("readInboundEmail", () => {
   it("authenticates a message signed by its From domain", async () => {
@@ -237,28 +236,21 @@ describe("readInboundEmail", () => {
     expect(injected.authenticated).toBe(false);
   });
 
-  it("authenticates recipient-unsigned mail the relay saw come from the sender's own server", async () => {
-    const raw = bytes(
-      await sealed(
-        await signed(message(plain), "example.test", RECIPIENTS_UNSIGNED),
-        "spf=pass smtp.mailfrom=ada@example.test",
-      ),
-    );
-    const read = (hoursLater: number, relayArcDomain: string | null = "relay.test") =>
-      readInboundEmail(raw, {
-        resolver,
-        now: new Date(SENT + hoursLater * 3_600_000),
-        ...(relayArcDomain ? { relayArcDomain } : {}),
+  it("rejects recipient-unsigned mail even with relay-sealed aligned SPF", async () => {
+    const original = await signed(message(plain), "example.test", RECIPIENTS_UNSIGNED);
+    for (const raw of [
+      original,
+      original.replace("To: Bot <helper@bots.test>", "To: Other <other@example.test>"),
+    ]) {
+      const email = await readInboundEmail(
+        bytes(await sealed(raw, "spf=pass smtp.mailfrom=ada@example.test")),
+        { resolver },
+      );
+      expect(email).toMatchObject({
+        authenticated: false,
+        unauthenticatedReason: "signature leaves out required headers",
       });
-
-    expect(await read(1)).toMatchObject({ authenticated: true, unauthenticatedReason: null });
-    expect((await read(25)).authenticated).toBe(false);
-    expect((await read(-2)).authenticated).toBe(false);
-    expect(await read(1, null)).toMatchObject({
-      authenticated: false,
-      unauthenticatedReason: "recipients unsigned and the relay did not confirm the sending server",
-    });
-    expect((await read(1, "other-relay.test")).authenticated).toBe(false);
+    }
   });
 
   it("does not authenticate recipient-unsigned mail resent from another server", async () => {
@@ -267,8 +259,6 @@ describe("readInboundEmail", () => {
       (
         await readInboundEmail(bytes(raw), {
           resolver,
-          now: new Date(SENT),
-          relayArcDomain: "relay.test",
         })
       ).authenticated;
 
