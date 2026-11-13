@@ -4511,6 +4511,16 @@ describe("computer terminal and file transfer", () => {
     expect(expiresAt.getTime() - Date.now()).toBeLessThanOrEqual(90_000);
   });
 
+  it("never lets holding the screen answer a request the bot made to someone else", async () => {
+    const { prisma, call } = setup({ ...controlled, controlUserId: "user-1" });
+    vi.mocked(prisma.run.findFirst).mockResolvedValue({ id: "run-1", userId: "user-2" } as never);
+    await expect(call("release", { reason: "done", runId: "run-1" })).resolves.toMatchObject({
+      status: 409,
+      body: { json: { message: "The bot is waiting for someone else" } },
+    });
+    expect(prisma.computer.updateMany).not.toHaveBeenCalled();
+  });
+
   it("renews the holder's control each time their page checks in", async () => {
     const soon = new Date(Date.now() + 5_000);
     const { prisma, call } = setup({

@@ -667,6 +667,36 @@ describePostgres("chat replies during screen takeover (PostgreSQL)", () => {
     });
   });
 
+  it("does not let another member answer someone else's request by taking the screen", async () => {
+    const fixture = await setup("unopened");
+    const otherId = randomUUID();
+    organizations.push(otherId);
+    await system.user.create({
+      data: { id: otherId, name: "Other", email: `${otherId}@example.test`, emailVerified: true },
+    });
+    const membership = {
+      id: otherId,
+      organizationId: fixture.actor.spaceId,
+      userId: otherId,
+      role: "member",
+      createdAt: new Date(),
+    };
+    await system.member.create({ data: membership });
+    await system.spaceMember.create({ data: { ...membership, spaceId: fixture.actor.spaceId } });
+    const other = { ...fixture.actor, userId: otherId, email: `${otherId}@example.test` };
+    // Anyone in the Space may take the screen…
+    expect((await fixture.call("takeover", other)).status).toBe(200);
+    expect(await fixture.control()).toMatchObject({ controlUserId: otherId });
+    // …but holding it never answers the request the bot made to someone else.
+    for (const reason of ["done", "skipped"] as const) {
+      expect((await fixture.release(reason, other)).status).toBe(409);
+    }
+    expect(await system.run.findUniqueOrThrow({ where: { id: fixture.run.id } })).toMatchObject({
+      status: "waiting_takeover",
+      checkpoint: null,
+    });
+  });
+
   it("answers the request from a reply but keeps another bot's screen control", async () => {
     const fixture = await setup();
     await system.computer.update({

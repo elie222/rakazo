@@ -138,7 +138,7 @@ export async function releaseComputerControl(
 
 /**
  * Answer a bot's request for help on its screen (Done or Skip), ending this person's control
- * first. The person it asked answers, or whoever holds its screen. Resolves the answered run.
+ * first. Only the person it asked answers. Resolves the answered run.
  */
 export async function answerComputerRequest(
   deps: RouterDeps,
@@ -150,11 +150,11 @@ export async function answerComputerRequest(
   // Only an answer to a waiting request ends control; any other reply leaves the screen alone.
   const waiting = await waitingTakeoverRun(deps, actor.spaceId, botId, runId);
   if (!waiting) return null;
-  const bot = await createRepos(deps.prisma).getBot(actor, botId);
-  const holder = Boolean(bot.computer && holdsComputerControl(bot.computer, botId, actor));
-  if (waiting.userId !== actor.userId && !holder) {
+  // Anyone in the Space can take the screen, so holding it never answers for someone else.
+  if (waiting.userId !== actor.userId) {
     throw new ORPCError("CONFLICT", { message: "The bot is waiting for someone else" });
   }
+  const bot = await createRepos(deps.prisma).getBot(actor, botId);
   if (bot.computer) await releaseComputerControl(deps, actor, bot.computer, botId, reason);
   const answered = await deps.events.answerTakeoverRequest({
     spaceId: actor.spaceId,
