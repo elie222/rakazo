@@ -153,8 +153,15 @@ describe("image attachment preparation", () => {
     });
   });
 
-  it("leaves a small image untouched", async () => {
-    asset({ width: 1000, height: 800 });
+  it.each(["jpeg", "png"])("leaves a small %s image untouched", async (format) => {
+    const extension = format === "jpeg" ? "jpg" : "png";
+    asset({
+      uri: `file:///fake/photo.${extension}`,
+      fileName: `photo.${extension}`,
+      mimeType: `image/${format}`,
+      width: 1000,
+      height: 800,
+    });
 
     const result = await pickFromLibrary();
 
@@ -162,10 +169,70 @@ describe("image attachment preparation", () => {
     expect(state.file).toHaveBeenCalledWith(state.asset.uri);
     expect(state.base64).toHaveBeenCalledWith(state.asset.uri);
     expect(result.attachments[0]).toMatchObject({
-      name: "photo.jpg",
-      previewUri: "file:///fake/photo.jpg",
+      name: `photo.${extension}`,
+      previewUri: state.asset.uri,
     });
   });
+
+  it.each([
+    ["heic", 1000, 800],
+    ["heif", 1600, 1200],
+    ["heic", undefined, undefined],
+  ])("converts a %s photo without enlarging it (%s x %s)", async (extension, width, height) => {
+    asset({
+      uri: `file:///fake/photo.${extension}`,
+      fileName: `photo.${extension}`,
+      mimeType: `image/${extension}`,
+      width,
+      height,
+    });
+
+    const result = await pickFromLibrary();
+
+    expect(state.manipulate).toHaveBeenCalledExactlyOnceWith(state.asset.uri);
+    expect(state.resize).not.toHaveBeenCalled();
+    expect(state.save).toHaveBeenCalledWith({ compress: 0.7, format: "jpeg" });
+    expect(result.skipped).toEqual([]);
+    expect(result.attachments[0]).toMatchObject({
+      name: "photo.jpg",
+      mimeType: "image/jpeg",
+      previewUri: "file:///fake/photo-resized.jpg",
+    });
+  });
+
+  it("converts a small camera HEIC photo without resizing", async () => {
+    asset({ fileName: "photo.heic", mimeType: "image/heic", width: 800, height: 600 });
+
+    const result = await takePhoto();
+
+    expect(state.resize).not.toHaveBeenCalled();
+    expect(result.skipped).toEqual([]);
+    expect(result.attachments[0]).toMatchObject({ name: "photo.jpg", mimeType: "image/jpeg" });
+  });
+
+  it("still resizes a large HEIC photo while converting it", async () => {
+    asset({ fileName: "photo.heic", mimeType: "image/heic" });
+
+    const result = await pickFromLibrary();
+
+    expect(state.resize).toHaveBeenCalledWith({ width: 1600 });
+    expect(result.skipped).toEqual([]);
+    expect(result.attachments[0]).toMatchObject({ name: "photo.jpg", mimeType: "image/jpeg" });
+  });
+
+  it.each(["missing", "failed"])(
+    "skips an unconverted small HEIC when conversion is %s",
+    async (failure) => {
+      asset({ fileName: "photo.heic", mimeType: "image/heic", width: 800, height: 600 });
+      if (failure === "missing") state.optionalNativeModule.mockReturnValue(null);
+      else state.render.mockRejectedValue(new Error("conversion failed"));
+
+      const result = await pickFromLibrary();
+
+      expect(result.attachments).toEqual([]);
+      expect(result.skipped).toEqual([{ name: "photo.heic", reason: "unsupported type" }]);
+    },
+  );
 
   it("resizes a wide image by width", async () => {
     const result = await pickFromLibrary();
