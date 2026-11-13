@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   completeComposerMention,
   composerMentionQuery,
+  filterComposerMentionTargets,
   removeComposerMention,
   resolveComposerSendPlan,
 } from "./composer-mentions.js";
@@ -22,6 +23,36 @@ describe("inline mention completion", () => {
       caret: nextCaret,
     });
   });
+
+  it.each([
+    ["研", "研究助手"],
+    ["Ré", "Réviseur"],
+    ["Re\u0301", "Réviseur"],
+    ["מר", "מרים"],
+    ["مُ", "مُساعد"],
+    ["𐐀", "𐐀bot"],
+    ["bot_１２-", "bot_１２-helper"],
+  ])("keeps the picker open for the Unicode prefix %j", (prefix, name) => {
+    const text = `ask @${prefix}`;
+    const target = { kind: "bot", id: "target", name } as const;
+    const query = composerMentionQuery(text, text.length, text.length, [target]);
+    expect(query).toEqual({ start: 4, end: text.length, query: prefix });
+    expect(filterComposerMentionTargets([target], query!.query)).toEqual([target]);
+  });
+
+  it.each(["研究", "Rév", "Re\u0301v", "𐐀bot"])(
+    "replaces the whole Unicode query %j when the caret is in the middle",
+    (prefix) => {
+      const text = `ask @${prefix}, please`;
+      const caret = 5 + [...prefix][0]!.length;
+      const query = composerMentionQuery(text, caret)!;
+      expect(query).toEqual({ start: 4, end: 5 + prefix.length, query: text.slice(5, caret) });
+      expect(completeComposerMention(text, query, { name: "Reviewer" })).toEqual({
+        text: "ask @Reviewer, please",
+        caret: 13,
+      });
+    },
+  );
 
   it.each(["email@bo", "@bo done", "ordinary text"])(
     "ignores nonqueries at the end of %j",

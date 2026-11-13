@@ -132,11 +132,11 @@ export function composerMentionQuery(
     (span) => selectionStart > span.start && selectionStart <= span.end,
   );
   if (recognized) return { ...recognized, query: text.slice(recognized.start + 1, selectionStart) };
-  const match = /(?:^|\s)@([\w-]*)$/.exec(text.slice(0, selectionStart));
+  const match = /(?:^|\s)@([\p{L}\p{M}\p{N}_-]*)$/u.exec(text.slice(0, selectionStart));
   if (!match) return null;
   const query = match[1] ?? "";
   const start = selectionStart - query.length - 1;
-  const rest = /^[\w-]*/.exec(text.slice(selectionStart))?.[0] ?? "";
+  const rest = /^[\p{L}\p{M}\p{N}_-]*/u.exec(text.slice(selectionStart))?.[0] ?? "";
   return { start, end: selectionStart + rest.length, query };
 }
 
