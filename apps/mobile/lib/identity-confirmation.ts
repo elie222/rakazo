@@ -1,7 +1,8 @@
 import { t } from "@lingui/core/macro";
-import type { AccountSecurity } from "@rakazo/contracts";
+import type { AccountSecurity, SignInProvider } from "@rakazo/contracts";
+import { identityConfirmationProviders } from "@rakazo/contracts";
 
-export type IdentityMethod = "sso" | "email";
+export type IdentityMethod = "sso" | "email" | `provider:${string}`;
 
 /** What the code prompt returns when the person asks for another code. */
 export const NEW_CODE = Symbol("new code");
@@ -11,9 +12,12 @@ export type IdentityConfirmationDeps = {
   confirmIdentity: (proof: { password: string } | { code: string }) => Promise<void>;
   requestIdentityCode: () => Promise<void>;
   /** A fresh SSO sign-in that replaces this device's session; false when dismissed. */
-  reauthenticate: () => Promise<boolean>;
+  reauthenticate: (provider?: string) => Promise<boolean>;
   /** How an account without a password confirms; null when dismissed. */
-  choose: (methods: IdentityMethod[]) => Promise<IdentityMethod | null>;
+  choose: (
+    methods: IdentityMethod[],
+    providers?: SignInProvider[],
+  ) => Promise<IdentityMethod | null>;
   /**
    * Asks for the password or emailed code, showing the last failure; null when dismissed.
    * The code prompt also offers another code, since one expires and locks after three tries.
@@ -33,13 +37,17 @@ export async function confirmIdentityOnDevice(deps: IdentityConfirmationDeps): P
   const security = await deps.fetchAccountSecurity();
   let kind: "password" | "code" = "password";
   if (!security.hasPassword) {
+    const providers = identityConfirmationProviders(security);
     const methods: IdentityMethod[] = [
-      ...(security.sso && security.ssoLinked ? (["sso"] as const) : []),
+      ...providers.map(
+        (provider): IdentityMethod => (provider.id === "oidc" ? "sso" : `provider:${provider.id}`),
+      ),
       ...(security.emailDeletion ? (["email"] as const) : []),
     ];
     if (!methods.length) throw new Error(t`Could not continue`);
-    const method = await deps.choose(methods);
+    const method = await deps.choose(methods, providers);
     if (method === "sso") return deps.reauthenticate();
+    if (method?.startsWith("provider:")) return deps.reauthenticate(method.slice(9));
     if (method !== "email") return false;
     await deps.requestIdentityCode();
     kind = "code";

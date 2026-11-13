@@ -217,3 +217,18 @@ it("lets an account without a password request another code", async () => {
   expect(requestIdentityCode).toHaveBeenCalledTimes(2);
   expect(host.querySelector<HTMLInputElement>("#confirm-identity-code")?.value).toBe("");
 });
+
+it.each(["google", "apple"])("offers the linked %s identity without email delivery", async (id) => {
+  vi.mocked(fetchAccountSecurity).mockResolvedValue(
+    security({
+      hasPassword: false,
+      emailDeletion: false,
+      reauthenticationProviders: [{ id, name: "Provider" }],
+    }),
+  );
+  await act(async () => root.render(<Reveal action={needsConfirmationOnce()} />));
+  await act(async () => button("Reveal").click());
+  expect(button("Continue with Provider")).toBeDefined();
+  expect(button("Email me a code")).toBeUndefined();
+  expect(host.querySelector('[role="alert"]')).toBeNull();
+});

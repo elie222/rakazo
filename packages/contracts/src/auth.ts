@@ -71,6 +71,7 @@ export const accountSecuritySchema = z.object({
   freshOidcAuth: z.boolean(),
   ssoLinked: z.boolean(),
   linkedProviderIds: z.array(z.string()).optional(),
+  reauthenticationProviders: z.array(signInProviderSchema).optional(),
   emailDeletion: z.boolean(),
   sso: z.object({ name: z.string().min(1) }).nullable(),
 });
@@ -122,4 +123,12 @@ export async function runWithIdentityConfirmation<T>(
     if (!isIdentityConfirmationRequired(error) || !(await confirm())) throw error;
   }
   return action();
+}
+
+/** Linked, configured providers only; older servers exposed just organization SSO. */
+export function identityConfirmationProviders(security: AccountSecurity): SignInProvider[] {
+  return (
+    security.reauthenticationProviders ??
+    (security.sso && security.ssoLinked ? [{ id: "oidc", name: security.sso.name }] : [])
+  );
 }

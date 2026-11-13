@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import type { TransactionalEmailProvider } from "@rakazo/adapter-kit";
+import type { SignInProvider } from "@rakazo/contracts";
 import type { BetterAuthPlugin } from "better-auth";
 import {
   APIError,
@@ -21,6 +22,7 @@ export function accountSecurity(
   ssoName?: string,
   ssoIssuer?: string,
   passwordChangeEnabled = true,
+  providers: SignInProvider[] = [],
 ): BetterAuthPlugin {
   return {
     id: "account-security",
@@ -38,19 +40,25 @@ export function accountSecurity(
           const accounts = await ctx.context.internalAdapter.findAccounts(
             ctx.context.session.user.id,
           );
+          const ssoLinked = (
+            await Promise.all(
+              accounts.map((account) =>
+                isCurrentOidcAccount(account, ssoIssuer, ctx.context.secretConfig),
+              ),
+            )
+          ).some(Boolean);
           return ctx.json({
             freshOidcAuth: Boolean(
               proof &&
                 proof.value === ctx.context.session.user.id &&
                 proof.expiresAt.getTime() > Date.now(),
             ),
-            ssoLinked: (
-              await Promise.all(
-                accounts.map((account) =>
-                  isCurrentOidcAccount(account, ssoIssuer, ctx.context.secretConfig),
-                ),
-              )
-            ).some(Boolean),
+            ssoLinked,
+            reauthenticationProviders: providers.filter((provider) =>
+              provider.id === "oidc"
+                ? ssoLinked
+                : accounts.some((account) => account.providerId === provider.id),
+            ),
             linkedProviderIds: [...new Set(accounts.map((account) => account.providerId))],
             hasPassword: Boolean(credential?.password),
             passwordChangeEnabled,

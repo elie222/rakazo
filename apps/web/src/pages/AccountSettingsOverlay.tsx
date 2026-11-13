@@ -498,7 +498,14 @@ export function GeneralSettingsPanels({
       {showPassword || canLinkSso || passkeysSupported || unlinkedProviders.length > 0 ? (
         <SettingsGroup title={<Trans>Security</Trans>}>
           {showPassword ? <ChangePasswordRow email={email} /> : null}
-          {canLinkSso ? <LinkSsoRow onSecurity={setAccountSecurity} /> : null}
+          {canLinkSso ? (
+            <LinkSsoRow
+              provider={
+                accountSecurity?.sso ? { id: "oidc", name: accountSecurity.sso.name } : undefined
+              }
+              onSecurity={setAccountSecurity}
+            />
+          ) : null}
           {unlinkedProviders.map((provider) => (
             <LinkSsoRow key={provider.id} provider={provider} onSecurity={setAccountSecurity} />
           ))}

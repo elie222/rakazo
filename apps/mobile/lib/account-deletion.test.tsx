@@ -282,4 +282,21 @@ describe("passwordless account deletion", () => {
     expect(input.value).toBe("");
     expect(button("Delete").disabled).toBe(true);
   });
+
+  it.each(["google", "apple"])(
+    "uses browser reauthentication for linked %s deletion",
+    async (id) => {
+      vi.mocked(fetchAccountSecurity).mockResolvedValue({
+        ...passwordless,
+        hasPassword: false,
+        sso: null,
+        ssoLinked: false,
+        emailDeletion: false,
+        reauthenticationProviders: [{ id, name: "Provider" }],
+      });
+      await open();
+      await click("Continue with Provider");
+      expect(continueWithSso).toHaveBeenCalledWith("reauthenticate", id);
+    },
+  );
 });

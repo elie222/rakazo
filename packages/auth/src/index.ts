@@ -55,10 +55,12 @@ import {
   appleUserInfo,
   googleEmailVerified,
   isBuiltinAuthorizationURL,
+  publicSignInProviders,
   requestProviderId,
   socialTrustedOrigins,
   trustedSocialLinking,
 } from "./social.js";
+import { socialReauthentication } from "./social-reauthentication.js";
 import type { TokenKey } from "./token-storage.js";
 import { encryptStoredOAuthTokens, openIdToken, sealIdToken } from "./token-storage.js";
 
@@ -400,6 +402,18 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
       validateUserInfo: async ({ user, source }, ctx) => {
         if (source.method !== "oauth") return;
         const providerId = source.oauth?.providerId;
+        const reauthentication = (await getOAuthState())?.serverContext;
+        const expectedUser = reauthentication?.reauthUserId;
+        if (
+          typeof expectedUser === "string" &&
+          (source.action !== "sign-in" || user.id !== expectedUser)
+        )
+          return { error: "REAUTHENTICATION_REQUIRED" };
+        if (typeof expectedUser === "string") {
+          const current = await sessionForAuthHook(ctx);
+          if (current && current.session.token !== reauthentication?.reauthSessionToken)
+            return { error: "REAUTHENTICATION_REQUIRED" };
+        }
         if (providerId === "google" || providerId === "apple") {
           const verified = user.emailVerified === true;
           const email = String(user.email ?? "").toLowerCase();
@@ -422,9 +436,6 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
           return;
         }
         if (providerId !== "oidc") return;
-        const expectedUser = (await getOAuthState())?.serverContext?.reauthUserId;
-        if (typeof expectedUser === "string" && user.id !== expectedUser)
-          return { error: "REAUTHENTICATION_REQUIRED" };
         const verified = user.emailVerified === true;
         const email = String(user.email ?? "").toLowerCase();
         if (isMessagingEmail(email)) return { error: "EMAIL_NOT_AVAILABLE" };
@@ -502,6 +513,7 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
       },
     },
     plugins: [
+      socialReauthentication(),
       signedBearer,
       expo(),
       accountSecurity(
@@ -510,6 +522,7 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
         env.oidc?.name,
         env.oidc?.issuer,
         env.passwordAuth !== false,
+        publicSignInProviders(env.social, env.oidc),
       ),
       identityConfirmation(env.email, emailLocaleOf),
       ...(discovery ? [discovery.plugin] : []),
@@ -564,7 +577,7 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
         }
         if (
           ctx.path === "/sign-in/social" &&
-          ctx.body?.provider === "oidc" &&
+          typeof providerId === "string" &&
           ctx.body?.additionalData?.reauthenticate === true
         ) {
           const session = await sessionForAuthHook(ctx);
@@ -572,7 +585,12 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
           const accounts = await ctx.context.internalAdapter.findAccounts(session.user.id);
           const current = await Promise.all(
             accounts.map((account) =>
-              isCurrentOidcAccount(account, env.oidc?.issuer, ctx.context.secretConfig),
+              providerId === "oidc"
+                ? isCurrentOidcAccount(account, env.oidc?.issuer, ctx.context.secretConfig)
+                : Promise.resolve(
+                    account.providerId === providerId &&
+                      Boolean(env.social?.providers.some((p) => p.id === providerId)),
+                  ),
             ),
           );
           const accountIds = accounts
@@ -580,6 +598,7 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
             .map((account) => account.accountId);
           if (!accountIds.length || ctx.body.idToken) throw new APIError("FORBIDDEN");
           await addOAuthServerContext({
+            reauthProviderId: providerId,
             reauthUserId: session.user.id,
             reauthSessionToken: session.session.token,
             reauthAccountIds: accountIds,
@@ -840,7 +859,9 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
               });
             }
             const context =
-              ctx && isOidcCallback(ctx) ? (await getOAuthState())?.serverContext : undefined;
+              ctx && ctx.path === "/callback/:id"
+                ? (await getOAuthState())?.serverContext
+                : undefined;
             // Set only after ID-token verification and exact linked-account binding.
             if (
               ctx &&

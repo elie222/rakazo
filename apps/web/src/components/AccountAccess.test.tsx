@@ -41,7 +41,7 @@ let root: ReturnType<typeof createRoot>;
 const security: AccountSecurity = {
   hasPassword: false,
   freshOidcAuth: false,
-  ssoLinked: false,
+  ssoLinked: true,
   emailDeletion: false,
   sso: { name: "SSO" },
 };
@@ -263,4 +263,37 @@ it("refreshes authenticated linked-account state after a successful provider lin
   );
   await click("Link Google");
   expect(onSecurity).toHaveBeenCalledWith(linked);
+});
+
+it.each(["google", "apple"])(
+  "reauthenticates a linked %s identity without email delivery",
+  async (id) => {
+    vi.mocked(fetchAccountSecurity).mockResolvedValue({
+      ...security,
+      sso: null,
+      ssoLinked: false,
+      reauthenticationProviders: [{ id, name: "Provider" }],
+      linkedProviderIds: [id],
+    });
+    await render();
+    await click("Delete");
+    expect(deleteButton().disabled).toBe(true);
+    await click("Continue with Provider");
+    expect(authClient.signIn.social).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: id,
+        additionalData: { reauthenticate: true },
+        disableRedirect: true,
+      }),
+    );
+    expect(requestAccountDeletionCode).not.toHaveBeenCalled();
+  },
+);
+
+it("preserves a configured organization label when linking", async () => {
+  await act(async () =>
+    root.render(<LinkSsoRow provider={{ id: "oidc", name: "Company Login" }} />),
+  );
+  await click("Link Company Login");
+  expect(authClient.linkSocial).toHaveBeenCalledWith(expect.objectContaining({ provider: "oidc" }));
 });

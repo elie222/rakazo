@@ -1,5 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { AccountSecurity, SignInProvider } from "@rakazo/contracts";
+import { identityConfirmationProviders } from "@rakazo/contracts";
 import { Button, Input, Label } from "@rakazo/ui-web";
 import { useEffect, useState } from "react";
 import { fetchAccountSecurity, requestAccountDeletionCode } from "../lib/account-security";
@@ -116,8 +117,9 @@ export function DeleteAccountForm({
             </div>
           ) : (
             <>
-              {security.sso ? (
+              {identityConfirmationProviders(security).map((provider) => (
                 <Button
+                  key={provider.id}
                   variant="outline"
                   disabled={pending}
                   onClick={() =>
@@ -127,7 +129,7 @@ export function DeleteAccountForm({
                         (disableRedirect, callbackURL) =>
                           authClient.signIn.social({
                             disableRedirect,
-                            provider: "oidc",
+                            provider: provider.id,
                             additionalData: { reauthenticate: true },
                             callbackURL: callbackURL(returnTo),
                             errorCallbackURL: callbackURL(returnTo),
@@ -139,9 +141,13 @@ export function DeleteAccountForm({
                     }, true)
                   }
                 >
-                  <Trans>Sign in again</Trans>
+                  {provider.id === "oidc" ? (
+                    <Trans>Sign in again</Trans>
+                  ) : (
+                    <Trans>Continue with {provider.name}</Trans>
+                  )}
                 </Button>
-              ) : null}
+              ))}
               {security.emailDeletion ? (
                 <Button
                   variant="outline"
@@ -212,13 +218,15 @@ export function DeleteAccountForm({
 
 /** Links the organization's SSO identity to an account that signed up another way. */
 export function LinkSsoRow({
-  provider = { id: "oidc", name: "SSO" },
+  provider: suppliedProvider,
   onSecurity,
 }: {
   provider?: SignInProvider;
   onSecurity?: (security: AccountSecurity) => void;
 }) {
   const { t } = useLingui();
+  const provider = suppliedProvider ?? { id: "oidc", name: t`SSO` };
+  const providerName = provider.id === "oidc" && provider.name === "SSO" ? t`SSO` : provider.name;
   const [error, setError] = useState<string | null>(() => {
     const code = redirectError("link", provider.id);
     return code ? authErrorText({ code }, t`Could not continue`) : null;
@@ -246,10 +254,10 @@ export function LinkSsoRow({
   }
   return (
     <SettingsRow
-      label={provider.name}
+      label={providerName}
       control={
         <Button variant="secondary" size="sm" onClick={() => void link()}>
-          <Trans>Link {provider.name}</Trans>
+          <Trans>Link {providerName}</Trans>
         </Button>
       }
     >

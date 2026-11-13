@@ -211,7 +211,7 @@ export default function Profile() {
                 chevron="right"
                 disabled={pending}
                 dimmed={pending}
-                title={t`Link SSO`}
+                title={t`Link ${security.sso.name === "SSO" ? t`SSO` : security.sso.name}`}
                 onPress={() =>
                   void securityAction(async () => {
                     if (await continueWithSso("link")) setSecurity(await fetchAccountSecurity());

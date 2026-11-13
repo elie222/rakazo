@@ -1742,12 +1742,12 @@ it("uses a signed Apple secret on Better Auth's first and renewed token exchange
       ],
     },
   });
-  const provider = (await auth.$context).socialProviders.find((item) => item.id === "apple")!;
   const secrets: string[] = [];
   vi.stubGlobal(
     "fetch",
     vi.fn(async (_url, init) => {
-      secrets.push(new URLSearchParams(init.body).get("client_secret")!);
+      const sentSecret = new URLSearchParams(init.body).get("client_secret");
+      if (sentSecret) secrets.push(sentSecret);
       return Response.json({
         access_token: "offline-access",
         token_type: "Bearer",
@@ -1755,12 +1755,14 @@ it("uses a signed Apple secret on Better Auth's first and renewed token exchange
       });
     }),
   );
-  const exchange = () =>
-    provider.validateAuthorizationCode!({
-      code: "offline-code",
-      redirectURI: `${origin}/api/auth/callback/apple`,
-      codeVerifier: "offline-verifier",
+  const exchange = async () => {
+    const response = await request("/sign-in/social", {
+      provider: "apple",
+      callbackURL: `${origin}/app`,
     });
+    const url = new URL(((await response.json()) as { url: string }).url);
+    await request(`/callback/apple?code=offline-code&state=${url.searchParams.get("state")}`);
+  };
   await exchange();
   vi.setSystemTime(new Date("2026-05-20T00:00:00Z"));
   await exchange();
@@ -1910,5 +1912,197 @@ it("reports only the authenticated user's linked provider ids", async () => {
   expect(response.status).toBe(200);
   expect(await response.json()).toMatchObject({
     linkedProviderIds: ["oidc", "social-example"],
+  });
+});
+
+describe.each(["google", "apple"] as const)("%s bound identity confirmation", (providerId) => {
+  async function linked() {
+    const pem = generateKeyPairSync("ec", { namedCurve: "prime256v1" })
+      .privateKey.export({ type: "pkcs8", format: "pem" })
+      .toString();
+    setup({
+      email: undefined,
+      social: {
+        providers: [
+          providerId === "google"
+            ? {
+                id: "google",
+                name: "Google",
+                clientId: "offline-client",
+                clientSecret: "offline-secret",
+              }
+            : {
+                id: "apple",
+                name: "Apple",
+                clientId: "offline-client",
+                teamId: "team",
+                keyId: "key",
+                privateKey: pem,
+              },
+        ],
+      },
+    });
+    await request("/sign-up/email", {
+      email: "owner@example.test",
+      password: "test-password-123",
+      name: "Test",
+    });
+    rows("user")[0]!.emailVerified = true;
+    Object.assign(rows("account")[0]!, { providerId, accountId: "own-subject", password: null });
+    const provider = (await auth.$context).socialProviders.find((p) => p.id === providerId)!;
+    // Replace only remote signing-key retrieval; verify signature, issuer, audience and nonce.
+    if (!provider.idToken || !("jwks" in provider.idToken)) throw new Error("Missing verifier");
+    provider.idToken.jwks = async () => publicKey as never;
+    return String(rows("session")[0]!.token);
+  }
+  async function begin(token?: string) {
+    const response = await request(
+      "/sign-in/social",
+      {
+        provider: providerId,
+        callbackURL: `${origin}/app`,
+        additionalData: { reauthenticate: true },
+      },
+      token,
+    );
+    expect(response.status).toBe(200);
+    return new URL(((await response.json()) as { url: string }).url);
+  }
+  async function callback(
+    url: URL,
+    subject = "own-subject",
+    extra: Record<string, unknown> = {},
+    callbackProvider = providerId,
+  ) {
+    const originalFetch = globalThis.fetch;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        const endpoint = new URL(input instanceof Request ? input.url : String(input));
+        if (
+          endpoint.hostname === "oauth2.googleapis.com" ||
+          endpoint.hostname === "appleid.apple.com"
+        )
+          return json({
+            access_token: "offline-access",
+            token_type: "Bearer",
+            expires_in: 300,
+            id_token: jwt({
+              iss:
+                providerId === "google"
+                  ? "https://accounts.google.com"
+                  : "https://appleid.apple.com",
+              aud: "offline-client",
+              sub: subject,
+              email: "owner@example.test",
+              email_verified: true,
+              nonce: url.searchParams.get("nonce"),
+              ...extra,
+            }),
+          });
+        return originalFetch(input, init);
+      }),
+    );
+    return request(
+      `/callback/${callbackProvider}?code=offline-code&state=${url.searchParams.get("state")}`,
+    );
+  }
+  it("confirms its own linked identity without email delivery and deletes the account", async () => {
+    await linked();
+    expect((await request("/delete-user", {})).status).toBe(403);
+    const url = await begin();
+    expect((await callback(url)).headers.get("location")).toBe(`${origin}/app`);
+    const session = rows("session").at(-1)!;
+    expect(
+      await auth.hasRecentIdentityConfirmation({
+        sessionId: String(session.id),
+        userId: String(session.userId),
+      }),
+    ).toBe(true);
+    expect(await (await request("/account-security")).json()).toMatchObject({
+      freshOidcAuth: true,
+      emailDeletion: false,
+      reauthenticationProviders: [{ id: providerId }],
+    });
+    expect((await request("/delete-user", {})).status).toBe(200);
+    expect(rows("user")).toHaveLength(0);
+  });
+  it.each([
+    "different subject",
+    "wrong owner",
+    "revoked session",
+    "expired session",
+    "stale state",
+    "wrong nonce",
+    "wrong issuer",
+    "wrong audience",
+    "borrowed provider",
+    "borrowed browser",
+    "different current session",
+  ])("rejects %s before mutation", async (failure) => {
+    await linked();
+    const url = await begin();
+    if (failure === "wrong owner") rows("account")[0]!.userId = "other-user";
+    if (failure === "revoked session") state.db.session = [];
+    if (failure === "expired session") rows("session")[0]!.expiresAt = new Date(0);
+    if (failure === "stale state") {
+      for (const row of rows("verification")) row.expiresAt = new Date(0);
+    }
+    if (failure === "borrowed browser") cookies = "";
+    if (failure === "different current session") {
+      rows("session").push({ ...rows("session")[0]!, id: "other-session", token: "other-token" });
+      cookies = cookies.replace(
+        /((?:__Secure-)?better-auth\.session_token=)[^;]+/,
+        `$1${encodeURIComponent(signedBearer("other-token"))}`,
+      );
+    }
+    const result = await callback(
+      url,
+      failure === "different subject" ? "other-subject" : "own-subject",
+      failure === "wrong nonce"
+        ? { nonce: "borrowed-nonce" }
+        : failure === "wrong issuer"
+          ? { iss: "https://attacker.example.test" }
+          : failure === "wrong audience"
+            ? { aud: "other-client" }
+            : {},
+      failure === "borrowed provider" ? (providerId === "google" ? "apple" : "google") : providerId,
+    );
+    expect(result.headers.get("location")).toContain("error=");
+    expect(
+      rows("verification").some((row) => String(row.identifier).startsWith("oidc-reauth-")),
+    ).toBe(false);
+    expect(rows("user")).toHaveLength(1);
+    expect(rows("account")).toHaveLength(1);
+    expect((await request("/delete-user", {})).status).not.toBe(200);
+  });
+  it("consumes concurrent callbacks once and rejects replay", async () => {
+    await linked();
+    const url = await begin();
+    const results = await Promise.all([callback(url), callback(url)]);
+    expect(results.filter((r) => r.headers.get("location") === `${origin}/app`)).toHaveLength(1);
+    expect((await callback(url)).headers.get("location")).toContain("error=");
+  });
+  it("refuses unlinked identities and native tokens as reauthentication", async () => {
+    await linked();
+    const input = {
+      provider: providerId,
+      callbackURL: `${origin}/app`,
+      additionalData: { reauthenticate: true },
+    };
+    expect(
+      (await request("/sign-in/social", { ...input, idToken: { token: "unbound" } })).status,
+    ).toBe(403);
+    rows("account")[0]!.providerId = "unconfigured";
+    expect((await request("/sign-in/social", input)).status).toBe(403);
+    expect(rows("user")).toHaveLength(1);
+    expect(rows("account")).toHaveLength(1);
+  });
+  it("supports native signed bearer initiation without a browser session cookie", async () => {
+    const token = await linked();
+    cookies = "";
+    const url = await begin(token);
+    expect((await callback(url)).headers.get("location")).toBe(`${origin}/app`);
+    expect((await request("/delete-user", {})).status).toBe(200);
   });
 });

@@ -1,5 +1,6 @@
 import { useLingui } from "@lingui/react/macro";
 import type { AccountSecurity } from "@rakazo/contracts";
+import { identityConfirmationProviders } from "@rakazo/contracts";
 import { useState } from "react";
 import {
   Modal,
@@ -171,17 +172,20 @@ export function useAccountDeletion({
           </Text>
           {!security?.hasPassword ? (
             <>
-              {security?.sso ? (
+              {(security ? identityConfirmationProviders(security) : []).map((provider) => (
                 <NativeActionButton
-                  label={t`Sign in again`}
+                  key={provider.id}
+                  label={
+                    provider.id === "oidc" ? t`Sign in again` : t`Continue with ${provider.name}`
+                  }
                   disabled={pending}
                   onPress={() =>
                     void run(async () => {
-                      setSsoReauthenticated(await continueWithSso("reauthenticate"));
+                      setSsoReauthenticated(await continueWithSso("reauthenticate", provider.id));
                     })
                   }
                 />
-              ) : null}
+              ))}
               {security?.emailDeletion ? (
                 <NativeActionButton
                   label={t`Send deletion code`}

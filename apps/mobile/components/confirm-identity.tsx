@@ -1,4 +1,5 @@
 import { useLingui } from "@lingui/react/macro";
+import type { SignInProvider } from "@rakazo/contracts";
 import { runWithIdentityConfirmation } from "@rakazo/contracts";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, Platform } from "react-native";
@@ -59,14 +60,19 @@ export function useIdentityConfirmation() {
   );
 
   const choose = useCallback(
-    (methods: IdentityMethod[]) =>
+    (methods: IdentityMethod[], providers: SignInProvider[] = []) =>
       new Promise<IdentityMethod | null>((resolve) => {
         Alert.alert(
           title,
           undefined,
           [
             ...methods.map((method) => ({
-              text: method === "sso" ? t`Sign in again` : t`Email me a code`,
+              text:
+                method === "sso"
+                  ? t`Sign in again`
+                  : method === "email"
+                    ? t`Email me a code`
+                    : t`Continue with ${providers.find((provider) => `provider:${provider.id}` === method)?.name ?? ""}`,
               onPress: () => resolve(method),
             })),
             { text: t`Cancel`, style: "cancel" as const, onPress: () => resolve(null) },
@@ -84,7 +90,7 @@ export function useIdentityConfirmation() {
           fetchAccountSecurity,
           confirmIdentity,
           requestIdentityCode,
-          reauthenticate: () => continueWithSso("reauthenticate"),
+          reauthenticate: (provider) => continueWithSso("reauthenticate", provider),
           choose,
           ask,
           errorText: (error) => errorText(error, t`Could not continue`),
