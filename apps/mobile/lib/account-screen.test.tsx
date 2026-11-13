@@ -791,6 +791,7 @@ it.each([false, true])(
         "Models",
         "Approvals",
         "Vault",
+        "Computers",
         "Memory",
         "Voice",
         "Messaging",
@@ -809,6 +810,7 @@ it.each([false, true])(
         ["General", "/general"],
         ["Models", "/models"],
         ["Vault", "/vault"],
+        ["Computers", "/computers"],
         ["Memory", "/memory"],
         ["Messaging", "/messaging"],
       ]) {
