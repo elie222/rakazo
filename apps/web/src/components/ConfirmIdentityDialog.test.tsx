@@ -218,17 +218,20 @@ it("lets an account without a password request another code", async () => {
   expect(host.querySelector<HTMLInputElement>("#confirm-identity-code")?.value).toBe("");
 });
 
-it.each(["google", "apple"])("offers the linked %s identity without email delivery", async (id) => {
-  vi.mocked(fetchAccountSecurity).mockResolvedValue(
-    security({
-      hasPassword: false,
-      emailDeletion: false,
-      reauthenticationProviders: [{ id, name: "Provider" }],
-    }),
-  );
-  await act(async () => root.render(<Reveal action={needsConfirmationOnce()} />));
-  await act(async () => button("Reveal").click());
-  expect(button("Continue with Provider")).toBeDefined();
-  expect(button("Email me a code")).toBeUndefined();
-  expect(host.querySelector('[role="alert"]')).toBeNull();
-});
+it.each(["google", "apple"])(
+  "hides unsupported linked %s identity without email delivery",
+  async (id) => {
+    vi.mocked(fetchAccountSecurity).mockResolvedValue(
+      security({
+        hasPassword: false,
+        emailDeletion: false,
+        linkedProviderIds: [id],
+      }),
+    );
+    await act(async () => root.render(<Reveal action={needsConfirmationOnce()} />));
+    await act(async () => button("Reveal").click());
+    expect(button("Continue with Provider")).toBeUndefined();
+    expect(button("Email me a code")).toBeUndefined();
+    expect(host.querySelector('[role="alert"]')).not.toBeNull();
+  },
+);

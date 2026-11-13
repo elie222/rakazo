@@ -205,7 +205,7 @@ on first use, refreshed in the background, and failures back off up to one minut
 reflects discovery, not a guarantee that the provider's token endpoint is currently reachable.
 
 Account deletion keeps the existing password confirmation for password users. Users without a
-password may delete after explicit provider reauthentication within five minutes; **Sign in again** starts a fresh
+password may delete after explicit organization SSO reauthentication within five minutes; **Sign in again** starts a fresh
 provider round-trip bound to the signed-in account. Choosing a different identity cannot confirm
 deletion or create another account in that flow. A stale or borrowed session alone cannot authorize deletion. With transactional
 email configured, **Send deletion code** sends a single-use code to the account email, valid for ten
@@ -271,6 +271,13 @@ signup. The provider email must be verified before any social account is created
 counts only for Gmail or a matching verified Workspace domain. Apple verification counts only for
 Apple-managed mailboxes and relay addresses. Other provider mailboxes cannot
 create an account through social signup; verify an account through email and link it in settings.
+
+Google and Apple sign-in and linking do not confirm sensitive actions. Their browser sessions
+may be cached; an account chooser, consent screen, or nonce does not prove fresh authentication.
+Use a password, an emailed confirmation code, or organization OIDC with verified fresh `auth_time`.
+Social-only accounts on servers without a supported confirmation method or email delivery cannot
+self-confirm sensitive actions, including account deletion. The operator must configure a supported
+method; the interface hides unavailable confirmation options.
 
 ## Directory provisioning (SCIM)
 

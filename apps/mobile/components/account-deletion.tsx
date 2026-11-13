@@ -175,9 +175,7 @@ export function useAccountDeletion({
               {(security ? identityConfirmationProviders(security) : []).map((provider) => (
                 <NativeActionButton
                   key={provider.id}
-                  label={
-                    provider.id === "oidc" ? t`Sign in again` : t`Continue with ${provider.name}`
-                  }
+                  label={t`Sign in again`}
                   disabled={pending}
                   onPress={() =>
                     void run(async () => {

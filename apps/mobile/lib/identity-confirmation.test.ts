@@ -64,7 +64,7 @@ describe("confirmIdentityOnDevice", () => {
       ask: vi.fn(async () => " 123456 "),
     });
     await expect(confirmIdentityOnDevice(d)).resolves.toBe(true);
-    expect(d.choose).toHaveBeenCalledWith(["email"], []);
+    expect(d.choose).toHaveBeenCalledWith(["email"]);
     expect(d.requestIdentityCode).toHaveBeenCalledTimes(1);
     expect(d.ask).toHaveBeenCalledWith("code", null);
     expect(d.confirmIdentity).toHaveBeenCalledWith({ code: "123456" });
@@ -95,7 +95,7 @@ describe("confirmIdentityOnDevice", () => {
       choose: vi.fn(async () => "sso" as const),
     });
     await expect(confirmIdentityOnDevice(d)).resolves.toBe(true);
-    expect(d.choose).toHaveBeenCalledWith(["sso", "email"], [{ id: "oidc", name: "SSO" }]);
+    expect(d.choose).toHaveBeenCalledWith(["sso", "email"]);
     expect(d.reauthenticate).toHaveBeenCalledTimes(1);
     expect(d.confirmIdentity).not.toHaveBeenCalled();
   });
@@ -107,16 +107,12 @@ describe("confirmIdentityOnDevice", () => {
   });
 });
 
-it.each(["google", "apple"])("confirms a linked %s identity without email delivery", async (id) => {
-  const providers = [{ id, name: "Provider" }];
-  const d = deps(
-    security({ hasPassword: false, emailDeletion: false, reauthenticationProviders: providers }),
-    {
-      choose: vi.fn(async () => `provider:${id}` as const),
-    },
-  );
-  expect(await confirmIdentityOnDevice(d)).toBe(true);
-  expect(d.reauthenticate).toHaveBeenCalledWith(id);
-  expect(d.requestIdentityCode).not.toHaveBeenCalled();
-  expect(d.confirmIdentity).not.toHaveBeenCalled();
-});
+it.each(["google", "apple"])(
+  "cannot confirm a linked %s identity without a supported method",
+  async (id) => {
+    const d = deps(security({ hasPassword: false, emailDeletion: false, linkedProviderIds: [id] }));
+    await expect(confirmIdentityOnDevice(d)).rejects.toThrow();
+    expect(d.choose).not.toHaveBeenCalled();
+    expect(d.reauthenticate).not.toHaveBeenCalled();
+  },
+);

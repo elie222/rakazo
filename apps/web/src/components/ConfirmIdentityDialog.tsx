@@ -144,11 +144,7 @@ export function ConfirmIdentityDialog({
                     })
                   }
                 >
-                  {provider.id === "oidc" ? (
-                    <Trans>Sign in again</Trans>
-                  ) : (
-                    <Trans>Continue with {provider.name}</Trans>
-                  )}
+                  <Trans>Sign in again</Trans>
                 </Button>
               ))}
               {security.emailDeletion && sent ? (

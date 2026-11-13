@@ -1814,7 +1814,8 @@ it.each([
       },
     });
     const provider = (await auth.$context).socialProviders.find((item) => item.id === providerId)!;
-    provider.idToken = { verify: async () => true };
+    if (!provider.idToken || !("jwks" in provider.idToken)) throw new Error("Missing verifier");
+    provider.idToken.jwks = async () => publicKey as never;
     expect(
       (
         await request("/sign-in/social", {
@@ -1834,6 +1835,8 @@ it.each([
       accessToken: "offline-token",
       tokenType: "Bearer",
       idToken: jwt({
+        iss: providerId === "google" ? "https://accounts.google.com" : "https://appleid.apple.com",
+        aud: providerId === "google" ? "offline-client" : "service",
         sub: "former-owner",
         email: "former@example.test",
         email_verified: verifiedClaim,
@@ -1908,9 +1911,13 @@ it.each([
         email,
         email_verified: true,
         name: "Test",
+        iss: providerId === "google" ? "https://accounts.google.com" : "https://appleid.apple.com",
+        aud: providerId === "google" ? "offline-client" : "service",
+        nonce: authorization.searchParams.get("nonce"),
       }),
     });
-    provider.idToken = { verify: async () => true };
+    if (!provider.idToken || !("jwks" in provider.idToken)) throw new Error("Missing verifier");
+    provider.idToken.jwks = async () => publicKey as never;
     const retry = await request("/link-social", input);
     const authorization = new URL(((await retry.json()) as { url: string }).url);
     const callback = await request(
@@ -1956,7 +1963,7 @@ it("reports only the authenticated user's linked provider ids", async () => {
   });
 });
 
-describe.each(["google", "apple"] as const)("%s bound identity confirmation", (providerId) => {
+describe.each(["google", "apple"] as const)("%s ordinary OAuth boundary", (providerId) => {
   async function linked() {
     const pem = generateKeyPairSync("ec", { namedCurve: "prime256v1" })
       .privateKey.export({ type: "pkcs8", format: "pem" })
@@ -1996,16 +2003,11 @@ describe.each(["google", "apple"] as const)("%s bound identity confirmation", (p
     provider.idToken.jwks = async () => publicKey as never;
     return String(rows("session")[0]!.token);
   }
-  async function begin(token?: string) {
-    const response = await request(
-      "/sign-in/social",
-      {
-        provider: providerId,
-        callbackURL: `${origin}/app`,
-        additionalData: { reauthenticate: true },
-      },
-      token,
-    );
+  async function begin() {
+    const response = await request("/sign-in/social", {
+      provider: providerId,
+      callbackURL: `${origin}/app`,
+    });
     expect(response.status).toBe(200);
     return new URL(((await response.json()) as { url: string }).url);
   }
@@ -2048,31 +2050,49 @@ describe.each(["google", "apple"] as const)("%s bound identity confirmation", (p
       `/callback/${callbackProvider}?code=offline-code&state=${url.searchParams.get("state")}`,
     );
   }
-  it("confirms its own linked identity without email delivery and deletes the account", async () => {
+  it.each([undefined, 1])(
+    "cached OAuth with auth_time %s never grants sensitive proof",
+    async (authTime) => {
+      await linked();
+      const url = await begin();
+      expect(
+        (await callback(url, "own-subject", authTime ? { auth_time: authTime } : {})).headers.get(
+          "location",
+        ),
+      ).toBe(`${origin}/app`);
+      const session = rows("session").at(-1)!;
+      expect(
+        await auth.hasRecentIdentityConfirmation({
+          sessionId: String(session.id),
+          userId: String(session.userId),
+        }),
+      ).toBe(false);
+      expect(await (await request("/account-security")).json()).toMatchObject({
+        freshOidcAuth: false,
+        emailDeletion: false,
+        ssoLinked: false,
+      });
+      expect((await request("/delete-user", {})).status).toBe(403);
+      expect(rows("user")).toHaveLength(1);
+      expect(recordSecurityEvent).not.toHaveBeenCalledWith(
+        expect.objectContaining({ type: "auth.identity.confirmed" }),
+      );
+    },
+  );
+  it("refuses social step-up before issuing an OAuth challenge", async () => {
     await linked();
-    expect((await request("/delete-user", {})).status).toBe(403);
-    const url = await begin();
-    expect((await callback(url)).headers.get("location")).toBe(`${origin}/app`);
-    expect(recordSecurityEvent).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: "auth.identity.confirmed",
-        metadata: { method: "social", providerId },
-      }),
-    );
-    const session = rows("session").at(-1)!;
-    expect(
-      await auth.hasRecentIdentityConfirmation({
-        sessionId: String(session.id),
-        userId: String(session.userId),
-      }),
-    ).toBe(true);
-    expect(await (await request("/account-security")).json()).toMatchObject({
-      freshOidcAuth: true,
-      emailDeletion: false,
-      reauthenticationProviders: [{ id: providerId }],
-    });
-    expect((await request("/delete-user", {})).status).toBe(200);
-    expect(rows("user")).toHaveLength(0);
+    for (const idToken of [undefined, { token: "unbound" }]) {
+      expect(
+        (
+          await request("/sign-in/social", {
+            provider: providerId,
+            callbackURL: `${origin}/app`,
+            additionalData: { reauthenticate: true },
+            ...(idToken ? { idToken } : {}),
+          })
+        ).status,
+      ).toBe(403);
+    }
   });
   it("never takes over a verified local account by matching a provider email", async () => {
     await linked();
@@ -2109,91 +2129,28 @@ describe.each(["google", "apple"] as const)("%s bound identity confirmation", (p
       expect((await request("/delete-user", {})).status).toBe(403);
     },
   );
-  it("keeps sensitive-action reauthentication limited to five minutes", async () => {
-    vi.useFakeTimers({ toFake: ["Date"] });
-    vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
-    await linked();
-    const url = await begin();
-    vi.setSystemTime(Date.now() + 6 * 60_000);
-    expect((await callback(url)).headers.get("location")).toContain("error=");
-    expect((await request("/delete-user", {})).status).toBe(403);
-  });
-  it.each([
-    "different subject",
-    "wrong owner",
-    "revoked session",
-    "expired session",
-    "stale state",
-    "wrong nonce",
-    "wrong issuer",
-    "wrong audience",
-    "borrowed provider",
-    "borrowed browser",
-    "different current session",
-  ])("rejects %s before mutation", async (failure) => {
-    await linked();
-    const url = await begin();
-    if (failure === "wrong owner") rows("account")[0]!.userId = "other-user";
-    if (failure === "revoked session") state.db.session = [];
-    if (failure === "expired session") rows("session")[0]!.expiresAt = new Date(0);
-    if (failure === "stale state") {
-      for (const row of rows("verification")) row.expiresAt = new Date(0);
-    }
-    if (failure === "borrowed browser") cookies = "";
-    if (failure === "different current session") {
-      rows("session").push({ ...rows("session")[0]!, id: "other-session", token: "other-token" });
-      cookies = cookies.replace(
-        /((?:__Secure-)?better-auth\.session_token=)[^;]+/,
-        `$1${encodeURIComponent(signedBearer("other-token"))}`,
+  it.each(["wrong nonce", "wrong issuer", "wrong audience"])(
+    "rejects %s during ordinary sign-in",
+    async (failure) => {
+      await linked();
+      const url = await begin();
+      const extra =
+        failure === "wrong nonce"
+          ? { nonce: "borrowed" }
+          : failure === "wrong issuer"
+            ? { iss: "https://attacker.example.test" }
+            : { aud: "other-client" };
+      expect((await callback(url, "own-subject", extra)).headers.get("location")).toContain(
+        "error=",
       );
-    }
-    const result = await callback(
-      url,
-      failure === "different subject" ? "other-subject" : "own-subject",
-      failure === "wrong nonce"
-        ? { nonce: "borrowed-nonce" }
-        : failure === "wrong issuer"
-          ? { iss: "https://attacker.example.test" }
-          : failure === "wrong audience"
-            ? { aud: "other-client" }
-            : {},
-      failure === "borrowed provider" ? (providerId === "google" ? "apple" : "google") : providerId,
-    );
-    expect(result.headers.get("location")).toContain("error=");
-    expect(
-      rows("verification").some((row) => String(row.identifier).startsWith("oidc-reauth-")),
-    ).toBe(false);
-    expect(rows("user")).toHaveLength(1);
-    expect(rows("account")).toHaveLength(1);
-    expect((await request("/delete-user", {})).status).not.toBe(200);
-  });
+      expect((await request("/delete-user", {})).status).toBe(403);
+    },
+  );
   it("consumes concurrent callbacks once and rejects replay", async () => {
     await linked();
     const url = await begin();
     const results = await Promise.all([callback(url), callback(url)]);
     expect(results.filter((r) => r.headers.get("location") === `${origin}/app`)).toHaveLength(1);
     expect((await callback(url)).headers.get("location")).toContain("error=");
-  });
-  it("refuses unlinked identities and native tokens as reauthentication", async () => {
-    await linked();
-    const input = {
-      provider: providerId,
-      callbackURL: `${origin}/app`,
-      additionalData: { reauthenticate: true },
-    };
-    expect(
-      (await request("/sign-in/social", { ...input, idToken: { token: "unbound" } })).status,
-    ).toBe(403);
-    rows("account")[0]!.providerId = "unconfigured";
-    expect((await request("/sign-in/social", input)).status).toBe(403);
-    expect(rows("user")).toHaveLength(1);
-    expect(rows("account")).toHaveLength(1);
-  });
-  it("supports native signed bearer initiation without a browser session cookie", async () => {
-    const token = await linked();
-    cookies = "";
-    const url = await begin(token);
-    expect((await callback(url)).headers.get("location")).toBe(`${origin}/app`);
-    expect((await request("/delete-user", {})).status).toBe(200);
   });
 });

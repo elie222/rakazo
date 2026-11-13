@@ -71,7 +71,6 @@ export const accountSecuritySchema = z.object({
   freshOidcAuth: z.boolean(),
   ssoLinked: z.boolean(),
   linkedProviderIds: z.array(z.string()).optional(),
-  reauthenticationProviders: z.array(signInProviderSchema).optional(),
   emailDeletion: z.boolean(),
   sso: z.object({ name: z.string().min(1) }).nullable(),
 });
@@ -125,10 +124,7 @@ export async function runWithIdentityConfirmation<T>(
   return action();
 }
 
-/** Linked, configured providers only; older servers exposed just organization SSO. */
+/** Only organization SSO supports verifiable fresh authentication. */
 export function identityConfirmationProviders(security: AccountSecurity): SignInProvider[] {
-  return (
-    security.reauthenticationProviders ??
-    (security.sso && security.ssoLinked ? [{ id: "oidc", name: security.sso.name }] : [])
-  );
+  return security.sso && security.ssoLinked ? [{ id: "oidc", name: security.sso.name }] : [];
 }

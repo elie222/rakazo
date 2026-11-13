@@ -55,11 +55,10 @@ import {
   appleUserInfo,
   googleEmailVerified,
   isBuiltinAuthorizationURL,
-  publicSignInProviders,
   requestProviderId,
   socialTrustedOrigins,
 } from "./social.js";
-import { socialReauthentication } from "./social-reauthentication.js";
+import { socialCallbackProtection } from "./social-callback-protection.js";
 import type { TokenKey } from "./token-storage.js";
 import { encryptStoredOAuthTokens, openIdToken, sealIdToken } from "./token-storage.js";
 
@@ -505,7 +504,7 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
       },
     },
     plugins: [
-      socialReauthentication(),
+      socialCallbackProtection(),
       signedBearer,
       expo(),
       accountSecurity(
@@ -514,7 +513,6 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
         env.oidc?.name,
         env.oidc?.issuer,
         env.passwordAuth !== false,
-        publicSignInProviders(env.social, env.oidc),
       ),
       identityConfirmation(env.email, emailLocaleOf),
       ...(discovery ? [discovery.plugin] : []),
@@ -575,17 +573,13 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
           typeof providerId === "string" &&
           ctx.body?.additionalData?.reauthenticate === true
         ) {
+          if (providerId !== "oidc") throw new APIError("FORBIDDEN");
           const session = await sessionForAuthHook(ctx);
           if (!session || isMessagingEmail(session.user.email)) throw new APIError("UNAUTHORIZED");
           const accounts = await ctx.context.internalAdapter.findAccounts(session.user.id);
           const current = await Promise.all(
             accounts.map((account) =>
-              providerId === "oidc"
-                ? isCurrentOidcAccount(account, env.oidc?.issuer, ctx.context.secretConfig)
-                : Promise.resolve(
-                    account.providerId === providerId &&
-                      Boolean(env.social?.providers.some((p) => p.id === providerId)),
-                  ),
+              isCurrentOidcAccount(account, env.oidc?.issuer, ctx.context.secretConfig),
             ),
           );
           const accountIds = accounts
@@ -859,7 +853,8 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
             // Set only after ID-token verification and exact linked-account binding.
             if (
               ctx &&
-              context?.reauthUserId === session.userId &&
+              context?.reauthProviderId === "oidc" &&
+              context.reauthUserId === session.userId &&
               typeof context.reauthExpiresAt === "number" &&
               context.reauthExpiresAt > Date.now()
             ) {
@@ -872,11 +867,8 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
                 type: "auth.identity.confirmed",
                 userId: session.userId,
                 metadata: {
-                  method: context.reauthProviderId === "oidc" ? "sso" : "social",
-                  providerId:
-                    typeof context.reauthProviderId === "string"
-                      ? context.reauthProviderId
-                      : undefined,
+                  method: "sso",
+                  providerId: "oidc",
                 },
               });
             }
