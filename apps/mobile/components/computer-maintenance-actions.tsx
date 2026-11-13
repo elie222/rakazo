@@ -2,7 +2,7 @@ import { useLingui } from "@lingui/react/macro";
 import type { ComputerStatus } from "@rakazo/contracts";
 import { useFocusEffect } from "expo-router";
 import type { ReactElement } from "react";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Alert } from "react-native";
 import { rpc } from "../lib/api";
 import { computerUpdates } from "../lib/computer-updates";
@@ -30,6 +30,8 @@ export function useComputerMaintenanceRows(
       void refresh();
     }, [refresh]),
   );
+  // A queued update or recovery reports progress here; its status changes with it.
+  useEffect(() => computerUpdates.subscribe(() => void refresh()), [refresh]);
 
   if (!botId || !computer) return [];
   const busy = Boolean(computer.busyBotName) || computer.state === "booting" || pending !== null;

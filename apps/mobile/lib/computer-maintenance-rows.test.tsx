@@ -13,7 +13,9 @@ const { rpc, alert, start } = vi.hoisted(() => ({
   start: vi.fn(async () => undefined),
 }));
 vi.mock("./api", () => ({ rpc }));
-vi.mock("./computer-updates", () => ({ computerUpdates: { start } }));
+vi.mock("./computer-updates", () => ({
+  computerUpdates: { start, subscribe: () => () => undefined },
+}));
 vi.mock("expo-router", () => ({
   useFocusEffect: (effect: () => void) => useEffect(effect, [effect]),
 }));
