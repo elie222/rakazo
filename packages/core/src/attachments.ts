@@ -1,4 +1,4 @@
-import type { AttachmentMimeType, MessageBlock } from "@rakazo/contracts";
+import type { AttachmentMimeType, HistoryToolStep, MessageBlock } from "@rakazo/contracts";
 import {
   ATTACHMENT_COUNT_CEILING,
   ATTACHMENT_MAX_BYTES,
@@ -223,8 +223,7 @@ export function blocksToAgentHistoryText(blocks: MessageBlock[]): string {
 }
 
 /** A reply in order, with its tool steps apart from the text around them. */
-export type AgentHistorySegment = { text: string } | { steps: ToolSteps };
-type ToolSteps = Extract<MessageBlock, { kind: "steps" }>["steps"];
+export type AgentHistorySegment = { text: string } | { steps: HistoryToolStep[] };
 
 /**
  * The same reply as blocksToAgentHistoryText, split at its tool steps so a runtime can replay
@@ -241,7 +240,7 @@ export function blocksToAgentHistorySegments(blocks: MessageBlock[]): AgentHisto
     if (block.kind === "steps") {
       // Stored blocks can come from an account import, so skip malformed entries.
       const steps = Array.isArray(block.steps)
-        ? block.steps.filter((step) => typeof step?.label === "string")
+        ? (block.steps as HistoryToolStep[]).filter((step) => typeof step?.label === "string")
         : [];
       if (!steps.length) continue;
       flush();

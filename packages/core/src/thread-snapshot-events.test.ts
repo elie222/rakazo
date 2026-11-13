@@ -1089,12 +1089,8 @@ describe("thread event reduction", () => {
           {
             kind: "steps",
             steps: [
-              { label: "Slack find channels", tool: "SLACK_FIND_CHANNELS", count: 1 },
-              {
-                label: "Slack fetch conversation history",
-                tool: "SLACK_FETCH_CONVERSATION_HISTORY",
-                count: 2,
-              },
+              { label: "Slack find channels", count: 1 },
+              { label: "Slack fetch conversation history", count: 2 },
             ],
           },
         ],
@@ -1107,12 +1103,7 @@ describe("thread event reduction", () => {
       [
         message(
           "progress:run-1",
-          [
-            {
-              kind: "steps",
-              steps: [{ label: "Slack find channels", tool: "SLACK_FIND_CHANNELS", count: 1 }],
-            },
-          ],
+          [{ kind: "steps", steps: [{ label: "Slack find channels", count: 1 }] }],
           4,
         ),
       ],
@@ -1185,10 +1176,7 @@ describe("thread event reduction", () => {
         id: "progress:run-1",
         blocks: [
           { kind: "text", text: "Let me check Slack for a broad search." },
-          {
-            kind: "steps",
-            steps: [{ label: "Slack find channels", tool: "SLACK_FIND_CHANNELS", count: 1 }],
-          },
+          { kind: "steps", steps: [{ label: "Slack find channels", count: 1 }] },
         ],
       }),
     ]);
@@ -1237,10 +1225,7 @@ describe("thread event reduction", () => {
         id: "progress:run-1",
         blocks: [
           { kind: "text", text: "Let me check Done." },
-          {
-            kind: "steps",
-            steps: [{ label: "Slack find channels", tool: "SLACK_FIND_CHANNELS", count: 1 }],
-          },
+          { kind: "steps", steps: [{ label: "Slack find channels", count: 1 }] },
         ],
       }),
     ]);
@@ -1316,10 +1301,7 @@ describe("thread event reduction", () => {
 
     expect(next?.messages[0]?.blocks).toEqual([
       { kind: "text", text: "Let me check Slack now." },
-      {
-        kind: "steps",
-        steps: [{ label: "Slack find channels", tool: "SLACK_FIND_CHANNELS", count: 1 }],
-      },
+      { kind: "steps", steps: [{ label: "Slack find channels", count: 1 }] },
     ]);
   });
 
@@ -1444,10 +1426,7 @@ describe("thread event reduction", () => {
   it("clears the step trail once the durable answer arrives", () => {
     const initial = snapshot([
       message("progress:run-1", [
-        {
-          kind: "steps",
-          steps: [{ label: "Slack find channels", tool: "SLACK_FIND_CHANNELS", count: 1 }],
-        },
+        { kind: "steps", steps: [{ label: "Slack find channels", count: 1 }] },
       ]),
     ]);
 

@@ -1,4 +1,10 @@
-import type { MessageBlock, ThreadMessage } from "@rakazo/contracts";
+import type {
+  HistoryToolStep,
+  MessageBlock,
+  ThreadMessage,
+  ToolHistory,
+  ToolStepCall,
+} from "@rakazo/contracts";
 import { cloudAgentBlockFromPayload } from "./cloud-agent.js";
 import { preserveIdentitySource } from "./identity-source.js";
 import { payloadAuthor } from "./message-replies.js";
@@ -386,19 +392,20 @@ export function liveActivityLine(
 export type ToolStepOutcome = "succeeded" | "failed" | "stopped";
 export type ToolStep = Extract<MessageBlock, { kind: "steps" }>["steps"][number];
 
-export type ToolStepCall = NonNullable<ToolStep["calls"]>[number];
-/** Calls a reply keeps arguments and results for; a later turn replays no more than these. */
-export const TOOL_STEP_CALLS_KEPT = 40;
-
 /**
- * Records how each call ended on the step it shows as, and what it was called with and returned
- * when every call of the step has that. `calls` lists every step a call made, in call order (a
- * connector call can make several). If they stop lining up with the steps, the steps are
- * returned as they were rather than credited to the wrong step.
+ * Records how each call ended on the step it shows as. `calls` lists every step a call made, in
+ * call order (a connector call can make several). If they stop lining up with the steps, the
+ * steps are returned as they were rather than credited to the wrong step.
  */
 export function withToolStepOutcomes(
   segments: readonly MessageBlock[],
-  calls: readonly { label: string; outcome: ToolStepOutcome | undefined; call?: ToolStepCall }[],
+  calls: readonly {
+    label: string;
+    outcome: ToolStepOutcome | undefined;
+    /** The tool the call ran, and what it kept, when the call shows as its own step. */
+    tool?: string;
+    call?: ToolStepCall;
+  }[],
 ): MessageBlock[] {
   let next = 0;
   const annotated: MessageBlock[] = [];
@@ -407,20 +414,27 @@ export function withToolStepOutcomes(
       annotated.push(block);
       continue;
     }
-    const steps: ToolStep[] = [];
-    for (const step of block.steps) {
+    const steps: HistoryToolStep[] = [];
+    for (const step of block.steps as HistoryToolStep[]) {
       const outcomes: NonNullable<ToolStep["outcomes"]> = {};
-      const kept: ToolStepCall[] = [];
-      for (let index = 0; index < step.count; index += 1) {
-        const call = calls[next++];
-        if (call?.label !== step.label) return [...segments];
+      const own = calls.slice(next, next + step.count);
+      next += step.count;
+      if (own.length < step.count || own.some((call) => call.label !== step.label))
+        return [...segments];
+      for (const call of own)
         if (call.outcome) outcomes[call.outcome] = (outcomes[call.outcome] ?? 0) + 1;
-        if (call.call && next <= TOOL_STEP_CALLS_KEPT) kept.push(call.call);
-      }
-      const { outcomes: _previous, calls: _calls, ...rest } = step;
+      const { outcomes: _previous, tool: _tool, calls: _calls, ...rest } = step;
+      // Calls are kept for a step only when every one of them was, all of the same tool.
+      const tool = own[0]?.tool;
+      const kept = own.flatMap((call) => (call.call ? [call.call] : []));
+      const replayable =
+        tool !== undefined &&
+        next <= TOOL_STEP_CALLS_KEPT &&
+        kept.length === step.count &&
+        own.every((call) => call.tool === tool);
       steps.push({
         ...rest,
-        ...(kept.length === step.count ? { calls: kept } : {}),
+        ...(replayable ? { tool, calls: kept } : {}),
         ...(Object.keys(outcomes).length > 0 ? { outcomes } : {}),
       });
     }
@@ -429,13 +443,59 @@ export function withToolStepOutcomes(
   return annotated;
 }
 
+/** Calls a reply keeps arguments and results for; a later turn replays no more than these. */
+export const TOOL_STEP_CALLS_KEPT = 40;
+
+/**
+ * Splits a reply's kept tool calls off its blocks: the blocks keep only what the UI shows, and
+ * the history (one entry per step, in order) is stored beside the message for later runs.
+ * Every message write goes through this, so no tool output reaches a client in the blocks.
+ */
+export function splitToolHistory(blocks: readonly MessageBlock[]): {
+  blocks: MessageBlock[];
+  toolHistory: ToolHistory | undefined;
+} {
+  const steps: ToolHistory["steps"] = [];
+  const shown = blocks.map((block): MessageBlock => {
+    if (block.kind !== "steps") return block;
+    return {
+      ...block,
+      steps: (block.steps as HistoryToolStep[]).map(({ tool, calls, ...step }) => {
+        steps.push(tool && calls?.length ? { tool, calls } : null);
+        return step;
+      }),
+    };
+  });
+  return { blocks: shown, toolHistory: steps.some(Boolean) ? { steps } : undefined };
+}
+
+/** The message's steps with the tool and calls its stored history keeps for them, for replay. */
+export function withToolHistory(
+  blocks: readonly MessageBlock[],
+  history: ToolHistory | undefined,
+): MessageBlock[] {
+  if (!history) return [...blocks];
+  let index = 0;
+  return blocks.map((block) =>
+    block.kind === "steps"
+      ? {
+          ...block,
+          steps: block.steps.map((step): HistoryToolStep => {
+            const kept = history.steps[index++];
+            return kept ? { ...step, tool: kept.tool, calls: kept.calls } : step;
+          }),
+        }
+      : block,
+  );
+}
+
 export function appendToolStep(steps: readonly ToolStep[], toolName: string): ToolStep[] {
   const label = humanizeToolName(toolName);
   const last = steps.at(-1);
-  if (last && last.label === label && last.tool === toolName) {
+  if (last && last.label === label) {
     return [...steps.slice(0, -1), { ...last, count: last.count + 1 }];
   }
-  return [...steps, { label, tool: toolName, count: 1 }];
+  return [...steps, { label, count: 1 }];
 }
 
 /** Puts a note on the newest step, splitting it off a run of the same step so it stays in order. */
@@ -446,10 +506,7 @@ export function noteLastToolStep(segments: readonly MessageBlock[], note: string
   if (block?.kind !== "steps" || !last) return [...segments];
   const steps = block.steps.slice(0, -1);
   if (last.count > 1)
-    steps.push(
-      { ...last, count: last.count - 1 },
-      { label: last.label, ...(last.tool ? { tool: last.tool } : {}), count: 1, note },
-    );
+    steps.push({ ...last, count: last.count - 1 }, { label: last.label, count: 1, note });
   else steps.push({ ...last, note: last.note ? `${last.note}\n\n${note}` : note });
   const next = [...segments];
   next[index] = { ...block, steps };

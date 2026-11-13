@@ -227,6 +227,51 @@ describePostgres("content encryption (PostgreSQL)", () => {
       await prisma.message.delete({ where: { id: message.id }, select: { id: true } });
     }));
 
+  it("keeps a reply's tool history encrypted, out of ordinary reads and out of search", () =>
+    runAsSystem("test fixture", async () => {
+      const blocks = [
+        {
+          kind: "steps",
+          steps: [
+            {
+              label: "Shell",
+              tool: "shell",
+              count: 1,
+              calls: [{ arguments: '{"command":"cat ledger"}', result: "OSPREY-TOTAL 4410" }],
+            },
+          ],
+        },
+        { kind: "text", text: "Checked the ledger." },
+      ] as MessageBlock[];
+      const message = await createThreadMessage(prisma, { threadId, role: "bot", botId, blocks });
+      expect(message).not.toHaveProperty("toolHistory");
+      const {
+        rows: [stored],
+      } = await raw.query<{ blocks: string; toolHistory: string }>(
+        `SELECT blocks::text AS blocks, "toolHistory" FROM messages WHERE id = $1`,
+        [message.id],
+      );
+      expect(stored!.blocks).not.toContain("OSPREY");
+      expect(stored!.toolHistory).not.toContain("OSPREY");
+      expect(stored!.toolHistory).toContain("rkz1:");
+      // Reads leave it out, nested ones too, unless they ask for it.
+      expect(await prisma.message.findUnique({ where: { id: message.id } })).not.toHaveProperty(
+        "toolHistory",
+      );
+      const nested = await prisma.thread.findUnique({
+        where: { id: threadId },
+        include: { messages: { where: { id: message.id } } },
+      });
+      expect(nested?.messages[0]).not.toHaveProperty("toolHistory");
+      const selected = await prisma.message.findUnique({
+        where: { id: message.id },
+        select: { toolHistory: true },
+      });
+      expect(JSON.parse(selected!.toolHistory!).steps[0].calls[0].result).toBe("OSPREY-TOTAL 4410");
+      expect((await searchHistory(prisma, scope, { query: "osprey" })).messages).toEqual([]);
+      await prisma.message.delete({ where: { id: message.id }, select: { id: true } });
+    }));
+
   it("reads and searches plaintext rows next to encrypted ones, then migrates them", () =>
     runAsSystem("test fixture", async () => {
       const plaintextId = `enc-plain-${suffix}`;

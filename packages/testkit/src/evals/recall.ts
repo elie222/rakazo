@@ -1,4 +1,5 @@
-import { MessageBlock } from "@rakazo/contracts";
+import type { HistoryToolStep } from "@rakazo/contracts";
+import { MessageBlock, ToolStepCallSchema } from "@rakazo/contracts";
 import { toolStepsHistoryText } from "@rakazo/core";
 import { z } from "zod";
 import type { Criterion, EvalCase, Evidence } from "./cases.js";
@@ -1656,9 +1657,16 @@ export const RECALL_EVAL_CASES: EvalCase[] = [
   }),
 ];
 
-const StepsSchema = z.array(z.unknown()).transform((steps, ctx) => {
+const StepsSchema = z.array(z.unknown()).transform((steps, ctx): HistoryToolStep[] => {
   const parsed = MessageBlock.safeParse({ kind: "steps", steps });
-  if (parsed.success && parsed.data.kind === "steps") return parsed.data.steps;
+  const kept = z
+    .array(z.object({ tool: z.string().optional(), calls: z.array(ToolStepCallSchema).optional() }))
+    .safeParse(steps);
+  if (parsed.success && parsed.data.kind === "steps" && kept.success)
+    return parsed.data.steps.map((step, index) => {
+      const { tool, calls } = kept.data[index]!;
+      return { ...step, ...(tool ? { tool } : {}), ...(calls ? { calls } : {}) };
+    });
   ctx.addIssue({ code: "custom", message: "steps must be stored tool steps" });
   return z.NEVER;
 });

@@ -16,6 +16,7 @@ import {
   normalizeRunError,
   QUEUE_HOLDING_RUN_STATUSES,
   sanitizeJsonValue,
+  splitToolHistory,
 } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import { cancelRunsInTransaction } from "./cancel-runs.js";
@@ -162,6 +163,7 @@ export type FinalizeRunInput = FinalizeRunBase &
   (
     | {
         outcome: "completed";
+        /** Steps may carry their tool and kept calls; they are stored apart from the blocks. */
         blocks: MessageBlock[];
         markUnread?: boolean;
       }
@@ -865,15 +867,18 @@ async function finalizeRunOnce(
       });
     }
     let firstResponse = false;
-    const replyBlocks =
+    // Clients get the blocks without the kept calls, in the message and in its event alike.
+    const { blocks: replyBlocks, toolHistory } = splitToolHistory(
       input.outcome === "completed"
         ? completedRunBlocks(input.blocks, writableRun?.startedAt ?? null, now)
-        : (input.partialReply ?? []);
+        : (input.partialReply ?? []),
+    );
     if (replyBlocks.length > 0) {
       const message = await createThreadMessageInTransaction(tx, {
         threadId: input.threadId,
         role: "bot",
         blocks: replyBlocks,
+        toolHistory,
         botId: input.botId,
         runId: input.runId,
         ...(input.outcome === "completed"

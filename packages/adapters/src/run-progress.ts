@@ -194,9 +194,10 @@ export function withReplyToolOutcomes(
 ): MessageBlock[] {
   return withToolStepOutcomes(
     reply.messageSegments,
-    reply.toolCalls.map(({ label, executionId }) => ({
+    reply.toolCalls.map(({ label, executionId, tool }) => ({
       label,
       outcome: reply.toolOutcomes.get(executionId) ?? unfinished,
+      tool,
       call: reply.toolStepCalls.get(executionId),
     })),
   );

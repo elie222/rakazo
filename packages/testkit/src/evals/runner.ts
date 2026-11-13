@@ -7,7 +7,12 @@ import {
   messageBot,
 } from "@rakazo/adapters";
 import type { MessageBlock, ModelConnectInput, ReplyMode, RunStatus } from "@rakazo/contracts";
-import { ACTIVE_RUN_STATUSES, attachmentComputerPath, isTerminal } from "@rakazo/core";
+import {
+  ACTIVE_RUN_STATUSES,
+  attachmentComputerPath,
+  isTerminal,
+  splitToolHistory,
+} from "@rakazo/core";
 import type { createDb } from "@rakazo/db";
 import { createThreadEvents } from "@rakazo/db";
 import type { HostedApp } from "../apps/mcp-host.js";
@@ -413,11 +418,9 @@ export async function runTrial(
       // Direct synthetic fixture setup, never pay a model to author filler.
       for (let offset = 0; offset < scenario.history.messages.length; offset += 500) {
         await prisma.message.createMany({
-          data: scenario.history.messages.slice(offset, offset + 500).map((m) => ({
-            threadId: thread.id,
-            seq: m.seq,
-            role: m.role,
-            blocks: [
+          data: scenario.history.messages.slice(offset, offset + 500).map((m) => {
+            // Kept calls are stored apart from the blocks, as every product message write does.
+            const { blocks, toolHistory } = splitToolHistory([
               // A reply that used tools stores its steps ahead of its text, as live replies do.
               ...(m.steps ? [{ kind: "steps", steps: seededSteps.get(m.seq) ?? m.steps }] : []),
               ...(m.text ? [{ kind: "text", text: m.text }] : []),
@@ -434,10 +437,17 @@ export async function runTrial(
                     },
                   ]
                 : []),
-            ],
-            createdAt: m.createdAt,
-            ...(m.role === "bot" ? { botId: botAuthor(m.author) } : {}),
-          })),
+            ] as MessageBlock[]);
+            return {
+              threadId: thread.id,
+              seq: m.seq,
+              role: m.role,
+              blocks,
+              ...(toolHistory ? { toolHistory: JSON.stringify(toolHistory) } : {}),
+              createdAt: m.createdAt,
+              ...(m.role === "bot" ? { botId: botAuthor(m.author) } : {}),
+            };
+          }),
         });
       }
       if (scenario.history.messages.some((m) => m.subagentResult)) {

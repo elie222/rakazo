@@ -1,6 +1,6 @@
 import type { AgentRunRequest, AgentToolCompletion } from "@rakazo/adapter-kit";
+import type { ToolStepCall } from "@rakazo/contracts";
 import { storedImageMimeType } from "@rakazo/contracts";
-import type { ToolStepCall } from "@rakazo/core";
 import { redactSecrets, toolResultTaintsRun } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import { redactToolArgsForReview } from "./auto-review.js";

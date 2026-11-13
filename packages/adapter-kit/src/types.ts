@@ -3,7 +3,7 @@ import type {
   ByokTier,
   CacheCapabilities as ConnectionCacheCapabilities,
   ConnectionCatalogItem,
-  MessageBlock,
+  HistoryToolStep,
   ModelApiProtocol,
   PurchaseCardField,
   SandboxKind,
@@ -637,9 +637,7 @@ export interface AgentRunRequest {
      * This bot's own reply in order, its tool steps apart from its text, set when it used
      * tools. A runtime that can replay tool calls reads it instead of `content`.
      */
-    segments?: Array<
-      { text: string } | { steps: Extract<MessageBlock, { kind: "steps" }>["steps"] }
-    >;
+    segments?: Array<{ text: string } | { steps: HistoryToolStep[] }>;
     /** Images attached to this message, hydrated only for recent user turns. */
     images?: AgentInputImage[];
   }>;

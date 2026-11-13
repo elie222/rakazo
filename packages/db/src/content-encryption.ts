@@ -35,6 +35,11 @@ const EVENT_PAYLOAD_PLAIN_KEYS = new Set([
 interface FieldSpec {
   /** Present for JSON columns: the scalar keys kept queryable beside the sealed copy. */
   plainKeys?: ReadonlySet<string>;
+  /**
+   * Read only by code that selects it: reads leave it out by default (as searchTokens), and
+   * search never indexes it, so it never reaches a client through an ordinary read.
+   */
+  hidden?: boolean;
 }
 
 interface ModelSpec {
@@ -51,7 +56,7 @@ interface ModelSpec {
 export const ENCRYPTED_MODELS: Record<string, ModelSpec> = {
   Message: {
     table: "messages",
-    fields: { blocks: { plainKeys: MESSAGE_BLOCK_PLAIN_KEYS } },
+    fields: { blocks: { plainKeys: MESSAGE_BLOCK_PLAIN_KEYS }, toolHistory: { hidden: true } },
     space: { parent: "threads" },
     ownerRelation: "thread",
     searchTokens: true,
@@ -247,6 +252,8 @@ export function withContentEncryption(prisma: PrismaClient, ring: ContentKeyRing
       if (spec) {
         const omit: RecordValue = isRecord(next.omit) ? { ...next.omit } : {};
         if (spec.searchTokens && omit.searchTokens === undefined) omit.searchTokens = true;
+        for (const [field, fieldSpec] of Object.entries(spec.fields))
+          if (fieldSpec.hidden && omit[field] === undefined) omit[field] = true;
         for (const column of contextColumns(spec))
           if (omit[column]) {
             delete omit[column];
@@ -367,19 +374,22 @@ export function withContentEncryption(prisma: PrismaClient, ring: ContentKeyRing
       const plainKeys = spec.fields[field]!.plainKeys;
       let value = next[field];
       if (!plainKeys && isRecord(value) && "set" in value) value = value.set;
+      const indexed = !spec.fields[field]!.hidden;
       if (value === null) next[field] = null;
       else if (plainKeys) {
         words.push(historySearchText(value as Prisma.JsonValue));
         strings.push(...stringsIn(value));
         next[field] = sealJson(value, plainKeys, encrypt);
       } else if (typeof value === "string") {
-        words.push(value);
-        strings.push(value);
+        if (indexed) {
+          words.push(value);
+          strings.push(value);
+        }
         next[field] = encrypt(value);
       } else throw new Error(`Unsupported write to encrypted ${spec.table}.${field}`);
     }
     // Tokens cover the fields written here: indexed models write all of them together.
-    if (spec.searchTokens)
+    if (spec.searchTokens && fields.some((field) => !spec.fields[field]!.hidden))
       next.searchTokens = searchTokens(key, { words: words.join("\n"), strings });
     ring.remember(spec.table, rowId, context);
     return next;

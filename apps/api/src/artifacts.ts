@@ -8,6 +8,7 @@ import {
   attachmentMaxCount,
   attachmentSizeLabel,
   isAttachmentAudioMimeType,
+  isStepScreenshotMimeType,
 } from "@rakazo/contracts";
 import {
   AttachmentValidationError,
@@ -289,6 +290,8 @@ async function readArtifact(
   },
   contextBotId: string,
 ) {
+  // A reply's kept screenshot is for the bot's own later runs, never for a person's client.
+  if (isStepScreenshotMimeType(row.mimeType)) throw new IsolationError();
   const bytes = await artifacts.get(
     row.storageKey,
     createAdapterContext(actor, contextBotId, `artifact-get:${row.id}`),

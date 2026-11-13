@@ -1,3 +1,4 @@
+import type { HistoryToolStep } from "@rakazo/contracts";
 import { appendToolCallSegment } from "@rakazo/core";
 import { describe, expect, it, vi } from "vitest";
 import type { ReplyState, RunContext } from "./run-context.js";
@@ -53,15 +54,13 @@ describe("tool step outcomes", () => {
     expect(withReplyToolOutcomes(reply)).toEqual([
       {
         kind: "steps",
-        steps: [{ label: "Shell", tool: "shell", count: 2, outcomes: { succeeded: 1 } }],
+        steps: [{ label: "Shell", count: 2, outcomes: { succeeded: 1 } }],
       },
     ]);
     expect(withReplyToolOutcomes(reply, "stopped")).toEqual([
       {
         kind: "steps",
-        steps: [
-          { label: "Shell", tool: "shell", count: 2, outcomes: { succeeded: 1, stopped: 1 } },
-        ],
+        steps: [{ label: "Shell", count: 2, outcomes: { succeeded: 1, stopped: 1 } }],
       },
     ]);
   });
@@ -70,8 +69,8 @@ describe("tool step outcomes", () => {
     const reply = {
       messageSegments: appendToolCallSegment(appendToolCallSegment([], "shell"), "shell"),
       toolCalls: [
-        { label: "Shell", executionId: "call-1" },
-        { label: "Shell", executionId: "call-2" },
+        { label: "Shell", executionId: "call-1", tool: "shell" },
+        { label: "Shell", executionId: "call-2", tool: "shell" },
       ],
       toolOutcomes: new Map([
         ["call-1", "succeeded" as const],
@@ -113,7 +112,9 @@ describe("tool step outcomes", () => {
     // A step whose calls are not all kept (a connector call that made several) keeps none.
     reply.toolStepCalls.delete("call-2");
     const [block] = withReplyToolOutcomes(reply);
-    expect(block?.kind === "steps" ? block.steps[0]?.calls : "not steps").toBeUndefined();
+    expect(
+      block?.kind === "steps" ? (block.steps[0] as HistoryToolStep).calls : "not steps",
+    ).toBeUndefined();
   });
 
   it("keeps what a call really was and returned, redacted, bounded to its start and end", () => {
@@ -161,34 +162,34 @@ describe("tool step outcomes", () => {
   });
 
   it("redacts a secret learned later from calls already kept, when the reply is saved", () => {
+    const step: HistoryToolStep = {
+      label: "Shell",
+      tool: "shell",
+      count: 1,
+      calls: [
+        {
+          arguments: '{"command":"echo late-secret"}',
+          result: "late-secret",
+          image: { artifactId: "shot" },
+        },
+      ],
+    };
     const [block] = redactBlocks(
       [
         {
           kind: "steps",
-          steps: [
-            {
-              label: "Shell",
-              tool: "shell",
-              count: 1,
-              calls: [
-                {
-                  arguments: '{"command":"echo late-secret"}',
-                  result: "late-secret",
-                  image: { artifactId: "shot" },
-                },
-              ],
-            },
-          ],
+          steps: [step],
         },
       ],
       ["late-secret"],
     );
     expect(JSON.stringify(block)).not.toContain("late-secret");
-    expect(block?.kind === "steps" && JSON.parse(block.steps[0]!.calls![0]!.arguments!)).toEqual({
+    const [call] = block?.kind === "steps" ? (block.steps[0] as HistoryToolStep).calls! : [];
+    expect(JSON.parse(call!.arguments!)).toEqual({
       command: "echo [redacted]",
     });
     // The kept screenshot stays with its call.
-    expect(block?.kind === "steps" && block.steps[0]!.calls![0]!.image).toEqual({
+    expect(call!.image).toEqual({
       artifactId: "shot",
     });
   });

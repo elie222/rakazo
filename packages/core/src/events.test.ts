@@ -1,3 +1,4 @@
+import type { MessageBlock } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import {
   appendTextSegment,
@@ -19,12 +20,14 @@ import {
   runFailureError,
   sanitizeJsonValue,
   sanitizeUtf16ForJson,
+  splitToolHistory,
   stripLiveStreamingProgress,
   toolNameFromLabel,
   trackToolCallStreak,
   trackToolNameStreak,
   withLiveStreamingProgress,
   withoutLastToolStepNotes,
+  withToolHistory,
   withToolStepOutcomes,
 } from "./events.js";
 import { modelFallbackFailure, normalizeRunError } from "./run-error.js";
@@ -77,7 +80,7 @@ describe("response streaming preference", () => {
         id: "progress:run-2",
         blocks: [
           { kind: "progress" as const, text: "partial" },
-          { kind: "steps" as const, steps: [{ label: "Shell", tool: "shell", count: 1 }] },
+          { kind: "steps" as const, steps: [{ label: "Shell", count: 1 }] },
         ],
       },
       {
@@ -89,7 +92,7 @@ describe("response streaming preference", () => {
       messages[0],
       {
         id: "progress:run-2",
-        blocks: [{ kind: "steps" as const, steps: [{ label: "Shell", tool: "shell", count: 1 }] }],
+        blocks: [{ kind: "steps" as const, steps: [{ label: "Shell", count: 1 }] }],
       },
       messages[3],
     ]);
@@ -144,7 +147,7 @@ describe("reduceLiveMessageBlocks", () => {
     });
 
     expect(reduceLiveMessageBlocks(activity, { type: "tool", name: "shell" })).toEqual([
-      { kind: "steps", steps: [{ label: "Shell", tool: "shell", count: 1 }] },
+      { kind: "steps", steps: [{ label: "Shell", count: 1 }] },
     ]);
   });
 
@@ -159,7 +162,7 @@ describe("reduceLiveMessageBlocks", () => {
       payload: { reset: true, text: "Checking totals", activity: true },
     });
     expect(blocks).toEqual([
-      { kind: "steps", steps: [{ label: "Shell", tool: "shell", count: 1 }] },
+      { kind: "steps", steps: [{ label: "Shell", count: 1 }] },
       { kind: "progress", text: "Checking totals", activity: true },
     ]);
   });
@@ -175,7 +178,7 @@ describe("reduceLiveMessageBlocks", () => {
       payload: { reset: true, text: "Checking the totals.", activity: true },
     });
     expect(blocks).toEqual([
-      { kind: "steps", steps: [{ label: "Shell", tool: "shell", count: 1 }] },
+      { kind: "steps", steps: [{ label: "Shell", count: 1 }] },
       { kind: "progress", text: "Checking the totals.", activity: true },
     ]);
     expect(liveActivityLine([{ id: "progress:run-1", blocks }])).toBe("Checking the totals.");
@@ -183,7 +186,7 @@ describe("reduceLiveMessageBlocks", () => {
     expect(
       reduceLiveMessageBlocks(blocks, { type: "progress", payload: { text: "They match." } }),
     ).toEqual([
-      { kind: "steps", steps: [{ label: "Shell", tool: "shell", count: 1 }] },
+      { kind: "steps", steps: [{ label: "Shell", count: 1 }] },
       { kind: "progress", text: "They match." },
     ]);
   });
@@ -423,12 +426,8 @@ describe("projectMessages", () => {
     expect(messages[0]?.blocks[0]).toEqual({
       kind: "steps",
       steps: [
-        {
-          label: "Slack fetch conversation history",
-          tool: "SLACK_FETCH_CONVERSATION_HISTORY",
-          count: 2,
-        },
-        { label: "Slack find channels", tool: "SLACK_FIND_CHANNELS", count: 1 },
+        { label: "Slack fetch conversation history", count: 2 },
+        { label: "Slack find channels", count: 1 },
       ],
     });
   });
@@ -468,10 +467,7 @@ describe("projectMessages", () => {
     // sentence and the held-back tool call appear together, in that order.
     expect(messages[0]?.blocks).toEqual([
       { kind: "text", text: "Let me check Slack for a broad search." },
-      {
-        kind: "steps",
-        steps: [{ label: "Slack find channels", tool: "SLACK_FIND_CHANNELS", count: 1 }],
-      },
+      { kind: "steps", steps: [{ label: "Slack find channels", count: 1 }] },
     ]);
   });
 
@@ -497,7 +493,7 @@ describe("projectMessages", () => {
       },
     ]);
     expect(messages[0]?.blocks).toEqual([
-      { kind: "steps", steps: [{ label: "Shell", tool: "shell", count: 1 }] },
+      { kind: "steps", steps: [{ label: "Shell", count: 1 }] },
       { kind: "progress", text: "The check passed." },
     ]);
   });
@@ -604,7 +600,7 @@ describe("projectMessages", () => {
         botId: "bot-a",
         blocks: [
           { kind: "text", text: "Alpha done." },
-          { kind: "steps", steps: [{ label: "Shell", tool: "shell", count: 1 }] },
+          { kind: "steps", steps: [{ label: "Shell", count: 1 }] },
         ],
       }),
       expect.objectContaining({
@@ -612,7 +608,7 @@ describe("projectMessages", () => {
         botId: "bot-b",
         blocks: [
           { kind: "text", text: "Beta." },
-          { kind: "steps", steps: [{ label: "Read file", tool: "read_file", count: 1 }] },
+          { kind: "steps", steps: [{ label: "Read file", count: 1 }] },
         ],
       }),
     ]);
@@ -663,26 +659,22 @@ describe("humanizeToolName", () => {
 describe("appendToolStep", () => {
   it("starts a new step for the first call", () => {
     expect(appendToolStep([], "SLACK_FIND_CHANNELS")).toEqual([
-      { label: "Slack find channels", tool: "SLACK_FIND_CHANNELS", count: 1 },
+      { label: "Slack find channels", count: 1 },
     ]);
   });
 
   it("increments the count when the same tool fires again in a row", () => {
     const first = appendToolStep([], "SLACK_FIND_CHANNELS");
     expect(appendToolStep(first, "SLACK_FIND_CHANNELS")).toEqual([
-      { label: "Slack find channels", tool: "SLACK_FIND_CHANNELS", count: 2 },
+      { label: "Slack find channels", count: 2 },
     ]);
   });
 
   it("appends a new step when a different tool fires", () => {
     const first = appendToolStep([], "SLACK_FIND_CHANNELS");
     expect(appendToolStep(first, "SLACK_FETCH_CONVERSATION_HISTORY")).toEqual([
-      { label: "Slack find channels", tool: "SLACK_FIND_CHANNELS", count: 1 },
-      {
-        label: "Slack fetch conversation history",
-        tool: "SLACK_FETCH_CONVERSATION_HISTORY",
-        count: 1,
-      },
+      { label: "Slack find channels", count: 1 },
+      { label: "Slack fetch conversation history", count: 1 },
     ]);
   });
 });
@@ -789,9 +781,7 @@ describe("appendTextSegment", () => {
   });
 
   it("does nothing when the text is empty", () => {
-    const segments = [
-      { kind: "steps" as const, steps: [{ label: "Shell", tool: "shell", count: 1 }] },
-    ];
+    const segments = [{ kind: "steps" as const, steps: [{ label: "Shell", count: 1 }] }];
     expect(appendTextSegment(segments, "")).toEqual(segments);
   });
 
@@ -801,11 +791,9 @@ describe("appendTextSegment", () => {
   });
 
   it("starts a new text segment after a steps segment", () => {
-    const segments = [
-      { kind: "steps" as const, steps: [{ label: "Shell", tool: "shell", count: 1 }] },
-    ];
+    const segments = [{ kind: "steps" as const, steps: [{ label: "Shell", count: 1 }] }];
     expect(appendTextSegment(segments, "done")).toEqual([
-      { kind: "steps", steps: [{ label: "Shell", tool: "shell", count: 1 }] },
+      { kind: "steps", steps: [{ label: "Shell", count: 1 }] },
       { kind: "text", text: "done" },
     ]);
   });
@@ -814,20 +802,14 @@ describe("appendTextSegment", () => {
 describe("appendToolCallSegment", () => {
   it("starts a new steps segment when there are none", () => {
     expect(appendToolCallSegment([], "SLACK_FIND_CHANNELS")).toEqual([
-      {
-        kind: "steps",
-        steps: [{ label: "Slack find channels", tool: "SLACK_FIND_CHANNELS", count: 1 }],
-      },
+      { kind: "steps", steps: [{ label: "Slack find channels", count: 1 }] },
     ]);
   });
 
   it("collapses into the last steps segment for the same tool", () => {
     const segments = appendToolCallSegment([], "SLACK_FIND_CHANNELS");
     expect(appendToolCallSegment(segments, "SLACK_FIND_CHANNELS")).toEqual([
-      {
-        kind: "steps",
-        steps: [{ label: "Slack find channels", tool: "SLACK_FIND_CHANNELS", count: 2 }],
-      },
+      { kind: "steps", steps: [{ label: "Slack find channels", count: 2 }] },
     ]);
   });
 
@@ -835,7 +817,7 @@ describe("appendToolCallSegment", () => {
     const segments = [{ kind: "text" as const, text: "hi" }];
     expect(appendToolCallSegment(segments, "shell")).toEqual([
       { kind: "text", text: "hi" },
-      { kind: "steps", steps: [{ label: "Shell", tool: "shell", count: 1 }] },
+      { kind: "steps", steps: [{ label: "Shell", count: 1 }] },
     ]);
   });
 
@@ -845,8 +827,8 @@ describe("appendToolCallSegment", () => {
       {
         kind: "steps",
         steps: [
-          { label: "Slack find channels", tool: "SLACK_FIND_CHANNELS", count: 1 },
-          { label: "Shell", tool: "shell", count: 1 },
+          { label: "Slack find channels", count: 1 },
+          { label: "Shell", count: 1 },
         ],
       },
     ]);
@@ -864,8 +846,8 @@ describe("step notes", () => {
       {
         kind: "steps",
         steps: [
-          { label: "Read file", tool: "read_file", count: 2, note: "The meeting is with Anna." },
-          { label: "Read file", tool: "read_file", count: 1, note: "Saving it." },
+          { label: "Read file", count: 2, note: "The meeting is with Anna." },
+          { label: "Read file", count: 1, note: "Saving it." },
         ],
       },
     ]);
@@ -886,8 +868,8 @@ describe("step notes", () => {
       {
         kind: "steps",
         steps: [
-          { label: "Read file", tool: "read_file", count: 1, note: "One." },
-          { label: "Shell", tool: "shell", count: 2 },
+          { label: "Read file", count: 1, note: "One." },
+          { label: "Shell", count: 2 },
         ],
       },
     ]);
@@ -1146,8 +1128,8 @@ describe("withToolStepOutcomes", () => {
       {
         kind: "steps",
         steps: [
-          { label: "Shell", tool: "shell", count: 2, outcomes: { succeeded: 1, failed: 1 } },
-          { label: "Web search", tool: "web_search", count: 1, note: "Looking it up." },
+          { label: "Shell", count: 2, outcomes: { succeeded: 1, failed: 1 } },
+          { label: "Web search", count: 1, note: "Looking it up." },
         ],
       },
     ]);
@@ -1159,5 +1141,40 @@ describe("withToolStepOutcomes", () => {
       segments,
     );
     expect(withToolStepOutcomes(segments, [])).toEqual(segments);
+  });
+});
+
+describe("a reply's kept tool calls", () => {
+  it("split off the blocks as one entry per step and merge back unchanged", () => {
+    const kept = {
+      tool: "shell",
+      calls: [{ arguments: '{"command":"ls"}', result: "notes.txt" }],
+    };
+    const blocks = [
+      {
+        kind: "steps",
+        steps: [
+          { label: "Shell", count: 1, ...kept },
+          { label: "Web fetch", count: 2 },
+        ],
+      },
+      { kind: "text", text: "Done." },
+      { kind: "steps", steps: [{ label: "Shell", count: 1, ...kept }] },
+    ] as MessageBlock[];
+    const { blocks: shown, toolHistory } = splitToolHistory(blocks);
+    expect(JSON.stringify(shown)).not.toMatch(/"tool"|"calls"|notes\.txt/);
+    expect(toolHistory).toEqual({ steps: [kept, null, kept] });
+    expect(withToolHistory(shown, toolHistory)).toEqual([
+      {
+        kind: "steps",
+        steps: [
+          { label: "Shell", count: 1, ...kept },
+          { label: "Web fetch", count: 2 },
+        ],
+      },
+      { kind: "text", text: "Done." },
+      { kind: "steps", steps: [{ label: "Shell", count: 1, ...kept }] },
+    ]);
+    expect(splitToolHistory(shown).toolHistory).toBeUndefined();
   });
 });

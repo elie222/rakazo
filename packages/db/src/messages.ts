@@ -1,4 +1,5 @@
-import type { MessageAuthor, MessageBlock } from "@rakazo/contracts";
+import type { MessageAuthor, MessageBlock, ToolHistory } from "@rakazo/contracts";
+import { splitToolHistory } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "./client.js";
 import { markThreadUnreadForMembers } from "./thread-reads.js";
 import { THREAD_LOCK_TRANSACTION_OPTIONS, withTransactionRetry } from "./transaction-retry.js";
@@ -39,6 +40,8 @@ export function loadRunHistoryMessages(
       botId: true,
       runId: true,
       blocks: true,
+      // Only the bot's own runs read this: it is what its earlier tool calls were sent and returned.
+      toolHistory: true,
       authorUserId: true,
       createdAt: true,
       replyToMessageId: true,
@@ -63,6 +66,8 @@ export interface CreateThreadMessageInput {
   threadId: string;
   role: "user" | "bot" | "system";
   blocks: MessageBlock[];
+  /** A bot reply's tool calls as sent and returned, for its later runs only. */
+  toolHistory?: ToolHistory;
   botId?: string;
   /** The signed-in person who wrote a user message; null when the sender is not a known user. */
   authorUserId?: string;
@@ -108,12 +113,16 @@ export async function createThreadMessageInTransaction(
       exceptUserId: input.authorUserId,
     });
   }
+  // Kept calls never stay in the blocks clients read; they go in their own encrypted column.
+  const split = splitToolHistory(input.blocks);
+  const toolHistory = input.toolHistory ?? split.toolHistory;
   return tx.message.create({
     data: {
       threadId: input.threadId,
       seq: thread.nextMessageSeq - 1,
       role: input.role,
-      blocks: input.blocks as Prisma.InputJsonValue,
+      blocks: split.blocks as Prisma.InputJsonValue,
+      ...(toolHistory ? { toolHistory: JSON.stringify(toolHistory) } : {}),
       botId: input.botId,
       authorUserId: input.authorUserId,
       replyToMessageId: input.replyToMessageId,

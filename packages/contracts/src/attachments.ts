@@ -30,6 +30,9 @@ export const STEP_SCREENSHOT_MIME_TYPES = ATTACHMENT_IMAGE_MIME_TYPES.map(
 export function stepScreenshotMimeType(imageType: AttachmentImageMimeType): string {
   return `${imageType}${STEP_SCREENSHOT_PROFILE}`;
 }
+export function isStepScreenshotMimeType(mimeType: string): boolean {
+  return mimeType.endsWith(STEP_SCREENSHOT_PROFILE);
+}
 /** The image type a kept screenshot, or an image attachment, shows as; else undefined. */
 export function storedImageMimeType(mimeType: string): AttachmentImageMimeType | undefined {
   const type = mimeType.endsWith(STEP_SCREENSHOT_PROFILE)

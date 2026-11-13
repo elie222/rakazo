@@ -831,7 +831,7 @@ describe("threadSnapshot", () => {
           blocks: [
             {
               kind: "steps",
-              steps: [{ label: "Slack find channels", tool: "SLACK_FIND_CHANNELS", count: 1 }],
+              steps: [{ label: "Slack find channels", count: 1 }],
             },
           ],
         }),

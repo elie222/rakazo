@@ -2,11 +2,15 @@ import type { ArtifactStore } from "@rakazo/adapter-kit";
 import type { Actor } from "@rakazo/contracts";
 import { attachmentComputerPath } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
+import { IsolationError } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import {
   ArtifactListCursorError,
   createOwnedArtifact,
   deleteArtifactFamily,
+  getOwnedArtifact,
+  getSpaceArtifact,
+  getSpaceArtifactById,
   listSpaceArtifacts,
   resolveGroupSendAttachments,
   resolveSendAttachments,
@@ -732,5 +736,43 @@ describe("send attachment count", () => {
       await expect(send(limit, effective)).resolves.toMatchObject({ blocks: expect.any(Array) });
       expect(findMany).toHaveBeenCalledOnce();
     }
+  });
+});
+
+describe("a reply's kept screenshot", () => {
+  it("cannot be opened from a client, by a group member or anyone else", async () => {
+    const row = {
+      id: "shot-1",
+      botId: "bot-1",
+      groupId: "group-1",
+      runId: "run-1",
+      storageKey: "stored-shot",
+      name: "screenshot",
+      description: null,
+      mimeType: "image/png;profile=step-screenshot",
+      size: 3,
+      version: 1,
+      createdAt: new Date(),
+    };
+    const get = vi.fn(async () => new Uint8Array([1, 2, 3]));
+    const deps = {
+      prisma: { artifact: { findFirst: vi.fn(async () => row) } } as unknown as PrismaClient,
+      artifacts: { get } as unknown as ArtifactStore,
+    };
+    const member: Actor = { ...actor, userId: "member-1" };
+    await expect(
+      getSpaceArtifact(deps, member, {
+        artifactId: "shot-1",
+        groupId: "group-1",
+        contextBotId: "bot-1",
+      }),
+    ).rejects.toBeInstanceOf(IsolationError);
+    await expect(
+      getSpaceArtifactById(deps, member, { artifactId: "shot-1" }),
+    ).rejects.toBeInstanceOf(IsolationError);
+    await expect(
+      getOwnedArtifact(deps, actor, { artifactId: "shot-1", botId: "bot-1" }),
+    ).rejects.toBeInstanceOf(IsolationError);
+    expect(get).not.toHaveBeenCalled();
   });
 });

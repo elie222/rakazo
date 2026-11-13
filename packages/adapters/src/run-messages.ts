@@ -1,5 +1,10 @@
-import type { MessageBlock } from "@rakazo/contracts";
-import { callIdFromClientNonce, isBackgroundRunTrigger, redactSecrets } from "@rakazo/core";
+import type { HistoryToolStep, MessageBlock } from "@rakazo/contracts";
+import {
+  callIdFromClientNonce,
+  isBackgroundRunTrigger,
+  redactSecrets,
+  splitToolHistory,
+} from "@rakazo/core";
 import type { Prisma, RunLease } from "@rakazo/db";
 import {
   appendEventInTransaction,
@@ -54,7 +59,7 @@ export function redactBlocks(blocks: MessageBlock[], secrets: string[]): Message
     if (block.kind === "steps") {
       return {
         ...block,
-        steps: block.steps.map((step) => ({
+        steps: (block.steps as HistoryToolStep[]).map((step) => ({
           ...step,
           label: redactSecrets(step.label, secrets),
           ...(step.note === undefined ? {} : { note: redactSecrets(step.note, secrets) }),
@@ -148,10 +153,14 @@ export async function persistMessageInTransaction(
   allowCancelledRun = false,
   lease?: RunLease,
 ) {
+  // Clients get the blocks without the kept calls, in the message and in its event alike.
+  const { blocks: shown, toolHistory } = splitToolHistory(blocks);
+  blocks = shown;
   const message = await createThreadMessageInTransaction(tx, {
     threadId: run.threadId,
     role,
     blocks,
+    toolHistory,
     botId: run.botId,
     runId: run.id,
     markUnread,

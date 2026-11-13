@@ -529,7 +529,8 @@ async function onToolCalled(ctx: RunContext, event: RuntimeEvent<"tool">): Promi
   const callSteps = stepNames.length > 0 ? stepNames : [event.name];
   reply.pendingToolNames.push(...callSteps);
   // A call that shows as its own step keeps what it was called with, for later turns to replay.
-  if (callSteps.length === 1 && callSteps[0] === event.name)
+  const ownStep = callSteps.length === 1 && callSteps[0] === event.name;
+  if (ownStep)
     reply.toolStepCalls.set(event.executionId, {
       arguments: keptToolArguments(event.args, ctx.secrets),
     });
@@ -537,6 +538,7 @@ async function onToolCalled(ctx: RunContext, event: RuntimeEvent<"tool">): Promi
     ...callSteps.map((name) => ({
       label: humanizeToolName(name),
       executionId: event.executionId,
+      ...(ownStep ? { tool: event.name } : {}),
     })),
   );
   // Text before ask_user stays pending: the run pauses next, and the question needs it.
