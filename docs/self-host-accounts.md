@@ -271,9 +271,9 @@ Linking requires the provider's verified email to match the verified Rakazo emai
 provider address, including Apple's Hide My Email relay address, cannot be linked to that account.
 
 Signup through Google or Apple follows the same closed registration and allowlist as email
-signup. The provider email has to be verified when an allowlist is set. Google verification
+signup. The provider email must be verified before any social account is created. Google verification
 counts only for Gmail or a matching verified Workspace domain. Other Google mailboxes cannot
-satisfy an allowlist through social signup; verify an account through email and link it in settings.
+create an account through social signup; verify an account through email and link it in settings.
 
 ## Directory provisioning (SCIM)
 

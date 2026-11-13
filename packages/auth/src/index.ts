@@ -422,8 +422,7 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
             const policy = await admission();
             if (!policy.enabled) return { error: "REGISTRATION_CLOSED" };
             if (!emailAllowed(email, policy.allowlist)) return { error: "EMAIL_NOT_ALLOWED" };
-            if (policy.allowlist.length > 0 && !verified)
-              return { error: "EMAIL_VERIFICATION_REQUIRED" };
+            if (!verified) return { error: "EMAIL_VERIFICATION_REQUIRED" };
             return;
           }
           // A verified provider email may join an account whose address is already verified.
@@ -877,7 +876,13 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
               await recordSecurityEvent({
                 type: "auth.identity.confirmed",
                 userId: session.userId,
-                metadata: { method: "sso" },
+                metadata: {
+                  method: context.reauthProviderId === "oidc" ? "sso" : "social",
+                  providerId:
+                    typeof context.reauthProviderId === "string"
+                      ? context.reauthProviderId
+                      : undefined,
+                },
               });
             }
             const previous = replacedSession(ctx);

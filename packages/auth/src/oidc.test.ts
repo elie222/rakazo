@@ -1,5 +1,6 @@
 import { createHash, createHmac, generateKeyPairSync, sign } from "node:crypto";
 import type * as Db from "@rakazo/db";
+import { recordSecurityEvent } from "@rakazo/db";
 import { memoryAdapter } from "better-auth/adapters/memory";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Auth, AuthEnv } from "./index.js";
@@ -12,6 +13,7 @@ vi.mock("better-auth/adapters/prisma", () => ({ prismaAdapter: () => memoryAdapt
 vi.mock("@rakazo/db", async (original) => ({
   ...(await original<typeof Db>()),
   bootstrapUserSpace: vi.fn(),
+  recordSecurityEvent: vi.fn(),
 }));
 
 const issuer = "https://identity.example.test";
@@ -1777,38 +1779,58 @@ it("uses a signed Apple secret on Better Auth's first and renewed token exchange
   expect(secrets[1]).not.toBe(secrets[0]);
 });
 
-it("rejects stale Google verification during allowlisted signup", async () => {
-  setup({
-    signupAllowlist: "example.test",
-    social: {
-      providers: [
-        {
-          id: "google",
-          name: "Google",
-          clientId: "offline-client",
-          clientSecret: "offline-secret",
-        },
-      ],
-    },
-  });
-  const provider = (await auth.$context).socialProviders.find((item) => item.id === "google")!;
-  provider.idToken = { verify: async () => true };
-  const response = await request("/sign-in/social", {
-    provider: "google",
-    callbackURL: `${origin}/app`,
-    idToken: {
-      token: jwt({
-        sub: "former-owner",
-        email: "former@example.test",
-        email_verified: true,
-        name: "Test",
-      }),
-    },
-  });
-  expect(response.status).not.toBe(200);
-  expect(rows("user")).toHaveLength(0);
-  expect(rows("session")).toHaveLength(0);
-});
+it.each([
+  ["google", ""],
+  ["google", "example.test"],
+  ["apple", ""],
+  ["apple", "example.test"],
+])(
+  "rejects unproven %s mailbox ownership with allowlist %j",
+  async (providerId, signupAllowlist) => {
+    const pem = generateKeyPairSync("ec", { namedCurve: "prime256v1" })
+      .privateKey.export({ type: "pkcs8", format: "pem" })
+      .toString();
+    setup({
+      signupAllowlist,
+      social: {
+        providers: [
+          {
+            id: "google",
+            name: "Google",
+            clientId: "offline-client",
+            clientSecret: "offline-secret",
+          },
+          {
+            id: "apple",
+            name: "Apple",
+            clientId: "service",
+            teamId: "team",
+            keyId: "key",
+            privateKey: pem,
+          },
+        ],
+      },
+    });
+    const provider = (await auth.$context).socialProviders.find((item) => item.id === providerId)!;
+    provider.idToken = { verify: async () => true };
+    const response = await request("/sign-in/social", {
+      provider: providerId,
+      callbackURL: `${origin}/app`,
+      idToken: {
+        token: jwt({
+          sub: "former-owner",
+          email: "former@example.test",
+          email_verified: providerId === "google",
+          name: "Test",
+        }),
+      },
+    });
+    expect(response.status).not.toBe(200);
+    expect(rows("user")).toHaveLength(0);
+    expect(rows("account")).toHaveLength(0);
+    expect(rows("session")).toHaveLength(0);
+  },
+);
 
 it.each([
   ["google", "local@example.test"],
@@ -2012,6 +2034,12 @@ describe.each(["google", "apple"] as const)("%s bound identity confirmation", (p
     expect((await request("/delete-user", {})).status).toBe(403);
     const url = await begin();
     expect((await callback(url)).headers.get("location")).toBe(`${origin}/app`);
+    expect(recordSecurityEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "auth.identity.confirmed",
+        metadata: { method: "social", providerId },
+      }),
+    );
     const session = rows("session").at(-1)!;
     expect(
       await auth.hasRecentIdentityConfirmation({

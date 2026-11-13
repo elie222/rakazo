@@ -2,7 +2,7 @@ import { t } from "@lingui/core/macro";
 import type * as AppleAuthentication from "expo-apple-authentication";
 import { currentApiBase } from "./api";
 import { signInWithIdentityToken } from "./api-auth";
-import { DEFAULT_API } from "./server-config";
+import { defaultApiBase } from "./endpoint";
 import { continueWithSso } from "./sso";
 
 /** Native sign-in for a provider that asked for it. Anything else uses the browser. */
@@ -17,7 +17,8 @@ export function continueWithNativeSignIn(providerId: string): Promise<boolean> {
  */
 export async function continueWithApple(): Promise<boolean> {
   // Capabilities from a custom server cannot authorize disclosure of a bundle-scoped token.
-  if (currentApiBase() !== DEFAULT_API || !DEFAULT_API.startsWith("https://"))
+  const bundledApi = defaultApiBase();
+  if (currentApiBase() !== bundledApi || !bundledApi.startsWith("https://"))
     return continueWithSso("sign-in", "apple");
   let apple: typeof AppleAuthentication;
   try {

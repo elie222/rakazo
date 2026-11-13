@@ -11,7 +11,10 @@ vi.mock("expo-apple-authentication", () => ({
   AppleAuthenticationScope: { FULL_NAME: 0, EMAIL: 1 },
 }));
 vi.mock("./api", () => ({ currentApiBase: vi.fn(() => "https://api.example.test") }));
-vi.mock("./server-config", () => ({ DEFAULT_API: "https://api.example.test" }));
+vi.mock("./server-config", () => ({
+  DEFAULT_API: "https://API.example.test/api/",
+  LOCAL_API: "http://127.0.0.1:3100",
+}));
 vi.mock("./api-auth", () => ({ signInWithIdentityToken: vi.fn() }));
 vi.mock("./sso", () => ({ continueWithSso: vi.fn() }));
 
