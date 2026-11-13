@@ -1,13 +1,14 @@
 import { MenuView } from "@expo/ui/community/menu";
 import { useLingui } from "@lingui/react/macro";
 import type { NativeStackNavigationOptions } from "expo-router";
-import { useNavigationContainerRef, useRouter } from "expo-router";
+import { useRouter } from "expo-router";
 import { Alert, View } from "react-native";
 import { notifyArchivedChatsChanged } from "../lib/archived-chats";
 import { archiveBot, confirmClearConversation, confirmDeleteBot } from "../lib/bot-lifecycle";
 import { useResolvedAppearance } from "../lib/native";
 import { iosAtLeast } from "../lib/native-controls";
 import { useConfirmationGuard } from "../lib/use-confirmation-guard";
+import { useLeaveDeletedChat } from "../lib/use-leave-deleted-chat";
 import { errorText } from "../lib/user-error";
 import { NativeSymbol } from "./native-symbol";
 
@@ -22,7 +23,7 @@ export type BotProfileAction = {
 export function useBotProfileActions(botId: string, name: string): BotProfileAction[] {
   const { t } = useLingui();
   const router = useRouter();
-  const navigation = useNavigationContainerRef();
+  const leaveDeletedChat = useLeaveDeletedChat();
   const beginDelete = useConfirmationGuard();
   function leave() {
     router.dismissAll();
@@ -54,16 +55,7 @@ export function useBotProfileActions(botId: string, name: string): BotProfileAct
           { id: botId, name },
           (removedGroupIds) => {
             notifyArchivedChatsChanged();
-            // The profile may have been popped back to this bot's chat while deleting.
-            // Inspect the live route rather than the confirmation's expired screen visit.
-            const route = navigation.getCurrentRoute() as
-              | { params?: { botId?: string; groupId?: string } }
-              | undefined;
-            if (
-              route?.params?.botId === botId ||
-              (route?.params?.groupId && removedGroupIds.includes(route.params.groupId))
-            )
-              leave();
+            leaveDeletedChat(botId, removedGroupIds);
           },
           confirmation.current,
           undefined,

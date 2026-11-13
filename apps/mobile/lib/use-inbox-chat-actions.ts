@@ -1,7 +1,6 @@
 import { useLingui } from "@lingui/react/macro";
 import type { RpcInput, RpcPath, SpaceBot, SpaceGroup } from "@rakazo/contracts";
 import { createSnoozeQueue } from "@rakazo/core";
-import { useNavigationContainerRef, useRouter } from "expo-router";
 import type { Dispatch, SetStateAction } from "react";
 import { useCallback, useState } from "react";
 import { Alert } from "react-native";
@@ -19,6 +18,7 @@ import { removeFromSearchInbox } from "./search-inbox";
 import { promptSectionName } from "./section-name-prompt";
 import { currentSessionGeneration, loadSessionToken } from "./session";
 import { useConfirmationGuard } from "./use-confirmation-guard";
+import { useLeaveDeletedChat } from "./use-leave-deleted-chat";
 import { errorText } from "./user-error";
 
 /** Sends a request about a chat to that chat's space without switching to it. */
@@ -58,8 +58,7 @@ export function useInboxChatActions({
   setSpaces: ListUpdate<MobileSpace>;
 }) {
   const { t } = useLingui();
-  const navigation = useNavigationContainerRef();
-  const router = useRouter();
+  const leaveDeletedChat = useLeaveDeletedChat();
   const beginDelete = useConfirmationGuard(confirmationActive);
   const [unreadOverrides, setUnreadOverrides] = useState<ReadonlyMap<string, boolean>>(
     () => new Map(),
@@ -211,16 +210,7 @@ export function useInboxChatActions({
             { id: chat.id, name: chat.name },
             (removedGroupIds) => {
               deleted();
-              const route = navigation.getCurrentRoute() as
-                | { params?: { botId?: string; groupId?: string } }
-                | undefined;
-              if (
-                route?.params?.botId === chat.id ||
-                (route?.params?.groupId && removedGroupIds.includes(route.params.groupId))
-              ) {
-                router.dismissAll();
-                router.replace("/");
-              }
+              leaveDeletedChat(chat.id, removedGroupIds);
             },
             confirmation!.current,
             requestContext,
@@ -233,7 +223,7 @@ export function useInboxChatActions({
         Alert.alert(t`Could not update chat`, errorText(err, t`Try again.`)),
       );
     },
-    [beginDelete, loadBots, navigation, router, sendReadState, t, updateChat],
+    [beginDelete, loadBots, leaveDeletedChat, sendReadState, t, updateChat],
   );
   const botAction = useCallback(
     (action: InboxRowAction, bot: MobileBot | SpaceBot) => void runRowAction("bot", bot, action),
