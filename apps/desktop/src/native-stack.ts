@@ -8,7 +8,7 @@ import type { WriteStream } from "node:fs";
 import { createWriteStream } from "node:fs";
 import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { DesktopLocalStackState } from "@rakazo/contracts";
+import type { DesktopLocalStackPhase, DesktopLocalStackState } from "@rakazo/contracts";
 import type { RunDocker } from "./docker-cli.js";
 import { t } from "./i18n.js";
 import {
@@ -47,7 +47,7 @@ import {
 import { readPrivateFile, writePrivateFile } from "./setup-store.js";
 
 /** Phases between `up-start` and a stop or failure, while the stack runs or restarts. */
-const ACTIVE_PHASES = new Set<string>(["starting", "waiting-healthy", "ready"]);
+const ACTIVE_PHASES = new Set<DesktopLocalStackPhase>(["starting", "waiting-healthy", "ready"]);
 export const NATIVE_PORTS_FILE = ".native-ports";
 /** The database VM, its network and its volume; computers are `rakazo-<uuid>` with a bot label. */
 export const DATABASE_CONTAINER = "rakazo-postgres";
