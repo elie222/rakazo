@@ -366,3 +366,17 @@ it("does not overwrite a refreshed member order when saving", async () => {
   await click("Save");
   expect(rpc).not.toHaveBeenCalledWith("groups/update", expect.anything());
 });
+
+it("keeps a failed save visible after a successful refresh", async () => {
+  await act(async () => root.render(<GroupSettings />));
+  await click("Show all");
+  await act(async () => switches()[2]!.click());
+  rpc.mockImplementation(async (procedure: string) => {
+    if (procedure === "groups/update") throw new Error("Save failed");
+    return procedure === "groups/list" ? [group] : procedure === "bots/list" ? bots : [];
+  });
+  await click("Save");
+  const before = container.textContent;
+  await act(async () => notifyArchivedChatsChanged());
+  expect(container.textContent).toBe(before);
+});

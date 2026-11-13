@@ -24,6 +24,7 @@ export default function GroupSettingsScreen() {
   const [bots, setBots] = useState<MobileBot[]>([]);
   const [name, setName] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
@@ -46,7 +47,7 @@ export default function GroupSettingsScreen() {
         const initial = baseline === null;
         const previousName = baseline?.name;
         baseline = nextGroup;
-        setError(null);
+        setLoadError(null);
         setGroup(nextGroup);
         setName((previous) => (initial || previous === previousName ? nextGroup.name : previous));
         setSelected((previous) =>
@@ -66,7 +67,7 @@ export default function GroupSettingsScreen() {
         );
         setBots(nextBots.filter((bot) => !bot.archivedAt));
       } catch (err) {
-        if (request === generation) setError(errorText(err, t`Could not load group`));
+        if (request === generation) setLoadError(errorText(err, t`Could not load group`));
       }
     }
     void load();
@@ -151,7 +152,9 @@ export default function GroupSettingsScreen() {
             disabled={pending}
           />
         ) : null}
-        {error ? <Text style={{ color: tokens.destructive, marginTop: 12 }}>{error}</Text> : null}
+        {error || loadError ? (
+          <Text style={{ color: tokens.destructive, marginTop: 12 }}>{error ?? loadError}</Text>
+        ) : null}
         <NativeActionButton
           disabled={
             !name.trim() ||
