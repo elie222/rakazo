@@ -1,3 +1,5 @@
+import type { ToolCall } from "@earendil-works/pi-ai";
+import { validateToolArguments } from "@earendil-works/pi-ai/utils/validation";
 import {
   FLEET_TOOL_NAMES,
   TICKET_COMMENT_MAX_LENGTH,
@@ -15,6 +17,82 @@ import {
 import { SCRATCHPAD_NOTES_MAX_LENGTH, SCRATCHPAD_TITLE_MAX_LENGTH } from "./scratchpad-tools.js";
 
 describe("jsonSchemaParameters", () => {
+  it.each(["property", "array item", "union alternative"])(
+    "preserves nested allOf constraints in a %s through SDK validation",
+    (position) => {
+      const composed = {
+        description: "A composed request body",
+        allOf: [
+          { type: "object", properties: { name: { type: "string" } }, required: ["name"] },
+          {
+            type: "object",
+            properties: { count: { type: "integer", minimum: 1 } },
+            required: ["count"],
+          },
+        ],
+      };
+      const field =
+        position === "array item"
+          ? { type: "array", items: composed }
+          : position === "union alternative"
+            ? { anyOf: [composed, { type: "null" }] }
+            : composed;
+      const inputSchema = { type: "object", properties: { body: field }, required: ["body"] };
+      const original = structuredClone(inputSchema);
+      const tool = { name: "composed_body", description: "Send a body", inputSchema };
+      const parameters = parametersFor(tool);
+      const wire = JSON.parse(JSON.stringify(parameters));
+      const wrap = (body: ToolCall["arguments"][string]) => ({
+        body: position === "array item" ? [body] : body,
+      });
+      const valid = wrap({ name: "sample", count: 2 });
+      const validate = (args: ToolCall["arguments"]) =>
+        validateToolArguments(
+          { name: tool.name, description: tool.description, parameters },
+          { type: "toolCall", id: "test-call", name: tool.name, arguments: args },
+        );
+      const invalidObjects: ToolCall["arguments"][] = [
+        { name: "sample" },
+        { count: 2 },
+        { name: "sample", count: 0 },
+      ];
+      expect(validate(valid)).toEqual(valid);
+      for (const schema of [inputSchema, wire]) {
+        expect(parseConnectorToolArgs(schema, valid)).toEqual(valid);
+        for (const invalid of [...invalidObjects, "text"]) {
+          expect(() => parseConnectorToolArgs(schema, wrap(invalid))).toThrow();
+        }
+      }
+      for (const invalid of invalidObjects) {
+        expect(() => validate(wrap(invalid))).toThrow();
+      }
+      expect(inputSchema).toEqual(original);
+    },
+  );
+
+  it("preserves allOf siblings and enriches nested string discriminators", () => {
+    const field = {
+      type: "object",
+      description: "An intersection with sibling constraints",
+      properties: { kind: { const: "entry" } },
+      required: ["kind"],
+      allOf: [{ properties: { count: { type: "number", minimum: 1 } }, required: ["count"] }],
+    };
+    const wire = JSON.parse(
+      JSON.stringify(
+        parametersFor({
+          name: "composed_body",
+          description: "Send a body",
+          inputSchema: { type: "object", properties: { body: field } },
+        }),
+      ),
+    );
+    expect(wire.properties.body).toEqual({
+      ...field,
+      properties: { kind: { type: "string", const: "entry", enum: ["entry"] } },
+    });
+  });
+
   it("uses a connected delete_bot schema instead of local archival parameters", () => {
     const schema = JSON.parse(
       JSON.stringify(
