@@ -129,6 +129,85 @@ describe("GraphQL connector import", () => {
     expect(JSON.stringify(fetch.mock.calls)).toContain("__schema");
   });
 
+  it.each<{ headers: Record<string, string>; contentType: string; accept: string }>([
+    { headers: {}, contentType: "application/json", accept: "application/json" },
+    {
+      headers: { "Content-Type": "application/json", Accept: "application/graphql-response+json" },
+      contentType: "application/json",
+      accept: "application/graphql-response+json",
+    },
+    {
+      headers: { "CONTENT-TYPE": "application/json; charset=utf-8", ACCEPT: "application/json" },
+      contentType: "application/json; charset=utf-8",
+      accept: "application/json",
+    },
+  ])(
+    "preserves case-insensitive headers on import and execution: $headers",
+    async ({ headers, contentType, accept }) => {
+      const calls: Headers[] = [];
+      const remote = {
+        fetch: async (_input: string | URL | Request, init?: RequestInit) => {
+          const sent = new Headers(init?.headers);
+          calls.push(sent);
+          expect(sent.get("content-type")).toBe(contentType);
+          expect(sent.get("accept")).toBe(accept);
+          expect(sent.get("authorization")).toBe("Bearer fake-credential");
+          return Response.json(
+            calls.length === 1 ? STAR_WARS_INTROSPECTION : { data: { hello: "ok" } },
+          );
+        },
+        resolveHostname: async () => [{ address: "203.0.113.10", family: 4 as const }],
+      };
+      const auth = { type: "bearer" as const };
+      await prepareGraphqlInstall({
+        source: "https://graphql.example.test/graphql",
+        config: { auth, headers },
+        credential: "fake-credential",
+        remote,
+      });
+      const operations = importGraphqlSchema(STAR_WARS_INTROSPECTION);
+      const operation = operations.find((op) => op.fieldName === "hello")!;
+      await executeGraphqlOperation(
+        "https://graphql.example.test/graphql",
+        { auth, headers, operations },
+        operation,
+        {},
+        "fake-credential",
+        new AbortController().signal,
+        remote,
+      );
+      expect(calls).toHaveLength(2);
+    },
+  );
+
+  it("lets a credential header override a custom header regardless of casing", async () => {
+    const headers = { "X-Access": "public-placeholder", "Content-Type": "application/json" };
+    const auth = { type: "header" as const, name: "x-access" };
+    const remote = {
+      fetch: async (_input: string | URL | Request, init?: RequestInit) => {
+        expect(new Headers(init?.headers).get("x-access")).toBe("fake-credential");
+        return Response.json(STAR_WARS_INTROSPECTION);
+      },
+      resolveHostname: async () => [{ address: "203.0.113.10", family: 4 as const }],
+    };
+    await prepareGraphqlInstall({
+      source: "https://graphql.example.test/graphql",
+      config: { auth, headers },
+      credential: "fake-credential",
+      remote,
+    });
+    const operations = importGraphqlSchema(STAR_WARS_INTROSPECTION);
+    await executeGraphqlOperation(
+      "https://graphql.example.test/graphql",
+      { auth, headers, operations },
+      operations[0]!,
+      {},
+      "fake-credential",
+      new AbortController().signal,
+      remote,
+    );
+  });
+
   it("introspects a loopback endpoint only with the private-endpoint escape", async () => {
     const fetch = vi.fn(async () => Response.json(STAR_WARS_INTROSPECTION));
     const install = (allowPrivateEndpoint: boolean) =>
