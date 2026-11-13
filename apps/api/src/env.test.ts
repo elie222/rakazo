@@ -419,14 +419,11 @@ describe("social sign-in environment", () => {
     ).toEqual({
       providers: [{ id: "google", name: "Google", clientId: "client", clientSecret: "secret" }],
     });
-    expect(
-      loadEnv({ ...base, ...apple, APPLE_APP_BUNDLE_IDENTIFIER: "com.example.app" }).social,
-    ).toMatchObject({
+    expect(loadEnv({ ...base, ...apple }).social).toMatchObject({
       providers: [
         expect.objectContaining({
           id: "apple",
           clientId: "com.example.service",
-          bundleId: "com.example.app",
         }),
       ],
     });

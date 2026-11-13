@@ -60,25 +60,18 @@ it("enables Apple from the key material and refuses a partial set", () => {
       keyId: "KEYID12345",
     }),
   ]);
-  expect(
-    socialAuthFromFields({ ...apple, appleBundleId: "com.example.app" })?.providers[0],
-  ).toMatchObject({ bundleId: "com.example.app" });
-  expect(() => socialAuthFromFields({ appleBundleId: "com.example.app" })).toThrow(
-    /requires Apple sign-in/,
-  );
 });
 
 it("lists OpenID Connect ahead of the configured social providers, without secrets", () => {
   const social = socialAuthFromFields({
     ...apple,
-    appleBundleId: "com.example.app",
     googleClientId: "google-client",
     googleClientSecret: "google-secret",
   });
   expect(publicSignInProviders(social, { name: "SSO" })).toEqual([
     { id: "oidc", name: "SSO" },
     { id: "google", name: "Google", presentation: socialPresentation("google") },
-    { id: "apple", name: "Apple", native: true, presentation: socialPresentation("apple") },
+    { id: "apple", name: "Apple", presentation: socialPresentation("apple") },
   ]);
   expect(JSON.stringify(publicSignInProviders(social, undefined))).not.toContain("google-secret");
   expect(JSON.stringify(publicSignInProviders(social, undefined))).not.toContain("PRIVATE KEY");

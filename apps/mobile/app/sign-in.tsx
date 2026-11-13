@@ -37,7 +37,6 @@ import {
   signInWithCode,
   signUp,
 } from "../lib/api-auth";
-import { continueWithNativeSignIn } from "../lib/apple-sign-in";
 import type { AuthMode } from "../lib/auth-routing";
 import { initialAuthMode } from "../lib/auth-routing";
 import { displayApiHost, usesCustomApiBase } from "../lib/endpoint";
@@ -234,10 +233,7 @@ export default function SignIn() {
   }
 
   function startProvider(provider: (typeof providers)[number]) {
-    const native = Boolean(provider.native) && Platform.OS === "ios";
-    return externalSignIn(() =>
-      native ? continueWithNativeSignIn(provider.id) : continueWithSso("sign-in", provider.id),
-    );
+    return externalSignIn(() => continueWithSso("sign-in", provider.id));
   }
 
   async function externalSignIn(run: () => Promise<boolean>) {

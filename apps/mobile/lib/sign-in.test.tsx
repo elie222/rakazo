@@ -14,7 +14,6 @@ import {
   signInWithCode,
   signUp,
 } from "./api-auth";
-import { continueWithNativeSignIn } from "./apple-sign-in";
 import type * as Endpoint from "./endpoint";
 import type { NativeActionButtonProps } from "./native-controls";
 import { passkeysAvailable, signInWithPasskey } from "./passkey";
@@ -165,7 +164,6 @@ vi.mock("./api-auth", () => ({
 }));
 vi.mock("./incoming-share", () => ({ hasIncomingShare: () => route.waiting }));
 vi.mock("./sso", () => ({ continueWithSso: vi.fn() }));
-vi.mock("./apple-sign-in", () => ({ continueWithNativeSignIn: vi.fn() }));
 vi.mock("./passkey", () => ({ passkeysAvailable: vi.fn(), signInWithPasskey: vi.fn() }));
 vi.mock("./user-error", () => ({ credentialIssueText: vi.fn(), errorText: vi.fn() }));
 
@@ -261,7 +259,7 @@ it.each(["in", "up"])(
   },
 );
 
-it("offers each configured provider and uses native Apple on iOS", async () => {
+it("offers native provider controls and uses browser OAuth for sign-in", async () => {
   vi.mocked(passwordResetCapabilities).mockResolvedValue({
     ...capabilities,
     sso: null,
@@ -271,7 +269,6 @@ it("offers each configured provider and uses native Apple on iOS", async () => {
     ],
   });
   vi.mocked(continueWithSso).mockResolvedValue(false);
-  vi.mocked(continueWithNativeSignIn).mockResolvedValue(false);
   await render();
   expect(input("Email")).toBeNull();
   expect(button("Continue with Google")).toBeDefined();
@@ -280,9 +277,8 @@ it("offers each configured provider and uses native Apple on iOS", async () => {
   expect(button("Continue with email")).toBeDefined();
   await press("Continue with Google");
   expect(continueWithSso).toHaveBeenCalledWith("sign-in", "google");
-  expect(continueWithNativeSignIn).not.toHaveBeenCalled();
   await press("Continue with Apple");
-  expect(continueWithNativeSignIn).toHaveBeenCalledWith("apple");
+  expect(continueWithSso).toHaveBeenCalledWith("sign-in", "apple");
   await press("Continue with email");
   expect(input("Email")).not.toBeNull();
 });

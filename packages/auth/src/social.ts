@@ -28,7 +28,6 @@ export interface AppleProviderConfig {
   keyId: string;
   privateKey: string;
   /** iOS bundle id. When set, native identity tokens are accepted alongside the Services ID. */
-  bundleId?: string;
 }
 
 export type BuiltinSocialProvider = GoogleProviderConfig | AppleProviderConfig;
@@ -44,7 +43,6 @@ export interface SocialAuthFields {
   appleTeamId?: string;
   appleKeyId?: string;
   applePrivateKey?: string;
-  appleBundleId?: string;
 }
 
 export interface PublicSignInProvider {
@@ -70,16 +68,11 @@ export function socialAuthFromFields(fields: SocialAuthFields): SocialAuthConfig
   const privateKey = blank(fields.applePrivateKey);
   const appleParts = [appleClientId, teamId, keyId, privateKey];
   if (appleParts.some(Boolean) && !appleParts.every(Boolean)) throw new Error(APPLE_TOGETHER);
-  const bundleId = blank(fields.appleBundleId);
-  if (bundleId && !appleClientId) {
-    throw new Error("APPLE_APP_BUNDLE_IDENTIFIER requires Apple sign-in");
-  }
   for (const [label, value] of [
     ["GOOGLE_CLIENT_ID", googleClientId],
     ["APPLE_CLIENT_ID", appleClientId],
     ["APPLE_TEAM_ID", teamId],
     ["APPLE_KEY_ID", keyId],
-    ["APPLE_APP_BUNDLE_IDENTIFIER", bundleId],
   ] as const) {
     if (value && /\s/.test(value)) throw new Error(`${label} must not contain spaces`);
   }
@@ -102,7 +95,6 @@ export function socialAuthFromFields(fields: SocialAuthFields): SocialAuthConfig
       teamId,
       keyId,
       privateKey,
-      ...(bundleId ? { bundleId } : {}),
     });
   }
   return providers.length ? { providers } : undefined;
@@ -123,7 +115,6 @@ export function publicSignInProviders(
       id: provider.id,
       name: provider.name,
       presentation: socialPresentation(provider.id),
-      ...(provider.id === "apple" && provider.bundleId ? { native: true } : {}),
     });
   }
   return providers;

@@ -353,8 +353,8 @@ it("refuses implicit Google linking even when a third-party mailbox claim is ver
     idToken: { token: "offline-token" },
     callbackURL: `${origin}/app`,
   });
-  expect(response.status).toBe(401);
-  expect(await response.json()).toMatchObject({ code: "OAUTH_LINK_ERROR" });
+  expect(response.status).toBe(403);
+  expect(await response.json()).toMatchObject({ message: "Browser sign-in required" });
   expect(rows("user")).toHaveLength(1);
   expect(rows("account")).toHaveLength(1);
   expect(rows("account")[0]?.providerId).toBe("credential");
@@ -1781,11 +1781,11 @@ it("uses a signed Apple secret on Better Auth's first and renewed token exchange
 
 it.each([
   ["google", "", true],
-  ["google", "example.test", true],
+  ["google", "former@example.test", true],
   ["apple", "", false],
-  ["apple", "example.test", false],
+  ["apple", "former@example.test", false],
   ["apple", "", true],
-  ["apple", "example.test", true],
+  ["apple", "former@example.test", true],
 ])(
   "rejects unproven %s mailbox ownership with allowlist %j",
   async (providerId, signupAllowlist, verifiedClaim) => {
@@ -1815,19 +1815,36 @@ it.each([
     });
     const provider = (await auth.$context).socialProviders.find((item) => item.id === providerId)!;
     provider.idToken = { verify: async () => true };
-    const response = await request("/sign-in/social", {
+    expect(
+      (
+        await request("/sign-in/social", {
+          provider: providerId,
+          idToken: {
+            token: jwt({ sub: "unbound", email: "former@example.test", email_verified: true }),
+          },
+        })
+      ).status,
+    ).toBe(403);
+    const initiation = await request("/sign-in/social", {
       provider: providerId,
       callbackURL: `${origin}/app`,
-      idToken: {
-        token: jwt({
-          sub: "former-owner",
-          email: "former@example.test",
-          email_verified: verifiedClaim,
-          name: "Test",
-        }),
-      },
     });
-    expect(response.status).not.toBe(200);
+    const authorization = new URL(((await initiation.json()) as { url: string }).url);
+    provider.validateAuthorizationCode = async () => ({
+      accessToken: "offline-token",
+      tokenType: "Bearer",
+      idToken: jwt({
+        sub: "former-owner",
+        email: "former@example.test",
+        email_verified: verifiedClaim,
+        nonce: authorization.searchParams.get("nonce"),
+        name: "Test",
+      }),
+    });
+    const response = await request(
+      `/callback/${providerId}?code=offline-code&state=${authorization.searchParams.get("state")}`,
+    );
+    expect(response.headers.get("location")).toContain("error=EMAIL_VERIFICATION_REQUIRED");
     expect(rows("user")).toHaveLength(0);
     expect(rows("account")).toHaveLength(0);
     expect(rows("session")).toHaveLength(0);

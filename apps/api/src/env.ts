@@ -245,7 +245,6 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     appleTeamId: optional(source.APPLE_TEAM_ID),
     appleKeyId: optional(source.APPLE_KEY_ID),
     applePrivateKey: applePrivateKey(source),
-    appleBundleId: optional(source.APPLE_APP_BUNDLE_IDENTIFIER),
   });
   const scimBearerToken = optional(source.SCIM_BEARER_TOKEN);
   if (scimBearerToken && (scimBearerToken.length < 32 || /\s/.test(scimBearerToken)))

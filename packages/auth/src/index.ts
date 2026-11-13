@@ -328,12 +328,6 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
               get clientSecret() {
                 return appleSecret.current();
               },
-              ...(apple.bundleId
-                ? {
-                    appBundleIdentifier: apple.bundleId,
-                    audience: [apple.clientId, apple.bundleId],
-                  }
-                : {}),
               getUserInfo: async (token: Parameters<typeof appleUserInfo>[1]) =>
                 appleUserInfo(prisma, token, Boolean((await getOAuthState())?.link)),
             },
@@ -564,6 +558,12 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
     hooks: {
       before: createAuthMiddleware(async (ctx) => {
         const providerId = requestProviderId(ctx);
+        if (
+          ctx.path === "/sign-in/social" &&
+          ctx.body?.idToken &&
+          (providerId === "google" || providerId === "apple")
+        )
+          throw new APIError("FORBIDDEN", { message: "Browser sign-in required" });
 
         if (ctx.path === "/sign-in/social") {
           await addOAuthServerContext({

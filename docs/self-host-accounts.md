@@ -227,7 +227,6 @@ APPLE_CLIENT_ID=replace-with-services-id
 APPLE_TEAM_ID=replace-with-team-id
 APPLE_KEY_ID=replace-with-key-id
 APPLE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nreplace-with-key\n-----END PRIVATE KEY-----"
-APPLE_APP_BUNDLE_IDENTIFIER=com.example.app
 ```
 
 Leave a pair empty to keep that provider off. `APPLE_PRIVATE_KEY` is the contents of the Sign in
@@ -255,12 +254,10 @@ redirect URI. The key is created under Keys with Sign in with Apple enabled; its
 `APPLE_KEY_ID`, and the team id is on the account page. Download the `.p8` once and store it
 with the API's other secrets.
 
-`APPLE_APP_BUNDLE_IDENTIFIER` is the iOS app's bundle id. Set it so the iPhone app can use the
-system Sign in with Apple sheet with the API bundled into the app. Custom servers always use
-browser OAuth; server capabilities cannot request a native token. Without it, Apple sign-in still works in the browser. The App
-Store requires Apple sign-in on a build that also offers Google, so enable both for that app.
-Android and the web app use the system browser for either provider. Secrets stay on the API; the
-sign-in screen only learns which providers are enabled.
+Web, desktop, and mobile use browser OAuth with the same callback URLs. iOS renders the native
+Apple button when available; it starts browser authorization rather than acquiring a bare identity
+token. Native token submission is not supported: the browser flow binds authorization to one-use
+server state and a nonce. The App Store requires an Apple option on a build that offers Google.
 
 Existing accounts connect Google, Apple, or generic OpenID Connect through authenticated
 linking in account settings. Matching provider and account emails never implicitly link them:
