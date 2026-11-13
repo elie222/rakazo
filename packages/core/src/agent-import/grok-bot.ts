@@ -128,10 +128,9 @@ function oneLine(value: string): string {
 }
 
 /** Failed brace matches before a reply stops being searched: each one scans to its end. */
-const MAX_UNBALANCED = 50;
 const BOT_FIELDS = ["instructions", "memories", "user_facts", "skills", "routines", "apps"];
 /** The start of an export document; one left unclosed means the reply was cut off. */
-const EXPORT_START = /^\{\s*"(?:format|version|bots)"/;
+const EXPORT_START = /^\{\s*["'“‘]?(?:format|version|bots)["'“”‘’]?\s*:/;
 
 /** Tolerates JSON5 syntax in pasted replies. Uploaded normalized documents use strict JSON. */
 function looseJson(source: string): unknown {
@@ -148,35 +147,25 @@ function looseJson(source: string): unknown {
  */
 function bracedObjects(source: string): { found: string[]; cutOff: boolean } {
   const found: string[] = [];
-  let cutOff = false;
-  let unbalanced = 0;
-  let at = source.indexOf("{");
-  while (at >= 0 && unbalanced < MAX_UNBALANCED) {
-    let depth = 0;
-    let quote: string | null = null;
-    let end = -1;
-    for (let index = at; index < source.length && end < 0; index += 1) {
-      const char = source[index];
-      if (quote) {
-        if (char === "\\") index += 1;
-        else if (char === quote) quote = null;
-      } else if (char === '"' || char === "'") quote = char;
-      else if (char === "{") depth += 1;
-      else if (char === "}") {
-        depth -= 1;
-        if (depth === 0) end = index;
-      }
-    }
-    if (end < 0) {
-      unbalanced += 1;
-      cutOff ||= EXPORT_START.test(source.slice(at, at + 40));
-      at = source.indexOf("{", at + 1);
-    } else {
-      found.push(source.slice(at, end + 1));
-      at = source.indexOf("{", end + 1);
+  const starts: { index: number; export: boolean }[] = [];
+  let quote: string | null = null;
+  let candidates = 0;
+  for (let index = 0; index < source.length; index += 1) {
+    const char = source[index];
+    if (quote) {
+      if (char === "\\") index += 1;
+      else if (char === quote) quote = null;
+    } else if (starts.length && (char === '"' || char === "'")) quote = char;
+    else if (char === "{") {
+      const candidate = EXPORT_START.test(source.slice(index, index + 80));
+      if (candidate && ++candidates > 100) throw new GrokBotExportError("too_large");
+      starts.push({ index, export: candidate });
+    } else if (char === "}") {
+      const start = starts.pop();
+      if (start?.export) found.push(source.slice(start.index, index + 1));
     }
   }
-  return { found, cutOff };
+  return { found, cutOff: starts.some((start) => start.export) };
 }
 
 const isExportDocument = (value: unknown): value is Json =>

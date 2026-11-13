@@ -412,3 +412,11 @@ it("does not treat an app website as an MCP endpoint", () => {
   );
   expect(bot?.apps[0]?.mcpUrl).toBe("");
 });
+
+it("finds exports inside surrounding chat braces", () => {
+  expect(
+    parseGrokBotExport(
+      'Here { export: {"bots":[{"name":"Example","instructions":"Keep this"}]} }',
+    )[0]?.instructions,
+  ).toBe("Keep this");
+});
