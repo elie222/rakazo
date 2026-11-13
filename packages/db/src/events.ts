@@ -44,6 +44,8 @@ import {
   RunHistoryWriteError,
 } from "./messages.js";
 import { isRecordNotFound } from "./prisma-errors.js";
+import type { RosterChange } from "./roster-changes.js";
+import { followRosterChanges, loadRosterScope, publishRosterChange } from "./roster-changes.js";
 import { createRowId } from "./row-id.js";
 import { deleteRunSecretsInTransaction } from "./run-secrets.js";
 import { isRunResponse, readRunTimingFields } from "./run-timing.js";
@@ -102,6 +104,8 @@ export interface ThreadEvents {
     spaceId: string,
     signal?: AbortSignal,
   ): AsyncGenerator<ChatAlert>;
+  publishRosterChange?(change: RosterChange): Promise<void>;
+  followRosterChanges?(userId: string, signal?: AbortSignal): AsyncGenerator<void>;
   answerRunInput(input: AnswerRunInput): Promise<boolean>;
   append(input: AppendEventInput): Promise<ProductEvent>;
   claimSteering(input: ClaimSteeringInput): Promise<ClaimedSteeringMessage[]>;
@@ -185,6 +189,23 @@ export interface SendUserMessageInput {
     modelId: string;
     thinkingLevel: string | null;
   };
+  /**
+   * Runs in the send's transaction once its message and run exist. Returning false rolls the
+   * send back with SendClaimLostError, so a row the caller owns decides between two sends that
+   * must not both happen. A replayed send has already passed its claim and skips it.
+   */
+  claim?: (
+    tx: Prisma.TransactionClient,
+    sent: { messageId: string; runId: string | null },
+  ) => Promise<boolean>;
+}
+
+/** A send's claim was lost: another path already owns what it would have started. */
+export class SendClaimLostError extends Error {
+  override readonly name = "SendClaimLostError";
+  constructor() {
+    super("Another delivery already owns this message");
+  }
 }
 
 export interface SendUserMessageResult {
@@ -211,6 +232,11 @@ export function createThreadEvents(
       await realtime?.publish(`incoming-calls:${userId}`, "");
     },
     followIncomingCalls: (userId, signal) => followIncomingCallSignals(realtime, userId, signal),
+    publishRosterChange: (change) => publishRosterChange(realtime, change),
+    ...(realtime && {
+      followRosterChanges: (userId, signal) =>
+        followRosterChanges(realtime, userId, () => loadRosterScope(prisma, userId), signal),
+    }),
     answerRunInput: (input) => answerRunInput(prisma, input, realtime, options.runSecretWriter),
     append: (input) => appendEvent(prisma, input, realtime, options.analytics),
     claimSteering: (input) => claimSteering(prisma, input),
@@ -523,6 +549,11 @@ export async function sendUserMessage(
         });
         await tx.message.update({ where: { id: message.id }, data: { runId: busy.id } });
       }
+      if (
+        input.claim &&
+        !(await input.claim(tx, { messageId: message.id, runId: run?.id ?? busy?.id ?? null }))
+      )
+        throw new SendClaimLostError();
       const event = await appendEventInTransaction(tx, {
         spaceId: input.spaceId,
         threadId: input.threadId,

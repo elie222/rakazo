@@ -1,0 +1,378 @@
+name: PR screenshots
+
+# Both trusted completion workflows call this. The first exits if its counterpart is
+# still running; the second captures after both sources are ready. No runner waits.
+on:
+  workflow_call:
+    inputs:
+      head_sha:
+        required: true
+        type: string
+      pull_request:
+        required: true
+        type: number
+
+permissions: {}
+
+# Covers context, capture and publishing, so simultaneous completion events cannot
+# capture twice before the first run has updated the description.
+concurrency:
+  group: pr-screenshots-${{ inputs.pull_request }}-${{ inputs.head_sha }}
+  queue: max
+  cancel-in-progress: false
+
+jobs:
+  screenshot-context:
+    name: Gather screenshot context
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: read
+    env:
+      SCREENSHOT_AGENT: ${{ vars.PR_SCREENSHOT_AGENT || 'codex' }}
+    outputs:
+      pr: ${{ steps.pr.outputs.pr }}
+      prompt: ${{ steps.pr.outputs.prompt }}
+      preview_url: ${{ steps.pr.outputs.preview_url }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - name: Gather the pull request
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APP_PREFIX: ${{ vars.FLY_PREVIEW_APP_PREFIX }}
+          HEAD_SHA: ${{ inputs.head_sha }}
+          PR: ${{ inputs.pull_request }}
+        run: |
+          set -euo pipefail
+          [[ $HEAD_SHA =~ ^[0-9a-f]{40}$ ]] || { echo "Bad commit" >&2; exit 1; }
+          ready=$(python3 .github/scripts/pr-screenshots.py ready "$GITHUB_REPOSITORY" "$PR" "$HEAD_SHA")
+          if [[ $ready != ready ]]; then
+            echo "Screenshot sources are not both ready; their completion will trigger another run."
+            exit 0
+          fi
+          pr=$PR
+          [[ $pr =~ ^[1-9][0-9]*$ ]] || { echo "Bad pull request number" >&2; exit 1; }
+          dir="$RUNNER_TEMP/pr-screenshots"
+          mkdir -p "$dir"
+          gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$pr/files?per_page=100" --jq '.[].filename' > "$dir/files.txt"
+          # Only changes the web app can show; the agent decides the rest.
+          if ! grep -E '^(apps/web/(src/|public/|index\.html$)|packages/(ui-web|ui-tokens|chat-ui|page-kit)/)' "$dir/files.txt" |
+            grep -Evq '(\.test\.[cm]?[jt]sx?|\.spec\.[cm]?[jt]sx?)$'; then
+            echo "No web UI changes; skipping."
+            exit 0
+          fi
+          [[ $SCREENSHOT_AGENT == codex || $SCREENSHOT_AGENT == claude ]] || { echo "Unknown PR_SCREENSHOT_AGENT" >&2; exit 1; }
+          gh api "repos/$GITHUB_REPOSITORY/pulls/$pr" > "$dir/current.json"
+          if python3 .github/scripts/pr-screenshots.py obsolete "$dir/current.json" "$HEAD_SHA"; then
+            echo "This commit is no longer current; skipping."
+            exit 0
+          fi
+          assessed=$(python3 .github/scripts/pr-screenshots.py assessed "$GITHUB_REPOSITORY" "$pr" "$HEAD_SHA")
+          if [[ $assessed == complete ]]; then
+            echo "This commit already has a completed screenshot assessment; skipping."
+            exit 0
+          fi
+          gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/issues/$pr/comments?per_page=100" > "$dir/comments.json"
+          python3 .github/scripts/pr-screenshots.py evidence "$dir/comments.json" "$HEAD_SHA" > "$dir/evidence.txt"
+          preview_url="https://${APP_PREFIX:-rakazo-pr}-$pr.fly.dev"
+          gh api "repos/$GITHUB_REPOSITORY/pulls/$pr" |
+            jq --arg url "$preview_url" --rawfile evidence "$dir/evidence.txt" --rawfile files "$dir/files.txt" \
+              '{title, head_sha: .head.sha, body: (.body // ""), changed_files: ($files | split("\n") | map(select(. != ""))), preview_url: $url, existing_e2e_screenshots: $evidence}' \
+              > "$dir/pr.json"
+          gh pr diff "$pr" --repo "$GITHUB_REPOSITORY" > "$dir/full.diff" 2>/dev/null || echo "(diff unavailable)" > "$dir/full.diff"
+          delimiter="PROMPT_$(openssl rand -hex 16)"
+          {
+            echo "prompt<<$delimiter"
+            python3 .github/scripts/pr-screenshots.py prompt .github/prompts/pr-screenshots.md \
+              "$dir/pr.json" "$dir/full.diff"
+            echo "$delimiter"
+            echo "pr=$pr"
+            echo "preview_url=$preview_url"
+          } >> "$GITHUB_OUTPUT"
+
+  # Shows the change on the pull request without its author taking screenshots. The agent only
+  # gets browser tools: no files, shell or web access, so the pull request and the preview it
+  # browses, which anyone may write, cannot reach the login in its environment. The browser runs
+  # as a separate user that cannot read the runner's files or processes either.
+  screenshots:
+    name: Screenshot the change
+    needs: screenshot-context
+    if: needs.screenshot-context.outputs.pr != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Only Codex uses the shared login; other agents get a run-specific group.
+    concurrency:
+      group: ${{ (vars.PR_SCREENSHOT_AGENT || 'codex') == 'codex' && 'codex-subscription' || format('screenshot-agent-{0}-{1}-{2}', github.run_id, github.run_attempt, inputs.pull_request) }}
+      queue: max
+      cancel-in-progress: false
+    env:
+      SCREENSHOT_AGENT: ${{ vars.PR_SCREENSHOT_AGENT || 'codex' }}
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      pr: ${{ needs.screenshot-context.outputs.pr }}
+      result: ${{ steps.claude.outputs.structured_output || steps.codex.outputs.result }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - name: Recheck the queued commit
+        id: current
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ inputs.pull_request }}
+          HEAD_SHA: ${{ inputs.head_sha }}
+        run: |
+          if [[ $(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR" --jq '"\(.state) \(.head.sha)"') == "open $HEAD_SHA" ]]; then
+            echo "current=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Prepare an isolated browser
+        id: browser
+        if: steps.current.outputs.current == 'true'
+        env:
+          PREVIEW_URL: ${{ needs.screenshot-context.outputs.preview_url }}
+          PUBLIC_BASE_URL: ${{ vars.PLAYWRIGHT_PUBLIC_BASE_URL }}
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/pr-screenshots.py contract >> "$GITHUB_OUTPUT"
+          node=$(command -v node)
+          npm=$(command -v npm)
+          sudo useradd --create-home --shell /usr/sbin/nologin pr-screenshots
+          sudo env PATH="$(dirname "$node"):/usr/bin:/bin" "$npm" install --no-save --no-fund --prefix /opt/pr-screenshots-mcp @playwright/mcp@0.0.84
+          # No --with-deps: ubuntu-latest already has Chromium's libraries, and its apt mirror is flaky.
+          sudo env PLAYWRIGHT_BROWSERS_PATH=/opt/pr-screenshots-browsers \
+            "$node" /opt/pr-screenshots-mcp/node_modules/playwright/cli.js install chromium
+          sudo install -d -o pr-screenshots -g pr-screenshots -m 755 /srv/pr-screenshots
+          gallery_origin=$(python3 -c 'import os, urllib.parse; u = urllib.parse.urlsplit(os.environ["PUBLIC_BASE_URL"]); print(f"{u.scheme}://{u.netloc}" if u.scheme == "https" and u.netloc else "")')
+          origins="$PREVIEW_URL;https://github.com;https://private-user-images.githubusercontent.com;https://user-images.githubusercontent.com"
+          [[ -z $gallery_origin ]] || origins="$origins;$gallery_origin"
+          jq -n --arg node "$node" --arg origin "$origins" '{mcpServers: {playwright: {
+            command: "sudo",
+            args: ["-n", "-u", "pr-screenshots", "env", "-i", "-C", "/srv/pr-screenshots",
+              "PATH=/usr/local/bin:/usr/bin:/bin", "HOME=/home/pr-screenshots",
+              "PLAYWRIGHT_BROWSERS_PATH=/opt/pr-screenshots-browsers",
+              $node, "/opt/pr-screenshots-mcp/node_modules/@playwright/mcp/cli.js",
+              "--headless", "--isolated", "--browser", "chromium", "--viewport-size", "1440x900",
+              "--output-dir", "/srv/pr-screenshots", "--allowed-origins", $origin]}}}' \
+            > "$RUNNER_TEMP/pr-screenshots-mcp.json"
+      - id: claude
+        if: steps.current.outputs.current == 'true' && env.SCREENSHOT_AGENT == 'claude'
+        uses: anthropics/claude-code-action@c0949c50a78c1ec8ce2647db36629b870e715d0c # v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ github.token }}
+          # Fork authors lack write access; the agent has only browser tools and a read-only token.
+          allowed_non_write_users: "*"
+          prompt: ${{ needs.screenshot-context.outputs.prompt }}
+          claude_args: >-
+            --model ${{ vars.PR_SCREENSHOT_MODEL || 'claude-sonnet-5-5' }}
+            --max-turns 60
+            --mcp-config ${{ runner.temp }}/pr-screenshots-mcp.json
+            --allowedTools ${{ steps.browser.outputs.tools }}
+            --disallowedTools Read,Grep,Glob,Bash,Edit,Write,MultiEdit,NotebookEdit,WebFetch,WebSearch,Task,mcp__playwright__browser_evaluate,mcp__playwright__browser_run_code_unsafe,mcp__playwright__browser_file_upload,mcp__playwright__browser_drop,mcp__playwright__browser_network_request,mcp__playwright__browser_network_requests
+            --json-schema '${{ steps.browser.outputs.schema }}'
+      - name: Prepare isolated Codex user
+        if: steps.current.outputs.current == 'true' && env.SCREENSHOT_AGENT == 'codex'
+        run: |
+          set -euo pipefail
+          npm install --global @openai/codex@0.164.0
+          install -d -m 700 "$RUNNER_TEMP/screenshot-codex"
+          sudo useradd --create-home --shell /usr/sbin/nologin codex-screenshots
+          sudo install -d -o codex-screenshots -g codex-screenshots -m 700 \
+            /home/codex-screenshots/.codex /srv/pr-screenshot-agent
+          # Root-owned, fixed command: no arguments or environment from the agent.
+          {
+            echo '#!/bin/sh'
+            printf 'exec '
+            jq -r '.mcpServers.playwright | ([.command] + .args) | map(@sh) | join(" ")' "$RUNNER_TEMP/pr-screenshots-mcp.json"
+          } | sudo tee /opt/pr-screenshots-browser > /dev/null
+          sudo chmod 755 /opt/pr-screenshots-browser
+          sudo tee /etc/sudoers.d/codex-screenshots > /dev/null <<'SUDOERS'
+          codex-screenshots ALL=(root) NOPASSWD: /opt/pr-screenshots-browser ""
+          SUDOERS
+          sudo chmod 440 /etc/sudoers.d/codex-screenshots
+          sudo visudo -cf /etc/sudoers.d/codex-screenshots
+          jq '.mcpServers.playwright = {command: "sudo", args: ["-n", "/opt/pr-screenshots-browser"]}' \
+            "$RUNNER_TEMP/pr-screenshots-mcp.json" > "$RUNNER_TEMP/codex-mcp.json"
+          sudo python3 .github/scripts/pr-screenshot-codex.py "$RUNNER_TEMP/codex-mcp.json" /home/codex-screenshots/.codex
+          sudo chown -R codex-screenshots:codex-screenshots /home/codex-screenshots/.codex
+          sudo chmod 600 /home/codex-screenshots/.codex/config.toml /home/codex-screenshots/.codex/schema.json
+      - name: Restore subscription login
+        id: auth
+        if: steps.current.outputs.current == 'true' && env.SCREENSHOT_AGENT == 'codex'
+        env:
+          CODEX_SUBSCRIPTION_AUTH: ${{ secrets.CODEX_SUBSCRIPTION_AUTH }}
+          GH_TOKEN: ${{ secrets.GH_DEPENDENCY_UPDATES_PAT }}
+        run: |
+          set -euo pipefail
+          install -d -m 700 "$RUNNER_TEMP/screenshot-codex"
+          printf '%s' "$CODEX_SUBSCRIPTION_AUTH" | python3 .github/scripts/codex-subscription-auth.py "$RUNNER_TEMP/screenshot-codex/auth.json"
+          # Verify write-back before Codex can rotate the refresh token.
+          gh secret set CODEX_SUBSCRIPTION_AUTH --repo "$GITHUB_REPOSITORY" < "$RUNNER_TEMP/screenshot-codex/auth.json"
+          sudo install -o codex-screenshots -g codex-screenshots -m 600 \
+            "$RUNNER_TEMP/screenshot-codex/auth.json" /home/codex-screenshots/.codex/auth.json
+      - name: Run Codex screenshot agent
+        id: codex
+        if: steps.auth.outcome == 'success'
+        env:
+          CODEX_HOME: /home/codex-screenshots/.codex
+          PROMPT: ${{ needs.screenshot-context.outputs.prompt }}
+          MODEL: ${{ vars.PR_SCREENSHOT_MODEL }}
+        run: |
+          set -euo pipefail
+          log="$RUNNER_TEMP/screenshot-codex/session.log"
+          codex=$(command -v codex)
+          args=()
+          [[ -z $MODEL ]] || args+=(--model "$MODEL")
+          # No checkout instructions or inherited credentials; browser tools only.
+          status=0
+          printf '%s' "$PROMPT" | timeout --kill-after=30s 20m sudo -n -H -u codex-screenshots env -i \
+            PATH="$PATH" HOME=/home/codex-screenshots CODEX_HOME="$CODEX_HOME" \
+            "$codex" exec --ephemeral --skip-git-repo-check \
+            -C /srv/pr-screenshot-agent "${args[@]}" \
+            --output-schema "$CODEX_HOME/schema.json" --output-last-message /srv/pr-screenshot-agent/result.json - \
+            > "$log" 2>&1 || status=$?
+          if [[ $status -ne 0 ]]; then
+            echo "::error::Codex exited with status $status"
+            # As in the dependency updater, show only filtered error lines. The
+            # private transcript may contain refreshed credentials or hostile text.
+            resume="$(openssl rand -hex 16)"
+            echo "::stop-commands::$resume"
+            grep -E '^(ERROR|Error|error)[: ]|^[0-9-]+T[0-9:.]+Z +ERROR |^Not inside a trusted directory' "$log" \
+              | grep -viE '[A-Za-z0-9+_=-]{24,}|token|bearer|secret|authoriz|cookie|password|eyJ' \
+              | tail -n 20 | cut -c1-300 || true
+            echo "::$resume::"
+            exit "$status"
+          fi
+          result=$(sudo -n -u codex-screenshots head -c 65537 /srv/pr-screenshot-agent/result.json | jq -c .)
+          echo "result=$result" >> "$GITHUB_OUTPUT"
+      - name: Persist refreshed subscription login
+        if: always() && steps.auth.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ secrets.GH_DEPENDENCY_UPDATES_PAT }}
+        run: |
+          set -euo pipefail
+          timeout 10s sudo -n -u codex-screenshots head -c 65537 /home/codex-screenshots/.codex/auth.json \
+            | python3 .github/scripts/codex-subscription-auth.py "$RUNNER_TEMP/screenshot-auth.json"
+          gh secret set CODEX_SUBSCRIPTION_AUTH --repo "$GITHUB_REPOSITORY" < "$RUNNER_TEMP/screenshot-auth.json"
+      - name: Remove subscription login and logs
+        if: always() && env.SCREENSHOT_AGENT == 'codex'
+        run: |
+          sudo rm -rf /home/codex-screenshots/.codex /srv/pr-screenshot-agent
+          rm -rf "$RUNNER_TEMP/screenshot-codex" "$RUNNER_TEMP/screenshot-auth.json" "$RUNNER_TEMP/codex-mcp.json"
+      - name: Collect screenshots
+        if: steps.claude.outputs.structured_output != '' || steps.codex.outputs.result != ''
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/shots"
+          sudo find /srv/pr-screenshots -maxdepth 1 -type f -name '*.png' -size -5242881c -exec cp -t "$RUNNER_TEMP/shots" {} +
+          sudo chown -R "$(id -u):$(id -g)" "$RUNNER_TEMP/shots"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: steps.claude.outputs.structured_output != '' || steps.codex.outputs.result != ''
+        with:
+          name: pr-screenshots-${{ inputs.pull_request }}
+          path: ${{ runner.temp }}/shots
+          if-no-files-found: ignore
+          retention-days: 3
+
+  # Trusted half: checks the agent's files and captions, then rewrites only its own section of
+  # the description. Never runs anything the agent produced.
+  publish-screenshots:
+    name: Add screenshots to the pull request
+    needs: screenshots
+    if: needs.screenshots.outputs.result != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: pr-screenshot-publication-${{ inputs.pull_request }}
+      queue: max
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        # An empty list uploads nothing; any other result must bring its files.
+        if: contains(needs.screenshots.outputs.result, '"file"')
+        with:
+          name: pr-screenshots-${{ inputs.pull_request }}
+          path: ${{ runner.temp }}/shots
+      - name: Update the description
+        id: publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ needs.screenshots.outputs.pr }}
+          RESULT: ${{ needs.screenshots.outputs.result }}
+          HEAD_SHA: ${{ inputs.head_sha }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ vars.S3_REGION }}
+          AWS_EC2_METADATA_DISABLED: "true"
+          S3_BUCKET: ${{ vars.S3_BUCKET }}
+          S3_ENDPOINT: ${{ vars.S3_ENDPOINT }}
+          PLAYWRIGHT_PUBLIC_BASE_URL: ${{ vars.PLAYWRIGHT_PUBLIC_BASE_URL }}
+        run: |
+          set -euo pipefail
+          [[ $PR =~ ^[0-9]+$ ]] || { echo "Bad pull request number" >&2; exit 1; }
+          [[ $HEAD_SHA =~ ^[0-9a-f]{40}$ ]] || { echo "Bad commit" >&2; exit 1; }
+          [[ $PLAYWRIGHT_PUBLIC_BASE_URL =~ ^https://[^[:space:]]+$ ]] || { echo "PLAYWRIGHT_PUBLIC_BASE_URL must be an https URL" >&2; exit 1; }
+          if [[ $(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR" --jq '"\(.state) \(.head.sha)"') != "open $HEAD_SHA" ]]; then
+            echo "The pull request closed or has a newer commit; skipping."
+            exit 0
+          fi
+          shots="$RUNNER_TEMP/shots"
+          out="$RUNNER_TEMP/pr-screenshots-out"
+          mkdir -p "$shots"
+          key="pr-agent/$PR/$HEAD_SHA"
+          python3 .github/scripts/pr-screenshots.py prepare "$RESULT" "$shots" \
+            "${PLAYWRIGHT_PUBLIC_BASE_URL%/}/$key" "$out"
+          if [[ -s $out/section.md ]]; then
+            marker=$(python3 .github/scripts/pr-screenshots.py marker "$HEAD_SHA")
+            sed -i "1a$marker" "$out/section.md"
+          fi
+          while IFS= read -r name; do
+            aws s3 cp "$shots/$name" "s3://$S3_BUCKET/playwright/$key/$name" \
+              --endpoint-url "$S3_ENDPOINT" --content-type image/png \
+              --cache-control "public,max-age=31536000,immutable"
+          done < "$out/uploads.txt"
+          gh api "repos/$GITHUB_REPOSITORY/pulls/$PR" > "$out/current.json"
+          if python3 .github/scripts/pr-screenshots.py obsolete "$out/current.json" "$HEAD_SHA"; then
+            echo "The pull request changed during uploads; skipping publication."
+            exit 0
+          fi
+          jq -r '.body // ""' "$out/current.json" > "$out/body.md"
+          python3 .github/scripts/pr-screenshots.py retain "$out/body.md" "$out/section.md" "$HEAD_SHA" > "$out/retained.md"
+          mv "$out/retained.md" "$out/section.md"
+          if [[ ! -s $out/section.md ]]; then
+            labels="$(gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$PR/labels" --jq '.[].name')"
+            if grep -qx screenshots <<< "$labels"; then
+              gh api -X DELETE "repos/$GITHUB_REPOSITORY/issues/$PR/labels/screenshots" --silent
+            fi
+          fi
+          python3 .github/scripts/pr-screenshots.py splice "$out/body.md" "$out/section.md" > "$out/new.md"
+          if ! cmp -s "$out/body.md" "$out/new.md"; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/pulls/$PR" -F body=@"$out/new.md" > /dev/null
+          fi
+          if [[ -s $out/section.md ]]; then
+            gh api "repos/$GITHUB_REPOSITORY/issues/$PR/labels" -f "labels[]=screenshots" --silent
+          fi
+          if jq -e '.complete == true' <<< "$RESULT" > /dev/null; then
+            printf 'complete\n' > "$out/complete.txt"
+            echo "complete=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: steps.publish.outputs.complete == 'true'
+        with:
+          name: pr-screenshot-reviewed-${{ needs.screenshots.outputs.pr }}-${{ inputs.head_sha }}
+          path: ${{ runner.temp }}/pr-screenshots-out/complete.txt
+          retention-days: 90
+          overwrite: true

@@ -105,6 +105,8 @@ function deferred<T>() {
 }
 let stop: (() => void) | undefined;
 beforeEach(() => {
+  // Retry and reconnect waits are jittered; pin them to their unjittered values.
+  vi.spyOn(Math, "random").mockReturnValue(0);
   vi.useFakeTimers();
   fake.generation = 1;
   fake.locked = false;

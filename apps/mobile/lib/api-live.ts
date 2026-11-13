@@ -83,6 +83,19 @@ export async function subscribeIncomingCallEvents(
     context,
   );
 }
+/** Calls `onSignal` for each roster signal: one when the stream opens, then one per change. */
+export async function subscribeRosterSignals(onSignal: () => void, signal: AbortSignal) {
+  const context = await captureApiRequestContext();
+  return subscribeRpcEvents(
+    "notifications/subscribe",
+    {},
+    (event) => {
+      if (event.type === "roster") onSignal();
+    },
+    signal,
+    context,
+  );
+}
 async function subscribeRpcEvents(
   procedure: string,
   input: Record<string, unknown>,

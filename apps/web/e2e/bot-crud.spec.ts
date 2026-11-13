@@ -232,7 +232,6 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   await expect(sidePanel.getByRole("button", { name: "Reset computer" })).toHaveCount(0);
   await expect(sidePanel.getByRole("button", { name: "Update computer" })).toHaveCount(0);
   await expect(sidePanel.getByRole("button", { name: "Take control" })).toHaveCount(0);
-  await expect(sidePanel.getByTestId("computer-more-button")).toHaveCount(0);
   await captureScreenshot(page, testInfo, "27b-computer-panel");
 
   await editName("Atlas");

@@ -278,7 +278,7 @@ export class StripeBillingProvider implements BillingProvider {
       metadata: { rakazo_credit_cents: String(amountCents) },
       proration_behavior: upgrading ? "always_invoice" : "none",
       payment_behavior: "error_if_incomplete",
-    });
+    }).catch(rethrowUncharged);
   }
 
   async createByokCheckout(input: BillingByokCheckoutRequest) {
@@ -670,11 +670,7 @@ export class StripeBillingProvider implements BillingProvider {
     await this.request("POST", `/v1/subscriptions/${encodeURIComponent(chosen.subscription.id)}`, {
       trial_end: "now",
       payment_behavior: "error_if_incomplete",
-    }).catch((error: unknown) => {
-      if (error instanceof StripeRequestError && error.status === 402)
-        throw new BillingPaymentNotCompletedError({ cause: error });
-      throw error;
-    });
+    }).catch(rethrowUncharged);
   }
 
   async cancelCustomerSubscriptions(customerId: string) {
@@ -1065,4 +1061,11 @@ function isByokPlan(subscription: StripeSubscription) {
 function creditAmount(value: string | undefined): number | undefined {
   const parsed = HeldCreditAmountSchema.safeParse(Number(value));
   return parsed.success ? parsed.data : undefined;
+}
+
+/** Stripe answers 402 when `error_if_incomplete` leaves a declined or unconfirmed card uncharged. */
+function rethrowUncharged(error: unknown): never {
+  if (error instanceof StripeRequestError && error.status === 402)
+    throw new BillingPaymentNotCompletedError({ cause: error });
+  throw error;
 }
