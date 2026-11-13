@@ -152,8 +152,18 @@ describePostgres("a reply's kept tool calls (PostgreSQL)", () => {
 
     // The bot's next run reads the calls back.
     const history = await runAsTenant(actor, () =>
-      loadRunHistoryMessages(prisma, { id: "next-run", threadId, botId }, 50),
+      loadRunHistoryMessages(prisma, { id: "next-run", threadId, botId, userId }, 50),
     );
+    // Another member's run of the same bot sees the reply as everyone does, not its tool calls.
+    const theirs = await runAsTenant(actor, () =>
+      loadRunHistoryMessages(
+        prisma,
+        { id: "member-run", threadId, botId, userId: "another-member" },
+        50,
+      ),
+    );
+    expect(theirs.find((message) => message.runId === run.id)?.toolHistory).toBeNull();
+    expect(JSON.stringify(theirs)).not.toContain(PRIVATE);
     const reply = history.find((message) => message.runId === run.id);
     expect(JSON.parse(reply!.toolHistory!)).toEqual({
       steps: [

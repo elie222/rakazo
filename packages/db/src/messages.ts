@@ -9,13 +9,13 @@ import { THREAD_LOCK_TRANSACTION_OPTIONS, withTransactionRetry } from "./transac
  * `steeringMessages` is non-empty for a message still waiting for its own run, which the caller
  * leaves out of this run's history.
  */
-export function loadRunHistoryMessages(
+export async function loadRunHistoryMessages(
   prisma: PrismaClient,
-  run: { id: string; threadId: string; botId: string },
+  run: { id: string; threadId: string; botId: string; userId: string },
   limit: number,
   channelId?: string,
 ) {
-  return prisma.message.findMany({
+  const messages = await prisma.message.findMany({
     where: {
       threadId: run.threadId,
       ...(channelId
@@ -51,6 +51,32 @@ export function loadRunHistoryMessages(
       steeringMessages: { where: { botId: run.botId, runId: null }, select: { id: true } },
     },
   });
+  return withOwnToolHistory(prisma, run, messages);
+}
+
+/**
+ * Keeps a reply's tool history only for runs of the same bot started by the same person: in a
+ * shared space another member's run of the bot sees the reply as everyone does, never what its
+ * tools read (an owner's inbox, say).
+ */
+async function withOwnToolHistory<
+  M extends { runId: string | null; botId: string | null; toolHistory: string | null },
+>(prisma: PrismaClient, run: { botId: string; userId: string }, messages: M[]): Promise<M[]> {
+  const runIds = [...new Set(messages.flatMap((m) => (m.toolHistory && m.runId ? [m.runId] : [])))];
+  if (!runIds.length) return messages;
+  const owners = new Map(
+    (
+      await prisma.run.findMany({
+        where: { id: { in: runIds } },
+        select: { id: true, userId: true },
+      })
+    ).map((row) => [row.id, row.userId]),
+  );
+  return messages.map((m) =>
+    m.toolHistory && !(m.botId === run.botId && m.runId && owners.get(m.runId) === run.userId)
+      ? { ...m, toolHistory: null }
+      : m,
+  );
 }
 
 /** Marks the bot message that keeps the reply text of a run that failed partway through it. */
