@@ -1365,6 +1365,7 @@ export async function relabelVaultItem(
   };
   return prisma.$transaction(async (tx) => {
     await lockVault(tx, scope);
+    await assertVaultInUse(tx, scope);
     const row = await tx.vaultCredential.findFirst({
       where: { ...(await vaultFields(tx, scope)), name },
       select: { id: true, auth: true, origin: true },

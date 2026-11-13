@@ -232,6 +232,25 @@ afterEach(async () => {
 });
 
 describe("an item's uses", () => {
+  it.each(["detail", "history"])("offers retry after an activity failure in %s", async (view) => {
+    const use = { at: new Date().toISOString(), botName: "Research bot", chat: null, site: null };
+    vault.activity.mockResolvedValue([use]);
+    await render();
+    await click(rowNamed("github"));
+    if (view === "history") await click("vault-item-activity");
+    vault.activity.mockRejectedValue(new Error("unavailable"));
+    await act(async () => {
+      await queryClient.invalidateQueries();
+    });
+    await flush();
+    const failure = container.querySelector('[role="alert"]') as HTMLElement;
+    expect(failure.textContent).toContain("Could not load activity");
+    vault.activity.mockResolvedValue([use]);
+    await click(buttonIn(failure, "Retry")!);
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    expect(container.textContent).toContain("Research bot");
+  });
+
   it("shows the latest use only once there is one, and opens the list on its own page", async () => {
     const at = new Date(Date.now() - 2 * 3600_000).toISOString();
     const use = { at, botName: "Research bot", chat: null };

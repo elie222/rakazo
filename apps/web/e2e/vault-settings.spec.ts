@@ -79,22 +79,31 @@ test("saves a contact, a card billed to it, and a login from Settings, showing n
 
   // A bot's earlier checkout, as the audit log would hold it.
   const at = new Date(Date.now() - 2 * 3600_000).toISOString();
+  let activityUnavailable = true;
   await page.route("**/rpc/vault/activity", (route) =>
-    route.fulfill({
-      json: {
-        json: [
-          {
-            at,
-            botName: "Research bot",
-            site: "https://shop.example.test",
-            chat: null,
+    activityUnavailable
+      ? route.fulfill({ status: 503, json: { message: "unavailable" } })
+      : route.fulfill({
+          json: {
+            json: [
+              {
+                at,
+                botName: "Research bot",
+                site: "https://shop.example.test",
+                chat: null,
+              },
+            ],
           },
-        ],
-      },
-    }),
+        }),
   );
   await vault.getByText("Visa ·· 4242", { exact: true }).click();
   const detail = page.getByTestId("vault-item-detail");
+  const activityFailure = detail.getByRole("alert");
+  await expect(activityFailure).toContainText("Could not load activity");
+  await captureScreenshot(page, testInfo, "vault-activity-retry");
+  activityUnavailable = false;
+  await activityFailure.getByRole("button", { name: "Retry", exact: true }).click();
+  await expect(activityFailure).toHaveCount(0);
   const activity = detail.getByRole("button", { name: "Used 2h ago by Research bot", exact: true });
   await expect(detail.getByText("•••• 4242", { exact: true })).toBeVisible();
   await expect(detail.getByText("Home", { exact: true })).toBeVisible();

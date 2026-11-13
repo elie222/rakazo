@@ -154,7 +154,7 @@ async function auditRows(
   // Their own organization, computed only for an account vault item: nothing of a Space vault
   // item, or of one whose vault isn't said, leaves the Space's organization.
   const personal =
-    owner && ownItem && outsider
+    owner && ownItem && (outsider || actor.type === "user")
       ? await ownedOrganizationId(db, owner).catch((error: unknown) => {
           if (error instanceof IsolationError) return undefined;
           throw error;
@@ -166,7 +166,14 @@ async function auditRows(
     ? [{ organizationId: input.organizationId, withheld: false }]
     : space
       ? [
-          ...(ownTrail ? [] : [{ organizationId: space.organizationId, withheld: outsider }]),
+          ...(ownTrail
+            ? []
+            : [
+                {
+                  organizationId: space.organizationId,
+                  withheld: outsider || (ownItem && actor.type === "user"),
+                },
+              ]),
           ...(personal ? [{ organizationId: personal, withheld: false }] : []),
         ]
       : memberships.map((member) => ({ organizationId: member.organizationId, withheld: false }));

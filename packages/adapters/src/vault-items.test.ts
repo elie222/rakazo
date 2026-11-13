@@ -102,6 +102,25 @@ async function vaultWithCard() {
 }
 
 describe("saving cards and contacts", () => {
+  it("refuses a metadata save when the Space vault changes before its lock", async () => {
+    const db = fakeDatabase();
+    db.useOwnVault(scope.spaceId);
+    await save(db, "visa", JSON.stringify(fakeCard), card);
+    vi.spyOn(db.prisma.spaceSettingOverride, "findUnique")
+      .mockResolvedValueOnce({ setting: "credentials" } as never)
+      .mockResolvedValue(null);
+    await expect(
+      relabelVaultItem(db.prisma, { ...scope, vault: "space" }, "visa", {
+        title: "Changed",
+        policy: "off",
+        bots: { allBots: false, botIds: [] },
+      }),
+    ).rejects.toThrow("This Space uses the account vault");
+    expect(db.rows()[0]).toMatchObject({ policy: "allow" });
+    expect(db.rows()[0]?.title).not.toBe("Changed");
+    expect(db.limits()).toEqual([]);
+  });
+
   it("encrypts the whole value and saves it in its canonical shape", async () => {
     const db = await vaultWithCard();
     const row = db.rows().find((stored) => stored.name === "visa")!;

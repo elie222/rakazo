@@ -282,7 +282,8 @@ describe("security events in the audit log", () => {
   const matrix: [string, "account" | "space" | undefined, string[][], string[][]][] = [
     // Who acts, the item's vault, then the rows of an action of theirs (import, save, remove,
     // reveal) and of a bot's use in a run of theirs, on a site or in a shell.
-    ["member", "account", [["org-1", N]], [["org-1", N]]],
+    ["member", "account", [["org-1", W]], [["org-1", N]]],
+    ["member owning an organization", "account", [["org-own", N]], [["org-1", N]]],
     ["member", "space", [["org-1", N]], [["org-1", N]]],
     ["member", undefined, [["org-1", N]], [["org-1", N]]],
     // An account vault action of their own happened in no space; a use did.
@@ -309,9 +310,9 @@ describe("security events in the audit log", () => {
     "$kind by a $who of an item in the $vault vault: $lands",
     async ({ kind, who, scope, rows }) => {
       Object.assign(store.member, {
-        findUnique: vi.fn(async () => ({ role: who === "member" ? "member" : "guest" })),
+        findUnique: vi.fn(async () => ({ role: who.startsWith("member") ? "member" : "guest" })),
         findMany: vi.fn(async () =>
-          who === "guest owning an organization"
+          who.endsWith("owning an organization")
             ? [{ organizationId: "org-own", role: "owner" }]
             : [],
         ),
