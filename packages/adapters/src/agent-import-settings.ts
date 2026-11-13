@@ -191,7 +191,7 @@ export function readGrokBotImportSettings(
       skipped.push({ path: `routines: ${source.name || index + 1}`, reason: "unsupported" });
       continue;
     }
-    if (looksLikeCredential(source.instruction)) {
+    if ([source.name, source.instruction].some(looksLikeCredential)) {
       skipped.push({ path: `routines: ${source.name || index + 1}`, reason: "unsupported" });
       continue;
     }

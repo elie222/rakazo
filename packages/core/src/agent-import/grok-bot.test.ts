@@ -324,3 +324,29 @@ it("rejects explicit unrelated formats and newer string versions", () => {
     ),
   ).toThrow(GrokBotExportError);
 });
+
+it("reads braces inside JSON5 strings in fenced replies", () => {
+  expect(
+    parseGrokBotExport(
+      "```json\n{format:'grok-bot-export', bots:[{name:'Example', instructions:'Keep } braces'}]}\n``` ",
+    )[0]?.instructions,
+  ).toBe("Keep } braces");
+});
+
+it("keeps populated aliases beside empty canonical arrays", () => {
+  const [bot] = readGrokBotExportJson(
+    JSON.stringify({
+      bots: [
+        {
+          name: "Example",
+          user_facts: [],
+          userFacts: ["Prefers brief replies"],
+          apps: [],
+          integrations: ["Calendar"],
+        },
+      ],
+    }),
+  );
+  expect(bot?.userFacts).toEqual(["Prefers brief replies"]);
+  expect(bot?.apps.map((app) => app.name)).toEqual(["Calendar"]);
+});

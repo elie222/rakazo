@@ -153,14 +153,14 @@ function bracedObjects(source: string): { found: string[]; cutOff: boolean } {
   let at = source.indexOf("{");
   while (at >= 0 && unbalanced < MAX_UNBALANCED) {
     let depth = 0;
-    let quoted = false;
+    let quote: string | null = null;
     let end = -1;
     for (let index = at; index < source.length && end < 0; index += 1) {
       const char = source[index];
-      if (quoted) {
+      if (quote) {
         if (char === "\\") index += 1;
-        else if (char === '"') quoted = false;
-      } else if (char === '"') quoted = true;
+        else if (char === quote) quote = null;
+      } else if (char === '"' || char === "'") quote = char;
       else if (char === "{") depth += 1;
       else if (char === "}") {
         depth -= 1;
@@ -234,7 +234,7 @@ function readBot(bot: Json): GrokBot {
     description: first(bot.description),
     instructions: first(bot.instructions, bot.soul, bot.systemPrompt),
     memories: strings(bot.memories),
-    userFacts: strings(bot.user_facts ?? bot.userFacts),
+    userFacts: strings([...list(bot.user_facts), ...list(bot.userFacts)]),
     skills: list(bot.skills).flatMap((skill): GrokBotSkill[] => {
       if (typeof skill === "string") {
         return skill.trim() ? [{ name: oneLine(skill), description: "", instructions: "" }] : [];
@@ -269,7 +269,7 @@ function readBot(bot: Json): GrokBot {
           ]
         : [],
     ),
-    apps: list(bot.apps ?? bot.plugins ?? bot.integrations).flatMap(readApp),
+    apps: [...list(bot.apps), ...list(bot.plugins), ...list(bot.integrations)].flatMap(readApp),
   };
 }
 
