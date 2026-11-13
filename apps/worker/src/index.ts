@@ -33,7 +33,6 @@ import {
   createRunSandbox,
   createRunSecretWriter,
   createTicketChangeNotifier,
-  databaseCapacityBackoffMs,
   ExpoPushProvider,
   GraphileJobPublisher,
   homeStorageSweeper,
@@ -67,11 +66,11 @@ import {
   createBoardEvents,
   createDb,
   createThreadEvents,
+  databaseCapacityBackoffMs,
+  databaseOutage,
   describeRowSecurity,
   installAuditEventStore,
   installSecurityEventStore,
-  isPoolCheckoutTimeout,
-  isTooManyDatabaseConnections,
   observeThreadChanges,
   parsePositiveInteger,
   pushSessionExpiresAt,
@@ -170,7 +169,7 @@ async function main() {
   const runs = new RunStarter(realtime, { signal: shutdown.signal });
   const jobs: JobPublisher =
     inMemoryJobs ?? new RunJobPublisher(prisma, new GraphileJobPublisher(pool, prisma), runs);
-  const { messaging } = installedMessaging(
+  const { messaging, installations: messagingInstallations } = installedMessaging(
     prisma,
     secrets,
     {
@@ -207,7 +206,7 @@ async function main() {
     smtpUrl: process.env.BOT_EMAIL_SMTP_URL?.trim() || undefined,
     domain: process.env.INBOUND_EMAIL_DOMAIN?.trim() || undefined,
   });
-  const { executor, jobHandlers } = createRunRuntime(env, connectors, {
+  const { executor, jobHandlers, messagingDelivery, teamChat } = createRunRuntime(env, connectors, {
     mediaGeneration,
     prisma,
     runtime,
@@ -226,6 +225,9 @@ async function main() {
     // Bots use a separate sending connection from account email.
     email,
     messaging,
+    isMessagingInstallationActive: messagingInstallations
+      ? (id: string) => messagingInstallations.isActive(id)
+      : undefined,
     cloudAgent,
     // Device sockets live in an API process; the worker forwards to whichever one holds it.
     userDevices: withHostComputerScreen(
@@ -276,6 +278,7 @@ async function main() {
       reconcileHomeStorage: homeStorageSweeper(home),
       reconcileDeadJobs: inMemoryJobs ? undefined : createDeadJobPruner(pool),
     },
+    { messagingDelivery, teamChat },
   );
   let stopHealth: (() => Promise<void>) | undefined;
   let stopping = false;
@@ -317,38 +320,39 @@ async function main() {
       },
     ),
   );
-  // graphile-worker fires completeJob()/failJobs() without awaiting them. When
-  // pool.connect() then hits Postgres 53300 or a saturated pool's checkout timeout,
-  // that rejection is unhandled. Exiting on 53300 is a crash loop: Docker restarts
-  // the process before Postgres has reaped the old backends. Exiting on a checkout
-  // timeout aborts every active run over one transient stall. Stay up on those
-  // rejections only — do not resume after uncaughtException (Node leaves the
-  // process in an undefined state).
+  // graphile-worker fires completeJob()/failJobs() without awaiting them. When the
+  // database is unavailable (53300, a saturated pool's checkout timeout, read-only
+  // during a failover) that rejection is unhandled. Exiting on 53300 is a crash loop:
+  // Docker restarts the process before Postgres has reaped the old backends. Exiting
+  // on a checkout timeout aborts every active run over one transient stall. Stay up on
+  // those rejections only, logged once per outage — do not resume after
+  // uncaughtException (Node leaves the process in an undefined state).
   process.on("uncaughtException", (error) => {
     logger.error("uncaughtException", error);
     process.exitCode = 1;
     void stop().finally(() => process.exit(1));
   });
   process.on("unhandledRejection", (reason) => {
+    if (databaseOutage.failed(reason, "job queue")) return;
     logger.error("unhandledRejection", reason);
-    if (isTooManyDatabaseConnections(reason) || isPoolCheckoutTimeout(reason)) return;
     process.exitCode = 1;
     void stop().finally(() => process.exit(1));
   });
 
-  // Direct runs may already be active while the scheduler waits for capacity.
-  // Keep retrying without exiting; the handlers above drain them on shutdown.
+  // Direct runs may already be active while the scheduler waits for the database: out of
+  // capacity, read-only or unreachable. Keep retrying without exiting, logging the outage
+  // once; the handlers above drain them on shutdown.
   for (let attempt = 0; !stopping; attempt += 1) {
     try {
       await jobHost.start(jobHandlers);
+      databaseOutage.succeeded();
       break;
     } catch (error) {
       if (stopping) return;
-      if (!isTooManyDatabaseConnections(error)) {
+      if (!databaseOutage.failed(error, "worker start", { fromDatabaseConnection: true })) {
         await stop();
         throw error;
       }
-      logger.error("worker job host start waiting on database capacity", error);
       await sleep(databaseCapacityBackoffMs(attempt), undefined, { signal: shutdown.signal }).catch(
         () => undefined,
       );

@@ -616,56 +616,67 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   const codexCatalog = new CodexCatalogCache();
   // One instance: chat runs submit videos and, in single-process mode, background polls finish them.
   const mediaGeneration = createMediaGenerationProvider();
-  const { executor, jobHandlers } = createRunRuntime(runtimeEnv, connectors, {
-    billingEnabled: modelCreditsEnabled,
-    mediaGeneration,
-    contextStrategy,
-    prisma,
-    runtime,
-    codexCatalog,
-    sandbox,
-    memory,
-    memoryProviders,
-    home,
-    artifacts,
-    secretStore: secrets,
-    secretHttp: remoteConnectors,
-    notifications,
-    jobs,
-    events,
-    onTicketChange: ticketChanges,
-    email: botEmail,
-    messaging,
-    cloudAgent,
-    userDevices:
-      userDevicesOverride ??
-      withHostComputerScreen(userDevices, {
-        prisma,
-        sandboxKind: env.sandboxProvider,
-        url: hostComputer.hostComputerUrl,
-        token: hostComputer.hostComputerToken,
-      }),
-    paymentWallet,
-    shutdownSignal: shutdown.signal,
-    now,
-  });
+  const { executor, jobHandlers, messagingDelivery, teamChat } = createRunRuntime(
+    runtimeEnv,
+    connectors,
+    {
+      billingEnabled: modelCreditsEnabled,
+      mediaGeneration,
+      contextStrategy,
+      prisma,
+      runtime,
+      codexCatalog,
+      sandbox,
+      memory,
+      memoryProviders,
+      home,
+      artifacts,
+      secretStore: secrets,
+      secretHttp: remoteConnectors,
+      notifications,
+      jobs,
+      events,
+      onTicketChange: ticketChanges,
+      email: botEmail,
+      messaging,
+      isMessagingInstallationActive: messagingInstallations
+        ? (id: string) => messagingInstallations.isActive(id)
+        : undefined,
+      cloudAgent,
+      userDevices:
+        userDevicesOverride ??
+        withHostComputerScreen(userDevices, {
+          prisma,
+          sandboxKind: env.sandboxProvider,
+          url: hostComputer.hostComputerUrl,
+          token: hostComputer.hostComputerToken,
+        }),
+      paymentWallet,
+      shutdownSignal: shutdown.signal,
+      now,
+    },
+  );
 
   if (inMemoryJobs) {
     await inMemoryJobs.start(jobHandlers);
   }
   runs?.attach(jobHandlers);
   const reconciler = inMemoryJobs
-    ? createRunReconciler({
-        prisma,
-        jobs,
-        events,
-        notifications,
-        cloudAgent,
-        userCloudAgents,
-        paymentWallet,
-        mediaGeneration,
-        billingEnabled: modelCreditsEnabled,
-      })
+    ? createRunReconciler(
+        {
+          prisma,
+          jobs,
+          events,
+          notifications,
+          cloudAgent,
+          userCloudAgents,
+          paymentWallet,
+          mediaGeneration,
+          billingEnabled: modelCreditsEnabled,
+        },
+        {},
+        { messagingDelivery, teamChat },
+      )
     : undefined;
   reconciler?.start();
   const stopReferralEmails =
@@ -762,6 +773,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     dataDir: env.dataDir,
     billing,
     messagingInstallations,
+    messagingDelivery,
     messaging: {
       enabled: Boolean(messaging),
       providers: messaging?.platforms().map((platform) => platform.provider) ?? [],
@@ -1070,21 +1082,23 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       authenticate: sessionActor,
     });
   }
-  const messagingRuntime = messaging
-    ? await startMessagingRuntime({
-        app,
-        prisma,
-        events,
-        jobs,
-        sandbox,
-        secrets,
-        artifacts,
-        runtime,
-        env,
-        messaging,
-        messagingInstallations,
-      })
-    : undefined;
+  const messagingRuntime =
+    messaging && messagingDelivery && teamChat
+      ? await startMessagingRuntime({
+          app,
+          prisma,
+          events,
+          jobs,
+          sandbox,
+          secrets,
+          artifacts,
+          env,
+          messaging,
+          messagingInstallations,
+          delivery: messagingDelivery,
+          teamChat,
+        })
+      : undefined;
 
   app.route(
     "/",
