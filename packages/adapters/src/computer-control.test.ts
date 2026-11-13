@@ -7,13 +7,10 @@ import type {
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import {
-  CONTROL_LEASE_MS,
   clearInactiveUserComputerControl,
   expireComputerControl,
-  extendActiveComputerControl,
   hasActiveComputerControl,
   revokeScreenControl,
-  teachingControlLeaseExpiresAt,
 } from "./computer-control.js";
 
 describe("computer control leases", () => {
@@ -316,56 +313,6 @@ describe("computer control leases", () => {
     expect(harness.events.releaseUserControl).toHaveBeenCalledWith(
       expect.objectContaining({ botId: null, leaseId: "lease-1", reason: "expired" }),
     );
-  });
-});
-
-describe("teaching control lease extension", () => {
-  it("covers the teaching window and at least one control lease", () => {
-    const now = new Date("2026-01-01T00:00:00.000Z");
-    expect(teachingControlLeaseExpiresAt(new Date("2026-01-01T00:00:30.000Z"), now)).toEqual(
-      new Date(now.getTime() + CONTROL_LEASE_MS),
-    );
-    expect(teachingControlLeaseExpiresAt(new Date("2026-01-01T00:20:00.000Z"), now)).toEqual(
-      new Date("2026-01-01T00:20:00.000Z"),
-    );
-  });
-
-  it("extends an existing user lease and reschedules expiry", async () => {
-    const now = new Date("2026-01-01T00:00:00.000Z");
-    const teachingUntil = new Date("2026-01-01T00:10:00.000Z");
-    const harness = controlHarness({
-      controlLeaseExpiresAt: new Date("2026-01-01T00:04:00.000Z"),
-    });
-    const computer = {
-      id: "computer-id",
-      controlHolder: "user",
-      controlLeaseId: "lease-1",
-      controlLeaseExpiresAt: new Date("2026-01-01T00:04:00.000Z"),
-      controlBotId: "bot",
-    };
-
-    await expect(
-      extendActiveComputerControl(
-        harness.deps.prisma,
-        harness.deps.jobs,
-        computer,
-        "bot",
-        teachingUntil,
-        now,
-      ),
-    ).resolves.toBe(true);
-
-    const expectedExpiry = teachingUntil;
-    expect(harness.prisma.computer.updateMany).toHaveBeenCalledWith({
-      where: {
-        id: "computer-id",
-        controlHolder: "user",
-        controlBotId: "bot",
-        controlLeaseId: "lease-1",
-      },
-      data: { controlLeaseExpiresAt: expectedExpiry },
-    });
-    expect(harness.enqueue).toHaveBeenCalled();
   });
 });
 

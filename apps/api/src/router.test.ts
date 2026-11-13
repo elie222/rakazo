@@ -4424,11 +4424,17 @@ describe("computer terminal and file transfer", () => {
           },
         }),
       },
+      $transaction: vi.fn(async (write: (tx: unknown) => unknown) => write(prisma)),
+      $queryRaw: vi.fn().mockResolvedValue([]),
       computer: {
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
         findUniqueOrThrow: vi.fn(),
       },
-      computerExecutionLease: { findUnique: vi.fn().mockResolvedValue(null) },
+      computerExecutionLease: {
+        findUnique: vi.fn().mockResolvedValue(null),
+        findFirst: vi.fn().mockResolvedValue(null),
+        count: vi.fn().mockResolvedValue(0),
+      },
       run: { findFirst: vi.fn().mockResolvedValue(null) },
       taughtSkill: { findFirst: vi.fn().mockResolvedValue(null) },
     } as unknown as PrismaClient;
@@ -4564,24 +4570,27 @@ describe("computer terminal and file transfer", () => {
     });
   });
 
-  it("waits for a bot action on the screen to end before giving control", async () => {
+  it("waits for this bot's action on its screen to end before giving control", async () => {
     const { prisma, call } = setup();
-    vi.mocked(prisma.computer.updateMany).mockResolvedValueOnce({ count: 0 });
+    // The bot is mid-action on the first try, and done on the next.
+    vi.mocked(prisma.computerExecutionLease.findFirst).mockResolvedValueOnce({
+      id: "lease-row",
+    } as never);
+    vi.mocked(prisma.computerExecutionLease.count).mockResolvedValueOnce(1);
     vi.mocked(prisma.computer.findUniqueOrThrow).mockResolvedValueOnce({
       id: "computer-1",
       controlHolder: "none",
       controlLeaseId: null,
       controlLeaseExpiresAt: null,
-      screenActionUntil: new Date(Date.now() + 5_000),
     } as never);
     await expect(call("takeover", {})).resolves.toMatchObject({ status: 200 });
-    const grants = vi.mocked(prisma.computer.updateMany).mock.calls;
-    expect(grants).toHaveLength(2);
-    for (const [grant] of grants) {
-      expect(grant.where).toMatchObject({
-        OR: [{ screenActionUntil: null }, { screenActionUntil: { lte: expect.any(Date) } }],
-      });
+    const checks = vi.mocked(prisma.computerExecutionLease.findFirst).mock.calls;
+    expect(checks).toHaveLength(2);
+    // Only this bot's mark counts; another Team bot's action never delays it.
+    for (const [check] of checks) {
+      expect(check?.where).toMatchObject({ computerId: "computer-1", botId: "bot-1" });
     }
+    expect(prisma.computer.updateMany).toHaveBeenCalledOnce();
   });
 
   it("renews the holder's control each time their page checks in", async () => {

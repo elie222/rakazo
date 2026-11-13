@@ -19,7 +19,7 @@ import {
   createThreadMessageInTransaction,
   IsolationError,
 } from "@rakazo/db";
-import { releaseComputerControlLease } from "./computer-control.js";
+import { expireComputerControl, releaseComputerControlLease } from "./computer-control.js";
 import { scheduleComputerSleep } from "./computer-idle.js";
 import { toComputerRef } from "./computer-support.js";
 
@@ -488,6 +488,27 @@ export async function expireTaughtSkillTeaching(
   const finalized = await completeTeachingSession(deps, actor, skill.id, "expired", stopSnapshot);
   await deps.jobs.cancel(skillTeachingExpireJobKey(skill.id));
   return finalized;
+}
+
+/**
+ * End a person's lapsed control, and with it a teaching recording that relied on it: a page that
+ * stopped checking in mid-recording loses the screen like any other, and the recording stops.
+ */
+export async function expireComputerControlAndTeaching(
+  deps: TeachingSessionDeps,
+  computerId: string,
+  leaseId: string,
+): Promise<boolean> {
+  const recording = await deps.prisma.taughtSkill.findFirst({
+    where: { status: "recording", bot: { computerId } },
+  });
+  const released = await expireComputerControl(deps, computerId, leaseId);
+  if (!released || !recording) return released;
+  if (parseRecording(recording.recording).controlLeaseId !== leaseId) return released;
+  const actor = { spaceId: recording.spaceId, userId: recording.userId } as Actor;
+  await completeTeachingSession(deps, actor, recording.id, "expired");
+  await deps.jobs.cancel(skillTeachingExpireJobKey(recording.id));
+  return released;
 }
 
 export async function applyTeachingDesktopInput(

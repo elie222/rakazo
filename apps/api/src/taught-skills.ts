@@ -15,10 +15,12 @@ import {
   ComputerBusyError,
   captureTeachingSnapshot,
   completeTeachingSession,
+  controlLeaseExpiresAt,
   emptyRecording,
   expireTaughtSkillTeaching,
-  extendActiveComputerControl,
   getActiveTeachingSession,
+  hasActiveComputerControl,
+  holdsUserControl,
   mapTaughtSkill,
   observeStopSnapshot,
   parsePlaybook,
@@ -29,7 +31,6 @@ import {
   releaseTeachingComputerControlForBot,
   scheduleComputerControlExpiry,
   screenLeaseIdForRun,
-  teachingControlLeaseExpiresAt,
   userControlHeldBy,
 } from "@rakazo/adapters";
 import type { Actor, MessageBlock, TaughtSkill } from "@rakazo/contracts";
@@ -217,17 +218,20 @@ async function grantTakeover(
   deps: TaughtSkillsDeps,
   actor: Actor,
   bot: Awaited<ReturnType<ReturnType<typeof createRepos>["getBot"]>>,
-  until: Date,
 ): Promise<{ bot: typeof bot; leaseId: string }> {
   if (!bot.computer) throw new IsolationError();
   await assertComputerFreeFor(deps, actor, bot);
-  if (await extendActiveComputerControl(deps.prisma, deps.jobs, bot.computer, bot.id, until)) {
-    const leaseId = bot.computer.controlLeaseId;
-    if (!leaseId) throw new IsolationError();
-    return { bot, leaseId };
+  // Teaching keeps the person's own control, which their page's heartbeat renews like any other.
+  if (
+    hasActiveComputerControl(bot.computer) &&
+    bot.computer.controlBotId === bot.id &&
+    bot.computer.controlLeaseId &&
+    holdsUserControl(bot.computer, actor.userId)
+  ) {
+    return { bot, leaseId: bot.computer.controlLeaseId };
   }
   const leaseId = randomUUID();
-  const expiresAt = teachingControlLeaseExpiresAt(until);
+  const expiresAt = controlLeaseExpiresAt();
   const granted = await deps.prisma.computer.updateMany({
     where: {
       id: bot.computer.id,
@@ -414,7 +418,7 @@ export function createTaughtSkillsService(deps: TaughtSkillsDeps) {
       bot = await ensureGraphicalComputer(deps, actor, bot);
       const startedAt = new Date();
       const expiresAt = new Date(startedAt.getTime() + teachRecordingTtlMs());
-      const { leaseId } = await grantTakeover(deps, actor, bot, expiresAt);
+      const { leaseId } = await grantTakeover(deps, actor, bot);
       let row: TaughtSkillRow;
       try {
         row = await deps.prisma.$transaction(async (tx) => {

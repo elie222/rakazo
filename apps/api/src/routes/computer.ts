@@ -381,29 +381,37 @@ export function computerRoutes(ctx: RouterContext) {
         const computerId = bot.computer.id;
         const leaseId = randomUUID();
         let expiresAt = controlLeaseExpiresAt();
-        // A bot action already on the screen finishes first; its mark lapses on its own if its
-        // worker died, so this waits at most that long.
+        // This bot's action already on its screen finishes first; its mark lapses on its own if
+        // its worker died, so this waits at most that long. Other bots' actions never delay it.
         const deadline = Date.now() + SCREEN_ACTION_MS;
         for (;;) {
           const now = new Date();
           expiresAt = controlLeaseExpiresAt(now);
-          const granted = await deps.prisma.computer.updateMany({
-            where: {
-              id: computerId,
-              state: "running",
-              maintenanceId: null,
-              controlHolder: { not: "user" },
-              controlLeaseId: null,
-              OR: [{ screenActionUntil: null }, { screenActionUntil: { lte: now } }],
-            },
-            data: {
-              controlHolder: "user",
-              controlLeaseId: leaseId,
-              controlLeaseExpiresAt: expiresAt,
-              controlBotId: bot.id,
-              controlUserId: context.actor.userId,
-              controlFence: { increment: 1 },
-            },
+          const granted = await deps.prisma.$transaction(async (tx) => {
+            // The bot locks this row to mark an action, so each side sees the other's write.
+            await tx.$queryRaw`SELECT id FROM computers WHERE id = ${computerId} FOR UPDATE`;
+            const acting = await tx.computerExecutionLease.findFirst({
+              where: { computerId, botId: bot.id, screenActionUntil: { gt: now } },
+              select: { id: true },
+            });
+            if (acting) return { count: 0 };
+            return tx.computer.updateMany({
+              where: {
+                id: computerId,
+                state: "running",
+                maintenanceId: null,
+                controlHolder: { not: "user" },
+                controlLeaseId: null,
+              },
+              data: {
+                controlHolder: "user",
+                controlLeaseId: leaseId,
+                controlLeaseExpiresAt: expiresAt,
+                controlBotId: bot.id,
+                controlUserId: context.actor.userId,
+                controlFence: { increment: 1 },
+              },
+            });
           });
           if (granted.count === 1) break;
           const current = await deps.prisma.computer.findUniqueOrThrow({
@@ -416,7 +424,9 @@ export function computerRoutes(ctx: RouterContext) {
             return { leaseId: current.controlLeaseId!, expiresAt: renewed.toISOString() };
           }
           assertNotAnotherPersonsControl(current, context.actor);
-          const botActing = Boolean(current.screenActionUntil && current.screenActionUntil > now);
+          const botActing = await deps.prisma.computerExecutionLease.count({
+            where: { computerId, botId: bot.id, screenActionUntil: { gt: now } },
+          });
           if (!botActing || Date.now() >= deadline) {
             throw new ORPCError("CONFLICT", { message: "Computer is busy" });
           }

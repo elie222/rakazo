@@ -20,6 +20,7 @@ import {
   browserSnapshotFromTool,
   redactBrowserResult,
 } from "./browser-tools.js";
+import { hasActiveComputerControl } from "./computer-control.js";
 import { BACKGROUND_WORK_LAUNCH } from "./computer-idle.js";
 import {
   displayBotWorkspacePath,
@@ -151,14 +152,16 @@ async function takeScreenTurn(ctx: RunContext, look = false): Promise<ScreenTurn
   }
   const { prisma } = ctx.deps;
   const computerId = ctx.computer.stored.id;
+  const botId = ctx.bot.id;
   let marked: Date | undefined;
   const end = async () => {
     if (!marked) return;
     const until = marked;
     marked = undefined;
     await prisma.$executeRaw`
-      UPDATE computers SET "screenActionUntil" = NULL
-      WHERE id = ${computerId} AND "screenActionUntil" = ${until}`;
+      UPDATE computer_execution_leases SET "screenActionUntil" = NULL
+      WHERE "computerId" = ${computerId} AND "botId" = ${botId}
+        AND "screenActionUntil" = ${until}`;
   };
   const { signal } = ctx.context;
   const refused = await awaitScreenTurn({
@@ -167,24 +170,41 @@ async function takeScreenTurn(ctx: RunContext, look = false): Promise<ScreenTurn
     readControl: async () => {
       const now = new Date();
       const until = new Date(now.getTime() + SCREEN_ACTION_MS);
-      // Mark the action in the same write that finds no person on this bot's screen. Raw SQL
-      // leaves updatedAt alone, which boot and sleep compare to claim the computer.
+      // Mark this bot's action in the same statement that finds no person on its screen. The
+      // computer row is locked, as Take control locks it, so one of the two always sees the
+      // other. Raw SQL leaves updatedAt alone.
       const [free] = await prisma.$queryRaw<Array<{ controlFence: number }>>`
-        UPDATE computers SET "screenActionUntil" = ${until}
-        WHERE id = ${computerId}
-          AND ("controlHolder" <> 'user' OR "controlBotId" IS NULL
-            OR "controlBotId" <> ${ctx.bot.id} OR "controlLeaseExpiresAt" IS NULL
-            OR "controlLeaseExpiresAt" <= ${now})
-        RETURNING "controlFence"`;
+        UPDATE computer_execution_leases AS l SET "screenActionUntil" = ${until}
+        FROM (
+          SELECT id, "controlFence" FROM computers
+          WHERE id = ${computerId}
+            AND ("controlHolder" <> 'user' OR "controlBotId" IS NULL
+              OR "controlBotId" <> ${botId} OR "controlLeaseExpiresAt" IS NULL
+              OR "controlLeaseExpiresAt" <= ${now})
+          FOR UPDATE
+        ) AS c
+        WHERE l."computerId" = c.id AND l."botId" = ${botId}
+        RETURNING c."controlFence"`;
       if (free) {
         marked = until;
         return { held: false, fence: free.controlFence };
       }
-      const held = await prisma.computer.findUnique({
+      const computer = await prisma.computer.findUnique({
         where: { id: computerId },
-        select: { controlFence: true },
+        select: {
+          controlHolder: true,
+          controlLeaseId: true,
+          controlLeaseExpiresAt: true,
+          controlBotId: true,
+          controlFence: true,
+        },
       });
-      return held ? { held: true, fence: held.controlFence } : null;
+      if (!computer) return null;
+      // Without a lease row there is no mark to make, and the action goes ahead unmarked.
+      return {
+        held: hasActiveComputerControl(computer) && computer.controlBotId === botId,
+        fence: computer.controlFence,
+      };
     },
     sleep: (ms) => sleep(ms, undefined, { signal }),
   });

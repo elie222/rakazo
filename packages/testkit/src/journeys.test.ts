@@ -3397,6 +3397,104 @@ describeJourneys("required product journeys", () => {
     }
   });
 
+  it("18b: a teaching page that stops checking in loses control and its recording", async () => {
+    const cookie = await signup(app, `teach-quiet-j-${stamp}@rakazo.test`, "Teach Quiet");
+    const bot = await rpc<Bot>(app, cookie, "bots/create", {
+      name: "Quiet",
+      title: "",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+    await rpc(app, cookie, "computer/boot", { botId: bot.id });
+    const lease = await rpc<{ leaseId: string; expiresAt: string }>(
+      app,
+      cookie,
+      "computer/takeover",
+      { botId: bot.id },
+    );
+    const skill = await rpc<{ id: string }>(app, cookie, "skills/start", {
+      botId: bot.id,
+      goal: "Quiet demo",
+    });
+    // Teaching holds the person's own lease, renewed only by their page.
+    const teaching = await prisma.computer.findFirstOrThrow({
+      where: { bots: { some: { id: bot.id } } },
+    });
+    expect(teaching.controlLeaseId).toBe(lease.leaseId);
+    expect(teaching.controlLeaseExpiresAt!.getTime() - Date.now()).toBeLessThanOrEqual(90_000);
+    // Closing the page asks for a release, which teaching keeps; then no heartbeat arrives.
+    await rpc(app, cookie, "computer/release", { botId: bot.id });
+    expect(
+      (await prisma.computer.findUniqueOrThrow({ where: { id: teaching.id } })).controlLeaseId,
+    ).toBe(lease.leaseId);
+    await prisma.computer.update({
+      where: { id: teaching.id },
+      data: { controlLeaseExpiresAt: new Date(Date.now() - 1_000) },
+    });
+    expect(
+      (await rpc<{ controlHolder: string }>(app, cookie, "computer/status", { botId: bot.id }))
+        .controlHolder,
+    ).toBe("none");
+    expect(await prisma.computer.findUniqueOrThrow({ where: { id: teaching.id } })).toMatchObject({
+      controlHolder: "none",
+      controlLeaseId: null,
+    });
+    const ended = await rpc<{ status: string }>(app, cookie, "skills/get", { skillId: skill.id });
+    expect(ended.status).not.toBe("recording");
+  });
+
+  it("18c: one Team bot's action on its screen never delays taking another bot's", async () => {
+    const cookie = await signup(app, `screen-turn-j-${stamp}@rakazo.test`, "Screen Turn");
+    const writer = await rpc<Bot>(app, cookie, "bots/create", {
+      name: "Writer",
+      title: "",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+    const researcher = await rpc<Bot>(app, cookie, "bots/create", {
+      name: "Researcher",
+      title: "",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+    await rpc(app, cookie, "computer/boot", { botId: writer.id });
+    const computer = await prisma.computer.findFirstOrThrow({
+      where: { bots: { some: { id: writer.id } } },
+    });
+    expect((await prisma.bot.findUniqueOrThrow({ where: { id: researcher.id } })).computerId).toBe(
+      computer.id,
+    );
+    // The writer is in the middle of an action on its own screen.
+    await prisma.computerExecutionLease.upsert({
+      where: { computerId_botId: { computerId: computer.id, botId: writer.id } },
+      create: {
+        computerId: computer.id,
+        botId: writer.id,
+        runId: `writer-action-${stamp}`,
+        expiresAt: new Date(Date.now() + 60_000),
+        screenActionUntil: new Date(Date.now() + 1_500),
+      },
+      update: { screenActionUntil: new Date(Date.now() + 1_500) },
+    });
+    const researcherStarted = Date.now();
+    await rpc(app, cookie, "computer/takeover", { botId: researcher.id });
+    expect(Date.now() - researcherStarted).toBeLessThan(1_000);
+    await rpc(app, cookie, "computer/release", { botId: researcher.id });
+
+    // Taking the writer's own screen waits for its action to end.
+    await prisma.computerExecutionLease.update({
+      where: { computerId_botId: { computerId: computer.id, botId: writer.id } },
+      data: { screenActionUntil: new Date(Date.now() + 1_500) },
+    });
+    const writerStarted = Date.now();
+    await rpc(app, cookie, "computer/takeover", { botId: writer.id });
+    expect(Date.now() - writerStarted).toBeGreaterThanOrEqual(1_200);
+    await rpc(app, cookie, "computer/release", { botId: writer.id });
+  });
+
   it("19: in Ask mode, destination writes pause for approval before side effects", async () => {
     const cookie = await signup(app, `approval-j-${stamp}@rakazo.test`, "Approval");
     const bot = await rpc<Bot>(app, cookie, "bots/create", {

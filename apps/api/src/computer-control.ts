@@ -10,6 +10,7 @@ import {
   computerSupportsUpdate,
   enqueueTakeoverContinuation,
   expireComputerControl,
+  expireComputerControlAndTeaching,
   hasActiveComputerControl,
   holdsUserControl,
   isSandboxGoneError,
@@ -280,7 +281,7 @@ export async function expireStaleComputerControl(
   const leaseId = computer.controlLeaseId;
   // Keep a failed revoke's lease id so reconciliation can retry provider shutdown.
   if (leaseId) {
-    await expireComputerControl(deps, computer.id, leaseId).catch(() => undefined);
+    await expireComputerControlAndTeaching(deps, computer.id, leaseId).catch(() => undefined);
     return true;
   }
   return clearInactiveUserComputerControl(deps.prisma, computer.id).catch(() => false);

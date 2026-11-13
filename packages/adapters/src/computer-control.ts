@@ -6,7 +6,7 @@ import {
 } from "@rakazo/adapter-kit";
 import { COMPUTER_CONTROL_LEASE_MS } from "@rakazo/core";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
-import { hasActiveComputerControl, recordComputerRunEnd } from "@rakazo/db";
+import { recordComputerRunEnd } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { toComputerRef } from "./computer-support.js";
 import { isSandboxGoneError } from "./sandbox-errors.js";
@@ -45,46 +45,6 @@ export async function enqueueTakeoverContinuation(
     // The release is durable; reconciliation will retry this queued run.
     getLogger().error("takeover continuation enqueue", error);
   }
-}
-
-export function teachingControlLeaseExpiresAt(teachingExpiresAt: Date, now = new Date()): Date {
-  return new Date(Math.max(controlLeaseExpiresAt(now).getTime(), teachingExpiresAt.getTime()));
-}
-
-export async function extendActiveComputerControl(
-  prisma: PrismaClient,
-  jobs: JobPublisher,
-  computer: {
-    id: string;
-    controlHolder: string;
-    controlLeaseId: string | null;
-    controlLeaseExpiresAt: Date | null;
-    controlBotId: string | null;
-  },
-  botId: string,
-  until: Date,
-  now = new Date(),
-): Promise<boolean> {
-  if (
-    !hasActiveComputerControl(computer, now) ||
-    computer.controlBotId !== botId ||
-    !computer.controlLeaseId
-  ) {
-    return false;
-  }
-  const expiresAt = teachingControlLeaseExpiresAt(until, now);
-  const extended = await prisma.computer.updateMany({
-    where: {
-      id: computer.id,
-      controlHolder: "user",
-      controlBotId: botId,
-      controlLeaseId: computer.controlLeaseId,
-    },
-    data: { controlLeaseExpiresAt: expiresAt },
-  });
-  if (extended.count !== 1) return false;
-  await scheduleComputerControlExpiry(jobs, computer.id, computer.controlLeaseId, expiresAt);
-  return true;
 }
 
 /** Clears controlHolder=user when no live control lease remains (stale / orphaned rows). */

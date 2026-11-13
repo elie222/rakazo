@@ -1,1 +1,1 @@
-ALTER TABLE "computers" ADD COLUMN "screenActionUntil" TIMESTAMP(3);
+ALTER TABLE "computer_execution_leases" ADD COLUMN "screenActionUntil" TIMESTAMP(3);
