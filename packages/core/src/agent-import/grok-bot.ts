@@ -350,16 +350,17 @@ function mergeBots(bots: readonly GrokBot[]): GrokBot[] {
   // A later part naming a skill again continues it; skills within one part stay apart.
   const joinSkills = (mine: GrokBotSkill[], theirs: GrokBotSkill[]) => {
     const skills = [...mine];
-    const continued = new Set<number>();
+    const positions = new Map<string, { indices: number[]; next: number }>();
+    mine.forEach((skill, index) => {
+      if (!skill.name) return;
+      const name = skill.name.toLowerCase();
+      const entry = positions.get(name) ?? { indices: [], next: 0 };
+      entry.indices.push(index);
+      positions.set(name, entry);
+    });
     for (const skill of theirs) {
-      // Each earlier part's skill is continued at most once; this part's own skills stay apart.
-      const at = mine.findIndex(
-        (item, index) =>
-          Boolean(skill.name) &&
-          !continued.has(index) &&
-          item.name.toLowerCase() === skill.name.toLowerCase(),
-      );
-      if (at >= 0) continued.add(at);
+      const entry = skill.name ? positions.get(skill.name.toLowerCase()) : undefined;
+      const at = entry ? (entry.indices[entry.next++] ?? -1) : -1;
       const earlier = skills[at];
       if (!earlier) {
         skills.push(skill);
