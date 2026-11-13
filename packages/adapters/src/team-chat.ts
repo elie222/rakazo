@@ -6,7 +6,7 @@ import {
   teamChatEngageJob,
   teamChatEngageJobKey,
 } from "@rakazo/adapter-kit";
-import type { MessageBlock } from "@rakazo/contracts";
+import type { AutomatedSenderPolicies, MessageBlock } from "@rakazo/contracts";
 import { ATTACHMENT_MAX_COUNT, AutomatedSenderPoliciesSchema } from "@rakazo/contracts";
 import {
   messageBlockForArtifact,
@@ -314,7 +314,8 @@ export class TeamChat {
    * One conversation's ambient decision over its unanswered messages, a batch at a time, and the
    * conversation's next one: at once while a backlog this pass moved on remains, else when the
    * messages it left waiting need another look. One job per pass, since a second under the
-   * conversation's key would replace the first.
+   * conversation's key would replace the first. A digest sender's messages stay out of the batch
+   * until its period passes, so they never hold up anything behind them.
    */
   async ambientJob(conversationId: string): Promise<void> {
     await runAsSystem("decide on ambient team-chat messages", async () => {
@@ -323,22 +324,39 @@ export class TeamChat {
         select: AMBIENT_CONVERSATION,
       });
       if (!conversation) return;
+      const parsedPolicies = AutomatedSenderPoliciesSchema.safeParse(
+        conversation.automatedSenderPolicies,
+      );
+      const senderPolicies = parsedPolicies.success ? parsedPolicies.data : {};
+      const now = new Date();
+      const digests = await this.waitingDigests(conversation.id, senderPolicies, now);
       const observed = await this.deps.prisma.externalMessage.findMany({
-        where: { externalConversationId: conversation.id, status: "observed" },
+        where: {
+          externalConversationId: conversation.id,
+          status: "observed",
+          ...(digests.senders.length > 0
+            ? { NOT: { senderIsBot: true, senderId: { in: digests.senders } } }
+            : {}),
+        },
         include: { externalConversation: { select: CONVERSATION } },
         orderBy: { createdAt: "asc" },
         take: AMBIENT_BATCH_SIZE,
       });
-      if (observed.length === 0) return;
-      const now = new Date();
-      const waitUntil = await this.decideAmbient(conversation, observed, now);
+      const waitUntil =
+        observed.length > 0
+          ? await this.decideAmbient(conversation, senderPolicies, observed, now)
+          : Number.POSITIVE_INFINITY;
       // A full batch that is all still waiting would only read itself again.
       const backlog =
         observed.length === AMBIENT_BATCH_SIZE &&
         (await this.deps.prisma.externalMessage.count({
           where: { id: { in: observed.map(({ id }) => id) }, status: "observed" },
         })) < observed.length;
-      const nextAt = Math.min(backlog ? now.getTime() : Number.POSITIVE_INFINITY, waitUntil);
+      const nextAt = Math.min(
+        backlog ? now.getTime() : Number.POSITIVE_INFINITY,
+        waitUntil,
+        digests.nextDueAt,
+      );
       if (Number.isFinite(nextAt))
         await this.deps.jobs.enqueue(teamChatAmbientJob(conversation.id, new Date(nextAt)));
     });
@@ -346,11 +364,12 @@ export class TeamChat {
 
   /**
    * Decides one batch: ignores it, or starts one run for the message that needs the bot, with the
-   * others as context. Returns when the messages it left waiting, for the conversation to go quiet
-   * or for a digest's period to pass, need another look.
+   * others as context. Returns when the batch needs another look because the conversation has
+   * not gone quiet yet.
    */
   private async decideAmbient(
     conversation: AmbientConversation,
+    senderPolicies: AutomatedSenderPolicies,
     observed: AmbientMessage[],
     now: Date,
   ): Promise<number> {
@@ -381,10 +400,6 @@ export class TeamChat {
     const ambientEnabled = conversation.teamChatAmbientEnabled ?? policy.teamChatAmbientEnabled;
     // Blank room instructions follow the bot, as the settings screens show them.
     const rules = conversation.teamChatRules || policy.teamChatRules;
-    const parsedPolicies = AutomatedSenderPoliciesSchema.safeParse(
-      conversation.automatedSenderPolicies,
-    );
-    const senderPolicies = parsedPolicies.success ? parsedPolicies.data : {};
     if (!ambientEnabled) {
       await this.markIgnored(observed, now);
       return none;
@@ -394,21 +409,11 @@ export class TeamChat {
         message.senderIsBot && (senderPolicies[message.senderId]?.mode ?? "ignore") === "ignore",
     );
     await this.markIgnored(ignored, now);
-    const candidates = observed.filter((message) => !ignored.includes(message));
-    if (candidates.length === 0) return none;
-    const hasImmediateCandidate = candidates.some(
-      (message) => !message.senderIsBot || senderPolicies[message.senderId]?.mode !== "rollup",
-    );
-    const rollups = hasImmediateCandidate
-      ? undefined
-      : await this.rollupSchedule(candidates, senderPolicies, now);
-    const evaluated = rollups ? rollups.due : candidates;
-    // Digests whose period has not passed get a decision once the first of them is due.
-    const nextDueAt = rollups?.nextDueAt?.getTime() ?? none;
+    const evaluated = observed.filter((message) => !ignored.includes(message));
     const latest = evaluated.at(-1);
-    const quietAt = latest ? latest.createdAt.getTime() + this.debounceMs : 0;
-    const waitUntil = Math.min(quietAt > now.getTime() ? quietAt : none, nextDueAt);
-    if (!latest || quietAt > now.getTime()) return waitUntil;
+    if (!latest) return none;
+    const quietAt = latest.createdAt.getTime() + this.debounceMs;
+    if (quietAt > now.getTime()) return quietAt;
     const judged = evaluated.slice(-AMBIENT_CONTEXT_MESSAGES);
     const actionable = [...judged]
       .reverse()
@@ -437,7 +442,7 @@ export class TeamChat {
         : { act: false, reason: "Ambient engagement judge is unavailable." };
     if (!decision.act) {
       await this.markIgnored(evaluated, now);
-      return waitUntil;
+      return none;
     }
     const trigger =
       judged.find((message) => message.providerEventId === decision.askedByEventId) ?? latest;
@@ -480,7 +485,7 @@ export class TeamChat {
       return true;
     });
     if (promoted) await this.startAgentRun(trigger.id, ["received"]);
-    return waitUntil;
+    return none;
   }
 
   /**
@@ -622,19 +627,33 @@ export class TeamChat {
    * A conversation holding only digest senders' messages: the ones whose digest period has
    * passed since the sender was last judged, and when the next one comes due.
    */
-  private async rollupSchedule<T extends { externalConversationId: string; senderId: string }>(
-    messages: T[],
-    policies: Record<string, { mode: string; rollupHours?: number }>,
+  /**
+   * Digest senders with messages waiting here whose period has not passed, and when the first of
+   * them falls due. A sender's period runs from the last time its messages were decided.
+   */
+  private async waitingDigests(
+    conversationId: string,
+    policies: AutomatedSenderPolicies,
     now: Date,
-  ): Promise<{ due: T[]; nextDueAt: Date | undefined }> {
-    const dueSenders = new Set<string>();
-    let nextDueAt: number | undefined;
-    for (const senderId of new Set(messages.map((message) => message.senderId))) {
-      const hours = policies[senderId]?.rollupHours;
-      if (!hours) continue;
+  ): Promise<{ senders: string[]; nextDueAt: number }> {
+    const digestSenders = Object.entries(policies)
+      .filter(([, policy]) => policy.mode === "rollup")
+      .map(([senderId]) => senderId);
+    const waiting = { senders: [] as string[], nextDueAt: Number.POSITIVE_INFINITY };
+    if (digestSenders.length === 0) return waiting;
+    const pending = await this.deps.prisma.externalMessage.groupBy({
+      by: ["senderId"],
+      where: {
+        externalConversationId: conversationId,
+        status: "observed",
+        senderIsBot: true,
+        senderId: { in: digestSenders },
+      },
+    });
+    for (const { senderId } of pending) {
       const latest = await this.deps.prisma.externalMessage.findFirst({
         where: {
-          externalConversationId: messages[0]?.externalConversationId,
+          externalConversationId: conversationId,
           senderId,
           senderIsBot: true,
           judgedAt: { not: null },
@@ -642,14 +661,14 @@ export class TeamChat {
         orderBy: { judgedAt: "desc" },
         select: { judgedAt: true },
       });
-      const dueAt = (latest?.judgedAt?.getTime() ?? 0) + hours * 60 * 60 * 1000;
-      if (dueAt <= now.getTime()) dueSenders.add(senderId);
-      else nextDueAt = Math.min(nextDueAt ?? dueAt, dueAt);
+      const dueAt =
+        (latest?.judgedAt?.getTime() ?? 0) +
+        (policies[senderId]?.rollupHours ?? 0) * 60 * 60 * 1000;
+      if (dueAt <= now.getTime()) continue;
+      waiting.senders.push(senderId);
+      waiting.nextDueAt = Math.min(waiting.nextDueAt, dueAt);
     }
-    return {
-      due: messages.filter((message) => dueSenders.has(message.senderId)),
-      nextDueAt: nextDueAt === undefined ? undefined : new Date(nextDueAt),
-    };
+    return waiting;
   }
 }
 

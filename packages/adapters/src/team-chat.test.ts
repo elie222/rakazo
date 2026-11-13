@@ -64,6 +64,7 @@ function matches(row: object, where: Where = {}): boolean {
   const record = row as Record<string, unknown>;
   return Object.entries(where).every(([key, condition]) => {
     if (key === "OR") return (condition as Where[]).some((branch) => matches(row, branch));
+    if (key === "NOT") return !matches(row, condition as Where);
     if (!(key in record) && key.includes("_")) return matches(row, condition as Where);
     const value = record[key];
     if (condition === null || typeof condition !== "object" || condition instanceof Date)
@@ -170,6 +171,14 @@ function setup(
         query([...externalMessages.values()].map(withRelations), args),
       count: async (args: FindArgs) =>
         query([...externalMessages.values()].map(withRelations), args).length,
+      groupBy: async ({ by, where }: { by: ["senderId"]; where: Where }) =>
+        [
+          ...new Set(
+            query([...externalMessages.values()].map(withRelations), { where }).map(
+              (row) => row[by[0]],
+            ),
+          ),
+        ].map((senderId) => ({ senderId })),
       update: async ({ where, data }: { where: { id: string }; data: object }) => {
         const row = externalMessages.get(where.id);
         if (!row) throw new Error(`No external message ${where.id}`);
@@ -935,7 +944,7 @@ describe("TeamChat.ambientJob", () => {
     );
   });
 
-  it("reaches a backlog behind a batch of digests at once, not at the next digest's due time", async () => {
+  it("decides everything else on the next pass while digests that are not due wait out of the batch", async () => {
     const chat = setup({
       conversation: {
         automatedSenderPolicies: {
@@ -944,30 +953,36 @@ describe("TeamChat.ambientJob", () => {
         },
       },
     });
+    const laterJudgedAt = new Date(Date.now() - 2 * HOUR_MS);
     chat.record({
       kind: "ambient",
       status: "ignored",
       senderId: "later-bot",
       senderIsBot: true,
-      judgedAt: new Date(Date.now() - 2 * HOUR_MS),
+      judgedAt: laterJudgedAt,
     });
-    const digests = Array.from({ length: 100 }, (_, index) =>
+    const digests = Array.from({ length: 200 }, (_, index) =>
       chat.ambient({ senderId: index % 2 ? "later-bot" : "due-bot", senderIsBot: true }),
     );
     const people = Array.from({ length: 20 }, () => chat.ambient());
     const next = () => chat.jobs.get(`team_chat.ambient:${chat.conversation.id}`)?.availableAt;
 
+    // A full batch of due digests, then the rest on the next pass, at once.
     await chat.teamChat.ambientJob(chat.conversation.id);
     expect(next()!.getTime()).toBeLessThanOrEqual(Date.now());
     await chat.teamChat.ambientJob(chat.conversation.id);
 
-    expect(new Set(chat.statuses(...digests, ...people))).toEqual(new Set(["ignored"]));
+    const due = digests.filter((message) => message.senderId === "due-bot");
+    const later = digests.filter((message) => message.senderId === "later-bot");
+    expect(new Set(chat.statuses(...due, ...people))).toEqual(new Set(["ignored"]));
+    expect(new Set(chat.statuses(...later))).toEqual(new Set(["observed"]));
     expect(chat.decide.mock.calls.at(-1)![0].messages.map((m) => m.eventId)).toEqual(
       people.map(({ providerEventId }) => providerEventId),
     );
+    expect(next()).toEqual(new Date(laterJudgedAt.getTime() + 6 * HOUR_MS));
   });
 
-  it("does not reread a full batch that is all still waiting on its digest", async () => {
+  it("leaves digests that are not due out of the batch, and comes back when the first is due", async () => {
     const chat = setup({
       conversation: {
         automatedSenderPolicies: {
