@@ -257,6 +257,22 @@ describe("previewMessageText", () => {
     );
   });
 
+  it("keeps channel text ahead of ordinary questions after sending", () => {
+    const blocks: MessageBlock[] = [
+      { kind: "ask", text: "Which release?" },
+      {
+        kind: "channel_message",
+        provider: "test",
+        channelId: "channel",
+        fromAddress: "sender",
+        fromLabel: "Sender",
+        text: "Channel context",
+      },
+    ];
+    expect(previewMessageText({ role: "bot", blocks }, labels)).toBe("Channel context");
+    expect(messageReplyPreview(blocks, "bot").text).toBe("Channel context");
+  });
+
   it("keeps mixed-card question previews stable after sending", () => {
     const blocks: MessageBlock[] = [
       { kind: "choice", question: "Pick a channel", options: [] },

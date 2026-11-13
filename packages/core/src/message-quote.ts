@@ -132,9 +132,12 @@ export function deriveMessageQuote(
 /** A compact server-owned preview; text takes priority over cards and attachments. */
 export function messageReplyExcerpt(blocks: MessageBlock[], role: string): string {
   for (const block of [
-    ...blocks.filter((block) => block.kind === "text"),
+    ...blocks.filter((block) => block.kind === "text" || block.kind === "channel_message"),
     ...blocks.filter(isQuestionAskBlock),
-    ...blocks.filter((block) => block.kind !== "text" && !isQuestionAskBlock(block)),
+    ...blocks.filter(
+      (block) =>
+        block.kind !== "text" && block.kind !== "channel_message" && !isQuestionAskBlock(block),
+    ),
   ]) {
     const source = replyBlockText(block).slice(0, MAX_QUOTABLE_SOURCE_LENGTH);
     const visible =
