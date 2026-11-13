@@ -77,3 +77,42 @@ export class DatabaseOutage {
 
 /** Shared by everything in this process, so one outage is one streak in its logs. */
 export const databaseOutage = new DatabaseOutage();
+
+/** How long work that has to land, such as ending a run, waits out a database failover. */
+export const DATABASE_FAILOVER_WAIT_MS = 90_000;
+
+/**
+ * Runs `operation`, and while it fails because the database is unavailable runs it again with
+ * backoff, for up to `waitMs`. Only for work that is safe to repeat, such as a write fenced by a
+ * run's lease. The outage logs once for all callers; any other error is thrown at once.
+ */
+export async function retryWhileDatabaseUnavailable<T>(
+  operation: () => Promise<T>,
+  options: {
+    source: string;
+    signal?: AbortSignal;
+    waitMs?: number;
+    outage?: DatabaseOutage;
+    sleep?: (ms: number) => Promise<void>;
+  },
+): Promise<T> {
+  const outage = options.outage ?? databaseOutage;
+  const sleep = options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
+  const deadline = Date.now() + (options.waitMs ?? DATABASE_FAILOVER_WAIT_MS);
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      const result = await operation();
+      outage.succeeded();
+      return result;
+    } catch (error) {
+      if (
+        options.signal?.aborted ||
+        Date.now() >= deadline ||
+        !outage.failed(error, options.source, { fromDatabaseConnection: true })
+      )
+        throw error;
+      await sleep(Math.min(5_000, databaseCapacityBackoffMs(attempt)));
+      if (options.signal?.aborted) throw error;
+    }
+  }
+}
