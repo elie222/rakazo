@@ -256,9 +256,9 @@ describe("checkPageSource", () => {
   });
 
   it.each([
-    'function () { return <Status />; }',
-    '() => <Status />',
-    '() => React.createElement(Status, null)',
+    "function () { return <Status />; }",
+    "() => <Status />",
+    "() => React.createElement(Status, null)",
   ])("accepts a harmless kit-name helper before default export %s", (exported) => {
     expect(
       checkPageSource(
