@@ -19,6 +19,7 @@ import {
   shade,
   Venn,
 } from "./dataviz.js";
+import { Page } from "./layout.js";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -647,6 +648,74 @@ describe("data display", () => {
     expect(deltas.map((d) => d.textContent)).toEqual(["Up 12%", "Up 0.3pt", "Down 3"]);
     expect(root.textContent).toContain("vs last month");
     expect(root.querySelectorAll(".rk-spark polyline")).toHaveLength(1);
+  });
+
+  it("refreshes table fades when the mounted page changes language", () => {
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(100);
+    vi.spyOn(HTMLElement.prototype, "scrollWidth", "get").mockReturnValue(300);
+    vi.spyOn(window, "getComputedStyle").mockImplementation(
+      (element) =>
+        ({
+          direction: element.closest("main")?.getAttribute("dir") ?? "ltr",
+        }) as CSSStyleDeclaration,
+    );
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    mounted.push(() => {
+      act(() => root.unmount());
+      container.remove();
+    });
+    const render = (lang: string) =>
+      act(() =>
+        root.render(
+          <Page title="Table" lang={lang}>
+            <Table columns={["Name"]} rows={[["Alpha"]]} />
+          </Page>,
+        ),
+      );
+    render("en");
+    const scroll = container.querySelector(".rk-table-scroll")!;
+    expect(scroll.hasAttribute("data-fade-start")).toBe(false);
+    expect(scroll.hasAttribute("data-fade-end")).toBe(true);
+    render("he");
+    expect(container.querySelector(".rk-table-scroll")).toBe(scroll);
+    expect(scroll.hasAttribute("data-fade-start")).toBe(true);
+    expect(scroll.hasAttribute("data-fade-end")).toBe(false);
+    render("en");
+    expect(scroll.hasAttribute("data-fade-start")).toBe(false);
+    expect(scroll.hasAttribute("data-fade-end")).toBe(true);
+  });
+
+  it.each(["ltr", "rtl"])("fades the physical hidden edges in %s tables", (direction) => {
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(100);
+    vi.spyOn(HTMLElement.prototype, "scrollWidth", "get").mockReturnValue(300);
+    vi.spyOn(window, "getComputedStyle").mockReturnValue({ direction } as CSSStyleDeclaration);
+    const container = mount(<Table columns={["Name"]} rows={[["Alpha"]]} />);
+    const scroll = container.querySelector<HTMLDivElement>(".rk-table-scroll")!;
+    const edges = () => [
+      scroll.hasAttribute("data-fade-start"),
+      scroll.hasAttribute("data-fade-end"),
+    ];
+    const move = (left: number) =>
+      act(() => {
+        scroll.scrollLeft = left;
+        scroll.dispatchEvent(new Event("scroll"));
+      });
+    const rtl = direction === "rtl";
+    expect(edges()).toEqual([rtl, !rtl]);
+    move(rtl ? -100 : 100);
+    expect(edges()).toEqual([true, true]);
+    move(rtl ? -200 : 200);
+    expect(edges()).toEqual([!rtl, rtl]);
+    // Elastic overscroll must not light up the edge already reached.
+    move(rtl ? -220 : 220);
+    expect(edges()).toEqual([!rtl, rtl]);
+    move(rtl ? 20 : -20);
+    expect(edges()).toEqual([rtl, !rtl]);
+    vi.spyOn(HTMLElement.prototype, "scrollWidth", "get").mockReturnValue(100);
+    move(0);
+    expect(edges()).toEqual([false, false]);
   });
 
   it.each([false, true])(
