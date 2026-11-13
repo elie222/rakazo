@@ -1938,10 +1938,10 @@ PURCHASE_HELPERS = r"""
   const TOTAL = /(?<!sub)total|amount due|balance due|to pay|you pay|סה[״"'׳]?כ|סך[\s-]*הכל|לתשלום/i;
   const moneyIn = (text, last) => {
     const found = String(text).match(MONEY);
-    if (last && found?.length > 1) return found.join(" ");
+    if (last && found?.length > 1) return "?";
     return found ? found[0].replace(/[.,\s]+$/, "").slice(0, 40) : "";
   };
-  // The amount the page shows next to its total, the last one when it shows several.
+  // The amount next to the last total line; multiple prices on one line are ambiguous.
   function totalShown() {
     const lines = String(document.body?.innerText || "").split("\n").slice(0, 400);
     let found = "";
