@@ -45,7 +45,9 @@ import {
   teamBrowserProfileName,
   withCleanupDeadline,
 } from "./computer-workspace.js";
+import { purgeClearedConversationMemory } from "./conversation-memory-cleanup.js";
 import { removeAgentHome, removeAgentHomeFolders } from "./home.js";
+import type { MemoryProviderResolver } from "./memory-provider-factory.js";
 import { forgetPageShareSecrets } from "./page-share-secrets.js";
 import { removePiBotSessions } from "./pi-session.js";
 import { isSandboxGoneError } from "./sandbox-errors.js";
@@ -219,6 +221,7 @@ type BotLifecycleDeps = {
   home: AgentHomeStore;
   jobs: JobPublisher;
   dataDir?: string;
+  memoryProviders?: MemoryProviderResolver;
   artifacts?: ArtifactStore;
   /** Removes deleted page links' sealed tokens from a remote secret store. */
   secretStore?: Pick<SecretStore, "delete">;
@@ -316,25 +319,16 @@ export async function archiveBot(
     }),
     deps.prisma.run.findMany({
       where: { botId: bot.id, status: { in: [...ACTIVE_RUN_STATUSES] } },
-      select: { id: true },
+      select: { id: true, taskId: true, userId: true, spaceId: true },
     }),
     deps.prisma.routine.findMany({
       where: { botId: bot.id, active: true },
       select: { id: true },
     }),
   ]);
-  const runIds = activeRuns.map((run) => run.id);
   const now = new Date();
-  await deps.prisma.$transaction(async (tx) => {
-    await tx.run.updateMany({
-      where: { id: { in: runIds } },
-      data: { status: "cancelled", completedAt: now },
-    });
-    await clearEndedRunState(tx, runIds);
-    await tx.task.updateMany({
-      where: { runs: { some: { id: { in: runIds } } } },
-      data: { status: "cancelled" },
-    });
+  const cancelledRuns = await deps.prisma.$transaction(async (tx) => {
+    const cancelled = await cancelRunsInTransaction(tx, activeRuns, now);
     await tx.routine.updateMany({
       where: { botId: bot.id },
       data: { active: false, nextRunAt: null },
@@ -356,9 +350,10 @@ export async function archiveBot(
       where: { id: bot.id },
       data: { archivedAt: bot.archivedAt ?? now, pinned: false },
     });
+    return cancelled;
   });
   await Promise.allSettled([
-    ...activeRuns.map((run) => deps.jobs.cancel(runJobKey(run.id))),
+    ...cancelledRuns.map((run) => deps.jobs.cancel(runJobKey(run.id))),
     ...activeRoutines.map((routine) => deps.jobs.cancel(routineJobKey(routine.id))),
   ]);
   await releaseTeamComputerScreen(deps, bot, dedicated?.id, context);
@@ -442,6 +437,14 @@ export async function destroyBot(
       if (locked.length === 0) return null;
       const webhookSecretId = locked[0]?.webhookSecretId ?? bot.webhookSecretId ?? null;
       const { deleteMemories } = options;
+      // The thread cascades with the bot; retain its namespace only when deletion was requested.
+      const directMemory =
+        deleteMemories && deps.memoryProviders
+          ? await tx.thread.findUnique({
+              where: { botId: bot.id },
+              select: { id: true, historyCompactionGeneration: true },
+            })
+          : null;
       const botArtifacts = await tx.artifact.findMany({
         where: { botId: bot.id, groupId: null, spaceId: bot.spaceId },
         select: { storageKey: true },
@@ -454,6 +457,16 @@ export async function destroyBot(
       const pageShareSecrets = await deletePageShareSecrets(tx, botPages);
       await tx.page.deleteMany({ where: botPages });
       const groupCleanup = await detachBotFromGroups(tx, bot.id);
+      // Membership can have ended earlier; recorded runs still name every surviving group
+      // whose learned sessions belong to this bot, until the bot's cascade removes those runs.
+      const groupMemberMemory =
+        deleteMemories && deps.memoryProviders
+          ? await tx.run.findMany({
+              where: { botId: bot.id, thread: { groupId: { not: null } } },
+              distinct: ["threadId"],
+              select: { thread: { select: { id: true, historyCompactionGeneration: true } } },
+            })
+          : [];
       await tx.computerExecutionLease.deleteMany({ where: { botId: bot.id } });
       await tx.computer.updateMany({
         where: {
@@ -494,6 +507,9 @@ export async function destroyBot(
           ...botArtifacts.map((artifact) => artifact.storageKey),
           ...groupCleanup.artifactKeys,
         ],
+        directMemory,
+        groupMemberMemory: groupMemberMemory.map((run) => run.thread),
+        groupMemory: groupCleanup.memory,
         cancelledGroupRuns: groupCleanup.cancelledRuns,
         pageShareSecrets: [...pageShareSecrets, ...groupCleanup.pageShareSecrets],
       };
@@ -523,6 +539,45 @@ export async function destroyBot(
         .catch(() => undefined);
     }),
   );
+  if (deps.memoryProviders) {
+    const memory = { prisma: deps.prisma, memoryProviders: deps.memoryProviders, jobs: deps.jobs };
+    await Promise.all(
+      deletion.groupMemory.map((group) =>
+        purgeClearedConversationMemory(
+          memory,
+          context,
+          {
+            kind: "group",
+            threadId: group.threadId,
+            memberBotIds: group.botIds,
+          },
+          group.generation,
+        ).catch((error) => getLogger().error("dissolved group memory cleanup", error)),
+      ),
+    );
+    await Promise.all(
+      deletion.groupMemberMemory.map((thread) =>
+        purgeClearedConversationMemory(
+          memory,
+          context,
+          {
+            kind: "group-member",
+            botId: bot.id,
+            threadId: thread.id,
+          },
+          thread.historyCompactionGeneration,
+        ).catch((error) => getLogger().error("deleted bot group memory cleanup", error)),
+      ),
+    );
+    if (deletion.directMemory) {
+      await purgeClearedConversationMemory(
+        memory,
+        context,
+        { kind: "bot", botId: bot.id, threadId: deletion.directMemory.id },
+        deletion.directMemory.historyCompactionGeneration,
+      ).catch((error) => getLogger().error("deleted bot conversation memory cleanup", error));
+    }
+  }
   if (dedicated) {
     await recordComputerRunEnd(deps.prisma, { id: dedicated.id }, "deleted");
     await removeAgentHome(deps.home, dedicated.homeKey, deps.dataDir).catch(() => undefined);
@@ -536,6 +591,43 @@ export async function destroyBot(
     await removeStoredArtifacts(artifactStore, deletion.artifactKeys, context);
   }
   if (deps.secretStore) await forgetPageShareSecrets(deps.secretStore, deletion.pageShareSecrets);
+}
+
+type DissolvableGroup = {
+  members: ReadonlyArray<{ botId: string; bot: { archivedAt: Date | null } }>;
+};
+
+/**
+ * Groups left with fewer than two active bots once `botId` is gone.
+ * Removal and its preview both decide here, so the warning names what the delete removes.
+ */
+function groupsDissolvedByRemovingBot<T extends DissolvableGroup>(
+  groups: readonly T[],
+  botId: string,
+): T[] {
+  return groups.filter((group) => {
+    const activeMembersAfterDeletion = group.members.filter(
+      (member) => member.botId !== botId && member.bot.archivedAt === null,
+    ).length;
+    return activeMembersAfterDeletion < GROUP_MEMBER_MIN;
+  });
+}
+
+/** The groups `destroyBot` dissolves for this bot, as `{ id, name }`. Read-only. */
+export async function groupsRemovedByDeletingBot(prisma: PrismaClient, botId: string) {
+  const groups = await prisma.chatGroup.findMany({
+    where: { members: { some: { botId } } },
+    orderBy: [{ name: "asc" }, { id: "asc" }],
+    select: {
+      id: true,
+      name: true,
+      members: { select: { botId: true, bot: { select: { archivedAt: true } } } },
+    },
+  });
+  return groupsDissolvedByRemovingBot(groups, botId).map((group) => ({
+    id: group.id,
+    name: group.name,
+  }));
 }
 
 async function detachBotFromGroups(tx: Prisma.TransactionClient, botId: string) {
@@ -553,22 +645,44 @@ async function detachBotFromGroups(tx: Prisma.TransactionClient, botId: string) 
       members: {
         select: { botId: true, bot: { select: { archivedAt: true } } },
       },
-      thread: { select: { id: true } },
+      thread: { select: { id: true, historyCompactionGeneration: true } },
     },
   });
-  const dissolvedGroupIds: string[] = [];
-  for (const group of affectedGroups) {
-    const activeMembersAfterDeletion = group.members.filter(
-      (member) => member.botId !== botId && member.bot.archivedAt === null,
-    ).length;
-    if (activeMembersAfterDeletion < GROUP_MEMBER_MIN) {
-      dissolvedGroupIds.push(group.id);
-    }
-  }
+  const dissolvedGroupIds = groupsDissolvedByRemovingBot(affectedGroups, botId).map(
+    (group) => group.id,
+  );
   const dissolvedGroupIdSet = new Set(dissolvedGroupIds);
   const dissolvedThreadIds = affectedGroups
     .filter((group) => dissolvedGroupIdSet.has(group.id))
     .flatMap((group) => (group.thread ? [group.thread.id] : []));
+  // Capture all learners before the group cascades away, including bots no longer in it.
+  const learners = dissolvedThreadIds.length
+    ? await tx.run.findMany({
+        where: { threadId: { in: dissolvedThreadIds } },
+        distinct: ["threadId", "botId"],
+        select: { threadId: true, botId: true },
+      })
+    : [];
+  const memory = affectedGroups
+    .filter((group) => dissolvedGroupIdSet.has(group.id))
+    .flatMap((group) =>
+      group.thread
+        ? [
+            {
+              threadId: group.thread.id,
+              generation: group.thread.historyCompactionGeneration,
+              botIds: [
+                ...new Set([
+                  ...group.members.map((member) => member.botId),
+                  ...learners
+                    .filter((run) => run.threadId === group.thread!.id)
+                    .map((run) => run.botId),
+                ]),
+              ],
+            },
+          ]
+        : [],
+    );
   const activeRuns = dissolvedThreadIds.length
     ? await tx.run.findMany({
         where: {
@@ -618,6 +732,7 @@ async function detachBotFromGroups(tx: Prisma.TransactionClient, botId: string) 
     await tx.chatGroup.deleteMany({ where: { id: { in: dissolvedGroupIds } } });
   }
   return {
+    memory,
     artifactKeys: groupArtifacts.map((artifact) => artifact.storageKey),
     pageShareSecrets,
     cancelledRuns: cancelledRuns.map((run) => ({
@@ -714,6 +829,7 @@ const REMOTE_TEAM_SANDBOX_KINDS = new Set([
   "createos",
   "kubernetes",
   "incus",
+  "local-vm",
 ]);
 
 /**

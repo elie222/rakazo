@@ -95,6 +95,10 @@ export function sandboxProviderOptionsFromEnv(
   | "incusCpuLimit"
   | "incusMemoryLimit"
   | "incusProcessLimit"
+  | "localVmCli"
+  | "localVmComputerImage"
+  | "localVmCpus"
+  | "localVmMemory"
   | "wuyingAccessKeyId"
   | "wuyingAccessKeySecret"
   | "wuyingRegionId"
@@ -159,6 +163,10 @@ export function sandboxProviderOptionsFromEnv(
     incusCpuLimit: optional(source.INCUS_SANDBOX_CPU_LIMIT),
     incusMemoryLimit: optional(source.INCUS_SANDBOX_MEMORY_LIMIT),
     incusProcessLimit: optional(source.INCUS_SANDBOX_PROCESS_LIMIT),
+    localVmCli: optional(source.LOCAL_VM_CLI),
+    localVmComputerImage: optional(source.LOCAL_VM_COMPUTER_IMAGE),
+    localVmCpus: optional(source.LOCAL_VM_CPUS),
+    localVmMemory: optional(source.LOCAL_VM_MEMORY),
     wuyingAccessKeyId: optional(source.WUYING_ACCESS_KEY_ID),
     wuyingAccessKeySecret: optional(source.WUYING_ACCESS_KEY_SECRET),
     wuyingRegionId: optional(source.WUYING_REGION_ID),

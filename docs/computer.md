@@ -52,11 +52,16 @@ Open the computer and choose **More computer actions**:
 
 ## Use your own computer
 
-In the [desktop app](./desktop-app.md), bots can also run commands on the computer the app is
-installed on. Turn on **Let bots use this computer** in **Settings → General** under **Computers**.
-In every [approval mode](./approvals.md), a bot asks before its first command in a space and before
-it first uses each app there, unless a Block rule refuses it. **Allow in this space** covers the
-rest of that space, in any chat, until you remove the computer from the same list.
+In the [desktop app](./desktop-app.md), bots can also run commands and use apps on the computer the
+app is installed on. Turn on **Let bots use this computer** in **Settings → General** under
+**Computers**. This works with Rakazo Cloud, a server you connect to, and the app's own local server.
+Using apps on screen works on Mac and Windows; on a Mac, allow Rakazo under **Accessibility** and
+**Screen Recording** in System Settings.
+
+In every [approval mode](./approvals.md), a bot asks before it first uses each app in a space, and
+on a connected server before its first command there too, unless a Block rule refuses it. **Allow
+in this space** covers the rest of that space, in any chat. Bots use your apps only in chats you
+start with your own bots, never from routines or other people's messages.
 
 > [!WARNING]
 > A bot with access to your computer can read your files and run programs as you. Only turn it on

@@ -1,9 +1,11 @@
 import {
   abortableDelay,
   createRefreshCoalescer,
+  errorStatus,
   isRetryableError,
   isRunTerminalEvent,
   messageUnreadFor,
+  reconnectDelayMs,
   reduceThreadSnapshot,
   rememberTerminalRun,
   retryDelayMs,
@@ -286,6 +288,12 @@ export function useThreadLiveSubscription({
         }
         // A 4xx other than 408/429 is the server's answer; reconnecting only polls it.
         if (abort.signal.aborted || !isRetryableError(failure)) break;
+        // Ended without the server's answer: most likely closed under it, as a deploy closes
+        // every client's stream at once.
+        if (errorStatus(failure) === undefined) {
+          await abortableDelay(reconnectDelayMs(failure), abort.signal);
+          if (abort.signal.aborted || sessionGeneration !== currentSessionGeneration()) break;
+        }
         let refreshFailure: unknown;
         if (!jumpScrollTarget.current && !expandedHistoryThread.current) {
           refreshFailure = await refresh().then(

@@ -121,6 +121,11 @@ msgstr "{0} 正在运行"
 msgid "{0} KB"
 msgstr "{0} KB"
 
+#. placeholder {0}: usd(creditsUsd)
+#: apps/web/src/components/PlanUsage.tsx
+msgid "{0} left"
+msgstr "剩余 {0}"
+
 #. placeholder {0}: parts.amount
 #: apps/web/src/components/ArtifactFileCard.tsx
 msgid "{0} MB"
@@ -141,6 +146,11 @@ msgstr "{0} TB"
 msgid "{0}, paused until you turn it on"
 msgstr "{0}，开启前保持暂停"
 
+#. placeholder {0}: Math.round(used)
+#: apps/web/src/components/PlanUsage.tsx
+msgid "{0}% used"
+msgstr "已用 {0}%"
+
 #: apps/web/src/lib/billing.ts
 msgid "{amount} / {period}"
 msgstr "{amount} / {period}"
@@ -160,6 +170,10 @@ msgstr "每周 {amount}"
 #: apps/mobile/lib/spending-limit.ts
 msgid "{amount} in total"
 msgstr "总计 {amount}"
+
+#: apps/mobile/app/(settings)/account.tsx
+msgid "{amount} left"
+msgstr "剩余 {amount}"
 
 #: apps/mobile/lib/spending-limit.ts
 msgid "{amount} spent"
@@ -673,6 +687,10 @@ msgstr "{title}，保存为 {savedAs}"
 msgid "{toolCount, plural, one {# tool} other {# tools}}"
 msgstr "{toolCount, plural, one {# 个工具} other {# 个工具}}"
 
+#: apps/mobile/app/(settings)/account.tsx
+msgid "{used}% used"
+msgstr "已用 {used}%"
+
 #: apps/mobile/components/vault-item-editor.tsx
 msgid "{variable} is reserved. Choose another name."
 msgstr "{variable} 已被保留。请选择其他名称。"
@@ -1093,7 +1111,7 @@ msgstr "添加模型"
 msgid "Add open work"
 msgstr "添加待办事项"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/mobile/lib/passkey.ts
 #: apps/web/src/components/PasskeyOffer.tsx
 #: apps/web/src/components/PasskeySettings.tsx
@@ -1177,7 +1195,6 @@ msgstr "地址第 2 行"
 msgid "Adds"
 msgstr "将添加"
 
-#: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/mobile/app/bot-settings.tsx
 #: apps/mobile/components/compatible-endpoint-form.tsx
@@ -1204,13 +1221,13 @@ msgstr "智能体"
 msgid "Agent from another app"
 msgstr "其他应用中的智能体"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 msgid "Agent messages"
 msgstr "智能体消息"
 
 #: apps/mobile/app/(settings)/_layout.tsx
-#: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/ai-data-sharing.tsx
+#: apps/mobile/app/(settings)/general.tsx
 msgid "AI data sharing"
 msgstr "AI 数据共享"
 
@@ -1294,14 +1311,11 @@ msgstr "允许一次"
 msgid "Allow Rakazo to use Speech Recognition and the microphone in System Settings."
 msgstr "请在系统设置中允许 Rakazo 使用语音识别和麦克风。"
 
+#: apps/mobile/lib/call-session.ts
 #: apps/mobile/lib/composer-dictation.ts
+#: apps/mobile/lib/thread-voice.ts
 msgid "Allow speech recognition in Settings, or connect a voice provider that transcribes."
 msgstr "请在设置中允许语音识别，或连接支持转写的语音服务。"
-
-#: apps/mobile/lib/call-session.ts
-#: apps/mobile/lib/thread-voice.ts
-msgid "Allow speech recognition in Settings, or connect ElevenLabs, OpenAI, or Fish Audio."
-msgstr "请在“设置”中允许语音识别，或连接 ElevenLabs、OpenAI 或 Fish Audio。"
 
 #: apps/web/src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Allow writing"
@@ -1382,7 +1396,7 @@ msgstr "无法使用导入的 API 密钥。取消勾选后重试。"
 msgid "An integration tool"
 msgstr "集成工具"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/mobile/lib/live-notifications.ts
 msgid "Android blocked notifications."
 msgstr "Android 已阻止通知。"
@@ -1486,7 +1500,7 @@ msgstr "API 令牌"
 msgid "API URL"
 msgstr "API URL"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
 msgid "Appearance"
 msgstr "外观"
@@ -1560,7 +1574,6 @@ msgid "archived"
 msgstr "已归档"
 
 #: apps/mobile/app/(settings)/_layout.tsx
-#: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/components/inbox-rows.tsx
 #: apps/web/src/pages/shell/archived-chats.tsx
 msgid "Archived"
@@ -1866,7 +1879,7 @@ msgstr "Bot 屏幕"
 msgid "Bot screen preview"
 msgstr "Bot 屏幕预览"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
 msgid "Bot style"
 msgstr "Bot 风格"
@@ -1995,13 +2008,14 @@ msgid "Can't read images"
 msgstr "无法读取图像"
 
 #: apps/mobile/app/_layout.tsx
-#: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/ai-data-sharing.tsx
 #: apps/mobile/app/(settings)/archived-bots.tsx
 #: apps/mobile/app/(settings)/billing.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/mobile/app/(settings)/memory-note.tsx
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/mobile/app/(settings)/plugin.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/mobile/app/(settings)/skill.tsx
 #: apps/mobile/app/(settings)/space.tsx
 #: apps/mobile/app/(settings)/spending-limit.tsx
@@ -2144,8 +2158,8 @@ msgid "Change model"
 msgstr "更换模型"
 
 #: apps/mobile/app/(settings)/_layout.tsx
-#: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/change-password.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
 msgid "Change password"
 msgstr "修改密码"
@@ -2562,10 +2576,10 @@ msgstr "已完成"
 #: apps/mobile/app/bot-settings.tsx
 #: apps/mobile/components/computer-mode-picker.tsx
 #: apps/mobile/components/ComputerCard.tsx
+#: apps/web/src/components/ComputerCard.tsx
 #: apps/web/src/pages/settings-nav.ts
 #: apps/web/src/pages/shell/bot-panel.tsx
 #: apps/web/src/pages/shell/bot-settings-sections.tsx
-#: apps/web/src/pages/shell/message-view.tsx
 msgid "Computer"
 msgstr "电脑"
 
@@ -3091,11 +3105,12 @@ msgstr "无法连接此语音提供商"
 msgid "Could not connect to the computer screen"
 msgstr "无法连接电脑屏幕"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/mobile/app/computer.tsx
 #: apps/mobile/app/sign-in.tsx
 #: apps/mobile/app/thread.tsx
 #: apps/mobile/components/account-deletion.tsx
+#: apps/mobile/components/ComputerCard.tsx
 #: apps/mobile/components/confirm-identity.tsx
 #: apps/mobile/lib/api-auth.ts
 #: apps/mobile/lib/identity-confirmation.ts
@@ -3104,6 +3119,7 @@ msgstr "无法连接电脑屏幕"
 #: apps/mobile/lib/user-error.ts
 #: apps/web/src/components/AccountAccess.tsx
 #: apps/web/src/components/AccountDataSettings.tsx
+#: apps/web/src/components/ComputerCard.tsx
 #: apps/web/src/components/ConfirmIdentityDialog.tsx
 #: apps/web/src/components/PasskeyOffer.tsx
 #: apps/web/src/components/PasskeySettings.tsx
@@ -3303,6 +3319,7 @@ msgstr "无法退出空间"
 msgid "Could not load"
 msgstr "无法加载"
 
+#: apps/mobile/components/inbox-activity.tsx
 #: apps/web/src/pages/ActivityList.tsx
 msgid "Could not load activity"
 msgstr "无法加载动态"
@@ -3534,6 +3551,7 @@ msgstr "无法播放测试片段"
 
 #: apps/mobile/components/audio-attachment.tsx
 #: apps/mobile/lib/voice.ts
+#: apps/web/src/lib/tts.ts
 msgid "Could not play that clip."
 msgstr "无法播放该音频。"
 
@@ -3668,7 +3686,7 @@ msgstr "无法撤销授权"
 msgid "Could not run routine"
 msgstr "无法运行例行任务"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/mobile/app/(settings)/memory-note.tsx
 #: apps/mobile/app/(settings)/team-conversation.tsx
 #: apps/mobile/components/vault-item-editor.tsx
@@ -3934,7 +3952,7 @@ msgstr "无法更新电脑"
 msgid "Could not update name"
 msgstr "无法更新姓名"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/mobile/app/bot-profile.tsx
 msgid "Could not update notifications"
 msgstr "无法更新通知"
@@ -3997,7 +4015,7 @@ msgstr "无法刷新——显示最近加载的消息。"
 msgid "Couldn't start the computer"
 msgstr "无法启动电脑"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
 msgid "Couldn't update bot style"
 msgstr "无法更新 Bot 风格"
@@ -4113,9 +4131,11 @@ msgstr "凭据：{names}"
 msgid "Credit amount"
 msgstr "额度金额"
 
+#: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/mobile/app/paywall.tsx
 #: apps/web/src/components/ModelCredits.tsx
+#: apps/web/src/components/PlanUsage.tsx
 msgid "Credits"
 msgstr "额度"
 
@@ -4198,7 +4218,7 @@ msgstr "每天"
 msgid "Daily check-ins on unfinished work"
 msgstr "每天跟进未完成的工作"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
 #: apps/web/src/pages/shell/use-palette-actions.ts
 msgid "Dark"
@@ -4269,9 +4289,9 @@ msgstr "OpenClaw 默认内容"
 msgid "Default scope"
 msgstr "默认范围"
 
-#: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/memory-note.tsx
 #: apps/mobile/app/(settings)/organization.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/mobile/app/(settings)/skill.tsx
 #: apps/mobile/app/(settings)/space.tsx
 #: apps/mobile/app/artifact.tsx
@@ -4343,8 +4363,8 @@ msgstr "要删除 {name} 及其 {count} 个 Bot 吗？"
 msgid "Delete {name} and its bot?"
 msgstr "要删除 {name} 及其 Bot 吗？"
 
-#: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/memory-note.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/mobile/app/(settings)/skill.tsx
 #: apps/mobile/app/pages.tsx
 #: apps/mobile/lib/bot-lifecycle.ts
@@ -4353,7 +4373,7 @@ msgstr "要删除 {name} 及其 Bot 吗？"
 msgid "Delete {name}?"
 msgstr "要删除 {name} 吗？"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/mobile/app/paywall.tsx
 #: apps/web/src/components/AccountAccess.tsx
 #: apps/web/src/components/AccountMenu.tsx
@@ -4371,6 +4391,8 @@ msgid "Delete memories too"
 msgstr "同时删除记忆"
 
 #: apps/mobile/app/(settings)/organization.tsx
+#: apps/mobile/app/paywall.tsx
+#: apps/web/src/components/AccountMenu.tsx
 #: apps/web/src/pages/OrganizationSettingsPanel.tsx
 msgid "Delete organization"
 msgstr "删除组织"
@@ -4418,6 +4440,10 @@ msgstr "已删除"
 #: apps/mobile/components/pages/page-card.tsx
 msgid "Deleted"
 msgstr "已删除"
+
+#: apps/web/src/pages/shell/transcript-member-name.ts
+msgid "Deleted bot"
+msgstr "已删除的 Bot"
 
 #: apps/web/src/components/PasskeySettings.tsx
 #: apps/web/src/pages/Artifacts.tsx
@@ -4646,12 +4672,12 @@ msgstr "还没有账户？"
 #: apps/mobile/lib/activity.ts
 #: apps/mobile/lib/board.ts
 #: apps/web/src/components/AccountDataSettings.tsx
+#: apps/web/src/components/ComputerCard.tsx
 #: apps/web/src/components/ToolActivityDisclosure.tsx
 #: apps/web/src/lib/ticket-status.ts
 #: apps/web/src/pages/ActivityList.tsx
 #: apps/web/src/pages/shell/avatar-studio-popover.tsx
 #: apps/web/src/pages/shell/import-setup-card.tsx
-#: apps/web/src/pages/shell/message-view.tsx
 msgid "Done"
 msgstr "完成"
 
@@ -4726,7 +4752,7 @@ msgstr "编辑头像"
 msgid "Edit first"
 msgstr "先编辑"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/mobile/app/bot-settings.tsx
 #: apps/mobile/components/name-dialog-compose.tsx
 #: apps/mobile/components/name-dialog.tsx
@@ -5289,6 +5315,8 @@ msgstr "网关令牌"
 msgid "Gateway URL"
 msgstr "网关 URL"
 
+#: apps/mobile/app/(settings)/_layout.tsx
+#: apps/mobile/app/(settings)/account.tsx
 #: apps/web/src/pages/settings-nav.ts
 #: apps/web/src/pages/SettingsOverlay.tsx
 msgid "General"
@@ -5387,6 +5415,10 @@ msgstr "群组设置"
 msgid "Group updates"
 msgstr "合并更新"
 
+#: apps/web/src/pages/shell/dialogs.tsx
+msgid "Groups left with fewer than two bots are deleted too, including their messages, files, and pages."
+msgstr "Bot 少于两个的群组也会被删除，包括其中的消息、文件和页面。"
+
 #: apps/mobile/components/CallCard.tsx
 #: apps/web/src/components/call/CallCard.tsx
 msgid "Hang up"
@@ -5401,7 +5433,7 @@ msgstr "请先挂断，然后输入屏幕上的代码。"
 msgid "Hang up, then enter the code on screen."
 msgstr "请挂断，然后输入屏幕上的代码。"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 msgid "Haptics"
 msgstr "触感反馈"
 
@@ -5582,6 +5614,8 @@ msgid "https://example.com/openapi.json"
 msgstr "https://example.com/openapi.json"
 
 #: apps/mobile/app/computer.tsx
+#: apps/mobile/components/ComputerCard.tsx
+#: apps/web/src/components/ComputerCard.tsx
 #: apps/web/src/pages/shell/computer-release-actions.tsx
 msgid "I’m done"
 msgstr "我做完了"
@@ -5881,7 +5915,7 @@ msgid "Label"
 msgstr "标签"
 
 #: apps/mobile/app/(settings)/_layout.tsx
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/mobile/app/(settings)/language.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
 msgid "Language"
@@ -5934,7 +5968,7 @@ msgstr "允许 Bot 使用这台电脑"
 msgid "Lets bots save and recall facts by meaning, alongside MEMORY.md."
 msgstr "让 Bot 在 MEMORY.md 之外，按语义保存和回忆事实。"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
 #: apps/web/src/pages/shell/use-palette-actions.ts
 msgid "Light"
@@ -5959,7 +5993,7 @@ msgstr "链接已复制"
 msgid "Link DMs"
 msgstr "关联私信"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/web/src/components/AccountAccess.tsx
 msgid "Link SSO"
 msgstr "关联 SSO"
@@ -5976,11 +6010,11 @@ msgstr "聆听"
 msgid "Listening…"
 msgstr "正在聆听…"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 msgid "Live update settings"
 msgstr "实时更新设置"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 msgid "Live working status"
 msgstr "实时工作状态"
 
@@ -5998,7 +6032,7 @@ msgstr "加载更多"
 msgid "Load older runs"
 msgstr "加载更早的运行记录"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
 msgid "Load web images automatically"
 msgstr "自动加载网络图片"
@@ -6497,10 +6531,12 @@ msgstr "周一"
 msgid "month"
 msgstr "月"
 
+#: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/spending-limit.tsx
 #: apps/mobile/app/paywall.tsx
 #: apps/mobile/lib/cron.ts
 #: apps/web/src/components/ModelCredits.tsx
+#: apps/web/src/components/PlanUsage.tsx
 #: apps/web/src/components/SpendingLimitSettings.tsx
 #: apps/web/src/lib/cron.ts
 msgid "Monthly"
@@ -6650,7 +6686,7 @@ msgstr "等你回答"
 msgid "Needs an OAuth client ID"
 msgstr "需要 OAuth 客户端 ID"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/mobile/components/inbox-activity.tsx
 #: apps/mobile/components/inbox-rows.tsx
 #: apps/mobile/components/unread-jump-overlay.tsx
@@ -6674,9 +6710,9 @@ msgid "Needs takeover"
 msgstr "需要接管"
 
 #: apps/mobile/components/ComputerCard.tsx
+#: apps/web/src/components/ComputerCard.tsx
 #: apps/web/src/lib/roster-status.ts
 #: apps/web/src/pages/shell/computer-overlay.tsx
-#: apps/web/src/pages/shell/message-view.tsx
 msgid "Needs you"
 msgstr "需要接管"
 
@@ -6968,6 +7004,7 @@ msgstr "无行"
 msgid "No runs match these filters."
 msgstr "没有符合筛选的运行记录。"
 
+#: apps/mobile/components/inbox-activity.tsx
 #: apps/mobile/components/routine-run-history.tsx
 #: apps/web/src/pages/ActivityList.tsx
 msgid "No runs yet"
@@ -7103,11 +7140,11 @@ msgstr "暂无记忆"
 msgid "Nothing saved yet."
 msgstr "尚未保存任何内容。"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 msgid "Notification settings"
 msgstr "通知设置"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/mobile/app/bot-profile.tsx
 #: apps/mobile/app/bot-settings.tsx
 #: apps/web/src/pages/shell/bot-settings-sections.tsx
@@ -7227,12 +7264,12 @@ msgstr "仅自己"
 #: apps/mobile/app/pages.tsx
 #: apps/mobile/components/ImportSetupCard.tsx
 #: apps/web/src/components/bot-templates/bot-templates-dialog.tsx
+#: apps/web/src/components/ComputerCard.tsx
 #: apps/web/src/components/markdown-link-prompt.tsx
 #: apps/web/src/components/pages/PagesList.tsx
 #: apps/web/src/pages/PaymentWalletSettingsPanel.tsx
 #: apps/web/src/pages/shell/computer-panel.tsx
 #: apps/web/src/pages/shell/import-setup-card.tsx
-#: apps/web/src/pages/shell/message-view.tsx
 msgid "Open"
 msgstr "打开"
 
@@ -7378,7 +7415,7 @@ msgstr "组织"
 msgid "Organization API key"
 msgstr "组织 API 密钥"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/mobile/app/bot-settings.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
 #: apps/web/src/pages/shell/avatar-studio-popover.tsx
@@ -7486,12 +7523,12 @@ msgstr "此群组为你创建的页面会显示在这里。"
 msgid "Pages this group builds for you appear here. Ask for a dashboard, tracker or plan to make one."
 msgstr "此群组为你创建的页面会显示在这里。请它做一个仪表板、跟踪表或计划即可创建。"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/web/src/components/PasskeySettings.tsx
 msgid "Passkey"
 msgstr "通行密钥"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/web/src/components/PasskeySettings.tsx
 msgid "Passkeys"
 msgstr "通行密钥"
@@ -7828,7 +7865,7 @@ msgstr "拉取请求"
 msgid "Put your bots to work"
 msgstr "让你的 Bot 开始工作"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 msgid "Questions, approvals, takeover"
 msgstr "提问、审批和接管"
 
@@ -7842,8 +7879,8 @@ msgstr "排队中"
 msgid "Quote"
 msgstr "引用"
 
-#: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/ai-data-sharing.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/mobile/app/bot-settings.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
 #: apps/web/src/pages/shell/avatar-studio-popover.tsx
@@ -8080,10 +8117,10 @@ msgstr "重新加载"
 msgid "Remote MCP server"
 msgstr "远程 MCP 服务器"
 
-#: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/approvals.tsx
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/mobile/app/(settings)/plugin.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/mobile/app/(settings)/spending-limit.tsx
 #: apps/mobile/app/(settings)/vault.tsx
 #: apps/mobile/app/space-members.tsx
@@ -8215,7 +8252,7 @@ msgstr "已移除，但列表刷新失败"
 msgid "Removing…"
 msgstr "正在移除…"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/mobile/app/pages.tsx
 #: apps/mobile/components/model-providers.tsx
 #: apps/web/src/components/pages/PagesList.tsx
@@ -8282,7 +8319,7 @@ msgstr "替换为 {site} 保存的登录信息"
 msgid "Replies"
 msgstr "回复"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 msgid "Replies and completed work"
 msgstr "回复和已完成的工作"
 
@@ -8355,15 +8392,26 @@ msgstr "重置密码"
 msgid "Reset your password"
 msgstr "重置你的密码"
 
+#: apps/mobile/app/(settings)/billing.tsx
 #: apps/mobile/app/(settings)/spending-limit.tsx
 #: apps/mobile/components/run-error-sheet.tsx
 #: apps/web/src/components/SpendingLimitSettings.tsx
 msgid "Resets"
 msgstr "重置"
 
+#. placeholder {0}: formatBillingDate(status.computerHoursResetAt, i18n.locale || "en")
+#: apps/web/src/components/ModelCredits.tsx
+msgid "Resets {0}"
+msgstr "{0} 重置"
+
 #: apps/mobile/components/thread-error-notice.tsx
 msgid "Resets {date}."
 msgstr "将于 {date} 重置。"
+
+#: apps/mobile/app/(settings)/account.tsx
+#: apps/web/src/components/PlanUsage.tsx
+msgid "Resets in {reset}"
+msgstr "{reset}后重置"
 
 #: apps/web/src/components/ComputerMaintenanceActions.tsx
 msgid "Resetting…"
@@ -8425,14 +8473,15 @@ msgstr "正在恢复工作区"
 msgid "Resume notifications"
 msgstr "恢复通知"
 
-#: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/ai-data-sharing.tsx
 #: apps/mobile/app/(settings)/bot-template.tsx
 #: apps/mobile/app/(settings)/bot-templates.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/mobile/app/(settings)/memory-note.tsx
 #: apps/mobile/app/(settings)/memory.tsx
 #: apps/mobile/app/(settings)/plugin.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/mobile/app/(settings)/skill.tsx
 #: apps/mobile/app/(settings)/skills.tsx
 #: apps/mobile/app/sign-in.tsx
@@ -8624,9 +8673,9 @@ msgstr "与主模型相同"
 msgid "Saturday"
 msgstr "周六"
 
-#: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/memory-note.tsx
 #: apps/mobile/app/(settings)/model-connection.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/mobile/app/(settings)/skill.tsx
 #: apps/mobile/app/(settings)/spending-limit.tsx
 #: apps/mobile/app/(settings)/team-conversation.tsx
@@ -8744,7 +8793,7 @@ msgstr "计划执行延迟"
 msgid "Scheduled routines"
 msgstr "定时例行任务"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 msgid "Scheduled tasks"
 msgstr "计划任务"
 
@@ -8987,10 +9036,16 @@ msgstr "服务器名称"
 msgid "Server URL"
 msgstr "服务器 URL"
 
+#: apps/mobile/app/(settings)/account.tsx
+#: apps/web/src/components/PlanUsage.tsx
+msgid "Session"
+msgstr "会话"
+
 #: apps/web/src/components/SpendingLimitSettings.tsx
 msgid "Set"
 msgstr "设置"
 
+#: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/components/CallCard.tsx
 #: apps/mobile/components/inbox-render-item.tsx
 #: apps/web/src/components/call/CallCard.tsx
@@ -9309,6 +9364,8 @@ msgstr "技能会加入所有 Bot 共享的技能库。"
 
 #: apps/mobile/app/computer.tsx
 #: apps/mobile/app/new-group.tsx
+#: apps/mobile/components/ComputerCard.tsx
+#: apps/web/src/components/ComputerCard.tsx
 #: apps/web/src/pages/shell/computer-release-actions.tsx
 msgid "Skip"
 msgstr "跳过"
@@ -9318,7 +9375,7 @@ msgid "Skip or deploy key"
 msgstr "跳过或使用部署密钥"
 
 #: apps/mobile/components/ComputerCard.tsx
-#: apps/web/src/pages/shell/message-view.tsx
+#: apps/web/src/components/ComputerCard.tsx
 msgid "Skipped"
 msgstr "已跳过"
 
@@ -9611,7 +9668,7 @@ msgstr "正在停止…"
 msgid "Stored encrypted"
 msgstr "已加密存储"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
 msgid "Stream replies"
 msgstr "流式回复"
@@ -9721,7 +9778,7 @@ msgstr "切换服务器将删除未发送的消息。"
 msgid "Switching…"
 msgstr "正在切换…"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
 #: apps/web/src/pages/shell/use-palette-actions.ts
 msgid "System"
@@ -9736,6 +9793,7 @@ msgid "Table"
 msgstr "表格"
 
 #: apps/mobile/app/computer.tsx
+#: apps/web/src/components/ComputerCard.tsx
 #: apps/web/src/pages/shell/computer-overlay.tsx
 msgid "Take control"
 msgstr "接管控制权"
@@ -9875,6 +9933,14 @@ msgstr "你的 Bot 工作所用的电脑。"
 #: apps/web/src/lib/model-connection-preflight.ts
 msgid "The connection timed out."
 msgstr "连接超时。"
+
+#: apps/web/src/pages/shell/dialogs.tsx
+msgid "The group {names} will be deleted too, including its messages, files, and pages."
+msgstr "群组 {names} 也会被删除，包括其中的消息、文件和页面。"
+
+#: apps/web/src/pages/shell/dialogs.tsx
+msgid "The groups {names} will be deleted too, including their messages, files, and pages."
+msgstr "群组 {names} 也会被删除，包括其中的消息、文件和页面。"
 
 #. js-lingui-explicit-id
 #: packages/i18n/src/run-error.ts
@@ -10387,7 +10453,7 @@ msgstr "为防止滥用，试用期的时长较少。"
 msgid "Troubleshoot"
 msgstr "故障排除"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/web/src/components/TrustedLinkSitesSettings.tsx
 msgid "Trusted sites"
 msgstr "受信任的网站"
@@ -10412,9 +10478,9 @@ msgstr "受信任的网站"
 msgid "Try again"
 msgstr "重试"
 
-#: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/archived-bots.tsx
 #: apps/mobile/app/(settings)/bot-template.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/mobile/app/artifact.tsx
 #: apps/mobile/app/artifacts.tsx
 #: apps/mobile/app/board.tsx
@@ -10654,6 +10720,7 @@ msgid "URL"
 msgstr "URL"
 
 #: apps/mobile/app/(settings)/account.tsx
+#: apps/web/src/components/SidebarFooter.tsx
 #: apps/web/src/pages/settings-nav.ts
 msgid "Usage"
 msgstr "用量"
@@ -10858,6 +10925,10 @@ msgstr "查看全部"
 msgid "View source"
 msgstr "查看源代码"
 
+#: apps/web/src/components/SidebarFooter.tsx
+msgid "View usage"
+msgstr "查看用量"
+
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/ai-data-sharing.tsx
@@ -10951,7 +11022,9 @@ msgstr "工作日"
 msgid "Weekends"
 msgstr "周末"
 
+#: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/spending-limit.tsx
+#: apps/web/src/components/PlanUsage.tsx
 #: apps/web/src/components/SpendingLimitSettings.tsx
 msgid "Weekly"
 msgstr "每周"
@@ -11199,6 +11272,7 @@ msgid "You're all set"
 msgstr "一切就绪"
 
 #: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 msgid "Your account"
 msgstr "你的账户"
 

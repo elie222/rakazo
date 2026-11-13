@@ -7,7 +7,31 @@ import { appendForwardedFor } from "./forwarded-for.js";
 export const DEVICE_SOCKET = `^${USER_DEVICE_CONNECT_PATH}(?:\\?|$)`;
 
 /**
- * What the web server forwards to the API, in development and in `vite preview` deployments.
+ * What the web server forwards to the API, keyed the way Vite's proxy matches: a prefix, or a
+ * pattern when the key starts with `^`. True marks the only route that forwards upgrades: a
+ * user's own computer keeps its device socket open there, so it is anchored to the exact path.
+ */
+export const API_ROUTES: Readonly<Record<string, boolean>> = {
+  "/api": false,
+  [DEVICE_SOCKET]: true,
+  "/rpc": false,
+  // Native app domain association, served by the API from deployment settings.
+  "/.well-known/apple-app-site-association": false,
+  "/.well-known/assetlinks.json": false,
+};
+
+/** Whether the API takes this request, or with `upgrade`, this upgrade; matched as Vite does. */
+export function forwardsToApi(url: string | undefined, upgrade = false): boolean {
+  if (url === undefined) return false;
+  return Object.entries(API_ROUTES).some(
+    ([key, upgrades]) =>
+      (!upgrade || upgrades) &&
+      (key.startsWith("^") ? new RegExp(key).test(url) : url.startsWith(key)),
+  );
+}
+
+/**
+ * The API routes as Vite proxy options, for development and `vite preview` deployments.
  * `allowedHosts` reads the running server's own list: Vite checks it for plain requests but not
  * for the upgrades its proxy forwards.
  */
@@ -40,16 +64,9 @@ export function apiProxy(
       }
     },
   });
-  return {
-    "/api": options(false),
-    // A user's own computer keeps its device socket open here, the API's only upgrade. Vite
-    // matches other keys as prefixes, so this one is anchored to the exact path.
-    [DEVICE_SOCKET]: options(true),
-    "/rpc": options(false),
-    // Native app domain association, served by the API from deployment settings.
-    "/.well-known/apple-app-site-association": options(false),
-    "/.well-known/assetlinks.json": options(false),
-  };
+  return Object.fromEntries(
+    Object.entries(API_ROUTES).map(([route, upgrades]) => [route, options(upgrades)]),
+  );
 }
 
 /** Vite's own Host check for plain requests (isHostAllowedInternal), which it doesn't export. */

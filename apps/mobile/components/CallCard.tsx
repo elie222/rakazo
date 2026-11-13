@@ -193,7 +193,7 @@ export function CallCard() {
         <RoundButton
           label={t`Hang up`}
           ios="phone.down.fill"
-          android="call-outline"
+          android={{ material: "phone-hangup" }}
           color={tokens.destructiveForeground}
           border={tokens.destructiveFill}
           background={tokens.destructiveFill}
