@@ -85,6 +85,32 @@ describe("isEchoOfSpeech", () => {
       ),
     ).toBe(false);
   });
+
+  it("keeps long playback interruptions at the looser barge-in threshold", () => {
+    const reply =
+      "I checked the staging deploy logs for your service and all thirty two integration tests passed today";
+    expect(
+      isEchoOfSpeech(
+        "stop please I checked the logs already let us deploy something completely different instead",
+        reply,
+        0.4,
+      ),
+    ).toBe(false);
+  });
+
+  it("handles repetitive long transcripts and replies without stalling", () => {
+    const repeatedReply = Array.from({ length: 150 }, (_, i) =>
+      i % 2 === 0 ? "yeah" : "okay",
+    ).join(" ");
+    const repeatedHeard = `${Array.from({ length: 75 }, () => "yeah").join(" ")} ${Array.from(
+      { length: 75 },
+      () => "wait",
+    ).join(" ")}`;
+    expect(isEchoOfSpeech(repeatedHeard, repeatedReply)).toBe(false);
+
+    const fiveMinuteClip = Array.from({ length: 500 }, () => "yeah").join(" ");
+    expect(isEchoOfSpeech(fiveMinuteClip, fiveMinuteClip)).toBe(false);
+  });
 });
 
 describe("SpokenMemory", () => {
@@ -119,6 +145,20 @@ describe("SpokenMemory", () => {
 
     expect(memory.isEcho("hey I am here and here", undefined, 30_000)).toBe(true);
     expect(memory.isEcho("hey I am here and here", undefined, 36_000)).toBe(false);
+  });
+
+  it("does not merge two separate replies to reject a genuine long turn", () => {
+    const memory = new SpokenMemory();
+    memory.remember("Please check the staging server status right now", 0);
+    memory.remember("before we restart the background worker queue", 1_000);
+
+    expect(
+      memory.isEcho(
+        "Please check the staging server status and wait before we restart the background worker queue today",
+        undefined,
+        2_000,
+      ),
+    ).toBe(false);
   });
 
   it("keeps a genuine turn, and everything once cleared", () => {

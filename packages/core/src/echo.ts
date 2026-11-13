@@ -1,10 +1,12 @@
 /** Above this length, require matched words to cluster in a compact span rather than across turns. */
 const MAX_ECHO_WORDS = 12;
+/** Upper bound on transcripts checked for long echoes so multi-minute clips stay bounded. */
+const MAX_LONG_ECHO_WORDS = 160;
 /** Fewer matched words than this is coincidence, not the speaker leaking into the mic. */
 const MIN_ECHO_WORDS = 3;
 const ECHO_MATCH_RATIO = 0.6;
 /** Compactness multiplier for matching echoed transcripts longer than MAX_ECHO_WORDS. */
-const LONG_ECHO_SPAN_FACTOR = 2;
+const LONG_ECHO_SPAN_FACTOR = 1.5;
 
 const CONTRACTIONS: Record<string, string> = {
   m: "am",
@@ -50,6 +52,8 @@ export function isEchoOfSpeech(
     );
   }
   if (heardWords.length > MAX_ECHO_WORDS) {
+    // Keep playback barge-in (looser thresholds < ECHO_MATCH_RATIO) accepting long interruptions.
+    if (threshold < ECHO_MATCH_RATIO || heardWords.length > MAX_LONG_ECHO_WORDS) return false;
     return hasCompactInOrderMatch(heardWords, spokenWords, threshold);
   }
   let cursor = 0;
@@ -65,9 +69,9 @@ export function isEchoOfSpeech(
 }
 
 /**
- * Matches longer transcripts (> MAX_ECHO_WORDS) only when enough heard words appear in order
- * inside a single compact span of `spokenWords`, preventing scattered stopword matches across
- * unrelated past replies from filtering out real long turns.
+ * Matches longer transcripts (MAX_ECHO_WORDS < len <= MAX_LONG_ECHO_WORDS) only when enough
+ * heard words appear in order inside a single compact window of `spokenWords`. Slides an O(S)
+ * word-count filter first and only runs bounded 1D LCS on candidate windows.
  */
 function hasCompactInOrderMatch(
   heardWords: readonly string[],
@@ -76,31 +80,86 @@ function hasCompactInOrderMatch(
 ): boolean {
   const required = Math.max(MIN_ECHO_WORDS, Math.ceil(heardWords.length * threshold));
   if (spokenWords.length < required) return false;
-  const maxSpan = heardWords.length * LONG_ECHO_SPAN_FACTOR;
-  const maxStartOffset = heardWords.length - required;
-  for (let startH = 0; startH <= maxStartOffset; startH += 1) {
-    const anchor = heardWords[startH];
-    if (!anchor) continue;
-    for (
-      let startS = spokenWords.indexOf(anchor);
-      startS !== -1;
-      startS = spokenWords.indexOf(anchor, startS + 1)
-    ) {
-      let matched = 1;
-      let cursor = startS + 1;
-      for (let h = startH + 1; h < heardWords.length; h += 1) {
-        if (matched + (heardWords.length - h) < required) break;
-        const word = heardWords[h];
-        if (!word) continue;
-        const at = spokenWords.indexOf(word, cursor);
-        if (at === -1 || at - startS >= maxSpan) continue;
-        matched += 1;
-        cursor = at + 1;
-        if (matched >= required) return true;
+  const needed = new Map<string, number>();
+  for (const word of heardWords) {
+    needed.set(word, (needed.get(word) ?? 0) + 1);
+  }
+  const windowSize = Math.min(
+    spokenWords.length,
+    Math.ceil(heardWords.length * LONG_ECHO_SPAN_FACTOR),
+  );
+  const have = new Map<string, number>();
+  let overlap = 0;
+  const addWord = (word: string) => {
+    const want = needed.get(word);
+    if (!want) return;
+    const count = (have.get(word) ?? 0) + 1;
+    have.set(word, count);
+    if (count <= want) overlap += 1;
+  };
+  const removeWord = (word: string) => {
+    const want = needed.get(word);
+    if (!want) return;
+    const count = have.get(word) ?? 0;
+    if (count <= want) overlap -= 1;
+    have.set(word, count - 1);
+  };
+  for (let i = 0; i < windowSize; i += 1) {
+    const word = spokenWords[i];
+    if (word) addWord(word);
+  }
+  const step = Math.max(1, Math.floor(heardWords.length / 4));
+  let nextLcsAt = 0;
+  const maxStart = spokenWords.length - windowSize;
+  for (let start = 0; start <= maxStart; start += 1) {
+    if (overlap >= required && start >= nextLcsAt) {
+      if (
+        lcsLengthInWindow(heardWords, spokenWords, start, start + windowSize, required) >= required
+      ) {
+        return true;
       }
+      nextLcsAt = start + step;
+    }
+    if (start < maxStart) {
+      const leaving = spokenWords[start];
+      const entering = spokenWords[start + windowSize];
+      if (leaving) removeWord(leaving);
+      if (entering) addWord(entering);
     }
   }
   return false;
+}
+
+function lcsLengthInWindow(
+  heardWords: readonly string[],
+  spokenWords: readonly string[],
+  start: number,
+  end: number,
+  required: number,
+): number {
+  const m = heardWords.length;
+  const dp = new Uint16Array(m + 1);
+  let best = 0;
+  for (let s = start; s < end; s += 1) {
+    const word = spokenWords[s];
+    let prevDiag = 0;
+    for (let h = 1; h <= m; h += 1) {
+      const saved = dp[h] ?? 0;
+      if (word === heardWords[h - 1]) {
+        const next = prevDiag + 1;
+        dp[h] = next;
+        if (next > best) {
+          best = next;
+          if (best >= required) return best;
+        }
+      } else {
+        const left = dp[h - 1] ?? 0;
+        if (left > saved) dp[h] = left;
+      }
+      prevDiag = saved;
+    }
+  }
+  return best;
 }
 
 /** How long a spoken line can still come back through the microphone. */
@@ -135,8 +194,13 @@ export class SpokenMemory {
    * matches without comparing each pair — at the cost of also matching words picked
    * from lines further apart. Compare runs pairwise if that drops real turns.
    */
-  isEcho(heard: string, threshold?: number, now = Date.now()): boolean {
+  isEcho(heard: string, threshold = ECHO_MATCH_RATIO, now = Date.now()): boolean {
     this.prune(now);
+    if (words(heard).length > MAX_ECHO_WORDS) {
+      // Long transcripts are matched against individual replies so words across reply boundaries
+      // cannot combine to swallow a genuine long turn.
+      return this.entries.some((entry) => isEchoOfSpeech(heard, entry.text, threshold));
+    }
     return isEchoOfSpeech(heard, this.entries.map((entry) => entry.text).join(". "), threshold);
   }
 
