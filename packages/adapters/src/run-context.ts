@@ -72,6 +72,10 @@ export interface RunLeaseState {
   lastCheckAt: number;
   /** A takeover keeps the computer lease past this attempt. */
   retainComputer: boolean;
+  /** When the heartbeat last renewed both leases, so a failover is waited out only while they hold. */
+  renewedAt: number;
+  /** The attempt handed the run back after a database outage; it keeps its turn on the computer. */
+  handedBack: boolean;
 }
 
 export interface RunComputerUseState {
