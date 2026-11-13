@@ -88,6 +88,8 @@ export async function autoReviewCheckerProvider(
           callObserver: judgeKey.callObserver,
           accountId: judgeKey.accountId,
           gatewayId: judgeKey.gatewayId,
+          projectId: judgeKey.projectId,
+          region: judgeKey.region,
           baseUrl: judgeKey.baseUrl,
           headers: judgeKey.headers,
           allowPrivateEndpoint: judgeKey.allowPrivateEndpoint,

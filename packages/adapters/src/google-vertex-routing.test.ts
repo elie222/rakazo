@@ -53,6 +53,16 @@ describe("project-scoped model connections", () => {
     },
   );
 
+  it.each(["us_central1", "-us-central1", "us-central1-", "Global", "a".repeat(53)])(
+    "rejects a region that cannot form a regional hostname: %s",
+    (region) => {
+      expect(() => buildModelConnectPlaintext({ ...config, region })).toThrow(
+        "project ID and region",
+      );
+      expect(() => resolveRuntimeModel({ ...config, region })).toThrow("project ID and region");
+    },
+  );
+
   it("keeps key-only legacy routing and isolates two connections", () => {
     const legacy = resolveRuntimeModel({
       provider: config.provider,

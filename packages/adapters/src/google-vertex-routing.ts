@@ -13,7 +13,14 @@ export function vertexRoutingForConnect(
   const projectId = input.projectId ?? previous?.projectId;
   const region = input.region ?? previous?.region;
   if (projectId === undefined && region === undefined) return undefined;
-  if (!modelRoutingId(projectId) || !modelRoutingId(region)) {
+  const regionId = modelRoutingId(region);
+  // The region is also a DNS label prefix; leave room for "-aiplatform".
+  if (
+    !modelRoutingId(projectId) ||
+    !regionId ||
+    regionId.length > 52 ||
+    !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(regionId)
+  ) {
     throw new Error("Enter a valid project ID and region.");
   }
   return { projectId: projectId?.trim(), region: region?.trim() };
