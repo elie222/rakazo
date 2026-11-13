@@ -244,6 +244,19 @@ describe("previewMessageText", () => {
     },
   );
 
+  it.each([
+    "\n  Which release?  \nMore context",
+    "\r\n  Which release?  \r\nMore context",
+    "a".repeat(300),
+    `${"a".repeat(279)}😀more`,
+    `${" ".repeat(100_000)}Outside the preview limit`,
+  ])("matches the server preview for bounded question text: %j", (text) => {
+    const blocks: MessageBlock[] = [{ kind: "ask", text }];
+    expect(previewMessageText({ role: "bot", blocks }, labels)).toBe(
+      messageReplyPreview(blocks, "bot").text || labels.message,
+    );
+  });
+
   it("keeps text ahead of questions and questions ahead of attachments", () => {
     const ask: MessageBlock = { kind: "ask", text: "Which release?" };
     expect(

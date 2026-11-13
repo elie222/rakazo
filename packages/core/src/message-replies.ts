@@ -5,6 +5,19 @@ import { displayName } from "./display-name.js";
 import { plainTextFromMarkdown } from "./markdown-plain.js";
 import { messageReaction } from "./message-reactions.js";
 
+/** Bound the source considered when deriving a reply excerpt. */
+export const MAX_QUOTABLE_SOURCE_LENGTH = 100_000;
+
+/** The first nonblank reply line, capped without splitting a surrogate pair. */
+export function compactReplyExcerpt(text: string): string {
+  const first = text
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .find(Boolean);
+  const excerpt = (first ?? "").slice(0, 280);
+  return /[\uD800-\uDBFF]$/u.test(excerpt) ? excerpt.slice(0, -1) : excerpt;
+}
+
 type ReplyMetadata = {
   replyToMessageId?: string;
   replyQuote?: string;
@@ -154,8 +167,9 @@ export function previewMessageText(
     .trim();
   if (text) return text;
   for (const block of message.blocks) {
-    if (block.kind === "ask" && isQuestionAskBlock(block) && block.text.trim()) {
-      return block.text.trim();
+    if (block.kind === "ask" && isQuestionAskBlock(block)) {
+      const excerpt = compactReplyExcerpt(block.text.slice(0, MAX_QUOTABLE_SOURCE_LENGTH));
+      if (excerpt) return excerpt;
     }
   }
   const attachment = replyAttachment(message.blocks);

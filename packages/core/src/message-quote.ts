@@ -6,12 +6,16 @@ import remarkGfm from "remark-gfm";
 import remarkParse from "remark-parse";
 import { unified } from "unified";
 import { blocksToAgentHistoryText } from "./attachments.js";
-import { replyAttachment } from "./message-replies.js";
+import {
+  compactReplyExcerpt,
+  MAX_QUOTABLE_SOURCE_LENGTH,
+  replyAttachment,
+} from "./message-replies.js";
 import { isDeliveryMessage } from "./message-visibility.js";
 
 const markdownParser = unified().use(remarkParse).use(remarkGfm);
-/** Past this much source text in one message, quote derivation refuses to run. */
-export const MAX_QUOTABLE_SOURCE_LENGTH = 100_000;
+
+export { MAX_QUOTABLE_SOURCE_LENGTH } from "./message-replies.js";
 
 type MdastNode = { type?: string; value?: string; children?: MdastNode[] };
 
@@ -133,14 +137,8 @@ export function messageReplyExcerpt(blocks: MessageBlock[], role: string): strin
     const source = replyBlockText(block).slice(0, MAX_QUOTABLE_SOURCE_LENGTH);
     const visible =
       block.kind === "text" && role !== "user" ? visibleTextFromMarkdown(source) : source;
-    const first = visible
-      .split(/\r?\n/u)
-      .map((line) => line.trim())
-      .find(Boolean);
-    if (first) {
-      const excerpt = first.slice(0, 280);
-      return /[\uD800-\uDBFF]$/u.test(excerpt) ? excerpt.slice(0, -1) : excerpt;
-    }
+    const excerpt = compactReplyExcerpt(visible);
+    if (excerpt) return excerpt;
   }
   return "";
 }
