@@ -28,7 +28,8 @@ export function socialReauthentication(): BetterAuthPlugin {
                   await ctx.internalAdapter.createVerificationValue({
                     identifier: `identity-callback-${data.state}`,
                     value: `${provider.id}:${data.idTokenNonce}`,
-                    expiresAt: new Date(Date.now() + IDENTITY_CONFIRMATION_MS),
+                    // Match Better Auth's OAuth state lifetime, including ordinary sign-in.
+                    expiresAt: new Date(Date.now() + 10 * 60_000),
                   });
                 }
                 return url;

@@ -2055,6 +2055,33 @@ describe.each(["google", "apple"] as const)("%s bound identity confirmation", (p
     expect((await request("/delete-user", {})).status).toBe(200);
     expect(rows("user")).toHaveLength(0);
   });
+  it.each([6, 11])(
+    "allows ordinary sign-in only within the OAuth window (%i minutes)",
+    async (minutes) => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+      await linked();
+      const response = await request("/sign-in/social", {
+        provider: providerId,
+        callbackURL: `${origin}/app`,
+      });
+      const url = new URL(((await response.json()) as { url: string }).url);
+      vi.setSystemTime(Date.now() + minutes * 60_000);
+      const result = await callback(url);
+      if (minutes < 10) expect(result.headers.get("location")).toBe(`${origin}/app`);
+      else expect(result.headers.get("location")).toContain("error=");
+      expect((await request("/delete-user", {})).status).toBe(403);
+    },
+  );
+  it("keeps sensitive-action reauthentication limited to five minutes", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+    await linked();
+    const url = await begin();
+    vi.setSystemTime(Date.now() + 6 * 60_000);
+    expect((await callback(url)).headers.get("location")).toContain("error=");
+    expect((await request("/delete-user", {})).status).toBe(403);
+  });
   it.each([
     "different subject",
     "wrong owner",
