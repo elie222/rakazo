@@ -155,10 +155,34 @@ function bracedObjects(source: string): { found: string[]; cutOff: boolean } {
   const starts: { index: number; export: boolean }[] = [];
   let quote: string | null = null;
   let candidates = 0;
+  let comment: "line" | "block" | null = null;
   // Quotes delimit strings only inside an export: a brace in chat text (`{Sam's bot}`) is prose.
   let openExports = 0;
   for (let index = 0; index < source.length; index += 1) {
     const char = source[index];
+    if (comment === "line") {
+      if (char === "\n" || char === "\r") comment = null;
+      continue;
+    }
+    if (comment === "block") {
+      if (char === "*" && source[index + 1] === "/") {
+        comment = null;
+        index += 1;
+      }
+      continue;
+    }
+    if (!quote && openExports > 0 && char === "/") {
+      if (source[index + 1] === "/") {
+        comment = "line";
+        index += 1;
+        continue;
+      }
+      if (source[index + 1] === "*") {
+        comment = "block";
+        index += 1;
+        continue;
+      }
+    }
     if (quote) {
       if (char === "\\") index += 1;
       else if (char === quote) quote = null;
@@ -312,7 +336,9 @@ function mergeBots(bots: readonly GrokBot[]): GrokBot[] {
       // Each earlier part's skill is continued at most once; this part's own skills stay apart.
       const at = mine.findIndex(
         (item, index) =>
-          !continued.has(index) && item.name.toLowerCase() === skill.name.toLowerCase(),
+          Boolean(skill.name) &&
+          !continued.has(index) &&
+          item.name.toLowerCase() === skill.name.toLowerCase(),
       );
       if (at >= 0) continued.add(at);
       const earlier = skills[at];

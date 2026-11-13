@@ -541,3 +541,23 @@ it("reads a fenced export with a leading JSON5 comment", () => {
     )[0]?.instructions,
   ).toBe("Keep");
 });
+
+it("ignores braces and quotes inside JSON5 comments", () => {
+  for (const comment of ['// { "\n', '/* } " { */']) {
+    expect(
+      parseGrokBotExport(
+        `\`\`\`json\n{${comment}bots:[{name:"Example",instructions:"Keep"}]}\n\`\`\``,
+      )[0]?.instructions,
+    ).toBe("Keep");
+  }
+});
+it("rejects an empty bot import plan", () => {
+  expect(
+    parseAgentImport([
+      {
+        path: GROK_BOT_EXPORT_PATH,
+        content: JSON.stringify({ bots: [{ name: "Empty", skills: [] }] }),
+      },
+    ]),
+  ).toHaveProperty("error");
+});

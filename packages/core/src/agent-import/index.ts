@@ -311,9 +311,17 @@ export function parseAgentImport(
     }
     // The client sends only the Bot the user picked.
     const [bot] = bots;
-    return bot && bots.length === 1
-      ? plan("grok_bot", parseGrokBot(bot))
-      : { error: AGENT_IMPORT_NOT_FOUND };
+    if (!bot || bots.length !== 1) return { error: AGENT_IMPORT_NOT_FOUND };
+    const parsed = parseGrokBot(bot);
+    if (
+      !parsed.instructions.length &&
+      !parsed.memory.length &&
+      !parsed.skills.length &&
+      !bot.routines.length &&
+      !bot.apps.length
+    )
+      return { error: AGENT_IMPORT_NOT_FOUND };
+    return plan("grok_bot", parsed);
   }
   // A known agent file (SOUL.md, MEMORY.md, memories/…) is read as one even when its text
   // has the document's headings; only another file or the pasted reply is a document.
