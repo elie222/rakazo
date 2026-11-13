@@ -115,6 +115,7 @@ export type HomeCopy = {
       product: string;
       changelog: string;
       submitPlugin: string;
+      enterprise: string;
       alternatives: string;
       sandboxes: string;
       integrationPlatforms: string;
@@ -1034,12 +1035,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         {
           question: "Czy mogę używać subskrypcji Claude Pro/Max lub ChatGPT Plus/Pro?",
           answer:
-            "Tak. Zaloguj się przez tę subskrypcję albo użyj klucza API, OpenRoutera lub lokalnego serwera zgodnego z OpenAI, np. Ollama lub LM Studio. Rakazo nie pokrywa kosztów modelu.",
-        },
-        {
-          question: "Czy potrzebuję klucza API, jeśli już płacę za Claude lub ChatGPT?",
-          answer:
-            "Nie. Zaloguj się przez Claude Pro/Max lub ChatGPT Plus/Pro, a model będzie rozliczany w ramach tej subskrypcji. Możesz też użyć klucza API do Anthropic, OpenAI, OpenRoutera lub Grok. W obu przypadkach koszty modelu pokrywasz samodzielnie.",
+            "Zaloguj się przez ChatGPT z odpowiednim planem lub połącz klucz API. Dla Claude użyj klucza API Anthropic; subskrypcje Pro i Max nie obejmują środków API. Ograniczenia dostawców opisano na stronie Model subscriptions w dokumentacji.",
         },
         {
           question: "Czy mogę uruchomić model lokalnie?",
@@ -1081,6 +1077,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         product: "Produkt",
         changelog: "Historia zmian",
         submitPlugin: "Zgłoś wtyczkę",
+        enterprise: "Dla firm",
         alternatives: "Alternatywy",
         sandboxes: "Piaskownice",
         integrationPlatforms: "Platformy integracyjne",
@@ -1192,11 +1189,6 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       items: [
         CLAUDE_CHATGPT_SUBSCRIPTION_FAQ,
         {
-          question: "Do I need an API key if I already pay for Claude or ChatGPT?",
-          answer:
-            "No. Sign in with Claude Pro/Max or ChatGPT Plus/Pro and that subscription covers the model. An API key is the other path, for Anthropic, OpenAI, OpenRouter, or Grok. Rakazo does not pay either way.",
-        },
-        {
           question: "Can I run a local model?",
           answer:
             "Yes. Point a bot at a local OpenAI-compatible server such as Ollama or LM Studio. Each bot can use a different model.",
@@ -1236,6 +1228,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         product: "Product",
         changelog: "Changelog",
         submitPlugin: "Submit a plugin",
+        enterprise: "Enterprise",
         alternatives: "Alternatives",
         sandboxes: "Sandboxes",
         integrationPlatforms: "Integration platforms",
@@ -1349,12 +1342,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         {
           question: "Kann ich mein Claude Pro/Max- oder ChatGPT Plus/Pro-Abo nutzen?",
           answer:
-            "Ja — melde dich mit diesem Abo an, oder nutze einen API-Key, OpenRouter oder einen lokalen OpenAI-kompatiblen Server (Ollama, LM Studio usw.). Rakazo zahlt die Modellrechnung nicht.",
-        },
-        {
-          question: "Brauche ich einen API-Key, wenn ich schon für Claude oder ChatGPT zahle?",
-          answer:
-            "Nein. Melde dich mit Claude Pro/Max oder ChatGPT Plus/Pro an. Dieses Abo deckt das Modell ab. Ein API-Key ist der andere Weg, für Anthropic, OpenAI, OpenRouter oder Grok. Rakazo zahlt so oder so nicht.",
+            "Melde dich mit einem berechtigten ChatGPT-Abo an oder verbinde einen API-Key. Nutze für Claude einen Anthropic-API-Key; Pro und Max enthalten kein API-Guthaben. Einschränkungen der Anbieter stehen unter Model subscriptions in der Dokumentation.",
         },
         {
           question: "Kann ich ein lokales Modell nutzen?",
@@ -1396,6 +1384,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         product: "Produkt",
         changelog: "Änderungsprotokoll",
         submitPlugin: "Plugin einreichen",
+        enterprise: "Enterprise",
         alternatives: "Alternativen",
         sandboxes: "Sandboxes",
         integrationPlatforms: "Integrationsplattformen",
@@ -1508,12 +1497,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         {
           question: "Claude Pro/Max 또는 ChatGPT Plus/Pro 구독을 쓸 수 있나요?",
           answer:
-            "네 — 그 구독으로 로그인하거나, API 키, OpenRouter, 로컬 OpenAI 호환 서버(Ollama, LM Studio 등)를 사용하세요. 모델 요금은 Rakazo가 내지 않습니다.",
-        },
-        {
-          question: "이미 Claude나 ChatGPT를 결제 중이면 API 키가 필요한가요?",
-          answer:
-            "아니요. Claude Pro/Max 또는 ChatGPT Plus/Pro로 로그인하면 그 구독이 모델을 부담합니다. API 키는 Anthropic, OpenAI, OpenRouter, Grok을 쓰는 다른 경로입니다. 어느 쪽이든 Rakazo가 요금을 내지 않습니다.",
+            "지원되는 ChatGPT 요금제로 로그인하거나 API 키를 연결하세요. Claude는 Anthropic API 키를 사용하세요. Pro와 Max 구독에는 API 크레딧이 포함되지 않습니다. 제공업체의 제한은 문서의 Model subscriptions를 참고하세요.",
         },
         {
           question: "로컬 모델을 쓸 수 있나요?",
@@ -1555,6 +1539,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         product: "제품",
         changelog: "변경 내역",
         submitPlugin: "플러그인 제출",
+        enterprise: "엔터프라이즈",
         alternatives: "대안",
         sandboxes: "샌드박스",
         integrationPlatforms: "통합 플랫폼",
@@ -1667,12 +1652,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         {
           question: "可以用我的 Claude Pro/Max 或 ChatGPT Plus/Pro 订阅吗？",
           answer:
-            "可以 — 用该订阅登录，或使用 API 密钥、OpenRouter，或本地的 OpenAI 兼容服务（Ollama、LM Studio 等）。模型费用不由 Rakazo 支付。",
-        },
-        {
-          question: "已经在为 Claude 或 ChatGPT 付费，还需要 API 密钥吗？",
-          answer:
-            "不需要。用 Claude Pro/Max 或 ChatGPT Plus/Pro 登录，由该订阅承担模型费用。API 密钥是另一条路，用于 Anthropic、OpenAI、OpenRouter 或 Grok。两种方式都不是 Rakazo 付费。",
+            "使用符合条件的 ChatGPT 套餐登录，或连接 API 密钥。Claude 请使用 Anthropic API 密钥；Pro 和 Max 订阅不包含 API 额度。提供商限制请参阅文档中的 Model subscriptions。",
         },
         {
           question: "可以用本地模型吗？",
@@ -1714,6 +1694,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         product: "产品",
         changelog: "更新日志",
         submitPlugin: "提交插件",
+        enterprise: "企业版",
         alternatives: "替代方案",
         sandboxes: "沙箱",
         integrationPlatforms: "集成平台",
@@ -1827,12 +1808,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         {
           question: "Claude Pro/Max や ChatGPT Plus/Pro のサブスクリプションを使えますか？",
           answer:
-            "はい。そのサブスクリプションでサインインするか、API キー、OpenRouter、ローカルの OpenAI 互換サーバー（Ollama、LM Studio など）を使えます。モデルの利用料を Rakazo が支払うことはありません。",
-        },
-        {
-          question: "Claude や ChatGPT にすでに課金している場合、API キーは必要ですか？",
-          answer:
-            "いいえ。Claude Pro/Max または ChatGPT Plus/Pro でサインインすれば、そのサブスクリプションでモデルを利用できます。もう一つの方法は API キーで、Anthropic、OpenAI、OpenRouter、Grok に対応しています。どちらの場合も、Rakazo が料金を支払うことはありません。",
+            "対象の ChatGPT プランでサインインするか、API キーを接続してください。Claude には Anthropic API キーを使います。Pro と Max のサブスクリプションに API クレジットは含まれません。提供元の制限はドキュメントの Model subscriptions を参照してください。",
         },
         {
           question: "ローカルモデルを使えますか？",
@@ -1874,6 +1850,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         product: "製品",
         changelog: "変更履歴",
         submitPlugin: "プラグインを申請",
+        enterprise: "エンタープライズ",
         alternatives: "代替ツール",
         sandboxes: "サンドボックス",
         integrationPlatforms: "連携プラットフォーム",
@@ -1987,12 +1964,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         {
           question: "¿Puedo usar mi suscripción a Claude Pro/Max o ChatGPT Plus/Pro?",
           answer:
-            "Sí — inicia sesión con esa suscripción, o usa una clave de API, OpenRouter o un servidor local compatible con OpenAI (Ollama, LM Studio, etc.). Rakazo no paga la factura del modelo.",
-        },
-        {
-          question: "¿Necesito una clave de API si ya pago Claude o ChatGPT?",
-          answer:
-            "No. Inicia sesión con Claude Pro/Max o ChatGPT Plus/Pro y esa suscripción cubre el modelo. Una clave de API es la otra opción, para Anthropic, OpenAI, OpenRouter o Grok. Rakazo no paga en ningún caso.",
+            "Inicia sesión con un plan de ChatGPT compatible o conecta una clave de API. Para Claude, usa una clave de API de Anthropic; Pro y Max no incluyen crédito de API. Consulta las restricciones en Model subscriptions, en la documentación.",
         },
         {
           question: "¿Puedo usar un modelo local?",
@@ -2034,6 +2006,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         product: "Producto",
         changelog: "Novedades",
         submitPlugin: "Enviar un plugin",
+        enterprise: "Empresas",
         alternatives: "Alternativas",
         sandboxes: "Sandboxes",
         integrationPlatforms: "Plataformas de integración",
@@ -2147,12 +2120,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         {
           question: "Puis-je utiliser mon abonnement Claude Pro/Max ou ChatGPT Plus/Pro ?",
           answer:
-            "Oui — connectez-vous avec cet abonnement, ou utilisez une clé API, OpenRouter ou un serveur local compatible OpenAI (Ollama, LM Studio, etc.). Rakazo ne paie pas la facture du modèle.",
-        },
-        {
-          question: "Ai-je besoin d’une clé API si je paie déjà Claude ou ChatGPT ?",
-          answer:
-            "Non. Connectez-vous avec Claude Pro/Max ou ChatGPT Plus/Pro et cet abonnement couvre le modèle. Une clé API est l’autre option, pour Anthropic, OpenAI, OpenRouter ou Grok. Rakazo ne paie dans aucun des cas.",
+            "Connectez-vous avec un abonnement ChatGPT éligible ou utilisez une clé API. Pour Claude, utilisez une clé API Anthropic : Pro et Max n’incluent pas de crédit API. Consultez les restrictions dans Model subscriptions, dans la documentation.",
         },
         {
           question: "Puis-je utiliser un modèle local ?",
@@ -2194,6 +2162,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         product: "Produit",
         changelog: "Nouveautés",
         submitPlugin: "Proposer un plugin",
+        enterprise: "Entreprise",
         alternatives: "Alternatives",
         sandboxes: "Sandbox",
         integrationPlatforms: "Plateformes d'intégration",
@@ -2307,12 +2276,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         {
           question: "Posso usar minha assinatura do Claude Pro/Max ou ChatGPT Plus/Pro?",
           answer:
-            "Sim — entre com essa assinatura, ou use uma chave de API, OpenRouter ou um servidor local compatível com OpenAI (Ollama, LM Studio etc.). O Rakazo não paga a conta do modelo.",
-        },
-        {
-          question: "Preciso de uma chave de API se já pago pelo Claude ou ChatGPT?",
-          answer:
-            "Não. Entre com Claude Pro/Max ou ChatGPT Plus/Pro e essa assinatura cobre o modelo. A chave de API é o outro caminho, para Anthropic, OpenAI, OpenRouter ou Grok. O Rakazo não paga em nenhum dos casos.",
+            "Entre com um plano ChatGPT elegível ou conecte uma chave de API. Para Claude, use uma chave de API da Anthropic; Pro e Max não incluem créditos de API. Consulte as restrições em Model subscriptions na documentação.",
         },
         {
           question: "Posso usar um modelo local?",
@@ -2354,6 +2318,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         product: "Produto",
         changelog: "Novidades",
         submitPlugin: "Enviar um plugin",
+        enterprise: "Empresas",
         alternatives: "Alternativas",
         sandboxes: "Sandboxes",
         integrationPlatforms: "Plataformas de integração",
@@ -2467,12 +2432,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         {
           question: "Kan ik mijn Claude Pro/Max- of ChatGPT Plus/Pro-abonnement gebruiken?",
           answer:
-            "Ja — log in met dat abonnement, of gebruik een API-key, OpenRouter of een lokale OpenAI-compatibele server (Ollama, LM Studio enz.). Rakazo betaalt de modelrekening niet.",
-        },
-        {
-          question: "Heb ik een API-key nodig als ik al voor Claude of ChatGPT betaal?",
-          answer:
-            "Nee. Log in met Claude Pro/Max of ChatGPT Plus/Pro en dat abonnement dekt het model. Een API-key is de andere route, voor Anthropic, OpenAI, OpenRouter of Grok. Rakazo betaalt in geen van beide gevallen.",
+            "Log in met een geschikt ChatGPT-abonnement of koppel een API-key. Gebruik voor Claude een Anthropic-API-key; Pro en Max bevatten geen API-tegoed. Zie Model subscriptions in de documentatie voor beperkingen van aanbieders.",
         },
         {
           question: "Kan ik een lokaal model draaien?",
@@ -2514,6 +2474,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         product: "Product",
         changelog: "Wijzigingslog",
         submitPlugin: "Plugin indienen",
+        enterprise: "Enterprise",
         alternatives: "Alternatieven",
         sandboxes: "Sandboxes",
         integrationPlatforms: "Integratieplatforms",
@@ -2627,12 +2588,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         {
           question: "Можно ли использовать подписку Claude Pro/Max или ChatGPT Plus/Pro?",
           answer:
-            "Да — войдите с этой подпиской или используйте API-ключ, OpenRouter или локальный OpenAI-совместимый сервер (Ollama, LM Studio и т. д.). Rakazo не оплачивает счёт за модель.",
-        },
-        {
-          question: "Нужен ли API-ключ, если я уже плачу за Claude или ChatGPT?",
-          answer:
-            "Нет. Войдите с Claude Pro/Max или ChatGPT Plus/Pro, и эта подписка покроет модель. API-ключ — другой путь: для Anthropic, OpenAI, OpenRouter или Grok. В любом случае Rakazo не платит.",
+            "Войдите с подходящим планом ChatGPT или подключите API-ключ. Для Claude используйте API-ключ Anthropic: подписки Pro и Max не включают API-кредиты. Ограничения провайдеров описаны на странице Model subscriptions в документации.",
         },
         {
           question: "Можно ли запустить локальную модель?",
@@ -2674,6 +2630,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         product: "Продукт",
         changelog: "Журнал изменений",
         submitPlugin: "Предложить плагин",
+        enterprise: "Для бизнеса",
         alternatives: "Альтернативы",
         sandboxes: "Песочницы",
         integrationPlatforms: "Платформы интеграций",
@@ -2787,12 +2744,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         {
           question: "Claude Pro/Max veya ChatGPT Plus/Pro aboneliğimi kullanabilir miyim?",
           answer:
-            "Evet — bu abonelikle giriş yapın ya da bir API anahtarı, OpenRouter veya yerel bir OpenAI uyumlu sunucu (Ollama, LM Studio vb.) kullanın. Model faturasını Rakazo ödemez.",
-        },
-        {
-          question: "Claude veya ChatGPT için zaten ödeme yapıyorsam API anahtarına ihtiyacım var mı?",
-          answer:
-            "Hayır. Claude Pro/Max veya ChatGPT Plus/Pro ile giriş yapın; model bu abonelikle karşılanır. Diğer yol Anthropic, OpenAI, OpenRouter veya Grok için bir API anahtarıdır. Her iki durumda da Rakazo ödeme yapmaz.",
+            "Uygun bir ChatGPT planıyla giriş yapın veya API anahtarı bağlayın. Claude için Anthropic API anahtarı kullanın; Pro ve Max abonelikleri API kredisi içermez. Sağlayıcı kısıtlamaları için belgelerdeki Model subscriptions sayfasına bakın.",
         },
         {
           question: "Yerel bir model çalıştırabilir miyim?",
@@ -2834,6 +2786,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         product: "Ürün",
         changelog: "Değişiklik günlüğü",
         submitPlugin: "Eklenti gönder",
+        enterprise: "Kurumsal",
         alternatives: "Alternatifler",
         sandboxes: "Sandbox'lar",
         integrationPlatforms: "Entegrasyon platformları",
@@ -2947,12 +2900,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         {
           question: "אפשר להשתמש במנוי Claude Pro/Max או ChatGPT Plus/Pro שלי?",
           answer:
-            "כן — אפשר להתחבר עם המנוי הזה, או להשתמש במפתח API, ב-OpenRouter או בשרת מקומי תואם OpenAI (Ollama, LM Studio וכו'). Rakazo לא משלמת את חשבון המודל.",
-        },
-        {
-          question: "צריך מפתח API אם כבר יש לי מנוי בתשלום ל-Claude או ל-ChatGPT?",
-          answer:
-            "לא. מתחברים עם Claude Pro/Max או ChatGPT Plus/Pro, והמנוי הזה מכסה את המודל. מפתח API הוא הדרך השנייה, עבור Anthropic, OpenAI, OpenRouter או Grok. בכל מקרה, Rakazo לא משלמת.",
+            "אפשר להתחבר עם מנוי ChatGPT מתאים או עם מפתח API. עבור Claude, השתמשו במפתח API של Anthropic; מנויי Pro ו-Max אינם כוללים קרדיט ל-API. מגבלות הספקים מפורטות בעמוד Model subscriptions בתיעוד.",
         },
         {
           question: "אפשר להריץ מודל מקומי?",
@@ -2994,6 +2942,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         product: "מוצר",
         changelog: "יומן שינויים",
         submitPlugin: "הגשת תוסף",
+        enterprise: "ארגונים",
         alternatives: "חלופות",
         sandboxes: "ארגזי חול",
         integrationPlatforms: "פלטפורמות אינטגרציה",
@@ -3107,12 +3056,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         {
           question: "क्या मेरा Claude Pro/Max या ChatGPT Plus/Pro सब्सक्रिप्शन इस्तेमाल हो सकता है?",
           answer:
-            "हाँ — उसी सब्सक्रिप्शन से साइन इन करें, या API कुंजी, OpenRouter या कोई लोकल OpenAI-संगत सर्वर (Ollama, LM Studio आदि) इस्तेमाल करें। मॉडल का बिल Rakazo नहीं भरता।",
-        },
-        {
-          question: "अगर Claude या ChatGPT का पेड सब्सक्रिप्शन पहले से है, तो क्या API कुंजी चाहिए?",
-          answer:
-            "नहीं। Claude Pro/Max या ChatGPT Plus/Pro से साइन इन करें, और वही सब्सक्रिप्शन मॉडल का खर्च उठाता है। API कुंजी दूसरा रास्ता है, Anthropic, OpenAI, OpenRouter या Grok के लिए। दोनों में से किसी भी तरीके में Rakazo भुगतान नहीं करता।",
+            "पात्र ChatGPT प्लान से साइन इन करें या API कुंजी जोड़ें। Claude के लिए Anthropic API कुंजी इस्तेमाल करें; Pro और Max सब्सक्रिप्शन में API क्रेडिट शामिल नहीं है। प्रदाता की पाबंदियों के लिए दस्तावेज़ों में Model subscriptions देखें।",
         },
         {
           question: "क्या लोकल मॉडल चलाया जा सकता है?",
@@ -3154,6 +3098,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         product: "प्रोडक्ट",
         changelog: "चेंजलॉग",
         submitPlugin: "प्लगइन सबमिट करें",
+        enterprise: "एंटरप्राइज़",
         alternatives: "विकल्प",
         sandboxes: "सैंडबॉक्स",
         integrationPlatforms: "इंटीग्रेशन प्लेटफ़ॉर्म",
@@ -3266,12 +3211,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         {
           question: "可以用我的 Claude Pro/Max 或 ChatGPT Plus/Pro 訂閱嗎？",
           answer:
-            "可以 — 用該訂閱登入，或使用 API 金鑰、OpenRouter，或本機的 OpenAI 相容伺服器（Ollama、LM Studio 等）。模型費用不由 Rakazo 支付。",
-        },
-        {
-          question: "已經付費使用 Claude 或 ChatGPT，還需要 API 金鑰嗎？",
-          answer:
-            "不需要。用 Claude Pro/Max 或 ChatGPT Plus/Pro 登入，模型費用由該訂閱涵蓋。API 金鑰是另一種方式，適用於 Anthropic、OpenAI、OpenRouter 或 Grok。無論哪種方式，Rakazo 都不會付費。",
+            "使用符合資格的 ChatGPT 方案登入，或連接 API 金鑰。Claude 請使用 Anthropic API 金鑰；Pro 和 Max 訂閱不包含 API 額度。供應商限制請參閱文件中的 Model subscriptions。",
         },
         {
           question: "可以執行本機模型嗎？",
@@ -3313,6 +3253,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         product: "產品",
         changelog: "更新紀錄",
         submitPlugin: "提交外掛",
+        enterprise: "企業版",
         alternatives: "替代方案",
         sandboxes: "沙箱",
         integrationPlatforms: "整合平台",

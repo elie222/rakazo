@@ -167,6 +167,8 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     site: z.string().optional(),
     status: z.enum(["pending", "answered"]).optional(),
     answer: z.string().optional(),
+    /** Composer message that durably records this answer; absent on older or card-only replies. */
+    answerMessageId: z.string().optional(),
     /** A secret request the user dismissed instead of answering. */
     dismissed: z.literal(true).optional(),
     /** A login the user used for this run only instead of saving it. */
@@ -236,6 +238,11 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     durationSeconds: z.number().int().nonnegative().optional(),
   }),
   z.object({ kind: z.literal("meta"), text: z.string() }),
+  /**
+   * Marks a user message as what woke the bot (a webhook, an email, a chat message). Its text
+   * block is the bot's full prompt, so chats, previews and search leave the message out.
+   */
+  z.object({ kind: z.literal("delivery") }),
   z.object({
     kind: z.literal("progress"),
     text: z.string(),

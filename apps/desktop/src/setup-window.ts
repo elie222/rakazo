@@ -6,7 +6,7 @@ import { app, BrowserWindow, ipcMain, screen, shell } from "electron";
 import type { createAppOpener } from "./app-opener.js";
 import { developmentIcon, handleOnlyFrom, markOnce } from "./app-window.js";
 import { desktop } from "./desktop-state.js";
-import { DOCKER_INSTALL_LINKS, isDesktopSetupLink } from "./docker-cli.js";
+import { dockerDownloadUrl, isDesktopSetupLink } from "./docker-cli.js";
 import { desktopDirection, desktopLocale, desktopMessages, t } from "./i18n.js";
 import { managedLocalOpenUrl, parseSetupInput, RAKAZO_CLOUD_URL } from "./setup-config.js";
 import { writeSetup } from "./setup-store.js";
@@ -257,7 +257,9 @@ export function registerSetupIpc({
   });
   handleOnlyFrom(fromSetupWindow, "desktop.setup.openLink", async (_event, link: unknown) => {
     if (!isDesktopSetupLink(link)) return;
-    await shell.openExternal(DOCKER_INSTALL_LINKS[link]);
+    // An x64 build under Rosetta still needs the Apple silicon installer.
+    const arch = app.runningUnderARM64Translation ? "arm64" : process.arch;
+    await shell.openExternal(dockerDownloadUrl(process.platform, arch));
   });
   handleOnlyFrom(
     fromSetupWindow,

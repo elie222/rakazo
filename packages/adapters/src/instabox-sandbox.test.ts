@@ -1,3 +1,4 @@
+import { InstaboxError } from "@insforge/instabox-sdk";
 import { describe, expect, it, vi } from "vitest";
 import { INSTABOX_COMPUTER_TEMPLATE } from "./instabox-sandbox.js";
 import { emulatedInstabox, InstaboxEmulator } from "./instabox-sandbox.test-support.js";
@@ -179,13 +180,14 @@ describe("instabox computer backend", () => {
     expect(emulator.computers.get(computer.id)!.state).toBe("suspended");
   });
 
-  it("pauses the computer when a timed-out job's kill is not confirmed", async () => {
+  it("keeps the computer running when a timed-out job had already exited", async () => {
     const { emulator, provider, computer } = await started();
     emulator.hangs = (command) => command.includes("infinity");
     emulator.jobKill = () => false;
-    await expect(run(provider, computer, 50)).rejects.toThrow("was paused");
-    expect(emulator.killedJobs).toHaveLength(3);
-    expect(emulator.computers.get(computer.id)!.state).toBe("suspended");
+    const events = await run(provider, computer, 50);
+    expect(events.at(-1)).toEqual({ type: "exit", code: 124 });
+    expect(emulator.killedJobs).toHaveLength(1);
+    expect(emulator.computers.get(computer.id)!.state).toBe("running");
   });
 
   it("retries a job kill that fails once", async () => {
@@ -222,5 +224,77 @@ describe("instabox computer backend", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("instabox computer sizes", () => {
+  const sizeOf = (emulator: InstaboxEmulator, id: string) => emulator.computers.get(id)!.spec;
+
+  it("starts a new computer at the plan's size, leaving standard to instabox's default", async () => {
+    const emulator = new InstaboxEmulator();
+    const provider = emulatedInstabox(emulator).provider();
+    const large = await provider.provision({ ...request, size: "large" }, ctx);
+    const standard = await provider.provision({ ...request, size: "standard" }, ctx);
+    expect(sizeOf(emulator, large.id)).toEqual({ vcpus: 8, memMiB: 16384 });
+    expect(sizeOf(emulator, standard.id)).toEqual({ vcpus: 4, memMiB: 8192 });
+    expect(emulator.requests.filter((name) => name.startsWith("create "))).toEqual([
+      "create agent-browser 8/16384",
+      "create agent-browser",
+    ]);
+  });
+
+  it("reports a size the account's plan does not offer as unavailable", async () => {
+    const emulator = new InstaboxEmulator();
+    emulator.allowedSpecs = ["4/8192"];
+    const provider = emulatedInstabox(emulator).provider();
+    await expect(provider.provision({ ...request, size: "large" }, ctx)).rejects.toMatchObject({
+      name: "SandboxSizeUnavailableError",
+      reason: "not_offered",
+    });
+    expect(emulator.computers.size).toBe(0);
+  });
+
+  it("moves a stopped computer to the plan's size when it starts again", async () => {
+    const { emulator, provider, computer } = await started();
+    await provider.stop(computer, ctx);
+    const resumed = await provider.provision(
+      { ...request, providerRef: computer.id, providerKind: "instabox", size: "large" },
+      ctx,
+    );
+    expect(resumed).toMatchObject({ id: computer.id, fresh: false });
+    expect(sizeOf(emulator, computer.id)).toEqual({ vcpus: 8, memMiB: 16384 });
+    expect(emulator.computers.get(computer.id)!.state).toBe("running");
+  });
+
+  it("keeps a running computer at the size it has", async () => {
+    const { emulator, provider, computer } = await started();
+    await provider.provision(
+      { ...request, providerRef: computer.id, providerKind: "instabox", size: "large" },
+      ctx,
+    );
+    expect(emulator.requests.some((name) => name.startsWith("resize "))).toBe(false);
+    expect(sizeOf(emulator, computer.id)).toEqual({ vcpus: 4, memMiB: 8192 });
+  });
+
+  it("reports a computer that could not start at the new size as unavailable, at its old size", async () => {
+    const { emulator, provider, computer } = await started();
+    emulator.resizeFails = true;
+    await provider.stop(computer, ctx);
+    const reconnect = { ...request, providerRef: computer.id, providerKind: "instabox" as const };
+    await expect(provider.provision({ ...reconnect, size: "large" }, ctx)).rejects.toMatchObject({
+      name: "SandboxSizeUnavailableError",
+    });
+    expect(sizeOf(emulator, computer.id)).toEqual({ vcpus: 4, memMiB: 8192 });
+    // The lifecycle then starts it at the size it has.
+    await expect(provider.provision(reconnect, ctx)).resolves.toMatchObject({ fresh: false });
+  });
+
+  it("surfaces a resize failure that is not about the size instead of falling back", async () => {
+    const { emulator, provider, computer } = await started();
+    await provider.stop(computer, ctx);
+    const outage = new InstaboxError("upstream unavailable", { status: 503, code: "unavailable" });
+    emulator.resizeError = outage;
+    const reconnect = { ...request, providerRef: computer.id, providerKind: "instabox" as const };
+    await expect(provider.provision({ ...reconnect, size: "large" }, ctx)).rejects.toBe(outage);
   });
 });

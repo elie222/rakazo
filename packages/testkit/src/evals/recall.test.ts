@@ -1,7 +1,11 @@
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { Evidence } from "./cases.js";
 import { EMPTY_SETTINGS } from "./cases.js";
 import {
+  loadRecallCases,
   RECALL_EVAL_CASES,
   RECALL_FIXTURE_VERSION,
   RECALL_JUDGE_CALIBRATION,
@@ -190,6 +194,13 @@ describe("recall outcome grading", () => {
       expect(shell(id, "chromium --version")!.stdout).toMatch(/^Chromium 131\./);
       expect(shell(id, "uname -a")).toBeUndefined();
     }
+    // The file spells the name with capitals, so a case-sensitive lowercase search finds nothing.
+    const prefs = "~/.config/chromium/Default/Preferences";
+    expect(shell("tool-steps-replayed", `grep -o '"midnight[^"]*"' ${prefs}`)).toMatchObject({
+      stdout: "",
+      code: 1,
+    });
+    expect(shell("tool-steps-replayed", `grep -io '"midnight[^"]*"' ${prefs}`)!.code).toBe(0);
     // Only the installed extension's own manifest shows it; an unrelated path proves nothing.
     expect(shell("tool-steps-replayed", "cat ~/notes/manifest.json")).toBeUndefined();
     // A redirect silences only the check it follows, so an earlier failure still shows.
@@ -247,6 +258,119 @@ describe("recall outcome grading", () => {
     ).toBe(false);
   });
 
+  it("in a tool-heavy chat, passes a real check and observes a step list or a call written out", () => {
+    const c = scenario("tool-heavy-new-check");
+    const history = c.history!;
+    expect(history.messages).toHaveLength(48);
+    expect(history.messages.filter((m) => m.steps).length).toBe(12);
+    const uptime = { step: 1, name: "shell", args: { command: "uptime" } };
+    expect(failed("tool-heavy-new-check", evidence([uptime], "Up 3 days."))).toEqual([]);
+    expect(scriptedShell(c.computer!, "uptime")?.stdout).toContain("up 3 days");
+    // A history lookup, or a command that reads something else, is not a check of the uptime.
+    const listing = { step: 1, name: "shell", args: { command: "ls ~" } };
+    for (const calls of [[search], [listing]])
+      expect(failed("tool-heavy-new-check", evidence(calls, "Up a while."))).toEqual([
+        "checked-now",
+      ]);
+    expect(scriptedShell(c.computer!, "cat /proc/uptime")?.stdout).toBe("274620.31 1081234.55");
+    expect(scriptedShell(c.computer!, "pwd; ls -la ~; uptime")?.stdout).toContain(".config");
+    expect(scriptedShell(c.computer!, 'ls -la "$HOME"')?.stdout).toContain(".config");
+    // A search that also covers places the computer lacks still finds the extension.
+    const installed = scenario("tool-steps-replayed").computer!;
+    for (const command of [
+      'grep -ril "midnight" ~/.config ~/.cache',
+      'grep -ril "midnight" ~/.config ~/Library/Application\\ Support',
+    ])
+      expect(scriptedShell(installed, command)?.stdout).toContain("manifest.json");
+    expect(scriptedShell(installed, "ls ~/.config/google-chrome/Default/Extensions")?.code).toBe(2);
+    // Commands bots ran in recorded trials, answered as the computer would.
+    const computer = scenario("tool-steps-replayed").computer!;
+    const dir = "~/.config/chromium/Default/Extensions/pbnhgcfkmdlhnoeajihcmpgkglmbjblb/10.7.1_0";
+    expect(scriptedShell(computer, `cd ${dir} && head -c 1500 manifest.json`)?.stdout).toContain(
+      "Midnight Lizard",
+    );
+    expect(
+      scriptedShell(computer, 'grep -ril "midnight" ~/.config/chromium/Default/Preferences')
+        ?.stdout,
+    ).toBe("/home/rakazo/.config/chromium/Default/Preferences");
+    expect(
+      scriptedShell(
+        computer,
+        "grep -i midnight ~/.config/chromium/Default/Preferences | cut -c1-34",
+      )?.stdout,
+    ).toBe(`"pbnhgcfkmdlhnoeajihcmpgkglmbjblb"`);
+    expect(scriptedShell(computer, 'ls ~/.config/google-chrome; echo "exit: $?"')?.stdout).toBe(
+      "exit: 2",
+    );
+    expect(
+      scriptedShell(
+        computer,
+        'find ~ -maxdepth 8 -name manifest.json -path "*Extensions*" 2>/dev/null | xargs grep -l -i "midnight"',
+      )?.stdout,
+    ).toContain("manifest.json");
+    expect(
+      scriptedShell(computer, "ls -d ~/.config/chromium* ~/.config/google-chrome* 2>/dev/null")
+        ?.stdout,
+    ).toBe("/home/rakazo/.config/chromium");
+    // A find too shallow to reach the manifest finds nothing, piped or not.
+    expect(scriptedShell(computer, "find ~ -maxdepth 6 -name manifest.json")?.stdout).toBe("");
+    expect(
+      scriptedShell(computer, "find ~ -maxdepth 6 -name manifest.json | xargs grep -l midnight")
+        ?.stdout,
+    ).toBe("");
+    // Recorded searches that include Preferences list what a real shell would.
+    expect(
+      scriptedShell(
+        computer,
+        'grep -ril "midnight" ~/.config/chromium/Default/Extensions ~/.config/chromium/Default/Preferences 2>/dev/null | head',
+      )?.stdout.split("\n"),
+    ).toEqual([expect.stringContaining("manifest.json"), expect.stringContaining("Preferences")]);
+    expect(
+      scriptedShell(
+        computer,
+        "find ~ -maxdepth 6 -name Preferences 2>/dev/null | xargs grep -l -i lizard 2>/dev/null | head",
+      )?.stdout,
+    ).toBe("/home/rakazo/.config/chromium/Default/Preferences");
+    // A grep -l of Preferences for something it doesn't hold lists nothing.
+    expect(
+      scriptedShell(computer, "grep -l -i firefox ~/.config/chromium/Default/Preferences")?.stdout,
+    ).not.toContain("Preferences");
+    // A search by the extension's title finds nothing; by its id, its folder.
+    expect(scriptedShell(computer, 'find ~ -maxdepth 8 -iname "*midnight*lizard*"')?.stdout).toBe(
+      "",
+    );
+    expect(
+      scriptedShell(computer, "find ~ -maxdepth 6 -type d -name 'pbnhgcfkmdlhnoeajihcmpgkglmbjblb'")
+        ?.stdout,
+    ).toContain("Extensions/pbnhgcfkmdlhnoeajihcmpgkglmbjblb");
+    expect(scriptedShell(computer, "ls -la ../../shared 2>/dev/null; pwd")?.stdout).toBe(
+      "/home/rakazo",
+    );
+    // A probe for several browsers still finds the Chromium the computer has.
+    expect(
+      scriptedShell(
+        scenario("tool-steps-replayed").computer!,
+        "which chromium chromium-browser google-chrome",
+      )?.stdout,
+    ).toBe("/usr/bin/chromium");
+    const observed = (text: string) => c.observe!(evidence([], text));
+    expect(observed("- Shell (succeeded): Checking uptime.\nUp 3 days.")["copied-marker"]).toBe(
+      true,
+    );
+    expect(observed("- Shell ×2 (1 succeeded, 1 failed)")["copied-marker"]).toBe(true);
+    for (const text of [
+      'shell({"command": "uptime"})',
+      '<tool_call>{"name": "shell", "arguments": {"command": "uptime"}}</tool_call>',
+      '<function=shell>{"command": "uptime"}</function>',
+      '<|tool_call|>{"name": "shell"}',
+      '[TOOL_CALLS] [{"name": "shell"}]',
+    ])
+      expect(observed(text)["tool-call-text"]).toBe(true);
+    const plain = observed("It has been up for 3 days and 4 hours.\n- Restarted on Sunday");
+    expect(plain["copied-marker"]).toBe(false);
+    expect(plain["tool-call-text"]).toBe(false);
+  });
+
   it("fails a history lookup on everyday turns only when the turn cannot need one", () => {
     const egg = scenario("ordinary-visible").history!.messages.slice(-2);
     expect(egg.map((m) => [m.role, m.text])).toEqual([
@@ -263,13 +387,109 @@ describe("recall outcome grading", () => {
     }
   });
 
+  it("shows the install judge the summary a compacted chat left the bot", () => {
+    const judged = scenario("tool-steps-compacted").judge!({
+      ...evidence([], "reply"),
+      historySummary: "Installed Midnight Lizard with two shell commands.",
+    });
+    expect((judged.evidence as { record: string }).record).toContain("two shell commands");
+  });
+
+  it("shows the install judge the checks made in the reply, in anchors as in trials", () => {
+    const installAnchors = RECALL_JUDGE_CALIBRATION.filter((a) =>
+      a.input.rubric.includes("asking whether the bot installed a browser extension"),
+    );
+    expect(installAnchors.length).toBeGreaterThan(0);
+    for (const anchor of installAnchors) expect(anchor.input.evidence).toHaveProperty("checks");
+  });
+
   it("leaves meaning to a versioned judge with labelled anchors for every rubric", () => {
-    for (const c of RECALL_EVAL_CASES) {
+    // The tool-heavy case grades only whether a call was made, so it has no judge.
+    expect(RECALL_EVAL_CASES.filter((c) => !c.judge).map((c) => c.id)).toEqual([
+      "recall-tool-heavy-new-check",
+    ]);
+    for (const c of RECALL_EVAL_CASES.filter((c) => c.judge)) {
       const input = c.judge?.(evidence([], "reply"));
       expect(input?.rubric.startsWith(`${RECALL_JUDGE_VERSION}:`)).toBe(true);
-      expect(input?.evidence).toEqual({ reply: "reply" });
+      expect(input?.evidence).toMatchObject({ reply: "reply" });
       const anchors = RECALL_JUDGE_CALIBRATION.filter((a) => a.input.rubric === input?.rubric);
       expect(new Set(anchors.map((a) => a.pass))).toEqual(new Set([true, false]));
     }
+  });
+  it("loads extra cases from a file, checked and graded like the built-in ones", () => {
+    const file = path.join(mkdtempSync(path.join(tmpdir(), "recall-cases-")), "cases.jsonl");
+    const steps = [{ label: "Shell", count: 1, note: "Checking free space." }];
+    writeFileSync(
+      file,
+      [
+        {
+          id: "recall-file-uptime",
+          purpose: "needs a fresh check",
+          messages: [
+            { role: "user", text: "Disk?" },
+            { role: "bot", text: "18 GB.", steps },
+          ],
+          ask: "Uptime now?",
+          expect: { kind: "needs-tool", command: "\\buptime\\b" },
+          computer: { shell: [{ match: "\\buptime\\b", output: "up 3 days" }] },
+        },
+        {
+          id: "recall-file-sign-off",
+          purpose: "an everyday turn",
+          messages: [{ role: "user", text: "Hi" }],
+          ask: "Bye!",
+          expect: { kind: "rubric", rubric: "sign-off" },
+        },
+      ]
+        .map((entry) => JSON.stringify(entry))
+        .join("\n"),
+    );
+    const [uptime, signOff] = loadRecallCases(file);
+    expect(uptime!.history!.messages[1]!.steps).toEqual(steps);
+    expect(scriptedShell(uptime!.computer!, "uptime")?.stdout).toBe("up 3 days");
+    expect(uptime!.grade(evidence([], "Up a while.")).map((c) => c.pass)).toEqual([false]);
+    const ran = { step: 1, name: "shell", args: { command: "uptime -p" } };
+    expect(uptime!.grade(evidence([ran], "Up 3 days.")).map((c) => c.pass)).toEqual([true]);
+    expect(uptime!.judge).toBeUndefined();
+    expect(signOff!.judge!(evidence([], "Bye")).rubric).toContain(RECALL_JUDGE_VERSION);
+    writeFileSync(
+      file,
+      JSON.stringify([
+        {
+          id: "recall-file-install",
+          purpose: "an install question",
+          messages: [
+            { role: "user", text: "Dark pages?" },
+            { role: "bot", text: "Installed Night Owl.", steps },
+          ],
+          ask: "Did you install an extension?",
+          expect: { kind: "rubric", rubric: "installed" },
+        },
+      ]),
+    );
+    const [install] = loadRecallCases(file);
+    const record = (install!.judge!(evidence([], "Yes")).evidence as { record: string }).record;
+    expect(record).toContain("Installed Night Owl.");
+    const badPattern = {
+      id: "recall-file-bad",
+      purpose: "x",
+      messages: [{ role: "user", text: "x" }],
+      ask: "x",
+      expect: { kind: "needs-tool", command: "(" },
+    };
+    writeFileSync(file, JSON.stringify([badPattern]));
+    expect(() => loadRecallCases(file)).toThrow(/valid regular expression/);
+    const backwards = {
+      ...badPattern,
+      expect: { kind: "rubric", rubric: "sign-off" },
+      messages: [
+        { role: "user", text: "x", day: 0 },
+        { role: "bot", text: "y", day: -2 },
+      ],
+    };
+    writeFileSync(file, JSON.stringify([backwards]));
+    expect(() => loadRecallCases(file)).toThrow(/earlier message's day/);
+    writeFileSync(file, JSON.stringify([{ id: "bad", purpose: "x", messages: [], ask: "x" }]));
+    expect(() => loadRecallCases(file)).toThrow();
   });
 });

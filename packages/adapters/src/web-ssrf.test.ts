@@ -99,6 +99,83 @@ describe("web SSRF policy", () => {
     expect(result.body).toContain("hello");
   });
 
+  it.each(["text/html; charset=gbk", 'Text/HTML; CHARSET="GBK"'])(
+    "decodes the declared charset in %s",
+    async (contentType) => {
+      // GBK bytes for 中文, used in both the title and the page body.
+      const chinese = Buffer.from([0xd6, 0xd0, 0xce, 0xc4]);
+      const body = Buffer.concat([
+        Buffer.from("<title>"),
+        chinese,
+        Buffer.from("</title><p>"),
+        chinese,
+        Buffer.from("</p>"),
+      ]);
+      const result = await fetchSafeWebText("https://example.test/page", {
+        fetch: async () => new Response(body, { headers: { "content-type": contentType } }),
+        resolveHostname: publicResolver,
+      });
+      expect(result.body).toBe("<title>中文</title><p>中文</p>");
+      expect(result.contentType).toBe(contentType);
+    },
+  );
+
+  it("uses the final response charset after a redirect", async () => {
+    const result = await fetchSafeWebText("https://example.test/start", {
+      fetch: async (url) =>
+        String(url).endsWith("/start")
+          ? new Response(null, {
+              status: 302,
+              headers: { location: "/final", "content-type": "text/html; charset=utf-8" },
+            })
+          : new Response(new Uint8Array([0x63, 0x61, 0x66, 0xe9]), {
+              headers: { "content-type": "text/plain; charset=iso-8859-1" },
+            }),
+      resolveHostname: publicResolver,
+    });
+    expect(result.url).toBe("https://example.test/final");
+    expect(result.body).toBe("café");
+  });
+
+  it.each([
+    null,
+    "text/html",
+    "text/plain; charset=utf-8",
+    "text/plain; charset=",
+    "text/plain; charset=not-an-encoding",
+    "not a media type",
+    'text/plain; note="ignore; charset=gbk"',
+  ])("keeps the UTF-8 default for %s", async (contentType) => {
+    const result = await fetchSafeWebText("https://example.test/page", {
+      fetch: async () =>
+        new Response(new TextEncoder().encode("中文 café"), {
+          headers: contentType ? { "content-type": contentType } : {},
+        }),
+      resolveHostname: publicResolver,
+    });
+    expect(result.body).toBe("中文 café");
+  });
+
+  it("still limits the encoded byte count before decoding", async () => {
+    const fetchMock: typeof fetch = async () =>
+      new Response(new Uint8Array([0xd6, 0xd0, 0xce, 0xc4]), {
+        headers: { "content-type": "text/plain; charset=gbk" },
+      });
+    const options = { fetch: fetchMock, resolveHostname: publicResolver, maxBytes: 2 };
+    await expect(fetchSafeWebText("https://example.test/page", options)).rejects.toThrow(
+      /too large/i,
+    );
+    await expect(
+      fetchSafeWebText("https://example.test/page", { ...options, truncate: true }),
+    ).resolves.toMatchObject({ body: "中" });
+    await expect(
+      fetchSafeWebBytes("https://example.test/page", {
+        fetch: fetchMock,
+        resolveHostname: publicResolver,
+      }),
+    ).resolves.toMatchObject({ body: new Uint8Array([0xd6, 0xd0, 0xce, 0xc4]) });
+  });
+
   it("refuses ports outside allowedPorts on every hop", async () => {
     await expect(
       assertSafeWebUrl("https://example.test:8443/", publicResolver, undefined, [80, 443]),

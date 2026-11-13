@@ -673,6 +673,8 @@ class HostCheckTests(unittest.TestCase):
             loadavg = root / "loadavg"
             loadavg.write_text("0.50 0.50 0.50 1/100 1\n")
             source = source.replace("/proc/loadavg", str(loadavg))
+            pressure = root / "pressure-cpu"
+            source = source.replace("/proc/pressure/cpu", str(pressure))
             meminfo = root / "meminfo"
             healthy_memory = (
                 "MemTotal: 8000000 kB\nMemAvailable: 4000000 kB\n"
@@ -727,12 +729,33 @@ class HostCheckTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("need a reboot", alert_log.read_text())
             reboot_required.unlink()
+            # Without pressure information, a load above the core count alerts.
             loadavg.write_text("6.00 5.50 5.00 1/100 1\n")
             result = subprocess.run(
                 ["bash", str(script)], env=env, capture_output=True, text=True
             )
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("CPU is overloaded", alert_log.read_text())
+            # With it, a high load alone does not: only work waiting for a core does.
+            alert_log.write_text("")
+            pressure.write_text(
+                "some avg10=30.00 avg60=25.00 avg300=24.00 total=1\n"
+                "full avg10=0.00 avg60=0.00 avg300=0.00 total=0\n"
+            )
+            result = subprocess.run(
+                ["bash", str(script)], env=env, capture_output=True, text=True
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            pressure.write_text(
+                "some avg10=80.00 avg60=70.00 avg300=65.00 total=1\n"
+                "full avg10=0.00 avg60=0.00 avg300=0.00 total=0\n"
+            )
+            result = subprocess.run(
+                ["bash", str(script)], env=env, capture_output=True, text=True
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("CPU is overloaded", alert_log.read_text())
+            pressure.unlink()
             loadavg.write_text("0.50 0.50 0.50 1/100 1\n")
             meminfo.write_text(
                 "MemTotal: 8000000 kB\nMemAvailable: 500000 kB\n"

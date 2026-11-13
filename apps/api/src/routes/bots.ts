@@ -7,6 +7,7 @@ import {
   defaultVaultItemTitle,
   forgetBotSecret,
   forgetPageShareSecrets,
+  groupsRemovedByDeletingBot,
   hasActiveComputerControl,
   isSecretAlreadySaved,
   listVaultItems,
@@ -52,11 +53,13 @@ import type { AgentImportServices } from "../agent-import.js";
 import { agentImportSetupState, createImportedBot, previewAgentImport } from "../agent-import.js";
 import { deleteAgentSecret, listAgentSecrets, putAgentSecret } from "../agent-secrets.js";
 import { botEmailAddress, botEmailAddresses, claimBotEmailAddress } from "../bot-email-address.js";
+import { loadBotForRemoval } from "../bot-removal.js";
 import { changedBotSettings } from "../bot-setting-analytics.js";
 import { createBotFromTemplate, listBotTemplates } from "../bot-templates.js";
 import { requireIdentityConfirmation } from "../identity-confirmation.js";
 import { managedAppCatalog } from "../onboarding.js";
 import type { RouterDeps } from "../router.js";
+import { purgeClearedThreadMemory } from "../thread-memory.js";
 import { loadMessagePage } from "../thread-message-pages.js";
 import type { RouterContext } from "./context.js";
 import { computerContext, modelSetup, THREAD_MESSAGE_PAGE_SIZE } from "./shared.js";
@@ -633,6 +636,10 @@ export function botsRoutes(ctx: RouterContext) {
         await removeBot(context.actor, input.botId, { deleteMemories: input.deleteMemories });
         return { ok: true as const };
       }),
+      removePreview: authed.bots.removePreview.handler(async ({ context, input }) => {
+        const bot = await loadBotForRemoval(deps.prisma, repos, context.actor, input.botId);
+        return groupsRemovedByDeletingBot(deps.prisma, bot.id);
+      }),
       emailAddress: authed.bots.emailAddress.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
         // The address and its inbox are the owner's: other members of the Space never see it.
@@ -758,7 +765,7 @@ export function botsRoutes(ctx: RouterContext) {
         try {
           return await groupRepos.createGroup(context.actor, {
             name: duplicateBotName(source.name),
-            botIds: source.members.map((member) => member.bot.id),
+            botIds: source.members.flatMap((member) => (member.bot ? [member.bot.id] : [])),
           });
         } catch (error) {
           throw mapSpaceLifecycleError(error);
@@ -797,6 +804,18 @@ export function botsRoutes(ctx: RouterContext) {
         try {
           await stopCancelledGroupRuns(deps, context.actor, removed);
         } finally {
+          if (removed.memory) {
+            await purgeClearedThreadMemory(
+              deps,
+              context.actor,
+              {
+                kind: "group",
+                threadId: removed.memory.threadId,
+                memberBotIds: removed.memory.botIds,
+              },
+              removed.memory.generation,
+            ).catch((error) => getLogger().error("group memory cleanup", error));
+          }
           // The group row is already gone, so a retry could no longer find these.
           const cleanup = await Promise.allSettled(
             removed.artifactStorageKeys.map((storageKey) =>

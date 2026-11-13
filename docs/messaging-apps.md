@@ -6,7 +6,7 @@ there.
 > [!NOTE]
 > **Settings → Messaging** appears only when your server has at least one chat app set up. Which
 > apps you see depends on the server: Slack, Telegram, WhatsApp, iMessage and SMS, and Feishu (Lark)
-> are supported. On a self-hosted server the operator configures them; see
+> are supported, along with Microsoft Teams direct messages. On a self-hosted server the operator configures them; see
 > [Self-hosting](./self-host.md).
 
 ## Link a bot to a chat app

@@ -25,6 +25,7 @@ export * from "./content-migration.js";
 export * from "./credential-secrets.js";
 export * from "./cross-space-communication.js";
 export * from "./database-access.js";
+export * from "./database-outage.js";
 export * from "./deferred-migrations.js";
 export {
   eventsAfter,
@@ -49,6 +50,7 @@ export * from "./page-shares.js";
 export * from "./prisma-errors.js";
 export * from "./provider-transactions.js";
 export * from "./repos.js";
+export * from "./roster-changes.js";
 export * from "./row-security.js";
 export * from "./run-secrets.js";
 export * from "./run-timing.js";
