@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { setTimeout as sleep } from "node:timers/promises";
 import type { BrowserProvider, SandboxProvider } from "@rakazo/adapter-kit";
 import type { ComputerCommand } from "@rakazo/contracts";
 import { COMPUTER_COMMAND_OUTPUT_MAX_CHARS } from "@rakazo/contracts";
@@ -52,6 +53,7 @@ import { builtinOffered } from "./run-instructions.js";
 import { computerScreenToolResult } from "./run-lifecycle.js";
 import type { ToolCall, ToolHandlers } from "./run-tool-gate.js";
 import { auditToolCall } from "./run-tool-gate.js";
+import { awaitScreenTurn } from "./screen-turn.js";
 import {
   isRunningShellCommand,
   observeShellCommand,
@@ -134,15 +136,46 @@ function formatObservation(
     visualActionKey ? { unchangedVisualCount: guard.streak.count } : undefined,
   );
   screen.lastFrameId = observation.frameId;
+  screen.turn.mustLook = false;
   return result;
 }
 
-async function screenBlocked(ctx: RunContext): Promise<string | undefined> {
+/**
+ * Wait for this bot's turn on its screen, or say why it may not use it now. A person's lease
+ * counts until it is cleared, which happens only after the provider has stopped their input, even
+ * once it has lapsed. Looking (a screenshot or snapshot) is how the bot catches up after a person
+ * used the screen.
+ */
+async function screenBlocked(ctx: RunContext, look = false): Promise<string | undefined> {
   if (ctx.computer.heldForTakeover) return DESKTOP_HELD_FOR_TAKEOVER_MESSAGE;
   if (await getActiveTeachingSession(ctx.deps.prisma, ctx.run.spaceId, ctx.run.botId)) {
     return "Teaching is in progress. Stop teaching before using the computer.";
   }
-  return undefined;
+  const { signal } = ctx.context;
+  return awaitScreenTurn({
+    turn: ctx.state.screen.turn,
+    look,
+    readControl: async () => {
+      const computer = await ctx.deps.prisma.computer.findUnique({
+        where: { id: ctx.computer.stored.id },
+        select: {
+          controlHolder: true,
+          controlLeaseId: true,
+          controlBotId: true,
+          controlFence: true,
+        },
+      });
+      if (!computer) return null;
+      return {
+        held:
+          computer.controlHolder === "user" &&
+          Boolean(computer.controlLeaseId) &&
+          computer.controlBotId === ctx.bot.id,
+        fence: computer.controlFence,
+      };
+    },
+    sleep: (ms) => sleep(ms, undefined, { signal }),
+  });
 }
 
 /**
@@ -184,7 +217,7 @@ function releaseUnpressedPayment(ctx: RunContext, call: ToolCall): Promise<void>
 export async function pageBrowserTool(ctx: RunContext, call: ToolCall) {
   const { deps, run, bot, context } = ctx;
   const { name, args } = call;
-  const blocked = await screenBlocked(ctx);
+  const blocked = await screenBlocked(ctx, name === "browser_snapshot");
   if (blocked) return call.finish({ error: blocked });
   if (name !== "browser_snapshot") ctx.computer.checkpoint.markDirty();
   // Pages can echo a filled login (e.g. a username field), so scrub every page result.
@@ -415,6 +448,10 @@ export async function pageBrowserTool(ctx: RunContext, call: ToolCall) {
       name,
       result,
     );
+    // A snapshot that returned the page is the fresh look a person's use asked for.
+    if (name === "browser_snapshot" && !(result as { error?: unknown } | null)?.error) {
+      ctx.state.screen.turn.mustLook = false;
+    }
     return browserResultForModel(result);
   }, call.finish);
 }
@@ -424,7 +461,7 @@ export const computerTools: ToolHandlers = {
   async computer_observe(ctx, call) {
     const { deps, context } = ctx;
     const { name } = call;
-    const blocked = await screenBlocked(ctx);
+    const blocked = await screenBlocked(ctx, true);
     if (blocked) return { error: blocked };
     return computerScreenToolResult(async () =>
       formatObservation(

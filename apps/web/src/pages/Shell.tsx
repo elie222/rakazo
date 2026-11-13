@@ -1408,7 +1408,6 @@ function SpaceShell() {
           composerRunning={composerRunning}
           sending={sending}
           booting={booting}
-          runStatus={snapshot?.run?.status}
           sendError={sendError}
           embeddedScreenUrl={computerControls.embeddedScreenUrl}
           screenFrameKey={computerState.screenFrameKey}
