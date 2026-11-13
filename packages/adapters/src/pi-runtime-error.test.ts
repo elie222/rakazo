@@ -200,6 +200,7 @@ describe("Pi runtime errors", () => {
     'OAuth refresh failed for anthropic: Anthropic token refresh request failed. url=https://example.invalid/v1/oauth/token; details=Error: HTTP request failed. status=400; body={"error": "invalid_grant", "error_description": "Refresh token not found or invalid"}',
     '400 {"message":"Provider returned error","code":400,"metadata":{"raw":"{\\"error\\":{\\"message\\":\\"example upstream failure\\"}}","provider_name":"ExampleUpstream","is_byok":false}}',
     '400 {"type":"error","error":{"type":"invalid_request_error","message":"Invalid effort level: max"},"request_id":"req_example"}',
+    '400: {"type":"invalid_request_error","message":"This example model is hosted outside Europe and the United States. Select Global in your workspace\'s privacy settings to use it."}',
   ])("marks a provider account failure the user can fix: %s", async (message) => {
     provider.errorMessage = message;
     const failure = consume();
@@ -215,6 +216,8 @@ describe("Pi runtime errors", () => {
     "Provider returned an empty response",
     "Cyber safeguards flagged this message. If this is legitimate security work, you can apply for the Cyber Verification Program: https://support.claude.com/en/articles/<article-id>",
     "This request triggered cyber-related safeguards. To learn about the Cyber Verification Program, see https://support.claude.com/en/articles/<article-id>",
+    "SAFETY",
+    '400: {"code":"data_inspection_failed","param":null,"message":"Input text data may contain inappropriate content.","type":"data_inspection_failed"}',
     'unexpected tokens remaining in message header: Some("to=functions.example")',
     'HarmonyError: unexpected tokens remaining in message header: Some("analysis")',
     '500: {"message":"unexpected tokens remaining in message header: Some(\\"analysis\\")"}',
