@@ -1,5 +1,5 @@
 import { execFileSync, execSync } from "node:child_process";
-import { existsSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import path from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 import { composeBaseArgs, postgresUp } from "./compose-stack.js";
@@ -59,7 +59,10 @@ describeBackup("compose backup and restore", () => {
   it("dumps postgres and restores into a side database", () => {
     expect(existsSync(path.join(repoRoot, "scripts/backup.sh"))).toBe(true);
     expect(existsSync(path.join(repoRoot, "scripts/restore.sh"))).toBe(true);
-    const stamp = `verify-${Date.now()}`;
+    const backups = path.join(repoRoot, "backups");
+    mkdirSync(backups, { recursive: true });
+    const backupDirectory = mkdtempSync(path.join(backups, "verify-"));
+    const stamp = path.basename(backupDirectory);
     // The dump holds the whole database, so it goes even when an assertion fails.
     try {
       execSync(`${path.join(repoRoot, "scripts/backup.sh")} ${stamp}`, {
@@ -74,6 +77,17 @@ describeBackup("compose backup and restore", () => {
       expect(sql.toLowerCase()).toContain("bots");
       expect(sql).not.toMatch(/OPENROUTER_API_KEY|sk-or-v1-/);
 
+      compose(
+        psql([
+          "-d",
+          "postgres",
+          "-X",
+          "--set=ON_ERROR_STOP=on",
+          "-c",
+          "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'rakazo_app') THEN CREATE ROLE rakazo_app NOLOGIN; END IF; END $$",
+        ]),
+        { stdio: "pipe", timeout: 20_000 },
+      );
       createSideDatabase();
       try {
         importDump(sql);
