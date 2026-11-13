@@ -19,6 +19,8 @@ import type { MessageBlock } from "@rakazo/contracts";
 import {
   botMessageHopExhausted,
   botMessageMaxHops,
+  chatAppAskText,
+  chatAppTakeoverText,
   nextBotMessageHop,
   pageLinksAsTitles,
   teamChatResponseText,
@@ -841,7 +843,7 @@ export class MessagingDelivery {
    * after it goes ahead of it.
    */
   private async recordDirectRun(
-    run: { id: string; botId: string; userId: string },
+    run: { id: string; botId: string; userId: string; status: string },
     progress: boolean,
   ): Promise<OutboundLane | undefined> {
     const identity = await this.deps.prisma.messagingIdentity.findUnique({
@@ -858,8 +860,11 @@ export class MessagingDelivery {
       .platforms()
       .some((platform) => platform.provider === identity.provider && platform.capabilities.files);
     const linkedPages = linkedPageIds(messages);
+    // A run that ended, such as one cancelled or expired while it waited, leaves its question
+    // pending with nothing to resume, so the chat app is not asked it.
+    const asks = !TERMINAL_RUN.includes(run.status);
     const rowsByMessage = messages.map((message) => {
-      const body = extractText(message.blocks, linkedPages);
+      const body = extractText(message.blocks, linkedPages, { asks });
       const parts = body ? splitOutboundBody(identity.provider, body) : [];
       return [
         ...parts.map((part, index) => ({
@@ -1365,15 +1370,28 @@ function linkedPageIds(messages: readonly { blocks: unknown }[]): Set<string> {
 
 /**
  * The text other channels get. A page card cannot travel, so a page the reply does not name goes
- * as its title.
+ * as its title. With `asks`, for a 1:1 chat, a pending question or takeover request goes as text
+ * too, so the person learns the bot is waiting on them.
  */
-function extractText(blocks: unknown, linkedPages: ReadonlySet<string>): string {
+function extractText(
+  blocks: unknown,
+  linkedPages: ReadonlySet<string>,
+  options: { asks?: boolean } = {},
+): string {
   if (!Array.isArray(blocks)) return "";
   return blocks
     .flatMap(
       (block: { kind?: unknown; text?: unknown; pageId?: unknown; title?: unknown } | null) => {
         if (block?.kind === "text" && typeof block.text === "string")
           return [pageLinksAsTitles(block.text)];
+        if (options.asks && block?.kind === "ask") {
+          const ask = chatAppAskText(block as MessageBlock);
+          return ask ? [ask] : [];
+        }
+        if (options.asks && block?.kind === "computer") {
+          const takeover = chatAppTakeoverText(block as Parameters<typeof chatAppTakeoverText>[0]);
+          return takeover ? [takeover] : [];
+        }
         if (
           block?.kind === "page" &&
           typeof block.title === "string" &&
