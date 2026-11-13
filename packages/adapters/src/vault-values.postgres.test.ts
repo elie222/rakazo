@@ -1,6 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import type { AdapterContext } from "@rakazo/adapter-kit";
 import type { BotSecretDestination } from "@rakazo/contracts";
+import { decodeLoginSecret } from "@rakazo/contracts";
 import {
   asSystem,
   ciphertextKeyId,
@@ -13,10 +14,19 @@ import {
   runAsTenant,
 } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { resolveLoginFill, revealBotSecret, storeBotSecret } from "./bot-secrets.js";
+import {
+  LOGIN_ALREADY_SAVED,
+  LOGIN_VALUE_CHANGED,
+  loadLoginPasswordRedactions,
+  loginCodeClaim,
+  resolveLoginFill,
+  revealBotSecret,
+  storeBotSecret,
+} from "./bot-secrets.js";
 import { EncryptedSecretStore } from "./secrets.js";
 import {
   migrateVaultValues,
+  openVaultValue,
   rotateVaultKeys,
   vaultItemsNotUnderKeys,
   vaultItemsUnderOlderKeys,
@@ -866,5 +876,108 @@ describePostgres("vault values under the content keys (PostgreSQL)", () => {
       await system.organization.deleteMany({ where: { id: member.spaceId } });
       await system.user.deleteMany({ where: { id: member.userId } });
     }
+  });
+  it("keeps encrypted login keys, import duplicates and blocked-value redaction intact", async () => {
+    const name = "encrypted-policy-login";
+    const otp = ("GEZDGNBV" + "GY3TQOJQ").repeat(2);
+    const destination = { ...login, name } as BotSecretDestination;
+    const saveValue = (
+      plaintext: string,
+      extra: Partial<Parameters<typeof storeBotSecret>[0]> = {},
+    ) =>
+      runAsTenant(scope, () =>
+        storeBotSecret({
+          prisma: sealing.prisma,
+          secretStore,
+          scope,
+          destination,
+          plaintext,
+          ...extra,
+        }),
+      );
+    await saveValue(
+      JSON.stringify({
+        fields: [
+          { label: "Email", value: "test@example.test", hidden: false },
+          { label: "Password", value: "fake-encrypted-password", hidden: true },
+        ],
+        otp,
+      }),
+    );
+    await runAsSystem("vault test migration", () =>
+      migrateVaultValues(sealing.prisma, secretStore, context, { mode: "encrypt" }),
+    );
+    // An editor save omitting the key preserves it after the migration.
+    const updated = JSON.stringify({
+      fields: [
+        { label: "Email", value: "test@example.test", hidden: false },
+        { label: "Password", value: "fake-replaced-password", hidden: true },
+      ],
+    });
+    await saveValue(updated);
+    const stored = (await rows()).find((row) => row.name === name)!;
+    expect(stored.ciphertext).toMatch(/^rkz1:/);
+    expect(stored.ciphertext).not.toContain(otp);
+    const plaintext = await runAsTenant(scope, () =>
+      openVaultValue(sealing.prisma, secretStore, stored),
+    );
+    expect(decodeLoginSecret(plaintext).otp).toBe(otp);
+    await expect(saveValue(updated, { newLoginOnly: new Map<string, string>() })).rejects.toThrow(
+      LOGIN_ALREADY_SAVED,
+    );
+    const resolved = await runAsTenant(scope, () =>
+      resolveLoginFill({
+        prisma: sealing.prisma,
+        secretStore,
+        scope,
+        runId: "encrypted-code-run",
+        name,
+        field: "",
+        code: true,
+      }),
+    );
+    expect(resolved).toMatchObject({
+      text: expect.stringMatching(/^\d{6}$/),
+      login: { id: stored.id },
+    });
+    if (!("text" in resolved) || !resolved.login) throw new Error("Expected a code");
+    // Re-encryption changes ciphertext too: a stale code must spend no attempt.
+    await runAsSystem("vault test rotate", () => rotateVaultKeys(sealing.prisma, context));
+    await runAsSystem("vault test reencrypt", () =>
+      migrateVaultValues(sealing.prisma, secretStore, context, { mode: "reencrypt" }),
+    );
+    const claim = loginCodeClaim({
+      prisma: sealing.prisma,
+      secretStore,
+      scope,
+      runId: "encrypted-code-run",
+      login: resolved.login,
+      code: resolved.text,
+      origin: login.origin,
+    });
+    await expect(runAsTenant(scope, () => claim.claim())).resolves.toBe(LOGIN_VALUE_CHANGED);
+    expect(
+      await system.secret.count({
+        where: { userId: scope.userId, kind: "run-code-spent:encrypted-code-run" },
+      }),
+    ).toBe(0);
+    await saveValue(updated, { policy: "off" });
+    await expect(
+      runAsTenant(scope, () =>
+        resolveLoginFill({
+          prisma: sealing.prisma,
+          secretStore,
+          scope: { ...scope, botId: "unselected-bot" },
+          runId: "encrypted-code-run",
+          name,
+          field: "password",
+        }),
+      ),
+    ).resolves.toHaveProperty("error");
+    const redactions = await runAsTenant(scope, () =>
+      loadLoginPasswordRedactions(sealing.prisma, secretStore, scope),
+    );
+    expect(redactions).toContain("fake-replaced-password");
+    expect(redactions).toContain(otp);
   });
 });

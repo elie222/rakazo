@@ -1,6 +1,8 @@
 import type { ComputerRef } from "@rakazo/adapter-kit";
 import { encodeLoginSecret } from "@rakazo/contracts";
+import { installAuditEventStore } from "@rakazo/db";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { fakeAuditLog, fakeDatabase } from "./bot-secrets.test-support.js";
 import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
 import { createRunExecutor } from "./executor.js";
 import { EncryptedSecretStore } from "./secrets.js";
@@ -35,11 +37,19 @@ type ExecuteTool = (
  */
 async function runAfterFill(
   toolCalls: Array<{ name: string; args: Record<string, unknown> }>,
-  options: { savedLogin?: boolean; reply?: string } = {},
+  options: {
+    savedLogin?: boolean;
+    reply?: string;
+    blockedCommand?: boolean;
+    blockedKey?: boolean;
+    /** Another bot of the same owner runs on their Team Computer, reading a real vault. */
+    teamVault?: ReturnType<typeof fakeDatabase>;
+    printed?: string[];
+  } = {},
 ) {
   const run = {
     id: "run-2",
-    botId: "bot-1",
+    botId: options.teamVault ? "bot-2" : "bot-1",
     threadId: "thread-1",
     taskId: "task-1",
     spaceId: "space-1",
@@ -78,12 +88,32 @@ async function runAfterFill(
       { recordId: "command-1" },
     )),
   };
-  const botSecrets = options.savedLogin === false ? [commandRow] : [loginRow, commandRow];
+  // A key no bot may use, which an earlier run or the owner wrote into a file.
+  const keyRow = {
+    ...scope,
+    name: "api-key",
+    origin: "https://api.example.test",
+    auth: { type: "bearer" },
+    policy: "off",
+    ...(await secretStore.put(
+      "fake-off-api-key-123456",
+      { ...scope, operationId: "test", traceId: "test", signal: new AbortController().signal },
+      { recordId: "key-1" },
+    )),
+  };
+  const botSecrets = [
+    ...(options.savedLogin === false ? [] : [loginRow]),
+    commandRow,
+    ...(options.blockedKey ? [keyRow] : []),
+  ];
   const load = vi.spyOn(secretStore, "load");
   const printed = [
     `user=${USERNAME} pass=${PASSWORD}`,
     `form=${new URLSearchParams({ username: USERNAME, password: PASSWORD })}`,
     `base64=${Buffer.from(PASSWORD).toString("base64")}`,
+    ...(options.blockedCommand ? ["token=fake-cli-token"] : []),
+    ...(options.blockedKey ? ["key=fake-off-api-key-123456"] : []),
+    ...(options.printed ?? []),
   ].join("\n");
   const toolResults: unknown[] = [];
   const runtimeRun = vi.fn(async function* (request: { executeTool?: ExecuteTool }) {
@@ -125,7 +155,12 @@ async function runAfterFill(
         computerId: "computer-1",
         computerSwitching: false,
         memoryScope: null,
-        computer: { id: "computer-1", scope: "dedicated", kind: "e2b", homeKey: "home-1" },
+        computer: {
+          id: "computer-1",
+          scope: options.teamVault ? "team" : "dedicated",
+          kind: "e2b",
+          homeKey: "home-1",
+        },
       })),
       findMany: vi.fn(async () => []),
     },
@@ -164,7 +199,25 @@ async function runAfterFill(
         defaultModelId: "openai/gpt-4o",
       })),
     },
-    vaultCredential: { findMany: vi.fn(async () => botSecrets) },
+    ...(options.teamVault
+      ? {
+          vaultCredential: options.teamVault.prisma.vaultCredential,
+          spaceSettingOverride: options.teamVault.prisma.spaceSettingOverride,
+        }
+      : {
+          vaultCredential: {
+            // A variable the owner blocked is not in what the bot may use.
+            findMany: vi.fn(async ({ where }: { where: { policy?: unknown } }) =>
+              botSecrets.filter(
+                (row) =>
+                  !(
+                    where.policy &&
+                    (row === keyRow || (options.blockedCommand && row === commandRow))
+                  ),
+              ),
+            ),
+          },
+        }),
     externalEffect: {
       findMany: vi.fn(async () => []),
       findFirst: vi.fn(async () => null),
@@ -229,6 +282,49 @@ async function runAfterFill(
 
 afterEach(() => {
   vi.restoreAllMocks();
+  installAuditEventStore(undefined);
+});
+
+describe("saved API keys in a later run", () => {
+  it("hides a key no bot may use from the run's first file read", async () => {
+    const { toolResults } = await runAfterFill([{ name: "read_file", args: { path: "out.txt" } }], {
+      blockedKey: true,
+    });
+    const text = JSON.stringify(toolResults);
+    expect(text).toContain("key=[redacted]");
+    expect(text).not.toContain("fake-off-api-key-123456");
+  });
+});
+
+describe("command variables in a later run", () => {
+  it("hides a variable's value after the owner blocks it", async () => {
+    const { toolResults } = await runAfterFill([{ name: "read_file", args: { path: "out.txt" } }], {
+      blockedCommand: true,
+    });
+    const text = JSON.stringify(toolResults);
+    expect(text).toContain("token=[redacted]");
+    expect(text).not.toContain("fake-cli-token");
+  });
+
+  it("is used once a shell command has it, not when the run starts and hides it", async () => {
+    const rows = fakeAuditLog();
+    const used = () => rows.filter((row) => row.action === "credential.used");
+    await runAfterFill([{ name: "read_file", args: { path: "out.txt" } }]);
+    expect(used()).toEqual([]);
+    await runAfterFill([
+      { name: "shell", args: { command: "deploy" } },
+      { name: "shell", args: { command: "deploy again" } },
+    ]);
+    expect(used()).toEqual([
+      expect.objectContaining({
+        actorId: "bot-1",
+        targetId: "command-1",
+        targetLabel: "cli-token",
+        runId: "run-2",
+        metadata: { tool: "shell", scope: "space", name: "cli-token", kind: "command" },
+      }),
+    ]);
+  });
 });
 
 describe("saved logins in a later run", () => {
@@ -287,6 +383,87 @@ describe("saved logins in a later run", () => {
     expect(loginLoads).toBe(0);
     expect(JSON.stringify(toolResults)).toContain(USERNAME);
   });
+});
+
+describe("another bot's saved login on a Team Computer", () => {
+  const OTHER_VAULT = "fake other vault pass";
+  const OTHER_MEMBER = "fake other member pass";
+
+  async function teamVault(own: "account" | "space") {
+    const db = fakeDatabase();
+    if (own === "space") db.useOwnVault("space-1");
+    const login = async (
+      id: string,
+      owner: { userId: string; spaceId: string | null },
+      password: string,
+      access: { policy?: string } = {},
+    ) =>
+      db.prisma.vaultCredential.create({
+        data: {
+          ...owner,
+          ...access,
+          name: id,
+          origin: "https://login.example.test",
+          auth: { type: "login" },
+          ...(await secretStore.put(
+            encodeLoginSecret({
+              fields: [
+                { label: "Username", value: USERNAME, hidden: false },
+                { label: "Password", value: password, hidden: true },
+              ],
+            }),
+            {
+              userId: owner.userId,
+              spaceId: "space-1",
+              operationId: "test",
+              traceId: "test",
+              signal: new AbortController().signal,
+            },
+            { recordId: id },
+          )),
+        },
+      });
+    // The login bot-1 saved and filled, in the vault the Space uses, and one in the vault it doesn't.
+    const inUse = own === "space" ? "space-1" : null;
+    // It asks first and is limited to no bot here, and bot-2's run still hides it.
+    await login("login-1", { userId: "user-1", spaceId: inUse }, PASSWORD, { policy: "ask" });
+    await db.prisma.vaultCredentialLimit.createMany({
+      data: [{ credentialId: "login-1", userId: "user-1", spaceId: "space-1" }],
+    });
+    await login(
+      "unused-vault",
+      { userId: "user-1", spaceId: inUse ? null : "space-1" },
+      OTHER_VAULT,
+    );
+    // Another member's logins are in their own vault, which this owner's runs don't load.
+    await login("other-member", { userId: "user-2", spaceId: null }, OTHER_MEMBER);
+    return db;
+  }
+
+  it.each(["account", "space"] as const)(
+    "hides it from bot-2's command output, files and window titles (%s vault)",
+    async (own) => {
+      const { toolResults, loginLoads } = await runAfterFill(
+        [
+          { name: "shell", args: { command: "read-filled-fields" } },
+          { name: "read_file", args: { path: "page.txt" } },
+          { name: "list_files", args: { path: "notes" } },
+          { name: "computer_observe", args: {} },
+        ],
+        { teamVault: await teamVault(own), printed: [OTHER_VAULT, OTHER_MEMBER] },
+      );
+      const text = JSON.stringify(toolResults);
+      expect(text).not.toContain(PASSWORD);
+      expect(text).not.toContain(encodeURIComponent(PASSWORD));
+      expect(text).not.toContain(Buffer.from(PASSWORD).toString("base64"));
+      expect(text).toContain("notes/[redacted].txt");
+      expect(text).toContain(`${USERNAME} - [redacted]`);
+      expect(loginLoads).toBe(1);
+      // Only the vault the Space uses now is hidden.
+      expect(text).toContain(OTHER_VAULT);
+      expect(text).toContain(OTHER_MEMBER);
+    },
+  );
 });
 
 /** Models the run reads but these tests do not care about behave as empty tables. */

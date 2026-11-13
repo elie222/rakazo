@@ -6,6 +6,7 @@
   "type": "module",
   "exports": {
     "./run-error": "./src/run-error.ts",
+    "./vault": "./src/vault.ts",
     "./locales/*": "./locales/*"
   },
   "scripts": {
