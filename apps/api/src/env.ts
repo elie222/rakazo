@@ -476,8 +476,8 @@ function applePrivateKey(source: NodeJS.ProcessEnv): string | undefined {
   if (!file) return inline;
   try {
     return readFileSync(file, "utf8");
-  } catch {
-    throw new Error("APPLE_PRIVATE_KEY_FILE could not be read");
+  } catch (cause) {
+    throw new Error("APPLE_PRIVATE_KEY_FILE could not be read", { cause });
   }
 }
 

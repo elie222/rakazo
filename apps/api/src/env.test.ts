@@ -444,14 +444,20 @@ describe("social sign-in environment", () => {
       expect(() => loadEnv({ ...base, ...apple, APPLE_PRIVATE_KEY_FILE: file })).toThrow(
         /not both/,
       );
-      expect(() =>
+      try {
         loadEnv({
           ...base,
           ...apple,
           APPLE_PRIVATE_KEY: undefined,
           APPLE_PRIVATE_KEY_FILE: join(dir, "missing.p8"),
-        }),
-      ).toThrow(/could not be read/);
+        });
+        expect.unreachable("Missing private key must fail startup");
+      } catch (error) {
+        expect(error).toMatchObject({
+          message: "APPLE_PRIVATE_KEY_FILE could not be read",
+          cause: { code: "ENOENT", path: join(dir, "missing.p8") },
+        });
+      }
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
