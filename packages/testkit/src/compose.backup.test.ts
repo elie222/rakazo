@@ -1,4 +1,5 @@
 import { execFileSync, execSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import path from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
@@ -18,13 +19,9 @@ function compose(args: string[], options?: Parameters<typeof execFileSync>[2]) {
 
 const psql = (sqlArgs: string[]) => ["exec", "-T", "postgres", "psql", "-U", "rakazo", ...sqlArgs];
 
-const SIDE_DATABASE = "rakazo_restore_test";
+const SIDE_DATABASE = `rakazo_restore_${randomUUID().replaceAll("-", "")}`;
 
 function createSideDatabase() {
-  compose(psql(["-d", "postgres", "-c", `DROP DATABASE IF EXISTS ${SIDE_DATABASE}`]), {
-    stdio: "pipe",
-    timeout: 20_000,
-  });
   compose(psql(["-d", "postgres", "-c", `CREATE DATABASE ${SIDE_DATABASE}`]), {
     stdio: "pipe",
     timeout: 20_000,
