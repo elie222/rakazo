@@ -131,9 +131,8 @@ export default function ArtifactsScreen() {
         setNext(page.nextCursor ? { cursor: page.nextCursor, botId, madeByBots } : null);
       } catch (error) {
         if (generation !== generationRef.current) return;
-        if (mode === "replace") {
-          setLoadError(errorText(error, t`Could not load artifacts.`));
-        }
+        // A refresh can supersede a replace load before any items are available.
+        setLoadError(errorText(error, t`Could not load artifacts.`));
       }
     },
     [t],

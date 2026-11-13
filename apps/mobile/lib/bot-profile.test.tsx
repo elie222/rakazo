@@ -1467,6 +1467,73 @@ describe("artifacts opened for one bot", () => {
     expect(container.textContent).toContain("No artifacts yet");
   });
 
+  it("shows an error when the deletion refresh supersedes a filter load and fails", async () => {
+    const file = {
+      id: "file-a",
+      name: "report.md",
+      botId: "bot-fixture",
+      groupId: null,
+      runId: null,
+      description: null,
+      mimeType: "text/markdown",
+      size: 6,
+      version: 1,
+      versionCount: 1,
+      createdAt: "2026-11-01T00:00:00.000Z",
+    };
+    const deletion = deferred<void>();
+    const stale = deferred<{ items: (typeof file)[]; nextCursor: null }>();
+    listSpaceArtifacts.mockResolvedValue({ items: [], nextCursor: null });
+    listSpaceArtifacts.mockResolvedValueOnce({ items: [file], nextCursor: null });
+    listSpaceArtifacts.mockReturnValueOnce(stale.promise);
+    listSpaceArtifacts.mockRejectedValueOnce(new Error("Could not load artifacts."));
+    removeArtifact.mockReturnValueOnce(deletion.promise);
+    await render(createElement(ArtifactsScreen));
+    act(() => button("report.md").dispatchEvent(new MouseEvent("contextmenu", { bubbles: true })));
+    await act(async () =>
+      alert.mock.lastCall?.[2]
+        .find((action: { style?: string }) => action.style === "destructive")
+        .onPress(),
+    );
+    await act(async () => button("Other").click());
+    await act(async () => deletion.resolve());
+    expect(listSpaceArtifacts).toHaveBeenLastCalledWith({
+      botId: "other-bot",
+      madeByBots: false,
+      limit: 30,
+    });
+    await act(async () => stale.resolve({ items: [file], nextCursor: null }));
+    expect(container.textContent).not.toContain("report.md");
+    expect(container.querySelector("progress")).toBeNull();
+    expect(container.textContent).toContain("Could not load artifacts.");
+    await act(async () => button("Refresh files").click());
+    expect(container.textContent).toContain("No artifacts yet");
+    expect(container.textContent).not.toContain("Could not load artifacts.");
+  });
+
+  it("keeps displayed files when a background refresh fails", async () => {
+    const file = {
+      id: "file-a",
+      name: "report.md",
+      botId: "bot-fixture",
+      groupId: null,
+      runId: null,
+      description: null,
+      mimeType: "text/markdown",
+      size: 6,
+      version: 1,
+      versionCount: 1,
+      createdAt: "2026-11-01T00:00:00.000Z",
+    };
+    listSpaceArtifacts.mockResolvedValueOnce({ items: [file], nextCursor: null });
+    listSpaceArtifacts.mockRejectedValueOnce(new Error("Could not load artifacts."));
+    await render(createElement(ArtifactsScreen));
+    await act(async () => button("Refresh files").click());
+    expect(container.textContent).toContain("report.md");
+    expect(container.textContent).not.toContain("Could not load artifacts.");
+    expect(container.querySelector("progress")).toBeNull();
+  });
+
   it("loads only the profile bot's artifacts initially", async () => {
     await render(createElement(ArtifactsScreen));
     expect(listSpaceArtifacts).toHaveBeenCalledTimes(1);
