@@ -440,8 +440,10 @@ function grokSkills(bot: GrokBot) {
     const path = `skills/${skill.name || index + 1}`;
     const body = skill.instructions.replace(FRONTMATTER, "").trim();
     if (!body) return { source: skill, path, item: null };
-    const front = FRONTMATTER.test(skill.instructions) ? parseSkillMd(skill.instructions) : null;
-    const fromFront = front && !("error" in front) ? front.description : "";
+    const parsed = FRONTMATTER.test(skill.instructions) ? parseSkillMd(skill.instructions) : null;
+    // Its metadata (requirements, platforms) stays, so setup needs still show.
+    const front = parsed && !("error" in parsed) ? parsed : null;
+    const fromFront = front?.description ?? "";
     const firstLine = body.split("\n").find((line) => line.trim()) ?? "";
     const description = oneLine(
       skill.description || fromFront || firstLine.replace(/^#+\s*/, ""),
@@ -449,7 +451,8 @@ function grokSkills(bot: GrokBot) {
     const name = freeName(slug(skill.name) || `skill-${index + 1}`, used, "");
     let item: AgentImportSkill | null = null;
     try {
-      item = skillItem(`skills:${name}`, `${buildSkillMd({ name, description, body })}\n`);
+      const markdown = buildSkillMd({ name, description, body, frontmatter: front?.frontmatter });
+      item = skillItem(`skills:${name}`, `${markdown}\n`);
     } catch {
       item = null;
     }
@@ -466,8 +469,9 @@ export function grokSkillNames(bot: GrokBot): Map<string, string> {
   );
 }
 
+/** One bullet per entry; an entry's own lines stay, indented under it. */
 function bullets(lines: readonly string[]): string {
-  return `${lines.map((line) => `- ${line.replace(/\s*\n\s*/g, " ")}`).join("\n")}\n`;
+  return `${lines.map((line) => `- ${line.replace(/\r?\n/g, "\n  ")}`).join("\n")}\n`;
 }
 
 function routinesToSetUp(routines: readonly GrokBotRoutine[]): string {

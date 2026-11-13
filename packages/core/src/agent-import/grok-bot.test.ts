@@ -245,6 +245,27 @@ describe("a Grok Bot as an import plan", () => {
     ]);
   });
 
+  it("keeps a skill's own metadata and an entry's own lines", () => {
+    const parsed = plan({
+      ...bot!,
+      memories: ["Release steps:\n1. Tag\n2. Publish"],
+      userFacts: [],
+      skills: [
+        {
+          name: "Mac Notes",
+          description: "",
+          instructions:
+            "---\nname: mac-notes\ndescription: Edit Apple Notes\nplatforms: [macos]\n---\n\nOpen Notes.",
+        },
+      ],
+    });
+    expect(parsed.memory[0]!.content).toBe("- Release steps:\n  1. Tag\n  2. Publish\n");
+    const [skill] = parsed.skills;
+    expect(skill!.content).toContain("platforms:");
+    expect(skill!.description).toBe("Edit Apple Notes");
+    expect(skill!.status.kind).not.toBe("ready");
+  });
+
   it("flags key-shaped text and lists a skill with no text as skipped", () => {
     const parsed = plan({
       ...bot!,
