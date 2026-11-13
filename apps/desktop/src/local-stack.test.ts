@@ -369,7 +369,9 @@ const ok: Script = (args) => {
   if (args[0] === "compose" && args[1] === "version") return { stdout: "2.29.0\n" };
   if (args[0] === "info") return { stdout: "27.1.1\n" };
   if (args[0] === "inspect")
-    return { stdout: JSON.stringify([`RAKAZO_DESKTOP_STACK_TOKEN=${fakeHex(32)}`]) };
+    return {
+      stdout: JSON.stringify({ running: true, env: [`RAKAZO_DESKTOP_STACK_TOKEN=${fakeHex(32)}`] }),
+    };
   const subcommand = args[7];
   if (subcommand === "ps") return { stdout: "fake-container-id\n" };
   if (subcommand === "pull") return { lines: ["app Pulled", "computer Pulled"] };
@@ -943,7 +945,12 @@ describe("LocalStackController", () => {
     await ensureStackToken(stackPath, fakeHex);
     const stack = controller({}, (args) =>
       args[0] === "inspect"
-        ? { stdout: JSON.stringify(["RAKAZO_DESKTOP_STACK_TOKEN=another-stack-token"]) }
+        ? {
+            stdout: JSON.stringify({
+              running: true,
+              env: ["RAKAZO_DESKTOP_STACK_TOKEN=another-stack-token"],
+            }),
+          }
         : ok(args),
     );
     await expect(stack.rediscoverManagedStack()).resolves.toBe(false);

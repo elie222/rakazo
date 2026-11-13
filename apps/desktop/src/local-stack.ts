@@ -554,28 +554,36 @@ export class LocalStackController extends StackLifecycle {
     try {
       const result = await this.compose(
         binary,
-        ["ps", "--status", "running", "-q"],
-        HEALTH_POLL_INTERVAL_MS,
+        ["ps", "--all", "-q"],
+        DOCKER_INFO_TIMEOUT_MS,
         undefined,
         true,
       );
       if (result.code !== 0 || !result.stdout.trim()) return false;
       const inspected = await this.docker(
         binary,
-        ["inspect", "--format", "{{json .Config.Env}}", ...result.stdout.trim().split(/\s+/)],
-        HEALTH_POLL_INTERVAL_MS,
+        [
+          "inspect",
+          "--format",
+          '{"running":{{json .State.Running}},"env":{{json .Config.Env}}}',
+          ...result.stdout.trim().split(/\s+/),
+        ],
+        DOCKER_INFO_TIMEOUT_MS,
         undefined,
         true,
       );
+      const containers: { running?: boolean; env?: unknown }[] = inspected.stdout
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line));
       const running =
         inspected.code === 0 &&
-        inspected.stdout
-          .trim()
-          .split("\n")
-          .some((line) => {
-            const env: unknown = JSON.parse(line);
-            return Array.isArray(env) && env.includes(`RAKAZO_DESKTOP_STACK_TOKEN=${token}`);
-          });
+        containers.some((container) => container.running === true) &&
+        containers.some(
+          (container) =>
+            Array.isArray(container.env) &&
+            container.env.includes(`RAKAZO_DESKTOP_STACK_TOKEN=${token}`),
+        );
       if (running && generation === this.stopGeneration && !this.managedStackMayRun) {
         this.managedStackMayRun = true;
         this.deps.onReuseConfirmed?.();
