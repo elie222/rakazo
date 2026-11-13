@@ -486,6 +486,14 @@ describe("withMentions", () => {
     ]);
   });
 
+  it("continues processing valid blocks after a malformed block", () => {
+    const nested = `${"> ".repeat(10000)}Planner`;
+    expect(withMentions([nested, "Planner is ready."], [planner])).toEqual([
+      nested,
+      `${link} is ready.`,
+    ]);
+  });
+
   it("preserves deeply nested Markdown when preprocessing cannot parse it", () => {
     const text = `${"> ".repeat(10000)}Planner`;
     expect(withMentions([text], [planner])).toEqual([text]);

@@ -44,7 +44,7 @@ function escapeRegExp(value: string): string {
 
 const mentionParser = unified().use(remarkParse).use(remarkGfm);
 
-type MentionTrees = Map<string, ReturnType<typeof mentionParser.parse>>;
+type MentionTrees = Map<string, ReturnType<typeof mentionParser.parse> | null>;
 
 function rewriteOutsideCode(
   text: string,
@@ -52,37 +52,43 @@ function rewriteOutsideCode(
   trees: MentionTrees,
   skipLinks = false,
 ) {
-  const tree = trees.get(text) ?? mentionParser.parse(text);
-  trees.set(text, tree);
-  let result = "";
-  let offset = 0;
-  function visit(node: typeof tree | (typeof tree.children)[number]) {
-    if (
-      node.type === "link" ||
-      node.type === "code" ||
-      node.type === "inlineCode" ||
-      (skipLinks &&
-        ["link", "image", "linkReference", "imageReference", "definition"].includes(node.type))
-    ) {
-      const start = node.position?.start.offset;
-      const end = node.position?.end.offset;
-      if (start !== undefined && end !== undefined) {
-        const source = text.slice(start, end);
-        result +=
-          rewrite(text.slice(offset, start)) +
-          (!skipLinks &&
-          node.type === "link" &&
-          node.url.toLowerCase().startsWith(MENTION_URL_PREFIX)
-            ? rewrite(source)
-            : source);
-        offset = end;
+  if (trees.get(text) === null) return text;
+  try {
+    const tree = trees.get(text) ?? mentionParser.parse(text);
+    trees.set(text, tree);
+    let result = "";
+    let offset = 0;
+    function visit(node: typeof tree | (typeof tree.children)[number]) {
+      if (
+        node.type === "link" ||
+        node.type === "code" ||
+        node.type === "inlineCode" ||
+        (skipLinks &&
+          ["link", "image", "linkReference", "imageReference", "definition"].includes(node.type))
+      ) {
+        const start = node.position?.start.offset;
+        const end = node.position?.end.offset;
+        if (start !== undefined && end !== undefined) {
+          const source = text.slice(start, end);
+          result +=
+            rewrite(text.slice(offset, start)) +
+            (!skipLinks &&
+            node.type === "link" &&
+            node.url.toLowerCase().startsWith(MENTION_URL_PREFIX)
+              ? rewrite(source)
+              : source);
+          offset = end;
+        }
+        return;
       }
-      return;
+      if ("children" in node) for (const child of node.children) visit(child);
     }
-    if ("children" in node) for (const child of node.children) visit(child);
+    visit(tree);
+    return result + rewrite(text.slice(offset));
+  } catch {
+    trees.set(text, null);
+    return text;
   }
-  visit(tree);
-  return result + rewrite(text.slice(offset));
 }
 const MODEL_MENTION_LINK = /\[([^\]\n]*)\]\(\s*<?rakazo-mention:[^)\n]*\)/gi;
 const OPENS_WITH_BLOCK = /^\s*(#|>|\||```|~~~|[-*+]\s|\d+[.)]\s)/;
@@ -119,30 +125,28 @@ export function withMentions(
   texts: readonly string[],
   mentions: readonly { id: string; name: string }[],
 ): string[] {
-  try {
-    const trees: MentionTrees = new Map();
-    // Only links placed here draw as mentions; ones already in the text keep just their name.
-    const result = texts.map((text) =>
-      rewriteOutsideCode(text, (part) => part.replace(MODEL_MENTION_LINK, "$1"), trees),
-    );
-    if (result.length === 0) return result;
-    for (const mention of mentions) {
-      const name = mention.name.trim();
-      if (!name) continue;
-      const link = `[${name.replace(/[\\[\]*_`<>]/g, "\\$&")}](${MENTION_URL_PREFIX}${encodeURIComponent(mention.id)})`;
-      const placed = result.some((text, index) => {
-        const linked = linkFirstName(text, name, link, trees);
-        if (linked !== undefined) result[index] = linked;
-        return linked !== undefined;
-      });
-      if (placed) continue;
-      const first = result[0]!;
-      result[0] = OPENS_WITH_BLOCK.test(first) ? `${link}\n\n${first}` : `${link} ${first}`;
-    }
-    return result;
-  } catch {
-    return [...texts];
+  const trees: MentionTrees = new Map();
+  // Only links placed here draw as mentions; ones already in the text keep just their name.
+  const result = texts.map((text) =>
+    rewriteOutsideCode(text, (part) => part.replace(MODEL_MENTION_LINK, "$1"), trees),
+  );
+  if (result.length === 0) return result;
+  for (const mention of mentions) {
+    const name = mention.name.trim();
+    if (!name) continue;
+    const link = `[${name.replace(/[\\[\]*_`<>]/g, "\\$&")}](${MENTION_URL_PREFIX}${encodeURIComponent(mention.id)})`;
+    const placed = result.some((text, index) => {
+      const linked = linkFirstName(text, name, link, trees);
+      if (linked !== undefined) result[index] = linked;
+      return linked !== undefined;
+    });
+    if (placed) continue;
+    const firstIndex = result.findIndex((text) => trees.get(text) !== null);
+    if (firstIndex === -1) continue;
+    const first = result[firstIndex]!;
+    result[firstIndex] = OPENS_WITH_BLOCK.test(first) ? `${link}\n\n${first}` : `${link} ${first}`;
   }
+  return result;
 }
 
 /** Message blocks whose prose names each entry once as a mention link. Tool activity is left alone. */
