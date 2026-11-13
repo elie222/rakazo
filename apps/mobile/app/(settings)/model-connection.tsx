@@ -720,7 +720,11 @@ export default function ModelConnection() {
       onOpen={(id) =>
         router.push({
           pathname: "/model-settings",
-          params: { credentialId: credential.id, modelId: id },
+          params: {
+            credentialId: credential.id,
+            modelId: id,
+            ...(target.scope === "space" ? { spaceId: target.spaceId } : {}),
+          },
         })
       }
     />

@@ -13,7 +13,7 @@ import {
   modelSettingsRequest,
 } from "@rakazo/core";
 import { useFocusEffect, useLocalSearchParams, useNavigation } from "expo-router";
-import { useCallback, useLayoutEffect, useState } from "react";
+import { useCallback, useLayoutEffect, useMemo, useState } from "react";
 import {
   AccessibilityInfo,
   ActivityIndicator,
@@ -27,9 +27,9 @@ import { LimitField } from "../../components/model-connection-fields";
 import { createModelsStyles } from "../../components/model-connection-styles";
 import { NativeActionButton } from "../../components/native-action-button";
 import { NativeSwitch } from "../../components/native-switch";
-import { rpc } from "../../lib/api";
 import type { MobileModel, MobileModelCredential } from "../../lib/mobile-types";
 import { native, useThemedStyles } from "../../lib/native";
+import { settingsRpc, settingsTarget } from "../../lib/settings-target";
 import { errorText } from "../../lib/user-error";
 
 /** One model's own settings on the connection that runs it. */
@@ -37,10 +37,16 @@ export default function ModelSettingsScreen() {
   const styles = useThemedStyles(createModelsStyles);
   const navigation = useNavigation();
   const { t } = useLingui();
-  const { credentialId = "", modelId = "" } = useLocalSearchParams<{
+  const {
+    credentialId = "",
+    modelId = "",
+    spaceId,
+  } = useLocalSearchParams<{
     credentialId?: string;
     modelId?: string;
+    spaceId?: string;
   }>();
+  const rpc = useMemo(() => settingsRpc(settingsTarget(spaceId)), [spaceId]);
   const [credential, setCredential] = useState<MobileModelCredential | null>(null);
   const [entry, setEntry] = useState<MobileModel | undefined>();
   const [fields, setFields] = useState<ModelSettingsFields | null>(null);
@@ -60,7 +66,7 @@ export default function ModelSettingsScreen() {
     setEntry(nextEntry);
     setFields(modelSettingsFields(credentialModelSettings(next, modelId), nextEntry));
     setError(null);
-  }, [credentialId, modelId, t]);
+  }, [credentialId, modelId, rpc, t]);
 
   useFocusEffect(
     useCallback(() => {

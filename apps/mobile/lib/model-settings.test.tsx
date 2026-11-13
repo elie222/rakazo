@@ -680,6 +680,28 @@ it("saves a model's own limits and capabilities from its Manage model screen", a
   }
 });
 
+it("reads and saves a Space override's model settings in that Space", async () => {
+  params.credentialId = "credential-fixture";
+  params.modelId = "model-fixture";
+  params.spaceId = "space-override";
+  rpcCalls.length = 0;
+  try {
+    await remount(async () => {
+      await act(async () => root.render(createElement(ModelSettingsScreen)));
+    });
+    await change("Maximum output tokens", "8192");
+    await saveConnection();
+    for (const procedure of ["models/credentials", "models/list", "models/saveModelSettings"])
+      expect(
+        rpcCalls.find(([called]) => called === procedure)?.[2]?.requestContext?.headers,
+      ).toEqual({ "x-rakazo-space-id": "space-override" });
+  } finally {
+    delete params.credentialId;
+    delete params.modelId;
+    delete params.spaceId;
+  }
+});
+
 it("resets a customized model to its defaults", async () => {
   params.credentialId = "credential-fixture";
   params.modelId = "model-fixture";

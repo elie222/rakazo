@@ -161,7 +161,7 @@ export default function Models() {
   const manageModel = (credential: MobileModelCredential, modelId: string) =>
     router.push({
       pathname: "/model-settings",
-      params: { credentialId: credential.id, modelId },
+      params: { credentialId: credential.id, modelId, ...(spaceId ? { spaceId } : {}) },
     });
 
   /** Every provider, popular first, plus the hosted presets of the compatible one. */
