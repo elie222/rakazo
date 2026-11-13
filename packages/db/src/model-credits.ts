@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { AgentUsage, BillingCreditPurchase } from "@rakazo/adapter-kit";
-import { MODEL_CREDITS_EXHAUSTED_ERROR } from "@rakazo/core";
+import { MODEL_CREDITS_EXHAUSTED_ERROR, MODEL_UNPRICED_FOR_CREDITS_ERROR } from "@rakazo/core";
 import type { PrismaClient } from "./client.js";
 import type { Prisma } from "./generated/prisma/client.js";
 import { enforceModelCreditCap } from "./model-credit-cap.js";
@@ -143,7 +143,7 @@ export async function reserveModelCredits(
   now = new Date(),
 ) {
   if (!Number.isFinite(maxCostUsd) || maxCostUsd <= 0 || maxCostUsd > 10_000)
-    throw new Error("This model has no reliable price. Connect your own API key to use it.");
+    throw new Error(MODEL_UNPRICED_FOR_CREDITS_ERROR);
   const amountMicros = BigInt(Math.ceil(maxCostUsd * MICROS_PER_DOLLAR));
   const callId = attribution?.callId ?? randomUUID();
   const source = `call:${callId}`;

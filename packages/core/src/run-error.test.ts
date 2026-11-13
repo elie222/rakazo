@@ -20,6 +20,7 @@ import {
   MODEL_OUTPUT_LIMIT_ERROR,
   MODEL_REQUEST_LIMIT_ERROR,
   MODEL_REQUIRED_SEND_ERROR,
+  MODEL_UNPRICED_FOR_CREDITS_ERROR,
   modelFallbackFailure,
   normalizeRunError,
   userRunError,
@@ -495,6 +496,14 @@ describe("normalizeRunError", () => {
       expect(normalizeRunError(MODEL_CREDITS_EXHAUSTED_ERROR)).toEqual({
         summary: MODEL_CREDITS_EXHAUSTED_ERROR,
         details: MODEL_CREDITS_EXHAUSTED_ERROR,
+        recovery: "connection",
+      });
+    });
+
+    it("sends a model credits cannot price to the member's own connection", () => {
+      expect(normalizeRunError(MODEL_UNPRICED_FOR_CREDITS_ERROR)).toEqual({
+        summary: MODEL_UNPRICED_FOR_CREDITS_ERROR,
+        details: MODEL_UNPRICED_FOR_CREDITS_ERROR,
         recovery: "connection",
       });
     });
