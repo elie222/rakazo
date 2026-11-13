@@ -9,11 +9,18 @@ import {
   refreshStoredModelCredential,
   resolveStoredModelAuth,
   retireToReconnectMarker,
+  withModelCredentialLock,
 } from "./model-credential-refresh.js";
 import { hostedModelCreditObserver } from "./model-credit-observer.js";
 import { deploymentModelRole, resolveMemberMainModel } from "./model-roles.js";
-import { parseModelSecret, secretValuesToRedact, serializeModelSecret } from "./model-secret.js";
+import {
+  keptModelSettings,
+  parseModelSecret,
+  secretValuesToRedact,
+  serializeModelSecret,
+} from "./model-secret.js";
 import { hasHostedModelCredits } from "./model-selection.js";
+import { connectionModelSettings } from "./model-settings.js";
 import { toOAuthCredential } from "./pi-credentials.js";
 
 const MAX_RULES_CHARS = 4_000;
@@ -290,7 +297,6 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
       this.deps.secrets,
       { userId: bot.userId, spaceId: bot.spaceId },
       credential,
-      parseModelSecret(plaintext).maxTokens,
     );
     const auth = await resolveStoredModelAuth(
       this.deps.prisma,
@@ -301,13 +307,15 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
       provider,
     );
     const parsed = auth.secret;
-    const limit = parsed.maxTokens !== undefined ? { maxTokens: parsed.maxTokens } : {};
+    const modelSettings = connectionModelSettings(parsed, provider, modelId, credential);
+    const limit =
+      modelSettings.maxTokens !== undefined ? { maxTokens: modelSettings.maxTokens } : {};
     const context =
       parsed.kind === "oauth"
         ? {}
         : {
             cacheCapabilities: parsed.cacheCapabilities,
-            contextWindow: parsed.contextWindow,
+            contextWindow: modelSettings.contextWindow,
           };
     if (parsed.kind === "oauth") {
       return {
@@ -317,15 +325,24 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
           ...limit,
           oauth: {
             credential: { ...parsed.credential },
-            persist: async (credential) => {
-              await persist(
-                serializeModelSecret({
-                  kind: "oauth",
-                  credential: toOAuthCredential(credential),
-                  ...limit,
-                }),
-              );
-            },
+            // Read the stored copy when saving, so settings saved since the run began stay.
+            persist: (credential) =>
+              withModelCredentialLock(secret.id, async () => {
+                const current = await this.deps.prisma.secret.findFirst({
+                  where: { id: secret.id, userId: bot.userId, spaceId: null },
+                });
+                if (!current) return;
+                const stored = parseModelSecret(
+                  await this.deps.secrets.load(current.ciphertext, current.id),
+                );
+                await persist(
+                  serializeModelSecret({
+                    kind: "oauth",
+                    credential: toOAuthCredential(credential),
+                    ...keptModelSettings(stored),
+                  }),
+                );
+              }),
             refresh: refreshStoredModelCredential(
               this.deps.prisma,
               this.deps.secrets,

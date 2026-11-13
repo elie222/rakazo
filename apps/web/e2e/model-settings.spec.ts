@@ -293,9 +293,6 @@ test("connects, lists, and uses an OpenAI-compatible endpoint", async ({ page },
     await page.getByRole("textbox", { name: "Header name", exact: true }).fill("x-session");
     await page.getByLabel("Header value", { exact: true }).fill("fake-session-secret");
     await captureScreenshot(page, testInfo, "openai-compatible-header-edit");
-    await page.getByRole("checkbox", { name: "Supports thinking" }).check();
-    // Room for the bot's required context, so a pi run reaches the fake endpoint.
-    await page.getByLabel("Context limit").fill("200000");
 
     await page.getByRole("button", { name: "Save", exact: true }).click();
     await expect(modelConnectionDialog(page, "OpenAI-compatible")).toBeHidden();
@@ -305,6 +302,21 @@ test("connects, lists, and uses an OpenAI-compatible endpoint", async ({ page },
       LOCAL_MODEL_ID,
     );
     await captureScreenshot(page, testInfo, "openai-compatible-connected");
+    // A model's own settings open from its row: this endpoint's model thinks.
+    await page
+      .getByTestId("model-role-main")
+      .getByTestId("model-role-row-1")
+      .getByRole("button", { name: / options$/ })
+      .click();
+    await page.getByRole("menuitem", { name: "Manage model", exact: true }).click();
+    const modelSettings = page.getByTestId("model-settings-page");
+    await expect(modelSettings).toContainText(LOCAL_MODEL_ID);
+    await modelSettings.getByRole("checkbox", { name: "Supports thinking" }).check();
+    await modelSettings.getByLabel("Context limit").fill("200000");
+    await modelSettings.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(modelSettings.getByText("Saved.", { exact: true })).toBeVisible();
+    await captureScreenshot(page, testInfo, "model-settings-page");
+    await modelSettings.getByRole("button", { name: "Back", exact: true }).click();
     await page.getByRole("button", { name: "Close model settings" }).click();
     await openUserSettings(page, "models");
     const saved = await manageModelConnection(page, "OpenAI-compatible");
@@ -332,10 +344,7 @@ test("connects, lists, and uses an OpenAI-compatible endpoint", async ({ page },
     await saved.getByLabel("OpenAI-compatible server URL").fill(baseUrl);
     await expect(saved.getByRole("button", { name: "Save", exact: true })).toBeEnabled();
 
-    await page
-      .getByTestId("model-connection")
-      .getByRole("button", { name: "Close", exact: true })
-      .click();
+    await saved.getByRole("button", { name: "Back", exact: true }).click();
     await expect(saved).toBeHidden();
     await page.getByRole("button", { name: "Close model settings" }).click();
     await openBotPanelTab(page, "Advanced");
@@ -344,7 +353,7 @@ test("connects, lists, and uses an OpenAI-compatible endpoint", async ({ page },
     // option copy and getByLabel(..., { exact: true }) misses it. Use the role name.
     const botModel = settings.getByRole("combobox", { name: "Model", exact: true });
     await expect(botModel.locator("option")).toContainText([LOCAL_MODEL_ID, SECOND_MODEL_ID]);
-    await botModel.selectOption(`openai-compatible::${SECOND_MODEL_ID}`);
+    await botModel.selectOption(`openai-compatible::${LOCAL_MODEL_ID}`);
     // Native select popups are outside Playwright's screenshots. Render the
     // same options as an expanded native list for the CI screenshot, then restore.
     // An expanded select is a listbox, so keep a role-independent handle.
@@ -377,7 +386,7 @@ test("connects, lists, and uses an OpenAI-compatible endpoint", async ({ page },
       expect(completionBodies.length).toBeGreaterThan(0);
       expect(completionHeaders.at(-1)).toBe("fake-session-secret");
       expect(completionBodies.at(-1)).toMatchObject({
-        model: SECOND_MODEL_ID,
+        model: LOCAL_MODEL_ID,
         reasoning_effort: "high",
       });
     }

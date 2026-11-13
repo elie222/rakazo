@@ -34,6 +34,7 @@ import type { Actor, Bot, ProductEvent } from "@rakazo/contracts";
 import {
   BLOCKED_ITEM_ANSWER,
   CONNECTOR_AUTH_UNAVAILABLE,
+  MAX_MODEL_SETTINGS_PER_CONNECTION,
   MCP_OAUTH_CLIENT_REQUIRED,
   MODEL_KEY_FORMAT_ERROR,
   REPLY_QUOTE_MAX_LENGTH,
@@ -6200,6 +6201,155 @@ describe("model disconnect", () => {
     expect(tx.userModelCredential.deleteMany).toHaveBeenCalledWith({
       where: { userId: actor.userId, id: { in: ["personal", "work"] } },
     });
+  });
+});
+
+describe("model settings", () => {
+  const actor = {
+    spaceId: "space-1",
+    userId: "user-1",
+    email: "user@rakazo.test",
+    isDeploymentOwner: true,
+  } satisfies Actor;
+
+  function settingsDeps(stored: string, defaultModel = "served") {
+    let plaintext = stored;
+    const tx = {
+      $executeRaw: vi.fn(async () => 0),
+      secret: {
+        findFirst: vi.fn(async () => ({ ciphertext: "sealed" })),
+        update: vi.fn(async () => ({})),
+      },
+    };
+    const deps = {
+      prisma: {
+        $transaction: vi.fn(async (fn: (client: typeof tx) => unknown) => fn(tx)),
+        userModelCredential: {
+          findFirst: vi.fn(async ({ where }: { where: { id: string } }) =>
+            where.id === "connection-1"
+              ? {
+                  id: "connection-1",
+                  secretId: "secret-1",
+                  userPreferences: [{ modelId: defaultModel }],
+                }
+              : null,
+          ),
+        },
+      },
+      secrets: {
+        load: vi.fn(async () => plaintext),
+        put: vi.fn(async (next: string) => {
+          plaintext = next;
+          return { id: "secret-1", ciphertext: "sealed-again" };
+        }),
+      },
+      env: {
+        defaultProvider: "fake",
+        defaultModel: "fake-model",
+        webOrigin: "http://127.0.0.1:5173",
+        screenProxySecret: "fake-test-secret",
+        sandboxProvider: "fake",
+        agentRuntime: "pi",
+      },
+    } as unknown as RouterDeps;
+    const handler = new RPCHandler(createRouter(deps));
+    const call = (body: unknown) =>
+      handle(
+        handler,
+        new Request("http://127.0.0.1/rpc/models/saveModelSettings", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ json: body }),
+        }),
+        { prefix: "/rpc", context: { actor } },
+      );
+    return { tx, call, stored: () => JSON.parse(plaintext) as Record<string, unknown> };
+  }
+
+  it("saves one model's settings on the connection without touching its key", async () => {
+    const { tx, call, stored } = settingsDeps("sk-synthetic-key");
+    const response = await call({
+      credentialId: "connection-1",
+      modelId: "glm-5.3-flashx",
+      settings: { images: true, maxTokens: 8000 },
+    });
+    expect(response.status).toBe(200);
+    expect(stored()).toEqual({
+      kind: "api_key",
+      key: "sk-synthetic-key",
+      models: { "glm-5.3-flashx": { images: true, maxTokens: 8000 } },
+    });
+    expect(tx.secret.update).toHaveBeenCalledWith({
+      where: { id: "secret-1" },
+      data: { ciphertext: "sealed-again" },
+    });
+  });
+
+  it("caps how many models on one connection keep their own settings", async () => {
+    const models = Object.fromEntries(
+      Array.from({ length: MAX_MODEL_SETTINGS_PER_CONNECTION }, (_, index) => [
+        `model-${index}`,
+        { images: true },
+      ]),
+    );
+    const { call } = settingsDeps(
+      JSON.stringify({ kind: "api_key", key: "sk-synthetic-key", models }),
+    );
+    expect(
+      (
+        await call({
+          credentialId: "connection-1",
+          modelId: "model-new",
+          settings: { images: true },
+        })
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await call({
+          credentialId: "connection-1",
+          modelId: "model-0",
+          settings: { maxTokens: 10 },
+        })
+      ).status,
+    ).toBe(200);
+    expect(
+      (await call({ credentialId: "connection-1", modelId: "model-new", settings: {} })).status,
+    ).toBe(200);
+  });
+
+  it("refuses another member's connection, a model the server does not serve, and no room for input", async () => {
+    const compatible = JSON.stringify({
+      kind: "openai_compatible",
+      baseUrl: "https://models.example.test/v1",
+      enabledModelIds: ["served"],
+    });
+    const { call } = settingsDeps(compatible);
+    expect(
+      (await call({ credentialId: "connection-2", modelId: "served", settings: {} })).status,
+    ).toBe(404);
+    expect(
+      (
+        await call({
+          credentialId: "connection-1",
+          modelId: "unlisted",
+          settings: { images: true },
+        })
+      ).status,
+    ).toBe(400);
+    // Clearing a model that left the connection still works.
+    expect(
+      (await call({ credentialId: "connection-1", modelId: "unlisted", settings: {} })).status,
+    ).toBe(200);
+    expect(
+      (
+        await call({
+          credentialId: "connection-1",
+          modelId: "served",
+          settings: { contextWindow: 1000, maxTokens: 1000 },
+        })
+      ).status,
+    ).toBe(400);
   });
 });
 

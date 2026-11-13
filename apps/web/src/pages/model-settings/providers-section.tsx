@@ -31,8 +31,8 @@ export function ProvidersSection({
   disabled,
   onAdd,
   onOpen,
+  detail,
   panel,
-  panelAt,
 }: {
   credentials: ModelCredential[];
   /** Every provider that can be connected, connected ones included. */
@@ -41,11 +41,12 @@ export function ProvidersSection({
   name: (credential: ModelCredential) => string;
   disabled?: boolean;
   onAdd: (provider: ConnectableProvider) => void;
+  /** Opens a connection's page. */
   onOpen: (credential: ModelCredential) => void;
-  /** The connection form, shown under the connection it belongs to or after the list. */
+  /** What a connection's row says after its name, such as how many models it runs. */
+  detail?: (credential: ModelCredential) => ReactNode;
+  /** The form for a new connection, shown after the list. */
   panel?: ReactNode;
-  /** The connection id the form belongs to, or "add" for a new one. */
-  panelAt?: string | null;
 }) {
   return (
     <section className="mb-8" data-testid="model-providers">
@@ -64,27 +65,31 @@ export function ProvidersSection({
                 onClick={() => onOpen(credential)}
                 className="flex min-h-[52px] w-full items-center gap-2.5 py-2 ps-3 pe-3 text-start outline-none first:rounded-t-xl hover:bg-accent/50 focus-visible:ring-3 focus-visible:ring-ring/50"
               >
-                <span className="min-w-0 flex-1 truncate text-body-lg text-foreground">
+                <span
+                  data-testid="provider-row-name"
+                  className="min-w-0 flex-1 truncate text-body-lg text-foreground"
+                >
                   {nameOf(credential)}
                 </span>
                 {credential.reconnectRequired ? (
                   <span className="shrink-0 text-body-sm text-warning">
                     <Trans>Sign in again</Trans>
                   </span>
-                ) : null}
+                ) : (
+                  detail?.(credential)
+                )}
                 <ChevronRight
-                  className={`size-4 shrink-0 text-muted-foreground transition-transform ${panelAt === credential.id ? "rotate-90" : ""}`}
+                  className="size-4 shrink-0 text-muted-foreground rtl:rotate-180"
                   aria-hidden
                 />
               </button>
-              {panelAt === credential.id ? <div className="px-3 pb-3">{panel}</div> : null}
             </li>
           ))}
         <li>
           <AddProvider providers={providers} disabled={disabled} onPick={onAdd} />
         </li>
       </ul>
-      {panelAt === "add" ? panel : null}
+      {panel}
     </section>
   );
 }

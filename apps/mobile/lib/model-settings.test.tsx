@@ -9,6 +9,7 @@ import { createRoot } from "react-dom/client";
 import { Alert } from "react-native";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import ModelConnection from "../app/(settings)/model-connection";
+import ModelSettingsScreen from "../app/(settings)/model-settings";
 import Models from "../app/(settings)/models";
 import type { ModelConnectionRequest } from "./model-connection-request";
 import {
@@ -23,7 +24,7 @@ const savedEndpoint = "https://models.example.test/v1";
 const { push, back, params, rpcCalls, saved } = vi.hoisted(() => ({
   push: vi.fn(),
   back: vi.fn(),
-  params: {} as { requestId?: string; spaceId?: string },
+  params: {} as { requestId?: string; spaceId?: string; credentialId?: string; modelId?: string },
   rpcCalls: [] as [
     string,
     unknown,
@@ -581,15 +582,6 @@ function currentProtocol(): string | undefined {
   );
 }
 
-const EFFORT_LABELS = ["Default", "Minimal", "Low", "Medium", "High", "Extra high", "Max"];
-
-/** The reasoning-effort choice the picker marks current, when reasoning is on. */
-function currentEffort(): string | undefined {
-  return EFFORT_LABELS.find(
-    (label) => protocolChoice(label)?.getAttribute("aria-pressed") === "true",
-  );
-}
-
 async function saveConnection() {
   const save = [...container.querySelectorAll("button")].find(
     (button) => button.textContent === "Save",
@@ -642,43 +634,48 @@ it("keeps the chosen protocol when the endpoint changes", async () => {
   }
 });
 
-/** Remounting folds Advanced away again; the effort picker lives inside it. */
-async function remountWithAdvanced(render: () => Promise<void>) {
-  await remount(render);
-  const advanced = [...container.querySelectorAll("button")].find(
-    (button) => button.textContent === "Advanced",
-  );
-  expect(advanced).toBeDefined();
-  await act(async () => advanced!.click());
-}
-
-it("clamps a staged effort when the protocol switch drops the level", async () => {
-  saved.reasoning = true;
-  saved.thinkingLevel = "max";
-  try {
-    await remountWithAdvanced(() => renderConnection());
-    expect(currentEffort()).toBe("Max");
-    await act(async () => protocolChoice("Anthropic Messages").click());
-    expect(currentEffort()).toBe("High");
-    await saveConnection();
-    expect(rpcCalls.find(([procedure]) => procedure === "models/connect")?.[1]).toMatchObject({
-      apiProtocol: "anthropic-messages",
-      thinkingLevel: "high",
-    });
-  } finally {
-    saved.reasoning = false;
-    saved.thinkingLevel = undefined;
-  }
-});
-
 it("offers no protocol choice on a catalog provider's connection", async () => {
   await remount(() => renderConnection({ provider: "anthropic", credentialId: null }));
   expect(PROTOCOL_LABELS.some((label) => container.textContent?.includes(label))).toBe(false);
 });
 
-it("lets the limit fields hold every value the server accepts", () => {
-  expect(field("Maximum output tokens")?.maxLength).toBe(String(MAX_MODEL_MAX_TOKENS).length);
-  expect(field("Context limit")?.maxLength).toBe(String(MAX_MODEL_CONTEXT_WINDOW).length);
+it("lists the connection's models, each opening its settings", async () => {
+  push.mockClear();
+  const row = [...container.querySelectorAll("button")].find((button) =>
+    button.textContent?.startsWith("model-fixture"),
+  );
+  expect(row).toBeDefined();
+  await act(async () => row!.click());
+  expect(push).toHaveBeenCalledWith({
+    pathname: "/model-settings",
+    params: { credentialId: "credential-fixture", modelId: "model-fixture" },
+  });
+});
+
+it("saves a model's own limits and capabilities from its Manage model screen", async () => {
+  params.credentialId = "credential-fixture";
+  params.modelId = "model-fixture";
+  try {
+    await remount(async () => {
+      await act(async () => root.render(createElement(ModelSettingsScreen)));
+    });
+    expect(field("Maximum output tokens")?.maxLength).toBe(String(MAX_MODEL_MAX_TOKENS).length);
+    expect(field("Context limit")?.maxLength).toBe(String(MAX_MODEL_CONTEXT_WINDOW).length);
+    expect(field("Context limit")?.placeholder).toBe("262144");
+    expect(field("Maximum images per request")).toBeNull();
+    await act(async () => field("Supports images")!.click());
+    expect(field("Maximum images per request")).not.toBeNull();
+    await change("Maximum output tokens", "8192");
+    await saveConnection();
+    expect(rpcCalls.find(([procedure]) => procedure === "models/saveModelSettings")?.[1]).toEqual({
+      credentialId: "credential-fixture",
+      modelId: "model-fixture",
+      settings: { maxTokens: 8192, images: true, reasoning: false },
+    });
+  } finally {
+    delete params.credentialId;
+    delete params.modelId;
+  }
 });
 
 it("keeps setup help and API key collapsible for generic compatible servers", async () => {

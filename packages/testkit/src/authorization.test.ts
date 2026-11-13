@@ -260,6 +260,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["models/probeOpenAiCompatible"],
       ["models/probeCatalog"],
       ["models/rename"],
+      ["models/saveModelSettings"],
       ["models/disconnect"],
       ["spaces/list"],
       ["spaces/create", { name: "Nope" }],

@@ -53,9 +53,11 @@ import { markExpectedFailure } from "@rakazo/logging/hono";
 import { mayUsePrivateEndpoint } from "../mcp-servers.js";
 import { firstModelConnectAnalytics } from "../model-connect-analytics.js";
 import {
+  keptModelSettingsOf,
   modelConnectionTarget,
   persistModelCredential,
   prepareAllowedThinkingLevels,
+  saveConnectionModelSettings,
   throwIfAborted,
 } from "../model-credentials.js";
 import { assertCompatibleDefaultChange } from "../model-pins.js";
@@ -87,7 +89,11 @@ export function modelsRoutes(ctx: RouterContext) {
           {
             provider: login.provider,
             credentialId: target?.id ?? null,
-            plaintext: serializeModelSecret({ kind: "oauth", credential: login.credential }),
+            plaintext: serializeModelSecret({
+              kind: "oauth",
+              credential: login.credential,
+              ...(await keptModelSettingsOf(deps, actor, target)),
+            }),
             // A second account is told apart by the email it signed in with.
             label:
               oauthCredentialEmail(login.credential) ??
@@ -593,6 +599,10 @@ export function modelsRoutes(ctx: RouterContext) {
             throw new ORPCError("SERVICE_UNAVAILABLE", { cause: error });
           throw error;
         });
+        return { ok: true as const };
+      }),
+      saveModelSettings: authed.models.saveModelSettings.handler(async ({ context, input }) => {
+        await saveConnectionModelSettings(deps, context.actor, input);
         return { ok: true as const };
       }),
       rename: authed.models.rename.handler(async ({ context, input }) => {

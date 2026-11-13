@@ -6,18 +6,29 @@ import {
   codexLiveListsModel,
   compatibleThinkingLevels,
   defaultCatalogModelId,
+  enabledOpenAiCompatibleModelIds,
+  keptModelSettings,
   modelCredentialDto,
   parseModelSecret,
   prepareAllowedThinkingLevels as prepareModelThinkingLevels,
   providerCatalogCache,
   resolveCodexOAuthDefaultModel,
+  updateStoredModelSecret,
   validateModelAuthAvailability,
   verifyCatalogProviderApiKey,
   verifyOpenAiCompatibleApiKey,
+  withModelSettings,
 } from "@rakazo/adapters";
-import type { Actor, ModelConnectInput, SettingsScope, ThinkingLevel } from "@rakazo/contracts";
+import type {
+  Actor,
+  ModelConnectInput,
+  ModelSettingsSave,
+  SettingsScope,
+  ThinkingLevel,
+} from "@rakazo/contracts";
 import {
   canonicalPiProviderId,
+  MAX_MODEL_SETTINGS_PER_CONNECTION,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   storedPiProviderIds,
   usableModelId,
@@ -298,6 +309,68 @@ export async function persistModelCredential(
   );
   (deps.providerCatalog ?? providerCatalogCache).invalidate(canonicalPiProviderId(input.provider));
   return modelCredentialDto(cred, input.plaintext);
+}
+
+/** One model's settings on one of the member's connections. */
+export async function saveConnectionModelSettings(
+  deps: RouterDeps,
+  actor: Actor,
+  input: ModelSettingsSave,
+) {
+  const credential = await deps.prisma.userModelCredential.findFirst({
+    where: { id: input.credentialId, userId: actor.userId },
+    include: { userPreferences: { where: { userId: actor.userId } } },
+  });
+  if (!credential) throw new ORPCError("NOT_FOUND", { message: "Connection not found" });
+  const defaultModel = credential.userPreferences[0]?.modelId;
+  const saved = await updateStoredModelSecret(
+    deps.prisma,
+    deps.secrets,
+    actor,
+    credential.secretId,
+    (secret) => {
+      // Clearing a model's settings always works, even after the model left the connection.
+      if (
+        Object.keys(input.settings).length > 0 &&
+        secret.kind === "openai_compatible" &&
+        secret.enabledModelIds !== undefined &&
+        !enabledOpenAiCompatibleModelIds(secret, defaultModel).includes(input.modelId)
+      )
+        throw new ORPCError("BAD_REQUEST", { message: "Unknown model for that connection" });
+      const saved = secret.models ?? {};
+      if (
+        Object.keys(input.settings).length > 0 &&
+        !Object.hasOwn(saved, input.modelId) &&
+        Object.keys(saved).length >= MAX_MODEL_SETTINGS_PER_CONNECTION
+      )
+        throw new ORPCError("BAD_REQUEST", {
+          message: "Too many models on this connection have their own settings",
+        });
+      return withModelSettings(secret, input.modelId, input.settings);
+    },
+  );
+  if (!saved) throw new ORPCError("NOT_FOUND", { message: "Connection not found" });
+}
+
+/** Signing a connection in again keeps the settings saved for its models. */
+export async function keptModelSettingsOf(
+  deps: RouterDeps,
+  actor: Actor,
+  credential: { secretId: string } | null,
+) {
+  if (!credential) return {};
+  const row = await deps.prisma.secret.findFirst({
+    where: { id: credential.secretId, userId: actor.userId, spaceId: null },
+    select: { ciphertext: true },
+  });
+  if (!row) return {};
+  try {
+    return keptModelSettings(
+      parseModelSecret(await deps.secrets.load(row.ciphertext, credential.secretId)),
+    );
+  } catch {
+    return {};
+  }
 }
 
 export function throwIfAborted(signal?: AbortSignal) {

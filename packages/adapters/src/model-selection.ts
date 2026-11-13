@@ -17,10 +17,12 @@ import {
   organizationForMember,
 } from "@rakazo/db";
 import { resolveDeploymentModel } from "./deployment-model.js";
-import { modelCredentialDto } from "./model-connect.js";
+import type { modelCredentialDto } from "./model-connect.js";
+import { compatibleModelThinkingLevels } from "./model-connect.js";
 import type { StoredModelSecret } from "./model-secret.js";
 import { parseModelSecret } from "./model-secret.js";
-import { compatibleModelSeesImages, modelAcceptsImageInput } from "./model-vision.js";
+import { connectionModelSettings } from "./model-settings.js";
+import { modelAcceptsImageInput } from "./model-vision.js";
 import type { ModelCredentialAuthKind } from "./pi-catalog-availability.js";
 import {
   catalogModelAvailableForAuth,
@@ -30,8 +32,9 @@ import {
 } from "./pi-catalog-availability.js";
 import type { CodexLiveCatalog, CodexLiveReadOptions } from "./pi-codex-catalog.js";
 import { codexLiveListsModel } from "./pi-codex-catalog.js";
-import type { CatalogReads } from "./pi-live-catalog.js";
+import type { CatalogReads, CatalogSpaceAuth } from "./pi-live-catalog.js";
 import { liveCatalogEntry, providerLiveListsModel, readOnce } from "./pi-live-catalog.js";
+import type { PiCatalogEntry } from "./pi-models.js";
 import {
   creditsCanPriceModel,
   listPiCatalog,
@@ -395,24 +398,12 @@ export async function connectedModelSeesImages(
   credential: ModelCredential,
   catalogImages?: boolean,
 ): Promise<boolean> {
-  if (canonicalPiProviderId(provider) !== OPENAI_COMPATIBLE_PROVIDER_ID)
-    return modelAcceptsImageInput(provider, modelId, catalogImages);
-  if (!credential) return false;
-  const stored = await loadStoredModelSecret(
-    deps.prisma,
-    deps.secretStore,
-    userId,
-    credential.secretId,
-  );
-  if (stored.status !== "loaded") return false;
-  try {
-    const secret = parseModelSecret(stored.plaintext);
-    return (
-      secret.kind === "openai_compatible" && compatibleModelSeesImages(credential, secret, modelId)
-    );
-  } catch {
-    return false;
-  }
+  const settings = credential
+    ? await loadModelSecret(deps.prisma, deps.secretStore, userId, credential.secretId).then(
+        (secret) => (secret ? connectionModelSettings(secret, provider, modelId, credential) : {}),
+      )
+    : {};
+  return modelAcceptsImageInput(provider, modelId, catalogImages ?? settings.images);
 }
 
 /**
@@ -442,6 +433,56 @@ export function loadStoredModelSecret(
       if (error instanceof SecretStoreUnavailableError) throw error;
       return { status: "unreadable", ciphertext: secret.ciphertext };
     }
+  });
+}
+
+/**
+ * Listed-only models as the settings saved on the connection that serves each describe them.
+ * Bundled models keep the catalog's answer.
+ */
+export async function withLiveModelSettings(
+  prisma: Pick<PrismaClient, "secret">,
+  secrets: Pick<SecretStore, "load">,
+  userId: string,
+  auth: Pick<CatalogSpaceAuth, "secretIdByProvider" | "secretIdByModel">,
+  catalog: PiCatalogEntry[],
+): Promise<PiCatalogEntry[]> {
+  const secretIdFor = (entry: PiCatalogEntry) =>
+    entry.live
+      ? (auth.secretIdByModel?.[entry.provider]?.[entry.id] ??
+        auth.secretIdByProvider?.[entry.provider])
+      : undefined;
+  const ids = [...new Set(catalog.flatMap((entry) => secretIdFor(entry) ?? []))];
+  if (ids.length === 0) return catalog;
+  const rows = await prisma.secret.findMany({
+    where: { id: { in: ids }, userId, spaceId: null },
+    select: { id: true, ciphertext: true },
+  });
+  const stored = new Map<string, StoredModelSecret>();
+  await Promise.all(
+    rows.map(async (row) => {
+      try {
+        stored.set(row.id, parseModelSecret(await secrets.load(row.ciphertext, row.id)));
+      } catch {
+        // An unreadable connection describes none of its models.
+      }
+    }),
+  );
+  return catalog.map((entry) => {
+    const secretId = secretIdFor(entry);
+    const secret = secretId ? stored.get(secretId) : undefined;
+    if (!secret) return entry;
+    const settings = connectionModelSettings(secret, entry.provider, entry.id);
+    if (settings.images === undefined && settings.reasoning === undefined) return entry;
+    const described = liveCatalogEntry(entry.provider, entry.id, settings);
+    return described
+      ? {
+          ...entry,
+          reasoning: described.reasoning,
+          thinkingLevels: described.thinkingLevels,
+          images: described.images,
+        }
+      : entry;
   });
 }
 
@@ -792,7 +833,8 @@ export function compatibleThinkingLevels(
   if (plaintext !== undefined) {
     try {
       parsed = parseModelSecret(plaintext);
-      levels = modelCredentialDto(row, plaintext).thinkingLevels;
+      if (parsed.kind === "openai_compatible")
+        levels = compatibleModelThinkingLevels(parsed, modelId.trim(), row);
     } catch {
       // Unreadable connections must not advertise reasoning support.
     }

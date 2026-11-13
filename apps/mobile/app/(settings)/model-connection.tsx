@@ -4,10 +4,6 @@ import type { ModelApiProtocol, ModelHeaderRow, ThinkingLevel } from "@rakazo/co
 import {
   compatibleEndpointPresets,
   connectionDisplayName,
-  DEFAULT_MODEL_CONTEXT_WINDOW,
-  DEFAULT_MODEL_MAX_TOKENS,
-  MAX_MODEL_CONTEXT_WINDOW,
-  MAX_MODEL_MAX_TOKENS,
   matchCompatibleEndpointPreset,
   modelHeadersInput,
   modelRoutingForm,
@@ -15,13 +11,11 @@ import {
   savedCompatibleEndpointMatches,
 } from "@rakazo/contracts";
 import {
-  clampCatalogThinkingLevel,
   compatibleConnectionReady,
   compatibleModelRows,
-  compatibleThinkingLevels,
   connectionFormFields,
   connectionFormModelId,
-  connectionMaxTokensField,
+  connectionModels,
   createModelProbe,
   initialModelProbeState,
   modelConnectRequest,
@@ -43,7 +37,8 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { CompatibleEndpointForm } from "../../components/compatible-endpoint-form";
-import { DisclosureRow, LimitField } from "../../components/model-connection-fields";
+import { ConnectionModelList } from "../../components/connection-model-list";
+import { DisclosureRow } from "../../components/model-connection-fields";
 import { createModelsStyles } from "../../components/model-connection-styles";
 import { NativeActionButton } from "../../components/native-action-button";
 import type { MobileMe, MobileModel, MobileModelCredential } from "../../lib/mobile-types";
@@ -61,7 +56,7 @@ type ModelSelection = {
   modelId?: string;
 };
 
-type FeedbackAnchor = "probe" | "model" | "connection" | "limits";
+type FeedbackAnchor = "probe" | "model" | "connection";
 
 /** Connects or manages one provider for the model list that opened it. */
 export default function ModelConnection() {
@@ -93,12 +88,7 @@ export default function ModelConnection() {
   const [baseUrl, setBaseUrl] = useState("");
   const [apiProtocol, setApiProtocol] = useState<ModelApiProtocol>("chat-completions");
   const [headerRows, setHeaderRows] = useState<ModelHeaderRow[] | null>(null);
-  const [reasoning, setReasoning] = useState(false);
   const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel | null>(null);
-  const [maxTokens, setMaxTokens] = useState(String(DEFAULT_MODEL_MAX_TOKENS));
-  const [contextWindow, setContextWindow] = useState(String(DEFAULT_MODEL_CONTEXT_WINDOW));
-  const [supportsImages, setSupportsImages] = useState(false);
-  const [maxImagesPerPrompt, setMaxImagesPerPrompt] = useState("");
   const [showEndpointHelp, setShowEndpointHelp] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showApiKey, setShowApiKey] = useState(false);
@@ -124,7 +114,6 @@ export default function ModelConnection() {
     setSavedNotice(next.notice === t`Saved.` ? next.notice : null);
     const message = nextError ?? next.notice ?? null;
     // VoiceOver keeps focus on the tapped button, so speak the result from here.
-    // Saved limits also show their result beside the button that was pressed.
     if (message) AccessibilityInfo.announceForAccessibility(message);
   }
 
@@ -169,12 +158,7 @@ export default function ModelConnection() {
       setEnabledModelIds(fields.enabledModelIds);
       setBaseUrl(fields.baseUrl);
       setApiProtocol(fields.apiProtocol);
-      setReasoning(fields.reasoning);
       setThinkingLevel(fields.thinkingLevel);
-      setMaxTokens(fields.maxTokens);
-      setContextWindow(fields.contextWindow);
-      setSupportsImages(fields.supportsImages);
-      setMaxImagesPerPrompt(fields.maxImagesPerPrompt);
       setAccountId(fields.accountId);
       setGatewayId(fields.gatewayId);
       return nextMe;
@@ -273,7 +257,6 @@ export default function ModelConnection() {
     credential,
     keyRequired: Boolean(endpointPreset),
   });
-  const limitsDirty = maxTokens !== connectionMaxTokensField(provider, credential?.maxTokens);
   const gatewayDirty =
     accountId.trim() !== (credential?.accountId ?? "") ||
     gatewayId.trim() !== (credential?.gatewayId ?? "");
@@ -284,7 +267,7 @@ export default function ModelConnection() {
     setHeaderRows(null);
     // A new endpoint starts with no model or ticks; the saved endpoint gets its saved ones back.
     setEnabledModelIds(savedCompatibleModelIds(credential, nextBaseUrl));
-    stageCompatibleModelId(
+    setModelId(
       savedCompatibleEndpointMatches(nextBaseUrl, credential?.baseUrl)
         ? (credential?.modelId ?? "")
         : "",
@@ -295,12 +278,6 @@ export default function ModelConnection() {
 
   function updateApiProtocol(nextProtocol: ModelApiProtocol) {
     setApiProtocol(nextProtocol);
-    setThinkingLevel(
-      clampCatalogThinkingLevel(
-        thinkingLevel,
-        reasoning ? compatibleThinkingLevels(nextProtocol) : [],
-      ) as ThinkingLevel | null,
-    );
     resetOpenAiCompatibleProbe();
     clearFeedback();
   }
@@ -330,9 +307,7 @@ export default function ModelConnection() {
           { timeoutMs: MODEL_CONNECT_TIMEOUT_MS },
         ),
       onSuccess: (models) => {
-        const next = modelId.trim() || models[0] || "";
-        if (next !== modelId) stageCompatibleModelId(next);
-        else setModelId(next);
+        setModelId(modelId.trim() || models[0] || "");
         publishFeedback("probe", {
           notice:
             models.length === 0
@@ -369,19 +344,8 @@ export default function ModelConnection() {
     }
   }
 
-  function stageCompatibleModelId(nextModelId: string) {
-    setModelId(nextModelId);
-    setThinkingLevel(
-      clampCatalogThinkingLevel(
-        credential?.modelId === nextModelId ? credential.thinkingLevel : null,
-        reasoning ? compatibleThinkingLevels(apiProtocol) : [],
-      ) as ThinkingLevel | null,
-    );
-  }
-
-  async function connectKey(limitsOnly = false) {
+  async function connectKey() {
     if (!selected) return;
-    const anchor = limitsOnly ? "limits" : "connection";
     const connect = modelConnectRequest({
       form: {
         apiKey,
@@ -390,38 +354,19 @@ export default function ModelConnection() {
         baseUrl,
         apiProtocol,
         headerRows,
-        reasoning,
         thinkingLevel,
-        maxTokens,
-        contextWindow,
-        supportsImages,
-        maxImagesPerPrompt,
         accountId,
         gatewayId,
       },
       selected,
       credential,
       credentialId: credentialIdRef.current,
-      settingsOnly: limitsOnly,
       makeDefault: { makeDefault, scope: target.scope },
     });
     if (connect.status === "incomplete") return;
-    // Drop the previous result before the limit check so it cannot sit beside the new one.
     Keyboard.dismiss();
     clearFeedback();
-    setFeedbackAnchor(anchor);
-    if (connect.status === "invalid") {
-      publishFeedback(anchor, {
-        error:
-          connect.field === "maxTokens"
-            ? t`Enter a whole number from 1 to ${ph({ max: MAX_MODEL_MAX_TOKENS })} for maximum output tokens.`
-            : connect.field === "maxImagesPerPrompt"
-              ? t`Enter a whole number from 1 to 1000 for the image limit.`
-              : t`Enter a whole number from 1 to ${ph({ max: MAX_MODEL_CONTEXT_WINDOW })} for the context limit.`,
-      });
-      return;
-    }
-    const { savingLimitOnly, activeModelId } = connect;
+    const { savingWithoutKey, activeModelId } = connect;
     setPending("connect");
     try {
       const saved = await rpc("models/connect", connect.input, {
@@ -429,12 +374,12 @@ export default function ModelConnection() {
       });
       credentialIdRef.current = saved.id;
       setCredentialId(saved.id);
-      if (!limitsOnly) setApiKey("");
-      if (!savingLimitOnly && (await finishConnecting(activeModelId, saved.id))) return;
+      setApiKey("");
+      if (!savingWithoutKey && (await finishConnecting(activeModelId, saved.id))) return;
       await load({ modelId });
-      publishFeedback(anchor, { notice: t`Saved.` });
+      publishFeedback("connection", { notice: t`Saved.` });
     } catch (err) {
-      publishFeedback(anchor, {
+      publishFeedback("connection", {
         error: errorText(err, t`Could not connect this provider`),
       });
     } finally {
@@ -468,11 +413,6 @@ export default function ModelConnection() {
     setShowAdvanced((visible) => !visible);
   }
 
-  function changeMaxTokens(value: string) {
-    setMaxTokens(value);
-    clearFeedback();
-  }
-
   const savedHeaderEndpointMatches = savedCompatibleEndpointMatches(baseUrl, credential?.baseUrl);
   const visibleHeaderRows =
     headerRows ??
@@ -502,29 +442,17 @@ export default function ModelConnection() {
       search={search}
       compatibleRows={compatibleRows}
       modelId={modelId}
-      onSelectModel={stageCompatibleModelId}
+      onSelectModel={setModelId}
       enabledModelIds={enabledModelIds}
       setEnabledModelIds={setEnabledModelIds}
       probeModels={probeModels}
       showAdvanced={showAdvanced}
       onToggleAdvanced={toggleAdvanced}
-      reasoning={reasoning}
-      setReasoning={setReasoning}
-      thinkingLevel={thinkingLevel}
-      setThinkingLevel={setThinkingLevel}
-      supportsImages={supportsImages}
-      setSupportsImages={setSupportsImages}
       headerRows={visibleHeaderRows}
       onChangeHeaderRows={changeHeaderRows}
       savedHeaderPlaceholder={(row) =>
         savedHeaderEndpointMatches && (credential?.headerNames?.includes(row.name) ?? false)
       }
-      contextWindow={contextWindow}
-      setContextWindow={setContextWindow}
-      maxTokens={maxTokens}
-      onChangeMaxTokens={changeMaxTokens}
-      maxImagesPerPrompt={maxImagesPerPrompt}
-      setMaxImagesPerPrompt={setMaxImagesPerPrompt}
     />
   ) : null;
 
@@ -587,36 +515,6 @@ export default function ModelConnection() {
           style={{ marginTop: 12 }}
         />
       </View>
-    ) : null;
-
-  // Managing a connection keeps its model choice in the list that opened it.
-  // Keys belong to the provider: models are picked in the list, limits only once connected.
-  const catalogModelCard =
-    !isOpenAiCompatible && selected && credential ? (
-      <>
-        <DisclosureRow label={t`Advanced`} expanded={showAdvanced} onPress={toggleAdvanced} />
-        {showAdvanced ? (
-          <>
-            <LimitField
-              label={t`Maximum output tokens`}
-              value={maxTokens}
-              onChangeText={changeMaxTokens}
-              maxLength={String(MAX_MODEL_MAX_TOKENS).length}
-              busy={busy}
-            />
-            {credential && limitsDirty ? (
-              <NativeActionButton
-                disabled={busy || !routingReady}
-                label={pending === "connect" && feedbackAnchor === "limits" ? t`Saving…` : t`Save`}
-                onPress={() => void connectKey(true)}
-                prominence="secondary"
-                style={{ marginTop: 12 }}
-              />
-            ) : null}
-            {feedbackAnchor === "limits" ? feedback : null}
-          </>
-        ) : null}
-      </>
     ) : null;
 
   const catalogConnectionControls =
@@ -816,6 +714,18 @@ export default function ModelConnection() {
       />
     </View>
   ) : null;
+  const modelList = credential ? (
+    <ConnectionModelList
+      models={connectionModels(credential, catalog)}
+      onOpen={(id) =>
+        router.push({
+          pathname: "/model-settings",
+          params: { credentialId: credential.id, modelId: id },
+        })
+      }
+    />
+  ) : null;
+
   if (loading && catalog.length === 0) {
     return (
       <SafeAreaView edges={["bottom"]} style={[styles.screen, styles.centered]}>
@@ -839,6 +749,7 @@ export default function ModelConnection() {
               {compatKeySection}
               {feedbackAnchor === "probe" ? null : feedback}
               {connectedStatusRow}
+              {modelList}
             </>
           ) : credential ? (
             <>
@@ -846,7 +757,7 @@ export default function ModelConnection() {
               {connectedStatusRow}
               {catalogConnectionControls}
               {feedbackAnchor === "connection" ? feedback : null}
-              {catalogModelCard}
+              {modelList}
             </>
           ) : provider === me?.hostCredentialProvider ? (
             <>
@@ -862,7 +773,6 @@ export default function ModelConnection() {
                 <>
                   {catalogConnectionControls}
                   {feedback}
-                  {catalogModelCard}
                 </>
               ) : null}
             </>
@@ -870,7 +780,6 @@ export default function ModelConnection() {
             <>
               {catalogConnectionControls}
               {feedback}
-              {catalogModelCard}
             </>
           )
         ) : (

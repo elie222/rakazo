@@ -8,7 +8,8 @@ import type { Prisma, PrismaClient } from "@rakazo/db";
 import { retireModelCredential } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { advisoryLock } from "./advisory-lock.js";
-import { parseModelSecret, serializeModelSecret } from "./model-secret.js";
+import type { KeptModelSettings, StoredModelSecret } from "./model-secret.js";
+import { keptModelSettings, parseModelSecret, serializeModelSecret } from "./model-secret.js";
 import type { ResolveModelOpts } from "./pi-oauth.js";
 import {
   loadProviderOAuth,
@@ -63,7 +64,6 @@ export function retireToReconnectMarker(
   secretStore: Pick<SecretStore, "put" | "load" | "delete">,
   scope: { userId: string; spaceId: string },
   credential: { id: string; secretId: string },
-  maxTokens: number | undefined,
 ) {
   return async (
     _reason: ModelCredentialRetireReason,
@@ -76,11 +76,22 @@ export function retireToReconnectMarker(
         select: { ciphertext: true },
       })
     )?.ciphertext;
+    // Read when retiring, so settings saved since the run began are kept.
+    let kept: KeptModelSettings = {};
+    if (previous) {
+      try {
+        kept = keptModelSettings(
+          parseModelSecret(await secretStore.load(previous, credential.secretId)),
+        );
+      } catch {
+        // An unreadable copy has no settings to keep.
+      }
+    }
     const replacement = await secretStore.put(
       serializeModelSecret({
         kind: "oauth",
         reconnectRequired: true,
-        ...(maxTokens !== undefined ? { maxTokens } : {}),
+        ...kept,
       }),
       {
         operationId: "cred",
@@ -156,9 +167,7 @@ export async function resolveStoredModelAuth(
     return resolveModelAuth(plaintext, provider, opts);
   }
   const { secretId } = credential;
-  let failure:
-    | { args: Parameters<NonNullable<ResolveModelOpts["retire"]>>; maxTokens?: number }
-    | undefined;
+  let failure: { args: Parameters<NonNullable<ResolveModelOpts["retire"]>> } | undefined;
   try {
     // The token write announces itself once the lock's connection is back.
     const outcome = await holdSecretNotifications(() =>
@@ -186,7 +195,7 @@ export async function resolveStoredModelAuth(
             },
             // Recorded only: retiring needs the lock's connection released first.
             retire: async (...args) => {
-              failure = { args, maxTokens: parseModelSecret(stored).maxTokens };
+              failure = { args };
               return false;
             },
           }).then(
@@ -204,13 +213,9 @@ export async function resolveStoredModelAuth(
     let deleted = false;
     try {
       deleted =
-        (await retireToReconnectMarker(
-          prisma,
-          secretStore,
-          scope,
-          { id: credential.id, secretId },
-          failure.maxTokens,
-        )(...failure.args)) === true;
+        (await retireToReconnectMarker(prisma, secretStore, scope, { id: credential.id, secretId })(
+          ...failure.args,
+        )) === true;
     } catch (retireError) {
       getLogger().error("model credential retirement failed", retireError);
     }
@@ -294,6 +299,40 @@ export function persistStoredModelSecret(
       data: { ciphertext: stored.ciphertext },
     });
   };
+}
+
+/**
+ * Change a stored connection's settings under the same locks token refreshes take, so neither
+ * write replaces the other. Returns false when the secret is gone.
+ */
+export async function updateStoredModelSecret(
+  prisma: Pick<PrismaClient, "$transaction" | "secret">,
+  secretStore: Pick<SecretStore, "load" | "put">,
+  scope: { userId: string; spaceId: string },
+  secretId: string,
+  update: (secret: StoredModelSecret) => StoredModelSecret,
+): Promise<boolean> {
+  return withModelCredentialLock(secretId, () =>
+    withRefreshLock(
+      prisma,
+      (tx) => lockModelCredential(tx, secretId),
+      async (tx) => {
+        const row = await tx.secret.findFirst({
+          where: { id: secretId, userId: scope.userId, spaceId: null },
+          select: { ciphertext: true },
+        });
+        if (!row) return false;
+        const secret = parseModelSecret(await secretStore.load(row.ciphertext, secretId));
+        await persistStoredModelSecret(
+          tx,
+          secretStore,
+          scope,
+          secretId,
+        )(serializeModelSecret(update(secret)));
+        return true;
+      },
+    ),
+  );
 }
 
 /**

@@ -43,6 +43,9 @@ export type PiCatalogEntry = {
   thinkingLevels?: ThinkingLevel[];
   /** The model reads images. Left out where a connection setting decides it. */
   images?: boolean;
+  /** The model card's context window and output ceiling. */
+  contextWindow?: number;
+  maxTokens?: number;
   placeholder?: boolean;
   /** Provider models share one pinned HTTPS models-list base URL. */
   catalogProbe?: boolean;
@@ -340,7 +343,11 @@ function buildPiCatalog(): PiCatalogEntry[] {
         // Its image support is the connection's own setting, not the catalog's.
         ...(provider.id === OPENAI_COMPATIBLE_PROVIDER_ID
           ? { placeholder: true, endpointPresets: COMPATIBLE_ENDPOINT_PRESETS }
-          : { images: model.input.includes("image") }),
+          : {
+              images: model.input.includes("image"),
+              contextWindow: model.contextWindow,
+              maxTokens: model.maxTokens,
+            }),
         ...(probeBaseUrl ? { catalogProbe: true } : {}),
         ...(routingFields ? { routingFields } : {}),
       });

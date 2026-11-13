@@ -158,6 +158,12 @@ export default function Models() {
       }),
     );
 
+  const manageModel = (credential: MobileModelCredential, modelId: string) =>
+    router.push({
+      pathname: "/model-settings",
+      params: { credentialId: credential.id, modelId },
+    });
+
   /** Every provider, popular first, plus the hosted presets of the compatible one. */
   const allProviders = useMemo(() => {
     const grouped = new Map<string, ConnectableProvider>();
@@ -250,6 +256,7 @@ export default function Models() {
     pickerRoute,
     connectRoute,
     onManage: manage,
+    onManageModel: manageModel,
     userId: me?.userId ?? "",
     spaceId: target.scope === "space" ? target.spaceId : (me?.spaceId ?? ""),
     scope: target.scope,
