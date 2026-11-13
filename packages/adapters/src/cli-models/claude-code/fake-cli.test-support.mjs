@@ -52,6 +52,7 @@ async function inventory() {
 /** Answers one stream-json request the way the CLI would, by scenario. */
 async function chat() {
   writeFileSync(`${recordPath}.spawned`, "");
+  if (scenario === "slow-reply") await new Promise((resolve) => setTimeout(resolve, 300));
   const tools = await inventory();
   out({
     type: "system",
@@ -123,6 +124,7 @@ async function chat() {
   };
 
   switch (scenario) {
+    case "slow-reply":
     case "late-error":
     case "reply": {
       stream({
@@ -168,6 +170,9 @@ async function chat() {
       });
       break;
     }
+    case "unoffered-tool":
+    case "wrong-prefix":
+    case "bare-tool":
     case "incomplete-tool":
     case "tool": {
       process.on("SIGTERM", () => {});
@@ -175,7 +180,17 @@ async function chat() {
       stream({
         type: "content_block_start",
         index: 0,
-        content_block: { type: "tool_use", id: "toolu_1", name: "mcp__rakazo__lookup", input: {} },
+        content_block: {
+          type: "tool_use",
+          id: "toolu_1",
+          name:
+            {
+              "unoffered-tool": "mcp__rakazo__feedback",
+              "wrong-prefix": "mcp__other__lookup",
+              "bare-tool": "lookup",
+            }[scenario] ?? "mcp__rakazo__lookup",
+          input: {},
+        },
       });
       stream({
         type: "content_block_delta",

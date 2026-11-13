@@ -28,6 +28,7 @@ import {
   transformMessages,
 } from "@earendil-works/pi-ai/api/transform-messages";
 import { sanitizeSensitiveText } from "../../pi-runtime-errors.js";
+import { modelStreamIdleTimeoutMs } from "../../pi-runtime-limits.js";
 import type { ClaudeCodeProcess } from "./cli.js";
 import {
   CLAUDE_CODE_NOT_INSTALLED_ERROR,
@@ -260,8 +261,6 @@ function apiError(code: unknown, detail: string, reportedStatus?: unknown): Erro
 
 class Aborted extends Error {}
 
-const IDLE_TIMEOUT_MS = 10 * 60_000;
-
 /**
  * Waits for one exchange with the CLI: reading an event or writing a frame. The CLI prints
  * something at least on every retry and every streamed token and reads its input as it comes, so
@@ -273,10 +272,12 @@ function exchange<T>(step: Promise<T>, signal: AbortSignal | undefined, idleMs: 
   return Promise.race([
     step,
     new Promise<never>((_, reject) => {
-      timer = setTimeout(
-        () => reject(new Error("Claude Code stopped responding. Try again.")),
-        idleMs,
-      );
+      if (idleMs > 0) {
+        timer = setTimeout(
+          () => reject(new Error("Claude Code stopped responding. Try again.")),
+          idleMs,
+        );
+      }
       onAbort = () => reject(new Aborted("Request was aborted"));
       if (signal?.aborted) onAbort();
       signal?.addEventListener("abort", onAbort, { once: true });
@@ -377,6 +378,7 @@ export function streamClaudeCode(
       if (options.signal?.aborted) throw new Aborted("Request was aborted");
       const system = getCurrentSystemPrompt(context.messages);
       const tools = getCurrentTools(context.messages);
+      const offeredToolNames = new Set(tools.map((tool) => `${TOOL_PREFIX}${tool.name}`));
       const frames = claudeCodeFrames(context, model);
       files = await mkdtemp(join(tmpdir(), "rakazo-claude-code-request-"));
       const cwd = join(files, "cwd");
@@ -447,7 +449,7 @@ export function streamClaudeCode(
           maxTokens ? { CLAUDE_CODE_MAX_OUTPUT_TOKENS: String(maxTokens) } : {},
         ),
       });
-      const idleMs = options.timeoutMs ?? IDLE_TIMEOUT_MS;
+      const idleMs = modelStreamIdleTimeoutMs();
       const read = () => nextEvent(child!, options.signal, idleMs);
 
       for (const frame of frames) {
@@ -565,10 +567,13 @@ export function streamClaudeCode(
               });
             } else if (block.type === "tool_use") {
               const name = String(block.name ?? "");
+              if (!offeredToolNames.has(name)) {
+                throw new Error("Claude Code requested a tool that was not offered.");
+              }
               output.content.push({
                 type: "toolCall",
                 id: String(block.id ?? ""),
-                name: name.startsWith(TOOL_PREFIX) ? name.slice(TOOL_PREFIX.length) : name,
+                name: name.slice(TOOL_PREFIX.length),
                 arguments: {},
               });
               blocks.set(index, { index: contentIndex, json: "" });

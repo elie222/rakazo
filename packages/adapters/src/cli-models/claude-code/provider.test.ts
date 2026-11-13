@@ -579,15 +579,48 @@ describe.skipIf(process.platform === "win32")("Claude Code CLI provider", () => 
   });
 
   it("gives up on a CLI that stops reading its input", async () => {
+    const previousIdle = process.env.MODEL_STREAM_IDLE_TIMEOUT_MS;
+    vi.stubEnv("MODEL_STREAM_IDLE_TIMEOUT_MS", "500");
     fakeClaude("deaf");
     const long: Context = {
       systemPrompt: "You are a helpful bot.",
       messages: [{ role: "user", content: "x".repeat(4 * 1024 * 1024), timestamp: 1 }],
     };
-    const message = await models.streamSimple(model, long, { timeoutMs: 500 }).result();
-    expect(message.stopReason).toBe("error");
-    expect(message.errorMessage).toMatch(/stopped responding/);
+    try {
+      const message = await models.streamSimple(model, long).result();
+      expect(message.stopReason).toBe("error");
+      expect(message.errorMessage).toMatch(/stopped responding/);
+    } finally {
+      vi.stubEnv("MODEL_STREAM_IDLE_TIMEOUT_MS", previousIdle);
+    }
   });
+
+  it.each(["0", "2000"])(
+    "uses the shared idle setting (%s), independent of HTTP timeout",
+    async (idle) => {
+      const previousIdle = process.env.MODEL_STREAM_IDLE_TIMEOUT_MS;
+      vi.stubEnv("MODEL_STREAM_IDLE_TIMEOUT_MS", idle);
+      fakeClaude("slow-reply");
+      try {
+        const message = await models.streamSimple(model, hello, { timeoutMs: 1 }).result();
+        expect(message.stopReason).toBe("stop");
+      } finally {
+        vi.stubEnv("MODEL_STREAM_IDLE_TIMEOUT_MS", previousIdle);
+      }
+    },
+  );
+
+  it.each(["unoffered-tool", "wrong-prefix", "bare-tool"])(
+    "rejects a %s call before publishing it",
+    async (scenario) => {
+      fakeClaude(scenario);
+      const { events, message } = await run(hello);
+      expect(message.stopReason).toBe("error");
+      expect(message.errorMessage).toContain("tool that was not offered");
+      expect(events.some((event) => event.type.startsWith("toolcall"))).toBe(false);
+      expect(events.some((event) => event.type === "done")).toBe(false);
+    },
+  );
 
   it("redacts secrets from the CLI's error output", async () => {
     fakeClaude("crash");
