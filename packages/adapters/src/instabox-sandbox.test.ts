@@ -441,6 +441,36 @@ describe("instabox page tools", () => {
     }
   });
 
+  it("does not report a computer deleted during the install as prepared", async () => {
+    const emulator = new InstaboxEmulator();
+    const { provider: create } = emulatedInstabox(emulator);
+    const provider = create();
+    const computer = await provider.provision(request, ctx);
+    emulator.onWrite = (path) => {
+      if (path.startsWith("/tmp/rakazo-page-browser-")) emulator.computers.delete(computer.id);
+    };
+    const failure = await provider.prepare(computer, ctx).catch((error: unknown) => error);
+    expect(isSandboxGoneError(failure)).toBe(true);
+  });
+
+  it("does not report a computer paused for an installer it could not stop as prepared", async () => {
+    vi.useFakeTimers();
+    try {
+      const emulator = new InstaboxEmulator();
+      emulator.hangs = (command) => command.startsWith("bash -c 'status=0; bash ");
+      emulator.jobKill = () => new Error("kill unavailable");
+      const { provider: create } = emulatedInstabox(emulator);
+      const provider = create();
+      const computer = await provider.provision(request, ctx);
+      const preparing = provider.prepare(computer, ctx).catch((error: unknown) => error);
+      await vi.advanceTimersByTimeAsync(125_000);
+      expect(await preparing).toMatchObject({ name: "SandboxUnsafeStopError" });
+      expect(emulator.computers.get(computer.id)!.state).toBe("suspended");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it.each(["exit", "rejection"])(
     "retries input cleanup after one transient %s",
     async (failure) => {

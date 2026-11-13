@@ -27,9 +27,13 @@ import {
 } from "./computer-support.js";
 import { PortableFileBatcher } from "./computer-workspace.js";
 import { LinuxDesktop, onBotScreen, PREPARE_LINUX_DESKTOP } from "./linux-desktop.js";
-import { installPageBrowserCommand } from "./page-browser-install.js";
+import { installPageBrowserCommand, privatePageInput } from "./page-browser-install.js";
 import { sandboxCommandArgv } from "./sandbox-command-environment.js";
-import { isSandboxGoneError, sandboxNotFoundError } from "./sandbox-errors.js";
+import {
+  isSandboxGoneError,
+  isSandboxUnsafeStopError,
+  sandboxNotFoundError,
+} from "./sandbox-errors.js";
 import { shouldSkipPortableWorkspaceFile } from "./workspace-save-policy.js";
 
 const DISPLAY_START = 20;
@@ -386,8 +390,10 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
         PAGE_BROWSER_INSTALL_MS,
       );
       installed = result.exitCode === 0;
-    } catch {
+    } catch (error) {
       context.signal.throwIfAborted();
+      // A deleted computer, or one paused because the installer would not stop, is not ready.
+      if (isSandboxGoneError(error) || isSandboxUnsafeStopError(error)) throw error;
     } finally {
       await this.runSetupCommand(
         computer,
@@ -404,10 +410,7 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
       });
   }
 
-  /**
-   * Hands a page request to a command on its stdin. The request can carry saved logins and cards,
-   * so it travels as a file in a private folder that the command removes before it starts.
-   */
+  /** Hands a page request to a command on its stdin, through a private file. */
   private async runWithPrivateInput(
     computer: ComputerRef,
     command: string,
@@ -416,17 +419,14 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
     context: AdapterContext,
   ): Promise<{ code: number; stdout: string }> {
     context.signal.throwIfAborted();
-    const directory = `/tmp/rakazo-page-input-${randomUUID()}`;
-    const file = `${directory}/request`;
-    const created = await this.run(computer, `mkdir -m 700 -- ${shellQuote(directory)}`, {
-      timeoutMs: 10_000,
-    });
+    const page = privatePageInput();
+    const created = await this.run(computer, page.create, { timeoutMs: 10_000 });
     if (created.exitCode !== 0) throw new Error("Could not prepare browser input");
     try {
       context.signal.throwIfAborted();
       try {
         await this.use(computer, (desktop) =>
-          desktop.files.write([{ path: file, data: toArrayBuffer(Buffer.from(input)) }], {
+          desktop.files.write([{ path: page.file, data: toArrayBuffer(Buffer.from(input)) }], {
             signal: context.signal,
           }),
         );
@@ -437,11 +437,7 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
       // Not cancelled midway: an action already sent finishes, then the abort is reported.
       let result: CommandResult;
       try {
-        result = await this.run(
-          computer,
-          `bash -c ${shellQuote(`exec 0< ${shellQuote(file)} || exit 1; rm -f -- ${shellQuote(file)} && rmdir -- ${shellQuote(directory)} || exit 1; ${command}`)}`,
-          { timeoutMs },
-        );
+        result = await this.run(computer, page.run(command), { timeoutMs });
       } catch {
         context.signal.throwIfAborted();
         // The bot gets the page tools' own failure, never the provider's error text.
@@ -452,11 +448,7 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
     } finally {
       let cleaned = false;
       for (let attempt = 0; attempt < 2 && !cleaned; attempt++) {
-        cleaned = await this.run(
-          computer,
-          `rm -f -- ${shellQuote(file)} && { rmdir -- ${shellQuote(directory)} 2>/dev/null || test ! -e ${shellQuote(directory)}; }`,
-          { timeoutMs: 10_000 },
-        ).then(
+        cleaned = await this.run(computer, page.cleanup, { timeoutMs: 10_000 }).then(
           (result) => result.exitCode === 0,
           () => false,
         );
