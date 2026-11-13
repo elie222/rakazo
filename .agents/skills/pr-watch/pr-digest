@@ -13,7 +13,6 @@
 set -uo pipefail
 
 POLL=${PR_DIGEST_POLL:-30}
-DEADLINE=${PR_DIGEST_DEADLINE:-7200}
 BODY_CHARS=${PR_DIGEST_BODY_CHARS:-600}
 SEEN_DIR=${PR_DIGEST_SEEN_DIR:-$HOME/.cache/pr-digest}
 # How many empty polls to allow before accepting that a PR has no check runs.
@@ -362,7 +361,7 @@ main() {
   [ "$FORK" = true ] || FORK=false
 
   if [ "$watch" -eq 1 ]; then
-    local started=$SECONDS head runs statuses empty=0 left baseline="" first=1 seen
+    local head runs statuses empty=0 baseline="" first=1 seen
     seen=$(seen_path "$repo" "$pr")
     while :; do
       head=$(gh pr view "$pr" --repo "$repo" --json headRefOid --jq .headRefOid) \
@@ -392,9 +391,7 @@ main() {
         fi
         empty=$((empty + 1))
       fi
-      left=$((DEADLINE - (SECONDS - started)))
-      [ "$left" -le 0 ] && break
-      sleep "$(( POLL < left ? POLL : left ))"
+      sleep "$POLL"
     done
   fi
 
