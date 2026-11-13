@@ -30,6 +30,7 @@ const {
   alert,
   afterChatNotifyChange,
   listSpaceArtifacts,
+  removeArtifact,
   params,
   color,
   focus,
@@ -42,6 +43,7 @@ const {
   alert: vi.fn(),
   afterChatNotifyChange: vi.fn(async () => undefined),
   listSpaceArtifacts: vi.fn(),
+  removeArtifact: vi.fn(),
   params: { current: {} as Record<string, string> },
   color: new Proxy({}, { get: (_, key) => String(key) }),
   focus: new Set<() => (() => void) | undefined>(),
@@ -73,7 +75,7 @@ vi.mock("./live-notifications", () => ({ afterChatNotifyChange }));
 vi.mock("./artifacts", () => ({
   listSpaceArtifacts,
   matchesArtifactQuery: (item: { name: string }, query: string) => item.name.includes(query),
-  removeArtifact: vi.fn(),
+  removeArtifact,
 }));
 vi.mock("expo-router", () => ({
   Stack: {
@@ -112,7 +114,8 @@ vi.mock("react-native", () => {
     ActivityIndicator: () => createElement("progress"),
     Alert: { alert },
     BackHandler: { addEventListener: () => ({ remove: () => undefined }) },
-    RefreshControl: () => null,
+    RefreshControl: ({ onRefresh }: { onRefresh: () => void }) =>
+      createElement("button", { type: "button", onClick: onRefresh }, "Refresh files"),
     ScrollView: view,
     View: view,
     Text: ({ children }: { children?: ReactNode }) => createElement("span", null, children),
@@ -145,6 +148,7 @@ vi.mock("react-native", () => {
       keyExtractor,
       renderItem,
       onEndReached,
+      refreshControl,
     }: {
       ListHeaderComponent?: ReactNode;
       ListEmptyComponent?: ReactNode;
@@ -152,6 +156,7 @@ vi.mock("react-native", () => {
       keyExtractor?: (item: unknown) => string;
       renderItem?: (info: { item: unknown }) => ReactNode;
       onEndReached?: () => void;
+      refreshControl?: ReactNode;
     }) => {
       useLayoutEffect(() => {
         if (screen.endOnLayout) onEndReached?.();
@@ -160,6 +165,7 @@ vi.mock("react-native", () => {
         "div",
         null,
         ListHeaderComponent,
+        refreshControl,
         data.length === 0
           ? ListEmptyComponent
           : data.map((item) =>
@@ -288,6 +294,14 @@ async function render(element: ReactNode) {
   await act(async () => {
     root.render(element);
   });
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
 }
 
 function button(label: string) {
@@ -1331,6 +1345,126 @@ describe("artifacts opened for one bot", () => {
     ]);
     listSpaceArtifacts.mockResolvedValue({ items: [], nextCursor: null });
     params.current = { botId: "bot-fixture" };
+  });
+
+  it.each(["refresh", "pagination"])(
+    "does not restore deleted files from a stale %s response",
+    async (mode) => {
+      const file = {
+        id: "file-a",
+        name: "report.md",
+        botId: "bot-fixture",
+        groupId: null,
+        runId: null,
+        description: null,
+        mimeType: "text/markdown",
+        size: 6,
+        version: 1,
+        versionCount: 1,
+        createdAt: "2026-11-01T00:00:00.000Z",
+      };
+      const stale = deferred<{ items: (typeof file)[]; nextCursor: string | null }>();
+      listSpaceArtifacts.mockResolvedValue({ items: [], nextCursor: "fresh-page" });
+      listSpaceArtifacts.mockResolvedValueOnce({ items: [file], nextCursor: "page-2" });
+      listSpaceArtifacts.mockReturnValueOnce(stale.promise);
+      removeArtifact.mockResolvedValue(undefined);
+      await render(createElement(ArtifactsScreen));
+      await act(async () => button(mode === "refresh" ? "Refresh files" : "End of list").click());
+      act(() =>
+        button("report.md").dispatchEvent(new MouseEvent("contextmenu", { bubbles: true })),
+      );
+      await act(async () =>
+        alert.mock.lastCall?.[2]
+          .find((action: { style?: string }) => action.style === "destructive")
+          .onPress(),
+      );
+      expect(removeArtifact).toHaveBeenCalledWith("file-a");
+      expect(container.textContent).not.toContain("report.md");
+      await act(async () => stale.resolve({ items: [file], nextCursor: "stale-page" }));
+      expect(container.textContent).not.toContain("report.md");
+      expect(listSpaceArtifacts).toHaveBeenLastCalledWith({
+        botId: "bot-fixture",
+        madeByBots: false,
+        limit: 30,
+      });
+      await act(async () => button("End of list").click());
+      expect(listSpaceArtifacts).toHaveBeenLastCalledWith(
+        expect.objectContaining({ cursor: "fresh-page" }),
+      );
+    },
+  );
+
+  it("keeps a failed deletion's file and allows the pending refresh to finish", async () => {
+    const file = {
+      id: "file-a",
+      name: "report.md",
+      botId: "bot-fixture",
+      groupId: null,
+      runId: null,
+      description: null,
+      mimeType: "text/markdown",
+      size: 6,
+      version: 1,
+      versionCount: 1,
+      createdAt: "2026-11-01T00:00:00.000Z",
+    };
+    const stale = deferred<{ items: (typeof file)[]; nextCursor: null }>();
+    listSpaceArtifacts.mockResolvedValueOnce({ items: [file], nextCursor: null });
+    listSpaceArtifacts.mockReturnValueOnce(stale.promise);
+    removeArtifact.mockRejectedValueOnce(new Error("Deletion failed"));
+    await render(createElement(ArtifactsScreen));
+    await act(async () => button("Refresh files").click());
+    act(() => button("report.md").dispatchEvent(new MouseEvent("contextmenu", { bubbles: true })));
+    await act(async () =>
+      alert.mock.lastCall?.[2]
+        .find((action: { style?: string }) => action.style === "destructive")
+        .onPress(),
+    );
+    expect(alert.mock.lastCall?.[0]).toBe("Could not delete this artifact");
+    await act(async () =>
+      stale.resolve({ items: [{ ...file, name: "updated.md" }], nextCursor: null }),
+    );
+    expect(container.textContent).toContain("updated.md");
+    expect(listSpaceArtifacts).toHaveBeenCalledTimes(2);
+  });
+
+  it("reloads the current filter when deletion finishes after a filter change", async () => {
+    const file = {
+      id: "file-a",
+      name: "report.md",
+      botId: "bot-fixture",
+      groupId: null,
+      runId: null,
+      description: null,
+      mimeType: "text/markdown",
+      size: 6,
+      version: 1,
+      versionCount: 1,
+      createdAt: "2026-11-01T00:00:00.000Z",
+    };
+    const deletion = deferred<void>();
+    const stale = deferred<{ items: (typeof file)[]; nextCursor: null }>();
+    listSpaceArtifacts.mockResolvedValue({ items: [], nextCursor: null });
+    listSpaceArtifacts.mockResolvedValueOnce({ items: [file], nextCursor: null });
+    listSpaceArtifacts.mockReturnValueOnce(stale.promise);
+    removeArtifact.mockReturnValueOnce(deletion.promise);
+    await render(createElement(ArtifactsScreen));
+    act(() => button("report.md").dispatchEvent(new MouseEvent("contextmenu", { bubbles: true })));
+    await act(async () =>
+      alert.mock.lastCall?.[2]
+        .find((action: { style?: string }) => action.style === "destructive")
+        .onPress(),
+    );
+    await act(async () => button("Other").click());
+    await act(async () => deletion.resolve());
+    expect(listSpaceArtifacts).toHaveBeenLastCalledWith({
+      botId: "other-bot",
+      madeByBots: false,
+      limit: 30,
+    });
+    await act(async () => stale.resolve({ items: [file], nextCursor: null }));
+    expect(container.textContent).not.toContain("report.md");
+    expect(container.textContent).toContain("No artifacts yet");
   });
 
   it("loads only the profile bot's artifacts initially", async () => {

@@ -197,9 +197,11 @@ export default function ArtifactsScreen() {
           style: "destructive",
           onPress: () =>
             void removeArtifact(item.id)
-              .then(() =>
-                setItems((current) => current?.filter((row) => row.id !== item.id) ?? current),
-              )
+              .then(() => {
+                setItems((current) => current?.filter((row) => row.id !== item.id) ?? current);
+                // Invalidate reads started before deletion and refresh the current filter.
+                void load(activeBotIdRef.current, madeByBotsRef.current, "refresh");
+              })
               .catch((error: unknown) =>
                 Alert.alert(t`Could not delete this artifact`, errorText(error, t`Try again.`)),
               ),
