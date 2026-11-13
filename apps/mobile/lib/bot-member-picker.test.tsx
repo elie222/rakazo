@@ -18,6 +18,7 @@ const { rpc, back, push, replace } = vi.hoisted(() => ({
   replace: vi.fn(),
 }));
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
+vi.mock("./session", () => ({ currentSessionGeneration: () => 0 }));
 vi.mock("./api-server", () => ({}));
 vi.mock("./api-auth", () => ({}));
 vi.mock("./api-live", () => ({}));
@@ -129,7 +130,13 @@ beforeEach(() => {
   container = document.createElement("div");
   root = createRoot(container);
   rpc.mockImplementation(async (procedure: string) =>
-    procedure === "groups/list" ? [group] : procedure === "bots/list" ? bots : undefined,
+    procedure === "groups/list"
+      ? [group]
+      : procedure === "bots/list"
+        ? bots
+        : procedure === "bots/listArchived"
+          ? []
+          : undefined,
   );
 });
 afterEach(async () => {
@@ -234,7 +241,13 @@ it("keeps members closed while a save is running", async () => {
           finish = resolve;
         })
       : Promise.resolve(
-          procedure === "groups/list" ? [group] : procedure === "bots/list" ? bots : undefined,
+          procedure === "groups/list"
+            ? [group]
+            : procedure === "bots/list"
+              ? bots
+              : procedure === "bots/listArchived"
+                ? []
+                : undefined,
         ),
   );
   await act(async () => root.render(<GroupSettings />));
@@ -253,10 +266,30 @@ it("keeps members closed while a save is running", async () => {
 it("removes deleted bots from an open group picker after deletion completes", async () => {
   await act(async () => root.render(<GroupSettings />));
   rpc.mockImplementation(async (procedure: string) =>
-    procedure === "bots/list" ? bots.slice(1) : undefined,
+    procedure === "bots/list" ? bots.slice(1) : procedure === "bots/listArchived" ? [] : undefined,
   );
   await act(async () => notifyArchivedChatsChanged());
   expect(switches().map((input) => input.getAttribute("aria-label"))).toEqual(["Writer"]);
   await click("Show all");
   expect(switches().map((input) => input.getAttribute("aria-label"))).toEqual(["Writer", "Runner"]);
+});
+
+it("preserves archived membership when the bot is restored", async () => {
+  await act(async () => root.render(<GroupSettings />));
+  rpc.mockImplementation(async (procedure: string) =>
+    procedure === "bots/list"
+      ? bots.slice(1)
+      : procedure === "bots/listArchived"
+        ? [bots[0]]
+        : undefined,
+  );
+  await act(async () => notifyArchivedChatsChanged());
+  rpc.mockImplementation(async (procedure: string) =>
+    procedure === "bots/list" ? bots : procedure === "bots/listArchived" ? [] : undefined,
+  );
+  await act(async () => notifyArchivedChatsChanged());
+  expect(switches().map((input) => input.getAttribute("aria-label"))).toEqual([
+    "Researcher",
+    "Writer",
+  ]);
 });

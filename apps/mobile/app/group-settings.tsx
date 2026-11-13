@@ -46,11 +46,12 @@ export default function GroupSettingsScreen() {
   useEffect(() => {
     let active = true;
     const unsubscribe = onArchivedChatsChanged(() => {
-      void rpc("bots/list")
-        .then((nextBots) => {
+      void Promise.all([rpc("bots/list"), rpc("bots/listArchived", {})])
+        .then(([nextBots, archivedBots]) => {
           if (!active) return;
           const available = nextBots.filter((bot) => !bot.archivedAt);
-          const ids = new Set(available.map((bot) => bot.id));
+          // Archiving retains membership; only permanently deleted bots are removed.
+          const ids = new Set([...nextBots, ...archivedBots].map((bot) => bot.id));
           setBots(available);
           setSelected((previous) => previous.filter((id) => ids.has(id)));
           setGroup(
