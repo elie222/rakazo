@@ -181,12 +181,14 @@ chosen bots on the login don't cover it; set it too. Bots are chosen in the Spac
 limiting an account item in one Space leaves the bots of your other Spaces as they were, and a
 Space with its own vault never uses account items. A bot treats an item it may not use as missing,
 while a value it saw earlier stays hidden from its runs.
-Before upgrading to this release, stop the previous release's workers, or let them finish and
-stop, before the new server starts: this is a deployment prerequisite. A worker of the previous
-release does not know these settings, so while one runs it treats Block and Ask first as Allow,
-ignores the choice of bots and records no uses. Rolling the server back to the previous release
-widens access the same way, so set every item you blocked or limited back by hand, or remove it,
-before a rollback.
+The migration installs restrictive row-security policies that hide all vault items and run
+credential rows from previous-release connections, including system connections. Current
+connections declare support for item policies alongside their tenant settings. During a rolling
+upgrade, old instances cannot read or change credentials; after a rollback, vault operations
+remain unavailable until the server is upgraded again. This requires the restricted runtime
+database role used by supported deployments: a superuser or a role bypassing row security
+cannot enforce this boundary. An action that already received a value before the migration or
+policy change may finish; database policies cannot recall values already handed out.
 
 **Import CSV** in the New menu reads a password manager's CSV export on your device; the file is
 never uploaded. It matches common column names for the name, site, username or email and

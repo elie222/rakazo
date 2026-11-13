@@ -1,7 +1,7 @@
 import type { VaultUse } from "@rakazo/contracts";
 import { VAULT_ACTIVITY_LIMIT } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
-import { recordAuditEvent, runAsSystem } from "@rakazo/db";
+import { runAsSystem, tryRecordAuditEvent } from "@rakazo/db";
 import type { BotSecretScope, VaultItemUse } from "./bot-secrets.js";
 import { vaultItemId } from "./bot-secrets.js";
 
@@ -21,9 +21,9 @@ export function recordVaultItemUse(use: {
   tool: string;
   item: VaultItemUse;
   site?: string;
-}): Promise<void> {
+}): Promise<boolean> {
   const { item } = use;
-  return recordAuditEvent({
+  return tryRecordAuditEvent({
     action: "credential.used",
     actor: { type: "bot", id: use.bot.id, label: use.bot.name },
     spaceId: use.spaceId,

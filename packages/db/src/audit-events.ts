@@ -71,13 +71,20 @@ export function installAuditEventStore(db: AuditEventDb | undefined): void {
  * write logs the whole event, so the record still reaches the log sink.
  */
 export async function recordAuditEvent(input: AuditEventInput): Promise<void> {
+  await tryRecordAuditEvent(input);
+}
+
+/** Whether the database accepted the event; lets callers retry without suppressing a use. */
+export async function tryRecordAuditEvent(input: AuditEventInput): Promise<boolean> {
   const db = store;
-  if (!db) return;
+  if (!db) return false;
   const caller = input.actor.type === "user" ? securityRequestCaller() : undefined;
   try {
-    await runAsSystem("append an audit event", async () => {
+    return await runAsSystem("append an audit event", async () => {
       const rows = await auditRows(db, input, caller);
-      if (rows.length) await db.auditEvent.createMany({ data: rows });
+      if (!rows.length) return false;
+      await db.auditEvent.createMany({ data: rows });
+      return true;
     });
   } catch (error) {
     getLogger().error("audit.event.write_failed", error, {
@@ -91,6 +98,7 @@ export async function recordAuditEvent(input: AuditEventInput): Promise<void> {
       "audit.event.run_id": input.runId ?? undefined,
       "audit.event.metadata": securityEventMetadata(input.metadata),
     });
+    return false;
   }
 }
 

@@ -1,7 +1,5 @@
--- Each vault item says, in each Space, which of that Space's bots may use it: every bot, as before,
--- or the ones chosen there. Additive: existing items keep every bot, and the previous release
--- ignores both tables, so rolling back to it widens access: chosen bots are ignored and a login
--- set to Ask first ("ask", which it doesn't know) is used as if allowed.
+-- Additive vault access settings. The legacy access guard migration prevents older
+-- runtime connections from using the vault without enforcing these settings.
 CREATE TABLE "vault_credential_limits" (
   "id" TEXT NOT NULL,
   "credentialId" TEXT NOT NULL,

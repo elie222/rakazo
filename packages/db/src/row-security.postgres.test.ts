@@ -614,6 +614,53 @@ describePostgres("row-level security (PostgreSQL)", () => {
     }
   });
 
+  it.each([false, true])(
+    "hides vault rows from legacy connections, including system=%s",
+    async (system) => {
+      const connect = () => app.pool.connect();
+      const client = await (system
+        ? runAsSystem("legacy rollout test", connect)
+        : runAsTenant(a, connect));
+      try {
+        const select = () =>
+          client.query('SELECT id FROM vault_credentials WHERE "userId" = $1', [a.userId]);
+        expect((await select()).rows.length).toBeGreaterThan(0);
+        await client.query("SELECT set_config('app.vault_access_version', '', false)");
+        expect((await select()).rows).toEqual([]);
+        expect(
+          (
+            await client.query(
+              `UPDATE vault_credentials SET policy = 'allow' WHERE "userId" = $1 RETURNING id`,
+              [a.userId],
+            )
+          ).rows,
+        ).toEqual([]);
+        await expect(
+          client.query(
+            `INSERT INTO vault_credentials (id, "userId", name, origin, auth, ciphertext, "updatedAt")
+        VALUES ('legacy-insert', $1, 'legacy', 'https://example.test', '{}', 'fake', now())`,
+            [a.userId],
+          ),
+        ).rejects.toThrow(/row-level security/);
+        await client.query("SELECT set_config('app.vault_access_version', '1', false)");
+        await client.query(
+          `INSERT INTO secrets (id, "userId", "spaceId", kind, ciphertext)
+        VALUES ($1, $2, $3, 'run-login:rollout:login', 'fake')`,
+          [`rollout-${system}`, a.userId, a.spaceId],
+        );
+        await client.query("SELECT set_config('app.vault_access_version', '', false)");
+        expect(
+          (await client.query("SELECT id FROM secrets WHERE id = $1", [`rollout-${system}`])).rows,
+        ).toEqual([]);
+        await client.query("SELECT set_config('app.vault_access_version', '1', false)");
+        expect((await select()).rows.length).toBeGreaterThan(0);
+        await client.query("DELETE FROM secrets WHERE id = $1", [`rollout-${system}`]);
+      } finally {
+        client.release(true);
+      }
+    },
+  );
+
   it("routes every bypass policy through the key check", async () => {
     const policies = await owner.prisma.$queryRaw<
       Array<{ policyname: string; qual: string; with_check: string | null }>

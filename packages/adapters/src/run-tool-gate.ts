@@ -276,7 +276,7 @@ export async function gateToolCall(
       (name === "schedule_update" && Boolean(args.prompt))) &&
     (await isRunTainted(ctx)) &&
     (await ctx.trust.routineNamesNewSite(String(args.prompt ?? "")));
-const memoryWriteGated = await memoryWriteNeedsApproval(name, () => isRunTainted(ctx));
+  const memoryWriteGated = await memoryWriteNeedsApproval(name, () => isRunTainted(ctx));
   const { purchase, cardUse, loginUse } = request;
   // Saved logins that ask first require the owner on every use, like saved cards.
   const paying = Boolean(purchase) || Boolean(cardUse) || Boolean(loginUse);

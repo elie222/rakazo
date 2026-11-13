@@ -33,6 +33,7 @@ import {
   storeBotSecret,
 } from "./bot-secrets.js";
 import { fakeDatabase } from "./bot-secrets.test-support.js";
+import { recordVaultUse } from "./run-context.js";
 import { secretTools } from "./run-tools-secrets.js";
 import { EncryptedSecretStore } from "./secrets.js";
 
@@ -95,6 +96,34 @@ async function fixture(auth = destination.auth) {
 }
 
 describe("authenticated secret requests", () => {
+  it("retries failed audit inserts before deduplicating a use", async () => {
+    const createMany = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValue({ count: 1 });
+    installAuditEventStore({
+      auditEvent: { createMany },
+      space: { findUnique: async () => ({ organizationId: "org-1", name: "Home" }) },
+      member: { findUnique: async () => ({ role: "owner" }) },
+    } as never);
+    const ctx = {
+      bot: { id: "bot-1", name: "Bot" },
+      run: { userId: "owner", spaceId: "space-1" },
+      runId: "run-1",
+      thread: { id: "thread-1" },
+      state: { vaultUses: new Set<string>() },
+    };
+    const item = { id: "item-1", name: "login", spaceId: null, kind: "login" };
+    await recordVaultUse(ctx as never, "browser_act", item, "https://example.test");
+    expect(ctx.state.vaultUses.size).toBe(0);
+    await recordVaultUse(ctx as never, "browser_act", item, "https://example.test");
+    await recordVaultUse(ctx as never, "browser_act", item, "https://example.test");
+    expect(createMany).toHaveBeenCalledTimes(2);
+    expect(ctx.state.vaultUses.size).toBe(1);
+    await recordVaultUse(ctx as never, "browser_act", item, "https://other.example.test");
+    expect(createMany).toHaveBeenCalledTimes(3);
+  });
+
   it("records when the vault gives the run a saved key, once per attempt", async () => {
     const { input, fetch } = await fixture();
     const rows: Array<Record<string, unknown>> = [];

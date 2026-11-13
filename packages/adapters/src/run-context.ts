@@ -370,7 +370,7 @@ export async function recordVaultUse(
   const use = JSON.stringify([item.id, site ?? null]);
   if (ctx.state.vaultUses.has(use)) return;
   ctx.state.vaultUses.add(use);
-  await recordVaultItemUse({
+  const recorded = await recordVaultItemUse({
     bot: ctx.bot,
     spaceId: ctx.run.spaceId,
     // The run's person, whose vault holds the item.
@@ -381,6 +381,7 @@ export async function recordVaultUse(
     item,
     site,
   });
+  if (!recorded) ctx.state.vaultUses.delete(use);
 }
 
 export function pauseForApproval(ctx: RunContext) {
