@@ -9,6 +9,8 @@ import {
   defaultCatalogModelId,
   enabledOpenAiCompatibleModelIds,
   keptModelSettings,
+  listPiCatalog,
+  liveCatalogEntry,
   modelCredentialDto,
   parseModelSecret,
   prepareAllowedThinkingLevels as prepareModelThinkingLevels,
@@ -30,11 +32,12 @@ import type {
 import {
   canonicalPiProviderId,
   MAX_MODEL_SETTINGS_PER_CONNECTION,
+  modelOutputLeavesInputRoom,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   storedPiProviderIds,
   usableModelId,
 } from "@rakazo/contracts";
-import { clampCatalogThinkingLevel } from "@rakazo/core";
+import { catalogEntryFor, clampCatalogThinkingLevel, modelSettingsDefaults } from "@rakazo/core";
 import {
   deleteUnreferencedCredentialSecret,
   findNewestUserModelCredential,
@@ -338,6 +341,20 @@ export async function saveConnectionModelSettings(
         !enabledOpenAiCompatibleModelIds(secret, defaultModel).includes(input.modelId)
       )
         throw new ORPCError("BAD_REQUEST", { message: "Unknown model for that connection" });
+      const contextWindow =
+        input.settings.contextWindow ??
+        modelSettingsDefaults(
+          credential.provider,
+          catalogEntryFor(listPiCatalog(), credential.provider, input.modelId) ??
+            liveCatalogEntry(credential.provider, input.modelId),
+        ).contextWindow;
+      if (
+        input.settings.maxTokens !== undefined &&
+        !modelOutputLeavesInputRoom(input.settings.maxTokens, contextWindow)
+      )
+        throw new ORPCError("BAD_REQUEST", {
+          message: "Maximum output tokens must be below the context limit.",
+        });
       const next = withModelSettings(secret, input.modelId, input.settings);
       const count = (value: typeof secret) => Object.keys(value.models ?? {}).length;
       if (count(next) > MAX_MODEL_SETTINGS_PER_CONNECTION && count(next) > count(secret))

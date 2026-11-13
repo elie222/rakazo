@@ -1,7 +1,5 @@
 import { Plural, Trans, useLingui } from "@lingui/react/macro";
-import type { ModelSettings } from "@rakazo/contracts";
 import type { ConnectionModel } from "@rakazo/core";
-import { modelSettingsTags } from "@rakazo/core";
 import { ListSearchInput, SectionHeading } from "@rakazo/ui-web";
 import type { ReactNode } from "react";
 import { SettingsPageHeader } from "../../components/SettingsPageHeader";
@@ -9,16 +7,6 @@ import { useListSearch } from "../../lib/use-list-search";
 import { SettingsListRow } from "./providers-section";
 
 type ProviderModel = ConnectionModel;
-
-/** What a model's own settings change, in a few words; nothing when it follows its card. */
-function useSettingsSummary() {
-  const { t } = useLingui();
-  const labels = { images: t`Images`, thinking: t`Thinking`, limits: t`Limits` };
-  return (settings: ModelSettings | undefined) =>
-    modelSettingsTags(settings)
-      .map((tag) => labels[tag])
-      .join(" · ");
-}
 
 /** One connection: its own settings, then every model it runs, each opening its settings. */
 export function ProviderPage({
@@ -36,7 +24,6 @@ export function ProviderPage({
   onOpenModel: (modelId: string) => void;
 }) {
   const { t } = useLingui();
-  const summary = useSettingsSummary();
   const {
     query,
     setQuery,
@@ -74,13 +61,7 @@ export function ProviderPage({
                   onClick={() => onOpenModel(model.id)}
                   label={model.label}
                   className="last:rounded-b-xl"
-                >
-                  {summary(model.settings) ? (
-                    <span className="shrink-0 text-body-sm text-muted-foreground">
-                      {summary(model.settings)}
-                    </span>
-                  ) : null}
-                </SettingsListRow>
+                />
               </li>
             ))}
             {matching.length ? null : (
@@ -95,18 +76,11 @@ export function ProviderPage({
   );
 }
 
-/** "14 models · 2 customized" for a connection's row. */
+/** The number of models available on a connection. */
 export function ProviderModelCount({ models }: { models: ProviderModel[] }) {
-  const customized = models.filter((model) => model.settings).length;
   return (
     <span className="shrink-0 text-body-sm text-muted-foreground">
       <Plural value={models.length} one="# model" other="# models" />
-      {customized ? (
-        <>
-          {" · "}
-          <Plural value={customized} one="# customized" other="# customized" />
-        </>
-      ) : null}
     </span>
   );
 }

@@ -354,6 +354,14 @@ export const ModelCatalogEntrySchema = z.object({
   signIn: ModelOAuthSignInModeSchema.optional(),
   reasoning: z.boolean().optional(),
   thinkingLevels: z.array(ThinkingLevelSchema).optional(),
+  /** Uncustomized capabilities for forms on other connections of the same provider. */
+  defaultCapabilities: z
+    .object({
+      images: z.boolean().optional(),
+      reasoning: z.boolean().optional(),
+      thinkingLevels: z.array(ThinkingLevelSchema).optional(),
+    })
+    .optional(),
   /** The model reads images. Left out where a connection setting decides it. */
   images: z.boolean().optional(),
   /** The model card's context window and output ceiling, where the catalog has one. */

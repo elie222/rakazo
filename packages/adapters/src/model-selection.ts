@@ -468,11 +468,16 @@ export function withLiveModelSettings(
     const secretId =
       auth.secretIdByModel[entry.provider]?.[entry.id] ?? auth.secretIdByProvider[entry.provider];
     const settings = secretId ? auth.modelSettingsBySecretId?.[secretId]?.[entry.id] : undefined;
-    if (settings?.images === undefined && settings?.reasoning === undefined) return entry;
     const described = liveCatalogEntry(entry.provider, entry.id, settings);
     return described
       ? {
           ...entry,
+          defaultCapabilities: {
+            images: entry.images,
+            reasoning: entry.reasoning,
+            thinkingLevels: liveCatalogEntry(entry.provider, entry.id, { reasoning: true })
+              ?.thinkingLevels,
+          },
           reasoning: described.reasoning,
           thinkingLevels: described.thinkingLevels,
           images: described.images,

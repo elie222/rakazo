@@ -41,6 +41,7 @@ export type PiCatalogEntry = {
   signIn?: ModelOAuthSignInMode;
   reasoning?: boolean;
   thinkingLevels?: ThinkingLevel[];
+  defaultCapabilities?: { images?: boolean; reasoning?: boolean; thinkingLevels?: ThinkingLevel[] };
   /** The model reads images. Left out where a connection setting decides it. */
   images?: boolean;
   /** The model card's context window and output ceiling. */

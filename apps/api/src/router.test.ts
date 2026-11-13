@@ -6213,7 +6213,7 @@ describe("model settings", () => {
     isDeploymentOwner: true,
   } satisfies Actor;
 
-  function settingsDeps(stored: string, defaultModel = "served") {
+  function settingsDeps(stored: string, defaultModel = "served", provider = "zai") {
     let plaintext = stored;
     const tx = {
       $executeRaw: vi.fn(async () => 0),
@@ -6231,6 +6231,7 @@ describe("model settings", () => {
               ? {
                   id: "connection-1",
                   secretId: "secret-1",
+                  provider,
                   userPreferences: [{ modelId: defaultModel }],
                 }
               : null,
@@ -6308,6 +6309,37 @@ describe("model settings", () => {
       where: { id: "secret-1" },
       data: { ciphertext: "sealed-again" },
     });
+  });
+
+  it("rejects output-only overrides that fill the model's default context", async () => {
+    const known = listPiCatalog().find((entry) => entry.provider === "zai" && entry.contextWindow)!;
+    for (const input of [
+      {
+        provider: "zai",
+        modelId: known.id,
+        window: known.contextWindow!,
+        secret: "sk-synthetic-key",
+      },
+      {
+        provider: "openai-compatible",
+        modelId: "served",
+        window: 262144,
+        secret: JSON.stringify({
+          kind: "openai_compatible",
+          apiKey: "fake-key",
+          baseUrl: "https://example.com/v1",
+        }),
+      },
+    ]) {
+      const { call, deps } = settingsDeps(input.secret, input.modelId, input.provider);
+      const response = await call({
+        credentialId: "connection-1",
+        modelId: input.modelId,
+        settings: { maxTokens: input.window },
+      });
+      expect(response.status).toBe(400);
+      expect(deps.secrets.put).not.toHaveBeenCalled();
+    }
   });
 
   it("caps how many models on one connection keep their own settings", async () => {

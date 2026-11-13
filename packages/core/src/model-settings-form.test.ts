@@ -8,7 +8,7 @@ import {
   modelSettingsDefaults,
   modelSettingsFields,
   modelSettingsRequest,
-  modelSettingsTags,
+  modelThinkingLevels,
 } from "./model-settings-form.js";
 
 const COMPATIBLE = "openai-compatible";
@@ -222,14 +222,29 @@ describe("catalogEntryFor", () => {
   });
 });
 
-describe("modelSettingsTags", () => {
-  it("names what a model's own settings change, and nothing for one that follows its card", () => {
-    expect(modelSettingsTags({ maxTokens: 1, reasoning: true, images: true })).toEqual([
-      "images",
-      "thinking",
-      "limits",
-    ]);
-    expect(modelSettingsTags({ images: false })).toEqual([]);
-    expect(modelSettingsTags(undefined)).toEqual([]);
+describe("connection-specific live capabilities", () => {
+  it("uses sibling defaults instead of another connection's overlay", () => {
+    const entry = {
+      images: true,
+      reasoning: true,
+      thinkingLevels: ["low", "high"] as const,
+      defaultCapabilities: {
+        images: false,
+        reasoning: false,
+        thinkingLevels: ["low", "high"] as ("low" | "high")[],
+      },
+    };
+    const other = credential();
+    expect(modelSettingsFields(credentialModelSettings(other, "live-model"), entry)).toMatchObject({
+      images: false,
+      reasoning: false,
+    });
+    expect(
+      modelThinkingLevels(other, { ...entry, thinkingLevels: ["low", "high"] }, "live-model"),
+    ).toEqual(["off"]);
+    const customized = credential({ modelSettings: { "live-model": { reasoning: true } } });
+    expect(
+      modelThinkingLevels(customized, { ...entry, thinkingLevels: ["low", "high"] }, "live-model"),
+    ).toEqual(["low", "high"]);
   });
 });

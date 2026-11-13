@@ -320,6 +320,7 @@ test("connects, lists, and uses an OpenAI-compatible endpoint", async ({ page },
     await page.getByRole("button", { name: "Close model settings" }).click();
     await openUserSettings(page, "models");
     const saved = await manageModelConnection(page, "OpenAI-compatible");
+    await captureScreenshot(page, testInfo, "model-provider-models");
     await expect(saved.getByRole("checkbox", { name: SECOND_MODEL_ID })).toBeChecked();
     await captureScreenshot(page, testInfo, "openai-compatible-multi-model");
     await saved.getByText("Advanced", { exact: true }).click();

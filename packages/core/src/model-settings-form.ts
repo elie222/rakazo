@@ -119,19 +119,6 @@ export function connectionModels(
   ];
 }
 
-/** What a model's own settings change, in the order the apps show them. */
-export function modelSettingsTags(
-  settings: ModelSettings | undefined,
-): ("images" | "thinking" | "limits")[] {
-  return [
-    ...(settings?.images ? (["images"] as const) : []),
-    ...(settings?.reasoning ? (["thinking"] as const) : []),
-    ...(settings?.contextWindow !== undefined || settings?.maxTokens !== undefined
-      ? (["limits"] as const)
-      : []),
-  ];
-}
-
 /** The values a model runs with when its fields are left empty. */
 export function modelSettingsDefaults(
   provider: string,
@@ -170,9 +157,14 @@ export function credentialModelSettings(
  */
 export function modelThinkingLevels(
   credential: (SettingsCredential & Pick<ModelCredential, "apiProtocol">) | undefined,
-  entry: Pick<ModelCatalogEntry, "thinkingLevels"> | undefined,
+  entry: Pick<ModelCatalogEntry, "thinkingLevels" | "defaultCapabilities"> | undefined,
   modelId: string | null | undefined,
 ): ThinkingLevel[] {
+  if (credential && modelId && entry?.defaultCapabilities) {
+    const reasoning =
+      credentialModelSettings(credential, modelId).reasoning ?? entry.defaultCapabilities.reasoning;
+    return reasoning ? (entry.defaultCapabilities.thinkingLevels ?? []) : ["off"];
+  }
   if (credential?.provider !== OPENAI_COMPATIBLE_PROVIDER_ID || !modelId)
     return entry?.thinkingLevels ?? [];
   return credentialModelSettings(credential, modelId).reasoning
@@ -186,15 +178,15 @@ export function modelThinkingLevels(
  */
 export function modelSettingsFields(
   settings: ModelSettings,
-  entry?: Pick<ModelCatalogEntry, "images" | "reasoning">,
+  entry?: Pick<ModelCatalogEntry, "images" | "reasoning" | "defaultCapabilities">,
 ): ModelSettingsFields {
   return {
     contextWindow: settings.contextWindow !== undefined ? String(settings.contextWindow) : "",
     maxTokens: settings.maxTokens !== undefined ? String(settings.maxTokens) : "",
-    images: settings.images ?? entry?.images ?? false,
+    images: settings.images ?? (entry?.defaultCapabilities ?? entry)?.images ?? false,
     maxImagesPerPrompt:
       settings.maxImagesPerPrompt !== undefined ? String(settings.maxImagesPerPrompt) : "",
-    reasoning: settings.reasoning ?? entry?.reasoning ?? false,
+    reasoning: settings.reasoning ?? (entry?.defaultCapabilities ?? entry)?.reasoning ?? false,
   };
 }
 

@@ -1652,14 +1652,14 @@ it("opens a connection's page with its models, then a model's page, and goes bac
   ]);
   const view = await renderSettings();
   try {
-    expect(providersSection().textContent).toContain("2 models · 1 customized");
+    expect(providersSection().textContent).toContain("2 models");
     await openProvider("DeepSeek");
     expect(titles(view.container)).toEqual(["DeepSeek"]);
     const rows = [
       ...view.container.querySelectorAll('[data-testid="model-provider-models"] button'),
     ].map((entry) => entry.textContent);
-    // A model with its own settings comes first and says what it changes.
-    expect(rows).toEqual(["DeepSeek ReasonerLimits", "DeepSeek Chat"]);
+    // Models with their own settings stay first without adding status labels.
+    expect(rows).toEqual(["DeepSeek Reasoner", "DeepSeek Chat"]);
     await click(buttons(view.container, "DeepSeek Reasoner")[0]);
     expect(titles(view.container)).toEqual(["DeepSeek Reasoner"]);
     expect(labeled(view.container, "Maximum output tokens")?.value).toBe("2048");

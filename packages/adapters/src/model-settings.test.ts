@@ -1,3 +1,4 @@
+import { credentialModelSettings } from "@rakazo/core";
 import { describe, expect, it, vi } from "vitest";
 import { buildModelConnectPlaintext, modelCredentialDto } from "./model-connect.js";
 import {
@@ -354,6 +355,11 @@ describe("listed-only models", () => {
     };
     const [zai, codex] = withLiveModelSettings(auth, [listed, account]);
     expect(zai?.images).toBe(true);
+    expect(zai?.defaultCapabilities).toMatchObject({
+      images: listed.images,
+      reasoning: listed.reasoning,
+    });
+    expect(zai?.defaultCapabilities?.thinkingLevels?.length).toBeGreaterThan(1);
     expect(codex).toBe(account);
   });
 
@@ -363,4 +369,25 @@ describe("listed-only models", () => {
     expect(modelAcceptsImageInput("zai", "glm-5.3", true)).toBe(false);
     expect(modelAcceptsImageInput("zai", "glm-5.3-flash", false)).toBe(true);
   });
+});
+
+it("keeps legacy image settings aligned between runtime and the credential DTO", () => {
+  const row = {
+    id: "fixture",
+    provider: "openai-compatible",
+    label: "Fixture",
+    defaultModel: "served",
+    supportsImages: true,
+  };
+  const secret = {
+    kind: "openai_compatible" as const,
+    apiKey: "fake-key",
+    baseUrl: "https://example.com/v1",
+  };
+  const dto = modelCredentialDto(row, serializeModelSecret(secret));
+  for (const modelId of ["served", "other"]) {
+    expect(credentialModelSettings(dto, modelId).images).toBe(
+      connectionModelSettings(secret, row.provider, modelId, row).images,
+    );
+  }
 });
