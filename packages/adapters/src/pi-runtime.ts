@@ -95,6 +95,8 @@ import { PiJsonlSessionRecorder } from "./pi-session.js";
 import { withPiTelemetry } from "./pi-telemetry.js";
 import { withPiThinkingActivity } from "./pi-thinking-activity.js";
 import { observedPiStream } from "./pi-usage.js";
+import type { RejectedProviderRequest } from "./provider-request-shape.js";
+import { attachRejectedRequest, rejectedRequestOf } from "./provider-request-shape.js";
 import type { RuntimeContextDecision } from "./runtime-context.js";
 import { createRuntimeContextPolicy } from "./runtime-context.js";
 import { deliverFinishedShells } from "./shell-command-stream.js";
@@ -435,6 +437,7 @@ export class PiAgentRuntime implements AgentRuntime {
         };
         // The idle watchdog may clone a terminal message, preserving its content array.
         const providerFailures = new WeakSet<AssistantMessage["content"]>();
+        let rejectedRequest: RejectedProviderRequest | undefined;
         const hasBackups = Boolean(request.fallbackModels?.length);
         let agent: Agent;
         let activeStreamTarget = host.activeModel;
@@ -479,6 +482,9 @@ export class PiAgentRuntime implements AgentRuntime {
                       ...usageHooks,
                       prepareContext,
                       onProviderError: (message) => providerFailures.add(message.content),
+                      onRejectedRequest: (rejection) => {
+                        rejectedRequest = rejection;
+                      },
                     },
                   ),
                 target.config.cacheCapabilities?.retentionMode,
@@ -1175,10 +1181,14 @@ export class PiAgentRuntime implements AgentRuntime {
               ...fallbackState.backupOutcomes.values(),
             ]);
           }
-          throw modelFailure(error, message, {
+          const failure = modelFailure(error, message, {
             provider: activeStreamTarget.config.provider,
             primaryProvider: fallbackState.request.model.provider,
           });
+          // Only a rejection nothing explains needs its request's shape to be reproduced.
+          throw failure.constructor === Error
+            ? attachRejectedRequest(failure, rejectedRequest)
+            : failure;
         }
         // Only an assistant message can hold the answer a provider left off the deltas;
         // a trailing tool result is tool output, not the model's reply.
@@ -1257,7 +1267,7 @@ export class PiAgentRuntime implements AgentRuntime {
               ? new ModelAccountError(message)
               : error instanceof ModelOutputError
                 ? new ModelOutputError(message)
-                : new Error(message),
+                : attachRejectedRequest(new Error(message), rejectedRequestOf(error)),
         );
       } finally {
         stopThinking();

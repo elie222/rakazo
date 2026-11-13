@@ -42,6 +42,7 @@ import {
   shouldEnqueueCompaction,
 } from "./history-compaction.js";
 import { connectorStepNames } from "./pi-runtime-tools.js";
+import { rejectedRequestOf } from "./provider-request-shape.js";
 import {
   backOffRoutineAfterAccountError,
   clearRoutineBackoff,
@@ -1049,6 +1050,12 @@ function runFailureFingerprint(provider: string, message: string): string[] {
   return ["run.failed", provider || "unknown", kind ?? "unclassified", String(status ?? "none")];
 }
 
+/** The shape of a request the provider rejected for a reason nothing classified. */
+function requestDetails(error: unknown): { "error.details"?: string } {
+  const rejection = rejectedRequestOf(error);
+  return rejection ? { "error.details": JSON.stringify({ providerRequest: rejection }) } : {};
+}
+
 /** The turn failed: keep the reply streamed so far, record the error, and retry or notify. */
 export async function failRun(
   ctx: RunContext,
@@ -1135,6 +1142,7 @@ export async function failRun(
         "run.outcome": "failed",
         ...model.active,
         "error.fingerprint": runFailureFingerprint(model.active["model.provider"], message),
+        ...requestDetails(error),
       },
     );
   }

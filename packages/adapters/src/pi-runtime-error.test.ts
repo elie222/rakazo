@@ -7,25 +7,86 @@ import {
 } from "@rakazo/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const provider = vi.hoisted(() => ({ errorMessage: "" }));
+const provider = vi.hoisted(() => ({ errorMessage: "", rejectRequest: false }));
 
 vi.mock("@earendil-works/pi-agent-core", () => ({
   Agent: class {
     state = { errorMessage: provider.errorMessage, messages: [] };
+    constructor(
+      private readonly options: {
+        streamFn: (model: unknown, context: unknown, options: unknown) => AsyncIterable<unknown>;
+      },
+    ) {}
 
     subscribe() {}
-    async prompt() {}
+    async prompt() {
+      if (!provider.rejectRequest) return;
+      const stream = this.options.streamFn(
+        undefined,
+        { systemPrompt: "SYSTEM-PROMPT-secret", messages: [] },
+        {},
+      );
+      for await (const _event of stream) {
+        // Drain the request so its response hooks run.
+      }
+    }
     async waitForIdle() {}
     abort() {}
   },
 }));
 
-vi.mock("@earendil-works/pi-ai/providers/all", () => ({
-  builtinModels: () => ({
-    getModel: () => ({ provider: "openai-codex", id: "gpt-test" }),
-    streamSimple: vi.fn(),
-  }),
-}));
+vi.mock("@earendil-works/pi-ai/providers/all", async () => {
+  const { AssistantMessageEventStream } = await import("@earendil-works/pi-ai/utils/event-stream");
+  return {
+    builtinModels: () => ({
+      getModel: () => ({
+        provider: "openai-codex",
+        id: "gpt-test",
+        api: "openai-codex-responses",
+        input: ["text"],
+        contextWindow: 200_000,
+        maxTokens: 32_000,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      }),
+      streamSimple: (
+        model: { provider: string; id: string },
+        _context: unknown,
+        options: {
+          onPayload?: (body: unknown, model: unknown) => unknown;
+          onResponse?: (response: unknown, model: unknown) => unknown;
+        },
+      ) => {
+        const stream = new AssistantMessageEventStream();
+        void (async () => {
+          await options.onPayload?.(
+            {
+              model: model.id,
+              instructions: "SYSTEM-PROMPT-secret",
+              input: [{ role: "user", content: [{ type: "input_text", text: "PROMPT-secret" }] }],
+              reasoning: { effort: "high" },
+            },
+            model,
+          );
+          await options.onResponse?.({ status: 400, headers: {} }, model);
+          const error = {
+            role: "assistant",
+            content: [],
+            stopReason: "error",
+            errorMessage: '{"detail":"Bad Request"}',
+            api: "openai-codex-responses",
+            provider: model.provider,
+            model: model.id,
+            usage: {},
+            timestamp: 0,
+          };
+          stream.push({ type: "error", reason: "error", error } as never);
+          stream.end(error as never);
+        })();
+        return stream;
+      },
+    }),
+  };
+});
 
 vi.mock("./pi-local-provider.js", () => ({
   registerLocalProvider: (models: unknown) => models,
@@ -38,6 +99,7 @@ vi.mock("./pi-openai-compatible-provider.js", () => ({
 }));
 
 import { PiAgentRuntime } from "./pi-runtime.js";
+import { rejectedRequestOf } from "./provider-request-shape.js";
 
 function consume(model = { provider: "openai-codex", id: "gpt-test" }) {
   const runtime = new PiAgentRuntime();
@@ -69,6 +131,25 @@ function consume(model = { provider: "openai-codex", id: "gpt-test" }) {
 describe("Pi runtime errors", () => {
   beforeEach(() => {
     provider.errorMessage = "Request was aborted by policy";
+    provider.rejectRequest = false;
+  });
+
+  it("attaches the shape of a request a provider rejected for no known reason", async () => {
+    provider.errorMessage = '{"detail":"Bad Request"}';
+    provider.rejectRequest = true;
+    const error = await consume().catch((caught: unknown) => caught);
+    expect(error).not.toBeInstanceOf(ModelAccountError);
+    const rejection = rejectedRequestOf(error);
+    expect(rejection).toMatchObject({
+      provider: "openai-codex",
+      model: "gpt-test",
+      status: 400,
+      body: {
+        params: { model: "gpt-test", "reasoning.effort": "high" },
+        messages: { count: 1, items: ["user:input_text"] },
+      },
+    });
+    expect(JSON.stringify(rejection)).not.toMatch(/secret/);
   });
 
   it("propagates provider failures instead of completing with error text", async () => {
