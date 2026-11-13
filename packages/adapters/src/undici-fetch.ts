@@ -60,7 +60,7 @@ function responseForGlobalRealm(input: object): Response {
         }
         controller.enqueue(next.value);
       } catch (error) {
-        controller.error(error);
+        controller.error(withDropReason(error));
       }
     },
     cancel(reason) {
@@ -68,6 +68,15 @@ function responseForGlobalRealm(input: object): Response {
     },
   });
   return new Response(body, init);
+}
+
+/** undici fails any dropped body with a bare "terminated" and keeps why in `cause` (the
+ * server closed the socket, a reset, a timeout). Keep that reason in the message, which is
+ * all a run's error details carry. */
+function withDropReason(error: unknown): unknown {
+  if (!(error instanceof Error) || error.message !== "terminated") return error;
+  const reason = error.cause instanceof Error ? error.cause.message.trim() : "";
+  return reason ? new TypeError(`terminated (${reason})`, { cause: error.cause }) : error;
 }
 
 /** Node's fetch as this module loaded it. A later replacement of

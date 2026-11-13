@@ -1,3 +1,4 @@
+import { ph, t } from "@lingui/core/macro";
 import type { BotAvatarSet } from "@rakazo/contracts";
 import type { CallExchange } from "@rakazo/core";
 import {
@@ -40,7 +41,7 @@ import {
 import type { DictationGiveUp } from "./dictation";
 import * as dictation from "./dictation";
 import { hapticImpact, hapticSuccess } from "./haptics";
-import { deviceLanguage, getActiveUiLocale, t } from "./i18n";
+import { deviceLanguage, getActiveUiLocale } from "./i18n";
 import type { MobileSnapshot } from "./mobile-types";
 import { blockText } from "./mobile-types";
 import { reportMobileError } from "./monitoring";
@@ -48,7 +49,14 @@ import { fetchServer } from "./server-headers";
 import { currentSessionGeneration, subscribeSessionGeneration } from "./session";
 import { errorText, voiceAccountErrorText } from "./user-error";
 import type { SpeechOwner } from "./voice";
-import { createSpeechOwner, ensureVoiceConsent, speakText, stopSpeaking } from "./voice";
+import {
+  createSpeechOwner,
+  ensureVoiceConsent,
+  setCallAudio,
+  setDictationAudio,
+  speakText,
+  stopSpeaking,
+} from "./voice";
 
 export type CallPhase = "listening" | "thinking" | "speaking";
 
@@ -101,6 +109,7 @@ export type CallDeps = {
   stopSpeaking: () => void;
   /** The opening cue as the call starts, the closing one once the caller's turn is heard. */
   cue: (cue: CallCue) => Promise<void>;
+  audio: (active: boolean) => Promise<void>;
   /** The soft sound while the bot works on a turn: loaded at call start, freed at hang-up. */
   waitSound: (action: "preload" | "start" | "stop" | "release") => void;
   watch: (
@@ -173,8 +182,9 @@ let turnSeq = 0;
 let speechSeq = 0;
 /** Whether the provider can transcribe, so the fallback path is worth trying at all. */
 let canTranscribe = true;
-/** Whether this device does its own speech recognition; unknown until the first turn. */
+/** Whether this device does its own speech recognition; unknown until a turn tries it again. */
 let onDevice: boolean | null = null;
+let recognitionFailures = 0;
 /** A microphone session is running, so playback can leave it open instead of restarting it. */
 let micOpen = false;
 /** True from ringing until the start cue ends: nothing may open the microphone before the greeting. */
@@ -255,6 +265,7 @@ export function startCall(
   callRunId = null;
   canTranscribe = call.transcribe ?? true;
   onDevice = null;
+  recognitionFailures = 0;
   micOpen = false;
   bargedIn = false;
   spokenMemory.clear();
@@ -284,6 +295,10 @@ export function startCall(
 async function openCall(openedCallId: string, greeting?: string): Promise<void> {
   deps.waitSound("preload");
   opening = true;
+  await deps.audio(true).catch((error: unknown) => {
+    reportMobileError(error, "voice.microphone", { source: "call-audio" });
+  });
+  if (!state || callId !== openedCallId) return;
   await deps.cue("start").catch(() => undefined);
   if (!state || callId !== openedCallId || botEndedCall) return;
   hapticSuccess();
@@ -327,6 +342,7 @@ export function endCall(): void {
   }
   turn?.abort();
   turn = null;
+  if (state) void deps.audio(false).catch(() => undefined);
   unwatch?.();
   unwatch = null;
   if (hangUpTimer) clearTimeout(hangUpTimer);
@@ -415,7 +431,7 @@ async function openMic(): Promise<void> {
   // first snapshot arrives, the call cannot tell, so it waits for that too.
   if (!thread || pendingCallSecretAsk(thread)) {
     heldForCode = true;
-    if (thread) set({ caption: t("Hang up, then enter the code on screen.") });
+    if (thread) set({ caption: t`Hang up, then enter the code on screen.` });
     return;
   }
   micOpen = true;
@@ -433,7 +449,9 @@ async function openMic(): Promise<void> {
             if (mine()) heardInterim(text);
           },
           onFinal: (text) => {
-            if (mine()) void handleTranscript(text);
+            if (!mine()) return;
+            recognitionFailures = 0;
+            void handleTranscript(text);
           },
           onGiveUp: (reason) => {
             if (!mine()) return;
@@ -441,7 +459,10 @@ async function openMic(): Promise<void> {
             micOpen = false;
             interim.clear();
             set({ heard: "" });
-            if (reason === "failed") onDevice = false;
+            if (reason === "failed") {
+              onDevice = false;
+              recognitionFailures += 1;
+            }
             // Recording must wait for playback; recognition can still hear a barge-in.
             if (state?.phase !== "speaking" || onDevice !== false) void openMic();
           },
@@ -454,6 +475,7 @@ async function openMic(): Promise<void> {
         return;
       }
       onDevice = false;
+      recognitionFailures = 0;
     }
     // Muting or hanging up while the device was deciding: no microphone after all.
     if (!mine() || !state || state.muted) {
@@ -463,9 +485,7 @@ async function openMic(): Promise<void> {
     if (!canTranscribe) {
       micOpen = false;
       set({
-        caption: t(
-          "Allow speech recognition in Settings, or connect ElevenLabs, OpenAI, or Fish Audio.",
-        ),
+        caption: t`Allow speech recognition in Settings, or connect a voice provider that transcribes.`,
       });
       return;
     }
@@ -474,6 +494,7 @@ async function openMic(): Promise<void> {
     const text = clip ? await deps.transcribe(clip, controller.signal) : "";
     if (!mine()) return;
     micOpen = false;
+    if (recognitionFailures === 1) onDevice = null;
     await handleTranscript(text);
   } catch (error) {
     if (!mine()) return;
@@ -521,7 +542,7 @@ async function handleTranscript(raw: string): Promise<void> {
   const next = callTurn(thread, text);
   if (next.kind === "enter_code") {
     heldForCode = true;
-    set({ phase: "listening", heard: "", caption: t("Hang up, then enter the code on screen.") });
+    set({ phase: "listening", heard: "", caption: t`Hang up, then enter the code on screen.` });
     return;
   }
   const closing = isFarewell(text);
@@ -534,7 +555,7 @@ async function handleTranscript(raw: string): Promise<void> {
     callRunId = next.runId;
     if (closing) hangUpAfterReply = true;
     void listen();
-    set({ caption: t("Approve or deny it on screen.") });
+    set({ caption: t`Approve or deny it on screen.` });
     return;
   }
   const { botId } = state;
@@ -623,7 +644,7 @@ function failTurn(error: unknown): void {
     endCall();
     return;
   }
-  set({ phase: "listening", caption: errorText(error, t("Could not hear that.")) });
+  set({ phase: "listening", caption: errorText(error, t`Could not hear that.`) });
   void listen();
 }
 
@@ -638,7 +659,7 @@ function blockForConsent(error: AiConsentBlocked): void {
     phase: "listening",
     muted: true,
     heard: "",
-    caption: errorText(error, t("Could not hear that.")),
+    caption: errorText(error, t`Could not hear that.`),
   });
 }
 
@@ -673,14 +694,14 @@ function onThread(next: MobileSnapshot): void {
   if (!state) return;
   if (pendingCallSecretAsk(next)) {
     // Also when the mic never opened (the thread loaded late): the caller still needs to know.
-    if (heldForCode) set({ caption: t("Hang up, then enter the code on screen.") });
+    if (heldForCode) set({ caption: t`Hang up, then enter the code on screen.` });
     if (!micOpen) return;
     heldForCode = true;
     turn?.abort();
     turn = null;
     micOpen = false;
     interim.clear();
-    set({ heard: "", caption: t("Hang up, then enter the code on screen.") });
+    set({ heard: "", caption: t`Hang up, then enter the code on screen.` });
     return;
   }
   // The first snapshot arrived, or the code was entered on screen: listen again unless the
@@ -696,7 +717,7 @@ async function switchCall(target: CallSwitch, heard: string): Promise<void> {
   switching = true;
   const { botId } = state;
   const switchingCallId = callId;
-  const notice = t("OK, switching to {name}.", { name: target.name });
+  const notice = t`OK, switching to ${ph({ name: target.name })}.`;
   turn?.abort();
   turn = null;
   micOpen = false;
@@ -769,7 +790,7 @@ function speakAndListen(text: string): void {
         blockForConsent(error);
         return;
       }
-      set({ caption: errorText(error, t("Could not speak that.")) });
+      set({ caption: errorText(error, t`Could not speak that.`) });
     })
     .finally(() => {
       if (superseded()) return;
@@ -805,7 +826,7 @@ function productionDeps(requestContext?: ApiRequestContext): CallDeps {
   const callContext = async () => {
     const context = requestContext ?? (await captureApiRequestContext());
     if (context.sessionGeneration !== generation || currentSessionGeneration() !== generation)
-      throw new Error(t("Something went wrong. Try again."));
+      throw new Error(t`Something went wrong. Try again.`);
     return context;
   };
   // The server rejected this call's session: stop listening instead of opening the
@@ -847,6 +868,7 @@ function productionDeps(requestContext?: ApiRequestContext): CallDeps {
     endCall: async (botId, id) => closeCall(botId, id, await callContext()),
     speak: (botId, text) => speakReply(botId, text, speechOwner, requestContext),
     stopSpeaking: () => stopSpeaking(speechOwner),
+    audio: setCallAudio,
     cue: playCallCue,
     waitSound: (action) => {
       if (action === "start") void startWaitSound().catch(() => undefined);
@@ -864,12 +886,11 @@ function productionDeps(requestContext?: ApiRequestContext): CallDeps {
 async function dictateTurn(handlers: DictationHandlers, signal: AbortSignal): Promise<boolean> {
   if (!(await dictation.available())) return false;
   const lang = recognitionLocaleTag(getActiveUiLocale(), await deviceLanguage());
-  await dictation.listen({ ...handlers, signal, lang });
+  await dictation.listen({ ...handlers, signal, lang, call: true });
   return true;
 }
 
-// The turn whose recording owns the shared audio mode. A hung-up turn that finishes
-// late must not switch recording off under the next call's recorder.
+// A dictation that finishes late must not switch recording off under the next one's recorder.
 let recordingTurn: AbortSignal | undefined;
 
 /**
@@ -880,23 +901,23 @@ export async function recordClip(
   signal: AbortSignal,
   until?: AbortSignal,
 ): Promise<CallClip | null> {
-  const { AudioModule, RecordingPresets, setAudioModeAsync } = await import("expo-audio");
+  const { AudioModule, RecordingPresets } = await import("expo-audio");
   if (signal.aborted) return null;
   const permission = await AudioModule.requestRecordingPermissionsAsync();
   // The call can end while the microphone prompt is open.
   if (signal.aborted) return null;
   if (!permission.granted)
     throw new ExpectedTurnFailure(
-      until
-        ? t("Allow microphone access to dictate.")
-        : t("Allow microphone access to call a bot."),
+      until ? t`Allow microphone access to dictate.` : t`Allow microphone access to call a bot.`,
     );
   let recorder: AudioRecorder | undefined;
   let heardSpeech = false;
   const maxMs = until ? MAX_DICTATION_MS : MAX_CLIP_MS;
   try {
-    recordingTurn = signal;
-    await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
+    if (until) {
+      recordingTurn = signal;
+      await setDictationAudio(true);
+    }
     recorder = new AudioModule.AudioRecorder({
       ...RecordingPresets.HIGH_QUALITY,
       isMeteringEnabled: true,
@@ -949,7 +970,7 @@ export async function recordClip(
     recorder?.release();
     if (recordingTurn === signal) {
       recordingTurn = undefined;
-      await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true });
+      await setDictationAudio(false);
     }
   }
 }
@@ -981,12 +1002,12 @@ export async function transcribeClip(
   );
   const body = await readJsonObjectWithin<{ text?: string; error?: string; code?: string }>(res, {
     maxBytes: MAX_TRANSCRIPTION_RESPONSE_BYTES,
-    tooLargeMessage: t("Could not transcribe that."),
+    tooLargeMessage: t`Could not transcribe that.`,
     signal,
   });
   if (!res.ok) {
     throw new ExpectedTurnFailure(
-      voiceAccountErrorText(body) ?? errorText(body.error ?? "", t("Could not transcribe that.")),
+      voiceAccountErrorText(body) ?? errorText(body.error ?? "", t`Could not transcribe that.`),
     );
   }
   return body.text ?? "";
@@ -1007,7 +1028,7 @@ async function speakReply(
   requestContext?: ApiRequestContext,
 ): Promise<void> {
   if (!(await speakText(text, { botId, owner, requestContext }))) {
-    throw new Error(t("Add a voice provider in Voice settings."));
+    throw new Error(t`Add a voice provider in Voice settings.`);
   }
 }
 
@@ -1082,14 +1103,14 @@ function watchReplies(
         failure = undefined;
       } catch (error) {
         if (controller.signal.aborted) return;
-        // A 4xx other than 408/429 is the server's answer; asking again only polls it. Without
-        // a first snapshot the microphone stays shut, so the call cannot go on: hang it up, from
-        // the caller's side so the server is told. A first load that keeps failing ends it too,
-        // after as many tries as a run of failed turns.
+        // A 4xx other than 408/429 is the server's answer; asking again only polls it. The
+        // call cannot go on without the feed, whether or not a snapshot is already on screen:
+        // hang it up, from the caller's side so the server is told. A first load that keeps
+        // failing ends it too, after as many tries as a run of failed turns.
         const giveUp =
           !isRetryableError(error) || (!snapshot && ++firstLoadFailures >= MAX_TURN_FAILURES);
         if (giveUp) {
-          if (!snapshot && callId === watchedCallId) endCall();
+          if (callId === watchedCallId) endCall();
           return;
         }
         retry = Math.min(FEED_RETRY_MAX_MS, retry * 2);

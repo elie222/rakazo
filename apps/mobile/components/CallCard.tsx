@@ -1,3 +1,5 @@
+import { ph } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
 import { accountDisplay } from "@rakazo/core";
 import { typeScale } from "@rakazo/ui-tokens";
 import { AudioModule } from "expo-audio";
@@ -12,10 +14,8 @@ import { rpc } from "../lib/api";
 import { startCallBackground, stopCallBackground } from "../lib/call-background";
 import type { CallPhase } from "../lib/call-session";
 import { hangUp, toggleMute, toggleTranscript, useCallSession } from "../lib/call-session";
-import { useI18n } from "../lib/i18n";
 import { useMobileTokens } from "../lib/native";
 import { currentSessionGeneration, subscribeSessionGeneration } from "../lib/session";
-import { setVoiceBackgroundPlayback } from "../lib/voice";
 import { BotAvatar } from "./bot-avatar";
 import { GlassIconButton } from "./glass-icon-button";
 import { GlassSurface } from "./glass-surface";
@@ -36,7 +36,7 @@ function KeepCallAwake() {
 
 export function CallCard() {
   const call = useCallSession();
-  const { t } = useI18n();
+  const { t } = useLingui();
   const tokens = useMobileTokens();
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -63,7 +63,7 @@ export function CallCard() {
       .then((me) => {
         // A sign-out while the request is in flight must not restore the old account's initial.
         if (generation !== currentSessionGeneration()) return;
-        cachedInitial = accountDisplay(me, t("You")).initial ?? "";
+        cachedInitial = accountDisplay(me, t`You`).initial ?? "";
         setInitial(cachedInitial);
       })
       .catch(() => undefined);
@@ -78,13 +78,6 @@ export function CallCard() {
       }),
     [],
   );
-
-  // A call keeps its replies playing while the screen is off.
-  useEffect(() => {
-    if (!onCall) return;
-    setVoiceBackgroundPlayback(true);
-    return () => setVoiceBackgroundPlayback(false);
-  }, [onCall]);
 
   // A microphone foreground service keeps the call alive when the display sleeps.
   // Start it only after the microphone permission is granted; retry when the call
@@ -156,7 +149,7 @@ export function CallCard() {
         />
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={t("On a call with {name}", { name: call.botName })}
+          accessibilityLabel={t`On a call with ${ph({ name: call.botName })}`}
           onPress={() =>
             router.push({ pathname: "/thread", params: { botId: call.botId, name: call.botName } })
           }
@@ -172,7 +165,7 @@ export function CallCard() {
       </View>
       <View style={styles.actions}>
         <RoundButton
-          label={t("Settings")}
+          label={t`Settings`}
           ios="gearshape"
           android="settings-outline"
           color={tokens.foreground}
@@ -180,7 +173,7 @@ export function CallCard() {
           onPress={() => router.push("/voice")}
         />
         <RoundButton
-          label={t("Transcript")}
+          label={t`Transcript`}
           ios="captions.bubble"
           android="chatbox-outline"
           selected={call.transcriptOpen}
@@ -189,7 +182,7 @@ export function CallCard() {
           onPress={toggleTranscript}
         />
         <RoundButton
-          label={call.muted ? t("Unmute") : t("Mute")}
+          label={call.muted ? t`Unmute` : t`Mute`}
           ios={call.muted ? "mic.slash" : "mic"}
           android={call.muted ? "mic-off-outline" : "mic-outline"}
           selected={call.muted}
@@ -198,9 +191,9 @@ export function CallCard() {
           onPress={toggleMute}
         />
         <RoundButton
-          label={t("Hang up")}
+          label={t`Hang up`}
           ios="phone.down.fill"
-          android="call-outline"
+          android={{ material: "phone-hangup" }}
           color={tokens.destructiveForeground}
           border={tokens.destructiveFill}
           background={tokens.destructiveFill}

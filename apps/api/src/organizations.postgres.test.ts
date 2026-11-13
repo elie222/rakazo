@@ -566,10 +566,14 @@ describePostgres("organizations (PostgreSQL)", () => {
       returnBilling = resolve;
     });
     const deadline = new AbortController();
+    // Going on after its deadline, the attempt's next step would be a query; record any it makes.
+    let billingReturned = false;
+    const queriesAfterBilling: string[] = [];
     const late = runAsSystem("an attempt cut off at its deadline", () =>
       deleteOrganization(
         {
           ...deps(),
+          prisma: recordingQueries(prisma, () => billingReturned, queriesAfterBilling),
           billing: {
             cancelForDeletedOrganization: async () => {
               billingCalled();
@@ -594,9 +598,11 @@ describePostgres("organizations (PostgreSQL)", () => {
     const retry = client(ada).organizations.remove({ organizationId: work.id });
     await until(() => sandbox.started.includes(ref));
 
+    billingReturned = true;
     returnBilling();
-    // Give the cut-off attempt time to go on, if it would.
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    // The cut-off attempt resumes within these microtasks, so by now it has stopped or gone on.
+    await new Promise(setImmediate);
+    expect(queriesAfterBilling).toEqual([]);
     expect(sandbox.started.filter((started) => started === ref)).toHaveLength(1);
     release();
     await retry;
@@ -685,6 +691,36 @@ describePostgres("organizations (PostgreSQL)", () => {
 
     expect(await system.space.findUnique({ where: { id: work.id } })).toMatchObject({
       deletingAt: expect.any(Date),
+      deletionClaimId: expect.stringContaining(`organization-deletion:${work.id}:`),
+    });
+    expect((await client(ada).organizations.list()).organizations).toHaveLength(1);
+  });
+
+  it("takes over an account deletion's lapsed claim, keeping it when billing fails", async () => {
+    const ada = await signup();
+    const work = await client(ada).organizations.create({ name: "Work" });
+    await subscribe(asUser(ada, work.id));
+    // An account deletion that stalled after claiming the Space.
+    await system.space.updateMany({
+      where: { organizationId: work.id },
+      data: {
+        deletionClaimId: `account-deletion:${ada.userId}`,
+        deletionAttemptId: "account-attempt",
+        deletingAt: new Date(Date.now() - 10 * 60_000),
+      },
+    });
+    vi.spyOn(emulator, "cancelCustomerSubscriptions").mockRejectedValueOnce(
+      new Error("billing unavailable"),
+    );
+
+    await expect(client(ada).organizations.remove({ organizationId: work.id })).rejects.toThrow(
+      "billing unavailable",
+    );
+
+    // Parked, not released: the lease is at the epoch and the account attempt id is gone.
+    expect(await system.space.findUnique({ where: { id: work.id } })).toMatchObject({
+      deletingAt: new Date(0),
+      deletionAttemptId: null,
       deletionClaimId: expect.stringContaining(`organization-deletion:${work.id}:`),
     });
     expect((await client(ada).organizations.list()).organizations).toHaveLength(1);
@@ -1082,4 +1118,29 @@ function memoryRing() {
     sampleByMasterKey: async () => [],
   };
   return new ContentKeyRing(new LocalKeyProvider([{ id: "k1", key: randomBytes(32) }]), store);
+}
+
+/** `prisma`, recording each model query made while `recording()` is true. */
+function recordingQueries(
+  prisma: PrismaClient,
+  recording: () => boolean,
+  queries: string[],
+): PrismaClient {
+  return new Proxy(prisma, {
+    get(target, model, receiver) {
+      const delegate = Reflect.get(target, model, receiver);
+      if (typeof model !== "string" || model.startsWith("$") || typeof delegate !== "object")
+        return delegate;
+      return new Proxy(delegate, {
+        get(methods, method, methodsReceiver) {
+          const query = Reflect.get(methods, method, methodsReceiver);
+          if (typeof query !== "function") return query;
+          return (...args: unknown[]) => {
+            if (recording()) queries.push(`${model}.${String(method)}`);
+            return query.apply(methods, args);
+          };
+        },
+      });
+    },
+  });
 }

@@ -13,6 +13,14 @@ describe("cloud agent tool boundary", () => {
     ).toBe(false);
     expect(selectCloudAgentTools(builtinAgentTools, true)).toBe(builtinAgentTools);
   });
+  it("keeps only status and cancellation for existing agents without launch access", () => {
+    expect(
+      selectCloudAgentTools(builtinAgentTools, false, true)
+        .filter((tool) => CLOUD_AGENT_TOOL_NAMES.has(tool.name))
+        .map((tool) => tool.name)
+        .sort(),
+    ).toEqual(["cloud_agent_cancel", "cloud_agent_status"]);
+  });
   it("classifies every mutation as consequential", () => {
     for (const name of ["cloud_agent_launch", "cloud_agent_reply", "cloud_agent_cancel"])
       expect(toolRequiresApproval(name, false)).toBe(true);

@@ -1,3 +1,4 @@
+import { t } from "@lingui/core/macro";
 import type { IncomingBotCall, SpaceBot, SpaceNavigation } from "@rakazo/contracts";
 import type { ringingCall } from "@rakazo/core";
 import {
@@ -5,6 +6,7 @@ import {
   callIsRinging,
   isRetryableError,
   nextIncomingCall,
+  reconnectDelayMs,
   respondToIncomingCall,
   retryDelayMs,
 } from "@rakazo/core";
@@ -15,7 +17,6 @@ import type { ApiRequestContext } from "./api";
 import { captureApiRequestContext, rpc } from "./api";
 import { subscribeIncomingCallEvents } from "./api-live";
 import { endCall, getSnapshot, startCall, subscribe as subscribeCall } from "./call-session";
-import { t } from "./i18n";
 import { registerCallPushToken } from "./push";
 import { serverHeaders } from "./server-headers";
 import { currentSessionGeneration, loadSessionToken, registerSessionDiskCache } from "./session";
@@ -137,10 +138,12 @@ async function follow(controller: AbortController) {
   let retry = 250;
   let failure: unknown;
   while (!controller.signal.aborted && generation === currentSessionGeneration()) {
+    let opened = false;
     try {
       await subscribeIncomingCallEvents((incoming) => {
         // Ignore events from an aborted feed so a late callback cannot resolve a newer wait.
         if (controller.signal.aborted || feed !== controller) return;
+        opened = true;
         const listed = new Map(
           incoming.map((call) => [
             call.incomingCall.callId,
@@ -165,7 +168,10 @@ async function follow(controller: AbortController) {
       if (controller.signal.aborted || !isRetryableError(error)) return;
       failure = error;
     }
-    await abortableDelay(retryDelayMs(failure, retry), controller.signal).catch(() => undefined);
+    await abortableDelay(
+      opened ? reconnectDelayMs(failure) : retryDelayMs(failure, retry),
+      controller.signal,
+    ).catch(() => undefined);
     retry = Math.min(retry * 2, 5000);
   }
 }
@@ -282,11 +288,11 @@ export async function respondToMobileCall(call: IncomingBotCall, action: "answer
       // The session changed mid-answer: rpc drops the hang-up below locally, because its
       // context belongs to the old generation, so the server keeps the call answered.
       if (generation !== currentSessionGeneration())
-        throw new Error(t("Something went wrong. Try again."));
+        throw new Error(t`Something went wrong. Try again.`);
       const voice = await rpc("voice/status", {}, { requestContext: context });
       if (generation !== currentSessionGeneration())
-        throw new Error(t("Something went wrong. Try again."));
-      if (nativeEnded.has(target.callId)) throw new Error(t("This call is no longer ringing."));
+        throw new Error(t`Something went wrong. Try again.`);
+      if (nativeEnded.has(target.callId)) throw new Error(t`This call is no longer ringing.`);
       // Answering during a call replaces it, like a phone's end-and-accept.
       if (getSnapshot()) endCall();
       activeNativeCall = target.callId;
@@ -332,29 +338,34 @@ async function drainNative() {
   const state = await native?.incomingState();
   // A sign-out during the read belongs to the old session; the new one drains for itself.
   if (!state || !running || generation !== currentSessionGeneration()) return;
-  if (state.token) await registerCallPushToken({ voipToken: state.token }).catch(() => undefined);
-  // Answers first: an answer expires with its ring, while showing other rings can wait for the roster.
-  for (const action of state.actions) {
-    if (action.action === "end") {
-      nativeEnded.add(action.callId);
-      if (activeNativeCall === action.callId) endCall();
-      continue;
+  try {
+    // Answers first: an answer expires with its ring, while showing other rings can wait for the roster.
+    for (const action of state.actions) {
+      if (action.action === "end") {
+        nativeEnded.add(action.callId);
+        if (activeNativeCall === action.callId) endCall();
+        continue;
+      }
+      if (!callIsRinging(action)) {
+        await native?.finishAnswer(action.callId, false);
+        continue;
+      }
+      const bot = await callerFor(action.botId, action.callId).catch(() => null);
+      // A stale lookup answers nothing and completes no native action: a newer feed owns it.
+      if (bot === undefined) continue;
+      if (!bot) {
+        await native?.finishAnswer(action.callId, false);
+        continue;
+      }
+      await respondToMobileCall(
+        { ...bot, incomingCall: { ...action, reason: "", opening: "" } },
+        "answer",
+      ).catch(() => undefined);
     }
-    if (!callIsRinging(action)) {
-      await native?.finishAnswer(action.callId, false);
-      continue;
-    }
-    const bot = await callerFor(action.botId, action.callId).catch(() => null);
-    // A stale lookup answers nothing and completes no native action: a newer feed owns it.
-    if (bot === undefined) continue;
-    if (!bot) {
-      await native?.finishAnswer(action.callId, false);
-      continue;
-    }
-    await respondToMobileCall(
-      { ...bot, incomingCall: { ...action, reason: "", opening: "" } },
-      "answer",
-    ).catch(() => undefined);
+  } finally {
+    // Start storage and network bookkeeping only after pending answers finish.
+    if (state.token && running && generation === currentSessionGeneration())
+      void registerCallPushToken({ voipToken: state.token }).catch(() => undefined);
   }
   for (const ring of state.ringing ?? []) {
     if (!callIsRinging(ring)) continue;
@@ -443,10 +454,10 @@ export function startIncomingCalls() {
   void Notifications.setNotificationCategoryAsync?.("incoming-call", [
     {
       identifier: "decline",
-      buttonTitle: t("Decline"),
+      buttonTitle: t`Decline`,
       options: { opensAppToForeground: true, isDestructive: true },
     },
-    { identifier: "answer", buttonTitle: t("Answer"), options: { opensAppToForeground: true } },
+    { identifier: "answer", buttonTitle: t`Answer`, options: { opensAppToForeground: true } },
   ]).catch(() => undefined);
   const refresh = () => {
     const generation = currentSessionGeneration();

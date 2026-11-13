@@ -30,7 +30,6 @@ vi.mock("./api-server", () => ({}));
 vi.mock("./api-auth", () => ({}));
 vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({ configureClientBuild: vi.fn() }));
-vi.mock("./i18n", () => ({ t: (message: string) => message }));
 
 import { IOS_APP_STORE_URL } from "@rakazo/contracts";
 import {

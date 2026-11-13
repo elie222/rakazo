@@ -65,3 +65,14 @@ The workflow refuses tags that do not match the desktop version, have no
 matching changelog section, are not on `main`, or are not newer than the latest
 published release. The release text is that changelog section followed by the
 merged pull requests.
+
+## Apple silicon server bundle
+
+The macOS job also builds `rakazo-server-darwin-arm64-<version>.tar.xz` with
+`scripts/build-server-bundle.mjs` and publishes it as an asset of the same
+release. It holds the API, worker, web server and migrations with their
+production dependencies, so This computer can run them without Docker. The app
+does not include it; it ships only `server-bundle.json` in its resources, with
+the asset's `url`, `sha256`, `size` and `version`, and downloads the bundle when
+someone picks This computer. Builds without that file, such as local packaging,
+have no bundle to download.

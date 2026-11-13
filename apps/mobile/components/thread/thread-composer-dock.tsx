@@ -1,3 +1,5 @@
+import { ph } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
 import { replyAttachment } from "@rakazo/core";
 import type { ReactNode } from "react";
 import { useEffect, useRef } from "react";
@@ -7,7 +9,6 @@ import Animated, { interpolate, useAnimatedStyle, useSharedValue } from "react-n
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { mobileTokens } from "../../lib/appearance";
 import type { MobileArtifactTarget } from "../../lib/artifact-open";
-import { useI18n } from "../../lib/i18n";
 import type { MobileMessage } from "../../lib/mobile-types";
 import type { PendingAttachment } from "../../lib/thread-attachments";
 import type { ThreadColumnPadding } from "../../lib/thread-edges";
@@ -16,6 +17,7 @@ import { ComposerReplyPreview } from "../composer-reply-preview";
 import { GlassSurface } from "../glass-surface";
 import { NativeSymbol } from "../native-symbol";
 import { ReplyDismissButton } from "../reply-dismiss-button";
+import { ThreadEdgeFade } from "./thread-edge-fade";
 
 /**
  * Holds the composer above the keyboard, with the reply being written and the draft's
@@ -53,7 +55,7 @@ export function ThreadComposerDock({
   children: ReactNode;
 }) {
   const tokens = mobileTokens();
-  const { t } = useI18n();
+  const { t } = useLingui();
   const insets = useSafeAreaInsets();
   // Frame by frame, including a swipe that drags the keyboard down.
   const keyboardProgress = useSharedValue(KeyboardController.isVisible() ? 1 : 0);
@@ -74,12 +76,18 @@ export function ThreadComposerDock({
     },
     [],
   );
+  // On iOS the input rests just above the home indicator rather than a full safe area up.
   const composerRestingPadding =
-    Platform.OS === "ios" ? insets.bottom : Math.max(insets.bottom + 12, 24);
+    Platform.OS === "ios" ? Math.max(insets.bottom - 14, 8) : Math.max(insets.bottom + 12, 24);
   // Hands the composer from the keyboard to the safe area as the keyboard moves, so it never
   // dips into the home indicator and then jumps back up.
   const composerKeyboardPadding = useAnimatedStyle(() => ({
     paddingBottom: interpolate(keyboardProgress.value, [0, 1], [composerRestingPadding, 12]),
+  }));
+
+  // Ends about halfway up the input, following it as the keyboard moves.
+  const fadeHeight = useAnimatedStyle(() => ({
+    height: interpolate(keyboardProgress.value, [0, 1], [composerRestingPadding, 12]) + 22,
   }));
 
   const noticeHeight = useRef(0);
@@ -97,6 +105,7 @@ export function ThreadComposerDock({
         columnPadding,
       ]}
     >
+      {hidden ? null : <ThreadEdgeFade edge="bottom" style={fadeHeight} />}
       <View
         pointerEvents="box-none"
         onLayout={(event) => {
@@ -196,7 +205,7 @@ export function ThreadComposerDock({
                     {attachment.name}
                   </Text>
                   <Pressable
-                    accessibilityLabel={t("Remove {name}", { name: attachment.name })}
+                    accessibilityLabel={t`Remove ${ph({ name: attachment.name })}`}
                     onPress={() => onRemoveAttachment(attachment.id)}
                   >
                     <NativeSymbol

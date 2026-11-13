@@ -2,6 +2,7 @@ import {
   COMPUTER_ALLOWANCE_USED_ERROR,
   COMPUTER_PROVIDER_UNAVAILABLE_ERROR,
   COMPUTER_RATE_LIMIT_ERROR,
+  COMPUTER_UNRESPONSIVE_ERROR,
 } from "@rakazo/contracts";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -12,12 +13,14 @@ import {
   MISSING_MODEL_RUN_ERROR,
   MISSING_TOOL_FINAL_RESPONSE_ERROR,
   MODEL_CONTEXT_TOO_SMALL_ERROR,
+  MODEL_CREDIT_CAP_REACHED_ERROR,
   MODEL_CREDITS_EXHAUSTED_ERROR,
   MODEL_IMAGE_INPUT_ERROR,
   MODEL_OUTPUT_CUT_ERROR,
   MODEL_OUTPUT_LIMIT_ERROR,
   MODEL_REQUEST_LIMIT_ERROR,
   MODEL_REQUIRED_SEND_ERROR,
+  MODEL_UNPRICED_FOR_CREDITS_ERROR,
   modelFallbackFailure,
   normalizeRunError,
   userRunError,
@@ -471,6 +474,7 @@ describe("normalizeRunError", () => {
       '400 {"type":"error","error":{"type":"api_error","message":"Upstream request failed: [api_error] Upstream response was not valid JSON"}}',
       "Codex error: This content was flagged for possible cybersecurity risk. If this seems wrong, try rephrasing your request.",
       "Cyber safeguards flagged this message. If this is legitimate security work, you can apply for the Cyber Verification Program: https://support.claude.com/en/articles/<article-id>",
+      "This request triggered cyber-related safeguards. To learn about the Cyber Verification Program, see https://support.claude.com/en/articles/<article-id>",
       MODEL_OUTPUT_LIMIT_ERROR,
       "Upstream error from Example: HttpError: HTTP 400: Tool calls cutoff by max_tokens.",
     ])("calls unusable model output what it is: %s", (details) => {
@@ -482,10 +486,25 @@ describe("normalizeRunError", () => {
       });
     });
 
+    it("shows an operator cap without suggesting buying credits or changing connections", () => {
+      expect(normalizeRunError(MODEL_CREDIT_CAP_REACHED_ERROR)).toEqual({
+        summary: MODEL_CREDIT_CAP_REACHED_ERROR,
+        details: MODEL_CREDIT_CAP_REACHED_ERROR,
+      });
+    });
+
     it("keeps the advice when Rakazo credits run out", () => {
       expect(normalizeRunError(MODEL_CREDITS_EXHAUSTED_ERROR)).toEqual({
         summary: MODEL_CREDITS_EXHAUSTED_ERROR,
         details: MODEL_CREDITS_EXHAUSTED_ERROR,
+        recovery: "connection",
+      });
+    });
+
+    it("sends a model credits cannot price to the member's own connection", () => {
+      expect(normalizeRunError(MODEL_UNPRICED_FOR_CREDITS_ERROR)).toEqual({
+        summary: MODEL_UNPRICED_FOR_CREDITS_ERROR,
+        details: MODEL_UNPRICED_FOR_CREDITS_ERROR,
         recovery: "connection",
       });
     });
@@ -513,8 +532,20 @@ describe("normalizeRunError", () => {
       '400: {"message":"Unsupported model parameter: fixture_option"}',
       '400: {"message":"Unknown model setting: fixture_option"}',
       "TypeError: Cannot read properties of undefined (reading 'content')",
+      '400 {"message":"Provider returned error","code":400,"metadata":{"raw":"{}","provider_name":""}}',
     ])("leaves requests we built and unknown shapes unattributed: %s", (details) => {
       expect(normalizeRunError(details).kind).toBeUndefined();
+    });
+
+    it.each([
+      '400 {"message":"Provider returned error","code":400,"metadata":{"raw":"{\\"error\\":{\\"message\\":\\"example upstream failure\\"}}","provider_name":"ExampleUpstream","is_byok":false}}',
+      '400 {"type":"error","error":{"type":"invalid_request_error","message":"Invalid effort level: max"},"request_id":"req_example"}',
+    ])("suggests another model when the provider refuses this one's request: %s", (details) => {
+      expect(normalizeRunError(details)).toMatchObject({
+        summary: "The model provider returned an error.",
+        recovery: "model",
+        status: 400,
+      });
     });
   });
 });
@@ -696,12 +727,13 @@ it.each([
   });
 });
 
-it.each([COMPUTER_RATE_LIMIT_ERROR, COMPUTER_PROVIDER_UNAVAILABLE_ERROR])(
-  "shows the computer error %j as written",
-  (message) => {
-    expect(normalizeRunError(message)).toEqual({ summary: message, details: message });
-  },
-);
+it.each([
+  COMPUTER_RATE_LIMIT_ERROR,
+  COMPUTER_PROVIDER_UNAVAILABLE_ERROR,
+  COMPUTER_UNRESPONSIVE_ERROR,
+])("shows the computer error %j as written", (message) => {
+  expect(normalizeRunError(message)).toEqual({ summary: message, details: message });
+});
 
 it("sends spent computer hours to billing", () => {
   expect(normalizeRunError(COMPUTER_ALLOWANCE_USED_ERROR)).toEqual({

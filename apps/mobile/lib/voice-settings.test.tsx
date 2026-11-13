@@ -14,7 +14,6 @@ const state = vi.hoisted(() => ({
   params: {} as { spaceId?: string },
   held: null as Promise<void> | null,
 }));
-const t = (text: string) => text;
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("expo-router", () => ({
   useFocusEffect: (callback: () => void) => useEffect(callback, [callback]),
@@ -48,9 +47,36 @@ vi.mock("./call-sounds", () => ({
 vi.mock("./voice", () => ({ speakText: vi.fn() }));
 vi.mock("./appearance", () => ({ mobileTokens: () => ({}) }));
 vi.mock("./native", () => ({ native: {}, useThemedStyles: (factory: () => unknown) => factory() }));
-vi.mock("./i18n", () => ({ t: (text: string) => text, useI18n: () => ({ t }) }));
 vi.mock("../components/row-accessories", () => ({
   Checkmark: () => <span data-testid="checkmark" />,
+}));
+vi.mock("../components/menu-picker", () => ({
+  MenuPicker: ({
+    choices,
+    value,
+    onChange,
+    disabled,
+  }: {
+    disabled?: boolean;
+    choices: { key: string; label: string }[];
+    value: string;
+    onChange: (key: string) => void;
+  }) => (
+    <div>
+      {choices.map((choice) => (
+        <button
+          key={choice.key}
+          type="button"
+          disabled={disabled}
+          aria-pressed={choice.key === value}
+          onClick={() => onChange(choice.key)}
+        >
+          {choice.label}
+          {choice.key === value ? <span data-testid="checkmark" /> : null}
+        </button>
+      ))}
+    </div>
+  ),
 }));
 vi.mock("../components/native-switch", () => ({ NativeSwitch: () => null }));
 vi.mock("react-native-safe-area-context", () => ({
@@ -92,17 +118,20 @@ vi.mock("react-native", () => {
       value,
       onChangeText,
       onBlur,
+      placeholder,
     }: {
       accessibilityLabel: string;
       value: string;
       onChangeText?: (value: string) => void;
       onBlur?: () => void;
+      placeholder?: string;
     }) => (
       <input
         aria-label={accessibilityLabel}
         value={value}
         onChange={(event) => onChangeText?.(event.currentTarget.value)}
         onBlur={onBlur}
+        placeholder={placeholder}
       />
     ),
   };
@@ -171,7 +200,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it("selects only This device and hides all provider controls until it is turned off", async () => {
+it("selects only This device and hides provider controls until a provider is chosen", async () => {
   await render();
   selected("This device");
   for (const entry of catalog) unselected(entry.name);
@@ -180,7 +209,7 @@ it("selects only This device and hides all provider controls until it is turned 
   expect(container.textContent).not.toContain("Disconnect");
   expect(container.textContent).not.toContain("Speech model");
   expect(container.textContent).not.toContain("fish-audio voice");
-  await click("This device");
+  await click("Fish Audio");
   selected("Fish Audio");
   unselected("This device");
   expect(container.querySelector('input[aria-label="API key"]')).not.toBeNull();
@@ -190,6 +219,20 @@ it("selects only This device and hides all provider controls until it is turned 
   expect(container.textContent).toContain("Replace key");
   expect(container.textContent).toContain("Disconnect");
   expect(container.textContent).toContain("fish-audio voice");
+});
+
+it.each([true, false])("ignores reselecting the current provider (device: %s)", async (device) => {
+  state.load.mockResolvedValue(device);
+  await render();
+  const label = device ? "This device" : "Fish Audio";
+  selected(label);
+  state.rpc.mockClear();
+
+  await click(label);
+
+  expect(state.save).not.toHaveBeenCalled();
+  expect(state.rpc).not.toHaveBeenCalled();
+  selected(label);
 });
 
 it("falls back to an available provider when the saved provider is hidden", async () => {
@@ -214,6 +257,31 @@ it("falls back to an available provider when the saved provider is hidden", asyn
   });
   await click("Disconnect Self-hosted");
   expect(state.rpc).toHaveBeenCalledWith("voice/disconnect", { provider: "openai-compatible" });
+  expect(container.textContent).not.toContain("Disconnect Self-hosted");
+});
+
+it("keeps selected voices when a hidden provider disconnects and the read fails", async () => {
+  state.load.mockResolvedValue(false);
+  const original = state.rpc.getMockImplementation()!;
+  let disconnected = false;
+  state.rpc.mockImplementation((proc: string, args?: { provider: string }) => {
+    if (proc === "voice/disconnect") {
+      disconnected = true;
+      return undefined;
+    }
+    if (proc === "voice/catalog" && disconnected) return Promise.reject({});
+    if (proc === "voice/credentials")
+      return [
+        { id: "selected", provider: "fish-audio", voiceId: "voice" },
+        { id: "hidden", provider: "openai-compatible", voiceId: "voice" },
+      ];
+    return original(proc, args);
+  });
+  await render();
+  expect(container.textContent).toContain("fish-audio voice");
+  await click("Disconnect Self-hosted");
+  expect(container.textContent).toContain("fish-audio voice");
+  expect(container.textContent).toContain("Could not load voice settings");
   expect(container.textContent).not.toContain("Disconnect Self-hosted");
 });
 
@@ -267,7 +335,7 @@ it("keeps the device selected if saving its preference fails", async () => {
   expect(container.querySelector("input")).toBeNull();
   expect(state.rpc).not.toHaveBeenCalledWith("voice/setVoice", expect.anything());
   expect(container.textContent).toContain("Could not save that preference");
-  await click("This device");
+  await click("Fish Audio");
   selected("Fish Audio");
 });
 
@@ -288,7 +356,7 @@ it.each([true, false])(
     if (device) {
       selected("This device");
       expect(state.save.mock.calls).toEqual([[false], [true]]);
-      await click("This device");
+      await click("Fish Audio");
     } else {
       expect(state.save.mock.calls).toEqual([[false]]);
     }
@@ -322,6 +390,27 @@ it("clears stale voices if the refresh fails after activating a provider", async
   expect(container.textContent).not.toContain("fish-audio voice");
   expect(container.textContent).toContain("Could not load voice settings");
   expect(state.save.mock.calls).toEqual([[false]]);
+});
+
+it("keeps a disconnect when the read after it fails", async () => {
+  state.load.mockResolvedValue(false);
+  await render();
+  const original = state.rpc.getMockImplementation()!;
+  state.rpc.mockImplementation((proc: string, args?: { provider: string }) => {
+    if (proc === "voice/disconnect") return undefined;
+    // A body without a message, so the text shown is the caller's own fallback.
+    if (proc === "voice/catalog") return Promise.reject({});
+    return original(proc, args);
+  });
+  expect(container.textContent).toContain("fish-audio voice");
+  await click("Disconnect");
+  expect(state.rpc).toHaveBeenCalledWith("voice/disconnect", { provider: "fish-audio" });
+  // Its voices go with the key: picking one would only fail on the server.
+  expect(container.textContent).not.toContain("fish-audio voice");
+  expect(container.textContent).toContain("Could not load voice settings");
+  expect(container.textContent).not.toContain("Could not disconnect");
+  expect(container.textContent).not.toContain("Disconnect");
+  expect(container.textContent).toContain("Connect");
 });
 
 it("edits a Space's override in that Space, leaving this device's voice and sounds out", async () => {
@@ -444,4 +533,68 @@ it("keeps a saved speech model when an opening read started before the save land
   });
   await act(async () => releaseCatalog());
   await vi.waitFor(() => expect(input().value).toBe("saved-model"));
+});
+
+async function typeInto(label: string, text: string) {
+  const input = container.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, text);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+function withLinkedProvider(credential: { hasKey: boolean } | null) {
+  const original = state.rpc.getMockImplementation()!;
+  let saved = credential && { id: "linked", provider: "linked", voiceId: "", ...credential };
+  state.rpc.mockImplementation((proc: string, args?: { provider: string }) => {
+    if (proc === "voice/catalog")
+      return [
+        ...catalog,
+        { id: "linked", name: "Linked", transcribe: true, modelConnection: true },
+      ];
+    if (proc === "voice/credentials") return saved ? [...credentials, saved] : credentials;
+    if (proc === "voice/connect") {
+      saved = { id: "linked", provider: "linked", voiceId: "", hasKey: false };
+      return saved;
+    }
+    return original(proc, args);
+  });
+}
+
+it("connects through the account's model connection with no key, then offers no key to replace", async () => {
+  state.load.mockResolvedValue(false);
+  withLinkedProvider(null);
+  await render();
+  await click("Linked");
+  const key = () => container.querySelector<HTMLInputElement>('input[aria-label="API key"]');
+  expect(key()?.placeholder).toBe("Optional");
+  expect(button("Connect").disabled).toBe(false);
+  // A key the user does type must still be a whole one.
+  await typeInto("API key", "short");
+  expect(button("Connect").disabled).toBe(true);
+  await typeInto("API key", "");
+  await click("Connect");
+  expect(state.rpc).toHaveBeenCalledWith("voice/connect", {
+    provider: "linked",
+    scope: "account",
+    apiKey: "",
+  });
+  expect(key()).toBeNull();
+  const labels = [...container.querySelectorAll("button")].map((item) => item.textContent);
+  expect(labels).not.toContain("Connect");
+  expect(labels).not.toContain("Replace key");
+  expect(button("Disconnect").disabled).toBe(false);
+  expect(container.textContent).toContain("linked voice");
+});
+
+it("still needs a whole key to replace a key saved for a model-connection provider", async () => {
+  state.load.mockResolvedValue(false);
+  withLinkedProvider({ hasKey: true });
+  await render();
+  await click("Linked");
+  expect(
+    container.querySelector<HTMLInputElement>('input[aria-label="API key"]')?.placeholder,
+  ).toBe("Paste a replacement key");
+  expect(button("Replace key").disabled).toBe(true);
+  await typeInto("API key", "a-whole-key");
+  expect(button("Replace key").disabled).toBe(false);
 });

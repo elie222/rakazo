@@ -1,21 +1,18 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type {
-  Bot,
-  ComputerReleaseReason,
-  ComputerStatus,
-  Run,
-  TaughtSkill,
-} from "@rakazo/contracts";
+import type { Bot, ComputerReleaseReason, ComputerStatus, TaughtSkill } from "@rakazo/contracts";
 import { BotAvatar, Button } from "@rakazo/ui-web";
 import { X } from "lucide-react";
 import type { ReactNode } from "react";
-import { ComputerMaintenanceActions } from "../../components/ComputerMaintenanceActions";
 import { TeachCaptureOverlay } from "../../components/teach/TeachCaptureOverlay";
 import { TeachComputerOverlayControl } from "../../components/teach/TeachComputerOverlay";
 import { TeachRecordingChrome, TeachStopButton } from "../../components/teach/TeachRecordingChrome";
 import { screenFrames, screenIframeSandbox } from "../../lib/computer-screen";
-import { computerTakeoverBlocked } from "../../lib/thread-events";
+import {
+  DARWIN_WINDOW_CONTROLS_WIDTH_PX,
+  desktopBridge,
+  windowChromeKind,
+} from "../../lib/desktop";
 import { ComputerReleaseActions } from "./computer-release-actions";
 import { computerLabel, DesktopKindEmptyState } from "./computer-view";
 
@@ -29,7 +26,6 @@ type ComputerOverlayProps = {
   composerRunning: boolean;
   sending: boolean;
   booting: boolean;
-  runStatus?: Run["status"];
   sendError: string | null;
   embeddedScreenUrl: string | null;
   /** Changes to load the screen again in a new frame. */
@@ -44,7 +40,6 @@ type ComputerOverlayProps = {
   onTakeControl: () => void;
   onStart: () => void;
   onRefreshTeaching: () => Promise<void>;
-  onRefreshComputer: () => Promise<void>;
   onClose: () => void;
 };
 
@@ -58,7 +53,6 @@ export function ComputerOverlay({
   composerRunning,
   sending,
   booting,
-  runStatus,
   sendError,
   embeddedScreenUrl,
   screenFrameKey,
@@ -72,7 +66,6 @@ export function ComputerOverlay({
   onTakeControl,
   onStart,
   onRefreshTeaching,
-  onRefreshComputer,
   onClose,
 }: ComputerOverlayProps) {
   return (
@@ -88,6 +81,11 @@ export function ComputerOverlay({
         <div
           data-testid="computer-chrome"
           className="app-no-drag flex items-center justify-between gap-4 border-b border-sidebar-border px-[18px] py-3.5"
+          style={
+            windowChromeKind(desktopBridge()) === "darwin"
+              ? { paddingLeft: DARWIN_WINDOW_CONTROLS_WIDTH_PX + 18 }
+              : undefined
+          }
         >
           <div className="flex min-w-0 flex-1 items-center gap-3">
             <BotAvatar
@@ -110,17 +108,6 @@ export function ComputerOverlay({
                 {computerLabel(computer?.mode, bot.name)}
               </span>
             )}
-            {!recordingSkill && hasControl ? (
-              computer?.takeoverRequested ? (
-                <span className="rounded-full bg-warning/15 px-[11px] py-1 text-body-sm text-warning">
-                  <Trans>Needs you</Trans>
-                </span>
-              ) : (
-                <span className="rounded-full bg-success/15 px-[11px] py-1 text-body-sm text-success">
-                  <Trans>You have control</Trans>
-                </span>
-              )
-            ) : null}
             {!recordingSkill && hasControl && computer?.shared ? (
               <span
                 data-testid="computer-shared-browser"
@@ -151,7 +138,7 @@ export function ComputerOverlay({
                 takeoverRequested={Boolean(computer?.takeoverRequested)}
                 onRelease={onRelease}
               />
-            ) : computer?.state === "running" && !computerTakeoverBlocked(computer, runStatus) ? (
+            ) : computer?.state === "running" ? (
               <Button
                 type="button"
                 variant="outline"
@@ -169,15 +156,6 @@ export function ComputerOverlay({
                 computer={computer}
                 busy={teachBusy}
                 onRefresh={onRefreshTeaching}
-              />
-            ) : null}
-            {!recordingSkill ? (
-              <ComputerMaintenanceActions
-                botId={bot.id}
-                computer={computer}
-                onChanged={async () => {
-                  await onRefreshComputer();
-                }}
               />
             ) : null}
             <Button

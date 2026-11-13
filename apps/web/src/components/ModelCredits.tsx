@@ -1,4 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
+import { ORPCError } from "@orpc/client";
 import type {
   BillingStatus,
   ByokInterval,
@@ -461,7 +462,7 @@ export function ModelCreditsSettings({
   const [tierTarget, setTierTarget] = useState<TierOffer | null>(null);
   const [checkoutTier, setCheckoutTier] = useState<ByokTier>("standard");
   const [pending, setPending] = useState(false);
-  const [error, setError] = useState(false);
+  const [error, setError] = useState<"failed" | "uncharged" | null>(null);
   const computer = useTierComputer();
   const balance = new Intl.NumberFormat(i18n.locale, {
     style: "currency",
@@ -472,11 +473,11 @@ export function ModelCreditsSettings({
   async function action(work: () => Promise<void>) {
     if (pending) return;
     setPending(true);
-    setError(false);
+    setError(null);
     try {
       await work();
-    } catch {
-      setError(true);
+    } catch (err) {
+      setError(err instanceof ORPCError && err.status === 402 ? "uncharged" : "failed");
     } finally {
       setPending(false);
     }
@@ -662,6 +663,13 @@ export function ModelCreditsSettings({
             <Trans>Computer hours left</Trans>
           </h3>
           <p className="mt-2 text-display font-medium tabular-nums">{status.computerHoursLeft}</p>
+          {status.computerHoursResetAt ? (
+            <p className="mt-2 text-body text-muted-foreground">
+              <Trans>
+                Resets {formatBillingDate(status.computerHoursResetAt, i18n.locale || "en")}
+              </Trans>
+            </p>
+          ) : null}
           {status.canManage && status.state === "trialing" && !status.cancelAtPeriodEnd ? (
             <>
               <p className="mt-2 text-body text-muted-foreground">
@@ -885,7 +893,11 @@ export function ModelCreditsSettings({
       ) : null}
       {error ? (
         <p role="alert" className="text-body text-destructive">
-          <Trans>Could not update billing</Trans>
+          {error === "uncharged" ? (
+            <Trans>Your card was not charged</Trans>
+          ) : (
+            <Trans>Could not update billing</Trans>
+          )}
         </p>
       ) : null}
       <Dialog open={purchaseOpen} onOpenChange={setPurchaseOpen}>

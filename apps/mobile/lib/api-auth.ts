@@ -1,11 +1,14 @@
+import { t } from "@lingui/core/macro";
 import type { AccountSecurity, AuthCapabilities } from "@rakazo/contracts";
 import {
   accountSecuritySchema,
   authCapabilitiesSchema,
   legacyAccountSecurity,
   legacyAuthCapabilitiesSchema,
+  SIGNUP_SURFACE_HEADER,
 } from "@rakazo/contracts";
 import { displayName, signupRequiresEmailVerification } from "@rakazo/core";
+import { Platform } from "react-native";
 import type { PendingSignOut } from "./api";
 import {
   authHeaders,
@@ -19,7 +22,7 @@ import {
   selectedSpaceId,
 } from "./api";
 import { clearSpace } from "./api-server";
-import { getActiveUiLocale, t } from "./i18n";
+import { getActiveUiLocale } from "./i18n";
 import { resumeLiveNotifications } from "./live-notifications";
 import { serverHeaders } from "./server-headers";
 import {
@@ -35,7 +38,7 @@ import {
 } from "./session";
 import { authResponseErrorText, sessionSaveErrorText } from "./user-error";
 
-async function postAuth(path: string, input: Record<string, string>, apiBase = currentApiBase()) {
+async function postAuth(path: string, input: object, apiBase = currentApiBase()) {
   return fetchMobileJson<unknown>(
     `${apiBase}/api/auth/${path}`,
     {
@@ -47,6 +50,7 @@ async function postAuth(path: string, input: Record<string, string>, apiBase = c
         "content-type": "application/json",
         origin: "rakazo://",
         "accept-language": getActiveUiLocale(),
+        [SIGNUP_SURFACE_HEADER]: Platform.OS,
       },
       body: JSON.stringify(input),
     },
@@ -55,7 +59,7 @@ async function postAuth(path: string, input: Record<string, string>, apiBase = c
 }
 async function authenticate(
   path: string,
-  input: Record<string, string>,
+  input: object,
   missingSession: string,
 ): Promise<{ verificationRequired: boolean }> {
   const apiBase = currentApiBase();
@@ -81,7 +85,7 @@ async function authenticate(
   if (current()) {
     try {
       if (!(await clearSpace()))
-        throw new Error(t("Could not save your sign-in on this device. Try again."));
+        throw new Error(t`Could not save your sign-in on this device. Try again.`);
       // Checked in the same tick the save starts; a failed write leaves no session behind.
       if (current()) {
         await saveSessionToken(token);
@@ -96,18 +100,18 @@ async function authenticate(
     // Recorded like a sign-out, so a server that cannot be reached now still ends it later.
     const revocation: PendingSignOut = { apiBase, token, headers, recordedAt: Date.now() };
     void deliverSignOutRecord(revocation, await savePendingSignOut(revocation));
-    throw new Error(t("Could not continue"));
+    throw new Error(t`Could not continue`);
   }
   return { verificationRequired: false };
 }
 export function signIn(email: string, password: string) {
-  return authenticate("sign-in/email", { email, password }, t("Sign-in did not return a session"));
+  return authenticate("sign-in/email", { email, password }, t`Sign-in did not return a session`);
 }
 export function signUp(email: string, password: string, name: string) {
   return authenticate(
     "sign-up/email",
     { email, password, name },
-    t("Sign-up did not return a session"),
+    t`Sign-up did not return a session`,
   );
 }
 /** Always succeeds when the server accepts the request, whether or not an email was sent. */
@@ -123,7 +127,7 @@ export async function signInWithCode(email: string, code: string, name?: string)
   await authenticate(
     "sign-in/email-otp",
     { email, otp: code, ...(name ? { name } : {}) },
-    t("Sign-in did not return a session"),
+    t`Sign-in did not return a session`,
   );
 }
 export type PasswordResetCapabilities = AuthCapabilities;
@@ -132,7 +136,7 @@ export async function passwordResetCapabilities(): Promise<PasswordResetCapabili
     `${currentApiBase()}/api/auth/capabilities`,
     { headers: { origin: "rakazo://" } },
   );
-  if (!response.ok) throw new Error(t("Could not load sign-in options"));
+  if (!response.ok) throw new Error(t`Could not load sign-in options`);
   return authCapabilitiesSchema.or(legacyAuthCapabilitiesSchema).parse(body);
 }
 export async function requestPasswordReset(email: string, redirectTo: string): Promise<void> {
@@ -151,13 +155,13 @@ export async function requestPasswordReset(email: string, redirectTo: string): P
   );
   if (!response.ok)
     throw new Error(
-      authResponseErrorText(response.status, body, invalidJson, t("Could not send reset email")),
+      authResponseErrorText(response.status, body, invalidJson, t`Could not send reset email`),
     );
 }
 export async function updateAccountName(name: string): Promise<void> {
   const nextName = name.trim();
   if (!nextName || nextName.length > 80 || !displayName(nextName, "")) {
-    throw new Error(t("Could not update name"));
+    throw new Error(t`Could not update name`);
   }
   const { response, body, invalidJson } = await fetchMobileJson<unknown>(
     `${currentApiBase()}/api/auth/update-user`,
@@ -174,7 +178,7 @@ export async function updateAccountName(name: string): Promise<void> {
   );
   if (!response.ok)
     throw new Error(
-      authResponseErrorText(response.status, body, invalidJson, t("Could not update name")),
+      authResponseErrorText(response.status, body, invalidJson, t`Could not update name`),
     );
 }
 /** A hash of the change whose new session is not saved yet; never the passwords themselves. */
@@ -220,7 +224,7 @@ async function replaceSessionAfterPasswordChange(
   // The token the server replaces is the one this request carries; a second read could differ.
   const previousToken = headers.authorization?.slice("Bearer ".length) ?? "";
   // Without it the cookie jar could still sign the change, and the queue could not move over.
-  if (!previousToken) throw new Error(t("Could not change password"));
+  if (!previousToken) throw new Error(t`Could not change password`);
   const { response, body, invalidJson } = await fetchMobileJson<unknown>(
     `${apiBase}/api/auth/change-password`,
     {
@@ -236,7 +240,7 @@ async function replaceSessionAfterPasswordChange(
   );
   if (!response.ok)
     throw new Error(
-      authResponseErrorText(response.status, body, invalidJson, t("Could not change password")),
+      authResponseErrorText(response.status, body, invalidJson, t`Could not change password`),
     );
   // Revoking other sessions also revokes this one; keep the replacement the server issued.
   const token = tokenFromAuthResponse(response, body);
@@ -265,17 +269,17 @@ export async function signOut() {
   const apiBase = currentApiBase();
   // A save still running reads as no session, and the clear would delete its token once it lands
   // with no record to revoke it: as in a server switch, the sign-out stops and the user retries.
-  if (sessionSaveInProgress()) throw new Error(t("Could not clear the local session"));
+  if (sessionSaveInProgress()) throw new Error(t`Could not clear the local session`);
   const generation = currentSessionGeneration();
   const tokenSnapshot = await snapshotSessionToken();
-  if (!tokenSnapshot.ok) throw new Error(t("Could not clear the local session"));
+  if (!tokenSnapshot.ok) throw new Error(t`Could not clear the local session`);
   // A failed save or wipe can leave a token stored that reads as no session; the clear deletes it
   // too. An unreadable store only skips that record: signing out still clears this device.
   const stored = tokenSnapshot.value ? undefined : await snapshotStoredSessionToken();
   // A sign-in that started during the first read may have stored its token by the second one;
   // that token is the session in use, not the one being signed out.
   if (stored && (generation !== currentSessionGeneration() || sessionSaveInProgress())) {
-    throw new Error(t("Could not clear the local session"));
+    throw new Error(t`Could not clear the local session`);
   }
   const revocation: PendingSignOut = {
     apiBase,
@@ -289,13 +293,13 @@ export async function signOut() {
   // A sign-in that saved its token since the read has no record; as in a server switch, the
   // sign-out stops without clearing it. The record stays for the session the user signed out of.
   if (generation !== currentSessionGeneration() || sessionSaveInProgress()) {
-    throw new Error(t("Could not clear the local session"));
+    throw new Error(t`Could not clear the local session`);
   }
   // The local session clears first: a server that accepts the connection but never answers
   // must not keep this device signed in for the delivery's request timeout.
   const sessionCleared = await clearSessionToken();
   const spaceCleared = await clearSpace();
-  if (!sessionCleared || !spaceCleared) throw new Error(t("Could not clear the local session"));
+  if (!sessionCleared || !spaceCleared) throw new Error(t`Could not clear the local session`);
   // Delivery waits on the same silent server, so it cannot hold the visible sign-out either.
   // The persisted record covers an attempt that dies with the process.
   if (revocation.token) void deliverSignOutRecord(revocation, persisted);
@@ -319,7 +323,7 @@ export async function deleteAccount(password?: string, token?: string) {
   );
   if (!response.ok) {
     throw new Error(
-      authResponseErrorText(response.status, body, invalidJson, t("Could not delete account")),
+      authResponseErrorText(response.status, body, invalidJson, t`Could not delete account`),
     );
   }
   await clearSessionToken();
@@ -333,11 +337,11 @@ export async function fetchAccountSecurity(): Promise<AccountSecurity> {
   );
   // Older servers support password accounts and the original change/delete endpoints.
   if (response.status === 404) return legacyAccountSecurity;
-  if (!response.ok) throw new Error(t("Could not load sign-in options"));
+  if (!response.ok) throw new Error(t`Could not load sign-in options`);
   try {
     return accountSecuritySchema.parse(body);
   } catch {
-    throw new Error(t("Could not load sign-in options"));
+    throw new Error(t`Could not load sign-in options`);
   }
 }
 async function postSignedInAuth(path: string, payload: Record<string, string> = {}): Promise<void> {
@@ -356,7 +360,7 @@ async function postSignedInAuth(path: string, payload: Record<string, string> = 
   );
   if (!response.ok)
     throw new Error(
-      authResponseErrorText(response.status, body, invalidJson, t("Could not continue")),
+      authResponseErrorText(response.status, body, invalidJson, t`Could not continue`),
     );
 }
 export const requestAccountDeletionCode = () => postSignedInAuth("/request-account-deletion");
