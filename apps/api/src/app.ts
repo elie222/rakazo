@@ -26,6 +26,7 @@ import type {
   UserDeviceGateway,
 } from "@rakazo/adapters";
 import {
+  BillingEmulator,
   ChatSdkMessagingSurface,
   CodexCatalogCache,
   configuredBotEmailProvider,
@@ -146,6 +147,7 @@ import { configuredEmailProvider } from "./email.js";
 import { mountEmailInboundRoute } from "./email-inbound.js";
 import type { AppEnv } from "./env.js";
 import { loadEnv } from "./env.js";
+import { createExperiments } from "./experiments.js";
 import { healthRoutes } from "./health.js";
 import { homeRetentionSweep } from "./home-retention.js";
 import { startHourlySweep } from "./hourly-sweep.js";
@@ -434,8 +436,16 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   };
   const onEmailError = emailErrorLogger("transactional email delivery failed");
   const stripeBilling = stripeBillingConfigFromEnv(env);
+  const localBillingEmulator =
+    !billingOverride && !stripeBilling && env.billingEmulator
+      ? new BillingEmulator({ modelCredits: true })
+      : undefined;
+  if (localBillingEmulator && !isLocalhostOrLoopbackIp(env.apiHost)) {
+    throw new Error("BILLING_EMULATOR requires API_HOST to be a loopback host");
+  }
   const billingProvider: BillingProvider | undefined =
-    billingOverride ?? (stripeBilling ? new StripeBillingProvider(stripeBilling) : undefined);
+    billingOverride ??
+    (stripeBilling ? new StripeBillingProvider(stripeBilling) : localBillingEmulator);
   const billing = billingProvider
     ? createBillingService({
         prisma,
@@ -444,6 +454,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         webOrigin: env.webOrigin,
         managedModelsAvailable: resolveDeploymentModel().configured,
         analytics,
+        experiments: createExperiments(env.experiments),
       })
     : undefined;
   const modelCreditsEnabled = billing?.modelCreditsEnabled ?? false;
@@ -467,7 +478,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   );
   const { mcpOAuth, mcp, pipedream, installed, integrationSettings, stack, userCloudAgents } =
     connectors;
-  const runtime =
+  const baseRuntime =
     runtimeOverride ??
     (env.agentRuntime === "scripted"
       ? new ScriptedAgentRuntime()
@@ -618,7 +629,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   const codexCatalog = new CodexCatalogCache();
   // One instance: chat runs submit videos and, in single-process mode, background polls finish them.
   const mediaGeneration = createMediaGenerationProvider();
-  const { executor, jobHandlers, messagingDelivery, teamChat } = createRunRuntime(
+  const { runtime, executor, jobHandlers, messagingDelivery, teamChat } = createRunRuntime(
     runtimeEnv,
     connectors,
     {
@@ -626,7 +637,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       mediaGeneration,
       contextStrategy,
       prisma,
-      runtime,
+      runtime: baseRuntime,
       codexCatalog,
       sandbox,
       memory,
