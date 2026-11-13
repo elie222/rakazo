@@ -52,7 +52,7 @@ import { loadAppearancePreference, mobileTokens } from "../lib/appearance";
 import { replaceWithSignIn } from "../lib/auth-routing";
 import { AvatarScreenFocus } from "../lib/avatar-life";
 import { CallKeyboardContext } from "../lib/call-keyboard-context";
-import { useCallSession } from "../lib/call-session";
+import { useCallActive } from "../lib/call-session";
 import { installClientUpdates, watchForegroundUpdates } from "../lib/client-update";
 import { loadHapticsPreference } from "../lib/haptics";
 import { bootstrapI18n } from "../lib/i18n";
@@ -277,7 +277,7 @@ function ChatContentProviders({
 export const unstable_settings = { anchor: "index" };
 
 function LayoutContent() {
-  const call = useCallSession();
+  const call = useCallActive();
   const { t } = useLingui();
   const insets = useSafeAreaInsets();
   // Beside the list a chat swaps in place, the way it does when picked from a sidebar.
@@ -395,12 +395,8 @@ function LayoutContent() {
           <ChatContentProviders loadRemoteImages={loadRemoteImages}>
             <ThemeProvider value={navigationTheme}>
               <StatusBar style={resolved === "light" ? "dark" : "light"} />
-              <CallKeyboardContext.Provider value={Boolean(call)}>
-                <KeyboardAvoidingView
-                  enabled={Boolean(call)}
-                  behavior="padding"
-                  style={{ flex: 1 }}
-                >
+              <CallKeyboardContext.Provider value={call}>
+                <KeyboardAvoidingView enabled={call} behavior="padding" style={{ flex: 1 }}>
                   <SplitFrame>
                     <Stack
                       screenLayout={({ navigation, options, children }) => (
