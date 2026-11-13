@@ -34,29 +34,34 @@ function harness(options: { available?: boolean; serverOrigin?: string | undefin
     row
       ? Object.fromEntries(Object.keys(select).map((name) => [name, row[name as keyof Row]]))
       : null;
+  const byId = (where: { id: string }) => {
+    if (!("id" in where)) throw new Error("Write tailnet connections by id");
+    return [...rows.values()].find((row) => row.id === where.id);
+  };
   const none = { count: async () => 0 };
   const prisma = {
     tailnetConnection: {
       findUnique: async ({ where, select }: { where: Where; select: Record<string, boolean> }) =>
         pick(rows.get(key(where)), select),
+      // Writes by id only, as secret persistence requires.
       upsert: async (args: {
-        where: Where;
+        where: { id: string };
         create: Omit<Row, "botIds">;
         update: Partial<Row>;
         select: Record<string, boolean>;
       }) => {
-        const current = rows.get(key(args.where));
+        const current = byId(args.where);
         const next = current ? { ...current, ...args.update } : { ...args.create, botIds: [] };
-        rows.set(key(args.where), next);
+        rows.set(`${next.spaceId}/${next.userId}`, next);
         return pick(next, args.select);
       },
       update: async (args: {
-        where: Where;
+        where: { id: string };
         data: Partial<Row>;
         select: Record<string, boolean>;
       }) => {
-        const next = { ...(rows.get(key(args.where)) as Row), ...args.data };
-        rows.set(key(args.where), next);
+        const next = { ...(byId(args.where) as Row), ...args.data };
+        rows.set(`${next.spaceId}/${next.userId}`, next);
         return pick(next, args.select);
       },
       deleteMany: async ({ where }: { where: { spaceId: string; userId: string } }) => ({
