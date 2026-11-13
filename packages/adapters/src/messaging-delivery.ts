@@ -1,3 +1,4 @@
+import { setTimeout as sleep } from "node:timers/promises";
 import type {
   AdapterContext,
   ArtifactStore,
@@ -29,6 +30,7 @@ import {
   CrossSpaceCommunicationBlockedError,
   createThreadMessageInTransaction,
   crossSpaceCommunicationAllowed,
+  databaseCapacityBackoffMs,
   databaseOutage,
   isDatabaseUnavailable,
   runAsSystem,
@@ -48,14 +50,26 @@ import { isUserProgressClientNonce } from "./user-progress.js";
  */
 export const MESSAGING_DM_OUTBOUND_CAP = 140;
 
-/** How long one send may take, file upload included, before it counts as failed. */
+/**
+ * How long one send may take, file upload included. Providers that take the abort signal stop
+ * there; the vendor clients Rakazo configures (Slack, Sendblue) already give up well before it.
+ */
 export const MESSAGING_SEND_TIMEOUT_MS = 60_000;
 
 /**
- * When a recorded message's backup job is due: after the send that records it has had its
- * time. Firing means that send never finished, so the job sends it.
+ * When a claimed send counts as dead and its backup job may send the message again. Strictly
+ * longer than the timeout: until just before it the sender keeps waiting for a provider call it
+ * cannot abort, and keeps retrying the bookkeeping of one that went out, so only a crash or a
+ * call hung this long can lead to a second post.
  */
-export const MESSAGING_SEND_BACKUP_MS = MESSAGING_SEND_TIMEOUT_MS + 30_000;
+export const MESSAGING_SEND_STALE_MS = 2 * MESSAGING_SEND_TIMEOUT_MS;
+const STALE_MARGIN_MS = 10_000;
+
+/** When a recorded message's backup job is due: once its send's claim would be stale. */
+export const MESSAGING_SEND_BACKUP_MS = MESSAGING_SEND_STALE_MS + 30_000;
+
+/** How long the previous release treated a row it claimed (sent, no handle yet) as in flight. */
+const PREVIOUS_RELEASE_IN_FLIGHT_MS = 2 * 60_000;
 
 /** How soon a message held behind the sendblue cap checks again, should no reply arrive. */
 const DM_CAP_RECHECK_MS = 15 * 60_000;
@@ -133,6 +147,8 @@ type SendOutcome =
   | { kind: "failed" }
   /** Not sent and not failed: the conversation waits (the sendblue cap). */
   | { kind: "held" }
+  /** The provider call is still running past its time; the backup job takes the row over. */
+  | { kind: "unsettled" }
   | { kind: "error"; error: unknown; attachmentName: string | null };
 
 /**
@@ -249,6 +265,7 @@ export class MessagingDelivery {
         include: {
           sourceMessage: true,
           bot: { select: { name: true } },
+          thread: { select: { externalConversation: { select: { botId: true } } } },
           externalMessage: { include: { externalConversation: true } },
         },
       });
@@ -280,10 +297,15 @@ export class MessagingDelivery {
         }
       } else if (run.trigger === "bot_message" && !options.progress) {
         // A delegated run answers its owner's 1:1 chat, and once it ends, the team-chat thread
-        // the delegation started in.
+        // the delegation started in. Only a run in that conversation's own thread, by its bot,
+        // runs with the shared chat's privacy: a continuation in the bot's private thread may
+        // have read its owner's memory and stays in the app.
         const direct = await this.recordDirectRun(run, false);
         if (direct) lanes.push(direct);
-        if (run.status === "completed" || run.status === "failed") {
+        if (
+          (run.status === "completed" || run.status === "failed") &&
+          run.thread.externalConversation?.botId === run.botId
+        ) {
           const delegated = await this.recordDelegatedReply(run);
           if (delegated) lanes.push(delegated);
         }
@@ -370,8 +392,18 @@ export class MessagingDelivery {
         return;
       }
       const row = claim.row;
-      const outcome = await this.sendRow(row);
+      // The claim's last moment: past it, the backup job may send the row again.
+      const deadline = Date.now() + MESSAGING_SEND_STALE_MS - STALE_MARGIN_MS;
+      const outcome = await this.sendRow(row, deadline);
       const own = job?.rowId === row.id;
+      if (outcome.kind === "unsettled") {
+        getLogger().warn("messaging send still running past its time; its backup job takes over");
+        if (own)
+          await this.deps.jobs.enqueue(
+            messagingSendJob(row.id, new Date(deadline + STALE_MARGIN_MS + 5_000)),
+          );
+        return;
+      }
       if (outcome.kind === "held") {
         await this.deps.prisma.messagingOutbound.updateMany({
           where: { id: row.id, status: "sending" },
@@ -395,10 +427,32 @@ export class MessagingDelivery {
         getLogger().warn("messaging outbound failed", {
           reason: outcome.error instanceof Error ? outcome.error.message : String(outcome.error),
         });
-        await this.finish(row, { kind: "failed" }, outcome.attachmentName);
+        await this.settle(row, { kind: "failed" }, deadline, outcome.attachmentName);
         continue;
       }
-      await this.finish(row, outcome);
+      await this.settle(row, outcome, deadline);
+    }
+  }
+
+  /**
+   * Records how a claimed send ended, retrying the write until the claim's deadline: a message
+   * that went out must not be left claimed for its backup job to send again.
+   */
+  private async settle(
+    row: LaneRow,
+    outcome: { kind: "sent"; handle: string | null } | { kind: "failed" },
+    deadline: number,
+    attachmentName: string | null = null,
+  ): Promise<void> {
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        await this.finish(row, outcome, attachmentName);
+        return;
+      } catch (error) {
+        const wait = databaseCapacityBackoffMs(attempt);
+        if (Date.now() + wait >= deadline) throw error;
+        await sleep(wait);
+      }
     }
   }
 
@@ -415,14 +469,31 @@ export class MessagingDelivery {
   > {
     return this.deps.prisma.$transaction(async (tx) => {
       await lockLane(tx, lane);
+      const now = Date.now();
+      // The previous release claims a row by marking it sent before its handle is known. While
+      // such a send may still be running, nothing behind it may overtake it.
+      const previousClaim = await tx.messagingOutbound.findFirst({
+        where: {
+          ...laneWhere(lane),
+          status: "sent",
+          providerHandle: null,
+          updatedAt: { gt: new Date(now - PREVIOUS_RELEASE_IN_FLIGHT_MS) },
+        },
+        orderBy: { updatedAt: "desc" },
+        select: { updatedAt: true },
+      });
+      if (previousClaim)
+        return {
+          kind: "blocked" as const,
+          retryAt: new Date(previousClaim.updatedAt.getTime() + PREVIOUS_RELEASE_IN_FLIGHT_MS),
+        };
       const head = await tx.messagingOutbound.findFirst({
         where: { ...laneWhere(lane), status: { in: UNSENT } },
         orderBy: SEND_ORDER,
         select: LANE_ROW,
       });
       if (!head) return { kind: "empty" as const };
-      const now = Date.now();
-      const staleAt = head.updatedAt.getTime() + MESSAGING_SEND_TIMEOUT_MS;
+      const staleAt = head.updatedAt.getTime() + MESSAGING_SEND_STALE_MS;
       const mine = head.id === ownRowId;
       const claimable =
         head.status === "pending" ||
@@ -438,7 +509,13 @@ export class MessagingDelivery {
           ),
         };
       }
-      await tx.messagingOutbound.update({ where: { id: head.id }, data: { status: "sending" } });
+      // Compare-and-set on the status read here, under the lock the previous release takes too,
+      // so its drain and this one can never both claim the row.
+      const claimed = await tx.messagingOutbound.updateMany({
+        where: { id: head.id, status: head.status, updatedAt: head.updatedAt },
+        data: { status: "sending" },
+      });
+      if (claimed.count !== 1) return { kind: "blocked" as const, retryAt: new Date(now + 5_000) };
       return { kind: "claimed" as const, row: head };
     });
   }
@@ -453,8 +530,9 @@ export class MessagingDelivery {
       await tx.messagingOutbound.updateMany({
         where: { id: row.id, status: { in: UNSENT } },
         data:
+          // An empty handle, never null: a sent row without one is the previous release's claim.
           outcome.kind === "sent"
-            ? { status: "sent", ...(outcome.handle ? { providerHandle: outcome.handle } : {}) }
+            ? { status: "sent", providerHandle: outcome.handle ?? "" }
             : { status: "failed" },
       });
       await this.deps.jobs.cancelIn(tx, messagingSendJobKey(row.id));
@@ -519,79 +597,78 @@ export class MessagingDelivery {
   }
 
   /** Sends one claimed row, within the send timeout. */
-  private async sendRow(row: LaneRow): Promise<SendOutcome> {
+  /**
+   * Sends one claimed row. The provider gets the send timeout as its abort signal; a call that
+   * cannot be aborted is waited for until the claim's deadline rather than abandoned, so the
+   * backup job never sends beside a call that may still land.
+   */
+  private async sendRow(row: LaneRow, deadline: number): Promise<SendOutcome> {
     let attachmentName: string | null = null;
-    const signal = AbortSignal.timeout(MESSAGING_SEND_TIMEOUT_MS);
     const context: AdapterContext = {
       operationId: `messaging.send:${row.id}`,
       traceId: `messaging.send:${row.id}`,
       spaceId: "",
       userId: "",
-      signal,
+      signal: AbortSignal.timeout(MESSAGING_SEND_TIMEOUT_MS),
     };
-    try {
-      return await raceWithSignal(
-        (async (): Promise<SendOutcome> => {
-          if (row.kind !== "dm") return this.sendToThread(row, context);
-          const identity = row.identityId
-            ? await this.deps.prisma.messagingIdentity.findUnique({ where: { id: row.identityId } })
-            : null;
-          // Nothing more reaches a deactivated person's chat app, including what was queued before.
-          if (!identity || (await accountDeactivated(this.deps.prisma, identity.userId)))
-            return { kind: "failed" };
-          // Sendblue's consecutive-outbound vendor cap; other providers have no equivalent
-          // limit, so do not hold Slack/WhatsApp/Telegram DMs.
-          if (
-            identity.provider === "sendblue" &&
-            identity.outboundSinceInbound >= MESSAGING_DM_OUTBOUND_CAP
-          )
-            return { kind: "held" };
-          const threadId = await this.resolveDirectThread(identity, context);
-          const invitePair = connectInvitePair(row.idempotencyKey);
-          if (invitePair) {
-            const result = await this.sendConnectInvite(row, threadId, invitePair, context);
-            if (result.kind === "sent" && result.handle !== null)
-              await this.countOutbound(identity);
-            return result;
-          }
-          let attachment: MessagingOutboundAttachment | undefined;
-          const artifactId = fileArtifactId(row.idempotencyKey);
-          if (artifactId) {
-            // Scoped to the identity's Space: delivery runs across every Space.
-            const artifact = await this.deps.prisma.artifact.findFirst({
-              where: { id: artifactId, spaceId: identity.spaceId },
-              select: { name: true, mimeType: true, storageKey: true, userId: true },
-            });
-            // Deleted since the reply was recorded, or not in this Space.
-            if (!artifact) return { kind: "failed" };
-            attachmentName = artifact.name;
-            const data = await this.deps.artifacts.get(artifact.storageKey, {
-              ...context,
-              spaceId: identity.spaceId,
-              userId: artifact.userId,
-            });
-            attachment = { name: artifact.name, mimeType: artifact.mimeType, data };
-          }
-          const sent = await this.deps.messaging.sendToThread(
-            {
-              threadId,
-              body: row.body,
-              idempotencyKey: row.idempotencyKey,
-              ...(attachment ? { attachment } : {}),
-            },
-            context,
-          );
-          await this.countOutbound(identity);
-          return { kind: "sent", handle: sent.handle };
-        })(),
-        signal,
+    const work = (async (): Promise<SendOutcome> => {
+      if (row.kind !== "dm") return this.sendToThread(row, context);
+      const identity = row.identityId
+        ? await this.deps.prisma.messagingIdentity.findUnique({ where: { id: row.identityId } })
+        : null;
+      // Nothing more reaches a deactivated person's chat app, including what was queued before.
+      if (!identity || (await accountDeactivated(this.deps.prisma, identity.userId)))
+        return { kind: "failed" };
+      // Sendblue's consecutive-outbound vendor cap; other providers have no equivalent
+      // limit, so do not hold Slack/WhatsApp/Telegram DMs.
+      if (
+        identity.provider === "sendblue" &&
+        identity.outboundSinceInbound >= MESSAGING_DM_OUTBOUND_CAP
+      )
+        return { kind: "held" };
+      const threadId = await this.resolveDirectThread(identity, context);
+      const invitePair = connectInvitePair(row.idempotencyKey);
+      if (invitePair) {
+        const result = await this.sendConnectInvite(row, threadId, invitePair, context);
+        if (result.kind === "sent" && result.handle !== null) await this.countOutbound(identity);
+        return result;
+      }
+      let attachment: MessagingOutboundAttachment | undefined;
+      const artifactId = fileArtifactId(row.idempotencyKey);
+      if (artifactId) {
+        // Scoped to the identity's Space: delivery runs across every Space.
+        const artifact = await this.deps.prisma.artifact.findFirst({
+          where: { id: artifactId, spaceId: identity.spaceId },
+          select: { name: true, mimeType: true, storageKey: true, userId: true },
+        });
+        // Deleted since the reply was recorded, or not in this Space.
+        if (!artifact) return { kind: "failed" };
+        attachmentName = artifact.name;
+        const data = await this.deps.artifacts.get(artifact.storageKey, {
+          ...context,
+          spaceId: identity.spaceId,
+          userId: artifact.userId,
+        });
+        attachment = { name: artifact.name, mimeType: artifact.mimeType, data };
+      }
+      const sent = await this.deps.messaging.sendToThread(
+        {
+          threadId,
+          body: row.body,
+          idempotencyKey: row.idempotencyKey,
+          ...(attachment ? { attachment } : {}),
+        },
+        context,
       );
-    } catch (error) {
+      await this.countOutbound(identity);
+      return { kind: "sent", handle: sent.handle };
+    })().catch((error): SendOutcome => {
       // The message is fine; the database is not. Its backup job sends it once that is back,
       // and the outage never gives the message up as failed.
       if (isDatabaseUnavailable(error)) throw error;
       return { kind: "error", error, attachmentName };
-    }
+    });
+    return settleBy(work, deadline);
   }
 
   /** Group posts, the group intro, and team-chat replies go straight to their provider thread. */
@@ -1091,8 +1168,16 @@ export class MessagingDelivery {
   }
 }
 
-/** Every writer and sender of one conversation serializes on this transaction lock. */
+/**
+ * Every writer and sender of one conversation serializes here: on the person's messaging
+ * identity or the group's channel row, which the previous release locks too, and on an advisory
+ * lock for threads with no such row (team chat). Always in that order.
+ */
 async function lockLane(tx: Prisma.TransactionClient, lane: OutboundLane): Promise<void> {
+  if (lane.identityId === null)
+    await tx.$queryRaw`SELECT id FROM messaging_channels WHERE "threadId" = ${lane.threadId} FOR UPDATE`;
+  else
+    await tx.$queryRaw`SELECT id FROM messaging_identities WHERE id = ${lane.identityId} FOR UPDATE`;
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`messaging_outbound:${laneKey(lane)}`}, 0))`;
 }
 
@@ -1112,14 +1197,19 @@ function laneOf(row: { identityId: string | null; threadId: string | null }): Ou
   return null;
 }
 
-/** The provider calls take no abort signal, so a send that outlives its time is abandoned. */
-function raceWithSignal<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
-  if (signal.aborted) return Promise.reject(signal.reason ?? new Error("Send timed out"));
-  return new Promise<T>((resolve, reject) => {
-    const onAbort = () => reject(signal.reason ?? new Error("Send timed out"));
-    signal.addEventListener("abort", onAbort, { once: true });
-    promise.then(resolve, reject).finally(() => signal.removeEventListener("abort", onAbort));
+/** The send's outcome, or `unsettled` when it is still running at the deadline. */
+async function settleBy(work: Promise<SendOutcome>, deadline: number): Promise<SendOutcome> {
+  // A call that settles after the deadline belongs to the backup job now.
+  work.catch(() => undefined);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<SendOutcome>((resolve) => {
+    timer = setTimeout(() => resolve({ kind: "unsettled" }), Math.max(0, deadline - Date.now()));
   });
+  try {
+    return await Promise.race([work, late]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function escapeRegExp(value: string): string {

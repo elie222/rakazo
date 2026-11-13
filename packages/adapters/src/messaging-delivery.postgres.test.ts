@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import type { MessagingSurface } from "@rakazo/adapter-kit";
 import { messagingReplyJobKey, messagingSendJobKey, RetryJobLaterError } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
@@ -15,7 +17,7 @@ import { MessagingSendError } from "./chat-sdk-surface.js";
 import type { OutboundLane } from "./messaging-delivery.js";
 import {
   MESSAGING_SEND_BACKUP_MS,
-  MESSAGING_SEND_TIMEOUT_MS,
+  MESSAGING_SEND_STALE_MS,
   MessagingDelivery,
 } from "./messaging-delivery.js";
 import { GraphileJobPublisher } from "./wakeup.js";
@@ -216,7 +218,7 @@ describePostgres("chat delivery with Graphile backup jobs (PostgreSQL)", () => {
     expect(await job(messagingSendJobKey(second!))).toBeUndefined();
   });
 
-  it("resends a claim whose sender died once the send's time is up, but not a fresh one", async () => {
+  it("resends a claim whose sender died once the claim is stale, but not a fresh one", async () => {
     const target = lane();
     const [id] = await record(target, ["claimed"]);
     await system.messagingOutbound.update({ where: { id: id! }, data: { status: "sending" } });
@@ -228,11 +230,11 @@ describePostgres("chat delivery with Graphile backup jobs (PostgreSQL)", () => {
     expect(sent).toEqual([]);
     const rescheduled = await job(messagingSendJobKey(id!));
     expect(rescheduled!.run_at.getTime()).toBeGreaterThan(
-      Date.now() + MESSAGING_SEND_TIMEOUT_MS - 5_000,
+      Date.now() + MESSAGING_SEND_STALE_MS - 5_000,
     );
 
     await owner.query(
-      `update messaging_outbound set "updatedAt" = now() - interval '2 minutes' where id = $1`,
+      `update messaging_outbound set "updatedAt" = now() - interval '3 minutes' where id = $1`,
       [id],
     );
     await backup.sendJob(id!, { number: 1, max: 5 });
@@ -473,5 +475,91 @@ describePostgres("chat delivery with Graphile backup jobs (PostgreSQL)", () => {
     expect(await system.messagingOutbound.count({ where: { identityId, body: "only once" } })).toBe(
       1,
     );
+  });
+  it("waits behind a message the previous release claimed under the same lock, never beside it", async () => {
+    const target = lane();
+    await system.messagingChannel.create({
+      data: { provider: "telegram", threadId: target.threadId, name: "Overlap" },
+    });
+    const [first] = await record(target, ["claimed by the old drain", "next"]);
+    const { messaging, sent } = surface();
+    // The previous release's drain: the channel row lock, then pending -> sent before its send.
+    const old = await owner.connect();
+    try {
+      await old.query("BEGIN");
+      await old.query(`SELECT id FROM messaging_channels WHERE "threadId" = $1 FOR UPDATE`, [
+        target.threadId,
+      ]);
+      const sending = delivery(messaging).send([target]);
+      await old.query(
+        `UPDATE messaging_outbound SET status = 'sent', "updatedAt" = now() WHERE id = $1 AND status = 'pending'`,
+        [first],
+      );
+      await old.query("COMMIT");
+      await sending;
+    } finally {
+      old.release();
+    }
+    // Its send may still be running, so the next message waits.
+    expect({ sent, status: await statuses(target.threadId) }).toEqual({
+      sent: [],
+      status: ["claimed by the old drain:sent", "next:pending"],
+    });
+
+    // Once the old drain saved its handle, the conversation moves on.
+    await system.messagingOutbound.update({
+      where: { id: first! },
+      data: { providerHandle: "h-1" },
+    });
+    await delivery(messaging).send([target]);
+    expect(sent).toEqual(["next"]);
+  });
+
+  it("queues reply jobs for chat runs the previous release left to its recovery scan", async () => {
+    const left = await dmRun("completed", "left for the scan");
+    const delivered = await dmRun("completed", "already mirrored");
+    await system.run.update({
+      where: { id: delivered.id },
+      data: { messagingMirroredAt: new Date() },
+    });
+    const old = await dmRun("completed", "too old to send now");
+    // Runs that ended before the run-end trigger existed have no reply job.
+    await owner.query(`DELETE FROM graphile_worker._private_jobs WHERE key = ANY($1::text[])`, [
+      [left.id, delivered.id, old.id].map(messagingReplyJobKey),
+    ]);
+    await owner.query(
+      `UPDATE runs SET "completedAt" = (now() AT TIME ZONE 'UTC') - interval '1 hour' WHERE id = ANY($1::text[])`,
+      [[left.id, delivered.id]],
+    );
+    await owner.query(
+      `UPDATE runs SET "completedAt" = (now() AT TIME ZONE 'UTC') - interval '3 days' WHERE id = $1`,
+      [old.id],
+    );
+    const migration = readFileSync(
+      fileURLToPath(
+        new URL(
+          "../../db/prisma/migrations/20261214120006_queue_unsent_run_replies/migration.sql",
+          import.meta.url,
+        ),
+      ),
+      "utf8",
+    );
+    const client = await owner.connect();
+    try {
+      await client.query("BEGIN");
+      // Applied before the deferred drop of the column it reads.
+      await client.query(
+        `ALTER TABLE runs ADD COLUMN IF NOT EXISTS "teamChatMirroredAt" TIMESTAMP(3)`,
+      );
+      await client.query(migration);
+      const { rows } = await client.query<{ key: string }>(
+        `SELECT key FROM graphile_worker._private_jobs WHERE key = ANY($1::text[])`,
+        [[left.id, delivered.id, old.id].map(messagingReplyJobKey)],
+      );
+      expect(rows.map((row) => row.key)).toEqual([messagingReplyJobKey(left.id)]);
+    } finally {
+      await client.query("ROLLBACK");
+      client.release();
+    }
   });
 });

@@ -46,6 +46,7 @@ describe("chat delivery while the database is unavailable", () => {
   it("logs one outage for many direct sends that cannot reach the database, then its recovery", async () => {
     let down = true;
     const tx = {
+      $queryRaw: vi.fn(async () => []),
       $executeRaw: vi.fn(async () => 0),
       messagingOutbound: { findFirst: vi.fn(async () => null) },
     };
@@ -83,9 +84,13 @@ describe("chat delivery while the database is unavailable", () => {
     };
     const updateMany = vi.fn(async () => ({ count: 1 }));
     const tx = {
+      $queryRaw: vi.fn(async () => []),
       $executeRaw: vi.fn(async () => 0),
       messagingOutbound: {
-        findFirst: vi.fn(async () => row),
+        // No claim of the previous release in the conversation; this row is its head.
+        findFirst: vi.fn(async ({ where }: { where: { status?: unknown } }) =>
+          where.status === "sent" ? null : row,
+        ),
         update: vi.fn(async () => row),
         updateMany,
       },
