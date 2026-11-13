@@ -210,6 +210,20 @@ describe("tool definitions", () => {
     for (const secret of SECRETS) expect(serialized).not.toContain(secret);
   });
 
+  it("keeps only the newest tool lists of a long history", () => {
+    const load = (index: number) => ({
+      type: "additional_tools",
+      tools: [{ type: "function", name: `t${index}`, parameters: { type: "object" } }],
+    });
+    const tools = summarizeProviderRequest({
+      input: Array.from({ length: 25 }, (_, index) => load(index)),
+    })?.tools;
+    expect(tools).toMatchObject({ count: 25, omittedLists: 5 });
+    expect(tools?.lists.map((list) => list.at)).toEqual(
+      Array.from({ length: 20 }, (_, index) => `input.${index + 5}`),
+    );
+  });
+
   it("counts a name declared twice in one list", () => {
     const tool = { type: "function", name: "x", parameters: { type: "object" } };
     expect(summarizeProviderRequest({ tools: [tool, tool] })?.tools?.duplicateNames).toBe(1);

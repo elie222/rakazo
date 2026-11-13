@@ -23,6 +23,8 @@ export interface ProviderRequestShape {
     maxNameLength: number;
     invalidNames: number;
     duplicateNames: number;
+    /** Older lists left out of `lists` once a request declares more than the cap. */
+    omittedLists?: number;
     /** Each list of tools the request declares, by where it sits: `tools` or `input.<index>`. */
     lists: { at: string; tools: string[] }[];
   };
@@ -139,6 +141,7 @@ const SCHEMA_VALUES = [
 ];
 const MAX_SCHEMA_DEPTH = 64;
 const MAX_TOOL_NAME = 80;
+const MAX_TOOL_LISTS = 20;
 
 /** Walks schema positions only, so a property named like a keyword is never mistaken for one. */
 function scanSchema(
@@ -232,12 +235,14 @@ function describeToolLists(body: Record<string, unknown>): ProviderRequestShape[
     return { at, tools: compact(entries.map((entry) => entry.summary)) };
   });
   const names = all.map((entry) => entry.name).filter(Boolean);
+  const omittedLists = Math.max(0, described.length - MAX_TOOL_LISTS);
   return {
     count: all.length,
     maxNameLength: Math.max(0, ...names.map((name) => name.length)),
     invalidNames: names.filter((name) => !VALID_TOOL_NAME.test(name)).length,
     duplicateNames,
-    lists: described,
+    ...(omittedLists ? { omittedLists } : {}),
+    lists: described.slice(-MAX_TOOL_LISTS),
   };
 }
 
