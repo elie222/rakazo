@@ -47,8 +47,7 @@ import { PARTIAL_REPLY_NOTE } from "./automated-messages.js";
 import { backgroundHelpersAllowed } from "./background-helpers.js";
 import { loadBotMessageContext } from "./bot-messages.js";
 import {
-  commandCredentialRedactions,
-  loadBotCommandEnvironment,
+  loadCommandVariables,
   loadLoginPasswordRedactions,
   loadRunCodeRedactions,
   loadRunLoginRedactions,
@@ -119,6 +118,7 @@ import { usesNativeShell } from "./native-shell.js";
 import { createPaidServiceProvider } from "./paid-services-factory.js";
 import { paymentWalletConnected } from "./payment-wallets.js";
 import { restoreComputerModels } from "./pi-runtime-computer-mode.js";
+import { promptVersion } from "./prompt-version.js";
 import { loadPurchaseRedactions } from "./purchase-service.js";
 import { loadReplyContext, messageToAgentHistoryText } from "./reply-context.js";
 import { backOffRoutineAfterAccountError } from "./routine-backoff.js";
@@ -136,7 +136,10 @@ import { APPROVED_EFFECT_REPLAY_ORDER, buildApprovalContinuation } from "./run-e
 import {
   BOT_DIRECTORY_LIMIT,
   botEmailInstruction,
+  COMPUTER_USE_INSTRUCTION,
   dockerComputerToolInstruction,
+  hostComputerInstruction,
+  PRIVATE_WORKSPACE_INSTRUCTION,
   persistentComputerInstruction,
   runIdentityInstruction,
   threadContextForRun,
@@ -561,7 +564,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           configuredMemory,
           savedSkills,
           agentSkills,
-          initialBotCommandEnvironment,
+          { env: initialBotCommandEnvironment, redactions: commandRedactions },
           savedLoginPasswordRedactions,
           purchaseRedactions,
           runLoginRedactions,
@@ -605,7 +608,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             spaceId: run.spaceId,
             userId: run.userId,
           }),
-          loadBotCommandEnvironment(deps.prisma, deps.secretStore, run),
+          loadCommandVariables(deps.prisma, deps.secretStore, run),
           loadLoginPasswordRedactions(deps.prisma, deps.secretStore, run),
           deps.paymentWallet ? loadPurchaseRedactions(deps, run) : [],
           loadRunLoginRedactions(deps.prisma, deps.secretStore, run, run.id),
@@ -634,7 +637,9 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
               thread.nextMessageSeq)
             : thread.nextMessageSeq;
         // Encoded forms too: read_file redacts with these values before any shell command runs.
-        runSecrets.push(...commandCredentialRedactions(initialBotCommandEnvironment));
+        // Read here only to hide the values and to tell the model the variables' names: no
+        // command has them yet, so nothing is recorded as used until the shell tool sends one.
+        runSecrets.push(...commandRedactions);
         // A login filled in an earlier run may still be on its page, and anything this run reads
         // or is given may contain it, so every run hides its saved passwords before the model runs.
         runSecrets.push(
@@ -1416,16 +1421,11 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                 )
                 .catch(() => undefined)
             : undefined;
-        const hostShell = hostEnvironment
-          ? `Home: ${JSON.stringify(hostEnvironment.home)}. Shell: ${JSON.stringify(hostEnvironment.shell)}. The shell tool executes commands with that shell. Use its native syntax, paths and installed tools; do not assume Linux or bash.`
+        const hostInstruction = hostEnvironment
+          ? hostComputerInstruction(computerKind, hostEnvironment)
           : undefined;
-        const hostInstruction = !hostEnvironment
-          ? undefined
-          : computerKind === "wuying"
-            ? `Commands run on a Windows cloud computer. ${hostShell} Files outside the bot workspace can be accessed through commands. The screen shows the Windows desktop; use the graphical tools for apps without a command line.`
-            : `Commands run on the user's ${hostEnvironment.platform} computer with their account permissions. ${hostShell} Local files outside the bot workspace can be accessed through commands. App launching is available through OS commands; graphical screen control is unavailable.`;
         const computerInstruction = [
-          "Use the computer only when the task needs files, commands, a browser, or an installed application. Answer directly from the conversation when sufficient; use connected tools for app data. A website with no connected app is still yours to use in the computer's browser, now and in scheduled routines, so a missing connection alone is never a reason to decline. Do not inspect the computer just to prepare for an unrelated task. If what you are about to buy, send or submit differs from what the user confirmed, such as a changed item or total, show the difference and confirm again first.",
+          COMPUTER_USE_INSTRUCTION,
           hostInstruction
             ? `${baseComputerInstruction} ${hostInstruction}`
             : dockerToolInstruction
@@ -1438,7 +1438,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         const workspaceInstruction =
           computerMode === "team"
             ? teamWorkspaceInstruction(bot.id)
-            : "This entire computer workspace is your private home. Relative file paths and shell working directories start at its root.";
+            : PRIVATE_WORKSPACE_INSTRUCTION;
 
         const reply = await createReplyState(deps, run, runSecrets);
         const script = scripted ? inferScript(task.prompt, takeoverResume?.checkpoint) : undefined;
@@ -1456,7 +1456,11 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             pendingTurnCheckpoints: new Map(),
             storedTurnCheckpoint,
           },
-          screen: { lastFrameId: undefined, unchangedVisualStreak: { count: 0 } },
+          screen: {
+            lastFrameId: undefined,
+            unchangedVisualStreak: { count: 0 },
+            turn: { controlFence: undefined, mustLook: false },
+          },
           toolCallStreak: { key: undefined, count: 0 },
           overLimitActionCalls: 0,
           toolResults: new Map(),
@@ -1466,6 +1470,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           ownInstructionsBaseline: bot.instructions ?? "",
           earlierAttempt: undefined,
           walletHosts: new Set(),
+          vaultUses: new Set(),
           handedOff: false,
           terminalCheckpointComplete: false,
         };
@@ -1784,6 +1789,16 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
 
         try {
           if (checkpointLoadError) throw checkpointLoadError;
+          // Recorded only once setup is done, so a setup failure is not charged to the prompt.
+          // A label for comparing releases: failing to record it never fails the run.
+          await Promise.resolve()
+            .then(() =>
+              deps.prisma.run.updateMany({
+                where: { id: runId, status: "running", leaseOwner: workerId, leaseFence: fence },
+                data: { promptVersion: promptVersion() },
+              }),
+            )
+            .catch((error: unknown) => getLogger().warn("run.prompt_version_failed", { error }));
           const runtimeEvents = deps.runtime.run(
             {
               botId: bot.id,

@@ -254,7 +254,10 @@ describe("createBackgroundJobHandlers", () => {
     const enqueue = vi.fn(async () => undefined);
     const handlers = createBackgroundJobHandlers({
       executor: {} as unknown as ReturnType<typeof createRunExecutor>,
-      prisma: { computer: owned() } as unknown as PrismaClient,
+      prisma: {
+        computer: owned(),
+        taughtSkill: { findFirst: vi.fn(async () => null) },
+      } as unknown as PrismaClient,
       sandbox: {} as unknown as SandboxProvider,
       home: {} as unknown as AgentHomeStore,
       artifacts: {} as unknown as ArtifactStore,
