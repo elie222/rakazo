@@ -483,11 +483,18 @@ export class PiAgentRuntime implements AgentRuntime {
                       ...usageHooks,
                       prepareContext,
                       onProviderError: (message) => providerFailures.add(message.content),
-                      onRejectedRequest: (rejection) => {
-                        // A later success means the run recovered from earlier rejections.
-                        if (!rejection) rejectedRequests.length = 0;
-                        else if (rejectedRequests.push(rejection) > MAX_REJECTED_REQUESTS)
-                          rejectedRequests.shift();
+                      onRejectedRequest: (rejection, model) => {
+                        if (rejection) {
+                          if (rejectedRequests.push(rejection) > MAX_REJECTED_REQUESTS)
+                            rejectedRequests.shift();
+                          return;
+                        }
+                        // That model recovered; another model's rejection still explains a failure.
+                        for (let index = rejectedRequests.length - 1; index >= 0; index -= 1) {
+                          const entry = rejectedRequests[index];
+                          if (entry?.provider === model.provider && entry.model === model.id)
+                            rejectedRequests.splice(index, 1);
+                        }
                       },
                     },
                   ),

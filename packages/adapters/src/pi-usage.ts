@@ -346,7 +346,7 @@ export function observedPiStream(
     recordUsage?: (event: Extract<AgentRuntimeEvent, { type: "usage" }>) => void | Promise<void>;
     /** Provider failures only; excludes context, reservations and usage settlement. */
     onProviderError?: (message: AssistantMessage) => void;
-    onRejectedRequest?: (rejection: RejectedProviderRequest | undefined) => void;
+    onRejectedRequest?: (rejection: RejectedProviderRequest | undefined, model: Model<Api>) => void;
   },
 ) {
   const stream = createAssistantMessageEventStream();

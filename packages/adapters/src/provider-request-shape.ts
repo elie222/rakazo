@@ -1,4 +1,4 @@
-import type { SimpleStreamOptions } from "@earendil-works/pi-ai";
+import type { Api, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
 
 /**
  * The shape of a model request a provider rejected, safe to log: key names, counts, part types,
@@ -162,11 +162,11 @@ export function summarizeProviderRequest(payload: unknown): ProviderRequestShape
 
 /**
  * Stream options that report each response: the request's shape when it was rejected with a
- * 4xx, and undefined when it succeeded, so rejections the run recovered from are dropped.
+ * 4xx, and undefined when that model succeeded, so the rejections it recovered from drop.
  */
 export function withRejectedRequestCapture<O extends SimpleStreamOptions>(
   options: O,
-  onRejected: (rejection: RejectedProviderRequest | undefined) => void,
+  onRejected: (rejection: RejectedProviderRequest | undefined, model: Model<Api>) => void,
 ): O {
   let payload: unknown;
   const { onPayload, onResponse } = options;
@@ -185,14 +185,17 @@ export function withRejectedRequestCapture<O extends SimpleStreamOptions>(
         const requestId = REQUEST_ID_HEADERS.map((name) => headers[name]).find(
           (value) => value !== undefined && REQUEST_ID.test(value),
         );
-        onRejected({
-          provider: model.provider,
-          model: model.id,
-          status: response.status,
-          ...(requestId ? { requestId } : {}),
-          body: summarizeProviderRequest(payload),
-        });
-      } else if (response.status < 400) onRejected(undefined);
+        onRejected(
+          {
+            provider: model.provider,
+            model: model.id,
+            status: response.status,
+            ...(requestId ? { requestId } : {}),
+            body: summarizeProviderRequest(payload),
+          },
+          model,
+        );
+      } else if (response.status >= 200 && response.status < 300) onRejected(undefined, model);
       return onResponse?.(response, model);
     },
   };

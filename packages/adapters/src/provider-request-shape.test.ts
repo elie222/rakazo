@@ -195,6 +195,7 @@ describe("withRejectedRequestCapture", () => {
       reported.push(value),
     );
     await options.onResponse?.({ status: 500, headers: {} }, model);
+    await options.onResponse?.({ status: 302, headers: {} }, model);
     expect(reported).toEqual([]);
     await options.onResponse?.({ status: 200, headers: {} }, model);
     expect(reported).toEqual([undefined]);
