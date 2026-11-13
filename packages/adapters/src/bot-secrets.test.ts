@@ -16,6 +16,7 @@ import {
   LOGIN_CODES_USED_UP,
   LOGIN_REMOVED,
   LOGIN_VALUE_CHANGED,
+  linkHeaderEntries,
   listBotSecrets,
   loadLoginPasswordRedactions,
   loadRunCodeRedactions,
@@ -30,6 +31,7 @@ import {
   resolveCodeFill,
   resolveLoginFill,
   resolveRequestSecretDestination,
+  responsePaging,
   sameSecretDestination,
   storeBotSecret,
 } from "./bot-secrets.js";
@@ -362,6 +364,62 @@ describe("authenticated secret requests", () => {
     });
   });
 
+  it("returns where the next page is, redacted", async () => {
+    const { input, fetch } = await fixture();
+    const page = (n: number) => `${destination.origin}/api/v1/courses?page=${n}&per_page=10`;
+    fetch.mockResolvedValueOnce(
+      new Response("[]", {
+        headers: {
+          Link: `<${page(1)}>; rel="current",<${page(2)}>; rel="next",<${page(1)}>; rel="first", <${page(5)}&k=${secret}>; rel=last`,
+          "X-Total-Count": "42",
+          "X-Echo": secret,
+        },
+      }),
+    );
+    const result = await requestWithBotSecret(input);
+    expect(result).toMatchObject({ status: 200, truncated: false });
+    // A link that carries the credential is left out, not returned with it replaced.
+    expect(result).toHaveProperty("links", { current: page(1), next: page(2), first: page(1) });
+    expect(result).toHaveProperty("headers", { "x-total-count": "42" });
+    expect(JSON.stringify(result)).not.toContain(secret);
+    expect(JSON.stringify(result)).not.toContain("x-echo");
+  });
+
+  it("leaves out links and headers echoing the credential in another case or escape", async () => {
+    const { input, fetch } = await fixture();
+    const page = (n: number) => `${destination.origin}/api/v1/courses?page=${n}`;
+    const lowerEscaped = encodeURIComponent(secret).toLowerCase();
+    fetch.mockResolvedValueOnce(
+      new Response("[]", {
+        headers: {
+          Link: `<${page(2)}>; rel=next, <${page(5)}&k=${lowerEscaped}>; rel=last, <${page(4)}&k=${encodeURIComponent(lowerEscaped)}>; rel=prev`,
+          "X-Next-Page": secret.toUpperCase(),
+          "X-Total": "40",
+        },
+      }),
+    );
+    const result = await requestWithBotSecret(input);
+    expect(result).toHaveProperty("links", { next: page(2) });
+    expect(result).toHaveProperty("headers", { "x-total": "40" });
+    const text = JSON.stringify(result).toLowerCase();
+    expect(text).not.toContain(lowerEscaped);
+    expect(text).not.toContain(secret.toLowerCase());
+  });
+
+  it("leaves out a relation whose URI carries the credential", async () => {
+    const { input, fetch } = await fixture();
+    const page = `${destination.origin}/api/v1/courses?page=2`;
+    const lowerEscaped = encodeURIComponent(secret).toLowerCase();
+    fetch.mockResolvedValueOnce(
+      new Response("[]", {
+        headers: { Link: `<${page}>; rel="next https://rel.example.test/${lowerEscaped}"` },
+      }),
+    );
+    const result = await requestWithBotSecret(input);
+    expect(result).toHaveProperty("links", { next: page });
+    expect(JSON.stringify(result).toLowerCase()).not.toContain(lowerEscaped);
+  });
+
   it("redacts before truncating and bounds the response body", async () => {
     const { input, fetch } = await fixture();
     fetch.mockResolvedValueOnce(new Response("x".repeat(19_990) + secret));
@@ -580,6 +638,87 @@ describe("authenticated secret requests", () => {
       error: expect.stringContaining("Authenticated request failed"),
     });
     expect(fetch).not.toHaveBeenCalled();
+  });
+});
+
+describe("responsePaging", () => {
+  const base = "https://api.example.test/v1/items?page=1";
+
+  it("reads quoted Link parameters that hold commas and semicolons", () => {
+    const header =
+      '<https://api.example.test/v1/items?page=2>; title="Page, next; really"; rel="next", ' +
+      '<https://api.example.test/v1/items?page=9>; rel="last"; title="rel=next"';
+    expect(linkHeaderEntries(header).map((entry) => entry.params.get("rel"))).toEqual([
+      "next",
+      "last",
+    ]);
+    expect(responsePaging(new Headers({ Link: header }), base).links).toEqual({
+      next: "https://api.example.test/v1/items?page=2",
+      last: "https://api.example.test/v1/items?page=9",
+    });
+  });
+
+  it("resolves relative links against the request URL and drops unusable ones", () => {
+    const headers = new Headers({
+      Link: '</v1/items?page=2>; rel=next, <?page=1>; rel="first prev", <javascript:alert(1)>; rel=last',
+    });
+    expect(responsePaging(headers, base).links).toEqual({
+      next: "https://api.example.test/v1/items?page=2",
+      first: "https://api.example.test/v1/items?page=1",
+      prev: "https://api.example.test/v1/items?page=1",
+    });
+  });
+
+  it("keeps the case of extension relations, which are URIs", () => {
+    const headers = new Headers({
+      Link: '</v1/items?page=2>; rel="NEXT https://api.example.test/Relations/Next"',
+    });
+    expect(responsePaging(headers, base).links).toEqual({
+      next: "https://api.example.test/v1/items?page=2",
+      "https://api.example.test/Relations/Next": "https://api.example.test/v1/items?page=2",
+    });
+  });
+
+  it("keeps relations named like Object properties", () => {
+    const headers = new Headers({
+      Link: '</v1/items?page=2>; rel="constructor toString", </v1/items?page=3>; rel=__proto__',
+    });
+    const links = responsePaging(headers, base).links ?? {};
+    expect(links.constructor).toBe("https://api.example.test/v1/items?page=2");
+    // Registered names are lowercased.
+    expect(Object.hasOwn(links, "tostring")).toBe(true);
+    expect(Object.hasOwn(links, "__proto__")).toBe(true);
+    expect(Object.getPrototypeOf(links)).toBe(Object.prototype);
+  });
+
+  it("bounds links and headers together, keeping the next page and paging headers", () => {
+    const pages = Array.from(
+      { length: 12 },
+      (_, n) => `</v1/items?p=${n}${"x".repeat(900)}>; rel=r${n}`,
+    );
+    const headers = new Headers({
+      Link: [...pages, "</v1/items?page=2>; rel=next"].join(", "),
+      "X-Next-Page": "2",
+      "X-Total": "40",
+    });
+    const result = responsePaging(headers, base);
+    expect(result.links?.next).toBe("https://api.example.test/v1/items?page=2");
+    expect(result.headers).toEqual({ "x-next-page": "2", "x-total": "40" });
+    expect(JSON.stringify(result).length).toBeLessThan(6_500);
+    expect(Object.keys(result.links ?? {}).length).toBeGreaterThan(1);
+  });
+
+  it("leaves out links and paging headers too long to return", () => {
+    const long = "x".repeat(2_001);
+    const headers = new Headers({
+      Link: `</v1/items?cursor=${long}>; rel=next, </v1/items?page=1>; rel=first`,
+      "X-Next-Page": long,
+      "X-Total": "40",
+    });
+    expect(responsePaging(headers, base)).toEqual({
+      links: { first: "https://api.example.test/v1/items?page=1" },
+      headers: { "x-total": "40" },
+    });
   });
 });
 
