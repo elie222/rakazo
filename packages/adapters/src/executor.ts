@@ -806,7 +806,9 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         const groupReplyOptional =
           Boolean(thread.groupId) && run.trigger === "user" && run.groupReplyOptional;
         // A group member a message named nobody may stay silent, so it shows nothing early.
-        const statusLinesWanted = runNarratesLive(run.trigger) && !groupReplyOptional;
+        // Messages mode keeps a bot's working private, so it shows no statuses either.
+        const statusLinesWanted =
+          runNarratesLive(run.trigger) && !groupReplyOptional && bot.replyMode !== "messages";
         // Set up in the background: the run never waits on the status model. Its statuses
         // show as soon as they are ready, not once the run has finished setting up.
         const statusLinesSetup = statusLinesWanted
@@ -1909,7 +1911,9 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                 pluginLine,
                 agentSkillsLine,
                 taughtSkillsLine,
-                replyGuidance: runReplyGuidance(run.trigger, replyMode),
+                replyGuidance: runReplyGuidance(run.trigger, replyMode, {
+                  mayStaySilent: groupReplyOptional,
+                }),
                 // These runs get a narrow tool set, so guidance names only the tools they have.
                 disabledBuiltinTools:
                   isStrategicInitiativeRun(run) || run.trigger === BACKGROUND_HELPER_TRIGGER

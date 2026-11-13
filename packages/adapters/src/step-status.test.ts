@@ -74,6 +74,12 @@ describe("step status field", () => {
       expect(runReplyGuidance("bot_message")).toContain("never to announce that you are starting");
     });
 
+    it("tells a group member a message named nobody not to open with a sentence", () => {
+      expect(runReplyGuidance("user", "chat", { mayStaySilent: true })).not.toContain(
+        "live_status field",
+      );
+    });
+
     it("keeps the live guidance for bots without message_user", () => {
       const guidance = replyGuidanceForOfferedTools(
         runReplyGuidance("user"),

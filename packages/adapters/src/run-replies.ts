@@ -85,13 +85,18 @@ export function runReplyMode(
     : "chat";
 }
 
-export function runReplyGuidance(trigger: string, replyMode: ReplyMode = "chat"): string {
+export function runReplyGuidance(
+  trigger: string,
+  replyMode: ReplyMode = "chat",
+  { mayStaySilent = false }: { mayStaySilent?: boolean } = {},
+): string {
   if (replyMode === "messages") return messagesModeReplyGuidance();
   if (trigger === "reaction") return REACTION_SILENT_REPLY_GUIDANCE;
   if (isBackgroundRunTrigger(trigger)) return TICKET_SILENT_REPLY_GUIDANCE;
   return runAllowsSilentEmpty(trigger)
     ? ROUTINE_SILENT_REPLY_GUIDANCE
-    : longWorkProgressGuidance(undefined, runNarratesLive(trigger));
+    : // A group member a message named nobody may stay silent, so it is not told to open.
+      longWorkProgressGuidance(undefined, runNarratesLive(trigger) && !mayStaySilent);
 }
 
 export function replyGuidanceForOfferedTools(
