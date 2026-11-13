@@ -2,7 +2,13 @@ import { REPLY_QUOTE_MAX_LENGTH } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import { toHistory } from "./pi-runtime-history.js";
-import { loadReplyContext, messageToAgentHistoryText } from "./reply-context.js";
+import {
+  loadReplyContext,
+  messageToAgentHistorySegments,
+  messageToAgentHistoryText,
+} from "./reply-context.js";
+
+const OFFERED = new Set(["shell", "SLACK_FIND_CHANNELS", "read_file"]);
 
 function harness(replyTo: unknown = null, replyQuote: string | null = null) {
   const findFirst = vi.fn().mockResolvedValue({
@@ -243,5 +249,51 @@ describe("earlier turns' tool work", () => {
     expect(text).toContain("Shell ×2: Installing the password manager extension.");
     expect(text).toContain("Computer screenshot");
     expect(text).toContain("Done.");
+  });
+
+  it("replays the stored steps as the bot's own tool calls when the run has tools", () => {
+    const message = {
+      id: "bot-install",
+      threadId: "thread-1",
+      role: "bot",
+      blocks: [
+        {
+          kind: "steps",
+          steps: [
+            {
+              label: "Shell",
+              tool: "shell",
+              count: 1,
+              note: "Installing the extension.",
+              calls: [{ arguments: '{"command":"ls ext"}', result: "10.7.1_0" }],
+            },
+          ],
+        },
+        { kind: "text", text: "Done." },
+      ],
+    };
+    const replayed = toHistory(
+      [
+        {
+          id: "bot-install",
+          role: "assistant",
+          content: messageToAgentHistoryText(message),
+          segments: messageToAgentHistorySegments(message),
+        },
+      ],
+      "Did you install the extension?",
+      undefined,
+      OFFERED,
+    );
+    expect(replayed.map((entry) => entry.role)).toEqual(["assistant", "toolResult", "assistant"]);
+    expect(replayed[0]).toMatchObject({
+      content: [
+        { type: "text", text: "Installing the extension." },
+        { type: "toolCall", name: "shell", arguments: { command: "ls ext" } },
+      ],
+    });
+    expect(
+      messageToAgentHistorySegments({ ...message, blocks: [{ kind: "text", text: "Hi." }] }),
+    ).toBeUndefined();
   });
 });

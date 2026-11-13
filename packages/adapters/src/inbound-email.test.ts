@@ -345,6 +345,15 @@ describe("readInboundEmail", () => {
     expect(lookups).toEqual([]);
   });
 
+  it("does not split an emoji where a long body is cut", async () => {
+    const body = `${"a".repeat(INBOUND_EMAIL_TEXT_MAX_CHARS - 1)}😀 tail`;
+    const raw = message(plain, `${body}\r\n`);
+
+    const email = await readInboundEmail(bytes(raw), { resolver });
+
+    expect(email.text).toBe(`${"a".repeat(INBOUND_EMAIL_TEXT_MAX_CHARS - 1)}\n[…]`);
+  });
+
   it("refuses mail with more parts than real mail has", async () => {
     const boundary = "b2";
     const parts = Array.from(

@@ -1,4 +1,4 @@
-import type { ToolStep } from "@rakazo/core";
+import type { HistoryToolStep } from "@rakazo/contracts";
 import type { Criterion } from "./cases.js";
 
 export const HISTORY_FIXTURE_VERSION = "history-v1-seed-73";
@@ -10,8 +10,11 @@ export type HistoryMessage = {
   /** Empty when the message carries only a file. */
   text: string;
   subagentResult?: string;
-  /** Tools a bot reply used, stored as the reply's steps block. */
-  steps?: ToolStep[];
+  /**
+   * Tools a bot reply used, stored as the reply's steps block; each step's tool and kept calls
+   * are stored apart from it, as the product stores them.
+   */
+  steps?: HistoryToolStep[];
   /** A synthetic file the user attached, uploaded through the product before seeding. */
   file?: { name: string; mimeType: string; content: string };
   createdAt: Date;

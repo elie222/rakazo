@@ -834,6 +834,8 @@ export const appContract = {
           reason: ComputerReleaseReasonSchema.optional(),
           /** The run a needs-you card answers; the release applies only while it waits on the caller. */
           runId: Id.optional(),
+          /** The lease this page took; a late release from an old page leaves newer control alone. */
+          leaseId: Id.optional(),
         }),
       )
       .output(z.object({ ok: z.literal(true) })),
