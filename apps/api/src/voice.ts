@@ -25,7 +25,7 @@ import type {
   VoiceStatus,
 } from "@rakazo/contracts";
 import { SettingsScopeSchema } from "@rakazo/contracts";
-import { toUtterances } from "@rakazo/core";
+import { speakable, toUtterances } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import {
   deleteUnreferencedCredentialSecret,
@@ -629,7 +629,7 @@ async function spokenUtterances(
   const full = toUtterances(input.text);
   const summary = deps.speechSummary;
   if (!input.botId || !summary) return full;
-  if (full.join(" ").length <= summary.minChars) return full;
+  if (speakable(input.text).length <= summary.minChars) return full;
   const spoken = await summary.summarize(actor, input.botId, input.text, input.signal);
   const utterances = spoken ? toUtterances(spoken) : [];
   return utterances.length > 0 ? utterances : full;
