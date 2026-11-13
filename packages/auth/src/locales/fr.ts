@@ -24,15 +24,20 @@ export const FR_MESSAGES: Record<string, string> = {
   "Enter this code in Rakazo to confirm it's you:":
     "Saisissez ce code dans Rakazo pour confirmer que c’est bien vous :",
   "Welcome to Rakazo": "Bienvenue dans Rakazo",
-  "Thanks for signing up for Rakazo.": "Merci de vous être inscrit à Rakazo.",
-  "Rakazo also has apps for": "Rakazo existe aussi en app pour",
-  "Questions or ideas?": "Des questions ou des idées ?",
-  "Join us on Discord": "Rejoignez-nous sur Discord",
-  "Rakazo is open source. If you like it,": "Rakazo est open source. S’il vous plaît,",
-  "a star on GitHub": "une étoile sur GitHub",
-  "helps others find it.": "aide d’autres personnes à le découvrir.",
-  "Want to run it on your own servers?": "Vous voulez l’héberger sur vos propres serveurs ?",
-  "Self-host Rakazo": "Héberger Rakazo soi-même",
+  "Welcome to Rakazo. The people who get the most out of it do three things:":
+    "Bienvenue dans Rakazo. Ceux qui en tirent le meilleur parti font trois choses :",
+  "Get the apps": "Installez les apps",
+  "Rakazo runs on {platforms}, so your bots can reach you wherever you are.":
+    "Rakazo fonctionne sur {platforms}, pour que vos bots puissent vous joindre où que vous soyez.",
+  "Join the community": "Rejoignez la communauté",
+  "See what others are building, get help fast, and tell us what to build next on {discord}.":
+    "Découvrez ce que les autres créent, obtenez de l’aide rapidement et dites-nous quoi créer ensuite sur {discord}.",
+  "Star us on GitHub": "Ajoutez une étoile sur GitHub",
+  "Rakazo is open source. {star} helps more people find it.":
+    "Rakazo est open source. {star} aide plus de monde à le découvrir.",
+  "A star on GitHub": "Une étoile sur GitHub",
+  "Questions? Just reply. I read every one.":
+    "Des questions ? Répondez simplement. Je lis tous les messages.",
   "Have any questions? Reply to this email.": "Des questions ? Répondez à cet e-mail.",
   Unsubscribe: "Se désabonner",
   "Invite a friend": "Invitez un ami",
