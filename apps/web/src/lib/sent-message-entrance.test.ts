@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { SENT_ENTRANCE_WINDOW_MS, sentMessageEntrances } from "./sent-message-entrance.js";
+import {
+  SENT_ENTRANCE_WINDOW_MS,
+  sentMessageEntrances,
+  withNewSends,
+  withoutUnsent,
+} from "./sent-message-entrance.js";
 
 const mine = (id: string) => ({ id, role: "user", author: { id: "me" } });
 const bot = (id: string) => ({ id, role: "bot" });
@@ -99,5 +104,22 @@ describe("sentMessageEntrances", () => {
       now: 1_500,
     });
     expect(result).toEqual({ entering: ["new"], pendingSends: [] });
+  });
+});
+
+describe("pending sends", () => {
+  it("gives each send that landed in one render its own entrance and text", () => {
+    expect(withNewSends([], ["First", "Second"], 2, 1_000)).toEqual([
+      { sentAt: 1_000, text: "First" },
+      { sentAt: 1_000, text: "Second" },
+    ]);
+  });
+
+  it("drops only the send that produced no message", () => {
+    const pending = [
+      { sentAt: 1_000, text: "First" },
+      { sentAt: 1_000, text: "Second" },
+    ];
+    expect(withoutUnsent(pending, ["First"])).toEqual([{ sentAt: 1_000, text: "Second" }]);
   });
 });

@@ -53,6 +53,8 @@ import {
   SENT_ENTRANCE_KEYFRAMES,
   SENT_ENTRANCE_TIMING,
   sentMessageEntrances,
+  withNewSends,
+  withoutUnsent,
 } from "../../lib/sent-message-entrance";
 import { messageHasVisibleBlocks } from "../../lib/tool-activity-view";
 import { TRANSCRIPT_CONTENT_PADDING } from "../../lib/transcript-layout";
@@ -74,8 +76,9 @@ export const Transcript = memo(function Transcript({
   scrollRequest,
   onScrollRequestHandled,
   followRequest,
-  sentText,
+  sentTexts = [],
   unsentRequests = 0,
+  unsentTexts = [],
   artifactTarget,
   transcript,
   meId,
@@ -120,10 +123,12 @@ export const Transcript = memo(function Transcript({
   onScrollRequestHandled: () => void;
   /** Changes when you send: the view moves to the end and follows the reply. */
   followRequest: number;
-  /** The text of the latest send from this tab, so only that message enters with it. */
-  sentText?: string;
-  /** Sends from this tab that produced no message: their entrance is dropped. */
+  /** The texts of recent sends from this tab, newest last, so each message enters with its own. */
+  sentTexts?: readonly string[];
+  /** Sends from this tab that produced no message: their entrances are dropped. */
   unsentRequests?: number;
+  /** The texts of those sends, newest last. */
+  unsentTexts?: readonly string[];
   artifactTarget: ArtifactTarget;
   transcript: FoldedTranscript<ThreadMessage>;
   meId?: string;
@@ -464,18 +469,21 @@ export const Transcript = memo(function Transcript({
   const pendingSends = useRef<PendingSend[]>([]);
   useLayoutEffect(() => {
     if (followedRequest.current === followRequest) return;
+    // Several sends can land in one render; each gets its own entrance with its own text.
+    const sends = Math.max(1, followRequest - followedRequest.current);
     followedRequest.current = followRequest;
-    pendingSends.current.push({ sentAt: Date.now(), text: sentText });
+    pendingSends.current = withNewSends(pendingSends.current, sentTexts, sends, Date.now());
     snapToEnd();
-  }, [followRequest, snapToEnd, sentText]);
+  }, [followRequest, snapToEnd, sentTexts]);
 
   const droppedRequests = useRef(unsentRequests);
   useLayoutEffect(() => {
     const dropped = unsentRequests - droppedRequests.current;
     droppedRequests.current = unsentRequests;
-    // The newest sends are the ones that produced nothing.
-    if (dropped > 0) pendingSends.current.splice(-dropped, dropped);
-  }, [unsentRequests]);
+    // Drop the entrance of each send that produced nothing, matched by its text.
+    if (dropped > 0)
+      pendingSends.current = withoutUnsent(pendingSends.current, unsentTexts.slice(-dropped));
+  }, [unsentRequests, unsentTexts]);
 
   useLayoutEffect(() => {
     const element = scrollRef.current;

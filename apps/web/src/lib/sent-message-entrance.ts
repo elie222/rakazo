@@ -78,3 +78,26 @@ export function sentMessageEntrances({
   }
   return { entering, pendingSends: stillPending };
 }
+
+/** The pending sends after `count` new sends, each with its own text from `recentTexts`. */
+export function withNewSends(
+  pending: readonly PendingSend[],
+  recentTexts: readonly string[],
+  count: number,
+  sentAt: number,
+): PendingSend[] {
+  return [...pending, ...recentTexts.slice(-Math.max(1, count)).map((text) => ({ sentAt, text }))];
+}
+
+/** The pending sends without those that produced no message, matched by their text. */
+export function withoutUnsent(
+  pending: readonly PendingSend[],
+  unsentTexts: readonly string[],
+): PendingSend[] {
+  const next = [...pending];
+  for (const text of unsentTexts) {
+    const index = next.findLastIndex((send) => send.text === text);
+    next.splice(index < 0 ? -1 : index, 1);
+  }
+  return next;
+}

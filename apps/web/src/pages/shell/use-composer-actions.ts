@@ -43,6 +43,9 @@ type ThreadRefresh = RefObject<(id: string) => Promise<ThreadSnapshot>>;
  * What the composer sends and the chat actions beside it: attachments, replies, send, stop,
  * answers, reactions, and the errors they leave.
  */
+
+/** How many recent sends the transcript can match to arriving messages. */
+const RECENT_SENDS = 20;
 export function useComposerActions({
   rpc,
   pageSession,
@@ -96,8 +99,10 @@ export function useComposerActions({
   const [sentCount, setSentCount] = useState(0);
   // Sends that produced no message of yours: a routine-only submission or a failed send.
   const [unsentCount, setUnsentCount] = useState(0);
-  // The text of the latest send, so only that message enters with the send animation.
-  const [sentText, setSentText] = useState<string | undefined>(undefined);
+  // The texts of recent sends, newest last, so each message enters with its own send, and the
+  // texts of sends that produced no message, so their entrances are dropped.
+  const [sentTexts, setSentTexts] = useState<readonly string[]>([]);
+  const [unsentTexts, setUnsentTexts] = useState<readonly string[]>([]);
   useEffect(() => {
     setComposerUnsavedWork({ sending, attachments: pendingAttachments.length > 0 });
     return () => setComposerUnsavedWork({ sending: false, attachments: false });
@@ -380,7 +385,7 @@ export function useComposerActions({
       setSending(true);
       setSendError(null);
       clearReadBoundary();
-      setSentText(trimmed);
+      setSentTexts((texts) => [...texts.slice(-(RECENT_SENDS - 1)), trimmed]);
       setSentCount((count) => count + 1);
       const dropDelayedSetup = () => {
         // Only after successful engagement so a failed upload/send keeps the setup card.
@@ -395,6 +400,7 @@ export function useComposerActions({
       try {
         if (!plan.shouldSend) {
           unsentCounted = true;
+          setUnsentTexts((texts) => [...texts.slice(-(RECENT_SENDS - 1)), trimmed]);
           setUnsentCount((count) => count + 1);
           if (plan.shouldRunRoutines) {
             await rpc.threads.sendWithRoutines({
@@ -514,7 +520,10 @@ export function useComposerActions({
         else if (botTarget) void refreshThreadRef.current(botTarget).catch(() => undefined);
         return true;
       } catch (error) {
-        if (!accepted && !unsentCounted) setUnsentCount((count) => count + 1);
+        if (!accepted && !unsentCounted) {
+          setUnsentTexts((texts) => [...texts.slice(-(RECENT_SENDS - 1)), trimmed]);
+          setUnsentCount((count) => count + 1);
+        }
         const isConfirmation = isImageInputConfirmation(error);
         // Offer the file resend only for the unchanged draft this send carried.
         const confirmation = isConfirmation && draftEdits.current === editsAtSend;
@@ -631,8 +640,9 @@ export function useComposerActions({
     clearReply,
     sending,
     sentCount,
-    sentText,
+    sentTexts,
     unsentCount,
+    unsentTexts,
     sendMessage,
     stopRun,
     answerMessage,
