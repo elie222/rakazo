@@ -530,7 +530,6 @@ export function useComputerControls({
   activeGroupId,
   runStatus,
   sandboxProvider,
-  teaching = false,
   refreshThread,
   refreshGroupThread,
   onUpgrade,
@@ -545,8 +544,6 @@ export function useComputerControls({
   activeGroupId: RefObject<string | undefined>;
   runStatus: Run["status"] | undefined;
   sandboxProvider: Me["sandboxProvider"] | undefined;
-  /** A teaching recording is running, which keeps this person's control while it does. */
-  teaching?: boolean;
   refreshThread: (botId: string) => Promise<ThreadSnapshot>;
   refreshGroupThread: (groupId: string) => Promise<ThreadSnapshot>;
   onUpgrade: () => void;
@@ -751,9 +748,8 @@ export function useComputerControls({
   const hasControl = userHoldsComputerControl(computer, computerBot?.id);
   useEffect(() => {
     const heartbeatBotId = computerBot?.id ?? active?.id;
-    // A teaching recording holds the screen even while its window is closed.
-    const showing = panel === "computer" || computerOpen || teaching;
-    if (!showing || !heartbeatBotId || computer?.state !== "running") return;
+    if ((panel !== "computer" && !computerOpen) || !heartbeatBotId || computer?.state !== "running")
+      return;
     // A screen left open in a hidden window must not keep the computer awake, but control lasts
     // while the page checks in, so the person holding it keeps it from another tab.
     const ping = () => {
@@ -768,7 +764,7 @@ export function useComputerControls({
     );
     ping();
     return () => window.clearInterval(timer);
-  }, [panel, computerOpen, teaching, computerBot?.id, active?.id, computer?.state, hasControl]);
+  }, [panel, computerOpen, computerBot?.id, active?.id, computer?.state, hasControl]);
 
   // Control ends with the screen: closing it, switching chats, or leaving the page hands it back.
   const heldBotId = hasControl && computerOpen ? computerBot?.id : undefined;

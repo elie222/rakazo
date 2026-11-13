@@ -3,6 +3,7 @@ import {
   computerControlExpireJob,
   computerControlExpireJobKey,
   runContinueJob,
+  skillTeachingExpireJob,
 } from "@rakazo/adapter-kit";
 import { COMPUTER_CONTROL_LEASE_MS } from "@rakazo/core";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
@@ -129,12 +130,17 @@ export async function releaseComputerControlLease(
     leaseId,
     reason,
   });
-  if (released) {
+  if (!released) return false;
+  await deps.jobs
+    .cancel(computerControlExpireJobKey(computer.id, leaseId))
+    .catch((error) => getLogger().error("computer control expiry cancellation", error));
+  // A recording made under this lease is now a draft; its job posts the draft to the chat.
+  for (const skillId of released.draftedSkillIds) {
     await deps.jobs
-      .cancel(computerControlExpireJobKey(computer.id, leaseId))
-      .catch((error) => getLogger().error("computer control expiry cancellation", error));
+      .enqueue(skillTeachingExpireJob(skillId, new Date()))
+      .catch((error) => getLogger().error("teaching draft publish enqueue", error));
   }
-  return released;
+  return true;
 }
 
 /** Ends a lease its page stopped renewing; a renewed one is checked again when it would lapse. */

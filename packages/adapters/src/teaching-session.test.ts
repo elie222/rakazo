@@ -1,20 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
-import type * as ComputerControl from "./computer-control.js";
-import { expireComputerControl } from "./computer-control.js";
 import {
   appendRecordingEvent,
   applyTeachingDesktopInput,
   completeTeachingSession,
   emptyRecording,
-  expireComputerControlAndTeaching,
   expireTaughtSkillTeaching,
   recordTeachingInputEvent,
 } from "./teaching-session.js";
-
-vi.mock("./computer-control.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof ComputerControl>();
-  return { ...actual, expireComputerControl: vi.fn(actual.expireComputerControl) };
-});
 
 function skillRow(
   overrides: Partial<ReturnType<typeof emptySkill>> = {},
@@ -102,7 +94,7 @@ function recordingDeps(skill: ReturnType<typeof skillRow>) {
       events: {
         append: vi.fn(),
         notify: vi.fn(),
-        releaseUserControl: vi.fn().mockResolvedValue(true),
+        releaseUserControl: vi.fn().mockResolvedValue({ draftedSkillIds: [] }),
       },
       jobs: {
         enqueue: vi.fn().mockResolvedValue(undefined),
@@ -272,53 +264,6 @@ describe("completeTeachingSession", () => {
     // A retry after the finalize commit must not lose or duplicate the stopped event.
     await completeTeachingSession(deps as never, actor, "skill-1", "stopped");
     expect(stoppedEvents()).toHaveLength(1);
-  });
-});
-
-describe("expireComputerControlAndTeaching", () => {
-  /** Member A's lapsed lease is still on the computer while member B's recording exists. */
-  function staleExpiry(recordingLease: string) {
-    const recording = { ...emptyRecording(), controlLeaseId: recordingLease };
-    const harness = recordingDeps(skillRow({ userId: "user-b", recording }));
-    Object.assign(harness.deps.prisma, {
-      computer: {
-        findUnique: vi.fn(async () => ({ controlLeaseId: "lease-a", controlBotId: "bot-1" })),
-      },
-    });
-    vi.mocked(expireComputerControl).mockResolvedValueOnce(true);
-    return harness;
-  }
-
-  it("leaves a recording another member started on a new lease", async () => {
-    const { deps, current } = staleExpiry("lease-b");
-    await expect(
-      expireComputerControlAndTeaching(deps as never, "computer-1", "lease-a"),
-    ).resolves.toBe(true);
-    expect(current().status).toBe("recording");
-    expect(deps.events.releaseUserControl).not.toHaveBeenCalled();
-    expect(deps.jobs.cancel).not.toHaveBeenCalled();
-  });
-
-  it("rechecks the recording's lease under its row lock before ending it", async () => {
-    const { deps, tx, current } = staleExpiry("lease-a");
-    // The row now belongs to a recording on another member's lease by the time it is locked.
-    tx.taughtSkill.findUniqueOrThrow.mockResolvedValueOnce({
-      ...current(),
-      recording: { ...emptyRecording(), controlLeaseId: "lease-b" },
-    });
-    await expireComputerControlAndTeaching(deps as never, "computer-1", "lease-a");
-    expect(current().status).toBe("recording");
-    expect(deps.events.releaseUserControl).not.toHaveBeenCalled();
-  });
-
-  it("ends the recording bound to the lease that lapsed", async () => {
-    const { deps, tx, current } = staleExpiry("lease-a");
-    const bot = { id: "bot-1", thread: { id: "thread-1" }, computer: null };
-    deps.prisma.bot.findUnique = vi.fn().mockResolvedValue(bot);
-    tx.bot.findUnique = vi.fn().mockResolvedValue(bot);
-    await expireComputerControlAndTeaching(deps as never, "computer-1", "lease-a");
-    expect(current().status).toBe("draft");
-    expect(deps.jobs.cancel).toHaveBeenCalled();
   });
 });
 

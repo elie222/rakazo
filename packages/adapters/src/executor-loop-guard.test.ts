@@ -174,8 +174,6 @@ async function runLoop(
   };
   let answeredMessageIds = ["steer-1"];
   const prisma = {
-    $queryRaw: vi.fn(async () => []),
-    $executeRaw: vi.fn(async () => 0),
     externalEffect,
     steeringMessage: {
       findMany: vi.fn(async () => answeredMessageIds.map((messageId) => ({ messageId }))),

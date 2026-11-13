@@ -230,7 +230,6 @@ function fixture(runId = "run-1") {
     $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(prisma)),
     space: { findUnique: vi.fn(async () => null) },
     $queryRaw: vi.fn(async () => []),
-    $executeRaw: vi.fn(async () => 0),
     spaceMember: { findUnique: async () => ({ id: "member-1" }) },
     usageRecord: {
       createMany: vi.fn(async (_input: { data: Array<{ model: string }> }) => ({ count: 1 })),

@@ -29,8 +29,6 @@ vi.mock("./purchase-service.js", async (importOriginal) => ({
 
 /** A computer row the screen gate finds nobody on. */
 const freeComputer = { findUnique: async () => null };
-/** The screen gate's raw writes: no person on the screen, and nothing to clear. */
-const freeScreen = { $queryRaw: async () => [], $executeRaw: async () => 0 };
 
 /** A screen this run has not shared with a person. */
 const freshScreen = () => ({
@@ -60,7 +58,6 @@ async function runPageTool(name: string, args: Record<string, unknown> = {}) {
       prisma: {
         taughtSkill: { findFirst: async () => null },
         computer: freeComputer,
-        ...freeScreen,
       },
     },
     run: { spaceId: "space", botId: "b1" },
@@ -134,7 +131,6 @@ describe("page tools save a page's file downloads in the calling bot's own folde
         prisma: {
           taughtSkill: { findFirst: async () => null },
           computer: freeComputer,
-          ...freeScreen,
         },
       },
       run: { spaceId: "space", botId },
@@ -226,23 +222,18 @@ describe("screen tools keep off the screen while a takeover holds it or teaching
     const findFirst = vi.fn(async () => (teaching ? { id: "skill" } : null));
     const get = vi.fn(async () => computer);
     // Nobody holds the screen now; the fence counts each time a person took it.
-    const until = (values: unknown[]) =>
-      values.find((value): value is Date => value instanceof Date)?.getTime();
-    const $queryRaw = vi.fn(async (_sql: TemplateStringsArray, ...values: unknown[]) => {
-      steps.push(`mark ${until(values)}`);
-      return [{ controlFence }];
-    });
-    const $executeRaw = vi.fn(async (_sql: TemplateStringsArray, ...values: unknown[]) => {
-      steps.push(`clear ${until(values)}`);
-      return 1;
-    });
+    // Nobody holds the screen now; the fence counts each time a person took it.
+    const findUnique = vi.fn(async () => ({
+      controlHolder: "none",
+      controlLeaseId: null,
+      controlBotId: null,
+      controlFence,
+    }));
     const ctx = {
       deps: {
         prisma: {
           taughtSkill: { findFirst },
-          computer: { findUnique: async () => null },
-          $queryRaw,
-          $executeRaw,
+          computer: { findUnique },
         },
         sandbox: { act, observe },
         events: { append: async () => {} },
@@ -299,15 +290,6 @@ describe("screen tools keep off the screen while a takeover holds it or teaching
     expect((await runScreenTool(name, false, false)).act).toHaveBeenCalledOnce();
   });
 
-  it("keeps a person from taking control while its action is on the screen", async () => {
-    const { steps, act } = await runScreenTool("launch_app", false, false);
-    expect(act).toHaveBeenCalledOnce();
-    const [mark, during, clear] = steps;
-    expect(mark).toMatch(/^mark \d+$/);
-    expect(during).toBe("act");
-    expect(clear).toBe(mark?.replace("mark", "clear"));
-  });
-
   it("asks for a look again when the screenshot after a person's use fails", async () => {
     const screen = { ...freshScreen(), turn: { controlFence: 1, mustLook: true } };
     const failed = await runScreenTool("computer_observe", false, false, screen, 1, true);
@@ -348,7 +330,6 @@ describe("a run remembers the sites it typed an approved wallet purchase into", 
         prisma: {
           taughtSkill: { findFirst: async () => null },
           computer: freeComputer,
-          ...freeScreen,
         },
         paymentWallet: {},
       },
@@ -410,7 +391,6 @@ describe("browser_act types a saved card only where the user approved it", () =>
           ...db.prisma,
           taughtSkill: { findFirst: async () => null },
           computer: freeComputer,
-          ...freeScreen,
         },
         secretStore,
       },
@@ -538,7 +518,6 @@ describe("browser_act fill_code", () => {
         prisma: {
           taughtSkill: { findFirst: async () => null },
           computer: freeComputer,
-          ...freeScreen,
           secret: {
             findFirst: async ({ where }: { where: Record<string, unknown> }) =>
               rows.find((row) => matches(row, where)) ?? null,

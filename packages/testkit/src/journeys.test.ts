@@ -3397,55 +3397,38 @@ describeJourneys("required product journeys", () => {
     }
   });
 
-  it("18b: a teaching page that stops checking in loses control and its recording", async () => {
-    const cookie = await signup(app, `teach-quiet-j-${stamp}@rakazo.test`, "Teach Quiet");
+  it("18b: closing the screen mid-teaching hands back control and saves the recording", async () => {
+    const cookie = await signup(app, `teach-close-j-${stamp}@rakazo.test`, "Teach Close");
     const bot = await rpc<Bot>(app, cookie, "bots/create", {
-      name: "Quiet",
+      name: "Closer",
       title: "",
       description: "",
       instructions: "",
       notifyOnFinish: true,
     });
     await rpc(app, cookie, "computer/boot", { botId: bot.id });
-    const lease = await rpc<{ leaseId: string; expiresAt: string }>(
-      app,
-      cookie,
-      "computer/takeover",
-      { botId: bot.id },
-    );
+    const lease = await rpc<{ leaseId: string }>(app, cookie, "computer/takeover", {
+      botId: bot.id,
+    });
     const skill = await rpc<{ id: string }>(app, cookie, "skills/start", {
       botId: bot.id,
-      goal: "Quiet demo",
+      goal: "Close demo",
     });
-    // Teaching holds the person's own lease, renewed only by their page.
-    const teaching = await prisma.computer.findFirstOrThrow({
-      where: { bots: { some: { id: bot.id } } },
-    });
-    expect(teaching.controlLeaseId).toBe(lease.leaseId);
-    expect(teaching.controlLeaseExpiresAt!.getTime() - Date.now()).toBeLessThanOrEqual(90_000);
-    // Closing the page asks for a release, which teaching keeps; then no heartbeat arrives.
+    // Teaching records under the person's own control.
+    const stored = await prisma.taughtSkill.findUniqueOrThrow({ where: { id: skill.id } });
+    expect((stored.recording as { controlLeaseId?: string }).controlLeaseId).toBe(lease.leaseId);
+
+    // Closing the screen hands control back, which ends the recording as a saved draft.
     await rpc(app, cookie, "computer/release", { botId: bot.id });
     expect(
-      (await prisma.computer.findUniqueOrThrow({ where: { id: teaching.id } })).controlLeaseId,
-    ).toBe(lease.leaseId);
-    await prisma.computer.update({
-      where: { id: teaching.id },
-      data: { controlLeaseExpiresAt: new Date(Date.now() - 1_000) },
-    });
-    expect(
-      (await rpc<{ controlHolder: string }>(app, cookie, "computer/status", { botId: bot.id }))
-        .controlHolder,
-    ).toBe("none");
-    expect(await prisma.computer.findUniqueOrThrow({ where: { id: teaching.id } })).toMatchObject({
-      controlHolder: "none",
-      controlLeaseId: null,
-    });
+      await prisma.computer.findFirstOrThrow({ where: { bots: { some: { id: bot.id } } } }),
+    ).toMatchObject({ controlHolder: "none", controlLeaseId: null });
     const ended = await rpc<{ status: string }>(app, cookie, "skills/get", { skillId: skill.id });
-    expect(ended.status).not.toBe("recording");
+    expect(ended.status).toBe("draft");
   });
 
-  it("18c: one Team bot's action on its screen never delays taking another bot's", async () => {
-    const cookie = await signup(app, `screen-turn-j-${stamp}@rakazo.test`, "Screen Turn");
+  it("18c: a stale lease's expiry leaves a recording bound to another lease alone", async () => {
+    const cookie = await signup(app, `teach-stale-j-${stamp}@rakazo.test`, "Teach Stale");
     const writer = await rpc<Bot>(app, cookie, "bots/create", {
       name: "Writer",
       title: "",
@@ -3461,38 +3444,42 @@ describeJourneys("required product journeys", () => {
       notifyOnFinish: true,
     });
     await rpc(app, cookie, "computer/boot", { botId: writer.id });
+    await rpc(app, cookie, "computer/takeover", { botId: writer.id });
+    const mine = await rpc<{ id: string }>(app, cookie, "skills/start", {
+      botId: writer.id,
+      goal: "Mine",
+    });
+    // Another member's recording, made under a lease of its own.
+    const theirs = await prisma.taughtSkill.create({
+      data: {
+        spaceId: (await prisma.bot.findUniqueOrThrow({ where: { id: researcher.id } })).spaceId,
+        botId: researcher.id,
+        userId: (await prisma.bot.findUniqueOrThrow({ where: { id: researcher.id } })).userId,
+        goal: "Theirs",
+        status: "recording",
+        recording: { events: [], snapshots: [], controlLeaseId: "another-members-lease" },
+        startedAt: new Date(),
+        expiresAt: new Date(Date.now() + 60_000),
+      },
+    });
+    // The writer's lease lapses and its expiry runs.
     const computer = await prisma.computer.findFirstOrThrow({
       where: { bots: { some: { id: writer.id } } },
     });
-    expect((await prisma.bot.findUniqueOrThrow({ where: { id: researcher.id } })).computerId).toBe(
-      computer.id,
+    await prisma.computer.update({
+      where: { id: computer.id },
+      data: { controlLeaseExpiresAt: new Date(Date.now() - 1_000) },
+    });
+    expect(
+      (await rpc<{ controlHolder: string }>(app, cookie, "computer/status", { botId: writer.id }))
+        .controlHolder,
+    ).toBe("none");
+    expect((await prisma.taughtSkill.findUniqueOrThrow({ where: { id: mine.id } })).status).toBe(
+      "draft",
     );
-    // The writer is in the middle of an action on its own screen.
-    await prisma.computerExecutionLease.upsert({
-      where: { computerId_botId: { computerId: computer.id, botId: writer.id } },
-      create: {
-        computerId: computer.id,
-        botId: writer.id,
-        runId: `writer-action-${stamp}`,
-        expiresAt: new Date(Date.now() + 60_000),
-        screenActionUntil: new Date(Date.now() + 1_500),
-      },
-      update: { screenActionUntil: new Date(Date.now() + 1_500) },
-    });
-    const researcherStarted = Date.now();
-    await rpc(app, cookie, "computer/takeover", { botId: researcher.id });
-    expect(Date.now() - researcherStarted).toBeLessThan(1_000);
-    await rpc(app, cookie, "computer/release", { botId: researcher.id });
-
-    // Taking the writer's own screen waits for its action to end.
-    await prisma.computerExecutionLease.update({
-      where: { computerId_botId: { computerId: computer.id, botId: writer.id } },
-      data: { screenActionUntil: new Date(Date.now() + 1_500) },
-    });
-    const writerStarted = Date.now();
-    await rpc(app, cookie, "computer/takeover", { botId: writer.id });
-    expect(Date.now() - writerStarted).toBeGreaterThanOrEqual(1_200);
-    await rpc(app, cookie, "computer/release", { botId: writer.id });
+    expect((await prisma.taughtSkill.findUniqueOrThrow({ where: { id: theirs.id } })).status).toBe(
+      "recording",
+    );
   });
 
   it("19: in Ask mode, destination writes pause for approval before side effects", async () => {

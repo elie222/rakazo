@@ -8,15 +8,16 @@ import {
   ComputerBusyError,
   clearInactiveUserComputerControl,
   computerSupportsUpdate,
+  controlLeaseExpiresAt,
   enqueueTakeoverContinuation,
   expireComputerControl,
-  expireComputerControlAndTeaching,
   hasActiveComputerControl,
   holdsUserControl,
   isSandboxGoneError,
   releaseComputerControlLease,
   releaseComputerExecutionLease,
   replaceComputer,
+  scheduleComputerControlExpiry,
   scheduleComputerSleep,
   screenLeaseIdForRun,
 } from "@rakazo/adapters";
@@ -28,6 +29,9 @@ import { getLogger } from "@rakazo/logging";
 import { resolveComputerWork, toComputerStatus } from "./computer-status.js";
 import type { RouterDeps } from "./router.js";
 import { computerContext } from "./routes/shared.js";
+
+/** What changing who controls a screen needs. */
+type ControlDeps = Pick<RouterDeps, "prisma" | "events" | "jobs" | "sandbox">;
 
 const BOOT_LEASE_RETRY_MS = 250;
 const BOOT_LEASE_ATTEMPTS = 20;
@@ -114,7 +118,7 @@ export function assertNotAnotherPersonsControl(
 
 /** Hand back this person's control of the bot's screen. Resolves true when it ended a lease. */
 export async function releaseComputerControl(
-  deps: RouterDeps,
+  deps: ControlDeps,
   actor: Actor,
   computer: NonNullable<Awaited<ReturnType<ReturnType<typeof createRepos>["getBot"]>>["computer"]>,
   botId: string,
@@ -172,7 +176,7 @@ export async function answerComputerRequest(
 
 /** Keep this lease while its page checks in. */
 export async function renewComputerControl(
-  deps: RouterDeps,
+  deps: ControlDeps,
   computerId: string,
   leaseId: string,
   expiresAt: Date,
@@ -284,7 +288,7 @@ export async function expireStaleComputerControl(
   const leaseId = computer.controlLeaseId;
   // Keep a failed revoke's lease id so reconciliation can retry provider shutdown.
   if (leaseId) {
-    await expireComputerControlAndTeaching(deps, computer.id, leaseId).catch(() => undefined);
+    await expireComputerControl(deps, computer.id, leaseId).catch(() => undefined);
     return true;
   }
   return clearInactiveUserComputerControl(deps.prisma, computer.id).catch(() => false);
@@ -344,4 +348,95 @@ export function withViewOnly(url: string, viewOnly: boolean) {
     const join = url.includes("?") ? "&" : "?";
     return `${url}${join}view_only=${viewOnly ? "true" : "false"}`;
   }
+}
+
+/**
+ * Give this person control of the bot's screen: one holder per computer, and a lease their page's
+ * heartbeat renews.
+ */
+export async function takeComputerControl(
+  deps: ControlDeps,
+  actor: Actor,
+  botId: string,
+): Promise<{ leaseId: string; expiresAt: string }> {
+  const repos = createRepos(deps.prisma);
+  let bot = await repos.getBot(actor, botId);
+  if (!bot.computer?.providerRef || bot.computer.state !== "running") {
+    throw new ORPCError("BAD_REQUEST", { message: "computer must be running" });
+  }
+  assertNotAnotherPersonsControl(bot.computer, actor);
+  if (holdsComputerControl(bot.computer, bot.id, actor)) {
+    const expiresAt = controlLeaseExpiresAt();
+    await renewComputerControl(deps, bot.computer.id, bot.computer.controlLeaseId!, expiresAt);
+    return { leaseId: bot.computer.controlLeaseId!, expiresAt: expiresAt.toISOString() };
+  }
+  // This person's control of another bot's screen on a shared computer ends first.
+  if (hasActiveComputerControl(bot.computer) && bot.computer.controlBotId) {
+    await releaseComputerControl(deps, actor, bot.computer, bot.computer.controlBotId);
+  } else if (bot.computer.controlLeaseId) {
+    await expireComputerControl(deps, bot.computer.id, bot.computer.controlLeaseId);
+  }
+  bot = await repos.getBot(actor, botId);
+  if (!bot.computer?.providerRef || bot.computer.state !== "running") {
+    throw new ORPCError("BAD_REQUEST", { message: "computer must be running" });
+  }
+  const computerId = bot.computer.id;
+  const leaseId = randomUUID();
+  const expiresAt = controlLeaseExpiresAt();
+  // Granted at once: a bot action already running may finish, since it was based on what the
+  // screen showed before this person did anything, but every action after this is refused.
+  const granted = await deps.prisma.computer.updateMany({
+    where: {
+      id: computerId,
+      state: "running",
+      maintenanceId: null,
+      controlHolder: { not: "user" },
+      controlLeaseId: null,
+    },
+    data: {
+      controlHolder: "user",
+      controlLeaseId: leaseId,
+      controlLeaseExpiresAt: expiresAt,
+      controlBotId: bot.id,
+      controlUserId: actor.userId,
+      controlFence: { increment: 1 },
+    },
+  });
+  if (granted.count !== 1) {
+    const current = await deps.prisma.computer.findUniqueOrThrow({ where: { id: computerId } });
+    // A second Take control from the holder, such as a double tap, keeps their lease.
+    if (holdsComputerControl(current, bot.id, actor)) {
+      const renewed = controlLeaseExpiresAt();
+      await renewComputerControl(deps, computerId, current.controlLeaseId!, renewed);
+      return { leaseId: current.controlLeaseId!, expiresAt: renewed.toISOString() };
+    }
+    assertNotAnotherPersonsControl(current, actor);
+    throw new ORPCError("CONFLICT", { message: "Computer is busy" });
+  }
+  try {
+    await scheduleComputerControlExpiry(deps.jobs, computerId, leaseId, expiresAt);
+  } catch (error) {
+    await deps.prisma.computer.updateMany({
+      where: { id: computerId, controlLeaseId: leaseId },
+      data: {
+        controlHolder: "none",
+        controlLeaseId: null,
+        controlUserId: null,
+        controlLeaseExpiresAt: null,
+        controlBotId: null,
+      },
+    });
+    throw error;
+  }
+  if (bot.thread) {
+    await deps.events.append({
+      spaceId: actor.spaceId,
+      threadId: bot.thread.id,
+      botId: bot.id,
+      type: "computer.takeover.granted",
+      payload: { leaseId },
+    });
+  }
+  scheduleComputerSleep(deps.jobs, computerId);
+  return { leaseId, expiresAt: expiresAt.toISOString() };
 }

@@ -1322,6 +1322,30 @@ describe("computer screen", () => {
       expect(view.querySelector("section")).toBeNull();
     });
 
+    it("opens the screen when a timed-out Take control was granted after all", async () => {
+      status = idle;
+      const base = rpc.getMockImplementation()!;
+      rpc.mockImplementation((method: string, ...rest: unknown[]) => {
+        if (method !== "computer/takeover") return base(method, ...rest);
+        // The server granted control after the app stopped waiting for the answer.
+        status = { ...idle, controlHolder: "user", controlBotId: "bot-1" };
+        return Promise.reject(
+          Object.defineProperty(new Error("Request timed out"), "name", {
+            value: "TimeoutError",
+          }),
+        );
+      });
+      const view = await render();
+      await act(async () => boots[0]?.resolve());
+      await settle();
+
+      await act(async () => takeControlButtons(view)[0]?.click());
+      await settle();
+
+      expect(view.textContent).not.toContain("Request timed out");
+      expect(view.querySelector("section")).not.toBeNull();
+    });
+
     it("keeps following the boot after the request times out", async () => {
       vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
       try {

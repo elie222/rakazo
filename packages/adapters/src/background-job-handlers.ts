@@ -24,7 +24,7 @@ import { getLogger } from "@rakazo/logging";
 import { settleCallRequest } from "./call-request.js";
 import type { CloudAgentConnection, UserCloudAgents } from "./cloud-agent-factory.js";
 import { pollCloudAgent } from "./cloud-agent-poll.js";
-import { scheduleComputerControlExpiry } from "./computer-control.js";
+import { expireComputerControl, scheduleComputerControlExpiry } from "./computer-control.js";
 import { rateLimitEnds, scheduleComputerSleep, sleepComputerIfIdle } from "./computer-idle.js";
 import { performComputerUpdate } from "./computer-update.js";
 import {
@@ -40,7 +40,7 @@ import { pollMediaVideo } from "./media-video-poll.js";
 import type { MemoryProviderResolver } from "./memory-provider-factory.js";
 import type { MessagingDelivery } from "./messaging-delivery.js";
 import { pollPurchase } from "./purchase-poll.js";
-import { expireComputerControlAndTeaching, expireTaughtSkillTeaching } from "./teaching-session.js";
+import { expireTaughtSkillTeaching } from "./teaching-session.js";
 import type { TeamChat } from "./team-chat.js";
 
 type Tenant = { spaceId: string; userId: string };
@@ -184,7 +184,7 @@ export function createBackgroundJobHandlers(deps: {
     }),
     "computer.control-expire": asOwner(computer, async ({ computerId, leaseId }) => {
       try {
-        if (await expireComputerControlAndTeaching(deps, computerId, leaseId)) {
+        if (await expireComputerControl(deps, computerId, leaseId)) {
           scheduleComputerSleep(deps.jobs, computerId);
         }
       } catch (error) {

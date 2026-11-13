@@ -960,10 +960,27 @@ describe("answerTakeoverRequest", () => {
 });
 
 describe("releaseUserControl", () => {
-  function controlTx(cleared: number) {
+  function controlTx(cleared: number, recordings: string[] = []) {
     return {
+      $queryRaw: vi.fn().mockResolvedValue(recordings.map((id) => ({ id }))),
+      taughtSkill: {
+        findUniqueOrThrow: vi.fn(async ({ where }: { where: { id: string } }) => ({
+          id: where.id,
+          botId: "bot-1",
+          goal: "Export the list",
+          status: "recording",
+          recording: { events: [], snapshots: [], controlLeaseId: "lease-1" },
+        })),
+        update: vi.fn(async ({ where, data }: { where: { id: string }; data: object }) => ({
+          id: where.id,
+          ...data,
+        })),
+      },
+      bot: {
+        findFirst: vi.fn().mockResolvedValue({ thread: { id: "thread-1" } }),
+        findUnique: vi.fn().mockResolvedValue({ thread: { id: "thread-1" } }),
+      },
       computer: { updateMany: vi.fn().mockResolvedValue({ count: cleared }) },
-      bot: { findFirst: vi.fn().mockResolvedValue({ thread: { id: "thread-1" } }) },
       thread: { update: vi.fn().mockResolvedValue({ nextEventSeq: 8 }) },
       event: {
         create: vi.fn(async ({ data }: { data: { seq: number; type: string } }) => ({
@@ -989,7 +1006,9 @@ describe("releaseUserControl", () => {
       $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
     } as unknown as PrismaClient;
 
-    await expect(releaseUserControl(prisma, input, fanout)).resolves.toBe(true);
+    await expect(releaseUserControl(prisma, input, fanout)).resolves.toEqual({
+      draftedSkillIds: [],
+    });
 
     expect(tx.computer.updateMany).toHaveBeenCalledWith({
       where: { id: "computer-1", spaceId: "workspace-1", controlLeaseId: "lease-1" },
@@ -1014,6 +1033,33 @@ describe("releaseUserControl", () => {
     expect(publish).toHaveBeenCalledWith("thread:thread-1", JSON.stringify({ cursor: 7 }));
   });
 
+  it("saves the teaching recording made under the lease as a draft, in the same transaction", async () => {
+    const tx = controlTx(1, ["skill-1"]);
+    const prisma = {
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+    } as unknown as PrismaClient;
+
+    await expect(releaseUserControl(prisma, input)).resolves.toEqual({
+      draftedSkillIds: ["skill-1"],
+    });
+    // Only recordings bound to this very lease are locked and ended.
+    expect(tx.$queryRaw.mock.calls[0]?.slice(1)).toEqual(["lease-1"]);
+    expect(tx.taughtSkill.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "skill-1" },
+        data: expect.objectContaining({ status: "draft" }),
+      }),
+    );
+    expect(tx.event.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          type: "skill.teaching.stopped",
+          payload: { skillId: "skill-1", reason: "stopped" },
+        }),
+      }),
+    );
+  });
+
   it("does nothing when another lease holds the computer now", async () => {
     const tx = controlTx(0);
     const prisma = {
@@ -1031,7 +1077,9 @@ describe("releaseUserControl", () => {
       $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
     } as unknown as PrismaClient;
 
-    await expect(releaseUserControl(prisma, { ...input, botId: null })).resolves.toBe(true);
+    await expect(releaseUserControl(prisma, { ...input, botId: null })).resolves.toEqual({
+      draftedSkillIds: [],
+    });
 
     expect(tx.bot.findFirst).not.toHaveBeenCalled();
     expect(tx.event.create).not.toHaveBeenCalled();

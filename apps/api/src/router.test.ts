@@ -4424,17 +4424,11 @@ describe("computer terminal and file transfer", () => {
           },
         }),
       },
-      $transaction: vi.fn(async (write: (tx: unknown) => unknown) => write(prisma)),
-      $queryRaw: vi.fn().mockResolvedValue([]),
       computer: {
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
         findUniqueOrThrow: vi.fn(),
       },
-      computerExecutionLease: {
-        findUnique: vi.fn().mockResolvedValue(null),
-        findFirst: vi.fn().mockResolvedValue(null),
-        count: vi.fn().mockResolvedValue(0),
-      },
+      computerExecutionLease: { findUnique: vi.fn().mockResolvedValue(null) },
       run: { findFirst: vi.fn().mockResolvedValue(null) },
       taughtSkill: { findFirst: vi.fn().mockResolvedValue(null) },
     } as unknown as PrismaClient;
@@ -4448,7 +4442,7 @@ describe("computer terminal and file transfer", () => {
       },
       events: {
         append: vi.fn().mockResolvedValue(undefined),
-        releaseUserControl: vi.fn().mockResolvedValue(true),
+        releaseUserControl: vi.fn().mockResolvedValue({ draftedSkillIds: [] }),
         answerTakeoverRequest: vi.fn().mockResolvedValue(true),
       },
       env: {
@@ -4542,6 +4536,23 @@ describe("computer terminal and file transfer", () => {
     expect(deps.events.releaseUserControl).not.toHaveBeenCalled();
   });
 
+  it("answers Done after the person's lease lapsed, ending that lease and granting nothing", async () => {
+    const lapsed = { ...controlled, controlUserId: "user-1", controlLeaseExpiresAt: new Date(0) };
+    const { prisma, deps, call } = setup(lapsed);
+    vi.mocked(prisma.run.findFirst).mockResolvedValue({ id: "run-1", userId: "user-1" } as never);
+    await expect(call("release", { reason: "done", runId: "run-1" })).resolves.toMatchObject({
+      status: 200,
+    });
+    // The lapsed lease is revoked and cleared before the answer lands; nothing is granted.
+    const released = vi.mocked(deps.events.releaseUserControl).mock.invocationCallOrder[0]!;
+    const answered = vi.mocked(deps.events.answerTakeoverRequest).mock.invocationCallOrder[0]!;
+    expect(deps.events.releaseUserControl).toHaveBeenCalledWith(
+      expect.objectContaining({ leaseId: "lease-1" }),
+    );
+    expect(released).toBeLessThan(answered);
+    expect(prisma.computer.updateMany).not.toHaveBeenCalled();
+  });
+
   it("hands control back on I'm done even when nothing is waiting any more", async () => {
     const { deps, call } = setup({ ...controlled, controlUserId: "user-1" });
     await expect(call("release", { reason: "done" })).resolves.toMatchObject({ status: 200 });
@@ -4549,13 +4560,6 @@ describe("computer terminal and file transfer", () => {
       expect.objectContaining({ leaseId: "lease-1" }),
     );
     expect(deps.events.answerTakeoverRequest).not.toHaveBeenCalled();
-  });
-
-  it("leaves a teaching recording its control when the screen closes", async () => {
-    const { prisma, deps, call } = setup({ ...controlled, controlUserId: "user-1" });
-    vi.mocked(prisma.taughtSkill.findFirst).mockResolvedValue({ id: "skill-1" } as never);
-    await expect(call("release", {})).resolves.toMatchObject({ status: 200 });
-    expect(deps.events.releaseUserControl).not.toHaveBeenCalled();
   });
 
   it("returns the holder's own lease to a second Take control", async () => {
@@ -4570,29 +4574,6 @@ describe("computer terminal and file transfer", () => {
       status: 200,
       body: { json: { leaseId: "lease-1" } },
     });
-  });
-
-  it("waits for this bot's action on its screen to end before giving control", async () => {
-    const { prisma, call } = setup();
-    // The bot is mid-action on the first try, and done on the next.
-    vi.mocked(prisma.computerExecutionLease.findFirst).mockResolvedValueOnce({
-      id: "lease-row",
-    } as never);
-    vi.mocked(prisma.computerExecutionLease.count).mockResolvedValueOnce(1);
-    vi.mocked(prisma.computer.findUniqueOrThrow).mockResolvedValueOnce({
-      id: "computer-1",
-      controlHolder: "none",
-      controlLeaseId: null,
-      controlLeaseExpiresAt: null,
-    } as never);
-    await expect(call("takeover", {})).resolves.toMatchObject({ status: 200 });
-    const checks = vi.mocked(prisma.computerExecutionLease.findFirst).mock.calls;
-    expect(checks).toHaveLength(2);
-    // Only this bot's mark counts; another Team bot's action never delays it.
-    for (const [check] of checks) {
-      expect(check?.where).toMatchObject({ computerId: "computer-1", botId: "bot-1" });
-    }
-    expect(prisma.computer.updateMany).toHaveBeenCalledOnce();
   });
 
   it("renews the holder's control each time their page checks in", async () => {

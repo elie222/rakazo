@@ -15,12 +15,9 @@ import {
   ComputerBusyError,
   captureTeachingSnapshot,
   completeTeachingSession,
-  controlLeaseExpiresAt,
   emptyRecording,
   expireTaughtSkillTeaching,
   getActiveTeachingSession,
-  hasActiveComputerControl,
-  holdsUserControl,
   mapTaughtSkill,
   observeStopSnapshot,
   parsePlaybook,
@@ -29,9 +26,7 @@ import {
   recordTeachingInputEvent,
   releaseComputerExecutionLease,
   releaseTeachingComputerControlForBot,
-  scheduleComputerControlExpiry,
   screenLeaseIdForRun,
-  userControlHeldBy,
 } from "@rakazo/adapters";
 import type { Actor, MessageBlock, TaughtSkill } from "@rakazo/contracts";
 import type { SkillPlaybook, TeachRecordingEvent } from "@rakazo/core";
@@ -50,6 +45,7 @@ import {
   isUniqueViolation,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { takeComputerControl } from "./computer-control.js";
 
 export interface TaughtSkillsDeps {
   prisma: PrismaClient;
@@ -221,54 +217,8 @@ async function grantTakeover(
 ): Promise<{ bot: typeof bot; leaseId: string }> {
   if (!bot.computer) throw new IsolationError();
   await assertComputerFreeFor(deps, actor, bot);
-  // Teaching keeps the person's own control, which their page's heartbeat renews like any other.
-  if (
-    hasActiveComputerControl(bot.computer) &&
-    bot.computer.controlBotId === bot.id &&
-    bot.computer.controlLeaseId &&
-    holdsUserControl(bot.computer, actor.userId)
-  ) {
-    return { bot, leaseId: bot.computer.controlLeaseId };
-  }
-  const leaseId = randomUUID();
-  const expiresAt = controlLeaseExpiresAt();
-  const granted = await deps.prisma.computer.updateMany({
-    where: {
-      id: bot.computer.id,
-      state: "running",
-      // Never another person's live lease, even one taken after the check above.
-      OR: [
-        { controlHolder: { not: "user" } },
-        { controlLeaseExpiresAt: { lte: new Date() } },
-        {
-          controlBotId: bot.id,
-          ...userControlHeldBy(actor.userId),
-        },
-      ],
-    },
-    data: {
-      controlHolder: "user",
-      controlLeaseId: leaseId,
-      controlLeaseExpiresAt: expiresAt,
-      controlBotId: bot.id,
-      controlUserId: actor.userId,
-      controlFence: { increment: 1 },
-      state: "running",
-    },
-  });
-  if (granted.count !== 1) {
-    throw new ORPCError("CONFLICT", { message: "Could not take control of the computer" });
-  }
-  await scheduleComputerControlExpiry(deps.jobs, bot.computer.id, leaseId, expiresAt);
-  if (bot.thread) {
-    await deps.events.append({
-      spaceId: actor.spaceId,
-      threadId: bot.thread.id,
-      botId: bot.id,
-      type: "computer.takeover.granted",
-      payload: { holder: "user", reason: "teaching" },
-    });
-  }
+  // Teaching records under the person's ordinary control, and ends when that control does.
+  const { leaseId } = await takeComputerControl(deps, actor, bot.id);
   return { bot, leaseId };
 }
 

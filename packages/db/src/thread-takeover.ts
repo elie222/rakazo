@@ -5,6 +5,7 @@ import type { Prisma, PrismaClient } from "./client.js";
 import { notifyRealtime } from "./event-stream.js";
 import { appendEventInTransaction, transientRunEventsWhere } from "./events.js";
 import type { RunLease } from "./messages.js";
+import { draftRecordingsOfLeaseInTransaction } from "./teaching-recordings.js";
 import { THREAD_LOCK_TRANSACTION_OPTIONS } from "./transaction-retry.js";
 
 export type TakeoverAnswer = "done" | "skipped";
@@ -14,6 +15,11 @@ export interface AnswerTakeoverRequestInput {
   botId: string;
   runId: string;
   reason: TakeoverAnswer;
+}
+
+export interface ReleaseUserControlResult {
+  /** Teaching recordings made under the lease, now saved as drafts. */
+  draftedSkillIds: string[];
 }
 
 export interface ReleaseUserControlInput {
@@ -163,11 +169,15 @@ export async function answerTakeoverRequest(
 }
 
 /** Clear a person's control of a computer, if this lease still holds it, and say so in chat. */
+/**
+ * Clear a person's control of a computer, if this lease still holds it, and say so in chat. A
+ * teaching recording made under the lease ends with it, saved as a draft.
+ */
 export async function releaseUserControl(
   prisma: PrismaClient,
   input: ReleaseUserControlInput,
   realtime?: RealtimeFanout,
-): Promise<boolean> {
+): Promise<ReleaseUserControlResult | false> {
   const committed = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     const cleared = await tx.computer.updateMany({
       where: { id: input.computerId, spaceId: input.spaceId, controlLeaseId: input.leaseId },
@@ -180,26 +190,33 @@ export async function releaseUserControl(
       },
     });
     if (cleared.count !== 1) return null;
-    if (!input.botId) return { threadId: null, seq: null };
-    const bot = await tx.bot.findFirst({
-      where: { id: input.botId, spaceId: input.spaceId },
-      select: { thread: { select: { id: true } } },
-    });
-    if (!bot?.thread) return { threadId: null, seq: null };
-    const event = await appendEventInTransaction(tx, {
-      spaceId: input.spaceId,
-      threadId: bot.thread.id,
-      botId: input.botId,
-      type: "computer.takeover.released",
-      payload: { holder: "none", leaseId: input.leaseId, reason: input.reason },
-    });
-    return { threadId: event.threadId, seq: event.seq };
-  });
+    const drafted = await draftRecordingsOfLeaseInTransaction(tx, input);
+    const notices = drafted.flatMap((ended) =>
+      "seq" in ended ? [{ threadId: ended.threadId, seq: ended.seq }] : [],
+    );
+    const bot = input.botId
+      ? await tx.bot.findFirst({
+          where: { id: input.botId, spaceId: input.spaceId },
+          select: { thread: { select: { id: true } } },
+        })
+      : null;
+    if (input.botId && bot?.thread) {
+      const event = await appendEventInTransaction(tx, {
+        spaceId: input.spaceId,
+        threadId: bot.thread.id,
+        botId: input.botId,
+        type: "computer.takeover.released",
+        payload: { holder: "none", leaseId: input.leaseId, reason: input.reason },
+      });
+      notices.push({ threadId: event.threadId, seq: event.seq });
+    }
+    return { notices, draftedSkillIds: drafted.map((ended) => ended.skillId) };
+  }, THREAD_LOCK_TRANSACTION_OPTIONS);
   if (!committed) return false;
-  if (committed.threadId && committed.seq !== null) {
-    await notifyRealtime(realtime, committed.threadId, committed.seq);
+  for (const notice of committed.notices) {
+    await notifyRealtime(realtime, notice.threadId, notice.seq);
   }
-  return true;
+  return { draftedSkillIds: committed.draftedSkillIds };
 }
 
 /**

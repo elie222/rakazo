@@ -1923,8 +1923,6 @@ model ComputerExecutionLease {
   runId      String
   fence      Int      @default(0)
   expiresAt  DateTime
-  /// This bot's screen action is running until then; a person takes its screen only after it.
-  screenActionUntil DateTime?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 

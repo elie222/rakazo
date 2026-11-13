@@ -99,7 +99,6 @@ async function runAfterFill(
     spaceMember: { findUnique: async () => ({ id: "member-1" }) },
     $transaction: vi.fn(async (write: (tx: unknown) => unknown) => write(prisma)),
     $queryRaw: vi.fn(async () => []),
-    $executeRaw: vi.fn(async () => 0),
     run: {
       findUnique: vi.fn(async () => run),
       findUniqueOrThrow: vi.fn(async () => run),

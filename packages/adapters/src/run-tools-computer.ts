@@ -51,7 +51,7 @@ import { builtinOffered } from "./run-instructions.js";
 import { computerScreenToolResult } from "./run-lifecycle.js";
 import type { ToolCall, ToolHandlers } from "./run-tool-gate.js";
 import { auditToolCall } from "./run-tool-gate.js";
-import { awaitScreenTurn, SCREEN_ACTION_MS } from "./screen-turn.js";
+import { awaitScreenTurn } from "./screen-turn.js";
 import {
   isRunningShellCommand,
   observeShellCommand,
@@ -138,71 +138,23 @@ function formatObservation(
   return result;
 }
 
-type ScreenTurnResult = { error: string } | { end: () => Promise<void> };
-
 /**
- * Wait for this bot's turn on its screen. A turn marks the computer while the action runs, so a
- * person taking control waits for it to end; call `end` when the action is over.
+ * Wait for this bot's turn on its screen, or say why it may not use it now. A person's lease
+ * counts until it is cleared, which happens only after the provider has stopped their input, even
+ * once it has lapsed.
  */
-async function takeScreenTurn(ctx: RunContext, look = false): Promise<ScreenTurnResult> {
-  if (ctx.computer.heldForTakeover) return { error: DESKTOP_HELD_FOR_TAKEOVER_MESSAGE };
+async function screenBlocked(ctx: RunContext, look: boolean): Promise<string | undefined> {
+  if (ctx.computer.heldForTakeover) return DESKTOP_HELD_FOR_TAKEOVER_MESSAGE;
   if (await getActiveTeachingSession(ctx.deps.prisma, ctx.run.spaceId, ctx.run.botId)) {
-    return { error: "Teaching is in progress. Stop teaching before using the computer." };
+    return "Teaching is in progress. Stop teaching before using the computer.";
   }
-  const { prisma } = ctx.deps;
-  const computerId = ctx.computer.stored.id;
-  const botId = ctx.bot.id;
-  let marked: Date | undefined;
-  // The mark lasts as long as the action: it is renewed while the action runs, and lapses on its
-  // own only if this worker dies.
-  const renew = async () => {
-    if (!marked) return;
-    const until = new Date(Date.now() + SCREEN_ACTION_MS);
-    const renewed = await prisma.$executeRaw`
-      UPDATE computer_execution_leases SET "screenActionUntil" = ${until}
-      WHERE "computerId" = ${computerId} AND "botId" = ${botId}
-        AND "screenActionUntil" = ${marked}`;
-    if (renewed === 1) marked = until;
-  };
-  let renewing: ReturnType<typeof setInterval> | undefined;
-  const end = async () => {
-    clearInterval(renewing);
-    if (!marked) return;
-    const until = marked;
-    marked = undefined;
-    await prisma.$executeRaw`
-      UPDATE computer_execution_leases SET "screenActionUntil" = NULL
-      WHERE "computerId" = ${computerId} AND "botId" = ${botId}
-        AND "screenActionUntil" = ${until}`;
-  };
   const { signal } = ctx.context;
-  const refused = await awaitScreenTurn({
+  return awaitScreenTurn({
     turn: ctx.state.screen.turn,
     look,
     readControl: async () => {
-      const until = new Date(Date.now() + SCREEN_ACTION_MS);
-      // Mark this bot's action in the same statement that finds no person on its screen. A
-      // person's lease counts until it is cleared, which happens only after the provider has
-      // stopped their input, even once it has lapsed. The computer row is locked, as Take
-      // control locks it, so one of the two always sees the other. Raw SQL leaves updatedAt
-      // alone.
-      const [free] = await prisma.$queryRaw<Array<{ controlFence: number }>>`
-        UPDATE computer_execution_leases AS l SET "screenActionUntil" = ${until}
-        FROM (
-          SELECT id, "controlFence" FROM computers
-          WHERE id = ${computerId}
-            AND ("controlHolder" <> 'user' OR "controlBotId" IS NULL
-              OR "controlBotId" <> ${botId} OR "controlLeaseId" IS NULL)
-          FOR UPDATE
-        ) AS c
-        WHERE l."computerId" = c.id AND l."botId" = ${botId}
-        RETURNING c."controlFence"`;
-      if (free) {
-        marked = until;
-        return { held: false, fence: free.controlFence };
-      }
-      const computer = await prisma.computer.findUnique({
-        where: { id: computerId },
+      const computer = await ctx.deps.prisma.computer.findUnique({
+        where: { id: ctx.computer.stored.id },
         select: {
           controlHolder: true,
           controlLeaseId: true,
@@ -211,25 +163,16 @@ async function takeScreenTurn(ctx: RunContext, look = false): Promise<ScreenTurn
         },
       });
       if (!computer) return null;
-      // Without a lease row there is no mark to make, and the action goes ahead unmarked.
       return {
         held:
           computer.controlHolder === "user" &&
           Boolean(computer.controlLeaseId) &&
-          computer.controlBotId === botId,
+          computer.controlBotId === ctx.bot.id,
         fence: computer.controlFence,
       };
     },
     sleep: (ms) => sleep(ms, undefined, { signal }),
   });
-  if (refused) {
-    await end();
-    return { error: refused };
-  }
-  renewing = setInterval(() => {
-    renew().catch((error: unknown) => getLogger().warn("screen action mark renewal", { error }));
-  }, SCREEN_ACTION_MS / 3);
-  return { end };
 }
 
 /** Run a screen tool in this bot's turn, or answer with why it may not use the screen. */
@@ -239,13 +182,8 @@ async function withScreenTurn<T>(
   refuse: (error: string) => T | Promise<T>,
   run: () => Promise<T>,
 ): Promise<T> {
-  const turn = await takeScreenTurn(ctx, look);
-  if ("error" in turn) return refuse(turn.error);
-  try {
-    return await run();
-  } finally {
-    await turn.end();
-  }
+  const blocked = await screenBlocked(ctx, look);
+  return blocked ? refuse(blocked) : run();
 }
 
 /**
