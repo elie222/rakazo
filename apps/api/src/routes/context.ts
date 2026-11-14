@@ -89,7 +89,8 @@ export function createRouterContext(deps: RouterDeps) {
     /** Re-runs the request's auth so a long-lived stream notices sign-out and revocation. */
     stillAuthorized?: () => Promise<boolean>;
     /** The API key behind this call, so what it sends is marked as coming from that key. */
-    serviceOrigin?: { credentialId: string; name: string };
+    /** `botIds` is the key's bot list; empty means every bot. */
+    serviceOrigin?: { credentialId: string; name: string; botIds: readonly string[] };
   }>();
   const repos = createRepos(deps.prisma, {
     phoneCallsEnabled: deps.env?.phoneCallsEnabled,

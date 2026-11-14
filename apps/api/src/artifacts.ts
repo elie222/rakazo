@@ -705,7 +705,10 @@ export function buildUserMessageBlocks(
   const caption = text?.trim();
   if (caption) blocks.push({ kind: "text" as const, text: caption });
   blocks.push(...attachmentBlocks);
-  if (serviceOrigin) blocks.push({ kind: "service_origin" as const, ...serviceOrigin });
+  if (serviceOrigin) {
+    const { credentialId, name } = serviceOrigin;
+    blocks.push({ kind: "service_origin" as const, credentialId, name });
+  }
   return blocks;
 }
 

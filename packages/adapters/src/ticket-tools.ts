@@ -206,6 +206,10 @@ export async function createTicket(
   return { ticket: toTicketDto(row, board.ticketPrefix) };
 }
 
+function assignedWithin(assigneeBotId: string | null, botIds: readonly string[] | undefined) {
+  return !botIds || (assigneeBotId !== null && botIds.includes(assigneeBotId));
+}
+
 export async function updateTicket(
   deps: TicketToolDeps,
   input: {
@@ -219,6 +223,8 @@ export async function updateTicket(
     status?: string;
     ownerBotId?: string;
     promptCredentialId?: string | null;
+    /** Only a ticket assigned to one of these bots, checked on the locked row. */
+    assigneeBotIds?: readonly string[];
   },
 ) {
   const parsed = UpdateTicketInput.safeParse({ ...input, assigneeBotId: input.ownerBotId });
@@ -232,7 +238,7 @@ export async function updateTicket(
     const current = await tx.ticket.findFirst({
       where: { id: data.id, spaceId: input.spaceId, boardId: board.id },
     });
-    if (!current) return null;
+    if (!current || !assignedWithin(current.assigneeBotId, input.assigneeBotIds)) return null;
     const row = await tx.ticket.update({
       where: { id: current.id },
       data: {
@@ -275,6 +281,8 @@ export async function commentTicket(
     userId?: string;
     id: string;
     body: string;
+    /** Only a ticket assigned to one of these bots, checked on the locked row. */
+    assigneeBotIds?: readonly string[];
   },
 ) {
   const parsed = CommentTicketInput.safeParse({ ticketId: input.id, body: input.body });
@@ -283,6 +291,13 @@ export async function commentTicket(
   const ticket = await findTicket(deps.prisma, input.spaceId, board, { id: input.id });
   if (!ticket) return { error: "Ticket not found." };
   const row = await deps.prisma.$transaction(async (tx) => {
+    // A reassignment between the lookup above and this write must not let a limited key through.
+    await tx.$queryRaw`SELECT id FROM tickets WHERE id = ${ticket.id} AND "spaceId" = ${input.spaceId} FOR UPDATE`;
+    const locked = await tx.ticket.findUnique({
+      where: { id: ticket.id },
+      select: { assigneeBotId: true },
+    });
+    if (!locked || !assignedWithin(locked.assigneeBotId, input.assigneeBotIds)) return null;
     const comment = await tx.ticketComment.create({
       include: { authorBot: { select: { name: true } }, authorUser: { select: { name: true } } },
       data: {
@@ -296,6 +311,7 @@ export async function commentTicket(
     await tx.ticket.update({ where: { id: ticket.id }, data: { updatedAt: new Date() } });
     return comment;
   });
+  if (!row) return { error: "Ticket not found." };
   await deps.onTicketChange?.({
     spaceId: input.spaceId,
     boardId: board.id,

@@ -195,7 +195,11 @@ export function serviceApiHandler(deps: {
         context: {
           actor,
           signal: abort.signal,
-          serviceOrigin: { credentialId: credential.id, name: credential.name },
+          serviceOrigin: {
+            credentialId: credential.id,
+            name: credential.name,
+            botIds: credential.botIds,
+          },
           stillAuthorized: async () =>
             (await isServiceCredentialLive(prisma, credential.id)) &&
             Boolean(await memberActor(credential.userId, credential.spaceId)),
