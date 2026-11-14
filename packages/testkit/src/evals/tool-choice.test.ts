@@ -45,8 +45,55 @@ describe("tool-choice grading", () => {
     ).toBe(false);
   });
 
+  it("counts update_bot's notify_on_finish alias as a write when notifyOnFinish is listed", () => {
+    const before = { bot: { notifyOnFinish: true }, user: {} };
+    const grade = (args: Record<string, unknown>) =>
+      passes(
+        gradeToolChoice(
+          { settingsUnchanged: true },
+          evidence({
+            settingsBefore: before,
+            settings: before,
+            toolCalls: [{ step: 2, name: "update_bot", args }],
+          }),
+        ),
+      );
+    expect(grade({ notify_on_finish: false, change: ["notifyOnFinish"] })).toBe(false);
+    expect(grade({ notify_on_finish: false })).toBe(true);
+  });
+
+  it("counts an update_bot field only when the call lists it in change", () => {
+    const grade = (args: Record<string, unknown>, expected: Record<string, unknown>) =>
+      passes(
+        gradeToolChoice(
+          { calls: [{ tool: "update_bot", args: expected as never }] },
+          evidence({ toolCalls: [{ step: 2, name: "update_bot", args }] }),
+        ),
+      );
+    expect(grade({ color: "#0a0" }, { color: "*" })).toBe(false);
+    expect(grade({ color: "#0a0", change: ["name"] }, { color: "*" })).toBe(false);
+    expect(grade({ color: "#0a0", change: ["color"] }, { color: "*" })).toBe(true);
+    expect(grade({ color: "#0a0", change: ["color"] }, { color: "*", change: "*" })).toBe(true);
+    expect(grade({ color: "#0a0" }, { change: "*" })).toBe(false);
+    expect(grade({ bot_id: "b1", name: "Librarian" }, { bot_id: "*", name: "~librarian" })).toBe(
+      false,
+    );
+    expect(
+      grade(
+        { bot_id: "b1", name: "Librarian", change: ["name"] },
+        { bot_id: "*", name: "~librarian" },
+      ),
+    ).toBe(true);
+  });
+
   it("matches substrings, presence, alternatives and exact values", () => {
-    const toolCalls = [{ step: 2, name: "update_bot", args: { name: "Scout Bot", color: "#0a0" } }];
+    const toolCalls = [
+      {
+        step: 2,
+        name: "update_bot",
+        args: { name: "Scout Bot", color: "#0a0", change: ["name", "color"] },
+      },
+    ];
     const ok = (args: Record<string, unknown>) =>
       passes(
         gradeToolChoice(
@@ -113,7 +160,17 @@ describe("tool-choice grading", () => {
         ),
       ),
     ).toBe(true);
-    const write = [{ step: 2, name: "update_bot", args: { name: "Assistant" } }];
+    // Filled in but not listed in change: the call applies nothing.
+    const filled = [{ step: 2, name: "update_bot", args: { name: "Assistant", readAloud: false } }];
+    expect(
+      passes(
+        gradeToolChoice(
+          { settingsUnchanged: true },
+          evidence({ settingsBefore: before, settings: before, toolCalls: filled }),
+        ),
+      ),
+    ).toBe(true);
+    const write = [{ step: 2, name: "update_bot", args: { name: "Assistant", change: ["name"] } }];
     expect(
       passes(
         gradeToolChoice(

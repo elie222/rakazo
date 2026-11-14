@@ -10,6 +10,7 @@
     "./host-computer-server": "./src/host-computer-server.ts",
     "./host-screen": "./src/host-screen.ts",
     "./model-json": "./src/model-json.ts",
+    "./update-bot-patch": "./src/update-bot-patch.ts",
     "./wuying-screen-policy": "./src/wuying-screen-policy.ts",
     "./user-device-client": "./src/user-device-client.ts"
   },

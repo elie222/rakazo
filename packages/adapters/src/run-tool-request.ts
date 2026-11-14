@@ -21,7 +21,14 @@ import {
 import { listVaultItems } from "./bot-secrets.js";
 import { validCloudAgentArgs } from "./cloud-agent-tools.js";
 import { sanitizeConnectorError } from "./connector-safety.js";
-import { isFleetApprovalTool, modelLabel, prepareFleetRequest } from "./fleet-tools.js";
+import type { UpdateBotCurrent } from "./fleet-tools.js";
+import {
+  isFleetApprovalTool,
+  modelLabel,
+  prepareFleetRequest,
+  resolveUpdateBotTarget,
+  UPDATE_BOT_CURRENT_SELECT,
+} from "./fleet-tools.js";
 import { assertConnectorToolArgs, CATALOG_EXECUTE } from "./lazy-tool-catalog.js";
 import { paidRequestEffect, restorePaidRequest } from "./paid-request.js";
 import type { PurchaseApproval } from "./purchase-gate.js";
@@ -51,7 +58,15 @@ import { USER_COMPUTER_TOOLS } from "./run-tools-user-computer.js";
 import { SCHEDULE_TOOL_NAMES } from "./schedule-tools.js";
 import { SKILL_TOOL_NAMES } from "./skill-tools.js";
 import { refusal } from "./tool-refusal.js";
-import { argumentGiven, dropUnchangedOwnBotArgs } from "./update-bot-patch.js";
+import {
+  argumentGiven,
+  dropUnchangedOwnBotArgs,
+  notAppliedNote,
+  splitUpdateBotChange,
+  UPDATE_BOT_OWNER_ONLY_FIELDS,
+  UPDATE_BOT_SETTING_KEYS,
+  updateBotSettingsGiven,
+} from "./update-bot-patch.js";
 import type { VaultCardUse, VaultLoginUse } from "./vault-card-use.js";
 import {
   cardUseSummary,
@@ -86,12 +101,26 @@ export interface ToolRequest {
   cardUse: VaultCardUse | undefined;
   /** This browser_act call signs in with a saved login that asks first, approved like a card. */
   loginUse: VaultLoginUse | undefined;
+  /**
+   * The settings an `update_bot` call filled in without listing in `change`. They are not in
+   * `args`; the result names them as not applied. An approved replay runs the stored request and
+   * names none: the call it restores may differ from the one that was approved.
+   */
+  unlistedFields?: Record<string, unknown>;
+  /** Another bot's owner-only settings the call named: not in `args`, named as not applied. */
+  ownerOnlyFields?: Record<string, unknown>;
 }
 
 type ToolError = { error: string };
 
-/** A prepare-step refusal: a plain error, or a result that ends the turn on a repeat. */
-type PrepareRefusal = ToolError | TerminatingToolResult;
+/** A call that ends before the gate because it would change nothing. */
+type NoChangeResult = { ok: true; changed: false };
+
+/**
+ * A prepare-step result that ends the call: a plain error, a result that ends the turn on a
+ * repeat, or a change that would change nothing.
+ */
+type PrepareRefusal = ToolError | TerminatingToolResult | NoChangeResult;
 
 /**
  * Resolve catalog and bound connector routes, and line the call up with the next approved
@@ -382,6 +411,13 @@ export async function prepareToolRequest(
 ): Promise<PrepareRefusal | undefined> {
   const { deps, run, bot } = ctx;
   const { name, executionId, nextApprovedTool } = request;
+  // Before every check: a field the call only filled in must neither refuse nor change it. An
+  // approved replay runs the request stored after this split.
+  if (name === "update_bot" && nextApprovedTool !== name) {
+    const split = splitUpdateBotChange(request.args);
+    request.args = split.args;
+    request.unlistedFields = split.unlisted;
+  }
   let { args } = request;
   if (
     (SCHEDULE_TOOL_NAMES.has(name) || SKILL_TOOL_NAMES.has(name)) &&
@@ -446,6 +482,10 @@ export async function prepareToolRequest(
   if (name === "update_bot" && !argumentGiven(args.bot_id)) {
     const refused = await prepareOwnBotUpdate(ctx, request);
     if (refused) return refused;
+    args = request.args;
+  } else if (name === "update_bot" && nextApprovedTool !== name) {
+    const settled = await prepareChildBotUpdate(ctx, request);
+    if (settled) return settled;
     args = request.args;
   }
   if (isFleetApprovalTool(name) && nextApprovedTool !== name) {
@@ -592,23 +632,14 @@ export async function prepareToolRequest(
   return undefined;
 }
 
-/** Settings that change what this bot runs on or how it speaks; only the owner's chat sets them. */
-const OWNER_SETTINGS = ["model", "thinkingLevel", "voice", "readAloud"];
-
-/** Everything a bot may change on itself. Credentials, tools and access stay in Settings. */
+/**
+ * Everything a bot may pass to update_bot on itself: its settings, the instructions pager and
+ * its own id. Credentials, tools and access stay in Settings.
+ */
 const OWN_FIELDS = new Set([
-  ...OWNER_SETTINGS,
-  "name",
-  "description",
-  "instructions",
+  ...UPDATE_BOT_SETTING_KEYS,
   "instructions_offset",
   "instructionsOffset",
-  "color",
-  "artifact_id",
-  "use_attached_image",
-  "notifyOnFinish",
-  "dailyCheckIns",
-  "notify_on_finish",
   "bot_id",
 ]);
 
@@ -636,6 +667,69 @@ async function currentModelNames(
 }
 
 /**
+ * Drops the settings an `update_bot` call repeats from the target bot's current values, both the
+ * ones it applies and the ones it left out of `change`: a value the bot already has is no change,
+ * and is not worth naming as not applied. Returns the arguments left to apply.
+ */
+async function dropRepeatedSettings(
+  ctx: RunContext,
+  request: ToolRequest,
+  botId: string,
+  current: UpdateBotCurrent | null,
+): Promise<Record<string, unknown>> {
+  const { run } = ctx;
+  const own = botId === run.botId;
+  const unlisted = request.unlistedFields;
+  const { previousInstructions: _previous, reason: _reason, ...given } = request.args;
+  const modelNames =
+    own && current && (argumentGiven(given.model) || argumentGiven(unlisted?.model))
+      ? await currentModelNames(ctx, current)
+      : [];
+  const unchanged = (fields: Record<string, unknown>) =>
+    current
+      ? dropUnchangedOwnBotArgs(
+          fields,
+          current,
+          modelNames,
+          // Only this bot runs at this run's thinking level.
+          own && !current.thinkingLevel ? run.thinkingLevel : undefined,
+        )
+      : fields;
+  const notApplied = unlisted ? unchanged(unlisted) : {};
+  request.unlistedFields = Object.keys(notApplied).length ? notApplied : undefined;
+  const args = unchanged(given);
+  request.args = args;
+  return args;
+}
+
+/**
+ * `update_bot` on another bot. Its owner-only settings change only in its Settings, so they leave
+ * the call before the gate and the result names them. A call that changes nothing ends here,
+ * without an approval card: with fields it only filled in it is refused, naming them; otherwise
+ * it says nothing changed.
+ */
+async function prepareChildBotUpdate(
+  ctx: RunContext,
+  request: ToolRequest,
+): Promise<PrepareRefusal | undefined> {
+  // A bot that does not exist, or is archived, gets the handler's refusal, never "no change".
+  const target = await resolveUpdateBotTarget(ctx.deps.prisma, ctx.fleetRun, request.args.bot_id);
+  if ("error" in target) return target;
+  const ownerOnly: Record<string, unknown> = {};
+  for (const field of UPDATE_BOT_OWNER_ONLY_FIELDS) {
+    if (!(field in request.args)) continue;
+    if (argumentGiven(request.args[field])) ownerOnly[field] = request.args[field];
+    delete request.args[field];
+  }
+  const args = await dropRepeatedSettings(ctx, request, target.id, target);
+  request.ownerOnlyFields = Object.keys(ownerOnly).length ? ownerOnly : undefined;
+  if (updateBotSettingsGiven(args).length) return undefined;
+  const note = notAppliedNote(request);
+  if (note) return refusal("update_bot_nothing_listed", note);
+  return { ok: true, changed: false };
+}
+
+/**
  * `update_bot` on this bot itself. Under Never ask instructions are written at once; otherwise
  * they go through approval like any other action, and outside runs cannot change them.
  */
@@ -650,32 +744,11 @@ async function prepareOwnBotUpdate(
     request.heldForApproval = typeof request.args.previousInstructions === "string";
     return undefined;
   }
-  const { previousInstructions: _previous, reason: _reason, ...given } = request.args;
   const current = await ctx.deps.prisma.bot.findUnique({
     where: { id: run.botId },
-    select: {
-      name: true,
-      description: true,
-      instructions: true,
-      color: true,
-      notifyOnFinish: true,
-      dailyCheckIns: true,
-      modelProvider: true,
-      modelId: true,
-      thinkingLevel: true,
-      autoSpeak: true,
-      voiceId: true,
-    },
+    select: UPDATE_BOT_CURRENT_SELECT,
   });
-  const args = current
-    ? dropUnchangedOwnBotArgs(
-        given,
-        current,
-        argumentGiven(given.model) ? await currentModelNames(ctx, current) : [],
-        current.thinkingLevel ? undefined : run.thinkingLevel,
-      )
-    : given;
-  request.args = args;
+  const args = await dropRepeatedSettings(ctx, request, run.botId, current);
   // A paged read never writes: the handler answers with the settings and names every other field
   // it left out, so the write checks below do not apply to those fields.
   if (argumentGiven(args.instructions_offset ?? args.instructionsOffset)) return undefined;
@@ -688,7 +761,7 @@ async function prepareOwnBotUpdate(
       `Only the owner can change ${settingsOnly.join(", ")}, in Settings.`,
     );
   const unguarded = await neverAsks(ctx);
-  if (OWNER_SETTINGS.some((key) => argumentGiven(args[key]))) {
+  if (UPDATE_BOT_OWNER_ONLY_FIELDS.some((key) => argumentGiven(args[key]))) {
     if (isSubagentToolExecution(executionId) || (!unguarded && !ctx.source.ownerStartedRun))
       return refusal(
         "owner_only_model_settings",

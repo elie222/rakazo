@@ -1169,6 +1169,45 @@ describe("Pi connector tool dispatch", () => {
     );
   });
 
+  it("keeps an update_bot change sent as a single string", async () => {
+    const updateBotTool = builtinAgentTools.find((tool) => tool.name === "update_bot");
+    if (!updateBotTool) throw new Error("missing update_bot");
+    fakeAgentState.invoke = { name: "update_bot", args: { name: "Scout", change: "name" } };
+    const executeTool = vi.fn(async () => ({ ok: true }));
+    const runtime = new PiAgentRuntime();
+
+    for await (const _event of runtime.run(
+      {
+        botId: "b",
+        threadId: "t",
+        runId: "r",
+        prompt: "rename yourself Scout",
+        instructions: "",
+        history: [],
+        tools: [updateBotTool],
+        model: { provider: "test", id: "dispatch-test-model" },
+        executeTool,
+      },
+      {
+        operationId: "1",
+        traceId: "1",
+        spaceId: "w",
+        userId: "u",
+        signal: new AbortController().signal,
+      },
+    )) {
+      // Exhaust the runtime event stream so tool execution completes.
+    }
+
+    expect(executeTool).toHaveBeenCalledWith(
+      "update_bot",
+      { name: "Scout", change: ["name"] },
+      JSON.stringify(["pi-tool", "main", "call-1"]),
+      undefined,
+      { onShellStillRunning: expect.any(Function) },
+    );
+  });
+
   it("runs schedule tools, remember and request_secret sequentially", async () => {
     const executeTool = vi.fn(async () => ({ ok: true }));
     const runtime = new PiAgentRuntime();

@@ -340,7 +340,9 @@ describe("inferScript update_bot", () => {
     expect(inferScript("silence finish notifications")).toEqual([
       {
         assistant: "silencing finish notifications.",
-        toolCalls: [{ name: "update_bot", args: { notifyOnFinish: false } }],
+        toolCalls: [
+          { name: "update_bot", args: { notifyOnFinish: false, change: ["notifyOnFinish"] } },
+        ],
         complete: true,
       },
     ]);
@@ -350,7 +352,9 @@ describe("inferScript update_bot", () => {
     expect(inferScript("resume finish notifications")).toEqual([
       {
         assistant: "enabling finish notifications.",
-        toolCalls: [{ name: "update_bot", args: { notifyOnFinish: true } }],
+        toolCalls: [
+          { name: "update_bot", args: { notifyOnFinish: true, change: ["notifyOnFinish"] } },
+        ],
         complete: true,
       },
     ]);
