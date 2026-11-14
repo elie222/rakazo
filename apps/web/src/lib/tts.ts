@@ -43,6 +43,7 @@ export class Speaker {
   private objectUrl: string | null = null;
   private settlePlayback: ((end: PlaybackEnd) => void) | null = null;
   private request: AbortController | null = null;
+  private served: string | null = null;
 
   subscribe(fn: (s: SpeechSnapshot) => void): () => void {
     this.watchers.add(fn);
@@ -54,6 +55,11 @@ export class Speaker {
 
   get state(): SpeechSnapshot {
     return this.snapshot;
+  }
+
+  /** The voice the server actually used, set only when it was not the one asked for. */
+  get substitutedVoice(): string | null {
+    return this.served;
   }
 
   private set(next: SpeechSnapshot) {
@@ -108,6 +114,7 @@ export class Speaker {
     const live = () => this.token === mine && !controller.signal.aborted;
     const spaceId = opts.spaceId ?? selectedSpaceId();
 
+    this.served = null;
     this.set({ status: "preparing", botId: opts.botId, messageId: opts.messageId });
     let utterances: string[];
     try {
@@ -215,6 +222,8 @@ export class Speaker {
         const body = await readVoiceError(res, deadline.signal);
         throw new Error(voiceAccountErrorText(body) ?? body.error ?? "");
       }
+      const served = res.headers.get("x-voice-id");
+      if (served && served !== opts.voiceId) this.served = served;
       const bytes = await readVoiceAudio(res, deadline.signal);
       return new Blob([new Uint8Array(bytes)], {
         type: res.headers.get("content-type") ?? "audio/mpeg",

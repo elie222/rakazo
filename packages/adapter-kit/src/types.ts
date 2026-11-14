@@ -830,6 +830,8 @@ export interface VoiceInfo {
 export interface SpeechClip {
   bytes: Uint8Array;
   mimeType: "audio/mpeg" | "audio/wav" | "audio/ogg";
+  /** The voice actually used, when the provider substituted one for the requested voice. */
+  voiceId?: string;
 }
 
 export interface VoiceCapabilities {

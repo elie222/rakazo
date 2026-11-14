@@ -9,6 +9,7 @@ import {
   parseCompatibleVoiceList,
   parseOpenAiCompatibleVoiceSecret,
   serializeOpenAiCompatibleVoiceSecret,
+  suggestedVoices,
 } from "./openai-compatible-voice.js";
 
 /** Fixtures save as the deployment owner, who may use local speech servers. */
@@ -167,6 +168,31 @@ describe("parseCompatibleVoiceList", () => {
       data: [{ id: "af_alloy" }, { id: 7 }, { id: "" }, { id: "af_heart" }, { id: "af_alloy" }],
     });
     expect(voices.map((voice) => voice.id)).toEqual(["af_heart", "af_alloy"]);
+  });
+});
+
+describe("suggestedVoices", () => {
+  it("reads the voices a strict server says the model takes", () => {
+    expect(
+      suggestedVoices({
+        error: {
+          message:
+            'Voice "alloy" is not supported by model "tts-qwen3-0-6b". Try using a supported voice: Vivian, Serena, Ono_Anna, Sohee, Uncle_Fu, ....',
+        },
+      }),
+    ).toEqual(["Vivian", "Serena", "Ono_Anna", "Sohee", "Uncle_Fu"]);
+  });
+
+  it("keeps the list short and drops anything that is not a voice id", () => {
+    const many = Array.from({ length: 20 }, (_, index) => `voice${index}`).join(", ");
+    expect(suggestedVoices({ detail: `valid voices: ${many}` })).toHaveLength(8);
+    expect(suggestedVoices({ detail: "Supported voices: tara, <bad>, tara" })).toEqual(["tara"]);
+  });
+
+  it("finds nothing in a body that names no list", () => {
+    expect(suggestedVoices({ detail: 'Voice "alloy" is not supported by model "x"' })).toEqual([]);
+    expect(suggestedVoices({ detail: "supported voices are these" })).toEqual([]);
+    expect(suggestedVoices(null)).toEqual([]);
   });
 });
 
@@ -351,6 +377,61 @@ describe("OpenAiCompatibleVoiceProvider", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(JSON.parse(String(calledInit(fetchMock).body))).toHaveProperty("lang_code");
     expect(JSON.parse(String(calledInit(fetchMock, 1).body))).not.toHaveProperty("lang_code");
+  });
+
+  it("retries with the voice the server suggests and reports the one it used", async () => {
+    const refusal = {
+      error: {
+        message:
+          'Voice "alloy" is not supported by model "tts-qwen3-0-6b". Try using a supported voice: Vivian, Serena.',
+      },
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(refusal), { status: 400 }))
+      .mockResolvedValueOnce(
+        new Response(new Uint8Array([1, 2, 3]), { headers: { "content-type": "audio/mpeg" } }),
+      );
+    await expect(
+      provider(fetchMock).synthesize({ text: "Hi", voiceId: "alloy", apiKey: keyless }, ctx),
+    ).resolves.toMatchObject({ mimeType: "audio/mpeg", voiceId: "Vivian" });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(String(calledInit(fetchMock, 1).body)).voice).toBe("Vivian");
+  });
+
+  it("reports the requested voice only when it was not substituted", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(new Uint8Array([1]), { headers: { "content-type": "audio/mpeg" } }),
+      );
+    await expect(
+      provider(fetchMock).synthesize({ text: "Hi", voiceId: "alloy", apiKey: keyless }, ctx),
+    ).resolves.not.toHaveProperty("voiceId");
+  });
+
+  it("names the suggested voices when the substituted voice is refused too", async () => {
+    const refusal = () =>
+      new Response(
+        JSON.stringify({
+          error: {
+            message: 'Voice "alloy" is not supported. Try using a supported voice: Vivian.',
+          },
+        }),
+        { status: 400 },
+      );
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(refusal())
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: { message: "Voice Vivian is retired." } }), {
+          status: 400,
+        }),
+      );
+    await expect(
+      provider(fetchMock).synthesize({ text: "Hi", voiceId: "alloy", apiKey: keyless }, ctx),
+    ).rejects.toThrow(/Voice Vivian is retired\. Try one of: Vivian\./);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("does not retry a 400 that never mentions lang_code", async () => {

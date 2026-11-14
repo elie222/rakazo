@@ -551,6 +551,42 @@ describe("prepareVoice", () => {
     });
   });
 
+  it("passes the voice a provider substituted to the client as a header", async () => {
+    const synthesize = vi
+      .fn()
+      .mockResolvedValue({ bytes: new Uint8Array([1]), mimeType: "audio/mpeg", voiceId: "Vivian" });
+    vi.spyOn(adapters, "createVoiceProvider").mockReturnValue({ synthesize } as never);
+    const app = new Hono();
+    mountVoiceHttpRoutes(app, depsWith(undefined), async () => actor);
+
+    const response = await app.request("/api/voice/speak", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text: "Hello.", voiceId: "alloy" }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("x-voice-id")).toBe("Vivian");
+  });
+
+  it("sets no voice header when the requested voice was used", async () => {
+    const synthesize = vi
+      .fn()
+      .mockResolvedValue({ bytes: new Uint8Array([1]), mimeType: "audio/mpeg" });
+    vi.spyOn(adapters, "createVoiceProvider").mockReturnValue({ synthesize } as never);
+    const app = new Hono();
+    mountVoiceHttpRoutes(app, depsWith(undefined), async () => actor);
+
+    const response = await app.request("/api/voice/speak", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text: "Hello.", voiceId: "Vivian" }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.headers.has("x-voice-id")).toBe(false);
+  });
+
   it.each([
     ["Chinese", "中".repeat(2400)],
     ["Japanese", "あ".repeat(2400)],

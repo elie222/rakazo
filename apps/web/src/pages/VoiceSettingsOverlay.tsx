@@ -392,7 +392,12 @@ export function VoiceSettingsOverlay({
         setError(speaker.state.error);
         return;
       }
-      setNotice(t`If you heard that, voice is ready.`);
+      const served = speaker.substitutedVoice;
+      setNotice(
+        served
+          ? t`That voice isn't offered by this server, so it used ${served} instead.`
+          : t`If you heard that, voice is ready.`,
+      );
     } catch (err) {
       setError(errorText(err, t`Could not play a test clip`));
     } finally {
