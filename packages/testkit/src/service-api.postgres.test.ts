@@ -195,6 +195,10 @@ describeWithDatabase("service API", () => {
     expect(await withComputer.json()).toMatchObject({
       computer: { state: expect.any(String), screenAvailable: expect.any(Boolean) },
     });
+    // Runs are conversation activity, so a key that may only read bots does not see them.
+    const botReader = await newKey(owner.cookie, { scopes: ["bots:read"] });
+    const withoutRuns = await get(botReader.token, `/${bot.id}/status`);
+    expect(await withoutRuns.json()).not.toHaveProperty("runs");
 
     const answers = await Promise.all(
       [foreign.id, archived.id, "missing-bot"].map(async (id) => {
