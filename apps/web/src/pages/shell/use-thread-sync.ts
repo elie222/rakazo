@@ -135,6 +135,7 @@ export function useThreadSync({
     computerOpenRef,
     computerBotIdRef,
     refreshComputerScreen,
+    isOwnControlEvent,
   } = computerState;
   const threadRefreshEpoch = useRef(0);
   const groupRefreshEpoch = useRef(0);
@@ -233,7 +234,12 @@ export function useThreadSync({
     return snap;
   }
 
-  async function refreshThread(id: string, signal?: AbortSignal) {
+  /** `readScreen: false` leaves the screen to a caller that already reads it. */
+  async function refreshThread(
+    id: string,
+    signal?: AbortSignal,
+    { readScreen = true }: { readScreen?: boolean } = {},
+  ) {
     const readerEpoch = readerScrollEpoch.current;
     const preRequestElement = messageScroll.current;
     const stickToEnd = !preRequestElement || transcriptIsNearEnd(preRequestElement);
@@ -282,7 +288,7 @@ export function useThreadSync({
       fetchFresh(queryClient, queries.skills.list.queryOptions({ input: { botId: id } })).catch(
         () => null,
       ),
-      refreshComputerScreen(id).catch(() => null),
+      readScreen ? refreshComputerScreen(id).catch(() => null) : null,
     ]).then(([routines, skills]) => {
       if (
         activeBotId.current !== id ||
@@ -457,11 +463,18 @@ export function useThreadSync({
           // waiting_input: reconcile ask cards if a stale post-send refresh raced SSE.
           void snapshotRefresh.invalidate().catch(() => undefined);
         } else if (isComputerStatusEvent(event)) {
-          // In a shared Space the event does not say who took control; the snapshot does.
+          // This tab's own take or release already reads the new screen.
+          const own = isOwnControlEvent(active.id, event.type, event.payload.leaseId);
+          // In a shared Space the event does not say who took control; the snapshot does. An own
+          // grant may still be someone else's while this tab's call is out, so it reconciles too.
           if (event.type === "computer.takeover.granted" && computerRef.current?.shared) {
-            void snapshotRefresh.invalidate().catch(() => undefined);
+            if (own)
+              void refreshThread(active.id, undefined, { readScreen: false }).catch(
+                () => undefined,
+              );
+            else void snapshotRefresh.invalidate().catch(() => undefined);
           }
-          void refreshComputerScreen(active.id).catch(() => undefined);
+          if (!own) void refreshComputerScreen(active.id).catch(() => undefined);
         }
         if (isRunTerminalEvent(event)) refreshRoutineHistory(event.runId);
       },
