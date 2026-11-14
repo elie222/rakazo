@@ -230,11 +230,14 @@ findings() {
     $qodo_def
     $link_def
     [.[] | select(.user.login == \$me) | .body | ascii_downcase] as \$mine
-    | [.[] | select(qodo_review) | . as \$c
-       | qodo_findings[] | select(.closed | not)
+    | [.[] | select(qodo_review) | . as \$c | qodo_findings as \$all
+       | \$all[] | select(.closed | not)
        | (.title | ascii_downcase) as \$t
+       # A longer title that contains this one must not answer it too.
+       | [\$all[].title | ascii_downcase | select(. != \$t and contains(\$t))] as \$longer
        | . + {id: \$c.id, author: \$c.user.login,
-              answered: ([\$mine[] | select(\$t != \"\" and links(\$c.html_url | ascii_downcase) and contains(\$t))]
+              answered: ([\$mine[] | reduce \$longer[] as \$l (.; split(\$l) | join(\" \"))
+                          | select(\$t != \"\" and links(\$c.html_url | ascii_downcase) and contains(\$t))]
                          | length > 0)}]" <<<"$convo")
   qodo_open=$(jq --argjson n "$BODY_CHARS" "
     $clean_def
@@ -260,7 +263,7 @@ findings() {
          | {key: \"r\(.id):\(.submitted_at)\", id, author: .user.login,
             path: \"(review \(.state))\", line: 0, body: (.body | clean)}]" <<<"$reviews")
 
-  QODO_SHA=$(jq -r "$qodo_def [.[] | select(qodo_review) | qodo_sha] | last // \"\"" <<<"$convo")
+  QODO_SHA=$(jq -r "$qodo_def [.[] | select(qodo_review) | qodo_sha | values] | last // \"\"" <<<"$convo")
   OPEN=$(jq -s 'add' <<<"$open$convo_open$qodo_open$review_open")
   INLINE=$inline CONVO=$convo REVIEWS=$reviews NOISE_N=$noise_n QODO=$qodo
 }

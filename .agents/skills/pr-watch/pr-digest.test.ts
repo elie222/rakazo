@@ -321,6 +321,7 @@ describe("pr-digest", () => {
       const current = sticky([
         finding(1, "Don&#x27;t drop the key", bug),
         finding(2, "Retry can loop", bug),
+        finding(3, "Retry", bug),
       ]);
       const edited = { ...current, updated_at: "2026-01-05T00:00:00Z" };
       const answer = reply(
@@ -332,19 +333,28 @@ describe("pr-digest", () => {
 
       const partial = runDigest({ conversation: [edited, answer, unlinked] });
       expect(partial.status).toBe(11);
-      expect(partial.stdout).toContain("1 open · 1 answered");
+      expect(partial.stdout).toContain("2 open · 1 answered");
       expect(partial.stdout).toContain("answered (qodo 1) Don't drop the key");
       expect(partial.stdout).toContain("Retry can loop [");
 
-      const done = runDigest({ conversation: [edited, both] });
+      // Quoting "Retry can loop" does not also answer "Retry".
+      const longer = runDigest({ conversation: [edited, both] });
+      expect(longer.status).toBe(11);
+      expect(longer.stdout).toContain("1 open · 2 answered");
+      expect(longer.stdout).toContain("Retry [");
+
+      const retry = reply(73, `${current.html_url} Retry: intended too.`);
+      const done = runDigest({ conversation: [edited, both, retry] });
       expect(done.status).toBe(0);
-      expect(done.stdout).toContain("0 open · 2 answered");
+      expect(done.stdout).toContain("0 open · 3 answered");
     });
 
     it("says when Qodo has not reviewed the head yet", () => {
       const old = sticky([]);
       old.body = old.body.replace("abc0000", "def0000");
-      const result = runDigest({ conversation: [old] });
+      const restarting = sticky([], [], 62);
+      restarting.body = "\n<h3>Code Review by Qodo</h3>\n<h3>New Review Started</h3>\n";
+      const result = runDigest({ conversation: [old, restarting] });
       expect(result.status).toBe(0);
       expect(result.stdout).toContain("qodo reviewed def00000, not the head yet");
     });
