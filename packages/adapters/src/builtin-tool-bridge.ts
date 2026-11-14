@@ -20,6 +20,7 @@ const FIND_TOOL_LIMIT = 3;
  */
 export const CORE_BUILTIN_TOOL_NAMES: ReadonlySet<string> = new Set([
   "shell",
+  "user_computer_list",
   "user_computer_shell",
   "read_file",
   "write_file",

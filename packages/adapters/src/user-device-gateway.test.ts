@@ -58,10 +58,27 @@ function fakePrisma() {
         for (const id of ids(where)) if (devices.has(id)) Object.assign(devices.get(id)!, data);
         return { count: 0 };
       },
-      findMany: async ({ where }: { where: { id: { in: string[] } } }) =>
-        ids(where)
-          .map((id) => devices.get(id))
-          .filter((row) => row?.revokedAt),
+      findMany: async ({
+        where,
+        select,
+      }: {
+        where: { id?: { in: string[] }; userId?: string };
+        select?: { connections?: { where: { heartbeatAt: { gt: Date } } } };
+      }) =>
+        where.userId !== undefined
+          ? [...devices.values()]
+              .filter((row) => row.userId === where.userId && !row.revokedAt)
+              .map((row) => ({
+                ...row,
+                connections: [...connections.values()].filter(
+                  (connection) =>
+                    connection.deviceId === row.id &&
+                    connection.heartbeatAt > select!.connections!.where.heartbeatAt.gt,
+                ),
+              }))
+          : ids(where)
+              .map((id) => devices.get(id))
+              .filter((row) => row?.revokedAt),
       findFirst: async ({ where }: { where: { userId: string; revokedAt: null } }) =>
         [...devices.values()].find((row) => row.userId === where.userId && !row.revokedAt) ?? null,
     },
@@ -84,13 +101,14 @@ function fakePrisma() {
       findFirst: async ({
         where,
       }: {
-        where: { heartbeatAt: { gt: Date }; device: { userId: string } };
+        where: { deviceId?: string; heartbeatAt: { gt: Date }; device: { userId: string } };
       }) => {
         const row = [...connections.values()]
           .filter((connection) => {
             const device = devices.get(connection.deviceId);
             return (
               device &&
+              (where.deviceId === undefined || connection.deviceId === where.deviceId) &&
               device.userId === where.device.userId &&
               !device.revokedAt &&
               connection.heartbeatAt > where.heartbeatAt.gt
@@ -243,6 +261,61 @@ describe("user device gateway in the holding process", () => {
     await expect(result).resolves.toEqual([{ platform: "darwin" }]);
     expect(socket.sent.some((message) => message.type === "cancel")).toBe(false);
   });
+
+  it("routes explicit ids without changing the latest-connection default", async () => {
+    const { hub, devices, deviceRows, connections } = setup();
+    const first = new FakeSocket();
+    const second = new FakeSocket();
+    const next = { ...device, id: "device-2", name: "Desk PC" };
+    deviceRows.set(next.id, { ...deviceRows.get(device.id)!, ...next });
+    await hub.attach(device, first);
+    await hub.attach(next, second);
+    connections.get(device.id)!.connectedAt = new Date(Date.now() - 1000);
+    expect((await devices.connected("user-1"))?.deviceId).toBe(next.id);
+    expect(await devices.list("user-1")).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ deviceId: device.id, connected: true, bound: false }),
+        expect.objectContaining({ deviceId: next.id, connected: true, bound: true }),
+      ]),
+    );
+    for (const [computerId, socket] of [
+      [device.id, first],
+      [undefined, second],
+    ] as const) {
+      const result = collect(
+        devices.request("user-1", environment, AbortSignal.timeout(5000), computerId),
+      );
+      const { id } = await socket.nextRequest();
+      socket.reply(id, { value: "ok" });
+      socket.reply(id, { done: true });
+      expect(await result).toEqual(["ok"]);
+    }
+  });
+
+  it.each(["unknown", "foreign", "disabled", "disconnected"])(
+    "refuses a %s id with another computer connected",
+    async (kind) => {
+      const { hub, devices, deviceRows, connections } = setup();
+      const socket = new FakeSocket();
+      await hub.attach(device, socket);
+      const target = "device-2";
+      if (kind !== "unknown") {
+        deviceRows.set(target, {
+          ...deviceRows.get(device.id)!,
+          id: target,
+          userId: kind === "foreign" ? "user-2" : "user-1",
+          revokedAt: kind === "disabled" ? new Date() : null,
+        });
+        if (kind !== "disconnected")
+          connections.set(target, { ...connections.get(device.id)!, deviceId: target });
+      }
+      expect(await devices.connected("user-1", target)).toBeNull();
+      await expect(
+        collect(devices.request("user-1", environment, AbortSignal.timeout(5000), target)),
+      ).rejects.toThrow(USER_DEVICE_OFFLINE_MESSAGE);
+      expect(socket.sent).toHaveLength(0);
+    },
+  );
 
   it("raises the device's error", async () => {
     const { hub, devices } = setup();

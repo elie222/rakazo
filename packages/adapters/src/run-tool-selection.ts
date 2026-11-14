@@ -195,6 +195,7 @@ export function selectBuiltinToolsForRun(options: {
       ((emailMailbox && options.emailSend) || tool.name !== "send_email") &&
       (emailClaimOffered || tool.name !== "claim_email_address") &&
       (options.userComputer || tool.name !== "user_computer_shell") &&
+      (options.userComputer || options.userComputerScreen || tool.name !== "user_computer_list") &&
       (options.userComputerScreen || !USER_COMPUTER_SCREEN_TOOLS.has(tool.name)) &&
       // Already on a call, or reached through a messaging channel that cannot ring.
       ((options.phoneCallsEnabled &&

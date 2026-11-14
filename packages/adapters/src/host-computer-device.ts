@@ -53,8 +53,26 @@ export function withHostComputerScreen(
   }
 
   return {
-    async connected(userId) {
-      return (await devices?.connected(userId)) ?? hostDevice();
+    async connected(userId, deviceId) {
+      if (deviceId === HOST_COMPUTER_DEVICE_ID) return hostDevice();
+      const paired = await devices?.connected(userId, deviceId);
+      return paired ?? (deviceId === undefined ? hostDevice() : null);
+    },
+    async list(userId) {
+      const paired = (await devices?.list(userId)) ?? [];
+      const local = await hostDevice();
+      return local
+        ? [
+            ...paired,
+            {
+              deviceId: local.deviceId,
+              name: local.name,
+              platform: local.platform,
+              connected: true,
+              bound: !paired.some((device) => device.bound),
+            },
+          ]
+        : paired;
     },
     async pairedSince(userId) {
       return (await devices?.pairedSince(userId)) ?? enabledSince();

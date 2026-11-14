@@ -137,17 +137,47 @@ async function lastValue<T>(values: AsyncIterable<T>): Promise<T> {
 }
 
 /** Checked again at execution: the desktop can disconnect or be revoked after the offer. */
-async function connectedUserComputer(ctx: RunContext) {
+async function connectedUserComputer(ctx: RunContext, computerId?: string) {
   const owner = ctx.source.userComputerOwner;
   const devices = ctx.deps.userDevices;
-  const device = owner && devices ? await devices.connected(owner).catch(() => null) : null;
+  const device =
+    owner && devices ? await devices.connected(owner, computerId).catch(() => null) : null;
   return owner && devices && device ? { owner, devices, deviceId: device.deviceId } : undefined;
+}
+
+const TARGET_UNAVAILABLE =
+  "The selected computer is disconnected or not allowed for this user. Use user_computer_list to see available computers.";
+
+function requestedComputer(args: Record<string, unknown>): { computerId?: string; error?: string } {
+  if (args.computerId === undefined) return {};
+  if (typeof args.computerId !== "string" || !args.computerId.trim() || args.computerId.length > 64)
+    return { error: "computerId must be a non-empty computer id from user_computer_list." };
+  return { computerId: args.computerId };
+}
+
+export async function userComputerList(ctx: RunContext, call: ToolCall) {
+  const owner = ctx.source.userComputerOwner;
+  const devices = ctx.deps.userDevices;
+  if (!owner || !devices) return call.finish({ error: USER_COMPUTER_UNAVAILABLE });
+  const computers = (await devices.list(owner))
+    .filter((device) => device.connected)
+    .map((device) => ({
+      computerId: device.deviceId,
+      name: device.name,
+      bound: device.bound === true,
+    }));
+  return call.finish({ computers });
 }
 
 export async function userComputerShell(ctx: RunContext, call: ToolCall) {
   const { bot, runId } = ctx;
-  const connected = await connectedUserComputer(ctx);
-  if (!connected) return call.finish({ error: USER_COMPUTER_UNAVAILABLE });
+  const target = requestedComputer(call.args);
+  if (target.error) return call.finish({ error: target.error });
+  const connected = await connectedUserComputer(ctx, target.computerId);
+  if (!connected)
+    return call.finish({
+      error: target.computerId ? TARGET_UNAVAILABLE : USER_COMPUTER_UNAVAILABLE,
+    });
   const { owner, devices, deviceId } = connected;
   const { signal } = ctx.context;
   const command = String(call.args.command ?? "");
@@ -229,8 +259,13 @@ type ScreenRequest =
 /** The device gets the app name the approval card showed, never the raw argument. */
 async function userComputerScreen(ctx: RunContext, call: ToolCall, request: ScreenRequest) {
   if (!request.app) return call.finish({ error: "app must name an app on the user's computer." });
-  const connected = await connectedUserComputer(ctx);
-  if (!connected) return call.finish({ error: USER_COMPUTER_UNAVAILABLE });
+  const target = requestedComputer(call.args);
+  if (target.error) return call.finish({ error: target.error });
+  const connected = await connectedUserComputer(ctx, target.computerId);
+  if (!connected)
+    return call.finish({
+      error: target.computerId ? TARGET_UNAVAILABLE : USER_COMPUTER_UNAVAILABLE,
+    });
   const { owner, devices, deviceId } = connected;
   const { signal } = ctx.context;
   try {

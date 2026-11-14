@@ -1348,7 +1348,11 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             userComputer = "connected";
             userComputerShell = !device.screenOnly;
             // The macOS and Windows desktops fetch a screen driver; Linux has none yet.
-            userComputerScreen = device.platform === "darwin" || device.platform === "win32";
+            const computers = await deps.userDevices.list(userComputerOwnerId);
+            userComputerScreen = [
+              device,
+              ...computers.filter((computer) => computer.connected),
+            ].some((computer) => computer.platform === "darwin" || computer.platform === "win32");
           } else userComputer = "offline";
         }
         const cloudAgent = await cloudAgentPromise;
