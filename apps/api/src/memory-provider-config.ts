@@ -94,7 +94,16 @@ export async function updateMemoryProviderConfig(
   return saveMemoryProviderConnection(
     deps,
     actor,
-    { provider: existing.provider, settings: input.settings, credentials },
+    {
+      provider: existing.provider,
+      settings: {
+        ...input.settings,
+        ...(!movesCredentials && typeof toStringRecord(existing.settings).baseUrl === "string"
+          ? { baseUrl: toStringRecord(existing.settings).baseUrl }
+          : {}),
+      },
+      credentials,
+    },
     { replacesSecretId: existing.secretId, readAt: existing.updatedAt, storedCredentials },
   );
 }

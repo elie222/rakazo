@@ -5,6 +5,7 @@ import {
   createHindsightProvider,
   HINDSIGHT_PROVIDER_ID,
   hindsightRequiresPrivateEndpoint,
+  parseRecallBanks,
   prepareHindsightConnection,
 } from "./hindsight-memory-provider.js";
 import {
@@ -108,14 +109,7 @@ function honchoTarget(settings: Record<string, string>): string {
 
 function hindsightTarget(settings: Record<string, string>): string {
   // The key can read other banks, so the banks recalled are part of what it reaches.
-  const recallBanks = [
-    ...new Set(
-      (settings.recallBanks ?? "")
-        .split(",")
-        .map((bank) => bank.trim())
-        .filter(Boolean),
-    ),
-  ].sort();
+  const recallBanks = parseRecallBanks(settings.recallBanks).sort();
   return JSON.stringify([serviceTarget(settings, "cloud"), recallBanks]);
 }
 

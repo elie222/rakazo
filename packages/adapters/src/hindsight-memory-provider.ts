@@ -141,7 +141,7 @@ interface HindsightOptions {
   skipUnrelated: boolean;
 }
 
-function parseRecallBanks(value: string | undefined): string[] {
+export function parseRecallBanks(value: string | undefined): string[] {
   const banks = [
     ...new Set(
       (value ?? "")
