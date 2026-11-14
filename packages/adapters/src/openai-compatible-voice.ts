@@ -188,13 +188,7 @@ function errorMessage(value: unknown): string | undefined {
  * Any private address is allowed, so echo only a short, single-line error from the
  * server: enough for "model not found", too little to read another service through it.
  */
-function serverError(
-  status: number,
-  what: string,
-  body: unknown,
-  apiKey?: string,
-  suggested?: string[],
-): Error {
+function serverError(status: number, what: string, body: unknown, apiKey?: string): Error {
   const detail =
     body && typeof body === "object"
       ? (body as { detail?: unknown; error?: unknown; message?: unknown })
@@ -211,11 +205,7 @@ function serverError(
     ?.replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]+/gu, " ")
     .trim()
     .slice(0, MAX_SERVER_DETAIL_LENGTH);
-  // A refusal that names usable voices is worth completing, even past the detail cap, and the
-  // list is worth showing even when the refusal carried no displayable message of its own.
-  const offer = suggested?.length ? `Try one of: ${suggested.join(", ")}.` : undefined;
-  const hint = [short || undefined, offer].filter(Boolean).join(" ") || undefined;
-  return voiceRequestError(status, PROVIDER_NAME, what, hint ? { detail: hint } : null, body);
+  return voiceRequestError(status, PROVIDER_NAME, what, short ? { detail: short } : null, body);
 }
 
 /**
@@ -498,14 +488,14 @@ export class OpenAiCompatibleVoiceProvider implements VoiceProvider {
       const refused = refusal ?? (await readVoiceJson(res));
       // A strict server that refuses the voice may name the ones the model takes; trying the
       // first keeps the request alive, and the clip reports the voice it really used.
-      const usable = suggestedVoices(refused).filter((voice) => voice !== request.voiceId);
       const alternative =
-        usable[0] && (res.status === 400 || res.status === 422) ? usable[0] : undefined;
+        res.status === 400 || res.status === 422
+          ? suggestedVoices(refused).find((voice) => voice !== request.voiceId)
+          : undefined;
       if (alternative) {
         res = await speak(alternative, langRefused ? undefined : kokoroLangCode(alternative));
         if (res.ok) return speechClip(res, signal, alternative);
-        // The retry's refusal is about the voice it just tried, so keep the first list.
-        throw serverError(res.status, "speaking", await readVoiceJson(res), secret.apiKey, usable);
+        throw serverError(res.status, "speaking", await readVoiceJson(res), secret.apiKey);
       }
       throw serverError(res.status, "speaking", refused, secret.apiKey);
     }

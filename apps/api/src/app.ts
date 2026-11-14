@@ -851,7 +851,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         return isTrustedOrigin(origin, env) ? origin : "";
       },
       credentials: true,
-      exposeHeaders: [SERVER_BUILD_HEADER],
+      exposeHeaders: [SERVER_BUILD_HEADER, "x-voice-id"],
     }),
   );
   // Session and account replies must never be stored by a client or an HTTP cache.

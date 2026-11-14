@@ -173,7 +173,7 @@ describe("Speaker", () => {
     expect(speaker.substitutedVoice).toBe("Serena");
 
     (releaseFirst as unknown as () => void)();
-    await expect(first).resolves.toBe("");
+    await expect(first).resolves.toBeUndefined();
   });
 
   it("unlocks from a tap while other speech is still preparing, but never over a playing clip", async () => {
@@ -243,7 +243,7 @@ describe("Speaker", () => {
     const pending = speaker.speak("Hello.");
     await vi.waitFor(() => expect(speaker.state.status).toBe("speaking"));
     speaker.stop();
-    await expect(pending).resolves.toBe("");
+    await expect(pending).resolves.toBeUndefined();
     expect(speaker.state).toEqual({ status: "idle" });
   });
 
@@ -255,7 +255,7 @@ describe("Speaker", () => {
     ).mockImplementation(() => new Promise(() => undefined));
     const pending = speaker.speak("Hello there.", { messageId: "m1" });
     speaker.stop();
-    await expect(pending).resolves.toBe("");
+    await expect(pending).resolves.toBeUndefined();
     expect(speaker.state.status).toBe("idle");
   });
 
@@ -273,7 +273,7 @@ describe("Speaker", () => {
     const first = speaker.speak("First.", { messageId: "m1" });
     await speaker.speak("Second.", { messageId: "m2" });
     fail(new Error("Your voice provider is out of credit."));
-    await expect(first).resolves.toBe("");
+    await expect(first).resolves.toBeUndefined();
     expect(speaker.state.error).toBeUndefined();
   });
 

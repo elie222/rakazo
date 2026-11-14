@@ -467,31 +467,7 @@ describe("OpenAiCompatibleVoiceProvider", () => {
     ).resolves.not.toHaveProperty("voiceId");
   });
 
-  it("names the suggested voices when the substituted voice is refused too", async () => {
-    const refusal = () =>
-      new Response(
-        JSON.stringify({
-          error: {
-            message: 'Voice "alloy" is not supported. Try using a supported voice: Vivian.',
-          },
-        }),
-        { status: 400 },
-      );
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(refusal())
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ error: { message: "Voice Vivian is retired." } }), {
-          status: 400,
-        }),
-      );
-    await expect(
-      provider(fetchMock).synthesize({ text: "Hi", voiceId: "alloy", apiKey: keyless }, ctx),
-    ).rejects.toThrow(/Voice Vivian is retired\. Try one of: Vivian\./);
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-  });
-
-  it("keeps an array-shaped detail and the list when the substitute is refused", async () => {
+  it("reports the substitute's own refusal, including an array-shaped detail", async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(
@@ -509,7 +485,8 @@ describe("OpenAiCompatibleVoiceProvider", () => {
       );
     await expect(
       provider(fetchMock).synthesize({ text: "Hi", voiceId: "alloy", apiKey: keyless }, ctx),
-    ).rejects.toThrow(/Voice Vivian is retired\. Try one of: Vivian\./);
+    ).rejects.toThrow(/Voice Vivian is retired\./);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("does not retry a 400 that never mentions lang_code", async () => {
