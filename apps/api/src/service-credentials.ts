@@ -193,7 +193,8 @@ export async function authenticateServiceCredential(
 export async function isServiceCredentialLive(prisma: PrismaClient, id: string): Promise<boolean> {
   return runAsSystem("check a service credential", async () => {
     const live = await prisma.serviceCredential.count({
-      where: { id, revokedAt: null, expiresAt: { gt: new Date() } },
+      // As at sign-in: a deactivated account's keys stop, even if revoking them failed.
+      where: { id, revokedAt: null, expiresAt: { gt: new Date() }, user: { deactivatedAt: null } },
     });
     return live === 1;
   });
