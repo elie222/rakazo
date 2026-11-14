@@ -342,6 +342,40 @@ describe("plugin RPC boundary", () => {
       await setPluginParts({ ...deps, removeServer }, actor, { id: installed.id, parts: [] }),
     ).toBeNull();
   });
+  it("removes a connector on the thread-lock budget and starts a retried attempt over", async () => {
+    const { deps, prisma } = setup();
+    prisma.capabilityInstall.findFirst.mockResolvedValue({
+      id: "install-test",
+      spaceId: actor.spaceId,
+      userId: actor.userId,
+      allSpaces: true,
+      availableIn: [],
+      kind: "plugin",
+      source,
+      version: sha,
+      digest: (await input()).pluginDigest,
+      config: { parts: ["skills", "connector"] },
+    } as never);
+    prisma.mcpServer.findMany.mockResolvedValue([{ id: "server-1", secretId: null }] as never);
+    // A card request holding the server row can deadlock removal once; the retry runs it again.
+    prisma.$transaction.mockImplementationOnce(async (run) => {
+      await run(prisma);
+      throw Object.assign(new Error("deadlock"), { code: "P2034" });
+    });
+    const removeServer = vi.fn();
+    const startAttempt = vi.fn();
+    const result = await setPluginParts({ ...deps, removeServer, startAttempt }, actor, {
+      id: "install-test",
+      parts: ["skills"],
+    });
+    expect(result?.config).toMatchObject({ parts: ["skills"] });
+    expect(prisma.$transaction).toHaveBeenCalledTimes(2);
+    expect(prisma.$transaction).toHaveBeenLastCalledWith(expect.any(Function), {
+      timeout: 20_000,
+    });
+    expect(startAttempt).toHaveBeenCalledTimes(2);
+    expect(removeServer).toHaveBeenCalledTimes(2);
+  });
   it("lists only the skills that installed when skills are added later", async () => {
     const { deps, prisma } = setup();
     deps.fetcher = async () => ({
