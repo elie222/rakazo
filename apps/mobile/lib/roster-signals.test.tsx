@@ -4,7 +4,7 @@ import { act } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useRosterSignals } from "./roster-signals";
+import { useLiveStream, useRosterSignals } from "./roster-signals";
 
 const streams = vi.hoisted(
   () => [] as Array<{ signal: () => void; computerUpdates: () => void; end: () => void }>,
@@ -36,16 +36,12 @@ vi.mock("./api-live", () => ({
 }));
 
 let live = false;
-function Harness({
-  onChange,
-  enabled,
-  followRoster = enabled,
-}: {
-  onChange: () => void;
-  enabled: boolean;
-  followRoster?: boolean;
-}) {
-  live = useRosterSignals(onChange, enabled, followRoster);
+function Harness({ onChange, enabled }: { onChange: () => void; enabled: boolean }) {
+  live = useRosterSignals(onChange, enabled);
+  return null;
+}
+function Stream() {
+  useLiveStream(true);
   return null;
 }
 
@@ -100,20 +96,33 @@ describe("useRosterSignals", () => {
     expect(computerUpdates.signalled).toHaveBeenCalledOnce();
   });
 
-  it("stays open off the inbox for computer updates, without following roster changes", async () => {
+  it("shares one stream, held open by the update progress off the inbox", async () => {
     const onChange = vi.fn();
     await act(async () =>
-      root.render(<Harness enabled followRoster={false} onChange={onChange} />),
+      root.render(
+        <>
+          <Stream />
+          <Harness enabled={false} onChange={onChange} />
+        </>,
+      ),
     );
     await act(async () => streams[0]!.signal());
     await act(async () => streams[0]!.signal());
     expect(onChange).not.toHaveBeenCalled();
-    await act(async () => streams[0]!.computerUpdates());
-    expect(computerUpdates.signalled).toHaveBeenCalledOnce();
-    await act(async () => root.render(<Harness enabled onChange={onChange} />));
+    const other = vi.fn();
+    await act(async () =>
+      root.render(
+        <>
+          <Stream />
+          <Harness enabled onChange={onChange} />
+          <Harness enabled onChange={other} />
+        </>,
+      ),
+    );
     expect(streams).toHaveLength(1);
     await act(async () => streams[0]!.signal());
     expect(onChange).toHaveBeenCalledOnce();
+    expect(other).toHaveBeenCalledOnce();
   });
 
   it("reopens for a newly selected Space, ignoring the old stream's late signals", async () => {

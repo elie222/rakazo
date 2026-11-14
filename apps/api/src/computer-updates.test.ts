@@ -43,6 +43,34 @@ describe("notifications.subscribe computer update signals", () => {
       controller.abort();
     }
   });
+
+  it("ends the stream when computer update signals fail, so the app reconnects", async () => {
+    const controller = new AbortController();
+    const followChatAlerts = vi.fn(async function* (
+      _userId: string,
+      _spaceId: string,
+      signal: AbortSignal,
+    ) {
+      await new Promise((resolve) => signal.addEventListener("abort", resolve));
+    });
+    const followComputerUpdateChanges = vi.fn(async function* () {
+      yield;
+      throw new Error("subscribe failed");
+    });
+    const client = createRouterClient(
+      createRouter({
+        events: { followChatAlerts, followComputerUpdateChanges },
+      } as unknown as RouterDeps),
+      { context: { actor, signal: controller.signal } },
+    );
+    try {
+      const iterator = (await client.notifications.subscribe())[Symbol.asyncIterator]();
+      expect((await iterator.next()).value).toEqual({ type: "computerUpdates" });
+      await expect(iterator.next()).rejects.toThrow("subscribe failed");
+    } finally {
+      controller.abort();
+    }
+  });
 });
 
 describe("computer.dismissUpdate", () => {

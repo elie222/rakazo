@@ -373,11 +373,10 @@ export function accountRoutes(ctx: RouterContext) {
           signal: AbortSignal,
         ): AsyncGenerator<typeof COMPUTER_UPDATES_CHANGED> {
           if (!followComputerUpdateChanges) return;
-          // As with roster signals, the app keeps polling computer updates if these fail.
-          try {
-            for await (const _ of followComputerUpdateChanges(spaceId, signal))
-              yield COMPUTER_UPDATES_CHANGED;
-          } catch {}
+          // The app reads computer updates only on these signals, so a failure ends the stream: the
+          // app reconnects and re-reads instead of showing progress that never moves.
+          for await (const _ of followComputerUpdateChanges(spaceId, signal))
+            yield COMPUTER_UPDATES_CHANGED;
         };
         const frames = withHeartbeats(context, (signal) =>
           mergeStreams(
