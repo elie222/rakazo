@@ -18,6 +18,9 @@ import { ViewTitle } from "./parts";
 
 export type SourceKind = "mcp" | "api" | "graphql";
 
+/** How a custom source authenticates. OAuth is a remote MCP server's browser sign-in. */
+export type SourceAuth = "none" | "bearer" | "header" | "oauth";
+
 export type SourceForm = ReturnType<typeof useSourceForm>;
 
 /** The fields of a custom MCP, OpenAPI, or GraphQL connector; each start fills them afresh. */
@@ -27,7 +30,7 @@ export function useSourceForm() {
   const [sourceName, setSourceName] = useState("");
   const [sourceUrl, setSourceUrl] = useState("");
   const [credential, setCredential] = useState("");
-  const [authType, setAuthType] = useState<"none" | "bearer" | "header">("bearer");
+  const [authType, setAuthType] = useState<SourceAuth>("bearer");
   const [authName, setAuthName] = useState("x-api-key");
   const [sourceHint, setSourceHint] = useState<string | null>(null);
 
@@ -114,6 +117,19 @@ export function SourceFormView({
   } = form;
   if (!sourceKind) return null;
   const custom = !sourcePreset;
+  // OAuth saves the server before the browser sign-in, so it is not a check of typed credentials.
+  const oauth = authType === "oauth";
+  const submitLabel = installing ? (
+    oauth ? (
+      <Trans>Connecting…</Trans>
+    ) : (
+      <Trans>Verifying…</Trans>
+    )
+  ) : oauth ? (
+    <Trans>Save and sign in</Trans>
+  ) : (
+    <Trans>Verify and add</Trans>
+  );
   return (
     <div data-testid="integrations-source-form" className="max-w-xl space-y-6">
       <ViewTitle
@@ -186,6 +202,11 @@ export function SourceFormView({
               <NativeSelectOption value="header">
                 <Trans>API key header</Trans>
               </NativeSelectOption>
+              {sourceKind === "mcp" ? (
+                <NativeSelectOption value="oauth">
+                  <Trans>OAuth</Trans>
+                </NativeSelectOption>
+              ) : null}
             </NativeSelect>
           </Field>
         ) : null}
@@ -201,7 +222,7 @@ export function SourceFormView({
             />
           </Field>
         ) : null}
-        {!custom || authType !== "none" ? (
+        {(!custom || authType !== "none") && authType !== "oauth" ? (
           <Field>
             <FieldLabel htmlFor="source-credential">
               {sourcePreset ? <Trans>Bearer token</Trans> : <Trans>Credential</Trans>}
@@ -225,7 +246,7 @@ export function SourceFormView({
           </p>
         ) : null}
         <Button type="submit" disabled={installing}>
-          {installing ? <Trans>Verifying…</Trans> : <Trans>Verify and add</Trans>}
+          {submitLabel}
         </Button>
       </form>
     </div>

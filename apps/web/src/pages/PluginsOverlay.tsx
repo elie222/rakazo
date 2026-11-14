@@ -6,12 +6,13 @@ import type {
   IntegrationCatalogSurface,
   McpSourcePreset,
 } from "@rakazo/contracts";
-import { mcpServerConnection } from "@rakazo/contracts";
+import { MCP_OAUTH_CLIENT_REQUIRED, mcpServerConnection } from "@rakazo/contracts";
 import {
   CONNECTION_CATALOG_PAGE_SIZE,
   catalogItemKey,
   installedPluginParts,
   managedAppFor,
+  newClientId,
 } from "@rakazo/core";
 import {
   Button,
@@ -37,8 +38,9 @@ import type {
 import { PluginDetail, pluginSelection } from "../components/integrations/plugin-marketplace";
 import { reachesOtherSpaces, useOwnSpaces } from "../components/integrations/space-availability";
 import type { connectedAppMarks } from "../lib/connected-apps";
+import { connectMcpOauth } from "../lib/mcp-connect";
 import { rpc } from "../lib/rpc";
-import { errorText } from "../lib/user-error";
+import { errorCode, errorText } from "../lib/user-error";
 import { AddMenu } from "./plugins/add-menu";
 import { ConnectorDetail } from "./plugins/connector-detail";
 import { DomainSearch, useDomainSearch } from "./plugins/domain-search";
@@ -255,18 +257,49 @@ export function PluginsOverlay({
     const { sourceKind, sourcePreset, sourceName, sourceUrl, credential, authType, authName } =
       sourceForm;
     if (!sourceKind) return;
+    const name =
+      sourceName.trim() ||
+      (sourcePreset?.name ?? (sourceKind === "graphql" ? "GraphQL" : "Custom connector"));
     setSourceError(null);
     setPending("install-source");
     try {
-      const auth = {
-        type: authType,
-        ...(authType === "header" ? { name: authName.trim() } : {}),
-      };
+      // OAuth is the MCP server itself signing in, so it is saved first and then authorized.
+      if (sourceKind === "mcp" && authType === "oauth") {
+        const endpoint = sourceUrl.trim();
+        // A server already saved for this address keeps its grant and its agent assignments,
+        // so submitting again after a cancelled sign-in retries the authorization.
+        const existing = (await rpc.mcp.servers.list()).find(
+          (server) => server.endpoint === endpoint,
+        );
+        const server =
+          existing ??
+          (await rpc.mcp.servers.create({
+            slug: `integration-${newClientId().slice(0, 8)}`,
+            name,
+            transport: "streamable_http",
+            endpoint,
+          }));
+        const result = await connectMcpOauth(server.id);
+        // The server is saved either way; an unfinished sign-in can be retried from here.
+        if (result === "cancelled") {
+          setSourceError(t`Sign-in cancelled. Try again.`);
+          return;
+        }
+        sourceForm.setCredential("");
+        sourceForm.setSourceKind(null);
+        setView("manage");
+        await refresh();
+        if (result === "authorization_not_requested")
+          setSourceError(t`This server did not request browser authorization.`);
+        return;
+      }
+      const auth =
+        authType === "header"
+          ? { type: "header" as const, name: authName.trim() }
+          : { type: authType === "bearer" ? ("bearer" as const) : ("none" as const) };
       await rpc.capabilities.install({
         kind: sourceKind,
-        name:
-          sourceName.trim() ||
-          (sourcePreset?.name ?? (sourceKind === "graphql" ? "GraphQL" : "Custom connector")),
+        name,
         source: sourceUrl.trim(),
         credential: credential.trim() || undefined,
         config: sourcePreset
@@ -282,6 +315,14 @@ export function PluginsOverlay({
       setView("manage");
       await refresh();
     } catch (err) {
+      // The server is saved; its OAuth client ID belongs in its own settings.
+      if (errorCode(err) === MCP_OAUTH_CLIENT_REQUIRED) {
+        sourceForm.setSourceKind(null);
+        setView("manage");
+        await refresh().catch(() => undefined);
+        setSourceError(t`This server needs an OAuth client ID. Add one in Manage MCP servers.`);
+        return;
+      }
       setSourceError(errorText(err, t`Could not install connector`));
     } finally {
       setPending(null);
