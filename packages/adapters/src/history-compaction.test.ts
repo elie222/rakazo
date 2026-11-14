@@ -12,8 +12,6 @@ import { describe, expect, it, vi } from "vitest";
 import {
   COMPACTION_BATCH_SIZE,
   compactHistory,
-  formatCompactedSummary,
-  formatRecalledMemory,
   HISTORY_WINDOW_SIZE,
   historyWindowSize,
   MAX_COMPACTED_SUMMARY_CHARS,
@@ -28,6 +26,7 @@ import {
   shouldEnqueueCompaction,
   summarizeTimeoutMs,
 } from "./history-compaction.js";
+import { formatCompactedSummary, formatRecalledMemory } from "./history-compaction.prompt.js";
 
 describe("shouldEnqueueCompaction", () => {
   it("is false when nothing has aged out of the window yet", () => {

@@ -34,7 +34,7 @@ export function connectedAppMarks(
   const initials = new Set<string>();
   const preferred = apps.filter((app) => {
     if (app.logo) return true;
-    const initial = app.name[0]?.toUpperCase() ?? "";
+    const initial = Array.from(app.name)[0]?.toUpperCase() ?? "";
     if (initials.has(initial)) return false;
     initials.add(initial);
     return true;
