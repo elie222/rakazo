@@ -88,13 +88,13 @@ curl -X POST "$RAKAZO_URL/api/service/v1/bots/$BOT_ID/prompts" \
 
 ### Waiting for a reply
 
-`POST /bots/{id}/prompts?wait=60` holds the call for up to 60 seconds and adds `run` to the response: the run's status and what the bot said in it. `GET /runs/{id}?wait=60` does the same for a run you already started. `settled` is true once the run ended or the bot is waiting on a question for you. When it is false, the wait ran out, so call again.
+`POST /bots/{id}/prompts?wait=60` holds the call for up to 60 seconds and adds `run` to the response: the run's status and what the bot said in it. `GET /runs/{id}?wait=60` does the same for a run you already started. `settled` is true once the run ended or the bot is waiting on a question for you. When it is false, the wait ran out, so call again. Waiting on a prompt needs `conversations:read` as well, because it returns the bot's reply.
 
 ### Live events
 
 `GET /bots/{id}/events` is a server-sent event stream of new messages and run changes, filtered the same way as conversations. Each event's `id` is its sequence number. To resume, send it back as `Last-Event-ID` or `?cursor=`. With neither, the stream starts now. The first thing sent is the comment line `: connected`, so a client knows the stream is open before anything happens.
 
-A stream closes after 15 minutes, so reconnect with the last id. A key may hold 5 streams at once, across every server.
+A stream closes after 15 minutes, so reconnect with the last id. A key may hold 5 streams and waiting calls at once, across every server.
 
 ## For agents
 
@@ -122,5 +122,5 @@ Errors look like `{"error": {"code": "...", "message": "..."}}`. A body that fai
 | 413    | `payload_too_large`        | Body over the limit for this call                               |
 | 415    | `unsupported_media_type`   | Expected `application/json`                                     |
 | 429    | `rate_limited`             | See the `Retry-After` header                                    |
-| 429    | `too_many_streams`         | Close an event stream first                                     |
+| 429    | `too_many_streams`         | Close an event stream or let a waiting call finish first        |
 | 503    | `service_unavailable`      | Retry; for a write, use the same idempotency key                |

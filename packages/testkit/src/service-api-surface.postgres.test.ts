@@ -1047,6 +1047,64 @@ describeWithDatabase("service API surface", () => {
       expect(sent).not.toHaveProperty("run");
     });
 
+    it("does not wait for a reply for a key that may not read conversations", async () => {
+      const { cookie } = await person();
+      const bot = await newBot(cookie, "Write only");
+      const { token } = await newKey(cookie, ["bots:read", "prompts:write"]);
+      const refused = await api(token, "POST", `/bots/${bot.id}/prompts?wait=5`, {
+        body: { text: "tell me" },
+        key: "write-only-wait",
+      });
+      expect(refused.status).toBe(403);
+      expect(refused.json.error?.code).toBe("forbidden");
+      // Refused before the send, so the bot never got the message.
+      const threadId = await threadOf(cookie, bot.id);
+      expect(await db.message.count({ where: { threadId, role: "user" } })).toBe(0);
+      const sent = await ok<Record<string, unknown>>(token, "POST", `/bots/${bot.id}/prompts`, {
+        body: { text: "tell me" },
+        key: "write-only",
+      });
+      expect(sent).not.toHaveProperty("run");
+    });
+
+    it("counts a waiting call against the key's stream slots", async () => {
+      const { cookie } = await person();
+      const bot = await newBot(cookie, "Patient");
+      const { token, credential } = await newKey(cookie);
+      const sent = await ok<{ runId: string }>(token, "POST", `/bots/${bot.id}/prompts`, {
+        body: { text: "hello" },
+        key: "slots-1",
+      });
+      const owner = await db.serviceCredential.findUniqueOrThrow({ where: { id: credential.id } });
+      await db.serviceEventStream.createMany({
+        data: Array.from({ length: 5 }, () => ({
+          userId: owner.userId,
+          spaceId: owner.spaceId,
+          credentialId: credential.id,
+          expiresAt: new Date(Date.now() + 60_000),
+        })),
+      });
+      const waiting = await api(token, "GET", `/runs/${sent.runId}?wait=1`);
+      expect(waiting.status).toBe(429);
+      expect(waiting.json.error?.code).toBe("too_many_streams");
+      const sending = await api(token, "POST", `/bots/${bot.id}/prompts?wait=1`, {
+        body: { text: "again" },
+        key: "slots-2",
+      });
+      expect(sending.status).toBe(429);
+      // A read that does not wait needs no slot.
+      expect((await api(token, "GET", `/runs/${sent.runId}`)).status).toBe(200);
+      await db.serviceEventStream.deleteMany({ where: { credentialId: credential.id } });
+      await ok(token, "GET", `/runs/${sent.runId}?wait=1`);
+      // The wait gives its slot back when it returns.
+      expect(await db.serviceEventStream.count({ where: { credentialId: credential.id } })).toBe(0);
+      const texts = await db.message.findMany({
+        where: { threadId: await threadOf(cookie, bot.id), role: "user" },
+        select: { blocks: true },
+      });
+      expect(JSON.stringify(texts)).not.toContain("again");
+    });
+
     it("gives up at the wait and says the run is not settled", async () => {
       const { cookie } = await person();
       const bot = await newBot(cookie, "Slow");
