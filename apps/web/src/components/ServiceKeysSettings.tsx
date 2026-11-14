@@ -1,3 +1,4 @@
+import { plural } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { ServiceCredential, ServiceScope } from "@rakazo/contracts";
 import {
@@ -88,6 +89,15 @@ export function ServiceKeysSettings() {
     return new Date(key.expiresAt).getTime() <= Date.now()
       ? t`Expired ${date}`
       : t`Expires ${date}`;
+  }
+
+  // No bots on a key means every bot, so say so rather than show nothing.
+  function botsText(key: ServiceCredential) {
+    if (!key.botIds.length) return t`All bots`;
+    const names = key.botIds.map((id) => bots?.find((bot) => bot.id === id)?.name);
+    if (names.every(Boolean)) return names.join(", ");
+    const count = key.botIds.length;
+    return t`${plural(count, { one: "# bot", other: "# bots" })}`;
   }
 
   function lastUsedText(key: ServiceCredential) {
@@ -214,6 +224,7 @@ export function ServiceKeysSettings() {
               <div className="truncate text-muted-foreground">
                 {key.tokenPrefix}… {key.scopes.join(", ")}
               </div>
+              <div className="truncate text-muted-foreground">{botsText(key)}</div>
               <div className="truncate text-muted-foreground">
                 {expiryText(key)} · {lastUsedText(key)}
               </div>
