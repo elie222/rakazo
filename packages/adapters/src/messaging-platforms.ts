@@ -539,7 +539,12 @@ function plainTextWithLinkAddresses(markdown: string): string {
       type: "root",
       children: [{ type: "paragraph", children: node.children }],
     });
-    return text(!label || label === node.url ? node.url : `${label} (${node.url})`);
+    if (!label) return text(node.url);
+    const bare = node.url.replace(/^(?:https?:\/\/|mailto:)/, "");
+    if (label === node.url || label === bare || label === bare.replace(/\/$/, "")) {
+      return text(label);
+    }
+    return text(`${label} (${node.url})`);
   });
   return toPlainText(ast);
 }

@@ -120,6 +120,14 @@ describe("Telegram messaging Markdown", () => {
     expect(sent).toContain("https://example.com/beta");
   });
 
+  it("does not repeat an address already shown when a long reply is split", () => {
+    const long = `**Contact** bob@example.com or https://example.com/\n${"x".repeat(4200)}`;
+    const sent = splitOutboundBody("telegram", long).join("\n").replace(/\\(.)/g, "$1");
+    expect(sent).toContain("bob@example.com");
+    expect(sent).not.toContain("mailto:");
+    expect(sent).not.toContain("(https://example.com/)");
+  });
+
   it("keeps the address of a link in a reply that fits in one message", () => {
     const body = "Read [the docs](https://example.com/docs/start) first.";
     expect(splitOutboundBody("telegram", body).join("")).toContain(
