@@ -443,7 +443,7 @@ export function registerOpenAiCompatibleRuntime(
 ): MutableModels {
   const baseUrl = normalizeOpenAiCompatibleBaseUrl(opts.baseUrl);
   const modelId = opts.modelId.trim();
-  const acceptsImages = opts.acceptsImages || openAiCompatibleVisionModelIds().has(modelId);
+  const acceptsImages = opts.acceptsImages ?? openAiCompatibleVisionModelIds().has(modelId);
   models.setProvider(
     openAiCompatibleProvider(
       [
