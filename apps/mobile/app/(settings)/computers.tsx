@@ -24,12 +24,14 @@ export default function ComputersSettings() {
   const styles = useThemedStyles(createStyles);
   const { t } = useLingui();
   const loadGeneration = useRef(0);
+  const refreshGeneration = useRef(0);
   const visit = useRef(0);
   const focused = useRef(false);
   const pendingRef = useRef(false);
   const removing = useRef(new Set<string>());
   const [devices, setDevices] = useState<UserDeviceSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [pending, setPending] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -41,20 +43,25 @@ export default function ComputersSettings() {
         const listed = await listUserDevices();
         if (generation !== loadGeneration.current) return;
         setDevices(listed.filter((device) => !removing.current.has(device.deviceId)));
+        setLoadFailed(false);
         if (!preserveError) setError(null);
+        return true;
       } catch (cause) {
         if (generation !== loadGeneration.current) return;
         const message = errorText(cause, t`Could not load`);
+        setLoadFailed(true);
         setError((current) => (preserveError && current ? current : message));
+        return false;
       }
     },
     [t],
   );
 
   async function refresh() {
+    const generation = ++refreshGeneration.current;
     setRefreshing(true);
     await load();
-    setRefreshing(false);
+    if (generation === refreshGeneration.current) setRefreshing(false);
   }
 
   useFocusEffect(
@@ -65,6 +72,8 @@ export default function ComputersSettings() {
         focused.current = false;
         visit.current += 1;
         loadGeneration.current += 1;
+        refreshGeneration.current += 1;
+        setRefreshing(false);
         pendingRef.current = false;
         setPending(false);
       };
@@ -96,9 +105,11 @@ export default function ComputersSettings() {
     setPending(true);
     setError(null);
     setDevices((current) => current?.filter((item) => item.deviceId !== device.deviceId) ?? null);
+    let failed = false;
     try {
       await removeUserDevice(device.deviceId);
     } catch (cause) {
+      failed = true;
       if (visit.current === startedVisit) setError(errorText(cause, t`Could not remove`));
     } finally {
       removing.current.delete(device.deviceId);
@@ -106,7 +117,16 @@ export default function ComputersSettings() {
         pendingRef.current = false;
         setPending(false);
       }
-      if (focused.current) void load(true);
+      if (focused.current) {
+        const loaded = await load(true);
+        if (failed && loaded === false && visit.current === startedVisit) {
+          setDevices((current) =>
+            current && !current.some((item) => item.deviceId === device.deviceId)
+              ? [...current, device]
+              : current,
+          );
+        }
+      }
     }
   }
 
@@ -147,7 +167,7 @@ export default function ComputersSettings() {
             {error}
           </Text>
         ) : null}
-        {error && !devices ? (
+        {loadFailed ? (
           <NativeActionButton
             fill={false}
             label={t`Retry`}

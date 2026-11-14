@@ -88,8 +88,8 @@ vi.mock("react-native", () => {
         {children}
       </div>
     ),
-    RefreshControl: ({ onRefresh }: { onRefresh: () => void }) => (
-      <button type="button" aria-label="Refresh" onClick={onRefresh} />
+    RefreshControl: ({ onRefresh, refreshing }: { onRefresh: () => void; refreshing: boolean }) => (
+      <button type="button" aria-label="Refresh" aria-busy={refreshing} onClick={onRefresh} />
     ),
     Text: ({ children, ...props }: { children?: ReactNode; role?: string }) => (
       <p role={props.role} {...props}>
@@ -192,20 +192,89 @@ it("re-lists after a revoke error and keeps the error visible", async () => {
   expect(listUserDevices).toHaveBeenCalledTimes(2);
   expect(container.textContent).not.toContain("Laptop");
   expect(container.textContent).toContain("offline");
+  expect(container.textContent).not.toContain("Retry");
 });
 
 it("keeps the revoke error when reconciliation also fails", async () => {
   vi.mocked(listUserDevices)
     .mockResolvedValueOnce([laptop])
     .mockRejectedValueOnce(new Error("list failed"));
-  vi.mocked(removeUserDevice).mockRejectedValue(new Error("remove failed"));
+  vi.mocked(removeUserDevice).mockRejectedValue({});
   await render();
   await act(async () =>
     container.querySelector<HTMLButtonElement>('[aria-label="Remove Laptop, Connected"]')?.click(),
   );
   await act(async () => confirmRemove()?.onPress?.());
   await settle();
-  expect(container.textContent).toContain("remove failed");
+  expect(container.textContent).toContain("LaptopConnected");
+  expect(container.textContent).toContain("Could not remove");
+  expect(container.textContent).toContain("Retry");
+});
+
+it("retries a failed reload after a list exists", async () => {
+  vi.mocked(listUserDevices)
+    .mockResolvedValueOnce([laptop])
+    .mockRejectedValueOnce(new Error("list failed"))
+    .mockResolvedValueOnce([desk]);
+  await render();
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('[aria-label="Refresh"]')?.click(),
+  );
+  expect(container.textContent).toContain("LaptopConnected");
+  expect(container.textContent).toContain("list failed");
+  const retry = [...container.querySelectorAll("button")].find(
+    (button) => button.textContent === "Retry",
+  );
+  expect(retry).toBeDefined();
+  await act(async () => retry?.click());
+  expect(container.textContent).toContain("Desk PCOffline");
+  expect(container.textContent).not.toContain("list failed");
+  expect(container.textContent).not.toContain("Retry");
+});
+
+function refreshBusy() {
+  return container.querySelector('[aria-label="Refresh"]')?.getAttribute("aria-busy");
+}
+
+it("keeps refreshing until the newest refresh finishes", async () => {
+  let finishFirst!: (devices: (typeof laptop)[]) => void;
+  let finishSecond!: (devices: (typeof laptop)[]) => void;
+  vi.mocked(listUserDevices)
+    .mockResolvedValueOnce([laptop])
+    .mockReturnValueOnce(new Promise((resolve) => (finishFirst = resolve)))
+    .mockReturnValueOnce(new Promise((resolve) => (finishSecond = resolve)));
+  await render();
+  const refresh = () =>
+    container.querySelector<HTMLButtonElement>('[aria-label="Refresh"]')?.click();
+  await act(async () => refresh());
+  await act(async () => refresh());
+  expect(refreshBusy()).toBe("true");
+  await act(async () => finishFirst([laptop]));
+  expect(refreshBusy()).toBe("true");
+  await act(async () => finishSecond([laptop]));
+  expect(refreshBusy()).toBe("false");
+});
+
+it("resets refreshing on blur and ignores the previous refresh", async () => {
+  let finishFirst!: (devices: (typeof laptop)[]) => void;
+  let finishSecond!: (devices: (typeof laptop)[]) => void;
+  vi.mocked(listUserDevices)
+    .mockResolvedValueOnce([laptop])
+    .mockReturnValueOnce(new Promise((resolve) => (finishFirst = resolve)))
+    .mockResolvedValueOnce([laptop])
+    .mockReturnValueOnce(new Promise((resolve) => (finishSecond = resolve)));
+  await render();
+  const refresh = () =>
+    container.querySelector<HTMLButtonElement>('[aria-label="Refresh"]')?.click();
+  await act(async () => refresh());
+  await act(async () => blur());
+  expect(refreshBusy()).toBe("false");
+  await act(async () => focus());
+  await act(async () => refresh());
+  await act(async () => finishFirst([laptop]));
+  expect(refreshBusy()).toBe("true");
+  await act(async () => finishSecond([laptop]));
+  expect(refreshBusy()).toBe("false");
 });
 
 it("ignores a delayed refresh after a successful revoke", async () => {
