@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import type {
   ApnsVoipConfig,
   PhotonProjectCredentials,
+  PluginSources,
   TelegramBotCredentials,
 } from "@rakazo/adapters";
 import {
@@ -10,6 +11,7 @@ import {
   boatApiUrlFromEnv,
   deploymentLabsFromEnv,
   mcpStdioOptionsFromEnv,
+  parsePluginArchives,
   photonProjectsFromEnv,
   resolveCloudAgentProvider,
   resolveDeploymentModel,
@@ -119,6 +121,8 @@ export interface AppEnv {
   composioApiKey: string | undefined;
   /** Optional integrations.sh-compatible catalog base URL. */
   integrationsCatalogUrl: string | undefined;
+  /** Whether Integrations lists the public plugin registries, and the deployment's own plugins. */
+  pluginSources: Required<Pick<PluginSources, "registries" | "archives">>;
   pipedreamClientId: string | undefined;
   pipedreamClientSecret: string | undefined;
   pipedreamProjectId: string | undefined;
@@ -323,6 +327,10 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     boatApiUrl: boatApiUrlFromEnv(source),
     composioApiKey: source.COMPOSIO_API_KEY,
     integrationsCatalogUrl: optional(source.INTEGRATIONS_CATALOG_URL),
+    pluginSources: {
+      registries: source.PLUGIN_REGISTRIES_ENABLED !== "false",
+      archives: parsePluginArchives(source.PLUGIN_ARCHIVES),
+    },
     pipedreamClientId: optional(source.PIPEDREAM_CLIENT_ID),
     pipedreamClientSecret: optional(source.PIPEDREAM_CLIENT_SECRET),
     pipedreamProjectId: optional(source.PIPEDREAM_PROJECT_ID),
