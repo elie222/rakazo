@@ -110,8 +110,8 @@ describe("createStatusLineWriter", () => {
   it("stops at the first model that writes a status", async () => {
     const { deps: d, models } = deps(() => "Reading your question\nLooking up prices");
     const writer = await createStatusLineWriter(d, scope, []);
-    const lines = await writer?.opening("How much is the plan?", new AbortController().signal);
-    expect(lines).toEqual(["Reading your question", "Looking up prices"]);
+    const line = await writer?.opening("How much is the plan?", new AbortController().signal);
+    expect(line).toBe("Reading your question");
     expect(models).toEqual(["small-a"]);
   });
 });

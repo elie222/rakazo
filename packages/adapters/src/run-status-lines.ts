@@ -1,8 +1,5 @@
 import type { StatusLineWriter } from "./status-lines.js";
 
-/** How long each opening status stays before the next one, while the model has not acted yet. */
-export const OPENING_STATUS_ROTATION_MS = 3_500;
-
 export type LiveStatusLines = {
   /** Whether a status model is writing statuses; false until it is known, and without one. */
   active(): boolean;
@@ -36,10 +33,10 @@ export type StatusLineTarget = {
 };
 
 /**
- * Runs the member's status model alongside the run: a few opening statuses rotate as soon as
- * they are ready, while the run sets up and the main model thinks, and each step it starts
- * without a status of its own gets one. A status shows only while nothing newer took over, and
- * statuses are shown one at a time, in order.
+ * Runs the member's status model alongside the run: one opening status about taking in the
+ * request shows as soon as it is ready, while the run sets up and the main model thinks, and
+ * each step it starts without a status of its own gets one. A status shows only while nothing
+ * newer took over, and statuses are shown one at a time, in order.
  */
 export function startStatusLines(target: StatusLineTarget): LiveStatusLines {
   const abort = new AbortController();
@@ -47,7 +44,6 @@ export function startStatusLines(target: StatusLineTarget): LiveStatusLines {
   let generation = 0;
   let closed = false;
   let hasWriter = false;
-  let rotation: ReturnType<typeof setTimeout> | undefined;
   // The request for whatever the line shows now; a newer step or status cancels it.
   let current = new AbortController();
   const replaceCurrent = () => {
@@ -57,10 +53,6 @@ export function startStatusLines(target: StatusLineTarget): LiveStatusLines {
   };
   // Each status waits for the one before it, so a slow write never lands after a newer one.
   let showing: Promise<unknown> = Promise.resolve();
-  const stopRotation = () => {
-    if (rotation) clearTimeout(rotation);
-    rotation = undefined;
-  };
   const show = (text: string, mine: number) => {
     showing = showing.then(async () => {
       if (closed || mine !== generation || target.held()) return;
@@ -79,7 +71,6 @@ export function startStatusLines(target: StatusLineTarget): LiveStatusLines {
   );
   function close() {
     closed = true;
-    stopRotation();
     abort.abort();
     target.signal?.removeEventListener("abort", onRunAbort);
   }
@@ -90,20 +81,11 @@ export function startStatusLines(target: StatusLineTarget): LiveStatusLines {
   void writer
     .then(async (writer) => {
       if (!writer || closed) return;
-      const lines = await writer.opening(
+      const line = await writer.opening(
         target.request,
         AbortSignal.any([abort.signal, current.signal]),
       );
-      let index = 0;
-      const next = async () => {
-        if (closed || opening !== generation || index >= lines.length) return;
-        await show(lines[index++]!, opening);
-        if (index < lines.length) {
-          rotation = setTimeout(() => void next(), OPENING_STATUS_ROTATION_MS);
-          rotation.unref?.();
-        }
-      };
-      await next();
+      if (line) await show(line, opening);
     })
     .catch(() => {});
 
@@ -111,7 +93,6 @@ export function startStatusLines(target: StatusLineTarget): LiveStatusLines {
     active: () => hasWriter && !closed,
     step(text, { fallback = true } = {}) {
       const mine = ++generation;
-      stopRotation();
       const signal = replaceCurrent();
       void writer
         .then((writer) => writer?.step(target.request, text, signal))
@@ -124,7 +105,6 @@ export function startStatusLines(target: StatusLineTarget): LiveStatusLines {
     },
     supersede() {
       generation += 1;
-      stopRotation();
       replaceCurrent();
     },
     close,

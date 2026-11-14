@@ -32,8 +32,11 @@ export type StatusLineScope = {
 
 /** Writes short status lines with the member's status model, when they chose one. */
 export interface StatusLineWriter {
-  /** A few statuses for the first moments of work on the request, in the order to show. */
-  opening(request: string, signal: AbortSignal): Promise<string[]>;
+  /**
+   * One status for the moment before the first step, about taking in the request: nothing has
+   * been done yet, so it never claims work.
+   */
+  opening(request: string, signal: AbortSignal): Promise<string | undefined>;
   /** One status for a step, from its technical description. */
   step(request: string, step: string, signal: AbortSignal): Promise<string | undefined>;
 }
@@ -200,10 +203,10 @@ export async function createStatusLineWriter(
       async opening(request, signal) {
         const lines = await write(
           () =>
-            `${requestPrompt(request, secrets)}\n\nWrite three different statuses for the first moments of working on this request, one per line, from first to last.`,
+            `${requestPrompt(request, secrets)}\n\nNothing has been done for this request yet. Write one status that says you are taking in what it asks about (for example “Looking into the plan pricing”). Never claim a search, check or comparison that has not happened.`,
           signal,
         );
-        return lines.slice(0, 3);
+        return lines[0];
       },
       async step(request, step, signal) {
         const lines = await write(
