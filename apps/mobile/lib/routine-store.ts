@@ -61,7 +61,8 @@ function countWrite(scope: string, change: 1 | -1) {
 }
 
 /** Reads the bot's routines; a read already running is shared. */
-export async function loadBotRoutines(botId: string): Promise<void> {
+/** `fresh` drops a read already in flight, which may have started before the change it follows. */
+export async function loadBotRoutines(botId: string, { fresh = false } = {}): Promise<void> {
   const query = routinesQuery(botId);
   // A read sent during a save or delete could answer with the value from before it, so it
   // waits until they finish.
@@ -71,7 +72,7 @@ export async function loadBotRoutines(botId: string): Promise<void> {
     return;
   }
   try {
-    await fetchFresh(queryClient, query, { reuse: true });
+    await fetchFresh(queryClient, query, { reuse: !fresh });
   } catch {
     // The cache keeps the failure for the screens to show.
   }
@@ -203,7 +204,11 @@ export function useBotRoutines(botId: string) {
       if (botId) void loadBotRoutines(botId);
     }, [botId]),
   );
-  useSpaceChanges("routines", () => loadBotRoutines(botId), useIsFocused() && Boolean(botId));
+  useSpaceChanges(
+    "routines",
+    () => loadBotRoutines(botId, { fresh: true }),
+    useIsFocused() && Boolean(botId),
+  );
   const failedSinceShown = errorUpdatedAt >= shownSince && errorUpdatedAt > dataUpdatedAt;
   // A delay seen before a failed read may already have cleared.
   const routines = useMemo(
