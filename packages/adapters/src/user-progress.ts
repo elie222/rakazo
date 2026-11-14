@@ -61,13 +61,8 @@ export const MID_TURN_PROGRESS_MAX_PER_RUN = 3;
  */
 export function midTurnProgressBudgetAllows(publishedCount: number, turnAgeMs: number): boolean {
   return (
-    !midTurnProgressBudgetUsed(publishedCount) && turnAgeMs >= MID_TURN_PROGRESS_MIN_TURN_AGE_MS
+    publishedCount < MID_TURN_PROGRESS_MAX_PER_RUN && turnAgeMs >= MID_TURN_PROGRESS_MIN_TURN_AGE_MS
   );
-}
-
-/** Whether the run has posted every durable interim message it may, however long it runs. */
-export function midTurnProgressBudgetUsed(publishedCount: number): boolean {
-  return publishedCount >= MID_TURN_PROGRESS_MAX_PER_RUN;
 }
 
 /**
