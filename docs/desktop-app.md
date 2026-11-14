@@ -36,10 +36,11 @@ files.
   their own isolated computers, or **Use this Mac** (**Use this computer** on Windows and Linux) to
   let them work directly on yours. **Computer Access…** in the app menu changes this later, and
   **Revoke Local Computer Access** turns it off.
-- With any server, turn on **Let bots use this computer** in **Settings → General** under
-  **Computers**. Your computer then shows as **Connected** or **Offline** there. Access belongs to
-  the account that turned it on and ends when that account signs out, resets its password or signs
-  out everywhere. Signing back in to the same account restores it without asking again.
+- With any HTTPS server, or the app's own loopback server, turn on **Let bots use this computer**
+  in **Settings → General** under **Computers**. Your computer then shows as **Connected** or
+  **Offline** there. Access belongs to the account that turned it on and ends when that account
+  signs out, resets its password or signs out everywhere. Signing back in to the same account
+  restores it without asking again.
 
 Either way, the app asks **Allow bots to use this computer?** before access is granted. See
 [The bot's computer](./computer.md#use-your-own-computer).
