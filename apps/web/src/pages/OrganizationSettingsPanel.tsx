@@ -3,6 +3,7 @@ import { canDeleteOrganization } from "@rakazo/core";
 import { Button, Field, FieldLabel, Input } from "@rakazo/ui-web";
 import { Plus } from "lucide-react";
 import { useEffect, useId, useState } from "react";
+import { AuditLog } from "../components/AuditLog";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { CreateOrganizationDialog } from "../components/CreateOrganizationDialog";
 import { SettingsGroup, SettingsRow } from "../components/SettingsRows";
@@ -135,6 +136,7 @@ function OrganizationSettings({
           </Button>
         ) : null}
       </div>
+      <AuditLog organizationId={organization.id} />
       <CreateOrganizationDialog open={creating} onOpenChange={setCreating} />
       {confirmingDelete ? (
         <DeleteOrganizationDialog
