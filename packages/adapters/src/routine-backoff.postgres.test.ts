@@ -54,7 +54,10 @@ describePostgres("backing off a routine on refused model accounts (PostgreSQL)",
       },
     });
     const enqueue = vi.fn(async () => undefined);
-    const deps = { prisma: system, jobs: { enqueue, cancel: vi.fn(), close: vi.fn() } };
+    const deps = {
+      prisma: system,
+      jobs: { enqueue, enqueueIn: vi.fn(), cancelIn: vi.fn(), cancel: vi.fn(), close: vi.fn() },
+    };
     return { routine, deps, enqueue };
   }
 

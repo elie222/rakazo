@@ -8,7 +8,7 @@ import { currentApiBase } from "../../lib/api";
 import type { MobileArtifactTarget } from "../../lib/artifact-open";
 import { textMobileArtifact } from "../../lib/artifact-open";
 import { offerComposerText } from "../../lib/composer-offer";
-import { useI18n } from "../../lib/i18n";
+import { useUiLocale } from "../../lib/i18n";
 import { useMobileTokens, useResolvedAppearance } from "../../lib/native";
 import { pageActionAllowed, pageMessage, pageTapStart } from "../../lib/pages";
 import { SandboxedHtmlPreview } from "../sandboxed-html-preview";
@@ -37,7 +37,7 @@ function apiHost(): string[] {
 export function McpAppCard({ block, target }: { block: AppBlock; target: MobileArtifactTarget }) {
   const tokens = useMobileTokens();
   const theme = useResolvedAppearance();
-  const { locale } = useI18n();
+  const locale = useUiLocale();
   const openLink = useNativeLinkConfirm();
   const [html, setHtml] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);

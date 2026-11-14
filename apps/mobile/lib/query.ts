@@ -1,9 +1,9 @@
+import { t } from "@lingui/core/macro";
 import type { RpcInput, RpcOutput, RpcPath } from "@rakazo/contracts";
 import type { DataTag, QueryFunction, QueryKey } from "@tanstack/react-query";
 import { QueryClient } from "@tanstack/react-query";
 import type { RpcArgs } from "./api";
 import { captureApiRequestContext, currentApiBase, rpc, selectedSpaceId } from "./api";
-import { t } from "./i18n";
 import { currentSessionGeneration } from "./session";
 
 /**
@@ -45,11 +45,11 @@ function scopedRpcQuery<P extends RpcPath>(
   const queryKey = [...scope, proc, input ?? {}] as unknown as DataTag<QueryKey, T, Error>;
   const queryFn: QueryFunction<T> = async ({ signal }) => {
     if (scopeKey().join("\n") !== scope.join("\n"))
-      throw new Error(t("Something went wrong. Try again."));
+      throw new Error(t`Something went wrong. Try again.`);
     const requestContext = await captureApiRequestContext(spaceId);
     const answer = await rpc(proc, ...([input, { signal, requestContext }] as RpcArgs<P>));
     if (scopeKey().join("\n") !== scope.join("\n"))
-      throw new Error(t("Something went wrong. Try again."));
+      throw new Error(t`Something went wrong. Try again.`);
     return answer;
   };
   return { queryKey, queryFn };

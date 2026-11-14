@@ -1,5 +1,6 @@
 import type { ProductEvent } from "@rakazo/contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { RECONNECT_SPREAD_MS } from "./retry-policy.js";
 import { IDLE_TIMEOUT_MS, runThreadSubscription } from "./thread-subscription.js";
 
 const head = { threadId: "thread", cursor: 10 };
@@ -57,6 +58,7 @@ function setup(committed: typeof head | null = head) {
     beforeEvent: vi.fn(),
     applyEvent: vi.fn(),
     onEvent: vi.fn(),
+    random: () => 0,
   };
   return { abort, channel, state, callbacks };
 }
@@ -96,6 +98,23 @@ describe("thread subscription recovery", () => {
     expect(callbacks.applyEvent).toHaveBeenCalledExactlyOnceWith(event(12));
     expect(callbacks.beforeEvent).toHaveBeenCalledTimes(2);
     expect(callbacks.onEvent).toHaveBeenCalledTimes(2);
+    abort.abort();
+    await running;
+  });
+
+  it("waits a random part of the reconnect spread before refreshing a stream the server closed", async () => {
+    vi.useFakeTimers();
+    const { abort, channel, callbacks } = setup();
+    callbacks.random = () => 0.5;
+    const running = runThreadSubscription(callbacks);
+    await vi.advanceTimersByTimeAsync(0);
+    channel.end();
+    await vi.advanceTimersByTimeAsync(RECONNECT_SPREAD_MS / 2 - 1);
+    expect(callbacks.refresh).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(callbacks.refresh).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(250);
+    expect(callbacks.subscribe).toHaveBeenCalledTimes(2);
     abort.abort();
     await running;
   });

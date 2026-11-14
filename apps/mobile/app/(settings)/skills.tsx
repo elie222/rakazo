@@ -1,3 +1,4 @@
+import { useLingui } from "@lingui/react/macro";
 import type { CapabilityInstall } from "@rakazo/contracts";
 import { useQuery } from "@tanstack/react-query";
 import { useFocusEffect, useNavigation, useRouter } from "expo-router";
@@ -17,7 +18,6 @@ import { NativeActionButton } from "../../components/native-action-button";
 import { PluginIcon } from "../../components/plugin-icon";
 import { Chevron } from "../../components/row-accessories";
 import { SkillSymbol } from "../../components/skill-symbol";
-import { useI18n } from "../../lib/i18n";
 import { native, useThemedStyles } from "../../lib/native";
 import { iosAtLeast } from "../../lib/native-controls";
 import type { PluginParams } from "../../lib/plugin-marketplace";
@@ -39,7 +39,7 @@ export default function SkillsScreen() {
   const router = useRouter();
   const sideInsets = useSideInsets();
   const styles = useThemedStyles(createStyles);
-  const { t } = useI18n();
+  const { t } = useLingui();
   const skills = useQuery(rpcQuery("agentSkills/list"), queryClient);
   const catalog = useQuery(rpcQuery("marketplace/catalog", { query: "" }), queryClient);
   const capabilities = useQuery(rpcQuery("capabilities/list"), queryClient);
@@ -80,14 +80,14 @@ export default function SkillsScreen() {
       iosAtLeast(26)
         ? {
             unstable_headerRightItems: () => [
-              { type: "button" as const, label: t("From GitHub"), onPress: toggle },
+              { type: "button" as const, label: t`From GitHub`, onPress: toggle },
             ],
           }
         : {
             headerRight: () => (
               <NativeActionButton
                 fill={false}
-                label={t("From GitHub")}
+                label={t`From GitHub`}
                 onPress={toggle}
                 prominence="secondary"
               />
@@ -121,7 +121,7 @@ export default function SkillsScreen() {
             <TextInput
               value={gitUrl}
               onChangeText={setGitUrl}
-              accessibilityLabel={t("Plugin GitHub URL")}
+              accessibilityLabel={t`Plugin GitHub URL`}
               placeholder="https://github.com/owner/plugin"
               placeholderTextColor={native.tertiaryLabel}
               autoCapitalize="none"
@@ -133,14 +133,14 @@ export default function SkillsScreen() {
             />
             <NativeActionButton
               disabled={!gitUrl.trim()}
-              label={t("Preview")}
+              label={t`Preview`}
               onPress={() => openSkills(gitImportParams(gitUrl))}
               prominence="secondary"
             />
           </View>
         ) : null}
         <View testID="your-skills" style={styles.list}>
-          <Text style={styles.section}>{t("Your skills")}</Text>
+          <Text style={styles.section}>{t`Your skills`}</Text>
           {ownSkills.map((skill) => (
             <Pressable
               key={skill.id}
@@ -171,7 +171,7 @@ export default function SkillsScreen() {
             onPress={() => router.push("/skill")}
             style={({ pressed }) => [styles.row, pressed && styles.pressed]}
           >
-            <Text style={[styles.title, styles.grow]}>{t("New skill")}</Text>
+            <Text style={[styles.title, styles.grow]}>{t`New skill`}</Text>
             <Chevron />
           </Pressable>
         </View>
@@ -182,12 +182,12 @@ export default function SkillsScreen() {
           style={({ pressed }) => [styles.row, pressed && styles.pressed]}
         >
           <BotTemplateIcon size={LOGO_SIZE} />
-          <Text style={[styles.title, styles.grow]}>{t("Templates")}</Text>
+          <Text style={[styles.title, styles.grow]}>{t`Templates`}</Text>
           <Chevron />
         </Pressable>
         {skillSets.length ? (
           <View testID="plugin-skill-sets" style={styles.list}>
-            <Text style={styles.section}>{t("Plugins")}</Text>
+            <Text style={styles.section}>{t`Plugins`}</Text>
             {skillSets.map((install) => {
               const params = setParams(install);
               const count = pluginSkillCount(install);
@@ -211,7 +211,7 @@ export default function SkillsScreen() {
                       {params.name}
                     </Text>
                     <Text numberOfLines={1} style={styles.secondary}>
-                      {count === 1 ? t("1 skill") : t("{count} skills", { count })}
+                      {count === 1 ? t`1 skill` : t`${count} skills`}
                     </Text>
                   </View>
                   <Chevron />
@@ -220,12 +220,12 @@ export default function SkillsScreen() {
             })}
           </View>
         ) : null}
-        <Text style={styles.section}>{t("Browse")}</Text>
+        <Text style={styles.section}>{t`Browse`}</Text>
         <TextInput
           value={query}
           onChangeText={setQuery}
-          accessibilityLabel={t("Search skills")}
-          placeholder={t("Search skills")}
+          accessibilityLabel={t`Search skills`}
+          placeholder={t`Search skills`}
           placeholderTextColor={native.tertiaryLabel}
           autoCapitalize="none"
           autoCorrect={false}
@@ -235,11 +235,11 @@ export default function SkillsScreen() {
         {state === "partial" ? (
           <View style={styles.row}>
             <Text style={[styles.secondary, styles.grow]}>
-              {t("Some plugins could not be loaded.")}
+              {t`Some plugins could not be loaded.`}
             </Text>
             <NativeActionButton
               fill={false}
-              label={t("Retry")}
+              label={t`Retry`}
               onPress={() => {
                 setRetrying(true);
                 void load().finally(() => setRetrying(false));
@@ -249,7 +249,7 @@ export default function SkillsScreen() {
           </View>
         ) : null}
         {state === "loading" ? (
-          <ActivityIndicator color={native.secondaryLabel} accessibilityLabel={t("Loading…")} />
+          <ActivityIndicator color={native.secondaryLabel} accessibilityLabel={t`Loading…`} />
         ) : null}
         <View testID="skill-packs" style={styles.list}>
           {packs.map((entry) => (
@@ -277,7 +277,7 @@ export default function SkillsScreen() {
                 ) : null}
               </View>
               {installed.has(entry.installedSource) ? (
-                <Text style={styles.secondary}>{t("Added")}</Text>
+                <Text style={styles.secondary}>{t`Added`}</Text>
               ) : (
                 <Chevron />
               )}

@@ -5,17 +5,17 @@ import { UI_LOCALES } from "./ui-locale";
 
 /** Agent import's own files; a string used only by these belongs to import. */
 const IMPORT_FILES = [
-  "src/lib/agent-import-errors.ts",
-  "src/pages/shell/agent-import-plan.tsx",
-  "src/pages/shell/agent-import.tsx",
-  "src/pages/shell/import-setup-card.tsx",
-  "src/pages/shell/import-status.ts",
-  "src/pages/shell/use-agent-import-source.ts",
+  "apps/web/src/lib/agent-import-errors.ts",
+  "apps/web/src/pages/shell/agent-import-plan.tsx",
+  "apps/web/src/pages/shell/agent-import.tsx",
+  "apps/web/src/pages/shell/import-setup-card.tsx",
+  "apps/web/src/pages/shell/import-status.ts",
+  "apps/web/src/pages/shell/use-agent-import-source.ts",
 ];
 /** Import strings that live in shared files. */
 const SHARED_IMPORT_STRINGS = ["Import an agent"];
 
-const localesDir = new URL("../locales/", import.meta.url);
+const localesDir = new URL("../../../../packages/i18n/locales/", import.meta.url);
 const catalog = (locale: string) =>
   readFileSync(fileURLToPath(new URL(`${locale}/messages.po`, localesDir)), "utf8")
     .split("\n\n")
@@ -30,10 +30,12 @@ const catalog = (locale: string) =>
       return {
         id: strings("msgid"),
         text: strings("msgstr"),
-        // `#: src/a.tsx src/b.ts:12` lines: the files, with any line numbers removed.
+        // `#: apps/web/src/a.tsx apps/mobile/lib/b.ts:12` lines: the web files, with any line
+        // numbers removed. Mobile shares the catalog, so a string can also be used there.
         references: (block.match(/^#: .*$/gm) ?? [])
           .flatMap((line) => line.slice(3).split(" "))
-          .map((reference) => reference.replace(/:\d+$/, "")),
+          .map((reference) => reference.replace(/:\d+$/, ""))
+          .filter((reference) => reference.startsWith("apps/web/")),
       };
     })
     .filter((entry) => entry.id);

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="rakazo_channel_live">लाइव एजेंट स्थिति</string>
+  <string name="rakazo_channel_messages">एजेंट संदेश</string>
+  <string name="rakazo_channel_scheduled">शेड्यूल किए गए कार्य</string>
+  <string name="rakazo_channel_attention">ध्यान देना ज़रूरी</string>
+
+  <string name="rakazo_live_one">%1$s काम कर रहा है</string>
+  <string name="rakazo_live_many">%1$s और %2$d अन्य काम कर रहे हैं</string>
+  <string name="rakazo_live_working">काम जारी है</string>
+
+  <string name="rakazo_scheduled_title">%1$s · शेड्यूल किया गया कार्य</string>
+  <string name="rakazo_replied_group">%1$s ने %2$s में जवाब दिया</string>
+  <string name="rakazo_replied">%1$s ने जवाब दिया</string>
+
+  <string name="rakazo_attention_failed">%1$s को समस्या आई</string>
+  <string name="rakazo_attention_takeover">%1$s को स्क्रीन पर आपकी ज़रूरत है</string>
+  <string name="rakazo_attention_input">%1$s को आपके इनपुट की ज़रूरत है</string>
+</resources>

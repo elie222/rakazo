@@ -1,4 +1,5 @@
 import type { RealtimeFanout } from "@rakazo/adapter-kit";
+import { DATABASE_KEEPALIVE } from "@rakazo/db";
 import type { Notification } from "pg";
 import { Client } from "pg";
 
@@ -48,6 +49,8 @@ export class PostgresRealtimeFanout implements RealtimeFanout {
           connectionString: options.connectionString,
           application_name: "rakazo-realtime",
           connectionTimeoutMillis: 5_000,
+          // An idle listener never writes, so without probes a failover leaves it deaf.
+          ...DATABASE_KEEPALIVE,
         }) as RealtimeListenerClient);
     this.reconnectBaseMs = options.reconnectBaseMs ?? 250;
     this.reconnectMaxMs = options.reconnectMaxMs ?? 10_000;

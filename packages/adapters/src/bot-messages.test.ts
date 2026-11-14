@@ -128,6 +128,26 @@ describe("messaging another bot", () => {
     expect(harness.enqueue).not.toHaveBeenCalled();
   });
 
+  it("does not deliver when multiple bots have the same exact name", async () => {
+    const harness = deps({
+      bots: [
+        { id: "bot-first", name: "Reviewer", thread: { id: "thread-first" } },
+        { id: "bot-second", name: "Reviewer", thread: { id: "thread-second" } },
+      ],
+    });
+    const sent = await messageBot(harness.deps, run, sender, {
+      confirm_name: "Reviewer",
+      message: "review this",
+    });
+
+    expect(sent).toMatchObject({ ok: false });
+    expect(harness.tx.message.create).not.toHaveBeenCalled();
+    expect(harness.tx.task.create).not.toHaveBeenCalled();
+    expect(harness.tx.run.create).not.toHaveBeenCalled();
+    expect(harness.enqueue).not.toHaveBeenCalled();
+    expect(harness.notify).not.toHaveBeenCalled();
+  });
+
   it("delivers into the target's own chat without marking either thread unread", async () => {
     const harness = deps();
     const sent = await messageBot(harness.deps, run, sender, {

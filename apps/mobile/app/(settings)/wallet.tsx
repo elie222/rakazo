@@ -1,3 +1,5 @@
+import { ph } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
 import type { Me, PaymentWalletStatus } from "@rakazo/contracts";
 import { useFocusEffect } from "expo-router";
 import { useCallback, useRef, useState } from "react";
@@ -5,7 +7,6 @@ import { Alert, AppState, Linking, ScrollView, StyleSheet } from "react-native";
 import { LoadFailure } from "../../components/load-failure";
 import { SettingsGroup, SettingsRow, useStackedSettings } from "../../components/settings-group";
 import { rpc } from "../../lib/api";
-import { useI18n } from "../../lib/i18n";
 import { useSideInsets } from "../../lib/side-insets";
 import { errorText } from "../../lib/user-error";
 
@@ -16,7 +17,7 @@ type Provider = NonNullable<Me["paymentWalletProvider"]>;
 
 /** Connects the wallet the user's bots spend from. */
 export default function WalletSettings() {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const sideInsets = useSideInsets();
   const stacked = useStackedSettings();
   const [provider, setProvider] = useState<Provider | null>(null);
@@ -34,7 +35,7 @@ export default function WalletSettings() {
     setLoadError(null);
   }, []);
   const reload = useCallback(
-    () => void load().catch((err) => setLoadError(errorText(err, t("Could not load wallet")))),
+    () => void load().catch((err) => setLoadError(errorText(err, t`Could not load wallet`))),
     [load, t],
   );
 
@@ -79,7 +80,7 @@ export default function WalletSettings() {
       setStatus(next);
       if (next.status === "connecting") await Linking.openURL(next.verificationUrl);
     } catch (err) {
-      Alert.alert(errorText(err, t("Could not update wallet")));
+      Alert.alert(errorText(err, t`Could not update wallet`));
     } finally {
       setPending(false);
     }
@@ -101,7 +102,7 @@ export default function WalletSettings() {
               accessibilityRole="button"
               disabled={pending}
               onPress={() => void act(() => rpc("paymentWallet/connect"))}
-              title={t("Connect {name}", { name: provider.name })}
+              title={t`Connect ${ph({ name: provider.name })}`}
             />
           ) : (
             <SettingsRow
@@ -115,13 +116,13 @@ export default function WalletSettings() {
                 accessibilityRole="button"
                 disabled={pending}
                 onPress={() => void Linking.openURL(status.verificationUrl)}
-                title={t("Open")}
+                title={t`Open`}
               />
               <SettingsRow
                 accessibilityRole="button"
                 disabled={pending}
                 onPress={disconnect}
-                title={t("Cancel")}
+                title={t`Cancel`}
               />
             </>
           ) : null}
@@ -131,12 +132,12 @@ export default function WalletSettings() {
               destructive
               disabled={pending}
               onPress={() =>
-                Alert.alert(t("Disconnect {name}?", { name: provider.name }), undefined, [
-                  { text: t("Cancel"), style: "cancel" },
-                  { text: t("Disconnect"), style: "destructive", onPress: disconnect },
+                Alert.alert(t`Disconnect ${ph({ name: provider.name })}?`, undefined, [
+                  { text: t`Cancel`, style: "cancel" },
+                  { text: t`Disconnect`, style: "destructive", onPress: disconnect },
                 ])
               }
-              title={t("Disconnect")}
+              title={t`Disconnect`}
             />
           ) : null}
         </SettingsGroup>

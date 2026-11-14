@@ -1,5 +1,5 @@
+import { t } from "@lingui/core/macro";
 import { Alert } from "react-native";
-import { t } from "./i18n";
 import { hasUnsentSends } from "./thread-feedback";
 import { unsentSendsRestored } from "./unsent-sends";
 
@@ -14,14 +14,14 @@ export async function confirmUnsentSendLoss(action: UnsentSendLossAction): Promi
   // The persisted queue loads asynchronously at startup; reading the in-memory list
   // before that lands, or after it failed, would treat an unknown queue as empty.
   if ((await unsentSendsRestored()) && !hasUnsentSends()) return true;
-  const confirmLabel = action === "sign-out" ? t("Sign out anyway") : t("Switch anyway");
+  const confirmLabel = action === "sign-out" ? t`Sign out anyway` : t`Switch anyway`;
   const message =
     action === "sign-out"
-      ? t("Signing out deletes unsent messages.")
-      : t("Switching servers deletes unsent messages.");
+      ? t`Signing out deletes unsent messages.`
+      : t`Switching servers deletes unsent messages.`;
   return new Promise((resolve) => {
-    Alert.alert(t("Unsent messages"), message, [
-      { text: t("Cancel"), style: "cancel", onPress: () => resolve(false) },
+    Alert.alert(t`Unsent messages`, message, [
+      { text: t`Cancel`, style: "cancel", onPress: () => resolve(false) },
       { text: confirmLabel, style: "destructive", onPress: () => resolve(true) },
     ]);
   });

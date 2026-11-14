@@ -9,7 +9,7 @@ import {
   TemporarilyUnavailableError,
   TooManyRequestsError,
 } from "@modelcontextprotocol/sdk/server/auth/errors.js";
-import { McpError } from "@modelcontextprotocol/sdk/types.js";
+import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 import type {
   AdapterContext,
   ConnectorCall,
@@ -67,6 +67,7 @@ import {
 } from "./mcp-package-installer.js";
 import type { McpServerHealthUpdate } from "./mcp-server-health.js";
 import { needsMcpOAuthClient, recordMcpServerHealth } from "./mcp-server-health.js";
+import { mcpToolAllowed } from "./mcp-tool-permissions.js";
 import { McpSession, mcpStdioRefusal } from "./mcp-transport.js";
 import type { RemoteTransportDependencies } from "./remote-mcp.js";
 import { ConnectorRedirectError, isMcpSessionGoneError, mcpToolFields } from "./remote-mcp.js";
@@ -89,6 +90,12 @@ type SessionEntry = {
   /** Resolved credential values the child may echo in errors or tool output. */
   launchSecrets?: string[];
 };
+class McpSecretChangedError extends Error {
+  constructor() {
+    super("Secret changed during MCP connection; retry");
+  }
+}
+
 type PendingSession = {
   revision: number;
   promise: Promise<McpSession>;
@@ -189,6 +196,24 @@ const REJECTED_TOKEN_CODES = new Set([-32302]);
 
 function isRejectedTokenError(error: unknown): boolean {
   return error instanceof McpError && REJECTED_TOKEN_CODES.has(error.code);
+}
+
+/** Whether a failed call left its session usable: the connection is still up and the
+ * failure came from the server's own JSON-RPC error or the run's cancellation, not from the
+ * transport or a token the server stopped accepting. A server silent for the whole tool
+ * timeout is treated as hung and restarted. */
+function keepsMcpSession(
+  session: McpSession | undefined,
+  error: unknown,
+  signal: AbortSignal,
+): boolean {
+  if (!session?.open) return false;
+  if (signal.aborted) return true;
+  return (
+    error instanceof McpError &&
+    error.code !== ErrorCode.RequestTimeout &&
+    !isRejectedTokenError(error)
+  );
 }
 
 /** A redacted connect failure that keeps whether it was expected, which its message loses. */
@@ -506,11 +531,7 @@ export class McpConnector implements ConnectorProvider {
           );
           reportAllowlistDrift(assignment, listed.tools, context);
           return listed.tools
-            .filter(
-              (tool) =>
-                assignment.allowAllTools ||
-                (assignment.allowedTools as unknown[]).includes(tool.name),
-            )
+            .filter((tool) => mcpToolAllowed(assignment, tool.name))
             .map((tool) => ({
               name: `mcp__${assignment.server.slug}__${tool.name}`,
               description: tool.description ?? tool.name,
@@ -679,11 +700,7 @@ export class McpConnector implements ConnectorProvider {
       };
       return;
     }
-    if (
-      !assignment ||
-      (!assignment.allowAllTools &&
-        !(assignment.allowedTools as unknown[]).includes(call.route.toolName))
-    ) {
+    if (!assignment || !mcpToolAllowed(assignment, call.route.toolName)) {
       yield { type: "error", message: "MCP tool is not assigned to this bot" };
       return;
     }
@@ -693,9 +710,11 @@ export class McpConnector implements ConnectorProvider {
     let material: OAuthMaterial | undefined;
     let launchSecrets: string[] = [];
     const sessionKey = this.sessionKey(assignment.server, context);
+    let used: McpSession | undefined;
     try {
       const toolName = call.route.toolName;
       const result = await this.withSession(assignment.server, context, (session) => {
+        used = session;
         material = this.sessions.get(sessionKey)?.material;
         launchSecrets = this.sessions.get(sessionKey)?.launchSecrets ?? [];
         return session.callTool(toolName, call.args, { signal: context.signal });
@@ -714,9 +733,13 @@ export class McpConnector implements ConnectorProvider {
       );
       if (app) yield { type: "app", app };
     } catch (error) {
-      // A thrown call means the transport or auth broke; drop the session so the next call reconnects.
       const secrets = [...(material ? oauthMaterialSecrets(material) : []), ...launchSecrets];
-      await this.evict(sessionKey);
+      // Drop a broken, hung or unauthorized connection, so the next call reconnects. A
+      // cancelled run or the server's own error leaves a stdio process and the server's
+      // session state in place. A session another call already replaced stays replaced:
+      // evicting the key then would close the fresh one.
+      const replaced = used !== undefined && this.sessions.get(sessionKey)?.session !== used;
+      if (!replaced && !keepsMcpSession(used, error, context.signal)) await this.evict(sessionKey);
       yield { type: "error", message: sanitizeConnectorError(error, secrets) };
     }
   }
@@ -906,8 +929,19 @@ export class McpConnector implements ConnectorProvider {
     use: (session: McpSession) => Promise<T>,
   ): Promise<T> {
     const sessionKey = this.sessionKey(server, context);
-    for (let attempt = 0; ; attempt += 1) {
-      const session = await this.sessionFor(server, context);
+    let retriedRotation = false;
+    let retriedSessionLoss = false;
+    for (;;) {
+      let session: McpSession;
+      try {
+        session = await this.sessionFor(server, context);
+      } catch (error) {
+        // No tool has run yet: reconnect once with the current credentials.
+        context.signal.throwIfAborted();
+        if (retriedRotation || !(error instanceof McpSecretChangedError)) throw error;
+        retriedRotation = true;
+        continue;
+      }
       this.inFlight.set(session, (this.inFlight.get(session) ?? 0) + 1);
       // A session in use is never reaped as idle.
       const entry = this.sessions.get(sessionKey);
@@ -915,7 +949,9 @@ export class McpConnector implements ConnectorProvider {
       try {
         return await use(session);
       } catch (error) {
-        if (attempt !== 0 || !isMcpSessionGoneError(error)) throw error;
+        context.signal.throwIfAborted();
+        if (retriedSessionLoss || !isMcpSessionGoneError(error)) throw error;
+        retriedSessionLoss = true;
         // Stop reusing the expired session immediately, but let its other requests
         // receive their own responses before closing the shared SDK client.
         if (this.sessions.get(sessionKey)?.session === session) this.sessions.delete(sessionKey);
@@ -1002,7 +1038,7 @@ export class McpConnector implements ConnectorProvider {
       }) => {
         if (this.connecting.get(sessionKey)?.invalidated) {
           await closeEntry({ session, credentialDir });
-          throw new Error("Secret changed during MCP connection; retry");
+          throw new McpSecretChangedError();
         }
         connected = {
           session,
@@ -1020,6 +1056,12 @@ export class McpConnector implements ConnectorProvider {
         this.sessions.set(sessionKey, connected);
         if (connected.stdio) this.startReaper();
         return session;
+      },
+      (error: unknown) => {
+        // connectSession has already closed the failed connection and sanitized its error.
+        // Share the rotation result with every caller waiting on this connection.
+        if (this.connecting.get(sessionKey)?.invalidated) throw new McpSecretChangedError();
+        throw error;
       },
     );
     this.connecting.set(sessionKey, { revision: server.revision, promise });

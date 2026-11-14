@@ -19,7 +19,7 @@ export async function sandboxAllowance(
   deps: AllowanceDeps,
   organizationId: string,
   now = new Date(),
-): Promise<{ limitMicros: number; usedMicros: number } | null> {
+): Promise<{ limitMicros: number; usedMicros: number; resetsAt: Date | null } | null> {
   const plan = await sandboxAllowancePlan(deps.prisma, organizationId, now);
   if (plan === null) return null;
   const runs = await sandboxRunHours(deps.prisma, organizationId, plan.since, now);
@@ -32,6 +32,7 @@ export async function sandboxAllowance(
   return {
     limitMicros: (plan.limitCents * MICROS_PER_DOLLAR) / 100,
     usedMicros: Math.round(usedMicros),
+    resetsAt: plan.resetsAt,
   };
 }
 

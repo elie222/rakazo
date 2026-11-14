@@ -15,6 +15,8 @@ vi.mock("./computer-lifecycle.js", async (importOriginal) => ({
 
 const OWNER_MEMORY = "Owner's door code is 4821";
 const OWNER_NOTE = "Plan the owner's surprise party";
+/** What an owner-only tool returned to an earlier reply, kept for the bot's own later turns. */
+const OWNER_TOOL_RESULT = "Inbox: offer letter from the owner's new employer";
 
 type Sender = { senderId: string; senderIsBot?: boolean };
 
@@ -62,6 +64,8 @@ async function teamChatRun(input: {
     run: {
       findUnique: vi.fn(async () => run),
       findUniqueOrThrow: vi.fn(async () => run),
+      // The earlier reply's run: started under the conversation's (owner's) user, as all are.
+      findMany: vi.fn(async () => [{ id: "run-0", userId: run.userId }]),
       updateMany: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
         Object.assign(run, data);
         return { count: 1 };
@@ -94,7 +98,40 @@ async function teamChatRun(input: {
       update: vi.fn(async () => ({ nextMessageSeq: 2, nextEventSeq: 2 })),
     },
     message: {
-      findMany: vi.fn(async () => []),
+      // The history loader asks for tool history; an earlier reply read the owner's inbox.
+      findMany: vi.fn(async (args: { select?: { toolHistory?: boolean } }) =>
+        args.select?.toolHistory
+          ? [
+              {
+                id: "reply-0",
+                threadId: "thread-1",
+                seq: 0,
+                role: "bot",
+                botId: "bot-1",
+                runId: "run-0",
+                blocks: [
+                  { kind: "steps", steps: [{ label: "Read email", count: 1 }] },
+                  { kind: "text", text: "You have one new email." },
+                ],
+                toolHistory: JSON.stringify({
+                  steps: [
+                    {
+                      tool: "read_email",
+                      calls: [{ arguments: "{}", result: OWNER_TOOL_RESULT }],
+                    },
+                  ],
+                }),
+                authorUserId: null,
+                createdAt: new Date("2026-11-01T00:00:00Z"),
+                replyToMessageId: null,
+                replyQuote: null,
+                replyTo: null,
+                clientNonce: null,
+                steeringMessages: [],
+              },
+            ]
+          : [],
+      ),
       findFirst: vi.fn(async () => null),
       findUnique: vi.fn(async () => ({
         blocks: input.sharedChannel
@@ -263,6 +300,7 @@ async function teamChatRun(input: {
     tools,
     context,
     sawOwnerState: context.includes(OWNER_MEMORY) || context.includes(OWNER_NOTE),
+    sawOwnerToolResult: JSON.stringify(request.history).includes(OWNER_TOOL_RESULT),
     toldNonOwner: context.includes("someone other than your owner"),
   };
 }
@@ -278,6 +316,7 @@ describe("team chat runs from people other than the owner", () => {
   ])("keep the owner's memory and notes from %s", async (_who, senders) => {
     const result = await teamChatRun({ senders, ownerAddress: "T1:U-OWNER" });
     expect(result.sawOwnerState).toBe(false);
+    expect(result.sawOwnerToolResult).toBe(false);
     expect(result.toldNonOwner).toBe(true);
     for (const tool of ownerOnlyTools) expect(result.tools).not.toContain(tool);
     expect(result.tools).toContain("web_fetch");
@@ -303,6 +342,7 @@ describe("team chat runs from the owner", () => {
       ...owner,
     });
     expect(result.sawOwnerState).toBe(true);
+    expect(result.sawOwnerToolResult).toBe(true);
     expect(result.toldNonOwner).toBe(false);
     for (const tool of ownerOnlyTools) expect(result.tools).toContain(tool);
   });

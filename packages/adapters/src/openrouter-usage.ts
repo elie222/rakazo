@@ -1,5 +1,5 @@
 import type { AgentUsage, ModelUsageLookup } from "@rakazo/adapter-kit";
-import { readBoundedJsonResponse } from "@rakazo/core";
+import { cancelResponseBody, readBoundedJsonResponse } from "@rakazo/core";
 import { z } from "zod";
 import { readBoundedText } from "./connector-http.js";
 
@@ -78,7 +78,10 @@ export class OpenRouterUsageLookup implements ModelUsageLookup {
         signal: AbortSignal.timeout(5_000),
       },
     );
-    if (response.status === 404) return null;
+    if (response.status === 404) {
+      cancelResponseBody(response);
+      return null;
+    }
     if (!response.ok) {
       const detail = await errorDetail(response);
       throw new Error(

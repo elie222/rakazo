@@ -1,3 +1,4 @@
+import { useLingui } from "@lingui/react/macro";
 import type { SpaceBot } from "@rakazo/contracts";
 import { displayName as safeDisplayName } from "@rakazo/core";
 import { useRouter } from "expo-router";
@@ -5,7 +6,6 @@ import { useSyncExternalStore } from "react";
 import { Pressable } from "react-native";
 import type { ChatTitleRoute } from "../lib/chat-settings-route";
 import { chatTitleRoute } from "../lib/chat-settings-route";
-import { useI18n } from "../lib/i18n";
 import type { MobileBot, MobileGroup } from "../lib/mobile-types";
 import { useThemedStyles } from "../lib/native";
 import { useInboxBot, useInboxGroup } from "../lib/search-inbox";
@@ -72,7 +72,7 @@ export function ChatHeaderTitle({
   routeKey: string;
   params: ChatTitleParams;
 }) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const router = useRouter();
   const styles = useThemedStyles(createThreadHeaderStyles);
   const published = useSyncExternalStore(subscribe, () => titles.get(routeKey));
@@ -93,12 +93,12 @@ export function ChatHeaderTitle({
   };
   // A group seats its members from the inbox's copy until the chat has loaded its own.
   const members = inGroup ? (title.members ?? inboxGroup?.members) : undefined;
-  const label = safeDisplayName(title.name, inGroup ? t("Group") : t("Bot")) || t("Thread");
+  const label = safeDisplayName(title.name, inGroup ? t`Group` : t`Bot`) || t`Thread`;
   const opens = title.opens;
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={opens ? t(inGroup ? "Group settings" : "Profile") : label}
+      accessibilityLabel={opens ? (inGroup ? t`Group settings` : t`Profile`) : label}
       disabled={!opens}
       onPress={() => {
         if (opens) router.push(opens);

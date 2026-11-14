@@ -121,7 +121,7 @@ describe("model credit checkout", () => {
       webOrigin: "https://app.example.com",
     });
     for (const monthly of [true, false]) {
-      await expect(billing.purchaseCredits(actor, { amountCents: 1000, monthly })).resolves.toEqual(
+      await expect(billing.purchaseCredits(actor, { amountCents: 2000, monthly })).resolves.toEqual(
         { url: "https://checkout.example.com" },
       );
     }

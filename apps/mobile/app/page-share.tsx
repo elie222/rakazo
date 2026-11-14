@@ -1,3 +1,5 @@
+import { ph } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
 import type { PageVisibility } from "@rakazo/contracts";
 import { accountDisplay } from "@rakazo/core";
 import * as Clipboard from "expo-clipboard";
@@ -17,7 +19,6 @@ import {
 import { NativeSymbol } from "../components/native-symbol";
 import { PageLoadFailure } from "../components/pages/page-load-failure";
 import { SettingsGroup, SettingsRow } from "../components/settings-group";
-import { useI18n } from "../lib/i18n";
 import { useMobileTokens } from "../lib/native";
 import {
   getLatestPage,
@@ -38,7 +39,7 @@ type Loaded =
  */
 export default function PageShareScreen() {
   const { pageId } = useLocalSearchParams<{ pageId: string }>();
-  const { t } = useI18n();
+  const { t } = useLingui();
   const tokens = useMobileTokens();
   const [loaded, setLoaded] = useState<Loaded>({ status: "loading" });
   const [copied, setCopied] = useState(false);
@@ -87,8 +88,8 @@ export default function PageShareScreen() {
         ) : (
           <PageLoadFailure
             error={loaded.error}
-            fallback={t("Could not load this page.")}
-            gone={t("This page isn't available")}
+            fallback={t`Could not load this page.`}
+            gone={t`This page isn't available`}
             onRetry={() => setAttempt((count) => count + 1)}
           />
         )}
@@ -97,7 +98,7 @@ export default function PageShareScreen() {
   }
   const shown = state.pending ?? state.visibility;
   const link = pageShareLink(state);
-  const owner = accountDisplay(loaded.owner, t("You"));
+  const owner = accountDisplay(loaded.owner, t`You`);
   const check = (value: PageVisibility) =>
     shown === value ? (
       <NativeSymbol ios="checkmark" android="checkmark" size={16} color={tokens.foreground} />
@@ -105,23 +106,23 @@ export default function PageShareScreen() {
   return (
     <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.content}>
       <Text numberOfLines={1} style={[styles.heading, { color: tokens.foreground }]}>
-        {t("Share “{title}”", { title: loaded.title })}
+        {t`Share “${ph({ title: loaded.title })}”`}
       </Text>
       <SettingsGroup>
         <SettingsRow
           key="owner"
           title={owner.label}
-          value={t("Owner")}
+          value={t`Owner`}
           leading={<Avatar owner={owner} />}
         />
       </SettingsGroup>
-      <SettingsGroup label={t("Who can view")}>
+      <SettingsGroup label={t`Who can view`}>
         <SettingsRow
           key="private"
           accessibilityRole="radio"
           accessibilityState={{ checked: shown === "private" }}
           disabled={state.pending !== null}
-          title={t("Only you")}
+          title={t`Only you`}
           leading={
             <NativeSymbol
               ios="lock"
@@ -138,8 +139,8 @@ export default function PageShareScreen() {
           accessibilityRole="radio"
           accessibilityState={{ checked: shown === "link" }}
           disabled={state.pending !== null}
-          title={t("Anyone with the link")}
-          detail={t("No sign-in needed")}
+          title={t`Anyone with the link`}
+          detail={t`No sign-in needed`}
           leading={
             <NativeSymbol ios="globe" android="globe-outline" size={18} color={tokens.foreground} />
           }
@@ -149,7 +150,7 @@ export default function PageShareScreen() {
       </SettingsGroup>
       {state.error || linkProblem ? (
         <Text accessibilityRole="alert" style={[styles.error, { color: tokens.destructive }]}>
-          {state.error ? t("Could not change who can view this page. Try again.") : linkProblem}
+          {state.error ? t`Could not change who can view this page. Try again.` : linkProblem}
         </Text>
       ) : null}
       {link ? (
@@ -157,7 +158,7 @@ export default function PageShareScreen() {
           <SettingsRow
             key="copy"
             accessibilityRole="button"
-            title={t("Copy link")}
+            title={t`Copy link`}
             leading={
               <NativeSymbol
                 ios={copied ? "checkmark" : "doc.on.doc"}
@@ -170,14 +171,14 @@ export default function PageShareScreen() {
               setLinkProblem(null);
               void Clipboard.setStringAsync(link).then(
                 () => setCopied(true),
-                () => setLinkProblem(t("Could not copy the link.")),
+                () => setLinkProblem(t`Could not copy the link.`),
               );
             }}
           />
           <SettingsRow
             key="share"
             accessibilityRole="button"
-            title={t("Share")}
+            title={t`Share`}
             leading={
               <NativeSymbol
                 ios="square.and.arrow.up"
@@ -189,14 +190,14 @@ export default function PageShareScreen() {
             onPress={() => {
               setLinkProblem(null);
               void Share.share(Platform.OS === "ios" ? { url: link } : { message: link }).catch(
-                () => setLinkProblem(t("Something went wrong. Try again.")),
+                () => setLinkProblem(t`Something went wrong. Try again.`),
               );
             }}
           />
           <SettingsRow
             key="open"
             accessibilityRole="button"
-            title={t("Open in browser")}
+            title={t`Open in browser`}
             leading={
               <NativeSymbol
                 ios="arrow.up.right"
@@ -208,7 +209,7 @@ export default function PageShareScreen() {
             onPress={() => {
               setLinkProblem(null);
               void WebBrowser.openBrowserAsync(link).catch(() =>
-                setLinkProblem(t("Something went wrong. Try again.")),
+                setLinkProblem(t`Something went wrong. Try again.`),
               );
             }}
           />

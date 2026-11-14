@@ -35,10 +35,6 @@ vi.mock("./search-inbox", () => ({
 vi.mock("./organizations", () => ({ refreshOrganizations: state.refreshOrganizations }));
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("./native", () => ({ native: {}, useMobileTokens: () => ({}) }));
-vi.mock("./i18n", () => ({
-  t: (text: string) => text,
-  useI18n: () => ({ t: (text: string) => text }),
-}));
 vi.mock("../components/sheet-header", () => ({ cancelHeaderOptions: () => ({}) }));
 vi.mock("expo-router", () => ({
   useNavigation: () => ({ isFocused: () => state.focused }),

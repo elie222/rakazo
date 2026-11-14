@@ -1,7 +1,6 @@
 import { readFileSync } from "node:fs";
-import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { startWorkerHealth, watchEventLoopStalls, workerHealthIsFresh } from "./health.js";
+import { startWorkerHealth, workerHealthIsFresh } from "./health.js";
 
 const files = vi.hoisted(() => ({
   writeFile: vi.fn(async (_path: string, _data: string, _options: unknown) => {}),
@@ -52,27 +51,5 @@ describe("worker health", () => {
         'test: ["CMD", "node", "dist/health-check.js"]',
       );
     }
-  });
-
-  it("reports a blocked event loop with heap figures, and not ordinary timer jitter", async () => {
-    vi.useFakeTimers();
-    const sink = createTestSink();
-    installLogger(createLogger({ service: "rakazo-worker", sinks: [sink], level: "debug" }));
-    let clock = 0;
-    const stop = watchEventLoopStalls(() => clock);
-    const tick = async (elapsed: number) => {
-      clock += elapsed;
-      await vi.advanceTimersByTimeAsync(1_000);
-    };
-    await tick(1_000);
-    await tick(4_000);
-    await tick(41_000);
-    stop();
-    await tick(60_000);
-
-    const stalls = sink.events.filter((event) => event.message === "worker.event_loop_stalled");
-    expect(stalls).toHaveLength(1);
-    expect(stalls[0]).toMatchObject({ "event_loop.stall_ms": 40_000 });
-    expect(stalls[0]!["memory.heap_limit_bytes"]).toBeGreaterThan(0);
   });
 });

@@ -1100,6 +1100,26 @@ describe("reporting a failed run", () => {
   });
 
   it.each([
+    [
+      "a failure the provider classified",
+      '404: {"error":{"message":"No endpoints found for thread-42"}}',
+      ["run.failed", "openrouter", "model", "404"],
+    ],
+    [
+      "an unclassified failure",
+      "Unexpected message role in thread-42",
+      ["run.failed", "openrouter", "unclassified", "none"],
+    ],
+  ])(
+    "fingerprints %s by provider, kind and status, not its text",
+    async (_label, message, fingerprint) => {
+      expect(await failedRunLog(new Error(message))).toEqual([
+        expect.objectContaining({ "error.fingerprint": fingerprint }),
+      ]);
+    },
+  );
+
+  it.each([
     ["warning", overloaded()],
     ["error", new Error("Unexpected message role")],
   ])("names the model that failed on the %s", async (_level, error) => {

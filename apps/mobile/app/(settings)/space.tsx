@@ -1,3 +1,5 @@
+import { ph } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
 import type { SpaceSetting } from "@rakazo/contracts";
 import { useQuery } from "@tanstack/react-query";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
@@ -10,7 +12,6 @@ import { NativeSwitch } from "../../components/native-switch";
 import { SettingsGroup, SettingsRow } from "../../components/settings-group";
 import { mobileTokens } from "../../lib/appearance";
 import { useApprovalSettings } from "../../lib/approval-settings";
-import { useI18n } from "../../lib/i18n";
 import { native, useThemedStyles } from "../../lib/native";
 import { queryClient, rpcQuery } from "../../lib/query";
 import { settingsRpc, settingsTarget } from "../../lib/settings-target";
@@ -27,7 +28,7 @@ export default function SpaceSettings() {
   const target = useMemo(() => settingsTarget(spaceId), [spaceId]);
   const rpc = useMemo(() => settingsRpc(target), [target]);
   const router = useRouter();
-  const { t } = useI18n();
+  const { t } = useLingui();
   const sideInsets = useSideInsets();
   const styles = useThemedStyles(createStyles);
   const isSpace = target.scope === "space";
@@ -39,7 +40,7 @@ export default function SpaceSettings() {
   const overridesQuery = useQuery({ ...overridesRead, enabled: isSpace }, queryClient);
   const overrides = overridesQuery.data ?? null;
   const loadError = overridesQuery.error
-    ? errorText(overridesQuery.error, t("Something went wrong. Try again."))
+    ? errorText(overridesQuery.error, t`Something went wrong. Try again.`)
     : null;
   const setOverrides = (next: SpaceSetting[]) =>
     queryClient.setQueryData(overridesRead.queryKey, next);
@@ -70,7 +71,7 @@ export default function SpaceSettings() {
       setOverrides(await rpc("spaceSettings/setOverride", { setting, enabled }));
       if (enabled && setting !== "confirmations") open(setting);
     } catch (err) {
-      setError(errorText(err, t("Could not save that preference")));
+      setError(errorText(err, t`Could not save that preference`));
     } finally {
       setPending(false);
     }
@@ -90,21 +91,21 @@ export default function SpaceSettings() {
         trailing={
           <NativeSwitch
             key={kept}
-            accessibilityLabel={t("Customize {setting}", { setting: title })}
+            accessibilityLabel={t`Customize ${ph({ setting: title })}`}
             value={customized}
             // A Space's mode save holds its Approvals switch, so it can't land after a reset.
             disabled={!overrides || pending || (setting === "confirmations" && approvals.pending)}
             onValueChange={(next) => {
               // A Space's own vault is deleted with its override, so turning it off asks first.
               if (setting !== "credentials" || next) return void customize(setting, next);
-              Alert.alert(t("Delete this Space's credentials?"), undefined, [
+              Alert.alert(t`Delete this Space's credentials?`, undefined, [
                 {
-                  text: t("Cancel"),
+                  text: t`Cancel`,
                   style: "cancel",
                   onPress: () => setKept((count) => count + 1),
                 },
                 {
-                  text: t("Delete"),
+                  text: t`Delete`,
                   style: "destructive",
                   onPress: () => void customize(setting, false),
                 },
@@ -139,11 +140,11 @@ export default function SpaceSettings() {
             {shownError}
           </Text>
         ) : null}
-        <SettingsGroup accessibilityLabel={t("Customize")} label={t("Customize")}>
-          {row("models", t("Models"))}
-          {row("voice", t("Voice"))}
-          {row("confirmations", t("Approvals"))}
-          {row("credentials", t("Vault"))}
+        <SettingsGroup accessibilityLabel={t`Customize`} label={t`Customize`}>
+          {row("models", t`Models`)}
+          {row("voice", t`Voice`)}
+          {row("confirmations", t`Approvals`)}
+          {row("credentials", t`Vault`)}
         </SettingsGroup>
         {overrides?.includes("confirmations") ? (
           <SettingsGroup>

@@ -1,3 +1,4 @@
+import { useLingui } from "@lingui/react/macro";
 import { lazy, Suspense } from "react";
 import type { TextInputProps } from "react-native";
 import {
@@ -11,7 +12,6 @@ import {
   View,
 } from "react-native";
 import { mobileTokens } from "../lib/appearance";
-import { useI18n } from "../lib/i18n";
 import { isNameDialogAvailable } from "../lib/name-dialog-available";
 import { useThemedStyles } from "../lib/native";
 
@@ -37,12 +37,12 @@ export function NameDialog(props: NameDialogProps) {
 }
 
 function FallbackNameDialog({ draft, error, saving, onChange, onSave, onClose }: NameDialogProps) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   return (
     <TextFieldDialog
-      title={t("Edit name")}
-      label={t("Name")}
-      submitLabel={t("Save")}
+      title={t`Edit name`}
+      label={t`Name`}
+      submitLabel={t`Save`}
       value={draft}
       error={error}
       saving={saving}
@@ -81,7 +81,7 @@ export function TextFieldDialog({
   onSubmit: (value: string) => void;
   onClose: () => void;
 }) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const styles = useThemedStyles(createStyles);
   const disabled = saving || !value.trim();
   return (
@@ -125,7 +125,7 @@ export function TextFieldDialog({
               onPress={onClose}
               style={styles.action}
             >
-              <Text style={[styles.actionText, saving && styles.disabled]}>{t("Cancel")}</Text>
+              <Text style={[styles.actionText, saving && styles.disabled]}>{t`Cancel`}</Text>
             </Pressable>
             {extraAction ? (
               <Pressable

@@ -32,6 +32,19 @@ describe("Android call foreground service", () => {
     expect(service).toMatch(/catch \(_: Exception\)/);
   });
 
+  it("uses the saved app locale for the incoming-call notification and call screen", () => {
+    const calls = source("java/com/rakazo/notifications/IncomingCalls.kt");
+    expect(calls).toContain(
+      "val copy = localizedContext(context, NotificationStorage(context).locale)",
+    );
+    for (const key of ["rakazo_call_title", "rakazo_call_decline", "rakazo_call_answer"]) {
+      expect(calls).not.toMatch(new RegExp(`context\\.getString\\(R\\.string\\.${key}`));
+    }
+    expect(calls).toContain(
+      "super.attachBaseContext(localizedContext(base, NotificationStorage(base).locale))",
+    );
+  });
+
   it("uses the saved app locale for call notification strings and keeps a supplied title", () => {
     const service = source("java/com/rakazo/notifications/RakazoCallService.kt");
     expect(service).toContain(
@@ -62,6 +75,12 @@ describe("Android call foreground service", () => {
       ja: "values-ja",
       es: "values-es",
       pl: "values-pl",
+      fr: "values-fr",
+      he: "values-iw",
+      hi: "values-hi",
+      ko: "values-ko",
+      "pt-BR": "values-pt-rBR",
+      tr: "values-tr",
     } as const satisfies Record<(typeof UI_LOCALES)[number], string>;
     const keys = [
       "rakazo_call_channel",

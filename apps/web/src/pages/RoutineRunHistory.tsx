@@ -9,12 +9,12 @@ import {
   routineRunAt,
   routineRunLateness,
 } from "@rakazo/core";
+import { translateRunError } from "@rakazo/i18n/run-error";
 import { Button, SectionHeading, Spinner } from "@rakazo/ui-web";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { ChevronRight } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useSpaceQueries } from "../lib/query";
-import { translateRunError } from "../lib/run-error";
 import { statusLabel, statusTone } from "./ActivityList";
 
 export function RoutineRunHistory({ routineId }: { routineId: string }) {

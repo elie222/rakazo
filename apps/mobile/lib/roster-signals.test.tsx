@@ -1,0 +1,183 @@
+// @vitest-environment jsdom
+
+import { act } from "react";
+import type { Root } from "react-dom/client";
+import { createRoot } from "react-dom/client";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { useLiveStream, useRosterSignals } from "./roster-signals";
+
+const streams = vi.hoisted(
+  () =>
+    [] as Array<{
+      signal: () => void;
+      computerUpdates: () => void;
+      end: () => void;
+      fail: (error: unknown) => void;
+    }>,
+);
+const computerUpdates = vi.hoisted(() => ({ signalled: vi.fn() }));
+vi.mock("./computer-updates", () => ({ computerUpdates }));
+const spaceSelection = vi.hoisted(() => new Set<() => void>());
+vi.mock("./api", () => ({
+  subscribeSpaceSelection: (listener: () => void) => {
+    spaceSelection.add(listener);
+    return () => spaceSelection.delete(listener);
+  },
+}));
+
+const sessionChanges = vi.hoisted(() => new Set<() => void>());
+vi.mock("./session", () => ({
+  subscribeSessionGeneration: (listener: () => void) => {
+    sessionChanges.add(listener);
+    return () => sessionChanges.delete(listener);
+  },
+}));
+
+vi.mock("react-native", () => ({
+  AppState: { currentState: "active", addEventListener: () => ({ remove: () => {} }) },
+}));
+
+vi.mock("./api-live", () => ({
+  subscribeRosterSignals: (
+    onSignal: () => void,
+    signal: AbortSignal,
+    onComputerUpdates: () => void,
+  ) =>
+    new Promise<void>((resolve, reject) => {
+      streams.push({
+        signal: onSignal,
+        computerUpdates: onComputerUpdates,
+        end: resolve,
+        fail: reject,
+      });
+      signal.addEventListener("abort", () => resolve());
+    }),
+}));
+
+let live = false;
+function Harness({ onChange, enabled }: { onChange: () => void; enabled: boolean }) {
+  live = useRosterSignals(onChange, enabled);
+  return null;
+}
+function Stream() {
+  useLiveStream(true);
+  return null;
+}
+
+describe("useRosterSignals", () => {
+  let root: Root;
+  let container: HTMLDivElement;
+
+  beforeEach(() => {
+    // Retry and reconnect waits are jittered; pin them to their unjittered values.
+    vi.spyOn(Math, "random").mockReturnValue(0);
+    vi.useFakeTimers();
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    streams.length = 0;
+    vi.clearAllMocks();
+    live = false;
+    container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+  });
+
+  afterEach(() => {
+    act(() => root.unmount());
+    container.remove();
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it("goes live on the first signal and reloads on each one after it", async () => {
+    const onChange = vi.fn();
+    await act(async () => root.render(<Harness enabled onChange={onChange} />));
+    expect(streams).toHaveLength(1);
+    await act(async () => streams[0]!.signal());
+    expect(live).toBe(true);
+    expect(onChange).not.toHaveBeenCalled();
+    await act(async () => streams[0]!.signal());
+    expect(onChange).toHaveBeenCalledTimes(1);
+  });
+
+  it("drops back to polling when the stream ends, then reconnects", async () => {
+    const onChange = vi.fn();
+    await act(async () => root.render(<Harness enabled onChange={onChange} />));
+    await act(async () => streams[0]!.signal());
+    await act(async () => streams[0]!.end());
+    expect(live).toBe(false);
+    await act(() => vi.advanceTimersByTimeAsync(1_000));
+    expect(streams).toHaveLength(2);
+  });
+
+  it("passes computer update signals on", async () => {
+    await act(async () => root.render(<Harness enabled onChange={vi.fn()} />));
+    await act(async () => streams[0]!.computerUpdates());
+    expect(computerUpdates.signalled).toHaveBeenCalledOnce();
+  });
+
+  it("shares one stream, held open by the update progress off the inbox", async () => {
+    const onChange = vi.fn();
+    await act(async () =>
+      root.render(
+        <>
+          <Stream />
+          <Harness enabled={false} onChange={onChange} />
+        </>,
+      ),
+    );
+    await act(async () => streams[0]!.signal());
+    await act(async () => streams[0]!.signal());
+    expect(onChange).not.toHaveBeenCalled();
+    const other = vi.fn();
+    await act(async () =>
+      root.render(
+        <>
+          <Stream />
+          <Harness enabled onChange={onChange} />
+          <Harness enabled onChange={other} />
+        </>,
+      ),
+    );
+    expect(streams).toHaveLength(1);
+    await act(async () => streams[0]!.signal());
+    expect(onChange).toHaveBeenCalledOnce();
+    expect(other).toHaveBeenCalledOnce();
+  });
+
+  it("reopens for a newly selected Space, ignoring the old stream's late signals", async () => {
+    await act(async () => root.render(<Harness enabled onChange={vi.fn()} />));
+    const old = streams[0]!;
+    await act(async () => {
+      for (const listener of spaceSelection) listener();
+    });
+    expect(streams).toHaveLength(2);
+    await act(async () => old.computerUpdates());
+    expect(computerUpdates.signalled).not.toHaveBeenCalled();
+    expect(spaceSelection.size).toBe(1);
+  });
+
+  it("after a refusal, waits for another session or Space instead of asking again", async () => {
+    await act(async () => root.render(<Harness enabled onChange={vi.fn()} />));
+    await act(async () => streams[0]!.fail(Object.assign(new Error("Forbidden"), { status: 403 })));
+    await act(() => vi.advanceTimersByTimeAsync(60_000));
+    expect(streams).toHaveLength(1);
+    await act(async () => {
+      for (const listener of spaceSelection) listener();
+    });
+    expect(streams).toHaveLength(2);
+  });
+
+  it("reopens under a new session", async () => {
+    await act(async () => root.render(<Harness enabled onChange={vi.fn()} />));
+    await act(async () => {
+      for (const listener of sessionChanges) listener();
+    });
+    expect(streams).toHaveLength(2);
+    expect(sessionChanges.size).toBe(1);
+  });
+
+  it("stays closed while disabled", async () => {
+    await act(async () => root.render(<Harness enabled={false} onChange={vi.fn()} />));
+    expect(streams).toHaveLength(0);
+  });
+});

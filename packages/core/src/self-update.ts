@@ -1,6 +1,5 @@
 /** The repository a stock Rakazo deployment tracks. */
 export const OFFICIAL_REPO_URL = "https://github.com/elie222/rakazo";
-export const DEFAULT_UPDATE_BRANCH = "main";
 export const DEFAULT_UPDATE_REMOTE = "origin";
 
 const SCP_LIKE = /^(?<user>[A-Za-z0-9._-]+)@(?<host>[A-Za-z0-9._-]+):(?<path>[^:]+)$/;
@@ -158,81 +157,6 @@ export function parseGitStatusPorcelain(stdout: string): PorcelainStatus {
   return { clean: changed.length === 0, changed };
 }
 
-export interface UpdateStep {
-  id: string;
-  label: string;
-  command: string;
-  args: string[];
-}
-
-export interface UpdatePlanInput {
-  remote?: string;
-  remoteUrl: string;
-  branch: string;
-  /** Immutable commit selected by preflight; a later branch movement must not change the update. */
-  targetCommit: string;
-  /** Set when the checkout currently points at a different remote and has to be re-pointed. */
-  repointRemote?: boolean;
-}
-
-/**
- * Ordered work to get from "new commits on the remote" to "new code on disk". The migration runs
- * last so the window where the old process sees the new schema is as short as the restart itself,
- * and the merge is fast-forward only so local commits fail the update instead of being discarded.
- */
-export function updateSteps(input: UpdatePlanInput): UpdateStep[] {
-  if (!isGitCommit(input.targetCommit)) throw new Error("An update needs a full commit digest.");
-  const remote = input.remote ?? DEFAULT_UPDATE_REMOTE;
-  const steps: UpdateStep[] = [];
-  if (input.repointRemote === true) {
-    steps.push({
-      id: "remote",
-      label: "Point the checkout at the chosen repository",
-      command: "git",
-      args: ["remote", "set-url", remote, input.remoteUrl],
-    });
-  }
-  steps.push(
-    {
-      id: "fetch",
-      label: "Fetch the selected branch",
-      command: "git",
-      args: ["fetch", "--no-tags", "--prune", remote, input.branch],
-    },
-    {
-      id: "merge",
-      label: "Fast-forward to the checked commit",
-      command: "git",
-      args: ["merge", "--ff-only", input.targetCommit],
-    },
-    {
-      id: "install",
-      label: "Install dependencies",
-      command: "pnpm",
-      args: ["install", "--frozen-lockfile"],
-    },
-    {
-      id: "generate",
-      label: "Regenerate the database client",
-      command: "pnpm",
-      args: ["--filter", "@rakazo/db", "run", "generate"],
-    },
-    {
-      id: "build",
-      label: "Build the web app",
-      command: "pnpm",
-      args: ["--filter", "@rakazo/web", "run", "build"],
-    },
-    {
-      id: "migrate",
-      label: "Apply database migrations",
-      command: "pnpm",
-      args: ["--filter", "@rakazo/db", "run", "migrate"],
-    },
-  );
-  return steps;
-}
-
 export type RestartSupervisor =
   | { kind: "systemd" | "pm2" | "declared"; label: string }
   | { kind: "none"; label: null };
@@ -259,40 +183,4 @@ export function restartSupervisorAdvice(supervisor: RestartSupervisor): string {
     return `Rakazo will exit after updating and ${supervisor.label} will start it on the new code.`;
   }
   return `No process supervisor was detected, so Rakazo will not exit on its own. Restart the API, worker, and web processes yourself, or set ${RESTART_SUPERVISOR_ENV} to the supervisor that restarts them (for example "docker" with restart: unless-stopped, or run under systemd with Restart=always).`;
-}
-
-export type UpdateAvailability =
-  | { status: "unavailable"; reason: string }
-  | { status: "dirty"; changed: string[] }
-  | { status: "up-to-date"; commit: string }
-  | { status: "available"; commit: string; targetCommit: string; behindBy: number };
-
-export interface UpdateCheckInput {
-  checkoutReason?: string;
-  commit?: string;
-  targetCommit?: string;
-  behindBy?: number;
-  status?: PorcelainStatus;
-}
-
-/** One place decides whether an update may proceed, so the API and the tests agree. */
-export function decideUpdateAvailability(input: UpdateCheckInput): UpdateAvailability {
-  if (input.checkoutReason) return { status: "unavailable", reason: input.checkoutReason };
-  if (!input.commit || !input.targetCommit) {
-    return { status: "unavailable", reason: "Could not read the current commit." };
-  }
-  if (input.status && !input.status.clean) {
-    return { status: "dirty", changed: input.status.changed };
-  }
-  if (input.commit === input.targetCommit) return { status: "up-to-date", commit: input.commit };
-  return {
-    status: "available",
-    commit: input.commit,
-    targetCommit: input.targetCommit,
-    behindBy: input.behindBy ?? 0,
-  };
-}
-
-export function shortCommit(commit: string | null | undefined): string {
-  return commit ? commit.trim().slice(0, 7) : "unknown";
 }

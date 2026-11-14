@@ -25,9 +25,6 @@ export function matchCompatibleEndpointPreset(
   return presets.find((preset) => preset.baseUrl === normalized);
 }
 
-export const OPENAI_COMPATIBLE_BASE_URL_HINT =
-  "Paste the OpenAI-compatible address from your server. Rakazo adds /v1 if needed.";
-
 /** Connect when base URL and model id are set, and a key when the endpoint needs one. */
 export function openAiCompatibleConnectReady(input: {
   baseUrl: string;

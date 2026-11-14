@@ -1,10 +1,10 @@
+import { useLingui } from "@lingui/react/macro";
 import type { LoginFieldInput } from "@rakazo/contracts";
 import { LOGIN_FIELD_LIMIT } from "@rakazo/contracts";
 import type { RefObject } from "react";
 import type { TextInputInstance } from "react-native";
 import { StyleSheet, Text, TextInput, View } from "react-native";
 import { mobileTokens } from "../lib/appearance";
-import { useI18n } from "../lib/i18n";
 import { useThemedStyles } from "../lib/native";
 import { loginFieldTraits } from "../lib/secret-field-traits";
 import { NativeActionButton } from "./native-action-button";
@@ -43,7 +43,7 @@ export function LoginFieldsEditor({
   onEndEditing: (text: string) => void;
   onSubmit: () => void;
 }) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const styles = useThemedStyles(createStyles);
   const change = (id: number, patch: Partial<LoginFieldInput>) =>
     onChange((current) =>
@@ -53,17 +53,17 @@ export function LoginFieldsEditor({
   return (
     <>
       {fields.map((field, index) => {
-        const name = labels?.[index] ?? (field.label.trim() || t("Value"));
+        const name = labels?.[index] ?? (field.label.trim() || t`Value`);
         const last = index === fields.length - 1;
         return (
           <View key={field.id} style={styles.group}>
             {labels ? null : (
               <View style={[styles.row, styles.separated]}>
                 <TextInput
-                  accessibilityLabel={t("Label")}
+                  accessibilityLabel={t`Label`}
                   value={field.label}
                   onChangeText={(label) => change(field.id, { label })}
-                  placeholder={t("Label")}
+                  placeholder={t`Label`}
                   placeholderTextColor={styles.placeholder.color}
                   textContentType="none"
                   autoComplete="off"
@@ -73,7 +73,7 @@ export function LoginFieldsEditor({
                 />
                 {fields.length > 1 ? (
                   <NativeActionButton
-                    accessibilityLabel={t("Remove")}
+                    accessibilityLabel={t`Remove`}
                     icon={{ ios: "minus.circle", android: "remove-circle-outline" }}
                     prominence="quiet"
                     disabled={!editable}
@@ -108,9 +108,9 @@ export function LoginFieldsEditor({
               />
             </View>
             <View style={styles.row}>
-              <Text style={styles.switchLabel}>{t("Hidden")}</Text>
+              <Text style={styles.switchLabel}>{t`Hidden`}</Text>
               <NativeSwitch
-                accessibilityLabel={t("Hidden")}
+                accessibilityLabel={t`Hidden`}
                 disabled={!editable}
                 value={field.hidden}
                 onValueChange={(hidden) => change(field.id, { hidden })}
@@ -121,7 +121,7 @@ export function LoginFieldsEditor({
       })}
       {labels || fields.length >= LOGIN_FIELD_LIMIT ? null : (
         <NativeActionButton
-          label={t("Add field")}
+          label={t`Add field`}
           icon={{ ios: "plus", android: "add" }}
           prominence="plain"
           fill={false}

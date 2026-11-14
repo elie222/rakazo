@@ -16,7 +16,7 @@ import {
   withPricingSources,
 } from "./shared";
 
-const WORKLOAD_SHOWN = ["selfHosted", "selfHostedCloud", "openai", "fish", "elevenlabs", "cartesia"] as const;
+const WORKLOAD_SHOWN = ["selfHosted", "selfHostedCloud", "xai", "openai", "fish", "elevenlabs", "cartesia"] as const;
 const COMPARED = ["selfHosted", "hostedKokoro", "macos", "openai", "fish", "elevenlabs"] as const;
 
 /** RunPod RTX 4090 per hour, community and secure, as of November 2026. */
@@ -186,7 +186,7 @@ export const selfHosted: VoiceProvider = {
       heading: "When to choose self-hosted voice",
       paragraphs: [
         "Choose it when you don't want a hosted vendor to process your voice, when you want voice with no vendor account or usage bill, or when you already run local models. It pairs naturally with a [self-hosted Rakazo](/self-hosted-ai-agent/) and a local model, so the whole assistant can work offline.",
-        "Hosted providers are less work and usually sound more polished. [ElevenLabs](/voice-providers/elevenlabs/) and [Fish Audio](/voice-providers/fish-audio/) offer cloning, [OpenAI](/voice-providers/openai/) reuses a key you may already have, and [Cartesia](/voice-providers/cartesia/) is tuned for low latency. If Rakazo runs directly on a Mac, [Server (Mac)](/voice-providers/macos/) speaks with nothing to install, but doesn't transcribe. See the [comparison](/voice-providers/) for all six.",
+        "Hosted providers are less work and usually sound more polished. [ElevenLabs](/voice-providers/elevenlabs/) and [Fish Audio](/voice-providers/fish-audio/) offer cloning, [OpenAI](/voice-providers/openai/) reuses a key you may already have, xAI can use the Grok sign-in you connect for models, and [Cartesia](/voice-providers/cartesia/) is tuned for low latency. If Rakazo runs directly on a Mac, [Server (Mac)](/voice-providers/macos/) speaks with nothing to install, but doesn't transcribe. See the [comparison](/voice-providers/) for every option.",
       ],
     },
     {
