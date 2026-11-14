@@ -188,22 +188,32 @@ function SessionApp() {
                   />
                 }
               />
-              <Route
-                path="/sign-in"
-                element={
-                  user ? <Navigate to={next ?? "/app"} replace /> : <AuthPage key="in" mode="in" />
-                }
-              />
-              <Route
-                path="/sign-up"
-                element={
-                  user ? (
-                    <Navigate to={newAccountDestination(next)} replace />
-                  ) : (
-                    <AuthPage key="up" mode="up" />
-                  )
-                }
-              />
+              {["/sign-in", "/sign-in/email"].map((path) => (
+                <Route
+                  key={path}
+                  path={path}
+                  element={
+                    user ? (
+                      <Navigate to={next ?? "/app"} replace />
+                    ) : (
+                      <AuthPage key="in" mode="in" />
+                    )
+                  }
+                />
+              ))}
+              {["/sign-up", "/sign-up/email"].map((path) => (
+                <Route
+                  key={path}
+                  path={path}
+                  element={
+                    user ? (
+                      <Navigate to={newAccountDestination(next)} replace />
+                    ) : (
+                      <AuthPage key="up" mode="up" />
+                    )
+                  }
+                />
+              ))}
               <Route
                 path="/forgot-password"
                 element={

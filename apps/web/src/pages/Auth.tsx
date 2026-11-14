@@ -18,7 +18,7 @@ import {
 } from "@rakazo/ui-web";
 import { ChevronLeft } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { PasskeySignIn, usePasskeySignIn } from "../components/PasskeySignIn";
 import { SocialSignInButtons } from "../components/SocialSignInButtons";
 import { authClient } from "../lib/auth";
@@ -41,6 +41,10 @@ export const submitClass = "mt-3 h-12 w-full rounded-xl text-body-lg";
 export function AuthPage({ mode }: { mode: AuthMode }) {
   const { t } = useLingui();
   const [searchParams, setSearchParams] = useSearchParams();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const chooserPath = mode === "up" ? "/sign-up" : "/sign-in";
+  const emailStep = location.pathname === `${chooserPath}/email`;
   const next = signInNext(searchParams.get("next"));
   // Switching between sign-in and sign-up keeps where the person was going.
   const nextQuery = next ? `?next=${encodeURIComponent(next)}` : "";
@@ -66,7 +70,6 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
   const [capabilityAttempt, setCapabilityAttempt] = useState(0);
   const [codeSent, setCodeSent] = useState(false);
   const [code, setCode] = useState("");
-  const [emailStep, setEmailStep] = useState(false);
   const useCode = Boolean(reset?.passwordAuth && reset.emailCode) && mode !== "forgot";
   // A blank password asks for an emailed code, so code-only accounts need no toggle.
   const codeMode = useCode && !password;
@@ -94,8 +97,11 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
     );
 
   useEffect(() => {
-    setEmailStep(false);
-  }, [mode]);
+    if (!emailStep) {
+      setCodeSent(false);
+      setCode("");
+    }
+  }, [emailStep]);
 
   useEffect(() => {
     setReset(null);
@@ -272,7 +278,8 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
             className="text-muted-foreground hover:text-foreground"
             onClick={() => {
               setError(null);
-              setEmailStep(false);
+              if (location.state?.authChooser) navigate(-1);
+              else navigate(`${chooserPath}${nextQuery}`, { replace: true });
             }}
           >
             <ChevronLeft />
@@ -326,7 +333,7 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
                 onPress={(providerId) => void signInWithProvider(providerId)}
                 onEmail={() => {
                   setError(null);
-                  setEmailStep(true);
+                  navigate(`${chooserPath}/email${nextQuery}`, { state: { authChooser: true } });
                 }}
                 onPasskey={mode === "in" && passkey.supported ? passkey.start : undefined}
               />

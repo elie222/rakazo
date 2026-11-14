@@ -88,6 +88,38 @@ test("sign-in offers Google and Apple before email", async ({ page }, testInfo) 
   await captureScreenshot(page, testInfo, "sign-up-chooser");
 });
 
+for (const path of ["/sign-in", "/sign-up"]) {
+  test(`${path} email form follows browser history and survives reload`, async ({ page }) => {
+    await mockSignedOut(page, both);
+    const query = "?next=%2Finvite%2Fexample-token";
+    await page.goto("/forgot-password");
+    await page.goto(`${path}${query}`);
+    await page.getByRole("button", { name: "Continue with email" }).click();
+    await expect(page).toHaveURL(`${path}/email${query}`);
+    await expect(page.getByLabel("Email", { exact: true })).toBeVisible();
+
+    await page.goBack();
+    await expect(page).toHaveURL(`${path}${query}`);
+    await expect(page.getByRole("button", { name: "Continue with email" })).toBeVisible();
+    await expect(page.getByLabel("Email", { exact: true })).toHaveCount(0);
+    await page.goForward();
+    await expect(page).toHaveURL(`${path}/email${query}`);
+    await expect(page.getByLabel("Email", { exact: true })).toBeVisible();
+    await page.reload();
+    await expect(page.getByLabel("Email", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Back", exact: true }).click();
+    await expect(page).toHaveURL(`${path}${query}`);
+    await page.goBack();
+    await expect(page).toHaveURL("/forgot-password");
+
+    // A direct link has no chooser entry in its history.
+    await page.goto(`${path}/email${query}`);
+    await page.getByRole("button", { name: "Back", exact: true }).click();
+    await expect(page).toHaveURL(`${path}${query}`);
+    await expect(page.getByRole("button", { name: "Continue with email" })).toBeVisible();
+  });
+}
+
 test("returning people see the sign-in method they used last", async ({ page }, testInfo) => {
   await mockSignedOut(page, both);
   await page
