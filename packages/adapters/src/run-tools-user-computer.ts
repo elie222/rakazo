@@ -11,6 +11,7 @@ import type {
 import { HOST_SCREEN_MAX_ACTIONS, hostScreenAction } from "./host-screen.js";
 import { nativeShellCommandArgv } from "./native-shell.js";
 import type { RunContext } from "./run-context.js";
+import { isRunTainted } from "./run-context.js";
 import type { ToolCall } from "./run-tool-gate.js";
 import {
   isRunningShellCommand,
@@ -62,7 +63,9 @@ export function userComputerOwner(input: {
  * rules allow, until they choose "Allow in this space"; a block still refuses it. These tools run
  * only in the user's own runs (see userComputerOwner), so any effect of them past "intended" in
  * this space traces back to that approval. Removing every paired computer ends it, so pairing again
- * asks again. Screen control is approved per app.
+ * asks again. Screen control is approved per app. Once outside content entered the run, such as a
+ * web page, an email or a tool result, that standing approval no longer speaks for the user, so
+ * every call asks again: the content could be steering it.
  */
 export async function userComputerGate(
   ctx: RunContext,
@@ -73,7 +76,7 @@ export async function userComputerGate(
   if (blocked) return "deny";
   const { deps, run } = ctx;
   const pairedSince = await deps.userDevices?.pairedSince(run.userId);
-  if (!pairedSince) return "ask";
+  if (!pairedSince || (await isRunTainted(ctx))) return "ask";
   const where = {
     spaceId: run.spaceId,
     status: { in: ["approved", "executing", "completed", "uncertain"] },

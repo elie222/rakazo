@@ -53,7 +53,56 @@ function setup(execute: (signal: AbortSignal) => AsyncIterable<unknown>, secrets
   return { ctx, call, controller, requests, signals, deviceIds, onShellStillRunning };
 }
 
+/** A run on its first attempt that has read nothing from outside, unless `tainted`. */
+function runState(tainted = false) {
+  return {
+    state: { tainted, earlierAttempt: Promise.resolve(false) },
+    trust: { receivedOutsideMessage: async () => false },
+  };
+}
+
 describe("userComputerGate", () => {
+  it("allows the shell again once the user allowed it in this space", async () => {
+    const findFirst = vi.fn(async () => ({ id: "effect-1" }));
+    const ctx = {
+      ...runState(),
+      deps: {
+        userDevices: { pairedSince: async () => new Date(0) },
+        prisma: { externalEffect: { findFirst } },
+      },
+      run: { spaceId: "space-1", userId: "user-1" },
+    } as unknown as RunContext;
+    await expect(userComputerGate(ctx, false, "user_computer_shell", {})).resolves.toBe("allow");
+  });
+
+  it.each([
+    ["user_computer_shell", {}],
+    ["user_computer_act", { app: "Mail" }],
+    ["user_computer_observe", { app: "Mail" }],
+  ])(
+    "asks for %s after outside content entered the run, despite an earlier allow",
+    async (name, args) => {
+      const findFirst = vi.fn(async () => ({ id: "effect-1" }));
+      const findMany = vi.fn(async () => [{ id: "effect-1", request: { app: "Mail" } }]);
+      const ctx = {
+        ...runState(true),
+        deps: {
+          userDevices: { pairedSince: async () => new Date(0) },
+          prisma: { externalEffect: { findFirst, findMany } },
+        },
+        run: { spaceId: "space-1", userId: "user-1" },
+      } as unknown as RunContext;
+      await expect(userComputerGate(ctx, false, name, args)).resolves.toBe("ask");
+      expect(findFirst).not.toHaveBeenCalled();
+      expect(findMany).not.toHaveBeenCalled();
+    },
+  );
+
+  it("still refuses a blocked call in a run that read outside content", async () => {
+    const ctx = { ...runState(true), deps: {}, run: {} } as unknown as RunContext;
+    await expect(userComputerGate(ctx, true, "user_computer_shell", {})).resolves.toBe("deny");
+  });
+
   it("finds an app approved before hundreds of later screen actions", async () => {
     const effects = [
       ...Array.from({ length: 450 }, (_, index) => ({ id: `e${450 - index}`, app: "TextEdit" })),
@@ -64,6 +113,7 @@ describe("userComputerGate", () => {
       return effects.slice(start, start + take);
     });
     const ctx = {
+      ...runState(),
       deps: {
         userDevices: { pairedSince: async () => new Date(0) },
         prisma: { externalEffect: { findMany } },
