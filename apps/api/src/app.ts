@@ -864,7 +864,12 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       query: { disableRefresh },
     });
     // A native client signs in with a bearer token and keeps no cookie.
-    const cookies = request.headers.has("cookie") ? headers.getSetCookie() : [];
+    const incomingCookieNames = new Set(
+      (request.headers.get("cookie") ?? "").split(";").map((cookie) => cookie.trim().split("=")[0]),
+    );
+    const cookies = headers
+      .getSetCookie()
+      .filter((cookie) => incomingCookieNames.has(cookie.split("=")[0]));
     if (cookies.length > 0) renewedSessionCookies.set(request, cookies);
     return response;
   };

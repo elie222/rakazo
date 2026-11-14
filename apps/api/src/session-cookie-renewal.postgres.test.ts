@@ -86,6 +86,17 @@ it.skipIf(!databaseUrl)(
       const native = await me({ authorization: `Bearer ${token}` });
       expect(native.status).toBe(200);
       expect(sessionCookies(native)).toEqual([]);
+
+      await system.session.updateMany({
+        where: { userId: user.id },
+        data: { expiresAt: aged },
+      });
+      const unrelatedCookie = await me({
+        authorization: `Bearer ${token}`,
+        cookie: "preference=compact",
+      });
+      expect(unrelatedCookie.status).toBe(200);
+      expect(sessionCookies(unrelatedCookie)).toEqual([]);
     } finally {
       await handles.stop();
       await rm(dataDir, { recursive: true, force: true });
