@@ -10,6 +10,10 @@ const SPACE_CHANGE_PROCEDURES: Record<string, readonly SpaceChangeKind[]> = {
   "routines.update": ["routines"],
   "routines.remove": ["routines"],
   "routines.testRun": ["runs"],
+  // These can queue a run.
+  "threads.sendWithRoutines": ["runs"],
+  "threads.react": ["runs"],
+  "threads.endCall": ["runs"],
   // Activity leaves out archived bots.
   "bots.restore": ["runs"],
   "bots.remove": ["runs", "routines"],
