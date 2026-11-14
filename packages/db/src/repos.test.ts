@@ -389,7 +389,7 @@ describe("createRepos.listBots", () => {
     expect(queryRaw).toHaveBeenCalledTimes(6);
   });
 
-  it("loads content only for the message the preview shows", async () => {
+  it("loads the first candidate alone, then the rest of the page in one read", async () => {
     const outline = (id: string, seq: number, kinds: string[]) => ({
       id,
       threadId: "thread-1",
@@ -403,7 +403,11 @@ describe("createRepos.listBots", () => {
     const messageFindMany = vi
       .fn()
       .mockResolvedValueOnce([{ id: "empty", blocks: [{ kind: "text", text: "" }] }])
-      .mockResolvedValueOnce([{ id: "answer", blocks: [{ kind: "text", text: "Answer" }] }]);
+      .mockResolvedValueOnce([
+        { id: "file", blocks: [{ kind: "file", artifactId: "a", name: "a.pdf" }] },
+        { id: "answer", blocks: [{ kind: "text", text: "Answer" }] },
+        { id: "older", blocks: [{ kind: "text", text: "Older" }] },
+      ]);
     const prisma = {
       bot: { findMany: vi.fn(async () => [baseBot]) },
       run: { findMany: vi.fn(async () => []) },
@@ -411,8 +415,9 @@ describe("createRepos.listBots", () => {
         .fn()
         .mockResolvedValueOnce([])
         .mockResolvedValueOnce([
-          outline("prompt", 4, ["delivery"]),
-          outline("empty", 3, ["text"]),
+          outline("prompt", 5, ["delivery"]),
+          outline("empty", 4, ["text"]),
+          outline("file", 3, ["file"]),
           outline("answer", 2, ["text"]),
           outline("older", 1, ["text"]),
         ]),
@@ -424,7 +429,7 @@ describe("createRepos.listBots", () => {
     ]);
     expect(messageFindMany.mock.calls.map(([args]) => args.where.id.in)).toEqual([
       ["empty"],
-      ["answer"],
+      ["file", "answer", "older"],
     ]);
   });
 

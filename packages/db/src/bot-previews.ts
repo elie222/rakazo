@@ -137,23 +137,26 @@ export async function botThreadPreviews(prisma: PrismaClient, threadIds: string[
     );
     const exhausted: string[] = [];
     let scanning = [...visibleByThread.keys()];
-    while (scanning.length > 0) {
+    // Usually the first candidate has text; when it does not, read the rest of the page at once.
+    for (let round = 0; scanning.length > 0; round++) {
       const unloaded = new Map<string, ScannedMessage>();
       for (const threadId of scanning) {
-        let next: ScannedMessage | undefined;
+        const candidates: ScannedMessage[] = [];
         for (const message of visibleByThread.get(threadId) ?? []) {
           if (!message.loaded) {
-            next = message;
-            break;
+            candidates.push(message);
+            if (round === 0) break;
+            continue;
           }
+          if (candidates.length > 0) continue;
           const preview = previewFromBlocks(message.blocks);
           if (preview) {
             previews.set(threadId, preview);
             break;
           }
         }
-        if (next) unloaded.set(next.id, next);
-        else if (!previews.has(threadId)) exhausted.push(threadId);
+        for (const message of candidates) unloaded.set(message.id, message);
+        if (candidates.length === 0 && !previews.has(threadId)) exhausted.push(threadId);
       }
       if (unloaded.size === 0) break;
       const loaded = await prisma.message.findMany({
