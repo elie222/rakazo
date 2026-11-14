@@ -261,7 +261,7 @@ describe("CartesiaVoiceProvider", () => {
   // An unbounded /voices request returns the whole catalog, overruns the voice JSON read cap
   // and fails connecting the provider outright.
   it("bounds the voices request so the catalog cannot overrun the read cap", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ data: [] })));
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ data: [] })));
     vi.stubGlobal("fetch", fetchMock);
     const provider = new CartesiaVoiceProvider();
 
