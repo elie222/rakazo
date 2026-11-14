@@ -111,7 +111,10 @@ function fixture({
   browser,
   spendingLimit = null,
   memoryProvider,
+  promptCredentialId = null,
 }: {
+  /** The API key behind the run's instructions, if any. */
+  promptCredentialId?: string | null;
   /** The Space's semantic memory provider; none by default. */
   memoryProvider?: Record<string, unknown>;
   /** A page browser on a graphical computer, so browser_act and computer_act are offered. */
@@ -208,6 +211,7 @@ function fixture({
     trigger,
     sourceMessageId: sourceRole ? "source-1" : null,
     leaseFence: 0,
+    promptCredentialId,
   };
   const createdAt = new Map<string, Date>();
   const externalEffect = {
@@ -2141,6 +2145,21 @@ describe("own instructions through update_bot", () => {
     await f.run(true);
     expect(f.instructionState.instructions).toBe("Draft only");
     expect(f.instructionState.instructionHistory).toHaveLength(0);
+  });
+  it("refuses an instruction change in a routine run whose prompt a key wrote", async () => {
+    const f = fixture({
+      name: "update_bot",
+      builtin: true,
+      trigger: "routine",
+      promptCredentialId: "key-1",
+    });
+    f.setCalls([{ args: { instructions: first }, executionId: "call-1" }]);
+    await f.run();
+    expect(f.results).toEqual([
+      { error: "Instruction changes are blocked for runs someone else started." },
+    ]);
+    expect(f.effects).toEqual([]);
+    expect(f.instructionState.instructions).toBe("Draft only");
   });
   it("asks for a held change on its own", async () => {
     const f = fixture({ name: "update_bot", builtin: true, trigger: "routine" });

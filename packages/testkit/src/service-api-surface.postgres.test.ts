@@ -210,6 +210,22 @@ describeWithDatabase("service API surface", () => {
     const listed = await ok<{ runs: Array<{ runId: string }> }>(token, "GET", "/runs");
     expect(listed.runs.map((run) => run.runId)).toContain(own.runId);
     expect(listed.runs.map((run) => run.runId)).not.toContain(theirs.id);
+    // Recent keeps one run per chat. Another member's later run must not hide the creator's.
+    await db.run.update({
+      where: { id: own.runId },
+      data: { status: "completed", completedAt: new Date(Date.now() - 1000) },
+    });
+    await db.run.update({
+      where: { id: theirs.id },
+      data: { status: "completed", completedAt: new Date() },
+    });
+    const recent = await ok<{ runs: Array<{ runId: string }> }>(
+      token,
+      "GET",
+      "/runs?filter=recent",
+    );
+    expect(recent.runs.map((run) => run.runId)).toContain(own.runId);
+    expect(recent.runs.map((run) => run.runId)).not.toContain(theirs.id);
   });
 
   describe("every route", () => {

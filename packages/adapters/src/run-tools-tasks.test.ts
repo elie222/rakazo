@@ -2,10 +2,11 @@ import { describe, expect, it, vi } from "vitest";
 import type { RunContext } from "./run-context.js";
 import type { ToolCall } from "./run-tool-gate.js";
 import { taskTools } from "./run-tools-tasks.js";
+import type * as TicketTools from "./ticket-tools.js";
 import { createTicket, updateTicket } from "./ticket-tools.js";
 
 vi.mock("./ticket-tools.js", async (original) => ({
-  ...(await original<typeof import("./ticket-tools.js")>()),
+  ...(await original<typeof TicketTools>()),
   createTicket: vi.fn(async () => ({ ticket: { id: "ticket-1" } })),
   updateTicket: vi.fn(async () => ({ ticket: { id: "ticket-1" } })),
 }));
