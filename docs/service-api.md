@@ -104,7 +104,7 @@ curl -X POST "$RAKAZO_URL/api/service/v1/bots/$BOT_ID/prompts" \
 
 ### Waiting for a reply
 
-`POST /bots/{id}/prompts?wait=60` holds the call for up to 60 seconds and adds `run` to the response: the run's status and what the bot said in it. `GET /runs/{id}?wait=60` does the same for a run you already started. `settled` is true once the run ended or the bot is waiting on a question for you. When it is false, the wait ran out, so call again. Waiting on a prompt needs `conversations:read` as well, because it returns the bot's reply.
+`POST /bots/{id}/prompts?wait=60` holds the call for up to 60 seconds and adds `run` to the response: the run's status and what the bot said in it. `GET /runs/{id}?wait=60` does the same for a run you already started. `settled` is true once the run ended or the bot is waiting on a question for you. When it is false, the wait ran out, so call again. A run's detail holds its latest 100 replies, and the conversation holds the rest. Waiting on a prompt needs `conversations:read` as well, because it returns the bot's reply.
 
 ### Live events
 
