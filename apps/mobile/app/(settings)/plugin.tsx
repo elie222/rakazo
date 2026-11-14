@@ -381,7 +381,10 @@ function PluginScreen() {
                 fill={false}
                 label={t`Retry`}
                 // Back to the spinner while it reads again.
-                onPress={() => void queryClient.resetQueries({ queryKey: previewRead.queryKey })}
+                onPress={() => {
+                  if (change.error) change.reset();
+                  void queryClient.resetQueries({ queryKey: previewRead.queryKey });
+                }}
                 prominence="secondary"
               />
             ) : null}

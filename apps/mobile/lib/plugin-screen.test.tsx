@@ -10,6 +10,7 @@ import { queryClient } from "./query";
 const SOURCE = "https://plugins.example.test/notes";
 const state = vi.hoisted(() => ({
   rpc: vi.fn(),
+  params: {} as Record<string, string>,
   botId: "",
   focused: true,
   header: undefined as undefined | (() => ReactElement<{ label: string; onPress: () => void }>),
@@ -36,7 +37,7 @@ vi.mock("./native-controls", () => ({ iosAtLeast: () => false }));
 vi.mock("expo-router", () => ({
   Redirect: () => null,
   useRouter: () => ({ navigate: vi.fn() }),
-  useLocalSearchParams: () => ({ source: SOURCE, installedSource: SOURCE, name: "Notes" }),
+  useLocalSearchParams: () => state.params,
   useNavigation: () => ({
     setOptions: (options: { headerRight?: typeof state.header }) => {
       state.header = options.headerRight;
@@ -128,6 +129,7 @@ let root: Root;
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   queryClient.clear();
+  state.params = { source: SOURCE, installedSource: SOURCE, name: "Notes" };
   state.botId = "";
   state.focused = true;
   state.header = undefined;
@@ -232,4 +234,20 @@ it("shows the preview again after a failed read and Retry", async () => {
   await press("Retry");
   expect(container.textContent).not.toContain("Could not preview plugin");
   expect(container.textContent).toContain("https://notes.example.test/mcp");
+});
+
+it("clears a failed connect when Retry reads the preview again", async () => {
+  state.params = { ...state.params, managedConnectorId: "test", managedSlug: "notes" };
+  answers["connections/catalog"] = async () => [
+    { connectorId: "test", slug: "notes", name: "Notes", logo: null, connected: false },
+  ];
+  answers["connections/list"] = async () => [];
+  answers["capabilities/pluginPreview"] = () => Promise.reject(new Error());
+  answers["connections/begin"] = () => Promise.reject(new Error());
+  await render();
+  await pressHeader();
+  expect(container.textContent).toContain("Could not connect");
+  answers["capabilities/pluginPreview"] = async () => preview;
+  await press("Retry");
+  expect(container.textContent).not.toContain("Could not connect");
 });

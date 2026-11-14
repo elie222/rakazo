@@ -18,7 +18,8 @@ export function useScreenQuery<T>(
   const foreground = useAppForeground();
   useFocusEffect(
     useCallback(() => {
-      if (enabled && foreground) void refetch();
+      // A read already in flight, such as the one opening the screen starts, is joined.
+      if (enabled && foreground) void refetch({ cancelRefetch: false });
     }, [enabled, foreground, refetch]),
   );
   return query;

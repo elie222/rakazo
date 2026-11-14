@@ -129,7 +129,7 @@ export default function Integrations() {
   const [sourceAuth, setSourceAuth] = useState<SourceAuth>("none");
   const [authHeader, setAuthHeader] = useState("x-api-key");
   const [oauthServerId, setOauthServerId] = useState<string | null>(null);
-  const [actionPending, setPending] = useState<string | null>(null);
+  const [pending, setPending] = useState<string | null>(null);
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [removeError, setRemoveError] = useState<string | null>(null);
   const [lastBotId, setLastBotId] = useState("");
@@ -204,17 +204,16 @@ export default function Integrations() {
       if (created) authorizeMcp(created.id);
     },
   });
-  const pending = authorize.pending
-    ? `oauth:${authorize.input?.serverId}`
-    : sourceAdd.pending
-      ? "source"
-      : actionPending;
   const mcpError = authorize.error
     ? errorText(authorize.error, t`Could not start MCP OAuth`)
     : mcpLoadError;
   const sourceError = sourceAdd.error
     ? errorText(sourceAdd.error, t`Could not add source`)
     : removeError;
+  // A servers list that loads replaces whatever the last sign-in attempt reported.
+  useEffect(() => {
+    if (authorize.error) authorize.reset();
+  }, [mcpServers]);
 
   function applySnapshot(next: IntegrationsSnapshot) {
     snapshot.current = next;
@@ -669,7 +668,7 @@ export default function Integrations() {
           <NativeActionButton
             label={server.oauthStatus === "reconnect" ? t`Reconnect` : t`Connect`}
             fill={false}
-            busy={pending === `oauth:${server.id}`}
+            busy={authorize.pending && authorize.input?.serverId === server.id}
             onPress={() => authorizeMcp(server.id)}
             prominence="secondary"
           />
@@ -1018,6 +1017,7 @@ export default function Integrations() {
     } else beginSource(option.kind, option.preset);
   }
 
+  // Rebuilt when an add fails too, so picking another type from the menu clears that error.
   useLayoutEffect(() => {
     if (!iosAtLeast(26)) return;
     navigation.setOptions({
@@ -1037,7 +1037,7 @@ export default function Integrations() {
         },
       ],
     } satisfies NativeStackNavigationOptions);
-  }, [navigation, sourcePresets, t]);
+  }, [navigation, sourcePresets, t, sourceAdd.error]);
 
   return (
     <SafeAreaView edges={["bottom"]} style={styles.screen}>
@@ -1066,7 +1066,7 @@ export default function Integrations() {
             setAuthHeader={setAuthHeader}
             credential={credential}
             setCredential={setCredential}
-            busy={pending === "source"}
+            busy={sourceAdd.pending}
             onAdd={addSource}
             onClose={closeAdding}
           />

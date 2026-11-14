@@ -79,3 +79,12 @@ it("does not read while disabled", async () => {
   await render({ focused: true, enabled: true });
   expect(state.rpc).toHaveBeenCalledTimes(1);
 });
+
+it("joins a read already in flight instead of restarting it", async () => {
+  await render({ focused: true });
+  await render({ focused: false });
+  await queryClient.invalidateQueries({ refetchType: "none" });
+  await render({ focused: true });
+  expect(state.rpc).toHaveBeenCalledTimes(2);
+  expect(container.textContent).toBe("second");
+});
