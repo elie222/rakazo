@@ -116,6 +116,7 @@ import {
 } from "@rakazo/db";
 import type { Logger } from "@rakazo/logging";
 import {
+  bestEffort,
   createServiceLogger,
   enrichLogContext,
   getLogger,
@@ -1195,9 +1196,9 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       await realtime.close();
       await mcp.close();
       await installed.close();
-      await prisma.$disconnect().catch(() => undefined);
-      await created.pool?.end().catch(() => undefined);
-      await ownedJobPool?.end().catch(() => undefined);
+      await bestEffort("disconnect database client", prisma.$disconnect());
+      await bestEffort("close database pool", created.pool?.end());
+      await bestEffort("close job database pool", ownedJobPool?.end());
       await analytics?.flush();
       await logger.flush({ timeoutMs: 2_000 });
     },

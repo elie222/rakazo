@@ -3,6 +3,7 @@ import type { SecretStore } from "@rakazo/adapter-kit";
 import type { PlanLimits, PlanLimitWindow } from "@rakazo/contracts";
 import { readBoundedJsonResponse } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
+import { bestEffort } from "@rakazo/logging";
 import { parseModelSecret } from "./model-secret.js";
 import {
   ANTHROPIC_OAUTH_PROVIDER,
@@ -61,7 +62,7 @@ async function getJson(
     signal,
   });
   if (!response.ok) {
-    await response.body?.cancel().catch(() => undefined);
+    await bestEffort("cancel unread response body", response.body?.cancel());
     throw new Error(`http ${response.status}`);
   }
   return readBoundedJsonResponse(response, MAX_BYTES, signal);
