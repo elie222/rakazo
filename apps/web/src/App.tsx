@@ -196,7 +196,7 @@ function SessionApp() {
                     user ? (
                       <Navigate to={next ?? "/app"} replace />
                     ) : (
-                      <AuthPage key="in" mode="in" />
+                      <AuthPage key={path} mode="in" />
                     )
                   }
                 />
@@ -209,7 +209,7 @@ function SessionApp() {
                     user ? (
                       <Navigate to={newAccountDestination(next)} replace />
                     ) : (
-                      <AuthPage key="up" mode="up" />
+                      <AuthPage key={path} mode="up" />
                     )
                   }
                 />

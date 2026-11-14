@@ -97,13 +97,6 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
     );
 
   useEffect(() => {
-    if (!emailStep) {
-      setCodeSent(false);
-      setCode("");
-    }
-  }, [emailStep]);
-
-  useEffect(() => {
     setReset(null);
     setCapabilityError(false);
     let active = true;
