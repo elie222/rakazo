@@ -13,6 +13,11 @@ export const signInProviderSchema = z.object({
             .array(
               z.object({
                 d: z.string().max(4096),
+                /** Brand color; omitted paths follow the button's text color. */
+                fill: z
+                  .string()
+                  .regex(/^#[0-9a-fA-F]{6}$/)
+                  .optional(),
               }),
             )
             .max(8),
@@ -22,6 +27,15 @@ export const signInProviderSchema = z.object({
     .optional(),
 });
 export type SignInProvider = z.infer<typeof signInProviderSchema>;
+
+/** Readable by the sign-in page; set only after a sign-in succeeds. Holds a provider id or `email`. */
+export const LAST_SIGN_IN_COOKIE = "rakazo_last_sign_in";
+
+/** The chooser button a remembered sign-in method belongs to: a provider id, or `email`. */
+export function lastSignInChoice(method: string | null | undefined): string | null {
+  if (!method) return null;
+  return method === "email" || method === "email-otp" ? "email" : method;
+}
 
 export const authCapabilitiesSchema = z.object({
   sso: z

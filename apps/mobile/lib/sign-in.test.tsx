@@ -234,7 +234,7 @@ it.each(["in", "up"])("offers a provider before the email form in %s mode", asyn
   expect(button("Continue with Example")).toBeDefined();
   expect(button("Continue with email")).toBeDefined();
   expect(host.textContent).toContain("or");
-  expect(host.textContent).toContain(mode === "in" ? "Welcome back" : "Create your Rakazo");
+  expect(host.textContent).toContain(mode === "in" ? "Welcome back" : "Create your account");
   await press("Continue with email");
   expect(input("Email")).not.toBeNull();
   expect(button("Back")).toBeDefined();
@@ -481,6 +481,26 @@ it("offers a secondary passkey sign-in only in sign-in mode on a supported serve
 
   act(() => buttonNamed("Sign up")!.click());
   expect(buttonNamed("Sign in with passkey")).toBeUndefined();
+});
+
+it("moves passkey sign-in to the provider chooser", async () => {
+  vi.mocked(passwordResetCapabilities).mockResolvedValue({
+    ...capabilities,
+    sso: exampleSso,
+    passkeyRpId: "example.invalid",
+  });
+  vi.mocked(passkeysAvailable).mockResolvedValue(true);
+  vi.mocked(signInWithPasskey).mockResolvedValue(false);
+  await render();
+  expectBefore(button("Continue with email")!, button("Continue with passkey")!);
+  await press("Continue with passkey");
+  expect(signInWithPasskey).toHaveBeenCalledOnce();
+
+  await press("Continue with email");
+  expect(button("Sign in with passkey")).toBeUndefined();
+  await press("Back");
+  await press("Sign up");
+  expect(button("Continue with passkey")).toBeUndefined();
 });
 
 it("asks the signup survey after an external sign-in creates the account", async () => {
