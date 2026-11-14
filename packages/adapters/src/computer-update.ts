@@ -626,6 +626,19 @@ export async function reconcileComputerUpdates(
     })),
     ...(await select({ status: "queued" })),
   ];
+  try {
+    await reconcile(deps, updates, changedSpaces);
+  } finally {
+    // A later failure must not cost the changes already committed their signal.
+    for (const spaceId of changedSpaces) await deps.events?.publishComputerUpdateChange?.(spaceId);
+  }
+}
+
+async function reconcile(
+  deps: Pick<Deps, "prisma" | "jobs">,
+  updates: (Prisma.ComputerUpdateGetPayload<object> & { computer: { spaceId: string } })[],
+  changedSpaces: Set<string>,
+) {
   for (const update of updates) {
     if (update.status === "queued") {
       await deps.jobs.enqueue({
@@ -707,5 +720,4 @@ export async function reconcileComputerUpdates(
       });
     }
   }
-  for (const spaceId of changedSpaces) await deps.events?.publishComputerUpdateChange?.(spaceId);
 }

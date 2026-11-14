@@ -147,6 +147,14 @@ describe("background computer maintenance", () => {
     expect(row.status).toBe("interrupted");
     expect(events.publishComputerUpdateChange).toHaveBeenCalledExactlyOnceWith("space");
   });
+  it("still signals committed reconciliation changes when a later step fails", async () => {
+    const { row, rows, deps, events, jobs } = fixture("running");
+    rows.push({ ...row, id: "update-2", status: "queued" });
+    jobs.enqueue.mockRejectedValueOnce(new Error("queue unavailable"));
+    await expect(reconcileComputerUpdates(deps)).rejects.toThrow("queue unavailable");
+    expect(row.status).toBe("interrupted");
+    expect(events.publishComputerUpdateChange).toHaveBeenCalledExactlyOnceWith("space");
+  });
   it("records a failure without exposing the provider error or replaying replacement", async () => {
     const { row, deps } = fixture();
     replacement.mockRejectedValueOnce(new Error("provider-private-detail"));

@@ -59,6 +59,7 @@ describe("computer update presentation", () => {
       follow: noSignals,
     });
     const stop = store.watch();
+    await vi.advanceTimersByTimeAsync(0);
     await store.start("bot-1");
     resolve([]);
     await Promise.resolve();
@@ -75,14 +76,16 @@ describe("computer update presentation", () => {
   });
   it("restores background progress on a new mount and ignores responses after disposal", async () => {
     vi.useFakeTimers();
-    const { follow } = liveSignals();
+    const signals = liveSignals();
     const store = createComputerUpdates({
       list: async () => [update],
       start: async () => update,
       dismiss: async () => {},
-      follow,
+      follow: signals.follow,
     });
     let stop = store.watch();
+    await vi.advanceTimersByTimeAsync(0);
+    signals.latest().signal();
     await vi.advanceTimersByTimeAsync(0);
     expect(store.getSnapshot().updates).toEqual([update]);
     stop();
@@ -90,6 +93,7 @@ describe("computer update presentation", () => {
     stop();
     await vi.advanceTimersByTimeAsync(0);
     expect(store.getSnapshot().updates).toEqual([]);
+    expect(signals.follow).toHaveBeenCalledOnce();
   });
   it("reads when the server signals a change, not on a timer", async () => {
     vi.useFakeTimers();
@@ -102,18 +106,19 @@ describe("computer update presentation", () => {
       follow: signals.follow,
     });
     const stop = store.watch();
+    await vi.advanceTimersByTimeAsync(0);
     signals.latest().signal();
     await vi.advanceTimersByTimeAsync(10 * 60_000);
-    expect(list).toHaveBeenCalledTimes(2);
+    expect(list).toHaveBeenCalledTimes(1);
     list.mockResolvedValue([{ ...update, stage: "restoring" }]);
     signals.latest().signal();
     await vi.advanceTimersByTimeAsync(0);
     expect(store.getSnapshot().updates).toEqual([{ ...update, stage: "restoring" }]);
     // Progress arrives as signals; a lost one is caught up slowly, never at the polling pace.
     await vi.advanceTimersByTimeAsync(29_000);
-    expect(list).toHaveBeenCalledTimes(3);
+    expect(list).toHaveBeenCalledTimes(2);
     await vi.advanceTimersByTimeAsync(1_000);
-    expect(list).toHaveBeenCalledTimes(4);
+    expect(list).toHaveBeenCalledTimes(3);
     stop();
   });
   it("turns signals that arrive during a read into one more read", async () => {
@@ -132,6 +137,7 @@ describe("computer update presentation", () => {
       dismiss: async () => {},
       follow: signals.follow,
     }).watch();
+    await vi.advanceTimersByTimeAsync(0);
     signals.latest().signal();
     signals.latest().signal();
     signals.latest().signal();
@@ -155,28 +161,35 @@ describe("computer update presentation", () => {
       dismiss: async () => {},
       follow: signals.follow,
     }).watch();
+    await vi.advanceTimersByTimeAsync(0);
     signals.latest().signal();
     await vi.advanceTimersByTimeAsync(0);
-    expect(list).toHaveBeenCalledTimes(2);
+    expect(list).toHaveBeenCalledTimes(1);
     const dropped = signals.latest();
     dropped.end(new Error("network"));
     await vi.advanceTimersByTimeAsync(0);
     expect(signals.follow).toHaveBeenCalledTimes(2);
     expect(signals.latest()).not.toBe(dropped);
     await vi.advanceTimersByTimeAsync(15_000);
-    expect(list).toHaveBeenCalledTimes(3);
+    expect(list).toHaveBeenCalledTimes(2);
     signals.latest().signal();
     await vi.advanceTimersByTimeAsync(60_000);
-    expect(list).toHaveBeenCalledTimes(4);
+    expect(list).toHaveBeenCalledTimes(3);
     stop();
   });
-  it("reopens the stream for a newly selected Space", async () => {
+  it("starts over for a newly selected Space, dropping the old Space's late answers", async () => {
     vi.useFakeTimers();
     const signals = liveSignals();
     let spaceChanged!: () => void;
-    const list = vi.fn(async (): Promise<ComputerUpdate[]> => []);
+    let resolveOld!: (rows: ComputerUpdate[]) => void;
+    const list = vi.fn(
+      (): Promise<ComputerUpdate[]> =>
+        new Promise((done) => {
+          resolveOld = done;
+        }),
+    );
     const unsubscribe = vi.fn();
-    const stop = createComputerUpdates({
+    const store = createComputerUpdates({
       list,
       start: async () => update,
       dismiss: async () => {},
@@ -185,15 +198,28 @@ describe("computer update presentation", () => {
         spaceChanged = listener;
         return unsubscribe;
       },
-    }).watch();
-    signals.latest().signal();
+    });
+    const stop = store.watch();
     await vi.advanceTimersByTimeAsync(0);
+    signals.latest().signal();
+    resolveOld([{ ...update, status: "failed" }]);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(store.getSnapshot().updates).toHaveLength(1);
+    signals.latest().signal();
+    const lateOld = resolveOld;
     spaceChanged();
+    expect(store.getSnapshot().updates).toEqual([]);
     await vi.advanceTimersByTimeAsync(0);
     expect(signals.follow).toHaveBeenCalledTimes(2);
+    lateOld([{ ...update, status: "failed" }]);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(store.getSnapshot().updates).toEqual([]);
     signals.latest().signal();
     await vi.advanceTimersByTimeAsync(0);
     expect(list).toHaveBeenCalledTimes(3);
+    resolveOld([update]);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(store.getSnapshot().updates).toEqual([update]);
     stop();
     expect(unsubscribe).toHaveBeenCalledOnce();
   });
@@ -207,6 +233,7 @@ describe("computer update presentation", () => {
       follow: noSignals,
     });
     const stop = store.watch();
+    await vi.advanceTimersByTimeAsync(0);
     await vi.advanceTimersByTimeAsync(14_000);
     expect(list).toHaveBeenCalledTimes(1);
     list.mockResolvedValue([update]);
@@ -231,12 +258,14 @@ describe("computer update presentation", () => {
       follow,
     });
     let stop = store.watch();
+    await vi.advanceTimersByTimeAsync(0);
     await vi.advanceTimersByTimeAsync(60_000);
     expect(list).toHaveBeenCalledTimes(1);
     expect(follow).toHaveBeenCalledTimes(1);
     stop();
     list.mockResolvedValue([]);
     stop = store.watch();
+    await vi.advanceTimersByTimeAsync(0);
     await vi.advanceTimersByTimeAsync(15_000);
     expect(list).toHaveBeenCalledTimes(3);
     stop();
@@ -252,6 +281,7 @@ describe("computer update presentation", () => {
       dismiss: async () => {},
       follow: noSignals,
     }).watch();
+    await vi.advanceTimersByTimeAsync(0);
     await vi.advanceTimersByTimeAsync(60_000);
     expect(list).toHaveBeenCalledTimes(1);
     stop();
@@ -269,6 +299,7 @@ describe("computer update presentation", () => {
       dismiss: async () => {},
       follow: noSignals,
     }).watch();
+    await vi.advanceTimersByTimeAsync(0);
     await vi.advanceTimersByTimeAsync(30_000);
     expect(list).toHaveBeenCalledTimes(3);
     stop();

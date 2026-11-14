@@ -108,6 +108,8 @@ export function createComputerUpdates(client: {
   };
   const follow = async (epoch: number, stopped: AbortSignal) => {
     let retry = 1_000;
+    // The stream's first signal reads the list; if it never opens, read it now instead.
+    let read = false;
     while (epoch === generation && !refused) {
       const controller = new AbortController();
       stream = controller;
@@ -117,6 +119,7 @@ export function createComputerUpdates(client: {
         await client.follow(() => {
           if (epoch !== generation || controller.signal.aborted) return;
           opened = true;
+          read = true;
           live = true;
           void refresh();
         }, controller.signal);
@@ -126,9 +129,9 @@ export function createComputerUpdates(client: {
       if (epoch !== generation) return;
       stream = undefined;
       live = false;
-      // Reopened for another Space, whose first signal reads its list.
-      if (controller.signal.aborted) continue;
-      schedule();
+      if (read) schedule();
+      else void refresh();
+      read = true;
       // An older server without signals, or a refused session: polling carries on, or stops on
       // its own refusal.
       if (failure !== undefined && !isRetryableError(failure)) return;
@@ -140,6 +143,26 @@ export function createComputerUpdates(client: {
       retry = Math.min(retry * 2, 30_000);
     }
   };
+  const begin = () => {
+    const epoch = ++generation;
+    watching = true;
+    refused = false;
+    live = false;
+    const stopped = new AbortController();
+    // A watch undone at once (a remount) never opens a stream it would only abort.
+    const opening = setTimeout(() => void follow(epoch, stopped.signal), 0);
+    return () => {
+      clearTimeout(opening);
+      generation++;
+      watching = false;
+      live = false;
+      clearTimeout(timer);
+      stopped.abort();
+      stream?.abort();
+      stream = undefined;
+      state = { updates: [], openId: null };
+    };
+  };
   return {
     getSnapshot: () => state,
     subscribe(listener: () => void) {
@@ -149,27 +172,16 @@ export function createComputerUpdates(client: {
       };
     },
     watch() {
-      const epoch = ++generation;
-      watching = true;
-      refused = false;
-      live = false;
-      const stopped = new AbortController();
+      let stop = begin();
+      // Another Space has its own list and signals, and nothing from the old one may land.
       const unfollowSpace = client.onSpaceChange?.(() => {
-        if (stream) stream.abort();
-        else void refresh();
+        stop();
+        emit();
+        stop = begin();
       });
-      void refresh();
-      void follow(epoch, stopped.signal);
       return () => {
-        generation++;
-        watching = false;
-        live = false;
-        clearTimeout(timer);
-        stopped.abort();
-        stream?.abort();
-        stream = undefined;
         unfollowSpace?.();
-        state = { updates: [], openId: null };
+        stop();
       };
     },
     open(id: string | null) {
