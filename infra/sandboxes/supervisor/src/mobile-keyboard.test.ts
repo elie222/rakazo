@@ -595,6 +595,31 @@ describe("mobile trackpad touches", () => {
     }
   });
 
+  it("does not click after slow aiming, a third finger, or remaining-finger movement", () => {
+    withTrackpad((fixture) => {
+      fixture.touch("touchstart", 1, 50, 250);
+      for (let x = 51; x <= 55; x++) fixture.touch("touchmove", 1, x, 250);
+      fixture.touch("touchend", 1, 55, 250);
+      expect(mouseDowns(fixture)).toHaveLength(0);
+    });
+    for (const thirdFinger of [false, true]) {
+      withTrackpad((fixture) => {
+        const first = { identifier: 1, clientX: 50, clientY: 250 };
+        const second = { identifier: 2, clientX: 90, clientY: 250 };
+        fixture.touch("touchstart", 1, 50, 250);
+        fixture.touch("touchstart", 2, 90, 250, [first]);
+        if (thirdFinger) {
+          fixture.touch("touchstart", 3, 100, 250, [first, second]);
+          fixture.touch("touchend", 3, 100, 250, [first, second]);
+        }
+        fixture.touch("touchend", 2, 90, 250, [first]);
+        if (!thirdFinger) fixture.touch("touchmove", 1, 60, 250);
+        fixture.touch("touchend", 1, 60, 250);
+        expect(mouseDowns(fixture)).toHaveLength(0);
+      });
+    }
+  });
+
   it("right-clicks on a two-finger tap", () => {
     withTrackpad((fixture) => {
       const first = { identifier: 1, clientX: 50, clientY: 250 };
