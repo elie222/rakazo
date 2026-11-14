@@ -61,6 +61,7 @@ import { rpc } from "../lib/rpc";
 import { createStoredPreference } from "../lib/stored-preference";
 import { useObjectUrl } from "../lib/use-object-url";
 import { errorText } from "../lib/user-error";
+import { useRedrawAtMidnight } from "./shell/use-redraw-at-midnight";
 import { WindowChrome } from "./WindowChrome";
 
 type ViewMode = "grid" | "list";
@@ -92,6 +93,7 @@ function matchesCalendarDateFilter(iso: string, filter: DateFilter, now: Date): 
 export function ArtifactsPage() {
   const { artifactId } = useParams<{ artifactId?: string }>();
   const navigate = useNavigate();
+  const today = useRedrawAtMidnight();
   const { t } = useLingui();
   const [activeBotId, setActiveBotId] = useState<string | null>(null);
   const viewMode = viewModePreference.use();
@@ -150,17 +152,16 @@ export function ArtifactsPage() {
 
   const filteredItems = useMemo(() => {
     if (!items) return null;
-    const now = new Date();
     const query = searchQuery.trim().toLowerCase();
     return items.filter((item) => {
-      if (!matchesCalendarDateFilter(item.createdAt, dateFilter, now)) return false;
+      if (!matchesCalendarDateFilter(item.createdAt, dateFilter, today)) return false;
       if (!query) return true;
       return (
         item.name.toLowerCase().includes(query) ||
         (item.description?.toLowerCase().includes(query) ?? false)
       );
     });
-  }, [items, searchQuery, dateFilter]);
+  }, [items, searchQuery, dateFilter, today]);
 
   const clientFilterActive = searchQuery.trim().length > 0 || dateFilter !== "all";
   const autoFetchedCursorRef = useRef<string | null>(null);
