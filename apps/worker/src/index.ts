@@ -5,6 +5,7 @@ import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 import { stopOnShutdownSignals } from "@rakazo/core/node/shutdown-signals";
 import { startWorkerHealth } from "./health.js";
 import { createWorkerSecretStore } from "./secret-store.js";
+import { stopWithin } from "./shutdown.js";
 
 loadRootEnv();
 await unwrapEnvFromKeyManager();
@@ -301,7 +302,12 @@ async function main() {
         await connectors.mcp.close();
         await connectors.installed.close();
         await prisma.$disconnect().catch(() => undefined);
-        await pool.end().catch(() => undefined);
+        // Once the job hosts have stopped, only work they gave up on can still hold a
+        // connection, such as Graphile's listener whose UNLISTEN never answered.
+        await stopWithin(
+          pool.end().catch(() => undefined),
+          "database pool",
+        );
       } finally {
         await analytics?.flush();
         await shutdownPiTelemetry();
