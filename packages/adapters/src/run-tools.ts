@@ -121,7 +121,7 @@ async function dispatchTool(
     return refuse(
       refusal(
         "daily_check_in_tool_not_allowed",
-        "Daily check-ins can only ask or message the user.",
+        "Daily check-ins can only ask the user. Put any reminder in your final reply.",
       ),
     );
   }
