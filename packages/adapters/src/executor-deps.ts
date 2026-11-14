@@ -16,6 +16,7 @@ import type {
   SandboxProvider,
   SecretStore,
   TransactionalEmailProvider,
+  WeatherProvider,
   WebProvider,
 } from "@rakazo/adapter-kit";
 import type { PrismaClient, RunLease, ThreadEvents } from "@rakazo/db";
@@ -71,6 +72,8 @@ export interface ExecutorDeps {
   listConnectedPluginSlugs?: (userId: string) => Promise<string[]>;
   /** Builtin web_search / web_fetch. Defaults to keyless HTTP when omitted. */
   web?: WebProvider;
+  /** Builtin weather_forecast. Defaults to keyless Open-Meteo when omitted. */
+  weather?: WeatherProvider;
   mediaGeneration?: MediaGenerationProvider;
   paidServices?: PaidServiceProvider;
   /** Page browser (DOM refs) on the bot computer. Defaults to the sandbox live browser when supported. */

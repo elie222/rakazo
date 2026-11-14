@@ -248,6 +248,7 @@ import {
   runReplaysToolHistory,
 } from "./tool-step-calls.js";
 import { restoreTurnCheckpoint } from "./turn-checkpoint.js";
+import { createWeatherProvider } from "./weather-provider-factory.js";
 import { createWebProvider } from "./web-provider-factory.js";
 
 /** Same reach as the MCP connector: usable servers assigned to the bot or shared with every bot. */
@@ -274,6 +275,7 @@ const RUN_HEARTBEAT_MS = 60_000;
 export function createRunExecutor(executorDeps: ExecutorDeps) {
   const contextStrategy = executorDeps.contextStrategy ?? DEFAULT_CONTEXT_STRATEGY;
   const web = executorDeps.web ?? createWebProvider();
+  const weather = executorDeps.weather ?? createWeatherProvider();
   const mediaGeneration = executorDeps.mediaGeneration ?? createMediaGenerationProvider();
   const paidServices = executorDeps.paidServices ?? createPaidServiceProvider();
   const browser =
@@ -1559,7 +1561,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
 
         const ctx: RunContext = {
           deps,
-          providers: { web, mediaGeneration, paidServices, browser, cloudAgent },
+          providers: { web, weather, mediaGeneration, paidServices, browser, cloudAgent },
           run,
           runId,
           workerId,

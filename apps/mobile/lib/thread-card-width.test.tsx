@@ -136,6 +136,7 @@ vi.mock("../components/ChoiceCard", () => ({ ChoiceCard: () => null }));
 vi.mock("../components/ImportSetupCard", () => ({ ImportSetupCard: () => null }));
 vi.mock("../components/ComputerCard", () => ({ ComputerCard: () => null }));
 vi.mock("../components/pages/page-card", () => ({ PageCard: () => null }));
+vi.mock("../components/weather/weather-card", () => ({ WeatherCard: () => null }));
 vi.mock("../components/thread/mcp-app-card", () => ({ McpAppCard: () => null }));
 vi.mock("../components/inline-image-attachment", () => ({
   InlineImageAttachment: ({ name, onOpen }: { name: string; onOpen: () => void }) => (

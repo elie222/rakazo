@@ -827,6 +827,24 @@ export const builtinAgentTools: ConnectorTool[] = [
     readOnly: true,
   },
   {
+    name: "weather_forecast",
+    description:
+      "Look up the weather for a place and show it to the user as a weather card (current conditions, hourly and daily forecast). Pass a place name, or latitude and longitude. Read-only; does not need a computer. The card shows the details, so reply in a sentence or two and do not repeat them.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        location: {
+          type: "string",
+          description: 'A place name, such as "Lisbon" or "Springfield, Illinois".',
+        },
+        latitude: { type: "number", description: "Latitude, -90 to 90, with longitude." },
+        longitude: { type: "number", description: "Longitude, -180 to 180, with latitude." },
+        days: { type: "number", description: "Daily rows to show, 1 to 10 (default 7)." },
+      },
+    },
+    readOnly: true,
+  },
+  {
     name: "service_search",
     description:
       "Find a paid data service by the job it does: map places, search results, work emails, people and company profiles, social posts, SEO and backlink data. Returns service ids, prices in USD per call, and params. Then call one with service_call.",

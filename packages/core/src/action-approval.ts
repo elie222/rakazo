@@ -63,6 +63,7 @@ const OUTSIDE_RUN_SAFE_BUILTIN_TOOLS = new Set([
   "service_search",
   "skill_read",
   "task_catalog",
+  "weather_forecast",
   "web_fetch",
   "web_search",
 ]);

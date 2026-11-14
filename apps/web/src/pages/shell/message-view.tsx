@@ -30,6 +30,7 @@ import {
   ToolSteps,
 } from "../../components/ToolActivityDisclosure";
 import { SkillDraftCard } from "../../components/teach/SkillDraftCard";
+import { WeatherCard } from "../../components/weather/WeatherCard";
 import type { ArtifactTarget } from "../../lib/artifact-open";
 import { messageProviderLabel } from "../../lib/messaging";
 import type { PageBlock } from "../../lib/page-cards";
@@ -500,6 +501,13 @@ export const MessageView = memo(function MessageView({
                 block={block}
                 updated={isPageSuperseded?.(message.id, block) ?? false}
               />
+            );
+          }
+          if (block.kind === "weather") {
+            return (
+              <div key={i} className="flex justify-start">
+                <WeatherCard forecast={block.forecast} />
+              </div>
             );
           }
           if (block.kind === "chart") {

@@ -8,6 +8,7 @@ import type {
   PaidServiceProvider,
   SandboxProvider,
   SemanticMemoryProvider,
+  WeatherProvider,
   WebProvider,
 } from "@rakazo/adapter-kit";
 import type {
@@ -289,6 +290,7 @@ export type RunTrust = ReturnType<typeof createRunTrustLoaders> & {
 
 export interface RunProviders {
   web: WebProvider;
+  weather: WeatherProvider;
   mediaGeneration: MediaGenerationProvider | undefined;
   paidServices: PaidServiceProvider | undefined;
   browser: BrowserProvider;

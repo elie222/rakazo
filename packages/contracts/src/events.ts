@@ -93,6 +93,77 @@ const ChartBlock = z
     });
   });
 
+/** Longest stretch a weather card shows: ten daily rows, two days of hours. */
+export const WEATHER_MAX_DAYS = 10;
+export const WEATHER_MAX_HOURS = 48;
+
+/**
+ * A forecast as the card shows it. Everything is metric (°C, km/h, mm) and chosen units are
+ * applied by the client; instants are epoch milliseconds and day or hour labels use `timeZone`.
+ */
+export const WeatherForecastSchema = z.object({
+  locationLabel: z.string().min(1).max(200),
+  timeZone: z
+    .string()
+    .min(1)
+    .max(100)
+    .refine((zone) => {
+      try {
+        new Intl.DateTimeFormat("en", { timeZone: zone });
+        return true;
+      } catch {
+        return false;
+      }
+    }, "Not a time zone"),
+  /** When the forecast was fetched; "now" and "Updated" are relative to it, not the device clock. */
+  asOfMs: z.number().int(),
+  current: z.object({
+    /** A WMO weather code. */
+    code: z.number().int().min(0).max(99),
+    isDay: z.boolean(),
+    temperatureC: z.number(),
+    apparentC: z.number(),
+    /** Percent, 0 to 100. */
+    humidity: z.number().min(0).max(100),
+    windKph: z.number().min(0),
+  }),
+  hours: z
+    .array(
+      z.object({
+        startMs: z.number().int(),
+        code: z.number().int().min(0).max(99),
+        isDay: z.boolean(),
+        temperatureC: z.number(),
+        /** Percent, 0 to 100. */
+        precipChance: z.number().min(0).max(100),
+      }),
+    )
+    .max(WEATHER_MAX_HOURS),
+  days: z
+    .array(
+      z.object({
+        /** Midnight of the day in `timeZone`. */
+        startMs: z.number().int(),
+        code: z.number().int().min(0).max(99),
+        maxC: z.number(),
+        minC: z.number(),
+        precipChance: z.number().min(0).max(100),
+        precipMm: z.number().min(0),
+      }),
+    )
+    .min(1)
+    .max(WEATHER_MAX_DAYS),
+  attribution: z.object({
+    name: z.string().max(100),
+    /** A link clients draw, so only https. */
+    url: z
+      .string()
+      .max(500)
+      .refine((url) => url.startsWith("https://") && URL.canParse(url)),
+  }),
+});
+export type WeatherForecast = z.infer<typeof WeatherForecastSchema>;
+
 export const SecretAskPurpose = z.enum(["otp", "password", "api_key"]);
 export type SecretAskPurpose = z.infer<typeof SecretAskPurpose>;
 
@@ -367,6 +438,11 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     pageId: Id,
     version: z.number().int().positive(),
     title: z.string().max(PAGE_TITLE_MAX_LENGTH),
+  }),
+  z.object({
+    /** A forecast the bot looked up, shown as a card. */
+    kind: z.literal("weather"),
+    forecast: WeatherForecastSchema,
   }),
   z.object({
     kind: z.literal("handoff"),
