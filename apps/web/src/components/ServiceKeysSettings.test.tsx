@@ -71,23 +71,29 @@ describe("ServiceKeysSettings", () => {
     input.dispatchEvent(new Event("input", { bubbles: true }));
   };
 
+  const render = async () => {
+    container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+    await act(async () => {
+      root.render(
+        <QueryClientProvider
+          client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+        >
+          <ServiceKeysSettings />
+        </QueryClientProvider>,
+      );
+    });
+    await settle();
+  };
+
   beforeEach(async () => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     vi.clearAllMocks();
     confirm.run.mockImplementation((action: () => Promise<unknown>) => action());
     rpc.list.mockResolvedValue([key]);
     rpc.bots.mockResolvedValue([{ id: "bot-1", name: "Worker" }]);
-    container = document.createElement("div");
-    document.body.append(container);
-    root = createRoot(container);
-    await act(async () => {
-      root.render(
-        <QueryClientProvider client={new QueryClient()}>
-          <ServiceKeysSettings />
-        </QueryClientProvider>,
-      );
-    });
-    await settle();
+    await render();
   });
 
   afterEach(() => {
@@ -144,5 +150,18 @@ describe("ServiceKeysSettings", () => {
     expect(rpc.revoke).toHaveBeenCalledWith({ id: "key-1" });
     expect(button("Revoke")).toBeUndefined();
     expect(container.textContent).toContain("Revoked");
+  });
+
+  it("does not create a key for every bot when the bot list fails to load", async () => {
+    act(() => root.unmount());
+    container.remove();
+    rpc.bots.mockRejectedValue(new Error("down"));
+    await render();
+    await act(async () => typeName("Nightly"));
+    expect(button("Create key")?.disabled).toBe(true);
+    await act(async () => button("Create key")?.click());
+    await settle();
+    expect(rpc.create).not.toHaveBeenCalled();
+    expect(container.textContent).toContain("Could not load your bots");
   });
 });
