@@ -45,6 +45,7 @@ export function MessagingSettingsPanel() {
   const [selectedBotId, setSelectedBotId] = useState("");
   const linkGeneration = useRef(0);
   const linkPending = useRef(false);
+  const linkFromPicker = useRef(true);
   const [issuingLink, setIssuingLink] = useState(false);
   const [linkRequest, setLinkRequest] = useState<{
     code: string;
@@ -170,12 +171,17 @@ export function MessagingSettingsPanel() {
   // A selection archived elsewhere drops out of the list; fall back to the first bot.
   const linkBotId = bots.find((bot) => bot.id === selectedBotId)?.id ?? bots[0]?.id ?? "";
   useEffect(() => {
-    linkGeneration.current++;
-    setLinkRequest(null);
-    return () => {
+    if (linkFromPicker.current) {
       linkGeneration.current++;
-    };
+      setLinkRequest(null);
+    }
   }, [linkBotId]);
+  useEffect(
+    () => () => {
+      linkGeneration.current++;
+    },
+    [],
+  );
   const botName = (botId: string) => bots.find((bot) => bot.id === botId)?.name;
   // Only meaningful once a second chat app is linked: the same group can then
   // hold two of the caller's memberships, one per agent.
@@ -221,9 +227,10 @@ export function MessagingSettingsPanel() {
   const linkApp = linkRequest ? providerLabel(linkRequest.provider) : "";
   const linkAddress = linkRequest ? status?.addresses?.[linkRequest.provider] : undefined;
 
-  async function startLink(provider: string, botId: string) {
+  async function startLink(provider: string, botId: string, fromPicker = true) {
     if (linkPending.current) return;
     linkPending.current = true;
+    linkFromPicker.current = fromPicker;
     setIssuingLink(true);
     const generation = ++linkGeneration.current;
     setError(null);
@@ -262,9 +269,11 @@ export function MessagingSettingsPanel() {
         aria-label={t`Bot`}
         value={linkBotId}
         onChange={(event) => {
-          linkGeneration.current++;
+          if (linkFromPicker.current) {
+            linkGeneration.current++;
+            setLinkRequest(null);
+          }
           setSelectedBotId(event.target.value);
-          setLinkRequest(null);
         }}
       >
         {bots.map((bot) => (
@@ -383,7 +392,9 @@ export function MessagingSettingsPanel() {
                         size="sm"
                         variant="ghost"
                         disabled={issuingLink}
-                        onClick={() => void startLink(installation.provider, installation.botId)}
+                        onClick={() =>
+                          void startLink(installation.provider, installation.botId, false)
+                        }
                       >
                         <Trans>Link DMs</Trans>
                       </Button>

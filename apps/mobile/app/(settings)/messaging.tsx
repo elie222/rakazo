@@ -30,6 +30,7 @@ export default function MessagingSettings() {
   const [selectedBotId, setSelectedBotId] = useState("");
   const linkGeneration = useRef(0);
   const linkPending = useRef(false);
+  const linkFromPicker = useRef(true);
   const [issuingLink, setIssuingLink] = useState(false);
   const [status, setStatus] = useState<MessagingStatus | null>(null);
   const [installations, setInstallations] = useState<MessagingInstallationsStatus>({
@@ -71,6 +72,10 @@ export default function MessagingSettings() {
   useFocusEffect(
     useCallback(() => {
       void refresh().catch((err) => setLoadError(errorText(err)));
+      return () => {
+        linkGeneration.current++;
+        setLink(null);
+      };
     }, [refresh]),
   );
 
@@ -120,12 +125,17 @@ export default function MessagingSettings() {
   // A selection archived elsewhere drops out of the list; fall back to the first bot.
   const botId = bots.find((bot) => bot.id === selectedBotId)?.id ?? bots[0]?.id ?? "";
   useEffect(() => {
-    linkGeneration.current++;
-    setLink(null);
-    return () => {
+    if (linkFromPicker.current) {
       linkGeneration.current++;
-    };
+      setLink(null);
+    }
   }, [botId]);
+  useEffect(
+    () => () => {
+      linkGeneration.current++;
+    },
+    [],
+  );
   const botName = (id: string) => bots.find((bot) => bot.id === id)?.name;
   // Only meaningful once a second chat app is linked: the same group can then
   // hold two of the caller's memberships, one per agent.
@@ -169,9 +179,10 @@ export default function MessagingSettings() {
     });
   }
 
-  async function startLink(provider: string, linkBotId = botId) {
+  async function startLink(provider: string, linkBotId = botId, fromPicker = true) {
     if (linkPending.current) return;
     linkPending.current = true;
+    linkFromPicker.current = fromPicker;
     setIssuingLink(true);
     const generation = ++linkGeneration.current;
     setError(null);
@@ -310,7 +321,7 @@ export default function MessagingSettings() {
                         fill={false}
                         variant="text"
                         disabled={busy || issuingLink}
-                        onPress={() => startLink(installation.provider, installation.botId)}
+                        onPress={() => startLink(installation.provider, installation.botId, false)}
                       />
                     ) : null}
                     {textAction(
@@ -357,9 +368,11 @@ export default function MessagingSettings() {
             choices={bots.map((bot) => ({ key: bot.id, label: bot.name }))}
             value={botId}
             onChange={(id) => {
-              linkGeneration.current++;
+              if (linkFromPicker.current) {
+                linkGeneration.current++;
+                setLink(null);
+              }
               setSelectedBotId(id);
-              setLink(null);
             }}
           />
         ) : null}

@@ -631,3 +631,59 @@ it("ignores a code that arrives after the panel closes", async () => {
   expect(messaging.status).toHaveBeenCalledTimes(reads);
   expect(container.textContent).toBe("");
 });
+
+it.each([false, true])(
+  "keeps workspace codes when picker changes (initial load: %s)",
+  async (initialLoad) => {
+    messaging.status.mockResolvedValue({ ...statusWith([]), providers: ["slack", "telegram"] });
+    messaging.installations.list.mockResolvedValue({
+      available: true,
+      installations: [
+        { id: "install-1", provider: "slack", workspaceName: "Workspace", botId: "workspace-bot" },
+      ],
+    } as never);
+    const bots = [
+      { id: "bot-1", name: "Chief" },
+      { id: "bot-2", name: "Team" },
+    ];
+    api.bots.list.mockResolvedValue(bots);
+    let loadBots!: (value: typeof bots) => void;
+    if (initialLoad)
+      api.bots.list.mockImplementationOnce(
+        () =>
+          new Promise((yes) => {
+            loadBots = yes;
+          }),
+      );
+    let resolve!: (value: { code: string; expiresAt: string }) => void;
+    messaging.link.start.mockImplementationOnce(
+      () =>
+        new Promise((yes) => {
+          resolve = yes;
+        }),
+    );
+    await renderOverlay();
+    await act(async () =>
+      [...container.querySelectorAll("button")]
+        .find((button) => button.textContent === "Link DMs")!
+        .click(),
+    );
+    const pick = (id: string) => {
+      const select = container.querySelector("select")!;
+      select.value = id;
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    };
+    if (initialLoad) {
+      await act(async () => loadBots(bots));
+      await act(async () => vi.advanceTimersByTimeAsync(0));
+    }
+    await act(async () => pick("bot-2"));
+    await act(async () =>
+      resolve({ code: "WORKSPACE-CODE", expiresAt: new Date(Date.now() + 20_000).toISOString() }),
+    );
+    expect(container.textContent).toContain("WORKSPACE-CODE");
+    expect(messaging.link.start).toHaveBeenCalledWith({ botId: "workspace-bot" });
+    await act(async () => pick("bot-1"));
+    expect(container.textContent).toContain("WORKSPACE-CODE");
+  },
+);

@@ -23,8 +23,13 @@ vi.mock("./user-error", () => ({
   errorText: (_: unknown, fallback = "Something went wrong. Try again.") => fallback,
 }));
 const push = vi.fn();
+let blur: (() => void) | undefined;
 vi.mock("expo-router", () => ({
-  useFocusEffect: (effect: () => void) => useEffect(effect, [effect]),
+  useFocusEffect: (effect: () => undefined | (() => void)) =>
+    useEffect(() => {
+      blur = effect() ?? undefined;
+      return () => blur?.();
+    }, [effect]),
   useRouter: () => ({ push }),
 }));
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
@@ -505,4 +510,70 @@ it("ignores a code that arrives after leaving settings", async () => {
   );
   expect(listCalls()).toBe(reads);
   expect(container.textContent).toBe("");
+});
+
+it.each(["resolve", "reject"] as const)(
+  "ignores a late %s after blur without unmount",
+  async (outcome) => {
+    let resolve!: (value: unknown) => void;
+    let reject!: (error: Error) => void;
+    responses["messaging/link/start"] = new Promise((yes, no) => {
+      resolve = yes;
+      reject = no;
+    });
+    await act(async () => root.render(<MessagingSettings />));
+    await act(async () =>
+      [...container.querySelectorAll("button")]
+        .find((button) => button.textContent === "iMessage")!
+        .click(),
+    );
+    const reads = listCalls();
+    await act(async () => blur?.());
+    await act(async () => {
+      if (outcome === "resolve")
+        resolve({ code: "BLURRED-CODE", expiresAt: new Date(Date.now() + 20_000).toISOString() });
+      else reject(new Error("offline"));
+    });
+    expect(container.textContent).not.toContain("BLURRED-CODE");
+    expect(container.textContent).not.toContain("Something went wrong");
+    expect(listCalls()).toBe(reads);
+  },
+);
+
+it("keeps workspace codes through picker changes and clears them on blur", async () => {
+  responses["messaging/status"] = {
+    enabled: true,
+    providers: ["slack", "sendblue"],
+    identities: [],
+  };
+  responses["bots/list"] = [
+    { id: "bot-1", name: "Chief" },
+    { id: "bot-2", name: "Team" },
+  ];
+  responses["messaging/installations/list"] = {
+    available: true,
+    installations: [
+      { id: "install-1", provider: "slack", workspaceName: "Workspace", botId: "workspace-bot" },
+    ],
+  };
+  let resolve!: (value: unknown) => void;
+  responses["messaging/link/start"] = new Promise((yes) => {
+    resolve = yes;
+  });
+  await act(async () => root.render(<MessagingSettings />));
+  await press("Slack", "Link DMs");
+  const pick = (label: string) =>
+    [...container.querySelectorAll("button")]
+      .find((button) => button.textContent === label)!
+      .click();
+  await act(async () => pick("Team"));
+  await act(async () =>
+    resolve({ code: "WORKSPACE-CODE", expiresAt: new Date(Date.now() + 20_000).toISOString() }),
+  );
+  expect(container.textContent).toContain("WORKSPACE-CODE");
+  expect(rpc).toHaveBeenCalledWith("messaging/link/start", { botId: "workspace-bot" });
+  await act(async () => pick("Chief"));
+  expect(container.textContent).toContain("WORKSPACE-CODE");
+  await act(async () => blur?.());
+  expect(container.textContent).not.toContain("WORKSPACE-CODE");
 });

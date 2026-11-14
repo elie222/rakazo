@@ -169,17 +169,17 @@ test("messaging settings show linked chat apps, channels, connections, and team 
   const userName = `Messenger ${stamp}`;
   await signup(page, `messaging-${stamp}@rakazo.test`, "password12", userName);
   await completeOnboarding(page);
-  await page.route("**/rpc/bots/list", (route) =>
-    route.fulfill({
+  await page.route("**/rpc/bots/list", async (route) => {
+    const response = await route.fetch();
+    const payload = await response.json();
+    // Keep the onboarding bot used by the team-conversation fixture.
+    payload.json.push({ ...payload.json[0], id: "bot-2", name: "Lead" });
+    await route.fulfill({
+      response,
       contentType: "application/json",
-      body: JSON.stringify({
-        json: [
-          { id: "bot-1", name: "Chief" },
-          { id: "bot-2", name: "Lead" },
-        ],
-      }),
-    }),
-  );
+      body: JSON.stringify(payload),
+    });
+  });
 
   await page.getByRole("button", { name: new RegExp(userName) }).click();
   await page.getByRole("button", { name: "Settings" }).click();
