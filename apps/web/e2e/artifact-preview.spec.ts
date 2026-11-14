@@ -120,7 +120,7 @@ test("audio attachments can retry a failed preview without leaving the card", as
     mimeType: "audio/wav",
     buffer: wav,
   });
-  const composer = page.getByPlaceholder(/Message/);
+  const composer = page.getByRole("combobox", { name: /Message/ });
   await composer.fill("Here is the audio clip");
   await composer.press("Enter");
   const play = page.getByRole("button", { name: "Play clip.wav", exact: true });
