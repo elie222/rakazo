@@ -1,9 +1,8 @@
 import type { ComputerUpdate } from "@rakazo/contracts";
 import { COMPUTER_UPDATE_STAGES } from "@rakazo/contracts";
-import { abortableDelay } from "./async.js";
-import { isRetryableError, reconnectDelayMs, retryDelayMs } from "./retry-policy.js";
+import { isRetryableError, retryDelayMs } from "./retry-policy.js";
 
-/** Without live signals (an older server, or while reconnecting) the list is polled instead. */
+/** Without live signals (an older server, or while the app's live stream is closed) the list is polled. */
 const POLL_MS = 15_000;
 const POLL_IN_PROGRESS_MS = 1_500;
 /** The server signals every status and stage change; this only covers one lost mid-update. */
@@ -11,22 +10,20 @@ const SIGNALLED_IN_PROGRESS_MS = 30_000;
 
 /**
  * Shared list and local presentation state; the server owns operation lifetime. The list is read
- * when watching starts and again whenever the server signals a change, and polled only while
- * those signals are unavailable.
+ * when watching starts and whenever the app's live stream signals a change (it signals once on
+ * opening), and polled only while those signals are unavailable.
  */
 export function createComputerUpdates(client: {
   list: () => Promise<ComputerUpdate[]>;
   start: (botId: string, action: "update" | "recover") => Promise<ComputerUpdate>;
   dismiss: (id: string) => Promise<unknown>;
-  /** Follows the Space's change signals until the stream ends: once when it opens, then per change. */
-  follow: (onSignal: () => void, signal: AbortSignal) => Promise<void>;
-  /** The list and its signals belong to the selected Space, so switching reopens both. */
+  /** The list belongs to the selected Space, so switching starts over. */
   onSpaceChange?: (listener: () => void) => () => void;
 }) {
   let state: { updates: ComputerUpdate[]; openId: string | null } = { updates: [], openId: null };
   const listeners = new Set<() => void>();
   let timer: ReturnType<typeof setTimeout> | undefined;
-  // Bumped by every watch and unwatch, so a late response or stream from another watch is dropped.
+  // Bumped by every watch and unwatch, so a late response from another watch is dropped.
   let generation = 0;
   let watching = false;
   // The server refused a read (signed out, or this build): nothing is asked again until rewatched.
@@ -35,7 +32,6 @@ export function createComputerUpdates(client: {
   let live = false;
   let fetching = false;
   let again = false;
-  let stream: AbortController | undefined;
   const emit = () => {
     for (const listener of listeners) listener();
   };
@@ -106,60 +102,15 @@ export function createComputerUpdates(client: {
       fetching = false;
     }
   };
-  const follow = async (epoch: number, stopped: AbortSignal) => {
-    let retry = 1_000;
-    // The stream's first signal reads the list; if it never opens, read it now instead.
-    let read = false;
-    while (epoch === generation && !refused) {
-      const controller = new AbortController();
-      stream = controller;
-      let failure: unknown;
-      let opened = false;
-      try {
-        await client.follow(() => {
-          if (epoch !== generation || controller.signal.aborted) return;
-          opened = true;
-          read = true;
-          live = true;
-          void refresh();
-        }, controller.signal);
-      } catch (error) {
-        failure = error;
-      }
-      if (epoch !== generation) return;
-      stream = undefined;
-      live = false;
-      if (read) schedule();
-      else void refresh();
-      read = true;
-      // An older server without signals, or a refused session: polling carries on, or stops on
-      // its own refusal.
-      if (failure !== undefined && !isRetryableError(failure)) return;
-      if (opened) retry = 1_000;
-      await abortableDelay(
-        opened ? reconnectDelayMs(failure) : retryDelayMs(failure, retry),
-        stopped,
-      );
-      retry = Math.min(retry * 2, 30_000);
-    }
-  };
   const begin = () => {
-    const epoch = ++generation;
+    generation++;
     watching = true;
     refused = false;
-    live = false;
-    const stopped = new AbortController();
-    // A watch undone at once (a remount) never opens a stream it would only abort.
-    const opening = setTimeout(() => void follow(epoch, stopped.signal), 0);
+    void refresh();
     return () => {
-      clearTimeout(opening);
       generation++;
       watching = false;
-      live = false;
       clearTimeout(timer);
-      stopped.abort();
-      stream?.abort();
-      stream = undefined;
       state = { updates: [], openId: null };
     };
   };
@@ -173,9 +124,11 @@ export function createComputerUpdates(client: {
     },
     watch() {
       let stop = begin();
-      // Another Space has its own list and signals, and nothing from the old one may land.
+      // Another Space has its own list, and nothing from the old one may land. Its signals may
+      // still be the old Space's, so poll until the live stream signals again.
       const unfollowSpace = client.onSpaceChange?.(() => {
         stop();
+        live = false;
         emit();
         stop = begin();
       });
@@ -183,6 +136,16 @@ export function createComputerUpdates(client: {
         unfollowSpace?.();
         stop();
       };
+    },
+    /** The app's live stream opened or reported a change. */
+    signalled() {
+      live = true;
+      void refresh();
+    },
+    /** The app's live stream closed; poll until it opens again. */
+    signalsLost() {
+      live = false;
+      if (!fetching) schedule();
     },
     open(id: string | null) {
       state = { ...state, openId: id };

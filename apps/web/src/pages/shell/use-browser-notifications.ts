@@ -6,6 +6,7 @@ import {
   deliverBrowserNotification as deliverNativeBrowserNotification,
   shouldNotifyBrowser,
 } from "../../lib/browser-notifications";
+import { computerUpdates } from "../../lib/computer-updates";
 import { notificationIcon, prepareNotificationIcons } from "../../lib/notification-icon";
 import type { RpcClient } from "../../lib/rpc";
 
@@ -132,6 +133,7 @@ export function useBrowserNotifications(
           for await (const frame of stream) {
             if (!active) return;
             if (frame.type === "roster") rosterRef.current?.changed();
+            else if (frame.type === "computerUpdates") computerUpdates.signalled();
             else if (frame.alert) show(frame.alert);
           }
         } catch (cause) {
@@ -139,6 +141,7 @@ export function useBrowserNotifications(
         } finally {
           controller.abort();
           rosterRef.current?.lost();
+          computerUpdates.signalsLost();
         }
         if (!active || (failure !== undefined && !isRetryableError(failure))) return;
         await new Promise<void>((resolve) => {

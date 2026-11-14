@@ -367,7 +367,6 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["computer/reset"],
       ["computer/update"],
       ["computer/updates"],
-      ["computer/subscribeUpdates"],
       ["computer/releaseInterrupted"],
       ["computer/dismissUpdate"],
       ["computer/dismissDiskWarning", { botId: "missing-bot" }],

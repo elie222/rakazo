@@ -2,6 +2,7 @@ import { abortableDelay, isRetryableError, reconnectDelayMs, retryDelayMs } from
 import { useEffect, useRef, useState } from "react";
 import { subscribeRosterSignals } from "./api-live";
 import { useAppForeground } from "./app-foreground";
+import { computerUpdates } from "./computer-updates";
 
 /**
  * Follows the server's roster signals while enabled and on screen, running `onChange` for each
@@ -23,15 +24,22 @@ export function useRosterSignals(onChange: () => unknown, enabled: boolean): boo
         let failure: unknown;
         let opened = false;
         try {
-          await subscribeRosterSignals(() => {
-            if (controller.signal.aborted) return;
-            if (opened) void onChangeRef.current();
-            opened = true;
-            setLive(true);
-          }, controller.signal);
+          await subscribeRosterSignals(
+            () => {
+              if (controller.signal.aborted) return;
+              if (opened) void onChangeRef.current();
+              opened = true;
+              setLive(true);
+            },
+            controller.signal,
+            () => {
+              if (!controller.signal.aborted) computerUpdates.signalled();
+            },
+          );
         } catch (error) {
           failure = error;
         }
+        computerUpdates.signalsLost();
         if (controller.signal.aborted) return;
         setLive(false);
         if (failure !== undefined && !isRetryableError(failure)) return;

@@ -11,21 +11,30 @@ const actor: Actor = {
   isDeploymentOwner: true,
 };
 
-describe("computer.subscribeUpdates", () => {
-  it("streams change signals for the actor's Space", async () => {
+describe("notifications.subscribe computer update signals", () => {
+  it("signals changes to the actor's Space's computer updates", async () => {
     const controller = new AbortController();
+    const followChatAlerts = vi.fn(async function* (
+      _userId: string,
+      _spaceId: string,
+      signal: AbortSignal,
+    ) {
+      await new Promise((resolve) => signal.addEventListener("abort", resolve));
+    });
     const followComputerUpdateChanges = vi.fn(async function* () {
       yield;
       yield;
     });
     const client = createRouterClient(
-      createRouter({ events: { followComputerUpdateChanges } } as unknown as RouterDeps),
+      createRouter({
+        events: { followChatAlerts, followComputerUpdateChanges },
+      } as unknown as RouterDeps),
       { context: { actor, signal: controller.signal } },
     );
     try {
-      const iterator = (await client.computer.subscribeUpdates())[Symbol.asyncIterator]();
-      expect((await iterator.next()).value).toEqual({ type: "changed" });
-      expect((await iterator.next()).value).toEqual({ type: "changed" });
+      const iterator = (await client.notifications.subscribe())[Symbol.asyncIterator]();
+      expect((await iterator.next()).value).toEqual({ type: "computerUpdates" });
+      expect((await iterator.next()).value).toEqual({ type: "computerUpdates" });
       expect(followComputerUpdateChanges).toHaveBeenCalledWith(
         actor.spaceId,
         expect.any(AbortSignal),
@@ -33,23 +42,6 @@ describe("computer.subscribeUpdates", () => {
     } finally {
       controller.abort();
     }
-  });
-
-  it("is unavailable without a realtime fanout, so the app keeps polling", async () => {
-    const client = createRouterClient(createRouter({ events: {} } as unknown as RouterDeps), {
-      context: { actor },
-    });
-    const iterator = (await client.computer.subscribeUpdates())[Symbol.asyncIterator]();
-    await expect(iterator.next()).rejects.toMatchObject({ code: "NOT_FOUND" });
-  });
-
-  it("requires a signed-in user", async () => {
-    const client = createRouterClient(createRouter({} as unknown as RouterDeps), {
-      context: { actor: null },
-    });
-    await expect(client.computer.subscribeUpdates()).rejects.toMatchObject({
-      code: "UNAUTHORIZED",
-    });
   });
 });
 

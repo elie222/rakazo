@@ -29,7 +29,7 @@ test("computer maintenance shows durable background progress and failure recover
     route.fulfill({ json: { json: updates } }),
   );
   // The mocked list never signals a change, so the app polls it as it does without live signals.
-  await page.route("**/rpc/computer/subscribeUpdates", (route) =>
+  await page.route("**/rpc/notifications/subscribe", (route) =>
     route.fulfill({
       status: 404,
       json: { json: { defined: false, code: "NOT_FOUND", status: 404, message: "Not found" } },
