@@ -884,7 +884,6 @@ app.whenReady().then(async () => {
     "desktop.clipboard.write",
     createClipboardHandler(permissionTarget, (text) => clipboard.writeText(text)),
   );
-  ipcMain.handle("desktop.platform", () => process.platform);
   ipcMain.handle("desktop.passkeys.rpIds", () => passkeyRpIds);
   ipcMain.handle("desktop.monitoring.enabled", () => reportsErrors);
   handleOnlyFrom(fromMainWindow, "desktop.server.change", () => {

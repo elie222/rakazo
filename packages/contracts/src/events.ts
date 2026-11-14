@@ -492,7 +492,6 @@ export function hasThinkingActivityMarker(payload: Record<string, unknown>): pay
   const activity = payload.activity;
   return activity !== null && typeof activity === "object" && "thinking" in activity;
 }
-export type ThreadActivityPayload = z.infer<typeof ThreadActivityPayloadSchema>;
 
 export const ProductEventSchema = z
   .object({

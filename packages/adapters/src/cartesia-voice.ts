@@ -8,12 +8,12 @@ import type {
   VoiceSynthesizeRequest,
   VoiceVerifyResult,
 } from "@rakazo/adapter-kit";
+import { deadlineSignal } from "@rakazo/core";
 import {
   readVoiceAudio,
   readVoiceJson,
   requireOk,
   verifyVoiceHttpGet,
-  voiceDeadline,
   voiceRequestError,
 } from "./voice-http.js";
 
@@ -46,7 +46,7 @@ export class CartesiaVoiceProvider implements VoiceProvider {
   }
 
   async listVoices(apiKey: string, context: AdapterContext): Promise<VoiceInfo[]> {
-    const signal = voiceDeadline(context.signal, 20_000);
+    const signal = deadlineSignal(20_000, context.signal);
     const voices: Array<Record<string, unknown>> = [];
     let startingAfter: string | undefined;
     // `limit` is per page, so walk the cursor to keep voices past the first page in the picker
@@ -76,7 +76,7 @@ export class CartesiaVoiceProvider implements VoiceProvider {
   }
 
   async synthesize(request: VoiceSynthesizeRequest, context: AdapterContext): Promise<SpeechClip> {
-    const signal = voiceDeadline(request.signal ?? context.signal, 60_000);
+    const signal = deadlineSignal(60_000, request.signal ?? context.signal);
     const res = await fetch(`${API}/tts/bytes`, {
       method: "POST",
       headers: {

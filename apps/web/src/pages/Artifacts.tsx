@@ -162,7 +162,7 @@ export function ArtifactsPage() {
         (item.description?.toLowerCase().includes(query) ?? false)
       );
     });
-    // biome-ignore lint/correctness/useExhaustiveDependencies: The midnight tick invalidates cached date filters.
+    // `today` is listed so the midnight tick invalidates cached date filters.
   }, [items, searchQuery, dateFilter, today]);
 
   const clientFilterActive = searchQuery.trim().length > 0 || dateFilter !== "all";
