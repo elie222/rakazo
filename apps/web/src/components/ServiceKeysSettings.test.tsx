@@ -152,6 +152,10 @@ describe("ServiceKeysSettings", () => {
     expect(container.textContent).toContain("Revoked");
   });
 
+  it("names each revoke button after its key", () => {
+    expect(button("Revoke")?.getAttribute("aria-label")).toBe("Revoke Nightly");
+  });
+
   it("does not create a key for every bot when the bot list fails to load", async () => {
     act(() => root.unmount());
     container.remove();
