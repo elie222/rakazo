@@ -258,6 +258,7 @@ export function usageReportingFetch(
     sseObserved.add(reported);
     let buffer = "";
     let dropping = false;
+    let previousCarriageReturn = false;
     const decoder = new TextDecoder();
     const observe = async (frame: string) => {
       const data = frame
@@ -277,7 +278,14 @@ export function usageReportingFetch(
     const body = response.body.pipeThrough(
       new TransformStream<Uint8Array, Uint8Array>({
         async transform(chunk, controller) {
-          buffer = (buffer + decoder.decode(chunk, { stream: true })).replace(/\r\n/g, "\n");
+          let text = decoder.decode(chunk, { stream: true });
+          if (text) {
+            // SSE accepts CR, LF and CRLF, including a CRLF split across chunks.
+            const endsWithCarriageReturn = text.endsWith("\r");
+            if (previousCarriageReturn && text.startsWith("\n")) text = text.slice(1);
+            previousCarriageReturn = endsWithCarriageReturn;
+            buffer += text.replace(/\r\n?/g, "\n");
+          }
           let boundary = buffer.indexOf("\n\n");
           while (boundary >= 0) {
             const frame = buffer.slice(0, boundary);
