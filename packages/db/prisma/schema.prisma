@@ -1876,6 +1876,7 @@ model Computer {
   homeDeletionNotice      HomeDeletionNotice?
 
   @@index([spaceId, scope])
+  @@index([executionRunId])
   @@map("computers")
 }
 

@@ -56,6 +56,18 @@ const hotQueries = [
       AND "completedAt" IS NOT NULL ORDER BY "completedAt" DESC LIMIT 1`,
   },
   {
+    name: "computers bound to cancelled runs",
+    index: "computers_executionRunId_idx",
+    sql: `SELECT id FROM computers WHERE "executionRunId" IN ($1)`,
+  },
+  {
+    name: "control leases due to expire",
+    index: "computers_control_lease_idx",
+    sql: `SELECT id FROM computers WHERE "controlLeaseId" IS NOT NULL
+      AND ("controlLeaseExpiresAt" IS NULL OR "controlLeaseExpiresAt" <= now()) AND id <> $1
+      ORDER BY "controlLeaseExpiresAt", id LIMIT 100`,
+  },
+  {
     name: "a thread's messages after a cursor",
     index: "messages_threadId_seq_key",
     sql: `SELECT id FROM messages WHERE "threadId" = $1 AND seq > 0 ORDER BY seq LIMIT 100`,
