@@ -49,6 +49,8 @@ export async function* followSpaceChanges(
     latch.notify();
   };
   const unsubscribe = await realtime.subscribe(spaceChangesTopic(spaceId), (payload) => {
+    // An empty payload is the fanout's catch-up after its listener reconnects: anything may have changed.
+    if (payload === "") for (const kind of SpaceChangeKind.options) changed(kind);
     const kind = SpaceChangeKind.safeParse(payload);
     if (kind.success) changed(kind.data);
   });

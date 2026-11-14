@@ -83,6 +83,15 @@ describe("followSpaceChanges", () => {
     expect((await iterator.next()).value).toBe("computerUpdates");
     await iterator.return(undefined);
   });
+
+  it("signals every kind when the fanout asks subscribers to catch up", async () => {
+    const fanout = fakeFanout();
+    const iterator = followSpaceChanges(fanout as never, "space-1");
+    await opened(iterator);
+    await fanout.publish("space-changes:space-1", "");
+    expect(await opened(iterator)).toEqual(["computerUpdates", "runs", "routines"]);
+    await iterator.return(undefined);
+  });
 });
 
 describe("publishSpaceChange", () => {
