@@ -113,7 +113,7 @@ function parseSkillFrontmatter(text: string): unknown {
 
 function quoteLegacyColonScalars(text: string): string {
   return text.replace(
-    /^(\s*(?:-\s+)?[A-Za-z_][\w-]*:[ \t]+)(?!["'{[|>!&*?])([^\r\n]*:[ \t]+[^\r\n]*)$/gm,
+    /^([ \t]*(?:-[ \t]+)?[A-Za-z_][\w-]*:[ \t]+)(?!["'{[|>!&*?])([^\r\n]*:[ \t]+[^\r\n]*)$/gm,
     (_line, prefix: string, value: string) => `${prefix}${JSON.stringify(value)}`,
   );
 }
