@@ -5,6 +5,22 @@ import org.junit.Test
 
 class MarkdownPreviewTest {
   @Test
+  fun `normalizes CR LF and CRLF before reading Markdown blocks`() {
+    val cases = listOf(
+      "# Heading\n## Subheading" to "Heading Subheading",
+      "- first\n- second\n1. third" to "first second third",
+      "```ts\nconst x = 1;\n```\nAfter" to "const x = 1; After",
+      "| A | B |\n| --- | --- |\n| 1 | 2 |" to "A, B 1, 2",
+    )
+    for (eol in listOf("\n", "\r\n", "\r")) {
+      for ((source, expected) in cases) {
+        assertEquals(expected, markdownToPreview(source.replace("\n", eol)))
+      }
+    }
+    assertEquals("A B C D", markdownToPreview("# A\r\n- B\r> C\n## D"))
+  }
+
+  @Test
   fun `removes complete and unfinished HTML comments`() {
     for (source in listOf(
       "a <!-- x > hidden --> b",

@@ -658,7 +658,7 @@ private fun closerAt(text: String, open: Char, close: Char): Array<Int?> {
 private data class PreviewSource(val text: String, val truncated: Boolean)
 
 private fun boundedPreviewSource(markdown: String): PreviewSource {
-  val normalized = markdown.replace("\r\n", "\n")
+  val normalized = markdown.replace("\r\n", "\n").replace("\r", "\n")
   if (normalized.length <= MAX_PREVIEW_SOURCE) return PreviewSource(normalized, false)
   val body = normalized.trimStart()
   if (body.length <= MAX_PREVIEW_SOURCE) return PreviewSource(body, false)
