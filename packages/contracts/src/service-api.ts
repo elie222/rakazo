@@ -439,6 +439,8 @@ export const SERVICE_ROUTES = {
     path: "/bots/:botId/memory/:documentId",
     scope: "memory:write",
     summary: "Replace a memory document, optionally only at a known revision",
+    // Each replace adds a revision, so a retry after a lost answer must replay, not write again.
+    idempotency: "stored",
     body: z.strictObject({
       content: z.string().max(1_000_000),
       expectedRevision: z.number().int().positive().optional(),
