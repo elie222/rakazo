@@ -222,7 +222,9 @@ describe("graphical computer spec", () => {
     expect(resolveComputerComputeGpus("  ")).toBeUndefined();
     expect(resolveComputerComputeGpus(" all ")).toBe(-1);
     expect(resolveComputerComputeGpus("2")).toBe(2);
-    for (const value of ["0", "-1", "1.5", "ALL", "all,1", "device=0", "two"])
+    // Counts too large to hold exactly, including ones that would become Infinity.
+    const huge = ["9007199254740993", "9".repeat(400)];
+    for (const value of ["0", "-1", "1.5", "ALL", "all,1", "device=0", "two", ...huge])
       expect(() => resolveComputerComputeGpus(value)).toThrow(/SANDBOX_COMPUTER_COMPUTE_GPUS/);
 
     expect(containerCreateOptions(base).HostConfig).not.toHaveProperty("DeviceRequests");

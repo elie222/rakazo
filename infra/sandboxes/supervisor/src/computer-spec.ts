@@ -261,11 +261,12 @@ export function resolveComputerComputeGpus(
   const raw = (value ?? "").trim();
   if (!raw) return undefined;
   if (raw === "all") return -1;
-  if (!/^[1-9]\d*$/.test(raw))
+  const count = /^[1-9]\d*$/.test(raw) ? Number(raw) : Number.NaN;
+  if (!Number.isSafeInteger(count))
     throw new Error(
       `Unsupported SANDBOX_COMPUTER_COMPUTE_GPUS: "${raw}" (expected all or a positive count)`,
     );
-  return Number(raw);
+  return count;
 }
 
 function isGpuRequest(request: Docker.DeviceRequest) {
