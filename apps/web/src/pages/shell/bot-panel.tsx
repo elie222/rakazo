@@ -14,6 +14,7 @@ import {
   connectedModelChoices,
   credentialForModel,
   modelOptionKey,
+  modelThinkingLevels,
   parseModelOptionKey,
   resolveSelectableModelId,
 } from "@rakazo/core";
@@ -291,10 +292,10 @@ export function BotSettings({
         )
       : undefined;
   const effectiveCredential = credentialForModel(credentials, effectiveProvider, effectiveModelId);
-  const thinkingOptions = (
-    effectiveCredential?.thinkingLevels ??
-    effectiveEntry?.thinkingLevels ??
-    []
+  const thinkingOptions = modelThinkingLevels(
+    effectiveCredential,
+    effectiveEntry,
+    effectiveModelId,
   ).filter((level) => level !== "off");
   const defaultThinkingLevel = effectiveCredential?.thinkingLevel ?? "medium";
 

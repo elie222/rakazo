@@ -17,7 +17,7 @@ import type { Prisma, PrismaClient } from "@rakazo/db";
 import { runAsSystem, runAsTenant } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { StoredModelSecret } from "./model-secret.js";
-import { parseModelSecret, serializeModelSecret } from "./model-secret.js";
+import { keptModelSettings, parseModelSecret, serializeModelSecret } from "./model-secret.js";
 import { createManualAnthropicOAuthLogin } from "./pi-anthropic-oauth.js";
 
 export const CHATGPT_OAUTH_PROVIDER = "openai-codex";
@@ -508,7 +508,7 @@ export async function resolveModelAuth(
   }
   const now = opts?.now ?? Date.now();
   let credential = parsed.credential;
-  const maxTokens = parsed.maxTokens;
+  const kept = keptModelSettings(parsed);
   if (credential.expires - now < MIN_OAUTH_VALIDITY_MS) {
     try {
       credential = await oauth.refresh(credential, opts?.signal ?? new AbortController().signal);
@@ -546,7 +546,7 @@ export async function resolveModelAuth(
       serializeModelSecret({
         kind: "oauth",
         credential,
-        ...(maxTokens !== undefined ? { maxTokens } : {}),
+        ...kept,
       }),
     );
   }
@@ -558,7 +558,7 @@ export async function resolveModelAuth(
     secret: {
       kind: "oauth",
       credential,
-      ...(maxTokens !== undefined ? { maxTokens } : {}),
+      ...kept,
     },
     apiKey: auth.apiKey,
   };
