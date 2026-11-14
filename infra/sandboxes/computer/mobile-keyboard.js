@@ -133,6 +133,7 @@ export function attachMobileTrackpad(
   let startX = 0;
   let startY = 0;
   let scrollStartY = 0;
+  let twoFingerStart = [];
   let cursorX = null;
   let cursorY = null;
   let moved = false;
@@ -269,7 +270,14 @@ export function attachMobileTrackpad(
     const touches = Array.from(event.touches ?? []);
     if (touches.length >= 2) {
       // A second finger turns the gesture into a scroll; it never moves or clicks.
-      if (!twoFinger) scrolled = false;
+      if (!twoFinger) {
+        scrolled = touchId !== null && moved;
+        twoFingerStart = touches.map(({ identifier, clientX, clientY }) => ({
+          identifier,
+          clientX,
+          clientY,
+        }));
+      }
       if (touches.length > 2) scrolled = true;
       twoFinger = true;
       scrollY = averageY(touches);
@@ -297,7 +305,16 @@ export function attachMobileTrackpad(
         return;
       }
       const y = averageY(touches);
-      if (Math.abs(scrollStartY - y) > 5) scrolled = true;
+      if (
+        Math.abs(scrollStartY - y) > 5 ||
+        touches.some((touch) => {
+          const start = twoFingerStart.find((item) => item.identifier === touch.identifier);
+          return (
+            !start || Math.hypot(touch.clientX - start.clientX, touch.clientY - start.clientY) > 5
+          );
+        })
+      )
+        scrolled = true;
       if (scrolled) wheel(scrollY - y);
       scrollY = y;
       return;

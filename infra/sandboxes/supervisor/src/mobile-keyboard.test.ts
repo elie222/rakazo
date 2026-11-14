@@ -639,6 +639,21 @@ describe("mobile trackpad touches", () => {
     });
   });
 
+  it("does not right-click for pinches or a second finger added during a drag", () => {
+    for (const pinch of [false, true]) {
+      withTrackpad((fixture) => {
+        fixture.touch("touchstart", 1, 50, 250);
+        if (!pinch) fixture.touch("touchmove", 1, 60, 250);
+        const first = { identifier: 1, clientX: pinch ? 50 : 60, clientY: 250 };
+        fixture.touch("touchstart", 2, 90, 250, [first]);
+        if (pinch) fixture.touch("touchmove", 2, 110, 250, [{ ...first, clientX: 30 }]);
+        fixture.touch("touchend", 2, 110, 250, [first]);
+        fixture.touch("touchend", 1, first.clientX, 250);
+        expect(mouseDowns(fixture)).toHaveLength(0);
+      });
+    }
+  });
+
   it("right-clicks on a two-finger tap", () => {
     withTrackpad((fixture) => {
       const first = { identifier: 1, clientX: 50, clientY: 250 };
