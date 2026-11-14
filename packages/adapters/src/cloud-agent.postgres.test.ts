@@ -251,6 +251,57 @@ describePostgres("cloud agent lifecycle and recovery (PostgreSQL + Cursor emulat
     }
   }, 30_000);
 
+  it("records a poll's result that waited behind a long thread read", async () => {
+    const { thread, launch, poll, state } = await setup();
+    const id = await launch();
+    let locked!: (xactId: string) => void;
+    const lockTaken = new Promise<string>((resolve) => {
+      locked = resolve;
+    });
+    let open!: () => void;
+    const opened = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    const reader = asSystem(prisma).$transaction(
+      async (tx) => {
+        await tx.$queryRaw`SELECT id FROM threads WHERE id = ${thread.id} FOR SHARE`;
+        const rows = await tx.$queryRaw<Array<{ xactId: string }>>`
+            SELECT pg_current_xact_id()::text AS "xactId"`;
+        locked(rows[0]?.xactId ?? "");
+        await opened;
+      },
+      { timeout: 30_000 },
+    );
+    const xactId = await lockTaken;
+    const probe = await runAsSystem("lock probe", () => db.pool.connect());
+    let polled: Promise<void> = Promise.resolve();
+    try {
+      polled = poll(id);
+      polled.catch(() => undefined);
+      // Count from the moment the poll's own write is blocked on the reader.
+      await vi.waitFor(
+        async () => {
+          const result = await probe.query(
+            "SELECT count(*)::int AS waiting FROM pg_locks WHERE locktype = 'transactionid' AND NOT granted AND transactionid::text = $1",
+            [xactId],
+          );
+          expect(result.rows[0].waiting).toBeGreaterThan(0);
+        },
+        { timeout: 10_000, interval: 20 },
+      );
+      // Past Prisma's default five-second budget for the poll's own write.
+      await new Promise((resolve) => setTimeout(resolve, 6_000));
+      open();
+      await polled;
+      expect(await state(id)).toMatchObject({ errorCount: 0, remoteId: expect.any(String) });
+    } finally {
+      open();
+      await reader.catch(() => undefined);
+      await polled.catch(() => undefined);
+      probe.release();
+    }
+  }, 30_000);
+
   it("forwards first-response timing when its cloud-agent card is the first output", async () => {
     const h = await setup();
     await h.launch();
