@@ -20,9 +20,11 @@ import type {
 } from "@modelcontextprotocol/sdk/shared/auth.js";
 import type { SecretStore } from "@rakazo/adapter-kit";
 import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
+import type { McpOAuthBeginClient } from "@rakazo/contracts";
 import {
   isLocalhostOrLoopbackIp,
   MCP_OAUTH_CLIENT_REQUIRED,
+  MOBILE_MCP_OAUTH_STATE_PREFIX,
   mcpOAuthEnvReferences,
   parseMcpOAuthAuthorizationParams,
 } from "@rakazo/contracts";
@@ -838,6 +840,8 @@ type Pending = {
   /** The stored authorization generation this flow began at. */
   generation: number;
   provider: StoredMcpOAuthProvider;
+  /** The bot that gets the server once this sign-in finishes. */
+  botId: string | null;
   createdAt: number;
   expiry?: ReturnType<typeof setTimeout>;
 };
@@ -1205,6 +1209,8 @@ export class McpOAuthBroker {
     spaceId: string;
     userId: string;
     redirectUri: string;
+    client?: McpOAuthBeginClient;
+    botId?: string;
   }): Promise<
     | { status: "authorization_required"; sessionId: string; authorizationUrl: string }
     | { status: "already_connected" | "authorization_not_requested" }
@@ -1238,7 +1244,7 @@ export class McpOAuthBroker {
     if (activeCount >= MAX_PENDING_SESSIONS) {
       throw new Error("Too many pending MCP authorization attempts; wait and try again");
     }
-    const sessionId = randomUUID();
+    const sessionId = `${input.client === "mobile" ? MOBILE_MCP_OAUTH_STATE_PREFIX : ""}${randomUUID()}`;
     let authorizationUrl: URL | undefined;
     const provider = this.createProvider(server, context, loaded, {
       redirectUri: input.redirectUri,
@@ -1307,6 +1313,7 @@ export class McpOAuthBroker {
         endpoint: target,
         redirectUri: input.redirectUri,
         oauthCiphertext: sessionMaterial.ciphertext,
+        botId: input.botId ?? null,
       },
     });
     const expiry = setTimeout(() => {
@@ -1324,6 +1331,7 @@ export class McpOAuthBroker {
       stdio: !server.endpoint,
       generation: loaded.material.oauthGeneration ?? 0,
       provider,
+      botId: input.botId ?? null,
       createdAt: Date.now(),
       expiry,
     });
@@ -1340,7 +1348,7 @@ export class McpOAuthBroker {
     state: string;
     spaceId: string;
     userId: string;
-  }): Promise<{ serverId: string; revision: number }> {
+  }): Promise<{ serverId: string; revision: number; botId: string | null }> {
     await this.sweepExpiredPending();
     if (input.state !== input.sessionId) {
       throw new Error("MCP OAuth session is invalid or expired");
@@ -1383,6 +1391,7 @@ export class McpOAuthBroker {
           redirectUri: session.redirectUri,
           state: session.id,
         }),
+        botId: session.botId,
         createdAt: session.createdAt.getTime(),
         expiry: undefined,
       };
@@ -1461,7 +1470,7 @@ export class McpOAuthBroker {
         });
       },
     );
-    return { serverId: pending.serverId, revision };
+    return { serverId: pending.serverId, revision, botId: pending.botId };
   }
 
   private async sweepExpiredPending(): Promise<void> {
@@ -1474,6 +1483,17 @@ export class McpOAuthBroker {
     await runAsSystem("expire abandoned MCP sign-ins in every Space", () =>
       this.prisma.mcpOAuthSession.deleteMany({ where: { createdAt: { lt: new Date(cutoff) } } }),
     );
+  }
+
+  /** Ends this person's sign-in that the provider refused or failed, so it stops counting
+   * against their limit and can no longer complete. */
+  async discard(input: { sessionId: string; spaceId: string; userId: string }): Promise<void> {
+    const pending = this.pending.get(input.sessionId);
+    if (pending?.spaceId === input.spaceId && pending.userId === input.userId)
+      this.discardPending(input.sessionId, pending);
+    await this.prisma.mcpOAuthSession.deleteMany({
+      where: { id: input.sessionId, spaceId: input.spaceId, userId: input.userId },
+    });
   }
 
   private discardPending(sessionId: string, pending: Pending): void {

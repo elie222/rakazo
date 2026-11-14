@@ -66,7 +66,9 @@ vi.mock("./pages/Board", () => {
   return { BoardPage: () => <div>Board page</div> };
 });
 vi.mock("./pages/IntegrationSetup", () => ({ IntegrationSetupPage: () => null }));
-vi.mock("./pages/McpOAuthCallback", () => ({ McpOAuthCallbackPage: () => null }));
+vi.mock("./pages/McpOAuthCallback", () => ({
+  McpOAuthCallbackPage: () => <div>MCP callback</div>,
+}));
 
 import { App } from "./App";
 
@@ -156,6 +158,31 @@ it("keeps the sign-in page mounted while a signed-out session refetches", async 
     await render({ isPending: false, data: null, error: null });
     expect(container.textContent).toBe("Auth in");
     expect(capability.authMounts).toBe(1);
+  } finally {
+    capability.session = null;
+    await act(async () => root.unmount());
+    vi.unstubAllGlobals();
+  }
+});
+
+it.each([
+  ["hands a mobile sign-in back to the app", "mobile-session-1", "MCP callback"],
+  ["sends a signed-out browser sign-in to sign in first", "session-1", "Auth in"],
+])("on the MCP OAuth callback, %s", async (_name, state, text) => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  capability.session = { isPending: false, data: null, error: null };
+  try {
+    await act(async () => {
+      root.render(
+        <MemoryRouter initialEntries={[`/mcp/oauth/callback?code=code-1&state=${state}`]}>
+          <App />
+        </MemoryRouter>,
+      );
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(container.textContent).toBe(text);
   } finally {
     capability.session = null;
     await act(async () => root.unmount());

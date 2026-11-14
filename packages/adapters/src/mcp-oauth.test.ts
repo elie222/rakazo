@@ -1,4 +1,4 @@
-import { MCP_OAUTH_CLIENT_REQUIRED } from "@rakazo/contracts";
+import { MCP_OAUTH_CLIENT_REQUIRED, MOBILE_MCP_OAUTH_STATE_PREFIX } from "@rakazo/contracts";
 import { getLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { OAuthMaterial } from "./mcp-oauth.js";
@@ -835,6 +835,32 @@ describe("MCP OAuth", () => {
     });
 
     await broker.disconnect({ serverId: "server-1", ...shared.context });
+
+    await expect(
+      broker.complete({
+        sessionId: session.id,
+        code: "authorization-code",
+        state: session.id,
+        spaceId: shared.context.spaceId,
+        userId: shared.context.userId,
+      }),
+    ).rejects.toThrow("MCP OAuth session is invalid or expired");
+  });
+
+  it("ends a sign-in the provider refused, so it no longer counts or completes", async () => {
+    const shared = sharedCredentials({
+      oauth: { codeVerifier: "verifier", redirectUri: "http://127.0.0.1:5173/mcp/oauth/callback" },
+    });
+    const { broker } = await shared.startProcess(
+      vi.fn(async () => {
+        throw new Error("offline");
+      }),
+    );
+    const session = await shared.beginSession({
+      oauth: { codeVerifier: "verifier", redirectUri: "http://127.0.0.1:5173/mcp/oauth/callback" },
+    });
+
+    await broker.discard({ sessionId: session.id, ...shared.context });
 
     await expect(
       broker.complete({
@@ -1801,20 +1827,24 @@ describe("MCP OAuth", () => {
       expect(authorizationUrl.searchParams.get("code_challenge_method")).toBe("S256");
       expect(authorizationUrl.searchParams.get("state")).toBe(started.sessionId);
 
-      const second = await broker.begin({
+      const mobile = await broker.begin({
         serverId: "server-1",
         spaceId: "workspace-1",
         userId: "user-1",
         redirectUri: "http://127.0.0.1:5173/mcp/oauth/callback",
+        client: "mobile",
       });
-      expect(second.status).toBe("authorization_required");
-      if (second.status !== "authorization_required") throw new Error("OAuth was not requested");
-      expect(second.sessionId).not.toBe(started.sessionId);
+      expect(mobile.status).toBe("authorization_required");
+      if (mobile.status !== "authorization_required") throw new Error("OAuth was not requested");
+      expect(mobile.sessionId).not.toBe(started.sessionId);
+      expect(mobile.sessionId.startsWith(MOBILE_MCP_OAUTH_STATE_PREFIX)).toBe(true);
+      expect(new URL(mobile.authorizationUrl).searchParams.get("state")).toBe(mobile.sessionId);
+      expect(started.sessionId.startsWith(MOBILE_MCP_OAUTH_STATE_PREFIX)).toBe(false);
 
       await broker.complete({
-        sessionId: started.sessionId,
+        sessionId: mobile.sessionId,
         code: "authorization-code",
-        state: started.sessionId,
+        state: mobile.sessionId,
         spaceId: "workspace-1",
         userId: "user-1",
       });

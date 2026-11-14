@@ -52,6 +52,7 @@ export { identitySource } from "./identity-source.js";
 export * from "./import-setup.js";
 export * from "./inbound-routine.js";
 export * from "./instruction-diff.js";
+export * from "./integration-catalog.js";
 export * from "./keyed-listeners.js";
 export * from "./list-search.js";
 export * from "./logo-avatar-activity.js";

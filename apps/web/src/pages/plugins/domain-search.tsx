@@ -51,10 +51,12 @@ export function useDomainSearch() {
 
 export function DomainSearch({
   state,
+  busy,
   onBack,
   onPick,
 }: {
   state: DomainSearchState;
+  busy: boolean;
   onBack: () => void;
   onPick: (result: IntegrationCatalogResult, surface: IntegrationCatalogSurface) => void;
 }) {
@@ -142,7 +144,7 @@ export function DomainSearch({
                     type="button"
                     variant="secondary"
                     size="sm"
-                    disabled={!canAdd}
+                    disabled={!canAdd || busy}
                     title={canAdd ? undefined : t`Manual setup required`}
                     onClick={() => onPick(result, surface)}
                   >

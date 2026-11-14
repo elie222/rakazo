@@ -167,10 +167,12 @@ import {
 } from "./integration-settings.js";
 import {
   BotMcpServerSchema,
+  McpOAuthClientSchema,
   McpServerConfigInput,
   McpServerSchema,
   McpSourcePresetSchema,
 } from "./mcp.js";
+import { McpOAuthBeginClientSchema } from "./mcp-oauth-return.js";
 import {
   ModelApiProtocolSchema,
   ModelBackupChoiceSchema,
@@ -304,6 +306,15 @@ export const OrganizationListSchema = z.object({
   ),
 });
 export type OrganizationList = z.infer<typeof OrganizationListSchema>;
+
+const McpOAuthBeginSchema = z.discriminatedUnion("status", [
+  z.object({
+    status: z.literal("authorization_required"),
+    sessionId: Id,
+    authorizationUrl: z.string().url(),
+  }),
+  z.object({ status: z.enum(["already_connected", "authorization_not_requested"]) }),
+]);
 
 export const appContract = {
   analytics: { screen: oc.input(AnalyticsScreenInput).output(z.object({ ok: z.literal(true) })) },
@@ -1165,11 +1176,26 @@ export const appContract = {
     servers: {
       list: oc.output(z.array(McpServerSchema)),
       create: oc.input(McpServerConfigInput).output(McpServerSchema),
+      /** Adds a remote server by URL, reusing one already added, and starts its sign-in. The bot
+       * gets the server once the sign-in finishes, or right away when none is needed. */
+      connect: oc
+        .input(
+          z.object({
+            name: z.string().trim().min(1).max(120),
+            endpoint: z.string().url().max(2048),
+            botId: Id.optional(),
+            redirectUri: z.string().url().optional(),
+            client: McpOAuthBeginClientSchema,
+          }),
+        )
+        .output(z.object({ server: McpServerSchema, signIn: McpOAuthBeginSchema })),
       update: oc
         .input(
           z.union([
             z.object({ id: Id, config: McpServerConfigInput }),
             z.object({ id: Id, secret: z.string().min(1).max(16384) }),
+            /** Saves a client for the server and keeps the rest as stored. */
+            z.object({ id: Id, oauthClient: McpOAuthClientSchema }),
           ]),
         )
         .output(McpServerSchema),
@@ -1206,21 +1232,27 @@ export const appContract = {
         .output(z.array(BotMcpServerSchema)),
     },
     oauth: {
-      begin: oc.input(z.object({ serverId: Id, redirectUri: z.string().url().optional() })).output(
-        z.discriminatedUnion("status", [
+      begin: oc
+        .input(
           z.object({
-            status: z.literal("authorization_required"),
-            sessionId: Id,
-            authorizationUrl: z.string().url(),
+            serverId: Id,
+            redirectUri: z.string().url().optional(),
+            client: McpOAuthBeginClientSchema,
           }),
-          z.object({
-            status: z.enum(["already_connected", "authorization_not_requested"]),
-          }),
-        ]),
-      ),
+        )
+        .output(McpOAuthBeginSchema),
+      /** Finishes a sign-in from the provider's redirect, including a refusal or an error. */
       complete: oc
-        .input(z.object({ sessionId: Id, code: z.string().min(1), state: z.string().min(1) }))
-        .output(z.object({ ok: z.literal(true) })),
+        .input(
+          z.object({
+            sessionId: Id,
+            state: z.string().min(1),
+            code: z.string().min(1).optional(),
+            error: z.string().max(200).optional(),
+            errorDescription: z.string().max(1000).optional(),
+          }),
+        )
+        .output(z.object({ ok: z.literal(true), status: z.enum(["connected", "cancelled"]) })),
       disconnect: oc.input(z.object({ serverId: Id })).output(z.object({ ok: z.literal(true) })),
     },
   },
