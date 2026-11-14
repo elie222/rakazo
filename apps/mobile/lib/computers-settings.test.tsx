@@ -415,3 +415,26 @@ it("keeps the newest list when an earlier load finishes last", async () => {
   await settle();
   expect(container.textContent).not.toContain("Laptop");
 });
+
+it("restores an uncertain removal after returning when both requests fail", async () => {
+  let failRemove!: (error: Error) => void;
+  vi.mocked(listUserDevices)
+    .mockResolvedValueOnce([laptop])
+    .mockRejectedValue(new Error("list failed"));
+  vi.mocked(removeUserDevice).mockReturnValue(new Promise((_, reject) => (failRemove = reject)));
+  await render();
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('[aria-label="Remove Laptop, Connected"]')?.click(),
+  );
+  await act(async () => confirmRemove()?.onPress?.());
+  await act(async () => {
+    blur();
+    focus();
+  });
+  await settle();
+  await act(async () => failRemove(new Error("remove failed")));
+  await settle();
+  expect(container.textContent).toContain("LaptopConnected");
+  expect(container.textContent).toContain("list failed");
+  expect(container.textContent).not.toContain("remove failed");
+});

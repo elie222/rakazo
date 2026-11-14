@@ -87,7 +87,6 @@ export default function ComputersSettings() {
         visit.current += 1;
         loadGeneration.current += 1;
         refreshGeneration.current += 1;
-        unconfirmed.current.clear();
         setRefreshing(false);
         pendingRef.current = false;
         setPending(false);
@@ -123,8 +122,8 @@ export default function ComputersSettings() {
     try {
       await removeUserDevice(device.deviceId);
     } catch (cause) {
+      unconfirmed.current.set(device.deviceId, device);
       if (visit.current === startedVisit) {
-        unconfirmed.current.set(device.deviceId, device);
         setError(errorText(cause, t`Could not remove`));
       }
     } finally {

@@ -204,6 +204,29 @@ let passwordChangesInFlight = 0;
 export function passwordChangeInFlight() {
   return passwordChangesInFlight > 0;
 }
+export async function fetchAuthenticatedAccountJson<T>(
+  path: string,
+  init: RequestInit,
+  invalidJsonFallback?: T,
+): Promise<{ response: Response; body: T; invalidJson?: boolean }> {
+  const context = await captureApiRequestContext(null);
+  const result = await fetchMobileJson<T>(
+    `${context.apiBase}${path}`,
+    { ...init, headers: { origin: "rakazo://", ...context.headers } },
+    invalidJsonFallback,
+  );
+  if (
+    result.response.status === 401 &&
+    context.headers.authorization &&
+    context.apiBase === currentApiBase() &&
+    context.sessionGeneration === currentSessionGeneration() &&
+    !passwordChangesInFlight
+  ) {
+    await rejectSession();
+  }
+  return result;
+}
+
 export async function fetchMobileJson<T>(
   input: Parameters<typeof fetch>[0],
   init: RequestInit,
