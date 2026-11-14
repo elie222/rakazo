@@ -22,6 +22,7 @@ import {
 import { getLogger } from "@rakazo/logging";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { runLeaseFor } from "./run-messages.js";
+import { isExactNoResponse, PEER_NOTHING_NEW_REPLY } from "./silent-reply.js";
 
 /**
  * The hop the current run sits at, read back from the message that woke this
@@ -91,6 +92,13 @@ export async function messageBot(
 ) {
   const message = String(input.message ?? "").trim();
   if (!message) return { ok: false as const, error: "message is required" };
+  if (isExactNoResponse(message)) {
+    return {
+      ok: false as const,
+      error:
+        "The silent reply marker cannot be sent to another bot; send a real update or stay silent.",
+    };
+  }
   if (message.length > BOT_MESSAGE_MAX_LENGTH) {
     return { ok: false as const, error: BOT_MESSAGE_TOO_LONG };
   }
@@ -390,7 +398,7 @@ export async function returnBotMessageOutcome(
     sender,
     {
       bot_id: source.fromBotId,
-      message: clampBotMessage(text),
+      message: clampBotMessage(isExactNoResponse(text) ? PEER_NOTHING_NEW_REPLY : text),
       intent,
       // One key per run so status vs result (executor vs reconciler) cannot double-deliver.
       deliveryKey: `auto-outcome:${run.id}`,

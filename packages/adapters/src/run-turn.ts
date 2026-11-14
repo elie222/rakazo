@@ -89,6 +89,7 @@ import {
 import {
   completionMessageSegments,
   emptyDelegatedToolTurnShouldFail,
+  peerInformationalReplyMayBeSilent,
   runAllowsSilentEmpty,
   runPromotesMidTurnNarration,
   TOOL_STEPS_WITHOUT_RESPONSE,
@@ -922,9 +923,13 @@ export async function completeRun(ctx: RunContext) {
     !reply.publishedTerminalSubagent &&
     reply.messageSegments.every((block) => block.kind === "text") &&
     (await groupSilenceStillAllowed(ctx));
+  const informationalPeerMayBeSilent = peerInformationalReplyMayBeSilent(
+    run.trigger,
+    ctx.source.peerMessage?.intent,
+  );
   const silentReply = groupSilentEnd
     ? { assembled: "", blocks: [] }
-    : ctx.allowSilentEmptyRun || ctx.groupReplyOptional
+    : ctx.allowSilentEmptyRun || ctx.groupReplyOptional || informationalPeerMayBeSilent
       ? stripNoResponseReply(reply.assembled, reply.messageSegments)
       : (ctx.source.peerMessage?.intent === "request" ||
             ctx.source.peerMessage?.intent === "question") &&
@@ -937,7 +942,10 @@ export async function completeRun(ctx: RunContext) {
     // "…" fallback so we do not add a junk final bubble.
     completionBlocks = completionMessageSegments(completionBlocks, {
       allowSilentEmpty:
-        ctx.allowSilentEmptyRun || reply.publishedMidTurnUserMessage || groupSilentEnd,
+        ctx.allowSilentEmptyRun ||
+        informationalPeerMayBeSilent ||
+        reply.publishedMidTurnUserMessage ||
+        groupSilentEnd,
       emptyResponseText: ctx.emptyResponseText,
       suppressOutput: ctx.state.handedOff || isBackgroundRunTrigger(run.trigger),
       skipEmptyFallback: reply.publishedTerminalSubagent || reply.publishedMidTurnUserMessage,

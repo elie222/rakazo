@@ -25,6 +25,13 @@ export function runAllowsSilentEmpty(trigger: string): boolean {
   return trigger === "reaction" || trigger === "routine" || isBackgroundRunTrigger(trigger);
 }
 
+/** Only explicitly informational peer intents may finish without a visible response. */
+export function peerInformationalReplyMayBeSilent(trigger: string, intent?: string): boolean {
+  return (
+    trigger === "bot_message" && (intent === "status" || intent === "fyi" || intent === "result")
+  );
+}
+
 /**
  * Whether text written before a tool call may become a durable mid-turn chat bubble.
  * Routine and bot-to-bot runs hold it back, using the last segment as the final reply
