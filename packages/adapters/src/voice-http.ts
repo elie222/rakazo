@@ -216,7 +216,10 @@ export async function verifyVoiceHttpGet(options: {
       headers: options.headers,
       signal: voiceDeadline(options.signal, 20_000),
     });
-    if (res.ok) return { ok: true };
+    if (res.ok) {
+      cancelResponseBody(res);
+      return { ok: true };
+    }
     const body = await readVoiceJson(res);
     return {
       ok: false,
