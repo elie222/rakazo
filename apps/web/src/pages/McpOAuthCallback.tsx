@@ -19,10 +19,16 @@ export function McpOAuthCallbackPage() {
   const [done, setDone] = useState(false);
   const handledState = useRef<string | null>(null);
   useEffect(() => {
+    const fail = (message: string) => {
+      setError(message);
+      const channel = new BroadcastChannel(POPUP_NAME);
+      channel.postMessage({ type: "mcp-oauth-failed", message });
+      channel.close();
+    };
     const code = params.get("code");
     const state = params.get("state");
     if (!code || !state) {
-      setError(params.get("error_description") ?? t`OAuth authorization was cancelled.`);
+      fail(params.get("error_description") ?? t`OAuth authorization was cancelled.`);
       return;
     }
     if (handledState.current === state) return;
@@ -40,7 +46,7 @@ export function McpOAuthCallbackPage() {
         }
         navigate("/app?mcp_oauth=connected", { replace: true });
       })
-      .catch((err: unknown) => setError(errorText(err, t`Could not complete OAuth`)));
+      .catch((err: unknown) => fail(errorText(err, t`Could not complete OAuth`)));
   }, [navigate, params, t]);
   const showReturn = Boolean(error) && window.name !== POPUP_NAME;
   return (

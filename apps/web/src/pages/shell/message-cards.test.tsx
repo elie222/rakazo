@@ -180,3 +180,17 @@ it("links OAuth failures in chat to the shared recovery guide without approving 
     await act(async () => root.unmount());
   }
 });
+
+it("rejects OAuth callback failures and clears its timers", async () => {
+  vi.useFakeTimers();
+  const { channels } = popupFlow({ focused: false });
+  const flow = connectMcpOauth("server");
+  const rejection = expect(flow).rejects.toThrow("Consent denied");
+  await vi.advanceTimersByTimeAsync(0);
+  channels[0]?.onmessage?.({
+    data: { type: "mcp-oauth-failed", message: "Consent denied" },
+  } as MessageEvent);
+  await rejection;
+  expect(channels[0]?.close).toHaveBeenCalledOnce();
+  expect(vi.getTimerCount()).toBe(0);
+});
