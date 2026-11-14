@@ -384,14 +384,19 @@ export function VoiceSettingsOverlay({
     setNotice(null);
     markPending("test");
     try {
-      await speaker.speak(t`Hi, this is how I'll sound when I read replies out loud.`, {
-        spaceId,
-        scope,
-      });
+      const outcome = await speaker.speak(
+        t`Hi, this is how I'll sound when I read replies out loud.`,
+        {
+          spaceId,
+          scope,
+        },
+      );
       if (speaker.state.error) {
         setError(speaker.state.error);
         return;
       }
+      // An empty result means the sample was cut off, so it has no voice of its own to report.
+      if (outcome === "") return;
       const served = speaker.substitutedVoice;
       setNotice(
         served
