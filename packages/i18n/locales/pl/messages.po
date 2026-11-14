@@ -4217,8 +4217,8 @@ msgstr "Utwórz przestrzeń"
 
 #: apps/mobile/app/sign-in.tsx
 #: apps/web/src/pages/Auth.tsx
-msgid "Create your Rakazo"
-msgstr "Utwórz swoje Rakazo"
+msgid "Create your account"
+msgstr "Utwórz konto"
 
 #: apps/mobile/components/thread/message-bubble.tsx
 #: apps/web/src/components/AskCard.tsx
