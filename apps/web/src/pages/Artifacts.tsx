@@ -61,6 +61,7 @@ import { rpc } from "../lib/rpc";
 import { createStoredPreference } from "../lib/stored-preference";
 import { useObjectUrl } from "../lib/use-object-url";
 import { errorText } from "../lib/user-error";
+import { useRedrawAtMidnight } from "./shell/use-redraw-at-midnight";
 import { WindowChrome } from "./WindowChrome";
 
 type ViewMode = "grid" | "list";
@@ -92,6 +93,7 @@ function matchesCalendarDateFilter(iso: string, filter: DateFilter, now: Date): 
 export function ArtifactsPage() {
   const { artifactId } = useParams<{ artifactId?: string }>();
   const navigate = useNavigate();
+  const today = useRedrawAtMidnight();
   const { t } = useLingui();
   const [activeBotId, setActiveBotId] = useState<string | null>(null);
   const viewMode = viewModePreference.use();
@@ -160,7 +162,8 @@ export function ArtifactsPage() {
         (item.description?.toLowerCase().includes(query) ?? false)
       );
     });
-  }, [items, searchQuery, dateFilter]);
+    // biome-ignore lint/correctness/useExhaustiveDependencies: The midnight tick invalidates cached date filters.
+  }, [items, searchQuery, dateFilter, today]);
 
   const clientFilterActive = searchQuery.trim().length > 0 || dateFilter !== "all";
   const autoFetchedCursorRef = useRef<string | null>(null);
