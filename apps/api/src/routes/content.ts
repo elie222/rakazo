@@ -265,7 +265,7 @@ export function contentRoutes(ctx: RouterContext) {
     },
     search: {
       query: authed.search.query.handler(async ({ context, input }) => ({
-        hits: await querySpaceSearch(deps.prisma, context.actor, input.q),
+        hits: await querySpaceSearch(deps.prisma, context.actor, input.q, context.signal),
       })),
     },
     links: {
