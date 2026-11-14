@@ -6,7 +6,7 @@ import type { RefObject } from "react";
 import { useCallback, useRef, useState } from "react";
 import { Linking } from "react-native";
 import type { rpc as apiRpc } from "./api";
-import type { MobileModel } from "./mobile-types";
+import type { MobileModel, MobileModelCredential } from "./mobile-types";
 import { cancelModelOAuthAttempt, finishModelOAuthAttempt, waitForModelOAuth } from "./model-auth";
 import type { SettingsTarget } from "./settings-target";
 import { errorText } from "./user-error";
@@ -19,6 +19,7 @@ type SubscriptionSignInOptions = {
   scope: SettingsTarget["scope"];
   credentialIdRef: RefObject<string | null>;
   setCredentialId: (id: string) => void;
+  onSaved?: (credential: MobileModelCredential) => void;
   modelId: string;
   load: (preferred: { modelId?: string }) => Promise<unknown>;
   finishConnecting: (connectedModelId: string, connectedCredentialId: string) => Promise<boolean>;
@@ -38,6 +39,7 @@ export function useSubscriptionSignIn({
   scope,
   credentialIdRef,
   setCredentialId,
+  onSaved,
   modelId,
   load,
   finishConnecting,
@@ -88,6 +90,7 @@ export function useSubscriptionSignIn({
     oauthLoginIdRef.current = null;
     credentialIdRef.current = saved.id;
     setCredentialId(saved.id);
+    onSaved?.(saved);
     setOauth(null);
     if (await finishConnecting(selected?.id ?? modelId, saved.id)) return;
     await load({ modelId });

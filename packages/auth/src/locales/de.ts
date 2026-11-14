@@ -24,16 +24,19 @@ export const DE_MESSAGES: Record<string, string> = {
   "Enter this code in Rakazo to confirm it's you:":
     "Gib diesen Code in Rakazo ein, um zu bestätigen, dass du es bist:",
   "Welcome to Rakazo": "Willkommen bei Rakazo",
-  "Thanks for signing up for Rakazo.": "Danke, dass du dich bei Rakazo registriert hast.",
-  "Rakazo also has apps for": "Rakazo gibt es auch als App für",
-  "Questions or ideas?": "Fragen oder Ideen?",
-  "Join us on Discord": "Komm zu uns auf Discord",
-  "Rakazo is open source. If you like it,": "Rakazo ist Open Source. Wenn es dir gefällt,",
-  "a star on GitHub": "hilft ein Stern auf GitHub",
-  "helps others find it.": "anderen, es zu finden.",
-  "Want to run it on your own servers?": "Möchtest du es auf deinen eigenen Servern betreiben?",
-  "Self-host Rakazo": "Rakazo selbst hosten",
-  "Have any questions? Reply to this email.": "Hast du Fragen? Antworte einfach auf diese E-Mail.",
+  "Welcome to Rakazo. The people who get the most out of it do three things:":
+    "Willkommen bei Rakazo. Wer das meiste aus Rakazo herausholt, macht drei Dinge:",
+  "Get the apps": "Hol dir die Apps",
+  "Rakazo runs on {platforms}, so your bots can reach you wherever you are.":
+    "Rakazo läuft auf {platforms}, damit deine Bots dich überall erreichen.",
+  "Join the community": "Werde Teil der Community",
+  "See what others are building, get help fast, and tell us what to build next on {discord}.":
+    "Sieh, was andere bauen, bekomm schnell Hilfe und sag uns auf {discord}, was wir als Nächstes bauen sollen.",
+  "Star us on GitHub": "Gib uns einen Stern auf GitHub",
+  "Rakazo is open source. {star} helps more people find it.":
+    "Rakazo ist Open Source. {star} hilft mehr Menschen, es zu finden.",
+  "A star on GitHub": "Ein Stern auf GitHub",
+  "Questions? Just reply. I read every one.": "Fragen? Antworte einfach. Ich lese jede Nachricht.",
   Unsubscribe: "Abmelden",
   "Invite a friend": "Lade einen Freund ein",
   "Invite a friend to Rakazo: they get {weeks} weeks free, and you earn a free month when they start a qualifying subscription with a new card.":
@@ -41,10 +44,6 @@ export const DE_MESSAGES: Record<string, string> = {
   "Open Rakazo": "Öffne Rakazo",
   "and choose Invite friends for your link.":
     "und wähle „Freunde einladen“, um deinen Link zu erhalten.",
-  "Have any questions? Just reply to this email.":
-    "Hast du Fragen? Antworte einfach auf diese E-Mail.",
-  "If you're enjoying Rakazo,": "Wenn dir Rakazo gefällt,",
-  "give us a star on GitHub": "gib uns einen Stern auf GitHub",
   "We received your Rakazo plugin": "Wir haben dein Rakazo-Plugin erhalten",
   "Thanks for submitting a plugin to the Rakazo marketplace.":
     "Danke, dass du ein Plugin für den Rakazo-Marktplatz eingereicht hast.",

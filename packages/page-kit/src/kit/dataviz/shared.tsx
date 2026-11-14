@@ -48,6 +48,17 @@ export function ChartTip({ tip, width }: { tip: TipState | null; width: number }
  */
 export function useActive(count: number, indexAt: (x: number, y: number) => number | null) {
   const [active, setActive] = useState<number | null>(null);
+  const [pointerTarget, setPointerTarget] = useState<Element | null>(null);
+  useEffect(() => {
+    const target = pointerTarget;
+    if (active === null || !target) return;
+    const dismissOutside = (event: globalThis.PointerEvent) => {
+      if (!event.composedPath().includes(target)) setActive(null);
+    };
+    const document = target.ownerDocument;
+    document.addEventListener("pointerdown", dismissOutside, true);
+    return () => document.removeEventListener("pointerdown", dismissOutside, true);
+  }, [active, pointerTarget]);
   const current = active !== null && active < count ? active : null;
   const onPointerMove = (event: PointerEvent<Element>) => {
     const box = event.currentTarget.getBoundingClientRect();
@@ -79,8 +90,15 @@ export function useActive(count: number, indexAt: (x: number, y: number) => numb
       tabIndex: count > 0 ? 0 : undefined,
       onPointerMove,
       // A tap on a touch screen picks the item under the finger, as hovering does.
-      onPointerDown: onPointerMove,
-      onPointerLeave: () => setActive(null),
+      onPointerDown: (event: PointerEvent<Element>) => {
+        setPointerTarget(event.currentTarget);
+        onPointerMove(event);
+      },
+      onPointerLeave: (event: PointerEvent<Element>) => {
+        // Touch pointers leave when the finger lifts, not just when leaving the chart.
+        if (event.pointerType !== "touch") setActive(null);
+      },
+      onPointerCancel: () => setActive(null),
       onKeyDown,
       onBlur: () => setActive(null),
     },

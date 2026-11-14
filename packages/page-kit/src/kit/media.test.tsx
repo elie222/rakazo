@@ -154,6 +154,71 @@ describe("media", () => {
     expect(current()).toEqual(["Show photo 1"]);
     act(() => root.unmount());
   });
+
+  describe.each([
+    { dir: "ltr", sign: 1, forward: "ArrowRight", back: "ArrowLeft" },
+    { dir: "rtl", sign: -1, forward: "ArrowLeft", back: "ArrowRight" },
+  ])("in a $dir page", ({ dir, sign, forward, back }) => {
+    const WIDTH = 300;
+    const mountGallery = () => {
+      vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(WIDTH);
+      const scrollTo = vi.spyOn(Element.prototype, "scrollTo");
+      const wrapper = host.appendChild(document.createElement("div"));
+      wrapper.dir = dir;
+      const root = createRoot(wrapper);
+      act(() => root.render(<Gallery photos={[{ src: PNG }, { src: PNG }, { src: PNG }]} />));
+      const track = wrapper.querySelector<HTMLElement>(".rk-gallery-track")!;
+      const current = () =>
+        [...wrapper.querySelectorAll("button[aria-current]")].map((dot) =>
+          dot.getAttribute("aria-label"),
+        );
+      const press = (key: string) =>
+        act(() => {
+          track.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
+        });
+      const scrollTrack = (left: number) =>
+        act(() => {
+          Object.defineProperty(track, "scrollLeft", { value: left, configurable: true });
+          track.dispatchEvent(new Event("scroll"));
+        });
+      return { wrapper, scrollTo, current, press, scrollTrack };
+    };
+
+    it("scrolls to the chosen photo's side and marks its dot", () => {
+      const { wrapper, scrollTo, current } = mountGallery();
+      click(wrapper.querySelector('button[aria-label="Show photo 2"]'));
+      expect(scrollTo).toHaveBeenLastCalledWith(expect.objectContaining({ left: sign * WIDTH }));
+      expect(current()).toEqual(["Show photo 2"]);
+    });
+
+    it("marks the photo the track has scrolled to, never none", () => {
+      const { current, scrollTrack } = mountGallery();
+      scrollTrack(sign * WIDTH);
+      expect(current()).toEqual(["Show photo 2"]);
+      scrollTrack(sign * 2 * WIDTH);
+      expect(current()).toEqual(["Show photo 3"]);
+      scrollTrack(0);
+      expect(current()).toEqual(["Show photo 1"]);
+      scrollTrack(-sign * WIDTH);
+      expect(current()).toEqual(["Show photo 1"]);
+      scrollTrack(sign * 5 * WIDTH);
+      expect(current()).toEqual(["Show photo 3"]);
+    });
+
+    it("steps with the arrow that points the way the photos lie, stopping at both ends", () => {
+      const { scrollTo, current, press } = mountGallery();
+      press(back);
+      expect(current()).toEqual(["Show photo 1"]);
+      press(forward);
+      expect(current()).toEqual(["Show photo 2"]);
+      expect(scrollTo).toHaveBeenLastCalledWith(expect.objectContaining({ left: sign * WIDTH }));
+      press(forward);
+      press(forward);
+      expect(current()).toEqual(["Show photo 3"]);
+      press(back);
+      expect(current()).toEqual(["Show photo 2"]);
+    });
+  });
 });
 
 describe("cards and people", () => {
@@ -324,6 +389,38 @@ describe("calendar", () => {
     ]);
     expect(host.textContent).not.toContain("Lost");
     render(<MonthView month="soon" />);
+  });
+
+  it("sizes a week from visible events only, including the first and last day", () => {
+    render(
+      <WeekView
+        week="2026-11-09"
+        events={[
+          { date: "2026-11-08", start: 0, end: 1, title: "Previous week" },
+          { date: " 2026-11-09 ", start: 9, end: 10, title: "First day" },
+          { date: "2026-11-15", start: 10, end: 11, title: "Last day" },
+          { date: "2026-11-16", start: 22, end: 23, title: "Next week" },
+        ]}
+      />,
+    );
+    expect((host.querySelector(".rk-cal-body") as HTMLElement).style.height).toBe("88px");
+    expect(host.textContent).toContain("First day");
+    expect(host.textContent).toContain("Last day");
+    expect(host.textContent).not.toContain("Previous week");
+    expect(host.textContent).not.toContain("Next week");
+  });
+
+  it("uses the empty-week range when every event is outside the displayed days", () => {
+    render(
+      <WeekView
+        week="2026-12-28"
+        events={[
+          { date: "2026-12-27", start: 0, end: 1, title: "Before" },
+          { date: "2027-01-04", start: 22, end: 23, title: "After" },
+        ]}
+      />,
+    );
+    expect((host.querySelector(".rk-cal-body") as HTMLElement).style.height).toBe("440px");
   });
 
   it("places week events by hour and draws the now line only on today", () => {

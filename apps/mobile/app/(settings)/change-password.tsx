@@ -1,7 +1,7 @@
 import { useLingui } from "@lingui/react/macro";
 import { MAX_PASSWORD_LENGTH, PASSWORD_RULES } from "@rakazo/core";
 import { useRouter } from "expo-router";
-import { useEffect, useRef, useState } from "react";
+import { useContext, useEffect, useRef, useState } from "react";
 import {
   KeyboardAvoidingView,
   Platform,
@@ -14,11 +14,14 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeActionButton } from "../../components/native-action-button";
 import { changePassword } from "../../lib/api-auth";
 import { mobileTokens } from "../../lib/appearance";
+import { CallKeyboardContext } from "../../lib/call-keyboard-context";
+import { endCallBeforeSessionEnd } from "../../lib/call-session";
 import { native, useThemedStyles } from "../../lib/native";
 import { useSideInsets } from "../../lib/side-insets";
 import { errorText } from "../../lib/user-error";
 
 export default function ChangePassword() {
+  const call = useContext(CallKeyboardContext);
   const sideInsets = useSideInsets();
   const router = useRouter();
   const { t } = useLingui();
@@ -40,7 +43,7 @@ export default function ChangePassword() {
 
   function close() {
     if (router.canGoBack()) router.back();
-    else router.replace("/account");
+    else router.replace("/profile");
   }
 
   async function save() {
@@ -53,6 +56,8 @@ export default function ChangePassword() {
     setPending(true);
     setError(null);
     try {
+      // Hang up while the session still exists, so the server records the call's end.
+      await endCallBeforeSessionEnd();
       await changePassword(currentPassword, newPassword);
       if (!mounted.current) return;
       setCurrentPassword("");
@@ -70,6 +75,7 @@ export default function ChangePassword() {
   return (
     <SafeAreaView edges={["bottom"]} style={styles.screen}>
       <KeyboardAvoidingView
+        enabled={!call}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         style={styles.screen}
       >

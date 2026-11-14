@@ -37,6 +37,8 @@ const composioSdkState = vi.hoisted(() => ({
     resultType?: "completed" | "failed" | "blocked";
   },
   failTools: null as null | string[],
+  repeatToolCursor: false,
+  rawToolQueries: [] as Array<{ toolkit_slug: string; limit: number; cursor?: string }>,
   logIds: null as null | string[],
   connectedAccounts: {
     list: async (_query?: Record<string, unknown>) => ({ items: [] as Array<{ id: string }> }),
@@ -75,6 +77,25 @@ vi.mock("@composio/core", () => ({
         return session;
       },
     };
+
+    getClient() {
+      return {
+        tools: {
+          list: async (query: { toolkit_slug: string; limit: number; cursor?: string }) => {
+            composioSdkState.rawToolQueries.push(query);
+            const offset = Number(query.cursor ?? 0);
+            const end = Math.min(offset + query.limit, 250);
+            return {
+              items: Array.from({ length: end - offset }, (_, index) => ({
+                slug: `GMAIL_ACTION_${offset + index}`,
+                description: "An action",
+              })),
+              next_cursor: composioSdkState.repeatToolCursor ? "0" : end < 250 ? String(end) : null,
+            };
+          },
+        },
+      };
+    }
 
     readonly connectedAccounts = {
       list: (query?: Record<string, unknown>) => composioSdkState.connectedAccounts.list(query),
@@ -149,6 +170,62 @@ vi.mock("@composio/core", () => ({
     }
   },
 }));
+
+describe("composio app tools", () => {
+  it("rejects a repeated catalog cursor", async () => {
+    composioSdkState.repeatToolCursor = true;
+    try {
+      await expect(
+        new ComposioConnector().listAppTools(
+          {
+            operationId: "app-tools",
+            traceId: "app-tools",
+            spaceId: "workspace",
+            userId: "user-1",
+            signal: new AbortController().signal,
+          },
+          "gmail",
+        ),
+      ).rejects.toThrow("pagination did not terminate");
+    } finally {
+      composioSdkState.repeatToolCursor = false;
+    }
+  });
+
+  it("does not fetch tools for an aborted request", async () => {
+    const signal = AbortSignal.abort(new Error("Cancelled"));
+    const before = composioSdkState.rawToolQueries.length;
+    await expect(
+      new ComposioConnector().listAppTools(
+        {
+          operationId: "app-tools",
+          traceId: "app-tools",
+          spaceId: "workspace",
+          userId: "user-1",
+          signal,
+        },
+        "gmail",
+      ),
+    ).rejects.toThrow("Cancelled");
+    expect(composioSdkState.rawToolQueries).toHaveLength(before);
+  });
+  it("lists the app's own actions rather than the session's search tools", async () => {
+    composioToolkitDirectory.invalidate();
+    const tools = await new ComposioConnector().listAppTools(
+      {
+        operationId: "composio-app-tools",
+        traceId: "composio-app-tools",
+        spaceId: "workspace",
+        userId: "user-1",
+        signal: new AbortController().signal,
+      },
+      "gmail",
+    );
+    expect(tools).toHaveLength(250);
+    expect(tools.at(-1)?.name).toBe("GMAIL_ACTION_249");
+    expect(composioSdkState.rawToolQueries.at(-1)?.toolkit_slug.toLowerCase()).toBe("gmail");
+  });
+});
 
 describe("composio tool mapping", () => {
   it("maps OpenAI-style session tools and raw slugs", () => {
@@ -503,6 +580,64 @@ describe("composio tool mapping", () => {
           toolkits: ["GITHUB"],
           connectedAccounts: { GITHUB: ["ca_current"] },
         },
+      });
+    } finally {
+      restore();
+    }
+  });
+
+  it.each([
+    { tool: "GITHUB_MCP_LIST_REPOS", batch: false, stale: "github", blocked: false },
+    { tool: "github_mcp_list_repos", batch: true, stale: "github", blocked: false },
+    { tool: "GITHUB_GET_REPOS", batch: false, stale: "github", blocked: true },
+    { tool: "GITHUB_GET_REPOS", batch: true, stale: "github", blocked: true },
+    { tool: "GITHUB_MCP_LIST_REPOS", batch: false, stale: "github_mcp", blocked: true },
+    { tool: "GITHUB_MCP_LIST_REPOS", batch: true, stale: "github_mcp", blocked: true },
+  ])("routes overlapping toolkit names: %o", async ({ tool, batch, stale, blocked }) => {
+    composioSdkState.created.length = 0;
+    composioSdkState.executions.length = 0;
+    composioSdkState.sessions.clear();
+    composioToolkitDirectory.invalidate();
+    const restore = stubActiveAccounts([stale === "github" ? "ca-mcp" : "ca-github"]);
+    try {
+      const connector = new ComposioConnector();
+      const args = batch ? { tools: [{ tool_slug: tool, arguments: {} }] } : {};
+      const call = {
+        tool: batch ? "COMPOSIO_MULTI_EXECUTE_TOOL" : tool,
+        args,
+        executionId: "overlapping-toolkits",
+      };
+      const events: ConnectorEvent[] = [];
+      for await (const event of connector.execute(call, {
+        operationId: "test",
+        traceId: "test",
+        spaceId: "workspace",
+        userId: "user-1",
+        signal: new AbortController().signal,
+        connectedConnections: [
+          {
+            id: "github",
+            connectorId: "composio",
+            externalId: "github",
+            displayName: "GitHub",
+            providerRef: "ca-github",
+          },
+          {
+            id: "mcp",
+            connectorId: "composio",
+            externalId: "GitHub_MCP",
+            displayName: "GitHub MCP",
+            providerRef: "ca-mcp",
+          },
+        ],
+      }))
+        events.push(event);
+      expect(events.map((event) => event.type)).toEqual([blocked ? "error" : "result"]);
+      expect(composioSdkState.executions).toEqual(blocked ? [] : [{ tool: call.tool, args }]);
+      expect(composioSdkState.created.at(-1)?.config).toMatchObject({
+        toolkits: [stale === "github" ? "GITHUB_MCP" : "GITHUB"],
+        connectedAccounts:
+          stale === "github" ? { GITHUB_MCP: ["ca-mcp"] } : { GITHUB: ["ca-github"] },
       });
     } finally {
       restore();

@@ -1,5 +1,10 @@
 import { ORPCError } from "@orpc/server";
-import { isTransientModelError, SecretStoreUnavailableError } from "@rakazo/adapter-kit";
+import {
+  isSignInRetryRequest,
+  isTransientModelError,
+  SecretStoreUnavailableError,
+} from "@rakazo/adapter-kit";
+import type { PiOAuthPersist } from "@rakazo/adapters";
 import {
   compatibleEndpointPreset,
   listPiCatalog,
@@ -17,7 +22,7 @@ import {
   storedOpenAiCompatibleProbeKey,
   UNAVAILABLE_MODEL_FOR_AUTH_MESSAGE,
 } from "@rakazo/adapters";
-import type { ThinkingLevel } from "@rakazo/contracts";
+import type { Actor, ModelCredential, ThinkingLevel } from "@rakazo/contracts";
 import {
   backupChoiceKey,
   canonicalPiProviderId,
@@ -71,6 +76,41 @@ export function modelsRoutes(ctx: RouterContext) {
     validateRoleChoices,
     authed,
   } = ctx;
+  const saveSignIn =
+    (actor: Actor): PiOAuthPersist<ModelCredential> =>
+    async (login) => {
+      try {
+        // Read before the save: it only counts a member's first connection.
+        const record = await firstModelConnectAnalytics(deps, actor, "oauth");
+        const target = await modelConnectionTarget(deps, actor, login.provider, login.credentialId);
+        const saved = await persistModelCredential(
+          deps,
+          actor,
+          {
+            provider: login.provider,
+            credentialId: target?.id ?? null,
+            plaintext: serializeModelSecret({ kind: "oauth", credential: login.credential }),
+            // A second account is told apart by the email it signed in with.
+            label:
+              oauthCredentialEmail(login.credential) ??
+              login.label ??
+              listPiCatalog().find((entry) => entry.provider === login.provider)?.providerName,
+            modelId: login.modelId,
+            thinkingLevel: login.thinkingLevel,
+            makeDefault: login.makeDefault,
+            scope: login.settingsScope,
+            signal: login.signal,
+          },
+          codexCatalog,
+        );
+        record(login.provider, { name: "model_connected" });
+        return saved;
+      } catch (error) {
+        // The member is told why a save was refused; anything else is reported generically.
+        if (error instanceof ORPCError) throw new ModelSignInError(error.message);
+        throw error;
+      }
+    };
   return {
     models: {
       list: authed.models.list.handler(async ({ context }) => {
@@ -331,11 +371,12 @@ export function modelsRoutes(ctx: RouterContext) {
             label: input.label,
             codePage: input.codePage,
             signal: context.signal,
+            persist: saveSignIn(context.actor),
           })
           .catch((error: unknown) => {
             record(input.provider, { name: "model_connect_failed", error });
             // The provider's sign-in service is down or overloaded; the user tries again later.
-            if (isTransientModelError(error)) {
+            if (isTransientModelError(error) || isSignInRetryRequest(error)) {
               getLogger().warn("rpc models/beginOAuth provider unavailable", {
                 reason: error instanceof Error ? error.message : String(error),
               });
@@ -347,7 +388,7 @@ export function modelsRoutes(ctx: RouterContext) {
       }),
       submitOAuthCode: authed.models.submitOAuthCode.handler(async ({ context, input }) => {
         return deps.oauthLogins
-          .submit(input.loginId, context.actor, input.code)
+          .submit(input.loginId, context.actor, input.code, saveSignIn(context.actor))
           .catch((error: unknown) => {
             if (error instanceof ModelSignInError)
               throw new ORPCError("BAD_REQUEST", { message: error.message, cause: error });
@@ -355,10 +396,7 @@ export function modelsRoutes(ctx: RouterContext) {
           });
       }),
       completeOAuth: authed.models.completeOAuth.handler(async ({ context, input }) => {
-        const result = await deps.oauthLogins.complete(input.loginId, {
-          userId: context.actor.userId,
-          spaceId: context.actor.spaceId,
-        });
+        const result = await deps.oauthLogins.complete(input.loginId, context.actor);
         if (result.status === "error") {
           const record = await firstModelConnectAnalytics(deps, context.actor, "oauth");
           record(result.provider, { name: "model_connect_failed", error: new Error(result.error) });
@@ -368,50 +406,16 @@ export function modelsRoutes(ctx: RouterContext) {
       }),
       finishOAuth: authed.models.finishOAuth.handler(async ({ context, input }) => {
         throwIfAborted(context.signal);
-        let provider: string | undefined;
-        const record = await firstModelConnectAnalytics(deps, context.actor, "oauth");
-        const result = await deps.oauthLogins
-          .finish(input.loginId, context.actor, async (login) => {
-            provider = login.provider;
-            const target = await modelConnectionTarget(
-              deps,
-              context.actor,
-              login.provider,
-              login.credentialId,
-            );
-            return persistModelCredential(
-              deps,
-              context.actor,
-              {
-                provider: login.provider,
-                credentialId: target?.id ?? null,
-                plaintext: serializeModelSecret({ kind: "oauth", credential: login.credential }),
-                // A second account is told apart by the email it signed in with.
-                label:
-                  oauthCredentialEmail(login.credential) ??
-                  login.label ??
-                  listPiCatalog().find((entry) => entry.provider === login.provider)?.providerName,
-                modelId: login.modelId,
-                thinkingLevel: login.thinkingLevel,
-                makeDefault: login.makeDefault,
-                scope: login.settingsScope,
-                signal: login.signal,
-              },
-              codexCatalog,
-            );
-          })
-          .catch((error: unknown) => {
-            record(provider, { name: "model_connect_failed", error });
-            throw error;
-          });
+        const result = await deps.oauthLogins.finish(input.loginId, context.actor);
         if (result.status === "pending") {
           throw new ORPCError("CONFLICT", { message: "Sign-in has not finished yet." });
         }
         if (result.status === "error") {
-          record(provider, { name: "model_connect_failed", error: new Error(result.error) });
+          const record = await firstModelConnectAnalytics(deps, context.actor, "oauth");
+          record(result.provider, { name: "model_connect_failed", error: new Error(result.error) });
           throw new ORPCError("NOT_FOUND", { message: result.error });
         }
-        record(provider, { name: "model_connected" });
+        // The save already counted the connection.
         return result.value;
       }),
       cancelOAuth: authed.models.cancelOAuth.handler(async ({ context, input }) => {

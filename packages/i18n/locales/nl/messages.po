@@ -121,6 +121,11 @@ msgstr "{0} draait"
 msgid "{0} KB"
 msgstr "{0} KB"
 
+#. placeholder {0}: usd(creditsUsd)
+#: apps/web/src/components/PlanUsage.tsx
+msgid "{0} left"
+msgstr "Nog {0} over"
+
 #. placeholder {0}: parts.amount
 #: apps/web/src/components/ArtifactFileCard.tsx
 msgid "{0} MB"
@@ -141,6 +146,11 @@ msgstr "{0} TB"
 msgid "{0}, paused until you turn it on"
 msgstr "{0}, gepauzeerd tot je hem aanzet"
 
+#. placeholder {0}: Math.round(used)
+#: apps/web/src/components/PlanUsage.tsx
+msgid "{0}% used"
+msgstr "{0}% gebruikt"
+
 #: apps/web/src/lib/billing.ts
 msgid "{amount} / {period}"
 msgstr "{amount} / {period}"
@@ -160,6 +170,10 @@ msgstr "{amount} per week"
 #: apps/mobile/lib/spending-limit.ts
 msgid "{amount} in total"
 msgstr "{amount} in totaal"
+
+#: apps/mobile/app/(settings)/account.tsx
+msgid "{amount} left"
+msgstr "Nog {amount} over"
 
 #: apps/mobile/lib/spending-limit.ts
 msgid "{amount} spent"
@@ -673,6 +687,10 @@ msgstr "{title}, opgeslagen als {savedAs}"
 msgid "{toolCount, plural, one {# tool} other {# tools}}"
 msgstr "{toolCount, plural, one {# tool} other {# tools}}"
 
+#: apps/mobile/app/(settings)/account.tsx
+msgid "{used}% used"
+msgstr "{used}% gebruikt"
+
 #: apps/mobile/components/vault-item-editor.tsx
 msgid "{variable} is reserved. Choose another name."
 msgstr "{variable} is gereserveerd. Kies een andere naam."
@@ -1093,7 +1111,7 @@ msgstr "Model toevoegen"
 msgid "Add open work"
 msgstr "Open taak toevoegen"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/mobile/lib/passkey.ts
 #: apps/web/src/components/PasskeyOffer.tsx
 #: apps/web/src/components/PasskeySettings.tsx
@@ -1177,13 +1195,13 @@ msgstr "Adresregel 2"
 msgid "Adds"
 msgstr "Bevat"
 
-#: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/mobile/app/bot-settings.tsx
 #: apps/mobile/components/compatible-endpoint-form.tsx
 #: apps/mobile/components/routine-schedule-editor.tsx
 #: apps/web/src/lib/cron.ts
 #: apps/web/src/pages/McpServerForm.tsx
+#: apps/web/src/pages/memory-providers/MemoryProviderAdvanced.tsx
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
 #: apps/web/src/pages/ModelSettingsOverlay.tsx
 #: apps/web/src/pages/onboarding/model-step.tsx
@@ -1204,13 +1222,13 @@ msgstr "Agent"
 msgid "Agent from another app"
 msgstr "Agent uit een andere app"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 msgid "Agent messages"
 msgstr "Agentberichten"
 
 #: apps/mobile/app/(settings)/_layout.tsx
-#: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/ai-data-sharing.tsx
+#: apps/mobile/app/(settings)/general.tsx
 msgid "AI data sharing"
 msgstr "AI-gegevensdeling"
 
@@ -1294,14 +1312,11 @@ msgstr "Een keer toestaan"
 msgid "Allow Rakazo to use Speech Recognition and the microphone in System Settings."
 msgstr "Sta Rakazo toe om Spraakherkenning en de microfoon te gebruiken in Systeeminstellingen."
 
+#: apps/mobile/lib/call-session.ts
 #: apps/mobile/lib/composer-dictation.ts
+#: apps/mobile/lib/thread-voice.ts
 msgid "Allow speech recognition in Settings, or connect a voice provider that transcribes."
 msgstr "Sta spraakherkenning toe in Instellingen, of koppel een spraakprovider die transcribeert."
-
-#: apps/mobile/lib/call-session.ts
-#: apps/mobile/lib/thread-voice.ts
-msgid "Allow speech recognition in Settings, or connect ElevenLabs, OpenAI, or Fish Audio."
-msgstr "Sta spraakherkenning toe in Instellingen, of koppel ElevenLabs, OpenAI of Fish Audio."
 
 #: apps/web/src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Allow writing"
@@ -1370,6 +1385,14 @@ msgstr "Bedrag"
 msgid "An API key is stored for this provider, not a subscription sign-in."
 msgstr "Voor deze aanbieder is een API-sleutel opgeslagen, geen abonnementsaanmelding."
 
+#: apps/web/src/pages/MemorySettingsOverlay.tsx
+msgid "An external memory service for storing and recalling context across chats."
+msgstr "Een externe geheugendienst die context over chats heen opslaat en ophaalt."
+
+#: apps/web/src/pages/routine-editor/trigger-cards.tsx
+msgid "An HTTPS endpoint"
+msgstr "Een HTTPS-eindpunt"
+
 #: apps/web/src/lib/agent-import-errors.ts
 msgid "An imported API key could not be checked. Try again."
 msgstr "Een geïmporteerde API-sleutel kon niet worden gecontroleerd. Probeer het opnieuw."
@@ -1382,7 +1405,7 @@ msgstr "Een geïmporteerde API-sleutel kon niet worden gebruikt. Vink hem uit en
 msgid "An integration tool"
 msgstr "Een integratietool"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/mobile/lib/live-notifications.ts
 msgid "Android blocked notifications."
 msgstr "Android heeft meldingen geblokkeerd."
@@ -1398,7 +1421,6 @@ msgstr "Andere assistent"
 
 #: apps/mobile/components/IncomingCall.tsx
 #: apps/mobile/lib/incoming-calls.ts
-#: apps/web/src/components/AskCard.tsx
 msgid "Answer"
 msgstr "Antwoorden"
 
@@ -1453,6 +1475,7 @@ msgstr "Iedereen met de link"
 #: apps/web/src/components/SecretAskCard.tsx
 #: apps/web/src/components/vault/kinds.tsx
 #: apps/web/src/lib/localized-provider-hint.ts
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 #: apps/web/src/pages/memory-providers/HonchoSettingsForm.tsx
 #: apps/web/src/pages/model-settings/compatible-key-field.tsx
 #: apps/web/src/pages/model-settings/connection-controls.tsx
@@ -1486,7 +1509,7 @@ msgstr "API-token"
 msgid "API URL"
 msgstr "API-URL"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
 msgid "Appearance"
 msgstr "Weergave"
@@ -1560,7 +1583,6 @@ msgid "archived"
 msgstr "gearchiveerd"
 
 #: apps/mobile/app/(settings)/_layout.tsx
-#: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/components/inbox-rows.tsx
 #: apps/web/src/pages/shell/archived-chats.tsx
 msgid "Archived"
@@ -1866,7 +1888,7 @@ msgstr "Bot-scherm"
 msgid "Bot screen preview"
 msgstr "Voorbeeld van het bot-scherm"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
 msgid "Bot style"
 msgstr "Botstijl"
@@ -1995,13 +2017,14 @@ msgid "Can't read images"
 msgstr "Kan afbeeldingen niet lezen"
 
 #: apps/mobile/app/_layout.tsx
-#: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/ai-data-sharing.tsx
 #: apps/mobile/app/(settings)/archived-bots.tsx
 #: apps/mobile/app/(settings)/billing.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/mobile/app/(settings)/memory-note.tsx
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/mobile/app/(settings)/plugin.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/mobile/app/(settings)/skill.tsx
 #: apps/mobile/app/(settings)/space.tsx
 #: apps/mobile/app/(settings)/spending-limit.tsx
@@ -2144,8 +2167,8 @@ msgid "Change model"
 msgstr "Model wijzigen"
 
 #: apps/mobile/app/(settings)/_layout.tsx
-#: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/change-password.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
 msgid "Change password"
 msgstr "Wachtwoord wijzigen"
@@ -2562,10 +2585,10 @@ msgstr "Voltooid"
 #: apps/mobile/app/bot-settings.tsx
 #: apps/mobile/components/computer-mode-picker.tsx
 #: apps/mobile/components/ComputerCard.tsx
+#: apps/web/src/components/ComputerCard.tsx
 #: apps/web/src/pages/settings-nav.ts
 #: apps/web/src/pages/shell/bot-panel.tsx
 #: apps/web/src/pages/shell/bot-settings-sections.tsx
-#: apps/web/src/pages/shell/message-view.tsx
 msgid "Computer"
 msgstr "Computer"
 
@@ -2665,6 +2688,7 @@ msgstr "Bevestig dat de URL vanuit deze browsersessie bereikbaar is en test daar
 #: apps/mobile/lib/app-connect.ts
 #: apps/web/src/components/integrations/IntegrationSetup.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 #: apps/web/src/pages/memory-providers/HonchoSettingsForm.tsx
 #: apps/web/src/pages/memory-providers/SerenitySettingsForm.tsx
 #: apps/web/src/pages/memory-providers/SupermemorySettingsForm.tsx
@@ -2778,6 +2802,7 @@ msgstr "Gekoppeld."
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 #: apps/web/src/pages/McpServersOverlay.tsx
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 #: apps/web/src/pages/memory-providers/HonchoSettingsForm.tsx
 #: apps/web/src/pages/memory-providers/SerenitySettingsForm.tsx
 #: apps/web/src/pages/memory-providers/SupermemorySettingsForm.tsx
@@ -2871,14 +2896,14 @@ msgstr "Doorgaan met {name}"
 msgid "Control"
 msgstr "Ctrl"
 
-#: apps/mobile/lib/ai-consent.ts
-msgid "Conversation summaries, memories, searches and bot and Space IDs are sent to store and recall context."
-msgstr "Gesprekssamenvattingen, herinneringen, zoekopdrachten en bot- en Space-ID's worden verstuurd om context op te slaan en op te roepen."
-
 #: apps/mobile/app/(settings)/messaging.tsx
 #: apps/web/src/pages/MessagingSettingsPanel.tsx
 msgid "Conversations"
 msgstr "Gesprekken"
+
+#: apps/mobile/lib/ai-consent.ts
+msgid "Conversations, names, memories, searches and bot and Space IDs are sent to store and recall context."
+msgstr "Gesprekken, namen, herinneringen, zoekopdrachten en bot- en Space-ID's worden verstuurd om context op te slaan en op te halen."
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/mobile/components/code-copy-button.tsx
@@ -3091,11 +3116,12 @@ msgstr "Deze spraakaanbieder koppelen mislukt"
 msgid "Could not connect to the computer screen"
 msgstr "Verbinden met het computerscherm mislukt"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/mobile/app/computer.tsx
 #: apps/mobile/app/sign-in.tsx
 #: apps/mobile/app/thread.tsx
 #: apps/mobile/components/account-deletion.tsx
+#: apps/mobile/components/ComputerCard.tsx
 #: apps/mobile/components/confirm-identity.tsx
 #: apps/mobile/lib/api-auth.ts
 #: apps/mobile/lib/identity-confirmation.ts
@@ -3104,6 +3130,7 @@ msgstr "Verbinden met het computerscherm mislukt"
 #: apps/mobile/lib/user-error.ts
 #: apps/web/src/components/AccountAccess.tsx
 #: apps/web/src/components/AccountDataSettings.tsx
+#: apps/web/src/components/ComputerCard.tsx
 #: apps/web/src/components/ConfirmIdentityDialog.tsx
 #: apps/web/src/components/PasskeyOffer.tsx
 #: apps/web/src/components/PasskeySettings.tsx
@@ -3303,6 +3330,7 @@ msgstr "Space verlaten mislukt"
 msgid "Could not load"
 msgstr "Laden mislukt"
 
+#: apps/mobile/components/inbox-activity.tsx
 #: apps/web/src/pages/ActivityList.tsx
 msgid "Could not load activity"
 msgstr "Activiteit laden mislukt"
@@ -3534,6 +3562,7 @@ msgstr "Testfragment afspelen mislukt"
 
 #: apps/mobile/components/audio-attachment.tsx
 #: apps/mobile/lib/voice.ts
+#: apps/web/src/lib/tts.ts
 msgid "Could not play that clip."
 msgstr "Dat fragment kon niet worden afgespeeld."
 
@@ -3668,7 +3697,7 @@ msgstr "Toekenning intrekken mislukt"
 msgid "Could not run routine"
 msgstr "Routine uitvoeren mislukt"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/mobile/app/(settings)/memory-note.tsx
 #: apps/mobile/app/(settings)/team-conversation.tsx
 #: apps/mobile/components/vault-item-editor.tsx
@@ -3852,11 +3881,6 @@ msgstr "Aanmelden starten mislukt"
 msgid "Could not start teaching"
 msgstr "Onderwijs starten mislukt"
 
-#: apps/mobile/components/computer-maintenance-actions.tsx
-#: apps/web/src/components/ComputerMaintenanceActions.tsx
-msgid "Could not stop computer"
-msgstr "Computer stoppen mislukt"
-
 #: apps/mobile/components/AskActions.tsx
 msgid "Could not submit answer"
 msgstr "Antwoord insturen mislukt"
@@ -3934,7 +3958,7 @@ msgstr "Computer bijwerken mislukt"
 msgid "Could not update name"
 msgstr "Naam kon niet worden bijgewerkt"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/mobile/app/bot-profile.tsx
 msgid "Could not update notifications"
 msgstr "Meldingen bijwerken mislukt"
@@ -3997,7 +4021,7 @@ msgstr "Kon niet vernieuwen — de laatst geladen berichten worden getoond."
 msgid "Couldn't start the computer"
 msgstr "De computer kon niet worden gestart"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
 msgid "Couldn't update bot style"
 msgstr "Botstijl bijwerken mislukt"
@@ -4113,9 +4137,11 @@ msgstr "Inloggegevens: {names}"
 msgid "Credit amount"
 msgstr "Tegoedbedrag"
 
+#: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/mobile/app/paywall.tsx
 #: apps/web/src/components/ModelCredits.tsx
+#: apps/web/src/components/PlanUsage.tsx
 msgid "Credits"
 msgstr "Tegoed"
 
@@ -4198,7 +4224,7 @@ msgstr "Dagelijks"
 msgid "Daily check-ins on unfinished work"
 msgstr "Dagelijks navragen over onafgemaakt werk"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
 #: apps/web/src/pages/shell/use-palette-actions.ts
 msgid "Dark"
@@ -4269,9 +4295,9 @@ msgstr "Standaard van OpenClaw"
 msgid "Default scope"
 msgstr "Standaardbereik"
 
-#: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/memory-note.tsx
 #: apps/mobile/app/(settings)/organization.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/mobile/app/(settings)/skill.tsx
 #: apps/mobile/app/(settings)/space.tsx
 #: apps/mobile/app/artifact.tsx
@@ -4343,8 +4369,8 @@ msgstr "{name} en de {count} bijbehorende bots verwijderen?"
 msgid "Delete {name} and its bot?"
 msgstr "{name} en de bijbehorende bot verwijderen?"
 
-#: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/memory-note.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/mobile/app/(settings)/skill.tsx
 #: apps/mobile/app/pages.tsx
 #: apps/mobile/lib/bot-lifecycle.ts
@@ -4353,7 +4379,7 @@ msgstr "{name} en de bijbehorende bot verwijderen?"
 msgid "Delete {name}?"
 msgstr "{name} verwijderen?"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/mobile/app/paywall.tsx
 #: apps/web/src/components/AccountAccess.tsx
 #: apps/web/src/components/AccountMenu.tsx
@@ -4371,6 +4397,8 @@ msgid "Delete memories too"
 msgstr "Herinneringen ook verwijderen"
 
 #: apps/mobile/app/(settings)/organization.tsx
+#: apps/mobile/app/paywall.tsx
+#: apps/web/src/components/AccountMenu.tsx
 #: apps/web/src/pages/OrganizationSettingsPanel.tsx
 msgid "Delete organization"
 msgstr "Organisatie verwijderen"
@@ -4418,6 +4446,10 @@ msgstr "verwijderd"
 #: apps/mobile/components/pages/page-card.tsx
 msgid "Deleted"
 msgstr "Verwijderd"
+
+#: apps/web/src/pages/shell/transcript-member-name.ts
+msgid "Deleted bot"
+msgstr "Verwijderde bot"
 
 #: apps/web/src/components/PasskeySettings.tsx
 #: apps/web/src/pages/Artifacts.tsx
@@ -4646,12 +4678,12 @@ msgstr "Heb je geen account?"
 #: apps/mobile/lib/activity.ts
 #: apps/mobile/lib/board.ts
 #: apps/web/src/components/AccountDataSettings.tsx
+#: apps/web/src/components/ComputerCard.tsx
 #: apps/web/src/components/ToolActivityDisclosure.tsx
 #: apps/web/src/lib/ticket-status.ts
 #: apps/web/src/pages/ActivityList.tsx
 #: apps/web/src/pages/shell/avatar-studio-popover.tsx
 #: apps/web/src/pages/shell/import-setup-card.tsx
-#: apps/web/src/pages/shell/message-view.tsx
 msgid "Done"
 msgstr "Klaar"
 
@@ -4722,11 +4754,7 @@ msgstr "Bewerken"
 msgid "Edit avatar"
 msgstr "Avatar bewerken"
 
-#: apps/web/src/components/AskCard.tsx
-msgid "Edit first"
-msgstr "Eerst bewerken"
-
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/mobile/app/bot-settings.tsx
 #: apps/mobile/components/name-dialog-compose.tsx
 #: apps/mobile/components/name-dialog.tsx
@@ -4850,6 +4878,10 @@ msgstr "Voer een bedrag in"
 #: apps/web/src/lib/model-connection-preflight.ts
 msgid "Enter an API key before testing."
 msgstr "Voer een API-sleutel in voordat je test."
+
+#: apps/web/src/lib/routine-draft.ts
+msgid "Enter an HTTPS URL"
+msgstr "Voer een HTTPS-URL in"
 
 #: apps/web/src/components/ComputerProviderSettings.tsx
 msgid "Environment ID"
@@ -5081,12 +5113,8 @@ msgid "Failure handling"
 msgstr "Foutafhandeling"
 
 #: apps/web/src/pages/routine-editor/trigger-cards.tsx
-msgid "Fields that mark a change"
-msgstr "Velden die een wijziging markeren"
-
-#: apps/web/src/pages/routine-editor/trigger-cards.tsx
-msgid "Fields to compare, e.g. id, modifiedTime (optional)"
-msgstr "Te vergelijken velden, bijv. id, modifiedTime (optioneel)"
+msgid "Fields to compare (optional)"
+msgstr "Te vergelijken velden (optioneel)"
 
 #: apps/mobile/components/thread/message-bubble.tsx
 #: apps/mobile/lib/search-sheet.ts
@@ -5289,6 +5317,8 @@ msgstr "Gateway-token"
 msgid "Gateway URL"
 msgstr "Gateway-URL"
 
+#: apps/mobile/app/(settings)/_layout.tsx
+#: apps/mobile/app/(settings)/account.tsx
 #: apps/web/src/pages/settings-nav.ts
 #: apps/web/src/pages/SettingsOverlay.tsx
 msgid "General"
@@ -5387,6 +5417,10 @@ msgstr "Groepsinstellingen"
 msgid "Group updates"
 msgstr "Groepsupdates"
 
+#: apps/web/src/pages/shell/dialogs.tsx
+msgid "Groups left with fewer than two bots are deleted too, including their messages, files, and pages."
+msgstr "Groepen met minder dan twee overgebleven bots worden ook verwijderd, inclusief hun berichten, bestanden en pagina's."
+
 #: apps/mobile/components/CallCard.tsx
 #: apps/web/src/components/call/CallCard.tsx
 msgid "Hang up"
@@ -5401,7 +5435,7 @@ msgstr "Hang eerst op en voer daarna de code op het scherm in."
 msgid "Hang up, then enter the code on screen."
 msgstr "Hang op en voer daarna de code op het scherm in."
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 msgid "Haptics"
 msgstr "Haptische feedback"
 
@@ -5500,6 +5534,7 @@ msgstr "Transcript verbergen"
 
 #: apps/mobile/lib/thinking-level.ts
 #: apps/web/src/lib/ticket-priority.ts
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
 #: apps/web/src/pages/onboarding/model-step.tsx
 msgid "High"
@@ -5569,6 +5604,10 @@ msgstr "Hoe ga je Rakazo gebruiken?"
 msgid "http://127.0.0.1:8000/v1"
 msgstr "http://127.0.0.1:8000/v1"
 
+#: apps/web/src/pages/routine-editor/trigger-cards.tsx
+msgid "HTTPS URL"
+msgstr "HTTPS-URL"
+
 #: apps/mobile/components/add-custom-integration.tsx
 msgid "https://example.com/graphql"
 msgstr "https://example.com/graphql"
@@ -5582,6 +5621,8 @@ msgid "https://example.com/openapi.json"
 msgstr "https://example.com/openapi.json"
 
 #: apps/mobile/app/computer.tsx
+#: apps/mobile/components/ComputerCard.tsx
+#: apps/web/src/components/ComputerCard.tsx
 #: apps/web/src/pages/shell/computer-release-actions.tsx
 msgid "I’m done"
 msgstr "Ik ben klaar"
@@ -5881,7 +5922,7 @@ msgid "Label"
 msgstr "Label"
 
 #: apps/mobile/app/(settings)/_layout.tsx
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/mobile/app/(settings)/language.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
 msgid "Language"
@@ -5900,6 +5941,10 @@ msgstr "Laatste controle {0}: geen wijzigingen"
 #: apps/web/src/components/DesktopUpdates.tsx
 msgid "Later"
 msgstr "Later"
+
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Learn from conversations"
+msgstr "Leren van gesprekken"
 
 #: apps/mobile/app/(settings)/messaging.tsx
 #: apps/mobile/app/space-members.tsx
@@ -5930,11 +5975,7 @@ msgstr "Links"
 msgid "Let bots use this computer"
 msgstr "Bots deze computer laten gebruiken"
 
-#: apps/web/src/pages/MemorySettingsOverlay.tsx
-msgid "Lets bots save and recall facts by meaning, alongside MEMORY.md."
-msgstr "Laat bots feiten op betekenis opslaan en terugvinden, naast MEMORY.md."
-
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
 #: apps/web/src/pages/shell/use-palette-actions.ts
 msgid "Light"
@@ -5959,7 +6000,7 @@ msgstr "Link gekopieerd"
 msgid "Link DMs"
 msgstr "DM’s koppelen"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/web/src/components/AccountAccess.tsx
 msgid "Link SSO"
 msgstr "SSO koppelen"
@@ -5976,11 +6017,11 @@ msgstr "Luistert"
 msgid "Listening…"
 msgstr "Luistert…"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 msgid "Live update settings"
 msgstr "Instellingen voor live updates"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 msgid "Live working status"
 msgstr "Live werkstatus"
 
@@ -5998,7 +6039,7 @@ msgstr "Meer laden"
 msgid "Load older runs"
 msgstr "Oudere runs laden"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
 msgid "Load web images automatically"
 msgstr "Webafbeeldingen automatisch laden"
@@ -6114,6 +6155,7 @@ msgstr "Lijkt een sleutel te bevatten"
 
 #: apps/mobile/lib/thinking-level.ts
 #: apps/web/src/lib/ticket-priority.ts
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
 #: apps/web/src/pages/onboarding/model-step.tsx
 msgid "Low"
@@ -6243,6 +6285,7 @@ msgid "MCP servers"
 msgstr "MCP-servers"
 
 #: apps/mobile/lib/thinking-level.ts
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
 #: apps/web/src/pages/onboarding/model-step.tsx
 msgid "Medium"
@@ -6497,10 +6540,12 @@ msgstr "maandag"
 msgid "month"
 msgstr "maand"
 
+#: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/spending-limit.tsx
 #: apps/mobile/app/paywall.tsx
 #: apps/mobile/lib/cron.ts
 #: apps/web/src/components/ModelCredits.tsx
+#: apps/web/src/components/PlanUsage.tsx
 #: apps/web/src/components/SpendingLimitSettings.tsx
 #: apps/web/src/lib/cron.ts
 msgid "Monthly"
@@ -6534,11 +6579,6 @@ msgstr "Meer"
 #: apps/web/src/pages/plugins/plugin-browse.tsx
 msgid "More apps"
 msgstr "Meer apps"
-
-#: apps/mobile/components/computer-maintenance-actions.tsx
-#: apps/web/src/components/ComputerMaintenanceActions.tsx
-msgid "More computer actions"
-msgstr "Meer computeracties"
 
 #: apps/mobile/lib/bot-template-copy.ts
 #: apps/web/src/components/bot-templates/bot-template-copy.ts
@@ -6650,7 +6690,7 @@ msgstr "Heeft een antwoord nodig"
 msgid "Needs an OAuth client ID"
 msgstr "OAuth-client-ID nodig"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/mobile/components/inbox-activity.tsx
 #: apps/mobile/components/inbox-rows.tsx
 #: apps/mobile/components/unread-jump-overlay.tsx
@@ -6674,9 +6714,9 @@ msgid "Needs takeover"
 msgstr "Heeft overname nodig"
 
 #: apps/mobile/components/ComputerCard.tsx
+#: apps/web/src/components/ComputerCard.tsx
 #: apps/web/src/lib/roster-status.ts
 #: apps/web/src/pages/shell/computer-overlay.tsx
-#: apps/web/src/pages/shell/message-view.tsx
 msgid "Needs you"
 msgstr "Heeft jou nodig"
 
@@ -6968,6 +7008,7 @@ msgstr "Geen rijen"
 msgid "No runs match these filters."
 msgstr "Geen runs komen overeen met deze filters."
 
+#: apps/mobile/components/inbox-activity.tsx
 #: apps/mobile/components/routine-run-history.tsx
 #: apps/web/src/pages/ActivityList.tsx
 msgid "No runs yet"
@@ -7103,11 +7144,11 @@ msgstr "Nog niets onthouden"
 msgid "Nothing saved yet."
 msgstr "Nog niets bewaard."
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 msgid "Notification settings"
 msgstr "Meldingsinstellingen"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/mobile/app/bot-profile.tsx
 #: apps/mobile/app/bot-settings.tsx
 #: apps/web/src/pages/shell/bot-settings-sections.tsx
@@ -7227,12 +7268,12 @@ msgstr "Alleen jij"
 #: apps/mobile/app/pages.tsx
 #: apps/mobile/components/ImportSetupCard.tsx
 #: apps/web/src/components/bot-templates/bot-templates-dialog.tsx
+#: apps/web/src/components/ComputerCard.tsx
 #: apps/web/src/components/markdown-link-prompt.tsx
 #: apps/web/src/components/pages/PagesList.tsx
 #: apps/web/src/pages/PaymentWalletSettingsPanel.tsx
 #: apps/web/src/pages/shell/computer-panel.tsx
 #: apps/web/src/pages/shell/import-setup-card.tsx
-#: apps/web/src/pages/shell/message-view.tsx
 msgid "Open"
 msgstr "Openen"
 
@@ -7378,7 +7419,7 @@ msgstr "Organisatie"
 msgid "Organization API key"
 msgstr "Organisatie-API-sleutel"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/mobile/app/bot-settings.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
 #: apps/web/src/pages/shell/avatar-studio-popover.tsx
@@ -7486,12 +7527,12 @@ msgstr "Pagina's die deze groep voor je maakt, verschijnen hier."
 msgid "Pages this group builds for you appear here. Ask for a dashboard, tracker or plan to make one."
 msgstr "Pagina's die deze groep voor je maakt, verschijnen hier. Vraag om een dashboard, tracker of plan om er een te maken."
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/web/src/components/PasskeySettings.tsx
 msgid "Passkey"
 msgstr "Passkey"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/web/src/components/PasskeySettings.tsx
 msgid "Passkeys"
 msgstr "Passkeys"
@@ -7711,8 +7752,8 @@ msgid "Plugins"
 msgstr "Plugins"
 
 #: apps/web/src/pages/routine-editor/trigger-cards.tsx
-msgid "Post \"No changes\" in chat"
-msgstr "Plaats \"No changes\" in de chat"
+msgid "Post a chat message when a check finds no changes. The routine won't run."
+msgstr "Plaats een chatbericht wanneer een controle geen wijzigingen vindt. De routine wordt niet uitgevoerd."
 
 #: apps/mobile/lib/bot-template-copy.ts
 #: apps/web/src/components/bot-templates/bot-template-copy.ts
@@ -7828,7 +7869,7 @@ msgstr "Pull request"
 msgid "Put your bots to work"
 msgstr "Zet je bots aan het werk"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 msgid "Questions, approvals, takeover"
 msgstr "Vragen, goedkeuringen, overname"
 
@@ -7842,8 +7883,8 @@ msgstr "In wachtrij"
 msgid "Quote"
 msgstr "Citaat"
 
-#: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/ai-data-sharing.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/mobile/app/bot-settings.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
 #: apps/web/src/pages/shell/avatar-studio-popover.tsx
@@ -7895,6 +7936,18 @@ msgstr "Redeneerinspanning"
 #: apps/web/src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Recall and write"
 msgstr "Ophalen en schrijven"
+
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Recall automatically"
+msgstr "Automatisch ophalen"
+
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Recall depth"
+msgstr "Ophaaldiepte"
+
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Recall from banks"
+msgstr "Ophalen uit banken"
 
 #: apps/web/src/pages/memory-providers/HonchoSettingsForm.tsx
 msgid "Recall from this peer; save to Rakazo’s own peers."
@@ -7953,14 +8006,12 @@ msgstr "Opname gestart. Vernieuw het scherm om verder te gaan."
 msgid "Recording: {0}"
 msgstr "Opname: {0}"
 
-#: apps/mobile/components/computer-maintenance-actions.tsx
 #: apps/mobile/components/computer-update-progress.tsx
 #: apps/web/src/components/ComputerMaintenanceActions.tsx
 #: apps/web/src/components/ComputerUpdateProgress.tsx
 msgid "Recover computer"
 msgstr "Computer herstellen"
 
-#: apps/mobile/components/computer-maintenance-actions.tsx
 #: apps/web/src/components/ComputerMaintenanceActions.tsx
 msgid "Recover computer?"
 msgstr "Computer herstellen?"
@@ -7993,17 +8044,11 @@ msgstr "Herstel mislukt"
 msgid "Recovery is unavailable until the previous operation has stopped."
 msgstr "Herstel is niet beschikbaar tot de vorige bewerking is gestopt."
 
-#: apps/mobile/components/computer-maintenance-actions.tsx
 #: apps/mobile/components/computer-update-progress.tsx
 #: apps/web/src/components/ComputerMaintenanceActions.tsx
 #: apps/web/src/components/ComputerUpdateProgress.tsx
 msgid "Recovery restores the last saved workspace. Unsaved work may be lost."
 msgstr "Herstel zet de laatst opgeslagen werkruimte terug. Niet-opgeslagen werk kan verloren gaan."
-
-#: apps/mobile/components/computer-maintenance-actions.tsx
-#: apps/web/src/components/ComputerMaintenanceActions.tsx
-msgid "Recreate a computer that is not working."
-msgstr "Maak een computer opnieuw aan die niet werkt."
 
 #: apps/mobile/components/computer-update-progress.tsx
 #: apps/web/src/components/ComputerUpdateProgress.tsx
@@ -8080,10 +8125,10 @@ msgstr "Herladen"
 msgid "Remote MCP server"
 msgstr "Externe MCP-server"
 
-#: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/approvals.tsx
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/mobile/app/(settings)/plugin.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/mobile/app/(settings)/spending-limit.tsx
 #: apps/mobile/app/(settings)/vault.tsx
 #: apps/mobile/app/space-members.tsx
@@ -8215,7 +8260,7 @@ msgstr "Verwijderd, maar het vernieuwen van de lijst mislukte"
 msgid "Removing…"
 msgstr "Bezig met verwijderen…"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/mobile/app/pages.tsx
 #: apps/mobile/components/model-providers.tsx
 #: apps/web/src/components/pages/PagesList.tsx
@@ -8282,7 +8327,7 @@ msgstr "Vervangt de opgeslagen login voor {site}"
 msgid "Replies"
 msgstr "Antwoorden"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 msgid "Replies and completed work"
 msgstr "Antwoorden en afgerond werk"
 
@@ -8305,6 +8350,10 @@ msgstr "Antwoord geannuleerd"
 #: apps/web/src/pages/shell/composer.tsx
 msgid "Replying to {0}"
 msgstr "Antwoordt op {0}"
+
+#: apps/web/src/pages/routine-editor/trigger-cards.tsx
+msgid "Report unchanged checks"
+msgstr "Ongewijzigde controles melden"
 
 #: apps/mobile/lib/user-error.ts
 #: apps/web/src/lib/user-error.ts
@@ -8355,16 +8404,28 @@ msgstr "Wachtwoord opnieuw instellen"
 msgid "Reset your password"
 msgstr "Je wachtwoord opnieuw instellen"
 
+#: apps/mobile/app/(settings)/billing.tsx
 #: apps/mobile/app/(settings)/spending-limit.tsx
 #: apps/mobile/components/run-error-sheet.tsx
 #: apps/web/src/components/SpendingLimitSettings.tsx
 msgid "Resets"
 msgstr "Reset"
 
+#. placeholder {0}: formatBillingDate(status.computerHoursResetAt, i18n.locale || "en")
+#: apps/web/src/components/ModelCredits.tsx
+msgid "Resets {0}"
+msgstr "Wordt gereset op {0}"
+
 #: apps/mobile/components/thread-error-notice.tsx
 msgid "Resets {date}."
 msgstr "Wordt gereset op {date}."
 
+#: apps/mobile/app/(settings)/account.tsx
+#: apps/web/src/components/PlanUsage.tsx
+msgid "Resets in {reset}"
+msgstr "Wordt gereset over {reset}"
+
+#: apps/mobile/components/computer-maintenance-actions.tsx
 #: apps/web/src/components/ComputerMaintenanceActions.tsx
 msgid "Resetting…"
 msgstr "Bezig met opnieuw instellen…"
@@ -8402,11 +8463,6 @@ msgstr "{name} herstellen"
 
 #: apps/mobile/components/computer-maintenance-actions.tsx
 #: apps/web/src/components/ComputerMaintenanceActions.tsx
-msgid "Restore the last saved workspace."
-msgstr "Zet de laatst opgeslagen werkruimte terug."
-
-#: apps/mobile/components/computer-maintenance-actions.tsx
-#: apps/web/src/components/ComputerMaintenanceActions.tsx
 msgid "Restore the last saved workspace. Unsaved work on the computer is lost."
 msgstr "Zet de laatst opgeslagen werkruimte terug. Niet-opgeslagen werk op de computer gaat verloren."
 
@@ -8425,14 +8481,15 @@ msgstr "Je werkruimte herstellen"
 msgid "Resume notifications"
 msgstr "Meldingen hervatten"
 
-#: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/ai-data-sharing.tsx
 #: apps/mobile/app/(settings)/bot-template.tsx
 #: apps/mobile/app/(settings)/bot-templates.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/mobile/app/(settings)/memory-note.tsx
 #: apps/mobile/app/(settings)/memory.tsx
 #: apps/mobile/app/(settings)/plugin.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/mobile/app/(settings)/skill.tsx
 #: apps/mobile/app/(settings)/skills.tsx
 #: apps/mobile/app/sign-in.tsx
@@ -8624,9 +8681,9 @@ msgstr "Zelfde als hoofdmodel"
 msgid "Saturday"
 msgstr "zaterdag"
 
-#: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/memory-note.tsx
 #: apps/mobile/app/(settings)/model-connection.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/mobile/app/(settings)/skill.tsx
 #: apps/mobile/app/(settings)/spending-limit.tsx
 #: apps/mobile/app/(settings)/team-conversation.tsx
@@ -8672,11 +8729,6 @@ msgstr "Mijn versie opslaan"
 #: apps/mobile/components/bot-organize-modal.tsx
 msgid "Save section name"
 msgstr "Sectienaam opslaan"
-
-#: apps/mobile/components/computer-maintenance-actions.tsx
-#: apps/web/src/components/ComputerMaintenanceActions.tsx
-msgid "Save the workspace and install current software."
-msgstr "Sla de werkruimte op en installeer de huidige software."
 
 #: apps/mobile/components/secret-ask-sheet.tsx
 #: apps/web/src/components/vault/VaultItemEditor.tsx
@@ -8744,7 +8796,7 @@ msgstr "Geplande uitvoering vertraagd"
 msgid "Scheduled routines"
 msgstr "Geplande routines"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 msgid "Scheduled tasks"
 msgstr "Geplande taken"
 
@@ -8912,7 +8964,6 @@ msgid "Send <0>{linkCode}</0> to <1>{linkAddress}</1> from {linkApp} within 10 m
 msgstr "Stuur <0>{linkCode}</0> binnen 10 minuten vanuit {linkApp} naar <1>{linkAddress}</1>."
 
 #: apps/mobile/components/thread/ask-block.tsx
-#: apps/web/src/components/AskCard.tsx
 msgid "Send answer"
 msgstr "Antwoord verzenden"
 
@@ -8925,10 +8976,6 @@ msgstr "Als bestand verzenden"
 #: apps/web/src/components/AccountAccess.tsx
 msgid "Send deletion code"
 msgstr "Verwijderingscode verzenden"
-
-#: apps/web/src/components/AskCard.tsx
-msgid "Send it"
-msgstr "Verzenden"
 
 #: apps/web/src/components/composer/HoldToTalk.tsx
 msgid "Send recording"
@@ -8987,10 +9034,16 @@ msgstr "Servernaam"
 msgid "Server URL"
 msgstr "Server-URL"
 
+#: apps/mobile/app/(settings)/account.tsx
+#: apps/web/src/components/PlanUsage.tsx
+msgid "Session"
+msgstr "Sessie"
+
 #: apps/web/src/components/SpendingLimitSettings.tsx
 msgid "Set"
 msgstr "Instellen"
 
+#: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/components/CallCard.tsx
 #: apps/mobile/components/inbox-render-item.tsx
 #: apps/web/src/components/call/CallCard.tsx
@@ -9309,6 +9362,8 @@ msgstr "Skills komen in de bibliotheek die al je bots delen."
 
 #: apps/mobile/app/computer.tsx
 #: apps/mobile/app/new-group.tsx
+#: apps/mobile/components/ComputerCard.tsx
+#: apps/web/src/components/ComputerCard.tsx
 #: apps/web/src/pages/shell/computer-release-actions.tsx
 msgid "Skip"
 msgstr "Overslaan"
@@ -9317,8 +9372,12 @@ msgstr "Overslaan"
 msgid "Skip or deploy key"
 msgstr "Overslaan of deploysleutel"
 
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Skip unrelated memories"
+msgstr "Niet-gerelateerde herinneringen overslaan"
+
 #: apps/mobile/components/ComputerCard.tsx
-#: apps/web/src/pages/shell/message-view.tsx
+#: apps/web/src/components/ComputerCard.tsx
 msgid "Skipped"
 msgstr "Overgeslagen"
 
@@ -9576,11 +9635,6 @@ msgstr "Stappen"
 msgid "Stop"
 msgstr "Stoppen"
 
-#: apps/mobile/components/computer-maintenance-actions.tsx
-#: apps/web/src/components/ComputerMaintenanceActions.tsx
-msgid "Stop computer"
-msgstr "Computer stoppen"
-
 #: apps/mobile/components/thread-composer.tsx
 msgid "Stop dictating"
 msgstr "Stop met dicteren"
@@ -9603,15 +9657,11 @@ msgstr "Gestopt"
 msgid "Stopped."
 msgstr "Gestopt."
 
-#: apps/web/src/components/ComputerMaintenanceActions.tsx
-msgid "Stopping…"
-msgstr "Stoppen…"
-
 #: apps/web/src/pages/McpServerForm.tsx
 msgid "Stored encrypted"
 msgstr "Versleuteld opgeslagen"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
 msgid "Stream replies"
 msgstr "Antwoorden streamen"
@@ -9658,6 +9708,14 @@ msgstr "Abonneren met je eigen AI"
 #: apps/web/src/pages/Paywall.tsx
 msgid "Subscription required"
 msgstr "Abonnement vereist"
+
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Summaries"
+msgstr "Samenvattingen"
+
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Summaries and facts"
+msgstr "Samenvattingen en feiten"
 
 #: apps/mobile/lib/cron.ts
 #: apps/web/src/lib/cron.ts
@@ -9721,7 +9779,7 @@ msgstr "Wisselen van server verwijdert onverzonden berichten."
 msgid "Switching…"
 msgstr "Bezig met wisselen…"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
 #: apps/web/src/pages/shell/use-palette-actions.ts
 msgid "System"
@@ -9736,6 +9794,7 @@ msgid "Table"
 msgstr "Tabel"
 
 #: apps/mobile/app/computer.tsx
+#: apps/web/src/components/ComputerCard.tsx
 #: apps/web/src/pages/shell/computer-overlay.tsx
 msgid "Take control"
 msgstr "Controle overnemen"
@@ -9875,6 +9934,14 @@ msgstr "De computer waarop je bots werken."
 #: apps/web/src/lib/model-connection-preflight.ts
 msgid "The connection timed out."
 msgstr "De verbinding is verlopen."
+
+#: apps/web/src/pages/shell/dialogs.tsx
+msgid "The group {names} will be deleted too, including its messages, files, and pages."
+msgstr "De groep {names} wordt ook verwijderd, inclusief de berichten, bestanden en pagina's."
+
+#: apps/web/src/pages/shell/dialogs.tsx
+msgid "The groups {names} will be deleted too, including their messages, files, and pages."
+msgstr "De groepen {names} worden ook verwijderd, inclusief hun berichten, bestanden en pagina's."
 
 #. js-lingui-explicit-id
 #: packages/i18n/src/run-error.ts
@@ -10387,7 +10454,7 @@ msgstr "Proefperiodes krijgen minder uren om misbruik te voorkomen."
 msgid "Troubleshoot"
 msgstr "Problemen oplossen"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/web/src/components/TrustedLinkSitesSettings.tsx
 msgid "Trusted sites"
 msgstr "Vertrouwde sites"
@@ -10412,9 +10479,9 @@ msgstr "Vertrouwde sites"
 msgid "Try again"
 msgstr "Opnieuw proberen"
 
-#: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/archived-bots.tsx
 #: apps/mobile/app/(settings)/bot-template.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/mobile/app/artifact.tsx
 #: apps/mobile/app/artifacts.tsx
 #: apps/mobile/app/board.tsx
@@ -10476,7 +10543,6 @@ msgid "Type without recording"
 msgstr "Typen zonder opname"
 
 #: apps/mobile/components/thread/ask-block.tsx
-#: apps/web/src/components/AskCard.tsx
 msgid "Type your answer"
 msgstr "Typ je antwoord"
 
@@ -10624,6 +10690,7 @@ msgstr "De computer van {name} bijwerken"
 msgid "Updating Team Computer"
 msgstr "Teamcomputer bijwerken"
 
+#: apps/mobile/components/computer-maintenance-actions.tsx
 #: apps/web/src/components/ComputerMaintenanceActions.tsx
 msgid "Updating…"
 msgstr "Bezig met bijwerken…"
@@ -10654,6 +10721,7 @@ msgid "URL"
 msgstr "URL"
 
 #: apps/mobile/app/(settings)/account.tsx
+#: apps/web/src/components/SidebarFooter.tsx
 #: apps/web/src/pages/settings-nav.ts
 msgid "Usage"
 msgstr "Gebruik"
@@ -10951,7 +11019,9 @@ msgstr "Werkdagen"
 msgid "Weekends"
 msgstr "Weekenden"
 
+#: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/spending-limit.tsx
+#: apps/web/src/components/PlanUsage.tsx
 #: apps/web/src/components/SpendingLimitSettings.tsx
 msgid "Weekly"
 msgstr "Wekelijks"
@@ -10990,6 +11060,10 @@ msgstr "Wat moet deze routine elke keer doen?"
 #: apps/web/src/pages/shell/bot-settings-sections.tsx
 msgid "What this bot is for"
 msgstr "Waarvoor deze bot is"
+
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "What to recall"
+msgstr "Wat ophalen"
 
 #: apps/web/src/components/teach/SkillDraftCard.tsx
 msgid "What to return"
@@ -11199,6 +11273,7 @@ msgid "You're all set"
 msgstr "Alles staat klaar"
 
 #: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 msgid "Your account"
 msgstr "Je account"
 
@@ -11223,6 +11298,11 @@ msgstr "Je kaart wordt vandaag belast met {price}, min het ongebruikte deel van 
 #: apps/web/src/components/ModelCredits.tsx
 msgid "Your card is charged the prorated difference today."
 msgstr "Je kaart wordt vandaag belast met het naar rato berekende verschil."
+
+#: apps/mobile/app/(settings)/billing.tsx
+#: apps/web/src/components/ModelCredits.tsx
+msgid "Your card was not charged"
+msgstr "Je kaart is niet belast"
 
 #: apps/mobile/app/computer.tsx
 #: apps/web/src/pages/Shell.tsx

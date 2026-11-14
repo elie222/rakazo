@@ -29,7 +29,7 @@ the default work as described for Parallel.
 
 ## Self-hosted memory
 
-Supermemory and Honcho can run on your own network. In **Settings → Memory**, choose **Local**
+Supermemory, Honcho and Hindsight can run on your own network. In **Settings → Memory**, open **Advanced**, choose **Self-hosted**
 and enter the instance's base URL. The operator must set `MCP_ALLOW_PRIVATE_ENDPOINT=true`; workspace owners can then save a local endpoint. It must
 be loopback or resolve to private addresses (a Compose service name, an RFC1918 or unique-local
 address, or a `.internal` name such as Railway's private network); Rakazo pins the resolved
@@ -42,6 +42,16 @@ its own PostgreSQL with pgvector, an LLM provider, and an embedding provider; se
 `EMBEDDING_VECTOR_DIMENSIONS` before its first start. Rakazo stores only explicitly saved facts
 in Honcho; conversation summaries stay in Rakazo. Bots can forget a saved fact on Honcho v3.2 or
 later.
+
+For [Hindsight](https://github.com/vectorize-io/hindsight) 1.0 or later, the key is optional when
+the server has no authentication. Hindsight needs its own LLM provider to extract facts. Rakazo
+creates a bank per bot and, for the Shared scope, one per Space. Bank names use the reserved
+`rakazo-` prefix and fixed-length hashes of the identifiers so legacy identifiers cannot collide.
+It does not configure banks, so set extraction missions in Hindsight if you want them. Rakazo sends each finished turn (unless **Learn from conversations** is off) and the
+facts bots save; banks under **Recall from banks** are only read. A bank under **Recall from banks**
+must be on the same Hindsight server or Cloud account; an app that runs Hindsight embedded on its
+own machine keeps its banks there. All names starting with `rakazo-` are reserved and cannot be
+listed there, including banks created by another app using that prefix.
 
 ## MCP servers
 
@@ -135,7 +145,11 @@ base URL; Rakazo appends `api/search`.
 
 ## Messaging apps
 
-Optional messaging platforms (iMessage through Sendblue or Photon, Slack, WhatsApp, Telegram, Feishu/Lark) mount when their env credentials are set — see `.env.example`. The Lark adapter and official SDK load only when configured. Point a Feishu/Lark bot event subscription at `/api/v1/messaging/webhook/lark` (webhook/HTTP inbound only; do not enable long connection). Personal group linking works on iMessage and Telegram (see the Telegram privacy note below); WhatsApp and Feishu/Lark are direct-only, and Slack channels use workspace installations below. Telegram can run several bots side by side (`TELEGRAM_BOT_TOKEN_<NAME>` plus `TELEGRAM_WEBHOOK_SECRET_TOKEN_<NAME>`), for example one per space, so the same person can chat with a different Rakazo bot through each. Photon works the same way: each extra project (`PHOTON_PROJECT_ID_<NAME>` plus `PHOTON_PROJECT_SECRET_<NAME>`, and `PHOTON_WEBHOOK_SECRET_<NAME>` for webhooks) gives the person a different number, mounted as provider `photon-<name>`. Photon receives iMessage over an outbound stream from the API, so it works on a server with no public URL; on Photon's shared lines the person texts first, and group chats are not available.
+Messaging adapters are optional. Configure credentials for the platforms you need; users link
+their own bots from **Settings → Messaging**. See [Chat apps](./messaging-apps.md) for the supported
+direct-message and group flows. Teams, WhatsApp, Feishu/Lark, and Photon are direct-message only.
+Slack channels use workspace installations; Telegram and iMessage through Sendblue use personal
+group linking.
 
 Each platform turns on when its full set of credentials is present on the API and worker.
 Webhooks arrive at `/api/v1/messaging/webhook/<provider>`.
@@ -147,7 +161,10 @@ Webhooks arrive at `/api/v1/messaging/webhook/<provider>`.
 | Telegram                    | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET_TOKEN`                                                                                                                                              |
 | iMessage (Photon)           | `PHOTON_PROJECT_ID`, `PHOTON_PROJECT_SECRET`; `PHOTON_WEBHOOK_SECRET` to receive by webhook instead of the stream; more projects as `PHOTON_PROJECT_ID_<NAME>` plus `PHOTON_PROJECT_SECRET_<NAME>` |
 | Feishu/Lark                 | `LARK_APP_ID`, `LARK_APP_SECRET`, `LARK_VERIFICATION_TOKEN`; `LARK_ENCRYPT_KEY` when event encryption is on; `LARK_DOMAIN` (`feishu`, the default, or `lark`)                                      |
+| Microsoft Teams             | `TEAMS_APP_ID`, `TEAMS_APP_PASSWORD`, `TEAMS_APP_TENANT_ID` (single-tenant, direct messages only)                                                                                                  |
 | Slack                       | See below                                                                                                                                                                                          |
+
+### Telegram
 
 Telegram is webhook-only: Telegram sends the secret in `X-Telegram-Bot-Api-Secret-Token`, and the
 worker never long-polls. An extra bot named `<NAME>` (letters and digits) uses the provider
@@ -156,14 +173,71 @@ worker never long-polls. An extra bot named `<NAME>` (letters and digits) uses t
 Telegram groups use personal group linking, like iMessage: each linked member approves their own
 bot, and the per-room listening settings belong to Slack team conversations only. In BotFather
 run `/setprivacy` on the bot and choose **Disable** (or make it a group admin), or the bot only
-receives group messages that mention it. Broadcast channel posts never start runs. For Lark,
-create a custom app with the Bot capability and subscribe it to `im.message.receive_v1`.
+receives group messages that mention it. Broadcast channel posts never start runs. Multiple bots
+can run side by side, allowing one person to link a different Rakazo bot through each.
+
+### iMessage through Photon
+
+Photon receives messages over an outbound stream from the API, so it works without a public URL.
+To use webhooks instead, set `PHOTON_WEBHOOK_SECRET`. Each additional project uses
+`PHOTON_PROJECT_ID_<NAME>` and `PHOTON_PROJECT_SECRET_<NAME>` (plus
+`PHOTON_WEBHOOK_SECRET_<NAME>` for webhooks), and appears as `photon-<name>`. On shared lines,
+the person must text first. Group chats are not supported.
+
+### Feishu/Lark
+
+Create a custom app with the Bot capability and subscribe to `im.message.receive_v1`. Point the
+event subscription at `/api/v1/messaging/webhook/lark`. Use webhook/HTTP delivery, not long
+connection. Set `LARK_DOMAIN=lark` for Lark or leave the default `feishu` for Feishu. Set
+`LARK_ENCRYPT_KEY` when event encryption is enabled. The adapter and SDK load only when configured.
+
+### Linking and signup
 
 People link a chat app to their account from **Messaging** settings. `MESSAGING_OPEN_SIGNUP=true`
 instead gives unknown senders their own chat-only accounts, whose runs use the deployment model.
 
 In rooms, a bot decides whether to answer ambient messages with its own model. To use a separate
 model for that decision, set both `TEAM_CHAT_JUDGE_PROVIDER` and `TEAM_CHAT_JUDGE_MODEL`.
+
+### Microsoft Teams
+
+This guide covers installation in the Microsoft tenant that owns the bot registration.
+Cross-company distribution has not been verified for this configuration.
+
+1. Register an app in Microsoft Entra ID and create a client secret. Create an Azure Bot using
+   that app's **Single Tenant** identity, then enable its Microsoft Teams channel.
+2. Set `TEAMS_APP_ID`, `TEAMS_APP_PASSWORD` (the client secret **value**), and `TEAMS_APP_TENANT_ID`
+   on the API and worker. The tenant ID is the tenant that owns the bot registration.
+3. Set the bot's messaging endpoint to
+   `https://your-domain.example/api/v1/messaging/webhook/teams`. It must be publicly reachable over
+   HTTPS. Microsoft JWT verification remains enabled.
+4. In Developer Portal for Teams, create a Teams app with the existing bot's app ID and the
+   `personal` scope. Include the app's icons, website, privacy policy, and terms, then validate
+   and download the app package.
+5. Have a Microsoft 365 administrator upload the package to the organization's Teams app catalog
+   and allow the app for its intended users. Install that catalog app in Teams and open its
+   personal chat.
+6. In Rakazo, pick a bot under **Settings → Messaging**, choose `teams`, and send the code in a
+   direct message to the Teams app within 10 minutes.
+
+One server registration serves individually linked users; it does not bind the deployment to one
+Rakazo account, space, or bot. Replies use each user's linked conversation, including after a
+server restart. Teams channels, group chats, and starting a new DM by user address are not
+supported. No Microsoft Graph history permissions are needed.
+
+For **Permissions needed** during installation, check the app's availability for the affected
+user in Teams admin center. For a Developer Portal preview or personal package upload, also check
+**Teams apps → Setup policies → Upload custom apps** in the policy actually assigned to that user.
+A separate test-user policy can enable previews without changing the organization-wide default.
+Changes can take a few hours. Install the organization catalog version when the administrator has
+already published it there; a Developer Portal preview is a separate upload path.
+
+See Microsoft's [custom app installation guide](https://learn.microsoft.com/en-us/microsoftteams/platform/concepts/deploy-and-publish/apps-upload)
+and [app setup policies](https://learn.microsoft.com/en-us/microsoftteams/teams-app-setup-policies).
+Before considering setup complete, link a user in the registration's tenant and verify a
+message/reply roundtrip. Repeat with a second user linked to a different Rakazo bot to check
+individual routing. A validated package or successful installation alone does not verify message
+delivery.
 
 ### Slack
 
@@ -223,13 +297,31 @@ CURSOR_API_KEY=replace-with-your-key
 
 The key and explicit Space ID are both required. Use a credential whose connected repositories may be accessed by members of that Space. Each created agent is additionally bound to its initiating user; another user cannot inspect, reply to, or cancel it by supplying an agent ID. The deployment key is never a model tool argument.
 
+### Connect T3 Code
+
+T3 Code runs agents on a machine you control. Each user connects their own T3 Code environment; it needs no deployment setting, whatever `CLOUD_AGENT_PROVIDER` says, and follows the MCP server's usual access: the Rakazo agents it is assigned to, in the Spaces where it is available. Cloud agents those Rakazo agents launch then run on T3 Code instead of the deployment's provider; ones already running on the deployment's provider stay reachable.
+
+1. In T3 Code, copy the address from **Use T3 Code in another app (MCP)**. It ends in `/mcp`.
+2. In Rakazo, add it under **MCP servers** as a remote server and click **Connect OAuth**.
+3. On the T3 Code page that opens, set the access level to **Auto** (without a sign-in code it starts at **Read only**) and approve.
+
+Rakazo identifies a compatible connection by its orchestrator tools and input schemas, an explicit operate grant, and matching OAuth resource and authorization origins, rather than a display name.
+
+With **Read only**, the server is not used for new agents. With **Supervised**, every run that edits files waits for approval in T3 Code, and its card shows it running until then. To change the level, disconnect the server and connect it again; disconnecting ends its running agents as expired. T3 Code also refuses follow-ups and cancellation on threads running above the chosen level, such as full-access threads started in its own UI.
+
+T3 Code's approval lasts 30 days and cannot be renewed. Once it lapses or is revoked, new agents stop using the server, the cards of its running agents end as expired, and the server shows **Reconnect OAuth**. Removing, disabling or disconnecting the server, or making it unavailable in the Space, ends its agents the same way. Meanwhile new cloud agents run on the deployment's provider, if there is one.
+
+The address from step 1 goes through T3 Connect and is public HTTPS. A direct private address, such as a Tailscale one, needs `MCP_ALLOW_PRIVATE_ENDPOINT=true` on the API and worker. That setting is deployment-wide: it lets every user's MCP servers reach private addresses.
+
+A launch with a repository runs in a new worktree of the unarchived T3 Code project whose Git remote matches it, branched from that project's current checkout; a repository with no matching project is rejected. A launch without one uses a scratch folder. Agents use T3 Code's default model or, with none set, the first model of a provider that can run. Images are not supported. Rakazo sends a follow-up only after the agent's run ends; it waits behind a turn started in T3 Code itself. Cancel stops only the agent's current run, or removes a follow-up that has not started. When another run starts on the thread right after the agent's run finishes, as when T3 Code continues on its own, the card follows that run. A follow-up T3 Code holds instead of starting, as after a stopped or failed worktree setup, a provider failure or **Stop** in T3 Code, ends the card as failed after about a minute and is removed from T3 Code's queue where the connection's access allows it. A T3 Code version without the tools Rakazo uses fails the card.
+
 The tools are `cloud_agent_launch`, `cloud_agent_status`, `cloud_agent_reply`, and `cloud_agent_cancel`. All three mutations participate in the existing action-approval rules and auto-review policy. As with other consequential tools, an empty rule set and disabled auto-review permit execution by default.
 
 Launch accepts a prompt, optional repository, images, and `openPr`. Raw environment variables are intentionally unsupported: passing secrets through model-generated tool arguments would persist them in ordinary history. Configure remote environment secrets directly with the provider.
 
 ### Recovery
 
-The database stores ownership and pending operations independently of chat cards. The worker and reconciler recover queue failures and interrupted launches. Cursor creates use a stable client agent ID, so retrying an accepted create does not create another remote agent.
+The database stores ownership and pending operations independently of chat cards. The worker and reconciler recover queue failures and interrupted launches. Cursor creates use a stable client agent ID, so retrying an accepted create does not create another remote agent. T3 Code launches use a stable request key the same way, unless the server is reconnected while one is in flight.
 
 Each follow-up tracks its own remote run. When a follow-up response is lost, the worker observes the latest run instead of resending the prompt. Until it can distinguish the new run, status remains pending; it does not claim the older run completed the follow-up. Cancellation likewise remains pending until the remote state confirms it. If a request's outcome remains unknown indefinitely, inspect the agent on the provider's site.
 

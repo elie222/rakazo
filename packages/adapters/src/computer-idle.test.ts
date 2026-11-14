@@ -5,6 +5,7 @@ import { FetchError } from "@boatdev/sdk";
 import type { AgentHomeStore, JobPublisher, SandboxProvider } from "@rakazo/adapter-kit";
 import {
   SandboxDamagedError,
+  SandboxProviderAccountError,
   SandboxRateLimitError,
   SandboxUnavailableError,
   SandboxUnresponsiveError,
@@ -319,6 +320,28 @@ describe("sandbox idle", () => {
     expect(harness.jobs.enqueue).toHaveBeenCalledOnce();
   });
 
+  it("leaves a heartbeat the provider fails after checkpointing to the next idle check", async () => {
+    const harness = idleHarness({ backgroundWorkProbeCodes: [1, 0] });
+    harness.sandbox.keepAlive.mockRejectedValueOnce(
+      new SandboxUnresponsiveError("provider request failed (HTTP 500)"),
+    );
+
+    await expect(sleepComputerIfIdle(harness.deps, harness.computer.id)).resolves.toBeUndefined();
+
+    expect(harness.sandbox.stop).not.toHaveBeenCalled();
+    expect(harness.jobs.enqueue).toHaveBeenCalledOnce();
+  });
+
+  it("reports the provider account refusing the heartbeat after checkpointing", async () => {
+    const harness = idleHarness({ backgroundWorkProbeCodes: [1, 0] });
+    harness.sandbox.keepAlive.mockRejectedValueOnce(new SandboxProviderAccountError());
+
+    await expect(sleepComputerIfIdle(harness.deps, harness.computer.id)).rejects.toBeInstanceOf(
+      SandboxProviderAccountError,
+    );
+    expect(harness.sandbox.stop).not.toHaveBeenCalled();
+  });
+
   it("uses provider-native idle inspection instead of retaining emulator computers", async () => {
     const harness = idleHarness({ providerBackgroundWorkStatus: "idle" });
 
@@ -370,7 +393,6 @@ describe("sandbox idle", () => {
         controlUserId: null,
         controlLeaseExpiresAt: null,
         controlBotId: null,
-        controlRunId: null,
       },
     });
     expect(harness.events.append).toHaveBeenCalledWith(
@@ -1162,59 +1184,35 @@ describe("maximum active lifetime", () => {
     expect(harness.sandbox.stop).toHaveBeenCalledOnce();
   });
 
-  it("leaves a computer the user is controlling to its control lease", async () => {
-    const control = {
+  it("keeps a controlled computer up within the limit and stops it past the limit, ending control", async () => {
+    const harness = idleHarness({ billsWhileRunning: true, runningSince: new Date(now) });
+    Object.assign(harness.computer, {
       controlHolder: "user",
       controlLeaseId: "lease",
       controlLeaseExpiresAt: new Date(now + 60_000),
-    };
-    const harness = idleHarness({ billsWhileRunning: true, runningSince: longAgo });
-    Object.assign(harness.computer, control);
-    harness.prisma.run.findFirst.mockImplementation(async ({ where }) =>
-      where.status.in.includes("waiting_takeover") ? { id: "waiting-for-user" } : null,
+    });
+
+    // Within the limit each check-in pushes the idle check a full idle window out.
+    vi.setSystemTime(now + 60_000);
+    Object.assign(harness.computer, { controlLeaseExpiresAt: new Date(now + 120_000) });
+    await touchRunningComputer(harness.deps, harness.computer);
+    expect(harness.jobs.enqueue).toHaveBeenLastCalledWith(
+      expect.objectContaining({ availableAt: new Date(now + 60_000 + DEFAULT_SANDBOX_IDLE_MS) }),
     );
+    expect(harness.sandbox.keepAlive).toHaveBeenCalledOnce();
 
-    for (const elapsed of [0, 60_000, DEFAULT_COMPUTER_MAX_ACTIVE_MS + 60_000]) {
-      vi.setSystemTime(now + elapsed);
-      Object.assign(harness.computer, {
-        controlLeaseExpiresAt: new Date(now + elapsed + 60_000),
-      });
-      await touchRunningComputer(harness.deps, harness.computer);
-      await sleepComputerIfIdle(harness.deps, harness.computer.id);
-      expect(harness.jobs.enqueue).toHaveBeenLastCalledWith(
-        expect.objectContaining({
-          availableAt: new Date(now + elapsed + DEFAULT_SANDBOX_IDLE_MS),
-        }),
-      );
-    }
-
-    expect(harness.sandbox.keepAlive).toHaveBeenCalledTimes(6);
-    expect(harness.jobs.enqueue).toHaveBeenCalledTimes(6);
-    expect(harness.sandbox.stop).not.toHaveBeenCalled();
+    // A page that keeps checking in renews control, but not past the lifetime limit.
+    const past = now + DEFAULT_COMPUTER_MAX_ACTIVE_MS + 60_000;
+    vi.setSystemTime(past);
+    Object.assign(harness.computer, { controlLeaseExpiresAt: new Date(past + 60_000) });
+    await touchRunningComputer(harness.deps, harness.computer);
+    expect(harness.jobs.enqueue).toHaveBeenLastCalledWith(
+      expect.objectContaining({ availableAt: new Date(past) }),
+    );
+    await sleepComputerIfIdle(harness.deps, harness.computer.id);
+    expect(harness.sandbox.stop).toHaveBeenCalledOnce();
+    expect(harness.computer).toMatchObject({ state: "suspended", controlHolder: "none" });
   });
-
-  it.each([undefined, false])(
-    "keeps an unbilled computer (%s) awake for a run that just asked for takeover",
-    async (billing) => {
-      const harness = idleHarness({
-        billsWhileRunning: billing,
-        takeoverRequestedAt: new Date(now - 5 * 60_000),
-      });
-
-      await sleepComputerIfIdle(harness.deps, harness.computer.id);
-
-      expect(harness.prisma.run.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: { bot: { computerId: harness.computer.id }, status: "waiting_takeover" },
-        }),
-      );
-      expect(harness.sandbox.stop).not.toHaveBeenCalled();
-      expect(harness.sandbox.keepAlive).toHaveBeenCalledOnce();
-      expect(harness.jobs.enqueue).toHaveBeenCalledWith(
-        expect.objectContaining({ availableAt: new Date(now + DEFAULT_SANDBOX_IDLE_MS) }),
-      );
-    },
-  );
 
   it("rechecks a waiting takeover when its grace ends", async () => {
     const requestedAt = new Date(now - TAKEOVER_IDLE_GRACE_MS + 60_000);
@@ -1401,7 +1399,7 @@ describe("maximum active lifetime", () => {
       expect(harness.sandbox.stop).not.toHaveBeenCalled();
     });
 
-    it("leaves a computer the user is controlling past the cap to its control lease", async () => {
+    it("stops a computer the user is controlling past the cap", async () => {
       vi.stubEnv("COMPUTER_MAX_ACTIVE_UNBILLED_MS", String(unbilledLimit));
       const harness = idleHarness({ billsWhileRunning: false, runningSince: pastUnbilled });
       Object.assign(harness.computer, {
@@ -1409,15 +1407,12 @@ describe("maximum active lifetime", () => {
         controlLeaseId: "lease",
         controlLeaseExpiresAt: new Date(now + 60_000),
       });
-      harness.prisma.run.findFirst.mockImplementation(async ({ where }) =>
-        where.status.in.includes("waiting_takeover") ? { id: "waiting-for-user" } : null,
-      );
 
       await touchRunningComputer(harness.deps, harness.computer);
       await sleepComputerIfIdle(harness.deps, harness.computer.id);
 
-      expect(harness.sandbox.keepAlive).toHaveBeenCalledTimes(2);
-      expect(harness.sandbox.stop).not.toHaveBeenCalled();
+      expect(harness.sandbox.stop).toHaveBeenCalledOnce();
+      expect(harness.computer.controlHolder).toBe("none");
     });
 
     it("keeps a computer past the cap while a coding agent works", async () => {
@@ -1543,7 +1538,7 @@ describe("monthly computer allowance", () => {
     expect(harness.computer.state).toBe("running");
   });
 
-  it("leaves a computer whose allowance is spent to a user in control until the lease ends", async () => {
+  it("stops a computer whose allowance is spent even while a person is in control", async () => {
     const harness = idleHarness({
       billsWhileRunning: true,
       runningSince: new Date(now - 60_000),
@@ -1554,14 +1549,16 @@ describe("monthly computer allowance", () => {
       controlLeaseId: "lease",
       controlLeaseExpiresAt: new Date(now + 60_000),
     });
-    harness.prisma.run.findFirst.mockImplementation(async ({ where }) =>
-      where.status.in.includes("waiting_takeover") ? { id: "waiting-for-user" } : null,
-    );
 
     await sleepComputerIfIdle(harness.deps, harness.computer.id);
 
-    expect(harness.sandbox.stop).not.toHaveBeenCalled();
-    expect(harness.computer.state).toBe("running");
+    expect(harness.sandbox.stop).toHaveBeenCalledOnce();
+    expect(harness.computer).toMatchObject({ state: "suspended", controlHolder: "none" });
+    // Control ends through the shared helper, which drafts a recording made under it.
+    expect(harness.deps.events.draftRecordingsOfLease).toHaveBeenCalledWith({
+      spaceId: harness.computer.spaceId,
+      leaseId: "lease",
+    });
   });
 
   it("stops a computer whose allowance is spent even while a coding agent works", async () => {
@@ -2125,6 +2122,7 @@ function idleHarness(
   const events = {
     append: vi.fn().mockResolvedValue({}),
     notify: vi.fn().mockResolvedValue(undefined),
+    draftRecordingsOfLease: vi.fn().mockResolvedValue([]),
   };
   return {
     computer,

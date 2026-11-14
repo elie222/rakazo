@@ -7,6 +7,7 @@ import { HOSTED_SANDBOXES_TABLE } from "./compare";
 import { daytona } from "./daytona";
 import { docker } from "./docker";
 import { e2b } from "./e2b";
+import { instabox } from "./instabox";
 import { kubernetes } from "./kubernetes";
 import { novita } from "./novita";
 import { railway } from "./railway";
@@ -17,6 +18,7 @@ import {
   DAYTONA_CREDIT,
   E2B_CREDIT,
   E2B_PRO_FEE,
+  INSTABOX,
   KUBERNETES_NODE_FITS,
   MONTH_HOURS,
   NOVITA_CREDIT,
@@ -33,10 +35,15 @@ import {
   dockerComputersFit,
   euro,
   hourly,
+  instaboxCreditHours,
+  instaboxHour,
+  instaboxProMonthly,
+  instaboxShape,
   macMiniMonthly,
   monthly,
   railwayAppMonthly,
   railwayComputerMonthly,
+  rateUsd,
   sandboxPath,
   usd,
   wuyingPayAsYouGo,
@@ -55,6 +62,7 @@ export const SANDBOXES: readonly Sandbox[] = [
   e2b,
   daytona,
   novita,
+  instabox,
   railway,
   wuying,
   docker,
@@ -70,6 +78,9 @@ const About = (amount: number) => `A${aboutUsd(amount).slice(1)}`;
 const boatBeatsE2bHours = Math.round(BOAT.minimum / hourly(RATES.e2b) / 10) * 10;
 const hostedHourly = [RATES.novita, RATES.e2b].map((rate) => hourly(rate));
 const hostedWorkday = [RATES.novita, RATES.e2b].map((rate) => monthly(rate, WORKDAY_HOURS));
+const instaboxShapeLabel = instaboxShape();
+const instaboxHourly = instaboxHour();
+const instaboxCredit = instaboxCreditHours();
 
 /** Hub sections after the comparison table: prices, the wider market, and isolation. */
 const HUB_SECTIONS: readonly ArticleSection[] = [
@@ -109,6 +120,15 @@ const HUB_SECTIONS: readonly ArticleSection[] = [
         {
           topic: "[Novita](/sandboxes/novita/)",
           cells: ["Per second, no plan fee", `$${NOVITA_CREDIT} credit after a survey`, ...perSecondRow(RATES.novita)],
+        },
+        {
+          topic: "[InstaBox](/sandboxes/instabox/)",
+          cells: [
+            `Per second. Pro plan $${INSTABOX.proFee} a month, returned as usage credit`,
+            "Free plan for one computer",
+            `${usd(instaboxProMonthly(WORKDAY_HOURS))} on Pro, the fee, at ${instaboxShapeLabel}, the size Rakazo uses`,
+            `${usd(instaboxProMonthly(MONTH_HOURS))} on Pro`,
+          ],
         },
         {
           topic: "[Railway](/sandboxes/railway/)",
@@ -154,8 +174,9 @@ const HUB_SECTIONS: readonly ArticleSection[] = [
       note: `${PRICES_NOTE} Usage before free credits. Rakazo can't run Boat at 2 vCPU / 4 GB: self-hosted installs use ${BOAT_RAKAZO.vcpus} vCPU / ${BOAT_RAKAZO.gb} GB machines, which cost ${usd(boatMonthly(BOAT_RAKAZO.hour, WORKDAY_HOURS))} and ${usd(boatMonthly(BOAT_RAKAZO.hour, MONTH_HOURS))}, and larger Rakazo Cloud plans use [larger ones](/sandboxes/boat/). Each option's page shows the rates and assumptions behind its numbers.`,
     },
     bullets: [
-      "For a few hours a day, per-second providers are cheapest. Novita has the lowest rate of the hosted options Rakazo supports, and E2B and Daytona charge the same as each other.",
+      "For a few hours a day, per-second providers are cheapest. InstaBox has the lowest hourly rates here, just under Boat's, and a free plan for one computer, but more computers need its Pro plan. Of the providers with no plan fee, Novita has the lowest rate, and E2B and Daytona charge the same as each other.",
       `Boat's $${BOAT.minimum} minimum covers about ${Math.floor(BOAT.minimum / BOAT_RAKAZO.hour)} hours of the bigger computer self-hosted Rakazo uses, and it covers every computer on the account, so it is cheaper than E2B or Daytona once your computers run more than about ${boatBeatsE2bHours} hours a month between them, and by far around the clock.`,
+      `InstaBox's Pro fee works the same way: the $${INSTABOX.proFee} comes back as usage credit, enough for about ${instaboxCredit} hours of the ${instaboxShapeLabel} computer Rakazo uses there, shared by every computer on the account.`,
       "A server you rent for Docker costs the same whether bots work or not. It's the cheapest way to run many computers, if you're happy to look after it.",
     ],
   },
@@ -199,7 +220,7 @@ const HUB_SECTIONS: readonly ArticleSection[] = [
         {
           topic: "microVM: Firecracker, Kata, Cloud Hypervisor",
           cells: [
-            "[E2B](/sandboxes/e2b/), CreateOS, boxd, Vercel Sandbox, Northflank, [Kubernetes](/sandboxes/kubernetes/) with Kata",
+            "[E2B](/sandboxes/e2b/), [InstaBox](/sandboxes/instabox/), CreateOS, boxd, Vercel Sandbox, Northflank, [Kubernetes](/sandboxes/kubernetes/) with Kata",
             "Other people's bots and public instances",
             "Needs KVM on your own hardware",
           ],
@@ -230,6 +251,7 @@ const HUB_SOURCES: readonly SourceLink[] = [
   PRICING.e2b,
   PRICING.daytona,
   PRICING.novita,
+  PRICING.instabox,
   PRICING.railway,
   PRICING.wuying,
   PRICING.createos,
@@ -246,7 +268,7 @@ const HUB_SOURCES: readonly SourceLink[] = [
 export const SANDBOXES_HUB = {
   title: "Best AI agent sandboxes in 2026: pricing and comparison of Boat, E2B, Daytona, Modal, Vercel and more",
   description:
-    "Where should an AI agent's computer run? Prices, isolation, session limits and self-hosting compared for Boat, E2B, Daytona, Novita, Railway, Docker and Kubernetes, with Modal, Vercel Sandbox and Northflank for reference.",
+    "Where should an AI agent's computer run? Prices, isolation, session limits and self-hosting compared for Boat, E2B, Daytona, Novita, InstaBox, Railway, Docker and Kubernetes, with Modal, Vercel Sandbox and Northflank for reference.",
   h1: "Best sandboxes for AI agents in 2026",
   intro: [
     "An AI agent that only chats can't do much. To clean up an inbox, research a list of companies or fix a bug, it needs a computer: a browser it can sign in with, files it can keep, and a terminal to run things in. A sandbox is that computer, kept apart from yours so a mistake stays contained.",
@@ -271,11 +293,11 @@ export const SANDBOXES_HUB = {
   choose: [
     {
       heading: "You want it hosted",
-      text: `[Boat](/sandboxes/boat/) is what Rakazo Cloud runs its own bot computers on: full Linux VMs where every bot keeps its own Chrome logins, for a $${BOAT.minimum} monthly minimum. [E2B](/sandboxes/e2b/) is the option Rakazo's live computer tests run on, gives every computer its own microVM, and pauses idle computers instead of deleting them. [Novita](/sandboxes/novita/) pauses with memory, so a bot comes back to the same open programs, at the lowest hourly rate. [Daytona](/sandboxes/daytona/) keeps each computer's disk, has no session cap, and suits teams already using it.`,
+      text: `[Boat](/sandboxes/boat/) is what Rakazo Cloud runs its own bot computers on: full Linux VMs where every bot keeps its own Chrome logins, for a $${BOAT.minimum} monthly minimum. [E2B](/sandboxes/e2b/) is the option Rakazo's live computer tests run on, gives every computer its own microVM, and pauses idle computers instead of deleting them. [Novita](/sandboxes/novita/) pauses with memory, so a bot comes back to the same open programs, with no plan fee. [InstaBox](/sandboxes/instabox/) also pauses with memory, at low hourly rates, with a free plan for one computer. [Daytona](/sandboxes/daytona/) keeps each computer's disk, has no session cap, and suits teams already using it.`,
     },
     {
       heading: "You want the smallest bill",
-      text: "If bots work an hour or two a day, a per-second provider such as [Novita](/sandboxes/novita/) or [E2B](/sandboxes/e2b/) costs a few dollars a month. If they work most of the day, [Boat](/sandboxes/boat/)'s flat minimum or a [Docker](/sandboxes/docker/) server you rent is cheaper. Cheapest of all is a spare machine you already own.",
+      text: "If bots work an hour or two a day, a per-second provider such as [Novita](/sandboxes/novita/) or [E2B](/sandboxes/e2b/) costs a few dollars a month, and [InstaBox](/sandboxes/instabox/)'s free plan runs one computer at no charge. If they work most of the day, [Boat](/sandboxes/boat/)'s flat minimum, InstaBox's Pro plan or a [Docker](/sandboxes/docker/) server you rent is cheaper. Cheapest of all is a spare machine you already own.",
     },
     {
       heading: "You don't want a cloud account",
@@ -306,12 +328,12 @@ export const SANDBOXES_HUB = {
     },
     {
       question: "How much does an AI agent sandbox cost?",
-      answer: `Hosted sandboxes charge about ${usd(hostedHourly[0])} to ${usd(hostedHourly[1])} an hour for 2 vCPU and 4 GB while running, as of November 2026, so a computer used 4 hours a workday costs about $${Math.round(hostedWorkday[0])} to $${Math.round(hostedWorkday[1])} a month. Boat has a $${BOAT.minimum} monthly minimum that covers far more hours. Self-hosting costs whatever your server does.`,
+      answer: `Most hosted sandboxes Rakazo supports charge about ${usd(hostedHourly[0])} to ${usd(hostedHourly[1])} an hour for 2 vCPU and 4 GB while running, as of November 2026, so a computer used 4 hours a workday costs about $${Math.round(hostedWorkday[0])} to $${Math.round(hostedWorkday[1])} a month. InstaBox charges about ${rateUsd(instaboxHourly)} an hour for the ${instaboxShapeLabel} computer Rakazo uses there. Boat has a $${BOAT.minimum} monthly minimum, and InstaBox's $${INSTABOX.proFee} Pro fee comes back as usage credit, so both cover far more hours. Self-hosting costs whatever your server does.`,
     },
     {
       question: "What is the cheapest sandbox for AI agents?",
       answer:
-        "A spare computer running [Docker](/sandboxes/docker/), which costs only electricity. Among the hosted options Rakazo supports, [Novita](/sandboxes/novita/) has the lowest hourly rate and [Boat](/sandboxes/boat/) is cheapest for computers that run most of the day.",
+        "A spare computer running [Docker](/sandboxes/docker/), which costs only electricity. Among the hosted options compared here, [InstaBox](/sandboxes/instabox/) and [Boat](/sandboxes/boat/) have the lowest hourly rates. InstaBox also has a free plan for one computer, and Boat and InstaBox's Pro plan are cheapest for computers that run most of the day.",
     },
     {
       question: "Is the E2B sandbox free?",
@@ -320,7 +342,7 @@ export const SANDBOXES_HUB = {
     {
       question: "Does Rakazo support Modal or Vercel Sandbox?",
       answer:
-        "No. Rakazo supports Boat, E2B, Daytona, Novita, Railway, Wuying, CreateOS, boxd, Docker, Kubernetes, Incus and your own computer. Modal and Vercel Sandbox are compared above for reference.",
+        "No. Rakazo supports Boat, E2B, Daytona, Novita, InstaBox, Railway, Wuying, CreateOS, boxd, Docker, Kubernetes, Incus and your own computer. Modal and Vercel Sandbox are compared above for reference.",
     },
     {
       question: "Do I need a sandbox provider to run Rakazo?",
@@ -335,7 +357,7 @@ export const SANDBOXES_HUB = {
     {
       question: "Is Docker a real sandbox for AI agents?",
       answer:
-        "It's a real boundary but not the strongest. Rakazo's containers drop every Linux capability and cap memory, CPU and processes, but they share the host's kernel. For bots you don't fully trust, pick a provider that gives each computer its own kernel as Rakazo uses it: [E2B](/sandboxes/e2b/) and CreateOS (Firecracker microVMs), boxd (microVMs), [Boat](/sandboxes/boat/) and [Railway](/sandboxes/railway/) (full VMs), or [Kubernetes](/sandboxes/kubernetes/) with Kata. gVisor on Kubernetes is a middle ground. Not every hosted sandbox qualifies: Rakazo creates [Daytona](/sandboxes/daytona/) computers as Daytona's default containers, which share the host's kernel, and Novita doesn't say what it uses.",
+        "It's a real boundary but not the strongest. Rakazo's containers drop every Linux capability and cap memory, CPU and processes, but they share the host's kernel. For bots you don't fully trust, pick a provider that gives each computer its own kernel as Rakazo uses it: [E2B](/sandboxes/e2b/), [InstaBox](/sandboxes/instabox/) and CreateOS (Firecracker microVMs), boxd (microVMs), [Boat](/sandboxes/boat/) and [Railway](/sandboxes/railway/) (full VMs), or [Kubernetes](/sandboxes/kubernetes/) with Kata. gVisor on Kubernetes is a middle ground. Not every hosted sandbox qualifies: Rakazo creates [Daytona](/sandboxes/daytona/) computers as Daytona's default containers, which share the host's kernel, and Novita doesn't say what it uses.",
     },
   ],
   sources: HUB_SOURCES,

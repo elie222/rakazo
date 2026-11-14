@@ -40,6 +40,7 @@ const KUBERNETES_SANDBOX =
   "SANDBOX_PROVIDER=kubernetes runs the api and worker in a cluster, not Compose";
 
 /** Read by code but never passed to the api or worker containers, with the reason. */
+const LOCAL_VM = "Mac VM computers, which only the desktop app's native stack runs";
 const NOT_PASSED: Record<string, string> = {
   VITEST: "set by the test runner",
   OWNER_EMAIL: "bootstrap-owner CLI input, passed on its own command line",
@@ -48,6 +49,10 @@ const NOT_PASSED: Record<string, string> = {
   INVOCATION_ID: "restart-supervisor detection for systemd hosts; Compose restarts containers",
   RAKAZO_ALLOW_DEV_SECRETS: "development-only escape hatch for placeholder secrets",
   EMAIL_EMULATOR: "ignored when NODE_ENV=production",
+  BILLING_EMULATOR: "ignored when NODE_ENV=production",
+  NODE_USE_ENV_PROXY:
+    "Node's own proxy switch, read to match it; Compose sends proxied traffic through HTTP_PROXY",
+  NODE_OPTIONS: "Node's own startup flags, read to match its proxy switch; never set by Compose",
   AWS_KMS_PROFILE: "for maintainer laptops; servers use AWS_KMS_ACCESS_KEY_ID and its secret",
   GIT_SHA: "baked into the image at build time; a pass-through entry would unset it",
   SHELL: "host shell for the desktop computer, which only the Electron app runs",
@@ -58,6 +63,12 @@ const NOT_PASSED: Record<string, string> = {
   RAKAZO_IMAGE_TAG: "read by deployment tooling and the updater sidecar, not app processes",
   RAKAZO_DEPLOYED_MIGRATIONS: "passed only to the migration CLI by the production deploy script",
   RAKAZO_IMAGE_TAG_PREVIOUS: "read by the updater sidecar, which has its own environment",
+  RAKAZO_DB_PACKAGE_DIR: "passed only to the migration CLI by the desktop app's native stack",
+  RAKAZO_ENV_FILE: "set by the desktop app's native stack so no stray .env is read",
+  LOCAL_VM_CLI: LOCAL_VM,
+  LOCAL_VM_COMPUTER_IMAGE: LOCAL_VM,
+  LOCAL_VM_CPUS: LOCAL_VM,
+  LOCAL_VM_MEMORY: LOCAL_VM,
   KUBERNETES_SANDBOX_COMPUTER_IMAGE: KUBERNETES_SANDBOX,
   KUBERNETES_SANDBOX_HOME_CLAIM: KUBERNETES_SANDBOX,
   KUBERNETES_SANDBOX_HOME_COLOCATE_LABELS: KUBERNETES_SANDBOX,

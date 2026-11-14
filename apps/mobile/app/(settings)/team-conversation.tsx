@@ -18,7 +18,7 @@ import {
 } from "@rakazo/core";
 import type { NativeStackNavigationOptions } from "expo-router";
 import { useLocalSearchParams, useNavigation, useRouter } from "expo-router";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Alert, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { glassHeaderOptions } from "../../components/glass-title";
 import { LoadFailure } from "../../components/load-failure";
@@ -28,12 +28,14 @@ import { NativeSymbol } from "../../components/native-symbol";
 import { SettingsGroup, SettingsRow } from "../../components/settings-group";
 import { rpc } from "../../lib/api";
 import { mobileTokens } from "../../lib/appearance";
+import { CallKeyboardContext } from "../../lib/call-keyboard-context";
 import { native, useMobileTokens, useThemedStyles } from "../../lib/native";
 import { iosAtLeast } from "../../lib/native-controls";
 import { errorText } from "../../lib/user-error";
 
 /** Reply mode, instructions, and automated-sender handling for one team chat room. */
 export default function TeamConversationSettings() {
+  const rootAvoidsKeyboard = useContext(CallKeyboardContext);
   const { t } = useLingui();
   const router = useRouter();
   const navigation = useNavigation();
@@ -164,7 +166,7 @@ export default function TeamConversationSettings() {
     <ScrollView
       contentInsetAdjustmentBehavior="automatic"
       contentContainerStyle={styles.content}
-      automaticallyAdjustKeyboardInsets
+      automaticallyAdjustKeyboardInsets={!rootAvoidsKeyboard}
       keyboardShouldPersistTaps="handled"
       keyboardDismissMode="on-drag"
     >

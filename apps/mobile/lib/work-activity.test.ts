@@ -50,15 +50,48 @@ const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 beforeEach(() => {
   vi.clearAllMocks();
+  rpc.mockReset();
   app.token = "session-token";
   app.generation = 1;
   app.ready = 1;
   app.readFails = false;
 });
 
-it("starts the card for the chat just sent to", () => {
+it("starts the card for the chat just sent to only after the server confirms support", async () => {
+  let reply!: (value: { following: boolean }) => void;
+  rpc.mockReturnValueOnce(new Promise((resolve) => (reply = resolve)));
   startWorkActivity({ title: "Planner", spaceId: "space-1", target: { groupId: "group-1" } });
+  expect(rpc).toHaveBeenCalledWith("notifications/followWorkActivity", {});
+  expect(native.startWorkActivity).not.toHaveBeenCalled();
+  reply({ following: true });
+  await settle();
   expect(native.startWorkActivity).toHaveBeenCalledWith("Planner", "space-1", null, "group-1");
+});
+
+it("skips creating a card when the server cannot follow it", async () => {
+  rpc.mockResolvedValueOnce({ following: false });
+  startWorkActivity({ title: "Planner", spaceId: "space-1", target: { botId: "bot-1" } });
+  await settle();
+  expect(native.startWorkActivity).not.toHaveBeenCalled();
+  expect(native.endWorkActivity).not.toHaveBeenCalled();
+});
+
+it.each(["unsupported preflight", "offline"])("skips creating a card on %s", async (message) => {
+  rpc.mockRejectedValueOnce(new Error(message));
+  startWorkActivity({ title: "Planner", spaceId: "space-1", target: { botId: "bot-1" } });
+  await settle();
+  expect(native.startWorkActivity).not.toHaveBeenCalled();
+  expect(native.endWorkActivity).not.toHaveBeenCalled();
+});
+
+it("ignores preflight support from a previous session", async () => {
+  let reply!: (value: { following: boolean }) => void;
+  rpc.mockReturnValueOnce(new Promise((resolve) => (reply = resolve)));
+  startWorkActivity({ title: "Planner", spaceId: "space-1", target: { botId: "bot-1" } });
+  app.generation += 1;
+  reply({ following: true });
+  await settle();
+  expect(native.startWorkActivity).not.toHaveBeenCalled();
 });
 
 it("ends the card only when the server says nothing would update it", async () => {

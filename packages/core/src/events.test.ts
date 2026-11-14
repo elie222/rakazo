@@ -1,8 +1,10 @@
+import type { MessageBlock } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import {
   appendTextSegment,
   appendToolCallSegment,
   appendToolStep,
+  appToolLabel,
   containsSecret,
   createStreamingRedactor,
   endsSentence,
@@ -19,12 +21,14 @@ import {
   runFailureError,
   sanitizeJsonValue,
   sanitizeUtf16ForJson,
+  splitToolHistory,
   stripLiveStreamingProgress,
   toolNameFromLabel,
   trackToolCallStreak,
   trackToolNameStreak,
   withLiveStreamingProgress,
   withoutLastToolStepNotes,
+  withToolHistory,
   withToolStepOutcomes,
 } from "./events.js";
 import { modelFallbackFailure, normalizeRunError } from "./run-error.js";
@@ -643,6 +647,13 @@ describe("toolNameFromLabel", () => {
   });
 });
 
+describe("appToolLabel", () => {
+  it("drops the app's own prefix only", () => {
+    expect(appToolLabel("GMAIL_SEND_EMAIL", "gmail")).toBe("Send email");
+    expect(appToolLabel("SLACK_FIND_CHANNELS", "gmail")).toBe("Slack find channels");
+  });
+});
+
 describe("humanizeToolName", () => {
   it("turns a Composio-style constant into a readable label", () => {
     expect(humanizeToolName("SLACK_FIND_CHANNELS")).toBe("Slack find channels");
@@ -1138,5 +1149,40 @@ describe("withToolStepOutcomes", () => {
       segments,
     );
     expect(withToolStepOutcomes(segments, [])).toEqual(segments);
+  });
+});
+
+describe("a reply's kept tool calls", () => {
+  it("split off the blocks as one entry per step and merge back unchanged", () => {
+    const kept = {
+      tool: "shell",
+      calls: [{ arguments: '{"command":"ls"}', result: "notes.txt" }],
+    };
+    const blocks = [
+      {
+        kind: "steps",
+        steps: [
+          { label: "Shell", count: 1, ...kept },
+          { label: "Web fetch", count: 2 },
+        ],
+      },
+      { kind: "text", text: "Done." },
+      { kind: "steps", steps: [{ label: "Shell", count: 1, ...kept }] },
+    ] as MessageBlock[];
+    const { blocks: shown, toolHistory } = splitToolHistory(blocks);
+    expect(JSON.stringify(shown)).not.toMatch(/"tool"|"calls"|notes\.txt/);
+    expect(toolHistory).toEqual({ steps: [kept, null, kept] });
+    expect(withToolHistory(shown, toolHistory)).toEqual([
+      {
+        kind: "steps",
+        steps: [
+          { label: "Shell", count: 1, ...kept },
+          { label: "Web fetch", count: 2 },
+        ],
+      },
+      { kind: "text", text: "Done." },
+      { kind: "steps", steps: [{ label: "Shell", count: 1, ...kept }] },
+    ]);
+    expect(splitToolHistory(shown).toolHistory).toBeUndefined();
   });
 });

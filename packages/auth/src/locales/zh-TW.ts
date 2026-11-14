@@ -22,25 +22,25 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Your Rakazo confirmation code": "你的 Rakazo 確認碼",
   "Enter this code in Rakazo to confirm it's you:": "在 Rakazo 中輸入此驗證碼以確認是你本人：",
   "Welcome to Rakazo": "歡迎使用 Rakazo",
-  "Thanks for signing up for Rakazo.": "感謝你註冊 Rakazo。",
-  "Rakazo also has apps for": "Rakazo 也提供以下平台的 App：",
-  "Questions or ideas?": "有問題或想法嗎？",
-  "Join us on Discord": "加入我們的 Discord",
-  "Rakazo is open source. If you like it,": "Rakazo 是開源專案。如果你喜歡它，",
-  "a star on GitHub": "在 GitHub 上給顆星",
-  "helps others find it.": "能幫助更多人發現它。",
-  "Want to run it on your own servers?": "想在自己的伺服器上執行嗎？",
-  "Self-host Rakazo": "自行架設 Rakazo",
-  "Have any questions? Reply to this email.": "有任何問題嗎？請回覆這封郵件。",
+  "Welcome to Rakazo. The people who get the most out of it do three things:":
+    "歡迎使用 Rakazo。用得最好的人都會做三件事：",
+  "Get the apps": "下載應用程式",
+  "Rakazo runs on {platforms}, so your bots can reach you wherever you are.":
+    "Rakazo 支援 {platforms}，讓你的機器人隨時隨地都能聯絡到你。",
+  "Join the community": "加入社群",
+  "See what others are building, get help fast, and tell us what to build next on {discord}.":
+    "在 {discord} 上看看別人在打造什麼、快速獲得協助，並告訴我們接下來該做什麼。",
+  "Star us on GitHub": "在 GitHub 上給我們星星",
+  "Rakazo is open source. {star} helps more people find it.":
+    "Rakazo 是開源的。{star}能幫助更多人發現它。",
+  "A star on GitHub": "在 GitHub 上給星星",
+  "Questions? Just reply. I read every one.": "有問題嗎？直接回覆即可。每封我都會看。",
   Unsubscribe: "取消訂閱",
   "Invite a friend": "邀請朋友",
   "Invite a friend to Rakazo: they get {weeks} weeks free, and you earn a free month when they start a qualifying subscription with a new card.":
     "邀請朋友加入 Rakazo：對方可免費使用 {weeks} 週；當對方用新卡開始符合條件的訂閱時，你將獲得一個月免費。",
   "Open Rakazo": "開啟 Rakazo",
   "and choose Invite friends for your link.": "並選擇「邀請朋友」取得你的連結。",
-  "Have any questions? Just reply to this email.": "有任何問題嗎？直接回覆這封郵件即可。",
-  "If you're enjoying Rakazo,": "如果你喜歡 Rakazo，",
-  "give us a star on GitHub": "歡迎在 GitHub 上給我們一顆星",
   "We received your Rakazo plugin": "我們已收到你的 Rakazo 外掛",
   "Thanks for submitting a plugin to the Rakazo marketplace.": "感謝你向 Rakazo 外掛市集提交外掛。",
   "We review every submission and will email you when it's done.":

@@ -3,6 +3,7 @@ import type {
   Model,
   Models,
   ModelThinkingLevel,
+  MutableModels,
   ThinkingLevelMap,
 } from "@earendil-works/pi-ai";
 import { clampThinkingLevel } from "@earendil-works/pi-ai";
@@ -25,15 +26,19 @@ import {
   REASONING_MODEL_MAX_TOKENS,
   resolveCompletionMaxTokens,
 } from "./pi-runtime-limits.js";
+import { scopedRuntimeModels } from "./pi-runtime-scope.js";
 
 // Built on first use, not at module load: entry points call loadRootEnv() after
 // their imports, and ESM hoists those imports, so module-level env reads here
 // would run before .env is loaded and miss the local provider entirely.
 let catalogModelsCache: Models | undefined;
-function catalogModels(): Models {
-  catalogModelsCache ??= registerOpenAiCompatibleCatalog(
+export function createRuntimeModels(): MutableModels {
+  return registerOpenAiCompatibleCatalog(
     registerLocalProvider(applyPiModelCompatibility(builtinModels())),
   );
+}
+function catalogModels(): Models {
+  catalogModelsCache ??= createRuntimeModels();
   return catalogModelsCache;
 }
 
@@ -172,7 +177,7 @@ export function modelsForRequest(
       contextWindow: request.model.contextWindow,
     });
   }
-  return catalogModels();
+  return scopedRuntimeModels() ?? catalogModels();
 }
 
 export function modelForCompletion(model: Model<Api>, configuredMaxTokens?: number): Model<Api> {
@@ -234,7 +239,7 @@ const UNSUPPORTED_REASONING_EFFORT =
   /\b(?:unsupported|invalid) reasoning[ _]effort\b|\breasoning[ _]effort\b[^.;:\n]{0,30}?\b(?:not supported|unsupported|invalid)\b/i;
 
 const REASONING_EFFORT_CHOICES =
-  /\breasoning_effort\b[\s\S]{0,120}?\b(?:one of|supported values are)\b([^.}"]*)/i;
+  /\breasoning_effort\b[\s\S]{0,120}?\b(?:one of|supported values)\b\s*(?:are|:)?\s*([^.}"]*)/i;
 
 /**
  * The thinking levels of a model whose endpoint rejected `reasoning_effort` and listed the values

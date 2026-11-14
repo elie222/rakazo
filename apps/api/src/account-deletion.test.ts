@@ -1,3 +1,5 @@
+import type * as Adapters from "@rakazo/adapters";
+import { destroyBot } from "@rakazo/adapters";
 import type * as Db from "@rakazo/db";
 import {
   claimOrganizationForDeletion,
@@ -7,6 +9,11 @@ import {
 } from "@rakazo/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { deleteOrganization } from "./account-deletion.js";
+
+vi.mock("@rakazo/adapters", async (importOriginal) => ({
+  ...(await importOriginal<typeof Adapters>()),
+  destroyBot: vi.fn(),
+}));
 
 vi.mock("@rakazo/db", async (importOriginal) => ({
   ...(await importOriginal<typeof Db>()),
@@ -74,6 +81,34 @@ describe("deleteOrganization lease", () => {
 
     await expect(deleting).resolves.toBeUndefined();
     expect(recordAuditEvent).toHaveBeenCalledOnce();
+  });
+
+  it("passes memory resolution into bot teardown before deleting the Space configuration", async () => {
+    let configured = true;
+    const resolve = vi.fn(async () => {
+      expect(configured).toBe(true);
+      return null;
+    });
+    const memoryProviders = { resolve };
+    vi.mocked(prisma.bot.findMany).mockResolvedValueOnce([
+      { id: "bot-1", spaceId: "space-1", userId: "user-1", name: "Bot", archivedAt: null },
+    ] as never);
+    vi.mocked(destroyBot).mockImplementationOnce(async (teardown, bot, _context, options) => {
+      expect(teardown.memoryProviders).toBe(memoryProviders);
+      expect(options.deleteMemories).toBe(true);
+      await teardown.memoryProviders!.resolve(bot.spaceId);
+      return { removedGroupIds: [] };
+    });
+    vi.mocked(deleteClaimedSpace).mockImplementation(async () => {
+      expect(resolve).toHaveBeenCalledWith("space-1");
+      configured = false;
+      spacesLeft = 0;
+      return { artifactKeys: [], pageShareSecrets: [] };
+    });
+
+    await deleteOrganization(deps({ memoryProviders }), "user-1", "org-1");
+    expect(destroyBot).toHaveBeenCalledOnce();
+    expect(configured).toBe(false);
   });
 
   it("stops before teardown once renewals fail for most of the lease", async () => {

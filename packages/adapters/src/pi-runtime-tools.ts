@@ -42,6 +42,7 @@ import { recordPiTelemetryContent, withPiTelemetrySpan } from "./pi-telemetry.js
 import { VERBATIM_TOOL_RESULTS } from "./runtime-context.js";
 import { SCHEDULE_TOOL_NAMES } from "./schedule-tools.js";
 import type { FinishedShellCommand } from "./shell-command-stream.js";
+import { providerToolCallId } from "./tool-call-ids.js";
 import { textContentArg } from "./tool-text.js";
 import { isVerbatimMcpResult } from "./verbatim-mcp-result.js";
 import { positiveIntegerArg } from "./workspace-file-tools.js";
@@ -107,7 +108,11 @@ function useToolAgentTool(
           type: "tool",
           name: USE_TOOL,
           args: params as Record<string, unknown>,
-          executionId: JSON.stringify(["pi-tool", host.agentNamespace ?? "main", toolCallId]),
+          executionId: JSON.stringify([
+            "pi-tool",
+            host.agentNamespace ?? "main",
+            providerToolCallId(host.providerToolCallIds, toolCallId),
+          ]),
           response: host.modelResponses,
         });
         throw new Error(`${name} is not available. Use a name find_tool lists.`);
@@ -468,7 +473,8 @@ function toAgentTool(
           description: raw.description ? String(raw.description) : "",
           instructions: raw.instructions ? String(raw.instructions) : "",
           prompt: raw.prompt ? String(raw.prompt) : "",
-          computer_mode: raw.computer_mode ? String(raw.computer_mode) : "",
+          // Left out means Team; an empty string would fail the mode's enum.
+          ...(raw.computer_mode ? { computer_mode: String(raw.computer_mode) } : {}),
         };
       }
       if (tool.name === "update_bot" || FLEET_TOOL_NAMES.some((name) => name === tool.name)) {
@@ -505,14 +511,16 @@ function toAgentTool(
             isVerbatimMcpResult(name, callArgs, host.request.verbatimMcpServers);
           recordPiTelemetryContent(span, "pi.agent.tool.arguments", args);
           const rawCallId =
-            toolCallId || `${host.request.runId}:${tool.name}:${host.toolCallSeq.value++}`;
+            providerToolCallId(host.providerToolCallIds, toolCallId) ||
+            `${host.request.runId}:${tool.name}:${host.toolCallSeq.value++}`;
           // Backend idempotency includes the agent namespace; Pi wire IDs remain untouched.
           const executionId = JSON.stringify(["pi-tool", host.agentNamespace ?? "main", rawCallId]);
           // A sequential tail cannot start after its preceding call pauses.
           // This makes the saved sequential tail safe to resolve on resume.
           if (host.pausePending)
             return { content: [], details: { skipped: true }, terminate: true };
-          if (host.depth === 0) await host.captureCheckpoint?.(rawCallId, executionId);
+          if (host.depth === 0)
+            await host.captureCheckpoint?.(toolCallId || rawCallId, executionId);
           if (host.pausePending)
             return { content: [], details: { skipped: true }, terminate: true };
           if (!beginToolCall(host)) {
@@ -809,6 +817,8 @@ export interface ToolHost {
   toolCallBudget: ToolCallBudget;
   /** Shared fallback uniqueness when the model omits toolCallId (nested hosts reuse this). */
   toolCallSeq: { value: number };
+  /** Transcript tool call ids renamed for uniqueness, mapped to the id the provider sent. */
+  providerToolCallIds: Map<string, string>;
   abortTurn(): void;
   signal: AbortSignal;
   depth: number;

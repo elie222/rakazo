@@ -28,6 +28,9 @@ Google Vertex works the same way with `PI_DEFAULT_PROVIDER=google-vertex`, using
 application default credentials (`GOOGLE_APPLICATION_CREDENTIALS`, `GOOGLE_CLOUD_PROJECT`,
 `GOOGLE_CLOUD_LOCATION`). Runs on host credentials are billed to that cloud account.
 
+On a server only you use, the deployment model can also run through the
+[Claude Code CLI](#claude-code-cli) signed in on the host.
+
 The Compose files also pass the standard provider key variables the agent runtime reads itself
 (`OPENAI_API_KEY`, `GEMINI_API_KEY`, `MISTRAL_API_KEY`, `GROQ_API_KEY`, `XAI_API_KEY` and others) to
 the API and worker, for models that have no stored credential.
@@ -77,6 +80,10 @@ RAKAZO_LOCAL_MAX_TOKENS=4096
 RAKAZO_LOCAL_VISION_MODELS=qwen3-vl
 # Optional: model ids on this endpoint that accept OpenAI-style reasoning_effort.
 RAKAZO_LOCAL_REASONING_MODELS=qwen3:4b
+# Optional: prompt tokens per minute the server accepts (a rate-limited key or quota).
+RAKAZO_LOCAL_TOKENS_PER_MINUTE=200000
+# Optional: off when the server does not cache prompts.
+RAKAZO_LOCAL_PROMPT_CACHE=off
 ```
 
 Set `RAKAZO_LOCAL_MODELS_API_KEY` when the server requires a key, such as LiteLLM, vLLM started
@@ -95,6 +102,22 @@ connection sets its own max-tokens value. It never exceeds a quarter of
 `RAKAZO_LOCAL_CONTEXT_WINDOW`, so the prompt keeps the rest; a higher limit leaves less room for the
 prompt, so long chats are compacted sooner.
 
+A server behind a rate-limited key (a free tier, an organisation token quota) often answers `429`
+with a fixed `Retry-After` of a minute, so each rejected call costs a minute. Set
+`RAKAZO_LOCAL_TOKENS_PER_MINUTE` to the server's prompt-token limit and Rakazo paces calls to the
+local provider under it with a sliding one-minute window, waiting only as long as the window needs.
+The estimate is calibrated against the prompt tokens the server reports. Leave some headroom if
+other clients share the key; a `429` that still happens keeps the usual `Retry-After` handling.
+Unset, calls are sent as soon as they are ready. Like the other token limits, a value that is not
+a positive integer is rejected when the local provider is configured.
+
+Rakazo keeps a run's earlier messages unchanged between calls so a server's prompt cache keeps
+hitting, and trims old page state only when that saves more than the cache would. A server without
+prompt caching (several hosted gateways and confidential-compute endpoints report no cached
+tokens) gets nothing from that, and old page snapshots are only sent again on every call. Set
+`RAKAZO_LOCAL_PROMPT_CACHE=off` to declare this: stale page state is then trimmed once about 3,000
+tokens of it have built up. Unset, behaviour is unchanged.
+
 The loopback default is suitable when running Rakazo from a source checkout. From containers,
 prefer a stable LAN RFC1918 address (not Compose service DNS alone). On Docker Desktop,
 `host.docker.internal` also works.
@@ -104,6 +127,44 @@ bots run, or firewall / block that path. Linux does not get `host.docker.interna
 way by default.
 Only configure an endpoint you control: prompts, attachments, and tool results sent to that model
 leave Rakazo through this URL. Leave `RAKAZO_LOCAL_MODELS` blank to disable the provider.
+
+## Claude Code CLI
+
+With a Claude subscription, a server that only you use can run its deployment model through the
+official Claude Code CLI, signed in with your own account. For each model turn Rakazo starts the
+`claude` command installed on the server and reads its reply. Rakazo never reads, stores, forwards
+or refreshes your Claude sign-in, and every request to Anthropic is the CLI's own. Rakazo keeps the
+conversation, tools, memory and approvals: the CLI only answers as the model, with its own tools,
+settings, project files and saved sessions turned off.
+
+What it needs:
+
+- The API and worker running from a source checkout on the same machine as the CLI, as the same
+  OS user. The official Docker images and the desktop app's local stack do not include Claude
+  Code, and adding it to them is not supported.
+- Claude Code 2.1.280 or newer on that user's `PATH`, signed in once in a terminal as that user
+  with `claude auth login`. Rakazo has no Claude sign-in screen and accepts no Claude tokens, so
+  `claude setup-token` is not needed.
+- One account on the server. A Claude sign-in belongs to one person, so Rakazo refuses Claude Code
+  runs while the server has more than one account (people who only message bots from chat apps do
+  not count) or bills for model usage.
+
+```env
+PI_DEFAULT_PROVIDER=claude-code
+PI_DEFAULT_CREDENTIALS=host
+PI_DEFAULT_MODEL=claude-sonnet-5
+```
+
+Use a full model id the CLI accepts with `claude --model`, so Rakazo knows the model's context
+and output limits. Usage counts against your own Claude plan and its limits, which assume
+ordinary individual use; Rakazo shows no cost for these runs, and once the plan's limit is reached
+runs fail with a rate-limit error until it resets. Your use of Claude Code is covered by
+Anthropic's terms; see [Legal and compliance](https://code.claude.com/docs/en/legal-and-compliance).
+
+The CLI runs in an empty private temporary directory with an allowlisted environment. API keys and
+other server secrets, including `ANTHROPIC_API_KEY`, are never passed to it, so it always uses its
+own sign-in. Only the deployment model runs on Claude Code; it is not offered as a connection in
+**Settings → Models**.
 
 ## Ollama Cloud
 

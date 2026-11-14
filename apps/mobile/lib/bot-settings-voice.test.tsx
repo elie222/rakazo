@@ -210,10 +210,12 @@ vi.mock("react-native", () => {
       value,
       onChangeText,
       scrollEnabled,
+      editable,
     }: {
       value: string;
       onChangeText?: (value: string) => void;
       scrollEnabled?: boolean;
+      editable?: boolean;
       style?: unknown;
       accessibilityLabel?: string;
       placeholder?: string;
@@ -221,6 +223,7 @@ vi.mock("react-native", () => {
     }) =>
       createElement("textarea", {
         value,
+        disabled: editable === false,
         onChange: () => undefined,
         onInput: (event: { currentTarget: HTMLTextAreaElement }) =>
           onChangeText?.(event.currentTarget.value),
@@ -524,6 +527,81 @@ describe("bot settings device voice menu", () => {
       versionId: "v1",
       expectedInstructions: "",
     });
+  });
+
+  it.each([false, true])(
+    "locks instruction edits and Save during restore (fails: %s)",
+    async (fails) => {
+      mocks.history = [
+        {
+          id: "v1",
+          instructions: "Earlier",
+          reason: "Manual edit",
+          createdAt: "2026-10-01T00:00:00Z",
+        },
+      ];
+      const restore = deferredSave<{ id: string; instructions: string }>();
+      mocks.rpc.mockReturnValue(restore.promise);
+      await render();
+      await act(async () =>
+        container.querySelector<HTMLButtonElement>('[aria-label="Read replies aloud"]')!.click(),
+      );
+      const history = container.querySelector('[data-menu="Instruction history"]')!;
+      await act(async () => history.querySelector<HTMLButtonElement>("button")!.click());
+      const confirm = mocks.alert.mock.calls.at(-1)![2][1].onPress;
+      await act(async () => {
+        confirm();
+        confirm();
+      });
+      const input = container.querySelector<HTMLTextAreaElement>(
+        'textarea[aria-label="Instructions"]',
+      )!;
+      expect(input.disabled).toBe(true);
+      const save = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+        (button) => button.textContent === "Saving…",
+      )!;
+      expect(save.disabled).toBe(true);
+      await act(async () => save.click());
+      expect(mocks.rpc).toHaveBeenCalledTimes(1);
+      await act(async () => {
+        if (fails) restore.reject(new Error("restore failed"));
+        else restore.resolve({ id: "bot-fixture", instructions: "Earlier" });
+      });
+      expect(input.disabled).toBe(false);
+      expect(input.value).toBe(fails ? "" : "Earlier");
+      if (fails) expect(container.textContent).toContain("restore failed");
+      expect(mocks.back).not.toHaveBeenCalled();
+    },
+  );
+
+  it("does not start a restore while Save is in flight", async () => {
+    mocks.history = [
+      {
+        id: "v1",
+        instructions: "Earlier",
+        reason: "Manual edit",
+        createdAt: "2026-10-01T00:00:00Z",
+      },
+    ];
+    const save = deferredSave();
+    mocks.rpc.mockReturnValue(save.promise);
+    await render();
+    const history = container.querySelector('[data-menu="Instruction history"]')!;
+    await act(async () => history.querySelector<HTMLButtonElement>("button")!.click());
+    const confirm = mocks.alert.mock.calls.at(-1)![2][1].onPress;
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('[aria-label="Read replies aloud"]')!.click(),
+    );
+    const button = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+      (node) => node.textContent === "Save",
+    )!;
+    await act(async () => {
+      button.click();
+      confirm();
+    });
+    expect(mocks.rpc).toHaveBeenCalledTimes(1);
+    expect(mocks.rpc).toHaveBeenCalledWith("bots/update", expect.any(Object));
+    await act(async () => save.resolve());
   });
 
   it("exports through the share sheet and confirms conversation clearing", async () => {

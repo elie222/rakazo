@@ -121,6 +121,11 @@ msgstr "{0}이(가) 실행 중입니다"
 msgid "{0} KB"
 msgstr "{0} KB"
 
+#. placeholder {0}: usd(creditsUsd)
+#: apps/web/src/components/PlanUsage.tsx
+msgid "{0} left"
+msgstr "{0} 남음"
+
 #. placeholder {0}: parts.amount
 #: apps/web/src/components/ArtifactFileCard.tsx
 msgid "{0} MB"
@@ -141,49 +146,58 @@ msgstr "{0} TB"
 msgid "{0}, paused until you turn it on"
 msgstr "{0}, 직접 켤 때까지 일시 중지됨"
 
+#. placeholder {0}: Math.round(used)
+#: apps/web/src/components/PlanUsage.tsx
+msgid "{0}% used"
+msgstr "{0}% 사용됨"
+
 #: apps/web/src/lib/billing.ts
 msgid "{amount} / {period}"
 msgstr "{amount} / {period}"
 
 #: apps/mobile/lib/spending-limit.ts
 msgid "{amount} a day"
-msgstr ""
+msgstr "하루 {amount}"
 
 #: apps/mobile/lib/spending-limit.ts
 msgid "{amount} a month"
-msgstr ""
+msgstr "월 {amount}"
 
 #: apps/mobile/lib/spending-limit.ts
 msgid "{amount} a week"
-msgstr ""
+msgstr "주 {amount}"
 
 #: apps/mobile/lib/spending-limit.ts
 msgid "{amount} in total"
-msgstr ""
+msgstr "총 {amount}"
+
+#: apps/mobile/app/(settings)/account.tsx
+msgid "{amount} left"
+msgstr "{amount} 남음"
 
 #: apps/mobile/lib/spending-limit.ts
 msgid "{amount} spent"
-msgstr ""
+msgstr "{amount} 사용"
 
 #: apps/mobile/lib/spending-limit.ts
 msgid "{amount} spent this month"
-msgstr ""
+msgstr "이번 달 {amount} 사용"
 
 #: apps/mobile/lib/spending-limit.ts
 msgid "{amount} spent this week"
-msgstr ""
+msgstr "이번 주 {amount} 사용"
 
 #: apps/mobile/lib/spending-limit.ts
 msgid "{amount} spent today"
-msgstr ""
+msgstr "오늘 {amount} 사용"
 
 #: apps/mobile/lib/thread-voice.ts
 msgid "{bot} here."
-msgstr ""
+msgstr "{bot}입니다."
 
 #: apps/mobile/lib/thread-voice.ts
 msgid "{bot} here. Hi {name}."
-msgstr ""
+msgstr "{bot}입니다. 안녕하세요, {name}님."
 
 #: apps/web/src/pages/shell/dialogs.tsx
 msgid "{botCount, plural, one {Delete {name} and its # bot?} other {Delete {name} and its # bots?}}"
@@ -195,15 +209,15 @@ msgstr "{botName}의 컴퓨터"
 
 #: apps/mobile/app/(settings)/account.tsx
 msgid "{calls} calls, {tokens} tokens"
-msgstr ""
+msgstr "호출 {calls}회, 토큰 {tokens}개"
 
 #: apps/mobile/lib/app-version.ts
 msgid "{channel} {id}"
-msgstr ""
+msgstr "{channel} {id}"
 
 #: apps/mobile/lib/app-version.ts
 msgid "{channel} {id}, {date}"
-msgstr ""
+msgstr "{channel} {id}, {date}"
 
 #: apps/web/src/components/vault/VaultItemEditor.tsx
 msgid "{commandVariable} is reserved and cannot be used as a command variable. Choose another name."
@@ -224,19 +238,19 @@ msgstr "{count, plural, one {# 행} other {# 행}}"
 
 #: apps/mobile/components/thread/thread-list-controls.tsx
 msgid "{count} agents working"
-msgstr ""
+msgstr "에이전트 {count}개 작업 중"
 
 #: apps/mobile/components/space-bots-model.tsx
 msgid "{count} bots have their own model:"
-msgstr ""
+msgstr "자체 모델을 쓰는 봇 {count}개:"
 
 #: apps/mobile/components/space-bots-model.tsx
 msgid "{count} bots now use the space default."
-msgstr ""
+msgstr "이제 봇 {count}개가 스페이스 기본값을 사용합니다."
 
 #: apps/mobile/app/(settings)/integrations.tsx
 msgid "{count} connectors"
-msgstr ""
+msgstr "커넥터 {count}개"
 
 #: apps/web/src/lib/billing.ts
 msgid "{count} days"
@@ -244,12 +258,12 @@ msgstr "{count}일"
 
 #: apps/mobile/app/share.tsx
 msgid "{count} files"
-msgstr ""
+msgstr "파일 {count}개"
 
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/mobile/app/invite.tsx
 msgid "{count} free months earned"
-msgstr ""
+msgstr "무료 {count}개월 획득"
 
 #: apps/web/src/lib/billing.ts
 msgid "{count} months"
@@ -263,27 +277,27 @@ msgstr "{count}개 더"
 
 #: apps/mobile/components/unread-jump-overlay.tsx
 msgid "{count} need attention"
-msgstr ""
+msgstr "{count}개 확인 필요"
 
 #: apps/mobile/app/bot-profile.tsx
 msgid "{count} on"
-msgstr ""
+msgstr "{count}개 켜짐"
 
 #: apps/mobile/app/(settings)/skills.tsx
 msgid "{count} skills"
-msgstr ""
+msgstr "스킬 {count}개"
 
 #: apps/mobile/components/space-availability.tsx
 msgid "{count} spaces"
-msgstr ""
+msgstr "스페이스 {count}개"
 
 #: apps/mobile/components/integration-detail.tsx
 msgid "{count} tools"
-msgstr ""
+msgstr "도구 {count}개"
 
 #: apps/mobile/components/unread-jump-overlay.tsx
 msgid "{count} unread"
-msgstr ""
+msgstr "읽지 않음 {count}개"
 
 #: apps/web/src/lib/billing.ts
 msgid "{count} weeks"
@@ -295,27 +309,27 @@ msgstr "{count}년"
 
 #: apps/mobile/lib/activity.ts
 msgid "{count}d ago"
-msgstr ""
+msgstr "{count}일 전"
 
 #: apps/mobile/lib/activity.ts
 msgid "{count}h ago"
-msgstr ""
+msgstr "{count}시간 전"
 
 #: apps/mobile/lib/activity.ts
 msgid "{count}m ago"
-msgstr ""
+msgstr "{count}분 전"
 
 #: apps/mobile/app/paywall.tsx
 msgid "{days} days free"
-msgstr ""
+msgstr "{days}일 무료"
 
 #: apps/mobile/app/paywall.tsx
 msgid "{days} days free, then {price} / month. Cancel anytime."
-msgstr ""
+msgstr "{days}일 무료, 이후 월 {price}. 언제든 해지할 수 있습니다."
 
 #: apps/mobile/app/paywall.tsx
 msgid "{days} days free, then {price} / year. Cancel anytime."
-msgstr ""
+msgstr "{days}일 무료, 이후 연 {price}. 언제든 해지할 수 있습니다."
 
 #: apps/web/src/lib/relative-time.ts
 msgid "{days}d ago"
@@ -323,11 +337,11 @@ msgstr "{days}일 전"
 
 #: apps/mobile/components/thread/message-bubble.tsx
 msgid "{from} messaged {to}"
-msgstr ""
+msgstr "{from}님이 {to}님에게 메시지를 보냄"
 
 #: apps/mobile/lib/cron.ts
 msgid "{from} to {to}"
-msgstr ""
+msgstr "{from}~{to}"
 
 #: apps/web/src/components/markdown-copy.tsx
 msgid "{from}–{to} of {total} rows"
@@ -359,11 +373,11 @@ msgstr "{inviterName}님이 초대했습니다"
 
 #: apps/mobile/components/unread-jump-overlay.tsx
 msgid "{label}, above"
-msgstr ""
+msgstr "{label}, 위쪽"
 
 #: apps/mobile/components/unread-jump-overlay.tsx
 msgid "{label}, below"
-msgstr ""
+msgstr "{label}, 아래쪽"
 
 #: apps/web/src/components/markdown-copy.tsx
 msgid "{label}, empty"
@@ -375,23 +389,23 @@ msgstr "{minutes}분 전"
 
 #: apps/mobile/lib/cron.ts
 msgid "{n} {unit}"
-msgstr ""
+msgstr "{n} {unit}"
 
 #: apps/mobile/lib/thread-attachments.ts
 msgid "{name} (could not read)"
-msgstr ""
+msgstr "{name} (읽을 수 없음)"
 
 #: apps/mobile/lib/thread-attachments.ts
 msgid "{name} (max {count} attachments)"
-msgstr ""
+msgstr "{name} (최대 첨부 {count}개)"
 
 #: apps/mobile/lib/thread-attachments.ts
 msgid "{name} (over {limit})"
-msgstr ""
+msgstr "{name} ({limit} 초과)"
 
 #: apps/mobile/lib/thread-attachments.ts
 msgid "{name} (permission denied)"
-msgstr ""
+msgstr "{name} (권한 거부됨)"
 
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
@@ -400,7 +414,7 @@ msgstr "{name}(기본 제공 스킬과 같은 이름)"
 
 #: apps/mobile/lib/thread-attachments.ts
 msgid "{name} (unsupported type)"
-msgstr ""
+msgstr "{name} (지원되지 않는 형식)"
 
 #: apps/mobile/lib/activity.ts
 #: apps/web/src/lib/activity-list-filters.ts
@@ -414,7 +428,7 @@ msgstr "{name}의 질문: {text}"
 
 #: apps/mobile/components/AppConnectCard.tsx
 msgid "{name} connection"
-msgstr ""
+msgstr "{name} 연결"
 
 #. js-lingui-explicit-id
 #: apps/web/src/lib/browser-notifications.ts
@@ -428,11 +442,11 @@ msgstr "{name} 완료"
 
 #: apps/mobile/lib/computer.ts
 msgid "{name} is using it"
-msgstr ""
+msgstr "{name}이(가) 사용 중"
 
 #: apps/mobile/components/thread/thread-list-controls.tsx
 msgid "{name} is working"
-msgstr ""
+msgstr "{name} 작업 중"
 
 #: apps/mobile/components/model-role-settings.tsx
 #: apps/web/src/pages/ModelRoleSettings.tsx
@@ -446,15 +460,15 @@ msgstr "{name} 중지됨"
 
 #: apps/mobile/lib/routine.ts
 msgid "{name}, Off"
-msgstr ""
+msgstr "{name}, 꺼짐"
 
 #: apps/mobile/lib/routine.ts
 msgid "{name}, On"
-msgstr ""
+msgstr "{name}, 켜짐"
 
 #: apps/mobile/lib/computer.ts
 msgid "{name}’s computer"
-msgstr ""
+msgstr "{name}의 컴퓨터"
 
 #: apps/web/src/pages/model-settings/space-bots-model.tsx
 msgid "{names} keep their own model"
@@ -467,27 +481,27 @@ msgstr "{names}은(는) 자체 모델을 유지합니다"
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/mobile/app/paywall.tsx
 msgid "{price} / month"
-msgstr ""
+msgstr "월 {price}"
 
 #: apps/mobile/app/paywall.tsx
 msgid "{price} / month begins"
-msgstr ""
+msgstr "월 {price} 결제 시작"
 
 #: apps/mobile/app/paywall.tsx
 msgid "{price} / month. Cancel anytime."
-msgstr ""
+msgstr "월 {price}. 언제든 해지할 수 있습니다."
 
 #: apps/mobile/app/(settings)/billing.tsx
 msgid "{price} / year"
-msgstr ""
+msgstr "연 {price}"
 
 #: apps/mobile/app/paywall.tsx
 msgid "{price} / year begins"
-msgstr ""
+msgstr "연 {price} 결제 시작"
 
 #: apps/mobile/app/paywall.tsx
 msgid "{price} / year. Cancel anytime."
-msgstr ""
+msgstr "연 {price}. 언제든 해지할 수 있습니다."
 
 #. js-lingui-explicit-id
 #: packages/i18n/src/run-error.ts
@@ -590,11 +604,11 @@ msgstr "남은 시간 {remaining}"
 
 #: apps/mobile/app/(settings)/account.tsx
 msgid "{runs} runs, {tokens} tokens"
-msgstr ""
+msgstr "실행 {runs}회, 토큰 {tokens}개"
 
 #: apps/mobile/app/(settings)/bot-template.tsx
 msgid "{schedule}, paused until you turn it on"
-msgstr ""
+msgstr "{schedule}, 직접 켤 때까지 일시 중지됨"
 
 #: apps/web/src/pages/BillingSettingsPanel.tsx
 msgid "{seats, plural, one {# seat} other {# seats}}"
@@ -602,7 +616,7 @@ msgstr "{seats, plural, other {좌석 #개}}"
 
 #: apps/mobile/app/(settings)/team-conversation.tsx
 msgid "{sender} rollup hours"
-msgstr ""
+msgstr "{sender} 요약 간격(시간)"
 
 #: apps/web/src/components/SpendingLimitSettings.tsx
 msgid "{shown} a day"
@@ -673,9 +687,13 @@ msgstr "{title}, {savedAs}(으)로 저장"
 msgid "{toolCount, plural, one {# tool} other {# tools}}"
 msgstr "{toolCount, plural, other {도구 #개}}"
 
+#: apps/mobile/app/(settings)/account.tsx
+msgid "{used}% used"
+msgstr "{used}% 사용됨"
+
 #: apps/mobile/components/vault-item-editor.tsx
 msgid "{variable} is reserved. Choose another name."
-msgstr ""
+msgstr "{variable}은(는) 예약된 이름입니다. 다른 이름을 선택하세요."
 
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/web/src/components/ModelCredits.tsx
@@ -689,7 +707,7 @@ msgstr "@{0}"
 
 #: apps/mobile/components/thread-composer.tsx
 msgid "@{name}"
-msgstr ""
+msgstr "@{name}"
 
 #: apps/mobile/lib/bot-template-copy.ts
 #: apps/web/src/components/bot-templates/bot-template-copy.ts
@@ -795,20 +813,20 @@ msgstr "/ 월"
 
 #: apps/mobile/components/space-bots-model.tsx
 msgid "1 bot has its own model:"
-msgstr ""
+msgstr "자체 모델을 쓰는 봇 1개:"
 
 #: apps/mobile/components/space-bots-model.tsx
 msgid "1 bot now uses the space default."
-msgstr ""
+msgstr "이제 봇 1개가 스페이스 기본값을 사용합니다."
 
 #: apps/mobile/app/(settings)/integrations.tsx
 msgid "1 connector"
-msgstr ""
+msgstr "커넥터 1개"
 
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/mobile/app/invite.tsx
 msgid "1 free month earned"
-msgstr ""
+msgstr "무료 1개월 획득"
 
 #: apps/mobile/lib/inbox-swipe.ts
 #: apps/web/src/pages/BotContextMenu.tsx
@@ -817,7 +835,7 @@ msgstr "1시간"
 
 #: apps/mobile/app/(settings)/skills.tsx
 msgid "1 skill"
-msgstr ""
+msgstr "스킬 1개"
 
 #: apps/web/src/components/integrations/space-availability.tsx
 msgid "1 space"
@@ -825,11 +843,11 @@ msgstr "스페이스 1개"
 
 #: apps/mobile/components/integration-detail.tsx
 msgid "1 tool"
-msgstr ""
+msgstr "도구 1개"
 
 #: apps/mobile/components/unread-jump-overlay.tsx
 msgid "1 unread"
-msgstr ""
+msgstr "읽지 않음 1개"
 
 #: apps/mobile/lib/inbox-swipe.ts
 #: apps/web/src/pages/BotContextMenu.tsx
@@ -851,7 +869,7 @@ msgstr "모델이 일상적인 작업은 승인하고 나머지는 사용자에�
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "A sign-in page opened — enter this code there:"
-msgstr ""
+msgstr "로그인 페이지가 열렸습니다. 이 코드를 입력하세요:"
 
 #. placeholder {0}: oauth.verificationUri.replace(/^https:\/\//, "")
 #: apps/web/src/pages/model-settings/connection-controls.tsx
@@ -919,7 +937,7 @@ msgstr "{name}의 계정 메뉴"
 
 #: apps/mobile/components/integration-detail.tsx
 msgid "Accounts"
-msgstr ""
+msgstr "계정"
 
 #. placeholder {0}: bot.name
 #. placeholder {0}: group.spaceName
@@ -949,7 +967,7 @@ msgstr "활성"
 #: apps/mobile/components/routine-list.ios.tsx
 #: apps/mobile/components/routine-list.tsx
 msgid "Active: {name}"
-msgstr ""
+msgstr "활성: {name}"
 
 #: apps/mobile/components/inbox-header.tsx
 #: apps/mobile/lib/use-home-header.ts
@@ -976,7 +994,7 @@ msgstr "그룹에 {0} 추가"
 
 #: apps/mobile/app/(settings)/integrations.tsx
 msgid "Add {name}"
-msgstr ""
+msgstr "{name} 추가"
 
 #: apps/web/src/lib/routine-draft.ts
 msgid "Add a command to run"
@@ -1020,7 +1038,7 @@ msgstr "이 루틴을 실행할 트리거를 추가하세요."
 #: apps/mobile/lib/call-session.ts
 #: apps/mobile/lib/thread-voice.ts
 msgid "Add a voice provider in Voice settings."
-msgstr ""
+msgstr "음성 설정에서 음성 서비스를 추가하세요."
 
 #: apps/web/src/lib/tts.ts
 msgid "Add a voice provider key and pick a voice in Voice settings."
@@ -1028,7 +1046,7 @@ msgstr "음성 설정에서 음성 서비스 키를 추가하고 목소리를 �
 
 #: apps/mobile/lib/model-settings.ts
 msgid "Add an AI model to keep chatting"
-msgstr ""
+msgstr "계속 채팅하려면 AI 모델을 추가하세요"
 
 #: apps/web/src/pages/McpServersOverlay.tsx
 msgid "Add an HTTPS server URL."
@@ -1042,7 +1060,7 @@ msgstr "하나 더 추가"
 
 #: apps/mobile/components/integration-detail.tsx
 msgid "Add another {name}"
-msgstr ""
+msgstr "{name} 하나 더 추가"
 
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/web/src/components/ModelCredits.tsx
@@ -1057,7 +1075,7 @@ msgstr "직접 추가"
 
 #: apps/mobile/app/routine.tsx
 msgid "Add email trigger"
-msgstr ""
+msgstr "이메일 트리거 추가"
 
 #: apps/mobile/components/model-role-settings.tsx
 #: apps/web/src/pages/ModelRoleSettings.tsx
@@ -1086,14 +1104,14 @@ msgstr "MCP 서버 추가"
 #: apps/mobile/lib/model-settings.ts
 #: apps/mobile/lib/run-error-presentation.ts
 msgid "Add model"
-msgstr ""
+msgstr "모델 추가"
 
 #: apps/mobile/components/bot-context-cards.tsx
 #: apps/web/src/pages/ScratchpadSection.tsx
 msgid "Add open work"
 msgstr "진행 중인 작업 추가"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/mobile/lib/passkey.ts
 #: apps/web/src/components/PasskeyOffer.tsx
 #: apps/web/src/components/PasskeySettings.tsx
@@ -1114,7 +1132,7 @@ msgstr "규칙 추가"
 
 #: apps/mobile/app/routine.tsx
 msgid "Add schedule"
-msgstr ""
+msgstr "일정 추가"
 
 #: apps/web/src/pages/McpServerForm.tsx
 #: apps/web/src/pages/McpServersOverlay.tsx
@@ -1177,13 +1195,13 @@ msgstr "주소 2"
 msgid "Adds"
 msgstr "추가 항목"
 
-#: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/mobile/app/bot-settings.tsx
 #: apps/mobile/components/compatible-endpoint-form.tsx
 #: apps/mobile/components/routine-schedule-editor.tsx
 #: apps/web/src/lib/cron.ts
 #: apps/web/src/pages/McpServerForm.tsx
+#: apps/web/src/pages/memory-providers/MemoryProviderAdvanced.tsx
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
 #: apps/web/src/pages/ModelSettingsOverlay.tsx
 #: apps/web/src/pages/onboarding/model-step.tsx
@@ -1198,25 +1216,25 @@ msgstr "고급..."
 
 #: apps/mobile/components/thread/thread-list-controls.tsx
 msgid "Agent"
-msgstr ""
+msgstr "에이전트"
 
 #: apps/web/src/components/AccountDataSettings.tsx
 msgid "Agent from another app"
 msgstr "다른 앱의 에이전트"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 msgid "Agent messages"
-msgstr ""
+msgstr "에이전트 메시지"
 
 #: apps/mobile/app/(settings)/_layout.tsx
-#: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/ai-data-sharing.tsx
+#: apps/mobile/app/(settings)/general.tsx
 msgid "AI data sharing"
-msgstr ""
+msgstr "AI 데이터 공유"
 
 #: apps/mobile/app/(settings)/ai-data-sharing.tsx
 msgid "AI models"
-msgstr ""
+msgstr "AI 모델"
 
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/mobile/app/(settings)/vault.tsx
@@ -1231,7 +1249,7 @@ msgstr "{credit} 전액이 모델 사용에 쓰입니다."
 
 #: apps/mobile/app/paywall.tsx
 msgid "All {price} goes to model usage."
-msgstr ""
+msgstr "{price} 전액이 모델 사용에 쓰입니다."
 
 #: apps/mobile/app/artifacts.tsx
 #: apps/web/src/components/integrations/agent-access.tsx
@@ -1265,7 +1283,7 @@ msgstr "허용"
 
 #: apps/mobile/app/(settings)/ai-data-sharing.tsx
 msgid "Allow {name} on mobile"
-msgstr ""
+msgstr "모바일에서 {name} 허용"
 
 #: apps/mobile/app/bot-settings.tsx
 #: apps/web/src/pages/shell/bot-settings-sections.tsx
@@ -1279,11 +1297,11 @@ msgstr "이 스페이스에서 허용"
 
 #: apps/mobile/lib/call-session.ts
 msgid "Allow microphone access to call a bot."
-msgstr ""
+msgstr "봇에게 전화하려면 마이크 접근을 허용하세요."
 
 #: apps/mobile/lib/call-session.ts
 msgid "Allow microphone access to dictate."
-msgstr ""
+msgstr "받아쓰기를 하려면 마이크 접근을 허용하세요."
 
 #: apps/mobile/lib/ask-action-label.ts
 #: apps/web/src/components/AskCard.tsx
@@ -1294,14 +1312,11 @@ msgstr "한 번 허용"
 msgid "Allow Rakazo to use Speech Recognition and the microphone in System Settings."
 msgstr "시스템 설정에서 Rakazo가 음성 인식과 마이크를 사용하도록 허용하세요."
 
-#: apps/mobile/lib/composer-dictation.ts
-msgid "Allow speech recognition in Settings, or connect a voice provider that transcribes."
-msgstr ""
-
 #: apps/mobile/lib/call-session.ts
+#: apps/mobile/lib/composer-dictation.ts
 #: apps/mobile/lib/thread-voice.ts
-msgid "Allow speech recognition in Settings, or connect ElevenLabs, OpenAI, or Fish Audio."
-msgstr ""
+msgid "Allow speech recognition in Settings, or connect a voice provider that transcribes."
+msgstr "설정에서 음성 인식을 허용하거나, 텍스트 변환을 지원하는 음성 서비스를 연결하세요."
 
 #: apps/web/src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Allow writing"
@@ -1370,6 +1385,14 @@ msgstr "금액"
 msgid "An API key is stored for this provider, not a subscription sign-in."
 msgstr "이 서비스에는 구독 로그인이 아니라 API 키가 저장되어 있습니다."
 
+#: apps/web/src/pages/MemorySettingsOverlay.tsx
+msgid "An external memory service for storing and recalling context across chats."
+msgstr "여러 채팅에 걸쳐 컨텍스트를 저장하고 불러오는 외부 기억 서비스입니다."
+
+#: apps/web/src/pages/routine-editor/trigger-cards.tsx
+msgid "An HTTPS endpoint"
+msgstr "HTTPS 엔드포인트"
+
 #: apps/web/src/lib/agent-import-errors.ts
 msgid "An imported API key could not be checked. Try again."
 msgstr "가져온 API 키를 확인하지 못했습니다. 다시 시도하세요."
@@ -1382,10 +1405,10 @@ msgstr "가져온 API 키를 사용할 수 없습니다. 선택을 해제하고 
 msgid "An integration tool"
 msgstr "연동 도구"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/mobile/lib/live-notifications.ts
 msgid "Android blocked notifications."
-msgstr ""
+msgstr "Android에서 알림이 차단되었습니다."
 
 #: apps/mobile/lib/activity.ts
 #: apps/web/src/lib/activity-list-filters.ts
@@ -1398,7 +1421,6 @@ msgstr "다른 어시스턴트"
 
 #: apps/mobile/components/IncomingCall.tsx
 #: apps/mobile/lib/incoming-calls.ts
-#: apps/web/src/components/AskCard.tsx
 msgid "Answer"
 msgstr "답변"
 
@@ -1433,7 +1455,7 @@ msgstr "내 키로 모든 모델 사용"
 
 #: apps/mobile/components/routine-email-trigger.tsx
 msgid "Anyone at @{domain}"
-msgstr ""
+msgstr "@{domain}의 모든 사용자"
 
 #: apps/web/src/pages/routine-editor/trigger-cards.tsx
 msgid "Anyone at @{ownerDomain}"
@@ -1453,6 +1475,7 @@ msgstr "링크가 있는 모든 사용자"
 #: apps/web/src/components/SecretAskCard.tsx
 #: apps/web/src/components/vault/kinds.tsx
 #: apps/web/src/lib/localized-provider-hint.ts
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 #: apps/web/src/pages/memory-providers/HonchoSettingsForm.tsx
 #: apps/web/src/pages/model-settings/compatible-key-field.tsx
 #: apps/web/src/pages/model-settings/connection-controls.tsx
@@ -1472,7 +1495,7 @@ msgstr "API 키 헤더"
 
 #: apps/mobile/components/add-custom-integration.tsx
 msgid "API key header name"
-msgstr ""
+msgstr "API 키 헤더 이름"
 
 #: apps/web/src/pages/shell/agent-import-plan.tsx
 msgid "API keys"
@@ -1486,7 +1509,7 @@ msgstr "API 토큰"
 msgid "API URL"
 msgstr "API URL"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
 msgid "Appearance"
 msgstr "모양"
@@ -1560,7 +1583,6 @@ msgid "archived"
 msgstr "보관됨"
 
 #: apps/mobile/app/(settings)/_layout.tsx
-#: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/components/inbox-rows.tsx
 #: apps/web/src/pages/shell/archived-chats.tsx
 msgid "Archived"
@@ -1572,7 +1594,7 @@ msgstr "인자"
 
 #: apps/mobile/app/_layout.tsx
 msgid "Artifact"
-msgstr ""
+msgstr "아티팩트"
 
 #: apps/mobile/app/_layout.tsx
 #: apps/mobile/app/(settings)/account.tsx
@@ -1589,7 +1611,7 @@ msgstr "묻기"
 
 #: apps/mobile/app/routines.tsx
 msgid "Ask this Bot in chat to set up a routine."
-msgstr ""
+msgstr "채팅에서 이 봇에게 자동 실행 설정을 요청하세요."
 
 #: apps/mobile/components/approval-settings-rows.tsx
 #: apps/web/src/components/ApprovalRulesSettings.tsx
@@ -1614,7 +1636,7 @@ msgstr "{0}에"
 
 #: apps/mobile/lib/cron.ts
 msgid "at {time}"
-msgstr ""
+msgstr "{time}에"
 
 #: apps/web/src/pages/RoutineSchedule.tsx
 msgid "at {timeSelect}"
@@ -1754,7 +1776,7 @@ msgstr "기본 인증({username})"
 
 #: apps/mobile/components/add-custom-integration.tsx
 msgid "Bearer"
-msgstr ""
+msgstr "Bearer"
 
 #: apps/mobile/components/add-custom-integration.tsx
 #: apps/mobile/components/vault-item-editor.tsx
@@ -1843,7 +1865,7 @@ msgstr "Bot"
 
 #: apps/mobile/app/bot-profile.tsx
 msgid "Bot actions"
-msgstr ""
+msgstr "봇 작업"
 
 #: apps/mobile/components/bot-email.tsx
 #: apps/web/src/components/vault/BotEmailAddresses.tsx
@@ -1856,7 +1878,7 @@ msgstr "Bot은 화면만 보고 직접 조작하지 않습니다"
 
 #: apps/mobile/components/space-bots-model.tsx
 msgid "Bot models"
-msgstr ""
+msgstr "봇 모델"
 
 #: apps/web/src/pages/shell/computer-overlay.tsx
 msgid "Bot screen"
@@ -1866,7 +1888,7 @@ msgstr "Bot 화면"
 msgid "Bot screen preview"
 msgstr "Bot 화면 미리보기"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
 msgid "Bot style"
 msgstr "봇 스타일"
@@ -1892,7 +1914,7 @@ msgstr "봇과 브라우저 자동화"
 
 #: apps/mobile/lib/bot-lifecycle.ts
 msgid "Bots and their own chats stay."
-msgstr ""
+msgstr "봇과 봇의 개별 채팅은 유지됩니다."
 
 #: apps/web/src/components/SharedSpaceRules.tsx
 msgid "Bots use the accounts of whoever messages them"
@@ -1900,7 +1922,7 @@ msgstr "봇은 메시지를 보낸 사람의 계정을 사용합니다"
 
 #: apps/mobile/app/paywall.tsx
 msgid "Bots with their own computer"
-msgstr ""
+msgstr "자체 컴퓨터를 가진 봇"
 
 #: apps/web/src/pages/Paywall.tsx
 msgid "Bots with their own computer and browser"
@@ -1945,11 +1967,11 @@ msgstr "다시 전화하기"
 
 #: apps/mobile/app/(settings)/voice.tsx
 msgid "Call greeting"
-msgstr ""
+msgstr "통화 인사말"
 
 #: apps/mobile/app/(settings)/voice.tsx
 msgid "Call sounds"
-msgstr ""
+msgstr "통화 효과음"
 
 #. placeholder {0}: call.botName
 #: apps/web/src/components/call/CallCard.tsx
@@ -1970,7 +1992,7 @@ msgstr "호출"
 
 #: apps/mobile/lib/thread-voice.ts
 msgid "Calls need transcription"
-msgstr ""
+msgstr "통화에는 텍스트 변환이 필요합니다"
 
 #: apps/web/src/pages/settings-nav.ts
 msgid "Calls, dictation, and replies read aloud."
@@ -1978,7 +2000,7 @@ msgstr "통화, 받아쓰기, 답장 소리 내어 읽기."
 
 #: apps/mobile/lib/thread-attachments.ts
 msgid "Camera"
-msgstr ""
+msgstr "카메라"
 
 #: apps/web/src/components/pages/SharePopover.tsx
 msgid "Can view without signing in"
@@ -1995,13 +2017,14 @@ msgid "Can't read images"
 msgstr "이미지를 읽을 수 없음"
 
 #: apps/mobile/app/_layout.tsx
-#: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/ai-data-sharing.tsx
 #: apps/mobile/app/(settings)/archived-bots.tsx
 #: apps/mobile/app/(settings)/billing.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/mobile/app/(settings)/memory-note.tsx
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/mobile/app/(settings)/plugin.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/mobile/app/(settings)/skill.tsx
 #: apps/mobile/app/(settings)/space.tsx
 #: apps/mobile/app/(settings)/spending-limit.tsx
@@ -2128,7 +2151,7 @@ msgstr "카드"
 
 #: apps/mobile/app/(settings)/integrations.tsx
 msgid "Category"
-msgstr ""
+msgstr "카테고리"
 
 #: apps/web/src/pages/ModelRoleSettings.tsx
 msgid "Change {name}"
@@ -2144,15 +2167,15 @@ msgid "Change model"
 msgstr "모델 변경"
 
 #: apps/mobile/app/(settings)/_layout.tsx
-#: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/change-password.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
 msgid "Change password"
 msgstr "비밀번호 변경"
 
 #: apps/mobile/app/(settings)/billing.tsx
 msgid "Change plan"
-msgstr ""
+msgstr "요금제 변경"
 
 #: apps/web/src/pages/Auth.tsx
 msgid "Change server"
@@ -2184,7 +2207,7 @@ msgstr "채팅 세부정보"
 #: apps/mobile/app/_layout.tsx
 #: apps/mobile/app/bot-settings.tsx
 msgid "Chat settings"
-msgstr ""
+msgstr "채팅 설정"
 
 #: apps/mobile/components/thread-composer.tsx
 #: apps/web/src/pages/shell/composer-mentions.tsx
@@ -2289,7 +2312,7 @@ msgstr "새 비밀번호 선택"
 
 #: apps/mobile/app/(settings)/billing.tsx
 msgid "Choose a plan"
-msgstr ""
+msgstr "요금제 선택"
 
 #: apps/web/src/pages/onboarding/model-step.tsx
 msgid "Choose a provider"
@@ -2325,7 +2348,7 @@ msgstr "등록"
 
 #: apps/mobile/components/bot-email.tsx
 msgid "Claim {address}"
-msgstr ""
+msgstr "{address} 받기"
 
 #: apps/web/src/lib/localized-provider-hint.ts
 msgid "Claude subscription"
@@ -2357,7 +2380,7 @@ msgstr "대화 내용 비우기"
 
 #: apps/mobile/lib/bot-lifecycle.ts
 msgid "Clear conversation?"
-msgstr ""
+msgstr "대화 내용을 비울까요?"
 
 #: apps/web/src/pages/ActivityList.tsx
 msgid "Clear filter {label}"
@@ -2401,7 +2424,7 @@ msgstr "차트 닫기"
 
 #: apps/mobile/components/bot-organize-modal.tsx
 msgid "Close chat organization"
-msgstr ""
+msgstr "채팅 정리 닫기"
 
 #: apps/mobile/app/computer.tsx
 #: apps/web/src/pages/shell/computer-overlay.tsx
@@ -2410,7 +2433,7 @@ msgstr "컴퓨터 닫기"
 
 #: apps/mobile/components/image-artifact-viewer.tsx
 msgid "Close image"
-msgstr ""
+msgstr "이미지 닫기"
 
 #: apps/web/src/pages/shell/message-cards.tsx
 msgid "Close image preview"
@@ -2474,7 +2497,7 @@ msgstr "클라우드"
 
 #: apps/mobile/components/thread/special-message-card.tsx
 msgid "Cloud agent"
-msgstr ""
+msgstr "클라우드 에이전트"
 
 #: apps/mobile/app/sign-in.tsx
 #: apps/mobile/components/confirm-identity.tsx
@@ -2496,7 +2519,7 @@ msgstr "{0} 접기"
 
 #: apps/mobile/components/inbox-rows.tsx
 msgid "Collapse {name}"
-msgstr ""
+msgstr "{name} 접기"
 
 #: apps/mobile/components/bot-look-picker.tsx
 #: apps/web/src/pages/shell/avatar-studio-popover.tsx
@@ -2509,7 +2532,7 @@ msgstr "색상 {color}"
 
 #: apps/mobile/components/bot-look-picker.tsx
 msgid "Color {number}"
-msgstr ""
+msgstr "색상 {number}"
 
 #: apps/web/src/components/markdown-copy.tsx
 msgid "column {index}"
@@ -2562,10 +2585,10 @@ msgstr "완료"
 #: apps/mobile/app/bot-settings.tsx
 #: apps/mobile/components/computer-mode-picker.tsx
 #: apps/mobile/components/ComputerCard.tsx
+#: apps/web/src/components/ComputerCard.tsx
 #: apps/web/src/pages/settings-nav.ts
 #: apps/web/src/pages/shell/bot-panel.tsx
 #: apps/web/src/pages/shell/bot-settings-sections.tsx
-#: apps/web/src/pages/shell/message-view.tsx
 msgid "Computer"
 msgstr "컴퓨터"
 
@@ -2595,7 +2618,7 @@ msgstr "컴퓨터가 절전 상태입니다. 열어 깨우세요."
 
 #: apps/mobile/lib/computer.ts
 msgid "Computer is asleep. Take control to wake it."
-msgstr ""
+msgstr "컴퓨터가 절전 상태입니다. 제어권을 가져와 깨우세요."
 
 #: apps/mobile/lib/computer.ts
 #: apps/web/src/pages/shell/computer-overlay.tsx
@@ -2605,7 +2628,7 @@ msgstr "컴퓨터가 중지됨"
 
 #: apps/mobile/components/computer-keyboard-bar.tsx
 msgid "Computer keyboard"
-msgstr ""
+msgstr "컴퓨터 키보드"
 
 #: apps/mobile/app/(settings)/models.tsx
 #: apps/web/src/pages/ModelSettingsOverlay.tsx
@@ -2665,6 +2688,7 @@ msgstr "이 브라우저 세션에서 URL에 연결할 수 있는지 확인한 �
 #: apps/mobile/lib/app-connect.ts
 #: apps/web/src/components/integrations/IntegrationSetup.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 #: apps/web/src/pages/memory-providers/HonchoSettingsForm.tsx
 #: apps/web/src/pages/memory-providers/SerenitySettingsForm.tsx
 #: apps/web/src/pages/memory-providers/SupermemorySettingsForm.tsx
@@ -2680,7 +2704,7 @@ msgstr "연결"
 #: apps/mobile/components/add-custom-integration.tsx
 #: apps/mobile/components/AppConnectCard.tsx
 msgid "Connect {name}"
-msgstr ""
+msgstr "{name} 연결"
 
 #: apps/web/src/pages/ModelSettingsOverlay.tsx
 msgid "Connect {selectedProviderName}"
@@ -2703,7 +2727,7 @@ msgstr "봇을 실행하기 전에 설정에서 모델을 연결하세요."
 
 #: apps/mobile/app/(settings)/voice.tsx
 msgid "Connect a voice provider first."
-msgstr ""
+msgstr "먼저 음성 서비스를 연결하세요."
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/web/src/pages/model-settings/connection-controls.tsx
@@ -2722,7 +2746,7 @@ msgstr "MCP 서버 ‘{name}’ 연결"
 
 #: apps/mobile/components/McpApprovalCard.tsx
 msgid "Connect MCP server {name}"
-msgstr ""
+msgstr "MCP 서버 {name} 연결"
 
 #: apps/web/src/pages/MemorySettingsOverlay.tsx
 msgid "Connect memory provider"
@@ -2742,7 +2766,7 @@ msgstr "먼저 이 모델의 제공자를 연결하세요."
 
 #: apps/mobile/app/paywall.tsx
 msgid "Connect your AI"
-msgstr ""
+msgstr "AI 연결하기"
 
 #. js-lingui-explicit-id
 #: packages/i18n/src/run-error.ts
@@ -2773,11 +2797,12 @@ msgstr "{0}에 연결했습니다."
 
 #: apps/mobile/components/McpApprovalCard.tsx
 msgid "Connected."
-msgstr ""
+msgstr "연결되었습니다."
 
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 #: apps/web/src/pages/McpServersOverlay.tsx
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 #: apps/web/src/pages/memory-providers/HonchoSettingsForm.tsx
 #: apps/web/src/pages/memory-providers/SerenitySettingsForm.tsx
 #: apps/web/src/pages/memory-providers/SupermemorySettingsForm.tsx
@@ -2793,7 +2818,7 @@ msgstr "연결"
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/mobile/app/(settings)/plugin.tsx
 msgid "Connection pending"
-msgstr ""
+msgstr "연결 대기 중"
 
 #: apps/web/src/lib/model-connection-preflight.ts
 msgid "Connection test failed."
@@ -2865,20 +2890,20 @@ msgstr "{0}(으)로 계속"
 
 #: apps/mobile/app/sign-in.tsx
 msgid "Continue with {name}"
-msgstr ""
+msgstr "{name}(으)로 계속하기"
 
 #: apps/mobile/components/computer-keyboard-bar.tsx
 msgid "Control"
-msgstr ""
-
-#: apps/mobile/lib/ai-consent.ts
-msgid "Conversation summaries, memories, searches and bot and Space IDs are sent to store and recall context."
-msgstr ""
+msgstr "Control"
 
 #: apps/mobile/app/(settings)/messaging.tsx
 #: apps/web/src/pages/MessagingSettingsPanel.tsx
 msgid "Conversations"
 msgstr "대화"
+
+#: apps/mobile/lib/ai-consent.ts
+msgid "Conversations, names, memories, searches and bot and Space IDs are sent to store and recall context."
+msgstr "컨텍스트를 저장하고 불러오기 위해 대화, 이름, 기억, 검색 내용, 봇 및 Space ID가 전송됩니다."
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/mobile/components/code-copy-button.tsx
@@ -2969,7 +2994,7 @@ msgstr "스킬을 추가하지 못했습니다"
 
 #: apps/mobile/app/(settings)/integrations.tsx
 msgid "Could not add source"
-msgstr ""
+msgstr "소스를 추가하지 못했습니다"
 
 #: apps/web/src/pages/PluginSubmissionsPanel.tsx
 msgid "Could not approve plugin"
@@ -2983,11 +3008,11 @@ msgstr "서버를 승인하지 못했습니다."
 #: apps/mobile/components/bot-profile-menu.tsx
 #: apps/mobile/lib/use-inbox-chat-actions.ts
 msgid "Could not archive bot"
-msgstr ""
+msgstr "봇을 보관하지 못했습니다"
 
 #: apps/mobile/lib/thread-attachments.ts
 msgid "Could not attach files"
-msgstr ""
+msgstr "파일을 첨부하지 못했습니다"
 
 #: apps/mobile/components/AppConnectCard.tsx
 #: apps/web/src/pages/shell/message-cards.tsx
@@ -3005,7 +3030,7 @@ msgstr "변경하지 못했습니다"
 
 #: apps/mobile/app/(settings)/language.tsx
 msgid "Could not change language"
-msgstr ""
+msgstr "언어를 변경하지 못했습니다"
 
 #: apps/mobile/app/(settings)/change-password.tsx
 #: apps/mobile/lib/api-auth.ts
@@ -3038,15 +3063,15 @@ msgstr "대화 내용을 비우지 못했습니다."
 
 #: apps/mobile/lib/api-server.ts
 msgid "Could not clear the custom server URL"
-msgstr ""
+msgstr "사용자 지정 서버 URL을 지우지 못했습니다"
 
 #: apps/mobile/lib/api-auth.ts
 msgid "Could not clear the local session"
-msgstr ""
+msgstr "로컬 세션을 지우지 못했습니다"
 
 #: apps/mobile/lib/api-server.ts
 msgid "Could not clear the previous server session"
-msgstr ""
+msgstr "이전 서버 세션을 지우지 못했습니다"
 
 #: apps/mobile/components/ChoiceCard.tsx
 #: apps/mobile/components/computer-update-progress.tsx
@@ -3091,11 +3116,12 @@ msgstr "음성 서비스에 연결하지 못했습니다."
 msgid "Could not connect to the computer screen"
 msgstr "컴퓨터 화면에 연결하지 못했습니다"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/mobile/app/computer.tsx
 #: apps/mobile/app/sign-in.tsx
 #: apps/mobile/app/thread.tsx
 #: apps/mobile/components/account-deletion.tsx
+#: apps/mobile/components/ComputerCard.tsx
 #: apps/mobile/components/confirm-identity.tsx
 #: apps/mobile/lib/api-auth.ts
 #: apps/mobile/lib/identity-confirmation.ts
@@ -3104,6 +3130,7 @@ msgstr "컴퓨터 화면에 연결하지 못했습니다"
 #: apps/mobile/lib/user-error.ts
 #: apps/web/src/components/AccountAccess.tsx
 #: apps/web/src/components/AccountDataSettings.tsx
+#: apps/web/src/components/ComputerCard.tsx
 #: apps/web/src/components/ConfirmIdentityDialog.tsx
 #: apps/web/src/components/PasskeyOffer.tsx
 #: apps/web/src/components/PasskeySettings.tsx
@@ -3119,7 +3146,7 @@ msgstr "계속 진행하지 못했습니다."
 #: apps/mobile/app/page-share.tsx
 #: apps/mobile/app/pages.tsx
 msgid "Could not copy the link."
-msgstr ""
+msgstr "링크를 복사하지 못했습니다."
 
 #: apps/mobile/app/new-bot.tsx
 #: apps/web/src/pages/shell/agent-import.tsx
@@ -3162,7 +3189,7 @@ msgstr "Bot을 만들지 못했습니다."
 #: apps/mobile/components/account-deletion.tsx
 #: apps/mobile/lib/api-auth.ts
 msgid "Could not delete account"
-msgstr ""
+msgstr "계정을 삭제하지 못했습니다"
 
 #: apps/mobile/app/(settings)/archived-bots.tsx
 #: apps/mobile/lib/bot-lifecycle.ts
@@ -3181,7 +3208,7 @@ msgstr "MCP 서버를 삭제하지 못했습니다."
 
 #: apps/mobile/app/(settings)/memory-note.tsx
 msgid "Could not delete note"
-msgstr ""
+msgstr "메모를 삭제하지 못했습니다"
 
 #: apps/web/src/pages/shell/dialogs.tsx
 msgid "Could not delete page"
@@ -3211,12 +3238,12 @@ msgstr "스페이스를 삭제하지 못했습니다"
 
 #: apps/mobile/app/pages.tsx
 msgid "Could not delete the page."
-msgstr ""
+msgstr "페이지를 삭제하지 못했습니다."
 
 #: apps/mobile/app/artifact.tsx
 #: apps/mobile/app/artifacts.tsx
 msgid "Could not delete this artifact"
-msgstr ""
+msgstr "이 아티팩트를 삭제하지 못했습니다"
 
 #: apps/web/src/pages/Artifacts.tsx
 msgid "Could not delete this artifact."
@@ -3224,11 +3251,11 @@ msgstr "이 아티팩트를 삭제하지 못했습니다."
 
 #: apps/mobile/lib/composer-dictation.ts
 msgid "Could not dictate"
-msgstr ""
+msgstr "받아쓰기를 하지 못했습니다"
 
 #: apps/mobile/app/(settings)/voice.tsx
 msgid "Could not disconnect"
-msgstr ""
+msgstr "연결을 해제하지 못했습니다"
 
 #: apps/web/src/pages/MemorySettingsOverlay.tsx
 msgid "Could not disconnect memory provider"
@@ -3272,7 +3299,7 @@ msgstr "도구를 켜지 못했습니다"
 
 #: apps/mobile/lib/use-subscription-sign-in.ts
 msgid "Could not finish sign-in"
-msgstr ""
+msgstr "로그인을 완료하지 못했습니다"
 
 #: apps/web/src/pages/AdminAccessPage.tsx
 msgid "Could not grant access"
@@ -3280,7 +3307,7 @@ msgstr "액세스 권한을 부여하지 못했습니다"
 
 #: apps/mobile/lib/call-session.ts
 msgid "Could not hear that."
-msgstr ""
+msgstr "잘 들리지 않았습니다."
 
 #: apps/web/src/pages/PluginsOverlay.tsx
 msgid "Could not install connector"
@@ -3303,6 +3330,7 @@ msgstr "스페이스에서 나가지 못했습니다"
 msgid "Could not load"
 msgstr "불러올 수 없음"
 
+#: apps/mobile/components/inbox-activity.tsx
 #: apps/web/src/pages/ActivityList.tsx
 msgid "Could not load activity"
 msgstr "활동을 불러오지 못했습니다"
@@ -3326,12 +3354,12 @@ msgstr "결제 정보를 불러오지 못했습니다"
 #: apps/mobile/app/(settings)/bot-template.tsx
 #: apps/mobile/app/bot-settings.tsx
 msgid "Could not load bot"
-msgstr ""
+msgstr "봇을 불러오지 못했습니다"
 
 #: apps/mobile/app/index.tsx
 #: apps/mobile/lib/use-home-inbox.ts
 msgid "Could not load bots"
-msgstr ""
+msgstr "봇을 불러오지 못했습니다"
 
 #: apps/web/src/pages/IntegrationSetup.tsx
 msgid "Could not load bots. Reload to try again."
@@ -3340,7 +3368,7 @@ msgstr "봇을 불러오지 못했습니다. 새로고침하여 다시 시도하
 #: apps/mobile/app/(settings)/archived-bots.tsx
 #: apps/mobile/components/home-error-state.tsx
 msgid "Could not load chats"
-msgstr ""
+msgstr "채팅을 불러오지 못했습니다"
 
 #: apps/web/src/components/ComputerProviderSettings.tsx
 msgid "Could not load computer settings"
@@ -3352,15 +3380,15 @@ msgstr "자격 증명을 불러오지 못했습니다."
 
 #: apps/mobile/lib/thread-paging.ts
 msgid "Could not load earlier messages"
-msgstr ""
+msgstr "이전 메시지를 불러오지 못했습니다"
 
 #: apps/mobile/app/group-settings.tsx
 msgid "Could not load group"
-msgstr ""
+msgstr "그룹을 불러오지 못했습니다"
 
 #: apps/mobile/components/image-artifact-viewer.tsx
 msgid "Could not load image"
-msgstr ""
+msgstr "이미지를 불러오지 못했습니다"
 
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/mobile/lib/integrations-cache.ts
@@ -3383,7 +3411,7 @@ msgstr "멤버를 불러오지 못했습니다"
 #: apps/mobile/app/(settings)/memory-note.tsx
 #: apps/mobile/app/(settings)/memory.tsx
 msgid "Could not load memory"
-msgstr ""
+msgstr "기억을 불러오지 못했습니다"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/mobile/app/(settings)/model-picker.tsx
@@ -3396,23 +3424,23 @@ msgstr "AI 모델 설정을 불러오지 못했습니다."
 
 #: apps/mobile/app/pages.tsx
 msgid "Could not load pages."
-msgstr ""
+msgstr "페이지를 불러오지 못했습니다."
 
 #: apps/mobile/app/(settings)/ai-data-sharing.tsx
 msgid "Could not load permissions."
-msgstr ""
+msgstr "권한을 불러오지 못했습니다."
 
 #: apps/mobile/app/(settings)/plugin.tsx
 msgid "Could not load plugin"
-msgstr ""
+msgstr "플러그인을 불러오지 못했습니다"
 
 #: apps/mobile/app/routine.tsx
 msgid "Could not load routine"
-msgstr ""
+msgstr "자동 실행을 불러오지 못했습니다"
 
 #: apps/mobile/app/routines.tsx
 msgid "Could not load routines"
-msgstr ""
+msgstr "자동 실행 목록을 불러오지 못했습니다"
 
 #: apps/mobile/components/routine-run-history.tsx
 #: apps/web/src/pages/RoutineRunHistory.tsx
@@ -3440,7 +3468,7 @@ msgstr "템플릿을 불러오지 못했습니다"
 
 #: apps/mobile/app/computer.tsx
 msgid "Could not load the desktop. This device cannot reach the screen URL."
-msgstr ""
+msgstr "데스크톱을 불러오지 못했습니다. 이 기기에서 화면 URL에 연결할 수 없습니다."
 
 #: apps/mobile/app/artifact.tsx
 #: apps/web/src/pages/Artifacts.tsx
@@ -3459,7 +3487,7 @@ msgstr "파일을 불러오지 못했습니다."
 #: apps/mobile/app/page-share.tsx
 #: apps/mobile/app/page.tsx
 msgid "Could not load this page."
-msgstr ""
+msgstr "이 페이지를 불러오지 못했습니다."
 
 #: apps/mobile/app/(settings)/voice.tsx
 #: apps/web/src/pages/VoiceSettingsOverlay.tsx
@@ -3468,11 +3496,11 @@ msgstr "음성 설정을 불러오지 못했습니다."
 
 #: apps/mobile/app/bot-settings.tsx
 msgid "Could not load voices"
-msgstr ""
+msgstr "목소리를 불러오지 못했습니다"
 
 #: apps/mobile/app/(settings)/wallet.tsx
 msgid "Could not load wallet"
-msgstr ""
+msgstr "지갑을 불러오지 못했습니다"
 
 #: apps/web/src/lib/sign-out.ts
 msgid "Could not log out. Try again."
@@ -3480,7 +3508,7 @@ msgstr "로그아웃하지 못했습니다. 다시 시도해 주세요."
 
 #: apps/mobile/app/board.tsx
 msgid "Could not move the ticket"
-msgstr ""
+msgstr "티켓을 옮기지 못했습니다"
 
 #: apps/mobile/app/paywall.tsx
 #: apps/web/src/components/ModelCredits.tsx
@@ -3492,21 +3520,21 @@ msgstr "결제 페이지를 열지 못했습니다"
 
 #: apps/mobile/lib/use-computer-boot.ts
 msgid "Could not open computer"
-msgstr ""
+msgstr "컴퓨터를 열지 못했습니다"
 
 #: apps/mobile/app/peer-chat.tsx
 #: apps/mobile/components/thread/message-bubble.tsx
 msgid "Could not open file"
-msgstr ""
+msgstr "파일을 열지 못했습니다"
 
 #: apps/mobile/components/thread/message-bubble.tsx
 msgid "Could not open image"
-msgstr ""
+msgstr "이미지를 열지 못했습니다"
 
 #: apps/mobile/lib/thread-paging.ts
 #: apps/mobile/lib/thread-sync.ts
 msgid "Could not open message"
-msgstr ""
+msgstr "메시지를 열지 못했습니다"
 
 #: apps/web/src/components/bot-templates/bot-templates-dialog.tsx
 msgid "Could not open the bot"
@@ -3514,11 +3542,11 @@ msgstr "Bot을 열지 못했습니다"
 
 #: apps/mobile/components/pdf-preview.tsx
 msgid "Could not open this PDF."
-msgstr ""
+msgstr "이 PDF를 열지 못했습니다."
 
 #: apps/mobile/app/pages.tsx
 msgid "Could not pin the page."
-msgstr ""
+msgstr "페이지를 고정하지 못했습니다."
 
 #: apps/web/src/components/pages/PagesList.tsx
 msgid "Could not pin this page. Try again."
@@ -3526,7 +3554,7 @@ msgstr "이 페이지를 고정하지 못했습니다. 다시 시도하세요."
 
 #: apps/mobile/app/(settings)/voice.tsx
 msgid "Could not play a sample"
-msgstr ""
+msgstr "샘플을 재생하지 못했습니다"
 
 #: apps/web/src/pages/VoiceSettingsOverlay.tsx
 msgid "Could not play a test clip"
@@ -3534,8 +3562,9 @@ msgstr "샘플 음성을 재생하지 못했습니다."
 
 #: apps/mobile/components/audio-attachment.tsx
 #: apps/mobile/lib/voice.ts
+#: apps/web/src/lib/tts.ts
 msgid "Could not play that clip."
-msgstr ""
+msgstr "클립을 재생하지 못했습니다."
 
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
@@ -3544,7 +3573,7 @@ msgstr "플러그인을 미리 보지 못했습니다"
 
 #: apps/mobile/lib/endpoint.ts
 msgid "Could not reach that server"
-msgstr ""
+msgstr "해당 서버에 연결할 수 없습니다"
 
 #: apps/web/src/lib/model-connection-preflight.ts
 msgid "Could not reach the model server."
@@ -3565,7 +3594,7 @@ msgstr "서버에 연결할 수 없습니다"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "Could not reach this model server"
-msgstr ""
+msgstr "이 모델 서버에 연결할 수 없습니다"
 
 #: apps/web/src/pages/shell/agent-import-plan.tsx
 #: apps/web/src/pages/shell/use-agent-import-source.ts
@@ -3608,7 +3637,7 @@ msgstr "스킬을 제거하지 못했습니다"
 
 #: apps/mobile/app/(settings)/integrations.tsx
 msgid "Could not remove source"
-msgstr ""
+msgstr "소스를 제거하지 못했습니다"
 
 #: apps/web/src/components/VaultSettings.tsx
 msgid "Could not remove the credential"
@@ -3616,7 +3645,7 @@ msgstr "자격 증명을 제거하지 못했습니다"
 
 #: apps/mobile/app/(settings)/vault.tsx
 msgid "Could not remove the item"
-msgstr ""
+msgstr "항목을 제거하지 못했습니다"
 
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/web/src/pages/model-settings/providers-section.tsx
@@ -3634,7 +3663,7 @@ msgstr "스페이스 이름을 바꿀 수 없습니다"
 
 #: apps/mobile/app/pages.tsx
 msgid "Could not rename the page."
-msgstr ""
+msgstr "페이지 이름을 바꾸지 못했습니다."
 
 #: apps/web/src/components/pages/PagesList.tsx
 #: apps/web/src/components/pages/PageViewHost.tsx
@@ -3652,7 +3681,7 @@ msgstr "비밀번호를 재설정할 수 없습니다"
 #: apps/mobile/app/(settings)/archived-bots.tsx
 #: apps/mobile/components/thread/thread-header.tsx
 msgid "Could not restore bot"
-msgstr ""
+msgstr "봇을 복원하지 못했습니다"
 
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/web/src/pages/plugins/use-plugin-connections.ts
@@ -3668,7 +3697,7 @@ msgstr "권한을 취소하지 못했습니다"
 msgid "Could not run routine"
 msgstr "루틴을 실행할 수 없습니다"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/mobile/app/(settings)/memory-note.tsx
 #: apps/mobile/app/(settings)/team-conversation.tsx
 #: apps/mobile/components/vault-item-editor.tsx
@@ -3688,7 +3717,7 @@ msgstr "자동 검토를 저장할 수 없습니다"
 
 #: apps/mobile/app/bot-settings.tsx
 msgid "Could not save bot"
-msgstr ""
+msgstr "봇을 저장하지 못했습니다"
 
 #: apps/web/src/components/ComputerProviderSettings.tsx
 msgid "Could not save computer settings"
@@ -3733,7 +3762,7 @@ msgstr "선택 내용을 저장하지 못했습니다."
 #: apps/mobile/app/(settings)/voice.tsx
 #: apps/mobile/lib/approval-settings.ts
 msgid "Could not save that preference"
-msgstr ""
+msgstr "해당 설정을 저장하지 못했습니다"
 
 #: apps/mobile/app/(settings)/voice.tsx
 #: apps/web/src/pages/VoiceSettingsOverlay.tsx
@@ -3752,15 +3781,15 @@ msgstr "자격 증명을 저장하지 못했습니다"
 
 #: apps/mobile/lib/use-home-inbox.ts
 msgid "Could not save the default space"
-msgstr ""
+msgstr "기본 스페이스를 저장하지 못했습니다"
 
 #: apps/mobile/lib/api-server.ts
 msgid "Could not save the previous server session"
-msgstr ""
+msgstr "이전 서버 세션을 저장하지 못했습니다"
 
 #: apps/mobile/lib/api-server.ts
 msgid "Could not save the server URL"
-msgstr ""
+msgstr "서버 URL을 저장하지 못했습니다"
 
 #: apps/web/src/pages/shell/message-cards.tsx
 msgid "Could not save this choice"
@@ -3771,7 +3800,7 @@ msgstr "선택 내용을 저장하지 못했습니다."
 #: apps/mobile/lib/sso.ts
 #: apps/mobile/lib/user-error.ts
 msgid "Could not save your sign-in on this device. Try again."
-msgstr ""
+msgstr "이 기기에 로그인 정보를 저장하지 못했습니다. 다시 시도하세요."
 
 #: apps/web/src/pages/plugins/domain-search.tsx
 msgid "Could not search catalog"
@@ -3781,7 +3810,7 @@ msgstr "카탈로그를 검색하지 못했습니다"
 #: apps/mobile/components/thread/ask-block.tsx
 #: apps/mobile/components/vault-item-editor.tsx
 msgid "Could not send answer"
-msgstr ""
+msgstr "답변을 보내지 못했습니다"
 
 #: apps/mobile/lib/api-auth.ts
 #: apps/web/src/pages/Auth.tsx
@@ -3795,15 +3824,15 @@ msgstr "메시지를 보내지 못했습니다."
 
 #: apps/mobile/components/audio-attachment.tsx
 msgid "Could not share file"
-msgstr ""
+msgstr "파일을 공유하지 못했습니다"
 
 #: apps/mobile/components/image-artifact-viewer.tsx
 msgid "Could not share image"
-msgstr ""
+msgstr "이미지를 공유하지 못했습니다"
 
 #: apps/mobile/app/artifact.tsx
 msgid "Could not share this artifact"
-msgstr ""
+msgstr "이 아티팩트를 공유하지 못했습니다"
 
 #: apps/web/src/components/VaultSettings.tsx
 msgid "Could not show the credential"
@@ -3811,7 +3840,7 @@ msgstr "자격 증명을 표시할 수 없습니다"
 
 #: apps/mobile/app/(settings)/vault.tsx
 msgid "Could not show the item"
-msgstr ""
+msgstr "항목을 표시하지 못했습니다"
 
 #: apps/web/src/pages/shell/use-routine-editor.ts
 msgid "Could not show the webhook key"
@@ -3825,20 +3854,20 @@ msgstr "로그인하지 못했습니다"
 #: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/paywall.tsx
 msgid "Could not sign out"
-msgstr ""
+msgstr "로그아웃하지 못했습니다"
 
 #: apps/mobile/lib/thread-voice.ts
 msgid "Could not speak"
-msgstr ""
+msgstr "읽어 주지 못했습니다"
 
 #: apps/mobile/lib/call-session.ts
 #: apps/mobile/lib/voice.ts
 msgid "Could not speak that."
-msgstr ""
+msgstr "해당 내용을 읽어 주지 못했습니다."
 
 #: apps/mobile/app/(settings)/integrations.tsx
 msgid "Could not start MCP OAuth"
-msgstr ""
+msgstr "MCP OAuth를 시작하지 못했습니다"
 
 #: apps/web/src/pages/McpServersOverlay.tsx
 msgid "Could not start OAuth"
@@ -3846,20 +3875,15 @@ msgstr "OAuth 인증을 시작하지 못했습니다."
 
 #: apps/mobile/lib/use-subscription-sign-in.ts
 msgid "Could not start sign-in"
-msgstr ""
+msgstr "로그인을 시작하지 못했습니다"
 
 #: apps/web/src/components/teach/TeachComputerOverlay.tsx
 msgid "Could not start teaching"
 msgstr "가르치기를 시작하지 못했습니다."
 
-#: apps/mobile/components/computer-maintenance-actions.tsx
-#: apps/web/src/components/ComputerMaintenanceActions.tsx
-msgid "Could not stop computer"
-msgstr "컴퓨터를 중지하지 못했습니다"
-
 #: apps/mobile/components/AskActions.tsx
 msgid "Could not submit answer"
-msgstr ""
+msgstr "답변을 제출하지 못했습니다"
 
 #: apps/web/src/components/AskCard.tsx
 #: apps/web/src/components/SecretAskCard.tsx
@@ -3873,7 +3897,7 @@ msgstr "{failedNames}을(를) 전환하지 못했습니다. 다시 시도하세�
 
 #: apps/mobile/app/computer.tsx
 msgid "Could not switch computer"
-msgstr ""
+msgstr "컴퓨터를 전환하지 못했습니다"
 
 #: apps/mobile/app/(settings)/archived-bots.tsx
 #: apps/mobile/app/index.tsx
@@ -3883,7 +3907,7 @@ msgstr ""
 #: apps/mobile/components/organization-menu.tsx
 #: apps/mobile/lib/organizations.ts
 msgid "Could not switch spaces"
-msgstr ""
+msgstr "스페이스를 전환하지 못했습니다"
 
 #: apps/web/src/pages/shell/use-computer.tsx
 msgid "Could not take control"
@@ -3900,7 +3924,7 @@ msgstr "녹음을 텍스트로 변환하지 못했습니다."
 #: apps/mobile/lib/call-session.ts
 #: apps/mobile/lib/composer-dictation.ts
 msgid "Could not transcribe that."
-msgstr ""
+msgstr "텍스트로 변환하지 못했습니다."
 
 #: apps/web/src/pages/ScratchpadSection.tsx
 msgid "Could not update"
@@ -3920,7 +3944,7 @@ msgstr "봇 액세스 권한을 업데이트하지 못했습니다"
 #: apps/mobile/lib/thread-read.ts
 #: apps/mobile/lib/use-inbox-chat-actions.ts
 msgid "Could not update chat"
-msgstr ""
+msgstr "채팅을 업데이트하지 못했습니다"
 
 #: apps/mobile/components/computer-maintenance-actions.tsx
 #: apps/web/src/components/ComputerMaintenanceActions.tsx
@@ -3934,10 +3958,10 @@ msgstr "컴퓨터를 업데이트할 수 없습니다"
 msgid "Could not update name"
 msgstr "이름을 업데이트하지 못했습니다"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/mobile/app/bot-profile.tsx
 msgid "Could not update notifications"
-msgstr ""
+msgstr "알림 설정을 업데이트하지 못했습니다"
 
 #: apps/mobile/lib/thread-send.ts
 #: apps/web/src/pages/shell/use-composer-actions.ts
@@ -3947,7 +3971,7 @@ msgstr "반응을 업데이트할 수 없습니다"
 #: apps/mobile/app/routine.tsx
 #: apps/mobile/app/routines.tsx
 msgid "Could not update routine"
-msgstr ""
+msgstr "자동 실행을 업데이트하지 못했습니다"
 
 #: apps/web/src/pages/MemorySettingsOverlay.tsx
 msgid "Could not update the default memory scope"
@@ -3955,7 +3979,7 @@ msgstr "기본 기억 범위를 변경하지 못했습니다."
 
 #: apps/mobile/app/(settings)/wallet.tsx
 msgid "Could not update wallet"
-msgstr ""
+msgstr "지갑을 업데이트하지 못했습니다"
 
 #: apps/web/src/components/ComputersUnavailableHint.tsx
 msgid "Could not verify computer setup ({failureMessage}). Fix the connection, then check again."
@@ -3991,13 +4015,13 @@ msgstr "지갑을 불러오지 못했습니다"
 
 #: apps/mobile/components/thread-error-notice.tsx
 msgid "Couldn't refresh — showing the last loaded messages."
-msgstr ""
+msgstr "새로고침하지 못했습니다. 마지막으로 불러온 메시지를 표시합니다."
 
 #: apps/mobile/app/computer.tsx
 msgid "Couldn't start the computer"
-msgstr ""
+msgstr "컴퓨터를 시작하지 못했습니다"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
 msgid "Couldn't update bot style"
 msgstr "봇 스타일을 업데이트하지 못했습니다"
@@ -4067,7 +4091,7 @@ msgstr "자동 실행 만들기"
 
 #: apps/mobile/components/bot-organize-modal.tsx
 msgid "Create section"
-msgstr ""
+msgstr "섹션 만들기"
 
 #: apps/mobile/app/new-space.tsx
 #: apps/mobile/lib/ask-action-label.ts
@@ -4113,9 +4137,11 @@ msgstr "자격 증명: {names}"
 msgid "Credit amount"
 msgstr "크레딧 금액"
 
+#: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/mobile/app/paywall.tsx
 #: apps/web/src/components/ModelCredits.tsx
+#: apps/web/src/components/PlanUsage.tsx
 msgid "Credits"
 msgstr "크레딧"
 
@@ -4147,11 +4173,11 @@ msgstr "현재 비밀번호"
 
 #: apps/mobile/app/paywall.tsx
 msgid "Current plan"
-msgstr ""
+msgstr "현재 요금제"
 
 #: apps/mobile/app/(settings)/integrations.tsx
 msgid "Custom connector"
-msgstr ""
+msgstr "사용자 지정 커넥터"
 
 #: apps/mobile/components/vault-item-editor.tsx
 #: apps/web/src/components/vault/VaultItemEditor.tsx
@@ -4160,11 +4186,11 @@ msgstr "사용자 지정 헤더"
 
 #: apps/mobile/app/sign-in.tsx
 msgid "Custom server"
-msgstr ""
+msgstr "사용자 지정 서버"
 
 #: apps/mobile/app/sign-in.tsx
 msgid "Custom server {host}"
-msgstr ""
+msgstr "사용자 지정 서버 {host}"
 
 #: apps/mobile/app/new-space.tsx
 #: apps/web/src/pages/shell/dialogs.tsx
@@ -4182,7 +4208,7 @@ msgstr "{label} 맞춤설정"
 
 #: apps/mobile/app/(settings)/space.tsx
 msgid "Customize {setting}"
-msgstr ""
+msgstr "{setting} 사용자 지정"
 
 #: apps/web/src/pages/shell/avatar-studio-popover.tsx
 msgid "Customize bot avatar"
@@ -4198,7 +4224,7 @@ msgstr "매일"
 msgid "Daily check-ins on unfinished work"
 msgstr "미완료 작업 매일 확인"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
 #: apps/web/src/pages/shell/use-palette-actions.ts
 msgid "Dark"
@@ -4218,7 +4244,7 @@ msgstr "일"
 
 #: apps/mobile/app/paywall.tsx
 msgid "Day {days}"
-msgstr ""
+msgstr "{days}일째"
 
 #: apps/web/src/pages/shell/message-cards.tsx
 msgid "Day-to-day work"
@@ -4269,9 +4295,9 @@ msgstr "OpenClaw 기본값"
 msgid "Default scope"
 msgstr "기본 기억 범위"
 
-#: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/memory-note.tsx
 #: apps/mobile/app/(settings)/organization.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/mobile/app/(settings)/skill.tsx
 #: apps/mobile/app/(settings)/space.tsx
 #: apps/mobile/app/artifact.tsx
@@ -4314,7 +4340,7 @@ msgstr "\"{0}\"을(를) 삭제할까요?"
 #: apps/mobile/app/routine.tsx
 #: apps/mobile/app/routines.tsx
 msgid "Delete \"{name}\"?"
-msgstr ""
+msgstr "\"{name}\"을(를) 삭제할까요?"
 
 #. placeholder {0}: artifact.name
 #: apps/web/src/pages/Artifacts.tsx
@@ -4333,27 +4359,27 @@ msgstr "{0}을 삭제할까요?"
 #: apps/mobile/components/routine-list.ios.tsx
 #: apps/mobile/components/routine-list.tsx
 msgid "Delete {name}"
-msgstr ""
+msgstr "{name} 삭제"
 
 #: apps/mobile/lib/inbox-spaces.ts
 msgid "Delete {name} and its {count} bots?"
-msgstr ""
+msgstr "{name}과(와) 봇 {count}개를 삭제할까요?"
 
 #: apps/mobile/lib/inbox-spaces.ts
 msgid "Delete {name} and its bot?"
-msgstr ""
+msgstr "{name}과(와) 봇을 삭제할까요?"
 
-#: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/memory-note.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/mobile/app/(settings)/skill.tsx
 #: apps/mobile/app/pages.tsx
 #: apps/mobile/lib/bot-lifecycle.ts
 #: apps/mobile/lib/confirm-delete-section.ts
 #: apps/mobile/lib/inbox-spaces.ts
 msgid "Delete {name}?"
-msgstr ""
+msgstr "{name}을(를) 삭제할까요?"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/mobile/app/paywall.tsx
 #: apps/web/src/components/AccountAccess.tsx
 #: apps/web/src/components/AccountMenu.tsx
@@ -4371,13 +4397,15 @@ msgid "Delete memories too"
 msgstr "기억도 함께 삭제"
 
 #: apps/mobile/app/(settings)/organization.tsx
+#: apps/mobile/app/paywall.tsx
+#: apps/web/src/components/AccountMenu.tsx
 #: apps/web/src/pages/OrganizationSettingsPanel.tsx
 msgid "Delete organization"
 msgstr "조직 삭제"
 
 #: apps/mobile/app/routine.tsx
 msgid "Delete routine"
-msgstr ""
+msgstr "자동 실행 삭제"
 
 #: apps/mobile/components/bot-organize-modal.tsx
 #: apps/mobile/components/inbox-render-item.tsx
@@ -4394,7 +4422,7 @@ msgstr "스페이스 삭제"
 #: apps/mobile/app/routine.tsx
 #: apps/mobile/app/routines.tsx
 msgid "Delete this routine?"
-msgstr ""
+msgstr "이 자동 실행을 삭제할까요?"
 
 #: apps/mobile/app/(settings)/space.tsx
 #: apps/web/src/pages/SpaceSettingOverrides.tsx
@@ -4403,12 +4431,12 @@ msgstr "이 스페이스의 자격 증명을 삭제할까요?"
 
 #: apps/mobile/components/account-deletion.tsx
 msgid "Delete your account?"
-msgstr ""
+msgstr "계정을 삭제할까요?"
 
 #: apps/mobile/components/bot-profile-menu.tsx
 #: apps/mobile/lib/inbox-swipe.ts
 msgid "Delete…"
-msgstr ""
+msgstr "삭제…"
 
 #: apps/mobile/components/thread/special-message-card.tsx
 #: apps/web/src/pages/shell/message-view.tsx
@@ -4417,7 +4445,11 @@ msgstr "삭제됨"
 
 #: apps/mobile/components/pages/page-card.tsx
 msgid "Deleted"
-msgstr ""
+msgstr "삭제됨"
+
+#: apps/web/src/pages/shell/transcript-member-name.ts
+msgid "Deleted bot"
+msgstr "삭제된 봇"
 
 #: apps/web/src/components/PasskeySettings.tsx
 #: apps/web/src/pages/Artifacts.tsx
@@ -4476,11 +4508,11 @@ msgstr "개발자"
 
 #: apps/mobile/app/bot-settings.tsx
 msgid "Device voice"
-msgstr ""
+msgstr "기기 음성"
 
 #: apps/mobile/components/mermaid-diagram.tsx
 msgid "Diagram"
-msgstr ""
+msgstr "다이어그램"
 
 #: apps/mobile/components/thread-composer.tsx
 #: apps/web/src/pages/shell/keyboard-shortcuts-dialog.tsx
@@ -4501,7 +4533,7 @@ msgstr "받아쓰기에 실패했습니다."
 
 #: apps/mobile/app/sign-in.tsx
 msgid "Did you mean {email}?"
-msgstr ""
+msgstr "{email}을(를) 입력하려고 하셨나요?"
 
 #: apps/web/src/pages/Auth.tsx
 msgid "Did you mean <0>{emailSuggestion}</0>?"
@@ -4522,11 +4554,11 @@ msgstr "비활성화됨"
 
 #: apps/mobile/app/(settings)/memory-note.tsx
 msgid "Discard"
-msgstr ""
+msgstr "버리기"
 
 #: apps/mobile/app/(settings)/memory-note.tsx
 msgid "Discard changes?"
-msgstr ""
+msgstr "변경 사항을 버릴까요?"
 
 #: apps/web/src/components/composer/HoldToTalk.tsx
 msgid "Discard recording"
@@ -4568,7 +4600,7 @@ msgstr "{disconnectName} 연결을 해제했습니다."
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "Disconnected {provider}."
-msgstr ""
+msgstr "{provider} 연결을 해제했습니다."
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/mobile/app/(settings)/voice.tsx
@@ -4613,7 +4645,7 @@ msgstr "지금은 연결하지 않았습니다. MCP 설정에서 언제든 다�
 
 #: apps/mobile/components/add-custom-integration.tsx
 msgid "Display name"
-msgstr ""
+msgstr "표시 이름"
 
 #: apps/web/src/pages/HostComputerPrompt.tsx
 msgid "Docker"
@@ -4646,18 +4678,18 @@ msgstr "계정이 없나요?"
 #: apps/mobile/lib/activity.ts
 #: apps/mobile/lib/board.ts
 #: apps/web/src/components/AccountDataSettings.tsx
+#: apps/web/src/components/ComputerCard.tsx
 #: apps/web/src/components/ToolActivityDisclosure.tsx
 #: apps/web/src/lib/ticket-status.ts
 #: apps/web/src/pages/ActivityList.tsx
 #: apps/web/src/pages/shell/avatar-studio-popover.tsx
 #: apps/web/src/pages/shell/import-setup-card.tsx
-#: apps/web/src/pages/shell/message-view.tsx
 msgid "Done"
 msgstr "완료"
 
 #: apps/mobile/components/computer-keyboard-bar.tsx
 msgid "Down"
-msgstr ""
+msgstr "아래"
 
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/web/src/components/ModelCredits.tsx
@@ -4720,13 +4752,9 @@ msgstr "편집"
 
 #: apps/mobile/app/bot-settings.tsx
 msgid "Edit avatar"
-msgstr ""
+msgstr "아바타 편집"
 
-#: apps/web/src/components/AskCard.tsx
-msgid "Edit first"
-msgstr "수정 후 보내기"
-
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/mobile/app/bot-settings.tsx
 #: apps/mobile/components/name-dialog-compose.tsx
 #: apps/mobile/components/name-dialog.tsx
@@ -4741,7 +4769,7 @@ msgstr "Bot 정보 수정"
 
 #: apps/mobile/app/routine.tsx
 msgid "Edit routine"
-msgstr ""
+msgstr "자동 실행 편집"
 
 #: apps/mobile/app/bot-profile.tsx
 #: apps/mobile/app/sign-in.tsx
@@ -4782,7 +4810,7 @@ msgstr "이메일 인증이 필요합니다"
 
 #: apps/mobile/lib/app-version.ts
 msgid "Embedded"
-msgstr ""
+msgstr "내장"
 
 #. placeholder {0}: humanizeTool(toolName)
 #: apps/web/src/pages/shell/bot-settings-sections.tsx
@@ -4795,7 +4823,7 @@ msgstr "최종 사용자 ID"
 
 #: apps/mobile/app/(settings)/billing.tsx
 msgid "Ends"
-msgstr ""
+msgstr "종료일"
 
 #: apps/web/src/lib/billing.ts
 msgid "Ends {day}"
@@ -4812,7 +4840,7 @@ msgstr "비밀번호를 입력하세요"
 
 #: apps/mobile/lib/endpoint.ts
 msgid "Enter a server URL"
-msgstr ""
+msgstr "서버 URL을 입력하세요"
 
 #: apps/mobile/lib/user-error.ts
 #: apps/web/src/lib/user-error.ts
@@ -4831,11 +4859,11 @@ msgstr "최대 출력 토큰 수는 1에서 {MAX_MODEL_MAX_TOKENS} 사이의 정
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "Enter a whole number from 1 to {max} for maximum output tokens."
-msgstr ""
+msgstr "최대 출력 토큰으로 1~{max} 사이의 정수를 입력하세요."
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "Enter a whole number from 1 to {max} for the context limit."
-msgstr ""
+msgstr "컨텍스트 한도로 1~{max} 사이의 정수를 입력하세요."
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/web/src/pages/model-settings/use-model-settings.ts
@@ -4845,11 +4873,15 @@ msgstr "이미지 한도는 1에서 1000 사이의 정수로 입력하세요."
 
 #: apps/mobile/app/(settings)/spending-limit.tsx
 msgid "Enter an amount"
-msgstr ""
+msgstr "금액을 입력하세요"
 
 #: apps/web/src/lib/model-connection-preflight.ts
 msgid "Enter an API key before testing."
 msgstr "테스트하기 전에 API 키를 입력하세요."
+
+#: apps/web/src/lib/routine-draft.ts
+msgid "Enter an HTTPS URL"
+msgstr "HTTPS URL을 입력하세요"
 
 #: apps/web/src/components/ComputerProviderSettings.tsx
 msgid "Environment ID"
@@ -4871,7 +4903,7 @@ msgstr "오류"
 
 #: apps/mobile/components/computer-keyboard-bar.tsx
 msgid "Escape"
-msgstr ""
+msgstr "Escape"
 
 #: apps/mobile/app/(settings)/team-conversation.tsx
 #: apps/mobile/components/routine-schedule-editor.tsx
@@ -4894,11 +4926,11 @@ msgstr "매주 {0} 및 {1}"
 
 #: apps/mobile/lib/cron.ts
 msgid "Every {day}"
-msgstr ""
+msgstr "매주 {day}"
 
 #: apps/mobile/lib/cron.ts
 msgid "Every {days} and {last}"
-msgstr ""
+msgstr "매주 {days} 및 {last}"
 
 #: apps/web/src/pages/RoutineSchedule.tsx
 msgid "every {intervalAmountSelect} {intervalUnitSelect}"
@@ -4906,7 +4938,7 @@ msgstr "{intervalAmountSelect} {intervalUnitSelect}마다"
 
 #: apps/mobile/lib/cron.ts
 msgid "every {n} {unit}"
-msgstr ""
+msgstr "{n} {unit}마다"
 
 #: apps/mobile/lib/cron.ts
 #: apps/web/src/lib/cron.ts
@@ -4936,7 +4968,7 @@ msgstr "매시간 {0}분"
 
 #: apps/mobile/lib/cron.ts
 msgid "Every hour at :{minute}"
-msgstr ""
+msgstr "매시간 {minute}분"
 
 #: apps/mobile/app/(settings)/team-conversation.tsx
 #: apps/web/src/pages/ExternalConversationSettings.tsx
@@ -4950,11 +4982,11 @@ msgstr "매주 월요일"
 
 #: apps/mobile/components/routine-schedule-editor.tsx
 msgid "Every month"
-msgstr ""
+msgstr "매월"
 
 #: apps/mobile/components/routine-schedule-editor.tsx
 msgid "Every week"
-msgstr ""
+msgstr "매주"
 
 #: apps/web/src/components/SharedSpaceRules.tsx
 msgid "Everyone here sees its chats, bots and memory"
@@ -4962,7 +4994,7 @@ msgstr "여기 있는 모든 사람이 채팅, 봇, 기억을 볼 수 있습니�
 
 #: apps/mobile/app/(settings)/messaging.tsx
 msgid "Everyone in this bot's space can read the chats it gets from {app}."
-msgstr ""
+msgstr "이 봇의 스페이스에 있는 모든 사람이 {app}에서 받은 채팅을 읽을 수 있습니다."
 
 #: apps/web/src/pages/MessagingSettingsPanel.tsx
 msgid "Everyone in this bot's space can read the chats it gets from {linkApp}."
@@ -4970,11 +5002,11 @@ msgstr "이 봇의 스페이스에 있는 모든 사람이 {linkApp}에서 받�
 
 #: apps/mobile/app/new-group.tsx
 msgid "Ex: Project Falcon"
-msgstr ""
+msgstr "예: Project Falcon"
 
 #: apps/mobile/components/compatible-endpoint-form.tsx
 msgid "exact-model-id"
-msgstr ""
+msgstr "exact-model-id"
 
 #: apps/web/src/pages/shell/message-cards.tsx
 msgid "Expand"
@@ -4987,7 +5019,7 @@ msgstr "{0} 펼치기"
 
 #: apps/mobile/components/inbox-rows.tsx
 msgid "Expand {name}"
-msgstr ""
+msgstr "{name} 펼치기"
 
 #: apps/web/src/components/markdown-copy.tsx
 msgid "Expand table"
@@ -5006,7 +5038,7 @@ msgstr "만료"
 
 #: apps/mobile/lib/vault.ts
 msgid "Expires {date}"
-msgstr ""
+msgstr "{date} 만료"
 
 #: apps/web/src/components/vault/kinds.tsx
 msgid "Expires {expiry}"
@@ -5081,12 +5113,8 @@ msgid "Failure handling"
 msgstr "실패했을 때 처리"
 
 #: apps/web/src/pages/routine-editor/trigger-cards.tsx
-msgid "Fields that mark a change"
-msgstr "변경을 나타내는 필드"
-
-#: apps/web/src/pages/routine-editor/trigger-cards.tsx
-msgid "Fields to compare, e.g. id, modifiedTime (optional)"
-msgstr "비교할 필드, 예: id, modifiedTime (선택 사항)"
+msgid "Fields to compare (optional)"
+msgstr "비교할 필드(선택 사항)"
 
 #: apps/mobile/components/thread/message-bubble.tsx
 #: apps/mobile/lib/search-sheet.ts
@@ -5159,11 +5187,11 @@ msgstr "찾는 중…"
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/mobile/app/(settings)/plugin.tsx
 msgid "Finish connecting in the browser, then refresh this page."
-msgstr ""
+msgstr "브라우저에서 연결을 완료한 뒤 이 페이지를 새로고침하세요."
 
 #: apps/mobile/components/McpApprovalCard.tsx
 msgid "Finish MCP authorization in the web app."
-msgstr ""
+msgstr "웹 앱에서 MCP 인증을 완료하세요."
 
 #: apps/mobile/components/ImportSetupCard.tsx
 #: apps/web/src/pages/shell/import-setup-card.tsx
@@ -5172,7 +5200,7 @@ msgstr "설정 마무리"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "Finish signing in in your browser:"
-msgstr ""
+msgstr "브라우저에서 로그인을 완료하세요:"
 
 #: apps/web/src/lib/model-connection-preflight.ts
 msgid "Finish subscription sign-in, then test again."
@@ -5203,11 +5231,11 @@ msgstr "비밀번호를 잊으셨나요?"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "Found {count} model."
-msgstr ""
+msgstr "모델 {count}개를 찾았습니다."
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "Found {count} models."
-msgstr ""
+msgstr "모델 {count}개를 찾았습니다."
 
 #: apps/mobile/app/paywall.tsx
 #: apps/web/src/components/ModelCredits.tsx
@@ -5228,15 +5256,15 @@ msgstr "무료 플랜이 {day}에 종료됩니다"
 
 #: apps/mobile/app/(settings)/billing.tsx
 msgid "Free trial"
-msgstr ""
+msgstr "무료 체험"
 
 #: apps/mobile/app/(settings)/billing.tsx
 msgid "Free until"
-msgstr ""
+msgstr "무료 기간 종료"
 
 #: apps/mobile/app/paywall.tsx
 msgid "Free until {date}"
-msgstr ""
+msgstr "{date}까지 무료"
 
 #: apps/mobile/lib/cron.ts
 #: apps/web/src/lib/cron.ts
@@ -5262,7 +5290,7 @@ msgstr "GitHub에서"
 
 #: apps/mobile/app/paywall.tsx
 msgid "Full access, nothing to pay"
-msgstr ""
+msgstr "모든 기능, 결제 없음"
 
 #: apps/mobile/components/vault-item-editor.tsx
 #: apps/mobile/components/vault-item-sheet.tsx
@@ -5289,6 +5317,8 @@ msgstr "게이트웨이 토큰"
 msgid "Gateway URL"
 msgstr "게이트웨이 URL"
 
+#: apps/mobile/app/(settings)/_layout.tsx
+#: apps/mobile/app/(settings)/account.tsx
 #: apps/web/src/pages/settings-nav.ts
 #: apps/web/src/pages/SettingsOverlay.tsx
 msgid "General"
@@ -5296,7 +5326,7 @@ msgstr "일반"
 
 #: apps/mobile/app/(settings)/billing.tsx
 msgid "Get a free month for each friend who starts a trial."
-msgstr ""
+msgstr "친구가 체험판을 시작할 때마다 무료 1개월을 받으세요."
 
 #: apps/mobile/app/bot-profile.tsx
 #: apps/web/src/pages/shell/bot-panel.tsx
@@ -5305,7 +5335,7 @@ msgstr "이메일 주소 받기"
 
 #: apps/mobile/app/bot-profile.tsx
 msgid "Get notified when this Bot finishes or needs input"
-msgstr ""
+msgstr "이 봇이 작업을 마치거나 입력이 필요할 때 알림 받기"
 
 #: apps/web/src/components/SidebarFooter.tsx
 msgid "Get the mobile app"
@@ -5346,7 +5376,7 @@ msgstr "부여 중…"
 
 #: apps/mobile/components/add-custom-integration.tsx
 msgid "GraphQL endpoint"
-msgstr ""
+msgstr "GraphQL 엔드포인트"
 
 #: apps/mobile/app/_layout.tsx
 #: apps/mobile/app/(settings)/messaging.tsx
@@ -5368,11 +5398,11 @@ msgstr "그룹"
 
 #: apps/mobile/app/group-settings.tsx
 msgid "Group name"
-msgstr ""
+msgstr "그룹 이름"
 
 #: apps/mobile/app/group-settings.tsx
 msgid "Group not found"
-msgstr ""
+msgstr "그룹을 찾을 수 없습니다"
 
 #: apps/mobile/app/_layout.tsx
 #: apps/mobile/app/group-settings.tsx
@@ -5386,6 +5416,10 @@ msgstr "그룹 설정"
 #: apps/web/src/pages/ExternalConversationSettings.tsx
 msgid "Group updates"
 msgstr "업데이트 묶기"
+
+#: apps/web/src/pages/shell/dialogs.tsx
+msgid "Groups left with fewer than two bots are deleted too, including their messages, files, and pages."
+msgstr "봇이 2개 미만으로 남는 그룹도 메시지, 파일, 페이지와 함께 삭제됩니다."
 
 #: apps/mobile/components/CallCard.tsx
 #: apps/web/src/components/call/CallCard.tsx
@@ -5401,9 +5435,9 @@ msgstr "먼저 전화를 끊은 다음 화면에 표시된 코드를 입력하�
 msgid "Hang up, then enter the code on screen."
 msgstr "전화를 끊은 다음 화면에 표시된 코드를 입력하세요."
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 msgid "Haptics"
-msgstr ""
+msgstr "햅틱"
 
 #: apps/web/src/pages/routine-editor/trigger-cards.tsx
 msgid "Header"
@@ -5415,7 +5449,7 @@ msgstr "헤더 \"{header}\""
 
 #: apps/mobile/components/vault-item-sheet.tsx
 msgid "Header {name}"
-msgstr ""
+msgstr "헤더 {name}"
 
 #: apps/mobile/components/header-rows-editor.tsx
 #: apps/mobile/components/vault-item-editor.tsx
@@ -5444,15 +5478,15 @@ msgstr "샘플 듣기"
 
 #: apps/mobile/lib/thread-voice.ts
 msgid "Hello {name}, {bot} here."
-msgstr ""
+msgstr "안녕하세요, {name}님. {bot}입니다."
 
 #: apps/mobile/lib/thread-voice.ts
 msgid "Hello, {bot} here."
-msgstr ""
+msgstr "안녕하세요, {bot}입니다."
 
 #: apps/mobile/app/bot-settings.tsx
 msgid "Hi, I'm {name}."
-msgstr ""
+msgstr "안녕하세요, {name}입니다."
 
 #: apps/mobile/app/(settings)/voice.tsx
 #: apps/web/src/pages/VoiceSettingsOverlay.tsx
@@ -5461,7 +5495,7 @@ msgstr "안녕하세요. 답변을 소리 내어 읽을 때 이런 목소리로 
 
 #: apps/mobile/app/bot-settings.tsx
 msgid "Hi, this is how I'll sound."
-msgstr ""
+msgstr "안녕하세요, 제 목소리는 이렇습니다."
 
 #: apps/mobile/components/login-fields-editor.tsx
 #: apps/web/src/components/vault/LoginFieldsInput.tsx
@@ -5474,11 +5508,11 @@ msgstr "숨기기"
 
 #: apps/mobile/components/thread/message-bubble.tsx
 msgid "Hide {label}"
-msgstr ""
+msgstr "{label} 숨기기"
 
 #: apps/mobile/components/chat-route-header.tsx
 msgid "Hide chats"
-msgstr ""
+msgstr "채팅 숨기기"
 
 #: apps/web/src/pages/routine-editor/trigger-cards.tsx
 msgid "Hide key"
@@ -5486,7 +5520,7 @@ msgstr "키 숨기기"
 
 #: apps/mobile/components/computer-keyboard-bar.tsx
 msgid "Hide keyboard"
-msgstr ""
+msgstr "키보드 숨기기"
 
 #: apps/mobile/app/sign-in.tsx
 #: apps/web/src/components/I18nBootstrap.tsx
@@ -5500,6 +5534,7 @@ msgstr "대화 기록 숨기기"
 
 #: apps/mobile/lib/thinking-level.ts
 #: apps/web/src/lib/ticket-priority.ts
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
 #: apps/web/src/pages/onboarding/model-step.tsx
 msgid "High"
@@ -5567,21 +5602,27 @@ msgstr "Rakazo를 어떻게 사용하실 건가요?"
 
 #: apps/mobile/components/compatible-endpoint-form.tsx
 msgid "http://127.0.0.1:8000/v1"
-msgstr ""
+msgstr "http://127.0.0.1:8000/v1"
+
+#: apps/web/src/pages/routine-editor/trigger-cards.tsx
+msgid "HTTPS URL"
+msgstr "HTTPS URL"
 
 #: apps/mobile/components/add-custom-integration.tsx
 msgid "https://example.com/graphql"
-msgstr ""
+msgstr "https://example.com/graphql"
 
 #: apps/mobile/components/add-custom-integration.tsx
 msgid "https://example.com/mcp"
-msgstr ""
+msgstr "https://example.com/mcp"
 
 #: apps/mobile/components/add-custom-integration.tsx
 msgid "https://example.com/openapi.json"
-msgstr ""
+msgstr "https://example.com/openapi.json"
 
 #: apps/mobile/app/computer.tsx
+#: apps/mobile/components/ComputerCard.tsx
+#: apps/web/src/components/ComputerCard.tsx
 #: apps/web/src/pages/shell/computer-release-actions.tsx
 msgid "I’m done"
 msgstr "조작 끝내기"
@@ -5602,7 +5643,7 @@ msgstr "무시"
 
 #: apps/mobile/components/thread/message-bubble.tsx
 msgid "Image"
-msgstr ""
+msgstr "이미지"
 
 #. js-lingui-explicit-id
 #: packages/i18n/src/run-error.ts
@@ -5793,7 +5834,7 @@ msgstr "격리된 미리보기 — 계정에 액세스할 수 없음"
 
 #: apps/mobile/app/new-space.tsx
 msgid "It could not be opened. Try again from the sidebar."
-msgstr ""
+msgstr "열 수 없습니다. 사이드바에서 다시 시도하세요."
 
 #: apps/web/src/components/pages/PageViewHost.tsx
 msgid "It may have been deleted, or it belongs to someone else."
@@ -5810,11 +5851,11 @@ msgstr "대화, 파일, 자동 실행이 영구 삭제됩니다. 이 Bot이 만�
 
 #: apps/mobile/lib/bot-lifecycle.ts
 msgid "Its conversation, files, and routines will be permanently deleted. What should happen to its memories?"
-msgstr ""
+msgstr "대화, 파일, 자동 실행이 영구 삭제됩니다. 기억은 어떻게 할까요?"
 
 #: apps/mobile/app/pages.tsx
 msgid "Its link stops working. This cannot be undone."
-msgstr ""
+msgstr "링크가 더 이상 작동하지 않습니다. 되돌릴 수 없습니다."
 
 #: apps/web/src/components/pages/PagesList.tsx
 msgid "Its shared link stops working and its cards in chat show it as deleted. This can't be undone."
@@ -5835,7 +5876,7 @@ msgstr "최신 메시지로 이동"
 
 #: apps/mobile/components/thread/thread-list-controls.tsx
 msgid "Jump to latest, new messages"
-msgstr ""
+msgstr "최신 메시지로 이동, 새 메시지 있음"
 
 #: apps/web/src/pages/shell/chat-context.tsx
 msgid "Jump to replied message: {excerpt}"
@@ -5871,7 +5912,7 @@ msgstr "키"
 
 #: apps/mobile/app/(settings)/vault.tsx
 msgid "Kind"
-msgstr ""
+msgstr "종류"
 
 #: apps/mobile/components/login-fields-editor.tsx
 #: apps/mobile/components/vault-item-editor.tsx
@@ -5881,7 +5922,7 @@ msgid "Label"
 msgstr "레이블"
 
 #: apps/mobile/app/(settings)/_layout.tsx
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/mobile/app/(settings)/language.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
 msgid "Language"
@@ -5901,6 +5942,10 @@ msgstr "마지막 확인 {0}: 변경 없음"
 msgid "Later"
 msgstr "나중에"
 
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Learn from conversations"
+msgstr "대화에서 학습"
+
 #: apps/mobile/app/(settings)/messaging.tsx
 #: apps/mobile/app/space-members.tsx
 #: apps/web/src/components/SpaceMembersSettings.tsx
@@ -5915,7 +5960,7 @@ msgstr "{0}에서 나갈까요?"
 
 #: apps/mobile/app/space-members.tsx
 msgid "Leave {name}?"
-msgstr ""
+msgstr "{name}에서 나갈까요?"
 
 #: apps/mobile/app/space-members.tsx
 #: apps/web/src/components/SpaceMembersSettings.tsx
@@ -5924,17 +5969,13 @@ msgstr "스페이스 나가기"
 
 #: apps/mobile/components/computer-keyboard-bar.tsx
 msgid "Left"
-msgstr ""
+msgstr "왼쪽"
 
 #: apps/web/src/components/ComputerDeviceSettings.tsx
 msgid "Let bots use this computer"
 msgstr "봇이 이 컴퓨터를 사용하도록 허용"
 
-#: apps/web/src/pages/MemorySettingsOverlay.tsx
-msgid "Lets bots save and recall facts by meaning, alongside MEMORY.md."
-msgstr "MEMORY.md와 함께 봇이 의미를 기준으로 사실을 저장하고 떠올릴 수 있게 합니다."
-
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
 #: apps/web/src/pages/shell/use-palette-actions.ts
 msgid "Light"
@@ -5942,7 +5983,7 @@ msgstr "라이트"
 
 #: apps/mobile/components/run-error-sheet.tsx
 msgid "Limit"
-msgstr ""
+msgstr "한도"
 
 #: apps/mobile/lib/search-sheet.ts
 #: apps/web/src/pages/SpaceSearch.tsx
@@ -5959,7 +6000,7 @@ msgstr "링크를 복사했습니다"
 msgid "Link DMs"
 msgstr "DM 연결"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/web/src/components/AccountAccess.tsx
 msgid "Link SSO"
 msgstr "SSO 연결"
@@ -5976,13 +6017,13 @@ msgstr "듣는 중"
 msgid "Listening…"
 msgstr "듣는 중…"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 msgid "Live update settings"
-msgstr ""
+msgstr "실시간 업데이트 설정"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 msgid "Live working status"
-msgstr ""
+msgstr "실시간 작업 상태"
 
 #: apps/mobile/components/thread/thread-list-controls.tsx
 #: apps/web/src/pages/shell/transcript.tsx
@@ -5998,7 +6039,7 @@ msgstr "더 불러오기"
 msgid "Load older runs"
 msgstr "이전 실행 불러오기"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
 msgid "Load web images automatically"
 msgstr "웹 이미지 자동으로 불러오기"
@@ -6010,7 +6051,7 @@ msgstr "활동을 불러오는 중…"
 #: apps/mobile/components/image-artifact-viewer.tsx
 #: apps/mobile/components/inline-image-attachment.tsx
 msgid "Loading image…"
-msgstr ""
+msgstr "이미지 불러오는 중…"
 
 #: apps/web/src/pages/PluginsOverlay.tsx
 msgid "Loading integrations…"
@@ -6035,7 +6076,7 @@ msgstr "미리보기를 불러오는 중…"
 
 #: apps/mobile/components/integration-detail.tsx
 msgid "Loading tools…"
-msgstr ""
+msgstr "도구 불러오는 중…"
 
 #: apps/web/src/pages/VoiceSettingsOverlay.tsx
 msgid "Loading voice providers…"
@@ -6098,15 +6139,15 @@ msgstr "봇이 사용할 수 있는 로그인 정보와 키."
 #: apps/mobile/app/artifacts.tsx
 #: apps/mobile/components/failed-send-bubble.tsx
 msgid "Long press to delete"
-msgstr ""
+msgstr "길게 눌러 삭제"
 
 #: apps/mobile/components/inbox-rows.tsx
 msgid "Long press to pin or move to a section"
-msgstr ""
+msgstr "길게 눌러 고정하거나 섹션으로 이동"
 
 #: apps/mobile/components/inbox-rows.tsx
 msgid "Long press to pin, move, or silence notifications"
-msgstr ""
+msgstr "길게 눌러 고정, 이동 또는 알림 끄기"
 
 #: apps/web/src/pages/shell/agent-import-plan.tsx
 msgid "Looks like it contains a key"
@@ -6114,6 +6155,7 @@ msgstr "키가 포함된 것 같습니다"
 
 #: apps/mobile/lib/thinking-level.ts
 #: apps/web/src/lib/ticket-priority.ts
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
 #: apps/web/src/pages/onboarding/model-step.tsx
 msgid "Low"
@@ -6148,7 +6190,7 @@ msgstr "{0} 관리"
 
 #: apps/mobile/components/model-role-settings.tsx
 msgid "Manage {provider}"
-msgstr ""
+msgstr "{provider} 관리"
 
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/web/src/components/ModelCredits.tsx
@@ -6243,6 +6285,7 @@ msgid "MCP servers"
 msgstr "MCP 서버"
 
 #: apps/mobile/lib/thinking-level.ts
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
 #: apps/web/src/pages/onboarding/model-step.tsx
 msgid "Medium"
@@ -6273,7 +6316,7 @@ msgstr "멤버({0})"
 
 #: apps/mobile/components/bot-member-picker.tsx
 msgid "Members ({count})"
-msgstr ""
+msgstr "멤버 ({count})"
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/(settings)/account.tsx
@@ -6334,7 +6377,7 @@ msgstr "{activeName}에게 메시지 보내기"
 
 #: apps/mobile/components/thread/thread-screen.tsx
 msgid "Message {name}"
-msgstr ""
+msgstr "{name}에게 메시지 보내기"
 
 #: apps/web/src/pages/shell/composer.tsx
 msgid "Message composer"
@@ -6373,7 +6416,7 @@ msgstr "메시지"
 
 #: apps/mobile/lib/ai-consent.ts
 msgid "Messages, chat history, bot instructions, memories, attachments, screenshots and connected-app content are sent to run your bots, including routines."
-msgstr ""
+msgstr "자동 실행을 포함해 봇을 실행하기 위해 메시지, 채팅 기록, 봇 지침, 기억, 첨부 파일, 스크린샷, 연결된 앱의 콘텐츠가 전송됩니다."
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/(settings)/account.tsx
@@ -6464,7 +6507,7 @@ msgstr "모델 선택지"
 
 #: apps/mobile/components/run-error-sheet.tsx
 msgid "Model provider"
-msgstr ""
+msgstr "모델 제공업체"
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/(settings)/account.tsx
@@ -6497,10 +6540,12 @@ msgstr "월요일"
 msgid "month"
 msgstr "월"
 
+#: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/spending-limit.tsx
 #: apps/mobile/app/paywall.tsx
 #: apps/mobile/lib/cron.ts
 #: apps/web/src/components/ModelCredits.tsx
+#: apps/web/src/components/PlanUsage.tsx
 #: apps/web/src/components/SpendingLimitSettings.tsx
 #: apps/web/src/lib/cron.ts
 msgid "Monthly"
@@ -6534,11 +6579,6 @@ msgstr "더보기"
 #: apps/web/src/pages/plugins/plugin-browse.tsx
 msgid "More apps"
 msgstr "앱 더보기"
-
-#: apps/mobile/components/computer-maintenance-actions.tsx
-#: apps/web/src/components/ComputerMaintenanceActions.tsx
-msgid "More computer actions"
-msgstr "컴퓨터 작업 더보기"
 
 #: apps/mobile/lib/bot-template-copy.ts
 #: apps/web/src/components/bot-templates/bot-template-copy.ts
@@ -6631,7 +6671,7 @@ msgstr "이 루틴의 이름을 정하세요"
 
 #: apps/mobile/app/routine.tsx
 msgid "Name this routine."
-msgstr ""
+msgstr "자동 실행 이름을 입력하세요."
 
 #: apps/mobile/app/new-bot.tsx
 #: apps/web/src/pages/shell/create-bot-dialog.tsx
@@ -6650,7 +6690,7 @@ msgstr "답변 필요"
 msgid "Needs an OAuth client ID"
 msgstr "OAuth 클라이언트 ID가 필요합니다"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/mobile/components/inbox-activity.tsx
 #: apps/mobile/components/inbox-rows.tsx
 #: apps/mobile/components/unread-jump-overlay.tsx
@@ -6674,9 +6714,9 @@ msgid "Needs takeover"
 msgstr "인수 필요"
 
 #: apps/mobile/components/ComputerCard.tsx
+#: apps/web/src/components/ComputerCard.tsx
 #: apps/web/src/lib/roster-status.ts
 #: apps/web/src/pages/shell/computer-overlay.tsx
-#: apps/web/src/pages/shell/message-view.tsx
 msgid "Needs you"
 msgstr "확인 필요"
 
@@ -6738,7 +6778,7 @@ msgstr "새 그룹 채팅"
 
 #: apps/mobile/app/(settings)/vault.tsx
 msgid "New item"
-msgstr ""
+msgstr "새 항목"
 
 #: apps/web/src/components/VaultSettings.tsx
 msgid "New login"
@@ -6751,7 +6791,7 @@ msgstr "새 메시지"
 
 #: apps/mobile/app/(settings)/ai-data-sharing.tsx
 msgid "New mobile actions won't send data to these services. Runs already in progress and routines keep going until you stop them."
-msgstr ""
+msgstr "새 모바일 작업은 이 서비스들로 데이터를 보내지 않습니다. 이미 진행 중인 실행과 자동 실행은 직접 중지할 때까지 계속됩니다."
 
 #: apps/web/src/pages/ScratchpadSection.tsx
 msgid "New open-work item"
@@ -6773,7 +6813,7 @@ msgstr "새 비공개 스페이스"
 #: apps/mobile/app/routine.tsx
 #: apps/mobile/app/routines.tsx
 msgid "New routine"
-msgstr ""
+msgstr "새 자동 실행"
 
 #: apps/mobile/components/bot-organize-modal.tsx
 #: apps/mobile/components/inbox-swipe-row.ios.tsx
@@ -6803,7 +6843,7 @@ msgstr "새 변수"
 
 #: apps/mobile/app/new-group.tsx
 msgid "Next"
-msgstr ""
+msgstr "다음"
 
 #: apps/web/src/pages/shell/chat-find-bar.tsx
 msgid "Next match"
@@ -6819,7 +6859,7 @@ msgstr "다음 페이지"
 
 #: apps/mobile/app/routine.tsx
 msgid "Next run"
-msgstr ""
+msgstr "다음 실행"
 
 #: apps/web/src/pages/SettingsOverlay.tsx
 msgid "Next settings sections"
@@ -6832,7 +6872,7 @@ msgstr "다음 주"
 
 #: apps/mobile/app/(settings)/ai-data-sharing.tsx
 msgid "No AI services configured."
-msgstr ""
+msgstr "구성된 AI 서비스가 없습니다."
 
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/web/src/pages/plugins/plugin-browse.tsx
@@ -6841,7 +6881,7 @@ msgstr "검색 결과가 없습니다."
 
 #: apps/mobile/app/(settings)/archived-bots.tsx
 msgid "No archived chats"
-msgstr ""
+msgstr "보관된 채팅 없음"
 
 #: apps/mobile/app/artifacts.tsx
 #: apps/web/src/pages/Artifacts.tsx
@@ -6850,7 +6890,7 @@ msgstr "아직 아티팩트가 없습니다"
 
 #: apps/mobile/components/add-custom-integration.tsx
 msgid "No auth"
-msgstr ""
+msgstr "인증 없음"
 
 #: apps/web/src/pages/plugins/source-form.tsx
 msgid "No authentication"
@@ -6888,7 +6928,7 @@ msgstr "이 페이지에 일치하는 아티팩트가 없습니다."
 
 #: apps/mobile/components/bot-member-picker.tsx
 msgid "No matching bots"
-msgstr ""
+msgstr "일치하는 봇 없음"
 
 #: apps/mobile/components/model-picker-list.tsx
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
@@ -6911,7 +6951,7 @@ msgstr "{peerBotName}와의 메시지가 아직 없습니다."
 #: apps/mobile/components/inbox-rows.tsx
 #: apps/mobile/lib/search-sheet.ts
 msgid "No messages yet"
-msgstr ""
+msgstr "아직 메시지가 없습니다"
 
 #: apps/web/src/pages/ModelSettingsOverlay.tsx
 msgid "No model catalog is available."
@@ -6932,7 +6972,7 @@ msgstr "“{query}”과(와) 일치하는 페이지가 없습니다."
 #: apps/mobile/app/artifact.tsx
 #: apps/mobile/components/video-preview.tsx
 msgid "No preview for this file type."
-msgstr ""
+msgstr "이 파일 형식은 미리 볼 수 없습니다."
 
 #: apps/web/src/components/integrations/IntegrationSetup.tsx
 msgid "No remote MCP servers found"
@@ -6968,6 +7008,7 @@ msgstr "행 없음"
 msgid "No runs match these filters."
 msgstr "이 필터와 일치하는 실행이 없습니다."
 
+#: apps/mobile/components/inbox-activity.tsx
 #: apps/mobile/components/routine-run-history.tsx
 #: apps/web/src/pages/ActivityList.tsx
 msgid "No runs yet"
@@ -6975,7 +7016,7 @@ msgstr "아직 실행 기록이 없습니다"
 
 #: apps/mobile/app/page-share.tsx
 msgid "No sign-in needed"
-msgstr ""
+msgstr "로그인 필요 없음"
 
 #: apps/web/src/pages/KnowledgeSection.tsx
 msgid "No skills yet"
@@ -6991,11 +7032,11 @@ msgstr "아직 티켓이 없습니다"
 
 #: apps/mobile/app/board.tsx
 msgid "No tickets yet."
-msgstr ""
+msgstr "아직 티켓이 없습니다."
 
 #: apps/mobile/components/integration-detail.tsx
 msgid "No tools available."
-msgstr ""
+msgstr "사용 가능한 도구가 없습니다."
 
 #: apps/web/src/pages/RoutineList.tsx
 msgid "No trigger"
@@ -7025,7 +7066,7 @@ msgstr "추가되지 않음: {0}"
 
 #: apps/mobile/app/(settings)/plugin.tsx
 msgid "Not added: {list}"
-msgstr ""
+msgstr "추가되지 않음: {list}"
 
 #: apps/web/src/components/McpServerHealthLine.tsx
 msgid "Not checked yet"
@@ -7061,23 +7102,23 @@ msgstr "나중에"
 
 #: apps/mobile/lib/model-settings.ts
 msgid "Not Now"
-msgstr ""
+msgstr "나중에"
 
 #: apps/mobile/components/failed-send-bubble.tsx
 msgid "Not sent"
-msgstr ""
+msgstr "전송되지 않음"
 
 #: apps/mobile/components/failed-send-bubble.tsx
 msgid "Not sent. No model"
-msgstr ""
+msgstr "전송되지 않음. 모델 없음"
 
 #: apps/mobile/components/failed-send-bubble.tsx
 msgid "Not sent. Tap for options"
-msgstr ""
+msgstr "전송되지 않음. 탭하여 옵션 보기"
 
 #: apps/mobile/components/failed-send-bubble.tsx
 msgid "Not sent. Tap to retry"
-msgstr ""
+msgstr "전송되지 않음. 탭하여 다시 시도"
 
 #: apps/web/src/pages/shell/agent-import-plan.tsx
 #: apps/web/src/pages/shell/import-status.ts
@@ -7101,13 +7142,13 @@ msgstr "아직 기억한 내용이 없습니다"
 
 #: apps/mobile/app/(settings)/vault.tsx
 msgid "Nothing saved yet."
-msgstr ""
+msgstr "아직 저장된 항목이 없습니다."
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 msgid "Notification settings"
-msgstr ""
+msgstr "알림 설정"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/mobile/app/bot-profile.tsx
 #: apps/mobile/app/bot-settings.tsx
 #: apps/web/src/pages/shell/bot-settings-sections.tsx
@@ -7116,11 +7157,11 @@ msgstr "알림"
 
 #: apps/mobile/components/inbox-rows.tsx
 msgid "notifications silenced"
-msgstr ""
+msgstr "알림 꺼짐"
 
 #: apps/mobile/components/bot-avatar.tsx
 msgid "Notifications silenced"
-msgstr ""
+msgstr "알림 꺼짐"
 
 #: apps/web/src/components/vault/VaultItemDetail.tsx
 msgid "Number"
@@ -7128,7 +7169,7 @@ msgstr "번호"
 
 #: apps/mobile/components/add-custom-integration.tsx
 msgid "OAuth"
-msgstr ""
+msgstr "OAuth"
 
 #: apps/web/src/pages/McpOAuthCallback.tsx
 msgid "OAuth authorization was cancelled."
@@ -7152,11 +7193,11 @@ msgstr "오프라인"
 
 #: apps/mobile/lib/call-session.ts
 msgid "OK, switching to {name}."
-msgstr ""
+msgstr "네, {name}(으)로 전환합니다."
 
 #: apps/mobile/components/CallCard.tsx
 msgid "On a call with {name}"
-msgstr ""
+msgstr "{name}와(과) 통화 중"
 
 #: apps/web/src/pages/routine-editor/add-trigger-menu.tsx
 #: apps/web/src/pages/RoutineSchedule.tsx
@@ -7175,7 +7216,7 @@ msgstr "1일 {0}에"
 
 #: apps/mobile/lib/cron.ts
 msgid "on the 1st at {time}"
-msgstr ""
+msgstr "매월 1일 {time}"
 
 #: apps/mobile/components/ask-receipt.tsx
 #: apps/web/src/components/AskCard.tsx
@@ -7197,7 +7238,7 @@ msgstr "{codeHost}에서 보낸 코드만 입력하세요."
 
 #: apps/mobile/components/thread/ask-block.tsx
 msgid "Only enter a code {host} sent you."
-msgstr ""
+msgstr "{host}에서 보낸 코드만 입력하세요."
 
 #: apps/mobile/components/routine-email-trigger.tsx
 #: apps/web/src/pages/routine-editor/trigger-cards.tsx
@@ -7214,7 +7255,7 @@ msgstr "봇을 만든 사람만 웹훅 키를 설정할 수 있습니다."
 
 #: apps/mobile/app/paywall.tsx
 msgid "Only the owner of this account can choose a plan."
-msgstr ""
+msgstr "이 계정의 소유자만 요금제를 선택할 수 있습니다."
 
 #: apps/mobile/app/page-share.tsx
 #: apps/web/src/components/pages/SharePopover.tsx
@@ -7227,12 +7268,12 @@ msgstr "나만"
 #: apps/mobile/app/pages.tsx
 #: apps/mobile/components/ImportSetupCard.tsx
 #: apps/web/src/components/bot-templates/bot-templates-dialog.tsx
+#: apps/web/src/components/ComputerCard.tsx
 #: apps/web/src/components/markdown-link-prompt.tsx
 #: apps/web/src/components/pages/PagesList.tsx
 #: apps/web/src/pages/PaymentWalletSettingsPanel.tsx
 #: apps/web/src/pages/shell/computer-panel.tsx
 #: apps/web/src/pages/shell/import-setup-card.tsx
-#: apps/web/src/pages/shell/message-view.tsx
 msgid "Open"
 msgstr "열기"
 
@@ -7270,7 +7311,7 @@ msgstr "{0}과(와) 채팅 열기"
 #: apps/mobile/app/computer.tsx
 #: apps/mobile/components/ComputerCard.tsx
 msgid "Open computer"
-msgstr ""
+msgstr "컴퓨터 열기"
 
 #: apps/web/src/components/ComputersUnavailableHint.tsx
 msgid "Open computer settings"
@@ -7278,7 +7319,7 @@ msgstr "컴퓨터 설정 열기"
 
 #: apps/mobile/app/routine.tsx
 msgid "Open conversation"
-msgstr ""
+msgstr "대화 열기"
 
 #: apps/mobile/app/_layout.tsx
 #: apps/web/src/components/markdown-link-prompt.tsx
@@ -7287,11 +7328,11 @@ msgstr "외부 링크를 열까요?"
 
 #: apps/mobile/components/inline-image-attachment.tsx
 msgid "Open image {name}"
-msgstr ""
+msgstr "이미지 {name} 열기"
 
 #: apps/mobile/app/page-share.tsx
 msgid "Open in browser"
-msgstr ""
+msgstr "브라우저에서 열기"
 
 #: apps/mobile/app/computer.tsx
 #: apps/web/src/pages/shell/computer-panel.tsx
@@ -7315,7 +7356,7 @@ msgstr "Rakazo 열기"
 #: apps/mobile/lib/composer-dictation.ts
 #: apps/mobile/lib/thread-voice.ts
 msgid "Open Voice"
-msgstr ""
+msgstr "음성 열기"
 
 #: apps/mobile/components/bot-context-cards.tsx
 #: apps/web/src/pages/ScratchpadSection.tsx
@@ -7334,7 +7375,7 @@ msgstr "OpenAI 호환 서버 주소"
 
 #: apps/mobile/components/add-custom-integration.tsx
 msgid "OpenAPI JSON"
-msgstr ""
+msgstr "OpenAPI JSON"
 
 #: apps/web/src/pages/shell/agent-import.tsx
 msgid "OpenClaw or Hermes"
@@ -7360,7 +7401,7 @@ msgstr "선택 사항인 헤더 값"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "Or connect an API key"
-msgstr ""
+msgstr "또는 API 키 연결"
 
 #: apps/web/src/pages/model-settings/connection-controls.tsx
 #: apps/web/src/pages/onboarding/model-step.tsx
@@ -7378,7 +7419,7 @@ msgstr "조직"
 msgid "Organization API key"
 msgstr "조직 API 키"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/mobile/app/bot-settings.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
 #: apps/web/src/pages/shell/avatar-studio-popover.tsx
@@ -7392,11 +7433,11 @@ msgstr "원본 메시지를 사용할 수 없습니다"
 
 #: apps/mobile/lib/app-version.ts
 msgid "OTA {id}"
-msgstr ""
+msgstr "OTA {id}"
 
 #: apps/mobile/lib/app-version.ts
 msgid "OTA {id}, {date}"
-msgstr ""
+msgstr "OTA {id}, {date}"
 
 #: apps/mobile/components/compatible-endpoint-form.tsx
 #: apps/web/src/components/FoundModelPicker.tsx
@@ -7472,7 +7513,7 @@ msgstr "페이지"
 
 #: apps/mobile/app/pages.tsx
 msgid "Pages this bot builds for you appear here."
-msgstr ""
+msgstr "이 봇이 만든 페이지가 여기에 표시됩니다."
 
 #: apps/web/src/components/pages/PagesList.tsx
 msgid "Pages this bot builds for you appear here. Ask for a dashboard, tracker or plan to make one."
@@ -7480,18 +7521,18 @@ msgstr "이 봇이 만든 페이지가 여기에 표시됩니다. 대시보드, 
 
 #: apps/mobile/app/pages.tsx
 msgid "Pages this group builds for you appear here."
-msgstr ""
+msgstr "이 그룹이 만든 페이지가 여기에 표시됩니다."
 
 #: apps/web/src/components/pages/PagesList.tsx
 msgid "Pages this group builds for you appear here. Ask for a dashboard, tracker or plan to make one."
 msgstr "이 그룹이 만든 페이지가 여기에 표시됩니다. 대시보드, 트래커 또는 계획을 요청해 만들어 보세요."
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/web/src/components/PasskeySettings.tsx
 msgid "Passkey"
 msgstr "패스키"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/web/src/components/PasskeySettings.tsx
 msgid "Passkeys"
 msgstr "패스키"
@@ -7517,7 +7558,7 @@ msgstr "비밀번호는 {MAX_PASSWORD_LENGTH}자 이하여야 합니다"
 
 #: apps/mobile/lib/user-error.ts
 msgid "Password must be {max} characters or fewer"
-msgstr ""
+msgstr "비밀번호는 {max}자 이하여야 합니다"
 
 #: apps/mobile/app/sign-in.tsx
 #: apps/web/src/pages/Auth.tsx
@@ -7572,7 +7613,7 @@ msgstr "API 키를 붙여넣은 뒤 다시 테스트하세요."
 #: apps/mobile/components/audio-attachment.tsx
 #: apps/mobile/components/voice-player-bar.tsx
 msgid "Pause"
-msgstr ""
+msgstr "일시 정지"
 
 #: apps/mobile/lib/import-setup.ts
 #: apps/mobile/lib/routine.ts
@@ -7624,7 +7665,7 @@ msgstr "사진"
 
 #: apps/mobile/lib/thread-attachments.ts
 msgid "Photo library"
-msgstr ""
+msgstr "사진 보관함"
 
 #: apps/web/src/pages/GroupPanel.tsx
 msgid "Pick {GROUP_MEMBER_MIN}–{GROUP_MEMBER_MAX}"
@@ -7633,11 +7674,11 @@ msgstr "{GROUP_MEMBER_MIN}–{GROUP_MEMBER_MAX}개 선택"
 #: apps/mobile/components/bot-chip-picker.tsx
 #: apps/mobile/components/bot-member-picker.tsx
 msgid "Pick {min}–{max}"
-msgstr ""
+msgstr "{min}–{max}개 선택"
 
 #: apps/mobile/components/pick-chat-pane.tsx
 msgid "Pick a chat"
-msgstr ""
+msgstr "채팅 선택"
 
 #: apps/web/src/lib/model-connection-preflight.ts
 msgid "Pick a model from the catalog."
@@ -7674,7 +7715,7 @@ msgstr "요금제"
 #: apps/mobile/components/audio-attachment.tsx
 #: apps/mobile/components/voice-player-bar.tsx
 msgid "Play"
-msgstr ""
+msgstr "재생"
 
 #: apps/web/src/components/ArtifactFileCard.tsx
 msgid "Play {name}"
@@ -7688,7 +7729,7 @@ msgstr "재생 중…"
 #: apps/mobile/components/ChoiceCard.tsx
 #: apps/mobile/components/McpApprovalCard.tsx
 msgid "Please try again."
-msgstr ""
+msgstr "다시 시도하세요."
 
 #: apps/web/src/pages/KnowledgeSection.tsx
 msgid "Plugin"
@@ -7711,8 +7752,8 @@ msgid "Plugins"
 msgstr "플러그인"
 
 #: apps/web/src/pages/routine-editor/trigger-cards.tsx
-msgid "Post \"No changes\" in chat"
-msgstr "채팅에 “변경 없음” 게시"
+msgid "Post a chat message when a check finds no changes. The routine won't run."
+msgstr "확인 결과 변경 사항이 없으면 채팅 메시지를 게시합니다. 자동 실행은 실행되지 않습니다."
 
 #: apps/mobile/lib/bot-template-copy.ts
 #: apps/web/src/components/bot-templates/bot-template-copy.ts
@@ -7757,15 +7798,15 @@ msgstr "우선순위"
 
 #: apps/mobile/app/paywall.tsx
 msgid "Privacy"
-msgstr ""
+msgstr "개인정보"
 
 #: apps/mobile/app/(settings)/ai-data-sharing.tsx
 msgid "Privacy policies"
-msgstr ""
+msgstr "개인정보 처리방침"
 
 #: apps/mobile/lib/ai-consent.ts
 msgid "Privacy policy"
-msgstr ""
+msgstr "개인정보 처리방침"
 
 #: apps/mobile/components/computer-mode-picker.tsx
 #: apps/web/src/pages/shell/bot-settings-sections.tsx
@@ -7784,7 +7825,7 @@ msgstr "생산성"
 #: apps/mobile/app/_layout.tsx
 #: apps/mobile/components/chat-header-title.tsx
 msgid "Profile"
-msgstr ""
+msgstr "프로필"
 
 #: apps/mobile/lib/import-setup.ts
 #: apps/web/src/pages/shell/import-status.ts
@@ -7808,7 +7849,7 @@ msgstr "서비스"
 
 #: apps/mobile/components/run-error-sheet.tsx
 msgid "Provider message"
-msgstr ""
+msgstr "제공업체 메시지"
 
 #: apps/mobile/components/model-providers.tsx
 #: apps/web/src/pages/model-settings/providers-section.tsx
@@ -7817,7 +7858,7 @@ msgstr "서비스"
 
 #: apps/mobile/lib/endpoint.ts
 msgid "Public servers need https://. HTTP only works on your local network."
-msgstr ""
+msgstr "공개 서버에는 https://가 필요합니다. HTTP는 로컬 네트워크에서만 작동합니다."
 
 #: apps/mobile/components/thread/special-message-card.tsx
 #: apps/web/src/components/CloudAgentCard.tsx
@@ -7826,11 +7867,11 @@ msgstr "풀 리퀘스트"
 
 #: apps/mobile/app/paywall.tsx
 msgid "Put your bots to work"
-msgstr ""
+msgstr "봇에게 일을 맡기세요"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 msgid "Questions, approvals, takeover"
-msgstr ""
+msgstr "질문, 승인, 제어권 가져오기"
 
 #: apps/mobile/lib/activity.ts
 #: apps/web/src/pages/ActivityList.tsx
@@ -7840,10 +7881,10 @@ msgstr "대기 중"
 #: apps/mobile/components/thread/message-row.tsx
 #: apps/mobile/components/thread/quote-sheet.tsx
 msgid "Quote"
-msgstr ""
+msgstr "인용"
 
-#: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/ai-data-sharing.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/mobile/app/bot-settings.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
 #: apps/web/src/pages/shell/avatar-studio-popover.tsx
@@ -7895,6 +7936,18 @@ msgstr "추론 강도"
 #: apps/web/src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Recall and write"
 msgstr "불러오기와 쓰기"
+
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Recall automatically"
+msgstr "자동으로 불러오기"
+
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Recall depth"
+msgstr "불러오기 깊이"
+
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Recall from banks"
+msgstr "불러올 뱅크"
 
 #: apps/web/src/pages/memory-providers/HonchoSettingsForm.tsx
 msgid "Recall from this peer; save to Rakazo’s own peers."
@@ -7953,14 +8006,12 @@ msgstr "녹화가 시작되었습니다. 화면을 새로고침한 뒤 이어가
 msgid "Recording: {0}"
 msgstr "녹화 중: {0}"
 
-#: apps/mobile/components/computer-maintenance-actions.tsx
 #: apps/mobile/components/computer-update-progress.tsx
 #: apps/web/src/components/ComputerMaintenanceActions.tsx
 #: apps/web/src/components/ComputerUpdateProgress.tsx
 msgid "Recover computer"
 msgstr "컴퓨터 복구"
 
-#: apps/mobile/components/computer-maintenance-actions.tsx
 #: apps/web/src/components/ComputerMaintenanceActions.tsx
 msgid "Recover computer?"
 msgstr "컴퓨터를 복구할까요?"
@@ -7972,7 +8023,7 @@ msgstr "{0}의 컴퓨터 복구 중"
 
 #: apps/mobile/components/computer-update-progress.tsx
 msgid "Recovering {name}’s Computer"
-msgstr ""
+msgstr "{name}의 컴퓨터 복구 중"
 
 #: apps/mobile/components/computer-update-progress.tsx
 #: apps/web/src/components/ComputerUpdateProgress.tsx
@@ -7993,17 +8044,11 @@ msgstr "복구 실패"
 msgid "Recovery is unavailable until the previous operation has stopped."
 msgstr "이전 작업이 중지될 때까지 복구할 수 없습니다."
 
-#: apps/mobile/components/computer-maintenance-actions.tsx
 #: apps/mobile/components/computer-update-progress.tsx
 #: apps/web/src/components/ComputerMaintenanceActions.tsx
 #: apps/web/src/components/ComputerUpdateProgress.tsx
 msgid "Recovery restores the last saved workspace. Unsaved work may be lost."
 msgstr "복구하면 마지막으로 저장된 작업 공간이 복원됩니다. 저장하지 않은 작업은 손실될 수 있습니다."
-
-#: apps/mobile/components/computer-maintenance-actions.tsx
-#: apps/web/src/components/ComputerMaintenanceActions.tsx
-msgid "Recreate a computer that is not working."
-msgstr "작동하지 않는 컴퓨터를 다시 만듭니다."
 
 #: apps/mobile/components/computer-update-progress.tsx
 #: apps/web/src/components/ComputerUpdateProgress.tsx
@@ -8065,7 +8110,7 @@ msgstr "거부하는 중…"
 
 #: apps/mobile/app/computer.tsx
 msgid "Release"
-msgstr ""
+msgstr "넘기기"
 
 #: apps/web/src/pages/shell/computer-release-actions.tsx
 msgid "Release control"
@@ -8078,12 +8123,12 @@ msgstr "새로고침"
 
 #: apps/mobile/components/add-custom-integration.tsx
 msgid "Remote MCP server"
-msgstr ""
+msgstr "원격 MCP 서버"
 
-#: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/approvals.tsx
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/mobile/app/(settings)/plugin.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/mobile/app/(settings)/spending-limit.tsx
 #: apps/mobile/app/(settings)/vault.tsx
 #: apps/mobile/app/space-members.tsx
@@ -8130,13 +8175,13 @@ msgstr "{memberName}님을 제거할까요?"
 #: apps/mobile/components/integration-detail.tsx
 #: apps/mobile/components/thread/thread-composer-dock.tsx
 msgid "Remove {name}"
-msgstr ""
+msgstr "{name} 제거"
 
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/mobile/app/(settings)/vault.tsx
 #: apps/mobile/app/space-members.tsx
 msgid "Remove {name}?"
-msgstr ""
+msgstr "{name}을(를) 제거할까요?"
 
 #: apps/web/src/components/vault/VaultItemDetail.tsx
 msgid "Remove {secretName}? Bots will no longer be able to use it."
@@ -8178,7 +8223,7 @@ msgstr "메시지 트리거 제거"
 
 #: apps/mobile/app/bot-settings.tsx
 msgid "Remove photo"
-msgstr ""
+msgstr "사진 제거"
 
 #: apps/mobile/components/routine-schedule-editor.tsx
 #: apps/web/src/pages/RoutineSchedule.tsx
@@ -8192,7 +8237,7 @@ msgstr "작업 기술 {0} 삭제"
 
 #: apps/mobile/components/thread-composer.tsx
 msgid "Remove skill {name}"
-msgstr ""
+msgstr "스킬 {name} 제거"
 
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
@@ -8215,7 +8260,7 @@ msgstr "삭제했지만 목록을 새로고침하지 못했습니다."
 msgid "Removing…"
 msgstr "삭제 중…"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/mobile/app/pages.tsx
 #: apps/mobile/components/model-providers.tsx
 #: apps/web/src/components/pages/PagesList.tsx
@@ -8242,7 +8287,7 @@ msgstr "플랜 갱신"
 
 #: apps/mobile/app/(settings)/billing.tsx
 msgid "Renews"
-msgstr ""
+msgstr "갱신일"
 
 #: apps/web/src/lib/billing.ts
 msgid "Renews {day}"
@@ -8275,16 +8320,16 @@ msgstr "{0}에 저장된 로그인을 대체합니다"
 #: apps/mobile/components/secret-ask-sheet.tsx
 #: apps/mobile/components/thread/ask-block.tsx
 msgid "Replaces the login saved for {site}"
-msgstr ""
+msgstr "{site}에 저장된 로그인 정보를 대체합니다"
 
 #: apps/mobile/app/bot-settings.tsx
 #: apps/web/src/pages/shell/bot-settings-sections.tsx
 msgid "Replies"
 msgstr "답장"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 msgid "Replies and completed work"
-msgstr ""
+msgstr "답장과 완료된 작업"
 
 #: apps/mobile/app/(settings)/team-conversation.tsx
 #: apps/web/src/pages/ExternalConversationSettings.tsx
@@ -8306,6 +8351,10 @@ msgstr "답장이 취소되었습니다"
 msgid "Replying to {0}"
 msgstr "{0}에게 답장 중"
 
+#: apps/web/src/pages/routine-editor/trigger-cards.tsx
+msgid "Report unchanged checks"
+msgstr "변경 없는 확인 결과 알리기"
+
 #: apps/mobile/lib/user-error.ts
 #: apps/web/src/lib/user-error.ts
 msgid "Request a new code"
@@ -8313,7 +8362,7 @@ msgstr "새 코드를 요청하세요"
 
 #: apps/mobile/lib/use-computer-boot.ts
 msgid "Request timed out"
-msgstr ""
+msgstr "요청 시간이 초과되었습니다"
 
 #: apps/mobile/app/(settings)/messaging.tsx
 #: apps/web/src/pages/MessagingSettingsPanel.tsx
@@ -8355,16 +8404,28 @@ msgstr "비밀번호 재설정"
 msgid "Reset your password"
 msgstr "비밀번호를 재설정하세요"
 
+#: apps/mobile/app/(settings)/billing.tsx
 #: apps/mobile/app/(settings)/spending-limit.tsx
 #: apps/mobile/components/run-error-sheet.tsx
 #: apps/web/src/components/SpendingLimitSettings.tsx
 msgid "Resets"
 msgstr "초기화"
 
+#. placeholder {0}: formatBillingDate(status.computerHoursResetAt, i18n.locale || "en")
+#: apps/web/src/components/ModelCredits.tsx
+msgid "Resets {0}"
+msgstr "{0}에 초기화"
+
 #: apps/mobile/components/thread-error-notice.tsx
 msgid "Resets {date}."
-msgstr ""
+msgstr "{date}에 초기화됩니다."
 
+#: apps/mobile/app/(settings)/account.tsx
+#: apps/web/src/components/PlanUsage.tsx
+msgid "Resets in {reset}"
+msgstr "{reset} 후 초기화"
+
+#: apps/mobile/components/computer-maintenance-actions.tsx
 #: apps/web/src/components/ComputerMaintenanceActions.tsx
 msgid "Resetting…"
 msgstr "재설정 중…"
@@ -8402,11 +8463,6 @@ msgstr "{name} 복원"
 
 #: apps/mobile/components/computer-maintenance-actions.tsx
 #: apps/web/src/components/ComputerMaintenanceActions.tsx
-msgid "Restore the last saved workspace."
-msgstr "마지막으로 저장한 작업 공간을 복원합니다."
-
-#: apps/mobile/components/computer-maintenance-actions.tsx
-#: apps/web/src/components/ComputerMaintenanceActions.tsx
 msgid "Restore the last saved workspace. Unsaved work on the computer is lost."
 msgstr "마지막으로 저장된 작업 공간을 복원합니다. 컴퓨터에서 저장하지 않은 작업은 사라집니다."
 
@@ -8423,16 +8479,17 @@ msgstr "워크스페이스 복원 중"
 #: apps/mobile/components/bot-organize-modal.tsx
 #: apps/mobile/components/inbox-swipe-row.ios.tsx
 msgid "Resume notifications"
-msgstr ""
+msgstr "알림 다시 켜기"
 
-#: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/ai-data-sharing.tsx
 #: apps/mobile/app/(settings)/bot-template.tsx
 #: apps/mobile/app/(settings)/bot-templates.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/mobile/app/(settings)/memory-note.tsx
 #: apps/mobile/app/(settings)/memory.tsx
 #: apps/mobile/app/(settings)/plugin.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/mobile/app/(settings)/skill.tsx
 #: apps/mobile/app/(settings)/skills.tsx
 #: apps/mobile/app/sign-in.tsx
@@ -8474,7 +8531,7 @@ msgstr "{0}과(와)의 통화로 돌아가기"
 
 #: apps/mobile/app/thread.tsx
 msgid "Return to inbox"
-msgstr ""
+msgstr "받은편지함으로 돌아가기"
 
 #: apps/web/src/pages/McpOAuthCallback.tsx
 #: apps/web/src/pages/SlackInstallCallback.tsx
@@ -8502,7 +8559,7 @@ msgstr "철회됨"
 
 #: apps/mobile/components/computer-keyboard-bar.tsx
 msgid "Right"
-msgstr ""
+msgstr "오른쪽"
 
 #: apps/web/src/components/ComputerProviderSettings.tsx
 msgid "Root filesystem"
@@ -8525,7 +8582,7 @@ msgstr "자동 실행"
 
 #: apps/mobile/app/routine.tsx
 msgid "Routine link is incomplete"
-msgstr ""
+msgstr "자동 실행 링크가 불완전합니다"
 
 #: apps/mobile/app/_layout.tsx
 #: apps/mobile/app/bot-profile.tsx
@@ -8546,7 +8603,7 @@ msgstr "행"
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/components/approval-settings-rows.tsx
 msgid "Rules"
-msgstr ""
+msgstr "규칙"
 
 #: apps/web/src/pages/RoutineEditor.tsx
 msgid "Run at"
@@ -8583,7 +8640,7 @@ msgstr "실행 중"
 
 #: apps/mobile/components/thread/thread-screen.tsx
 msgid "Running {name}…"
-msgstr ""
+msgstr "{name} 실행 중…"
 
 #: apps/web/src/pages/shell/transcript.tsx
 msgid "Running {workingRoutine}…"
@@ -8608,7 +8665,7 @@ msgstr "영업 및 CRM"
 
 #: apps/mobile/app/(settings)/team-conversation.tsx
 msgid "Same as {bot}"
-msgstr ""
+msgstr "{bot}와(과) 동일"
 
 #: apps/web/src/pages/ExternalConversationSettings.tsx
 msgid "Same as {botName}"
@@ -8624,9 +8681,9 @@ msgstr "기본 모델과 동일"
 msgid "Saturday"
 msgstr "토요일"
 
-#: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/memory-note.tsx
 #: apps/mobile/app/(settings)/model-connection.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/mobile/app/(settings)/skill.tsx
 #: apps/mobile/app/(settings)/spending-limit.tsx
 #: apps/mobile/app/(settings)/team-conversation.tsx
@@ -8667,16 +8724,11 @@ msgstr "저장"
 
 #: apps/mobile/app/(settings)/memory-note.tsx
 msgid "Save mine"
-msgstr ""
+msgstr "내 것 저장"
 
 #: apps/mobile/components/bot-organize-modal.tsx
 msgid "Save section name"
-msgstr ""
-
-#: apps/mobile/components/computer-maintenance-actions.tsx
-#: apps/web/src/components/ComputerMaintenanceActions.tsx
-msgid "Save the workspace and install current software."
-msgstr "작업 공간을 저장하고 최신 소프트웨어를 설치합니다."
+msgstr "섹션 이름 저장"
 
 #: apps/mobile/components/secret-ask-sheet.tsx
 #: apps/web/src/components/vault/VaultItemEditor.tsx
@@ -8693,7 +8745,7 @@ msgstr "저장됨"
 
 #: apps/mobile/lib/artifact-open.ts
 msgid "Saved {name} locally"
-msgstr ""
+msgstr "{name}을(를) 기기에 저장했습니다"
 
 #: apps/web/src/pages/ScratchpadSection.tsx
 msgid "Saved, but list refresh failed"
@@ -8744,9 +8796,9 @@ msgstr "예약 실행 지연"
 msgid "Scheduled routines"
 msgstr "예약된 루틴"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 msgid "Scheduled tasks"
-msgstr ""
+msgstr "예약된 작업"
 
 #: apps/web/src/pages/McpServerForm.tsx
 msgid "Scopes (optional)"
@@ -8856,11 +8908,11 @@ msgstr "시크릿"
 
 #: apps/mobile/components/inbox-render-item.tsx
 msgid "Section actions for {name}"
-msgstr ""
+msgstr "{name} 섹션 작업"
 
 #: apps/mobile/components/bot-organize-modal.tsx
 msgid "Section name"
-msgstr ""
+msgstr "섹션 이름"
 
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
 msgid "Security"
@@ -8884,7 +8936,7 @@ msgstr "대화할 Bot을 선택하세요"
 
 #: apps/mobile/components/thread/message-row.tsx
 msgid "Select text"
-msgstr ""
+msgstr "텍스트 선택"
 
 #: apps/web/src/pages/memory-providers/ConnectionModeFields.tsx
 msgid "Self-hosted"
@@ -8897,11 +8949,11 @@ msgstr "보내기"
 
 #: apps/mobile/app/(settings)/messaging.tsx
 msgid "Send {code} from {app} within 10 minutes."
-msgstr ""
+msgstr "10분 이내에 {app}에서 {code}를 보내세요."
 
 #: apps/mobile/app/(settings)/messaging.tsx
 msgid "Send {code} to {address} from {app} within 10 minutes."
-msgstr ""
+msgstr "10분 이내에 {app}에서 {address}(으)로 {code}를 보내세요."
 
 #: apps/web/src/pages/MessagingSettingsPanel.tsx
 msgid "Send <0>{linkCode}</0> from {linkApp} within 10 minutes."
@@ -8912,7 +8964,6 @@ msgid "Send <0>{linkCode}</0> to <1>{linkAddress}</1> from {linkApp} within 10 m
 msgstr "10분 안에 {linkApp}에서 <1>{linkAddress}</1>(으)로 <0>{linkCode}</0>을(를) 보내세요."
 
 #: apps/mobile/components/thread/ask-block.tsx
-#: apps/web/src/components/AskCard.tsx
 msgid "Send answer"
 msgstr "답변 보내기"
 
@@ -8925,10 +8976,6 @@ msgstr "파일로 보내기"
 #: apps/web/src/components/AccountAccess.tsx
 msgid "Send deletion code"
 msgstr "삭제 코드 보내기"
-
-#: apps/web/src/components/AskCard.tsx
-msgid "Send it"
-msgstr "보내기"
 
 #: apps/web/src/components/composer/HoldToTalk.tsx
 msgid "Send recording"
@@ -8963,15 +9010,15 @@ msgstr "Serenity 엔드포인트가 필요합니다."
 #: apps/mobile/app/_layout.tsx
 #: apps/mobile/app/server.tsx
 msgid "Server"
-msgstr ""
+msgstr "서버"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "Server found. Enter a model name."
-msgstr ""
+msgstr "서버를 찾았습니다. 모델 이름을 입력하세요."
 
 #: apps/mobile/app/(settings)/_layout.tsx
 msgid "Server integrations"
-msgstr ""
+msgstr "서버 연동"
 
 #: apps/web/src/pages/McpServerForm.tsx
 msgid "Server name"
@@ -8987,10 +9034,16 @@ msgstr "서버 이름"
 msgid "Server URL"
 msgstr "서버 URL"
 
+#: apps/mobile/app/(settings)/account.tsx
+#: apps/web/src/components/PlanUsage.tsx
+msgid "Session"
+msgstr "세션"
+
 #: apps/web/src/components/SpendingLimitSettings.tsx
 msgid "Set"
 msgstr "설정"
 
+#: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/components/CallCard.tsx
 #: apps/mobile/components/inbox-render-item.tsx
 #: apps/web/src/components/call/CallCard.tsx
@@ -9045,7 +9098,7 @@ msgstr "모양 {0}"
 
 #: apps/mobile/components/bot-look-picker.tsx
 msgid "Shape {number}"
-msgstr ""
+msgstr "모양 {number}"
 
 #: apps/mobile/app/artifact.tsx
 #: apps/mobile/app/page-share.tsx
@@ -9064,19 +9117,19 @@ msgstr "“{title}” 공유"
 #: apps/mobile/components/audio-attachment.tsx
 #: apps/mobile/components/image-artifact-viewer.tsx
 msgid "Share {name}"
-msgstr ""
+msgstr "{name} 공유"
 
 #: apps/mobile/lib/ai-consent.ts
 msgid "Share data with {name}?"
-msgstr ""
+msgstr "{name}와(과) 데이터를 공유할까요?"
 
 #: apps/mobile/app/invite.tsx
 msgid "Share link"
-msgstr ""
+msgstr "링크 공유"
 
 #: apps/mobile/app/share.tsx
 msgid "Share to"
-msgstr ""
+msgstr "공유 대상"
 
 #: apps/web/src/components/pages/SharePopover.tsx
 msgid "Share, anyone with the link can view"
@@ -9101,7 +9154,7 @@ msgstr "보기"
 
 #: apps/mobile/components/thread/message-bubble.tsx
 msgid "Show {label}"
-msgstr ""
+msgstr "{label} 보기"
 
 #: apps/mobile/components/bot-member-picker.tsx
 #: apps/web/src/components/SpendingLimitSettings.tsx
@@ -9115,7 +9168,7 @@ msgstr "봇 표시"
 
 #: apps/mobile/components/chat-route-header.tsx
 msgid "Show chats"
-msgstr ""
+msgstr "채팅 보기"
 
 #: apps/web/src/pages/routine-editor/trigger-cards.tsx
 msgid "Show key"
@@ -9123,7 +9176,7 @@ msgstr "키 표시"
 
 #: apps/mobile/components/computer-keyboard-bar.tsx
 msgid "Show keyboard"
-msgstr ""
+msgstr "키보드 보기"
 
 #: apps/web/src/pages/Artifacts.tsx
 msgid "Show list"
@@ -9220,11 +9273,11 @@ msgstr "구독으로 로그인하거나 대신 API 키를 테스트하세요."
 #: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/paywall.tsx
 msgid "Sign out"
-msgstr ""
+msgstr "로그아웃"
 
 #: apps/mobile/lib/unsent-send-warning.ts
 msgid "Sign out anyway"
-msgstr ""
+msgstr "그래도 로그아웃"
 
 #: apps/mobile/app/sign-in.tsx
 #: apps/web/src/pages/Auth.tsx
@@ -9233,7 +9286,7 @@ msgstr "가입하기"
 
 #: apps/mobile/app/sign-in.tsx
 msgid "Sign up for Rakazo"
-msgstr ""
+msgstr "Rakazo 가입하기"
 
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 msgid "Sign-in cancelled. Try again."
@@ -9243,20 +9296,20 @@ msgstr "로그인이 취소되었습니다. 다시 시도하세요."
 #: apps/mobile/lib/passkey.ts
 #: apps/mobile/lib/sso.ts
 msgid "Sign-in did not return a session"
-msgstr ""
+msgstr "로그인에서 세션을 받지 못했습니다"
 
 #: apps/mobile/lib/api-auth.ts
 msgid "Sign-up did not return a session"
-msgstr ""
+msgstr "가입에서 세션을 받지 못했습니다"
 
 #: apps/mobile/lib/unsent-send-warning.ts
 msgid "Signing out deletes unsent messages."
-msgstr ""
+msgstr "로그아웃하면 보내지 않은 메시지가 삭제됩니다."
 
 #: apps/mobile/components/bot-organize-modal.tsx
 #: apps/mobile/components/inbox-swipe-row.ios.tsx
 msgid "Silence notifications"
-msgstr ""
+msgstr "알림 끄기"
 
 #: apps/mobile/components/vault-item-editor.tsx
 #: apps/mobile/components/vault-item-sheet.tsx
@@ -9272,7 +9325,7 @@ msgstr "로그인한 사이트는 이 스페이스의 모든 사람에게 로그
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "sk-…"
-msgstr ""
+msgstr "sk-…"
 
 #: apps/mobile/app/(settings)/bot-template.tsx
 #: apps/web/src/components/bot-templates/bot-templates-dialog.tsx
@@ -9286,7 +9339,7 @@ msgstr "작업 기술 {0}"
 
 #: apps/mobile/components/thread-composer.tsx
 msgid "Skill {name}"
-msgstr ""
+msgstr "스킬 {name}"
 
 #: apps/web/src/pages/shell/agent-import-plan.tsx
 msgid "Skill {position}"
@@ -9309,6 +9362,8 @@ msgstr "스킬은 모든 봇이 공유하는 라이브러리에 추가됩니다.
 
 #: apps/mobile/app/computer.tsx
 #: apps/mobile/app/new-group.tsx
+#: apps/mobile/components/ComputerCard.tsx
+#: apps/web/src/components/ComputerCard.tsx
 #: apps/web/src/pages/shell/computer-release-actions.tsx
 msgid "Skip"
 msgstr "건너뛰기"
@@ -9317,8 +9372,12 @@ msgstr "건너뛰기"
 msgid "Skip or deploy key"
 msgstr "건너뛰거나 배포 키"
 
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Skip unrelated memories"
+msgstr "관련 없는 기억 건너뛰기"
+
 #: apps/mobile/components/ComputerCard.tsx
-#: apps/web/src/pages/shell/message-view.tsx
+#: apps/web/src/components/ComputerCard.tsx
 msgid "Skipped"
 msgstr "건너뜀"
 
@@ -9329,7 +9388,7 @@ msgstr "{0} 건너뜀"
 
 #: apps/mobile/lib/thread-attachments.ts
 msgid "Skipped {items}"
-msgstr ""
+msgstr "건너뜀: {items}"
 
 #: apps/mobile/lib/routine.ts
 #: apps/web/src/pages/routine-editor/add-trigger-menu.tsx
@@ -9370,7 +9429,7 @@ msgstr "일부 설정은 가져오지 않습니다"
 
 #: apps/mobile/app/computer.tsx
 msgid "Something went wrong while it was starting. Try again in a moment."
-msgstr ""
+msgstr "시작하는 중 문제가 발생했습니다. 잠시 후 다시 시도하세요."
 
 #: apps/mobile/app/(settings)/approval-rule-add.tsx
 #: apps/mobile/app/(settings)/approvals.tsx
@@ -9429,11 +9488,11 @@ msgstr "스페이스"
 
 #: apps/mobile/components/inbox-render-item.tsx
 msgid "Space actions for {name}"
-msgstr ""
+msgstr "{name} 스페이스 작업"
 
 #: apps/mobile/app/new-space.tsx
 msgid "Space created"
-msgstr ""
+msgstr "스페이스를 만들었습니다"
 
 #: apps/mobile/lib/chat-model.ts
 #: apps/web/src/pages/shell/bot-panel.tsx
@@ -9450,7 +9509,7 @@ msgstr "읽기"
 
 #: apps/mobile/components/thread/message-row.tsx
 msgid "Speak message"
-msgstr ""
+msgstr "메시지 읽어 주기"
 
 #: apps/web/src/pages/shell/message-view.tsx
 msgid "Speak this reply"
@@ -9496,7 +9555,7 @@ msgstr "{trialDays}일 무료 체험 시작"
 
 #: apps/mobile/app/paywall.tsx
 msgid "Start free trial"
-msgstr ""
+msgstr "무료 체험 시작"
 
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/web/src/components/ModelCredits.tsx
@@ -9516,7 +9575,7 @@ msgstr "작업 녹화 시작"
 
 #: apps/mobile/app/paywall.tsx
 msgid "Start using Rakazo"
-msgstr ""
+msgstr "Rakazo 시작하기"
 
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/web/src/components/ModelCredits.tsx
@@ -9576,14 +9635,9 @@ msgstr "실행 단계"
 msgid "Stop"
 msgstr "중지"
 
-#: apps/mobile/components/computer-maintenance-actions.tsx
-#: apps/web/src/components/ComputerMaintenanceActions.tsx
-msgid "Stop computer"
-msgstr "컴퓨터 중지"
-
 #: apps/mobile/components/thread-composer.tsx
 msgid "Stop dictating"
-msgstr ""
+msgstr "받아쓰기 중지"
 
 #: apps/web/src/pages/shell/message-view.tsx
 msgid "Stop speaking"
@@ -9603,15 +9657,11 @@ msgstr "중지됨"
 msgid "Stopped."
 msgstr "중지되었습니다."
 
-#: apps/web/src/components/ComputerMaintenanceActions.tsx
-msgid "Stopping…"
-msgstr "중지하는 중…"
-
 #: apps/web/src/pages/McpServerForm.tsx
 msgid "Stored encrypted"
 msgstr "암호화해 저장"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
 msgid "Stream replies"
 msgstr "답변 스트리밍"
@@ -9659,6 +9709,14 @@ msgstr "내 AI로 구독"
 msgid "Subscription required"
 msgstr "구독 필요"
 
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Summaries"
+msgstr "요약"
+
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Summaries and facts"
+msgstr "요약 및 사실"
+
 #: apps/mobile/lib/cron.ts
 #: apps/web/src/lib/cron.ts
 msgid "Sunday"
@@ -9684,19 +9742,19 @@ msgstr "전환"
 
 #: apps/mobile/components/space-bots-model.tsx
 msgid "Switch {count} bots to the space default?"
-msgstr ""
+msgstr "봇 {count}개를 스페이스 기본값으로 전환할까요?"
 
 #: apps/mobile/components/space-bots-model.tsx
 msgid "Switch 1 bot to the space default?"
-msgstr ""
+msgstr "봇 1개를 스페이스 기본값으로 전환할까요?"
 
 #: apps/mobile/lib/unsent-send-warning.ts
 msgid "Switch anyway"
-msgstr ""
+msgstr "그래도 전환"
 
 #: apps/mobile/app/(settings)/billing.tsx
 msgid "Switch to {name}?"
-msgstr ""
+msgstr "{name}(으)로 전환할까요?"
 
 #: apps/web/src/components/ModelCredits.tsx
 msgid "Switch to {tierTargetName}?"
@@ -9714,14 +9772,14 @@ msgstr "연간 결제로 전환할까요?"
 
 #: apps/mobile/lib/unsent-send-warning.ts
 msgid "Switching servers deletes unsent messages."
-msgstr ""
+msgstr "서버를 전환하면 보내지 않은 메시지가 삭제됩니다."
 
 #: apps/mobile/components/space-bots-model.tsx
 #: apps/web/src/pages/model-settings/space-bots-model.tsx
 msgid "Switching…"
 msgstr "전환 중…"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
 #: apps/web/src/pages/shell/use-palette-actions.ts
 msgid "System"
@@ -9729,13 +9787,14 @@ msgstr "시스템"
 
 #: apps/mobile/components/computer-keyboard-bar.tsx
 msgid "Tab"
-msgstr ""
+msgstr "Tab"
 
 #: apps/web/src/components/markdown-copy.tsx
 msgid "Table"
 msgstr "표"
 
 #: apps/mobile/app/computer.tsx
+#: apps/web/src/components/ComputerCard.tsx
 #: apps/web/src/pages/shell/computer-overlay.tsx
 msgid "Take control"
 msgstr "제어권 가져오기"
@@ -9743,11 +9802,11 @@ msgstr "제어권 가져오기"
 #: apps/mobile/app/index.tsx
 #: apps/mobile/components/inbox-render-item.tsx
 msgid "Tap + to create a bot"
-msgstr ""
+msgstr "+를 탭하여 봇 만들기"
 
 #: apps/mobile/components/inline-image-attachment.tsx
 msgid "Tap to open"
-msgstr ""
+msgstr "탭하여 열기"
 
 #: apps/web/src/components/ComputerProviderSettings.tsx
 msgid "Target"
@@ -9779,7 +9838,7 @@ msgstr "Teams 메시지"
 
 #: apps/mobile/components/run-error-sheet.tsx
 msgid "Technical details"
-msgstr ""
+msgstr "기술 세부 정보"
 
 #: apps/web/src/components/ComputerProviderSettings.tsx
 msgid "Template"
@@ -9794,7 +9853,7 @@ msgstr "템플릿"
 
 #: apps/mobile/app/paywall.tsx
 msgid "Terms"
-msgstr ""
+msgstr "약관"
 
 #: apps/web/src/components/teach/SkillDraftCard.tsx
 msgid "Test"
@@ -9824,15 +9883,15 @@ msgstr "사용할 수 없는 주소입니다"
 
 #: apps/mobile/lib/endpoint.ts
 msgid "That doesn’t look like a URL"
-msgstr ""
+msgstr "URL 형식이 아닌 것 같습니다"
 
 #: apps/mobile/lib/endpoint.ts
 msgid "That URL did not look like a Rakazo server"
-msgstr ""
+msgstr "Rakazo 서버 URL이 아닌 것 같습니다"
 
 #: apps/mobile/lib/endpoint.ts
 msgid "That URL is missing a host"
-msgstr ""
+msgstr "URL에 호스트가 없습니다"
 
 #: apps/mobile/components/failed-send-bubble.tsx
 #: apps/web/src/pages/shell/composer-error.tsx
@@ -9841,23 +9900,23 @@ msgstr "Bot은 파일을 사용할 수 있지만 이미지는 볼 수 없습니�
 
 #: apps/mobile/lib/run-error-presentation.ts
 msgid "The bot couldn't finish its reply. Technical details includes the reported error."
-msgstr ""
+msgstr "봇이 답변을 마치지 못했습니다. 기술 세부 정보에서 보고된 오류를 확인하세요."
 
 #: apps/mobile/lib/run-error-presentation.ts
 msgid "The bot couldn't reply because its provider's daily limit was reached."
-msgstr ""
+msgstr "제공업체의 일일 한도에 도달해 봇이 답변하지 못했습니다."
 
 #: apps/mobile/lib/run-error-presentation.ts
 msgid "The bot couldn't reply because its provider's monthly limit was reached."
-msgstr ""
+msgstr "제공업체의 월간 한도에 도달해 봇이 답변하지 못했습니다."
 
 #: apps/mobile/lib/run-error-presentation.ts
 msgid "The bot couldn't reply because its provider's usage limit was reached."
-msgstr ""
+msgstr "제공업체의 사용 한도에 도달해 봇이 답변하지 못했습니다."
 
 #: apps/mobile/lib/run-error-presentation.ts
 msgid "The bot couldn't reply because its provider's weekly limit was reached."
-msgstr ""
+msgstr "제공업체의 주간 한도에 도달해 봇이 답변하지 못했습니다."
 
 #: apps/mobile/components/thread/ask-block.tsx
 #: apps/web/src/components/SecretAskCard.tsx
@@ -9875,6 +9934,14 @@ msgstr "봇이 작업하는 컴퓨터."
 #: apps/web/src/lib/model-connection-preflight.ts
 msgid "The connection timed out."
 msgstr "연결 시간이 초과되었습니다."
+
+#: apps/web/src/pages/shell/dialogs.tsx
+msgid "The group {names} will be deleted too, including its messages, files, and pages."
+msgstr "{names} 그룹도 메시지, 파일, 페이지와 함께 삭제됩니다."
+
+#: apps/web/src/pages/shell/dialogs.tsx
+msgid "The groups {names} will be deleted too, including their messages, files, and pages."
+msgstr "{names} 그룹도 각 그룹의 메시지, 파일, 페이지와 함께 삭제됩니다."
 
 #. js-lingui-explicit-id
 #: packages/i18n/src/run-error.ts
@@ -9897,7 +9964,7 @@ msgstr "소유자가 링크를 끄거나 페이지를 삭제했을 수 있습니
 
 #: apps/mobile/lib/run-error-presentation.ts
 msgid "The provider couldn't serve the model selected for this bot."
-msgstr ""
+msgstr "제공업체가 이 봇에 선택된 모델을 제공하지 못했습니다."
 
 #: apps/web/src/lib/model-connection-preflight.ts
 msgid "The provider is rate-limiting requests."
@@ -9905,11 +9972,11 @@ msgstr "서비스가 요청 속도를 제한하고 있습니다."
 
 #: apps/mobile/lib/run-error-presentation.ts
 msgid "The provider received too many requests to answer this bot."
-msgstr ""
+msgstr "제공업체에 요청이 너무 많아 이 봇에 답변하지 못했습니다."
 
 #: apps/mobile/lib/run-error-presentation.ts
 msgid "The provider refused the key this bot used for its reply."
-msgstr ""
+msgstr "제공업체가 이 봇이 답변에 사용한 키를 거부했습니다."
 
 #: apps/mobile/app/computer.tsx
 #: apps/web/src/lib/computer-screen.ts
@@ -9930,15 +9997,15 @@ msgstr "선택한 기억 서비스는 현재 빌드에서 사용할 수 없습�
 
 #: apps/mobile/lib/api.ts
 msgid "The server changed while starting the request"
-msgstr ""
+msgstr "요청을 시작하는 중 서버가 변경되었습니다"
 
 #: apps/mobile/components/home-error-state.tsx
 msgid "The server had a problem"
-msgstr ""
+msgstr "서버에 문제가 발생했습니다"
 
 #: apps/mobile/lib/user-error.ts
 msgid "The server had a problem. Try again in a moment."
-msgstr ""
+msgstr "서버에 문제가 발생했습니다. 잠시 후 다시 시도하세요."
 
 #: apps/web/src/components/pages/SharePopover.tsx
 msgid "The shared link stops working"
@@ -9951,11 +10018,11 @@ msgstr "사용하지 않은 차액은 다음 청구서에 적립됩니다."
 
 #: apps/mobile/components/space-bots-model.tsx
 msgid "Their own model is cleared. You can pick one again in each bot."
-msgstr ""
+msgstr "자체 모델 설정이 해제되었습니다. 각 봇에서 다시 선택할 수 있습니다."
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "Then paste the code here."
-msgstr ""
+msgstr "그런 다음 여기에 코드를 붙여넣으세요."
 
 #: apps/web/src/pages/shell/use-agent-import-source.ts
 msgid "These files are too large to import."
@@ -9992,7 +10059,7 @@ msgstr "사고: {0}"
 
 #: apps/mobile/components/model-role-settings.tsx
 msgid "Thinking: {level}"
-msgstr ""
+msgstr "생각 깊이: {level}"
 
 #: apps/mobile/lib/user-error.ts
 #: apps/web/src/lib/user-error.ts
@@ -10018,19 +10085,19 @@ msgstr "이 Bot은 별도 Linux 화면이 아니라 현재 컴퓨터에서 실�
 
 #: apps/mobile/lib/run-error-presentation.ts
 msgid "This bot's reply stopped at its key's daily limit. Your own key has its own limits."
-msgstr ""
+msgstr "이 봇의 답변이 키의 일일 한도에서 중단되었습니다. 내 키에는 별도의 한도가 적용됩니다."
 
 #: apps/mobile/lib/run-error-presentation.ts
 msgid "This bot's reply stopped at its key's monthly limit. Your own key has its own limits."
-msgstr ""
+msgstr "이 봇의 답변이 키의 월간 한도에서 중단되었습니다. 내 키에는 별도의 한도가 적용됩니다."
 
 #: apps/mobile/lib/run-error-presentation.ts
 msgid "This bot's reply stopped at its key's usage limit. Your own key has its own limits."
-msgstr ""
+msgstr "이 봇의 답변이 키의 사용 한도에서 중단되었습니다. 내 키에는 별도의 한도가 적용됩니다."
 
 #: apps/mobile/lib/run-error-presentation.ts
 msgid "This bot's reply stopped at its key's weekly limit. Your own key has its own limits."
-msgstr ""
+msgstr "이 봇의 답변이 키의 주간 한도에서 중단되었습니다. 내 키에는 별도의 한도가 적용됩니다."
 
 #: apps/web/src/lib/dictation.ts
 msgid "This browser can't detect when you stop talking. Use Chrome, the desktop app, or hold-to-talk in the composer."
@@ -10082,11 +10149,11 @@ msgstr "이 아티팩트의 버전 {0}개가 모두 삭제됩니다. 이 작업�
 #: apps/mobile/app/artifact.tsx
 #: apps/mobile/app/artifacts.tsx
 msgid "This deletes all {count} versions of this artifact. This can't be undone."
-msgstr ""
+msgstr "이 아티팩트의 버전 {count}개가 모두 삭제됩니다. 되돌릴 수 없습니다."
 
 #: apps/mobile/app/(settings)/voice.tsx
 msgid "This device"
-msgstr ""
+msgstr "이 기기"
 
 #: apps/web/src/components/ArtifactFileCard.tsx
 msgid "This file is not valid UTF-8 text."
@@ -10130,11 +10197,11 @@ msgstr "이번 달 컴퓨터 시간을 모두 사용했습니다."
 
 #: apps/mobile/app/(settings)/memory-note.tsx
 msgid "This note changed"
-msgstr ""
+msgstr "이 메모가 변경되었습니다"
 
 #: apps/mobile/app/(settings)/memory-note.tsx
 msgid "This note no longer exists"
-msgstr ""
+msgstr "이 메모는 더 이상 존재하지 않습니다"
 
 #: apps/mobile/app/page.tsx
 #: apps/mobile/components/pages/page-card.tsx
@@ -10159,7 +10226,7 @@ msgstr "이 페이지를 사용할 수 없습니다"
 #: apps/mobile/app/routine.tsx
 #: apps/mobile/app/routines.tsx
 msgid "This permanently deletes the routine and its run history."
-msgstr ""
+msgstr "자동 실행과 실행 기록이 영구 삭제됩니다."
 
 #: apps/web/src/components/AccountAccess.tsx
 msgid "This permanently deletes your account and data."
@@ -10167,7 +10234,7 @@ msgstr "계정과 데이터가 영구적으로 삭제됩니다."
 
 #: apps/mobile/components/account-deletion.tsx
 msgid "This permanently deletes your account, bots, conversations, memories, files, and saved connections. This cannot be undone."
-msgstr ""
+msgstr "계정, 봇, 대화, 기억, 파일, 저장된 연결이 영구 삭제됩니다. 되돌릴 수 없습니다."
 
 #: apps/web/src/pages/shell/dialogs.tsx
 msgid "This permanently removes every message and stops current work. The chat remains available."
@@ -10183,7 +10250,7 @@ msgstr "이 서비스는 아직 연결되지 않았습니다."
 
 #: apps/mobile/lib/bot-lifecycle.ts
 msgid "This removes every message and stops current work. The bot, computer, memory, and routines are kept."
-msgstr ""
+msgstr "모든 메시지가 삭제되고 현재 작업이 중지됩니다. 봇, 컴퓨터, 기억, 자동 실행은 유지됩니다."
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/mobile/components/model-providers.tsx
@@ -10193,7 +10260,7 @@ msgstr "모든 스페이스에서 이 연결이 제거됩니다."
 
 #: apps/mobile/app/index.tsx
 msgid "This removes the space for everyone."
-msgstr ""
+msgstr "모든 사람에게서 스페이스가 삭제됩니다."
 
 #: apps/web/src/pages/Auth.tsx
 msgid "This reset link is invalid or expired"
@@ -10201,7 +10268,7 @@ msgstr "이 재설정 링크는 유효하지 않거나 만료되었습니다"
 
 #: apps/mobile/app/routine.tsx
 msgid "This routine no longer exists"
-msgstr ""
+msgstr "이 자동 실행은 더 이상 존재하지 않습니다"
 
 #: apps/web/src/pages/shell/message-cards.tsx
 msgid "This server cannot be assigned without a bot."
@@ -10238,7 +10305,7 @@ msgstr "이번 주"
 #: apps/mobile/components/chat-header-title.tsx
 #: apps/mobile/components/thread/thread-header.tsx
 msgid "Thread"
-msgstr ""
+msgstr "스레드"
 
 #: apps/mobile/lib/cron.ts
 #: apps/web/src/lib/cron.ts
@@ -10304,11 +10371,11 @@ msgstr "내일"
 
 #: apps/mobile/lib/user-error.ts
 msgid "Too many attempts. Try again in a few minutes."
-msgstr ""
+msgstr "시도 횟수가 너무 많습니다. 몇 분 후 다시 시도하세요."
 
 #: apps/mobile/lib/thread-feedback.ts
 msgid "Too many unsent messages"
-msgstr ""
+msgstr "보내지 않은 메시지가 너무 많습니다"
 
 #: apps/web/src/pages/routine-editor/trigger-cards.tsx
 msgid "Tool arguments (JSON)"
@@ -10387,7 +10454,7 @@ msgstr "악용을 막기 위해 체험 기간에는 시간이 더 적게 제공�
 msgid "Troubleshoot"
 msgstr "문제 해결"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/web/src/components/TrustedLinkSitesSettings.tsx
 msgid "Trusted sites"
 msgstr "신뢰할 수 있는 사이트"
@@ -10412,9 +10479,9 @@ msgstr "신뢰할 수 있는 사이트"
 msgid "Try again"
 msgstr "다시 시도"
 
-#: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/archived-bots.tsx
 #: apps/mobile/app/(settings)/bot-template.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/mobile/app/artifact.tsx
 #: apps/mobile/app/artifacts.tsx
 #: apps/mobile/app/board.tsx
@@ -10440,7 +10507,7 @@ msgstr "다시 시도"
 #: apps/mobile/lib/thread-voice.ts
 #: apps/mobile/lib/use-inbox-chat-actions.ts
 msgid "Try again."
-msgstr ""
+msgstr "다시 시도하세요."
 
 #: apps/web/src/lib/model-connection-preflight.ts
 msgid "Try the test again."
@@ -10476,7 +10543,6 @@ msgid "Type without recording"
 msgstr "녹음 없이 입력"
 
 #: apps/mobile/components/thread/ask-block.tsx
-#: apps/web/src/components/AskCard.tsx
 msgid "Type your answer"
 msgstr "답변을 입력하세요"
 
@@ -10500,7 +10566,7 @@ msgstr "제거"
 
 #: apps/mobile/components/routine-schedule-editor.tsx
 msgid "Unit"
-msgstr ""
+msgstr "단위"
 
 #: apps/mobile/app/(settings)/messaging.tsx
 #: apps/web/src/pages/MessagingSettingsPanel.tsx
@@ -10522,7 +10588,7 @@ msgstr "고정 해제"
 
 #: apps/mobile/components/inbox-rows.tsx
 msgid "unread"
-msgstr ""
+msgstr "읽지 않음"
 
 #: apps/mobile/components/inbox-activity.tsx
 #: apps/web/src/pages/ActivityList.tsx
@@ -10531,7 +10597,7 @@ msgstr "읽지 않음"
 
 #: apps/mobile/lib/unsent-send-warning.ts
 msgid "Unsent messages"
-msgstr ""
+msgstr "보내지 않은 메시지"
 
 #: apps/mobile/components/bot-organize-modal.tsx
 #: apps/mobile/components/inbox-swipe-row.ios.tsx
@@ -10552,7 +10618,7 @@ msgstr "지원하지 않는 파일 형식: {0}"
 
 #: apps/mobile/components/computer-keyboard-bar.tsx
 msgid "Up"
-msgstr ""
+msgstr "위"
 
 #: apps/web/src/components/DesktopUpdates.tsx
 msgid "Up to date"
@@ -10600,11 +10666,11 @@ msgstr "업데이트가 필요합니다"
 
 #: apps/mobile/lib/api.ts
 msgid "Update your server to use AI data sharing in this mobile version."
-msgstr ""
+msgstr "이 모바일 버전에서 AI 데이터 공유를 사용하려면 서버를 업데이트하세요."
 
 #: apps/mobile/components/pages/page-card.tsx
 msgid "Updated below"
-msgstr ""
+msgstr "아래에서 업데이트됨"
 
 #: apps/web/src/pages/settings-nav.ts
 msgid "Updates"
@@ -10617,13 +10683,14 @@ msgstr "{0}의 컴퓨터 업데이트 중"
 
 #: apps/mobile/components/computer-update-progress.tsx
 msgid "Updating {name}’s Computer"
-msgstr ""
+msgstr "{name}의 컴퓨터 업데이트 중"
 
 #: apps/mobile/components/computer-update-progress.tsx
 #: apps/web/src/components/ComputerUpdateProgress.tsx
 msgid "Updating Team Computer"
 msgstr "팀 컴퓨터 업데이트 중"
 
+#: apps/mobile/components/computer-maintenance-actions.tsx
 #: apps/web/src/components/ComputerMaintenanceActions.tsx
 msgid "Updating…"
 msgstr "업데이트 중…"
@@ -10654,6 +10721,7 @@ msgid "URL"
 msgstr "URL"
 
 #: apps/mobile/app/(settings)/account.tsx
+#: apps/web/src/components/SidebarFooter.tsx
 #: apps/web/src/pages/settings-nav.ts
 msgid "Usage"
 msgstr "사용량"
@@ -10679,11 +10747,11 @@ msgstr "2~64자를 사용하세요"
 
 #: apps/mobile/lib/account-name-editor.ts
 msgid "Use 80 characters or fewer"
-msgstr ""
+msgstr "80자 이하로 입력하세요"
 
 #: apps/mobile/app/sign-in.tsx
 msgid "Use a custom server"
-msgstr ""
+msgstr "사용자 지정 서버 사용"
 
 #: apps/mobile/components/compatible-endpoint-form.tsx
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
@@ -10693,7 +10761,7 @@ msgstr "찾은 모델 중에서 선택"
 
 #: apps/mobile/lib/endpoint.ts
 msgid "Use an http or https URL"
-msgstr ""
+msgstr "http 또는 https URL을 사용하세요"
 
 #: apps/web/src/lib/model-connection-preflight.ts
 msgid "Use Connect to verify the key."
@@ -10701,7 +10769,7 @@ msgstr "키를 확인하려면 연결을 사용하세요."
 
 #: apps/mobile/app/server.tsx
 msgid "Use default server"
-msgstr ""
+msgstr "기본 서버 사용"
 
 #: apps/web/src/pages/SpaceSettingOverrides.tsx
 msgid "Use defaults"
@@ -10718,11 +10786,11 @@ msgstr "이 봇에서 사용"
 
 #: apps/mobile/app/(settings)/memory-note.tsx
 msgid "Use latest"
-msgstr ""
+msgstr "최신 버전 사용"
 
 #: apps/mobile/components/vault-item-editor.tsx
 msgid "Use letters, numbers and _, starting with a letter."
-msgstr ""
+msgstr "영문자, 숫자, _만 사용하고 영문자로 시작하세요."
 
 #: apps/mobile/components/bot-email.tsx
 #: apps/web/src/components/BotEmailAddressField.tsx
@@ -10748,7 +10816,7 @@ msgstr "Rakazo 크레딧 사용"
 
 #: apps/mobile/components/space-bots-model.tsx
 msgid "Use space default"
-msgstr ""
+msgstr "스페이스 기본값 사용"
 
 #: apps/web/src/pages/memory-providers/HonchoSettingsForm.tsx
 msgid "Use up to 512 letters, digits, _ or -."
@@ -10756,7 +10824,7 @@ msgstr "영문자, 숫자, _ 또는 -를 최대 512자까지 사용하세요."
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "Use your own key"
-msgstr ""
+msgstr "내 키 사용"
 
 #: apps/web/src/pages/memory-providers/HonchoSettingsForm.tsx
 msgid "User peer"
@@ -10787,7 +10855,7 @@ msgstr "이 서버의 자체 {hostCredentialSource} 자격 증명으로 {selecte
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "Uses this server's own {source} credentials to access {provider}."
-msgstr ""
+msgstr "이 서버의 {source} 자격 증명으로 {provider}에 접근합니다."
 
 #: apps/web/src/components/ModelCredits.tsx
 msgid "Using your API key"
@@ -10846,7 +10914,7 @@ msgstr "버전"
 
 #: apps/mobile/app/artifact.tsx
 msgid "Versions"
-msgstr ""
+msgstr "버전"
 
 #: apps/mobile/components/integration-plugins.tsx
 #: apps/web/src/pages/plugins/plugin-browse.tsx
@@ -10872,7 +10940,7 @@ msgstr "음성"
 
 #: apps/mobile/components/VoiceChatCard.tsx
 msgid "Voice chat"
-msgstr ""
+msgstr "음성 채팅"
 
 #: apps/web/src/lib/tts.ts
 msgid "Voice request timed out."
@@ -10884,15 +10952,15 @@ msgstr "잠시 기다린 뒤 다시 테스트하세요."
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "Waiting for sign-in — the code expires in about {minutes} minutes."
-msgstr ""
+msgstr "로그인 대기 중 — 코드는 약 {minutes}분 후 만료됩니다."
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "Waiting for sign-in — the link expires in about {minutes} minutes."
-msgstr ""
+msgstr "로그인 대기 중 — 링크는 약 {minutes}분 후 만료됩니다."
 
 #: apps/mobile/components/thread/ask-block.tsx
 msgid "Waiting for this bot’s response."
-msgstr ""
+msgstr "이 봇의 응답을 기다리는 중입니다."
 
 #: apps/web/src/lib/roster-status.ts
 msgid "Waiting in line…"
@@ -10900,7 +10968,7 @@ msgstr "줄에서 기다리는 중…"
 
 #: apps/mobile/app/(settings)/voice.tsx
 msgid "Waiting sound"
-msgstr ""
+msgstr "대기음"
 
 #: apps/mobile/lib/app-connect.ts
 #: apps/web/src/pages/shell/message-cards.tsx
@@ -10951,7 +11019,9 @@ msgstr "주중"
 msgid "Weekends"
 msgstr "주말"
 
+#: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/spending-limit.tsx
+#: apps/web/src/components/PlanUsage.tsx
 #: apps/web/src/components/SpendingLimitSettings.tsx
 msgid "Weekly"
 msgstr "매주"
@@ -10990,6 +11060,10 @@ msgstr "이 루틴이 실행될 때마다 무엇을 해야 하나요?"
 #: apps/web/src/pages/shell/bot-settings-sections.tsx
 msgid "What this bot is for"
 msgstr "이 Bot을 언제, 어떤 일에 사용할지 적어주세요"
+
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "What to recall"
+msgstr "불러올 내용"
 
 #: apps/web/src/components/teach/SkillDraftCard.tsx
 msgid "What to return"
@@ -11066,19 +11140,19 @@ msgstr "시작할 수 있는 사람"
 
 #: apps/mobile/app/page-share.tsx
 msgid "Who can view"
-msgstr ""
+msgstr "보기 권한"
 
 #: apps/mobile/app/(settings)/ai-data-sharing.tsx
 msgid "Withdraw"
-msgstr ""
+msgstr "철회"
 
 #: apps/mobile/app/(settings)/ai-data-sharing.tsx
 msgid "Withdraw all permissions"
-msgstr ""
+msgstr "모든 권한 철회"
 
 #: apps/mobile/app/(settings)/ai-data-sharing.tsx
 msgid "Withdraw all permissions?"
-msgstr ""
+msgstr "모든 권한을 철회할까요?"
 
 #: apps/mobile/components/inbox-rows.tsx
 #: apps/web/src/pages/shell/sidebar-roster.tsx
@@ -11133,7 +11207,7 @@ msgstr "워크스페이스"
 
 #: apps/mobile/app/routine.tsx
 msgid "Write what this routine should do."
-msgstr ""
+msgstr "이 자동 실행이 할 일을 적어 주세요."
 
 #: apps/web/src/lib/billing.ts
 msgid "year"
@@ -11145,7 +11219,7 @@ msgstr "연간"
 
 #: apps/mobile/app/paywall.tsx
 msgid "Yearly −{percent}%"
-msgstr ""
+msgstr "연간 −{percent}%"
 
 #: apps/mobile/components/time-separator.tsx
 #: apps/web/src/pages/shell/chat-context.tsx
@@ -11177,7 +11251,7 @@ msgstr "이 창을 닫아도 됩니다."
 
 #: apps/mobile/lib/ai-consent.ts
 msgid "You can turn this off in Account → AI data sharing."
-msgstr ""
+msgstr "계정 → AI 데이터 공유에서 끌 수 있습니다."
 
 #: apps/web/src/components/call/VoiceChatCard.tsx
 msgid "You declined"
@@ -11196,11 +11270,12 @@ msgstr "직접 조작 중"
 
 #: apps/mobile/app/paywall.tsx
 msgid "You're all set"
-msgstr ""
+msgstr "준비가 끝났습니다"
 
 #: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 msgid "Your account"
-msgstr ""
+msgstr "내 계정"
 
 #. js-lingui-explicit-id
 #: packages/i18n/src/run-error.ts
@@ -11217,12 +11292,17 @@ msgstr "오늘 카드에서 {annualPrice}이 결제되며, 이번 달 사용하�
 
 #: apps/mobile/app/(settings)/billing.tsx
 msgid "Your card is charged {price} today, less the unused part of this month."
-msgstr ""
+msgstr "이번 달 미사용분을 제외한 {price}이(가) 오늘 카드로 청구됩니다."
 
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/web/src/components/ModelCredits.tsx
 msgid "Your card is charged the prorated difference today."
 msgstr "오늘 일할 계산된 차액이 카드로 청구됩니다."
+
+#: apps/mobile/app/(settings)/billing.tsx
+#: apps/web/src/components/ModelCredits.tsx
+msgid "Your card was not charged"
+msgstr "카드로 결제되지 않았습니다"
 
 #: apps/mobile/app/computer.tsx
 #: apps/web/src/pages/Shell.tsx
@@ -11248,7 +11328,7 @@ msgstr "이메일 주소"
 
 #: apps/mobile/app/paywall.tsx
 msgid "Your free trial has started"
-msgstr ""
+msgstr "무료 체험이 시작되었습니다"
 
 #. js-lingui-explicit-id
 #: packages/i18n/src/run-error.ts
@@ -11279,11 +11359,11 @@ msgstr "체험 기간이 끝나면 요금제가 연 {annualPrice}로 바뀝니�
 
 #: apps/mobile/app/(settings)/billing.tsx
 msgid "Your plan becomes {price} / year when your trial ends."
-msgstr ""
+msgstr "체험 기간이 끝나면 요금제가 연 {price}(으)로 바뀝니다."
 
 #: apps/mobile/app/(settings)/billing.tsx
 msgid "Your plan becomes {price} when your trial ends."
-msgstr ""
+msgstr "체험 기간이 끝나면 요금제가 {price}(으)로 바뀝니다."
 
 #: apps/web/src/components/ModelCredits.tsx
 msgid "Your plan becomes {tierTargetLabel} when your trial ends."
@@ -11291,11 +11371,11 @@ msgstr "체험이 끝나면 요금제가 {tierTargetLabel}(으)로 바뀝니다.
 
 #: apps/mobile/lib/ai-consent.ts
 msgid "Your recordings are sent for transcription, and text you play is sent to generate speech."
-msgstr ""
+msgstr "녹음은 텍스트 변환을 위해 전송되고, 재생하는 텍스트는 음성 생성을 위해 전송됩니다."
 
 #: apps/mobile/components/home-error-state.tsx
 msgid "Your session expired"
-msgstr ""
+msgstr "세션이 만료되었습니다"
 
 #: apps/mobile/app/(settings)/skills.tsx
 #: apps/web/src/components/integrations/skills-dialog.tsx

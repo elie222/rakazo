@@ -6,7 +6,7 @@ import { AudioModule } from "expo-audio";
 import { useKeepAwake } from "expo-keep-awake";
 import { useRouter } from "expo-router";
 import type { ComponentProps } from "react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Animated, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { useReducedMotion } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -16,7 +16,7 @@ import type { CallPhase } from "../lib/call-session";
 import { hangUp, toggleMute, toggleTranscript, useCallSession } from "../lib/call-session";
 import { useMobileTokens } from "../lib/native";
 import { currentSessionGeneration, subscribeSessionGeneration } from "../lib/session";
-import { setVoiceBackgroundPlayback } from "../lib/voice";
+import { getVoicePlaybackState, subscribeVoicePlayback } from "../lib/voice";
 import { BotAvatar } from "./bot-avatar";
 import { GlassIconButton } from "./glass-icon-button";
 import { GlassSurface } from "./glass-surface";
@@ -37,6 +37,7 @@ function KeepCallAwake() {
 
 export function CallCard() {
   const call = useCallSession();
+  const playback = useSyncExternalStore(subscribeVoicePlayback, getVoicePlaybackState);
   const { t } = useLingui();
   const tokens = useMobileTokens();
   const insets = useSafeAreaInsets();
@@ -79,13 +80,6 @@ export function CallCard() {
       }),
     [],
   );
-
-  // A call keeps its replies playing while the screen is off.
-  useEffect(() => {
-    if (!onCall) return;
-    setVoiceBackgroundPlayback(true);
-    return () => setVoiceBackgroundPlayback(false);
-  }, [onCall]);
 
   // A microphone foreground service keeps the call alive when the display sleeps.
   // Start it only after the microphone permission is granted; retry when the call
@@ -133,10 +127,11 @@ export function CallCard() {
   }, [call?.botId, call?.botName, call?.phase]);
 
   if (!call) return null;
+  const recentExchanges = call.exchanges.slice(-TRANSCRIPT_LINES);
   return (
     <GlassSurface
       shape="roundedRectangle"
-      style={[styles.card, { top: insets.top + 52 }]}
+      style={[styles.card, { marginBottom: playback.status === "idle" ? insets.bottom + 8 : 0 }]}
       fallbackStyle={[
         styles.cardFallback,
         {
@@ -201,7 +196,7 @@ export function CallCard() {
         <RoundButton
           label={t`Hang up`}
           ios="phone.down.fill"
-          android="call-outline"
+          android={{ material: "phone-hangup" }}
           color={tokens.destructiveForeground}
           border={tokens.destructiveFill}
           background={tokens.destructiveFill}
@@ -210,23 +205,24 @@ export function CallCard() {
       </View>
       {call.transcriptOpen ? (
         <View style={[styles.transcript, { borderTopColor: tokens.border }]}>
-          {call.exchanges.slice(-TRANSCRIPT_LINES).map((exchange, index) => (
-            <Text
-              key={`${exchange.role}-${index + 1}-${exchange.text.slice(0, 24)}`}
-              numberOfLines={1}
-              style={[
-                styles.line,
-                { color: exchange.role === "bot" ? tokens.foreground : tokens.mutedForeground },
-              ]}
-            >
-              {exchange.text}
-            </Text>
-          ))}
-          {call.caption || call.heard ? (
-            <Text numberOfLines={1} style={[styles.line, { color: tokens.mutedForeground }]}>
-              {call.caption || call.heard}
-            </Text>
-          ) : null}
+          {Array.from({ length: TRANSCRIPT_LINES }, (_, index) => {
+            const exchange = recentExchanges[index];
+            return (
+              <Text
+                key={`transcript-${index + 1}`}
+                numberOfLines={1}
+                style={[
+                  styles.line,
+                  { color: exchange?.role === "bot" ? tokens.foreground : tokens.mutedForeground },
+                ]}
+              >
+                {exchange?.text || " "}
+              </Text>
+            );
+          })}
+          <Text numberOfLines={1} style={[styles.line, { color: tokens.mutedForeground }]}>
+            {call.caption || call.heard || " "}
+          </Text>
         </View>
       ) : null}
     </GlassSurface>
@@ -317,11 +313,11 @@ function Waveform({ phase }: { phase: CallPhase }) {
 
 const styles = StyleSheet.create({
   card: {
-    position: "absolute",
     alignSelf: "center",
     width: 320,
+    maxWidth: "100%",
+    marginTop: 8,
     padding: 12,
-    zIndex: 50,
   },
   cardFallback: {
     borderRadius: 18,

@@ -95,10 +95,13 @@ import { PiJsonlSessionRecorder } from "./pi-session.js";
 import { withPiTelemetry } from "./pi-telemetry.js";
 import { withPiThinkingActivity } from "./pi-thinking-activity.js";
 import { observedPiStream } from "./pi-usage.js";
+import type { RejectedProviderRequest } from "./provider-request-shape.js";
+import { attachRejectedRequests, rejectedRequestsOf } from "./provider-request-shape.js";
 import type { RuntimeContextDecision } from "./runtime-context.js";
 import { createRuntimeContextPolicy } from "./runtime-context.js";
 import { deliverFinishedShells } from "./shell-command-stream.js";
 import { withoutThinkingFrom } from "./thinking-signatures.js";
+import { runToolCallIds, uniqueToolCallIdStream } from "./tool-call-ids.js";
 import type { ComputerModeCheckpoint } from "./turn-checkpoint.js";
 import {
   restoreTurnCheckpoint,
@@ -107,6 +110,7 @@ import {
 } from "./turn-checkpoint.js";
 import { midTaskMessageFromPrompt, midTaskMessagePrompt } from "./user-progress.js";
 
+const MAX_REJECTED_REQUESTS = 5;
 const running = new Map<string, { controller: AbortController; work: Promise<void> }>();
 // Some OpenAI-compatible models return EOS immediately after a tool result
 // instead of taking another assistant turn. A bounded internal follow-up keeps
@@ -304,6 +308,7 @@ export class PiAgentRuntime implements AgentRuntime {
           subagentGate: createGate(MAX_PARALLEL_SUBAGENTS),
           toolCallBudget: trackedBudget,
           toolCallSeq: { value: 0 },
+          providerToolCallIds: new Map(),
           abortTurn: () => undefined,
           signal,
           depth: 0,
@@ -314,6 +319,8 @@ export class PiAgentRuntime implements AgentRuntime {
         resumeHost = host;
         const allTools = toAgentTools(toolDefs, host);
         const toolsByAgentName = agentToolDefinitions(toolDefs);
+        // Replayed calls to tools the model no longer has say so in their results.
+        const offeredToolNames = new Set(allTools.map((tool) => tool.name));
         let tools = allTools;
         const seenSteeringIds: string[] = [];
         const initialSteering = request.claimSteering ? await request.claimSteering([]) : [];
@@ -336,6 +343,7 @@ export class PiAgentRuntime implements AgentRuntime {
             withoutSteeringMessages(request.history, initialSteering),
             request.prompt,
             request.sourceMessageId,
+            offeredToolNames,
           );
         const representedHistoryIds = new Set(
           restored
@@ -435,11 +443,17 @@ export class PiAgentRuntime implements AgentRuntime {
         };
         // The idle watchdog may clone a terminal message, preserving its content array.
         const providerFailures = new WeakSet<AssistantMessage["content"]>();
+        const rejectedRequests: RejectedProviderRequest[] = [];
         const hasBackups = Boolean(request.fallbackModels?.length);
         let agent: Agent;
         let activeStreamTarget = host.activeModel;
         // A tool result that ended the turn carries the reply the user must still see.
         let terminatedReply: string | undefined;
+        // Whether ending now would leave the user nothing: no text shown, no tools run, and the run
+        // may not stay silent. Such a run answers with the empty-response text, so an empty model
+        // reply is repeated first.
+        const wouldEndEmpty = () =>
+          !request.allowSilentEmpty && toolCalls === 0 && !streamed.trim();
         let fallbackState: FallbackStreamState = {
           request,
           getActive: () => activeStreamTarget,
@@ -450,6 +464,7 @@ export class PiAgentRuntime implements AgentRuntime {
           backupOutcomes: new Map(),
           selfRecoveries: 0,
           cutReplies: new WeakMap(),
+          retriesEmptyReply: wouldEndEmpty,
           stream: (target, ctx, options) => {
             if (hasCurrentImages && !target.model.input.includes("image")) {
               throw new Error(MODEL_IMAGE_INPUT_ERROR);
@@ -479,6 +494,19 @@ export class PiAgentRuntime implements AgentRuntime {
                       ...usageHooks,
                       prepareContext,
                       onProviderError: (message) => providerFailures.add(message.content),
+                      onRejectedRequest: (rejection, model) => {
+                        if (rejection) {
+                          if (rejectedRequests.push(rejection) > MAX_REJECTED_REQUESTS)
+                            rejectedRequests.shift();
+                          return;
+                        }
+                        // That model recovered; another model's rejection still explains a failure.
+                        for (let index = rejectedRequests.length - 1; index >= 0; index -= 1) {
+                          const entry = rejectedRequests[index];
+                          if (entry?.provider === model.provider && entry.model === model.id)
+                            rejectedRequests.splice(index, 1);
+                        }
+                      },
                     },
                   ),
                 target.config.cacheCapabilities?.retentionMode,
@@ -611,14 +639,18 @@ export class PiAgentRuntime implements AgentRuntime {
               mode === "computer",
             );
         }
+        const toolCallIds = runToolCallIds(history as Message[], host.providerToolCallIds);
         agent = new Agent({
           sessionId: conversationSessionId(request.threadId, request.botId),
           steeringMode: "all",
           streamFn: (_m, ctx, options) =>
-            fallbackAwareModelStream(
-              fallbackState,
-              ctx,
-              withAutomatedLabels({ ...options, fetch: this.modelFetch ?? options?.fetch }),
+            uniqueToolCallIdStream(
+              fallbackAwareModelStream(
+                fallbackState,
+                ctx,
+                withAutomatedLabels({ ...options, fetch: this.modelFetch ?? options?.fetch }),
+              ),
+              toolCallIds,
             ),
           getApiKey:
             hasBackups || computer
@@ -1087,7 +1119,9 @@ export class PiAgentRuntime implements AgentRuntime {
               const addedHistory = withoutSteeringMessages(request.history, initialSteering).filter(
                 (message) => message.id && !representedHistoryIds.has(message.id),
               );
-              agent.state.messages.push(...toHistory(addedHistory, ""));
+              const replayed = toHistory(addedHistory, "", undefined, offeredToolNames);
+              for (const id of runToolCallIds(replayed as Message[]).used) toolCallIds.used.add(id);
+              agent.state.messages.push(...replayed);
               for (const message of addedHistory)
                 if (message.id) representedHistoryIds.add(message.id);
               for (const item of initialSteering) {
@@ -1102,7 +1136,8 @@ export class PiAgentRuntime implements AgentRuntime {
                 });
               }
               // A run cannot continue from an assistant message. What trails here is this
-              // bot's own earlier text, which the restored transcript already carries.
+              // bot's own earlier reply, which the restored transcript already carries; a
+              // continue from its tool results would extend that old reply.
               for (let last = agent.state.messages.at(-1); isHistoryReply(last); ) {
                 agent.state.messages.pop();
                 last = agent.state.messages.at(-1);
@@ -1175,10 +1210,14 @@ export class PiAgentRuntime implements AgentRuntime {
               ...fallbackState.backupOutcomes.values(),
             ]);
           }
-          throw modelFailure(error, message, {
+          const failure = modelFailure(error, message, {
             provider: activeStreamTarget.config.provider,
             primaryProvider: fallbackState.request.model.provider,
           });
+          // Only a rejection nothing explains needs its request's shape to be reproduced.
+          throw failure.constructor === Error
+            ? attachRejectedRequests(failure, rejectedRequests)
+            : failure;
         }
         // Only an assistant message can hold the answer a provider left off the deltas;
         // a trailing tool result is tool output, not the model's reply.
@@ -1241,7 +1280,7 @@ export class PiAgentRuntime implements AgentRuntime {
             streamed = fallback;
           } else if (toolWorkPendingFinal && !request.allowSilentEmpty) {
             throw new ModelOutputError(MISSING_TOOL_FINAL_RESPONSE_ERROR);
-          } else if (toolCalls === 0 && !request.allowSilentEmpty) {
+          } else if (wouldEndEmpty()) {
             streamed = request.emptyResponseText?.trim() || "No response. Try again.";
             queue.push({ type: "text", text: streamed });
           }
@@ -1257,7 +1296,7 @@ export class PiAgentRuntime implements AgentRuntime {
               ? new ModelAccountError(message)
               : error instanceof ModelOutputError
                 ? new ModelOutputError(message)
-                : new Error(message),
+                : attachRejectedRequests(new Error(message), rejectedRequestsOf(error) ?? []),
         );
       } finally {
         stopThinking();

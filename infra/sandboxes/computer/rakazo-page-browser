@@ -352,10 +352,18 @@ class AgentBrowser:
         info = os.lstat(self.home)
         if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid():
             raise RuntimeError("The page browser's own folder is not this user's")
-        # Its own configuration, never one from the bot's home or working folder.
+        # Its own configuration, never one from the bot's home or working folder. Replaced whole, never
+        # rewritten in place: a call for another screen may be starting agent-browser on it right now.
         self.config = os.path.join(self.home, "config.json")
-        with open(self.config, "w", encoding="utf-8") as config:
-            config.write("{}")
+        fd, staged = tempfile.mkstemp(dir=self.home, prefix=".config-")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as config:
+                config.write("{}")
+            os.replace(staged, self.config)
+        except BaseException:
+            with contextlib.suppress(FileNotFoundError):
+                os.unlink(staged)
+            raise
         self.session = f"display-{port}"
         # When set, every command answers by then or is given up.
         self.deadline: float | None = None
@@ -1923,21 +1931,25 @@ PURCHASE_HELPERS = r"""
     || (el && PAY_WORD.test(phrase(word)) && inPaymentForm(el)));
   // Controls on a payment page that never pay.
   const NOT_PAYING = /^(?:back|go back|previous|cancel|edit|change|remove|delete|clear|apply|redeem|coupon|promo|discount|gift card|show|hide|help|close|dismiss|terms|privacy|learn more|view|select (?:a )?seat|choose (?:a )?seat|sign in|log in|login|sign up|register|forgot|add (?:a )?(?:promo|coupon|code|gift|note)|add to (?:cart|basket|bag))\b|^(?:חזרה|ביטול|עריכה|שינוי|הסרה|קופון|סגירה|סגור|עזרה|תנאי|פרטיות|התחבר|כניסה|החל|הוסף לסל|הוספה לסל)(?:\s|$)/;
-  // A number may group its thousands with spaces, as in "1 234,56 €".
-  const NUMBER = "\\d(?:[\\d.,]|[ \\u00a0\\u202f](?=\\d{3}))*";
+  // A number may group its thousands with spaces, as in "1 234,56 €". Separators before its first digit
+  // are kept, so ".99 USD" is not read as 99 dollars.
+  const NUMBER = "[.,]*\\d(?:[\\d.,]|[ \\u00a0\\u202f](?=\\d{3}))*";
   const MONEY = new RegExp(`(?:[$€£₪¥]\\s?${NUMBER}|${NUMBER}\\s?(?:[$€£₪¥]|USD|EUR|GBP|ILS|NIS|ש"ח|ש״ח)|(?:USD|EUR|GBP|ILS|NIS)\\s?${NUMBER})`, "gi");
   const TOTAL = /(?<!sub)total|amount due|balance due|to pay|you pay|סה[״"'׳]?כ|סך[\s-]*הכל|לתשלום/i;
-  const moneyIn = (text, last) => {
-    const found = String(text).match(MONEY);
-    return found ? found[last ? found.length - 1 : 0].replace(/[.,\s]+$/, "").slice(0, 40) : "";
+  const moneyIn = (text) => {
+    const value = String(text);
+    if (value.length > 1000) return "?";
+    const found = value.match(MONEY);
+    if (found?.length > 1) return "?";
+    return found ? found[0].replace(/[.,\s]+$/, "").slice(0, 40) : "";
   };
-  // The amount the page shows next to its total, the last one when it shows several.
+  // The amount next to the last total line; multiple prices on one line are ambiguous.
   function totalShown() {
     const lines = String(document.body?.innerText || "").split("\n").slice(0, 400);
     let found = "";
     lines.forEach((line, i) => {
       if (!TOTAL.test(line.slice(0, 200))) return;
-      found = moneyIn(line.slice(0, 200), true) || moneyIn(lines[i + 1] || "", false) || found;
+      found = moneyIn(line) || moneyIn(lines[i + 1] || "") || found;
     });
     return found;
   }
@@ -2062,7 +2074,8 @@ PURCHASE_HELPERS = r"""
   // A button that names another amount than the page's total also reports the total, which the spending
   // limit counts if larger. `items`: the order lines the page lists, when it lists any.
   function shownPurchase(reason, label, words = [label]) {
-    const named = words.map((word) => moneyIn(word, false)).find(Boolean) || "";
+    const prices = [...new Set(words.map((word) => moneyIn(word)).filter(Boolean))];
+    const named = prices.length > 1 ? "?" : prices[0] || "";
     const total = totalShown();
     const items = orderItems();
     return { reason, label: cut(label, 80), amount: named || total, amountFrom: named ? "button" : "page",
@@ -2402,6 +2415,9 @@ def purchase_refusal(step: dict[str, Any], site: str, buying: dict[str, Any] | N
     and total still say what the card showed. An earlier step may have changed the page since the caller asked."""
     if not buying:
         return None
+    if buying.get("amount") == "?" or buying.get("total") == "?":
+        return {"ok": False, "completed": completed, "uncertain": False,
+                "error": "The checkout total is ambiguous. Ask the user to verify the price and complete the payment manually."}
     approved = step.get("approved") is True and step.get("site") == site
     # A total the card showed beside the button (empty when it showed none) must still be the page's.
     changed = approved and any(key in step and shown(step[key]) != shown(buying.get(key, ""))

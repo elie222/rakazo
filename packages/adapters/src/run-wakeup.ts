@@ -3,12 +3,18 @@ import type {
   BackgroundJob,
   BackgroundJobHandlers,
   JobPublisher,
+  JobTransaction,
   JobWorkerHost,
   RealtimeFanout,
 } from "@rakazo/adapter-kit";
 import { dispatchBackgroundJob } from "@rakazo/adapter-kit";
-import type { Prisma, PrismaClient } from "@rakazo/db";
-import { endTakeoverWaits, isTooManyDatabaseConnections, runAsSystem } from "@rakazo/db";
+import type { DatabaseOutage, Prisma, PrismaClient } from "@rakazo/db";
+import {
+  databaseOutage,
+  endTakeoverWaits,
+  isTooManyDatabaseConnections,
+  runAsSystem,
+} from "@rakazo/db";
 import { getLogger, runCorrelatedJob } from "@rakazo/logging";
 import type { Pool } from "pg";
 import { RunExecutionHost } from "./run-execution.js";
@@ -154,6 +160,14 @@ export class RunJobPublisher implements JobPublisher {
     this.starter.start(job.payload.runId, job.availableAt);
   }
 
+  async enqueueIn(tx: JobTransaction, job: BackgroundJob): Promise<void> {
+    await this.background.enqueueIn(tx, job);
+  }
+
+  async cancelIn(tx: JobTransaction, key: string): Promise<void> {
+    await this.background.cancelIn(tx, key);
+  }
+
   async cancel(key: string): Promise<void> {
     // The durable status is already cancelled. Legacy Graphile deliveries can
     // safely drain as no-ops; chat cancellation needs no scheduler connection.
@@ -190,8 +204,17 @@ export class RunWorkerHost implements JobWorkerHost {
     private readonly prisma: PrismaClient,
     private readonly realtime: RealtimeFanout,
     private readonly starter: RunStarter,
-    private readonly options: { intervalMs?: number; batchSize?: number; pool?: Pool } = {},
+    private readonly options: {
+      intervalMs?: number;
+      batchSize?: number;
+      pool?: Pool;
+      outage?: DatabaseOutage;
+    } = {},
   ) {}
+
+  private get outage(): DatabaseOutage {
+    return this.options.outage ?? databaseOutage;
+  }
 
   async start(handlers: BackgroundJobHandlers): Promise<void> {
     if (!this.stopping) return;
@@ -241,9 +264,11 @@ export class RunWorkerHost implements JobWorkerHost {
           this.scanAgain = false;
           await this.scan();
         }
+        this.outage.succeeded();
       } catch (error) {
         this.scanAgain = false;
-        if (!this.stopping) getLogger().error("run dispatch scan", error);
+        if (!this.stopping && !this.outage.failed(error, "run recovery scan"))
+          getLogger().error("run dispatch scan", error);
       }
     }).finally(() => {
       this.scanning = undefined;
@@ -302,7 +327,8 @@ export class RunWorkerHost implements JobWorkerHost {
       }
     })
       .catch((error) => {
-        if (!this.stopping) getLogger().error("run queue health", error);
+        if (!this.stopping && !this.outage.failed(error, "run queue health"))
+          getLogger().error("run queue health", error);
       })
       .finally(() => {
         this.queueCheck = undefined;

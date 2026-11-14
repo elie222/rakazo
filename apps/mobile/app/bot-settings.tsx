@@ -23,12 +23,13 @@ import {
 import { typeScale } from "@rakazo/ui-tokens";
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import type { Voice } from "expo-speech";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { ScrollViewInstance } from "react-native";
 import { Alert, Modal, Pressable, ScrollView, Share, StyleSheet, Text, View } from "react-native";
 import { BotAvatar } from "../components/bot-avatar";
 import { BotContextCards } from "../components/bot-context-cards";
 import { BotLookPicker } from "../components/bot-look-picker";
+import { useComputerMaintenanceRows } from "../components/computer-maintenance-actions";
 import { ComputerModePicker } from "../components/computer-mode-picker";
 import { glassHeaderOptions } from "../components/glass-title";
 import { GrowingTextInput } from "../components/growing-text-input";
@@ -46,6 +47,7 @@ import {
 } from "../components/settings-group";
 import { currentApiBase, rpc, selectedSpaceId } from "../lib/api";
 import { deviceVoices, setVoiceForBot, voiceForBot, voiceLabel } from "../lib/bot-voices";
+import { CallKeyboardContext } from "../lib/call-keyboard-context";
 import { chatModelPickerChoices } from "../lib/chat-model";
 import { COMPUTER_LIFECYCLE_TIMEOUT_MS } from "../lib/computer";
 import { notifyConversationCleared } from "../lib/conversation-cleared";
@@ -61,6 +63,7 @@ import { errorText } from "../lib/user-error";
 import { stopVoicePlayback } from "../lib/voice";
 
 export default function BotSettingsScreen() {
+  const rootAvoidsKeyboard = useContext(CallKeyboardContext);
   const sideInsets = useSideInsets();
   const tokens = useMobileTokens();
   const { t } = useLingui();
@@ -103,6 +106,7 @@ export default function BotSettingsScreen() {
   // Undefined until a row is picked; null when the picked row has no connection.
   const [pendingConnection, setPendingConnection] = useState<string | null | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
+  const computerMaintenanceRows = useComputerMaintenanceRows(botId);
   const [deviceVoiceEnabled, setDeviceVoiceEnabled] = useState(false);
   const [voices, setVoices] = useState<Voice[]>([]);
   const [voiceId, setVoiceId] = useState<string | undefined>();
@@ -110,6 +114,7 @@ export default function BotSettingsScreen() {
   const voiceChoice = useRef(0);
   const [voiceError, setVoiceError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const pendingRef = useRef(false);
 
   const crossSpaceSave = useMemo(
     () =>
@@ -440,7 +445,8 @@ export default function BotSettingsScreen() {
   }
 
   async function save() {
-    if (!botId || !bot || pending) return;
+    if (!botId || !bot || pendingRef.current) return;
+    pendingRef.current = true;
     setPending(true);
     setError(null);
     try {
@@ -523,6 +529,7 @@ export default function BotSettingsScreen() {
     } catch (err) {
       setError(errorText(err, t`Could not save bot`));
     } finally {
+      pendingRef.current = false;
       setPending(false);
     }
   }
@@ -589,7 +596,7 @@ export default function BotSettingsScreen() {
         ref={scrollRef}
         style={[{ flex: 1, backgroundColor: tokens.background }, sideInsets]}
         contentContainerStyle={{ padding: 24 }}
-        automaticallyAdjustKeyboardInsets
+        automaticallyAdjustKeyboardInsets={!rootAvoidsKeyboard}
         contentInsetAdjustmentBehavior="automatic"
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
@@ -703,6 +710,7 @@ export default function BotSettingsScreen() {
               <View style={styles.cardContent}>
                 <ComputerModePicker plain value={computerMode} onChange={setComputerMode} />
               </View>
+              {computerMaintenanceRows}
             </SettingsGroup>
             <SettingsGroup label={t`Voice`}>
               <SettingsSwitch
@@ -777,7 +785,7 @@ export default function BotSettingsScreen() {
                         label: `${new Date(version.createdAt).toLocaleString()} (${version.reason})`,
                       }))}
                       onChange={(versionId) => {
-                        if (pending || instructions !== bot.instructions) return;
+                        if (pendingRef.current || instructions !== bot.instructions) return;
                         const version = bot.instructionHistory?.find(
                           (item) => item.id === versionId,
                         );
@@ -787,6 +795,10 @@ export default function BotSettingsScreen() {
                             {
                               text: t`Restore`,
                               onPress: () => {
+                                if (pendingRef.current) return;
+                                pendingRef.current = true;
+                                setPending(true);
+                                setError(null);
                                 void rpc("bots/restoreInstructions", {
                                   botId: bot.id,
                                   versionId,
@@ -796,7 +808,11 @@ export default function BotSettingsScreen() {
                                     setBot(updated);
                                     setInstructions(updated.instructions ?? "");
                                   })
-                                  .catch((err) => setError(errorText(err)));
+                                  .catch((err) => setError(errorText(err)))
+                                  .finally(() => {
+                                    pendingRef.current = false;
+                                    setPending(false);
+                                  });
                               },
                             },
                           ]);
@@ -828,6 +844,7 @@ export default function BotSettingsScreen() {
                 label={t`Instructions`}
                 maxLength={BOT_INSTRUCTIONS_MAX_LENGTH}
                 value={instructions}
+                editable={!pending}
                 onChangeText={setInstructions}
                 backgroundColor={native.groupedCell}
                 fontSize={17}
