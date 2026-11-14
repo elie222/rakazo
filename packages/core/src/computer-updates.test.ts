@@ -68,14 +68,15 @@ describe("computer update presentation", () => {
     const list = vi.fn(async (): Promise<ComputerUpdate[]> => []);
     const updates = store(list);
     const stop = updates.watch();
-    updates.signalled();
+    const signals = updates.connect();
+    signals.signalled();
     await vi.advanceTimersByTimeAsync(5 * 60_000 - 1);
     expect(list).toHaveBeenCalledTimes(2);
     await vi.advanceTimersByTimeAsync(1);
     expect(list).toHaveBeenCalledTimes(3);
     list.mockClear();
     list.mockResolvedValue([{ ...update, stage: "restoring" }]);
-    updates.signalled();
+    signals.signalled();
     await vi.advanceTimersByTimeAsync(0);
     expect(updates.getSnapshot().updates).toEqual([{ ...update, stage: "restoring" }]);
     // Progress arrives as signals; a lost one is caught up slowly, never at the polling pace.
@@ -90,8 +91,9 @@ describe("computer update presentation", () => {
     const reads = pending();
     const updates = store(reads.list);
     const stop = updates.watch();
-    updates.signalled();
-    updates.signalled();
+    const signals = updates.connect();
+    signals.signalled();
+    signals.signalled();
     expect(reads.list).toHaveBeenCalledTimes(1);
     reads.resolve([]);
     await vi.advanceTimersByTimeAsync(0);
@@ -106,12 +108,41 @@ describe("computer update presentation", () => {
     const list = vi.fn(async (): Promise<ComputerUpdate[]> => []);
     const updates = store(list);
     const stop = updates.watch();
-    updates.signalled();
+    const signals = updates.connect();
+    signals.signalled();
     await vi.advanceTimersByTimeAsync(60_000);
     expect(list).toHaveBeenCalledTimes(2);
-    updates.signalsLost();
+    signals.lost();
     await vi.advanceTimersByTimeAsync(15_000);
     expect(list).toHaveBeenCalledTimes(3);
+    stop();
+  });
+  it("ignores a replaced connection closing late", async () => {
+    vi.useFakeTimers();
+    const list = vi.fn(async (): Promise<ComputerUpdate[]> => []);
+    const updates = store(list);
+    const stop = updates.watch();
+    const old = updates.connect();
+    const current = updates.connect();
+    current.signalled();
+    old.lost();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(list).toHaveBeenCalledTimes(2);
+    stop();
+  });
+  it("still retries a failed read when its timer fires early", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(Math, "random").mockReturnValue(0);
+    const list = vi.fn(async (): Promise<ComputerUpdate[]> => {
+      throw Object.assign(new Error("Unavailable"), { status: 503 });
+    });
+    const stop = store(list).watch();
+    await vi.advanceTimersByTimeAsync(0);
+    // A clock read just behind the timer's due time.
+    const now = Date.now();
+    vi.spyOn(Date, "now").mockReturnValue(now + 15_000 - 1);
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(list).toHaveBeenCalledTimes(2);
     stop();
   });
   it("starts over for a newly selected Space and drops the old Space's late answers", async () => {
@@ -135,7 +166,8 @@ describe("computer update presentation", () => {
       },
     });
     const stop = updates.watch();
-    updates.signalled();
+    const signals = updates.connect();
+    signals.signalled();
     answers[0]?.([{ ...update, status: "failed" }]);
     await vi.advanceTimersByTimeAsync(0);
     expect(updates.getSnapshot().updates).toHaveLength(1);
@@ -175,8 +207,9 @@ describe("computer update presentation", () => {
     const updates = store(list);
     let stop = updates.watch();
     await vi.advanceTimersByTimeAsync(0);
-    updates.signalled();
-    updates.signalsLost();
+    const signals = updates.connect();
+    signals.signalled();
+    signals.lost();
     await vi.advanceTimersByTimeAsync(60_000);
     expect(list).toHaveBeenCalledTimes(1);
     stop();
@@ -197,7 +230,8 @@ describe("computer update presentation", () => {
     );
     const updates = store(list);
     const stop = updates.watch();
-    updates.signalled();
+    const signals = updates.connect();
+    signals.signalled();
     reject(Object.assign(new Error("Unauthorized"), { status: 401 }));
     await vi.advanceTimersByTimeAsync(60_000);
     expect(list).toHaveBeenCalledTimes(1);
@@ -214,10 +248,11 @@ describe("computer update presentation", () => {
     );
     const updates = store(list);
     const stop = updates.watch();
-    updates.signalled();
+    const signals = updates.connect();
+    signals.signalled();
     reject(Object.assign(new Error("Busy"), { status: 429, retryAfterMs: 20_000 }));
     await vi.advanceTimersByTimeAsync(0);
-    updates.signalled();
+    signals.signalled();
     await vi.advanceTimersByTimeAsync(19_000);
     expect(list).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(1_000);

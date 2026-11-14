@@ -29,6 +29,7 @@ export function useRosterSignals(onChange: () => unknown, enabled: boolean): boo
         const close = () => connection.abort();
         controller.signal.addEventListener("abort", close);
         const unfollowSpace = subscribeSpaceSelection(close);
+        const computerUpdateSignals = computerUpdates.connect();
         try {
           await subscribeRosterSignals(
             () => {
@@ -39,7 +40,7 @@ export function useRosterSignals(onChange: () => unknown, enabled: boolean): boo
             },
             connection.signal,
             () => {
-              if (!connection.signal.aborted) computerUpdates.signalled();
+              if (!connection.signal.aborted) computerUpdateSignals.signalled();
             },
           );
         } catch (error) {
@@ -47,7 +48,7 @@ export function useRosterSignals(onChange: () => unknown, enabled: boolean): boo
         }
         unfollowSpace();
         controller.signal.removeEventListener("abort", close);
-        computerUpdates.signalsLost();
+        computerUpdateSignals.lost();
         if (controller.signal.aborted) return;
         setLive(false);
         if (connection.signal.aborted) continue;

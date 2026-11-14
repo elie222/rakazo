@@ -123,6 +123,7 @@ export function useBrowserNotifications(
     void (async () => {
       while (active) {
         controller = new AbortController();
+        const computerUpdateSignals = computerUpdates.connect();
         let failure: unknown;
         let opened = false;
         try {
@@ -133,7 +134,7 @@ export function useBrowserNotifications(
           for await (const frame of stream) {
             if (!active) return;
             if (frame.type === "roster") rosterRef.current?.changed();
-            else if (frame.type === "computerUpdates") computerUpdates.signalled();
+            else if (frame.type === "computerUpdates") computerUpdateSignals.signalled();
             else if (frame.alert) show(frame.alert);
           }
         } catch (cause) {
@@ -141,7 +142,7 @@ export function useBrowserNotifications(
         } finally {
           controller.abort();
           rosterRef.current?.lost();
-          computerUpdates.signalsLost();
+          computerUpdateSignals.lost();
         }
         if (!active || (failure !== undefined && !isRetryableError(failure))) return;
         await new Promise<void>((resolve) => {

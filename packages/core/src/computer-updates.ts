@@ -36,6 +36,7 @@ export function createComputerUpdates(client: {
   let backoffUntil = 0;
   let revision = 0;
   let live = false;
+  let connection = 0;
   let fetching = false;
   let again = false;
   const emit = () => {
@@ -57,7 +58,14 @@ export function createComputerUpdates(client: {
             ? SIGNALLED_IN_PROGRESS_MS
             : SIGNALLED_IDLE_MS;
     if (failure !== undefined) backoffUntil = Date.now() + delay;
-    timer = setTimeout(() => void refresh(), Math.max(delay, backoffUntil - Date.now()));
+    timer = setTimeout(
+      () => {
+        // The timer is the retry the backoff waited for, even if it fires a little early.
+        backoffUntil = 0;
+        void refresh();
+      },
+      Math.max(delay, backoffUntil - Date.now()),
+    );
   };
   const read = async () => {
     const epoch = generation;
@@ -147,15 +155,25 @@ export function createComputerUpdates(client: {
         stop();
       };
     },
-    /** The app's live stream opened or reported a change. */
-    signalled() {
-      live = true;
-      void refresh();
-    },
-    /** The app's live stream closed; poll until it opens again. */
-    signalsLost() {
-      live = false;
-      if (!fetching) schedule();
+    /**
+     * Signals from one connection of the app's live stream: call `signalled` when it opens and on
+     * each change, and `lost` when it closes. Only the newest connection counts, so an old one
+     * closing late cannot undo its replacement.
+     */
+    connect() {
+      const id = ++connection;
+      return {
+        signalled() {
+          if (id !== connection) return;
+          live = true;
+          void refresh();
+        },
+        lost() {
+          if (id !== connection) return;
+          live = false;
+          if (!fetching) schedule();
+        },
+      };
     },
     open(id: string | null) {
       state = { ...state, openId: id };

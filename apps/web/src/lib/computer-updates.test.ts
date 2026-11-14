@@ -33,7 +33,7 @@ describe("web computer updates", () => {
     vi.useFakeTimers();
     updates.mockResolvedValue([update]);
     const stop = computerUpdates.watch();
-    computerUpdates.signalled();
+    computerUpdates.connect().signalled();
     await vi.advanceTimersByTimeAsync(0);
     expect(computerUpdates.getSnapshot().updates).toEqual([update]);
     const calls = updates.mock.calls.length;
