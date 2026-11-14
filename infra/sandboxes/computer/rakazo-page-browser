@@ -1890,10 +1890,12 @@ PURCHASE_HELPERS = r"""
   const phrase = (text) => text.toLowerCase().replace(/^[^\p{L}\p{N}$€£₪¥]+|[^\p{L}\p{N})]+$/gu, "");
   const CURRENCY = "[$€£₪¥]|usd|eur|gbp|ils|nis";
   const SPENDS = `${CURRENCY}|\\d`;
+  // This wording can select a method or pay immediately; only an explicit choice role disambiguates it.
+  const METHOD_STEP = /^pay (?:with|using|by|via) .+$/;
   // The last step of an order. Each starts the phrase, so "to checkout", "continue to payment", "add to
   // cart", "pay later" and a lone "confirm" or "continue" are not final steps.
   const FINAL_STEP = [
-    new RegExp(`^(?:pay(?: securely)?(?: now)?|pay now securely|pay (?:with|using|by|via) .+|pay (?:${SPENDS}).*)$`),
+    new RegExp(`^(?:pay(?: securely)?(?: now)?|pay now securely|pay (?:${SPENDS}).*)$`),
     /^make (?:a |the |my )?payment\b/,
     new RegExp(`^send (?:money|payment|funds|(?:${CURRENCY})\\s?\\d.*)`),
     /^confirm (?:the |your |my )?(?:transfer|payment|bid|purchase)\b/,
@@ -1923,11 +1925,14 @@ PURCHASE_HELPERS = r"""
     if (el instanceof HTMLInputElement) return ["submit", "image"].includes(el.type) ? el.form : null;
     return null;
   }
+  // A method choice is not a form submit. Explicit final-action labels still ask, whatever the role.
+  const selectsMethod = (el) => el && !submittedForm(el) && ["tab", "radio"].includes(el.getAttribute("role"));
   const inPaymentForm = (el) => {
     const form = el.form || el.closest("form");
     return Boolean(form) && (submittedForm(el) !== null || [...form.elements].some(cardLike));
   };
   const isFinalStep = (words, el) => words.some((word) => FINAL_STEP.some((pattern) => pattern.test(phrase(word)))
+    || (!selectsMethod(el) && METHOD_STEP.test(phrase(word)))
     || (el && PAY_WORD.test(phrase(word)) && inPaymentForm(el)));
   // Controls on a payment page that never pay.
   const NOT_PAYING = /^(?:back|go back|previous|cancel|edit|change|remove|delete|clear|apply|redeem|coupon|promo|discount|gift card|show|hide|help|close|dismiss|terms|privacy|learn more|view|select (?:a )?seat|choose (?:a )?seat|sign in|log in|login|sign up|register|forgot|add (?:a )?(?:promo|coupon|code|gift|note)|add to (?:cart|basket|bag))\b|^(?:חזרה|ביטול|עריכה|שינוי|הסרה|קופון|סגירה|סגור|עזרה|תנאי|פרטיות|התחבר|כניסה|החל|הוסף לסל|הוספה לסל)(?:\s|$)/;
@@ -2089,7 +2094,7 @@ PURCHASE_HELPERS = r"""
     if (form && ([...form.elements].some(cardLike) || (frame && form.querySelector("iframe,frame")))) reason = "card_form";
     else if ((el instanceof HTMLButtonElement || el instanceof HTMLInputElement || el instanceof HTMLAnchorElement
         || el.getAttribute("role") === "button" || pressable(el)) && isFinalStep(words, el)) reason = "final_step";
-    else if ((frame || pageCards().length) && pressable(el) && !inSurroundings(el)
+    else if (!selectsMethod(el) && (frame || pageCards().length) && pressable(el) && !inSurroundings(el)
         && !words.some((word) => NOT_PAYING.test(phrase(word)))) reason = "payment_page";
     return reason ? shownPurchase(reason, words[0] || "", words) : null;
   }
