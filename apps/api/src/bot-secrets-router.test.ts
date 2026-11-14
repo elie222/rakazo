@@ -1,10 +1,14 @@
 import { RPCHandler } from "@orpc/server/fetch";
-import type { Actor } from "@rakazo/contracts";
-import { encodeLoginSecret } from "@rakazo/contracts";
+import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
+import type { Actor, BotSecretMetadata } from "@rakazo/contracts";
+import { encodeLoginSecret, newVaultImportRows, parseVaultCsv } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { RouterDeps } from "./router.js";
 import { createRouter } from "./router.js";
+
+// RFC 6238's test key, written in pieces so it never reads as a saved secret.
+const TEST_KEY = ("GEZDGNBV" + "GY3TQOJQ").repeat(2);
 
 const events = vi.hoisted(() => ({ record: vi.fn() }));
 vi.mock("@rakazo/db", async (original) => ({
@@ -26,11 +30,15 @@ const actor = {
 
 const FAKE_VALUE = "fake-value-SENTINEL-1";
 
-function matches(row: Row, where: Row = {}) {
+function matches(row: Row, where: Row = {}): boolean {
   return Object.entries(where).every(([key, value]) =>
-    value && typeof value === "object" && "startsWith" in value
-      ? String(row[key]).startsWith(String(value.startsWith))
-      : row[key] === value,
+    key === "OR"
+      ? (value as Row[]).some((branch) => matches(row, branch))
+      : value && typeof value === "object" && "has" in value
+        ? ((row[key] as unknown[] | undefined) ?? []).includes(value.has)
+        : value && typeof value === "object" && "startsWith" in value
+          ? String(row[key]).startsWith(String(value.startsWith))
+          : row[key] === value,
   );
 }
 
@@ -93,6 +101,9 @@ function botSecretDeps(seed: Row[] = []) {
       }),
     },
     vaultCredential: botSecret,
+    // No item here is limited to chosen bots.
+    vaultCredentialBot: { findMany: vi.fn(async () => []) },
+    vaultCredentialLimit: { findMany: vi.fn(async () => []) },
     // Counted before a prepared value that was never committed is deleted from the store.
     secret: { count: vi.fn(async () => 0) },
     botSecret: { count: vi.fn(async () => 0) },
@@ -247,6 +258,9 @@ describe("botSecrets router", () => {
         note: "",
         createdAt: "2026-08-01T00:00:00.000Z",
         updatedAt: "2026-08-01T00:00:00.000Z",
+        policy: "allow",
+        allBots: true,
+        botIds: [],
       },
     ]);
     expect(result.text).not.toContain("enc:");
@@ -267,6 +281,9 @@ describe("botSecrets router", () => {
       note: "",
       createdAt: "2026-09-01T00:00:00.000Z",
       updatedAt: "2026-09-01T00:00:00.000Z",
+      policy: "allow",
+      allBots: true,
+      botIds: [],
     });
     expect(saved.text).not.toContain(FAKE_VALUE);
     expect(allowed.secrets.put).toHaveBeenCalledWith(
@@ -432,6 +449,9 @@ describe("botSecrets router", () => {
         note: "",
         createdAt: "2026-08-01T00:00:00.000Z",
         updatedAt: "2026-08-01T00:00:00.000Z",
+        policy: "allow",
+        allBots: true,
+        botIds: [],
       },
     ]);
   });
@@ -533,6 +553,321 @@ describe("vault router", () => {
       { contact: { city: "Springfield" } },
       { contact: { city: "Shelbyville" } },
     ]);
+  });
+
+  it("lists a login that asks first, and keeps it through a save without a policy", async () => {
+    const { rows, call } = botSecretDeps();
+    const login = { name: "work", origin: "https://login.example.test", auth: { type: "login" } };
+    const value = JSON.stringify({
+      fields: [{ label: "Password", value: FAKE_VALUE, hidden: true }],
+    });
+    const saved = await call("vault/put", {
+      destination: login,
+      value,
+      policy: "ask",
+    });
+    expect(saved.body.json).toMatchObject({ policy: "ask" });
+    const listed = (await call("vault/list", {})).body.json as { policy?: string }[];
+    expect(listed.map((item) => item.policy)).toEqual(["ask"]);
+    // A save without a policy keeps it asking.
+    const relabeled = await call("vault/put", { destination: login, title: "Work" });
+    expect(relabeled.body.json).toMatchObject({ policy: "ask" });
+    expect(rows[0]).toMatchObject({ title: "Work", policy: "ask" });
+    // Only a login asks first.
+    const key = await call("vault/put", { destination, value: FAKE_VALUE, policy: "ask" });
+    expect(key.status).toBe(400);
+  });
+
+  it.each(["before the save lock", "between rows"])(
+    "stops a default-vault import when its selection changes %s",
+    async (when) => {
+      const { prisma, secrets, rows, call } = botSecretDeps();
+      const changeVault = () =>
+        prisma.spaceSettingOverride.findUnique.mockResolvedValue({ setting: "credentials" });
+      if (when === "before the save lock") {
+        const put = secrets.put.getMockImplementation()!;
+        secrets.put.mockImplementationOnce(async (...args) => {
+          const value = await put(...args);
+          changeVault();
+          return value;
+        });
+      } else {
+        const create = prisma.vaultCredential.create.getMockImplementation()!;
+        prisma.vaultCredential.create.mockImplementationOnce(async (...args) => {
+          const value = await create(...args);
+          changeVault();
+          return value;
+        });
+      }
+      events.record.mockClear();
+      const result = await call("vault/import", {
+        rows: ["alice", "bob"].map((username) => ({
+          title: username,
+          origin: "https://shop.example.test",
+          username,
+          password: FAKE_VALUE,
+        })),
+      });
+      expect(result.status).toBe(409);
+      expect(rows).toHaveLength(when === "before the save lock" ? 0 : 1);
+      expect(events.record).toHaveBeenCalledTimes(rows.length);
+      if (rows.length) {
+        expect(rows[0]?.spaceId).toBeNull();
+        expect(events.record).toHaveBeenCalledWith(
+          expect.objectContaining({ metadata: expect.objectContaining({ scope: "account" }) }),
+        );
+      }
+    },
+  );
+
+  it("lets an explicitly selected account vault import while the Space uses its own", async () => {
+    const { prisma, rows, call } = botSecretDeps();
+    prisma.spaceSettingOverride.findUnique.mockResolvedValue({ setting: "credentials" });
+    const result = await call("vault/import", {
+      scope: "account",
+      rows: [
+        { title: "Shop", origin: "https://shop.example.test", username: "", password: FAKE_VALUE },
+      ],
+    });
+    expect(result.body.json).toMatchObject({ added: 1 });
+    expect(rows[0]?.spaceId).toBeNull();
+  });
+
+  it("imports new logins one by one and counts every row it skips", async () => {
+    const { prisma, rows, call } = botSecretDeps();
+    const origin = "https://shop.example.test";
+    const row = { title: "", origin, username: "alice", password: FAKE_VALUE };
+    await call("vault/put", {
+      destination: { origin, auth: { type: "login" } },
+      value: encodeLoginSecret({
+        fields: [
+          { label: "Email", value: "alice", hidden: false },
+          { label: "Password", value: "fake-old", hidden: true },
+        ],
+      }),
+    });
+    events.record.mockClear();
+    const imported = await call("vault/import", {
+      rows: [
+        row,
+        { ...row, username: "bob", title: "Shop" },
+        { ...row, username: "bob", title: "Shop again" },
+        { ...row, origin: "http://shop.example.test", username: "carol" },
+        { ...row, username: "dave", password: "" },
+        { ...row, origin: `${origin}/login`, username: "erin" },
+      ],
+    });
+    expect(imported.body.json).toEqual({
+      added: 2,
+      skipped: { notHttps: 1, noPassword: 1, duplicate: 2, invalid: 0, limit: 0 },
+      // Each by its place in the rows sent, so the app can say which rows they were.
+      notSaved: [
+        { index: 0, reason: "duplicate" },
+        { index: 2, reason: "duplicate" },
+        { index: 3, reason: "notHttps" },
+        { index: 4, reason: "noPassword" },
+      ],
+    });
+    // A page address is saved under its site, as when saving a login by hand.
+    expect(rows.map((saved) => [saved.name, saved.origin])).toEqual([
+      ["shop-example-test", origin],
+      ["shop", origin],
+      ["shop-example-test-2", origin],
+    ]);
+    expect(rows[1]).toMatchObject({ title: "Shop", origin, auth: { type: "login" } });
+    // One event for each login saved, without its name: a guest's would reach the host's audit log.
+    expect(events.record.mock.calls).toEqual(
+      Array(2).fill([
+        expect.objectContaining({
+          type: "credential.created",
+          metadata: { procedure: "vault.import", kind: "vault_credential", scope: "account" },
+        }),
+      ]),
+    );
+    expect(imported.text).not.toContain(FAKE_VALUE);
+    // A login also on a site is already saved there.
+    await call("vault/put", {
+      destination: { name: "shop", origin, auth: { type: "login" } },
+      alsoOn: ["https://www.shop.example.test"],
+    });
+    const elsewhere = await call("vault/import", {
+      rows: [{ ...row, origin: "https://www.shop.example.test", username: "bob" }],
+    });
+    expect(elsewhere.body.json).toMatchObject({ added: 0, skipped: { duplicate: 1 } });
+    // An address written another way is the same site, as when saving one by hand.
+    const shouted = await call("vault/import", {
+      rows: ["https://SHOP.example.test", `${origin}/sign-in`, "https://shop.example.test./"].map(
+        (site) => ({
+          ...row,
+          origin: site,
+          username: "bob",
+        }),
+      ),
+    });
+    // The trailing dot too, as the app's reading of an export drops it.
+    expect(shouted.body.json).toMatchObject({ added: 0, skipped: { duplicate: 3 } });
+    // Past the vault's limit a new login is counted as not fitting, and one already saved as
+    // already saved, as a retry after a lost reply sends it. Once one doesn't fit, the rest are
+    // counted without reading the vault again.
+    for (let index = rows.length; index < 99; index++)
+      rows.push({ ...rows[0], id: `filler-${index}`, name: `filler-${index}` });
+    prisma.vaultCredential.findMany.mockClear();
+    const full = await call("vault/import", {
+      rows: ["bob", "frank", "grace", "heidi"].map((username) => ({ ...row, username })),
+    });
+    expect(full.body.json).toMatchObject({
+      added: 1,
+      skipped: { limit: 2, duplicate: 1 },
+      notSaved: [
+        { index: 0, reason: "duplicate" },
+        { index: 2, reason: "limit" },
+        { index: 3, reason: "limit" },
+      ],
+    });
+    // A new name is looked for once for each row up to the first that didn't fit.
+    const named = prisma.vaultCredential.findMany.mock.calls.filter(
+      ([args]) => (args.where.name as { startsWith?: string } | undefined)?.startsWith,
+    );
+    expect(named).toHaveLength(3);
+    const tooMany = await call("vault/import", { rows: Array(101).fill(row) });
+    expect(tooMany.status).toBe(400);
+  });
+
+  it("adds nothing when a login already saved there can't be read for now, and says so on retry", async () => {
+    const { rows, secrets, call } = botSecretDeps();
+    const origin = "https://shop.example.test";
+    const row = { title: "", origin, username: "alice", password: FAKE_VALUE };
+    expect((await call("vault/import", { rows: [row] })).body.json).toMatchObject({ added: 1 });
+    events.record.mockClear();
+    // The new value is written, but the saved login it may repeat can't be read for now.
+    const load = secrets.load.getMockImplementation()!;
+    secrets.load.mockRejectedValue(new SecretStoreUnavailableError());
+    const failed = await call("vault/import", { rows: [row] });
+    expect(failed.status).toBe(409);
+    expect(failed.text).toContain("The saved login could not be read. Try again.");
+    expect(failed.text).not.toContain(FAKE_VALUE);
+    expect(rows).toHaveLength(1);
+    expect(events.record).not.toHaveBeenCalled();
+    secrets.load.mockImplementation(load);
+    expect((await call("vault/import", { rows: [row] })).body.json).toMatchObject({
+      added: 0,
+      skipped: { duplicate: 1 },
+    });
+  });
+
+  it("saves a good login after rows it would refuse, with one place left in the Vault", async () => {
+    const { rows, call } = botSecretDeps();
+    for (let index = 0; index < 99; index++)
+      rows.push({
+        id: `filler-${index}`,
+        userId: "user-1",
+        spaceId: null,
+        name: `filler-${index}`,
+      });
+    const parsed = parseVaultCsv(
+      [
+        "url,username,password",
+        "https://169.254.169.254,alice,fake-password",
+        `https://a.example.test,alice,${"\u0001".repeat(4096)}`,
+        "https://good.example.test,bob,fake-password",
+      ].join("\n"),
+    );
+    if (!("rows" in parsed)) throw new Error("not parsed");
+    // The app's list of those 99 items.
+    const listed = rows.map(
+      ({ name }) => ({ name, origin: "", auth: { type: "command" } }) as BotSecretMetadata,
+    );
+    const plan = newVaultImportRows(parsed.rows, listed, parsed.lines);
+    expect((await call("vault/import", { rows: plan.rows })).body.json).toMatchObject({
+      added: 1,
+      skipped: { limit: 0 },
+    });
+    expect(rows.at(-1)).toMatchObject({ origin: "https://good.example.test" });
+  });
+
+  it("never gives bots an export's notes", async () => {
+    const { rows, call } = botSecretDeps();
+    const parsed = parseVaultCsv(
+      "name,url,username,password,notes\nBank,https://bank.example.test,alice,fake-pass,Security answer: Fluffy",
+    );
+    if (!("rows" in parsed)) throw new Error("not parsed");
+    expect((await call("vault/import", { rows: parsed.rows })).body.json).toMatchObject({
+      added: 1,
+    });
+    // list_secrets shows a bot each item's note, so the item keeps none.
+    expect(rows[0]?.note ?? "").toBe("");
+    const listed = await call("list", { botId: "bot-1" });
+    expect(listed.text).toContain("bank");
+    expect(listed.text).not.toContain("Fluffy");
+    // An app that still sends a note is refused, so none is saved.
+    const noted = await call("vault/import", {
+      rows: [{ ...parsed.rows[0], username: "bob", note: "Security answer: Fluffy" }],
+    });
+    expect(noted.status).toBe(400);
+  });
+
+  it("saves a login's other sites as HTTPS origins and keeps them through an older app's save", async () => {
+    const { call } = botSecretDeps();
+    const value = encodeLoginSecret({
+      fields: [{ label: "Password", value: FAKE_VALUE, hidden: true }],
+    });
+    const login = { name: "shop", origin: "https://shop.example.test", auth: { type: "login" } };
+    const saved = await call("vault/put", {
+      destination: login,
+      value,
+      alsoOn: ["https://www.shop.example.test/sign-in", "https://shop.example.test"],
+    });
+    expect(saved.body.json).toMatchObject({ alsoOn: ["https://www.shop.example.test"] });
+    // An app from before other sites sends none, so they stay.
+    await call("vault/put", { destination: login, value });
+    const relabeled = await call("vault/put", { destination: login, title: "Shop" });
+    expect(relabeled.body.json).toMatchObject({ alsoOn: ["https://www.shop.example.test"] });
+    expect((await call("vault/put", { destination: login, alsoOn: [] })).body.json).toMatchObject({
+      alsoOn: [],
+    });
+    // A cloud metadata host too, as no login may be saved for one.
+    for (const alsoOn of [
+      ["http://www.shop.example.test"],
+      ["https://u:p@shop.example.test"],
+      ["https://*.shop.example.test"],
+      ["https://169.254.169.254"],
+    ])
+      expect((await call("vault/put", { destination: login, alsoOn })).status).toBe(400);
+    const key = { destination, value: FAKE_VALUE, alsoOn: ["https://www.portal.example.test"] };
+    expect((await call("vault/put", key)).status).toBe(400);
+  });
+
+  it("keeps a login's authenticator key until a save removes it, and imports none", async () => {
+    const { auth, call, secrets } = botSecretDeps();
+    const otp = TEST_KEY;
+    const fields = [{ label: "Password", value: FAKE_VALUE, hidden: true }];
+    const login = { name: "shop", origin: "https://shop.example.test", auth: { type: "login" } };
+    const put = (value: Record<string, unknown>) =>
+      call("vault/put", { destination: login, value: JSON.stringify(value) });
+    expect((await put({ fields, otp })).body.json).toMatchObject({ preview: { otp: true } });
+    const invalid = await put({ fields, otp: "not a key" });
+    expect(invalid.status).toBe(400);
+    expect(invalid.text).toContain("This authenticator key can't be read.");
+    expect(invalid.text).not.toContain("not a key");
+    // An app from before authenticator keys, or a login card answer, sends none: it stays.
+    await put({ fields });
+    auth.hasRecentIdentityConfirmation.mockResolvedValue(true);
+    expect((await call("vault/reveal", { name: "shop" })).body.json).toEqual({ fields, otp });
+    // A saved key that can't be read for now: the save waits, and the owner is told to retry.
+    const load = secrets.load.getMockImplementation()!;
+    secrets.load.mockRejectedValue(new SecretStoreUnavailableError());
+    const unread = await put({ fields: [{ ...fields[0]!, value: "fake-other" }] });
+    expect(unread.status).toBe(409);
+    expect(unread.text).toContain("The saved login could not be read. Try again.");
+    secrets.load.mockImplementation(load);
+    const removed = await put({ fields, otp: "" });
+    expect(removed.body.json).not.toMatchObject({ preview: { otp: true } });
+    expect((await call("vault/reveal", { name: "shop" })).body.json).toEqual({ fields });
+    const row = { title: "", origin: "https://mail.example.test", username: "a" };
+    // Keys are added by hand, one login at a time: an import that sends one is refused.
+    const imported = await call("vault/import", { rows: [{ ...row, password: FAKE_VALUE, otp }] });
+    expect(imported.status).toBe(400);
+    expect(imported.text).not.toContain(otp);
   });
 
   it("changes only the title or note of a saved item when no value is sent", async () => {

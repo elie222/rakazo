@@ -47,6 +47,7 @@ describe("desktop preload bridge", () => {
     expect(bridge.platform).toBe("linux");
     expect(Object.keys(bridge).sort()).toEqual([
       "badge",
+      "clipboard",
       "computer",
       "device",
       "locale",
@@ -73,6 +74,10 @@ describe("desktop preload bridge", () => {
     await bridge.badge!.set(7);
     expect(invoke).toHaveBeenCalledWith("desktop.badge.set", 7);
 
+    expect(Object.keys(bridge.clipboard!)).toEqual(["writeText"]);
+    await bridge.clipboard!.writeText("example");
+    expect(invoke).toHaveBeenCalledWith("desktop.clipboard.write", "example");
+
     await bridge.device?.state();
     await bridge.device?.setAllowed(true);
     expect(invoke).toHaveBeenCalledWith("desktop.device.setAllowed", true);
@@ -93,6 +98,7 @@ describe("desktop preload bridge", () => {
     await bridge.server!.change();
     expect(invoke.mock.calls.map(([channel]) => channel)).toEqual([
       "desktop.badge.set",
+      "desktop.clipboard.write",
       "desktop.device.state",
       "desktop.device.setAllowed",
       "desktop.locale.set",

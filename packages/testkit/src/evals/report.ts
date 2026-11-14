@@ -33,6 +33,12 @@ export type TrialResult = {
   reason: string | null;
   criteria: Criterion[];
   judgment?: Judgment;
+  /** What the trial was graded on, so a new rubric can grade it again without running the bot. */
+  evidence?: unknown;
+  /** What the offline sandbox could not do in the trial; a regrade weighs a failure as the run did. */
+  harnessIssues?: string[];
+  /** Whether this run ran the trial, or took it from a stored run with the same fingerprint. */
+  origin?: { kind: "reused" | "regraded"; fingerprint: string; startedAt: string };
   /** Recorded behaviour; `present` is null when the judge could not grade it. */
   observations?: Record<string, { present: boolean | null; reason?: string }>;
   assisted: false;
@@ -115,6 +121,12 @@ export function summarize(results: readonly TrialResult[]) {
       ),
       planned: trials.length,
       attempted: attempted.length,
+      /** Trials this run ran, took unchanged from the store, or took and graded again. */
+      origin: {
+        run: attempted.filter((r) => !r.origin).length,
+        reused: attempted.filter((r) => r.origin?.kind === "reused").length,
+        regraded: attempted.filter((r) => r.origin?.kind === "regraded").length,
+      },
       passed,
       failed: trials.filter((r) => r.status === "failed").length,
       notRun: trials.filter((r) => r.status === "not-run").length,
@@ -156,6 +168,38 @@ export function redact(text: string, secrets: readonly string[] = []): string {
       /((?:api[_-]?key|access[_-]?token|password|secret|authorization)["']?\s*[=:]\s*)(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|(?:(?:bearer|basic|token)\s+)?[^\s"',;&]+)/gi,
       "$1[redacted]",
     );
+}
+
+/**
+ * What a trial was graded on, as JSON. Configured secrets and credential-shaped tokens are removed;
+ * synthetic fixture paths, links and addresses stay, because a regrade must see what the live grade
+ * saw (recall checks rerun recorded commands against fixture paths). Maps and Sets (an app's
+ * drafts) are tagged so `restoreEvidence` gives judges the same shapes back.
+ */
+export function evidenceSnapshot(value: unknown, secrets: readonly string[]): unknown {
+  return JSON.parse(
+    JSON.stringify(value, (_, v) =>
+      v instanceof Map ? { $map: [...v] } : v instanceof Set ? { $set: [...v] } : v,
+    ),
+    (_, v) => (typeof v === "string" ? withoutCredentials(v, secrets) : v),
+  );
+}
+
+function withoutCredentials(text: string, secrets: readonly string[]) {
+  let safe = text;
+  for (const secret of secrets.filter(Boolean).sort((a, b) => b.length - a.length))
+    safe = safe.replaceAll(secret, "[redacted]");
+  return safe.replace(/\b(?:sk-|ghp_|github_pat_)[A-Za-z0-9_-]+/g, "[redacted]");
+}
+
+export function restoreEvidence(value: unknown): unknown {
+  return JSON.parse(JSON.stringify(value), (_, v) =>
+    v && typeof v === "object" && Array.isArray(v.$map)
+      ? new Map(v.$map)
+      : v && typeof v === "object" && Array.isArray(v.$set)
+        ? new Set(v.$set)
+        : v,
+  );
 }
 
 export function emptyTrial(caseId: string, trial: number): TrialResult {

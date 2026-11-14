@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 
+import { i18n } from "@lingui/core";
 import type { LoginFieldInput } from "@rakazo/contracts";
+import { BLOCKED_ITEM_ANSWER, UNCHOSEN_ITEM_ANSWER } from "@rakazo/contracts";
 import type { ReactNode } from "react";
 import { act } from "react";
 import type { Root } from "react-dom/client";
@@ -39,6 +41,9 @@ let root: Root;
 let container: HTMLDivElement;
 
 beforeEach(() => {
+  // The app renders only once I18nBootstrap has activated a locale; the refusal text is shared.
+  i18n.load("en", {});
+  i18n.activate("en");
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   container = document.createElement("div");
   document.body.append(container);
@@ -508,6 +513,30 @@ it("shows a question's detail as plain text above its options", async () => {
   expect(button("ASend it")).toBeDefined();
 });
 
+it("shows what a sign-in approval types besides the login, above its two answers", async () => {
+  // The card as the server builds it for a login that asks first and types its code.
+  await render({
+    kind: "ask",
+    approvalEffectId: "effect-1",
+    text: "Sign in to login.example.test with Work login?",
+    detail: "This types the login's authenticator code.",
+    detailFormat: "text",
+    status: "pending",
+    actions: [
+      { id: "allow", label: "Allow once" },
+      { id: "deny", label: "Deny" },
+    ],
+  });
+  expect(container.textContent).toContain("Sign in to login.example.test with Work login?");
+  expect(container.querySelector('[data-testid="ask-detail"]')?.textContent).toBe(
+    "This types the login's authenticator code.",
+  );
+  expect([...container.querySelectorAll("button")].map((item) => item.textContent)).toEqual([
+    "Allow once",
+    "Deny",
+  ]);
+});
+
 it("gives onboarding choices the same lettered rows as questions", async () => {
   await act(async () =>
     root.render(
@@ -664,6 +693,31 @@ it("keeps the form open with a generic error when a login fails to save", async 
   // The values are cleared as the save starts, so nothing typed is left behind.
   expect(loginInput("PIN").value).toBe("");
 });
+
+it.each([
+  [
+    BLOCKED_ITEM_ANSWER,
+    "This item is blocked for bots. Allow it in the Vault, or dismiss the request.",
+  ],
+  [
+    UNCHOSEN_ITEM_ANSWER,
+    "This bot can't use this item. Change it in the Vault, or dismiss the request.",
+  ],
+])(
+  "says why a login wasn't saved only when bots can't use that item (%s)",
+  async (answer, shown) => {
+    await render(loginCard, undefined, async () => {
+      throw new Error(answer);
+    });
+    await openEditor();
+    await typeIn(loginInput("ID number"), "fake-id-123");
+    await typeIn(loginInput("Phone number"), "+1 555 0100");
+    await typeIn(loginInput("PIN"), "1234");
+    await act(async () => dialogButton("Save")!.click());
+    expect(dialog()?.textContent).toContain(shown);
+    expect(dialog()?.textContent).not.toContain("Could not submit this answer");
+  },
+);
 
 const cardAsk: AskBlock = {
   kind: "ask",

@@ -653,6 +653,31 @@ it("waits for a saved or live inbox before publishing a remounted session's sear
   expect(publish).toHaveBeenLastCalledWith([]);
 });
 
+it("opens bots in each space in share mode without swipe actions or long-press menus", () => {
+  const bots = ["current", "other"].map((space) => ({
+    id: `bot-${space}`,
+    spaceId: `space-${space}`,
+    name: `Bot ${space}`,
+    preview: "",
+  }));
+  const openBot = vi.fn();
+  render(
+    <List
+      items={bots.map((bot) => ({ type: "bot", bot }) as InboxItem)}
+      options={{ sharing: true, openBot }}
+    />,
+  );
+  const rows = Array.from(container.querySelectorAll("button"));
+  expect(rows).toHaveLength(2);
+  for (const row of rows) {
+    expect(row.dataset.longPress).toBeUndefined();
+    act(() => row.click());
+  }
+  expect(openBot.mock.calls).toEqual(bots.map((bot) => [bot]));
+  expect(ui.swipeRows).toEqual([]);
+  expect(ui.rowMenus).toEqual([]);
+});
+
 it("gives chats in every space the long-press menu, with their own space's sections", () => {
   const chat = (id: string, spaceId: string) => ({
     id,

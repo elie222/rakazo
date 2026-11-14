@@ -200,12 +200,14 @@ export function ComputerGroup({
   memoryProviderConfigured,
   memoryScope,
   onMemoryScopeChange,
+  actions,
 }: {
   computerMode: ComputerMode;
   onComputerModeChange: (mode: ComputerMode) => void;
   memoryProviderConfigured: boolean;
   memoryScope: MemoryScope;
   onMemoryScopeChange: (scope: MemoryScope) => void;
+  actions?: ReactNode;
 }) {
   const { t } = useLingui();
   return (
@@ -238,6 +240,7 @@ export function ComputerGroup({
           </div>
         </div>
       ) : null}
+      {actions}
     </BotPanelGroup>
   );
 }

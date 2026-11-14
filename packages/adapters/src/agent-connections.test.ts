@@ -1,6 +1,7 @@
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { RunHistoryWriteError } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
+import type { AgentConnectionDeps } from "./agent-connections.js";
 import {
   connectAgent,
   messageConnectedAgent,
@@ -200,6 +201,27 @@ function createDeps(
   const sendUserMessage = vi.fn(async () => ({ messageId: "m", runId: "r", seq: 1 }));
   const notify = vi.fn(async () => undefined);
   const enqueue = vi.fn(async () => undefined);
+  // Records rows the way the delivery path does: a replaced key starts a fresh row.
+  const messagingDelivery = {
+    recordIn: vi.fn(
+      async (
+        tx: { messagingOutbound: typeof prisma.messagingOutbound },
+        _lane: unknown,
+        rows: Array<Record<string, unknown>>,
+        options: { replace?: boolean } = {},
+      ) => {
+        for (const row of rows) {
+          if (options.replace)
+            await tx.messagingOutbound.deleteMany({
+              where: { idempotencyKey: row.idempotencyKey as string },
+            });
+          await tx.messagingOutbound.createMany({ data: [row] });
+        }
+        return rows.map((_row, index) => `out-${index}`);
+      },
+    ),
+    send: vi.fn(async () => undefined),
+  };
   return {
     prisma: prisma as unknown as PrismaClient & typeof prisma,
     events: { sendUserMessage, notify } as unknown as Pick<
@@ -207,6 +229,8 @@ function createDeps(
       "sendUserMessage" | "notify"
     >,
     jobs: { enqueue },
+    messagingDelivery: messagingDelivery as typeof messagingDelivery &
+      NonNullable<AgentConnectionDeps["messagingDelivery"]>,
     outboundRows,
     txCalls,
     notify,
@@ -240,7 +264,7 @@ describe("connectAgent", () => {
         body: expect.stringMatching(/YES/),
       }),
     ]);
-    expect(deps.enqueue).toHaveBeenCalled();
+    expect(deps.messagingDelivery.send).toHaveBeenCalledWith([{ identityId: "mi-2" }]);
   });
 
   it("treats a concurrent first-time create as pending when the unique key loses", async () => {

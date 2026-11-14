@@ -54,7 +54,7 @@ function fixture({
   stalledDelivery?: boolean;
 } & Pick<
   AuthEnv,
-  "singleAccount" | "afterDeleteSession" | "afterReplaceSession" | "beforeDeleteUser"
+  "singleAccount" | "afterDeleteSession" | "afterReplaceSession" | "beforeDeleteUser" | "analytics"
 > = {}) {
   const data: Record<string, Record<string, unknown>[]> = {
     user: [],
@@ -275,6 +275,53 @@ function fixture({
 }
 
 beforeEach(() => vi.clearAllMocks());
+
+it("stores validated signup attribution once, hides it from auth responses, and captures it", async () => {
+  const analytics = { capture: vi.fn(), flush: vi.fn(async () => undefined) };
+  const f = fixture({ analytics });
+  const attribution = { surface: "web", utmSource: "community", utmCampaign: "launch" };
+  const response = await f.auth.handler(
+    new Request("http://auth.example.test/api/auth/sign-up/email", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        origin: "http://web.example.test",
+        cookie: `rakazo_signup_attribution=${encodeURIComponent(JSON.stringify(attribution))}`,
+        "x-rakazo-signup-surface": "android",
+      },
+      body: JSON.stringify({
+        email: "new@example.test",
+        password: "offline-password12",
+        name: "New User",
+      }),
+    }),
+  );
+  expect(response.status, await response.clone().text()).toBe(200);
+  expect(f.data.user![0]).toMatchObject({
+    signupSurface: "android",
+    signupUtmSource: "community",
+    signupUtmCampaign: "launch",
+  });
+  const body = await response.json();
+  expect(body).toHaveProperty("user.id");
+  expect(body).not.toHaveProperty("user.signupSurface");
+  expect(body).not.toHaveProperty("user.signupUtmSource");
+  expect(analytics.capture).toHaveBeenCalledWith(
+    expect.any(String),
+    {
+      name: "account_created",
+      ...attribution,
+      surface: "android",
+    },
+    { id: expect.any(String), at: expect.any(Date) },
+  );
+  await f.signin("new@example.test");
+  expect(f.data.user![0]).toMatchObject({
+    signupSurface: "android",
+    signupUtmSource: "community",
+    signupUtmCampaign: "launch",
+  });
+});
 
 describe("client address and security events", () => {
   const signInWith = (f: ReturnType<typeof fixture>, headers: Record<string, string>) =>

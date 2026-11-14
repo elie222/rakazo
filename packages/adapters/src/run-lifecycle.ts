@@ -14,11 +14,12 @@ import {
   userRunError,
 } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
-import { isTooManyDatabaseConnections, spaceTakesWork } from "@rakazo/db";
+import { databaseOutage, retryWhileDatabaseUnavailable, spaceTakesWork } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { sanitizedError } from "@rakazo/logging/monitoring";
 import { returnHelperOutcome } from "./background-helpers.js";
 import { returnBotMessageOutcome } from "./bot-messages.js";
+import { VaultKeyUnavailableError } from "./bot-secrets.js";
 import { sleepDeferReason } from "./computer-idle.js";
 import type { ComputerExecutionLease } from "./computer-lifecycle.js";
 import { ComputerBusyError, releaseComputerExecutionLease } from "./computer-lifecycle.js";
@@ -308,15 +309,16 @@ export async function writeComputerRunRequeue(
 }
 
 /**
- * This worker is stopping and still owns the run. Queue it for another worker.
- * The row stays recoverable: no failure is recorded, and the lease does not keep
- * the next worker from claiming it.
+ * This worker stopped working on a run it still owns, because it is stopping or the database
+ * went away mid-turn. Queue it to start again. No failure is recorded, and the lease does not
+ * keep the next attempt from claiming it.
  */
-export async function requeueRunAfterShutdown(
+export async function requeueInterruptedRun(
   deps: ExecutorDeps,
   runId: string,
   workerId: string,
   fence: number,
+  wakeAt = new Date(),
 ): Promise<boolean> {
   const released = await deps.prisma.run.updateMany({
     where: {
@@ -330,13 +332,14 @@ export async function requeueRunAfterShutdown(
       error: null,
       leaseOwner: null,
       leaseExpiresAt: null,
-      wakeAt: null,
+      // Set, so the legacy retry trigger does not hold it back as a failed setup.
+      wakeAt,
     },
   });
   if (released.count !== 1) return false;
   await deps.jobs
-    .enqueue(runContinueJob(runId))
-    .catch((error) => getLogger().error("shutdown run requeue", error));
+    .enqueue({ ...runContinueJob(runId), availableAt: wakeAt })
+    .catch((error) => getLogger().error("run requeue", error));
   return true;
 }
 
@@ -467,22 +470,32 @@ export async function retryRunSetup(
   // retry budget that eventually fails the run.
   if (deps.shutdownSignal?.aborted) return;
   const computerBusy = setupError instanceof ComputerBusyError;
-  const retryForever = computerBusy || isTooManyDatabaseConnections(setupError);
+  // The outage logs itself once, and waiting it out is not a failed setup.
+  const databaseDown = databaseOutage.failed(setupError, "run setup");
+  const retryForever = computerBusy || databaseDown;
   const setupMessage = redactSecrets(userRunError(setupError), runSecrets);
   const reportedSetupError = sanitizedError(setupError, (text) => redactSecrets(text, runSecrets));
-  // An outage at the computer provider, or a paused turn's tool going offline, is retried like
-  // any setup failure, but is not a Rakazo bug to report.
+  // An outage at the computer provider or the key manager, or a paused turn's tool going
+  // offline, is retried like any setup failure, but is not a Rakazo bug to report.
   const providerOutage =
     setupError instanceof SandboxUnavailableError ||
     setupError instanceof SandboxUnresponsiveError ||
-    setupError instanceof PausedTurnToolsUnavailableError;
+    setupError instanceof PausedTurnToolsUnavailableError ||
+    setupError instanceof VaultKeyUnavailableError;
   // A lost lease aborted setup on purpose; whatever that interrupted is not a failure.
-  if (providerOutage || !plan.leaseValid) {
+  if (databaseDown) {
+    // Logged by the outage.
+  } else if (providerOutage || !plan.leaseValid) {
     getLogger().warn("run setup failed", { error: reportedSetupError });
   } else if (!computerBusy) {
     getLogger().error("run setup failed", reportedSetupError);
   }
-  const priorFailures = retryForever ? 0 : await setupFailureStreak(deps.prisma, runId);
+  // Every write below is fenced by this attempt's lease, so each may wait out a failover.
+  const whileDatabaseDown = <T>(source: string, write: () => Promise<T>) =>
+    retryWhileDatabaseUnavailable(write, { source, signal: deps.shutdownSignal });
+  const priorFailures = retryForever
+    ? 0
+    : await whileDatabaseDown("run setup", () => setupFailureStreak(deps.prisma, runId));
   // The job reconciler re-enqueues a queued run whose job ran out of attempts, so a
   // setup that fails every time would retry forever. End the run instead.
   if (!retryForever && priorFailures >= RUN_SETUP_FAILURE_LIMIT - 1) {
@@ -504,25 +517,29 @@ export async function retryRunSetup(
     : computerRetryDelay(fence);
   // One instant for the run and its wake-up job, so neither runs before the other.
   const retryAt = new Date(Date.now() + retryDelay);
-  const released = await writeComputerRunRequeue(
-    deps,
-    runId,
-    workerId,
-    fence,
-    resumeCheckpoint,
-    heldForTakeover,
-    retryForever ? null : "Run setup failed; retrying",
-    retryAt,
+  const released = await whileDatabaseDown("run requeue", () =>
+    writeComputerRunRequeue(
+      deps,
+      runId,
+      workerId,
+      fence,
+      resumeCheckpoint,
+      heldForTakeover,
+      retryForever ? null : "Run setup failed; retrying",
+      retryAt,
+    ),
   );
   if (released) {
-    await deps.prisma.attempt.update({
-      where: { id: attempt.id },
-      data: {
-        status: "setup_failed",
-        error: retryForever ? null : "Run setup failed; retrying",
-        finishedAt: new Date(),
-      },
-    });
+    await whileDatabaseDown("run requeue", () =>
+      deps.prisma.attempt.update({
+        where: { id: attempt.id },
+        data: {
+          status: "setup_failed",
+          error: retryForever ? null : "Run setup failed; retrying",
+          finishedAt: new Date(),
+        },
+      }),
+    );
     if (retryForever || dispatchHandedOff) {
       await deps.jobs.enqueue({
         ...runContinueJob(runId),
@@ -570,8 +587,9 @@ export async function finishRunAttempt(
         .catch(() => undefined);
     }
     await releaseComputerExecutionLease(deps.prisma, computerLease).catch(() => undefined);
-    // A stopping process requeues this run instead, which must keep its turn.
-    if (!deps.shutdownSignal?.aborted) {
+    // A stopping process requeues this run instead, and a run handed back after a database
+    // outage resumes here; either must keep its turn.
+    if (!deps.shutdownSignal?.aborted && !lease.handedBack) {
       await startNextWaitingRun(deps, run.botId, runId).catch((error) =>
         getLogger().error("start next waiting run", error),
       );
@@ -580,7 +598,7 @@ export async function finishRunAttempt(
   if (deps.shutdownSignal?.aborted) {
     // A renewal still in flight must not treat this release as a lost lease.
     lease.completed = true;
-    await requeueRunAfterShutdown(deps, runId, workerId, fence).catch((error) =>
+    await requeueInterruptedRun(deps, runId, workerId, fence).catch((error) =>
       getLogger().error("shutdown run requeue", error),
     );
   }
