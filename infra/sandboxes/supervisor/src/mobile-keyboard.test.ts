@@ -652,18 +652,4 @@ describe("mobile trackpad touches", () => {
       expect(fixture.viewControls.hidden).toBe(true);
     });
   });
-
-  it("shows left and right only while zoomed, and moves the view with them", () => {
-    withTrackpad((fixture) => {
-      expect(fixture.viewControls.zoomed).toBe(false);
-      fixture.view("zoom-in");
-      expect(fixture.viewControls.zoomed).toBe(true);
-      fixture.view("pan-right");
-      expect(fixture.style.transform).toBe("translate(-100px, -75px) scale(1.5)");
-      fixture.view("pan-left");
-      expect(fixture.style.transform).toBe("translate(0px, -75px) scale(1.5)");
-      fixture.view("zoom-out");
-      expect(fixture.viewControls.zoomed).toBe(false);
-    });
-  });
 });

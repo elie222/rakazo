@@ -63,7 +63,7 @@
         height: 42px;
         pointer-events: none;
         will-change: transform;
-        filter: drop-shadow(0 1px 2px rgb(0 0 0 / 50%));
+        filter: drop-shadow(0 1px 2px color-mix(in srgb, CanvasText 50%, transparent));
       }
       #mobile-pointer[hidden] {
         display: none;
@@ -77,9 +77,6 @@
         display: grid;
         grid-template-columns: repeat(3, 60px);
         gap: 10px;
-      }
-      #mobile-view-controls:not([data-zoomed]) [data-view^="pan-"] {
-        visibility: hidden;
       }
       .mobile-keyboard-open #mobile-view-controls,
       #mobile-view-controls[hidden] {
@@ -229,7 +226,7 @@
   <body>
     <div id="screen"></div>
     <svg id="mobile-pointer" aria-hidden="true" viewBox="0 0 28 28" hidden>
-      <path d="M1 1v22l6-6 4 9 4-2-4-9h8z" fill="#fff" stroke="#000" stroke-width="1.5" stroke-linejoin="round" />
+      <path d="M1 1v22l6-6 4 9 4-2-4-9h8z" fill="Canvas" stroke="CanvasText" stroke-width="1.5" stroke-linejoin="round" />
     </svg>
     <div id="mobile-key-bar" hidden>
       <button type="button" data-key="Escape" aria-label="Escape">Esc</button>
@@ -251,14 +248,8 @@
         <button type="button" data-view="zoom-out" aria-label="Zoom out" title="Zoom out">
           <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14" /></svg>
         </button>
-        <button type="button" data-view="pan-left" aria-label="Move view left" title="Move view left">
-          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6" /></svg>
-        </button>
         <button type="button" data-view="scroll-down" aria-label="Scroll down" title="Scroll down">
           <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6" /></svg>
-        </button>
-        <button type="button" data-view="pan-right" aria-label="Move view right" title="Move view right">
-          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6" /></svg>
         </button>
       </div>
       <button id="mobile-paste" type="button" aria-label="Paste" title="Paste" hidden>

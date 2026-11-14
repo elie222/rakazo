@@ -60,13 +60,7 @@ function createViewZoom(surface) {
     get zoomed() {
       return zoom > 1;
     },
-    // Move a zoomed view by a share of its width: -1 shows what is left, 1 what is right.
-    panBy(share) {
-      const before = panX;
-      panX -= share * surface.clientWidth;
-      apply();
-      return panX - before;
-    },
+    refresh: apply,
     // Zoom around a client point so what is under it stays put.
     step(direction, x, y) {
       const index = ZOOM_STEPS.indexOf(zoom) + direction;
@@ -116,8 +110,8 @@ function createViewZoom(surface) {
  * a large arrow moved on every touchmove, so it stays smooth whatever the network latency.
  * Touches are consumed at the touch level (not pointer capture) so iOS never turns them into
  * compatibility mouse events that noVNC would handle as direct touches. Optional view controls
- * (buttons with data-view="zoom-in|zoom-out|scroll-up|scroll-down|pan-left|pan-right") zoom
- * around the pointer, scroll at it and move a zoomed view; a zoomed view follows the pointer.
+ * (buttons with data-view="zoom-in|zoom-out|scroll-up|scroll-down") zoom
+ * around the pointer, scroll at it; a zoomed view follows the pointer.
  */
 export function attachMobileTrackpad(
   rfb,
@@ -142,6 +136,7 @@ export function attachMobileTrackpad(
   let twoFinger = false;
   let scrollY = 0;
   let scrolled = false;
+  let previousBounds = null;
   const view = createViewZoom(surface);
 
   const canvas = () => surface.querySelector("canvas");
@@ -209,6 +204,7 @@ export function attachMobileTrackpad(
     const target = canvas();
     if (!target) return;
     const bounds = target.getBoundingClientRect();
+    previousBounds = bounds;
     cursorX ??= bounds.left + bounds.width / 2;
     cursorY ??= bounds.top + bounds.height / 2;
     const shown = view.follow(
@@ -236,13 +232,10 @@ export function attachMobileTrackpad(
     if (viewControls) viewControls.hidden = !enabled;
     // noVNC's own touch handling does not know about the zoom.
     if (!enabled) view.reset();
-    showZoomed();
     if (enabled) positionCursor();
     showPointer();
   };
   const onButtonClick = () => setEnabled(!enabled);
-  // Left and right only matter, and only show, while the view is zoomed.
-  const showZoomed = () => viewControls?.toggleAttribute?.("data-zoomed", view.zoomed);
   const onViewClick = (event) => {
     const action = event.target?.closest?.("[data-view]")?.dataset.view;
     if (!enabled || cursorX == null || cursorY == null) return;
@@ -250,11 +243,7 @@ export function attachMobileTrackpad(
       wheel(action === "scroll-up" ? -SCROLL_STEP : SCROLL_STEP);
     } else if (action === "zoom-in" || action === "zoom-out") {
       view.step(action === "zoom-in" ? 1 : -1, cursorX, cursorY);
-      showZoomed();
       positionCursor();
-    } else if (action === "pan-left" || action === "pan-right") {
-      cursorX += view.panBy(action === "pan-left" ? -0.5 : 0.5);
-      showPointer();
     }
   };
   // The canvas only exists once noVNC connects; show the pointer then.
@@ -331,11 +320,21 @@ export function attachMobileTrackpad(
     if (event.isTrusted && enabled) setEnabled(false);
   };
   const onResize = () => {
-    view.reset();
-    showZoomed();
-    cursorX = null;
-    cursorY = null;
-    if (enabled) positionCursor();
+    const x =
+      previousBounds && cursorX != null
+        ? (cursorX - previousBounds.left) / previousBounds.width
+        : 0.5;
+    const y =
+      previousBounds && cursorY != null
+        ? (cursorY - previousBounds.top) / previousBounds.height
+        : 0.5;
+    view.refresh();
+    const bounds = canvas()?.getBoundingClientRect();
+    if (!bounds) return;
+    cursorX = bounds.left + x * bounds.width;
+    cursorY = bounds.top + y * bounds.height;
+    previousBounds = bounds;
+    showPointer();
   };
   const resizeObserver =
     typeof ResizeObserver === "undefined" ? null : new ResizeObserver(onResize);
@@ -345,7 +344,7 @@ export function attachMobileTrackpad(
   button.hidden = false;
   button.addEventListener("click", onButtonClick);
   viewControls?.addEventListener("click", onViewClick);
-  surface.addEventListener("mousemove", onMouseMove);
+  surface.addEventListener("mousemove", onMouseMove, true);
   surface.addEventListener("touchstart", onTouchStart, listen);
   surface.addEventListener("touchmove", onTouchMove, listen);
   surface.addEventListener("touchend", onTouchEnd, listen);
@@ -355,7 +354,7 @@ export function attachMobileTrackpad(
 
   return () => {
     resizeObserver?.disconnect();
-    surface.removeEventListener("mousemove", onMouseMove);
+    surface.removeEventListener("mousemove", onMouseMove, true);
     button.removeEventListener("click", onButtonClick);
     viewControls?.removeEventListener("click", onViewClick);
     surface.removeEventListener("touchstart", onTouchStart, listen);
