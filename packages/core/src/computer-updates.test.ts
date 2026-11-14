@@ -63,23 +63,26 @@ describe("computer update presentation", () => {
     await Promise.resolve();
     expect(updates.getSnapshot().updates).toEqual([]);
   });
-  it("with live signals, reads on each signal instead of on a timer", async () => {
+  it("with live signals, reads on each signal and only rarely on a timer", async () => {
     vi.useFakeTimers();
     const list = vi.fn(async (): Promise<ComputerUpdate[]> => []);
     const updates = store(list);
     const stop = updates.watch();
     updates.signalled();
-    await vi.advanceTimersByTimeAsync(10 * 60_000);
+    await vi.advanceTimersByTimeAsync(5 * 60_000 - 1);
     expect(list).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(list).toHaveBeenCalledTimes(3);
+    list.mockClear();
     list.mockResolvedValue([{ ...update, stage: "restoring" }]);
     updates.signalled();
     await vi.advanceTimersByTimeAsync(0);
     expect(updates.getSnapshot().updates).toEqual([{ ...update, stage: "restoring" }]);
     // Progress arrives as signals; a lost one is caught up slowly, never at the polling pace.
     await vi.advanceTimersByTimeAsync(29_000);
-    expect(list).toHaveBeenCalledTimes(3);
+    expect(list).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(1_000);
-    expect(list).toHaveBeenCalledTimes(4);
+    expect(list).toHaveBeenCalledTimes(2);
     stop();
   });
   it("turns signals that arrive during a read into one more read", async () => {

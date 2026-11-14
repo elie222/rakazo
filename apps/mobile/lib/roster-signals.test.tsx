@@ -11,6 +11,13 @@ const streams = vi.hoisted(
 );
 const computerUpdates = vi.hoisted(() => ({ signalled: vi.fn(), signalsLost: vi.fn() }));
 vi.mock("./computer-updates", () => ({ computerUpdates }));
+const spaceSelection = vi.hoisted(() => new Set<() => void>());
+vi.mock("./api", () => ({
+  subscribeSpaceSelection: (listener: () => void) => {
+    spaceSelection.add(listener);
+    return () => spaceSelection.delete(listener);
+  },
+}));
 
 vi.mock("react-native", () => ({
   AppState: { currentState: "active", addEventListener: () => ({ remove: () => {} }) },
@@ -86,6 +93,19 @@ describe("useRosterSignals", () => {
     expect(computerUpdates.signalsLost).not.toHaveBeenCalled();
     await act(async () => streams[0]!.end());
     expect(computerUpdates.signalsLost).toHaveBeenCalledOnce();
+  });
+
+  it("reopens for a newly selected Space, ignoring the old stream's late signals", async () => {
+    await act(async () => root.render(<Harness enabled onChange={vi.fn()} />));
+    const old = streams[0]!;
+    await act(async () => {
+      for (const listener of spaceSelection) listener();
+    });
+    expect(streams).toHaveLength(2);
+    expect(computerUpdates.signalsLost).toHaveBeenCalledOnce();
+    await act(async () => old.computerUpdates());
+    expect(computerUpdates.signalled).not.toHaveBeenCalled();
+    expect(spaceSelection.size).toBe(1);
   });
 
   it("stays closed while disabled", async () => {

@@ -5,8 +5,12 @@ import { isRetryableError, retryDelayMs } from "./retry-policy.js";
 /** Without live signals (an older server, or while the app's live stream is closed) the list is polled. */
 const POLL_MS = 15_000;
 const POLL_IN_PROGRESS_MS = 1_500;
-/** The server signals every status and stage change; this only covers one lost mid-update. */
+/**
+ * The server signals every change, but a publish or its follower can fail without closing the
+ * stream; these slow re-reads bound how long that leaves the list stale.
+ */
 const SIGNALLED_IN_PROGRESS_MS = 30_000;
+const SIGNALLED_IDLE_MS = 5 * 60_000;
 
 /**
  * Shared list and local presentation state; the server owns operation lifetime. The list is read
@@ -49,8 +53,8 @@ export function createComputerUpdates(client: {
           ? base
           : inProgress()
             ? SIGNALLED_IN_PROGRESS_MS
-            : undefined;
-    if (delay !== undefined) timer = setTimeout(() => void refresh(), delay);
+            : SIGNALLED_IDLE_MS;
+    timer = setTimeout(() => void refresh(), delay);
   };
   const read = async () => {
     const epoch = generation;
