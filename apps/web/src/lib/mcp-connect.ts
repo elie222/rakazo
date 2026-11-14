@@ -54,39 +54,32 @@ export async function connectMcpOauth(serverId: string): Promise<McpOauthResult>
   return await new Promise<McpOauthResult>((resolve, reject) => {
     const channel = new BroadcastChannel(MCP_OAUTH_CHANNEL);
     let settled = false;
+    let captured = false;
     let pollTimer = 0;
     let timeoutTimer = 0;
     let unsubscribe: (() => void) | undefined;
-    const finish = (result: McpOauthResult) => {
+    const settle = (done: () => void) => {
       if (settled) return;
       settled = true;
       window.clearInterval(pollTimer);
       window.clearTimeout(timeoutTimer);
       channel.close();
       unsubscribe?.();
-      resolve(result);
+      done();
     };
-    const fail = (error: unknown) => {
-      if (settled) return;
-      settled = true;
-      window.clearInterval(pollTimer);
-      window.clearTimeout(timeoutTimer);
-      channel.close();
-      unsubscribe?.();
-      reject(error);
-    };
+    const finish = (result: McpOauthResult) => settle(() => resolve(result));
+    const fail = (error: unknown) => settle(() => reject(error));
     // COOP makes an open popup read as closed, but it keeps focus until the
     // user really closes it.
     pollTimer = window.setInterval(() => {
       if (!popup.closed || !document.hasFocus()) return;
+      if (!browser) return finish("cancelled");
       // A captured sign-in closes the popup as it hands over the code; give
       // that message its turn before counting the closed window as a cancel.
-      if (browser) {
-        window.clearInterval(pollTimer);
-        window.setTimeout(() => finish("cancelled"), CAPTURE_GRACE_MS);
-        return;
-      }
-      finish("cancelled");
+      window.clearInterval(pollTimer);
+      window.setTimeout(() => {
+        if (!captured) finish("cancelled");
+      }, CAPTURE_GRACE_MS);
     }, 500);
     timeoutTimer = window.setTimeout(() => {
       popup.close();
@@ -96,22 +89,17 @@ export async function connectMcpOauth(serverId: string): Promise<McpOauthResult>
       if ((event.data as { type?: string } | null)?.type !== "mcp-oauth-complete") return;
       finish("connected");
     };
-    if (browser) {
-      unsubscribe = browser.onOAuthCallback((callback) => {
-        if (callback.serverId !== serverId) return;
-        if ("error" in callback) {
-          popup.close();
-          fail(new Error(callback.error));
-          return;
-        }
-        if (callback.state !== started.sessionId) return;
-        void rpc.mcp.oauth
-          .complete({ sessionId: callback.state, code: callback.code, state: callback.state })
-          .then(() => {
-            channel.postMessage({ type: "mcp-oauth-complete" });
-            finish("connected");
-          }, fail);
-      });
-    }
+    unsubscribe = browser?.onOAuthCallback((callback) => {
+      if (callback.serverId !== serverId) return;
+      if ("error" in callback) return fail(new Error(callback.error));
+      if (callback.state !== started.sessionId) return;
+      captured = true;
+      void rpc.mcp.oauth
+        .complete({ sessionId: callback.state, code: callback.code, state: callback.state })
+        .then(() => {
+          channel.postMessage({ type: "mcp-oauth-complete" });
+          finish("connected");
+        }, fail);
+    });
   });
 }

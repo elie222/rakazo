@@ -87,7 +87,7 @@ it("keeps the browser flow's shared window name and callback page", async () => 
   expect(rpcMock.mcp.oauth.complete).not.toHaveBeenCalled();
 });
 
-it("reports a provider refusal and closes its window", async () => {
+it("reports a provider refusal", async () => {
   let captured: ((callback: RakazoDesktopMcpOAuthCallback) => void) | undefined;
   window.rakazoDesktop = {
     platform: "linux",
@@ -99,7 +99,7 @@ it("reports a provider refusal and closes its window", async () => {
       },
     },
   } as unknown as NonNullable<Window["rakazoDesktop"]>;
-  const popup = openPopup();
+  openPopup();
 
   try {
     const connecting = connectMcpOauth("clx123");
@@ -107,7 +107,6 @@ it("reports a provider refusal and closes its window", async () => {
     captured?.({ serverId: "clx123", error: "Wrong account" });
 
     await expect(connecting).rejects.toThrow("Wrong account");
-    expect(popup.close).toHaveBeenCalled();
     expect(rpcMock.mcp.oauth.complete).not.toHaveBeenCalled();
   } finally {
     delete window.rakazoDesktop;

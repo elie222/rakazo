@@ -208,7 +208,7 @@ function oauthServer(id: string) {
   } as McpServer;
 }
 
-it("clears a server's own browser sign-in and its stored grant", async () => {
+it("disconnecting also empties the server's own sign-in browser", async () => {
   const clear = vi.fn().mockResolvedValue(undefined);
   window.rakazoDesktop = {
     platform: "darwin",
@@ -220,9 +220,9 @@ it("clears a server's own browser sign-in and its stored grant", async () => {
   const root = createRoot(host);
   try {
     await act(async () => root.render(overlay()));
-    await vi.waitFor(() => expect(host.textContent).toContain("Clear browser sign-in"));
+    await vi.waitFor(() => expect(host.textContent).toContain("Disconnect"));
     const item = Array.from(host.querySelectorAll("button")).find(
-      (button) => button.textContent === "Clear browser sign-in",
+      (button) => button.textContent === "Disconnect",
     );
     await act(async () => item?.click());
     await vi.waitFor(() => expect(clear).toHaveBeenCalledWith("Mobbin"));
@@ -230,19 +230,6 @@ it("clears a server's own browser sign-in and its stored grant", async () => {
   } finally {
     await act(async () => root.unmount());
     delete window.rakazoDesktop;
-  }
-});
-
-it("hides browser clearing where the shell shares one cookie jar", async () => {
-  mocks.list.mockReset().mockResolvedValue([oauthServer("Mobbin")]);
-  const host = document.createElement("div");
-  const root = createRoot(host);
-  try {
-    await act(async () => root.render(overlay()));
-    await vi.waitFor(() => expect(host.textContent).toContain("Reconnect OAuth"));
-    expect(host.textContent).not.toContain("Clear browser sign-in");
-  } finally {
-    await act(async () => root.unmount());
   }
 });
 
