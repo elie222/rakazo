@@ -1,6 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { MessagingChannelMembership, MessagingInstallationsStatus } from "@rakazo/contracts";
-import { isRetryableError, messagingConnectOptions } from "@rakazo/core";
+import { createMessagingLinkGuard, isRetryableError, messagingConnectOptions } from "@rakazo/core";
 import { fetchFresh, writeSaved } from "@rakazo/core/query";
 import {
   Button,
@@ -15,7 +15,7 @@ import {
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDownIcon, PlusIcon } from "lucide-react";
 import type { ReactNode } from "react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { SettingsGroup, SettingsRow } from "../components/SettingsRows";
 import { providerLabel } from "../lib/messaging";
@@ -43,9 +43,7 @@ export function MessagingSettingsPanel() {
   const { t } = useLingui();
   const [settingsConversationId, setSettingsConversationId] = useState<string | null>(null);
   const [selectedBotId, setSelectedBotId] = useState("");
-  const linkGeneration = useRef(0);
-  const linkPending = useRef(false);
-  const linkFromPicker = useRef(true);
+  const [linkGuard] = useState(createMessagingLinkGuard);
   const [issuingLink, setIssuingLink] = useState(false);
   const [linkRequest, setLinkRequest] = useState<{
     code: string;
@@ -148,7 +146,7 @@ export function MessagingSettingsPanel() {
   }, [linkRequest]);
 
   async function act(action: () => Promise<unknown>) {
-    linkGeneration.current++;
+    linkGuard.invalidate();
     setError(null);
     // A displayed code must always match the current selection and link
     // state; the link action re-sets it after issuing.
@@ -171,16 +169,15 @@ export function MessagingSettingsPanel() {
   // A selection archived elsewhere drops out of the list; fall back to the first bot.
   const linkBotId = bots.find((bot) => bot.id === selectedBotId)?.id ?? bots[0]?.id ?? "";
   useEffect(() => {
-    if (linkFromPicker.current) {
-      linkGeneration.current++;
+    if (linkGuard.invalidate(true)) {
       setLinkRequest(null);
     }
-  }, [linkBotId]);
+  }, [linkBotId, linkGuard]);
   useEffect(
     () => () => {
-      linkGeneration.current++;
+      linkGuard.invalidate();
     },
-    [],
+    [linkGuard],
   );
   const botName = (botId: string) => bots.find((bot) => bot.id === botId)?.name;
   // Only meaningful once a second chat app is linked: the same group can then
@@ -228,22 +225,20 @@ export function MessagingSettingsPanel() {
   const linkAddress = linkRequest ? status?.addresses?.[linkRequest.provider] : undefined;
 
   async function startLink(provider: string, botId: string, fromPicker = true) {
-    if (linkPending.current) return;
-    linkPending.current = true;
-    linkFromPicker.current = fromPicker;
+    const request = linkGuard.begin(fromPicker);
+    if (!request) return;
     setIssuingLink(true);
-    const generation = ++linkGeneration.current;
     setError(null);
     setLinkRequest(null);
     try {
       const issued = await rpc.messaging.link.start({ botId });
-      if (generation !== linkGeneration.current) return;
+      if (!request.isCurrent()) return;
       setLinkRequest({ ...issued, botId, provider });
       await refresh();
     } catch {
-      if (generation === linkGeneration.current) setError(t`Couldn't update messaging settings`);
+      if (request.isCurrent()) setError(t`Couldn't update messaging settings`);
     } finally {
-      linkPending.current = false;
+      request.finish();
       setIssuingLink(false);
     }
   }
@@ -269,8 +264,7 @@ export function MessagingSettingsPanel() {
         aria-label={t`Bot`}
         value={linkBotId}
         onChange={(event) => {
-          if (linkFromPicker.current) {
-            linkGeneration.current++;
+          if (linkGuard.invalidate(true)) {
             setLinkRequest(null);
           }
           setSelectedBotId(event.target.value);

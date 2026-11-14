@@ -8,9 +8,13 @@ import type {
   MessagingInstallationsStatus,
   MessagingStatus,
 } from "@rakazo/contracts";
-import { messagingConnectOptions, messagingProviderName } from "@rakazo/core";
+import {
+  createMessagingLinkGuard,
+  messagingConnectOptions,
+  messagingProviderName,
+} from "@rakazo/core";
 import { useFocusEffect, useRouter } from "expo-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { AppState, Linking, ScrollView, StyleSheet, Text, View } from "react-native";
 import { LoadFailure } from "../../components/load-failure";
 import { MenuPicker, MenuPickerMenu } from "../../components/menu-picker";
@@ -28,9 +32,7 @@ export default function MessagingSettings() {
   const styles = useThemedStyles(createStyles);
   const [bots, setBots] = useState<Bot[]>([]);
   const [selectedBotId, setSelectedBotId] = useState("");
-  const linkGeneration = useRef(0);
-  const linkPending = useRef(false);
-  const linkFromPicker = useRef(true);
+  const [linkGuard] = useState(createMessagingLinkGuard);
   const [issuingLink, setIssuingLink] = useState(false);
   const [status, setStatus] = useState<MessagingStatus | null>(null);
   const [installations, setInstallations] = useState<MessagingInstallationsStatus>({
@@ -73,10 +75,10 @@ export default function MessagingSettings() {
     useCallback(() => {
       void refresh().catch((err) => setLoadError(errorText(err)));
       return () => {
-        linkGeneration.current++;
+        linkGuard.invalidate();
         setLink(null);
       };
-    }, [refresh]),
+    }, [refresh, linkGuard]),
   );
 
   useEffect(() => {
@@ -107,7 +109,7 @@ export default function MessagingSettings() {
   }, [link, status]);
 
   async function act(action: () => Promise<unknown>) {
-    linkGeneration.current++;
+    linkGuard.invalidate();
     setBusy(true);
     setError(null);
     setLoadError(null);
@@ -125,16 +127,15 @@ export default function MessagingSettings() {
   // A selection archived elsewhere drops out of the list; fall back to the first bot.
   const botId = bots.find((bot) => bot.id === selectedBotId)?.id ?? bots[0]?.id ?? "";
   useEffect(() => {
-    if (linkFromPicker.current) {
-      linkGeneration.current++;
+    if (linkGuard.invalidate(true)) {
       setLink(null);
     }
-  }, [botId]);
+  }, [botId, linkGuard]);
   useEffect(
     () => () => {
-      linkGeneration.current++;
+      linkGuard.invalidate();
     },
-    [],
+    [linkGuard],
   );
   const botName = (id: string) => bots.find((bot) => bot.id === id)?.name;
   // Only meaningful once a second chat app is linked: the same group can then
@@ -180,17 +181,15 @@ export default function MessagingSettings() {
   }
 
   async function startLink(provider: string, linkBotId = botId, fromPicker = true) {
-    if (linkPending.current) return;
-    linkPending.current = true;
-    linkFromPicker.current = fromPicker;
+    const request = linkGuard.begin(fromPicker);
+    if (!request) return;
     setIssuingLink(true);
-    const generation = ++linkGeneration.current;
     setError(null);
     setLoadError(null);
     setLink(null);
     try {
       const issued = await rpc("messaging/link/start", { botId: linkBotId });
-      if (generation !== linkGeneration.current) return;
+      if (!request.isCurrent()) return;
       setLink({
         ...issued,
         botId: linkBotId,
@@ -201,9 +200,9 @@ export default function MessagingSettings() {
       });
       await refresh();
     } catch (err) {
-      if (generation === linkGeneration.current) setError(errorText(err));
+      if (request.isCurrent()) setError(errorText(err));
     } finally {
-      linkPending.current = false;
+      request.finish();
       setIssuingLink(false);
     }
   }
@@ -368,8 +367,7 @@ export default function MessagingSettings() {
             choices={bots.map((bot) => ({ key: bot.id, label: bot.name }))}
             value={botId}
             onChange={(id) => {
-              if (linkFromPicker.current) {
-                linkGeneration.current++;
+              if (linkGuard.invalidate(true)) {
                 setLink(null);
               }
               setSelectedBotId(id);
