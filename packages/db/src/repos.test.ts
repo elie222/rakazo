@@ -641,3 +641,77 @@ it("finds incoming calls independently of the sidebar message window", async () 
   expect((await createRepos(prisma).listBots(actor))[0]?.incomingCall).toBeNull();
   expect(messageQuery).not.toHaveBeenCalled();
 });
+
+describe("createRepos.createBot computer", () => {
+  function createFakePrisma() {
+    const upserts: string[] = [];
+    let computer = { id: "", scope: "team" };
+    const tx = {
+      $queryRaw: vi.fn(async () => []),
+      spaceMember: {
+        findUnique: vi.fn(async () => ({ organizationId: "org-1", space: { deletingAt: null } })),
+        findFirst: vi.fn(async () => ({ userId: "owner-1" })),
+      },
+      bot: {
+        aggregate: vi.fn(async () => ({ _max: { position: null } })),
+        findMany: vi.fn(async () => []),
+        create: vi.fn(async (args: { data: Record<string, unknown> }) => ({
+          ...baseBot,
+          ...args.data,
+        })),
+        findFirstOrThrow: vi.fn(async () => ({ ...baseBot, computer })),
+      },
+      computer: {
+        findUnique: vi.fn(async () => null),
+        upsert: vi.fn(async (args: { create: { scope: string; scopeKey: string } }) => {
+          upserts.push(args.create.scopeKey);
+          computer = { id: args.create.scopeKey, scope: args.create.scope };
+          return computer;
+        }),
+      },
+      thread: { create: vi.fn(async () => ({ id: "thread-1" })) },
+      browserProfile: { create: vi.fn(async () => ({})) },
+      memoryDocument: { create: vi.fn(async () => ({})) },
+    };
+    const prisma = {
+      deploymentSettings: { findUnique: vi.fn(async () => null) },
+      $transaction: vi.fn(async (run: (client: typeof tx) => Promise<unknown>) => run(tx)),
+    };
+    return { prisma: prisma as unknown as PrismaClient, upserts };
+  }
+
+  const input = { name: "Helper", description: "", instructions: "", notifyOnFinish: true };
+
+  async function create(env: string | undefined, computerMode?: "team" | "dedicated") {
+    vi.stubEnv("COMPUTER_DEFAULT_MODE", env);
+    try {
+      const { prisma, upserts } = createFakePrisma();
+      const bot = await createRepos(prisma).createBot(actor, { ...input, computerMode });
+      return { bot, upserts };
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  }
+
+  it("keeps Team when no default is configured", async () => {
+    const { bot, upserts } = await create(undefined);
+    expect(bot.computerMode).toBe("team");
+    expect(upserts).toEqual(["team:ws-1:owner-1"]);
+  });
+
+  it("gives a bot without a chosen mode the configured default", async () => {
+    const { bot, upserts } = await create("dedicated");
+    expect(bot.computerMode).toBe("dedicated");
+    expect(upserts).toHaveLength(1);
+    expect(upserts[0]).toMatch(/^bot:c[a-z0-9]{24}$/);
+  });
+
+  it("lets an explicit mode win over the default", async () => {
+    expect((await create("dedicated", "team")).bot.computerMode).toBe("team");
+    expect((await create(undefined, "dedicated")).bot.computerMode).toBe("dedicated");
+  });
+
+  it("rejects an unknown default", async () => {
+    await expect(create("shared")).rejects.toThrow("COMPUTER_DEFAULT_MODE");
+  });
+});

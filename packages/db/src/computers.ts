@@ -146,6 +146,17 @@ export function resolveMaxComputersPerUser(
   return limit;
 }
 
+/** The computer a new bot gets when its request names none: COMPUTER_DEFAULT_MODE, else Team. */
+export function resolveDefaultComputerMode(
+  value = process.env.COMPUTER_DEFAULT_MODE,
+): ComputerMode {
+  const mode = value?.trim() || "team";
+  if (mode !== "team" && mode !== "dedicated") {
+    throw new Error("COMPUTER_DEFAULT_MODE must be team or dedicated");
+  }
+  return mode;
+}
+
 export class ComputerLimitError extends Error {
   constructor(limit: number) {
     super(`User computer limit (${limit}) reached`);

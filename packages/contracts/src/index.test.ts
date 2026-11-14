@@ -253,6 +253,10 @@ describe("contracts", () => {
     const parsed = CreateBotInput.parse({ name: "Chief" });
     expect(parsed.notifyOnFinish).toBe(true);
     expect(parsed.avatarFamily).toBeUndefined();
+    expect(parsed.computerMode).toBeUndefined();
+    expect(CreateBotInput.parse({ name: "Chief", computerMode: "dedicated" }).computerMode).toBe(
+      "dedicated",
+    );
   });
 
   it("accepts an organic avatar family from 0 to 9 when creating a bot", () => {

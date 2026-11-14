@@ -4,6 +4,10 @@
 default; Private Computers are optional. See [computer runtime and isolation](./computer-runtime.md)
 for the sharing and persistence contract.
 
+Set `COMPUTER_DEFAULT_MODE=dedicated` on the API and worker to give each new bot a Private
+Computer when its request does not choose one. An explicit choice still wins, and existing bots
+keep their computer. Private Computers count toward `SANDBOX_MAX_COMPUTERS_PER_USER`.
+
 ## Quick pick
 
 | Goal                                                    | Set                                                                      | Also need                                                                                                                             |
