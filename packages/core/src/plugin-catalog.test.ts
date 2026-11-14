@@ -97,6 +97,7 @@ describe("managedAppFor", () => {
     expect(managedAppFor(entry({ name: "google-calendar" }), apps)).toBe(apps[0]);
     expect(managedAppFor(entry({ name: "calcom", displayName: "Calcom" }), apps)).toBeUndefined();
   });
+
   it("keeps different Chinese brands separate", () => {
     const apps = [{ name: "日历", slug: "calendar" }];
     expect(managedAppFor(entry({ name: "notes", displayName: "笔记" }), apps)).toBeUndefined();
