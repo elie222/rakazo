@@ -241,6 +241,7 @@ export function PluginsOverlay({
     setView("source");
     sourceForm.start(kind, preset);
     setSourceError(null);
+    setOauthError(null);
   }
 
   function beginCatalogSurface(
@@ -252,6 +253,7 @@ export function PluginsOverlay({
     setView("source");
     sourceForm.startFromCatalog(result, surface, surface.source);
     setSourceError(null);
+    setOauthError(null);
   }
 
   async function installSource() {
@@ -262,8 +264,8 @@ export function PluginsOverlay({
       sourceName.trim() ||
       (sourcePreset?.name ?? (sourceKind === "graphql" ? "GraphQL" : "Custom connector"));
     setSourceError(null);
-    setPending("install-source");
     setOauthError(null);
+    setPending("install-source");
     let savedForOauth = false;
     try {
       // OAuth is the MCP server itself signing in, so it is saved first and then authorized.
@@ -336,6 +338,7 @@ export function PluginsOverlay({
     setConfirmingSource(null);
     setPending(install.id);
     setSourceError(null);
+    setOauthError(null);
     try {
       await rpc.capabilities.remove({ id: install.id });
       await updateIntegrations((current) => ({
@@ -353,12 +356,14 @@ export function PluginsOverlay({
     setPlugin(null);
     setDetailKey(null);
     setSourceError(null);
+    setOauthError(null);
     setView(next);
   }
 
   function leaveSource() {
     sourceForm.close();
     setSourceError(null);
+    setOauthError(null);
     setView(sourceBack);
   }
 
@@ -555,7 +560,7 @@ export function PluginsOverlay({
               connectorInstalls={connectorInstalls}
               standaloneServers={standaloneServers}
               appCount={appCount}
-              sourceError={oauthError ?? sourceError}
+              sourceError={sourceError ?? oauthError}
               confirmingSource={confirmingSource}
               onRemoveSource={(install) => void removeSource(install)}
               onOpenMcp={onOpenMcp}
