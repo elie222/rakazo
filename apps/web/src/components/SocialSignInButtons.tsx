@@ -2,7 +2,7 @@ import { Trans } from "@lingui/react/macro";
 import type { SignInProvider } from "@rakazo/contracts";
 import { LAST_SIGN_IN_COOKIE, lastSignInChoice, signInProviderGroups } from "@rakazo/contracts";
 import { Button } from "@rakazo/ui-web";
-import { Mail } from "lucide-react";
+import { KeyRound, Mail } from "lucide-react";
 import { useState } from "react";
 
 function lastSignIn() {
@@ -29,14 +29,16 @@ export function SocialSignInButtons({
   disabled,
   onPress,
   onEmail,
+  onPasskey,
 }: {
   providers: SignInProvider[];
   disabled?: boolean;
   onPress: (providerId: string) => void;
   onEmail?: () => void;
+  onPasskey?: () => void;
 }) {
   const [last] = useState(lastSignIn);
-  if (providers.length === 0 && !onEmail) return null;
+  if (providers.length === 0 && !onEmail && !onPasskey) return null;
   const { primary, secondary } = signInProviderGroups(providers);
   return (
     <div className="flex w-full flex-col gap-3">
@@ -75,6 +77,20 @@ export function SocialSignInButtons({
           <Mail />
           <Trans>Continue with email</Trans>
           {last === "email" ? <LastUsed /> : null}
+        </Button>
+      ) : null}
+      {onPasskey ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="xl"
+          disabled={disabled}
+          className="relative w-full min-w-0 shadow-none"
+          onClick={onPasskey}
+        >
+          <KeyRound />
+          <Trans>Continue with passkey</Trans>
+          {last === "passkey" ? <LastUsed /> : null}
         </Button>
       ) : null}
       {secondary.map((provider) => (
