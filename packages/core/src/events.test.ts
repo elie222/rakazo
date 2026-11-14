@@ -191,6 +191,31 @@ describe("reduceLiveMessageBlocks", () => {
       { kind: "progress", text: "They match." },
     ]);
   });
+
+  it("keeps the shown mark through deltas and a waiting tool, and drops it for activity", () => {
+    let blocks = reduceLiveMessageBlocks([], {
+      type: "progress",
+      payload: { text: "Checking", streaming: true, shown: true },
+    });
+    blocks = reduceLiveMessageBlocks(blocks, {
+      type: "progress",
+      payload: { delta: " the totals", streaming: true, shown: true },
+    });
+    expect(blocks).toEqual([{ kind: "progress", text: "Checking the totals", shown: true }]);
+    blocks = reduceLiveMessageBlocks(blocks, { type: "tool", name: "shell" });
+    expect(blocks).toEqual([
+      { kind: "progress", text: "Checking the totals", shown: true, pendingToolNames: ["shell"] },
+    ]);
+    expect(
+      reduceLiveMessageBlocks(blocks, {
+        type: "progress",
+        payload: { reset: true, text: "Checking the totals", activity: true },
+      }),
+    ).toEqual([
+      { kind: "steps", steps: [{ label: "Shell", count: 1 }] },
+      { kind: "progress", text: "Checking the totals", activity: true },
+    ]);
+  });
 });
 
 describe("runFailureError", () => {
