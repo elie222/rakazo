@@ -1431,7 +1431,7 @@ describe("anthropic-messages wire protocol", () => {
     });
     const provider = models.getProvider(OPENAI_COMPATIBLE_PROVIDER_ID)!;
     const model = models.getModel(OPENAI_COMPATIBLE_PROVIDER_ID, input.modelId)!;
-    let body: Record<string, any> = {};
+    let body: { thinking?: { budget_tokens?: unknown }; output_config?: unknown } = {};
     await provider
       .streamSimple(model, normalizeContext({ messages: [] }), {
         apiKey: "fake-api-key",
@@ -1443,7 +1443,7 @@ describe("anthropic-messages wire protocol", () => {
       })
       .result();
     expect(body.thinking).toMatchObject({ type: "enabled" });
-    expect(typeof body.thinking.budget_tokens).toBe("number");
+    expect(typeof body.thinking?.budget_tokens).toBe("number");
   });
 
   it("uses adaptive thinking with an effort for models the built-in catalog marks adaptive", async () => {
@@ -1458,7 +1458,7 @@ describe("anthropic-messages wire protocol", () => {
     const provider = models.getProvider(OPENAI_COMPATIBLE_PROVIDER_ID)!;
     const model = models.getModel(OPENAI_COMPATIBLE_PROVIDER_ID, modelId)!;
     expect(model.compat).toEqual({ forceAdaptiveThinking: true });
-    let body: Record<string, any> = {};
+    let body: { thinking?: { budget_tokens?: unknown }; output_config?: unknown } = {};
     await provider
       .streamSimple(model, normalizeContext({ messages: [] }), {
         apiKey: "fake-api-key",
