@@ -1062,8 +1062,14 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   mountServiceApi(app, {
     prisma,
     router,
-    memberActor: (userId, spaceId) =>
-      actorFromMembership(requireMembership(prisma, userId, spaceId)),
+    // A key has no session, so read the email a membership check needs from the user row.
+    memberActor: async (userId, spaceId) => {
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { id: true, email: true },
+      });
+      return user ? actorFromMembership(requireMembership(prisma, user, spaceId)) : null;
+    },
   });
   mountVoiceHttpRoutes(app, { prisma, secrets, env }, async (c) => {
     const actor = await sessionActor(c.req.raw);
