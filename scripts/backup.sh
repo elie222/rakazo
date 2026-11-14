@@ -35,6 +35,7 @@ done
 if [[ "$SKIP_HOMES" == "1" ]]; then
   tar -czf "$OUT/homes.tgz" --files-from /dev/null
 else
+  [[ ! -L "$ROOT/data" && -d "$ROOT/data" ]] || { echo "data must be a directory, not a symlink" >&2; exit 1; }
   tar -czf "$OUT/homes.tgz" -C "$ROOT" data
 fi
 echo "Backup written to $OUT"

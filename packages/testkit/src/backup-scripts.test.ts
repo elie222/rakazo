@@ -457,6 +457,7 @@ describe("development backup failures", () => {
 
   it.each(["directory", "artifact"])("does not write through a backup %s symlink", (kind) => {
     const f = fixture();
+    mkdirSync(path.join(f.checkout, "data"));
     const target = path.join(f.root, "outside");
     const output = path.join(f.checkout, "backups/example");
     if (kind === "directory") {
