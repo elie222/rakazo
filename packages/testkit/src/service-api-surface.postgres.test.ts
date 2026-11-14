@@ -729,20 +729,39 @@ describeWithDatabase("service API surface", () => {
       );
       const id = (doc as { id: string }).id;
       expect(
-        (await api(token, "PUT", `/bots/${other.id}/memory/${id}`, { body: { content: "x" } }))
-          .status,
+        (
+          await api(token, "PUT", `/bots/${other.id}/memory/${id}`, {
+            body: { content: "x" },
+            key: "memory-other",
+          })
+        ).status,
       ).toBe(404);
-      const written = await ok<{ content: string; revision: number }>(
-        token,
-        "PUT",
-        `/bots/${bot.id}/memory/${id}`,
-        { body: { content: "two", expectedRevision: 1 } },
-      );
-      expect(written).toMatchObject({ content: "two", revision: 2 });
-      const stale = await api(token, "PUT", `/bots/${bot.id}/memory/${id}`, {
-        body: { content: "three", expectedRevision: 1 },
-      });
+      const write = (content: string, key: string, expectedRevision?: number) =>
+        api(token, "PUT", `/bots/${bot.id}/memory/${id}`, {
+          body: { content, ...(expectedRevision ? { expectedRevision } : {}) },
+          key,
+        });
+      const written = await write("two", "memory-two", 1);
+      expect(written.json).toMatchObject({ content: "two", revision: 2 });
+      const stale = await write("three", "memory-three", 1);
       expect(stale.status).toBe(409);
+      // A replace needs a key, so a retry after a lost answer replays it rather than writing again.
+      expect(
+        (await api(token, "PUT", `/bots/${bot.id}/memory/${id}`, { body: { content: "x" } }))
+          .status,
+      ).toBe(400);
+      const blind = await write("four", "memory-four");
+      expect(blind.json).toMatchObject({ content: "four", revision: 3 });
+      await write("newer edit", "memory-newer");
+      const retry = await write("four", "memory-four");
+      expect(retry.json).toMatchObject({ content: "four", revision: 3 });
+      const after = await ok<{
+        documents: Array<{ id: string; content: string; revision: number }>;
+      }>(token, "GET", `/bots/${bot.id}/memory`);
+      expect(after.documents.find((entry) => entry.id === id)).toMatchObject({
+        content: "newer edit",
+        revision: 4,
+      });
     });
 
     it("manages scratchpad items and tickets within a key's bots", async () => {
@@ -900,6 +919,40 @@ describeWithDatabase("service API surface", () => {
           where: { messageId: sent.messageId, botId: first.id, runId: null },
         }),
       ).toBe(1);
+    });
+
+    it("holds a group message when every member is busy, and says so", async () => {
+      const { cookie, actor } = await person();
+      const first = await newBot(cookie, "Busy one");
+      const second = await newBot(cookie, "Busy two");
+      const { token } = await newKey(cookie);
+      const group = await ok<{ id: string; threadId: string }>(token, "POST", "/groups", {
+        body: { name: "All busy", botIds: [first.id, second.id] },
+        key: "all-busy-group",
+      });
+      const owner = { spaceId: actor.spaceId, userId: actor.userId, threadId: group.threadId };
+      for (const bot of [first, second]) {
+        const task = await db.task.create({
+          data: { ...owner, botId: bot.id, prompt: "the owner's work", status: "running" },
+        });
+        await db.run.create({
+          data: { ...owner, botId: bot.id, taskId: task.id, status: "running", trigger: "user" },
+        });
+      }
+      const send = () =>
+        ok<{ messageId: string; runId: string | null; held: boolean }>(
+          token,
+          "POST",
+          `/groups/${group.id}/prompts`,
+          { body: { text: "when you are free" }, key: "all-busy-prompt" },
+        );
+      const sent = await send();
+      expect(sent).toMatchObject({ runId: null, held: true });
+      expect(
+        await db.steeringMessage.count({ where: { messageId: sent.messageId, runId: null } }),
+      ).toBe(2);
+      // A retry finds the held message rather than saving it again.
+      expect((await send()).messageId).toBe(sent.messageId);
     });
 
     it("marks a key's message for the person and the bot, without letting the key forge it", async () => {
