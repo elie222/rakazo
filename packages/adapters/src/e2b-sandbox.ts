@@ -1,4 +1,3 @@
-
 import { E2B_COMPUTER_TEMPLATE, E2B_DESKTOP_TEMPLATE } from "./e2b-template.js";
 import type { RemoteDesktopSdk } from "./remote-desktop-sandbox.js";
 import { RemoteDesktopSandboxProvider } from "./remote-desktop-sandbox.js";
