@@ -284,6 +284,10 @@ export function createMcpServers(
     actor: Actor,
     server: { id: string; secretId: string | null },
   ) => {
+    // Taken before closing cards: a bot request posting a card holds a share lock on this row,
+    // so removal waits for it and then closes that card too. NO KEY UPDATE leaves the key-share
+    // lock an approval's assignment insert takes free, so the two cannot deadlock.
+    await tx.$queryRaw`SELECT id FROM mcp_servers WHERE id = ${server.id} FOR NO KEY UPDATE`;
     const painted = await dismissMcpServerApprovals(onboardingDeps, actor, server.id, tx);
     await tx.mcpServer.delete({ where: { id: server.id } });
     if (server.secretId) {

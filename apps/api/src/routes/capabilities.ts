@@ -15,7 +15,14 @@ import {
 import type { Actor } from "@rakazo/contracts";
 import { comparePlugins, containsSecret, matchesPluginQuery } from "@rakazo/core";
 import type { Prisma } from "@rakazo/db";
-import { AVAILABILITY_SELECT, availableInSpace, itemSecretIn, spaceAvailability } from "@rakazo/db";
+import {
+  AVAILABILITY_SELECT,
+  availableInSpace,
+  itemSecretIn,
+  spaceAvailability,
+  THREAD_LOCK_TRANSACTION_OPTIONS,
+  withTransactionRetry,
+} from "@rakazo/db";
 import { requireAdmin } from "../admins.js";
 import { searchIntegrationCatalog } from "../integration-catalog.js";
 import { assertMcpRemoteEndpoint, mayUsePrivateEndpoint } from "../mcp-servers.js";
@@ -33,36 +40,41 @@ export function capabilitiesRoutes(ctx: RouterContext) {
   /** Removes an install and, for a plugin, the servers, secrets and skills it added. */
   const removeInstall = async (actor: Actor, id: string) => {
     const notify: Array<{ threadId: string; seq: number }> = [];
-    await deps.prisma.$transaction(async (tx) => {
-      // Parts changes hold this lock while adding children; reading them without it could
-      // miss a connector committed meanwhile and leave its secret behind.
-      await lockPluginInstalls(tx, actor);
-      const existing = await tx.capabilityInstall.findFirst({
-        where: { id, ...availableInSpace(actor) },
-      });
-      if (!existing) return;
-      if (existing.kind === "plugin") {
-        const servers = await tx.mcpServer.findMany({
-          where: { installId: existing.id, userId: actor.userId },
-          select: { id: true, secretId: true },
+    // Removing a server waits on a card request's lock, held for its thread-lock budget.
+    await withTransactionRetry(() =>
+      deps.prisma.$transaction(async (tx) => {
+        // A retried attempt starts over; a rolled-back one's events must not be announced.
+        notify.length = 0;
+        // Parts changes hold this lock while adding children; reading them without it could
+        // miss a connector committed meanwhile and leave its secret behind.
+        await lockPluginInstalls(tx, actor);
+        const existing = await tx.capabilityInstall.findFirst({
+          where: { id, ...availableInSpace(actor) },
         });
-        for (const server of servers) {
-          notify.push(...(await removeMcpServerInTransaction(tx, actor, server)));
-        }
-        await tx.agentSkill.deleteMany({ where: { installId: existing.id } });
-      }
-      await tx.capabilityInstall.delete({ where: { id: existing.id } });
-      if (existing.secretId) {
-        const shared = await tx.capabilityInstall.count({
-          where: { secretId: existing.secretId },
-        });
-        if (shared === 0) {
-          await tx.secret.deleteMany({
-            where: { id: existing.secretId, ...itemSecretIn(actor) },
+        if (!existing) return;
+        if (existing.kind === "plugin") {
+          const servers = await tx.mcpServer.findMany({
+            where: { installId: existing.id, userId: actor.userId },
+            select: { id: true, secretId: true },
           });
+          for (const server of servers) {
+            notify.push(...(await removeMcpServerInTransaction(tx, actor, server)));
+          }
+          await tx.agentSkill.deleteMany({ where: { installId: existing.id } });
         }
-      }
-    });
+        await tx.capabilityInstall.delete({ where: { id: existing.id } });
+        if (existing.secretId) {
+          const shared = await tx.capabilityInstall.count({
+            where: { secretId: existing.secretId },
+          });
+          if (shared === 0) {
+            await tx.secret.deleteMany({
+              where: { id: existing.secretId, ...itemSecretIn(actor) },
+            });
+          }
+        }
+      }, THREAD_LOCK_TRANSACTION_OPTIONS),
+    );
     for (const event of notify) await deps.events.notify(event.threadId, event.seq);
   };
   return {
@@ -304,6 +316,9 @@ export function capabilitiesRoutes(ctx: RouterContext) {
             secrets: deps.secrets,
             fetcher: deps.pluginRepoFetcher,
             assertEndpoint: (endpoint) => assertMcpRemoteEndpoint(endpoint, deps),
+            startAttempt: () => {
+              notify.length = 0;
+            },
             removeServer: async (tx, server) =>
               notify.push(...(await removeMcpServerInTransaction(tx, context.actor, server))),
           },

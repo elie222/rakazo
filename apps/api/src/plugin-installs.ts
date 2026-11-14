@@ -17,6 +17,8 @@ import {
   isUniqueViolation,
   runAsSystemInTransaction,
   spaceAvailability,
+  THREAD_LOCK_TRANSACTION_OPTIONS,
+  withTransactionRetry,
 } from "@rakazo/db";
 import { assertNameFreeWhereAvailable, lockOwner } from "./availability.js";
 
@@ -356,6 +358,8 @@ export async function setPluginParts(
       tx: Prisma.TransactionClient,
       server: { id: string; secretId: string | null },
     ) => Promise<unknown>;
+    /** Called as each transaction attempt starts, so a retry can drop a rolled-back attempt's work. */
+    startAttempt?: () => void;
   },
   actor: Actor,
   input: { id: string; parts: PluginPart[] },
@@ -379,44 +383,48 @@ export async function setPluginParts(
   const servers = plugin && added.includes("connector") ? plugin.mcpServers : [];
   return withPreparedServers(deps, actor, servers, signal, async (prepared) => {
     try {
-      const row = await deps.prisma.$transaction(async (tx) => {
-        await lockPluginInstalls(tx, actor);
-        const install = await tx.capabilityInstall.findFirst({
-          where: { ...availableInSpace(actor), id: existing.id },
-          include: { availableIn: AVAILABILITY_SELECT },
-        });
-        if (!install) throw new ORPCError("NOT_FOUND", { message: "Plugin is not installed" });
-        const owned = { userId: actor.userId, installId: install.id };
-        // The plan above was made from an unlocked read; another change since then invalidates it.
-        const locked = installedPluginParts(install.config as Record<string, unknown>);
-        if (locked.length !== current.length || locked.some((part) => !current.includes(part)))
-          throw new ORPCError("CONFLICT", { message: "Plugin changed. Reload and try again" });
-        if (removing.includes("connector")) {
-          const rows = await tx.mcpServer.findMany({
-            where: owned,
-            select: { id: true, secretId: true },
+      // Removing a server waits on a card request's lock, held for its thread-lock budget.
+      const row = await withTransactionRetry(() =>
+        deps.prisma.$transaction(async (tx) => {
+          deps.startAttempt?.();
+          await lockPluginInstalls(tx, actor);
+          const install = await tx.capabilityInstall.findFirst({
+            where: { ...availableInSpace(actor), id: existing.id },
+            include: { availableIn: AVAILABILITY_SELECT },
           });
-          for (const server of rows) await deps.removeServer(tx, server);
-        }
-        if (removing.includes("skills")) await tx.agentSkill.deleteMany({ where: owned });
-        if (plugin && added.includes("skills")) {
-          await assertSkillNamesFree(tx, actor, plugin, install);
-          await addSkills(tx, install, plugin);
-        }
-        if (plugin) await addServers(tx, install, plugin, prepared);
-        const updated = await tx.capabilityInstall.update({
-          where: { id: install.id },
-          data: {
-            config: {
-              ...(install.config as Record<string, unknown>),
-              // Re-read at the pinned commit, so the saved preview matches what is installed now.
-              ...(plugin ? pluginPreviewDto(plugin) : {}),
-              parts,
-            } as Prisma.InputJsonValue,
-          },
-        });
-        return { ...updated, availableIn: install.availableIn };
-      });
+          if (!install) throw new ORPCError("NOT_FOUND", { message: "Plugin is not installed" });
+          const owned = { userId: actor.userId, installId: install.id };
+          // The plan above was made from an unlocked read; another change since then invalidates it.
+          const locked = installedPluginParts(install.config as Record<string, unknown>);
+          if (locked.length !== current.length || locked.some((part) => !current.includes(part)))
+            throw new ORPCError("CONFLICT", { message: "Plugin changed. Reload and try again" });
+          if (removing.includes("connector")) {
+            const rows = await tx.mcpServer.findMany({
+              where: owned,
+              select: { id: true, secretId: true },
+            });
+            for (const server of rows) await deps.removeServer(tx, server);
+          }
+          if (removing.includes("skills")) await tx.agentSkill.deleteMany({ where: owned });
+          if (plugin && added.includes("skills")) {
+            await assertSkillNamesFree(tx, actor, plugin, install);
+            await addSkills(tx, install, plugin);
+          }
+          if (plugin) await addServers(tx, install, plugin, prepared);
+          const updated = await tx.capabilityInstall.update({
+            where: { id: install.id },
+            data: {
+              config: {
+                ...(install.config as Record<string, unknown>),
+                // Re-read at the pinned commit, so the saved preview matches what is installed now.
+                ...(plugin ? pluginPreviewDto(plugin) : {}),
+                parts,
+              } as Prisma.InputJsonValue,
+            },
+          });
+          return { ...updated, availableIn: install.availableIn };
+        }, THREAD_LOCK_TRANSACTION_OPTIONS),
+      );
       return installDto(row);
     } catch (error) {
       if (isUniqueViolation(error)) {

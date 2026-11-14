@@ -14,6 +14,8 @@ import {
   IsolationError,
   isUniqueViolation,
   itemSecretIn,
+  THREAD_LOCK_TRANSACTION_OPTIONS,
+  withTransactionRetry,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import {
@@ -395,8 +397,13 @@ export function mcpRoutes(ctx: RouterContext) {
           if (!server) throw new IsolationError();
           // Assignments cascade; the encrypted credential must go with the server.
           // Cards are closed first, including ones that were never assigned.
-          const seqs = await deps.prisma.$transaction((tx) =>
-            removeMcpServerInTransaction(tx, context.actor, server),
+          const seqs = await withTransactionRetry(() =>
+            deps.prisma.$transaction(
+              (tx) => removeMcpServerInTransaction(tx, context.actor, server),
+              // Closing cards locks their threads, and the server row can be held by a card request
+              // for its own thread-lock budget, so removal waits on the same budget.
+              THREAD_LOCK_TRANSACTION_OPTIONS,
+            ),
           );
           for (const event of seqs) await deps.events.notify(event.threadId, event.seq);
           return { ok: true as const };
