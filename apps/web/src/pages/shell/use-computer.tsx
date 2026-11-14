@@ -652,8 +652,8 @@ export function useComputerControls({
     showProgress: boolean;
     force?: boolean;
   }) {
-    if (controlRequests.current.has(targetBotId)) return;
-    controlRequests.current.add(targetBotId);
+    if (takeControl && controlRequests.current.has(targetBotId)) return;
+    if (takeControl) controlRequests.current.add(targetBotId);
     setScreenUrlLoadedBotId(null);
     screenAwaitsRetry.current = false;
     const epoch = ++computerBootEpoch.current;
@@ -700,7 +700,7 @@ export function useComputerControls({
       setComputerErrorFromScreen(false);
       throw error;
     } finally {
-      controlRequests.current.delete(targetBotId);
+      if (takeControl) controlRequests.current.delete(targetBotId);
       if (stillThisBoot()) setBootingBotId(null);
     }
   }

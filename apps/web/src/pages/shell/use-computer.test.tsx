@@ -616,9 +616,21 @@ async function renderTakingControl(
     heartbeat,
     held,
     takeControl: () => controls.openComputer("bot-1", true),
+    openView: () => controls.openComputer("bot-1", false),
     handBack: (reason?: "done" | "skipped") => controls.releaseComputer(reason),
   };
 }
+
+it("takes control when a view-only boot is already in progress", async () => {
+  const takeover = vi.fn(async () => ({ leaseId: "lease-1", expiresAt: "" }));
+  const { openView, takeControl } = await renderTakingControl(takeover);
+  await act(async () => {
+    const opening = openView();
+    const taking = takeControl();
+    await Promise.all([opening, taking]);
+  });
+  expect(takeover).toHaveBeenCalledTimes(1);
+});
 
 it("ignores a second take while the first control request is pending", async () => {
   let finish!: (value: { leaseId: string; expiresAt: string }) => void;
