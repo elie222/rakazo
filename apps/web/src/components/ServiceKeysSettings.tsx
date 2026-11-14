@@ -29,7 +29,7 @@ export function ServiceKeysSettings() {
   const queryClient = useQueryClient();
   const list = queries.serviceCredentials.list.queryOptions();
   const { data: keys, isError: loadFailed } = useQuery({ ...list, refetchOnMount: "always" });
-  const { data: bots } = useQuery(queries.bots.list.queryOptions());
+  const { data: bots, isError: botsFailed } = useQuery(queries.bots.list.queryOptions());
   const { withIdentityConfirmation, identityDialog } = useIdentityConfirmation();
   const [name, setName] = useState("");
   const [scopes, setScopes] = useState<ServiceScope[]>(["bots:read"]);
@@ -179,7 +179,8 @@ export function ServiceKeysSettings() {
             </NativeSelectOption>
           ))}
         </NativeSelect>
-        <Button type="submit" disabled={busy || !name.trim() || scopes.length === 0}>
+        {/* An empty bot list means every bot, so wait for the picker before creating. */}
+        <Button type="submit" disabled={busy || !bots || !name.trim() || scopes.length === 0}>
           <Trans>Create key</Trans>
         </Button>
       </form>
@@ -191,6 +192,11 @@ export function ServiceKeysSettings() {
       {loadFailed ? (
         <p role="alert" className="text-body text-destructive">
           <Trans>Could not load your keys</Trans>
+        </p>
+      ) : null}
+      {botsFailed ? (
+        <p role="alert" className="text-body text-destructive">
+          <Trans>Could not load your bots</Trans>
         </p>
       ) : null}
       <ul className="divide-y divide-border">
