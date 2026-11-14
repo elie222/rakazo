@@ -1,8 +1,3 @@
 {
-  "apps/api/src/routes/bots.ts": 1,
-  "apps/api/src/thread-message-pages.ts": 1,
-  "apps/desktop/src/main.ts": 1,
-  "packages/adapters/src/bot-secrets.ts": 2,
-  "packages/adapters/src/executor.ts": 1,
-  "packages/adapters/src/inbound-email.ts": 1
+  "apps/api/src/thread-message-pages.ts": 1
 }

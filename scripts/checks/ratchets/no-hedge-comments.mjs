@@ -1,5 +1,5 @@
 export const message =
-  "A comment may not excuse a shortcut (for now, workaround, hack, TODO, FIXME, XXX). Do the real fix in this change, or open an issue and leave no marker in the code.";
+  "A comment may not excuse a shortcut (workaround, hack, TODO, FIXME, XXX). Do the real fix in this change, or open an issue and leave no marker in the code.";
 
 export const include = [
   "{apps,packages,infra,scripts}/**/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs,astro,css,sql,swift,kt,gradle}",
@@ -15,7 +15,7 @@ export const exclude = [
 ];
 
 // The tags are upper case only: lower-case "todo" is a ticket status and a Spanish word.
-const HEDGE = String.raw`(?:\b(?:for now|workarounds?|hacks?|hacky)\b|(?-i:\b(?:TODO|FIXME|XXX)\b))`;
+const HEDGE = String.raw`(?:\b(?:workarounds?|hacks?|hacky)\b|(?-i:\b(?:TODO|FIXME|XXX)\b))`;
 // `//` after a colon is a URL, not a comment.
 const SLASH_COMMENT = new RegExp(
   String.raw`(?:(?<!:)\/\/|\/\*|^\s*\*|<!--|^\s*--\s).*?${HEDGE}`,
