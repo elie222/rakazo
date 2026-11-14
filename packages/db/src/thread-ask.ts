@@ -672,15 +672,18 @@ export async function eligibleWaitingTextAnswer(
   return found.messageId;
 }
 
-/** Commit only answers that pass the same read-only composer eligibility check. */
+/**
+ * Commit only answers that pass the same read-only composer eligibility check. With
+ * `questionMessageId`, only while that question is still the one a reply answers: an answer worked
+ * out against it does not go to another.
+ */
 export async function answerWaitingRunWithTextInTransaction(
   tx: Prisma.TransactionClient,
-  input: Parameters<typeof eligibleWaitingTextAnswer>[1],
+  input: Parameters<typeof eligibleWaitingTextAnswer>[1] & { questionMessageId?: string },
 ): Promise<{ threadId: string; seq: number } | null> {
   const messageId = await eligibleWaitingTextAnswer(tx, input);
-  return messageId
-    ? commitAnswerRunInput(tx, { ...input, messageId, answer: input.answer.trim() })
-    : null;
+  if (!messageId || (input.questionMessageId && messageId !== input.questionMessageId)) return null;
+  return commitAnswerRunInput(tx, { ...input, messageId, answer: input.answer.trim() });
 }
 
 export async function pauseRunForInput(

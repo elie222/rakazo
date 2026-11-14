@@ -6,6 +6,7 @@ import type { MessageBlock } from "@rakazo/contracts";
 import { ATTACHMENT_MAX_COUNT, isAttachmentAudioMimeType } from "@rakazo/contracts";
 import type { MessagingCommand } from "@rakazo/core";
 import {
+  chatAppAskAnswer,
   displayName,
   messageBlockForArtifact,
   normalizeVoiceTranscript,
@@ -25,6 +26,7 @@ import {
   accountDeactivated,
   createThreadMessage,
   crossSpaceCommunicationAllowed,
+  eligibleWaitingTextAnswer,
   normalizeMessagingLinkCode,
   redeemMessagingLinkCode,
   SendClaimLostError,
@@ -204,15 +206,33 @@ async function handleDirectEvent(
 
   const stored = await storeInboundMedia(deps, ids, event);
 
-  // Message-trigger routines own the delivery when configured. Do not also
-  // start a normal messaging continue for the same inbound handle.
-  if (
-    await wakeMessageRoutines(deps, ids, event, {
+  const clientNonce = `messaging:${event.provider}:${event.handle}`;
+  // A plain text reply to the bot's question answers it, before any routine can take it.
+  const answers =
+    existing && attachments.length === 0 && !event.mediaUrl
+      ? await answeredQuestion(deps, existing.id, ids, event.content)
+      : undefined;
+  // A redelivered message that already reached the bot, such as one that answered its
+  // question, is sent again below, where it resolves to what it did the first time.
+  const delivered =
+    !answers &&
+    (await deps.prisma.message.findUnique({
+      where: { threadId_clientNonce: { threadId: ids.threadId, clientNonce } },
+      select: { id: true },
+    }));
+  const wakeRoutines = () =>
+    wakeMessageRoutines(deps, ids, event, {
       artifacts: stored.artifacts,
       unavailable: stored.unavailable,
-    })
-  )
-    return;
+    });
+  // Message-trigger routines own the delivery when configured. Do not also
+  // start a normal messaging continue for the same inbound handle.
+  if (!answers && !delivered && (await wakeRoutines())) return;
+  // An answer can still miss under the thread lock, when the question was answered meanwhile.
+  // With routines, the message then starts no run of its own and goes to them as any message.
+  const routinesOwnMisses =
+    answers !== undefined &&
+    (await deps.prisma.routine.count({ where: messageRoutineWhere(ids, event.provider) })) > 0;
   const body = [text, ...stored.unavailable].filter(Boolean).join("\n");
   const sent = await deps.events.sendUserMessage({
     spaceId: ids.spaceId,
@@ -227,8 +247,11 @@ async function handleDirectEvent(
     ],
     prompt: promptTextForAttachments(body, stored.artifacts),
     trigger: "messaging",
-    clientNonce: `messaging:${event.provider}:${event.handle}`,
+    clientNonce,
+    ...(answers ? { answers } : {}),
+    ...(routinesOwnMisses ? { createRun: false } : {}),
   });
+  if (routinesOwnMisses && !sent.runId && (await wakeRoutines())) return;
   if (sent.runId) {
     const runId = sent.runId;
     deps.acknowledge?.(event.threadId, event.handle, async () => {
@@ -260,6 +283,52 @@ async function handleDirectEvent(
       getLogger().error("messaging inbound run enqueue error", error);
     });
   }
+}
+
+/**
+ * The question a text reply answers, and with what: a question of this person's waiting run that
+ * the composer's rule lets a reply answer now, that a chat-app reply can answer, and that has fully
+ * reached this chat. The send checks again under the thread lock.
+ */
+async function answeredQuestion(
+  deps: MessagingInboundDeps,
+  identityId: string,
+  ids: { spaceId: string; threadId: string; userId: string },
+  reply: string,
+): Promise<{ runId: string; messageId: string; answer: string } | undefined> {
+  if (!reply.trim()) return undefined;
+  const runs = await deps.prisma.run.findMany({
+    where: { threadId: ids.threadId, userId: ids.userId, status: "waiting_input" },
+    select: { id: true },
+  });
+  for (const run of runs) {
+    const messageId = await eligibleWaitingTextAnswer(deps.prisma, {
+      spaceId: ids.spaceId,
+      threadId: ids.threadId,
+      runId: run.id,
+      answeredByUserId: ids.userId,
+      answer: reply,
+    });
+    if (!messageId) continue;
+    const question = await deps.prisma.message.findUnique({
+      where: { id: messageId },
+      select: { blocks: true },
+    });
+    const ask = ((question?.blocks ?? []) as MessageBlock[]).find(
+      (block) => block.kind === "ask" && block.status !== "answered",
+    );
+    const answer = ask ? chatAppAskAnswer(ask, reply) : undefined;
+    if (!answer) return undefined;
+    // Only a question the person has seen: every part sent, and the provider took it.
+    const rows = await deps.prisma.messagingOutbound.findMany({
+      where: { identityId, sourceMessageId: messageId },
+      select: { status: true, providerHandle: true },
+    });
+    if (!rows.length || rows.some((row) => row.status !== "sent" || row.providerHandle === null))
+      return undefined;
+    return { runId: run.id, messageId, answer };
+  }
+  return undefined;
 }
 
 /** Time for all voice note transcripts of one inbound message; files are delivered without them after it. */
@@ -344,6 +413,21 @@ async function withVoiceTranscript(
   return normalized ? { ...artifact, transcript: normalized } : artifact;
 }
 
+/** The routines a message from `provider` wakes for this identity's person. */
+function messageRoutineWhere(
+  target: Pick<ProvisionedMessagingIdentity, "spaceId" | "userId" | "botId">,
+  provider: string,
+) {
+  return {
+    botId: target.botId,
+    spaceId: target.spaceId,
+    // The wake runs as the identity's person, so only their own routines may ride on it.
+    userId: target.userId,
+    active: true,
+    messageProvider: provider,
+  };
+}
+
 /** Wake provider-neutral message routines through the same approval boundary as webhooks. */
 export async function wakeMessageRoutines(
   deps: Pick<MessagingInboundDeps, "prisma" | "events" | "jobs">,
@@ -363,14 +447,7 @@ export async function wakeMessageRoutines(
   },
 ): Promise<boolean> {
   const routines = await deps.prisma.routine.findMany({
-    where: {
-      botId: target.botId,
-      spaceId: target.spaceId,
-      // The wake runs as the identity's person, so only their own routines may ride on it.
-      userId: target.userId,
-      active: true,
-      messageProvider: event.provider,
-    },
+    where: messageRoutineWhere(target, event.provider),
     select: {
       id: true,
       name: true,

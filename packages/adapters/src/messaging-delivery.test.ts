@@ -17,6 +17,7 @@ import {
 } from "@rakazo/adapter-kit";
 import {
   CHAT_APP_ASK_NOTE,
+  CHAT_APP_CHOICE_NOTE,
   CHAT_APP_TAKEOVER_NOTE,
   TAKEOVER_COMPUTER_PENDING_STATE,
 } from "@rakazo/core";
@@ -978,7 +979,7 @@ describe("deliverRun to a 1:1 chat", () => {
         "Both are free at 7pm.",
         "1. Luigi's",
         "2. Noodle Bar",
-        CHAT_APP_ASK_NOTE,
+        CHAT_APP_CHOICE_NOTE,
       ].join("\n"),
     ]);
   });
