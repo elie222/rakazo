@@ -1816,12 +1816,17 @@ function apiKeyRedactionForms(destination: BotSecretDestination, plaintext: stri
   ].filter(Boolean);
 }
 
-/** A card number as pages show it: as given, digits only, and in groups of four. */
+/**
+ * A card number as pages show it: as given, digits only, and in groups of four. American Express
+ * (15 digits) and Diners Club (14) print as 4-6-5 and 4-6-4.
+ */
 export function cardRedactionForms(number: string): string[] {
   const digits = number.replace(/\D/g, "");
   const grouped = digits.replace(/(\d{4})(?=\d)/g, "$1 ");
   const hyphenated = digits.replace(/(\d{4})(?=\d)/g, "$1-");
-  return [...new Set([number, digits, grouped, hyphenated].filter(Boolean))];
+  const long = digits.match(/^(\d{4})(\d{6})(\d{4,5})$/);
+  const printed = long ? [long.slice(1).join(" "), long.slice(1).join("-")] : [];
+  return [...new Set([number, digits, grouped, hyphenated, ...printed].filter(Boolean))];
 }
 
 export class VaultKeyUnavailableError extends Error {

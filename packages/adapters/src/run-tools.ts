@@ -1,7 +1,8 @@
 import type { AgentToolExecutionObserver } from "@rakazo/adapter-kit";
 import { BACKGROUND_HELPER_TRIGGER, toolResultTaintsRun } from "@rakazo/core";
 import { isTerminatingReplyResult } from "./approval-effect.js";
-import { IMAGE_RETURNING_COMPUTER_TOOLS, MODEL_CANNOT_SEE_MESSAGE } from "./model-vision.js";
+import { IMAGE_RETURNING_COMPUTER_TOOLS } from "./model-vision.js";
+import { MODEL_CANNOT_SEE_MESSAGE } from "./model-vision.prompt.js";
 import type { RunContext } from "./run-context.js";
 import { markReadOutsideContent } from "./run-context.js";
 import { noteComputerTaskStep } from "./run-progress.js";
