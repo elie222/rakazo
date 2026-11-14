@@ -119,12 +119,32 @@ function quoteLegacyColonScalars(text: string): string {
 }
 
 function repairUnknownStringEscapes(text: string): string {
-  return text.replace(/"(?:[^"\\\r\n]|\\.)*"/g, (value) =>
-    value.replace(
-      /\\(?!["\\/0abtnvfreN_LP]|x[0-9a-fA-F]{2}|u[0-9a-fA-F]{4}|U[0-9a-fA-F]{8})/g,
-      (slash) => `${slash}${slash}`,
-    ),
-  );
+  const parts: string[] = [];
+  let start = 0;
+  let quote = -1;
+  for (let index = 0; index < text.length; index++) {
+    const char = text[index];
+    if (char === "\n" || char === "\r") quote = -1;
+    else if (quote >= 0 && char === "\\") index++;
+    else if (char === '"') {
+      if (quote < 0) quote = index;
+      else {
+        parts.push(text.slice(start, quote));
+        parts.push(
+          text
+            .slice(quote, index + 1)
+            .replace(
+              /\\(?!["\\/0abtnvfreN_LP]|x[0-9a-fA-F]{2}|u[0-9a-fA-F]{4}|U[0-9a-fA-F]{8})/g,
+              (slash) => `${slash}${slash}`,
+            ),
+        );
+        start = index + 1;
+        quote = -1;
+      }
+    }
+  }
+  parts.push(text.slice(start));
+  return parts.join("");
 }
 
 function assertSafeFrontmatter(value: unknown): void {

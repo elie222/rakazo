@@ -265,6 +265,11 @@ description: Use when: the user asks for a status summary.
     expect(reloaded).toMatchObject({ name: "null", description: "null" });
   });
 
+  it("rejects malformed YAML with many escaped quotes", () => {
+    const parsed = parseSkillMd(`---\nname: Example\ndescription: "${'\\"'.repeat(40_000)}\n---\n`);
+    expect(parsed).toMatchObject({ error: expect.any(String) });
+  });
+
   it("rejects malformed YAML after many blank lines", () => {
     const parsed = parseSkillMd(`---\n${"\n".repeat(90_000)}invalid: [\n---\n`);
     expect(parsed).toMatchObject({ error: expect.any(String) });
