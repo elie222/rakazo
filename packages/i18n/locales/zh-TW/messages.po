@@ -4218,8 +4218,8 @@ msgstr "建立空間"
 
 #: apps/mobile/app/sign-in.tsx
 #: apps/web/src/pages/Auth.tsx
-msgid "Create your Rakazo"
-msgstr "建立你的 Rakazo"
+msgid "Create your account"
+msgstr "建立你的帳號"
 
 #: apps/mobile/components/thread/message-bubble.tsx
 #: apps/web/src/components/AskCard.tsx
