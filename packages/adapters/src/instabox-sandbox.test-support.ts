@@ -54,7 +54,8 @@ export class InstaboxEmulator implements InstaboxApi {
   pageBrowser: ((request: unknown) => { exitCode: number; stdout: string }) | undefined;
   /** Thrown by the next file write, as a transfer failure is. */
   writeError: Error | undefined;
-  onWrite: (path: string, data: Uint8Array, signal?: AbortSignal) => void = () => {};
+  onWrite: (path: string, data: Uint8Array, signal?: AbortSignal) => void | Promise<void> =
+    () => {};
   private sequence = 0;
 
   async create(
@@ -161,7 +162,7 @@ export class InstaboxEmulator implements InstaboxApi {
           const failure = this.writeError;
           this.writeError = undefined;
           computer.files.set(path, { content: new Uint8Array(data), mode: 0o644 });
-          this.onWrite(path, data, options.signal);
+          await this.onWrite(path, data, options.signal);
           if (failure) throw failure;
         },
       },

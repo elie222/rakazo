@@ -376,25 +376,34 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
     // The installer carries the helper's files, more than one command may hold, so it runs from a file.
     const script = `/tmp/rakazo-page-browser-${randomUUID()}.sh`;
     let installed = false;
+    let stage = "transfer";
+    let exitCode: number | undefined;
+    const deadline = new AbortController();
+    const timer = setTimeout(() => deadline.abort(), PAGE_BROWSER_INSTALL_MS);
+    const signal = AbortSignal.any([context.signal, deadline.signal]);
     try {
       await this.use(computer, (desktop) =>
         desktop.files.write(
           [{ path: script, data: toArrayBuffer(Buffer.from(installPageBrowserCommand())) }],
-          { signal: context.signal },
+          { signal },
         ),
       );
+      stage = "install";
+      signal.throwIfAborted();
       const result = await this.runSetupCommand(
         computer,
         `status=0; bash ${shellQuote(script)} || status=$?; rm -f -- ${shellQuote(script)}; exit "$status"`,
-        context.signal,
+        signal,
         PAGE_BROWSER_INSTALL_MS,
       );
-      installed = result.exitCode === 0;
+      exitCode = result.exitCode;
+      installed = exitCode === 0;
     } catch (error) {
       context.signal.throwIfAborted();
       // A deleted computer, or one paused because the installer would not stop, is not ready.
       if (isSandboxGoneError(error) || isSandboxUnsafeStopError(error)) throw error;
     } finally {
+      clearTimeout(timer);
       await this.runSetupCommand(
         computer,
         `rm -f -- ${shellQuote(script)}`,
@@ -407,6 +416,9 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
       getLogger().warn("sandbox.page_browser", {
         provider: this.config.id,
         outcome: "install_failed",
+        stage,
+        exitCode,
+        timedOut: deadline.signal.aborted,
       });
   }
 

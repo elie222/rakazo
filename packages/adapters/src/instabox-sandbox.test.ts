@@ -419,6 +419,30 @@ describe("instabox page tools", () => {
     },
   );
 
+  it("bounds a stalled installer upload and removes the partial file", async () => {
+    vi.useFakeTimers();
+    try {
+      const emulator = new InstaboxEmulator();
+      const { provider: create } = emulatedInstabox(emulator);
+      const provider = create();
+      const computer = await provider.provision(request, ctx);
+      emulator.onWrite = (_path, _data, signal) =>
+        new Promise<void>((_resolve, reject) => {
+          signal!.addEventListener("abort", () => reject(signal!.reason), { once: true });
+        });
+      const preparing = provider.prepare(computer, ctx);
+      await vi.advanceTimersByTimeAsync(121_000);
+      await preparing;
+      expect(
+        [...emulator.computers.get(computer.id)!.files.keys()].filter((path) =>
+          path.startsWith("/tmp/rakazo-page-browser-"),
+        ),
+      ).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("gives up on a stalled install after two minutes and keeps the desktop", async () => {
     vi.useFakeTimers();
     try {
