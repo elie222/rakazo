@@ -112,6 +112,7 @@ import { createMediaGenerationProvider } from "./media-generation-factory.js";
 import { loadAgentMemoryContext } from "./memory-context.js";
 import { resolveMemberMainModel, selectConfiguredModel } from "./model-roles.js";
 import {
+  findConnectedBotModelCredential,
   findConnectedModelCredential,
   PINNED_PROVIDER_NOT_CONNECTED,
   pinnedModelCredentialError,
@@ -708,10 +709,11 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         const hasModelOverride = Boolean(modelChoice.modelProvider && modelChoice.modelId);
         const overrideCredential =
           !pinnedComputerModels && hasModelOverride && modelChoice.modelProvider
-            ? await findConnectedModelCredential(
+            ? await findConnectedBotModelCredential(
                 deps.prisma,
                 deps.secretStore,
                 run,
+                bot.id,
                 modelChoice.modelProvider,
                 modelChoice.modelId,
               )

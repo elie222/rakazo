@@ -6141,10 +6141,22 @@ describe("model disconnect", () => {
     secretId: `${id}-secret`,
   });
 
+  type PinnedBot = {
+    provider: string;
+    modelId: string;
+    bot: { name: string; modelProvider: string | null; modelId: string | null };
+  };
+  const pinnedBot = (name: string, botModelId = "gpt-x"): PinnedBot => ({
+    provider: "openai-codex",
+    modelId: "gpt-x",
+    bot: { name, modelProvider: "openai-codex", modelId: botModelId },
+  });
+
   function disconnectDeps() {
     const connections = [connection("personal"), connection("work")];
     const tx = {
       $queryRaw: vi.fn(async () => [{ bypass: null }]),
+      userBotModelConnection: { findMany: vi.fn(async () => [] as PinnedBot[]) },
       userModelRoleChoice: { deleteMany: vi.fn(async () => ({ count: 1 })) },
       spaceModelRoleChoice: { deleteMany: vi.fn(async () => ({ count: 1 })) },
       userModelCredential: {
@@ -6181,6 +6193,70 @@ describe("model disconnect", () => {
       );
     return { tx, cancelProvider, call };
   }
+
+  it("refuses removing a connection a bot runs on while another remains", async () => {
+    const { tx, call } = disconnectDeps();
+    tx.userBotModelConnection.findMany.mockResolvedValue([pinnedBot("Ada")]);
+
+    const response = await call({ provider: "openai-codex", credentialId: "work" });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      json: { message: "In use by Ada. Pick another connection for them first." },
+    });
+    expect(tx.userModelCredential.deleteMany).not.toHaveBeenCalled();
+    expect(tx.userModelRoleChoice.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it("refuses when the choice was saved under the other Azure provider id", async () => {
+    const { tx, call } = disconnectDeps();
+    tx.userBotModelConnection.findMany.mockResolvedValue([
+      {
+        provider: "azure-openai-responses",
+        modelId: "gpt-x",
+        bot: { name: "Ada", modelProvider: "azure", modelId: "gpt-x" },
+      },
+    ]);
+
+    const response = await call({ provider: "openai-codex", credentialId: "work" });
+
+    expect(response.status).toBe(400);
+    expect(tx.userModelCredential.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it("only counts bots in Spaces the member still belongs to", async () => {
+    const { tx, call } = disconnectDeps();
+
+    await call({ provider: "openai-codex", credentialId: "work" });
+
+    expect(tx.userBotModelConnection.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          bot: { archivedAt: null, space: { memberships: { some: { userId: actor.userId } } } },
+        }),
+      }),
+    );
+  });
+
+  it("ignores a choice left behind by a bot that moved to another model", async () => {
+    const { tx, call } = disconnectDeps();
+    tx.userBotModelConnection.findMany.mockResolvedValue([pinnedBot("Ada", "gpt-y")]);
+
+    const response = await call({ provider: "openai-codex", credentialId: "work" });
+
+    expect(response.status).toBe(200);
+    expect(tx.userModelCredential.deleteMany).toHaveBeenCalled();
+  });
+
+  it("allows removing the provider's last connection", async () => {
+    const { tx, call } = disconnectDeps();
+    tx.userModelCredential.findMany.mockResolvedValue([connection("work")]);
+
+    const response = await call({ provider: "openai-codex", credentialId: "work" });
+
+    expect(response.status).toBe(200);
+    expect(tx.userBotModelConnection.findMany).not.toHaveBeenCalled();
+  });
 
   it("removes one connection and its rows, keeping the other account's", async () => {
     const { tx, cancelProvider, call } = disconnectDeps();
@@ -7767,6 +7843,7 @@ describe("bot model auth on save", () => {
     const tx = {
       $queryRaw: vi.fn(async () => []),
       bot: { update: botUpdate },
+      userBotModelConnection: { deleteMany: vi.fn(async () => ({ count: 0 })) },
       thread: { update: vi.fn(async () => ({ nextEventSeq: 2 })) },
       event: { create: vi.fn(async () => ({ seq: 1 })) },
     };
@@ -7778,6 +7855,7 @@ describe("bot model auth on save", () => {
         update: botUpdate,
       },
       userModelPreference: { findFirst: preferenceFindFirst },
+      userBotModelConnection: { findUnique: vi.fn(async () => null) },
       userModelCredential: { findFirst: vi.fn(async () => null) },
       secret: { findFirst: secretFindFirst },
       $transaction: vi.fn(async (fn: (client: typeof tx) => unknown) => fn(tx)),
@@ -8666,6 +8744,7 @@ describe("openai-compatible enabled models", () => {
     userId?: string;
     role?: string;
     position?: number;
+    modelConnections?: { provider: string; modelId: string; credentialId: string }[];
   };
   type PinWhere = {
     spaceId?: string;
@@ -8713,6 +8792,7 @@ describe("openai-compatible enabled models", () => {
   function pinStores(options: {
     bots?: Pin[];
     routines?: Pin[];
+    routineConnections?: { provider: string; modelId: string; credentialId: string }[];
     backups?: string[];
     roleChoices?: string[];
     mainPrimary?: string;
@@ -8736,10 +8816,18 @@ describe("openai-compatible enabled models", () => {
       })),
     ];
     return {
-      bots: (where: PinWhere) => matching(options.bots, where),
+      bots: (where: PinWhere) =>
+        matching(options.bots, where).map((row) => ({ modelConnections: [], ...row })),
       routine: {
         findMany: vi.fn(async ({ where }: { where: PinWhere }) =>
-          matching(options.routines, where),
+          matching(options.routines, where).map((row) => ({
+            bot: {
+              modelProvider: compatible,
+              modelId: row.modelId,
+              modelConnections: options.routineConnections ?? [],
+            },
+            ...row,
+          })),
         ),
       },
       // The account's models; no Space overrides them.
@@ -8818,6 +8906,12 @@ describe("openai-compatible enabled models", () => {
   }
 
   function fixture(options: {
+    sharedBotChoices?: {
+      modelId: string;
+      credentialId: string;
+      provider: string;
+      bot: { name: string; spaceId: string; modelId: string };
+    }[];
     /** Stored plaintext; null makes the stored ciphertext unreadable. */
     plaintext: string | null;
     alternatePlaintext?: string;
@@ -8828,6 +8922,7 @@ describe("openai-compatible enabled models", () => {
     botModelId?: string;
     bots?: Pin[];
     routines?: Pin[];
+    routineConnections?: { provider: string; modelId: string; credentialId: string }[];
     backups?: string[];
     roleChoices?: string[];
     mainPrimary?: string;
@@ -8862,9 +8957,18 @@ describe("openai-compatible enabled models", () => {
     }
     const pins = pinStores(options);
     const bot = botRow(options.botModelId ?? options.defaultModel);
+    const botModelConnection = {
+      findMany: vi.fn(async () => options.sharedBotChoices ?? []),
+      findUnique: vi.fn(async () => null),
+      upsert: vi.fn(async () => ({})),
+      deleteMany: vi.fn(async () => ({ count: 1 })),
+    };
     const prisma = {
       ...pins,
+      userBotModelConnection: botModelConnection,
       $queryRaw: vi.fn(async () => []),
+      thread: { update: vi.fn(async () => ({ nextEventSeq: 2 })) },
+      event: { create: vi.fn(async () => ({ seq: 1 })) },
       bot: {
         findFirst: vi.fn(async () => bot),
         findMany: vi.fn(async ({ where }: { where: PinWhere }) =>
@@ -8965,8 +9069,11 @@ describe("openai-compatible enabled models", () => {
         }),
         { prefix: "/rpc", context: { actor } },
       );
-      const payload = (await response.json()) as { json: { message?: string } };
-      return { status: response.status, message: payload.json.message };
+      const payload = (await response.json()) as {
+        json: { message?: string; credentialId?: string | null; pinned?: boolean };
+      };
+      const { message, credentialId, pinned } = payload.json;
+      return { status: response.status, message, credentialId, pinned };
     };
     const enabledInDto = () =>
       modelCredentialDto(
@@ -9064,6 +9171,111 @@ describe("openai-compatible enabled models", () => {
     },
   );
 
+  it("leaves a routine alone when its bot's chosen connection is another one", async () => {
+    const { call } = fixture({
+      plaintext: secretText(["m-a", "m-b"]),
+      defaultModel: "m-a",
+      routines: [{ name: "Nightly digest", modelId: "m-b" }],
+      routineConnections: [{ provider: compatible, modelId: "m-b", credentialId: "cred-other" }],
+    });
+    const result = await call("models/connect", {
+      provider: compatible,
+      baseUrl,
+      modelId: "m-a",
+      enabledModelIds: ["m-a"],
+    });
+    expect(result.status).toBe(200);
+  });
+
+  it("refuses dropping a model this member chose the connection for on a shared bot", async () => {
+    const { call, prisma } = fixture({
+      plaintext: secretText(["m-a", "m-b"]),
+      defaultModel: "m-a",
+      sharedBotChoices: [
+        {
+          provider: compatible,
+          modelId: "m-b",
+          credentialId: "cred-compat",
+          bot: { name: "Shared", spaceId: "space-2", modelId: "m-b" },
+        },
+      ],
+    });
+    const result = await call("models/connect", {
+      provider: compatible,
+      baseUrl,
+      modelId: "m-a",
+      enabledModelIds: ["m-a"],
+    });
+    expect(result).toEqual({ status: 400, message: expect.stringContaining("Shared") });
+    expect(prisma.userBotModelConnection.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          userId: actor.userId,
+          bot: expect.objectContaining({
+            userId: { not: actor.userId },
+            space: { memberships: { some: { userId: actor.userId } } },
+          }),
+        }),
+      }),
+    );
+  });
+
+  it("ignores a member's old choice once the shared bot has moved to another model", async () => {
+    const { call } = fixture({
+      plaintext: secretText(["m-a", "m-b"]),
+      defaultModel: "m-a",
+      sharedBotChoices: [
+        {
+          provider: compatible,
+          modelId: "m-b",
+          credentialId: "cred-compat",
+          bot: { name: "Shared", spaceId: "space-2", modelId: "m-c" },
+        },
+      ],
+    });
+    await expect(
+      call("models/connect", {
+        provider: compatible,
+        baseUrl,
+        modelId: "m-a",
+        enabledModelIds: ["m-a"],
+      }),
+    ).resolves.toMatchObject({ status: 200 });
+  });
+
+  it("ignores a routine's model once its bot has moved off the chosen connection's model", async () => {
+    const { call, prisma } = fixture({
+      plaintext: secretText(["m-a", "m-b"]),
+      defaultModel: "m-a",
+      routines: [{ name: "Nightly digest", modelId: "m-b" }],
+      routineConnections: [{ provider: compatible, modelId: "m-b", credentialId: "cred-other" }],
+    });
+    prisma.routine.findMany.mockImplementation(
+      async () =>
+        [
+          {
+            name: "Nightly digest",
+            spaceId: "space-1",
+            modelId: "m-b",
+            bot: {
+              modelProvider: compatible,
+              modelId: "m-a",
+              modelConnections: [
+                { provider: compatible, modelId: "m-b", credentialId: "cred-other" },
+              ],
+            },
+          },
+        ] as never,
+    );
+    const result = await call("models/connect", {
+      provider: compatible,
+      baseUrl,
+      modelId: "m-a",
+      enabledModelIds: ["m-a"],
+    });
+    expect(result.status).toBe(400);
+  });
+
   it("ignores another user's bot in the same space", async () => {
     const { call } = fixture({
       plaintext: secretText(["m-a", "m-b"]),
@@ -9143,6 +9355,146 @@ describe("openai-compatible enabled models", () => {
     expect(state.credential).toEqual(initialCredential);
   });
 
+  it("refuses dropping a model from the connection a bot was put on", async () => {
+    const { call } = fixture({
+      plaintext: secretText(["m-a", "m-b"]),
+      defaultModel: "m-a",
+      bots: [
+        {
+          name: "Ada",
+          modelId: "m-b",
+          modelConnections: [{ provider: compatible, modelId: "m-b", credentialId: "cred-compat" }],
+        },
+      ],
+    });
+
+    const result = await call("models/connect", {
+      provider: compatible,
+      credentialId: "cred-compat",
+      baseUrl,
+      apiKey: "sk-fake-replacement-key",
+      modelId: "m-a",
+      enabledModelIds: ["m-a"],
+    });
+
+    expect(result).toEqual({ status: 400, message: refusal("Ada") });
+  });
+
+  it("saves a bot's connection with its model", async () => {
+    const { call, prisma, state } = fixture({ plaintext: secretText(["X"]), defaultModel: "X" });
+    state.credential.userPreferences = [];
+
+    await expect(
+      call("bots/update", { botId: "bot-1", modelConnectionId: "cred-compat" }),
+    ).resolves.toMatchObject({ status: 200 });
+
+    const pin = { provider: compatible, modelId: "X", credentialId: "cred-compat" };
+    expect(prisma.userBotModelConnection.upsert).toHaveBeenCalledWith({
+      where: { userId_botId: { userId: actor.userId, botId: "bot-1" } },
+      create: { userId: actor.userId, botId: "bot-1", ...pin },
+      update: pin,
+    });
+  });
+
+  it("removes a member's chosen connection when the bot's model changes", async () => {
+    const { call, prisma, state } = fixture({
+      plaintext: secretText(["X", "Y"]),
+      defaultModel: "X",
+    });
+    state.credential.userPreferences = [];
+
+    await expect(
+      call("bots/update", { botId: "bot-1", modelProvider: compatible, modelId: "Y" }),
+    ).resolves.toMatchObject({ status: 200 });
+
+    expect(prisma.userBotModelConnection.deleteMany).toHaveBeenCalledWith({
+      where: { userId: actor.userId, botId: "bot-1" },
+    });
+  });
+
+  it("keeps a member's chosen connection when the bot's model stays", async () => {
+    const { call, prisma, state } = fixture({ plaintext: secretText(["X"]), defaultModel: "X" });
+    state.credential.userPreferences = [];
+
+    await expect(
+      call("bots/update", { botId: "bot-1", modelProvider: compatible, modelId: "X" }),
+    ).resolves.toMatchObject({ status: 200 });
+
+    expect(prisma.userBotModelConnection.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it("leaves a small edit of a bot on the default model outside the connection transaction", async () => {
+    const { call, prisma } = fixture({ plaintext: secretText(["X"]), defaultModel: "X" });
+    Object.assign(await prisma.bot.findFirst(), { modelProvider: null, modelId: null });
+
+    await expect(call("bots/update", { botId: "bot-1", pinned: true })).resolves.toMatchObject({
+      status: 200,
+    });
+
+    expect(prisma.userBotModelConnection.deleteMany).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("removes a member's chosen connection when a bot on the default model gets one", async () => {
+    const { call, prisma, state } = fixture({ plaintext: secretText(["X"]), defaultModel: "X" });
+    state.credential.userPreferences = [];
+    Object.assign(await prisma.bot.findFirst(), { modelProvider: null, modelId: null });
+
+    await expect(
+      call("bots/update", { botId: "bot-1", modelProvider: compatible, modelId: "X" }),
+    ).resolves.toMatchObject({ status: 200 });
+
+    expect(prisma.userBotModelConnection.deleteMany).toHaveBeenCalledWith({
+      where: { userId: actor.userId, botId: "bot-1" },
+    });
+  });
+
+  it("removes a member's chosen connection when asked to", async () => {
+    const { call, prisma, state } = fixture({ plaintext: secretText(["X"]), defaultModel: "X" });
+    state.credential.userPreferences = [];
+
+    await expect(
+      call("bots/update", { botId: "bot-1", modelConnectionId: null }),
+    ).resolves.toMatchObject({ status: 200 });
+
+    expect(prisma.userBotModelConnection.deleteMany).toHaveBeenCalledWith({
+      where: { userId: actor.userId, botId: "bot-1" },
+    });
+    expect(prisma.userBotModelConnection.upsert).not.toHaveBeenCalled();
+  });
+
+  it("refuses a bot's connection that does not serve its model", async () => {
+    const { call, prisma, state } = fixture({
+      plaintext: secretText(["Y"]),
+      defaultModel: "Y",
+      botModelId: "X",
+    });
+    state.credential.userPreferences = [];
+
+    const result = await call("bots/update", { botId: "bot-1", modelConnectionId: "cred-compat" });
+
+    expect(result.status).toBe(400);
+    expect(prisma.userBotModelConnection.upsert).not.toHaveBeenCalled();
+    expect(prisma.bot.update).not.toHaveBeenCalled();
+  });
+
+  it("reports the connection running a bot's model and whether it was chosen", async () => {
+    const { call, prisma, state } = fixture({ plaintext: secretText(["X"]), defaultModel: "X" });
+    state.credential.userPreferences = [];
+    prisma.userBotModelConnection.findUnique.mockResolvedValue({
+      provider: compatible,
+      modelId: "X",
+      credentialId: "cred-compat",
+      bot: { modelProvider: compatible, modelId: "X" },
+    } as never);
+
+    await expect(call("bots/modelConnection", { botId: "bot-1" })).resolves.toMatchObject({
+      status: 200,
+      credentialId: "cred-compat",
+      pinned: true,
+    });
+  });
+
   it("accepts the same key replacement when the client lists the pinned id", async () => {
     const { call, secrets } = fixture({
       plaintext: null,
@@ -9190,6 +9542,39 @@ describe("openai-compatible enabled models", () => {
 
     expect(result).toEqual({ status: 400, message: refusal("Ada") });
     expect(secrets.put).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["an owned bot", { bots: [{ name: "Ada", modelId: "m-a" }] }],
+    [
+      "a shared bot",
+      {
+        sharedBotChoices: [
+          {
+            provider: compatible,
+            modelId: "m-a",
+            credentialId: "cred-other",
+            bot: { name: "Ada", spaceId: "space-2", modelId: "m-a" },
+          },
+        ],
+      },
+    ],
+  ])("lets a default change pass %s pinned to another connection", async (_name, pins) => {
+    const { call, prisma } = fixture({ plaintext: secretText(), defaultModel: "m-a", ...pins });
+    prisma.bot.findMany.mockImplementation(
+      async () =>
+        ("bots" in pins ? pins.bots : []).map((bot) => ({
+          ...bot,
+          spaceId: "space-1",
+          modelConnections: [
+            { provider: compatible, modelId: bot.modelId, credentialId: "cred-other" },
+          ],
+        })) as never,
+    );
+
+    const result = await call("models/setDefault", { provider: compatible, modelId: "m-c" });
+
+    expect(result.status).toBe(200);
   });
 
   it("stores the new list with the default included when nothing pins a dropped id", async () => {

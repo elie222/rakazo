@@ -178,6 +178,7 @@ async function failRun(scenario: Scenario) {
     },
     computer: { updateMany: vi.fn(async () => ({ count: 1 })) },
     connection: { findMany: vi.fn(async () => []) },
+    userBotModelConnection: { findUnique: vi.fn(async () => null) },
     userModelPreference: { findFirst: vi.fn(async () => null) },
     spaceSettingOverride: { findUnique: vi.fn(async () => null) },
     userModelRoleChoice: {

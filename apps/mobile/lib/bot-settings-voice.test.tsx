@@ -17,6 +17,11 @@ const mocks = vi.hoisted(() => ({
   crossSpaceCommunication: false,
   avatarSet: undefined as "organic" | "rakazo" | undefined,
   focus: undefined as string | undefined,
+  botModel: {} as { modelProvider?: string; modelId?: string },
+  credentials: [] as unknown[],
+  catalog: [] as unknown[],
+  connection: { credentialId: null as string | null, pinned: false },
+  connectionError: undefined as Error | undefined,
   os: "ios",
   work: [] as unknown[],
   history: [] as unknown[],
@@ -100,8 +105,15 @@ vi.mock("./api", () => ({
         computerMode: "team",
         fleetManagement: false,
         crossSpaceCommunication: mocks.crossSpaceCommunication,
+        ...mocks.botModel,
       };
     }
+    if (procedure === "bots/modelConnection") {
+      if (mocks.connectionError) throw mocks.connectionError;
+      return mocks.connection;
+    }
+    if (procedure === "models/credentials") return mocks.credentials;
+    if (procedure === "models/list") return mocks.catalog;
     if (procedure === "scratchpad/list") return mocks.work;
     if (procedure === "memory/list") return mocks.docs;
     if (procedure === "me") return {};
@@ -365,6 +377,11 @@ describe("bot settings device voice menu", () => {
     mocks.loadBot.mockReset();
     vi.mocked(Notifications.getPresentedNotificationsAsync).mockResolvedValue([]);
     mocks.focus = undefined;
+    mocks.botModel = {};
+    mocks.credentials = [];
+    mocks.catalog = [];
+    mocks.connection = { credentialId: null, pinned: false };
+    mocks.connectionError = undefined;
     mocks.instructions = "";
     mocks.description = "";
     mocks.os = "ios";
@@ -661,6 +678,113 @@ describe("bot settings device voice menu", () => {
     expect(mocks.rpc).toHaveBeenLastCalledWith("bots/update", {
       botId: "bot-fixture",
       avatarSet: "organic",
+    });
+  });
+
+  describe("choosing the connection that runs a bot", () => {
+    const opus = {
+      provider: "anthropic",
+      providerName: "Anthropic",
+      id: "claude-opus",
+      label: "Claude Opus",
+      billing: "",
+    };
+    const row = (matches: (title: string) => boolean) =>
+      [...container.querySelectorAll('[data-menu="Model"] button')].find((button) =>
+        matches(button.textContent ?? ""),
+      ) as HTMLButtonElement;
+    const save = async () =>
+      act(async () =>
+        [...container.querySelectorAll("button")]
+          .find((button) => button.textContent === "Save")!
+          .click(),
+      );
+    beforeEach(() => {
+      const connection = { provider: "anthropic", hasKey: true, isDefault: false };
+      mocks.rpc.mockResolvedValue({});
+      mocks.botModel = { modelProvider: "anthropic", modelId: "claude-opus" };
+      mocks.credentials = [
+        { ...connection, id: "sub", label: "Claude subscription" },
+        { ...connection, id: "api", label: "Anthropic API key" },
+      ];
+      mocks.catalog = [opus];
+    });
+
+    it("lists each connection, shows the saved one, and saves a new pick", async () => {
+      mocks.connection = { credentialId: "sub", pinned: true };
+      await render();
+      expect(row((title) => title.includes("Claude subscription")).dataset.state).toBe("on");
+      await act(async () => row((title) => title.includes("Anthropic API key")).click());
+      await save();
+      expect(mocks.rpc).toHaveBeenCalledWith(
+        "bots/update",
+        expect.objectContaining({ botId: "bot-fixture", modelConnectionId: "api" }),
+      );
+    });
+
+    it("saves the connection already shown when its row is tapped", async () => {
+      mocks.connection = { credentialId: "sub", pinned: false };
+      await render();
+      await act(async () => row((title) => title.includes("Claude subscription")).click());
+      await save();
+      expect(mocks.rpc).toHaveBeenCalledWith(
+        "bots/update",
+        expect.objectContaining({ modelConnectionId: "sub" }),
+      );
+    });
+
+    it("removes the saved connection when the funded row is picked", async () => {
+      mocks.connection = { credentialId: "sub", pinned: true };
+      mocks.catalog = [opus, { ...opus, managed: true }];
+      await render();
+      await act(async () =>
+        row(
+          (title) =>
+            title.includes("Claude Opus") &&
+            !title.includes("Claude subscription") &&
+            !title.includes("Anthropic API key"),
+        ).click(),
+      );
+      await save();
+      expect(mocks.rpc).toHaveBeenCalledWith(
+        "bots/update",
+        expect.objectContaining({ modelConnectionId: null }),
+      );
+    });
+
+    it("keeps showing a failed connection lookup after the model list loads", async () => {
+      mocks.connectionError = new Error("Connection lookup refused");
+      await render();
+      expect(container.textContent).toContain("Connection lookup refused");
+    });
+
+    it("does not show the old connection when the new model's lookup fails", async () => {
+      mocks.connection = { credentialId: "sub", pinned: true };
+      mocks.catalog = [opus, { ...opus, id: "claude-sonnet", label: "Claude Sonnet" }];
+      await render();
+      await act(async () =>
+        row((title) => title.includes("Claude subscription") && title.includes("Sonnet")).click(),
+      );
+      mocks.connectionError = new Error("Connection lookup refused");
+      await save();
+      expect(container.textContent).toContain("Connection lookup refused");
+      expect(
+        row((title) => title.includes("Claude subscription") && title.includes("Sonnet")).dataset
+          .state,
+      ).not.toBe("on");
+    });
+
+    it("sends no connection when none was picked", async () => {
+      mocks.connection = { credentialId: "sub", pinned: true };
+      await render();
+      await act(async () =>
+        container.querySelector<HTMLButtonElement>('[aria-label="Read replies aloud"]')!.click(),
+      );
+      await save();
+      expect(mocks.rpc).toHaveBeenCalledWith(
+        "bots/update",
+        expect.not.objectContaining({ modelConnectionId: expect.anything() }),
+      );
     });
   });
 

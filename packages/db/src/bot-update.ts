@@ -37,6 +37,10 @@ export async function commitBotUpdate(
     expectedUserAvatarSet?: { userId: string; botAvatarSet: string };
     instructionRestore?: { versionId: string; undo?: boolean };
     reason?: string;
+    /** The connection chosen with this model, saved with it. */
+    modelConnection?: { userId: string; provider: string; modelId: string; credentialId: string };
+    /** Removes this member's chosen connection in the same write. */
+    clearModelConnectionFor?: string;
   },
   appendEvent: AppendEvent = appendEventInTransaction,
 ): Promise<{ id: string; name: string; description: string } | null> {
@@ -48,6 +52,8 @@ export async function commitBotUpdate(
   }
   if (
     !options.emitBotUpdated &&
+    !options.modelConnection &&
+    !options.clearModelConnectionFor &&
     options.data.instructions === undefined &&
     !options.instructionRestore
   ) {
@@ -84,6 +90,19 @@ export async function commitBotUpdate(
       data,
       select: { id: true, name: true, description: true },
     });
+    if (options.modelConnection) {
+      const { userId, ...pin } = options.modelConnection;
+      await tx.userBotModelConnection.upsert({
+        where: { userId_botId: { userId, botId: options.botId } },
+        create: { userId, botId: options.botId, ...pin },
+        update: pin,
+      });
+    }
+    if (options.clearModelConnectionFor) {
+      await tx.userBotModelConnection.deleteMany({
+        where: { userId: options.clearModelConnectionFor, botId: options.botId },
+      });
+    }
     const event = await appendEvent(tx, {
       spaceId: options.spaceId,
       threadId: options.threadId,

@@ -6,6 +6,7 @@ import {
   checkpointAndStopComputer,
   defaultVaultItemTitle,
   endTeachingWithLease,
+  findConnectedModelCredential,
   forgetBotSecret,
   forgetPageShareSecrets,
   groupsRemovedByDeletingBot,
@@ -55,9 +56,12 @@ import { ACTIVE_RUN_STATUSES, COMPUTER_USING_RUNS, displayName } from "@rakazo/c
 import type { Prisma } from "@rakazo/db";
 import {
   BotSectionNameConflictError,
+  botModelConnectionApplies,
+  botModelConnectionId,
   botProfileLabelsChanged,
   ComputerLimitError,
   commitBotUpdate,
+  copyBotModelConnection,
   expireComputerExecutionLeases,
   InstructionConflictError,
   IsolationError,
@@ -521,6 +525,11 @@ export function botsRoutes(ctx: RouterContext) {
           .catch((error: unknown) => {
             throw mapSpaceLifecycleError(error);
           });
+        // The copy exists by now and runs on the usual connection without this, so it is not a
+        // reason to fail the request and have a retry make a second copy.
+        await copyBotModelConnection(deps.prisma, context.actor, source, duplicate.id).catch(
+          (error: unknown) => getLogger().error("bot duplicate model connection", error),
+        );
         const assignments = await deps.prisma.botMcpServer.findMany({
           where: {
             botId: source.id,
@@ -558,17 +567,51 @@ export function botsRoutes(ctx: RouterContext) {
           });
           if (!section) throw new IsolationError();
         }
+        const provider =
+          input.modelProvider !== undefined ? input.modelProvider : existing.modelProvider;
+        const modelId = input.modelId !== undefined ? input.modelId : existing.modelId;
+        if (input.modelConnectionId && (!provider || !modelId))
+          throw new ORPCError("BAD_REQUEST", { message: "Pick a model for this bot first" });
         const modelChange = await validateBotModelChange(botModelValidation(context.actor), {
           userId: context.actor.userId,
           spaceId: context.actor.spaceId,
-          provider:
-            input.modelProvider !== undefined ? input.modelProvider : existing.modelProvider,
-          model: input.modelId !== undefined ? input.modelId : existing.modelId,
+          provider,
+          model: modelId,
           thinkingLevel: input.thinkingLevel,
           current: { provider: existing.modelProvider, model: existing.modelId },
+          credentialId:
+            input.modelConnectionId === null
+              ? undefined
+              : (input.modelConnectionId ??
+                (provider && modelId
+                  ? await botModelConnectionId(
+                      deps.prisma,
+                      context.actor,
+                      input.botId,
+                      provider,
+                      modelId,
+                    )
+                  : undefined)),
+          connectionChanging: Boolean(input.modelConnectionId),
         });
         if (!modelChange.ok) throw new ORPCError("BAD_REQUEST", { message: modelChange.error });
         const thinkingLevel = input.thinkingLevel;
+        const modelMoved = existing.modelProvider
+          ? !botModelConnectionApplies(
+              { provider: existing.modelProvider, modelId: existing.modelId ?? "" },
+              provider ?? "",
+              modelId,
+            )
+          : Boolean(provider);
+        const modelConnection =
+          input.modelConnectionId && provider && modelId
+            ? {
+                userId: context.actor.userId,
+                provider,
+                modelId,
+                credentialId: input.modelConnectionId,
+              }
+            : undefined;
         if (!existing.thread) throw new IsolationError();
         // Picking a set on one bot pins it unless it is the owner's default, which unpins it.
         const avatarSetPinned =
@@ -593,6 +636,13 @@ export function botsRoutes(ctx: RouterContext) {
             input.replyMode !== undefined,
           expectedInstructions: input.expectedInstructions,
           expectedSettings: input.expectedSettings,
+          modelConnection,
+          // A choice made for the old model must not come back unchecked if the bot returns to it.
+          clearModelConnectionFor:
+            input.modelConnectionId === null ||
+            (input.modelConnectionId === undefined && modelMoved)
+              ? context.actor.userId
+              : undefined,
           data: {
             name: input.name,
             description: input.description,
@@ -641,6 +691,21 @@ export function botsRoutes(ctx: RouterContext) {
         const bot = bots.find((b) => b.id === input.botId);
         if (!bot) throw new IsolationError();
         return bot;
+      }),
+      modelConnection: authed.bots.modelConnection.handler(async ({ context, input }) => {
+        const { actor } = context;
+        const { modelProvider: provider, modelId } = await repos.getBot(actor, input.botId);
+        if (!provider || !modelId) return { credentialId: null, pinned: false };
+        const pin = await botModelConnectionId(deps.prisma, actor, input.botId, provider, modelId);
+        const credential = await findConnectedModelCredential(
+          deps.prisma,
+          deps.secrets,
+          actor,
+          provider,
+          modelId,
+          { credentialId: pin },
+        );
+        return { credentialId: credential?.id ?? null, pinned: Boolean(pin) };
       }),
       restoreInstructions: authed.bots.restoreInstructions.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);

@@ -166,6 +166,7 @@ export const ROW_SECURITY_MODELS: ReadonlySet<string> = new Set([
   "SpaceSettingOverride",
   "UserModelRoleChoice",
   "UserModelPreference",
+  "UserBotModelConnection",
   "UserVoicePreference",
   "UserActionApprovalRule",
   "UserActionAutoReviewPreference",

@@ -1,5 +1,5 @@
 import { t } from "@lingui/core/macro";
-import type { ChatModelChoice } from "@rakazo/core";
+import type { ChatModelChoice, ConnectedModelChoice } from "@rakazo/core";
 import { chatModelChoices, connectedModelChoices } from "@rakazo/core";
 import type { MobileMe, MobileModel, MobileModelCredential } from "./mobile-types";
 
@@ -9,6 +9,7 @@ export function chatModelPickerChoices(
   catalog: MobileModel[],
   credentials: MobileModelCredential[],
   selectedKey: string,
+  connected: readonly ConnectedModelChoice[] = connectedModelChoices(credentials, catalog),
 ): ChatModelChoice[] {
   const defaultEntry = me?.defaultModel
     ? catalogEntry(catalog, me.defaultProvider, me.defaultModel)
@@ -16,12 +17,7 @@ export function chatModelPickerChoices(
   const spaceDefaultLabel = me?.defaultModel
     ? `${t`Space default`} (${defaultEntry?.label ?? me.defaultModel})`
     : t`Space default`;
-  const choices = chatModelChoices(
-    connectedModelChoices(credentials, catalog),
-    selectedKey,
-    spaceDefaultLabel,
-    defaultEntry?.images,
-  );
+  const choices = chatModelChoices(connected, selectedKey, spaceDefaultLabel, defaultEntry?.images);
   choices[0] = {
     ...choices[0]!,
     title: t`Space default`,

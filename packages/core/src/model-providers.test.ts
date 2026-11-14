@@ -1,15 +1,21 @@
 import { describe, expect, it } from "vitest";
 import {
+  botConnectionChanged,
   botsWithOwnModel,
   canUseCompatibleModelAsDefault,
   chatModelChoices,
   clampCatalogThinkingLevel,
   compatibleModelRows,
   connectedModelChoices,
+  connectionChoiceKey,
   connectionForModelChoice,
+  connectionModelChoices,
+  connectionPickerKey,
   credentialForModel,
   filterModelChoices,
   groupModelChoices,
+  parseConnectionChoiceKey,
+  pickBotModelChoice,
   pickCatalogModelId,
   popularModelProvidersFirst,
   resolveSelectableModelId,
@@ -578,5 +584,156 @@ describe("connectionForModelChoice", () => {
     expect(pick("glm-flash")).toBe("matching");
     expect(pick("glm-other")).toBe("preferred");
     expect(pick("glm-flash", "newest")).toBe("newest");
+  });
+});
+
+describe("connectionModelChoices", () => {
+  const entry = (provider: string, id: string) => ({
+    provider,
+    id,
+    label: id,
+    providerName: provider === "anthropic" ? "Anthropic" : "xAI",
+  });
+  const catalog = [entry("anthropic", "opus"), entry("xai", "grok")];
+  const anthropic = (id: string, label: string) => ({ id, label, provider: "anthropic" });
+
+  it("lists a model under each connection of a provider that has several", () => {
+    const choices = connectionModelChoices(
+      [anthropic("sub", "Claude subscription"), anthropic("api", "API key")],
+      catalog,
+    );
+    expect(
+      choices.map(({ key, credentialId, providerLabel }) => [key, credentialId, providerLabel]),
+    ).toEqual([
+      ["sub@@anthropic::opus", "sub", "Claude subscription"],
+      ["api@@anthropic::opus", "api", "API key"],
+    ]);
+  });
+
+  it("lists a model only under the connections that can run it", () => {
+    const keys = connectionModelChoices(
+      [anthropic("sub", "Subscription"), anthropic("api", "API key")],
+      [{ ...entry("anthropic", "opus"), credentialIds: ["sub"] }, entry("anthropic", "sonnet")],
+    ).map((choice) => choice.key);
+    expect(keys).toEqual([
+      "sub@@anthropic::opus",
+      "sub@@anthropic::sonnet",
+      "api@@anthropic::sonnet",
+    ]);
+  });
+
+  it("drops the thinking level only when the pick cannot keep it", () => {
+    const credentials = [
+      { id: "sub", thinkingLevels: ["high"] },
+      { id: "api", thinkingLevels: ["low"] },
+    ];
+    const current = { modelKey: "anthropic::opus", thinkingLevel: "high", credentials };
+    expect(pickBotModelChoice("sub@@anthropic::opus", current)).toEqual({
+      credentialId: "sub",
+      modelKey: "anthropic::opus",
+      resetThinking: false,
+    });
+    expect(pickBotModelChoice("api@@anthropic::opus", current).resetThinking).toBe(true);
+    expect(pickBotModelChoice("anthropic::opus", current)).toEqual({
+      credentialId: null,
+      modelKey: "anthropic::opus",
+      resetThinking: false,
+    });
+    expect(pickBotModelChoice("sub@@anthropic::sonnet", current).resetThinking).toBe(true);
+  });
+
+  it("shows a bot's saved connection, or the model alone when it has none", () => {
+    const choices = [{ key: "sub@@anthropic::opus" }, { key: "anthropic::funded" }];
+    expect(connectionPickerKey(choices, "anthropic::opus", "sub")).toBe("sub@@anthropic::opus");
+    expect(connectionPickerKey(choices, "anthropic::funded", "sub")).toBe("anthropic::funded");
+    expect(connectionPickerKey(choices, "anthropic::funded", null)).toBe("anthropic::funded");
+  });
+
+  it("counts removing a saved connection as a change, and nothing else without one", () => {
+    const pinned = { credentialId: "sub", pinned: true };
+    const usual = { credentialId: "sub", pinned: false };
+    expect(botConnectionChanged(undefined, pinned)).toBe(false);
+    expect(botConnectionChanged(null, pinned)).toBe(true);
+    expect(botConnectionChanged(null, usual)).toBe(false);
+    expect(botConnectionChanged(null, undefined)).toBe(true);
+    expect(botConnectionChanged("sub", pinned)).toBe(false);
+    expect(botConnectionChanged("sub", usual)).toBe(true);
+    expect(botConnectionChanged("api", pinned)).toBe(true);
+  });
+
+  it.each([
+    ["saved", { modelId: "opus" }],
+    ["enabled", { enabledModelIds: ["opus"] }],
+  ])("keeps a %s model off a connection that cannot run it", (_name, saved) => {
+    const keys = connectionModelChoices(
+      [{ ...anthropic("api", "API key"), ...saved }, anthropic("sub", "Subscription")],
+      [{ ...entry("anthropic", "opus"), credentialIds: ["sub"] }],
+    ).map((choice) => choice.key);
+    expect(keys).toEqual(["sub@@anthropic::opus"]);
+  });
+
+  it.each([
+    ["saved", { modelId: "funded" }],
+    ["enabled", { enabledModelIds: ["funded"] }],
+  ])("lists a %s funded model only under no connection", (_name, saved) => {
+    const keys = connectionModelChoices(
+      [{ ...anthropic("api", "API key"), ...saved }, anthropic("sub", "Subscription")],
+      [{ ...entry("anthropic", "funded"), managed: true }],
+    ).map((choice) => choice.key);
+    expect(keys).toEqual(["anthropic::funded"]);
+  });
+
+  it("keeps a custom model id the catalog does not list", () => {
+    const keys = connectionModelChoices(
+      [{ ...anthropic("api", "API key"), modelId: "custom" }, anthropic("sub", "Subscription")],
+      [{ ...entry("anthropic", "opus"), credentialIds: ["sub"] }],
+    ).map((choice) => choice.key);
+    expect(keys).toEqual(["api@@anthropic::custom", "sub@@anthropic::opus"]);
+  });
+
+  it("lists a funded model once, under no connection", () => {
+    const choices = connectionModelChoices(
+      [anthropic("sub", "Subscription"), anthropic("api", "API key")],
+      [{ ...entry("anthropic", "funded"), managed: true }, entry("anthropic", "opus")],
+    );
+    expect(choices.map(({ key, credentialId }) => [key, credentialId])).toEqual([
+      ["sub@@anthropic::opus", "sub"],
+      ["api@@anthropic::opus", "api"],
+      ["anthropic::funded", undefined],
+    ]);
+  });
+
+  it("leaves a provider with one connection as it was", () => {
+    const [choice, ...rest] = connectionModelChoices([anthropic("sub", "Claude")], catalog);
+    expect(rest).toEqual([]);
+    expect(choice).toMatchObject({ key: "anthropic::opus", providerLabel: "Anthropic" });
+    expect(choice?.credentialId).toBeUndefined();
+  });
+
+  it("keeps a connection's own enabled models apart from the other connection's", () => {
+    const connection = (id: string, enabledModelIds: string[]) => ({
+      id,
+      label: id,
+      provider: "openai-compatible",
+      enabledModelIds,
+    });
+    const keys = connectionModelChoices(
+      [connection("kourier", ["a", "shared"]), connection("synthetic", ["shared"])],
+      [],
+    ).map((choice) => choice.key);
+    expect(keys).toEqual([
+      "kourier@@openai-compatible::a",
+      "kourier@@openai-compatible::shared",
+      "synthetic@@openai-compatible::shared",
+    ]);
+  });
+
+  it("round-trips a key, and reads a plain key whose model id contains the separator", () => {
+    expect(parseConnectionChoiceKey(connectionChoiceKey("sub", "anthropic::opus"))).toEqual({
+      credentialId: "sub",
+      modelKey: "anthropic::opus",
+    });
+    expect(parseConnectionChoiceKey("xai::a@@b")).toEqual({ modelKey: "xai::a@@b" });
+    expect(parseConnectionChoiceKey("")).toEqual({ modelKey: "" });
   });
 });

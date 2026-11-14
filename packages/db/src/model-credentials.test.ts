@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import type { PrismaClient } from "./client.js";
 import {
+  botModelConnectionId,
   chooseModelCredential,
   defaultModelCredentialCandidates,
+  findBotModelCredential,
   findModelCredential,
   newestModelCredentialOrder,
   saveModelPreference,
@@ -330,4 +332,77 @@ it.each([
       credentials: [credential],
     }),
   ).toEqual([credential]);
+});
+
+describe("a bot's chosen connection", () => {
+  const pin = {
+    provider: "anthropic",
+    modelId: "claude-opus",
+    credentialId: "subscription",
+    bot: { modelProvider: "anthropic", modelId: "claude-opus" },
+  };
+  const lookup = (row: typeof pin | null) =>
+    ({ userBotModelConnection: { findUnique: vi.fn(async () => row) } }) as unknown as PrismaClient;
+
+  it("reads the member's own row and applies while the bot is on that model", async () => {
+    const prisma = lookup(pin);
+    await expect(
+      botModelConnectionId(prisma, { userId: "user" }, "bot", "anthropic", "claude-opus"),
+    ).resolves.toBe("subscription");
+    expect(prisma.userBotModelConnection.findUnique).toHaveBeenCalledWith({
+      where: { userId_botId: { userId: "user", botId: "bot" } },
+      select: {
+        provider: true,
+        modelId: true,
+        credentialId: true,
+        bot: { select: { modelProvider: true, modelId: true } },
+      },
+    });
+  });
+
+  it("does not apply to a routine still on the model its bot has left", async () => {
+    const moved = { ...pin, bot: { modelProvider: "anthropic", modelId: "claude-sonnet" } };
+    await expect(
+      botModelConnectionId(lookup(moved), { userId: "user" }, "bot", "anthropic", "claude-opus"),
+    ).resolves.toBeUndefined();
+  });
+
+  it.each([
+    ["another model", "anthropic", "claude-haiku"],
+    ["another provider", "openrouter", "claude-opus"],
+  ])("does not apply on %s", async (_name, provider, modelId) => {
+    await expect(
+      botModelConnectionId(lookup(pin), { userId: "user" }, "bot", provider, modelId),
+    ).resolves.toBeUndefined();
+  });
+
+  it("uses the chosen connection, and the usual one without a choice", async () => {
+    const row = {
+      id: "subscription",
+      userId: "user",
+      provider: "anthropic",
+      label: "Claude",
+      secretId: "secret",
+      userPreferences: [],
+    };
+    const credentialFindFirst = vi.fn().mockResolvedValue(row);
+    const preferenceFindFirst = vi.fn().mockResolvedValue(null);
+    const prisma = (selected: typeof pin | null) =>
+      ({
+        ...lookup(selected),
+        userModelCredential: { findFirst: credentialFindFirst },
+        userModelPreference: { findFirst: preferenceFindFirst },
+      }) as unknown as PrismaClient;
+
+    await findBotModelCredential(prisma(pin), { userId: "user" }, "bot", "anthropic", pin.modelId);
+    expect(credentialFindFirst).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        where: { id: "subscription", userId: "user", provider: "anthropic" },
+      }),
+    );
+    expect(preferenceFindFirst).not.toHaveBeenCalled();
+
+    await findBotModelCredential(prisma(null), { userId: "user" }, "bot", "anthropic", pin.modelId);
+    expect(preferenceFindFirst).toHaveBeenCalled();
+  });
 });

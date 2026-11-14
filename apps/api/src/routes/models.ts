@@ -33,6 +33,7 @@ import { clampCatalogThinkingLevel } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import {
   appliedModelRole,
+  botModelConnectionApplies,
   comparePreferenceOrder,
   defaultModelCredentialCandidates,
   deleteUnreferencedCredentialSecret,
@@ -120,9 +121,14 @@ export function modelsRoutes(ctx: RouterContext) {
     };
   return {
     models: {
-      list: authed.models.list.handler(async ({ context }) =>
-        withServingConnections(context.actor, await chatCatalog(context.actor)),
-      ),
+      list: authed.models.list.handler(async ({ context }) => {
+        const catalog = await chatCatalog(context.actor);
+        // Only narrows which connection lists a model; saving a bot still checks its connection.
+        return withServingConnections(context.actor, catalog).catch((error: unknown) => {
+          getLogger().error("models list serving connections", error);
+          return catalog;
+        });
+      }),
       credentials: authed.models.credentials.handler(async ({ context }) => {
         const [rows, main] = await Promise.all([
           deps.prisma.userModelCredential.findMany({
@@ -647,6 +653,41 @@ export function modelsRoutes(ctx: RouterContext) {
               if (input.credentialId && existing.length === 0) return;
               const ids = existing.map((row) => row.id);
               const lastConnection = existing.length === connections.length;
+              // Removing one of several connections would silently move these bots onto another.
+              if (!lastConnection) {
+                const pinned = await runAsSystemInTransaction(
+                  tx,
+                  "bots using a model connection in every Space",
+                  () =>
+                    tx.userBotModelConnection.findMany({
+                      where: {
+                        userId: context.actor.userId,
+                        credentialId: { in: ids },
+                        // Someone who left a Space can no longer run its bots or change them.
+                        bot: {
+                          archivedAt: null,
+                          space: { memberships: { some: { userId: context.actor.userId } } },
+                        },
+                      },
+                      select: {
+                        provider: true,
+                        modelId: true,
+                        bot: { select: { name: true, modelProvider: true, modelId: true } },
+                      },
+                    }),
+                );
+                const names = pinned
+                  .filter(
+                    (pin) =>
+                      pin.bot.modelProvider &&
+                      botModelConnectionApplies(pin, pin.bot.modelProvider, pin.bot.modelId),
+                  )
+                  .map((pin) => pin.bot.name);
+                if (names.length > 0)
+                  throw new ORPCError("BAD_REQUEST", {
+                    message: `In use by ${[...new Set(names)].join(", ")}. Pick another connection for them first.`,
+                  });
+              }
               const roleRows = {
                 userId: context.actor.userId,
                 provider,
