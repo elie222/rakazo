@@ -1,7 +1,9 @@
 import { abortableDelay, isRetryableError, reconnectDelayMs, retryDelayMs } from "@rakazo/core";
 import { useEffect, useRef, useState } from "react";
+import { subscribeSpaceSelection } from "./api";
 import { subscribeRosterSignals } from "./api-live";
 import { useAppForeground } from "./app-foreground";
+import { computerUpdates } from "./computer-updates";
 
 /**
  * Follows the server's roster signals while enabled and on screen, running `onChange` for each
@@ -22,18 +24,34 @@ export function useRosterSignals(onChange: () => unknown, enabled: boolean): boo
       while (!controller.signal.aborted) {
         let failure: unknown;
         let opened = false;
+        // The stream speaks for the Space selected when it opened, so a switch reopens it.
+        const connection = new AbortController();
+        const close = () => connection.abort();
+        controller.signal.addEventListener("abort", close);
+        const unfollowSpace = subscribeSpaceSelection(close);
+        const computerUpdateSignals = computerUpdates.connect();
         try {
-          await subscribeRosterSignals(() => {
-            if (controller.signal.aborted) return;
-            if (opened) void onChangeRef.current();
-            opened = true;
-            setLive(true);
-          }, controller.signal);
+          await subscribeRosterSignals(
+            () => {
+              if (connection.signal.aborted) return;
+              if (opened) void onChangeRef.current();
+              opened = true;
+              setLive(true);
+            },
+            connection.signal,
+            () => {
+              if (!connection.signal.aborted) computerUpdateSignals.signalled();
+            },
+          );
         } catch (error) {
           failure = error;
         }
+        unfollowSpace();
+        controller.signal.removeEventListener("abort", close);
+        computerUpdateSignals.lost();
         if (controller.signal.aborted) return;
         setLive(false);
+        if (connection.signal.aborted) continue;
         if (failure !== undefined && !isRetryableError(failure)) return;
         if (opened) retry = 1_000;
         await abortableDelay(

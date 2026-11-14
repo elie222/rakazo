@@ -269,6 +269,9 @@ export function computerRoutes(ctx: RouterContext) {
           if (error instanceof ComputerBusyError)
             throw new ORPCError("CONFLICT", { message: "Computer is busy" });
           throw error;
+        } finally {
+          // A refused start can still have dismissed earlier failures.
+          await deps.events.publishComputerUpdateChange?.(context.actor.spaceId);
         }
       }),
       reset: authed.computer.reset.handler(async ({ context, input }) =>
@@ -288,6 +291,8 @@ export function computerRoutes(ctx: RouterContext) {
           if (error instanceof ComputerBusyError)
             throw new ORPCError("CONFLICT", { message: "Computer is busy" });
           throw error;
+        } finally {
+          await deps.events.publishComputerUpdateChange?.(context.actor.spaceId);
         }
       }),
       updates: authed.computer.updates.handler(async ({ context }) => {
@@ -317,7 +322,7 @@ export function computerRoutes(ctx: RouterContext) {
         throw new ORPCError("FORBIDDEN");
       }),
       dismissUpdate: authed.computer.dismissUpdate.handler(async ({ context, input }) => {
-        await deps.prisma.computerUpdate.updateMany({
+        const dismissed = await deps.prisma.computerUpdate.updateMany({
           where: {
             id: input.id,
             status: "failed",
@@ -328,6 +333,8 @@ export function computerRoutes(ctx: RouterContext) {
           },
           data: { status: "dismissed" },
         });
+        if (dismissed.count > 0)
+          await deps.events.publishComputerUpdateChange?.(context.actor.spaceId);
         return { ok: true as const };
       }),
       dismissDiskWarning: authed.computer.dismissDiskWarning.handler(async ({ context, input }) => {

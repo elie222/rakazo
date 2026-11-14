@@ -16,6 +16,7 @@ import {
   DEFAULT_BOT_AVATAR_COLOR,
   MODEL_SEARCH_THRESHOLD,
   modelOptionKey,
+  modelThinkingLevels,
   parseModelOptionKey,
   pickBotModelChoice,
   resolveSelectableModelId,
@@ -307,10 +308,10 @@ export default function BotSettingsScreen() {
       : undefined;
   const effectiveCredential =
     chosenCredential ?? credentialForModel(credentials, effectiveProvider, effectiveModelId);
-  const thinkingOptions = (
-    effectiveCredential?.thinkingLevels ??
-    effectiveEntry?.thinkingLevels ??
-    []
+  const thinkingOptions = modelThinkingLevels(
+    effectiveCredential,
+    effectiveEntry,
+    effectiveModelId,
   ).filter((level) => level !== "off");
 
   const modelChoices = useMemo(

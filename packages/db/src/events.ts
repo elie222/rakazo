@@ -23,6 +23,10 @@ import { cancelRunsInTransaction } from "./cancel-runs.js";
 import { createChatAlerts } from "./chat-alerts.js";
 import type { PrismaClient } from "./client.js";
 import { Prisma } from "./client.js";
+import {
+  followComputerUpdateChanges,
+  publishComputerUpdateChange,
+} from "./computer-update-changes.js";
 import { expireComputerExecutionLeases } from "./computers.js";
 import { contentEncryptionOf } from "./content-encryption.js";
 import {
@@ -113,6 +117,8 @@ export interface ThreadEvents {
   ): AsyncGenerator<ChatAlert>;
   publishRosterChange?(change: RosterChange): Promise<void>;
   followRosterChanges?(userId: string, signal?: AbortSignal): AsyncGenerator<void>;
+  publishComputerUpdateChange?(spaceId: string): Promise<void>;
+  followComputerUpdateChanges?(spaceId: string, signal?: AbortSignal): AsyncGenerator<void>;
   answerRunInput(input: AnswerRunInput): Promise<boolean>;
   append(input: AppendEventInput): Promise<ProductEvent>;
   claimSteering(input: ClaimSteeringInput): Promise<ClaimedSteeringMessage[]>;
@@ -246,7 +252,10 @@ export function createThreadEvents(
     ...(realtime && {
       followRosterChanges: (userId, signal) =>
         followRosterChanges(realtime, userId, () => loadRosterScope(prisma, userId), signal),
+      followComputerUpdateChanges: (spaceId, signal) =>
+        followComputerUpdateChanges(realtime, spaceId, signal),
     }),
+    publishComputerUpdateChange: (spaceId) => publishComputerUpdateChange(realtime, spaceId),
     answerRunInput: (input) => answerRunInput(prisma, input, realtime, options.runSecretWriter),
     append: (input) => appendEvent(prisma, input, realtime, options.analytics),
     claimSteering: (input) => claimSteering(prisma, input),

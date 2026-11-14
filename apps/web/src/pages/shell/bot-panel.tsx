@@ -16,6 +16,7 @@ import {
   connectionPickerKey,
   credentialForModel,
   modelOptionKey,
+  modelThinkingLevels,
   parseModelOptionKey,
   pickBotModelChoice,
   resolveSelectableModelId,
@@ -327,10 +328,10 @@ export function BotSettings({
       : undefined;
   const effectiveCredential =
     chosenCredential ?? credentialForModel(credentials, effectiveProvider, effectiveModelId);
-  const thinkingOptions = (
-    effectiveCredential?.thinkingLevels ??
-    effectiveEntry?.thinkingLevels ??
-    []
+  const thinkingOptions = modelThinkingLevels(
+    effectiveCredential,
+    effectiveEntry,
+    effectiveModelId,
   ).filter((level) => level !== "off");
   const defaultThinkingLevel = effectiveCredential?.thinkingLevel ?? "medium";
 

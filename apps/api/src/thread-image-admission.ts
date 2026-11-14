@@ -4,10 +4,10 @@ import type { CodexLiveCatalog } from "@rakazo/adapters";
 import {
   CHATGPT_OAUTH_PROVIDER,
   codexLiveModel,
+  connectionModelSettings,
   findConnectedBotModelCredential,
   knownModelImageInput,
   modelAcceptsImageInput,
-  modelIdSupportsImages,
   parseModelSecret,
   resolveMemberMainModel,
   runModelChoice,
@@ -15,6 +15,7 @@ import {
   selectConfiguredModel,
 } from "@rakazo/adapters";
 import type { Actor, MessageBlock } from "@rakazo/contracts";
+import { OPENAI_COMPATIBLE_PROVIDER_ID } from "@rakazo/contracts";
 import { MODEL_IMAGE_INPUT_ERROR, MODEL_IMAGE_INPUT_UNKNOWN } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import {
@@ -93,50 +94,30 @@ export async function assertThreadImageInput(
   const id = running ? run.modelId : selected.id;
   if (!provider || !id) return;
   let supportsImages = knownModelImageInput(provider, id);
-  if (provider === "openai-compatible" && configuration) {
-    const credential = running ? overrideCredential : selected.credential;
-    if (credential) {
-      const row = await prisma.secret.findFirst({
-        where: { id: credential.secretId, userId: actor.userId, spaceId: null },
+  const credential = running ? overrideCredential : selected.credential;
+  if (supportsImages === undefined && configuration && credential) {
+    // A model the catalog cannot describe reads images when its settings say so; without
+    // one its capability is unknown, so the user is asked to configure it.
+    const secret = await loadModelSecret(prisma, configuration.secrets, actor, credential);
+    if (secret) {
+      const settings = connectionModelSettings(secret, provider, id, {
+        defaultModel: credential.defaultModel,
+        supportsImages: await legacyImageInput(prisma, actor, credential.id),
       });
-      if (row) {
-        const legacy = await prisma.userModelCredential.findFirst({
-          where: { id: credential.id, userId: actor.userId },
-          select: { supportsImages: true },
-        });
-        const secret = parseModelSecret(await configuration.secrets.load(row.ciphertext, row.id));
-        if (secret.kind === "openai_compatible") {
-          // A custom endpoint is never known to be text-only: without image input turned on,
-          // its capability is unknown, so the user is asked to configure it.
-          supportsImages =
-            modelAcceptsImageInput(provider, id) ||
-            modelIdSupportsImages(secret.visionModelIds, id) ||
-            (secret.visionModelIds === undefined &&
-              credential.defaultModel?.trim() === id.trim() &&
-              legacy?.supportsImages === true) ||
-            undefined;
-        }
-      }
+      supportsImages =
+        provider === OPENAI_COMPATIBLE_PROVIDER_ID
+          ? modelAcceptsImageInput(provider, id, settings.images) || settings.images
+          : settings.images;
     }
   }
-  if (provider === CHATGPT_OAUTH_PROVIDER && configuration?.codexCatalog) {
-    const credential = running ? overrideCredential : selected.credential;
-    if (credential) {
-      try {
-        const row = await prisma.secret.findFirst({
-          where: { id: credential.secretId, userId: actor.userId, spaceId: null },
-        });
-        if (row) {
-          const secret = parseModelSecret(await configuration.secrets.load(row.ciphertext, row.id));
-          const live = await codexLiveModel(configuration.codexCatalog, actor.userId, secret, id, {
-            waitMs: 0,
-          });
-          if (live?.supportsImages !== undefined) supportsImages = live.supportsImages;
-        }
-      } catch {
-        // An unreadable secret keeps the bundled or unknown answer.
-      }
-    }
+  if (provider === CHATGPT_OAUTH_PROVIDER && configuration?.codexCatalog && credential) {
+    const secret = await loadModelSecret(prisma, configuration.secrets, actor, credential);
+    const live = secret
+      ? await codexLiveModel(configuration.codexCatalog, actor.userId, secret, id, {
+          waitMs: 0,
+        }).catch(() => undefined)
+      : undefined;
+    if (live?.supportsImages !== undefined) supportsImages = live.supportsImages;
   }
   const unknownInput = supportsImages === undefined && !runtimeModelAcceptsImages(provider, id);
   if (supportsImages === false || unknownInput)
@@ -144,6 +125,34 @@ export async function assertThreadImageInput(
       message: unknownInput ? MODEL_IMAGE_INPUT_UNKNOWN : MODEL_IMAGE_INPUT_ERROR,
       data: { reason: "model_image_input_unsupported" },
     });
+}
+
+/** An unreadable secret describes nothing, so the model's image input stays unknown. */
+async function loadModelSecret(
+  prisma: PrismaClient,
+  secrets: Pick<SecretStore, "load">,
+  actor: Actor,
+  credential: { secretId: string },
+) {
+  const row = await prisma.secret.findFirst({
+    where: { id: credential.secretId, userId: actor.userId, spaceId: null },
+  });
+  if (!row) return undefined;
+  try {
+    return parseModelSecret(await secrets.load(row.ciphertext, row.id));
+  } catch {
+    return undefined;
+  }
+}
+
+/** Connections saved before per-model image settings recorded the capability on the row. */
+async function legacyImageInput(prisma: PrismaClient, actor: Actor, credentialId: string) {
+  return (
+    await prisma.userModelCredential.findFirst({
+      where: { id: credentialId, userId: actor.userId },
+      select: { supportsImages: true },
+    })
+  )?.supportsImages;
 }
 
 /** The main model as resolveMemberMainModel picks it, without reading secrets. */

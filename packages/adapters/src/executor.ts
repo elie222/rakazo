@@ -1,7 +1,7 @@
 import type { AgentRunRequest, ComputerRef, SemanticMemoryProvider } from "@rakazo/adapter-kit";
 import { DEFAULT_CONTEXT_STRATEGY, runContinueJob } from "@rakazo/adapter-kit";
 import type { MessageBlock, RunStatus } from "@rakazo/contracts";
-import { disabledBuiltinToolSet } from "@rakazo/contracts";
+import { disabledBuiltinToolSet, hasLab, resolveLabs } from "@rakazo/contracts";
 import {
   BACKGROUND_HELPER_TRIGGER,
   botMessageAllowsSilence,
@@ -591,7 +591,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         const channelId = messagingChannelId(sourceBlocks);
         const messagingChannelRun = isMessagingChannelRun(run.trigger, sourceBlocks);
         const [
-          bot,
+          { bot, ownerLabs },
           thread,
           messages,
           peerMessage,
@@ -608,10 +608,20 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           runLoginRedactions,
           runCodeRedactions,
         ] = await Promise.all([
-          deps.prisma.bot.findUniqueOrThrow({
-            where: { id: run.botId },
-            include: { computer: true },
-          }),
+          deps.prisma.bot
+            .findUniqueOrThrow({
+              where: { id: run.botId },
+              include: { computer: true },
+            })
+            .then(async (bot) => ({
+              bot,
+              ownerLabs: (
+                await deps.prisma.user.findUnique({
+                  where: { id: bot.userId },
+                  select: { labs: true },
+                })
+              )?.labs,
+            })),
           deps.prisma.thread.findUniqueOrThrow({
             where: { id: run.threadId },
             include: {
@@ -667,6 +677,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           fromUser: messages.find((message) => message.id === run.sourceMessageId)?.role === "user",
           nonOwnerChat: nonOwnerChatRun,
         });
+        const ticketBoardEnabled = hasLab(resolveLabs(ownerLabs, deps.deploymentLabs), "board");
         const historySearchBeforeSeq =
           contextStrategy !== "current" && run.sourceMessageId
             ? (messages.find((message) => message.id === run.sourceMessageId)?.seq ??
@@ -951,7 +962,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                 spaceId: run.spaceId,
                 botId: bot.id,
               }),
-          nonOwnerChatRun || !deps.ticketBoardEnabled
+          nonOwnerChatRun || !ticketBoardEnabled
             ? Promise.resolve(undefined)
             : loadAgentTicketContext(deps, {
                 spaceId: run.spaceId,
@@ -1260,7 +1271,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           id: runModelId,
           ...(credential ? { connectionId: credential.id } : {}),
           ...resolvedModelRunFields(resolved),
-          thinkingLevel: thinkingLevel ?? resolved.thinkingLevel ?? null,
+          thinkingLevel: thinkingLevel ?? null,
         };
         // Saved identities win on resume, including when the setting was cleared meanwhile.
         const computerModel =
@@ -1374,7 +1385,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         );
         const builtins = [
           ...selectBuiltinToolsForRun({
-            ticketBoardEnabled: deps.ticketBoardEnabled,
+            ticketBoardEnabled,
             // A call rings the bot's own person, whose chat it is; other members of a shared
             // Space reach it by message for now.
             phoneCallsEnabled: deps.phoneCallsEnabled && run.userId === bot.userId,

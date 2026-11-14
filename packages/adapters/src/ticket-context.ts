@@ -72,11 +72,11 @@ export function renderTicketContext(
 }
 
 export async function loadAgentTicketContext(
-  deps: { prisma: PrismaClient; ticketBoardEnabled?: boolean },
+  deps: { prisma: PrismaClient },
   input: { spaceId: string; text: string },
   maxBytes = MAX_TICKET_CONTEXT_BYTES,
 ): Promise<string | undefined> {
-  if (!deps.ticketBoardEnabled || !TICKET_REF_HINT.test(input.text)) return undefined;
+  if (!TICKET_REF_HINT.test(input.text)) return undefined;
 
   const board = await deps.prisma.board.findUnique({ where: { spaceId: input.spaceId } });
   if (!board) return undefined;

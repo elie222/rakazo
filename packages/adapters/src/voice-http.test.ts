@@ -1,3 +1,5 @@
+import { once } from "node:events";
+import { createServer } from "node:http";
 import { VoiceAccountError } from "@rakazo/adapter-kit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -50,6 +52,55 @@ describe("speechUploadName", () => {
 describe("verifyVoiceHttpGet", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  it.each(["pending", "rejecting"])("does not await %s success-body cleanup", async (mode) => {
+    const cancel = vi.fn(() =>
+      mode === "pending"
+        ? new Promise<void>(() => undefined)
+        : Promise.reject(new Error("cleanup failed")),
+    );
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(new ReadableStream({ cancel }))));
+    await expect(
+      verifyVoiceHttpGet({
+        url: "https://api.example/voices",
+        headers: {},
+        signal: new AbortController().signal,
+        provider: "Example",
+      }),
+    ).resolves.toEqual({ ok: true });
+    expect(cancel).toHaveBeenCalledOnce();
+  });
+
+  it("closes a successful streaming response without waiting for the deadline", async () => {
+    let closed = false;
+    const server = createServer((_req, res) => {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.write("{");
+      res.on("close", () => {
+        closed = true;
+      });
+    });
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("No test address");
+    const controller = new AbortController();
+    try {
+      await expect(
+        verifyVoiceHttpGet({
+          url: `http://127.0.0.1:${address.port}/voices`,
+          headers: {},
+          signal: controller.signal,
+          provider: "Example",
+        }),
+      ).resolves.toEqual({ ok: true });
+      await vi.waitFor(() => expect(closed).toBe(true), { timeout: 1000 });
+    } finally {
+      controller.abort();
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
   });
 
   it("returns ok when the provider accepts the key", async () => {

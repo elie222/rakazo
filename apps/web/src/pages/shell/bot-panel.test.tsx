@@ -397,7 +397,7 @@ describe("BotSettings thinking options", () => {
     expect(onSave.mock.lastCall?.[0]).not.toHaveProperty("thinkingLevel");
   });
 
-  it("shows the connection's thinking levels for a bot on a second enabled model", async () => {
+  it("shows the thinking levels the bot's own model offers on its connection", async () => {
     i18n.load("en", {});
     i18n.activate("en");
     vi.mocked(rpc.models.credentials).mockResolvedValueOnce([
@@ -418,7 +418,8 @@ describe("BotSettings thinking options", () => {
         isDefault: true,
         modelId: "alpha",
         enabledModelIds: ["alpha", "beta"],
-        thinkingLevels: ["off", "low", "high"],
+        apiProtocol: "anthropic-messages",
+        modelSettings: { beta: { reasoning: true } },
       },
     ]);
     await render("Billing", { modelProvider: "openai-compatible", modelId: "beta" });
@@ -434,7 +435,13 @@ describe("BotSettings thinking options", () => {
     if (!(model instanceof HTMLSelectElement)) throw new Error("Missing model select");
     expect(model.value).toBe("openai-compatible::beta");
     if (!(thinking instanceof HTMLSelectElement)) throw new Error("Missing thinking select");
-    expect([...thinking.options].map((option) => option.value)).toEqual(["", "low", "high"]);
+    expect([...thinking.options].map((option) => option.value)).toEqual([
+      "",
+      "minimal",
+      "low",
+      "medium",
+      "high",
+    ]);
   });
 
   it("lists each connection's models and saves the chosen connection with the model", async () => {
@@ -682,25 +689,24 @@ describe("BotSettings thinking options", () => {
   it("clears a thinking level the newly picked connection does not offer", async () => {
     i18n.load("en", {});
     i18n.activate("en");
-    const connection = { provider: "anthropic", hasKey: true, isDefault: false };
+    // Each endpoint's protocol decides its efforts: only the chat-completions one offers max.
+    const connection = {
+      provider: "openai-compatible",
+      hasKey: true,
+      isDefault: false,
+      modelId: "house-model",
+      reasoning: true,
+    };
     vi.mocked(rpc.models.credentials).mockResolvedValue([
-      { ...connection, id: "sub", label: "Claude subscription", thinkingLevels: ["off", "high"] },
-      { ...connection, id: "api", label: "Anthropic API key", thinkingLevels: ["off", "low"] },
+      { ...connection, id: "sub", label: "Chat endpoint", apiProtocol: "chat-completions" },
+      { ...connection, id: "api", label: "Messages endpoint", apiProtocol: "anthropic-messages" },
     ]);
-    vi.mocked(rpc.models.list).mockResolvedValue([
-      {
-        provider: "anthropic",
-        providerName: "Anthropic",
-        id: "claude-opus",
-        label: "Claude Opus",
-        billing: "",
-      },
-    ]);
+    vi.mocked(rpc.models.list).mockResolvedValue([]);
     vi.mocked(rpc.bots.modelConnection).mockResolvedValue({ credentialId: "sub", pinned: true });
     await render("Billing", {
-      modelProvider: "anthropic",
-      modelId: "claude-opus",
-      thinkingLevel: "high",
+      modelProvider: "openai-compatible",
+      modelId: "house-model",
+      thinkingLevel: "max",
     });
     await act(async () => {
       await Promise.resolve();
@@ -715,17 +721,17 @@ describe("BotSettings thinking options", () => {
     });
     const model = container.querySelector('[id$="-model"]') as HTMLSelectElement;
     const thinking = () => container.querySelector('[id$="-thinking"]') as HTMLSelectElement;
-    expect([...thinking().options].map((option) => option.value)).toContain("high");
+    expect([...thinking().options].map((option) => option.value)).toContain("max");
 
     await act(async () => {
-      model.value = "api@@anthropic::claude-opus";
+      model.value = "api@@openai-compatible::house-model";
       model.dispatchEvent(new Event("change", { bubbles: true }));
     });
 
     const offered = [...thinking().options].map((option) => option.value);
     expect(offered).toContain("low");
-    expect(offered).not.toContain("high");
-    expect(thinking().value).not.toBe("high");
+    expect(offered).not.toContain("max");
+    expect(thinking().value).not.toBe("max");
     vi.mocked(rpc.models.credentials).mockResolvedValue([]);
     vi.mocked(rpc.models.list).mockResolvedValue([]);
     vi.mocked(rpc.bots.modelConnection).mockResolvedValue({ credentialId: null, pinned: false });

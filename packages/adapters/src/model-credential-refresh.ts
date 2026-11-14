@@ -8,7 +8,9 @@ import type { Prisma, PrismaClient } from "@rakazo/db";
 import { retireModelCredential } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { advisoryLock } from "./advisory-lock.js";
-import { parseModelSecret, serializeModelSecret } from "./model-secret.js";
+import type { KeptModelSettings, StoredModelSecret } from "./model-secret.js";
+import { keptModelSettings, parseModelSecret, serializeModelSecret } from "./model-secret.js";
+import { toOAuthCredential } from "./pi-credentials.js";
 import type { ResolveModelOpts } from "./pi-oauth.js";
 import {
   loadProviderOAuth,
@@ -29,6 +31,9 @@ const REFRESH_KICK_TIMEOUT_MS = 30_000;
  * timer that starts after ours: this backstop must not fire first and drop a rotated token.
  */
 const RUNTIME_REFRESH_BACKSTOP_MS = REFRESH_REQUEST_TIMEOUT_MS + 5_000;
+
+/** Settings saves racing a retirement each restart it; past this the retirement gives up. */
+const RETIRE_ATTEMPTS = 3;
 
 const modelCredentialLocks = new Map<string, Promise<void>>();
 
@@ -63,24 +68,36 @@ export function retireToReconnectMarker(
   secretStore: Pick<SecretStore, "put" | "load" | "delete">,
   scope: { userId: string; spaceId: string },
   credential: { id: string; secretId: string },
-  maxTokens: number | undefined,
 ) {
-  return async (
-    _reason: ModelCredentialRetireReason,
-    _detail: string | undefined,
-    failed?: ModelCredentialFailedState,
-  ): Promise<boolean> => {
-    const previous = (
+  const readStored = async () =>
+    (
       await prisma.secret.findFirst({
         where: { id: credential.secretId, userId: scope.userId, spaceId: null },
         select: { ciphertext: true },
       })
     )?.ciphertext;
+  const failedMatcher = (failed: ModelCredentialFailedState) =>
+    matchesFailedOAuthSecret(
+      (ciphertext, secretId) => secretStore.load(ciphertext, secretId),
+      failed,
+    );
+  /** One attempt: replace the copy read at its start, keeping that copy's settings. */
+  const attempt = async (previous: string | undefined, failed?: ModelCredentialFailedState) => {
+    let kept: KeptModelSettings = {};
+    if (previous) {
+      try {
+        kept = keptModelSettings(
+          parseModelSecret(await secretStore.load(previous, credential.secretId)),
+        );
+      } catch {
+        // An unreadable copy has no settings to keep.
+      }
+    }
     const replacement = await secretStore.put(
       serializeModelSecret({
         kind: "oauth",
         reconnectRequired: true,
-        ...(maxTokens !== undefined ? { maxTokens } : {}),
+        ...kept,
       }),
       {
         operationId: "cred",
@@ -91,6 +108,7 @@ export function retireToReconnectMarker(
       },
       { recordId: credential.secretId },
     );
+    const matchesFailed = failed ? failedMatcher(failed) : undefined;
     let replaced = false;
     try {
       const retired = await retireModelCredential(prisma, {
@@ -98,18 +116,31 @@ export function retireToReconnectMarker(
         credentialId: credential.id,
         secretId: credential.secretId,
         replacementCiphertext: replacement.ciphertext,
-        matchesFailedSecret: failed
-          ? matchesFailedOAuthSecret(
-              (ciphertext, secretId) => secretStore.load(ciphertext, secretId),
-              failed,
-            )
-          : undefined,
+        // A settings save since the read changes the copy, so its settings are never dropped.
+        matchesFailedSecret:
+          previous === undefined
+            ? matchesFailed
+            : async (secret) =>
+                secret.ciphertext === previous && (!matchesFailed || (await matchesFailed(secret))),
       });
       replaced = retired && previous !== undefined;
       return retired;
     } finally {
       const unused = replaced ? previous : replacement.ciphertext;
       if (unused) await secretStore.delete(unused, credential.secretId).catch(() => undefined);
+    }
+  };
+  return async (
+    _reason: ModelCredentialRetireReason,
+    _detail: string | undefined,
+    failed?: ModelCredentialFailedState,
+  ): Promise<boolean> => {
+    let previous = await readStored();
+    for (let tries = 1; ; tries++) {
+      if (await attempt(previous, failed)) return true;
+      const current = await readStored();
+      if (current === previous || tries >= RETIRE_ATTEMPTS) return false;
+      previous = current;
     }
   };
 }
@@ -156,9 +187,7 @@ export async function resolveStoredModelAuth(
     return resolveModelAuth(plaintext, provider, opts);
   }
   const { secretId } = credential;
-  let failure:
-    | { args: Parameters<NonNullable<ResolveModelOpts["retire"]>>; maxTokens?: number }
-    | undefined;
+  let failure: { args: Parameters<NonNullable<ResolveModelOpts["retire"]>> } | undefined;
   try {
     // The token write announces itself once the lock's connection is back.
     const outcome = await holdSecretNotifications(() =>
@@ -186,7 +215,7 @@ export async function resolveStoredModelAuth(
             },
             // Recorded only: retiring needs the lock's connection released first.
             retire: async (...args) => {
-              failure = { args, maxTokens: parseModelSecret(stored).maxTokens };
+              failure = { args };
               return false;
             },
           }).then(
@@ -204,13 +233,9 @@ export async function resolveStoredModelAuth(
     let deleted = false;
     try {
       deleted =
-        (await retireToReconnectMarker(
-          prisma,
-          secretStore,
-          scope,
-          { id: credential.id, secretId },
-          failure.maxTokens,
-        )(...failure.args)) === true;
+        (await retireToReconnectMarker(prisma, secretStore, scope, { id: credential.id, secretId })(
+          ...failure.args,
+        )) === true;
     } catch (retireError) {
       getLogger().error("model credential retirement failed", retireError);
     }
@@ -292,6 +317,70 @@ export function persistStoredModelSecret(
     await prisma.secret.update({
       where: { id: secretId },
       data: { ciphertext: stored.ciphertext },
+    });
+  };
+}
+
+/**
+ * Change a stored connection's settings under the same locks token refreshes take, so neither
+ * write replaces the other. Returns false when the secret is gone.
+ */
+export async function updateStoredModelSecret(
+  prisma: Pick<PrismaClient, "$transaction" | "secret">,
+  secretStore: Pick<SecretStore, "load" | "put">,
+  scope: { userId: string; spaceId: string },
+  secretId: string,
+  update: (secret: StoredModelSecret) => StoredModelSecret | null,
+): Promise<boolean> {
+  return withModelCredentialLock(secretId, () =>
+    holdSecretNotifications(() =>
+      withRefreshLock(
+        prisma,
+        (tx) => lockModelCredential(tx, secretId),
+        async (tx) => {
+          const row = await tx.secret.findFirst({
+            where: { id: secretId, userId: scope.userId, spaceId: null },
+            select: { ciphertext: true },
+          });
+          if (!row) return false;
+          const next = update(parseModelSecret(await secretStore.load(row.ciphertext, secretId)));
+          if (next)
+            await persistStoredModelSecret(
+              tx,
+              secretStore,
+              scope,
+              secretId,
+            )(serializeModelSecret(next));
+          return true;
+        },
+      ),
+    ),
+  );
+}
+
+/**
+ * Saves a token a run refreshed onto the stored copy, under the same locks as settings saves, so
+ * settings saved meanwhile stay. A newer or identical stored token is left alone.
+ */
+export function persistRefreshedModelCredential(
+  prisma: Pick<PrismaClient, "$transaction" | "secret">,
+  secretStore: Pick<SecretStore, "load" | "put">,
+  scope: { userId: string; spaceId: string },
+  secretId: string,
+): (next: AgentModelOAuthCredential) => Promise<void> {
+  return async (next) => {
+    await updateStoredModelSecret(prisma, secretStore, scope, secretId, (current) => {
+      if (current.kind === "oauth" && !current.reconnectRequired) {
+        const stored = current.credential;
+        if (stored.expires > next.expires) return null;
+        if (
+          stored.access === next.access &&
+          stored.refresh === next.refresh &&
+          stored.expires === next.expires
+        )
+          return null;
+      }
+      return { kind: "oauth", credential: toOAuthCredential(next), ...keptModelSettings(current) };
     });
   };
 }

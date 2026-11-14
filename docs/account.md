@@ -26,7 +26,8 @@ instead of a password. Some actions, such as exporting data, ask you to confirm 
 
 ## Credentials
 
-**Settings → Vault** lists the API keys and website logins your bots can use. Values are never shown.
+**Settings → Vault** lists the API keys and website logins your bots can use. Protected values
+show only after you confirm it's you.
 You can add one, replace its value, or remove it. See [Reusable credentials](./bot-secrets.md).
 
 ## Organizations

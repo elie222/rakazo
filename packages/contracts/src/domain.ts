@@ -5,6 +5,7 @@ import { DisabledBuiltinToolsSchema } from "./builtin-tools.js";
 import { ComputerModeSchema, ComputerStatusSchema } from "./computer.js";
 import { BotSettingsValuesSchema, ThreadMessageSchema } from "./events.js";
 import { Id, MemoryScope, ReplyModeSchema, RunStatus, ThinkingLevelSchema } from "./ids.js";
+import { LabFeatureSchema } from "./labs.js";
 import { NavLinkSchema } from "./nav-links.js";
 import { RoutineWatchSchema, RoutineWatchStateSchema } from "./routine-watch.js";
 import { RunTriggerSchema } from "./runs.js";
@@ -1489,6 +1490,11 @@ export type ServerUpdateRequest = z.infer<typeof ServerUpdateRequestSchema>;
 export const MeSchema = z.object({
   maxUploadSizeBytes: z.number().int().positive().optional(),
   maxAttachmentsPerMessage: z.number().int().positive().optional(),
+  /** Labs features this account turned on. Absent from servers that predate Labs. */
+  labs: z.array(LabFeatureSchema).default([]),
+  /** Labs features this account can switch; the deployment turns the rest on for everyone. */
+  labsAvailable: z.array(LabFeatureSchema).default([]),
+  /** Deprecated: whether `labs` includes "board", kept for apps that predate Labs. */
   ticketBoardEnabled: z.boolean(),
   phoneCallsEnabled: z.boolean().default(false),
   /** Operator-configured menu links. Absent from older servers. */

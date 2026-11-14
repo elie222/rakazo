@@ -8,7 +8,7 @@ import {
   compatibleModelRows,
   connectedModelChoices,
   connectionChoiceKey,
-  connectionMaxTokensField,
+  connectionForModelChoice,
   connectionModelChoices,
   connectionPickerKey,
   credentialForModel,
@@ -213,6 +213,21 @@ describe("connected model choices", () => {
       undefined,
       undefined,
     ]);
+  });
+
+  it("follows an OpenAI-compatible model's own image setting over the catalog", () => {
+    const choices = connectedModelChoices(
+      [
+        {
+          provider: "openai-compatible",
+          label: "Server",
+          enabledModelIds: ["declared", "custom", "unset"],
+          modelSettings: { declared: { images: false }, custom: { images: false } },
+        },
+      ],
+      [{ provider: "openai-compatible", id: "declared", label: "Declared", images: true }],
+    );
+    expect(choices.map((choice) => choice.images)).toEqual([false, false, undefined]);
   });
 
   it("rewrites a catalog id that is only a display label", () => {
@@ -556,12 +571,19 @@ it("offers managed models without a personal key and hides unconnected providers
   expect(connectedModelChoices([{ provider: "hosted", label: "Hosted" }], catalog)).toHaveLength(2);
 });
 
-describe("connectionMaxTokensField", () => {
-  it("shows the saved limit, or the default an OpenAI-compatible endpoint would send", () => {
-    expect(connectionMaxTokensField("openai-compatible", undefined)).toBe("4096");
-    expect(connectionMaxTokensField("openai-compatible", 8_000)).toBe("8000");
-    expect(connectionMaxTokensField("anthropic", undefined)).toBe("");
-    expect(connectionMaxTokensField("anthropic", 2_000)).toBe("2000");
+describe("connectionForModelChoice", () => {
+  const connections = [
+    { id: "newest", provider: "zai", label: "Newest" },
+    { id: "preferred", provider: "zai", label: "Preferred", preferenceRank: 0, modelId: "glm-5.3" },
+    { id: "matching", provider: "zai", label: "Matching", preferenceRank: 1, modelId: "glm-flash" },
+  ];
+
+  it("picks the connection runs would use for an unpinned row", () => {
+    const pick = (modelId: string, credentialId?: string) =>
+      connectionForModelChoice(connections, { provider: "zai", modelId, credentialId })?.id;
+    expect(pick("glm-flash")).toBe("matching");
+    expect(pick("glm-other")).toBe("preferred");
+    expect(pick("glm-flash", "newest")).toBe("newest");
   });
 });
 
