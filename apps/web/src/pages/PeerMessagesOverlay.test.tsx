@@ -39,6 +39,26 @@ vi.mock("@rakazo/ui-web", () => {
   };
 });
 
+vi.mock("./shell/message-cards", () => ({
+  ArtifactImage: () => null,
+  ChartBlockView: ({ name }: { name: string }) => <div data-testid="peer-chart">{name}</div>,
+}));
+vi.mock("../components/pages/PageBlockCard", () => ({
+  PageBlockCard: ({
+    block,
+    updated,
+    onOpen,
+  }: {
+    block: { title: string };
+    updated: boolean;
+    onOpen?: () => void;
+  }) => (
+    <button type="button" onClick={onOpen} data-testid="peer-page" data-updated={updated}>
+      {block.title}
+    </button>
+  ),
+}));
+
 import { PeerMessagesOverlay } from "./PeerMessagesOverlay";
 
 const scrollHeight = vi.spyOn(HTMLElement.prototype, "scrollHeight", "get");
@@ -64,7 +84,7 @@ function exchange(count: number) {
   }));
 }
 
-async function open() {
+async function open(onClose = () => undefined) {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const container = document.createElement("div");
   document.body.append(container);
@@ -81,7 +101,7 @@ async function open() {
           peerBotId="peer"
           peerBotName="Researcher"
           peerBotColor="green"
-          onClose={() => undefined}
+          onClose={onClose}
         />
       </QueryClientProvider>,
     ),
@@ -143,4 +163,65 @@ it("follows a refresh only while the reader is at the latest message", async () 
 
   expect(scrolledUp.transcript.textContent).toContain("note 40");
   expect(scrolledUp.transcript.scrollTop).toBe(1_000);
+});
+
+it("shows chart-only and page-only replies and marks older page cards", async () => {
+  api.messages.mockResolvedValue({
+    messages: [
+      {
+        id: "wake",
+        role: "bot",
+        runId: "run",
+        createdAt: "1",
+        blocks: [
+          {
+            kind: "bot_message_received",
+            fromBotId: "peer",
+            fromBotName: "Peer",
+            text: "Please report",
+          },
+        ],
+      },
+      {
+        id: "chart",
+        role: "bot",
+        runId: "run",
+        createdAt: "2",
+        blocks: [{ kind: "chart", name: "Daily chart", spec: {}, data: [] }],
+      },
+      {
+        id: "page1",
+        role: "bot",
+        runId: "run",
+        createdAt: "3",
+        blocks: [{ kind: "page", pageId: "page", title: "Old page", version: 1 }],
+      },
+      {
+        id: "page2",
+        role: "bot",
+        runId: "run",
+        createdAt: "4",
+        blocks: [
+          { kind: "text", text: "Latest report" },
+          { kind: "page", pageId: "page", title: "New page", version: 2 },
+        ],
+      },
+    ],
+    olderCursor: null,
+  });
+  const close = vi.fn();
+  const { transcript } = await open(close);
+  act(() => transcript.querySelector<HTMLButtonElement>('[data-testid="peer-page"]')?.click());
+  expect(close).toHaveBeenCalledOnce();
+  expect(transcript.querySelector('[data-testid="peer-chart"]')?.textContent).toBe("Daily chart");
+  expect(
+    [...transcript.querySelectorAll('[data-testid="peer-page"]')].map((node) => [
+      node.textContent,
+      node.getAttribute("data-updated"),
+    ]),
+  ).toEqual([
+    ["Old page", "true"],
+    ["New page", "false"],
+  ]);
+  expect(transcript.textContent).toContain("Latest report");
 });

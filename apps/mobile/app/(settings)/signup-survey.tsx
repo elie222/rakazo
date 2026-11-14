@@ -1,7 +1,7 @@
 import { useLingui } from "@lingui/react/macro";
 import type { SignupSurvey as SignupSurveyAnswers } from "@rakazo/contracts";
 import { signupSurveyAsksTeamSize } from "@rakazo/contracts";
-import { useRef, useState } from "react";
+import { useContext, useRef, useState } from "react";
 import {
   KeyboardAvoidingView,
   Platform,
@@ -15,6 +15,7 @@ import { NativeActionButton } from "../../components/native-action-button";
 import { NativeSymbol } from "../../components/native-symbol";
 import { SettingsGroup, SettingsRow, useStackedSettings } from "../../components/settings-group";
 import { rpc } from "../../lib/api";
+import { CallKeyboardContext } from "../../lib/call-keyboard-context";
 import { native, useThemedStyles } from "../../lib/native";
 import { closeSettingsSheet } from "../../lib/settings-sheet";
 import { useSideInsets } from "../../lib/side-insets";
@@ -25,6 +26,7 @@ type Use = NonNullable<SignupSurveyAnswers["use"]>;
 
 /** Optional questions shown once after signing up on a billing deployment. */
 export default function SignupSurvey() {
+  const call = useContext(CallKeyboardContext);
   const sideInsets = useSideInsets();
   const { t } = useLingui();
   const styles = useThemedStyles(createStyles);
@@ -53,6 +55,7 @@ export default function SignupSurvey() {
 
   return (
     <KeyboardAvoidingView
+      enabled={!call}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
       style={styles.screen}
     >

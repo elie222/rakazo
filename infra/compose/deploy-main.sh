@@ -47,6 +47,18 @@ if [[ -z "${RAKAZO_HEALTH_URL:-}" ]]; then
   RAKAZO_HEALTH_URL="https://${host}/health"
 fi
 
+# How many API and worker containers to run, the same .env settings Compose reads.
+replicas() {
+  local count
+  count="$(sed -n "s/^$1=//p" .env | tail -n 1)"
+  echo "${count:-1}"
+}
+API_REPLICAS="$(replicas RAKAZO_API_REPLICAS)"
+WORKER_REPLICAS="$(replicas RAKAZO_WORKER_REPLICAS)"
+for count in "${API_REPLICAS}" "${WORKER_REPLICAS}"; do
+  [[ "${count}" =~ ^[1-9][0-9]*$ ]] || { echo "RAKAZO_API_REPLICAS and RAKAZO_WORKER_REPLICAS must be whole numbers of at least 1" >&2; exit 1; }
+done
+
 compose() {
   local limit="$1"
   shift
@@ -106,13 +118,16 @@ container_healthy() {
   return 1
 }
 
-# Starts one more container of a service beside the given ones and waits for its health check.
+# Starts the given number of new containers of a service beside the running ones and waits for
+# their health checks.
 start_beside() {
-  local service="$1" running="$2" new
+  local service="$1" running="$2" count="$3" new container
   compose "${UP_TIMEOUT}" up -d --no-deps --no-recreate \
-    --scale "${service}=$(($(wc -w <<<"${running}") + 1))" "${service}"
+    --scale "${service}=$(($(wc -w <<<"${running}") + count))" "${service}"
   new="$(compose 1m ps --all --quiet "${service}" | grep -vxF "${running}")"
-  container_healthy "${new}"
+  for container in ${new}; do
+    container_healthy "${container}"
+  done
 }
 
 # A replaced worker is not stopped like the API. It stops claiming jobs and finishes the ones it
@@ -165,18 +180,18 @@ replace_worker() {
     compose "${UP_TIMEOUT}" up -d --no-deps --wait worker
     return
   fi
-  start_beside worker "${live}"
+  start_beside worker "${live}" "${WORKER_REPLICAS}"
   drain_workers "${live}"
 }
 
-# Replaces the API, web and worker without a gap: one new container starts beside the running
-# ones, and the old ones stop only once it passes its health check. Caddy dials whichever container
+# Replaces the API, web and worker without a gap: new containers start beside the running
+# ones, and the old ones stop only once those pass their health checks. Caddy dials whichever container
 # answers, so requests keep flowing through a deploy, and the new worker picks up chat runs while
 # the old one hands back the runs it was executing. Every other service is then reconciled
 # normally; the replaced containers already match the new configuration and stay as they are.
 # Compose leaves the worker alone there, since it would stop a draining one.
 roll_out() {
-  local service old services
+  local service old services count
   # Migrations run first, from their own container: it is the only one given the owner login.
   # The old API keeps serving meanwhile, so each migration must work with the previous release.
   # On older releases the API migrates on start, so only start its database here.
@@ -194,7 +209,8 @@ roll_out() {
       compose "${UP_TIMEOUT}" up -d --no-deps --wait "${service}"
       continue
     fi
-    start_beside "${service}" "${old}"
+    if [[ "${service}" == api ]]; then count="${API_REPLICAS}"; else count=1; fi
+    start_beside "${service}" "${old}" "${count}"
     # shellcheck disable=SC2086 # one container ID per word
     sudo docker stop --time 30 ${old} >/dev/null
     # shellcheck disable=SC2086

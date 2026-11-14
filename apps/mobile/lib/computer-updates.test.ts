@@ -4,7 +4,11 @@ const api = vi.hoisted(() => ({ rpc: vi.fn(), seq: 0 }));
 vi.mock("./api-server", () => ({}));
 vi.mock("./api-auth", () => ({}));
 vi.mock("./api-live", () => ({}));
-vi.mock("./api", () => ({ rpc: api.rpc, spaceSelectionSeq: () => api.seq }));
+vi.mock("./api", () => ({
+  rpc: api.rpc,
+  spaceSelectionSeq: () => api.seq,
+  subscribeSpaceSelection: () => () => {},
+}));
 
 import { computerUpdates } from "./computer-updates";
 
@@ -17,7 +21,7 @@ afterEach(() => {
 });
 
 describe("mobile computer updates", () => {
-  it("stops polling when the current Space's session is rejected", async () => {
+  it("stops reading when the current Space's session is rejected", async () => {
     vi.useFakeTimers();
     api.rpc.mockRejectedValue(unauthorized());
     const stop = computerUpdates.watch();
@@ -26,7 +30,7 @@ describe("mobile computer updates", () => {
     stop();
   });
 
-  it("keeps polling after a 401 sent before a Space switch", async () => {
+  it("retries after a 401 sent before a Space switch", async () => {
     vi.useFakeTimers();
     api.rpc.mockImplementationOnce(async () => {
       api.seq += 1;
@@ -34,7 +38,7 @@ describe("mobile computer updates", () => {
     });
     api.rpc.mockResolvedValue([]);
     const stop = computerUpdates.watch();
-    await vi.advanceTimersByTimeAsync(15_000);
+    await vi.advanceTimersByTimeAsync(5_000);
     expect(api.rpc).toHaveBeenCalledTimes(2);
     stop();
   });

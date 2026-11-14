@@ -378,7 +378,10 @@ export class DockerSandboxProvider implements SandboxProvider {
     if (!res.ok) {
       const detail = await safeBody(res, context.signal);
       if (/cannot allocate another screen/i.test(detail)) {
-        throw new Error("This Team Computer cannot allocate another screen.");
+        const limit = /\(limit (\d+)\)/i.exec(detail)?.[1];
+        throw new Error(
+          `This Team Computer cannot allocate another screen${limit ? ` (limit ${limit})` : ""}.`,
+        );
       }
       // A container that stopped under a "running" row (host reboot, docker stop) has no
       // screen to show; report it gone so the caller offers a boot instead of a blank error.

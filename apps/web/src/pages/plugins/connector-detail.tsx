@@ -1,19 +1,10 @@
 import { Plural, Trans, useLingui } from "@lingui/react/macro";
 import type { ConnectionCatalogItem } from "@rakazo/contracts";
 import { CONNECTION_LABEL_MAX_LENGTH } from "@rakazo/contracts";
-import { catalogItemAccounts, catalogItemKey, humanizeToolName } from "@rakazo/core";
+import { appToolLabel, catalogItemAccounts, catalogItemKey } from "@rakazo/core";
 import { Badge, Button, Disclosure, Input } from "@rakazo/ui-web";
 import { ChevronLeft, Plus } from "lucide-react";
 import type { PluginConnections } from "./use-plugin-connections";
-
-/** "GMAIL_SEND_EMAIL" under Gmail reads as "Send email": the app is already the page title. */
-function toolLabel(name: string, item: ConnectionCatalogItem) {
-  const prefix = `${item.slug}_`;
-  const bare = name.toLowerCase().startsWith(prefix.toLowerCase())
-    ? name.slice(prefix.length)
-    : name;
-  return humanizeToolName(bare);
-}
 
 /** A connected app's page: its accounts, adding another, its tools, and uninstalling it. */
 export function ConnectorDetail({
@@ -68,7 +59,7 @@ export function ConnectorDetail({
             />
           ) : (
             <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-accent text-body font-semibold text-foreground">
-              {item.name[0]}
+              {Array.from(item.name)[0]}
             </div>
           )}
           <div className="truncate text-heading3 font-medium text-foreground">{item.name}</div>
@@ -155,7 +146,7 @@ export function ConnectorDetail({
                 className="h-6 px-2.5 text-label font-normal"
                 title={tool.description || undefined}
               >
-                {toolLabel(tool.name, item)}
+                {appToolLabel(tool.name, item.slug)}
               </Badge>
             ))}
           </div>

@@ -13,7 +13,7 @@ export function aiDataDisclosure(use: AiDataUse): string {
     case "voice":
       return t`Your recordings are sent for transcription, and text you play is sent to generate speech.`;
     case "memory":
-      return t`Conversation summaries, memories, searches and bot and Space IDs are sent to store and recall context.`;
+      return t`Conversations, names, memories, searches and bot and Space IDs are sent to store and recall context.`;
   }
 }
 

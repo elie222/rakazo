@@ -19,9 +19,12 @@ import {
   offeredCatalog,
   providerCatalogCache,
   providerLiveCatalogsForSpace,
+  runsOnHostedCredits,
   savedCatalogSelections,
   scriptedCatalogEntry,
+  spaceCanRunCatalogModel,
   validateConnectedModelChoice,
+  withLiveModelSettings,
 } from "@rakazo/adapters";
 import type {
   Actor,
@@ -34,6 +37,7 @@ import type {
 import {
   appContract,
   canonicalPiProviderId,
+  hasLab,
   modelSupportsRole,
   OPENAI_COMPATIBLE_PROVIDER_ID,
 } from "@rakazo/contracts";
@@ -166,7 +170,10 @@ export function createRouterContext(deps: RouterDeps) {
     let selected = providerLive.size
       ? await savedCatalogSelections(deps.prisma, actor.userId)
       : undefined;
-    const merged = applyProviderLiveCatalog(codexMerged, auth, providerLive, selected);
+    const merged = withLiveModelSettings(
+      auth,
+      applyProviderLiveCatalog(codexMerged, auth, providerLive, selected),
+    );
     // A connected provider's saved choice stays listed after new users stop being offered it.
     if (
       !selected &&
@@ -175,23 +182,25 @@ export function createRouterContext(deps: RouterDeps) {
           (auth.byProvider[entry.provider] ||
             auth.byModel[entry.provider] ||
             entry.provider === auth.managedProvider) &&
-          hiddenCatalogModel(entry),
+          (hiddenCatalogModel(entry) || !spaceCanRunCatalogModel(auth, entry)),
       )
     )
       selected = await savedCatalogSelections(deps.prisma, actor.userId);
-    return offeredCatalog(merged, selected).map((entry) =>
-      entry.provider === auth.managedProvider
-        ? {
-            ...entry,
-            managed: true,
-            billing:
-              auth.secretIdByModel[entry.provider]?.[entry.id] ||
-              auth.secretIdByProvider[entry.provider]
-                ? entry.billing
-                : "Uses Rakazo credits",
-          }
-        : entry,
-    );
+    // A saved choice stays listed so its role can still be edited; its runs ask for a key.
+    return offeredCatalog(merged, selected)
+      .filter(
+        (entry) =>
+          spaceCanRunCatalogModel(auth, entry) || selected?.has(`${entry.provider}:${entry.id}`),
+      )
+      .map((entry) =>
+        entry.provider === auth.managedProvider
+          ? {
+              ...entry,
+              managed: true,
+              billing: runsOnHostedCredits(auth, entry) ? "Uses Rakazo credits" : entry.billing,
+            }
+          : entry,
+      );
   };
 
   // Shown where a member chose no model, so the list names what actually runs.
@@ -432,16 +441,17 @@ export function createRouterContext(deps: RouterDeps) {
     return next();
   });
 
-  // The flag is checked first so a disabled board is not found even when signed out.
-  const boardEnabled = os
-    .use(async ({ next }) => {
-      if (!deps.env?.ticketBoardEnabled) throw new ORPCError("NOT_FOUND");
-      return next();
-    })
-    .use(signedIn);
+  const boardEnabled = os.use(signedIn).use(async ({ context, next }) => {
+    if (deps.env?.deploymentLabs?.includes("board")) return next();
+    const user = await deps.prisma.user.findUnique({
+      where: { id: context.actor.userId },
+      select: { labs: true },
+    });
+    if (!hasLab(user?.labs, "board")) throw new ORPCError("NOT_FOUND");
+    return next();
+  });
   const ticketDeps = {
     prisma: deps.prisma,
-    ticketBoardEnabled: deps.env?.ticketBoardEnabled,
     onTicketChange: deps.ticketChanges,
   };
 
@@ -467,6 +477,7 @@ export function createRouterContext(deps: RouterDeps) {
     removeBot,
     agentImportServices,
     chatCatalog,
+    withServingConnections,
     withDeploymentDefault,
     withImageInput,
     modelRoleCatalog,

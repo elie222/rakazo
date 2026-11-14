@@ -577,6 +577,17 @@ describe("listGroups archived", () => {
     expect(query.include.members.where).toBeUndefined();
   });
 
+  it("skips a member whose bot was deleted between the member and bot reads", async () => {
+    const deleted = { bot: null } as unknown as ReturnType<typeof member>;
+    const { repos: groupRepos } = repos([
+      group("losing-a-bot", false, [member("a"), member("b"), deleted]),
+      group("left-with-one-bot", false, [member("c"), deleted]),
+    ]);
+    const listed = await groupRepos.listGroups(actor);
+    expect(listed.map((item) => item.id)).toEqual(["losing-a-bot"]);
+    expect(listed[0]!.members.map((item) => item.botId)).toEqual(["a", "b"]);
+  });
+
   it("keeps the active list to groups with enough active bots", async () => {
     const { findMany, repos: groupRepos } = repos([
       group("openable", false, [member("a"), member("b")]),

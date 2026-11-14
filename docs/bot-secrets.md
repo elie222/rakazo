@@ -16,7 +16,7 @@ For example, the bot can request:
 }
 ```
 
-The value is encrypted in Postgres `vault_credentials` using the deployment's `ENCRYPTION_KEY` (AES-256-GCM with record-bound authentication). Only the run's user can submit a reusable credential. It belongs to that user and survives later runs. By default it sits in the user's account vault, which every Space uses; a Space where the user keeps its own credentials has a separate vault that starts empty, so they have to be saved there again, and no other Space can read it. It is deleted when its owner is deleted, and a Space's own vault is also deleted with its Space. Names, destinations and authentication configuration are metadata; `list_secrets` returns those fields without values. No hosted credential service or prebuilt connector is required.
+The value is encrypted in Postgres `vault_credentials`. Once `content-encryption migrate` has given its vault a key, it is under the [content encryption](./content-encryption.md#how-it-works) keys (AES-256-GCM bound to the item, its owner and its vault): `migrate` moves existing items, and later saves use the key while content encryption is on. Saves made before the vault has a key, or while content encryption is off, use the deployment's `ENCRYPTION_KEY` (AES-256-GCM with record-bound authentication); with Infisical, new saves go to Infisical. Only the run's user can submit a reusable credential. It belongs to that user and survives later runs. By default it sits in the user's account vault, which every Space uses; a Space where the user keeps its own credentials has a separate vault that starts empty, so they have to be saved there again, and no other Space can read it. It is deleted when its owner is deleted, and a Space's own vault is also deleted with its Space. Names, destinations and authentication configuration are metadata; `list_secrets` returns those fields without values. No hosted credential service or prebuilt connector is required.
 
 The bot uses `secret_request` to ask the backend to decrypt and inject the credential:
 
@@ -65,6 +65,8 @@ A command variable is redacted from command output in its plain, base64 and URL-
 
 Command variables are managed in the same Vault as other reusable credentials. The request card a bot opens in a thread shows a command variable's variable name in place of a site.
 
+Each variable a command is sent with is recorded as a use of it (`credential.used` in the [audit log](./self-host-audit-log.md#what-is-recorded)) and listed in its item's activity: once per variable each time a run starts or resumes, however many commands that run then runs, and once per variable for each check of a [routine](./routines.md#when-something-changes) that watches a command. The record never holds the value, and has no site, since a shell is not one. A command that is refused, or that never reaches the computer, is not a use, and neither is a run reading the variables when it starts in order to hide them from its output. A variable a bot may not use (see Managing the vault) is neither exported to its commands nor recorded.
+
 ## Saved website logins
 
 When you want a bot to sign in to a website by itself, ask it to save the login. It calls `request_secret` with `"auth": {"type": "login"}`, the origin of the sign-in page, and the labels of the values the site signs in with:
@@ -100,7 +102,11 @@ To sign in, the bot fills fields found with `browser_snapshot`, naming each by i
 
 `"username"` and `"password"` also name a login's first visible and first hidden field, so a bot can fill a login saved in settings without knowing its labels.
 
-The backend decrypts the value and the page browser types it only if the page is still on the saved origin at that moment, so a login cannot be typed into another site or a page that redirected. The origin must be HTTPS: `RAKAZO_SECRETS_ALLOW_PRIVATE_HTTP` does not apply to website logins. A hidden field goes only into a password field, and a visible field only into a text, email or tel input. A visible field can appear on the page and in screenshots. A site's "show password" control still works normally; revealing a hidden value can make it visible in screenshots. Values travel to the computer over stdin, not command-line arguments. Snapshots never report the value of a field that holds a saved login. In every run, not only the one that filled it, tool results such as page results, command output and file reads are scrubbed of each saved login's hidden fields in plain, URL-encoded, form-encoded and base64 form; hidden values shorter than 6 characters are only scrubbed in the run that fills them. In the run that fills a login, page results are also scrubbed of its visible fields of 6 or more characters, which covers a site that echoes them in page text; shorter visible values are not scrubbed because redaction replaces every occurrence. Later runs leave visible fields readable, since one is often the user's own email address. Only this bot's own runs scrub its hidden fields: on a Team Computer, other bots' runs don't, so use a Private Computer for a bot that signs in to sites. A login cannot be used with `secret_request`. Fills need no approval: saving the login is the approval, and it is bound to one site. Use `forget_secret` to remove it.
+The backend decrypts the value and the page browser types it only if the page is still on the origin the fill was sent for at that moment, which is the saved origin or one of the other sites its owner added (below), so a login cannot be typed into another site or a page that redirected. The origin must be HTTPS: `RAKAZO_SECRETS_ALLOW_PRIVATE_HTTP` does not apply to website logins. A hidden field goes only into a password field, and a visible field only into a text, email or tel input. A visible field can appear on the page and in screenshots. A site's "show password" control still works normally; revealing a hidden value can make it visible in screenshots. Values travel to the computer over stdin, not command-line arguments. Snapshots never report the value of a field that holds a saved login. In every run, not only the one that filled it, tool results such as page results, command output and file reads are scrubbed of each saved login's hidden fields in plain, URL-encoded, form-encoded and base64 form; hidden values shorter than 6 characters are only scrubbed in the run that fills them. In the run that fills a login, page results are also scrubbed of its visible fields of 6 or more characters, which covers a site that echoes them in page text; shorter visible values are not scrubbed because redaction replaces every occurrence. Later runs leave visible fields readable, since one is often the user's own email address. Saved logins belong to you, not to one bot, so in a Space only you use, every run on its Team Computer scrubs every login in the vault that Space uses, whichever bot filled it and whichever bots may use it. In a [shared Space](./spaces.md#share-a-space), other members' runs scrub only their own logins, so sign in from a Private Computer there. Each run reads the vault when it starts, so another bot's run that is already going doesn't scrub a login saved or changed after it began, and a login kept without saving is only scrubbed in its own run. On any computer, later runs no longer scrub a login's old values once it is changed or removed, or the logins in a vault the Space has stopped using. Redaction hides text, not sessions: the other bots on a Team Computer can use the sites a bot signed in to, so use a Private Computer for a bot whose sign-ins they must not use. A login cannot be used with `secret_request`. Unless the login is set to Ask first (see Managing the vault), fills need no approval: saving the login is the approval, and it is bound to its site and to the other sites its owner adds for it. Use `forget_secret` to remove it.
+
+A login can also fill on up to 10 other exact HTTPS origins, such as `https://www.example.test` for a login saved on `https://login.example.test`. Only the owner sets them, in **Also on** when editing the login in Settings; a bot cannot add one, and a wildcard such as `https://*.example.test` is refused. The backend sends the page browser the one origin, of the login's own and its others, that the page was last reported on, so the page browser's check stays the same and an older computer image needs no change: a page that moved to any other origin, a lookalike host or plain HTTP is refused. `request_secret` finds a login for any of its origins, by name or by site, and keeps it saved at its own site; by site, it takes the one login saved at that site, or when none is, the one login also on it. If the page moved to another of the login's sites without the run seeing it, the fill is refused, and the bot is told to open the saved site and fill again; a fill goes by the page the run last saw, so after a snapshot it fills on the page's current site instead. Other sites apply to the page itself, not to frames: a sign-in form in a frame fills only when the frame is on the login's own site and the page around it is not one of its other sites, so for a sign-in frame, save the login for the frame's site and don't add the page around it. A bot can ask to move a login to another site only while the login has no authenticator key and no other sites: only its owner sets them, for the site it has, and a login card shows neither, so `request_secret` with `replace` is refused for such a login and the bot is told to ask you to change its site in the Vault. If you add a key or a site while such a card waits, answering the card moves the login without them. Whole-domain matching is not supported.
+
+A login can also keep an **Authenticator key**, a base32 secret or an `otpauth://totp` link (SHA-1, SHA-256 or SHA-512, 6 or 8 digits, 30 or 60 seconds), which the owner adds when editing it in Settings. Spaces, dashes and case don't matter and padding may be left off, but a secret whose length can't be whole bytes, or whose padding doesn't fill its last group, is refused as a likely typo. It is stored encrypted inside the login's value, and a save that leaves it out, such as a login card the user answers or an older app, leaves it as it is, whether that is a key or none: a key you removed stays removed until you type one again. Clearing the field removes it. A bot types the login's current code with `browser_act` `fill_code` and `secret`, the login's name: the backend computes the RFC 6238 code at that moment and sends it through the same code fill as a code the user typed, so it is typed only on one of the login's sites (its own or one it is also on), into a code box, and kept with the run's typed codes: each code is typed once per run and hidden from tool output in every attempt of the run, also after a restart. The backend can't see whether a site took a code, so it reads the site asking again as a refusal: a code requested within 5 minutes of the last one typed for the same login in that run is a repeat. Three in a row, each within 5 minutes of the one before, stop the login's codes for every run as the third is typed, with no fourth request needed, and the bot is told to ask the user for the code instead, since a site that asked twice more likely has another key; no run types that login's codes again until its owner saves the login in the Vault, and the time it was saved stays as it was. Only the codes of the value as saved count together, so the count starts over once the login is saved again. A stop is cleared only by the owner's own save in the Vault: answering a login card a bot asked for keeps the saved key, so it leaves the stop in place, and renaming or re-setting the item changes neither. A code the page clearly never typed, such as one refused because the page is on another site, gives its place back, and the stop with it unless three other codes still stand; a fill the page may have taken keeps both, whether or not the site accepted the code. Codes further apart never count, so a login whose codes work is used as often as a long run, or several runs, need. The bot never sees the key or the code; the key is hidden from tool output in every run, as a saved password is, in the forms a page shows it (as saved, in either case, grouped in fours with spaces or dashes, or inside its setup link); like a password, a run hides the keys saved when it started, and a key added or changed later from the run's first fill of that login. `list_secrets` tells the bot which logins can type a code (`authenticatorCode`) and their other sites (`alsoOn`). A blocked login gives no code, and each use is recorded as `credential.used`. A login the person entered for one run only, without saving it, has no key, so the bot asks for a code instead. Any run that can use the login can type its code, including group and channel runs, with no card unless the login is set to Ask first; such a login asks for the code too, saying so on its card, and a webhook run can't use it. Keeping the key beside the password makes the two one factor for anyone who can use the vault, so add one only where the bot must sign in on its own.
 
 Logins saved before fields existed read as a visible Username and a hidden Password, and fill exactly as before.
 
@@ -139,7 +145,7 @@ Every call that types a saved card asks the person first, naming the card and th
 
 ## Contacts
 
-A contact is a name, address, phone or email, the user's own or someone else's, such as `home`, `mom` or `office`. A bot asks for one with `request_secret` and auth `{ "type": "contact" }`, with no origin. A contact is not secret from the bot: `list_secrets` returns its fields, and the bot types them like any other text. It is still encrypted at rest.
+A contact is a name, address, phone or email, the user's own or someone else's, such as `home`, `mom` or `office`. A bot asks for one with `request_secret` and auth `{ "type": "contact" }`, with no origin. A contact is not secret from the bot: `list_secrets` returns its fields, and the bot types them like any other text, so a contact has no uses to record or list. It is still encrypted at rest.
 
 ## Managing the vault
 
@@ -151,6 +157,75 @@ Opening an item shows its fields; protected values show only after you confirm i
 there you can edit an item, add a note on when the bot should use it, which `list_secrets` shows
 the bot, or remove it after confirming. Remove deletes the saved value immediately. Asking the bot
 to `forget_secret` a name only removes it; it does not list or replace one.
+
+Each item's **Bots** setting says which bots may use it. Every bot may by default. Block keeps every
+bot from it (a contact can't be blocked), and choosing bots limits it to those bots; none chosen
+means no bot uses it. In a shared Space you can choose any of its bots, and your choice covers only
+your runs with them, since each person's runs use their own vault. A login can also **Ask first**:
+each `browser_act` call that signs in with it shows the user a card, such as "Sign in to
+example.com with Work login?" (its title, never a username), naming the one site it fills on (the
+page's, when that is one of its other sites). When the call types the login's authenticator code,
+the card says so under the question: "This types the login's authenticator code." The card shows
+on every such call, also in Never ask and over an Always allow rule; its only answers are Allow
+once and Deny, and only the person whose run it is can give one. Allowing covers that one call and
+what the card said: the fields of the login the call fills, its code only when the card said so,
+on the site the card named, for the login as it was saved when the card was shown. The call's
+other steps, such as the click that submits the form, run with it; a call that would also pay or
+type a saved card is refused instead. An approval for a password never covers a code, so a code
+asked for later shows its own card. Any later call asks again, and so does a call allowed before
+the login was saved again, as when a key or a site was added while the card waited. Declining
+types nothing, and a webhook run can't use the login, as with saved cards. A login saved by
+`generate_secret` with `command: true` also has a command variable copy of its password,
+`<name>-password`: that copy is its own item with its own Bots setting, so Ask first, Block or
+chosen bots on the login don't cover it; set it too. Bots are chosen in the Space they are in:
+limiting an account item in one Space leaves the bots of your other Spaces as they were, and a
+Space with its own vault never uses account items. A bot treats an item it may not use as missing,
+while a value it saw earlier stays hidden from its runs.
+The migration installs restrictive row-security policies that hide restricted vault items from
+previous-release connections, including system connections. Unrestricted items remain readable
+and writable. Any per-Space bot limit hides that account item from old connections in every
+Space, since an old writer could overwrite it. Run-only logins, codes and secrets are unavailable
+to old connections for an owner with a restricted item in the account or current Space's vault:
+these temporary rows cannot reliably be linked to an item, so allowing them could bypass its
+restriction. Other owners and Spaces keep working. Current connections declare support for item
+policies alongside their tenant settings. This requires the restricted runtime database role used
+by supported deployments: a superuser or a role bypassing row security cannot enforce this
+boundary. An action that already received a value before the migration or policy change may
+finish; database policies cannot recall values already handed out.
+
+**Import CSV** in the New menu reads a password manager's CSV export on your device; the file is
+never uploaded. It matches common column names for the name, site, username or email and
+password, takes the first HTTPS site of a cell that lists several (a site
+written without `https://`, such as `example.com`, counts as HTTPS; `http://` does not), reads a file
+of up to 5 MB, and shows how many logins it will add before
+saving, with a line saying that bots can use each one until you change its Bots setting. A Vault
+holds 100 items, so when a file has more new logins than there is room for, the
+review counts the rest as "Vault full". It still sends them, up to 100 at a time, and the server
+decides which fit; its result lists any it had no room for. An import that stops partway says some logins
+may have been saved; importing the file again skips them.
+It leaves out rows whose site isn't HTTPS or is one no login may be saved for, rows without a password, rows
+with a value too long to save, rows with more cells than the header, and logins already saved for the same site and
+username, and lists the first few of those rows by the file's line each starts on and name or site,
+never by username or password. A row the file repeats is listed as repeated until the import has
+saved or turned down its first copy, then as already saved, or as turned down the same way. A long
+name is shortened to fit. Notes aren't imported, since bots see an item's note
+and an export's notes can hold private data such as security answers; add one by hand where it
+helps the bot. If a saved login can't be read for now, the import stops there; importing the file
+again later counts what was saved as already saved. Each login it adds is a new item that bots may use, like one
+you add yourself, and is audited as `credential.created`. As with every vault event, a shared
+Space's organization names the login only when you are a full member of it. A guest's full record
+of an item in their account vault goes to the organization they own; one in the Space's vault is
+recorded only in the Space (see the [audit log](./self-host-audit-log.md#what-is-recorded)). An
+item's activity lists its 20 latest uses as the audit log records them, one for each item and site
+each time a run starts or resumes and one for each check of a routine, not one for each field
+typed: a login, card or code a page may have typed, an API key a request may have carried, and a
+command variable a shell command was sent with. A guest sees a use in a
+shared Space without its site where only the unnamed record exists: a use of an item in the
+Space's vault, or any use when they own no organization. A command variable's use never has a
+site. Authenticator keys aren't imported; add
+one in the login's editor where a bot must sign in on its own. A file whose quotes are broken is
+not read at all, so no password is read differently from the export. Delete the export file
+afterwards: it holds your passwords unencrypted.
 
 A sign-in without a password, such as an ID number and phone number, uses the same login card. CAPTCHA and passkeys still use `request_takeover`, as does any sign-in you prefer to do yourself.
 
