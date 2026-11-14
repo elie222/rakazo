@@ -97,6 +97,8 @@ export async function createStatusLineWriter(
         operationId: `status-line:${scope.runId}`,
         operationKind: "setup",
       });
+    // Each request runs under its own id, so concurrent ones share no runtime state.
+    let requests = 0;
     const writeWith = async (
       choice: ModelRoleChoice,
       buildPrompt: () => string,
@@ -109,6 +111,7 @@ export async function createStatusLineWriter(
       // Built only now, so it is redacted against the credentials just resolved too.
       const prompt = buildPrompt();
       const startedAt = Date.now();
+      const runId = `${scope.runId}:status-line:${++requests}`;
       let text = "";
       let problem = "";
       // A provider that does not stop when aborted must not hold up the next model.
@@ -117,7 +120,7 @@ export async function createStatusLineWriter(
           {
             botId: scope.botId,
             threadId: scope.threadId,
-            runId: `${scope.runId}:status-line`,
+            runId,
             usageOperationKind: "setup",
             // An empty answer stays empty, so the next model is tried instead of a placeholder.
             allowSilentEmpty: true,

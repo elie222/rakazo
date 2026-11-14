@@ -42,6 +42,8 @@ export function startStatusLines(target: StatusLineTarget): LiveStatusLines {
   const abort = new AbortController();
   const onRunAbort = () => close();
   let generation = 0;
+  // The generation a supersede last ended; a later one with nothing new to end does nothing.
+  let supersededAt = -1;
   let closed = false;
   let hasWriter = false;
   // The request for whatever the line shows now; a newer step or status cancels it.
@@ -104,7 +106,10 @@ export function startStatusLines(target: StatusLineTarget): LiveStatusLines {
         .catch(() => {});
     },
     supersede() {
+      // Every streamed text delta supersedes; only the first after a status has work to do.
+      if (supersededAt === generation) return;
       generation += 1;
+      supersededAt = generation;
       replaceCurrent();
     },
     close,

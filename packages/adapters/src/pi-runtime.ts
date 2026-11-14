@@ -1299,8 +1299,12 @@ export class PiAgentRuntime implements AgentRuntime {
         signal.removeEventListener("abort", stopThinking);
         queue.close();
         if (trackedBudget) {
+          // A run that made no tool call has nothing to carry over: a resumed one starts the
+          // same fresh budget. Aborted one-shot calls, such as status lines, leave no entry.
           const keepForResume =
-            (signal.aborted || Boolean(resumeHost?.pausePending)) && !trackedBudget.exceeded;
+            (signal.aborted || Boolean(resumeHost?.pausePending)) &&
+            !trackedBudget.exceeded &&
+            trackedBudget.count > 0;
           releaseToolCallBudget(request.runId, keepForResume);
         }
       }
