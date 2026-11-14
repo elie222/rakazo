@@ -14,6 +14,7 @@ import {
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createRunExecutor } from "./executor.js";
 import { createJobReconciler } from "./job-reconciler.js";
+import { deleteSpentOneShotRoutine } from "./run-routines.js";
 
 const url = process.env.DATABASE_URL;
 const describePostgres = process.env.VERIFY_DATABASE === "1" && url ? describe : describe.skip;
@@ -101,6 +102,44 @@ describePostgres("routine tick prompt and model consistency (PostgreSQL)", () =>
     const task = await system.task.findUniqueOrThrow({ where: { id: run.taskId } });
     expect(task.prompt).toContain("CORRECTED");
     expect(run).toMatchObject({ modelProvider: "prov-b", modelId: "model-B", modelPinned: true });
+  });
+
+  it("deletes only a spent one-time routine and keeps its run history", async () => {
+    const spent = { crons: ["@once"], active: false, nextRunAt: null };
+    const create = (data: Partial<Prisma.RoutineUncheckedCreateInput>) =>
+      system.routine.create({
+        data: { ...identity, name: "reminder", prompt: "remind me", ...spent, ...data },
+      });
+    const [done, rescheduled, recurring, webhook, busy] = await Promise.all([
+      create({}),
+      create({ active: true, nextRunAt: new Date(Date.now() + 60 * 60_000) }),
+      create({ crons: ["0 9 * * *"] }),
+      create({ webhookEnabled: true }),
+      create({}),
+    ]);
+    const task = await system.task.create({
+      data: { ...identity, prompt: "remind me", status: "completed" },
+    });
+    const runFor = (routineId: string, status: string) =>
+      system.run.create({
+        data: { ...identity, taskId: task.id, status, trigger: "routine", routineId },
+      });
+    const finished = await runFor(done.id, "completed");
+    await runFor(busy.id, "running");
+
+    for (const routine of [done, rescheduled, recurring, webhook, busy])
+      await deleteSpentOneShotRoutine(system, { routineId: routine.id, userId: identity.userId });
+
+    const left = await system.routine.findMany({
+      where: { id: { in: [done.id, rescheduled.id, recurring.id, webhook.id, busy.id] } },
+      select: { id: true },
+    });
+    expect(left.map((row) => row.id).sort()).toEqual(
+      [rescheduled.id, recurring.id, webhook.id, busy.id].sort(),
+    );
+    await expect(
+      system.run.findUniqueOrThrow({ where: { id: finished.id }, select: { routineId: true } }),
+    ).resolves.toEqual({ routineId: null });
   });
 
   it("runs no routine in a Space that is being deleted", async () => {
