@@ -130,6 +130,9 @@ export function attachMobileTrackpad(
   let touchId = null;
   let lastX = 0;
   let lastY = 0;
+  let startX = 0;
+  let startY = 0;
+  let scrollStartY = 0;
   let cursorX = null;
   let cursorY = null;
   let moved = false;
@@ -249,6 +252,8 @@ export function attachMobileTrackpad(
   };
   // The canvas only exists once noVNC connects; show the pointer then.
   const onConnect = () => {
+    const target = canvas();
+    if (target) resizeObserver?.observe(target);
     if (enabled) positionCursor();
   };
   const consume = (event) => {
@@ -268,6 +273,7 @@ export function attachMobileTrackpad(
       if (touches.length > 2) scrolled = true;
       twoFinger = true;
       scrollY = averageY(touches);
+      scrollStartY = scrollY;
       return;
     }
     const touch = event.changedTouches?.[0];
@@ -277,6 +283,8 @@ export function attachMobileTrackpad(
     touchId = touch.identifier;
     lastX = touch.clientX;
     lastY = touch.clientY;
+    startX = lastX;
+    startY = lastY;
     moved = false;
   };
   const onTouchMove = (event) => {
@@ -289,8 +297,8 @@ export function attachMobileTrackpad(
         return;
       }
       const y = averageY(touches);
-      if (scrollY !== y) scrolled = true;
-      wheel(scrollY - y);
+      if (Math.abs(scrollStartY - y) > 5) scrolled = true;
+      if (scrolled) wheel(scrollY - y);
       scrollY = y;
       return;
     }
@@ -299,7 +307,7 @@ export function attachMobileTrackpad(
     if (!touch) return;
     const deltaX = touch.clientX - lastX;
     const deltaY = touch.clientY - lastY;
-    if (deltaX !== 0 || deltaY !== 0) moved = true;
+    if (Math.hypot(touch.clientX - startX, touch.clientY - startY) > 5) moved = true;
     positionCursor(deltaX, deltaY);
     lastX = touch.clientX;
     lastY = touch.clientY;
@@ -344,6 +352,8 @@ export function attachMobileTrackpad(
   const resizeObserver =
     typeof ResizeObserver === "undefined" ? null : new ResizeObserver(onResize);
   resizeObserver?.observe(surface);
+  const initialCanvas = canvas();
+  if (initialCanvas) resizeObserver?.observe(initialCanvas);
   const listen = { capture: true, passive: false };
 
   button.hidden = false;

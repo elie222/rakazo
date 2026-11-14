@@ -584,7 +584,7 @@ describe("mobile trackpad touches", () => {
         fixture.touch("touchstart", 1, 50, 250);
         fixture.touch("touchstart", 2, 90, 250, [first]);
         if (!cancel) {
-          for (let delta = 1; delta <= 5; delta++) {
+          for (let delta = 1; delta <= 10; delta++) {
             fixture.touch("touchmove", 2, 90, 250 - delta, [{ ...first, clientY: 250 - delta }]);
           }
         }
@@ -598,8 +598,8 @@ describe("mobile trackpad touches", () => {
   it("does not click after slow aiming, a third finger, or remaining-finger movement", () => {
     withTrackpad((fixture) => {
       fixture.touch("touchstart", 1, 50, 250);
-      for (let x = 51; x <= 55; x++) fixture.touch("touchmove", 1, x, 250);
-      fixture.touch("touchend", 1, 55, 250);
+      for (let x = 51; x <= 60; x++) fixture.touch("touchmove", 1, x, 250);
+      fixture.touch("touchend", 1, 60, 250);
       expect(mouseDowns(fixture)).toHaveLength(0);
     });
     for (const thirdFinger of [false, true]) {
@@ -618,6 +618,25 @@ describe("mobile trackpad touches", () => {
         expect(mouseDowns(fixture)).toHaveLength(0);
       });
     }
+  });
+
+  it("allows small fingertip movement during taps", () => {
+    withTrackpad((fixture) => {
+      fixture.touch("touchstart", 1, 50, 250);
+      fixture.touch("touchmove", 1, 51, 251);
+      fixture.touch("touchend", 1, 51, 251);
+      expect(mouseDowns(fixture)).toHaveLength(1);
+    });
+    withTrackpad((fixture) => {
+      const first = { identifier: 1, clientX: 50, clientY: 250 };
+      fixture.touch("touchstart", 1, 50, 250);
+      fixture.touch("touchstart", 2, 90, 250, [first]);
+      fixture.touch("touchmove", 2, 90, 251, [{ ...first, clientY: 251 }]);
+      fixture.touch("touchend", 2, 90, 251, [first]);
+      fixture.touch("touchend", 1, 50, 251);
+      expect(mouseDowns(fixture)).toHaveLength(1);
+      expect(fixture.wheelDeltas).toHaveLength(0);
+    });
   });
 
   it("right-clicks on a two-finger tap", () => {
