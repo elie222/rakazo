@@ -1,6 +1,7 @@
 import type { AgentRunRequest, AgentRuntimeEvent } from "@rakazo/adapter-kit";
 import { describe, expect, it, vi } from "vitest";
 import type { ExecutorDeps } from "./executor-deps.js";
+import { effectiveModelRole } from "./model-roles.js";
 import { createStatusLineWriter } from "./status-lines.js";
 
 vi.mock("./model-roles.js", () => ({
@@ -113,5 +114,22 @@ describe("createStatusLineWriter", () => {
     const line = await writer?.opening("How much is the plan?", new AbortController().signal);
     expect(line).toBe("Reading your question");
     expect(models).toEqual(["small-a"]);
+  });
+
+  it("uses a member's fallbacks when no primary is set", async () => {
+    vi.mocked(effectiveModelRole).mockResolvedValueOnce({
+      primary: null,
+      backups: [{ provider: "openai", modelId: "small-b" }],
+      primarySource: "member",
+    } as unknown as Awaited<ReturnType<typeof effectiveModelRole>>);
+    const { deps: d, models } = deps(() => "Checking availability");
+    const writer = await createStatusLineWriter(d, scope, []);
+    const line = await writer?.step(
+      "Is it in stock?",
+      "Running: curl …",
+      new AbortController().signal,
+    );
+    expect(line).toBe("Checking availability");
+    expect(models).toEqual(["small-b"]);
   });
 });

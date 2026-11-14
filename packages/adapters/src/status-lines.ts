@@ -57,10 +57,11 @@ export async function createStatusLineWriter(
       "status",
       {},
     );
-    if (!primary) return undefined;
     // The primary first, then each fallback in order; a model's key is resolved once, when
-    // it is first needed.
-    const choices = [primary, ...backups];
+    // it is first needed. A member may have saved only fallbacks: the deployment fills no
+    // primary for this role.
+    const choices = primary ? [primary, ...backups] : [...backups];
+    if (!choices.length) return undefined;
     const keys = new Map<ModelRoleChoice, ReturnType<typeof resolveModelKey>>();
     const keyFor = (choice: ModelRoleChoice) => {
       let key = keys.get(choice);
