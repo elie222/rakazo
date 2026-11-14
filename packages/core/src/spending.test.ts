@@ -24,6 +24,15 @@ describe("parsePageAmount", () => {
     // A separator before three digits groups thousands: the larger reading.
     ["$1.234", 123400, "usd"],
     ["$1,000,000", 100000000, "usd"],
+    // A decimal part with no whole part is still a fraction, not whole units.
+    ["$.99", 99, "usd"],
+    ["€,50", 50, "eur"],
+    [".99 USD", 99, "usd"],
+    [",50 €", 50, "eur"],
+    ["$.5", 50, "usd"],
+    ["$0.99", 99, "usd"],
+    ["€0,50", 50, "eur"],
+    ["$00.99", 99, "usd"],
   ])("reads %s", (text, amount, currency) => {
     expect(parsePageAmount(text)).toEqual({ amount, currency });
   });
@@ -41,6 +50,11 @@ describe("parsePageAmount", () => {
     "$1.2345",
     "$1,234,56",
     "$30,000,000",
+    "$..99",
+    "$,.99",
+    "$.999",
+    "€,500",
+    "$.1,234",
   ])("refuses %j", (text) => {
     expect(parsePageAmount(text)).toBeNull();
   });

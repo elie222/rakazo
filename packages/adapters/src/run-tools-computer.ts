@@ -49,7 +49,7 @@ import { purchaseApprovalOf } from "./purchase-gate.js";
 import { resolvePurchaseCardFill, resolvePurchasePayTokenFill } from "./purchase-service.js";
 import type { RunContext } from "./run-context.js";
 import { addRunSecrets, recordVaultUse } from "./run-context.js";
-import { builtinOffered } from "./run-instructions.js";
+import { builtinOffered } from "./run-instructions.prompt.js";
 import { computerScreenToolResult } from "./run-lifecycle.js";
 import type { ToolCall, ToolHandlers } from "./run-tool-gate.js";
 import { auditToolCall } from "./run-tool-gate.js";
@@ -60,7 +60,7 @@ import {
   SHELL_STILL_RUNNING_NOTICE,
 } from "./shell-command-stream.js";
 import { recordPagePayment } from "./spending-gate.js";
-import { DESKTOP_HELD_FOR_TAKEOVER_MESSAGE } from "./takeover-resume.js";
+import { DESKTOP_HELD_FOR_TAKEOVER_MESSAGE } from "./takeover-resume.prompt.js";
 import { getActiveTeachingSession } from "./teaching-session.js";
 import { LOGIN_CODE_FIELD, vaultCardUseOf, vaultLoginUseOf } from "./vault-card-use.js";
 

@@ -2,7 +2,7 @@ import { useLingui } from "@lingui/react/macro";
 import type { ModelHeaderRow } from "@rakazo/contracts";
 import { serverHeadersFromRows } from "@rakazo/contracts";
 import { Stack, useRouter } from "expo-router";
-import { useEffect, useRef, useState } from "react";
+import { useContext, useEffect, useRef, useState } from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, Text, TextInput } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { HeaderRowsEditor } from "../components/header-rows-editor";
@@ -10,6 +10,7 @@ import { NativeActionButton } from "../components/native-action-button";
 import { cancelHeaderOptions, trailingHeaderOptions } from "../components/sheet-header";
 import { currentApiBase } from "../lib/api";
 import { resetApiBase, saveApiBase } from "../lib/api-server";
+import { CallKeyboardContext } from "../lib/call-keyboard-context";
 import {
   apiBaseWarning,
   defaultApiBase,
@@ -24,6 +25,7 @@ import { confirmUnsentSendLoss } from "../lib/unsent-send-warning";
 import { errorText } from "../lib/user-error";
 
 export default function ServerScreen() {
+  const call = useContext(CallKeyboardContext);
   const sideInsets = useSideInsets();
   const { t } = useLingui();
   const tokens = useMobileTokens();
@@ -121,6 +123,7 @@ export default function ServerScreen() {
         }}
       />
       <KeyboardAvoidingView
+        enabled={!call}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         style={{ flex: 1 }}
       >

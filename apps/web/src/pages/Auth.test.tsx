@@ -7,6 +7,8 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { authClient } from "../lib/auth";
 import type { AuthCapabilities } from "../lib/auth-capabilities";
 import { fetchAuthCapabilities } from "../lib/auth-capabilities";
+import type * as Passkeys from "../lib/passkeys";
+import { usePasskeysSupported } from "../lib/passkeys";
 import { clearSpaceSelection } from "../lib/rpc";
 import { AuthPage } from "./Auth";
 
@@ -65,11 +67,21 @@ vi.mock("@rakazo/ui-web", () => ({
 vi.mock("../lib/auth-capabilities", () => ({ fetchAuthCapabilities: vi.fn() }));
 vi.mock("../lib/auth", () => ({
   authClient: {
-    signIn: { social: vi.fn(async () => ({})), email: vi.fn(), emailOtp: vi.fn() },
+    signIn: {
+      social: vi.fn(async () => ({})),
+      email: vi.fn(),
+      emailOtp: vi.fn(),
+      passkey: vi.fn(async () => ({ data: {}, error: null })),
+    },
     emailOtp: { sendVerificationOtp: vi.fn() },
   },
 }));
 vi.mock("../lib/rpc", () => ({ clearSpaceSelection: vi.fn() }));
+vi.mock("../lib/passkeys", async (importActual) => ({
+  ...(await importActual<typeof Passkeys>()),
+  usePasskeysSupported: vi.fn(() => false),
+  conditionalPasskeyAvailable: vi.fn(async () => false),
+}));
 const capabilities: AuthCapabilities = {
   passwordAuth: false,
   sso: { name: "Example", availability: "unavailable" },
@@ -211,6 +223,27 @@ it("shows a configured provider beside the password form and hides the rest", as
   await render("up");
   expect(host.textContent).not.toContain("Continue with");
   expect(host.querySelector('input[name="email"]')).not.toBeNull();
+});
+
+it("offers a supported passkey in the sign-in chooser only", async () => {
+  vi.mocked(usePasskeysSupported).mockReturnValue(true);
+  vi.mocked(fetchAuthCapabilities).mockResolvedValue({ ...capabilities, passwordAuth: true });
+  await render();
+  const passkey = button("Continue with passkey");
+  expect(
+    button("Continue with email").compareDocumentPosition(passkey) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  await act(async () => passkey.click());
+  expect(authClient.signIn.passkey).toHaveBeenCalledWith({ autoFill: false });
+  expect(clearSpaceSelection).toHaveBeenCalled();
+
+  await render();
+  await act(async () => button("Continue with email").click());
+  expect(button("Sign in with passkey")).toBeUndefined();
+
+  await render("up");
+  expect(button("Continue with passkey")).toBeUndefined();
 });
 
 it("hides SSO in password recovery", async () => {

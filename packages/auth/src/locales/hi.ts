@@ -36,16 +36,12 @@ export const HI_MESSAGES: Record<string, string> = {
     "Rakazo ओपन सोर्स है। {star} से ज़्यादा लोग इसे ढूँढ पाते हैं।",
   "A star on GitHub": "GitHub पर एक स्टार",
   "Questions? Just reply. I read every one.": "कोई सवाल? बस जवाब दें। मैं हर ईमेल पढ़ता हूँ।",
-  "Have any questions? Reply to this email.": "कोई सवाल है? इस ईमेल का जवाब दें।",
   Unsubscribe: "सदस्यता छोड़ें",
   "Invite a friend": "किसी दोस्त को आमंत्रित करें",
   "Invite a friend to Rakazo: they get {weeks} weeks free, and you earn a free month when they start a qualifying subscription with a new card.":
     "किसी दोस्त को Rakazo पर बुलाएँ: उन्हें {weeks} हफ़्ते मुफ़्त मिलते हैं, और जब वे नए कार्ड से योग्य सदस्यता शुरू करते हैं तो आपको एक महीना मुफ़्त मिलता है।",
   "Open Rakazo": "Rakazo खोलें",
   "and choose Invite friends for your link.": "और अपना लिंक पाने के लिए दोस्तों को आमंत्रित करें चुनें।",
-  "Have any questions? Just reply to this email.": "कोई सवाल है? बस इस ईमेल का जवाब दें।",
-  "If you're enjoying Rakazo,": "अगर आपको Rakazo पसंद आ रहा है,",
-  "give us a star on GitHub": "तो GitHub पर हमें एक स्टार दें",
   "We received your Rakazo plugin": "हमें आपका Rakazo प्लगइन मिल गया है",
   "Thanks for submitting a plugin to the Rakazo marketplace.":
     "Rakazo मार्केटप्लेस में प्लगइन भेजने के लिए धन्यवाद।",

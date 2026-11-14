@@ -37,16 +37,12 @@ export const HE_MESSAGES: Record<string, string> = {
     "Rakazo הוא קוד פתוח. {star} עוזר ליותר אנשים למצוא אותו.",
   "A star on GitHub": "כוכב ב-GitHub",
   "Questions? Just reply. I read every one.": "שאלות? פשוט להשיב לאימייל. אני קורא כל תשובה.",
-  "Have any questions? Reply to this email.": "יש שאלות? אפשר להשיב לאימייל הזה.",
   Unsubscribe: "ביטול המינוי",
   "Invite a friend": "הזמנת חבר",
   "Invite a friend to Rakazo: they get {weeks} weeks free, and you earn a free month when they start a qualifying subscription with a new card.":
     "אפשר להזמין חבר ל-Rakazo: הוא מקבל {weeks} שבועות בחינם, ואתם מקבלים חודש חינם כשהוא מתחיל מינוי מתאים עם כרטיס חדש.",
   "Open Rakazo": "פתיחת Rakazo",
   "and choose Invite friends for your link.": "ובחירה ב״הזמנת חברים״ כדי לקבל את הקישור שלך.",
-  "Have any questions? Just reply to this email.": "יש שאלות? פשוט משיבים לאימייל הזה.",
-  "If you're enjoying Rakazo,": "אם Rakazo מוצא חן בעיניך,",
-  "give us a star on GitHub": "נשמח לכוכב ב-GitHub",
   "We received your Rakazo plugin": "קיבלנו את הפלאגין שלך ל-Rakazo",
   "Thanks for submitting a plugin to the Rakazo marketplace.": "תודה ששלחת פלאגין לחנות של Rakazo.",
   "We review every submission and will email you when it's done.":

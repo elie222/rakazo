@@ -1,5 +1,8 @@
 import type { MessageBlock } from "@rakazo/contracts";
-import { isSecretAskBlock } from "./action-approval.js";
+import { isQuestionAskBlock } from "./ask-kind.js";
+
+export { isQuestionAskBlock } from "./ask-kind.js";
+
 import { resolveAskChoice } from "./answerable-ask.js";
 
 type Message = {
@@ -7,16 +10,6 @@ type Message = {
   role: string;
   blocks: readonly MessageBlock[];
 };
-
-/** A conversational question, separate from permission and protected-input requests. */
-export function isQuestionAskBlock(block: MessageBlock): boolean {
-  return (
-    block.kind === "ask" &&
-    !isSecretAskBlock(block) &&
-    !block.approvalEffectId &&
-    !block.instructionUpdate
-  );
-}
 
 /** Answers linked by the server to a user message currently visible in the transcript. */
 export function separateAskAnswers(

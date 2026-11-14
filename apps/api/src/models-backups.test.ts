@@ -649,11 +649,18 @@ describe("role-based model settings API", () => {
           modelId !== availableModel.id || credential.secretId === "credential-personal-secret",
       );
     try {
-      const catalog = (await (await call("models/forRole", { role: "main" })).response.json())
-        .json as Array<{ id: string; credentialIds?: string[] }>;
-      expect(catalog.find((entry) => entry.id === availableModel.id)?.credentialIds).toEqual([
-        "credential-personal",
-      ]);
+      for (const [procedure, input] of [
+        ["models/forRole", { role: "main" }],
+        ["models/list", null],
+      ] as const) {
+        const catalog = (await (await call(procedure, input)).response.json()).json as Array<{
+          id: string;
+          credentialIds?: string[];
+        }>;
+        expect(catalog.find((entry) => entry.id === availableModel.id)?.credentialIds).toEqual([
+          "credential-personal",
+        ]);
+      }
       const model = { provider: availableModel.provider, modelId: availableModel.id };
       const wrong = await call("models/setRole", {
         role: "main",

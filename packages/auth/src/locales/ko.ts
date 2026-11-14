@@ -38,17 +38,12 @@ export const KO_MESSAGES: Record<string, string> = {
   "A star on GitHub": "GitHub 스타",
   "Questions? Just reply. I read every one.":
     "질문이 있으신가요? 답장만 보내 주세요. 모두 읽습니다.",
-  "Have any questions? Reply to this email.": "궁금한 점이 있으신가요? 이 이메일에 답장하세요.",
   Unsubscribe: "수신 거부",
   "Invite a friend": "친구 초대",
   "Invite a friend to Rakazo: they get {weeks} weeks free, and you earn a free month when they start a qualifying subscription with a new card.":
     "친구를 Rakazo에 초대하세요. 친구는 {weeks}주 동안 무료로 사용하고, 친구가 새 카드로 대상 구독을 시작하면 나는 한 달 무료를 받아요.",
   "Open Rakazo": "Rakazo를 열고",
   "and choose Invite friends for your link.": "친구 초대를 선택해 링크를 받으세요.",
-  "Have any questions? Just reply to this email.":
-    "궁금한 점이 있으신가요? 이 이메일에 답장만 하시면 됩니다.",
-  "If you're enjoying Rakazo,": "Rakazo가 마음에 드신다면",
-  "give us a star on GitHub": "GitHub에서 스타를 눌러 주세요",
   "We received your Rakazo plugin": "Rakazo 플러그인을 받았습니다",
   "Thanks for submitting a plugin to the Rakazo marketplace.":
     "Rakazo 마켓플레이스에 플러그인을 제출해 주셔서 감사합니다.",
