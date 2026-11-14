@@ -48,7 +48,7 @@ A message sent with a key is marked by the platform with the key's name. The sen
 
 A run started this way is not treated as one you started. The bot does not get its bot management tools or the tools for connecting to other people's agents, and the text does not count as your words when Auto Review or site trust decides what is allowed. Your approval settings still apply, and any approval card comes to you. A message sent with a key while the bot is working waits for its own run instead of steering the current one.
 
-A routine prompt written with a key stays marked as the key's until you save the routine in the app. Until then its runs, scheduled or not, have the same limits as a run started with a key: no tools for connecting to other people's agents, and Auto Review and site trust do not treat the prompt as your words.
+A routine prompt written with a key stays marked as the key's until you save the routine in the app. Until then its runs, scheduled or not, have the same limits as a run started with a key: no tools for connecting to other people's agents, no changes to the bot's instructions, and Auto Review and site trust do not treat the prompt as your words.
 
 The same limits carry to the work such a run starts: routines it schedules, its helpers, the bots it messages or hands a ticket to, and the run that wakes when a cloud agent, purchase or video job it started finishes. A ticket a key creates or reassigns wakes its bot with them too.
 
