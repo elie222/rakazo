@@ -196,10 +196,20 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   await openWork.getByRole("button", { name: "Add", exact: true }).click();
   const workRows = openWork.locator(".group");
   await expect(workRows).toHaveCount(2);
+  await openWork.getByRole("button", { name: "Add open work" }).click();
+  const workDraft = openWork.getByRole("textbox", { name: "New open-work item" });
+  await workDraft.fill("Retained draft");
   for (let index = 0; index < 2; index += 1) {
     await workRows.first().hover();
     await workRows.first().getByRole("button", { name: "Remove" }).click();
   }
+  await expect(workRows).toHaveCount(0);
+  await expect(workDraft).toHaveValue("Retained draft");
+  await captureScreenshot(page, testInfo, "open-work-empty-list-draft");
+  await openWork.getByRole("button", { name: "Add", exact: true }).click();
+  await expect(openWork.getByText("Retained draft", { exact: true })).toBeVisible();
+  await workRows.first().hover();
+  await workRows.first().getByRole("button", { name: "Remove" }).click();
   await expect(openWork).toHaveCount(0);
   const disabledTools = settings.getByLabel("Disable a tool");
   await expect(disabledTools).toBeVisible();

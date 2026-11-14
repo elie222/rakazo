@@ -95,7 +95,7 @@ export function ScratchpadSection({ botId }: { botId: string }) {
     }
   }
 
-  if (!items.length && !error) return null;
+  if (!items.length && !error && !adding) return null;
 
   return (
     <div className="mt-6" data-testid="bot-scratchpad">
