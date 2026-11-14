@@ -12,7 +12,7 @@ const SPACE_CHANGE_PROCEDURES: Record<string, readonly SpaceChangeKind[]> = {
   "routines.testRun": ["runs"],
   // Activity leaves out archived bots.
   "bots.restore": ["runs"],
-  "bots.remove": ["runs"],
+  "bots.remove": ["runs", "routines"],
 };
 
 export function spaceChangesFor(path: readonly string[]): readonly SpaceChangeKind[] {
