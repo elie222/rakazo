@@ -158,4 +158,23 @@ describe("publishRosterChange", () => {
       publishRosterChange(undefined, { spaceIds: ["space-1"] }),
     ).resolves.toBeUndefined();
   });
+
+  it("retries through a short database outage, and gives up quietly on other failures", async () => {
+    const calls: string[] = [];
+    const fanout = {
+      publish: async (topic: string) => {
+        calls.push(topic);
+        if (topic === "roster-user:user-1") throw new Error("bad payload");
+        if (calls.length === 1)
+          throw Object.assign(new Error("terminating connection"), { code: "57P01" });
+      },
+    };
+    await publishRosterChange(
+      fanout as never,
+      { spaceIds: ["space-1"], userIds: ["user-1"] },
+      { sleep: async () => {} },
+    );
+    await tick();
+    expect(calls).toEqual(["roster-space:space-1", "roster-user:user-1", "roster-space:space-1"]);
+  });
 });
