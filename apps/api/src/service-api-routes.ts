@@ -331,12 +331,14 @@ async function runDetail(
     if (credential.botIds.length && run.thread.groupId) throw new ServiceRejection("not_found");
     const settled = isTerminal(run.status) || run.status === "waiting_input";
     if (settled || Date.now() >= deadline || abort.signal.aborted) {
-      const messages = await prisma.message.findMany({
+      // The latest replies, oldest first: a long run's answer is at its end.
+      const latest = await prisma.message.findMany({
         where: { threadId: run.threadId, runId: run.id, role: { not: "user" } },
-        orderBy: { seq: "asc" },
+        orderBy: { seq: "desc" },
         take: 100,
         select: { id: true, seq: true, role: true, runId: true, blocks: true },
       });
+      const messages = latest.reverse();
       return {
         runId: run.id,
         botId: run.botId,
@@ -547,8 +549,14 @@ export const SERVICE_HANDLERS: Handlers = {
       readsComputer ? client.computer.status({ botId }) : null,
       readsRuns
         ? prisma.run.findMany({
-            // Only the creator's runs, as everywhere else a key reads runs.
-            where: { botId, spaceId: actor.spaceId, userId: actor.userId },
+            // Only the creator's runs, as everywhere else a key reads runs. Group chats are
+            // refused to a key limited to some bots, and their runs with them.
+            where: {
+              botId,
+              spaceId: actor.spaceId,
+              userId: actor.userId,
+              ...(credential.botIds.length ? { thread: { groupId: null } } : {}),
+            },
             select: { id: true, status: true },
             orderBy: [{ createdAt: "desc" }, { id: "asc" }],
             take: RECENT_RUNS,
