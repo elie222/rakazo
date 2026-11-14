@@ -6,14 +6,21 @@ import { useAppForeground } from "./app-foreground";
 import { computerUpdates } from "./computer-updates";
 
 /**
- * Follows the server's roster signals while enabled and on screen, running `onChange` for each
- * change. True while signals are live, so polling can slow down; the first signal of each
- * connection only flips this, since the poll that restarts with it already catches up.
+ * Holds the server's live stream open while enabled and in the foreground, which also carries
+ * computer update signals. Runs `onChange` for each roster change while `followRoster` is set.
+ * True while signals are live, so polling can slow down; the first signal of each connection only
+ * flips this, since the poll that restarts with it already catches up.
  */
-export function useRosterSignals(onChange: () => unknown, enabled: boolean): boolean {
+export function useRosterSignals(
+  onChange: () => unknown,
+  enabled: boolean,
+  followRoster: boolean,
+): boolean {
   const foreground = useAppForeground();
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
+  const followRosterRef = useRef(followRoster);
+  followRosterRef.current = followRoster;
   const [live, setLive] = useState(false);
 
   useEffect(() => {
@@ -29,18 +36,17 @@ export function useRosterSignals(onChange: () => unknown, enabled: boolean): boo
         const close = () => connection.abort();
         controller.signal.addEventListener("abort", close);
         const unfollowSpace = subscribeSpaceSelection(close);
-        const computerUpdateSignals = computerUpdates.connect();
         try {
           await subscribeRosterSignals(
             () => {
               if (connection.signal.aborted) return;
-              if (opened) void onChangeRef.current();
+              if (opened && followRosterRef.current) void onChangeRef.current();
               opened = true;
               setLive(true);
             },
             connection.signal,
             () => {
-              if (!connection.signal.aborted) computerUpdateSignals.signalled();
+              if (!connection.signal.aborted) computerUpdates.signalled();
             },
           );
         } catch (error) {
@@ -48,7 +54,6 @@ export function useRosterSignals(onChange: () => unknown, enabled: boolean): boo
         }
         unfollowSpace();
         controller.signal.removeEventListener("abort", close);
-        computerUpdateSignals.lost();
         if (controller.signal.aborted) return;
         setLive(false);
         if (connection.signal.aborted) continue;

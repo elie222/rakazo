@@ -272,7 +272,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
   // The embedded pane is visible beside the chat, so it keeps polling even when
   // the chat route owns focus.
   const inboxShown = hasSession && (embedded || isFocused);
-  const rosterSignalsLive = useRosterSignals(loadBots, inboxShown);
+  const rosterSignalsLive = useRosterSignals(loadBots, hasSession, inboxShown);
   useForegroundPoll(
     loadBots,
     rosterSignalsLive ? INBOX_SIGNALLED_POLL_INTERVAL_MS : INBOX_POLL_INTERVAL_MS,

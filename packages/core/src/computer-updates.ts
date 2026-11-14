@@ -2,20 +2,13 @@ import type { ComputerUpdate } from "@rakazo/contracts";
 import { COMPUTER_UPDATE_STAGES } from "@rakazo/contracts";
 import { isRetryableError, retryDelayMs } from "./retry-policy.js";
 
-/** Without live signals (an older server, or while the app's live stream is closed) the list is polled. */
-const POLL_MS = 15_000;
-const POLL_IN_PROGRESS_MS = 1_500;
-/**
- * The server signals every change, but a publish or its follower can fail without closing the
- * stream; these slow re-reads bound how long that leaves the list stale.
- */
-const SIGNALLED_IN_PROGRESS_MS = 30_000;
-const SIGNALLED_IDLE_MS = 5 * 60_000;
+/** Failed reads retry on this backoff (or the server's Retry-After); nothing else re-reads on a timer. */
+const RETRY_MS = 5_000;
 
 /**
  * Shared list and local presentation state; the server owns operation lifetime. The list is read
- * when watching starts and whenever the app's live stream signals a change (it signals once on
- * opening), and polled only while those signals are unavailable.
+ * when watching starts and whenever the app's live stream signals a change. The stream signals once
+ * on every (re)connect, so a change missed while it was down is caught then.
  */
 export function createComputerUpdates(client: {
   list: () => Promise<ComputerUpdate[]>;
@@ -35,43 +28,25 @@ export function createComputerUpdates(client: {
   // After a failed read, signals wait for its scheduled retry, which honors Retry-After.
   let backoffUntil = 0;
   let revision = 0;
-  let live = false;
-  let connection = 0;
   let fetching = false;
   let again = false;
   const emit = () => {
     for (const listener of listeners) listener();
   };
-  const inProgress = () =>
-    state.updates.some((item) => item.status === "queued" || item.status === "running");
-  const schedule = (failure?: unknown) => {
+  const retry = (failure: unknown) => {
     clearTimeout(timer);
-    timer = undefined;
-    if (!watching || refused) return;
-    const base = inProgress() ? POLL_IN_PROGRESS_MS : POLL_MS;
-    const delay =
-      failure !== undefined
-        ? retryDelayMs(failure, base)
-        : !live
-          ? base
-          : inProgress()
-            ? SIGNALLED_IN_PROGRESS_MS
-            : SIGNALLED_IDLE_MS;
-    if (failure !== undefined) backoffUntil = Date.now() + delay;
-    timer = setTimeout(
-      () => {
-        // The timer is the retry the backoff waited for, even if it fires a little early.
-        backoffUntil = 0;
-        void refresh();
-      },
-      Math.max(delay, backoffUntil - Date.now()),
-    );
+    const delay = retryDelayMs(failure, RETRY_MS);
+    backoffUntil = Date.now() + delay;
+    timer = setTimeout(() => {
+      // The timer is the retry the backoff waited for, even if it fires a little early.
+      backoffUntil = 0;
+      void refresh();
+    }, delay);
   };
   const read = async () => {
     const epoch = generation;
     const stamp = revision;
     clearTimeout(timer);
-    let failure: unknown;
     try {
       const updates = await client.list();
       if (epoch !== generation) return;
@@ -97,9 +72,8 @@ export function createComputerUpdates(client: {
         clearTimeout(timer);
         return;
       }
-      failure = error;
+      retry(error);
     }
-    schedule(failure);
   };
   /** One read at a time; signals that arrive meanwhile become one more read. */
   const mayRead = () => watching && !refused && Date.now() >= backoffUntil;
@@ -142,11 +116,9 @@ export function createComputerUpdates(client: {
     },
     watch() {
       let stop = begin();
-      // Another Space has its own list, and nothing from the old one may land. Its signals may
-      // still be the old Space's, so poll until the live stream signals again.
+      // Another Space has its own list, and nothing from the old one may land.
       const unfollowSpace = client.onSpaceChange?.(() => {
         stop();
-        live = false;
         emit();
         stop = begin();
       });
@@ -155,25 +127,9 @@ export function createComputerUpdates(client: {
         stop();
       };
     },
-    /**
-     * Signals from one connection of the app's live stream: call `signalled` when it opens and on
-     * each change, and `lost` when it closes. Only the newest connection counts, so an old one
-     * closing late cannot undo its replacement.
-     */
-    connect() {
-      const id = ++connection;
-      return {
-        signalled() {
-          if (id !== connection) return;
-          live = true;
-          void refresh();
-        },
-        lost() {
-          if (id !== connection) return;
-          live = false;
-          if (!fetching) schedule();
-        },
-      };
+    /** Call when the app's live stream opens and on each change it signals. */
+    signalled() {
+      void refresh();
     },
     open(id: string | null) {
       state = { ...state, openId: id };
@@ -189,7 +145,6 @@ export function createComputerUpdates(client: {
         openId: update.id,
       };
       emit();
-      schedule();
     },
     async dismiss(id: string) {
       const epoch = generation;

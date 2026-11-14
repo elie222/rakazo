@@ -9,8 +9,7 @@ import { useRosterSignals } from "./roster-signals";
 const streams = vi.hoisted(
   () => [] as Array<{ signal: () => void; computerUpdates: () => void; end: () => void }>,
 );
-const computerUpdateSignals = vi.hoisted(() => ({ signalled: vi.fn(), lost: vi.fn() }));
-const computerUpdates = vi.hoisted(() => ({ connect: () => computerUpdateSignals }));
+const computerUpdates = vi.hoisted(() => ({ signalled: vi.fn() }));
 vi.mock("./computer-updates", () => ({ computerUpdates }));
 const spaceSelection = vi.hoisted(() => new Set<() => void>());
 vi.mock("./api", () => ({
@@ -37,8 +36,16 @@ vi.mock("./api-live", () => ({
 }));
 
 let live = false;
-function Harness({ onChange, enabled }: { onChange: () => void; enabled: boolean }) {
-  live = useRosterSignals(onChange, enabled);
+function Harness({
+  onChange,
+  enabled,
+  followRoster = enabled,
+}: {
+  onChange: () => void;
+  enabled: boolean;
+  followRoster?: boolean;
+}) {
+  live = useRosterSignals(onChange, enabled, followRoster);
   return null;
 }
 
@@ -87,13 +94,26 @@ describe("useRosterSignals", () => {
     expect(streams).toHaveLength(2);
   });
 
-  it("passes computer update signals on, and their loss when the stream ends", async () => {
+  it("passes computer update signals on", async () => {
     await act(async () => root.render(<Harness enabled onChange={vi.fn()} />));
     await act(async () => streams[0]!.computerUpdates());
-    expect(computerUpdateSignals.signalled).toHaveBeenCalledOnce();
-    expect(computerUpdateSignals.lost).not.toHaveBeenCalled();
-    await act(async () => streams[0]!.end());
-    expect(computerUpdateSignals.lost).toHaveBeenCalledOnce();
+    expect(computerUpdates.signalled).toHaveBeenCalledOnce();
+  });
+
+  it("stays open off the inbox for computer updates, without following roster changes", async () => {
+    const onChange = vi.fn();
+    await act(async () =>
+      root.render(<Harness enabled followRoster={false} onChange={onChange} />),
+    );
+    await act(async () => streams[0]!.signal());
+    await act(async () => streams[0]!.signal());
+    expect(onChange).not.toHaveBeenCalled();
+    await act(async () => streams[0]!.computerUpdates());
+    expect(computerUpdates.signalled).toHaveBeenCalledOnce();
+    await act(async () => root.render(<Harness enabled onChange={onChange} />));
+    expect(streams).toHaveLength(1);
+    await act(async () => streams[0]!.signal());
+    expect(onChange).toHaveBeenCalledOnce();
   });
 
   it("reopens for a newly selected Space, ignoring the old stream's late signals", async () => {
@@ -103,9 +123,8 @@ describe("useRosterSignals", () => {
       for (const listener of spaceSelection) listener();
     });
     expect(streams).toHaveLength(2);
-    expect(computerUpdateSignals.lost).toHaveBeenCalledOnce();
     await act(async () => old.computerUpdates());
-    expect(computerUpdateSignals.signalled).not.toHaveBeenCalled();
+    expect(computerUpdates.signalled).not.toHaveBeenCalled();
     expect(spaceSelection.size).toBe(1);
   });
 
