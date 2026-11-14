@@ -32,7 +32,7 @@ export default function Labs() {
         .then((me) => {
           if (!active) return;
           setLabs(me.labs);
-          setAvailable(me.labsAvailable);
+          setAvailable(me.labsAvailable ?? []);
         })
         .catch(() => undefined);
       return () => {

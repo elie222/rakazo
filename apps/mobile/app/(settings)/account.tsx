@@ -348,7 +348,7 @@ export default function Account() {
                   } as const,
                 ]
               : []),
-            ...(me?.labsAvailable.length
+            ...(me?.labsAvailable?.length
               ? [
                   {
                     title: t`Labs`,
