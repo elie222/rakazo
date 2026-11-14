@@ -19,7 +19,7 @@ A key acts as you, in the space it was created in, and never reaches more than y
 | `memory:read`, `memory:write`             | Read and replace a bot's memory documents                     |
 | `routines:read`, `routines:write`         | List, create, change and run routines, and read their history |
 | `artifacts:read`                          | List and download a bot's files                               |
-| `scratchpad:read`, `scratchpad:write`     | Manage a bot's scratchpad                                     |
+| `scratchpad:read`, `scratchpad:write`     | Read, add, change and delete a bot's scratchpad items         |
 | `skills:read`, `pages:read`               | List a bot's taught skills and saved pages                    |
 | `groups:read`, `groups:write`             | Manage group chats                                            |
 | `tickets:read`, `tickets:write`           | Read boards, and read, create, change and comment on tickets  |
