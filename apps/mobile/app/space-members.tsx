@@ -5,21 +5,13 @@ import type { SpaceMember, SpaceMembers } from "@rakazo/contracts";
 import { accountDisplay } from "@rakazo/core";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
-import {
-  ActivityIndicator,
-  Alert,
-  Platform,
-  ScrollView,
-  Share,
-  StyleSheet,
-  Text,
-} from "react-native";
+import { ActivityIndicator, Alert, Platform, ScrollView, Share, StyleSheet } from "react-native";
+import { LoadFailure } from "../components/load-failure";
 import { NativeSymbol } from "../components/native-symbol";
 import { SettingsGroup, SettingsRow } from "../components/settings-group";
 import { cancelHeaderOptions } from "../components/sheet-header";
 import { rpc, selectedSpaceId } from "../lib/api";
 import { selectSpace } from "../lib/api-server";
-import { mobileTokens } from "../lib/appearance";
 import { native, useMobileTokens, useResolvedAppearance, useThemedStyles } from "../lib/native";
 import { errorText } from "../lib/user-error";
 
@@ -32,11 +24,13 @@ export default function SpaceMembersScreen() {
   const { spaceId, name } = useLocalSearchParams<{ spaceId: string; name?: string }>();
   const [members, setMembers] = useState<SpaceMembers | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
   const [pending, setPending] = useState(false);
 
   useEffect(() => {
     if (!spaceId) return;
     let active = true;
+    setError(null);
     rpc("spaces/members/list", { spaceId })
       .then((next) => {
         if (active) setMembers(next);
@@ -47,7 +41,7 @@ export default function SpaceMembersScreen() {
     return () => {
       active = false;
     };
-  }, [spaceId]);
+  }, [spaceId, attempt]);
 
   async function invite() {
     if (!spaceId || pending) return;
@@ -132,7 +126,9 @@ export default function SpaceMembersScreen() {
         style={styles.screen}
         contentContainerStyle={styles.content}
       >
-        {error ? <Text style={styles.error}>{error}</Text> : null}
+        {error ? (
+          <LoadFailure message={error} onRetry={() => setAttempt((value) => value + 1)} />
+        ) : null}
         {!members && !error ? <ActivityIndicator /> : null}
         {members ? (
           <SettingsGroup accessibilityLabel={t`Members`}>
@@ -226,6 +222,5 @@ function createStyles() {
   return StyleSheet.create({
     screen: { flex: 1, backgroundColor: native.groupedPage },
     content: { padding: 20, gap: 28 },
-    error: { color: mobileTokens().destructive },
   });
 }
