@@ -65,6 +65,12 @@ spec:
                 secretKeyRef:
                   name: rakazo-secrets
                   key: SCREEN_PROXY_SECRET
+            - name: SMTP_URL
+              valueFrom:
+                secretKeyRef:
+                  name: rakazo-secrets
+                  key: SMTP_URL
+                  optional: true
           envFrom:
             - configMapRef:
                 name: rakazo-config
@@ -159,6 +165,12 @@ spec:
                 secretKeyRef:
                   name: rakazo-secrets
                   key: ENCRYPTION_KEY
+            - name: SMTP_URL
+              valueFrom:
+                secretKeyRef:
+                  name: rakazo-secrets
+                  key: SMTP_URL
+                  optional: true
           envFrom:
             - configMapRef:
                 name: rakazo-config

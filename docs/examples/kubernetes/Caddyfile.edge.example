@@ -3,7 +3,8 @@
 # RAKAZO_AUTH_UPSTREAM: local oauth2-proxy host:port, proxying to the same ingress.
 {$RAKAZO_PUBLIC_HOST} {
 	# Keep the full path: the token in it is checked by Rakazo, not by this matcher.
-	handle /novnc/session/* {
+	@screen path /novnc/session/* //novnc/session/*
+	handle @screen {
 		header {
 			Cache-Control "no-store"
 			Referrer-Policy "no-referrer"
