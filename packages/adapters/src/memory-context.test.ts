@@ -1,6 +1,7 @@
 import type { AdapterContext, MemorySnapshot, MemoryStore } from "@rakazo/adapter-kit";
 import { describe, expect, it, vi } from "vitest";
-import { buildAgentMemoryPrompt, loadAgentMemoryContext } from "./memory-context.js";
+import { loadAgentMemoryContext } from "./memory-context.js";
+import { buildAgentMemoryPrompt } from "./memory-context.prompt.js";
 
 const context: AdapterContext = {
   operationId: "run-1",

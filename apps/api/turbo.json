@@ -4,6 +4,16 @@
   "tasks": {
     "check": {
       "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/packages/testkit/src/**"]
+    },
+    "build": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/packages/core/src/node/prompt-source-version.ts",
+        "$TURBO_ROOT$/packages/*/src/**/*.prompt.ts",
+        "$TURBO_ROOT$/packages/*/src/**/*.tool-definition.ts",
+        "$TURBO_ROOT$/apps/*/src/**/*.prompt.ts",
+        "$TURBO_ROOT$/apps/*/src/**/*.tool-definition.ts"
+      ]
     }
   }
 }

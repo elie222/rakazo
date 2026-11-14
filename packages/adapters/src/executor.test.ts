@@ -7,7 +7,7 @@ import type { PrismaClient } from "@rakazo/db";
 import { RunHistoryWriteError } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { describe, expect, it, vi } from "vitest";
-import { builtinAgentTools } from "./builtin-tools.js";
+import { builtinAgentTools } from "./builtin.tool-definition.js";
 import {
   CLOUDFLARE_AI_GATEWAY_CONFIG_MESSAGE,
   CLOUDFLARE_WORKERS_AI_PROVIDER_ID,
@@ -31,11 +31,11 @@ import {
   userTurnInstructions,
   VOICE_CALL_INSTRUCTION,
   voiceCallInstruction,
-} from "./run-instructions.js";
+} from "./run-instructions.prompt.js";
 import { createRunWorkspaceCheckpoint } from "./run-lifecycle.js";
 import { isTerminalModelSetupError } from "./run-model.js";
 import { runNotificationsEnabled } from "./run-notifications.js";
-import { REACTION_SILENT_REPLY_GUIDANCE } from "./run-replies.js";
+import { REACTION_SILENT_REPLY_GUIDANCE } from "./run-replies.prompt.js";
 import {
   followUpsOffered,
   offeredFleetTools,

@@ -21,7 +21,7 @@ import {
   messageBlocksText,
   runAllowsSilentEmpty,
   runPromotesMidTurnNarration,
-} from "./run-replies.js";
+} from "./run-replies.prompt.js";
 import { PAGE_BROWSER_TOOL_NAMES } from "./run-tool-selection.js";
 import { couldBecomeNoResponse, isExactNoResponse, isPlaceholderText } from "./silent-reply.js";
 import { USER_COMPUTER_SCREEN_TOOLS } from "./user-computer-tools.js";

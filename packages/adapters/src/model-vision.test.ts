@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { builtinAgentTools } from "./builtin-tools.js";
+import { builtinAgentTools } from "./builtin.tool-definition.js";
 import { CLAUDE_CODE_PROVIDER_ID } from "./cli-models/claude-code/provider.js";
 import {
   catalogKnowsModel,

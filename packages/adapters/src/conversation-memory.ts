@@ -16,7 +16,7 @@ import {
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { MemoryProviderResolver } from "./memory-provider-factory.js";
-import { messageBlocksText } from "./run-replies.js";
+import { messageBlocksText } from "./run-replies.prompt.js";
 import { isUserProgressClientNonce, USER_PROGRESS_CLIENT_NONCE_PREFIX } from "./user-progress.js";
 
 /** A person or another bot talking to the bot; routines, webhooks and channels are not. */

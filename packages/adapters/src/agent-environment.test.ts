@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
-import {
-  formatAgentEnvironmentInstruction,
-  redactAgentCommandResult,
-  redactShellStreams,
-} from "./agent-environment.js";
+import { redactAgentCommandResult, redactShellStreams } from "./agent-environment.js";
+import { formatAgentEnvironmentInstruction } from "./agent-environment.prompt.js";
 
 describe("agent-environment", () => {
   it("formats an instruction only when secrets exist", () => {

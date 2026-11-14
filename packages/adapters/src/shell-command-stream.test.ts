@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { automated } from "./automated-messages.js";
+import { automated } from "./automated-messages.prompt.js";
 import { TOOL_RESULT_TEXT_LIMIT } from "./pi-runtime-limits.js";
 import {
   deliverFinishedShells,

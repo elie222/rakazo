@@ -83,6 +83,11 @@
       "types": "./src/query.ts",
       "development": "./src/query.ts",
       "default": "./src/query.ts"
+    },
+    "./node/prompt-source-version": {
+      "types": "./src/node/prompt-source-version.ts",
+      "development": "./src/node/prompt-source-version.ts",
+      "default": "./src/node/prompt-source-version.ts"
     }
   },
   "scripts": {

@@ -9,18 +9,20 @@ import type {
 } from "@rakazo/adapter-kit";
 import { DecisionProviderError } from "@rakazo/adapter-kit";
 import {
-  AUTO_REVIEW_ASK,
-  AUTO_REVIEW_PASS,
   autoReviewMinConfidence,
   autoReviewTimeoutMs,
-  MAX_OWNER_WORDS_CHARS,
-  MEMORY_WRITE_ASK,
-  MEMORY_WRITE_PASS,
   reviewArgsTooLong,
   sanitizeAutoReviewReason,
   TOO_LONG_TO_REVIEW,
-  truncateReviewText,
 } from "./auto-review.js";
+import {
+  AUTO_REVIEW_ASK,
+  AUTO_REVIEW_PASS,
+  MAX_OWNER_WORDS_CHARS,
+  MEMORY_WRITE_ASK,
+  MEMORY_WRITE_PASS,
+  truncateReviewText,
+} from "./auto-review.prompt.js";
 
 const MAX_TASK_CHARS = 400;
 const MAX_BOT_CHARS = 240;

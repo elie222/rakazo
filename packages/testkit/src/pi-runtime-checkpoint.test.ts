@@ -5,7 +5,7 @@ import type { AgentRunRequest, AgentRuntimeEvent } from "@rakazo/adapter-kit";
 import { describe, expect, it, vi } from "vitest";
 import { MAX_APPROVAL_DETAIL_LENGTH } from "../../adapters/src/approval-ask.js";
 import { approvalPausedToolResult } from "../../adapters/src/approval-effect.js";
-import { builtinAgentTools } from "../../adapters/src/builtin-tools.js";
+import { builtinAgentTools } from "../../adapters/src/builtin.tool-definition.js";
 import { PiAgentRuntime } from "../../adapters/src/pi-runtime.js";
 import type { TurnCheckpoint } from "../../adapters/src/turn-checkpoint.js";
 import * as turnCheckpoints from "../../adapters/src/turn-checkpoint.js";

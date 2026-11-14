@@ -10,7 +10,7 @@ import {
   parseBrowserActions,
   redactBrowserResult,
 } from "./browser-tools.js";
-import { builtinAgentTools } from "./builtin-tools.js";
+import { builtinAgentTools } from "./builtin.tool-definition.js";
 import { ComputerBrowserProvider } from "./computer-browser.js";
 import { redactConnectorPayload } from "./connector-safety.js";
 import { FakeBrowserProvider } from "./fake-browser.js";

@@ -1,6 +1,6 @@
 import { FLEET_TOOL_NAMES } from "@rakazo/contracts";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { builtinAgentTools } from "./builtin-tools.js";
+import { builtinAgentTools } from "./builtin.tool-definition.js";
 
 type FakeTool = {
   name: string;

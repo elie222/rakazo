@@ -44,9 +44,9 @@ import {
   teamChatRunFromOwner,
 } from "@rakazo/db";
 import { enrichLogContext, getLogger } from "@rakazo/logging";
-import { formatAgentEnvironmentInstruction } from "./agent-environment.js";
+import { formatAgentEnvironmentInstruction } from "./agent-environment.prompt.js";
 import { createApprovedEffectReplayQueue } from "./approval-effect.js";
-import { PARTIAL_REPLY_NOTE } from "./automated-messages.js";
+import { PARTIAL_REPLY_NOTE } from "./automated-messages.prompt.js";
 import { backgroundHelpersAllowed } from "./background-helpers.js";
 import { loadBotMessageContext } from "./bot-messages.js";
 import {
@@ -56,8 +56,8 @@ import {
   loadRunLoginRedactions,
 } from "./bot-secrets.js";
 import { createBrowserProvider } from "./browser-provider-factory.js";
+import { agentConnectionTools, builtinAgentTools } from "./builtin.tool-definition.js";
 import { partitionTools } from "./builtin-tool-bridge.js";
-import { agentConnectionTools, builtinAgentTools } from "./builtin-tools.js";
 import { USER_CLOUD_AGENT_KEY_PREFIX } from "./cloud-agent-factory.js";
 import { cloudAgentForActor } from "./cloud-agent-service.js";
 import { mergeConnectedPlugins, needsLivePluginSync } from "./composio-connector.js";
@@ -80,7 +80,7 @@ import {
   PINNED_COMPUTER_MODEL_LOST_RUN_ERROR,
   resolveComputerRunModel,
 } from "./computer-model-settings.js";
-import { teamWorkspaceInstruction } from "./computer-support.js";
+import { teamWorkspaceInstruction } from "./computer-support.prompt.js";
 import { checkpointRunComputerWorkspace } from "./computer-workspace.js";
 import {
   connectedContext,
@@ -88,7 +88,7 @@ import {
   persistLivePluginConnections,
   selectRunConnections,
 } from "./connection-context.js";
-import { formatCurrentTimeInstruction } from "./current-time.js";
+import { formatCurrentTimeInstruction } from "./current-time.prompt.js";
 import { resolveDeploymentModel } from "./deployment-model.js";
 import type { ExecutorDeps } from "./executor-deps.js";
 import type { FleetRun } from "./fleet-tools.js";
@@ -130,7 +130,8 @@ import {
   messageToAgentHistoryText,
 } from "./reply-context.js";
 import { backOffRoutineAfterAccountError } from "./routine-backoff.js";
-import { lateRoutineRunDueAt, lateRoutineRunInstruction } from "./routine-lateness.js";
+import { lateRoutineRunDueAt } from "./routine-lateness.js";
+import { lateRoutineRunInstruction } from "./routine-lateness.prompt.js";
 import { lazyRunComputer } from "./run-computer.js";
 import type {
   RunComputerUseState,
@@ -153,7 +154,7 @@ import {
   threadContextForRun,
   userTurnInstructions,
   voiceCallInstruction,
-} from "./run-instructions.js";
+} from "./run-instructions.prompt.js";
 import {
   claimRun,
   createRunWorkspaceCheckpoint,
@@ -181,7 +182,7 @@ import {
   runAllowsSilentEmpty,
   runReplyGuidance,
   runReplyMode,
-} from "./run-replies.js";
+} from "./run-replies.prompt.js";
 import {
   notifyRoutineRetryAttemptsExhausted,
   retryRoutineRun,
@@ -227,18 +228,20 @@ import {
   takeoverCheckpointOf,
   takeoverContinuePlan,
 } from "./takeover-resume.js";
-import { TASK_CATALOG_GUIDANCE } from "./task-catalog.js";
+import { TASK_CATALOG_GUIDANCE } from "./task-catalog.prompt.js";
 import { parsePlaybook } from "./teaching-session.js";
 import {
   createEarlierFileQueue,
-  currentTurnFilesInstruction,
   listCurrentTurnFiles,
   listRecentThreadFiles,
   materializeCurrentTurnFiles,
   materializeEarlierFiles,
   materializeRecentThreadFiles,
-  recentThreadFilesInstruction,
 } from "./thread-artifacts.js";
+import {
+  currentTurnFilesInstruction,
+  recentThreadFilesInstruction,
+} from "./thread-artifacts.prompt.js";
 import { loadAgentTicketContext } from "./ticket-context.js";
 import { appendToolCompletionAudit, toolCompletionOutcome } from "./tool-completion-audit.js";
 import { toolResultFingerprint } from "./tool-loop.js";

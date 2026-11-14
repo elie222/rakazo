@@ -11,12 +11,14 @@ import { describe, expect, it, vi } from "vitest";
 import {
   attachWorkspaceFileToThread,
   createEarlierFileQueue,
-  currentTurnFilesInstruction,
   materializeCurrentTurnFiles,
   materializeEarlierFiles,
   materializeRecentThreadFiles,
-  recentThreadFilesInstruction,
 } from "./thread-artifacts.js";
+import {
+  currentTurnFilesInstruction,
+  recentThreadFilesInstruction,
+} from "./thread-artifacts.prompt.js";
 
 describe("current-turn thread files", () => {
   it.each([

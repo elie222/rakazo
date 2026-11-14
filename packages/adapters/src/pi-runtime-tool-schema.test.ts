@@ -7,7 +7,7 @@ import {
   TICKET_TITLE_MAX_LENGTH,
 } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
-import { builtinAgentTools } from "./builtin-tools.js";
+import { builtinAgentTools } from "./builtin.tool-definition.js";
 import { lazyCatalogTools, parseConnectorToolArgs } from "./lazy-tool-catalog.js";
 import {
   jsonSchemaParameters,
