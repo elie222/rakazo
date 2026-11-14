@@ -185,7 +185,7 @@ async function main() {
     boardEvents,
     jobs,
     prisma,
-    ticketBoardEnabled: env.ticketBoardEnabled,
+    deploymentLabs: env.deploymentLabs,
   });
   // One provider instance so emulator launches and polls share the same Map.
   const cloudAgent = createCloudAgentConnection();

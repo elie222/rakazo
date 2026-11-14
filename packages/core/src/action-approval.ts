@@ -1,5 +1,8 @@
 import type { ActionApprovalRule as StoredActionApprovalRule } from "@rakazo/contracts";
 import { BUILTIN_TOOL_NAMES } from "@rakazo/contracts";
+
+export { isSecretAskBlock } from "./ask-kind.js";
+
 import { humanizeToolName } from "./events.js";
 
 const APPROVAL_EXEMPT_TOOLS = new Set([
@@ -654,14 +657,6 @@ export function applyJudgeDecision(input: {
  * expression character class. Web renders the title as Markdown; plain-text surfaces unescape them.
  */
 export const CARD_TITLE_ESCAPED_CHARACTERS = "[\\\\`*_[\\]<>~|]";
-
-export function isSecretAskBlock(block: {
-  kind: string;
-  input?: string;
-  approvalEffectId?: string;
-}): boolean {
-  return block.kind === "ask" && block.input === "secret" && !block.approvalEffectId;
-}
 
 export function isApprovalAskBlock(block: {
   kind: string;
