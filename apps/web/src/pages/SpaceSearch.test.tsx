@@ -180,7 +180,7 @@ it("says the search failed instead of no results, ignoring superseded and cleare
   await act(async () => container.querySelector("button")!.click());
   expect(container.textContent).toBe("Searching…");
   await act(async () => vi.advanceTimersByTime(200));
-  expect(query).toHaveBeenLastCalledWith({ q: "first" });
+  expect(query).toHaveBeenLastCalledWith({ q: "first" }, { signal: expect.any(AbortSignal) });
   await act(async () => pending[1]!.resolve([]));
   expect(container.textContent).toBe("No results");
 
