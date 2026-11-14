@@ -32,7 +32,7 @@ type ChatAlertOptions = {
   roster?: RosterSignals;
 };
 
-export type RosterSignals = { changed: () => void; lost: () => void };
+export type RosterSignals = { changed: () => void };
 
 /** A question still arrives while a chat is snoozed; an ordinary reply waits. */
 function messageAsks(event: { type: string; payload: { blocks?: unknown } }): boolean {
@@ -140,7 +140,6 @@ export function useBrowserNotifications(
           failure = cause;
         } finally {
           controller.abort();
-          rosterRef.current?.lost();
         }
         if (!active || (failure !== undefined && !isRetryableError(failure))) return;
         await new Promise<void>((resolve) => {
