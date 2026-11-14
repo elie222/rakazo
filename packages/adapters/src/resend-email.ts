@@ -1,8 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { setTimeout as sleep } from "node:timers/promises";
 import type { TransactionalEmail, TransactionalEmailProvider } from "@rakazo/adapter-kit";
 import { EmailRecipientRejectedError } from "@rakazo/adapter-kit";
-import { cancelResponseBody, parseRetryAfter, readBoundedJsonResponse } from "@rakazo/core";
+import { cancelResponseBody, parseRetryAfter, readBoundedJsonResponse, retry } from "@rakazo/core";
 
 const MAX_RESPONSE_BYTES = 4_096;
 
@@ -75,53 +74,60 @@ export class ResendEmailProvider implements TransactionalEmailProvider {
       ...(cc?.length ? { cc } : {}),
       ...rest,
     });
-    for (let attempt = 0; ; attempt++) {
-      let retry = true;
-      let retryAfterMs: number | undefined;
-      let recipientRejected = false;
-      let failure = "Resend email request failed";
-      try {
-        const response = await this.request("https://api.resend.com/emails", {
-          method: "POST",
-          redirect: "error",
-          headers: {
-            authorization: `Bearer ${this.config.apiKey}`,
-            "content-type": "application/json",
-            "idempotency-key": idempotencyKey,
-          },
-          body,
+    let retryable = true;
+    let retryAfterMs: number | undefined;
+    try {
+      await retry(
+        async () => {
+          retryable = true;
+          retryAfterMs = undefined;
+          let recipientRejected = false;
+          let failure = "Resend email request failed";
+          try {
+            const response = await this.request("https://api.resend.com/emails", {
+              method: "POST",
+              redirect: "error",
+              headers: {
+                authorization: `Bearer ${this.config.apiKey}`,
+                "content-type": "application/json",
+                "idempotency-key": idempotencyKey,
+              },
+              body,
+              signal,
+            });
+            if (response.ok) {
+              const result: unknown = await readBoundedJsonResponse(response, MAX_RESPONSE_BYTES);
+              if (
+                typeof result === "object" &&
+                result !== null &&
+                "id" in result &&
+                typeof result.id === "string" &&
+                result.id.length > 0
+              )
+                return;
+              failure = "Resend returned an invalid email response";
+            } else {
+              retryable = response.status === 429 || response.status >= 500;
+              retryAfterMs = parseRetryAfter(response.headers.get("retry-after"));
+              const error = await errorDetail(response);
+              recipientRejected = error.recipientRejected;
+              failure = `Resend email request failed (HTTP ${response.status}${error.detail})`;
+            }
+          } catch {
+            // A lost response may already have sent the email; the same key makes retry safe.
+          }
+          throw recipientRejected ? new EmailRecipientRejectedError(failure) : new Error(failure);
+        },
+        {
+          attempts: this.retryDelaysMs.length + 1,
+          retryable: (error) => retryable && !(error instanceof EmailRecipientRejectedError),
+          delayMs: (attempt) => retryAfterMs ?? this.retryDelaysMs[attempt] ?? 0,
           signal,
-        });
-        if (response.ok) {
-          const result: unknown = await readBoundedJsonResponse(response, MAX_RESPONSE_BYTES);
-          if (
-            typeof result === "object" &&
-            result !== null &&
-            "id" in result &&
-            typeof result.id === "string" &&
-            result.id.length > 0
-          )
-            return;
-          failure = "Resend returned an invalid email response";
-        } else {
-          retry = response.status === 429 || response.status >= 500;
-          retryAfterMs = parseRetryAfter(response.headers.get("retry-after"));
-          const error = await errorDetail(response);
-          recipientRejected = error.recipientRejected;
-          failure = `Resend email request failed (HTTP ${response.status}${error.detail})`;
-        }
-      } catch {
-        // A lost response may already have sent the email; the same key makes retry safe.
-      }
+        },
+      );
+    } catch (error) {
       if (signal.aborted) throw new Error("Resend email delivery timed out");
-      const delay = this.retryDelaysMs[attempt];
-      if (recipientRejected) throw new EmailRecipientRejectedError(failure);
-      if (!retry || delay === undefined) throw new Error(failure);
-      try {
-        await sleep(retryAfterMs ?? delay, undefined, { signal });
-      } catch {
-        throw new Error("Resend email delivery timed out");
-      }
+      throw error;
     }
   }
 }
