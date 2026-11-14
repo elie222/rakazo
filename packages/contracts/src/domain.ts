@@ -935,7 +935,8 @@ export const PluginPreviewSchema = z.object({
   repository: z.string().nullable(),
   license: z.string().nullable(),
   keywords: z.array(z.string()),
-  resolvedSha: z.string().regex(/^[a-f0-9]{40}$/),
+  /** A git commit, or the SHA-256 of a plugin archive. */
+  resolvedSha: z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/),
   /** Immutable source for confirming this preview, present on new API responses. */
   pinnedSource: z.string().optional(),
   /** The source an install of this preview is saved under. */

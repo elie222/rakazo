@@ -1,8 +1,18 @@
 import type { PluginMarketplaceCatalog, PluginMarketplaceEntry } from "@rakazo/contracts";
 import { comparePlugins, matchesPluginQuery, pluginCategory } from "@rakazo/core";
 import { z } from "zod";
-import type { PluginCompleteness, PluginTextReader } from "./plugin-connectors.js";
-import { classifyPluginFiles, parsePluginSource } from "./plugin-connectors.js";
+import type {
+  PluginArchive,
+  PluginCompleteness,
+  PluginRepoFetcher,
+  PluginTextReader,
+} from "./plugin-connectors.js";
+import {
+  classifyPluginFiles,
+  parsePluginSource,
+  pluginSourceFetcher,
+  previewPluginInstall,
+} from "./plugin-connectors.js";
 import { fetchSafeWebText } from "./web-ssrf.js";
 
 const REGISTRIES = [
@@ -179,7 +189,58 @@ const publicRead: PluginTextReader = async (url, maxBytes, signal) =>
 
 /** Cache is per API router instance; failures are never cached. Concurrent
  * requests share one bounded fetch, without sharing an actor's abort signal. */
-export function createPluginMarketplace(read: PluginTextReader = publicRead) {
+export type PluginSources = {
+  /** False leaves the public registries out. */
+  registries?: boolean;
+  archives?: readonly PluginArchive[];
+  fetcher?: PluginRepoFetcher;
+};
+
+export function createPluginMarketplace(
+  read: PluginTextReader = publicRead,
+  sources: PluginSources = {},
+) {
+  const registries = sources.registries === false ? [] : REGISTRIES;
+  const archives = sources.archives ?? [];
+  const fetcher = sources.fetcher ?? pluginSourceFetcher(archives);
+  /** A pinned archive never changes, so each is read once per process. A failure is kept for a
+   * minute, so an unreachable host is reported unavailable without every browse waiting on it. */
+  const archiveEntries = new Map<string, Promise<PluginMarketplaceEntry | null>>();
+  const archiveEntry = (archive: PluginArchive) => {
+    const source = `${archive.url}@${archive.sha256}`;
+    let entry = archiveEntries.get(source);
+    if (!entry) {
+      entry = previewPluginInstall({
+        source,
+        fetcher,
+        signal: AbortSignal.timeout(15_000),
+      }).then((plugin) =>
+        // Like the registries, only a plugin that installs completely is listed.
+        plugin.skipped.some((part) => part.kind !== "unsupported_field") ||
+        (!plugin.skills.length && !plugin.mcpServers.length)
+          ? null
+          : {
+              id: `${new URL(archive.url).hostname}:${source}`,
+              name: plugin.name,
+              displayName: displayName(plugin.name),
+              description: plugin.description,
+              keywords: plugin.keywords,
+              category: null,
+              logo: null,
+              homepage: plugin.homepage,
+              domains: [],
+              registry: new URL(archive.url).hostname,
+              source,
+              installedSource: archive.url,
+              hasConnector: plugin.mcpServers.length > 0,
+              skillCount: plugin.skills.length,
+            },
+      );
+      archiveEntries.set(source, entry);
+      entry.catch(() => setTimeout(() => archiveEntries.delete(source), 60_000).unref());
+    }
+    return entry.then((listed) => ({ entries: listed ? [listed] : [], skipped: listed ? 0 : 1 }));
+  };
   const cache = new Map<
     string,
     { expires: number; data: ReturnType<typeof parsePluginMarketplace> }
@@ -339,7 +400,10 @@ export function createPluginMarketplace(read: PluginTextReader = publicRead) {
   }
   return {
     async catalog(query: string): Promise<PluginMarketplaceCatalog> {
-      const results = await Promise.allSettled(REGISTRIES.map(registryData));
+      const results = await Promise.allSettled([
+        ...registries.map(registryData),
+        ...archives.map(archiveEntry),
+      ]);
       const entries: PluginMarketplaceEntry[] = [];
       const unavailableRegistries: string[] = [];
       let skippedEntries = 0;
@@ -347,7 +411,10 @@ export function createPluginMarketplace(read: PluginTextReader = publicRead) {
         if (result.status === "fulfilled") {
           entries.push(...result.value.entries);
           skippedEntries += result.value.skipped;
-        } else unavailableRegistries.push(REGISTRIES[i]!.name);
+        } else
+          unavailableRegistries.push(
+            registries[i]?.name ?? new URL(archives[i - registries.length]!.url).hostname,
+          );
       }
       const now = Date.now();
       return {
