@@ -13,6 +13,12 @@ import { readScopeOf, SERVICE_API_PREFIX, SERVICE_ROUTES, SERVICE_SCOPES } from 
 import { isOwnerStartedRun } from "@rakazo/core";
 import { createPendingSteeringRun } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import {
+  claimIdempotencyKey,
+  finishIdempotencyKey,
+  holdIdempotencyKey,
+  releaseIdempotencyKey,
+} from "../../../apps/api/src/service-idempotency.ts";
 import type { BotIntroHarness } from "./discard-bot-intro.js";
 import { discardBotIntroFromCreate } from "./discard-bot-intro.js";
 import { sessionCookieHeader } from "./index.js";
@@ -470,7 +476,6 @@ describeWithDatabase("service API surface", () => {
     it("keeps a running write's claim from lapsing", async () => {
       const { cookie, actor } = await person();
       const { credential } = await newKey(cookie);
-      const { holdIdempotencyKey } = await import("../../../apps/api/src/service-idempotency.ts");
       const soon = new Date(Date.now() + 1000);
       const claim = await db.serviceIdempotencyKey.create({
         data: {
@@ -490,8 +495,7 @@ describeWithDatabase("service API surface", () => {
     it("leaves a retry's claim alone when the first request's claim lapsed", async () => {
       const { cookie, actor } = await person();
       const { credential } = await newKey(cookie);
-      const store = await import("../../../apps/api/src/service-idempotency.ts");
-      const claim = (key: string) => store.claimIdempotencyKey(db, actor, credential.id, key, "h");
+      const claim = (key: string) => claimIdempotencyKey(db, actor, credential.id, key, "h");
       const first = await claim("lapsed");
       if (first.kind !== "claimed") throw new Error("expected a claim");
       await db.serviceIdempotencyKey.updateMany({
@@ -501,15 +505,11 @@ describeWithDatabase("service API surface", () => {
       const retry = await claim("lapsed");
       if (retry.kind !== "claimed") throw new Error("expected the retry to claim");
 
-      expect(await store.finishIdempotencyKey(db, first.claimId, 200, { from: "first" })).toBe(
-        false,
-      );
-      await store.releaseIdempotencyKey(db, first.claimId);
+      expect(await finishIdempotencyKey(db, first.claimId, 200, { from: "first" })).toBe(false);
+      await releaseIdempotencyKey(db, first.claimId);
       const row = await db.serviceIdempotencyKey.findFirstOrThrow({ where: { key: "lapsed" } });
       expect([row.id, row.responseStatus]).toEqual([retry.claimId, null]);
-      expect(await store.finishIdempotencyKey(db, retry.claimId, 200, { from: "retry" })).toBe(
-        true,
-      );
+      expect(await finishIdempotencyKey(db, retry.claimId, 200, { from: "retry" })).toBe(true);
     });
 
     it("runs a routine's whole life and keeps it on its own bot", async () => {

@@ -169,6 +169,22 @@ describe("ServiceKeysSettings", () => {
     );
   });
 
+  it("says which bots each key can reach", async () => {
+    act(() => root.unmount());
+    container.remove();
+    rpc.list.mockResolvedValue([
+      key,
+      { ...key, id: "key-2", name: "Limited", botIds: ["bot-1"] },
+      { ...key, id: "key-3", name: "Gone", botIds: ["bot-1", "bot-gone"] },
+    ]);
+    await render();
+    const rows = [...container.querySelectorAll("li")].map((row) => row.textContent ?? "");
+    expect(rows[0]).toContain("All bots");
+    expect(rows[1]).toContain("Worker");
+    expect(rows[1]).not.toContain("All bots");
+    expect(rows[2]).toContain("2 bots");
+  });
+
   it("names each revoke button after its key", () => {
     expect(button("Revoke")?.getAttribute("aria-label")).toBe("Revoke Nightly");
   });
