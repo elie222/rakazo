@@ -8,8 +8,9 @@
 // rewritten to the relative path of the file it resolves to from its importer.
 import { builtinModules } from "node:module";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { build } from "esbuild";
+import { promptSourceVersion } from "../packages/core/src/node/prompt-source-version.ts";
 
 const builtins = new Set(builtinModules);
 
@@ -23,6 +24,11 @@ export function serverBuildOptions(entry, outfile) {
     format: "esm",
     target: "node24",
     sourcemap: true,
+    define: {
+      __RAKAZO_PROMPT_SOURCE_VERSION__: JSON.stringify(
+        promptSourceVersion(fileURLToPath(new URL("../", import.meta.url))),
+      ),
+    },
     // No "module" condition: resolve externals the way Node will.
     conditions: ["node"],
     logLevel: "warning",

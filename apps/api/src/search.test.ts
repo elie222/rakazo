@@ -267,3 +267,19 @@ it("guards name-derived snippets while preserving descriptions", async () => {
   ).toEqual(["", ""]);
   expect(hits.find((hit) => hit.botId === "bot-2")?.snippet).toBe("Keep __TestTok2__ literal");
 });
+
+describe("cancelled search", () => {
+  it("stops issuing queries once the request is cancelled", async () => {
+    const { prisma } = fixture(1);
+    const abort = new AbortController();
+    prisma.bot.findMany.mockImplementation(async () => {
+      abort.abort();
+      return [];
+    });
+    await expect(
+      querySpaceSearch(prisma as unknown as PrismaClient, actor, "report", abort.signal),
+    ).rejects.toBe(abort.signal.reason);
+    expect(prisma.$queryRaw).not.toHaveBeenCalled();
+    expect(prisma.artifact.findMany).not.toHaveBeenCalled();
+  });
+});

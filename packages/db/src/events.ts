@@ -280,7 +280,7 @@ export async function clearThread(
   realtime?: RealtimeFanout,
 ): Promise<ClearThreadResult> {
   const committed = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-    // Group before thread, the order every group writer uses (see lockOwnedGroup).
+    // Group before thread, the order every group writer uses (see lockSpaceGroup).
     if (input.groupId) {
       await tx.$queryRaw`
         SELECT id FROM chat_groups

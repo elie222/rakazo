@@ -626,7 +626,6 @@ export type GenerateSecretInput = z.infer<typeof GenerateSecretInput>;
 export function botSecretSubmissionSchema(options?: { allowPrivateHttpOrigin?: boolean }) {
   return z.object({ credentialSaved: botSecretDestinationSchema(options) });
 }
-export const BotSecretSubmission = botSecretSubmissionSchema();
 
 const destinationInputShape = {
   name: BotSecretName,

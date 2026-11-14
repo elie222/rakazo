@@ -4,7 +4,7 @@ import {
   toolResultTaintsRun,
 } from "@rakazo/core";
 import { describe, expect, it, vi } from "vitest";
-import { botEmailInstruction } from "./run-instructions.js";
+import { botEmailInstruction } from "./run-instructions.prompt.js";
 import { selectBuiltinToolsForRun } from "./run-tool-selection.js";
 import { emailTools } from "./run-tools-email.js";
 
