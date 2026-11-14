@@ -62,7 +62,7 @@ const hotQueries = [
   },
   {
     name: "control leases due to expire",
-    index: "computers_control_lease_idx",
+    index: "computers_controlLeaseExpiresAt_id_idx",
     sql: `SELECT id FROM computers WHERE "controlLeaseId" IS NOT NULL
       AND ("controlLeaseExpiresAt" IS NULL OR "controlLeaseExpiresAt" <= now()) AND id <> $1
       ORDER BY "controlLeaseExpiresAt", id LIMIT 100`,
