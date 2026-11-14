@@ -3,7 +3,7 @@ import { plainTextFromMarkdown, truncatedPlainText } from "./markdown-plain.js";
 
 describe("plainTextFromMarkdown", () => {
   it.each(["\n", "\r\n", "\r"])("handles Markdown line endings %j", (eol) => {
-    const cases = [
+    const cases: Array<[string, string]> = [
       ["# Heading\n## Subheading", "Heading Subheading"],
       ["- first\n- second\n1. third", "first second third"],
       ["```ts\nconst x = 1;\n```\nAfter", "const x = 1; After"],
