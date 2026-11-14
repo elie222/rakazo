@@ -50,11 +50,13 @@ A run started this way is not treated as one you started. The bot does not get i
 
 A routine prompt written with a key stays marked as the key's until you save the routine in the app. Until then its runs, scheduled or not, have the same limits as a run started with a key: no tools for connecting to other people's agents, and Auto Review and site trust do not treat the prompt as your words.
 
+The same limits carry to the work such a run starts: routines it schedules, its helpers, the bots it messages or hands a ticket to, and the run that wakes when a cloud agent, purchase or video job it started finishes. A ticket a key creates or reassigns wakes its bot with them too.
+
 Instructions and memory written with a key are saved as yours, and later runs treat them that way, so `bots:write` and `memory:write` are the scopes to grant with care.
 
 A key's message never answers a question a bot is waiting on. The bot keeps waiting for you, and the message gets its own run afterwards.
 
-A message sent while the bot is busy waits for a run of its own. The response has `held: true` and `runId: null`. With `?wait=`, the request follows the message into that run and returns its reply, within the time you allowed. Without it, send the same request with the same `Idempotency-Key` to get the run once it exists; nothing is sent twice. A retry may add or change `?wait=`, because it changes only how long the call waits, not what is sent. Several waiting messages can share one run. Stopping the bot drops waiting messages, as it does in the chat, and the response then has `held: false` and `runId: null`.
+A message sent while the bot is busy waits for a run of its own. The response has `held: true` and `runId: null`. With `?wait=`, the request follows the message into that run and returns its reply, within the time you allowed. Without it, send the same request with the same `Idempotency-Key` to get the run once it exists; nothing is sent twice. A retry may add or change `?wait=`, because it changes only how long the call waits, not what is sent. Waiting messages sent with the same key can share one run. Stopping the bot drops waiting messages, as it does in the chat, and the response then has `held: false` and `runId: null`.
 
 Stopping a run leaves its request in the conversation, as it does in the chat, so the bot can pick that work up again on its next message. Say so in that message if it should not.
 
