@@ -262,6 +262,7 @@ export function PluginsOverlay({
       (sourcePreset?.name ?? (sourceKind === "graphql" ? "GraphQL" : "Custom connector"));
     setSourceError(null);
     setPending("install-source");
+    let savedForOauth = false;
     try {
       // OAuth is the MCP server itself signing in, so it is saved first and then authorized.
       if (sourceKind === "mcp" && authType === "oauth") {
@@ -272,6 +273,7 @@ export function PluginsOverlay({
           transport: "streamable_http",
           endpoint,
         });
+        savedForOauth = true;
         sourceForm.setCredential("");
         sourceForm.setSourceKind(null);
         setView("manage");
@@ -316,7 +318,12 @@ export function PluginsOverlay({
         setSourceError(t`This server needs an OAuth client ID. Add one in Manage MCP servers.`);
         return;
       }
-      setSourceError(errorText(err, t`Could not install connector`));
+      setSourceError(
+        errorText(
+          err,
+          savedForOauth ? t`Could not complete OAuth` : t`Could not install connector`,
+        ),
+      );
     } finally {
       setPending(null);
     }
