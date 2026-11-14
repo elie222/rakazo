@@ -29,7 +29,9 @@ import {
   cancelDeactivatedAccountRuns,
   cancelRunsInTransaction,
   createPendingSteeringRun,
+  databaseOutage,
   effectiveMemoryScope,
+  isDatabaseUnavailable,
   isPartialReplyClientNonce,
   loadRunHistoryMessages,
   loadRunTurnCheckpoint,
@@ -37,6 +39,7 @@ import {
   RunHistoryWriteError,
   readRunTimingFields,
   recordUsage,
+  retryWhileDatabaseUnavailable,
   settleReleasedTakeoverCards,
   teamChatRunFromOwner,
 } from "@rakazo/db";
@@ -65,6 +68,7 @@ import {
   acquireComputerExecutionLease,
   acquireDedicatedScreenLeaseFence,
   ComputerBusyError,
+  EXECUTION_LEASE_MS,
   provisionComputer,
   releaseComputerExecutionLease,
   renewComputerExecutionLease,
@@ -195,7 +199,13 @@ import { historyMyChatsAllowed } from "./run-tools-memory.js";
 import type { UserComputerState } from "./run-tools-user-computer.js";
 import { USER_COMPUTER_SHELL_TOOL, userComputerOwner } from "./run-tools-user-computer.js";
 import { createRunTrustLoaders } from "./run-trust.js";
-import { completeRun, consumeRunEvents, failRun, handoffEndedTurn } from "./run-turn.js";
+import {
+  completeRun,
+  consumeRunEvents,
+  failRun,
+  handoffEndedTurn,
+  requeueRunAfterDatabaseOutage,
+} from "./run-turn.js";
 import {
   claimRunSteering,
   loadCurrentTurnImages,
@@ -259,6 +269,8 @@ async function verbatimMcpServersForRun(
   return { ids: servers.map((server) => server.id), slugs: servers.map((server) => server.slug) };
 }
 
+const RUN_HEARTBEAT_MS = 60_000;
+
 export function createRunExecutor(executorDeps: ExecutorDeps) {
   const contextStrategy = executorDeps.contextStrategy ?? DEFAULT_CONTEXT_STRATEGY;
   const web = executorDeps.web ?? createWebProvider();
@@ -277,11 +289,15 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
   // owns the run finalizes it. A fenced-out attempt must not end the run's
   // state while a newer attempt of this run still needs it; whether it may end
   // it depends on the run row, not on this attempt. A rejected finalizeRun left
-  // the run unfinished, so its state survives the retry.
+  // the run unfinished, so its state survives the retry. The write is fenced by the
+  // lease, so it waits out a database failover instead of losing the run's outcome.
   const events: ThreadEvents = {
     ...executorDeps.events,
     finalizeRun: async (input) => {
-      const result = await executorDeps.events.finalizeRun(input);
+      const result = await retryWhileDatabaseUnavailable(
+        () => executorDeps.events.finalizeRun(input),
+        { source: "run finalize", signal: executorDeps.shutdownSignal },
+      );
       if (result || (await runEndedForThisWorker(executorDeps.prisma, input))) {
         endRunConnectorState(input.runId);
       }
@@ -460,6 +476,8 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         completed: false,
         lastCheckAt: 0,
         retainComputer: false,
+        renewedAt: Date.now(),
+        handedBack: false,
       };
       const computerUse: RunComputerUseState = {
         reason: "none",
@@ -479,17 +497,26 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         ])
           .then(([runRenewed, computerRenewed]) => {
             if (lease.completed) return;
-            if (!runRenewed || !computerRenewed) {
-              lease.valid = false;
-              runAbortController?.abort();
+            if (runRenewed && computerRenewed) {
+              lease.renewedAt = Date.now();
+              return;
             }
+            lease.valid = false;
+            runAbortController?.abort();
           })
-          .catch(() => {
+          .catch((error) => {
             if (lease.completed) return;
+            // Both leases outlast a short failover; the next beat renews them. Once they could
+            // have expired, another worker may claim the run, so this attempt stops.
+            if (
+              databaseOutage.failed(error, "run lease renewal") &&
+              Date.now() < lease.renewedAt + EXECUTION_LEASE_MS - RUN_HEARTBEAT_MS
+            )
+              return;
             lease.valid = false;
             runAbortController?.abort();
           });
-      }, 60_000);
+      }, RUN_HEARTBEAT_MS);
       heartbeat.unref?.();
       const stopHeartbeatAfterCompletion = () => {
         lease.completed = true;
@@ -2095,6 +2122,10 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             } catch (completionError) {
               caughtError = completionError;
             }
+          }
+          if (isDatabaseUnavailable(caughtError)) {
+            await requeueRunAfterDatabaseOutage(ctx);
+            return;
           }
           await failRun(ctx, caughtError, {
             ownCredential: resolved.ownCredential,

@@ -42,6 +42,17 @@ export type ComposioClient = {
       limit?: number;
     }): Promise<Array<{ slug: string; noAuth?: boolean; composioManagedAuthSchemes?: string[] }>>;
   };
+  getClient(): {
+    tools: {
+      list(
+        query: { toolkit_slug: string; limit: number; cursor?: string },
+        options?: { signal?: AbortSignal },
+      ): Promise<{
+        items: unknown[];
+        next_cursor?: string | null;
+      }>;
+    };
+  };
   authConfigs: {
     list(query: { limit?: number; cursor?: string }): Promise<{
       items: Array<{ toolkit: { slug: string }; status: string }>;
@@ -595,6 +606,30 @@ export class ComposioConnector implements ComposioProvider {
 
   async listReconnectRefs(context: AdapterContext): Promise<string[]> {
     return this.accountIds(context.userId, [], RECONNECT_STATUSES, { signal: context.signal });
+  }
+
+  /** The app's own actions, not the session tools that only search and run them. */
+  async listAppTools(context: AdapterContext, externalId: string): Promise<ConnectorTool[]> {
+    context.signal.throwIfAborted();
+    const [toolkit] = await this.canonicalizeToolkits([externalId]);
+    if (!toolkit) return [];
+    const composio = await this.sdk();
+    const tools: unknown[] = [];
+    const seen = new Set<string>();
+    let cursor: string | undefined;
+    do {
+      context.signal.throwIfAborted();
+      if (seen.size >= 200 || (cursor && seen.has(cursor))) {
+        throw new Error("App tool catalog pagination did not terminate");
+      }
+      if (cursor) seen.add(cursor);
+      const page = await composio
+        .getClient()
+        .tools.list({ toolkit_slug: toolkit, limit: 200, cursor }, { signal: context.signal });
+      tools.push(...page.items);
+      cursor = page.next_cursor ?? undefined;
+    } while (cursor);
+    return asConnectorTools(tools);
   }
 
   async discoverTools(context: AdapterContext): Promise<ConnectorTool[]> {

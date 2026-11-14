@@ -1,6 +1,7 @@
 import type { Models } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { canonicalPiProviderId } from "@rakazo/contracts";
+import { CLAUDE_CODE_PROVIDER_ID, claudeCodeModel } from "./cli-models/claude-code/provider.js";
 import { DEFAULT_OPENROUTER_MODEL_ID } from "./deployment-model.js";
 import { liveModelSibling, withLiveImageInput } from "./pi-live-model.js";
 import { registerLocalProvider } from "./pi-local-provider.js";
@@ -77,6 +78,13 @@ function catalogModels(): Models {
   return catalogModelsCache;
 }
 
+function visionModel(provider: string, id: string) {
+  const models = catalogModels();
+  return provider === CLAUDE_CODE_PROVIDER_ID
+    ? claudeCodeModel(id, models)
+    : models.getModel(provider, id);
+}
+
 /**
  * Mirror Pi's scripted placeholder resolution so vision checks use the same
  * model the runtime will actually call.
@@ -101,7 +109,7 @@ export function catalogKnowsModel(provider: string, modelId: string): boolean {
   const resolved = resolveModelRefForVisionCheck(provider, modelId);
   if (!resolved.provider || !resolved.id || resolved.provider === OPENAI_COMPATIBLE_PROVIDER_ID)
     return false;
-  return Boolean(catalogModels().getModel(resolved.provider, resolved.id));
+  return Boolean(visionModel(resolved.provider, resolved.id));
 }
 
 /**
@@ -123,7 +131,7 @@ export function modelAcceptsImageInput(
       acceptsImages ??
       Boolean(models.getModel(resolved.provider, resolved.id)?.input.includes("image"))
     );
-  const known = models.getModel(resolved.provider, resolved.id);
+  const known = visionModel(resolved.provider, resolved.id);
   if (known)
     return (
       resolved.provider === CHATGPT_OAUTH_PROVIDER
@@ -149,7 +157,7 @@ export function filterImageReturningComputerTools<T extends { name: string }>(
 export function knownModelImageInput(provider: string, modelId: string): boolean | undefined {
   const resolved = resolveModelRefForVisionCheck(provider, modelId);
   if (resolved.provider === OPENAI_COMPATIBLE_PROVIDER_ID) return undefined;
-  const model = catalogModels().getModel(resolved.provider, resolved.id);
+  const model = visionModel(resolved.provider, resolved.id);
   return model ? model.input.includes("image") : undefined;
 }
 

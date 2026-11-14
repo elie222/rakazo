@@ -54,9 +54,10 @@ export function SocialSignInButtons({
                           key={path.d}
                           d={path.d}
                           fill={
-                            provider.presentation?.variant === "outline"
+                            path.fill ??
+                            (provider.presentation?.variant === "outline"
                               ? tokens.foreground
-                              : tokens.primaryForeground
+                              : tokens.primaryForeground)
                           }
                         />
                       ))}

@@ -131,6 +131,14 @@ name: Settings
 - waitForAnimationToEnd:
     timeout: 3000
 - takeScreenshot: 14-bot-profile-menu
+- tapOn: "Delete…"
+- extendedWaitUntil:
+    visible: ".*will be deleted too.*"
+    timeout: 15000
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 14-bot-delete-warning
+- tapOn: "Cancel"
 - openLink: "rakazo:///group-settings?groupId=${RAKAZO_SCREENSHOT_GROUP_ID}"
 - extendedWaitUntil:
     visible: ".*Delete group.*"

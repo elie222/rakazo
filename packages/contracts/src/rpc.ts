@@ -339,6 +339,8 @@ export const appContract = {
           client: BillingClientSchema,
           /** Billing period of the own-key plan's checkout; monthly when omitted. */
           interval: ByokIntervalSchema.optional(),
+          /** The own-key plan's tier; Standard when omitted. */
+          tier: ByokTierSchema.optional(),
         }),
       )
       /** `url` is the checkout to pay for the own-key plan before it has access. */
@@ -622,7 +624,14 @@ export const appContract = {
     restore: oc.input(botId).output(z.object({ ok: z.literal(true) })),
     remove: oc
       .input(z.object({ botId: Id, deleteMemories: z.boolean().default(false) }))
-      .output(z.object({ ok: z.literal(true) })),
+      // Optional for clients talking to older servers; current servers return committed group IDs.
+      .output(
+        z.object({
+          ok: z.literal(true),
+          removedGroupIds: z.array(Id).optional(),
+          alreadyRemoved: z.boolean().optional(),
+        }),
+      ),
     /** Groups this delete removes because fewer than two active bots would remain. */
     removePreview: oc.input(botId).output(z.array(z.object({ id: Id, name: z.string() }))),
     emailAddress: oc.input(botId).output(BotEmailAddressSchema),

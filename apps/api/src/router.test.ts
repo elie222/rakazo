@@ -185,11 +185,19 @@ describe("account preferences", () => {
     await expect(client.analytics.screen({ screen: "chat", surface: "desktop" })).resolves.toEqual({
       ok: true,
     });
-    expect(capture).toHaveBeenCalledWith(actor.userId, {
-      name: "screen_viewed",
-      screen: "chat",
-      surface: "desktop",
-    });
+    expect(capture).toHaveBeenCalledWith(
+      actor.userId,
+      { name: "screen_viewed", screen: "chat", surface: "desktop" },
+      undefined,
+      undefined,
+    );
+    await client.analytics.screen({ screen: "plans", surface: "web", planLayout: "tiers" });
+    expect(capture).toHaveBeenLastCalledWith(
+      actor.userId,
+      { name: "screen_viewed", screen: "plans", surface: "web", planLayout: "tiers" },
+      undefined,
+      { "plan-layout": "tiers" },
+    );
     await expect(
       client.analytics.screen({
         screen: "chat",
@@ -201,7 +209,7 @@ describe("account preferences", () => {
     await expect(
       anonymous.analytics.screen({ screen: "chat", surface: "web" }),
     ).rejects.toMatchObject({ code: "UNAUTHORIZED" });
-    expect(capture).toHaveBeenCalledTimes(1);
+    expect(capture).toHaveBeenCalledTimes(2);
   });
 
   it("reports model credential store outages as service unavailable", async () => {
@@ -699,7 +707,7 @@ describe("billing", () => {
       code: "NOT_FOUND",
     });
     await expect(
-      client.billing.purchaseCredits({ amountCents: 1000, monthly: true }),
+      client.billing.purchaseCredits({ amountCents: 2000, monthly: true }),
     ).rejects.toMatchObject({ code: "NOT_FOUND" });
     await expect(client.billing.setMonthlyCredits({ amountCents: 2000 })).rejects.toMatchObject({
       code: "NOT_FOUND",
@@ -4387,6 +4395,22 @@ describe("computer screen url", () => {
     expect(endRun.mock.calls.map(([, , reason]) => reason)).toEqual(["gone"]);
   });
 
+  it("returns the team screen limit without private provider details", async () => {
+    const { response, updateMany } = await callScreenUrl(() =>
+      Promise.reject(
+        new Error("cannot allocate another screen (limit 4): private provider detail"),
+      ),
+    );
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      json: expect.objectContaining({
+        code: "CONFLICT",
+        message: "All 4 Team Computer screens are in use (SANDBOX_TEAM_SCREEN_LIMIT)",
+      }),
+    });
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+
   it("keeps a transport blip an error and leaves the row alone", async () => {
     const { response, updateMany } = await callScreenUrl(() =>
       Promise.reject(Object.assign(new Error("fetch failed"), { code: "ECONNRESET" })),
@@ -4397,11 +4421,7 @@ describe("computer screen url", () => {
 
   it("returns a recoverable conflict when the screen is temporarily busy", async () => {
     const { response, updateMany } = await callScreenUrl(() =>
-      Promise.reject(
-        new ComputerScreenUnavailableError(
-          "cannot allocate another screen: private provider detail",
-        ),
-      ),
+      Promise.reject(new ComputerScreenUnavailableError("private provider detail")),
     );
     expect(response.status).toBe(409);
     await expect(response.json()).resolves.toEqual({
@@ -10940,4 +10960,58 @@ describe("quarantined computer stop", () => {
       }
     },
   );
+});
+
+describe("connection tool listing", () => {
+  it.each([true, false])("selects app catalog when available: %s", async (hasCatalog) => {
+    const findFirst = vi.fn(async () => ({
+      id: "connection-1",
+      displayName: "Example",
+      providerRef: "account-1",
+    }));
+    const tools = [{ name: "example_action", description: "An action" }];
+    const listAppTools = vi.fn(async () => tools);
+    const discoverTools = vi.fn(async () => tools);
+    const connector = { discoverTools, ...(hasCatalog ? { listAppTools } : {}) };
+    const client = createRouterClient(
+      createRouter({
+        prisma: { connection: { findFirst } },
+        connectors: { managed: () => connector },
+      } as unknown as RouterDeps),
+      {
+        context: { actor: { spaceId: "workspace-1", userId: "user-1" } } as never,
+      },
+    );
+    expect(await client.connections.tools({ connectorId: "example", provider: "example" })).toEqual(
+      tools,
+    );
+    expect(findFirst).toHaveBeenCalledWith({
+      where: {
+        spaceId: "workspace-1",
+        userId: "user-1",
+        connectorId: "example",
+        provider: "example",
+        status: "connected",
+      },
+    });
+    if (hasCatalog) {
+      expect(listAppTools).toHaveBeenCalledWith(expect.anything(), "example");
+      expect(discoverTools).not.toHaveBeenCalled();
+    } else {
+      expect(discoverTools).toHaveBeenCalledWith(
+        expect.objectContaining({
+          connectedConnections: [
+            {
+              id: "connection-1",
+              connectorId: "example",
+              externalId: "example",
+              displayName: "Example",
+              providerRef: "account-1",
+            },
+          ],
+          connectedProviders: ["example"],
+        }),
+      );
+    }
+  });
 });

@@ -251,6 +251,57 @@ describePostgres("cloud agent lifecycle and recovery (PostgreSQL + Cursor emulat
     }
   }, 30_000);
 
+  it("records a poll's result that waited behind a long thread read", async () => {
+    const { thread, launch, poll, state } = await setup();
+    const id = await launch();
+    let locked!: (xactId: string) => void;
+    const lockTaken = new Promise<string>((resolve) => {
+      locked = resolve;
+    });
+    let open!: () => void;
+    const opened = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    const reader = asSystem(prisma).$transaction(
+      async (tx) => {
+        await tx.$queryRaw`SELECT id FROM threads WHERE id = ${thread.id} FOR SHARE`;
+        const rows = await tx.$queryRaw<Array<{ xactId: string }>>`
+            SELECT pg_current_xact_id()::text AS "xactId"`;
+        locked(rows[0]?.xactId ?? "");
+        await opened;
+      },
+      { timeout: 30_000 },
+    );
+    const xactId = await lockTaken;
+    const probe = await runAsSystem("lock probe", () => db.pool.connect());
+    let polled: Promise<void> = Promise.resolve();
+    try {
+      polled = poll(id);
+      polled.catch(() => undefined);
+      // Count from the moment the poll's own write is blocked on the reader.
+      await vi.waitFor(
+        async () => {
+          const result = await probe.query(
+            "SELECT count(*)::int AS waiting FROM pg_locks WHERE locktype = 'transactionid' AND NOT granted AND transactionid::text = $1",
+            [xactId],
+          );
+          expect(result.rows[0].waiting).toBeGreaterThan(0);
+        },
+        { timeout: 10_000, interval: 20 },
+      );
+      // Past Prisma's default five-second budget for the poll's own write.
+      await new Promise((resolve) => setTimeout(resolve, 6_000));
+      open();
+      await polled;
+      expect(await state(id)).toMatchObject({ errorCount: 0, remoteId: expect.any(String) });
+    } finally {
+      open();
+      await reader.catch(() => undefined);
+      await polled.catch(() => undefined);
+      probe.release();
+    }
+  }, 30_000);
+
   it("forwards first-response timing when its cloud-agent card is the first output", async () => {
     const h = await setup();
     await h.launch();
@@ -726,6 +777,34 @@ describePostgres("cloud agent lifecycle and recovery (PostgreSQL + Cursor emulat
     expect(await h.state(id)).toMatchObject({ status: "finished", errorCount: 0 });
   });
 
+  it("leaves a rate-limited agent's scheduled poll alone when its status is read", async () => {
+    const h = await setup();
+    const id = await h.launch();
+    await h.poll(id);
+    h.wire.failNextRequest = 429;
+    await h.poll(id);
+    const before = await h.state(id);
+    expect(before.nextPollAt!.getTime()).toBeGreaterThan(Date.now() + 29_000);
+    h.enqueue.mockClear();
+    expect(await h.tool("status", { id })).toMatchObject({ id, status: "running" });
+    expect(h.enqueue).not.toHaveBeenCalled();
+    expect((await h.state(id)).nextPollAt).toEqual(before.nextPollAt);
+  });
+
+  it("keeps a cancel's immediate poll when the status is read afterwards", async () => {
+    const h = await setup();
+    const id = await h.launch();
+    await h.poll(id);
+    h.wire.failNextRequest = 429;
+    await h.poll(id);
+    h.enqueue.mockClear();
+    await h.tool("cancel", { id });
+    expect(h.enqueue).toHaveBeenCalledTimes(1);
+    expect(h.enqueue.mock.calls[0]![0].availableAt).toBeUndefined();
+    await h.tool("status", { id });
+    expect(h.enqueue).toHaveBeenCalledTimes(1);
+  });
+
   it("reports a follow-up to an expired agent as expired", async () => {
     const h = await setup();
     const id = await h.launch();
@@ -1013,6 +1092,28 @@ describePostgres("cloud agent lifecycle and recovery (PostgreSQL + Cursor emulat
       } finally {
         vi.useRealTimers();
       }
+    });
+
+    it("settles a cancel of an agent whose launch T3 Code refused", async () => {
+      const { h, actor, tool, launch, poll } = await connected();
+      await connectServer(actor, { allBots: true });
+      // T3 Code has no project for this repository, so nothing remote is ever created.
+      const id = await launch({ repository: "https://github.com/example/missing" });
+      await poll(id);
+      expect(await h.state(id)).toMatchObject({
+        status: "failed",
+        remoteId: null,
+        nextPollAt: null,
+      });
+      expect(await tool("cancel", { id })).toMatchObject({ cancellationPending: true });
+      await poll(id);
+      expect(await h.state(id)).toMatchObject({
+        status: "failed",
+        cancelRequested: false,
+        nextPollAt: null,
+        errorCount: 0,
+      });
+      expect(await h.wakes()).toHaveLength(1);
     });
 
     it("keeps status and cancellation usable after revocation without a deployment provider", async () => {

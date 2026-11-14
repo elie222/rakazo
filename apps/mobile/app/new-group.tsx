@@ -7,7 +7,7 @@ import {
 } from "@rakazo/contracts";
 import { Stack, useNavigation, useRouter } from "expo-router";
 import { useHeaderHeight } from "expo-router/react-navigation";
-import { useEffect, useRef, useState } from "react";
+import { useContext, useEffect, useRef, useState } from "react";
 import { BackHandler, Platform, ScrollView, Text, TextInput, View } from "react-native";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { BotChipPicker } from "../components/bot-chip-picker";
@@ -16,6 +16,7 @@ import { GroupAvatar } from "../components/group-avatar";
 import { NativeActionButton } from "../components/native-action-button";
 import { SheetCloseButton } from "../components/sheet-close-button";
 import { rpc } from "../lib/api";
+import { CallKeyboardContext } from "../lib/call-keyboard-context";
 import { hapticSuccess } from "../lib/haptics";
 import type { MobileBot } from "../lib/mobile-types";
 import { native, useMobileTokens } from "../lib/native";
@@ -25,6 +26,7 @@ import { useSideInsets } from "../lib/side-insets";
 import { errorText } from "../lib/user-error";
 
 export default function NewGroup() {
+  const call = useContext(CallKeyboardContext);
   const sideInsets = useSideInsets();
   const { t } = useLingui();
   const tokens = useMobileTokens();
@@ -149,6 +151,7 @@ export default function NewGroup() {
       />
       {/* Shrinks above the keyboard so Skip/Create and the last bot rows stay reachable. */}
       <KeyboardAvoidingView
+        enabled={!call}
         behavior="padding"
         automaticOffset
         style={{ flex: 1, backgroundColor: tokens.background }}

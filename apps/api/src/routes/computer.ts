@@ -5,9 +5,9 @@ import { computerControlExpireJobKey } from "@rakazo/adapter-kit";
 import type { ComputerExecutionLease } from "@rakazo/adapters";
 import {
   applyTeachingDesktopInput,
-  COMPUTER_SCREEN_UNAVAILABLE,
   ComputerBusyError,
   checkpointAndStopComputer,
+  computerScreenUnavailableMessage,
   computerSupportsTerminal,
   computerSupportsUpdate,
   computerUpdateView,
@@ -680,7 +680,7 @@ export function computerRoutes(ctx: RouterContext) {
           )
           .catch(async (error: unknown) => {
             if (isComputerScreenUnavailable(error)) {
-              throw new ORPCError("CONFLICT", { message: COMPUTER_SCREEN_UNAVAILABLE });
+              throw new ORPCError("CONFLICT", { message: computerScreenUnavailableMessage(error) });
             }
             return clearGoneSandbox(deps, computer, error);
           });
