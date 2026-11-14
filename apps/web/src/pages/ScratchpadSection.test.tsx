@@ -9,7 +9,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 
 const rpcMock = vi.hoisted(() => ({
-  scratchpad: { list: vi.fn(), create: vi.fn(), remove: vi.fn() },
+  scratchpad: { list: vi.fn(), create: vi.fn(), remove: vi.fn(), update: vi.fn() },
 }));
 vi.mock("../lib/rpc", () => ({
   rpc: rpcMock,
@@ -214,6 +214,58 @@ it("keeps an added item when an older background read lands after it", async () 
     expect(host.textContent).toContain("Added task");
   } finally {
     await act(async () => root.unmount());
+    vi.unstubAllGlobals();
+  }
+});
+
+it.each(["remove", "complete"])("keeps the draft after the last item is %s", async (action) => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const existing = workItem("a", "Existing task");
+  const added = workItem("b", "New draft");
+  rpcMock.scratchpad.list
+    .mockResolvedValueOnce([existing])
+    .mockResolvedValueOnce([])
+    .mockResolvedValueOnce([added]);
+  rpcMock.scratchpad.remove.mockResolvedValue({ ok: true });
+  rpcMock.scratchpad.update.mockResolvedValue({ ...existing, status: "done" });
+  rpcMock.scratchpad.create.mockResolvedValue(added);
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  try {
+    await mount(root, "bot-fixture");
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('[aria-label="Add open work"]')!.click(),
+    );
+    const input = host.querySelector<HTMLInputElement>('[aria-label="New open-work item"]')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+        input,
+        added.title,
+      );
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () =>
+      host
+        .querySelector<HTMLButtonElement>(
+          action === "remove" ? '[aria-label="Remove"]' : '[aria-label="Complete"]',
+        )!
+        .click(),
+    );
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+    expect(host.querySelector<HTMLInputElement>('[aria-label="New open-work item"]')?.value).toBe(
+      added.title,
+    );
+    await act(async () => input.form!.requestSubmit());
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+    expect(rpcMock.scratchpad.create).toHaveBeenCalledWith({
+      botId: "bot-fixture",
+      title: added.title,
+    });
+    expect(host.textContent).toContain(added.title);
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
     vi.unstubAllGlobals();
   }
 });
