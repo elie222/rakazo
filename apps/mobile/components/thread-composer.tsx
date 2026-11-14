@@ -245,6 +245,8 @@ export function ThreadComposer({
       pendingNativeEdit.current = null;
     },
     insert: (text) => {
+      setSlashQuery(null);
+      setMentionQuery(null);
       // A delayed selection must not replay the edit from before the share.
       pendingNativeEdit.current = null;
       const current = draftRef.current;
@@ -252,6 +254,8 @@ export function ThreadComposer({
       setDraft(draftRef.current);
     },
     addReply: (text) => {
+      setSlashQuery(null);
+      setMentionQuery(null);
       const current = draftRef.current;
       draftRef.current = current.trim() ? `${current.trimEnd()} ${text}` : text;
       setDraft(draftRef.current);
