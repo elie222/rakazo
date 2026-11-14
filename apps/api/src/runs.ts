@@ -65,21 +65,29 @@ export function activityNotificationsEnabled(
   return groupId !== null || notifyOnFinish;
 }
 
+/** `userId` keeps one member's runs, chosen before the latest per chat so another's cannot hide them. */
 export async function listSpaceRuns(
   prisma: PrismaClient,
   actor: Actor,
   filter: "active" | "recent",
+  options: { userId?: string } = {},
 ): Promise<RunActivityRow[]> {
+  const owner = options.userId ? { userId: options.userId } : {};
   const rows = await prisma.run.findMany({
     where:
       filter === "active"
         ? {
             spaceId: actor.spaceId,
+            ...owner,
             bot: { archivedAt: null },
             trigger: { notIn: [...ACTIVITY_HIDDEN_TRIGGERS] },
             status: { in: [...ACTIVE_RUN_STATUSES] },
           }
-        : { spaceId: actor.spaceId, id: { in: await latestFinishedRunPerChat(prisma, actor) } },
+        : {
+            spaceId: actor.spaceId,
+            ...owner,
+            id: { in: await latestFinishedRunPerChat(prisma, actor, options.userId) },
+          },
     include: {
       bot: { select: { name: true, archivedAt: true, notifyOnFinish: true } },
       task: { select: { prompt: true } },
@@ -120,7 +128,11 @@ export async function listSpaceRuns(
 }
 
 /** Recent lists chats keyed like `activitySections`, so one busy chat must not push the others out of the limit. */
-async function latestFinishedRunPerChat(prisma: PrismaClient, actor: Actor): Promise<string[]> {
+async function latestFinishedRunPerChat(
+  prisma: PrismaClient,
+  actor: Actor,
+  userId?: string,
+): Promise<string[]> {
   const rows = await prisma.$queryRaw<Array<{ id: string }>>`
     SELECT id FROM (
       SELECT DISTINCT ON (COALESCE('group:' || t."groupId", 'bot:' || r."botId")) r.id, r."completedAt", r."updatedAt"
@@ -131,6 +143,7 @@ async function latestFinishedRunPerChat(prisma: PrismaClient, actor: Actor): Pro
         AND b."archivedAt" IS NULL
         AND r.trigger NOT IN (${Prisma.join([...ACTIVITY_HIDDEN_TRIGGERS])})
         AND r.status IN (${Prisma.join([...TERMINAL_STATUSES])})
+        ${userId ? Prisma.sql`AND r."userId" = ${userId}` : Prisma.empty}
       ORDER BY COALESCE('group:' || t."groupId", 'bot:' || r."botId"), r."completedAt" DESC, r."updatedAt" DESC, r.id DESC
     ) latest
     ORDER BY "completedAt" DESC, "updatedAt" DESC, id DESC

@@ -16,6 +16,7 @@ import { isTerminal } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { recordAuditEvent, runAsSystem } from "@rakazo/db";
 import type { createRouter } from "./router.js";
+import { listSpaceRuns } from "./runs.js";
 import type { AuthenticatedServiceCredential } from "./service-credentials.js";
 
 type Routes = typeof SERVICE_ROUTES;
@@ -609,26 +610,17 @@ export const SERVICE_HANDLERS: Handlers = {
   async stopBot(context) {
     return context.client.threads.stop({ botId: botOf(context) });
   },
-  async listRuns({ client, prisma, actor, credential, query }) {
-    const { runs } = await client.runs.list({ filter: query?.filter ?? "active" });
-    // Group chats are refused to a key limited to some bots, and their runs with them.
-    const reachable = runs.filter(
-      (run) => mayReach(credential, run.botId) && (!credential.botIds.length || !run.groupId),
-    );
+  async listRuns({ prisma, actor, credential, query }) {
     // Only the creator's runs, as everywhere else a key reads runs.
-    const own = new Set(
-      (
-        await prisma.run.findMany({
-          where: {
-            id: { in: reachable.map((run) => run.runId) },
-            spaceId: actor.spaceId,
-            userId: actor.userId,
-          },
-          select: { id: true },
-        })
-      ).map((run) => run.id),
-    );
-    return { runs: reachable.filter((run) => own.has(run.runId)) };
+    const runs = await listSpaceRuns(prisma, actor, query?.filter ?? "active", {
+      userId: actor.userId,
+    });
+    // Group chats are refused to a key limited to some bots, and their runs with them.
+    return {
+      runs: runs.filter(
+        (run) => mayReach(credential, run.botId) && (!credential.botIds.length || !run.groupId),
+      ),
+    };
   },
 
   async getRun(context) {
