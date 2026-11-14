@@ -237,6 +237,7 @@ export { dispatcherFetch } from "./undici-fetch.js";
 export * from "./user-device-emulator.js";
 export * from "./user-device-gateway.js";
 export * from "./user-device-protocol.js";
+export { openingAcknowledgementEnabled } from "./user-progress.js";
 export { listVaultItemUses } from "./vault-activity.js";
 export {
   migrateVaultValues,

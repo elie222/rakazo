@@ -12,6 +12,7 @@ import {
   isMessagingChannelRun,
   isOwnerStartedRun,
   isTerminal,
+  messageBlocksText,
   messagingChannelId,
   messagingChannelPrivacyBlock,
   messagingDmSurfaceNote,
@@ -179,6 +180,7 @@ import {
   DELEGATED_EMPTY_NOTICE,
   GROUP_UNADDRESSED_REPLY_GUIDANCE,
   runAllowsSilentEmpty,
+  runNarratesLive,
   runReplyGuidance,
   runReplyMode,
 } from "./run-replies.js";
@@ -187,6 +189,8 @@ import {
   retryRoutineRun,
   wakeRoutine,
 } from "./run-routines.js";
+import type { LiveStatusLines } from "./run-status-lines.js";
+import { startStatusLines } from "./run-status-lines.js";
 import {
   BUILTIN_AGENT_TOOL_NAMES,
   followUpsOffered,
@@ -218,6 +222,7 @@ import { loadAgentScratchpadContext } from "./scratchpad-context.js";
 import { inferScript } from "./scripted-runtime.js";
 import { loadSharedSpaceNote } from "./shared-space-note.js";
 import { builtinAgentSkillRecords, listAgentSkillRecords } from "./skill-tools.js";
+import { createStatusLineWriter } from "./status-lines.js";
 import {
   filterStrategicInitiativeTools,
   isStrategicInitiativeRun,
@@ -525,6 +530,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
 
       const runSecrets = [...deps.secrets];
       let dispatchHandedOff = false;
+      let attemptStatusLive: LiveStatusLines | undefined;
       try {
         // Durable run ownership and its heartbeat now carry recovery. Model,
         // integration and computer setup must not occupy a queue dispatch slot.
@@ -868,6 +874,56 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           run.sourceMessageId,
         );
         const turnBlocks = currentTurnMessage?.blocks;
+        // A status model, when the member chose one, writes the working line's statuses. It
+        // starts now, so its opening statuses are ready while the rest of the run sets up.
+        const statusRequestText = turnBlocks ? messageBlocksText(turnBlocks).trim() : "";
+        const groupReplyOptional =
+          Boolean(thread.groupId) && run.trigger === "user" && run.groupReplyOptional;
+        // A group member a message named nobody may stay silent, so it shows nothing early.
+        // Messages mode keeps a bot's working private, so it shows no statuses either.
+        const statusLinesWanted =
+          runNarratesLive(run.trigger) && !groupReplyOptional && bot.replyMode !== "messages";
+        // Set up in the background: the run never waits on the status model. Its statuses
+        // show as soon as they are ready, not once the run has finished setting up.
+        const statusLinesSetup = statusLinesWanted
+          ? createStatusLineWriter(
+              deps,
+              {
+                runId,
+                spaceId: run.spaceId,
+                userId: run.userId,
+                botId: bot.id,
+                threadId: thread.id,
+              },
+              runSecrets,
+            )
+          : Promise.resolve(undefined);
+        let statusHeld = () => false;
+        // The status model hears nothing before the main model's key is registered for redaction.
+        let markStatusSecretsReady = () => {};
+        const statusSecretsReady = new Promise<void>((resolve) => {
+          markStatusSecretsReady = resolve;
+        });
+        const statusLive = statusLinesWanted
+          ? startStatusLines({
+              writer: statusLinesSetup,
+              request: statusRequestText,
+              ready: statusSecretsReady,
+              signal: runAbortController.signal,
+              held: () => statusHeld(),
+              show: (text) =>
+                deps.events.append({
+                  spaceId: run.spaceId,
+                  threadId: thread.id,
+                  botId: bot.id,
+                  type: "thread.progress",
+                  runId,
+                  payload: { text, activity: true },
+                }),
+            })
+          : undefined;
+        // A setup that fails before the turn starts must not leave statuses posting.
+        attemptStatusLive = statusLive;
         // A run owns its source message and steering bound to it, including waiting-input
         // replies. message.runId alone is display linkage: a send during background work
         // points at that run but waits for its continuation. Read independently of history.
@@ -893,8 +949,6 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         const currentRunRequiresImageInput = confirmedRunImages.length > 0;
         // The send decided whether the message named this member; one it named nobody for
         // reached every member, and each may end its turn without a reply.
-        const groupReplyOptional =
-          Boolean(thread.groupId) && run.trigger === "user" && run.groupReplyOptional;
         const allowSilentPeerMessage = botMessageAllowsSilence(
           peerMessage?.intent,
           peerMessage?.repliesToRequest,
@@ -1075,6 +1129,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           resolved,
         } = started.start;
         runSecrets.push(...resolved.redact);
+        markStatusSecretsReady();
         // A pin stays as it was created. Unpinned runs still record the model they
         // used; modelPinned is what keeps that record from becoming the next choice.
         if (!run.modelPinned) {
@@ -1512,7 +1567,10 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             ? teamWorkspaceInstruction(bot.id)
             : PRIVATE_WORKSPACE_INSTRUCTION;
 
-        const reply = await createReplyState(deps, run, runSecrets);
+        const reply = await createReplyState(deps, run, runSecrets, {
+          // Earlier attempts reached a step when they saved a checkpoint before it.
+          resumesEarlierWork: storedTurnCheckpoint || Boolean(resumeCheckpoint),
+        });
         const script = scripted ? inferScript(task.prompt, takeoverResume?.checkpoint) : undefined;
         const state: RunState = {
           lease,
@@ -1558,6 +1616,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         };
 
         const ctx: RunContext = {
+          statusLive,
           deps,
           providers: { web, mediaGeneration, paidServices, browser, cloudAgent },
           run,
@@ -1633,6 +1692,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           settleRunningHelpers: settleHelpers,
           stopHeartbeatAfterCompletion,
         };
+        statusHeld = () => ctx.state.reply.narrationStatusShowing;
         const pluginLine =
           connectedPlugins.length > 0
             ? `Connected plugins: ${connectedPlugins.map((row) => `${row.displayName} (${row.connectorId}:${row.provider})`).join(", ")}. Prefer those plugin tools over the computer browser or web search when reading app data (repos, releases, mail, calendar, and similar).`
@@ -1946,7 +2006,9 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                 pluginLine,
                 agentSkillsLine,
                 taughtSkillsLine,
-                replyGuidance: runReplyGuidance(run.trigger, replyMode),
+                replyGuidance: runReplyGuidance(run.trigger, replyMode, {
+                  mayStaySilent: groupReplyOptional,
+                }),
                 // These runs get a narrow tool set, so guidance names only the tools they have.
                 disabledBuiltinTools:
                   isStrategicInitiativeRun(run) || run.trigger === BACKGROUND_HELPER_TRIGGER
@@ -2147,6 +2209,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           setupError,
         );
       } finally {
+        attemptStatusLive?.close();
         getLogger().info("run.computer", {
           "run.id": runId,
           trigger: run.trigger,

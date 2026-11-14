@@ -773,6 +773,8 @@ export type AgentRuntimeEvent =
       text: string;
       /** Provider-generated tool status rather than assistant-authored narration. */
       activity?: true;
+      /** The status line is the one the model gave the call, not the tool's technical one. */
+      modelStatus?: true;
     }
   | {
       type: "tool";
@@ -783,6 +785,8 @@ export type AgentRuntimeEvent =
       viaUseTool?: boolean;
       /** Which model response made the call; calls from one response share it. */
       response?: number;
+      /** The short status the model gave the call, shown while it runs. */
+      status?: string;
     }
   | {
       type: "ask";

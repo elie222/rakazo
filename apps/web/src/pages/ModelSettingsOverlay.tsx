@@ -144,6 +144,14 @@ export function ModelSettingsOverlay({
     computerOpened ||
     !mainSeesImages ||
     Boolean(computerRole?.primary || computerRole?.backups.length);
+  // The main model writes its own status lines, so this list shows once one is chosen or
+  // when asked for from the main model's menu.
+  const [statusOpened, setStatusOpened] = useState(false);
+  const statusRole = useModelRole(me, scope, "status");
+  // Only where bots narrate live does a status model change anything.
+  const statusAvailable = me?.liveStatusLines === true;
+  const showStatus =
+    statusAvailable && (statusOpened || Boolean(statusRole?.primary || statusRole?.backups.length));
 
   // A hosted preset shares the compatible provider id with a saved local server.
   const connected = Boolean(
@@ -333,10 +341,19 @@ export function ModelSettingsOverlay({
               ) : null
             }
             primaryMenuItems={
-              showComputer ? null : (
-                <DropdownMenuItem onClick={() => setComputerOpened(true)}>
-                  <Trans>Computer-use model…</Trans>
-                </DropdownMenuItem>
+              showComputer && (showStatus || !statusAvailable) ? null : (
+                <>
+                  {showComputer ? null : (
+                    <DropdownMenuItem onClick={() => setComputerOpened(true)}>
+                      <Trans>Computer-use model…</Trans>
+                    </DropdownMenuItem>
+                  )}
+                  {showStatus || !statusAvailable ? null : (
+                    <DropdownMenuItem onClick={() => setStatusOpened(true)}>
+                      <Trans>Status line model…</Trans>
+                    </DropdownMenuItem>
+                  )}
+                </>
               )
             }
           />
@@ -376,6 +393,24 @@ export function ModelSettingsOverlay({
                 openConnection({ id, name: id }, null, credentialId, "computer")
               }
               panel={connectionAt === "computer" ? panelFor(true) : null}
+            />
+          ) : null}
+          {showStatus ? (
+            <ModelRoleSettings
+              userId={me.userId}
+              spaceId={me.spaceId}
+              scope={scope}
+              credentials={credentials}
+              modelRole="status"
+              title={t`Status line model`}
+              defaultLabel={t`Same as main model`}
+              providers={providers}
+              providerLabel={providerLabel}
+              onConnect={(next, intent) => openConnection(next, intent, null, "status")}
+              onManage={(id, credentialId) =>
+                openConnection({ id, name: id }, null, credentialId, "status")
+              }
+              panel={connectionAt === "status" ? panelFor(true) : null}
             />
           ) : null}
           {scope === "space" ? null : (

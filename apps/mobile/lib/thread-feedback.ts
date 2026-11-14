@@ -167,6 +167,18 @@ const screens = new Map<string, number>();
 /** Removed sends whose files wait for a saved index that no longer lists them. */
 const removed = new Set<SendAttempt>();
 export const OUTBOX_MAX_ENTRIES = 20;
+/** When each send was typed on this device, so only a message just sent from here animates in. */
+const typedAt = new WeakMap<SendAttempt, number>();
+/** How long after the tap a send's bubble still counts as just sent. */
+export const FRESH_SEND_MS = 1000;
+/**
+ * Whether the send was typed here a moment ago. A restored, retried or re-rendered send is not,
+ * so only the tap that sent it slides its bubble in.
+ */
+export function isFreshSend(attempt: SendAttempt, now = Date.now()) {
+  const at = typedAt.get(attempt);
+  return at !== undefined && now - at < FRESH_SEND_MS;
+}
 
 function subscribe(watcher: () => void) {
   watchers.add(watcher);
@@ -540,6 +552,7 @@ export function useThreadFeedback(
             : { ...a },
         );
       }
+      typedAt.set(attempt, Date.now());
       return attempt;
     },
     async send(attempt: SendAttempt, force = false) {

@@ -3,12 +3,39 @@ import {
   BACKGROUND_HELPER_TRIGGER,
   isBackgroundRunTrigger,
   isConversationalRun,
+  messageBlocksText,
 } from "@rakazo/core";
 import { NO_RESPONSE } from "./silent-reply.js";
-import { messageUserMaxLength } from "./user-progress.js";
+import { messageUserMaxLength, openingAcknowledgementEnabled } from "./user-progress.js";
 
-export function longWorkProgressGuidance(maxLength = messageUserMaxLength()): string {
-  return `Send progress updates only when the work will take minutes — long computer tasks or multi-step jobs — never for quick replies and never to announce that you are starting. The one exception: once you are working in a browser or on a desktop on a task that will take a few minutes, tell the person right away with message_user that it will take a while. Even then send at most a few brief updates (a sentence or two each), not one per tool call, and do not narrate routine steps. Thinking stays private. message_user is capped at ${maxLength} characters and will be silently cut off if you exceed it \u2014 never put your final answer, a report, or any long-form deliverable in it. Always put the complete final answer in your normal reply, never split across message_user calls, and never assume a message_user update already delivered your content.`;
+const LIVE_NARRATION_GUIDANCE =
+  "When answering needs tool calls, first write one short sentence in the person's language saying what you are about to do (for example “I'll check whether a date was announced.”); it is posted at once so they know you are on it. Skip it when you can answer without tools. After that, do not write text between tool calls; instead fill each tool call's live_status field with two to five words, in the person's language, saying what that call does (for example “Checking availability”). It is shown as a live status line, never as a message, and does not count as a progress update.";
+
+const LIVE_PROGRESS_LIMIT =
+  "Beyond that, send progress updates only when the work will take minutes — long computer tasks or multi-step jobs.";
+
+const QUIET_START_GUIDANCE =
+  "Send progress updates only when the work will take minutes — long computer tasks or multi-step jobs — never for quick replies and never to announce that you are starting.";
+
+/**
+ * Whether a run's model is told to open with a sentence and narrate its steps: only when live
+ * narration is on and a person in the chat reads the run's text as it comes.
+ */
+export function runNarratesLive(trigger: string): boolean {
+  return (
+    openingAcknowledgementEnabled() &&
+    isConversationalRun(trigger) &&
+    runPromotesMidTurnNarration(trigger) &&
+    !runAllowsSilentEmpty(trigger)
+  );
+}
+
+export function longWorkProgressGuidance(
+  maxLength = messageUserMaxLength(),
+  live = openingAcknowledgementEnabled(),
+): string {
+  const start = live ? `${LIVE_NARRATION_GUIDANCE} ${LIVE_PROGRESS_LIMIT}` : QUIET_START_GUIDANCE;
+  return `${start} The one exception: once you are working in a browser or on a desktop on a task that will take a few minutes, tell the person right away with message_user that it will take a while. Even then send at most a few brief updates (a sentence or two each), not one per tool call, and do not narrate routine steps. Thinking stays private. message_user is capped at ${maxLength} characters and will be silently cut off if you exceed it \u2014 never put your final answer, a report, or any long-form deliverable in it. Always put the complete final answer in your normal reply, never split across message_user calls, and never assume a message_user update already delivered your content.`;
 }
 
 export function messagesModeReplyGuidance(maxLength = messageUserMaxLength()): string {
@@ -58,11 +85,18 @@ export function runReplyMode(
     : "chat";
 }
 
-export function runReplyGuidance(trigger: string, replyMode: ReplyMode = "chat"): string {
+export function runReplyGuidance(
+  trigger: string,
+  replyMode: ReplyMode = "chat",
+  { mayStaySilent = false }: { mayStaySilent?: boolean } = {},
+): string {
   if (replyMode === "messages") return messagesModeReplyGuidance();
   if (trigger === "reaction") return REACTION_SILENT_REPLY_GUIDANCE;
   if (isBackgroundRunTrigger(trigger)) return TICKET_SILENT_REPLY_GUIDANCE;
-  return runAllowsSilentEmpty(trigger) ? ROUTINE_SILENT_REPLY_GUIDANCE : longWorkProgressGuidance();
+  return runAllowsSilentEmpty(trigger)
+    ? ROUTINE_SILENT_REPLY_GUIDANCE
+    : // A group member a message named nobody may stay silent, so it is not told to open.
+      longWorkProgressGuidance(undefined, runNarratesLive(trigger) && !mayStaySilent);
 }
 
 export function replyGuidanceForOfferedTools(
@@ -70,9 +104,11 @@ export function replyGuidanceForOfferedTools(
   disabled?: ReadonlySet<string>,
 ): string | undefined {
   if (!disabled?.has("message_user")) return guidance;
-  if (guidance === longWorkProgressGuidance()) {
-    return "Always put the complete final answer in your normal reply.";
-  }
+  const finalAnswer = "Always put the complete final answer in your normal reply.";
+  // Live narration needs no message_user: the opening sentence and statuses still apply.
+  if (guidance === longWorkProgressGuidance(undefined, true))
+    return `${LIVE_NARRATION_GUIDANCE} ${finalAnswer}`;
+  if (guidance === longWorkProgressGuidance(undefined, false)) return finalAnswer;
   if (guidance === REACTION_SILENT_REPLY_GUIDANCE) {
     return guidance.replace(", with no message_user call.", ".");
   }
@@ -88,14 +124,6 @@ export const DELEGATED_EMPTY_NOTICE =
 /** Failure used when a tool-bearing turn would otherwise complete as the empty notice. */
 export const TOOL_STEPS_WITHOUT_RESPONSE =
   "The model finished its tool steps without a written response.";
-
-/** The message's text blocks joined, untrimmed. */
-export function messageBlocksText(blocks: readonly MessageBlock[]): string {
-  return blocks
-    .filter((block): block is Extract<MessageBlock, { kind: "text" }> => block.kind === "text")
-    .map((block) => block.text)
-    .join("");
-}
 
 /** True when the only written completion is the empty delegated notice after tool steps. */
 export function emptyDelegatedToolTurnShouldFail(blocks: MessageBlock[]): boolean {

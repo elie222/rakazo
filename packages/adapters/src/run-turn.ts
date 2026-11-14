@@ -19,6 +19,7 @@ import {
   isBackgroundRunTrigger,
   MISSING_TOOL_FINAL_RESPONSE_ERROR,
   normalizeRunError,
+  noteLastToolStep,
   redactSecrets,
   redactSecretsAfter,
   TAKEOVER_COMPUTER_PENDING_STATE,
@@ -217,6 +218,7 @@ export async function consumeRunEvents(
         reply.assistantTurnText = "";
       }
       if (event.type === "text") {
+        if (event.text) ctx.statusLive?.supersede();
         await streamText(ctx, event);
       } else if (event.type === "turn") {
         reply.assistantTurnBreakPending = true;
@@ -261,6 +263,7 @@ export async function consumeRunEvents(
   } finally {
     watching = false;
     clearInterval(watch);
+    ctx.statusLive?.close();
     // Run completion clears thinking too; never let this replace the turn's own outcome.
     await publishThinking(false).catch(() => {});
   }
@@ -332,8 +335,17 @@ async function streamProgress(ctx: RunContext, event: RuntimeEvent<"progress">) 
   // Tool status lines are not the model writing.
   if (!event.activity) ctx.state.toolCallStreak = { key: undefined, count: 0 };
   if (run.trigger === "routine" || isBackgroundRunTrigger(run.trigger)) return;
+  if (event.activity && event.text.trim())
+    reply.lastActivityLine = redactSecrets(event.text, ctx.secrets);
   // The bot's own note stays the working line until it writes again.
   if (event.activity && reply.narrationStatusShowing) return;
+  // With a status model, a step's technical line is worded for the person instead of shown.
+  // The model's own status ends the opening rotation, even before the status model is known.
+  if (event.activity && event.modelStatus) ctx.statusLive?.supersede();
+  else if (event.activity && ctx.statusLive?.active() && event.text.trim()) {
+    ctx.statusLive.step(redactSecrets(event.text, ctx.secrets));
+    return;
+  }
   // Flush batched text deltas first so an activity line cannot land
   // ahead of text the model streamed before the tool call.
   if (reply.pendingProgress && !progressHeldForSilence(ctx)) {
@@ -564,6 +576,13 @@ async function onToolCalled(ctx: RunContext, event: RuntimeEvent<"tool">): Promi
   // A step without a note of its own replaces the earlier one in the live view, so its status
   // lines show again.
   if (!heldNote) reply.narrationStatusShowing = false;
+  // The status the model gave the call names the step in the finished reply too, over any text
+  // held before it.
+  const status = event.status;
+  if (status && runPromotesMidTurnNarration(run.trigger) && !ctx.allowSilentEmptyRun) {
+    flushPendingTools(reply);
+    reply.messageSegments = noteLastToolStep(reply.messageSegments, status);
+  }
   reply.textSinceLastStep = "";
   reply.assistantTurnBreakPending = true;
   await deps.events.append({
@@ -574,7 +593,8 @@ async function onToolCalled(ctx: RunContext, event: RuntimeEvent<"tool">): Promi
     runId,
     payload: { name: event.name, executionId: event.executionId },
   });
-  await showNarrationStatus(ctx, heldNote);
+  // A step that came with the model's own status keeps it on the line.
+  await showNarrationStatus(ctx, heldNote, { keepLine: Boolean(event.status) });
   tryFlushPendingTools(reply);
   // A call can finish before or after its own event is handled, so its result is read here.
   const { toolCallStreak: streak, toolResults } = ctx.state;

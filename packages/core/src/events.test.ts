@@ -8,6 +8,7 @@ import {
   containsSecret,
   createStreamingRedactor,
   endsSentence,
+  heldActivityLine,
   humanizeToolName,
   isRunTerminalEvent,
   liveActivityLine,
@@ -1149,6 +1150,28 @@ describe("withToolStepOutcomes", () => {
       segments,
     );
     expect(withToolStepOutcomes(segments, [])).toEqual(segments);
+  });
+});
+
+describe("heldActivityLine", () => {
+  it("keeps the last status between steps and drops it when the work stops", () => {
+    const first = heldActivityLine(undefined, "Checking availability", ["run-1"]);
+    expect(first.line).toBe("Checking availability");
+    expect(heldActivityLine(first, undefined, ["run-1"]).line).toBe("Checking availability");
+    expect(heldActivityLine(first, "Looking for updates", ["run-1"]).line).toBe(
+      "Looking for updates",
+    );
+    expect(heldActivityLine(first, undefined, []).line).toBeUndefined();
+  });
+
+  it("treats a run listed twice as the same work", () => {
+    const held = heldActivityLine(undefined, "Checking availability", ["run-1", "run-1"]);
+    expect(heldActivityLine(held, undefined, ["run-1"]).line).toBe("Checking availability");
+  });
+
+  it("drops a finished worker's status while another keeps working", () => {
+    const both = heldActivityLine(undefined, "Checking availability", ["run-1", "run-2"]);
+    expect(heldActivityLine(both, undefined, ["run-2"]).line).toBeUndefined();
   });
 });
 

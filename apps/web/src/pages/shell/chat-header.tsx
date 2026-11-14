@@ -19,6 +19,7 @@ export function ChatHeader({
   voiceReady,
   inCall,
   panelOpen,
+  working,
   onOpenNavigation,
   onTogglePanel,
   onCall,
@@ -32,6 +33,8 @@ export function ChatHeader({
   voiceReady: boolean;
   inCall: boolean;
   panelOpen: boolean;
+  /** A bot is working on this chat right now: a green dot sits on the avatar. */
+  working: boolean;
   onOpenNavigation: () => void;
   onTogglePanel: () => void;
   onCall: (bot: Bot) => void;
@@ -61,16 +64,31 @@ export function ChatHeader({
         onClick={onTogglePanel}
         className="app-no-drag h-auto min-w-0 gap-2 py-1 ps-1 pe-3.5"
       >
-        {inGroup ? (
-          <GroupAvatar members={activeSnapshot?.members ?? activeGroup?.members ?? []} size={26} />
-        ) : active ? (
-          <BotAvatar
-            avatarSet={active.avatarSet}
-            color={active.color}
-            identity={active.id}
-            size={26}
-            status={active.status}
-          />
+        {inGroup || active ? (
+          <span className="relative shrink-0">
+            {inGroup ? (
+              <GroupAvatar
+                members={activeSnapshot?.members ?? activeGroup?.members ?? []}
+                size={26}
+              />
+            ) : active ? (
+              <BotAvatar
+                avatarSet={active.avatarSet}
+                color={active.color}
+                identity={active.id}
+                size={26}
+                status={active.status}
+              />
+            ) : null}
+            <span
+              aria-hidden="true"
+              data-testid="chat-working-dot"
+              data-working={working ? "" : undefined}
+              className={`pointer-events-none absolute -end-0.5 -bottom-0.5 size-2.5 rounded-full bg-working-dot ring-2 ring-muted transition-[opacity,scale] duration-200 ease-out motion-reduce:transition-none ${
+                working ? "scale-100 opacity-100" : "scale-50 opacity-0"
+              }`}
+            />
+          </span>
         ) : null}
         <span className="min-w-0">
           <span className="block truncate text-body-lg font-medium text-foreground" dir="auto">

@@ -88,6 +88,18 @@ body,
   -webkit-app-region: no-drag;
 }
 
+/* The working line and its label cross-fade with these. */
+@keyframes rk-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes rk-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+
 @keyframes rkPulse {
   0%,
   100% {

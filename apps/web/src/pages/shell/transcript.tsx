@@ -7,13 +7,15 @@ import type {
   MessageReaction,
   ThreadMessage,
 } from "@rakazo/contracts";
-import type { ChildBotBlock, FoldedTranscript } from "@rakazo/core";
+import type { ChildBotBlock, FoldedTranscript, HeldActivityLine } from "@rakazo/core";
 import {
   expandPeerReplies,
   groupVoiceChats,
+  heldActivityLine,
   isPeerReceiptBlocks,
   liveActivityLine,
   liveMessageComposing,
+  messageBlocksText,
   peerExchangeLines,
   projectBotMentions,
   projectMessageReactions,
@@ -46,6 +48,14 @@ import {
   quoteDraftForSelection,
 } from "../../lib/quote-selection";
 import type { createSpaceRpc } from "../../lib/rpc";
+import type { PendingSend } from "../../lib/sent-message-entrance";
+import {
+  SENT_ENTRANCE_KEYFRAMES,
+  SENT_ENTRANCE_TIMING,
+  sentMessageEntrances,
+  withNewSends,
+  withoutUnsent,
+} from "../../lib/sent-message-entrance";
 import { messageHasVisibleBlocks } from "../../lib/tool-activity-view";
 import { TRANSCRIPT_CONTENT_PADDING } from "../../lib/transcript-layout";
 import { transcriptIsNearEnd, transcriptMovedDown } from "../../lib/transcript-scroll";
@@ -66,6 +76,9 @@ export const Transcript = memo(function Transcript({
   scrollRequest,
   onScrollRequestHandled,
   followRequest,
+  sentTexts = [],
+  unsentRequests = 0,
+  unsentTexts = [],
   artifactTarget,
   transcript,
   meId,
@@ -76,6 +89,7 @@ export const Transcript = memo(function Transcript({
   answerableAskIds,
   dismissableAskIds,
   running,
+  workingRunIds,
   workingBots,
   workingRoutine,
   userBubble,
@@ -109,6 +123,12 @@ export const Transcript = memo(function Transcript({
   onScrollRequestHandled: () => void;
   /** Changes when you send: the view moves to the end and follows the reply. */
   followRequest: number;
+  /** The texts of recent sends from this tab, newest last, so each message enters with its own. */
+  sentTexts?: readonly string[];
+  /** Sends from this tab that produced no message: their entrances are dropped. */
+  unsentRequests?: number;
+  /** The texts of those sends, newest last. */
+  unsentTexts?: readonly string[];
   artifactTarget: ArtifactTarget;
   transcript: FoldedTranscript<ThreadMessage>;
   meId?: string;
@@ -120,6 +140,8 @@ export const Transcript = memo(function Transcript({
   answerableAskIds: Set<string>;
   dismissableAskIds: Set<string>;
   running: boolean;
+  /** The runs at work in this chat; the held status belongs to them. */
+  workingRunIds?: readonly string[];
   workingBots: GroupAvatarMember[];
   workingRoutine?: string;
   /** Your bubbles take the bot's color in its own chat. */
@@ -250,8 +272,15 @@ export const Transcript = memo(function Transcript({
   );
   const separatorIds = timeSeparatorIds(shownMessages);
   const unreadDividerId = unreadDividerMessageId(shownMessages, unreadAfterSeq, olderCursor, meId);
+  // The bot's last status stays up between steps, until the next one or the end of the run.
+  const lastActivityLine = useRef<HeldActivityLine | undefined>(undefined);
+  lastActivityLine.current = heldActivityLine(
+    lastActivityLine.current,
+    liveActivityLine(messages),
+    running ? (workingRunIds ?? workingBots.map((bot, index) => bot.botId ?? `bot-${index}`)) : [],
+  );
   const workingLabel =
-    liveActivityLine(messages) ?? (workingRoutine ? t`Running ${workingRoutine}…` : t`Working…`);
+    lastActivityLine.current.line ?? (workingRoutine ? t`Running ${workingRoutine}…` : t`Working…`);
   const [quoteDraft, setQuoteDraft] = useState<{
     message: ThreadMessage;
     text: string;
@@ -436,11 +465,25 @@ export const Transcript = memo(function Transcript({
   }, [messages, scrollRequest, scrollRef, endJumpScroll, onScrollRequestHandled, exchanges.lineOf]);
 
   const followedRequest = useRef(followRequest);
+  /** When each send from this tab was made, until its message arrives. */
+  const pendingSends = useRef<PendingSend[]>([]);
   useLayoutEffect(() => {
     if (followedRequest.current === followRequest) return;
+    // Several sends can land in one render; each gets its own entrance with its own text.
+    const sends = Math.max(1, followRequest - followedRequest.current);
     followedRequest.current = followRequest;
+    pendingSends.current = withNewSends(pendingSends.current, sentTexts, sends, Date.now());
     snapToEnd();
-  }, [followRequest, snapToEnd]);
+  }, [followRequest, snapToEnd, sentTexts]);
+
+  const droppedRequests = useRef(unsentRequests);
+  useLayoutEffect(() => {
+    const dropped = unsentRequests - droppedRequests.current;
+    droppedRequests.current = unsentRequests;
+    // Drop the entrance of each send that produced nothing, matched by its text.
+    if (dropped > 0)
+      pendingSends.current = withoutUnsent(pendingSends.current, unsentTexts.slice(-dropped));
+  }, [unsentRequests, unsentTexts]);
 
   useLayoutEffect(() => {
     const element = scrollRef.current;
@@ -448,6 +491,34 @@ export const Transcript = memo(function Transcript({
     // Content can grow below a reader who is not following without any scroll event.
     else if (element) setAtEnd(transcriptIsNearEnd(element));
   }, [messages, running, scrollRef, snapToEnd]);
+
+  // Your message rises into place the first time it appears after you send it from this tab.
+  // It runs before paint, after the snap above, so the row starts just above the composer.
+  const seenMessages = useRef<readonly ThreadMessage[] | null>(null);
+  useLayoutEffect(() => {
+    const seen = seenMessages.current;
+    seenMessages.current = messages;
+    // With no send from this tab waiting, a streamed token costs nothing here.
+    if (!seen || !pendingSends.current.length) return;
+    const seenIds = new Set(seen.map((message) => message.id));
+    const { entering, pendingSends: stillPending } = sentMessageEntrances({
+      messages: messages.map((message) => ({
+        ...message,
+        text: messageBlocksText(message.blocks).trim(),
+      })),
+      seenIds,
+      pendingSends: pendingSends.current,
+      meId,
+      now: Date.now(),
+    });
+    pendingSends.current = stillPending;
+    if (!entering.length || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    for (const id of entering) {
+      scrollRef.current
+        ?.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(id)}"]`)
+        ?.animate?.(SENT_ENTRANCE_KEYFRAMES, SENT_ENTRANCE_TIMING);
+    }
+  }, [messages, meId, scrollRef]);
 
   useLayoutEffect(() => {
     const button = jumpButtonRef.current;

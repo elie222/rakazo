@@ -26,12 +26,15 @@ import {
   SHIPPED_BOT_AVATAR_VIEWBOX,
   usesLogoAvatar,
 } from "@rakazo/core";
-import { memo, useSyncExternalStore } from "react";
+import { memo, useEffect, useSyncExternalStore } from "react";
 import { Image, Pressable, View } from "react-native";
 import Animated, {
+  Easing,
   useAnimatedProps,
   useAnimatedStyle,
   useReducedMotion,
+  useSharedValue,
+  withTiming,
 } from "react-native-reanimated";
 import Svg, { G, Path, Rect } from "react-native-svg";
 import type { AvatarLife } from "../lib/avatar-life";
@@ -125,6 +128,11 @@ export interface BotAvatarProps {
   motion?: AvatarMotionMode;
   composing?: boolean;
   pokeable?: boolean;
+  /**
+   * Shows the working dot exactly when true, fading and scaling it in and out, instead of
+   * deriving it from `status` (the chat title passes whether its thread has a run at work).
+   */
+  workingDot?: boolean;
 }
 
 /** Missing set metadata deliberately preserves every existing avatar. */
@@ -145,6 +153,7 @@ function RakazoBotAvatar({
   muted = false,
   motion = "static",
   pokeable = false,
+  workingDot,
 }: BotAvatarProps) {
   const liveActivity = useSyncExternalStore(
     mobileLogoAvatarActivity.subscribe,
@@ -169,31 +178,83 @@ function RakazoBotAvatar({
         motion={motion}
         pokeable={pokeable}
       />
-      {working ? <WorkingDot size={size} muted={muted} /> : null}
+      {workingDot !== undefined ? (
+        <FadingWorkingDot visible={workingDot} size={size} muted={muted} />
+      ) : working ? (
+        <WorkingDot size={size} muted={muted} />
+      ) : null}
       {muted ? <MutedBadge size={size} /> : null}
     </View>
+  );
+}
+
+/** How long the chat title's working dot takes to appear and to go. */
+const WORKING_DOT_IN_MS = 220;
+const WORKING_DOT_OUT_MS = 180;
+
+function workingDotStyle(size: number, muted: boolean, background: string, fill: string) {
+  const dot = avatarWorkingDot(size);
+  return {
+    position: "absolute",
+    right: muted ? undefined : dot.inset - dot.ring,
+    left: muted ? dot.inset - dot.ring : undefined,
+    bottom: dot.inset - dot.ring,
+    width: dot.diameter + dot.ring * 2,
+    height: dot.diameter + dot.ring * 2,
+    borderRadius: size,
+    borderWidth: dot.ring,
+    borderColor: background,
+    backgroundColor: fill,
+  } as const;
+}
+
+/** The working dot that grows in when work starts and shrinks away when it stops. */
+function FadingWorkingDot({
+  visible,
+  size,
+  muted,
+}: {
+  visible: boolean;
+  size: number;
+  muted: boolean;
+}) {
+  const tokens = useMobileTokens();
+  const { t } = useLingui();
+  const reducedMotion = useReducedMotion();
+  // Mounts in its current state: only a change animates.
+  const shown = useSharedValue(visible ? 1 : 0);
+  useEffect(() => {
+    shown.value = reducedMotion
+      ? visible
+        ? 1
+        : 0
+      : withTiming(visible ? 1 : 0, {
+          duration: visible ? WORKING_DOT_IN_MS : WORKING_DOT_OUT_MS,
+          easing: Easing.out(Easing.cubic),
+        });
+  }, [shown, visible, reducedMotion]);
+  const style = useAnimatedStyle(() => ({
+    opacity: shown.value,
+    transform: [{ scale: 0.4 + 0.6 * shown.value }],
+  }));
+  return (
+    <Animated.View
+      pointerEvents="none"
+      accessibilityLabel={visible ? t`Working` : undefined}
+      accessibilityElementsHidden={!visible}
+      importantForAccessibility={visible ? "auto" : "no-hide-descendants"}
+      style={[workingDotStyle(size, muted, tokens.background, tokens.workingDot), style]}
+    />
   );
 }
 
 function WorkingDot({ size, muted }: { size: number; muted: boolean }) {
   const tokens = useMobileTokens();
   const { t } = useLingui();
-  const dot = avatarWorkingDot(size);
   return (
     <View
       accessibilityLabel={t`Working`}
-      style={{
-        position: "absolute",
-        right: muted ? undefined : dot.inset - dot.ring,
-        left: muted ? dot.inset - dot.ring : undefined,
-        bottom: dot.inset - dot.ring,
-        width: dot.diameter + dot.ring * 2,
-        height: dot.diameter + dot.ring * 2,
-        borderRadius: size,
-        borderWidth: dot.ring,
-        borderColor: tokens.background,
-        backgroundColor: tokens.workingDot,
-      }}
+      style={workingDotStyle(size, muted, tokens.background, tokens.workingDot)}
     />
   );
 }
@@ -250,6 +311,7 @@ function LegacyBotAvatar({
   motion = "static",
   composing = false,
   pokeable = false,
+  workingDot,
 }: {
   color: string;
   size?: number;
@@ -269,6 +331,7 @@ function LegacyBotAvatar({
   composing?: boolean;
   /** A tap plays a little reaction (the activity mark). */
   pokeable?: boolean;
+  workingDot?: boolean;
 }) {
   const tokens = useMobileTokens();
   const state = avatarLifeState(status, composing);
@@ -332,7 +395,11 @@ function LegacyBotAvatar({
       {parsed.kind !== "image" && clock !== "still" ? (
         <ThinkingDots color={fillColor} size={size} life={life} />
       ) : null}
-      {isWorking ? <WorkingDot size={size} muted={muted} /> : null}
+      {workingDot !== undefined ? (
+        <FadingWorkingDot visible={workingDot} size={size} muted={muted} />
+      ) : isWorking ? (
+        <WorkingDot size={size} muted={muted} />
+      ) : null}
       {muted ? <MutedBadge size={size} /> : null}
     </View>
   );

@@ -71,6 +71,15 @@ export function midTurnProgressBudgetUsed(publishedCount: number): boolean {
 }
 
 /**
+ * `RAKAZO_OPENING_ACKNOWLEDGEMENT=1` turns on live narration in chat mode: the bot opens a
+ * tool-using turn with one sentence on what it is about to do, posted at once, and labels each
+ * later step with a short status shown only as the working line.
+ */
+export function openingAcknowledgementEnabled(): boolean {
+  return process.env.RAKAZO_OPENING_ACKNOWLEDGEMENT?.trim() === "1";
+}
+
+/**
  * The message_user cap: `RAKAZO_MESSAGE_USER_MAX_CHARS` when it is a positive integer,
  * else USER_PROGRESS_MESSAGE_MAX_LENGTH.
  */

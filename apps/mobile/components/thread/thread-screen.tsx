@@ -1,10 +1,12 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import type { AgentSkillCatalogEntry } from "@rakazo/contracts";
+import type { HeldActivityLine } from "@rakazo/core";
 import {
   buildComposerMentionOptions,
   channelMessageSender,
   chatUserBubbleColors,
+  heldActivityLine,
   isRunWaitingOnUser,
   isRunWorking,
   liveActivityLine,
@@ -13,6 +15,7 @@ import {
   newestPageCards,
   otherAuthor,
   displayName as safeDisplayName,
+  threadRunWorking,
   workingRoutineName,
 } from "@rakazo/core";
 import { useFocusEffect, useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
@@ -263,6 +266,17 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     snap && (!showingSaved || error)
       ? snap.run?.status
       : (titleBot?.threadStatus ?? snap?.run?.status);
+  // The title's working dot follows the thread's own runs, so writing the reply (which hides
+  // the bot-status dot) or a settled latest run beside newer work never hides it.
+  const threadWorking =
+    !inGroup &&
+    threadRunWorking(
+      currentBotStatus,
+      snap && (!showingSaved || error)
+        ? (snap.activeRuns ?? (snap.run ? [snap.run] : []))
+        : undefined,
+      botId,
+    );
   // The group's members in its order, once the chat or its group list has loaded them; the
   // title seats the inbox's copy until then.
   const groupMembers = threadGroupMembers(groupId, snap, mentionGroups);
@@ -270,7 +284,17 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
   const hasLiveProgress = visibleMessages.some(
     (message) => message.id.startsWith("progress:") && liveMessageComposing(message.blocks),
   );
-  const activityLine = liveActivityLine(snap?.messages ?? []);
+  // The bot's last status stays up between steps, until the next one or the end of its run.
+  // It belongs to the runs that were working: another chat's or a finished peer's never shows.
+  const lastActivityLine = useRef<HeldActivityLine | undefined>(undefined);
+  lastActivityLine.current = heldActivityLine(
+    lastActivityLine.current,
+    liveActivityLine(snap?.messages ?? []),
+    [...(snap?.activeRuns ?? []), ...(snap?.run ? [snap.run] : [])]
+      .filter((run) => isRunWorking(run.status))
+      .map((run) => run.id),
+  );
+  const activityLine = lastActivityLine.current.line;
   const workingRoutine = workingRoutineName(snap?.activeRuns ?? (snap?.run ? [snap.run] : []));
   const userBubble = useMemo(
     () =>
@@ -331,6 +355,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     titleName,
     groupMembers,
     currentBotStatus,
+    working: threadWorking,
     composingBots,
     onCleared: history.clear,
   });
@@ -508,14 +533,15 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
   });
 
   const workingBots =
-    !inGroup && titleBot && isRunWorking(currentBotStatus) && !hasLiveProgress
+    !inGroup && titleBot && threadWorking && !hasLiveProgress
       ? [
           {
             id: titleBot.id,
             name: titleBot.name,
             color: titleBot.color,
             avatarSet: titleBot.avatarSet,
-            status: currentBotStatus,
+            // The footer follows the same work as the header dot, even beside a settled run.
+            status: isRunWorking(currentBotStatus) ? currentBotStatus : "running",
           },
         ]
       : inGroup

@@ -20,6 +20,11 @@ export type ChatTitle = {
   bot: MobileBot | SpaceBot | undefined;
   status: string | undefined;
   composing: boolean;
+  /**
+   * Whether the open chat's thread has a run at work, read from its own runs. Unset until the
+   * chat publishes, when the avatar falls back to the bot's status.
+   */
+  working?: boolean;
   /** The chat's name, or undefined while only a placeholder is known. */
   name: string | undefined;
   /** Where tapping the title goes, or null when it opens nothing. */
@@ -106,7 +111,12 @@ export function ChatHeaderTitle({
     >
       <GlassSurface style={styles.titleCapsule} fallbackStyle={styles.titleCapsuleFill}>
         {!inGroup && params.botId ? (
-          <ChatTitleAvatar bot={title.bot} status={title.status} composing={title.composing} />
+          <ChatTitleAvatar
+            bot={title.bot}
+            status={title.status}
+            composing={title.composing}
+            working={title.working}
+          />
         ) : null}
         {inGroup ? <GroupSeats members={members ?? []} size={CHAT_TITLE_AVATAR_SIZE} /> : null}
         <ChatTitleLabel label={label} placeholder={!title.name} style={styles.title} />
