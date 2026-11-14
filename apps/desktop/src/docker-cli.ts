@@ -229,7 +229,7 @@ function directArguments(args: readonly string[]): string[] | undefined {
 
 /**
  * Runs the docker CLI with a fixed argv (never a shell), a bounded lifetime, and
- * process-group termination on timeout or abort. Mirrors the sandbox adapter's runCommand.
+ * process-group termination on timeout or abort.
  */
 export function runDocker(
   binary: string,
