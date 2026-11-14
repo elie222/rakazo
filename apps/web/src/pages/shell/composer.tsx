@@ -898,8 +898,13 @@ const ComposerBody = memo(function Composer({
           talkDisabled={disabled || onCall}
           sendDisabled={sending || !canSend || disabled}
           stopDisabled={sending}
+          canSend={canSend}
           sendColors={sendColors}
-          onSend={() => void send()}
+          onSend={() => {
+            void send();
+            // While a bot works the button turns back into Stop; keep typing where the words were.
+            if (running) textareaRef.current?.focus({ preventScroll: true });
+          }}
           onStop={() => void onStop()}
         />
       </div>

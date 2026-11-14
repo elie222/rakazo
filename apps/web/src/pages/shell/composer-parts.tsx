@@ -169,7 +169,11 @@ export function SlashPicker({
   );
 }
 
-/** Hold-to-talk, Send, and while a reply runs, Stop. */
+/**
+ * Hold-to-talk and Send. While a reply runs, Send and Stop share one button: Stop, which turns
+ * into Send once there is something to steer the bot with, and back after it is sent. It stays one
+ * element, so keyboard focus stays on it as it switches.
+ */
 export function ComposerActions({
   actionsRef,
   expanded,
@@ -179,6 +183,7 @@ export function ComposerActions({
   talkDisabled,
   sendDisabled,
   stopDisabled,
+  canSend,
   sendColors,
   onSend,
   onStop,
@@ -192,6 +197,8 @@ export function ComposerActions({
   talkDisabled: boolean;
   sendDisabled: boolean | undefined;
   stopDisabled: boolean;
+  /** The draft holds something to send (text, a skill or an attachment). */
+  canSend: boolean;
   /** The bot's color, as your messages to it wear it; the send button matches them. */
   sendColors?: { background: string; foreground: string };
   onSend: () => void;
@@ -220,24 +227,28 @@ export function ComposerActions({
         <>
           {showTalk ? <HoldToTalkControls talk={talk} disabled={talkDisabled} /> : null}
           <Button
+            variant={canSend ? "default" : "outline"}
             size="icon"
-            aria-label={t`Send`}
-            disabled={sendDisabled}
-            onClick={onSend}
-            style={sendStyle}
-            className={sendClassName}
+            aria-label={canSend ? t`Send` : t`Stop`}
+            disabled={canSend ? sendDisabled : stopDisabled}
+            onClick={canSend ? onSend : onStop}
+            style={canSend ? sendStyle : undefined}
+            className={
+              canSend
+                ? sendClassName
+                : "size-8 rounded-full border border-border bg-muted text-foreground/80 shadow-sm transition-colors hover:bg-accent hover:text-foreground"
+            }
           >
-            <ArrowUp size={16} strokeWidth={2.2} />
-          </Button>
-          <Button
-            variant="outline"
-            size="icon"
-            aria-label={t`Stop`}
-            disabled={stopDisabled}
-            onClick={onStop}
-            className="size-8 rounded-full border border-border bg-muted text-foreground/80 shadow-sm transition-colors hover:bg-accent hover:text-foreground"
-          >
-            <Square size={11} strokeWidth={0} fill="currentColor" />
+            <span
+              key={canSend ? "send" : "stop"}
+              className="grid place-items-center animate-in fade-in-0 zoom-in-75 duration-150 motion-reduce:animate-none"
+            >
+              {canSend ? (
+                <ArrowUp size={16} strokeWidth={2.2} />
+              ) : (
+                <Square size={11} strokeWidth={0} fill="currentColor" />
+              )}
+            </span>
           </Button>
         </>
       ) : (
