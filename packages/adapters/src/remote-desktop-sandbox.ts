@@ -442,7 +442,8 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
             signal: context.signal,
           }),
         );
-      } catch {
+      } catch (error) {
+        if (isSandboxGoneError(error) || isSandboxUnsafeStopError(error)) throw error;
         throw new Error("Could not transfer browser input");
       }
       context.signal.throwIfAborted();
@@ -450,7 +451,8 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
       let result: CommandResult;
       try {
         result = await this.run(computer, page.run(command), { timeoutMs });
-      } catch {
+      } catch (error) {
+        if (isSandboxGoneError(error) || isSandboxUnsafeStopError(error)) throw error;
         context.signal.throwIfAborted();
         // The bot gets the page tools' own failure, never the provider's error text.
         throw new Error("Page browser unavailable or interrupted");
@@ -462,7 +464,10 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
       for (let attempt = 0; attempt < 2 && !cleaned; attempt++) {
         cleaned = await this.run(computer, page.cleanup, { timeoutMs: 10_000 }).then(
           (result) => result.exitCode === 0,
-          () => false,
+          (error) => {
+            if (isSandboxGoneError(error) || isSandboxUnsafeStopError(error)) throw error;
+            return false;
+          },
         );
       }
       if (!cleaned)

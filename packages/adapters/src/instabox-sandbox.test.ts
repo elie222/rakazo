@@ -530,6 +530,36 @@ describe("instabox page tools", () => {
     expect(pageFiles(emulator, computer.id)).toEqual([]);
   });
 
+  it.each(["transfer", "command", "cleanup"])(
+    "preserves a lost computer during page %s",
+    async (stage) => {
+      const { emulator, provider, computer } = await started();
+      emulator.pageBrowser = () => ({ exitCode: 0, stdout: JSON.stringify({ ok: true }) });
+      if (stage === "transfer") {
+        emulator.onWrite = () => {
+          emulator.computers.delete(computer.id);
+        };
+      } else {
+        emulator.fails = (command) => {
+          if (
+            stage === "command"
+              ? command.includes("exec 0<")
+              : command.startsWith("rm -f -- '/tmp/rakazo-page-input-")
+          ) {
+            throw Object.assign(new Error("sandbox no longer exists"), {
+              name: "SandboxNotFoundError",
+            });
+          }
+          return false;
+        };
+      }
+      const failure = await provider.pageBrowser!(computer, fill, ctx).catch(
+        (error: unknown) => error,
+      );
+      expect(isSandboxGoneError(failure)).toBe(true);
+    },
+  );
+
   it("passes a page request on stdin from a private file, never on a command line", async () => {
     const { emulator, provider, computer } = await started();
     const received: unknown[] = [];
