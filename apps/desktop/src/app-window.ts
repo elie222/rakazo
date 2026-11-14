@@ -2,10 +2,11 @@ import { existsSync } from "node:fs";
 import { readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { Session } from "electron";
-import { app, BrowserWindow, ipcMain, net, screen, session, shell } from "electron";
+import { app, BrowserWindow, ipcMain, Menu, net, screen, session, shell } from "electron";
 import type { AppDocumentState } from "./app-document-state.js";
 import { waitForMountedAppDocument } from "./app-document-state.js";
 import { LAUNCH_CHECK_DELAY_MS } from "./auto-update.js";
+import { contextMenuTemplate } from "./context-menu.js";
 import { appWindowTargets, desktop } from "./desktop-state.js";
 import { t, withDetail } from "./i18n.js";
 import { reportDesktopError } from "./monitoring.js";
@@ -195,6 +196,9 @@ export function createWindow(url: string, partition: string | null) {
     const external = safeExternalUrl(event.url);
     if (external !== null) void shell.openExternal(external);
   };
+  win.webContents.on("context-menu", (_event, params) => {
+    Menu.buildFromTemplate(contextMenuTemplate(params)).popup({ window: win });
+  });
   win.webContents.on("will-navigate", keepOnAppOrigin);
   win.webContents.on("will-redirect", keepOnAppOrigin);
   // The popup has no address bar, so a loopback redirect would otherwise strand

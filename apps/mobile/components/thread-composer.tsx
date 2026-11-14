@@ -243,6 +243,8 @@ export function ThreadComposer({
       pendingNativeEdit.current = null;
     },
     insert: (text) => {
+      // A delayed selection must not replay the edit from before the share.
+      pendingNativeEdit.current = null;
       const current = draftRef.current;
       draftRef.current = current ? `${current}\n${text}` : text;
       setDraft(draftRef.current);

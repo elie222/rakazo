@@ -6,6 +6,7 @@ import {
   captureScreenshot,
   completeOnboarding,
   openBotPanelTab,
+  openEmailSignIn,
   realSandboxTimeout,
   rpc,
   signup,
@@ -344,6 +345,12 @@ test("sign-in, spawn, and stop work in the shell", async ({ page }, testInfo) =>
     if (message.type() === "error") browserErrors.push(message.text());
   });
   page.on("requestfailed", (request) => {
+    // Leaving a page closes the live streams it held open.
+    if (
+      request.url().includes("/rpc/notifications/subscribe") &&
+      request.failure()?.errorText === "net::ERR_ABORTED"
+    )
+      return;
     failedRequests.push(
       `${request.method()} ${request.url()} ${request.failure()?.errorText ?? ""}`,
     );
@@ -431,6 +438,7 @@ test("sign-in, spawn, and stop work in the shell", async ({ page }, testInfo) =>
 
   await page.context().clearCookies();
   await page.goto("/sign-in");
+  await openEmailSignIn(page);
   await page.getByPlaceholder("Your email address").fill(email);
   await page.getByPlaceholder("Password").fill("password12");
   await page.getByRole("button", { name: "Sign in", exact: true }).click();

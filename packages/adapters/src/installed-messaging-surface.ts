@@ -8,6 +8,7 @@ import type {
   MessagingSendRequest,
   MessagingSurface,
 } from "@rakazo/adapter-kit";
+import { MessagingSendError } from "./chat-sdk-surface.js";
 import { credentialDigest } from "./credential-digest.js";
 
 type CachedSurface = {
@@ -168,13 +169,17 @@ export class InstalledMessagingSurface implements MessagingSurface {
     };
   }
 
+  /** A workspace that was removed, or is not this caller's, never takes a send: no retry helps. */
   private authorize(installation: MessagingInstallation | null, context: AdapterContext) {
     if (
       !installation ||
       installation.provider !== this.provider.provider ||
       (context.spaceId && installation.spaceId !== context.spaceId)
     )
-      throw new Error("Messaging workspace unavailable");
+      throw new MessagingSendError(new Error("Messaging workspace unavailable"), {
+        permanent: true,
+        retryAfterMs: null,
+      });
   }
 
   private async withSurface<T>(

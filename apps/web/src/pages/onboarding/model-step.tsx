@@ -1,9 +1,8 @@
 import { Plural, Trans, useLingui } from "@lingui/react/macro";
-import type { ThinkingLevel } from "@rakazo/contracts";
 import {
   Button,
+  Disclosure,
   Input,
-  ModelThinkingOptions,
   Select,
   SelectContent,
   SelectGroup,
@@ -255,31 +254,19 @@ function CompatibleServerFields({ model, fieldId }: { model: OnboardingModel; fi
   const { t } = useLingui();
   const {
     baseUrl,
-    contextWindow,
     headerRows,
     invalidatePreflight,
     manualModelId,
-    maxImagesPerPrompt,
-    maxTokens,
     modelId,
     preflightFailure,
     preflightTarget,
     probeModels,
     probeServerModels,
     probing,
-    reasoning,
     resetOpenAiCompatibleProbe,
-    setContextWindow,
     setHeaderRows,
     setManualModelId,
-    setMaxImagesPerPrompt,
-    setMaxTokens,
     setModelId,
-    setReasoning,
-    setSupportsImages,
-    setThinkingLevel,
-    supportsImages,
-    thinkingLevel,
     updateBaseUrl,
   } = model;
 
@@ -352,39 +339,7 @@ function CompatibleServerFields({ model, fieldId }: { model: OnboardingModel; fi
           </Button>
         ) : null}
       </div>
-      <ModelThinkingOptions
-        reasoning={reasoning}
-        onReasoningChange={(value) => {
-          setReasoning(value);
-          if (!value) setThinkingLevel(null);
-        }}
-        advancedLabel={t`Advanced`}
-        thinkingLabel={t`Supports thinking`}
-        thinkingLevel={thinkingLevel}
-        onThinkingLevelChange={(value) => setThinkingLevel(value as ThinkingLevel | null)}
-        thinkingLevelOptions={[
-          { value: "minimal", label: t`Minimal` },
-          { value: "low", label: t`Low` },
-          { value: "medium", label: t`Medium` },
-          { value: "high", label: t`High` },
-          { value: "xhigh", label: t`Extra high` },
-          { value: "max", label: t`Max` },
-        ]}
-        thinkingLevelLabel={t`Reasoning effort`}
-        thinkingLevelDefaultLabel={t`Default`}
-        maxTokens={maxTokens}
-        onMaxTokensChange={setMaxTokens}
-        maxTokensLabel={t`Maximum output tokens`}
-        contextWindow={contextWindow}
-        onContextWindowChange={setContextWindow}
-        contextWindowLabel={t`Context limit`}
-        supportsImages={supportsImages}
-        onSupportsImagesChange={setSupportsImages}
-        imagesLabel={t`Supports images`}
-        maxImagesPerPrompt={maxImagesPerPrompt}
-        onMaxImagesPerPromptChange={setMaxImagesPerPrompt}
-        maxImagesLabel={t`Maximum images per request`}
-      >
+      <Disclosure className="mt-4 text-body text-muted-foreground" summary={t`Advanced`}>
         <ModelHeadersEditor
           rows={headerRows}
           onChange={(rows) => {
@@ -393,7 +348,7 @@ function CompatibleServerFields({ model, fieldId }: { model: OnboardingModel; fi
             invalidatePreflight();
           }}
         />
-      </ModelThinkingOptions>
+      </Disclosure>
     </div>
   );
 }

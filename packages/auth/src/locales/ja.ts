@@ -25,26 +25,26 @@ export const JA_MESSAGES: Record<string, string> = {
   "Enter this code in Rakazo to confirm it's you:":
     "ご本人であることを確認するには、Rakazoで次のコードを入力してください:",
   "Welcome to Rakazo": "Rakazoへようこそ",
-  "Thanks for signing up for Rakazo.": "Rakazoにご登録いただきありがとうございます。",
-  "Rakazo also has apps for": "Rakazoには次のアプリもあります:",
-  "Questions or ideas?": "ご質問やアイデアはありますか？",
-  "Join us on Discord": "Discordに参加する",
-  "Rakazo is open source. If you like it,": "Rakazoはオープンソースです。気に入っていただけたら、",
-  "a star on GitHub": "GitHubでのスター",
-  "helps others find it.": "が、ほかの人に見つけてもらう助けになります。",
-  "Want to run it on your own servers?": "自分のサーバで動かしたいですか？",
-  "Self-host Rakazo": "Rakazoをセルフホストする",
-  "Have any questions? Reply to this email.": "ご質問があれば、このメールに返信してください。",
+  "Welcome to Rakazo. The people who get the most out of it do three things:":
+    "Rakazo へようこそ。Rakazo を最大限に活用している人は、次の 3 つをしています。",
+  "Get the apps": "アプリを入手する",
+  "Rakazo runs on {platforms}, so your bots can reach you wherever you are.":
+    "Rakazo は {platforms} で使えるので、ボットはどこにいてもあなたに連絡できます。",
+  "Join the community": "コミュニティに参加する",
+  "See what others are building, get help fast, and tell us what to build next on {discord}.":
+    "{discord} で、ほかの人が作っているものを見たり、すぐに助けを得たり、次に作ってほしいものを教えてください。",
+  "Star us on GitHub": "GitHub でスターを付ける",
+  "Rakazo is open source. {star} helps more people find it.":
+    "Rakazo はオープンソースです。{star} は、より多くの人が Rakazo を見つける助けになります。",
+  "A star on GitHub": "GitHub のスター",
+  "Questions? Just reply. I read every one.":
+    "質問があれば、このメールに返信してください。すべて読んでいます。",
   Unsubscribe: "配信停止",
   "Invite a friend": "友だちを招待",
   "Invite a friend to Rakazo: they get {weeks} weeks free, and you earn a free month when they start a qualifying subscription with a new card.":
     "友だちをRakazoに招待しましょう。友だちは{weeks}週間無料で使え、新しいカードで対象のサブスクリプションを始めると、あなたは1か月無料になります。",
   "Open Rakazo": "Rakazoを開き",
   "and choose Invite friends for your link.": "「友だちを招待」を選ぶとリンクを取得できます。",
-  "Have any questions? Just reply to this email.":
-    "ご質問があれば、このメールに返信するだけでOKです。",
-  "If you're enjoying Rakazo,": "Rakazoを気に入っていただけたら、",
-  "give us a star on GitHub": "GitHubでスターをお願いします",
   "We received your Rakazo plugin": "Rakazoプラグインを受け付けました",
   "Thanks for submitting a plugin to the Rakazo marketplace.":
     "Rakazoマーケットプレイスにプラグインを申請いただきありがとうございます。",

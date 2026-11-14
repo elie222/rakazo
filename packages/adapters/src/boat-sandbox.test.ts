@@ -671,8 +671,22 @@ describe("BoatSandboxProvider", () => {
       throw boatError(409, "sandbox_resuming", "A resume for this sandbox is already in progress.");
     });
 
-    expect(await provider.readFile(computer, "kept.txt", context)).toEqual(Uint8Array.of(1));
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
+    try {
+      expect(await provider.readFile(computer, "kept.txt", context)).toEqual(Uint8Array.of(1));
+    } finally {
+      installLogger(createLogger({ service: "test", level: "off", sinks: [] }));
+    }
     expect(resume).toHaveBeenCalledOnce();
+    expect(sink.events).toEqual([
+      expect.objectContaining({
+        level: "info",
+        message: "sandbox.start",
+        operation: "resume",
+        outcome: "in_progress",
+      }),
+    ]);
   });
 
   it("retries a request that never reached Boat once, whatever the call", async () => {

@@ -73,7 +73,11 @@ describe("unsafe computer stop", () => {
       return { count: 1 };
     });
     const prisma = {
-      computer: { updateMany, findUniqueOrThrow: vi.fn(async () => computer) },
+      computer: {
+        updateMany,
+        findMany: vi.fn(async () => []),
+        findUniqueOrThrow: vi.fn(async () => computer),
+      },
     } as unknown as PrismaClient;
     const handle = {
       wait: vi.fn(() => new Promise(() => undefined)),

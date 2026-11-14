@@ -1,5 +1,5 @@
 import { useLingui } from "@lingui/react/macro";
-import type { BotAvatarSet, SpaceMemoryConfig, UsageSummary } from "@rakazo/contracts";
+import type { BotAvatarSet, LabFeature, SpaceMemoryConfig, UsageSummary } from "@rakazo/contracts";
 import {
   Button,
   Dialog,
@@ -26,6 +26,7 @@ import {
   UsageSettingsPanel,
 } from "./AccountSettingsOverlay";
 import { BillingSettingsPanel } from "./BillingSettingsPanel";
+import { LabsSettingsPanel } from "./LabsSettingsPanel";
 import { MemorySettingsOverlay } from "./MemorySettingsOverlay";
 import { MessagingSettingsPanel } from "./MessagingSettingsPanel";
 import { ModelSettingsOverlay } from "./ModelSettingsOverlay";
@@ -56,6 +57,9 @@ export function SettingsOverlay({
   onBotAvatarSetChange,
   onAccountImported,
   onImportAgent,
+  labs,
+  labsAvailable,
+  onLabsChange,
   billingEnabled = false,
   sandboxProvider,
   onSandboxProviderChange,
@@ -89,6 +93,10 @@ export function SettingsOverlay({
   onBotAvatarSetChange?: (set: BotAvatarSet) => Promise<void>;
   onAccountImported?: () => Promise<void>;
   onImportAgent?: () => void;
+  labs: readonly LabFeature[];
+  /** The Labs features this account can switch; Labs is hidden when there are none. */
+  labsAvailable: readonly LabFeature[];
+  onLabsChange: (labs: LabFeature[]) => Promise<void>;
   billingEnabled?: boolean;
   sandboxProvider?: string | null;
   onSandboxProviderChange?: (sandboxProvider: string) => void;
@@ -130,13 +138,14 @@ export function SettingsOverlay({
     (requestedSection === "billing" && !billingEnabled) ||
     (requestedSection === "messaging" && !messagingEnabled) ||
     (requestedSection === "wallet" && !paymentWalletProvider) ||
-    (requestedSection === "updates" && !showUpdates)
+    (requestedSection === "updates" && !showUpdates) ||
+    (requestedSection === "labs" && labsAvailable.length === 0)
       ? "general"
       : requestedSection;
   const panelBusy = memoryBusy || voiceBusy;
   // Only a space's own page binds to it; every other section, memory included, acts on the
   // space the app is showing.
-  const spaceId = section === "space" ? (space?.id ?? null) : null;
+  const spaceId = section === "space" ? (space?.id ?? null) : undefined;
   const releaseComputerRecovery = useCallback(() => {
     window.clearTimeout(recoveryHoldTimer.current);
     recoveryHoldTimer.current = undefined;
@@ -169,6 +178,7 @@ export function SettingsOverlay({
     computer: showComputer,
     billing: billingEnabled,
     updates: showUpdates,
+    labs: labsAvailable.length > 0,
   });
 
   useEffect(() => {
@@ -454,6 +464,13 @@ export function SettingsOverlay({
                       onRecoveryDismissed={releaseComputerRecovery}
                       canConfigureComputers={canConfigureComputers}
                       computerSettingsEnabled={computerSettingsEnabled}
+                    />
+                  ) : null}
+                  {section === "labs" ? (
+                    <LabsSettingsPanel
+                      labs={labs}
+                      available={labsAvailable}
+                      onLabsChange={onLabsChange}
                     />
                   ) : null}
                   {section === "billing" && billingEnabled ? (

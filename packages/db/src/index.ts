@@ -16,6 +16,7 @@ export * from "./cancel-runs.js";
 export * from "./chat-alerts.js";
 export * from "./client.js";
 export * from "./computer-runs.js";
+export * from "./computer-update-changes.js";
 export * from "./computers.js";
 export * from "./content-crypto.js";
 export * from "./content-encryption.js";
@@ -25,6 +26,7 @@ export * from "./content-migration.js";
 export * from "./credential-secrets.js";
 export * from "./cross-space-communication.js";
 export * from "./database-access.js";
+export * from "./database-outage.js";
 export * from "./deferred-migrations.js";
 export {
   eventsAfter,
@@ -62,6 +64,7 @@ export * from "./space-members.js";
 export * from "./space-settings.js";
 export * from "./spaces.js";
 export * from "./spending.js";
+export * from "./teaching-recordings.js";
 export * from "./thread-ask.js";
 export { primaryActiveRun } from "./thread-listing.js";
 export * from "./thread-reads.js";

@@ -72,6 +72,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     fonts-dejavu-core \
     fonts-noto-cjk \
     fonts-noto-color-emoji \
+    fonts-thai-tlwg \
     locales \
     dbus-x11 \
     xdg-desktop-portal \

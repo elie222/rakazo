@@ -314,7 +314,7 @@ describe("offline checkout cancellation", () => {
       cancelUrl: "https://example.test/cancel",
     };
     await provider.createByokCheckout({ customerId, amountCents: 4900, ...urls });
-    await provider.createCreditCheckout({ customerId, amountCents: 1000, monthly: true, ...urls });
+    await provider.createCreditCheckout({ customerId, amountCents: 2000, monthly: true, ...urls });
     await provider.cancelCustomerSubscriptions(customerId);
     expect(() => provider.completeByokCheckout(customerId)).toThrow();
     expect(() => provider.completeCreditCheckout(customerId)).toThrow();
