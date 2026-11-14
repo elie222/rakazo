@@ -189,6 +189,30 @@ mounts, for example from a systemd mount unit the share's unit depends on). The 
 exist on the Docker host. Recreate the supervisor after a change; each computer picks the new
 set up on its next provision, which replaces it.
 
+## GPUs for programs
+
+`SANDBOX_COMPUTER_COMPUTE_GPUS` lets programs inside every bot computer compute on the host's
+GPUs (Docker sandboxes only): `all`, or a count such as `1`, with the same meaning as
+`docker run --gpus`. A bot can then run GPU software in its own computer, such as speech
+recognition, image generation or model training. Leave it unset and computers get no GPU.
+
+The Docker host needs a GPU driver that Docker can hand to containers, which for most GPUs
+means installing the vendor's container toolkit and checking that
+`docker run --rm --gpus all <image> <the vendor's status tool>` works. The supervisor asks Docker
+for GPUs without naming a driver, so any driver Docker offers for `--gpus` is used. The computer
+image ships no GPU libraries of its own: the driver adds its own at start, and a bot installs
+the frameworks it needs in its home. When the host cannot provide the GPUs, Docker refuses to
+create the computer and the bot's computer fails to start until the setting or the host is fixed.
+
+Changing the setting replaces each computer the next time it starts; the home is kept. It does
+not change the browser, which keeps rendering pages in software.
+
+WARNING: the setting is deployment-wide, and a GPU is shared hardware. Every bot in every Space
+reaches the host's GPU driver directly, which is a larger attack surface than the rest of the
+sandbox, and nothing limits how much GPU memory or time one computer takes from the others or
+from other GPU software on the host. Enable it only when you trust every bot on the deployment
+with that.
+
 ## Time zone and language
 
 Each computer runs in its owner's time zone and app language when the account has them: the

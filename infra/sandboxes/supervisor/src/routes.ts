@@ -22,6 +22,7 @@ import {
   COMPUTER_UID,
   COMPUTER_USER,
   computerBridgeNameFor,
+  computerComputeGpusMatch,
   computerDnsMatches,
   computerHomeStorage,
   computerMountsMatch,
@@ -38,6 +39,7 @@ import {
   xdotoolCommand,
 } from "./computer-spec.js";
 import {
+  computerComputeGpus,
   computerDns,
   computerMounts,
   controlViaLoopback,
@@ -255,6 +257,8 @@ app.post("/computers", async (c) => {
           computerDnsMatches(info.HostConfig.Dns, computerDns) &&
           // So are host mounts: an added, changed or removed one replaces the computer.
           computerMountsMatch(info, computerMounts) &&
+          // And GPUs: turning them on or off, or changing the count, replaces it too.
+          computerComputeGpusMatch(info.HostConfig.DeviceRequests, computerComputeGpus) &&
           // So are the owner's time zone and language.
           computerLocaleMatches(info.Config.Env, locale) &&
           controlPublishOk &&
@@ -320,6 +324,7 @@ app.post("/computers", async (c) => {
           publishControlPort: controlViaLoopback,
           dns: computerDns,
           mounts: computerMounts,
+          computeGpus: computerComputeGpus,
           locale,
         });
         let container: Docker.Container | undefined;
