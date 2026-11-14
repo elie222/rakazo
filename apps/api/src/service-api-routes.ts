@@ -508,25 +508,29 @@ export const SERVICE_HANDLERS: Handlers = {
     const { client, prisma, actor, credential } = context;
     if (!context.bot) throw new ServiceRejection("not_found");
     const botId = context.bot.id;
-    // The computer's state is for keys that may read the computer.
+    // The computer's state is for keys that may read the computer, and runs for keys that may
+    // read conversations.
     const readsComputer = credential.scopes.includes("computer:read");
+    const readsRuns = credential.scopes.includes("conversations:read");
     const [head, computer, runs] = await Promise.all([
       client.threads.head({ botId }),
       readsComputer ? client.computer.status({ botId }) : null,
-      prisma.run.findMany({
-        // Only the creator's runs, as everywhere else a key reads runs.
-        where: { botId, spaceId: actor.spaceId, userId: actor.userId },
-        select: { id: true, status: true },
-        orderBy: [{ createdAt: "desc" }, { id: "asc" }],
-        take: RECENT_RUNS,
-      }),
+      readsRuns
+        ? prisma.run.findMany({
+            // Only the creator's runs, as everywhere else a key reads runs.
+            where: { botId, spaceId: actor.spaceId, userId: actor.userId },
+            select: { id: true, status: true },
+            orderBy: [{ createdAt: "desc" }, { id: "asc" }],
+            take: RECENT_RUNS,
+          })
+        : null,
     ]);
     return {
       botId,
       name: context.bot.name,
       threadId: head.threadId,
       cursor: head.cursor,
-      runs,
+      ...(runs ? { runs } : {}),
       ...(computer
         ? { computer: { state: computer.state, screenAvailable: computer.screenAvailable } }
         : {}),
