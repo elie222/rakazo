@@ -163,10 +163,6 @@ export function formatGithubEventPrompt(event: string, payload: Record<string, u
   ].join("\n");
 }
 
-export function githubWebhookPath(botId: string): string {
-  return `/api/v1/bots/${botId}/github`;
-}
-
 export function mountGithubWebhookRoute(
   app: Hono,
   deps: WebhookDeps,

@@ -290,5 +290,3 @@ export function createAgentSkillsService(prisma: PrismaClient) {
     },
   };
 }
-
-export type AgentSkillsService = ReturnType<typeof createAgentSkillsService>;
