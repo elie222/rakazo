@@ -24,24 +24,32 @@ export default function ComputersSettings() {
   const styles = useThemedStyles(createStyles);
   const { t } = useLingui();
   const loadGeneration = useRef(0);
+  const visit = useRef(0);
+  const focused = useRef(false);
+  const pendingRef = useRef(false);
+  const removing = useRef(new Set<string>());
   const [devices, setDevices] = useState<UserDeviceSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
-  const load = useCallback(async () => {
-    loadGeneration.current += 1;
-    const generation = loadGeneration.current;
-    try {
-      const listed = await listUserDevices();
-      if (generation !== loadGeneration.current) return;
-      setDevices(listed);
-      setError(null);
-    } catch (cause) {
-      if (generation !== loadGeneration.current) return;
-      setError(errorText(cause, t`Could not load`));
-    }
-  }, [t]);
+  const load = useCallback(
+    async (preserveError = false) => {
+      loadGeneration.current += 1;
+      const generation = loadGeneration.current;
+      try {
+        const listed = await listUserDevices();
+        if (generation !== loadGeneration.current) return;
+        setDevices(listed.filter((device) => !removing.current.has(device.deviceId)));
+        if (!preserveError) setError(null);
+      } catch (cause) {
+        if (generation !== loadGeneration.current) return;
+        const message = errorText(cause, t`Could not load`);
+        setError((current) => (preserveError && current ? current : message));
+      }
+    },
+    [t],
+  );
 
   async function refresh() {
     setRefreshing(true);
@@ -51,16 +59,20 @@ export default function ComputersSettings() {
 
   useFocusEffect(
     useCallback(() => {
+      focused.current = true;
       void load();
       return () => {
+        focused.current = false;
+        visit.current += 1;
         loadGeneration.current += 1;
+        pendingRef.current = false;
         setPending(false);
       };
     }, [load]),
   );
 
   function confirmRemove(device: UserDeviceSummary) {
-    if (pending) return;
+    if (pendingRef.current) return;
     Alert.alert(
       t`Remove ${device.name}?`,
       t`This computer will stop running bots for your account`,
@@ -76,21 +88,25 @@ export default function ComputersSettings() {
   }
 
   async function revoke(device: UserDeviceSummary) {
-    if (pending) return;
+    if (pendingRef.current) return;
+    const startedVisit = visit.current;
+    pendingRef.current = true;
+    removing.current.add(device.deviceId);
+    loadGeneration.current += 1;
     setPending(true);
     setError(null);
     setDevices((current) => current?.filter((item) => item.deviceId !== device.deviceId) ?? null);
     try {
       await removeUserDevice(device.deviceId);
     } catch (cause) {
-      setDevices((current) => {
-        if (!current) return [device];
-        if (current.some((item) => item.deviceId === device.deviceId)) return current;
-        return [...current, device];
-      });
-      setError(errorText(cause, t`Could not remove`));
+      if (visit.current === startedVisit) setError(errorText(cause, t`Could not remove`));
     } finally {
-      setPending(false);
+      removing.current.delete(device.deviceId);
+      if (visit.current === startedVisit) {
+        pendingRef.current = false;
+        setPending(false);
+      }
+      if (focused.current) void load(true);
     }
   }
 
@@ -110,17 +126,20 @@ export default function ComputersSettings() {
         ) : null}
         {devices?.length ? (
           <SettingsGroup>
-            {devices.map((device) => (
-              <SettingsRow
-                key={device.deviceId}
-                accessibilityRole="button"
-                accessibilityLabel={t`Remove ${device.name}`}
-                disabled={pending}
-                onPress={() => confirmRemove(device)}
-                title={device.name}
-                value={device.connected ? t`Connected` : t`Offline`}
-              />
-            ))}
+            {devices.map((device) => {
+              const status = device.connected ? t`Connected` : t`Offline`;
+              return (
+                <SettingsRow
+                  key={device.deviceId}
+                  accessibilityRole="button"
+                  accessibilityLabel={t`Remove ${device.name}, ${status}`}
+                  disabled={pending}
+                  onPress={() => confirmRemove(device)}
+                  title={device.name}
+                  value={status}
+                />
+              );
+            })}
           </SettingsGroup>
         ) : null}
         {error ? (
