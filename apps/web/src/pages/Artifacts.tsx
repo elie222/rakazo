@@ -152,15 +152,17 @@ export function ArtifactsPage() {
 
   const filteredItems = useMemo(() => {
     if (!items) return null;
+    const now = new Date();
     const query = searchQuery.trim().toLowerCase();
     return items.filter((item) => {
-      if (!matchesCalendarDateFilter(item.createdAt, dateFilter, today)) return false;
+      if (!matchesCalendarDateFilter(item.createdAt, dateFilter, now)) return false;
       if (!query) return true;
       return (
         item.name.toLowerCase().includes(query) ||
         (item.description?.toLowerCase().includes(query) ?? false)
       );
     });
+    // biome-ignore lint/correctness/useExhaustiveDependencies: The midnight tick invalidates cached date filters.
   }, [items, searchQuery, dateFilter, today]);
 
   const clientFilterActive = searchQuery.trim().length > 0 || dateFilter !== "all";
