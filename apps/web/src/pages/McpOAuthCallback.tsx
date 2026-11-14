@@ -2,7 +2,7 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import { Button } from "@rakazo/ui-web";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { MCP_OAUTH_CHANNEL } from "../lib/mcp-connect";
+import { isMcpOAuthPopupWindow, MCP_OAUTH_CHANNEL } from "../lib/mcp-connect";
 import { rpc } from "../lib/rpc";
 import { errorText } from "../lib/user-error";
 
@@ -33,7 +33,7 @@ export function McpOAuthCallbackPage() {
         const channel = new BroadcastChannel(POPUP_NAME);
         channel.postMessage({ type: "mcp-oauth-complete" });
         channel.close();
-        if (window.name === POPUP_NAME) {
+        if (isMcpOAuthPopupWindow(window.name)) {
           setDone(true);
           window.close();
           return;
@@ -42,7 +42,7 @@ export function McpOAuthCallbackPage() {
       })
       .catch((err: unknown) => setError(errorText(err, t`Could not complete OAuth`)));
   }, [navigate, params, t]);
-  const showReturn = Boolean(error) && window.name !== POPUP_NAME;
+  const showReturn = Boolean(error) && !isMcpOAuthPopupWindow(window.name);
   return (
     <div className="grid min-h-screen place-items-center bg-background p-6 text-center">
       <div>

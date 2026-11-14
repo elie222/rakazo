@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 const OAUTH_POPUP_NAMES = new Set([
   "rakazo-app-connect",
   "rakazo-mcp-oauth",
@@ -5,6 +7,29 @@ const OAUTH_POPUP_NAMES = new Set([
   "rakazo-model-oauth",
   "rakazo-plugin-connect",
 ]);
+
+/** An MCP sign-in window's name carries the server it belongs to after this prefix. */
+const MCP_OAUTH_POPUP_PREFIX = "rakazo-mcp-oauth:";
+
+/** A server id from an MCP sign-in window name; null for the shared browser name. */
+export function mcpOAuthPopupServerId(frameName: string): string | null {
+  if (!frameName.startsWith(MCP_OAUTH_POPUP_PREFIX)) return null;
+  const serverId = frameName.slice(MCP_OAUTH_POPUP_PREFIX.length);
+  return isMcpOAuthServerId(serverId) ? serverId : null;
+}
+
+export function isMcpOAuthServerId(value: unknown): value is string {
+  return typeof value === "string" && /^[a-zA-Z0-9_-]{1,64}$/.test(value);
+}
+
+/** One persistent cookie jar per connected instance and server. */
+export function mcpOAuthPartition(appUrl: string, serverId: string) {
+  const digest = createHash("sha256")
+    .update(JSON.stringify([new URL(appUrl).origin, serverId]))
+    .digest("hex")
+    .slice(0, 24);
+  return `persist:rakazo-mcp-${digest}`;
+}
 
 export function shouldOpenInAppPopup(
   appOrigin: string | null,
@@ -22,7 +47,10 @@ export function shouldOpenInAppPopup(
 
   const isHttp = target.protocol === "http:" || target.protocol === "https:";
   if (appOrigin !== null && target.origin === appOrigin) return isHttp;
-  return target.protocol === "https:" && OAUTH_POPUP_NAMES.has(frameName);
+  return (
+    target.protocol === "https:" &&
+    (OAUTH_POPUP_NAMES.has(frameName) || mcpOAuthPopupServerId(frameName) !== null)
+  );
 }
 
 /** Keep auth cookies in the parent app's server-specific session. */

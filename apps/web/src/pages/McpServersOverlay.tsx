@@ -31,6 +31,7 @@ import {
   useOwnSpaces,
 } from "../components/integrations/space-availability";
 import { McpServerHealthLine } from "../components/McpServerHealthLine";
+import { desktopBridge } from "../lib/desktop";
 import { connectMcpOauth, MCP_OAUTH_CHANNEL } from "../lib/mcp-connect";
 import { useSpaceQueries } from "../lib/query";
 import { rpc } from "../lib/rpc";
@@ -103,6 +104,8 @@ export function McpServersOverlay({
   const botsQuery = useQuery(botsOptions);
   const assignmentsOptions = queries.mcp.assignments.all.queryOptions();
   const assignmentsQuery = useQuery(assignmentsOptions);
+  /** The desktop shell gives every server its own browser; a browser shares one. */
+  const mcpBrowser = desktopBridge()?.mcpBrowser;
   const servers = serversQuery.data ?? [];
   const spaceCount = useOwnSpaces().length;
   const bots = useMemo(
@@ -289,6 +292,8 @@ export function McpServersOverlay({
     setError(null);
     try {
       await rpc.mcp.servers.remove({ id: server.id });
+      // A server added again gets a fresh jar anyway; this drops the old one.
+      await mcpBrowser?.clear(server.id).catch(() => undefined);
       if (editing?.id === server.id) resetForm();
       await refresh();
     } catch (err) {
@@ -329,6 +334,27 @@ export function McpServersOverlay({
       await refresh();
     } catch (err) {
       setError(errorDetails(err, t`Could not disconnect OAuth`));
+    } finally {
+      setOauthPending(null);
+    }
+  }
+
+  /**
+   * Starts the server's sign-in from scratch. Disconnecting alone leaves the
+   * provider signed in, so its consent screen offers the same account again;
+   * the stored grant has to go too, or Connect reports "already connected".
+   */
+  async function clearBrowserSignIn(server: McpServer) {
+    if (!mcpBrowser) return;
+    setError(null);
+    setOauthPending(server.id);
+    try {
+      await rpc.mcp.oauth.disconnect({ serverId: server.id });
+      await mcpBrowser.clear(server.id);
+      await refresh();
+      toast.success(t`Browser sign-in cleared`);
+    } catch (err) {
+      setError(errorDetails(err, t`Could not clear the browser sign-in`));
     } finally {
       setOauthPending(null);
     }
@@ -421,6 +447,14 @@ export function McpServersOverlay({
               {oauth && server.oauthStatus !== "none" ? (
                 <DropdownMenuItem disabled={pending} onClick={() => void disconnectOAuth(server)}>
                   <Trans>Disconnect</Trans>
+                </DropdownMenuItem>
+              ) : null}
+              {oauth && mcpBrowser ? (
+                <DropdownMenuItem
+                  disabled={pending}
+                  onClick={() => void clearBrowserSignIn(server)}
+                >
+                  <Trans>Clear browser sign-in</Trans>
                 </DropdownMenuItem>
               ) : null}
               <DropdownMenuSeparator />

@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { oauthPopupSessionPreferences, shouldOpenInAppPopup } from "./window-open.js";
+import {
+  mcpOAuthPartition,
+  mcpOAuthPopupServerId,
+  oauthPopupSessionPreferences,
+  shouldOpenInAppPopup,
+} from "./window-open.js";
 
 const appOrigin = "https://rakazo.example.com";
 
@@ -31,6 +36,47 @@ describe("desktop child windows", () => {
     expect(
       shouldOpenInAppPopup(appOrigin, "http://provider.example.com", "rakazo-model-oauth"),
     ).toBe(false);
+  });
+});
+
+it("keeps a server-named MCP sign-in window in an Electron popup", () => {
+  expect(
+    shouldOpenInAppPopup(
+      appOrigin,
+      "https://provider.example.com/authorize",
+      "rakazo-mcp-oauth:cabc",
+    ),
+  ).toBe(true);
+  expect(
+    shouldOpenInAppPopup(appOrigin, "https://provider.example.com/authorize", "rakazo-mcp-oauth:"),
+  ).toBe(false);
+  expect(
+    shouldOpenInAppPopup(
+      appOrigin,
+      "https://provider.example.com/authorize",
+      "rakazo-mcp-oauth:../other",
+    ),
+  ).toBe(false);
+});
+
+describe("MCP sign-in browsers", () => {
+  it("reads the server from the window name", () => {
+    expect(mcpOAuthPopupServerId("rakazo-mcp-oauth:clx123abc")).toBe("clx123abc");
+    expect(mcpOAuthPopupServerId("rakazo-mcp-oauth")).toBeNull();
+    expect(mcpOAuthPopupServerId("rakazo-mcp-oauth:")).toBeNull();
+    expect(mcpOAuthPopupServerId("rakazo-mcp-oauth:a/b")).toBeNull();
+    expect(mcpOAuthPopupServerId("_blank")).toBeNull();
+  });
+
+  it("gives every server a persistent, opaque jar of its own", () => {
+    const first = mcpOAuthPartition("https://first.example.test", "clx123abc");
+    expect(first).toMatch(/^persist:rakazo-mcp-[0-9a-f]{24}$/);
+    expect(mcpOAuthPartition("https://first.example.test", "clx123abc")).toBe(first);
+    expect(mcpOAuthPartition("https://first.example.test", "clx999xyz")).not.toBe(first);
+    expect(mcpOAuthPartition("https://second.example.test", "clx123abc")).not.toBe(first);
+    expect(mcpOAuthPartition("https://first.example.test:8443", "clx123abc")).not.toBe(first);
+    expect(mcpOAuthPartition("https://first.example.test/settings", "clx123abc")).toBe(first);
+    expect(first).not.toContain("clx123abc");
   });
 });
 

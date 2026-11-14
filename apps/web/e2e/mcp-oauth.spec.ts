@@ -121,6 +121,103 @@ test("connects an MCP server through the OAuth popup callback", async ({ page },
   await captureScreenshot(page, testInfo, "mcp-oauth-expired");
 });
 
+test("clears a server's own browser sign-in where the desktop shell keeps one per server", async ({
+  page,
+}, testInfo) => {
+  await page.addInitScript(() => {
+    const cleared: string[] = [];
+    (window as unknown as { clearedMcpBrowsers: string[] }).clearedMcpBrowsers = cleared;
+    Object.defineProperty(window, "rakazoDesktop", {
+      value: {
+        platform: "darwin",
+        window: {
+          close: async () => {},
+          minimize: async () => {},
+          toggleMaximize: async () => {},
+          state: async () => ({ minimized: false, maximized: false, fullScreen: false }),
+        },
+        oauth: { onCallback: () => () => {} },
+        mcpBrowser: {
+          clear: async (serverId: string) => {
+            cleared.push(serverId);
+          },
+          onOAuthCallback: () => () => {},
+        },
+      },
+    });
+  });
+  const stamp = Date.now();
+  await signup(page, `mcp-clear-${stamp}@rakazo.test`, "password12", "MCP clear");
+  await completeOnboarding(page);
+
+  const server: McpServer = {
+    id: "mcp-clear-server",
+    spaceId: "mcp-clear-workspace",
+    slug: "mobbin",
+    name: "Mobbin MCP",
+    description: "",
+    transport: "streamable_http",
+    endpoint: "https://api.mobbin.com/mcp",
+    command: null,
+    hasArgs: false,
+    envKeys: [],
+    fileKeys: [],
+    headerKeys: [],
+    hasSecret: true,
+    oauthStatus: "connected",
+    oauthClientId: null,
+    enabled: true,
+    verbatimResults: false,
+    revision: 1,
+    health: {
+      status: "ok",
+      message: null,
+      toolCount: 3,
+      checkedAt: "2026-11-07T00:00:00.000Z",
+    },
+    createdAt: "2026-11-07T00:00:00.000Z",
+    updatedAt: "2026-11-07T00:00:00.000Z",
+  };
+  const disconnects: string[] = [];
+  await page.context().route("**/rpc/mcp/servers/list", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ json: [server] }),
+    });
+  });
+  await page.context().route("**/rpc/mcp/assignments/all", async (route) => {
+    await route.fulfill({ contentType: "application/json", body: JSON.stringify({ json: [] }) });
+  });
+  await page.context().route("**/rpc/mcp/oauth/disconnect", async (route) => {
+    const { json } = route.request().postDataJSON() as { json: { serverId: string } };
+    disconnects.push(json.serverId);
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ json: { ok: true } }),
+    });
+  });
+
+  await page.getByRole("button", { name: "Connect apps", exact: true }).click();
+  await openIntegrationsAdd(page, "Manage MCP servers");
+  await expect(page.getByText("Mobbin MCP", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Actions for Mobbin MCP", exact: true }).click();
+  await expect(
+    page.getByRole("menuitem", { name: "Clear browser sign-in", exact: true }),
+  ).toBeVisible();
+  await captureScreenshot(page, testInfo, "mcp-clear-browser-sign-in");
+
+  await page.getByRole("menuitem", { name: "Clear browser sign-in", exact: true }).click();
+  await expect(page.getByText("Browser sign-in cleared", { exact: true })).toBeVisible();
+  await expect.poll(() => disconnects).toEqual([server.id]);
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => (window as unknown as { clearedMcpBrowsers: string[] }).clearedMcpBrowsers,
+      ),
+    )
+    .toEqual([server.id]);
+});
+
 test("adds an MCP server with a pre-registered OAuth client", async ({ page }, testInfo) => {
   const stamp = Date.now();
   await signup(page, `mcp-oauth-client-${stamp}@rakazo.test`, "password12", "MCP OAuth");
