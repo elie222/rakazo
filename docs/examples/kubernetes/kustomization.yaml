@@ -60,3 +60,16 @@ replacements:
         options:
           delimiter: "'"
           index: 1
+  - source:
+      kind: ConfigMap
+      name: rakazo-installation
+      fieldPath: data.PREVIOUS_COMPUTER_IMAGE
+    targets:
+      - select:
+          kind: ValidatingAdmissionPolicy
+          name: rakazo-example-computers
+        fieldPaths:
+          - spec.validations.0.expression
+        options:
+          delimiter: "'"
+          index: 3

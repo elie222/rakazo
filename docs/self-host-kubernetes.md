@@ -370,7 +370,16 @@ until the active release is established; never unset the variable as a shortcut.
 
 For an upgrade, back up PostgreSQL, the data PVC and encryption keys first; test a
 restore. Drain running worker jobs before replacing the worker, as described in
-[upgrading](./self-host-upgrading.md). Update the pinned images. From the example directory, after applying the foundation
+[upgrading](./self-host-upgrading.md). Before changing the pinned images, copy the running release's
+`KUBERNETES_SANDBOX_COMPUTER_IMAGE` into `PREVIOUS_COMPUTER_IMAGE` in
+`installation.env`. Admission then permits both releases during migration and
+rollout, including when either fails. Leave it empty on first install. Retain the
+previous digest until the old API and worker have stopped and the rollback window
+has closed; then clear it and reapply the foundation phase. On rollback, preserve
+both digests while restoring the old app configuration, so either running release
+can still start computers.
+
+Update the pinned images. From the example directory, after applying the foundation
 phase, archive the completed migration Job's logs and remove that Job before
 creating its replacement:
 

@@ -24,7 +24,7 @@ spec:
           - pods/ephemeralcontainers
   validations:
     - expression: object.spec.containers.size() == 1 && object.spec.containers.all(c,
-        c.image == 'REPLACED_BY_KUSTOMIZE')
+        c.image in ['REPLACED_BY_KUSTOMIZE', 'PREVIOUS_IMAGE'])
       message: Computer pod exceeds the example sandbox boundary
     - expression: "!has(object.spec.initContainers) && !has(object.spec.ephemeralContainers)"
       message: Computer pod exceeds the example sandbox boundary

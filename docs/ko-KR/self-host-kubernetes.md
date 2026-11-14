@@ -340,6 +340,13 @@ ConfigMap이나 키가 없으면 보호장치 없이 진행하는 대신 Job이 
 
 업그레이드 전에는 PostgreSQL, 데이터 볼륨, 암호화 키를 백업하고 복원도 시험하세요.
 [업그레이드 안내](../self-host-upgrading.md)에 따라 worker 작업을 마친 뒤 교체합니다.
+이미지를 바꾸기 전에 실행 중인 릴리스의 `KUBERNETES_SANDBOX_COMPUTER_IMAGE`를
+`installation.env`의 `PREVIOUS_COMPUTER_IMAGE`에 복사하세요. 마이그레이션이나 배포가
+실패해도 두 릴리스가 모두 컴퓨터를 시작할 수 있습니다. 첫 설치에서는 빈 값으로 둡니다.
+이전 API와 worker가 종료되고 롤백 기간이 끝날 때까지 이전 digest를 유지하세요.
+그 후 값을 비우고 foundation 단계를 다시 적용합니다. 롤백할 때도 두 digest를
+유지한 채 이전 앱 설정을 복원하세요.
+
 이미지를 갱신하고 예제 디렉터리에서 foundation 단계를 적용한 뒤 다음을 실행하세요.
 완료된 Job의 로그를 보관한 다음 Job을 교체합니다.
 
