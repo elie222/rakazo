@@ -8,7 +8,11 @@ import type {
   MessagingInstallationsStatus,
   MessagingStatus,
 } from "@rakazo/contracts";
-import { messagingConnectOptions, messagingProviderName } from "@rakazo/core";
+import {
+  createMessagingLinkGuard,
+  messagingConnectOptions,
+  messagingProviderName,
+} from "@rakazo/core";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import { AppState, Linking, ScrollView, StyleSheet, Text, View } from "react-native";
@@ -28,6 +32,8 @@ export default function MessagingSettings() {
   const styles = useThemedStyles(createStyles);
   const [bots, setBots] = useState<Bot[]>([]);
   const [selectedBotId, setSelectedBotId] = useState("");
+  const [linkGuard] = useState(createMessagingLinkGuard);
+  const [issuingLink, setIssuingLink] = useState(false);
   const [status, setStatus] = useState<MessagingStatus | null>(null);
   const [installations, setInstallations] = useState<MessagingInstallationsStatus>({
     available: false,
@@ -68,7 +74,11 @@ export default function MessagingSettings() {
   useFocusEffect(
     useCallback(() => {
       void refresh().catch((err) => setLoadError(errorText(err)));
-    }, [refresh]),
+      return () => {
+        linkGuard.invalidate();
+        setLink(null);
+      };
+    }, [refresh, linkGuard]),
   );
 
   useEffect(() => {
@@ -99,6 +109,7 @@ export default function MessagingSettings() {
   }, [link, status]);
 
   async function act(action: () => Promise<unknown>) {
+    linkGuard.invalidate();
     setBusy(true);
     setError(null);
     setLoadError(null);
@@ -115,6 +126,17 @@ export default function MessagingSettings() {
 
   // A selection archived elsewhere drops out of the list; fall back to the first bot.
   const botId = bots.find((bot) => bot.id === selectedBotId)?.id ?? bots[0]?.id ?? "";
+  useEffect(() => {
+    if (linkGuard.invalidate(true)) {
+      setLink(null);
+    }
+  }, [botId, linkGuard]);
+  useEffect(
+    () => () => {
+      linkGuard.invalidate();
+    },
+    [linkGuard],
+  );
   const botName = (id: string) => bots.find((bot) => bot.id === id)?.name;
   // Only meaningful once a second chat app is linked: the same group can then
   // hold two of the caller's memberships, one per agent.
@@ -158,11 +180,16 @@ export default function MessagingSettings() {
     });
   }
 
-  function startLink(provider: string, linkBotId = botId) {
-    void act(async () => {
-      const issued = await rpc("messaging/link/start", {
-        botId: linkBotId,
-      });
+  async function startLink(provider: string, linkBotId = botId, fromPicker = true) {
+    const request = linkGuard.begin(fromPicker);
+    if (!request) return;
+    setIssuingLink(true);
+    setError(null);
+    setLoadError(null);
+    setLink(null);
+    try {
+      const issued = await rpc("messaging/link/start", { botId: linkBotId });
+      if (!request.isCurrent()) return;
       setLink({
         ...issued,
         botId: linkBotId,
@@ -171,7 +198,13 @@ export default function MessagingSettings() {
           status?.identities.map((identity) => [identity.id, identity.botId]) ?? [],
         ),
       });
-    });
+      await refresh();
+    } catch (err) {
+      if (request.isCurrent()) setError(errorText(err));
+    } finally {
+      request.finish();
+      setIssuingLink(false);
+    }
   }
 
   const textAction = (
@@ -185,7 +218,7 @@ export default function MessagingSettings() {
       size="compact"
       fill={false}
       variant={prominence === "primary" ? undefined : "text"}
-      disabled={busy}
+      disabled={busy || issuingLink}
       onPress={() => void act(onPress)}
     />
   );
@@ -196,7 +229,7 @@ export default function MessagingSettings() {
       size="compact"
       fill={false}
       variant="text"
-      disabled={busy || !botId}
+      disabled={busy || issuingLink || !botId}
       onPress={() => startLink("slack")}
     />
   );
@@ -260,7 +293,7 @@ export default function MessagingSettings() {
                     size="compact"
                     fill={false}
                     variant="text"
-                    disabled={busy}
+                    disabled={busy || issuingLink}
                     onPress={installSlack}
                   />
                 </View>
@@ -286,8 +319,8 @@ export default function MessagingSettings() {
                         size="compact"
                         fill={false}
                         variant="text"
-                        disabled={busy}
-                        onPress={() => startLink(installation.provider, installation.botId)}
+                        disabled={busy || issuingLink}
+                        onPress={() => startLink(installation.provider, installation.botId, false)}
                       />
                     ) : null}
                     {textAction(
@@ -306,7 +339,7 @@ export default function MessagingSettings() {
           {slackInstall && slackInstallations.length ? (
             <SettingsRow
               accessibilityRole="button"
-              disabled={busy}
+              disabled={busy || issuingLink}
               onPress={installSlack}
               title={t`Add workspace`}
             />
@@ -334,8 +367,10 @@ export default function MessagingSettings() {
             choices={bots.map((bot) => ({ key: bot.id, label: bot.name }))}
             value={botId}
             onChange={(id) => {
+              if (linkGuard.invalidate(true)) {
+                setLink(null);
+              }
               setSelectedBotId(id);
-              setLink(null);
             }}
           />
         ) : null}
@@ -344,7 +379,7 @@ export default function MessagingSettings() {
             label={t`Connect a chat app`}
             choices={connectChoices}
             value=""
-            disabled={busy}
+            disabled={busy || issuingLink}
             onChange={(provider) => startLink(provider)}
           >
             <View>

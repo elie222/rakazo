@@ -169,6 +169,17 @@ test("messaging settings show linked chat apps, channels, connections, and team 
   const userName = `Messenger ${stamp}`;
   await signup(page, `messaging-${stamp}@rakazo.test`, "password12", userName);
   await completeOnboarding(page);
+  await page.route("**/rpc/bots/list", async (route) => {
+    const response = await route.fetch();
+    const payload = await response.json();
+    // Keep the onboarding bot used by the team-conversation fixture.
+    payload.json.push({ ...payload.json[0], id: "bot-2", name: "Lead" });
+    await route.fulfill({
+      response,
+      contentType: "application/json",
+      body: JSON.stringify(payload),
+    });
+  });
 
   await page.getByRole("button", { name: new RegExp(userName) }).click();
   await page.getByRole("button", { name: "Settings" }).click();
@@ -180,6 +191,43 @@ test("messaging settings show linked chat apps, channels, connections, and team 
   await expect(messagingSettings.getByRole("button", { name: "Connect a chat app" })).toBeEnabled();
   await expect(messagingSettings.getByText("Example workspace", { exact: false })).toBeVisible();
   await captureScreenshot(page, testInfo, "messaging-slack-workspace");
+  let releaseCode!: () => void;
+  const codeReady = new Promise<void>((resolve) => {
+    releaseCode = resolve;
+  });
+  try {
+    await page.route("**/rpc/messaging/link/start", async (route) => {
+      await codeReady;
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          json: { code: "STALE-CODE", expiresAt: new Date(Date.now() + 600_000).toISOString() },
+        }),
+      });
+    });
+    await messagingSettings.getByRole("button", { name: "Connect a chat app" }).click();
+    const issuing = page.waitForRequest("**/rpc/messaging/link/start");
+    await page.getByRole("menuitem", { name: "iMessage", exact: true }).click();
+    await issuing;
+    const botPicker = messagingSettings.getByLabel("Bot", { exact: true });
+    await botPicker.selectOption("bot-2");
+  } finally {
+    // Always release the route before afterEach waits for pending handlers.
+    releaseCode();
+  }
+  await expect(messagingSettings.getByRole("button", { name: "Connect a chat app" })).toBeEnabled();
+  await expect(page.getByTestId("messaging-link-code")).toHaveCount(0);
+  await captureScreenshot(page, testInfo, "messaging-link-selection-changed");
+  await page.unroute("**/rpc/messaging/link/start");
+  await page.route("**/rpc/messaging/link/start", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        json: { code: "ABCD-2345", expiresAt: new Date(Date.now() + 600_000).toISOString() },
+      }),
+    }),
+  );
+
   await expect(messagingSettings.getByRole("heading", { name: "Conversations" })).toBeVisible();
   await expect(messagingSettings.getByText("#launch")).toBeVisible();
   await messagingSettings.getByRole("button", { name: "Settings", exact: true }).click();
