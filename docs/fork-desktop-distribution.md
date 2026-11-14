@@ -15,7 +15,8 @@ Keep certificates and keys out of the repository. The workflow requires code sig
 notarization, ticket verification and matching update metadata before publishing. A distribution
 certificate used for iPhone builds is not a Developer ID Application certificate.
 
-Prepare a normal version and changelog release, merge it after review, then tag that merge.
+The workflow requires a branch named `main`, and the release tag must point to a commit on it.
+Prepare a normal version and changelog release, merge it into `main` after review, then tag that merge.
 The workflow validates the tag and publishes installers and update metadata only after every
 selected platform succeeds. Users switching from an app signed by another team must install
 the first fork release manually; later updates must retain the fork's signing identity.
