@@ -227,6 +227,46 @@ describe("computer loopback provision lifecycle", () => {
     expect(container.stop).toHaveBeenCalledOnce();
   });
 
+  it("stops a discarded computer while a stuck screen command holds its screen lock", async () => {
+    const { supervisorApp } = await import("./index.js");
+    const { withComputerScreenLock } = await import("./locks.js");
+    const container = {
+      inspect: vi.fn(async () => ({
+        Config: {
+          Labels: { "rakazo.managed": "true", "rakazo.botId": "bot", "rakazo.spaceId": "space" },
+        },
+        State: { Running: true },
+      })),
+      exec: vi.fn(),
+      stop: vi.fn(async () => {}),
+    };
+    mocks.docker.getContainer.mockReturnValue(container);
+    let release = () => {};
+    const held = withComputerScreenLock(
+      "wedged",
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+    );
+    try {
+      const response = await supervisorApp.request("/computers/wedged/stop", {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${resolveSupervisorToken(process.env)}`,
+          "x-rakazo-bot-id": "bot",
+          "x-rakazo-space-id": "space",
+          "x-rakazo-discard-unsaved": "1",
+        },
+      });
+      expect(response.status).toBe(200);
+      expect(container.stop).toHaveBeenCalledOnce();
+    } finally {
+      release();
+      await held;
+    }
+  });
+
   it("kills a computer that does not stop when asked", async () => {
     const { supervisorApp } = await import("./index.js");
     let running = true;

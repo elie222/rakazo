@@ -44,11 +44,21 @@ else
   done
 fi
 
-# Sustained, not momentary: the 15-minute load and what the kernel could still hand out.
-read -r _ _ load15 _ </proc/loadavg
-if awk -v avg="${load15}" -v cpus="$(nproc)" 'BEGIN { exit !(avg > cpus) }'; then
-  echo "15-minute load ${load15} on $(nproc) cores" >&2
-  report "CPU is overloaded (15-minute load above the core count)"
+# Sustained, not momentary. CPU pressure is the share of time work waited for a core over the
+# last 5 minutes; load average also counts idle-waiting threads, so it is only the fallback for
+# kernels without pressure stall information.
+if [[ -r /proc/pressure/cpu ]]; then
+  waiting="$(awk '/^some / { sub(/avg300=/, "", $4); print $4 }' /proc/pressure/cpu)"
+  if awk -v waiting="${waiting}" 'BEGIN { exit !(waiting > 50) }'; then
+    echo "CPU work waited ${waiting}% of the last 5 minutes" >&2
+    report "CPU is overloaded (work waited for a core more than half the time)"
+  fi
+else
+  read -r _ _ load15 _ </proc/loadavg
+  if awk -v avg="${load15}" -v cpus="$(nproc)" 'BEGIN { exit !(avg > cpus) }'; then
+    echo "15-minute load ${load15} on $(nproc) cores" >&2
+    report "CPU is overloaded (15-minute load above the core count)"
+  fi
 fi
 if awk '/^MemTotal:/ { total = $2 } /^MemAvailable:/ { available = $2 }
   /^SwapTotal:/ { swap = $2 } /^SwapFree:/ { swapfree = $2 }

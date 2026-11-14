@@ -23,6 +23,7 @@ import type { createSpaceRpc } from "../../lib/rpc";
 import { errorText } from "../../lib/user-error";
 import type { RosterDropTarget } from "./roster-drop";
 import { resolveRosterDrop } from "./roster-drop";
+import { createRosterSchedule, ROSTER_POLL_MS } from "./roster-schedule";
 import type { useShellNavigation } from "./use-shell-navigation";
 import { firstThreadRoute } from "./use-shell-navigation";
 import type { ThreadState } from "./use-thread-state";
@@ -46,6 +47,8 @@ export function useSpaceRoster({
   redirectKeepingOverlay: Navigation["redirectKeepingOverlay"];
 }) {
   const [groups, setGroups] = useState<Group[]>(seed?.groups ?? []);
+  const groupsRef = useRef(groups);
+  groupsRef.current = groups;
   const [bots, setBots] = useState<Bot[]>(seed?.bots ?? []);
   const botsRef = useRef(bots);
   botsRef.current = bots;
@@ -197,6 +200,7 @@ export function useSpaceRoster({
   return {
     groups,
     setGroups,
+    groupsRef,
     bots,
     setBots,
     botsRef,
@@ -228,8 +232,8 @@ export function useSpaceRoster({
 export type SpaceRoster = ReturnType<typeof useSpaceRoster>;
 
 /**
- * Loads the space's bootstrap, keeps the roster polled, and saves what the shell showed so a
- * revisit paints at once.
+ * Loads the space's bootstrap, keeps the roster current, and saves what the shell showed so a
+ * revisit paints at once. Returns what the server's roster signals drive.
  */
 export function useSpaceBootstrap({
   rpc,
@@ -290,6 +294,8 @@ export function useSpaceBootstrap({
   const { snapshotRef, commitSnapshot, setRoutines, setRoutinesBotId, bootstrappedThread } = thread;
   // Until the route names the chat reopened from cache, that chat stands in for it.
   const routeChat = botId || groupId ? undefined : startChat;
+  const refreshRosterRef = useRef<() => void>(() => {});
+  const [rosterSchedule] = useState(() => createRosterSchedule(() => refreshRosterRef.current()));
 
   function saveSeed(bootstrap: AppBootstrap, chat?: ChatTarget) {
     // With no space chosen the server picks one, so a shell reopened that way looks there too.
@@ -438,22 +444,25 @@ export function useSpaceBootstrap({
         50,
       );
     };
+    refreshRosterRef.current = refreshVisibleBots;
     window.addEventListener("focus", refreshVisibleBots);
     document.addEventListener("visibilitychange", refreshVisibleBots);
-    // Poll skips while a refresh is in flight; focus/visibility and event-driven
-    // callers still bump botsRefreshEpoch so only the latest response applies.
+    // While the server signals roster changes this only heals a missed one. It skips while a
+    // refresh is in flight; other callers still bump botsRefreshEpoch so only the latest applies.
     const poll = window.setInterval(() => {
       if (botsRefreshInFlight.current > 0) return;
-      refreshVisibleBots();
-    }, 3_000);
+      rosterSchedule.poll();
+    }, ROSTER_POLL_MS);
     return () => {
       cancelled = true;
+      refreshRosterRef.current = () => {};
       window.clearTimeout(refreshTimer);
       window.clearInterval(poll);
       window.removeEventListener("focus", refreshVisibleBots);
       document.removeEventListener("visibilitychange", refreshVisibleBots);
     };
   }, []);
+  return rosterSchedule.signals;
 }
 
 /** Dragging a bot in the roster: reorder it, move it to a section, or add it to a group. */

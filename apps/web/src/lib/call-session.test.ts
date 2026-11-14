@@ -75,6 +75,8 @@ const endCallRpc = vi.mocked(rpc.threads.endCall);
 
 describe("call session", () => {
   beforeEach(() => {
+    // Retry and reconnect waits are jittered; pin them to their unjittered values.
+    vi.spyOn(Math, "random").mockReturnValue(0);
     endCall();
     vi.clearAllMocks();
     vi.useFakeTimers();

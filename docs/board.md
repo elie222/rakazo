@@ -1,9 +1,9 @@
 # Ticket board
 
 > [!NOTE]
-> The ticket board is available on self-hosted servers. To turn it on, set
-> `TICKET_BOARD_ENABLED=true` on the API and worker. See
-> [Configuration](./self-host-configuration.md).
+> The ticket board is a Labs feature. Each account turns it on in **Settings → Labs**, or a
+> self-hosted server turns it on for everyone with `TICKET_BOARD_ENABLED=true` on the API and
+> worker. See [Configuration](./self-host-configuration.md).
 
 The board is a shared list of tickets that you and your bots both work from. Open it from **Board**
 in the account menu, or from **Board** in Settings on mobile.

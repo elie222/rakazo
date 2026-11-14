@@ -3,8 +3,10 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { encodeLoginSecret, RoutineWatchSchema } from "@rakazo/contracts";
-import { describe, expect, it, vi } from "vitest";
-import { accountVault, fakeDatabase } from "./bot-secrets.test-support.js";
+import { installAuditEventStore } from "@rakazo/db";
+import * as Logging from "@rakazo/logging";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { accountVault, fakeAuditLog, fakeDatabase } from "./bot-secrets.test-support.js";
 import { ComputerBusyError, provisionComputer } from "./computer-lifecycle.js";
 import { protectedComputerLifecycleRefusal } from "./desktop-command-guard.js";
 import type { RoutineWatchTickDeps } from "./routine-watch.js";
@@ -186,6 +188,114 @@ describe("tickRoutineWatch", () => {
     };
     return { deps, routine, updateMany, messages };
   }
+
+  it("reschedules temporary HTTP failures at the watch interval without disabling it", async () => {
+    const { deps, routine, updateMany, messages } = setup(
+      {},
+      { kind: "http", url: "https://example.com/status", everyMinutes: 5 },
+    );
+    deps.http = {
+      fetch: async () => new Response("temporary outage", { status: 503 }),
+      resolveHostname: async () => [{ address: "203.0.113.10", family: 4 }],
+    };
+    routine.watchState.fingerprint = "last-known";
+    const before = Date.now();
+    expect(await tickRoutineWatch(deps, routine, target, scheduledAt)).toEqual({ run: false });
+    expect(updateMany).toHaveBeenCalledOnce();
+    expect(updateMany).toHaveBeenCalledWith({
+      where: { id: routine.id, userId: routine.userId, active: true, nextRunAt: scheduledAt },
+      data: {
+        nextRunAt: expect.any(Date),
+        watchState: {
+          checkedAt: expect.any(String),
+          outcome: "failed",
+          retrying: true,
+          fingerprint: "last-known",
+          detail: "HTTPS check returned status 503.",
+        },
+      },
+    });
+    const saved = (
+      updateMany.mock.calls[0] as unknown as [
+        {
+          data: {
+            nextRunAt: Date;
+            watchState: {
+              checkedAt: string;
+              outcome: "failed";
+              fingerprint: string;
+              detail: string;
+            };
+          };
+        },
+      ]
+    )[0].data;
+    const retry = saved.nextRunAt;
+    expect(retry.getTime()).toBeGreaterThanOrEqual(before + 5 * 60_000);
+    expect(retry.getTime()).toBeLessThanOrEqual(Date.now() + 5 * 60_000);
+    expect(messages).toHaveLength(1);
+    expect(JSON.stringify(messages[0])).toContain("HTTPS check returned status 503.");
+    expect(messages[0]?.role).toBe("system");
+    expect(deps.jobs.enqueue).toHaveBeenCalledWith(expect.objectContaining({ availableAt: retry }));
+    expect(new Date(saved.watchState.checkedAt).getTime()).toBeGreaterThanOrEqual(before);
+    // A continuing outage refreshes failure state without another thread notice.
+    await tickRoutineWatch(deps, { ...routine, watchState: saved.watchState }, target, new Date());
+    expect(messages).toHaveLength(1);
+    deps.http.fetch = async () => new Response("ready");
+    const recovered = await tickRoutineWatch(
+      deps,
+      { ...routine, watchState: saved.watchState },
+      target,
+      new Date(),
+    );
+    expect(recovered).toMatchObject({ run: true, state: { outcome: "changed", detail: null } });
+    if (recovered.run) expect(recovered.state).not.toHaveProperty("retrying");
+  });
+
+  it("announces an HTTP outage after a permanently paused watch is resumed", async () => {
+    const { deps, routine, updateMany, messages } = setup(
+      {},
+      {
+        kind: "http",
+        url: "https://example.com/status",
+        everyMinutes: 5,
+      },
+    );
+    deps.http = {
+      fetch: async () => new Response("not found", { status: 404 }),
+      resolveHostname: async () => [{ address: "203.0.113.10", family: 4 }],
+    };
+    routine.watchState.fingerprint = "last-known";
+    await tickRoutineWatch(deps, routine, target, scheduledAt);
+    const paused = (
+      updateMany.mock.calls[0] as unknown as [
+        {
+          data: { active: boolean; watchState: unknown };
+        },
+      ]
+    )[0].data;
+    expect(paused.active).toBe(false);
+    expect(paused.watchState).not.toHaveProperty("retrying");
+    expect(messages).toHaveLength(1);
+    expect(messages[0]?.role).toBe("bot");
+    // Resuming retains the previous state. A new temporary outage still needs a notice.
+    deps.http.fetch = async () => new Response("temporary outage", { status: 503 });
+    await tickRoutineWatch(deps, { ...routine, watchState: paused.watchState }, target, new Date());
+    expect(messages).toHaveLength(2);
+    expect(messages[1]?.role).toBe("system");
+    expect(JSON.stringify(messages[1])).toContain("HTTPS check returned status 503.");
+    expect(updateMany).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          watchState: expect.objectContaining({
+            outcome: "failed",
+            retrying: true,
+            fingerprint: "last-known",
+          }),
+        }),
+      }),
+    );
+  });
 
   it("records a quiet no-change check without a message and schedules the next", async () => {
     const { deps, routine, updateMany, messages } = setup({ data: { changes: [] } });
@@ -938,6 +1048,112 @@ describe("tickRoutineWatch on a computer", () => {
     expect(gone.note).not.toContain(password);
   });
 
+  it("retries a command check, not pauses it, while the key manager is down", async () => {
+    const vault = fakeDatabase();
+    await vault.prisma.vaultCredential.create({
+      data: {
+        id: "site-login",
+        ...accountVault,
+        name: "site_login",
+        origin: "https://login.example.test",
+        auth: { type: "login" },
+        ciphertext: "rkz1:vault-key:sealed",
+      },
+    });
+    vi.mocked(provisionComputer).mockClear();
+    const { deps, routine, updateMany, messages, execute } = setupComputer(
+      { kind: "command", command: "check-order" },
+      { stdout: "ok" },
+      undefined,
+      { vault, secretStore: { load: async () => "unused" } },
+    );
+    // The login is under a vault key the key manager can't unwrap right now.
+    const outage = () => Promise.reject(new Error("fake key manager outage"));
+    Object.assign(deps.prisma, {
+      $contentEncryption: () => ({ ring: { byId: outage, all: outage } }),
+      spaceKey: { findUnique: async () => ({ id: "key" }) },
+    });
+    const warn = vi.spyOn(Logging.getLogger(), "warn");
+    try {
+      expect(await tickRoutineWatch(deps, routine, target, scheduledAt)).toEqual({ run: false });
+      // Said in the log each time, naming the routine and the key manager's reason, but no value.
+      expect(warn).toHaveBeenCalledWith("routine.watch_deferred", {
+        "routine.id": "routine-1",
+        error: expect.any(Error),
+      });
+      expect(Logging.serializeError(warn.mock.calls[0]![1]!.error)).toMatchObject({
+        name: "VaultKeyUnavailableError",
+        cause: { name: "Error", message: "fake key manager outage" },
+      });
+    } finally {
+      warn.mockRestore();
+    }
+    expect(execute).not.toHaveBeenCalled();
+    // Deferred before the computer is woken for it.
+    expect(provisionComputer).not.toHaveBeenCalled();
+    expect(messages).toEqual([]);
+    expect(updateMany).toHaveBeenCalledWith({
+      where: { id: "routine-1", userId: "user-1", active: true, nextRunAt: scheduledAt },
+      data: { nextRunAt: expect.any(Date) },
+    });
+    expect(deps.jobs.enqueue).toHaveBeenCalled();
+  });
+
+  it("retries a command check whose command variable can't be loaded while the key manager is down", async () => {
+    const vault = fakeDatabase();
+    await vault.prisma.vaultCredential.create({
+      data: {
+        id: "gh-token",
+        ...accountVault,
+        name: "gh_token",
+        origin: "",
+        auth: { type: "command" },
+        ciphertext: "rkz1:vault-key:sealed",
+      },
+    });
+    vi.mocked(provisionComputer).mockClear();
+    const { deps, routine, updateMany, messages, execute } = setupComputer(
+      { kind: "command", command: "check-order" },
+      { stdout: "ok" },
+      undefined,
+      { vault, secretStore: { load: async () => "unused" } },
+    );
+    // The variable is under a vault key the key manager can't unwrap right now.
+    const outage = () => Promise.reject(new Error("fake key manager outage"));
+    Object.assign(deps.prisma, {
+      $contentEncryption: () => ({ ring: { byId: outage, all: outage } }),
+      spaceKey: { findUnique: async () => ({ id: "key" }) },
+    });
+    const warn = vi.spyOn(Logging.getLogger(), "warn");
+    try {
+      expect(await tickRoutineWatch(deps, routine, target, scheduledAt)).toEqual({ run: false });
+      // Deferred for the outage itself, not for some other error on the way.
+      expect(warn).toHaveBeenCalledWith("routine.watch_deferred", {
+        "routine.id": "routine-1",
+        error: expect.any(Error),
+      });
+      expect(
+        Logging.serializeError(
+          warn.mock.calls.find(([event]) => event === "routine.watch_deferred")![1]!.error,
+        ),
+      ).toMatchObject({
+        name: "VaultKeyUnavailableError",
+        cause: { name: "Error", message: "fake key manager outage" },
+      });
+    } finally {
+      warn.mockRestore();
+    }
+    expect(execute).not.toHaveBeenCalled();
+    // Deferred before the computer is woken for it.
+    expect(provisionComputer).not.toHaveBeenCalled();
+    expect(messages).toEqual([]);
+    expect(updateMany).toHaveBeenCalledWith({
+      where: { id: "routine-1", userId: "user-1", active: true, nextRunAt: scheduledAt },
+      data: { nextRunAt: expect.any(Date) },
+    });
+    expect(deps.jobs.enqueue).toHaveBeenCalled();
+  });
+
   it("scrubs a quote and backslash inside tracked command JSON", async () => {
     const secret = 'ghp_quote"slash\\secretToken';
     const vault = fakeDatabase();
@@ -1189,6 +1405,145 @@ describe("tickRoutineWatch on a computer", () => {
     } as never;
     await tickRoutineWatch(deps, routine, target, scheduledAt);
     expect(JSON.stringify(updateMany.mock.calls[0])).toContain("1:5.25");
+  });
+
+  describe("a check's use of the vault's command variables", () => {
+    const secret = "ghp_fakefakeRoutineWatchToken";
+    afterEach(() => {
+      installAuditEventStore(undefined);
+      vi.mocked(provisionComputer).mockReset();
+    });
+
+    /** A vault with a variable the check's command gets, and one that can't be read. */
+    async function watched(watch: Record<string, unknown> = { kind: "command", command: "gh" }) {
+      const vault = fakeDatabase();
+      for (const [name, ciphertext] of [
+        ["gh-token", "cipher-gh"],
+        ["stripe-api-key", "cipher-stripe"],
+      ] as const) {
+        await vault.prisma.vaultCredential.create({
+          data: {
+            id: name,
+            ...accountVault,
+            name,
+            origin: "",
+            auth: { type: "command" },
+            ciphertext,
+          },
+        });
+      }
+      vi.mocked(provisionComputer).mockResolvedValue({
+        id: "computer-1",
+        botId: "bot-1",
+        kind: "fake",
+        providerRef: "fake",
+      });
+      const secretStore = {
+        async load(ciphertext: string) {
+          if (ciphertext === "cipher-gh") return secret;
+          throw new Error("unreadable");
+        },
+      };
+      return {
+        vault,
+        ...setupComputer(watch, { stdout: "ok\n" }, undefined, { vault, secretStore }),
+      };
+    }
+
+    it("records each variable a check's command was sent with, with no site", async () => {
+      const rows = fakeAuditLog();
+      const { deps, routine, execute } = await watched();
+      await checkRoutineWatch(deps, routine);
+      expect(execute).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ env: { GH_TOKEN: secret }, unsetEnv: ["STRIPE_API_KEY"] }),
+        expect.anything(),
+      );
+      // Only the variable it got: the one that can't be read is unset, and no use.
+      expect(rows).toEqual([
+        expect.objectContaining({
+          organizationId: "org-1",
+          spaceId: "space-1",
+          action: "credential.used",
+          actorType: "bot",
+          actorId: "bot-1",
+          targetType: "vault_credential",
+          targetId: "gh-token",
+          targetLabel: "gh-token",
+          runId: null,
+          threadId: null,
+          metadata: { tool: "routine_watch", scope: "account", name: "gh-token", kind: "command" },
+        }),
+      ]);
+      // The next check is sent it again, which is its own use.
+      await checkRoutineWatch(deps, routine);
+      expect(rows).toHaveLength(2);
+      expect(JSON.stringify(rows)).not.toContain(secret);
+    });
+
+    it("records nothing for a files watch, or a command the computer never got", async () => {
+      const rows = fakeAuditLog();
+      const files = await watched({ kind: "files", paths: ["inbox"] });
+      await checkRoutineWatch(files.deps, files.routine);
+      // Refused by the desktop-protection guard, then put off because the computer is busy.
+      const refused = await watched({ kind: "command", command: "pkill chrome; gh" });
+      await tickRoutineWatch(refused.deps, refused.routine, target, scheduledAt);
+      const busy = await watched();
+      vi.mocked(provisionComputer).mockRejectedValue(new ComputerBusyError());
+      await tickRoutineWatch(busy.deps, busy.routine, target, scheduledAt);
+      for (const { execute } of [refused, busy]) expect(execute).not.toHaveBeenCalled();
+      expect(rows).toEqual([]);
+    });
+
+    it("gives and records no variable the routine's bot may not use", async () => {
+      const rows = fakeAuditLog();
+      const { vault, deps, routine, execute } = await watched();
+      // Limited in this Space to chosen bots, of which the routine's bot is none.
+      await vault.prisma.vaultCredentialLimit.createMany({
+        data: [{ credentialId: "gh-token", userId: "user-1", spaceId: "space-1" }],
+      });
+      await checkRoutineWatch(deps, routine);
+      expect(execute).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.not.objectContaining({ env: expect.anything() }),
+        expect.anything(),
+      );
+      expect(rows).toEqual([]);
+    });
+
+    it("names a guest's account variable only in their own organization", async () => {
+      const rows = fakeAuditLog("guest");
+      const { deps, routine } = await watched();
+      await checkRoutineWatch(deps, routine);
+      expect(rows.map((row) => [row.organizationId, row.targetLabel])).toEqual([
+        ["org-1", null],
+        ["org-own", "gh-token"],
+      ]);
+      expect(rows[0]!.metadata).toEqual({
+        tool: "routine_watch",
+        scope: "account",
+        kind: "command",
+      });
+    });
+
+    it("records a use once the command was sent, also when the check then fails", async () => {
+      const rows = fakeAuditLog();
+      const { deps, routine, execute } = await watched();
+      execute.mockImplementation(async function* () {
+        yield { type: "stderr", data: "starting" };
+        throw new Error("the connection to the computer was lost");
+      });
+      await expect(checkRoutineWatch(deps, routine)).rejects.toThrow(
+        "The check could not run on the computer",
+      );
+      expect(rows).toHaveLength(1);
+    });
+
+    it("checks all the same when the audit log can't be written", async () => {
+      fakeAuditLog("member", true);
+      const { deps, routine } = await watched();
+      expect((await checkRoutineWatch(deps, routine)).state.detail).toBe("ok");
+    });
   });
 });
 

@@ -1531,11 +1531,22 @@ function boatClient(api: BoatSandboxSdk, apiKey: string, gate: BoatRequestGate):
         });
         return result;
       } catch (error) {
+        const durationMs = Math.round(performance.now() - started);
+        // Another caller's resume is already waking it; the caller waits for it to be ready.
+        if (error instanceof BoatApiError && error.code === "sandbox_resuming") {
+          getLogger().info("sandbox.start", {
+            provider: "boat",
+            operation,
+            outcome: "in_progress",
+            durationMs,
+          });
+          throw error;
+        }
         getLogger().warn("sandbox.start", {
           provider: "boat",
           operation,
           outcome: error instanceof SandboxRateLimitError ? "rate_limited" : "failed",
-          durationMs: Math.round(performance.now() - started),
+          durationMs,
           error,
         });
         throw error;

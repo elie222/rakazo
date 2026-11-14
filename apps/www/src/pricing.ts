@@ -44,14 +44,15 @@ const COMPUTER_USE: Record<ComputerSize, string> = {
   xlarge: "big builds and many apps at once",
 };
 
-/** A computer's hours over its size, with the size explained on hover. */
-function computerCell(hours: string, size: ComputerSize) {
+/** The exact hours and size behind a computer cell, shown on hover. */
+function computerDetail(hours: string, size: ComputerSize) {
   const specs = COMPUTER_SIZE_SPECS[size];
-  return {
-    label: `${hours}\n${specs.vcpus} vCPU\n${specs.memoryGb} GB RAM`,
-    detail: `${specs.vcpus} processor cores and ${specs.memoryGb} GB of memory: ${COMPUTER_USE[size]}`,
-  };
+  return `${hours} a month, ${specs.vcpus} vCPU, ${specs.memoryGb} GB RAM: ${COMPUTER_USE[size]}`;
 }
+
+/** Ends each computer hover, so the hours don't read as a meter on everything a bot does. */
+const COMPUTER_TIME_NOTE =
+  "Counts only while your bot uses its computer, which most work doesn't need. It pauses when idle.";
 
 /** Computer hours a monthly credit plan of `cents` includes. */
 function creditPlanHours(cents: number) {
@@ -72,6 +73,7 @@ const SANDBOX_NAMES: Record<Exclude<SandboxKind, "none" | "desktop" | "fake">, s
   novita: "Novita",
   railway: "Railway",
   wuying: "Wuying",
+  "local-vm": "Apple container",
 };
 const SANDBOX_PROVIDERS = Object.values(SANDBOX_NAMES);
 
@@ -143,6 +145,19 @@ const TIERS = (Object.keys(BYOK_TIERS) as ByokTier[]).flatMap((tier) => {
   ];
 });
 
+const STANDARD_HOURS = computerHours(STANDARD.computerAllowanceCents);
+const STANDARD_VCPUS = COMPUTER_SIZE_SPECS[STANDARD.computerSize].vcpus;
+
+/** A tier's computer as a multiple of Standard's, so the table compares plans without a meter. */
+function tierComputerCell(tier: (typeof TIERS)[number]): PricingCell {
+  const usage = tier.hours / STANDARD_HOURS;
+  const power = COMPUTER_SIZE_SPECS[tier.computerSize].vcpus / STANDARD_VCPUS;
+  return {
+    label: usage === 1 ? "Included" : `${usage}× the usage\n${power}× the power`,
+    detail: `${computerDetail(`${tier.hours} hours`, tier.computerSize)}. ${COMPUTER_TIME_NOTE}`,
+  };
+}
+
 const COLUMN_COUNT = TIERS.length + 2;
 const included = (cell: PricingCell): PricingCell[] => Array(COLUMN_COUNT).fill(cell);
 
@@ -192,17 +207,14 @@ export const PRICING_COMPARISON = {
     { feature: "Integrations and MCP", cells: included(true) },
     {
       feature: "Bot computer",
-      hint: "A computer a bot can use to run code, edit files, and browse. Most tasks don't need one, and it sleeps when idle, so hours go a long way.",
+      hint: "A computer your bot can use to run code, edit files, and browse.",
       cells: [
-        "Unlimited\nAny size",
-        ...TIERS.map((tier) => computerCell(`${tier.hours} hours/mo`, tier.computerSize)),
-        (() => {
-          const cell = computerCell(`From ${creditPlanHours(MODEL_CREDIT_AMOUNTS[0])} hours/mo`, STANDARD.computerSize);
-          return {
-            ...cell,
-            detail: `${cell.detail}. Hours grow with your plan: ${dollars(DEFAULT_MONTHLY_CREDIT_AMOUNT)} a month includes ${creditPlanHours(DEFAULT_MONTHLY_CREDIT_AMOUNT)}`,
-          };
-        })(),
+        "Unlimited",
+        ...TIERS.map(tierComputerCell),
+        {
+          label: "Included",
+          detail: `${computerDetail(`From ${creditPlanHours(MODEL_CREDIT_AMOUNTS[0])} hours`, STANDARD.computerSize)}. Hours grow with your plan: ${dollars(DEFAULT_MONTHLY_CREDIT_AMOUNT)} a month includes ${creditPlanHours(DEFAULT_MONTHLY_CREDIT_AMOUNT)}. ${COMPUTER_TIME_NOTE}`,
+        },
       ],
     },
     { feature: "EU hosting", cells: ["Your choice", ...TIERS.map(() => true), true] },

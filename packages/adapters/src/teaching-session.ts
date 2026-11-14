@@ -5,7 +5,7 @@ import type {
   JobPublisher,
   SandboxProvider,
 } from "@rakazo/adapter-kit";
-import { computerControlExpireJobKey, skillTeachingExpireJobKey } from "@rakazo/adapter-kit";
+import { skillTeachingExpireJobKey } from "@rakazo/adapter-kit";
 import type { Actor, MessageBlock, TaughtSkill } from "@rakazo/contracts";
 import type { SkillPlaybook, TeachRecordingEvent, TeachSnapshot } from "@rakazo/core";
 import {
@@ -17,9 +17,10 @@ import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   appendEventInTransaction,
   createThreadMessageInTransaction,
+  draftTeachingRecordingInTransaction,
   IsolationError,
 } from "@rakazo/db";
-import { revokeScreenControl } from "./computer-control.js";
+import { releaseComputerControlLease } from "./computer-control.js";
 import { scheduleComputerSleep } from "./computer-idle.js";
 import { toComputerRef } from "./computer-support.js";
 
@@ -212,43 +213,11 @@ async function finalizeTeachingRecording(
     if (skill.status !== "recording" && skill.status !== "drafting") {
       throw new Error("Teaching session is not active");
     }
-    const recording = parseRecording(skill.recording);
-    if (stopSnapshot) {
-      recording.snapshots.push(stopSnapshot);
-      recording.events.push({
-        at: stopSnapshot.at,
-        kind: "snapshot",
-        summary: stopSnapshot.summary,
-      });
-    }
-    const playbook = buildPlaybookFromRecording(skill.goal, recording.events, recording.snapshots);
-    const updated = await tx.taughtSkill.update({
-      where: { id: skillId },
-      data: {
-        status: "draft",
-        recording: recording as never,
-        playbook: playbook as never,
-        stoppedAt: new Date(),
-      },
+    return draftTeachingRecordingInTransaction(tx, skill, {
+      spaceId: actor.spaceId,
+      reason,
+      stopSnapshot,
     });
-    // The stopped event must commit with the status flip; appended afterwards it is lost for
-    // good when the process dies in between, because retries see a draft and skip it.
-    const bot = await tx.bot.findUnique({
-      where: { id: skill.botId },
-      include: { thread: true },
-    });
-    let stopped: { threadId: string; seq: number } | null = null;
-    if (bot?.thread) {
-      const event = await appendEventInTransaction(tx, {
-        spaceId: actor.spaceId,
-        threadId: bot.thread.id,
-        botId: skill.botId,
-        type: "skill.teaching.stopped",
-        payload: { skillId: skill.id, reason },
-      });
-      stopped = { threadId: bot.thread.id, seq: event.seq };
-    }
-    return { skill: updated, stopped };
   });
 }
 
@@ -301,7 +270,7 @@ async function releaseTeachingComputerControl(
       controlHolder: string;
       controlBotId: string | null;
       controlLeaseId: string | null;
-      controlRunId: string | null;
+      spaceId: string;
     } | null;
   },
   expectedLeaseId?: string | null,
@@ -315,23 +284,14 @@ async function releaseTeachingComputerControl(
     return;
   }
   if (!expectedLeaseId || computer.controlLeaseId !== expectedLeaseId) return;
-  const leaseId = computer.controlLeaseId;
-  await revokeScreenControl(
+  await releaseComputerControlLease(
     deps,
     computer,
+    bot.id,
+    computer.controlLeaseId,
     computerContext(actor, bot.id, "skills.release"),
-    leaseId,
+    "released",
   );
-  await deps.jobs.cancel(computerControlExpireJobKey(computer.id, leaseId));
-  await deps.events.finalizeComputerControlRelease({
-    spaceId: actor.spaceId,
-    computerId: computer.id,
-    botId: bot.id,
-    runId: computer.controlRunId,
-    leaseId,
-    holder: "bot",
-    reason: "released",
-  });
   await scheduleComputerSleep(deps.jobs, computer.id);
 }
 

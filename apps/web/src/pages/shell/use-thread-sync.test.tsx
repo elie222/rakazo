@@ -143,6 +143,41 @@ it.each([false, true])(
   },
 );
 
+it("refreshes a group's computer screen when control changes for that computer", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const snapshot = {
+    threadId: "thread-1",
+    cursor: 1,
+    messages: [],
+    run: null,
+  } as unknown as ThreadSnapshot;
+  const get = vi.fn(() => Promise.resolve(snapshot));
+  const commitSnapshot = vi.fn();
+  const input = syncInput({ inGroup: true, get, commitSnapshot });
+  input.computerState.computerBotIdRef.current = "bot-computer";
+  function Probe() {
+    useThreadSync(input);
+    return null;
+  }
+  const root = createRoot(document.createElement("div"));
+  await act(async () => root.render(createElement(Probe)));
+  const subscription = vi.mocked(runThreadSubscription).mock.calls[0]![0];
+  const released = (botId: string) =>
+    ({
+      type: "computer.takeover.released",
+      botId,
+      payload: { holder: "none" },
+    }) as unknown as ProductEvent;
+  subscription.onEvent(released("bot-computer"), snapshot);
+  await flush();
+  expect(input.computerState.refreshComputerScreen).toHaveBeenCalledTimes(1);
+  expect(input.computerState.refreshComputerScreen).toHaveBeenCalledWith("bot-computer");
+  subscription.onEvent(released("bot-other"), snapshot);
+  await flush();
+  expect(input.computerState.refreshComputerScreen).toHaveBeenCalledTimes(1);
+  act(() => root.unmount());
+});
+
 it.each([
   ["running", { status: "running" }, true],
   ["idle", null, true],

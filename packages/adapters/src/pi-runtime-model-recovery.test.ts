@@ -345,6 +345,42 @@ describe("a call that spends its whole output budget on thinking", () => {
     expect(texts(events)).toContain("From the backup.");
   });
 
+  it.each([
+    ["an unavailable provider", () => thinkingOnly(plain, "error", "HTTP 503 unavailable"), 1],
+    ["empty replies", () => stream(message(plain, [], "stop")), 3],
+  ])(
+    "lets a backup reached after %s repeat its own call that spent its budget",
+    async (_case, failure, failedCalls) => {
+      let primaryCalls = 0;
+      let backupCalls = 0;
+      providerState.stream.mockImplementation((target: Model<"openai-completions">) => {
+        if (target.id === plain.id) {
+          primaryCalls += 1;
+          return primaryCalls === 1 ? thinkingOnly(plain, "length") : failure();
+        }
+        backupCalls += 1;
+        return backupCalls === 1
+          ? thinkingOnly(backup, "length")
+          : reply(backup, "From the backup.");
+      });
+      const events = await run(
+        request(plain, {}, [{ provider: backup.provider, id: backup.id, apiKey: "backup-key" }]),
+      );
+      expect(
+        providerState.stream.mock.calls.map(([target, , options]) => [
+          target.id,
+          (options as StreamOptions).maxTokens,
+        ]),
+      ).toEqual([
+        [plain.id, 4_096],
+        ...Array.from({ length: failedCalls }, () => [plain.id, 8_192]),
+        [backup.id, 4_096],
+        [backup.id, 8_192],
+      ]);
+      expect(texts(events)).toContain("From the backup.");
+    },
+  );
+
   it("takes a smaller output reservation the provider can afford after the raise", async () => {
     const router = model("openrouter", "router", { reasoning: false, maxTokens: 65_536 });
     providerState.models.set("openrouter/router", router as unknown as Record<string, unknown>);

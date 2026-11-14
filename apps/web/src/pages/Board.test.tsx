@@ -96,6 +96,8 @@ function ticket(
 
 let client: QueryClient;
 beforeEach(() => {
+  // Retry and reconnect waits are jittered; pin them to their unjittered values.
+  vi.spyOn(Math, "random").mockReturnValue(0);
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 });
 

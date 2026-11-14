@@ -1,4 +1,4 @@
-import { CommandExitError, InstaboxError } from "@insforge/instabox-sdk";
+import { CommandExitError, InstaboxError, InstaboxQuotaError } from "@insforge/instabox-sdk";
 import { parse } from "shell-quote";
 import type {
   InstaboxApi,
@@ -6,12 +6,14 @@ import type {
   InstaboxJob,
   InstaboxMachine,
   InstaboxRunOptions,
+  InstaboxSpec,
 } from "./instabox-sandbox.js";
 import { InstaboxSandboxProvider, instaboxSdk } from "./instabox-sandbox.js";
 import { desktopCommandResponder, simpleCommand } from "./linux-desktop.test-support.js";
 
 interface EmulatedComputer {
   state: "running" | "suspended";
+  spec: InstaboxSpec;
   template: string;
   metadata: Record<string, string>;
   files: Map<string, { content: Uint8Array; mode: number }>;
@@ -39,15 +41,28 @@ export class InstaboxEmulator implements InstaboxApi {
   rateLimited = 0;
   /** Jobs whose kill was attempted after their wait gave up. */
   readonly killedJobs: string[] = [];
-  /** Each `job.kill`. An Error rejects; false means the signal was not confirmed. */
+  /** Each `job.kill`. An Error rejects; false means every process had already exited. */
   jobKill: () => boolean | Error = () => true;
+  /** The sizes the account's plan offers, as `vcpus/memMiB`; the first is the default. */
+  allowedSpecs = ["4/8192", "8/16384", "16/32768"];
+  /** A resize whose restart fails: the computer starts again at its old size. */
+  resizeFails = false;
+  /** Thrown by the next resize request before any change, as an API or transport failure is. */
+  resizeError: Error | undefined;
   private sequence = 0;
 
-  async create(template: string, metadata: Record<string, string>): Promise<InstaboxMachine> {
-    this.request(`create ${template}`);
+  async create(
+    template: string,
+    metadata: Record<string, string>,
+    spec?: InstaboxSpec,
+  ): Promise<InstaboxMachine> {
+    this.request(`create ${template}${spec ? ` ${spec.vcpus}/${spec.memMiB}` : ""}`);
+    if (spec) this.offered(spec);
+    const [vcpus, memMiB] = this.allowedSpecs[0]!.split("/").map(Number);
     const id = `m_test${++this.sequence}`;
     this.computers.set(id, {
       state: "running",
+      spec: spec ?? { vcpus: vcpus!, memMiB: memMiB! },
       template,
       metadata,
       files: new Map(),
@@ -77,6 +92,14 @@ export class InstaboxEmulator implements InstaboxApi {
     }
   }
 
+  private offered(spec: InstaboxSpec) {
+    if (!this.allowedSpecs.includes(`${spec.vcpus}/${spec.memMiB}`))
+      throw new InstaboxQuotaError("this plan does not offer that size", {
+        status: 400,
+        code: "spec_not_allowed",
+      });
+  }
+
   private require(id: string): EmulatedComputer {
     const computer = this.computers.get(id);
     if (!computer) throw new InstaboxError("machine not found", { status: 404, code: "not_found" });
@@ -95,11 +118,27 @@ export class InstaboxEmulator implements InstaboxApi {
       sandboxId: id,
       getInfo: async () => {
         this.request(`info ${id}`);
-        return { state: this.require(id).state };
+        const { state, spec } = this.require(id);
+        return { state, machine: { spec: { ...spec } } };
       },
       pause: async () => {
         this.request(`pause ${id}`);
         this.require(id).state = "suspended";
+      },
+      // The server stops, resizes and starts the computer; a failed start goes back to the old size.
+      resize: async (spec) => {
+        this.request(`resize ${id} ${spec.vcpus}/${spec.memMiB}`);
+        const computer = this.require(id);
+        if (this.resizeError) throw this.resizeError;
+        this.offered(spec);
+        computer.state = "running";
+        // The SDK's error for a failed operation: no HTTP status, the operation named.
+        if (this.resizeFails)
+          throw new InstaboxError("no host has room for that size", {
+            code: "no_capacity",
+            operationId: "op_resize",
+          });
+        computer.spec = { ...spec };
       },
       commands: { run: async (command, options) => this.run(id, command, options) },
       files: {

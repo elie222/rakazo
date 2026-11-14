@@ -5,6 +5,7 @@ import {
   messageUnreadFor,
   payloadAuthor,
   plainTextFromMarkdown,
+  TAKEOVER_COMPUTER_PENDING_STATE,
 } from "@rakazo/core";
 import { i18n } from "./i18n";
 
@@ -53,6 +54,23 @@ export type BrowserNotificationContext = {
   /** The signed-in person: another member's message is news to them, their own is not. */
   meId?: string;
 };
+
+/** A card that only asks for the screen shares the takeover alert's tag, so the two show as one
+ * notification; a viewer who gets no takeover alert still sees the card. */
+function pendingTakeoverOnly(event: Pick<ProductEvent, "type" | "payload">): boolean {
+  if (event.type !== "thread.message.created") return false;
+  const blocks = event.payload.blocks;
+  if (!Array.isArray(blocks) || blocks.length === 0) return false;
+  return blocks.every(
+    (block) =>
+      !!block &&
+      typeof block === "object" &&
+      "kind" in block &&
+      block.kind === "computer" &&
+      "state" in block &&
+      block.state === TAKEOVER_COMPUTER_PENDING_STATE,
+  );
+}
 
 export function shouldNotifyBrowser(
   event: Pick<ProductEvent, "id" | "type" | "threadId" | "seq" | "payload">,
@@ -144,7 +162,9 @@ export function deliverBrowserNotification(
       (block) => !!block && typeof block === "object" && "kind" in block && block.kind === "ask",
     )
       ? `${event.threadId}:ask`
-      : event.threadId;
+      : pendingTakeoverOnly(event)
+        ? `${event.threadId}:takeover`
+        : event.threadId;
   try {
     context.show(message.title, message.body, tag);
     context.notifiedEventIds.add(event.id);

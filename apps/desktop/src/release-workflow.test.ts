@@ -123,6 +123,21 @@ describe("desktop release workflow", () => {
     expect(workflow).not.toMatch(/secrets\.APPLE_TEAM_ID/);
   });
 
+  it("publishes the Apple silicon server bundle the macOS app names", () => {
+    expect(workflow).toContain('node scripts/build-server-bundle.mjs "$RUNNER_TEMP/server-bundle"');
+    expect(workflow).toContain(
+      `"https://github.com/\${GITHUB_REPOSITORY}/releases/download/\${RELEASE_TAG}"`,
+    );
+    expect(workflow).toContain(
+      'cp "$RUNNER_TEMP/server-bundle/server-bundle.json" apps/desktop/build/server-bundle.json',
+    );
+    expect(workflow).toContain("Contents/Resources/server-bundle.json");
+    expect(workflow).toContain("apps/desktop/out/rakazo-server-*.tar.xz");
+    expect(workflow).toContain(
+      'test -s "release-artifacts/rakazo-server-darwin-arm64-$RELEASE_VERSION.tar.xz"',
+    );
+  });
+
   it("publishes only a complete stable, upgrade-only feed", () => {
     expect(workflow).toContain("^v([0-9]+)\\.([0-9]+)\\.([0-9]+)$");
     expect(workflow).toContain("must be newer than published release");
