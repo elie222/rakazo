@@ -40,6 +40,7 @@ import { connectedContext, selectRunConnections } from "./connection-context.js"
 import { nativeShellCommandArgv, usesNativeShell } from "./native-shell.js";
 import { isEgressRefused } from "./network-address.js";
 import { loadPurchaseRedactions } from "./purchase-service.js";
+import { recordVaultItemUse } from "./vault-activity.js";
 import type { SafeWebFetchOptions } from "./web-ssrf.js";
 import { fetchSafeHttpRequest } from "./web-ssrf.js";
 
@@ -539,7 +540,7 @@ async function readComputer(
         shellCommandEnvironment({
           prisma: deps.prisma,
           secretStore,
-          scope: { spaceId: routine.spaceId, userId: routine.userId },
+          scope: { spaceId: routine.spaceId, userId: routine.userId, botId: bot.id },
           registerRedactions: (values) => {
             for (const value of values) secrets.add(value);
           },
@@ -585,6 +586,9 @@ async function readComputer(
     const argv = shellEnvironment
       ? nativeShellCommandArgv(watch.command ?? "", shellEnvironment)
       : ["sh", "-lc", watch.command ?? ""];
+    // The computer is sent the check with its variables here, so each is a use from then on,
+    // recorded once the check ends, however it ends; a check refused or stopped before this got
+    // none. It has no run or chat, and the audit log never throws, so the check never fails on it.
     const result = await run(
       deps,
       computer,
@@ -595,7 +599,17 @@ async function readComputer(
         env: Object.keys(commandEnvironment.env).length > 0 ? commandEnvironment.env : undefined,
         unsetEnv: commandEnvironment.unsetEnv,
       },
-    );
+    ).finally(async () => {
+      for (const item of commandEnvironment?.used ?? [])
+        await recordVaultItemUse({
+          bot,
+          spaceId: routine.spaceId,
+          // The routine's owner, whose vault the check reads.
+          userId: routine.userId,
+          tool: "routine_watch",
+          item,
+        });
+    });
     const revealed = [...secrets];
     const stderr = redactSecrets(result.stderr, revealed);
     if (result.code !== 0) {

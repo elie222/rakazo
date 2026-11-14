@@ -404,12 +404,13 @@ export default function Integrations() {
     writeIntegrationsCache(scope, next);
   }
 
-  async function retryRefresh() {
+  async function retryRefresh(isCurrent?: () => boolean) {
     const focus = focusGeneration.current;
     try {
       await refresh();
     } catch (reason) {
       if (
+        (!isCurrent || isCurrent()) &&
         mounted.current &&
         focus === focusGeneration.current &&
         (!cacheScope.current || isIntegrationsScopeCurrent(cacheScope.current))
@@ -726,7 +727,7 @@ export default function Integrations() {
       if (result.status === "connected") {
         if (result.row) updateAccount(result.row);
         void notifyAppConnected(item, isCurrent);
-        await refresh();
+        await retryRefresh(isCurrent);
         if (isCurrent()) setToolsTick((tick) => tick + 1);
         return;
       }
@@ -754,7 +755,7 @@ export default function Integrations() {
       await rpc("connections/revoke", { connectionId: row.id });
       if (!isCurrent()) return;
       updateAccount({ ...row, status: "revoked" });
-      await refresh();
+      await retryRefresh(isCurrent);
       if (isCurrent()) setToolsTick((tick) => tick + 1);
     } catch (reason) {
       if (!isCurrent()) return;
@@ -804,12 +805,12 @@ export default function Integrations() {
         if (!isCurrent()) return;
         updateAccount({ ...row, status: "revoked" });
       }
-      await refresh();
+      await retryRefresh(isCurrent);
       if (isCurrent()) closeDetail();
     } catch (reason) {
       if (!isCurrent()) return;
-      setCatalogError(errorText(reason, t`Could not revoke connection`));
       await refresh().catch(() => undefined);
+      if (isCurrent()) setCatalogError(errorText(reason, t`Could not revoke connection`));
     } finally {
       if (isCurrent()) setPending(null);
     }

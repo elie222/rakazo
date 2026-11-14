@@ -12,7 +12,7 @@ import type { Mock } from "vitest";
 import { describe, expect, it, vi } from "vitest";
 import {
   listVaultItems,
-  loadBotCommandEnvironment,
+  loadCommandVariables,
   loadLoginPasswordRedactions,
   relabelVaultItem,
   requestWithBotSecret,
@@ -239,7 +239,7 @@ describe("vault values under the envelope keys", () => {
         savedAt: row(db, "visa").updatedAt!.toISOString(),
       }),
     ).toMatchObject({ text: "4242424242424242" });
-    expect(await loadBotCommandEnvironment(db.prisma, secretStore, scope)).toEqual({
+    expect((await loadCommandVariables(db.prisma, secretStore, scope)).env).toEqual({
       TOKEN: "fake-command-value",
     });
     expect((await listVaultItems(db.prisma, secretStore, scope))[0]).toMatchObject({
@@ -305,12 +305,12 @@ describe("vault values under the envelope keys", () => {
     await db.migrate();
     db.ring.clear();
     const unwrap = vi.spyOn(db.provider, "unwrap").mockRejectedValue(new Error("fake outage"));
-    await expect(loadBotCommandEnvironment(db.prisma, secretStore, scope)).rejects.toThrow(
+    await expect(loadCommandVariables(db.prisma, secretStore, scope)).rejects.toThrow(
       "key manager",
     );
     // A running run's later commands go on without the variable.
     const unset = new Set<string>();
-    expect(await loadBotCommandEnvironment(db.prisma, secretStore, scope, unset, "unset")).toEqual(
+    expect((await loadCommandVariables(db.prisma, secretStore, scope, unset, "unset")).env).toEqual(
       {},
     );
     expect([...unset].sort()).toEqual(["GH_TOKEN", "OTHER_TOKEN"]);
@@ -318,7 +318,7 @@ describe("vault values under the envelope keys", () => {
     // One item's own damaged data is left unset, as before.
     const other = row(db, "other_token");
     other.ciphertext = `${other.ciphertext.slice(0, -4)}AAAA`;
-    expect(await loadBotCommandEnvironment(db.prisma, secretStore, scope)).toEqual({
+    expect((await loadCommandVariables(db.prisma, secretStore, scope)).env).toEqual({
       GH_TOKEN: "fake-gh-token",
     });
   });
@@ -390,7 +390,7 @@ describe("vault values under the envelope keys", () => {
       1,
     );
     db.ring.clear();
-    expect(await loadBotCommandEnvironment(db.prisma, secretStore, scope)).toEqual({
+    expect((await loadCommandVariables(db.prisma, secretStore, scope)).env).toEqual({
       NEW_TOKEN: "fake-new-token",
     });
     expect(await loadLoginPasswordRedactions(db.prisma, secretStore, scope)).not.toContain(

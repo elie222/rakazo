@@ -132,12 +132,35 @@ export function composerMentionQuery(
     (span) => selectionStart > span.start && selectionStart <= span.end,
   );
   if (recognized) return { ...recognized, query: text.slice(recognized.start + 1, selectionStart) };
-  const match = /(?:^|\s)@([\w-]*)$/.exec(text.slice(0, selectionStart));
+  const match = /(?:^|\s)@((?:[\p{L}\p{M}\p{N}_\u200c\u30fb-]|\u200d)*)$/u.exec(
+    text.slice(0, selectionStart),
+  );
   if (!match) return null;
   const query = match[1] ?? "";
   const start = selectionStart - query.length - 1;
-  const rest = /^[\w-]*/.exec(text.slice(selectionStart))?.[0] ?? "";
-  return { start, end: selectionStart + rest.length, query };
+  const rest =
+    /^(?:[\p{L}\p{M}\p{N}_\u200c\u30fb-]|\u200d)*/u.exec(text.slice(selectionStart))?.[0] ?? "";
+  // CJK prose need not have spaces. Extend into it only as far as a known name matches.
+  const cjk = rest.search(
+    /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u,
+  );
+  if (cjk < 0) return { start, end: selectionStart + rest.length, query };
+  let end = selectionStart + cjk;
+  const typed = text.slice(start + 1, selectionStart + rest.length);
+  for (const { name } of knownMentions) {
+    const candidate = name.trim();
+    let matched = 0;
+    for (const character of typed) {
+      if (
+        candidate.slice(matched, matched + character.length).toLowerCase() !==
+        character.toLowerCase()
+      )
+        break;
+      matched += character.length;
+    }
+    if (matched >= query.length) end = Math.max(end, start + 1 + matched);
+  }
+  return { start, end, query };
 }
 
 function pickerWords(value: string): string[] {

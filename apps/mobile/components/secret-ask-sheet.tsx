@@ -2,6 +2,7 @@ import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import type { LoginFieldInput } from "@rakazo/contracts";
 import { LoginSecretValue, loginCardFields } from "@rakazo/contracts";
+import { secretAnswerErrorText } from "@rakazo/i18n/vault";
 import { useEffect, useRef, useState } from "react";
 import type { TextInputInstance } from "react-native";
 import { Modal, Platform, ScrollView, StyleSheet, Text, View } from "react-native";
@@ -70,8 +71,8 @@ export function SecretAskSheet({
     setError(null);
     try {
       await onSave(answer, remember);
-    } catch {
-      setError(t`Could not send answer`);
+    } catch (err) {
+      setError(secretAnswerErrorText(err, t`Could not send answer`));
     } finally {
       setSubmitting(false);
     }
