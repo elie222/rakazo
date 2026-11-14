@@ -1,7 +1,11 @@
 import { createHash, randomBytes } from "node:crypto";
 import { ORPCError } from "@orpc/server";
 import type { Actor, ServiceCredential, ServiceScope } from "@rakazo/contracts";
-import { SERVICE_CREDENTIALS_PER_MEMBER, ServiceScopeSchema } from "@rakazo/contracts";
+import {
+  SERVICE_CREDENTIALS_PER_MEMBER,
+  ServiceScopeSchema,
+  withReadScopes,
+} from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { recordAuditEvent, runAsSystem } from "@rakazo/db";
 
@@ -90,7 +94,7 @@ export async function createServiceCredential(
         name: input.name,
         tokenHash: hashToken(token),
         tokenPrefix: token.slice(0, TOKEN_PREFIX.length + 6),
-        scopes: [...new Set(input.scopes)],
+        scopes: withReadScopes(input.scopes),
         botIds,
         expiresAt: new Date(now.getTime() + input.expiresInDays * DAY_MS),
       },

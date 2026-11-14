@@ -1,6 +1,11 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { ServiceCredential, ServiceScope } from "@rakazo/contracts";
-import { isIdentityConfirmationRequired, SERVICE_SCOPES } from "@rakazo/contracts";
+import {
+  isIdentityConfirmationRequired,
+  readScopeOf,
+  SERVICE_SCOPES,
+  withReadScopes,
+} from "@rakazo/contracts";
 import {
   Button,
   Checkbox,
@@ -130,10 +135,12 @@ export function ServiceKeysSettings() {
               <Checkbox
                 id={`${ids}-scope-${scope}`}
                 checked={scopes.includes(scope)}
+                // A write scope includes reading the same area, so its read stays on with it.
+                disabled={scopes.some((entry) => readScopeOf(entry) === scope)}
                 onCheckedChange={(checked) =>
                   setScopes((current) =>
                     checked === true
-                      ? [...current, scope]
+                      ? withReadScopes([...current, scope])
                       : current.filter((entry) => entry !== scope),
                   )
                 }
