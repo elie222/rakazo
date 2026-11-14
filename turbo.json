@@ -22,6 +22,10 @@
     "check": {
       "dependsOn": ["^check", "^generate", "generate"]
     },
+    "test": {
+      "dependsOn": ["^generate"],
+      "outputs": ["coverage/**"]
+    },
     "dev": {
       "cache": false,
       "env": ["PUBLIC_CRISP_WEBSITE_ID", "PUBLIC_POSTHOG_HOST", "PUBLIC_POSTHOG_KEY"],
