@@ -1,3 +1,8 @@
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   parsePerformanceReport,
@@ -77,4 +82,60 @@ describe("performance report input", () => {
       );
     }
   });
+});
+
+describe("performance comparison table", () => {
+  it.each([
+    ["baseline", "candidate", "baseline", "candidate"],
+    ["before|cold", "after|warm", "before\\|cold", "after\\|warm"],
+    ["before\nsecond", "after\r\nsecond\rthird", "before second", "after second third"],
+    ["before\\|cold", "after\\", "before\\\\\\|cold", "after\\\\"],
+    ["基线 🦞", "优化后", "基线 🦞", "优化后"],
+  ])(
+    "keeps labels %j and %j in separate header cells",
+    (before, after, escapedBefore, escapedAfter) => {
+      const directory = mkdtempSync(path.join(tmpdir(), "perf-compare-label-"));
+      const distribution = { count: 1, min: 10, median: 10, p95: 10, max: 10 };
+      const report = {
+        schemaVersion: 2,
+        environment: {},
+        summary: {
+          cacheColdShellUsableMs: distribution,
+          warmShellUsableMs: distribution,
+          settingsPaintedMs: 10,
+          settingsSettledMs: 10,
+          typingKeyPaintMs: distribution,
+          idleCpuPercent: distribution,
+          idleSummedWorkingSetKiB: distribution,
+          streamingCpuPercent: distribution,
+          reopenMs: null,
+          hiddenSummedWorkingSetKiB: null,
+        },
+      };
+      try {
+        const beforePath = path.join(directory, "before.json");
+        const afterPath = path.join(directory, "after.json");
+        writeFileSync(beforePath, JSON.stringify({ ...report, label: before }));
+        writeFileSync(afterPath, JSON.stringify({ ...report, label: after }));
+        const output = execFileSync(
+          process.execPath,
+          [
+            "--import",
+            "tsx",
+            fileURLToPath(new URL("./cli/compare-performance.ts", import.meta.url)),
+            beforePath,
+            afterPath,
+          ],
+          { encoding: "utf8" },
+        );
+        const lines = output.trimEnd().split("\n");
+        expect(lines).toHaveLength(10);
+        expect(lines[0]).toBe(`| Metric | ${escapedBefore} | ${escapedAfter} | Delta |`);
+        expect(lines[1]).toBe("| --- | ---: | ---: | ---: |");
+        expect(lines[2]).toBe("| Cache-cold shell usable (median ms) | 10 | 10 | 0% |");
+      } finally {
+        rmSync(directory, { recursive: true, force: true });
+      }
+    },
+  );
 });
