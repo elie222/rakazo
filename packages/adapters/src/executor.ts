@@ -1258,7 +1258,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           id: runModelId,
           ...(credential ? { connectionId: credential.id } : {}),
           ...resolvedModelRunFields(resolved),
-          thinkingLevel: thinkingLevel ?? resolved.thinkingLevel ?? null,
+          thinkingLevel: thinkingLevel ?? null,
         };
         // Saved identities win on resume, including when the setting was cleared meanwhile.
         const computerModel =

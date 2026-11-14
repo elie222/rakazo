@@ -24,6 +24,7 @@ import {
   scriptedCatalogEntry,
   spaceCanRunCatalogModel,
   validateConnectedModelChoice,
+  withLiveModelSettings,
 } from "@rakazo/adapters";
 import type {
   Actor,
@@ -168,7 +169,10 @@ export function createRouterContext(deps: RouterDeps) {
     let selected = providerLive.size
       ? await savedCatalogSelections(deps.prisma, actor.userId)
       : undefined;
-    const merged = applyProviderLiveCatalog(codexMerged, auth, providerLive, selected);
+    const merged = withLiveModelSettings(
+      auth,
+      applyProviderLiveCatalog(codexMerged, auth, providerLive, selected),
+    );
     // A connected provider's saved choice stays listed after new users stop being offered it.
     if (
       !selected &&
@@ -471,6 +475,7 @@ export function createRouterContext(deps: RouterDeps) {
     removeBot,
     agentImportServices,
     chatCatalog,
+    withServingConnections,
     withDeploymentDefault,
     withImageInput,
     modelRoleCatalog,

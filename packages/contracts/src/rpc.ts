@@ -181,6 +181,7 @@ import {
   ModelConnectionTargetSchema,
   ModelCredentialSchema,
   ModelOAuthBeginSchema,
+  ModelSettingsSaveSchema,
   OPENAI_COMPATIBLE_PROVIDER_ID,
 } from "./model-connections.js";
 import { ModelHeadersSchema } from "./model-headers.js";
@@ -589,6 +590,7 @@ export const appContract = {
     rename: oc
       .input(z.object({ credentialId: Id, label: ModelConnectionLabelSchema }))
       .output(z.object({ ok: z.literal(true) })),
+    saveModelSettings: oc.input(ModelSettingsSaveSchema).output(z.object({ ok: z.literal(true) })),
     /** Removes one connection, or every connection of the provider when older apps omit it. */
     disconnect: oc
       .input(z.object({ provider: z.string().trim().min(1), credentialId: Id.optional() }))

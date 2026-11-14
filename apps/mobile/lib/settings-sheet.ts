@@ -22,6 +22,7 @@ const settingsScreens = new Set([
   "language",
   "memory",
   "memory-note",
+  "model-settings",
   "models",
   "organization",
   "plugin",

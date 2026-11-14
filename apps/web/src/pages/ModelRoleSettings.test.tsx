@@ -345,7 +345,7 @@ describe("shared role editor", () => {
     saved = { primary: { ...chat, thinkingLevel: "high" }, backups: [jev] };
     await render({ thinking: true });
     expect(container.textContent).toContain("Thinking: High");
-    await menu("Chat", "Manage OpenRouter");
+    await menu("Chat", "Manage provider");
     expect(onManage).toHaveBeenCalledWith("openrouter", "key");
     await click(trigger("Jev 1.14 options"));
     expect(
@@ -430,7 +430,7 @@ it("names rows and menus by their connection", async () => {
   await click(trigger("Claude options"));
   expect(
     [...document.querySelectorAll('[role="menuitem"]')].map((entry) => entry.textContent),
-  ).toContain("Manage Claude subscription");
+  ).toContain("Manage provider");
 });
 
 it("groups models by connection and runs the same model on either account", async () => {
@@ -459,7 +459,7 @@ it("groups models by connection and runs the same model on either account", asyn
     backups: [{ ...chat, credentialId: "work" }],
   });
   expect(rows()).toEqual(["ChatOpenRouter", "ChatOpenRouter (Work)"]);
-  await menu("Chat", "Manage OpenRouter");
+  await menu("Chat", "Manage provider");
   expect(onManage).toHaveBeenLastCalledWith("openrouter", "key");
 });
 

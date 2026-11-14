@@ -1,5 +1,5 @@
 import { Text, TextInput, View } from "react-native";
-import { useThemedStyles } from "../lib/native";
+import { native, useThemedStyles } from "../lib/native";
 import { createModelsStyles } from "./model-connection-styles";
 import { SettingsRow } from "./settings-group";
 
@@ -34,12 +34,15 @@ export function LimitField({
   onChangeText,
   maxLength,
   busy,
+  placeholder,
 }: {
   label: string;
   value: string;
   onChangeText: (next: string) => void;
   maxLength: number;
   busy: boolean;
+  /** The value that applies while the field is empty. */
+  placeholder?: string;
 }) {
   const styles = useThemedStyles(createModelsStyles);
   return (
@@ -51,6 +54,8 @@ export function LimitField({
         keyboardType="number-pad"
         maxLength={maxLength}
         onChangeText={onChangeText}
+        placeholder={placeholder}
+        placeholderTextColor={native.tertiaryLabel}
         style={styles.keyInput}
         value={value}
       />
