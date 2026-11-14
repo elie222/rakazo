@@ -8,6 +8,7 @@ import type {
   ObjectStorage,
   PortableFile,
 } from "@rakazo/adapter-kit";
+import { retry } from "@rakazo/core";
 import type { ContentKeyRing, ContentLocation, DataKey, PrismaClient } from "@rakazo/db";
 import {
   ContentDecryptionError,
@@ -193,16 +194,13 @@ export class ObjectAgentHomeStore extends LocalAgentHomeStore {
    * over from them. A Docker computer's mounted copy is never replaced, so that still fails.
    */
   override async removeFolders(botId: string, parent: string, names: readonly string[]) {
-    for (let attempt = 1; ; attempt++) {
-      try {
-        return await this.removeFoldersOnce(botId, parent, names);
-      } catch (error) {
-        const superseded =
-          error instanceof StaleHomeCacheError || error instanceof HomeSaveConflictError;
-        if (!superseded || attempt >= REMOVE_FOLDERS_ATTEMPTS || (await this.isLiveCache(botId)))
-          throw error;
-      }
-    }
+    return retry(() => this.removeFoldersOnce(botId, parent, names), {
+      attempts: REMOVE_FOLDERS_ATTEMPTS,
+      delayMs: 0,
+      retryable: async (error) =>
+        (error instanceof StaleHomeCacheError || error instanceof HomeSaveConflictError) &&
+        !(await this.isLiveCache(botId)),
+    });
   }
 
   private async removeFoldersOnce(botId: string, parent: string, names: readonly string[]) {

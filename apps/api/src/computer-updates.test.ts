@@ -43,6 +43,52 @@ describe("notifications.subscribe computer update signals", () => {
       controller.abort();
     }
   });
+
+  it("ends the stream half a minute after computer update signals fail", async () => {
+    vi.useFakeTimers();
+    const controller = new AbortController();
+    const followChatAlerts = vi.fn(async function* (
+      _userId: string,
+      _spaceId: string,
+      signal: AbortSignal,
+    ) {
+      await new Promise((resolve) => signal.addEventListener("abort", resolve));
+    });
+    const followComputerUpdateChanges = vi.fn(async function* () {
+      yield;
+      throw new Error("subscribe failed");
+    });
+    const client = createRouterClient(
+      createRouter({
+        events: { followChatAlerts, followComputerUpdateChanges },
+      } as unknown as RouterDeps),
+      { context: { actor, signal: controller.signal } },
+    );
+    try {
+      const iterator = (await client.notifications.subscribe())[Symbol.asyncIterator]();
+      expect((await iterator.next()).value).toEqual({ type: "computerUpdates" });
+      const started = Date.now();
+      let endedAt: number | undefined;
+      // Heartbeats and alerts keep flowing until the stream ends.
+      const drained = (async () => {
+        try {
+          while (!(await iterator.next()).done);
+        } catch (error) {
+          endedAt = Date.now();
+          throw error;
+        }
+      })();
+      drained.catch(() => {});
+      await vi.advanceTimersByTimeAsync(29_000);
+      expect(endedAt).toBeUndefined();
+      await vi.advanceTimersByTimeAsync(1_000);
+      await expect(drained).rejects.toThrow("subscribe failed");
+      expect(endedAt! - started).toBe(30_000);
+    } finally {
+      controller.abort();
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe("computer.dismissUpdate", () => {

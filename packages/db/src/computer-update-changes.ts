@@ -1,16 +1,33 @@
 import type { RealtimeFanout } from "@rakazo/adapter-kit";
+import { getLogger } from "@rakazo/logging";
+import { retryWhileDatabaseUnavailable } from "./database-outage.js";
 import { ChangeLatch } from "./event-stream.js";
 
 const IDLE_WAIT_MS = 60_000;
 
 const computerUpdatesTopic = (spaceId: string) => `computer-updates:${spaceId}`;
 
-/** Best effort: an app that misses a signal catches up when its stream reopens. */
-export async function publishComputerUpdateChange(
+const PUBLISH_RETRY_MS = 15_000;
+
+/**
+ * Apps re-read computer updates only on these signals, so a publish rides out a short database
+ * outage in the background, without holding up the request or update step that changed it. Past
+ * that it gives up; apps catch up when their stream reopens.
+ */
+export function publishComputerUpdateChange(
   realtime: RealtimeFanout | undefined,
   spaceId: string,
+  options: { sleep?: (ms: number) => Promise<void> } = {},
 ): Promise<void> {
-  await realtime?.publish(computerUpdatesTopic(spaceId), "").catch(() => undefined);
+  if (realtime)
+    void retryWhileDatabaseUnavailable(() => realtime.publish(computerUpdatesTopic(spaceId), ""), {
+      source: "computer update signal",
+      waitMs: PUBLISH_RETRY_MS,
+      ...options,
+    }).catch((error: unknown) =>
+      getLogger().warn("computer update signal not published", { error }),
+    );
+  return Promise.resolve();
 }
 
 /**

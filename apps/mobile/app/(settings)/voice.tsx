@@ -357,7 +357,7 @@ export default function VoiceSettings() {
     setError(null);
     if (status) setLoadError(null);
     try {
-      await rpc("voice/connect", {
+      const connected = await rpc("voice/connect", {
         provider: selected.id,
         scope,
         apiKey: apiKey.trim(),
@@ -372,8 +372,34 @@ export default function VoiceSettings() {
             }
           : {}),
       });
+      // The mutation has succeeded even if the following read cannot reach the server.
+      loadRevision.current++;
+      const merge = (current: VoiceCredential[] = []) =>
+        current.some((entry) => entry.provider === connected.provider)
+          ? current.map((entry) => (entry.provider === connected.provider ? connected : entry))
+          : [...current, connected];
+      const savedStatus: VoiceStatus = {
+        configured: true,
+        ready: Boolean(connected.voiceId),
+        transcribe: Boolean(selected.transcribe),
+        provider: connected.provider,
+        voiceId: connected.voiceId ?? "",
+      };
+      setStatus(savedStatus);
+      // A replacement server or model can have a different set of voices.
+      setVoices([]);
+      setCredentials(merge);
+      setVoiceId(connected.voiceId ?? "");
+      edited.current.delete("voiceId");
       setApiKey("");
-      await load(selected.id);
+      await Promise.all([
+        writeSaved(queryClient, voiceReads(target).credentials.queryKey, merge),
+        writeSaved(queryClient, voiceReads(target).status.queryKey, () => savedStatus),
+        writeSaved(queryClient, voicesRead(target, connected.provider).queryKey, () => []),
+      ]);
+      await load(selected.id).catch((err: unknown) =>
+        setError(errorText(err, t`Could not load voice settings`)),
+      );
     } catch (err) {
       setError(errorText(err, t`Could not connect`));
     } finally {
@@ -448,9 +474,28 @@ export default function VoiceSettings() {
     loadRevision.current++;
     setVoiceId(nextVoiceId);
     setPending("voice");
+    setError(null);
+    if (status) setLoadError(null);
     try {
-      await rpc("voice/setVoice", { voiceId: nextVoiceId, provider: selected?.id, scope });
-      await load(selected?.id);
+      const saved = await rpc("voice/setVoice", {
+        voiceId: nextVoiceId,
+        provider: selected?.id,
+        scope,
+      });
+      setStatus(saved);
+      // A cached revisit initializes the picker from credentials, not status.
+      const merge = (current: VoiceCredential[] = []) =>
+        current.map((entry) =>
+          entry.provider === saved.provider ? { ...entry, voiceId: saved.voiceId } : entry,
+        );
+      setCredentials(merge);
+      await Promise.all([
+        writeSaved(queryClient, voiceReads(target).status.queryKey, () => saved),
+        writeSaved(queryClient, voiceReads(target).credentials.queryKey, merge),
+      ]);
+      await load(selected?.id).catch((err: unknown) =>
+        setError(errorText(err, t`Could not load voice settings`)),
+      );
     } catch (err) {
       setError(errorText(err, t`Could not save that voice`));
     } finally {

@@ -9,13 +9,13 @@ import type {
   VoiceTranscribeRequest,
   VoiceVerifyResult,
 } from "@rakazo/adapter-kit";
+import { deadlineSignal } from "@rakazo/core";
 import {
   readVoiceAudio,
   readVoiceJson,
   requireOk,
   speechUploadName,
   verifyVoiceHttpGet,
-  voiceDeadline,
   voiceLanguageHint,
   voiceRequestError,
 } from "./voice-http.js";
@@ -47,7 +47,7 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
   async listVoices(apiKey: string, context: AdapterContext): Promise<VoiceInfo[]> {
     const res = await fetch(`${API}/voices`, {
       headers: { "xi-api-key": apiKey },
-      signal: voiceDeadline(context.signal, 20_000),
+      signal: deadlineSignal(20_000, context.signal),
     });
     const body = await readVoiceJson(res, { requireValid: res.ok });
     if (!res.ok) throw voiceRequestError(res.status, "ElevenLabs", "listing voices", body);
@@ -65,7 +65,7 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
   }
 
   async synthesize(request: VoiceSynthesizeRequest, context: AdapterContext): Promise<SpeechClip> {
-    const signal = voiceDeadline(request.signal ?? context.signal, 60_000);
+    const signal = deadlineSignal(60_000, request.signal ?? context.signal);
     const res = await fetch(
       `${API}/text-to-speech/${encodeURIComponent(request.voiceId)}?output_format=${FORMAT}`,
       {
@@ -102,7 +102,7 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
       method: "POST",
       headers: { "xi-api-key": request.apiKey },
       body: form,
-      signal: voiceDeadline(request.signal ?? context.signal, 60_000),
+      signal: deadlineSignal(60_000, request.signal ?? context.signal),
     });
     const body = await readVoiceJson(res, { requireValid: res.ok });
     if (!res.ok) throw voiceRequestError(res.status, "ElevenLabs", "transcribing", body);
