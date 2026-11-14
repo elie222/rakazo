@@ -1040,6 +1040,8 @@ export async function sendThreadMessage(
         userId: string;
         trigger?: string | null;
       }> = [];
+      // Busy members a key's message waits for. Reported only when no member started a run.
+      const held: typeof runs = [];
       for (const botId of targetBotIds) {
         const answered = answeredByBotId.get(botId);
         if (answered) {
@@ -1074,7 +1076,8 @@ export async function sendThreadMessage(
             },
           });
           // A key's message waits for a run of its own, so the busy one is not its run.
-          if (!input.serviceOrigin) runs.push(active);
+          if (input.serviceOrigin) held.push(active);
+          else runs.push(active);
           continue;
         }
         const task = await tx.task.create({
@@ -1145,7 +1148,7 @@ export async function sendThreadMessage(
           replyPreview,
         },
       });
-      return { message, runs, routineRuns, eventSeq: event.seq };
+      return { message, runs, held, routineRuns, eventSeq: event.seq };
     }, THREAD_LOCK_TRANSACTION_OPTIONS);
 
   const committed = await withTransactionRetry(commit).catch(async (error) => {
@@ -1193,5 +1196,8 @@ export async function sendThreadMessage(
     }
   }
   await enqueueRunsNeedingContinue(deps.jobs, [...committed.routineRuns, ...committed.runs]);
-  return sendResult(committed.message, committed.runs);
+  // A key's message to members who are all busy started no run; like a direct send, report a busy
+  // one, which the service API knows is not this message's run.
+  const reported = committed.runs.length ? committed.runs : (committed.held ?? []);
+  return sendResult(committed.message, reported);
 }
