@@ -2,7 +2,11 @@ import { setImmediate } from "node:timers/promises";
 import type { JobPublisher, NotificationProvider } from "@rakazo/adapter-kit";
 import { routineWakeupJob, runContinueJob } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
-import { BACKGROUND_HELPER_TRIGGER, stuckWorkStatusMessages } from "@rakazo/core";
+import {
+  BACKGROUND_HELPER_TRIGGER,
+  messageBlocksText,
+  stuckWorkStatusMessages,
+} from "@rakazo/core";
 import type { DatabaseOutage, Pool, PrismaClient, ThreadEvents } from "@rakazo/db";
 import { databaseOutage, reconcileComputerRuns } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -12,7 +16,6 @@ import { returnBotMessageOutcome } from "./bot-messages.js";
 import { reconcileCallRequests } from "./call-request.js";
 import { scheduleComputerControlExpiry } from "./computer-control.js";
 import { findRunRecoveryBlockers } from "./run-recovery.js";
-import { messageBlocksText } from "./run-replies.js";
 import { reconcileStuckWork } from "./stuck-work.js";
 import { isLoopGuardStopText } from "./tool-loop.js";
 import { isUserProgressClientNonce } from "./user-progress.js";

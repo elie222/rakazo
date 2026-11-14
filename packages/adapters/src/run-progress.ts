@@ -7,6 +7,7 @@ import {
   endsSentence,
   isBackgroundRunTrigger,
   isConversationalRun,
+  messageBlocksText,
   noteLastToolStep,
   redactSecrets,
   redactSecretsAfter,
@@ -17,11 +18,7 @@ import type { ExecutorDeps } from "./executor-deps.js";
 import { IMAGE_RETURNING_COMPUTER_TOOLS } from "./model-vision.js";
 import type { ReplyState, RunContext } from "./run-context.js";
 import { publishMessage } from "./run-messages.js";
-import {
-  messageBlocksText,
-  runAllowsSilentEmpty,
-  runPromotesMidTurnNarration,
-} from "./run-replies.js";
+import { runAllowsSilentEmpty, runPromotesMidTurnNarration } from "./run-replies.js";
 import { PAGE_BROWSER_TOOL_NAMES } from "./run-tool-selection.js";
 import { couldBecomeNoResponse, isExactNoResponse, isPlaceholderText } from "./silent-reply.js";
 import { USER_COMPUTER_SCREEN_TOOLS } from "./user-computer-tools.js";

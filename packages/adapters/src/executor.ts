@@ -12,6 +12,7 @@ import {
   isMessagingChannelRun,
   isOwnerStartedRun,
   isTerminal,
+  messageBlocksText,
   messagingChannelId,
   messagingChannelPrivacyBlock,
   messagingDmSurfaceNote,
@@ -174,7 +175,6 @@ import { createReplyState } from "./run-progress.js";
 import {
   DELEGATED_EMPTY_NOTICE,
   GROUP_UNADDRESSED_REPLY_GUIDANCE,
-  messageBlocksText,
   runAllowsSilentEmpty,
   runNarratesLive,
   runReplyGuidance,

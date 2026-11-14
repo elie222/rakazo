@@ -494,11 +494,13 @@ export const Transcript = memo(function Transcript({
 
   // Your message rises into place the first time it appears after you send it from this tab.
   // It runs before paint, after the snap above, so the row starts just above the composer.
-  const seenMessageIds = useRef<ReadonlySet<string> | null>(null);
+  const seenMessages = useRef<readonly ThreadMessage[] | null>(null);
   useLayoutEffect(() => {
-    const seenIds = seenMessageIds.current;
-    seenMessageIds.current = new Set(messages.map((message) => message.id));
-    if (!seenIds) return;
+    const seen = seenMessages.current;
+    seenMessages.current = messages;
+    // With no send from this tab waiting, a streamed token costs nothing here.
+    if (!seen || !pendingSends.current.length) return;
+    const seenIds = new Set(seen.map((message) => message.id));
     const { entering, pendingSends: stillPending } = sentMessageEntrances({
       messages: messages.map((message) => ({
         ...message,

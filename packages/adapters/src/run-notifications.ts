@@ -4,6 +4,7 @@ import {
   BACKGROUND_HELPER_TRIGGER,
   displayName,
   isBackgroundRunTrigger,
+  messageBlocksText,
   plainTextFromMarkdown,
   redactSecrets,
   truncatedPlainText,
@@ -14,7 +15,6 @@ import { countUnreadInboxChats, membersSnoozing } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { notificationIdentity } from "./notification-identity.js";
-import { messageBlocksText } from "./run-replies.js";
 
 const COMPLETION_NOTIFICATION_MAX_CHARS = 180;
 const NOTIFY_RECIPIENTS_AT_ONCE = 5;
