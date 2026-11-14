@@ -9,6 +9,7 @@ import { createRoot } from "react-dom/client";
 import { Alert } from "react-native";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import ModelConnection from "../app/(settings)/model-connection";
+import ModelSettingsScreen from "../app/(settings)/model-settings";
 import Models from "../app/(settings)/models";
 import type { ModelConnectionRequest } from "./model-connection-request";
 import {
@@ -20,10 +21,11 @@ import { modelPickerRequest } from "./model-picker-selection";
 import { queryClient } from "./query";
 
 const savedEndpoint = "https://models.example.test/v1";
-const { push, back, params, rpcCalls, saved } = vi.hoisted(() => ({
+const { push, back, replace, params, rpcCalls, saved } = vi.hoisted(() => ({
   push: vi.fn(),
   back: vi.fn(),
-  params: {} as { requestId?: string; spaceId?: string },
+  replace: vi.fn(),
+  params: {} as { requestId?: string; spaceId?: string; credentialId?: string; modelId?: string },
   rpcCalls: [] as [
     string,
     unknown,
@@ -35,9 +37,11 @@ const { push, back, params, rpcCalls, saved } = vi.hoisted(() => ({
     label: "Fixture",
     held: null as Promise<void> | null,
     failMe: false,
+    failConnect: false,
     apiProtocol: undefined as string | undefined,
     reasoning: false,
     thinkingLevel: undefined as string | undefined,
+    modelSettings: undefined as Record<string, object> | undefined,
     bots: [] as {
       id: string;
       name: string;
@@ -50,6 +54,7 @@ const { push, back, params, rpcCalls, saved } = vi.hoisted(() => ({
     needsModel: false,
   },
 }));
+const settingsRouter = { push, back, replace };
 
 vi.mock("./session", () => ({ currentSessionGeneration: () => 1 }));
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
@@ -95,7 +100,25 @@ vi.mock("./api", () => ({
       if (failure) throw new Error("offline");
       return {};
     }
-    if (procedure === "models/connect") return { id: "credential-new" };
+    if (procedure === "models/connect") {
+      if (saved.failConnect) throw new Error("connection refused");
+      const form = input as {
+        provider: string;
+        baseUrl?: string;
+        modelId?: string;
+        maxTokens?: number;
+      };
+      return {
+        id: "credential-new",
+        provider: form.provider,
+        label: "Saved fixture",
+        hasKey: true,
+        baseUrl: form.baseUrl,
+        modelId: form.modelId,
+        maxTokens: form.maxTokens,
+        headerNames: ["x-session"],
+      };
+    }
     if (procedure === "models/forRole") return [];
     if (procedure === "models/list")
       return [
@@ -128,13 +151,14 @@ vi.mock("./api", () => ({
           ...(saved.apiProtocol ? { apiProtocol: saved.apiProtocol } : {}),
           ...(saved.reasoning ? { reasoning: true } : {}),
           ...(saved.thinkingLevel ? { thinkingLevel: saved.thinkingLevel } : {}),
+          ...(saved.modelSettings ? { modelSettings: saved.modelSettings } : {}),
         },
       ];
     return [];
   },
 }));
 vi.mock("expo-router", () => ({
-  useRouter: () => ({ push, back }),
+  useRouter: () => settingsRouter,
   useNavigation: () => ({ setOptions: vi.fn() }),
   useLocalSearchParams: () => params,
   useFocusEffect: (effect: () => (() => void) | undefined) => useEffect(effect, [effect]),
@@ -581,15 +605,6 @@ function currentProtocol(): string | undefined {
   );
 }
 
-const EFFORT_LABELS = ["Default", "Minimal", "Low", "Medium", "High", "Extra high", "Max"];
-
-/** The reasoning-effort choice the picker marks current, when reasoning is on. */
-function currentEffort(): string | undefined {
-  return EFFORT_LABELS.find(
-    (label) => protocolChoice(label)?.getAttribute("aria-pressed") === "true",
-  );
-}
-
 async function saveConnection() {
   const save = [...container.querySelectorAll("button")].find(
     (button) => button.textContent === "Save",
@@ -642,43 +657,116 @@ it("keeps the chosen protocol when the endpoint changes", async () => {
   }
 });
 
-/** Remounting folds Advanced away again; the effort picker lives inside it. */
-async function remountWithAdvanced(render: () => Promise<void>) {
-  await remount(render);
-  const advanced = [...container.querySelectorAll("button")].find(
-    (button) => button.textContent === "Advanced",
-  );
-  expect(advanced).toBeDefined();
-  await act(async () => advanced!.click());
-}
-
-it("clamps a staged effort when the protocol switch drops the level", async () => {
-  saved.reasoning = true;
-  saved.thinkingLevel = "max";
-  try {
-    await remountWithAdvanced(() => renderConnection());
-    expect(currentEffort()).toBe("Max");
-    await act(async () => protocolChoice("Anthropic Messages").click());
-    expect(currentEffort()).toBe("High");
-    await saveConnection();
-    expect(rpcCalls.find(([procedure]) => procedure === "models/connect")?.[1]).toMatchObject({
-      apiProtocol: "anthropic-messages",
-      thinkingLevel: "high",
-    });
-  } finally {
-    saved.reasoning = false;
-    saved.thinkingLevel = undefined;
-  }
-});
-
 it("offers no protocol choice on a catalog provider's connection", async () => {
   await remount(() => renderConnection({ provider: "anthropic", credentialId: null }));
   expect(PROTOCOL_LABELS.some((label) => container.textContent?.includes(label))).toBe(false);
 });
 
-it("lets the limit fields hold every value the server accepts", () => {
-  expect(field("Maximum output tokens")?.maxLength).toBe(String(MAX_MODEL_MAX_TOKENS).length);
-  expect(field("Context limit")?.maxLength).toBe(String(MAX_MODEL_CONTEXT_WINDOW).length);
+it("lists the connection's models, each opening its settings", async () => {
+  push.mockClear();
+  const row = [...container.querySelectorAll("button")].find((button) =>
+    button.textContent?.startsWith("model-fixture"),
+  );
+  expect(row).toBeDefined();
+  await act(async () => row!.click());
+  expect(push).toHaveBeenCalledWith({
+    pathname: "/model-settings",
+    params: { credentialId: "credential-fixture", modelId: "model-fixture" },
+  });
+});
+
+it("saves a model's own limits and capabilities from its Manage model screen", async () => {
+  params.credentialId = "credential-fixture";
+  params.modelId = "model-fixture";
+  try {
+    await remount(async () => {
+      await act(async () => root.render(createElement(ModelSettingsScreen)));
+    });
+    expect(field("Maximum output tokens")?.maxLength).toBe(String(MAX_MODEL_MAX_TOKENS).length);
+    expect(field("Context limit")?.maxLength).toBe(String(MAX_MODEL_CONTEXT_WINDOW).length);
+    expect(field("Context limit")?.placeholder).toBe("262144");
+    expect(field("Maximum images per request")).toBeNull();
+    await act(async () => field("Supports images")!.click());
+    expect(field("Maximum images per request")).not.toBeNull();
+    await change("Maximum output tokens", "8192");
+    await saveConnection();
+    expect(rpcCalls.find(([procedure]) => procedure === "models/saveModelSettings")?.[1]).toEqual({
+      credentialId: "credential-fixture",
+      modelId: "model-fixture",
+      settings: { maxTokens: 8192, images: true, reasoning: false },
+    });
+  } finally {
+    delete params.credentialId;
+    delete params.modelId;
+  }
+});
+
+it("leaves a removed model's settings and preserves the selected Space", async () => {
+  params.credentialId = "credential-fixture";
+  params.modelId = "removed-model";
+  params.spaceId = "space-override";
+  replace.mockClear();
+  try {
+    await remount(async () => {
+      await act(async () => root.render(createElement(ModelSettingsScreen)));
+    });
+    expect(replace).toHaveBeenCalledWith({
+      pathname: "/models",
+      params: { spaceId: "space-override" },
+    });
+    expect(field("Maximum output tokens")).toBeNull();
+    expect(rpcCalls.some(([procedure]) => procedure === "models/saveModelSettings")).toBe(false);
+  } finally {
+    delete params.credentialId;
+    delete params.modelId;
+    delete params.spaceId;
+  }
+});
+
+it("reads and saves a Space override's model settings in that Space", async () => {
+  params.credentialId = "credential-fixture";
+  params.modelId = "model-fixture";
+  params.spaceId = "space-override";
+  rpcCalls.length = 0;
+  try {
+    await remount(async () => {
+      await act(async () => root.render(createElement(ModelSettingsScreen)));
+    });
+    await change("Maximum output tokens", "8192");
+    await saveConnection();
+    for (const procedure of ["models/credentials", "models/list", "models/saveModelSettings"])
+      expect(
+        rpcCalls.find(([called]) => called === procedure)?.[2]?.requestContext?.headers,
+      ).toEqual({ "x-rakazo-space-id": "space-override" });
+  } finally {
+    delete params.credentialId;
+    delete params.modelId;
+    delete params.spaceId;
+  }
+});
+
+it("resets a customized model to its defaults", async () => {
+  params.credentialId = "credential-fixture";
+  params.modelId = "model-fixture";
+  saved.modelSettings = { "model-fixture": { maxTokens: 8192 } };
+  try {
+    await remount(async () => {
+      await act(async () => root.render(createElement(ModelSettingsScreen)));
+    });
+    expect(field("Maximum output tokens")?.value).toBe("8192");
+    const reset = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Reset to defaults",
+    );
+    expect(reset).toBeDefined();
+    await act(async () => reset!.click());
+    expect(
+      rpcCalls.findLast(([procedure]) => procedure === "models/saveModelSettings")?.[1],
+    ).toEqual({ credentialId: "credential-fixture", modelId: "model-fixture", settings: {} });
+  } finally {
+    saved.modelSettings = undefined;
+    delete params.credentialId;
+    delete params.modelId;
+  }
 });
 
 it("keeps setup help and API key collapsible for generic compatible servers", async () => {
@@ -788,4 +876,65 @@ it("searches discovered models without losing the selected default", async () =>
   expect(container.textContent).toContain("found-0");
   expect(field("found-0")?.checked).toBe(true);
   expect(field("found-1")?.checked).toBe(true);
+});
+
+describe("connection success with a failed refresh", () => {
+  afterEach(() => {
+    saved.failMe = false;
+    saved.failConnect = false;
+  });
+
+  it("keeps a new saved connection and clears its key when refreshing fails", async () => {
+    await remount(() => renderConnection({ credentialId: null, baseUrl: "https://ollama.com/v1" }));
+    await change("API key", "synthetic-test-key");
+    await change("Model id", "model-fixture");
+    saved.failMe = true;
+    await saveConnection();
+    expect(container.textContent).not.toContain("Could not connect this provider");
+    expect(container.textContent).toContain("Could not load model settings");
+    expect(field("API key")?.value).toBe("");
+    expect(field("API key")?.placeholder).toBe("Paste a replacement key");
+    const save = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Save",
+    )!;
+    expect(save.disabled).toBe(false);
+    await saveConnection();
+    const connects = rpcCalls.filter(([procedure]) => procedure === "models/connect");
+    expect(connects).toHaveLength(2);
+    expect(connects[1]?.[1]).toMatchObject({ credentialId: "credential-new" });
+    expect((connects[1]?.[1] as { apiKey?: string } | undefined)?.apiKey).toBeUndefined();
+  });
+
+  it("keeps a saved connection when the picker's follow-up read fails", async () => {
+    const onConnected = vi.fn(async () => {
+      throw new Error("credentials refresh failed");
+    });
+    await remount(() =>
+      renderConnection({ credentialId: null, baseUrl: "https://ollama.com/v1", onConnected }),
+    );
+    await change("API key", "synthetic-test-key");
+    await change("Model id", "model-fixture");
+    await saveConnection();
+    expect(onConnected).toHaveBeenCalledWith({
+      provider: "openai-compatible",
+      modelId: "model-fixture",
+      credentialId: "credential-new",
+    });
+    expect(container.textContent).toContain("Could not load model settings");
+    expect(container.textContent).not.toContain("Could not connect this provider");
+    expect(field("API key")?.value).toBe("");
+    expect(field("API key")?.placeholder).toBe("Paste a replacement key");
+    expect(back).not.toHaveBeenCalled();
+  });
+
+  it("keeps the typed key and unsaved state when the connection itself fails", async () => {
+    await remount(() => renderConnection({ credentialId: null, baseUrl: "https://ollama.com/v1" }));
+    await change("API key", "synthetic-test-key");
+    await change("Model id", "model-fixture");
+    saved.failConnect = true;
+    await saveConnection();
+    expect(container.textContent).toContain("Could not connect this provider");
+    expect(field("API key")?.value).toBe("synthetic-test-key");
+    expect(field("API key")?.placeholder).not.toBe("Paste a replacement key");
+  });
 });

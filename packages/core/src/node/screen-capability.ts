@@ -1,4 +1,4 @@
-import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes } from "node:crypto";
 import {
   ipVersion,
   isLocalhostOrLoopbackIp,
@@ -15,9 +15,9 @@ export const SCREEN_RECHECK_MS = 1_000;
  */
 export const SCREEN_UNCONFIRMED_MAX_MS = 6_000;
 /**
- * Remote seals are reused until this much life remains. A public hop (E2B) can
- * still be presenting the capability it started with; minting a new one on
- * every poll aborts that handshake. The reused seal keeps its original expiry.
+ * Remote seals stay the same until this much life remains. A public hop (E2B) can
+ * still be presenting the capability it started with; a new one on every poll
+ * aborts that handshake.
  */
 export const REMOTE_SCREEN_CAPABILITY_MIN_REMAINING_MS = 10 * 60_000;
 
@@ -86,21 +86,34 @@ export function sealScreenCapability(
   now = Date.now(),
   headers?: Record<string, string>,
 ) {
+  return seal(url, secret, origin, scope, now + SCREEN_PROXY_TTL_MS, headers, false);
+}
+
+function seal(
+  url: string,
+  secret: string,
+  origin: string,
+  scope: ScreenCapabilityScope,
+  expiresAt: number,
+  headers: Record<string, string> | undefined,
+  repeatable: boolean,
+) {
   if (!isScreenProxyHeaders(headers)) throw new Error("Invalid screen authentication headers");
   const target = new URL(url);
   if (target.protocol !== "https:" && target.protocol !== "http:")
     throw new Error("Invalid screen protocol");
   const policy = target.searchParams.get("view_only") === "false" ? "control" : "view";
-  const expiresAt = now + SCREEN_PROXY_TTL_MS;
-  const iv = randomBytes(12);
-  const cipher = createCipheriv("aes-256-gcm", createHash("sha256").update(secret).digest(), iv, {
-    authTagLength: 16,
-  });
-  cipher.setAAD(Buffer.from(`${policy}:${expiresAt}`));
-  const ciphertext = Buffer.concat([
-    cipher.update(JSON.stringify({ url, scope, headers }), "utf8"),
-    cipher.final(),
-  ]);
+  const key = createHash("sha256").update(secret).digest();
+  const aad = `${policy}:${expiresAt}`;
+  const plaintext = JSON.stringify({ url, scope, headers });
+  // A repeatable seal derives its nonce from what it seals, so equal inputs give the same
+  // link on every server and different inputs never share a nonce.
+  const iv = repeatable
+    ? createHmac("sha256", key).update(`${aad}\0${plaintext}`).digest().subarray(0, 12)
+    : randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", key, iv, { authTagLength: 16 });
+  cipher.setAAD(Buffer.from(aad));
+  const ciphertext = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
   const token = Buffer.concat([iv, cipher.getAuthTag(), ciphertext]).toString("base64url");
   const prefix = `/novnc/session/${policy}/${expiresAt}.${token}`;
   const result = new URL(`${prefix}${target.pathname || "/"}`, new URL(origin).origin);
@@ -117,22 +130,18 @@ export function sealScreenCapability(
   return result.toString();
 }
 
-const remoteScreenSeals = new Map<string, { sealed: string; expiresAt: number }>();
-
 export function isLoopbackScreenTarget(url: string) {
   return isLocalhostOrLoopbackIp(new URL(url).hostname);
 }
 
-/** Drop cached remote seals. Tests use this so issuance order cannot leak between cases. */
-export function resetRemoteScreenCapabilityReuse() {
-  remoteScreenSeals.clear();
-}
+const REMOTE_SCREEN_SEAL_WINDOW_MS =
+  SCREEN_PROXY_TTL_MS - REMOTE_SCREEN_CAPABILITY_MIN_REMAINING_MS;
 
 /**
- * Issue a screen capability. Loopback targets stay a fresh seal per call.
- * Remote targets reuse a still-valid seal for the same upstream URL and scope
- * so an in-flight viewer is not raced by token rotation. Revocation is unchanged:
- * the seal still expires, and a new scope or upstream URL misses the cache.
+ * Issue a screen capability. Loopback targets get a fresh seal per call. Remote targets get
+ * the same seal from every server for the same upstream URL and scope until less than
+ * REMOTE_SCREEN_CAPABILITY_MIN_REMAINING_MS of it remains, so an in-flight viewer is not
+ * raced by token rotation. Expiry and scope changes still revoke it.
  */
 export function issueScreenCapability(
   url: string,
@@ -144,17 +153,10 @@ export function issueScreenCapability(
 ) {
   if (isLoopbackScreenTarget(url))
     return sealScreenCapability(url, secret, origin, scope, now, headers);
-  const key = remoteScreenSealKey(url, secret, origin, scope, headers);
-  const cached = remoteScreenSeals.get(key);
-  if (cached && cached.expiresAt - now > REMOTE_SCREEN_CAPABILITY_MIN_REMAINING_MS) {
-    return cached.sealed;
-  }
-  const sealed = sealScreenCapability(url, secret, origin, scope, now, headers);
-  for (const [cachedKey, entry] of remoteScreenSeals) {
-    if (entry.expiresAt <= now) remoteScreenSeals.delete(cachedKey);
-  }
-  remoteScreenSeals.set(key, { sealed, expiresAt: now + SCREEN_PROXY_TTL_MS });
-  return sealed;
+  const expiresAt =
+    (Math.floor(now / REMOTE_SCREEN_SEAL_WINDOW_MS) + 1) * REMOTE_SCREEN_SEAL_WINDOW_MS +
+    REMOTE_SCREEN_CAPABILITY_MIN_REMAINING_MS;
+  return seal(url, secret, origin, scope, expiresAt, headers, true);
 }
 
 export function addScreenProxyCapability(
@@ -170,26 +172,6 @@ export function addScreenProxyCapability(
   const protocol = new URL(url).protocol;
   if (protocol !== "http:" && protocol !== "https:") return url;
   return issueScreenCapability(url, secret, origin, scope, now, headers);
-}
-
-function remoteScreenSealKey(
-  url: string,
-  secret: string,
-  origin: string,
-  scope: ScreenCapabilityScope,
-  headers?: Record<string, string>,
-) {
-  return [
-    createHash("sha256").update(secret).digest("base64url"),
-    new URL(origin).origin,
-    url,
-    JSON.stringify(Object.entries(headers ?? {}).sort(([a], [b]) => a.localeCompare(b))),
-    scope.botId,
-    scope.computerId,
-    String(scope.botGeneration),
-    String(scope.computerGeneration),
-    scope.controlLeaseId ?? "",
-  ].join("\0");
 }
 
 export function openScreenCapability(

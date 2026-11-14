@@ -2,7 +2,7 @@ import type { DesktopSetup } from "@rakazo/contracts";
 import type { BrowserWindow } from "electron";
 import type { DesktopUpdateController } from "./auto-update.js";
 import type { prepareHostComputer } from "./host-computer.js";
-import type { LocalStackController } from "./local-stack.js";
+import type { StackController } from "./local-stack.js";
 import type { UserDeviceAccess } from "./user-device.js";
 
 /** Window, setup, and service state shared by the main process modules. */
@@ -33,7 +33,7 @@ export const desktop = {
   /** Created once the app's language is known, so its first message is in it. */
   desktopUpdater: DesktopUpdateController;
   launchUpdateCheckScheduled: boolean;
-  localStack: LocalStackController;
+  localStack: StackController;
   hostComputer: Awaited<ReturnType<typeof prepareHostComputer>> | undefined;
   userDevices: UserDeviceAccess | undefined;
 };

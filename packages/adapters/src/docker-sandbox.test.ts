@@ -1,8 +1,14 @@
 import type { ProcessEvent } from "@rakazo/adapter-kit";
-import { SandboxRequestRejectedError } from "@rakazo/adapter-kit";
+import {
+  SandboxDamagedError,
+  SandboxRequestRejectedError,
+  SandboxUnresponsiveError,
+} from "@rakazo/adapter-kit";
+import { COMPUTER_UNRESPONSIVE_ERROR } from "@rakazo/contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   DockerSandboxProvider,
+  HEALTH_CHECK_TIMEOUT_MS,
   MAX_SANDBOX_ERROR_RESPONSE_BYTES,
   MAX_SANDBOX_SUCCESS_RESPONSE_BYTES,
   SCREEN_RELEASE_TIMEOUT_MS,
@@ -42,6 +48,26 @@ describe("Docker sandbox", () => {
         context,
       ),
     ).rejects.toThrow("control screen failed to start");
+  });
+
+  it("preserves the team screen limit without provider details", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json(
+          { error: "cannot allocate another screen (limit 4): private detail" },
+          { status: 409 },
+        ),
+      ),
+    );
+    const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+    await expect(
+      provider.connectScreen(
+        { id: "computer", botId: "bot", kind: "docker", providerRef: "computer" },
+        { view: "stream" },
+        context,
+      ),
+    ).rejects.toThrow("This Team Computer cannot allocate another screen (limit 4).");
   });
 
   it("requires a control token and an explicit route for an interactive screen", async () => {
@@ -199,11 +225,344 @@ describe("Docker sandbox", () => {
         (error: unknown) => (settled = error),
       );
       deadline.abort(new DOMException("The operation timed out.", "TimeoutError"));
-      await vi.waitFor(() => expect(settled).toBe(deadline.signal.reason));
+      await vi.waitFor(() => expect(settled).toBeInstanceOf(SandboxUnresponsiveError));
+      expect(settled).toMatchObject({
+        message: COMPUTER_UNRESPONSIVE_ERROR,
+        cause: deadline.signal.reason,
+      });
       expect(cancel).toHaveBeenCalledOnce();
     } finally {
       timeout.mockRestore();
     }
+  });
+
+  it("reports a command the computer never answers as an unresponsive computer", async () => {
+    const dropped = new TypeError("terminated");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw dropped;
+      }),
+    );
+    const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+    const events = provider.execute(
+      { id: "computer", botId: "bot", kind: "docker", providerRef: "computer" },
+      { argv: ["true"] },
+      context,
+    );
+    await expect(events[Symbol.asyncIterator]().next()).rejects.toMatchObject({
+      name: "SandboxUnresponsiveError",
+      message: COMPUTER_UNRESPONSIVE_ERROR,
+      cause: dropped,
+    });
+  });
+
+  /** A finished command's stream: what it printed, then exit code 0. */
+  const commandOutput = (stdout: string) =>
+    new Response(
+      [
+        ...(stdout ? [JSON.stringify({ type: "stdout", data: stdout })] : []),
+        JSON.stringify({ type: "exit", code: 0 }),
+      ].join("\n"),
+      { headers: { "content-type": "application/x-ndjson" } },
+    );
+
+  describe("before a computer is used", () => {
+    const computer = {
+      id: "computer",
+      botId: "bot",
+      kind: "docker",
+      providerRef: "computer",
+    } as const;
+
+    it("uses a computer that can write its home folder", async () => {
+      const fetchMock = vi.fn(async () => commandOutput(""));
+      vi.stubGlobal("fetch", fetchMock);
+      const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+      await provider.prepare(computer, context);
+      expect(fetchMock).toHaveBeenCalledExactlyOnceWith(
+        "http://supervisor.test/computers/computer/exec",
+        expect.objectContaining({
+          body: expect.stringContaining(
+            JSON.stringify(["/bin/sh", "-c", "test -w . || echo unwritable"]),
+          ),
+        }),
+      );
+    });
+
+    it("shares one home probe while callers stop waiting independently", async () => {
+      let answer = (_response: Response) => {};
+      const fetchMock = vi.fn(
+        () =>
+          new Promise<Response>((resolve) => {
+            answer = resolve;
+          }),
+      );
+      vi.stubGlobal("fetch", fetchMock);
+      const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+      const stopped = new AbortController();
+      const first = provider.prepare(computer, { ...context, signal: stopped.signal });
+      const second = provider.prepare(computer, context);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      stopped.abort(new Error("stopped"));
+      await expect(first).rejects.toThrow("stopped");
+      answer(commandOutput(""));
+      await expect(second).resolves.toBeUndefined();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("reports a computer that cannot write its home folder as damaged", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => commandOutput("unwritable\n")),
+      );
+      const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+      await expect(provider.prepare(computer, context)).rejects.toBeInstanceOf(SandboxDamagedError);
+    });
+
+    it("does not restart a computer on incomplete unwritable output", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(
+          async () =>
+            new Response(JSON.stringify({ type: "stdout", data: "unwritable\n" }), {
+              headers: { "content-type": "application/x-ndjson" },
+            }),
+        ),
+      );
+      const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+      await expect(provider.prepare(computer, context)).resolves.toBeUndefined();
+    });
+
+    it("bounds an unanswered preparation check without reporting damage", async () => {
+      const deadline = new AbortController();
+      vi.spyOn(AbortSignal, "timeout").mockReturnValue(deadline.signal);
+      try {
+        vi.stubGlobal(
+          "fetch",
+          vi.fn(
+            (_url: string, init: RequestInit) =>
+              new Promise<Response>((_resolve, reject) => {
+                init.signal?.addEventListener("abort", () => reject(init.signal?.reason));
+              }),
+          ),
+        );
+        const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+        const check = provider.prepare(computer, context);
+        expect(AbortSignal.timeout).toHaveBeenCalledWith(HEALTH_CHECK_TIMEOUT_MS);
+        const rejected = expect(check).rejects.not.toBeInstanceOf(SandboxDamagedError);
+        deadline.abort(new DOMException("Timed out", "TimeoutError"));
+        await rejected;
+      } finally {
+        vi.mocked(AbortSignal.timeout).mockRestore();
+      }
+    });
+
+    it("does not blame the home folder when the check itself could not run", async () => {
+      const fetchMock = vi.fn(async (url: string) =>
+        url.endsWith("/exec")
+          ? new Response("supervisor error", { status: 500 })
+          : new Response(JSON.stringify({ running: true })),
+      );
+      vi.stubGlobal("fetch", fetchMock);
+      const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+      await expect(provider.prepare(computer, context)).resolves.toBeUndefined();
+    });
+  });
+
+  describe("after a command goes unanswered", () => {
+    const computer = {
+      id: "computer",
+      botId: "bot",
+      kind: "docker",
+      providerRef: "computer",
+    } as const;
+    const exit = (code: number) =>
+      new Response(JSON.stringify({ type: "exit", code }), {
+        headers: { "content-type": "application/x-ndjson" },
+      });
+    async function unansweredProvider(fetchMock: ReturnType<typeof vi.fn>) {
+      fetchMock.mockRejectedValueOnce(new TypeError("terminated"));
+      vi.stubGlobal("fetch", fetchMock);
+      const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+      await expect(
+        provider
+          .execute(computer, { argv: ["true"] }, context)
+          [Symbol.asyncIterator]()
+          .next(),
+      ).rejects.toBeInstanceOf(SandboxUnresponsiveError);
+      return provider;
+    }
+
+    const checkTimeout = (call: unknown[] | undefined) => {
+      if (!call) throw new Error("Expected an exec request");
+      return JSON.parse((call[1] as RequestInit).body as string).timeoutMs;
+    };
+
+    it("gives every preparation check a short deadline", async () => {
+      const fetchMock = vi.fn(async () => exit(0));
+      const provider = await unansweredProvider(fetchMock);
+      await provider.prepare(computer, context);
+      expect(checkTimeout(fetchMock.mock.calls.at(-1))).toBe(HEALTH_CHECK_TIMEOUT_MS);
+      await provider.prepare(computer, context);
+      expect(checkTimeout(fetchMock.mock.calls.at(-1))).toBe(HEALTH_CHECK_TIMEOUT_MS);
+    });
+
+    it("reports the computer damaged when it answers that its home cannot be written", async () => {
+      const provider = await unansweredProvider(vi.fn(async () => commandOutput("unwritable\n")));
+      await expect(provider.prepare(computer, context)).rejects.toBeInstanceOf(SandboxDamagedError);
+    });
+
+    it.each([new Error("stopped"), "stopped"])(
+      "does not start a check for an already stopped caller (%s)",
+      async (reason) => {
+        const fetchMock = vi.fn(async () => exit(0));
+        const provider = await unansweredProvider(fetchMock);
+        fetchMock.mockClear();
+        const stopped = new AbortController();
+        stopped.abort(reason);
+
+        await expect(
+          provider.prepare(computer, { ...context, signal: stopped.signal }),
+        ).rejects.toEqual(reason instanceof Error ? reason : new Error("Request timed out"));
+        expect(fetchMock).not.toHaveBeenCalled();
+      },
+    );
+
+    it("observes a failed check after its only caller stops waiting", async () => {
+      let answer = (_response: Response) => {};
+      const fetchMock = vi.fn(
+        () =>
+          new Promise<Response>((resolve) => {
+            answer = resolve;
+          }),
+      );
+      const provider = await unansweredProvider(fetchMock);
+      const unhandled = vi.fn();
+      process.on("unhandledRejection", unhandled);
+      try {
+        const stopped = new AbortController();
+        const check = provider.prepare(computer, { ...context, signal: stopped.signal });
+        await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+        stopped.abort(new Error("stopped"));
+        await expect(check).rejects.toThrow("stopped");
+
+        answer(exit(1));
+        await new Promise((resolve) => setImmediate(resolve));
+        await new Promise((resolve) => setImmediate(resolve));
+        expect(unhandled).not.toHaveBeenCalled();
+
+        fetchMock.mockResolvedValueOnce(exit(1));
+        await expect(provider.prepare(computer, context)).rejects.toBeInstanceOf(
+          SandboxDamagedError,
+        );
+        expect(fetchMock).toHaveBeenCalledTimes(3);
+      } finally {
+        process.off("unhandledRejection", unhandled);
+      }
+    });
+
+    it.each([
+      ["answers nothing", () => Promise.reject(new TypeError("terminated"))],
+      ["fails the command", async () => exit(1)],
+    ])("reports the computer damaged when it %s", async (_name, respond) => {
+      const provider = await unansweredProvider(vi.fn(respond));
+      await expect(provider.prepare(computer, context)).rejects.toBeInstanceOf(SandboxDamagedError);
+    });
+
+    it("stops it without a checkpoint and trusts the restarted computer", async () => {
+      const fetchMock = vi.fn(async () => new Response("{}"));
+      const provider = await unansweredProvider(fetchMock);
+      await provider.stop(computer, context, { discardUnsaved: true });
+      expect(fetchMock.mock.calls.at(-1)).toEqual([
+        "http://supervisor.test/computers/computer/stop",
+        expect.objectContaining({
+          headers: expect.objectContaining({ "x-rakazo-discard-unsaved": "1" }),
+        }),
+      ]);
+      await provider.prepare(computer, context);
+      expect(checkTimeout(fetchMock.mock.calls.at(-1))).toBe(HEALTH_CHECK_TIMEOUT_MS);
+    });
+
+    it("runs one check for callers that need it at the same time", async () => {
+      let answer = (_response: Response) => {};
+      const fetchMock = vi.fn(
+        () =>
+          new Promise<Response>((resolve) => {
+            answer = resolve;
+          }),
+      );
+      const provider = await unansweredProvider(fetchMock);
+      const first = provider.prepare(computer, context);
+      const second = provider.prepare(computer, context);
+      await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+      answer(exit(0));
+      await Promise.all([first, second]);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    it("lets the other callers' check finish when one caller stops waiting", async () => {
+      let answer = (_response: Response) => {};
+      const fetchMock = vi.fn(
+        () =>
+          new Promise<Response>((resolve) => {
+            answer = resolve;
+          }),
+      );
+      const provider = await unansweredProvider(fetchMock);
+      const stopped = new AbortController();
+      const first = provider.prepare(computer, { ...context, signal: stopped.signal });
+      const second = provider.prepare(computer, context);
+      await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+      stopped.abort(new Error("stopped"));
+      await expect(first).rejects.toThrow("stopped");
+      answer(exit(0));
+      await expect(second).resolves.toBeUndefined();
+    });
+
+    it("checks again after a stall that happened during a passing check", async () => {
+      let answer = (_response: Response) => {};
+      const fetchMock = vi.fn(
+        () =>
+          new Promise<Response>((resolve) => {
+            answer = resolve;
+          }),
+      );
+      const provider = await unansweredProvider(fetchMock);
+      const check = provider.prepare(computer, context);
+      await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+      const passing = answer;
+      fetchMock.mockRejectedValueOnce(new TypeError("terminated"));
+      await expect(
+        provider
+          .execute(computer, { argv: ["true"] }, context)
+          [Symbol.asyncIterator]()
+          .next(),
+      ).rejects.toBeInstanceOf(SandboxUnresponsiveError);
+      passing(exit(0));
+      await check;
+      fetchMock.mockResolvedValueOnce(exit(0));
+      await provider.prepare(computer, context);
+      expect(fetchMock).toHaveBeenCalledTimes(4);
+    });
+  });
+
+  it("leaves a command the caller stopped as the caller's own abort", async () => {
+    const caller = new AbortController();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init: RequestInit) => {
+        caller.abort(new Error("stopped"));
+        throw init.signal?.reason;
+      }),
+    );
+    const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+    const events = provider.execute(
+      { id: "computer", botId: "bot", kind: "docker", providerRef: "computer" },
+      { argv: ["true"] },
+      { ...context, signal: caller.signal },
+    );
+    await expect(events[Symbol.asyncIterator]().next()).rejects.toThrow("stopped");
   });
 
   it("rejects a declared oversized success response without buffering it", async () => {

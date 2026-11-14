@@ -3,7 +3,9 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import { ChatMarkdown, LinkifiedText, withBlockMentions } from "@rakazo/chat-ui/web";
 import type {
   BotAvatarSet,
+  ComputerReleaseReason,
   LoginFieldInput,
+  MessageBlock,
   MessageReaction,
   ThreadMessage,
 } from "@rakazo/contracts";
@@ -16,6 +18,7 @@ import { ArtifactFileCard } from "../../components/ArtifactFileCard";
 import { AskCard } from "../../components/AskCard";
 import { CollaborationMarker } from "../../components/ai/CollaborationMarker";
 import { CloudAgentCard } from "../../components/CloudAgentCard";
+import { ComputerCard } from "../../components/ComputerCard";
 import { McpAppCard } from "../../components/McpAppCard";
 import { PageBlockCard } from "../../components/pages/PageBlockCard";
 import { SubagentCard } from "../../components/SubagentCard";
@@ -54,6 +57,7 @@ import { MessageHoverActions } from "./message-hover-actions";
 export const MessageView = memo(function MessageView({
   artifactTarget,
   canAnswer,
+  separateAnswers,
   canDismiss,
   message,
   meId,
@@ -77,6 +81,7 @@ export const MessageView = memo(function MessageView({
   callHoldsSpeaker,
   onSpeak,
   onOpenComputer,
+  onReleaseComputer,
   onOpenImportSetup,
   rpc,
   showToolActivity,
@@ -87,6 +92,7 @@ export const MessageView = memo(function MessageView({
 }: {
   artifactTarget: ArtifactTarget;
   canAnswer: boolean;
+  separateAnswers?: ReadonlySet<MessageBlock>;
   canDismiss: boolean;
   message: ThreadMessage;
   /** The signed-in person; anyone else's message is named and set apart. */
@@ -123,7 +129,12 @@ export const MessageView = memo(function MessageView({
   /** An active call owns the speaker, so new reads wait until it ends. */
   callHoldsSpeaker: boolean;
   onSpeak: (message: ThreadMessage) => void;
-  onOpenComputer: (botId?: string) => void;
+  onOpenComputer: (botId?: string, takeControl?: boolean) => void;
+  onReleaseComputer: (
+    botId: string,
+    runId: string | undefined,
+    reason: ComputerReleaseReason,
+  ) => Promise<void>;
   /** Opens where an imported item's setup is finished. */
   onOpenImportSetup?: (target: ImportSetupTarget) => void;
   rpc: ReturnType<typeof createSpaceRpc>;
@@ -636,6 +647,7 @@ export const MessageView = memo(function MessageView({
               <div key={i} className="relative w-full min-w-0">
                 <AskCard
                   block={block}
+                  answerIsSeparate={separateAnswers?.has(block)}
                   canAnswer={canAnswer}
                   canDismiss={canDismiss}
                   onAnswer={(text, fields, remember) =>
@@ -658,45 +670,14 @@ export const MessageView = memo(function MessageView({
           }
           if (block.kind === "computer") {
             return (
-              <div
+              <ComputerCard
                 key={i}
-                data-testid="computer-card"
-                className="w-[340px] max-w-full rounded-[18px] border border-border bg-muted px-[18px] py-4"
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-body-lg font-medium text-foreground">
-                    <Trans>Computer</Trans>
-                  </span>
-                  <span
-                    className={
-                      block.state === "Needs you"
-                        ? "rounded-full bg-warning/15 px-[11px] py-1 text-body-sm text-warning"
-                        : block.state === "Skipped"
-                          ? "rounded-full bg-foreground/10 px-[11px] py-1 text-body-sm text-muted-foreground"
-                          : "rounded-full bg-success/15 px-[11px] py-1 text-body-sm text-success"
-                    }
-                  >
-                    {block.state === "Needs you"
-                      ? t`Needs you`
-                      : block.state === "Skipped"
-                        ? t`Skipped`
-                        : block.state === "Done"
-                          ? t`Done`
-                          : block.state}
-                  </span>
-                </div>
-                <div className="my-2.5 text-body-lg leading-[1.5] text-foreground/75">
-                  <ChatMarkdown>{block.text}</ChatMarkdown>
-                </div>
-                <Button
-                  type="button"
-                  size="sm"
-                  data-testid="computer-card-open"
-                  onClick={() => onOpenComputer(message.botId)}
-                >
-                  <Trans>Open</Trans>
-                </Button>
-              </div>
+                block={block}
+                botId={message.botId}
+                runId={message.runId}
+                onOpen={onOpenComputer}
+                onRelease={onReleaseComputer}
+              />
             );
           }
           return null;

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
 import type { TransactionalEmail, TransactionalEmailProvider } from "@rakazo/adapter-kit";
 import { EmailRecipientRejectedError } from "@rakazo/adapter-kit";
-import { cancelResponseBody, readBoundedJsonResponse } from "@rakazo/core";
+import { cancelResponseBody, parseRetryAfter, readBoundedJsonResponse } from "@rakazo/core";
 
 const MAX_RESPONSE_BYTES = 4_096;
 
@@ -77,6 +77,7 @@ export class ResendEmailProvider implements TransactionalEmailProvider {
     });
     for (let attempt = 0; ; attempt++) {
       let retry = true;
+      let retryAfterMs: number | undefined;
       let recipientRejected = false;
       let failure = "Resend email request failed";
       try {
@@ -104,6 +105,7 @@ export class ResendEmailProvider implements TransactionalEmailProvider {
           failure = "Resend returned an invalid email response";
         } else {
           retry = response.status === 429 || response.status >= 500;
+          retryAfterMs = parseRetryAfter(response.headers.get("retry-after"));
           const error = await errorDetail(response);
           recipientRejected = error.recipientRejected;
           failure = `Resend email request failed (HTTP ${response.status}${error.detail})`;
@@ -116,7 +118,7 @@ export class ResendEmailProvider implements TransactionalEmailProvider {
       if (recipientRejected) throw new EmailRecipientRejectedError(failure);
       if (!retry || delay === undefined) throw new Error(failure);
       try {
-        await sleep(delay, undefined, { signal });
+        await sleep(retryAfterMs ?? delay, undefined, { signal });
       } catch {
         throw new Error("Resend email delivery timed out");
       }

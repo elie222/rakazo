@@ -45,6 +45,7 @@ const IDLE: DictationSnapshot = { status: "idle", transcript: "" };
 const ENDPOINT_SILENCE_MS = 1200;
 const ENDPOINT_TICK_MS = 80;
 const SILENCE_RMS = 0.035;
+export const MAX_ENDPOINT_RECORDING_MS = 30_000;
 /** Web Speech codes that mean the cloud recognizer cannot be used. */
 const WEB_SPEECH_SERVICE_ERRORS = new Set(["network", "service-not-allowed"]);
 
@@ -79,6 +80,14 @@ export function prefersServerDictation(): boolean {
   // iPadOS 13+ reports a desktop Safari user agent, so fall back to touch support.
   const touchPoints = typeof navigator.maxTouchPoints === "number" ? navigator.maxTouchPoints : 0;
   return touchPoints > 1 && /macintosh/i.test(agent);
+}
+
+export function usesServerDictation(transcribe: boolean | undefined): boolean {
+  return (
+    (prefersServerDictation() && transcribe !== false) ||
+    Boolean(desktopBridge()?.speech && transcribe) ||
+    (!webSpeechAvailable() && Boolean(transcribe))
+  );
 }
 
 /** Connected server transcription should take over after Web Speech cannot run. */
@@ -198,6 +207,10 @@ export class Dictation {
     return this.snapshot;
   }
 
+  get recording(): boolean {
+    return this.media?.state === "recording";
+  }
+
   private set(next: DictationSnapshot) {
     this.snapshot = next;
     for (const watcher of [...this.watchers]) watcher(next);
@@ -258,10 +271,7 @@ export class Dictation {
     // Desktop system speech is a fallback for an unconfigured transcription provider.
     // An unknown capability is not a refusal: a device whose browser cannot hold the
     // microphone open goes to the server even before the voice status has loaded.
-    if (
-      (prefersServerDictation() && opts.transcribe !== false) ||
-      (desktopBridge()?.speech && transcribe)
-    ) {
+    if (usesServerDictation(opts.transcribe)) {
       await this.listenRecorder(mine, opts.mode, opts.endpointMs ?? ENDPOINT_SILENCE_MS, spaceId);
       return;
     }
@@ -273,10 +283,6 @@ export class Dictation {
         transcribe,
         spaceId,
       );
-      return;
-    }
-    if (transcribe) {
-      await this.listenRecorder(mine, opts.mode, opts.endpointMs ?? ENDPOINT_SILENCE_MS, spaceId);
       return;
     }
     this.set({
@@ -490,6 +496,7 @@ export class Dictation {
         void this.transcribeChunks(mine, spaceId);
       };
       media.start(mode === "endpoint" ? 250 : undefined);
+      this.set({ ...this.snapshot });
     } catch (error) {
       if (media) {
         media.ondataavailable = null;
@@ -535,16 +542,26 @@ export class Dictation {
         return speech;
       };
       let silentFor = 0;
+      const startedAt = Date.now();
       this.vadTimer = setInterval(() => {
         const media = this.media;
         if (this.token !== mine || !media || media.state === "inactive") return;
-        if (this.sampleInput?.()) {
-          silentFor = 0;
+        const speaking = this.sampleInput?.();
+        const full =
+          endpointMs !== undefined && Date.now() - startedAt >= MAX_ENDPOINT_RECORDING_MS;
+        if (full && !this.heardSpeech) {
+          this.finish(this.snapshot.transcript, mine);
           return;
         }
-        if (endpointMs === undefined || !this.heardSpeech) return;
-        silentFor += ENDPOINT_TICK_MS;
-        if (silentFor < endpointMs) return;
+        if (!full) {
+          if (speaking) {
+            silentFor = 0;
+            return;
+          }
+          if (endpointMs === undefined || !this.heardSpeech) return;
+          silentFor += ENDPOINT_TICK_MS;
+          if (silentFor < endpointMs) return;
+        }
         this.stopVad();
         try {
           media.stop();

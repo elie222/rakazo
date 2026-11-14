@@ -215,6 +215,17 @@ describe("plural rules without Intl.PluralRules", () => {
     expect(pluralCategory("es", 2)).toBe("other");
   });
 
+  it("picks the same whole-number form as Intl.PluralRules in every shipped language", async () => {
+    const { pluralCategory } = await import("./plural-rules");
+    const { UI_LOCALES } = await import("./ui-locale");
+    for (const locale of UI_LOCALES) {
+      const rules = new Intl.PluralRules(locale);
+      for (let count = 0; count <= 120; count++) {
+        expect(pluralCategory(locale, count), `${locale} ${count}`).toBe(rules.select(count));
+      }
+    }
+  });
+
   it("fills in Intl.PluralRules only where it is missing, and reads fractions as other", async () => {
     const native = Intl.PluralRules;
     const { installPluralRules } = await import("./plural-rules");

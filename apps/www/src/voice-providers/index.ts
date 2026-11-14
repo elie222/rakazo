@@ -60,6 +60,7 @@ const BILL_ADVICE = `Speech is usually the larger charge, so how much your bots 
 /** Hosted options in Rakazo whose speech costs under a dollar an hour. */
 const UNDER_A_DOLLAR = [
   { name: "[Fish Audio](/voice-providers/fish-audio/)", hour: speechHourCost(RATES.fish) },
+  { name: "xAI", hour: speechHourCost(RATES.xai) },
   { name: "[OpenAI](/voice-providers/openai/)", hour: RATES.openaiMiniTtsMinute * 60 },
   { name: "[ElevenLabs](/voice-providers/elevenlabs/)", hour: speechHourCost(RATES.elevenlabsFlash) },
   {
@@ -83,6 +84,7 @@ const HUB_SECTIONS: readonly ArticleSection[] = [
       "openaiTts1",
       "cartesia",
       "fish",
+      "xai",
       "selfHosted",
       "hostedKokoro",
       "macos",
@@ -103,6 +105,7 @@ const HUB_SECTIONS: readonly ArticleSection[] = [
       "macos",
       "selfHosted",
       "selfHostedCloud",
+      "xai",
       "openai",
       "fish",
       "elevenlabs",
@@ -140,6 +143,10 @@ const HUB_SECTIONS: readonly ArticleSection[] = [
           cells: ["S2.1 Pro, or a model you choose", "`transcribe-1-pro`", "Yes", "Fish Audio"],
         },
         {
+          topic: "xAI",
+          cells: ["Grok voices", "Grok speech to text", "No", "xAI"],
+        },
+        {
           topic: "[Self-hosted](/voice-providers/self-hosted/)",
           cells: [
             "Your model, such as Kokoro",
@@ -175,7 +182,7 @@ const HUB_SECTIONS: readonly ArticleSection[] = [
 export const VOICE_PROVIDERS_HUB = {
   title: "Best text to speech and speech to text APIs for AI agents in 2026: pricing compared",
   description:
-    "ElevenLabs, OpenAI, Cartesia, Fish Audio, Deepgram, Google, Azure, Kokoro and macOS voices compared on price per hour, transcription, cloning and privacy, with what a talking AI agent costs a month. From the team behind Rakazo.",
+    "ElevenLabs, OpenAI, Cartesia, Fish Audio, xAI, Deepgram, Google, Azure, Kokoro and macOS voices compared on price per hour, transcription, cloning and privacy, with what a talking AI agent costs a month. From the team behind Rakazo.",
   h1: "Best voice APIs for AI agents in 2026: text to speech and transcription compared",
   intro: [
     "Typing isn't always the fastest way to work with an AI agent. Sometimes you want to say what you need on the way out the door, hear the answer while you cook, or have the agent call you when something can't wait. That takes two things: a voice that sounds right, and transcription that hears you correctly.",
@@ -240,7 +247,7 @@ export const VOICE_PROVIDERS_HUB = {
     {
       question: "Is there an API that can convert audio to text?",
       answer:
-        `Yes, many: ${listed(Object.keys(TRANSCRIPTION_HOURLY))} all do. Across the models and modes on this page, prices run from about ${usd(TRANSCRIPTION_RANGE.low.price)} an hour (${TRANSCRIPTION_RANGE.low.name}) to ${usd(TRANSCRIPTION_RANGE.high.price)} (${TRANSCRIPTION_RANGE.high.name}). In Rakazo, ElevenLabs, OpenAI, Fish Audio and self-hosted servers transcribe what you say.`,
+        `Yes, many: ${listed(Object.keys(TRANSCRIPTION_HOURLY))} all do. Across the models and modes on this page, prices run from about ${usd(TRANSCRIPTION_RANGE.low.price)} an hour (${TRANSCRIPTION_RANGE.low.name}) to ${usd(TRANSCRIPTION_RANGE.high.price)} (${TRANSCRIPTION_RANGE.high.name}). In Rakazo, ElevenLabs, OpenAI, Fish Audio, xAI and self-hosted servers transcribe what you say.`,
     },
     {
       question: "Is the Whisper API free?",
@@ -260,7 +267,7 @@ export const VOICE_PROVIDERS_HUB = {
     {
       question: "Which voice providers can transcribe?",
       answer:
-        "ElevenLabs, OpenAI, Fish Audio, and self-hosted servers that support transcription. Cartesia and **Server (Mac)** only speak, so your browser, the desktop app or your phone listens instead.",
+        "ElevenLabs, OpenAI, Fish Audio, xAI, and self-hosted servers that support transcription. Cartesia and **Server (Mac)** only speak, so your browser, the desktop app or your phone listens instead.",
     },
     {
       question: "Can AI agents use voice without a hosted vendor?",

@@ -19,6 +19,11 @@
       "development": "./src/axiom.ts",
       "default": "./src/axiom.ts"
     },
+    "./event-loop": {
+      "types": "./src/event-loop.ts",
+      "development": "./src/event-loop.ts",
+      "default": "./src/event-loop.ts"
+    },
     "./monitoring": "./src/monitoring.ts"
   },
   "scripts": {

@@ -20,6 +20,27 @@ describe("sanitizeModelConnectionError", () => {
       "sk-secretkey1234567890",
     );
   });
+
+  it.each([
+    ["a JSON error body", 'Invalid {"api_key": "EXAMPLE_PLACEHOLDER"}', "EXAMPLE_PLACEHOLDER"],
+    [
+      "a camel-case key with spaces around =",
+      "apiKey = EXAMPLE_PLACEHOLDER",
+      "EXAMPLE_PLACEHOLDER",
+    ],
+    ["a bearer token with base64 characters", "Bearer EXAMPLE+PLACE/HOLDER==", "PLACE/HOLDER"],
+    ["a single-quoted value", "api-key: 'EXAMPLE_PLACEHOLDER'", "EXAMPLE_PLACEHOLDER"],
+  ])("redacts the whole secret in %s", (_label, raw, secret) => {
+    const cleaned = sanitizeModelConnectionError(raw);
+    expect(cleaned).not.toContain(secret);
+    expect(cleaned).toContain("•••");
+  });
+
+  it("keeps the text around a redacted JSON value", () => {
+    expect(sanitizeModelConnectionError('{"api_key": "EXAMPLE_PLACEHOLDER", "code": 401}')).toBe(
+      '{"•••", "code": 401}',
+    );
+  });
 });
 
 describe("classifyModelConnectionFailure", () => {
@@ -29,6 +50,23 @@ describe("classifyModelConnectionFailure", () => {
     expect(classifyModelConnectionFailure(new Error("The operation was aborted")).outcome).toBe(
       "unknown",
     );
+  });
+
+  it.each([
+    ["rate_limit", "429 Too Many Requests"],
+    ["rate_limit", "HTTP 429"],
+    ["unauthorized", "Request failed with status 401"],
+    ["unauthorized", "HTTP 403: forbidden"],
+  ])("reads %s from the status code in %j", (outcome, message) => {
+    expect(classifyModelConnectionFailure(new Error(message)).outcome).toBe(outcome);
+  });
+
+  it.each([
+    "connect ECONNREFUSED 127.0.0.1:4030",
+    "connect ECONNREFUSED 127.0.0.1:14290",
+    "connect ECONNREFUSED 10.0.0.1:34010",
+  ])("does not read a port or id as a status code in %j", (message) => {
+    expect(classifyModelConnectionFailure(new Error(message)).outcome).toBe("unreachable");
   });
 
   it("keeps manual model entry for custom servers and catalog picks for catalog providers", () => {

@@ -46,6 +46,7 @@ import { forgetAppBadge, syncInboxAppBadge, unreadChatCount } from "../lib/app-b
 import { mobileTokens, resolveMobileAppearance } from "../lib/appearance";
 import { explicitSignInRoute } from "../lib/auth-routing";
 import { AvatarViewportScope, createAvatarViewport } from "../lib/avatar-life";
+import { useContentBottomInset } from "../lib/content-bottom-inset";
 import type { CreateAction } from "../lib/create-chooser";
 import { useHeaderHeightIfAny } from "../lib/floating-header";
 import { useForegroundPoll } from "../lib/foreground-poll";
@@ -80,9 +81,10 @@ import {
 import type { OrganizeTarget } from "../lib/organize-target";
 import { findOrganizeTarget } from "../lib/organize-target";
 import { offerPasskeyOnce } from "../lib/passkey";
-import { INBOX_POLL_INTERVAL_MS } from "../lib/poll-cadence";
+import { INBOX_POLL_INTERVAL_MS, INBOX_SIGNALLED_POLL_INTERVAL_MS } from "../lib/poll-cadence";
 import { registerPushToken } from "../lib/push";
 import { hasSignedInBefore, rememberSignedIn } from "../lib/returning-user";
+import { useRosterSignals } from "../lib/roster-signals";
 import { loadSavedInbox } from "../lib/saved-chats";
 import {
   currentReadySessionGeneration,
@@ -192,15 +194,19 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
   const [organizeTarget, setOrganizeTarget] = useState<OrganizeTarget | null>(null);
   const organizeRequestId = useRef(0);
   const [activityMode, setActivityMode] = useState(false);
+  const [activityModeLoaded, setActivityModeLoaded] = useState(false);
   const [spaceBusy, setSpaceBusy] = useState(false);
   const [spaceRecoveryId, setSpaceRecoveryId] = useState<string | null>(null);
   const userId = me?.userId;
   const { collapsed, toggleCollapsed, loaded: collapsedLoaded } = useCollapsedSections(userId);
-  // Collapsed sections load before the inbox first renders, so they don't fold on launch.
-  const ready = sessionLoaded && collapsedLoaded;
+  // Collapsed sections and the view load before the inbox first renders, so neither jumps on launch.
+  const ready = sessionLoaded && collapsedLoaded && activityModeLoaded;
 
   useEffect(() => {
-    void loadActivityMode().then(setActivityMode);
+    void loadActivityMode().then((on) => {
+      setActivityMode(on);
+      setActivityModeLoaded(true);
+    });
   }, []);
 
   // Only while the inbox is in front, so the offer waits until signup setup is done.
@@ -265,7 +271,13 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
 
   // The embedded pane is visible beside the chat, so it keeps polling even when
   // the chat route owns focus.
-  useForegroundPoll(loadBots, INBOX_POLL_INTERVAL_MS, hasSession && (embedded || isFocused));
+  const inboxShown = hasSession && (embedded || isFocused);
+  const rosterSignalsLive = useRosterSignals(loadBots, inboxShown);
+  useForegroundPoll(
+    loadBots,
+    rosterSignalsLive ? INBOX_SIGNALLED_POLL_INTERVAL_MS : INBOX_POLL_INTERVAL_MS,
+    inboxShown,
+  );
   useEffect(() => onInboxChanged(() => void refreshBots().catch(() => undefined)), [refreshBots]);
 
   const archivedCount = useArchivedCount(me?.spaceId, hasSession);
@@ -281,14 +293,21 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     editSectionFromMenu,
     deleteSection,
     snoozeChat,
-  } = useInboxChatActions({ loadBots, setBots, setGroups, setSpaces });
-
-  const { activity, setActivity, activityRequestId, loadActivity } = useSpaceActivity({
-    hasSession,
-    activityMode,
-    inSight: embedded || isFocused,
-    spaceActionRef,
+  } = useInboxChatActions({
+    confirmationActive: inboxShown,
+    loadBots,
+    setBots,
+    setGroups,
+    setSpaces,
   });
+
+  const { activity, activityStatus, clearActivity, activityRequestId, loadActivity } =
+    useSpaceActivity({
+      hasSession,
+      activityMode,
+      inSight: embedded || isFocused,
+      spaceActionRef,
+    });
 
   const visible = useMemo(
     () => withoutArchiving("bot", applyUnreadOverrides("bot", bots, unreadOverrides), archiving),
@@ -413,6 +432,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
         organizeTarget.chat)
     : null;
   const insets = useSafeAreaInsets();
+  const contentBottomInset = useContentBottomInset();
   // An unfolded or tablet window keeps the inbox in a centred column.
   const windowWidth = useWindowDimensions().width;
   const { inboxWidth } = useSplitView();
@@ -452,7 +472,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     listRef,
     // The Liquid Glass header floats over the list; the older header sits above it.
     topInset: nativeHeader ? headerHeight : 0,
-    bottomInset: insets.bottom,
+    bottomInset: contentBottomInset,
   });
   const router = useRouter();
   const pathname = usePathname();
@@ -503,7 +523,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
       setSpaceBusy(true);
       inboxRequestId.current += 1;
       activityRequestId.current += 1;
-      setActivity({ active: [], recent: [] });
+      clearActivity();
       // Close a pane in another space before selection can change its request context.
       onSelectSpace?.(spaceId);
       try {
@@ -554,7 +574,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
       try {
         const recoveryId = await removeInboxSpace(space.id, async () => {
           spaceActionRef.current.busy = false;
-          setActivity({ active: [], recent: [] });
+          clearActivity();
           await refreshBots();
           await loadActivity();
         });
@@ -746,9 +766,11 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
   const showLoadFailure = Boolean(loadFailure) && inboxHasNoChats(listData);
   const inlineError = error ?? (showLoadFailure ? null : (loadFailure?.message ?? null));
 
-  const hasListHeader = Boolean(
-    inlineError || spaceRecoveryId || (!onShareSelect && activityMode && userId),
-  );
+  // Folds are saved per account, so wait for it before offering them.
+  const activityView = !onShareSelect && activityMode && Boolean(userId);
+  const showActivity = activityView && !showLoadFailure;
+  const rows = activityView || showLoadFailure ? [] : listData;
+  const hasListHeader = Boolean(inlineError || spaceRecoveryId || showActivity);
   const listHeader = (
     <>
       {inlineError ? <Text style={styles.error}>{inlineError}</Text> : null}
@@ -762,10 +784,10 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
           <Text style={styles.spaceTitle}>{t`Try again.`}</Text>
         </Pressable>
       ) : null}
-      {/* Folds are saved per account, so wait for it before offering them. */}
-      {!onShareSelect && activityMode && userId ? (
+      {showActivity ? (
         <ActivitySection
           activity={activity}
+          status={activityStatus}
           bots={visible}
           groups={visibleGroups}
           toggledSections={collapsed}
@@ -796,10 +818,10 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
         onRetry={() => void refreshBots()}
         onSignIn={() => void signInAgain()}
       />
-    ) : (
+    ) : activityView ? undefined : (
       <Text style={styles.empty}>{me && !onShareSelect ? t`Tap + to create a bot` : null}</Text>
     );
-  const listFooter = (
+  const listFooter = activityView ? undefined : (
     <InboxListFooter
       createHint={!onShareSelect && !showLoadFailure && inboxNeedsCreateHint(listData)}
       archivedCount={onShareSelect ? 0 : archivedCount}
@@ -813,6 +835,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     <View style={styles.screen}>
       {nativeHeader || onShareSelect ? null : (
         <InboxHeader
+          embedded={embedded}
           initials={initials}
           activityMode={activityMode}
           toggleActivityMode={toggleActivityMode}
@@ -829,7 +852,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
               {/* iOS shows the inbox as one native list; other platforms keep the FlatList. */}
               {SWIPE_ROWS ? (
                 <NativeInboxList<InboxItem>
-                  data={showLoadFailure ? [] : listData}
+                  data={rows}
                   keyExtractor={inboxItemKey}
                   renderItem={renderItem}
                   isNativeRow={(item) =>
@@ -847,9 +870,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
                   avatarViewport={avatarViewport}
                   onRefresh={refreshInbox}
                   signals={jumpSignals}
-                  showJumpPills={
-                    !onShareSelect && !refreshing && !showLoadFailure && !inboxHasNoChats(listData)
-                  }
+                  showJumpPills={!onShareSelect && !refreshing && !inboxHasNoChats(rows)}
                 />
               ) : (
                 <FlatList<InboxItem>
@@ -859,7 +880,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
                   // Rows scrolled out of view freeze their avatars until they come back.
                   onViewableItemsChanged={onViewableItemsChanged}
                   viewabilityConfig={AVATAR_VIEWABILITY}
-                  data={showLoadFailure ? [] : listData}
+                  data={rows}
                   keyExtractor={inboxItemKey}
                   keyboardDismissMode="interactive"
                   keyboardShouldPersistTaps="handled"
@@ -888,11 +909,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
                 />
               )}
             </AvatarViewportScope>
-            {SWIPE_ROWS ||
-            onShareSelect ||
-            refreshing ||
-            showLoadFailure ||
-            inboxHasNoChats(listData)
+            {SWIPE_ROWS || onShareSelect || refreshing || inboxHasNoChats(rows)
               ? null
               : unreadJump.overlay}
           </View>

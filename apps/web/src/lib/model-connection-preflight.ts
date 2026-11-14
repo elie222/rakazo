@@ -21,8 +21,8 @@ type StoredModelAuthKind = NonNullable<ModelCredential["authKind"]>;
 
 const SECRET_PATTERNS: RegExp[] = [
   /\bsk-[a-zA-Z0-9_-]{8,}\b/g,
-  /\bBearer\s+[a-zA-Z0-9._-]+\b/gi,
-  /\bapi[_-]?key[=:]\s*\S+/gi,
+  /\bBearer\s+[\w.~+/=-]+/gi,
+  /\bapi[_-]?key["']?\s*[=:]\s*["']?[^\s"',}]+/gi,
 ];
 
 /** Strip patterns that look like credentials from user-visible errors. */
@@ -68,7 +68,7 @@ export function classifyModelConnectionFailure(
     };
   }
 
-  if (lower.includes("429") || lower.includes("rate limit") || lower.includes("rate-limit")) {
+  if (/\b429\b/.test(lower) || lower.includes("rate limit") || lower.includes("rate-limit")) {
     return {
       outcome: "rate_limit",
       message: message || t`The provider is rate-limiting requests.`,
@@ -77,8 +77,7 @@ export function classifyModelConnectionFailure(
   }
 
   if (
-    lower.includes("401") ||
-    lower.includes("403") ||
+    /\b(401|403)\b/.test(lower) ||
     lower.includes("unauthorized") ||
     lower.includes("invalid api key") ||
     lower.includes("authentication")

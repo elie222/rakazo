@@ -11,6 +11,7 @@ import {
 } from "../lib/incoming-calls";
 import { useMobileTokens } from "../lib/native";
 import { errorText } from "../lib/user-error";
+import { activateVoiceAudio } from "../lib/voice";
 import { BotAvatar } from "./bot-avatar";
 import { NativeActionButton } from "./native-action-button";
 
@@ -27,9 +28,16 @@ export function IncomingCall() {
     if (!id || active || usesNativeIncomingCallRingtone()) return;
     const player = createAudioPlayer(require("../assets/sounds/warm-start.m4a"));
     player.loop = true;
+    let disposed = false;
+    let playSeq = 0;
     const play = () => {
+      const seq = ++playSeq;
       if (AppState.currentState === "active") {
-        player.play();
+        void activateVoiceAudio()
+          .then(() => {
+            if (!disposed && seq === playSeq) player.play();
+          })
+          .catch(() => undefined);
         Vibration.vibrate([0, 400, 300, 400, 1500], true);
       } else {
         player.pause();
@@ -39,6 +47,7 @@ export function IncomingCall() {
     play();
     const subscription = AppState.addEventListener("change", play);
     return () => {
+      disposed = true;
       subscription.remove();
       player.remove();
       Vibration.cancel();

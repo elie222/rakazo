@@ -188,11 +188,21 @@ class ConfiguredIntegrationProvider implements ManagedConnectorProvider {
   async catalog(context: AdapterContext, query?: string) {
     return (await this.resolve())?.catalog(context, query) ?? [];
   }
+  async listAppTools(context: AdapterContext, externalId: string) {
+    const provider = await this.resolve();
+    if (!provider) return [];
+    return provider.listAppTools
+      ? provider.listAppTools(context, externalId)
+      : provider.discoverTools(context);
+  }
   async discoverTools(context: AdapterContext) {
     return (await this.resolve())?.discoverTools(context) ?? [];
   }
   async listConnectedExternalIds(context: AdapterContext) {
     return (await this.resolve())?.listConnectedExternalIds(context) ?? [];
+  }
+  async needsReconnect(context: AdapterContext, externalId: string) {
+    return (await (await this.resolve())?.needsReconnect?.(context, externalId)) ?? false;
   }
   async listReconnectRefs(context: AdapterContext) {
     return (await (await this.resolve())?.listReconnectRefs?.(context)) ?? [];

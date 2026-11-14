@@ -1,21 +1,26 @@
-import type { AppBootstrap } from "@rakazo/contracts";
-import { ATTACHMENT_MAX_BYTES, attachmentMaxBytes } from "@rakazo/contracts";
+import type { AppBootstrap, LabFeature } from "@rakazo/contracts";
+import { ATTACHMENT_MAX_BYTES, attachmentMaxBytes, parseLabs } from "@rakazo/contracts";
 import { displayIdentityResult } from "@rakazo/core";
 import { initialBootstrapTarget } from "./bootstrap-target";
 import { identityLabels } from "./identity-display";
 import { markOnce } from "./performance";
 import { rpc, selectedSpaceId } from "./rpc";
 
-let ticketBoardEnabled = false;
+let labs: readonly LabFeature[] = [];
 let maxUploadSizeBytes = ATTACHMENT_MAX_BYTES;
 export function getMaxUploadSizeBytes() {
   return maxUploadSizeBytes;
 }
 const capabilityListeners = new Set<() => void>();
-export function getTicketBoardEnabled() {
-  return ticketBoardEnabled;
+export function getLabs() {
+  return labs;
 }
-export function subscribeTicketBoardEnabled(listener: () => void) {
+/** Applies a saved Labs list at once, so routes and menus follow without a reload. */
+export function setLabs(next: readonly LabFeature[]) {
+  labs = next;
+  for (const listener of capabilityListeners) listener();
+}
+export function subscribeLabs(listener: () => void) {
   capabilityListeners.add(listener);
   return () => {
     capabilityListeners.delete(listener);
@@ -110,7 +115,7 @@ function requestBootstrap(botId?: string, spaceId?: string) {
 }
 
 function applyCapabilities(bootstrap: AppBootstrap): AppBootstrap {
-  ticketBoardEnabled = bootstrap.me.ticketBoardEnabled;
+  labs = parseLabs(bootstrap.me.labs);
   maxUploadSizeBytes = attachmentMaxBytes(bootstrap.me);
   for (const listener of capabilityListeners) listener();
   return bootstrap;
