@@ -204,7 +204,7 @@ export function attachMobileTrackpad(
     const target = canvas();
     if (!target) return;
     const bounds = target.getBoundingClientRect();
-    previousBounds = bounds;
+    if (bounds.width <= 0 || bounds.height <= 0) return;
     cursorX ??= bounds.left + bounds.width / 2;
     cursorY ??= bounds.top + bounds.height / 2;
     const shown = view.follow(
@@ -216,6 +216,7 @@ export function attachMobileTrackpad(
     if (!next) return;
     cursorX = next.x;
     cursorY = next.y;
+    previousBounds = target.getBoundingClientRect();
     showPointer();
     mouse("mousemove");
   };
@@ -321,16 +322,16 @@ export function attachMobileTrackpad(
   };
   const onResize = () => {
     const x =
-      previousBounds && cursorX != null
+      previousBounds?.width > 0 && cursorX != null
         ? (cursorX - previousBounds.left) / previousBounds.width
         : 0.5;
     const y =
-      previousBounds && cursorY != null
+      previousBounds?.height > 0 && cursorY != null
         ? (cursorY - previousBounds.top) / previousBounds.height
         : 0.5;
     view.refresh();
     const bounds = canvas()?.getBoundingClientRect();
-    if (!bounds) return;
+    if (!bounds || bounds.width <= 0 || bounds.height <= 0) return;
     cursorX = bounds.left + x * bounds.width;
     cursorY = bounds.top + y * bounds.height;
     previousBounds = bounds;

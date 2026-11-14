@@ -134,6 +134,7 @@ function trackpadFixture() {
   const toggle = () => buttonListeners.get("click")?.();
   return {
     touch,
+    canvas,
     toggle,
     view,
     viewControls,
@@ -626,6 +627,45 @@ describe("mobile trackpad touches", () => {
       fixture.view("scroll-up");
       expect(fixture.wheelDeltas).toEqual([150, -150]);
     });
+  });
+
+  it("preserves the desktop point after edge-follow and ignores zero-size resizes", () => {
+    let resize = () => {};
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        constructor(callback: () => void) {
+          resize = callback;
+        }
+        observe() {}
+        disconnect() {}
+      },
+    );
+    try {
+      withTrackpad((fixture) => {
+        fixture.view("zoom-in");
+        fixture.touch("touchstart", 1, 20, 150);
+        fixture.touch("touchmove", 1, 170, 150);
+        const before = fixture.pointer.style.transform;
+        resize();
+        expect(fixture.pointer.style.transform).toBe(before);
+        const box = fixture.canvas.getBoundingClientRect;
+        fixture.canvas.getBoundingClientRect = () => ({
+          left: 0,
+          top: 0,
+          width: 0,
+          height: 0,
+          right: 0,
+          bottom: 0,
+        });
+        resize();
+        fixture.canvas.getBoundingClientRect = box;
+        resize();
+        expect(fixture.pointer.style.transform).toBe(before);
+      });
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("zooms around the pointer and keeps clicks on the same desktop point", () => {

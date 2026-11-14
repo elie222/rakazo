@@ -75,7 +75,7 @@
         top: calc(var(--mobile-visual-top, 0px) + var(--mobile-visual-height, 100dvh) / 2);
         transform: translateY(-50%);
         display: grid;
-        grid-template-columns: repeat(3, 60px);
+        grid-template-columns: repeat(2, 60px);
         gap: 10px;
       }
       .mobile-keyboard-open #mobile-view-controls,
@@ -242,11 +242,11 @@
         <button type="button" data-view="zoom-in" aria-label="Zoom in" title="Zoom in">
           <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14" /></svg>
         </button>
-        <button type="button" data-view="scroll-up" aria-label="Scroll up" title="Scroll up">
-          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 15l6-6 6 6" /></svg>
-        </button>
         <button type="button" data-view="zoom-out" aria-label="Zoom out" title="Zoom out">
           <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14" /></svg>
+        </button>
+        <button type="button" data-view="scroll-up" aria-label="Scroll up" title="Scroll up">
+          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 15l6-6 6 6" /></svg>
         </button>
         <button type="button" data-view="scroll-down" aria-label="Scroll down" title="Scroll down">
           <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6" /></svg>
