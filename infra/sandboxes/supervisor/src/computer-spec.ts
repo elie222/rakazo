@@ -269,10 +269,6 @@ export function resolveComputerComputeGpus(
   return count;
 }
 
-function isGpuRequest(request: Docker.DeviceRequest) {
-  return request.Capabilities?.some((group) => group.includes("gpu")) ?? false;
-}
-
 /**
  * Whether a container was created with the configured GPUs. Devices are fixed when a container
  * is created, so turning the setting on or off, or changing the count, replaces the computer.
@@ -281,7 +277,7 @@ export function computerComputeGpusMatch(
   current: Docker.DeviceRequest[] | null | undefined,
   desired?: number,
 ) {
-  const requests = (current ?? []).filter(isGpuRequest);
+  const requests = current ?? [];
   if (desired === undefined) return requests.length === 0;
   return requests.length === 1 && requests[0]?.Count === desired;
 }

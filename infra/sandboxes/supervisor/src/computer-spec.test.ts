@@ -255,10 +255,6 @@ describe("graphical computer spec", () => {
     // So is one created with a different count.
     expect(computerComputeGpusMatch([reported(1)] as never, 2)).toBe(false);
     expect(computerComputeGpusMatch([reported(-1)] as never, 1)).toBe(false);
-    // A device request for something other than a GPU does not count as one.
-    const other = { ...reported(-1), Capabilities: [["other"]] };
-    expect(computerComputeGpusMatch([other] as never, undefined)).toBe(true);
-    expect(computerComputeGpusMatch([other] as never, -1)).toBe(false);
   });
 
   it("parses computer host mounts, with none when unset", () => {
