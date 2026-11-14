@@ -7,10 +7,10 @@ import {
   formatBaseline,
   loadRules,
   readBaseline,
+  repoFiles,
   report,
   scan,
   tighten,
-  repoFiles,
   violations,
 } from "./ratchets.mjs";
 
