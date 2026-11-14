@@ -8,22 +8,13 @@ import type {
   ThinkingLevel,
 } from "@rakazo/contracts";
 import {
-  DEFAULT_MODEL_CONTEXT_WINDOW,
   ModelHeaderRowsSchema,
   modelHeadersInput,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   openAiCompatibleConnectReady,
-  parseModelContextWindow,
-  parseModelMaxImagesPerPrompt,
-  parseModelMaxTokens,
   savedCompatibleEndpointMatches,
 } from "@rakazo/contracts";
-import {
-  clampCatalogThinkingLevel,
-  compatibleThinkingLevels,
-  connectionMaxTokensField,
-  pickCatalogModelId,
-} from "./model-providers.js";
+import { clampCatalogThinkingLevel, pickCatalogModelId } from "./model-providers.js";
 
 type CatalogModel = Pick<ModelCatalogEntry, "provider" | "id" | "recommended" | "thinkingLevels">;
 type DefaultModel = { defaultProvider: string | null; defaultModel: string | null };
@@ -33,12 +24,7 @@ export type ConnectionFormFields = {
   enabledModelIds: string[];
   baseUrl: string;
   apiProtocol: ModelApiProtocol;
-  reasoning: boolean;
   thinkingLevel: ThinkingLevel | null;
-  maxTokens: string;
-  contextWindow: string;
-  supportsImages: boolean;
-  maxImagesPerPrompt: string;
   accountId: string;
   gatewayId: string;
 };
@@ -82,12 +68,7 @@ export function connectionFormFields(input: {
     | "enabledModelIds"
     | "baseUrl"
     | "apiProtocol"
-    | "reasoning"
     | "thinkingLevel"
-    | "maxTokens"
-    | "contextWindow"
-    | "supportsImages"
-    | "maxImagesPerPrompt"
     | "accountId"
     | "gatewayId"
   >;
@@ -96,24 +77,18 @@ export function connectionFormFields(input: {
 }): ConnectionFormFields {
   const { catalog, provider, modelId, credential, presetBaseUrl } = input;
   const compatible = provider === OPENAI_COMPATIBLE_PROVIDER_ID;
-  const supportedThinking = compatible
-    ? credential?.reasoning
-      ? compatibleThinkingLevels(credential?.apiProtocol)
-      : []
-    : catalog.find((entry) => entry.provider === provider && entry.id === modelId)?.thinkingLevels;
   return {
     enabledModelIds: credential?.enabledModelIds ?? [],
     baseUrl: compatible ? (credential?.baseUrl ?? presetBaseUrl ?? "") : "",
     apiProtocol: credential?.apiProtocol ?? "chat-completions",
-    reasoning: credential?.reasoning ?? false,
-    thinkingLevel: clampCatalogThinkingLevel(
-      credential?.modelId === modelId ? credential.thinkingLevel : null,
-      supportedThinking,
-    ) as ThinkingLevel | null,
-    maxTokens: connectionMaxTokensField(provider, credential?.maxTokens),
-    contextWindow: String(credential?.contextWindow ?? DEFAULT_MODEL_CONTEXT_WINDOW),
-    supportsImages: credential?.supportsImages ?? false,
-    maxImagesPerPrompt: String(credential?.maxImagesPerPrompt ?? ""),
+    // An OpenAI-compatible model's effort is chosen where its model is used.
+    thinkingLevel: compatible
+      ? null
+      : (clampCatalogThinkingLevel(
+          credential?.modelId === modelId ? credential.thinkingLevel : null,
+          catalog.find((entry) => entry.provider === provider && entry.id === modelId)
+            ?.thinkingLevels,
+        ) as ThinkingLevel | null),
     accountId: credential?.accountId ?? "",
     gatewayId: credential?.gatewayId ?? "",
   };
@@ -151,24 +126,20 @@ export type ConnectionFormDraft = Omit<ConnectionFormFields, "enabledModelIds"> 
   headerRows: ModelHeaderRow[] | null;
 };
 
-/** A field whose number is out of range; each app words the message. */
-export type ConnectionFormInvalidField = "maxTokens" | "maxImagesPerPrompt" | "contextWindow";
-
 export type ModelConnectRequest =
   | { status: "incomplete" }
-  | { status: "invalid"; field: ConnectionFormInvalidField }
   | {
       status: "ready";
       input: ModelConnectInput;
-      /** A catalog provider's save without a new key: limits and gateway ids only. */
-      savingLimitOnly: boolean;
+      /** A catalog provider's save without a new key: gateway ids only. */
+      savingWithoutKey: boolean;
       /** The model the saved connection runs. */
       activeModelId: string;
     };
 
 /**
  * The `models.connect` input for a connection form. `settingsOnly` saves a catalog provider's
- * limits and gateway ids without the key field. `makeDefault` is sent with its scope when set.
+ * gateway ids without the key field. `makeDefault` is sent with its scope when set.
  */
 export function modelConnectRequest(input: {
   form: ConnectionFormDraft;
@@ -186,49 +157,26 @@ export function modelConnectRequest(input: {
   const baseUrl = form.baseUrl.trim();
   const modelId = form.modelId.trim();
   const newKey = settingsOnly ? "" : form.apiKey.trim();
-  const savingLimitOnly = !compatible && !newKey;
+  const savingWithoutKey = !compatible && !newKey;
   const activeModelId = compatible ? modelId : selected.id;
   if (compatible) {
     if (!baseUrl || !modelId) return { status: "incomplete" };
-  } else if (savingLimitOnly) {
+  } else if (savingWithoutKey) {
     if (!credential) return { status: "incomplete" };
   } else if (newKey.length < 8) {
     return { status: "incomplete" };
   }
-  const maxTokens = form.maxTokens.trim() ? parseModelMaxTokens(form.maxTokens) : undefined;
-  if ((compatible || form.maxTokens.trim()) && maxTokens === undefined) {
-    return { status: "invalid", field: "maxTokens" };
-  }
-  const maxImagesPerPrompt = compatible
-    ? parseModelMaxImagesPerPrompt(form.maxImagesPerPrompt, form.supportsImages)
-    : undefined;
-  if (
-    compatible &&
-    form.supportsImages &&
-    form.maxImagesPerPrompt.trim() &&
-    maxImagesPerPrompt === undefined
-  ) {
-    return { status: "invalid", field: "maxImagesPerPrompt" };
-  }
-  const contextWindow = compatible ? parseModelContextWindow(form.contextWindow) : undefined;
-  if (compatible && contextWindow === undefined) {
-    return { status: "invalid", field: "contextWindow" };
-  }
-  // The staged effort belongs to the model on screen. Clamp it before a connect or a limit
-  // save so a previous model's level cannot stick.
+  // The staged effort belongs to the model on screen. Clamp it before a save so a previous
+  // model's level cannot stick.
   const thinkingLevel = clampCatalogThinkingLevel(
     form.thinkingLevel,
-    compatible
-      ? form.reasoning
-        ? compatibleThinkingLevels(form.apiProtocol)
-        : []
-      : selected.thinkingLevels,
+    selected.thinkingLevels,
   ) as ThinkingLevel | null;
   const label = selected.providerName ?? selected.provider;
   if (compatible) {
     return {
       status: "ready",
-      savingLimitOnly,
+      savingWithoutKey,
       activeModelId,
       input: {
         provider: selected.provider,
@@ -238,13 +186,6 @@ export function modelConnectRequest(input: {
         modelId,
         // The server adds the default itself.
         enabledModelIds: form.enabledModelIds.filter((id) => id !== modelId),
-        reasoning: form.reasoning,
-        thinkingLevel,
-        maxTokens,
-        contextWindow,
-        supportsImages: form.supportsImages,
-        maxImagesPerPrompt:
-          form.supportsImages && !form.maxImagesPerPrompt.trim() ? null : maxImagesPerPrompt,
         ...makeDefault,
         apiKey: form.apiKey.trim() || undefined,
         label,
@@ -257,7 +198,7 @@ export function modelConnectRequest(input: {
     credential?.modelId === selected.id ? (credential.thinkingLevel ?? null) : null;
   return {
     status: "ready",
-    savingLimitOnly,
+    savingWithoutKey,
     activeModelId,
     input: {
       provider: selected.provider,
@@ -266,14 +207,13 @@ export function modelConnectRequest(input: {
         ? { accountId: form.accountId.trim(), gatewayId: form.gatewayId.trim() }
         : {}),
       modelId: selected.id,
-      // A limits-only save leaves the stored effort alone while the model and effort stay
+      // A save without a key leaves the stored effort alone while the model and effort stay
       // put. Changing either sends the clamped level, including null, so the previous
       // model's effort is not reused.
-      ...(!savingLimitOnly || modelChanged || (form.thinkingLevel ?? null) !== storedThinking
+      ...(!savingWithoutKey || modelChanged || (form.thinkingLevel ?? null) !== storedThinking
         ? { thinkingLevel }
         : {}),
       ...makeDefault,
-      maxTokens: maxTokens ?? null,
       label,
       credentialId,
     },

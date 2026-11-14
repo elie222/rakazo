@@ -10,6 +10,7 @@ import { Alert } from "react-native";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import Account from "../app/(settings)/account";
 import General from "../app/(settings)/general";
+import Labs from "../app/(settings)/labs";
 import Profile from "../app/(settings)/profile";
 import type * as Api from "./api";
 import { rpc } from "./api";
@@ -395,7 +396,13 @@ let container: HTMLDivElement | undefined;
 
 beforeEach(() => {
   vi.clearAllMocks();
-  account.me = { userId: "user-1", name: "Tester", email: "tester@example.test" };
+  account.me = {
+    userId: "user-1",
+    name: "Tester",
+    email: "tester@example.test",
+    labs: [],
+    labsAvailable: ["board"],
+  };
   account.rules = [];
   account.messaging = { enabled: true };
   account.plans = [];
@@ -794,6 +801,7 @@ it.each([false, true])(
         "Memory",
         "Voice",
         "Messaging",
+        "Labs",
         "Members",
       ];
       expect(titles).toEqual(["tester@example.test", "Usage", ...links]);
@@ -878,6 +886,45 @@ it("hides Messaging when no chat app is connected to the server", async () => {
   const titles = Array.from(view.screen.querySelectorAll("[data-row]"), (row) => row.textContent);
   expect(titles).toContain("Skills");
   expect(titles).not.toContain("Messaging");
+});
+
+it("shows the Board shortcut only to accounts that turned it on in Labs", async () => {
+  const titles = (view: Awaited<ReturnType<typeof renderAccount>>) =>
+    Array.from(view.screen.querySelectorAll("[data-row]"), (row) => row.textContent);
+  account.me = { ...account.me, labs: [] };
+  const off = await renderAccount();
+  expect(titles(off)).toContain("Labs");
+  expect(titles(off)).not.toContain("Board");
+  act(() => root?.unmount());
+
+  account.me = { ...account.me, labs: ["board"] };
+  expect(titles(await renderAccount())).toContain("Board");
+});
+
+it("hides Labs when the server turns every feature on for everyone", async () => {
+  account.me = { ...account.me, labs: ["board"], labsAvailable: [] };
+  const view = await renderAccount();
+  const titles = Array.from(view.screen.querySelectorAll("[data-row]"), (row) => row.textContent);
+  expect(titles).not.toContain("Labs");
+  expect(titles).toContain("Board");
+});
+
+it("saves a Labs switch at once and turns it back off when the save fails", async () => {
+  account.me = { ...account.me, labs: [] };
+  const view = await renderAccount(Labs);
+  const board = () => view.screen.querySelector('[role="switch"][aria-label="Board"]')!;
+  expect(board().getAttribute("aria-checked")).toBe("false");
+
+  vi.mocked(rpc).mockResolvedValueOnce({ ...account.me, labs: ["board"] } as never);
+  await act(async () => (board() as HTMLElement).click());
+  expect(rpc).toHaveBeenCalledWith("preferences/update", { labs: ["board"] });
+  expect(board().getAttribute("aria-checked")).toBe("true");
+
+  vi.mocked(rpc).mockRejectedValueOnce(new Error("offline"));
+  await act(async () => (board() as HTMLElement).click());
+  expect(rpc).toHaveBeenLastCalledWith("preferences/update", { labs: [] });
+  expect(board().getAttribute("aria-checked")).toBe("true");
+  expect(Alert.alert).toHaveBeenCalledWith("Labs", "Could not save");
 });
 
 it("starts one sign-out when Sign out is tapped again while the warning is open", async () => {

@@ -6,16 +6,32 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useRosterSignals } from "./roster-signals";
 
-const streams = vi.hoisted(() => [] as Array<{ signal: () => void; end: () => void }>);
+const streams = vi.hoisted(
+  () => [] as Array<{ signal: () => void; computerUpdates: () => void; end: () => void }>,
+);
+const computerUpdateSignals = vi.hoisted(() => ({ signalled: vi.fn(), lost: vi.fn() }));
+const computerUpdates = vi.hoisted(() => ({ connect: () => computerUpdateSignals }));
+vi.mock("./computer-updates", () => ({ computerUpdates }));
+const spaceSelection = vi.hoisted(() => new Set<() => void>());
+vi.mock("./api", () => ({
+  subscribeSpaceSelection: (listener: () => void) => {
+    spaceSelection.add(listener);
+    return () => spaceSelection.delete(listener);
+  },
+}));
 
 vi.mock("react-native", () => ({
   AppState: { currentState: "active", addEventListener: () => ({ remove: () => {} }) },
 }));
 
 vi.mock("./api-live", () => ({
-  subscribeRosterSignals: (onSignal: () => void, signal: AbortSignal) =>
+  subscribeRosterSignals: (
+    onSignal: () => void,
+    signal: AbortSignal,
+    onComputerUpdates: () => void,
+  ) =>
     new Promise<void>((resolve) => {
-      streams.push({ signal: onSignal, end: resolve });
+      streams.push({ signal: onSignal, computerUpdates: onComputerUpdates, end: resolve });
       signal.addEventListener("abort", () => resolve());
     }),
 }));
@@ -36,6 +52,7 @@ describe("useRosterSignals", () => {
     vi.useFakeTimers();
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     streams.length = 0;
+    vi.clearAllMocks();
     live = false;
     container = document.createElement("div");
     document.body.append(container);
@@ -68,6 +85,28 @@ describe("useRosterSignals", () => {
     expect(live).toBe(false);
     await act(() => vi.advanceTimersByTimeAsync(1_000));
     expect(streams).toHaveLength(2);
+  });
+
+  it("passes computer update signals on, and their loss when the stream ends", async () => {
+    await act(async () => root.render(<Harness enabled onChange={vi.fn()} />));
+    await act(async () => streams[0]!.computerUpdates());
+    expect(computerUpdateSignals.signalled).toHaveBeenCalledOnce();
+    expect(computerUpdateSignals.lost).not.toHaveBeenCalled();
+    await act(async () => streams[0]!.end());
+    expect(computerUpdateSignals.lost).toHaveBeenCalledOnce();
+  });
+
+  it("reopens for a newly selected Space, ignoring the old stream's late signals", async () => {
+    await act(async () => root.render(<Harness enabled onChange={vi.fn()} />));
+    const old = streams[0]!;
+    await act(async () => {
+      for (const listener of spaceSelection) listener();
+    });
+    expect(streams).toHaveLength(2);
+    expect(computerUpdateSignals.lost).toHaveBeenCalledOnce();
+    await act(async () => old.computerUpdates());
+    expect(computerUpdateSignals.signalled).not.toHaveBeenCalled();
+    expect(spaceSelection.size).toBe(1);
   });
 
   it("stays closed while disabled", async () => {

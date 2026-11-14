@@ -4,6 +4,7 @@ import {
   appendTextSegment,
   appendToolCallSegment,
   appendToolStep,
+  appToolLabel,
   containsSecret,
   createStreamingRedactor,
   endsSentence,
@@ -643,6 +644,13 @@ describe("toolNameFromLabel", () => {
   it("turns a displayed name back into the tool name", () => {
     expect(toolNameFromLabel(" Write  file ")).toBe("Write_file");
     expect(toolNameFromLabel("write_file")).toBe("write_file");
+  });
+});
+
+describe("appToolLabel", () => {
+  it("drops the app's own prefix only", () => {
+    expect(appToolLabel("GMAIL_SEND_EMAIL", "gmail")).toBe("Send email");
+    expect(appToolLabel("SLACK_FIND_CHANNELS", "gmail")).toBe("Slack find channels");
   });
 });
 

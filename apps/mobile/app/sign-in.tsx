@@ -8,7 +8,7 @@ import {
   suggestEmailCorrection,
 } from "@rakazo/core";
 import { Redirect, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useContext, useEffect, useState } from "react";
 import {
   AccessibilityInfo,
   ActivityIndicator,
@@ -39,6 +39,7 @@ import {
 } from "../lib/api-auth";
 import type { AuthMode } from "../lib/auth-routing";
 import { initialAuthMode } from "../lib/auth-routing";
+import { CallKeyboardContext } from "../lib/call-keyboard-context";
 import { displayApiHost, usesCustomApiBase } from "../lib/endpoint";
 import { hasIncomingShare } from "../lib/incoming-share";
 import { useMobileTokens } from "../lib/native";
@@ -50,6 +51,7 @@ import { credentialIssueText, errorText } from "../lib/user-error";
 const CODE_LENGTH = 6;
 
 export default function SignIn() {
+  const call = useContext(CallKeyboardContext);
   const { t } = useLingui();
   const tokens = useMobileTokens();
   const router = useRouter();
@@ -253,6 +255,7 @@ export default function SignIn() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: tokens.background }}>
       <KeyboardAvoidingView
+        enabled={!call}
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
@@ -464,6 +467,11 @@ export default function SignIn() {
                             setError(null);
                             setEmailStep(true);
                           }}
+                          onPasskey={
+                            passkeys && mode === "in"
+                              ? () => void externalSignIn(signInWithPasskey)
+                              : undefined
+                          }
                           onPress={(providerId) => {
                             const provider = providers.find((item) => item.id === providerId);
                             if (provider) void startProvider(provider);
@@ -627,7 +635,7 @@ export default function SignIn() {
                           onPress={() => void submit()}
                           style={{ marginTop: 16 }}
                         />
-                        {passkeys && mode === "in" ? (
+                        {passkeys && mode === "in" && !presented ? (
                           <NativeActionButton
                             label={t`Sign in with passkey`}
                             icon={{ ios: "key.fill", android: "key-outline" }}

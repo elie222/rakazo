@@ -52,7 +52,7 @@ export type DiagnosticsInput = {
     | "mcpStdioEnabled"
     | "mcpStdioAllowedCommands"
     | "mcpAllowPrivateEndpoint"
-    | "ticketBoardEnabled"
+    | "deploymentLabs"
     | "userDevicesEnabled"
     | "phoneCallsEnabled"
   > & { secretStore: string };
@@ -90,7 +90,7 @@ export function renderDiagnostics(input: DiagnosticsInput): string {
     `- MCP_STDIO_ENABLED: ${onOff(env.mcpStdioEnabled)}`,
     `- MCP_STDIO_ALLOWED_COMMANDS: ${env.mcpStdioAllowedCommands.length}`,
     `- MCP_ALLOW_PRIVATE_ENDPOINT: ${onOff(env.mcpAllowPrivateEndpoint)}`,
-    `- Ticket board: ${onOff(env.ticketBoardEnabled)}`,
+    `- Ticket board for everyone: ${onOff(env.deploymentLabs.includes("board"))}`,
     `- User devices: ${onOff(env.userDevicesEnabled)}`,
     `- Phone calls: ${onOff(env.phoneCallsEnabled)}`,
     "",

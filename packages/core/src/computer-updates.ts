@@ -2,48 +2,135 @@ import type { ComputerUpdate } from "@rakazo/contracts";
 import { COMPUTER_UPDATE_STAGES } from "@rakazo/contracts";
 import { isRetryableError, retryDelayMs } from "./retry-policy.js";
 
-/** Shared polling and local presentation state; the server owns operation lifetime. */
+/** Without live signals (an older server, or while the app's live stream is closed) the list is polled. */
+const POLL_MS = 15_000;
+const POLL_IN_PROGRESS_MS = 1_500;
+/**
+ * The server signals every change, but a publish or its follower can fail without closing the
+ * stream; these slow re-reads bound how long that leaves the list stale.
+ */
+const SIGNALLED_IN_PROGRESS_MS = 30_000;
+const SIGNALLED_IDLE_MS = 5 * 60_000;
+
+/**
+ * Shared list and local presentation state; the server owns operation lifetime. The list is read
+ * when watching starts and whenever the app's live stream signals a change (it signals once on
+ * opening), and polled only while those signals are unavailable.
+ */
 export function createComputerUpdates(client: {
   list: () => Promise<ComputerUpdate[]>;
   start: (botId: string, action: "update" | "recover") => Promise<ComputerUpdate>;
   dismiss: (id: string) => Promise<unknown>;
+  /** The list belongs to the selected Space, so switching starts over. */
+  onSpaceChange?: (listener: () => void) => () => void;
 }) {
   let state: { updates: ComputerUpdate[]; openId: string | null } = { updates: [], openId: null };
   const listeners = new Set<() => void>();
   let timer: ReturnType<typeof setTimeout> | undefined;
+  // Bumped by every watch and unwatch, so a late response from another watch is dropped.
   let generation = 0;
+  let watching = false;
+  // The server refused a read (signed out, or this build): nothing is asked again until rewatched.
+  let refused = false;
+  // After a failed read, signals wait for its scheduled retry, which honors Retry-After.
+  let backoffUntil = 0;
   let revision = 0;
+  let live = false;
+  let connection = 0;
+  let fetching = false;
+  let again = false;
   const emit = () => {
     for (const listener of listeners) listener();
   };
-  const poll = async (epoch: number) => {
+  const inProgress = () =>
+    state.updates.some((item) => item.status === "queued" || item.status === "running");
+  const schedule = (failure?: unknown) => {
+    clearTimeout(timer);
+    timer = undefined;
+    if (!watching || refused) return;
+    const base = inProgress() ? POLL_IN_PROGRESS_MS : POLL_MS;
+    const delay =
+      failure !== undefined
+        ? retryDelayMs(failure, base)
+        : !live
+          ? base
+          : inProgress()
+            ? SIGNALLED_IN_PROGRESS_MS
+            : SIGNALLED_IDLE_MS;
+    if (failure !== undefined) backoffUntil = Date.now() + delay;
+    timer = setTimeout(
+      () => {
+        // The timer is the retry the backoff waited for, even if it fires a little early.
+        backoffUntil = 0;
+        void refresh();
+      },
+      Math.max(delay, backoffUntil - Date.now()),
+    );
+  };
+  const read = async () => {
+    const epoch = generation;
     const stamp = revision;
+    clearTimeout(timer);
     let failure: unknown;
     try {
       const updates = await client.list();
-      if (epoch !== generation || stamp !== revision) return;
-      if (JSON.stringify(state.updates) === JSON.stringify(updates)) return;
-      state = {
-        updates,
-        openId: updates.some((item) => item.id === state.openId) ? state.openId : null,
-      };
-      emit();
-    } catch (error) {
-      // Keep the last known operation through transient failures; a 401 or other refusal stops
-      // polling until the next watch, since asking again cannot change the answer.
-      failure = error;
-    } finally {
-      if (epoch === generation) {
-        clearTimeout(timer);
-        if (failure === undefined || isRetryableError(failure)) {
-          const inProgress = state.updates.some(
-            (item) => item.status === "queued" || item.status === "running",
-          );
-          const delay = retryDelayMs(failure, inProgress ? 1500 : 15000);
-          timer = setTimeout(() => void poll(epoch), delay);
-        }
+      if (epoch !== generation) return;
+      // A start or dismiss landed while this was in flight; its result is newer than this read.
+      if (stamp !== revision) {
+        again = true;
+        return;
       }
+      backoffUntil = 0;
+      if (JSON.stringify(state.updates) !== JSON.stringify(updates)) {
+        state = {
+          updates,
+          openId: updates.some((item) => item.id === state.openId) ? state.openId : null,
+        };
+        emit();
+      }
+    } catch (error) {
+      if (epoch !== generation) return;
+      // Keep the last known operation through transient failures; a 401 or other refusal stops
+      // reading until the next watch, since asking again cannot change the answer.
+      if (!isRetryableError(error)) {
+        refused = true;
+        clearTimeout(timer);
+        return;
+      }
+      failure = error;
     }
+    schedule(failure);
+  };
+  /** One read at a time; signals that arrive meanwhile become one more read. */
+  const mayRead = () => watching && !refused && Date.now() >= backoffUntil;
+  const refresh = async () => {
+    if (!mayRead()) return;
+    if (fetching) {
+      again = true;
+      return;
+    }
+    fetching = true;
+    try {
+      do {
+        again = false;
+        await read();
+      } while (again && mayRead());
+    } finally {
+      fetching = false;
+    }
+  };
+  const begin = () => {
+    generation++;
+    watching = true;
+    refused = false;
+    backoffUntil = 0;
+    void refresh();
+    return () => {
+      generation++;
+      watching = false;
+      clearTimeout(timer);
+      state = { updates: [], openId: null };
+    };
   };
   return {
     getSnapshot: () => state,
@@ -54,12 +141,38 @@ export function createComputerUpdates(client: {
       };
     },
     watch() {
-      const epoch = ++generation;
-      void poll(epoch);
+      let stop = begin();
+      // Another Space has its own list, and nothing from the old one may land. Its signals may
+      // still be the old Space's, so poll until the live stream signals again.
+      const unfollowSpace = client.onSpaceChange?.(() => {
+        stop();
+        live = false;
+        emit();
+        stop = begin();
+      });
       return () => {
-        generation++;
-        clearTimeout(timer);
-        state = { updates: [], openId: null };
+        unfollowSpace?.();
+        stop();
+      };
+    },
+    /**
+     * Signals from one connection of the app's live stream: call `signalled` when it opens and on
+     * each change, and `lost` when it closes. Only the newest connection counts, so an old one
+     * closing late cannot undo its replacement.
+     */
+    connect() {
+      const id = ++connection;
+      return {
+        signalled() {
+          if (id !== connection) return;
+          live = true;
+          void refresh();
+        },
+        lost() {
+          if (id !== connection) return;
+          live = false;
+          if (!fetching) schedule();
+        },
       };
     },
     open(id: string | null) {
@@ -76,8 +189,7 @@ export function createComputerUpdates(client: {
         openId: update.id,
       };
       emit();
-      clearTimeout(timer);
-      timer = setTimeout(() => void poll(epoch), 1500);
+      schedule();
     },
     async dismiss(id: string) {
       const epoch = generation;

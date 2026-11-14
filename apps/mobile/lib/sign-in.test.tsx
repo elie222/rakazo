@@ -483,6 +483,26 @@ it("offers a secondary passkey sign-in only in sign-in mode on a supported serve
   expect(buttonNamed("Sign in with passkey")).toBeUndefined();
 });
 
+it("moves passkey sign-in to the provider chooser", async () => {
+  vi.mocked(passwordResetCapabilities).mockResolvedValue({
+    ...capabilities,
+    sso: exampleSso,
+    passkeyRpId: "example.invalid",
+  });
+  vi.mocked(passkeysAvailable).mockResolvedValue(true);
+  vi.mocked(signInWithPasskey).mockResolvedValue(false);
+  await render();
+  expectBefore(button("Continue with email")!, button("Continue with passkey")!);
+  await press("Continue with passkey");
+  expect(signInWithPasskey).toHaveBeenCalledOnce();
+
+  await press("Continue with email");
+  expect(button("Sign in with passkey")).toBeUndefined();
+  await press("Back");
+  await press("Sign up");
+  expect(button("Continue with passkey")).toBeUndefined();
+});
+
 it("asks the signup survey after an external sign-in creates the account", async () => {
   vi.mocked(passwordResetCapabilities).mockResolvedValue({
     ...capabilities,

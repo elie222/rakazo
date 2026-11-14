@@ -248,6 +248,129 @@ describe("pr-digest", () => {
     expect(result.stdout).toContain("(11 noise)");
   });
 
+  describe("Qodo review comment", () => {
+    const finding = (n: number, title: string, tags: string[], detail = `Details for ${n}.`) =>
+      `<details>\n<summary>  ${n}.  ${title} ${tags.map((t) => `<code>${t}</code>`).join(" ")}</summary>\n\n<br/>\n\n> <details open>\n><summary>Description</summary>\n><br/>\n>\n><pre>\n>${detail}\n></pre>\n></details>\n\n<hr/>\n</details>\n`;
+    const sticky = (current: string[], previous: string[] = [], id = 60) =>
+      comment({
+        id,
+        user: "qodo-free-for-open-source-projects[bot]",
+        kind: "Bot",
+        body: [
+          "<h3>Code Review by Qodo</h3>\n\n<code>🐞 Bugs (3)</code>\n",
+          ...current,
+          "<!-- https://github.com/example/project/commit/abc0000000000000000000000000000000000000 -->\n",
+          ...(previous.length
+            ? [
+                "<details>\n<summary><strong>Previous reviews</strong></summary>\n",
+                ...previous,
+                "</details>",
+              ]
+            : []),
+        ].join("\n"),
+      });
+    const bug = ["🐞 Bug", "≡ Correctness"];
+
+    it("lists unresolved findings from the latest review and blocks on them", () => {
+      const result = runDigest({
+        conversation: [
+          sticky(
+            [
+              finding(1, "Cache misses a key", [...bug, "⭐ New"], "<b><i>lookup</i></b> skips it"),
+              finding(2, "Retry can loop", bug),
+              finding(3, "<s>Fixed earlier</s>", ["✓ Resolved"]),
+              finding(4, "<s>Code moved</s>", ["⊘ Outdated"]),
+              finding(5, "Escape \x1b]0;title\x07here", ["🐞 Bug\x1b[31m"]),
+              "<details>\n<summary>  6.  No description <code>🐞 Bug</code></summary>\n</details>\n",
+            ],
+            [finding(1, "Only in an older review", bug)],
+          ),
+          comment({
+            id: 61,
+            user: "qodo-free-for-open-source-projects[bot]",
+            kind: "Bot",
+            body: "<h3>PR Summary by Qodo</h3>\n\nAdds a cache",
+          }),
+        ],
+      });
+      expect(result.status).toBe(11);
+      expect(result.stdout).toContain("qodo reviewed head · 4 open · 0 answered");
+      expect(result.stdout).toContain(
+        "(qodo 1):0\n  Cache misses a key [🐞 Bug, ≡ Correctness, new] lookup skips it",
+      );
+      expect(result.stdout).toContain("Retry can loop [🐞 Bug, ≡ Correctness] Details for 2.");
+      for (const gone of [
+        "Fixed earlier",
+        "Code moved",
+        "Only in an older review",
+        "Adds a cache",
+      ]) {
+        expect(result.stdout).not.toContain(gone);
+      }
+      expect(result.stdout).toContain("(2 noise)");
+      expect(result.stdout).toContain("Escape ]0;titlehere [🐞 Bug[31m]");
+      expect(result.stdout).toContain("(qodo 6):0\n  No description [🐞 Bug] \n");
+      expect(result.stdout).not.toContain("\x1b");
+      expect(result.stdout).not.toContain("\x07");
+    });
+
+    it("stops blocking on a finding your reply quotes, even after Qodo edits the comment", () => {
+      const current = sticky([
+        finding(1, "Don&#x27;t drop the key", bug),
+        finding(2, "Retry can loop", bug),
+        finding(3, "Retry", bug),
+      ]);
+      const edited = { ...current, updated_at: "2026-01-05T00:00:00Z" };
+      const answer = reply(
+        70,
+        `Declined [Don't drop the key](${current.html_url}): the key is rebuilt on read.`,
+      );
+      const both = reply(71, `${current.html_url} don't drop the key, retry can loop: intended.`);
+      const unlinked = reply(72, "Retry can loop is intended.");
+
+      const partial = runDigest({ conversation: [edited, answer, unlinked] });
+      expect(partial.status).toBe(11);
+      expect(partial.stdout).toContain("2 open · 1 answered");
+      expect(partial.stdout).toContain("answered (qodo 1) Don't drop the key");
+      expect(partial.stdout).toContain("Retry can loop [");
+
+      // Quoting "Retry can loop" does not also answer "Retry".
+      const longer = runDigest({ conversation: [edited, both] });
+      expect(longer.status).toBe(11);
+      expect(longer.stdout).toContain("1 open · 2 answered");
+      expect(longer.stdout).toContain("Retry [");
+
+      const retry = reply(73, `${current.html_url} Retry: intended too.`);
+      const done = runDigest({ conversation: [edited, both, retry] });
+      expect(done.status).toBe(0);
+      expect(done.stdout).toContain("0 open · 3 answered");
+    });
+
+    it("says when Qodo has not reviewed the head yet", () => {
+      const old = sticky([]);
+      old.body = old.body.replace("abc0000", "def0000");
+      const restarting = sticky([], [], 62);
+      restarting.body = "\n<h3>Code Review by Qodo</h3>\n<h3>New Review Started</h3>\n";
+      const result = runDigest({ conversation: [old, restarting] });
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain("qodo reviewed def00000, not the head yet");
+    });
+
+    it("wakes the watch when an edit adds a finding", () => {
+      const running = { name: "e2e", status: "in_progress", conclusion: null, html_url: "" };
+      const result = runDigest(
+        {
+          check: running,
+          conversation: [sticky([finding(1, "Retry can loop", [...bug, "⭐ New"])])],
+        },
+        "--watch",
+        "1",
+      );
+      expect(result.status).toBe(11);
+      expect(result.stdout).toContain("Retry can loop");
+    });
+  });
+
   it("only blocks effective change requests", () => {
     const cases: [string, string[], boolean][] = [
       ["approver", ["APPROVED"], false],

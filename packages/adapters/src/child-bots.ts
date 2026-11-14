@@ -516,6 +516,7 @@ export async function destroyBot(
           ...botArtifacts.map((artifact) => artifact.storageKey),
           ...groupCleanup.artifactKeys,
         ],
+        removedGroupIds: groupCleanup.removedGroupIds,
         directMemory,
         groupMemberMemory: groupMemberMemory.map((run) => run.thread),
         groupMemory: groupCleanup.memory,
@@ -524,7 +525,7 @@ export async function destroyBot(
       };
     }, THREAD_LOCK_TRANSACTION_OPTIONS),
   );
-  if (!deletion) return;
+  if (!deletion) return { removedGroupIds: [] as string[], alreadyRemoved: true };
   await Promise.allSettled(
     deletion.cancelledGroupRuns.map((run) => deps.jobs.cancel(runJobKey(run.id))),
   );
@@ -600,6 +601,7 @@ export async function destroyBot(
     await removeStoredArtifacts(artifactStore, deletion.artifactKeys, context);
   }
   if (deps.secretStore) await forgetPageShareSecrets(deps.secretStore, deletion.pageShareSecrets);
+  return { removedGroupIds: deletion.removedGroupIds };
 }
 
 type DissolvableGroup = {
@@ -741,6 +743,7 @@ async function detachBotFromGroups(tx: Prisma.TransactionClient, botId: string) 
     await tx.chatGroup.deleteMany({ where: { id: { in: dissolvedGroupIds } } });
   }
   return {
+    removedGroupIds: dissolvedGroupIds,
     memory,
     artifactKeys: groupArtifacts.map((artifact) => artifact.storageKey),
     pageShareSecrets,

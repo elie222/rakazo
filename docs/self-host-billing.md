@@ -33,9 +33,9 @@ access on the server, so a lapsed organization's bots and routines stop until it
 
 ## Model credits
 
-Configure the managed default model through the existing model connection settings. The default
-OpenRouter model is Luna 6; customers can choose another available model, with its usage deducted
-at model cost. In credit mode, the configured hosted provider uses Rakazo's key even when a personal
+Configure the managed default model through the existing [model connection settings](./self-host-models.md#deployment-model).
+Customers can choose another available model, with its usage deducted at model cost.
+In credit mode, the configured hosted provider uses Rakazo's key even when a personal
 key for that provider is saved. Switching back to BYOK restores that connection. Personal connections
 to other providers continue to use their own keys and never debit Rakazo credits. Hosted calls reserve an upper cost estimate atomically before starting, then settle
 to reported or catalog-priced usage. Unknown usage retains its reservation for reconciliation.

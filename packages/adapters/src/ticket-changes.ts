@@ -1,4 +1,5 @@
 import type { JobPublisher } from "@rakazo/adapter-kit";
+import type { LabFeature } from "@rakazo/contracts";
 import type { BoardEvents, PrismaClient } from "@rakazo/db";
 import { wakeTicketAssignee } from "./ticket-wake.js";
 
@@ -15,10 +16,9 @@ export function createTicketChangeNotifier(deps: {
   boardEvents: BoardEvents;
   prisma: PrismaClient;
   jobs: JobPublisher;
-  ticketBoardEnabled?: boolean;
+  deploymentLabs?: readonly LabFeature[];
 }): TicketChangeNotifier {
   return async (change) => {
-    if (!deps.ticketBoardEnabled) return;
     await deps.boardEvents
       .notify(change.spaceId, {
         boardId: change.boardId,

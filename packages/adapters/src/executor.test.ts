@@ -4424,13 +4424,13 @@ description: Prepare standup notes
     });
 
     bot.modelId = "text-only-model";
-    await expect(
-      executor.resolveModel({ userId: "user-1", spaceId: "ws-1", botId: "bot-1" }),
-    ).resolves.toMatchObject({
-      provider,
-      id: "text-only-model",
-      acceptsImages: false,
+    const textOnly = await executor.resolveModel({
+      userId: "user-1",
+      spaceId: "ws-1",
+      botId: "bot-1",
     });
+    expect(textOnly).toMatchObject({ provider, id: "text-only-model" });
+    expect(textOnly.acceptsImages).not.toBe(true);
   });
 
   it("falls back to the Space default when the override provider has no credential", async () => {

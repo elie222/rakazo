@@ -25,8 +25,8 @@ vi.mock("@lingui/react/macro", () => ({
   useLingui: () => ({ t: (parts: TemplateStringsArray) => parts.join("") }),
 }));
 vi.mock("./lib/bootstrap", () => ({
-  getTicketBoardEnabled: () => capability.enabled,
-  subscribeTicketBoardEnabled: () => () => {},
+  getLabs: () => (capability.enabled ? ["board"] : []),
+  subscribeLabs: () => () => {},
 }));
 vi.mock("./lib/auth", () => ({
   authClient: {

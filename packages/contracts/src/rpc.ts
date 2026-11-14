@@ -165,6 +165,7 @@ import {
   IntegrationProviderConfigSchema,
   IntegrationSetupStateSchema,
 } from "./integration-settings.js";
+import { LabFeatureSchema } from "./labs.js";
 import {
   BotMcpServerSchema,
   McpServerConfigInput,
@@ -181,6 +182,7 @@ import {
   ModelConnectionTargetSchema,
   ModelCredentialSchema,
   ModelOAuthBeginSchema,
+  ModelSettingsSaveSchema,
   OPENAI_COMPATIBLE_PROVIDER_ID,
 } from "./model-connections.js";
 import { ModelHeadersSchema } from "./model-headers.js";
@@ -399,13 +401,16 @@ export const appContract = {
             timezone: TimeZoneSchema.nullable().optional(),
             /** The language the app runs in, so emails can be written in it. */
             locale: AppLocaleSchema.optional(),
+            /** Replaces the account's Labs list. */
+            labs: z.array(LabFeatureSchema).optional(),
           })
           .refine(
             (input) =>
               input.avatarStyle !== undefined ||
               input.botAvatarSet !== undefined ||
               input.timezone !== undefined ||
-              input.locale !== undefined,
+              input.locale !== undefined ||
+              input.labs !== undefined,
             { message: "Nothing to update" },
           ),
       )
@@ -589,6 +594,7 @@ export const appContract = {
     rename: oc
       .input(z.object({ credentialId: Id, label: ModelConnectionLabelSchema }))
       .output(z.object({ ok: z.literal(true) })),
+    saveModelSettings: oc.input(ModelSettingsSaveSchema).output(z.object({ ok: z.literal(true) })),
     /** Removes one connection, or every connection of the provider when older apps omit it. */
     disconnect: oc
       .input(z.object({ provider: z.string().trim().min(1), credentialId: Id.optional() }))
@@ -622,7 +628,14 @@ export const appContract = {
     restore: oc.input(botId).output(z.object({ ok: z.literal(true) })),
     remove: oc
       .input(z.object({ botId: Id, deleteMemories: z.boolean().default(false) }))
-      .output(z.object({ ok: z.literal(true) })),
+      // Optional for clients talking to older servers; current servers return committed group IDs.
+      .output(
+        z.object({
+          ok: z.literal(true),
+          removedGroupIds: z.array(Id).optional(),
+          alreadyRemoved: z.boolean().optional(),
+        }),
+      ),
     /** Groups this delete removes because fewer than two active bots would remain. */
     removePreview: oc.input(botId).output(z.array(z.object({ id: Id, name: z.string() }))),
     emailAddress: oc.input(botId).output(BotEmailAddressSchema),
@@ -1474,12 +1487,13 @@ export const appContract = {
   notifications: {
     /**
      * Run alerts for the signed-in user's chats in this space, live while connected. `roster`
-     * says `spaces.list` may have changed.
+     * says `spaces.list` may have changed, and `computerUpdates` that `computer.updates` may have;
+     * each is sent once when the stream opens.
      */
     subscribe: oc.output(
       eventIterator(
         z.object({
-          type: z.enum(["alert", "roster", "heartbeat"]),
+          type: z.enum(["alert", "roster", "computerUpdates", "heartbeat"]),
           alert: ChatAlertSchema.optional(),
         }),
       ),

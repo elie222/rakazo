@@ -383,6 +383,11 @@ msgstr "{label}, नीचे"
 msgid "{label}, empty"
 msgstr "{label}, खाली"
 
+#. placeholder {0}: base.name
+#: apps/web/src/components/ModelCredits.tsx
+msgid "{memoryGb} GB of RAM and {usage}× the computer time of {0}. Time counts only while your bot uses its computer."
+msgstr "{memoryGb} GB RAM और {0} से {usage}× कंप्यूटर समय। समय सिर्फ़ तब गिना जाता है जब आपका बॉट अपना कंप्यूटर इस्तेमाल करता है।"
+
 #: apps/web/src/lib/relative-time.ts
 msgid "{minutes}m ago"
 msgstr "{minutes} मिनट पहले"
@@ -854,6 +859,10 @@ msgstr "1 अपठित"
 msgid "3 hours"
 msgstr "3 घंटे"
 
+#: apps/web/src/components/ModelCredits.tsx
+msgid "A {times}× more powerful computer for your bot"
+msgstr "आपके बॉट के लिए {times}× ज़्यादा शक्तिशाली कंप्यूटर"
+
 #: apps/web/src/pages/shell/message-cards.tsx
 msgid "A bit of everything"
 msgstr "थोड़ा-थोड़ा सब कुछ"
@@ -970,7 +979,9 @@ msgid "Active: {name}"
 msgstr "सक्रिय: {name}"
 
 #: apps/mobile/components/inbox-header.tsx
+#: apps/mobile/components/vault-item-sheet.tsx
 #: apps/mobile/lib/use-home-header.ts
+#: apps/web/src/components/vault/VaultItemActivity.tsx
 #: apps/web/src/pages/shell/sidebar-header.tsx
 msgid "Activity"
 msgstr "गतिविधि"
@@ -1048,6 +1059,11 @@ msgstr "आवाज़ सेटिंग्स में आवाज़ प�
 msgid "Add an AI model to keep chatting"
 msgstr "चैट जारी रखने के लिए AI मॉडल जोड़ें"
 
+#: apps/mobile/components/vault-item-editor.tsx
+#: apps/web/src/components/vault/VaultItemEditor.tsx
+msgid "Add an authenticator key"
+msgstr "ऑथेंटिकेटर कुंजी जोड़ें"
+
 #: apps/web/src/pages/McpServersOverlay.tsx
 msgid "Add an HTTPS server URL."
 msgstr "एक HTTPS सर्वर URL दर्ज करें।"
@@ -1111,6 +1127,11 @@ msgstr "मॉडल जोड़ें"
 msgid "Add open work"
 msgstr "खुला कार्य जोड़ें"
 
+#: apps/mobile/components/vault-item-editor.tsx
+#: apps/web/src/components/vault/VaultItemEditor.tsx
+msgid "Add other sites"
+msgstr "दूसरी साइटें जोड़ें"
+
 #: apps/mobile/app/(settings)/profile.tsx
 #: apps/mobile/lib/passkey.ts
 #: apps/web/src/components/PasskeyOffer.tsx
@@ -1160,6 +1181,11 @@ msgstr "ट्रिगर जोड़ें"
 #: apps/web/src/pages/MessagingSettingsPanel.tsx
 msgid "Add workspace"
 msgstr "वर्कस्पेस जोड़ें"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "Added"
+msgstr "जोड़ा गया"
 
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/mobile/app/(settings)/plugin.tsx
@@ -1252,6 +1278,7 @@ msgid "All {price} goes to model usage."
 msgstr "पूरे {price} मॉडल उपयोग पर जाते हैं।"
 
 #: apps/mobile/app/artifacts.tsx
+#: apps/mobile/components/vault-item-editor.tsx
 #: apps/web/src/components/integrations/agent-access.tsx
 #: apps/web/src/pages/Artifacts.tsx
 #: apps/web/src/pages/shell/agent-import-plan.tsx
@@ -1275,6 +1302,11 @@ msgstr "सभी स्थितियाँ"
 #: apps/web/src/pages/Artifacts.tsx
 msgid "All time"
 msgstr "अब तक"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "Allow"
+msgstr "अनुमति दें"
 
 #: apps/mobile/lib/ai-consent.ts
 #: apps/web/src/components/ApprovalRulesSettings.tsx
@@ -1341,6 +1373,18 @@ msgstr "पहले से कनेक्ट है"
 msgid "Already have an account?"
 msgstr "पहले से खाता है?"
 
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "Already saved"
+msgstr "पहले से सहेजा गया"
+
+#: apps/mobile/components/vault-item-editor.tsx
+#: apps/mobile/components/vault-item-sheet.tsx
+#: apps/web/src/components/vault/VaultItemDetail.tsx
+#: apps/web/src/components/vault/VaultItemEditor.tsx
+msgid "Also on"
+msgstr "इन पर भी"
+
 #: apps/mobile/app/(settings)/team-conversation.tsx
 #: apps/web/src/pages/ExternalConversationSettings.tsx
 msgid "Always act"
@@ -1404,6 +1448,11 @@ msgstr "इंपोर्ट की गई एक API कुंजी इस्
 #: apps/web/src/pages/routine-editor/trigger-cards.tsx
 msgid "An integration tool"
 msgstr "एक इंटीग्रेशन टूल"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "And {more} more"
+msgstr "और {more} अन्य"
 
 #: apps/mobile/app/(settings)/general.tsx
 #: apps/mobile/lib/live-notifications.ts
@@ -1583,7 +1632,9 @@ msgid "archived"
 msgstr "आर्काइव किया गया"
 
 #: apps/mobile/app/(settings)/_layout.tsx
+#: apps/mobile/app/(settings)/vault.tsx
 #: apps/mobile/components/inbox-rows.tsx
+#: apps/web/src/components/vault/VaultItemAccess.tsx
 #: apps/web/src/pages/shell/archived-chats.tsx
 msgid "Archived"
 msgstr "आर्काइव किया गया"
@@ -1608,6 +1659,11 @@ msgstr "आर्टिफ़ैक्ट"
 #: apps/web/src/components/ApprovalRulesSettings.tsx
 msgid "Ask"
 msgstr "पूछें"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "Ask first"
+msgstr "पहले पूछें"
 
 #: apps/mobile/app/routines.tsx
 msgid "Ask this Bot in chat to set up a routine."
@@ -1642,6 +1698,10 @@ msgstr "{time} बजे"
 msgid "at {timeSelect}"
 msgstr "{timeSelect} बजे"
 
+#: apps/web/src/pages/shell/composer.tsx
+msgid "Attach as file"
+msgstr "फ़ाइल के रूप में संलग्न करें"
+
 #: apps/mobile/components/thread-composer.tsx
 #: apps/web/src/pages/shell/composer.tsx
 msgid "Attach file"
@@ -1663,6 +1723,14 @@ msgstr "प्रमाणीकरण"
 #: apps/web/src/lib/model-connection-preflight.ts
 msgid "Authentication failed."
 msgstr "प्रमाणीकरण विफल रहा।"
+
+#: apps/mobile/app/(settings)/vault.tsx
+#: apps/mobile/components/vault-item-editor.tsx
+#: apps/mobile/components/vault-item-sheet.tsx
+#: apps/web/src/components/vault/VaultItemDetail.tsx
+#: apps/web/src/components/vault/VaultItemEditor.tsx
+msgid "Authenticator key"
+msgstr "ऑथेंटिकेटर कुंजी"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/web/src/pages/model-settings/connection-controls.tsx
@@ -1728,6 +1796,7 @@ msgstr "अवतार स्टूडियो"
 #: apps/mobile/app/sign-in.tsx
 #: apps/mobile/components/add-custom-integration.tsx
 #: apps/mobile/components/integration-detail.tsx
+#: apps/mobile/components/vault-item-sheet.tsx
 #: apps/web/src/components/bot-templates/bot-templates-dialog.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 #: apps/web/src/components/integrations/skills-dialog.tsx
@@ -1805,6 +1874,11 @@ msgstr "बिलिंग पता"
 #: apps/web/src/components/ModelCredits.tsx
 msgid "Billing period"
 msgstr "बिलिंग अवधि"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "Block"
+msgstr "ब्लॉक करें"
 
 #: apps/web/src/components/ApprovalRulesSettings.tsx
 msgid "Block"
@@ -1908,6 +1982,13 @@ msgstr "बॉट का मॉडल"
 msgid "Both"
 msgstr "दोनों"
 
+#: apps/mobile/components/vault-item-editor.tsx
+#: apps/mobile/components/vault-item-sheet.tsx
+#: apps/web/src/components/vault/VaultItemAccess.tsx
+#: apps/web/src/components/vault/VaultItemDetail.tsx
+msgid "Bots"
+msgstr "बॉट्स"
+
 #: apps/web/src/components/ModelCredits.tsx
 msgid "Bots and browser automation"
 msgstr "बॉट और ब्राउज़र ऑटोमेशन"
@@ -1915,6 +1996,11 @@ msgstr "बॉट और ब्राउज़र ऑटोमेशन"
 #: apps/mobile/lib/bot-lifecycle.ts
 msgid "Bots and their own chats stay."
 msgstr "बॉट और उनकी अपनी चैट बनी रहती हैं।"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "Bots can use each imported login until you change its Bots setting."
+msgstr "बॉट हर इम्पोर्ट किए गए लॉगिन का इस्तेमाल तब तक कर सकते हैं, जब तक आप उसकी बॉट्स सेटिंग नहीं बदलते।"
 
 #: apps/web/src/components/SharedSpaceRules.tsx
 msgid "Bots use the accounts of whoever messages them"
@@ -2336,6 +2422,15 @@ msgstr "फ़ोल्डर चुनें"
 msgid "Choose how to use Rakazo"
 msgstr "चुनें कि Rakazo का उपयोग कैसे करें"
 
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "Chosen bots"
+msgstr "चुने गए बॉट"
+
+#: apps/mobile/components/vault-item-editor.tsx
+msgid "Chosen bots"
+msgstr "चुने गए बॉट"
+
 #: apps/mobile/components/vault-item-editor.tsx
 #: apps/mobile/components/vault-item-sheet.tsx
 #: apps/web/src/components/vault/VaultItemEditor.tsx
@@ -2740,6 +2835,10 @@ msgstr "API कुंजी कनेक्ट करें"
 msgid "Connect apps"
 msgstr "ऐप कनेक्ट करें"
 
+#: apps/web/src/pages/shell/agent-import-plan.tsx
+msgid "Connect it again"
+msgstr "इसे फिर से कनेक्ट करें"
+
 #: apps/web/src/pages/shell/message-cards.tsx
 msgid "Connect MCP server “{name}”"
 msgstr "MCP सर्वर “{name}” कनेक्ट करें"
@@ -2883,14 +2982,19 @@ msgstr "बैकग्राउंड में जारी रखें"
 msgid "Continue to checkout"
 msgstr "चेकआउट पर जारी रखें"
 
-#. placeholder {0}: reset.sso.name
-#: apps/web/src/pages/Auth.tsx
+#. placeholder {0}: provider.name
+#: apps/web/src/components/SocialSignInButtons.tsx
 msgid "Continue with {0}"
 msgstr "{0} के साथ जारी रखें"
 
-#: apps/mobile/app/sign-in.tsx
+#: apps/mobile/components/social-sign-in-buttons.tsx
 msgid "Continue with {name}"
 msgstr "{name} के साथ जारी रखें"
+
+#: apps/mobile/components/social-sign-in-buttons.tsx
+#: apps/web/src/components/SocialSignInButtons.tsx
+msgid "Continue with email"
+msgstr "ईमेल के साथ जारी रखें"
 
 #: apps/mobile/components/computer-keyboard-bar.tsx
 msgid "Control"
@@ -3309,6 +3413,11 @@ msgstr "पहुँच नहीं दी जा सकी"
 msgid "Could not hear that."
 msgstr "वह सुनाई नहीं दिया।"
 
+#: apps/mobile/app/(settings)/vault.tsx
+#: apps/web/src/components/VaultSettings.tsx
+msgid "Could not import"
+msgstr "इम्पोर्ट नहीं हो सका"
+
 #: apps/web/src/pages/PluginsOverlay.tsx
 msgid "Could not install connector"
 msgstr "कनेक्टर इंस्टॉल नहीं हो सका"
@@ -3331,6 +3440,7 @@ msgid "Could not load"
 msgstr "लोड नहीं हो सका"
 
 #: apps/mobile/components/inbox-activity.tsx
+#: apps/web/src/components/vault/VaultItemActivity.tsx
 #: apps/web/src/pages/ActivityList.tsx
 msgid "Could not load activity"
 msgstr "गतिविधि लोड नहीं हो सकी"
@@ -3360,6 +3470,11 @@ msgstr "बॉट लोड नहीं हो सका"
 #: apps/mobile/lib/use-home-inbox.ts
 msgid "Could not load bots"
 msgstr "बॉट लोड नहीं हो सके"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "Could not load bots. Reload to try again."
+msgstr "बॉट लोड नहीं हो सके। दोबारा कोशिश करने के लिए फिर से लोड करें।"
 
 #: apps/web/src/pages/IntegrationSetup.tsx
 msgid "Could not load bots. Reload to try again."
@@ -4100,6 +4215,7 @@ msgstr "सेक्शन बनाएं"
 msgid "Create space"
 msgstr "स्पेस बनाएं"
 
+#: apps/mobile/app/sign-in.tsx
 #: apps/web/src/pages/Auth.tsx
 msgid "Create your Rakazo"
 msgstr "अपना Rakazo बनाएं"
@@ -4419,6 +4535,11 @@ msgstr "अनुभाग हटाएँ"
 msgid "Delete space"
 msgstr "स्पेस डिलीट करें"
 
+#: apps/mobile/app/(settings)/vault.tsx
+#: apps/web/src/components/vault/VaultImport.tsx
+msgid "Delete the exported file now. It holds your passwords unencrypted."
+msgstr "एक्सपोर्ट की गई फ़ाइल अभी हटाएँ। उसमें आपके पासवर्ड बिना एन्क्रिप्शन के हैं।"
+
 #: apps/mobile/app/routine.tsx
 #: apps/mobile/app/routines.tsx
 msgid "Delete this routine?"
@@ -4680,6 +4801,7 @@ msgstr "खाता नहीं है?"
 #: apps/web/src/components/AccountDataSettings.tsx
 #: apps/web/src/components/ComputerCard.tsx
 #: apps/web/src/components/ToolActivityDisclosure.tsx
+#: apps/web/src/components/vault/VaultImport.tsx
 #: apps/web/src/lib/ticket-status.ts
 #: apps/web/src/pages/ActivityList.tsx
 #: apps/web/src/pages/shell/avatar-studio-popover.tsx
@@ -4883,6 +5005,11 @@ msgstr "परीक्षण से पहले API कुंजी दर्�
 msgid "Enter an HTTPS URL"
 msgstr "HTTPS URL दर्ज करें"
 
+#: apps/mobile/components/vault-item-editor.tsx
+#: apps/web/src/components/vault/VaultItemEditor.tsx
+msgid "Enter each site as an HTTPS address a login can be saved for."
+msgstr "हर साइट को ऐसे HTTPS पते के रूप में दर्ज करें जिसके लिए लॉगिन सहेजा जा सके।"
+
 #: apps/web/src/components/ComputerProviderSettings.tsx
 msgid "Environment ID"
 msgstr "एनवायरनमेंट ID"
@@ -4975,18 +5102,11 @@ msgstr "हर घंटे :{minute} मिनट पर"
 msgid "Every message"
 msgstr "हर संदेश"
 
+#: apps/mobile/components/routine-schedule-editor.tsx
 #: apps/mobile/lib/cron.ts
 #: apps/web/src/lib/cron.ts
 msgid "Every Monday"
 msgstr "हर सोमवार"
-
-#: apps/mobile/components/routine-schedule-editor.tsx
-msgid "Every month"
-msgstr "हर महीने"
-
-#: apps/mobile/components/routine-schedule-editor.tsx
-msgid "Every week"
-msgstr "हर सप्ताह"
 
 #: apps/web/src/components/SharedSpaceRules.tsx
 msgid "Everyone here sees its chats, bots and memory"
@@ -4999,6 +5119,11 @@ msgstr "इस बॉट के स्पेस में हर कोई {app}
 #: apps/web/src/pages/MessagingSettingsPanel.tsx
 msgid "Everyone in this bot's space can read the chats it gets from {linkApp}."
 msgstr "इस बॉट के स्पेस में हर कोई {linkApp} से आने वाली इसकी चैट पढ़ सकता है।"
+
+#. placeholder {0}: first.name
+#: apps/web/src/components/ModelCredits.tsx
+msgid "Everything in {0}"
+msgstr "{0} में सब कुछ"
 
 #: apps/mobile/app/new-group.tsx
 msgid "Ex: Project Falcon"
@@ -5378,6 +5503,10 @@ msgstr "अनुमति दी जा रही है…"
 msgid "GraphQL endpoint"
 msgstr "GraphQL एंडपॉइंट"
 
+#: apps/web/src/pages/shell/agent-import.tsx
+msgid "Grok Bot"
+msgstr "Grok बॉट"
+
 #: apps/mobile/app/_layout.tsx
 #: apps/mobile/app/(settings)/messaging.tsx
 #: apps/mobile/components/archived-bot-list.ios.tsx
@@ -5417,9 +5546,14 @@ msgstr "समूह सेटिंग्स"
 msgid "Group updates"
 msgstr "अपडेट समूहित करें"
 
-#: apps/web/src/pages/shell/dialogs.tsx
+#: packages/i18n/src/bot-removal.ts
 msgid "Groups left with fewer than two bots are deleted too, including their messages, files, and pages."
 msgstr "जिन समूहों में दो से कम बॉट बचेंगे, वे भी अपने संदेशों, फ़ाइलों और पेजों समेत डिलीट हो जाएँगे।"
+
+#: apps/mobile/app/computer.tsx
+#: apps/web/src/pages/shell/computer-release-actions.tsx
+msgid "Hand back control"
+msgstr "नियंत्रण वापस दें"
 
 #: apps/mobile/components/CallCard.tsx
 #: apps/web/src/components/call/CallCard.tsx
@@ -5659,7 +5793,9 @@ msgstr "इस मॉडल के लिए चित्र इनपुट क
 msgid "Image upload area"
 msgstr "छवि अपलोड क्षेत्र"
 
+#: apps/mobile/app/(settings)/vault.tsx
 #: apps/web/src/components/AccountDataSettings.tsx
+#: apps/web/src/components/vault/VaultImport.tsx
 msgid "Import"
 msgstr "इम्पोर्ट करें"
 
@@ -5667,6 +5803,12 @@ msgstr "इम्पोर्ट करें"
 #: apps/web/src/pages/shell/agent-import.tsx
 msgid "Import an agent"
 msgstr "एजेंट इंपोर्ट करें"
+
+#: apps/mobile/app/(settings)/vault.tsx
+#: apps/web/src/components/vault/VaultImport.tsx
+#: apps/web/src/components/VaultSettings.tsx
+msgid "Import CSV"
+msgstr "CSV इम्पोर्ट करें"
 
 #: apps/web/src/components/AccountDataSettings.tsx
 msgid "Import data"
@@ -5887,6 +6029,10 @@ msgstr "उत्तर दिए गए संदेश पर जाएँ: {e
 msgid "just now"
 msgstr "अभी-अभी"
 
+#: apps/web/src/pages/shell/composer.tsx
+msgid "Keep inline"
+msgstr "इनलाइन रखें"
+
 #: apps/mobile/lib/bot-lifecycle.ts
 #: apps/web/src/pages/shell/dialogs.tsx
 msgid "Keep memories"
@@ -5927,6 +6073,14 @@ msgstr "लेबल"
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
 msgid "Language"
 msgstr "भाषा"
+
+#: apps/web/src/pages/shell/composer.tsx
+msgid "Large paste"
+msgstr "बड़ा पेस्ट"
+
+#: apps/web/src/pages/shell/composer.tsx
+msgid "Large text pasted inline"
+msgstr "बड़ा टेक्स्ट इनलाइन पेस्ट किया गया"
 
 #. placeholder {0}: new Date(state.checkedAt).toLocaleString()
 #: apps/web/src/pages/routine-editor/trigger-cards.tsx
@@ -5990,6 +6144,16 @@ msgstr "सीमा"
 msgid "Link"
 msgstr "लिंक"
 
+#. placeholder {0}: provider.name
+#. placeholder {0}: security.sso.name === "SSO" ? t`SSO` : security.sso.name
+#: apps/mobile/app/(settings)/profile.tsx
+msgid "Link {0}"
+msgstr "{0} लिंक करें"
+
+#: apps/web/src/components/AccountAccess.tsx
+msgid "Link {providerName}"
+msgstr "{providerName} लिंक करें"
+
 #: apps/web/src/components/pages/PublicPageShell.tsx
 #: apps/web/src/components/pages/SharePopover.tsx
 msgid "Link copied"
@@ -5999,11 +6163,6 @@ msgstr "लिंक कॉपी हो गया"
 #: apps/web/src/pages/MessagingSettingsPanel.tsx
 msgid "Link DMs"
 msgstr "निजी संदेश लिंक करें"
-
-#: apps/mobile/app/(settings)/profile.tsx
-#: apps/web/src/components/AccountAccess.tsx
-msgid "Link SSO"
-msgstr "SSO लिंक करें"
 
 #: apps/web/src/pages/Artifacts.tsx
 msgid "List view"
@@ -6561,6 +6720,7 @@ msgstr "मासिक क्रेडिट"
 msgid "Monthly credits expire at renewal. Top-ups do not expire."
 msgstr "मासिक क्रेडिट नवीनीकरण पर समाप्त हो जाते हैं। टॉप-अप समाप्त नहीं होते।"
 
+#: apps/mobile/components/routine-schedule-editor.tsx
 #: apps/web/src/lib/cron.ts
 msgid "Monthly on the 1st"
 msgstr "हर महीने की 1 तारीख को"
@@ -6716,7 +6876,6 @@ msgstr "नियंत्रण लेना ज़रूरी"
 #: apps/mobile/components/ComputerCard.tsx
 #: apps/web/src/components/ComputerCard.tsx
 #: apps/web/src/lib/roster-status.ts
-#: apps/web/src/pages/shell/computer-overlay.tsx
 msgid "Needs you"
 msgstr "आपकी ज़रूरत है"
 
@@ -6896,6 +7055,11 @@ msgstr "कोई ऑथ नहीं"
 msgid "No authentication"
 msgstr "कोई प्रमाणीकरण नहीं"
 
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "No bots"
+msgstr "कोई बॉट नहीं"
+
 #: apps/web/src/components/integrations/agent-access.tsx
 msgid "No bots"
 msgstr "कोई बॉट नहीं"
@@ -6968,6 +7132,15 @@ msgstr "कोई OpenClaw, Hermes या एजेंट दस्तावे�
 #: apps/web/src/components/pages/PagesList.tsx
 msgid "No pages match “{query}”."
 msgstr "“{query}” से कोई पेज मेल नहीं खाता।"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "No password"
+msgstr "कोई पासवर्ड नहीं"
+
+#: apps/web/src/components/ModelCredits.tsx
+msgid "No plan or key? Use credits"
+msgstr "प्लान या कुंजी नहीं है? क्रेडिट इस्तेमाल करें"
 
 #: apps/mobile/app/artifact.tsx
 #: apps/mobile/components/video-preview.tsx
@@ -7042,6 +7215,11 @@ msgstr "कोई टूल उपलब्ध नहीं।"
 msgid "No trigger"
 msgstr "कोई ट्रिगर नहीं"
 
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "No website and password columns found."
+msgstr "वेबसाइट और पासवर्ड कॉलम नहीं मिले।"
+
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/mobile/app/(settings)/spending-limit.tsx
 #: apps/mobile/components/spending-limit-row.tsx
@@ -7103,6 +7281,16 @@ msgstr "अभी नहीं"
 #: apps/mobile/lib/model-settings.ts
 msgid "Not Now"
 msgstr "अभी नहीं"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "Not on an HTTPS site"
+msgstr "HTTPS साइट पर नहीं"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "Not saved"
+msgstr "सहेजा नहीं गया"
 
 #: apps/mobile/components/failed-send-bubble.tsx
 msgid "Not sent"
@@ -7399,6 +7587,10 @@ msgstr "वैकल्पिक"
 msgid "Optional header value"
 msgstr "वैकल्पिक हेडर मान"
 
+#: apps/mobile/components/social-sign-in-buttons.tsx
+msgid "or"
+msgstr "या"
+
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "Or connect an API key"
 msgstr "या API कुंजी कनेक्ट करें"
@@ -7634,6 +7826,10 @@ msgstr "लंबित"
 msgid "Permissions"
 msgstr "अनुमतियाँ"
 
+#: apps/mobile/app/sign-in.tsx
+msgid "Persistent AI teammates that do real work"
+msgstr "स्थायी AI साथी जो असली काम करते हैं"
+
 #: apps/web/src/pages/shell/agent-import-plan.tsx
 msgid "Persona"
 msgstr "व्यक्तित्व"
@@ -7841,6 +8037,7 @@ msgstr "सुरक्षित इनपुट"
 msgid "Protocol"
 msgstr "प्रोटोकॉल"
 
+#: apps/mobile/app/(settings)/voice.tsx
 #: apps/web/src/pages/MemorySettingsOverlay.tsx
 #: apps/web/src/pages/onboarding/model-step.tsx
 #: apps/web/src/pages/VoiceSettingsOverlay.tsx
@@ -8108,14 +8305,6 @@ msgstr "अस्वीकृत"
 msgid "Rejecting…"
 msgstr "अस्वीकार किया जा रहा है…"
 
-#: apps/mobile/app/computer.tsx
-msgid "Release"
-msgstr "छोड़ें"
-
-#: apps/web/src/pages/shell/computer-release-actions.tsx
-msgid "Release control"
-msgstr "नियंत्रण छोड़ें"
-
 #: apps/web/src/components/InstructionSettings.tsx
 #: apps/web/src/lib/client-update.ts
 msgid "Reload"
@@ -8296,6 +8485,11 @@ msgstr "{day} को नवीनीकरण"
 #: apps/web/src/pages/ScratchpadSection.tsx
 msgid "Reopen"
 msgstr "पुनः खोलें"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "Repeated in the file"
+msgstr "फ़ाइल में दोहराया गया"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/mobile/components/model-providers.tsx
@@ -8502,6 +8696,7 @@ msgstr "सूचनाएँ फिर शुरू करें"
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 #: apps/web/src/components/integrations/skills-dialog.tsx
 #: apps/web/src/components/PasskeySettings.tsx
+#: apps/web/src/components/vault/VaultItemActivity.tsx
 #: apps/web/src/pages/AdminAccessPage.tsx
 #: apps/web/src/pages/Auth.tsx
 #: apps/web/src/pages/Invite.tsx
@@ -8599,6 +8794,11 @@ msgstr "आपकी अनुपस्थिति में चलने व�
 #: apps/web/src/components/markdown-copy.tsx
 msgid "Row"
 msgstr "पंक्ति"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "Row {line}"
+msgstr "पंक्ति {line}"
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/components/approval-settings-rows.tsx
@@ -8750,6 +8950,31 @@ msgstr "{name} स्थानीय रूप से सहेजा गया"
 #: apps/web/src/pages/ScratchpadSection.tsx
 msgid "Saved, but list refresh failed"
 msgstr "सहेजा गया, लेकिन सूची रिफ़्रेश विफल रही"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "Saved, but this server can't ask you first."
+msgstr "सहेजा गया, लेकिन यह सर्वर आपसे पहले नहीं पूछ सकता।"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "Saved, but this server can't block bots yet."
+msgstr "सहेजा गया, लेकिन यह सर्वर अभी बॉट को ब्लॉक नहीं कर सकता।"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "Saved, but this server can't keep authenticator keys yet."
+msgstr "सहेजा गया, लेकिन यह सर्वर अभी ऑथेंटिकेटर कुंजियाँ नहीं रख सकता।"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "Saved, but this server can't limit an item to chosen bots."
+msgstr "सहेजा गया, लेकिन यह सर्वर किसी आइटम को चुने गए बॉट तक सीमित नहीं कर सकता।"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "Saved, but this server fills logins only on their own site."
+msgstr "सहेजा गया, लेकिन यह सर्वर लॉगिन सिर्फ़ उनकी अपनी साइट पर भरता है।"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/mobile/lib/use-subscription-sign-in.ts
@@ -9252,14 +9477,18 @@ msgid "Sign in at <0>{0}</0>, then paste the code here."
 msgstr "<0>{0}</0> पर साइन इन करें, फिर कोड यहाँ पेस्ट करें।"
 
 #: apps/mobile/app/sign-in.tsx
+msgid "Sign in to continue to Rakazo"
+msgstr "Rakazo पर जारी रखने के लिए साइन इन करें"
+
+#: apps/mobile/app/sign-in.tsx
 #: apps/web/src/pages/Auth.tsx
 msgid "Sign in to Rakazo"
 msgstr "Rakazo में साइन इन करें"
 
 #: apps/mobile/lib/user-error.ts
 #: apps/web/src/lib/user-error.ts
-msgid "Sign in to your existing account to link SSO"
-msgstr "SSO लिंक करने के लिए अपने मौजूदा खाते में साइन इन करें"
+msgid "Sign in to your account, then link this provider in settings"
+msgstr "अपने खाते में साइन इन करें, फिर सेटिंग्स में इस प्रोवाइडर को लिंक करें"
 
 #: apps/mobile/app/sign-in.tsx
 #: apps/web/src/components/PasskeySignIn.tsx
@@ -9416,6 +9645,11 @@ msgstr "स्नूज़ करें"
 msgid "Snoozed"
 msgstr "स्नूज़ किए गए"
 
+#: apps/mobile/app/(settings)/vault.tsx
+#: apps/web/src/components/VaultSettings.tsx
+msgid "Some logins may have been saved. Importing the file again skips them."
+msgstr "कुछ लॉगिन शायद सहेजे जा चुके हैं। फ़ाइल फिर से इम्पोर्ट करने पर वे छोड़ दिए जाते हैं।"
+
 #: apps/mobile/app/(settings)/skills.tsx
 #: apps/mobile/components/integration-plugins.tsx
 #: apps/web/src/components/integrations/skills-dialog.tsx
@@ -9430,6 +9664,11 @@ msgstr "कुछ सेटिंग्स इंपोर्ट नहीं �
 #: apps/mobile/app/computer.tsx
 msgid "Something went wrong while it was starting. Try again in a moment."
 msgstr "शुरू होते समय कुछ गड़बड़ हो गई। थोड़ी देर में फिर कोशिश करें।"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/run-error.ts
+msgid "Something went wrong. Try again."
+msgstr "कुछ गलत हो गया। फिर से कोशिश करें।"
 
 #: apps/mobile/app/(settings)/approval-rule-add.tsx
 #: apps/mobile/app/(settings)/approvals.tsx
@@ -9531,6 +9770,7 @@ msgstr "वाक् मॉडल"
 msgid "Spending limit"
 msgstr "खर्च सीमा"
 
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/web/src/components/AccountAccess.tsx
 msgid "SSO"
 msgstr "SSO"
@@ -9547,6 +9787,10 @@ msgstr "GitHub पर स्टार करें"
 #: apps/web/src/pages/shell/computer-overlay.tsx
 msgid "Start"
 msgstr "शुरू करें"
+
+#: apps/web/src/components/ModelCredits.tsx
+msgid "Start {name} trial"
+msgstr "{name} ट्रायल शुरू करें"
 
 #: apps/web/src/components/ModelCredits.tsx
 #: apps/web/src/pages/Paywall.tsx
@@ -9696,6 +9940,10 @@ msgstr "{annualPrice} / वर्ष में सब्सक्राइब �
 #: apps/web/src/components/ModelCredits.tsx
 msgid "Subscribe for {price} / month"
 msgstr "{price} / माह पर सदस्यता लें"
+
+#: apps/web/src/components/ModelCredits.tsx
+msgid "Subscribe to {name}"
+msgstr "{name} की सदस्यता लें"
 
 #: apps/web/src/components/ModelCredits.tsx
 msgid "Subscribe to credits"
@@ -9885,6 +10133,10 @@ msgstr "यह पता उपलब्ध नहीं है"
 msgid "That doesn’t look like a URL"
 msgstr "यह URL जैसा नहीं दिखता"
 
+#: apps/web/src/lib/agent-import-errors.ts
+msgid "That isn't a Grok Bot export. Paste the Bot's whole reply."
+msgstr "यह Grok बॉट एक्सपोर्ट नहीं है। बॉट का पूरा जवाब पेस्ट करें।"
+
 #: apps/mobile/lib/endpoint.ts
 msgid "That URL did not look like a Rakazo server"
 msgstr "वह URL Rakazo सर्वर जैसा नहीं दिखा"
@@ -9935,11 +10187,11 @@ msgstr "वह कंप्यूटर जिस पर आपके बॉट 
 msgid "The connection timed out."
 msgstr "कनेक्शन का समय समाप्त हो गया।"
 
-#: apps/web/src/pages/shell/dialogs.tsx
+#: packages/i18n/src/bot-removal.ts
 msgid "The group {names} will be deleted too, including its messages, files, and pages."
 msgstr "समूह {names} भी अपने संदेशों, फ़ाइलों और पेजों समेत डिलीट हो जाएगा।"
 
-#: apps/web/src/pages/shell/dialogs.tsx
+#: packages/i18n/src/bot-removal.ts
 msgid "The groups {names} will be deleted too, including their messages, files, and pages."
 msgstr "समूह {names} भी अपने संदेशों, फ़ाइलों और पेजों समेत डिलीट हो जाएँगे।"
 
@@ -9977,6 +10229,10 @@ msgstr "इस बॉट को जवाब देने के लिए प�
 #: apps/mobile/lib/run-error-presentation.ts
 msgid "The provider refused the key this bot used for its reply."
 msgstr "प्रोवाइडर ने वह कुंजी अस्वीकार कर दी जो इस बॉट ने अपने जवाब के लिए उपयोग की।"
+
+#: apps/web/src/lib/agent-import-errors.ts
+msgid "The reply looks cut off. Ask the Bot for the rest, then paste both."
+msgstr "जवाब अधूरा लगता है। बॉट से बाकी हिस्सा माँगें, फिर दोनों पेस्ट करें।"
 
 #: apps/mobile/app/computer.tsx
 #: apps/web/src/lib/computer-screen.ts
@@ -10071,6 +10327,11 @@ msgstr "यह खाता निष्क्रिय है"
 msgid "This app needs its own sign-in setup to connect."
 msgstr "कनेक्ट करने के लिए इस ऐप को अपना साइन-इन सेटअप चाहिए।"
 
+#: apps/mobile/components/vault-item-editor.tsx
+#: apps/web/src/components/vault/VaultItemEditor.tsx
+msgid "This authenticator key can't be read."
+msgstr "यह ऑथेंटिकेटर कुंजी पढ़ी नहीं जा सकती।"
+
 #: apps/web/src/pages/shell/use-agent-import-source.ts
 msgid "This backup could not be read."
 msgstr "यह बैकअप पढ़ा नहीं जा सका।"
@@ -10078,6 +10339,11 @@ msgstr "यह बैकअप पढ़ा नहीं जा सका।"
 #: apps/web/src/pages/shell/agent-import-plan.tsx
 msgid "This bot"
 msgstr "यह बॉट"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "This bot can't use this item. Change it in the Vault, or dismiss the request."
+msgstr "यह बॉट इस आइटम का इस्तेमाल नहीं कर सकता। इसे वॉल्ट में बदलें, या अनुरोध खारिज करें।"
 
 #: apps/web/src/pages/shell/computer-view.tsx
 msgid "This bot runs on this computer, not a Linux desktop. Shell and files use your home folder."
@@ -10155,9 +10421,27 @@ msgstr "इससे इस आर्टिफ़ैक्ट के सभी {
 msgid "This device"
 msgstr "यह डिवाइस"
 
+#: apps/web/src/lib/agent-import-errors.ts
+msgid "This export is newer than Rakazo can read. Update Rakazo and try again."
+msgstr "यह एक्सपोर्ट इतना नया है कि Rakazo इसे पढ़ नहीं सकता। Rakazo अपडेट करें और फिर से कोशिश करें।"
+
+#: apps/web/src/lib/agent-import-errors.ts
+msgid "This export is too large to import."
+msgstr "यह एक्सपोर्ट इम्पोर्ट करने के लिए बहुत बड़ा है।"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "This file can't be read as CSV."
+msgstr "यह फ़ाइल CSV के रूप में पढ़ी नहीं जा सकती।"
+
 #: apps/web/src/components/ArtifactFileCard.tsx
 msgid "This file is not valid UTF-8 text."
 msgstr "यह फ़ाइल मान्य UTF-8 टेक्स्ट नहीं है।"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "This file is too large to import."
+msgstr "यह फ़ाइल इम्पोर्ट करने के लिए बहुत बड़ी है।"
 
 #: apps/web/src/lib/agent-import-errors.ts
 msgid "This import was already used. Choose the files again."
@@ -10166,6 +10450,16 @@ msgstr "यह इंपोर्ट पहले ही इस्तेमा�
 #: apps/web/src/pages/Invite.tsx
 msgid "This invite link is no longer valid."
 msgstr "यह आमंत्रण लिंक अब मान्य नहीं है।"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "This item is blocked for bots. Allow it in the Vault, or dismiss the request."
+msgstr "यह आइटम बॉट के लिए ब्लॉक है। इसे वॉल्ट में अनुमति दें, या अनुरोध खारिज करें।"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "This limits only this Space's bots. Your other Spaces choose for their own."
+msgstr "यह सिर्फ़ इस कार्यस्थान के बॉट को सीमित करता है। आपके दूसरे कार्यस्थान अपने लिए खुद चुनते हैं।"
 
 #: apps/web/src/pages/HostComputerPrompt.tsx
 msgid "this Mac"
@@ -10287,6 +10581,11 @@ msgstr "यह सर्वर पहले से कनेक्टेड ह�
 msgid "This server's tool result does not fit the model. Turn off Keep tool results whole for that server, or choose another model."
 msgstr "इस सर्वर का टूल परिणाम मॉडल में नहीं समाता। उस सर्वर के लिए \"टूल परिणाम पूरे रखें\" बंद करें, या कोई दूसरा मॉडल चुनें।"
 
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "This Space keeps its own vault, so its bots can't use account items."
+msgstr "इस कार्यस्थान का अपना वॉल्ट है, इसलिए इसके बॉट खाते के आइटम इस्तेमाल नहीं कर सकते।"
+
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/web/src/pages/model-settings/connection-controls.tsx
 msgid "This subscription sign-in is not available in Rakazo yet. Use a deployment credential or choose another provider."
@@ -10338,6 +10637,11 @@ msgstr "तक"
 #: apps/web/src/pages/ActivityList.tsx
 msgid "To {0}"
 msgstr "{0} तक"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "To add"
+msgstr "जोड़ा जाएगा"
 
 #: apps/mobile/lib/board.ts
 #: apps/web/src/lib/ticket-status.ts
@@ -10620,6 +10924,11 @@ msgstr "असमर्थित फ़ाइल प्रकार: {0}"
 msgid "Up"
 msgstr "ऊपर"
 
+#: apps/mobile/components/vault-item-editor.tsx
+#: apps/web/src/components/vault/VaultItemEditor.tsx
+msgid "Up to {limit} sites."
+msgstr "अधिकतम {limit} साइटें।"
+
 #: apps/web/src/components/DesktopUpdates.tsx
 msgid "Up to date"
 msgstr "अप टू डेट"
@@ -10663,6 +10972,12 @@ msgstr "अपडेट की प्रगति"
 #: apps/web/src/lib/client-update.ts
 msgid "Update required"
 msgstr "अपडेट आवश्यक है"
+
+#: apps/mobile/app/(settings)/vault.tsx
+#: apps/mobile/lib/api.ts
+#: apps/web/src/components/VaultSettings.tsx
+msgid "Update your server to import logins."
+msgstr "लॉगिन इम्पोर्ट करने के लिए अपना सर्वर अपडेट करें।"
 
 #: apps/mobile/lib/api.ts
 msgid "Update your server to use AI data sharing in this mobile version."
@@ -10759,6 +11074,11 @@ msgstr "कस्टम सर्वर उपयोग करें"
 msgid "Use a found model"
 msgstr "मिला हुआ मॉडल उपयोग करें"
 
+#: apps/mobile/lib/user-error.ts
+#: apps/web/src/lib/user-error.ts
+msgid "Use an account with the same email address"
+msgstr "उसी ईमेल पते वाला खाता इस्तेमाल करें"
+
 #: apps/mobile/lib/endpoint.ts
 msgid "Use an http or https URL"
 msgstr "http या https URL उपयोग करें"
@@ -10825,6 +11145,11 @@ msgstr "अधिकतम 512 अक्षर, अंक, _ या - उपय�
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "Use your own key"
 msgstr "अपनी कुंजी उपयोग करें"
+
+#: apps/mobile/components/vault-item-sheet.tsx
+#: apps/web/src/components/vault/VaultItemActivity.tsx
+msgid "Used {when} by {bot}"
+msgstr "{bot} ने {when} इस्तेमाल किया"
 
 #: apps/web/src/pages/memory-providers/HonchoSettingsForm.tsx
 msgid "User peer"
@@ -10899,6 +11224,11 @@ msgstr "वेरिएबल"
 msgid "Vault"
 msgstr "वॉल्ट"
 
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "Vault full"
+msgstr "वॉल्ट भरा हुआ है"
+
 #: apps/mobile/components/add-custom-integration.tsx
 #: apps/web/src/pages/plugins/source-form.tsx
 msgid "Verify and add"
@@ -10930,6 +11260,7 @@ msgstr "सोर्स देखें"
 #: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/ai-data-sharing.tsx
 #: apps/mobile/app/(settings)/space.tsx
+#: apps/mobile/app/(settings)/voice.tsx
 #: apps/mobile/app/bot-settings.tsx
 #: apps/web/src/pages/settings-nav.ts
 #: apps/web/src/pages/shell/bot-settings-sections.tsx
@@ -11025,6 +11356,11 @@ msgstr "सप्ताहांत"
 #: apps/web/src/components/SpendingLimitSettings.tsx
 msgid "Weekly"
 msgstr "हर हफ़्ते"
+
+#: apps/mobile/app/sign-in.tsx
+#: apps/web/src/pages/Auth.tsx
+msgid "Welcome back"
+msgstr "फिर से स्वागत है"
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/web/src/components/SignupSurvey.tsx
@@ -11125,6 +11461,10 @@ msgstr "बॉट कहां चलने चाहिए?"
 msgid "Where your bots pay from."
 msgstr "आपके बॉट कहाँ से भुगतान करते हैं।"
 
+#: apps/web/src/pages/shell/agent-import.tsx
+msgid "Which Bot?"
+msgstr "कौन-सा बॉट?"
+
 #: apps/web/src/pages/settings-nav.ts
 msgid "Which LLMs your bots use."
 msgstr "आपके बॉट कौन से LLM उपयोग करते हैं।"
@@ -11196,6 +11536,10 @@ msgstr "काम चल रहा है…"
 msgid "Works with"
 msgstr "इनके साथ काम करता है"
 
+#: apps/web/src/components/ModelCredits.tsx
+msgid "Works with your ChatGPT or Claude plan, or an API key."
+msgstr "आपके ChatGPT या Claude प्लान, या API कुंजी के साथ काम करता है।"
+
 #: apps/mobile/app/paywall.tsx
 #: apps/web/src/components/ModelCredits.tsx
 msgid "Works with your ChatGPT or Claude plan."
@@ -11261,12 +11605,6 @@ msgstr "आपने कॉल अस्वीकार की"
 #: apps/web/src/components/InviteDialog.tsx
 msgid "You get a free month when they start their trial with a new card."
 msgstr "जब वे नए कार्ड से अपना ट्रायल शुरू करते हैं, तो आपको एक महीना मुफ़्त मिलता है।"
-
-#: apps/mobile/app/computer.tsx
-#: apps/mobile/lib/computer.ts
-#: apps/web/src/pages/shell/computer-overlay.tsx
-msgid "You have control"
-msgstr "नियंत्रण आपके पास है"
 
 #: apps/mobile/app/paywall.tsx
 msgid "You're all set"
