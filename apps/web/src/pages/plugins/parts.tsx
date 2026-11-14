@@ -24,7 +24,7 @@ export function ConnectorIcon({ name, logo }: { name: string; logo?: string | nu
     />
   ) : (
     <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-accent text-body font-semibold text-foreground">
-      {name[0]}
+      {Array.from(name)[0]}
     </div>
   );
 }
