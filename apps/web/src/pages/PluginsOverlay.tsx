@@ -75,6 +75,7 @@ export function PluginsOverlay({
   const [confirmingSource, setConfirmingSource] = useState<string | null>(null);
   const spaceCount = useOwnSpaces().length;
   const [sourceError, setSourceError] = useState<string | null>(null);
+  const [oauthError, setOauthError] = useState<string | null>(null);
   const [view, setView] = useState<OverlayView>("browse");
   const [publicCatalogQuery, setPublicCatalogQuery] = useState("");
   // Where a source form returns: the domain search that prefilled it, or browse.
@@ -262,6 +263,7 @@ export function PluginsOverlay({
       (sourcePreset?.name ?? (sourceKind === "graphql" ? "GraphQL" : "Custom connector"));
     setSourceError(null);
     setPending("install-source");
+    setOauthError(null);
     let savedForOauth = false;
     try {
       // OAuth is the MCP server itself signing in, so it is saved first and then authorized.
@@ -274,18 +276,19 @@ export function PluginsOverlay({
           endpoint,
         });
         savedForOauth = true;
+        setPending(null);
         sourceForm.setCredential("");
         sourceForm.setSourceKind(null);
         setView("manage");
         await refresh().catch(() => undefined);
         const result = await connectMcpOauth(server.id);
         if (result === "cancelled") {
-          setSourceError(t`Sign-in cancelled. Try again.`);
+          setOauthError(t`Sign-in cancelled. Retry in Manage MCP servers.`);
           return;
         }
         await refresh().catch(() => undefined);
         if (result === "authorization_not_requested")
-          setSourceError(t`This server did not request browser authorization.`);
+          setOauthError(t`This server did not request browser authorization.`);
         return;
       }
       const auth =
@@ -310,22 +313,18 @@ export function PluginsOverlay({
       setView("manage");
       await refresh();
     } catch (err) {
-      // The server is saved; its OAuth client ID belongs in its own settings.
-      if (errorCode(err) === MCP_OAUTH_CLIENT_REQUIRED) {
-        sourceForm.setSourceKind(null);
-        setView("manage");
+      if (savedForOauth) {
         await refresh().catch(() => undefined);
-        setSourceError(t`This server needs an OAuth client ID. Add one in Manage MCP servers.`);
+        setOauthError(
+          errorCode(err) === MCP_OAUTH_CLIENT_REQUIRED
+            ? t`This server needs an OAuth client ID. Add one in Manage MCP servers.`
+            : errorText(err, t`Could not complete OAuth`),
+        );
         return;
       }
-      setSourceError(
-        errorText(
-          err,
-          savedForOauth ? t`Could not complete OAuth` : t`Could not install connector`,
-        ),
-      );
+      setSourceError(errorText(err, t`Could not install connector`));
     } finally {
-      setPending(null);
+      if (!savedForOauth) setPending(null);
     }
   }
 
@@ -556,7 +555,7 @@ export function PluginsOverlay({
               connectorInstalls={connectorInstalls}
               standaloneServers={standaloneServers}
               appCount={appCount}
-              sourceError={sourceError}
+              sourceError={oauthError ?? sourceError}
               confirmingSource={confirmingSource}
               onRemoveSource={(install) => void removeSource(install)}
               onOpenMcp={onOpenMcp}
