@@ -50,6 +50,8 @@ import { errorText } from "../../lib/user-error";
 // Caps the per-bot computer cache so a long session that opens many distinct bots
 // over time doesn't accumulate one entry per bot forever.
 const COMPUTER_CACHE_LIMIT = 20;
+// How long this tab's own take or release waits for its matching live event.
+const OWN_CONTROL_EVENT_MS = 10_000;
 
 type CachedComputer = { computer: ComputerStatus | null; screenUrl: string | null };
 
@@ -76,6 +78,14 @@ export function useComputerState({
   const [bootingBotId, setBootingBotId] = useState<string | null>(null);
   const booting = bootingBotId !== null && bootingBotId === computer?.botId;
   const bootsInFlight = useRef(new Map<string, symbol>());
+  // A take or release of control this tab asked for. Its own call reads the new
+  // screen, so the matching live event must not start a second read that discards the first.
+  const ownControlChange = useRef<{
+    botId: string;
+    type: string;
+    leaseId?: string;
+    until: number;
+  } | null>(null);
   const [screenUrl, setScreenUrl] = useState<string | null>(null);
   const screenUrlRef = useRef(screenUrl);
   const [screenUrlLoadedBotId, setScreenUrlLoadedBotId] = useState<string | null>(null);
@@ -453,6 +463,37 @@ export function useComputerState({
     });
   }
 
+  /** A known lease narrows the match: a takeover that returned an existing lease sends no event. */
+  function expectOwnControlEvent(
+    botId: string,
+    type: "computer.takeover.granted" | "computer.takeover.released",
+    leaseId?: string,
+  ) {
+    ownControlChange.current = { botId, type, leaseId, until: Date.now() + OWN_CONTROL_EVENT_MS };
+  }
+
+  /** A take or release that failed changed nothing; an event it held back still gets its read. */
+  function forgetOwnControlEvent(botId: string) {
+    if (ownControlChange.current?.botId === botId) ownControlChange.current = null;
+    // Only the bot on screen; another bot's read would discard the shown bot's own read.
+    if (activeBotId.current === botId || computerBotIdRef.current === botId) {
+      void refreshComputerScreen(botId).catch(() => undefined);
+    }
+  }
+
+  /** True once for the live event of a control change this tab asked for. */
+  function isOwnControlEvent(botId: string, type: string, leaseId?: unknown) {
+    const own = ownControlChange.current;
+    // A release that sent no event must not swallow the release after someone's later grant.
+    if (own?.botId === botId && own.type !== type && type === "computer.takeover.granted") {
+      ownControlChange.current = null;
+    }
+    if (!own || own.botId !== botId || own.type !== type || Date.now() > own.until) return false;
+    if (own.leaseId !== undefined && own.leaseId !== leaseId) return false;
+    ownControlChange.current = null;
+    return true;
+  }
+
   /** A retry the user pressed starts the visible screen's reconnects over. */
   function resetScreenReconnect() {
     screenReconnects.current.for(computerBotIdRef.current ?? "").reset();
@@ -496,6 +537,9 @@ export function useComputerState({
     resetScreenReconnect,
     computerVisible,
     refreshComputerScreen,
+    expectOwnControlEvent,
+    forgetOwnControlEvent,
+    isOwnControlEvent,
   };
 }
 
@@ -527,7 +571,11 @@ export function useComputerControls({
   activeGroupId: RefObject<string | undefined>;
   runStatus: Run["status"] | undefined;
   sandboxProvider: Me["sandboxProvider"] | undefined;
-  refreshThread: (botId: string) => Promise<ThreadSnapshot>;
+  refreshThread: (
+    botId: string,
+    signal?: AbortSignal,
+    options?: { readScreen?: boolean },
+  ) => Promise<ThreadSnapshot>;
   refreshGroupThread: (groupId: string) => Promise<ThreadSnapshot>;
   onUpgrade: () => void;
 }) {
@@ -560,6 +608,8 @@ export function useComputerControls({
     resetScreenReconnect,
     computerVisible,
     refreshComputerScreen,
+    expectOwnControlEvent,
+    forgetOwnControlEvent,
   } = state;
   const [keepComputerRecovery, setKeepComputerRecovery] = useState(false);
   const recoveryHoldTimer = useRef<number | undefined>(undefined);
@@ -625,10 +675,17 @@ export function useComputerControls({
         }
       }
       if (takeControl) {
-        await rpc.computer.takeover({ botId: targetBotId });
+        expectOwnControlEvent(targetBotId, "computer.takeover.granted");
+        const { leaseId } = await rpc.computer.takeover({ botId: targetBotId }).catch((error) => {
+          forgetOwnControlEvent(targetBotId);
+          throw error;
+        });
+        expectOwnControlEvent(targetBotId, "computer.takeover.granted", leaseId);
         if (!stillThisBoot() || !stillThisBot()) return;
       }
-      await refreshComputerFor(targetBotId);
+      await (takeControl
+        ? refreshAfterControlChange(targetBotId)
+        : refreshComputerFor(targetBotId));
     } catch (error) {
       if (!stillThisBoot() || !stillThisBot()) return;
       setComputerError(
@@ -641,9 +698,20 @@ export function useComputerControls({
     }
   }
 
-  async function refreshComputerFor(targetBotId: string) {
+  /**
+   * After this tab's own take or release, the one screen read starts beside the
+   * thread refresh, so a failed refresh still shows the new screen and the live event reads none.
+   */
+  async function refreshAfterControlChange(targetBotId: string) {
+    const shown = activeBotId.current === targetBotId || computerBotIdRef.current === targetBotId;
+    const screen = shown ? refreshComputerScreen(targetBotId).catch(() => null) : undefined;
+    await refreshComputerFor(targetBotId, false);
+    await screen;
+  }
+
+  async function refreshComputerFor(targetBotId: string, readScreen = true) {
     if (activeBotId.current === targetBotId) {
-      await refreshThread(targetBotId);
+      await refreshThread(targetBotId, undefined, { readScreen });
       return;
     }
     if (computerBotIdRef.current !== targetBotId) return;
@@ -651,7 +719,7 @@ export function useComputerControls({
     if (computerBotIdRef.current !== targetBotId) return;
     commitComputer(status);
     cacheComputerFor(targetBotId, { computer: status });
-    await refreshComputerScreen(targetBotId);
+    if (readScreen) await refreshComputerScreen(targetBotId);
   }
 
   useEffect(() => {
@@ -772,14 +840,14 @@ export function useComputerControls({
   }, [heldBotId, heldLeaseId]);
 
   // A control event says the screen is held but not by whom; the status read says, and gives the
-  // holder their lease.
+  // holder their lease. The event, or this tab's own take, already reads the screen.
   const controlBotNeedsRead =
     computer?.controlHolder === "user" && !computer.controlledByOther && !computer.controlLeaseId
       ? computer.botId
       : undefined;
   useEffect(() => {
     if (!controlBotNeedsRead || !computerOpen) return;
-    void refreshComputerFor(controlBotNeedsRead).catch(() => undefined);
+    void refreshComputerFor(controlBotNeedsRead, false).catch(() => undefined);
   }, [controlBotNeedsRead, computerOpen]);
 
   /** Open the computer view. Only an explicit Take control asks for the lease. */
@@ -833,9 +901,13 @@ export function useComputerControls({
     // Hand back and I'm done end whatever control this person holds on the bot's screen. Nothing
     // changes here until the server answers; the screen then follows its state.
     try {
-      await rpc.computer.release({ botId, reason });
+      expectOwnControlEvent(botId, "computer.takeover.released");
+      await rpc.computer.release({ botId, reason }).catch((error) => {
+        forgetOwnControlEvent(botId);
+        throw error;
+      });
       if (computerBotIdRef.current !== botId && activeBotId.current !== botId) return;
-      await refreshComputerFor(botId).catch(() => undefined);
+      await refreshAfterControlChange(botId).catch(() => undefined);
       const groupId = activeGroupId.current;
       if (groupId) {
         await refreshGroupThread(groupId).catch(() => undefined);
