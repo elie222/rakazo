@@ -1010,7 +1010,7 @@ describe("createStreamingRedactor", () => {
     const redactor = createStreamingRedactor(["abcdefghij"]); // length 10
     const high = "\uD83D";
     const low = "\uDE00";
-    // safeStartLimit lands between high and low; the pair must stay buffered together.
+    // The hold-window cut lands between high and low; the pair must stay buffered together.
     expect(redactor.push(`x${high}${low}abcdefgh`)).toBe("x");
     expect(redactor.push("ij done")).toBe("😀[redacted]");
     expect(redactor.finish()).toBe(" done");
