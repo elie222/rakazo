@@ -24,9 +24,6 @@ export const RunStatus = z.enum([
 ]);
 export type RunStatus = z.infer<typeof RunStatus>;
 
-export const EffectStatus = z.enum(["intended", "completed", "failed", "ambiguous", "reconciled"]);
-export type EffectStatus = z.infer<typeof EffectStatus>;
-
 export const ThinkingLevelSchema = z.enum([
   "off",
   "minimal",

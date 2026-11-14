@@ -56,6 +56,8 @@ import {
   modelConnectionTarget,
   persistModelCredential,
   prepareAllowedThinkingLevels,
+  prepareModelReconnectSettings,
+  saveConnectionModelSettings,
   throwIfAborted,
 } from "../model-credentials.js";
 import { assertCompatibleDefaultChange } from "../model-pins.js";
@@ -68,6 +70,7 @@ export function modelsRoutes(ctx: RouterContext) {
     connectModelCredential,
     refreshExpiredCredential,
     chatCatalog,
+    withServingConnections,
     withDeploymentDefault,
     withImageInput,
     modelRoleCatalog,
@@ -81,13 +84,19 @@ export function modelsRoutes(ctx: RouterContext) {
         // Read before the save: it only counts a member's first connection.
         const record = await firstModelConnectAnalytics(deps, actor, "oauth");
         const target = await modelConnectionTarget(deps, actor, login.provider, login.credentialId);
+        const retained = await prepareModelReconnectSettings(deps, actor, target);
         const saved = await persistModelCredential(
           deps,
           actor,
           {
             provider: login.provider,
             credentialId: target?.id ?? null,
-            plaintext: serializeModelSecret({ kind: "oauth", credential: login.credential }),
+            plaintext: serializeModelSecret({
+              kind: "oauth",
+              credential: login.credential,
+              ...retained.settings,
+            }),
+            expectedSecret: retained.expectedSecret,
             // A second account is told apart by the email it signed in with.
             label:
               oauthCredentialEmail(login.credential) ??
@@ -111,7 +120,9 @@ export function modelsRoutes(ctx: RouterContext) {
     };
   return {
     models: {
-      list: authed.models.list.handler(async ({ context }) => chatCatalog(context.actor)),
+      list: authed.models.list.handler(async ({ context }) =>
+        withServingConnections(context.actor, await chatCatalog(context.actor)),
+      ),
       credentials: authed.models.credentials.handler(async ({ context }) => {
         const [rows, main] = await Promise.all([
           deps.prisma.userModelCredential.findMany({
@@ -589,6 +600,14 @@ export function modelsRoutes(ctx: RouterContext) {
             { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
           );
         }).catch((error: unknown) => {
+          if (error instanceof SecretStoreUnavailableError)
+            throw new ORPCError("SERVICE_UNAVAILABLE", { cause: error });
+          throw error;
+        });
+        return { ok: true as const };
+      }),
+      saveModelSettings: authed.models.saveModelSettings.handler(async ({ context, input }) => {
+        await saveConnectionModelSettings(deps, context.actor, input).catch((error: unknown) => {
           if (error instanceof SecretStoreUnavailableError)
             throw new ORPCError("SERVICE_UNAVAILABLE", { cause: error });
           throw error;

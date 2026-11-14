@@ -337,7 +337,7 @@ export default function SignIn() {
                     : presented && mode === "in"
                       ? t`Welcome back`
                       : presented && mode === "up"
-                        ? t`Create your Rakazo`
+                        ? t`Create your account`
                         : mode === "in"
                           ? t`Sign in to Rakazo`
                           : mode === "up"
@@ -467,6 +467,11 @@ export default function SignIn() {
                             setError(null);
                             setEmailStep(true);
                           }}
+                          onPasskey={
+                            passkeys && mode === "in"
+                              ? () => void externalSignIn(signInWithPasskey)
+                              : undefined
+                          }
                           onPress={(providerId) => {
                             const provider = providers.find((item) => item.id === providerId);
                             if (provider) void startProvider(provider);
@@ -630,7 +635,7 @@ export default function SignIn() {
                           onPress={() => void submit()}
                           style={{ marginTop: 16 }}
                         />
-                        {passkeys && mode === "in" ? (
+                        {passkeys && mode === "in" && !presented ? (
                           <NativeActionButton
                             label={t`Sign in with passkey`}
                             icon={{ ios: "key.fill", android: "key-outline" }}
