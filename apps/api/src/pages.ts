@@ -3,6 +3,7 @@ import type { SecretStore } from "@rakazo/adapter-kit";
 import { forgetPageShareSecrets } from "@rakazo/adapters";
 import type { Actor, PageDetail, PageSummary, PageVisibility, SharedPage } from "@rakazo/contracts";
 import { pageShareTokenFromSlug, pageShareUrl } from "@rakazo/contracts";
+import { escapeSearchWildcards } from "@rakazo/core";
 import type { PageShareSecret, Prisma, PrismaClient } from "@rakazo/db";
 import { IsolationError, isRecordNotFound, runAsSystem } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -119,7 +120,9 @@ export async function listPages(
     ...(input.groupId ? { groupId: input.groupId } : {}),
     ...(input.botId ? { botId: input.botId, ...(input.groupId ? {} : { groupId: null }) } : {}),
     ...(input.cursor ? { AND: [afterCursor(decodeCursor(input.cursor))] } : {}),
-    ...(input.query ? { title: { contains: input.query, mode: "insensitive" } } : {}),
+    ...(input.query
+      ? { title: { contains: escapeSearchWildcards(input.query), mode: "insensitive" } }
+      : {}),
   };
   const rows = await prisma.page.findMany({
     where,

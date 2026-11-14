@@ -611,7 +611,7 @@ async function main() {
       DATA_DIR: dataDir,
       MAX_TOOL_CALLS_PER_TURN: String(controls.maxToolCalls),
       WEB_PROVIDER: "fake",
-      LOG_LEVEL: "off",
+      LOG_LEVEL: "error",
       COMPOSIO_API_KEY: "",
       PIPEDREAM_CLIENT_ID: "",
       PIPEDREAM_CLIENT_SECRET: "",

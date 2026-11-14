@@ -112,12 +112,6 @@ export function teamBotWorkspaceDirectory(botId: string): string {
   return path.posix.join("bots", normalizeWorkspacePath(botId));
 }
 
-export function teamWorkspaceInstruction(botId: string): string {
-  const home = teamBotWorkspaceDirectory(botId);
-  const sharedFromShell = `${path.posix.relative(home, "shared")}/`;
-  return `Your Team Computer home is ${home}. Relative file paths and shell working directories start there. Put intentionally shared work under shared/. File tools resolve shared/ and bots/ from the Team root, but shell commands do not: from your home, a shell command reaches shared work as ${sharedFromShell}, and a shell cwd of shared starts in it. Other bots' folders are visible under bots/; treat them as their working areas.`;
-}
-
 export function resolveBotWorkspacePath(
   scope: ComputerMode,
   botId: string,
@@ -136,7 +130,12 @@ export function resolveBotWorkspaceCwd(
   botId: string,
   requestedCwd: string | undefined,
 ): string | undefined {
-  if (scope !== "team") return requestedCwd;
+  if (scope !== "team") {
+    if (requestedCwd === undefined) return undefined;
+    const expanded = expandHomePrefix(requestedCwd);
+    if (expanded === requestedCwd) return requestedCwd;
+    return stripVirtualWorkspaceRoot(expanded) || undefined;
+  }
   if (!requestedCwd || requestedCwd === ".") return teamBotWorkspaceDirectory(botId);
   if (path.posix.isAbsolute(requestedCwd) || path.win32.isAbsolute(requestedCwd))
     return requestedCwd;

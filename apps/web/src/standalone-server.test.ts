@@ -26,10 +26,11 @@ async function listen(server: http.Server) {
   return (server.address() as AddressInfo).port;
 }
 
-async function start() {
+async function start(handler?: http.RequestListener) {
   const api = http.createServer((req, res) => {
     apiRequests.push(req.url ?? "");
-    res.end(JSON.stringify({ url: req.url, headers: req.headers }));
+    if (handler) handler(req, res);
+    else res.end(JSON.stringify({ url: req.url, headers: req.headers }));
   });
   api.on("upgrade", (_req, socket) => {
     socket.end(
@@ -116,6 +117,90 @@ describe("standalone web server", () => {
     expect(echoed.url).toBe("/rpc/ping?x=1");
     expect(echoed.headers["x-forwarded-for"]).toBe("203.0.113.9, 127.0.0.1");
     expect(JSON.parse((await get(port, "/api/auth/ok")).body).url).toBe("/api/auth/ok");
+  });
+
+  it.each(["text/event-stream", "application/json"])(
+    "closes a truncated %s response instead of leaving the client waiting",
+    async (contentType) => {
+      let upstream: http.ServerResponse;
+      const partial = contentType === "application/json" ? '{"message":' : "data: partial\n\n";
+      const port = await start((_req, res) => {
+        upstream = res;
+        res.writeHead(200, {
+          "content-type": contentType,
+          ...(contentType === "application/json" ? { "content-length": "100" } : {}),
+        });
+        res.write(partial);
+      });
+
+      const result = await new Promise<{ body: string; complete: boolean }>((resolve, reject) => {
+        const request = http.get({ host: "127.0.0.1", port, path: "/rpc/stream" }, (response) => {
+          let body = "";
+          response.setEncoding("utf8");
+          response.on("data", (chunk) => {
+            body += chunk;
+            upstream.destroy();
+          });
+          response.on("error", () => {});
+          response.on("close", () => {
+            clearTimeout(timeout);
+            resolve({ body, complete: response.complete });
+          });
+        });
+        request.on("error", reject);
+        const timeout = setTimeout(() => {
+          reject(new Error("The proxy did not close the truncated response"));
+          request.destroy();
+        }, 1_000);
+        cleanup.push(async () => {
+          clearTimeout(timeout);
+          request.destroy();
+        });
+      });
+      expect(result).toEqual({ body: partial, complete: false });
+    },
+  );
+
+  it("finishes a normal streamed response", async () => {
+    const port = await start((_req, res) => {
+      res.writeHead(200, { "content-type": "text/event-stream" });
+      res.write("data: first\n\n");
+      res.end("data: last\n\n");
+    });
+    expect(await get(port, "/rpc/stream")).toMatchObject({
+      status: 200,
+      body: "data: first\n\ndata: last\n\n",
+    });
+  });
+
+  it("returns 502 when the upstream disconnects before sending headers", async () => {
+    const port = await start((_req, res) => res.destroy());
+    expect((await get(port, "/rpc/ping")).status).toBe(502);
+  });
+
+  it("closes the upstream response when the client cancels", async () => {
+    let upstreamClosed = false;
+    const port = await start((_req, res) => {
+      res.on("close", () => {
+        upstreamClosed = true;
+      });
+      res.writeHead(200, { "content-type": "text/event-stream" });
+      res.write("data: first\n\n");
+    });
+    await new Promise<void>((resolve, reject) => {
+      const request = http.get({ host: "127.0.0.1", port, path: "/rpc/stream" }, (response) => {
+        response.on("error", () => {});
+        response.once("data", () => {
+          request.destroy();
+          resolve();
+        });
+      });
+      request.on("error", reject);
+      cleanup.push(async () => {
+        request.destroy();
+      });
+    });
+    await expect.poll(() => upstreamClosed).toBe(true);
   });
 
   it("forwards the device socket only for allowed hosts", async () => {

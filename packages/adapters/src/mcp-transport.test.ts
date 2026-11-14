@@ -285,6 +285,59 @@ describe("MCP transport seam", () => {
     await session.close();
   });
 
+  it("restarts a tool call's timeout on progress and keeps the session after a timeout", async () => {
+    // A minimal stdio server: "slow" reports progress past the timeout before answering,
+    // "silent" never answers, "echo" answers at once.
+    const server = `
+      const send = (message) => process.stdout.write(JSON.stringify({ jsonrpc: "2.0", ...message }) + "\\n");
+      let buffer = "";
+      process.stdin.on("data", (chunk) => {
+        buffer += chunk;
+        let end;
+        while ((end = buffer.indexOf("\\n")) >= 0) {
+          const message = JSON.parse(buffer.slice(0, end));
+          buffer = buffer.slice(end + 1);
+          if (message.method === "initialize")
+            send({ id: message.id, result: { protocolVersion: message.params.protocolVersion, capabilities: { tools: {} }, serverInfo: { name: "test", version: "1" } } });
+          if (message.method !== "tools/call") continue;
+          const answer = () => send({ id: message.id, result: { content: [{ type: "text", text: message.params.name }] } });
+          if (message.params.name === "echo") answer();
+          if (message.params.name !== "slow") continue;
+          const progressToken = message.params._meta?.progressToken;
+          let step = 0;
+          const timer = setInterval(() => {
+            step += 1;
+            if (progressToken !== undefined)
+              send({ method: "notifications/progress", params: { progressToken, progress: step } });
+            if (step === 15) { clearInterval(timer); answer(); }
+          }, 100);
+        }
+      });
+    `;
+    const session = new McpSession();
+    await session.connectStdio({
+      command: process.execPath,
+      args: ["-e", server],
+      allowedCommands: [process.execPath],
+    });
+    try {
+      // Answers after 1.5 s, past the 1 s timeout, with progress every 100 ms keeping it alive.
+      await expect(session.callTool("slow", {}, { timeoutMs: 1_000 })).resolves.toMatchObject({
+        content: [{ type: "text", text: "slow" }],
+      });
+      await expect(session.callTool("silent", {}, { timeoutMs: 200 })).rejects.toMatchObject({
+        code: -32001,
+      });
+      expect(session.open).toBe(true);
+      await expect(session.callTool("echo")).resolves.toMatchObject({
+        content: [{ type: "text", text: "echo" }],
+      });
+    } finally {
+      await session.close();
+    }
+    expect(session.open).toBe(false);
+  });
+
   it("requires a connected session for operations", async () => {
     const session = new McpSession();
     await expect(session.listTools()).rejects.toThrow("not connected");

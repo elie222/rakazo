@@ -17,12 +17,14 @@ import { useMobileTokens } from "../../lib/native";
 import { addToSearchInbox, searchInboxSession } from "../../lib/search-inbox";
 import { openFromSettingsSheet } from "../../lib/settings-sheet";
 import { useSideInsets } from "../../lib/side-insets";
+import { useConfirmationGuard } from "../../lib/use-confirmation-guard";
 import { errorText } from "../../lib/user-error";
 
 export default function ArchivedBots() {
   const sideInsets = useSideInsets();
   const { t } = useLingui();
   const router = useRouter();
+  const beginDelete = useConfirmationGuard();
   const tokens = useMobileTokens();
   const headerInset = useFloatingHeaderInset();
   const listRequest = useRef<AbortController | null>(null);
@@ -133,20 +135,33 @@ export default function ArchivedBots() {
 
   async function remove(bot: MobileBot) {
     if (pending) return;
+    const confirmation = beginDelete();
+    if (!confirmation) return;
     const generation = focusGeneration.current;
+    setPending(true);
+    const finished = () => {
+      confirmation.finish();
+      if (generation === focusGeneration.current) setPending(false);
+    };
     let options: Awaited<ReturnType<typeof requestOptions>>;
     try {
       options = await requestOptions(bot.spaceId);
     } catch (cause) {
-      Alert.alert(t`Could not delete bot`, errorText(cause, t`Try again.`));
+      if (confirmation.current())
+        Alert.alert(t`Could not delete bot`, errorText(cause, t`Try again.`));
+      finished();
       return;
     }
-    if (generation !== focusGeneration.current) return;
-    confirmDeleteBot(
+    if (!confirmation.current()) {
+      finished();
+      return;
+    }
+    void confirmDeleteBot(
       bot,
       () => removed(generation, withoutBot(bot.id)),
-      () => generation === focusGeneration.current,
+      () => confirmation.current() && generation === focusGeneration.current,
       options.requestContext,
+      finished,
     );
   }
 

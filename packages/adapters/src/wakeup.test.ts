@@ -148,7 +148,7 @@ describe("InMemoryJobQueue", () => {
     await queue.close();
   });
 
-  it("schedules and cancels a transaction's keyed jobs as it does any other", async () => {
+  it("keeps a transaction's jobs through a cancel its transaction may roll back", async () => {
     vi.useFakeTimers();
     const queue = new InMemoryJobQueue();
     const target = handlers();
@@ -156,12 +156,12 @@ describe("InMemoryJobQueue", () => {
     await queue.start(target);
     const dueAt = new Date(Date.now() + 1_000);
     await queue.enqueueIn(tx, messagingSendJob("kept", dueAt));
-    await queue.enqueueIn(tx, messagingSendJob("cancelled", dueAt));
-    await queue.cancelIn(tx, messagingSendJobKey("cancelled"));
+    await queue.cancelIn(tx, messagingSendJobKey("kept"));
 
     await vi.advanceTimersByTimeAsync(999);
     expect(target["messaging.send"]).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1);
+    // Its handler finds the message settled, or sends it if that transaction rolled back.
     expect(target["messaging.send"]).toHaveBeenCalledExactlyOnceWith(
       { outboundId: "kept" },
       undefined,
