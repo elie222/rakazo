@@ -31,6 +31,7 @@ function harness(overrides: { trigger?: string; threadBotId?: string | null } = 
     task: { create: vi.fn(async () => ({ id: "helper-task" })) },
     run: {
       findFirst: vi.fn(async () => null),
+      findUnique: vi.fn(async () => ({ promptCredentialId: "key-1" })),
       count: vi.fn(async () => 0),
       create: createRun,
     },
@@ -60,6 +61,8 @@ describe("starting a background helper", () => {
       data: expect.objectContaining({
         threadId: "helper-thread",
         trigger: "helper",
+        // The helper inherits the key behind the run that started it.
+        promptCredentialId: "key-1",
         sourceMessageId: "card",
         status: "queued",
       }),
@@ -144,7 +147,11 @@ describe("passing a helper's result back in a shared space", () => {
     const createRun = vi.fn(async (_args: unknown) => ({ id: "wake" }));
     const tx = {
       $queryRaw: vi.fn(async () => []),
-      run: { updateMany: vi.fn(async () => ({ count: 1 })), create: createRun },
+      run: {
+        updateMany: vi.fn(async () => ({ count: 1 })),
+        findUnique: vi.fn(async () => ({ promptCredentialId: "key-1" })),
+        create: createRun,
+      },
       message: {
         findFirst: vi.fn(async () => ({
           id: "card",
@@ -197,6 +204,7 @@ describe("passing a helper's result back in a shared space", () => {
         threadId: "chat",
         userId: "member",
         trigger: "helper_result",
+        promptCredentialId: "key-1",
         clientNonce: "helper-result:helper-run",
       }),
       select: { id: true },

@@ -22,6 +22,7 @@ import {
 import { getLogger } from "@rakazo/logging";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { runLeaseFor } from "./run-messages.js";
+import { promptCredentialOfRun } from "./run-prompt-credential.js";
 
 /**
  * The hop the current run sits at, read back from the message that woke this
@@ -264,6 +265,7 @@ export async function messageBot(
             userId: run.userId,
             status: "queued",
             trigger: "bot_message",
+            promptCredentialId: await promptCredentialOfRun(tx, run.id),
             sourceMessageId: inbound.id,
           },
           select: { id: true },

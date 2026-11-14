@@ -9,6 +9,7 @@ import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { generateMediaFromTool, MEDIA_JOB_KIND } from "./media-generation-tools.js";
 import { persistMessageInTransaction } from "./run-messages.js";
+import { promptCredentialOfRun } from "./run-prompt-credential.js";
 import { attachWorkspaceFileToThread } from "./thread-artifacts.js";
 
 /** A short video takes minutes; one still unfinished after this is reported as failed. */
@@ -330,6 +331,7 @@ async function queueWake(
       taskId: task.id,
       status: "queued",
       trigger: "media",
+      promptCredentialId: await promptCredentialOfRun(tx, run.id),
       clientNonce,
     },
   });
