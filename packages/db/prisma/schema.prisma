@@ -1321,8 +1321,9 @@ model Run {
   userId               String
   status               String
   trigger              String
-  /// For a routine run, the API key that wrote the prompt it follows (Routine.promptCredentialId
-  /// when it fired), so a later edit cannot change whose words it carries.
+  /// The API key that wrote any of the instructions this run follows: the key that sent its
+  /// prompt, or the one on the routine it fired (Routine.promptCredentialId at that moment), or
+  /// the one on the run that started it. Set once, so a later edit cannot change it.
   promptCredentialId   String?
   modelProvider        String?
   modelId              String?
@@ -1393,6 +1394,8 @@ model SteeringMessage {
   run       Run?     @relation(fields: [runId], references: [id], onDelete: SetNull)
   /// Set when a pending row must resume as this trigger so its reply can be delivered.
   originTrigger String?
+  /// The API key that wrote the instructions this waiting message carries, for the run it starts.
+  promptCredentialId String?
   /// Model agreed for an inbound delivery that had to wait. Empty follows the bot.
   modelProvider String?
   modelId       String?

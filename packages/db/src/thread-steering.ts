@@ -278,6 +278,8 @@ export async function createPendingSteeringRun(
               )
             ? "follow_up"
             : "messaging",
+      // One key-written message or routine in the batch marks the whole run.
+      promptCredentialId: batch.find((item) => item.promptCredentialId)?.promptCredentialId ?? null,
       sourceMessageId: source.message.id,
       ...(modelPin ?? {}),
     },

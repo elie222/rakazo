@@ -534,7 +534,14 @@ describePostgres("steering after a run ends without completing (PostgreSQL)", ()
         ],
       });
       await system.steeringMessage.create({
-        data: { messageId: message.id, botId, userId, originTrigger: "service" },
+        data: {
+          messageId: message.id,
+          botId,
+          userId,
+          originTrigger: "service",
+          // Only the first carries it: one key-written message marks the whole run.
+          promptCredentialId: text === texts[0] ? "credential-1" : null,
+        },
       });
     }
 
@@ -543,6 +550,7 @@ describePostgres("steering after a run ends without completing (PostgreSQL)", ()
     );
     const run = await system.run.findUniqueOrThrow({ where: { id: runId! } });
     expect(run.trigger).toBe("service");
+    expect(run.promptCredentialId).toBe("credential-1");
     await system.run.update({
       where: { id: run.id },
       data: { status: "running", startedAt: new Date(), leaseOwner: "worker-1", leaseFence: 1 },

@@ -378,6 +378,7 @@ export async function wakeMessageRoutines(
       modelProvider: true,
       modelId: true,
       thinkingLevel: true,
+      promptCredentialId: true,
     },
     orderBy: { updatedAt: "desc" },
   });

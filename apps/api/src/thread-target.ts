@@ -500,7 +500,13 @@ function steeringPlacement(
   actor: Actor,
   serviceOrigin: { credentialId: string; name: string } | undefined,
 ) {
-  if (serviceOrigin) return { runId: null, originTrigger: "service" };
+  if (serviceOrigin) {
+    return {
+      runId: null,
+      originTrigger: "service",
+      promptCredentialId: serviceOrigin.credentialId,
+    };
+  }
   return { runId: steersMessageFrom(active, actor) ? active.id : null };
 }
 
@@ -839,6 +845,7 @@ export async function sendThreadMessage(
             userId: actor.userId,
             status: "queued",
             trigger: input.serviceOrigin ? "service" : "user",
+            promptCredentialId: input.serviceOrigin?.credentialId ?? null,
             clientNonce: sendRunClientNonce(input.clientNonce, message.id),
             sourceMessageId: message.id,
           },
@@ -1089,6 +1096,7 @@ export async function sendThreadMessage(
             userId: actor.userId,
             status: "queued",
             trigger: input.serviceOrigin ? "service" : "user",
+            promptCredentialId: input.serviceOrigin?.credentialId ?? null,
             groupReplyOptional: namesNobody,
             clientNonce: sendRunClientNonce(input.clientNonce, message.id, botId),
             sourceMessageId: message.id,
