@@ -171,6 +171,7 @@ function parseHindsightConnection(
   const mode = settings.mode ?? "cloud";
   if (mode !== "cloud" && mode !== "local") throw new Error("mode must be cloud or local");
   const local = mode === "local";
+  // Preserve the stored URL spelling: queued erasures hash it into their connection identity.
   const baseUrl = local ? settings.baseUrl?.trim() : HINDSIGHT_CLOUD_BASE_URL;
   if (!baseUrl) throw new Error("baseUrl is required");
   if (local) {

@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   disconnectMemoryProvider,
   persistMemoryProviderConfig,
+  updateMemoryProviderConfig,
   updateMemoryProviderDefaultScope,
 } from "./memory-provider-config.js";
 
@@ -17,7 +18,14 @@ const deploymentOwner = { ...actor, isDeploymentOwner: true };
 
 function makeDeps(
   overrides: {
-    existing?: { id: string; secretId: string } | null;
+    existing?: {
+      id: string;
+      secretId: string;
+      provider?: string;
+      defaultMemoryScope?: string;
+      settings?: Record<string, string>;
+      secret?: { id: string; ciphertext: string };
+    } | null;
     upsertResult?: {
       provider: string;
       settings: Record<string, string>;
@@ -63,7 +71,11 @@ function makeDeps(
         ),
     },
     spaceMemoryConfig: { findUnique, update, upsert, delete: deleteConfig },
-    secret: { create: secretCreate, deleteMany: secretDeleteMany },
+    secret: {
+      create: secretCreate,
+      deleteMany: secretDeleteMany,
+      findUnique: vi.fn().mockResolvedValue({ id: "secret-old", ciphertext: "old-cipher" }),
+    },
     $transaction: vi.fn(),
   };
   prisma.$transaction.mockImplementation(async (callback: (tx: typeof prisma) => unknown) =>
@@ -71,7 +83,11 @@ function makeDeps(
   );
   const deps = {
     prisma: prisma as unknown as PrismaClient,
-    secrets: { put: vi.fn().mockResolvedValue({ id: "secret-new", ciphertext: "cipher" }) },
+    secrets: {
+      put: vi.fn().mockResolvedValue({ id: "secret-new", ciphertext: "cipher" }),
+      load: vi.fn().mockResolvedValue(JSON.stringify({ apiKey: "sm_stored_key_12345" })),
+      delete: vi.fn().mockResolvedValue(undefined),
+    },
   };
   return {
     deps,
@@ -511,5 +527,293 @@ describe("updateMemoryProviderDefaultScope", () => {
 
     await expect(updateMemoryProviderDefaultScope(deps, actor, "shared")).rejects.toThrow();
     expect(update).not.toHaveBeenCalled();
+  });
+});
+
+describe("updateMemoryProviderConfig", () => {
+  const connected = {
+    id: "cfg-1",
+    secretId: "secret-old",
+    provider: "supermemory",
+    defaultMemoryScope: "shared",
+    settings: { mode: "cloud", baseUrl: "https://api.supermemory.ai" },
+    secret: { id: "secret-old", ciphertext: "stored-cipher" },
+    updatedAt: new Date("2026-08-19T00:00:00.000Z"),
+  };
+  const settings = { mode: "cloud", baseUrl: "https://api.supermemory.ai" };
+
+  function updateDeps(overrides: Parameters<typeof makeDeps>[0] = { existing: connected }) {
+    const made = makeDeps(overrides);
+    const prepareConnection = vi.fn(
+      async (input: {
+        provider: string;
+        settings: Record<string, string>;
+        credentials: Record<string, string>;
+      }) => ({
+        provider: input.provider,
+        settings: input.settings,
+        credentials: input.credentials,
+      }),
+    );
+    const deps = {
+      ...made.deps,
+      classifySettings: async (_provider: string, value: Record<string, string>) => value,
+      prepareConnection,
+    } as Parameters<typeof updateMemoryProviderConfig>[0];
+    return { ...made, deps, prepareConnection };
+  }
+
+  it("keeps stored credentials when the update leaves them empty", async () => {
+    const { deps, prepareConnection, secretDeleteMany, upsert } = updateDeps();
+    await updateMemoryProviderConfig(deps, actor, { settings, credentials: { apiKey: "" } });
+    expect(deps.secrets.load).toHaveBeenCalledWith("stored-cipher", "secret-old");
+    expect(prepareConnection).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: "supermemory",
+        settings,
+        credentials: { apiKey: "sm_stored_key_12345" },
+        allowPrivateEndpoint: false,
+      }),
+    );
+    // The same secret record stays, so work bound to this connection keeps its identity.
+    expect(deps.secrets.put).not.toHaveBeenCalled();
+    expect(secretDeleteMany).not.toHaveBeenCalled();
+    expect(upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ update: expect.objectContaining({ secretId: "secret-old" }) }),
+    );
+  });
+
+  it("replaces a credential when one is given and keeps the default scope", async () => {
+    const { deps, upsert } = updateDeps();
+    await updateMemoryProviderConfig(deps, actor, {
+      settings,
+      credentials: { apiKey: "sm_new_key_12345" },
+    });
+    expect(deps.secrets.put).toHaveBeenCalledWith(
+      JSON.stringify({ apiKey: "sm_new_key_12345" }),
+      expect.anything(),
+    );
+    expect(upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        update: expect.objectContaining({
+          provider: "supermemory",
+          settings,
+          defaultMemoryScope: "shared",
+        }),
+      }),
+    );
+  });
+
+  it("refuses when no provider is connected", async () => {
+    const { deps, prepareConnection, transaction } = updateDeps({ existing: null });
+    await expect(
+      updateMemoryProviderConfig(deps, actor, { settings, credentials: {} }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect(prepareConnection).not.toHaveBeenCalled();
+    expect(transaction).not.toHaveBeenCalled();
+  });
+
+  it("rejects non-owners before reading stored credentials", async () => {
+    const { deps } = updateDeps({ existing: connected, spaceOwner: false });
+    await expect(
+      updateMemoryProviderConfig(deps, actor, { settings, credentials: {} }),
+    ).rejects.toThrow();
+    // The stored key is only compared, never sent to the moved target.
+  });
+
+  it("surfaces a failed probe exactly as connect does, without saving", async () => {
+    const { deps, prepareConnection, transaction } = updateDeps();
+    prepareConnection.mockRejectedValue(new Error("Supermemory rejected the key"));
+    await expect(
+      updateMemoryProviderConfig(deps, actor, { settings, credentials: {} }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST", message: "Supermemory rejected the key" });
+    await expect(
+      persistMemoryProviderConfig(deps, actor, {
+        provider: "supermemory",
+        settings,
+        credentials: { apiKey: "sm_test_key_12345" },
+        defaultMemoryScope: "isolated",
+      }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST", message: "Supermemory rejected the key" });
+    expect(deps.secrets.put).not.toHaveBeenCalled();
+    expect(transaction).not.toHaveBeenCalled();
+  });
+
+  it("refuses private endpoints the operator has not allowed", async () => {
+    const { deps, prepareConnection } = updateDeps();
+    await expect(
+      updateMemoryProviderConfig(deps, actor, {
+        settings: { mode: "local", baseUrl: "http://10.0.0.8:6767" },
+        credentials: { apiKey: "sm_new_key_12345" },
+      }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(prepareConnection).not.toHaveBeenCalled();
+  });
+
+  it("keeps the stored key for the exact draft the cloud form sends", async () => {
+    const { deps, prepareConnection } = updateDeps();
+    await updateMemoryProviderConfig(deps, actor, {
+      settings: { mode: "cloud" },
+      credentials: { apiKey: "" },
+    });
+    expect(prepareConnection).toHaveBeenCalledWith(
+      expect.objectContaining({ credentials: { apiKey: "sm_stored_key_12345" } }),
+    );
+  });
+
+  it("never sends the stored key to a new address", async () => {
+    const { deps, prepareConnection } = updateDeps();
+    await updateMemoryProviderConfig({ ...deps, env: { mcpAllowPrivateEndpoint: true } }, actor, {
+      settings: { mode: "local", baseUrl: "http://127.0.0.1:6767" },
+      credentials: { apiKey: "" },
+    });
+    // The stored key is only compared, never sent to the moved target.
+    // Only what was entered reaches the provider's own validation, which decides whether a missing
+    // key is acceptable (a keyless self-hosted server is).
+    expect(prepareConnection).toHaveBeenCalledWith(
+      expect.objectContaining({ credentials: { apiKey: "" } }),
+    );
+  });
+
+  it("moves the endpoint when the credentials are entered again", async () => {
+    const { deps, prepareConnection } = updateDeps();
+    const nextSettings = { mode: "local", baseUrl: "http://127.0.0.1:6767" };
+    await updateMemoryProviderConfig({ ...deps, env: { mcpAllowPrivateEndpoint: true } }, actor, {
+      settings: nextSettings,
+      credentials: { apiKey: "sm_new_key_12345" },
+    });
+    // The stored key is only compared, never sent to the moved target.
+    expect(prepareConnection).toHaveBeenCalledWith(
+      expect.objectContaining({
+        settings: nextSettings,
+        credentials: { apiKey: "sm_new_key_12345" },
+      }),
+    );
+  });
+
+  it("never lets the stored key reach another workspace or peer", async () => {
+    const { deps, prepareConnection } = updateDeps({
+      existing: {
+        ...connected,
+        provider: "honcho",
+        settings: { reasoningLevel: "low", workspaceId: "team" },
+      },
+    });
+    await updateMemoryProviderConfig(deps, actor, {
+      settings: { mode: "cloud", reasoningLevel: "low", workspaceId: "other-team" },
+      credentials: { apiKey: "" },
+    });
+    // The stored key is only compared, never sent to the moved target.
+    expect(prepareConnection).toHaveBeenCalledWith(
+      expect.objectContaining({ credentials: { apiKey: "" } }),
+    );
+  });
+
+  it("never lets the stored key read other banks", async () => {
+    const { deps, prepareConnection } = updateDeps({
+      existing: { ...connected, provider: "hindsight", settings: { recallBanks: "notes" } },
+    });
+    await updateMemoryProviderConfig(deps, actor, {
+      settings: { mode: "cloud", recallBanks: "notes, journal" },
+      credentials: { apiKey: "" },
+    });
+    // The stored key is only compared, never sent to the moved target.
+    expect(prepareConnection).toHaveBeenCalledWith(
+      expect.objectContaining({ credentials: { apiKey: "" } }),
+    );
+  });
+
+  it("keeps the connection identity when only the outside banks change and the key is re-entered", async () => {
+    const { deps, upsert } = updateDeps({
+      existing: { ...connected, provider: "hindsight", settings: { recallBanks: "notes" } },
+    });
+    await updateMemoryProviderConfig(deps, actor, {
+      settings: { mode: "cloud", recallBanks: "notes, journal" },
+      credentials: { apiKey: "sm_stored_key_12345" },
+    });
+    // Same credentials: the secret record stays, so pending memory cleanup isn't orphaned.
+    expect(deps.secrets.put).not.toHaveBeenCalled();
+    expect(upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ update: expect.objectContaining({ secretId: "secret-old" }) }),
+    );
+  });
+
+  it("refuses when the connection was replaced during the update", async () => {
+    const { deps, findUnique, upsert, secretDeleteMany } = updateDeps();
+    findUnique
+      .mockResolvedValueOnce(connected)
+      .mockResolvedValueOnce({ ...connected, secretId: "secret-other" });
+    await expect(
+      updateMemoryProviderConfig(deps, actor, {
+        settings,
+        credentials: { apiKey: "sm_replacement_key_1" },
+      }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect(upsert).not.toHaveBeenCalled();
+    expect(secretDeleteMany).not.toHaveBeenCalled();
+    // The value already written to the secret store is removed there too.
+    expect(deps.secrets.delete).toHaveBeenCalledWith("cipher", "secret-new");
+  });
+
+  it("refuses an edit that keeps the key when another save landed first", async () => {
+    const { deps, findUnique, upsert } = updateDeps();
+    findUnique.mockResolvedValueOnce(connected).mockResolvedValueOnce({
+      ...connected,
+      updatedAt: new Date("2026-08-19T00:05:00.000Z"),
+    });
+    await expect(
+      updateMemoryProviderConfig(deps, actor, { settings, credentials: { apiKey: "" } }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect(upsert).not.toHaveBeenCalled();
+  });
+
+  it("treats a trailing slash as the same self-hosted server", async () => {
+    const { deps, prepareConnection } = updateDeps({
+      existing: {
+        ...connected,
+        provider: "hindsight",
+        settings: { mode: "local", baseUrl: "https://memory.example.test" },
+      },
+    });
+    await updateMemoryProviderConfig({ ...deps, env: { mcpAllowPrivateEndpoint: true } }, actor, {
+      settings: { mode: "local", baseUrl: "https://memory.example.test/" },
+      credentials: { apiKey: "" },
+    });
+    expect(prepareConnection).toHaveBeenCalledWith(
+      expect.objectContaining({ credentials: { apiKey: "sm_stored_key_12345" } }),
+    );
+  });
+
+  it("removes the replaced key from the secret store once saved", async () => {
+    const { deps } = updateDeps();
+    await updateMemoryProviderConfig(deps, actor, {
+      settings,
+      credentials: { apiKey: "sm_replacement_key_1" },
+    });
+    expect(deps.secrets.delete).toHaveBeenCalledWith("old-cipher", "secret-old");
+    expect(deps.secrets.delete).not.toHaveBeenCalledWith("cipher", "secret-new");
+  });
+
+  it("saves a typed key when the stored one can no longer be read", async () => {
+    const { deps, prepareConnection, upsert } = updateDeps();
+    vi.mocked(deps.secrets.load).mockRejectedValueOnce(new Error("secret store key rotated"));
+    await updateMemoryProviderConfig(deps, actor, {
+      settings,
+      credentials: { apiKey: "sm_replacement_key_1" },
+    });
+    expect(prepareConnection).toHaveBeenCalledWith(
+      expect.objectContaining({ credentials: { apiKey: "sm_replacement_key_1" } }),
+    );
+    expect(upsert).toHaveBeenCalled();
+  });
+
+  it("surfaces a secret-store failure when no key was typed", async () => {
+    const { deps, prepareConnection, upsert } = updateDeps();
+    vi.mocked(deps.secrets.load).mockRejectedValueOnce(new Error("secret store unavailable"));
+    await expect(
+      updateMemoryProviderConfig(deps, actor, { settings, credentials: { apiKey: "" } }),
+    ).rejects.toThrow("secret store unavailable");
+    expect(prepareConnection).not.toHaveBeenCalled();
+    expect(upsert).not.toHaveBeenCalled();
   });
 });

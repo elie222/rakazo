@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type {
   BackgroundJob,
   SemanticMemoryProvider,
@@ -12,6 +13,7 @@ import {
   retainsConversationTurn,
   settleRetainedConversation,
 } from "./conversation-memory.js";
+import { createHindsightProvider } from "./hindsight-memory-provider.js";
 
 function memoryProvider(connectionIdentity = "connection-1") {
   const retain = vi.fn(
@@ -919,6 +921,20 @@ describe("settleRetainedConversation", () => {
     connectionIdentity: "connection-1",
     source: { spaceId: "space-1", userId: "user-1", botId: "bot-1", threadId: "thread-1" },
   };
+
+  it("settles pre-upgrade retain cleanup with the saved trailing-slash identity", async () => {
+    const baseUrl = "http://127.0.0.1:8888/";
+    const legacy = createHash("sha256")
+      .update(JSON.stringify(["version-1", baseUrl]))
+      .digest("hex");
+    const configured = createHindsightProvider({ mode: "local", baseUrl }, {}, "version-1");
+    const { deps, prisma, provider } = harness();
+    Object.assign(provider, { connectionIdentity: configured.connectionIdentity });
+    prisma.run.findUnique.mockResolvedValueOnce(null as never);
+    prisma.thread.findUnique.mockResolvedValueOnce(null as never);
+    await settleRetainedConversation(deps, "run-1", { ...pending, connectionIdentity: legacy });
+    expect(provider.purgeHistory).toHaveBeenCalledTimes(1);
+  });
 
   it("purges a late turn after deleting the group has removed its run", async () => {
     const { deps, prisma, provider } = harness();
