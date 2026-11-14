@@ -221,6 +221,7 @@ export function ServiceKeysSettings() {
                 variant="outline"
                 size="sm"
                 disabled={busy}
+                aria-label={t`Revoke ${key.name}`}
                 onClick={() => void revoke(key)}
               >
                 <Trans>Revoke</Trans>
