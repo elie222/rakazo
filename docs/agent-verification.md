@@ -227,6 +227,37 @@ its work before proceeding; cleanup failure leaves remaining trials not run.
 Live evaluations run only through an explicit local CLI invocation. They are
 not scheduled by the nightly workflow.
 
+#### Reusing stored runs
+
+`--store <folder>` (or `EVAL_RUN_STORE`) points the CLI at a private folder of
+finished runs; it is opt-in and never inside this repository. A finished run is
+saved there as `<fingerprint>/report.json.gz` with one line in `index.jsonl`
+(fingerprint, model, case and judge versions, commit, date, pass counts, cost).
+
+Every report records a fingerprint per case and strategy: a hash of the first
+model request as sent (system prompt, tool definitions and replayed history,
+with record ids, dates and loopback ports normalized), the model settings, the
+case's fixture version and data, the reply mode and the tool-call limit. The
+run's fingerprint combines them. A commit that changes none of these, such as a
+UI or mobile change, keeps the fingerprint. The judge's model and rubric
+version are kept apart.
+
+With a store, each case's first request is fingerprinted before it is sent. If
+a stored run has the same fingerprint, its trials are taken as they are under
+the same judge, or graded again from their stored evidence under a different
+one, and the request is never sent; otherwise the case runs. Trials that failed
+for harness, provider, cleanup or time reasons are never reused. `--fresh`
+runs everything again. Each trial's `origin` and each case's `origin` counts in
+the summary say what was reused or regraded, and `workflowTotals` counts only
+new spend. Reports imported with `--import <report.json>` from before
+fingerprints are listed as legacy and never reused.
+
+The fingerprint sees what the model is asked first and the case's data, not
+code: when only a tool's output, a fake service's behaviour or a case's
+deterministic checks change, bump the case's fixture version or use `--fresh`.
+A case whose data states a date relative to the day it runs gets a new
+fingerprint each day.
+
 The September 2026 Luna/OpenRouter baseline passed all 15 cases over three
 trials each (45/45) after correcting the harness. The initial run passed 41/45:
 one shell command was falsely reported successful by the fake sandbox, and
@@ -514,7 +545,7 @@ message 30, far outside the messages a run loads. The bot is asked for the
 lease's notice period once with the upload captioned and once with a bare file,
 and a third case asks about a contract that was never shared. Deterministic
 checks require a history lookup in the graded step and, for the lease, a read of
-the file at its `attachments/` path. The `recall-meaning-v5` judge then checks
+the file at its `attachments/` path. The `recall-meaning-v8` judge then checks
 that the answer gives the lease's period and names the file it came from, or
 that a never-shared contract is admitted rather than invented. Calibration
 labels cover a sourced answer, a request to resend, a generic guess, a wrong
@@ -532,7 +563,8 @@ the grading path for both a read and an unread lease.
 The `recall-tool-steps-*` cases check that a bot remembers work it did with
 tools. Early in a chat the user, who will get screenshots of docs from the bot,
 asks it to make pages in its browser dark, and the bot installs an extension from
-the command line, opens a page and takes a screenshot. The extension's name
+the command line, opens a page and takes a screenshot, a real capture of Chromium on example.com whose text the
+bot can read. The extension's name
 appears only in a note the bot wrote before a tool step. The reply reports the
 result ("Done. Pages in my browser show dark now, so screenshots will too."); the
 `-bare` variant keeps the reply issue #3683 found, "Done." alone. The chat is
@@ -552,13 +584,21 @@ question, eye-strain tips close to the install's topic, and "did I ever tell
 you my sister's name?" (never). A deterministic check fails a history lookup on
 the first three.
 
-The `recall-meaning-v5` judge fails a reply laid out as a step log, any tool-work
+The `recall-meaning-v8` judge fails a reply laid out as a step log, any tool-work
 reply that says the bot never used tools or its computer, a reply to an everyday
-turn that casts unprompted doubt on, corrects or retracts the bot's earlier work
-(including saying it did not confirm or check it), and an install answer that
-doubts the install happened. After a fresh check, a hedge about the extension's
-current state ("its files are there, but I can't tell whether it's enabled") is
-not doubt. Each trial also records, without deciding it, whether the bot used a
+turn that casts unprompted doubt on, corrects, retracts or second-guesses the
+bot's earlier work (including saying it did not confirm or check it, or should
+have asked first), and an install answer that doubts or retracts the install,
+calls its "Done" unchecked or premature, or suggests undoing it, even next to a
+correct yes. A hedge about the extension's current state is fine after a check
+made in the same reply, and saying it has not re-checked since, or cannot see
+the exact commands, is not doubt. The install judge sees the bot's record of the
+earlier exchange as that bot could read it and the checks it made in the graded
+reply, and judges any method or detail against those two, so describing a check
+or a detail the record shows is not read as invented history. A sign-off may
+mention earlier work in one sentence but not recap it. It was calibrated
+against reviewed replies from both replay forms and replies an earlier version
+graded too leniently. Each trial also records, without deciding it, whether the bot used a
 tool other than history lookups (re-verification), whether it looked back, and
 four judged behaviours: unprompted doubt; false confession (claiming it never
 used tools, never did or checked the work its record shows, had not changed
@@ -603,7 +643,12 @@ starting `recall-file-`, a `purpose`, the chat as `messages` (`role` `user` or
 a shell command matching it, the check the ask needs, and `{ "kind": "rubric", "rubric": "<name>" }` grades the reply
 with one of this suite's calibrated rubrics. An optional `computer` adds scripted
 shell checks (`match` as a regular expression source, with `flags`, `output` and
-`exitCode`) ahead of the shared home and Chromium ones, and the browser `screen`.
+`exitCode`) ahead of the shared home and Chromium ones, and the browser `screen`. A
+message's optional `day` (zero or negative) dates it that many days before the
+ask, and any text may write a date relative to the ask as `{{date:N}}`
+(2026-11-09), `{{mon-day:N}}` (Nov 9), `{{weekday:N}}` (Mon), `{{path-date:N}}`
+(2026/11/09) or `{{long-date:N}}` (9 November 2026), where `N` is days from the
+ask, so stored results never contradict the chat's own timeline.
 Every case records the copy observations above. Keep long fixture sets in a
 separate store and commit only synthetic content.
 

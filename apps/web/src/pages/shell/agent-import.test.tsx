@@ -308,7 +308,7 @@ describe("an item whose text looks like it contains a key", () => {
       root!.render(<AgentImportForm onClose={() => undefined} onCreated={() => undefined} />);
     });
     const reply = container.querySelector<HTMLTextAreaElement>(
-      'textarea[aria-label="Paste the reply"]',
+      '[data-testid="agent-import-another"] textarea[aria-label="Paste the reply"]',
     )!;
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(
@@ -317,9 +317,11 @@ describe("an item whose text looks like it contains a key", () => {
       );
       reply.dispatchEvent(new Event("input", { bubbles: true }));
     });
-    const continueButton = [...container.querySelectorAll("button")].find(
-      (button) => button.textContent === "Continue",
-    )!;
+    const continueButton = [
+      ...container.querySelectorAll<HTMLButtonElement>(
+        '[data-testid="agent-import-another"] button',
+      ),
+    ].find((button) => button.textContent === "Continue")!;
     await act(async () => continueButton.click());
 
     const box = (label: string) =>
@@ -360,7 +362,7 @@ describe("an item whose text looks like it contains a key", () => {
       root!.render(<AgentImportForm onClose={() => undefined} onCreated={() => undefined} />);
     });
     const reply = container.querySelector<HTMLTextAreaElement>(
-      'textarea[aria-label="Paste the reply"]',
+      '[data-testid="agent-import-another"] textarea[aria-label="Paste the reply"]',
     )!;
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(
@@ -370,7 +372,11 @@ describe("an item whose text looks like it contains a key", () => {
       reply.dispatchEvent(new Event("input", { bubbles: true }));
     });
     await act(async () =>
-      [...container!.querySelectorAll("button")]
+      [
+        ...container!.querySelectorAll<HTMLButtonElement>(
+          '[data-testid="agent-import-another"] button',
+        ),
+      ]
         .find((button) => button.textContent === "Continue")!
         .click(),
     );
@@ -464,7 +470,12 @@ describe("creating a bot", () => {
     await act(async () => {
       root!.render(<AgentImportForm onClose={() => undefined} onCreated={() => undefined} />);
     });
-    await act(async () => button("Copy prompt").click());
+    const copyPrompt = [
+      ...container.querySelectorAll<HTMLButtonElement>(
+        '[data-testid="agent-import-another"] button',
+      ),
+    ].find((item) => item.textContent === "Copy prompt")!;
+    await act(async () => copyPrompt.click());
     const archive = container.querySelector<HTMLInputElement>(
       '[data-testid="agent-import-archive"]',
     )!;
@@ -505,7 +516,7 @@ describe("a plain-HTTP LAN server, where crypto.randomUUID is missing", () => {
       root!.render(<AgentImportForm onClose={() => undefined} onCreated={() => undefined} />);
     });
     const reply = container.querySelector<HTMLTextAreaElement>(
-      'textarea[aria-label="Paste the reply"]',
+      '[data-testid="agent-import-another"] textarea[aria-label="Paste the reply"]',
     )!;
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(
@@ -515,11 +526,95 @@ describe("a plain-HTTP LAN server, where crypto.randomUUID is missing", () => {
       reply.dispatchEvent(new Event("input", { bubbles: true }));
     });
     await act(async () =>
-      [...container!.querySelectorAll("button")]
+      [
+        ...container!.querySelectorAll<HTMLButtonElement>(
+          '[data-testid="agent-import-another"] button',
+        ),
+      ]
         .find((button) => button.textContent === "Continue")!
         .click(),
     );
     expect(importPreview).toHaveBeenCalledTimes(1);
     expect(container!.querySelector('[data-testid="agent-import-preview"]')).not.toBeNull();
+  });
+});
+
+describe("a Grok Bot reply with several Bots", () => {
+  it("asks which Bot, and forgets the choice when another source is read", async () => {
+    container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+    await act(async () => {
+      root!.render(<AgentImportForm onClose={() => undefined} onCreated={() => undefined} />);
+    });
+    const grok = container.querySelector('[data-testid="agent-import-grok"]')!;
+    const reply = grok.querySelector<HTMLTextAreaElement>("textarea")!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(
+        reply,
+        JSON.stringify({
+          bots: [
+            { name: "Bramble", memories: ["A"] },
+            { name: "Wren", memories: ["B"] },
+          ],
+        }),
+      );
+      reply.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () =>
+      [...grok.querySelectorAll("button")].find((item) => item.textContent === "Continue")!.click(),
+    );
+    expect(grok.textContent).toContain("Which Bot?");
+    expect(importPreview).not.toHaveBeenCalled();
+
+    const archive = container.querySelector<HTMLInputElement>(
+      '[data-testid="agent-import-archive"]',
+    )!;
+    const file = new File(["backup"], "backup.zip", { type: "application/zip" });
+    Object.defineProperty(file, "arrayBuffer", {
+      value: () => Promise.reject(new Error("unreadable")),
+    });
+    await act(async () => {
+      Object.defineProperty(archive, "files", { configurable: true, value: [file] });
+      archive.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(grok.textContent).not.toContain("Which Bot?");
+  });
+});
+
+describe("choosing Grok Bot files", () => {
+  it("disables Continue while the chosen files are read", async () => {
+    container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+    await act(async () => {
+      root!.render(<AgentImportForm onClose={() => undefined} onCreated={() => undefined} />);
+    });
+    const grok = container.querySelector('[data-testid="agent-import-grok"]')!;
+    const reply = grok.querySelector<HTMLTextAreaElement>("textarea")!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(
+        reply,
+        "an earlier reply",
+      );
+      reply.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    const button = (label: string) =>
+      [...grok.querySelectorAll("button")].find((item) => item.textContent === label)!;
+    expect(button("Continue").disabled).toBe(false);
+
+    let finish!: (text: string) => void;
+    const file = new File(["{}"], "grok-bot-export-a.json", { type: "application/json" });
+    Object.defineProperty(file, "text", {
+      value: () => new Promise<string>((resolve) => (finish = resolve)),
+    });
+    const input = grok.querySelector<HTMLInputElement>('[data-testid="agent-import-grok-file"]')!;
+    await act(async () => {
+      Object.defineProperty(input, "files", { configurable: true, value: [file] });
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(button("Continue").disabled).toBe(true);
+    expect(button("Choose file").disabled).toBe(true);
+    await act(async () => finish("not an export"));
   });
 });

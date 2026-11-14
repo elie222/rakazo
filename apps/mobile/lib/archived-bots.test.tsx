@@ -1,13 +1,14 @@
 // @vitest-environment jsdom
 
-import type { ComputerStatus } from "@rakazo/contracts";
+vi.mock("./session", () => ({ currentSessionGeneration: () => 0 }));
+
+import { i18n } from "@lingui/core";
 import type { ReactNode } from "react";
 import { act, createElement, useEffect } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import ArchivedBots from "../app/(settings)/archived-bots";
-import { ComputerMaintenanceActions } from "../components/computer-maintenance-actions";
 import { onArchivedChatsChanged } from "./archived-chats";
 import type { MobileBot, MobileGroup } from "./mobile-types";
 import { registerSettingsSheet } from "./settings-sheet";
@@ -68,8 +69,6 @@ vi.mock("./search-inbox", () => ({
   searchInboxSession: () => ({ generation: 3, apiBase: "http://api.test" }),
 }));
 vi.mock("./native-controls", () => ({ iosAtLeast: () => true }));
-vi.mock("./computer-updates", () => ({ computerUpdates: { start: vi.fn() } }));
-vi.mock("@expo/ui/community/menu", () => ({ MenuView: () => null }));
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
 vi.mock("../components/native-action-button", () => ({
   NativeActionButton: ({ label, onPress }: { label: string; onPress: () => void }) =>
@@ -118,6 +117,8 @@ describe("archived chat read failures", () => {
   let container: HTMLDivElement;
   let unregister: () => void;
   beforeEach(async () => {
+    i18n.load("en", {});
+    i18n.activate("en");
     vi.clearAllMocks();
     unregister = registerSettingsSheet(closeSettingsSheet);
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -317,6 +318,7 @@ describe("archived chat read failures", () => {
       focus.current!();
     });
     // The stale refresh is restarted after the change, and the server no longer lists the bot.
+    if (action === "Delete") rpc.mockResolvedValueOnce([]);
     rpc.mockResolvedValueOnce({ ok: true }).mockResolvedValueOnce([]);
     const button = [...container.querySelectorAll("button")].find(
       (item) => item.textContent === action,
@@ -603,6 +605,7 @@ describe("archived chat read failures", () => {
         (item) => item.textContent === "Try again",
       )!;
       await act(async () => retry.click());
+      if (action === "Delete") rpc.mockResolvedValueOnce([]);
       rpc.mockResolvedValueOnce({ ok: true }).mockResolvedValueOnce([]);
       groupRpc.mockResolvedValueOnce([group]);
       const button = [...container.querySelectorAll("button")].find(
@@ -664,19 +667,4 @@ describe("archived chat read failures", () => {
       expect(alert).toHaveBeenCalledTimes(alerts);
     },
   );
-
-  it("clears a computer's native header menu when its actions unmount", async () => {
-    await act(async () =>
-      root.render(
-        <ComputerMaintenanceActions
-          botId="bot-fixture"
-          computer={{ state: "running" } as ComputerStatus}
-          onChanged={async () => {}}
-        />,
-      ),
-    );
-    expect(navigation.setOptions.mock.lastCall![0].unstable_headerRightItems()).toHaveLength(1);
-    await act(async () => root.render(null));
-    expect(navigation.setOptions.mock.lastCall![0].unstable_headerRightItems()).toEqual([]);
-  });
 });

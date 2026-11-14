@@ -1,17 +1,19 @@
 import type {
   BackgroundJob,
+  BackgroundJobAttempt,
   BackgroundJobExecution,
   BackgroundJobHandlers,
   BackgroundJobName,
   JobPublisher,
+  JobTransaction,
   JobWorkerHost,
 } from "@rakazo/adapter-kit";
-import { dispatchBackgroundJob } from "@rakazo/adapter-kit";
-import type { PrismaClient } from "@rakazo/db";
-import { isPoolCheckoutTimeout, isTooManyDatabaseConnections, runAsSystem } from "@rakazo/db";
+import { dispatchBackgroundJob, RetryJobLaterError } from "@rakazo/adapter-kit";
+import type { DatabaseOutage, PrismaClient } from "@rakazo/db";
+import { databaseCapacityBackoffMs, databaseOutage, runAsSystem } from "@rakazo/db";
 import { getLogger, runCorrelatedJob, unwrapJobPayload, wrapJobPayload } from "@rakazo/logging";
-import type { Runner, WorkerUtils } from "graphile-worker";
-import { makeWorkerUtils, run } from "graphile-worker";
+import type { JobHelpers, Runner, WorkerUtils } from "graphile-worker";
+import { consoleLogFactory, Logger, makeWorkerUtils, run } from "graphile-worker";
 import type { Pool } from "pg";
 import { recordHistoryCompactAttemptsExhausted } from "./history-compaction.js";
 import { RunExecutionHost } from "./run-execution.js";
@@ -69,6 +71,7 @@ export class GraphileJobPublisher implements JobPublisher {
       runAt: job.availableAt,
       jobKey: job.replaceKey,
       maxAttempts: job.maxAttempts,
+      ...(job.queueName ? { queueName: job.queueName } : {}),
       ...(jobKeyMode ? { jobKeyMode } : {}),
     });
     if (
@@ -93,6 +96,29 @@ export class GraphileJobPublisher implements JobPublisher {
         ),
       );
     }
+  }
+
+  /**
+   * Graphile lives in the same database, so the job commits or rolls back with the caller's
+   * writes. Run continuations start in the process that commits them, never from here.
+   */
+  async enqueueIn(tx: JobTransaction, job: BackgroundJob): Promise<void> {
+    if (job.name === "run.continue") throw new Error("Runs are not started inside a transaction");
+    if (job.keepExisting) throw new Error("keepExisting is not supported inside a transaction");
+    await tx.$executeRawUnsafe(
+      `select graphile_worker.add_job($1::text, $2::json, queue_name => $3::text,
+         run_at => $4::timestamptz, max_attempts => $5::int, job_key => $6::text)`,
+      job.name,
+      JSON.stringify(wrapJobPayload(job.payload)),
+      job.queueName ?? null,
+      job.availableAt ?? null,
+      job.maxAttempts ?? null,
+      job.replaceKey ?? null,
+    );
+  }
+
+  async cancelIn(tx: JobTransaction, key: string): Promise<void> {
+    await tx.$executeRawUnsafe("select graphile_worker.remove_job($1::text)", key);
   }
 
   async cancel(key: string): Promise<void> {
@@ -151,9 +177,10 @@ function dispatchJob(
   name: string,
   payload: unknown,
   execution?: BackgroundJobExecution,
+  attempt?: BackgroundJobAttempt,
 ) {
   return runAsSystem(`background job ${name}`, () =>
-    dispatchBackgroundJob(handlers, name, payload, execution),
+    dispatchBackgroundJob(handlers, name, payload, execution, attempt),
   );
 }
 
@@ -170,18 +197,25 @@ export async function migrateJobQueue(connectionString: string): Promise<void> {
   }
 }
 
-/** Same bounded backoff the worker uses around jobHost.start for 53300. */
-export function databaseCapacityBackoffMs(attempt: number): number {
-  return Math.min(30_000, 200 * 2 ** Math.min(attempt, 8));
-}
-
 /**
- * Saturation a relaunch rides out. A job's completion that cannot get a connection for long
- * enough stops the runner with pg-pool's checkout timeout, which the worker process otherwise
- * ignores, so it would stay up without one.
+ * Graphile's console logging, except that the database being unavailable goes to the process's
+ * outage streak: its own polling would otherwise log every poll interval until it is back. A
+ * failed task's error came from the job, so only its database errors count, not its sockets.
  */
-function isDatabaseSaturated(error: unknown): boolean {
-  return isTooManyDatabaseConnections(error) || isPoolCheckoutTimeout(error);
+export function jobQueueLogger(outage: DatabaseOutage): Logger {
+  return new Logger((scope) => {
+    const log = consoleLogFactory(scope);
+    return (level, message, meta) => {
+      const error = (meta as { error?: unknown } | undefined)?.error ?? new Error(message);
+      const fromDatabaseConnection = !(meta as { failure?: unknown } | undefined)?.failure;
+      if (
+        (level === "error" || level === "warning") &&
+        outage.failed(error, "job queue", { fromDatabaseConnection })
+      )
+        return;
+      log(level, message, meta);
+    };
+  });
 }
 
 function abandonment() {
@@ -228,8 +262,14 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
       sleep?: (ms: number) => Promise<void>;
       /** Test seam for JOB_DRAIN_TIMEOUT_MS. */
       drainTimeoutMs?: number;
+      /** Test seam for the process's database outage streak. */
+      outage?: DatabaseOutage;
     } = {},
   ) {}
+
+  private get outage(): DatabaseOutage {
+    return this.options.outage ?? databaseOutage;
+  }
 
   async start(handlers: BackgroundJobHandlers): Promise<void> {
     if (this.runner || this.superviseTask) return;
@@ -298,14 +338,15 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
         })
         .map((name) => [
           this.options.workload === "interactive" ? INTERACTIVE_RUN_TASK : name,
-          async (payload: unknown) => {
+          async (payload: unknown, helpers: JobHelpers) => {
             const unpacked = unwrapJobPayload(payload);
+            const attempt = { number: helpers.job.attempts, max: helpers.job.max_attempts };
             const execute = (execution?: BackgroundJobExecution) =>
               runCorrelatedJob({
                 name,
                 payload: unpacked.payload,
                 correlation: unpacked.correlation,
-                run: () => dispatchJob(handlers, name, unpacked.payload, execution),
+                run: () => dispatchJob(handlers, name, unpacked.payload, execution, attempt),
               });
             const job = { name };
             this.running.add(job);
@@ -314,6 +355,20 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
               // An abandoned job may still settle; the process exits soon after.
               work.catch(() => undefined);
               await Promise.race([work, this.abandoned.promise]);
+              this.outage.succeeded();
+            } catch (error) {
+              // Graphile's backoff is added to the job's run_at, so moving run_at first keeps the
+              // retry no sooner than the delay the job asked for.
+              if (error instanceof RetryJobLaterError)
+                await helpers.withPgClient((client) =>
+                  client.query(
+                    `update graphile_worker._private_jobs
+                     set run_at = greatest(run_at, now() + $2::int * interval '1 millisecond')
+                     where id = $1::bigint`,
+                    [helpers.job.id, Math.ceil(error.delayMs)],
+                  ),
+                );
+              throw error;
             } finally {
               this.running.delete(job);
             }
@@ -328,6 +383,7 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
       // Graphile kills the process by re-raising SIGTERM once its own jobs stop, before the
       // host's shutdown has handed back the runs it executes outside Graphile.
       noHandleSignals: true,
+      logger: jobQueueLogger(this.outage),
       taskList,
       preset: {
         worker: {
@@ -379,7 +435,8 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
       } catch (error) {
         if (this.stopping) return;
         if (this.runner === runner) this.runner = undefined;
-        if (!isDatabaseSaturated(error)) throw error;
+        // Read-only, unreachable or saturated: relaunch with backoff once it is back.
+        if (!this.outage.failed(error, "job queue", { fromDatabaseConnection: true })) throw error;
         // Back off after every lifecycle 53300 (runner death or failed relaunch),
         // not only when launchRunner rejects — otherwise a runner that starts then
         // dies again under saturation reconnects with no delay.
@@ -392,7 +449,8 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
             if (this.stopping || !this.runner) return;
             break;
           } catch (startError) {
-            if (!isDatabaseSaturated(startError)) throw startError;
+            if (!this.outage.failed(startError, "job queue", { fromDatabaseConnection: true }))
+              throw startError;
           }
         }
       }
@@ -555,6 +613,8 @@ export function createDeadJobPruner(
   };
 }
 
+const LAST_ATTEMPT = { number: 1, max: 1 } as const;
+
 /** Graphile's default when a job sets no cap. */
 const DEFAULT_JOB_MAX_ATTEMPTS = 25;
 
@@ -631,6 +691,17 @@ export class InMemoryJobQueue implements JobPublisher, JobWorkerHost {
     this.scheduled.set(timer, stored);
     if (stored.replaceKey) this.keyed.set(stored.replaceKey, timer);
   }
+
+  /** Not transactional: a job whose transaction rolls back still runs, and finds nothing to do. */
+  async enqueueIn(_tx: JobTransaction, job: BackgroundJob): Promise<void> {
+    await this.enqueue(job);
+  }
+
+  /**
+   * Not transactional either, so the job stays: it runs when due and finds nothing to do, and a
+   * transaction that rolls back never loses the backup it still needs.
+   */
+  async cancelIn(_tx: JobTransaction, _replaceKey: string): Promise<void> {}
 
   async cancel(replaceKey: string): Promise<void> {
     const closing = this.closingJobs.findIndex((job) => job.replaceKey === replaceKey);
@@ -711,7 +782,8 @@ export class InMemoryJobQueue implements JobPublisher, JobWorkerHost {
       name: job.name,
       payload: unpacked.payload,
       correlation: unpacked.correlation,
-      run: () => dispatchJob(handlers, job.name, unpacked.payload),
+      // Nothing here retries a failed job, so every try is the last one.
+      run: () => dispatchJob(handlers, job.name, unpacked.payload, undefined, LAST_ATTEMPT),
     }).catch(() => {
       this.failures.set(job.name, (this.failures.get(job.name) ?? 0) + 1);
     });

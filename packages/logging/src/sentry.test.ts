@@ -33,6 +33,9 @@ describe("sentry sink", () => {
     expect(sentryConfigFromEnv({ SENTRY_DSN: "https://errors.example.com/7" }).warning).toContain(
       "not a valid DSN",
     );
+    expect(
+      sentryConfigFromEnv({ SENTRY_DSN: "http://publickey@errors.example.com/7" }).warning,
+    ).toContain("not a valid DSN");
     expect(sentryConfigFromEnv({ SENTRY_DSN: "not a dsn" }).warning).toBeDefined();
     expect(
       sentryConfigFromEnv({
@@ -299,6 +302,22 @@ describe("sentry sink", () => {
       ["{{ default }}", "run.failed", "openrouter", "rate", "429"],
       undefined,
     ]);
+  });
+
+  it("attaches logged error details as a redacted extra", async () => {
+    const { events, transport } = recordingTransport();
+    const logger = createLogger({
+      service: "rakazo-worker",
+      sinks: [await createSentrySink("rakazo-worker", { dsn: DSN }, transport)],
+    });
+    logger.error("run.failed", new Error("Bad Request"), {
+      "error.details": '{"status":400,"note":"token=sk-live-123456789"}',
+    });
+    await logger.flush();
+
+    expect(events[0]?.extra["log.message"]).toBe("run.failed");
+    expect(events[0]?.extra["error.details"]).toContain('"status":400');
+    expect(events[0]?.extra["error.details"]).not.toContain("sk-live");
   });
 
   it("titles a failed request report by its method, route and status", async () => {

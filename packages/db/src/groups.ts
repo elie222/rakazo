@@ -40,7 +40,7 @@ type GroupRecord = {
       color: string;
       avatarSet?: string;
       runs: Array<{ status: string }>;
-    };
+    } | null;
   }>;
 };
 
@@ -54,13 +54,18 @@ type SpaceGroupRecord = Pick<
   } | null;
 };
 
+// Prisma loads a member's bot in a second query, so a bot deleted between the two reads comes back null.
+function presentMembers<T extends { bot: object | null }>(members: T[]) {
+  return members.filter((member): member is T & { bot: NonNullable<T["bot"]> } => !!member.bot);
+}
+
 function mapGroupMembers(members: GroupRecord["members"]): GroupMember[] {
-  return members.map((member) => ({
-    botId: member.bot.id,
-    name: member.bot.name,
-    color: member.bot.color,
-    avatarSet: resolveBotAvatarSet(member.bot.avatarSet),
-    status: primaryActiveRun(member.bot.runs)?.status ?? "idle",
+  return presentMembers(members).map(({ bot }) => ({
+    botId: bot.id,
+    name: bot.name,
+    color: bot.color,
+    avatarSet: resolveBotAvatarSet(bot.avatarSet),
+    status: primaryActiveRun(bot.runs)?.status ?? "idle",
   }));
 }
 
@@ -100,8 +105,8 @@ function mapSpaceGroup(group: SpaceGroupRecord): SpaceGroup {
   };
 }
 
-function hasMinimumActiveMembers(members: readonly unknown[]) {
-  return members.length >= GROUP_MEMBER_MIN;
+function hasMinimumActiveMembers(members: Array<{ bot: object | null }>) {
+  return presentMembers(members).length >= GROUP_MEMBER_MIN;
 }
 
 async function assertSpaceBots(
@@ -361,7 +366,7 @@ export function createGroupRepos(prisma: PrismaClient) {
       .filter(
         (group) =>
           group.archivedAt !== null ||
-          !hasMinimumActiveMembers(group.members.filter((member) => !member.bot.archivedAt)),
+          !hasMinimumActiveMembers(group.members.filter((member) => !member.bot?.archivedAt)),
       )
       .map((group) => mapGroup(group as GroupRecord));
   }
@@ -411,7 +416,7 @@ export function createGroupRepos(prisma: PrismaClient) {
         include: groupTargetInclude,
       });
       if (!group || !hasMinimumActiveMembers(group.members)) throw new IsolationError();
-      return group;
+      return { ...group, members: presentMembers(group.members) };
     },
 
     async createGroup(actor: Actor, input: { name: string; botIds: string[] }): Promise<Group> {
@@ -650,7 +655,10 @@ export function createGroupRepos(prisma: PrismaClient) {
         await lockSpaceGroup(tx, actor, groupId);
         // Wait out the thread's writers before taking the group row exclusively: their
         // foreign-key share on the group would otherwise wait on this transaction.
-        const thread = await tx.thread.findUnique({ where: { groupId }, select: { id: true } });
+        const thread = await tx.thread.findUnique({
+          where: { groupId },
+          select: { id: true, historyCompactionGeneration: true },
+        });
         if (thread) {
           await tx.$queryRaw`SELECT id FROM threads WHERE id = ${thread.id} FOR UPDATE`;
         }
@@ -660,7 +668,7 @@ export function createGroupRepos(prisma: PrismaClient) {
           where: { id: groupId },
           select: {
             artifacts: { select: { storageKey: true } },
-            members: { orderBy: groupMemberOrder, take: 1, select: { botId: true } },
+            members: { orderBy: groupMemberOrder, select: { botId: true } },
           },
         });
         const contextBotId = group?.members[0]?.botId;
@@ -677,10 +685,26 @@ export function createGroupRepos(prisma: PrismaClient) {
           (run) => run.id,
         );
         const { targets } = await snapshotRunTeardownTargets(tx, runIds);
+        const learnedBots = thread
+          ? await tx.run.findMany({
+              where: { threadId: thread.id },
+              distinct: ["botId"],
+              select: { botId: true },
+            })
+          : [];
         const pageShareSecrets = await deletePageShareSecrets(tx, { groupId });
         await tx.chatGroup.delete({ where: { id: groupId } });
         return {
           contextBotId,
+          memory: thread
+            ? {
+                threadId: thread.id,
+                generation: thread.historyCompactionGeneration,
+                botIds: [
+                  ...new Set([...group.members, ...learnedBots].map((member) => member.botId)),
+                ],
+              }
+            : undefined,
           artifactStorageKeys: group.artifacts.map((artifact) => artifact.storageKey),
           cancelledRunIds: runIds,
           computers: targets,

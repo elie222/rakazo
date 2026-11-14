@@ -69,6 +69,14 @@ function openSealed(sealed: SealedSecret, key: Buffer, recordId: string): string
   return Buffer.concat([decipher.update(sealed.enc), decipher.final()]).toString("utf8");
 }
 
+/** Whether a stored value failed to decrypt or is malformed, which no retry changes. */
+export function isPermanentDecryptFailure(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : "";
+  return (
+    message.includes("unable to authenticate") || message.includes("Encrypted secret is malformed")
+  );
+}
+
 export class EncryptedSecretStore extends SecretChanges implements SecretStore {
   private warnedRemoteRef = false;
   private readonly derivedKeys = new Map<string, Promise<Buffer>>();

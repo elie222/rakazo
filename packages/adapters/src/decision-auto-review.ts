@@ -9,20 +9,24 @@ import type {
 } from "@rakazo/adapter-kit";
 import { DecisionProviderError } from "@rakazo/adapter-kit";
 import {
-  AUTO_REVIEW_ASK,
-  AUTO_REVIEW_PASS,
   autoReviewMinConfidence,
   autoReviewTimeoutMs,
-  MAX_OWNER_WORDS_CHARS,
   reviewArgsTooLong,
   sanitizeAutoReviewReason,
   TOO_LONG_TO_REVIEW,
-  truncateReviewText,
 } from "./auto-review.js";
+import {
+  AUTO_REVIEW_ASK,
+  AUTO_REVIEW_PASS,
+  MAX_OWNER_WORDS_CHARS,
+  MEMORY_WRITE_ASK,
+  MEMORY_WRITE_PASS,
+  truncateReviewText,
+} from "./auto-review.prompt.js";
 
 const MAX_TASK_CHARS = 400;
 const MAX_BOT_CHARS = 240;
-export const APPROVAL_DECISION_RUBRIC_VERSION = "approval-v2";
+export const APPROVAL_DECISION_RUBRIC_VERSION = "approval-v3";
 export class DecisionAutoReviewProvider implements AutoReviewProvider {
   constructor(
     private readonly options: {
@@ -57,7 +61,7 @@ export class DecisionAutoReviewProvider implements AutoReviewProvider {
             args: request.args,
             userTask: truncateReviewText(
               request.userTask,
-              request.newSite ? MAX_OWNER_WORDS_CHARS : MAX_TASK_CHARS,
+              request.newSite || request.memoryWrite ? MAX_OWNER_WORDS_CHARS : MAX_TASK_CHARS,
             ),
             botDescription: truncateReviewText(request.botDescription, MAX_BOT_CHARS),
             matchingRules: request.matchingRules.map((rule) => ({
@@ -66,6 +70,7 @@ export class DecisionAutoReviewProvider implements AutoReviewProvider {
               matchValue: rule.matchValue,
             })),
             ...(request.newSite ? { newSite: true } : {}),
+            ...(request.memoryWrite ? { memoryWrite: true } : {}),
           },
           questions: {
             decision: {
@@ -76,10 +81,12 @@ export class DecisionAutoReviewProvider implements AutoReviewProvider {
                     pass: "The owner's words or the bot's role clearly call for this site, and the URL carries nothing beyond what that needs",
                     ask: "The site does not fit, or the URL's path or query holds data that looks taken from private context. Ask the user",
                   }
-                : {
-                    pass: AUTO_REVIEW_PASS,
-                    ask: AUTO_REVIEW_ASK,
-                  },
+                : request.memoryWrite
+                  ? { pass: MEMORY_WRITE_PASS, ask: MEMORY_WRITE_ASK }
+                  : {
+                      pass: AUTO_REVIEW_PASS,
+                      ask: AUTO_REVIEW_ASK,
+                    },
             },
           },
         },

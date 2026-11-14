@@ -1,5 +1,8 @@
 import type { ActionApprovalRule as StoredActionApprovalRule } from "@rakazo/contracts";
 import { BUILTIN_TOOL_NAMES } from "@rakazo/contracts";
+
+export { isSecretAskBlock } from "./ask-kind.js";
+
 import { humanizeToolName } from "./events.js";
 
 const APPROVAL_EXEMPT_TOOLS = new Set([
@@ -51,6 +54,7 @@ const OUTSIDE_RUN_SAFE_BUILTIN_TOOLS = new Set([
   "read_file",
   "read_history",
   "recall_memory",
+  "reflect_memory",
   "request_takeover",
   "run_subagent",
   "schedule_list",
@@ -254,6 +258,7 @@ const OWN_STATE_RESULT_TOOLS = new Set([
   "message_user",
   "read_history",
   "recall_memory",
+  "reflect_memory",
   "remember",
   "render_plot",
   "request_secret",
@@ -291,6 +296,21 @@ export function connectorReadRequiresApproval(input: {
   connectorTrusted: boolean;
 }): boolean {
   return input.tainted && !input.connectorTrusted;
+}
+
+const MEMORY_WRITE_TOOLS = new Set(["remember", "save_memory", "save_shared_memory"]);
+
+/**
+ * A memory save goes through the run's approval mode like any consequential action whenever the
+ * run's current action permissions are reduced: fresh outside input entered it, or someone other
+ * than the owner started it. Saved notes, summaries and recall are derived data and add no prompt
+ * by themselves. The predicate is only checked for a memory write.
+ */
+export async function memoryWriteNeedsApproval(
+  toolName: string,
+  actionTainted: () => Promise<boolean>,
+): Promise<boolean> {
+  return MEMORY_WRITE_TOOLS.has(toolName) && (await actionTainted());
 }
 
 /**
@@ -637,14 +657,6 @@ export function applyJudgeDecision(input: {
  * expression character class. Web renders the title as Markdown; plain-text surfaces unescape them.
  */
 export const CARD_TITLE_ESCAPED_CHARACTERS = "[\\\\`*_[\\]<>~|]";
-
-export function isSecretAskBlock(block: {
-  kind: string;
-  input?: string;
-  approvalEffectId?: string;
-}): boolean {
-  return block.kind === "ask" && block.input === "secret" && !block.approvalEffectId;
-}
 
 export function isApprovalAskBlock(block: {
   kind: string;

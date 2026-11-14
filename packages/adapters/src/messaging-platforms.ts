@@ -15,7 +15,16 @@ import type { HttpInstance } from "@larksuiteoapi/node-sdk";
 import type { MessagingInboundMessage, MessagingOutboundStatus } from "@rakazo/adapter-kit";
 import { getLogger } from "@rakazo/logging";
 import type { Adapter } from "chat";
-import { ConsoleLogger, convertEmojiPlaceholders, markdownToPlainText } from "chat";
+import {
+  ConsoleLogger,
+  convertEmojiPlaceholders,
+  isLinkNode,
+  markdownToPlainText,
+  parseMarkdown,
+  text,
+  toPlainText,
+  walkAst,
+} from "chat";
 import type { SendblueAdapterConfig, SendblueThreadId } from "chat-adapter-sendblue";
 import type { ClientOptions as SendblueClientOptions } from "sendblue";
 import type { MessagingPlatform } from "./chat-sdk-surface.js";
@@ -364,20 +373,23 @@ export function messagingPlatformsFromEnv(
   // token the adapter accepts unsigned webhook posts. Encrypt key and
   // domain are optional (event encryption / open.feishu.cn vs open.larksuite.com).
   if (env.larkAppId && env.larkAppSecret && env.larkVerificationToken) {
+    // Webhook-only: ws/long-connection incoming would consume events so
+    // the HTTP webhook at /api/v1/messaging/webhook/lark never sees them.
+    const adapter = new LazyLarkAdapter({
+      ...(options.larkTransport ? { httpInstance: options.larkTransport } : {}),
+      appId: env.larkAppId,
+      appSecret: env.larkAppSecret,
+      verificationToken: env.larkVerificationToken,
+      // Explicit defaults prevent the adapter from rereading untrimmed process.env values.
+      encryptKey: env.larkEncryptKey ?? "",
+      domain: env.larkDomain?.toLowerCase() === "lark" ? Domain.Lark : Domain.Feishu,
+    });
     platforms.push({
       provider: "lark",
       capabilities: { direct: true, groups: false, receipt: null },
-      // Webhook-only: ws/long-connection incoming would consume events so
-      // the HTTP webhook at /api/v1/messaging/webhook/lark never sees them.
-      adapter: new LazyLarkAdapter({
-        ...(options.larkTransport ? { httpInstance: options.larkTransport } : {}),
-        appId: env.larkAppId,
-        appSecret: env.larkAppSecret,
-        verificationToken: env.larkVerificationToken,
-        // Explicit defaults prevent the adapter from rereading untrimmed process.env values.
-        encryptKey: env.larkEncryptKey ?? "",
-        domain: env.larkDomain?.toLowerCase() === "lark" ? Domain.Lark : Domain.Feishu,
-      }),
+      adapter,
+      postOnce: (threadId, message, idempotencyKey) =>
+        adapter.postMessage(threadId, message, idempotencyKey),
     });
   }
 
@@ -519,6 +531,24 @@ function splitKeepingPairs(body: string): string[] {
 
 const telegramFormat = new TelegramFormatConverter();
 
+/** Plain text drops a link's address, so write it after the label first. */
+function plainTextWithLinkAddresses(markdown: string): string {
+  const ast = walkAst(parseMarkdown(markdown), (node) => {
+    if (!isLinkNode(node)) return node;
+    const label = toPlainText({
+      type: "root",
+      children: [{ type: "paragraph", children: node.children }],
+    });
+    if (!label) return text(node.url);
+    const bare = node.url.replace(/^(?:https?:\/\/|mailto:)/, "");
+    if (label === node.url || label === bare || label === bare.replace(/\/$/, "")) {
+      return text(label);
+    }
+    return text(`${label} (${node.url})`);
+  });
+  return toPlainText(ast);
+}
+
 function splitTelegramPart(body: string, literal = false): string[] {
   const markdown = literal ? escapeMarkdownV2(body) : body;
   const plainText = literal ? body : markdownToPlainText(body);
@@ -534,7 +564,9 @@ function splitTelegramPart(body: string, literal = false): string[] {
 
   // Parse before splitting: cutting Markdown can turn code into prose and
   // consume literal backslashes. Oversized formatted replies use escaped text.
-  if (!literal && plainText !== body) return splitTelegramPart(plainText, true);
+  if (!literal && plainText !== body) {
+    return splitTelegramPart(plainTextWithLinkAddresses(body), true);
+  }
 
   const parts = splitKeepingPairs(body);
   if (parts.length > 1) return parts.flatMap((part) => splitTelegramPart(part, literal));
