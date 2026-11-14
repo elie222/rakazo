@@ -88,7 +88,7 @@ export function useComposerTriggers({
     // One skill per message: a chosen skill keeps the menu closed.
     const next = selectedSkill ? null : composerSlashQuery(value, start, end, bindings);
     // Only a menu opened at the start refreshes skills, so a path typed mid-sentence never refetches.
-    if (next?.start === 0 && slashQuery === null) onSlashOpen?.();
+    if (next?.start === 0 && slashQuery?.start !== 0) onSlashOpen?.();
     setSlashQuery(next);
   }
 
