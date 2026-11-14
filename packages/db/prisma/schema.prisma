@@ -990,6 +990,8 @@ model Bot {
   sectionId         String?
   section           BotSection?       @relation(fields: [sectionId], references: [id], onDelete: SetNull)
   archivedAt        DateTime?
+  /// Set while the owner has paused the bot: it starts no new work until resumed.
+  pausedAt          DateTime?
   parentBotId       String?
   spawnKey          String?
   memoryScope       String?

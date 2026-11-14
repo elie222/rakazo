@@ -31,6 +31,8 @@ import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   answerWaitingRunWithTextInTransaction,
   appendEventInTransaction,
+  BotPausedError,
+  botPaused,
   clearEndedRunState,
   createGroupRepos,
   createRepos,
@@ -533,6 +535,8 @@ export async function sendThreadMessage(
     deps.prisma.$transaction(async (tx) => {
       // A Space being deleted takes no new turns; its lock comes before the group and thread rows.
       if (!(await spaceTakesWork(tx, actor.spaceId))) throw new SpaceDeletionInProgressError();
+      if (target.kind === "bot" && !input.noModel && (await botPaused(tx, target.botId)))
+        throw new BotPausedError();
       const author = await loadMessageAuthor(tx, actor.userId);
       let routineRuns: Array<{ id: string; status: string }> = [];
       let replyToMessageId: string | undefined;
