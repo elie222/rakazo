@@ -620,6 +620,29 @@ async function renderTakingControl(
   };
 }
 
+it("ignores a second take while the first control request is pending", async () => {
+  let finish!: (value: { leaseId: string; expiresAt: string }) => void;
+  const takeover = vi.fn(
+    () =>
+      new Promise<{ leaseId: string; expiresAt: string }>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const { takeControl } = await renderTakingControl(takeover);
+  let first!: Promise<boolean>;
+  await act(async () => {
+    first = takeControl();
+  });
+  await act(async () => {
+    await takeControl();
+  });
+  expect(takeover).toHaveBeenCalledTimes(1);
+  await act(async () => {
+    finish({ leaseId: "lease-1", expiresAt: "" });
+    await first;
+  });
+});
+
 it("matches a delayed release only to the lease handed back", async () => {
   const { takeControl, handBack } = await renderTakingControl();
   await act(async () => {
@@ -739,6 +762,8 @@ it("reads the screen for the live event of a takeover that failed", async () => 
     await takeControl();
   });
   expect(state.isOwnControlEvent("bot-1", "computer.takeover.granted", "lease-1")).toBe(false);
+  expect(state.computerErrorFromScreen).toBe(false);
+  expect(state.computerError).toBeTruthy();
 });
 
 it("offers Upgrade instead of a retry once the computer hours are spent", async () => {

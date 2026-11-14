@@ -473,11 +473,11 @@ export function useComputerState({
   }
 
   /** A take or release that failed changed nothing; an event it held back still gets its read. */
-  function forgetOwnControlEvent(botId: string) {
+  async function forgetOwnControlEvent(botId: string) {
     if (ownControlChange.current?.botId === botId) ownControlChange.current = null;
     // Only the bot on screen; another bot's read would discard the shown bot's own read.
     if (activeBotId.current === botId || computerBotIdRef.current === botId) {
-      void refreshComputerScreen(botId).catch(() => undefined);
+      await refreshComputerScreen(botId).catch(() => undefined);
     }
   }
 
@@ -638,6 +638,7 @@ export function useComputerControls({
     setScreenLoadError(null);
   }, [computerBot?.id, screenUrl]);
   const computerBootEpoch = useRef(0);
+  const controlRequests = useRef(new Set<string>());
   const autoBooted = useRef<string | null>(null);
 
   async function bootComputer({
@@ -651,6 +652,8 @@ export function useComputerControls({
     showProgress: boolean;
     force?: boolean;
   }) {
+    if (controlRequests.current.has(targetBotId)) return;
+    controlRequests.current.add(targetBotId);
     setScreenUrlLoadedBotId(null);
     screenAwaitsRetry.current = false;
     const epoch = ++computerBootEpoch.current;
@@ -677,10 +680,12 @@ export function useComputerControls({
       }
       if (takeControl) {
         expectOwnControlEvent(targetBotId, "computer.takeover.granted");
-        const { leaseId } = await rpc.computer.takeover({ botId: targetBotId }).catch((error) => {
-          forgetOwnControlEvent(targetBotId);
-          throw error;
-        });
+        const { leaseId } = await rpc.computer
+          .takeover({ botId: targetBotId })
+          .catch(async (error) => {
+            await forgetOwnControlEvent(targetBotId);
+            throw error;
+          });
         expectOwnControlEvent(targetBotId, "computer.takeover.granted", leaseId);
         if (!stillThisBoot() || !stillThisBot()) return;
       }
@@ -695,6 +700,7 @@ export function useComputerControls({
       setComputerErrorFromScreen(false);
       throw error;
     } finally {
+      controlRequests.current.delete(targetBotId);
       if (stillThisBoot()) setBootingBotId(null);
     }
   }
@@ -904,8 +910,8 @@ export function useComputerControls({
     try {
       const leaseId = computerRef.current?.controlLeaseId;
       if (leaseId) expectOwnControlEvent(botId, "computer.takeover.released", leaseId);
-      await rpc.computer.release({ botId, reason }).catch((error) => {
-        forgetOwnControlEvent(botId);
+      await rpc.computer.release({ botId, reason }).catch(async (error) => {
+        await forgetOwnControlEvent(botId);
         throw error;
       });
       if (computerBotIdRef.current !== botId && activeBotId.current !== botId) return;
