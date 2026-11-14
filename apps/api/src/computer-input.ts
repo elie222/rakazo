@@ -1,4 +1,3 @@
-// Number(null), Number(""), Number(true) and Number([]) are all valid, and would mean (0, 0).
 const isGiven = (value: unknown) =>
   typeof value === "number" || (typeof value === "string" && value.trim() !== "");
 
