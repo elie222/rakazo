@@ -131,12 +131,12 @@ vi.mock("../lib/ui-appearance", () => ({
   setUiAppearance: vi.fn(),
 }));
 
+import { localTimezone } from "@rakazo/core";
 import { authClient } from "../lib/auth";
 import {
   COMPOSER_ENTER_TO_SEND_STORAGE_KEY,
   composerEnterToSendPreference,
 } from "../lib/composer-enter-to-send-pref";
-import { localTimezone } from "../lib/local-timezone";
 import { remoteImagesPreference } from "../lib/remote-images-preference";
 import { TOOL_ACTIVITY_STORAGE_KEY } from "../lib/tool-activity-preference";
 import { GeneralSettingsPanels, UsageSettingsPanel } from "./AccountSettingsOverlay";

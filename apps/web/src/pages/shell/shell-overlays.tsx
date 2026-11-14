@@ -20,6 +20,7 @@ import { queryClient } from "../../lib/query";
 import type { createSpaceRpc } from "../../lib/rpc";
 import type { ShellOverlay } from "../shell-overlay";
 import { FALLBACK_BOT_COLOR } from "./chat-shared";
+import { withServerTimezone } from "./use-device-timezone-report";
 
 const SettingsOverlay = lazyOverlay(() =>
   import("../SettingsOverlay").then((module) => module.SettingsOverlay),
@@ -123,6 +124,7 @@ export function SettingsOverlays({
   refetchSession,
   bootstrapMe,
   setBootstrapMe,
+  noteTimezoneChoice,
   messagingEnabled,
   memoryConfig,
   peerConversation,
@@ -147,6 +149,8 @@ export function SettingsOverlays({
   refetchSession: () => Promise<unknown>;
   bootstrapMe: Me | null | undefined;
   setBootstrapMe: (update: (prev: Me | null | undefined) => Me | null | undefined) => void;
+  /** Marks a manual timezone save, so delayed device reports never repaint its zone. */
+  noteTimezoneChoice: () => void;
   messagingEnabled: boolean;
   memoryConfig: SpaceMemoryConfig | null | undefined;
   peerConversation: { peerBotId: string; peerBotName: string } | null;
@@ -196,9 +200,14 @@ export function SettingsOverlays({
           messagingEnabled={messagingEnabled}
           paymentWalletProvider={bootstrapMe?.paymentWalletProvider ?? null}
           timezone={bootstrapMe?.timezone ?? null}
-          onTimezoneChange={async (timezone) => {
-            const nextMe = await rpc.preferences.update({ timezone });
-            setBootstrapMe((prev) => (prev ? { ...prev, timezone: nextMe.timezone } : nextMe));
+          onTimezoneChange={async (timezone, followsDevice) => {
+            // The button's zone is this device's: taking it also returns the account to
+            // following the device, so later reports move it again.
+            const nextMe = followsDevice
+              ? await rpc.preferences.adoptTimezone({ timezone, switchTo: true })
+              : await rpc.preferences.update({ timezone });
+            noteTimezoneChoice();
+            setBootstrapMe((prev) => (prev ? withServerTimezone(prev, nextMe) : nextMe));
           }}
           botAvatarSet={bootstrapMe?.botAvatarSet}
           onBotAvatarSetChange={async (botAvatarSet) => {

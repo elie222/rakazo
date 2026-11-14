@@ -173,6 +173,7 @@ function SpaceShell() {
     initialLoadFailed,
     bootstrapMe,
     setBootstrapMe,
+    noteTimezoneChoice,
     refreshBots,
   } = roster;
   const snoozeNow = useSnoozeClock([
@@ -431,7 +432,6 @@ function SpaceShell() {
   }
   const openSpaceChatRef = useRef<(spaceId: string, path: string) => void>(() => {});
   const rosterSignals = useSpaceBootstrap({
-    rpc,
     roster,
     thread,
     commitComputer,
@@ -1382,6 +1382,7 @@ function SpaceShell() {
           refetchSession={() => session.refetch({ query: { disableCookieCache: true } })}
           bootstrapMe={bootstrapMe}
           setBootstrapMe={setBootstrapMe}
+          noteTimezoneChoice={noteTimezoneChoice}
           messagingEnabled={messagingSurfaceEnabled}
           memoryConfig={memoryProviderConfig}
           peerConversation={peerConversation}
