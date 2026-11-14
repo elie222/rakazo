@@ -386,7 +386,7 @@ msgstr "{label}，空"
 #. placeholder {0}: base.name
 #: apps/web/src/components/ModelCredits.tsx
 msgid "{memoryGb} GB of RAM and {usage}× the computer time of {0}. Time counts only while your bot uses its computer."
-msgstr ""
+msgstr "{memoryGb} GB 内存，电脑时长是 {0} 的 {usage} 倍。只在你的 Bot 使用电脑时计时。"
 
 #: apps/web/src/lib/relative-time.ts
 msgid "{minutes}m ago"
@@ -861,7 +861,7 @@ msgstr "3 小时"
 
 #: apps/web/src/components/ModelCredits.tsx
 msgid "A {times}× more powerful computer for your bot"
-msgstr ""
+msgstr "为你的 Bot 提供性能强 {times} 倍的电脑"
 
 #: apps/web/src/pages/shell/message-cards.tsx
 msgid "A bit of everything"
@@ -1062,7 +1062,7 @@ msgstr "添加一个 AI 模型以继续聊天"
 #: apps/mobile/components/vault-item-editor.tsx
 #: apps/web/src/components/vault/VaultItemEditor.tsx
 msgid "Add an authenticator key"
-msgstr ""
+msgstr "添加验证器密钥"
 
 #: apps/web/src/pages/McpServersOverlay.tsx
 msgid "Add an HTTPS server URL."
@@ -1130,7 +1130,7 @@ msgstr "添加待办事项"
 #: apps/mobile/components/vault-item-editor.tsx
 #: apps/web/src/components/vault/VaultItemEditor.tsx
 msgid "Add other sites"
-msgstr ""
+msgstr "添加其他网站"
 
 #: apps/mobile/app/(settings)/profile.tsx
 #: apps/mobile/lib/passkey.ts
@@ -1185,7 +1185,7 @@ msgstr "添加工作区"
 #. js-lingui-explicit-id
 #: packages/i18n/src/vault.ts
 msgid "Added"
-msgstr ""
+msgstr "已添加"
 
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/mobile/app/(settings)/plugin.tsx
@@ -1306,7 +1306,7 @@ msgstr "全部时间"
 #. js-lingui-explicit-id
 #: packages/i18n/src/vault.ts
 msgid "Allow"
-msgstr ""
+msgstr "允许"
 
 #: apps/mobile/lib/ai-consent.ts
 #: apps/web/src/components/ApprovalRulesSettings.tsx
@@ -1376,14 +1376,14 @@ msgstr "已有账户？"
 #. js-lingui-explicit-id
 #: packages/i18n/src/vault.ts
 msgid "Already saved"
-msgstr ""
+msgstr "已保存过"
 
 #: apps/mobile/components/vault-item-editor.tsx
 #: apps/mobile/components/vault-item-sheet.tsx
 #: apps/web/src/components/vault/VaultItemDetail.tsx
 #: apps/web/src/components/vault/VaultItemEditor.tsx
 msgid "Also on"
-msgstr ""
+msgstr "其他网站"
 
 #: apps/mobile/app/(settings)/team-conversation.tsx
 #: apps/web/src/pages/ExternalConversationSettings.tsx
@@ -1452,7 +1452,7 @@ msgstr "集成工具"
 #. js-lingui-explicit-id
 #: packages/i18n/src/vault.ts
 msgid "And {more} more"
-msgstr ""
+msgstr "还有 {more} 个"
 
 #: apps/mobile/app/(settings)/general.tsx
 #: apps/mobile/lib/live-notifications.ts
@@ -1663,7 +1663,7 @@ msgstr "询问"
 #. js-lingui-explicit-id
 #: packages/i18n/src/vault.ts
 msgid "Ask first"
-msgstr ""
+msgstr "先询问"
 
 #: apps/mobile/app/routines.tsx
 msgid "Ask this Bot in chat to set up a routine."
@@ -1700,7 +1700,7 @@ msgstr "{timeSelect}"
 
 #: apps/web/src/pages/shell/composer.tsx
 msgid "Attach as file"
-msgstr ""
+msgstr "作为文件附加"
 
 #: apps/mobile/components/thread-composer.tsx
 #: apps/web/src/pages/shell/composer.tsx
@@ -1730,7 +1730,7 @@ msgstr "身份验证失败。"
 #: apps/web/src/components/vault/VaultItemDetail.tsx
 #: apps/web/src/components/vault/VaultItemEditor.tsx
 msgid "Authenticator key"
-msgstr ""
+msgstr "验证器密钥"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/web/src/pages/model-settings/connection-controls.tsx
@@ -1878,7 +1878,7 @@ msgstr "账单周期"
 #. js-lingui-explicit-id
 #: packages/i18n/src/vault.ts
 msgid "Block"
-msgstr ""
+msgstr "阻止"
 
 #: apps/web/src/components/ApprovalRulesSettings.tsx
 msgid "Block"
@@ -1987,7 +1987,7 @@ msgstr "两者"
 #: apps/web/src/components/vault/VaultItemAccess.tsx
 #: apps/web/src/components/vault/VaultItemDetail.tsx
 msgid "Bots"
-msgstr ""
+msgstr "Bot"
 
 #: apps/web/src/components/ModelCredits.tsx
 msgid "Bots and browser automation"
@@ -2000,7 +2000,7 @@ msgstr "Bot 和它们自己的聊天会保留。"
 #. js-lingui-explicit-id
 #: packages/i18n/src/vault.ts
 msgid "Bots can use each imported login until you change its Bots setting."
-msgstr ""
+msgstr "在你更改每条导入登录信息的 Bot 设置之前，Bot 都可以使用它。"
 
 #: apps/web/src/components/SharedSpaceRules.tsx
 msgid "Bots use the accounts of whoever messages them"
@@ -2425,11 +2425,11 @@ msgstr "选择如何使用 Rakazo"
 #. js-lingui-explicit-id
 #: packages/i18n/src/vault.ts
 msgid "Chosen bots"
-msgstr ""
+msgstr "指定的 Bot"
 
 #: apps/mobile/components/vault-item-editor.tsx
 msgid "Chosen bots"
-msgstr ""
+msgstr "指定的 Bot"
 
 #: apps/mobile/components/vault-item-editor.tsx
 #: apps/mobile/components/vault-item-sheet.tsx
@@ -2837,7 +2837,7 @@ msgstr "连接应用"
 
 #: apps/web/src/pages/shell/agent-import-plan.tsx
 msgid "Connect it again"
-msgstr ""
+msgstr "重新连接"
 
 #: apps/web/src/pages/shell/message-cards.tsx
 msgid "Connect MCP server “{name}”"
@@ -2994,7 +2994,7 @@ msgstr "通过 {name} 继续"
 #: apps/mobile/components/social-sign-in-buttons.tsx
 #: apps/web/src/components/SocialSignInButtons.tsx
 msgid "Continue with email"
-msgstr ""
+msgstr "通过邮箱继续"
 
 #: apps/mobile/components/computer-keyboard-bar.tsx
 msgid "Control"
@@ -3416,7 +3416,7 @@ msgstr "没有听清。"
 #: apps/mobile/app/(settings)/vault.tsx
 #: apps/web/src/components/VaultSettings.tsx
 msgid "Could not import"
-msgstr ""
+msgstr "无法导入"
 
 #: apps/web/src/pages/PluginsOverlay.tsx
 msgid "Could not install connector"
@@ -3474,7 +3474,7 @@ msgstr "无法加载 Bot 列表"
 #. js-lingui-explicit-id
 #: packages/i18n/src/vault.ts
 msgid "Could not load bots. Reload to try again."
-msgstr ""
+msgstr "无法加载 Bot。请重新加载后重试。"
 
 #: apps/web/src/pages/IntegrationSetup.tsx
 msgid "Could not load bots. Reload to try again."
@@ -4538,7 +4538,7 @@ msgstr "删除空间"
 #: apps/mobile/app/(settings)/vault.tsx
 #: apps/web/src/components/vault/VaultImport.tsx
 msgid "Delete the exported file now. It holds your passwords unencrypted."
-msgstr ""
+msgstr "请立即删除导出的文件。其中的密码未加密。"
 
 #: apps/mobile/app/routine.tsx
 #: apps/mobile/app/routines.tsx
@@ -5008,7 +5008,7 @@ msgstr "请输入 HTTPS URL"
 #: apps/mobile/components/vault-item-editor.tsx
 #: apps/web/src/components/vault/VaultItemEditor.tsx
 msgid "Enter each site as an HTTPS address a login can be saved for."
-msgstr ""
+msgstr "请将每个网站填写为可保存登录信息的 HTTPS 地址。"
 
 #: apps/web/src/components/ComputerProviderSettings.tsx
 msgid "Environment ID"
@@ -5123,7 +5123,7 @@ msgstr "此 Bot 所在空间的所有人都能读取它从 {linkApp} 收到的�
 #. placeholder {0}: first.name
 #: apps/web/src/components/ModelCredits.tsx
 msgid "Everything in {0}"
-msgstr ""
+msgstr "包含 {0} 的全部内容"
 
 #: apps/mobile/app/new-group.tsx
 msgid "Ex: Project Falcon"
@@ -5505,7 +5505,7 @@ msgstr "GraphQL 端点"
 
 #: apps/web/src/pages/shell/agent-import.tsx
 msgid "Grok Bot"
-msgstr ""
+msgstr "Grok Bot"
 
 #: apps/mobile/app/_layout.tsx
 #: apps/mobile/app/(settings)/messaging.tsx
@@ -5553,7 +5553,7 @@ msgstr "Bot 少于两个的群组也会被删除，包括其中的消息、文�
 #: apps/mobile/app/computer.tsx
 #: apps/web/src/pages/shell/computer-release-actions.tsx
 msgid "Hand back control"
-msgstr ""
+msgstr "交还控制权"
 
 #: apps/mobile/components/CallCard.tsx
 #: apps/web/src/components/call/CallCard.tsx
@@ -5808,7 +5808,7 @@ msgstr "导入智能体"
 #: apps/web/src/components/vault/VaultImport.tsx
 #: apps/web/src/components/VaultSettings.tsx
 msgid "Import CSV"
-msgstr ""
+msgstr "导入 CSV"
 
 #: apps/web/src/components/AccountDataSettings.tsx
 msgid "Import data"
@@ -6031,7 +6031,7 @@ msgstr "刚刚"
 
 #: apps/web/src/pages/shell/composer.tsx
 msgid "Keep inline"
-msgstr ""
+msgstr "保留在正文中"
 
 #: apps/mobile/lib/bot-lifecycle.ts
 #: apps/web/src/pages/shell/dialogs.tsx
@@ -6076,11 +6076,11 @@ msgstr "语言"
 
 #: apps/web/src/pages/shell/composer.tsx
 msgid "Large paste"
-msgstr ""
+msgstr "大段粘贴"
 
 #: apps/web/src/pages/shell/composer.tsx
 msgid "Large text pasted inline"
-msgstr ""
+msgstr "已在正文中粘贴大段文本"
 
 #. placeholder {0}: new Date(state.checkedAt).toLocaleString()
 #: apps/web/src/pages/routine-editor/trigger-cards.tsx
@@ -6148,11 +6148,11 @@ msgstr "链接"
 #. placeholder {0}: security.sso.name === "SSO" ? t`SSO` : security.sso.name
 #: apps/mobile/app/(settings)/profile.tsx
 msgid "Link {0}"
-msgstr ""
+msgstr "关联 {0}"
 
 #: apps/web/src/components/AccountAccess.tsx
 msgid "Link {providerName}"
-msgstr ""
+msgstr "关联 {providerName}"
 
 #: apps/web/src/components/pages/PublicPageShell.tsx
 #: apps/web/src/components/pages/SharePopover.tsx
@@ -7058,7 +7058,7 @@ msgstr "无认证"
 #. js-lingui-explicit-id
 #: packages/i18n/src/vault.ts
 msgid "No bots"
-msgstr ""
+msgstr "没有 Bot"
 
 #: apps/web/src/components/integrations/agent-access.tsx
 msgid "No bots"
@@ -7136,11 +7136,11 @@ msgstr "没有与“{query}”匹配的页面。"
 #. js-lingui-explicit-id
 #: packages/i18n/src/vault.ts
 msgid "No password"
-msgstr ""
+msgstr "没有密码"
 
 #: apps/web/src/components/ModelCredits.tsx
 msgid "No plan or key? Use credits"
-msgstr ""
+msgstr "没有套餐或密钥？使用额度"
 
 #: apps/mobile/app/artifact.tsx
 #: apps/mobile/components/video-preview.tsx
@@ -7218,7 +7218,7 @@ msgstr "无触发器"
 #. js-lingui-explicit-id
 #: packages/i18n/src/vault.ts
 msgid "No website and password columns found."
-msgstr ""
+msgstr "未找到网站列和密码列。"
 
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/mobile/app/(settings)/spending-limit.tsx
@@ -7285,12 +7285,12 @@ msgstr "暂不"
 #. js-lingui-explicit-id
 #: packages/i18n/src/vault.ts
 msgid "Not on an HTTPS site"
-msgstr ""
+msgstr "不是 HTTPS 网站"
 
 #. js-lingui-explicit-id
 #: packages/i18n/src/vault.ts
 msgid "Not saved"
-msgstr ""
+msgstr "未保存"
 
 #: apps/mobile/components/failed-send-bubble.tsx
 msgid "Not sent"
@@ -7589,7 +7589,7 @@ msgstr "可选请求头值"
 
 #: apps/mobile/components/social-sign-in-buttons.tsx
 msgid "or"
-msgstr ""
+msgstr "或"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "Or connect an API key"
@@ -7828,7 +7828,7 @@ msgstr "权限"
 
 #: apps/mobile/app/sign-in.tsx
 msgid "Persistent AI teammates that do real work"
-msgstr ""
+msgstr "长期在线、真正干活的 AI 队友"
 
 #: apps/web/src/pages/shell/agent-import-plan.tsx
 msgid "Persona"
@@ -8489,7 +8489,7 @@ msgstr "重新打开"
 #. js-lingui-explicit-id
 #: packages/i18n/src/vault.ts
 msgid "Repeated in the file"
-msgstr ""
+msgstr "文件中重复"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/mobile/components/model-providers.tsx
@@ -8798,7 +8798,7 @@ msgstr "行"
 #. js-lingui-explicit-id
 #: packages/i18n/src/vault.ts
 msgid "Row {line}"
-msgstr ""
+msgstr "第 {line} 行"
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/components/approval-settings-rows.tsx
@@ -8954,27 +8954,27 @@ msgstr "已保存，但列表刷新失败"
 #. js-lingui-explicit-id
 #: packages/i18n/src/vault.ts
 msgid "Saved, but this server can't ask you first."
-msgstr ""
+msgstr "已保存，但此服务器无法先询问你。"
 
 #. js-lingui-explicit-id
 #: packages/i18n/src/vault.ts
 msgid "Saved, but this server can't block bots yet."
-msgstr ""
+msgstr "已保存，但此服务器暂不能阻止 Bot。"
 
 #. js-lingui-explicit-id
 #: packages/i18n/src/vault.ts
 msgid "Saved, but this server can't keep authenticator keys yet."
-msgstr ""
+msgstr "已保存，但此服务器暂不能保存验证器密钥。"
 
 #. js-lingui-explicit-id
 #: packages/i18n/src/vault.ts
 msgid "Saved, but this server can't limit an item to chosen bots."
-msgstr ""
+msgstr "已保存，但此服务器无法将项目限定给指定的 Bot。"
 
 #. js-lingui-explicit-id
 #: packages/i18n/src/vault.ts
 msgid "Saved, but this server fills logins only on their own site."
-msgstr ""
+msgstr "已保存，但此服务器只会在登录信息所属的网站上自动填充。"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/mobile/lib/use-subscription-sign-in.ts
@@ -9478,7 +9478,7 @@ msgstr "在 <0>{0}</0> 登录，然后将代码粘贴到这里。"
 
 #: apps/mobile/app/sign-in.tsx
 msgid "Sign in to continue to Rakazo"
-msgstr ""
+msgstr "登录以继续使用 Rakazo"
 
 #: apps/mobile/app/sign-in.tsx
 #: apps/web/src/pages/Auth.tsx
@@ -9488,7 +9488,7 @@ msgstr "登录 Rakazo"
 #: apps/mobile/lib/user-error.ts
 #: apps/web/src/lib/user-error.ts
 msgid "Sign in to your account, then link this provider in settings"
-msgstr ""
+msgstr "请先登录你的账户，然后在设置中关联此提供商"
 
 #: apps/mobile/app/sign-in.tsx
 #: apps/web/src/components/PasskeySignIn.tsx
@@ -9648,7 +9648,7 @@ msgstr "已延后"
 #: apps/mobile/app/(settings)/vault.tsx
 #: apps/web/src/components/VaultSettings.tsx
 msgid "Some logins may have been saved. Importing the file again skips them."
-msgstr ""
+msgstr "部分登录信息可能已保存。再次导入该文件时会跳过它们。"
 
 #: apps/mobile/app/(settings)/skills.tsx
 #: apps/mobile/components/integration-plugins.tsx
@@ -9668,7 +9668,7 @@ msgstr "启动时出了点问题。请稍后重试。"
 #. js-lingui-explicit-id
 #: packages/i18n/src/run-error.ts
 msgid "Something went wrong. Try again."
-msgstr ""
+msgstr "出了点问题。请重试。"
 
 #: apps/mobile/app/(settings)/approval-rule-add.tsx
 #: apps/mobile/app/(settings)/approvals.tsx
@@ -9790,7 +9790,7 @@ msgstr "启动"
 
 #: apps/web/src/components/ModelCredits.tsx
 msgid "Start {name} trial"
-msgstr ""
+msgstr "开始 {name} 试用"
 
 #: apps/web/src/components/ModelCredits.tsx
 #: apps/web/src/pages/Paywall.tsx
@@ -9943,7 +9943,7 @@ msgstr "以每月 {price} 订阅"
 
 #: apps/web/src/components/ModelCredits.tsx
 msgid "Subscribe to {name}"
-msgstr ""
+msgstr "订阅 {name}"
 
 #: apps/web/src/components/ModelCredits.tsx
 msgid "Subscribe to credits"
@@ -10135,7 +10135,7 @@ msgstr "这看起来不像 URL"
 
 #: apps/web/src/lib/agent-import-errors.ts
 msgid "That isn't a Grok Bot export. Paste the Bot's whole reply."
-msgstr ""
+msgstr "这不是 Grok Bot 的导出内容。请粘贴该 Bot 的完整回复。"
 
 #: apps/mobile/lib/endpoint.ts
 msgid "That URL did not look like a Rakazo server"
@@ -10232,7 +10232,7 @@ msgstr "提供商拒绝了此 Bot 用于回复的密钥。"
 
 #: apps/web/src/lib/agent-import-errors.ts
 msgid "The reply looks cut off. Ask the Bot for the rest, then paste both."
-msgstr ""
+msgstr "回复似乎被截断了。请让该 Bot 发送剩余部分，然后把两段都粘贴进来。"
 
 #: apps/mobile/app/computer.tsx
 #: apps/web/src/lib/computer-screen.ts
@@ -10330,7 +10330,7 @@ msgstr "此应用需要单独设置登录后才能连接。"
 #: apps/mobile/components/vault-item-editor.tsx
 #: apps/web/src/components/vault/VaultItemEditor.tsx
 msgid "This authenticator key can't be read."
-msgstr ""
+msgstr "无法读取此验证器密钥。"
 
 #: apps/web/src/pages/shell/use-agent-import-source.ts
 msgid "This backup could not be read."
@@ -10343,7 +10343,7 @@ msgstr "此 Bot"
 #. js-lingui-explicit-id
 #: packages/i18n/src/vault.ts
 msgid "This bot can't use this item. Change it in the Vault, or dismiss the request."
-msgstr ""
+msgstr "此 Bot 无法使用此项目。请在保管库中更改，或忽略此请求。"
 
 #: apps/web/src/pages/shell/computer-view.tsx
 msgid "This bot runs on this computer, not a Linux desktop. Shell and files use your home folder."
@@ -10423,16 +10423,16 @@ msgstr "本设备"
 
 #: apps/web/src/lib/agent-import-errors.ts
 msgid "This export is newer than Rakazo can read. Update Rakazo and try again."
-msgstr ""
+msgstr "此导出内容的版本比 Rakazo 能读取的更新。请更新 Rakazo 后重试。"
 
 #: apps/web/src/lib/agent-import-errors.ts
 msgid "This export is too large to import."
-msgstr ""
+msgstr "此导出内容太大，无法导入。"
 
 #. js-lingui-explicit-id
 #: packages/i18n/src/vault.ts
 msgid "This file can't be read as CSV."
-msgstr ""
+msgstr "无法将此文件读取为 CSV。"
 
 #: apps/web/src/components/ArtifactFileCard.tsx
 msgid "This file is not valid UTF-8 text."
@@ -10441,7 +10441,7 @@ msgstr "这个文件不是有效的 UTF-8 文本。"
 #. js-lingui-explicit-id
 #: packages/i18n/src/vault.ts
 msgid "This file is too large to import."
-msgstr ""
+msgstr "此文件太大，无法导入。"
 
 #: apps/web/src/lib/agent-import-errors.ts
 msgid "This import was already used. Choose the files again."
@@ -10454,12 +10454,12 @@ msgstr "此邀请链接已失效。"
 #. js-lingui-explicit-id
 #: packages/i18n/src/vault.ts
 msgid "This item is blocked for bots. Allow it in the Vault, or dismiss the request."
-msgstr ""
+msgstr "此项目已对 Bot 阻止。请在保管库中允许，或忽略此请求。"
 
 #. js-lingui-explicit-id
 #: packages/i18n/src/vault.ts
 msgid "This limits only this Space's bots. Your other Spaces choose for their own."
-msgstr ""
+msgstr "此设置只限制此空间的 Bot。你的其他空间各自决定。"
 
 #: apps/web/src/pages/HostComputerPrompt.tsx
 msgid "this Mac"
@@ -10584,7 +10584,7 @@ msgstr "此服务器的工具结果超出模型容量。请关闭该服务器的
 #. js-lingui-explicit-id
 #: packages/i18n/src/vault.ts
 msgid "This Space keeps its own vault, so its bots can't use account items."
-msgstr ""
+msgstr "此空间使用自己的保管库，因此其 Bot 无法使用账户项目。"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/web/src/pages/model-settings/connection-controls.tsx
@@ -10641,7 +10641,7 @@ msgstr "到 {0}"
 #. js-lingui-explicit-id
 #: packages/i18n/src/vault.ts
 msgid "To add"
-msgstr ""
+msgstr "待添加"
 
 #: apps/mobile/lib/board.ts
 #: apps/web/src/lib/ticket-status.ts
@@ -10927,7 +10927,7 @@ msgstr "向上"
 #: apps/mobile/components/vault-item-editor.tsx
 #: apps/web/src/components/vault/VaultItemEditor.tsx
 msgid "Up to {limit} sites."
-msgstr ""
+msgstr "最多 {limit} 个网站。"
 
 #: apps/web/src/components/DesktopUpdates.tsx
 msgid "Up to date"
@@ -10977,7 +10977,7 @@ msgstr "需要更新"
 #: apps/mobile/lib/api.ts
 #: apps/web/src/components/VaultSettings.tsx
 msgid "Update your server to import logins."
-msgstr ""
+msgstr "请更新你的服务器以导入登录信息。"
 
 #: apps/mobile/lib/api.ts
 msgid "Update your server to use AI data sharing in this mobile version."
@@ -11077,7 +11077,7 @@ msgstr "使用找到的模型"
 #: apps/mobile/lib/user-error.ts
 #: apps/web/src/lib/user-error.ts
 msgid "Use an account with the same email address"
-msgstr ""
+msgstr "请使用相同邮箱地址的账户"
 
 #: apps/mobile/lib/endpoint.ts
 msgid "Use an http or https URL"
@@ -11149,7 +11149,7 @@ msgstr "使用自己的密钥"
 #: apps/mobile/components/vault-item-sheet.tsx
 #: apps/web/src/components/vault/VaultItemActivity.tsx
 msgid "Used {when} by {bot}"
-msgstr ""
+msgstr "{bot} {when}使用过"
 
 #: apps/web/src/pages/memory-providers/HonchoSettingsForm.tsx
 msgid "User peer"
@@ -11227,7 +11227,7 @@ msgstr "保管库"
 #. js-lingui-explicit-id
 #: packages/i18n/src/vault.ts
 msgid "Vault full"
-msgstr ""
+msgstr "保管库已满"
 
 #: apps/mobile/components/add-custom-integration.tsx
 #: apps/web/src/pages/plugins/source-form.tsx
@@ -11360,7 +11360,7 @@ msgstr "每周"
 #: apps/mobile/app/sign-in.tsx
 #: apps/web/src/pages/Auth.tsx
 msgid "Welcome back"
-msgstr ""
+msgstr "欢迎回来"
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/web/src/components/SignupSurvey.tsx
@@ -11463,7 +11463,7 @@ msgstr "你的 Bot 用什么付款。"
 
 #: apps/web/src/pages/shell/agent-import.tsx
 msgid "Which Bot?"
-msgstr ""
+msgstr "哪个 Bot？"
 
 #: apps/web/src/pages/settings-nav.ts
 msgid "Which LLMs your bots use."
@@ -11538,7 +11538,7 @@ msgstr "配合使用的应用"
 
 #: apps/web/src/components/ModelCredits.tsx
 msgid "Works with your ChatGPT or Claude plan, or an API key."
-msgstr ""
+msgstr "可使用你的 ChatGPT 或 Claude 套餐，或 API 密钥。"
 
 #: apps/mobile/app/paywall.tsx
 #: apps/web/src/components/ModelCredits.tsx
