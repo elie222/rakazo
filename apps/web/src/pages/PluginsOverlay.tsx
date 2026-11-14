@@ -352,7 +352,7 @@ export function PluginsOverlay({
                         />
                       ) : (
                         <span className="grid h-6 w-6 place-items-center rounded-lg border border-border/60 bg-favicon-plate text-caption font-semibold text-foreground">
-                          {mark.name[0]?.toUpperCase()}
+                          {Array.from(mark.name)[0]?.toUpperCase()}
                         </span>
                       )}
                     </span>

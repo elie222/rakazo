@@ -208,3 +208,28 @@ it("offers the public catalog for a search and sends nothing there until it is p
   expect(searchBox().value).toBe("canva");
   expect(publicSearches()).toEqual([[{ query: "canva", usePublicCatalog: true }]]);
 });
+
+it("keeps complete Unicode initials in the connected-app marks", async () => {
+  api.connections.catalog.mockResolvedValue(
+    ["🦞 OpenClaw", "𠮷野", "notes"].map((name, i) => ({
+      connectorId: "fixture",
+      slug: `app-${i}`,
+      name,
+      logo: null,
+      connected: true,
+      noAuth: false,
+    })),
+  );
+  await act(async () =>
+    root.render(
+      <QueryClientProvider client={client}>
+        <PluginsOverlay onClose={() => {}} />
+      </QueryClientProvider>,
+    ),
+  );
+  await vi.waitFor(() => expect(searchBox().disabled).toBe(false));
+  const marks = [...host.querySelectorAll("span[aria-hidden] .place-items-center")].map(
+    (mark) => mark.textContent,
+  );
+  expect(marks).toEqual(["🦞", "𠮷", "N"]);
+});

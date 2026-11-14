@@ -160,7 +160,9 @@ test("integration fallback icons preserve non-BMP initials", async ({ page }, te
   const dialog = page.getByRole("dialog", { name: "Integrations", exact: true });
   await expect(dialog.getByText("🦞", { exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "integrations-unicode-plugin");
-  await dialog.getByRole("button", { name: /^\d+ connected$/ }).click();
+  const connected = dialog.getByRole("button", { name: /^\d+ connected$/ });
+  await expect(connected.locator("span[aria-hidden] .place-items-center")).toHaveText("𠮷");
+  await connected.click();
   const tile = dialog.getByTestId("connection-tile-unicode");
   await expect(tile.getByText("𠮷", { exact: true })).toBeVisible();
   await tile.getByRole("button", { name: "Added", exact: true }).click();
