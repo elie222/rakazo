@@ -9,6 +9,9 @@ const host = vi.hoisted(() => ({
   runtimeFails: false,
   pressed: [] as unknown[],
   press: undefined as (() => void) | undefined,
+  touch: {} as Record<string, ((event: { nativeEvent: unknown }) => void) | undefined>,
+  message: undefined as ((data: string) => void) | undefined,
+  opened: [] as string[],
 }));
 
 vi.mock("react-native", () => ({
@@ -28,7 +31,18 @@ vi.mock("react-native", () => ({
     return createElement("div", {}, children);
   },
   Text: ({ children }: { children?: ReactNode }) => createElement("p", {}, children),
-  View: ({ children }: { children?: ReactNode }) => createElement("div", {}, children),
+  View: ({
+    children,
+    onTouchStart,
+    onTouchEnd,
+  }: {
+    children?: ReactNode;
+    onTouchStart?: (event: { nativeEvent: unknown }) => void;
+    onTouchEnd?: (event: { nativeEvent: unknown }) => void;
+  }) => {
+    if (onTouchStart) host.touch = { start: onTouchStart, end: onTouchEnd };
+    return createElement("div", {}, children);
+  },
   StyleSheet: { create: (styles: unknown) => styles },
 }));
 vi.mock("react-native-svg", () => ({
@@ -41,9 +55,15 @@ vi.mock("react-native-svg", () => ({
 vi.mock("expo-router", () => ({
   useRouter: () => ({ push: (href: unknown) => host.pressed.push(href) }),
 }));
-vi.mock("@rakazo/chat-ui/native", () => ({ PageIcon: () => null }));
+vi.mock("@rakazo/chat-ui/native", () => ({
+  PageIcon: () => null,
+  useNativeLinkConfirm: () => (url: string) => host.opened.push(url),
+}));
 vi.mock("../components/sandboxed-html-preview", () => ({
-  SandboxedHtmlPreview: () => createElement("iframe"),
+  SandboxedHtmlPreview: ({ onMessage }: { onMessage?: (data: string) => void }) => {
+    host.message = onMessage;
+    return createElement("iframe");
+  },
 }));
 vi.mock("./api-server", () => ({}));
 vi.mock("./api-auth", () => ({}));
@@ -100,6 +120,38 @@ it("says a preview could not load instead of showing a blank card, and still ope
   host.runtimeFails = false;
   const shown = await card();
   expect(shown.container.textContent).not.toContain("couldn't load");
+  shown.unmount();
+});
+
+it("draws an HTML page whole in the chat instead of the compact preview", async () => {
+  host.runtimeFails = false;
+  host.detail = {
+    id: "page-1",
+    title: "Inline",
+    code: "<!DOCTYPE html><html><body><h1>x</h1></body></html>",
+    format: "html",
+    currentVersion: 1,
+  };
+  const shown = await card();
+  await act(async () => await new Promise((resolve) => setTimeout(resolve, 0)));
+  expect(shown.container.querySelector("iframe")).not.toBeNull();
+  expect(shown.container.textContent).toContain("Inline");
+
+  // After a tap it opens a web link the page asks for, and never another kind of link.
+  const ask = (url: string) =>
+    act(() => host.message?.(JSON.stringify({ type: "rakazo-page:open-link", url })));
+  const tap = () =>
+    act(() => {
+      const touch = { pageX: 10, pageY: 10, touches: [{}] };
+      host.touch.start?.({ nativeEvent: touch });
+      host.touch.end?.({ nativeEvent: { ...touch, touches: [] } });
+    });
+  await ask("https://example.com/a");
+  expect(host.opened).toEqual([]);
+  await tap();
+  await ask("tel:+15550100");
+  await ask("https://example.com/a");
+  expect(host.opened).toEqual(["https://example.com/a"]);
   shown.unmount();
 });
 

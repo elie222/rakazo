@@ -12,6 +12,7 @@ import { useMobileTokens, useResolvedAppearance } from "../../lib/native";
 import { usePageCardDetail } from "../../lib/page-card-detail";
 import { pageCardState, pageDocument, pagePreviewLayout } from "../../lib/pages";
 import { SandboxedHtmlPreview } from "../sandboxed-html-preview";
+import { InlineHtmlPage } from "./inline-html-page";
 
 type PageBlock = Extract<MessageBlock, { kind: "page" }>;
 
@@ -39,7 +40,9 @@ function PagePreview({
   useEffect(() => {
     if (!detail) return;
     let active = true;
-    void pageDocument(currentApiBase(), detail.code, theme, t`This page couldn't be shown.`)
+    void pageDocument(currentApiBase(), detail.code, theme, t`This page couldn't be shown.`, {
+      format: detail.format,
+    })
       .then((html) => {
         if (!active) return;
         setDocument(html);
@@ -108,6 +111,47 @@ export function PageCard({ block, messageId }: { block: PageBlock; messageId: st
   const state = pageCardState(block, detail);
   const updatedBelow = state.status === "ready" && pageCardSuperseded(newest, messageId, block);
   const deleted = state.status === "deleted";
+  const ready = state.status === "ready" ? state.detail : null;
+  // An HTML page draws whole where it was saved; a superseded one keeps the compact preview.
+  const inline = !deleted && !updatedBelow && ready?.format === "html";
+  const open = () => router.push({ pathname: "/page", params: { pageId: block.pageId } });
+  const footer = (
+    <>
+      <PageIcon colors={tokens} style={styles.icon} />
+      <View style={styles.footerText}>
+        <Text numberOfLines={1} style={[styles.title, { color: tokens.foreground }]}>
+          {state.title}
+        </Text>
+        <Text numberOfLines={1} style={[styles.kind, { color: tokens.mutedForeground }]}>
+          {deleted ? t`Deleted` : updatedBelow ? t`Updated below` : t`Page`}
+        </Text>
+      </View>
+    </>
+  );
+  const surface = {
+    backgroundColor: tokens.card,
+    borderColor: `${tokens.foreground}1F`,
+  };
+  if (inline && ready) {
+    // The page is interactive, so only its footer opens the full view; a Pressable around the
+    // whole card would take the touches its own controls need.
+    return (
+      <View testID="page-card" style={[styles.card, surface]}>
+        <InlineHtmlPage detail={ready} />
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={t`Open ${ph({ title: state.title })}`}
+          onPress={open}
+          style={({ pressed }) => [
+            styles.footer,
+            { borderTopColor: `${tokens.foreground}0A`, opacity: pressed ? 0.85 : 1 },
+          ]}
+        >
+          {footer}
+        </Pressable>
+      </View>
+    );
+  }
   return (
     <Pressable
       accessibilityRole="button"
@@ -115,34 +159,13 @@ export function PageCard({ block, messageId }: { block: PageBlock; messageId: st
       testID="page-card"
       onLayout={(event) => setWidth(event.nativeEvent.layout.width)}
       disabled={deleted}
-      onPress={() => router.push({ pathname: "/page", params: { pageId: block.pageId } })}
-      style={({ pressed }) => [
-        styles.card,
-        {
-          backgroundColor: tokens.card,
-          borderColor: `${tokens.foreground}1F`,
-          opacity: pressed ? 0.85 : 1,
-        },
-      ]}
+      onPress={open}
+      style={({ pressed }) => [styles.card, surface, { opacity: pressed ? 0.85 : 1 }]}
     >
       {deleted ? null : (
-        <PagePreview
-          detail={state.status === "ready" ? state.detail : null}
-          failed={state.status === "failed"}
-          width={width}
-        />
+        <PagePreview detail={ready} failed={state.status === "failed"} width={width} />
       )}
-      <View style={[styles.footer, { borderTopColor: `${tokens.foreground}0A` }]}>
-        <PageIcon colors={tokens} style={styles.icon} />
-        <View style={styles.footerText}>
-          <Text numberOfLines={1} style={[styles.title, { color: tokens.foreground }]}>
-            {state.title}
-          </Text>
-          <Text numberOfLines={1} style={[styles.kind, { color: tokens.mutedForeground }]}>
-            {deleted ? t`Deleted` : updatedBelow ? t`Updated below` : t`Page`}
-          </Text>
-        </View>
-      </View>
+      <View style={[styles.footer, { borderTopColor: `${tokens.foreground}0A` }]}>{footer}</View>
     </Pressable>
   );
 }

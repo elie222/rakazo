@@ -1,6 +1,12 @@
 import { useLingui } from "@lingui/react/macro";
-import type { MessageBlock } from "@rakazo/contracts";
-import { PAGE_RUNTIME_PATH, pageReply, pageReplyText, pageViewerDocument } from "@rakazo/core";
+import type { MessageBlock, PageFormat } from "@rakazo/contracts";
+import {
+  htmlPageViewerDocument,
+  PAGE_RUNTIME_PATH,
+  pageReply,
+  pageReplyText,
+  pageViewerDocument,
+} from "@rakazo/core";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   createContext,
@@ -59,11 +65,12 @@ async function fetchPageRuntime(): Promise<string> {
 }
 
 /**
- * A page's compiled code as the sandboxed viewer's document; null until the runtime has loaded.
- * `failed` says the runtime could not be fetched, and `retry` fetches it again.
+ * A page's source as the sandboxed viewer's document; null until a JSX page's runtime has loaded.
+ * `failed` says that runtime could not be fetched, and `retry` fetches it again. An HTML page
+ * needs no runtime, so its document is built straight from its code.
  */
 export function usePageDocument(
-  code: string | undefined,
+  page: { code: string; format?: PageFormat } | undefined,
   /** The app surface behind the page; a tablet sheet sits on the background. */
   on: "card" | "background" = "card",
   /** The chat's composer is beside the page, so its reply buttons can fill it. */
@@ -76,29 +83,51 @@ export function usePageDocument(
   // The surface follows the theme, so it is read again whenever the theme changes.
   const surface = useMemo(() => (theme ? readSurface(on) : ""), [theme, on]);
   const touch = useMedia("(pointer: coarse)");
+  const format = page?.format ?? "jsx";
   // Fetched again on every mount; the browser revalidates the server's no-cache runtime.
-  const runtime = useQuery({ queryKey: ["page-runtime"], queryFn: fetchPageRuntime });
+  const runtime = useQuery({
+    queryKey: ["page-runtime"],
+    queryFn: fetchPageRuntime,
+    enabled: format === "jsx",
+  });
   const errorTitle = t`This page couldn't be shown.`;
-  const viewerDocument = useMemo(
-    () =>
-      runtime.data === undefined || code === undefined
-        ? null
-        : pageViewerDocument({
-            runtime: runtime.data,
-            code,
-            theme,
-            errorTitle,
-            surface,
-            touch,
-            reply,
-            bottomInset,
-            lang: i18n.locale,
-          }),
-    [runtime.data, code, theme, errorTitle, surface, touch, reply, bottomInset, i18n.locale],
-  );
+  const viewerDocument = useMemo(() => {
+    if (page === undefined) return null;
+    if (format === "html") {
+      return htmlPageViewerDocument({ html: page.code, theme, lang: i18n.locale, bottomInset });
+    }
+    return runtime.data === undefined
+      ? null
+      : pageViewerDocument({
+          runtime: runtime.data,
+          code: page.code,
+          theme,
+          errorTitle,
+          surface,
+          touch,
+          reply,
+          bottomInset,
+          lang: i18n.locale,
+        });
+  }, [
+    page,
+    format,
+    runtime.data,
+    theme,
+    errorTitle,
+    surface,
+    touch,
+    reply,
+    bottomInset,
+    i18n.locale,
+  ]);
   const { refetch } = runtime;
   const retry = useCallback(() => void refetch(), [refetch]);
-  return { document: viewerDocument, failed: runtime.isError && runtime.data === undefined, retry };
+  return {
+    document: viewerDocument,
+    failed: format === "jsx" && runtime.isError && runtime.data === undefined,
+    retry,
+  };
 }
 
 type Dock = { node: HTMLElement | null; page: { id: string; title: string } | null };

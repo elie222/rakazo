@@ -58,7 +58,7 @@ export default function PageScreen() {
           page.code,
           theme,
           t`This page couldn't be shown.`,
-          { reply: pageChat(page) !== null },
+          { reply: pageChat(page) !== null, format: page.format },
         );
         if (!active) return;
         setLoaded({ status: "ready", page, document });

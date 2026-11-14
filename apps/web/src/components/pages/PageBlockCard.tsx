@@ -4,6 +4,7 @@ import type { PageBlock } from "../../lib/page-cards";
 import { useOpenPage, usePageDocument } from "../../lib/pages";
 import { useSpaceQueries } from "../../lib/query";
 import { errorCode } from "../../lib/user-error";
+import { InlineHtmlPage } from "./InlineHtmlPage";
 import { PageCard } from "./PageCard";
 
 /**
@@ -39,9 +40,21 @@ export function PageBlockCard({
     }
   }, [updated, currentVersion, block.version, block.pageId, queries, queryClient]);
   const shown = updated ? saved.data : current.data;
-  const viewer = usePageDocument(shown?.code);
+  const viewer = usePageDocument(shown);
   const deleted = errorCode(current.error) === "NOT_FOUND";
   const unread = shown === undefined && (updated ? saved.isError : current.isError);
+  // An HTML page draws whole in the chat where it was saved. A superseded card keeps the
+  // compact preview, so saving the same page repeatedly never copies its full body up the chat.
+  if (!updated && !deleted && shown?.format === "html") {
+    return (
+      <InlineHtmlPage
+        title={current.data?.title ?? block.title}
+        document={viewer.document}
+        failed={viewer.failed || unread}
+        onOpen={() => openPage(block.pageId)}
+      />
+    );
+  }
   return (
     <PageCard
       title={current.data?.title ?? block.title}

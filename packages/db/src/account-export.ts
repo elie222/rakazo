@@ -203,6 +203,9 @@ async function* spaceRecords(
         botId: ownBot(page.botId),
         groupId: ownGroup(page.groupId),
         title: page.title,
+        // Only HTML pages carry a format, so an archive of JSX pages stays readable by an
+        // older release that does not know the field.
+        ...(page.format === "html" ? { format: "html" as const } : {}),
         pinnedAt: isoOrNull(page.pinnedAt),
         currentVersion: page.currentVersion,
         createdAt: iso(page.createdAt),
@@ -217,7 +220,12 @@ async function* spaceRecords(
           select: { id: true, version: true, title: true, source: true, createdAt: true },
         });
         for (const row of versions)
-          yield { type: "page_version", ...row, pageId: page.id, createdAt: iso(row.createdAt) };
+          yield {
+            type: "page_version",
+            ...row,
+            pageId: page.id,
+            createdAt: iso(row.createdAt),
+          };
         if (versions.length < PAGE) break;
         version = versions.at(-1)!.version;
       }
