@@ -3,6 +3,7 @@ import { chatSnoozed, isRetryableError, reconnectDelayMs, retryDelayMs } from "@
 import type { RefObject } from "react";
 import { useCallback, useEffect, useRef } from "react";
 import {
+  browserNotificationTag,
   deliverBrowserNotification as deliverNativeBrowserNotification,
   shouldNotifyBrowser,
 } from "../../lib/browser-notifications";
@@ -245,13 +246,13 @@ export function useBrowserNotifications(
       if (snoozedOrdinaryReply(event, chatFor(pending))) return;
       if (typeof Notification === "undefined" || Notification.permission === "denied") return;
       if (Notification.permission === "default") {
-        pendingBrowserNotifications.current.set(event.threadId, pending);
+        pendingBrowserNotifications.current.set(browserNotificationTag(event), pending);
         return;
       }
       if (deliverBrowserNotification(pending)) {
-        pendingBrowserNotifications.current.delete(event.threadId);
+        pendingBrowserNotifications.current.delete(browserNotificationTag(event));
       } else {
-        pendingBrowserNotifications.current.set(event.threadId, pending);
+        pendingBrowserNotifications.current.set(browserNotificationTag(event), pending);
       }
     },
     [deliverBrowserNotification],
