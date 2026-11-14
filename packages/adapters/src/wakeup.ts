@@ -697,9 +697,11 @@ export class InMemoryJobQueue implements JobPublisher, JobWorkerHost {
     await this.enqueue(job);
   }
 
-  async cancelIn(_tx: JobTransaction, replaceKey: string): Promise<void> {
-    await this.cancel(replaceKey);
-  }
+  /**
+   * Not transactional either, so the job stays: it runs when due and finds nothing to do, and a
+   * transaction that rolls back never loses the backup it still needs.
+   */
+  async cancelIn(_tx: JobTransaction, _replaceKey: string): Promise<void> {}
 
   async cancel(replaceKey: string): Promise<void> {
     const closing = this.closingJobs.findIndex((job) => job.replaceKey === replaceKey);

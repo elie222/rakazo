@@ -231,6 +231,103 @@ describe("previewMessageText", () => {
     ).toBe("On my way");
   });
 
+  it.each(["pending", "answered"] as const)(
+    "previews a %s question before the server preview arrives",
+    (status) => {
+      const blocks: MessageBlock[] = [
+        { kind: "ask", text: "Which release?", status, detail: "Extra context", answer: "Stable" },
+      ];
+      expect(previewMessageText({ role: "bot", blocks }, labels)).toBe("Which release?");
+      expect(previewMessageText({ role: "bot", blocks }, labels)).toBe(
+        messageReplyPreview(blocks, "bot").text,
+      );
+    },
+  );
+
+  it.each([
+    "\n  Which release?  \nMore context",
+    "\r\n  Which release?  \r\nMore context",
+    "a".repeat(300),
+    `${"a".repeat(279)}😀more`,
+    `${" ".repeat(100_000)}Outside the preview limit`,
+  ])("matches the server preview for bounded question text: %j", (text) => {
+    const blocks: MessageBlock[] = [{ kind: "ask", text }];
+    expect(previewMessageText({ role: "bot", blocks }, labels)).toBe(
+      messageReplyPreview(blocks, "bot").text || labels.message,
+    );
+  });
+
+  it("does not expose delivery questions in local reply previews", () => {
+    const blocks: MessageBlock[] = [{ kind: "delivery" }, { kind: "ask", text: "Hidden question" }];
+    expect(previewMessageText({ role: "bot", blocks }, labels)).toBe(labels.message);
+    expect(messageReplyPreview(blocks, "bot").text).toBe("");
+  });
+
+  it("keeps channel text ahead of ordinary questions after sending", () => {
+    const blocks: MessageBlock[] = [
+      { kind: "ask", text: "Which release?" },
+      {
+        kind: "channel_message",
+        provider: "test",
+        channelId: "channel",
+        fromAddress: "sender",
+        fromLabel: "Sender",
+        text: "Channel context",
+      },
+    ];
+    expect(previewMessageText({ role: "bot", blocks }, labels)).toBe("Channel context");
+    expect(messageReplyPreview(blocks, "bot").text).toBe("Channel context");
+    expect(
+      messageReplyPreview([...blocks, { kind: "text", text: "Primary context" }], "bot").text,
+    ).toBe("Primary context");
+  });
+
+  it("keeps mixed-card question previews stable after sending", () => {
+    const blocks: MessageBlock[] = [
+      { kind: "choice", question: "Pick a channel", options: [] },
+      { kind: "ask", text: "Which release?" },
+    ];
+    expect(previewMessageText({ role: "bot", blocks }, labels)).toBe("Which release?");
+    expect(messageReplyPreview(blocks, "bot").text).toBe("Which release?");
+  });
+
+  it("keeps text ahead of questions and questions ahead of attachments", () => {
+    const ask: MessageBlock = { kind: "ask", text: "Which release?" };
+    expect(
+      previewMessageText(
+        { role: "bot", blocks: [ask, { kind: "text", text: "**Context**" }] },
+        labels,
+      ),
+    ).toBe("Context");
+    expect(previewMessageText({ role: "bot", blocks: [image, ask] }, labels)).toBe(
+      "Which release?",
+    );
+    expect(
+      previewMessageText(
+        {
+          role: "bot",
+          blocks: [
+            { kind: "ask", text: "  " },
+            { kind: "ask", text: " Use **stable**? " },
+          ],
+        },
+        labels,
+      ),
+    ).toBe("Use **stable**?");
+  });
+
+  it.each([
+    { kind: "ask", text: "Secret request", input: "secret" },
+    { kind: "ask", text: "Approval", approvalEffectId: "approval" },
+    {
+      kind: "ask",
+      text: "Instructions",
+      instructionUpdate: { botId: "bot", before: "", after: "New", reason: "Update" },
+    },
+  ] satisfies MessageBlock[])("does not expand protected-card previews: %j", (block) => {
+    expect(previewMessageText({ role: "bot", blocks: [block] }, labels)).toBe("Message");
+  });
+
   it("falls back to attachment labels, then a generic label", () => {
     const image = { kind: "image", artifactId: "a", mimeType: "image/png", name: "a.png" } as const;
     const file = { kind: "file", artifactId: "f", mimeType: "application/pdf", size: 1 } as const;

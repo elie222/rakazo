@@ -38,7 +38,7 @@ import {
 } from "./session";
 import { authResponseErrorText, sessionSaveErrorText } from "./user-error";
 
-async function postAuth(path: string, input: Record<string, string>, apiBase = currentApiBase()) {
+async function postAuth(path: string, input: object, apiBase = currentApiBase()) {
   return fetchMobileJson<unknown>(
     `${apiBase}/api/auth/${path}`,
     {
@@ -59,7 +59,7 @@ async function postAuth(path: string, input: Record<string, string>, apiBase = c
 }
 async function authenticate(
   path: string,
-  input: Record<string, string>,
+  input: object,
   missingSession: string,
 ): Promise<{ verificationRequired: boolean }> {
   const apiBase = currentApiBase();

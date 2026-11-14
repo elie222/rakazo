@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import type { ReactElement } from "react";
-import { act } from "react";
+import { act, useLayoutEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -134,6 +134,154 @@ describe("controls", () => {
     expect(writeText).not.toHaveBeenCalled();
     vi.unstubAllGlobals();
     vi.useRealTimers();
+  });
+
+  it.each([true, false])("ignores an older copy result after a newer result (%s)", async (ok) => {
+    const view = render(<CopyButton label="Copy" text="value" />);
+    click(q("button"));
+    click(q("button"));
+    const requests = posted as { id: string }[];
+    await act(async () => {
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          data: { type: "rakazo-page:copied", id: requests[1]!.id, ok },
+        }),
+      );
+    });
+    await act(async () => {
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          data: { type: "rakazo-page:copied", id: requests[0]!.id, ok: !ok },
+        }),
+      );
+    });
+    expect(q("button")!.textContent).toBe(ok ? "Copied" : "Copy");
+    expect(q(".rk-copy-fallback")?.textContent ?? null).toBe(ok ? null : "value");
+    view.unmount();
+  });
+
+  it.each([true, false])("ignores a pending copy after its content changes (%s)", async (ok) => {
+    const view = render(<CopyButton label="Copy" text="old" />);
+    click(q("button"));
+    const request = posted[0] as { id: string };
+    view.rerender(<CopyButton label="Copy" text="new" />);
+    await act(async () => {
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          data: { type: "rakazo-page:copied", id: request.id, ok },
+        }),
+      );
+    });
+    expect(q("button")!.textContent).toBe("Copy");
+    expect(q(".rk-copy-fallback")).toBeNull();
+    view.unmount();
+  });
+
+  it.each([true, false])(
+    "clears settled copy feedback when its content changes (%s)",
+    async (ok) => {
+      const view = render(<CopyButton label="Copy" text="old" />);
+      click(q("button"));
+      const request = posted[0] as { id: string };
+      await act(async () => {
+        window.dispatchEvent(
+          new MessageEvent("message", {
+            data: { type: "rakazo-page:copied", id: request.id, ok },
+          }),
+        );
+      });
+      view.rerender(<CopyButton label="Copy" text="new" />);
+      expect(q("button")!.textContent).toBe("Copy");
+      expect(q(".rk-copy-fallback")).toBeNull();
+      view.unmount();
+    },
+  );
+
+  it.each([true, false])("never commits old feedback for changed text (%s)", async (ok) => {
+    const committed: { button: string | null; fallback: string | null }[] = [];
+    function Probe({ value }: { value: string }) {
+      useLayoutEffect(() => {
+        committed.push({
+          button: q("button")?.textContent ?? null,
+          fallback: q(".rk-copy-fallback")?.textContent ?? null,
+        });
+      }, [value]);
+      return <CopyButton label="Copy" text={value} />;
+    }
+    const view = render(<Probe value="old" />);
+    click(q("button"));
+    const request = posted[0] as { id: string };
+    await act(async () => {
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          data: { type: "rakazo-page:copied", id: request.id, ok },
+        }),
+      );
+    });
+    view.rerender(<Probe value="new" />);
+    expect(committed[1]).toEqual({ button: "Copy", fallback: null });
+    view.unmount();
+  });
+
+  it("ignores an older response while the newest copy is still pending", async () => {
+    const view = render(<CopyButton label="Copy" text="value" />);
+    click(q("button"));
+    click(q("button"));
+    const requests = posted as { id: string }[];
+    await act(async () => {
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          data: { type: "rakazo-page:copied", id: requests[0]!.id, ok: false },
+        }),
+      );
+    });
+    expect(q("button")!.textContent).toBe("Copy");
+    expect(q(".rk-copy-fallback")).toBeNull();
+    await act(async () => {
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          data: { type: "rakazo-page:copied", id: requests[1]!.id, ok: true },
+        }),
+      );
+    });
+    expect(q("button")!.textContent).toBe("Copied");
+    view.unmount();
+  });
+
+  it("ignores an older timeout and gives a repeated success its own confirmation interval", async () => {
+    vi.useFakeTimers();
+    const view = render(<CopyButton label="Copy" text="value" />);
+    try {
+      click(q("button"));
+      await act(async () => vi.advanceTimersByTime(1000));
+      click(q("button"));
+      const requests = posted as { id: string }[];
+      await act(async () => {
+        window.dispatchEvent(
+          new MessageEvent("message", {
+            data: { type: "rakazo-page:copied", id: requests[1]!.id, ok: true },
+          }),
+        );
+      });
+      await act(async () => vi.advanceTimersByTime(1100));
+      expect(q("button")!.textContent).toBe("Copied");
+      expect(q(".rk-copy-fallback")).toBeNull();
+      click(q("button"));
+      await act(async () => {
+        window.dispatchEvent(
+          new MessageEvent("message", {
+            data: { type: "rakazo-page:copied", id: requests[2]!.id, ok: true },
+          }),
+        );
+      });
+      await act(async () => vi.advanceTimersByTime(1599));
+      expect(q("button")!.textContent).toBe("Copied");
+      await act(async () => vi.advanceTimersByTime(1));
+      expect(q("button")!.textContent).toBe("Copy");
+    } finally {
+      view.unmount();
+      vi.useRealTimers();
+    }
   });
 
   it("asks the host to open web and mail links and leaves other addresses as text", () => {

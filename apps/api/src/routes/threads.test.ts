@@ -1,13 +1,14 @@
+import { ORPCError } from "@orpc/server";
 import type { Actor } from "@rakazo/contracts";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { releaseComputerControl } from "../computer-control.js";
+import { answerComputerRequest } from "../computer-control.js";
 import type { RouterDeps } from "../router.js";
 import { purgeClearedThreadMemory } from "../thread-memory.js";
 import type { ThreadTarget } from "../thread-target.js";
 import { takeoverReleaser } from "./threads.js";
 
 vi.mock("../computer-control.js", () => ({
-  releaseComputerControl: vi.fn().mockResolvedValue(undefined),
+  answerComputerRequest: vi.fn().mockResolvedValue(null),
 }));
 
 const actor = { spaceId: "space-1", userId: "user-1" } as Actor;
@@ -18,13 +19,13 @@ describe("takeoverReleaser", () => {
 
   beforeEach(() => {
     findUnique.mockReset();
-    vi.mocked(releaseComputerControl).mockClear();
+    vi.mocked(answerComputerRequest).mockClear();
   });
 
   it("hands the screen back to the bot of a direct chat", async () => {
     const target = { kind: "bot", botId: "bot-1" } as ThreadTarget;
     await takeoverReleaser(deps, actor, target)("run-1");
-    expect(releaseComputerControl).toHaveBeenCalledWith(deps, actor, "bot-1", "done", "run-1");
+    expect(answerComputerRequest).toHaveBeenCalledWith(deps, actor, "bot-1", "done", "run-1");
     expect(findUnique).not.toHaveBeenCalled();
   });
 
@@ -36,14 +37,20 @@ describe("takeoverReleaser", () => {
       where: { id: "run-2", spaceId: "space-1" },
       select: { botId: true },
     });
-    expect(releaseComputerControl).toHaveBeenCalledWith(deps, actor, "bot-2", "done", "run-2");
+    expect(answerComputerRequest).toHaveBeenCalledWith(deps, actor, "bot-2", "done", "run-2");
+  });
+
+  it("still steers when the bot waits for someone else", async () => {
+    vi.mocked(answerComputerRequest).mockRejectedValueOnce(new ORPCError("CONFLICT"));
+    const target = { kind: "bot", botId: "bot-1" } as ThreadTarget;
+    await expect(takeoverReleaser(deps, actor, target)("run-1")).resolves.toBeUndefined();
   });
 
   it("releases nothing when the run is gone", async () => {
     findUnique.mockResolvedValue(null);
     const target = { kind: "group", memberBotIds: ["bot-1"] } as ThreadTarget;
     await takeoverReleaser(deps, actor, target)("run-3");
-    expect(releaseComputerControl).not.toHaveBeenCalled();
+    expect(answerComputerRequest).not.toHaveBeenCalled();
   });
 });
 

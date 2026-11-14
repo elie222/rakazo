@@ -8,7 +8,7 @@ import {
   RunHistoryWriteError,
 } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
-import { PARTIAL_REPLY_NOTE } from "./automated-messages.js";
+import { PARTIAL_REPLY_NOTE } from "./automated-messages.prompt.js";
 import { loadBotMessageContext, returnBotMessageOutcome } from "./bot-messages.js";
 import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
 import { createRunExecutor } from "./executor.js";
@@ -16,7 +16,10 @@ import { createJobReconciler } from "./job-reconciler.js";
 import type * as ModelVisionModule from "./model-vision.js";
 import type * as RunNotificationsModule from "./run-notifications.js";
 import { notifyRun } from "./run-notifications.js";
-import { GROUP_UNADDRESSED_REPLY_GUIDANCE, messagesModeReplyGuidance } from "./run-replies.js";
+import {
+  GROUP_UNADDRESSED_REPLY_GUIDANCE,
+  messagesModeReplyGuidance,
+} from "./run-replies.prompt.js";
 import { PEER_NOTHING_NEW_REPLY } from "./silent-reply.js";
 import { MID_TURN_PROGRESS_MIN_TURN_AGE_MS, userProgressClientNonce } from "./user-progress.js";
 
@@ -695,7 +698,16 @@ describe("notes that can't be posted as messages", () => {
     expect(finalText(finalizeRun)).toBe("Saved.");
     expect(finalizeRun.mock.calls[0]![0].blocks).toContainEqual({
       kind: "steps",
-      steps: [{ label: "Save event", count: 1, note: "The meeting is with Anna." }],
+      steps: [
+        {
+          label: "Save event",
+          tool: "save_event",
+          count: 1,
+          note: "The meeting is with Anna.",
+          // What the call was made with, for a later turn to replay.
+          calls: [{ arguments: "{}" }],
+        },
+      ],
     });
   });
 

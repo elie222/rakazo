@@ -81,7 +81,7 @@ export function PluginLogo({
     <div
       className={`${box} grid shrink-0 place-items-center border border-border/60 bg-favicon-plate font-semibold text-foreground`}
     >
-      {name[0]?.toUpperCase()}
+      {Array.from(name)[0]?.toUpperCase()}
     </div>
   );
 }

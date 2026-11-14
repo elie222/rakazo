@@ -11,8 +11,9 @@ const CURRENCY_MARKS: Array<[RegExp, SpendingCurrency]> = [
   [/£|\bGBP\b/i, "gbp"],
   [/₪|\b(?:ILS|NIS)\b|ש["״]ח/i, "ils"],
 ];
-// The page browser's own number pattern: thousands may be grouped with spaces, as in "1 234,56".
-const NUMBER = /\d(?:[\d.,]|[ \u00a0\u202f](?=\d{3}))*/g;
+// The page browser's own number pattern: thousands may be grouped with spaces, as in "1 234,56", and
+// separators before the first digit are kept, so ".99" is not read as 99.
+const NUMBER = /[.,]*\d(?:[\d.,]|[ \u00a0\u202f](?=\d{3}))*/g;
 // The payments table stores amounts as a 32-bit integer.
 const MAX_AMOUNT = 2_147_483_647;
 
@@ -25,6 +26,7 @@ const MAX_AMOUNT = 2_147_483_647;
 export function parsePageAmount(
   text: string,
 ): { amount: number; currency: SpendingCurrency } | null {
+  if (text.length > 1000) return null;
   const currencies = new Set(
     CURRENCY_MARKS.filter(([mark]) => mark.test(text)).map(([, currency]) => currency),
   );
@@ -37,9 +39,10 @@ export function parsePageAmount(
 }
 
 // Whole units grouped in threes by one separator ("1,234,567", "1 234"), then an optional decimal part of
-// one or two digits after the other separator ("1.234,56"); or plain digits with an optional decimal part.
+// one or two digits after the other separator ("1.234,56"); or plain digits with an optional decimal part,
+// where the whole part may be left out (".99", ",50").
 const GROUPED = /^(\d{1,3}(?:([.,\s])\d{3})(?:\2\d{3})*)(?:([.,])(\d{1,2}))?$/;
-const PLAIN = /^(\d+)(?:[.,](\d{1,2}))?$/;
+const PLAIN = /^(?=[.,]?\d)(\d*)(?:[.,](\d{1,2}))?$/;
 
 function minorUnits(number: string): number | null {
   const text = number.replace(/[  ]/g, " ").trim().replace(/[.,]$/, "");
@@ -90,10 +93,12 @@ export function spendingPeriodStart(
 /** An amount in minor units as money, such as "$12.50". */
 export function formatMinorAmount(amount: number, currency: string, locale = "en-US"): string {
   try {
-    return new Intl.NumberFormat(locale, {
+    const formatter = new Intl.NumberFormat(locale, {
       style: "currency",
       currency: currency.toUpperCase(),
-    }).format(amount / 100);
+    });
+    const digits = formatter.resolvedOptions().maximumFractionDigits ?? 2;
+    return formatter.format(amount / 10 ** digits);
   } catch {
     return `${(amount / 100).toFixed(2)} ${currency.toUpperCase()}`;
   }

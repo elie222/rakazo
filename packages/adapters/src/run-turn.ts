@@ -25,7 +25,12 @@ import {
   userRunError,
   withoutLastToolStepNotes,
 } from "@rakazo/core";
-import { RunHistoryWriteError, recordUsage } from "@rakazo/db";
+import {
+  isDatabaseUnavailable,
+  RunHistoryWriteError,
+  recordUsage,
+  retryWhileDatabaseUnavailable,
+} from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { sanitizedError } from "@rakazo/logging/monitoring";
 import { MAX_APPROVAL_DETAIL_LENGTH, truncate } from "./approval-ask.js";
@@ -50,7 +55,13 @@ import {
 } from "./routine-backoff.js";
 import type { RunContext, RunState } from "./run-context.js";
 import { persistTurnCheckpoint } from "./run-context.js";
-import { enqueueSteeringContinuation, renewRunLease, requeueComputerRun } from "./run-lifecycle.js";
+import {
+  computerRetryDelay,
+  enqueueSteeringContinuation,
+  renewRunLease,
+  requeueComputerRun,
+  requeueInterruptedRun,
+} from "./run-lifecycle.js";
 import { publishMessage, redactBlocks } from "./run-messages.js";
 import {
   completionMarksUnread,
@@ -81,7 +92,7 @@ import {
   runAllowsSilentEmpty,
   runPromotesMidTurnNarration,
   TOOL_STEPS_WITHOUT_RESPONSE,
-} from "./run-replies.js";
+} from "./run-replies.prompt.js";
 import { scheduleRoutineRetry } from "./run-routines.js";
 import { applyTool } from "./run-tools.js";
 import { withRuntimeCleanup } from "./runtime-stream.js";
@@ -110,6 +121,11 @@ import {
   toolResultFingerprint,
 } from "./tool-loop.js";
 import type { ToolRefusal } from "./tool-refusal.js";
+import {
+  keepToolStepResult,
+  keptToolArguments,
+  saveLatestStepScreenshot,
+} from "./tool-step-calls.js";
 import {
   assistantTurnSeparator,
   botMessageOutcomeFromMidTurn,
@@ -494,7 +510,6 @@ async function pauseForTakeover(ctx: RunContext, event: RuntimeEvent<"takeover">
     leaseOwner: workerId,
     leaseFence: fence,
     reason: safeReason,
-    computerId: ctx.computer.stored.id,
   });
   if (!paused) return;
   if (typeof paused === "object") {
@@ -524,10 +539,21 @@ async function onToolCalled(ctx: RunContext, event: RuntimeEvent<"tool">): Promi
   const stepNames = connectorStepNames(ctx.tools.connector.get(event.name), event.args);
   const callSteps = stepNames.length > 0 ? stepNames : [event.name];
   reply.pendingToolNames.push(...callSteps);
+  // A call that shows as its own step keeps what it was called with, for later turns to replay.
+  const ownStep = callSteps.length === 1 && callSteps[0] === event.name;
+  const early = reply.earlyCompletions?.get(event.executionId);
+  reply.earlyCompletions?.delete(event.executionId);
+  if (ownStep) {
+    reply.toolStepCalls.set(event.executionId, {
+      arguments: keptToolArguments(event.args, ctx.secrets),
+    });
+    if (early) keepToolStepResult(reply, early, ctx.secrets);
+  }
   reply.toolCalls.push(
     ...callSteps.map((name) => ({
       label: humanizeToolName(name),
       executionId: event.executionId,
+      ...(ownStep ? { tool: event.name } : {}),
     })),
   );
   // Text before ask_user stays pending: the run pauses next, and the question needs it.
@@ -597,6 +623,7 @@ async function onToolCalled(ctx: RunContext, event: RuntimeEvent<"tool">): Promi
     );
     const outcome = toolCompletionOutcome(completion);
     if (outcome) reply.toolOutcomes.set(event.executionId, outcome);
+    keepToolStepResult(reply, completion, ctx.secrets);
     await appendToolCompletionAudit(deps, audit, completion, ctx.secrets);
     return isToolPauseResult(result);
   } catch (error) {
@@ -625,6 +652,7 @@ async function stopStuckToolLoop(ctx: RunContext, toolName: string, refusal?: To
   ctx.runtimeAbortController.abort();
   ctx.tools.approvedReplays.assertDrained();
   flushPendingTools(reply);
+  await saveLatestStepScreenshot(ctx);
   // Calls that had not finished when the loop was stopped never ran to the end.
   reply.messageSegments = withReplyToolOutcomes(reply, "stopped");
   if (!(await renewRunLease(deps, runId, workerId, fence))) return;
@@ -877,6 +905,7 @@ export async function completeRun(ctx: RunContext) {
     reply.currentTextSegment = reply.assembled;
   }
   flushPendingTools(reply);
+  await saveLatestStepScreenshot(ctx);
   reply.messageSegments = withReplyToolOutcomes(reply);
   // Silent-allowed runs can choose an explicit NO_RESPONSE or finish empty.
   // Other runs still drop a stray sentinel at the edges of a real reply.
@@ -1054,6 +1083,28 @@ function runFailureFingerprint(provider: string, message: string): string[] {
 function requestDetails(error: unknown): { "error.details"?: string } {
   const rejected = rejectedRequestsOf(error);
   return rejected ? { "error.details": JSON.stringify({ providerRequests: rejected }) } : {};
+}
+
+/**
+ * The database went away mid-turn, which is no fault of the turn. Once the database answers
+ * again, hand the run back as a stopping worker does, keeping its turn on the computer; it
+ * starts again here and resumes. Its fence spaces out repeats, so a database that is only
+ * saturated is not hammered. An outage longer than the wait leaves the run to lease expiry.
+ */
+export async function requeueRunAfterDatabaseOutage(ctx: RunContext): Promise<void> {
+  const { deps, runId, workerId, fence } = ctx;
+  if (!ctx.state.terminalCheckpointComplete) {
+    await ctx.computer.checkpoint.flush().catch(() => undefined);
+  }
+  const wakeAt = new Date(Date.now() + computerRetryDelay(fence));
+  try {
+    ctx.state.lease.handedBack = await retryWhileDatabaseUnavailable(
+      () => requeueInterruptedRun(deps, runId, workerId, fence, wakeAt),
+      { source: "run requeue", signal: deps.shutdownSignal },
+    );
+  } catch (error) {
+    if (!isDatabaseUnavailable(error)) throw error;
+  }
 }
 
 /** The turn failed: keep the reply streamed so far, record the error, and retry or notify. */
