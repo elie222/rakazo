@@ -115,7 +115,7 @@ export const yourComputer: Sandbox = {
         "With Let bots use this computer, a bot can reach your computer only in your own chats with your own bots. Routines, webhooks, chat-app channels and other people's messages can't use it.",
         "With Let bots use this computer, commands, their output and screenshots pass through the Rakazo server you're connected to. Your files stay on your computer unless a bot reads them.",
         "Screen control works on Mac and Windows. On a Mac it needs Accessibility and Screen Recording permission in System Settings. On Linux, bots can run commands but not control the screen.",
-        "Use this Mac has no screen control, and bots use it without asking, including in routines. Don't choose it for a server other people use.",
+        "With Use this Mac, bots run commands without asking, including in routines. Using apps on screen still asks per app, and only in your own chats. Don't choose it for a server other people use.",
         "The desktop app has to stay open for bots to reach your computer.",
       ],
     },

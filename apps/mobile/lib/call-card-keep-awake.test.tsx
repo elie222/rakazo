@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CallCard } from "../components/CallCard";
 import { rpc } from "./api";
 import type { CallDeps } from "./call-session";
-import { endCall, startCall } from "./call-session";
+import { endCall, startCall, toggleTranscript, useCallActive } from "./call-session";
 import { hapticImpact } from "./haptics";
 
 vi.mock("./haptics", () => ({
@@ -120,11 +120,15 @@ vi.mock("./native", () => ({ useMobileTokens: () => ({}) }));
 vi.mock("../components/bot-avatar", () => ({ BotAvatar: () => null }));
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
 vi.mock("expo-file-system", () => ({ File: class {} }));
+const idlePlayback = vi.hoisted(() => ({ status: "idle" }));
 vi.mock("./voice", () => ({
+  subscribeVoicePlayback: () => () => undefined,
+  getVoicePlaybackState: () => idlePlayback,
   createSpeechOwner: () => Symbol("SpeechOwner"),
   speakText: vi.fn(),
   stopSpeaking: vi.fn(),
-  setVoiceBackgroundPlayback: vi.fn(),
+  setCallAudio: vi.fn(async () => undefined),
+  setDictationAudio: vi.fn(async () => undefined),
 }));
 vi.mock("./dictation", () => ({ available: vi.fn(), listen: vi.fn() }));
 vi.mock("./call-sounds", () => ({
@@ -146,6 +150,7 @@ const deps: CallDeps = {
   speak: async () => undefined,
   watch: () => vi.fn(),
   stopSpeaking: vi.fn(),
+  audio: async () => undefined,
   cue: async () => undefined,
   waitSound: vi.fn(),
 };
@@ -183,6 +188,26 @@ describe("CallCard background lifetime", () => {
     container.remove();
     activeTags.clear();
     vi.unstubAllGlobals();
+  });
+
+  it("only rerenders call-presence subscribers when a call starts or ends", async () => {
+    const render = vi.fn();
+    function CallPresence() {
+      const active = useCallActive();
+      render(active);
+      return null;
+    }
+    act(() => root.render(<CallPresence />));
+    expect(render).toHaveBeenLastCalledWith(false);
+    await act(async () => {
+      startCall({ botId: "bot-1", botName: "Ada" }, deps);
+    });
+    expect(render).toHaveBeenLastCalledWith(true);
+    render.mockClear();
+    act(() => toggleTranscript());
+    expect(render).not.toHaveBeenCalled();
+    act(() => endCall());
+    expect(render).toHaveBeenCalledExactlyOnceWith(false);
   });
 
   it("uses explicit hang-up feedback only when the Hang up button is pressed", async () => {

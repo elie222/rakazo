@@ -99,6 +99,17 @@ export class HostComputerSandbox implements SandboxProvider {
       reader.releaseLock();
     }
   }
+  /** One request outside a computer's lifecycle, such as screen control of this computer. */
+  stream<T>(input: HostComputerRequest, signal: AbortSignal): AsyncIterable<T> {
+    return this.request<T>(input, {
+      operationId: "host-computer",
+      traceId: "host-computer",
+      spaceId: "local",
+      userId: "local",
+      runId: input.runId,
+      signal,
+    });
+  }
   private async one<T>(input: HostComputerRequest, context: AdapterContext): Promise<T> {
     let result: T | undefined;
     for await (const value of this.request<T>(input, context)) result = value;

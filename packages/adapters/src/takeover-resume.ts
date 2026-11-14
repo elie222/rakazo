@@ -1,3 +1,5 @@
+import { takeoverResumeFromRelease } from "./takeover-resume.prompt.js";
+
 export type TakeoverResumeCheckpoint = "takeover" | "takeover-skipped";
 
 export const TAKEOVER_RESUME_CHECKPOINTS: readonly TakeoverResumeCheckpoint[] = [
@@ -5,32 +7,10 @@ export const TAKEOVER_RESUME_CHECKPOINTS: readonly TakeoverResumeCheckpoint[] = 
   "takeover-skipped",
 ];
 
-/** Shown when desktop tools are gated because the user still holds the screen. */
-export const DESKTOP_HELD_FOR_TAKEOVER_MESSAGE =
-  "The user has the screen. File and shell tools still work.";
-
 export function takeoverCheckpointOf(
   checkpoint: string | null | undefined,
 ): TakeoverResumeCheckpoint | null {
   return checkpoint === "takeover" || checkpoint === "takeover-skipped" ? checkpoint : null;
-}
-
-export function takeoverResumeFromRelease(reason: unknown): {
-  checkpoint: TakeoverResumeCheckpoint;
-  promptNote: string;
-} {
-  if (reason === "skipped" || reason === "expired") {
-    return {
-      checkpoint: "takeover-skipped",
-      promptNote:
-        "The takeover ended without the user completing it. Continue without assuming that step was done. Do not request takeover again for this same step unless you still cannot proceed.",
-    };
-  }
-  return {
-    checkpoint: "takeover",
-    promptNote:
-      "The user handed the computer back. Continue using the current screen state. Do not request takeover again for this same step.",
-  };
 }
 
 export type TakeoverContinuePlan = {

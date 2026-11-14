@@ -9,6 +9,7 @@ import type { PrismaClient } from "@rakazo/db";
 import { asSystem, billingAccountForOrganization, createDb } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createBillingService } from "./billing.js";
+import { watchCheckoutLeaseClaims } from "./checkout-lease.test-support.js";
 
 const dbTests = process.env.VERIFY_DATABASE && process.env.DATABASE_URL ? describe : describe.skip;
 
@@ -77,7 +78,7 @@ dbTests("billing checkout coordination", () => {
       prisma.user.findUnique({ where: { id: userId } }),
     );
     const service = createBillingService({ prisma, provider, webOrigin: "https://example.test" });
-    await service.purchaseCredits(actor, { amountCents: 1000, monthly: true });
+    await service.purchaseCredits(actor, { amountCents: 2000, monthly: true });
     const results = await Promise.all(
       [1000, 2500, 5000].map((amountCents) =>
         service.purchaseCredits(actor, { amountCents, monthly: true }),
@@ -239,13 +240,13 @@ dbTests("checkout and organization deletion", () => {
       name: "monthly credit",
       modelCredits: true,
       open: (service: ReturnType<typeof createBillingService>, actor: Actor) =>
-        service.purchaseCredits(actor, { amountCents: 1000, monthly: true }),
+        service.purchaseCredits(actor, { amountCents: 2000, monthly: true }),
     },
     {
       name: "one-time credit",
       modelCredits: true,
       open: (service: ReturnType<typeof createBillingService>, actor: Actor) =>
-        service.purchaseCredits(actor, { amountCents: 1000, monthly: false }),
+        service.purchaseCredits(actor, { amountCents: 2000, monthly: false }),
     },
   ] as const;
 
@@ -272,17 +273,19 @@ dbTests("checkout and organization deletion", () => {
   it("expires a checkout that was still opening when the cancellation ran", async () => {
     const { organizationId, actor } = await organizationFor("cancel");
     const provider = new GatedCheckoutEmulator(`deletion-cancel-${stamp}`, false);
-    const service = createBillingService({ prisma, provider, webOrigin: "https://example.test" });
+    const watched = watchCheckoutLeaseClaims(prisma);
+    const service = createBillingService({
+      prisma: watched.prisma,
+      provider,
+      webOrigin: "https://example.test",
+    });
     provider.releaseCustomer(); // This test gates the checkout call, not the customer create.
     const pending = service.checkout(actor);
     await provider.providerCallStarted;
     const canceling = service.cancelForDeletedOrganization(organizationId);
     // A cancellation that does not wait runs here, before the session exists; one that waits
-    // for the checkout's lease cannot have run yet, because the checkout holds the lease.
-    await Promise.race([
-      provider.cancellationRan,
-      new Promise((resolve) => setTimeout(resolve, 700)),
-    ]);
+    // finds the checkout holding the lease and queues behind it.
+    await Promise.race([provider.cancellationRan, watched.leaseRefused]);
     provider.releaseCheckout();
     await expect(pending).resolves.toMatchObject({ url: expect.any(String) });
     await canceling;

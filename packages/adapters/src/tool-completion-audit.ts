@@ -5,6 +5,8 @@ import { RunHistoryWriteError } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { isToolPauseResult } from "./approval-effect.js";
 import { sanitizeConnectorError } from "./connector-safety.js";
+import type { ToolRefusal } from "./tool-refusal.js";
+import { refusalCode } from "./tool-refusal.js";
 import { isFailedToolResult, toolResultError } from "./tool-result-error.js";
 
 function isAuditableToolResult(value: unknown): value is {
@@ -135,4 +137,71 @@ export async function appendToolCompletionAudit(
       executionId: redactSecrets(completion.executionId, secrets),
     });
   }
+}
+
+type RunLogTarget = {
+  spaceId: string;
+  threadId: string;
+  botId: string;
+  runId: string;
+  trigger: string;
+};
+
+const runLogFields = (target: RunLogTarget) => ({
+  "run.id": target.runId,
+  "space.id": target.spaceId,
+  "thread.id": target.threadId,
+  "bot.id": target.botId,
+  "run.trigger": target.trigger,
+});
+
+/**
+ * Logs a call turned away before its tool ran, and returns what was logged. Only the code is
+ * logged: the sentence the model reads can name bots, arguments or sites. A refusal without a
+ * code, such as a connector's own error, logs nothing here.
+ */
+export function logToolRefusal(
+  target: RunLogTarget,
+  tool: string,
+  refused: unknown,
+  secrets: string[] = [],
+  resolvedTool?: string,
+): ToolRefusal | undefined {
+  const code = refusalCode(refused);
+  if (!code) return undefined;
+  const logged: ToolRefusal = {
+    code,
+    ...(resolvedTool ? { target: redactSecrets(resolvedTool, secrets) } : {}),
+  };
+  getLogger().info("agent.tool.refused", {
+    ...runLogFields(target),
+    tool: redactSecrets(tool, secrets),
+    ...(logged.target ? { "tool.target": logged.target } : {}),
+    "tool.refusal": code,
+  });
+  return logged;
+}
+
+/** Logs a run stopped for repeating a call, with the code of the refusal it kept getting, if any. */
+export function logLoopGuardStop(
+  target: RunLogTarget,
+  stop: {
+    tool: string;
+    reason: "repeated_calls" | "over_limit_actions";
+    count: number;
+    /** How many of the repeated calls in a row came back failed. */
+    failures: number;
+    refusal?: ToolRefusal;
+  },
+  secrets: string[] = [],
+): void {
+  getLogger().info("run.loop_guard_stopped", {
+    ...runLogFields(target),
+    tool: redactSecrets(stop.tool, secrets),
+    "loop.reason": stop.reason,
+    "loop.count": stop.count,
+    "loop.failures": stop.failures,
+    ...(stop.refusal?.target ? { "tool.target": stop.refusal.target } : {}),
+    ...(stop.refusal ? { "tool.refusal": stop.refusal.code } : {}),
+  });
 }

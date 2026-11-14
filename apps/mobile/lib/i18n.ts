@@ -3,10 +3,16 @@ import { i18n } from "@lingui/core";
 import { messages as de } from "@rakazo/i18n/locales/de/messages.po";
 import { messages as en } from "@rakazo/i18n/locales/en/messages.po";
 import { messages as es } from "@rakazo/i18n/locales/es/messages.po";
+import { messages as fr } from "@rakazo/i18n/locales/fr/messages.po";
+import { messages as he } from "@rakazo/i18n/locales/he/messages.po";
+import { messages as hi } from "@rakazo/i18n/locales/hi/messages.po";
 import { messages as ja } from "@rakazo/i18n/locales/ja/messages.po";
+import { messages as ko } from "@rakazo/i18n/locales/ko/messages.po";
 import { messages as nl } from "@rakazo/i18n/locales/nl/messages.po";
 import { messages as pl } from "@rakazo/i18n/locales/pl/messages.po";
+import { messages as ptBR } from "@rakazo/i18n/locales/pt-BR/messages.po";
 import { messages as ru } from "@rakazo/i18n/locales/ru/messages.po";
+import { messages as tr } from "@rakazo/i18n/locales/tr/messages.po";
 import { messages as zhCN } from "@rakazo/i18n/locales/zh-CN/messages.po";
 import { messages as zhTW } from "@rakazo/i18n/locales/zh-TW/messages.po";
 import { useSyncExternalStore } from "react";
@@ -24,6 +30,12 @@ const catalogs: Record<UiLocale, Messages> = {
   ja,
   es,
   pl,
+  fr,
+  he,
+  hi,
+  ko,
+  "pt-BR": ptBR,
+  tr,
 };
 
 installPluralRules();

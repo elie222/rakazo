@@ -336,6 +336,7 @@ describe("thread composer isolation", () => {
     disk.full = false;
     disk.moveFails = false;
     appState.listeners.clear();
+    dictation.status = "idle";
     mentionApi.generation = 1;
     mentionApi.rpc.mockReset().mockResolvedValue([]);
     mentionApi.capture.mockReset().mockImplementation(async () => ({
@@ -512,6 +513,27 @@ describe("thread composer isolation", () => {
     expect(onEmptied).not.toHaveBeenCalled();
     type("");
     expect(onEmptied).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps shared text when an earlier typing selection arrives late", () => {
+    type("draft");
+    act(() => composer.current!.insert("shared text"));
+    expect(composer.current!.snapshot().promptText).toBe("draft\nshared text");
+    select(5);
+    expect(field().value).toBe("draftshared text");
+    expect(composer.current!.snapshot().promptText).toBe("draft\nshared text");
+    type("draft\nshared text!");
+    select(18);
+    expect(composer.current!.snapshot().promptText).toBe("draft\nshared text!");
+  });
+
+  it("appends repeated shares to an empty or settled draft", () => {
+    act(() => composer.current!.insert("first"));
+    select(5);
+    act(() => composer.current!.insert("second"));
+    select(12);
+    expect(composer.current!.snapshot().promptText).toBe("first\nsecond");
+    expect(props.send).not.toHaveBeenCalled();
   });
 
   it("keeps inserted text when backspacing into a mention afterwards", () => {
@@ -1211,6 +1233,28 @@ describe("thread composer isolation", () => {
     type("Remind me to buy milk!");
     act(() => dictation.onWords("to buy milk and eggs"));
     expect(container.querySelector("input")!.value).toBe("Remind me to buy milk!");
+  });
+
+  function sendButton() {
+    return container.querySelector<HTMLButtonElement>('button[aria-label="Send"]')!;
+  }
+
+  it("keeps Send disabled while a dictation is still recording", () => {
+    dictation.status = "listening";
+    type("Please check");
+    const send = sendButton();
+    expect(send.disabled).toBe(true);
+    act(() => send.click());
+    expect(props.send).not.toHaveBeenCalled();
+  });
+
+  it("keeps Send disabled while dictating a message that is only an attachment", () => {
+    dictation.status = "listening";
+    render({ attachmentIds: ["file-1"] });
+    const send = sendButton();
+    expect(send.disabled).toBe(true);
+    act(() => send.click());
+    expect(props.send).not.toHaveBeenCalled();
   });
 
   it("adds a provider's transcript after text typed while it recorded", () => {

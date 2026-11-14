@@ -4,7 +4,7 @@ import { AssistantMessageEventStream } from "@earendil-works/pi-ai/utils/event-s
 import type { AgentRunRequest } from "@rakazo/adapter-kit";
 import { beforeEach, expect, it, vi } from "vitest";
 import { approvalPausedToolResult } from "./approval-effect.js";
-import { builtinAgentTools } from "./builtin-tools.js";
+import { builtinAgentTools } from "./builtin.tool-definition.js";
 
 const fake = vi.hoisted(() => ({ models: new Map<string, unknown>(), stream: vi.fn() }));
 vi.mock("@earendil-works/pi-ai/providers/all", () => ({

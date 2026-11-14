@@ -1,5 +1,10 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { AccountSecurity, BotAvatarSet, UsageSummary } from "@rakazo/contracts";
+import type {
+  AccountSecurity,
+  BotAvatarSet,
+  SignInProvider,
+  UsageSummary,
+} from "@rakazo/contracts";
 import {
   APP_LOCALE_LABELS,
   accountDisplay,
@@ -30,7 +35,7 @@ import {
   TableRow,
 } from "@rakazo/ui-web/components/ui/table";
 import type { RefObject } from "react";
-import { useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { AccountAccess, LinkSsoRow } from "../components/AccountAccess";
 import { AccountDataSettings } from "../components/AccountDataSettings";
 import { SuccessPop } from "../components/ai/primitives";
@@ -45,6 +50,7 @@ import { PasskeySettings } from "../components/PasskeySettings";
 import { SettingsGroup, SettingsRow } from "../components/SettingsRows";
 import { TrustedLinkSitesSettings } from "../components/TrustedLinkSitesSettings";
 import { authClient } from "../lib/auth";
+import { fetchAuthCapabilities } from "../lib/auth-capabilities";
 import type { BotsSidebarDensity } from "../lib/bots-sidebar-density-pref";
 import { botsSidebarDensityPreference } from "../lib/bots-sidebar-density-pref";
 import { composerEnterToSendPreference } from "../lib/composer-enter-to-send-pref";
@@ -147,11 +153,30 @@ export function GeneralSettingsPanels({
   const showPassword = Boolean(
     accountSecurity?.hasPassword && accountSecurity.passwordChangeEnabled !== false,
   );
+  const [providers, setProviders] = useState<SignInProvider[]>([]);
   const passkeysSupported = usePasskeysSupported();
+  useEffect(() => {
+    let active = true;
+    void fetchAuthCapabilities()
+      .then((value) => {
+        if (active) setProviders(value.providers ?? []);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, []);
+  const unlinkedProviders = accountSecurity?.linkedProviderIds
+    ? providers.filter(
+        (provider) =>
+          provider.id !== "oidc" && !accountSecurity.linkedProviderIds?.includes(provider.id),
+      )
+    : [];
   const canLinkSso = Boolean(accountSecurity?.sso && !accountSecurity.ssoLinked);
   const [timezonePending, setTimezonePending] = useState(false);
   const [timezoneError, setTimezoneError] = useState<string | null>(null);
   const deviceTimezone = localTimezone();
+  const selectedTimezone = timezone ?? deviceTimezone;
 
   function chooseLocale(next: UiLocale) {
     if (next === locale) return;
@@ -270,7 +295,7 @@ export function GeneralSettingsPanels({
             />
           }
         />
-        {botAvatarSet && onBotAvatarSetChange ? (
+        {onBotAvatarSetChange ? (
           <SettingsRow
             label={
               <span id={botStyleLabelId}>
@@ -282,7 +307,7 @@ export function GeneralSettingsPanels({
                 <ToggleGroup
                   aria-labelledby={botStyleLabelId}
                   data-testid="bot-style-select"
-                  value={[botAvatarSet]}
+                  value={botAvatarSet ? [botAvatarSet] : []}
                   onValueChange={([next]) => {
                     if (!next || next === botAvatarSet) return;
                     setBotStyleError(null);
@@ -365,12 +390,12 @@ export function GeneralSettingsPanels({
                 <NativeSelect
                   aria-labelledby={timezoneId}
                   data-testid="timezone-select"
-                  value={timezone ?? deviceTimezone}
+                  value={selectedTimezone}
                   disabled={timezonePending}
                   onChange={(event) => void chooseTimezone(event.target.value)}
                   className="w-56 max-w-full"
                 >
-                  {timezoneOptions(timezone ?? deviceTimezone).map((zone) => (
+                  {timezoneOptions(selectedTimezone).map((zone) => (
                     <NativeSelectOption key={zone} value={zone}>
                       {zone.replaceAll("_", " ")}
                     </NativeSelectOption>
@@ -378,7 +403,7 @@ export function GeneralSettingsPanels({
                 </NativeSelect>
               }
             >
-              {!timezone || !sameTimeZone(timezone, deviceTimezone) ? (
+              {!sameTimeZone(selectedTimezone, deviceTimezone) ? (
                 <div className="mt-2 flex justify-end">
                   <Button
                     variant="outline"
@@ -470,10 +495,20 @@ export function GeneralSettingsPanels({
       <TrustedLinkSitesSettings />
       <ComputerDeviceSettings />
 
-      {showPassword || passkeysSupported || canLinkSso ? (
+      {showPassword || canLinkSso || passkeysSupported || unlinkedProviders.length > 0 ? (
         <SettingsGroup title={<Trans>Security</Trans>}>
           {showPassword ? <ChangePasswordRow email={email} /> : null}
-          {canLinkSso ? <LinkSsoRow /> : null}
+          {canLinkSso ? (
+            <LinkSsoRow
+              provider={
+                accountSecurity?.sso ? { id: "oidc", name: accountSecurity.sso.name } : undefined
+              }
+              onSecurity={setAccountSecurity}
+            />
+          ) : null}
+          {unlinkedProviders.map((provider) => (
+            <LinkSsoRow key={provider.id} provider={provider} onSecurity={setAccountSecurity} />
+          ))}
           <PasskeySettings />
         </SettingsGroup>
       ) : null}

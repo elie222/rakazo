@@ -36,6 +36,11 @@ export interface ContextSelectionOptions {
   /** Never drop current request, steering, approvals or authoritative constraints. */
   protectedIndexes?: readonly number[];
   recentExchanges?: number;
+  /**
+   * Exchanges older than recentExchanges stay while the messages before index `before`, where
+   * the current request starts, fit `tokens`.
+   */
+  earlier?: { before: number; tokens: number };
   cacheWarmth?: "likely-warm" | "likely-cold" | "unknown";
   /** Keep tool protocol intact while shortening oversized result bodies. */
   truncateToolResults?: boolean;
@@ -710,15 +715,25 @@ export function selectContext<T extends ContextMessage>(
     ? Number.POSITIVE_INFINITY
     : Math.max(1, options.recentExchanges ?? 8);
   let exchanges = 0;
+  // Active tool progress never counts against the earlier allowance, so the retained start
+  // holds during a run.
+  const currentStart = options.earlier?.before ?? 0;
+  let earlierTokens = 0;
   // Retain a contiguous recent suffix. Skip no holes inside a retained tool group.
   for (let index = groups.length - 1; index >= 0; index--) {
     const group = groups[index]!;
     if (group.indexes.some((i) => messages[i]!.role === "user")) exchanges += 1;
-    if (exchanges > exchangeLimit && !selected.has(group)) break;
     if (selected.has(group)) continue;
+    const earlier = group.indexes[0]! < currentStart;
+    if (
+      exchanges > exchangeLimit &&
+      (!earlier || earlierTokens + group.tokens > (options.earlier?.tokens ?? 0))
+    )
+      break;
     if (used + group.tokens > available) break;
     selected.add(group);
     used += group.tokens;
+    if (earlier) earlierTokens += group.tokens;
   }
   const selectedIndexes = new Set([...selected].flatMap((group) => group.indexes));
   return {

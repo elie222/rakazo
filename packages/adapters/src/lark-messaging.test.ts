@@ -263,6 +263,22 @@ describe("Lark messaging conformance", () => {
     },
   );
 
+  it("sends with a dedupe id Lark honors, so a repeated send of one message arrives once", async () => {
+    const { surface } = createSurface();
+    const threadId = await surface.openDirectThread("lark", "ou-test", context);
+    const key = `msg:${"m".repeat(25)}:file:${"a".repeat(25)}`;
+    await surface.sendToThread({ threadId, body: "hello", idempotencyKey: key }, context);
+    await surface.sendToThread({ threadId, body: "hello", idempotencyKey: key }, context);
+
+    const uuids = request.mock.calls
+      .map(([config]) => (config as { data?: { uuid?: string } }).data?.uuid)
+      .filter(Boolean);
+    expect(uuids).toEqual([
+      createHash("sha256").update(key).digest("hex").slice(0, 32),
+      createHash("sha256").update(key).digest("hex").slice(0, 32),
+    ]);
+  });
+
   it("rejects an invalid encrypted signature", async () => {
     const { surface, events } = createSurface(true);
     expect((await surface.handleWebhook("lark", encryptedWebhook(message(), false)))?.status).toBe(
@@ -610,6 +626,114 @@ describe("Lark messaging conformance", () => {
         content: expect.stringContaining("guide (https://example.test/guide)"),
       }),
     ]);
+  });
+
+  it.each([false, true])(
+    "resolves rich-text mention placeholders with code blocks: %s",
+    async (withCode) => {
+      const { surface, events } = createSurface();
+      const payload = messageWith("post", {
+        content: [
+          [
+            { tag: "at", user_id: "@_user_1", user_name: "" },
+            { tag: "text", text: " and " },
+            { tag: "at", user_id: "@_user_2" },
+            { tag: "text", text: " and " },
+            { tag: "at", user_id: "@_user_3", user_name: "Display name" },
+          ],
+          ...(withCode ? [[{ tag: "code_block", text: "@_user_1" }]] : []),
+        ],
+      });
+      Object.assign(payload.event.message, {
+        mentions: [
+          { key: "@_user_1", name: "Alice", id: { open_id: "ou-alice" } },
+          { key: "@_user_2", name: "Bob", id: { open_id: "ou-bob" } },
+          { key: "@_user_3", name: "Other name", id: { open_id: "ou-other" } },
+        ],
+      });
+      await surface.handleWebhook("lark", webhook(payload));
+      expect(events).toEqual([
+        expect.objectContaining({
+          content: `@Alice and @Bob and @Display name${withCode ? "\n@_user_1" : ""}`,
+        }),
+      ]);
+    },
+  );
+
+  it.each(["text", "post", "post with code"])(
+    "resolves overlapping mention keys exactly once in %s",
+    async (kind) => {
+      const { surface, events } = createSurface();
+      const keys = Array.from({ length: 10 }, (_, index) => `@_user_${index + 1}`);
+      const text = `${keys.join(" ")} @_user_100`;
+      const content =
+        kind === "text"
+          ? { text }
+          : {
+              content: [
+                keys
+                  .flatMap((user_id) => [
+                    { tag: "at", user_id, user_name: "" },
+                    { tag: "text", text: " " },
+                  ])
+                  .concat([{ tag: "at", user_id: "@_user_100", user_name: "" }]),
+                ...(kind === "post with code" ? [[{ tag: "code_block", text }]] : []),
+              ],
+            };
+      const payload = messageWith(kind === "text" ? "text" : "post", content);
+      const names = [
+        "Alice",
+        "Price $& @_user_10",
+        ...keys.slice(2).map((_, i) => `Person ${i + 3}`),
+      ];
+      Object.assign(payload.event.message, {
+        mentions: keys.map((key, index) => ({
+          key,
+          name: names[index],
+          id: { open_id: `ou-person-${index + 1}` },
+        })),
+      });
+      await surface.handleWebhook("lark", webhook(payload));
+      expect(events).toEqual([
+        expect.objectContaining({
+          content: `${names.map((name) => `@${name}`).join(" ")} @_user_100${kind === "post with code" ? `\n${text}` : ""}`,
+        }),
+      ]);
+    },
+  );
+
+  it("treats mention keys literally and ignores empty keys", async () => {
+    const { surface, events } = createSurface();
+    const payload = messageWith("text", { text: "@_user.1 @_userX1 @_user.1suffix" });
+    Object.assign(payload.event.message, {
+      mentions: [
+        { key: "", name: "Ignored", id: { open_id: "ou-empty" } },
+        { key: "@_user.1", name: "Alice", id: { open_id: "ou-alice" } },
+      ],
+    });
+    await surface.handleWebhook("lark", webhook(payload));
+    expect(events).toEqual([
+      expect.objectContaining({ content: "@Alice @_userX1 @_user.1suffix" }),
+    ]);
+  });
+
+  it("preserves unresolved rich-text mention IDs and falls back without an ID", async () => {
+    const { surface, events } = createSurface();
+    await surface.handleWebhook(
+      "lark",
+      webhook(
+        messageWith("post", {
+          content: [
+            [
+              { tag: "at", user_id: "@_user_9", user_name: "" },
+              { tag: "text", text: " and " },
+              { tag: "at" },
+            ],
+          ],
+        }),
+      ),
+    );
+    expect(events).toEqual([expect.objectContaining({ content: "@_user_9 and @unknown" })]);
   });
 
   it("does not replace mention keys inside code blocks", async () => {

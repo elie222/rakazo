@@ -201,12 +201,17 @@ test("create group from + and see two bots in one transcript", async ({ page }, 
     });
   }
   await expect(cityAsk).toBeVisible({ timeout: 15_000 });
-  await page.getByRole("button", { name: "Edit first" }).click();
-  await page.getByRole("textbox", { name: "Answer" }).fill("Paris");
-  await page.getByRole("button", { name: "Send answer" }).click();
-  await expect(page.getByTestId("ask-answer").filter({ hasText: "Paris" })).toBeVisible({
-    timeout: 30_000,
-  });
+  await expect(page.getByRole("button", { name: "Edit first" })).toHaveCount(0);
+  await composer.fill("Paris");
+  await composer.press("Enter");
+  const cityAnswer = page.getByTestId("message-user-bubble").filter({ hasText: /^Paris$/ });
+  await expect(cityAnswer).toBeVisible({ timeout: 30_000 });
+  const answeredQuestion = page
+    .getByTestId("question-card")
+    .filter({ hasText: "Which city should I use?" });
+  await expect(answeredQuestion).toHaveClass(/opacity-50/);
+  await expect(answeredQuestion).not.toContainText("Paris");
+  await captureScreenshot(page, testInfo, "answered-question-composer-reply");
 
   const firstMessage = transcript.locator("[data-message-id]").first();
   await firstMessage.hover();
@@ -245,7 +250,7 @@ test("create group from + and see two bots in one transcript", async ({ page }, 
   await expect(page.getByRole("combobox", { name: "Message Review team" })).toBeVisible();
   await page.unroute("**/rpc/threads/get");
   await sidebar.getByRole("button", { name: /^Draft team/ }).click();
-  await expect(page.getByTestId("ask-answer").filter({ hasText: "Paris" })).toBeVisible();
+  await expect(cityAnswer).toBeVisible();
 
   await composer.fill(
     "@Researcher write path notes/group-preview.md and attach it to the thread says # Group artifact",

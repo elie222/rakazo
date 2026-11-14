@@ -12,6 +12,9 @@ function subscribe(channel) {
 contextBridge.exposeInMainWorld("rakazoDesktop", {
   platform: process.platform,
   nativeWindowFrame: process.platform === "win32",
+  clipboard: {
+    writeText: (text) => ipcRenderer.invoke("desktop.clipboard.write", text),
+  },
   badge: {
     set: (count) => ipcRenderer.invoke("desktop.badge.set", count),
   },

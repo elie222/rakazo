@@ -287,6 +287,8 @@ async function removeDeletedBotFolders(
         names.slice(start, start + DELETED_BOT_FOLDER_BATCH),
         context,
       ).catch((error) => {
+        // The deadline's own warning covers a removal it cut short.
+        if (context.signal.aborted) return;
         getLogger().error("team bot folder cleanup", error);
       });
     }
@@ -442,7 +444,11 @@ export async function checkpointRunComputerWorkspace(
   computer: ComputerRef,
   context: AdapterContext,
 ): Promise<string | undefined> {
-  if (computerRecord.scope !== "team" || computer.kind === "docker") {
+  if (
+    computerRecord.scope !== "team" ||
+    computer.kind === "docker" ||
+    (await homeIsMounted(deps.home, deps.sandbox, computer, context))
+  ) {
     return checkpointAndRecordComputerWorkspace(deps, computerRecord, computer, context);
   }
   const now = new Date();
