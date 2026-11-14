@@ -1,7 +1,7 @@
 import type { Context, Model } from "@earendil-works/pi-ai";
 import sharp from "sharp";
 import { expect, it, vi } from "vitest";
-import { builtinAgentTools } from "./builtin-tools.js";
+import { builtinAgentTools } from "./builtin.tool-definition.js";
 import type * as RuntimeContextModule from "./runtime-context.js";
 
 const captured = vi.hoisted(() => ({ policies: [] as unknown[] }));

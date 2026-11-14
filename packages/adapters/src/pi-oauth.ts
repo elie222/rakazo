@@ -17,7 +17,7 @@ import type { Prisma, PrismaClient } from "@rakazo/db";
 import { runAsSystem, runAsTenant } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { StoredModelSecret } from "./model-secret.js";
-import { parseModelSecret, serializeModelSecret } from "./model-secret.js";
+import { keptModelSettings, parseModelSecret, serializeModelSecret } from "./model-secret.js";
 import { createManualAnthropicOAuthLogin } from "./pi-anthropic-oauth.js";
 
 export const CHATGPT_OAUTH_PROVIDER = "openai-codex";
@@ -276,13 +276,7 @@ export function oauthCredentialEmail(credential: OAuthCredential): string | unde
   return email?.includes("@") ? email.trim() : undefined;
 }
 
-const retiredCredentialErrors = new WeakSet<object>();
-
-/**
- * A credential was deleted before the model started. Account-change throws this
- * directly. A terminal refresh keeps its original provider error and is recorded
- * in `retiredCredentialErrors` so callers can still see that error object.
- */
+/** A credential was deleted before the model started. */
 export class RetiredModelCredentialError extends Error {
   constructor(message: string) {
     super(message);
@@ -290,15 +284,8 @@ export class RetiredModelCredentialError extends Error {
   }
 }
 
-export function markRetiredModelCredentialError(error: unknown): void {
-  if (typeof error === "object" && error !== null) retiredCredentialErrors.add(error);
-}
-
 export function isRetiredModelCredentialError(error: unknown): boolean {
-  return (
-    error instanceof RetiredModelCredentialError ||
-    (typeof error === "object" && error !== null && retiredCredentialErrors.has(error))
-  );
+  return error instanceof RetiredModelCredentialError;
 }
 
 export type PiOAuthConnected = {
@@ -508,7 +495,7 @@ export async function resolveModelAuth(
   }
   const now = opts?.now ?? Date.now();
   let credential = parsed.credential;
-  const maxTokens = parsed.maxTokens;
+  const kept = keptModelSettings(parsed);
   if (credential.expires - now < MIN_OAUTH_VALIDITY_MS) {
     try {
       credential = await oauth.refresh(credential, opts?.signal ?? new AbortController().signal);
@@ -546,7 +533,7 @@ export async function resolveModelAuth(
       serializeModelSecret({
         kind: "oauth",
         credential,
-        ...(maxTokens !== undefined ? { maxTokens } : {}),
+        ...kept,
       }),
     );
   }
@@ -558,7 +545,7 @@ export async function resolveModelAuth(
     secret: {
       kind: "oauth",
       credential,
-      ...(maxTokens !== undefined ? { maxTokens } : {}),
+      ...kept,
     },
     apiKey: auth.apiKey,
   };

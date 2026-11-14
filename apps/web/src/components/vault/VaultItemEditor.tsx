@@ -34,10 +34,10 @@ import {
 import type { ComponentProps, ReactNode } from "react";
 import { useId, useRef, useState } from "react";
 import type { AgentAccess } from "../integrations/agent-access";
+import { SettingsPageHeader } from "../SettingsPageHeader";
 import type { VaultAuth } from "./kinds";
 import { LoginFieldsInput } from "./LoginFieldsInput";
 import { VaultItemAccess } from "./VaultItemAccess";
-import { VaultPageHeader } from "./VaultPageHeader";
 
 /** What the editor hands back: a destination and the value to save, in the shape vault.put takes. */
 export type VaultEditorResult = {
@@ -179,7 +179,7 @@ export function VaultItemEditorPage({
         busyRef={busyRef}
         onDone={onBack}
         header={
-          <VaultPageHeader title={props.heading} onBack={() => !busyRef.current && onBack()} />
+          <SettingsPageHeader title={props.heading} onBack={() => !busyRef.current && onBack()} />
         }
       />
     </div>

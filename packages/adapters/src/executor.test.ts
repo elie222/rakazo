@@ -7,7 +7,7 @@ import type { PrismaClient } from "@rakazo/db";
 import { RunHistoryWriteError } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { describe, expect, it, vi } from "vitest";
-import { builtinAgentTools } from "./builtin-tools.js";
+import { builtinAgentTools } from "./builtin.tool-definition.js";
 import {
   CLOUDFLARE_AI_GATEWAY_CONFIG_MESSAGE,
   CLOUDFLARE_WORKERS_AI_PROVIDER_ID,
@@ -31,11 +31,11 @@ import {
   userTurnInstructions,
   VOICE_CALL_INSTRUCTION,
   voiceCallInstruction,
-} from "./run-instructions.js";
+} from "./run-instructions.prompt.js";
 import { createRunWorkspaceCheckpoint } from "./run-lifecycle.js";
 import { isTerminalModelSetupError } from "./run-model.js";
 import { runNotificationsEnabled } from "./run-notifications.js";
-import { REACTION_SILENT_REPLY_GUIDANCE } from "./run-replies.js";
+import { REACTION_SILENT_REPLY_GUIDANCE } from "./run-replies.prompt.js";
 import {
   followUpsOffered,
   offeredFleetTools,
@@ -44,10 +44,10 @@ import {
 import { historyMyChatsAllowed } from "./run-tools-memory.js";
 import {
   loadCurrentTurnImages,
-  missingTurnImagesInstruction,
   settleSteeringAttachmentLoads,
   withRecentTurnImages,
 } from "./run-turn-images.js";
+import { missingTurnImagesInstruction } from "./run-turn-images.prompt.js";
 import { mainRole, withModelRoles } from "./testing/model-roles.js";
 import {
   appendToolCompletionAudit,
@@ -4424,13 +4424,13 @@ description: Prepare standup notes
     });
 
     bot.modelId = "text-only-model";
-    await expect(
-      executor.resolveModel({ userId: "user-1", spaceId: "ws-1", botId: "bot-1" }),
-    ).resolves.toMatchObject({
-      provider,
-      id: "text-only-model",
-      acceptsImages: false,
+    const textOnly = await executor.resolveModel({
+      userId: "user-1",
+      spaceId: "ws-1",
+      botId: "bot-1",
     });
+    expect(textOnly).toMatchObject({ provider, id: "text-only-model" });
+    expect(textOnly.acceptsImages).not.toBe(true);
   });
 
   it("falls back to the Space default when the override provider has no credential", async () => {
