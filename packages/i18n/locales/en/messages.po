@@ -37,6 +37,11 @@ msgstr "{0, plural, one {# free month earned} other {# free months earned}}"
 msgid "{0, plural, one {# free month} other {# free months}}"
 msgstr "{0, plural, one {# free month} other {# free months}}"
 
+#. placeholder {0}: models.length
+#: apps/web/src/pages/model-settings/provider-page.tsx
+msgid "{0, plural, one {# model} other {# models}}"
+msgstr "{0, plural, one {# model} other {# models}}"
+
 #. placeholder {0}: skills.length - shownSkills.length
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 msgid "{0, plural, one {# more} other {# more}}"
@@ -231,6 +236,10 @@ msgstr "{connectedCount, plural, one {# connected} other {# connected}}"
 #: apps/web/src/pages/shell/message-view.tsx
 msgid "{count, plural, one {# message with {peer}} other {# messages with {peer}}}"
 msgstr "{count, plural, one {# message with {peer}} other {# messages with {peer}}}"
+
+#: apps/mobile/components/model-providers.tsx
+msgid "{count, plural, one {# model} other {# models}}"
+msgstr "{count, plural, one {# model} other {# models}}"
 
 #: apps/web/src/components/markdown-copy.tsx
 msgid "{count, plural, one {# row} other {# rows}}"
@@ -871,6 +880,11 @@ msgstr "A bit of everything"
 msgid "A command's output"
 msgstr "A command's output"
 
+#: apps/mobile/app/(settings)/labs.tsx
+#: apps/web/src/pages/LabsSettingsPanel.tsx
+msgid "A kanban board of tickets your bots can work on"
+msgstr "A kanban board of tickets your bots can work on"
+
 #: apps/mobile/components/approval-settings-rows.tsx
 #: apps/web/src/components/ApprovalRulesSettings.tsx
 msgid "A model approves routine actions and asks you about the rest."
@@ -1221,7 +1235,6 @@ msgstr "Address line 2"
 msgid "Adds"
 msgstr "Adds"
 
-#: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/mobile/app/bot-settings.tsx
 #: apps/mobile/components/compatible-endpoint-form.tsx
 #: apps/mobile/components/routine-schedule-editor.tsx
@@ -1229,7 +1242,6 @@ msgstr "Adds"
 #: apps/web/src/pages/McpServerForm.tsx
 #: apps/web/src/pages/memory-providers/MemoryProviderAdvanced.tsx
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
-#: apps/web/src/pages/ModelSettingsOverlay.tsx
 #: apps/web/src/pages/onboarding/model-step.tsx
 #: apps/web/src/pages/routine-editor/model-settings.tsx
 #: apps/web/src/pages/shell/bot-panel.tsx
@@ -1800,7 +1812,7 @@ msgstr "Avatar Studio"
 #: apps/web/src/components/bot-templates/bot-templates-dialog.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 #: apps/web/src/components/integrations/skills-dialog.tsx
-#: apps/web/src/components/vault/VaultPageHeader.tsx
+#: apps/web/src/components/SettingsPageHeader.tsx
 #: apps/web/src/pages/AdminAccessPage.tsx
 #: apps/web/src/pages/AdminPluginsPage.tsx
 #: apps/web/src/pages/Artifacts.tsx
@@ -1893,8 +1905,10 @@ msgstr "Blocked"
 
 #: apps/mobile/app/_layout.tsx
 #: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/labs.tsx
 #: apps/web/src/components/SidebarFooter.tsx
 #: apps/web/src/pages/Board.tsx
+#: apps/web/src/pages/LabsSettingsPanel.tsx
 msgid "Board"
 msgstr "Board"
 
@@ -2914,6 +2928,10 @@ msgstr "Connecting…"
 msgid "Connection"
 msgstr "Connection"
 
+#: apps/mobile/app/(settings)/model-settings.tsx
+msgid "Connection not found"
+msgstr "Connection not found"
+
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/mobile/app/(settings)/plugin.tsx
 msgid "Connection pending"
@@ -2949,9 +2967,8 @@ msgstr "Contacts"
 msgid "Contains code to run"
 msgstr "Contains code to run"
 
-#: apps/mobile/components/compatible-endpoint-form.tsx
-#: apps/web/src/pages/model-settings/compatible-model-fields.tsx
-#: apps/web/src/pages/onboarding/model-step.tsx
+#: apps/mobile/app/(settings)/model-settings.tsx
+#: apps/web/src/pages/model-settings/model-settings-panel.tsx
 msgid "Context limit"
 msgstr "Context limit"
 
@@ -2995,6 +3012,11 @@ msgstr "Continue with {name}"
 #: apps/web/src/components/SocialSignInButtons.tsx
 msgid "Continue with email"
 msgstr "Continue with email"
+
+#: apps/mobile/components/social-sign-in-buttons.tsx
+#: apps/web/src/components/SocialSignInButtons.tsx
+msgid "Continue with passkey"
+msgstr "Continue with passkey"
 
 #: apps/mobile/components/computer-keyboard-bar.tsx
 msgid "Control"
@@ -3530,9 +3552,11 @@ msgstr "Could not load memory"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/mobile/app/(settings)/model-picker.tsx
+#: apps/mobile/app/(settings)/model-settings.tsx
 #: apps/mobile/app/(settings)/models.tsx
 #: apps/mobile/app/bot-model.tsx
 #: apps/mobile/app/bot-settings.tsx
+#: apps/web/src/pages/model-settings/model-settings-panel.tsx
 #: apps/web/src/pages/model-settings/use-model-settings.ts
 msgid "Could not load model settings"
 msgstr "Could not load model settings"
@@ -3813,6 +3837,7 @@ msgid "Could not run routine"
 msgstr "Could not run routine"
 
 #: apps/mobile/app/(settings)/general.tsx
+#: apps/mobile/app/(settings)/labs.tsx
 #: apps/mobile/app/(settings)/memory-note.tsx
 #: apps/mobile/app/(settings)/team-conversation.tsx
 #: apps/mobile/components/vault-item-editor.tsx
@@ -3846,6 +3871,11 @@ msgstr "Could not save group"
 #: apps/web/src/pages/onboarding/use-onboarding-model.ts
 msgid "Could not save model"
 msgstr "Could not save model"
+
+#: apps/mobile/app/(settings)/model-settings.tsx
+#: apps/web/src/pages/model-settings/model-settings-panel.tsx
+msgid "Could not save model settings"
+msgstr "Could not save model settings"
 
 #: apps/mobile/app/routine.tsx
 #: apps/web/src/pages/shell/use-routine-editor.ts
@@ -4141,6 +4171,10 @@ msgstr "Couldn't start the computer"
 msgid "Couldn't update bot style"
 msgstr "Couldn't update bot style"
 
+#: apps/web/src/pages/LabsSettingsPanel.tsx
+msgid "Couldn't update Labs"
+msgstr "Couldn't update Labs"
+
 #: apps/web/src/pages/MessagingSettingsPanel.tsx
 msgid "Couldn't update messaging settings"
 msgstr "Couldn't update messaging settings"
@@ -4382,13 +4416,10 @@ msgstr "Decline"
 
 #: apps/mobile/app/bot-settings.tsx
 #: apps/mobile/components/bot-look-picker.tsx
-#: apps/mobile/components/compatible-endpoint-form.tsx
 #: apps/mobile/components/model-role-settings.tsx
 #: apps/web/src/components/ComputerProviderSettings.tsx
-#: apps/web/src/pages/model-settings/compatible-model-fields.tsx
 #: apps/web/src/pages/model-settings/role-model-picker.tsx
 #: apps/web/src/pages/ModelRoleSettings.tsx
-#: apps/web/src/pages/onboarding/model-step.tsx
 #: apps/web/src/pages/shell/avatar-studio-popover.tsx
 msgid "Default"
 msgstr "Default"
@@ -4969,27 +5000,24 @@ msgstr "Enter a server URL"
 msgid "Enter a valid email"
 msgstr "Enter a valid email"
 
-#: apps/web/src/pages/model-settings/use-model-settings.ts
-#: apps/web/src/pages/onboarding/use-onboarding-model.ts
+#: apps/web/src/pages/model-settings/model-settings-panel.tsx
 msgid "Enter a whole number from 1 to {MAX_MODEL_CONTEXT_WINDOW} for the context limit."
 msgstr "Enter a whole number from 1 to {MAX_MODEL_CONTEXT_WINDOW} for the context limit."
 
-#: apps/web/src/pages/model-settings/use-model-settings.ts
-#: apps/web/src/pages/onboarding/use-onboarding-model.ts
+#: apps/web/src/pages/model-settings/model-settings-panel.tsx
 msgid "Enter a whole number from 1 to {MAX_MODEL_MAX_TOKENS} for maximum output tokens."
 msgstr "Enter a whole number from 1 to {MAX_MODEL_MAX_TOKENS} for maximum output tokens."
 
-#: apps/mobile/app/(settings)/model-connection.tsx
+#: apps/mobile/app/(settings)/model-settings.tsx
 msgid "Enter a whole number from 1 to {max} for maximum output tokens."
 msgstr "Enter a whole number from 1 to {max} for maximum output tokens."
 
-#: apps/mobile/app/(settings)/model-connection.tsx
+#: apps/mobile/app/(settings)/model-settings.tsx
 msgid "Enter a whole number from 1 to {max} for the context limit."
 msgstr "Enter a whole number from 1 to {max} for the context limit."
 
-#: apps/mobile/app/(settings)/model-connection.tsx
-#: apps/web/src/pages/model-settings/use-model-settings.ts
-#: apps/web/src/pages/onboarding/use-onboarding-model.ts
+#: apps/mobile/app/(settings)/model-settings.tsx
+#: apps/web/src/pages/model-settings/model-settings-panel.tsx
 msgid "Enter a whole number from 1 to 1000 for the image limit."
 msgstr "Enter a whole number from 1 to 1000 for the image limit."
 
@@ -5196,8 +5224,6 @@ msgid "External conversation"
 msgstr "External conversation"
 
 #: apps/mobile/lib/thinking-level.ts
-#: apps/web/src/pages/model-settings/compatible-model-fields.tsx
-#: apps/web/src/pages/onboarding/model-step.tsx
 msgid "Extra high"
 msgstr "Extra high"
 
@@ -5669,8 +5695,6 @@ msgstr "Hide transcript"
 #: apps/mobile/lib/thinking-level.ts
 #: apps/web/src/lib/ticket-priority.ts
 #: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
-#: apps/web/src/pages/model-settings/compatible-model-fields.tsx
-#: apps/web/src/pages/onboarding/model-step.tsx
 msgid "High"
 msgstr "High"
 
@@ -6068,6 +6092,13 @@ msgid "Label"
 msgstr "Label"
 
 #: apps/mobile/app/(settings)/_layout.tsx
+#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/labs.tsx
+#: apps/web/src/pages/settings-nav.ts
+msgid "Labs"
+msgstr "Labs"
+
+#: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/(settings)/general.tsx
 #: apps/mobile/app/(settings)/language.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
@@ -6091,6 +6122,10 @@ msgstr "Last check {0}: changed"
 #: apps/web/src/pages/routine-editor/trigger-cards.tsx
 msgid "Last check {0}: no changes"
 msgstr "Last check {0}: no changes"
+
+#: apps/web/src/components/SocialSignInButtons.tsx
+msgid "Last used"
+msgstr "Last used"
 
 #: apps/web/src/components/DesktopUpdates.tsx
 msgid "Later"
@@ -6315,8 +6350,6 @@ msgstr "Looks like it contains a key"
 #: apps/mobile/lib/thinking-level.ts
 #: apps/web/src/lib/ticket-priority.ts
 #: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
-#: apps/web/src/pages/model-settings/compatible-model-fields.tsx
-#: apps/web/src/pages/onboarding/model-step.tsx
 msgid "Low"
 msgstr "Low"
 
@@ -6341,15 +6374,9 @@ msgid "Manage"
 msgstr "Manage"
 
 #. placeholder {0}: option.name
-#. placeholder {0}: providerName(choice)
-#: apps/web/src/pages/ModelRoleSettings.tsx
 #: apps/web/src/pages/SettingsOverlay.tsx
 msgid "Manage {0}"
 msgstr "Manage {0}"
-
-#: apps/mobile/components/model-role-settings.tsx
-msgid "Manage {provider}"
-msgstr "Manage {provider}"
 
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/web/src/components/ModelCredits.tsx
@@ -6362,10 +6389,20 @@ msgstr "Manage billing"
 msgid "Manage MCP servers"
 msgstr "Manage MCP servers"
 
+#: apps/mobile/components/model-role-settings.tsx
+#: apps/web/src/pages/ModelRoleSettings.tsx
+msgid "Manage model"
+msgstr "Manage model"
+
 #: apps/mobile/app/bot-settings.tsx
 #: apps/web/src/pages/shell/bot-settings-sections.tsx
 msgid "Manage other bots"
 msgstr "Manage other bots"
+
+#: apps/mobile/components/model-role-settings.tsx
+#: apps/web/src/pages/ModelRoleSettings.tsx
+msgid "Manage provider"
+msgstr "Manage provider"
 
 #: apps/web/src/pages/plugins/domain-search.tsx
 msgid "Manual"
@@ -6400,8 +6437,6 @@ msgid "Marketing"
 msgstr "Marketing"
 
 #: apps/mobile/lib/thinking-level.ts
-#: apps/web/src/pages/model-settings/compatible-model-fields.tsx
-#: apps/web/src/pages/onboarding/model-step.tsx
 msgid "Max"
 msgstr "Max"
 
@@ -6414,19 +6449,20 @@ msgstr "Max"
 msgid "Maximize"
 msgstr "Maximize"
 
-#: apps/mobile/components/compatible-endpoint-form.tsx
-#: apps/web/src/pages/model-settings/compatible-model-fields.tsx
-#: apps/web/src/pages/onboarding/model-step.tsx
+#: apps/mobile/app/(settings)/model-settings.tsx
+#: apps/web/src/pages/model-settings/model-settings-panel.tsx
 msgid "Maximum images per request"
 msgstr "Maximum images per request"
 
-#: apps/mobile/app/(settings)/model-connection.tsx
-#: apps/mobile/components/compatible-endpoint-form.tsx
-#: apps/web/src/pages/model-settings/compatible-model-fields.tsx
-#: apps/web/src/pages/ModelSettingsOverlay.tsx
-#: apps/web/src/pages/onboarding/model-step.tsx
+#: apps/mobile/app/(settings)/model-settings.tsx
+#: apps/web/src/pages/model-settings/model-settings-panel.tsx
 msgid "Maximum output tokens"
 msgstr "Maximum output tokens"
+
+#: apps/mobile/app/(settings)/model-settings.tsx
+#: apps/web/src/pages/model-settings/model-settings-panel.tsx
+msgid "Maximum output tokens must be below the context limit."
+msgstr "Maximum output tokens must be below the context limit."
 
 #: apps/web/src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "MCP endpoint"
@@ -6445,8 +6481,6 @@ msgstr "MCP servers"
 
 #: apps/mobile/lib/thinking-level.ts
 #: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
-#: apps/web/src/pages/model-settings/compatible-model-fields.tsx
-#: apps/web/src/pages/onboarding/model-step.tsx
 msgid "Medium"
 msgstr "Medium"
 
@@ -6589,8 +6623,6 @@ msgid "Microphone failed"
 msgstr "Microphone failed"
 
 #: apps/mobile/lib/thinking-level.ts
-#: apps/web/src/pages/model-settings/compatible-model-fields.tsx
-#: apps/web/src/pages/onboarding/model-step.tsx
 msgid "Minimal"
 msgstr "Minimal"
 
@@ -6671,6 +6703,8 @@ msgstr "Model provider"
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/space.tsx
+#: apps/mobile/components/connection-model-list.tsx
+#: apps/web/src/pages/model-settings/provider-page.tsx
 #: apps/web/src/pages/ModelSettingsOverlay.tsx
 #: apps/web/src/pages/settings-nav.ts
 #: apps/web/src/pages/SpaceSettingOverrides.tsx
@@ -7094,8 +7128,10 @@ msgstr "No matching artifacts on this page."
 msgid "No matching bots"
 msgstr "No matching bots"
 
+#: apps/mobile/components/connection-model-list.tsx
 #: apps/mobile/components/model-picker-list.tsx
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
+#: apps/web/src/pages/model-settings/provider-page.tsx
 #: apps/web/src/pages/model-settings/role-model-picker.tsx
 #: apps/web/src/pages/shell/chat-model-picker.tsx
 msgid "No matching models"
@@ -8124,12 +8160,6 @@ msgstr "Ready"
 msgid "Reason"
 msgstr "Reason"
 
-#: apps/mobile/components/compatible-endpoint-form.tsx
-#: apps/web/src/pages/model-settings/compatible-model-fields.tsx
-#: apps/web/src/pages/onboarding/model-step.tsx
-msgid "Reasoning effort"
-msgstr "Reasoning effort"
-
 #: apps/web/src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Recall and write"
 msgstr "Recall and write"
@@ -8593,6 +8623,11 @@ msgstr "Reset computer?"
 msgid "Reset password"
 msgstr "Reset password"
 
+#: apps/mobile/app/(settings)/model-settings.tsx
+#: apps/web/src/pages/model-settings/model-settings-panel.tsx
+msgid "Reset to defaults"
+msgstr "Reset to defaults"
+
 #: apps/mobile/app/sign-in.tsx
 #: apps/web/src/pages/Auth.tsx
 msgid "Reset your password"
@@ -8883,6 +8918,7 @@ msgstr "Saturday"
 
 #: apps/mobile/app/(settings)/memory-note.tsx
 #: apps/mobile/app/(settings)/model-connection.tsx
+#: apps/mobile/app/(settings)/model-settings.tsx
 #: apps/mobile/app/(settings)/profile.tsx
 #: apps/mobile/app/(settings)/skill.tsx
 #: apps/mobile/app/(settings)/spending-limit.tsx
@@ -8914,6 +8950,7 @@ msgstr "Saturday"
 #: apps/web/src/pages/KnowledgeSection.tsx
 #: apps/web/src/pages/McpServerForm.tsx
 #: apps/web/src/pages/model-settings/connection-controls.tsx
+#: apps/web/src/pages/model-settings/model-settings-panel.tsx
 #: apps/web/src/pages/model-settings/providers-section.tsx
 #: apps/web/src/pages/ModelSettingsOverlay.tsx
 #: apps/web/src/pages/RoutineEditor.tsx
@@ -8977,7 +9014,9 @@ msgid "Saved, but this server fills logins only on their own site."
 msgstr "Saved, but this server fills logins only on their own site."
 
 #: apps/mobile/app/(settings)/model-connection.tsx
+#: apps/mobile/app/(settings)/model-settings.tsx
 #: apps/mobile/lib/use-subscription-sign-in.ts
+#: apps/web/src/pages/model-settings/model-settings-panel.tsx
 #: apps/web/src/pages/model-settings/use-model-settings.ts
 msgid "Saved."
 msgstr "Saved."
@@ -8992,6 +9031,7 @@ msgid "Saving..."
 msgstr "Saving..."
 
 #: apps/mobile/app/(settings)/model-connection.tsx
+#: apps/mobile/app/(settings)/model-settings.tsx
 #: apps/mobile/app/bot-settings.tsx
 #: apps/mobile/app/group-settings.tsx
 #: apps/web/src/components/SecretAskCard.tsx
@@ -9000,6 +9040,7 @@ msgstr "Saving..."
 #: apps/web/src/pages/GroupPanel.tsx
 #: apps/web/src/pages/McpServerForm.tsx
 #: apps/web/src/pages/model-settings/connection-controls.tsx
+#: apps/web/src/pages/model-settings/model-settings-panel.tsx
 #: apps/web/src/pages/model-settings/providers-section.tsx
 #: apps/web/src/pages/ModelSettingsOverlay.tsx
 #: apps/web/src/pages/RoutineEditor.tsx
@@ -9043,6 +9084,7 @@ msgstr "Screen not connected"
 #: apps/web/src/components/VaultSettings.tsx
 #: apps/web/src/pages/Artifacts.tsx
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
+#: apps/web/src/pages/model-settings/provider-page.tsx
 #: apps/web/src/pages/model-settings/providers-section.tsx
 #: apps/web/src/pages/model-settings/role-model-picker.tsx
 #: apps/web/src/pages/plugins/domain-search.tsx
@@ -9093,6 +9135,7 @@ msgstr "Search MCP servers for “{query}”"
 
 #: apps/web/src/components/FoundModelPicker.tsx
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
+#: apps/web/src/pages/model-settings/provider-page.tsx
 #: apps/web/src/pages/model-settings/role-model-picker.tsx
 #: apps/web/src/pages/shell/chat-model-picker.tsx
 msgid "Search models"
@@ -9970,15 +10013,13 @@ msgstr "Summaries and facts"
 msgid "Sunday"
 msgstr "Sunday"
 
-#: apps/mobile/components/compatible-endpoint-form.tsx
-#: apps/web/src/pages/model-settings/compatible-model-fields.tsx
-#: apps/web/src/pages/onboarding/model-step.tsx
+#: apps/mobile/app/(settings)/model-settings.tsx
+#: apps/web/src/pages/model-settings/model-settings-panel.tsx
 msgid "Supports images"
 msgstr "Supports images"
 
-#: apps/mobile/components/compatible-endpoint-form.tsx
-#: apps/web/src/pages/model-settings/compatible-model-fields.tsx
-#: apps/web/src/pages/onboarding/model-step.tsx
+#: apps/mobile/app/(settings)/model-settings.tsx
+#: apps/web/src/pages/model-settings/model-settings-panel.tsx
 msgid "Supports thinking"
 msgstr "Supports thinking"
 

@@ -37,6 +37,11 @@ msgstr "{0, plural, one {הרווחת חודש חינם אחד} other {הרוו�
 msgid "{0, plural, one {# free month} other {# free months}}"
 msgstr "{0, plural, one {חודש חינם אחד} two {# חודשים חינם} other {# חודשים חינם}}"
 
+#. placeholder {0}: models.length
+#: apps/web/src/pages/model-settings/provider-page.tsx
+msgid "{0, plural, one {# model} other {# models}}"
+msgstr ""
+
 #. placeholder {0}: skills.length - shownSkills.length
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 msgid "{0, plural, one {# more} other {# more}}"
@@ -231,6 +236,10 @@ msgstr "{connectedCount, plural, one {מחובר אחד} two {# מחוברים} 
 #: apps/web/src/pages/shell/message-view.tsx
 msgid "{count, plural, one {# message with {peer}} other {# messages with {peer}}}"
 msgstr "{count, plural, one {הודעה אחת עם {peer}} two {# הודעות עם {peer}} other {# הודעות עם {peer}}}"
+
+#: apps/mobile/components/model-providers.tsx
+msgid "{count, plural, one {# model} other {# models}}"
+msgstr ""
 
 #: apps/web/src/components/markdown-copy.tsx
 msgid "{count, plural, one {# row} other {# rows}}"
@@ -871,6 +880,11 @@ msgstr "קצת מהכול"
 msgid "A command's output"
 msgstr "פלט של פקודה"
 
+#: apps/mobile/app/(settings)/labs.tsx
+#: apps/web/src/pages/LabsSettingsPanel.tsx
+msgid "A kanban board of tickets your bots can work on"
+msgstr ""
+
 #: apps/mobile/components/approval-settings-rows.tsx
 #: apps/web/src/components/ApprovalRulesSettings.tsx
 msgid "A model approves routine actions and asks you about the rest."
@@ -1221,7 +1235,6 @@ msgstr "שורת כתובת 2"
 msgid "Adds"
 msgstr "מה יתווסף"
 
-#: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/mobile/app/bot-settings.tsx
 #: apps/mobile/components/compatible-endpoint-form.tsx
 #: apps/mobile/components/routine-schedule-editor.tsx
@@ -1229,7 +1242,6 @@ msgstr "מה יתווסף"
 #: apps/web/src/pages/McpServerForm.tsx
 #: apps/web/src/pages/memory-providers/MemoryProviderAdvanced.tsx
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
-#: apps/web/src/pages/ModelSettingsOverlay.tsx
 #: apps/web/src/pages/onboarding/model-step.tsx
 #: apps/web/src/pages/routine-editor/model-settings.tsx
 #: apps/web/src/pages/shell/bot-panel.tsx
@@ -1800,7 +1812,7 @@ msgstr "Avatar Studio"
 #: apps/web/src/components/bot-templates/bot-templates-dialog.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 #: apps/web/src/components/integrations/skills-dialog.tsx
-#: apps/web/src/components/vault/VaultPageHeader.tsx
+#: apps/web/src/components/SettingsPageHeader.tsx
 #: apps/web/src/pages/AdminAccessPage.tsx
 #: apps/web/src/pages/AdminPluginsPage.tsx
 #: apps/web/src/pages/Artifacts.tsx
@@ -1893,8 +1905,10 @@ msgstr "חסום"
 
 #: apps/mobile/app/_layout.tsx
 #: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/labs.tsx
 #: apps/web/src/components/SidebarFooter.tsx
 #: apps/web/src/pages/Board.tsx
+#: apps/web/src/pages/LabsSettingsPanel.tsx
 msgid "Board"
 msgstr "לוח"
 
@@ -2914,6 +2928,10 @@ msgstr "מתחבר…"
 msgid "Connection"
 msgstr "חיבור"
 
+#: apps/mobile/app/(settings)/model-settings.tsx
+msgid "Connection not found"
+msgstr ""
+
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/mobile/app/(settings)/plugin.tsx
 msgid "Connection pending"
@@ -2949,9 +2967,8 @@ msgstr "אנשי קשר"
 msgid "Contains code to run"
 msgstr "מכיל קוד להרצה"
 
-#: apps/mobile/components/compatible-endpoint-form.tsx
-#: apps/web/src/pages/model-settings/compatible-model-fields.tsx
-#: apps/web/src/pages/onboarding/model-step.tsx
+#: apps/mobile/app/(settings)/model-settings.tsx
+#: apps/web/src/pages/model-settings/model-settings-panel.tsx
 msgid "Context limit"
 msgstr "מגבלת הקשר"
 
@@ -2995,6 +3012,11 @@ msgstr "המשך עם {name}"
 #: apps/web/src/components/SocialSignInButtons.tsx
 msgid "Continue with email"
 msgstr "המשך עם אימייל"
+
+#: apps/mobile/components/social-sign-in-buttons.tsx
+#: apps/web/src/components/SocialSignInButtons.tsx
+msgid "Continue with passkey"
+msgstr ""
 
 #: apps/mobile/components/computer-keyboard-bar.tsx
 msgid "Control"
@@ -3530,9 +3552,11 @@ msgstr "לא ניתן לטעון את הזיכרון"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/mobile/app/(settings)/model-picker.tsx
+#: apps/mobile/app/(settings)/model-settings.tsx
 #: apps/mobile/app/(settings)/models.tsx
 #: apps/mobile/app/bot-model.tsx
 #: apps/mobile/app/bot-settings.tsx
+#: apps/web/src/pages/model-settings/model-settings-panel.tsx
 #: apps/web/src/pages/model-settings/use-model-settings.ts
 msgid "Could not load model settings"
 msgstr "לא ניתן לטעון את הגדרות המודל"
@@ -3813,6 +3837,7 @@ msgid "Could not run routine"
 msgstr "לא ניתן להריץ את הרוטינה"
 
 #: apps/mobile/app/(settings)/general.tsx
+#: apps/mobile/app/(settings)/labs.tsx
 #: apps/mobile/app/(settings)/memory-note.tsx
 #: apps/mobile/app/(settings)/team-conversation.tsx
 #: apps/mobile/components/vault-item-editor.tsx
@@ -3846,6 +3871,11 @@ msgstr "לא ניתן לשמור את הקבוצה"
 #: apps/web/src/pages/onboarding/use-onboarding-model.ts
 msgid "Could not save model"
 msgstr "לא ניתן לשמור את המודל"
+
+#: apps/mobile/app/(settings)/model-settings.tsx
+#: apps/web/src/pages/model-settings/model-settings-panel.tsx
+msgid "Could not save model settings"
+msgstr ""
 
 #: apps/mobile/app/routine.tsx
 #: apps/web/src/pages/shell/use-routine-editor.ts
@@ -4141,6 +4171,10 @@ msgstr "לא ניתן להפעיל את המחשב"
 msgid "Couldn't update bot style"
 msgstr "לא ניתן לעדכן את סגנון הבוט"
 
+#: apps/web/src/pages/LabsSettingsPanel.tsx
+msgid "Couldn't update Labs"
+msgstr ""
+
 #: apps/web/src/pages/MessagingSettingsPanel.tsx
 msgid "Couldn't update messaging settings"
 msgstr "לא ניתן לעדכן את הגדרות ההודעות"
@@ -4382,13 +4416,10 @@ msgstr "דחייה"
 
 #: apps/mobile/app/bot-settings.tsx
 #: apps/mobile/components/bot-look-picker.tsx
-#: apps/mobile/components/compatible-endpoint-form.tsx
 #: apps/mobile/components/model-role-settings.tsx
 #: apps/web/src/components/ComputerProviderSettings.tsx
-#: apps/web/src/pages/model-settings/compatible-model-fields.tsx
 #: apps/web/src/pages/model-settings/role-model-picker.tsx
 #: apps/web/src/pages/ModelRoleSettings.tsx
-#: apps/web/src/pages/onboarding/model-step.tsx
 #: apps/web/src/pages/shell/avatar-studio-popover.tsx
 msgid "Default"
 msgstr "ברירת מחדל"
@@ -4969,27 +5000,24 @@ msgstr "יש להזין כתובת שרת"
 msgid "Enter a valid email"
 msgstr "יש להזין אימייל תקין"
 
-#: apps/web/src/pages/model-settings/use-model-settings.ts
-#: apps/web/src/pages/onboarding/use-onboarding-model.ts
+#: apps/web/src/pages/model-settings/model-settings-panel.tsx
 msgid "Enter a whole number from 1 to {MAX_MODEL_CONTEXT_WINDOW} for the context limit."
 msgstr "יש להזין מספר שלם בין 1 ל-{MAX_MODEL_CONTEXT_WINDOW} עבור מגבלת ההקשר."
 
-#: apps/web/src/pages/model-settings/use-model-settings.ts
-#: apps/web/src/pages/onboarding/use-onboarding-model.ts
+#: apps/web/src/pages/model-settings/model-settings-panel.tsx
 msgid "Enter a whole number from 1 to {MAX_MODEL_MAX_TOKENS} for maximum output tokens."
 msgstr "יש להזין מספר שלם בין 1 ל-{MAX_MODEL_MAX_TOKENS} עבור מספר טוקני הפלט המרבי."
 
-#: apps/mobile/app/(settings)/model-connection.tsx
+#: apps/mobile/app/(settings)/model-settings.tsx
 msgid "Enter a whole number from 1 to {max} for maximum output tokens."
 msgstr "יש להזין מספר שלם בין 1 ל-{max} למספר טוקני הפלט המרבי."
 
-#: apps/mobile/app/(settings)/model-connection.tsx
+#: apps/mobile/app/(settings)/model-settings.tsx
 msgid "Enter a whole number from 1 to {max} for the context limit."
 msgstr "יש להזין מספר שלם בין 1 ל-{max} למגבלת ההקשר."
 
-#: apps/mobile/app/(settings)/model-connection.tsx
-#: apps/web/src/pages/model-settings/use-model-settings.ts
-#: apps/web/src/pages/onboarding/use-onboarding-model.ts
+#: apps/mobile/app/(settings)/model-settings.tsx
+#: apps/web/src/pages/model-settings/model-settings-panel.tsx
 msgid "Enter a whole number from 1 to 1000 for the image limit."
 msgstr "יש להזין מספר שלם בין 1 ל-1000 עבור מגבלת התמונות."
 
@@ -5196,8 +5224,6 @@ msgid "External conversation"
 msgstr "שיחה חיצונית"
 
 #: apps/mobile/lib/thinking-level.ts
-#: apps/web/src/pages/model-settings/compatible-model-fields.tsx
-#: apps/web/src/pages/onboarding/model-step.tsx
 msgid "Extra high"
 msgstr "גבוה מאוד"
 
@@ -5669,8 +5695,6 @@ msgstr "הסתרת התמליל"
 #: apps/mobile/lib/thinking-level.ts
 #: apps/web/src/lib/ticket-priority.ts
 #: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
-#: apps/web/src/pages/model-settings/compatible-model-fields.tsx
-#: apps/web/src/pages/onboarding/model-step.tsx
 msgid "High"
 msgstr "גבוהה"
 
@@ -6068,6 +6092,13 @@ msgid "Label"
 msgstr "תווית"
 
 #: apps/mobile/app/(settings)/_layout.tsx
+#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/labs.tsx
+#: apps/web/src/pages/settings-nav.ts
+msgid "Labs"
+msgstr ""
+
+#: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/(settings)/general.tsx
 #: apps/mobile/app/(settings)/language.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
@@ -6091,6 +6122,10 @@ msgstr "בדיקה אחרונה {0}: השתנה"
 #: apps/web/src/pages/routine-editor/trigger-cards.tsx
 msgid "Last check {0}: no changes"
 msgstr "בדיקה אחרונה {0}: אין שינויים"
+
+#: apps/web/src/components/SocialSignInButtons.tsx
+msgid "Last used"
+msgstr ""
 
 #: apps/web/src/components/DesktopUpdates.tsx
 msgid "Later"
@@ -6315,8 +6350,6 @@ msgstr "נראה שמכיל מפתח"
 #: apps/mobile/lib/thinking-level.ts
 #: apps/web/src/lib/ticket-priority.ts
 #: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
-#: apps/web/src/pages/model-settings/compatible-model-fields.tsx
-#: apps/web/src/pages/onboarding/model-step.tsx
 msgid "Low"
 msgstr "נמוך"
 
@@ -6341,15 +6374,9 @@ msgid "Manage"
 msgstr "ניהול"
 
 #. placeholder {0}: option.name
-#. placeholder {0}: providerName(choice)
-#: apps/web/src/pages/ModelRoleSettings.tsx
 #: apps/web/src/pages/SettingsOverlay.tsx
 msgid "Manage {0}"
 msgstr "ניהול {0}"
-
-#: apps/mobile/components/model-role-settings.tsx
-msgid "Manage {provider}"
-msgstr "ניהול {provider}"
 
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/web/src/components/ModelCredits.tsx
@@ -6362,10 +6389,20 @@ msgstr "ניהול חיוב"
 msgid "Manage MCP servers"
 msgstr "ניהול שרתי MCP"
 
+#: apps/mobile/components/model-role-settings.tsx
+#: apps/web/src/pages/ModelRoleSettings.tsx
+msgid "Manage model"
+msgstr ""
+
 #: apps/mobile/app/bot-settings.tsx
 #: apps/web/src/pages/shell/bot-settings-sections.tsx
 msgid "Manage other bots"
 msgstr "ניהול בוטים אחרים"
+
+#: apps/mobile/components/model-role-settings.tsx
+#: apps/web/src/pages/ModelRoleSettings.tsx
+msgid "Manage provider"
+msgstr ""
 
 #: apps/web/src/pages/plugins/domain-search.tsx
 msgid "Manual"
@@ -6400,8 +6437,6 @@ msgid "Marketing"
 msgstr "שיווק"
 
 #: apps/mobile/lib/thinking-level.ts
-#: apps/web/src/pages/model-settings/compatible-model-fields.tsx
-#: apps/web/src/pages/onboarding/model-step.tsx
 msgid "Max"
 msgstr "מקסימלי"
 
@@ -6414,19 +6449,20 @@ msgstr "מקסימלי"
 msgid "Maximize"
 msgstr "הגדלה"
 
-#: apps/mobile/components/compatible-endpoint-form.tsx
-#: apps/web/src/pages/model-settings/compatible-model-fields.tsx
-#: apps/web/src/pages/onboarding/model-step.tsx
+#: apps/mobile/app/(settings)/model-settings.tsx
+#: apps/web/src/pages/model-settings/model-settings-panel.tsx
 msgid "Maximum images per request"
 msgstr "מספר תמונות מרבי לבקשה"
 
-#: apps/mobile/app/(settings)/model-connection.tsx
-#: apps/mobile/components/compatible-endpoint-form.tsx
-#: apps/web/src/pages/model-settings/compatible-model-fields.tsx
-#: apps/web/src/pages/ModelSettingsOverlay.tsx
-#: apps/web/src/pages/onboarding/model-step.tsx
+#: apps/mobile/app/(settings)/model-settings.tsx
+#: apps/web/src/pages/model-settings/model-settings-panel.tsx
 msgid "Maximum output tokens"
 msgstr "מספר טוקנים מרבי בפלט"
+
+#: apps/mobile/app/(settings)/model-settings.tsx
+#: apps/web/src/pages/model-settings/model-settings-panel.tsx
+msgid "Maximum output tokens must be below the context limit."
+msgstr ""
 
 #: apps/web/src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "MCP endpoint"
@@ -6445,8 +6481,6 @@ msgstr "שרתי MCP"
 
 #: apps/mobile/lib/thinking-level.ts
 #: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
-#: apps/web/src/pages/model-settings/compatible-model-fields.tsx
-#: apps/web/src/pages/onboarding/model-step.tsx
 msgid "Medium"
 msgstr "בינוני"
 
@@ -6589,8 +6623,6 @@ msgid "Microphone failed"
 msgstr "המיקרופון נכשל"
 
 #: apps/mobile/lib/thinking-level.ts
-#: apps/web/src/pages/model-settings/compatible-model-fields.tsx
-#: apps/web/src/pages/onboarding/model-step.tsx
 msgid "Minimal"
 msgstr "מינימלי"
 
@@ -6671,6 +6703,8 @@ msgstr "ספק המודל"
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/space.tsx
+#: apps/mobile/components/connection-model-list.tsx
+#: apps/web/src/pages/model-settings/provider-page.tsx
 #: apps/web/src/pages/ModelSettingsOverlay.tsx
 #: apps/web/src/pages/settings-nav.ts
 #: apps/web/src/pages/SpaceSettingOverrides.tsx
@@ -7094,8 +7128,10 @@ msgstr "אין תוצרים תואמים בדף הזה."
 msgid "No matching bots"
 msgstr "אין בוטים תואמים"
 
+#: apps/mobile/components/connection-model-list.tsx
 #: apps/mobile/components/model-picker-list.tsx
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
+#: apps/web/src/pages/model-settings/provider-page.tsx
 #: apps/web/src/pages/model-settings/role-model-picker.tsx
 #: apps/web/src/pages/shell/chat-model-picker.tsx
 msgid "No matching models"
@@ -8124,12 +8160,6 @@ msgstr "מוכן"
 msgid "Reason"
 msgstr "סיבה"
 
-#: apps/mobile/components/compatible-endpoint-form.tsx
-#: apps/web/src/pages/model-settings/compatible-model-fields.tsx
-#: apps/web/src/pages/onboarding/model-step.tsx
-msgid "Reasoning effort"
-msgstr "רמת חשיבה"
-
 #: apps/web/src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Recall and write"
 msgstr "שליפה וכתיבה"
@@ -8593,6 +8623,11 @@ msgstr "לאפס את המחשב?"
 msgid "Reset password"
 msgstr "איפוס סיסמה"
 
+#: apps/mobile/app/(settings)/model-settings.tsx
+#: apps/web/src/pages/model-settings/model-settings-panel.tsx
+msgid "Reset to defaults"
+msgstr ""
+
 #: apps/mobile/app/sign-in.tsx
 #: apps/web/src/pages/Auth.tsx
 msgid "Reset your password"
@@ -8883,6 +8918,7 @@ msgstr "שבת"
 
 #: apps/mobile/app/(settings)/memory-note.tsx
 #: apps/mobile/app/(settings)/model-connection.tsx
+#: apps/mobile/app/(settings)/model-settings.tsx
 #: apps/mobile/app/(settings)/profile.tsx
 #: apps/mobile/app/(settings)/skill.tsx
 #: apps/mobile/app/(settings)/spending-limit.tsx
@@ -8914,6 +8950,7 @@ msgstr "שבת"
 #: apps/web/src/pages/KnowledgeSection.tsx
 #: apps/web/src/pages/McpServerForm.tsx
 #: apps/web/src/pages/model-settings/connection-controls.tsx
+#: apps/web/src/pages/model-settings/model-settings-panel.tsx
 #: apps/web/src/pages/model-settings/providers-section.tsx
 #: apps/web/src/pages/ModelSettingsOverlay.tsx
 #: apps/web/src/pages/RoutineEditor.tsx
@@ -8977,7 +9014,9 @@ msgid "Saved, but this server fills logins only on their own site."
 msgstr "נשמר, אבל השרת הזה ממלא פרטי התחברות רק באתר שלהם."
 
 #: apps/mobile/app/(settings)/model-connection.tsx
+#: apps/mobile/app/(settings)/model-settings.tsx
 #: apps/mobile/lib/use-subscription-sign-in.ts
+#: apps/web/src/pages/model-settings/model-settings-panel.tsx
 #: apps/web/src/pages/model-settings/use-model-settings.ts
 msgid "Saved."
 msgstr "נשמר."
@@ -8992,6 +9031,7 @@ msgid "Saving..."
 msgstr "שומר..."
 
 #: apps/mobile/app/(settings)/model-connection.tsx
+#: apps/mobile/app/(settings)/model-settings.tsx
 #: apps/mobile/app/bot-settings.tsx
 #: apps/mobile/app/group-settings.tsx
 #: apps/web/src/components/SecretAskCard.tsx
@@ -9000,6 +9040,7 @@ msgstr "שומר..."
 #: apps/web/src/pages/GroupPanel.tsx
 #: apps/web/src/pages/McpServerForm.tsx
 #: apps/web/src/pages/model-settings/connection-controls.tsx
+#: apps/web/src/pages/model-settings/model-settings-panel.tsx
 #: apps/web/src/pages/model-settings/providers-section.tsx
 #: apps/web/src/pages/ModelSettingsOverlay.tsx
 #: apps/web/src/pages/RoutineEditor.tsx
@@ -9043,6 +9084,7 @@ msgstr "המסך אינו מחובר"
 #: apps/web/src/components/VaultSettings.tsx
 #: apps/web/src/pages/Artifacts.tsx
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
+#: apps/web/src/pages/model-settings/provider-page.tsx
 #: apps/web/src/pages/model-settings/providers-section.tsx
 #: apps/web/src/pages/model-settings/role-model-picker.tsx
 #: apps/web/src/pages/plugins/domain-search.tsx
@@ -9093,6 +9135,7 @@ msgstr "חיפוש „{query}” בשרתי MCP"
 
 #: apps/web/src/components/FoundModelPicker.tsx
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
+#: apps/web/src/pages/model-settings/provider-page.tsx
 #: apps/web/src/pages/model-settings/role-model-picker.tsx
 #: apps/web/src/pages/shell/chat-model-picker.tsx
 msgid "Search models"
@@ -9970,15 +10013,13 @@ msgstr "סיכומים ועובדות"
 msgid "Sunday"
 msgstr "יום ראשון"
 
-#: apps/mobile/components/compatible-endpoint-form.tsx
-#: apps/web/src/pages/model-settings/compatible-model-fields.tsx
-#: apps/web/src/pages/onboarding/model-step.tsx
+#: apps/mobile/app/(settings)/model-settings.tsx
+#: apps/web/src/pages/model-settings/model-settings-panel.tsx
 msgid "Supports images"
 msgstr "תומך בתמונות"
 
-#: apps/mobile/components/compatible-endpoint-form.tsx
-#: apps/web/src/pages/model-settings/compatible-model-fields.tsx
-#: apps/web/src/pages/onboarding/model-step.tsx
+#: apps/mobile/app/(settings)/model-settings.tsx
+#: apps/web/src/pages/model-settings/model-settings-panel.tsx
 msgid "Supports thinking"
 msgstr "תומך בחשיבה"
 
