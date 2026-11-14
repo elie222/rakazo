@@ -49,6 +49,11 @@ const { push, back, params, rpcCalls, saved } = vi.hoisted(() => ({
     // A failed save either keeps the bot's own model or finds it already cleared elsewhere.
     failBotUpdates: {} as Record<string, "kept" | "changed elsewhere">,
     needsModel: false,
+    // What the probe says about each found model; DeepInfra's listing carries it.
+    probeDetails: undefined as object[] | undefined,
+    failProbe: false,
+    // Holds the model search open until a test releases it.
+    holdProbe: undefined as Promise<void> | undefined,
   },
 }));
 
@@ -79,8 +84,14 @@ vi.mock("./api", () => ({
         defaultModel: "model-fixture",
         needsModel: saved.needsModel,
       };
-    if (procedure === "models/probeOpenAiCompatible")
-      return { models: Array.from({ length: 11 }, (_, index) => `found-${index}`) };
+    if (procedure === "models/probeOpenAiCompatible") {
+      if (saved.holdProbe) await saved.holdProbe;
+      if (saved.failProbe) throw new Error("offline");
+      return {
+        models: Array.from({ length: 11 }, (_, index) => `found-${index}`),
+        ...(saved.probeDetails ? { details: saved.probeDetails } : {}),
+      };
+    }
     if (procedure === "models/role") return { primary: null, backups: [] };
     if (procedure === "bots/list") {
       if (saved.failBotList) throw new Error("offline");
@@ -122,7 +133,10 @@ vi.mock("./api", () => ({
           provider: "openai-compatible",
           id: "model-fixture",
           label: "Fixture",
-          endpointPresets: [{ name: "Ollama Cloud", baseUrl: "https://ollama.com/v1" }],
+          endpointPresets: [
+            { name: "Ollama Cloud", baseUrl: "https://ollama.com/v1" },
+            { name: "DeepInfra", baseUrl: "https://api.deepinfra.com/v1/openai" },
+          ],
         },
         { provider: "anthropic", providerName: "Anthropic", id: "claude-fixture", label: "Claude" },
         // Deployment-funded models still leave room for a personal key.
@@ -391,24 +405,252 @@ async function notConnectedChoices() {
   return modelPickerRequest(route.params.requestId)!.connectChoices ?? [];
 }
 
-it("offers deployment-funded providers and Ollama Cloud once among providers to connect", async () => {
+it("offers deployment-funded providers and each hosted preset once among providers to connect", async () => {
   expect((await notConnectedChoices()).map((choice) => choice.label)).toEqual([
     "Anthropic",
     "OpenRouter",
+    "DeepInfra",
     "Ollama Cloud",
   ]);
 });
 
-it("does not offer Ollama Cloud again once it is the saved connection", async () => {
+it("does not offer Ollama Cloud again once it is the saved connection, but still offers DeepInfra", async () => {
   saved.baseUrl = "https://ollama.com/";
   try {
     expect((await notConnectedChoices()).map((choice) => choice.label)).toEqual([
       "Anthropic",
       "OpenRouter",
+      "DeepInfra",
     ]);
   } finally {
     saved.baseUrl = savedEndpoint;
   }
+});
+
+it("does not offer DeepInfra again once it is the saved connection, but still offers Ollama Cloud", async () => {
+  saved.baseUrl = "https://api.deepinfra.com/v1/openai/";
+  try {
+    expect((await notConnectedChoices()).map((choice) => choice.label)).toEqual([
+      "Anthropic",
+      "OpenRouter",
+      "Ollama Cloud",
+    ]);
+  } finally {
+    saved.baseUrl = savedEndpoint;
+  }
+});
+
+it("opens the DeepInfra preset through the compatible form with a visible key field", async () => {
+  await remount(() =>
+    renderConnection({ baseUrl: "https://api.deepinfra.com/v1/openai", credentialId: null }),
+  );
+  expect(field("OpenAI-compatible server URL")?.value).toBe("https://api.deepinfra.com/v1/openai");
+  expect(field("API key")?.placeholder).toBe("");
+  expect(field("API key")?.type).toBe("password");
+  expect(
+    [...container.querySelectorAll("button")].filter((button) =>
+      ["Setup help", "API key"].includes(button.textContent ?? ""),
+    ),
+  ).toHaveLength(0);
+  // A hosted preset refuses keyless requests, so Save waits for the key.
+  const save = () =>
+    [...container.querySelectorAll("button")].find((button) => button.textContent === "Save")!;
+  await change("Model id", "some/model");
+  expect(save().disabled).toBe(true);
+  await change("API key", "di-test-key-123456");
+  expect(save().disabled).toBe(false);
+});
+
+describe("DeepInfra capability prefill", () => {
+  const connectInput = () =>
+    rpcCalls.filter(([procedure]) => procedure === "models/connect").at(-1)?.[1] as
+      | Record<string, unknown>
+      | undefined;
+  const cache = { scope: "account", retentionMode: "short", readCostPerMillion: 0.1 } as const;
+
+  async function openDeepInfra() {
+    await remountWithAdvanced(() =>
+      renderConnection({ baseUrl: "https://api.deepinfra.com/v1/openai", credentialId: null }),
+    );
+    await change("API key", "di-test-key-123456");
+    await act(async () =>
+      [...container.querySelectorAll("button")]
+        .find((button) => button.textContent === "Find models")!
+        .click(),
+    );
+  }
+  const pick = (id: string) =>
+    act(async () =>
+      [...container.querySelectorAll("button")]
+        .find((button) => button.textContent === id)!
+        .click(),
+    );
+  const save = () =>
+    act(async () =>
+      [...container.querySelectorAll("button")]
+        .find((button) => button.textContent === "Save")!
+        .click(),
+    );
+
+  afterEach(() => {
+    saved.probeDetails = undefined;
+    saved.failProbe = false;
+    saved.holdProbe = undefined;
+  });
+
+  it("keeps an output limit edited while the model search is still running", async () => {
+    let release: () => void = () => undefined;
+    saved.holdProbe = new Promise((resolve) => (release = resolve));
+    saved.probeDetails = [
+      { id: "found-0", supportsImages: false, reasoning: false, contextWindow: 2048 },
+    ];
+    await openDeepInfra();
+    await change("Maximum output tokens", "1000");
+    await act(async () => {
+      release();
+      for (let index = 0; index < 5; index += 1) await new Promise((done) => setTimeout(done, 0));
+    });
+    // 1000 already fits the 2048-token context, so the search result must not replace it.
+    expect(field("Context limit")?.value).toBe("2048");
+    expect(field("Maximum output tokens")?.value).toBe("1000");
+  });
+
+  it("prefills the switches and limit from the picked model and sends them on connect", async () => {
+    saved.probeDetails = [
+      {
+        id: "found-0",
+        supportsImages: true,
+        reasoning: true,
+        contextWindow: 131072,
+        cacheCapabilities: cache,
+      },
+    ];
+    await openDeepInfra();
+    // The first found model is chosen for a new connection.
+    expect(field("Supports images")?.checked).toBe(true);
+    expect(field("Supports thinking")?.checked).toBe(true);
+    expect(field("Context limit")?.value).toBe("131072");
+    await save();
+    expect(connectInput()).toMatchObject({
+      baseUrl: "https://api.deepinfra.com/v1/openai",
+      modelId: "found-0",
+      supportsImages: true,
+      reasoning: true,
+      contextWindow: 131072,
+      cacheCapabilitiesByModel: { "found-0": cache },
+    });
+    expect(connectInput()).not.toHaveProperty("cacheCapabilities");
+  });
+
+  it("shows what the listing says each found model can do", async () => {
+    saved.probeDetails = [
+      { id: "found-0", supportsImages: true, reasoning: true },
+      { id: "found-1", supportsImages: false, reasoning: false },
+    ];
+    await openDeepInfra();
+    expect(document.body.textContent).toContain("found-0Images · Thinking");
+    expect(document.body.textContent).not.toContain("found-1Images");
+    expect(document.body.textContent).not.toContain("found-1Thinking");
+  });
+
+  it("lets the person change a prefilled switch before connecting", async () => {
+    saved.probeDetails = [
+      { id: "found-0", supportsImages: true, reasoning: true, contextWindow: 65536 },
+    ];
+    await openDeepInfra();
+    await act(async () => field("Supports images")!.click());
+    await save();
+    expect(connectInput()).toMatchObject({
+      supportsImages: false,
+      reasoning: true,
+      // Described, with no prompt cache: sent as cleared rather than left to a saved price.
+      cacheCapabilitiesByModel: { "found-0": null },
+    });
+    expect(connectInput()).not.toHaveProperty("cacheCapabilities");
+  });
+
+  it("applies the details of whichever model is picked and sends only that model's cache pricing", async () => {
+    saved.probeDetails = [
+      { id: "found-0", supportsImages: true, reasoning: true, cacheCapabilities: cache },
+      { id: "found-1", supportsImages: false, reasoning: false, contextWindow: 32768 },
+    ];
+    await openDeepInfra();
+    await pick("found-1");
+    expect(field("Supports images")?.checked).toBe(false);
+    expect(field("Supports thinking")?.checked).toBe(false);
+    expect(field("Context limit")?.value).toBe("32768");
+    await save();
+    expect(connectInput()).toMatchObject({
+      modelId: "found-1",
+      supportsImages: false,
+      reasoning: false,
+      contextWindow: 32768,
+      cacheCapabilitiesByModel: { "found-1": null },
+    });
+    expect(connectInput()).not.toHaveProperty("cacheCapabilities");
+  });
+
+  it("lowers the output limit with a small published context limit so the form still saves", async () => {
+    saved.probeDetails = [{ id: "found-0", contextWindow: 2048 }];
+    await openDeepInfra();
+    expect(field("Context limit")?.value).toBe("2048");
+    expect(field("Maximum output tokens")?.value).toBe("1024");
+    await save();
+    expect(connectInput()).toMatchObject({ contextWindow: 2048, maxTokens: 1024 });
+  });
+
+  it("does not prefill a one-token context limit", async () => {
+    saved.probeDetails = [{ id: "found-0", reasoning: true, contextWindow: 1 }];
+    await openDeepInfra();
+    expect(field("Supports thinking")?.checked).toBe(true);
+    expect(field("Context limit")?.value).toBe("262144");
+  });
+
+  it("refuses to save an output limit that leaves no room in the context limit", async () => {
+    await openDeepInfra();
+    await change("Context limit", "4096");
+    await change("Maximum output tokens", "8192");
+    await save();
+    expect(connectInput()).toBeUndefined();
+    expect(container.textContent).toContain(
+      "Maximum output tokens must be lower than the context limit.",
+    );
+  });
+
+  it("leaves the switches alone for a model the listing did not describe", async () => {
+    saved.probeDetails = [{ id: "found-0", supportsImages: true, contextWindow: 65536 }];
+    await openDeepInfra();
+    await pick("found-2");
+    expect(field("Supports images")?.checked).toBe(true);
+    expect(field("Context limit")?.value).toBe("65536");
+  });
+
+  it("forgets the last search's details when a later search fails", async () => {
+    saved.probeDetails = [
+      { id: "found-0", contextWindow: 65536 },
+      { id: "found-1", contextWindow: 32768, cacheCapabilities: cache },
+    ];
+    await openDeepInfra();
+    expect(field("Context limit")?.value).toBe("65536");
+    saved.failProbe = true;
+    await act(async () =>
+      [...container.querySelectorAll("button")]
+        .find((button) => button.textContent === "Find models")!
+        .click(),
+    );
+    await change("Model id", "found-1");
+    expect(field("Context limit")?.value).toBe("65536");
+    await save();
+    expect(connectInput()).toMatchObject({ modelId: "found-1" });
+    expect(connectInput()).not.toHaveProperty("cacheCapabilitiesByModel");
+  });
+
+  it("does not prefill when the server sends no details", async () => {
+    await openDeepInfra();
+    expect(field("Supports images")?.checked).toBe(false);
+    expect(field("Supports thinking")?.checked).toBe(false);
+    expect(field("Context limit")?.value).toBe("262144");
+  });
 });
 
 it("opens the Ollama preset through the compatible form with a visible key field", async () => {

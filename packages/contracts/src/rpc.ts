@@ -182,6 +182,7 @@ import {
   ModelCredentialSchema,
   ModelOAuthBeginSchema,
   OPENAI_COMPATIBLE_PROVIDER_ID,
+  OpenAiCompatibleModelInfoSchema,
 } from "./model-connections.js";
 import { ModelHeadersSchema } from "./model-headers.js";
 import { ModelRoleSchema, ModelRoleUpdateSchema, ModelRoleViewSchema } from "./model-roles.js";
@@ -536,7 +537,13 @@ export const appContract = {
           apiProtocol: ModelApiProtocolSchema.optional(),
         }),
       )
-      .output(z.object({ models: z.array(z.string()) })),
+      .output(
+        z.object({
+          models: z.array(z.string()),
+          /** Per-model capabilities, when the server publishes them; older servers omit it. */
+          details: z.array(OpenAiCompatibleModelInfoSchema).optional(),
+        }),
+      ),
     probeCatalog: oc
       .input(
         z.object({

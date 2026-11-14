@@ -18,9 +18,12 @@ import {
   compatibleThinkingLevels,
   createModelProbe,
   initialModelProbeState,
+  isSavedCompatibleModel,
+  pickedCompatibleModelFields,
+  probedModelFields,
   savedCompatibleModelIds,
 } from "@rakazo/core";
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import type { ModelCatalogEntry } from "../../lib/model-auth";
 import type { ModelPreflightFailure } from "../../lib/model-connection-preflight";
 import {
@@ -30,6 +33,7 @@ import {
   unavailableSelectedModel,
 } from "../../lib/model-connection-preflight";
 import type { RpcClient } from "../../lib/rpc";
+import { useProbeModelInfo } from "../../lib/use-probe-model-info";
 
 type PreflightOutcome = { success: string } | { failure: ModelPreflightFailure };
 
@@ -63,12 +67,20 @@ export function useModelConnectionForm({
   const [reasoning, setReasoning] = useState(false);
   const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel | null>(null);
   const [maxTokens, setMaxTokens] = useState(String(DEFAULT_MODEL_MAX_TOKENS));
+  // A model search can finish after the person edits the output limit; prefill reads this.
+  const maxTokensRef = useRef(maxTokens);
+  maxTokensRef.current = maxTokens;
   const [contextWindow, setContextWindow] = useState(String(DEFAULT_MODEL_CONTEXT_WINDOW));
   const [supportsImages, setSupportsImages] = useState(false);
   const [maxImagesPerPrompt, setMaxImagesPerPrompt] = useState("");
   const [{ models: probeModels, probing }, setProbe] = useState(initialModelProbeState);
   const [modelProbe] = useState(() => createModelProbe(setProbe));
-  const resetOpenAiCompatibleProbe = modelProbe.reset;
+  const probeInfo = useProbeModelInfo();
+  const clearProbeInfo = probeInfo.clear;
+  const resetOpenAiCompatibleProbe = useCallback(() => {
+    modelProbe.reset();
+    clearProbeInfo();
+  }, [modelProbe, clearProbeInfo]);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [preflightTesting, setPreflightTesting] = useState(false);
@@ -155,14 +167,40 @@ export function useModelConnectionForm({
     invalidatePreflight();
   }
 
+  /**
+   * What the model listing says about a model replaces the form's guesses (images, thinking,
+   * context limit); the toggles stay editable. A model the listing does not describe leaves
+   * them as they are. Returns whether thinking is on for the model afterwards.
+   */
+  function applyProbedModelFields(id: string): boolean {
+    const probed = probedModelFields(probeInfo.infoRef.current.get(id), maxTokensRef.current);
+    if (probed.supportsImages !== undefined) setSupportsImages(probed.supportsImages);
+    if (probed.reasoning !== undefined) setReasoning(probed.reasoning);
+    if (probed.reasoning === false) setThinkingLevel(null);
+    if (probed.contextWindow !== undefined) setContextWindow(probed.contextWindow);
+    if (probed.maxTokens !== undefined) setMaxTokens(probed.maxTokens);
+    return probed.reasoning ?? reasoning;
+  }
+
+  /**
+   * Picks the model on screen. The connection's saved model gets its saved settings back; any
+   * other model takes what the listing says about it.
+   */
   function stageCompatibleModelId(nextModelId: string) {
     setModelId(nextModelId);
-    setThinkingLevel(
-      clampCatalogThinkingLevel(
-        credential?.modelId === nextModelId ? credential.thinkingLevel : null,
-        reasoning ? compatibleThinkingLevels(apiProtocol) : [],
-      ) as ThinkingLevel | null,
-    );
+    const fields = pickedCompatibleModelFields({
+      credential,
+      baseUrl,
+      modelId: nextModelId,
+      probed: probeInfo.infoRef.current.get(nextModelId),
+      form: { reasoning, maxTokens: maxTokensRef.current, apiProtocol },
+    });
+    if (fields.reasoning !== undefined) setReasoning(fields.reasoning);
+    if (fields.supportsImages !== undefined) setSupportsImages(fields.supportsImages);
+    if (fields.maxImagesPerPrompt !== undefined) setMaxImagesPerPrompt(fields.maxImagesPerPrompt);
+    if (fields.maxTokens !== undefined) setMaxTokens(fields.maxTokens);
+    if (fields.contextWindow !== undefined) setContextWindow(fields.contextWindow);
+    setThinkingLevel(fields.thinkingLevel);
   }
 
   async function probeServerModels() {
@@ -178,18 +216,25 @@ export function useModelConnectionForm({
       baseUrl,
       apiKey,
       request: (input) =>
-        rpc.models.probeOpenAiCompatible({
-          ...input,
-          apiProtocol,
-          headers: modelHeadersInput(headerRows),
-          credentialId: credential?.id,
-        }),
+        probeInfo.record(
+          rpc.models.probeOpenAiCompatible({
+            ...input,
+            apiProtocol,
+            headers: modelHeadersInput(headerRows),
+            credentialId: credential?.id,
+          }),
+        ),
       onSuccess: (models) => {
         if (!stillCurrent()) return;
         const current = modelIdRef.current;
         const next = current.trim() || models[0] || "";
+        // A saved connection keeps its own settings for the model it already runs.
+        const keepSaved = next === current && isSavedCompatibleModel(credential, baseUrl, current);
         if (next !== current) stageCompatibleModelId(next);
-        else setModelId(next);
+        else {
+          setModelId(next);
+          if (!keepSaved) applyProbedModelFields(next);
+        }
         onModelsFound?.(models, current.trim());
         const unavailable = unavailableSelectedModel(current, models);
         if (unavailable) {
@@ -251,6 +296,7 @@ export function useModelConnectionForm({
     apiKey,
     apiProtocol,
     applyFields,
+    applyProbedModelFields,
     baseUrl,
     routingReady,
     contextWindow,
@@ -273,6 +319,8 @@ export function useModelConnectionForm({
     preflightSuccess,
     preflightTarget,
     preflightTesting,
+    probeInfoById: probeInfo.infoById,
+    probeInfoRef: probeInfo.infoRef,
     probeModels,
     probeServerModels,
     probing,

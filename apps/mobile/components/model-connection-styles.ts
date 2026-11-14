@@ -69,6 +69,14 @@ export function createModelsStyles() {
       color: native.label,
       fontSize: 15,
     },
+    modelChoiceText: {
+      flex: 1,
+    },
+    modelHint: {
+      color: native.secondaryLabel,
+      fontSize: 13,
+      marginTop: 2,
+    },
     singleRow: {
       borderBottomWidth: 0,
     },

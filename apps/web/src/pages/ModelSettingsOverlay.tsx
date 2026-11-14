@@ -5,6 +5,7 @@ import {
   modelRoleChoiceKey,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   savedCompatibleEndpointMatches,
+  savedCompatibleEndpointPresets,
 } from "@rakazo/contracts";
 import { popularModelProvidersFirst } from "@rakazo/core";
 import {
@@ -106,13 +107,11 @@ export function ModelSettingsOverlay({
     (entry) => entry.id,
     (entry) => entry.name,
   );
+  // A hosted preset is offered until a connection to its endpoint is saved, however many
+  // other compatible connections there are.
+  const savedPresets = savedCompatibleEndpointPresets(endpointPresets, credentials);
   const providers = allProviders.filter((entry) =>
-    entry.baseUrl
-      ? !savedCompatibleEndpointMatches(
-          credentialByProvider.get(OPENAI_COMPATIBLE_PROVIDER_ID)?.baseUrl ?? "",
-          entry.baseUrl,
-        )
-      : !credentialByProvider.has(entry.id),
+    entry.baseUrl ? !savedPresets.has(entry.baseUrl) : !credentialByProvider.has(entry.id),
   );
   const connectionName = (entry: ModelCredential) => {
     const group = groups.find((item) => item.id === entry.provider);

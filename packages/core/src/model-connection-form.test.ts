@@ -1,11 +1,15 @@
 import type { ModelCredential } from "@rakazo/contracts";
+import { ModelConnectInputSchema } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import type { ConnectionFormDraft } from "./model-connection-form.js";
 import {
   compatibleConnectionReady,
   connectionFormFields,
   connectionFormModelId,
+  isSavedCompatibleModel,
   modelConnectRequest,
+  pickedCompatibleModelFields,
+  probedModelFields,
 } from "./model-connection-form.js";
 
 const catalog = [
@@ -226,6 +230,164 @@ describe("compatibleConnectionReady", () => {
       compatibleConnectionReady({ ...ready, headerRows: [{ name: "bad name", value: "v" }] }),
     ).toBe(false);
   });
+
+  it("waits for a required key, from the typed one or the saved one", () => {
+    const atPreset = { ...ready, baseUrl: " https://hosted.example.test/v1 ", keyRequired: true };
+    expect(compatibleConnectionReady(atPreset)).toBe(false);
+    expect(compatibleConnectionReady({ ...atPreset, apiKey: "fake-key" })).toBe(true);
+    expect(
+      compatibleConnectionReady({
+        ...atPreset,
+        credential: { hasKey: true, baseUrl: "https://hosted.example.test/v1" },
+      }),
+    ).toBe(true);
+    expect(compatibleConnectionReady({ ...atPreset, keyRequired: false })).toBe(true);
+  });
+});
+
+describe("probedModelFields", () => {
+  it("prefills only the fields the listing publishes", () => {
+    expect(probedModelFields(undefined, "4096")).toEqual({});
+    expect(probedModelFields({ id: "a" }, "4096")).toEqual({});
+    expect(
+      probedModelFields(
+        { id: "a", supportsImages: false, reasoning: true, contextWindow: 131072 },
+        "4096",
+      ),
+    ).toEqual({ supportsImages: false, reasoning: true, contextWindow: "131072" });
+  });
+
+  it("ignores cache pricing, which rides on the connect request instead", () => {
+    expect(
+      probedModelFields(
+        { id: "a", cacheCapabilities: { scope: "account", retentionMode: "short" } },
+        "4096",
+      ),
+    ).toEqual({});
+  });
+
+  it.each([
+    [4096, "4096", "2048"],
+    [8192, "9000", "4096"],
+    [2, "4096", "1"],
+    [3, "3", "1"],
+  ])(
+    "lowers the output limit when a %i-token context would not leave it room (was %s)",
+    (contextWindow, current, lowered) => {
+      expect(probedModelFields({ id: "a", contextWindow }, current)).toEqual({
+        contextWindow: String(contextWindow),
+        maxTokens: lowered,
+      });
+    },
+  );
+
+  it("keeps an output limit that already fits", () => {
+    expect(probedModelFields({ id: "a", contextWindow: 8192 }, "4096")).toEqual({
+      contextWindow: "8192",
+    });
+  });
+
+  it.each(["", "lots", "4096.5"])(
+    "leaves an output limit it cannot read as a whole number (%j) to the form's own validation",
+    (current) => {
+      expect(probedModelFields({ id: "a", contextWindow: 4096 }, current)).toEqual({
+        contextWindow: "4096",
+      });
+    },
+  );
+
+  it("does not prefill a one-token context limit, which no output limit can fit under", () => {
+    expect(probedModelFields({ id: "a", reasoning: true, contextWindow: 1 }, "4096")).toEqual({
+      reasoning: true,
+    });
+  });
+
+  it("keeps every prefilled pair valid down to the smallest context limit", () => {
+    for (const contextWindow of [2, 3, 4096]) {
+      const fields = probedModelFields({ id: "a", contextWindow }, "4096");
+      expect(Number(fields.contextWindow)).toBe(contextWindow);
+      expect(Number(fields.maxTokens ?? "4096")).toBeLessThan(contextWindow);
+      expect(Number(fields.maxTokens ?? "4096")).toBeGreaterThanOrEqual(1);
+    }
+  });
+});
+
+describe("pickedCompatibleModelFields", () => {
+  const endpoint = "https://models.example.test/v1";
+  const saved = credential({
+    provider: COMPATIBLE,
+    baseUrl: endpoint,
+    modelId: "saved",
+    apiProtocol: "chat-completions",
+    reasoning: true,
+    thinkingLevel: "high",
+    maxTokens: 2048,
+    contextWindow: 32_000,
+    supportsImages: false,
+    maxImagesPerPrompt: 2,
+  });
+  const listing = new Map([
+    ["saved", { id: "saved", supportsImages: true, reasoning: false, contextWindow: 8192 }],
+    ["other", { id: "other", supportsImages: true, reasoning: false, contextWindow: 1024 }],
+  ]);
+  const savedFields = {
+    reasoning: true,
+    supportsImages: false,
+    maxImagesPerPrompt: "2",
+    maxTokens: "2048",
+    contextWindow: "32000",
+    thinkingLevel: "high",
+  };
+
+  /** A form that writes every returned field, as both apps do. */
+  function pick(form: Record<string, unknown>, modelId: string, baseUrl = endpoint) {
+    const fields = pickedCompatibleModelFields({
+      credential: saved,
+      baseUrl,
+      modelId,
+      probed: listing.get(modelId),
+      form: {
+        reasoning: form.reasoning as boolean,
+        maxTokens: form.maxTokens as string,
+        apiProtocol: "chat-completions",
+      },
+    });
+    return { ...form, ...fields };
+  }
+
+  it("tells the saved model on its saved endpoint from the same id elsewhere", () => {
+    expect(isSavedCompatibleModel(saved, `${endpoint}/`, "saved")).toBe(true);
+    expect(isSavedCompatibleModel(saved, endpoint, "other")).toBe(false);
+    expect(isSavedCompatibleModel(saved, "https://elsewhere.example.test/v1", "saved")).toBe(false);
+    expect(isSavedCompatibleModel(undefined, endpoint, "saved")).toBe(false);
+  });
+
+  it("restores the saved model's settings after another model's listing values were filled in", () => {
+    const other = pick(savedFields, "other");
+    expect(other).toEqual({
+      reasoning: false,
+      supportsImages: true,
+      maxImagesPerPrompt: "2",
+      maxTokens: "512",
+      contextWindow: "1024",
+      thinkingLevel: null,
+    });
+    expect(pick(other, "saved")).toEqual(savedFields);
+  });
+
+  it("takes the listing's values for the saved id on another endpoint", () => {
+    expect(pick(savedFields, "saved", "https://elsewhere.example.test/v1")).toEqual({
+      ...savedFields,
+      reasoning: false,
+      supportsImages: true,
+      contextWindow: "8192",
+      thinkingLevel: null,
+    });
+  });
+
+  it("keeps the form's own values for a model the listing does not describe", () => {
+    expect(pick(savedFields, "unlisted")).toEqual({ ...savedFields, thinkingLevel: null });
+  });
 });
 
 describe("modelConnectRequest", () => {
@@ -391,6 +553,87 @@ describe("modelConnectRequest", () => {
         label: "OpenAI-compatible",
         credentialId: "credential-fixture",
       },
+    });
+  });
+
+  describe("OpenAI-compatible limits and prompt caching", () => {
+    const compatible = { provider: COMPATIBLE, id: "openai-compatible" };
+    const form = (overrides: Partial<ConnectionFormDraft> = {}) =>
+      draft({ baseUrl: "http://h/v1", modelId: "m", maxTokens: "4096", ...overrides });
+    const cached = { scope: "account" as const, readCostPerMillion: 0.1 };
+    const pricier = { scope: "account" as const, readCostPerMillion: 0.9 };
+
+    it("refuses an output limit that leaves no room for input", () => {
+      for (const [maxTokens, contextWindow] of [
+        ["8192", "8192"],
+        ["8192", "4096"],
+        ["1", "1"],
+      ]) {
+        expect(
+          modelConnectRequest({
+            form: form({ maxTokens, contextWindow }),
+            selected: compatible,
+            credentialId: null,
+          }),
+        ).toEqual({ status: "invalid", field: "maxTokensExceedsContext" });
+      }
+    });
+
+    it("accepts an output limit one below the context limit", () => {
+      expect(
+        modelConnectRequest({
+          form: form({ maxTokens: "1", contextWindow: "2" }),
+          selected: compatible,
+          credentialId: null,
+        }).status,
+      ).toBe("ready");
+    });
+
+    it("sends the cache capabilities of every enabled model the listing described", () => {
+      const request = modelConnectRequest({
+        form: form({ enabledModelIds: ["n", "plain", "unlisted"] }),
+        selected: compatible,
+        credentialId: null,
+        probedModels: new Map([
+          ["m", { id: "m", cacheCapabilities: cached }],
+          ["n", { id: "n", cacheCapabilities: pricier }],
+          ["plain", { id: "plain", supportsImages: true }],
+          ["elsewhere", { id: "elsewhere", cacheCapabilities: cached }],
+        ]),
+      });
+      expect(request.status === "ready" && request.input.cacheCapabilitiesByModel).toEqual({
+        m: cached,
+        n: pricier,
+        plain: null,
+      });
+    });
+
+    it("builds a request the server accepts when the selected model and 500 enabled ones are described", () => {
+      const enabledModelIds = Array.from({ length: 500 }, (_, i) => `model-${i}`);
+      const request = modelConnectRequest({
+        form: form({ enabledModelIds }),
+        selected: compatible,
+        credentialId: null,
+        probedModels: new Map(
+          ["m", ...enabledModelIds].map((id) => [id, { id, cacheCapabilities: cached }]),
+        ),
+      });
+      expect(request.status).toBe("ready");
+      if (request.status !== "ready") return;
+      expect(Object.keys(request.input.cacheCapabilitiesByModel ?? {})).toHaveLength(501);
+      expect(ModelConnectInputSchema.safeParse(request.input).success).toBe(true);
+    });
+
+    it("sends no cache capabilities when the listing described none of the models", () => {
+      const request = modelConnectRequest({
+        form: form(),
+        selected: compatible,
+        credentialId: null,
+        probedModels: new Map([["elsewhere", { id: "elsewhere", cacheCapabilities: cached }]]),
+      });
+      expect(request.status === "ready" && request.input).not.toHaveProperty(
+        "cacheCapabilitiesByModel",
+      );
     });
   });
 });

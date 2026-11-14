@@ -1,6 +1,11 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
-import type { ModelApiProtocol, ModelHeaderRow, ThinkingLevel } from "@rakazo/contracts";
+import type {
+  ModelApiProtocol,
+  ModelHeaderRow,
+  OpenAiCompatibleModelInfo,
+  ThinkingLevel,
+} from "@rakazo/contracts";
 import {
   compatibleEndpointPresets,
   connectionDisplayName,
@@ -24,7 +29,9 @@ import {
   connectionMaxTokensField,
   createModelProbe,
   initialModelProbeState,
+  modelCapabilityHint,
   modelConnectRequest,
+  pickedCompatibleModelFields,
   savedCompatibleModelIds,
 } from "@rakazo/core";
 import { useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
@@ -96,15 +103,23 @@ export default function ModelConnection() {
   const [reasoning, setReasoning] = useState(false);
   const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel | null>(null);
   const [maxTokens, setMaxTokens] = useState(String(DEFAULT_MODEL_MAX_TOKENS));
+  // A model search can finish after the person edits the output limit; prefill reads this.
+  const maxTokensRef = useRef(maxTokens);
+  maxTokensRef.current = maxTokens;
   const [contextWindow, setContextWindow] = useState(String(DEFAULT_MODEL_CONTEXT_WINDOW));
   const [supportsImages, setSupportsImages] = useState(false);
   const [maxImagesPerPrompt, setMaxImagesPerPrompt] = useState("");
   const [showEndpointHelp, setShowEndpointHelp] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showApiKey, setShowApiKey] = useState(false);
+  // What the server's listing says about each found model; picking one prefills the switches.
+  const [probeDetails, setProbeDetails] = useState<OpenAiCompatibleModelInfo[]>([]);
   const [{ models: probeModels, probing }, setProbe] = useState(initialModelProbeState);
   const [modelProbe] = useState(() => createModelProbe(setProbe));
-  const resetOpenAiCompatibleProbe = modelProbe.reset;
+  const resetOpenAiCompatibleProbe = useCallback(() => {
+    modelProbe.reset();
+    setProbeDetails([]);
+  }, [modelProbe]);
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState<"connect" | "disconnect" | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -183,7 +198,7 @@ export default function ModelConnection() {
       setGatewayId(fields.gatewayId);
       return nextMe;
     },
-    [request, rpc, t],
+    [request, resetOpenAiCompatibleProbe, rpc, t],
   );
 
   function adoptSavedCredential(saved: MobileModelCredential) {
@@ -309,6 +324,8 @@ export default function ModelConnection() {
       savedCompatibleEndpointMatches(nextBaseUrl, credential?.baseUrl)
         ? (credential?.modelId ?? "")
         : "",
+      [],
+      nextBaseUrl,
     );
     resetOpenAiCompatibleProbe();
     clearFeedback();
@@ -336,11 +353,15 @@ export default function ModelConnection() {
     if (!baseUrl.trim()) return;
     Keyboard.dismiss();
     clearFeedback();
+    // The probe keeps only the model ids; hold the rest for the success callback, which a
+    // superseded probe never reaches. A search that fails leaves no details behind.
+    setProbeDetails([]);
+    let found: OpenAiCompatibleModelInfo[] = [];
     await modelProbe.probe({
       baseUrl,
       apiKey,
-      request: (input) =>
-        rpc(
+      request: async (input) => {
+        const result = await rpc(
           "models/probeOpenAiCompatible",
           {
             ...input,
@@ -349,10 +370,14 @@ export default function ModelConnection() {
             credentialId: credential?.id,
           },
           { timeoutMs: MODEL_CONNECT_TIMEOUT_MS },
-        ),
+        );
+        found = result.details ?? [];
+        return result;
+      },
       onSuccess: (models) => {
+        setProbeDetails(found);
         const next = modelId.trim() || models[0] || "";
-        if (next !== modelId) stageCompatibleModelId(next);
+        if (next !== modelId) stageCompatibleModelId(next, found);
         else setModelId(next);
         publishFeedback("probe", {
           notice:
@@ -390,14 +415,21 @@ export default function ModelConnection() {
     }
   }
 
-  function stageCompatibleModelId(nextModelId: string) {
+  function stageCompatibleModelId(nextModelId: string, details = probeDetails, endpoint = baseUrl) {
     setModelId(nextModelId);
-    setThinkingLevel(
-      clampCatalogThinkingLevel(
-        credential?.modelId === nextModelId ? credential.thinkingLevel : null,
-        reasoning ? compatibleThinkingLevels(apiProtocol) : [],
-      ) as ThinkingLevel | null,
-    );
+    const fields = pickedCompatibleModelFields({
+      credential,
+      baseUrl: endpoint,
+      modelId: nextModelId,
+      probed: details.find((info) => info.id === nextModelId),
+      form: { reasoning, maxTokens: maxTokensRef.current, apiProtocol },
+    });
+    if (fields.reasoning !== undefined) setReasoning(fields.reasoning);
+    if (fields.supportsImages !== undefined) setSupportsImages(fields.supportsImages);
+    if (fields.maxImagesPerPrompt !== undefined) setMaxImagesPerPrompt(fields.maxImagesPerPrompt);
+    if (fields.maxTokens !== undefined) setMaxTokens(fields.maxTokens);
+    if (fields.contextWindow !== undefined) setContextWindow(fields.contextWindow);
+    setThinkingLevel(fields.thinkingLevel);
   }
 
   async function connectKey(limitsOnly = false) {
@@ -425,6 +457,7 @@ export default function ModelConnection() {
       credentialId: credentialIdRef.current,
       settingsOnly: limitsOnly,
       makeDefault: { makeDefault, scope: target.scope },
+      probedModels: new Map(probeDetails.map((info) => [info.id, info])),
     });
     if (connect.status === "incomplete") return;
     // Drop the previous result before the limit check so it cannot sit beside the new one.
@@ -438,7 +471,9 @@ export default function ModelConnection() {
             ? t`Enter a whole number from 1 to ${ph({ max: MAX_MODEL_MAX_TOKENS })} for maximum output tokens.`
             : connect.field === "maxImagesPerPrompt"
               ? t`Enter a whole number from 1 to 1000 for the image limit.`
-              : t`Enter a whole number from 1 to ${ph({ max: MAX_MODEL_CONTEXT_WINDOW })} for the context limit.`,
+              : connect.field === "maxTokensExceedsContext"
+                ? t`Maximum output tokens must be lower than the context limit.`
+                : t`Enter a whole number from 1 to ${ph({ max: MAX_MODEL_CONTEXT_WINDOW })} for the context limit.`,
       });
       return;
     }
@@ -540,6 +575,12 @@ export default function ModelConnection() {
       enabledModelIds={enabledModelIds}
       setEnabledModelIds={setEnabledModelIds}
       probeModels={probeModels}
+      modelHint={(id) =>
+        modelCapabilityHint(
+          probeDetails.find((info) => info.id === id),
+          { images: t`Images`, thinking: t`Thinking` },
+        )
+      }
       showAdvanced={showAdvanced}
       onToggleAdvanced={toggleAdvanced}
       reasoning={reasoning}

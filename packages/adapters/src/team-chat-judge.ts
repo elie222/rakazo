@@ -12,7 +12,12 @@ import {
 } from "./model-credential-refresh.js";
 import { hostedModelCreditObserver } from "./model-credit-observer.js";
 import { deploymentModelRole, resolveMemberMainModel } from "./model-roles.js";
-import { parseModelSecret, secretValuesToRedact, serializeModelSecret } from "./model-secret.js";
+import {
+  modelCacheCapabilities,
+  parseModelSecret,
+  secretValuesToRedact,
+  serializeModelSecret,
+} from "./model-secret.js";
 import { hasHostedModelCredits } from "./model-selection.js";
 import { toOAuthCredential } from "./pi-credentials.js";
 
@@ -306,7 +311,7 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
       parsed.kind === "oauth"
         ? {}
         : {
-            cacheCapabilities: parsed.cacheCapabilities,
+            cacheCapabilities: modelCacheCapabilities(parsed, modelId),
             contextWindow: parsed.contextWindow,
           };
     if (parsed.kind === "oauth") {

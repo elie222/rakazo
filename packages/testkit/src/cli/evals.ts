@@ -5,7 +5,11 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { parseArgs } from "node:util";
 import type { AgentRunRequest } from "@rakazo/adapter-kit";
-import { ModelConnectInputSchema, ReplyModeSchema } from "@rakazo/contracts";
+import {
+  connectionCacheCapabilities,
+  ModelConnectInputSchema,
+  ReplyModeSchema,
+} from "@rakazo/contracts";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 import {
   APPS_EVAL_CASES,
@@ -405,7 +409,9 @@ async function main() {
   const connection = parsedConnection.data;
   report.model = connection.modelId!;
   report.provider = connection.provider;
-  Object.assign(report, { cacheCapabilities: connection.cacheCapabilities ?? null });
+  Object.assign(report, {
+    cacheCapabilities: connectionCacheCapabilities(connection, connection.modelId) ?? null,
+  });
   report.modelLimits = {
     contextWindow: connection.contextWindow ?? null,
     maxOutputTokens: connection.maxTokens ?? null,
@@ -473,6 +479,7 @@ async function main() {
         id: judgeConnection.modelId!,
         allowPrivateEndpoint: true,
         maxImagesPerPrompt: judgeConnection.maxImagesPerPrompt ?? undefined,
+        cacheCapabilities: connectionCacheCapabilities(judgeConnection, judgeConnection.modelId),
         maxTokens: judgeConnection.maxTokens ?? 2048,
       },
       collect,
@@ -546,6 +553,7 @@ async function main() {
         id: connection.modelId!,
         allowPrivateEndpoint: true,
         maxImagesPerPrompt: connection.maxImagesPerPrompt ?? undefined,
+        cacheCapabilities: connectionCacheCapabilities(connection, connection.modelId),
         maxTokens: connection.maxTokens ?? undefined,
       },
       pricing,

@@ -19,6 +19,7 @@ import {
   modelPreflightTestingLabel,
 } from "../../components/ModelConnectionPreflightNotice";
 import { ModelHeadersEditor } from "../../components/ModelHeadersEditor";
+import { modelCapabilityHint } from "../../lib/model-capability-hint";
 import { CompatibleKeyField } from "../model-settings/compatible-key-field";
 import type { OnboardingModel } from "./use-onboarding-model";
 
@@ -254,6 +255,7 @@ export function ModelStep({ model, fieldId }: { model: OnboardingModel; fieldId:
 function CompatibleServerFields({ model, fieldId }: { model: OnboardingModel; fieldId: string }) {
   const { t } = useLingui();
   const {
+    applyProbedModelFields,
     baseUrl,
     contextWindow,
     headerRows,
@@ -264,6 +266,7 @@ function CompatibleServerFields({ model, fieldId }: { model: OnboardingModel; fi
     modelId,
     preflightFailure,
     preflightTarget,
+    probeInfoById,
     probeModels,
     probeServerModels,
     probing,
@@ -282,6 +285,13 @@ function CompatibleServerFields({ model, fieldId }: { model: OnboardingModel; fi
     thinkingLevel,
     updateBaseUrl,
   } = model;
+
+  /** A different found model starts from its own published fields, not the last model's effort. */
+  function pickFoundModel(next: string) {
+    if (next !== modelId) setThinkingLevel(null);
+    setModelId(next);
+    applyProbedModelFields(next);
+  }
 
   return (
     <div className="mt-6 block text-body text-foreground">
@@ -320,9 +330,11 @@ function CompatibleServerFields({ model, fieldId }: { model: OnboardingModel; fi
             onChange={(next) => {
               invalidatePreflight();
               setManualModelId(next === CUSTOM_MODEL_OPTION);
-              setModelId(next === CUSTOM_MODEL_OPTION ? "" : next);
+              if (next === CUSTOM_MODEL_OPTION) setModelId("");
+              else pickFoundModel(next);
             }}
             otherValue={CUSTOM_MODEL_OPTION}
+            hint={(id) => modelCapabilityHint(probeInfoById.get(id))}
           />
         ) : (
           <Input
@@ -344,7 +356,7 @@ function CompatibleServerFields({ model, fieldId }: { model: OnboardingModel; fi
             className="mt-2 px-0 text-muted-foreground"
             onClick={() => {
               setManualModelId(false);
-              setModelId(probeModels[0] ?? "");
+              pickFoundModel(probeModels[0] ?? "");
               invalidatePreflight();
             }}
           >

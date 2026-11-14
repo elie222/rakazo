@@ -25,6 +25,11 @@ import {
 import { MODEL_CONNECT_TIMEOUT_MS } from "./pi-runtime-limits.js";
 import { maximumModelCallCost } from "./pi-usage.js";
 
+/** Clients get each hosted service's name and address; how the server checks keys stays here. */
+const CATALOG_ENDPOINT_PRESETS: CompatibleEndpointPreset[] = COMPATIBLE_ENDPOINT_PRESETS.map(
+  ({ name, baseUrl }) => ({ name, baseUrl }),
+);
+
 export type PiCatalogAuth = "api-key" | "oauth" | "both";
 
 export type PiCatalogEntry = {
@@ -339,7 +344,7 @@ function buildPiCatalog(): PiCatalogEntry[] {
         // endpoint. Keep each custom connection scoped to its entered model ID.
         // Its image support is the connection's own setting, not the catalog's.
         ...(provider.id === OPENAI_COMPATIBLE_PROVIDER_ID
-          ? { placeholder: true, endpointPresets: COMPATIBLE_ENDPOINT_PRESETS }
+          ? { placeholder: true, endpointPresets: CATALOG_ENDPOINT_PRESETS }
           : { images: model.input.includes("image") }),
         ...(probeBaseUrl ? { catalogProbe: true } : {}),
         ...(routingFields ? { routingFields } : {}),

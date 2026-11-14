@@ -5029,6 +5029,7 @@ describe("OpenAI-compatible model probes", () => {
   } satisfies Actor;
   const baseUrl = "https://127.0.0.1:8000/v1";
   const stored = JSON.stringify({ kind: "openai_compatible", baseUrl, apiKey: "fake-saved-key" });
+  const realProbe = adapters.probeOpenAiCompatibleModelList;
 
   function fixture(
     options: {
@@ -5036,6 +5037,7 @@ describe("OpenAI-compatible model probes", () => {
       secretUserId?: string;
       actor?: Actor;
       mcpAllowPrivateEndpoint?: boolean;
+      modelConnectionFetch?: typeof globalThis.fetch;
     } = {},
   ) {
     const credential = {
@@ -5072,9 +5074,9 @@ describe("OpenAI-compatible model probes", () => {
     const fetch = vi.fn<typeof globalThis.fetch>(async () =>
       Response.json({ data: [{ id: "test-model" }] }),
     );
-    const probe = adapters.probeOpenAiCompatibleModels;
-    vi.spyOn(adapters, "probeOpenAiCompatibleModels").mockImplementation((input, _, signal, opts) =>
-      probe(input, fetch, signal, opts),
+    vi.spyOn(adapters, "probeOpenAiCompatibleModelList").mockImplementation(
+      (input, transport, signal, opts) =>
+        realProbe(input, options.modelConnectionFetch ? transport : fetch, signal, opts),
     );
     const deps = {
       prisma: {
@@ -5083,9 +5085,11 @@ describe("OpenAI-compatible model probes", () => {
         secret: { findMany: findSecret },
       },
       secrets: { load },
-      modelConnectionFetch: vi.fn(() => {
-        throw new Error("Unexpected injected transport");
-      }),
+      modelConnectionFetch:
+        options.modelConnectionFetch ??
+        vi.fn(() => {
+          throw new Error("Unexpected injected transport");
+        }),
       env: {
         sandboxProvider: "fake",
         mcpAllowPrivateEndpoint: options.mcpAllowPrivateEndpoint ?? true,
@@ -5099,15 +5103,63 @@ describe("OpenAI-compatible model probes", () => {
 
   afterEach(() => vi.restoreAllMocks());
 
-  it("does not inject the connection transport into non-Ollama probes", async () => {
+  it("does not inject the connection transport into probes of caller-supplied URLs", async () => {
     const { client } = fixture();
     await client.models.probeOpenAiCompatible({ baseUrl });
-    expect(adapters.probeOpenAiCompatibleModels).toHaveBeenCalledWith(
+    expect(adapters.probeOpenAiCompatibleModelList).toHaveBeenCalledWith(
       expect.anything(),
       undefined,
       undefined,
       expect.anything(),
     );
+  });
+
+  it("probes the DeepInfra preset through the injected transport and returns model details", async () => {
+    const transport = vi.fn<typeof globalThis.fetch>(async (input) =>
+      String(input) === "https://api.deepinfra.com/v1/me"
+        ? Response.json({})
+        : Response.json({
+            data: [
+              {
+                id: "fixture/chat-model",
+                metadata: {
+                  context_length: 131072,
+                  pricing: { input_tokens: 0.5, output_tokens: 1, cache_read_tokens: 0.25 },
+                  tags: ["chat", "vision", "reasoning_effort", "prompt_cache"],
+                },
+              },
+              { id: "fixture/image-model", metadata: { tags: ["image-gen"] } },
+            ],
+          }),
+    );
+    const { client, fetch } = fixture({ modelConnectionFetch: transport });
+    await expect(
+      client.models.probeOpenAiCompatible({
+        baseUrl: "https://api.deepinfra.com/v1/openai",
+        apiKey: "fake-typed-key",
+      }),
+    ).resolves.toEqual({
+      models: ["fixture/chat-model"],
+      details: [
+        {
+          id: "fixture/chat-model",
+          supportsImages: true,
+          reasoning: true,
+          contextWindow: 131072,
+          cacheCapabilities: {
+            scope: "account",
+            retentionMode: "short",
+            inputCostPerMillion: 0.5,
+            readCostPerMillion: 0.25,
+          },
+        },
+      ],
+    });
+    expect(transport.mock.calls.map(([input]) => String(input))).toEqual([
+      "https://api.deepinfra.com/v1/me",
+      "https://api.deepinfra.com/v1/openai/models",
+    ]);
+    expect(fetch).not.toHaveBeenCalled();
   });
 
   it.each([undefined, "", "   "])("uses the saved key for a blank key %j", async (apiKey) => {
@@ -5739,20 +5791,33 @@ describe("model credential persistence", () => {
     );
   });
 
-  it.each([401, 403, 503])(
-    "rejects an unverified compatible Ollama connection (%i) before saving",
-    async (status) => {
+  it.each(
+    [
+      {
+        preset: "Ollama Cloud",
+        baseUrl: "https://ollama.com/v1",
+        check: "https://ollama.com/api/balance",
+      },
+      {
+        preset: "DeepInfra",
+        baseUrl: "https://api.deepinfra.com/v1/openai",
+        check: "https://api.deepinfra.com/v1/me",
+      },
+    ].flatMap((preset) => [401, 403, 503].map((status) => ({ ...preset, status }))),
+  )(
+    "rejects an unverified compatible $preset connection ($status) before saving",
+    async ({ baseUrl, check, status }) => {
       const { deps, handler } = persistDeps();
       const transport = vi.fn<typeof fetch>(async () => new Response(null, { status }));
       Object.assign(deps, { modelConnectionFetch: transport });
       const response = await call(handler, "models/connect", {
         provider: "openai-compatible",
-        baseUrl: "https://ollama.com/v1",
+        baseUrl,
         apiKey: "fake-fixture-key",
         modelId: "fixture-model",
       });
       expect(response.status).toBe(400);
-      expect(String(transport.mock.calls[0]?.[0])).toBe("https://ollama.com/api/balance");
+      expect(String(transport.mock.calls[0]?.[0])).toBe(check);
       expect(deps.secrets.put).not.toHaveBeenCalled();
       expect(deps.prisma.$transaction).not.toHaveBeenCalled();
     },

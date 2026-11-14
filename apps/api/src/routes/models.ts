@@ -13,7 +13,7 @@ import {
   oauthCredentialEmail,
   prepareStoredModelAuth,
   probeCatalogProviderModels,
-  probeOpenAiCompatibleModels,
+  probeOpenAiCompatibleModelList,
   providerCatalogCache,
   resolveMemberMainModel,
   selectDefaultCredentialId,
@@ -310,13 +310,15 @@ export function modelsRoutes(ctx: RouterContext) {
             }
           }
           try {
-            const models = await probeOpenAiCompatibleModels(
+            // Only the hosted presets' fixed URLs use the injected transport; a caller-supplied
+            // URL always goes out through the default fetch.
+            const { models, details } = await probeOpenAiCompatibleModelList(
               { ...input, apiKey, headers },
               compatibleEndpointPreset(input.baseUrl) ? deps.modelConnectionFetch : undefined,
               context.signal,
               { allowPrivate: mayUsePrivateEndpoint(deps) },
             );
-            return { models };
+            return details ? { models, details } : { models };
           } catch (error) {
             throw new ORPCError("BAD_REQUEST", {
               message: error instanceof Error ? error.message : "Could not list models",

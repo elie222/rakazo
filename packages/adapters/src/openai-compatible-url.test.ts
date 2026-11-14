@@ -3,6 +3,10 @@ import {
   assertAllowedOpenAiCompatibleRequestUrl,
   assertAllowedOpenAiCompatibleUrl,
   assertHttpsForKeyedOpenAiCompatibleUrl,
+  COMPATIBLE_ENDPOINT_PRESETS,
+  compatibleEndpointPreset,
+  DEEPINFRA_BASE_URL,
+  isDeepInfraBaseUrl,
   normalizeOpenAiCompatibleBaseUrl,
   openAiCompatAllowPublicHosts,
   PRIVATE_MODEL_ENDPOINT_MESSAGE,
@@ -219,4 +223,65 @@ it("keeps API-key-only HTTPS copy separate from header-aware copy", () => {
   expect(() => assertHttpsForKeyedOpenAiCompatibleUrl(url, undefined, true)).toThrow(
     "OpenAI-compatible endpoints that send an API key or custom headers must use HTTPS.",
   );
+});
+
+describe("hosted compatible endpoint presets", () => {
+  it("offers each preset once, at its canonical address", () => {
+    expect(new Set(COMPATIBLE_ENDPOINT_PRESETS.map((preset) => preset.baseUrl)).size).toBe(
+      COMPATIBLE_ENDPOINT_PRESETS.length,
+    );
+    for (const preset of COMPATIBLE_ENDPOINT_PRESETS)
+      expect(normalizeOpenAiCompatibleBaseUrl(preset.baseUrl)).toBe(preset.baseUrl);
+    expect(COMPATIBLE_ENDPOINT_PRESETS.map((preset) => preset.name)).toEqual([
+      "Ollama Cloud",
+      "DeepInfra",
+    ]);
+  });
+
+  it.each([
+    ["https://ollama.com", "Ollama Cloud"],
+    ["https://ollama.com/v1/", "Ollama Cloud"],
+    [" HTTPS://OLLAMA.COM:443/?q=x ", "Ollama Cloud"],
+    ["https://api.deepinfra.com/v1/openai/", "DeepInfra"],
+  ])("recognizes %s as %s", (url, name) => {
+    expect(compatibleEndpointPreset(url)?.name).toBe(name);
+  });
+
+  it.each([
+    undefined,
+    "invalid",
+    "https://ollama.com.evil.test",
+    "https://ollama.com/v2",
+    "http://ollama.com",
+    "https://user:pass@ollama.com",
+    "https://api.deepinfra.com/v1",
+    "http://127.0.0.1:8000/v1",
+  ])("does not mistake %s for a preset", (url) => {
+    expect(compatibleEndpointPreset(url)).toBeUndefined();
+  });
+
+  it("tells DeepInfra's endpoint from the other presets", () => {
+    expect(isDeepInfraBaseUrl(DEEPINFRA_BASE_URL)).toBe(true);
+    expect(isDeepInfraBaseUrl("https://api.deepinfra.com/v1")).toBe(false);
+    expect(isDeepInfraBaseUrl("https://ollama.com/v1")).toBe(false);
+  });
+
+  it("checks a preset's key only over HTTPS on the preset's own host", () => {
+    for (const { baseUrl, keyCheckUrl } of COMPATIBLE_ENDPOINT_PRESETS) {
+      if (!keyCheckUrl) continue;
+      const check = new URL(keyCheckUrl);
+      expect(check.protocol).toBe("https:");
+      expect(check.host).toBe(new URL(baseUrl).host);
+    }
+  });
+
+  it("keeps every preset host reachable when public hosts are off", () => {
+    for (const preset of COMPATIBLE_ENDPOINT_PRESETS)
+      expect(assertAllowedOpenAiCompatibleUrl(preset.baseUrl, { allowPublic: false }).href).toBe(
+        preset.baseUrl,
+      );
+    expect(() =>
+      assertAllowedOpenAiCompatibleUrl("https://models.example.test/v1", { allowPublic: false }),
+    ).toThrow("Public model endpoints are disabled");
+  });
 });

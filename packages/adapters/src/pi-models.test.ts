@@ -364,8 +364,11 @@ describe("Pi model catalog", () => {
     expect(openAiCompatible).toMatchObject({
       id: "custom",
       placeholder: true,
-      endpointPresets: COMPATIBLE_ENDPOINT_PRESETS,
+      endpointPresets: COMPATIBLE_ENDPOINT_PRESETS.map(({ name, baseUrl }) => ({ name, baseUrl })),
     });
+    // Clients get only each service's name and address.
+    for (const preset of openAiCompatible?.endpointPresets ?? [])
+      expect(Object.keys(preset).sort()).toEqual(["baseUrl", "name"]);
     expect(openAiCompatible?.catalogProbe).toBeUndefined();
   });
 

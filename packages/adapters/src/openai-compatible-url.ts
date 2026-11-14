@@ -13,15 +13,47 @@ import {
 
 export { normalizeOpenAiCompatibleBaseUrl, OPENAI_COMPATIBLE_PROVIDER_ID };
 
-const BUILT_IN_PUBLIC_MODEL_HOSTS = new Set(["ollama.com"]);
+/** DeepInfra serves its OpenAI-compatible API under /v1/openai. */
+export const DEEPINFRA_BASE_URL = "https://api.deepinfra.com/v1/openai";
+
+/**
+ * A hosted service as the server knows it. `keyCheckUrl` is an authenticated endpoint on the same
+ * host that refuses a missing or bad key, for a service whose model list answers without one.
+ */
+export type HostedEndpointPreset = CompatibleEndpointPreset & { keyCheckUrl?: string };
 
 /** Hosted compatible services the catalog offers by name. Each one needs a key. */
-export const COMPATIBLE_ENDPOINT_PRESETS: CompatibleEndpointPreset[] = [
-  { name: "Ollama Cloud", baseUrl: "https://ollama.com/v1" },
+export const COMPATIBLE_ENDPOINT_PRESETS: HostedEndpointPreset[] = [
+  {
+    name: "Ollama Cloud",
+    baseUrl: "https://ollama.com/v1",
+    keyCheckUrl: "https://ollama.com/api/balance",
+  },
+  {
+    name: "DeepInfra",
+    baseUrl: DEEPINFRA_BASE_URL,
+    keyCheckUrl: "https://api.deepinfra.com/v1/me",
+  },
 ];
+
+/** The hosted service on this endpoint's host, if any. */
+export function hostedEndpointPresetForHost(hostname: string): HostedEndpointPreset | undefined {
+  return COMPATIBLE_ENDPOINT_PRESETS.find(
+    (preset) => new URL(preset.baseUrl).hostname === hostname,
+  );
+}
+
+/** Hosts of the hosted presets, reachable even with public hosts off. */
+const BUILT_IN_PUBLIC_MODEL_HOSTS = new Set(
+  COMPATIBLE_ENDPOINT_PRESETS.map((preset) => new URL(preset.baseUrl).hostname),
+);
 
 export function compatibleEndpointPreset(baseUrl: string | undefined) {
   return matchCompatibleEndpointPreset(COMPATIBLE_ENDPOINT_PRESETS, baseUrl);
+}
+
+export function isDeepInfraBaseUrl(baseUrl: string | undefined): boolean {
+  return compatibleEndpointPreset(baseUrl)?.baseUrl === DEEPINFRA_BASE_URL;
 }
 
 export function openAiCompatAllowPublicHosts(): boolean {

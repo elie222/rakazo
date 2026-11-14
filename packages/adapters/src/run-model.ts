@@ -30,7 +30,12 @@ import {
 } from "./model-credit-observer.js";
 import { resolveMemberMainModel, selectConfiguredModel } from "./model-roles.js";
 import type { StoredModelSecret } from "./model-secret.js";
-import { parseModelSecret, secretValuesToRedact, serializeModelSecret } from "./model-secret.js";
+import {
+  modelCacheCapabilities,
+  parseModelSecret,
+  secretValuesToRedact,
+  serializeModelSecret,
+} from "./model-secret.js";
 import {
   enabledOpenAiCompatibleModelIds,
   findConnectedModelCredential,
@@ -326,7 +331,9 @@ async function resolveModelKeyMaterial(
         headers: resolved.secret.kind === "openai_compatible" ? resolved.secret.headers : undefined,
         allowPrivateEndpoint,
         cacheCapabilities:
-          resolved.secret.kind !== "oauth" ? resolved.secret.cacheCapabilities : undefined,
+          resolved.secret.kind !== "oauth"
+            ? modelCacheCapabilities(resolved.secret, modelId)
+            : undefined,
         contextWindow: resolved.secret.kind !== "oauth" ? resolved.secret.contextWindow : undefined,
         reasoning:
           resolved.secret.kind === "openai_compatible" ? resolved.secret.reasoning : undefined,
