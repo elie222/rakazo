@@ -85,6 +85,10 @@ export async function createStatusLineWriter(
           ),
         );
         keys.set(choice, key);
+        // A failed lookup is not kept: the next status tries the model again.
+        key.catch(() => {
+          if (keys.get(choice) === key) keys.delete(choice);
+        });
       }
       return key;
     };

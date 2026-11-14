@@ -2,6 +2,7 @@ import type { AgentRunRequest, AgentRuntimeEvent } from "@rakazo/adapter-kit";
 import { describe, expect, it, vi } from "vitest";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { effectiveModelRole } from "./model-roles.js";
+import { resolveModelKey } from "./run-model.js";
 import { createStatusLineWriter } from "./status-lines.js";
 
 vi.mock("./model-roles.js", () => ({
@@ -131,5 +132,18 @@ describe("createStatusLineWriter", () => {
     );
     expect(line).toBe("Checking availability");
     expect(models).toEqual(["small-b"]);
+  });
+
+  it("tries a model's key again after a failed lookup", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.mocked(resolveModelKey).mockRejectedValueOnce(new Error("database hiccup"));
+    const { deps: d, models } = deps(() => "Checking availability");
+    const writer = await createStatusLineWriter(d, scope, []);
+    const signal = new AbortController().signal;
+    await writer?.step("Is it in stock?", "Running: curl …", signal);
+    const line = await writer?.step("Is it in stock?", "Running: curl …", signal);
+    expect(line).toBe("Checking availability");
+    expect(models.filter((model) => model === "small-a").length).toBe(1);
+    warn.mockRestore();
   });
 });
