@@ -63,6 +63,21 @@ describe("startStatusLines", () => {
     live.close();
   });
 
+  it("never requests the opening once a step came first", async () => {
+    const opening = vi.fn(async () => "Looking into the plan pricing");
+    let resolveWriter!: (writer: StatusLineWriter) => void;
+    const t = target(undefined);
+    t.target.writer = new Promise<StatusLineWriter | undefined>((resolve) => {
+      resolveWriter = resolve;
+    });
+    const live = startStatusLines(t.target);
+    live.supersede();
+    resolveWriter({ opening, step: async () => undefined });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(opening).not.toHaveBeenCalled();
+    live.close();
+  });
+
   it("shows statuses one at a time, so a slow write never lands after a newer one", async () => {
     let release: () => void = () => {};
     const slow = new Promise<void>((resolve) => (release = resolve));

@@ -82,7 +82,8 @@ export function startStatusLines(target: StatusLineTarget): LiveStatusLines {
   const opening = ++generation;
   void writer
     .then(async (writer) => {
-      if (!writer || closed) return;
+      // A step or reply that came first owns the line: the opening is never requested.
+      if (!writer || closed || opening !== generation) return;
       const line = await writer.opening(
         target.request,
         AbortSignal.any([abort.signal, current.signal]),

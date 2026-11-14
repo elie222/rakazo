@@ -624,8 +624,9 @@ function buildAgentTool(
             executionId,
             response: host.modelResponses,
             ...(viaUseTool ? { viaUseTool } : {}),
-            ...(host.stepStatuses?.has(rawCallId)
-              ? { status: host.stepStatuses.get(rawCallId) }
+            // Remembered under the id the model gave, which may be empty: not the fallback id.
+            ...(host.stepStatuses?.has(toolCallId ?? "")
+              ? { status: host.stepStatuses.get(toolCallId ?? "") }
               : {}),
           });
           const startedAt = Date.now();
