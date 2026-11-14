@@ -30,6 +30,7 @@ export const RUN_TRIGGERS = [
   "skill",
   "bot_message",
   "webhook",
+  "service",
   "messaging",
   "cloud_agent",
   "purchase",

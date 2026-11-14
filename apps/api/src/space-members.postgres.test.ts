@@ -262,6 +262,43 @@ describePostgres("shared spaces: invites and membership (PostgreSQL)", () => {
     expect((await call(invitee.actor, "spaces/invites/accept", { token })).status).toBe(404);
   });
 
+  it("revokes a removed member's API keys there, so inviting them back does not revive them", async () => {
+    const owner = await person("owner");
+    const invitee = await person("invitee");
+    const home = await sharedSpace(owner, "Home");
+    await call(invitee.actor, "spaces/invites/accept", { token: await invite(owner, home) });
+    const key = (spaceId: string) =>
+      system.serviceCredential.create({
+        data: {
+          userId: invitee.id,
+          spaceId,
+          name: "Nightly",
+          tokenHash: randomUUID(),
+          tokenPrefix: "rks_test",
+          scopes: ["bots:read"],
+          botIds: [],
+          expiresAt: new Date(Date.now() + 86_400_000),
+        },
+      });
+    const there = await key(home);
+    const own = await key(invitee.spaceId);
+
+    const ownerInHome = inSpace(owner.actor, home);
+    expect(
+      (await call(ownerInHome, "spaces/members/remove", { spaceId: home, userId: invitee.id }))
+        .status,
+    ).toBe(200);
+    await call(invitee.actor, "spaces/invites/accept", { token: await invite(owner, home) });
+
+    const after = await system.serviceCredential.findMany({
+      where: { id: { in: [there.id, own.id] } },
+      select: { id: true, revokedAt: true },
+    });
+    expect(after.find((row) => row.id === there.id)?.revokedAt).toBeInstanceOf(Date);
+    // A key in a Space they still belong to keeps working.
+    expect(after.find((row) => row.id === own.id)?.revokedAt).toBeNull();
+  });
+
   it("keeps inviting, removing and leaving to the right people", async () => {
     const owner = await person("owner");
     const invitee = await person("invitee");

@@ -621,6 +621,11 @@ async function departSpace(
           await tx.actionAutoReviewPreference.deleteMany({ where: own });
           await tx.notificationPreference.deleteMany({ where: own });
           await tx.secret.deleteMany({ where: own });
+          // Their API keys here stop for good, so being invited back does not revive them.
+          await tx.serviceCredential.updateMany({
+            where: { ...own, revokedAt: null },
+            data: { revokedAt: new Date() },
+          });
           // Model, voice and role preferences, setting overrides, AI consents and their read state
           // in each chat cascade from here.
           await tx.spaceMember.delete({ where: { id: departing.id } });

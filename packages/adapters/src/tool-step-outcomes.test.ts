@@ -233,6 +233,8 @@ describe("tool step outcomes", () => {
       tickets: false,
       helper: false,
       helper_result: false,
+      // An API key's text is not the owner's own words.
+      service: false,
     };
     expect(Object.keys(expected).sort()).toEqual([...RUN_TRIGGERS].sort());
     for (const trigger of RUN_TRIGGERS)

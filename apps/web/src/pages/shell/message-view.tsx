@@ -404,6 +404,13 @@ export const MessageView = memo(function MessageView({
               />
             );
           }
+          if (block.kind === "service_origin") {
+            return (
+              <p key={i} className="text-right text-body-sm text-muted-foreground">
+                <Trans>Sent with the API key {block.name}</Trans>
+              </p>
+            );
+          }
           if (block.kind === "channel_message") {
             return (
               <div
