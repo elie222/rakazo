@@ -469,11 +469,22 @@ function encodeCursor(cursor: unknown): string | null {
 
 function decodeCursor(cursor: string | undefined): { id: string; createdAt: string } | undefined {
   if (!cursor) return undefined;
+  let value: unknown;
   try {
-    return JSON.parse(Buffer.from(cursor, "base64url").toString("utf8"));
+    value = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8"));
   } catch {
     throw new ServiceRejection("invalid_request");
   }
+  // Valid JSON of the wrong shape would reach the query with a bad date, so check it here.
+  const { id, createdAt } = (value ?? {}) as { id?: unknown; createdAt?: unknown };
+  if (
+    typeof id !== "string" ||
+    typeof createdAt !== "string" ||
+    Number.isNaN(Date.parse(createdAt))
+  ) {
+    throw new ServiceRejection("invalid_request");
+  }
+  return { id, createdAt };
 }
 
 const BOT_PAGE_SIZE = 200;
