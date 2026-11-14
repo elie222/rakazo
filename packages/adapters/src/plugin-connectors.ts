@@ -40,7 +40,7 @@ export type PluginSkippedEntry = {
   reason: string;
 };
 export type ParsedPlugin = {
-  format: "agent-plugins" | "cursor" | "grok";
+  format: "agent-plugins" | "agent-skills" | "cursor" | "grok";
   name: string;
   version: string | null;
   description: string;
@@ -60,9 +60,15 @@ export type ParsedPlugin = {
 
 /** Fetched component files; other paths are only listed. */
 const MAX_FILES = 200;
+/** A larger bounded fetch budget for catalogs containing many independent skills. */
+const MAX_CATALOG_FILES = 4000;
+const MAX_CATALOG_SKILLS = 500;
 const MAX_TREE_ENTRIES = 5000;
 const FETCH_CONCURRENCY = 8;
+const MAX_CATALOG_FETCH_CONCURRENCY = 16;
+const CATALOG_FETCH_TIMEOUT_MS = 60_000;
 const MAX_BYTES = 4_000_000;
+const MAX_CATALOG_BYTES = 30_000_000;
 const MAX_FILE_BYTES = 100_000;
 const FULL_SHA = /^[a-f0-9]{40}$/;
 const SCHEMAS = new Set([
@@ -75,12 +81,31 @@ const UNSUPPORTED_DIRS = new Set(["rules", "hooks", "automations"]);
 const UNSUPPORTED_FILES = new Set([".lsp.json"]);
 const AGENT_FILE = /^agents\/([^/]+)\.md$/;
 const SKILL_COMPANION = /^skills\/[^/]+\/(?!SKILL\.md$).+/;
-/** Reference docs a skill points to; scripts and binaries are not installed. */
+/** Plugin skill companions accept reference text, not scripts or binary assets. */
 const SKILL_TEXT_FILE = /\.(md|mdx|txt|json|ya?ml|csv)$/i;
+/** Agent Skills resources are read as text only; the importer never executes them. */
+const AGENT_SKILL_TEXT_FILE =
+  /\.(md|mdx|txt|json|jsonc|json5|jsonl|ya?ml|csv|tsv|toml|ini|cfg|conf|xml|html|css|scss|py|sh|bash|zsh|js|mjs|cjs|jsx|ts|mts|cts|tsx|rb|go|rs|php|pl|lua|ps1|bat|cmd|sql|r|m|swift|java|kt|scala|c|h|cpp|hpp|cs|ipynb|sv|v|vhd|vhdl|xdc|tcl|overlay|service|timer|tmpl|example|lock|dockerfile)$/i;
+const SKILL_RESOURCE_DIRS = ["assets", "references", "scripts", "templates"];
+const AGENT_SKILL_TEXT_FILENAMES = new Set([
+  "authors",
+  "changelog",
+  "contributing",
+  "copying",
+  "dockerfile",
+  "license",
+  "makefile",
+  "notice",
+  "readme",
+]);
+const MAX_AGENT_SKILL_FILES = 200;
+const MAX_AGENT_SKILL_FILES_BYTES = 2_000_000;
 export const MAX_SKILL_FILES = 40;
 const OVERSIZED_FILE = "\u0000";
 /** A link or submodule is never followed; a skill that contains one does not install. */
 const UNREADABLE_FILE = "\u0001";
+/** A listed Agent Skills file that was outside the bounded catalog preview. */
+const UNFETCHED_FILE = "\u0002";
 /** A whole component (skill folder, agent, command, MCP config or manifest) that is a link. */
 const UNREADABLE_COMPONENT =
   /^(skills\/[^/]+|agents\/[^/]+|commands\/[^/]+|\.?mcp\.json|plugin\.json|\.[a-z-]+-plugin(\/plugin\.json)?)$/;
@@ -191,6 +216,59 @@ export type PluginTextReader = (
 const readPublicText: PluginTextReader = async (url, maxBytes, signal) =>
   (await fetchSafeWebText(url, { maxBytes, signal })).body;
 
+function isSkillDocumentPath(path: string): boolean {
+  return (
+    path === "SKILL.md" ||
+    /^[^/]+\/SKILL\.md$/.test(path) ||
+    /^skills\/[^/]+\/SKILL\.md$/.test(path) ||
+    /^\.agents\/skills\/[^/]+\/SKILL\.md$/.test(path)
+  );
+}
+
+function skillFolder(path: string): string {
+  return path === "SKILL.md" ? "" : path.slice(0, -"SKILL.md".length);
+}
+
+function isWithinSkillFolder(path: string, folder: string): boolean {
+  return folder ? path.startsWith(folder) : path !== "SKILL.md";
+}
+
+function isAgentSkillResourcePath(path: string): boolean {
+  const filename = path.split("/").at(-1) ?? "";
+  const directory = path.split("/")[0] ?? "";
+  return (
+    AGENT_SKILL_TEXT_FILE.test(path) ||
+    AGENT_SKILL_TEXT_FILENAMES.has(filename.toLowerCase()) ||
+    (!filename.includes(".") && ["references", "scripts", "templates"].includes(directory))
+  );
+}
+
+function referencedSkillResources(body: string, siblings: readonly string[]): string[] {
+  const mentionedDirectories = new Set(
+    SKILL_RESOURCE_DIRS.filter((directory) => body.includes(`${directory}/`)),
+  );
+  const explicitlyNamed = new Set(siblings.filter((path) => bodyReferencesSkillPath(body, path)));
+  const explicitDirectories = new Set([...explicitlyNamed].map((path) => path.split("/")[0] ?? ""));
+  return siblings.filter((path) => {
+    const first = path.split("/")[0] ?? "";
+    return (
+      explicitlyNamed.has(path) ||
+      (mentionedDirectories.has(first) && !explicitDirectories.has(first)) ||
+      (body.includes("{baseDir}") && SKILL_RESOURCE_DIRS.includes(first))
+    );
+  });
+}
+
+function bodyReferencesSkillPath(body: string, path: string): boolean {
+  const escaped = path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const exactPath = new RegExp(
+    `(?:^|[^\\w./-])${escaped}(?=$|[^\\w./-]|\\.(?=$|\\s|[,;:!?)}\\]]))`,
+  );
+  if (path.includes("/")) return exactPath.test(body) || body.includes(`./${path}`);
+  if (/\.[^./]+$/.test(path)) return exactPath.test(body);
+  return body.includes(`\`${path}\``) || body.includes(`./${path}`) || body.includes(`${path}/`);
+}
+
 export async function fetchGitHubRepo(
   ref: PluginSourceRef,
   signal?: AbortSignal,
@@ -228,52 +306,181 @@ export async function fetchGitHubRepo(
     throw new Error("Plugin repository tree is incomplete");
   const prefix = ref.subdir ? `${ref.subdir}/` : "";
   const selected = tree.tree.filter((entry) => entry.path.startsWith(prefix));
-  const files: PluginRepoFile[] = [];
-  const entries = selected.filter((entry) => {
-    safePath(entry.path.slice(prefix.length));
-    if (entry.mode === "120000" || entry.type === "commit") {
-      files.push({ path: entry.path, content: UNREADABLE_FILE });
-      return false;
-    }
-    return entry.type === "blob";
-  });
+  const entries = selected
+    .filter((entry) => {
+      safePath(entry.path.slice(prefix.length));
+      return entry.type === "blob" && entry.mode !== "120000";
+    })
+    .map((entry) => ({
+      ...entry,
+      path: entry.path.slice(prefix.length),
+      absolutePath: entry.path,
+    }))
+    .sort((left, right) => (left.path < right.path ? -1 : left.path > right.path ? 1 : 0));
   if (entries.length > MAX_TREE_ENTRIES) throw new Error("Plugin directory has too many files");
+  const listedSkillDocuments = entries.filter((entry) => isSkillDocumentPath(entry.path));
+  const hasManifest = entries.some((entry) => MANIFESTS.includes(entry.path));
+  const rootSkill = listedSkillDocuments.find((entry) => entry.path === "SKILL.md");
+  const singleSkillMode = !hasManifest && rootSkill !== undefined;
+  const catalogMode =
+    !hasManifest &&
+    !singleSkillMode &&
+    listedSkillDocuments.some((entry) => entry.path !== "SKILL.md");
+  const skillDocuments = singleSkillMode ? [rootSkill] : listedSkillDocuments;
+  const nestedSkillFolders = singleSkillMode
+    ? listedSkillDocuments
+        .filter((entry) => entry !== rootSkill)
+        .map((entry) => skillFolder(entry.path))
+    : [];
+  const isInsideNestedSkill = (path: string) =>
+    nestedSkillFolders.some((folder) => path.startsWith(folder));
+  if (catalogMode && skillDocuments.length > MAX_CATALOG_SKILLS)
+    throw new Error("Skill catalog has too many skills");
+  const contentDeadline = catalogMode
+    ? AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(CATALOG_FETCH_TIMEOUT_MS)])
+    : deadline;
+
+  const contents = new Map<string, string>();
+  const entryByPath = new Map(entries.map((entry) => [entry.path, entry]));
+  for (const entry of selected) {
+    const path = entry.path.slice(prefix.length);
+    if (singleSkillMode && isInsideNestedSkill(path)) continue;
+    if (entry.mode === "120000" || entry.type === "commit") {
+      contents.set(entry.path, UNREADABLE_FILE);
+      continue;
+    }
+    if (entry.type !== "blob") continue;
+    const belongsToSkill = skillDocuments.some((skill) =>
+      isWithinSkillFolder(path, skillFolder(skill.path)),
+    );
+    contents.set(entry.path, !hasManifest && belongsToSkill ? UNFETCHED_FILE : "");
+  }
+
   let total = 0;
   let fetched = 0;
   const wanted: string[] = [];
-  for (const entry of entries) {
-    const path = entry.path.slice(prefix.length);
-    // Fetch only component text. Other paths are retained for skipped-part reporting.
-    if (!isFetchedComponent(path)) {
-      files.push({ path: entry.path, content: "" });
-      continue;
-    }
-    // An oversized reference refuses only its own skill, not the whole plugin.
-    if (SKILL_COMPANION.test(path) && (entry.size ?? 0) > MAX_FILE_BYTES) {
-      files.push({ path: entry.path, content: OVERSIZED_FILE });
-      continue;
-    }
-    if ((entry.size ?? 0) > MAX_FILE_BYTES) throw new Error("Plugin file is too large");
-    if (++fetched > MAX_FILES) throw new Error("Plugin directory has too many files");
-    wanted.push(entry.path);
-  }
-  const queue = [...wanted];
-  await Promise.all(
-    Array.from({ length: FETCH_CONCURRENCY }, async () => {
-      for (let path = queue.shift(); path !== undefined; path = queue.shift()) {
-        const body = await read(
-          `https://raw.githubusercontent.com${repo}/${sha}/${path.split("/").map(encodeURIComponent).join("/")}`,
-          MAX_FILE_BYTES,
-          deadline,
-        );
-        total += Buffer.byteLength(body);
-        if (total > MAX_BYTES) throw new Error("Plugin content is too large");
-        files.push({ path, content: body });
+  const addWanted = (path: string, maxFiles: number) => {
+    const entry = entryByPath.get(path);
+    if (!entry) return false;
+    if ((entry.size ?? 0) > MAX_FILE_BYTES) {
+      if (!hasManifest) {
+        contents.set(entry.absolutePath, UNFETCHED_FILE);
+        return false;
       }
-    }),
-  );
+      if (SKILL_COMPANION.test(path)) {
+        contents.set(entry.absolutePath, OVERSIZED_FILE);
+        return false;
+      }
+      throw new Error("Plugin file is too large");
+    }
+    if (fetched >= maxFiles) {
+      contents.set(entry.absolutePath, catalogMode ? UNFETCHED_FILE : "");
+      return false;
+    }
+    fetched++;
+    wanted.push(entry.absolutePath);
+    return true;
+  };
+
+  for (const entry of entries) {
+    const path = entry.path;
+    if (singleSkillMode && isInsideNestedSkill(path)) continue;
+    const standardComponent = hasManifest && isFetchedComponent(path);
+    const skillDocument =
+      (hasManifest && /^skills\/[^/]+\/SKILL\.md$/.test(path)) ||
+      (!hasManifest && (singleSkillMode ? path === "SKILL.md" : isSkillDocumentPath(path)));
+    const standaloneResource =
+      singleSkillMode &&
+      skillDocuments.some((skill) => {
+        const folder = skillFolder(skill.path);
+        return (
+          isWithinSkillFolder(path, folder) &&
+          path !== skill.path &&
+          isAgentSkillResourcePath(folder ? path.slice(folder.length) : path)
+        );
+      });
+    if (standardComponent || skillDocument || standaloneResource) {
+      const limit = catalogMode ? MAX_CATALOG_FILES : MAX_FILES;
+      if (!addWanted(path, limit) && !catalogMode && (entry.size ?? 0) <= MAX_FILE_BYTES) {
+        throw new Error("Plugin directory has too many files");
+      }
+    }
+  }
+  const download = async (paths: readonly string[]) => {
+    const queue = [...paths];
+    const concurrency = catalogMode ? MAX_CATALOG_FETCH_CONCURRENCY : FETCH_CONCURRENCY;
+    await Promise.all(
+      Array.from({ length: concurrency }, async () => {
+        for (let path = queue.shift(); path !== undefined; path = queue.shift()) {
+          const body = await read(
+            `https://raw.githubusercontent.com${repo}/${sha}/${path.split("/").map(encodeURIComponent).join("/")}`,
+            MAX_FILE_BYTES,
+            contentDeadline,
+          );
+          total += Buffer.byteLength(body);
+          if (total > (catalogMode ? MAX_CATALOG_BYTES : MAX_BYTES))
+            throw new Error("Plugin content is too large");
+          contents.set(path, body);
+        }
+      }),
+    );
+  };
+
+  await download(wanted);
+
+  if (catalogMode) {
+    const resourceWanted: string[] = [];
+    const resources = new Map<string, string[]>();
+    for (const skill of skillDocuments) {
+      const parsed = parseSkillMd(contents.get(skill.absolutePath) ?? "");
+      if ("error" in parsed) continue;
+      const folder = skillFolder(skill.path);
+      const siblings = entries
+        .filter((entry) => isWithinSkillFolder(entry.path, folder) && entry.path !== skill.path)
+        .map((entry) => (folder ? entry.path.slice(folder.length) : entry.path));
+      const referenced = referencedSkillResources(parsed.body, siblings);
+      if (referenced.length) resources.set(skill.path, referenced);
+    }
+
+    let catalogBytes = total;
+    for (const [skillPath, paths] of [...resources].sort(([left], [right]) =>
+      left < right ? -1 : left > right ? 1 : 0,
+    )) {
+      const skill = skillDocuments.find((entry) => entry.path === skillPath);
+      if (!skill) continue;
+      const folder = skillFolder(skill.path);
+      const candidates = paths
+        .map((path) => entryByPath.get(folder ? `${folder}${path}` : path))
+        .filter((entry): entry is (typeof entries)[number] => {
+          if (!entry) return false;
+          return (
+            contents.get(entry.absolutePath) === UNFETCHED_FILE &&
+            isAgentSkillResourcePath(folder ? entry.path.slice(folder.length) : entry.path)
+          );
+        });
+      const fetchableCandidates = candidates.filter((entry) => (entry.size ?? 0) <= MAX_FILE_BYTES);
+      const candidateBytes = fetchableCandidates.reduce((sum, entry) => sum + (entry.size ?? 0), 0);
+      if (
+        candidates.length > MAX_AGENT_SKILL_FILES ||
+        candidateBytes > MAX_AGENT_SKILL_FILES_BYTES ||
+        fetched + fetchableCandidates.length > MAX_CATALOG_FILES ||
+        catalogBytes + candidateBytes > MAX_CATALOG_BYTES
+      ) {
+        continue;
+      }
+      for (const entry of fetchableCandidates) {
+        fetched++;
+        resourceWanted.push(entry.absolutePath);
+      }
+      catalogBytes += candidateBytes;
+    }
+    await download(resourceWanted);
+  }
+
   // Parallel downloads finish in any order; parsing must not depend on it.
-  files.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+  const files = [...contents]
+    .map(([path, content]) => ({ path, content }))
+    .sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   return { files, resolvedSha: sha };
 }
 
@@ -281,15 +488,24 @@ function object(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-function companionRefusal(companions: Array<[string, string]>): string | null {
-  if (companions.some(([path]) => !SKILL_TEXT_FILE.test(path)))
+function companionRefusal(
+  companions: Array<[string, string]>,
+  agentSkillBundle = false,
+): string | null {
+  const maxFiles = agentSkillBundle ? MAX_AGENT_SKILL_FILES : MAX_SKILL_FILES;
+  const maxBytes = agentSkillBundle ? MAX_AGENT_SKILL_FILES_BYTES : MAX_SKILL_FILES_BYTES;
+  if (
+    companions.some(([path]) =>
+      agentSkillBundle ? !isAgentSkillResourcePath(path) : !SKILL_TEXT_FILE.test(path),
+    )
+  )
     return "Skills with scripts or other non-text files are not supported";
-  if (companions.length > MAX_SKILL_FILES) return "Skill has too many files";
+  if (companions.length > maxFiles) return "Skill has too many files";
   if (companions.some(([, text]) => text === UNREADABLE_FILE))
     return "Skills with links or submodules are not supported";
   if (companions.some(([, text]) => text === OVERSIZED_FILE)) return "Skill files are too large";
   const bytes = companions.reduce((sum, [, text]) => sum + Buffer.byteLength(text), 0);
-  if (bytes > MAX_SKILL_FILES_BYTES) return "Skill files are too large";
+  if (bytes > maxBytes) return "Skill files are too large";
   return null;
 }
 
@@ -297,22 +513,61 @@ function collectSkills(
   files: Map<string, string>,
   skipped: PluginSkippedEntry[],
   names: Set<string>,
+  agentSkillBundle = false,
 ): PluginSkillEntry[] {
   const skills: PluginSkillEntry[] = [];
   for (const [path, content] of files) {
-    const match = /^skills\/([^/]+)\/SKILL\.md$/.exec(path);
-    if (!match) continue;
+    if (
+      !isSkillDocumentPath(path) ||
+      (!agentSkillBundle && !/^skills\/[^/]+\/SKILL\.md$/.test(path))
+    )
+      continue;
     const parsed = parseSkillMd(content);
     if ("error" in parsed) {
       skipped.push({ kind: "skill_invalid", name: path, reason: parsed.error });
       continue;
     }
-    if (names.has(parsed.name.toLowerCase()))
-      throw new Error("Plugin contains duplicate skill names");
-    const folder = `skills/${match[1]}/`;
-    const companions = [...files].filter(([p]) => p.startsWith(folder) && p !== path);
-    const refusal = companionRefusal(companions.map(([p, text]) => [p.slice(folder.length), text]));
-    // A recipe whose scripts would be missing must not install half-working.
+    if (names.has(parsed.name.toLowerCase())) {
+      if (!agentSkillBundle) throw new Error("Plugin contains duplicate skill names");
+      skipped.push({
+        kind: "skill_invalid",
+        name: parsed.name,
+        reason: "Another skill in this catalog has the same name",
+      });
+      continue;
+    }
+    const folder = skillFolder(path);
+    const companions = [...files]
+      .filter(([p]) => isWithinSkillFolder(p, folder) && p !== path)
+      .map(([p, text]) => [folder ? p.slice(folder.length) : p, text] as [string, string]);
+    let storedCompanions = companions;
+    if (agentSkillBundle) {
+      const required = new Set(
+        referencedSkillResources(
+          parsed.body,
+          companions.map(([p]) => p),
+        ),
+      );
+      const missing = companions.filter(
+        ([relativePath, text]) =>
+          required.has(relativePath) &&
+          [UNFETCHED_FILE, UNREADABLE_FILE, OVERSIZED_FILE].includes(text),
+      );
+      if (missing.length) {
+        skipped.push({
+          kind: "skill_invalid",
+          name: parsed.name,
+          reason:
+            "The skill references companion files that are unavailable or exceed the import limits",
+        });
+        continue;
+      }
+      storedCompanions = companions.filter(
+        ([, text]) => ![UNFETCHED_FILE, UNREADABLE_FILE, OVERSIZED_FILE].includes(text),
+      );
+    }
+    const refusal = companionRefusal(storedCompanions, agentSkillBundle);
+    // A plugin recipe whose scripts would be missing must not install half-working.
     if (refusal) {
       skipped.push({ kind: "skill_invalid", name: parsed.name, reason: refusal });
       continue;
@@ -322,11 +577,9 @@ function collectSkills(
       name: parsed.name,
       description: parsed.description,
       content,
-      ...(companions.length
+      ...(storedCompanions.length
         ? {
-            files: Object.fromEntries(
-              companions.map(([p, text]) => [p.slice(folder.length), text]),
-            ),
+            files: Object.fromEntries(storedCompanions),
           }
         : {}),
     });
@@ -522,39 +775,72 @@ function collectMcpServers(
 export function parsePluginDirectory(input: {
   files: PluginRepoFile[];
   resolvedSha: string;
+  fallbackName?: string;
 }): ParsedPlugin {
   if (!FULL_SHA.test(input.resolvedSha))
     throw new Error("Plugin requires a full resolved commit SHA");
   if (input.files.length > MAX_TREE_ENTRIES) throw new Error("Plugin directory has too many files");
+  const maxBytes = input.files.some((file) => MANIFESTS.includes(file.path))
+    ? MAX_BYTES
+    : MAX_CATALOG_BYTES;
   const files = new Map<string, string>();
   let bytes = 0;
   for (const file of input.files) {
     const path = safePath(file.path);
-    bytes += Buffer.byteLength(file.content);
-    if (Buffer.byteLength(file.content) > MAX_FILE_BYTES || bytes > MAX_BYTES)
+    const marker = [OVERSIZED_FILE, UNREADABLE_FILE, UNFETCHED_FILE].includes(file.content);
+    const fileBytes = marker ? 0 : Buffer.byteLength(file.content);
+    bytes += fileBytes;
+    if (fileBytes > MAX_FILE_BYTES || bytes > maxBytes)
       throw new Error("Plugin content is too large");
     if (files.has(path)) throw new Error("Plugin contains duplicate file paths");
     files.set(path, file.content);
   }
   const manifestPath = MANIFESTS.find((path) => files.has(path));
-  if (!manifestPath) throw new Error("No plugin manifest found");
-  const raw: unknown = JSON.parse(files.get(manifestPath) ?? "");
-  if (!object(raw)) throw new Error("Plugin manifest must be an object");
-  const format =
-    manifestPath === "plugin.json"
-      ? "agent-plugins"
-      : manifestPath.startsWith(".cursor")
-        ? "cursor"
-        : "grok";
-  const schema = format === "agent-plugins" ? raw.$schema : undefined;
-  if (format === "agent-plugins" && (typeof schema !== "string" || !SCHEMAS.has(schema)))
-    throw new Error("Unsupported Agent Plugins schema");
-  const parsed = manifestSchema.safeParse(raw);
-  if (!parsed.success) throw new Error("Plugin manifest has invalid metadata or name");
-  const manifest = parsed.data;
+  let format: ParsedPlugin["format"];
+  let manifest: z.infer<typeof manifestSchema>;
+  let schema: string | undefined;
+  let rawManifest: Record<string, unknown> | undefined;
+  const agentSkillBundle = !manifestPath;
+  if (manifestPath) {
+    const raw: unknown = JSON.parse(files.get(manifestPath) ?? "");
+    if (!object(raw)) throw new Error("Plugin manifest must be an object");
+    rawManifest = raw;
+    format =
+      manifestPath === "plugin.json"
+        ? "agent-plugins"
+        : manifestPath.startsWith(".cursor")
+          ? "cursor"
+          : "grok";
+    const schemaValue = format === "agent-plugins" ? raw.$schema : undefined;
+    if (
+      format === "agent-plugins" &&
+      (typeof schemaValue !== "string" || !SCHEMAS.has(schemaValue))
+    )
+      throw new Error("Unsupported Agent Plugins schema");
+    schema = typeof schemaValue === "string" ? schemaValue : undefined;
+    const parsed = manifestSchema.safeParse(raw);
+    if (!parsed.success) throw new Error("Plugin manifest has invalid metadata or name");
+    manifest = parsed.data;
+  } else {
+    const skillPaths = [...files.keys()].filter(isSkillDocumentPath);
+    if (!skillPaths.length) throw new Error("No plugin manifest or Agent Skills files found");
+    const inferredName =
+      skillPaths.length === 1
+        ? skillFolder(skillPaths[0]!).split("/").filter(Boolean).at(-1)
+        : undefined;
+    const rawName = input.fallbackName?.trim() || inferredName || "skills";
+    const name = rawName
+      .toLowerCase()
+      .replace(/[^a-z0-9.-]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 64);
+    if (!name) throw new Error("Could not infer a name for this skill bundle");
+    format = "agent-skills";
+    manifest = { name };
+  }
   const skipped: PluginSkippedEntry[] = [];
-  if (schema) {
-    for (const key of Object.keys(raw)) {
+  if (schema && rawManifest) {
+    for (const key of Object.keys(rawManifest)) {
       if (!["$schema", "extensions", ...Object.keys(manifestSchema.shape)].includes(key)) {
         skipped.push({
           kind: "unsupported_field",
@@ -576,11 +862,12 @@ export function parsePluginDirectory(input: {
   const names = new Set<string>();
   const skills: PluginSkillEntry[] = [];
   const builtinNames: string[] = [];
-  for (const skill of [
-    ...collectSkills(files, skipped, names),
-    ...collectAgents(files, skipped, names),
-    ...collectCommands(files, names, skipped),
-  ]) {
+  const parsedSkills = [
+    ...collectSkills(files, skipped, names, agentSkillBundle),
+    ...(agentSkillBundle ? [] : collectAgents(files, skipped, names)),
+    ...(agentSkillBundle ? [] : collectCommands(files, names, skipped)),
+  ];
+  for (const skill of parsedSkills) {
     // A skill named like a built-in one repeats it; every user already has the built-in.
     if (findSkillByName(BUILTIN_AGENT_SKILLS, skill.name)) builtinNames.push(skill.name);
     else skills.push(skill);
@@ -618,9 +905,9 @@ function unsupportedParts(paths: string[]): string[] {
 
 export type PluginCompleteness = { hasConnector: boolean; skillCount: number };
 
-/** Decide from a plugin directory's file list (and its MCP config, when it has one)
- * whether every part installs. Null means it cannot be told without the file. */
-/** `sizes` (bytes by path, when known) applies the same reference-file limits an install does. */
+/** Classify manifest-backed plugin directories and manifestless Agent Skills catalogs. */
+/** Null means a plugin's MCP config is needed before its servers can be classified. */
+/** `sizes` (bytes by path, when known) applies the import byte limits. */
 /** The files a preview downloads; everything else is only listed. */
 function isFetchedComponent(path: string): boolean {
   return (
@@ -638,6 +925,20 @@ export function classifyPluginFiles(
   mcpConfig?: string,
   sizes?: ReadonlyMap<string, number>,
 ): PluginCompleteness | "incomplete" | null {
+  const hasManifest = paths.some((path) => MANIFESTS.includes(path));
+  const skillPaths = paths.filter(isSkillDocumentPath);
+  const hasMcpConfig = paths.some((path) => path === "mcp.json" || path === ".mcp.json");
+  if (!hasManifest && !hasMcpConfig && skillPaths.length > 0) {
+    const validSkills = skillPaths.filter((path) => (sizes?.get(path) ?? 0) <= MAX_FILE_BYTES);
+    if (
+      paths.length > MAX_TREE_ENTRIES ||
+      skillPaths.length > MAX_CATALOG_SKILLS ||
+      !validSkills.length ||
+      validSkills.reduce((sum, path) => sum + (sizes?.get(path) ?? 0), 0) > MAX_CATALOG_BYTES
+    )
+      return "incomplete";
+    return { hasConnector: false, skillCount: validSkills.length };
+  }
   if (unsupportedParts(paths).length) return "incomplete";
   // The same totals a preview enforces, so browse never offers a plugin it would refuse.
   const fetched = paths.filter(isFetchedComponent);
@@ -698,7 +999,12 @@ export async function previewPluginInstall(options: {
     }));
   if (source.subdir && !files.length)
     throw new Error(`Plugin subdirectory "${source.subdir}" not found`);
-  return { ...parsePluginDirectory({ files, resolvedSha: repo.resolvedSha }), source };
+  const repositoryName = new URL(source.gitUrl).pathname.split("/").filter(Boolean).at(-1);
+  const fallbackName = source.subdir?.split("/").at(-1) ?? repositoryName;
+  return {
+    ...parsePluginDirectory({ files, resolvedSha: repo.resolvedSha, fallbackName }),
+    source,
+  };
 }
 
 /** Public preview deliberately excludes skill bodies and all header values. */

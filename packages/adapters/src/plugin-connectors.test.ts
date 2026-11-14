@@ -110,6 +110,72 @@ describe("portable plugin parser", () => {
     expect(preview.format).toBe(format);
     expect(preview.mcpServers[0]?.transport).toBe("streamable_http");
   });
+  it("loads a manifestless Agent Skills catalog", () => {
+    const preview = parsePluginDirectory({
+      files: [
+        {
+          path: ".agents/skills/one/SKILL.md",
+          content: "---\nname: one\ndescription: First skill\n---\n\nDo one thing.\n",
+        },
+        {
+          path: "skills/two/SKILL.md",
+          content: "---\nname: two\ndescription: Second skill\n---\n\nDo another thing.\n",
+        },
+      ],
+      resolvedSha: SHA,
+      fallbackName: "agent-skills",
+    });
+    expect(preview).toMatchObject({ format: "agent-skills", name: "agent-skills" });
+    expect(preview.skills.map((entry) => entry.name)).toEqual(["one", "two"]);
+  });
+  it("skips duplicate names in a manifestless catalog", () => {
+    const preview = parsePluginDirectory({
+      files: [
+        { path: "one/SKILL.md", content: "---\nname: Shared\ndescription: First\n---\n" },
+        { path: "two/SKILL.md", content: "---\nname: shared\ndescription: Second\n---\n" },
+      ],
+      resolvedSha: SHA,
+    });
+    expect(preview.skills.map((entry) => entry.description)).toEqual(["First"]);
+    expect(preview.skipped).toContainEqual({
+      kind: "skill_invalid",
+      name: "shared",
+      reason: "Another skill in this catalog has the same name",
+    });
+  });
+  it("does not mistake ordinary words for references to extensionless files", () => {
+    const preview = parsePluginDirectory({
+      files: [
+        {
+          path: "one/SKILL.md",
+          content:
+            "---\nname: one\ndescription: Example\n---\n\nUse --profiles to choose roles. Example: collection/one/fixtures/example.pdf.\n",
+        },
+        { path: "one/profiles", content: "\u0001" },
+        { path: "one/fixtures/example.pdf", content: "\u0002" },
+      ],
+      resolvedSha: SHA,
+    });
+    expect(preview.skills.map((entry) => entry.name)).toEqual(["one"]);
+  });
+  it("supports skills with more than forty text resources", () => {
+    const resources = Array.from({ length: 41 }, (_, index) => ({
+      path: `one/references/${index}.md`,
+      content: `Reference ${index}.`,
+    }));
+    const preview = parsePluginDirectory({
+      files: [
+        {
+          path: "one/SKILL.md",
+          content:
+            "---\nname: one\ndescription: Example\n---\n\nLoad the appropriate file from references/.\n",
+        },
+        ...resources,
+      ],
+      resolvedSha: SHA,
+    });
+    expect(preview.skills[0]?.files).toHaveProperty("references/40.md", "Reference 40.");
+  });
   it("keeps loading valid components when siblings are invalid, local or editor-only", () => {
     const preview = parse([
       ...files({
@@ -248,12 +314,18 @@ describe("portable plugin parser", () => {
     expect(
       classifyPluginFiles(["mcp.json", "skills/a/SKILL.md", "agents/b.md", "README.md"], remote),
     ).toEqual({ hasConnector: true, skillCount: 2 });
-    expect(classifyPluginFiles(["skills/a/SKILL.md", "hooks/hooks.json"])).toBe("incomplete");
+    expect(classifyPluginFiles(["skills/a/SKILL.md", "hooks/hooks.json"])).toEqual({
+      hasConnector: false,
+      skillCount: 1,
+    });
     expect(classifyPluginFiles(["skills/a/SKILL.md", "skills/a/references/notes.md"])).toEqual({
       hasConnector: false,
       skillCount: 1,
     });
-    expect(classifyPluginFiles(["skills/a/SKILL.md", "skills/a/run.sh"])).toBe("incomplete");
+    expect(classifyPluginFiles(["skills/a/SKILL.md", "skills/a/run.sh"])).toEqual({
+      hasConnector: false,
+      skillCount: 1,
+    });
     expect(classifyPluginFiles(["mcp.json"])).toBeNull();
     expect(
       classifyPluginFiles(["mcp.json"], JSON.stringify({ mcpServers: { x: { command: "npx" } } })),
@@ -261,19 +333,39 @@ describe("portable plugin parser", () => {
     expect(classifyPluginFiles(["README.md"])).toBe("incomplete");
     const refs = Array.from({ length: 5 }, (_, i) => `skills/a/references/r${i}.md`);
     const big = new Map(refs.map((path) => [path, 90_000] as const));
-    expect(classifyPluginFiles(["skills/a/SKILL.md", ...refs], undefined, big)).toBe("incomplete");
+    expect(classifyPluginFiles(["skills/a/SKILL.md", ...refs], undefined, big)).toEqual({
+      hasConnector: false,
+      skillCount: 1,
+    });
     expect(
       classifyPluginFiles(
         ["skills/a/SKILL.md", refs[0]!],
         undefined,
         new Map([[refs[0]!, 120_000]]),
       ),
-    ).toBe("incomplete");
+    ).toEqual({ hasConnector: false, skillCount: 1 });
     const manySkills = Array.from({ length: 5 }, (_, s) => [
       `skills/s${s}/SKILL.md`,
       ...Array.from({ length: 40 }, (_, r) => `skills/s${s}/references/r${r}.md`),
     ]).flat();
-    expect(classifyPluginFiles(manySkills)).toBe("incomplete");
+    expect(classifyPluginFiles(manySkills)).toEqual({ hasConnector: false, skillCount: 5 });
+    expect(
+      classifyPluginFiles([
+        "plugin.json",
+        "skills/a/SKILL.md",
+        "skills/a/run.sh",
+        "hooks/hooks.json",
+      ]),
+    ).toBe("incomplete");
+    const agentSkillCatalog = [
+      ".agents/skills/one/SKILL.md",
+      ".agents/skills/one/scripts/helper.py",
+      ...Array.from({ length: 45 }, (_, index) => `.agents/skills/one/references/${index}.txt`),
+    ];
+    expect(classifyPluginFiles(agentSkillCatalog)).toEqual({
+      hasConnector: false,
+      skillCount: 1,
+    });
     expect(classifyPluginFiles(["skills/a/SKILL.md", refs[0]!], undefined, big)).toEqual({
       hasConnector: false,
       skillCount: 1,
@@ -452,6 +544,234 @@ describe("GitHub acquisition", () => {
       `https://api.github.com/repos/example/plugin/git/trees/${TREE}?recursive=1`,
       `https://raw.githubusercontent.com/example/plugin/${SHA}/plugin.json`,
     ]);
+  });
+  it("previews every catalog skill and fetches only its referenced text resources", async () => {
+    const tree = [
+      {
+        path: ".agents/skills/one/SKILL.md",
+        type: "blob",
+        mode: "100644",
+        size: 90,
+      },
+      {
+        path: ".agents/skills/one/references/guide.md",
+        type: "blob",
+        mode: "100644",
+        size: 32,
+      },
+      {
+        path: ".agents/skills/one/scripts/helper.py",
+        type: "blob",
+        mode: "100644",
+        size: 20,
+      },
+      {
+        path: ".agents/skills/one/scripts/helper",
+        type: "blob",
+        mode: "100644",
+        size: 20,
+      },
+      {
+        path: ".agents/skills/one/src/helper.py",
+        type: "blob",
+        mode: "100644",
+        size: 20,
+      },
+      {
+        path: ".agents/skills/one/references/unmentioned.md",
+        type: "blob",
+        mode: "100644",
+        size: 20,
+      },
+      {
+        path: ".agents/skills/one/templates/example.mjs",
+        type: "blob",
+        mode: "100644",
+        size: 20,
+      },
+      { path: "skills/two/SKILL.md", type: "blob", mode: "100644", size: 90 },
+    ];
+    const documents: Record<string, string> = {
+      ".agents/skills/one/SKILL.md":
+        "---\nname: one\ndescription: First skill\n---\n\nRead references/guide.md and run scripts/helper.py when needed. See scripts/helper for the shell variant, src/helper.py for its implementation, and templates/example.mjs for the example.\n",
+      ".agents/skills/one/references/guide.md": "Reference text.\n",
+      ".agents/skills/one/scripts/helper.py": "print('example')\n",
+      ".agents/skills/one/scripts/helper": "#!/bin/sh\nprintf example\n",
+      ".agents/skills/one/src/helper.py": "def helper(): pass\n",
+      ".agents/skills/one/references/unmentioned.md": "Do not fetch this.\n",
+      ".agents/skills/one/templates/example.mjs": "export const example = true;\n",
+      "skills/two/SKILL.md":
+        "---\nname: two\ndescription: Second skill\n---\n\nDo another thing.\n",
+    };
+    const read = vi.fn(async (url: string) => {
+      if (url.includes("/commits/"))
+        return JSON.stringify({ sha: SHA, commit: { tree: { sha: TREE } } });
+      if (url.includes("/git/trees/")) return JSON.stringify({ tree, truncated: false });
+      const path = url.split(`/${SHA}/`)[1];
+      return documents[path ?? ""] ?? "";
+    });
+
+    const repo = await fetchGitHubRepo(
+      parsePluginSource("https://github.com/example/skills"),
+      undefined,
+      read,
+    );
+    const preview = parsePluginDirectory(repo);
+
+    expect(preview.format).toBe("agent-skills");
+    expect(preview.skills.map((entry) => entry.name)).toEqual(["one", "two"]);
+    expect(preview.skills[0]?.files).toEqual({
+      "references/guide.md": "Reference text.\n",
+      "scripts/helper.py": "print('example')\n",
+      "scripts/helper": "#!/bin/sh\nprintf example\n",
+      "src/helper.py": "def helper(): pass\n",
+      "templates/example.mjs": "export const example = true;\n",
+    });
+    expect(read.mock.calls.map(([url]) => url).join(" ")).not.toContain("unmentioned.md");
+  });
+  it("previews an individual skill folder and includes its text resources", async () => {
+    const tree = [
+      { path: "catalog/one/SKILL.md", type: "blob", mode: "100644", size: 90 },
+      {
+        path: "catalog/one/references/guide.md",
+        type: "blob",
+        mode: "100644",
+        size: 32,
+      },
+    ];
+    const read = vi.fn(async (url: string) => {
+      if (url.includes("/commits/"))
+        return JSON.stringify({ sha: SHA, commit: { tree: { sha: TREE } } });
+      if (url.includes("/git/trees/")) return JSON.stringify({ tree, truncated: false });
+      if (url.endsWith("/catalog/one/SKILL.md"))
+        return "---\nname: one\ndescription: First skill\n---\n\nRead references/guide.md.\n";
+      return "Reference text.\n";
+    });
+    const preview = await previewPluginInstall({
+      source: "https://github.com/example/skills/tree/main/catalog/one",
+      fetcher: (source, signal) => fetchGitHubRepo(source, signal, read),
+    });
+
+    expect(preview.format).toBe("agent-skills");
+    expect(preview.skills).toMatchObject([
+      { name: "one", files: { "references/guide.md": "Reference text.\n" } },
+    ]);
+  });
+  it("keeps nested skills out of an individual skill folder import", async () => {
+    const tree = [
+      { path: "catalog/one/SKILL.md", type: "blob", mode: "100644", size: 90 },
+      {
+        path: "catalog/one/references/guide.md",
+        type: "blob",
+        mode: "100644",
+        size: 32,
+      },
+      { path: "catalog/one/nested/SKILL.md", type: "blob", mode: "100644", size: 90 },
+      {
+        path: "catalog/one/nested/references/guide.md",
+        type: "blob",
+        mode: "100644",
+        size: 32,
+      },
+    ];
+    const documents: Record<string, string> = {
+      "catalog/one/SKILL.md":
+        "---\nname: one\ndescription: First skill\n---\n\nRead references/guide.md.\n",
+      "catalog/one/references/guide.md": "Root skill reference.\n",
+      "catalog/one/nested/SKILL.md":
+        "---\nname: nested\ndescription: Nested skill\n---\n\nRead references/guide.md.\n",
+      "catalog/one/nested/references/guide.md": "Nested skill reference.\n",
+    };
+    const read = vi.fn(async (url: string) => {
+      if (url.includes("/commits/"))
+        return JSON.stringify({ sha: SHA, commit: { tree: { sha: TREE } } });
+      if (url.includes("/git/trees/")) return JSON.stringify({ tree, truncated: false });
+      const path = url.split(`/${SHA}/`)[1];
+      return documents[path ?? ""] ?? "";
+    });
+    const preview = await previewPluginInstall({
+      source: "https://github.com/example/skills/tree/main/catalog/one",
+      fetcher: (source, signal) => fetchGitHubRepo(source, signal, read),
+    });
+
+    expect(preview.skills).toMatchObject([
+      { name: "one", files: { "references/guide.md": "Root skill reference.\n" } },
+    ]);
+    expect(read.mock.calls.map(([url]) => url).join(" ")).not.toContain("/nested/");
+  });
+  it("fetches only referenced files once in a skills/name catalog", async () => {
+    const tree = [
+      { path: "skills/one/SKILL.md", type: "blob", mode: "100644", size: 90 },
+      {
+        path: "skills/one/references/used.txt",
+        type: "blob",
+        mode: "100644",
+        size: 24,
+      },
+      {
+        path: "skills/one/references/unused.txt",
+        type: "blob",
+        mode: "100644",
+        size: 26,
+      },
+    ];
+    const documents: Record<string, string> = {
+      "skills/one/SKILL.md":
+        "---\nname: one\ndescription: First skill\n---\n\nRead references/used.txt.\n",
+      "skills/one/references/used.txt": "Referenced resource.\n",
+      "skills/one/references/unused.txt": "Unreferenced resource.\n",
+    };
+    const read = vi.fn(async (url: string) => {
+      if (url.includes("/commits/"))
+        return JSON.stringify({ sha: SHA, commit: { tree: { sha: TREE } } });
+      if (url.includes("/git/trees/")) return JSON.stringify({ tree, truncated: false });
+      const path = url.split(`/${SHA}/`)[1];
+      return documents[path ?? ""] ?? "";
+    });
+    const repo = await fetchGitHubRepo(
+      parsePluginSource("https://github.com/example/skills"),
+      undefined,
+      read,
+    );
+    const preview = parsePluginDirectory(repo);
+    const calls = read.mock.calls.map(([url]) => url);
+
+    expect(preview.skills).toMatchObject([
+      { name: "one", files: { "references/used.txt": "Referenced resource.\n" } },
+    ]);
+    expect(calls.filter((url) => url.endsWith("/skills/one/references/used.txt"))).toHaveLength(1);
+    expect(calls.some((url) => url.includes("unused.txt"))).toBe(false);
+  });
+  it("explains when a skill references a companion file that cannot be imported", async () => {
+    const tree = [
+      { path: "one/SKILL.md", type: "blob", mode: "100644", size: 90 },
+      {
+        path: "one/references/guide.md",
+        type: "blob",
+        mode: "120000",
+        size: 32,
+      },
+    ];
+    const read = vi.fn(async (url: string) => {
+      if (url.includes("/commits/"))
+        return JSON.stringify({ sha: SHA, commit: { tree: { sha: TREE } } });
+      if (url.includes("/git/trees/")) return JSON.stringify({ tree, truncated: false });
+      return "---\nname: one\ndescription: First skill\n---\n\nRead references/guide.md.\n";
+    });
+    const repo = await fetchGitHubRepo(
+      parsePluginSource("https://github.com/example/skills"),
+      undefined,
+      read,
+    );
+    const preview = parsePluginDirectory(repo);
+
+    expect(preview.skills).toEqual([]);
+    expect(preview.skipped).toContainEqual({
+      kind: "skill_invalid",
+      name: "one",
+      reason:
+        "The skill references companion files that are unavailable or exceed the import limits",
+    });
   });
   it("never follows links or submodules, and refuses only a skill that contains one", async () => {
     const tree = [

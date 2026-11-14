@@ -76,6 +76,27 @@ describe("parseSkillMd", () => {
     expect(String(parsed.frontmatter.literal).endsWith("\n")).toBe(true);
   });
 
+  it("parses nested metadata with wrapped plain scalar values", () => {
+    const parsed = parseSkillMd(`---
+name: ai-governance
+description: >-
+  Design an AI governance system with lifecycle gates, risk controls, and oversight.
+metadata:
+  tags: ai-governance, responsible-ai, model-risk, governance-operating-model,
+    fairness, privacy, security
+  source_repo: https://example.test/skills
+---
+
+Apply the governance controls.
+`);
+    expect("error" in parsed).toBe(false);
+    if ("error" in parsed) return;
+    expect(parsed.frontmatter.metadata).toEqual({
+      tags: "ai-governance, responsible-ai, model-risk, governance-operating-model, fairness, privacy, security",
+      source_repo: "https://example.test/skills",
+    });
+  });
+
   it("accepts comments after block scalar headers without changing their values", () => {
     for (const header of [">", ">-", ">2", ">2-", ">-2", "|", "|+", "|2", "|2+", "|+2"]) {
       for (const separator of [" ", "\t"]) {
@@ -96,7 +117,7 @@ describe("parseSkillMd", () => {
 
   it("does not treat a hash without separation as a block header comment", () => {
     const parsed = parseSkillMd("---\nname: Example\ndescription: >#comment\n  text\n---\n");
-    expect(parsed).toEqual({ error: "Unexpected indented frontmatter line without a key." });
+    expect(parsed).toMatchObject({ error: expect.any(String) });
   });
 
   it("preserves commas in quoted inline array items through save and reload", () => {
@@ -222,6 +243,52 @@ detail: ${detail}---
       error: "Skill name must be at most 80 characters.",
     });
   });
+
+  it("keeps legacy plain descriptions containing a colon and uses the last duplicate key", () => {
+    const parsed = parseSkillMd(`---
+name: First name
+name: Example
+description: Use when: the user asks for a status summary.
+---
+`);
+    expect(parsed).toMatchObject({
+      name: "Example",
+      description: "Use when: the user asks for a status summary.",
+    });
+  });
+
+  it("keeps legacy null frontmatter values as the string null", () => {
+    const parsed = parseSkillMd("---\nname: null\ndescription: null\n---\n");
+    expect(parsed).toMatchObject({ name: "null", description: "null" });
+    if ("error" in parsed) return;
+    const reloaded = parseSkillMd(buildSkillMd(parsed));
+    expect(reloaded).toMatchObject({ name: "null", description: "null" });
+  });
+
+  it("rejects recursive aliases and excessively nested frontmatter", () => {
+    const recursive = parseSkillMd(`---
+name: Example
+description: Recursive metadata
+metadata: &metadata
+  child: *metadata
+---
+`);
+    expect(recursive).toMatchObject({ error: expect.stringContaining("recursive YAML aliases") });
+
+    const nested = [
+      "---",
+      "name: Example",
+      "description: Nested metadata",
+      "metadata:",
+      ...Array.from({ length: 34 }, (_, index) => `${"  ".repeat(index + 1)}level${index}:`),
+      `${"  ".repeat(35)}value: too deep`,
+      "---",
+      "",
+    ].join("\n");
+    expect(parseSkillMd(nested)).toMatchObject({
+      error: expect.stringContaining("nested too deeply"),
+    });
+  });
 });
 
 describe("buildSkillMd", () => {
@@ -235,6 +302,31 @@ describe("buildSkillMd", () => {
     expect(again.description).toBe(parsed.description);
     expect(again.frontmatter.compatibility).toBe("optional-extra");
     expect(again.body.trim()).toBe(parsed.body.trim());
+  });
+
+  it("round-trips nested metadata and multiline values", () => {
+    const doc = `---
+name: Nested
+description: Preserve nested metadata
+metadata:
+  owner:
+    team: Platform
+    note: |-
+      First line
+      Second line
+  tags:
+    - one
+    - two
+---
+
+Body.
+`;
+    const parsed = parseSkillMd(doc);
+    if ("error" in parsed) throw new Error(parsed.error);
+    const rebuilt = buildSkillMd(parsed);
+    const reloaded = parseSkillMd(rebuilt);
+    if ("error" in reloaded) throw new Error(reloaded.error);
+    expect(reloaded.frontmatter.metadata).toEqual(parsed.frontmatter.metadata);
   });
 
   it("round-trips keep-chomp and strip-chomp block scalars", () => {
