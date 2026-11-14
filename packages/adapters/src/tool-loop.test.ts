@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { observationToolResult } from "./computer-tools.js";
+import type { LoopGuardStreak } from "./tool-loop.js";
 import {
   advanceOverLimitActionCalls,
   advanceToolCallLoopGuard,
   isLoopGuardStopText,
+  loopGuardStop,
   loopGuardStopText,
   MAX_CONSECUTIVE_OVER_LIMIT_ACTION_CALLS,
   overLimitStopText,
@@ -26,6 +28,40 @@ function identicalStopsAt(seen: (call: number) => string | undefined) {
   }
   return undefined;
 }
+
+/** What a tool returned, fingerprinted as the model reads it: its JSON as text. */
+const returned = (value: unknown) =>
+  toolResultFingerprint({ content: [{ type: "text", text: JSON.stringify(value) }] });
+
+type Call = { name: string; args: unknown; result: string };
+
+/**
+ * The response whose call stops `respond(response)`'s calls, read the way the run loop reads
+ * them: each call sees the answer of the streak's last call, and a response's calls finish
+ * together before the next response.
+ */
+function stopsAtResponse(respond: (response: number) => Call[], responses = 60) {
+  let streak: LoopGuardStreak = { key: undefined, count: 0 };
+  const results = new Map<string, string>();
+  for (let response = 1; response <= responses; response += 1) {
+    const calls = respond(response);
+    for (const [index, call] of calls.entries()) {
+      const previous = streak.executionId ? results.get(streak.executionId) : undefined;
+      const guard = advanceToolCallLoopGuard(streak, call.name, call.args, previous, response);
+      if (guard.streak !== streak)
+        streak = { ...guard.streak, executionId: `${response}-${index}` };
+      if (guard.stuck) return { response, streak };
+    }
+    for (const [index, call] of calls.entries()) results.set(`${response}-${index}`, call.result);
+  }
+  return { response: undefined, streak };
+}
+
+const REWORDED = ["Continuing.", "On it.", "Proceeding with both tasks.", "Still working."];
+const progress = (response: number) => `${REWORDED[response % REWORDED.length]} (${response})`;
+const silent = returned({ stdout: "", stderr: "", code: 0 });
+/** A name without digits, so consecutive inputs never differ only by numbers. */
+const word = (n: number) => String.fromCharCode(97 + (n % 26)).repeat(1 + Math.floor(n / 26));
 
 describe("advanceToolCallLoopGuard", () => {
   it("allows a parallel Open Connector batch with distinct action inputs", () => {
@@ -149,7 +185,8 @@ describe("advanceToolCallLoopGuard", () => {
         streak,
         "fixture_tool",
         { input: call % 2 ? first : second },
-        failure(),
+        // A new failure each time, so only matching inputs could make these one run.
+        failure(`attempt ${call}`),
       );
       streak = result.streak;
       expect(result.stuck).toBe(false);
@@ -297,6 +334,152 @@ describe("advanceToolCallLoopGuard", () => {
 
     expect(stopsAt(() => 1)).toBeUndefined();
     expect(stopsAt((call) => call)).toBe(limit);
+  });
+
+  it.each([
+    [
+      "an update that was not posted",
+      returned({ ok: true, note: "This update was not posted. Keep working." }),
+    ],
+    ["a plain acknowledgement", returned({ ok: true })],
+    ["the same failure", failure("Messaging is unavailable here.")],
+  ])("stops a reworded message that keeps getting %s at the 25th response", (_, result) => {
+    for (const perResponse of [1, 2]) {
+      const { response, streak } = stopsAtResponse((n) =>
+        Array.from({ length: perResponse }, (_, index) => ({
+          name: "message_user",
+          args: { message: `${progress(n)} ${"part ".repeat(index)}` },
+          result,
+        })),
+      );
+      expect(response).toBe(25);
+      expect(loopGuardStop(streak)).toEqual({ kind: "same_result", count: 25 });
+      const text = loopGuardStopText("Message user", streak);
+      expect(text).toContain("Message user with the same result 25 times in a row");
+      expect(isLoopGuardStopText(text)).toBe(true);
+    }
+  });
+
+  it("stops a tool with varied input that keeps getting the same screen", () => {
+    const frame = toolResultFingerprint({ details: { frameId: "frame-a" } });
+    const { response } = stopsAtResponse((n) => [
+      {
+        name: "computer_act",
+        args: { actions: [{ kind: "key", text: `ctrl+${"lrt"[n % 3]}` }] },
+        result: frame,
+      },
+    ]);
+    expect(response).toBe(25);
+  });
+
+  it("starts the same-result run over when the answer changes", () => {
+    const { response } = stopsAtResponse((n) => [
+      { name: "message_user", args: { message: progress(n) }, result: returned({ ok: n > 10 }) },
+    ]);
+    // Response 11 is the first with a new answer, so it starts the run its 25th response stops.
+    expect(response).toBe(35);
+  });
+
+  it.each([
+    // Success names the file, so each answer is new.
+    [
+      "write_file across many files",
+      (n: number) => [
+        {
+          name: "write_file",
+          args: { path: `src/file-${"abcdefgh"[n % 8]}${n}.ts`, content: "x" },
+          result: returned({ ok: true, path: `src/file-${"abcdefgh"[n % 8]}${n}.ts` }),
+        },
+      ],
+    ],
+    [
+      "several write_file calls per response",
+      (n: number) =>
+        ["a", "b", "c"].map((name) => ({
+          name: "write_file",
+          args: { path: `${name}/${n}.md`, content: "x" },
+          result: returned({ ok: true, path: `${name}/${n}.md` }),
+        })),
+    ],
+    // Silent commands answer the same whatever they ran, but real work mixes in other tools.
+    [
+      "silent shell commands between file writes",
+      (n: number) =>
+        n % 3 === 0
+          ? [
+              {
+                name: "write_file",
+                args: { path: `out/${n}.txt` },
+                result: returned({ ok: true, path: `out/${n}.txt` }),
+              },
+            ]
+          : [
+              {
+                name: "shell",
+                args: { command: n % 2 ? `mkdir -p out/${"xyz"[n % 3]}` : "touch out/.keep" },
+                result: silent,
+              },
+            ],
+    ],
+    [
+      "silent shell commands in a response with another tool",
+      (n: number) => [
+        { name: "shell", args: { command: `cp ${word(n)} b` }, result: silent },
+        { name: "read_file", args: { path: "b" }, result: returned({ content: `line ${n}` }) },
+      ],
+    ],
+    // A form fill changes the page tree each step.
+    [
+      "browser_act through a form",
+      (n: number) => [
+        {
+          name: "browser_act",
+          args: { actions: [{ kind: "fill", ref: `e${n}`, text: REWORDED[n % 4] }] },
+          result: returned({ ok: true, completed: 1, tree: `form with ${n} fields filled` }),
+        },
+      ],
+    ],
+    // Each action that changes the screen gives a new frame.
+    [
+      "computer_act changing the screen",
+      (n: number) => [
+        {
+          name: "computer_act",
+          args: { actions: [{ kind: "type", text: REWORDED[n % 4] }] },
+          result: toolResultFingerprint({ details: { frameId: `frame-${n}` } }),
+        },
+      ],
+    ],
+  ])("lets %s run on", (_, respond) => {
+    expect(stopsAtResponse(respond).response).toBeUndefined();
+  });
+
+  it("lets 24 responses in a row get the same answer from varied input", () => {
+    const { response } = stopsAtResponse(
+      (n) => [
+        n % 25 === 0
+          ? {
+              name: "list_files",
+              args: { path: "out" },
+              result: returned({ path: "out", entries: [] }),
+            }
+          : { name: "shell", args: { command: `mkdir -p out/${word(n)}` }, result: silent },
+      ],
+      100,
+    );
+    expect(response).toBeUndefined();
+  });
+
+  it("keeps the input-based stop text when the same answer also reaches the limit", () => {
+    const stop = (command: (call: number) => string) => {
+      const { response, streak } = stopsAtResponse((n) => [
+        { name: "shell", args: { command: command(n) }, result: answer("Still loading") },
+      ]);
+      expect(response).toBe(25);
+      return loopGuardStopText("Shell", streak);
+    };
+    expect(stop(() => "cat job.log")).toContain(" with the same input 25 times");
+    expect(stop((n) => `cat job-${n}.log`)).toContain(" with nearly the same input 25 times");
   });
 
   it("fingerprints what the model saw, not timing details", () => {
