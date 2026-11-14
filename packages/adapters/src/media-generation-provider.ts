@@ -8,6 +8,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import { MediaGenerationError } from "@rakazo/adapter-kit";
 import { ATTACHMENT_MAX_BYTES } from "@rakazo/contracts";
+import { deadlineSignal } from "@rakazo/core";
 import { z } from "zod";
 import { FAKE_VIDEO_BASE64 } from "./fake-media-assets.js";
 import type { ResolveHostname } from "./web-ssrf.js";
@@ -218,7 +219,7 @@ export class FalMediaGenerationProvider implements MediaGenerationProvider {
   ): Promise<GeneratedMedia> {
     context = {
       ...context,
-      signal: AbortSignal.any([context.signal, AbortSignal.timeout(180_000)]),
+      signal: deadlineSignal(180_000, context.signal),
     };
     const id = await this.submit(input, false, context);
     for (let attempt = 0; attempt < 120; attempt++) {
