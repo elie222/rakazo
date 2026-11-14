@@ -23,6 +23,7 @@ import {
   WorkspaceTooLargeError,
 } from "@rakazo/adapter-kit";
 import { boundedSandboxCommandTimeoutMs } from "@rakazo/core";
+import { boxdSandboxCapabilities } from "./boxd-capabilities.js";
 import {
   BASE_SNAPSHOT_BUILD_TIMEOUT_MS,
   BaseSnapshotCache,
@@ -148,6 +149,7 @@ export class BoxdSandboxProvider implements SandboxProvider {
       contractVersion: "1",
       adapterVersion: "0.1.0",
       capabilities: {
+        ...boxdSandboxCapabilities,
         graphical: true,
         pty: false,
         snapshots: true,

@@ -31,6 +31,7 @@ import { normalizeDesktopWorkspacePath } from "./desktop-sandbox-paths.js";
 import { McpSession } from "./mcp-transport.js";
 import { sandboxNotFoundError } from "./sandbox-errors.js";
 import { shouldSkipPortableWorkspaceFile } from "./workspace-save-policy.js";
+import { wuyingSandboxCapabilities } from "./wuying-capabilities.js";
 import type { WuyingControlPlane } from "./wuying-openapi.js";
 import { WuyingOpenApi } from "./wuying-openapi.js";
 
@@ -117,6 +118,7 @@ export function describeWuyingSandbox() {
     contractVersion: "1",
     adapterVersion: "0.1.0",
     capabilities: {
+      ...wuyingSandboxCapabilities,
       graphical: true,
       pty: false,
       snapshots: false,

@@ -42,6 +42,7 @@ import {
 import type { ComputerSize } from "@rakazo/contracts";
 import { boundedSandboxCommandTimeoutMs } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
+import { boatSandboxCapabilities } from "./boat-capabilities.js";
 import {
   BoatApiError,
   BoatRequestGate,
@@ -263,6 +264,7 @@ export class BoatSandboxProvider implements SandboxProvider {
       contractVersion: "1",
       adapterVersion: "0.1.0",
       capabilities: {
+        ...boatSandboxCapabilities,
         graphical: true,
         pty: false,
         snapshots: true,

@@ -3,6 +3,7 @@ import { SandboxRateLimitError, SandboxSizeUnavailableError } from "@rakazo/adap
 import type { ComputerSize } from "@rakazo/contracts";
 import { COMPUTER_SIZE_SPECS } from "@rakazo/contracts";
 import { shellQuote } from "./computer-support.js";
+import { instaboxSandboxCapabilities } from "./instabox-capabilities.js";
 import type {
   CommandResult,
   CommandStartOpts,
@@ -103,6 +104,7 @@ export class InstaboxSandboxProvider extends RemoteDesktopSandboxProvider {
   ) {
     super({
       id: "instabox",
+      capabilities: instaboxSandboxCapabilities,
       label: "instabox",
       apiKey: options.apiKey,
       template: INSTABOX_COMPUTER_TEMPLATE,

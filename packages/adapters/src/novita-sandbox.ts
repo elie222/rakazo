@@ -1,5 +1,6 @@
 import { setTimeout as delay } from "node:timers/promises";
 import { sandboxIdleMs } from "./computer-idle.js";
+import { novitaSandboxCapabilities } from "./novita-capabilities.js";
 import { NOVITA_COMPUTER_TEMPLATE } from "./novita-template.js";
 import type {
   CommandResult,
@@ -106,6 +107,7 @@ export class NovitaSandboxProvider extends RemoteDesktopSandboxProvider {
   constructor(options: NovitaSandboxOptions, sdk?: RemoteDesktopSdk) {
     super({
       id: "novita",
+      capabilities: novitaSandboxCapabilities,
       label: "Novita",
       apiKey: options.apiKey,
       template: options.template?.trim() || NOVITA_COMPUTER_TEMPLATE,

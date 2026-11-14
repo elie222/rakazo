@@ -120,7 +120,6 @@ import {
   runModelChoice,
 } from "./model-selection.js";
 import { modelAcceptsImageInput } from "./model-vision.js";
-import { usesNativeShell } from "./native-shell.js";
 import { createPaidServiceProvider } from "./paid-services-factory.js";
 import { paymentWalletConnected } from "./payment-wallets.js";
 import { restoreComputerModels } from "./pi-runtime-computer-mode.js";
@@ -217,6 +216,7 @@ import {
   withRecentTurnImages,
 } from "./run-turn-images.js";
 import { missingTurnImagesInstruction } from "./run-turn-images.prompt.js";
+import { sandboxKindCapabilities } from "./sandbox-kind-capabilities.js";
 import { loadAgentScratchpadContext } from "./scratchpad-context.js";
 import { inferScript } from "./scripted-runtime.js";
 import { loadSharedSpaceNote } from "./shared-space-note.js";
@@ -1219,7 +1219,8 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           .filter(Boolean)
           .join("\n\n");
         const graphical =
-          computerKind !== "desktop" && deps.sandbox.describe().capabilities.graphical;
+          !sandboxKindCapabilities(computerKind).runsOnUserMachine &&
+          deps.sandbox.describe().capabilities.graphical;
         // Gate on the pair written to the run row above; re-deriving it would drop the
         // deployment fallback and gate a vision-capable default as text-only.
         const modelSeesImages = modelAcceptsImageInput(
@@ -1492,23 +1493,22 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           disabledBuiltinTools,
           new Set(tools.map((tool) => tool.name)),
         );
-        const hostEnvironment =
-          computerKind && usesNativeShell(computerKind)
-            ? await deps.sandbox
-                .environment?.(
-                  {
-                    id: storedComputer.providerRef ?? storedComputer.id,
-                    botId: storedComputer.homeKey,
-                    kind: computerKind as ComputerRef["kind"],
-                    providerRef: storedComputer.providerRef ?? "",
-                  },
-                  {
-                    ...context,
-                    signal: AbortSignal.any([context.signal, AbortSignal.timeout(2000)]),
-                  },
-                )
-                .catch(() => undefined)
-            : undefined;
+        const hostEnvironment = sandboxKindCapabilities(computerKind).nativeShell
+          ? await deps.sandbox
+              .environment?.(
+                {
+                  id: storedComputer.providerRef ?? storedComputer.id,
+                  botId: storedComputer.homeKey,
+                  kind: computerKind as ComputerRef["kind"],
+                  providerRef: storedComputer.providerRef ?? "",
+                },
+                {
+                  ...context,
+                  signal: AbortSignal.any([context.signal, AbortSignal.timeout(2000)]),
+                },
+              )
+              .catch(() => undefined)
+          : undefined;
         const hostInstruction = hostEnvironment
           ? hostComputerInstruction(computerKind, hostEnvironment)
           : undefined;

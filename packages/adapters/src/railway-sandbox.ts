@@ -33,6 +33,7 @@ import {
   onBotScreen,
   PREPARE_LINUX_DESKTOP,
 } from "./linux-desktop.js";
+import { railwaySandboxCapabilities } from "./railway-capabilities.js";
 import { sandboxCommandArgv } from "./sandbox-command-environment.js";
 import { abortedCommandEvents } from "./sandbox-command-events.js";
 import { readBodyCapped } from "./web-ssrf.js";
@@ -120,6 +121,7 @@ export class RailwaySandboxProvider implements SandboxProvider {
       contractVersion: "1",
       adapterVersion: "0.1.0",
       capabilities: {
+        ...railwaySandboxCapabilities,
         graphical: true,
         pty: false,
         snapshots: true,
