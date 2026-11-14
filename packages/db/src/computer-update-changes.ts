@@ -11,24 +11,23 @@ const PUBLISH_RETRY_MS = 15_000;
 
 /**
  * Apps re-read computer updates only on these signals, so a publish rides out a short database
- * outage. Past that it gives up rather than fail the update; apps catch up when their stream
- * reopens.
+ * outage in the background, without holding up the request or update step that changed it. Past
+ * that it gives up; apps catch up when their stream reopens.
  */
-export async function publishComputerUpdateChange(
+export function publishComputerUpdateChange(
   realtime: RealtimeFanout | undefined,
   spaceId: string,
   options: { sleep?: (ms: number) => Promise<void> } = {},
 ): Promise<void> {
-  if (!realtime) return;
-  try {
-    await retryWhileDatabaseUnavailable(() => realtime.publish(computerUpdatesTopic(spaceId), ""), {
+  if (realtime)
+    void retryWhileDatabaseUnavailable(() => realtime.publish(computerUpdatesTopic(spaceId), ""), {
       source: "computer update signal",
       waitMs: PUBLISH_RETRY_MS,
       ...options,
-    });
-  } catch (error) {
-    getLogger().warn("computer update signal not published", { error });
-  }
+    }).catch((error: unknown) =>
+      getLogger().warn("computer update signal not published", { error }),
+    );
+  return Promise.resolve();
 }
 
 /**

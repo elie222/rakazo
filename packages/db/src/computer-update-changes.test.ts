@@ -69,10 +69,12 @@ describe("publishComputerUpdateChange", () => {
       },
     };
     await publishComputerUpdateChange(fanout as never, "space-1", { sleep: async () => {} });
+    expect(calls).toBe(1);
+    await tick();
     expect(calls).toBe(2);
   });
 
-  it("gives up without throwing on other failures", async () => {
+  it("returns at once and gives up quietly on other failures", async () => {
     let calls = 0;
     const fanout = {
       publish: async () => {
@@ -83,6 +85,7 @@ describe("publishComputerUpdateChange", () => {
     await expect(
       publishComputerUpdateChange(fanout as never, "space-1", { sleep: async () => {} }),
     ).resolves.toBeUndefined();
+    await tick();
     expect(calls).toBe(1);
   });
 });

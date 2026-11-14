@@ -4,6 +4,7 @@ import { subscribeSpaceSelection } from "./api";
 import { subscribeRosterSignals } from "./api-live";
 import { useAppForeground } from "./app-foreground";
 import { computerUpdates } from "./computer-updates";
+import { subscribeSessionGeneration } from "./session";
 
 // One stream for the whole app, open while any screen holds it.
 const rosterListeners = new Set<() => void>();
@@ -18,14 +19,24 @@ const setLive = (next: boolean) => {
   for (const listener of liveListeners) listener();
 };
 
-function nextSpaceSelection(signal: AbortSignal): Promise<void> {
+/** The stream speaks for one session and Space, so either changing reopens it. */
+function followIdentity(listener: () => void): () => void {
+  const unfollowSpace = subscribeSpaceSelection(listener);
+  const unfollowSession = subscribeSessionGeneration(listener);
+  return () => {
+    unfollowSpace();
+    unfollowSession();
+  };
+}
+
+function nextIdentity(signal: AbortSignal): Promise<void> {
   return new Promise((resolve) => {
     const done = () => {
       unfollow();
       signal.removeEventListener("abort", done);
       resolve();
     };
-    const unfollow = subscribeSpaceSelection(done);
+    const unfollow = followIdentity(done);
     signal.addEventListener("abort", done);
     if (signal.aborted) done();
   });
@@ -36,11 +47,10 @@ async function follow(signal: AbortSignal) {
   while (!signal.aborted) {
     let failure: unknown;
     let opened = false;
-    // The stream speaks for the Space selected when it opened, so a switch reopens it.
     const connection = new AbortController();
     const abort = () => connection.abort();
     signal.addEventListener("abort", abort);
-    const unfollowSpace = subscribeSpaceSelection(abort);
+    const unfollowIdentity = followIdentity(abort);
     try {
       await subscribeRosterSignals(
         () => {
@@ -57,15 +67,15 @@ async function follow(signal: AbortSignal) {
     } catch (error) {
       failure = error;
     }
-    unfollowSpace();
+    unfollowIdentity();
     signal.removeEventListener("abort", abort);
     if (signal.aborted) return;
     setLive(false);
     if (connection.signal.aborted) continue;
     if (failure !== undefined && !isRetryableError(failure)) {
-      // Asking again cannot change a refusal, but another Space may answer; signing out releases
-      // the stream anyway.
-      await nextSpaceSelection(signal);
+      // Asking again cannot change a refusal, but another session or Space may answer; signing
+      // out releases the stream anyway.
+      await nextIdentity(signal);
       retry = 1_000;
       continue;
     }

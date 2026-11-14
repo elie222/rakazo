@@ -25,6 +25,14 @@ vi.mock("./api", () => ({
   },
 }));
 
+const sessionChanges = vi.hoisted(() => new Set<() => void>());
+vi.mock("./session", () => ({
+  subscribeSessionGeneration: (listener: () => void) => {
+    sessionChanges.add(listener);
+    return () => sessionChanges.delete(listener);
+  },
+}));
+
 vi.mock("react-native", () => ({
   AppState: { currentState: "active", addEventListener: () => ({ remove: () => {} }) },
 }));
@@ -148,7 +156,7 @@ describe("useRosterSignals", () => {
     expect(spaceSelection.size).toBe(1);
   });
 
-  it("after a refusal, waits for another Space instead of asking again", async () => {
+  it("after a refusal, waits for another session or Space instead of asking again", async () => {
     await act(async () => root.render(<Harness enabled onChange={vi.fn()} />));
     await act(async () => streams[0]!.fail(Object.assign(new Error("Forbidden"), { status: 403 })));
     await act(() => vi.advanceTimersByTimeAsync(60_000));
@@ -157,6 +165,15 @@ describe("useRosterSignals", () => {
       for (const listener of spaceSelection) listener();
     });
     expect(streams).toHaveLength(2);
+  });
+
+  it("reopens under a new session", async () => {
+    await act(async () => root.render(<Harness enabled onChange={vi.fn()} />));
+    await act(async () => {
+      for (const listener of sessionChanges) listener();
+    });
+    expect(streams).toHaveLength(2);
+    expect(sessionChanges.size).toBe(1);
   });
 
   it("stays closed while disabled", async () => {
