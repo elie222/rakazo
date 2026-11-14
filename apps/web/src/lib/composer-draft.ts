@@ -4,6 +4,18 @@ import { createKeyedListeners, validateComposerMentionBindings } from "@rakazo/c
 export const COMPOSER_DRAFT_STORAGE_PREFIX = "rakazo.composerDraft.";
 const COMPOSER_BINDINGS_STORAGE_PREFIX = "rakazo.composerBindings.";
 const COMPOSER_NONCE_STORAGE_PREFIX = "rakazo.composerNonce.";
+const LEGACY_COMPOSER_SEND_STORAGE_PREFIX = "rakazo.composerSend.";
+
+// Older releases saved full send payloads. Remove them on upgrade, including chats
+// that are never opened again; only retry nonces are stored by this release.
+try {
+  const keys = Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index));
+  for (const key of keys) {
+    if (key?.startsWith(LEGACY_COMPOSER_SEND_STORAGE_PREFIX)) localStorage.removeItem(key);
+  }
+} catch {
+  // Storage may be unavailable during server rendering or in private mode.
+}
 
 /** `appended`: words added from outside the composer while this send was in flight. */
 type ComposerDraftSubmission = { text: string; bindingRecord: string | null; appended?: string };
@@ -151,7 +163,8 @@ export function clearComposerDrafts(): void {
       if (
         key?.startsWith(COMPOSER_DRAFT_STORAGE_PREFIX) ||
         key?.startsWith(COMPOSER_BINDINGS_STORAGE_PREFIX) ||
-        key?.startsWith(COMPOSER_NONCE_STORAGE_PREFIX)
+        key?.startsWith(COMPOSER_NONCE_STORAGE_PREFIX) ||
+        key?.startsWith(LEGACY_COMPOSER_SEND_STORAGE_PREFIX)
       )
         localStorage.removeItem(key);
     }

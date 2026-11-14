@@ -2,6 +2,7 @@ import type { AgentSkillCatalogEntry } from "@rakazo/contracts";
 import type {
   ComposerMention,
   ComposerMentionBinding,
+  ComposerMentionQuery,
   ComposerMentionRange,
   SlashActionId,
 } from "@rakazo/core";
@@ -9,17 +10,20 @@ import {
   bindComposerMention,
   clampMentionHighlightIndex,
   composerMentionQuery,
+  composerSlashOptions,
+  composerSlashQuery,
   mentionChipKey,
-  SLASH_ACTIONS,
+  removeComposerSlashQuery,
 } from "@rakazo/core";
 import type { RefObject } from "react";
 import { useEffect, useId, useMemo, useState } from "react";
+import { slashActionLabel } from "./composer-mentions";
 
 type Composition = { text: string; bindings: ComposerMentionBinding[] };
 
 /**
- * What typing `@` or a leading `/` opens in the composer: the mention list, the slash list of
- * skills and actions, and the skill a slash pick attaches to the message.
+ * What typing `@` or `/` opens in the composer: the mention list, the slash list of skills and
+ * actions, and the skill a slash pick attaches to the message.
  */
 export function useComposerTriggers({
   draft,
@@ -53,12 +57,13 @@ export function useComposerTriggers({
         ?.query ?? null,
   );
   const [mentionHighlightKey, setMentionHighlightKey] = useState<string | null>(null);
-  const [slashQuery, setSlashQuery] = useState<string | null>(() => {
-    const slashMatch = /^\/([^\n]*)$/.exec(draft);
-    return slashMatch ? (slashMatch[1] ?? "") : null;
-  });
+  // The range is kept, so a pick edits the query that opened the menu wherever the caret is now.
+  const [slashQuery, setSlashQuery] = useState<ComposerMentionQuery | null>(() =>
+    composerSlashQuery(draft, draft.length, draft.length, mentionBindings),
+  );
   const [selectedSkill, setSelectedSkill] = useState<AgentSkillCatalogEntry | null>(null);
   const mentionListboxId = useId();
+  const slashListboxId = useId();
 
   const knownMentions = [...(mentionTargets ?? []), ...selectedMentions];
 
@@ -71,11 +76,20 @@ export function useComposerTriggers({
     setMentionQuery(
       composerMentionQuery(value, caret, end, knownMentions, bindings)?.query ?? null,
     );
-    // `/` only at the start of the draft so forced skills expand (`Use skill:` / `/Name` prefix).
-    const slashMatch = selectedSkill === null ? /^\/([^\n]*)$/.exec(value) : null;
-    const nextSlash = slashMatch ? (slashMatch[1] ?? "") : null;
-    if (nextSlash !== null && slashQuery === null) onSlashOpen?.();
-    setSlashQuery(nextSlash);
+    updateSlashQuery(value, caret, end, bindings);
+  }
+
+  function updateSlashQuery(
+    value: string,
+    start: number,
+    end: number,
+    bindings: typeof mentionBindings,
+  ) {
+    // One skill per message: a chosen skill keeps the menu closed.
+    const next = selectedSkill ? null : composerSlashQuery(value, start, end, bindings);
+    // Only a menu opened at the start refreshes skills, so a path typed mid-sentence never refetches.
+    if (next?.start === 0 && slashQuery === null) onSlashOpen?.();
+    setSlashQuery(next);
   }
 
   function insertMention(mention: ComposerMention) {
@@ -98,18 +112,23 @@ export function useComposerTriggers({
     pendingCaret.current = { start: completion.caret, end: completion.caret };
   }
 
-  function insertSkill(skill: AgentSkillCatalogEntry) {
+  /** Takes the `/query` out of the draft, keeping the words and mentions around it. */
+  function removeSlashQuery(): boolean {
+    if (!slashQuery) return false;
     markEdited();
-    setSelectedSkill(skill);
-    commitComposition({ text: "", bindings: [] });
+    const removed = removeComposerSlashQuery(draft, slashQuery, mentionBindings);
+    commitComposition({ text: removed.text, bindings: removed.bindings });
     setSlashQuery(null);
+    pendingCaret.current = { start: removed.caret, end: removed.caret };
+    return true;
+  }
+
+  function insertSkill(skill: AgentSkillCatalogEntry) {
+    if (removeSlashQuery()) setSelectedSkill(skill);
   }
 
   function runSlashAction(action: SlashActionId) {
-    markEdited();
-    commitComposition({ text: "", bindings: [] });
-    setSlashQuery(null);
-    onSlashAction?.(action);
+    if (removeSlashQuery()) onSlashAction?.(action);
   }
 
   function removeSkill() {
@@ -138,31 +157,44 @@ export function useComposerTriggers({
     ? `${mentionListboxId}-option-${activeMentionIndex}`
     : undefined;
 
-  const slashSkillOptions = useMemo(() => {
-    if (slashQuery === null) return [];
-    const query = slashQuery.trim().toLowerCase();
-    const skills = agentSkills ?? [];
-    return skills
-      .filter((skill) => {
-        if (!query) return true;
-        return (
-          skill.name.toLowerCase().includes(query) ||
-          skill.description.toLowerCase().includes(query)
-        );
-      })
-      .slice(0, 8);
-  }, [agentSkills, slashQuery]);
-
-  const slashActionOptions = useMemo(() => {
-    if (slashQuery === null) return [];
-    const query = slashQuery.trim().toLowerCase();
-    return SLASH_ACTIONS.filter((action) => !query || action.label.toLowerCase().includes(query));
-  }, [slashQuery]);
+  const { skills: slashSkillOptions, actions: slashActionOptions } = useMemo(
+    () =>
+      slashQuery === null
+        ? { skills: [], actions: [] }
+        : composerSlashOptions(slashQuery, agentSkills ?? [], (action) =>
+            slashActionLabel(action.id),
+          ),
+    [agentSkills, slashQuery],
+  );
 
   const showSlashPicker =
     slashQuery !== null &&
     mentionQuery === null &&
     (slashSkillOptions.length > 0 || slashActionOptions.length > 0);
+  const slashOptionKeys = showSlashPicker
+    ? [
+        ...slashSkillOptions.map((skill) => `skill:${skill.id}`),
+        ...slashActionOptions.map((action) => `action:${action.id}`),
+      ]
+    : [];
+  const [slashHighlightKey, setSlashHighlightKey] = useState<string | null>(null);
+  useEffect(() => setSlashHighlightKey(null), [slashQuery?.start, slashQuery?.query]);
+  const activeSlashIndex = clampMentionHighlightIndex(
+    slashOptionKeys.indexOf(slashHighlightKey ?? ""),
+    slashOptionKeys.length,
+  );
+  const activeOptionId = mentionPickerOpen
+    ? activeMentionOptionId
+    : showSlashPicker
+      ? `${slashListboxId}-option-${activeSlashIndex}`
+      : undefined;
+
+  function pickSlashOption(index: number) {
+    const skill = slashSkillOptions[index];
+    const action = slashActionOptions[index - slashSkillOptions.length];
+    if (skill) insertSkill(skill);
+    else if (action) runSlashAction(action.id);
+  }
 
   return {
     knownMentions,
@@ -172,11 +204,13 @@ export function useComposerTriggers({
     selectedSkill,
     setSelectedSkill,
     updatePickers,
+    updateSlashQuery,
     insertMention,
     insertSkill,
     runSlashAction,
     removeSkill,
     mentionListboxId,
+    slashListboxId,
     mentionOptions,
     activeMentionIndex,
     mentionPickerOpen,
@@ -184,5 +218,10 @@ export function useComposerTriggers({
     slashSkillOptions,
     slashActionOptions,
     showSlashPicker,
+    slashOptionKeys,
+    setSlashHighlightKey,
+    activeSlashIndex,
+    activeOptionId,
+    pickSlashOption,
   };
 }
