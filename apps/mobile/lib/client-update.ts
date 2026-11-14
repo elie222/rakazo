@@ -1,3 +1,4 @@
+import { t } from "@lingui/core/macro";
 import {
   ANDROID_APK_URL,
   buildIdAt,
@@ -9,7 +10,6 @@ import * as Updates from "expo-updates";
 import type { AppStateStatus } from "react-native";
 import { Alert, AppState, Linking, Platform } from "react-native";
 import { configureClientBuild } from "./api";
-import { t } from "./i18n";
 
 /** Foreground returns closer together than this reuse the last update check. */
 export const FOREGROUND_UPDATE_CHECK_MS = 15 * 60_000;
@@ -64,11 +64,11 @@ export function noteClientUpdateRequired(): void {
   if (prompting) return;
   prompting = true;
   Alert.alert(
-    t("Update required"),
+    t`Update required`,
     undefined,
     [
       {
-        text: t("Update"),
+        text: t`Update`,
         onPress: () => {
           void applyRequiredUpdate().finally(() => {
             prompting = false;

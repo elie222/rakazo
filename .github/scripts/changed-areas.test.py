@@ -86,6 +86,7 @@ class ChangedAreasTests(unittest.TestCase):
             ("packages/adapters/src/host-computer-runner.ts", expect("web", "e2e", "server", "native")),
             ("packages/adapters/src/computer-workspace.ts", expect("web", "e2e", "server", "native")),
             ("packages/adapters/src/file-handle-path.ts", expect("web", "e2e", "server", "native")),
+            ("packages/adapters/src/workspace-save-policy.ts", expect("web", "e2e", "server", "native")),
             ("packages/core/src/node/desktop-runtime.ts", expect(*EVERY_BROWSER_AREA, "native")),
             (
                 "infra/compose/docker-compose.prod.yml",

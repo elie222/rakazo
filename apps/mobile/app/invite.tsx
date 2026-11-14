@@ -1,3 +1,5 @@
+import { ph } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
 import { DEFAULT_NEW_BOT_AVATAR_SET, INVITED_TRIAL_WEEKS } from "@rakazo/contracts";
 import { INVITE_AVATAR_COLORS } from "@rakazo/core";
 import { typeScale } from "@rakazo/ui-tokens";
@@ -7,7 +9,6 @@ import { ScrollView, Share, StyleSheet, Text, View } from "react-native";
 import { BotAvatar } from "../components/bot-avatar";
 import { NativeActionButton } from "../components/native-action-button";
 import { NativeSymbol } from "../components/native-symbol";
-import { useI18n } from "../lib/i18n";
 import { native, useMobileTokens, useThemedStyles } from "../lib/native";
 import { useReferral } from "../lib/referral";
 
@@ -15,7 +16,7 @@ const AVATAR_SIZES = [44, 52, 64, 52, 44];
 
 /** The invite sheet the chat's gift opens: what the friend and the owner each get, and the link. */
 export default function InviteScreen() {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const router = useRouter();
   const tokens = useMobileTokens();
   const styles = useThemedStyles(createStyles);
@@ -30,8 +31,8 @@ export default function InviteScreen() {
     referral.rewards === 0
       ? null
       : referral.rewards === 1
-        ? t("1 free month earned")
-        : t("{count} free months earned", { count: referral.rewards });
+        ? t`1 free month earned`
+        : t`${ph({ count: referral.rewards })} free months earned`;
   return (
     <ScrollView
       style={styles.screen}
@@ -54,7 +55,7 @@ export default function InviteScreen() {
         ))}
       </View>
       <Text accessibilityRole="header" style={styles.title}>
-        {t("Give a friend {weeks} weeks free", { weeks: INVITED_TRIAL_WEEKS })}
+        {t`Give a friend ${ph({ weeks: INVITED_TRIAL_WEEKS })} weeks free`}
       </Text>
       <View style={styles.rows}>
         <View style={styles.row}>
@@ -65,7 +66,7 @@ export default function InviteScreen() {
             color={tokens.mutedForeground}
           />
           <Text style={styles.rowText}>
-            {t("They get {weeks} weeks free.", { weeks: INVITED_TRIAL_WEEKS })}
+            {t`They get ${ph({ weeks: INVITED_TRIAL_WEEKS })} weeks free.`}
           </Text>
         </View>
         <View style={styles.row}>
@@ -76,13 +77,13 @@ export default function InviteScreen() {
             color={tokens.mutedForeground}
           />
           <Text style={styles.rowText}>
-            {t("You get a free month when they start their trial with a new card.")}
+            {t`You get a free month when they start their trial with a new card.`}
           </Text>
         </View>
       </View>
       {rewards ? <Text style={styles.rewards}>{rewards}</Text> : null}
       <NativeActionButton
-        label={t("Share link")}
+        label={t`Share link`}
         onPress={() => void Share.share({ message: referral.url }).catch(() => undefined)}
       />
     </ScrollView>

@@ -6,8 +6,7 @@ import { asSystem, runAsTenant } from "./row-security.js";
 import { countUnreadInboxChats } from "./unread-inbox-chats.js";
 
 const databaseUrl = process.env.DATABASE_URL;
-const describePostgres =
-  process.env.VERIFY_DATABASE && databaseUrl ? describe.sequential : describe.skip;
+const describePostgres = process.env.VERIFY_DATABASE && databaseUrl ? describe : describe.skip;
 
 describePostgres("unread inbox chat count (PostgreSQL)", () => {
   const suffix = randomUUID();

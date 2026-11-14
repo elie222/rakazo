@@ -61,7 +61,6 @@ vi.mock("./session", () => ({
   }),
   subscribeSessionGeneration: () => () => {},
 }));
-vi.mock("./i18n", () => ({ t: (message: string) => message }));
 
 it("keeps a password change's unsent messages retryable when a namespace rewrite fails", async () => {
   const rpc = vi.mocked((await import("./api")).rpc);

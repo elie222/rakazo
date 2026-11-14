@@ -1,3 +1,4 @@
+import { t } from "@lingui/core/macro";
 import type {
   BotSecretMetadata,
   CardSummary,
@@ -24,20 +25,20 @@ import {
   VAULT_KINDS,
   vaultKind,
 } from "@rakazo/contracts";
-import { t } from "./i18n";
 
 export type CredentialAuth = NonNullable<BotSecretMetadata["auth"]>;
 export type CredentialType = CredentialAuth["type"];
 export type VaultItem = BotSecretMetadata & { auth: CredentialAuth };
+export type { VaultBots } from "@rakazo/core";
 /** What a save sends: no name for a new item, which the server names from its title. */
 export type VaultDestination = { name?: string; origin?: string; auth: CredentialAuth };
 
 export function vaultKindLabel(kind: VaultKind): string {
-  if (kind === "login") return t("Login");
-  if (kind === "card") return t("Card");
-  if (kind === "contact") return t("Contact");
-  if (kind === "api_key") return t("API key");
-  return t("Variable");
+  if (kind === "login") return t`Login`;
+  if (kind === "card") return t`Card`;
+  if (kind === "contact") return t`Contact`;
+  if (kind === "api_key") return t`API key`;
+  return t`Variable`;
 }
 
 /** The SF Symbol and Ionicons fallback for a kind. */
@@ -61,8 +62,8 @@ export function readableItem(item: BotSecretMetadata): VaultItem | null {
 export function vaultItemSubtitle(item: BotSecretMetadata): string {
   if (!item.auth) return item.origin;
   return sharedSubtitle(item, {
-    apiKey: t("API key"),
-    expires: (date) => t("Expires {date}", { date }),
+    apiKey: t`API key`,
+    expires: (date) => t`Expires ${date}`,
   });
 }
 
@@ -284,6 +285,7 @@ export type VaultSave = {
   value?: string;
   title?: string;
   note?: string;
+  alsoOn?: string[];
 };
 
 /** What Save sends, or undefined while the draft can't be saved. */

@@ -65,6 +65,8 @@ import { useComposerFileDrop } from "./use-composer-file-drop";
 import { useComposerLayout } from "./use-composer-layout";
 import { useComposerTriggers } from "./use-composer-triggers";
 
+export const LARGE_PASTE_THRESHOLD = 4_000;
+
 const ATTACHMENT_ACCEPT = attachmentPickerAccept(navigator.userAgent);
 const COMPOSER_TEXT = "rk-scroll whitespace-pre-wrap break-words px-0.5 py-0.5 text-body-lg";
 const ComposerBody = memo(function Composer({
@@ -155,6 +157,12 @@ const ComposerBody = memo(function Composer({
     text: readComposerDraft(draftKey),
     bindings: readComposerDraftBindings(draftKey),
   }));
+  const [largePaste, setLargePaste] = useState<{
+    text: string;
+    before: typeof composition;
+    start: number;
+    end: number;
+  } | null>(null);
   const draft = composition.text;
   const mentionBindings = composition.bindings;
   const compositionRef = useRef(composition);
@@ -171,6 +179,7 @@ const ComposerBody = memo(function Composer({
     ].slice(0, 3);
   }
   function commitComposition(next: typeof composition, persist = true) {
+    setLargePaste(null);
     compositionRef.current = next;
     setComposition(next);
     editSelections.current = [];
@@ -395,6 +404,7 @@ const ComposerBody = memo(function Composer({
     draft.trim().length > 0 || selectedSkill !== null || pendingAttachments.length > 0;
 
   function markEdited() {
+    setLargePaste(null);
     onDraftEdited?.();
     editRevision.current += 1;
     retryNonce.current = null;
@@ -450,6 +460,7 @@ const ComposerBody = memo(function Composer({
 
   async function send(imageHandling?: "file") {
     if (!canSend || sending || disabled) return;
+    setLargePaste(null);
     const revision = editRevision.current;
     // Recovery rebuilds the draft from text alone, so only a plain-text send —
     // no reply target, no attachments, no skill, no open page — can share its
@@ -530,21 +541,38 @@ const ComposerBody = memo(function Composer({
 
   function handlePaste(event: ClipboardEvent<HTMLTextAreaElement>) {
     const clipboardData = event.clipboardData;
-    // Only intercept real FileList pastes; leave text-only / empty-files native.
-    if (disabled || !clipboardData || !isFilePaste(clipboardData)) return;
-    event.preventDefault();
-    pickAttachments(clipboardData.files);
+    if (disabled || !clipboardData) return;
     const text = clipboardData.getData("text/plain");
+    const files = isFilePaste(clipboardData);
+    if (!files && text.length <= LARGE_PASTE_THRESHOLD) return;
+    event.preventDefault();
+    if (files) pickAttachments(clipboardData.files);
     if (!text) return;
     const textarea = event.currentTarget;
     const start = textarea.selectionStart;
     const end = textarea.selectionEnd;
+    const before = compositionRef.current;
     rememberSelection(textarea);
-    updateDraft(`${draft.slice(0, start)}${text}${draft.slice(end)}`, start + text.length);
     const caret = start + text.length;
-    window.requestAnimationFrame(() => {
-      textareaRef.current?.setSelectionRange(caret, caret);
-    });
+    updateDraft(`${before.text.slice(0, start)}${text}${before.text.slice(end)}`, caret);
+    pendingCaret.current = { start: caret, end: caret };
+    if (!files) setLargePaste({ text, before, start, end });
+  }
+
+  function attachLargePaste() {
+    if (!largePaste || disabled) return;
+    const file = new File([largePaste.text], "pasted-text.txt", { type: "text/plain" });
+    // Rejection leaves the pasted text available and the normal attachment notice visible.
+    if (!onAttachmentPick([file])) return;
+    markEdited();
+    commitComposition(largePaste.before);
+    updatePickers(
+      largePaste.before.text,
+      largePaste.start,
+      largePaste.end,
+      largePaste.before.bindings,
+    );
+    pendingCaret.current = { start: largePaste.start, end: largePaste.end };
   }
 
   const showComposerPlaceholder = draft.length === 0 && selectedSkill === null;
@@ -634,6 +662,26 @@ const ComposerBody = memo(function Composer({
         <div className="mb-3 rounded-[14px] border border-warning/40 bg-warning/10 px-4 py-2 text-body-sm text-warning">
           {attachmentNotice}
         </div>
+      ) : null}
+      <span className="sr-only" role="status">
+        {largePaste ? t`Large text pasted inline` : ""}
+      </span>
+      {largePaste ? (
+        <fieldset className="mb-2 flex items-center gap-1" aria-label={t`Large paste`}>
+          <Button variant="ghost" size="sm" disabled={disabled} onClick={attachLargePaste}>
+            {t`Attach as file`}
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setLargePaste(null);
+              textareaRef.current?.focus();
+            }}
+          >
+            {t`Keep inline`}
+          </Button>
+        </fieldset>
       ) : null}
       <PendingAttachmentChips
         attachments={pendingAttachments}

@@ -33,7 +33,6 @@ vi.mock("react-native", () => {
   };
 });
 vi.mock("./native", () => ({ useMobileTokens: () => ({ primary: "ink", unread: "unread-blue" }) }));
-vi.mock("./i18n", () => ({ useI18n: () => ({ t: (text: string) => text }) }));
 
 import { UnreadDivider } from "../components/unread-divider";
 

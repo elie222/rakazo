@@ -182,7 +182,7 @@ export function writeComposerDraft(
     promoteRecoveredDraft(drafts, scope);
     // Replace the saved draft only once the new one is fully written.
     next.create({ overwrite: true });
-    next.write(JSON.stringify({ version: 1, text, bindings }));
+    next.writeSync(JSON.stringify({ version: 1, text, bindings }));
     next.moveSync(file, { overwrite: true });
     return true;
   } catch {

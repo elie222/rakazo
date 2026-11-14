@@ -169,7 +169,7 @@ export const fishAudio: VoiceProvider = {
       heading: "When to choose Fish Audio",
       paragraphs: [
         "Choose Fish Audio when the voice itself matters and so does the price: a cloned voice, an unusual character, or a language where you want more choice than a fixed set of voices gives you. It speaks and transcribes, so one account does both.",
-        "[ElevenLabs](/voice-providers/elevenlabs/) is the other choice for cloning and polished voices, with more enterprise controls. [OpenAI](/voice-providers/openai/) is simplest if you already have a key, and [Cartesia](/voice-providers/cartesia/) is built for low-latency speech but does not transcribe. To keep voice off hosted services entirely, run a [self-hosted speech server](/voice-providers/self-hosted/), or use the [voices built into a Mac](/voice-providers/macos/) when Rakazo runs on one. The [voice provider comparison](/voice-providers/) puts all six side by side.",
+        "[ElevenLabs](/voice-providers/elevenlabs/) is the other choice for cloning and polished voices, with more enterprise controls. [OpenAI](/voice-providers/openai/) is simplest if you already have a key, and [Cartesia](/voice-providers/cartesia/) is built for low-latency speech but does not transcribe. To keep voice off hosted services entirely, run a [self-hosted speech server](/voice-providers/self-hosted/), or use the [voices built into a Mac](/voice-providers/macos/) when Rakazo runs on one. The [voice provider comparison](/voice-providers/) puts every option side by side.",
       ],
     },
     {

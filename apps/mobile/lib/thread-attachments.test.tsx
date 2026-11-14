@@ -19,10 +19,6 @@ vi.mock("./session", () => ({
   registerSessionDiskCache: (clear: () => void) => sessionCaches.push(clear),
 }));
 
-vi.mock("./i18n", () => ({
-  t: (text: string) => text,
-  useI18n: () => ({ t: (text: string) => text }),
-}));
 vi.mock("./pick-attachments", () => ({
   pickDocuments: vi.fn(),
   pickFromLibrary: vi.fn(),
@@ -155,8 +151,8 @@ it("counts a read that settles before the next render against the attachment lim
     "a3",
     "d1",
   ]);
-  // The identity i18n mock leaves the placeholder; before the fix there was no notice at all.
-  expect(attachments.attachmentNotice).toBe("Skipped {items}");
+  // Before the fix there was no notice at all.
+  expect(attachments.attachmentNotice).toBe("Skipped d2.txt (max 4 attachments)");
 });
 
 it("keeps a chat's unsent attachments when the chat is left and reopened", () => {
@@ -329,7 +325,9 @@ it("holds a share import to the attachment limit when a picker opened before it 
   await act(async () => share.settle());
 
   expect(attachments.activePendingAttachments.map((item) => item.id)).toEqual(["d1", "d2"]);
-  expect(attachments.attachmentNotice).toBe("Skipped {items}");
+  expect(attachments.attachmentNotice).toBe(
+    "Skipped s1.txt (max 2 attachments), s2.txt (max 2 attachments)",
+  );
   // Files left out by the limit give their share copies back.
   expect(releaseIncomingShareFiles).toHaveBeenLastCalledWith(share.files);
 });
@@ -346,7 +344,9 @@ it("holds a share import to the attachment limit when files are dropped during i
   await act(async () => share.settle());
 
   expect(attachments.activePendingAttachments.map((item) => item.id)).toEqual(["d1", "d2"]);
-  expect(attachments.attachmentNotice).toBe("Skipped {items}");
+  expect(attachments.attachmentNotice).toBe(
+    "Skipped s1.txt (max 2 attachments), s2.txt (max 2 attachments)",
+  );
 });
 
 it("keeps the share copy an earlier unsent attachment still uses when a later share overflows", async () => {

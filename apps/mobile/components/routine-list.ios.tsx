@@ -29,8 +29,9 @@ import {
   tint,
   toggleStyle,
 } from "@expo/ui/swift-ui/modifiers";
+import { ph } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
 import { PlatformColor, StyleSheet } from "react-native";
-import { useI18n } from "../lib/i18n";
 import { native, useMobileTokens, useResolvedAppearance } from "../lib/native";
 import { routineRowDetail, routineRowLabel } from "../lib/routine";
 import { NativeInsetList, useInsetListEdges } from "./native-inset-list";
@@ -45,7 +46,7 @@ export function RoutineList({
   onToggle,
   onDelete,
 }: RoutineListProps) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const edges = useInsetListEdges();
   const tokens = useMobileTokens();
   // Re-rendered with the appearance, so the rows read the new theme's `native` colours.
@@ -60,7 +61,7 @@ export function RoutineList({
         <List.ForEach>
           {routines.map((routine, index) => {
             const detail = routineRowDetail(routine, timeZone);
-            const switchLabel = t("Active: {name}", { name: routine.name });
+            const switchLabel = t`Active: ${ph({ name: routine.name })}`;
             return (
               <SwipeActions
                 key={routine.id}
@@ -137,14 +138,14 @@ export function RoutineList({
                 {canDelete && routine.editable !== false ? (
                   <SwipeActions.Actions allowsFullSwipe={false}>
                     <Button
-                      label={t("Delete")}
+                      label={t`Delete`}
                       systemImage="trash"
                       modifiers={[
                         labelStyle("iconOnly"),
                         // Red by tint, not the destructive role: SwiftUI removes a row as soon
                         // as a destructive swipe button is tapped, even when the alert is cancelled.
                         tint(PlatformColor("systemRed")),
-                        accessibilityLabel(t("Delete {name}", { name: routine.name })),
+                        accessibilityLabel(t`Delete ${ph({ name: routine.name })}`),
                       ]}
                       onPress={() => onDelete(routine)}
                     />

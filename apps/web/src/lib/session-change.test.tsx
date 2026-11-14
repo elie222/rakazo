@@ -40,11 +40,13 @@ vi.mock("@rakazo/core", async (importOriginal) => ({
 vi.mock("./call-pickup.js", () => ({ pickUp: vi.fn(async () => undefined) }));
 vi.mock("./dictation.js", () => ({
   dictation: { listen: mocks.listen, stop: mocks.stop, subscribe: () => () => undefined },
+  usesServerDictation: () => false,
 }));
 vi.mock("./tts.js", () => ({
   speaker: {
     speak: mocks.speak,
     stop: vi.fn(),
+    unlock: vi.fn(),
     isSpeaking: () => false,
     subscribe: () => () => undefined,
   },

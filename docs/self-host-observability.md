@@ -282,9 +282,9 @@ check alerts when a sink is configured but the shipper is not running.
 Alert in the destination, not on the host. Starting points, written as Axiom APL here but plain
 filters in any log store:
 
-| Alert | Query |
-| --- | --- |
-| Login with an unnamed key | `where event == "ssh.login" and key_name == "unknown"` |
-| Watched file changed | `where event == "file.change"` outside your own deploys and maintenance |
+| Alert                               | Query                                                                                                 |
+| ----------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| Login with an unnamed key           | `where event == "ssh.login" and key_name == "unknown"`                                                |
+| Watched file changed                | `where event == "file.change"` outside your own deploys and maintenance                               |
 | Root use outside the deploy account | `where (event == "sudo.command" and user != "deploy") or event == "su" or event == "identity.change"` |
-| Shipping stopped | no `shipper.heartbeat` from a `host` for more than two heartbeat intervals |
+| Shipping stopped                    | no `shipper.heartbeat` from a `host` for more than two heartbeat intervals                            |

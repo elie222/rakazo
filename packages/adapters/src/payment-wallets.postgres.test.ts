@@ -16,8 +16,7 @@ import {
 import { EncryptedSecretStore } from "./secrets.js";
 
 const databaseUrl = process.env.DATABASE_URL;
-const describePostgres =
-  process.env.VERIFY_DATABASE && databaseUrl ? describe.sequential : describe.skip;
+const describePostgres = process.env.VERIFY_DATABASE && databaseUrl ? describe : describe.skip;
 
 /** A wallet whose sign-in completes at once with a credential already due for refresh. */
 function testWallet(): PaymentWalletProvider & { refresh: ReturnType<typeof vi.fn> } {

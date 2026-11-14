@@ -12,10 +12,11 @@ import type { ReactNode } from "react";
 import { act, createElement, useMemo } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
-import { ActionSheetIOS, Alert, Platform } from "react-native";
+import { Alert, Platform } from "react-native";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FailedSendBubble } from "../components/failed-send-bubble";
 import type { rpc } from "./api";
+import { showIOSActionSheet } from "./ios-action-sheet";
 import type { MobileSnapshot } from "./mobile-types";
 import { filterPickedAttachments } from "./pick-attachments-filter";
 import type { ComposerSnapshot, SendAttempt, SendPayload } from "./thread-feedback";
@@ -64,19 +65,15 @@ vi.mock("react-native", () => ({
       children,
     ),
   Platform: { OS: "ios" },
-  ActionSheetIOS: { showActionSheetWithOptions: vi.fn() },
   Alert: { alert: vi.fn() },
 }));
+vi.mock("./ios-action-sheet", () => ({ showIOSActionSheet: vi.fn() }));
 vi.mock("expo-router", () => ({ router: { push: vi.fn() } }));
 vi.mock("expo-secure-store", () => ({}));
 vi.mock("./live-notifications", () => ({ resumeLiveNotifications: vi.fn() }));
 vi.mock("./network-cache", () => ({ clearNetworkCache: vi.fn() }));
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
 vi.mock("./native", () => ({ useMobileTokens: () => ({}) }));
-vi.mock("./i18n", () => ({
-  t: (text: string) => text,
-  useI18n: () => ({ t: (text: string) => text }),
-}));
 
 let feedback: ReturnType<typeof useThreadFeedback>;
 let nonces = 0;
@@ -894,9 +891,7 @@ describe("scoped mobile outbox", () => {
           .dispatchEvent(new MouseEvent("contextmenu", { bubbles: true })),
       );
       if (os === "ios") {
-        const [options, choose] = vi
-          .mocked(ActionSheetIOS.showActionSheetWithOptions)
-          .mock.calls.at(-1)!;
+        const [options, choose] = vi.mocked(showIOSActionSheet).mock.calls.at(-1)!;
         expect(options.options).toEqual(["Send as file", "Delete", "Cancel"]);
         expect(options.message).toContain(fileNote);
         await act(async () => {
@@ -937,9 +932,7 @@ describe("scoped mobile outbox", () => {
       });
       act(() => container.querySelector("button")!.click());
       if (os === "ios") {
-        const [options, choose] = vi
-          .mocked(ActionSheetIOS.showActionSheetWithOptions)
-          .mock.calls.at(-1)!;
+        const [options, choose] = vi.mocked(showIOSActionSheet).mock.calls.at(-1)!;
         expect(options.options).toEqual(["Send as file", "Try again", "Cancel"]);
         expect(options.message).toBe(
           `Image input is not configured for this model.\n\n${fileNote}`,
@@ -1013,9 +1006,7 @@ describe("scoped mobile outbox", () => {
           .dispatchEvent(new MouseEvent("contextmenu", { bubbles: true })),
       );
       if (os === "ios") {
-        const [options, choose] = vi
-          .mocked(ActionSheetIOS.showActionSheetWithOptions)
-          .mock.calls.at(-1)!;
+        const [options, choose] = vi.mocked(showIOSActionSheet).mock.calls.at(-1)!;
         expect(options.options).toEqual(["Add model", "Delete", "Cancel"]);
         expect(options.message).toBeUndefined();
         expect(options.cancelButtonIndex).toBe(2);
@@ -1064,9 +1055,7 @@ describe("scoped mobile outbox", () => {
         .dispatchEvent(new MouseEvent("contextmenu", { bubbles: true })),
     );
     if (os === "ios") {
-      const [options, choose] = vi
-        .mocked(ActionSheetIOS.showActionSheetWithOptions)
-        .mock.calls.at(-1)!;
+      const [options, choose] = vi.mocked(showIOSActionSheet).mock.calls.at(-1)!;
       expect(options.options).toEqual(["Try again", "Delete", "Cancel"]);
       expect(options.cancelButtonIndex).toBe(2);
       expect(options.destructiveButtonIndex).toBe(1);
@@ -1101,9 +1090,7 @@ describe("scoped mobile outbox", () => {
         .querySelector("button")!
         .dispatchEvent(new MouseEvent("contextmenu", { bubbles: true })),
     );
-    const [options, choose] = vi
-      .mocked(ActionSheetIOS.showActionSheetWithOptions)
-      .mock.calls.at(-1)!;
+    const [options, choose] = vi.mocked(showIOSActionSheet).mock.calls.at(-1)!;
     expect(options.options).toEqual(["Try again", "Delete", "Cancel"]);
     expect(options.message).toBeUndefined();
     act(() => choose(0));

@@ -5,8 +5,10 @@ const native = vi.hoisted(() => ({
   refreshWorkActivity: vi.fn(async () => undefined),
   endWorkActivity: vi.fn(async () => undefined),
   token: undefined as undefined | ((event: { token: string }) => void),
-  addListener(_name: string, callback: (event: { token: string }) => void) {
-    native.token = callback;
+  startToken: undefined as undefined | ((event: { token: string }) => void),
+  addListener(name: string, callback: (event: { token: string }) => void) {
+    if (name === "onWorkActivityStartToken") native.startToken = callback;
+    else native.token = callback;
     return { remove() {} };
   },
 }));
@@ -48,15 +50,48 @@ const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 beforeEach(() => {
   vi.clearAllMocks();
+  rpc.mockReset();
   app.token = "session-token";
   app.generation = 1;
   app.ready = 1;
   app.readFails = false;
 });
 
-it("starts the card for the chat just sent to", () => {
+it("starts the card for the chat just sent to only after the server confirms support", async () => {
+  let reply!: (value: { following: boolean }) => void;
+  rpc.mockReturnValueOnce(new Promise((resolve) => (reply = resolve)));
   startWorkActivity({ title: "Planner", spaceId: "space-1", target: { groupId: "group-1" } });
+  expect(rpc).toHaveBeenCalledWith("notifications/followWorkActivity", {});
+  expect(native.startWorkActivity).not.toHaveBeenCalled();
+  reply({ following: true });
+  await settle();
   expect(native.startWorkActivity).toHaveBeenCalledWith("Planner", "space-1", null, "group-1");
+});
+
+it("skips creating a card when the server cannot follow it", async () => {
+  rpc.mockResolvedValueOnce({ following: false });
+  startWorkActivity({ title: "Planner", spaceId: "space-1", target: { botId: "bot-1" } });
+  await settle();
+  expect(native.startWorkActivity).not.toHaveBeenCalled();
+  expect(native.endWorkActivity).not.toHaveBeenCalled();
+});
+
+it.each(["unsupported preflight", "offline"])("skips creating a card on %s", async (message) => {
+  rpc.mockRejectedValueOnce(new Error(message));
+  startWorkActivity({ title: "Planner", spaceId: "space-1", target: { botId: "bot-1" } });
+  await settle();
+  expect(native.startWorkActivity).not.toHaveBeenCalled();
+  expect(native.endWorkActivity).not.toHaveBeenCalled();
+});
+
+it("ignores preflight support from a previous session", async () => {
+  let reply!: (value: { following: boolean }) => void;
+  rpc.mockReturnValueOnce(new Promise((resolve) => (reply = resolve)));
+  startWorkActivity({ title: "Planner", spaceId: "space-1", target: { botId: "bot-1" } });
+  app.generation += 1;
+  reply({ following: true });
+  await settle();
+  expect(native.startWorkActivity).not.toHaveBeenCalled();
 });
 
 it("ends the card only when the server says nothing would update it", async () => {
@@ -86,6 +121,17 @@ it("ends the card only when the server says nothing would update it", async () =
   expect(native.endWorkActivity).toHaveBeenCalledOnce();
 });
 
+it("hands the phone's token for starting cards to the server", async () => {
+  rpc.mockResolvedValueOnce({ ok: true });
+  native.startToken!({ token: "cd" });
+  await settle();
+  expect(rpc).toHaveBeenCalledWith("notifications/registerWorkActivityStarts", { token: "cd" });
+  // A failed request is asked again on the next open.
+  rpc.mockRejectedValueOnce(new Error("offline"));
+  native.startToken!({ token: "cd" });
+  await settle();
+});
+
 it("asks again on launch and whenever the app opens, and ends the card on sign-out", async () => {
   startWorkActivities();
   expect(native.refreshWorkActivity).toHaveBeenCalledOnce();
@@ -94,9 +140,12 @@ it("asks again on launch and whenever the app opens, and ends the card on sign-o
   app.appState!("active");
   expect(native.refreshWorkActivity).toHaveBeenCalledOnce();
 
+  native.refreshWorkActivity.mockClear();
   app.session!();
   await settle();
   expect(native.endWorkActivity).not.toHaveBeenCalled();
+  // A new sign-in hands both tokens to its session.
+  expect(native.refreshWorkActivity).toHaveBeenCalledOnce();
   app.token = "";
   // A change still landing, or a keychain read that failed, is not a sign-out.
   app.ready = 0;

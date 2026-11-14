@@ -5,13 +5,13 @@ import { join } from "node:path";
 import type { TransactionalEmailProvider } from "@rakazo/adapter-kit";
 import { FakeSandboxProvider } from "@rakazo/adapters";
 import type { PrismaClient } from "@rakazo/db";
-import { asSystem, bootstrapUserSpace, createRepos } from "@rakazo/db";
+import { asSystem, bootstrapUserSpace, createRepos, reserveBotEmailSend } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { AppHandles } from "./app.js";
 import { createApp } from "./app.js";
 
 const databaseUrl = process.env.VERIFY_DATABASE === "1" ? process.env.DATABASE_URL : undefined;
-const describePostgres = databaseUrl ? describe.sequential : describe.skip;
+const describePostgres = databaseUrl ? describe : describe.skip;
 const webOrigin = "http://127.0.0.1:5173";
 const token = "scim-test-token-0123456789abcdef0123456789";
 const authSecret = "directory-test-secret-with-32-characters";
@@ -138,6 +138,56 @@ describePostgres("directory provisioning over SCIM (PostgreSQL)", () => {
     });
     expect(created.status).toBe(403);
   });
+
+  it.each(["PUT", "PATCH"])(
+    "blocks bot sending after a directory email change through %s until the new mailbox is verified",
+    async (method) => {
+      const externalId = randomUUID();
+      const address = `${externalId}@example.test`;
+      const replacement = `new-${address}`;
+      const created = await scim("POST", "/Users", userResource(address, externalId));
+      expect(created.status).toBe(201);
+      const resource = (await created.json()) as { id: string };
+      const user = await accountOf(address);
+      await system.user.update({ where: { id: user.id }, data: { emailVerified: true } });
+      const update = (email: string) =>
+        scim(
+          method,
+          `/Users/${resource.id}`,
+          method === "PUT"
+            ? userResource(email, externalId)
+            : {
+                schemas: [PATCH_SCHEMA],
+                Operations: [
+                  {
+                    op: "replace",
+                    value: {
+                      userName: email,
+                      emails: [{ value: email, type: "work", primary: true }],
+                    },
+                  },
+                ],
+              },
+        );
+      expect((await update(address)).status).toBe(200);
+      expect((await accountOf(address)).emailVerified).toBe(true);
+      const reserve = (email: string) =>
+        reserveBotEmailSend(handles.prisma, {
+          userId: user.id,
+          botId: "directory-fixture",
+          recipients: [email],
+        });
+      expect(await reserve(address)).toHaveProperty("id");
+
+      expect((await update(replacement)).status).toBe(200);
+      expect(await accountOf(replacement)).toMatchObject({ id: user.id, emailVerified: false });
+      expect(await reserve(replacement)).toBe("unverified");
+      expect(await system.botEmailSend.count({ where: { userId: user.id } })).toBe(1);
+
+      await system.user.update({ where: { id: user.id }, data: { emailVerified: true } });
+      expect(await reserve(replacement)).toHaveProperty("id");
+    },
+  );
 
   it("provisions a person, turns them off with a full replace, and back on with a patch", async () => {
     const address = "ada@example.test";

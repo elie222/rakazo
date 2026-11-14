@@ -83,7 +83,7 @@ export async function* followThreadEvents(
 
 const THREAD_TOPIC = "thread:";
 
-function threadTopic(threadId: string): string {
+export function threadTopic(threadId: string): string {
   return `${THREAD_TOPIC}${threadId}`;
 }
 
@@ -157,7 +157,7 @@ export async function* followIncomingCallSignals(
   }
 }
 
-class ChangeLatch {
+export class ChangeLatch {
   generation = 0;
   private wake: (() => void) | undefined;
 

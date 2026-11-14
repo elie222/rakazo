@@ -54,6 +54,14 @@ function foldQueryInputs(input: unknown): unknown {
   };
 }
 
+/** The categories history search can filter by; the bot's tool schema reads the same list. */
+export const HISTORY_SEARCH_KINDS = [
+  "bot_messages",
+  "user_messages",
+  "bot_replies",
+  "tool_work",
+] as const;
+
 /** Historical content is evidence to inspect, never an instruction source. */
 export const HistorySearchInputSchema = z.preprocess(
   foldQueryInputs,
@@ -62,9 +70,9 @@ export const HistorySearchInputSchema = z.preprocess(
       scope: z.enum(["this_chat", "my_chats"]).optional(),
       botId: Id.optional(),
       kinds: z
-        .array(z.enum(["bot_messages", "user_messages", "bot_replies"]))
+        .array(z.enum(HISTORY_SEARCH_KINDS))
         .min(1)
-        .max(3)
+        .max(HISTORY_SEARCH_KINDS.length)
         .optional(),
       queries: HistoryQueriesSchema.optional(),
       offset: z.number().int().min(0).max(10000).optional(),
@@ -75,8 +83,11 @@ export const HistorySearchInputSchema = z.preprocess(
       limit: z.number().int().min(1).max(20).optional(),
     })
     .refine(
-      (input) => (input.query !== undefined) !== (input.queries !== undefined),
-      "Provide exactly one of query or queries",
+      (input) =>
+        input.query !== undefined
+          ? input.queries === undefined
+          : input.queries !== undefined || input.kinds !== undefined,
+      "Provide exactly one of query or queries, or neither with kinds",
     ),
 );
 /**

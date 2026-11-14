@@ -12,6 +12,7 @@ export function resolveSandboxProvider(source: NodeJS.ProcessEnv = process.env):
   if (requested === "createos" && !optional(source.CREATEOS_SANDBOX_API_KEY)) return "none";
   if (requested === "boat" && !boatApiKeyFromEnv(source)) return "none";
   if (requested === "boxd" && !optional(source.BOXD_API_KEY)) return "none";
+  if (requested === "instabox" && !optional(source.INSTABOX_API_KEY)) return "none";
   if (
     requested === "wuying" &&
     [
@@ -73,6 +74,7 @@ export function sandboxProviderOptionsFromEnv(
   | "boatApiUrl"
   | "boxdApiKey"
   | "boxdOrg"
+  | "instaboxApiKey"
   | "kubernetesNamespace"
   | "kubernetesRuntimeClassName"
   | "kubernetesComputerImage"
@@ -93,6 +95,10 @@ export function sandboxProviderOptionsFromEnv(
   | "incusCpuLimit"
   | "incusMemoryLimit"
   | "incusProcessLimit"
+  | "localVmCli"
+  | "localVmComputerImage"
+  | "localVmCpus"
+  | "localVmMemory"
   | "wuyingAccessKeyId"
   | "wuyingAccessKeySecret"
   | "wuyingRegionId"
@@ -122,6 +128,7 @@ export function sandboxProviderOptionsFromEnv(
     boatApiUrl: boatApiUrlFromEnv(source),
     boxdApiKey: optional(source.BOXD_API_KEY),
     boxdOrg: optional(source.BOXD_ORG),
+    instaboxApiKey: optional(source.INSTABOX_API_KEY),
     kubernetesNamespace: optional(source.KUBERNETES_SANDBOX_NAMESPACE),
     kubernetesRuntimeClassName: optional(source.KUBERNETES_SANDBOX_RUNTIME_CLASS_NAME),
     kubernetesComputerImage: optional(source.KUBERNETES_SANDBOX_COMPUTER_IMAGE),
@@ -156,6 +163,10 @@ export function sandboxProviderOptionsFromEnv(
     incusCpuLimit: optional(source.INCUS_SANDBOX_CPU_LIMIT),
     incusMemoryLimit: optional(source.INCUS_SANDBOX_MEMORY_LIMIT),
     incusProcessLimit: optional(source.INCUS_SANDBOX_PROCESS_LIMIT),
+    localVmCli: optional(source.LOCAL_VM_CLI),
+    localVmComputerImage: optional(source.LOCAL_VM_COMPUTER_IMAGE),
+    localVmCpus: optional(source.LOCAL_VM_CPUS),
+    localVmMemory: optional(source.LOCAL_VM_MEMORY),
     wuyingAccessKeyId: optional(source.WUYING_ACCESS_KEY_ID),
     wuyingAccessKeySecret: optional(source.WUYING_ACCESS_KEY_SECRET),
     wuyingRegionId: optional(source.WUYING_REGION_ID),

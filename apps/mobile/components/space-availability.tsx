@@ -1,9 +1,10 @@
+import { ph } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
 import type { AvailabilityKind, SpaceAvailability } from "@rakazo/contracts";
 import { useEffect, useState } from "react";
 import { Text, View } from "react-native";
 import { rpc } from "../lib/api";
 import { mobileTokens } from "../lib/appearance";
-import { useI18n } from "../lib/i18n";
 import { errorText } from "../lib/user-error";
 import { MenuPicker } from "./menu-picker";
 
@@ -46,23 +47,23 @@ export function SpaceAvailabilityPicker({
   availability?: SpaceAvailability;
   onChanged: () => unknown;
 }) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const spaces = useOwnSpaces();
   const [error, setError] = useState<string | null>(null);
   if (spaces.length < 2 || !availability) return null;
   const several = !availability.allSpaces && availability.spaceIds.length > 1;
   const value = availability.allSpaces ? "all" : several ? "several" : availability.spaceIds[0]!;
   const choices = [
-    { key: "all", label: t("All spaces") },
+    { key: "all", label: t`All spaces` },
     ...spaces.map((space) => ({ key: space.id, label: space.name })),
     ...(several
-      ? [{ key: "several", label: t("{count} spaces", { count: availability.spaceIds.length }) }]
+      ? [{ key: "several", label: t`${ph({ count: availability.spaceIds.length })} spaces` }]
       : []),
   ];
   return (
     <View>
       <MenuPicker
-        label={t("Available in")}
+        label={t`Available in`}
         choices={choices}
         value={value}
         onChange={(key) => {
@@ -76,7 +77,7 @@ export function SpaceAvailabilityPicker({
           void rpc("availability/set", { kind, id, ...next })
             .then(onChanged)
             .catch((reason) =>
-              setError(errorText(reason, t("Could not change where this is available"))),
+              setError(errorText(reason, t`Could not change where this is available`)),
             );
         }}
       />

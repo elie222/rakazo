@@ -7,6 +7,7 @@ const { native, platform } = vi.hoisted(() => ({
 
 vi.mock("expo-modules-core", () => ({ requireNativeModule: () => native }));
 vi.mock("expo-notifications", () => ({ setNotificationHandler: vi.fn() }));
+vi.mock("expo-secure-store", () => ({}));
 vi.mock("react-native", () => ({ Platform: platform }));
 
 describe("Live update settings row", () => {

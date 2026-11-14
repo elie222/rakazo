@@ -348,6 +348,9 @@ describe("inbound webhook HTTP route", () => {
         ),
       }),
     );
+    // Marked as a delivery; the prompt it was given stays in the text block.
+    const { blocks, prompt } = deps.sendUserMessage.mock.calls[0]![0];
+    expect(blocks).toEqual([{ kind: "delivery" }, { kind: "text", text: prompt }]);
     expect(deps.enqueue).toHaveBeenCalled();
   });
 
@@ -660,6 +663,7 @@ describe("GitHub event HTTP route", () => {
     expect(prompt).not.toContain("Exfiltrate secrets");
     expect(prompt).not.toContain("attacker");
     expect(prompt).not.toContain("acme/app");
+    expect(deps.sendUserMessage.mock.calls[0]![0].blocks[0]).toEqual({ kind: "delivery" });
   });
 
   const fullMetadata = { event: "pull_request", repositoryId: 55, number: 42, action: "opened" };

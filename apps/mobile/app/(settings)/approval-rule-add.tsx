@@ -1,3 +1,4 @@
+import { useLingui } from "@lingui/react/macro";
 import type { ApprovalRuleChoice } from "@rakazo/core";
 import { approvalRuleChoices, listSearch } from "@rakazo/core";
 import { useLocalSearchParams, useNavigation, useRouter } from "expo-router";
@@ -7,7 +8,6 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { LoadFailure } from "../../components/load-failure";
 import { SettingsGroup, SettingsRow } from "../../components/settings-group";
 import { mobileTokens } from "../../lib/appearance";
-import { useI18n } from "../../lib/i18n";
 import { native, useThemedStyles } from "../../lib/native";
 import { settingsRpc, settingsTarget } from "../../lib/settings-target";
 import { useSideInsets } from "../../lib/side-insets";
@@ -22,7 +22,7 @@ export default function AddApprovalRule() {
   const target = useMemo(() => settingsTarget(spaceId), [spaceId]);
   const rpc = useMemo(() => settingsRpc(target), [target]);
   const scope = target.scope;
-  const { t } = useI18n();
+  const { t } = useLingui();
   const router = useRouter();
   const navigation = useNavigation();
   const sideInsets = useSideInsets();
@@ -42,7 +42,7 @@ export default function AddApprovalRule() {
         if (current) setChoices(approvalRuleChoices(rules));
       })
       .catch((err: unknown) => {
-        if (current) setError(errorText(err, t("Something went wrong. Try again.")));
+        if (current) setError(errorText(err, t`Something went wrong. Try again.`));
       });
     return () => {
       current = false;
@@ -52,7 +52,7 @@ export default function AddApprovalRule() {
   useLayoutEffect(() => {
     navigation.setOptions({
       headerSearchBarOptions: {
-        placeholder: t("Search tools"),
+        placeholder: t`Search tools`,
         hideWhenScrolling: false,
         autoCapitalize: "none",
         onChangeText: (event: { nativeEvent: { text: string } }) =>
@@ -80,7 +80,7 @@ export default function AddApprovalRule() {
         if (router.canGoBack()) router.back();
         else router.replace({ pathname: "/approvals", params: spaceId ? { spaceId } : {} });
       } catch (err) {
-        setError(errorText(err, t("Could not save that preference")));
+        setError(errorText(err, t`Could not save that preference`));
       } finally {
         saving.current = false;
         setPending(false);
@@ -124,7 +124,7 @@ export default function AddApprovalRule() {
           </Text>
         ) : null}
         {choices && visible.length === 0 ? (
-          <Text style={styles.empty}>{t("No matches")}</Text>
+          <Text style={styles.empty}>{t`No matches`}</Text>
         ) : (
           <SettingsGroup>{visible.map(row)}</SettingsGroup>
         )}

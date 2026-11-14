@@ -119,10 +119,6 @@ vi.mock("./native", () => ({
 }));
 vi.mock("./auth-routing", () => ({ replaceWithSignIn: vi.fn() }));
 vi.mock("./delete-account-prompt", () => ({ promptAccountDeletion: vi.fn(() => false) }));
-vi.mock("./i18n", () => ({
-  t: (text: string) => text,
-  useI18n: () => ({ t: (text: string) => text }),
-}));
 vi.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({ bottom: 34 }) }));
 vi.mock("./returning-user", () => ({ forgetSignedIn: vi.fn() }));
 vi.mock("./sso", () => ({ continueWithSso: vi.fn() }));
@@ -284,6 +280,21 @@ describe("passwordless account deletion", () => {
     expect(deleteAccount).not.toHaveBeenCalled();
     // The field switched to the password mode; the code must not sit in it as a password.
     expect(input.value).toBe("");
+    expect(button("Delete").disabled).toBe(true);
+  });
+
+  it.each(["google", "apple"])("hides unsupported linked %s deletion confirmation", async (id) => {
+    vi.mocked(fetchAccountSecurity).mockResolvedValue({
+      ...passwordless,
+      hasPassword: false,
+      sso: null,
+      ssoLinked: false,
+      emailDeletion: false,
+      linkedProviderIds: [id],
+    });
+    await open();
+    expect(document.body.textContent).not.toContain("Continue with Provider");
+    expect(continueWithSso).not.toHaveBeenCalled();
     expect(button("Delete").disabled).toBe(true);
   });
 });

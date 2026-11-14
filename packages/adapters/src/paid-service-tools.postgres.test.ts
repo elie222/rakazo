@@ -6,8 +6,7 @@ import { serviceCallFromTool } from "./paid-service-tools.js";
 import { FakePaidServiceProvider } from "./paid-services-factory.js";
 
 const context = { signal: new AbortController().signal } as AdapterContext;
-const dbTests =
-  process.env.VERIFY_DATABASE && process.env.DATABASE_URL ? describe.sequential : describe.skip;
+const dbTests = process.env.VERIFY_DATABASE && process.env.DATABASE_URL ? describe : describe.skip;
 dbTests("paid service billing", () => {
   let db: ReturnType<typeof createDb>, prisma: PrismaClient;
   const fixtures: Array<{ organizationId: string; userId: string }> = [];

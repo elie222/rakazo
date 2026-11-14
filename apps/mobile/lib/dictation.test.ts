@@ -1,6 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SpeechRecognizer } from "./dictation";
-import { ENDPOINT_SILENCE_MS, listen, setSpeechRecognizer, stop } from "./dictation";
+import {
+  ENDPOINT_SILENCE_MS,
+  finishListening,
+  listen,
+  QUIET_RESTART_MS,
+  setSpeechRecognizer,
+  stop,
+} from "./dictation";
 import { reportMobileError } from "./monitoring";
 
 vi.mock("./monitoring", () => ({ reportMobileError: vi.fn() }));
@@ -10,6 +17,12 @@ type Listener = (payload: never) => void;
 
 /** Longest restart delay the module backs off to. */
 const RESTART_CAP_MS = 2_000;
+
+const CALL_SESSION = {
+  category: "playAndRecord",
+  categoryOptions: ["mixWithOthers", "defaultToSpeaker", "allowBluetooth"],
+  mode: "default",
+};
 
 function fakeRecognizer() {
   const listeners = new Map<string, Set<Listener>>();
@@ -22,6 +35,7 @@ function fakeRecognizer() {
     isRecognitionAvailable: () => true,
     requestPermissionsAsync: async () => ({ granted: true }),
     getSupportedLocales: async () => ({ locales: [] }),
+    getAudioSessionCategoryAndOptionsIOS: () => CALL_SESSION,
     addListener: (event, listener) => {
       const set = listeners.get(event) ?? new Set();
       set.add(listener as Listener);
@@ -80,6 +94,59 @@ describe("mobile dictation", () => {
     expect(fake.start).toHaveBeenCalledWith(expect.objectContaining({ lang: "es-CL" }));
   });
 
+  it("closes a mic that hears nothing within its own endpoint", async () => {
+    const onGiveUp = vi.fn();
+    await listen({ onFinal: vi.fn(), onGiveUp, endpointMs: 30_000 });
+    vi.advanceTimersByTime(29_999);
+    expect(onGiveUp).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(onGiveUp).toHaveBeenCalledWith("idle");
+  });
+
+  it("does not count a repeated result as new words against its own endpoint", async () => {
+    const onFinal = vi.fn();
+    await listen({ onFinal, endpointMs: 30_000 });
+    fake.hear("buy milk");
+    for (let repeat = 0; repeat < 3; repeat += 1) {
+      vi.advanceTimersByTime(10_000);
+      fake.hear("buy milk");
+    }
+    expect(onFinal).toHaveBeenCalledWith("buy milk");
+  });
+
+  it("restarts through a quiet pause until its own endpoint ends it", async () => {
+    const onFinal = vi.fn();
+    await listen({ onFinal, endpointMs: 30_000 });
+    fake.hear("buy milk", true);
+    // The recognizer ends on its own again and again while nothing is said.
+    for (let ended = 0; ended < 8; ended += 1) {
+      fake.end();
+      vi.advanceTimersByTime(RESTART_CAP_MS);
+    }
+    expect(onFinal).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(30_000);
+    expect(onFinal).toHaveBeenCalledWith("buy milk");
+  });
+
+  it("keeps listening through pauses shorter than its endpoint until finished", async () => {
+    const onFinal = vi.fn();
+    await listen({ onFinal, endpointMs: 30_000 });
+    fake.hear("buy milk", true);
+    vi.advanceTimersByTime(ENDPOINT_SILENCE_MS * 5);
+    fake.hear("and eggs");
+    expect(onFinal).not.toHaveBeenCalled();
+    finishListening();
+    expect(onFinal).toHaveBeenCalledWith("buy milk and eggs");
+    expect(fake.abort).toHaveBeenCalled();
+  });
+
+  it("keeps the call's current audio session only when a call is listening", async () => {
+    await listen({ onFinal: vi.fn(), call: true });
+    expect(fake.start).toHaveBeenLastCalledWith(
+      expect.objectContaining({ iosCategory: CALL_SESSION }),
+    );
+  });
+
   it("ends the turn only after the silence window, not on the recognizer's own final", async () => {
     const onFinal = vi.fn();
     const interims: string[] = [];
@@ -103,6 +170,37 @@ describe("mobile dictation", () => {
     expect(onFinal).toHaveBeenCalledTimes(1);
     expect(onFinal).toHaveBeenCalledWith("how is the deploy going");
     expect(interims).toEqual(["how is the", "how is the", "how is the deploy going"]);
+  });
+
+  it("restarts a session that reports nothing for too long", async () => {
+    const onFinal = vi.fn();
+    await listen({ onFinal });
+    vi.advanceTimersByTime(QUIET_RESTART_MS - 1);
+    expect(fake.abort).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(fake.abort).toHaveBeenCalledOnce();
+
+    fake.end();
+    vi.advanceTimersByTime(250);
+    expect(fake.start).toHaveBeenCalledTimes(2);
+    expect(onFinal).not.toHaveBeenCalled();
+  });
+
+  it("restarts a quiet session that keeps reporting empty results", async () => {
+    await listen({ onFinal: vi.fn() });
+    for (let elapsed = 0; elapsed < QUIET_RESTART_MS; elapsed += 5_000) {
+      vi.advanceTimersByTime(5_000);
+      fake.hear("");
+    }
+    expect(fake.abort).toHaveBeenCalledOnce();
+  });
+
+  it("keeps a session that is hearing the caller", async () => {
+    await listen({ onFinal: vi.fn() });
+    vi.advanceTimersByTime(QUIET_RESTART_MS - 100);
+    fake.hear("still there");
+    vi.advanceTimersByTime(100);
+    expect(fake.abort).not.toHaveBeenCalled();
   });
 
   it("restarts a session that ended mid-turn and carries the words already heard", async () => {

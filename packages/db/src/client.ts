@@ -13,7 +13,12 @@ import {
   PgSpaceKeyStore,
 } from "./content-keys.js";
 import { PrismaClient } from "./generated/prisma/client.js";
-import { installDbContext, rlsBypassKey, withRowLevelSecurity } from "./row-security.js";
+import {
+  installDbContext,
+  rlsBypassKey,
+  WRAPPED_OPERATION_OPTIONS,
+  withRowLevelSecurity,
+} from "./row-security.js";
 import { withTextSanitization } from "./text-sanitization.js";
 
 export type Db = PrismaClient;
@@ -33,6 +38,18 @@ const CONNECT_RETRY_ATTEMPTS = 8;
 const SLOW_CHECKOUT_MS = 1_000;
 const SATURATION_REPORT_INTERVAL_MS = 10_000;
 
+/**
+ * Probe a quiet connection after 10s instead of the OS default of hours, so one a failover cut
+ * without closing it is found dead within seconds instead of hanging the work that holds it.
+ */
+export const DATABASE_KEEPALIVE = { keepAlive: true, keepAliveInitialDelayMillis: 10_000 };
+
+/**
+ * A query that never answers is on a connection that died mid-query. Longer than the longest
+ * transaction any work may hold, so it only ends queries no server is running anymore.
+ */
+const QUERY_TIMEOUT_MS = WRAPPED_OPERATION_OPTIONS.timeout + 30_000;
+
 export function createPool(connectionString: string, options: DbClientOptions = {}): Pool {
   const pool = new Pool({
     connectionString,
@@ -44,7 +61,8 @@ export function createPool(connectionString: string, options: DbClientOptions = 
     // next job burst is how a tight Postgres hits 53300; keep what we already have.
     idleTimeoutMillis: 0,
     application_name: options.applicationName,
-    keepAlive: true,
+    query_timeout: QUERY_TIMEOUT_MS,
+    ...DATABASE_KEEPALIVE,
   });
   // graphile-worker (and Node itself) require an 'error' listener on a shared
   // pool: an idle-client disconnect is otherwise an unhandled error that kills
@@ -83,7 +101,8 @@ export function createDb(
     connectionTimeoutMillis: CHECKOUT_TIMEOUT_MS,
     idleTimeoutMillis: 30_000,
     application_name: options.applicationName && `${options.applicationName}-keys`,
-    keepAlive: true,
+    query_timeout: QUERY_TIMEOUT_MS,
+    ...DATABASE_KEEPALIVE,
   });
   keyPool.on("error", () => undefined);
   installDbContext(keyPool);
@@ -138,6 +157,73 @@ export function isTooManyDatabaseConnections(error: unknown): boolean {
 /** pg-pool's error when no connection frees up within `connectionTimeoutMillis`. */
 export function isPoolCheckoutTimeout(error: unknown): boolean {
   return error instanceof Error && error.message === "timeout exceeded when trying to connect";
+}
+
+/**
+ * Postgres codes, Prisma codes and pg driver adapter error kinds that say the database cannot
+ * take the work right now: read-only during a failover, shutting down or starting up, out of
+ * connections, or not reachable.
+ */
+const UNAVAILABLE_CODES = new Set([
+  "25006",
+  "53300",
+  "57P01",
+  "57P02",
+  "57P03",
+  "08000",
+  "08001",
+  "08003",
+  "08004",
+  "08006",
+  "P1001",
+  "P1002",
+  "P1017",
+  "P2024",
+  "P2037",
+]);
+const UNAVAILABLE_KINDS = new Set([
+  "DatabaseNotReachable",
+  "ConnectionClosed",
+  "SocketTimeout",
+  "TooManyConnections",
+]);
+/** Raw socket failures, which only count when the caller knows they came from a database connection. */
+const SOCKET_CODES = new Set(["ECONNREFUSED", "ECONNRESET", "ETIMEDOUT", "EPIPE", "ENOTFOUND"]);
+/** pg's own errors for a connection that died: `query_timeout` firing, or the socket closing. */
+const UNAVAILABLE_MESSAGE =
+  /read-only transaction|^Connection terminated|Can't reach database server|^Query read timeout$/;
+
+/**
+ * Whether an error means the database is unavailable rather than that the work is wrong, so
+ * callers back off and wait instead of failing the work. Follows causes, Prisma's driver adapter
+ * error and aggregated connection attempts. Socket errors also come from other services, so they
+ * count only with `fromDatabaseConnection`.
+ */
+export function isDatabaseUnavailable(
+  error: unknown,
+  options: { fromDatabaseConnection?: boolean } = {},
+): boolean {
+  if (isTooManyDatabaseConnections(error)) return true;
+  const seen = new Set<unknown>();
+  const pending: unknown[] = [error];
+  while (pending.length > 0) {
+    const current = pending.pop();
+    if (!current || typeof current !== "object" || seen.has(current)) continue;
+    seen.add(current);
+    if (isPoolCheckoutTimeout(current)) return true;
+    const fields = current as Record<string, unknown>;
+    for (const key of ["code", "originalCode"]) {
+      const code = fields[key];
+      if (typeof code !== "string") continue;
+      if (UNAVAILABLE_CODES.has(code)) return true;
+      if (options.fromDatabaseConnection && SOCKET_CODES.has(code)) return true;
+    }
+    if (typeof fields.kind === "string" && UNAVAILABLE_KINDS.has(fields.kind)) return true;
+    if (current instanceof Error && UNAVAILABLE_MESSAGE.test(current.message)) return true;
+    pending.push(fields.cause, fields.meta, fields.driverAdapterError);
+    if (Array.isArray(fields.errors)) pending.push(...fields.errors);
+  }
+  return false;
 }
 
 export async function retryOnTooManyConnections<T>(

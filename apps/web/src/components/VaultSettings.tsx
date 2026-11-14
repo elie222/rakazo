@@ -1,7 +1,21 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { BotSecretMetadata, SettingsScope, VaultKind, VaultRevealed } from "@rakazo/contracts";
-import { isIdentityConfirmationRequired, VAULT_KINDS, vaultKind } from "@rakazo/contracts";
+import type {
+  BotSecretMetadata,
+  SettingsScope,
+  VaultCsv,
+  VaultKind,
+  VaultRevealed,
+} from "@rakazo/contracts";
+import {
+  isIdentityConfirmationRequired,
+  parseVaultCsv,
+  VAULT_IMPORT_FILE_LIMIT,
+  VAULT_KINDS,
+  vaultKind,
+} from "@rakazo/contracts";
+import { vaultBotsChoosable } from "@rakazo/core";
 import { fetchFresh, writeSaved } from "@rakazo/core/query";
+import { vaultBotsNote, vaultSaveNotice } from "@rakazo/i18n/vault";
 import {
   Button,
   DropdownMenu,
@@ -12,14 +26,16 @@ import {
   ListSearchInput,
 } from "@rakazo/ui-web";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, ChevronRight, Plus } from "lucide-react";
+import { ChevronDown, ChevronRight, FileUp, Plus } from "lucide-react";
 import { Fragment, useEffect, useRef, useState } from "react";
 import { useSpaceQueries } from "../lib/query";
 import { useSpaceRpc } from "../lib/space-rpc";
-import { errorText } from "../lib/user-error";
+import { errorCode, errorText } from "../lib/user-error";
 import { useIdentityConfirmation } from "./ConfirmIdentityDialog";
+import { useOwnSpaces } from "./integrations/space-availability";
 import { BotEmailAddresses } from "./vault/BotEmailAddresses";
 import { useVaultKindLabels, useVaultSubtitle, VaultTile } from "./vault/kinds";
+import { VaultImportPage } from "./vault/VaultImport";
 import { VaultItemDetail } from "./vault/VaultItemDetail";
 import type { VaultEditorInitial, VaultEditorResult } from "./vault/VaultItemEditor";
 import { VaultItemEditorPage } from "./vault/VaultItemEditor";
@@ -46,6 +62,20 @@ export function VaultSettings({
   const queryClient = useQueryClient();
   const list = queries.vault.list.queryOptions({ input: { scope } });
   const listQuery = useQuery({ ...list, refetchOnMount: "always" });
+  // Bots are chosen in the Space they're in, and a Space with its own vault never uses the
+  // account's.
+  const overrides = useQuery({
+    ...queries.spaceSettings.overrides.queryOptions(),
+    enabled: scope === "account",
+  });
+  const otherSpaces = useOwnSpaces().length > 1;
+  const ownVault = scope === "account" && Boolean(overrides.data?.includes("credentials"));
+  // Until that's known, an account item offers no bots, so no choice is saved the Space can't use.
+  const noBots = ownVault || (scope === "account" && !overrides.isSuccess);
+  const botsNote = vaultBotsNote({
+    ownVault,
+    otherSpaces: scope === "account" && !noBots && otherSpaces,
+  });
   const items = listQuery.data;
   const { one, many } = useVaultKindLabels();
   const subtitle = useVaultSubtitle();
@@ -58,6 +88,10 @@ export function VaultSettings({
   const [detailError, setDetailError] = useState<string | null>(null);
   const { withIdentityConfirmation, identityDialog } = useIdentityConfirmation();
   const revealAttempt = useRef(0);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const [importing, setImporting] = useState<{ read: number; csv: VaultCsv } | null>(null);
+  // Counts file picks: only the last one's read is shown, whichever finishes first.
+  const reads = useRef(0);
 
   useEffect(() => {
     onBusyChange?.(busy);
@@ -73,20 +107,67 @@ export function VaultSettings({
     }
   }
 
+  const activityKey = (name: string) => queries.vault.activity.queryKey({ input: { scope, name } });
+
   async function save(result: VaultEditorResult) {
     setBusy(true);
+    let saved: BotSecretMetadata;
+    const input = {
+      scope,
+      destination: result.destination,
+      ...(result.value !== undefined ? { value: result.value } : {}),
+      ...(result.title !== undefined ? { title: result.title } : {}),
+      ...(result.note !== undefined ? { note: result.note } : {}),
+      ...(result.allBots !== undefined ? { allBots: result.allBots } : {}),
+      ...(result.botIds ? { botIds: result.botIds } : {}),
+      ...(result.policy ? { policy: result.policy } : {}),
+      ...(result.alsoOn ? { alsoOn: result.alsoOn } : {}),
+    };
     try {
-      await rpc.vault.put({
-        scope,
-        destination: result.destination,
-        ...(result.value !== undefined ? { value: result.value } : {}),
-        ...(result.title !== undefined ? { title: result.title } : {}),
-        ...(result.note !== undefined ? { note: result.note } : {}),
-      });
+      saved = await rpc.vault.put(input);
     } finally {
       setBusy(false);
     }
-    setError((await refresh()) ? null : t`Could not load credentials.`);
+    void queryClient.invalidateQueries({ queryKey: activityKey(saved.name) });
+    const fresh = await refresh();
+    setError(fresh ? null : t`Could not load credentials.`);
+    // An older server drops what it doesn't know silently, but the item is saved, so say what.
+    const notice = vaultSaveNotice(result, saved);
+    // Which bots may use it is shown as saved even when the list can't be read again, so it never
+    // reads as blocked once bots can use it, and an item opened with a notice is there.
+    if (!fresh && (result.policy || result.allBots !== undefined || notice))
+      await writeSaved(queryClient, list.queryKey, (prev = []) => [
+        ...prev.filter((row) => row.name !== saved.name),
+        saved,
+      ]);
+    if (notice) {
+      setOpened(saved.name);
+      setDetailError(notice);
+    }
+  }
+
+  // Read on this device: the export file itself is never uploaded.
+  async function readExport(file: File | undefined) {
+    if (!file) return;
+    const read = ++reads.current;
+    // A file that can't be read, such as one deleted since it was picked, says so.
+    const text =
+      file.size > VAULT_IMPORT_FILE_LIMIT ? undefined : await file.text().catch(() => undefined);
+    const csv: VaultCsv =
+      text !== undefined
+        ? parseVaultCsv(text)
+        : { error: file.size > VAULT_IMPORT_FILE_LIMIT ? "too_large" : "unreadable" };
+    if (read === reads.current) setImporting({ read, csv });
+  }
+
+  async function importRows(rows: Parameters<typeof rpc.vault.import>[0]["rows"]) {
+    setBusy(true);
+    try {
+      return await rpc.vault.import({ scope, rows });
+    } finally {
+      setBusy(false);
+      await refresh();
+    }
   }
 
   async function reveal(name: string): Promise<VaultRevealed | null> {
@@ -129,6 +210,8 @@ export function VaultSettings({
     } finally {
       setBusy(false);
     }
+    // The name can be saved again at once, and a new item must not show this one's uses.
+    queryClient.removeQueries({ queryKey: activityKey(name) });
     closeItem();
     if (!(await refresh())) {
       await writeSaved(queryClient, list.queryKey, (prev = []) =>
@@ -152,12 +235,26 @@ export function VaultSettings({
         note: item.note,
         origin: item.origin,
         auth: item.auth,
-        ...(revealed && "fields" in revealed ? { loginFields: revealed.fields } : {}),
+        ...(revealed && "fields" in revealed
+          ? { loginFields: revealed.fields, otp: revealed.otp }
+          : {}),
         ...(revealed && "card" in revealed ? { card: revealed.card } : {}),
         ...(item.preview?.contact ? { contact: item.preview.contact } : {}),
+        ...(item.policy ? { policy: item.policy } : {}),
+        ...(item.allBots !== undefined
+          ? { access: { allBots: item.allBots, botIds: item.botIds ?? [] } }
+          : {}),
+        ...(item.alsoOn ? { alsoOn: item.alsoOn } : {}),
       },
     });
   }
+
+  // A new item can be limited to chosen bots unless the saved ones show this server can't.
+  const newItem = (kind: VaultKind): Editing => ({
+    kind,
+    mode: "new",
+    ...(vaultBotsChoosable(items) ? { initial: { access: { allBots: true, botIds: [] } } } : {}),
+  });
 
   const contacts = (items ?? []).flatMap((item) =>
     item.auth?.type === "contact" ? [{ name: item.name, title: item.title }] : [],
@@ -180,6 +277,12 @@ export function VaultSettings({
   );
   const openedItem = items?.find((item) => item.name === opened);
 
+  // Bots are offered once it's known this Space can use them, even in an editor already open.
+  const editingInitial = editing?.initial && {
+    ...editing.initial,
+    access: noBots ? undefined : editing.initial.access,
+    ...(editing.initial.access ? { botsNote } : {}),
+  };
   // An item or form takes the list's place in this panel instead of opening a dialog over Settings.
   if (editing)
     return (
@@ -200,10 +303,33 @@ export function VaultSettings({
                   variable: t`New variable`,
                 }[editing.kind]
           }
-          initial={editing.initial}
+          initial={editingInitial}
           contacts={contacts}
           onSave={save}
           failureText={(err) => errorText(err, t`Could not save the credential`)}
+        />
+      </section>
+    );
+  if (importing)
+    return (
+      <section data-testid="vault">
+        <VaultImportPage
+          // A new file starts a new review, with its own plan.
+          key={importing.read}
+          csv={importing.csv}
+          saved={items ?? []}
+          onImport={importRows}
+          failureText={(err) =>
+            // A server from before import has no such call.
+            errorCode(err) === "NOT_FOUND"
+              ? t`Update your server to import logins.`
+              : // On two lines: joining the two would need punctuation each language writes its way.
+                `${errorText(err, t`Could not import`)}\n${t`Some logins may have been saved. Importing the file again skips them.`}`
+          }
+          onBack={() => {
+            reads.current += 1;
+            setImporting(null);
+          }}
         />
       </section>
     );
@@ -212,6 +338,8 @@ export function VaultSettings({
       <section data-testid="vault">
         <VaultItemDetail
           key={openedItem.name}
+          scope={scope}
+          ownVault={ownVault}
           item={openedItem}
           contactTitles={new Map(contacts.map((contact) => [contact.name, contact.title]))}
           busy={busy}
@@ -276,15 +404,37 @@ export function VaultSettings({
                 {kind === "api_key" ? <DropdownMenuSeparator /> : null}
                 <DropdownMenuItem
                   data-testid={`vault-new-${kind}`}
-                  onClick={() => setEditing({ kind, mode: "new" })}
+                  onClick={() => setEditing(newItem(kind))}
                 >
                   <VaultTile kind={kind} title="" className="size-5 rounded-none bg-transparent" />
                   {one[kind]}
                 </DropdownMenuItem>
               </Fragment>
             ))}
+            <DropdownMenuSeparator />
+            {/* A review plans against the Vault as read, so it waits for a good read. */}
+            <DropdownMenuItem
+              data-testid="vault-import"
+              disabled={!listQuery.isSuccess}
+              onClick={() => fileInput.current?.click()}
+            >
+              <FileUp className="text-muted-foreground" />
+              <Trans>Import CSV</Trans>
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+        <input
+          ref={fileInput}
+          type="file"
+          accept=".csv,text/csv"
+          hidden
+          data-testid="vault-import-file"
+          onChange={(event) => {
+            void readExport(event.target.files?.[0]);
+            // The same file can be picked again after going back.
+            event.target.value = "";
+          }}
+        />
       </div>
       {listQuery.isError ? (
         <p className="text-body-sm text-destructive">

@@ -19,12 +19,6 @@ vi.mock("react-native", () => ({
   Text: ({ children }: { children: ReactNode }) => <span>{children}</span>,
   View: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));
-vi.mock("./i18n", () => ({
-  useI18n: () => ({
-    t: (value: string, params?: { name: string }) =>
-      params ? value.replace("{name}", params.name) : value,
-  }),
-}));
 vi.mock("./native", () => ({ useThemedStyles: () => ({}) }));
 vi.mock("./activity", () => ({
   activityPreview: () => "",
@@ -59,6 +53,7 @@ it("opens Needs attention and folds Working and Unread until the user opens them
         ] as never,
         recent: [],
       },
+      status: "loaded",
       bots: [
         { id: "marketing", name: "Marketing", status: "waiting_input" },
         { id: "research", name: "Research", status: "running" },
@@ -88,6 +83,7 @@ it("offers the inbox swipe actions on activity rows and leaves out archived chat
           { runId: "b", botId: "archived", botName: "Archived", status: "completed" },
         ] as never,
       },
+      status: "loaded",
       bots: [{ id: "marketing", name: "Marketing", status: "idle" }] as never,
       groups: [],
       toggledSections: new Set<string>(),
@@ -106,4 +102,23 @@ it("offers the inbox swipe actions on activity rows and leaves out archived chat
     '<section data-swipe="activity:bot:marketing"><p data-actions="unread archive pin">Marketing</p></section>',
   );
   expect(markup).not.toContain("Archived");
+});
+
+it.each([
+  ["loading", ""],
+  ["loaded", "No runs yet"],
+  ["failed", "Could not load activity"],
+] as const)("says why nothing is listed once the inbox is gone (%s)", (status, text) => {
+  const markup = renderToStaticMarkup(
+    createElement(ActivitySection, {
+      activity: { active: [], recent: [] },
+      status,
+      bots: [],
+      groups: [],
+      toggledSections: new Set<string>(),
+      onToggleSection: () => undefined,
+      openChat: () => undefined,
+    }),
+  );
+  expect(markup.replace(/<[^>]+>/g, "")).toBe(text);
 });

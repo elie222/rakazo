@@ -32,14 +32,6 @@ vi.mock("react-native-reanimated", () => ({
   FadeOut: { duration: () => ({ reduceMotion: () => "fade-out" }) },
   ReduceMotion: { System: "system" },
 }));
-vi.mock("./i18n", () => ({
-  useI18n: () => ({
-    t: (text: string, values?: Record<string, string | number>) =>
-      text
-        .replace("{count}", String(values?.count ?? ""))
-        .replace("{label}", String(values?.label ?? "")),
-  }),
-}));
 vi.mock("../components/unread-jump-pill", () => ({
   UNREAD_JUMP_PILL_HEIGHT: 38,
   UnreadJumpPill: () => null,

@@ -727,6 +727,37 @@ describe("graphical computer spec", () => {
     expect(dockerfile).toMatch(/gh --version/);
   });
 
+  it("ships file search, identification, and SQLite commands", () => {
+    const dockerfile = readFileSync(
+      path.resolve(import.meta.dirname, "../../computer/Dockerfile"),
+      "utf8",
+    );
+    const runtimeStage = dockerfile.slice(dockerfile.lastIndexOf("FROM debian:"));
+    const install = runtimeStage.match(
+      /apt-get install -y --no-install-recommends ([\s\S]*?)&& rm -rf \/var\/lib\/apt\/lists\/\*/,
+    )?.[1];
+    expect(install).toBeDefined();
+    const packages = install?.split(/\s+/);
+    // Every apt package behind a command the shell environment map names.
+    for (const name of [
+      "curl",
+      "git",
+      "jq",
+      "openssh-client",
+      "unzip",
+      "ripgrep",
+      "fd-find",
+      "file",
+      "sqlite3",
+    ]) {
+      expect(packages).toContain(name);
+    }
+    expect(runtimeStage).toContain("ln -s /usr/bin/fdfind /usr/local/bin/fd");
+    for (const command of ["rg", "fd", "file", "sqlite3"]) {
+      expect(runtimeStage).toContain(`&& ${command} --version`);
+    }
+  });
+
   it("ships document text extractors", () => {
     const root = path.resolve(import.meta.dirname, "../../computer");
     const dockerfile = readFileSync(path.join(root, "Dockerfile"), "utf8");
@@ -1777,6 +1808,8 @@ describe("graphical computer spec", () => {
               "spec = importlib.util.spec_from_file_location('control', sys.argv[1])",
               "module = importlib.util.module_from_spec(spec)",
               "spec.loader.exec_module(module)",
+              // The fixture launcher lives outside the image's trusted command folders.
+              "module.CHILD_PATH = sys.argv[3] + ':' + module.CHILD_PATH",
               "argv = ['env', 'DISPLAY=:1', 'rakazo-browser', sys.argv[2]]",
               "try:",
               "    module.run_control_argv(argv, ':1')",
@@ -1788,6 +1821,7 @@ describe("graphical computer spec", () => {
             ].join("\n"),
             path.join(root, "control.py"),
             "https://example.com/unanswered",
+            bin,
           ],
           { env: launchEnv, encoding: "utf8" },
         );

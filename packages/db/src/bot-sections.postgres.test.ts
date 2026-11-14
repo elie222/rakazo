@@ -8,8 +8,7 @@ import { asSystem, runAsSystem, runAsTenant } from "./row-security.js";
 import { BotSectionNameConflictError, IsolationError } from "./scope.js";
 
 const databaseUrl = process.env.DATABASE_URL;
-const describePostgres =
-  process.env.VERIFY_DATABASE && databaseUrl ? describe.sequential : describe.skip;
+const describePostgres = process.env.VERIFY_DATABASE && databaseUrl ? describe : describe.skip;
 
 describePostgres("deleteBotSection (PostgreSQL)", () => {
   const provider = "sendblue";

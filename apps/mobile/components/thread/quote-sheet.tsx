@@ -1,9 +1,9 @@
+import { t } from "@lingui/core/macro";
 import { truncateReplyQuote } from "@rakazo/contracts";
 import { typeScale } from "@rakazo/ui-tokens";
 import { useMemo, useState } from "react";
 import { Modal, Platform, ScrollView, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { t } from "../../lib/i18n";
 import { quotableMessageSegments } from "../../lib/message-presentation";
 import type { MobileMessage } from "../../lib/mobile-types";
 import { useMobileTokens } from "../../lib/native";
@@ -54,11 +54,11 @@ export function QuoteSheet({
             paddingBottom: 12,
           }}
         >
-          <NativeActionButton label={t("Cancel")} onPress={onCancel} prominence="plain" />
+          <NativeActionButton label={t`Cancel`} onPress={onCancel} prominence="plain" />
           <NativeActionButton
             disabled={!excerpt}
             fill={false}
-            label={t("Quote")}
+            label={t`Quote`}
             onPress={() => onQuote(excerpt)}
             prominence={excerpt ? "primary" : "plain"}
           />

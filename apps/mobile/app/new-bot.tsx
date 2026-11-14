@@ -1,3 +1,4 @@
+import { useLingui } from "@lingui/react/macro";
 import type { BotAvatarSet } from "@rakazo/contracts";
 import { BOT_NAME_MAX_LENGTH, resolveBotAvatarSet } from "@rakazo/contracts";
 import {
@@ -16,7 +17,6 @@ import { NativeActionButton } from "../components/native-action-button";
 import { cancelHeaderOptions } from "../components/sheet-header";
 import { rpc } from "../lib/api";
 import { askForModelBeforeFirstBot, createInboxBot } from "../lib/create-inbox-bot";
-import { useI18n } from "../lib/i18n";
 import { openChatFromInbox } from "../lib/inbox-changes";
 import { native, useMobileTokens } from "../lib/native";
 import { useSideInsets } from "../lib/side-insets";
@@ -25,7 +25,7 @@ import { errorText } from "../lib/user-error";
 /** Names a new bot and picks its look before creating it, as web's New bot dialog does. */
 export default function NewBot() {
   const sideInsets = useSideInsets();
-  const { t } = useI18n();
+  const { t } = useLingui();
   const tokens = useMobileTokens();
   const router = useRouter();
   const params = useLocalSearchParams<{ spaceId?: string; avatarSet?: BotAvatarSet }>();
@@ -93,7 +93,7 @@ export default function NewBot() {
       // A model is needed first, or the account or space changed: nothing is left to do here.
       if (outcome !== "created" && !gone.current) router.back();
     } catch (err) {
-      setError(errorText(err, t("Could not create bot")));
+      setError(errorText(err, t`Could not create bot`));
     } finally {
       creating.current = false;
       setPending(false);
@@ -104,7 +104,7 @@ export default function NewBot() {
     <>
       <Stack.Screen
         options={{
-          ...cancelHeaderOptions(t("Cancel"), () => {
+          ...cancelHeaderOptions(t`Cancel`, () => {
             if (!creating.current) router.back();
           }),
           gestureEnabled: !pending,
@@ -121,14 +121,14 @@ export default function NewBot() {
         </View>
         <TextInput
           autoFocus
-          accessibilityLabel={t("Name")}
+          accessibilityLabel={t`Name`}
           value={name}
           onChangeText={setName}
           maxLength={BOT_NAME_MAX_LENGTH}
           autoCapitalize="words"
           autoCorrect={false}
           editable={!pending}
-          placeholder={t("Name your Bot")}
+          placeholder={t`Name your Bot`}
           placeholderTextColor={tokens.mutedForeground}
           returnKeyType="done"
           onSubmitEditing={() => void create()}
@@ -158,7 +158,7 @@ export default function NewBot() {
         {error ? <Text style={{ color: tokens.destructive, marginTop: 16 }}>{error}</Text> : null}
         <NativeActionButton
           fill
-          label={pending ? t("Creating…") : t("Create")}
+          label={pending ? t`Creating…` : t`Create`}
           disabled={!trimmed || pending}
           onPress={() => void create()}
           style={{ marginTop: 28, borderRadius: 28 }}

@@ -23,6 +23,7 @@ import {
   registerOpenAiCompatibleCatalog,
 } from "./pi-openai-compatible-provider.js";
 import { MODEL_CONNECT_TIMEOUT_MS } from "./pi-runtime-limits.js";
+import { maximumModelCallCost } from "./pi-usage.js";
 
 export type PiCatalogAuth = "api-key" | "oauth" | "both";
 
@@ -40,8 +41,12 @@ export type PiCatalogEntry = {
   signIn?: ModelOAuthSignInMode;
   reasoning?: boolean;
   thinkingLevels?: ThinkingLevel[];
+  defaultCapabilities?: { images?: boolean; reasoning?: boolean; thinkingLevels?: ThinkingLevel[] };
   /** The model reads images. Left out where a connection setting decides it. */
   images?: boolean;
+  /** The model card's context window and output ceiling. */
+  contextWindow?: number;
+  maxTokens?: number;
   placeholder?: boolean;
   /** Provider models share one pinned HTTPS models-list base URL. */
   catalogProbe?: boolean;
@@ -118,6 +123,13 @@ export function hiddenCatalogModel(entry: { provider: string; id: string }): boo
 }
 
 const hiddenCatalogKeys = new Set<string>();
+const pricedCatalogKeys = new Set<string>();
+
+/** Rakazo credits reserve a call's price before sending it, so they only run a model with one. */
+export function creditsCanPriceModel(entry: { provider: string; id: string }): boolean {
+  listPiCatalog();
+  return pricedCatalogKeys.has(`${canonicalPiProviderId(entry.provider)}:${entry.id}`);
+}
 
 const catalogProbeBaseUrls = new Map<string, string>();
 const catalogBaseUrls = new Map<string, Set<string>>();
@@ -278,6 +290,7 @@ function buildPiCatalog(): PiCatalogEntry[] {
   catalogProbeBaseUrls.clear();
   catalogBaseUrls.clear();
   hiddenCatalogKeys.clear();
+  pricedCatalogKeys.clear();
   const models = registerOpenAiCompatibleCatalog(
     registerLocalProvider(applyPiModelCompatibility(builtinModels())),
   );
@@ -308,6 +321,8 @@ function buildPiCatalog(): PiCatalogEntry[] {
     const routingFields = cloudflareRoutingFields(provider.id);
     for (const model of providerModels) {
       if (!catalogModelServesAgents(model)) hiddenCatalogKeys.add(`${provider.id}:${model.id}`);
+      if (maximumModelCallCost(model.cost, 0, 0) !== undefined)
+        pricedCatalogKeys.add(`${provider.id}:${model.id}`);
       const thinkingLevels = getSupportedThinkingLevels(model) as ThinkingLevel[];
       entries.push({
         provider: provider.id,
@@ -329,7 +344,11 @@ function buildPiCatalog(): PiCatalogEntry[] {
         // Its image support is the connection's own setting, not the catalog's.
         ...(provider.id === OPENAI_COMPATIBLE_PROVIDER_ID
           ? { placeholder: true, endpointPresets: COMPATIBLE_ENDPOINT_PRESETS }
-          : { images: model.input.includes("image") }),
+          : {
+              images: model.input.includes("image"),
+              contextWindow: model.contextWindow,
+              maxTokens: model.maxTokens,
+            }),
         ...(probeBaseUrl ? { catalogProbe: true } : {}),
         ...(routingFields ? { routingFields } : {}),
       });

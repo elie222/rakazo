@@ -12,7 +12,7 @@ import { handleRpcError } from "./rpc-errors.js";
 import { resolveThreadTarget, sendThreadMessage } from "./thread-target.js";
 
 const describePostgres =
-  process.env.VERIFY_DATABASE && process.env.DATABASE_URL ? describe.sequential : describe.skip;
+  process.env.VERIFY_DATABASE && process.env.DATABASE_URL ? describe : describe.skip;
 
 describePostgres("shared space content (PostgreSQL)", () => {
   let db: ReturnType<typeof createDb>;

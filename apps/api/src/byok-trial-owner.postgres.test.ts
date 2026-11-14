@@ -17,10 +17,10 @@ import {
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { deleteOrganization } from "./account-deletion.js";
 import { createBillingService, TRIAL_DAYS } from "./billing.js";
+import { watchCheckoutLeaseClaims } from "./checkout-lease.test-support.js";
 import type { SpaceDeletionDeps } from "./space-deletion.js";
 
-const dbTests =
-  process.env.VERIFY_DATABASE && process.env.DATABASE_URL ? describe.sequential : describe.skip;
+const dbTests = process.env.VERIFY_DATABASE && process.env.DATABASE_URL ? describe : describe.skip;
 
 /** One owner and their first two organizations, each addressed through its own space. */
 async function ownerWithOrganizations(prisma: PrismaClient, stamp: string, name: string) {
@@ -468,11 +468,14 @@ dbTests("own-key trial hold lifecycle", () => {
     // The older request runs on an API instance with a one-connection pool, and its own
     // checkout call fails, as an aborted one does.
     const stalled = createDb(process.env.DATABASE_URL!, { poolMax: 1, applicationName: "stalled" });
+    // Its own name, so the wait below counts only this write and no other test's.
+    const expiry = createDb(process.env.DATABASE_URL!, { poolMax: 1, applicationName: "expiry" });
     const olderService = createBillingService({
       prisma: asSystem(stalled.prisma),
       provider: failingByokCheckout(provider),
       webOrigin: "https://example.test",
     });
+    let expiryWrite: Promise<unknown> | undefined;
     const blocker = await db.pool.connect();
     try {
       await service.selectFunding(owner.first.actor, "byok");
@@ -491,17 +494,31 @@ dbTests("own-key trial hold lifecycle", () => {
           { interval: 10, timeout: 5_000 },
         )
         .toBe(1);
-      // The lease lapses during the wait; the write waits for the lease row once that is locked.
-      void prisma.billingAccount
-        .updateMany({
+      // The lease lapses during the wait: the expiry write queues on the lease row the older
+      // request's transaction holds while its hold write waits, so the lapse is already
+      // bound to land mid-write. Wait until the write reached that queue instead of pacing
+      // it with a fixed delay a loaded runner can invalidate. The newer request needs no
+      // such wait: while the lease reads valid, its claim is refused and retried, not
+      // queued behind the holder.
+      const expiryWriteQueued = () =>
+        db.pool
+          .query(
+            `SELECT 1 FROM pg_stat_activity
+              WHERE application_name = 'expiry' AND wait_event_type = 'Lock'
+                AND query LIKE 'UPDATE%billing_accounts%'`,
+          )
+          .then((result) => result.rowCount);
+      expiryWrite = asSystem(expiry.prisma)
+        .billingAccount.updateMany({
           where: { organizationId: owner.first.organizationId },
           data: { checkoutLeaseExpiresAt: new Date(0) },
         })
-        .then();
+        // A failure here shows as a wrong lease below; teardown waits for it either way.
+        .catch(() => undefined);
       const newer = service.selectFunding(owner.first.actor, "byok");
       // Unrelated work queued on the older instance's pool delays its next statement.
       const queued = stalled.pool.query("SELECT pg_sleep(2)");
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await expect.poll(expiryWriteQueued, { interval: 10, timeout: 5_000 }).toBe(1);
       await blocker.query("COMMIT");
       await newer;
       const first = await customerOf(owner.first.organizationId);
@@ -517,6 +534,9 @@ dbTests("own-key trial hold lifecycle", () => {
       blocker.release();
       await stalled.prisma.$disconnect();
       await stalled.pool.end();
+      await expiryWrite;
+      await expiry.prisma.$disconnect();
+      await expiry.pool.end();
     }
   }, 20_000);
 
@@ -675,13 +695,18 @@ dbTests("own-key trial hold lifecycle", () => {
   it("serializes overlapping checkout attempts of one organization under its lease", async () => {
     const owner = await ownerWith("overlap");
     const provider = new GatedFailingByokEmulator(`hold-overlap-${stamp}`);
-    const service = createBillingService({ prisma, provider, webOrigin: "https://example.test" });
+    const watched = watchCheckoutLeaseClaims(prisma);
+    const service = createBillingService({
+      prisma: watched.prisma,
+      provider,
+      webOrigin: "https://example.test",
+    });
     const first = service.selectFunding(owner.first.actor, "byok");
     await provider.byokCallStarted; // The first attempt holds the lease, at the provider.
     const second = service.selectFunding(owner.first.actor, "byok");
     // Both attempts fail at the provider; before the fix the second reserved its hold while
     // the first was still creating its session, and their rollbacks resurrected it.
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    await watched.leaseRefused; // The second attempt is queued behind the first.
     provider.failAndUngate();
     await expect(first).rejects.toThrow("provider unavailable");
     await expect(second).rejects.toThrow("provider unavailable");

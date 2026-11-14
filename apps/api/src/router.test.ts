@@ -10,7 +10,7 @@ import {
   routineWakeupJob,
   SecretStoreUnavailableError,
 } from "@rakazo/adapter-kit";
-import type { McpOAuthSummary } from "@rakazo/adapters";
+import type { McpOAuthSummary, PiOAuthConnected, PiOAuthPersist } from "@rakazo/adapters";
 import * as adapters from "@rakazo/adapters";
 import {
   COMPUTER_SCREEN_UNAVAILABLE,
@@ -26,15 +26,19 @@ import {
   ModelSignInError,
   modelCredentialDto,
   parseModelSecret,
+  SAVED_LOGIN_UNREADABLE,
   screenLeaseIdForRun,
   serializeModelSecret,
 } from "@rakazo/adapters";
 import type { Actor, Bot, ProductEvent } from "@rakazo/contracts";
 import {
+  BLOCKED_ITEM_ANSWER,
   CONNECTOR_AUTH_UNAVAILABLE,
+  MAX_MODEL_SETTINGS_PER_CONNECTION,
   MCP_OAUTH_CLIENT_REQUIRED,
   MODEL_KEY_FORMAT_ERROR,
   REPLY_QUOTE_MAX_LENGTH,
+  UNCHOSEN_ITEM_ANSWER,
 } from "@rakazo/contracts";
 import { openScreenCapability } from "@rakazo/core/node/screen-capability";
 import type { PrismaClient } from "@rakazo/db";
@@ -48,6 +52,7 @@ import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mainRole, withModelRoles } from "../../../packages/adapters/src/testing/model-roles.js";
 import { providerScopeKey } from "./connection-flows.js";
+import { createModelConnector, prepareModelReconnectSettings } from "./model-credentials.js";
 import type { RouterDeps } from "./router.js";
 import {
   botIntroPrompt,
@@ -180,11 +185,19 @@ describe("account preferences", () => {
     await expect(client.analytics.screen({ screen: "chat", surface: "desktop" })).resolves.toEqual({
       ok: true,
     });
-    expect(capture).toHaveBeenCalledWith(actor.userId, {
-      name: "screen_viewed",
-      screen: "chat",
-      surface: "desktop",
-    });
+    expect(capture).toHaveBeenCalledWith(
+      actor.userId,
+      { name: "screen_viewed", screen: "chat", surface: "desktop" },
+      undefined,
+      undefined,
+    );
+    await client.analytics.screen({ screen: "plans", surface: "web", planLayout: "tiers" });
+    expect(capture).toHaveBeenLastCalledWith(
+      actor.userId,
+      { name: "screen_viewed", screen: "plans", surface: "web", planLayout: "tiers" },
+      undefined,
+      { "plan-layout": "tiers" },
+    );
     await expect(
       client.analytics.screen({
         screen: "chat",
@@ -196,7 +209,7 @@ describe("account preferences", () => {
     await expect(
       anonymous.analytics.screen({ screen: "chat", surface: "web" }),
     ).rejects.toMatchObject({ code: "UNAUTHORIZED" });
-    expect(capture).toHaveBeenCalledTimes(1);
+    expect(capture).toHaveBeenCalledTimes(2);
   });
 
   it("reports model credential store outages as service unavailable", async () => {
@@ -590,6 +603,28 @@ describe("account preferences", () => {
     },
   );
 
+  it.each([false, true])("checks work-card support before a token exists (%s)", async (enabled) => {
+    const { deps, actor } = preferencesDeps("robot");
+    const register = vi.fn().mockResolvedValue(false);
+    deps.workActivities = enabled ? { register, registerStarts: vi.fn() } : undefined;
+    const phone = createRouterClient(createRouter(deps), {
+      context: { actor, sessionId: "session-phone" } as never,
+    });
+
+    await expect(phone.notifications.followWorkActivity({})).resolves.toEqual({
+      following: enabled,
+    });
+    expect(register).not.toHaveBeenCalled();
+
+    // Token registration still reports whether there is work to follow.
+    const token = "ab".repeat(32);
+    await expect(phone.notifications.followWorkActivity({ token })).resolves.toEqual({
+      following: false,
+    });
+    if (enabled) expect(register).toHaveBeenCalledWith(actor.userId, "session-phone", token);
+    else expect(register).not.toHaveBeenCalled();
+  });
+
   it("ends only the calling session's push registration, keeping another session's", async () => {
     const { deps, actor } = preferencesDeps("robot");
     const calls: string[] = [];
@@ -672,7 +707,7 @@ describe("billing", () => {
       code: "NOT_FOUND",
     });
     await expect(
-      client.billing.purchaseCredits({ amountCents: 1000, monthly: true }),
+      client.billing.purchaseCredits({ amountCents: 2000, monthly: true }),
     ).rejects.toMatchObject({ code: "NOT_FOUND" });
     await expect(client.billing.setMonthlyCredits({ amountCents: 2000 })).rejects.toMatchObject({
       code: "NOT_FOUND",
@@ -1055,9 +1090,26 @@ describe("thread answer delivery", () => {
   });
 });
 
-describe("oversized one-time answer", () => {
-  it("says the answer is too long, without echoing it", async () => {
-    const answerRunInput = vi.fn().mockRejectedValue(new AnswerTooLongError());
+describe("answers the server can't save", () => {
+  it.each([
+    ["too long", new AnswerTooLongError(), "This answer is too long.", 400],
+    // The person blocked bots from the item while the request waited.
+    ["for a blocked item", new Error(BLOCKED_ITEM_ANSWER), BLOCKED_ITEM_ANSWER, 400],
+    [
+      "for an item chosen for other bots",
+      new Error(UNCHOSEN_ITEM_ANSWER),
+      UNCHOSEN_ITEM_ANSWER,
+      400,
+    ],
+    // The saved login it replaces can't be read for now: a retry may save it.
+    [
+      "held back by a saved login it can't read",
+      new Error(SAVED_LOGIN_UNREADABLE),
+      SAVED_LOGIN_UNREADABLE,
+      409,
+    ],
+  ])("says why one is %s, without echoing it", async (_, error, message, status) => {
+    const answerRunInput = vi.fn().mockRejectedValue(error);
     const enqueue = vi.fn();
     const prisma = {
       bot: {
@@ -1100,9 +1152,9 @@ describe("oversized one-time answer", () => {
       { prefix: "/rpc", context: { actor } },
     );
 
-    expect(response.status).toBe(400);
+    expect(response.status).toBe(status);
     const body = await response.text();
-    expect(body).toContain("This answer is too long.");
+    expect(body).toContain(message);
     expect(body).not.toContain("fake-code-");
     expect(enqueue).not.toHaveBeenCalled();
   });
@@ -4250,7 +4302,6 @@ describe("computer screen url", () => {
     controlLeaseId: null,
     controlLeaseExpiresAt: null,
     controlBotId: null,
-    controlRunId: null,
   };
 
   const callScreenUrl = async (
@@ -4344,6 +4395,22 @@ describe("computer screen url", () => {
     expect(endRun.mock.calls.map(([, , reason]) => reason)).toEqual(["gone"]);
   });
 
+  it("returns the team screen limit without private provider details", async () => {
+    const { response, updateMany } = await callScreenUrl(() =>
+      Promise.reject(
+        new Error("cannot allocate another screen (limit 4): private provider detail"),
+      ),
+    );
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      json: expect.objectContaining({
+        code: "CONFLICT",
+        message: "All 4 Team Computer screens are in use (SANDBOX_TEAM_SCREEN_LIMIT)",
+      }),
+    });
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+
   it("keeps a transport blip an error and leaves the row alone", async () => {
     const { response, updateMany } = await callScreenUrl(() =>
       Promise.reject(Object.assign(new Error("fetch failed"), { code: "ECONNRESET" })),
@@ -4354,11 +4421,7 @@ describe("computer screen url", () => {
 
   it("returns a recoverable conflict when the screen is temporarily busy", async () => {
     const { response, updateMany } = await callScreenUrl(() =>
-      Promise.reject(
-        new ComputerScreenUnavailableError(
-          "cannot allocate another screen: private provider detail",
-        ),
-      ),
+      Promise.reject(new ComputerScreenUnavailableError("private provider detail")),
     );
     expect(response.status).toBe(409);
     await expect(response.json()).resolves.toEqual({
@@ -4386,7 +4449,11 @@ describe("computer terminal and file transfer", () => {
     controlBotId: "bot-1",
   };
 
-  function setup(computer: Record<string, unknown> = {}, maxUploadSizeBytes?: number) {
+  function setup(
+    computer: Record<string, unknown> = {},
+    maxUploadSizeBytes?: number,
+    home?: LocalAgentHomeStore,
+  ) {
     const sandbox = {
       execute: vi.fn(async function* () {
         yield { type: "exit" as const, code: 0 };
@@ -4417,18 +4484,31 @@ describe("computer terminal and file transfer", () => {
             controlLeaseId: null,
             controlLeaseExpiresAt: null,
             controlBotId: null,
-            controlRunId: null,
             ...computer,
           },
         }),
       },
-      computer: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      computer: {
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        findUniqueOrThrow: vi.fn(),
+      },
       computerExecutionLease: { findUnique: vi.fn().mockResolvedValue(null) },
+      run: { findFirst: vi.fn().mockResolvedValue(null) },
+      taughtSkill: { findFirst: vi.fn().mockResolvedValue(null) },
     } as unknown as PrismaClient;
     const deps = {
       prisma,
       sandbox,
-      jobs: { enqueue: vi.fn().mockResolvedValue(undefined) },
+      home,
+      jobs: {
+        enqueue: vi.fn().mockResolvedValue(undefined),
+        cancel: vi.fn().mockResolvedValue(undefined),
+      },
+      events: {
+        append: vi.fn().mockResolvedValue(undefined),
+        releaseUserControl: vi.fn().mockResolvedValue(true),
+        answerTakeoverRequest: vi.fn().mockResolvedValue(true),
+      },
       env: {
         maxUploadSizeBytes,
         webOrigin: "http://127.0.0.1:5173",
@@ -4450,7 +4530,7 @@ describe("computer terminal and file transfer", () => {
       );
       return { status: response.status, body: await response.json() };
     };
-    return { sandbox, prisma, call };
+    return { sandbox, prisma, deps, call };
   }
 
   it("prepares an unused bot's folders before listing a running Team Computer", async () => {
@@ -4478,6 +4558,153 @@ describe("computer terminal and file transfer", () => {
       expect.anything(),
       "bots/bot-1",
       expect.anything(),
+    );
+  });
+
+  it("tells a second person the computer is busy instead of taking it from the first", async () => {
+    const { prisma, call } = setup({ ...controlled, controlUserId: "user-2" });
+    await expect(call("takeover", {})).resolves.toMatchObject({
+      status: 409,
+      body: { json: { message: "Someone else is using this computer" } },
+    });
+    expect(prisma.computer.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("gives control while the bot is working, for as long as the page checks in, and counts the change", async () => {
+    const { prisma, call } = setup();
+    const before = Date.now();
+    await expect(call("takeover", {})).resolves.toMatchObject({ status: 200 });
+    const grant = vi.mocked(prisma.computer.updateMany).mock.calls[0]![0];
+    expect(grant.data).toMatchObject({
+      controlHolder: "user",
+      controlBotId: "bot-1",
+      controlUserId: "user-1",
+      controlFence: { increment: 1 },
+    });
+    const expiresAt = (grant.data as { controlLeaseExpiresAt: Date }).controlLeaseExpiresAt;
+    expect(expiresAt.getTime() - before).toBeGreaterThanOrEqual(90_000);
+    expect(expiresAt.getTime() - Date.now()).toBeLessThanOrEqual(90_000);
+  });
+
+  it("never lets holding the screen answer a request the bot made to someone else", async () => {
+    const { prisma, deps, call } = setup({ ...controlled, controlUserId: "user-1" });
+    vi.mocked(prisma.run.findFirst).mockResolvedValue({ id: "run-1", userId: "user-2" } as never);
+    for (const reason of ["done", "skipped"]) {
+      await expect(call("release", { reason, runId: "run-1" })).resolves.toMatchObject({
+        status: 409,
+        body: { json: { message: "The bot is waiting for someone else" } },
+      });
+    }
+    expect(deps.events.answerTakeoverRequest).not.toHaveBeenCalled();
+    // A refused answer leaves this person's control as it was.
+    expect(deps.events.releaseUserControl).not.toHaveBeenCalled();
+  });
+
+  it("answers Done after the person's lease lapsed, ending that lease and granting nothing", async () => {
+    const lapsed = { ...controlled, controlUserId: "user-1", controlLeaseExpiresAt: new Date(0) };
+    const { prisma, deps, call } = setup(lapsed);
+    vi.mocked(prisma.run.findFirst).mockResolvedValue({ id: "run-1", userId: "user-1" } as never);
+    await expect(call("release", { reason: "done", runId: "run-1" })).resolves.toMatchObject({
+      status: 200,
+    });
+    // The lapsed lease is revoked and cleared before the answer lands; nothing is granted.
+    const released = vi.mocked(deps.events.releaseUserControl).mock.invocationCallOrder[0]!;
+    const answered = vi.mocked(deps.events.answerTakeoverRequest).mock.invocationCallOrder[0]!;
+    expect(deps.events.releaseUserControl).toHaveBeenCalledWith(
+      expect.objectContaining({ leaseId: "lease-1" }),
+    );
+    expect(released).toBeLessThan(answered);
+    expect(prisma.computer.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("leaves newer control alone when a late hand back names an older lease", async () => {
+    const { deps, call } = setup({ ...controlled, controlUserId: "user-1" });
+    await expect(call("release", { leaseId: "old-lease" })).resolves.toMatchObject({
+      status: 200,
+    });
+    expect(deps.events.releaseUserControl).not.toHaveBeenCalled();
+    await expect(call("release", { leaseId: "lease-1" })).resolves.toMatchObject({ status: 200 });
+    expect(deps.events.releaseUserControl).toHaveBeenCalledWith(
+      expect.objectContaining({ leaseId: "lease-1" }),
+    );
+  });
+
+  it("hands control back on I'm done even when nothing is waiting any more", async () => {
+    const { deps, call } = setup({ ...controlled, controlUserId: "user-1" });
+    await expect(call("release", { reason: "done" })).resolves.toMatchObject({ status: 200 });
+    expect(deps.events.releaseUserControl).toHaveBeenCalledWith(
+      expect.objectContaining({ leaseId: "lease-1" }),
+    );
+    expect(deps.events.answerTakeoverRequest).not.toHaveBeenCalled();
+  });
+
+  it("takes control afresh when the held lease lapsed before it could be renewed", async () => {
+    const { prisma, call } = setup({ ...controlled, controlUserId: "user-1" });
+    const held = (await prisma.bot.findFirst({} as never)) as unknown as { computer: object };
+    // The lease lapsed meanwhile: the renew finds nothing live, and the computer is free again.
+    vi.mocked(prisma.computer.updateMany).mockResolvedValueOnce({ count: 0 });
+    vi.mocked(prisma.bot.findFirst)
+      .mockResolvedValueOnce(held as never)
+      .mockResolvedValue({
+        ...held,
+        computer: {
+          ...held.computer,
+          controlHolder: "none",
+          controlLeaseId: null,
+          controlLeaseExpiresAt: null,
+          controlBotId: null,
+        },
+      } as never);
+    const response = await call("takeover", {});
+    expect(response).toMatchObject({ status: 200 });
+    expect((response.body as { json: { leaseId: string } }).json.leaseId).not.toBe("lease-1");
+    expect(vi.mocked(prisma.computer.updateMany).mock.calls[1]?.[0].data).toMatchObject({
+      controlHolder: "user",
+      controlUserId: "user-1",
+    });
+  });
+
+  it("returns the holder's own lease to a second Take control", async () => {
+    const held = { ...controlled, controlUserId: "user-1" };
+    const { prisma, call } = setup();
+    vi.mocked(prisma.computer.updateMany).mockResolvedValueOnce({ count: 0 });
+    vi.mocked(prisma.computer.findUniqueOrThrow).mockResolvedValue({
+      id: "computer-1",
+      ...held,
+    } as never);
+    await expect(call("takeover", {})).resolves.toMatchObject({
+      status: 200,
+      body: { json: { leaseId: "lease-1" } },
+    });
+  });
+
+  it("renews the holder's control each time their page checks in", async () => {
+    const soon = new Date(Date.now() + 5_000);
+    const { prisma, call } = setup({
+      ...controlled,
+      controlUserId: "user-1",
+      controlLeaseExpiresAt: soon,
+    });
+    await expect(call("heartbeat", {})).resolves.toMatchObject({ status: 200 });
+    expect(prisma.computer.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: "computer-1",
+        controlHolder: "user",
+        controlLeaseId: "lease-1",
+        // Only a live lease renews; a lapsed one is on its way to revocation.
+        controlLeaseExpiresAt: { gt: expect.any(Date) },
+      },
+      data: { controlLeaseExpiresAt: expect.any(Date) },
+    });
+  });
+
+  it("does not renew someone else's control from a watcher's check-in", async () => {
+    const { prisma, call } = setup({ ...controlled, controlUserId: "user-2" });
+    await expect(call("heartbeat", {})).resolves.toMatchObject({ status: 200 });
+    expect(prisma.computer.updateMany).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: { controlLeaseExpiresAt: expect.any(Date) },
+      }),
     );
   });
 
@@ -4650,6 +4877,19 @@ describe("computer terminal and file transfer", () => {
       status: 200,
       body: { json: { path: "notes.txt", content: "hello" } },
     });
+  });
+
+  it("answers 404 when a stopped computer's file is gone", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "rakazo-computer-read-"));
+    try {
+      const { call } = setup({ state: "stopped" }, undefined, new LocalAgentHomeStore(root));
+      await expect(call("readFile", { path: "gone.json" })).resolves.toMatchObject({
+        status: 404,
+        body: { json: { message: "file not found" } },
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   it("downloads bytes from a running computer", async () => {
@@ -5179,6 +5419,32 @@ describe("model credential persistence", () => {
     return { upsert, finish, deps, handler: new RPCHandler(createRouter(deps)) };
   }
 
+  /** A sign-in whose provider exchange returned `login`: begin hands over the save, and
+   *  finish returns what it saved. */
+  async function finishSignIn(
+    { deps, finish, handler }: ReturnType<typeof persistDeps>,
+    login: Omit<PiOAuthConnected, "signal">,
+  ) {
+    let persist: PiOAuthPersist<unknown> | undefined;
+    Object.assign(deps.oauthLogins, {
+      begin: vi.fn(async (input: { persist: PiOAuthPersist<unknown> }) => {
+        persist = input.persist;
+        return {
+          loginId: "login-1",
+          provider: login.provider,
+          mode: "device-code" as const,
+          userCode: "CODE",
+          verificationUri: "https://auth.example.com/device",
+          expiresInSeconds: 60,
+        };
+      }),
+    });
+    await call(handler, "models/beginOAuth", { provider: login.provider });
+    const value = await persist?.({ ...login, signal: new AbortController().signal });
+    finish.mockResolvedValue({ status: "connected", value, provider: login.provider });
+    return call(handler, "models/finishOAuth", { loginId: "login-1" });
+  }
+
   async function call(
     handler: RouterHandler,
     path: string,
@@ -5241,25 +5507,19 @@ describe("model credential persistence", () => {
   });
 
   it("does not persist a stringified null model id from subscription sign-in", async () => {
-    const { upsert, finish, handler } = persistDeps();
-    finish.mockImplementation(async (_loginId, _actor, persist) => ({
-      status: "connected" as const,
-      value: await persist({
-        status: "connected",
-        provider: "anthropic",
-        modelId: "null",
-        label: "Anthropic",
-        credential: {
-          type: "oauth",
-          access: "access-token",
-          refresh: "refresh-token",
-          expires: Date.now() + 60_000,
-        },
-        signal: new AbortController().signal,
-      }),
-    }));
-
-    const response = await call(handler, "models/finishOAuth", { loginId: "login-1" });
+    const setup = persistDeps();
+    const { upsert } = setup;
+    const response = await finishSignIn(setup, {
+      provider: "anthropic",
+      modelId: "null",
+      label: "Anthropic",
+      credential: {
+        type: "oauth",
+        access: "access-token",
+        refresh: "refresh-token",
+        expires: Date.now() + 60_000,
+      },
+    });
     expect(response.status).toBe(200);
     const persisted = upsert.mock.calls[0]?.[0] as {
       create: { modelId: string | null };
@@ -5312,6 +5572,7 @@ describe("model credential persistence", () => {
           userVoiceCredential: { count: vi.fn().mockResolvedValue(0) },
           userModelPreference: deps.prisma.userModelPreference,
           secret: {
+            findFirst: vi.fn().mockResolvedValue(null),
             create: vi.fn().mockResolvedValue({ id: "new-secret" }),
             deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
           },
@@ -5729,6 +5990,7 @@ describe("model credential persistence", () => {
           userVoiceCredential: { count: vi.fn().mockResolvedValue(0) },
           userModelPreference: deps.prisma.userModelPreference,
           secret: {
+            findFirst: vi.fn().mockResolvedValue(null),
             create: vi.fn().mockResolvedValue({ id: "new-secret" }),
             deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
           },
@@ -5819,22 +6081,16 @@ describe("model credential persistence", () => {
   });
 
   it("names a second subscription account by the email it signed in with", async () => {
-    const { finish, deps, handler } = persistDeps();
+    const setup = persistDeps();
+    const { deps } = setup;
     const access = `fake.${Buffer.from(
       JSON.stringify({ "https://api.openai.com/profile": { email: "work@example.com" } }),
     ).toString("base64url")}.fake`;
-    finish.mockImplementation(async (_loginId, _actor, persist) => ({
-      status: "connected" as const,
-      value: await persist({
-        status: "connected",
-        provider: "openai-codex",
-        credentialId: null,
-        credential: { type: "oauth", access, refresh: "refresh-token", expires: Date.now() + 1 },
-        signal: new AbortController().signal,
-      }),
-    }));
-
-    const response = await call(handler, "models/finishOAuth", { loginId: "login-1" });
+    const response = await finishSignIn(setup, {
+      provider: "openai-codex",
+      credentialId: null,
+      credential: { type: "oauth", access, refresh: "refresh-token", expires: Date.now() + 1 },
+    });
 
     expect(response.status).toBe(200);
     expect(deps.prisma.userModelCredential.create).toHaveBeenCalledWith(
@@ -5849,23 +6105,17 @@ describe("model credential persistence", () => {
     ["openai-codex", "OpenAI Codex"],
     ["anthropic", "Anthropic"],
   ])("labels a %s subscription sign-in with its own provider name", async (provider, label) => {
-    const { finish, deps, handler } = persistDeps();
-    finish.mockImplementation(async (_loginId, _actor, persist) => ({
-      status: "connected" as const,
-      value: await persist({
-        status: "connected",
-        provider,
-        credential: {
-          type: "oauth",
-          access: "access-token",
-          refresh: "refresh-token",
-          expires: Date.now() + 60_000,
-        },
-        signal: new AbortController().signal,
-      }),
-    }));
-
-    const response = await call(handler, "models/finishOAuth", { loginId: "login-1" });
+    const setup = persistDeps();
+    const { deps } = setup;
+    const response = await finishSignIn(setup, {
+      provider,
+      credential: {
+        type: "oauth",
+        access: "access-token",
+        refresh: "refresh-token",
+        expires: Date.now() + 60_000,
+      },
+    });
 
     expect(response.status).toBe(200);
     expect(deps.prisma.userModelCredential.create).toHaveBeenCalledWith(
@@ -5974,6 +6224,289 @@ describe("model disconnect", () => {
     expect(tx.userModelCredential.deleteMany).toHaveBeenCalledWith({
       where: { userId: actor.userId, id: { in: ["personal", "work"] } },
     });
+  });
+});
+
+describe("model settings", () => {
+  const actor = {
+    spaceId: "space-1",
+    userId: "user-1",
+    email: "user@rakazo.test",
+    isDeploymentOwner: true,
+  } satisfies Actor;
+
+  it.each(["settings", "connection"])(
+    "rejects a connection save when its source %s changes before commit",
+    async (change) => {
+      let secretId = "secret-original";
+      let ciphertext = "sealed-original";
+      const connection = () => ({ id: "connection-1", provider: "zai", secretId });
+      const readSecret = vi.fn(async () => ({ ciphertext }));
+      const create = vi.fn();
+      const tx = {
+        userModelCredential: { findFirst: vi.fn(async () => connection()) },
+        secret: { findFirst: readSecret, create },
+      };
+      const deps = {
+        prisma: {
+          userModelCredential: { findFirst: vi.fn(async () => connection()) },
+          secret: { findFirst: readSecret },
+          $transaction: vi.fn(async (fn: (client: typeof tx) => unknown) => fn(tx)),
+        },
+        secrets: {
+          load: vi.fn(async () =>
+            JSON.stringify({
+              kind: "api_key",
+              key: "fake-original-key",
+              models: { "model-fixture": { maxTokens: 2000 } },
+            }),
+          ),
+          put: vi.fn(async () => {
+            if (change === "settings") ciphertext = "sealed-new-settings";
+            else secretId = "secret-new-connection";
+            return { id: "secret-prepared", ciphertext: "sealed-stale-replacement" };
+          }),
+        },
+        env: { defaultModel: "model-fixture" },
+      } as unknown as RouterDeps;
+      const connector = createModelConnector(deps, { read: vi.fn() } as never);
+      await expect(
+        connector.connectModelCredential(
+          actor,
+          { provider: "zai", credentialId: "connection-1", modelId: "model-fixture" },
+          undefined,
+        ),
+      ).rejects.toMatchObject({ code: "CONFLICT" });
+      expect(create).not.toHaveBeenCalled();
+    },
+  );
+
+  function settingsDeps(stored: string, defaultModel = "served", provider = "zai") {
+    let plaintext = stored;
+    const tx = {
+      $executeRaw: vi.fn(async () => 0),
+      secret: {
+        findFirst: vi.fn(async () => ({ ciphertext: "sealed" })),
+        update: vi.fn(async () => ({})),
+      },
+    };
+    const deps = {
+      prisma: {
+        $transaction: vi.fn(async (fn: (client: typeof tx) => unknown) => fn(tx)),
+        userModelCredential: {
+          findFirst: vi.fn(async ({ where }: { where: { id: string } }) =>
+            where.id === "connection-1"
+              ? {
+                  id: "connection-1",
+                  secretId: "secret-1",
+                  provider,
+                  userPreferences: [{ modelId: defaultModel }],
+                }
+              : null,
+          ),
+        },
+      },
+      secrets: {
+        load: vi.fn(async () => plaintext),
+        put: vi.fn(async (next: string) => {
+          plaintext = next;
+          return { id: "secret-1", ciphertext: "sealed-again" };
+        }),
+      },
+      env: {
+        defaultProvider: "fake",
+        defaultModel: "fake-model",
+        webOrigin: "http://127.0.0.1:5173",
+        screenProxySecret: "fake-test-secret",
+        sandboxProvider: "fake",
+        agentRuntime: "pi",
+      },
+    } as unknown as RouterDeps;
+    const handler = new RPCHandler(createRouter(deps));
+    const call = (body: unknown) =>
+      handle(
+        handler,
+        new Request("http://127.0.0.1/rpc/models/saveModelSettings", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ json: body }),
+        }),
+        { prefix: "/rpc", context: { actor } },
+      );
+    return { deps, tx, call, stored: () => JSON.parse(plaintext) as Record<string, unknown> };
+  }
+
+  it("reports a secret store outage as unavailable and keeps settings it could not read", async () => {
+    const { deps, call } = settingsDeps("sk-synthetic-key");
+    deps.secrets.load = vi.fn(async () => {
+      throw new SecretStoreUnavailableError();
+    });
+    expect(
+      (
+        await call({
+          credentialId: "connection-1",
+          modelId: "glm-5.3-flashx",
+          settings: { images: true },
+        })
+      ).status,
+    ).toBe(503);
+    Object.assign(deps.prisma, {
+      secret: { findFirst: vi.fn(async () => ({ ciphertext: "sealed" })) },
+    });
+    await expect(
+      prepareModelReconnectSettings(deps, actor, { secretId: "secret-1" }),
+    ).rejects.toBeInstanceOf(SecretStoreUnavailableError);
+    deps.secrets.load = vi.fn(async () => "not json {");
+    await expect(
+      prepareModelReconnectSettings(deps, actor, { secretId: "secret-1" }),
+    ).resolves.toEqual({
+      settings: {},
+      expectedSecret: { id: "secret-1", ciphertext: "sealed" },
+    });
+  });
+
+  it("saves one model's settings on the connection without touching its key", async () => {
+    const { tx, call, stored } = settingsDeps("sk-synthetic-key");
+    const response = await call({
+      credentialId: "connection-1",
+      modelId: "glm-5.3-flashx",
+      settings: { images: true, maxTokens: 8000 },
+    });
+    expect(response.status).toBe(200);
+    expect(stored()).toEqual({
+      kind: "api_key",
+      key: "sk-synthetic-key",
+      models: { "glm-5.3-flashx": { images: true, maxTokens: 8000 } },
+    });
+    expect(tx.secret.update).toHaveBeenCalledWith({
+      where: { id: "secret-1" },
+      data: { ciphertext: "sealed-again" },
+    });
+  });
+
+  it("rejects output-only overrides that fill the model's default context", async () => {
+    const known = listPiCatalog().find((entry) => entry.provider === "zai" && entry.contextWindow)!;
+    for (const input of [
+      {
+        provider: "zai",
+        modelId: known.id,
+        window: known.contextWindow!,
+        secret: "sk-synthetic-key",
+      },
+      {
+        provider: "openai-compatible",
+        modelId: "served",
+        window: 262144,
+        secret: JSON.stringify({
+          kind: "openai_compatible",
+          apiKey: "fake-key",
+          baseUrl: "https://example.com/v1",
+        }),
+      },
+    ]) {
+      const { call, deps } = settingsDeps(input.secret, input.modelId, input.provider);
+      const response = await call({
+        credentialId: "connection-1",
+        modelId: input.modelId,
+        settings: { maxTokens: input.window },
+      });
+      expect(response.status).toBe(400);
+      expect(deps.secrets.put).not.toHaveBeenCalled();
+    }
+  });
+
+  it("rejects a context-only override below the model's default output cap", async () => {
+    const known = listPiCatalog().find(
+      (entry) => entry.provider === "zai" && entry.contextWindow && entry.maxTokens,
+    )!;
+    for (const input of [
+      { provider: "zai", modelId: known.id, secret: "sk-synthetic-key" },
+      {
+        provider: "openai-compatible",
+        modelId: "served",
+        secret: JSON.stringify({
+          kind: "openai_compatible",
+          apiKey: "fake-key",
+          baseUrl: "https://example.com/v1",
+        }),
+      },
+    ]) {
+      const { call, deps } = settingsDeps(input.secret, input.modelId, input.provider);
+      const response = await call({
+        credentialId: "connection-1",
+        modelId: input.modelId,
+        settings: { contextWindow: 1 },
+      });
+      expect(response.status).toBe(400);
+      expect(deps.secrets.put).not.toHaveBeenCalled();
+    }
+  });
+
+  it("caps how many models on one connection keep their own settings", async () => {
+    const models = Object.fromEntries(
+      Array.from({ length: MAX_MODEL_SETTINGS_PER_CONNECTION }, (_, index) => [
+        `model-${index}`,
+        { images: true },
+      ]),
+    );
+    const { call } = settingsDeps(
+      JSON.stringify({ kind: "api_key", key: "sk-synthetic-key", models }),
+    );
+    expect(
+      (
+        await call({
+          credentialId: "connection-1",
+          modelId: "model-new",
+          settings: { images: true },
+        })
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await call({
+          credentialId: "connection-1",
+          modelId: "model-0",
+          settings: { maxTokens: 10 },
+        })
+      ).status,
+    ).toBe(200);
+    expect(
+      (await call({ credentialId: "connection-1", modelId: "model-new", settings: {} })).status,
+    ).toBe(200);
+  });
+
+  it("refuses another member's connection, a model the server does not serve, and no room for input", async () => {
+    const compatible = JSON.stringify({
+      kind: "openai_compatible",
+      baseUrl: "https://models.example.test/v1",
+      enabledModelIds: ["served"],
+    });
+    const { call } = settingsDeps(compatible);
+    expect(
+      (await call({ credentialId: "connection-2", modelId: "served", settings: {} })).status,
+    ).toBe(404);
+    expect(
+      (
+        await call({
+          credentialId: "connection-1",
+          modelId: "unlisted",
+          settings: { images: true },
+        })
+      ).status,
+    ).toBe(400);
+    // Clearing a model that left the connection still works.
+    expect(
+      (await call({ credentialId: "connection-1", modelId: "unlisted", settings: {} })).status,
+    ).toBe(200);
+    expect(
+      (
+        await call({
+          credentialId: "connection-1",
+          modelId: "served",
+          settings: { contextWindow: 1000, maxTokens: 1000 },
+        })
+      ).status,
+    ).toBe(400);
   });
 });
 
@@ -6297,8 +6830,8 @@ describe("codex live catalog", () => {
         : {
             userModelCredential: {
               findMany: vi.fn().mockResolvedValue([
-                { provider: "openai-codex", secretId: "secret-api" },
-                { provider: "openai-codex", secretId: "secret-oauth" },
+                { id: "credential-api", provider: "openai-codex", secretId: "secret-api" },
+                { id: "credential-oauth", provider: "openai-codex", secretId: "secret-oauth" },
               ]),
             },
             userModelPreference: {
@@ -6312,6 +6845,10 @@ describe("codex live catalog", () => {
               findMany: vi
                 .fn()
                 .mockResolvedValue([{ id: "secret-oauth", ciphertext: "cipher-oauth" }]),
+              findFirst: vi.fn(async ({ where }: { where: { id: string } }) => ({
+                id: where.id,
+                ciphertext: where.id === "secret-oauth" ? "cipher-oauth" : "cipher-api",
+              })),
             },
           };
     const deps = {
@@ -6435,6 +6972,10 @@ describe("codex live catalog", () => {
           { id: "secret-a", ciphertext: "cipher-a" },
           { id: "secret-b", ciphertext: "cipher-b" },
         ]),
+        findFirst: vi.fn(async ({ where }: { where: { id: string } }) => ({
+          id: where.id,
+          ciphertext: where.id === "secret-a" ? "cipher-a" : "cipher-b",
+        })),
       },
     };
     const secrets = {
@@ -9399,18 +9940,22 @@ describe("groups.remove", () => {
       externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
       message: { findMany: vi.fn(async () => []) },
       $queryRaw: vi.fn().mockResolvedValue([{ id: "group-1" }]),
+      thread: {
+        findUnique: vi.fn().mockResolvedValue({ id: "thread-1", historyCompactionGeneration: 3 }),
+      },
       chatGroup: {
         findUnique: vi.fn().mockResolvedValue({
           artifacts: [],
           members: [{ botId: "bot-1" }],
-          thread: { id: "thread-1" },
         }),
         delete: vi.fn(async () => {
           calls.push("delete group");
         }),
       },
       run: {
-        findMany: vi.fn().mockResolvedValue([{ id: "run-1", taskId: "task-1" }]),
+        findMany: vi.fn(async (args: { distinct?: string[] }) =>
+          args.distinct ? [{ botId: "past-bot" }] : [{ id: "run-1", taskId: "task-1" }],
+        ),
         updateManyAndReturn: vi.fn(async ({ where }: { where: { id: { in: string[] } } }) => {
           calls.push("cancel run");
           return where.id.in.map((id) => ({ id }));
@@ -9449,6 +9994,7 @@ describe("groups.remove", () => {
       calls.push("expire lease");
     });
     const prisma = {
+      run: { findMany: vi.fn(async () => []) },
       $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
       computerExecutionLease: { updateMany: leaseUpdate },
       computer: { updateMany: vi.fn() },
@@ -9460,8 +10006,18 @@ describe("groups.remove", () => {
       calls.push("cancel run work");
       return [];
     });
+    const purgeHistory = vi.fn(async (_request: { botId: string }) => ({
+      ok: true as const,
+      value: undefined,
+    }));
     const deps = {
       prisma,
+      memoryProviders: {
+        resolve: async () => ({
+          provider: { describe: () => ({ capabilities: { purgesByThread: true } }), purgeHistory },
+          defaultScope: "isolated",
+        }),
+      },
       env: {
         defaultProvider: "fake",
         defaultModel: "fake-model",
@@ -9492,6 +10048,16 @@ describe("groups.remove", () => {
     );
 
     expect(response?.status).toBe(200);
+    expect(
+      purgeHistory.mock.calls.map(([request]) => (request as { botId: string }).botId).sort(),
+    ).toEqual(["bot-1", "past-bot"]);
+    expect(purgeHistory).toHaveBeenCalledWith(
+      expect.objectContaining({ threadId: "thread-1", generations: [2, 3] }),
+      expect.any(Object),
+    );
+    expect(purgeHistory.mock.invocationCallOrder[0]).toBeGreaterThan(
+      tx.chatGroup.delete.mock.invocationCallOrder[0]!,
+    );
     expect(releaseScreen).toHaveBeenCalledWith(
       expect.objectContaining({ id: "computer-1" }),
       expect.objectContaining({
@@ -9519,16 +10085,20 @@ describe("groups.remove", () => {
       externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
       message: { findMany: vi.fn(async () => []) },
       $queryRaw: vi.fn().mockResolvedValue([{ id: "group-1" }]),
+      thread: {
+        findUnique: vi.fn().mockResolvedValue({ id: "thread-1", historyCompactionGeneration: 3 }),
+      },
       chatGroup: {
         findUnique: vi.fn().mockResolvedValue({
           artifacts: [{ storageKey: "artifacts/group-1/report.pdf" }],
           members: [{ botId: "bot-1" }],
-          thread: { id: "thread-1" },
         }),
         delete: vi.fn(async () => undefined),
       },
       run: {
-        findMany: vi.fn().mockResolvedValue([{ id: "run-1", taskId: "task-1" }]),
+        findMany: vi.fn(async (args: { distinct?: string[] }) =>
+          args.distinct ? [{ botId: "past-bot" }] : [{ id: "run-1", taskId: "task-1" }],
+        ),
         updateManyAndReturn: vi.fn(async ({ where }: { where: { id: { in: string[] } } }) =>
           where.id.in.map((id) => ({ id })),
         ),
@@ -9555,6 +10125,7 @@ describe("groups.remove", () => {
     const deleteSecret = vi.fn(async () => undefined);
     const deps = {
       prisma,
+      memoryProviders: { resolve: async () => null },
       env: {
         defaultProvider: "fake",
         defaultModel: "fake-model",
@@ -9636,8 +10207,9 @@ describe("boards.rename", () => {
         updateManyAndReturn,
       },
       ticket: { count },
+      user: { findUnique: vi.fn(async () => ({ labs: ["board"] })) },
     } as unknown as PrismaClient;
-    const deps = { prisma, env: { ticketBoardEnabled: true } } as unknown as RouterDeps;
+    const deps = { prisma, env: {} } as unknown as RouterDeps;
     return { count, update, updateManyAndReturn, handler: new RPCHandler(createRouter(deps)) };
   }
 
@@ -9778,8 +10350,9 @@ describe("boards.tickets.list", () => {
         })),
       },
       ticket: { findMany },
+      user: { findUnique: vi.fn(async () => ({ labs: ["board"] })) },
     } as unknown as PrismaClient;
-    const deps = { prisma, env: { ticketBoardEnabled: true } } as unknown as RouterDeps;
+    const deps = { prisma, env: {} } as unknown as RouterDeps;
     return { findMany, handler: new RPCHandler(createRouter(deps)) };
   }
 
@@ -10308,7 +10881,6 @@ describe("quarantined computer stop", () => {
         controlHolder: "none",
         controlLeaseId: null,
         controlBotId: null,
-        controlRunId: null,
         homeRevision: "saved",
         screenGeneration: 1,
       };
@@ -10390,4 +10962,58 @@ describe("quarantined computer stop", () => {
       }
     },
   );
+});
+
+describe("connection tool listing", () => {
+  it.each([true, false])("selects app catalog when available: %s", async (hasCatalog) => {
+    const findFirst = vi.fn(async () => ({
+      id: "connection-1",
+      displayName: "Example",
+      providerRef: "account-1",
+    }));
+    const tools = [{ name: "example_action", description: "An action" }];
+    const listAppTools = vi.fn(async () => tools);
+    const discoverTools = vi.fn(async () => tools);
+    const connector = { discoverTools, ...(hasCatalog ? { listAppTools } : {}) };
+    const client = createRouterClient(
+      createRouter({
+        prisma: { connection: { findFirst } },
+        connectors: { managed: () => connector },
+      } as unknown as RouterDeps),
+      {
+        context: { actor: { spaceId: "workspace-1", userId: "user-1" } } as never,
+      },
+    );
+    expect(await client.connections.tools({ connectorId: "example", provider: "example" })).toEqual(
+      tools,
+    );
+    expect(findFirst).toHaveBeenCalledWith({
+      where: {
+        spaceId: "workspace-1",
+        userId: "user-1",
+        connectorId: "example",
+        provider: "example",
+        status: "connected",
+      },
+    });
+    if (hasCatalog) {
+      expect(listAppTools).toHaveBeenCalledWith(expect.anything(), "example");
+      expect(discoverTools).not.toHaveBeenCalled();
+    } else {
+      expect(discoverTools).toHaveBeenCalledWith(
+        expect.objectContaining({
+          connectedConnections: [
+            {
+              id: "connection-1",
+              connectorId: "example",
+              externalId: "example",
+              displayName: "Example",
+              providerRef: "account-1",
+            },
+          ],
+          connectedProviders: ["example"],
+        }),
+      );
+    }
+  });
 });

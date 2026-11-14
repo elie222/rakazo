@@ -40,9 +40,16 @@ vi.mock("@rakazo/core", async (importOriginal) => ({
 vi.mock("./lib/call-pickup.js", () => ({ pickUp: () => new Promise(() => undefined) }));
 vi.mock("./lib/dictation.js", () => ({
   dictation: { listen: vi.fn(), stop: vi.fn(), subscribe: () => () => undefined },
+  usesServerDictation: () => false,
 }));
 vi.mock("./lib/tts.js", () => ({
-  speaker: { speak: vi.fn(), stop: vi.fn(), isSpeaking: () => false, subscribe: () => () => {} },
+  speaker: {
+    speak: vi.fn(),
+    stop: vi.fn(),
+    unlock: vi.fn(),
+    isSpeaking: () => false,
+    subscribe: () => () => {},
+  },
 }));
 vi.mock("./lib/auth", () => ({
   authClient: {
@@ -55,8 +62,8 @@ vi.mock("./lib/auth", () => ({
   },
 }));
 vi.mock("./lib/bootstrap", () => ({
-  getTicketBoardEnabled: () => false,
-  subscribeTicketBoardEnabled: () => () => {},
+  getLabs: () => [],
+  subscribeLabs: () => () => {},
 }));
 vi.mock("./lib/rpc", () => {
   const client = {

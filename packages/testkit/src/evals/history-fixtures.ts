@@ -1,3 +1,4 @@
+import type { HistoryToolStep } from "@rakazo/contracts";
 import type { Criterion } from "./cases.js";
 
 export const HISTORY_FIXTURE_VERSION = "history-v1-seed-73";
@@ -9,6 +10,11 @@ export type HistoryMessage = {
   /** Empty when the message carries only a file. */
   text: string;
   subagentResult?: string;
+  /**
+   * Tools a bot reply used, stored as the reply's steps block; each step's tool and kept calls
+   * are stored apart from it, as the product stores them.
+   */
+  steps?: HistoryToolStep[];
   /** A synthetic file the user attached, uploaded through the product before seeding. */
   file?: { name: string; mimeType: string; content: string };
   createdAt: Date;
@@ -37,6 +43,8 @@ export type HistoryFixture = {
   required: string[];
   forbidden: string[];
   summary?: { upToSeq: number; text: string };
+  /** Compact the oldest batch through the product's job before the first step, instead of a prepared summary. */
+  compact?: true;
 };
 /** Seeded synthetic originals; generation requires neither inference nor stored 10k-line files. */
 export function historyFixture(

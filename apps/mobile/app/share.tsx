@@ -1,10 +1,11 @@
-import { useNavigation, useRouter } from "expo-router";
-import { useCallback, useEffect, useRef, useSyncExternalStore } from "react";
+import { ph } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
+import { useNavigation, usePreventRemove, useRouter } from "expo-router";
+import { useEffect, useEffectEvent, useRef, useState, useSyncExternalStore } from "react";
 import { Image, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { GlassIconButton } from "../components/glass-icon-button";
 import { NativeSymbol } from "../components/native-symbol";
-import { useI18n } from "../lib/i18n";
 import {
   cancelIncomingShare,
   getIncomingShare,
@@ -19,38 +20,47 @@ export default function ShareRoute() {
   const router = useRouter();
   const navigation = useNavigation();
   const share = useSyncExternalStore(subscribeIncomingShare, getIncomingShare);
-  const selected = useRef(false);
-  const closing = useRef(false);
+  const leaving = useRef(false);
+  const [onLeave, setOnLeave] = useState<(() => void) | null>(null);
   const tokens = useMobileTokens();
   const insets = useSafeAreaInsets();
-  const { t } = useI18n();
-  const close = useCallback(() => {
-    closing.current = true;
-    cancelIncomingShare();
-    router.dismissTo("/");
-  }, [router]);
-
-  useEffect(
-    () =>
-      navigation.addListener("beforeRemove", (event) => {
-        const payload = event.data.action.payload;
-        // Authentication temporarily replaces the picker; sign-in returns here with the share.
-        if (payload && "name" in payload && payload.name === "sign-in") return;
-        if (selected.current || closing.current) return;
-        event.preventDefault();
-        close();
-      }),
-    [navigation, close],
-  );
+  const { t } = useLingui();
+  const allowRemoval = usePreventRemove(!onLeave, ({ data, repeat }) => {
+    const payload = data.action.payload;
+    // Authentication temporarily replaces the picker; sign-in returns here with the share.
+    if (payload && "name" in payload && payload.name === "sign-in") {
+      leave(repeat);
+      return;
+    }
+    close();
+  });
+  const leave = (navigate: () => void) => {
+    if (leaving.current) return;
+    leaving.current = true;
+    setOnLeave(() => navigate);
+    allowRemoval();
+  };
+  // The prevention registry is React state too: same-tick navigation still sees the guard.
   useEffect(() => {
-    if (!share && !selected.current && !closing.current) close();
-  }, [share, close]);
+    onLeave?.();
+  }, [onLeave]);
+  const close = () => {
+    if (leaving.current) return;
+    cancelIncomingShare();
+    leave(() => router.dismissTo("/"));
+  };
+  const closeOnce = useEffectEvent(() => {
+    if (!leaving.current) close();
+  });
 
-  const open = useCallback(
-    (bot: Pick<MobileBot, "id" | "name">) => {
-      // Removal must preserve the share for thread.tsx to claim it.
-      if (!getIncomingShare()) return;
-      selected.current = true;
+  useEffect(() => {
+    if (!share) closeOnce();
+  }, [share]);
+
+  const open = (bot: Pick<MobileBot, "id" | "name">) => {
+    // Removal must preserve the share for thread.tsx to claim it.
+    if (!getIncomingShare()) return;
+    leave(() =>
       navigation.dispatch({
         type: "RESET",
         payload: {
@@ -60,10 +70,9 @@ export default function ShareRoute() {
             { name: "thread", params: { botId: bot.id, name: bot.name } },
           ],
         },
-      });
-    },
-    [navigation],
-  );
+      }),
+    );
+  };
   const preview = share ? sharePreview(share) : null;
 
   return (
@@ -85,7 +94,7 @@ export default function ShareRoute() {
       >
         <GlassIconButton
           testID="share-close"
-          accessibilityLabel={t("Close")}
+          accessibilityLabel={t`Close`}
           ios="xmark"
           android="close"
           size={44}
@@ -97,7 +106,7 @@ export default function ShareRoute() {
           accessibilityRole="header"
           style={{ fontSize: 20, fontWeight: "600", color: tokens.foreground }}
         >
-          {t("Share to")}
+          {t`Share to`}
         </Text>
       </View>
       {preview ? (
@@ -135,7 +144,7 @@ export default function ShareRoute() {
                 numberOfLines={1}
                 style={{ flex: 1, fontSize: 15, color: tokens.mutedForeground }}
               >
-                {preview.fileName ?? t("{count} files", { count: preview.fileCount })}
+                {preview.fileName ?? t`${ph({ count: preview.fileCount })} files`}
               </Text>
             </View>
           ) : null}

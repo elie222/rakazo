@@ -168,11 +168,6 @@ vi.mock("./native", () => ({
   useThemedStyles: (factory: () => unknown) => useMemo(factory, [factory]),
 }));
 vi.mock("./appearance", () => ({ mobileTokens: () => ({}) }));
-vi.mock("./i18n", () => {
-  const t = (text: string, values?: Record<string, string>) =>
-    text.replace(/\{(\w+)\}/g, (_, key: string) => values?.[key] ?? key);
-  return { t, useI18n: () => ({ t }), dateLocaleForUi: () => "en-US" };
-});
 // The row's avatar freezes while the row is scrolled out of view.
 vi.mock("./avatar-life", () => ({
   AvatarRow: ({ id, children }: { id: string; children: ReactNode }) => (
@@ -656,6 +651,31 @@ it("waits for a saved or live inbox before publishing a remounted session's sear
   // A loaded inbox may legitimately become empty; only the initial placeholder is skipped.
   render(<PublishRoster key="session-2" me={me} inboxSpaces={[]} />);
   expect(publish).toHaveBeenLastCalledWith([]);
+});
+
+it("opens bots in each space in share mode without swipe actions or long-press menus", () => {
+  const bots = ["current", "other"].map((space) => ({
+    id: `bot-${space}`,
+    spaceId: `space-${space}`,
+    name: `Bot ${space}`,
+    preview: "",
+  }));
+  const openBot = vi.fn();
+  render(
+    <List
+      items={bots.map((bot) => ({ type: "bot", bot }) as InboxItem)}
+      options={{ sharing: true, openBot }}
+    />,
+  );
+  const rows = Array.from(container.querySelectorAll("button"));
+  expect(rows).toHaveLength(2);
+  for (const row of rows) {
+    expect(row.dataset.longPress).toBeUndefined();
+    act(() => row.click());
+  }
+  expect(openBot.mock.calls).toEqual(bots.map((bot) => [bot]));
+  expect(ui.swipeRows).toEqual([]);
+  expect(ui.rowMenus).toEqual([]);
 });
 
 it("gives chats in every space the long-press menu, with their own space's sections", () => {

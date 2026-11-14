@@ -1,10 +1,11 @@
+import { t } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
 import { isRetryableError } from "@rakazo/core";
 import { useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { ActivityIndicator, Alert, Pressable, Text, View } from "react-native";
 import { Thread } from "../components/thread/thread-screen";
 import { currentApiBase, selectedSpaceId } from "../lib/api";
-import { t, useI18n } from "../lib/i18n";
 import { integrationsCacheScope } from "../lib/integrations-cache";
 import { useMobileTokens } from "../lib/native";
 import {
@@ -50,7 +51,7 @@ export default function ThreadRoute() {
             });
         })
         .catch((error) => {
-          if (!cancelled && !notified) Alert.alert(t("Could not continue"), errorText(error));
+          if (!cancelled && !notified) Alert.alert(t`Could not continue`, errorText(error));
           notified = true;
           if (!cancelled && isRetryableError(error)) timer = setTimeout(verify, 5_000);
         });
@@ -61,7 +62,7 @@ export default function ThreadRoute() {
     };
   }, [generation, ready]);
   const tokens = useMobileTokens();
-  const { t } = useI18n();
+  const { t } = useLingui();
   const router = useRouter();
   const focused = useIsFocused();
   const { spaceId } = useLocalSearchParams<{ spaceId?: string | string[] }>();
@@ -133,10 +134,10 @@ export default function ThreadRoute() {
       ) : (
         <View style={{ alignItems: "center", gap: 12 }}>
           <Text style={{ color: tokens.foreground, fontSize: 16 }}>
-            {t("Could not switch spaces")}
+            {t`Could not switch spaces`}
           </Text>
           <Pressable accessibilityRole="button" onPress={() => router.replace("/")}>
-            <Text style={{ color: tokens.foreground, fontSize: 16 }}>{t("Return to inbox")}</Text>
+            <Text style={{ color: tokens.foreground, fontSize: 16 }}>{t`Return to inbox`}</Text>
           </Pressable>
         </View>
       )}

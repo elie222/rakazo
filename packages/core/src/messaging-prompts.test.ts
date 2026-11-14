@@ -5,7 +5,7 @@ import {
   teamChatAmbientPrompt,
   teamChatPrompt,
   teamChatResponseText,
-} from "./messaging-prompts.js";
+} from "./messaging.prompt.js";
 
 describe("isMessagingChannelRun", () => {
   const channelBlock = {

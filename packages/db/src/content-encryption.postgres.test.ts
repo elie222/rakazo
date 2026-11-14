@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import type { MessageBlock } from "@rakazo/contracts";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type { PrismaClient } from "./client.js";
+import type { Prisma, PrismaClient } from "./client.js";
 import { createDb } from "./client.js";
 import { ContentDecryptionError } from "./content-crypto.js";
 import { contentEncryptionOf } from "./content-encryption.js";
@@ -20,8 +20,7 @@ import { createThreadMessage, createThreadMessageInTransaction } from "./message
 import { runAsSystem } from "./row-security.js";
 
 const databaseUrl = process.env.DATABASE_URL;
-const describePostgres =
-  process.env.VERIFY_DATABASE && databaseUrl ? describe.sequential : describe.skip;
+const describePostgres = process.env.VERIFY_DATABASE && databaseUrl ? describe : describe.skip;
 
 const masterA = { id: "test-a", key: randomBytes(32) };
 const masterB = { id: "test-b", key: randomBytes(32) };
@@ -228,6 +227,51 @@ describePostgres("content encryption (PostgreSQL)", () => {
       await prisma.message.delete({ where: { id: message.id }, select: { id: true } });
     }));
 
+  it("keeps a reply's tool history encrypted, out of ordinary reads and out of search", () =>
+    runAsSystem("test fixture", async () => {
+      const blocks = [
+        {
+          kind: "steps",
+          steps: [
+            {
+              label: "Shell",
+              tool: "shell",
+              count: 1,
+              calls: [{ arguments: '{"command":"cat ledger"}', result: "OSPREY-TOTAL 4410" }],
+            },
+          ],
+        },
+        { kind: "text", text: "Checked the ledger." },
+      ] as MessageBlock[];
+      const message = await createThreadMessage(prisma, { threadId, role: "bot", botId, blocks });
+      expect(message).not.toHaveProperty("toolHistory");
+      const {
+        rows: [stored],
+      } = await raw.query<{ blocks: string; toolHistory: string }>(
+        `SELECT blocks::text AS blocks, "toolHistory" FROM messages WHERE id = $1`,
+        [message.id],
+      );
+      expect(stored!.blocks).not.toContain("OSPREY");
+      expect(stored!.toolHistory).not.toContain("OSPREY");
+      expect(stored!.toolHistory).toContain("rkz1:");
+      // Reads leave it out, nested ones too, unless they ask for it.
+      expect(await prisma.message.findUnique({ where: { id: message.id } })).not.toHaveProperty(
+        "toolHistory",
+      );
+      const nested = await prisma.thread.findUnique({
+        where: { id: threadId },
+        include: { messages: { where: { id: message.id } } },
+      });
+      expect(nested?.messages[0]).not.toHaveProperty("toolHistory");
+      const selected = await prisma.message.findUnique({
+        where: { id: message.id },
+        select: { toolHistory: true },
+      });
+      expect(JSON.parse(selected!.toolHistory!).steps[0].calls[0].result).toBe("OSPREY-TOTAL 4410");
+      expect((await searchHistory(prisma, scope, { query: "osprey" })).messages).toEqual([]);
+      await prisma.message.delete({ where: { id: message.id }, select: { id: true } });
+    }));
+
   it("reads and searches plaintext rows next to encrypted ones, then migrates them", () =>
     runAsSystem("test fixture", async () => {
       const plaintextId = `enc-plain-${suffix}`;
@@ -281,6 +325,42 @@ describePostgres("content encryption (PostgreSQL)", () => {
 
       const excerpt = await readHistory(prisma, scope, { messageId: plaintextId, limit: 1 });
       expect(excerpt.messages[0]!.text).toBe("legacy note about pelicans");
+    }));
+
+  it("migrates tool history written with encryption off, and writes it back for a rollback", () =>
+    runAsSystem("test fixture", async () => {
+      const id = `enc-tools-plain-${suffix}`;
+      const history = JSON.stringify({
+        steps: [{ tool: "shell", calls: [{ arguments: "{}", result: "HERON-LEDGER 77" }] }],
+      });
+      // As a release with encryption off stores it.
+      await raw.query(
+        `INSERT INTO messages (id, "threadId", seq, role, blocks, "toolHistory") VALUES ($1, $2, 9100, 'bot', '[]'::jsonb, $3)`,
+        [id, threadId, history],
+      );
+      const status = await contentEncryptionStatus(prisma);
+      expect(
+        status.tables.find((t) => t.table === "messages.toolHistory")!.plaintext,
+      ).toBeGreaterThan(0);
+      const stored = async () =>
+        (
+          await raw.query<{ toolHistory: string }>(
+            `SELECT "toolHistory" FROM messages WHERE id = $1`,
+            [id],
+          )
+        ).rows[0]!.toolHistory;
+      await migrateContent(prisma, { mode: "encrypt" });
+      expect(await stored()).not.toContain("HERON");
+      expect(await stored()).toMatch(/^rkz1:/);
+      const read = await prisma.message.findUnique({
+        where: { id },
+        select: { toolHistory: true },
+      });
+      expect(read?.toolHistory).toBe(history);
+      await migrateContent(prisma, { mode: "decrypt" });
+      expect(await stored()).toBe(history);
+      await migrateContent(prisma, { mode: "encrypt" });
+      await prisma.message.delete({ where: { id }, select: { id: true } });
     }));
 
   it("encrypts memory, revisions, event payloads and thread summaries", () =>
@@ -515,6 +595,58 @@ describePostgres("content encryption (PostgreSQL)", () => {
       expect(await count()).toBe(1);
       await prisma.space.delete({ where: { id: doomed } });
       expect(await count()).toBe(0);
+    }));
+
+  it("leaves no vault key behind for a member or Space deleted while it is created", () =>
+    runAsSystem("test fixture", async () => {
+      const ring = contentEncryptionOf(prisma)!.ring;
+      const goneSpace = `enc-gone-space-${suffix}`;
+      const goneUser = `enc-gone-user-${suffix}`;
+      await prisma.space.create({ data: { id: goneSpace, organizationId, name: "Gone" } });
+      await prisma.user.create({
+        data: {
+          id: goneUser,
+          name: "Gone",
+          email: `${goneUser}@rakazo.test`,
+          emailVerified: false,
+        },
+      });
+      const keys = async (scope: string) =>
+        (await raw.query(`SELECT count(*)::int AS n FROM space_keys WHERE "spaceId" = $1`, [scope]))
+          .rows[0].n;
+      const waitingOnLock = async () =>
+        (
+          await raw.query(
+            `SELECT count(*)::int AS n FROM pg_stat_activity
+             WHERE datname = current_database() AND wait_event_type = 'Lock'
+               AND query LIKE '%INSERT INTO space_keys%'`,
+          )
+        ).rows[0].n > 0;
+      const deletions: Array<[string, (tx: Prisma.TransactionClient) => Promise<unknown>]> = [
+        [`vault:${goneSpace}`, (tx) => tx.space.delete({ where: { id: goneSpace } })],
+        [`user:${goneUser}`, (tx) => tx.user.delete({ where: { id: goneUser } })],
+      ];
+      for (const [scope, remove] of deletions) {
+        let created: Promise<string> = Promise.resolve("not started");
+        // The deletion has run its key-shredding trigger but not committed when the key is
+        // created. It commits once the key is in, or once creating it waits on the owner.
+        await prisma.$transaction(
+          async (tx) => {
+            await remove(tx);
+            created = ring.current(scope).then(
+              () => "created",
+              () => "refused",
+            );
+            for (let tries = 0; tries < 100; tries++) {
+              if (await Promise.race([created.then(() => true), waitingOnLock()])) break;
+              await new Promise((resolve) => setTimeout(resolve, 20));
+            }
+          },
+          { timeout: 15_000 },
+        );
+        expect(await keys(scope)).toBe(0);
+        expect(await created).toBe("refused");
+      }
     }));
 
   // Its own space, so key counts and searches see only these rows. Global steps

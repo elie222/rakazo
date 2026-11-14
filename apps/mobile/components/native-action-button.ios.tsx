@@ -57,11 +57,9 @@ export function NativeActionButton({
         padding({ horizontal: 0, vertical: 8 }),
         ...(stretches
           ? [
-              frame(
-                typeof measuredWidth === "number"
-                  ? { width: measuredWidth }
-                  : { maxWidth: Infinity },
-              ),
+              typeof measuredWidth === "number"
+                ? frame({ width: measuredWidth })
+                : frame({ maxWidth: Infinity }),
             ]
           : []),
         // The destructive text action (Disconnect) keeps a 44pt target.

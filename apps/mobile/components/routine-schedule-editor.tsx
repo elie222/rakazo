@@ -1,3 +1,4 @@
+import { useLingui } from "@lingui/react/macro";
 import type { CronFreq, CronPreset, CronUnit } from "@rakazo/core";
 import {
   CRON_FREQS,
@@ -6,7 +7,7 @@ import {
   cronIntervalAmounts,
   localizedClock,
 } from "@rakazo/core";
-import { useI18n } from "../lib/i18n";
+import { useUiLocale } from "../lib/i18n";
 import { MenuPicker } from "./menu-picker";
 import { SettingsGroup, SettingsInputRow } from "./settings-group";
 
@@ -34,20 +35,21 @@ export function RoutineScheduleEditor({
   onChange: (next: CronPreset) => void;
   onRemove: () => void;
 }) {
-  const { t, locale } = useI18n();
+  const { t } = useLingui();
+  const locale = useUiLocale();
   const freqLabel: Record<CronFreq, string> = {
-    "Every hour": t("Every hour"),
-    "Every day": t("Every day"),
-    Weekdays: t("Weekdays"),
-    "Every week": t("Every week"),
-    "Every month": t("Every month"),
-    Interval: t("Interval"),
-    Advanced: t("Advanced"),
+    "Every hour": t`Every hour`,
+    "Every day": t`Every day`,
+    Weekdays: t`Weekdays`,
+    "Every week": t`Every Monday`,
+    "Every month": t`Monthly on the 1st`,
+    Interval: t`Interval`,
+    Advanced: t`Advanced`,
   };
   const unitLabel: Record<CronUnit, string> = {
-    minutes: t("minutes"),
-    hours: t("hours"),
-    days: t("days"),
+    minutes: t`minutes`,
+    hours: t`hours`,
+    days: t`days`,
   };
   const times = TIMES.includes(value.time) ? TIMES : [...TIMES, value.time];
   const patch = (partial: Partial<CronPreset>) => onChange({ ...value, ...partial });
@@ -55,11 +57,11 @@ export function RoutineScheduleEditor({
     <SettingsGroup>
       <MenuPicker
         key="freq"
-        label={t("How often")}
+        label={t`How often`}
         value={value.freq}
         choices={[
           ...CRON_FREQS.map((freq) => ({ key: freq, label: freqLabel[freq] })),
-          { key: REMOVE, label: t("Remove schedule"), destructive: true },
+          { key: REMOVE, label: t`Remove schedule`, destructive: true },
         ]}
         onChange={(key) => {
           if (key === REMOVE) {
@@ -74,7 +76,7 @@ export function RoutineScheduleEditor({
       {value.freq === "Interval" ? (
         <MenuPicker
           key="amount"
-          label={t("Every")}
+          label={t`Every`}
           value={String(value.n)}
           choices={cronIntervalAmounts(value.unit, value.n).map((n) => ({
             key: String(n),
@@ -86,7 +88,7 @@ export function RoutineScheduleEditor({
       {value.freq === "Interval" ? (
         <MenuPicker
           key="unit"
-          label={t("Unit")}
+          label={t`Unit`}
           value={value.unit}
           choices={UNITS.map((unit) => ({ key: unit, label: unitLabel[unit] }))}
           onChange={(key) => {
@@ -98,7 +100,7 @@ export function RoutineScheduleEditor({
       {TIMED.includes(value.freq) ? (
         <MenuPicker
           key="time"
-          label={t("Time of day")}
+          label={t`Time of day`}
           value={value.time}
           choices={times.map((time) => ({ key: time, label: localizedClock(time, locale) }))}
           onChange={(time) => patch({ time })}
@@ -107,7 +109,7 @@ export function RoutineScheduleEditor({
       {value.freq === "Advanced" ? (
         <SettingsInputRow
           key="cron"
-          accessibilityLabel={t("Cron expression")}
+          accessibilityLabel={t`Cron expression`}
           autoCapitalize="none"
           autoCorrect={false}
           placeholder="*/3 * * * *"

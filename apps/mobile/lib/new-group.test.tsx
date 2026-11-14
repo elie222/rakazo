@@ -169,13 +169,6 @@ vi.mock("react-native-keyboard-controller", () => ({
   KeyboardAvoidingView: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
 }));
 vi.mock("./native", () => ({ native: {}, useMobileTokens: () => ({}) }));
-vi.mock("./i18n", () => ({
-  t: (text: string) => text,
-  useI18n: () => ({
-    t: (text: string, values: Record<string, string | number> = {}) =>
-      text.replace(/\{(\w+)\}/g, (_, key: string) => String(values[key])),
-  }),
-}));
 vi.mock("./native-controls", () => ({ iosAtLeast: () => nativeHeader.current }));
 vi.mock("../components/glass-icon-button", () => ({
   GlassIconButton: ({
