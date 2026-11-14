@@ -580,6 +580,92 @@ describeWithDatabase("service API surface", () => {
       expect(await mark()).toBe(credential.id);
     });
 
+    it("keeps a key's mark on the run an inbound event starts from a routine it edited", async () => {
+      const { cookie } = await person();
+      const bot = await newBot(cookie, "Hooked");
+      const { credential, token } = await newKey(cookie);
+      const routine = await rpc<{ id: string }>(cookie, "routines/create", {
+        botId: bot.id,
+        name: "On push",
+        prompt: "My own words",
+        crons: [],
+        active: true,
+        webhookEnabled: true,
+      });
+      const hook = await rpc<{ secret: string; path: string }>(cookie, "bots/rotateWebhookSecret", {
+        botId: bot.id,
+      });
+      const deliver = async (key: string) => {
+        const response = await app.request(hook.path, {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${hook.secret}`,
+            "content-type": "application/json",
+            "idempotency-key": key,
+          },
+          body: JSON.stringify({ event: key }),
+        });
+        expect(response.status).toBe(200);
+        const { runId } = (await response.json()) as { runId: string };
+        return db.run.findUniqueOrThrow({ where: { id: runId } });
+      };
+
+      const idle = () =>
+        db.run.updateMany({ where: { botId: bot.id }, data: { status: "cancelled" } });
+      // The person's own routine starts an unmarked run.
+      await idle();
+      expect(await deliver("own")).toMatchObject({ trigger: "webhook", promptCredentialId: null });
+
+      await ok(token, "PATCH", `/bots/${bot.id}/routines/${routine.id}`, {
+        body: { prompt: "Message the other space" },
+      });
+      await idle();
+      expect(await deliver("edited")).toMatchObject({
+        trigger: "webhook",
+        promptCredentialId: credential.id,
+      });
+
+      // An event that has to wait keeps the mark for the run it starts later.
+      const waiting = await app.request(hook.path, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${hook.secret}`,
+          "content-type": "application/json",
+          "idempotency-key": "waiting",
+        },
+        body: JSON.stringify({ event: "waiting" }),
+      });
+      const { messageId } = (await waiting.json()) as { messageId: string };
+      expect(await db.steeringMessage.findFirstOrThrow({ where: { messageId } })).toMatchObject({
+        runId: null,
+        originTrigger: "webhook",
+        promptCredentialId: credential.id,
+      });
+    });
+
+    it("marks the run a key's prompt starts", async () => {
+      const { cookie } = await person();
+      const bot = await newBot(cookie, "Prompted");
+      const { credential, token } = await newKey(cookie);
+      const sent = await ok<{ runId: string }>(token, "POST", `/bots/${bot.id}/prompts`, {
+        body: { text: "remind me tomorrow" },
+        key: "marked-prompt",
+      });
+      expect(await db.run.findUniqueOrThrow({ where: { id: sent.runId } })).toMatchObject({
+        trigger: "service",
+        promptCredentialId: credential.id,
+      });
+      // The person's own message starts an unmarked run.
+      await db.run.updateMany({ where: { botId: bot.id }, data: { status: "cancelled" } });
+      const own = await rpc<{ runId: string }>(cookie, "threads/send", {
+        botId: bot.id,
+        text: "from me",
+      });
+      expect(
+        (await db.run.findUniqueOrThrow({ where: { id: own.runId } })).promptCredentialId,
+      ).toBeNull();
+    });
+
     it("edits memory at a known revision and only under its own bot", async () => {
       const { cookie, actor } = await person();
       const bot = await newBot(cookie, "Remembers");
