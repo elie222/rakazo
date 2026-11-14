@@ -131,7 +131,7 @@ export function ThreadMessageList({
             // This callback tracks every row input, including reply, reaction and highlight state.
             extraData={renderMessageRow}
             style={styles.list}
-            // Scrolling keeps the keyboard open on Android (no dismiss-on-drag); on iOS it follows the finger.
+            // On iOS a swipe down hides the keyboard, following the finger; Android keeps it open.
             keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "none"}
             // Inverted, so the bottom padding is the visual top, clear of the transparent header.
             contentContainerStyle={listContentStyle}
