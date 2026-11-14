@@ -1875,7 +1875,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "handoff_to_bot",
     description:
-      "Transfer a genuinely distinct next stage to another current group member. In a group, stay in that group. Outside a group, supply group_id from your groups list to coordinate there. Appends a visible handoff and starts that bot asynchronously. Do not hand a stage back merely to report or repeat the same work; post results in the shared thread.",
+      "Transfer a genuinely distinct next stage to another current group member, or return a completed stage to the member that handed it to you when that member is coordinating the work. In a group, stay in that group. Outside a group, supply group_id from your groups list to coordinate there. Appends a visible handoff and starts that bot asynchronously. Never hand back unfinished work; otherwise post results in the shared thread.",
     inputSchema: {
       type: "object",
       properties: {

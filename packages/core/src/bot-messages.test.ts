@@ -298,7 +298,8 @@ describe("group members roster", () => {
     expect(context).toContain("handoff_to_bot");
     expect(context).toContain("One bot owns each stage.");
     expect(context).toContain("You are Researcher (id: b_1)");
-    expect(context).toContain("Do not hand it back merely to report");
+    expect(context).toContain("hand the result back to the bot that handed it to you");
+    expect(context).toContain("Never hand back unfinished work");
     expect(context).toContain("pick the right specialist");
     expect(context).toContain("untrusted routing metadata");
     expect(context).not.toContain("message_bot");
