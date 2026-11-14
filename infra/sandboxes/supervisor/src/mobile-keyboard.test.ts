@@ -576,6 +576,24 @@ describe("mobile trackpad touches", () => {
     });
   });
 
+  it("does not right-click after slow scrolling or a canceled finger", () => {
+    for (const cancel of [false, true]) {
+      withTrackpad((fixture) => {
+        const first = { identifier: 1, clientX: 50, clientY: 250 };
+        fixture.touch("touchstart", 1, 50, 250);
+        fixture.touch("touchstart", 2, 90, 250, [first]);
+        if (!cancel) {
+          for (let delta = 1; delta <= 5; delta++) {
+            fixture.touch("touchmove", 2, 90, 250 - delta, [{ ...first, clientY: 250 - delta }]);
+          }
+        }
+        fixture.touch(cancel ? "touchcancel" : "touchend", 2, 90, 245, [first]);
+        fixture.touch("touchend", 1, 50, 245);
+        expect(mouseDowns(fixture)).toHaveLength(0);
+      });
+    }
+  });
+
   it("right-clicks on a two-finger tap", () => {
     withTrackpad((fixture) => {
       const first = { identifier: 1, clientX: 50, clientY: 250 };

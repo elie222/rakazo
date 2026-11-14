@@ -62,8 +62,10 @@ function createViewZoom(surface) {
     },
     // Move a zoomed view by a share of its width: -1 shows what is left, 1 what is right.
     panBy(share) {
+      const before = panX;
       panX -= share * surface.clientWidth;
       apply();
+      return panX - before;
     },
     // Zoom around a client point so what is under it stays put.
     step(direction, x, y) {
@@ -77,14 +79,18 @@ function createViewZoom(surface) {
       apply();
     },
     // Pan so a client point stays in view; returns the point moved with the content.
-    follow(x, y) {
+    follow(x, y, bounds) {
       if (zoom === 1) return { x, y };
       const { left, top, width, height } = box();
       const before = { x: panX, y: panY };
       const overflow = (value, start, size) =>
         Math.min(0, value - start - VIEW_MARGIN) + Math.max(0, value - start - size + VIEW_MARGIN);
-      panX -= overflow(x, left, width);
-      panY -= overflow(y, top, height);
+      const visibleLeft = Math.max(left, bounds.left);
+      const visibleTop = Math.max(top, bounds.top);
+      const visibleRight = Math.min(left + width, bounds.right);
+      const visibleBottom = Math.min(top + height, bounds.bottom);
+      panX -= overflow(x, visibleLeft, visibleRight - visibleLeft);
+      panY -= overflow(y, visibleTop, visibleBottom - visibleTop);
       apply();
       return { x: x + panX - before.x, y: y + panY - before.y };
     },
@@ -170,7 +176,7 @@ export function attachMobileTrackpad(
         clientX: point.x,
         clientY: point.y,
         button: buttonNumber,
-        buttons: type === "mousedown" ? 1 << buttonNumber : 0,
+        buttons: type === "mousedown" ? (buttonNumber === 2 ? 2 : 1) : 0,
       }),
     );
   };
@@ -205,7 +211,11 @@ export function attachMobileTrackpad(
     const bounds = target.getBoundingClientRect();
     cursorX ??= bounds.left + bounds.width / 2;
     cursorY ??= bounds.top + bounds.height / 2;
-    const shown = view.follow(cursorX + deltaX * sensitivity, cursorY + deltaY * sensitivity);
+    const shown = view.follow(
+      cursorX + deltaX * sensitivity,
+      cursorY + deltaY * sensitivity,
+      bounds,
+    );
     const next = clampToCanvas(shown.x, shown.y);
     if (!next) return;
     cursorX = next.x;
@@ -243,8 +253,8 @@ export function attachMobileTrackpad(
       showZoomed();
       positionCursor();
     } else if (action === "pan-left" || action === "pan-right") {
-      view.panBy(action === "pan-left" ? -0.5 : 0.5);
-      positionCursor();
+      cursorX += view.panBy(action === "pan-left" ? -0.5 : 0.5);
+      showPointer();
     }
   };
   // The canvas only exists once noVNC connects; show the pointer then.
@@ -264,8 +274,8 @@ export function attachMobileTrackpad(
     const touches = Array.from(event.touches ?? []);
     if (touches.length >= 2) {
       // A second finger turns the gesture into a scroll; it never moves or clicks.
+      if (!twoFinger) scrolled = false;
       twoFinger = true;
-      scrolled = false;
       scrollY = averageY(touches);
       return;
     }
@@ -285,7 +295,7 @@ export function attachMobileTrackpad(
       const touches = Array.from(event.touches ?? []);
       if (touches.length < 2) return;
       const y = averageY(touches);
-      if (Math.abs(scrollY - y) > 1) scrolled = true;
+      if (scrollY !== y) scrolled = true;
       wheel(scrollY - y);
       scrollY = y;
       return;
@@ -304,6 +314,7 @@ export function attachMobileTrackpad(
     if (!enabled) return;
     consume(event);
     if (twoFinger) {
+      if (!clicks) scrolled = true;
       if ((event.touches?.length ?? 0) > 0) return;
       twoFinger = false;
       touchId = null;
@@ -316,11 +327,25 @@ export function attachMobileTrackpad(
   };
   const onTouchEnd = (event) => finishTouch(event, true);
   const onTouchCancel = (event) => finishTouch(event, false);
+  const onMouseMove = (event) => {
+    if (event.isTrusted && enabled) setEnabled(false);
+  };
+  const onResize = () => {
+    view.reset();
+    showZoomed();
+    cursorX = null;
+    cursorY = null;
+    if (enabled) positionCursor();
+  };
+  const resizeObserver =
+    typeof ResizeObserver === "undefined" ? null : new ResizeObserver(onResize);
+  resizeObserver?.observe(surface);
   const listen = { capture: true, passive: false };
 
   button.hidden = false;
   button.addEventListener("click", onButtonClick);
   viewControls?.addEventListener("click", onViewClick);
+  surface.addEventListener("mousemove", onMouseMove);
   surface.addEventListener("touchstart", onTouchStart, listen);
   surface.addEventListener("touchmove", onTouchMove, listen);
   surface.addEventListener("touchend", onTouchEnd, listen);
@@ -329,6 +354,8 @@ export function attachMobileTrackpad(
   setEnabled(true);
 
   return () => {
+    resizeObserver?.disconnect();
+    surface.removeEventListener("mousemove", onMouseMove);
     button.removeEventListener("click", onButtonClick);
     viewControls?.removeEventListener("click", onViewClick);
     surface.removeEventListener("touchstart", onTouchStart, listen);
