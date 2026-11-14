@@ -233,3 +233,62 @@ it("keeps complete Unicode initials in the connected-app marks", async () => {
   );
   expect(marks).toEqual(["🦞", "𠮷", "N"]);
 });
+
+it("opens both Unicode fallback screenshot targets through browse and manage", async () => {
+  api.connections.catalog.mockResolvedValue([
+    {
+      connectorId: "fixture",
+      slug: "unicode",
+      name: "𠮷野",
+      logo: null,
+      connected: true,
+      noAuth: false,
+    },
+  ]);
+  api.marketplace.catalog.mockResolvedValue({
+    entries: [
+      {
+        id: "openclaw",
+        name: "openclaw",
+        displayName: "🦞 OpenClaw",
+        description: "Fixture integration",
+        keywords: [],
+        category: "productivity",
+        logo: null,
+        homepage: null,
+        domains: [],
+        registry: "fixture",
+        source: "https://example.test/plugin",
+        installedSource: "https://example.test/plugin",
+        hasConnector: true,
+        skillCount: 0,
+      },
+    ],
+    unavailableRegistries: [],
+    skippedEntries: 0,
+  });
+  await act(async () =>
+    root.render(
+      <QueryClientProvider client={client}>
+        <PluginsOverlay onClose={() => {}} />
+      </QueryClientProvider>,
+    ),
+  );
+  await vi.waitFor(() => expect(searchBox().disabled).toBe(false));
+  expect(
+    [...host.querySelectorAll(".place-items-center")].some((el) => el.textContent === "🦞"),
+  ).toBe(true);
+  const connected = host.querySelector("span[aria-hidden]")!.closest("button")!;
+  await act(async () => connected.click());
+  const apps = host.querySelector('[data-testid="connected-apps"]')!;
+  expect(
+    [...apps.querySelectorAll(".place-items-center")].some((el) => el.textContent === "𠮷"),
+  ).toBe(true);
+  const added = [...apps.querySelectorAll("button")].find(
+    (button) => button.textContent === "Added",
+  )!;
+  await act(async () => added.click());
+  expect(
+    host.querySelector('[data-testid="connection-detail"] .place-items-center')?.textContent,
+  ).toBe("𠮷");
+});
