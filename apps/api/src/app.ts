@@ -857,10 +857,11 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   // Reading a session here can renew it. The browser must get the renewed cookie too,
   // or it keeps the one from sign-in and is signed out when that one expires.
   const renewedSessionCookies = new WeakMap<Request, string[]>();
-  const readSession = async (request: Request) => {
+  const readSession = async (request: Request, disableRefresh = false) => {
     const { headers, response } = await auth.api.getSession({
       headers: request.headers,
       returnHeaders: true,
+      query: { disableRefresh },
     });
     // A native client signs in with a bearer token and keeps no cookie.
     const cookies = request.headers.has("cookie") ? headers.getSetCookie() : [];
@@ -868,8 +869,11 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     return response;
   };
   app.use("*", async (c, next) => {
+    const request = c.req.raw;
     await next();
-    for (const cookie of renewedSessionCookies.get(c.req.raw) ?? []) {
+    for (const cookie of renewedSessionCookies.get(request) ??
+      renewedSessionCookies.get(c.req.raw) ??
+      []) {
       c.header("set-cookie", cookie, { append: true });
     }
   });
@@ -1006,9 +1010,9 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     sandboxProvider: env.sandboxProvider,
     prisma,
   });
-  const requestSession = async (request: Request) => {
+  const requestSession = async (request: Request, disableRefresh = false) => {
     // The bearer plugin turns a signed `Authorization: Bearer` into the session cookie.
-    const session = await readSession(request);
+    const session = await readSession(request, disableRefresh);
     if (!session?.user) return null;
     const actor = await actorFromMembership(
       requireMembership(
@@ -1067,7 +1071,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         // Same user in the same space, so leaving the space also ends a stream.
         // A database failure rejects this check; only a missing membership is unauthorized.
         stillAuthorized: async () => {
-          const current = await sessionActor(c.req.raw);
+          const current = (await requestSession(c.req.raw, true))?.actor;
           return Boolean(
             actor && current?.userId === actor.userId && current.spaceId === actor.spaceId,
           );
