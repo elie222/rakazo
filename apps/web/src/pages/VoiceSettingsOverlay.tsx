@@ -29,6 +29,7 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { XIcon } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useCallSession } from "../lib/call-session";
 import { useSpaceQueries } from "../lib/query";
 import { useBoundSpaceId, useSpaceRpc } from "../lib/space-rpc";
 import { speaker } from "../lib/tts";
@@ -51,7 +52,7 @@ export function VoiceSettingsOverlay({
   scope: SettingsScope;
 }) {
   const rpc = useSpaceRpc();
-  const spaceId = useBoundSpaceId();
+  const spaceId = useBoundSpaceId() ?? null;
   const queries = useSpaceQueries();
   const queryClient = useQueryClient();
   const scoped = { input: { scope } };
@@ -70,6 +71,7 @@ export function VoiceSettingsOverlay({
     return { catalog, credentials, status, provider, credential, voices };
   });
   const { t } = useLingui();
+  const call = useCallSession();
   const apiKeyId = useId();
   const voiceSelectId = useId();
   const speechModelId = useId();
@@ -302,11 +304,23 @@ export function VoiceSettingsOverlay({
     setNotice(null);
     markPending("disconnect");
     try {
-      await rpc.voice.disconnect({ provider: providerId });
+      try {
+        await rpc.voice.disconnect({ provider: providerId });
+      } catch (err) {
+        setError(errorText(err, t`Could not disconnect this voice provider`));
+        return;
+      }
       setApiKey("");
-      await refresh(providerId);
-    } catch (err) {
-      setError(errorText(err, t`Could not disconnect this voice provider`));
+      if (providerId === providerRef.current) setVoiceId("");
+      const drop = (current: VoiceCredential[]) =>
+        current.filter((entry) => entry.provider !== providerId);
+      setCredentials(drop);
+      queryClient.setQueryData(queries.voice.credentials.queryKey(scoped), (current) =>
+        current ? drop(current) : current,
+      );
+      await refresh(providerId).catch((err: unknown) =>
+        setError(errorText(err, t`Could not load voice settings`)),
+      );
     } finally {
       markPending(null);
     }
@@ -364,6 +378,8 @@ export function VoiceSettingsOverlay({
   }
 
   async function testVoice() {
+    // The sample uses the call's speaker, so it would cut off the reply.
+    if (call) return;
     setError(null);
     setNotice(null);
     markPending("test");
@@ -637,7 +653,7 @@ export function VoiceSettingsOverlay({
                 type="button"
                 variant="secondary"
                 className="mt-4"
-                disabled={busy || !status?.ready}
+                disabled={busy || !status?.ready || call !== null}
                 onClick={() => void testVoice()}
               >
                 {pending === "test" ? <Trans>Playing…</Trans> : <Trans>Hear a sample</Trans>}

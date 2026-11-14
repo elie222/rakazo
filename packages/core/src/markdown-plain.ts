@@ -228,6 +228,10 @@ export function truncatePlainText(text: string, maxChars: number): string {
 
 /** Matching `>` for a tag at `<`, ignoring `>` inside quoted attributes. */
 function htmlTagClose(text: string, open: number): number {
+  if (text.startsWith("<!--", open)) {
+    const close = text.indexOf("-->", open + 4);
+    return close === -1 ? text.length - 1 : close + 2;
+  }
   let quote: '"' | "'" | undefined;
   let gtInOpenQuote = -1;
   for (let i = open + 1; i < text.length; i++) {

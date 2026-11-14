@@ -1,5 +1,7 @@
 import { setTimeout as delay } from "node:timers/promises";
-import { SandboxRateLimitError } from "@rakazo/adapter-kit";
+import { SandboxRateLimitError, SandboxSizeUnavailableError } from "@rakazo/adapter-kit";
+import type { ComputerSize } from "@rakazo/contracts";
+import { COMPUTER_SIZE_SPECS } from "@rakazo/contracts";
 import { shellQuote } from "./computer-support.js";
 import type {
   CommandResult,
@@ -49,11 +51,17 @@ export interface InstaboxRunOptions {
   onStdout?: (data: string) => unknown;
 }
 
+export interface InstaboxSpec {
+  vcpus: number;
+  memMiB: number;
+}
+
 /** The part of an instabox sandbox the adapter uses, shaped like the SDK's `Sandbox`. */
 export interface InstaboxMachine {
   readonly sandboxId: string;
-  getInfo(): Promise<{ state: string }>;
+  getInfo(): Promise<{ state: string; machine: { spec: InstaboxSpec } }>;
   pause(): Promise<void>;
+  resize(spec: InstaboxSpec): Promise<void>;
   commands: {
     run(command: string, options: InstaboxRunOptions): Promise<InstaboxCommandResult | InstaboxJob>;
   };
@@ -66,7 +74,11 @@ export interface InstaboxMachine {
 
 /** The instabox SDK calls the adapter makes; tests pass an in-memory stand-in. */
 export interface InstaboxApi {
-  create(template: string, metadata: Record<string, string>): Promise<InstaboxMachine>;
+  create(
+    template: string,
+    metadata: Record<string, string>,
+    spec?: InstaboxSpec,
+  ): Promise<InstaboxMachine>;
   connect(id: string, resume: boolean): Promise<InstaboxMachine>;
   kill(id: string): Promise<boolean>;
 }
@@ -76,7 +88,8 @@ export async function nativeInstaboxApi(apiKey: string): Promise<InstaboxApi> {
   const { Sandbox } = await import("@insforge/instabox-sdk");
   return {
     // Without the vault, the account's own secrets never reach a bot's computer.
-    create: (template, metadata) => Sandbox.create(template, { apiKey, metadata, vault: false }),
+    create: (template, metadata, spec) =>
+      Sandbox.create(template, { apiKey, metadata, vault: false, ...spec }),
     connect: (id, resume) => Sandbox.connect(id, { apiKey, resume }),
     kill: (id) => Sandbox.kill(id, { apiKey }),
   };
@@ -139,10 +152,12 @@ export function instaboxSdk(
   };
   const pause = (machine: InstaboxMachine) => () => safetyPause(machine);
   return {
-    create: async (template, options) => {
+    create: async (template, options, size) => {
       let machine: InstaboxMachine;
       try {
-        machine = await (await api()).create(template, options.metadata);
+        // Standard is instabox's default size, which every plan offers.
+        const spec = size && size !== "standard" ? specOf(size) : undefined;
+        machine = await (await api()).create(template, options.metadata, spec);
       } catch (error) {
         throw translate(error);
       }
@@ -152,6 +167,27 @@ export function instaboxSdk(
         // Nothing has the new computer's reference yet, so nothing else would delete it.
         await (await api()).kill(machine.sandboxId).catch(() => false);
         throw error;
+      }
+    },
+    resize: async (id, size) => {
+      const machine = await reach(id, false);
+      let info: Awaited<ReturnType<InstaboxMachine["getInfo"]>>;
+      try {
+        info = await machine.getInfo();
+      } catch (error) {
+        throw translate(error, id);
+      }
+      const want = specOf(size);
+      const have = info.machine.spec;
+      if (info.state === "running" || (have.vcpus === want.vcpus && have.memMiB === want.memMiB))
+        return;
+      try {
+        await machine.resize(want);
+      } catch (error) {
+        // instabox starts a computer whose resize operation failed again at its old size.
+        if (isFailedOperation(error))
+          throw new SandboxSizeUnavailableError("not_offered", { cause: error });
+        throw translate(error, id);
       }
     },
     connect: async (id) => {
@@ -406,13 +442,14 @@ async function runJob(
   }
 }
 
-/** Retries the kill, then pauses the computer. Only a delivered signal counts as stopped. */
+/** Retries a kill that fails, then pauses the computer. */
 async function confirmJobStopped(job: InstaboxJob, pause: () => Promise<void>): Promise<void> {
   let cause: unknown;
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      if (await job.kill()) return;
-      cause = new Error("instabox job kill was not confirmed");
+      // false: every process had already exited, so the job is stopped either way.
+      await job.kill();
+      return;
     } catch (failure) {
       cause = failure;
     }
@@ -465,9 +502,25 @@ function translate(error: unknown, id?: string): unknown {
   if (!(error instanceof Error)) return error;
   const status = (error as { status?: unknown }).status;
   if (status === 429) return new SandboxRateLimitError({ cause: error });
+  if (errorCode(error) === "spec_not_allowed")
+    return new SandboxSizeUnavailableError("not_offered", { cause: error });
   if (id && status === 404 && !isInsideComputerNotFound(error))
     return sandboxNotFoundError(`instabox sandbox ${id} not found`, { cause: error });
   return error;
+}
+
+/** The SDK's error for an operation that ran and failed: no HTTP status, the operation named. */
+function isFailedOperation(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const { status, operationId } = error as { status?: unknown; operationId?: unknown };
+  return (
+    status === 0 && typeof operationId === "string" && errorCode(error) !== "operation_timeout"
+  );
+}
+
+function specOf(size: ComputerSize): InstaboxSpec {
+  const { vcpus, memoryGb } = COMPUTER_SIZE_SPECS[size];
+  return { vcpus, memMiB: memoryGb * 1024 };
 }
 
 function isInsideComputerNotFound(error: Error): boolean {

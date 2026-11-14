@@ -72,7 +72,7 @@ const creditStatus: BillingStatus = {
   balanceUsd: 12.5,
 };
 
-test("account menu and Usage show allowances and credits only when present", async ({
+test("account menu shows the usage hint and Usage shows allowances and credits only when present", async ({
   page,
 }, testInfo) => {
   await page.route("**/rpc/usage/limits", (route) => route.fulfill({ json: { json: plans } }));
@@ -85,13 +85,9 @@ test("account menu and Usage show allowances and credits only when present", asy
   const usage = page.getByRole("button", { name: /^Usage/ });
   // ChatGPT is nearly out for this session, but Claude still has room.
   await expect(usage).toContainText("64% used");
-  await usage.hover();
-  const details = page.getByTestId("usage-menu");
-  await expect(details.getByTestId("plan-limits")).toHaveCount(2);
-  await expect(details.getByTestId("credit-balance")).toHaveCount(0);
   await captureScreenshot(page, testInfo, "usage-limits-account-menu");
 
-  await details.getByRole("button", { name: "View usage" }).click();
+  await usage.click();
   const settings = page.getByTestId("user-settings");
   await expect(settings).toHaveAttribute("data-settings-section", "usage");
   const cards = settings.getByTestId("plan-limits");

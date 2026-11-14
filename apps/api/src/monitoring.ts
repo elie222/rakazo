@@ -30,7 +30,7 @@ export function parseDsn(dsn: string): DsnTarget | undefined {
   } catch {
     return undefined;
   }
-  if (url.protocol !== "https:" && url.protocol !== "http:") return undefined;
+  if (url.protocol !== "https:") return undefined;
   const segments = url.pathname.split("/").filter(Boolean);
   const projectId = segments.pop();
   if (!url.username || !projectId || !/^[\w-]+$/.test(projectId)) return undefined;

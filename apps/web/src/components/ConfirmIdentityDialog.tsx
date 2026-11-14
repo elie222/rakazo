@@ -1,6 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { AccountSecurity } from "@rakazo/contracts";
-import { runWithIdentityConfirmation } from "@rakazo/contracts";
+import { identityConfirmationProviders, runWithIdentityConfirmation } from "@rakazo/contracts";
 import {
   Button,
   Dialog,
@@ -54,7 +54,11 @@ export function ConfirmIdentityDialog({
       .then((value) => {
         if (!active) return;
         setSecurity(value);
-        if (!value.hasPassword && !value.emailDeletion && !(value.sso && value.ssoLinked))
+        if (
+          !value.hasPassword &&
+          !value.emailDeletion &&
+          !identityConfirmationProviders(value).length
+        )
           setError(t`Could not continue`);
       })
       .catch(() => {
@@ -115,8 +119,9 @@ export function ConfirmIdentityDialog({
             </div>
           ) : security ? (
             <>
-              {security.sso && security.ssoLinked ? (
+              {identityConfirmationProviders(security).map((provider) => (
                 <Button
+                  key={provider.id}
                   type="button"
                   variant="outline"
                   className="w-full"
@@ -127,7 +132,7 @@ export function ConfirmIdentityDialog({
                         (disableRedirect, callbackURL) =>
                           authClient.signIn.social({
                             disableRedirect,
-                            provider: "oidc",
+                            provider: provider.id,
                             additionalData: { reauthenticate: true },
                             callbackURL: callbackURL(window.location.href),
                             errorCallbackURL: callbackURL(window.location.href),
@@ -141,7 +146,7 @@ export function ConfirmIdentityDialog({
                 >
                   <Trans>Sign in again</Trans>
                 </Button>
-              ) : null}
+              ))}
               {security.emailDeletion && sent ? (
                 <div>
                   <Label htmlFor="confirm-identity-code">

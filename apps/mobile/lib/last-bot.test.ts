@@ -15,6 +15,8 @@ import {
 } from "./session";
 import { continueWithSso } from "./sso";
 
+vi.mock("react-native", () => ({ Platform: { OS: "ios" } }));
+
 const { saved, selectedSpace } = vi.hoisted(() => ({
   saved: new Map<string, string>(),
   selectedSpace: { id: null as string | null },

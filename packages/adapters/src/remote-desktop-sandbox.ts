@@ -14,6 +14,7 @@ import type {
   ScreenSession,
   TerminalRequest,
 } from "@rakazo/adapter-kit";
+import type { ComputerSize } from "@rakazo/contracts";
 import { boundedSandboxCommandTimeoutMs } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import { sandboxIdleMs } from "./computer-idle.js";
@@ -79,10 +80,17 @@ export interface RemoteDesktop {
 }
 
 export interface RemoteDesktopSdk {
+  /** `size` is the plan's size for a new computer; an SDK without sizes ignores it. */
   create(
     template: string,
     options: ReturnType<typeof remoteDesktopCreateOptions>,
+    size?: ComputerSize,
   ): Promise<RemoteDesktop>;
+  /**
+   * Moves a stopped or paused computer to `size` before it starts; a running one keeps its size.
+   * Throws `SandboxSizeUnavailableError` when the computer cannot start at that size.
+   */
+  resize?(id: string, size: ComputerSize, options: { apiKey: string }): Promise<void>;
   connect(id: string, options: { apiKey: string; timeoutMs: number }): Promise<RemoteDesktop>;
   connectRunning?(
     id: string,
@@ -275,11 +283,17 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
       homePath: string;
       providerRef?: string;
       providerKind?: ComputerRef["kind"];
+      size?: ComputerSize;
     },
     _context: AdapterContext,
   ): Promise<ComputerRef> {
     if (request.providerRef && request.providerKind === this.config.id) {
       try {
+        if (request.size && this.config.sdk.resize) {
+          await this.config.sdk.resize(request.providerRef, request.size, {
+            apiKey: this.config.apiKey,
+          });
+        }
         const desktop = await this.box(
           {
             id: request.providerRef,
@@ -304,6 +318,7 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
     }
     const desktop = await this.createDesktop(
       remoteDesktopCreateOptions(request.botId, this.config.apiKey),
+      request.size,
     );
     this.boxes.set(desktop.sandboxId, desktop);
     this.lastTouchedAt.set(desktop.sandboxId, Date.now());
@@ -525,9 +540,14 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
   /** Prefer the right-sized template; an account that has not built it keeps the stock one. */
   private async createDesktop(
     options: ReturnType<typeof remoteDesktopCreateOptions>,
+    size: ComputerSize | undefined,
   ): Promise<RemoteDesktop> {
+    const create = (template: string) =>
+      size
+        ? this.config.sdk.create(template, options, size)
+        : this.config.sdk.create(template, options);
     try {
-      return await this.config.sdk.create(this.config.template, options);
+      return await create(this.config.template);
     } catch (error) {
       if (!this.config.fallbackTemplate || !isTemplateMissingError(error)) throw error;
       getLogger().warn(
@@ -536,7 +556,7 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
           template: this.config.template,
         },
       );
-      return this.config.sdk.create(this.config.fallbackTemplate, options);
+      return create(this.config.fallbackTemplate);
     }
   }
 

@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { Pool } from "pg";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import { PrismaClient } from "./client.js";
 import { contentEncryptionOf, withContentEncryption } from "./content-encryption.js";
 import type { SpaceKeyRecord, SpaceKeyStore } from "./content-keys.js";
@@ -70,6 +70,26 @@ describe("withContentEncryption", () => {
         update: { content: "x" },
       }),
     ).rejects.toThrow(/Upserts/);
+  });
+
+  it("forgets a deleted Space's keys, its own vault's included", async () => {
+    const forget = vi.spyOn(ring, "forget");
+    try {
+      await prisma.space.delete({ where: { id: "space-gone" } }).catch(() => undefined);
+      expect(forget.mock.calls).toEqual([["space-gone"], ["vault:space-gone"]]);
+    } finally {
+      forget.mockRestore();
+    }
+  });
+
+  it("forgets a deleted member's account vault key", async () => {
+    const forget = vi.spyOn(ring, "forget");
+    try {
+      await prisma.user.delete({ where: { id: "user-gone" } }).catch(() => undefined);
+      expect(forget.mock.calls).toEqual([["user:user-gone"]]);
+    } finally {
+      forget.mockRestore();
+    }
   });
 
   it("requires creates to name their owner", async () => {

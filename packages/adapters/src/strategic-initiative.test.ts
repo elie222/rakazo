@@ -20,6 +20,8 @@ function publisher() {
   const enqueue = vi.fn(async () => undefined);
   const jobs: JobPublisher = {
     enqueue,
+    enqueueIn: async () => undefined,
+    cancelIn: async () => undefined,
     cancel: async () => undefined,
     close: async () => undefined,
   };

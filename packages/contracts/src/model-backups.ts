@@ -49,7 +49,7 @@ export function connectionDisplayName(
     defaultNames.includes(label)
   )
     return provider;
-  if (label.toLowerCase().startsWith(providerName.toLowerCase())) return label;
+  if (label.toLowerCase().startsWith(provider.toLowerCase())) return label;
   return `${provider} (${label})`;
 }
 

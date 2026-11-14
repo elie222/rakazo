@@ -196,6 +196,14 @@ export interface Queryable {
 }
 
 const COLUMNS = `id, "spaceId", version, "masterKeyId", "wrappedKey"`;
+
+/** A vault key was not created because its member or Space was deleted, with all it held. */
+export class VaultKeyOwnerGoneError extends Error {
+  constructor() {
+    super("The member or Space that owns this vault key was deleted");
+    this.name = "VaultKeyOwnerGoneError";
+  }
+}
 const ROW_CONTEXT: Record<SpaceSource, string> = {
   threads: `SELECT "spaceId", "userId" AS owner FROM threads WHERE id = $1`,
   events: `SELECT "spaceId", "threadId" AS owner FROM events WHERE id = $1`,
@@ -230,17 +238,33 @@ export class PgSpaceKeyStore implements SpaceKeyStore {
   }
 
   async insert(record: SpaceKeyRecord) {
+    const values = [
+      record.id,
+      record.spaceId,
+      record.version,
+      record.masterKeyId,
+      record.wrappedKey,
+    ];
+    // A vault key is created only while its member or Space exists. The statement locks that row
+    // as a foreign key would, so a deletion either waits and then shreds the new key, or commits
+    // first and leaves nothing to insert.
+    const [, kind, owner] = /^(user|vault):(.+)$/.exec(record.spaceId) ?? [];
     const { rows } = await this.db.query<SpaceKeyRecord>(
-      `INSERT INTO space_keys (${COLUMNS}) VALUES ($1, $2, $3, $4, $5)
-       ON CONFLICT ("spaceId", version) DO NOTHING RETURNING ${COLUMNS}`,
-      [record.id, record.spaceId, record.version, record.masterKeyId, record.wrappedKey],
+      owner
+        ? `WITH owner AS (SELECT 1 FROM ${kind === "user" ? `"user"` : "spaces"} WHERE id = $6 FOR KEY SHARE)
+           INSERT INTO space_keys (${COLUMNS}) SELECT $1::text, $2::text, $3::int, $4::text, $5::text
+           FROM owner ON CONFLICT ("spaceId", version) DO NOTHING RETURNING ${COLUMNS}`
+        : `INSERT INTO space_keys (${COLUMNS}) VALUES ($1, $2, $3, $4, $5)
+           ON CONFLICT ("spaceId", version) DO NOTHING RETURNING ${COLUMNS}`,
+      owner ? [...values, owner] : values,
     );
     if (rows[0]) return rows[0];
     const existing = (await this.forSpace(record.spaceId)).find(
       (row) => row.version === record.version,
     );
-    if (!existing) throw new Error("Space key insert lost a race to a deleted key");
-    return existing;
+    if (existing) return existing;
+    if (owner) throw new VaultKeyOwnerGoneError();
+    throw new Error("Space key insert lost a race to a deleted key");
   }
 
   // Which Space owns a row decides its key, not who may read it: the caller's own
@@ -357,23 +381,28 @@ export class ContentKeyRing {
     });
   }
 
-  /** The key new content is encrypted with, created on first use. */
-  async current(spaceId: string): Promise<DataKey> {
+  /**
+   * The key new content is encrypted with, created on first use. A command's `signal` keeps a
+   * creation it gave up on, as the key manager held its call open past an interruption, from
+   * storing a key afterwards.
+   */
+  async current(spaceId: string, signal?: AbortSignal): Promise<DataKey> {
     const existing = (await this.all(spaceId)).at(-1);
-    return existing ?? this.create(spaceId, 1);
+    return existing ?? this.create(spaceId, 1, signal);
   }
 
   /** Adds a new version that becomes current. Older versions keep decrypting. */
-  async rotate(spaceId: string): Promise<DataKey> {
+  async rotate(spaceId: string, signal?: AbortSignal): Promise<DataKey> {
     this.versions.deleteWhere((_, key) => key === spaceId);
     const latest = (await this.all(spaceId)).at(-1);
-    return this.create(spaceId, (latest?.version ?? 0) + 1);
+    return this.create(spaceId, (latest?.version ?? 0) + 1, signal);
   }
 
-  private create(spaceId: string, version: number): Promise<DataKey> {
+  private create(spaceId: string, version: number, signal?: AbortSignal): Promise<DataKey> {
     return this.once(`create:${spaceId}:${version}`, async () => {
       const dataKey = randomBytes(32);
       const wrapped = await this.provider.wrap(dataKey, { spaceId, version });
+      signal?.throwIfAborted();
       const stored = await this.store.insert({ id: createRowId(), spaceId, version, ...wrapped });
       this.versions.deleteWhere((_, key) => key === spaceId);
       const key = await this.unwrap(stored);

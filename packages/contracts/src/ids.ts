@@ -58,6 +58,7 @@ export const SandboxKind = z.enum([
   "railway",
   "kubernetes",
   "incus",
+  "local-vm",
   "wuying",
   "desktop",
   "fake",

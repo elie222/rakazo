@@ -65,8 +65,6 @@ describeWithDatabase("API authorization and resource isolation", () => {
       agentRuntime: "scripted",
       wakeupDriver: "memory",
       signupsEnabled: "true",
-      // Board procedures answer 404 before the session check while the board is off.
-      ticketBoardEnabled: true,
       composio: new ComposioConnector({ client: new FakeComposioClient() }),
     });
     pushTokens = new PrismaPushTokenStore(handles.prisma, encryptionKey);
@@ -260,6 +258,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["models/probeOpenAiCompatible"],
       ["models/probeCatalog"],
       ["models/rename"],
+      ["models/saveModelSettings"],
       ["models/disconnect"],
       ["spaces/list"],
       ["spaces/create", { name: "Nope" }],
@@ -294,6 +293,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["bots/archive", { botId: "missing-bot" }],
       ["bots/restore", { botId: "missing-bot" }],
       ["bots/remove", { botId: "missing-bot" }],
+      ["bots/removePreview", { botId: "missing-bot" }],
       ["bots/importCreate"],
       ["bots/importSetupState"],
       ["bots/templates"],
@@ -360,6 +360,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["computer/files", { botId: "missing-bot", path: "/" }],
       ["computer/readFile", { botId: "missing-bot", path: "MEMORY.md" }],
       ["computer/screenUrl", { botId: "missing-bot" }],
+      ["computer/preview", { botId: "missing-bot" }],
       ["computer/heartbeat", { botId: "missing-bot" }],
       ["computer/recover"],
       ["computer/reset"],
@@ -576,6 +577,8 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["vault/list"],
       ["vault/put"],
       ["vault/reveal"],
+      ["vault/activity"],
+      ["vault/import"],
       ["vault/remove"],
       ["botSecrets/list"],
       ["botSecrets/put"],
@@ -732,6 +735,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["computer/files", { botId: ownerBot.id, path: "/" }],
       ["computer/readFile", { botId: ownerBot.id, path: "PRIVATE.md" }],
       ["computer/screenUrl", { botId: ownerBot.id }],
+      ["computer/preview", { botId: ownerBot.id }],
       ["computer/heartbeat", { botId: ownerBot.id }],
       ["routines/list", { botId: ownerBot.id }],
       ["routines/create", routineInput(ownerBot.id)],
@@ -877,6 +881,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
     ).toMatchObject({ content: "owner-only-memory" });
 
     // Destructive bot removal is checked last so an authorization regression is unmistakable.
+    await expectDenied(app, intruder, "bots/removePreview", { botId: ownerBot.id });
     await expectDenied(app, intruder, "bots/remove", {
       botId: ownerBot.id,
       deleteMemories: true,

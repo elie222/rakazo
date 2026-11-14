@@ -244,3 +244,51 @@ test("run history links runs that replied and marks silent ones", async ({ page 
   await history.scrollIntoViewIfNeeded();
   await captureScreenshot(page, testInfo, "routine-run-history-states");
 });
+
+test("a webhook delivery stays out of the chat, like a scheduled run", async ({
+  page,
+}, testInfo) => {
+  const stamp = Date.now();
+  await signup(page, `routine-delivery-${stamp}@rakazo.test`, "password12", "Delivery");
+  await completeOnboarding(page);
+  const botId = activeBotId(page);
+
+  await rpc(page, "routines/create", {
+    botId,
+    name: "CRM sync",
+    prompt: "Add the new contact to the weekly list.",
+    webhookEnabled: true,
+    active: true,
+    notify: false,
+  });
+  const hook = await rpc<{ secret: string; path: string }>(page, "bots/rotateWebhookSecret", {
+    botId,
+  });
+  const delivered = await page.request.post(hook.path, {
+    headers: { authorization: `Bearer ${hook.secret}` },
+    data: {
+      event: "contact.created",
+      contact: { name: "Ada Lovelace", email: "ada@example.test", company: "Analytical" },
+    },
+  });
+  expect(delivered.ok()).toBe(true);
+  await expect
+    .poll(
+      async () =>
+        // The delivery starts its run before the webhook answers, so no active run means done.
+        (await rpc<{ run?: { status: string } | null }>(page, "threads/get", { botId })).run
+          ?.status ?? "done",
+      { timeout: 30_000 },
+    )
+    .toMatch(/^(done|failed|cancelled|waiting_input)$/);
+  await page.reload({ waitUntil: "domcontentloaded" });
+
+  // The run's own output shows; the prompt the delivery woke it with never does.
+  const transcript = page.getByTestId("transcript");
+  // The chat has loaded: its first day heading is there.
+  await expect(transcript.getByRole("heading", { level: 3 }).first()).toBeVisible({
+    timeout: 15_000,
+  });
+  await expect(transcript.getByTestId("message-user-bubble")).toHaveCount(0);
+  await captureScreenshot(page, testInfo, "routine-webhook-delivery");
+});

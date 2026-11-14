@@ -235,9 +235,6 @@ export function MemorySettingsOverlay({
               <SectionHeading id={providerSelectId} variant="heading">
                 <Trans>Provider</Trans>
               </SectionHeading>
-              <p className="mt-1 text-body-sm text-muted-foreground">
-                <Trans>Lets bots save and recall facts by meaning, alongside MEMORY.md.</Trans>
-              </p>
               {MEMORY_PROVIDER_SETTINGS.length > 1 ? (
                 <div className="mt-3">
                   <NativeSelect
@@ -258,11 +255,21 @@ export function MemorySettingsOverlay({
                 <p className="mt-3 text-body text-foreground">{registration.name}</p>
               )}
 
-              <div className="mt-4">
-                <ScopePicker value={defaultScope} disabled={busy} onChange={setDefaultScope} />
-              </div>
-
-              <registration.SettingsForm busy={busy} onConnect={connect} />
+              <p className="mt-3 text-body-sm text-muted-foreground">
+                <Trans>
+                  An external memory service for storing and recalling context across chats.
+                </Trans>
+              </p>
+              <registration.SettingsForm
+                key={registration.id}
+                busy={busy}
+                onConnect={connect}
+                advancedSettings={
+                  <div className="mt-4">
+                    <ScopePicker value={defaultScope} disabled={busy} onChange={setDefaultScope} />
+                  </div>
+                }
+              />
             </section>
           ) : (
             <p className="text-body-sm text-destructive">

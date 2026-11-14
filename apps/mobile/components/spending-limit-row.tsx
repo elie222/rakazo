@@ -1,6 +1,7 @@
 import { useLingui } from "@lingui/react/macro";
 import type { SpendingStatus } from "@rakazo/contracts";
 import { router, useFocusEffect } from "expo-router";
+import type { ReactNode } from "react";
 import { useCallback, useState } from "react";
 import { rpc } from "../lib/api";
 import { useUiLocale } from "../lib/i18n";
@@ -31,9 +32,11 @@ export function useSpendingStatus(): SpendingStatus | null {
 export function SpendingLimitRow({
   status,
   disabled = false,
+  leading,
 }: {
   status: SpendingStatus;
   disabled?: boolean;
+  leading?: ReactNode;
 }) {
   const { t } = useLingui();
   const locale = useUiLocale();
@@ -41,6 +44,7 @@ export function SpendingLimitRow({
     <SettingsRow
       chevron="right"
       disabled={disabled}
+      leading={leading}
       onPress={() => router.push("/spending-limit")}
       title={t`Spending limit`}
       value={status.limit ? spendingLimitSummary(locale, status.limit) : t`None`}

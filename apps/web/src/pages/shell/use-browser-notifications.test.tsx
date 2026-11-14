@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RpcClient } from "../../lib/rpc";
 import { useBrowserNotifications } from "./use-browser-notifications";
 
-type Frame = { type: "alert" | "heartbeat"; alert?: ChatAlert };
+type Frame = { type: "alert" | "roster" | "heartbeat"; alert?: ChatAlert };
 
 class FakeNotification {
   static permission: NotificationPermission = "granted";
@@ -78,6 +78,7 @@ const rpc = {
 const noBots: Bot[] = [];
 const bots = [{ id: "bot-b", name: "Scout", notifyOnFinish: true } as Bot];
 const groups: Array<{ id: string; snoozedUntil?: string | null }> = [{ id: "group-g" }];
+const roster = { changed: vi.fn(), lost: vi.fn() };
 
 function Harness({ botId, groupId }: { botId?: string; groupId?: string }) {
   hook = useBrowserNotifications(
@@ -90,6 +91,7 @@ function Harness({ botId, groupId }: { botId?: string; groupId?: string }) {
       openChat,
       meId: "user-1",
       groupsRef: { current: groups },
+      roster,
     },
   );
   return null;
@@ -238,6 +240,21 @@ describe("useBrowserNotifications chat alerts", () => {
     expect(streams).toHaveLength(2);
     await send({});
     expect(shown()).toHaveLength(1);
+  });
+
+  it("passes roster signals on, and says when the stream that carries them drops", async () => {
+    roster.changed.mockClear();
+    roster.lost.mockClear();
+    await open({ botId: "bot-a" });
+    streams[0]!.push({ type: "roster" });
+    streams[0]!.push({ type: "heartbeat" });
+    await flush();
+    expect(roster.changed).toHaveBeenCalledTimes(1);
+    expect(roster.lost).not.toHaveBeenCalled();
+    streams[0]!.fail(new Error("network"));
+    await flush();
+    expect(roster.lost).toHaveBeenCalledTimes(1);
+    expect(shown()).toEqual([]);
   });
 
   it("opens the chat from its own finished-run notification", async () => {
