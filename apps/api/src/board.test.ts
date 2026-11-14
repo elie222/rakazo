@@ -178,3 +178,11 @@ it("saves the account's labs once each and reports them back", async () => {
     ticketBoardEnabled: false,
   });
 });
+
+it("does not save a feature the deployment turns on as the account's choice", async () => {
+  const { client, update } = meDeps([], ["board"]);
+  await expect(client.preferences.update({ labs: ["board"] })).resolves.toMatchObject({
+    labs: ["board"],
+  });
+  expect(update).toHaveBeenCalledWith({ where: { id: actor.userId }, data: { labs: [] } });
+});
