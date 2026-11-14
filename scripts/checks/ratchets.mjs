@@ -38,8 +38,12 @@ export async function loadRules(dir = rulesDir) {
   );
 }
 
-export function trackedFiles(root = repoRoot) {
-  return execFileSync("git", ["ls-files", "-z"], {
+// A file not yet staged is checked too, so a local run sees new files. CI has none, and listing
+// them costs more than the rest of the run, so it skips that walk.
+const UNTRACKED = process.env.CI ? [] : ["--others", "--exclude-standard"];
+
+export function repoFiles(root = repoRoot) {
+  return execFileSync("git", ["ls-files", "-z", "--cached", ...UNTRACKED], {
     cwd: root,
     encoding: "utf8",
     maxBuffer: 1 << 28,
@@ -175,7 +179,7 @@ function globsToRegExp(globs) {
 
 async function main(args) {
   const rules = await loadRules();
-  const found = scan(rules, trackedFiles());
+  const found = scan(rules, repoFiles());
   if (args[0] === "--tighten") {
     for (const rule of rules) {
       if (!existsSync(rule.baselinePath)) continue;

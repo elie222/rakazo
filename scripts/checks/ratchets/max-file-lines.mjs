@@ -9,7 +9,9 @@ export const exclude = ["apps/www/src/i18n/**"];
 
 /** One hit for a file over its limit. Files over it today are frozen at 1, so they may still grow. */
 export function count(text, file) {
-  const limit = /\.(?:test|spec)\.[^/]+$/.test(file) ? TEST_LIMIT : SOURCE_LIMIT;
+  const limit = /(?:\.(?:test|spec)\.[^/]+|\/test_[^/]+\.py)$/.test(file)
+    ? TEST_LIMIT
+    : SOURCE_LIMIT;
   let lines = text.endsWith("\n") || text === "" ? 0 : 1;
   for (let at = text.indexOf("\n"); at !== -1; at = text.indexOf("\n", at + 1)) lines += 1;
   return lines > limit ? [{ line: limit + 1, text: `${lines} lines, limit ${limit}` }] : [];

@@ -10,12 +10,12 @@ import {
   report,
   scan,
   tighten,
-  trackedFiles,
+  repoFiles,
   violations,
 } from "./ratchets.mjs";
 
 const rules = await loadRules();
-const found = scan(rules, trackedFiles());
+const found = scan(rules, repoFiles());
 
 for (const rule of rules) {
   test(`${rule.name}: no file is above its baseline`, () => {
