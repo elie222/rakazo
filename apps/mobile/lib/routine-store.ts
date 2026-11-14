@@ -2,14 +2,13 @@ import type { Routine, RpcInput } from "@rakazo/contracts";
 import { fetchFresh, writeSaved } from "@rakazo/core/query";
 import type { QueryFunction } from "@tanstack/react-query";
 import { hashKey, useQuery } from "@tanstack/react-query";
-import { useFocusEffect } from "expo-router";
+import { useFocusEffect, useIsFocused } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
 import { captureApiRequestContext, rpc } from "./api";
 import { queryClient, rpcQuery } from "./query";
 import { createQueuedSave } from "./queued-save";
+import { useSpaceChanges } from "./roster-signals";
 
-/** A shown list asks again this often, so changes made elsewhere appear. */
-export const ROUTINES_POLL_MS = 15_000;
 /** A failed list read is tried once more after this long before it counts as failed. */
 export const ROUTINES_RETRY_MS = 1_000;
 
@@ -191,7 +190,7 @@ export async function removeBotRoutine(botId: string, routineId: string): Promis
 
 /**
  * The bot's routines, shared by every screen that shows them. Each time a screen comes into
- * view it shows what is already known and reads again, then keeps reading while it stays.
+ * view it shows what is already known and reads again, then again whenever routines change.
  */
 export function useBotRoutines(botId: string) {
   const [shownSince] = useState(Date.now);
@@ -201,12 +200,10 @@ export function useBotRoutines(botId: string) {
   );
   useFocusEffect(
     useCallback(() => {
-      if (!botId) return;
-      void loadBotRoutines(botId);
-      const timer = setInterval(() => void loadBotRoutines(botId), ROUTINES_POLL_MS);
-      return () => clearInterval(timer);
+      if (botId) void loadBotRoutines(botId);
     }, [botId]),
   );
+  useSpaceChanges("routines", () => loadBotRoutines(botId), useIsFocused() && Boolean(botId));
   const failedSinceShown = errorUpdatedAt >= shownSince && errorUpdatedAt > dataUpdatedAt;
   // A delay seen before a failed read may already have cleared.
   const routines = useMemo(

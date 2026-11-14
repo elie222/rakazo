@@ -576,6 +576,7 @@ export async function createScheduleFromTool(
   } catch {
     // Match routines.create: the reminder is live even if the thread signal fails.
   }
+  await deps.events.publishSpaceChange?.(input.spaceId, "routines");
 
   return {
     ok: true as const,
@@ -736,6 +737,7 @@ async function createWatchFromTool(
   } catch {
     // The watch is live even if the thread signal fails.
   }
+  await deps.events.publishSpaceChange?.(input.spaceId, "routines");
   return {
     ok: true as const,
     routineId: row.id,
@@ -982,6 +984,7 @@ export async function updateScheduleFromTool(
   } catch {
     // The change is saved even if the thread signal fails.
   }
+  await deps.events.publishSpaceChange?.(input.spaceId, "routines");
 
   return {
     ok: true as const,
@@ -1036,6 +1039,7 @@ export async function cancelScheduleFromTool(
   const { count } = await deps.prisma.routine.deleteMany({ where: { ...scope, id: existing.id } });
   if (count === 0) return { error: "Schedule not found." };
   await deps.jobs.cancel(routineJobKey(existing.id));
+  await deps.events.publishSpaceChange?.(input.spaceId, "routines");
   return { ok: true as const, routineId: existing.id, name: existing.name };
 }
 

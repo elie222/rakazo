@@ -357,6 +357,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
 
       const claimed = await claimRun(deps, run, workerId);
       if (!claimed) return;
+      await deps.events.publishSpaceChange?.(run.spaceId, "runs");
       const { fence, current } = claimed;
       const leaseTarget = await deps.prisma.bot.findUniqueOrThrow({
         where: { id: run.botId },

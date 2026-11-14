@@ -110,6 +110,11 @@ export async function signupThroughForm(
   await page.getByRole("button", { name: "Create account" }).click();
 }
 
+/** Brings the window back into view, which reads live lists again as returning to the tab does. */
+export async function refocus(page: Page) {
+  await page.evaluate(() => window.dispatchEvent(new Event("visibilitychange")));
+}
+
 /** Opens Integrations' add menu and picks one of its custom sources. */
 export async function openIntegrationsAdd(page: Page, item: string) {
   const dialog = page.getByRole("dialog", { name: "Integrations", exact: true });

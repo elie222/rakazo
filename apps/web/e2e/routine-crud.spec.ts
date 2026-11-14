@@ -6,6 +6,7 @@ import {
   captureScreenshot,
   completeOnboarding,
   openBotPanelTab,
+  refocus,
   rpc,
   signup,
 } from "./helpers";
@@ -48,10 +49,12 @@ test("a delayed schedule is visible only while the routine is active", async ({
   const name = page.locator("label:has-text('Name') input");
   await name.fill("Unsaved report name");
   scheduleDelayed = false;
-  await expect(delay).toHaveCount(0, { timeout: 35_000 });
+  await refocus(page);
+  await expect(delay).toHaveCount(0);
   await expect(name).toHaveValue("Unsaved report name");
   scheduleDelayed = true;
-  await expect(delay).toBeVisible({ timeout: 35_000 });
+  await refocus(page);
+  await expect(delay).toBeVisible();
   await expect(name).toHaveValue("Unsaved report name");
   await page.getByRole("switch", { name: "Active", exact: true }).click();
   await expect(delay).toHaveCount(0);

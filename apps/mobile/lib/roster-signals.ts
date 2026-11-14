@@ -1,3 +1,4 @@
+import type { SpaceChangeKind } from "@rakazo/contracts";
 import { abortableDelay, isRetryableError, reconnectDelayMs, retryDelayMs } from "@rakazo/core";
 import { useEffect, useRef } from "react";
 import { subscribeSpaceSelection } from "./api";
@@ -8,6 +9,7 @@ import { subscribeSessionGeneration } from "./session";
 
 // One stream for the whole app, open while any screen holds it.
 const rosterListeners = new Set<() => void>();
+const spaceChangeListeners = new Set<(kind: SpaceChangeKind) => void>();
 let holders = 0;
 let close: (() => void) | undefined;
 
@@ -52,8 +54,10 @@ async function follow(signal: AbortSignal) {
           for (const listener of rosterListeners) listener();
         },
         connection.signal,
-        () => {
-          if (!connection.signal.aborted) computerUpdates.signalled();
+        (kind) => {
+          if (connection.signal.aborted) return;
+          if (kind === "computerUpdates") computerUpdates.signalled();
+          else for (const listener of spaceChangeListeners) listener(kind);
         },
       );
     } catch (error) {
@@ -116,5 +120,36 @@ export function useRosterSignals(read: () => unknown, enabled: boolean): void {
     return () => {
       rosterListeners.delete(listener);
     };
+  }, [enabled, foreground]);
+}
+
+/**
+ * Runs `onChange` while enabled whenever what `kind` covers may have changed: on each signal,
+ * including the one every (re)connect sends, and when the app returns to the foreground.
+ */
+export function useSpaceChanges(
+  kind: Exclude<SpaceChangeKind, "computerUpdates">,
+  onChange: () => unknown,
+  enabled: boolean,
+): void {
+  useLiveStream(enabled);
+  const foreground = useAppForeground();
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+  useEffect(() => {
+    if (!enabled) return;
+    const listener = (changed: SpaceChangeKind) => {
+      if (changed === kind) void onChangeRef.current();
+    };
+    spaceChangeListeners.add(listener);
+    return () => {
+      spaceChangeListeners.delete(listener);
+    };
+  }, [kind, enabled]);
+  const wasForeground = useRef(foreground);
+  useEffect(() => {
+    // A server that sends no signals for this kind still gets read when the app comes back.
+    if (enabled && foreground && !wasForeground.current) void onChangeRef.current();
+    wasForeground.current = foreground;
   }, [enabled, foreground]);
 }

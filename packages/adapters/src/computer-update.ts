@@ -503,7 +503,8 @@ export async function performComputerUpdate(deps: Deps, updateId: string) {
         }),
   );
   if (claimed.count !== 1) return; // Never replay a destructive operation on job redelivery.
-  const announce = () => deps.events.publishComputerUpdateChange?.(target.computer.spaceId);
+  const announce = () =>
+    deps.events.publishSpaceChange?.(target.computer.spaceId, "computerUpdates");
   await announce();
   const update = await deps.prisma.computerUpdate.findUniqueOrThrow({
     where: { id: updateId },
@@ -601,7 +602,7 @@ async function finishUpdate(
 
 export async function reconcileComputerUpdates(
   deps: Pick<Deps, "prisma" | "jobs"> & {
-    events?: Pick<ThreadEvents, "publishComputerUpdateChange">;
+    events?: Pick<ThreadEvents, "publishSpaceChange">;
   },
 ) {
   const select = (where: Prisma.ComputerUpdateWhereInput) =>
@@ -630,7 +631,8 @@ export async function reconcileComputerUpdates(
     await reconcile(deps, updates, changedSpaces);
   } finally {
     // A later failure must not cost the changes already committed their signal.
-    for (const spaceId of changedSpaces) await deps.events?.publishComputerUpdateChange?.(spaceId);
+    for (const spaceId of changedSpaces)
+      await deps.events?.publishSpaceChange?.(spaceId, "computerUpdates");
   }
 }
 

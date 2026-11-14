@@ -16,7 +16,7 @@ import { onConversationCleared } from "./conversation-cleared";
 import type * as NativeControls from "./native-controls";
 import { queryClient } from "./query";
 import type * as RoutineHelpers from "./routine";
-import { ROUTINES_POLL_MS, ROUTINES_RETRY_MS } from "./routine-store";
+import { ROUTINES_RETRY_MS } from "./routine-store";
 
 vi.mock("./haptics", () => ({
   hapticImpact: vi.fn(),
@@ -57,6 +57,30 @@ const {
   },
 }));
 
+const spaceChangeListeners = vi.hoisted(() => new Map<string, Set<() => unknown>>());
+vi.mock("./roster-signals", () => ({
+  useSpaceChanges: (kind: string, onChange: () => unknown, enabled: boolean) => {
+    useEffect(() => {
+      if (!enabled) return;
+      const listeners = spaceChangeListeners.get(kind) ?? new Set();
+      spaceChangeListeners.set(kind, listeners);
+      listeners.add(onChange);
+      return () => void listeners.delete(onChange);
+    }, [kind, onChange, enabled]);
+  },
+}));
+/** Signals a routine change, waiting for the reads it starts unless one is held open. */
+const routinesChanged = () =>
+  act(async () => {
+    const reads = [...(spaceChangeListeners.get("routines") ?? [])].map((listener) => listener());
+    await Promise.race([
+      Promise.allSettled(reads),
+      vi.isFakeTimers()
+        ? vi.advanceTimersByTimeAsync(0)
+        : new Promise((resolve) => setTimeout(resolve, 0)),
+    ]);
+  });
+
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("./api-server", () => ({}));
 vi.mock("./api-auth", () => ({}));
@@ -94,6 +118,7 @@ vi.mock("expo-router", () => ({
     },
   }),
   useLocalSearchParams: () => params.current,
+  useIsFocused: () => true,
   useFocusEffect: (effect: () => (() => void) | undefined) => {
     useEffect(effect, [effect]);
     // Lets a test bring the screen back into view.
@@ -484,20 +509,22 @@ describe("bot profile", () => {
     expect(routinesRow().textContent).toBe("Routines1 on");
   });
 
-  it("reads again every 15 seconds while shown, and stops when it closes", async () => {
+  it("reads again when routines change while shown, never on a timer", async () => {
     vi.useFakeTimers();
     let rows = [routine("r1", "Morning digest")];
     profileRpc(async () => rows);
     await render(createElement(BotProfile));
     expect(listCalls()).toHaveLength(1);
+    await act(async () => vi.advanceTimersByTimeAsync(60_000));
+    expect(listCalls()).toHaveLength(1);
 
     rows = [...rows, routine("r2", "Weekly report", { createdAt: "2026-02-01T00:00:00.000Z" })];
-    await act(async () => vi.advanceTimersByTimeAsync(ROUTINES_POLL_MS));
+    await routinesChanged();
     expect(listCalls()).toHaveLength(2);
     expect(routinesRow().textContent).toBe("Routines2 on");
 
     act(() => root.unmount());
-    await act(async () => vi.advanceTimersByTimeAsync(ROUTINES_POLL_MS * 2));
+    await routinesChanged();
     expect(listCalls()).toHaveLength(2);
     root = createRoot(container);
   });
@@ -810,7 +837,8 @@ describe("routines screen", () => {
     });
     await render(createElement(RoutinesScreen));
     fail = true;
-    await act(async () => vi.advanceTimersByTimeAsync(ROUTINES_POLL_MS + ROUTINES_RETRY_MS));
+    await routinesChanged();
+    await act(async () => vi.advanceTimersByTimeAsync(ROUTINES_RETRY_MS));
     expect(listCalls()).toHaveLength(3);
     expect(rowFor("Morning digest, On")).toBeTruthy();
     expect(container.textContent).not.toContain("Could not load routines");
@@ -965,14 +993,14 @@ describe("routines screen", () => {
     await render(createElement(RoutinesScreen));
     await act(async () => reads[0]!([digest()]));
 
-    await act(async () => vi.advanceTimersByTimeAsync(ROUTINES_POLL_MS));
+    await routinesChanged();
     await act(async () => switchFor("Morning digest")!.click());
     await act(async () => save({ ...digest(), active: false }));
     await act(async () => reads[1]!([digest()]));
     expect(switchFor("Morning digest")!.checked).toBe(false);
 
     // The next read that started after the save shows the server again.
-    await act(async () => vi.advanceTimersByTimeAsync(ROUTINES_POLL_MS));
+    await routinesChanged();
     await act(async () => reads[2]!([{ ...digest(), active: true }]));
     expect(switchFor("Morning digest")!.checked).toBe(true);
   });
