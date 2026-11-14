@@ -43,6 +43,8 @@ export class Speaker {
   private objectUrl: string | null = null;
   private settlePlayback: ((end: PlaybackEnd) => void) | null = null;
   private request: AbortController | null = null;
+  private served: string | null = null;
+  private servedToken: number | null = null;
 
   subscribe(fn: (s: SpeechSnapshot) => void): () => void {
     this.watchers.add(fn);
@@ -54,6 +56,14 @@ export class Speaker {
 
   get state(): SpeechSnapshot {
     return this.snapshot;
+  }
+
+  /**
+   * The voice the server actually used for this request, set only when it was not the one asked
+   * for. Scoped to the current request so a superseded clip cannot report another one's voice.
+   */
+  get substitutedVoice(): string | null {
+    return this.servedToken === this.token ? this.served : null;
   }
 
   private set(next: SpeechSnapshot) {
@@ -99,7 +109,10 @@ export class Speaker {
     }
   }
 
-  /** Resolves with this request's failure text; stopping or superseding it resolves with none. */
+  /**
+   * Resolves with this request's failure text, or an empty string when it was stopped or
+   * superseded before finishing, so a caller can tell cancellation from completion.
+   */
   async speak(text: string, opts: SpeakOptions = {}): Promise<string | undefined> {
     this.stop();
     const mine = this.token;
@@ -108,6 +121,8 @@ export class Speaker {
     const live = () => this.token === mine && !controller.signal.aborted;
     const spaceId = opts.spaceId ?? selectedSpaceId();
 
+    this.served = null;
+    this.servedToken = mine;
     this.set({ status: "preparing", botId: opts.botId, messageId: opts.messageId });
     let utterances: string[];
     try {
@@ -116,12 +131,12 @@ export class Speaker {
         controller.signal,
       );
     } catch (error) {
-      const failure = live() ? errorText(error) : undefined;
+      const failure = live() ? errorText(error) : "";
       if (failure) this.set({ ...IDLE, error: failure });
       if (this.request === controller) this.request = null;
       return failure;
     }
-    if (!live()) return;
+    if (!live()) return "";
     if (!utterances.length) {
       this.set(IDLE);
       if (this.request === controller) this.request = null;
@@ -141,12 +156,12 @@ export class Speaker {
       if (!current) break;
       const rendered = await current;
       if ("error" in rendered) {
-        const failure = live() ? errorText(rendered.error) : undefined;
+        const failure = live() ? errorText(rendered.error) : "";
         if (failure) this.set({ ...IDLE, error: failure });
         if (this.request === controller) this.request = null;
         return failure;
       }
-      if (!live()) return;
+      if (!live()) return "";
       this.set({
         status: "speaking",
         botId: opts.botId,
@@ -161,6 +176,7 @@ export class Speaker {
             : undefined;
         if (live()) this.set(failure ? { ...IDLE, error: failure } : IDLE);
         if (this.request === controller) this.request = null;
+        if (!live()) return "";
         return end === "blocked" ? undefined : failure;
       }
     }
@@ -215,6 +231,10 @@ export class Speaker {
         const body = await readVoiceError(res, deadline.signal);
         throw new Error(voiceAccountErrorText(body) ?? body.error ?? "");
       }
+      // Only a request still in flight may record its voice: a superseded one would otherwise
+      // overwrite the field with a clip nobody is going to hear.
+      const served = res.headers.get("x-voice-id");
+      if (served && served !== opts.voiceId && !signal.aborted) this.served = served;
       const bytes = await readVoiceAudio(res, deadline.signal);
       return new Blob([new Uint8Array(bytes)], {
         type: res.headers.get("content-type") ?? "audio/mpeg",

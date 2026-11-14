@@ -753,6 +753,8 @@ export function mountVoiceHttpRoutes(
         headers: {
           "content-type": clip.mimeType,
           "cache-control": "no-store",
+          // Set only when the provider spoke with a voice other than the one asked for.
+          ...(clip.voiceId ? { "x-voice-id": clip.voiceId } : {}),
         },
       });
     } catch (error) {

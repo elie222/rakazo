@@ -9,6 +9,7 @@ import {
   parseCompatibleVoiceList,
   parseOpenAiCompatibleVoiceSecret,
   serializeOpenAiCompatibleVoiceSecret,
+  suggestedVoices,
 } from "./openai-compatible-voice.js";
 
 /** Fixtures save as the deployment owner, who may use local speech servers. */
@@ -170,6 +171,45 @@ describe("parseCompatibleVoiceList", () => {
   });
 });
 
+describe("suggestedVoices", () => {
+  it("reads the voices a strict server says the model takes", () => {
+    expect(
+      suggestedVoices({
+        error: {
+          message:
+            'Voice "alloy" is not supported by model "tts-qwen3-0-6b". Try using a supported voice: Vivian, Serena, Ono_Anna, Sohee, Uncle_Fu, ....',
+        },
+      }),
+    ).toEqual(["Vivian", "Serena", "Ono_Anna", "Sohee", "Uncle_Fu"]);
+  });
+
+  it("keeps the list short and drops anything that is not a voice id", () => {
+    const many = Array.from({ length: 20 }, (_, index) => `voice${index}`).join(", ");
+    expect(suggestedVoices({ detail: `valid voices: ${many}` })).toHaveLength(8);
+    expect(suggestedVoices({ detail: "Supported voices: tara, a b, tara" })).toEqual(["tara"]);
+    // Brackets a server wraps an id in are not part of it.
+    expect(suggestedVoices({ detail: "Supported voices: <tara>" })).toEqual(["tara"]);
+  });
+
+  it("keeps a dotted id whole", () => {
+    expect(suggestedVoices({ detail: "valid voices: voice.v1, Serena." })).toEqual([
+      "voice.v1",
+      "Serena",
+    ]);
+    expect(suggestedVoices({ detail: "valid voices: voice.v1." })).toEqual(["voice.v1"]);
+  });
+
+  it("does not read an explicitly unsupported list as alternatives", () => {
+    expect(suggestedVoices({ detail: "unsupported voices: evil, bad" })).toEqual([]);
+  });
+
+  it("finds nothing in a body that names no list", () => {
+    expect(suggestedVoices({ detail: 'Voice "alloy" is not supported by model "x"' })).toEqual([]);
+    expect(suggestedVoices({ detail: "supported voices are these" })).toEqual([]);
+    expect(suggestedVoices(null)).toEqual([]);
+  });
+});
+
 describe("kokoroLangCode", () => {
   it("takes the language from Kokoro voice ids only", () => {
     expect(kokoroLangCode("af_heart")).toBe("a");
@@ -327,6 +367,161 @@ describe("OpenAiCompatibleVoiceProvider", () => {
       );
     await provider(fetchMock).synthesize({ text: "Hi", voiceId: "alloy", apiKey: keyless }, ctx);
     expect(JSON.parse(String(calledInit(fetchMock).body))).not.toHaveProperty("lang_code");
+  });
+
+  it("retries without lang_code when a strict server names it as unrecognized", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            error: "Invalid request parameters",
+            details: { _errors: ["Unrecognized key(s) in object: 'lang_code'"] },
+          }),
+          { status: 400 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(new Uint8Array([1, 2, 3]), { headers: { "content-type": "audio/mpeg" } }),
+      );
+    await expect(
+      provider(fetchMock).synthesize({ text: "Hi", voiceId: "af_heart", apiKey: keyed }, ctx),
+    ).resolves.toMatchObject({ mimeType: "audio/mpeg" });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(String(calledInit(fetchMock).body))).toHaveProperty("lang_code");
+    expect(JSON.parse(String(calledInit(fetchMock, 1).body))).not.toHaveProperty("lang_code");
+  });
+
+  it("retries without lang_code when only a structured keys array names it", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ issues: [{ code: "unrecognized_keys", keys: ["lang_code"] }] }),
+          { status: 422 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(new Uint8Array([1]), { headers: { "content-type": "audio/mpeg" } }),
+      );
+    await expect(
+      provider(fetchMock).synthesize({ text: "Hi", voiceId: "af_heart", apiKey: keyed }, ctx),
+    ).resolves.toMatchObject({ mimeType: "audio/mpeg" });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(String(calledInit(fetchMock, 1).body))).not.toHaveProperty("lang_code");
+  });
+
+  it("keeps lang_code off the substitute once the server has refused it", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: "Unrecognized key(s) in object: 'lang_code'" }), {
+          status: 400,
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ error: "Voice af_heart is retired. Try a supported voice: af_bella." }),
+          { status: 400 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(new Uint8Array([1]), { headers: { "content-type": "audio/mpeg" } }),
+      );
+    await expect(
+      provider(fetchMock).synthesize({ text: "Hi", voiceId: "af_heart", apiKey: keyed }, ctx),
+    ).resolves.toMatchObject({ voiceId: "af_bella" });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(JSON.parse(String(calledInit(fetchMock, 1).body))).not.toHaveProperty("lang_code");
+    expect(JSON.parse(String(calledInit(fetchMock, 2).body))).not.toHaveProperty("lang_code");
+  });
+
+  it("retries with the voice the server suggests and reports the one it used", async () => {
+    const refusal = {
+      error: {
+        message:
+          'Voice "alloy" is not supported by model "tts-qwen3-0-6b". Try using a supported voice: Vivian, Serena.',
+      },
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(refusal), { status: 400 }))
+      .mockResolvedValueOnce(
+        new Response(new Uint8Array([1, 2, 3]), { headers: { "content-type": "audio/mpeg" } }),
+      );
+    await expect(
+      provider(fetchMock).synthesize({ text: "Hi", voiceId: "alloy", apiKey: keyless }, ctx),
+    ).resolves.toMatchObject({ mimeType: "audio/mpeg", voiceId: "Vivian" });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(String(calledInit(fetchMock, 1).body)).voice).toBe("Vivian");
+  });
+
+  it("reports the requested voice only when it was not substituted", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(new Uint8Array([1]), { headers: { "content-type": "audio/mpeg" } }),
+      );
+    await expect(
+      provider(fetchMock).synthesize({ text: "Hi", voiceId: "alloy", apiKey: keyless }, ctx),
+    ).resolves.not.toHaveProperty("voiceId");
+  });
+
+  it("names the suggested voices when the substituted voice is refused too", async () => {
+    const refusal = () =>
+      new Response(
+        JSON.stringify({
+          error: {
+            message: 'Voice "alloy" is not supported. Try using a supported voice: Vivian.',
+          },
+        }),
+        { status: 400 },
+      );
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(refusal())
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: { message: "Voice Vivian is retired." } }), {
+          status: 400,
+        }),
+      );
+    await expect(
+      provider(fetchMock).synthesize({ text: "Hi", voiceId: "alloy", apiKey: keyless }, ctx),
+    ).rejects.toThrow(/Voice Vivian is retired\. Try one of: Vivian\./);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps an array-shaped detail and the list when the substitute is refused", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            error: 'Voice "alloy" is not supported. Try using a supported voice: Vivian.',
+          }),
+          { status: 400 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ detail: [{ msg: "Voice Vivian is retired." }] }), {
+          status: 422,
+        }),
+      );
+    await expect(
+      provider(fetchMock).synthesize({ text: "Hi", voiceId: "alloy", apiKey: keyless }, ctx),
+    ).rejects.toThrow(/Voice Vivian is retired\. Try one of: Vivian\./);
+  });
+
+  it("does not retry a 400 that never mentions lang_code", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ error: 'Voice "alloy" is not supported by model' }), {
+        status: 400,
+      }),
+    );
+    await expect(
+      provider(fetchMock).synthesize({ text: "Hi", voiceId: "af_heart", apiKey: keyed }, ctx),
+    ).rejects.toThrow(/not supported/);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("surfaces the server's error detail when speaking fails", async () => {

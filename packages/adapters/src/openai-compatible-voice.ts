@@ -48,6 +48,14 @@ const MAX_SERVER_DETAIL_LENGTH = 160;
 /** A voice list is shown to the user, so it stays small: ids, short names, a few hundred. */
 const MAX_LISTED_VOICES = 500;
 const MAX_VOICE_LABEL_LENGTH = 120;
+/** Off-the-shelf voice ids are short and boring, so anything else in a hint is dropped. */
+const SUGGESTED_VOICE_ID = /^[\w.-]{1,64}$/;
+const MAX_SUGGESTED_VOICES = 8;
+const SUGGESTION_TAIL_LENGTH = 400;
+const MAX_SUGGESTION_LEAD = 20;
+/** "supported voice(s):", "try using a supported voice:", "valid voices are:". */
+const VOICE_HINT_PHRASE =
+  /\b(?:supported|valid|available|allowed)\s+voices?|\btry\s+(?:using\s+)?(?:one\s+of\s+)?(?:the\s+|a\s+)?(?:supported\s+|valid\s+)?voices?/i;
 
 /** What the encrypted voice secret holds for a self-hosted speech server. */
 export interface OpenAiCompatibleVoiceSecret {
@@ -162,11 +170,31 @@ export function openAiCompatibleVoiceServer(
   }
 }
 
+/** A detail can be a string, an array of messages or a nested object with either. */
+function errorMessage(value: unknown): string | undefined {
+  if (typeof value === "string" && value.trim() !== "") return value;
+  if (Array.isArray(value)) {
+    const parts = value.map(errorMessage).filter((part) => part !== undefined);
+    return parts.length ? parts.join("; ") : undefined;
+  }
+  if (value && typeof value === "object") {
+    const inner = value as { msg?: unknown; message?: unknown };
+    return errorMessage(inner.msg) ?? errorMessage(inner.message);
+  }
+  return undefined;
+}
+
 /**
  * Any private address is allowed, so echo only a short, single-line error from the
  * server: enough for "model not found", too little to read another service through it.
  */
-function serverError(status: number, what: string, body: unknown, apiKey?: string): Error {
+function serverError(
+  status: number,
+  what: string,
+  body: unknown,
+  apiKey?: string,
+  suggested?: string[],
+): Error {
   const detail =
     body && typeof body === "object"
       ? (body as { detail?: unknown; error?: unknown; message?: unknown })
@@ -175,15 +203,80 @@ function serverError(status: number, what: string, body: unknown, apiKey?: strin
     detail.error && typeof detail.error === "object"
       ? (detail.error as { message?: unknown }).message
       : undefined;
-  const raw = [detail.detail, detail.message, detail.error, nestedError].find(
-    (value): value is string => typeof value === "string" && value.trim() !== "",
-  );
+  const raw = [detail.detail, detail.message, detail.error, nestedError]
+    .map(errorMessage)
+    .find((value) => value !== undefined);
   const redacted = apiKey ? raw?.replaceAll(apiKey, "[redacted]") : raw;
   const short = redacted
     ?.replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]+/gu, " ")
     .trim()
     .slice(0, MAX_SERVER_DETAIL_LENGTH);
-  return voiceRequestError(status, PROVIDER_NAME, what, short ? { detail: short } : null, body);
+  // A refusal that names usable voices is worth completing, even past the detail cap, and the
+  // list is worth showing even when the refusal carried no displayable message of its own.
+  const offer = suggested?.length ? `Try one of: ${suggested.join(", ")}.` : undefined;
+  const hint = [short || undefined, offer].filter(Boolean).join(" ") || undefined;
+  return voiceRequestError(status, PROVIDER_NAME, what, hint ? { detail: hint } : null, body);
+}
+
+/**
+ * A strict server that refuses a voice usually names the ones the model takes
+ * ("Try using a supported voice: Vivian, Serena, ..."), so offer those back rather than
+ * leaving the user to guess. The phrase is matched first and the ids are read up to the
+ * first sentence break, so a body that names no list yields nothing.
+ */
+export function suggestedVoices(body: unknown): string[] {
+  let text: string;
+  try {
+    text = JSON.stringify(body) ?? "";
+  } catch {
+    return [];
+  }
+  const phrase = VOICE_HINT_PHRASE.exec(text);
+  if (!phrase) return [];
+  const end = phrase.index + phrase[0].length;
+  const tail = text.slice(end, end + SUGGESTION_TAIL_LENGTH).replaceAll("\\", "");
+  const colon = tail.indexOf(":");
+  if (colon === -1 || colon > MAX_SUGGESTION_LEAD) return [];
+  const voices: string[] = [];
+  // "voice.v1" is one id, so a period only splits when it ends a sentence. Commas,
+  // semicolons and newlines always do.
+  const listed = tail
+    .slice(colon + 1)
+    .replace(/\.(?=\s|$)/g, "\n")
+    .replace(/[;,]/g, "\n");
+  for (const part of listed.split("\n")) {
+    if (voices.length >= MAX_SUGGESTED_VOICES) break;
+    // The slice carries the closing JSON quoting, so trim to the id grammar first and drop the
+    // sentence period a last entry can end with.
+    const id = part
+      .trim()
+      .replace(/^[^\w.-]+|[^\w.-]+$/g, "")
+      .replace(/\.$/, "");
+    if (!/[a-z0-9]/i.test(id) || !SUGGESTED_VOICE_ID.test(id) || voices.includes(id)) continue;
+    voices.push(id);
+  }
+  return voices;
+}
+
+/** A strict server names the key it refuses, so that key can be dropped and retried. */
+const UNRECOGNIZED_KEY_WORD =
+  /unrecognized|unrecognised|unknown|unexpected|unsupported|not allowed|extra/i;
+
+function rejectsKey(body: unknown, key: string): boolean {
+  if (!body) return false;
+  let text: string;
+  try {
+    text = JSON.stringify(body);
+  } catch {
+    return false;
+  }
+  // The field is named either as a JSON string in a structured `keys` array or in prose, where
+  // a server may quote it with single quotes, backticks or nothing at all. The bare name has to
+  // count too, or "Unrecognized key(s) in object: 'lang_code'" only works when a keys array
+  // happens to accompany it.
+  const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const named = new RegExp(`(^|["'\\s])["'\`]?${escaped}["'\`]?($|[^\\w])`);
+  return named.test(text) && UNRECOGNIZED_KEY_WORD.test(text);
 }
 
 const KOKORO_ID = /^([abefhijpz])([fm])_([a-z]+)$/;
@@ -372,27 +465,51 @@ export class OpenAiCompatibleVoiceProvider implements VoiceProvider {
     const secret = parseOpenAiCompatibleVoiceSecret(request.apiKey);
     const signal = voiceDeadline(request.signal ?? context.signal, SPEAK_DEADLINE_MS);
     const langCode = kokoroLangCode(request.voiceId);
-    const res = await this.fetch(endpoint(secret, "audio/speech"), {
-      method: "POST",
-      headers: headers(secret, { "content-type": "application/json" }),
-      body: JSON.stringify({
-        model: secret.ttsModel,
-        voice: request.voiceId,
-        input: request.text,
-        response_format: "mp3",
-        // Kokoro servers otherwise read every voice with English pronunciation.
-        ...(langCode ? { lang_code: langCode } : {}),
-      }),
-      signal,
-    });
-    if (!res.ok) throw serverError(res.status, "speaking", await readVoiceJson(res), secret.apiKey);
-    const type = mediaType(res);
-    // mp3 was requested; servers label it audio/mpeg or audio/mp3. Anything else is not a clip.
-    if (type !== "audio/mpeg" && type !== "audio/mp3") {
-      await res.body?.cancel().catch(() => undefined);
-      throw new Error(`${PROVIDER_NAME} did not return MP3 audio.`);
+    const speak = (voice: string, lang: string | undefined) =>
+      this.fetch(endpoint(secret, "audio/speech"), {
+        method: "POST",
+        headers: headers(secret, { "content-type": "application/json" }),
+        body: JSON.stringify({
+          model: secret.ttsModel,
+          voice,
+          input: request.text,
+          response_format: "mp3",
+          // Kokoro servers otherwise read every voice with English pronunciation.
+          ...(lang ? { lang_code: lang } : {}),
+        }),
+        signal,
+      });
+    let res = await speak(request.voiceId, langCode);
+    let refusal: unknown;
+    // Set once the server has refused lang_code, so the substitute cannot add it back.
+    let langRefused = false;
+    // Some OpenAI-compatible servers reject the whole body over a key they do not know,
+    // so a rejection naming lang_code is retried once without it. Any other 400 keeps its
+    // own detail, and servers that accept the hint keep the pronunciation.
+    if (!res.ok && langCode && (res.status === 400 || res.status === 422)) {
+      refusal = await readVoiceJson(res);
+      if (rejectsKey(refusal, "lang_code")) {
+        langRefused = true;
+        res = await speak(request.voiceId, undefined);
+        refusal = undefined;
+      }
     }
-    return { bytes: await readVoiceAudio(res, signal), mimeType: "audio/mpeg" };
+    if (!res.ok) {
+      const refused = refusal ?? (await readVoiceJson(res));
+      // A strict server that refuses the voice may name the ones the model takes; trying the
+      // first keeps the request alive, and the clip reports the voice it really used.
+      const usable = suggestedVoices(refused).filter((voice) => voice !== request.voiceId);
+      const alternative =
+        usable[0] && (res.status === 400 || res.status === 422) ? usable[0] : undefined;
+      if (alternative) {
+        res = await speak(alternative, langRefused ? undefined : kokoroLangCode(alternative));
+        if (res.ok) return speechClip(res, signal, alternative);
+        // The retry's refusal is about the voice it just tried, so keep the first list.
+        throw serverError(res.status, "speaking", await readVoiceJson(res), secret.apiKey, usable);
+      }
+      throw serverError(res.status, "speaking", refused, secret.apiKey);
+    }
+    return speechClip(res, signal);
   }
 
   async transcribe(
@@ -435,6 +552,24 @@ export class OpenAiCompatibleVoiceProvider implements VoiceProvider {
     }
     return { text: raw.trim() };
   }
+}
+
+/** mp3 was requested; servers label it audio/mpeg or audio/mp3. Anything else is not a clip. */
+async function speechClip(
+  res: Response,
+  signal: AbortSignal,
+  voiceId?: string,
+): Promise<SpeechClip> {
+  const type = mediaType(res);
+  if (type !== "audio/mpeg" && type !== "audio/mp3") {
+    await res.body?.cancel().catch(() => undefined);
+    throw new Error(`${PROVIDER_NAME} did not return MP3 audio.`);
+  }
+  return {
+    bytes: await readVoiceAudio(res, signal),
+    mimeType: "audio/mpeg",
+    ...(voiceId ? { voiceId } : {}),
+  };
 }
 
 function parseJson(raw: string | null): unknown {

@@ -80,6 +80,102 @@ describe("Speaker", () => {
     expect(speaker.state).toEqual({ status: "idle" });
   });
 
+  it("records the voice the server substituted, and clears it on the next clip", async () => {
+    stubAudio((audio) => {
+      if (!(audio as unknown as { src: string }).src.startsWith("data:")) {
+        queueMicrotask(() => audio.onended?.());
+      }
+      return Promise.resolve();
+    });
+    const substituted = vi.fn().mockImplementation(
+      async () =>
+        new Response(new Blob(["audio"]), {
+          headers: { "content-type": "audio/mpeg", "x-voice-id": "Vivian" },
+        }),
+    );
+    const plain = vi.fn(
+      async () => new Response(new Blob(["audio"]), { headers: { "content-type": "audio/mpeg" } }),
+    );
+    const speaker = new Speaker();
+    vi.spyOn(
+      speaker as unknown as { prepare: () => Promise<string[]> },
+      "prepare",
+    ).mockResolvedValue(["Hello."]);
+
+    vi.stubGlobal("fetch", substituted);
+    await speaker.speak("Hello.", { voiceId: "alloy" });
+    expect(speaker.substitutedVoice).toBe("Vivian");
+
+    vi.stubGlobal("fetch", plain);
+    await speaker.speak("Hello.", { voiceId: "Vivian" });
+    expect(speaker.substitutedVoice).toBeNull();
+  });
+
+  it("does not report a substitution when the server echoes the requested voice", async () => {
+    stubAudio((audio) => {
+      if (!(audio as unknown as { src: string }).src.startsWith("data:")) {
+        queueMicrotask(() => audio.onended?.());
+      }
+      return Promise.resolve();
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(new Blob(["audio"]), {
+            headers: { "content-type": "audio/mpeg", "x-voice-id": "Vivian" },
+          }),
+      ),
+    );
+    const speaker = new Speaker();
+    vi.spyOn(
+      speaker as unknown as { prepare: () => Promise<string[]> },
+      "prepare",
+    ).mockResolvedValue(["Hello."]);
+
+    await speaker.speak("Hello.", { voiceId: "Vivian" });
+    expect(speaker.substitutedVoice).toBeNull();
+  });
+
+  it("does not let a superseded clip report a later clip's voice", async () => {
+    stubAudio((audio) => {
+      if (!(audio as unknown as { src: string }).src.startsWith("data:")) {
+        queueMicrotask(() => audio.onended?.());
+      }
+      return Promise.resolve();
+    });
+    const speaker = new Speaker();
+    vi.spyOn(
+      speaker as unknown as { prepare: () => Promise<string[]> },
+      "prepare",
+    ).mockResolvedValue(["Hello."]);
+    let releaseFirst: (() => void) | null = null;
+    const fetchMock = vi.fn(async () => {
+      if (fetchMock.mock.calls.length === 1) {
+        return new Promise<Response>((resolve) => {
+          releaseFirst = () =>
+            resolve(
+              new Response(new Blob(["audio"]), {
+                headers: { "content-type": "audio/mpeg", "x-voice-id": "Vivian" },
+              }),
+            );
+        });
+      }
+      return new Response(new Blob(["audio"]), {
+        headers: { "content-type": "audio/mpeg", "x-voice-id": "Serena" },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const first = speaker.speak("Hello.", { voiceId: "alloy" });
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    await speaker.speak("Hello.", { voiceId: "alloy" });
+    expect(speaker.substitutedVoice).toBe("Serena");
+
+    (releaseFirst as unknown as () => void)();
+    await expect(first).resolves.toBe("");
+  });
+
   it("unlocks from a tap while other speech is still preparing, but never over a playing clip", async () => {
     const played: string[] = [];
     stubAudio((audio) => {
@@ -147,7 +243,7 @@ describe("Speaker", () => {
     const pending = speaker.speak("Hello.");
     await vi.waitFor(() => expect(speaker.state.status).toBe("speaking"));
     speaker.stop();
-    await expect(pending).resolves.toBeUndefined();
+    await expect(pending).resolves.toBe("");
     expect(speaker.state).toEqual({ status: "idle" });
   });
 
@@ -159,7 +255,7 @@ describe("Speaker", () => {
     ).mockImplementation(() => new Promise(() => undefined));
     const pending = speaker.speak("Hello there.", { messageId: "m1" });
     speaker.stop();
-    await expect(pending).resolves.toBeUndefined();
+    await expect(pending).resolves.toBe("");
     expect(speaker.state.status).toBe("idle");
   });
 
@@ -177,7 +273,7 @@ describe("Speaker", () => {
     const first = speaker.speak("First.", { messageId: "m1" });
     await speaker.speak("Second.", { messageId: "m2" });
     fail(new Error("Your voice provider is out of credit."));
-    await expect(first).resolves.toBeUndefined();
+    await expect(first).resolves.toBe("");
     expect(speaker.state.error).toBeUndefined();
   });
 
