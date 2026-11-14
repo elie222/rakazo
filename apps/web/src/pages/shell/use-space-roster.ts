@@ -420,11 +420,11 @@ export function useSpaceBootstrap({
       .catch(() => {
         if (cancelled) return;
         if (!seed) setBootstrapMe(null);
-        void refreshBots(true).catch(() => {
-          rosterSignals.firstLoadFailed();
+        return refreshBots(true).catch(() => {
           if (!cancelled) setInitialLoadFailed(true);
         });
-      });
+      })
+      .finally(() => rosterSignals.firstLoadSettled());
     let refreshTimer: number | undefined;
     const refreshVisibleBots = () => {
       if (document.visibilityState !== "visible" && !callsEnabledRef.current) return;

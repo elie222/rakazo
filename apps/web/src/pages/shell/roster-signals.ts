@@ -1,24 +1,22 @@
 import type { RosterSignals } from "./use-browser-notifications";
 
-/** The page's own first load is fresh for this long, so an opening signal inside it is skipped. */
-export const OPENING_SIGNAL_GRACE_MS = 10_000;
-
-/** Re-reads the roster on each server signal, including the one each reconnect opens with. */
-export function createRosterSignals(refresh: () => void, now = Date.now) {
-  let opened = false;
-  let firstLoadFailed = false;
-  const created = now();
-  const signals: RosterSignals & { firstLoadFailed: () => void } = {
+/**
+ * Re-reads the roster on each server signal, including the one each (re)connection opens with.
+ * A signal during the page's own first load waits for it: a refresh racing that load can redirect
+ * away from a chat it is still opening, but the change it reports may postdate that load's read.
+ */
+export function createRosterSignals(refresh: () => void) {
+  let loading = true;
+  let missed = false;
+  const signals: RosterSignals & { firstLoadSettled: () => void } = {
     changed() {
-      // The stream's opening signal arrives alongside the page's own first load, and a refresh
-      // racing that load can redirect away from a chat it is still opening.
-      const opening = !opened;
-      opened = true;
-      if (opening && !firstLoadFailed && now() - created < OPENING_SIGNAL_GRACE_MS) return;
-      refresh();
+      if (loading) missed = true;
+      else refresh();
     },
-    firstLoadFailed() {
-      firstLoadFailed = true;
+    firstLoadSettled() {
+      if (!loading) return;
+      loading = false;
+      if (missed) refresh();
     },
   };
   return signals;

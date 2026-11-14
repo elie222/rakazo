@@ -7,9 +7,7 @@ import { computerUpdates } from "./computer-updates";
 import { subscribeSessionGeneration } from "./session";
 
 // One stream for the whole app, open while any screen holds it.
-const rosterListeners = new Set<(opening: boolean) => void>();
-let connected = false;
-const OPENING_SIGNAL_GRACE_MS = 10_000;
+const rosterListeners = new Set<() => void>();
 let holders = 0;
 let close: (() => void) | undefined;
 
@@ -49,10 +47,9 @@ async function follow(signal: AbortSignal) {
       await subscribeRosterSignals(
         () => {
           if (connection.signal.aborted) return;
-          const opening = !opened;
           opened = true;
-          connected = true;
-          for (const listener of rosterListeners) listener(opening);
+          // Each connection opens with a signal, so a reconnect catches up on what it missed.
+          for (const listener of rosterListeners) listener();
         },
         connection.signal,
         () => {
@@ -62,7 +59,6 @@ async function follow(signal: AbortSignal) {
     } catch (error) {
       failure = error;
     }
-    connected = false;
     unfollowIdentity();
     signal.removeEventListener("abort", abort);
     if (signal.aborted) return;
@@ -84,10 +80,7 @@ function hold(): () => void {
   if (holders++ === 0) {
     const controller = new AbortController();
     void follow(controller.signal);
-    close = () => {
-      controller.abort();
-      connected = false;
-    };
+    close = () => controller.abort();
   }
   let released = false;
   return () => {
@@ -107,9 +100,8 @@ export function useLiveStream(enabled: boolean): void {
 
 /**
  * Runs `read` while enabled: once when enabled or back in the foreground, then on each roster
- * signal. Each (re)connection opens with a signal, so a reconnect catches up on what it missed;
- * only the opening signal of a stream that was still connecting at that first read, and arrives
- * soon after it, is skipped.
+ * signal, including the one each (re)connection opens with: a change made before the stream
+ * subscribed reaches the app only through that opening signal.
  */
 export function useRosterSignals(read: () => unknown, enabled: boolean): void {
   useLiveStream(enabled);
@@ -118,14 +110,8 @@ export function useRosterSignals(read: () => unknown, enabled: boolean): void {
   readRef.current = read;
   useEffect(() => {
     if (!enabled || !foreground) return;
-    let readBeforeOpening = !connected;
-    const readAt = Date.now();
-    const listener = (opening: boolean) => {
-      const skip = opening && readBeforeOpening && Date.now() - readAt < OPENING_SIGNAL_GRACE_MS;
-      readBeforeOpening = false;
-      if (!skip) void readRef.current();
-    };
-    void readRef.current();
+    const listener = () => void readRef.current();
+    listener();
     rosterListeners.add(listener);
     return () => {
       rosterListeners.delete(listener);

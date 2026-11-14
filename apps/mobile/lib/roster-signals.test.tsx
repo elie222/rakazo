@@ -103,27 +103,16 @@ describe("useRosterSignals", () => {
     vi.unstubAllGlobals();
   });
 
-  it("reads once when shown, then on every later signal and never on a timer", async () => {
+  it("reads once when shown, then on every signal and never on a timer", async () => {
     const onChange = vi.fn();
     await act(async () => root.render(<Harness enabled onChange={onChange} />));
     expect(streams).toHaveLength(1);
     expect(onChange).toHaveBeenCalledTimes(1);
-    // The stream's opening signal arrives with that first read, so it adds nothing.
     await act(async () => streams[0]!.signal());
-    expect(onChange).toHaveBeenCalledTimes(1);
     await act(async () => streams[0]!.signal());
-    expect(onChange).toHaveBeenCalledTimes(2);
+    expect(onChange).toHaveBeenCalledTimes(3);
     await act(() => vi.advanceTimersByTimeAsync(10 * 60_000));
-    expect(onChange).toHaveBeenCalledTimes(2);
-  });
-
-  it("re-reads on a stream that opens long after the first read", async () => {
-    const onChange = vi.fn();
-    await act(async () => root.render(<Harness enabled onChange={onChange} />));
-    await act(async () => streams[0]!.fail(new Error("offline")));
-    await act(() => vi.advanceTimersByTimeAsync(10_000));
-    await act(async () => streams.at(-1)!.signal());
-    expect(onChange).toHaveBeenCalledTimes(2);
+    expect(onChange).toHaveBeenCalledTimes(3);
   });
 
   it("re-reads on the opening signal of a reconnect", async () => {
@@ -133,32 +122,9 @@ describe("useRosterSignals", () => {
     await act(async () => streams[0]!.end());
     await act(() => vi.advanceTimersByTimeAsync(1_000));
     expect(streams).toHaveLength(2);
+    expect(onChange).toHaveBeenCalledTimes(2);
     await act(async () => streams[1]!.signal());
-    expect(onChange).toHaveBeenCalledTimes(2);
-  });
-
-  it("reads at once when shown while the stream is already open", async () => {
-    const onChange = vi.fn();
-    await act(async () =>
-      root.render(
-        <>
-          <Stream />
-          <Harness enabled={false} onChange={onChange} />
-        </>,
-      ),
-    );
-    await act(async () => streams[0]!.signal());
-    await act(async () =>
-      root.render(
-        <>
-          <Stream />
-          <Harness enabled onChange={onChange} />
-        </>,
-      ),
-    );
-    expect(onChange).toHaveBeenCalledTimes(1);
-    await act(async () => streams[0]!.signal());
-    expect(onChange).toHaveBeenCalledTimes(2);
+    expect(onChange).toHaveBeenCalledTimes(3);
   });
 
   it("re-reads when the app returns to the foreground", async () => {
