@@ -166,6 +166,15 @@ describe("purchase detection in the page helper", () => {
     expect(submit.intent("Pay using Gift Card")?.reason).toBe("final_step");
   });
 
+  it("keeps explicit final-payment labels guarded on script-driven tabs and radios", () => {
+    const { intent, helper } = page(`<button type="button" role="tab"
+      onclick="this.dataset.submitted = 'true'">Place order</button>
+      <button type="button" role="radio">Confirm and pay</button>`);
+    expect(intent("Place order")?.reason).toBe("final_step");
+    expect(intent("Confirm and pay")?.reason).toBe("final_step");
+    expect(helper.paymentPage().purchase?.label).toBe("Place order");
+  });
+
   it("flags a final-step label even when nothing on the page is a card", () => {
     const { intent } =
       page(`<button>Pay $50.00</button><a href="/order" role="button">Place order</a>

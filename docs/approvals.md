@@ -70,7 +70,8 @@ counts if the shop later declines it.
 
 When the page browser can identify the clicked control, it treats explicitly marked,
 non-submitting payment-method tabs and radio options as selectors, not pay buttons.
-The final payment button still asks separately.
+A button that submits a form or explicitly says **Place order** still asks,
+even with a tab or radio role.
 
 Below the limit, **Recent payments** lists the latest payments that count, with the site, the bot,
 when and how much, whether or not a limit is set.
