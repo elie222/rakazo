@@ -24,9 +24,10 @@ export function requestLogging(logger?: Logger): MiddlewareHandler {
         if (!c.error) throw error;
       } finally {
         const failure = c.error ?? thrown;
-        if (failure) log.error("http.request.failed", failure);
-        const status = failure && c.res.status < 400 ? 500 : c.res.status;
         const context = getLogContext();
+        // An expected failure was already logged where it was recognised.
+        if (failure && !context["error.expected"]) log.error("http.request.failed", failure);
+        const status = failure && c.res.status < 400 ? 500 : c.res.status;
         // A client that disconnected never sees the status, so its 5xx is not a server failure.
         const level =
           status >= 500 && !c.req.raw.signal.aborted && !context["error.expected"]

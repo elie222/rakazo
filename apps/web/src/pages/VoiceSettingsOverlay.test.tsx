@@ -824,6 +824,46 @@ it("shows what a disconnect left, not a read sent before it", async () => {
   }
 });
 
+it("reports a disconnect as disconnected when the read after it fails", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  voice.catalog
+    .mockReset()
+    .mockResolvedValue([
+      { id: "elevenlabs", name: "ElevenLabs", description: "", transcribe: true },
+    ]);
+  // The first read opens the form; the one after the disconnect fails.
+  voice.credentials.mockReset().mockResolvedValueOnce([eleven]).mockRejectedValue({});
+  voice.status.mockReset().mockResolvedValue({ ready: true, provider: "elevenlabs" });
+  voice.voices.mockReset().mockResolvedValue([{ id: "rachel", label: "Rachel" }]);
+  voice.disconnect.mockReset().mockResolvedValue(undefined);
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(async () => {
+      root.render(
+        withQueries(<VoiceSettingsOverlay embedded scope="account" onClose={() => undefined} />),
+      );
+    });
+    await vi.waitFor(() => expect(container.textContent).toContain("ElevenLabs (Connected)"));
+    const disconnect = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Disconnect",
+    );
+    if (!disconnect) throw new Error("Missing disconnect button");
+    await act(async () => disconnect.click());
+    await vi.waitFor(() => expect(voice.credentials).toHaveBeenCalledTimes(2));
+    expect(container.querySelector("p.text-destructive")?.textContent).toBe(
+      "Could not load voice settings",
+    );
+    expect(container.textContent).not.toContain("(Connected)");
+    expect(container.querySelector('input[placeholder="Paste your API key"]')).not.toBeNull();
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
 it("lets a background refresh update untouched fields but keeps edited ones", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const catalog = [

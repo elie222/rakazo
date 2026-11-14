@@ -115,10 +115,10 @@ test("saves a contact, a card billed to it, and a login from Settings, showing n
     "Research botshop.example.test2h ago",
   );
   await captureScreenshot(page, testInfo, "vault-item-uses");
-  await page.getByTestId("vault-back").click();
+  await page.getByTestId("settings-back").click();
   await expect(activity).toBeVisible();
   // The item opens in the Settings panel itself, and Back returns to the list.
-  await page.getByTestId("vault-back").click();
+  await page.getByTestId("settings-back").click();
   await expect(rows).toHaveCount(3);
 
   const listed = JSON.stringify(await rpc(page, "vault/list", { scope: "account" }));
@@ -151,7 +151,7 @@ test("saves a contact, a card billed to it, and a login from Settings, showing n
     instructions: "",
     notifyOnFinish: false,
   });
-  await page.getByTestId("vault-back").click();
+  await page.getByTestId("settings-back").click();
   await startNew("api_key");
   await editor.getByLabel("Site", { exact: true }).fill("https://scoped.example.test");
   await editor.getByLabel("Value", { exact: true }).fill(`fake-scoped-key-${stamp}`);
@@ -168,7 +168,7 @@ test("saves a contact, a card billed to it, and a login from Settings, showing n
   await expect(chosen).not.toContainText("Researcher");
 
   // A key no bot may use yet: every bot let go of.
-  await page.getByTestId("vault-back").click();
+  await page.getByTestId("settings-back").click();
   await startNew("api_key");
   await editor.getByLabel("Site", { exact: true }).fill("https://none.example.test");
   await editor.getByLabel("Value", { exact: true }).fill(`fake-none-key-${stamp}`);
@@ -182,7 +182,7 @@ test("saves a contact, a card billed to it, and a login from Settings, showing n
   await captureScreenshot(page, testInfo, "vault-item-no-bots");
 
   // A login the user is asked about before each sign-in.
-  await page.getByTestId("vault-back").click();
+  await page.getByTestId("settings-back").click();
   await startNew("login");
   await editor.getByLabel("Site", { exact: true }).fill("https://ask.example.test");
   const loginValues = editor.getByTestId("login-field").locator('input:not([aria-label="Label"])');
@@ -208,7 +208,7 @@ test("saves a contact, a card billed to it, and a login from Settings, showing n
     delete body.json.policy;
     await route.fulfill({ response, json: body });
   });
-  await page.getByTestId("vault-back").click();
+  await page.getByTestId("settings-back").click();
   await startNew("api_key");
   await editor.getByLabel("Site", { exact: true }).fill("https://old.example.test");
   await editor.getByLabel("Value", { exact: true }).fill(`fake-old-key-${stamp}`);
@@ -218,7 +218,7 @@ test("saves a contact, a card billed to it, and a login from Settings, showing n
   await expect(detail.getByText("Saved, but this server can't block bots yet.")).toBeVisible();
   await captureScreenshot(page, testInfo, "vault-old-server-block");
 
-  await page.getByTestId("vault-back").click();
+  await page.getByTestId("settings-back").click();
   await vault.getByText(`fake-user-${stamp}@example.test`).click();
   await expect(detail.getByText("login.example.test", { exact: true })).toBeVisible();
   await expect(detail.getByText("Authenticator key", { exact: true })).toBeVisible();
@@ -233,7 +233,7 @@ test("saves a contact, a card billed to it, and a login from Settings, showing n
     delete body.json.alsoOn;
     await route.fulfill({ response, json: body });
   });
-  await page.getByTestId("vault-back").click();
+  await page.getByTestId("settings-back").click();
   await startNew("login");
   await editor.getByLabel("Site", { exact: true }).fill("https://old-sites.example.test");
   await values.nth(0).fill(`fake-old-user-${stamp}@example.test`);
@@ -255,7 +255,7 @@ test("saves a contact, a card billed to it, and a login from Settings, showing n
     delete body.json.preview?.otp;
     await route.fulfill({ response, json: body });
   });
-  await page.getByTestId("vault-back").click();
+  await page.getByTestId("settings-back").click();
   await startNew("login");
   await editor.getByLabel("Site", { exact: true }).fill("https://old-keys.example.test");
   await values.nth(0).fill(`fake-key-user-${stamp}@example.test`);
@@ -285,7 +285,7 @@ test("saves a contact, a card billed to it, and a login from Settings, showing n
     if (sent.json.policy === "ask") delete body.json.policy;
     await route.fulfill({ response, json: body });
   });
-  await page.getByTestId("vault-back").click();
+  await page.getByTestId("settings-back").click();
   await startNew("api_key");
   await editor.getByLabel("Site", { exact: true }).fill("https://old-scope.example.test");
   await editor.getByLabel("Value", { exact: true }).fill(`fake-old-scope-key-${stamp}`);
@@ -297,7 +297,7 @@ test("saves a contact, a card billed to it, and a login from Settings, showing n
     detail.getByText("Saved, but this server can't limit an item to chosen bots."),
   ).toBeVisible();
   await captureScreenshot(page, testInfo, "vault-old-server-chosen-bots");
-  await page.getByTestId("vault-back").click();
+  await page.getByTestId("settings-back").click();
   await startNew("login");
   await editor.getByLabel("Site", { exact: true }).fill("https://old-ask.example.test");
   await loginValues.nth(0).fill("alex");
@@ -390,7 +390,7 @@ test("imports logins from a CSV export after a review", async ({ page }, testInf
     await expect(shown.getByText(file.says, { exact: true })).toBeVisible();
     await expect(shown.getByRole("button", { name: "Import", exact: true })).toHaveCount(0);
     await captureScreenshot(page, testInfo, file.shot);
-    await page.getByTestId("vault-back").click();
+    await page.getByTestId("settings-back").click();
   }
   // More logins than the empty Vault holds: the review counts and lists those that don't fit.
   const big = [
@@ -409,7 +409,7 @@ test("imports logins from a CSV export after a review", async ({ page }, testInf
   );
   await expect(full.getByTestId("vault-import-problems")).toContainText("And 1 more");
   await captureScreenshot(page, testInfo, "vault-import-full");
-  await page.getByTestId("vault-back").click();
+  await page.getByTestId("settings-back").click();
   await vault.getByTestId("vault-import-file").setInputFiles({
     name: "export.csv",
     mimeType: "text/csv",
@@ -453,7 +453,7 @@ test("imports logins from a CSV export after a review", async ({ page }, testInf
     "Row 2 · Shop · Already saved",
   );
   await captureScreenshot(page, testInfo, "vault-import-again");
-  await page.getByTestId("vault-back").click();
+  await page.getByTestId("settings-back").click();
 
   // A server from before import, then one that fails partway: each says what to do.
   const fresh = `url,username,password\nhttps://new.example.test,fake-user-${stamp},fake-pass-new`;

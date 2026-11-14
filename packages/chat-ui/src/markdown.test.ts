@@ -309,6 +309,29 @@ describe("closeUnterminatedFence", () => {
     expect(closeUnterminatedFence(markdown)).toBe(markdown);
   });
 
+  it("closes a partial fence in CRLF text", () => {
+    expect(closeUnterminatedFence("```ts\r\nconst value = 1;\r\n")).toBe(
+      "```ts\r\nconst value = 1;\r\n\n```",
+    );
+  });
+
+  it("recognises the closing fence in CRLF text", () => {
+    const markdown = "```ts\r\nconst value = 1;\r\n```\r\n\r\nDone";
+    expect(closeUnterminatedFence(markdown)).toBe(markdown);
+  });
+
+  it("keeps a CRLF fence open while the closing line carries text", () => {
+    expect(closeUnterminatedFence("```ts\r\ncode\r\n``` not closing\r\n")).toBe(
+      "```ts\r\ncode\r\n``` not closing\r\n\n```",
+    );
+  });
+
+  it("does not add a second fence when a stream stops between \\r and \\n", () => {
+    const closed = "```ts\r\ncode\r\n```\r";
+    expect(closeUnterminatedFence(closed)).toBe(closed);
+    expect(closeUnterminatedFence("```ts\r\ncode\r")).toBe("```ts\r\ncode\r\n```");
+  });
+
   it("does not open a backtick fence whose info string has a backtick", () => {
     for (const markdown of ["```npm``` is great\nmore", "```a`b\ntext", "   ``` `x`\ntext"]) {
       expect(closeUnterminatedFence(markdown)).toBe(markdown);
@@ -445,6 +468,58 @@ describe("withMentions", () => {
     expect(withMentions([text], [planner])).toEqual([
       text.replace("Planner is ready.", `${link} is ready.`),
     ]);
+  });
+
+  it.each([
+    "``Planner `literal` example``",
+    "`Planner\nexample`",
+    "````md\n```\nPlanner\n```\n````",
+    "~~~~md\n~~~\nPlanner\n~~~\n~~~~",
+    "> ```\n> Planner\n> ```",
+  ])("preserves code source and links later prose: %s", (code) => {
+    expect(withMentions([`${code}\n\nPlanner is ready.`], [planner])).toEqual([
+      `${code}\n\n${link} is ready.`,
+    ]);
+  });
+
+  it("keeps an unclosed streaming fence intact and prepends the mention", () => {
+    const code = "```md\nPlanner\n\nPlanner is ready.";
+    expect(withMentions([code], [planner])).toEqual([`${link}\n\n${code}`]);
+  });
+
+  it.each([
+    "``[Planner](rakazo-mention:bot-1) `literal` ``",
+    "`[Planner](rakazo-mention:bot-1)\nexample`",
+    "````md\n```\n[Planner](rakazo-mention:bot-1)\n```\n````",
+    "~~~~md\n~~~\n[Planner](rakazo-mention:bot-1)\n~~~\n~~~~",
+  ])("does not strip model mention links inside code: %s", (code) => {
+    expect(withMentions([`${code}\n\nPlanner is ready.`], [planner])).toEqual([
+      `${code}\n\n${link} is ready.`,
+    ]);
+  });
+
+  it("preserves literal mention syntax in an ordinary link's code label", () => {
+    const text = "[`[Planner](rakazo-mention:bot-1)`](https://example.com)";
+    expect(withMentions([text], [planner])).toEqual([`${link} ${text}`]);
+  });
+
+  it("strips a model mention wrapper while preserving inline code in its label", () => {
+    expect(withMentions(["[Use `Planner`](rakazo-mention:bot-1) is ready."], [planner])).toEqual([
+      `${link} Use \`Planner\` is ready.`,
+    ]);
+  });
+
+  it("continues processing valid blocks after a malformed block", () => {
+    const nested = `${"> ".repeat(10000)}Planner`;
+    expect(withMentions([nested, "Planner is ready."], [planner])).toEqual([
+      nested,
+      `${link} is ready.`,
+    ]);
+  });
+
+  it("preserves deeply nested Markdown when preprocessing cannot parse it", () => {
+    const text = `${"> ".repeat(10000)}Planner`;
+    expect(withMentions([text], [planner])).toEqual([text]);
   });
 
   it("keeps a mention link already in the text as its name", () => {

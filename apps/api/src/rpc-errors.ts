@@ -9,14 +9,50 @@ import {
 } from "@rakazo/adapter-kit";
 import { ComputerRecoveryRequiredError } from "@rakazo/adapters";
 import {
+  databaseOutage,
   IsolationError,
   ProviderTransactionBusyError,
   SpaceDeletionInProgressError,
   SpaceOwnerRequiredError,
 } from "@rakazo/db";
-import { getLogContext, getLogger } from "@rakazo/logging";
+import { enrichLogContext, getLogContext, getLogger } from "@rakazo/logging";
 import { markExpectedFailure } from "@rakazo/logging/hono";
+import type { Context } from "hono";
+import { HTTPException } from "hono/http-exception";
 import { voiceAccountErrorStatus } from "./voice.js";
+
+/** How long a client waits before asking again while the database fails over. */
+export const DATABASE_RETRY_AFTER_SECONDS = 5;
+const DATABASE_UNAVAILABLE = "db.unavailable";
+
+/**
+ * Whether a request failed because the database is unavailable. The outage logs it once for
+ * every request it fails, and the request's 503 is expected rather than a report.
+ */
+export function failedOnDatabaseOutage(error: unknown): boolean {
+  if (!databaseOutage.failed(error, "api request")) return false;
+  markExpectedFailure();
+  enrichLogContext({ [DATABASE_UNAVAILABLE]: true });
+  return true;
+}
+
+/** Whether this request failed on a database outage, so its 503 asks the client to retry soon. */
+export function requestHitDatabaseOutage(): boolean {
+  return getLogContext()[DATABASE_UNAVAILABLE] === true;
+}
+
+/**
+ * Hono's default prints the stack and answers 500. Requests already log their failure, and a
+ * database outage answers 503 so clients try again.
+ */
+export function handleHttpError(error: Error, c: Context): Response {
+  if (error instanceof HTTPException) return error.getResponse();
+  if (failedOnDatabaseOutage(error))
+    return c.text("Service Unavailable", 503, {
+      "Retry-After": String(DATABASE_RETRY_AFTER_SECONDS),
+    });
+  return c.text("Internal Server Error", 500);
+}
 
 /**
  * Non-ORPCError failures are flattened into an opaque "Internal server error", so this log is
@@ -33,6 +69,9 @@ export function handleRpcError(
   if (error instanceof IsolationError) {
     getLogger().warn(`rpc ${path.join("/")} not found`, { "error.stack": error.stack });
     throw new ORPCError("NOT_FOUND", { message: error.message, cause: error });
+  }
+  if (failedOnDatabaseOutage(error)) {
+    throw new ORPCError("SERVICE_UNAVAILABLE", { cause: error });
   }
   if (error instanceof SpaceOwnerRequiredError) {
     throw new ORPCError("FORBIDDEN", { message: error.message, cause: error });

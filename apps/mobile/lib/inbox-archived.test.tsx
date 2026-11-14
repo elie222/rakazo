@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 
+vi.mock("./session", () => ({ currentSessionGeneration: () => 0 }));
+
 import type { CSSProperties, ReactNode } from "react";
 import { act, useEffect, useMemo } from "react";
 import type { Root } from "react-dom/client";
@@ -20,6 +22,7 @@ const mocks = vi.hoisted(() => ({
   alert: vi.fn(),
   removeFromSearchInbox: vi.fn(),
   loadArchived: vi.fn(),
+  getCurrentRoute: vi.fn(),
   router: {
     push: vi.fn(),
     replace: vi.fn(),
@@ -81,6 +84,7 @@ vi.mock("expo-router", () => ({
   // The inbox stays focused here; expo-router reruns the effect when its callback changes.
   useFocusEffect: (effect: () => (() => void) | undefined) => useEffect(effect, [effect]),
   useRouter: () => mocks.router,
+  useNavigationContainerRef: () => ({ getCurrentRoute: mocks.getCurrentRoute }),
   useNavigation: () => ({ setOptions: vi.fn() }),
   useRoute: () => ({ key: "thread-1" }),
   useLocalSearchParams: () => ({ groupId: "group-b" }),
@@ -89,7 +93,11 @@ vi.mock("expo-router", () => ({
 vi.mock("./api-server", () => ({}));
 vi.mock("./api-auth", () => ({}));
 vi.mock("./api-live", () => ({}));
-vi.mock("./api", () => ({ rpc: mocks.rpc }));
+vi.mock("./api", () => ({
+  selectedSpaceId: () => "space-a",
+  rpc: mocks.rpc,
+  captureApiRequestContext: async () => ({ apiBase: "https://example.test", headers: {} }),
+}));
 vi.mock("./native", () => ({
   native: { tertiaryLabel: "tertiary" },
   useThemedStyles: (factory: () => unknown) => useMemo(factory, [factory]),
@@ -131,6 +139,7 @@ const flush = () => act(async () => undefined);
 
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  mocks.getCurrentRoute.mockReturnValue({ name: "bot-profile", params: { botId: "bot-b" } });
   mocks.rpc.mockReset();
   mocks.alert.mockReset();
   mocks.removeFromSearchInbox.mockReset();
@@ -336,18 +345,120 @@ describe("bot profile menu archive notifications", () => {
     stop();
   });
 
+  it.each([false, true])(
+    "does not show a late profile delete prompt after unmount (failure=%s)",
+    async (fails) => {
+      const action = renderActions();
+      let finish!: () => void;
+      mocks.rpc.mockImplementationOnce(
+        () =>
+          new Promise((resolve, reject) => {
+            finish = () => (fails ? reject(new Error("offline")) : resolve([]));
+          }),
+      );
+      action("Delete…").onPress();
+      await act(async () => root.render(null));
+      finish();
+      await flush();
+      expect(mocks.alert).not.toHaveBeenCalled();
+    },
+  );
+
+  it("ignores repeated profile delete taps through preview and confirmation", async () => {
+    const action = renderActions();
+    let finish!: (groups: unknown[]) => void;
+    mocks.rpc.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    action("Delete…").onPress();
+    action("Delete…").onPress();
+    await flush();
+    expect(mocks.rpc).toHaveBeenCalledTimes(1);
+    finish([]);
+    await flush();
+    action("Delete…").onPress();
+    expect(mocks.alert).toHaveBeenCalledTimes(1);
+    alertButton(0, "Cancel").onPress!();
+    mocks.rpc.mockResolvedValueOnce([]);
+    action("Delete…").onPress();
+    await flush();
+    expect(mocks.alert).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    [{ name: "thread", params: { botId: "bot-b" } }, true],
+    [{ name: "bot-profile", params: { botId: "bot-b" } }, true],
+    [{ name: "bot-settings", params: { botId: "bot-b" } }, true],
+    [{ name: "bot-model", params: { botId: "bot-b" } }, true],
+    [{ name: "computer", params: { botId: "bot-b" } }, true],
+    [{ name: "routines", params: { botId: "bot-b" } }, true],
+    [{ name: "routine", params: { botId: "bot-b" } }, true],
+    [{ name: "pages", params: { groupId: "removed-group" } }, true],
+    [{ name: "thread", params: { botId: "other-bot" } }, false],
+    [{ name: "thread", params: { groupId: "removed-group" } }, true],
+    [{ name: "group-settings", params: { groupId: "removed-group" } }, true],
+    [{ name: "thread", params: { groupId: "retained-group" } }, false],
+    [{ name: "artifacts", params: { botId: "bot-b" } }, false],
+    [{ name: "index" }, false],
+    [undefined, false],
+  ])(
+    "only leaves a deleted bot's current route after the profile unmounts (%j)",
+    async (route, shouldLeave) => {
+      const { listener, stop } = listenForArchiveChanges();
+      const action = renderActions();
+      let finish!: () => void;
+      mocks.rpc
+        .mockResolvedValueOnce([{ id: "retained-group", name: "Outdated preview" }])
+        .mockImplementationOnce(
+          () =>
+            new Promise((resolve) => {
+              finish = () => resolve({ ok: true, removedGroupIds: ["removed-group"] });
+            }),
+        );
+      action("Delete…").onPress();
+      await flush();
+      alertButton(0, "Keep memories").onPress!();
+      expect(mocks.rpc).toHaveBeenLastCalledWith(
+        "bots/remove",
+        {
+          botId: "bot-b",
+          deleteMemories: false,
+        },
+        expect.objectContaining({ skipSpaceAuthRecovery: true }),
+      );
+      await act(async () => root.render(null));
+      mocks.getCurrentRoute.mockReturnValue(route);
+      await act(async () => finish());
+      expect(listener).toHaveBeenCalledOnce();
+      expect(left()).toBe(shouldLeave);
+      if (!shouldLeave) {
+        expect(mocks.router.dismissAll).not.toHaveBeenCalled();
+        expect(mocks.router.replace).not.toHaveBeenCalled();
+      }
+      stop();
+    },
+  );
+
   it("notifies after confirmed deletion succeeds", async () => {
     const { listener, stop } = listenForArchiveChanges();
     const action = renderActions();
-    mocks.rpc.mockResolvedValueOnce({});
+    mocks.rpc.mockResolvedValueOnce([]).mockResolvedValueOnce({});
     action("Delete…").onPress();
+    await flush();
     expect(listener).not.toHaveBeenCalled();
     alertButton(0, "Keep memories").onPress!();
     await flush();
-    expect(mocks.rpc).toHaveBeenCalledWith("bots/remove", {
-      botId: "bot-b",
-      deleteMemories: false,
-    });
+    expect(mocks.rpc).toHaveBeenCalledWith(
+      "bots/remove",
+      {
+        botId: "bot-b",
+        deleteMemories: false,
+      },
+      expect.objectContaining({ skipSpaceAuthRecovery: true }),
+    );
     expect(listener).toHaveBeenCalledOnce();
     expect(left()).toBe(true);
     stop();
@@ -362,7 +473,7 @@ describe("group deletion archive notifications", () => {
       if (method === "groups/list") {
         return Promise.resolve([{ id: "group-b", name: "Group", members: [] }]);
       }
-      if (method === "bots/list") return Promise.resolve([]);
+      if (method === "bots/list" || method === "bots/listArchived") return Promise.resolve([]);
       return removeFails ? Promise.reject(new Error("offline")) : Promise.resolve({});
     });
     await act(async () => root.render(<GroupSettingsScreen />));

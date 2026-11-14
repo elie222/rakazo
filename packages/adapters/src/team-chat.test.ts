@@ -64,6 +64,7 @@ function matches(row: object, where: Where = {}): boolean {
   const record = row as Record<string, unknown>;
   return Object.entries(where).every(([key, condition]) => {
     if (key === "OR") return (condition as Where[]).some((branch) => matches(row, branch));
+    if (key === "NOT") return !matches(row, condition as Where);
     if (!(key in record) && key.includes("_")) return matches(row, condition as Where);
     const value = record[key];
     if (condition === null || typeof condition !== "object" || condition instanceof Date)
@@ -168,6 +169,14 @@ function setup(
         query([...externalMessages.values()].map(withRelations), args)[0] ?? null,
       findMany: async (args: FindArgs) =>
         query([...externalMessages.values()].map(withRelations), args),
+      groupBy: async ({ where }: { by: ["senderId"]; where: Where }) =>
+        [
+          ...new Set(
+            query([...externalMessages.values()].map(withRelations), { where }).map(
+              (row) => row.senderId,
+            ),
+          ),
+        ].map((senderId) => ({ senderId })),
       update: async ({ where, data }: { where: { id: string }; data: object }) => {
         const row = externalMessages.get(where.id);
         if (!row) throw new Error(`No external message ${where.id}`);
@@ -188,6 +197,24 @@ function setup(
         query([...threadMessages.values()].map(withTranscriptOf), args),
     },
     artifact: { findMany: async (args: FindArgs) => query(artifacts, args) },
+    // The conversation's ambient scheduling lock.
+    $executeRaw: async () => 0,
+    /** Each digest sender's latest decision in a conversation. */
+    $queryRaw: async (_sql: TemplateStringsArray, senders: string[], conversationId: string) =>
+      senders.map((senderId) => ({
+        senderId,
+        judgedAt:
+          [...externalMessages.values()]
+            .filter(
+              (row) =>
+                row.externalConversationId === conversationId &&
+                row.senderId === senderId &&
+                row.senderIsBot &&
+                row.judgedAt,
+            )
+            .map((row) => row.judgedAt!)
+            .sort((a, b) => b.getTime() - a.getTime())[0] ?? null,
+      })),
   };
   const prisma = {
     ...tables,
@@ -900,6 +927,161 @@ describe("TeamChat.ambientJob", () => {
       [digest.providerEventId],
     ]);
     expect(chat.row(digest.id)?.status).toBe("ignored");
+  });
+
+  it("decides the digest senders that are due, then the next one once its period passes", async () => {
+    const chat = setup({
+      conversation: {
+        automatedSenderPolicies: {
+          "due-bot": { name: "Due", mode: "rollup", rollupHours: 6 },
+          "later-bot": { name: "Later", mode: "rollup", rollupHours: 6 },
+        },
+      },
+    });
+    const laterJudgedAt = new Date(Date.now() - 2 * HOUR_MS);
+    chat.record({
+      kind: "ambient",
+      status: "ignored",
+      senderId: "later-bot",
+      senderIsBot: true,
+      judgedAt: laterJudgedAt,
+    });
+    const due = chat.ambient({ senderId: "due-bot", senderIsBot: true });
+    const later = chat.ambient({ senderId: "later-bot", senderIsBot: true });
+
+    await chat.teamChat.ambientJob(chat.conversation.id);
+
+    expect(chat.decide.mock.calls.map(([input]) => input.messages.map((m) => m.eventId))).toEqual([
+      [due.providerEventId],
+    ]);
+    expect(chat.statuses(due, later)).toEqual(["ignored", "observed"]);
+    expect(chat.jobs.get(`team_chat.ambient:${chat.conversation.id}`)?.availableAt).toEqual(
+      new Date(laterJudgedAt.getTime() + 6 * HOUR_MS),
+    );
+  });
+
+  it("decides everything else on the next pass while digests that are not due wait out of the batch", async () => {
+    const chat = setup({
+      conversation: {
+        automatedSenderPolicies: {
+          "due-bot": { name: "Due", mode: "rollup", rollupHours: 6 },
+          "later-bot": { name: "Later", mode: "rollup", rollupHours: 6 },
+        },
+      },
+    });
+    const laterJudgedAt = new Date(Date.now() - 2 * HOUR_MS);
+    chat.record({
+      kind: "ambient",
+      status: "ignored",
+      senderId: "later-bot",
+      senderIsBot: true,
+      judgedAt: laterJudgedAt,
+    });
+    const digests = Array.from({ length: 200 }, (_, index) =>
+      chat.ambient({ senderId: index % 2 ? "later-bot" : "due-bot", senderIsBot: true }),
+    );
+    const people = Array.from({ length: 20 }, () => chat.ambient());
+    const next = () => chat.jobs.get(`team_chat.ambient:${chat.conversation.id}`)?.availableAt;
+
+    // A full batch of due digests, then the rest on the next pass, at once.
+    await chat.teamChat.ambientJob(chat.conversation.id);
+    expect(next()!.getTime()).toBeLessThanOrEqual(Date.now());
+    await chat.teamChat.ambientJob(chat.conversation.id);
+
+    const due = digests.filter((message) => message.senderId === "due-bot");
+    const later = digests.filter((message) => message.senderId === "later-bot");
+    expect(new Set(chat.statuses(...due, ...people))).toEqual(new Set(["ignored"]));
+    expect(new Set(chat.statuses(...later))).toEqual(new Set(["observed"]));
+    expect(chat.decide.mock.calls.at(-1)![0].messages.map((m) => m.eventId)).toEqual(
+      people.map(({ providerEventId }) => providerEventId),
+    );
+    expect(next()).toEqual(new Date(laterJudgedAt.getTime() + 6 * HOUR_MS));
+  });
+
+  it("leaves digests that are not due out of the batch, and comes back when the first is due", async () => {
+    const chat = setup({
+      conversation: {
+        automatedSenderPolicies: {
+          "later-bot": { name: "Later", mode: "rollup", rollupHours: 6 },
+        },
+      },
+    });
+    const judgedAt = new Date(Date.now() - 2 * HOUR_MS);
+    chat.record({
+      kind: "ambient",
+      status: "ignored",
+      senderId: "later-bot",
+      senderIsBot: true,
+      judgedAt,
+    });
+    for (let index = 0; index < 101; index += 1)
+      chat.ambient({ senderId: "later-bot", senderIsBot: true });
+
+    await chat.teamChat.ambientJob(chat.conversation.id);
+
+    expect(chat.decide).not.toHaveBeenCalled();
+    expect(chat.jobs.get(`team_chat.ambient:${chat.conversation.id}`)?.availableAt).toEqual(
+      new Date(judgedAt.getTime() + 6 * HOUR_MS),
+    );
+  });
+
+  it("ignores a room's waiting digests at once when the bot no longer answers there", async () => {
+    const chat = setup({
+      conversation: {
+        teamChatAmbientEnabled: false,
+        automatedSenderPolicies: {
+          "later-bot": { name: "Later", mode: "rollup", rollupHours: 6 },
+        },
+      },
+    });
+    chat.record({
+      kind: "ambient",
+      status: "ignored",
+      senderId: "later-bot",
+      senderIsBot: true,
+      judgedAt: new Date(Date.now() - HOUR_MS),
+    });
+    const digest = chat.ambient({ senderId: "later-bot", senderIsBot: true });
+
+    await chat.teamChat.ambientJob(chat.conversation.id);
+
+    expect(chat.row(digest.id)?.status).toBe("ignored");
+    expect(chat.jobs.has(`team_chat.ambient:${chat.conversation.id}`)).toBe(false);
+  });
+
+  it("keeps a message that arrives during a decision on its own quiet window", async () => {
+    let arrive = () => {};
+    const chat = setup({
+      conversation: {
+        automatedSenderPolicies: {
+          "later-bot": { name: "Later", mode: "rollup", rollupHours: 6 },
+        },
+      },
+      judge: async () => {
+        arrive();
+        return { act: false, reason: "Small talk." };
+      },
+    });
+    chat.record({
+      kind: "ambient",
+      status: "ignored",
+      senderId: "later-bot",
+      senderIsBot: true,
+      judgedAt: new Date(Date.now() - HOUR_MS),
+    });
+    chat.ambient({ senderId: "later-bot", senderIsBot: true });
+    chat.ambient();
+    let late: { createdAt: Date } | undefined;
+    arrive = () => {
+      late ??= chat.ambient({ createdAt: new Date() });
+    };
+
+    await chat.teamChat.ambientJob(chat.conversation.id);
+
+    // Not the waiting digest's due time, hours away.
+    expect(chat.jobs.get(`team_chat.ambient:${chat.conversation.id}`)?.availableAt).toEqual(
+      new Date(late!.createdAt.getTime() + DEBOUNCE_MS),
+    );
   });
 
   it("waits until the conversation has been quiet before deciding", async () => {

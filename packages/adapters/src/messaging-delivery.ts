@@ -19,6 +19,8 @@ import type { MessageBlock } from "@rakazo/contracts";
 import {
   botMessageHopExhausted,
   botMessageMaxHops,
+  chatAppAskText,
+  chatAppTakeoverText,
   nextBotMessageHop,
   pageLinksAsTitles,
   teamChatResponseText,
@@ -72,7 +74,8 @@ export const MESSAGING_SEND_BACKUP_MS = MESSAGING_SEND_STALE_MS + 30_000;
 /**
  * A claimed row: marked sent before its handle is known, as the previous release marks its own,
  * so either release sees the other's sends in flight. A finished send always gets a handle (an
- * empty one when the provider gives none).
+ * empty one when the provider gives none). This release also sets `claimedAt` until the send
+ * settles, which tells its claims apart from the previous release's.
  */
 const IN_FLIGHT = { status: "sent", providerHandle: null } as const;
 
@@ -355,22 +358,27 @@ export class MessagingDelivery {
   /**
    * Safety sweep, one page per call: a message waiting long after its last change whose backup
    * job is gone, or held by a worker that died, gets a fresh one. A job still waiting out a retry
-   * or a busy conversation is left alone. Rows recorded by the previous release have no job. A
-   * send in flight is left to its own job: the previous release's stale claims look the same and
-   * must never be sent again.
+   * or a busy conversation is left alone. Rows recorded by the previous release have no job. So
+   * does a claim of this release whose sender died and whose job gave up, such as on a database
+   * outage during its last try. The previous release's stale claims are never sent again: many of
+   * them went out.
    */
   async sweepStalled(now = new Date()): Promise<void> {
     const before = new Date(now.getTime() - STALLED_OUTBOUND_MS);
     const cursor = this.sweepCursor;
     const stalled = await this.deps.prisma.messagingOutbound.findMany({
       where: {
-        status: { in: WAITING },
+        OR: [{ status: { in: WAITING } }, { ...IN_FLIGHT, claimedAt: { not: null } }],
         updatedAt: { lt: before },
         ...(cursor
           ? {
-              OR: [
-                { updatedAt: { gt: cursor.at } },
-                { updatedAt: cursor.at, id: { gt: cursor.id } },
+              AND: [
+                {
+                  OR: [
+                    { updatedAt: { gt: cursor.at } },
+                    { updatedAt: cursor.at, id: { gt: cursor.id } },
+                  ],
+                },
               ],
             }
           : {}),
@@ -426,7 +434,7 @@ export class MessagingDelivery {
       if (outcome.kind === "held") {
         await this.deps.prisma.messagingOutbound.updateMany({
           where: { id: row.id, ...IN_FLIGHT, updatedAt: claimedAt },
-          data: { status: "pending" },
+          data: { status: "pending", claimedAt: null },
         });
         if (own) {
           await this.deps.jobs.enqueue(
@@ -490,7 +498,8 @@ export class MessagingDelivery {
    * Claims the conversation's first waiting row for this process, under the conversation's lock.
    * Any send in flight holds the conversation, this release's or the previous one's. Anyone may
    * take a pending head; a head waiting on a retry belongs to its backup job, and so does a send
-   * whose claim went stale.
+   * whose claim went stale. Such a send of this release holds the conversation until its backup
+   * job settles it, so nothing behind it goes first; the previous release's is done once stale.
    */
   private async claimHead(
     lane: OutboundLane,
@@ -505,15 +514,23 @@ export class MessagingDelivery {
       const now = Date.now();
       const staleBefore = new Date(now - MESSAGING_SEND_STALE_MS);
       const inFlight = await tx.messagingOutbound.findFirst({
-        where: { ...laneWhere(lane), ...IN_FLIGHT, updatedAt: { gt: staleBefore } },
+        where: {
+          ...laneWhere(lane),
+          ...IN_FLIGHT,
+          OR: [
+            { updatedAt: { gt: staleBefore } },
+            { claimedAt: { not: null }, ...(ownRowId ? { NOT: { id: ownRowId } } : {}) },
+          ],
+        },
         orderBy: { updatedAt: "desc" },
         select: { updatedAt: true },
       });
-      if (inFlight)
-        return {
-          kind: "blocked" as const,
-          retryAt: new Date(inFlight.updatedAt.getTime() + MESSAGING_SEND_STALE_MS + 5_000),
-        };
+      if (inFlight) {
+        const staleAt = inFlight.updatedAt.getTime() + MESSAGING_SEND_STALE_MS;
+        // A stale one's backup job sends the rows behind it once it settles it.
+        const retryAt = staleAt > now ? staleAt + 5_000 : now + MESSAGING_SEND_BACKUP_MS;
+        return { kind: "blocked" as const, retryAt: new Date(retryAt) };
+      }
       const head = await tx.messagingOutbound.findFirst({
         where: {
           ...laneWhere(lane),
@@ -536,7 +553,7 @@ export class MessagingDelivery {
           providerHandle: null,
           updatedAt: head.updatedAt,
         },
-        data: { status: "sent", updatedAt: claimedAt },
+        data: { status: "sent", updatedAt: claimedAt, claimedAt },
       });
       if (claimed.count !== 1) return { kind: "blocked" as const, retryAt: new Date(now + 5_000) };
       return { kind: "claimed" as const, row: head, claimedAt };
@@ -557,7 +574,9 @@ export class MessagingDelivery {
       const settled = await tx.messagingOutbound.updateMany({
         where: { id: row.id, ...IN_FLIGHT, updatedAt: claimedAt },
         data:
-          outcome.kind === "sent" ? { providerHandle: outcome.handle ?? "" } : { status: "failed" },
+          outcome.kind === "sent"
+            ? { providerHandle: outcome.handle ?? "", claimedAt: null }
+            : { status: "failed", claimedAt: null },
       });
       if (settled.count !== 1) return false;
       await this.deps.jobs.cancelIn(tx, messagingSendJobKey(row.id));
@@ -607,7 +626,7 @@ export class MessagingDelivery {
     if (own) {
       await this.deps.prisma.messagingOutbound.updateMany({
         where: claim,
-        data: { status: "retry" },
+        data: { status: "retry", claimedAt: null },
       });
       if (retryAfterMs) throw new RetryJobLaterError(retryAfterMs, { cause: error });
       throw error;
@@ -615,7 +634,7 @@ export class MessagingDelivery {
     await this.deps.prisma.$transaction(async (tx) => {
       const released = await tx.messagingOutbound.updateMany({
         where: claim,
-        data: { status: "retry" },
+        data: { status: "retry", claimedAt: null },
       });
       if (released.count !== 1) return;
       await this.deps.jobs.enqueueIn(
@@ -824,7 +843,7 @@ export class MessagingDelivery {
    * after it goes ahead of it.
    */
   private async recordDirectRun(
-    run: { id: string; botId: string; userId: string },
+    run: { id: string; botId: string; userId: string; status: string },
     progress: boolean,
   ): Promise<OutboundLane | undefined> {
     const identity = await this.deps.prisma.messagingIdentity.findUnique({
@@ -841,8 +860,11 @@ export class MessagingDelivery {
       .platforms()
       .some((platform) => platform.provider === identity.provider && platform.capabilities.files);
     const linkedPages = linkedPageIds(messages);
+    // A run that ended, such as one cancelled or expired while it waited, leaves its question
+    // pending with nothing to resume, so the chat app is not asked it.
+    const asks = !TERMINAL_RUN.includes(run.status);
     const rowsByMessage = messages.map((message) => {
-      const body = extractText(message.blocks, linkedPages);
+      const body = extractText(message.blocks, linkedPages, { asks });
       const parts = body ? splitOutboundBody(identity.provider, body) : [];
       return [
         ...parts.map((part, index) => ({
@@ -1348,15 +1370,28 @@ function linkedPageIds(messages: readonly { blocks: unknown }[]): Set<string> {
 
 /**
  * The text other channels get. A page card cannot travel, so a page the reply does not name goes
- * as its title.
+ * as its title. With `asks`, for a 1:1 chat, a pending question or takeover request goes as text
+ * too, so the person learns the bot is waiting on them.
  */
-function extractText(blocks: unknown, linkedPages: ReadonlySet<string>): string {
+function extractText(
+  blocks: unknown,
+  linkedPages: ReadonlySet<string>,
+  options: { asks?: boolean } = {},
+): string {
   if (!Array.isArray(blocks)) return "";
   return blocks
     .flatMap(
       (block: { kind?: unknown; text?: unknown; pageId?: unknown; title?: unknown } | null) => {
         if (block?.kind === "text" && typeof block.text === "string")
           return [pageLinksAsTitles(block.text)];
+        if (options.asks && block?.kind === "ask") {
+          const ask = chatAppAskText(block as MessageBlock);
+          return ask ? [ask] : [];
+        }
+        if (options.asks && block?.kind === "computer") {
+          const takeover = chatAppTakeoverText(block as Parameters<typeof chatAppTakeoverText>[0]);
+          return takeover ? [takeover] : [];
+        }
         if (
           block?.kind === "page" &&
           typeof block.title === "string" &&

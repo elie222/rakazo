@@ -212,6 +212,39 @@ describe("T3 Code adapter over its MCP wire emulator (offline)", () => {
     }
   });
 
+  it("ends a held follow-up when T3 Code refuses a later status read", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const emulator = new T3McpEmulator();
+      let reads = 0;
+      let refused = 0;
+      const { provider } = create(emulator, async (input, init) => {
+        if (String(init?.body ?? "").includes('"t3_thread_read"') && ++reads === refused)
+          emulator.failNext = { invalidParams: true, tool: "t3_thread_read" };
+        return emulator.fetch(input, init);
+      });
+      const first = await provider.launch(
+        { idempotencyKey: "held", prompt: "Task", repository: "https://github.com/example/demo" },
+        ctx,
+      );
+      await provider.cancel(first.id, ctx, first.latestRunId);
+      const held = await provider.reply(first.id, { prompt: "Retry" }, ctx);
+      vi.setSystemTime(Date.now() + 61_000);
+      // The read that confirms the hold.
+      refused = reads + 2;
+      const confirming = await rejection(provider.get(first.id, ctx, held.latestRunId));
+      expect((confirming as CloudAgentRequestRejected).reason).toBe("not_found");
+      // The read after the run left the queue before it could be dropped.
+      refused = reads + 3;
+      emulator.failNext = { failure: "orchestration_error", tool: "t3_queue" };
+      const after = await rejection(provider.get(first.id, ctx, held.latestRunId));
+      expect((after as CloudAgentRequestRejected).reason).toBe("not_found");
+      expect(reads).toBe(refused);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("follows a run T3 Code starts itself once the tracked run finished", async () => {
     const { emulator, provider } = create();
     const first = await provider.launch({ idempotencyKey: "continued", prompt: "Task" }, ctx);
@@ -413,6 +446,15 @@ describe("T3 Code failures", () => {
     emulator.failNext = { invalidParams: true, tool: "t3_thread_send" };
     const refused = await rejection(current.reply(first.id, { prompt: "More" }, ctx));
     expect((refused as CloudAgentRequestRejected).reason).toBe("invalid");
+    // A stop it refuses leaves the run going; a status read it refuses ends the card.
+    emulator.failNext = { failure: "capability_denied", tool: "t3_thread_interrupt" };
+    expect((await current.cancel(first.id, ctx, first.latestRunId)).status).toBe("running");
+    emulator.failNext = { invalidParams: true, tool: "t3_thread_read" };
+    const unread = await rejection(current.get(first.id, ctx, first.latestRunId));
+    expect((unread as CloudAgentRequestRejected).reason).toBe("not_found");
+    emulator.failNext = { invalidParams: true, tool: "t3_thread_read" };
+    const unstopped = await rejection(current.cancel(first.id, ctx, first.latestRunId));
+    expect((unstopped as CloudAgentRequestRejected).reason).toBe("not_found");
   });
 
   it("refuses redirects, plain http and malformed results", async () => {
