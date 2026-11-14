@@ -104,6 +104,22 @@ describe("Telegram messaging Markdown", () => {
     for (const url of urls) expect(sent).toContain(url);
   });
 
+  it("keeps link-shaped text in code as written when a long reply is split", () => {
+    const filler = Array.from({ length: 120 }, (_, i) => `Line ${i} of the reply.`).join("\n");
+    const body = `Write links as \`[label](url)\`.\n${filler}`;
+    expect(body.length).toBeGreaterThan(2000);
+    const long = `${body}\n${"x".repeat(4200)}`;
+    const sent = splitOutboundBody("telegram", long).join("\n").replace(/\\(.)/g, "$1");
+    expect(sent).toContain("[label](url)");
+    expect(sent).not.toContain("label (url)");
+  });
+
+  it("keeps the address of a link whose label has brackets when a long reply is split", () => {
+    const long = `See [the [beta] docs](https://example.com/beta)\n${"x".repeat(4200)}`;
+    const sent = splitOutboundBody("telegram", long).join("\n").replace(/\\(.)/g, "$1");
+    expect(sent).toContain("https://example.com/beta");
+  });
+
   it("keeps the address of a link in a reply that fits in one message", () => {
     const body = "Read [the docs](https://example.com/docs/start) first.";
     expect(splitOutboundBody("telegram", body).join("")).toContain(
