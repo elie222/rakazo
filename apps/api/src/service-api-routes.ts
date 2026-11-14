@@ -48,7 +48,7 @@ export const SERVICE_ERRORS = {
   payload_too_large: [413, "Request exceeds limits."],
   unsupported_media_type: [415, "Expected application/json."],
   rate_limited: [429, "Too many requests for this key."],
-  too_many_streams: [429, "This key has too many open event streams."],
+  too_many_streams: [429, "This key has too many open event streams or waiting calls."],
   service_unavailable: [503, "Service unavailable. Retry writes with the same idempotency key."],
 } as const;
 export type ServiceErrorCode = keyof typeof SERVICE_ERRORS;
@@ -265,6 +265,24 @@ async function placementOf(
     runId: run?.id ?? null,
     held: waiting.some((row) => row.runId === null),
   };
+}
+
+/**
+ * A call that waits polls the database until it returns, so it holds one of the key's stream
+ * slots meanwhile; otherwise the request budget alone would let a key keep about 120 waiting.
+ */
+async function holdingSlot<T>(
+  context: Pick<ServiceContext<ServiceRouteId>, "openStream">,
+  waitSeconds: number,
+  work: () => Promise<T>,
+): Promise<T> {
+  if (waitSeconds <= 0) return work();
+  const release = await context.openStream();
+  try {
+    return await work();
+  } finally {
+    release();
+  }
 }
 
 function pause(): Promise<void> {
@@ -553,23 +571,29 @@ export const SERVICE_HANDLERS: Handlers = {
   },
   botEvents: streamBotEvents,
   async sendPrompt(context) {
-    if (!context.bot) throw new ServiceRejection("not_found");
-    const sent = await sendPrompt(
-      context as never,
-      { botId: context.bot.id },
-      { type: "bot", id: context.bot.id, name: context.bot.name },
-    );
+    const bot = context.bot;
+    if (!bot) throw new ServiceRejection("not_found");
     const waitSeconds = context.query?.wait;
-    if (waitSeconds === undefined) return { botId: context.bot.id, ...sent };
-    const deadline = Date.now() + waitSeconds * 1000;
-    const placement = await awaitPlacement(context, sent.messageId, sent, deadline);
-    const remaining = Math.max(0, (deadline - Date.now()) / 1000);
-    return {
-      botId: context.bot.id,
-      ...sent,
-      ...placement,
-      ...(placement.runId ? { run: await runDetail(context, placement.runId, remaining) } : {}),
-    };
+    // Waiting returns the bot's reply, which is conversation content. Both checks come before the
+    // send, so a refused call sends nothing.
+    if (waitSeconds !== undefined && !context.credential.scopes.includes("conversations:read")) {
+      throw new ServiceRejection("forbidden");
+    }
+    const send = () =>
+      sendPrompt(context as never, { botId: bot.id }, { type: "bot", id: bot.id, name: bot.name });
+    if (waitSeconds === undefined) return { botId: bot.id, ...(await send()) };
+    return holdingSlot(context, waitSeconds, async () => {
+      const sent = await send();
+      const deadline = Date.now() + waitSeconds * 1000;
+      const placement = await awaitPlacement(context, sent.messageId, sent, deadline);
+      const remaining = Math.max(0, (deadline - Date.now()) / 1000);
+      return {
+        botId: bot.id,
+        ...sent,
+        ...placement,
+        ...(placement.runId ? { run: await runDetail(context, placement.runId, remaining) } : {}),
+      };
+    });
   },
   async stopBot(context) {
     return context.client.threads.stop({ botId: botOf(context) });
@@ -585,7 +609,10 @@ export const SERVICE_HANDLERS: Handlers = {
   },
 
   async getRun(context) {
-    return runDetail(context, param(context, "runId"), context.query?.wait ?? 0);
+    const waitSeconds = context.query?.wait ?? 0;
+    return holdingSlot(context, waitSeconds, () =>
+      runDetail(context, param(context, "runId"), waitSeconds),
+    );
   },
 
   async getComputer(context) {
