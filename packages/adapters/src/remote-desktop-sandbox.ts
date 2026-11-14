@@ -413,7 +413,9 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
           `rm -f -- ${shellQuote(script)}`,
           undefined,
           10_000,
-        ).catch(() => {});
+        ).catch((error: unknown) => {
+          if (isSandboxGoneError(error) || isSandboxUnsafeStopError(error)) throw error;
+        });
     }
     context.signal.throwIfAborted();
     if (!installed)

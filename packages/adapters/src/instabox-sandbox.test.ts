@@ -477,6 +477,21 @@ describe("instabox page tools", () => {
     expect(isSandboxGoneError(failure)).toBe(true);
   });
 
+  it("reports a computer lost between installation and cleanup", async () => {
+    const emulator = new InstaboxEmulator();
+    const { provider: create } = emulatedInstabox(emulator);
+    const provider = create();
+    const computer = await provider.provision(request, ctx);
+    emulator.fails = (command) => {
+      if (command.startsWith("bash -c 'status=0; bash ")) {
+        emulator.computers.delete(computer.id);
+      }
+      return false;
+    };
+    const failure = await provider.prepare(computer, ctx).catch((error: unknown) => error);
+    expect(isSandboxGoneError(failure)).toBe(true);
+  });
+
   it("keeps an early unsafe installer failure suspended without cleanup", async () => {
     const emulator = new InstaboxEmulator();
     const { provider: create } = emulatedInstabox(emulator);
