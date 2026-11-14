@@ -318,6 +318,7 @@ export async function changeUserTimezone(
   other?: {
     locale?: string;
     botAvatarSet?: string;
+    labs?: string[];
     marketingEmailOptOutAt?: Date | null;
   },
 ): Promise<void> {

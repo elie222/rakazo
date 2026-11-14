@@ -538,6 +538,8 @@ export async function prepareToolRequest(
         !now ||
         now.site !== approved.site ||
         now.label !== approved.label ||
+        now.amount === "?" ||
+        now.total === "?" ||
         now.amount !== approved.amount ||
         (now.total ?? "") !== (approved.total ?? "")
       )

@@ -85,7 +85,6 @@ async function main() {
     process.env.AGENT_RUNTIME = agentRuntime;
     process.env.RAKAZO_LIVE_MODEL_CATALOG = "off";
     if (!integration) {
-      process.env.TICKET_BOARD_ENABLED = "true";
       process.env.PHONE_CALLS_ENABLED = "true";
       process.env.INBOUND_EMAIL_DOMAIN = "bots.rakazo.test";
       process.env.INBOUND_EMAIL_SECRET = "test-inbound-email-secret-test-32chars";

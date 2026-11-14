@@ -1,7 +1,15 @@
 import { spawn } from "node:child_process";
 import { once } from "node:events";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { benchmarkEnvironment, stopProcess } from "./cli/performance-stack.js";
+import {
+  benchmarkEnvironment,
+  safeName,
+  stopProcess,
+  waitForUrl,
+} from "./cli/performance-stack.js";
 
 describe("benchmarkEnvironment", () => {
   afterEach(() => vi.unstubAllEnvs());
@@ -98,4 +106,187 @@ describe("stopProcess", () => {
     },
     10_000,
   );
+});
+
+describe("safeName", () => {
+  it.each(["基线", "优化后", "日本語", "한글", "مرحبا", "हिन्दी", "𠮷"])(
+    "preserves Unicode letters, numbers and combining marks in %s",
+    (label) => expect(safeName(label)).toBe(label),
+  );
+
+  it("keeps canonically equivalent labels distinct on disk", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "performance-unicode-label-"));
+    const labels = ["é", "e\u0301"] as const;
+    try {
+      expect(safeName(labels[0]).normalize("NFC")).not.toBe(safeName(labels[1]).normalize("NFC"));
+      for (const label of labels) {
+        await writeFile(path.join(directory, `${safeName(label)}.json`), label);
+      }
+      expect(await readdir(directory)).toHaveLength(2);
+      for (const label of labels) {
+        expect(await readFile(path.join(directory, `${safeName(label)}.json`), "utf8")).toBe(label);
+      }
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("retains existing ASCII naming and removes unsafe path characters", () => {
+    expect(safeName("Baseline V2.0_test")).toBe("baseline-v2.0_test");
+    expect(safeName("run-0123456789abcdef")).toBe("run-0123456789abcdef");
+    expect(safeName("../基线\\优化后: *?<>|\u0000")).toBe("..-基线-优化后-");
+    expect(safeName("中文／路径")).toBe("中文-路径");
+    expect(safeName("a/b")).toBe(safeName("a?b"));
+  });
+
+  it("writes distinct reports for different Chinese labels", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "performance-label-"));
+    const labels = ["基线", "优化后"];
+    try {
+      for (const label of labels) {
+        for (const extension of ["json", "md"]) {
+          await writeFile(path.join(directory, `${safeName(label)}.${extension}`), label);
+        }
+        await writeFile(path.join(directory, `web-chat-${safeName(label)}.json`), label);
+      }
+      expect(await readdir(directory)).toHaveLength(6);
+      for (const label of labels) {
+        expect(await readFile(path.join(directory, `${safeName(label)}.json`), "utf8")).toBe(label);
+      }
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("long performance report labels", () => {
+  it("reserves hash-suffixed names for transformed labels", () => {
+    const longLabel = "a".repeat(242);
+    const shortLabel = safeName(longLabel);
+    expect(safeName(shortLabel)).not.toBe(safeName(longLabel));
+    expect(Buffer.byteLength(safeName(shortLabel))).toBeLessThanOrEqual(241);
+  });
+
+  it.each(["基".repeat(100), "𠮷".repeat(100), "a".repeat(300)])(
+    "keeps report filenames within the byte limit",
+    async (label) => {
+      const directory = await mkdtemp(path.join(tmpdir(), "performance-long-label-"));
+      try {
+        const stem = safeName(label);
+        expect(stem).toBe(safeName(label));
+        expect(Buffer.from(stem).toString("utf8")).toBe(stem);
+        for (const filename of [`${stem}.json`, `${stem}.md`, `web-chat-${stem}.json`]) {
+          await writeFile(path.join(directory, filename), "report");
+          expect(Buffer.byteLength(filename)).toBeLessThanOrEqual(255);
+        }
+      } finally {
+        await rm(directory, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it("preserves the largest short label and bounds the next byte", () => {
+    const boundary = `${"基".repeat(80)}a`;
+    expect(Buffer.byteLength(boundary)).toBe(241);
+    expect(safeName(boundary)).toBe(boundary);
+    expect(Buffer.byteLength(safeName(`${boundary}b`))).toBeLessThanOrEqual(241);
+  });
+
+  it("distinguishes long labels that differ only beyond the retained prefix", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "performance-long-label-"));
+    const labels = [`${"基".repeat(100)}前`, `${"基".repeat(100)}后`] as const;
+    try {
+      expect(safeName(labels[0])).not.toBe(safeName(labels[1]));
+      for (const label of labels) {
+        await writeFile(path.join(directory, `web-chat-${safeName(label)}.json`), label);
+      }
+      expect(await readdir(directory)).toHaveLength(2);
+      for (const label of labels) {
+        expect(
+          await readFile(path.join(directory, `web-chat-${safeName(label)}.json`), "utf8"),
+        ).toBe(label);
+      }
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("waitForUrl", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it("aborts a request that never returns headers at the startup deadline", async () => {
+    vi.useFakeTimers();
+    let signal: AbortSignal | undefined;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((_url, options) => {
+        signal = options?.signal;
+        return new Promise((_resolve, reject) => {
+          signal?.addEventListener("abort", () => reject(signal?.reason), { once: true });
+        });
+      }),
+    );
+    const result = waitForUrl("http://localhost/ready").catch((error) => error);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(signal?.aborted).toBe(true);
+    expect(await result).toMatchObject({ message: expect.stringContaining("Timed out waiting") });
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("uses the remaining budget after a refused request", async () => {
+    vi.useFakeTimers();
+    let signal: AbortSignal | undefined;
+    const fetcher = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("refused"))
+      .mockImplementation((_url, options) => {
+        signal = options?.signal;
+        return new Promise((_resolve, reject) => {
+          signal?.addEventListener("abort", () => reject(signal?.reason), { once: true });
+        });
+      });
+    vi.stubGlobal("fetch", fetcher);
+    const result = waitForUrl("http://localhost/ready").catch((error) => error);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(signal?.aborted).toBe(true);
+    expect(await result).toMatchObject({ message: expect.stringContaining("refused") });
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("cancels unused response bodies and clears timers on success", async () => {
+    vi.useFakeTimers();
+    const failedBody = { cancel: vi.fn().mockResolvedValue(undefined) };
+    const readyBody = { cancel: vi.fn().mockResolvedValue(undefined) };
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce({ ok: false, status: 503, body: failedBody })
+        .mockResolvedValueOnce({ ok: true, body: readyBody }),
+    );
+    const ready = waitForUrl("http://localhost/ready");
+    await vi.advanceTimersByTimeAsync(200);
+    await ready;
+    expect(failedBody.cancel).toHaveBeenCalledOnce();
+    expect(readyBody.cancel).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
+describe("readiness body cleanup", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("accepts successful headers when body cancellation rejects", async () => {
+    const cancel = vi.fn().mockRejectedValue(new Error("body failed"));
+    const fetcher = vi.fn().mockResolvedValue({ ok: true, body: { cancel } });
+    vi.stubGlobal("fetch", fetcher);
+    await expect(waitForUrl("http://localhost/ready")).resolves.toBeUndefined();
+    expect(fetcher).toHaveBeenCalledOnce();
+    expect(cancel).toHaveBeenCalledOnce();
+  });
 });

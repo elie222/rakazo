@@ -30,6 +30,17 @@ export function withLiveImageInput(
   return { ...model, input };
 }
 
+/** A model the catalog does not list runs with the image input and thinking saved for it. */
+export function withModelCapabilities(
+  model: Model<Api>,
+  settings: { acceptsImages?: boolean; reasoning?: boolean },
+): Model<Api> {
+  const withImages = withLiveImageInput(model, settings.acceptsImages);
+  if (settings.reasoning === undefined || settings.reasoning === withImages.reasoning)
+    return withImages;
+  return { ...withImages, reasoning: settings.reasoning };
+}
+
 /** A deterministic fallback shared by listing and execution; never changes provider or host. */
 export function liveModelSibling(
   models: Models,

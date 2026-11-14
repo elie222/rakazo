@@ -130,8 +130,12 @@ export function resolveBotWorkspaceCwd(
   botId: string,
   requestedCwd: string | undefined,
 ): string | undefined {
-  if (scope !== "team")
-    return requestedCwd === undefined ? undefined : expandHomePrefix(requestedCwd);
+  if (scope !== "team") {
+    if (requestedCwd === undefined) return undefined;
+    const expanded = expandHomePrefix(requestedCwd);
+    if (expanded === requestedCwd) return requestedCwd;
+    return stripVirtualWorkspaceRoot(expanded) || undefined;
+  }
   if (!requestedCwd || requestedCwd === ".") return teamBotWorkspaceDirectory(botId);
   if (path.posix.isAbsolute(requestedCwd) || path.win32.isAbsolute(requestedCwd))
     return requestedCwd;

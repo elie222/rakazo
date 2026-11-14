@@ -60,7 +60,7 @@ export async function attachWorkspaceFileToThread(
     onAttached?: (tx: Prisma.TransactionClient, artifact: Artifact) => Promise<void>;
   },
 ): Promise<{ artifactId: string; block: Extract<MessageBlock, { kind: "image" | "file" }> }> {
-  const fileName = path.basename(input.filePath) || input.filePath;
+  const fileName = path.posix.basename(input.filePath.replace(/\\/g, "/")) || input.filePath;
   const mimeType = inferAttachmentMimeType(fileName);
   if (!mimeType) {
     throw new Error(`Unsupported attachment type for ${fileName}`);

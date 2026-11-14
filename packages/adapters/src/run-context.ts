@@ -52,6 +52,7 @@ import { secretPausedToolResult } from "./run-secret.js";
 import type { createRunTrustLoaders } from "./run-trust.js";
 import type { ScreenTurn } from "./screen-turn.js";
 import type { inferScript } from "./scripted-runtime.js";
+import { providerToolCallId, runToolCallIds } from "./tool-call-ids.js";
 import type { LoopGuardStreak } from "./tool-loop.js";
 import type { ToolRefusal } from "./tool-refusal.js";
 import { refusal } from "./tool-refusal.js";
@@ -71,6 +72,10 @@ export interface RunLeaseState {
   lastCheckAt: number;
   /** A takeover keeps the computer lease past this attempt. */
   retainComputer: boolean;
+  /** When the heartbeat last renewed both leases, so a failover is waited out only while they hold. */
+  renewedAt: number;
+  /** The attempt handed the run back after a database outage; it keeps its turn on the computer. */
+  handedBack: boolean;
 }
 
 export interface RunComputerUseState {
@@ -549,7 +554,11 @@ export function restoreTurnCheckpointEffects(
     }
     if (saved.effectOccurrences) {
       effects.occurrences.push(...saved.effectOccurrences);
-      const pendingExecutionId = JSON.stringify(["pi-tool", "main", saved.pendingToolCallId]);
+      const pendingExecutionId = JSON.stringify([
+        "pi-tool",
+        "main",
+        providerToolCallId(runToolCallIds(saved.messages).provider, saved.pendingToolCallId),
+      ]);
       // Provider IDs can repeat in later responses. Only the restored
       // pending call may consume its saved assignment, exactly once.
       effects.restoredPending = saved.effectOccurrences.findLast(

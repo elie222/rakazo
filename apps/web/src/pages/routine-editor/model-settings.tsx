@@ -1,6 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { ModelCatalogEntry, ModelCredential } from "@rakazo/contracts";
-import { credentialForModel } from "@rakazo/core";
+import { credentialForModel, modelThinkingLevels } from "@rakazo/core";
 import {
   Button,
   NativeSelect,
@@ -52,10 +52,10 @@ export function RoutineModelSettings({
     selectedModel?.provider,
     selectedModel?.modelId,
   );
-  const thinkingOptions = (
-    selectedCredential?.thinkingLevels ??
-    selectedEntry?.thinkingLevels ??
-    []
+  const thinkingOptions = modelThinkingLevels(
+    selectedCredential,
+    selectedEntry,
+    selectedModel?.modelId,
   ).filter((level) => level !== "off");
   const defaultThinkingLevel = selectedCredential?.thinkingLevel ?? "medium";
 

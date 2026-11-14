@@ -15,6 +15,11 @@ import {
   messagingSendJobKey,
   RetryJobLaterError,
 } from "@rakazo/adapter-kit";
+import {
+  CHAT_APP_ASK_NOTE,
+  CHAT_APP_TAKEOVER_NOTE,
+  TAKEOVER_COMPUTER_PENDING_STATE,
+} from "@rakazo/core";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 import { SpaceDeletionInProgressError } from "@rakazo/db";
 import type { Adapter } from "chat";
@@ -938,6 +943,143 @@ describe("deliverRun to a 1:1 chat", () => {
 
     expect(t.world.outbound).toEqual([]);
     expect(t.sendToThread).not.toHaveBeenCalled();
+  });
+
+  it("sends a question the run waits on as text, with its options numbered", async () => {
+    const t = setup();
+    addRun(t.world, {
+      status: "waiting_input",
+      replies: [
+        text("m-1", "Two places are open."),
+        {
+          id: "ask-1",
+          blocks: [
+            {
+              kind: "ask",
+              text: "Which one should I book?",
+              detail: "Both are free at 7pm.",
+              status: "pending",
+              actions: [
+                { id: "a", label: "Luigi's" },
+                { id: "b", label: "Noodle Bar" },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    await t.delivery.deliverRun("run-1");
+
+    expect(bodies(t)).toEqual([
+      "Two places are open.",
+      [
+        "Which one should I book?",
+        "Both are free at 7pm.",
+        "1. Luigi's",
+        "2. Noodle Bar",
+        CHAT_APP_ASK_NOTE,
+      ].join("\n"),
+    ]);
+  });
+
+  it("sends an approval's question without its card buttons, and nothing for an answered one", async () => {
+    const t = setup();
+    addRun(t.world, {
+      status: "waiting_input",
+      replies: [
+        {
+          id: "ask-1",
+          blocks: [
+            {
+              kind: "ask",
+              text: "Old question",
+              status: "answered",
+              actions: [{ id: "a", label: "Yes" }],
+            },
+          ],
+        },
+        {
+          id: "ask-2",
+          blocks: [
+            {
+              kind: "ask",
+              text: "Send the email to Sam?",
+              approvalEffectId: "effect-1",
+              status: "pending",
+              actions: [
+                { id: "allow", label: "Allow" },
+                { id: "deny", label: "Deny" },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    await t.delivery.deliverRun("run-1");
+
+    expect(bodies(t)).toEqual([`Send the email to Sam?\n${CHAT_APP_ASK_NOTE}`]);
+  });
+
+  it("keeps an approval's detail in the app and skips a question its ended run cannot use", async () => {
+    const approval = setup();
+    addRun(approval.world, {
+      status: "waiting_input",
+      replies: [
+        {
+          id: "ask-1",
+          blocks: [
+            {
+              kind: "ask",
+              text: "Run this command?",
+              detail: "rm -rf ~/projects/old",
+              approvalEffectId: "effect-1",
+              status: "pending",
+            },
+          ],
+        },
+      ],
+    });
+    await approval.delivery.deliverRun("run-1");
+    expect(bodies(approval)).toEqual([`Run this command?\n${CHAT_APP_ASK_NOTE}`]);
+
+    const cancelled = setup();
+    addRun(cancelled.world, {
+      status: "cancelled",
+      replies: [
+        text("m-1", "Two places are open."),
+        {
+          id: "ask-1",
+          blocks: [{ kind: "ask", text: "Which one should I book?", status: "pending" }],
+        },
+      ],
+    });
+    await cancelled.delivery.deliverRun("run-1");
+    expect(bodies(cancelled)).toEqual(["Two places are open."]);
+  });
+
+  it("sends a request to take over the bot's screen as text", async () => {
+    const t = setup();
+    addRun(t.world, {
+      status: "waiting_input",
+      replies: [
+        {
+          id: "takeover-1",
+          blocks: [
+            {
+              kind: "computer",
+              state: TAKEOVER_COMPUTER_PENDING_STATE,
+              text: "Please solve the captcha.",
+            },
+          ],
+        },
+      ],
+    });
+
+    await t.delivery.deliverRun("run-1");
+
+    expect(bodies(t)).toEqual([`Please solve the captcha.\n${CHAT_APP_TAKEOVER_NOTE}`]);
   });
 
   it("leaves in-app runs and bots without a linked chat in the app", async () => {
@@ -1886,6 +2028,7 @@ describe("when a send fails", () => {
       post("t-a", "a-2"),
     ]);
     t.sendToThread.mockRejectedValueOnce(new Error("messaging provider 500"));
+    const secondBackupAt = backupJob(t, second!)!.availableAt!.getTime();
     await t.delivery.send([threadLane("t-a")]);
 
     expect(t.sendToThread).toHaveBeenCalledOnce();
@@ -1894,9 +2037,7 @@ describe("when a send fails", () => {
     const retry = backupJob(t, first!)!.availableAt!.getTime();
     expect(retry).toBeGreaterThanOrEqual(before);
     expect(retry).toBeLessThanOrEqual(Date.now());
-    expect(backupJob(t, second!)!.availableAt!.getTime()).toBeGreaterThanOrEqual(
-      before + MESSAGING_SEND_BACKUP_MS,
-    );
+    expect(backupJob(t, second!)!.availableAt!.getTime()).toBe(secondBackupAt);
   });
 
   it("moves the backup job to the provider's retry-after", async () => {

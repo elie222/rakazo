@@ -132,26 +132,38 @@ async function handleDirectEvent(
   // A deactivated person's chat apps act for nobody: no commands, messages or links.
   if (existing && (await accountDeactivated(deps.prisma, existing.userId))) return;
   if (existing) {
+    const command = parseMessagingCommand(event.content);
+    const releasesHeld = existing.outboundSinceInbound >= MESSAGING_DM_OUTBOUND_CAP;
+    // Read what a YES or NO answers before the held replies below go out: one
+    // of them may be a request the person had not seen when they replied. A
+    // redelivery of the reply that already released them answers nothing.
+    const prompt =
+      (command === "approve" || command === "decline") && existing.capReleaseHandle !== event.handle
+        ? await latestPrompt(deps, existing)
+        : null;
     // Any reply — even a content-free reaction — ends the consecutive-
     // outbound streak, but only real text wakes the bot. The conversation
     // id is refreshed from the webhook so outbound always has a thread.
     await deps.prisma.messagingIdentity.update({
       where: { id: existing.id },
-      data: { outboundSinceInbound: 0, lastInboundAt: new Date(), dmThreadId: event.threadId },
+      data: {
+        outboundSinceInbound: 0,
+        lastInboundAt: new Date(),
+        dmThreadId: event.threadId,
+        ...(releasesHeld ? { capReleaseHandle: event.handle } : {}),
+      },
     });
     // Replies held behind the consecutive-outbound cap can go now.
-    if (existing.outboundSinceInbound >= MESSAGING_DM_OUTBOUND_CAP)
-      await deps.delivery.send([{ identityId: existing.id }]);
+    if (releasesHeld) await deps.delivery.send([{ identityId: existing.id }]);
     if (!text && attachments.length === 0) return;
     // Owner commands are only parsed in the verified 1:1 conversation.
-    const command = parseMessagingCommand(event.content);
     if (command === "stop") {
       // Only a bare "stop" is the command; one carrying media is delivered as a message.
       if (attachments.length === 0 && !event.mediaUrl) {
         await stopOwnerWork(deps, existing, event);
         return;
       }
-    } else if (command && (await applyOwnerCommand(deps, existing, command))) return;
+    } else if (command && (await applyOwnerCommand(deps, existing, command, prompt))) return;
     // A linked sender pasting a fresh code re-points this address at another
     // of their bots (only their own codes apply).
     if (await tryRedeemLinkCode(deps, event)) return;
@@ -556,22 +568,33 @@ async function stopOwnerWork(
   if (stop?.runIds.length) await finishThreadStop(deps, identity, target, stop);
 }
 
-/** How long a channel invite or connection request can be answered by text. */
-export const TEXT_ANSWER_WINDOW_MS = 24 * 60 * 60 * 1000;
-
-/**
- * The one request a bare YES or NO answers: the request whose prompt is the newest message this
- * line sent the person, confirmed delivered within the answer window and still pending. Anything
- * said since, by the bot or the product, makes the reply an ordinary message. So does a newest
- * message that is still on its way or failed: the person may have seen it, so no older prompt may
- * take the reply in its place.
- */
-async function answeredRequest(deps: MessagingInboundDeps, identity: IdentityRow) {
-  const latest = await deps.prisma.messagingOutbound.findFirst({
+/** The newest message this line sent the person, as it stood when their reply arrived. */
+function latestPrompt(deps: MessagingInboundDeps, identity: IdentityRow) {
+  return deps.prisma.messagingOutbound.findFirst({
     where: { identityId: identity.id, kind: "dm" },
     orderBy: { createdAt: "desc" },
     select: { idempotencyKey: true, createdAt: true, status: true, providerHandle: true },
   });
+}
+
+type LatestPrompt = Awaited<ReturnType<typeof latestPrompt>>;
+
+/** How long a channel invite or connection request can be answered by text. */
+export const TEXT_ANSWER_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * The one request a bare YES or NO answers: the request whose prompt was the newest message this
+ * line had sent the person when the reply arrived, confirmed delivered within the answer window
+ * and still pending. Anything
+ * said since, by the bot or the product, makes the reply an ordinary message. So does a newest
+ * message that is still on its way or failed: the person may have seen it, so no older prompt may
+ * take the reply in its place.
+ */
+async function answeredRequest(
+  deps: MessagingInboundDeps,
+  identity: IdentityRow,
+  latest: LatestPrompt,
+) {
   if (
     latest?.status !== "sent" ||
     latest.providerHandle === null ||
@@ -600,6 +623,7 @@ async function applyOwnerCommand(
   deps: MessagingInboundDeps,
   identity: IdentityRow,
   command: Exclude<MessagingCommand, "stop">,
+  prompt: LatestPrompt,
 ): Promise<boolean> {
   if (command === "leave") {
     const membership = await deps.prisma.messagingChannelMember.findFirst({
@@ -631,7 +655,7 @@ async function applyOwnerCommand(
     return true;
   }
 
-  const target = await answeredRequest(deps, identity);
+  const target = await answeredRequest(deps, identity, prompt);
   if (!target) return false;
   const approved = command === "approve";
 

@@ -24,6 +24,15 @@ describe("parsePageAmount", () => {
     // A separator before three digits groups thousands: the larger reading.
     ["$1.234", 123400, "usd"],
     ["$1,000,000", 100000000, "usd"],
+    // A decimal part with no whole part is still a fraction, not whole units.
+    ["$.99", 99, "usd"],
+    ["€,50", 50, "eur"],
+    [".99 USD", 99, "usd"],
+    [",50 €", 50, "eur"],
+    ["$.5", 50, "usd"],
+    ["$0.99", 99, "usd"],
+    ["€0,50", 50, "eur"],
+    ["$00.99", 99, "usd"],
   ])("reads %s", (text, amount, currency) => {
     expect(parsePageAmount(text)).toEqual({ amount, currency });
   });
@@ -41,6 +50,11 @@ describe("parsePageAmount", () => {
     "$1.2345",
     "$1,234,56",
     "$30,000,000",
+    "$..99",
+    "$,.99",
+    "$.999",
+    "€,500",
+    "$.1,234",
   ])("refuses %j", (text) => {
     expect(parsePageAmount(text)).toBeNull();
   });
@@ -89,6 +103,27 @@ describe("spendingPeriodStart", () => {
 });
 
 describe("formatMinorAmount", () => {
+  it.each([
+    [1000, "jpy", "¥1,000"],
+    [1000, "JPY", "¥1,000"],
+    [0, "jpy", "¥0"],
+    [1000, "krw", "₩1,000"],
+    [1234, "kwd", "KWD\u00a01.234"],
+    [2340, "eur", "€23.40"],
+    [2340, "gbp", "£23.40"],
+  ])("formats %s minor units of %s", (amount, currency, expected) => {
+    expect(formatMinorAmount(amount, currency)).toBe(expected);
+  });
+
+  it("uses the requested locale without changing the currency scale", () => {
+    expect(formatMinorAmount(1000, "jpy", "ja-JP")).toBe("￥1,000");
+    expect(formatMinorAmount(1234, "kwd", "de-DE")).toBe("1,234\u00a0KWD");
+  });
+
+  it("keeps the existing fallback for invalid currency codes", () => {
+    expect(formatMinorAmount(1234, "invalid")).toBe("12.34 INVALID");
+  });
+
   it("formats minor units as money", () => {
     expect(formatMinorAmount(2340, "usd")).toBe("$23.40");
     expect(formatMinorAmount(5000, "ils", "en-US")).toBe("₪50.00");

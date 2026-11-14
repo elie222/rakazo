@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { builtinAgentTools } from "./builtin.tool-definition.js";
+import { CLAUDE_CODE_PROVIDER_ID } from "./cli-models/claude-code/provider.js";
 import {
+  catalogKnowsModel,
   filterImageReturningComputerTools,
   IMAGE_RETURNING_COMPUTER_TOOLS,
   knownModelImageInput,
@@ -36,6 +38,14 @@ describe("model vision gating for computer tools", () => {
   it("sees models the runtime adds to the bundled catalog", () => {
     expect(modelAcceptsImageInput("anthropic", "claude-sonnet-5-5")).toBe(true);
     expect(modelAcceptsImageInput("openai-codex", "gpt-6.1-sol")).toBe(true);
+  });
+
+  it("uses the CLI model lookup consistently for image capabilities", () => {
+    const provider = CLAUDE_CODE_PROVIDER_ID;
+    const id = "claude-sonnet-5-5";
+    expect(catalogKnowsModel(provider, id)).toBe(true);
+    expect(knownModelImageInput(provider, id)).toBe(true);
+    expect(modelAcceptsImageInput(provider, id)).toBe(true);
   });
 
   it.each([

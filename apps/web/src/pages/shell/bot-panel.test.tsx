@@ -396,7 +396,7 @@ describe("BotSettings thinking options", () => {
     expect(onSave.mock.lastCall?.[0]).not.toHaveProperty("thinkingLevel");
   });
 
-  it("shows the connection's thinking levels for a bot on a second enabled model", async () => {
+  it("shows the thinking levels the bot's own model offers on its connection", async () => {
     i18n.load("en", {});
     i18n.activate("en");
     vi.mocked(rpc.models.credentials).mockResolvedValueOnce([
@@ -417,7 +417,8 @@ describe("BotSettings thinking options", () => {
         isDefault: true,
         modelId: "alpha",
         enabledModelIds: ["alpha", "beta"],
-        thinkingLevels: ["off", "low", "high"],
+        apiProtocol: "anthropic-messages",
+        modelSettings: { beta: { reasoning: true } },
       },
     ]);
     await render("Billing", { modelProvider: "openai-compatible", modelId: "beta" });
@@ -433,7 +434,13 @@ describe("BotSettings thinking options", () => {
     if (!(model instanceof HTMLSelectElement)) throw new Error("Missing model select");
     expect(model.value).toBe("openai-compatible::beta");
     if (!(thinking instanceof HTMLSelectElement)) throw new Error("Missing thinking select");
-    expect([...thinking.options].map((option) => option.value)).toEqual(["", "low", "high"]);
+    expect([...thinking.options].map((option) => option.value)).toEqual([
+      "",
+      "minimal",
+      "low",
+      "medium",
+      "high",
+    ]);
   });
 });
 

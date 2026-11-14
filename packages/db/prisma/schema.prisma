@@ -47,6 +47,8 @@ model User {
   /// The app language last chosen, such as "es" or "pt-BR". Null until an app reports it;
   /// emails then follow the language of the browser that asked for them.
   locale                      String?
+  /// Labs features this person turned on, by contracts' LabFeature id. Unknown ids are ignored.
+  labs                        String[]                     @default([])
   marketingEmailOptOutAt      DateTime?
   /// When an organization this person owns first subscribed; uses up every trial kind.
   billingTrialUsedAt          DateTime?
@@ -1876,6 +1878,7 @@ model Computer {
   homeDeletionNotice      HomeDeletionNotice?
 
   @@index([spaceId, scope])
+  @@index([executionRunId])
   @@map("computers")
 }
 
@@ -2235,6 +2238,9 @@ model MessagingIdentity {
   verifiedAt           DateTime?
   lastInboundAt        DateTime?
   outboundSinceInbound Int       @default(0)
+  /// Provider handle of the reply that last released messages held behind the outbound cap.
+  /// A redelivery of that reply answers no request: it was sent before they went out.
+  capReleaseHandle     String?
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
 

@@ -46,6 +46,7 @@ import { forgetAppBadge, syncInboxAppBadge, unreadChatCount } from "../lib/app-b
 import { mobileTokens, resolveMobileAppearance } from "../lib/appearance";
 import { explicitSignInRoute } from "../lib/auth-routing";
 import { AvatarViewportScope, createAvatarViewport } from "../lib/avatar-life";
+import { useContentBottomInset } from "../lib/content-bottom-inset";
 import type { CreateAction } from "../lib/create-chooser";
 import { useHeaderHeightIfAny } from "../lib/floating-header";
 import { useForegroundPoll } from "../lib/foreground-poll";
@@ -292,7 +293,13 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     editSectionFromMenu,
     deleteSection,
     snoozeChat,
-  } = useInboxChatActions({ loadBots, setBots, setGroups, setSpaces });
+  } = useInboxChatActions({
+    confirmationActive: inboxShown,
+    loadBots,
+    setBots,
+    setGroups,
+    setSpaces,
+  });
 
   const { activity, activityStatus, clearActivity, activityRequestId, loadActivity } =
     useSpaceActivity({
@@ -425,6 +432,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
         organizeTarget.chat)
     : null;
   const insets = useSafeAreaInsets();
+  const contentBottomInset = useContentBottomInset();
   // An unfolded or tablet window keeps the inbox in a centred column.
   const windowWidth = useWindowDimensions().width;
   const { inboxWidth } = useSplitView();
@@ -464,7 +472,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     listRef,
     // The Liquid Glass header floats over the list; the older header sits above it.
     topInset: nativeHeader ? headerHeight : 0,
-    bottomInset: insets.bottom,
+    bottomInset: contentBottomInset,
   });
   const router = useRouter();
   const pathname = usePathname();

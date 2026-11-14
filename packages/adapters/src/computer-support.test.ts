@@ -69,6 +69,13 @@ describe("Team Computer bot folders", () => {
     expect(cwd("~user/src")).toBe(`${root}/~user/src`);
   });
 
+  it("hands a dedicated computer's provider a relative cwd for a home alias", () => {
+    const requested = (cwd: string) => resolveBotWorkspaceCwd("dedicated", "bot-1", cwd);
+    expect(requested("~")).toBeUndefined();
+    expect(requested("~/")).toBeUndefined();
+    expect(requested("~/src")).toBe("src");
+  });
+
   it("tells the bot how its shell reaches the same shared folder as the file tools", () => {
     const shellDefaultCwd = resolveBotWorkspaceCwd("team", "bot-1", undefined) ?? "";
     const sharedForFileTools = resolveBotWorkspacePath("team", "bot-1", "shared/report.xlsx");

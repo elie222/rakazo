@@ -1,6 +1,7 @@
 import type { Models } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { canonicalPiProviderId } from "@rakazo/contracts";
+import { CLAUDE_CODE_PROVIDER_ID, claudeCodeModel } from "./cli-models/claude-code/provider.js";
 import { DEFAULT_OPENROUTER_MODEL_ID } from "./deployment-model.js";
 import { liveModelSibling, withLiveImageInput } from "./pi-live-model.js";
 import { registerLocalProvider } from "./pi-local-provider.js";
@@ -75,6 +76,13 @@ function catalogModels(): Models {
   return catalogModelsCache;
 }
 
+function visionModel(provider: string, id: string) {
+  const models = catalogModels();
+  return provider === CLAUDE_CODE_PROVIDER_ID
+    ? claudeCodeModel(id, models)
+    : models.getModel(provider, id);
+}
+
 /**
  * Mirror Pi's scripted placeholder resolution so vision checks use the same
  * model the runtime will actually call.
@@ -94,10 +102,18 @@ export function resolveModelRefForVisionCheck(
   return { provider: normalizedProvider, id: normalizedId };
 }
 
+/** The bundled catalog describes this model, so its capabilities are known, not configured. */
+export function catalogKnowsModel(provider: string, modelId: string): boolean {
+  const resolved = resolveModelRefForVisionCheck(provider, modelId);
+  if (!resolved.provider || !resolved.id || resolved.provider === OPENAI_COMPATIBLE_PROVIDER_ID)
+    return false;
+  return Boolean(visionModel(resolved.provider, resolved.id));
+}
+
 /**
- * Unknown models are treated as text-only. An explicit connection capability
- * override is honored for OpenAI-compatible models. For Codex, `acceptsImages`
- * is the account catalog's answer when a run has one, and is left unused when absent.
+ * The catalog decides for models it knows; for Codex, `acceptsImages` is the account catalog's
+ * answer and replaces it. Elsewhere `acceptsImages` is the model's setting, and models without
+ * one are judged by a same-family sibling or treated as text-only.
  */
 export function modelAcceptsImageInput(
   provider: string,
@@ -106,21 +122,24 @@ export function modelAcceptsImageInput(
 ): boolean {
   const resolved = resolveModelRefForVisionCheck(provider, modelId);
   if (!resolved.provider || !resolved.id) return false;
-  if (acceptsImages && resolved.provider === OPENAI_COMPATIBLE_PROVIDER_ID) return true;
-
   const models = catalogModels();
-  let model = models.getModel(resolved.provider, resolved.id);
-  if (
-    !model &&
-    resolved.provider !== "openrouter" &&
-    resolved.provider !== OPENAI_COMPATIBLE_PROVIDER_ID
-  ) {
-    model = models.getModel("openrouter", resolved.id);
-  }
-  model ??= liveModelSibling(models, resolved.provider, resolved.id);
-  if (model && resolved.provider === CHATGPT_OAUTH_PROVIDER) {
-    model = withLiveImageInput(model, acceptsImages);
-  }
+  // A model's own setting wins; operator-declared vision models are registered in the catalog.
+  if (resolved.provider === OPENAI_COMPATIBLE_PROVIDER_ID)
+    return (
+      acceptsImages ??
+      Boolean(models.getModel(resolved.provider, resolved.id)?.input.includes("image"))
+    );
+  const known = visionModel(resolved.provider, resolved.id);
+  if (known)
+    return (
+      resolved.provider === CHATGPT_OAUTH_PROVIDER
+        ? withLiveImageInput(known, acceptsImages)
+        : known
+    ).input.includes("image");
+  if (acceptsImages !== undefined) return acceptsImages;
+  const model =
+    (resolved.provider !== "openrouter" ? models.getModel("openrouter", resolved.id) : undefined) ??
+    liveModelSibling(models, resolved.provider, resolved.id);
   return Boolean(model?.input.includes("image"));
 }
 
@@ -136,7 +155,7 @@ export function filterImageReturningComputerTools<T extends { name: string }>(
 export function knownModelImageInput(provider: string, modelId: string): boolean | undefined {
   const resolved = resolveModelRefForVisionCheck(provider, modelId);
   if (resolved.provider === OPENAI_COMPATIBLE_PROVIDER_ID) return undefined;
-  const model = catalogModels().getModel(resolved.provider, resolved.id);
+  const model = visionModel(resolved.provider, resolved.id);
   return model ? model.input.includes("image") : undefined;
 }
 

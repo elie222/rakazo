@@ -2,7 +2,7 @@ import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import type { Connection, ConnectionCatalogItem, RpcOutput } from "@rakazo/contracts";
 import { CONNECTION_LABEL_MAX_LENGTH } from "@rakazo/contracts";
-import { catalogItemKey, humanizeToolName } from "@rakazo/core";
+import { appToolLabel, catalogItemKey } from "@rakazo/core";
 import type { Dispatch, SetStateAction } from "react";
 import { ActivityIndicator, Pressable, Text, TextInput, View } from "react-native";
 import { native, useThemedStyles } from "../lib/native";
@@ -140,7 +140,7 @@ export function IntegrationDetail({
             ) : (
               tools.map((tool) => (
                 <Text key={tool.name} style={styles.toolName}>
-                  {humanizeToolName(tool.name)}
+                  {appToolLabel(tool.name, item.slug)}
                 </Text>
               ))
             )}

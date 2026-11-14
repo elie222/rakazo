@@ -1,4 +1,5 @@
 import type { MenuAction } from "@expo/ui/community/menu";
+import { plural } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import type { ModelCatalogEntry, ModelCredential } from "@rakazo/contracts";
 import {
@@ -6,6 +7,7 @@ import {
   connectionDisplayName,
   MAX_MODEL_CONNECTION_LABEL,
 } from "@rakazo/contracts";
+import { connectionModels } from "@rakazo/core";
 import { Alert, Platform } from "react-native";
 import { RowMenu } from "./model-role-settings";
 import { SettingsGroup, SettingsRow } from "./settings-group";
@@ -27,6 +29,7 @@ export function ModelProviders({
   onDisconnect: (credential: ModelCredential) => void;
 }) {
   const { t } = useLingui();
+  const modelCount = (count: number) => t`${plural(count, { one: "# model", other: "# models" })}`;
   const providerName = (credential: ModelCredential) =>
     catalog.find(
       (entry) =>
@@ -41,9 +44,12 @@ export function ModelProviders({
         name,
         detail: credential.reconnectRequired
           ? t`Sign in again`
-          : name.startsWith(provider)
-            ? undefined
-            : provider,
+          : [
+              name.startsWith(provider) ? null : provider,
+              modelCount(connectionModels(credential, catalog).length),
+            ]
+              .filter(Boolean)
+              .join(" · "),
       };
     })
     .sort((left, right) => left.name.localeCompare(right.name));
