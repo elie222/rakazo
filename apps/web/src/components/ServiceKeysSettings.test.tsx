@@ -44,7 +44,7 @@ vi.mock("../lib/query", () => ({
   }),
 }));
 
-const { ServiceKeysSettings } = await import("./ServiceKeysSettings");
+import { ServiceKeysSettings } from "./ServiceKeysSettings";
 
 const key = {
   id: "key-1",
