@@ -251,7 +251,7 @@ export function vaultImportOrigin(cell: string): string | undefined {
     let written: string;
     try {
       written = decodeURIComponent(
-        site.replace(/[\t\r\n]/g, "").match(/^[^/?#:]*/)?.[0] ?? "",
+        site.replace(/[\t\r\n]/g, "").match(/^[^\\/?#:]*/)?.[0] ?? "",
       ).replace(/\.$/, "");
     } catch {
       continue;

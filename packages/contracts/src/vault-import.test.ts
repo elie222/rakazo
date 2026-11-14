@@ -190,6 +190,7 @@ describe("parseVaultCsv", () => {
 
   it.each([
     ["1%2E2%2E3%2E4", "https://1.2.3.4"],
+    ["192.168.1.1\\login", "https://192.168.1.1"],
     ["192.168.1.1", "https://192.168.1.1"],
     ["192.168.1.1:8443/admin", "https://192.168.1.1:8443"],
     ["example.com.", "https://example.com"],
