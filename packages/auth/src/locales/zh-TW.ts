@@ -35,16 +35,12 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
     "Rakazo 是開源的。{star}能幫助更多人發現它。",
   "A star on GitHub": "在 GitHub 上給星星",
   "Questions? Just reply. I read every one.": "有問題嗎？直接回覆即可。每封我都會看。",
-  "Have any questions? Reply to this email.": "有任何問題嗎？請回覆這封郵件。",
   Unsubscribe: "取消訂閱",
   "Invite a friend": "邀請朋友",
   "Invite a friend to Rakazo: they get {weeks} weeks free, and you earn a free month when they start a qualifying subscription with a new card.":
     "邀請朋友加入 Rakazo：對方可免費使用 {weeks} 週；當對方用新卡開始符合條件的訂閱時，你將獲得一個月免費。",
   "Open Rakazo": "開啟 Rakazo",
   "and choose Invite friends for your link.": "並選擇「邀請朋友」取得你的連結。",
-  "Have any questions? Just reply to this email.": "有任何問題嗎？直接回覆這封郵件即可。",
-  "If you're enjoying Rakazo,": "如果你喜歡 Rakazo，",
-  "give us a star on GitHub": "歡迎在 GitHub 上給我們一顆星",
   "We received your Rakazo plugin": "我們已收到你的 Rakazo 外掛",
   "Thanks for submitting a plugin to the Rakazo marketplace.": "感謝你向 Rakazo 外掛市集提交外掛。",
   "We review every submission and will email you when it's done.":

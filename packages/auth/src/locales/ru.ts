@@ -38,7 +38,6 @@ export const RU_MESSAGES: Record<string, string> = {
   "A star on GitHub": "Звезда на GitHub",
   "Questions? Just reply. I read every one.":
     "Есть вопросы? Просто ответьте. Я читаю каждое письмо.",
-  "Have any questions? Reply to this email.": "Есть вопросы? Ответьте на это письмо.",
   Unsubscribe: "Отписаться",
   "Invite a friend": "Пригласите друга",
   "Invite a friend to Rakazo: they get {weeks} weeks free, and you earn a free month when they start a qualifying subscription with a new card.":
@@ -46,9 +45,6 @@ export const RU_MESSAGES: Record<string, string> = {
   "Open Rakazo": "Откройте Rakazo",
   "and choose Invite friends for your link.":
     "и выберите «Пригласить друзей», чтобы получить ссылку.",
-  "Have any questions? Just reply to this email.": "Есть вопросы? Просто ответьте на это письмо.",
-  "If you're enjoying Rakazo,": "Если вам нравится Rakazo,",
-  "give us a star on GitHub": "поставьте нам звезду на GitHub",
   "We received your Rakazo plugin": "Мы получили ваш плагин для Rakazo",
   "Thanks for submitting a plugin to the Rakazo marketplace.":
     "Спасибо, что отправили плагин в маркетплейс Rakazo.",

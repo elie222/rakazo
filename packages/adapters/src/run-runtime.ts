@@ -6,11 +6,13 @@ import type {
   MessagingSurface,
   SecretStore,
 } from "@rakazo/adapter-kit";
+import type { LabFeature } from "@rakazo/contracts";
 import { phoneCallSettings, resolveEncryptionKey, uploadSizeFromEnv } from "@rakazo/core";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { createSecurityEventPruner, securityEventRetentionDays } from "@rakazo/db";
 import { auditLogConfig, createAuditLogReconciler } from "./audit-forwarding.js";
 import { createBackgroundJobHandlers } from "./background-job-handlers.js";
+import { cliModelRuntime } from "./cli-models/runtime.js";
 import { reconcileCloudAgents } from "./cloud-agent-service.js";
 import type { ComposioProvider } from "./composio-connector.js";
 import { ComposioConnector, isComposioEnabled } from "./composio-connector.js";
@@ -25,6 +27,7 @@ import type { RemoteConnectorDependencies } from "./installed-connectors.js";
 import { InstalledConnectorProvider } from "./installed-connectors.js";
 import { IntegrationProviderSettings } from "./integration-provider-settings.js";
 import { createJobReconciler } from "./job-reconciler.js";
+import { deploymentLabsFromEnv } from "./labs-env.js";
 import { McpConnector, mcpStdioOptionsFromEnv } from "./mcp-connector.js";
 import { McpOAuthBroker } from "./mcp-oauth.js";
 import { reconcileMediaVideos } from "./media-video-poll.js";
@@ -64,7 +67,7 @@ export interface RunRuntimeEnv extends PipedreamEnvironmentValues {
   mcpStdioAllowedCommands: string[];
   mcpStdio: ReturnType<typeof mcpStdioOptionsFromEnv>;
   mcpAllowPrivateEndpoint: boolean;
-  ticketBoardEnabled: boolean;
+  deploymentLabs: LabFeature[];
   phoneCallsEnabled: boolean;
   phoneCallRingSeconds: number;
   phoneCallCooldownMinutes: number;
@@ -99,7 +102,7 @@ export function runRuntimeEnvFromProcess(source: NodeJS.ProcessEnv): RunRuntimeE
     pipedreamClientSecret: source.PIPEDREAM_CLIENT_SECRET,
     pipedreamProjectId: source.PIPEDREAM_PROJECT_ID,
     pipedreamEnvironment: source.PIPEDREAM_ENVIRONMENT,
-    ticketBoardEnabled: source.TICKET_BOARD_ENABLED === "true",
+    deploymentLabs: deploymentLabsFromEnv(source),
     ...phoneCallSettings(source),
     maxUploadSizeBytes: uploadSizeFromEnv(source),
     inboundEmailDomain: source.INBOUND_EMAIL_DOMAIN?.trim().toLowerCase() || undefined,
@@ -183,7 +186,7 @@ type SetByRunRuntime =
   | "deploymentModelKey"
   | "deploymentModelConfigured"
   | "dataDir"
-  | "ticketBoardEnabled"
+  | "deploymentLabs"
   | "phoneCallsEnabled"
   | "phoneCallRingSeconds"
   | "phoneCallCooldownMinutes"
@@ -205,6 +208,7 @@ export function createRunRuntime(
   },
 ) {
   const { messaging, isMessagingInstallationActive, ...executorDeps } = deps;
+  const runtime = cliModelRuntime(env, deps.runtime, deps);
   const messagingDelivery = messaging
     ? new MessagingDelivery({
         prisma: deps.prisma,
@@ -222,7 +226,7 @@ export function createRunRuntime(
         isInstallationActive: isMessagingInstallationActive,
         judge: new ModelTeamChatEngagementJudge({
           prisma: deps.prisma,
-          runtime: deps.runtime,
+          runtime,
           secrets: deps.secretStore,
           deploymentProvider: env.defaultProvider,
           deploymentModel: env.defaultModel,
@@ -239,6 +243,7 @@ export function createRunRuntime(
     : undefined;
   const executor = createRunExecutor({
     ...executorDeps,
+    runtime,
     maxUploadSizeBytes: env.maxUploadSizeBytes,
     connector: connectors.stack.connector,
     connectors: connectors.stack.connector,
@@ -256,7 +261,7 @@ export function createRunRuntime(
     deploymentModelKey: env.deploymentModelKey,
     deploymentModelConfigured: env.deploymentModelConfigured,
     dataDir: env.dataDir,
-    ticketBoardEnabled: env.ticketBoardEnabled,
+    deploymentLabs: env.deploymentLabs,
     phoneCallsEnabled: env.phoneCallsEnabled,
     phoneCallRingSeconds: env.phoneCallRingSeconds,
     phoneCallCooldownMinutes: env.phoneCallCooldownMinutes,
@@ -275,7 +280,7 @@ export function createRunRuntime(
     events: deps.events,
     // Every container runs node as the same pid, and deploys run old and new side by side.
     workerId: `${hostname()}:${process.pid}`,
-    runtime: deps.runtime,
+    runtime,
     notifications: deps.notifications instanceof ExpoPushProvider ? deps.notifications : undefined,
     secretStore: deps.secretStore,
     memoryProviders: deps.memoryProviders,
@@ -289,7 +294,7 @@ export function createRunRuntime(
     mediaGeneration: deps.mediaGeneration,
     maxUploadSizeBytes: env.maxUploadSizeBytes,
   });
-  return { executor, jobHandlers, messagingDelivery, teamChat };
+  return { runtime, executor, jobHandlers, messagingDelivery, teamChat };
 }
 
 type JobReconcilerDeps = Parameters<typeof createJobReconciler>[0];
@@ -338,7 +343,7 @@ export function createRunReconciler(
       reconcileCloudAgents({ prisma, jobs, cloudAgent, userCloudAgents: deps.userCloudAgents }),
     reconcilePurchases: () => reconcilePurchases({ prisma, jobs, paymentWallet }),
     reconcileMediaVideos: () => reconcileMediaVideos({ prisma, jobs, mediaGeneration }),
-    reconcileComputerUpdates: () => reconcileComputerUpdates({ prisma, jobs }),
+    reconcileComputerUpdates: () => reconcileComputerUpdates({ prisma, jobs, events: deps.events }),
     reconcileSecurityEventRetention: createSecurityEventPruner(
       prisma,
       securityEventRetentionDays(),

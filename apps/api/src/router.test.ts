@@ -34,6 +34,7 @@ import type { Actor, Bot, ProductEvent } from "@rakazo/contracts";
 import {
   BLOCKED_ITEM_ANSWER,
   CONNECTOR_AUTH_UNAVAILABLE,
+  MAX_MODEL_SETTINGS_PER_CONNECTION,
   MCP_OAUTH_CLIENT_REQUIRED,
   MODEL_KEY_FORMAT_ERROR,
   REPLY_QUOTE_MAX_LENGTH,
@@ -51,6 +52,7 @@ import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mainRole, withModelRoles } from "../../../packages/adapters/src/testing/model-roles.js";
 import { providerScopeKey } from "./connection-flows.js";
+import { createModelConnector, prepareModelReconnectSettings } from "./model-credentials.js";
 import type { RouterDeps } from "./router.js";
 import {
   botIntroPrompt,
@@ -183,11 +185,19 @@ describe("account preferences", () => {
     await expect(client.analytics.screen({ screen: "chat", surface: "desktop" })).resolves.toEqual({
       ok: true,
     });
-    expect(capture).toHaveBeenCalledWith(actor.userId, {
-      name: "screen_viewed",
-      screen: "chat",
-      surface: "desktop",
-    });
+    expect(capture).toHaveBeenCalledWith(
+      actor.userId,
+      { name: "screen_viewed", screen: "chat", surface: "desktop" },
+      undefined,
+      undefined,
+    );
+    await client.analytics.screen({ screen: "plans", surface: "web", planLayout: "tiers" });
+    expect(capture).toHaveBeenLastCalledWith(
+      actor.userId,
+      { name: "screen_viewed", screen: "plans", surface: "web", planLayout: "tiers" },
+      undefined,
+      { "plan-layout": "tiers" },
+    );
     await expect(
       client.analytics.screen({
         screen: "chat",
@@ -199,7 +209,7 @@ describe("account preferences", () => {
     await expect(
       anonymous.analytics.screen({ screen: "chat", surface: "web" }),
     ).rejects.toMatchObject({ code: "UNAUTHORIZED" });
-    expect(capture).toHaveBeenCalledTimes(1);
+    expect(capture).toHaveBeenCalledTimes(2);
   });
 
   it("reports model credential store outages as service unavailable", async () => {
@@ -697,7 +707,7 @@ describe("billing", () => {
       code: "NOT_FOUND",
     });
     await expect(
-      client.billing.purchaseCredits({ amountCents: 1000, monthly: true }),
+      client.billing.purchaseCredits({ amountCents: 2000, monthly: true }),
     ).rejects.toMatchObject({ code: "NOT_FOUND" });
     await expect(client.billing.setMonthlyCredits({ amountCents: 2000 })).rejects.toMatchObject({
       code: "NOT_FOUND",
@@ -4385,6 +4395,22 @@ describe("computer screen url", () => {
     expect(endRun.mock.calls.map(([, , reason]) => reason)).toEqual(["gone"]);
   });
 
+  it("returns the team screen limit without private provider details", async () => {
+    const { response, updateMany } = await callScreenUrl(() =>
+      Promise.reject(
+        new Error("cannot allocate another screen (limit 4): private provider detail"),
+      ),
+    );
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      json: expect.objectContaining({
+        code: "CONFLICT",
+        message: "All 4 Team Computer screens are in use (SANDBOX_TEAM_SCREEN_LIMIT)",
+      }),
+    });
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+
   it("keeps a transport blip an error and leaves the row alone", async () => {
     const { response, updateMany } = await callScreenUrl(() =>
       Promise.reject(Object.assign(new Error("fetch failed"), { code: "ECONNRESET" })),
@@ -4395,11 +4421,7 @@ describe("computer screen url", () => {
 
   it("returns a recoverable conflict when the screen is temporarily busy", async () => {
     const { response, updateMany } = await callScreenUrl(() =>
-      Promise.reject(
-        new ComputerScreenUnavailableError(
-          "cannot allocate another screen: private provider detail",
-        ),
-      ),
+      Promise.reject(new ComputerScreenUnavailableError("private provider detail")),
     );
     expect(response.status).toBe(409);
     await expect(response.json()).resolves.toEqual({
@@ -5550,6 +5572,7 @@ describe("model credential persistence", () => {
           userVoiceCredential: { count: vi.fn().mockResolvedValue(0) },
           userModelPreference: deps.prisma.userModelPreference,
           secret: {
+            findFirst: vi.fn().mockResolvedValue(null),
             create: vi.fn().mockResolvedValue({ id: "new-secret" }),
             deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
           },
@@ -5967,6 +5990,7 @@ describe("model credential persistence", () => {
           userVoiceCredential: { count: vi.fn().mockResolvedValue(0) },
           userModelPreference: deps.prisma.userModelPreference,
           secret: {
+            findFirst: vi.fn().mockResolvedValue(null),
             create: vi.fn().mockResolvedValue({ id: "new-secret" }),
             deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
           },
@@ -6200,6 +6224,289 @@ describe("model disconnect", () => {
     expect(tx.userModelCredential.deleteMany).toHaveBeenCalledWith({
       where: { userId: actor.userId, id: { in: ["personal", "work"] } },
     });
+  });
+});
+
+describe("model settings", () => {
+  const actor = {
+    spaceId: "space-1",
+    userId: "user-1",
+    email: "user@rakazo.test",
+    isDeploymentOwner: true,
+  } satisfies Actor;
+
+  it.each(["settings", "connection"])(
+    "rejects a connection save when its source %s changes before commit",
+    async (change) => {
+      let secretId = "secret-original";
+      let ciphertext = "sealed-original";
+      const connection = () => ({ id: "connection-1", provider: "zai", secretId });
+      const readSecret = vi.fn(async () => ({ ciphertext }));
+      const create = vi.fn();
+      const tx = {
+        userModelCredential: { findFirst: vi.fn(async () => connection()) },
+        secret: { findFirst: readSecret, create },
+      };
+      const deps = {
+        prisma: {
+          userModelCredential: { findFirst: vi.fn(async () => connection()) },
+          secret: { findFirst: readSecret },
+          $transaction: vi.fn(async (fn: (client: typeof tx) => unknown) => fn(tx)),
+        },
+        secrets: {
+          load: vi.fn(async () =>
+            JSON.stringify({
+              kind: "api_key",
+              key: "fake-original-key",
+              models: { "model-fixture": { maxTokens: 2000 } },
+            }),
+          ),
+          put: vi.fn(async () => {
+            if (change === "settings") ciphertext = "sealed-new-settings";
+            else secretId = "secret-new-connection";
+            return { id: "secret-prepared", ciphertext: "sealed-stale-replacement" };
+          }),
+        },
+        env: { defaultModel: "model-fixture" },
+      } as unknown as RouterDeps;
+      const connector = createModelConnector(deps, { read: vi.fn() } as never);
+      await expect(
+        connector.connectModelCredential(
+          actor,
+          { provider: "zai", credentialId: "connection-1", modelId: "model-fixture" },
+          undefined,
+        ),
+      ).rejects.toMatchObject({ code: "CONFLICT" });
+      expect(create).not.toHaveBeenCalled();
+    },
+  );
+
+  function settingsDeps(stored: string, defaultModel = "served", provider = "zai") {
+    let plaintext = stored;
+    const tx = {
+      $executeRaw: vi.fn(async () => 0),
+      secret: {
+        findFirst: vi.fn(async () => ({ ciphertext: "sealed" })),
+        update: vi.fn(async () => ({})),
+      },
+    };
+    const deps = {
+      prisma: {
+        $transaction: vi.fn(async (fn: (client: typeof tx) => unknown) => fn(tx)),
+        userModelCredential: {
+          findFirst: vi.fn(async ({ where }: { where: { id: string } }) =>
+            where.id === "connection-1"
+              ? {
+                  id: "connection-1",
+                  secretId: "secret-1",
+                  provider,
+                  userPreferences: [{ modelId: defaultModel }],
+                }
+              : null,
+          ),
+        },
+      },
+      secrets: {
+        load: vi.fn(async () => plaintext),
+        put: vi.fn(async (next: string) => {
+          plaintext = next;
+          return { id: "secret-1", ciphertext: "sealed-again" };
+        }),
+      },
+      env: {
+        defaultProvider: "fake",
+        defaultModel: "fake-model",
+        webOrigin: "http://127.0.0.1:5173",
+        screenProxySecret: "fake-test-secret",
+        sandboxProvider: "fake",
+        agentRuntime: "pi",
+      },
+    } as unknown as RouterDeps;
+    const handler = new RPCHandler(createRouter(deps));
+    const call = (body: unknown) =>
+      handle(
+        handler,
+        new Request("http://127.0.0.1/rpc/models/saveModelSettings", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ json: body }),
+        }),
+        { prefix: "/rpc", context: { actor } },
+      );
+    return { deps, tx, call, stored: () => JSON.parse(plaintext) as Record<string, unknown> };
+  }
+
+  it("reports a secret store outage as unavailable and keeps settings it could not read", async () => {
+    const { deps, call } = settingsDeps("sk-synthetic-key");
+    deps.secrets.load = vi.fn(async () => {
+      throw new SecretStoreUnavailableError();
+    });
+    expect(
+      (
+        await call({
+          credentialId: "connection-1",
+          modelId: "glm-5.3-flashx",
+          settings: { images: true },
+        })
+      ).status,
+    ).toBe(503);
+    Object.assign(deps.prisma, {
+      secret: { findFirst: vi.fn(async () => ({ ciphertext: "sealed" })) },
+    });
+    await expect(
+      prepareModelReconnectSettings(deps, actor, { secretId: "secret-1" }),
+    ).rejects.toBeInstanceOf(SecretStoreUnavailableError);
+    deps.secrets.load = vi.fn(async () => "not json {");
+    await expect(
+      prepareModelReconnectSettings(deps, actor, { secretId: "secret-1" }),
+    ).resolves.toEqual({
+      settings: {},
+      expectedSecret: { id: "secret-1", ciphertext: "sealed" },
+    });
+  });
+
+  it("saves one model's settings on the connection without touching its key", async () => {
+    const { tx, call, stored } = settingsDeps("sk-synthetic-key");
+    const response = await call({
+      credentialId: "connection-1",
+      modelId: "glm-5.3-flashx",
+      settings: { images: true, maxTokens: 8000 },
+    });
+    expect(response.status).toBe(200);
+    expect(stored()).toEqual({
+      kind: "api_key",
+      key: "sk-synthetic-key",
+      models: { "glm-5.3-flashx": { images: true, maxTokens: 8000 } },
+    });
+    expect(tx.secret.update).toHaveBeenCalledWith({
+      where: { id: "secret-1" },
+      data: { ciphertext: "sealed-again" },
+    });
+  });
+
+  it("rejects output-only overrides that fill the model's default context", async () => {
+    const known = listPiCatalog().find((entry) => entry.provider === "zai" && entry.contextWindow)!;
+    for (const input of [
+      {
+        provider: "zai",
+        modelId: known.id,
+        window: known.contextWindow!,
+        secret: "sk-synthetic-key",
+      },
+      {
+        provider: "openai-compatible",
+        modelId: "served",
+        window: 262144,
+        secret: JSON.stringify({
+          kind: "openai_compatible",
+          apiKey: "fake-key",
+          baseUrl: "https://example.com/v1",
+        }),
+      },
+    ]) {
+      const { call, deps } = settingsDeps(input.secret, input.modelId, input.provider);
+      const response = await call({
+        credentialId: "connection-1",
+        modelId: input.modelId,
+        settings: { maxTokens: input.window },
+      });
+      expect(response.status).toBe(400);
+      expect(deps.secrets.put).not.toHaveBeenCalled();
+    }
+  });
+
+  it("rejects a context-only override below the model's default output cap", async () => {
+    const known = listPiCatalog().find(
+      (entry) => entry.provider === "zai" && entry.contextWindow && entry.maxTokens,
+    )!;
+    for (const input of [
+      { provider: "zai", modelId: known.id, secret: "sk-synthetic-key" },
+      {
+        provider: "openai-compatible",
+        modelId: "served",
+        secret: JSON.stringify({
+          kind: "openai_compatible",
+          apiKey: "fake-key",
+          baseUrl: "https://example.com/v1",
+        }),
+      },
+    ]) {
+      const { call, deps } = settingsDeps(input.secret, input.modelId, input.provider);
+      const response = await call({
+        credentialId: "connection-1",
+        modelId: input.modelId,
+        settings: { contextWindow: 1 },
+      });
+      expect(response.status).toBe(400);
+      expect(deps.secrets.put).not.toHaveBeenCalled();
+    }
+  });
+
+  it("caps how many models on one connection keep their own settings", async () => {
+    const models = Object.fromEntries(
+      Array.from({ length: MAX_MODEL_SETTINGS_PER_CONNECTION }, (_, index) => [
+        `model-${index}`,
+        { images: true },
+      ]),
+    );
+    const { call } = settingsDeps(
+      JSON.stringify({ kind: "api_key", key: "sk-synthetic-key", models }),
+    );
+    expect(
+      (
+        await call({
+          credentialId: "connection-1",
+          modelId: "model-new",
+          settings: { images: true },
+        })
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await call({
+          credentialId: "connection-1",
+          modelId: "model-0",
+          settings: { maxTokens: 10 },
+        })
+      ).status,
+    ).toBe(200);
+    expect(
+      (await call({ credentialId: "connection-1", modelId: "model-new", settings: {} })).status,
+    ).toBe(200);
+  });
+
+  it("refuses another member's connection, a model the server does not serve, and no room for input", async () => {
+    const compatible = JSON.stringify({
+      kind: "openai_compatible",
+      baseUrl: "https://models.example.test/v1",
+      enabledModelIds: ["served"],
+    });
+    const { call } = settingsDeps(compatible);
+    expect(
+      (await call({ credentialId: "connection-2", modelId: "served", settings: {} })).status,
+    ).toBe(404);
+    expect(
+      (
+        await call({
+          credentialId: "connection-1",
+          modelId: "unlisted",
+          settings: { images: true },
+        })
+      ).status,
+    ).toBe(400);
+    // Clearing a model that left the connection still works.
+    expect(
+      (await call({ credentialId: "connection-1", modelId: "unlisted", settings: {} })).status,
+    ).toBe(200);
+    expect(
+      (
+        await call({
+          credentialId: "connection-1",
+          modelId: "served",
+          settings: { contextWindow: 1000, maxTokens: 1000 },
+        })
+      ).status,
+    ).toBe(400);
   });
 });
 
@@ -6523,8 +6830,8 @@ describe("codex live catalog", () => {
         : {
             userModelCredential: {
               findMany: vi.fn().mockResolvedValue([
-                { provider: "openai-codex", secretId: "secret-api" },
-                { provider: "openai-codex", secretId: "secret-oauth" },
+                { id: "credential-api", provider: "openai-codex", secretId: "secret-api" },
+                { id: "credential-oauth", provider: "openai-codex", secretId: "secret-oauth" },
               ]),
             },
             userModelPreference: {
@@ -6538,6 +6845,10 @@ describe("codex live catalog", () => {
               findMany: vi
                 .fn()
                 .mockResolvedValue([{ id: "secret-oauth", ciphertext: "cipher-oauth" }]),
+              findFirst: vi.fn(async ({ where }: { where: { id: string } }) => ({
+                id: where.id,
+                ciphertext: where.id === "secret-oauth" ? "cipher-oauth" : "cipher-api",
+              })),
             },
           };
     const deps = {
@@ -6661,6 +6972,10 @@ describe("codex live catalog", () => {
           { id: "secret-a", ciphertext: "cipher-a" },
           { id: "secret-b", ciphertext: "cipher-b" },
         ]),
+        findFirst: vi.fn(async ({ where }: { where: { id: string } }) => ({
+          id: where.id,
+          ciphertext: where.id === "secret-a" ? "cipher-a" : "cipher-b",
+        })),
       },
     };
     const secrets = {
@@ -9892,8 +10207,9 @@ describe("boards.rename", () => {
         updateManyAndReturn,
       },
       ticket: { count },
+      user: { findUnique: vi.fn(async () => ({ labs: ["board"] })) },
     } as unknown as PrismaClient;
-    const deps = { prisma, env: { ticketBoardEnabled: true } } as unknown as RouterDeps;
+    const deps = { prisma, env: {} } as unknown as RouterDeps;
     return { count, update, updateManyAndReturn, handler: new RPCHandler(createRouter(deps)) };
   }
 
@@ -10034,8 +10350,9 @@ describe("boards.tickets.list", () => {
         })),
       },
       ticket: { findMany },
+      user: { findUnique: vi.fn(async () => ({ labs: ["board"] })) },
     } as unknown as PrismaClient;
-    const deps = { prisma, env: { ticketBoardEnabled: true } } as unknown as RouterDeps;
+    const deps = { prisma, env: {} } as unknown as RouterDeps;
     return { findMany, handler: new RPCHandler(createRouter(deps)) };
   }
 
@@ -10645,4 +10962,58 @@ describe("quarantined computer stop", () => {
       }
     },
   );
+});
+
+describe("connection tool listing", () => {
+  it.each([true, false])("selects app catalog when available: %s", async (hasCatalog) => {
+    const findFirst = vi.fn(async () => ({
+      id: "connection-1",
+      displayName: "Example",
+      providerRef: "account-1",
+    }));
+    const tools = [{ name: "example_action", description: "An action" }];
+    const listAppTools = vi.fn(async () => tools);
+    const discoverTools = vi.fn(async () => tools);
+    const connector = { discoverTools, ...(hasCatalog ? { listAppTools } : {}) };
+    const client = createRouterClient(
+      createRouter({
+        prisma: { connection: { findFirst } },
+        connectors: { managed: () => connector },
+      } as unknown as RouterDeps),
+      {
+        context: { actor: { spaceId: "workspace-1", userId: "user-1" } } as never,
+      },
+    );
+    expect(await client.connections.tools({ connectorId: "example", provider: "example" })).toEqual(
+      tools,
+    );
+    expect(findFirst).toHaveBeenCalledWith({
+      where: {
+        spaceId: "workspace-1",
+        userId: "user-1",
+        connectorId: "example",
+        provider: "example",
+        status: "connected",
+      },
+    });
+    if (hasCatalog) {
+      expect(listAppTools).toHaveBeenCalledWith(expect.anything(), "example");
+      expect(discoverTools).not.toHaveBeenCalled();
+    } else {
+      expect(discoverTools).toHaveBeenCalledWith(
+        expect.objectContaining({
+          connectedConnections: [
+            {
+              id: "connection-1",
+              connectorId: "example",
+              externalId: "example",
+              displayName: "Example",
+              providerRef: "account-1",
+            },
+          ],
+          connectedProviders: ["example"],
+        }),
+      );
+    }
+  });
 });

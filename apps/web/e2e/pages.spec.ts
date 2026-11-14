@@ -62,9 +62,10 @@ test("a week calendar keeps its days aligned in a desktop two-column page", asyn
   const source = `function CalendarPage() {
     return <Page width="wide" title="Calendar layout">
       <Grid columns={2}>
-        <Section heading="Week"><WeekView week="2026-11-09" start={8} end={18} events={[
+        <Section heading="Week"><WeekView week="2026-11-09" events={[
           { date: "2026-11-09", start: 9, end: 10, title: "Monday event" },
-          { date: "2026-11-15", start: 9.5, end: 10.5, title: "Sunday event" }
+          { date: "2026-11-15", start: 9.5, end: 10.5, title: "Sunday event" },
+          { date: "2026-11-16", start: 22, end: 23, title: "Next week event" }
         ]} /></Section>
         <Section heading="Day"><DayView start={8} end={18} events={[
           { start: 9.5, end: 10.5, title: "Day event" }
@@ -96,6 +97,7 @@ test("a week calendar keeps its days aligned in a desktop two-column page", asyn
       heads,
       columns,
       weekGrid: rect(week.querySelector(".rk-cal-columns")!),
+      weekHeight: week.querySelector(".rk-cal-body")!.getBoundingClientRect().height,
       weekScroll: { client: week.clientWidth, scroll: week.scrollWidth },
       sunday: rect(sunday),
       sundayText: sunday.textContent,
@@ -120,14 +122,89 @@ test("a week calendar keeps its days aligned in a desktop two-column page", asyn
     expect(layout.columns[i]!.y).toBeCloseTo(layout.columns[0]!.y, 0);
     expect(Math.abs(layout.heads[i]!.x - layout.columns[i]!.x)).toBeLessThanOrEqual(1);
   }
+  expect(layout.weekHeight).toBeCloseTo(88, 0);
+  await expect(frame.getByText("Next week event")).toHaveCount(0);
   expect(layout.sundayText).toContain("Sunday event");
-  expect(layout.sunday.y - layout.columns[6]!.y).toBeCloseTo(67, 0);
+  expect(layout.sunday.y - layout.columns[6]!.y).toBeCloseTo(23, 0);
   expect(layout.dayColumns).toHaveLength(1);
   expect(layout.dayColumns[0]!.width).toBeCloseTo(layout.dayGrid.width - 1, 0);
   expect(layout.dayEvent.y - layout.dayColumns[0]!.y).toBeCloseTo(67, 0);
   expect(layout.dayText).toContain("Day event");
   expect(layout.dayText).toContain("9:30");
   await captureScreenshot(page, testInfo, "page-calendar-two-columns");
+});
+
+test("shared page contents jump below the header and copy fallback", async ({
+  page,
+  browser,
+}, testInfo) => {
+  await signup(page, `pages-anchor-${Date.now()}@rakazo.test`, "password12", "Page Reader");
+  await completeOnboarding(page);
+  const title = "Reading guide";
+  const source = `export default function Guide() {
+    return <Page title="Reading guide">
+      <TableOfContents items={[{ label: "Details", id: "details" }]} />
+      <Section heading="Introduction">{Array.from({ length: 30 }, (_, i) => <Text key={i}>An example paragraph before the destination.</Text>)}</Section>
+      <Section heading="Details" id="details">{Array.from({ length: 30 }, (_, i) => <Text key={i}>An example paragraph after the destination.</Text>)}</Section>
+    </Page>;
+  }`;
+  await send(page, `call save_page with ${JSON.stringify({ title, source })}\nthen say Done.`);
+  const card = page.getByTestId("page-card");
+  await expect(card).toHaveCount(1, { timeout: 30_000 });
+  await card.getByRole("button", { name: `Open ${title}` }).click();
+  await page.getByTestId("page-view").getByRole("button", { name: "Share" }).click();
+  const share = page.getByTestId("page-share");
+  await share.getByRole("radio", { name: /Anyone with the link/ }).click();
+  const link = share.getByRole("link", { name: "Open link" });
+  await expect(link).toBeVisible();
+  const visitor = await browser.newContext({ reducedMotion: "reduce" });
+  const outside = await visitor.newPage();
+  await outside.setViewportSize({ width: 1280, height: 720 });
+  await outside.goto((await link.getAttribute("href"))!);
+  const frame = pageFrame(outside, title);
+  const target = frame.getByRole("heading", { name: "Details", exact: true });
+  const jump = async () => {
+    await frame.getByRole("link", { name: "Details", exact: true }).click();
+    const header = (await outside.locator("header").boundingBox())!;
+    // Nested-frame scrolling rounds fractional CSS coordinates. Allow one pixel, not an
+    // obscured heading (the original layout placed it at the top of the viewport).
+    await expect
+      .poll(async () => (await target.boundingBox())?.y ?? -Infinity)
+      .toBeGreaterThanOrEqual(header.y + header.height - 1);
+    await expect.poll(async () => (await target.boundingBox())?.y ?? Infinity).toBeLessThan(300);
+    expect(await outside.evaluate(() => window.scrollY)).toBe(0);
+  };
+  await jump();
+  await captureScreenshot(outside, testInfo, "page-public-contents-jump");
+  // A failed clipboard write leaves the manual-copy prompt outside the page's scroll area.
+  await outside.evaluate(() => {
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText: () => Promise.reject(new Error("denied")) },
+      configurable: true,
+    });
+    document.execCommand = () => false;
+  });
+  await outside.getByRole("button", { name: "Copy link" }).click();
+  const fallback = outside.getByRole("textbox", { name: "Page link" });
+  await expect(fallback).toBeVisible();
+  await jump();
+  const fallbackBox = (await fallback.boundingBox())!;
+  expect((await target.boundingBox())!.y).toBeGreaterThanOrEqual(
+    fallbackBox.y + fallbackBox.height - 1,
+  );
+  await captureScreenshot(outside, testInfo, "page-public-contents-copy-fallback");
+  await outside.setViewportSize({ width: 320, height: 120 });
+  await target.scrollIntoViewIfNeeded();
+  await expect(target).toBeInViewport();
+  await captureScreenshot(outside, testInfo, "page-public-short-viewport");
+  await outside.setViewportSize({ width: 1280, height: 720 });
+  await outside.emulateMedia({ media: "print" });
+  await expect(outside.locator("header")).toBeHidden();
+  await expect(fallback).toBeHidden();
+  expect(
+    await outside.locator("[data-page-print]").evaluate((shell) => shell.scrollHeight),
+  ).toBeGreaterThan(720);
+  await visitor.close();
 });
 
 test("a bot's page shows in its reply, opens full screen, is shared by link and updates", async ({

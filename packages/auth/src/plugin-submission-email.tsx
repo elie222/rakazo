@@ -1,7 +1,7 @@
 /** @jsxRuntime automatic */
 import type { TransactionalEmail } from "@rakazo/adapter-kit";
-import { Link, Text } from "react-email";
-import { emailText, linkStyle, message } from "./email.js";
+import { Text } from "react-email";
+import { Button, emailText, FinePrint, message } from "./email.js";
 
 // Anyone can submit with any address, so the submitter's copy repeats nothing they typed.
 export function pluginSubmissionReceivedEmail(
@@ -16,7 +16,7 @@ export function pluginSubmissionReceivedEmail(
     <>
       <Text>{say("Thanks for submitting a plugin to the Rakazo marketplace.")}</Text>
       <Text>{say("We review every submission and will email you when it's done.")}</Text>
-      <Text>{say("If you did not submit a plugin, ignore this email.")}</Text>
+      <FinePrint>{say("If you did not submit a plugin, ignore this email.")}</FinePrint>
     </>,
   );
 }
@@ -33,17 +33,13 @@ export function integrationClaimConfirmEmail(
     locale,
     say("Confirm your Rakazo page claim"),
     <>
-      <Text>
-        <Link href={url} style={linkStyle}>
-          {say("Confirm claim")}
-        </Link>
-      </Text>
+      <Button href={url}>{say("Confirm claim")}</Button>
       <Text>
         {say("We review every claim once it's confirmed and will email you when it's done.")}
       </Text>
-      <Text>
+      <FinePrint>
         {say("This link expires in one day. If you did not claim a page, ignore this email.")}
-      </Text>
+      </FinePrint>
     </>,
   );
 }
@@ -64,11 +60,7 @@ export function pluginSubmissionAdminEmail(
         {submission.name} from {submission.email}
       </Text>
       <Text>{submission.source ?? submission.claim}</Text>
-      <Text>
-        <Link href={reviewUrl} style={linkStyle}>
-          Review
-        </Link>
-      </Text>
+      <Button href={reviewUrl}>Review</Button>
     </>,
   );
 }
@@ -105,7 +97,6 @@ export function pluginSubmissionReviewedEmail(
             : say("We couldn't list {name} in the Rakazo plugin marketplace.", { name })}
       </Text>
       {submission.reason ? <Text>{submission.reason}</Text> : null}
-      <Text>{say("Have any questions? Reply to this email.")}</Text>
     </>,
   );
 }
