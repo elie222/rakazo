@@ -234,7 +234,7 @@ it.each(["in", "up"])("offers a provider before the email form in %s mode", asyn
   expect(button("Continue with Example")).toBeDefined();
   expect(button("Continue with email")).toBeDefined();
   expect(host.textContent).toContain("or");
-  expect(host.textContent).toContain(mode === "in" ? "Welcome back" : "Create your Rakazo");
+  expect(host.textContent).toContain(mode === "in" ? "Welcome back" : "Create your account");
   await press("Continue with email");
   expect(input("Email")).not.toBeNull();
   expect(button("Back")).toBeDefined();

@@ -7,9 +7,9 @@ import {
   resolveBotWorkspaceCwd,
   resolveBotWorkspacePath,
   teamBotWorkspaceDirectory,
-  teamWorkspaceInstruction,
   workspaceCwd,
 } from "./computer-support.js";
+import { teamWorkspaceInstruction } from "./computer-support.prompt.js";
 
 describe("workspaceCwd", () => {
   const root = "/home/user/rakazo-home";

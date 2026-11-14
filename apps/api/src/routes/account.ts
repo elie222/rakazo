@@ -11,6 +11,7 @@ import {
 import type { ActionApprovalRule, Actor, Me, SettingsScope } from "@rakazo/contracts";
 import { parseLabs } from "@rakazo/contracts";
 import {
+  abortableDelay,
   approvalModeFromPreference,
   approvalPreferenceFromMode,
   callRequestClientNonce,
@@ -67,6 +68,8 @@ import { HEARTBEAT, meDto, mergeStreams, withHeartbeats } from "./shared.js";
 
 const ROSTER_CHANGED = Symbol("roster changed");
 const COMPUTER_UPDATES_CHANGED = Symbol("computer updates changed");
+
+const COMPUTER_UPDATES_FAILURE_HOLD_MS = 30_000;
 
 export function accountRoutes(ctx: RouterContext) {
   const { deps, os, authed } = ctx;
@@ -373,11 +376,16 @@ export function accountRoutes(ctx: RouterContext) {
           signal: AbortSignal,
         ): AsyncGenerator<typeof COMPUTER_UPDATES_CHANGED> {
           if (!followComputerUpdateChanges) return;
-          // As with roster signals, the app keeps polling computer updates if these fail.
+          // The app reads computer updates only on these signals, so a failure ends the stream and
+          // the app reconnects and re-reads. Alerts keep flowing for a while first, so a lasting
+          // failure costs one reconnect every half minute rather than a tight loop.
           try {
             for await (const _ of followComputerUpdateChanges(spaceId, signal))
               yield COMPUTER_UPDATES_CHANGED;
-          } catch {}
+          } catch (error) {
+            await abortableDelay(COMPUTER_UPDATES_FAILURE_HOLD_MS, signal);
+            throw error;
+          }
         };
         const frames = withHeartbeats(context, (signal) =>
           mergeStreams(

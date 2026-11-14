@@ -3,8 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 import {
   ModelTeamChatEngagementJudge as Judge,
   parseTeamChatEngagementDecision,
-  renderTeamChatEngagementPrompt,
 } from "./team-chat-judge.js";
+import { renderTeamChatEngagementPrompt } from "./team-chat-judge.prompt.js";
 import { mainRole, withModelRoles } from "./testing/model-roles.js";
 
 class ModelTeamChatEngagementJudge extends Judge {
