@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -11,9 +11,11 @@ const ROUTE_TABLE = "apps/web/src/App.tsx";
 const OVERLAYS = "apps/web/src/pages/shell-overlay.ts";
 const MOBILE_APP = "apps/mobile/app";
 const IOS_CATALOG = "apps/mobile/e2e/ios-screenshots";
+const SPEC_DIRS = ["apps/web/e2e", "apps/desktop/e2e"];
 
 const read = (file: string) => readFileSync(path.join(root, file), "utf8");
-const quoted = (source: string) => [...source.matchAll(/"([^"]+)"/g)].flatMap((match) => match[1]);
+const quoted = (source: string) =>
+  [...source.matchAll(/"([^"]+)"/g)].flatMap((match) => match[1] ?? []);
 
 const reason = z.string().trim().min(1);
 const featureMap = z.strictObject({
@@ -31,9 +33,14 @@ const featureMap = z.strictObject({
   uncovered: z.strictObject({
     web: z.record(z.string(), reason),
     mobile: z.record(z.string(), reason),
+    evidence: z.record(z.string(), reason),
   }),
 });
 const map = featureMap.parse(JSON.parse(read(MAP)));
+/** Overlays a `desktop` text names, such as `?settings=updates`: shared UI only the desktop app enables. */
+const desktopOnly = map.features.flatMap(
+  (feature) => feature.desktop?.match(/(?<!\S)\?[\w=-]+/g) ?? [],
+);
 
 /** A path the route table takes from a constant, read from the file that exports it. */
 function importedPath(source: string, name: string): string {
@@ -52,7 +59,7 @@ function importedPath(source: string, name: string): string {
 /** Every path the web app answers, in the spelling the route table uses. */
 function webRoutes(): string[] {
   const source = read(ROUTE_TABLE);
-  const literal = [...source.matchAll(/\bpath="([^"]+)"/g)].flatMap((match) => match[1]);
+  const literal = [...source.matchAll(/\bpath="([^"]+)"/g)].flatMap((match) => match[1] ?? []);
   const named = [...source.matchAll(/\bpath=\{([A-Z_]+)\}/g)].map((match) =>
     importedPath(source, match[1] ?? ""),
   );
@@ -80,7 +87,7 @@ function webOverlays(): string[] {
     ...(source.match(/export type ShellOverlay =([\s\S]+?)\| null;/)?.[1] ?? "").matchAll(
       /kind: "([^"]+)"/g,
     ),
-  ].flatMap((match) => match[1]);
+  ].flatMap((match) => match[1] ?? []);
   if (!sections.length || !kinds.includes("settings") || kinds.length < 2) {
     throw new Error(
       `${OVERLAYS} no longer declares SETTINGS_SECTIONS and ShellOverlay the way webOverlays() in packages/testkit/src/feature-map.test.ts reads them; update it`,
@@ -92,27 +99,46 @@ function webOverlays(): string[] {
   ];
 }
 
-function gaps(surface: "web" | "mobile", actual: string[], source: string): string[] {
-  const claimed = map.features.flatMap((feature) => feature[surface] ?? []);
-  const uncovered = Object.keys(map.uncovered[surface]);
+/** Every spec file and iOS screenshot section, in the spelling `evidence` uses. */
+async function evidenceSources(): Promise<string[]> {
+  return [
+    ...SPEC_DIRS.flatMap((dir) =>
+      readdirSync(path.join(root, dir), { encoding: "utf8", recursive: true })
+        .filter((file) => file.endsWith(".spec.ts"))
+        .map((file) => `${dir}/${file.split(path.sep).join("/")}`),
+    ),
+    ...(await loadIosScreenshotCatalog(path.join(root, IOS_CATALOG))).map(
+      (section) => `ios:${section.id}`,
+    ),
+  ];
+}
+
+function gaps(
+  list: "web" | "mobile" | "evidence",
+  actual: string[],
+  source: string,
+  desktop?: string[],
+): string[] {
+  const claimed = [...map.features.flatMap((feature) => feature[list] ?? []), ...(desktop ?? [])];
+  const uncovered = Object.keys(map.uncovered[list]);
   return [
     ...actual
       .filter((entry) => !claimed.includes(entry) && !uncovered.includes(entry))
       .map(
         (entry) =>
-          `"${entry}" is in ${source} but not in ${MAP}: add it to the "${surface}" list of the feature it belongs to (or add a feature for it), or to "uncovered.${surface}" with a one-line reason`,
+          `"${entry}" is in ${source} but not in ${MAP}: add it to the "${list}" list of the feature it belongs to (or add a feature for it), ${desktop ? `or name it in that feature's "desktop" text if only the desktop app enables it, ` : ""}or to "uncovered.${list}" with a one-line reason`,
       ),
     ...[...claimed, ...uncovered]
       .filter((entry) => !actual.includes(entry))
       .map(
         (entry) =>
-          `${MAP} lists "${entry}" under ${surface}, but ${source} has nothing by that name: rename or remove it`,
+          `${MAP} lists "${entry}" under ${desktop?.includes(entry) ? "desktop" : list}, but ${source} has nothing by that name: rename or remove it`,
       ),
     ...uncovered
       .filter((entry) => claimed.includes(entry))
       .map(
         (entry) =>
-          `"${entry}" is in a feature's "${surface}" list and in "uncovered.${surface}" in ${MAP}: remove it from uncovered`,
+          `"${entry}" is in a feature's "${list}" list and in "uncovered.${list}" in ${MAP}: remove it from uncovered`,
       ),
   ];
 }
@@ -125,7 +151,7 @@ describe("feature map", () => {
 
   it("claims every web route, settings section, and overlay, or says why not", () => {
     expect(
-      gaps("web", [...webRoutes(), ...webOverlays()], `${ROUTE_TABLE} or ${OVERLAYS}`),
+      gaps("web", [...webRoutes(), ...webOverlays()], `${ROUTE_TABLE} or ${OVERLAYS}`, desktopOnly),
     ).toEqual([]);
   });
 
@@ -135,33 +161,32 @@ describe("feature map", () => {
     );
   });
 
-  it("names evidence that exists", async () => {
+  it("maps every spec and iOS screenshot section to a feature or says why not", async () => {
+    expect(
+      gaps(
+        "evidence",
+        await evidenceSources(),
+        `${SPEC_DIRS.join(", ")} or ${IOS_CATALOG}/catalog.json`,
+      ),
+    ).toEqual([]);
+  });
+
+  it("names iOS sections that capture the feature's screens", async () => {
     const sections = await loadIosScreenshotCatalog(path.join(root, IOS_CATALOG));
-    const problems: string[] = [];
-    for (const feature of map.features) {
-      for (const evidence of feature.evidence) {
-        if (evidence.startsWith("ios:")) {
-          const section = sections.find((candidate) => `ios:${candidate.id}` === evidence);
-          if (!section) {
-            problems.push(
-              `${feature.id}: "${evidence}" is not a section in ${IOS_CATALOG}/catalog.json; use "ios:<section id>" or remove it`,
-            );
-          } else if (!section.screens.some((screen) => feature.mobile?.includes(screen))) {
-            problems.push(
+    expect(
+      map.features.flatMap((feature) =>
+        sections
+          .filter(
+            (section) =>
+              feature.evidence.includes(`ios:${section.id}`) &&
+              !section.screens.some((screen) => feature.mobile?.includes(screen)),
+          )
+          .map(
+            (section) =>
               `${feature.id}: section "${section.id}" captures none of this feature's "mobile" screens; name a section that does or remove it`,
-            );
-          }
-        } else if (
-          !/^apps\/(web|desktop)\/e2e\/[^/]+\.spec\.ts$/.test(evidence) ||
-          !existsSync(path.join(root, evidence))
-        ) {
-          problems.push(
-            `${feature.id}: "${evidence}" is not a spec file under apps/web/e2e or apps/desktop/e2e; fix the path or remove it`,
-          );
-        }
-      }
-    }
-    expect(problems).toEqual([]);
+          ),
+      ),
+    ).toEqual([]);
   });
 
   it("links PRODUCT.md sections that exist", () => {

@@ -46,7 +46,8 @@
         "apps/web/e2e/billing-paywall.spec.ts",
         "apps/web/e2e/computer-hours-run-error.spec.ts",
         "ios:billing",
-        "ios:new-account"
+        "ios:new-account",
+        "ios:organizations"
       ],
       "product": null
     },
@@ -80,7 +81,8 @@
         "apps/web/e2e/logo-avatar-motion-conformance.spec.ts",
         "ios:inbox",
         "ios:onboarding",
-        "ios:workspace"
+        "ios:workspace",
+        "ios:organizations"
       ],
       "product": null
     },
@@ -345,7 +347,10 @@
         "apps/web/e2e/artifacts-tab.spec.ts",
         "apps/web/e2e/artifact-preview.spec.ts",
         "ios:files",
-        "ios:inbox"
+        "ios:inbox",
+        "ios:onboarding",
+        "ios:thread",
+        "ios:settings"
       ],
       "product": null
     },
@@ -422,7 +427,8 @@
         "apps/web/e2e/mcp-oauth.spec.ts",
         "apps/web/e2e/mcp-stdio.spec.ts",
         "apps/web/e2e/mcp-app.spec.ts",
-        "apps/web/e2e/integration-setup.spec.ts"
+        "apps/web/e2e/integration-setup.spec.ts",
+        "ios:settings"
       ],
       "product": null
     },
@@ -604,9 +610,9 @@
     {
       "id": "desktop-updates",
       "name": "Updates",
-      "web": ["?settings=updates"],
+      "web": null,
       "mobile": null,
-      "desktop": "the Updates settings section appears only in the desktop app",
+      "desktop": "?settings=updates opens only in the desktop app; a browser shows General",
       "evidence": ["apps/web/e2e/desktop-update.spec.ts"],
       "product": null
     },
@@ -625,6 +631,7 @@
       "/": "redirects to /app, /sign-in or /sign-up",
       "*": "the not-found page"
     },
-    "mobile": {}
+    "mobile": {},
+    "evidence": {}
   }
 }

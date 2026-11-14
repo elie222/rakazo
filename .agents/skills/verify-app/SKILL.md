@@ -18,8 +18,9 @@ Search `features.json` by name, route, or spec file. Each entry has:
   `?<overlay>` open over `/app`. Features that share a route live inside that
   screen; their spec shows the clicks that reach them.
 - `mobile`: screens under `apps/mobile/app`, by file name.
-- `desktop`: set only for what exists just in the desktop app. The rest of the
-  desktop app is the web UI, so its `web` entry applies.
+- `desktop`: set only for what exists just in the desktop app, including a
+  `?settings=<section>` it alone enables. The rest of the desktop app is the web
+  UI, so its `web` entry applies.
 - `evidence`: the specs and `ios:<section>` screenshot sections that exercise it.
   An empty list means nothing does.
 - `product`: the PRODUCT.md section that defines its behavior. Read it before
@@ -37,9 +38,10 @@ A surface set to `null` does not have the feature.
 
 - CI is the normal way to run a web spec (see Limits). A local `pnpm test:e2e`
   needs Docker; add `--grep=<title>` to run one test.
-- CI runs the web specs on every push that can affect them, except the files in
-  `nightlySpecs` in `apps/web/playwright.config.ts` and tests tagged `@nightly`,
-  which run nightly. For one of those, say the PR run did not cover it.
+- CI runs the web specs on pull requests whose files can affect them, not on
+  pushes to main. It skips the files in `nightlySpecs` in
+  `apps/web/playwright.config.ts` and tests tagged `@nightly`; the nightly run
+  covers everything. For one of those, say the PR run did not cover it.
 - `pnpm ios:screenshots` is not part of CI. It needs Maestro, a Postgres server in
   `DATABASE_URL`, and a booted simulator with a debug build;
   `apps/mobile/e2e/ios-screenshots/README.md` has the details. Repeat `--section`
@@ -79,10 +81,10 @@ with no evidence, a spec that only runs nightly.
 ## Keep the map true
 
 `packages/testkit/src/feature-map.test.ts` fails when a web route, settings
-section, overlay, or mobile screen is in no entry, and when an entry names a
-route, spec, section, or PRODUCT.md heading that does not exist. Its message says
-what to add where. A route that belongs to no feature goes in `uncovered` with a
-one-line reason.
+section, overlay, mobile screen, spec, or iOS section is in no entry, and when an
+entry names a route, spec, section, or PRODUCT.md heading that does not exist.
+Its message says what to add where. A route, spec, or section that belongs to no
+feature goes in `uncovered` with a one-line reason.
 
 ```sh
 pnpm exec vitest run packages/testkit/src/feature-map.test.ts
