@@ -145,6 +145,33 @@ findings() {
     def links($url):
       [scan("https?://[^\\s<>\\\"()\\[\\]]+")] | map(sub("[.,;:!?]+$"; "")) | index($url) != null;'
 
+  # Qodo keeps its findings in one sticky comment that it edits on every head,
+  # so the comment itself is noise and each numbered finding is read instead.
+  # Only the latest review counts (the part above "Previous reviews"); a struck
+  # title or a Resolved/Outdated tag closes a finding. The commit marker names
+  # the head that review covered.
+  local qodo_def='
+    def qodo_review:
+      (.user.login | startswith("qodo-"))
+      and (.body | ltrimstr("\n") | startswith("<h3>Code Review"));
+    def decode:
+      gsub("&#x27;|&#39;"; "'"'"'") | gsub("&quot;"; "\"") | gsub("&lt;"; "<")
+      | gsub("&gt;"; ">") | gsub("&amp;"; "&");
+    def qodo_current: .body | split("<summary><strong>Previous reviews</strong>")[0];
+    def qodo_sha:
+      [qodo_current | scan("<!-- https://github\\.com/[^ ]+/commit/([0-9a-f]{7,40}) -->") | .[0]] | first;
+    def qodo_findings:
+      [qodo_current | split("<summary>\\s+(?=\\d+\\.\\s)"; null) | .[1:][]
+       | capture("^(?<n>\\d+)\\.\\s+(?<head>[\\s\\S]*?)</summary>(?<rest>[\\s\\S]*)")
+       | [.head | scan("<code>([^<]*)</code>") | .[0]] as $tags
+       | {n: (.n | tonumber),
+          title: (.head | sub("<code>[\\s\\S]*$"; "") | gsub("<[^>]+>"; "") | decode
+                  | gsub("\\s+"; " ") | sub("^ "; "") | sub(" $"; "")),
+          closed: ((.head | test("<s>")) or ($tags | any(test("Resolved|Outdated")))),
+          new: ($tags | any(test("New"))),
+          category: ($tags | map(select(test("New") | not)) | join(", ")),
+          detail: ((.rest | capture("<pre>(?<p>[\\s\\S]*?)</pre>").p) // "")}];'
+
   # Inline review threads. One stays open until *you* have replied to it; a bot
   # follow-up confirming your fix must not mark it handled.
   local inline open
@@ -192,6 +219,30 @@ findings() {
        | {key: \"\(.id):\(.updated_at)\", id, author: .user.login,
           path: \"(conversation)\", line: 0, body: (.body | clean)}]" <<<"$convo")
 
+  # A Qodo finding stays open until Qodo marks it resolved, or until *you* post
+  # a conversation comment that quotes the sticky permalink and the finding's
+  # title. Its key is its title, not the comment's updated_at, so re-reviews
+  # of a new head do not reopen findings already answered, while a finding
+  # added by an edit is unseen and wakes the watch.
+  local qodo qodo_open
+  qodo=$(jq --arg me "$viewer" "
+    $qodo_def
+    $link_def
+    [.[] | select(.user.login == \$me) | .body | ascii_downcase] as \$mine
+    | [.[] | select(qodo_review) | . as \$c
+       | qodo_findings[] | select(.closed | not)
+       | (.title | ascii_downcase) as \$t
+       | . + {id: \$c.id, author: \$c.user.login,
+              answered: ([\$mine[] | select(\$t != \"\" and links(\$c.html_url | ascii_downcase) and contains(\$t))]
+                         | length > 0)}]" <<<"$convo")
+  qodo_open=$(jq --argjson n "$BODY_CHARS" "
+    $clean_def
+    $qodo_def
+    [.[] | select(.answered | not)
+     | {key: \"q\(.id):\(.title)\", id, author, path: \"(qodo \(.n))\", line: 0,
+        body: (\"\(.title) [\(.category)\(if .new then \", new\" else \"\" end)] \"
+               + (.detail | gsub(\"\\n>\"; \"\\n\") | clean | decode))}]" <<<"$qodo")
+
   # A human can request changes in a review summary with no line comment and no
   # conversation comment attached, so that surface has to be read too.
   local reviews review_open
@@ -208,8 +259,9 @@ findings() {
          | {key: \"r\(.id):\(.submitted_at)\", id, author: .user.login,
             path: \"(review \(.state))\", line: 0, body: (.body | clean)}]" <<<"$reviews")
 
-  OPEN=$(jq -s 'add' <<<"$open$convo_open$review_open")
-  INLINE=$inline CONVO=$convo REVIEWS=$reviews NOISE_N=$noise_n
+  QODO_SHA=$(jq -r "$qodo_def [.[] | select(qodo_review) | qodo_sha] | last // \"\"" <<<"$convo")
+  OPEN=$(jq -s 'add' <<<"$open$convo_open$qodo_open$review_open")
+  INLINE=$inline CONVO=$convo REVIEWS=$reviews NOISE_N=$noise_n QODO=$qodo
 }
 
 digest() {
@@ -284,6 +336,12 @@ digest() {
   open_n=$(jq length <<<"$open")
   echo "comments $(jq length <<<"$inline") inline · $(jq length <<<"$convo") conversation ($noise_n noise) · $(jq length <<<"$reviews") reviews · $open_n awaiting your reply"
   [ "$decision" = "CHANGES_REQUESTED" ] && echo "REVIEW changes requested"
+  if [ -n "$QODO_SHA" ]; then
+    local at="head"
+    [[ $head == "$QODO_SHA"* || $QODO_SHA == "$head"* ]] || at="${QODO_SHA:0:8}, not the head yet"
+    jq -r --arg at "$at" '"qodo reviewed \($at) · \([.[] | select(.answered | not)] | length) open · \([.[] | select(.answered)] | length) answered"
+      + ([.[] | select(.answered) | "\n  answered (qodo \(.n)) \(.title)"] | join(""))' <<<"$QODO"
+  fi
 
   if [ "$open_n" -gt 0 ]; then
     # Show a finding in full once. On later cycles it stays listed — nothing is

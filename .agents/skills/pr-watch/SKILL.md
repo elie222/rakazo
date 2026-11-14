@@ -105,6 +105,17 @@ URL as a Markdown link or on its own; sentence-ending punctuation is accepted.
 An edit to an inline or conversation root after your reply reopens the finding
 (`updated_at` moves past the reply).
 
+Qodo keeps its findings in one "Code Review by Qodo" comment that it edits on
+every new head, so the digest reads that comment's latest review and lists each
+finding Qodo has not marked resolved or outdated as `(qodo N)`, with its
+category and whether it is new. Each blocks until Qodo resolves it or you post a
+conversation comment that quotes the comment's permalink and the finding's
+title; one comment can answer several. An answered finding stays listed as
+answered and does not reopen when Qodo re-reviews a new head; a finding with a
+new title is a new finding, and an edit that adds one wakes `--watch`. The
+`qodo reviewed` line names the commit Qodo last covered; if it is not the head,
+Qodo has not produced a signal on that SHA yet.
+
 Review summaries block only while that reviewer has an active change request;
 a later approval or dismissal clears it. A general comment does not override
 a change request.
