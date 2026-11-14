@@ -10207,8 +10207,9 @@ describe("boards.rename", () => {
         updateManyAndReturn,
       },
       ticket: { count },
+      user: { findUnique: vi.fn(async () => ({ labs: ["board"] })) },
     } as unknown as PrismaClient;
-    const deps = { prisma, env: { ticketBoardEnabled: true } } as unknown as RouterDeps;
+    const deps = { prisma, env: {} } as unknown as RouterDeps;
     return { count, update, updateManyAndReturn, handler: new RPCHandler(createRouter(deps)) };
   }
 
@@ -10349,8 +10350,9 @@ describe("boards.tickets.list", () => {
         })),
       },
       ticket: { findMany },
+      user: { findUnique: vi.fn(async () => ({ labs: ["board"] })) },
     } as unknown as PrismaClient;
-    const deps = { prisma, env: { ticketBoardEnabled: true } } as unknown as RouterDeps;
+    const deps = { prisma, env: {} } as unknown as RouterDeps;
     return { findMany, handler: new RPCHandler(createRouter(deps)) };
   }
 

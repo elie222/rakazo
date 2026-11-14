@@ -676,7 +676,6 @@ const TICKETS = [
   { title: "Publish the changelog", status: "done" },
 ] as const;
 
-/** Board cards in several columns. Only an API with the board enabled shows them. */
 /** Two payments bots made with the wallet, as the spending limit lists them. */
 async function ensurePayments(
   prisma: ReturnType<typeof createDb>["prisma"],
@@ -712,12 +711,14 @@ async function ensurePayments(
   }
 }
 
+/** Board cards in several columns, with the board turned on in Labs so it shows. */
 async function ensureTickets(
   prisma: ReturnType<typeof createDb>["prisma"],
   spaceId: string,
   userId: string,
   botIds: string[],
 ) {
+  await prisma.user.update({ where: { id: userId }, data: { labs: ["board"] } });
   const board = await ensureBoard(prisma, spaceId);
   if (await prisma.ticket.count({ where: { boardId: board.id } })) return;
   for (const [index, ticket] of TICKETS.entries()) {

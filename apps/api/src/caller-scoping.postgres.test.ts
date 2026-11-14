@@ -269,10 +269,8 @@ describePostgres("caller and tenant scoping (PostgreSQL)", () => {
   it("runs authenticated procedures inside the caller's tenant", async () => {
     const own = await bot(shared, userA, { name: "Own" });
     const elsewhere = await bot(other, userA, { name: "Elsewhere" });
-    const router = createRouter({
-      prisma: runtime.prisma,
-      env: { ticketBoardEnabled: true },
-    } as unknown as RouterDeps);
+    await system.user.update({ where: { id: userA }, data: { labs: ["board"] } });
+    const router = createRouter({ prisma: runtime.prisma, env: {} } as unknown as RouterDeps);
     const call = async (procedure: string) => {
       const { response } = await new RPCHandler(router).handle(
         new Request(`https://api.example.test/rpc/${procedure}`, {

@@ -18,6 +18,7 @@ const settingsScreens = new Set([
   "general",
   "integration-setup",
   "integrations",
+  "labs",
   "messaging",
   "language",
   "memory",

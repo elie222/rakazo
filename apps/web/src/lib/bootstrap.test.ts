@@ -25,7 +25,7 @@ describe("bootstrap upload configuration", () => {
     async (maxUploadSizeBytes) => {
       vi.stubGlobal("window", { location: { pathname: "/sign-in" } });
       vi.mocked(rpc.bootstrap).mockResolvedValue({
-        me: { ticketBoardEnabled: false, maxUploadSizeBytes },
+        me: { maxUploadSizeBytes },
       } as Awaited<ReturnType<typeof rpc.bootstrap>>);
       const { takeInitialBootstrap, getMaxUploadSizeBytes } = await import("./bootstrap");
       await takeInitialBootstrap();
@@ -37,9 +37,7 @@ describe("bootstrap upload configuration", () => {
 describe("switching spaces in place", () => {
   it("loads the other space under its own header and leaves it for the shell", async () => {
     vi.stubGlobal("window", { location: { pathname: "/sign-in" } });
-    const other = { me: { ticketBoardEnabled: false } } as Awaited<
-      ReturnType<typeof rpc.bootstrap>
-    >;
+    const other = { me: {} } as Awaited<ReturnType<typeof rpc.bootstrap>>;
     vi.mocked(rpc.bootstrap).mockReset().mockResolvedValue(other);
     const { primeSpaceBootstrap, takeInitialBootstrap } = await import("./bootstrap");
     await primeSpaceBootstrap("space-b", "bot-b");
@@ -56,9 +54,7 @@ describe("switching spaces in place", () => {
     vi.stubGlobal("window", { location: { pathname: "/sign-in" } });
     vi.mocked(rpc.bootstrap)
       .mockReset()
-      .mockResolvedValue({ me: { ticketBoardEnabled: false } } as Awaited<
-        ReturnType<typeof rpc.bootstrap>
-      >);
+      .mockResolvedValue({ me: {} } as Awaited<ReturnType<typeof rpc.bootstrap>>);
     const { discardPrimedBootstrap, primeSpaceBootstrap, takeInitialBootstrap } = await import(
       "./bootstrap"
     );
@@ -73,12 +69,10 @@ describe("switching spaces in place", () => {
 describe("revisiting a space", () => {
   it("opens with the cached bootstrap and still refreshes it", async () => {
     vi.stubGlobal("window", { location: { pathname: "/sign-in" } });
-    const cached = { me: { ticketBoardEnabled: true, maxUploadSizeBytes: 4321 } } as Awaited<
+    const cached = { me: { labs: ["board"], maxUploadSizeBytes: 4321 } } as Awaited<
       ReturnType<typeof rpc.bootstrap>
     >;
-    const fresh = { me: { ticketBoardEnabled: false } } as Awaited<
-      ReturnType<typeof rpc.bootstrap>
-    >;
+    const fresh = { me: {} } as Awaited<ReturnType<typeof rpc.bootstrap>>;
     vi.mocked(rpc.bootstrap).mockReset().mockResolvedValue(fresh);
     const { getMaxUploadSizeBytes, peekBootstrapSeed, primeSpaceBootstrap, takeInitialBootstrap } =
       await import("./bootstrap");
@@ -100,9 +94,7 @@ describe("revisiting a space", () => {
     vi.stubGlobal("window", { location: { pathname: "/sign-in" } });
     vi.mocked(rpc.bootstrap)
       .mockReset()
-      .mockResolvedValue({ me: { ticketBoardEnabled: false } } as Awaited<
-        ReturnType<typeof rpc.bootstrap>
-      >);
+      .mockResolvedValue({ me: {} } as Awaited<ReturnType<typeof rpc.bootstrap>>);
     const { queryClient, spaceSeedKey } = await import("./query");
     const { peekBootstrapSeed, primeSpaceBootstrap } = await import("./bootstrap");
     // Left while showing bot-b1; the switch back targets bot-b2.
@@ -122,9 +114,7 @@ describe("revisiting a space", () => {
     vi.stubGlobal("window", { location: { pathname: "/sign-in" } });
     vi.mocked(rpc.bootstrap)
       .mockReset()
-      .mockResolvedValue({ me: { ticketBoardEnabled: false } } as Awaited<
-        ReturnType<typeof rpc.bootstrap>
-      >);
+      .mockResolvedValue({ me: {} } as Awaited<ReturnType<typeof rpc.bootstrap>>);
     const { peekBootstrapSeed, primeSpaceBootstrap } = await import("./bootstrap");
     void primeSpaceBootstrap("space-b", "bot-b", {} as Awaited<ReturnType<typeof rpc.bootstrap>>);
     vi.mocked(selectedSpaceId).mockReturnValue("space-c");
@@ -135,7 +125,7 @@ describe("revisiting a space", () => {
 describe("primed space isolation", () => {
   it("applies capabilities only when the selected shell takes the bootstrap", async () => {
     vi.stubGlobal("window", { location: { pathname: "/sign-in" } });
-    const other = { me: { ticketBoardEnabled: true, maxUploadSizeBytes: 1234 } } as Awaited<
+    const other = { me: { labs: ["board"], maxUploadSizeBytes: 1234 } } as Awaited<
       ReturnType<typeof rpc.bootstrap>
     >;
     vi.mocked(rpc.bootstrap).mockReset().mockResolvedValue(other);
@@ -145,23 +135,23 @@ describe("primed space isolation", () => {
       discardPrimedBootstrap,
       takeInitialBootstrap,
       getMaxUploadSizeBytes,
-      getTicketBoardEnabled,
-      subscribeTicketBoardEnabled,
+      getLabs,
+      subscribeLabs,
     } = await import("./bootstrap");
     const initialLimit = getMaxUploadSizeBytes();
     const listener = vi.fn();
-    subscribeTicketBoardEnabled(listener);
+    subscribeLabs(listener);
     const discarded = primeSpaceBootstrap("space-b");
     discardPrimedBootstrap(discarded);
     await discarded;
     expect(getMaxUploadSizeBytes()).toBe(initialLimit);
-    expect(getTicketBoardEnabled()).toBe(false);
+    expect(getLabs()).toEqual([]);
     expect(listener).not.toHaveBeenCalled();
     await primeSpaceBootstrap("space-b");
     expect(getMaxUploadSizeBytes()).toBe(initialLimit);
     await takeInitialBootstrap();
     expect(getMaxUploadSizeBytes()).toBe(1234);
-    expect(getTicketBoardEnabled()).toBe(true);
+    expect(getLabs()).toEqual(["board"]);
     expect(listener).toHaveBeenCalledOnce();
   });
 
@@ -172,7 +162,7 @@ describe("primed space isolation", () => {
     const old = new Promise<Bootstrap>((resolve) => {
       resolveOld = resolve;
     });
-    const current = { me: { ticketBoardEnabled: true, maxUploadSizeBytes: 4321 } } as Bootstrap;
+    const current = { me: { labs: ["board"], maxUploadSizeBytes: 4321 } } as Bootstrap;
     vi.mocked(rpc.bootstrap).mockReset().mockReturnValueOnce(old).mockResolvedValue(current);
     vi.mocked(selectedSpaceId).mockReturnValue("space-c");
     const {
@@ -180,36 +170,32 @@ describe("primed space isolation", () => {
       discardPrimedBootstrap,
       takeInitialBootstrap,
       getMaxUploadSizeBytes,
-      getTicketBoardEnabled,
+      getLabs,
     } = await import("./bootstrap");
     const superseded = primeSpaceBootstrap("space-b");
     await primeSpaceBootstrap("space-c");
     discardPrimedBootstrap(superseded);
     await expect(takeInitialBootstrap()).resolves.toBe(current);
-    resolveOld({ me: { ticketBoardEnabled: false, maxUploadSizeBytes: 1234 } } as Bootstrap);
+    resolveOld({ me: { maxUploadSizeBytes: 1234 } } as Bootstrap);
     await superseded;
     expect(getMaxUploadSizeBytes()).toBe(4321);
-    expect(getTicketBoardEnabled()).toBe(true);
+    expect(getLabs()).toEqual(["board"]);
   });
 
   it("drops another space's group bootstrap and requests the selected space", async () => {
     vi.stubGlobal("window", { location: { pathname: "/sign-in" } });
     vi.mocked(selectedSpaceId).mockReturnValue("space-a");
-    const other = { me: { ticketBoardEnabled: true, maxUploadSizeBytes: 1234 } } as Awaited<
+    const other = { me: { labs: ["board"], maxUploadSizeBytes: 1234 } } as Awaited<
       ReturnType<typeof rpc.bootstrap>
     >;
-    const current = { me: { ticketBoardEnabled: false } } as Awaited<
-      ReturnType<typeof rpc.bootstrap>
-    >;
+    const current = { me: {} } as Awaited<ReturnType<typeof rpc.bootstrap>>;
     vi.mocked(rpc.bootstrap).mockReset().mockResolvedValueOnce(other).mockResolvedValue(current);
-    const { primeSpaceBootstrap, takeInitialBootstrap, getTicketBoardEnabled } = await import(
-      "./bootstrap"
-    );
+    const { primeSpaceBootstrap, takeInitialBootstrap, getLabs } = await import("./bootstrap");
     await primeSpaceBootstrap("space-b");
     await expect(takeInitialBootstrap()).resolves.toBe(current);
     expect(rpc.bootstrap).toHaveBeenLastCalledWith({});
     expect(rpc.bootstrap).toHaveBeenCalledTimes(2);
-    expect(getTicketBoardEnabled()).toBe(false);
+    expect(getLabs()).toEqual([]);
   });
 
   it("does not expose a switch bootstrap to the subscription gate", async () => {
@@ -224,16 +210,22 @@ describe("primed space isolation", () => {
 
   it("keeps the first-load speculative bootstrap available without an explicit space", async () => {
     vi.stubGlobal("window", { location: { pathname: "/app" } });
-    const initial = { me: { ticketBoardEnabled: true } } as Awaited<
-      ReturnType<typeof rpc.bootstrap>
-    >;
+    const initial = { me: { labs: ["board"] } } as Awaited<ReturnType<typeof rpc.bootstrap>>;
     vi.mocked(rpc.bootstrap).mockReset().mockResolvedValue(initial);
-    const { peekInitialBootstrap, takeInitialBootstrap, getTicketBoardEnabled } = await import(
-      "./bootstrap"
-    );
+    const { peekInitialBootstrap, takeInitialBootstrap, getLabs } = await import("./bootstrap");
     await expect(peekInitialBootstrap()).resolves.toBe(initial);
-    expect(getTicketBoardEnabled()).toBe(true);
+    expect(getLabs()).toEqual(["board"]);
     await expect(takeInitialBootstrap()).resolves.toBe(initial);
     expect(rpc.bootstrap).toHaveBeenCalledTimes(1);
+  });
+
+  it("applies a saved Labs list to subscribers at once", async () => {
+    vi.stubGlobal("window", { location: { pathname: "/sign-in" } });
+    const { getLabs, setLabs, subscribeLabs } = await import("./bootstrap");
+    const listener = vi.fn();
+    subscribeLabs(listener);
+    setLabs(["board"]);
+    expect(getLabs()).toEqual(["board"]);
+    expect(listener).toHaveBeenCalledOnce();
   });
 });
