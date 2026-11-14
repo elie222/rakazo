@@ -186,6 +186,21 @@ function serverError(status: number, what: string, body: unknown, apiKey?: strin
   return voiceRequestError(status, PROVIDER_NAME, what, short ? { detail: short } : null, body);
 }
 
+/** A strict server names the key it refuses, so that key can be dropped and retried. */
+const UNRECOGNIZED_KEY_WORD =
+  /unrecognized|unrecognised|unknown|unexpected|unsupported|not allowed|extra/i;
+
+function rejectsKey(body: unknown, key: string): boolean {
+  if (!body) return false;
+  let text: string;
+  try {
+    text = JSON.stringify(body);
+  } catch {
+    return false;
+  }
+  return text.includes(`"${key}"`) && UNRECOGNIZED_KEY_WORD.test(text);
+}
+
 const KOKORO_ID = /^([abefhijpz])([fm])_([a-z]+)$/;
 const KOKORO_LANGUAGES: Record<string, string> = {
   a: "American English",
@@ -372,19 +387,29 @@ export class OpenAiCompatibleVoiceProvider implements VoiceProvider {
     const secret = parseOpenAiCompatibleVoiceSecret(request.apiKey);
     const signal = voiceDeadline(request.signal ?? context.signal, SPEAK_DEADLINE_MS);
     const langCode = kokoroLangCode(request.voiceId);
-    const res = await this.fetch(endpoint(secret, "audio/speech"), {
-      method: "POST",
-      headers: headers(secret, { "content-type": "application/json" }),
-      body: JSON.stringify({
-        model: secret.ttsModel,
-        voice: request.voiceId,
-        input: request.text,
-        response_format: "mp3",
-        // Kokoro servers otherwise read every voice with English pronunciation.
-        ...(langCode ? { lang_code: langCode } : {}),
-      }),
-      signal,
-    });
+    const speak = (lang: string | undefined) =>
+      this.fetch(endpoint(secret, "audio/speech"), {
+        method: "POST",
+        headers: headers(secret, { "content-type": "application/json" }),
+        body: JSON.stringify({
+          model: secret.ttsModel,
+          voice: request.voiceId,
+          input: request.text,
+          response_format: "mp3",
+          // Kokoro servers otherwise read every voice with English pronunciation.
+          ...(lang ? { lang_code: lang } : {}),
+        }),
+        signal,
+      });
+    let res = await speak(langCode);
+    // Some OpenAI-compatible servers reject the whole body over a key they do not know,
+    // so a rejection naming lang_code is retried once without it. Any other 400 keeps its
+    // own detail, and servers that accept the hint keep the pronunciation.
+    if (!res.ok && langCode && (res.status === 400 || res.status === 422)) {
+      const rejection = await readVoiceJson(res);
+      if (rejectsKey(rejection, "lang_code")) res = await speak(undefined);
+      else throw serverError(res.status, "speaking", rejection, secret.apiKey);
+    }
     if (!res.ok) throw serverError(res.status, "speaking", await readVoiceJson(res), secret.apiKey);
     const type = mediaType(res);
     // mp3 was requested; servers label it audio/mpeg or audio/mp3. Anything else is not a clip.

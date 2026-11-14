@@ -329,6 +329,42 @@ describe("OpenAiCompatibleVoiceProvider", () => {
     expect(JSON.parse(String(calledInit(fetchMock).body))).not.toHaveProperty("lang_code");
   });
 
+  it("retries without lang_code when a strict server names it as unrecognized", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            error: "Invalid request parameters",
+            details: { _errors: ["Unrecognized key(s) in object: 'lang_code'"] },
+            issues: [{ code: "unrecognized_keys", keys: ["lang_code"] }],
+          }),
+          { status: 400 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(new Uint8Array([1, 2, 3]), { headers: { "content-type": "audio/mpeg" } }),
+      );
+    await expect(
+      provider(fetchMock).synthesize({ text: "Hi", voiceId: "af_heart", apiKey: keyed }, ctx),
+    ).resolves.toMatchObject({ mimeType: "audio/mpeg" });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(String(calledInit(fetchMock).body))).toHaveProperty("lang_code");
+    expect(JSON.parse(String(calledInit(fetchMock, 1).body))).not.toHaveProperty("lang_code");
+  });
+
+  it("does not retry a 400 that never mentions lang_code", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ error: 'Voice "alloy" is not supported by model' }), {
+        status: 400,
+      }),
+    );
+    await expect(
+      provider(fetchMock).synthesize({ text: "Hi", voiceId: "af_heart", apiKey: keyed }, ctx),
+    ).rejects.toThrow(/not supported/);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it("surfaces the server's error detail when speaking fails", async () => {
     const fetchMock = vi
       .fn()
