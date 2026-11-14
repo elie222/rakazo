@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 import { selectConfiguredModel } from "./model-roles.js";
 import { serializeModelSecret } from "./model-secret.js";
 import {
+  connectedModelSeesImages,
   connectionServesModel,
   defaultCatalogModelId,
   enabledOpenAiCompatibleModelIds,
@@ -43,6 +44,35 @@ function credential(provider: string, defaultModel: string | null) {
 }
 
 const bot = { modelProvider: "bot-provider", modelId: "bot-model", thinkingLevel: "high" };
+
+it.each([
+  { bundled: true, catalogImages: undefined, expected: true },
+  { bundled: false, catalogImages: true, expected: true },
+  { bundled: false, catalogImages: false, expected: false },
+])(
+  "uses known image capabilities without decrypting, bundled: $bundled, answer: $catalogImages",
+  async ({ bundled, catalogImages, expected }) => {
+    const entry = bundled
+      ? listPiCatalog().find((model) => model.provider === "anthropic" && model.images)!
+      : { provider: "zai", id: "listed-model-fixture" };
+    const findFirst = vi.fn(async () => ({ ciphertext: "sealed-fixture" }));
+    const load = vi.fn(async () => {
+      throw new SecretStoreUnavailableError();
+    });
+    await expect(
+      connectedModelSeesImages(
+        { prisma: { secret: { findFirst } } as never, secretStore: { load } },
+        "user-1",
+        entry.provider,
+        entry.id,
+        credential(entry.provider, entry.id),
+        catalogImages,
+      ),
+    ).resolves.toBe(expected);
+    expect(findFirst).not.toHaveBeenCalled();
+    expect(load).not.toHaveBeenCalled();
+  },
+);
 
 describe("routine model pin", () => {
   const routine = {

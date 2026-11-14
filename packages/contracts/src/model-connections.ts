@@ -76,6 +76,34 @@ export function modelOutputLeavesInputRoom(
   return typeof maxTokens !== "number" || contextWindow === undefined || maxTokens < contextWindow;
 }
 
+/**
+ * One model's own settings on a connection. Omitted fields follow the model card. Image input
+ * and thinking apply only where the catalog cannot tell, since its answer is authoritative.
+ */
+export const ModelSettingsSchema = z
+  .object({
+    contextWindow: z.number().int().min(1).max(MAX_MODEL_CONTEXT_WINDOW).optional(),
+    maxTokens: z.number().int().min(1).max(MAX_MODEL_MAX_TOKENS).optional(),
+    images: z.boolean().optional(),
+    maxImagesPerPrompt: z.number().int().min(1).max(1000).optional(),
+    reasoning: z.boolean().optional(),
+  })
+  .refine((value) => modelOutputLeavesInputRoom(value.maxTokens, value.contextWindow), {
+    message: "Maximum output tokens must leave room for input",
+    path: ["maxTokens"],
+  });
+export type ModelSettings = z.infer<typeof ModelSettingsSchema>;
+
+/** How many models on one connection may keep their own settings. */
+export const MAX_MODEL_SETTINGS_PER_CONNECTION = 200;
+
+export const ModelSettingsSaveSchema = z.object({
+  credentialId: Id,
+  modelId: z.string().trim().min(1).max(512),
+  settings: ModelSettingsSchema,
+});
+export type ModelSettingsSave = z.infer<typeof ModelSettingsSaveSchema>;
+
 /** Wire protocol selected for one OpenAI-compatible connection. */
 export const ModelApiProtocolSchema = z.enum([
   "chat-completions",
@@ -111,6 +139,8 @@ export const ModelCredentialSchema = z.object({
   enabledModelIds: z.array(z.string()).optional(),
   /** The connection's enabled models that accept images, where it declares them per model. */
   visionModelIds: z.array(z.string()).optional(),
+  /** Settings saved for individual models on this connection. */
+  modelSettings: z.record(z.string(), ModelSettingsSchema).optional(),
   /** Stored secret kind. Absent when the secret could not be read. */
   authKind: z.enum(["api_key", "oauth", "openai_compatible"]).optional(),
   /**
@@ -266,8 +296,8 @@ export const ModelConnectInputSchema = z
         path: ["apiKey"],
       });
     }
-    // An existing connection can update its output limit without a new key.
-    if (!apiKey && value.maxTokens === undefined) {
+    // An existing connection saves its other settings without a new key.
+    if (!apiKey && value.maxTokens === undefined && !value.credentialId) {
       ctx.addIssue({
         code: "custom",
         message: "API key must contain at least 8 characters",
@@ -324,8 +354,19 @@ export const ModelCatalogEntrySchema = z.object({
   signIn: ModelOAuthSignInModeSchema.optional(),
   reasoning: z.boolean().optional(),
   thinkingLevels: z.array(ThinkingLevelSchema).optional(),
+  /** Uncustomized capabilities for forms on other connections of the same provider. */
+  defaultCapabilities: z
+    .object({
+      images: z.boolean().optional(),
+      reasoning: z.boolean().optional(),
+      thinkingLevels: z.array(ThinkingLevelSchema).optional(),
+    })
+    .optional(),
   /** The model reads images. Left out where a connection setting decides it. */
   images: z.boolean().optional(),
+  /** The model card's context window and output ceiling, where the catalog has one. */
+  contextWindow: z.number().int().min(1).optional(),
+  maxTokens: z.number().int().min(1).optional(),
   /** Catalog stand-in so a provider appears before the user enters a real model id. */
   placeholder: z.boolean().optional(),
   /** Models share one pinned HTTPS models-list URL that can be probed. */

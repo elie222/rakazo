@@ -85,6 +85,9 @@ vi.mock("expo-router", () => ({
     },
   },
   useRouter: () => ({ push }),
+  useNavigationContainerRef: () => ({
+    getCurrentRoute: () => ({ name: "bot-profile", params: params.current }),
+  }),
   useNavigation: () => ({
     setOptions: (options: { headerSearchBarOptions?: typeof screen.search }) => {
       screen.search = options.headerSearchBarOptions ?? null;

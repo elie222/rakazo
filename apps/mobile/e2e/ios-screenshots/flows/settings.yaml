@@ -94,6 +94,13 @@ name: Settings
 - waitForAnimationToEnd:
     timeout: 3000
 - takeScreenshot: 10-ai-data-sharing
+- openLink: "rakazo:///labs"
+- extendedWaitUntil:
+    visible: "Board"
+    timeout: 15000
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 10b-labs
 - openLink: "rakazo:///routine?botId=${RAKAZO_SCREENSHOT_BOT_ID}&botName=Researcher&routineId=${RAKAZO_SCREENSHOT_ROUTINE_ID}"
 - extendedWaitUntil:
     visible: ".*Weekly fixture review.*"
@@ -131,6 +138,14 @@ name: Settings
 - waitForAnimationToEnd:
     timeout: 3000
 - takeScreenshot: 14-bot-profile-menu
+- tapOn: "Delete…"
+- extendedWaitUntil:
+    visible: ".*will be deleted too.*"
+    timeout: 15000
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 14-bot-delete-warning
+- tapOn: "Cancel"
 - openLink: "rakazo:///group-settings?groupId=${RAKAZO_SCREENSHOT_GROUP_ID}"
 - extendedWaitUntil:
     visible: ".*Delete group.*"

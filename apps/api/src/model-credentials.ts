@@ -1,4 +1,5 @@
 import { ORPCError } from "@orpc/server";
+import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
 import type { CodexLiveCatalog } from "@rakazo/adapters";
 import {
   buildModelConnectPlaintext,
@@ -6,23 +7,37 @@ import {
   codexLiveListsModel,
   compatibleThinkingLevels,
   defaultCatalogModelId,
+  enabledOpenAiCompatibleModelIds,
+  keptModelSettings,
+  listPiCatalog,
+  liveCatalogEntry,
   modelCredentialDto,
   parseModelSecret,
   prepareAllowedThinkingLevels as prepareModelThinkingLevels,
   providerCatalogCache,
   resolveCodexOAuthDefaultModel,
+  updateStoredModelSecret,
   validateModelAuthAvailability,
   verifyCatalogProviderApiKey,
   verifyOpenAiCompatibleApiKey,
+  withModelSettings,
 } from "@rakazo/adapters";
-import type { Actor, ModelConnectInput, SettingsScope, ThinkingLevel } from "@rakazo/contracts";
+import type {
+  Actor,
+  ModelConnectInput,
+  ModelSettingsSave,
+  SettingsScope,
+  ThinkingLevel,
+} from "@rakazo/contracts";
 import {
   canonicalPiProviderId,
+  MAX_MODEL_SETTINGS_PER_CONNECTION,
+  modelOutputLeavesInputRoom,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   storedPiProviderIds,
   usableModelId,
 } from "@rakazo/contracts";
-import { clampCatalogThinkingLevel } from "@rakazo/core";
+import { catalogEntryFor, clampCatalogThinkingLevel, modelSettingsDefaults } from "@rakazo/core";
 import {
   deleteUnreferencedCredentialSecret,
   findNewestUserModelCredential,
@@ -109,6 +124,8 @@ type ModelCredentialInput = {
   signal?: AbortSignal;
   /** Becomes the main model only while there is none. */
   keepExistingDefault?: boolean;
+  /** The stored copy whose settings this replacement preserves. */
+  expectedSecret?: { id: string; ciphertext: string | null };
 };
 
 export async function prepareModelCredential(
@@ -201,6 +218,17 @@ async function writeModelCredential(
   // A connection removed while this save was in flight stays removed.
   if (input.credentialId && !existing)
     throw new ORPCError("NOT_FOUND", { message: "Connection not found" });
+  if (existing && input.expectedSecret) {
+    const current = await tx.secret.findFirst({
+      where: { id: existing.secretId, userId: actor.userId, spaceId: null },
+      select: { ciphertext: true },
+    });
+    if (
+      existing.secretId !== input.expectedSecret.id ||
+      (current?.ciphertext ?? null) !== input.expectedSecret.ciphertext
+    )
+      throw new ORPCError("CONFLICT", { message: "Model credentials changed; retry." });
+  }
   throwIfAborted(input.signal);
   const secret = await tx.secret.create({
     data: {
@@ -300,6 +328,87 @@ export async function persistModelCredential(
   return modelCredentialDto(cred, input.plaintext);
 }
 
+/** One model's settings on one of the member's connections. */
+export async function saveConnectionModelSettings(
+  deps: RouterDeps,
+  actor: Actor,
+  input: ModelSettingsSave,
+) {
+  const credential = await deps.prisma.userModelCredential.findFirst({
+    where: { id: input.credentialId, userId: actor.userId },
+    include: { userPreferences: { where: { userId: actor.userId } } },
+  });
+  if (!credential) throw new ORPCError("NOT_FOUND", { message: "Connection not found" });
+  const defaultModel = credential.userPreferences[0]?.modelId;
+  const saved = await updateStoredModelSecret(
+    deps.prisma,
+    deps.secrets,
+    actor,
+    credential.secretId,
+    (secret) => {
+      // Clearing a model's settings always works, even after the model left the connection.
+      if (
+        Object.keys(input.settings).length > 0 &&
+        secret.kind === "openai_compatible" &&
+        secret.enabledModelIds !== undefined &&
+        !enabledOpenAiCompatibleModelIds(secret, defaultModel).includes(input.modelId)
+      )
+        throw new ORPCError("BAD_REQUEST", { message: "Unknown model for that connection" });
+      const defaults = modelSettingsDefaults(
+        credential.provider,
+        catalogEntryFor(listPiCatalog(), credential.provider, input.modelId) ??
+          liveCatalogEntry(credential.provider, input.modelId),
+      );
+      if (
+        (input.settings.maxTokens !== undefined || input.settings.contextWindow !== undefined) &&
+        !modelOutputLeavesInputRoom(
+          input.settings.maxTokens ?? defaults.maxTokens,
+          input.settings.contextWindow ?? defaults.contextWindow,
+        )
+      )
+        throw new ORPCError("BAD_REQUEST", {
+          message: "Maximum output tokens must be below the context limit.",
+        });
+      const next = withModelSettings(secret, input.modelId, input.settings);
+      const count = (value: typeof secret) => Object.keys(value.models ?? {}).length;
+      if (count(next) > MAX_MODEL_SETTINGS_PER_CONNECTION && count(next) > count(secret))
+        throw new ORPCError("BAD_REQUEST", {
+          message: "Too many models on this connection have their own settings",
+        });
+      return next;
+    },
+  );
+  if (!saved) throw new ORPCError("NOT_FOUND", { message: "Connection not found" });
+}
+
+/** Keep settings and their source together so a reconnect cannot overwrite a newer save. */
+export async function prepareModelReconnectSettings(
+  deps: RouterDeps,
+  actor: Actor,
+  credential: { secretId: string } | null,
+) {
+  if (!credential) return { settings: {}, expectedSecret: undefined };
+  const row = await deps.prisma.secret.findFirst({
+    where: { id: credential.secretId, userId: actor.userId, spaceId: null },
+    select: { ciphertext: true },
+  });
+  let settings: ReturnType<typeof keptModelSettings> = {};
+  if (row) {
+    try {
+      settings = keptModelSettings(
+        parseModelSecret(await deps.secrets.load(row.ciphertext, credential.secretId)),
+      );
+    } catch (error) {
+      // An outage must not replace settings it could not read; a corrupt copy has none to keep.
+      if (error instanceof SecretStoreUnavailableError) throw error;
+    }
+  }
+  return {
+    settings,
+    expectedSecret: { id: credential.secretId, ciphertext: row?.ciphertext ?? null },
+  };
+}
+
 export function throwIfAborted(signal?: AbortSignal) {
   if (signal?.aborted) throw signal.reason ?? new Error("Request cancelled");
 }
@@ -312,6 +421,7 @@ export function createModelConnector(deps: RouterDeps, codexCatalog: CodexLiveCa
   ) => {
     const credential = await modelConnectionTarget(deps, actor, input.provider, input.credentialId);
     let plaintext: string;
+    let expectedSecret: ModelCredentialInput["expectedSecret"];
     try {
       let previousPlaintext: string | undefined;
       let omitVisionModelIds = false;
@@ -320,6 +430,7 @@ export function createModelConnector(deps: RouterDeps, codexCatalog: CodexLiveCa
           where: { id: credential.secretId, userId: actor.userId, spaceId: null },
           select: { ciphertext: true },
         });
+        expectedSecret = { id: credential.secretId, ciphertext: secret?.ciphertext ?? null };
         if (secret) {
           try {
             previousPlaintext = await deps.secrets.load(secret.ciphertext, credential.secretId);
@@ -375,19 +486,23 @@ export function createModelConnector(deps: RouterDeps, codexCatalog: CodexLiveCa
     if (input.provider === OPENAI_COMPATIBLE_PROVIDER_ID) {
       // Known race: this runs before persistModelCredential's transaction, so a pin saved in
       // between can fall outside the stored list and fail at run time. Concurrent saves of
-      // the same connection are last-write-wins.
+      // the same connection are rejected when their source secret changes.
       const saved = parseModelSecret(plaintext);
       if (credential)
         await assertNoDanglingModelPins(deps, actor, credential, saved, input.modelId ?? "");
     }
-    return { plaintext, credential };
+    return { plaintext, credential, expectedSecret };
   };
   const connectModelCredential = async (
     actor: Actor,
     input: ModelConnectInput,
     signal: AbortSignal | undefined,
   ) => {
-    const { plaintext, credential } = await verifyModelConnection(actor, input, signal);
+    const { plaintext, credential, expectedSecret } = await verifyModelConnection(
+      actor,
+      input,
+      signal,
+    );
     return persistModelCredential(
       deps,
       actor,
@@ -395,6 +510,7 @@ export function createModelConnector(deps: RouterDeps, codexCatalog: CodexLiveCa
         provider: input.provider,
         credentialId: credential?.id ?? null,
         plaintext,
+        expectedSecret,
         label: input.label,
         modelId: input.modelId,
         // openai-compatible keeps its effort inside the stored endpoint

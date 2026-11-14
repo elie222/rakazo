@@ -19,7 +19,7 @@ import {
 import { ChevronLeft } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { PasskeySignIn } from "../components/PasskeySignIn";
+import { PasskeySignIn, usePasskeySignIn } from "../components/PasskeySignIn";
 import { SocialSignInButtons } from "../components/SocialSignInButtons";
 import { authClient } from "../lib/auth";
 import type { AuthCapabilities } from "../lib/auth-capabilities";
@@ -57,6 +57,7 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
   });
   const [pending, setPending] = useState(false);
   const entering = useRef(false);
+  const passkey = usePasskeySignIn({ onSignedIn: enterApp, onError: setError });
   const [resetSent, setResetSent] = useState(false);
   // Signup triggers a session refresh that remounts the anonymous auth page.
   const sent = resetSent || searchParams.get("verify") === "email";
@@ -321,12 +322,13 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
             <>
               <SocialSignInButtons
                 providers={providers}
-                disabled={pending}
+                disabled={pending || passkey.pending}
                 onPress={(providerId) => void signInWithProvider(providerId)}
                 onEmail={() => {
                   setError(null);
                   setEmailStep(true);
                 }}
+                onPasskey={mode === "in" && passkey.supported ? passkey.start : undefined}
               />
               {error ? (
                 <p
@@ -486,6 +488,7 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
               </Button>
               {mode === "in" && !codeStep ? (
                 <PasskeySignIn
+                  autoFillOnly={presented}
                   disabled={pending}
                   className={submitClass}
                   onSignedIn={enterApp}

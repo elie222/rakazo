@@ -26,6 +26,7 @@ import type {
   UserDeviceGateway,
 } from "@rakazo/adapters";
 import {
+  BillingEmulator,
   ChatSdkMessagingSurface,
   CodexCatalogCache,
   configuredBotEmailProvider,
@@ -100,6 +101,7 @@ import {
   createDb,
   createPool,
   createThreadEvents,
+  databaseOutage,
   describeRowSecurity,
   IsolationError,
   installAuditEventStore,
@@ -146,6 +148,7 @@ import { configuredEmailProvider } from "./email.js";
 import { mountEmailInboundRoute } from "./email-inbound.js";
 import type { AppEnv } from "./env.js";
 import { loadEnv } from "./env.js";
+import { createExperiments } from "./experiments.js";
 import { healthRoutes } from "./health.js";
 import { homeRetentionSweep } from "./home-retention.js";
 import { startHourlySweep } from "./hourly-sweep.js";
@@ -159,7 +162,13 @@ import { pluginSubmissionRoutes } from "./plugin-submissions.js";
 import { sendReferralEmails } from "./referral-email.js";
 import { mountApiRequestBodyLimits, rpcBodyLimit } from "./request-body-limit.js";
 import { createRouter } from "./router.js";
-import { handleRpcError } from "./rpc-errors.js";
+import {
+  DATABASE_RETRY_AFTER_SECONDS,
+  failedOnDatabaseOutage,
+  handleHttpError,
+  handleRpcError,
+  requestHitDatabaseOutage,
+} from "./rpc-errors.js";
 import { mountScreenTarget } from "./screen-proxy.js";
 import { mountScriptAssets } from "./script-assets.js";
 import { createAuthResponseAudit } from "./security-audit.js";
@@ -317,7 +326,6 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     analytics,
     runSecretWriter: createRunSecretWriter(secrets),
   });
-  const ticketBoardEnabled = env.ticketBoardEnabled;
   const boardEvents = createBoardEvents(realtime);
   const environmentSignupPolicy = signupPolicyFromEnv(env);
   // Mirror the env policy for the previous release during a rolling deploy.
@@ -367,7 +375,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     boardEvents,
     jobs,
     prisma,
-    ticketBoardEnabled,
+    deploymentLabs: env.deploymentLabs,
   });
   const hostComputer = sandboxProviderOptionsFromEnv();
   const sandbox: SandboxProvider =
@@ -434,8 +442,16 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   };
   const onEmailError = emailErrorLogger("transactional email delivery failed");
   const stripeBilling = stripeBillingConfigFromEnv(env);
+  const localBillingEmulator =
+    !billingOverride && !stripeBilling && env.billingEmulator
+      ? new BillingEmulator({ modelCredits: true })
+      : undefined;
+  if (localBillingEmulator && !isLocalhostOrLoopbackIp(env.apiHost)) {
+    throw new Error("BILLING_EMULATOR requires API_HOST to be a loopback host");
+  }
   const billingProvider: BillingProvider | undefined =
-    billingOverride ?? (stripeBilling ? new StripeBillingProvider(stripeBilling) : undefined);
+    billingOverride ??
+    (stripeBilling ? new StripeBillingProvider(stripeBilling) : localBillingEmulator);
   const billing = billingProvider
     ? createBillingService({
         prisma,
@@ -444,6 +460,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         webOrigin: env.webOrigin,
         managedModelsAvailable: resolveDeploymentModel().configured,
         analytics,
+        experiments: createExperiments(env.experiments),
       })
     : undefined;
   const modelCreditsEnabled = billing?.modelCreditsEnabled ?? false;
@@ -467,7 +484,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   );
   const { mcpOAuth, mcp, pipedream, installed, integrationSettings, stack, userCloudAgents } =
     connectors;
-  const runtime =
+  const baseRuntime =
     runtimeOverride ??
     (env.agentRuntime === "scripted"
       ? new ScriptedAgentRuntime()
@@ -618,7 +635,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   const codexCatalog = new CodexCatalogCache();
   // One instance: chat runs submit videos and, in single-process mode, background polls finish them.
   const mediaGeneration = createMediaGenerationProvider();
-  const { executor, jobHandlers, messagingDelivery, teamChat } = createRunRuntime(
+  const { runtime, executor, jobHandlers, messagingDelivery, teamChat } = createRunRuntime(
     runtimeEnv,
     connectors,
     {
@@ -626,7 +643,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       mediaGeneration,
       contextStrategy,
       prisma,
-      runtime,
+      runtime: baseRuntime,
       codexCatalog,
       sandbox,
       memory,
@@ -788,9 +805,9 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     },
     env: {
       inboundEmailDomain: env.inboundEmail?.domain,
+      deploymentLabs: env.deploymentLabs,
       phoneCallsEnabled: env.phoneCallsEnabled,
       phoneCallRingSeconds: env.phoneCallRingSeconds,
-      ticketBoardEnabled,
       navLinks: env.navLinks,
       adminEmails: env.adminEmails,
       maxUploadSizeBytes: env.maxUploadSizeBytes,
@@ -819,6 +836,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     clientInterceptors: [onError((error, { path, signal }) => handleRpcError(error, path, signal))],
   });
   const app = new Hono();
+  app.onError(handleHttpError);
   const inFlight = trackInFlightRequests();
   app.use("*", inFlight.middleware);
   app.use("*", requestLogging(logger));
@@ -976,9 +994,9 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     const actor = await actorFromMembership(
       requireMembership(
         prisma,
-        session.user.id,
+        session.user,
         request.headers.get("x-rakazo-space-id"),
-        session.session.id,
+        session.session,
       ),
     );
     return actor && { actor, sessionId: session.session.id };
@@ -1037,8 +1055,13 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         },
       },
     });
-    if (matched) return c.newResponse(response.body, response);
-    await next();
+    if (!matched) return next();
+    const reply = c.newResponse(response.body, response);
+    if (requestHitDatabaseOutage())
+      reply.headers.set("Retry-After", String(DATABASE_RETRY_AFTER_SECONDS));
+    // A signed-in request that went through reached the database, so any outage is over.
+    else if (actor && reply.status < 500) databaseOutage.succeeded();
+    return reply;
   });
   mountAccountExportRoute(app, { prisma, auth, artifacts, home });
   mountAuditExportRoute(app, { prisma, sessionActor });
@@ -1226,11 +1249,10 @@ export function authLibraryLogger(event: string) {
   return {
     level: "error" as const,
     log: (_level: string, message: string, ...args: unknown[]) => {
-      const failure = {
-        event,
-        message,
-        error: args.find((arg): arg is Error => arg instanceof Error),
-      };
+      const error = args.find((arg): arg is Error => arg instanceof Error);
+      // The request answers 503, and the outage logs once for all of them.
+      if (error && failedOnDatabaseOutage(error)) return;
+      const failure = { event, message, error };
       const held = authLibraryFailures.getStore();
       if (held) held.push(failure);
       else logAuthLibraryFailure(failure, true);
@@ -1245,6 +1267,14 @@ export async function withAuthLibraryFailures(handle: () => Promise<Response>) {
   try {
     const response = await authLibraryFailures.run(failures, handle);
     crashed = response.status >= 500;
+    // The library answers its own 500 when the database is down; ask the client to retry.
+    if (response.status === 500 && requestHitDatabaseOutage())
+      return new Response("Service Unavailable", {
+        status: 503,
+        headers: { "Retry-After": String(DATABASE_RETRY_AFTER_SECONDS) },
+      });
+    // An auth request that went through read the database, so any outage is over.
+    if (response.status < 400 && !requestHitDatabaseOutage()) databaseOutage.succeeded();
     return response;
   } finally {
     for (const failure of failures) logAuthLibraryFailure(failure, crashed);

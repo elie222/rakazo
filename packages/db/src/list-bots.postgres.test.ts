@@ -14,6 +14,8 @@ interface MessageRead {
   text: string;
   values: unknown[];
   rowCount: number;
+  /** Rows that carried a message's blocks rather than only its block kinds. */
+  contentRows: number;
 }
 
 const MESSAGE_FROM = /\bfrom\s+(?:"public"\s*\.\s*)?"?messages"?\b/i;
@@ -35,6 +37,13 @@ function sqlValues(args: unknown[]): unknown[] {
   return [];
 }
 
+function contentRowsOf(result: QueryResult): number {
+  // The driver adapter reads rows as arrays.
+  const index = result.fields.findIndex((field) => field.name === "blocks");
+  if (index < 0) return 0;
+  return result.rows.filter((row) => (Array.isArray(row) ? row[index] : row.blocks) != null).length;
+}
+
 /** Sum of rows actually sent to the app, not rows Prisma later drops in memory. */
 function trackMessageReads(pool: Pool): MessageRead[] {
   const reads: MessageRead[] = [];
@@ -45,7 +54,12 @@ function trackMessageReads(pool: Pool): MessageRead[] {
     return (result as Promise<QueryResult>).then((queryResult) => {
       const text = sqlText(args[0]);
       if (/^\s*select\b/i.test(text) && MESSAGE_FROM.test(text)) {
-        reads.push({ text, values: sqlValues(args), rowCount: queryResult.rowCount ?? 0 });
+        reads.push({
+          text,
+          values: sqlValues(args),
+          rowCount: queryResult.rowCount ?? 0,
+          contentRows: contentRowsOf(queryResult),
+        });
       }
       return queryResult;
     });
@@ -67,6 +81,7 @@ describePostgres("listBots sidebar previews (PostgreSQL)", () => {
   let longUpdatedAt = "";
   let peerUpdatedAt = "";
   let shortUpdatedAt = "";
+  let relayUpdatedAt = "";
 
   const actorFor = (identity: { userId: string; spaceId: string }) => ({
     userId: identity.userId,
@@ -107,6 +122,7 @@ describePostgres("listBots sidebar previews (PostgreSQL)", () => {
     const longBot = await runAsTenant(owner, () => repos.createBot(actor, botInput("Long")));
     const peerBot = await runAsTenant(owner, () => repos.createBot(actor, botInput("Peer")));
     const shortBot = await runAsTenant(owner, () => repos.createBot(actor, botInput("Short")));
+    const relayBot = await runAsTenant(owner, () => repos.createBot(actor, botInput("Relay")));
     await runAsTenant(owner, async () => {
       const task = await prisma.task.create({
         data: {
@@ -132,10 +148,27 @@ describePostgres("listBots sidebar previews (PostgreSQL)", () => {
       await seedThread(longBot.threadId, 40);
       await seedThread(peerBot.threadId, 40, { peerRunId: peerRun.id, peerFromSeq: 40 - window });
       await seedThread(shortBot.threadId, 5);
+      const relayRun = await prisma.run.create({
+        data: {
+          spaceId: owner.spaceId,
+          botId: relayBot.id,
+          threadId: relayBot.threadId,
+          taskId: task.id,
+          userId: owner.userId,
+          status: "completed",
+          trigger: "bot_message",
+        },
+      });
+      await seedThread(relayBot.threadId, 3, {
+        peerRunId: relayRun.id,
+        peerFromSeq: 1,
+        receipt: { fromBotId: peerBot.id, fromBotName: "Peer", text: "Done", intent: "result" },
+      });
     });
     longUpdatedAt = atSeq(39);
     peerUpdatedAt = atSeq(39);
     shortUpdatedAt = atSeq(4);
+    relayUpdatedAt = atSeq(2);
   });
 
   afterAll(async () => {
@@ -158,17 +191,25 @@ describePostgres("listBots sidebar previews (PostgreSQL)", () => {
   async function seedThread(
     threadId: string,
     count: number,
-    peer?: { peerRunId: string; peerFromSeq: number },
+    peer?: {
+      peerRunId: string;
+      peerFromSeq: number;
+      /** Opens the peer run with a received-message receipt. */
+      receipt?: { fromBotId: string; fromBotName: string; text: string; intent: string };
+    },
   ) {
     await prisma.message.createMany({
       data: Array.from({ length: count }, (_, seq) => {
         const hidden = peer !== undefined && seq >= peer.peerFromSeq;
+        const receipt = peer?.receipt && seq === peer.peerFromSeq ? peer.receipt : undefined;
         return {
           id: `${threadId}-${seq}`,
           threadId,
           seq,
           role: hidden || seq % 2 === 1 ? "bot" : "user",
-          blocks: [{ kind: "text", text: hidden ? `Peer chatter ${seq}` : `Message ${seq}` }],
+          blocks: receipt
+            ? [{ kind: "bot_message_received", ...receipt }]
+            : [{ kind: "text", text: hidden ? `Peer chatter ${seq}` : `Message ${seq}` }],
           runId: hidden ? peer.peerRunId : null,
           createdAt: new Date(Date.UTC(2026, 0, 1, 0, 0, seq)),
         };
@@ -190,7 +231,7 @@ describePostgres("listBots sidebar previews (PostgreSQL)", () => {
     );
 
     const byName = new Map(listed.map((bot) => [bot.name, bot]));
-    expect(listed.map((bot) => bot.name)).toEqual(["Long", "Peer", "Short"]);
+    expect(listed.map((bot) => bot.name)).toEqual(["Long", "Peer", "Short", "Relay"]);
     expect(byName.get("Long")).toMatchObject({ preview: "Message 39", updatedAt: longUpdatedAt });
     // The newest 16 rows are a peer-run tail, so the preview is the message just before it.
     expect(byName.get("Peer")).toMatchObject({
@@ -198,13 +239,20 @@ describePostgres("listBots sidebar previews (PostgreSQL)", () => {
       updatedAt: peerUpdatedAt,
     });
     expect(byName.get("Short")).toMatchObject({ preview: "Message 4", updatedAt: shortUpdatedAt });
+    // A relay's reply is the bot's own answer; telling it apart needs the receipt's sealed intent.
+    expect(byName.get("Relay")).toMatchObject({
+      preview: "Peer chatter 2",
+      updatedAt: relayUpdatedAt,
+    });
     expect(byName.get("Long")?.status).toBe("idle");
     expect(byName.get("Peer")?.runErrorId).toBeNull();
 
-    const threads = 3;
+    const threads = 4;
     const fallbackWindows = 1;
-    expect(rowCount).toBeGreaterThanOrEqual(window * 2 + 5);
-    expect(rowCount).toBeLessThanOrEqual(window * threads + window * fallbackWindows);
+    const receipts = 1;
+    expect(rowCount).toBeLessThanOrEqual(window * threads + window * fallbackWindows + threads);
+    // Content is read only for each previewed message and the receipt that decides visibility.
+    expect(during.reduce((sum, read) => sum + read.contentRows, 0)).toBe(threads + receipts);
   });
 
   it("keeps an archived bot on the archived roster with the same preview", async () => {
@@ -221,7 +269,7 @@ describePostgres("listBots sidebar previews (PostgreSQL)", () => {
       const repos = createRepos(prisma);
       return Promise.all([repos.listBots(actor), repos.listBots(actor, { archived: true })]);
     });
-    expect(active.map((bot) => bot.name)).toEqual(["Long", "Peer"]);
+    expect(active.map((bot) => bot.name)).toEqual(["Long", "Peer", "Relay"]);
     expect(archived.find((bot) => bot.name === "Short")).toMatchObject({
       preview: "Message 4",
       updatedAt: shortUpdatedAt,

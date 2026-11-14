@@ -5,21 +5,13 @@ import type {
   ThinkingLevel,
 } from "@rakazo/contracts";
 import {
-  DEFAULT_MODEL_CONTEXT_WINDOW,
-  DEFAULT_MODEL_MAX_TOKENS,
   modelHeadersInput,
   modelRoutingForm,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   openAiCompatibleProbeSuccessMessage,
 } from "@rakazo/contracts";
 import type { ConnectionFormFields } from "@rakazo/core";
-import {
-  clampCatalogThinkingLevel,
-  compatibleThinkingLevels,
-  createModelProbe,
-  initialModelProbeState,
-  savedCompatibleModelIds,
-} from "@rakazo/core";
+import { createModelProbe, initialModelProbeState, savedCompatibleModelIds } from "@rakazo/core";
 import { useMemo, useRef, useState } from "react";
 import type { ModelCatalogEntry } from "../../lib/model-auth";
 import type { ModelPreflightFailure } from "../../lib/model-connection-preflight";
@@ -60,12 +52,7 @@ export function useModelConnectionForm({
   const [baseUrl, setBaseUrl] = useState("");
   const [apiProtocol, setApiProtocol] = useState<ModelApiProtocol>("chat-completions");
   const [headerRows, setHeaderRows] = useState<ModelHeaderRow[] | null>(null);
-  const [reasoning, setReasoning] = useState(false);
   const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel | null>(null);
-  const [maxTokens, setMaxTokens] = useState(String(DEFAULT_MODEL_MAX_TOKENS));
-  const [contextWindow, setContextWindow] = useState(String(DEFAULT_MODEL_CONTEXT_WINDOW));
-  const [supportsImages, setSupportsImages] = useState(false);
-  const [maxImagesPerPrompt, setMaxImagesPerPrompt] = useState("");
   const [{ models: probeModels, probing }, setProbe] = useState(initialModelProbeState);
   const [modelProbe] = useState(() => createModelProbe(setProbe));
   const resetOpenAiCompatibleProbe = modelProbe.reset;
@@ -95,12 +82,7 @@ export function useModelConnectionForm({
     setEnabledModelIds(fields.enabledModelIds);
     setBaseUrl(fields.baseUrl);
     setApiProtocol(fields.apiProtocol);
-    setReasoning(fields.reasoning);
     setThinkingLevel(fields.thinkingLevel);
-    setMaxTokens(fields.maxTokens);
-    setContextWindow(fields.contextWindow);
-    setSupportsImages(fields.supportsImages);
-    setMaxImagesPerPrompt(fields.maxImagesPerPrompt);
     setAccountId(fields.accountId);
     setGatewayId(fields.gatewayId);
   }
@@ -145,24 +127,8 @@ export function useModelConnectionForm({
 
   function updateApiProtocol(nextProtocol: ModelApiProtocol) {
     setApiProtocol(nextProtocol);
-    setThinkingLevel(
-      clampCatalogThinkingLevel(
-        thinkingLevel,
-        reasoning ? compatibleThinkingLevels(nextProtocol) : [],
-      ) as ThinkingLevel | null,
-    );
     resetOpenAiCompatibleProbe();
     invalidatePreflight();
-  }
-
-  function stageCompatibleModelId(nextModelId: string) {
-    setModelId(nextModelId);
-    setThinkingLevel(
-      clampCatalogThinkingLevel(
-        credential?.modelId === nextModelId ? credential.thinkingLevel : null,
-        reasoning ? compatibleThinkingLevels(apiProtocol) : [],
-      ) as ThinkingLevel | null,
-    );
   }
 
   async function probeServerModels() {
@@ -188,8 +154,7 @@ export function useModelConnectionForm({
         if (!stillCurrent()) return;
         const current = modelIdRef.current;
         const next = current.trim() || models[0] || "";
-        if (next !== current) stageCompatibleModelId(next);
-        else setModelId(next);
+        setModelId(next);
         onModelsFound?.(models, current.trim());
         const unavailable = unavailableSelectedModel(current, models);
         if (unavailable) {
@@ -253,7 +218,6 @@ export function useModelConnectionForm({
     applyFields,
     baseUrl,
     routingReady,
-    contextWindow,
     enabledModelIds,
     error,
     gatewayId,
@@ -262,8 +226,6 @@ export function useModelConnectionForm({
     needsRouting,
     needsGateway,
     isOpenAiCompatible,
-    maxImagesPerPrompt,
-    maxTokens,
     modelId,
     modelProbe,
     modelsForProvider,
@@ -277,27 +239,19 @@ export function useModelConnectionForm({
     probeServerModels,
     probing,
     provider,
-    reasoning,
     resetOpenAiCompatibleProbe,
     runPreflight,
     selected,
     setAccountId,
     setApiKey,
-    setContextWindow,
     setEnabledModelIds,
     setError,
     setGatewayId,
     setHeaderRows,
-    setMaxImagesPerPrompt,
-    setMaxTokens,
     setModelId,
     setNotice,
     setProvider,
-    setReasoning,
-    setSupportsImages,
     setThinkingLevel,
-    stageCompatibleModelId,
-    supportsImages,
     testApiKeyConnection,
     thinkingLevel,
     updateApiKey,

@@ -4,7 +4,11 @@ const api = vi.hoisted(() => ({ rpc: vi.fn(), seq: 0 }));
 vi.mock("./api-server", () => ({}));
 vi.mock("./api-auth", () => ({}));
 vi.mock("./api-live", () => ({}));
-vi.mock("./api", () => ({ rpc: api.rpc, spaceSelectionSeq: () => api.seq }));
+vi.mock("./api", () => ({
+  rpc: api.rpc,
+  spaceSelectionSeq: () => api.seq,
+  subscribeSpaceSelection: () => () => {},
+}));
 
 import { computerUpdates } from "./computer-updates";
 

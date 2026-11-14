@@ -14,11 +14,11 @@ import { Check, Copy, Eye, EyeOff } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import { useCopyText } from "../../lib/copy-text";
+import { SettingsPageHeader } from "../SettingsPageHeader";
 import type { VaultAuth } from "./kinds";
 import { siteHost, useVaultKindLabels, VaultTile } from "./kinds";
 import { useVaultBots } from "./VaultItemAccess";
 import { VaultItemActivity, VaultItemUses } from "./VaultItemActivity";
-import { VaultPageHeader } from "./VaultPageHeader";
 
 /** How long a shown value stays on screen. */
 export const REVEAL_MS = 30_000;
@@ -375,7 +375,7 @@ export function VaultItemDetail({
     );
   return (
     <div data-testid="vault-item-detail" className="flex flex-col gap-4">
-      <VaultPageHeader
+      <SettingsPageHeader
         title={item.title}
         leading={<VaultTile kind={kind} title={item.title} origin={item.origin} />}
         subtitle={

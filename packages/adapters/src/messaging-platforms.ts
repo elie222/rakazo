@@ -15,7 +15,16 @@ import type { HttpInstance } from "@larksuiteoapi/node-sdk";
 import type { MessagingInboundMessage, MessagingOutboundStatus } from "@rakazo/adapter-kit";
 import { getLogger } from "@rakazo/logging";
 import type { Adapter } from "chat";
-import { ConsoleLogger, convertEmojiPlaceholders, markdownToPlainText } from "chat";
+import {
+  ConsoleLogger,
+  convertEmojiPlaceholders,
+  isLinkNode,
+  markdownToPlainText,
+  parseMarkdown,
+  text,
+  toPlainText,
+  walkAst,
+} from "chat";
 import type { SendblueAdapterConfig, SendblueThreadId } from "chat-adapter-sendblue";
 import type { ClientOptions as SendblueClientOptions } from "sendblue";
 import type { MessagingPlatform } from "./chat-sdk-surface.js";
@@ -522,6 +531,24 @@ function splitKeepingPairs(body: string): string[] {
 
 const telegramFormat = new TelegramFormatConverter();
 
+/** Plain text drops a link's address, so write it after the label first. */
+function plainTextWithLinkAddresses(markdown: string): string {
+  const ast = walkAst(parseMarkdown(markdown), (node) => {
+    if (!isLinkNode(node)) return node;
+    const label = toPlainText({
+      type: "root",
+      children: [{ type: "paragraph", children: node.children }],
+    });
+    if (!label) return text(node.url);
+    const bare = node.url.replace(/^(?:https?:\/\/|mailto:)/, "");
+    if (label === node.url || label === bare || label === bare.replace(/\/$/, "")) {
+      return text(label);
+    }
+    return text(`${label} (${node.url})`);
+  });
+  return toPlainText(ast);
+}
+
 function splitTelegramPart(body: string, literal = false): string[] {
   const markdown = literal ? escapeMarkdownV2(body) : body;
   const plainText = literal ? body : markdownToPlainText(body);
@@ -537,7 +564,9 @@ function splitTelegramPart(body: string, literal = false): string[] {
 
   // Parse before splitting: cutting Markdown can turn code into prose and
   // consume literal backslashes. Oversized formatted replies use escaped text.
-  if (!literal && plainText !== body) return splitTelegramPart(plainText, true);
+  if (!literal && plainText !== body) {
+    return splitTelegramPart(plainTextWithLinkAddresses(body), true);
+  }
 
   const parts = splitKeepingPairs(body);
   if (parts.length > 1) return parts.flatMap((part) => splitTelegramPart(part, literal));
