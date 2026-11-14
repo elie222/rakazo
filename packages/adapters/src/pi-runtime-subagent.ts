@@ -2,7 +2,7 @@ import { Agent } from "@earendil-works/pi-agent-core";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import { isTerminatingReplyResult, terminatingReplyText } from "./approval-effect.js";
 import { withAutomatedLabels } from "./automated-messages.js";
-import { DELEGATION_TOOL_NAMES } from "./builtin-tools.js";
+import { DELEGATION_TOOL_NAMES } from "./builtin.tool-definition.js";
 import { withCloudflareAuth } from "./cloudflare-ai-gateway.js";
 import { estimatePiImageTokens } from "./pi-image-context.js";
 import { COMPUTER_MODE_TOOLS } from "./pi-runtime-computer-mode.js";
@@ -26,6 +26,7 @@ import { conversationSessionId, reliableModelStream } from "./pi-runtime-stream.
 import type { ToolHost } from "./pi-runtime-tools.js";
 import { toAgentTools, toolCallBudgetExceededMessage } from "./pi-runtime-tools.js";
 import { observedPiStream } from "./pi-usage.js";
+import { subagentSystemPrompt } from "./runtime.prompt.js";
 import { createRuntimeContextPolicy } from "./runtime-context.js";
 import { deliverFinishedShells } from "./shell-command-stream.js";
 import { uniqueToolCallIdStream } from "./tool-call-ids.js";
@@ -267,16 +268,7 @@ export async function executeSubagent(
         ? (selectedModel.credentials?.accessToken ?? selectedModel.apiKey)
         : selectedModel.apiKey,
     initialState: {
-      systemPrompt: [
-        `You are a Rakazo subagent named "${name}".`,
-        "You run inside the parent bot's turn — you are not a separate bot chat.",
-        "Complete the task and return a concise result. Do not spawn bots or further subagents.",
-        "Your task comes from the parent bot, not from the human user, and you cannot talk to the user: report your result back to the parent bot.",
-        "Messages marked as automated come from Rakazo, not from the user.",
-        extra,
-      ]
-        .filter(Boolean)
-        .join(" "),
+      systemPrompt: subagentSystemPrompt(name, extra),
       model: subagentModel,
       thinkingLevel: thinkingLevelFor(subagentModel, requestModel.thinkingLevel),
       tools: toAgentTools(childDefs, nestedHost),

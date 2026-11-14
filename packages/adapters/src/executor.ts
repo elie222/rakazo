@@ -1,7 +1,7 @@
 import type { AgentRunRequest, ComputerRef, SemanticMemoryProvider } from "@rakazo/adapter-kit";
 import { DEFAULT_CONTEXT_STRATEGY, runContinueJob } from "@rakazo/adapter-kit";
 import type { MessageBlock, RunStatus } from "@rakazo/contracts";
-import { disabledBuiltinToolSet } from "@rakazo/contracts";
+import { disabledBuiltinToolSet, hasLab, resolveLabs } from "@rakazo/contracts";
 import {
   BACKGROUND_HELPER_TRIGGER,
   botMessageAllowsSilence,
@@ -44,9 +44,9 @@ import {
   teamChatRunFromOwner,
 } from "@rakazo/db";
 import { enrichLogContext, getLogger } from "@rakazo/logging";
-import { formatAgentEnvironmentInstruction } from "./agent-environment.js";
+import { formatAgentEnvironmentInstruction } from "./agent-environment.prompt.js";
 import { createApprovedEffectReplayQueue } from "./approval-effect.js";
-import { PARTIAL_REPLY_NOTE } from "./automated-messages.js";
+import { PARTIAL_REPLY_NOTE } from "./automated-messages.prompt.js";
 import { backgroundHelpersAllowed } from "./background-helpers.js";
 import { loadBotMessageContext } from "./bot-messages.js";
 import {
@@ -56,8 +56,8 @@ import {
   loadRunLoginRedactions,
 } from "./bot-secrets.js";
 import { createBrowserProvider } from "./browser-provider-factory.js";
+import { agentConnectionTools, builtinAgentTools } from "./builtin.tool-definition.js";
 import { partitionTools } from "./builtin-tool-bridge.js";
-import { agentConnectionTools, builtinAgentTools } from "./builtin-tools.js";
 import { USER_CLOUD_AGENT_KEY_PREFIX } from "./cloud-agent-factory.js";
 import { cloudAgentForActor } from "./cloud-agent-service.js";
 import { mergeConnectedPlugins, needsLivePluginSync } from "./composio-connector.js";
@@ -80,7 +80,7 @@ import {
   PINNED_COMPUTER_MODEL_LOST_RUN_ERROR,
   resolveComputerRunModel,
 } from "./computer-model-settings.js";
-import { teamWorkspaceInstruction } from "./computer-support.js";
+import { teamWorkspaceInstruction } from "./computer-support.prompt.js";
 import { checkpointRunComputerWorkspace } from "./computer-workspace.js";
 import {
   connectedContext,
@@ -88,19 +88,21 @@ import {
   persistLivePluginConnections,
   selectRunConnections,
 } from "./connection-context.js";
-import { formatCurrentTimeInstruction } from "./current-time.js";
+import { formatCurrentTimeInstruction } from "./current-time.prompt.js";
 import { resolveDeploymentModel } from "./deployment-model.js";
 import type { ExecutorDeps } from "./executor-deps.js";
 import type { FleetRun } from "./fleet-tools.js";
 import { loadBotGroupDirectory, loadGroupContext } from "./group-handoff.js";
 import {
-  formatCompactedSummary,
-  formatRecalledMemory,
   historyWindowSize,
   LEGACY_HISTORY_WINDOW_SIZE,
-  MAX_RECALLED_MEMORIES,
   selectCompactedHistory,
 } from "./history-compaction.js";
+import {
+  formatCompactedSummary,
+  formatRecalledMemory,
+  MAX_RECALLED_MEMORIES,
+} from "./history-compaction.prompt.js";
 import {
   historySpeaker,
   loadSpacePeople,
@@ -130,7 +132,8 @@ import {
   messageToAgentHistoryText,
 } from "./reply-context.js";
 import { backOffRoutineAfterAccountError } from "./routine-backoff.js";
-import { lateRoutineRunDueAt, lateRoutineRunInstruction } from "./routine-lateness.js";
+import { lateRoutineRunDueAt } from "./routine-lateness.js";
+import { lateRoutineRunInstruction } from "./routine-lateness.prompt.js";
 import { lazyRunComputer } from "./run-computer.js";
 import type {
   RunComputerUseState,
@@ -153,7 +156,7 @@ import {
   threadContextForRun,
   userTurnInstructions,
   voiceCallInstruction,
-} from "./run-instructions.js";
+} from "./run-instructions.prompt.js";
 import {
   claimRun,
   createRunWorkspaceCheckpoint,
@@ -181,7 +184,7 @@ import {
   runAllowsSilentEmpty,
   runReplyGuidance,
   runReplyMode,
-} from "./run-replies.js";
+} from "./run-replies.prompt.js";
 import {
   notifyRoutineRetryAttemptsExhausted,
   retryRoutineRun,
@@ -209,11 +212,11 @@ import {
 import {
   claimRunSteering,
   loadCurrentTurnImages,
-  missingTurnImagesInstruction,
   RECENT_TURN_IMAGE_TURNS,
   withLatestStepScreenshot,
   withRecentTurnImages,
 } from "./run-turn-images.js";
+import { missingTurnImagesInstruction } from "./run-turn-images.prompt.js";
 import { loadAgentScratchpadContext } from "./scratchpad-context.js";
 import { inferScript } from "./scripted-runtime.js";
 import { loadSharedSpaceNote } from "./shared-space-note.js";
@@ -227,18 +230,20 @@ import {
   takeoverCheckpointOf,
   takeoverContinuePlan,
 } from "./takeover-resume.js";
-import { TASK_CATALOG_GUIDANCE } from "./task-catalog.js";
+import { TASK_CATALOG_GUIDANCE } from "./task-catalog.prompt.js";
 import { parsePlaybook } from "./teaching-session.js";
 import {
   createEarlierFileQueue,
-  currentTurnFilesInstruction,
   listCurrentTurnFiles,
   listRecentThreadFiles,
   materializeCurrentTurnFiles,
   materializeEarlierFiles,
   materializeRecentThreadFiles,
-  recentThreadFilesInstruction,
 } from "./thread-artifacts.js";
+import {
+  currentTurnFilesInstruction,
+  recentThreadFilesInstruction,
+} from "./thread-artifacts.prompt.js";
 import { loadAgentTicketContext } from "./ticket-context.js";
 import { appendToolCompletionAudit, toolCompletionOutcome } from "./tool-completion-audit.js";
 import { toolResultFingerprint } from "./tool-loop.js";
@@ -590,7 +595,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         const channelId = messagingChannelId(sourceBlocks);
         const messagingChannelRun = isMessagingChannelRun(run.trigger, sourceBlocks);
         const [
-          bot,
+          { bot, ownerLabs },
           thread,
           messages,
           peerMessage,
@@ -607,10 +612,20 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           runLoginRedactions,
           runCodeRedactions,
         ] = await Promise.all([
-          deps.prisma.bot.findUniqueOrThrow({
-            where: { id: run.botId },
-            include: { computer: true },
-          }),
+          deps.prisma.bot
+            .findUniqueOrThrow({
+              where: { id: run.botId },
+              include: { computer: true },
+            })
+            .then(async (bot) => ({
+              bot,
+              ownerLabs: (
+                await deps.prisma.user.findUnique({
+                  where: { id: bot.userId },
+                  select: { labs: true },
+                })
+              )?.labs,
+            })),
           deps.prisma.thread.findUniqueOrThrow({
             where: { id: run.threadId },
             include: {
@@ -666,6 +681,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           fromUser: messages.find((message) => message.id === run.sourceMessageId)?.role === "user",
           nonOwnerChat: nonOwnerChatRun,
         });
+        const ticketBoardEnabled = hasLab(resolveLabs(ownerLabs, deps.deploymentLabs), "board");
         const historySearchBeforeSeq =
           contextStrategy !== "current" && run.sourceMessageId
             ? (messages.find((message) => message.id === run.sourceMessageId)?.seq ??
@@ -949,7 +965,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                 spaceId: run.spaceId,
                 botId: bot.id,
               }),
-          nonOwnerChatRun || !deps.ticketBoardEnabled
+          nonOwnerChatRun || !ticketBoardEnabled
             ? Promise.resolve(undefined)
             : loadAgentTicketContext(deps, {
                 spaceId: run.spaceId,
@@ -1258,7 +1274,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           id: runModelId,
           ...(credential ? { connectionId: credential.id } : {}),
           ...resolvedModelRunFields(resolved),
-          thinkingLevel: thinkingLevel ?? resolved.thinkingLevel ?? null,
+          thinkingLevel: thinkingLevel ?? null,
         };
         // Saved identities win on resume, including when the setting was cleared meanwhile.
         const computerModel =
@@ -1372,7 +1388,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         );
         const builtins = [
           ...selectBuiltinToolsForRun({
-            ticketBoardEnabled: deps.ticketBoardEnabled,
+            ticketBoardEnabled,
             // A call rings the bot's own person, whose chat it is; other members of a shared
             // Space reach it by message for now.
             phoneCallsEnabled: deps.phoneCallsEnabled && run.userId === bot.userId,

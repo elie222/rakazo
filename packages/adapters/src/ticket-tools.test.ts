@@ -68,7 +68,7 @@ describe("ticket tools", () => {
       ticket: { findMany },
     };
 
-    const result = await listBoardTickets({ prisma, ticketBoardEnabled: true } as never, {
+    const result = await listBoardTickets({ prisma } as never, {
       spaceId: "ws",
       status: "doing",
     });
@@ -85,7 +85,7 @@ describe("ticket tools", () => {
     const findMany = vi.fn(async () => [ticket({ number: 2, description: "x".repeat(500) })]);
     const prisma = { ...boardSpace(), ticket: { findMany } };
 
-    const result = await listBoardTickets({ prisma, ticketBoardEnabled: true } as never, {
+    const result = await listBoardTickets({ prisma } as never, {
       spaceId: "ws",
     });
 
@@ -124,7 +124,7 @@ describe("ticket tools", () => {
     const findMany = vi.fn(async (_query: unknown) => rows);
     const prisma = { ...boardSpace(), ticket: { findMany } };
 
-    const first = await listBoardTickets({ prisma, ticketBoardEnabled: true } as never, {
+    const first = await listBoardTickets({ prisma } as never, {
       spaceId: "ws",
     });
     expect(first).toEqual({
@@ -135,7 +135,7 @@ describe("ticket tools", () => {
     expect(page.tickets).toHaveLength(50);
     expect(page.tickets[49]?.id).toBe("t49");
 
-    await listBoardTickets({ prisma, ticketBoardEnabled: true } as never, {
+    await listBoardTickets({ prisma } as never, {
       spaceId: "ws",
       cursor: page.nextCursor,
     });
@@ -153,7 +153,7 @@ describe("ticket tools", () => {
       take: 51,
     });
 
-    const invalid = await listBoardTickets({ prisma, ticketBoardEnabled: true } as never, {
+    const invalid = await listBoardTickets({ prisma } as never, {
       spaceId: "ws",
       cursor: "not-a-cursor",
     });
@@ -161,7 +161,7 @@ describe("ticket tools", () => {
   });
 });
 
-function mutationDeps(ticketBoardEnabled = true) {
+function mutationDeps() {
   let current = ticket();
   const changes = vi.fn(async (_change: { wakeAssignee: boolean }) => {});
   const tx = {
@@ -197,7 +197,7 @@ function mutationDeps(ticketBoardEnabled = true) {
     $transaction: vi.fn(async (fn: (client: typeof tx) => Promise<unknown>) => fn(tx)),
   };
   return {
-    deps: { prisma, onTicketChange: changes, ticketBoardEnabled } as never,
+    deps: { prisma, onTicketChange: changes } as never,
     prisma,
     tx,
     changes,
@@ -295,23 +295,6 @@ describe("ticket mutations", () => {
     expect(s.changes).not.toHaveBeenCalled();
   });
 
-  it("disables every tool without database access or wake-ups", async () => {
-    const s = mutationDeps(false);
-    await createTicket(s.deps, { spaceId: "ws", userId: "user-1", botId: "bot-1", title: "Ship" });
-    await updateTicket(s.deps, {
-      spaceId: "ws",
-      userId: "user-1",
-      botId: "bot-1",
-      id: "t1",
-      ownerBotId: "bot-2",
-    });
-    await commentTicket(s.deps, { spaceId: "ws", botId: "bot-1", id: "t1", body: "Ready" });
-    await listBoardTickets(s.deps, { spaceId: "ws" });
-    await getTicket(s.deps, { spaceId: "ws", ref: "RAK-1" });
-    expect(s.prisma.board.findUnique).not.toHaveBeenCalled();
-    expect(s.prisma.$transaction).not.toHaveBeenCalled();
-    expect(s.changes).not.toHaveBeenCalled();
-  });
   it("allocates a number and wakes the assigned bot once", async () => {
     const s = mutationDeps();
     const result = await createTicket(s.deps, {

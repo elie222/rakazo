@@ -11,7 +11,13 @@ export function memberName(
   return members.find((member) => member.botId === botId)?.name;
 }
 
-const MENTION_PATTERN = /@([A-Za-z0-9][A-Za-z0-9_-]{0,39})/g;
+export function botDisplayName(
+  members: readonly { botId: string; name: string }[] | undefined,
+  bots: readonly { id: string; name: string }[],
+  botId: string | undefined,
+): string | undefined {
+  return memberName(members, botId) ?? bots.find((bot) => bot.id === botId)?.name;
+}
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -24,15 +30,6 @@ export function hasMentionToken(text: string, name: string): boolean {
     `(?:^|[^\\p{L}\\p{N}_-])@${escapeRegExp(normalized)}(?![\\p{L}\\p{N}_-])`,
     "iu",
   ).test(text);
-}
-
-export function parseMentionNames(text: string): string[] {
-  const names = new Set<string>();
-  for (const match of text.matchAll(MENTION_PATTERN)) {
-    const name = match[1];
-    if (name) names.add(name.toLowerCase());
-  }
-  return [...names];
 }
 
 type GroupTargetInput = {

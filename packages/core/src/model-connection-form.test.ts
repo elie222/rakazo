@@ -39,12 +39,7 @@ function draft(overrides: Partial<ConnectionFormDraft> = {}): ConnectionFormDraf
     baseUrl: "",
     apiProtocol: "chat-completions",
     headerRows: null,
-    reasoning: false,
     thinkingLevel: null,
-    maxTokens: "",
-    contextWindow: "262144",
-    supportsImages: false,
-    maxImagesPerPrompt: "",
     accountId: "",
     gatewayId: "",
     ...overrides,
@@ -112,91 +107,35 @@ describe("connectionFormFields", () => {
       enabledModelIds: [],
       baseUrl: "https://ollama.com/v1",
       apiProtocol: "chat-completions",
-      reasoning: false,
       thinkingLevel: null,
-      maxTokens: "4096",
-      contextWindow: "262144",
-      supportsImages: false,
-      maxImagesPerPrompt: "",
       accountId: "",
       gatewayId: "",
     });
   });
 
-  it("shows a saved OpenAI-compatible connection, with effort only for its saved model", () => {
+  it("shows a saved OpenAI-compatible connection, whose models choose their own effort", () => {
     const saved = credential({
       provider: COMPATIBLE,
       baseUrl: "http://127.0.0.1:8000/v1",
       modelId: "local",
       enabledModelIds: ["local", "other"],
-      reasoning: true,
-      thinkingLevel: "high",
-      maxTokens: 2048,
-      contextWindow: 32_000,
-      supportsImages: true,
-      maxImagesPerPrompt: 4,
-    });
-    const fields = connectionFormFields({
-      catalog,
-      provider: COMPATIBLE,
-      modelId: "local",
-      credential: saved,
-      presetBaseUrl: "https://ignored.example/v1",
-    });
-    expect(fields).toMatchObject({
-      enabledModelIds: ["local", "other"],
-      baseUrl: "http://127.0.0.1:8000/v1",
-      apiProtocol: "chat-completions",
-      reasoning: true,
-      thinkingLevel: "high",
-      maxTokens: "2048",
-      contextWindow: "32000",
-      supportsImages: true,
-      maxImagesPerPrompt: "4",
-    });
-    expect(
-      connectionFormFields({ catalog, provider: COMPATIBLE, modelId: "other", credential: saved })
-        .thinkingLevel,
-    ).toBeNull();
-  });
-
-  it("keeps a saved protocol and clamps its effort levels to what the protocol runs", () => {
-    const saved = credential({
-      provider: COMPATIBLE,
-      baseUrl: "http://127.0.0.1:8000/v1",
-      modelId: "local",
-      reasoning: true,
-      thinkingLevel: "max",
       apiProtocol: "anthropic-messages",
+      reasoning: true,
+      thinkingLevel: "high",
     });
     expect(
-      connectionFormFields({ catalog, provider: COMPATIBLE, modelId: "local", credential: saved })
-        .apiProtocol,
-    ).toBe("anthropic-messages");
-    // Anthropic Messages has no budget above high, so a saved max clamps down.
-    expect(
-      connectionFormFields({ catalog, provider: COMPATIBLE, modelId: "local", credential: saved })
-        .thinkingLevel,
-    ).toBe("high");
-    const request = modelConnectRequest({
-      form: draft({
-        baseUrl: "http://127.0.0.1:8000/v1",
-        modelId: "local",
-        apiProtocol: "anthropic-messages",
-        reasoning: true,
-        thinkingLevel: "xhigh",
-        maxTokens: "4096",
-      }),
-      selected: {
+      connectionFormFields({
+        catalog,
         provider: COMPATIBLE,
-        id: "openai-compatible",
-        providerName: "OpenAI-compatible",
-      },
-      credentialId: null,
-    });
-    expect(request.status === "ready" && request.input).toMatchObject({
+        modelId: "local",
+        credential: saved,
+        presetBaseUrl: "https://ignored.example/v1",
+      }),
+    ).toMatchObject({
+      enabledModelIds: ["local", "other"],
+      baseUrl: "http://127.0.0.1:8000/v1",
       apiProtocol: "anthropic-messages",
-      thinkingLevel: "high",
+      thinkingLevel: null,
     });
   });
 
@@ -209,7 +148,6 @@ describe("connectionFormFields", () => {
     });
     expect(fields.thinkingLevel).toBe("high");
     expect(fields.baseUrl).toBe("");
-    expect(fields.maxTokens).toBe("");
   });
 });
 
@@ -237,7 +175,7 @@ describe("modelConnectRequest", () => {
     thinkingLevels: ["low", "high"] as ModelCredential["thinkingLevels"],
   };
 
-  it("waits for a key, or a saved connection for a limits-only save", () => {
+  it("waits for a key, or a saved connection for a save without one", () => {
     expect(
       modelConnectRequest({
         form: draft({ apiKey: "short" }),
@@ -250,32 +188,6 @@ describe("modelConnectRequest", () => {
     ).toBe("incomplete");
   });
 
-  it("names the out-of-range field", () => {
-    expect(
-      modelConnectRequest({
-        form: draft({ apiKey: "sk-long-enough", maxTokens: "0" }),
-        selected: anthropic,
-        credentialId: null,
-      }),
-    ).toEqual({ status: "invalid", field: "maxTokens" });
-    const compatible = { provider: COMPATIBLE, id: "openai-compatible" };
-    const form = draft({ baseUrl: "http://h/v1", modelId: "m", maxTokens: "4096" });
-    expect(
-      modelConnectRequest({
-        form: { ...form, supportsImages: true, maxImagesPerPrompt: "2000" },
-        selected: compatible,
-        credentialId: null,
-      }),
-    ).toEqual({ status: "invalid", field: "maxImagesPerPrompt" });
-    expect(
-      modelConnectRequest({
-        form: { ...form, contextWindow: "" },
-        selected: compatible,
-        credentialId: null,
-      }),
-    ).toEqual({ status: "invalid", field: "contextWindow" });
-  });
-
   it("connects a catalog key with the clamped effort and the makeDefault target", () => {
     expect(
       modelConnectRequest({
@@ -286,7 +198,7 @@ describe("modelConnectRequest", () => {
       }),
     ).toEqual({
       status: "ready",
-      savingLimitOnly: false,
+      savingWithoutKey: false,
       activeModelId: "opus",
       input: {
         provider: "anthropic",
@@ -295,27 +207,25 @@ describe("modelConnectRequest", () => {
         thinkingLevel: "high",
         makeDefault: true,
         scope: "account",
-        maxTokens: null,
         label: "Anthropic",
         credentialId: null,
       },
     });
   });
 
-  it("leaves the stored effort alone on a limits-only save unless model or effort changed", () => {
+  it("leaves the stored effort alone on a save without a key unless model or effort changed", () => {
     const saved = credential({ modelId: "opus", thinkingLevel: "high" });
-    const limits = modelConnectRequest({
-      form: draft({ apiKey: "sk-ignored-here", maxTokens: "1024", thinkingLevel: "high" }),
+    const settings = modelConnectRequest({
+      form: draft({ apiKey: "sk-ignored-here", thinkingLevel: "high" }),
       selected: anthropic,
       credential: saved,
       credentialId: saved.id,
       settingsOnly: true,
     });
-    expect(limits).toMatchObject({ status: "ready", savingLimitOnly: true });
-    expect(limits.status === "ready" && limits.input).toEqual({
+    expect(settings).toMatchObject({ status: "ready", savingWithoutKey: true });
+    expect(settings.status === "ready" && settings.input).toEqual({
       provider: "anthropic",
       modelId: "opus",
-      maxTokens: 1024,
       label: "Anthropic",
       credentialId: saved.id,
     });
@@ -358,10 +268,6 @@ describe("modelConnectRequest", () => {
         baseUrl: " http://h/v1 ",
         modelId: " m ",
         enabledModelIds: ["m", "n"],
-        reasoning: true,
-        thinkingLevel: "high",
-        maxTokens: "4096",
-        supportsImages: true,
         headerRows: [{ name: " X-Team ", value: "v" }],
       }),
       selected: {
@@ -373,7 +279,7 @@ describe("modelConnectRequest", () => {
     });
     expect(request).toEqual({
       status: "ready",
-      savingLimitOnly: false,
+      savingWithoutKey: false,
       activeModelId: "m",
       input: {
         provider: COMPATIBLE,
@@ -382,12 +288,6 @@ describe("modelConnectRequest", () => {
         headers: { "X-Team": "v" },
         modelId: "m",
         enabledModelIds: ["n"],
-        reasoning: true,
-        thinkingLevel: "high",
-        maxTokens: 4096,
-        contextWindow: 262_144,
-        supportsImages: true,
-        maxImagesPerPrompt: null,
         apiKey: "key",
         label: "OpenAI-compatible",
         credentialId: "credential-fixture",
@@ -405,7 +305,7 @@ describe("legacy project routing", () => {
   it("keeps key-only settings and key rotation editable without adding project routing", () => {
     const saved = credential({ provider: selected.provider, modelId: selected.id });
     for (const apiKey of ["", "replacement-fixture-key"]) {
-      const form = draft({ apiKey, projectId: "", region: "global", maxTokens: "4096" });
+      const form = draft({ apiKey, projectId: "", region: "global" });
       expect(modelRoutingForm(selected.routingFields, form, saved).routingReady).toBe(true);
       expect(modelRoutingDirty(form, saved)).toBe(false);
       const request = modelConnectRequest({

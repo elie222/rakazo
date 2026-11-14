@@ -1,6 +1,6 @@
-import type { Actor, MessageBlock } from "@rakazo/contracts";
-import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
-import { appendEventInTransaction, IsolationError } from "@rakazo/db";
+import type { Actor } from "@rakazo/contracts";
+import type { PrismaClient, ThreadEvents } from "@rakazo/db";
+import { IsolationError } from "@rakazo/db";
 
 export type BotThreadDeps = {
   prisma: PrismaClient;
@@ -14,23 +14,4 @@ export async function requireBotThread(deps: BotThreadDeps, actor: Actor, botId:
   });
   if (!bot?.thread) throw new IsolationError();
   return { bot, thread: bot.thread };
-}
-
-export async function updateBlocks(
-  deps: BotThreadDeps,
-  target: { spaceId: string; botId: string; threadId: string },
-  messageId: string,
-  blocks: MessageBlock[],
-): Promise<void> {
-  const event = await deps.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-    await tx.message.update({ where: { id: messageId }, data: { blocks } });
-    return appendEventInTransaction(tx, {
-      spaceId: target.spaceId,
-      threadId: target.threadId,
-      botId: target.botId,
-      type: "thread.message.updated",
-      payload: { messageId, role: "bot", blocks },
-    });
-  });
-  await deps.events.notify(target.threadId, event.seq);
 }

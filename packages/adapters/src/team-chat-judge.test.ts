@@ -5,8 +5,8 @@ import { resolveRuntimeModel } from "./pi-runtime-models.js";
 import {
   ModelTeamChatEngagementJudge as Judge,
   parseTeamChatEngagementDecision,
-  renderTeamChatEngagementPrompt,
 } from "./team-chat-judge.js";
+import { renderTeamChatEngagementPrompt } from "./team-chat-judge.prompt.js";
 import { mainRole, withModelRoles } from "./testing/model-roles.js";
 
 class ModelTeamChatEngagementJudge extends Judge {
@@ -114,7 +114,7 @@ describe("team chat engagement judge", () => {
     expect(parseTeamChatEngagementDecision("not json")).toEqual({ act: false });
   });
 
-  it("redacts compatible header values from failed judge diagnostics", async () => {
+  it("runs a compatible model with its own settings and redacts its header values from failures", async () => {
     const sink = createTestSink();
     const previousLogger = getLogger();
     installLogger(createLogger({ service: "test", sinks: [sink] }));
@@ -156,6 +156,7 @@ describe("team chat engagement judge", () => {
               "x-boundary": "12345678",
               "x-region": "us",
             },
+            models: { "model-fixture": { reasoning: true } },
           }),
       } as never,
       deploymentProvider: "openai-compatible",
@@ -181,6 +182,7 @@ describe("team chat engagement judge", () => {
       expect(run.mock.calls[0]?.[0]).toMatchObject({
         model: {
           headers: { "x-route": "route-value-fixture", "x-boundary": "12345678", "x-region": "us" },
+          reasoning: true,
         },
       });
       expect(sink.events).toHaveLength(1);
@@ -262,11 +264,12 @@ describe("team chat engagement judge", () => {
     expect(run).not.toHaveBeenCalled();
   });
 
-  it("refreshes a running judge's sign-in through the locked re-read", async () => {
+  it("refreshes a running judge's sign-in through the locked re-read, with its model's limits", async () => {
     const stored = (access: string, expires: number) =>
       JSON.stringify({
         kind: "oauth",
         credential: { type: "oauth", access, refresh: `refresh-${access}`, expires },
+        models: { "model-fixture": { contextWindow: 64_000 } },
       });
     // Another process already rotated the stored copy, so the locked refresh adopts it.
     const ciphertext = "start";
@@ -300,17 +303,20 @@ describe("team chat engagement judge", () => {
     ]);
     const providerRefresh = vi.fn(async () => undefined);
     let midRun: unknown;
+    let contextWindow: unknown;
     const judge = new ModelTeamChatEngagementJudge({
       prisma: prisma as never,
       runtime: {
         run: async function* (request: {
           model: {
+            contextWindow?: number;
             oauth?: {
               credential: Record<string, unknown>;
               refresh?: (held: unknown, refresh: unknown) => Promise<unknown>;
             };
           };
         }) {
+          contextWindow = request.model.contextWindow;
           const oauth = request.model.oauth;
           midRun = await oauth?.refresh?.({ ...oauth.credential, expires: 1 }, providerRefresh);
           yield { type: "done", text: '{"act":false}' };
@@ -341,6 +347,7 @@ describe("team chat engagement judge", () => {
     });
     expect(prisma.$transaction).toHaveBeenCalledOnce();
     expect(midRun).toMatchObject({ access: "rotated" });
+    expect(contextWindow).toBe(64_000);
     expect(providerRefresh).not.toHaveBeenCalled();
   });
 

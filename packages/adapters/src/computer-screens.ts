@@ -78,13 +78,22 @@ export function isComputerScreenUnavailable(error: unknown): error is Error {
   );
 }
 
+export function computerScreenUnavailableMessage(error: Error): string {
+  if (/cannot allocate another screen/i.test(error.message)) {
+    const limit = /\(limit (\d+)\)/i.exec(error.message)?.[1];
+    return `All ${limit ? `${limit} ` : ""}Team Computer screens are in use (SANDBOX_TEAM_SCREEN_LIMIT)`;
+  }
+  return COMPUTER_SCREEN_UNAVAILABLE;
+}
+
 export async function withComputerScreenAvailability<T>(
   work: () => Promise<T>,
 ): Promise<T | { error: string }> {
   try {
     return await work();
   } catch (error) {
-    if (isComputerScreenUnavailable(error)) return { error: error.message };
+    if (isComputerScreenUnavailable(error))
+      return { error: computerScreenUnavailableMessage(error) };
     throw error;
   }
 }

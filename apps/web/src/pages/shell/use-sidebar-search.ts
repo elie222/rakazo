@@ -50,7 +50,7 @@ export function useSidebarSearch({
       setSearchLoading(true);
       setSearchError(null);
       void rpc.search
-        .query({ q: spaceQuery })
+        .query({ q: spaceQuery }, { signal: abort.signal })
         .then((result) => {
           if (!abort.signal.aborted) setSearchHits(result.hits);
         })

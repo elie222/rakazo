@@ -4,6 +4,7 @@ import {
   appendTextSegment,
   appendToolCallSegment,
   appendToolStep,
+  appToolLabel,
   containsSecret,
   createStreamingRedactor,
   endsSentence,
@@ -646,6 +647,13 @@ describe("toolNameFromLabel", () => {
   });
 });
 
+describe("appToolLabel", () => {
+  it("drops the app's own prefix only", () => {
+    expect(appToolLabel("GMAIL_SEND_EMAIL", "gmail")).toBe("Send email");
+    expect(appToolLabel("SLACK_FIND_CHANNELS", "gmail")).toBe("Slack find channels");
+  });
+});
+
 describe("humanizeToolName", () => {
   it("turns a Composio-style constant into a readable label", () => {
     expect(humanizeToolName("SLACK_FIND_CHANNELS")).toBe("Slack find channels");
@@ -1002,7 +1010,7 @@ describe("createStreamingRedactor", () => {
     const redactor = createStreamingRedactor(["abcdefghij"]); // length 10
     const high = "\uD83D";
     const low = "\uDE00";
-    // safeStartLimit lands between high and low; the pair must stay buffered together.
+    // The hold-window cut lands between high and low; the pair must stay buffered together.
     expect(redactor.push(`x${high}${low}abcdefgh`)).toBe("x");
     expect(redactor.push("ij done")).toBe("😀[redacted]");
     expect(redactor.finish()).toBe(" done");

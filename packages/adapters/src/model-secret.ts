@@ -1,10 +1,16 @@
 import type { OAuthCredential } from "@earendil-works/pi-ai";
-import type { ModelApiProtocol, ModelContextLimits, ThinkingLevel } from "@rakazo/contracts";
+import type {
+  ModelApiProtocol,
+  ModelContextLimits,
+  ModelSettings,
+  ThinkingLevel,
+} from "@rakazo/contracts";
 import {
   MAX_MODEL_CONTEXT_WINDOW,
   MAX_MODEL_MAX_TOKENS,
   ModelApiProtocolSchema,
   ModelContextLimitsSchema,
+  ModelSettingsSchema,
   parseModelHeaders,
   ThinkingLevelSchema,
 } from "@rakazo/contracts";
@@ -13,6 +19,35 @@ const CORRUPT_MODEL_SECRET_MESSAGE =
   "Stored model credential is corrupt. Connect the provider again.";
 
 export type StoredModelLimits = ModelContextLimits;
+
+/** Settings saved for individual models, keyed by model id. */
+type StoredModelSettings = { models?: Record<string, ModelSettings> };
+
+function parsedModelSettings(value: unknown): StoredModelSettings {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const models: Record<string, ModelSettings> = Object.create(null);
+  for (const [modelId, settings] of Object.entries(value)) {
+    const parsed = ModelSettingsSchema.safeParse(settings);
+    // An empty entry is kept: it means the model's card, not the connection's earlier values.
+    if (modelId.trim() && parsed.success) models[modelId] = parsed.data;
+  }
+  return Object.keys(models).length > 0 ? { models } : {};
+}
+
+function serializedModelSettings(secret: StoredModelSettings): StoredModelSettings {
+  return parsedModelSettings(secret.models);
+}
+
+/** Model settings a connection keeps when its sign-in is refreshed, retired or replaced. */
+export type KeptModelSettings = StoredModelSettings & { maxTokens?: number };
+
+export function keptModelSettings(secret: StoredModelSecret | undefined): KeptModelSettings {
+  if (!secret) return {};
+  return {
+    ...(secret.maxTokens !== undefined ? { maxTokens: secret.maxTokens } : {}),
+    ...serializedModelSettings(secret),
+  };
+}
 
 function modelLimits(value: Record<string, unknown>): StoredModelLimits {
   const cache = ModelContextLimitsSchema.shape.cacheCapabilities.safeParse(value.cacheCapabilities);
@@ -32,9 +67,15 @@ export type StoredModelSecret =
       gatewayId?: string;
       projectId?: string;
       region?: string;
-    } & StoredModelLimits)
-  | { kind: "oauth"; reconnectRequired: true; maxTokens?: number }
-  | { kind: "oauth"; reconnectRequired?: false; credential: OAuthCredential; maxTokens?: number }
+    } & StoredModelLimits &
+      StoredModelSettings)
+  | ({ kind: "oauth"; reconnectRequired: true; maxTokens?: number } & StoredModelSettings)
+  | ({
+      kind: "oauth";
+      reconnectRequired?: false;
+      credential: OAuthCredential;
+      maxTokens?: number;
+    } & StoredModelSettings)
   | ({
       kind: "openai_compatible";
       baseUrl: string;
@@ -48,7 +89,8 @@ export type StoredModelSecret =
       visionModelIds?: string[];
       enabledModelIds?: string[];
       maxImagesPerPrompt?: number;
-    } & StoredModelLimits);
+    } & StoredModelLimits &
+      StoredModelSettings);
 
 function readOAuthCredential(value: unknown): OAuthCredential | undefined {
   if (!value || typeof value !== "object") return undefined;
@@ -140,6 +182,7 @@ export function parseModelSecret(plaintext: string): StoredModelSecret {
       ...(enabledModelIds ? { enabledModelIds } : {}),
       ...(maxImagesPerPrompt !== undefined ? { maxImagesPerPrompt } : {}),
       ...modelLimits(parsed),
+      ...parsedModelSettings(parsed.models),
     };
   }
   if (parsed.kind === "api_key") {
@@ -160,15 +203,18 @@ export function parseModelSecret(plaintext: string): StoredModelSecret {
       ...(projectId ? { projectId } : {}),
       ...(region ? { region } : {}),
       ...modelLimits(parsed),
+      ...parsedModelSettings(parsed.models),
     };
   }
   if (parsed.kind === "oauth") {
     const maxTokens = parsedMaxTokens(parsed.maxTokens);
+    const models = parsedModelSettings(parsed.models);
     if (parsed.reconnectRequired === true) {
       return {
         kind: "oauth",
         reconnectRequired: true,
         ...(maxTokens !== undefined ? { maxTokens } : {}),
+        ...models,
       };
     }
     const credential = readOAuthCredential(parsed.credential);
@@ -177,6 +223,7 @@ export function parseModelSecret(plaintext: string): StoredModelSecret {
       kind: "oauth",
       credential,
       ...(maxTokens !== undefined ? { maxTokens } : {}),
+      ...models,
     };
   }
   // Legacy secrets serialize the bare OAuth credential without a kind wrapper.
@@ -190,12 +237,20 @@ export function parseModelSecret(plaintext: string): StoredModelSecret {
 
 export function serializeModelSecret(secret: StoredModelSecret): string {
   if (secret.kind === "oauth") {
-    if (secret.reconnectRequired) return JSON.stringify(secret);
-    if (secret.maxTokens === undefined) return JSON.stringify(secret.credential);
+    const models = serializedModelSettings(secret);
+    if (secret.reconnectRequired)
+      return JSON.stringify({
+        kind: "oauth",
+        reconnectRequired: true,
+        ...(secret.maxTokens !== undefined ? { maxTokens: secret.maxTokens } : {}),
+        ...models,
+      });
+    if (secret.maxTokens === undefined && !models.models) return JSON.stringify(secret.credential);
     return JSON.stringify({
       kind: "oauth",
       credential: secret.credential,
-      maxTokens: secret.maxTokens,
+      ...(secret.maxTokens !== undefined ? { maxTokens: secret.maxTokens } : {}),
+      ...models,
     });
   }
   if (secret.kind === "openai_compatible") {
@@ -217,8 +272,10 @@ export function serializeModelSecret(secret: StoredModelSecret): string {
       ...(secret.maxImagesPerPrompt !== undefined
         ? { maxImagesPerPrompt: secret.maxImagesPerPrompt }
         : {}),
+      ...serializedModelSettings(secret),
     });
   }
+  const models = serializedModelSettings(secret);
   if (
     secret.maxTokens === undefined &&
     secret.accountId === undefined &&
@@ -226,7 +283,8 @@ export function serializeModelSecret(secret: StoredModelSecret): string {
     secret.projectId === undefined &&
     secret.region === undefined &&
     secret.contextWindow === undefined &&
-    secret.cacheCapabilities === undefined
+    secret.cacheCapabilities === undefined &&
+    !models.models
   ) {
     return secret.key;
   }
@@ -239,6 +297,7 @@ export function serializeModelSecret(secret: StoredModelSecret): string {
     ...(secret.projectId ? { projectId: secret.projectId } : {}),
     ...(secret.region ? { region: secret.region } : {}),
     ...modelLimits(secret as unknown as Record<string, unknown>),
+    ...models,
   });
 }
 

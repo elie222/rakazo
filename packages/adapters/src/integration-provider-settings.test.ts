@@ -44,6 +44,22 @@ function fixture() {
   return { rows, prisma, adapter, factory, secrets, settings };
 }
 describe("integration provider settings", () => {
+  it.each([true, false])("forwards app tools with discovery fallback: %s", async (hasCatalog) => {
+    const f = fixture();
+    const tools = [{ name: "example_action", description: "An action", inputSchema: {} }];
+    const listAppTools = vi.fn(async () => tools);
+    if (hasCatalog) f.adapter.listAppTools = listAppTools;
+    vi.mocked(f.adapter.discoverTools).mockResolvedValue(tools);
+    await f.settings.save({ provider: "composio", apiKey: "fake-key" }, context);
+    const provider = f.settings.providers().find((entry) => entry.describe().id === "composio")!;
+    expect(await provider.listAppTools!(context, "example")).toEqual(tools);
+    if (hasCatalog) {
+      expect(listAppTools).toHaveBeenCalledWith(context, "example");
+      expect(f.adapter.discoverTools).not.toHaveBeenCalled();
+    } else {
+      expect(f.adapter.discoverTools).toHaveBeenCalledWith(context);
+    }
+  });
   it("encrypts credentials and shares updates with a separately created worker resolver", async () => {
     const f = fixture();
     const worker = new IntegrationProviderSettings(
