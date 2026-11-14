@@ -1085,7 +1085,9 @@ describe("thread answer delivery", () => {
       }),
     );
     expect(enqueue).toHaveBeenCalledOnce();
-    expect(sink.events.some((event) => event.message === "thread answer enqueue")).toBe(true);
+    expect(sink.events).toContainEqual(
+      expect.objectContaining({ message: "run wake failed", "run.id": "run-1" }),
+    );
     installLogger(createLogger({ service: "rakazo-api", level: "off", sinks: [] }));
   });
 });

@@ -1,7 +1,7 @@
 import type { JobPublisher, MessagingInboundMessage, SandboxProvider } from "@rakazo/adapter-kit";
-import { runContinueJob, teamChatEngageJobKey } from "@rakazo/adapter-kit";
+import { teamChatEngageJobKey } from "@rakazo/adapter-kit";
 import type { MessagingDelivery, OutboundLane } from "@rakazo/adapters";
-import { MESSAGING_DM_OUTBOUND_CAP, messagingWakeIdempotencyKey } from "@rakazo/adapters";
+import { MESSAGING_DM_OUTBOUND_CAP, messagingWakeIdempotencyKey, wakeRun } from "@rakazo/adapters";
 import type { MessageBlock } from "@rakazo/contracts";
 import { ATTACHMENT_MAX_COUNT, isAttachmentAudioMimeType } from "@rakazo/contracts";
 import type { MessagingCommand } from "@rakazo/core";
@@ -256,9 +256,7 @@ async function handleDirectEvent(
       });
       return unsent === 0;
     });
-    await deps.jobs.enqueue(runContinueJob(sent.runId)).catch((error) => {
-      getLogger().error("messaging inbound run enqueue error", error);
-    });
+    await wakeRun(deps.jobs, sent.runId);
   }
 }
 
@@ -998,9 +996,7 @@ async function handleChannelEvent(
         clientNonce: `messaging:${event.provider}:${event.handle}`,
       });
       if (sent.runId) {
-        await deps.jobs.enqueue(runContinueJob(sent.runId)).catch((error) => {
-          getLogger().error("messaging channel fan-out enqueue error", error);
-        });
+        await wakeRun(deps.jobs, sent.runId);
       }
     } catch (error) {
       droppedWhileDeleting(error);

@@ -7,12 +7,7 @@ import type {
   SandboxProvider,
   SecretStore,
 } from "@rakazo/adapter-kit";
-import {
-  isSandboxProviderOutage,
-  routineJobKey,
-  runContinueJob,
-  runJobKey,
-} from "@rakazo/adapter-kit";
+import { isSandboxProviderOutage, routineJobKey, runJobKey } from "@rakazo/adapter-kit";
 import type { Actor, Bot, ComputerMode } from "@rakazo/contracts";
 import {
   BOT_DESCRIPTION_MAX_LENGTH,
@@ -52,6 +47,7 @@ import type { MemoryProviderResolver } from "./memory-provider-factory.js";
 import { forgetPageShareSecrets } from "./page-share-secrets.js";
 import { removePiBotSessions } from "./pi-session.js";
 import { isSandboxGoneError } from "./sandbox-errors.js";
+import { wakeRun } from "./wake-run.js";
 
 export function confirmSpawnedBotName(confirmName: string, botName: string) {
   if (confirmName !== botName) {
@@ -142,9 +138,7 @@ export async function spawnBot(
       spawnKey: input.spawnKey,
       prompt,
     });
-    await deps.jobs
-      .enqueue(runContinueJob(run.id))
-      .catch((error) => getLogger().error("spawned bot enqueue", error));
+    await wakeRun(deps.jobs, run.id);
   }
 
   return {
