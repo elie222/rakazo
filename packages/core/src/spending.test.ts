@@ -1,3 +1,4 @@
+import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import {
   formatMinorAmount,
@@ -5,6 +6,7 @@ import {
   parsePageAmount,
   spendingPeriodStart,
 } from "./spending.js";
+import { localTime, nearClockChange, zonedInstant } from "./time-zones.test-support.js";
 
 describe("parsePageAmount", () => {
   it.each([
@@ -24,6 +26,15 @@ describe("parsePageAmount", () => {
     // A separator before three digits groups thousands: the larger reading.
     ["$1.234", 123400, "usd"],
     ["$1,000,000", 100000000, "usd"],
+    // A decimal part with no whole part is still a fraction, not whole units.
+    ["$.99", 99, "usd"],
+    ["€,50", 50, "eur"],
+    [".99 USD", 99, "usd"],
+    [",50 €", 50, "eur"],
+    ["$.5", 50, "usd"],
+    ["$0.99", 99, "usd"],
+    ["€0,50", 50, "eur"],
+    ["$00.99", 99, "usd"],
   ])("reads %s", (text, amount, currency) => {
     expect(parsePageAmount(text)).toEqual({ amount, currency });
   });
@@ -41,6 +52,11 @@ describe("parsePageAmount", () => {
     "$1.2345",
     "$1,234,56",
     "$30,000,000",
+    "$..99",
+    "$,.99",
+    "$.999",
+    "€,500",
+    "$.1,234",
   ])("refuses %j", (text) => {
     expect(parsePageAmount(text)).toBeNull();
   });
@@ -89,6 +105,27 @@ describe("spendingPeriodStart", () => {
 });
 
 describe("formatMinorAmount", () => {
+  it.each([
+    [1000, "jpy", "¥1,000"],
+    [1000, "JPY", "¥1,000"],
+    [0, "jpy", "¥0"],
+    [1000, "krw", "₩1,000"],
+    [1234, "kwd", "KWD\u00a01.234"],
+    [2340, "eur", "€23.40"],
+    [2340, "gbp", "£23.40"],
+  ])("formats %s minor units of %s", (amount, currency, expected) => {
+    expect(formatMinorAmount(amount, currency)).toBe(expected);
+  });
+
+  it("uses the requested locale without changing the currency scale", () => {
+    expect(formatMinorAmount(1000, "jpy", "ja-JP")).toBe("￥1,000");
+    expect(formatMinorAmount(1234, "kwd", "de-DE")).toBe("1,234\u00a0KWD");
+  });
+
+  it("keeps the existing fallback for invalid currency codes", () => {
+    expect(formatMinorAmount(1234, "invalid")).toBe("12.34 INVALID");
+  });
+
   it("formats minor units as money", () => {
     expect(formatMinorAmount(2340, "usd")).toBe("$23.40");
     expect(formatMinorAmount(5000, "ils", "en-US")).toBe("₪50.00");
@@ -114,4 +151,89 @@ describe("parseLimitInput", () => {
       expect(parseLimitInput(text)).toBeNull();
     },
   );
+});
+
+describe("formatted amount properties", () => {
+  const amount = fc.oneof(fc.nat(200_000), fc.nat(2_147_483_647), fc.nat(2 ** 40));
+  const currency = fc.constantFrom("usd" as const, "eur" as const, "gbp" as const, "ils" as const);
+  const locale = fc.constantFrom(
+    ...["en-US", "en-GB", "en-IN", "en-AU", "en-ZA", "de-DE", "de-CH", "de-AT", "fr-FR", "fr-CA"],
+    ...["es-ES", "es-MX", "it-IT", "nl-NL", "pt-BR", "sv-SE", "nb-NO", "pl-PL", "ru-RU", "tr-TR"],
+    ...["he-IL", "ar-EG", "fa-IR", "hi-IN", "bn-BD", "ja-JP", "zh-CN", "vi-VN", "bg-BG", "hu-HU"],
+  );
+
+  it("reads an amount formatted in any locale back as that amount and currency, or not at all", () => {
+    fc.assert(
+      fc.property(amount, currency, locale, (amount, currency, locale) => {
+        const text = formatMinorAmount(amount, currency, locale);
+        expect([null, { amount, currency }]).toContainEqual(parsePageAmount(text));
+      }),
+      { seed: 42, numRuns: 300 },
+    );
+  });
+
+  it("reads back every storable amount formatted the US, German or French way", () => {
+    fc.assert(
+      fc.property(
+        fc.nat(2_147_483_647),
+        currency,
+        fc.constantFrom("en-US", "de-DE", "fr-FR"),
+        (amount, currency, locale) => {
+          expect(parsePageAmount(formatMinorAmount(amount, currency, locale))).toEqual({
+            amount,
+            currency,
+          });
+        },
+      ),
+      { seed: 42, numRuns: 150 },
+    );
+  });
+});
+
+describe("spendingPeriodStart properties", () => {
+  const period = fc.constantFrom("day" as const, "week" as const, "month" as const);
+  const set = new Date(0);
+
+  it("starts a period at the first instant of its first local day, never after now", () => {
+    fc.assert(
+      fc.property(period, zonedInstant, (period, { timeZone, at }) => {
+        const start = spendingPeriodStart(period, set, timeZone, at);
+        expect(start.getTime()).toBeLessThanOrEqual(at.getTime());
+        const local = localTime(start, timeZone);
+        const now = localTime(at, timeZone);
+        expect(localTime(new Date(start.getTime() - 1), timeZone).dayNumber).toBe(
+          local.dayNumber - 1,
+        );
+        if (!nearClockChange(start, timeZone)) {
+          expect([local.hour, local.minute, local.second]).toEqual([0, 0, 0]);
+        }
+        const age = now.dayNumber - local.dayNumber;
+        if (period === "day") expect(age).toBe(0);
+        if (period === "week") expect([local.weekday, age <= 6]).toEqual([1, true]);
+        if (period === "month") {
+          expect([local.year, local.month, local.day]).toEqual([now.year, now.month, 1]);
+        }
+      }),
+      { seed: 42, numRuns: 200 },
+    );
+  });
+
+  it("gives every instant between a period's start and a later one in it the same start", () => {
+    fc.assert(
+      fc.property(
+        period,
+        zonedInstant,
+        fc.double({ min: 0, max: 1, noNaN: true }),
+        (period, { timeZone, at }, fraction) => {
+          const start = spendingPeriodStart(period, set, timeZone, at);
+          const within = new Date(
+            start.getTime() + Math.floor((at.getTime() - start.getTime()) * fraction),
+          );
+          expect(spendingPeriodStart(period, set, timeZone, within)).toEqual(start);
+          expect(spendingPeriodStart(period, set, timeZone, start)).toEqual(start);
+        },
+      ),
+      { seed: 42, numRuns: 150 },
+    );
+  });
 });

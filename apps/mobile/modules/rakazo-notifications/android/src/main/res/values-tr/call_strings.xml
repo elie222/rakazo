@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="rakazo_call_channel">Devam eden arama</string>
+  <string name="rakazo_call_title">Rakazo araması</string>
+  <string name="rakazo_call_text">Mikrofon açık</string>
+  <string name="rakazo_call_answer">Yanıtla</string>
+  <string name="rakazo_call_decline">Reddet</string>
+</resources>

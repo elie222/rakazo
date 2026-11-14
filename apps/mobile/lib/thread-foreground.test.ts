@@ -37,7 +37,11 @@ vi.mock("./haptics", () => ({ getHapticsEnabled: () => true, hapticSuccess: vi.f
 type LiveEvent = { type: string; seq: number; runId?: string };
 const ref = <T>(current: T) => ({ current });
 
-beforeEach(() => vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true));
+beforeEach(() => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  // Retry and reconnect waits are jittered; pin them to their unjittered values.
+  vi.spyOn(Math, "random").mockReturnValue(0);
+});
 afterEach(() => {
   session.generation = 1;
   vi.useRealTimers();

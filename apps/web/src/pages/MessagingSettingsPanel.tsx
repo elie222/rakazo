@@ -140,7 +140,6 @@ export function MessagingSettingsPanel() {
       window.clearTimeout(poll);
       window.clearTimeout(expire);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [linkRequest]);
 
   async function act(action: () => Promise<unknown>) {

@@ -130,8 +130,18 @@ html[data-platform="darwin"] .titlebar {
   flex: none;
 }
 
+.choice-text {
+  display: grid;
+  gap: 2px;
+}
+
 .choice-title {
   font-weight: 600;
+}
+
+.choice-description {
+  font-size: 13px;
+  color: var(--muted-foreground);
 }
 
 .panel {
@@ -291,33 +301,47 @@ html[data-platform="darwin"] .titlebar {
   word-break: break-word;
 }
 
-.stack-help {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 16px;
-  margin-top: 10px;
-}
-
-.link {
-  background: none;
-  border: 0;
-  padding: 0;
-  font: inherit;
+.stack-hint {
+  margin: 6px 0 0;
   font-size: 13px;
-  color: var(--link);
-  cursor: pointer;
-  text-decoration: underline;
-  text-underline-offset: 2px;
+  color: var(--muted-foreground);
 }
 
-.link:hover {
-  color: var(--foreground);
+.stack-waiting {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0 0;
+  font-size: 12px;
+  color: var(--muted-foreground);
 }
 
-.link:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
-  border-radius: 3px;
+.stack-waiting[hidden] {
+  display: none;
+}
+
+.pulse {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--muted-foreground);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pulse {
+    animation: none;
+  }
 }
 
 .status {

@@ -7,9 +7,9 @@ import {
   resolveBotWorkspaceCwd,
   resolveBotWorkspacePath,
   teamBotWorkspaceDirectory,
-  teamWorkspaceInstruction,
   workspaceCwd,
 } from "./computer-support.js";
+import { teamWorkspaceInstruction } from "./computer-support.prompt.js";
 
 describe("workspaceCwd", () => {
   const root = "/home/user/rakazo-home";
@@ -56,6 +56,24 @@ describe("Team Computer bot folders", () => {
       "bots/bot-1/projects/site",
     );
     expect(resolveBotWorkspaceCwd("team", "bot-1", "/Users/me/project")).toBe("/Users/me/project");
+  });
+
+  it("reads a leading ~ in a dedicated computer's shell cwd as the workspace root", () => {
+    const root = "/workspace";
+    const cwd = (requested: string | undefined) =>
+      workspaceCwd(root, resolveBotWorkspaceCwd("dedicated", "bot-1", requested));
+    expect(cwd("~")).toBe(root);
+    expect(cwd("~/src")).toBe(`${root}/src`);
+    expect(cwd("src")).toBe(`${root}/src`);
+    expect(cwd(undefined)).toBe(root);
+    expect(cwd("~user/src")).toBe(`${root}/~user/src`);
+  });
+
+  it("hands a dedicated computer's provider a relative cwd for a home alias", () => {
+    const requested = (cwd: string) => resolveBotWorkspaceCwd("dedicated", "bot-1", cwd);
+    expect(requested("~")).toBeUndefined();
+    expect(requested("~/")).toBeUndefined();
+    expect(requested("~/src")).toBe("src");
   });
 
   it("tells the bot how its shell reaches the same shared folder as the file tools", () => {

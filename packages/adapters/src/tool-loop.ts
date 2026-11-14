@@ -12,12 +12,17 @@ const LOOP_GUARD_STOP_PATTERN = new RegExp(
   `^${LOOP_GUARD_STOP_PREFIX}.+${LOOP_GUARD_STOP_COUNT_PATTERN}\\d+${LOOP_GUARD_STOP_SUFFIX.replaceAll(".", "\\.")}$`,
 );
 
-export function loopGuardStopText(toolName: string, streak: ToolCallStreak): string {
+/** Whether the run stopped on one call repeated exactly, and the count its stop message gives. */
+export function loopGuardStop(streak: ToolCallStreak): { identical: boolean; count: number } {
   // Short of the similar limit, only a repeated failure stops a run, and that is an identical one.
   const identical =
     streak.count >= MAX_CONSECUTIVE_SIMILAR_TOOL_CALLS ||
     (streak.shapeCount ?? 0) < MAX_CONSECUTIVE_SIMILAR_TOOL_CALLS;
-  const count = identical ? streak.count : toolCallStreakLength(streak);
+  return { identical, count: identical ? streak.count : toolCallStreakLength(streak) };
+}
+
+export function loopGuardStopText(toolName: string, streak: ToolCallStreak): string {
+  const { identical, count } = loopGuardStop(streak);
   return `${LOOP_GUARD_STOP_PREFIX}${toolName} with ${identical ? "" : "nearly "}the same input ${count}${LOOP_GUARD_STOP_SUFFIX}`;
 }
 

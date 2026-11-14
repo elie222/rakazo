@@ -4,7 +4,12 @@ import { nextIncomingCall, respondToIncomingCall } from "@rakazo/core";
 import { BotAvatar, Button, defaultBotAvatarValue } from "@rakazo/ui-web";
 import { Phone, PhoneOff } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { isLeavingSession, startCall, useCallSession } from "../../lib/call-session";
+import {
+  isLeavingSession,
+  prepareCallAudio,
+  startCall,
+  useCallSession,
+} from "../../lib/call-session";
 import { rpc, selectedSpaceId } from "../../lib/rpc";
 import { errorText } from "../../lib/user-error";
 import { CallWindow } from "./CallWindow";
@@ -58,13 +63,13 @@ export function IncomingCall({
   transcribe,
   onAnswered,
 }: {
-  bots: Bot[];
+  bots: readonly Pick<Bot, "id" | "name" | "color" | "avatarSet" | "incomingCall">[];
   transcribe?: boolean;
   onAnswered: (botId: string) => void;
 }) {
   const { t } = useLingui();
   const onCall = useCallSession() !== null;
-  /** Calls this tab already acted on, so a stale roster poll cannot ring them again. */
+  /** Calls this tab already acted on, so a stale roster read cannot ring them again. */
   const [handled, setHandled] = useState<Set<string>>(() => new Set());
   const [now, setNow] = useState(() => Date.now());
   const [error, setError] = useState<string | null>(null);
@@ -154,6 +159,7 @@ export function IncomingCall({
 
   const answer = async () => {
     if (isLeavingSession()) return;
+    prepareCallAudio();
     setBusy(true);
     setError(null);
     const target = { botId: bot.id, callId: call.callId };

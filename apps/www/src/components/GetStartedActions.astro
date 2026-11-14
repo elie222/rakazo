@@ -1,8 +1,7 @@
 ---
 import { ANDROID_APP_STORE_URL } from "@rakazo/contracts/client-build";
 import type { HomeCopy } from "../i18n/home";
-import type { DesktopDownloads } from "../github";
-import { availableDesktopPlatforms, desktopDownloadHref } from "../github";
+import { DESKTOP_PLATFORMS, desktopDownloadHref } from "../github";
 import {
   APP_URL,
   GITHUB_URL,
@@ -13,17 +12,17 @@ type Props = {
   class: string;
   copy: HomeCopy["hero"];
   /** Omitted where the GitHub link should stay on every platform. */
-  downloads?: DesktopDownloads;
+  desktop?: boolean;
   /** PostHog `data-attr` prefix that tells this placement apart from others. */
   placement: string;
   githubLabel?: string;
 };
 
-const { class: className, copy, downloads, placement, githubLabel = copy.viewOnGithub } =
+const { class: className, copy, desktop, placement, githubLabel = copy.viewOnGithub } =
   Astro.props;
 
 // `data-show` lists the platforms (set on <html> by the HomePage script) that see each action.
-const desktopDownloads = (downloads ? availableDesktopPlatforms(downloads) : []).map((platform) => ({
+const desktopDownloads = (desktop ? DESKTOP_PLATFORMS : []).map((platform) => ({
   platform,
   label: copy.download[platform],
   href: desktopDownloadHref(platform),

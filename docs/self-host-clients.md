@@ -64,6 +64,12 @@ normal environment/secret manager:
 | `APNS_VOIP_ENVIRONMENT` | `sandbox` for development signing, `production` for TestFlight/App Store (default) |
 | `APNS_VOIP_BUNDLE_ID`   | Your iOS bundle identifier; defaults to `com.rakazo.app`                           |
 
+Live Activities use the same APNs credentials for work-card updates. Self-hosters using the
+App Store build do not get Live Activities: sending updates requires APNs credentials authorized
+for the store bundle identifier, which self-hosters do not have. To enable them, build and sign
+your own iOS app and configure the secrets above for its bundle identifier. Without server
+support, the app skips starting the work card.
+
 The adapter uses the `<bundle identifier>.voip` topic. Keep keys on the server; never put
 them in the app or repository. Enable Push Notifications and Background Modes (Voice over
 IP, Audio, and Remote notifications) for the iOS App ID and provisioning profile. The Expo

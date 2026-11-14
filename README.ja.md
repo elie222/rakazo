@@ -91,7 +91,7 @@ Gmail、Slack、GitHub、Notion、Linear など数千のアプリに加え、自
 
 ### すべてのデバイスで
 
-Web、デスクトップ、iPhone、Android が同じサーバーにつながります。
+Web、デスクトップ、iPhone、iPad、Android が同じサーバーにつながります。
 
 <img src="./docs/screenshots/readme/mobile.png" alt="iPhone のボット一覧とチャット" width="100%">
 
@@ -239,14 +239,21 @@ pnpm --filter @rakazo/desktop dev
 ```
 
 初回起動時、デスクトップアプリは Rakazo をこのコンピューターで動かすか、既存のサーバーに接続するかを
-尋ねます。**This computer**（このコンピューター）を選ぶと、アプリのデータディレクトリに Docker Compose で公開イメージを
-インストールして起動します（`infra/compose/install-images.sh` と同じファイルを使います）。そのため Docker Desktop、
-OrbStack、Docker Engine のいずれかが必要です。インストールされていない場合、アプリからそれらへのリンクを案内します。インストール済みの
-ビルドはイメージタグを自身のバージョンに固定し、パッケージ化されていないビルドは `edge` を取得します。
+尋ねます。**This computer**（このコンピューター）は、macOS 26 以降の Apple シリコン搭載 Mac で、
+ビルドにサーバーバンドルが含まれていれば Docker なしで動作します。新規セットアップではこの方式を使い、
+必要なサーバーとコンピューターランタイムをアプリがダウンロードします。既存の Docker スタックがある場合は、
+Docker の稼働中に移行を提案します。**Keep Docker** を選ぶと Docker を使い続けます。
+
+その他のビルドやプラットフォームでは、アプリのデータディレクトリに Docker Compose で公開イメージを
+インストールして起動します（`infra/compose/install-images.sh` と同じファイルを使います）。この方式には Docker Desktop、
+OrbStack、Docker Engine のいずれかが必要です。未インストールの場合はダウンロードリンクを案内します。
+インストール済みのビルドはイメージタグを自身のバージョンに固定し、パッケージ化されていないビルドは `edge` を取得します。
+
 `pnpm dev` を実行している開発者は、代わりに **Existing instance**（既存のインスタンス）を選び `http://127.0.0.1:5173` を指定してください。公開サーバーは
 HTTPS を使う必要があります。HTTP はループバックとプライベート LAN のアドレスでのみ受け付けます（リンクローカルは除く）。
 アプリは保存前に Rakazo のヘルスチェックエンドポイントを確認し、以降の起動ではそのインスタンスに直接接続します。
-アプリを終了してもスタックは動き続けます。停止するには、アプリケーションメニューの **Stop Local Stack**（ローカルスタックを停止）を使います。
+Docker スタックはアプリを終了しても動き続けますが、Docker を使わないサーバーはアプリとともに停止します。
+アプリを終了せずに管理対象のスタックを停止するには、アプリケーションメニューの **Stop Local Stack**（ローカルスタックを停止）を使います。
 
 Linux では、デスクトップアプリは AppImage として配布されており、FUSE 2（`libfuse.so.2`）が必要です。Fedora Silverblue や
 Ubuntu 24.04 など、FUSE 3 しか含まないディストリビューションでは
@@ -259,7 +266,7 @@ chmod +x Rakazo-*.AppImage
 ./Rakazo-*.AppImage --appimage-extract-and-run
 ```
 
-**This computer** は `docker` CLI を探し、Podman は検出しません。`compose` コマンドに対応した別の
+**This computer** の Docker 方式は `docker` CLI を探し、Podman は検出しません。`compose` コマンドに対応した別の
 Docker 互換 CLI を試すには、アプリを起動する前に `RAKAZO_DOCKER_BINARY` にそのパスを設定してください。
 
 接続先を変えるには、アプリケーションメニューの **Change Rakazo Server…**（Rakazo サーバーを変更）を使います。保存せずに
