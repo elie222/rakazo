@@ -1,6 +1,6 @@
 import type { IncomingBotCall } from "@rakazo/contracts";
-import { isRetryableError, reconnectDelayMs, retryDelayMs } from "@rakazo/core";
 import { useEffect, useState } from "react";
+import { followStream } from "../../lib/follow-stream";
 import { rpc } from "../../lib/rpc";
 
 const NO_CALLS: IncomingBotCall[] = [];
@@ -10,47 +10,16 @@ export function useIncomingCalls(spaceId: string | undefined): IncomingBotCall[]
   const [calls, setCalls] = useState<IncomingBotCall[]>(NO_CALLS);
   useEffect(() => {
     if (!spaceId) return;
-    let active = true;
-    let controller: AbortController | undefined;
-    let cancelRetry: (() => void) | undefined;
-    void (async () => {
-      while (active) {
-        controller = new AbortController();
-        let failure: unknown;
-        let opened = false;
-        try {
-          const stream = await rpc.notifications.subscribeCalls(undefined, {
-            signal: controller.signal,
-          });
-          opened = true;
-          for await (const frame of stream) {
-            if (!active) return;
-            if (frame.payload)
-              setCalls(frame.payload.calls.filter((call) => call.spaceId === spaceId));
-          }
-        } catch (cause) {
-          failure = cause;
-        } finally {
-          controller.abort();
-        }
-        if (!active || (failure !== undefined && !isRetryableError(failure))) return;
-        await new Promise<void>((resolve) => {
-          const timer = setTimeout(
-            resolve,
-            opened ? reconnectDelayMs(failure) : retryDelayMs(failure, 1_000),
-          );
-          cancelRetry = () => {
-            clearTimeout(timer);
-            resolve();
-          };
-        });
-        cancelRetry = undefined;
-      }
-    })();
+    const stop = followStream(
+      (signal) => rpc.notifications.subscribeCalls(undefined, { signal }),
+      (frame) => {
+        if (frame.payload) setCalls(frame.payload.calls.filter((call) => call.spaceId === spaceId));
+      },
+      // Calls were turned off: nothing it last reported may keep ringing.
+      () => setCalls(NO_CALLS),
+    );
     return () => {
-      active = false;
-      controller?.abort();
-      cancelRetry?.();
+      stop();
       setCalls(NO_CALLS);
     };
   }, [spaceId]);

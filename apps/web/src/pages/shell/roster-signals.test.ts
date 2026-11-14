@@ -28,6 +28,13 @@ describe("createRosterSignals", () => {
     expect(refresh).toHaveBeenCalledOnce();
   });
 
+  it("re-reads on the opening signal when the page's own first load failed", () => {
+    const { refresh, roster } = signals();
+    roster.firstLoadFailed();
+    roster.changed();
+    expect(refresh).toHaveBeenCalledOnce();
+  });
+
   it("re-reads on each later signal, including the one a reconnect opens with", () => {
     const { refresh, roster, advance } = signals();
     roster.changed();

@@ -421,6 +421,7 @@ export function useSpaceBootstrap({
         if (cancelled) return;
         if (!seed) setBootstrapMe(null);
         void refreshBots(true).catch(() => {
+          rosterSignals.firstLoadFailed();
           if (!cancelled) setInitialLoadFailed(true);
         });
       });
