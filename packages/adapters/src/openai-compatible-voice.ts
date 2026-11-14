@@ -97,7 +97,14 @@ export function serializeOpenAiCompatibleVoiceSecret(
   const same = previous?.baseUrl === baseUrl ? previous : undefined;
   // The transcription server and its key belong together, whatever happens to the main one.
   const sttInput = input.sttBaseUrl === undefined ? previous?.sttBaseUrl : input.sttBaseUrl.trim();
-  const sttUrl = sttInput ? assertAllowedOpenAiCompatibleUrl(sttInput, policy) : undefined;
+  let sttUrl: URL | undefined;
+  try {
+    sttUrl = sttInput ? assertAllowedOpenAiCompatibleUrl(sttInput, policy) : undefined;
+  } catch (error) {
+    throw new Error(
+      `Transcription server URL: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
   const sttBaseUrl = sttInput ? normalizeOpenAiCompatibleBaseUrl(sttInput) : undefined;
   const sameStt =
     previous && (previous.sttBaseUrl ?? previous.baseUrl) === (sttBaseUrl ?? baseUrl)
@@ -114,7 +121,15 @@ export function serializeOpenAiCompatibleVoiceSecret(
     }
   }
   assertHttpsForKeyedOpenAiCompatibleUrl(url, apiKey);
-  if (sttUrl) assertHttpsForKeyedOpenAiCompatibleUrl(sttUrl, sttApiKey);
+  if (sttUrl) {
+    try {
+      assertHttpsForKeyedOpenAiCompatibleUrl(sttUrl, sttApiKey);
+    } catch (error) {
+      throw new Error(
+        `Transcription server URL: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
   const secret: OpenAiCompatibleVoiceSecret = {
     kind: "openai_compatible",
     baseUrl,

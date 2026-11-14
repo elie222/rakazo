@@ -53,6 +53,22 @@ afterEach(() => {
 });
 
 describe("serializeOpenAiCompatibleVoiceSecret", () => {
+  it("identifies rejected transcription addresses", () => {
+    expect(() =>
+      serializeAsOwner({
+        baseUrl: "http://127.0.0.1:8810",
+        sttBaseUrl: "ftp://speech.example.com",
+      }),
+    ).toThrow(/^Transcription server URL:/);
+    expect(() =>
+      serializeAsOwner({
+        baseUrl: "http://127.0.0.1:8810",
+        sttBaseUrl: "http://speech.example.com",
+        sttApiKey: "test-key",
+      }),
+    ).toThrow(/^Transcription server URL:.*HTTPS/);
+  });
+
   it("refuses a private speech server unless private endpoints are allowed", async () => {
     expect(() =>
       serializeOpenAiCompatibleVoiceSecret({ baseUrl: "http://192.168.1.20:8880" }),
