@@ -57,9 +57,16 @@ export async function updateMemoryProviderConfig(
     include: { secret: true },
   });
   if (!existing) throw new ORPCError("NOT_FOUND");
-  const movesCredentials =
-    memoryProviderCredentialTarget(existing.provider, input.settings) !==
-    memoryProviderCredentialTarget(existing.provider, toStringRecord(existing.settings));
+  let movesCredentials: boolean;
+  try {
+    movesCredentials =
+      memoryProviderCredentialTarget(existing.provider, input.settings) !==
+      memoryProviderCredentialTarget(existing.provider, toStringRecord(existing.settings));
+  } catch (error) {
+    throw new ORPCError("BAD_REQUEST", {
+      message: error instanceof Error ? error.message : "Invalid memory provider settings",
+    });
+  }
   // What is stored now, when it can be read. It is only compared below, never sent anywhere when
   // the connection moves.
   const stored = await loadMemoryProviderCredentials(

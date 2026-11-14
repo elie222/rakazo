@@ -564,6 +564,19 @@ describe("updateMemoryProviderConfig", () => {
     return { ...made, deps, prepareConnection };
   }
 
+  it("returns invalid recall bank edits as a validation error before loading credentials", async () => {
+    const { deps } = updateDeps({
+      existing: { ...connected, provider: "hindsight" },
+    });
+    await expect(
+      updateMemoryProviderConfig(deps, actor, {
+        settings: { mode: "cloud", recallBanks: "invalid/bank" },
+        credentials: {},
+      }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(deps.secrets.load).not.toHaveBeenCalled();
+  });
+
   it("keeps stored credentials when the update leaves them empty", async () => {
     const { deps, prepareConnection, secretDeleteMany, upsert } = updateDeps();
     await updateMemoryProviderConfig(deps, actor, { settings, credentials: { apiKey: "" } });
