@@ -11,6 +11,7 @@ import { promptAiConsent } from "./ai-consent";
 import {
   captureApiRequestContext,
   fetchAuthenticatedAccountJson,
+  fetchMobileJson,
   isServerReachable,
   MAX_MOBILE_RPC_RESPONSE_BYTES,
   rpc,
@@ -24,6 +25,7 @@ import { subscribeThread } from "./api-live.js";
 import { loadApiBase, selectSpace } from "./api-server.js";
 import { resumeLiveNotifications } from "./live-notifications.js";
 import type { MobileModelCredential } from "./mobile-types.js";
+import { saveServerHeaders } from "./server-headers";
 import { restoreSessionToken, saveSessionToken } from "./session.js";
 import type { UnsentDisk } from "./thread-feedback.js";
 import { configureUnsentSends } from "./thread-feedback.js";
@@ -104,6 +106,26 @@ describe("mobile API requests", () => {
     } finally {
       setCachedApiBase(originalBase);
       unsubscribe();
+    }
+  });
+
+  it("uses a pinned server's access headers after the selected server changes", async () => {
+    const apiBase = "https://captured.example.test";
+    const originalBase = (await captureApiRequestContext(null)).apiBase;
+    expect(await saveServerHeaders(apiBase, { "x-access-key": "fake-access-key" })).toBe(true);
+    setCachedApiBase("https://replacement.example.test");
+    const fetchMock = vi.fn(async (_input: unknown, _init?: RequestInit) => jsonResponse({}));
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      await fetchMobileJson(`${apiBase}/api/devices`, {}, {}, apiBase);
+      expect(fetchMock.mock.calls[0]?.[0]).toBe(`${apiBase}/api/devices`);
+      expect(new Headers(fetchMock.mock.calls[0]?.[1]?.headers).get("x-access-key")).toBe(
+        "fake-access-key",
+      );
+      expect(fetchMock.mock.calls[0]?.[1]?.redirect).toBe("error");
+    } finally {
+      await saveServerHeaders(apiBase, {});
+      setCachedApiBase(originalBase);
     }
   });
 

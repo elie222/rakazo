@@ -461,3 +461,30 @@ it("clears a failed refresh error when successful removal reconciles", async () 
   expect(container.textContent).not.toContain("list failed");
   expect(container.textContent).not.toContain("Retry");
 });
+
+it("keeps a newer removal error when an earlier visit reconciles", async () => {
+  let finishFirst!: () => void;
+  vi.mocked(listUserDevices).mockResolvedValue([laptop, desk]);
+  vi.mocked(removeUserDevice)
+    .mockReturnValueOnce(new Promise((resolve) => (finishFirst = resolve)))
+    .mockRejectedValueOnce(new Error("second removal failed"));
+  await render();
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('[aria-label="Remove Laptop, Connected"]')?.click(),
+  );
+  await act(async () => confirmRemove()?.onPress?.());
+  await act(async () => {
+    blur();
+    focus();
+  });
+  await settle();
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('[aria-label="Remove Desk PC, Offline"]')?.click(),
+  );
+  await act(async () => confirmRemove()?.onPress?.());
+  await settle();
+  expect(container.textContent).toContain("second removal failed");
+  await act(async () => finishFirst());
+  await settle();
+  expect(container.textContent).toContain("second removal failed");
+});

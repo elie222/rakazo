@@ -214,6 +214,7 @@ export async function fetchAuthenticatedAccountJson<T>(
     `${context.apiBase}${path}`,
     { ...init, headers: { origin: "rakazo://", ...context.headers } },
     invalidJsonFallback,
+    context.apiBase,
   );
   if (
     result.response.status === 401 &&
@@ -231,6 +232,7 @@ export async function fetchMobileJson<T>(
   input: Parameters<typeof fetch>[0],
   init: RequestInit,
   invalidJsonFallback?: T,
+  apiBase = currentApiBase(),
 ): Promise<{ response: Response; body: T; invalidJson?: boolean }> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(new Error("Request timed out")), RPC_TIMEOUT_MS);
@@ -242,7 +244,7 @@ export async function fetchMobileJson<T>(
           ...init,
           signal: controller.signal,
         },
-        currentApiBase(),
+        apiBase,
       ),
       controller.signal,
       "Request timed out",

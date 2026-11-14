@@ -31,48 +31,48 @@ export default function ComputersSettings() {
   const removing = useRef(new Set<string>());
   const unconfirmed = useRef(new Map<string, UserDeviceSummary>());
   const [devices, setDevices] = useState<UserDeviceSummary[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [removalError, setRemovalError] = useState<string | null>(null);
+  const error = removalError ?? loadError;
   const [loadFailed, setLoadFailed] = useState(false);
   const [pending, setPending] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
-  const load = useCallback(
-    async (preserveError = false) => {
-      loadGeneration.current += 1;
-      const generation = loadGeneration.current;
-      try {
-        const listed = await listUserDevices();
-        if (generation !== loadGeneration.current) return;
-        unconfirmed.current.clear();
-        setDevices(listed.filter((device) => !removing.current.has(device.deviceId)));
-        setLoadFailed(false);
-        if (!preserveError) setError(null);
-      } catch (cause) {
-        if (generation !== loadGeneration.current) return;
-        const restore = [...unconfirmed.current.values()].filter(
-          (device) => !removing.current.has(device.deviceId),
-        );
-        unconfirmed.current.clear();
-        setDevices((current) =>
-          current
-            ? [
-                ...current,
-                ...restore.filter(
-                  (device) => !current.some((item) => item.deviceId === device.deviceId),
-                ),
-              ]
-            : current,
-        );
-        const message = errorText(cause, t`Could not load`);
-        setLoadFailed(true);
-        setError((current) => (preserveError && current ? current : message));
-      }
-    },
-    [t],
-  );
+  const load = useCallback(async () => {
+    loadGeneration.current += 1;
+    const generation = loadGeneration.current;
+    try {
+      const listed = await listUserDevices();
+      if (generation !== loadGeneration.current) return;
+      unconfirmed.current.clear();
+      setDevices(listed.filter((device) => !removing.current.has(device.deviceId)));
+      setLoadFailed(false);
+      setLoadError(null);
+    } catch (cause) {
+      if (generation !== loadGeneration.current) return;
+      const restore = [...unconfirmed.current.values()].filter(
+        (device) => !removing.current.has(device.deviceId),
+      );
+      unconfirmed.current.clear();
+      setDevices((current) =>
+        current
+          ? [
+              ...current,
+              ...restore.filter(
+                (device) => !current.some((item) => item.deviceId === device.deviceId),
+              ),
+            ]
+          : current,
+      );
+      const message = errorText(cause, t`Could not load`);
+      setLoadFailed(true);
+      setLoadError(message);
+    }
+  }, [t]);
 
   async function refresh() {
     const generation = ++refreshGeneration.current;
+    setRemovalError(null);
     setRefreshing(true);
     await load();
     if (generation === refreshGeneration.current) setRefreshing(false);
@@ -81,6 +81,7 @@ export default function ComputersSettings() {
   useFocusEffect(
     useCallback(() => {
       focused.current = true;
+      setRemovalError(null);
       void load();
       return () => {
         focused.current = false;
@@ -117,16 +118,15 @@ export default function ComputersSettings() {
     removing.current.add(device.deviceId);
     loadGeneration.current += 1;
     setPending(true);
-    setError(null);
+    setRemovalError(null);
+    setLoadError(null);
     setDevices((current) => current?.filter((item) => item.deviceId !== device.deviceId) ?? null);
-    let removalFailed = false;
     try {
       await removeUserDevice(device.deviceId);
     } catch (cause) {
-      removalFailed = true;
       unconfirmed.current.set(device.deviceId, device);
       if (visit.current === startedVisit) {
-        setError(errorText(cause, t`Could not remove`));
+        setRemovalError(errorText(cause, t`Could not remove`));
       }
     } finally {
       removing.current.delete(device.deviceId);
@@ -135,7 +135,7 @@ export default function ComputersSettings() {
         setPending(false);
       }
       if (focused.current) {
-        await load(removalFailed && visit.current === startedVisit);
+        await load();
       }
     }
   }
@@ -182,7 +182,8 @@ export default function ComputersSettings() {
             fill={false}
             label={t`Retry`}
             onPress={() => {
-              setError(null);
+              setRemovalError(null);
+              setLoadError(null);
               void load();
             }}
             prominence="secondary"
