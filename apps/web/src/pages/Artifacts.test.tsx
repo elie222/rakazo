@@ -63,7 +63,29 @@ vi.mock("@rakazo/ui-web", () => {
     ),
     NativeSelect: (props: ComponentProps<"select">) => <select {...props} />,
     NativeSelectOption: (props: ComponentProps<"option">) => <option {...props} />,
-    OptionSelect: () => null,
+    OptionSelect: ({
+      options,
+      value,
+      onValueChange,
+      "aria-label": label,
+    }: {
+      options: { value: string; label: string }[];
+      value: string;
+      onValueChange: (value: string) => void;
+      "aria-label": string;
+    }) => (
+      <select
+        aria-label={label}
+        value={value}
+        onChange={(event) => onValueChange(event.target.value)}
+      >
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    ),
     Select: Container,
     SelectContent: Container,
     SelectGroup: Container,
@@ -123,7 +145,11 @@ async function renderArtifacts() {
     ),
   );
   // Let query results reach the screen.
-  await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+  if (vi.isFakeTimers()) {
+    await act(async () => vi.advanceTimersByTimeAsync(0));
+  } else {
+    await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+  }
   return {
     container,
     async cleanup() {
@@ -258,6 +284,46 @@ it("reopens with cached artifacts and refreshes them in the background", async (
     });
   } finally {
     await page.cleanup();
+    vi.unstubAllGlobals();
+  }
+});
+
+it.each([
+  ["today", new Date(2026, 10, 12, 23, 59, 59)],
+  ["week", new Date(2026, 10, 14, 23, 59, 59)],
+  ["month", new Date(2026, 10, 30, 23, 59, 59)],
+])("refreshes the %s filter at the local calendar boundary", async (filter, before) => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.useFakeTimers();
+  vi.setSystemTime(before);
+  api.listSpace.mockResolvedValue({
+    items: [artifact("Previous period file", "old", before.toISOString())],
+    nextCursor: null,
+  });
+  const page = await renderArtifacts();
+  try {
+    const select = page.container.querySelector<HTMLSelectElement>(
+      'select[aria-label="Filter by date"]',
+    );
+    expect(select).not.toBeNull();
+    await act(async () => {
+      if (select) select.value = filter;
+      select?.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(page.container.textContent).toContain("Previous period file");
+    await act(async () => vi.advanceTimersByTimeAsync(999));
+    expect(page.container.textContent).toContain("Previous period file");
+    await act(async () => vi.advanceTimersByTimeAsync(1));
+    expect(page.container.textContent).not.toContain("Previous period file");
+    await act(async () => {
+      if (select) select.value = "all";
+      select?.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(page.container.textContent).toContain("Previous period file");
+  } finally {
+    await page.cleanup();
+    queryClient.clear();
+    vi.useRealTimers();
     vi.unstubAllGlobals();
   }
 });
