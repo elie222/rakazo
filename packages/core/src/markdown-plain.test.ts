@@ -2,6 +2,23 @@ import { describe, expect, it, vi } from "vitest";
 import { plainTextFromMarkdown, truncatedPlainText } from "./markdown-plain.js";
 
 describe("plainTextFromMarkdown", () => {
+  it.each(["\n", "\r\n", "\r"])("handles Markdown line endings %j", (eol) => {
+    const cases = [
+      ["# Heading\n## Subheading", "Heading Subheading"],
+      ["- first\n- second\n1. third", "first second third"],
+      ["```ts\nconst x = 1;\n```\nAfter", "const x = 1; After"],
+      ["| A | B |\n| --- | --- |\n| 1 | 2 |", "A, B 1, 2"],
+    ];
+    for (const [source, expected] of cases) {
+      expect(plainTextFromMarkdown(source.replaceAll("\n", eol))).toBe(expected);
+    }
+  });
+
+  it("normalizes mixed line endings before applying the preview bound", () => {
+    expect(plainTextFromMarkdown("# A\r\n- B\r> C\n## D")).toBe("A B C D");
+    expect(plainTextFromMarkdown("# A\r\n# B", { maxSource: 7 })).toBe("A B");
+  });
+
   it("reads only a bounded preview of the source unless the caller raises the limit", () => {
     const long = `${"word ".repeat(2_000)}the end`;
     expect(plainTextFromMarkdown(long)).not.toContain("the end");
