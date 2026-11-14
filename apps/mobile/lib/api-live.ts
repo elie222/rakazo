@@ -96,6 +96,19 @@ export async function subscribeRosterSignals(onSignal: () => void, signal: Abort
     context,
   );
 }
+/** Calls `onSignal` when the stream opens, then whenever the Space's computer updates change. */
+export async function subscribeComputerUpdateSignals(onSignal: () => void, signal: AbortSignal) {
+  const context = await captureApiRequestContext();
+  return subscribeRpcEvents(
+    "computer/subscribeUpdates",
+    {},
+    (event) => {
+      if (event.type === "changed") onSignal();
+    },
+    signal,
+    context,
+  );
+}
 async function subscribeRpcEvents(
   procedure: string,
   input: Record<string, unknown>,

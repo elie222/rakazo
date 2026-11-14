@@ -67,7 +67,7 @@ import {
 } from "../computer-control.js";
 import { scrollPoint } from "../computer-input.js";
 import type { RouterContext } from "./context.js";
-import { computerContext } from "./shared.js";
+import { computerContext, HEARTBEAT, withHeartbeats } from "./shared.js";
 
 const MAX_COMPUTER_TEXT_FILE_BYTES = 2 * 1024 * 1024;
 
@@ -269,6 +269,9 @@ export function computerRoutes(ctx: RouterContext) {
           if (error instanceof ComputerBusyError)
             throw new ORPCError("CONFLICT", { message: "Computer is busy" });
           throw error;
+        } finally {
+          // A refused start can still have dismissed earlier failures.
+          await deps.events.publishComputerUpdateChange?.(context.actor.spaceId);
         }
       }),
       reset: authed.computer.reset.handler(async ({ context, input }) =>
@@ -288,6 +291,8 @@ export function computerRoutes(ctx: RouterContext) {
           if (error instanceof ComputerBusyError)
             throw new ORPCError("CONFLICT", { message: "Computer is busy" });
           throw error;
+        } finally {
+          await deps.events.publishComputerUpdateChange?.(context.actor.spaceId);
         }
       }),
       updates: authed.computer.updates.handler(async ({ context }) => {
@@ -313,11 +318,20 @@ export function computerRoutes(ctx: RouterContext) {
         });
         return rows.map((row) => computerUpdateView(row));
       }),
+      subscribeUpdates: authed.computer.subscribeUpdates.handler(async function* ({ context }) {
+        const follow = deps.events.followComputerUpdateChanges;
+        // Without a fanout the app keeps polling `updates`.
+        if (!follow) throw new ORPCError("NOT_FOUND");
+        const { spaceId } = context.actor;
+        for await (const next of withHeartbeats(context, (signal) => follow(spaceId, signal))) {
+          yield { type: next === HEARTBEAT ? ("heartbeat" as const) : ("changed" as const) };
+        }
+      }),
       releaseInterrupted: authed.computer.releaseInterrupted.handler(() => {
         throw new ORPCError("FORBIDDEN");
       }),
       dismissUpdate: authed.computer.dismissUpdate.handler(async ({ context, input }) => {
-        await deps.prisma.computerUpdate.updateMany({
+        const dismissed = await deps.prisma.computerUpdate.updateMany({
           where: {
             id: input.id,
             status: "failed",
@@ -328,6 +342,8 @@ export function computerRoutes(ctx: RouterContext) {
           },
           data: { status: "dismissed" },
         });
+        if (dismissed.count > 0)
+          await deps.events.publishComputerUpdateChange?.(context.actor.spaceId);
         return { ok: true as const };
       }),
       dismissDiskWarning: authed.computer.dismissDiskWarning.handler(async ({ context, input }) => {

@@ -503,6 +503,8 @@ export async function performComputerUpdate(deps: Deps, updateId: string) {
         }),
   );
   if (claimed.count !== 1) return; // Never replay a destructive operation on job redelivery.
+  const announce = () => deps.events.publishComputerUpdateChange?.(target.computer.spaceId);
+  await announce();
   const update = await deps.prisma.computerUpdate.findUniqueOrThrow({
     where: { id: updateId },
     include: { computer: true },
@@ -542,6 +544,7 @@ export async function performComputerUpdate(deps: Deps, updateId: string) {
           data: { stage: update.action === "recover" && stage === "saving" ? "preparing" : stage },
         });
         if (result.count !== 1) throw new Error("Computer update interrupted");
+        await announce();
       },
     );
     await finishUpdate(deps.prisma, updateId, update.computerId, "completed");
@@ -571,6 +574,7 @@ export async function performComputerUpdate(deps: Deps, updateId: string) {
     }
   } finally {
     clearInterval(heartbeat);
+    await announce();
   }
   // A failure before teardown leaves the computer running, so idle sleep resumes either way.
   scheduleComputerSleep(deps.jobs, update.computerId);
@@ -595,9 +599,19 @@ async function finishUpdate(
   });
 }
 
-export async function reconcileComputerUpdates(deps: Pick<Deps, "prisma" | "jobs">) {
+export async function reconcileComputerUpdates(
+  deps: Pick<Deps, "prisma" | "jobs"> & {
+    events?: Pick<ThreadEvents, "publishComputerUpdateChange">;
+  },
+) {
   const select = (where: Prisma.ComputerUpdateWhereInput) =>
-    deps.prisma.computerUpdate.findMany({ where, take: 100, orderBy: { updatedAt: "asc" } });
+    deps.prisma.computerUpdate.findMany({
+      where,
+      take: 100,
+      orderBy: { updatedAt: "asc" },
+      include: { computer: { select: { spaceId: true } } },
+    });
+  const changedSpaces = new Set<string>();
   // Republishing leaves a queued row untouched, so a backlog of them would fill every pass.
   // Stalled rows go first so a failing republish cannot keep a computer reserved.
   const updates = [
@@ -631,6 +645,7 @@ export async function reconcileComputerUpdates(deps: Pick<Deps, "prisma" | "jobs
           data: { status: "failed" },
         });
         if (stale.count !== 1) return;
+        changedSpaces.add(update.computer.spaceId);
         if (status === "revoked") {
           // The provider release returned. Clear the lease with the holder so a later
           // takeover grants a new lease.
@@ -661,6 +676,7 @@ export async function reconcileComputerUpdates(deps: Pick<Deps, "prisma" | "jobs
           data: { status: "failed" },
         });
         if (abandoned.count !== 1) return false;
+        changedSpaces.add(update.computer.spaceId);
         // Only this update can hold a booting or suspending claim under its reservation, and
         // Recover refuses both. Unlike its worker, this cannot tell what the claim started
         // from, so a machine still attached may be running or half destroyed: quarantine it,
@@ -687,8 +703,9 @@ export async function reconcileComputerUpdates(deps: Pick<Deps, "prisma" | "jobs
         });
         // A stale heartbeat is not proof that provider calls have stopped. The worker's
         // settled path releases this reservation, or reconciliation does after ABANDONED_MS.
-        if (stale.count !== 1) return;
+        if (stale.count === 1) changedSpaces.add(update.computer.spaceId);
       });
     }
   }
+  for (const spaceId of changedSpaces) await deps.events?.publishComputerUpdateChange?.(spaceId);
 }
