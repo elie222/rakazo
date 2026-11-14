@@ -550,6 +550,20 @@ describeWithDatabase("service API surface", () => {
         `/bots/${bot.id}/routines/${routine.id}/history`,
       );
       expect(history.runs.map((entry) => entry.id)).toContain(run.runId);
+      // A cursor that is valid JSON of the wrong shape is a bad request, not a server error.
+      for (const cursor of [{}, { id: "x", createdAt: "not a date" }, null, "text"]) {
+        const after = Buffer.from(JSON.stringify(cursor)).toString("base64url");
+        const result = await api(
+          token,
+          "GET",
+          `/bots/${bot.id}/routines/${routine.id}/history?after=${after}`,
+        );
+        expect([cursor, result.status, result.json.error?.code]).toEqual([
+          cursor,
+          400,
+          "invalid_request",
+        ]);
+      }
     });
 
     it("marks a routine prompt a key wrote until the person writes their own", async () => {
@@ -773,6 +787,24 @@ describeWithDatabase("service API surface", () => {
         { body: { body: "looks good" }, key: "comment-1" },
       );
       expect(comment.body).toBe("looks good");
+    });
+
+    it("marks the run a ticket wakes when a key assigned it", async () => {
+      const { cookie } = await person();
+      const first = await newBot(cookie, "First");
+      const second = await newBot(cookie, "Second");
+      const { token, credential } = await newKey(cookie);
+      const ticket = await ok<{ id: string }>(token, "POST", "/tickets", {
+        body: { title: "Do the thing", assigneeBotId: first.id },
+        key: "ticket-wake-1",
+      });
+      await ok(token, "PATCH", `/tickets/${ticket.id}`, { body: { assigneeBotId: second.id } });
+      const wakes = await db.run.findMany({
+        where: { botId: { in: [first.id, second.id] }, trigger: "tickets" },
+        select: { botId: true, promptCredentialId: true },
+      });
+      expect(wakes).toHaveLength(2);
+      expect(wakes.map((run) => run.promptCredentialId)).toEqual([credential.id, credential.id]);
     });
 
     it("reaches a group and marks what it sends", async () => {

@@ -14,7 +14,7 @@ vi.mock("./payment-wallets.js", () => ({
 
 const fixture = { spaceId: "space-1", userId: "user-1", botId: "bot-1", threadId: "thread-1" };
 
-async function setup() {
+async function setup(run: { promptCredentialId?: string | null } = {}) {
   const db = fakePurchasePrisma(fixture);
   const queue = fakeJobs();
   const wallet = new FakePaymentWallet();
@@ -34,7 +34,7 @@ async function setup() {
       botId: fixture.botId,
       signal: new AbortController().signal,
     },
-    { threadId: fixture.threadId },
+    { threadId: fixture.threadId, ...run },
     "request_purchase",
     {
       merchantName: "Example Store",
@@ -98,6 +98,22 @@ describe("pollPurchase", () => {
     // Settled: a later poll does nothing.
     await env.poll();
     expect(env.runs).toHaveLength(1);
+  });
+
+  it("wakes with the mark of the key behind the run that made the purchase", async () => {
+    const marked = await setup({ promptCredentialId: "key-1" });
+    marked.approve();
+    await marked.poll();
+    expect(marked.row()).toMatchObject({ promptCredentialId: "key-1" });
+    expect(marked.runs).toEqual([
+      expect.objectContaining({ trigger: "purchase", promptCredentialId: "key-1" }),
+    ]);
+    const own = await setup();
+    own.approve();
+    await own.poll();
+    expect(own.runs).toEqual([
+      expect.objectContaining({ trigger: "purchase", promptCredentialId: null }),
+    ]);
   });
 
   it("does not wake a bot that is gone, and stops polling once the purchase settles", async () => {

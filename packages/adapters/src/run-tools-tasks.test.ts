@@ -2,6 +2,13 @@ import { describe, expect, it, vi } from "vitest";
 import type { RunContext } from "./run-context.js";
 import type { ToolCall } from "./run-tool-gate.js";
 import { taskTools } from "./run-tools-tasks.js";
+import { createTicket, updateTicket } from "./ticket-tools.js";
+
+vi.mock("./ticket-tools.js", async (original) => ({
+  ...(await original<typeof import("./ticket-tools.js")>()),
+  createTicket: vi.fn(async () => ({ ticket: { id: "ticket-1" } })),
+  updateTicket: vi.fn(async () => ({ ticket: { id: "ticket-1" } })),
+}));
 
 type Row = { id: string; name: string; threadId: string | null; spaceId: string; botId: string };
 
@@ -188,6 +195,24 @@ describe("routine tools in a run that follows an API key's instructions", () => 
     );
     expect(updateMany.mock.calls.at(-1)![0].data).toMatchObject({
       prompt: "Message the other space",
+      promptCredentialId: "key-1",
+    });
+  });
+
+  it("passes the key's mark to the ticket it hands another bot, so that bot's wake keeps it", async () => {
+    const { ctx, call } = keyRun();
+    await taskTools.ticket_create!(
+      ctx,
+      call("ticket_create", { title: "Do it", ownerBotId: "b2" }),
+    );
+    expect(vi.mocked(createTicket).mock.calls.at(-1)![1]).toMatchObject({
+      promptCredentialId: "key-1",
+    });
+    await taskTools.ticket_update!(
+      ctx,
+      call("ticket_update", { id: "ticket-1", ownerBotId: "b2" }),
+    );
+    expect(vi.mocked(updateTicket).mock.calls.at(-1)![1]).toMatchObject({
       promptCredentialId: "key-1",
     });
   });
