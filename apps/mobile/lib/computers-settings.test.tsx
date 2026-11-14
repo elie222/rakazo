@@ -211,6 +211,28 @@ it("keeps the revoke error when reconciliation also fails", async () => {
   expect(container.textContent).toContain("Retry");
 });
 
+it("restores a failed removal when a newer refresh fails", async () => {
+  let finishReconcile!: (devices: (typeof laptop)[]) => void;
+  vi.mocked(listUserDevices)
+    .mockResolvedValueOnce([laptop])
+    .mockReturnValueOnce(new Promise((resolve) => (finishReconcile = resolve)))
+    .mockRejectedValueOnce(new Error("list failed"));
+  vi.mocked(removeUserDevice).mockRejectedValue({});
+  await render();
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('[aria-label="Remove Laptop, Connected"]')?.click(),
+  );
+  await act(async () => confirmRemove()?.onPress?.());
+  expect(container.textContent).not.toContain("Laptop");
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('[aria-label="Refresh"]')?.click(),
+  );
+  await act(async () => finishReconcile([]));
+  expect(container.textContent).toContain("LaptopConnected");
+  expect(container.textContent).toContain("list failed");
+  expect(container.textContent).toContain("Retry");
+});
+
 it("retries a failed reload after a list exists", async () => {
   vi.mocked(listUserDevices)
     .mockResolvedValueOnce([laptop])
