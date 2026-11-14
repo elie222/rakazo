@@ -72,11 +72,22 @@ describe("speakable", () => {
     expect(speakable("a_b and c_d")).toBe("a_b and c_d");
   });
 
+  it("strips emphasis in linear time on markers that never close", () => {
+    for (const unit of ["(_a", ".*a", "(*a_"]) {
+      const text = unit.repeat(Math.floor(20_000 / unit.length));
+      const started = performance.now();
+      expect(speakable(text)).toBe(text);
+      expect(performance.now() - started).toBeLessThan(100);
+    }
+  });
+
   it("still drops emphasis markers around a word or phrase", () => {
     expect(speakable("this is _really_ good")).toBe("this is really good");
     expect(speakable("this is *really* good")).toBe("this is really good");
     expect(speakable("this is *very good indeed* here")).toBe("this is very good indeed here");
     expect(speakable("(_note_) and *(this)*")).toBe("(note) and (this)");
+    expect(speakable("*one* and _two_ but a_b_c and 2*3")).toBe("one and two but a_b_c and 2*3");
+    expect(speakable("*not closed\non this line*")).toBe("*not closed. on this line*");
   });
 
   it("drops a horizontal rule however it is spaced", () => {

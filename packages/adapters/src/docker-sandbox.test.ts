@@ -50,6 +50,26 @@ describe("Docker sandbox", () => {
     ).rejects.toThrow("control screen failed to start");
   });
 
+  it("preserves the team screen limit without provider details", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json(
+          { error: "cannot allocate another screen (limit 4): private detail" },
+          { status: 409 },
+        ),
+      ),
+    );
+    const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+    await expect(
+      provider.connectScreen(
+        { id: "computer", botId: "bot", kind: "docker", providerRef: "computer" },
+        { view: "stream" },
+        context,
+      ),
+    ).rejects.toThrow("This Team Computer cannot allocate another screen (limit 4).");
+  });
+
   it("requires a control token and an explicit route for an interactive screen", async () => {
     const fetchMock = vi.fn(async () => Response.json({}));
     vi.stubGlobal("fetch", fetchMock);

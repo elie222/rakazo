@@ -8,6 +8,7 @@ import {
   apnsVoipConfig,
   boatApiKeyFromEnv,
   boatApiUrlFromEnv,
+  deploymentLabsFromEnv,
   mcpStdioOptionsFromEnv,
   photonProjectsFromEnv,
   resolveCloudAgentProvider,
@@ -18,7 +19,7 @@ import {
 } from "@rakazo/adapters";
 import type { OidcConfig, SocialAuthConfig } from "@rakazo/auth";
 import { socialAuthFromFields } from "@rakazo/auth";
-import type { MinimumClientBuilds, NavLink } from "@rakazo/contracts";
+import type { LabFeature, MinimumClientBuilds, NavLink } from "@rakazo/contracts";
 import { isPrivateNetworkHost, parseMinimumClientBuilds, parseNavLinks } from "@rakazo/contracts";
 import { parseCrispWebsiteId } from "@rakazo/contracts/content-security-policy";
 import {
@@ -73,7 +74,8 @@ export interface AppEnv {
   dataDir: string;
   /** Opt-in Pi JSONL session recording under DATA_DIR/pi-sessions. Default off. */
   piSessionRecording: boolean;
-  ticketBoardEnabled: boolean;
+  /** Labs features this deployment turns on for every account. */
+  deploymentLabs: LabFeature[];
   /** USER_DEVICES_ENABLED=false stops users connecting their own computers. Default on. */
   userDevicesEnabled: boolean;
   /** COMPUTER_SETTINGS_ENABLED=true lets Settings choose where computers run. Default off. */
@@ -141,6 +143,9 @@ export interface AppEnv {
   stripeWebhookSecret: string | undefined;
   stripePriceId: string | undefined;
   emailEmulator: boolean;
+  billingEmulator: boolean;
+  /** A/B tests this deployment runs, by key; none by default. */
+  experiments: string | undefined;
   slackClientId?: string;
   slackClientSecret?: string;
   slackBotToken: string | undefined;
@@ -284,7 +289,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     contentEncryption: resolveContentEncryption(source),
     dataDir: source.DATA_DIR ?? "./data",
     piSessionRecording: source.PI_SESSION_RECORDING === "true",
-    ticketBoardEnabled: source.TICKET_BOARD_ENABLED === "true",
+    deploymentLabs: deploymentLabsFromEnv(source),
     userDevicesEnabled: source.USER_DEVICES_ENABLED !== "false",
     computerSettingsEnabled: source.COMPUTER_SETTINGS_ENABLED === "true",
     navLinks: parseNavLinks(source.RAKAZO_NAV_LINKS),
@@ -341,6 +346,8 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     stripeWebhookSecret: optional(source.STRIPE_WEBHOOK_SECRET),
     stripePriceId: optional(source.STRIPE_PRICE_ID),
     emailEmulator: source.EMAIL_EMULATOR === "true" && source.NODE_ENV !== "production",
+    experiments: optional(source.EXPERIMENTS),
+    billingEmulator: source.BILLING_EMULATOR === "true" && source.NODE_ENV !== "production",
     slackClientId: optional(source.SLACK_CLIENT_ID),
     slackClientSecret: optional(source.SLACK_CLIENT_SECRET),
     slackBotToken: optional(source.SLACK_BOT_TOKEN),

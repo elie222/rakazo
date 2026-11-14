@@ -7,6 +7,7 @@ import * as Logging from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   CODE_ALREADY_TYPED,
+  cardRedactionForms,
   credentialArgument,
   encodeRunCode,
   encodeRunLogin,
@@ -2269,5 +2270,26 @@ describe("replacing a saved login's site", () => {
     const [row] = db.rows();
     expect(row).toMatchObject({ id: before.id, origin: "https://other.example.test" });
     expect(await secretStore.load(row!.ciphertext, row!.id)).toBe(typed("fake-password-other"));
+  });
+});
+
+describe("cardRedactionForms", () => {
+  it("covers the groups of four that most cards are printed in", () => {
+    expect(cardRedactionForms("4242424242424242")).toEqual([
+      "4242424242424242",
+      "4242 4242 4242 4242",
+      "4242-4242-4242-4242",
+    ]);
+  });
+
+  it.each([
+    ["a 15-digit American Express", "378282246310005", "3782 822463 10005", "3782-822463-10005"],
+    ["a 14-digit Diners Club", "30569309025904", "3056 930902 5904", "3056-930902-5904"],
+  ])("also covers the groups %s is printed in", (_label, digits, spaced, hyphenated) => {
+    const forms = cardRedactionForms(digits);
+    expect(forms).toContain(digits);
+    expect(forms).toContain(spaced);
+    expect(forms).toContain(hyphenated);
+    expect(redactSecrets(`Card ${spaced} and ${hyphenated}`, forms)).not.toMatch(/\d{4}/);
   });
 });
