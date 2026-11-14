@@ -1,5 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { RakazoDesktop, UserDeviceSummary } from "@rakazo/contracts";
+import { secureHttpOrigin } from "@rakazo/contracts/network-host";
 import { Button, Label, Switch } from "@rakazo/ui-web";
 import { Trash2 } from "lucide-react";
 import { useCallback, useEffect, useId, useState } from "react";
@@ -27,9 +28,19 @@ async function thisComputerAccess(
   };
 }
 
+/**
+ * A private-LAN HTTP page never becomes the paired computer. `select` drops that origin, so a
+ * switch here would call `setAllowed` and do nothing.
+ */
+function plainHttpDesktop(desktop: RakazoDesktop | undefined): boolean {
+  if (!desktop?.device || typeof window === "undefined") return false;
+  return secureHttpOrigin(window.location.origin) === null;
+}
+
 export function ComputerDeviceSettings() {
   const { t } = useLingui();
   const desktop = desktopBridge();
+  const plainHttp = plainHttpDesktop(desktop);
   const [devices, setDevices] = useState<UserDeviceSummary[]>([]);
   const [thisComputer, setThisComputer] = useState<ThisComputer | null>(null);
   const [pending, setPending] = useState(false);
@@ -63,11 +74,17 @@ export function ComputerDeviceSettings() {
     }
   }
 
-  if (devices.length === 0 && !thisComputer) return null;
+  if (devices.length === 0 && !thisComputer && !plainHttp) return null;
 
   return (
     <SettingsGroup title={<Trans>Computers</Trans>} data-testid="computer-devices">
-      {thisComputer ? (
+      {plainHttp ? (
+        <p className="px-4 py-3 text-body-sm text-muted-foreground">
+          <Trans>
+            Plain HTTP does not pair this computer. Use HTTPS, or the app's own loopback server.
+          </Trans>
+        </p>
+      ) : thisComputer ? (
         <SettingsRow
           label={
             <Label htmlFor={switchId} className="text-body font-normal text-foreground">
