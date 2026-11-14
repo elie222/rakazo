@@ -61,6 +61,15 @@ it.skipIf(!databaseUrl)(
       const stored = await handles.prisma.session.findFirstOrThrow({ where: { userId: user.id } });
       expect(stored.expiresAt.getTime()).toBeGreaterThan(aged.getTime() + DAY_MS);
 
+      // The desktop app sends its device token beside the window's cookie.
+      await handles.prisma.session.updateMany({
+        where: { userId: user.id },
+        data: { expiresAt: aged },
+      });
+      const desktop = await me({ cookie, authorization: "Bearer device-token" });
+      expect(desktop.status).toBe(200);
+      expect(sessionCookies(desktop)).toHaveLength(1);
+
       // A native client holds a bearer token, not a cookie.
       await handles.prisma.session.updateMany({
         where: { userId: user.id },

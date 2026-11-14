@@ -845,7 +845,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       returnHeaders: true,
     });
     // A native client signs in with a bearer token and keeps no cookie.
-    const cookies = request.headers.has("authorization") ? [] : headers.getSetCookie();
+    const cookies = request.headers.has("cookie") ? headers.getSetCookie() : [];
     if (cookies.length > 0) renewedSessionCookies.set(request, cookies);
     return response;
   };
