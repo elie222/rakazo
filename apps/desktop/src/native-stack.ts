@@ -8,7 +8,7 @@ import type { WriteStream } from "node:fs";
 import { createWriteStream } from "node:fs";
 import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { DesktopLocalStackState } from "@rakazo/contracts";
+import type { DesktopLocalStackPhase, DesktopLocalStackState } from "@rakazo/contracts";
 import type { RunDocker } from "./docker-cli.js";
 import { t } from "./i18n.js";
 import {
@@ -46,6 +46,8 @@ import {
 } from "./mac-runtime.js";
 import { readPrivateFile, writePrivateFile } from "./setup-store.js";
 
+/** Phases between `up-start` and a stop or failure, while the stack runs or restarts. */
+const ACTIVE_PHASES = new Set<DesktopLocalStackPhase>(["starting", "waiting-healthy", "ready"]);
 export const NATIVE_PORTS_FILE = ".native-ports";
 /** The database VM, its network and its volume; computers are `rakazo-<uuid>` with a bot label. */
 export const DATABASE_CONTAINER = "rakazo-postgres";
@@ -360,6 +362,14 @@ export class NativeStackController extends StackLifecycle {
   /** True while any server process of this app is running, so quitting must stop them first. */
   hasProcesses(): boolean {
     return this.services.some((service) => service.alive);
+  }
+
+  /** Processes stop with the app, so only ones this session still runs need the off-switch.
+   * From `up-start` until a stop or failure, the stack is up or coming back: Postgres may
+   * start before the next phase change, and a crashed service waits out its restart delay
+   * with no phase change at all. */
+  managedStackRunning(): boolean {
+    return this.hasProcesses() || ACTIVE_PHASES.has(this.current.phase);
   }
 
   /** Only processes this app started count: an orphan from a crashed launch is replaced. */

@@ -558,6 +558,9 @@ function isCircular(root: unknown): boolean {
   return false;
 }
 
+const OPENAPI_SERVER_VARIABLE = /\{([^{}]+)\}/g;
+const MAX_OPENAPI_BASE_URL_LENGTH = 2_048;
+
 export function importOpenApiDocument(document: Record<string, unknown>): {
   baseUrl: string;
   operations: ApiOperation[];
@@ -567,13 +570,25 @@ export function importOpenApiDocument(document: Record<string, unknown>): {
     throw new Error("OpenAPI document must define servers[0].url");
   }
   const variables = asRecord(server.variables);
-  const baseUrl = server.url.replace(/\{([^{}]+)\}/g, (_placeholder, name: string) => {
+  const serverDefault = (name: string) => {
     const variable = asRecord(variables?.[name]);
     if (typeof variable?.default !== "string") {
       throw new Error("OpenAPI server variable must define a string default");
     }
     return variable.default;
-  });
+  };
+  // Repeating a long default can expand a small document into a huge URL,
+  // so measure the result before building it.
+  let length = server.url.length;
+  for (const [placeholder, name] of server.url.matchAll(OPENAPI_SERVER_VARIABLE)) {
+    length += serverDefault(name!).length - placeholder.length;
+  }
+  if (length > MAX_OPENAPI_BASE_URL_LENGTH) {
+    throw new Error(`OpenAPI server URL exceeds ${MAX_OPENAPI_BASE_URL_LENGTH} characters`);
+  }
+  const baseUrl = server.url.replace(OPENAPI_SERVER_VARIABLE, (_placeholder, name: string) =>
+    serverDefault(name),
+  );
   assertNoSensitiveQuery(baseUrl);
   const paths = document.paths;
   if (!paths || typeof paths !== "object" || Array.isArray(paths)) {

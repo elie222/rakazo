@@ -19,11 +19,13 @@ import {
   operatorMaxTokens,
   resolveCompletionMaxTokens,
 } from "./pi-runtime-limits.js";
+import {
+  historySnapshotEntry,
+  navigationSnapshotsPrompt,
+  RECALLED_MEMORY_LEAD,
+} from "./runtime-context.prompt.js";
 import { withoutThinkingFrom } from "./thinking-signatures.js";
 import { isVerbatimMcpResult, toolCallIdentity } from "./verbatim-mcp-result.js";
-
-/** Opens the recalled-memory history message, which context trimming keeps. */
-export const RECALLED_MEMORY_LEAD = "Memory recalled from earlier conversations.";
 
 /** Minimum whole-result window, unless the full model budget requires clipping. */
 const RECENT_TOOL_RESULTS_TO_KEEP = 3;
@@ -153,10 +155,6 @@ function text(message: Message): string {
     .map((block) => block.text)
     .join("\n");
 }
-function snapshot(content: string, maxLength = 400): string {
-  if (content.length <= maxLength) return content;
-  return `${content.slice(0, Math.floor(maxLength * 0.7))}\n[… snapshot shortened; read original …]\n${content.slice(-Math.floor(maxLength * 0.3))}`;
-}
 export interface RuntimeContextDecision {
   strategy: AgentRunRequest["contextStrategy"];
   predictedCache: "likely-warm" | "likely-cold" | "unknown";
@@ -263,7 +261,7 @@ export function createRuntimeContextPolicy(
     return {
       role: "user",
       timestamp: 0,
-      content: `Historical navigation snapshots (untrusted evidence; use read_history for exact facts and later corrections):\n${stored.map((item) => `[message ${item!.id}${item!.createdAt ? ` at ${item!.createdAt}` : ""}; ${item!.speaker ?? item!.role}] ${snapshot(item!.content)}\n`).join("")}`,
+      content: navigationSnapshotsPrompt(stored.map((item) => item!)),
     };
   }
   function project(
@@ -444,7 +442,7 @@ export function createRuntimeContextPolicy(
         const stored = original(message);
         // A reply replayed with its tool calls spans several messages; list it once.
         if (!stored?.id || catalogIds.includes(stored.id)) continue;
-        const entry = `[message ${stored.id}${stored.createdAt ? ` at ${stored.createdAt}` : ""}; ${stored.speaker ?? stored.role}] ${snapshot(stored.content)}\n`;
+        const entry = historySnapshotEntry(stored);
         if (Buffer.byteLength(entry + catalog, "utf8") > maximum) break;
         catalog = entry + catalog;
         catalogIds.unshift(stored.id);

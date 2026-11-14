@@ -97,6 +97,7 @@ describe("deleteOrganization lease", () => {
       expect(teardown.memoryProviders).toBe(memoryProviders);
       expect(options.deleteMemories).toBe(true);
       await teardown.memoryProviders!.resolve(bot.spaceId);
+      return { removedGroupIds: [] };
     });
     vi.mocked(deleteClaimedSpace).mockImplementation(async () => {
       expect(resolve).toHaveBeenCalledWith("space-1");

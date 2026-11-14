@@ -600,6 +600,12 @@ export function humanizeToolName(name: string): string {
   return lower.charAt(0).toUpperCase() + lower.slice(1);
 }
 
+/** "GMAIL_SEND_EMAIL" on Gmail's page reads as "Send email": the app is already the page title. */
+export function appToolLabel(name: string, appSlug: string): string {
+  const prefix = `${appSlug}_`.toLowerCase();
+  return humanizeToolName(name.toLowerCase().startsWith(prefix) ? name.slice(prefix.length) : name);
+}
+
 /** Reverses humanizeToolName for a typed name; rules match tool names ignoring case. */
 export function toolNameFromLabel(label: string): string {
   return label.trim().replace(/\s+/g, "_");

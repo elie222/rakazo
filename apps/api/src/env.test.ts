@@ -53,10 +53,10 @@ describe("loadEnv", () => {
     expect(() => loadEnv({ ...base, MAX_UPLOAD_SIZE_MB: value })).toThrow("MAX_UPLOAD_SIZE_MB");
   });
   it("keeps the ticket board off unless explicitly enabled", () => {
-    expect(loadEnv(base).ticketBoardEnabled).toBe(false);
+    expect(loadEnv(base).deploymentLabs).toEqual([]);
     for (const value of ["false", "1", ""])
-      expect(loadEnv({ ...base, TICKET_BOARD_ENABLED: value }).ticketBoardEnabled).toBe(false);
-    expect(loadEnv({ ...base, TICKET_BOARD_ENABLED: "true" }).ticketBoardEnabled).toBe(true);
+      expect(loadEnv({ ...base, TICKET_BOARD_ENABLED: value }).deploymentLabs).toEqual([]);
+    expect(loadEnv({ ...base, TICKET_BOARD_ENABLED: "true" }).deploymentLabs).toEqual(["board"]);
   });
   it("loads operator menu links and refuses to start on a bad value", () => {
     expect(loadEnv(base).navLinks).toEqual([]);
