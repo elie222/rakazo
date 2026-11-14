@@ -135,10 +135,10 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
   const rootAvoidsKeyboard = useContext(CallKeyboardContext);
   const contentBottomInset = useContentBottomInset();
   const onCall = Boolean(botId) && call?.botId === botId;
-  // The composer floats over the list, which scrolls underneath; this keeps the newest message
-  // clear of it. A read-only chat has no composer.
-  const [dockHeight, setDockHeight] = useState(0);
-  const bottomInset = Math.max(dockHeight, readOnly ? contentBottomInset : 0);
+  // The composer sits in the column below the list, so the list ends above it and needs no
+  // clearance of its own: keyboard padding (or the resized window) moves both together.
+  const [, setDockHeight] = useState(0);
+  const bottomInset = readOnly ? contentBottomInset : 0;
   const activeBotId = useRef(botId);
   activeBotId.current = botId;
   const activeGroupId = useRef(groupId);
