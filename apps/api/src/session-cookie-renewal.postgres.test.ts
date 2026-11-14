@@ -1,6 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { asSystem } from "@rakazo/db";
 import { expect, it } from "vitest";
 import { sessionCookieHeader } from "../../../packages/testkit/src/index.js";
 import { createApp } from "./app.js";
@@ -23,6 +24,7 @@ it.skipIf(!databaseUrl)(
       webOrigin: origin,
       authUrl: origin,
     });
+    const system = asSystem(handles.prisma);
     try {
       const email = `session-renewal-${Date.now()}@example.test`;
       const signup = await handles.app.request("/api/auth/sign-up/email", {
@@ -47,9 +49,9 @@ it.skipIf(!databaseUrl)(
       expect(sessionCookies(fresh)).toEqual([]);
 
       // Three days on, the next request renews the session.
-      const user = await handles.prisma.user.findUniqueOrThrow({ where: { email } });
+      const user = await system.user.findUniqueOrThrow({ where: { email } });
       const aged = new Date(Date.now() + 4 * DAY_MS);
-      await handles.prisma.session.updateMany({
+      await system.session.updateMany({
         where: { userId: user.id },
         data: { expiresAt: aged },
       });
@@ -58,11 +60,11 @@ it.skipIf(!databaseUrl)(
       const [sent] = sessionCookies(renewed);
       expect(sent).toContain(cookie.split("; ").find((part) => part.includes("session_token="))!);
       expect(Number(/max-age=(\d+)/i.exec(sent ?? "")?.[1])).toBeGreaterThan(6 * 24 * 60 * 60);
-      const stored = await handles.prisma.session.findFirstOrThrow({ where: { userId: user.id } });
+      const stored = await system.session.findFirstOrThrow({ where: { userId: user.id } });
       expect(stored.expiresAt.getTime()).toBeGreaterThan(aged.getTime() + DAY_MS);
 
       // The desktop app sends its device token beside the window's cookie.
-      await handles.prisma.session.updateMany({
+      await system.session.updateMany({
         where: { userId: user.id },
         data: { expiresAt: aged },
       });
@@ -71,7 +73,7 @@ it.skipIf(!databaseUrl)(
       expect(sessionCookies(desktop)).toHaveLength(1);
 
       // A native client holds a bearer token, not a cookie.
-      await handles.prisma.session.updateMany({
+      await system.session.updateMany({
         where: { userId: user.id },
         data: { expiresAt: aged },
       });
