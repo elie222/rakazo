@@ -704,6 +704,12 @@ async function playWithHtmlAudio(
   }
 }
 
+/**
+ * How long a local clip may take to start. One that cannot (Android out of audio tracks) fails
+ * by then, so a call moves on to listening instead of holding a silent line.
+ */
+const CLIP_START_MS = 3_000;
+
 async function playWithNativeAudio(bytes: Uint8Array, session?: HostedSession): Promise<void> {
   if (session?.isStopped) return;
   await changeAudioMode(async () => {
@@ -731,7 +737,7 @@ async function playWithNativeAudio(bytes: Uint8Array, session?: HostedSession): 
         else resolve();
       };
       const armStartupWatchdog = () => {
-        timer = setTimeout(() => finish(new Error(t`Could not play that clip.`)), 15_000);
+        timer = setTimeout(() => finish(new Error(t`Could not play that clip.`)), CLIP_START_MS);
       };
       const sub = player.addListener("playbackStatusUpdate", (status) => {
         if (status.error) {
@@ -746,7 +752,9 @@ async function playWithNativeAudio(bytes: Uint8Array, session?: HostedSession): 
           finish();
           return;
         }
-        if (status.playing && status.duration > 0 && !session?.isPaused) {
+        // Android reports playing while it is still buffering, so only a moving position shows
+        // the clip has started.
+        if (status.playing && status.currentTime > 0 && status.duration > 0 && !session?.isPaused) {
           clearTimeout(timer);
           timer = setTimeout(
             () => finish(new Error(t`Could not play that clip.`)),

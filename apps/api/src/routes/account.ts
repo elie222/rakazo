@@ -9,7 +9,9 @@ import {
   settleCallRequest,
 } from "@rakazo/adapters";
 import type { ActionApprovalRule, Actor, Me, SettingsScope } from "@rakazo/contracts";
+import { parseLabs } from "@rakazo/contracts";
 import {
+  abortableDelay,
   approvalModeFromPreference,
   approvalPreferenceFromMode,
   callRequestClientNonce,
@@ -65,6 +67,9 @@ import type { RouterContext } from "./context.js";
 import { HEARTBEAT, meDto, mergeStreams, withHeartbeats } from "./shared.js";
 
 const ROSTER_CHANGED = Symbol("roster changed");
+const COMPUTER_UPDATES_CHANGED = Symbol("computer updates changed");
+
+const SIGNAL_FAILURE_HOLD_MS = 30_000;
 
 export function accountRoutes(ctx: RouterContext) {
   const { deps, os, authed } = ctx;
@@ -177,6 +182,12 @@ export function accountRoutes(ctx: RouterContext) {
       update: authed.preferences.update.handler(async ({ context, input }): Promise<Me> => {
         const userId = context.actor.userId;
         const botAvatarSet = input.botAvatarSet;
+        // A feature the deployment turns on is not the account's choice, so it is not saved with it.
+        const deploymentLabs = deps.env?.deploymentLabs ?? [];
+        const labs =
+          input.labs === undefined
+            ? undefined
+            : parseLabs(input.labs).filter((feature) => !deploymentLabs.includes(feature));
         if (input.timezone !== undefined) {
           // The routines that took the account zone keep their local schedule in the new
           // one, and the other fields commit in the same save. The move's row lock still
@@ -184,6 +195,7 @@ export function accountRoutes(ctx: RouterContext) {
           await changeUserTimezone(deps, userId, input.timezone, {
             ...(input.locale === undefined ? {} : { locale: input.locale }),
             ...(botAvatarSet === undefined ? {} : { botAvatarSet }),
+            ...(labs === undefined ? {} : { labs }),
           });
         } else {
           await deps.prisma.user.update({
@@ -192,6 +204,7 @@ export function accountRoutes(ctx: RouterContext) {
             data: {
               ...(input.locale === undefined ? {} : { locale: input.locale }),
               ...(botAvatarSet === undefined ? {} : { botAvatarSet }),
+              ...(labs === undefined ? {} : { labs }),
             },
           });
         }
@@ -347,24 +360,48 @@ export function accountRoutes(ctx: RouterContext) {
     },
     notifications: {
       subscribe: authed.notifications.subscribe.handler(async function* ({ context }) {
-        const { followChatAlerts, followRosterChanges } = deps.events;
+        const { followChatAlerts, followRosterChanges, followComputerUpdateChanges } = deps.events;
         if (!followChatAlerts) throw new ORPCError("NOT_FOUND");
         const { spaceId, userId } = context.actor;
         const rosterChanges = async function* (
           signal: AbortSignal,
         ): AsyncGenerator<typeof ROSTER_CHANGED> {
           if (!followRosterChanges) return;
-          // Chat alerts keep flowing if roster signals fail; the client falls back to polling.
+          // The app re-reads the roster only on these signals, so a failure ends the stream the
+          // same way computer updates do below.
           try {
             for await (const _ of followRosterChanges(userId, signal)) yield ROSTER_CHANGED;
-          } catch {}
+          } catch (error) {
+            await abortableDelay(SIGNAL_FAILURE_HOLD_MS, signal);
+            throw error;
+          }
+        };
+        const computerUpdateChanges = async function* (
+          signal: AbortSignal,
+        ): AsyncGenerator<typeof COMPUTER_UPDATES_CHANGED> {
+          if (!followComputerUpdateChanges) return;
+          // The app reads computer updates only on these signals, so a failure ends the stream and
+          // the app reconnects and re-reads. Alerts keep flowing for a while first, so a lasting
+          // failure costs one reconnect every half minute rather than a tight loop.
+          try {
+            for await (const _ of followComputerUpdateChanges(spaceId, signal))
+              yield COMPUTER_UPDATES_CHANGED;
+          } catch (error) {
+            await abortableDelay(SIGNAL_FAILURE_HOLD_MS, signal);
+            throw error;
+          }
         };
         const frames = withHeartbeats(context, (signal) =>
-          mergeStreams(followChatAlerts(userId, spaceId, signal), rosterChanges(signal)),
+          mergeStreams(
+            followChatAlerts(userId, spaceId, signal),
+            rosterChanges(signal),
+            computerUpdateChanges(signal),
+          ),
         );
         for await (const next of frames) {
           if (next === HEARTBEAT) yield { type: "heartbeat" as const };
           else if (next === ROSTER_CHANGED) yield { type: "roster" as const };
+          else if (next === COMPUTER_UPDATES_CHANGED) yield { type: "computerUpdates" as const };
           else if (next.spaceId === spaceId) yield { type: "alert" as const, alert: next };
         }
       }),

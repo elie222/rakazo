@@ -1,11 +1,13 @@
 import type { Bot, ChatAlert, ProductEvent } from "@rakazo/contracts";
-import { chatSnoozed, isRetryableError, reconnectDelayMs, retryDelayMs } from "@rakazo/core";
+import { chatSnoozed } from "@rakazo/core";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useRef } from "react";
 import {
   deliverBrowserNotification as deliverNativeBrowserNotification,
   shouldNotifyBrowser,
 } from "../../lib/browser-notifications";
+import { computerUpdates } from "../../lib/computer-updates";
+import { followStream } from "../../lib/follow-stream";
 import { notificationIcon, prepareNotificationIcons } from "../../lib/notification-icon";
 import type { RpcClient } from "../../lib/rpc";
 
@@ -31,7 +33,7 @@ type ChatAlertOptions = {
   roster?: RosterSignals;
 };
 
-export type RosterSignals = { changed: () => void; lost: () => void };
+export type RosterSignals = { changed: () => void };
 
 /** A question still arrives while a chat is snoozed; an ordinary reply waits. */
 function messageAsks(event: { type: string; payload: { blocks?: unknown } }): boolean {
@@ -90,9 +92,6 @@ export function useBrowserNotifications(
   rosterRef.current = roster;
   const shown = useRef(new Set<Notification>());
   useEffect(() => {
-    let active = true;
-    let controller: AbortController | undefined;
-    let cancelRetry: (() => void) | undefined;
     const show = (alert: ChatAlert) => {
       if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
       const isOpen = alert.groupId
@@ -119,45 +118,16 @@ export function useBrowserNotifications(
         // Some browsers only allow notifications from a service worker.
       }
     };
-    void (async () => {
-      while (active) {
-        controller = new AbortController();
-        let failure: unknown;
-        let opened = false;
-        try {
-          const stream = await rpc.notifications.subscribe(undefined, {
-            signal: controller.signal,
-          });
-          opened = true;
-          for await (const frame of stream) {
-            if (!active) return;
-            if (frame.type === "roster") rosterRef.current?.changed();
-            else if (frame.alert) show(frame.alert);
-          }
-        } catch (cause) {
-          failure = cause;
-        } finally {
-          controller.abort();
-          rosterRef.current?.lost();
-        }
-        if (!active || (failure !== undefined && !isRetryableError(failure))) return;
-        await new Promise<void>((resolve) => {
-          const timer = setTimeout(
-            resolve,
-            opened ? reconnectDelayMs(failure) : retryDelayMs(failure, 1_000),
-          );
-          cancelRetry = () => {
-            clearTimeout(timer);
-            resolve();
-          };
-        });
-        cancelRetry = undefined;
-      }
-    })();
+    const stop = followStream(
+      (signal) => rpc.notifications.subscribe(undefined, { signal }),
+      (frame) => {
+        if (frame.type === "roster") rosterRef.current?.changed();
+        else if (frame.type === "computerUpdates") computerUpdates.signalled();
+        else if (frame.alert) show(frame.alert);
+      },
+    );
     return () => {
-      active = false;
-      controller?.abort();
-      cancelRetry?.();
+      stop();
       for (const notification of shown.current) notification.close();
     };
   }, [rpc]);

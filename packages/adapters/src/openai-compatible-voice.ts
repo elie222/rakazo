@@ -14,6 +14,7 @@ import {
   DEFAULT_COMPATIBLE_TTS_MODEL,
   OPENAI_COMPATIBLE_PROVIDER_ID,
 } from "@rakazo/contracts";
+import { deadlineSignal } from "@rakazo/core";
 import {
   assertAllowedOpenAiCompatibleUrl,
   assertHttpsForKeyedOpenAiCompatibleUrl,
@@ -26,7 +27,6 @@ import {
   readVoiceJson,
   readVoiceText,
   speechUploadName,
-  voiceDeadline,
   voiceHttpError,
   voiceLanguageHint,
   voiceRequestError,
@@ -315,7 +315,7 @@ export class OpenAiCompatibleVoiceProvider implements VoiceProvider {
     } catch (error) {
       return { ok: false, message: (error as Error).message };
     }
-    const signal = voiceDeadline(context.signal, VERIFY_DEADLINE_MS);
+    const signal = deadlineSignal(VERIFY_DEADLINE_MS, context.signal);
     const origin = new URL(secret.baseUrl).origin;
     try {
       let res = await this.fetch(endpoint(secret, "models"), {
@@ -351,7 +351,7 @@ export class OpenAiCompatibleVoiceProvider implements VoiceProvider {
         `${endpoint(secret, "audio/voices")}?model=${encodeURIComponent(secret.ttsModel)}`,
         {
           headers: headers(secret),
-          signal: voiceDeadline(context.signal, LIST_VOICES_DEADLINE_MS),
+          signal: deadlineSignal(LIST_VOICES_DEADLINE_MS, context.signal),
         },
       );
       if (!res.ok) {
@@ -370,7 +370,7 @@ export class OpenAiCompatibleVoiceProvider implements VoiceProvider {
 
   async synthesize(request: VoiceSynthesizeRequest, context: AdapterContext): Promise<SpeechClip> {
     const secret = parseOpenAiCompatibleVoiceSecret(request.apiKey);
-    const signal = voiceDeadline(request.signal ?? context.signal, SPEAK_DEADLINE_MS);
+    const signal = deadlineSignal(SPEAK_DEADLINE_MS, request.signal ?? context.signal);
     const langCode = kokoroLangCode(request.voiceId);
     const res = await this.fetch(endpoint(secret, "audio/speech"), {
       method: "POST",
@@ -415,7 +415,7 @@ export class OpenAiCompatibleVoiceProvider implements VoiceProvider {
       method: "POST",
       headers: headers(secret),
       body: form,
-      signal: voiceDeadline(request.signal ?? context.signal, TRANSCRIBE_DEADLINE_MS),
+      signal: deadlineSignal(TRANSCRIBE_DEADLINE_MS, request.signal ?? context.signal),
     });
     const raw = await readVoiceText(res);
     const type = mediaType(res);
