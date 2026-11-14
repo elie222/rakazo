@@ -7,6 +7,8 @@ import {
   screenPorts,
 } from "@rakazo/core/node/desktop-runtime";
 import type Docker from "dockerode";
+import type { ComputerGpu } from "./computer-gpu.js";
+import { computerGpuHostConfig } from "./computer-gpu.js";
 import type { ComputerLocale } from "./computer-locale.js";
 import { computerLocaleEnv } from "./computer-locale.js";
 
@@ -583,6 +585,7 @@ export interface ComputerCreateInput {
   publishControlPort?: boolean;
   dns?: string[];
   mounts?: ComputerMount[];
+  gpu?: ComputerGpu;
   locale?: ComputerLocale;
 }
 
@@ -655,6 +658,7 @@ export function containerCreateOptions(input: ComputerCreateInput) {
       AutoRemove: false,
       NetworkMode: input.networkMode ?? "bridge",
       ...(input.dns ? { Dns: input.dns } : {}),
+      ...computerGpuHostConfig(input.gpu),
     },
     WorkingDir: "/home/rakazo",
   };
