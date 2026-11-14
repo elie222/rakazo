@@ -47,6 +47,17 @@ export function isBackgroundRunTrigger(trigger: string | null | undefined): bool
   return BACKGROUND_RUN_TRIGGER_SET.has(trigger ?? "");
 }
 
+/**
+ * Runs no person is waiting on: another bot's message, a routine, a reaction. A bot's computer
+ * goes to its runs a person is waiting on first.
+ */
+export const UNATTENDED_RUN_TRIGGERS = ["bot_message", "routine", "reaction"] as const;
+const UNATTENDED_RUN_TRIGGER_SET = new Set<string>(UNATTENDED_RUN_TRIGGERS);
+
+export function isUnattendedRunTrigger(trigger: string | null | undefined): boolean {
+  return UNATTENDED_RUN_TRIGGER_SET.has(trigger ?? "");
+}
+
 const allowed: Record<RunStatus, RunStatus[]> = {
   queued: ["leased", "cancelled"],
   leased: ["running", "queued", "cancelled"],

@@ -11,6 +11,7 @@ import {
   isTerminal,
   nextFence,
   redactSecrets,
+  UNATTENDED_RUN_TRIGGERS,
   userRunError,
 } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
@@ -211,24 +212,30 @@ export function providerOutageRetryDelay(priorFailures: number): number {
 
 /**
  * A bot uses its computer for one run at a time, and runs that found it held wait without
- * a retry timer. The run releasing it starts the next one due. Runs backing off after a
- * failure keep their delay.
+ * a retry timer. The run releasing it starts the next one due: the oldest a person is waiting
+ * on, else the oldest of the rest. Runs backing off after a failure keep their delay.
  */
 export async function startNextWaitingRun(
   deps: ExecutorDeps,
   botId: string,
   releasedBy: string,
 ): Promise<void> {
-  const next = await deps.prisma.run.findFirst({
-    where: {
-      botId,
-      status: "queued",
-      id: { not: releasedBy },
-      OR: [{ wakeAt: null }, { wakeAt: { lte: new Date() } }],
-    },
-    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-    select: { id: true },
-  });
+  const now = new Date();
+  const oldestWaiting = (trigger: { in: string[] } | { notIn: string[] }) =>
+    deps.prisma.run.findFirst({
+      where: {
+        botId,
+        status: "queued",
+        id: { not: releasedBy },
+        trigger,
+        OR: [{ wakeAt: null }, { wakeAt: { lte: now } }],
+      },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      select: { id: true },
+    });
+  const next =
+    (await oldestWaiting({ notIn: [...UNATTENDED_RUN_TRIGGERS] })) ??
+    (await oldestWaiting({ in: [...UNATTENDED_RUN_TRIGGERS] }));
   if (next) await deps.jobs.enqueue(runContinueJob(next.id));
 }
 

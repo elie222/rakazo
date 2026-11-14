@@ -10,6 +10,7 @@ import {
   isConversationalRun,
   isRunWaitingOnUser,
   isRunWorking,
+  isUnattendedRunTrigger,
   messageBypassesTakeoverWait,
   messageSteersRun,
   QUEUE_HOLDING_RUN_STATUSES,
@@ -115,6 +116,15 @@ describe("run state machine", () => {
     expect(isBackgroundRunTrigger("user")).toBe(false);
     expect(isBackgroundRunTrigger("routine")).toBe(false);
     expect(isBackgroundRunTrigger(null)).toBe(false);
+  });
+
+  it("treats peer messages, routines and reactions as runs no person is waiting on", () => {
+    for (const trigger of ["bot_message", "routine", "reaction"]) {
+      expect(isUnattendedRunTrigger(trigger)).toBe(true);
+    }
+    for (const trigger of ["user", "messaging", "follow_up", "helper_result", null]) {
+      expect(isUnattendedRunTrigger(trigger)).toBe(false);
+    }
   });
 
   it("rejects rewriting a completed run", () => {
