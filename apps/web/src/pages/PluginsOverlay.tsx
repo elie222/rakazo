@@ -281,7 +281,7 @@ export function PluginsOverlay({
           setSourceError(t`Sign-in cancelled. Try again.`);
           return;
         }
-        await refresh();
+        await refresh().catch(() => undefined);
         if (result === "authorization_not_requested")
           setSourceError(t`This server did not request browser authorization.`);
         return;
