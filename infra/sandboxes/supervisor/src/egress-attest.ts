@@ -1,0 +1,511 @@
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { getLogger } from "@rakazo/logging";
+import type Docker from "dockerode";
+import { followProgress } from "./computer-image.js";
+import { EgressNotEnforced } from "./egress-probe.js";
+
+/**
+ * Behavioral probing from a restricted bridge cannot prove the forwarded
+ * destination drops: the blocked address space usually has no responder, so a
+ * removed DROP rule looks identical to an enforced one. The only trustworthy
+ * evidence is the live firewall itself, so this module reads it: a short-lived
+ * container in the host network namespace with CAP_NET_ADMIN dumps the Docker
+ * host's iptables chains, and the required rules must be present, in order,
+ * at the head of their chains — exactly what
+ * infra/compose/restrict-computer-egress.sh installs and repairs.
+ *
+ * Anything short of that match fails closed: a missing binary, a missing chain,
+ * a removed drop or a foreign rule inserted above the managed prefix all refuse
+ * restricted egress. Rules genuinely missing lets `auto` fall back to open;
+ * everything else fails the provision so the next one tries again.
+ *
+ * The probe runs with host-network CAP_NET_ADMIN, so its image is never the
+ * configurable computer image: the supervisor builds it itself, from this
+ * repository's infra/sandboxes/egress-attest context, tagged with the
+ * Dockerfile's content hash. It is never pulled — but only because the code
+ * builds it on a missing tag, never because of the name (see ATTEST_IMAGE).
+ */
+
+const BRIDGE_PREFIX = "rakazo-c";
+
+// The installer is the single source of truth for the firewall policy: its
+// blocked_destinations_v4/v6 heredocs and egress_rules_v4/v6 printf lines are
+// parsed here instead of being copied into TypeScript, so the two sides cannot
+// drift. egress-attest.test.ts still asserts the script's --print output against
+// the parsed rules, which guards the parser against a silent format change.
+/** The build context bundled next to the supervisor (see the supervisor Dockerfile). */
+export const ATTEST_CONTEXT = path.resolve(import.meta.dirname, "../../egress-attest");
+
+const INSTALLER_SCRIPT = path.resolve(
+  import.meta.dirname,
+  "../../../../infra/compose/restrict-computer-egress.sh",
+);
+const installerScript = readFileSync(INSTALLER_SCRIPT, "utf8");
+
+function installerDrops(family: "v4" | "v6"): string[] {
+  const match = new RegExp(
+    `blocked_destinations_${family}\\(\\) \\{\\s*cat <<'EOF'\\n([\\s\\S]*?)\\nEOF`,
+  ).exec(installerScript);
+  const block = match?.[1];
+  if (!block) {
+    throw new Error(`cannot parse blocked_destinations_${family} from restrict-computer-egress.sh`);
+  }
+  const drops = block.split("\n").map((line) => line.trim());
+  if (drops.length === 0 || drops.some((cidr) => !/^[0-9a-fA-F:.]+\/\d+$/.test(cidr))) {
+    throw new Error(`cannot parse blocked_destinations_${family} from restrict-computer-egress.sh`);
+  }
+  return drops;
+}
+
+export const REQUIRED_V4_DROPS = installerDrops("v4");
+export const REQUIRED_V6_DROPS = installerDrops("v6");
+
+const ATTEST_DEADLINE_MS = 30_000;
+
+/**
+ * The image name prefix the attestation probe runs under. A two-part name like
+ * this resolves to docker.io — only attestImageEnsurer's build-on-missing-tag
+ * keeps it local, so never add a pull fallback (see the module doc).
+ */
+export const ATTEST_IMAGE = "rakazo/egress-attest";
+
+/** Ensures the attestation image exists (see the module doc) and returns its name. */
+export function attestImageEnsurer(docker: Docker, context: string) {
+  let attempt: Promise<string> | undefined;
+  return () => {
+    attempt ??= provideAttestImage(docker, context).finally(() => {
+      attempt = undefined;
+    });
+    return attempt;
+  };
+}
+
+/** Strips URL query strings, which can carry registry signatures. */
+function redactUrlQueries(text: string) {
+  return text.replace(/\?[^\s"']+/g, "?[redacted]");
+}
+
+/**
+ * The image name the supervisor builds and runs the attestation from, derived
+ * from the Dockerfile's content hash: a changed build context means a new tag,
+ * so a stale image is never attested with. Also exposed for
+ * `--print-attest-tag`, which tells offline operators the exact tag to preload.
+ */
+export function expectedAttestImage(context: string) {
+  let dockerfile: Buffer;
+  try {
+    dockerfile = readFileSync(path.join(context, "Dockerfile"));
+  } catch {
+    throw new Error(`cannot attest restricted egress: no Dockerfile in ${context}`);
+  }
+  return `${ATTEST_IMAGE}:${createHash("sha256").update(dockerfile).digest("hex").slice(0, 16)}`;
+}
+
+async function provideAttestImage(docker: Docker, context: string) {
+  const image = expectedAttestImage(context);
+  try {
+    await docker.getImage(image).inspect();
+    return image;
+  } catch (error) {
+    if ((error as { statusCode?: number })?.statusCode !== 404) throw error;
+  }
+  try {
+    await followProgress((abortSignal) =>
+      docker.buildImage({ context, src: ["Dockerfile"] }, { t: image, version: "2", abortSignal }),
+    );
+    await docker.getImage(image).inspect();
+    return image;
+  } catch (error) {
+    // Docker's own reason can name registry hosts and embed signed URLs, so
+    // the log gets it with URL query strings stripped; the caller gets the tag
+    // to build or load instead.
+    const reason = redactUrlQueries(error instanceof Error ? error.message : String(error));
+    getLogger().error("attestation image build failed", { reason, "container.image.name": image });
+    throw new Error(
+      `could not build ${image} from infra/sandboxes/egress-attest; build or load that exact tag on the Docker host (see docs/self-host-restricted-network.md)`,
+    );
+  }
+}
+
+/**
+ * The rules the iptables backend must hold, in chain order, per family —
+ * parsed from the installer's egress_rules_* printf lines, which list rules
+ * in the order the final chain must show them.
+ */
+function requiredRules(family: "v4" | "v6") {
+  const drops = family === "v4" ? REQUIRED_V4_DROPS : REQUIRED_V6_DROPS;
+  const body = new RegExp(`egress_rules_${family}\\(\\) \\{\\n([\\s\\S]*?)\\n\\}`).exec(
+    installerScript,
+  )?.[1];
+  const loopFormat = body
+    ?.match(
+      new RegExp(
+        `while[\\s\\S]*?printf '([^']+)' [\\s\\S]*?done < <\\(blocked_destinations_${family}\\)`,
+      ),
+    )
+    ?.at(1);
+  if (!body || !loopFormat) {
+    throw new Error(`cannot parse egress_rules_${family} from restrict-computer-egress.sh`);
+  }
+  // Static printf lines expand every %s to the bridge prefix; the drop loop's
+  // first %s is the prefix and the rest expand to one blocked destination each.
+  const lines = [
+    ...[
+      ...body
+        .split("while")
+        .at(0)!
+        .matchAll(/printf '([^']+)'[^\n]*/g),
+    ].map((match) => match[1]!.split("%s").join(BRIDGE_PREFIX)),
+    ...drops.map((cidr) => {
+      const parts = loopFormat.split("%s");
+      return parts[0]! + BRIDGE_PREFIX + parts.slice(1).join(cidr);
+    }),
+  ].map((line) => line.replace(/\\n$/, ""));
+  // The conformance test (an attestation dump built from the installer's
+  // --print output must verify) pins these shapes against format drift.
+  const normalized = lines.map((line) => {
+    const [chain, ...args] = line.split(" ");
+    return { chain: chain!, rule: normalizeRule(args.join(" ")) };
+  });
+  return {
+    input: normalized.filter((line) => line.chain === "INPUT").map((line) => line.rule),
+    user: normalized.filter((line) => line.chain === "DOCKER-USER").map((line) => line.rule),
+  };
+}
+
+// Canonical form mirroring the script's normalize_rule: the kernel may print
+// -d ahead of -i and sort conntrack states, so compare fields, not tokens.
+function normalizeRule(rule: string) {
+  const tokens = rule.trim().split(/\s+/);
+  let input = "";
+  let output = "";
+  let dest = "";
+  let jump = "";
+  let ct = "";
+  const extra: string[] = [];
+  for (let i = 0; i < tokens.length; i += 1) {
+    const token = tokens[i] ?? "";
+    if (
+      token === "-i" ||
+      token === "-o" ||
+      token === "-d" ||
+      token === "-j" ||
+      token === "--ctstate"
+    ) {
+      const value = tokens[i + 1] ?? "";
+      i += 1;
+      if (token === "-i") input = value;
+      else if (token === "-o") output = value;
+      else if (token === "-d") dest = value;
+      else if (token === "-j") jump = value;
+      else ct = [...value.split(",")].sort().join(",");
+    } else extra.push(token);
+  }
+  return `in=${input} out=${output} ct=${ct} jump=${jump} dest=${dest} extra=${extra.join(" ")}`;
+}
+
+function chainHasPrefix(rules: string[], wanted: string[], chain: string) {
+  if (rules.length < wanted.length) {
+    throw new EgressNotEnforced(`${chain} holds fewer managed rules than required`);
+  }
+  const normalized = rules.map(normalizeRule);
+  if (wanted.some((rule) => !normalized.includes(rule))) {
+    throw new EgressNotEnforced(`${chain} is missing managed rules`);
+  }
+  for (let i = 0; i < wanted.length; i += 1) {
+    if (normalized[i] !== wanted[i]) {
+      // All managed rules are present (checked above), so the prefix is merely
+      // displaced: name the rules sitting above wherever it starts. If the
+      // managed rules are interleaved rather than displaced, name the foreign
+      // rules in the head instead.
+      const start = normalized.findIndex(
+        (_, index) =>
+          index + wanted.length <= normalized.length &&
+          wanted.every((rule, j) => normalized[index + j] === rule),
+      );
+      const above =
+        start > 0
+          ? rules.slice(0, start)
+          : rules.slice(0, wanted.length).filter((_rule, j) => !wanted.includes(normalized[j]!));
+      throw new Error(
+        `cannot verify restricted egress: ${chain} rules above the managed prefix (${above.join("; ")}) could bypass them; re-run infra/compose/restrict-computer-egress.sh to put the managed rules back on top (see docs/self-host-docker-computers.md)`,
+      );
+    }
+  }
+}
+
+/** iptables -S output lines for one chain, without the leading -A CHAIN. */
+function parseChain(output: string, chain: string) {
+  return output
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith(`-A ${chain} `))
+    .map((line) => line.slice(chain.length + 4));
+}
+
+function chainReadable(section: string | undefined) {
+  return (
+    section !== undefined &&
+    !/^iptables v/i.test(section) &&
+    !/iptables-(?:ambiguous|failed)|ip6tables-(?:absent|failed)|no chain|not found|permission denied/i.test(
+      section,
+    )
+  );
+}
+
+/**
+ * The managed drops live in DOCKER-USER, which only runs because Docker's own
+ * FORWARD chain jumps to it first. An intact DOCKER-USER that nothing jumps to
+ * enforces nothing: a missing jump means the rules are not attached (auto may
+ * fall open), and a jump that is not FORWARD's first rule could be bypassed by
+ * whatever sits above it, which we cannot verify.
+ */
+function verifyForwardJump(forwardRules: string[], family: "v4" | "v6") {
+  const jumpIndex = forwardRules.findIndex(
+    (rule) => normalizeRule(rule) === "in= out= ct= jump=DOCKER-USER dest= extra=",
+  );
+  if (jumpIndex === -1) {
+    throw new EgressNotEnforced(
+      `the ${family} FORWARD chain does not jump to DOCKER-USER, so the managed rules are not attached`,
+    );
+  }
+  if (jumpIndex !== 0) {
+    const above = forwardRules.slice(0, jumpIndex).join("; ");
+    throw new Error(
+      `cannot verify restricted egress: rules above the DOCKER-USER jump in the ${family} FORWARD chain could bypass the managed rules (${above}); move the jump back to the top (see docs/self-host-docker-computers.md)`,
+    );
+  }
+}
+
+function verifyIptablesFamily(sections: Record<string, string>, family: "v4" | "v6") {
+  const key = family === "v4" ? "V4" : "V6";
+  const user = sections[`${key}USER`];
+  const input = sections[`${key}INPUT`];
+  const forward = sections[`${key}FORWARD`];
+  const failed = (
+    [
+      ["DOCKER-USER", user],
+      ["INPUT", input],
+      ["FORWARD", forward],
+    ] as const
+  ).find(([, section]) => !chainReadable(section));
+  if (failed) {
+    if (failed[1]?.startsWith("iptables-ambiguous")) {
+      // A host that switched backends without a reboot can hold Docker chains
+      // in both views; which one filters traffic cannot be told apart.
+      throw new Error(
+        `cannot verify restricted egress: both the nft and legacy ${family} iptables backends hold Docker chains; flush the stale backend's Docker chains (or reboot), restart Docker, and re-run infra/compose/restrict-computer-egress.sh (see docs/self-host-docker-computers.md)`,
+      );
+    }
+    // An unreadable chain does not prove enforcement is absent. In particular,
+    // a failed ip6tables command is not evidence that IPv6 rules are missing.
+    throw new Error(
+      `could not read ${family} iptables rules from the host network namespace (${failed[0]}: ${failed[1] ?? "no output"})`,
+    );
+  }
+  const wanted = requiredRules(family);
+  chainHasPrefix(parseChain(user ?? "", "DOCKER-USER"), wanted.user, "DOCKER-USER");
+  chainHasPrefix(parseChain(input ?? "", "INPUT"), wanted.input, "INPUT");
+  verifyForwardJump(parseChain(forward ?? "", "FORWARD"), family);
+}
+
+export function parseAttestation(output: string): Record<string, string> {
+  const sections: Record<string, string> = {};
+  let current = "";
+  for (const line of output.split("\n")) {
+    const match = /^==RAKAZO-(\w+)==$/.exec(line.trim());
+    if (match) {
+      current = match[1] ?? "";
+      sections[current] = "";
+    } else if (current) {
+      sections[current] = sections[current] ? `${sections[current]}\n${line}` : line;
+    }
+  }
+  return sections;
+}
+
+export function verifyAttestation(output: string) {
+  const sections = parseAttestation(output);
+  if (sections.DONE === undefined) {
+    throw new Error("the attestation probe produced no output");
+  }
+  verifyIptablesFamily(sections, "v4");
+  // The attest script echoes each marker on its own, so match the whole
+  // section: a host interface named like a marker must not read as absent.
+  const ifinet6 = sections.IFINET6?.trim();
+  if (ifinet6 === undefined || ifinet6 === "ifinet6-unreadable") {
+    throw new Error("could not read host IPv6 state");
+  }
+  // A missing /proc/net/if_inet6 means the kernel has IPv6 disabled, which the
+  // install script's host_has_ipv6 reads the same way: no IPv6 rules to verify.
+  const ipv6Absent = ifinet6 === "ifinet6-absent";
+  // /proc/net/if_inet6 lists scope as the 4th column; 00 is global.
+  const ipv6Lines = ipv6Absent ? [] : ifinet6.split("\n").filter((line) => line.trim());
+  if (
+    ipv6Lines.some(
+      (line) =>
+        !/^[0-9a-f]{32}\s+[0-9a-f]+\s+[0-9a-f]+\s+[0-9a-f]{2}\s+[0-9a-f]+\s+\S+$/i.test(
+          line.trim(),
+        ),
+    )
+  ) {
+    throw new Error("could not parse host IPv6 state");
+  }
+  sections.GLOBALIPV6 = ipv6Lines.some((line) => line.trim().split(/\s+/)[3] === "00") ? "yes" : "";
+  // Mirror the install script: the IPv6 family is only skipped when the host
+  // has no global IPv6; otherwise it must verify like IPv4.
+  if (sections.GLOBALIPV6) verifyIptablesFamily(sections, "v6");
+}
+
+export const ATTEST_SCRIPT = [
+  // Debian's `iptables` is the nft variant by default, while Docker or the
+  // installer may have written the rules through the legacy one, so the dump
+  // must read the backend that holds Docker's chains. Pick, per family, the
+  // variant whose FORWARD and DOCKER-USER chains are both readable. Both being
+  // readable is ambiguous (which one does Docker filter through?), and neither
+  // is a failed read; either way verification fails closed further up.
+  "pick_backend() {",
+  '  chosen=""',
+  "  ambiguous=0",
+  '  for variant in "$1-nft" "$1-legacy"; do',
+  '    if "$variant" -w 2 -S FORWARD >/dev/null 2>&1 && "$variant" -w 2 -S DOCKER-USER >/dev/null 2>&1; then',
+  '      if [ -n "$chosen" ]; then ambiguous=1; else chosen="$variant"; fi',
+  "    fi",
+  "  done",
+  '  if [ "$ambiguous" -ne 0 ]; then echo iptables-ambiguous',
+  '  elif [ -n "$chosen" ]; then echo "$chosen"',
+  "  else echo iptables-failed",
+  "  fi",
+  "}",
+  "dump_chain() {",
+  '  if [ "$2" = iptables-ambiguous ] || [ "$2" = iptables-failed ]; then',
+  '    echo "$2"',
+  "  else",
+  '    "$2" -w 2 -S "$1" 2>&1 || echo iptables-failed',
+  "  fi",
+  "}",
+  "dump_family() {",
+  '  backend=$(pick_backend "$2")',
+  '  echo "==RAKAZO-$1USER=="',
+  '  dump_chain DOCKER-USER "$backend"',
+  '  echo "==RAKAZO-$1INPUT=="',
+  '  dump_chain INPUT "$backend"',
+  '  echo "==RAKAZO-$1FORWARD=="',
+  '  dump_chain FORWARD "$backend"',
+  "}",
+  "dump_family V4 iptables",
+  "dump_family V6 ip6tables",
+  "echo ==RAKAZO-IFINET6==",
+  // A missing file means the kernel has IPv6 disabled; only a file that exists
+  // but cannot be read is an error (mirrors the installer's host_has_ipv6).
+  "if [ -e /proc/net/if_inet6 ]; then",
+  "  cat /proc/net/if_inet6 2>/dev/null || echo ifinet6-unreadable",
+  "else",
+  "  echo ifinet6-absent",
+  "fi",
+  "echo ==RAKAZO-DONE==",
+].join("\n");
+
+/**
+ * Reads the host's live firewall through a throwaway host-network container and
+ * throws unless every required rule is in place. `EgressNotEnforced` means the
+ * rules are provably missing; any other error means they could not be verified.
+ * The whole lifecycle — creation, start, logs, cleanup — is deadline-bounded:
+ * a Docker request that never returns must not hold the provision. Leftovers
+ * of a timed-out attempt carry the probe label and are collected by the
+ * periodic cleanup.
+ */
+export async function attestRestrictedEgress(docker: Docker, image: string) {
+  await Promise.race([
+    attestOnce(docker, image),
+    new Promise<never>((_, reject) =>
+      setTimeout(
+        () =>
+          reject(
+            new Error("could not verify restricted egress: the attestation did not finish in time"),
+          ),
+        ATTEST_DEADLINE_MS + 30_000,
+      ).unref(),
+    ),
+  ]);
+}
+
+async function attestOnce(docker: Docker, image: string) {
+  let container: Docker.Container | undefined;
+  try {
+    container = await docker.createContainer({
+      Image: image,
+      Entrypoint: ["bash", "-c", ATTEST_SCRIPT],
+      Cmd: [],
+      Tty: true,
+      Labels: { "rakazo.egressProbe": "true" },
+      HostConfig: {
+        NetworkMode: "host",
+        CapDrop: ["ALL"],
+        // iptables-legacy needs both: it takes /run/xtables.lock even to list
+        // rules (which a read-only rootfs cannot provide) and opens a raw
+        // socket for libiptc, which the kernel gates on CAP_NET_RAW.
+        CapAdd: ["NET_ADMIN", "NET_RAW"],
+        SecurityOpt: ["no-new-privileges:true"],
+        ReadonlyRootfs: true,
+        Tmpfs: { "/run": "rw" },
+        Memory: 64 * 1024 * 1024,
+        PidsLimit: 32,
+      },
+    });
+    await container.start();
+    const result = await Promise.race([
+      container.wait() as Promise<{ StatusCode?: number }>,
+      new Promise<undefined>((resolve) =>
+        setTimeout(() => resolve(undefined), ATTEST_DEADLINE_MS).unref(),
+      ),
+    ]);
+    if (result?.StatusCode !== 0) {
+      throw new Error(`the attestation probe exited ${result?.StatusCode ?? "late"}`);
+    }
+    // docker-modem streams the response only when `follow` is set; without it the
+    // callback receives the whole buffered payload instead. TTY containers emit
+    // raw logs, so no stream demultiplexing is needed either way. The deadline
+    // starts before the request and covers both failure shapes — a callback that
+    // never fires and a stream that never ends — so the provision (and the
+    // container's cleanup) cannot be held forever.
+    const logs = await new Promise<string>((resolve, reject) => {
+      let stream: NodeJS.ReadableStream | undefined;
+      const timer = setTimeout(() => {
+        reject(new Error("the attestation probe's logs did not finish streaming"));
+        (stream as (NodeJS.ReadableStream & { destroy?: () => void }) | undefined)?.destroy?.();
+      }, ATTEST_DEADLINE_MS).unref();
+      container!.logs({ stdout: true, stderr: false }, (error, data) => {
+        if (error || !data) {
+          clearTimeout(timer);
+          reject(error ?? new Error("no attestation logs"));
+          return;
+        }
+        const logStream = data as unknown as NodeJS.ReadableStream;
+        if (typeof logStream.on !== "function") {
+          clearTimeout(timer);
+          resolve(String(data));
+          return;
+        }
+        stream = logStream;
+        let text = "";
+        logStream.on("data", (chunk: Buffer) => {
+          text += chunk.toString("utf8");
+        });
+        logStream.on("end", () => {
+          clearTimeout(timer);
+          resolve(text);
+        });
+        logStream.on("error", (streamError) => {
+          clearTimeout(timer);
+          reject(streamError);
+        });
+      });
+    });
+    verifyAttestation(logs);
+  } finally {
+    await container?.remove({ force: true }).catch(() => undefined);
+  }
+}
