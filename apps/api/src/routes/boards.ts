@@ -149,6 +149,7 @@ export function boardsRoutes(ctx: RouterContext) {
           spaceId: context.actor.spaceId,
           userId: context.actor.userId,
           ownerBotId: input.assigneeBotId,
+          promptCredentialId: context.serviceOrigin?.credentialId ?? null,
         });
         if ("error" in result) throw new ORPCError("BAD_REQUEST", { message: result.error });
         return result.ticket;
@@ -160,6 +161,7 @@ export function boardsRoutes(ctx: RouterContext) {
           spaceId: context.actor.spaceId,
           userId: context.actor.userId,
           ownerBotId: input.assigneeBotId,
+          promptCredentialId: context.serviceOrigin?.credentialId ?? null,
         });
         if ("error" in result) throw new ORPCError("BAD_REQUEST", { message: result.error });
         return result.ticket;
@@ -169,6 +171,7 @@ export function boardsRoutes(ctx: RouterContext) {
           ...input,
           spaceId: context.actor.spaceId,
           userId: context.actor.userId,
+          promptCredentialId: context.serviceOrigin?.credentialId ?? null,
         });
         if ("error" in result) throw new ORPCError("BAD_REQUEST", { message: result.error });
         return result.ticket;

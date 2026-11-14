@@ -173,6 +173,7 @@ export const taskTools: ToolHandlers = {
         description: args.description !== undefined ? String(args.description) : undefined,
         priority: args.priority !== undefined ? String(args.priority) : undefined,
         ownerBotId: args.ownerBotId !== undefined ? String(args.ownerBotId) : undefined,
+        promptCredentialId: run.promptCredentialId,
       }),
     );
   },
@@ -190,6 +191,7 @@ export const taskTools: ToolHandlers = {
         priority: args.priority !== undefined ? String(args.priority) : undefined,
         status: args.status !== undefined ? String(args.status) : undefined,
         ownerBotId: args.ownerBotId !== undefined ? String(args.ownerBotId) : undefined,
+        promptCredentialId: run.promptCredentialId,
       }),
     );
   },

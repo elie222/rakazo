@@ -13,7 +13,7 @@ import { getLogger } from "@rakazo/logging";
 /** Assignment wakes only its current owner, without posting a chat message. */
 export async function wakeTicketAssignee(
   deps: { prisma: PrismaClient; jobs: JobPublisher; deploymentLabs?: readonly LabFeature[] },
-  input: { spaceId: string; ticketId: string; botId: string },
+  input: { spaceId: string; ticketId: string; botId: string; promptCredentialId?: string | null },
 ): Promise<void> {
   const run = await deps.prisma.$transaction(async (tx) => {
     const ticket = await tx.ticket.findFirst({
@@ -48,6 +48,7 @@ export async function wakeTicketAssignee(
         userId: bot.userId,
         taskId: task.id,
         trigger: "tickets",
+        promptCredentialId: input.promptCredentialId ?? null,
         status: "queued",
       },
     });

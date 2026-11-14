@@ -168,6 +168,7 @@ export async function createTicket(
     description?: string;
     priority?: string;
     ownerBotId?: string;
+    promptCredentialId?: string | null;
   },
 ) {
   const parsed = CreateTicketInput.safeParse({
@@ -200,6 +201,7 @@ export async function createTicket(
     ticketId: row.id,
     assigneeBotId: row.assigneeBotId,
     wakeAssignee: row.assigneeBotId !== input.botId,
+    promptCredentialId: input.promptCredentialId ?? null,
   });
   return { ticket: toTicketDto(row, board.ticketPrefix) };
 }
@@ -216,6 +218,7 @@ export async function updateTicket(
     priority?: string | null;
     status?: string;
     ownerBotId?: string;
+    promptCredentialId?: string | null;
   },
 ) {
   const parsed = UpdateTicketInput.safeParse({ ...input, assigneeBotId: input.ownerBotId });
@@ -259,6 +262,7 @@ export async function updateTicket(
     ticketId: result.row.id,
     assigneeBotId: result.row.assigneeBotId,
     wakeAssignee: result.reassigned && result.row.assigneeBotId !== input.botId,
+    promptCredentialId: input.promptCredentialId ?? null,
   });
   return { ticket: toTicketDto(result.row, board.ticketPrefix) };
 }
