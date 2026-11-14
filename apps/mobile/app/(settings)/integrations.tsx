@@ -79,7 +79,6 @@ import {
   pluginCategories,
   pluginParams,
 } from "../../lib/plugin-marketplace";
-import { useSave } from "../../lib/query";
 import { useSideInsets } from "../../lib/side-insets";
 import { errorText } from "../../lib/user-error";
 
@@ -111,7 +110,7 @@ export default function Integrations() {
   const [query, setQuery] = useState("");
   const [visibleCount, setVisibleCount] = useState(CONNECTION_CATALOG_PAGE_SIZE);
   const [mcpServers, setMcpServers] = useState<McpServer[]>([]);
-  const [mcpLoadError, setMcpError] = useState<string | null>(null);
+  const [mcpError, setMcpError] = useState<string | null>(null);
   const [sources, setSources] = useState<CapabilityInstall[]>([]);
   const [pluginInstalls, setPluginInstalls] = useState<CapabilityInstall[]>([]);
   const [pluginEntries, setPluginEntries] = useState<PluginMarketplaceEntry[]>([]);
@@ -131,7 +130,7 @@ export default function Integrations() {
   const [oauthServerId, setOauthServerId] = useState<string | null>(null);
   const [pending, setPending] = useState<string | null>(null);
   const [catalogError, setCatalogError] = useState<string | null>(null);
-  const [removeError, setRemoveError] = useState<string | null>(null);
+  const [sourceError, setSourceError] = useState<string | null>(null);
   const [lastBotId, setLastBotId] = useState("");
   const [catalogReady, setCatalogReady] = useState(false);
   const [labelDrafts, setLabelDrafts] = useState<Record<string, string>>({});
@@ -149,71 +148,6 @@ export default function Integrations() {
   const focusGeneration = useRef(0);
   const refreshGeneration = useRef(0);
   const sourcesGeneration = useRef(0);
-
-  const authorize = useSave({
-    save: async ({ serverId, isCurrent }: { serverId: string; isCurrent: () => boolean }) => {
-      // The API picks the registered web callback; native clients cannot supply one.
-      const result = await rpc("mcp/oauth/begin", { serverId });
-      const browser = result.status === "authorization_required";
-      if (browser && isCurrent()) {
-        oauthBrowserOpen.current = true;
-        await Linking.openURL(result.authorizationUrl);
-      }
-      return { browser };
-    },
-    // Coming back from the browser refreshes instead.
-    onSaved: ({ browser }) => (browser ? undefined : retryRefresh()),
-  });
-  const sourceAdd = useSave({
-    save: async (kind: SourceKind): Promise<McpServer | null> => {
-      const displayName =
-        name.trim() ||
-        (sourcePreset?.name ?? (kind === "graphql" ? "GraphQL" : t`Custom connector`));
-      if (sourceAuth === "oauth")
-        return rpc("mcp/servers/create", {
-          slug: `integration-${newClientId().slice(0, 8)}`,
-          name: displayName,
-          transport: "streamable_http",
-          endpoint: url.trim(),
-        });
-      const auth =
-        sourceAuth === "header"
-          ? { type: "header", name: authHeader.trim() }
-          : { type: sourceAuth === "bearer" ? "bearer" : "none" };
-      await rpc("capabilities/install", {
-        kind,
-        name: displayName,
-        source: url.trim(),
-        credential: (sourceAuth !== "none" && credential.trim()) || undefined,
-        config: sourcePreset
-          ? { preset: sourcePreset.id }
-          : kind === "api"
-            ? { openApi: true, auth }
-            : kind === "graphql"
-              ? { auth }
-              : { preset: "custom", auth },
-      });
-      return null;
-    },
-    onSaved: async (created) => {
-      if (created) setOauthServerId(created.id);
-      setCredential("");
-      setSourceKind(null);
-      setAdding(null);
-      await retryRefresh();
-      if (created) authorizeMcp(created.id);
-    },
-  });
-  const mcpError = authorize.error
-    ? errorText(authorize.error, t`Could not start MCP OAuth`)
-    : mcpLoadError;
-  const sourceError = sourceAdd.error
-    ? errorText(sourceAdd.error, t`Could not add source`)
-    : removeError;
-  // A servers list that loads replaces whatever the last sign-in attempt reported.
-  useEffect(() => {
-    if (authorize.error) authorize.reset();
-  }, [mcpServers]);
 
   function applySnapshot(next: IntegrationsSnapshot) {
     snapshot.current = next;
@@ -513,8 +447,6 @@ export default function Integrations() {
         sourcesGeneration.current += 1;
         connectionAttempt.current?.abort();
         setPending(null);
-        authorize.reset();
-        sourceAdd.reset();
       };
     }, []),
   );
@@ -668,8 +600,8 @@ export default function Integrations() {
           <NativeActionButton
             label={server.oauthStatus === "reconnect" ? t`Reconnect` : t`Connect`}
             fill={false}
-            busy={authorize.pending && authorize.input?.serverId === server.id}
-            onPress={() => authorizeMcp(server.id)}
+            busy={pending === `oauth:${server.id}`}
+            onPress={() => void authorizeMcp(server.id)}
             prominence="secondary"
           />
         ) : null}
@@ -690,10 +622,7 @@ export default function Integrations() {
                 <NativeActionButton
                   label={t`Retry`}
                   fill={false}
-                  onPress={() => {
-                    if (authorize.error) authorize.reset();
-                    void retryRefresh();
-                  }}
+                  onPress={() => void retryRefresh()}
                   prominence="secondary"
                 />
               </View>
@@ -741,7 +670,7 @@ export default function Integrations() {
   function closeAdding() {
     setAdding(null);
     setSourceKind(null);
-    clearSourceError();
+    setSourceError(null);
     setName("");
     setUrl("");
     setCredential("");
@@ -891,7 +820,7 @@ export default function Integrations() {
     setAdding("source");
     setSourceKind(kind);
     setSourcePreset(preset);
-    clearSourceError();
+    setSourceError(null);
     setName(preset?.name ?? "");
     setUrl(preset?.url ?? "");
     setCredential("");
@@ -899,32 +828,88 @@ export default function Integrations() {
     setAuthHeader("x-api-key");
   }
 
-  function authorizeMcp(serverId: string) {
+  async function authorizeMcp(serverId: string) {
     const isCurrent = captureConnectionScope();
     if (!isCurrent()) return;
+    setPending(`oauth:${serverId}`);
     setMcpError(null);
-    authorize.run({ serverId, isCurrent });
+    try {
+      // The API picks the registered web callback; native clients cannot supply one.
+      const result = await rpc("mcp/oauth/begin", { serverId });
+      if (!isCurrent()) return;
+      if (result.status === "authorization_required") {
+        oauthBrowserOpen.current = true;
+        await Linking.openURL(result.authorizationUrl);
+      } else {
+        await retryRefresh(isCurrent);
+      }
+    } catch (reason) {
+      if (isCurrent()) setMcpError(errorText(reason, t`Could not start MCP OAuth`));
+    } finally {
+      if (isCurrent()) setPending(null);
+    }
   }
 
-  function clearSourceError() {
-    setRemoveError(null);
-    if (sourceAdd.error) sourceAdd.reset();
-  }
-
-  function addSource() {
-    if (!sourceKind || !captureConnectionScope()()) return;
-    setRemoveError(null);
-    sourceAdd.run(sourceKind);
+  async function addSource() {
+    if (!sourceKind) return;
+    const isCurrent = captureConnectionScope();
+    if (!isCurrent()) return;
+    setPending("source");
+    setSourceError(null);
+    const displayName =
+      name.trim() ||
+      (sourcePreset?.name ?? (sourceKind === "graphql" ? "GraphQL" : t`Custom connector`));
+    const auth =
+      sourceAuth === "header"
+        ? { type: "header", name: authHeader.trim() }
+        : { type: sourceAuth === "bearer" ? "bearer" : "none" };
+    let created: McpServer | null = null;
+    try {
+      if (sourceAuth === "oauth") {
+        created = await rpc("mcp/servers/create", {
+          slug: `integration-${newClientId().slice(0, 8)}`,
+          name: displayName,
+          transport: "streamable_http",
+          endpoint: url.trim(),
+        });
+        if (!isCurrent()) return;
+        setOauthServerId(created.id);
+      } else {
+        await rpc("capabilities/install", {
+          kind: sourceKind,
+          name: displayName,
+          source: url.trim(),
+          credential: (sourceAuth !== "none" && credential.trim()) || undefined,
+          config: sourcePreset
+            ? { preset: sourcePreset.id }
+            : sourceKind === "api"
+              ? { openApi: true, auth }
+              : sourceKind === "graphql"
+                ? { auth }
+                : { preset: "custom", auth },
+        });
+        if (!isCurrent()) return;
+      }
+      setCredential("");
+      setSourceKind(null);
+      setAdding(null);
+      await retryRefresh(isCurrent);
+      if (created) await authorizeMcp(created.id);
+    } catch (reason) {
+      if (isCurrent()) setSourceError(errorText(reason, t`Could not add source`));
+    } finally {
+      if (isCurrent()) setPending(null);
+    }
   }
 
   async function removeSource(source: CapabilityInstall) {
     setPending(source.id);
-    clearSourceError();
+    setSourceError(null);
     try {
       await rpc("capabilities/remove", { id: source.id });
       setSources((current) => current.filter((item) => item.id !== source.id));
     } catch (reason) {
-      setRemoveError(errorText(reason, t`Could not remove source`));
+      setSourceError(errorText(reason, t`Could not remove source`));
     } finally {
       setPending(null);
     }
@@ -1010,14 +995,13 @@ export default function Integrations() {
   function startAdding(option: AddCustomOption | undefined) {
     if (!option) return;
     closeDetail();
-    clearSourceError();
+    setSourceError(null);
     if (option.kind === "github") {
       setSourceKind(null);
       setAdding("github");
     } else beginSource(option.kind, option.preset);
   }
 
-  // Rebuilt when an add fails too, so picking another type from the menu clears that error.
   useLayoutEffect(() => {
     if (!iosAtLeast(26)) return;
     navigation.setOptions({
@@ -1037,7 +1021,7 @@ export default function Integrations() {
         },
       ],
     } satisfies NativeStackNavigationOptions);
-  }, [navigation, sourcePresets, t, sourceAdd.error]);
+  }, [navigation, sourcePresets, t]);
 
   return (
     <SafeAreaView edges={["bottom"]} style={styles.screen}>
@@ -1066,8 +1050,8 @@ export default function Integrations() {
             setAuthHeader={setAuthHeader}
             credential={credential}
             setCredential={setCredential}
-            busy={sourceAdd.pending}
-            onAdd={addSource}
+            busy={pending === "source"}
+            onAdd={() => void addSource()}
             onClose={closeAdding}
           />
         ) : (

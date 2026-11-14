@@ -39,12 +39,9 @@ vi.mock("./api-server", () => ({}));
 vi.mock("./api-auth", () => ({}));
 vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
-  currentApiBase: () => "https://app.example.test",
-  selectedSpaceId: () => "space-a",
   rpc: (proc: string, ...args: unknown[]) =>
     proc === "marketplace/catalog" ? state.marketplace() : state.rpc(proc, ...args),
 }));
-vi.mock("./session", () => ({ currentSessionGeneration: () => 1 }));
 vi.mock("../components/plugin-icon", () => ({
   PluginIcon: ({ name }: { name: string }) => <span>{name[0]}</span>,
 }));
@@ -1114,118 +1111,6 @@ it("registers an OAuth MCP server and starts the existing browser callback flow"
   expect(row()?.textContent).toBe("TTestConnected");
 });
 
-it("keeps an MCP sign-in that needed no browser when the following refresh fails", async () => {
-  const fallback = state.rpc.getMockImplementation();
-  let begun = false;
-  state.rpc.mockImplementation((proc: string, args: unknown) => {
-    if (proc === "mcp/servers/list")
-      return Promise.resolve([
-        {
-          id: "expired",
-          name: "Expired server",
-          enabled: true,
-          oauthStatus: "reconnect",
-          health: { status: "ok" },
-        },
-      ]);
-    if (proc === "mcp/oauth/begin") {
-      begun = true;
-      return Promise.resolve({ status: "already_connected" });
-    }
-    if (proc === "connections/catalog" && begun) return Promise.reject(new Error());
-    return fallback?.(proc, args);
-  });
-  await render();
-  await act(async () => resolveCatalog([]));
-  await act(async () => {
-    [...container.querySelectorAll("button")]
-      .find((button) => button.textContent === "Reconnect")
-      ?.click();
-  });
-  await settle();
-  expect(state.rpc).toHaveBeenCalledWith("mcp/oauth/begin", { serverId: "expired" });
-  expect(container.textContent).toContain("Could not load integrations");
-  expect(container.textContent).not.toContain("Could not start MCP OAuth");
-});
-
-it("reports an MCP sign-in that could not start", async () => {
-  const fallback = state.rpc.getMockImplementation();
-  state.rpc.mockImplementation((proc: string, args: unknown) => {
-    if (proc === "mcp/servers/list")
-      return Promise.resolve([
-        {
-          id: "expired",
-          name: "Expired server",
-          enabled: true,
-          oauthStatus: "reconnect",
-          health: { status: "ok" },
-        },
-      ]);
-    if (proc === "mcp/oauth/begin") return Promise.reject(new Error());
-    return fallback?.(proc, args);
-  });
-  await render();
-  await act(async () => resolveCatalog([]));
-  await act(async () => {
-    [...container.querySelectorAll("button")]
-      .find((button) => button.textContent === "Reconnect")
-      ?.click();
-  });
-  await settle();
-  expect(container.textContent).toContain("Could not start MCP OAuth");
-});
-
-it("starts the browser sign-in for a new OAuth server when the following refresh fails", async () => {
-  const fallback = state.rpc.getMockImplementation();
-  let created = false;
-  state.rpc.mockImplementation((proc: string, args: unknown) => {
-    if (proc === "mcp/servers/create") {
-      created = true;
-      return Promise.resolve({ id: "oauth-server", name: "Test", enabled: true });
-    }
-    if (proc === "mcp/oauth/begin")
-      return Promise.resolve({
-        status: "authorization_required",
-        sessionId: "test-session",
-        authorizationUrl: "https://identity.example.test/authorize",
-      });
-    if (proc === "connections/catalog" && created) return Promise.reject(new Error());
-    return fallback?.(proc, args);
-  });
-  await openMcpSource();
-  await act(async () => {
-    [...container.querySelectorAll("button")]
-      .find((button) => button.textContent === "OAuth")
-      ?.click();
-  });
-  await act(async () => {
-    [...container.querySelectorAll("button")]
-      .find((button) => button.textContent === "Verify and add")
-      ?.click();
-  });
-  await settle();
-  expect(container.querySelector('input[placeholder="https://example.com/mcp"]')).toBeNull();
-  expect(container.textContent).toContain("Could not load integrations");
-  expect(state.rpc).toHaveBeenCalledWith("mcp/oauth/begin", { serverId: "oauth-server" });
-  expect(Linking.openURL).toHaveBeenCalledWith("https://identity.example.test/authorize");
-});
-
-it("keeps the form open and reports a source that could not be added", async () => {
-  const fallback = state.rpc.getMockImplementation();
-  state.rpc.mockImplementation((proc: string, args: unknown) =>
-    proc === "capabilities/install" ? Promise.reject(new Error()) : fallback?.(proc, args),
-  );
-  await openMcpSource();
-  await act(async () => {
-    [...container.querySelectorAll("button")]
-      .find((button) => button.textContent === "Verify and add")
-      ?.click();
-  });
-  await settle();
-  expect(container.querySelector('input[placeholder="https://example.com/mcp"]')).not.toBeNull();
-  expect(container.textContent).toContain("Could not add source");
-});
-
 const expiredServer = {
   id: "expired",
   name: "Expired server",
@@ -1241,6 +1126,78 @@ async function press(label: string) {
   });
   await settle();
 }
+
+it("keeps an MCP sign-in that needed no browser when the following refresh fails", async () => {
+  const fallback = state.rpc.getMockImplementation();
+  let begun = false;
+  state.rpc.mockImplementation((proc: string, args: unknown) => {
+    if (proc === "mcp/servers/list") return Promise.resolve([expiredServer]);
+    if (proc === "mcp/oauth/begin") {
+      begun = true;
+      return Promise.resolve({ status: "already_connected" });
+    }
+    if (proc === "connections/catalog" && begun) return Promise.reject(new Error());
+    return fallback?.(proc, args);
+  });
+  await render();
+  await act(async () => resolveCatalog([]));
+  await press("Reconnect");
+  expect(state.rpc).toHaveBeenCalledWith("mcp/oauth/begin", { serverId: "expired" });
+  expect(container.textContent).toContain("Could not load integrations");
+  expect(container.textContent).not.toContain("Could not start MCP OAuth");
+});
+
+it("reports an MCP sign-in that could not start", async () => {
+  const fallback = state.rpc.getMockImplementation();
+  state.rpc.mockImplementation((proc: string, args: unknown) => {
+    if (proc === "mcp/servers/list") return Promise.resolve([expiredServer]);
+    if (proc === "mcp/oauth/begin") return Promise.reject(new Error());
+    return fallback?.(proc, args);
+  });
+  await render();
+  await act(async () => resolveCatalog([]));
+  await press("Reconnect");
+  expect(container.textContent).toContain("Could not start MCP OAuth");
+});
+
+it("starts the browser sign-in for a new OAuth server when the following refresh fails", async () => {
+  const fallback = state.rpc.getMockImplementation();
+  let created = false;
+  state.rpc.mockImplementation((proc: string, args: unknown) => {
+    if (proc === "mcp/servers/create") {
+      created = true;
+      return Promise.resolve({ id: "oauth-server", name: "Test", enabled: true });
+    }
+    if (proc === "mcp/oauth/begin")
+      return Promise.resolve({
+        status: "authorization_required",
+        sessionId: "test-session",
+        authorizationUrl: "https://identity.example.test/authorize-after-failed-refresh",
+      });
+    if (proc === "connections/catalog" && created) return Promise.reject(new Error());
+    return fallback?.(proc, args);
+  });
+  await openMcpSource();
+  await press("OAuth");
+  await press("Verify and add");
+  expect(container.querySelector('input[placeholder="https://example.com/mcp"]')).toBeNull();
+  expect(container.textContent).toContain("Could not load integrations");
+  expect(state.rpc).toHaveBeenCalledWith("mcp/oauth/begin", { serverId: "oauth-server" });
+  expect(Linking.openURL).toHaveBeenCalledWith(
+    "https://identity.example.test/authorize-after-failed-refresh",
+  );
+});
+
+it("keeps the form open and reports a source that could not be added", async () => {
+  const fallback = state.rpc.getMockImplementation();
+  state.rpc.mockImplementation((proc: string, args: unknown) =>
+    proc === "capabilities/install" ? Promise.reject(new Error()) : fallback?.(proc, args),
+  );
+  await openMcpSource();
+  await press("Verify and add");
+  expect(container.querySelector('input[placeholder="https://example.com/mcp"]')).not.toBeNull();
+  expect(container.textContent).toContain("Could not add source");
+});
 
 it("adds a source once when tapped again while a sign-in is still starting", async () => {
   const fallback = state.rpc.getMockImplementation();
