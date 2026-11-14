@@ -539,8 +539,7 @@ describePostgres("steering after a run ends without completing (PostgreSQL)", ()
           botId,
           userId,
           originTrigger: "service",
-          // Only the first carries it: one key-written message marks the whole run.
-          promptCredentialId: text === texts[0] ? "credential-1" : null,
+          promptCredentialId: "credential-1",
         },
       });
     }
@@ -567,5 +566,53 @@ describePostgres("steering after a run ends without completing (PostgreSQL)", ()
     );
     expect(claimed.map((item) => item.origin)).toEqual(["service", "service"]);
     for (const [index, text] of texts.entries()) expect(claimed[index]?.text).toContain(text);
+  });
+
+  it("gives each of the person's keys a run of its own, marked with that key", async () => {
+    await system.run.updateMany({
+      where: { threadId, status: { in: ["queued", "running", "waiting_input"] } },
+      data: { status: "cancelled" },
+    });
+    await system.steeringMessage.deleteMany({ where: { botId, runId: null } });
+    const keys = ["credential-old", "credential-new"];
+    for (const key of keys) {
+      const message = await createThreadMessage(system, {
+        threadId,
+        role: "user",
+        authorUserId: userId,
+        blocks: [
+          { kind: "text", text: `from ${key}` },
+          { kind: "service_origin", credentialId: key, name: key },
+        ],
+      });
+      await system.steeringMessage.create({
+        data: {
+          messageId: message.id,
+          botId,
+          userId,
+          originTrigger: "service",
+          promptCredentialId: key,
+        },
+      });
+    }
+
+    const next = async () => {
+      const runId = await asOwner(() =>
+        prisma.$transaction((tx) => createPendingSteeringRun(tx, { spaceId, threadId, botId })),
+      );
+      const run = await system.run.findUniqueOrThrow({ where: { id: runId! } });
+      const rows = await system.steeringMessage.findMany({
+        where: { runId: run.id },
+        include: { message: { select: { blocks: true } } },
+      });
+      await system.run.update({ where: { id: run.id }, data: { status: "cancelled" } });
+      await system.steeringMessage.deleteMany({ where: { runId: run.id } });
+      return { run, rows };
+    };
+    for (const key of keys) {
+      const { run, rows } = await next();
+      expect(run.promptCredentialId).toBe(key);
+      expect(rows.map((row) => row.promptCredentialId)).toEqual([key]);
+    }
   });
 });

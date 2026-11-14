@@ -241,8 +241,17 @@ export async function createPendingSteeringRun(
   const origin = pending.some((item) => steeringOrigin(item) === "private")
     ? "private"
     : steeringOrigin(pending[0]!);
-  const userId = pending.find((item) => steeringOrigin(item) === origin)!.userId;
-  const batch = pending.filter((item) => steeringOrigin(item) === origin && item.userId === userId);
+  const first = pending.find((item) => steeringOrigin(item) === origin)!;
+  const { userId } = first;
+  // One key too: the run is marked with the key behind its instructions, so instructions from
+  // another key, or none, wait for a continuation of their own.
+  const promptCredentialId = first.promptCredentialId ?? null;
+  const batch = pending.filter(
+    (item) =>
+      steeringOrigin(item) === origin &&
+      item.userId === userId &&
+      (item.promptCredentialId ?? null) === promptCredentialId,
+  );
   const source = batch.at(-1)!;
   const modelPin = continuationModelPin(batch);
   const task = await tx.task.create({
@@ -278,8 +287,7 @@ export async function createPendingSteeringRun(
               )
             ? "follow_up"
             : "messaging",
-      // One key-written message or routine in the batch marks the whole run.
-      promptCredentialId: batch.find((item) => item.promptCredentialId)?.promptCredentialId ?? null,
+      promptCredentialId,
       sourceMessageId: source.message.id,
       ...(modelPin ?? {}),
     },
