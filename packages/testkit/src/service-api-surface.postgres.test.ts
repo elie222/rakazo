@@ -172,7 +172,7 @@ describeWithDatabase("service API surface", () => {
     return { runId: run.id };
   };
 
-  it("shows a bot's status with only the creator's runs", async () => {
+  it("shows a bot's status and its run list with only the creator's runs", async () => {
     const { cookie } = await person();
     const bot = await newBot(cookie, "Shared");
     const { token } = await newKey(cookie, ["bots:read", "conversations:read"]);
@@ -189,7 +189,7 @@ describeWithDatabase("service API surface", () => {
         status: "running",
       },
     });
-    await db.run.create({
+    const theirs = await db.run.create({
       data: {
         spaceId: thread.spaceId,
         userId: someoneElse.userId,
@@ -206,6 +206,10 @@ describeWithDatabase("service API surface", () => {
       `/bots/${bot.id}/status`,
     );
     expect(status.runs.map((run) => run.id)).toEqual([own.runId]);
+    // The run list leaves the other member's run out too.
+    const listed = await ok<{ runs: Array<{ runId: string }> }>(token, "GET", "/runs");
+    expect(listed.runs.map((run) => run.runId)).toContain(own.runId);
+    expect(listed.runs.map((run) => run.runId)).not.toContain(theirs.id);
   });
 
   describe("every route", () => {
@@ -1471,6 +1475,27 @@ describeWithDatabase("service API surface", () => {
       const { token, credential } = await newKey(cookie);
       const response = await open(token, bot.id);
       await rpc(cookie, "serviceCredentials/revoke", { id: credential.id });
+      const reader = response.body!.getReader();
+      const closed = (async () => {
+        for (;;) {
+          if ((await reader.read()).done) return true;
+        }
+      })();
+      expect(
+        await Promise.race([
+          closed,
+          new Promise((resolve) => setTimeout(() => resolve(false), 40_000)),
+        ]),
+      ).toBe(true);
+    }, 45_000);
+
+    it("ends the stream when the account is deactivated, even if its keys were not revoked", async () => {
+      const { cookie, actor } = await person();
+      const bot = await newBot(cookie, "Deactivated");
+      const { token } = await newKey(cookie);
+      const response = await open(token, bot.id);
+      // Only the flag, as if the step that revokes the account's keys had failed.
+      await db.user.update({ where: { id: actor.userId }, data: { deactivatedAt: new Date() } });
       const reader = response.body!.getReader();
       const closed = (async () => {
         for (;;) {
