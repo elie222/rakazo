@@ -29,7 +29,6 @@ import {
   workspacePath,
 } from "./computer-support.js";
 import { PortableFileBatcher } from "./computer-workspace.js";
-import { daytonaSandboxCapabilities } from "./daytona-capabilities.js";
 import { LinuxDesktop, onBotScreen, PREPARE_LINUX_DESKTOP } from "./linux-desktop.js";
 import { installPageBrowserCommand } from "./page-browser-install.js";
 import { sandboxCommandArgv } from "./sandbox-command-environment.js";
@@ -212,7 +211,6 @@ export class DaytonaSandboxProvider implements SandboxProvider {
       contractVersion: "1",
       adapterVersion: "0.1.0",
       capabilities: {
-        ...daytonaSandboxCapabilities,
         graphical: true,
         pty: false,
         snapshots: true,

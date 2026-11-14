@@ -22,7 +22,6 @@ import {
   placeholderObservation,
   workspacePath,
 } from "./computer-support.js";
-import { fakeSandboxCapabilities } from "./fake-capabilities.js";
 import { FakeScreenServer } from "./fake-screen.js";
 import { FakeTerminalGateway } from "./fake-terminal.js";
 import { sandboxCommandEnvironment } from "./sandbox-command-environment.js";
@@ -46,7 +45,6 @@ export class FakeSandboxProvider implements SandboxProvider {
       contractVersion: "1",
       adapterVersion: "0.1.0",
       capabilities: {
-        ...fakeSandboxCapabilities,
         graphical: true,
         pty: true,
         snapshots: true,

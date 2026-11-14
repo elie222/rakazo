@@ -275,7 +275,7 @@ export interface SandboxKindCapabilities {
   storedHomeIsBackup: boolean;
 }
 
-export interface SandboxCapabilities extends SandboxKindCapabilities {
+export interface SandboxCapabilities {
   graphical: boolean;
   pty: boolean;
   snapshots: boolean;

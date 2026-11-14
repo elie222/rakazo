@@ -33,7 +33,6 @@ import {
   workspacePath,
 } from "./computer-support.js";
 import { PORTABLE_TRANSFER_BATCH_BYTES } from "./computer-workspace.js";
-import { createosSandboxCapabilities } from "./createos-capabilities.js";
 import { sandboxCommandArgv } from "./sandbox-command-environment.js";
 import { abortedCommandEvents, timedOutCommandEvents } from "./sandbox-command-events.js";
 import { sandboxNotFoundError } from "./sandbox-errors.js";
@@ -395,7 +394,6 @@ export class CreateOSSandboxProvider implements SandboxProvider {
       contractVersion: "1",
       adapterVersion: "0.1.0",
       capabilities: {
-        ...createosSandboxCapabilities,
         graphical: true,
         pty: false,
         snapshots: true,

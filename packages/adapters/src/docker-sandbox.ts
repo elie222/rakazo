@@ -37,7 +37,6 @@ import {
   normalizeWorkspacePath,
   workspaceCwd,
 } from "./computer-support.js";
-import { dockerSandboxCapabilities } from "./docker-capabilities.js";
 import { sandboxCommandArgv } from "./sandbox-command-environment.js";
 import { isSandboxGoneError, sandboxNotFoundError } from "./sandbox-errors.js";
 import { readBodyCapped, withAbort } from "./web-ssrf.js";
@@ -137,7 +136,6 @@ export class DockerSandboxProvider implements SandboxProvider {
       contractVersion: "1",
       adapterVersion: "0.1.0",
       capabilities: {
-        ...dockerSandboxCapabilities,
         graphical: true,
         pty: true,
         snapshots: true,

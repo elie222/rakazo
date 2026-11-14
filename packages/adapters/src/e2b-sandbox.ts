@@ -1,4 +1,4 @@
-import { e2bSandboxCapabilities } from "./e2b-capabilities.js";
+
 import { E2B_COMPUTER_TEMPLATE, E2B_DESKTOP_TEMPLATE } from "./e2b-template.js";
 import type { RemoteDesktopSdk } from "./remote-desktop-sandbox.js";
 import { RemoteDesktopSandboxProvider } from "./remote-desktop-sandbox.js";
@@ -33,7 +33,6 @@ export class E2BSandboxProvider extends RemoteDesktopSandboxProvider {
   constructor(apiKey: string, sdk: RemoteDesktopSdk = e2bSdk) {
     super({
       id: "e2b",
-      capabilities: e2bSandboxCapabilities,
       // Restricted sandboxes require this header.
       trafficAccessHeader: "e2b-traffic-access-token",
       label: "E2B",

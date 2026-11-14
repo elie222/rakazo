@@ -9,7 +9,6 @@ import type {
   ControlLeaseRef,
   PortableFile,
   ProcessEvent,
-  SandboxKindCapabilities,
   SandboxProvider,
   ScreenRequest,
   ScreenSession,
@@ -172,7 +171,6 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
   constructor(
     private readonly config: {
       id: ComputerRef["kind"];
-      capabilities: SandboxKindCapabilities;
       /** Header carrying the sandbox's traffic token, where the provider's gateway requires one. */
       trafficAccessHeader?: string;
       label: string;
@@ -190,7 +188,6 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
       contractVersion: "1",
       adapterVersion: "0.1.0",
       capabilities: {
-        ...this.config.capabilities,
         graphical: true,
         pty: true,
         snapshots: true,

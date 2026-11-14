@@ -10,7 +10,6 @@ import type {
   SandboxProvider,
   ScreenRequest,
 } from "@rakazo/adapter-kit";
-import { noneSandboxCapabilities } from "./none-capabilities.js";
 
 export const NO_SANDBOX_MESSAGE =
   "Computers unavailable. Set SANDBOX_PROVIDER=docker with SANDBOX_SUPERVISOR_TOKEN, or use e2b, novita, daytona, or boat with its API key.";
@@ -25,7 +24,6 @@ export class NoneSandboxProvider implements SandboxProvider {
       contractVersion: "1",
       adapterVersion: "0.1.0",
       capabilities: {
-        ...noneSandboxCapabilities,
         graphical: false,
         pty: false,
         snapshots: false,

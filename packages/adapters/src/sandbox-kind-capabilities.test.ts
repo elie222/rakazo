@@ -1,7 +1,6 @@
 import type { SandboxKindCapabilities } from "@rakazo/adapter-kit";
 import { SandboxKind } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
-import { createSandboxProvider } from "./sandbox-factory.js";
 import {
   sandboxCapabilitiesByKind,
   sandboxKindCapabilities,
@@ -65,27 +64,6 @@ function capabilities([
   };
 }
 
-const OFFLINE_OPTIONS = {
-  e2bApiKey: "test-key",
-  novitaApiKey: "test-key",
-  daytonaApiKey: "test-key",
-  createosApiKey: "test-key",
-  boatApiKey: "test-key",
-  boxdApiKey: "test-key",
-  instaboxApiKey: "test-key",
-  railwayApiToken: "test-token",
-  railwayEnvironmentId: "test-env",
-  incusUrl: "https://incus.example.com",
-  incusClientCert: "test-cert",
-  incusClientKey: "test-key",
-  wuyingAccessKeyId: "test-id",
-  wuyingAccessKeySecret: "test-secret",
-  wuyingDesktopId: "ecd-test",
-  wuyingEndUserId: "test-user",
-  wuyingMcpUrl: "https://gateway.example.com/mcp",
-  wuyingMcpToken: "test-token",
-};
-
 describe("sandbox kind capabilities", () => {
   it("declares every kind and no other", () => {
     expect(Object.keys(sandboxCapabilitiesByKind).sort()).toEqual([...SandboxKind.options].sort());
@@ -93,12 +71,6 @@ describe("sandbox kind capabilities", () => {
 
   it.each(SandboxKind.options)("%s keeps the values shared code used before", (kind) => {
     expect(sandboxKindCapabilities(kind)).toEqual(capabilities(EXPECTED[kind]));
-  });
-
-  it.each(SandboxKind.options)("%s reports its declaration from the provider", async (kind) => {
-    const provider = await createSandboxProvider(kind, OFFLINE_OPTIONS);
-    expect(provider.describe().id).toBe(kind);
-    expect(provider.describe().capabilities).toMatchObject(sandboxCapabilitiesByKind[kind]);
   });
 
   it.each(["unknown", "", null, undefined])("reads undeclared kind %j as before", (kind) => {

@@ -36,7 +36,6 @@ import {
   normalizeWorkspacePath,
   placeholderObservation,
 } from "./computer-support.js";
-import { desktopSandboxCapabilities } from "./desktop-capabilities.js";
 import type { NativeProcessTree } from "./desktop-process-tree.js";
 import { spawnOwnedCommand } from "./desktop-process-tree.js";
 import { isAllowedDesktopPath, normalizeDesktopWorkspacePath } from "./desktop-sandbox-paths.js";
@@ -80,7 +79,6 @@ export function describeDesktopSandbox() {
     contractVersion: "1",
     adapterVersion: "0.1.0",
     capabilities: {
-      ...desktopSandboxCapabilities,
       graphical: false,
       pty: true,
       snapshots: true,

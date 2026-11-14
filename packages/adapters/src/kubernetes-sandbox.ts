@@ -29,7 +29,6 @@ import type {
 import { COMPUTER_CACHE_ENV } from "@rakazo/core/node/desktop-runtime";
 import type { RawExecEvent } from "./exec-computer.js";
 import { ExecComputer, COMPUTER_IMAGE_WORKSPACE as WORKSPACE } from "./exec-computer.js";
-import { kubernetesSandboxCapabilities } from "./kubernetes-capabilities.js";
 import { LinuxDesktop, onBotScreen } from "./linux-desktop.js";
 import { sandboxNotFoundError } from "./sandbox-errors.js";
 
@@ -145,7 +144,6 @@ export class KubernetesSandboxProvider implements SandboxProvider {
       contractVersion: "1",
       adapterVersion: "0.1.0",
       capabilities: {
-        ...kubernetesSandboxCapabilities,
         graphical: true,
         pty: true,
         snapshots: true,
