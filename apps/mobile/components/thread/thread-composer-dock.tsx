@@ -103,13 +103,7 @@ export function ThreadComposerDock({
 
   return (
     // Floats over the messages, which scroll underneath it; only its controls take touches.
-    <View
-      pointerEvents="box-none"
-      style={[
-        { position: "absolute", left: 0, right: 0, bottom: 0, maxHeight: "100%" },
-        columnPadding,
-      ]}
-    >
+    <View pointerEvents="box-none" style={[columnPadding]}>
       {hidden ? null : <ThreadEdgeFade edge="bottom" style={fadeHeight} />}
       <View
         pointerEvents="box-none"
