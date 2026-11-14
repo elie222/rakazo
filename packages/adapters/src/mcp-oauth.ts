@@ -577,7 +577,7 @@ export class StoredMcpOAuthProvider implements OAuthClientProvider {
   private refreshing?: Promise<void>;
   /** The stored grant `wrapFetch` last handed the SDK in place of a token response. */
   private served?: OAuthTokens;
-  /** The refresh token storage held when this provider last read or wrote it. */
+  /** The grant storage held when this provider last read or wrote it. */
   private storedGrantKey: string | null;
 
   constructor(
