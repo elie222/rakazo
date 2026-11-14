@@ -70,6 +70,18 @@ Every change is recorded in the organization's audit log with the key as its act
 
 Conversations return only what a person sees: text, questions and their status, files, pages, and messages from other bots or chat apps. Tool calls, their results and everything else in a message stay in the app. Responses are built from an allowlist, so a new internal field does not appear here on its own.
 
+### Checking a key
+
+`GET /me` shows a key's scopes, bots and expiry. To check its access, call a route and read the status:
+
+```bash
+curl -s "$RAKAZO_URL/api/service/v1/me" -H "Authorization: Bearer $RAKAZO_KEY"
+curl -s -o /dev/null -w "%{http_code}\n" "$RAKAZO_URL/api/service/v1/bots/$BOT_ID" \
+  -H "Authorization: Bearer $RAKAZO_KEY"
+```
+
+The second call answers `200` for a key with `bots:read` that reaches that bot, `403 forbidden` for a key without the scope, and `404 not_found` for a bot outside the key's list. After a rotation, check the new key this way before revoking the old one. Once a key is revoked, the same calls answer `401 unauthenticated`. To see that for yourself, revoke a test key rather than one a program uses.
+
 ### Retrying writes
 
 A call that creates something, and a memory replace, needs an `Idempotency-Key` header of up to 128 letters, digits or `._:-`. Retrying with the same key and the same request returns the first answer with `Idempotent-Replayed: true`, and starts nothing. Keys are private to each API key and last 24 hours. Using one for a different request returns `409 idempotency_conflict`.
