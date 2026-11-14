@@ -669,7 +669,7 @@ describeWithDatabase("service API surface", () => {
       const first = await newBot(cookie, "Member");
       const second = await newBot(cookie, "Peer");
       const { token } = await newKey(cookie);
-      const limited = await newKey(cookie, ["conversations:read"], [first.id]);
+      const limited = await newKey(cookie, ["bots:read", "conversations:read"], [first.id]);
       const group = await ok<{ id: string; threadId: string }>(token, "POST", "/groups", {
         body: { name: "Limited team", botIds: [first.id, second.id] },
         key: "limited-group",
@@ -689,6 +689,31 @@ describeWithDatabase("service API surface", () => {
       const seen = await ok<{ runs: Array<{ runId: string }> }>(limited.token, "GET", "/runs");
       expect(seen.runs.map((entry) => entry.runId)).not.toContain(run.id);
       expect((await api(limited.token, "GET", `/runs/${run.id}`)).status).toBe(404);
+      // The bot's status leaves the group run out for the limited key as well.
+      const status = (botToken: string) =>
+        ok<{ runs: Array<{ id: string }> }>(botToken, "GET", `/bots/${first.id}/status`);
+      expect((await status(token)).runs.map((entry) => entry.id)).toContain(run.id);
+      expect((await status(limited.token)).runs.map((entry) => entry.id)).not.toContain(run.id);
+    });
+
+    it("returns a long run's latest replies", async () => {
+      const { cookie } = await person();
+      const bot = await newBot(cookie, "Talkative");
+      const { token } = await newKey(cookie);
+      const { runId } = await busyRun(bot.threadId);
+      await db.message.createMany({
+        data: Array.from({ length: 101 }, (_, index) => ({
+          threadId: bot.threadId,
+          seq: 6000 + index,
+          role: "bot",
+          botId: bot.id,
+          runId,
+          blocks: [{ kind: "text", text: `reply ${index}` }],
+        })),
+      });
+      const detail = await ok<{ messages: Array<{ seq: number }> }>(token, "GET", `/runs/${runId}`);
+      expect(detail.messages).toHaveLength(100);
+      expect([detail.messages[0]?.seq, detail.messages.at(-1)?.seq]).toEqual([6001, 6100]);
     });
 
     it("holds a group message for a busy member instead of joining its run", async () => {
