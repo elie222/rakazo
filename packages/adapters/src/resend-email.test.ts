@@ -1,9 +1,6 @@
-import * as timers from "node:timers/promises";
 import { EmailRecipientRejectedError } from "@rakazo/adapter-kit";
 import { describe, expect, it, vi } from "vitest";
 import { ResendEmailProvider } from "./resend-email.js";
-
-vi.mock("node:timers/promises", { spy: true });
 
 const config = { apiKey: "fake-api-key", from: "Rakazo <hello@example.test>" };
 const message = { to: "user@example.test", subject: "Reset password", text: "Reset link" };
@@ -41,8 +38,7 @@ describe("ResendEmailProvider", () => {
     [429, null, 250],
     [429, "invalid", 250],
   ])("honors retry timing for HTTP %s and header %s", async (status, header, delay) => {
-    const sleep = vi.spyOn(timers, "setTimeout").mockResolvedValue(undefined);
-    const now = vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-10-22T10:00:00Z"));
+    vi.useFakeTimers({ now: Date.parse("2026-10-22T10:00:00Z") });
     try {
       const request = vi
         .fn<typeof fetch>()
@@ -56,14 +52,16 @@ describe("ResendEmailProvider", () => {
           ),
         )
         .mockResolvedValueOnce(Response.json({ id: "email-1" }));
-      await new ResendEmailProvider(config, { fetch: request }).send(message);
-      expect(sleep).toHaveBeenCalledWith(delay, undefined, { signal: expect.any(AbortSignal) });
+      const sent = new ResendEmailProvider(config, { fetch: request }).send(message);
+      await vi.advanceTimersByTimeAsync(delay - 1);
+      expect(request).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1);
+      await sent;
       expect(request).toHaveBeenCalledTimes(2);
       expect(request.mock.calls[0]![1]!.headers).toEqual(request.mock.calls[1]![1]!.headers);
       expect(request.mock.calls[0]![1]!.signal).toBe(request.mock.calls[1]![1]!.signal);
     } finally {
-      sleep.mockRestore();
-      now.mockRestore();
+      vi.useRealTimers();
     }
   });
 

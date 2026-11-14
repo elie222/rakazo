@@ -83,7 +83,6 @@ export const TRIAL_DAYS = 7;
  * credits below. Each organization keeps one, so its plans look the same everywhere.
  */
 export const PlanLayoutSchema = z.enum(EXPERIMENTS["plan-layout"]);
-export type PlanLayout = z.infer<typeof PlanLayoutSchema>;
 
 export const ByokIntervalSchema = z.enum(["month", "year"]);
 export type ByokInterval = z.infer<typeof ByokIntervalSchema>;
