@@ -313,6 +313,11 @@ export default function Account() {
             href: "/vault",
             icon: { ios: "key", android: "key-outline" },
           })}
+          {settingsLink({
+            title: t`Computers`,
+            href: "/computers",
+            icon: { ios: "desktopcomputer", android: "desktop-outline" },
+          })}
           {me?.paymentWalletProvider
             ? settingsLink({
                 title: t`Wallet`,
