@@ -284,6 +284,7 @@ describe("pr-digest", () => {
               finding(3, "<s>Fixed earlier</s>", ["✓ Resolved"]),
               finding(4, "<s>Code moved</s>", ["⊘ Outdated"]),
               finding(5, "Escape \x1b]0;title\x07here", ["🐞 Bug\x1b[31m"]),
+              "<details>\n<summary>  6.  No description <code>🐞 Bug</code></summary>\n</details>\n",
             ],
             [finding(1, "Only in an older review", bug)],
           ),
@@ -296,7 +297,7 @@ describe("pr-digest", () => {
         ],
       });
       expect(result.status).toBe(11);
-      expect(result.stdout).toContain("qodo reviewed head · 3 open · 0 answered");
+      expect(result.stdout).toContain("qodo reviewed head · 4 open · 0 answered");
       expect(result.stdout).toContain(
         "(qodo 1):0\n  Cache misses a key [🐞 Bug, ≡ Correctness, new] lookup skips it",
       );
@@ -311,6 +312,7 @@ describe("pr-digest", () => {
       }
       expect(result.stdout).toContain("(2 noise)");
       expect(result.stdout).toContain("Escape ]0;titlehere [🐞 Bug[31m]");
+      expect(result.stdout).toContain("(qodo 6):0\n  No description [🐞 Bug] \n");
       expect(result.stdout).not.toContain("\x1b");
       expect(result.stdout).not.toContain("\x07");
     });
