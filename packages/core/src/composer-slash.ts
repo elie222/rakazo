@@ -41,7 +41,7 @@ export function composerSlashQuery(
   bindings: readonly ComposerMentionRange[] = [],
 ): ComposerMentionQuery | null {
   if (selectionStart !== selectionEnd) return null;
-  if (/^[\p{L}\p{N}_-]/u.test(text.slice(selectionStart))) return null;
+  if (/^(?:[\p{L}\p{N}_-]|\.[\p{L}\p{N}_])/u.test(text.slice(selectionStart))) return null;
   for (let slash = selectionStart - 1; slash >= 0 && text[slash] !== "\n"; slash--) {
     if (text[slash] !== "/" || (slash > 0 && !/\s/.test(text[slash - 1]!))) continue;
     if (bindings.some((binding) => slash >= binding.start && slash < binding.end)) return null;

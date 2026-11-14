@@ -91,6 +91,7 @@ describe("composerSlashQuery", () => {
     expect(composerSlashQuery("/sum，总结一下", 4)).toEqual({ start: 0, end: 4, query: "sum" });
     // A caret inside a word is editing that word, not asking for a command.
     for (const [text, caret] of [
+      ["See /foo.txt", 8],
       ["/sum总结一下", 4],
       ["please /sumthe notes", 11],
       ["/summary please", 4],
