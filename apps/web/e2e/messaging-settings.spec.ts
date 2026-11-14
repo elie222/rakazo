@@ -195,22 +195,26 @@ test("messaging settings show linked chat apps, channels, connections, and team 
   const codeReady = new Promise<void>((resolve) => {
     releaseCode = resolve;
   });
-  await page.route("**/rpc/messaging/link/start", async (route) => {
-    await codeReady;
-    await route.fulfill({
-      contentType: "application/json",
-      body: JSON.stringify({
-        json: { code: "STALE-CODE", expiresAt: new Date(Date.now() + 600_000).toISOString() },
-      }),
+  try {
+    await page.route("**/rpc/messaging/link/start", async (route) => {
+      await codeReady;
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          json: { code: "STALE-CODE", expiresAt: new Date(Date.now() + 600_000).toISOString() },
+        }),
+      });
     });
-  });
-  await messagingSettings.getByRole("button", { name: "Connect a chat app" }).click();
-  const issuing = page.waitForRequest("**/rpc/messaging/link/start");
-  await page.getByRole("menuitem", { name: "iMessage", exact: true }).click();
-  await issuing;
-  const botPicker = messagingSettings.getByLabel("Bot", { exact: true });
-  await botPicker.selectOption("bot-2");
-  releaseCode();
+    await messagingSettings.getByRole("button", { name: "Connect a chat app" }).click();
+    const issuing = page.waitForRequest("**/rpc/messaging/link/start");
+    await page.getByRole("menuitem", { name: "iMessage", exact: true }).click();
+    await issuing;
+    const botPicker = messagingSettings.getByLabel("Bot", { exact: true });
+    await botPicker.selectOption("bot-2");
+  } finally {
+    // Always release the route before afterEach waits for pending handlers.
+    releaseCode();
+  }
   await expect(messagingSettings.getByRole("button", { name: "Connect a chat app" })).toBeEnabled();
   await expect(page.getByTestId("messaging-link-code")).toHaveCount(0);
   await captureScreenshot(page, testInfo, "messaging-link-selection-changed");
