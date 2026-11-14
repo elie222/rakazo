@@ -14,15 +14,9 @@ import {
   initialBotMemory,
   resolveBotAvatarSet,
 } from "@rakazo/contracts";
-import {
-  BACKGROUND_RUN_TRIGGERS,
-  displayName,
-  isBackgroundRunTrigger,
-  phoneCallSettings,
-  ringingCall,
-  userVisibleMessages,
-} from "@rakazo/core";
+import { displayName, phoneCallSettings, ringingCall } from "@rakazo/core";
 import { chooseBotAvatar } from "./bot-avatar-choice.js";
+import { botThreadPreviews } from "./bot-previews.js";
 import type { Prisma, PrismaClient } from "./client.js";
 import type { ComputerMode } from "./computers.js";
 import { ensureComputerRecord, parseComputerMode, teamComputerUserId } from "./computers.js";
@@ -40,9 +34,6 @@ import {
 } from "./thread-listing.js";
 import { readStateFor, snoozedUntilFor, unreadFor } from "./thread-reads.js";
 import { withTransactionRetry } from "./transaction-retry.js";
-
-/** Newest messages loaded for sidebar preview; enough to skip a short peer-run tail. */
-const SIDEBAR_PREVIEW_MESSAGE_WINDOW = 16;
 
 function isBotCreateConflict(error: unknown, clientId?: string): boolean {
   if (!isUniqueViolation(error)) return false;
@@ -358,132 +349,60 @@ export function createRepos(
     },
 
     async listBots(actor: Actor, options: { archived?: boolean } = {}): Promise<Bot[]> {
-      const bots = await withNewestThreadMessages(
+      const bots = await withLatestBotRuns(
         prisma,
-        await withLatestBotRuns(
-          prisma,
-          await prisma.bot.findMany({
-            where: {
-              spaceId: actor.spaceId,
-              archivedAt: options.archived ? { not: null } : null,
-            },
-            include: {
-              thread: { include: { reads: readStateFor(actor.userId) } },
-              runs: activeRunSelection,
-              computer: { select: { scope: true } },
-            },
-            orderBy: [{ pinned: "desc" }, { position: "asc" }, { createdAt: "asc" }],
-          }),
-        ),
-        SIDEBAR_PREVIEW_MESSAGE_WINDOW,
-      );
-      const callThreadIds = capabilities.phoneCallsEnabled
-        ? bots.flatMap((bot) => (bot.thread ? [bot.thread.id] : []))
-        : [];
-      const callMessages = callThreadIds.length
-        ? await prisma.message.findMany({
-            where: {
-              threadId: { in: callThreadIds },
-              createdAt: {
-                gt: new Date(
-                  Date.now() -
-                    (capabilities.phoneCallRingSeconds ??
-                      phoneCallSettings().phoneCallRingSeconds) *
-                      1000,
-                ),
-              },
-              role: "bot",
-              clientNonce: { startsWith: "call:", endsWith: ":request" },
-            },
-            orderBy: { seq: "desc" },
-            distinct: ["threadId"],
-            select: { threadId: true, role: true, blocks: true },
-          })
-        : [];
-      const callsByThread = new Map(callMessages.map((message) => [message.threadId, message]));
-      const candidateRunIds = [
-        ...new Set(
-          bots.flatMap((bot) =>
-            (bot.thread?.messages ?? []).flatMap((message) =>
-              message.runId ? [message.runId] : [],
-            ),
-          ),
-        ),
-      ];
-      const checkedRunIds = new Set<string>();
-      const peerRunIds = new Set<string>();
-      const backgroundRunIds = new Set<string>();
-      const classifyRunIds = async (ids: string[]) => {
-        const missing = ids.filter((id) => !checkedRunIds.has(id));
-        if (missing.length === 0) return;
-        const rows = await prisma.run.findMany({
+        await prisma.bot.findMany({
           where: {
-            id: { in: missing },
-            trigger: { in: ["bot_message", ...BACKGROUND_RUN_TRIGGERS] },
+            spaceId: actor.spaceId,
+            archivedAt: options.archived ? { not: null } : null,
           },
-          select: { id: true, trigger: true },
-        });
-        for (const row of rows) {
-          if (isBackgroundRunTrigger(row.trigger)) backgroundRunIds.add(row.id);
-          else peerRunIds.add(row.id);
-        }
-        for (const id of missing) checkedRunIds.add(id);
-      };
-      await classifyRunIds(candidateRunIds);
-      return Promise.all(
-        bots.map(async (bot) => {
-          let messages = bot.thread?.messages ?? [];
-          const updatedAt = rosterUpdatedAt(messages[0], bot.updatedAt);
-          let preview = "";
-          for (let attempt = 0; attempt < 5; attempt++) {
-            const windowRunIds = [
-              ...new Set(messages.flatMap((message) => (message.runId ? [message.runId] : []))),
-            ].filter((runId) => !checkedRunIds.has(runId));
-            if (windowRunIds.length > 0) {
-              await classifyRunIds(windowRunIds);
-            }
-            const visible = userVisibleMessages(
-              messages.map((message) => ({
-                ...message,
-                blocks: message.blocks as MessageBlock[],
-                runId: message.runId ?? undefined,
-              })),
-              {
-                knownPeerRunIds: peerRunIds,
-                backgroundRunIds,
-                includeDelegatedReplyText: false,
-              },
-            );
-            for (const message of visible) {
-              preview = previewFromBlocks(message.blocks);
-              if (preview) break;
-            }
-            if (preview || messages.length === 0 || !bot.thread || attempt === 4) break;
-            const oldest = messages[messages.length - 1];
-            if (!oldest) break;
-            messages = await prisma.message.findMany({
-              where: { threadId: bot.thread.id, seq: { lt: oldest.seq } },
-              orderBy: { seq: "desc" },
-              take: SIDEBAR_PREVIEW_MESSAGE_WINDOW,
-            });
-            if (messages.length === 0) break;
-          }
-          const activeRun = primaryActiveRun(bot.runs);
-          const mapped = mapBot(
-            bot,
-            preview,
-            activeRun?.status ?? "idle",
-            rosterRunErrorId(bot.thread?.runs[0], activeRun),
-            updatedAt,
-            ringingCall(
-              bot.thread && callsByThread.has(bot.thread.id)
-                ? [callsByThread.get(bot.thread.id)!]
-                : [],
-            ),
-          );
-          return { ...mapped, threadStatus: threadRunStatus(bot.runs, mapped.threadId) };
+          include: {
+            thread: { include: { reads: readStateFor(actor.userId) } },
+            runs: activeRunSelection,
+            computer: { select: { scope: true } },
+          },
+          orderBy: [{ pinned: "desc" }, { position: "asc" }, { createdAt: "asc" }],
         }),
       );
+      const threadIds = bots.flatMap((bot) => (bot.thread ? [bot.thread.id] : []));
+      const callMessages =
+        capabilities.phoneCallsEnabled && threadIds.length
+          ? await prisma.message.findMany({
+              where: {
+                threadId: { in: threadIds },
+                createdAt: {
+                  gt: new Date(
+                    Date.now() -
+                      (capabilities.phoneCallRingSeconds ??
+                        phoneCallSettings().phoneCallRingSeconds) *
+                        1000,
+                  ),
+                },
+                role: "bot",
+                clientNonce: { startsWith: "call:", endsWith: ":request" },
+              },
+              orderBy: { seq: "desc" },
+              distinct: ["threadId"],
+              select: { threadId: true, role: true, blocks: true },
+            })
+          : [];
+      const callsByThread = new Map(callMessages.map((message) => [message.threadId, message]));
+      const { previews, newestAt } = await botThreadPreviews(prisma, threadIds);
+      return bots.map((bot) => {
+        const threadId = bot.thread?.id;
+        const activeRun = primaryActiveRun(bot.runs);
+        const mapped = mapBot(
+          bot,
+          (threadId && previews.get(threadId)) || "",
+          activeRun?.status ?? "idle",
+          rosterRunErrorId(bot.thread?.runs[0], activeRun),
+          (threadId && newestAt.get(threadId)) || bot.updatedAt,
+          ringingCall(
+            threadId && callsByThread.has(threadId) ? [callsByThread.get(threadId)!] : [],
+          ),
+        );
+        return { ...mapped, threadStatus: threadRunStatus(bot.runs, mapped.threadId) };
+      });
     },
 
     listSpaceBotsForSpaces,
