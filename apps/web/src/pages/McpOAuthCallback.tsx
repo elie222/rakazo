@@ -22,7 +22,7 @@ export function McpOAuthCallbackPage() {
     const fail = (message: string) => {
       setError(message);
       const channel = new BroadcastChannel(POPUP_NAME);
-      channel.postMessage({ type: "mcp-oauth-failed", message });
+      channel.postMessage({ type: "mcp-oauth-failed", sessionId: params.get("state"), message });
       channel.close();
     };
     const code = params.get("code");
@@ -37,7 +37,7 @@ export function McpOAuthCallbackPage() {
       .complete({ sessionId: state, code, state })
       .then(() => {
         const channel = new BroadcastChannel(POPUP_NAME);
-        channel.postMessage({ type: "mcp-oauth-complete" });
+        channel.postMessage({ type: "mcp-oauth-complete", sessionId: state });
         channel.close();
         if (window.name === POPUP_NAME) {
           setDone(true);

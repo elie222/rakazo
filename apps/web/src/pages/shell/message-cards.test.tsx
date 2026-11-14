@@ -10,6 +10,7 @@ const calls = vi.hoisted(() => ({
   mark: vi.fn(async () => ({ ok: true })),
   oauthBegin: vi.fn(async () => ({
     status: "authorization_required" as const,
+    sessionId: "session",
     authorizationUrl: "https://identity.example.test/authorize",
   })),
   approve: vi.fn(async () => ({ ok: true })),
@@ -82,7 +83,9 @@ it("approves the bot after OAuth completes while a COOP popup keeps focus", asyn
     await act(async () => vi.advanceTimersByTimeAsync(1000));
     expect(calls.approve).not.toHaveBeenCalled();
     await act(async () =>
-      channels[0]?.onmessage?.({ data: { type: "mcp-oauth-complete" } } as MessageEvent),
+      channels[0]?.onmessage?.({
+        data: { type: "mcp-oauth-complete", sessionId: "session" },
+      } as MessageEvent),
     );
     expect(calls.approve).toHaveBeenCalledExactlyOnceWith({
       botId: "bot",
@@ -188,7 +191,11 @@ it("rejects OAuth callback failures and clears its timers", async () => {
   const rejection = expect(flow).rejects.toThrow("Consent denied");
   await vi.advanceTimersByTimeAsync(0);
   channels[0]?.onmessage?.({
-    data: { type: "mcp-oauth-failed", message: "Consent denied" },
+    data: { type: "mcp-oauth-failed", sessionId: "other-session", message: "Unrelated" },
+  } as MessageEvent);
+  expect(channels[0]?.close).not.toHaveBeenCalled();
+  channels[0]?.onmessage?.({
+    data: { type: "mcp-oauth-failed", sessionId: "session", message: "Consent denied" },
   } as MessageEvent);
   await rejection;
   expect(channels[0]?.close).toHaveBeenCalledOnce();

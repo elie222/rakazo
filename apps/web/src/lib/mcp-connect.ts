@@ -59,9 +59,11 @@ export async function connectMcpOauth(serverId: string): Promise<McpOauthResult>
       finish("cancelled");
     }, MCP_OAUTH_TIMEOUT_MS);
     channel.onmessage = (event: MessageEvent) => {
-      const type = (event.data as { type?: string } | null)?.type;
+      const message = event.data as { type?: string; sessionId?: string; message?: string } | null;
+      if (message?.sessionId !== started.sessionId) return;
+      const type = message?.type;
       if (type === "mcp-oauth-failed") {
-        finish(new Error((event.data as { message: string }).message));
+        finish(new Error(message?.message));
         return;
       }
       if (type !== "mcp-oauth-complete") return;

@@ -275,7 +275,7 @@ export function PluginsOverlay({
         sourceForm.setCredential("");
         sourceForm.setSourceKind(null);
         setView("manage");
-        await refresh();
+        await refresh().catch(() => undefined);
         const result = await connectMcpOauth(server.id);
         if (result === "cancelled") {
           setSourceError(t`Sign-in cancelled. Try again.`);
