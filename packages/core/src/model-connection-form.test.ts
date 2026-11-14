@@ -36,6 +36,7 @@ function draft(overrides: Partial<ConnectionFormDraft> = {}): ConnectionFormDraf
     modelId: "",
     enabledModelIds: [],
     baseUrl: "",
+    label: "",
     apiProtocol: "chat-completions",
     headerRows: null,
     reasoning: false,
@@ -110,6 +111,7 @@ describe("connectionFormFields", () => {
     ).toEqual({
       enabledModelIds: [],
       baseUrl: "https://ollama.com/v1",
+      label: "",
       apiProtocol: "chat-completions",
       reasoning: false,
       thinkingLevel: null,
@@ -362,6 +364,7 @@ describe("modelConnectRequest", () => {
         maxTokens: "4096",
         supportsImages: true,
         headerRows: [{ name: " X-Team ", value: "v" }],
+        label: " Omniroute ",
       }),
       selected: {
         provider: COMPATIBLE,
@@ -388,7 +391,7 @@ describe("modelConnectRequest", () => {
         supportsImages: true,
         maxImagesPerPrompt: null,
         apiKey: "key",
-        label: "OpenAI-compatible",
+        label: "Omniroute",
         credentialId: "credential-fixture",
       },
     });

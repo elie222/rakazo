@@ -101,6 +101,19 @@ describe("connected backup model choices", () => {
     expect(offered(true)).not.toContain("custom-model");
     expect(offered(true)).not.toContain("hosted-vision");
   });
+  it("offers computer use a custom model whose image support the endpoint never declared", () => {
+    // An endpoint that reports no per-model capabilities leaves visionModelIds unset — or an
+    // empty list, when the probe found nothing to declare; the run-time check then treats
+    // support as unknown rather than absent, and so does the picker.
+    const unset = { ...credentials[1]!, enabledModelIds: ["custom-model"] };
+    const empty = { ...unset, visionModelIds: [] };
+    for (const local of [unset, empty]) {
+      const offered = connectedBackupOptions(catalog, [local], true).map(
+        (option) => option.modelId,
+      );
+      expect(offered).toContain("custom-model");
+    }
+  });
   it("offers only non-placeholder catalog models for connected providers", () => {
     expect(connectedBackupOptions(catalog, credentials)).toEqual([
       {

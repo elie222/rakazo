@@ -91,6 +91,7 @@ export default function ModelConnection() {
   const [accountId, setAccountId] = useState("");
   const [gatewayId, setGatewayId] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
+  const [endpointLabel, setEndpointLabel] = useState("");
   const [apiProtocol, setApiProtocol] = useState<ModelApiProtocol>("chat-completions");
   const [headerRows, setHeaderRows] = useState<ModelHeaderRow[] | null>(null);
   const [reasoning, setReasoning] = useState(false);
@@ -172,6 +173,7 @@ export default function ModelConnection() {
       setHeaderRows(null);
       setEnabledModelIds(fields.enabledModelIds);
       setBaseUrl(fields.baseUrl);
+      setEndpointLabel(fields.label);
       setApiProtocol(fields.apiProtocol);
       setReasoning(fields.reasoning);
       setThinkingLevel(fields.thinkingLevel);
@@ -409,6 +411,7 @@ export default function ModelConnection() {
         modelId,
         enabledModelIds,
         baseUrl,
+        label: endpointLabel,
         apiProtocol,
         headerRows,
         reasoning,
@@ -526,6 +529,11 @@ export default function ModelConnection() {
       probing={probing}
       baseUrl={baseUrl}
       onChangeBaseUrl={updateBaseUrl}
+      label={endpointLabel}
+      onChangeLabel={(next) => {
+        setEndpointLabel(next);
+        clearFeedback();
+      }}
       onFindModels={() => void probeServerModels()}
       hasPreset={Boolean(endpointPreset)}
       showEndpointHelp={showEndpointHelp}
