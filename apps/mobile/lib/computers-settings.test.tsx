@@ -438,3 +438,26 @@ it("restores an uncertain removal after returning when both requests fail", asyn
   expect(container.textContent).toContain("list failed");
   expect(container.textContent).not.toContain("remove failed");
 });
+
+it("clears a failed refresh error when successful removal reconciles", async () => {
+  let finishRemove!: () => void;
+  vi.mocked(listUserDevices)
+    .mockResolvedValueOnce([laptop])
+    .mockRejectedValueOnce(new Error("list failed"))
+    .mockResolvedValueOnce([]);
+  vi.mocked(removeUserDevice).mockReturnValue(new Promise((resolve) => (finishRemove = resolve)));
+  await render();
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('[aria-label="Remove Laptop, Connected"]')?.click(),
+  );
+  await act(async () => confirmRemove()?.onPress?.());
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('[aria-label="Refresh"]')?.click(),
+  );
+  expect(container.textContent).toContain("list failed");
+  await act(async () => finishRemove());
+  await settle();
+  expect(container.textContent).toContain("No paired computers");
+  expect(container.textContent).not.toContain("list failed");
+  expect(container.textContent).not.toContain("Retry");
+});

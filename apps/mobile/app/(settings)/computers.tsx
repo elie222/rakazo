@@ -119,9 +119,11 @@ export default function ComputersSettings() {
     setPending(true);
     setError(null);
     setDevices((current) => current?.filter((item) => item.deviceId !== device.deviceId) ?? null);
+    let removalFailed = false;
     try {
       await removeUserDevice(device.deviceId);
     } catch (cause) {
+      removalFailed = true;
       unconfirmed.current.set(device.deviceId, device);
       if (visit.current === startedVisit) {
         setError(errorText(cause, t`Could not remove`));
@@ -133,7 +135,7 @@ export default function ComputersSettings() {
         setPending(false);
       }
       if (focused.current) {
-        await load(visit.current === startedVisit);
+        await load(removalFailed && visit.current === startedVisit);
       }
     }
   }
