@@ -44,7 +44,8 @@ describe("notifications.subscribe computer update signals", () => {
     }
   });
 
-  it("ends the stream when computer update signals fail, so the app reconnects", async () => {
+  it("ends the stream half a minute after computer update signals fail", async () => {
+    vi.useFakeTimers();
     const controller = new AbortController();
     const followChatAlerts = vi.fn(async function* (
       _userId: string,
@@ -66,9 +67,26 @@ describe("notifications.subscribe computer update signals", () => {
     try {
       const iterator = (await client.notifications.subscribe())[Symbol.asyncIterator]();
       expect((await iterator.next()).value).toEqual({ type: "computerUpdates" });
-      await expect(iterator.next()).rejects.toThrow("subscribe failed");
+      const started = Date.now();
+      let endedAt: number | undefined;
+      // Heartbeats and alerts keep flowing until the stream ends.
+      const drained = (async () => {
+        try {
+          while (!(await iterator.next()).done);
+        } catch (error) {
+          endedAt = Date.now();
+          throw error;
+        }
+      })();
+      drained.catch(() => {});
+      await vi.advanceTimersByTimeAsync(29_000);
+      expect(endedAt).toBeUndefined();
+      await vi.advanceTimersByTimeAsync(1_000);
+      await expect(drained).rejects.toThrow("subscribe failed");
+      expect(endedAt! - started).toBe(30_000);
     } finally {
       controller.abort();
+      vi.useRealTimers();
     }
   });
 });
