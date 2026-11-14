@@ -250,12 +250,16 @@ describePostgres("organizations (PostgreSQL)", () => {
     // A helper started in Work and the turn relaying its result finish after the user moved on.
     await finishedRun(work.id, "helper", new Date(start + 1_000));
     await finishedRun(work.id, "helper_result", new Date(start + 2_000));
-    await expect(requireMembership(system, ada.userId)).resolves.toMatchObject({
+    await expect(
+      requireMembership(system, { id: ada.userId, email: ada.email }),
+    ).resolves.toMatchObject({
       spaceId: ada.spaceId,
     });
 
     await finishedRun(work.id, "user", new Date(start + 3_000));
-    await expect(requireMembership(system, ada.userId)).resolves.toMatchObject({
+    await expect(
+      requireMembership(system, { id: ada.userId, email: ada.email }),
+    ).resolves.toMatchObject({
       spaceId: work.id,
     });
   });
@@ -691,6 +695,36 @@ describePostgres("organizations (PostgreSQL)", () => {
 
     expect(await system.space.findUnique({ where: { id: work.id } })).toMatchObject({
       deletingAt: expect.any(Date),
+      deletionClaimId: expect.stringContaining(`organization-deletion:${work.id}:`),
+    });
+    expect((await client(ada).organizations.list()).organizations).toHaveLength(1);
+  });
+
+  it("takes over an account deletion's lapsed claim, keeping it when billing fails", async () => {
+    const ada = await signup();
+    const work = await client(ada).organizations.create({ name: "Work" });
+    await subscribe(asUser(ada, work.id));
+    // An account deletion that stalled after claiming the Space.
+    await system.space.updateMany({
+      where: { organizationId: work.id },
+      data: {
+        deletionClaimId: `account-deletion:${ada.userId}`,
+        deletionAttemptId: "account-attempt",
+        deletingAt: new Date(Date.now() - 10 * 60_000),
+      },
+    });
+    vi.spyOn(emulator, "cancelCustomerSubscriptions").mockRejectedValueOnce(
+      new Error("billing unavailable"),
+    );
+
+    await expect(client(ada).organizations.remove({ organizationId: work.id })).rejects.toThrow(
+      "billing unavailable",
+    );
+
+    // Parked, not released: the lease is at the epoch and the account attempt id is gone.
+    expect(await system.space.findUnique({ where: { id: work.id } })).toMatchObject({
+      deletingAt: new Date(0),
+      deletionAttemptId: null,
       deletionClaimId: expect.stringContaining(`organization-deletion:${work.id}:`),
     });
     expect((await client(ada).organizations.list()).organizations).toHaveLength(1);

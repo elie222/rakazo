@@ -8,7 +8,7 @@ import { rpc } from "../lib/api";
 import { native, useMobileTokens } from "../lib/native";
 import { errorText } from "../lib/user-error";
 import { NativeSymbol } from "./native-symbol";
-import { ProfileEditDialog } from "./profile-edit-dialog";
+import { useTextEditDialog } from "./profile-edit-dialog";
 
 export function BotContextCards({ botId }: { botId: string }) {
   const { t } = useLingui();
@@ -44,6 +44,19 @@ export function BotContextCards({ botId }: { botId: string }) {
       };
     }, [botId]),
   );
+  const addWork = useTextEditDialog(t`Add open work`, 200);
+  async function createWork(title: string) {
+    if (!title || busy) return;
+    setBusy(true);
+    try {
+      const item = await rpc("scratchpad/create", { botId, title });
+      setWork((items) => [item, ...items]);
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  }
   const heading = { color: tokens.mutedForeground, fontSize: 12, fontWeight: "500" as const };
   const card = { backgroundColor: native.fill, borderRadius: 12, padding: 16, gap: 12 };
   return (
@@ -62,25 +75,19 @@ export function BotContextCards({ botId }: { botId: string }) {
             <Text accessibilityRole="header" style={heading}>
               {t`Open work`}
             </Text>
-            <ProfileEditDialog
-              value=""
-              label={t`Add open work`}
-              editLabel={t`Add open work`}
-              maxLength={200}
-              icon="plus"
-              onCommit={async (title) => {
-                if (!title || busy) return;
-                setBusy(true);
-                try {
-                  const item = await rpc("scratchpad/create", { botId, title });
-                  setWork((items) => [item, ...items]);
-                } catch (err) {
-                  setError(errorText(err));
-                } finally {
-                  setBusy(false);
-                }
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t`Add open work`}
+              style={{
+                minHeight: 44,
+                minWidth: 44,
+                justifyContent: "center",
+                alignItems: "flex-end",
               }}
-            />
+              onPress={() => addWork.ask("", (title) => void createWork(title))}
+            >
+              <NativeSymbol ios="plus" android="add" size={18} color={tokens.mutedForeground} />
+            </Pressable>
           </View>
           <View style={card}>
             {(allWork ? work : work.slice(0, 5)).map((item) => (
@@ -137,6 +144,7 @@ export function BotContextCards({ botId }: { botId: string }) {
           </View>
         </View>
       ) : null}
+      {addWork.dialog}
       {docs.length ? (
         <View style={{ marginTop: 24 }}>
           <Text accessibilityRole="header" style={[heading, { marginBottom: 8 }]}>

@@ -293,6 +293,8 @@ export interface ManagedConnectorProvider
   extends ConnectorProvider,
     Omit<ConnectionAuthProvider, "describe"> {
   catalog(context: AdapterContext, query?: string): Promise<ConnectorCatalogItem[]>;
+  /** The actions one app offers, to show people what connecting it gives bots. */
+  listAppTools?(context: AdapterContext, externalId: string): Promise<ConnectorTool[]>;
   listConnectedExternalIds(context: AdapterContext): Promise<string[]>;
   /** Whether a connected app needs reconnecting because its saved connection gives this run no tools. */
   needsReconnect?(context: AdapterContext, externalId: string): Promise<boolean>;

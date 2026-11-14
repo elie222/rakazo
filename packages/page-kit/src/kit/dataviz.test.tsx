@@ -927,6 +927,105 @@ describe("data display", () => {
     ]);
   });
 
+  it("filters nested formatting, fragments and toned cells by their full text", () => {
+    const root = mount(
+      <Table
+        columns={["Location"]}
+        rows={[
+          [
+            <strong key="north">
+              North <em>Depot</em>
+            </strong>,
+          ],
+          [
+            <Fragment key="south">
+              South{" "}
+              <span>
+                <em>Depot</em>
+              </span>
+            </Fragment>,
+          ],
+          [
+            {
+              text: (
+                <strong>
+                  West <em>Depot</em>
+                </strong>
+              ),
+              tone: "success",
+            },
+          ],
+          ...Array.from({ length: 13 }, (_, i) => [`Office ${i}`]),
+        ]}
+      />,
+    );
+    const filter = root.querySelector<HTMLInputElement>("input")!;
+    const search = (value: string) =>
+      act(() => {
+        const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+        setter.call(filter, value);
+        filter.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+    search("Depot");
+    expect([...root.querySelectorAll("tbody td")].map((cell) => cell.textContent)).toEqual([
+      "North Depot",
+      "South Depot",
+      "West Depot",
+    ]);
+    search("North Depot");
+    expect(root.querySelectorAll("tbody tr")).toHaveLength(1);
+    expect(root.querySelector("tbody td")?.textContent).toBe("North Depot");
+    search("Office 12");
+    expect(root.querySelector("tbody td")?.textContent).toBe("Office 12");
+  });
+
+  it("sorts nested formatted numbers by their complete value in both directions", () => {
+    const root = mount(
+      <Table
+        sortable
+        columns={["Amount"]}
+        rows={[
+          [
+            <strong key="two">
+              <em>2</em>
+            </strong>,
+          ],
+          [
+            <Fragment key="hundred">
+              1<span>00</span>
+            </Fragment>,
+          ],
+          [
+            {
+              text: (
+                <strong>
+                  1<em>2</em>
+                </strong>
+              ),
+              tone: "success",
+            },
+          ],
+          [3],
+          [
+            <span key="zero">
+              {null}
+              {false}
+              {0}
+            </span>,
+          ],
+        ]}
+      />,
+    );
+    const values = () => [...root.querySelectorAll("tbody td")].map((cell) => cell.textContent);
+    const button = root.querySelector<HTMLButtonElement>("th button")!;
+    act(() => button.click());
+    expect(values()).toEqual(["0", "2", "3", "12", "100"]);
+    act(() => button.click());
+    expect(values()).toEqual(["100", "12", "3", "2", "0"]);
+    act(() => button.click());
+    expect(values()).toEqual(["2", "100", "12", "3", "0"]);
+  });
+
   it("sorts figures as numbers, filters long tables and pages very long ones", () => {
     const root = mount(
       <Table
