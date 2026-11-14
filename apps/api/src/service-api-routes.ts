@@ -598,14 +598,26 @@ export const SERVICE_HANDLERS: Handlers = {
   async stopBot(context) {
     return context.client.threads.stop({ botId: botOf(context) });
   },
-  async listRuns({ client, credential, query }) {
+  async listRuns({ client, prisma, actor, credential, query }) {
     const { runs } = await client.runs.list({ filter: query?.filter ?? "active" });
     // Group chats are refused to a key limited to some bots, and their runs with them.
-    return {
-      runs: runs.filter(
-        (run) => mayReach(credential, run.botId) && (!credential.botIds.length || !run.groupId),
-      ),
-    };
+    const reachable = runs.filter(
+      (run) => mayReach(credential, run.botId) && (!credential.botIds.length || !run.groupId),
+    );
+    // Only the creator's runs, as everywhere else a key reads runs.
+    const own = new Set(
+      (
+        await prisma.run.findMany({
+          where: {
+            id: { in: reachable.map((run) => run.runId) },
+            spaceId: actor.spaceId,
+            userId: actor.userId,
+          },
+          select: { id: true },
+        })
+      ).map((run) => run.id),
+    );
+    return { runs: reachable.filter((run) => own.has(run.runId)) };
   },
 
   async getRun(context) {
