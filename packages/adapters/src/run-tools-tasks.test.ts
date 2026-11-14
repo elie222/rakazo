@@ -101,3 +101,104 @@ describe("routine tools in a group run", () => {
     expect(deleteMany).not.toHaveBeenCalled();
   });
 });
+
+describe("routine tools in a run that follows an API key's instructions", () => {
+  const keyRun = (existing?: { promptCredentialId: string | null }) => {
+    const create = vi.fn(async (args: { data: Record<string, unknown> }) => ({
+      id: "routine-new",
+      ...args.data,
+    }));
+    const updateMany = vi.fn(async (_args: { data: Record<string, unknown> }) => ({ count: 1 }));
+    const row = {
+      id: "routine-1",
+      name: "Daily",
+      prompt: "old",
+      threadId: "thread-1",
+      spaceId: "s",
+      botId: "b",
+      userId: "u",
+      crons: ["0 9 * * *"],
+      timezone: "UTC",
+      active: true,
+      watch: null,
+      nextRunAt: new Date(Date.now() + 60_000),
+      ...existing,
+    };
+    const ctx = {
+      deps: {
+        prisma: {
+          routine: {
+            create,
+            updateMany,
+            findMany: vi.fn(async () => []),
+            findFirst: vi.fn(async () => row),
+            findUnique: vi.fn(async () => row),
+            findUniqueOrThrow: vi.fn(async () => row),
+          },
+        },
+        events: { append: vi.fn(async () => undefined) },
+        jobs: { enqueue: vi.fn(async () => undefined), cancel: vi.fn(async () => undefined) },
+      },
+      run: {
+        id: "run-1",
+        spaceId: "s",
+        userId: "u",
+        threadId: "thread-1",
+        promptCredentialId: "key-1",
+      },
+      bot: { id: "b", name: "Bot" },
+      thread: { id: "thread-1", groupId: null },
+      computer: { graphical: false },
+      tools: { offered: [] },
+    } as unknown as RunContext;
+    const call = (name: string, args: Record<string, unknown>) =>
+      ({ name, args, finish: async (result: unknown) => result }) as unknown as ToolCall;
+    return { ctx, call, create, updateMany };
+  };
+
+  it("marks a routine schedule_create makes as the key's", async () => {
+    const { ctx, call, create } = keyRun();
+    await expect(
+      taskTools.schedule_create!(
+        ctx,
+        call("schedule_create", {
+          name: "Later",
+          prompt: "Message the other space",
+          timezone: "UTC",
+          delaySeconds: 60,
+        }),
+      ),
+    ).resolves.toMatchObject({ ok: true });
+    expect(create.mock.calls[0]![0].data).toMatchObject({
+      prompt: "Message the other space",
+      promptCredentialId: "key-1",
+    });
+  });
+
+  it("marks a prompt schedule_update rewrites, and leaves a rename alone", async () => {
+    const { ctx, call, updateMany } = keyRun({ promptCredentialId: null });
+    await taskTools.schedule_update!(
+      ctx,
+      call("schedule_update", { routineId: "routine-1", name: "Renamed" }),
+    );
+    expect(updateMany.mock.calls.at(-1)![0].data).not.toHaveProperty("promptCredentialId");
+    await taskTools.schedule_update!(
+      ctx,
+      call("schedule_update", { routineId: "routine-1", prompt: "Message the other space" }),
+    );
+    expect(updateMany.mock.calls.at(-1)![0].data).toMatchObject({
+      prompt: "Message the other space",
+      promptCredentialId: "key-1",
+    });
+  });
+
+  it("does not clear a key's mark when a run of the person's own rewrites the prompt", async () => {
+    const { ctx, call, updateMany } = keyRun({ promptCredentialId: "key-1" });
+    (ctx.run as { promptCredentialId: string | null }).promptCredentialId = null;
+    await taskTools.schedule_update!(
+      ctx,
+      call("schedule_update", { routineId: "routine-1", prompt: "Reworded by the bot" }),
+    );
+    expect(updateMany.mock.calls.at(-1)![0].data).not.toHaveProperty("promptCredentialId");
+  });
+});

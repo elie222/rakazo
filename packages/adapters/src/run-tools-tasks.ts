@@ -216,6 +216,7 @@ export const taskTools: ToolHandlers = {
       botId: bot.id,
       userId: run.userId,
       threadId: thread.id,
+      promptCredentialId: run.promptCredentialId,
       ...scheduleCreateFields(args),
     });
     return call.finish(created);
@@ -233,6 +234,7 @@ export const taskTools: ToolHandlers = {
         routineId: String(args.routineId ?? ""),
         name: isScheduleValueProvided(args.name) ? String(args.name) : undefined,
         prompt: isScheduleValueProvided(args.prompt) ? String(args.prompt) : undefined,
+        promptCredentialId: run.promptCredentialId,
         active: typeof args.active === "boolean" ? args.active : undefined,
         timezone: isScheduleValueProvided(args.timezone) ? String(args.timezone) : undefined,
         schedule: compactScheduleInput(scheduleTimingArgs(args)),

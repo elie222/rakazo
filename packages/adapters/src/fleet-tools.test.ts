@@ -101,6 +101,7 @@ function fakeFleet(input: {
     },
     user: { findUnique: vi.fn(async () => ({ timezone: input.timezone ?? null })) },
     $transaction: vi.fn(),
+    run: { findUnique: vi.fn(async () => ({ promptCredentialId: "key-1" })) },
     externalEffect: { findMany: vi.fn(async () => input.effects ?? []) },
     routine: {
       findFirst: vi.fn(async () => input.routines?.[0] ?? null),
@@ -1735,6 +1736,8 @@ describe("createChildRoutine", () => {
       data: expect.objectContaining({
         botId: "bot-writer",
         threadId: "thread-bot-writer",
+        // The child's routine inherits the key behind the run that scheduled it.
+        promptCredentialId: "key-1",
         active: true,
       }),
     });
