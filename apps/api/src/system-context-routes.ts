@@ -1,6 +1,3 @@
-import type { Hono } from "hono";
-import { inspectRoutes } from "hono/dev";
-
 /**
  * Requests under these paths run with a system database context, which bypasses row-level
  * security: account and session tables, signup bootstrap and account deletion span tenants, and
@@ -37,26 +34,3 @@ export const SYSTEM_CONTEXT_ROUTES: Readonly<Record<string, string>> = {
     "none: redirects to the web app, where the signed-in installer finishes; no database",
   "POST /api/v1/phone/webhook": "the platform's signature, checked by its adapter",
 };
-
-/** Whether a registered route pattern can answer a request under a `/base/*` path. */
-function answersUnder(routePath: string, contextPath: string): boolean {
-  const route = routePath.split("/");
-  for (const [index, segment] of contextPath.replace(/\/\*$/, "").split("/").entries()) {
-    const candidate = route[index];
-    if (candidate === "*") return true;
-    if (candidate !== segment && !candidate?.startsWith(":")) return false;
-  }
-  return true;
-}
-
-/** The routes an app serves with a system database context, as `METHOD /path`. */
-export function systemContextRoutes(app: Hono): string[] {
-  const routes = inspectRoutes(app)
-    .filter(
-      (route) =>
-        !route.isMiddleware &&
-        SYSTEM_CONTEXT_PATHS.some(([contextPath]) => answersUnder(route.path, contextPath)),
-    )
-    .map((route) => `${route.method} ${route.path}`);
-  return [...new Set(routes)].sort();
-}

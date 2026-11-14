@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { expect, it } from "vitest";
-import { SYSTEM_CONTEXT_PATHS, systemContextRoutes } from "./system-context-routes.js";
+import { SYSTEM_CONTEXT_PATHS } from "./system-context-routes.js";
+import { systemContextRoutes } from "./system-context-routes.test-support.js";
 
 it("lists every route that can answer under a system-context path", () => {
   const app = new Hono();

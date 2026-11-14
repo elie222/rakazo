@@ -3,7 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
 import { createApp } from "./app.js";
-import { SYSTEM_CONTEXT_ROUTES, systemContextRoutes } from "./system-context-routes.js";
+import { SYSTEM_CONTEXT_ROUTES } from "./system-context-routes.js";
+import { systemContextRoutes } from "./system-context-routes.test-support.js";
 
 const databaseUrl = process.env.VERIFY_DATABASE === "1" ? process.env.DATABASE_URL : undefined;
 
