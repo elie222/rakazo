@@ -32,6 +32,8 @@ export function createComputerUpdates(client: {
   let watching = false;
   // The server refused a read (signed out, or this build): nothing is asked again until rewatched.
   let refused = false;
+  // After a failed read, signals wait for its scheduled retry, which honors Retry-After.
+  let backoffUntil = 0;
   let revision = 0;
   let live = false;
   let fetching = false;
@@ -54,7 +56,8 @@ export function createComputerUpdates(client: {
           : inProgress()
             ? SIGNALLED_IN_PROGRESS_MS
             : SIGNALLED_IDLE_MS;
-    timer = setTimeout(() => void refresh(), delay);
+    if (failure !== undefined) backoffUntil = Date.now() + delay;
+    timer = setTimeout(() => void refresh(), Math.max(delay, backoffUntil - Date.now()));
   };
   const read = async () => {
     const epoch = generation;
@@ -69,6 +72,7 @@ export function createComputerUpdates(client: {
         again = true;
         return;
       }
+      backoffUntil = 0;
       if (JSON.stringify(state.updates) !== JSON.stringify(updates)) {
         state = {
           updates,
@@ -90,8 +94,9 @@ export function createComputerUpdates(client: {
     schedule(failure);
   };
   /** One read at a time; signals that arrive meanwhile become one more read. */
+  const mayRead = () => watching && !refused && Date.now() >= backoffUntil;
   const refresh = async () => {
-    if (!watching || refused) return;
+    if (!mayRead()) return;
     if (fetching) {
       again = true;
       return;
@@ -101,7 +106,7 @@ export function createComputerUpdates(client: {
       do {
         again = false;
         await read();
-      } while (again && watching);
+      } while (again && mayRead());
     } finally {
       fetching = false;
     }
@@ -110,6 +115,7 @@ export function createComputerUpdates(client: {
     generation++;
     watching = true;
     refused = false;
+    backoffUntil = 0;
     void refresh();
     return () => {
       generation++;

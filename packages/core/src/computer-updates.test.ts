@@ -186,6 +186,44 @@ describe("computer update presentation", () => {
     expect(list).toHaveBeenCalledTimes(3);
     stop();
   });
+  it("asks no more after a refusal, even when signalled during the refused read", async () => {
+    vi.useFakeTimers();
+    let reject!: (error: unknown) => void;
+    const list = vi.fn(
+      () =>
+        new Promise<ComputerUpdate[]>((_, fail) => {
+          reject = fail;
+        }),
+    );
+    const updates = store(list);
+    const stop = updates.watch();
+    updates.signalled();
+    reject(Object.assign(new Error("Unauthorized"), { status: 401 }));
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(list).toHaveBeenCalledTimes(1);
+    stop();
+  });
+  it("lets signals wait out a failed read's Retry-After", async () => {
+    vi.useFakeTimers();
+    let reject!: (error: unknown) => void;
+    const list = vi.fn(
+      () =>
+        new Promise<ComputerUpdate[]>((_, fail) => {
+          reject = fail;
+        }),
+    );
+    const updates = store(list);
+    const stop = updates.watch();
+    updates.signalled();
+    reject(Object.assign(new Error("Busy"), { status: 429, retryAfterMs: 20_000 }));
+    await vi.advanceTimersByTimeAsync(0);
+    updates.signalled();
+    await vi.advanceTimersByTimeAsync(19_000);
+    expect(list).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(list).toHaveBeenCalledTimes(2);
+    stop();
+  });
   it("stops polling when the server refuses this build", async () => {
     vi.useFakeTimers();
     const list = vi.fn(async (): Promise<ComputerUpdate[]> => {
