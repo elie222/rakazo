@@ -2,7 +2,9 @@
 
 A fork can publish signed macOS updates through the existing `release-desktop` workflow.
 Set the repository variable `DESKTOP_RELEASE_MAC_ONLY` to `true` to build only macOS. Leaving
-it unset retains the normal three-platform release. The packaged macOS update feed points to
+it unset retains the normal three-platform release. Use macOS-only mode only for repositories
+that distribute macOS exclusively: making a partial release the latest release interrupts update
+checks for existing Windows and Linux installations. The packaged macOS update feed points to
 the repository running the workflow; the app identity and signing checks stay unchanged.
 
 Configure these repository secrets for your own signing account:
