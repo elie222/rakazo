@@ -94,6 +94,23 @@ describe("Telegram messaging Markdown", () => {
     expect(visibleText).toBe(expected);
   });
 
+  it("keeps every link address when a long reply is split", () => {
+    const urls = Array.from({ length: 80 }, (_, i) => `https://example.com/articles/${i}`);
+    const body = `Sources:\n${urls
+      .map((url, i) => `${i + 1}. [Article ${i}](${url}) - a short summary of the article text`)
+      .join("\n")}`;
+    expect(body.length).toBeGreaterThan(4096);
+    const sent = splitOutboundBody("telegram", body).join("\n").replace(/\\(.)/g, "$1");
+    for (const url of urls) expect(sent).toContain(url);
+  });
+
+  it("keeps the address of a link in a reply that fits in one message", () => {
+    const body = "Read [the docs](https://example.com/docs/start) first.";
+    expect(splitOutboundBody("telegram", body).join("")).toContain(
+      "https://example.com/docs/start",
+    );
+  });
+
   it("keeps every split part in the plain-text fallback after Markdown rejection", async () => {
     const { surface, sends, threadId } = createSurface([
       "Bad Request: can't parse entities",
