@@ -1436,6 +1436,9 @@ model CloudAgent {
   messageId           String?
   remoteId            String?
   latestRunId         String?
+  /// The API key behind the run that launched or followed up this agent, if any. Copied to the run
+  /// that wakes when it finishes, so the key's instructions keep their mark.
+  promptCredentialId  String?
   title               String
   status              String   @default("running")
   url                 String   @default("")
@@ -1528,6 +1531,9 @@ model Purchase {
   botId        String
   threadId     String
   threadGeneration Int
+  /// The API key behind the run that made this purchase, if any. Copied to the run that wakes on
+  /// a status change, so the key's instructions keep their mark.
+  promptCredentialId String?
   provider     String
   remoteId     String
   merchantName String

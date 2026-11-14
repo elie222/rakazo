@@ -44,7 +44,7 @@ type PaidRequestResult = { result: unknown; redactions: string[] };
 export async function executePaidRequest(
   deps: PurchaseDeps,
   context: AdapterContext & { botId: string },
-  run: { threadId: string },
+  run: { threadId: string; promptCredentialId?: string | null },
   args: Record<string, unknown>,
 ): Promise<PaidRequestResult> {
   const provider = deps.paymentWallet;
