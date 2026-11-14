@@ -227,6 +227,37 @@ its work before proceeding; cleanup failure leaves remaining trials not run.
 Live evaluations run only through an explicit local CLI invocation. They are
 not scheduled by the nightly workflow.
 
+#### Reusing stored runs
+
+`--store <folder>` (or `EVAL_RUN_STORE`) points the CLI at a private folder of
+finished runs; it is opt-in and never inside this repository. A finished run is
+saved there as `<fingerprint>/report.json.gz` with one line in `index.jsonl`
+(fingerprint, model, case and judge versions, commit, date, pass counts, cost).
+
+Every report records a fingerprint per case and strategy: a hash of the first
+model request as sent (system prompt, tool definitions and replayed history,
+with record ids, dates and loopback ports normalized), the model settings, the
+case's fixture version and data, the reply mode and the tool-call limit. The
+run's fingerprint combines them. A commit that changes none of these, such as a
+UI or mobile change, keeps the fingerprint. The judge's model and rubric
+version are kept apart.
+
+With a store, each case's first request is fingerprinted before it is sent. If
+a stored run has the same fingerprint, its trials are taken as they are under
+the same judge, or graded again from their stored evidence under a different
+one, and the request is never sent; otherwise the case runs. Trials that failed
+for harness, provider, cleanup or time reasons are never reused. `--fresh`
+runs everything again. Each trial's `origin` and each case's `origin` counts in
+the summary say what was reused or regraded, and `workflowTotals` counts only
+new spend. Reports imported with `--import <report.json>` from before
+fingerprints are listed as legacy and never reused.
+
+The fingerprint sees what the model is asked first and the case's data, not
+code: when only a tool's output, a fake service's behaviour or a case's
+deterministic checks change, bump the case's fixture version or use `--fresh`.
+A case whose data states a date relative to the day it runs gets a new
+fingerprint each day.
+
 The September 2026 Luna/OpenRouter baseline passed all 15 cases over three
 trials each (45/45) after correcting the harness. The initial run passed 41/45:
 one shell command was falsely reported successful by the fake sandbox, and

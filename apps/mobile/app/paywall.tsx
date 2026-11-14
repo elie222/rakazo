@@ -49,6 +49,7 @@ import {
 } from "../lib/billing";
 import { endCallBeforeSessionEnd } from "../lib/call-session";
 import { translucentColor } from "../lib/color";
+import { useContentBottomInset } from "../lib/content-bottom-inset";
 import { dateLocaleForUi } from "../lib/i18n";
 import { useMobileTokens } from "../lib/native";
 import {
@@ -81,6 +82,7 @@ export default function Paywall() {
   const { t } = useLingui();
   const tokens = useMobileTokens();
   const insets = useSafeAreaInsets();
+  const contentBottomInset = useContentBottomInset();
   const router = useRouter();
   const dismissible = useLocalSearchParams<{ dismissible?: string }>().dismissible === "1";
   const [status, setStatus] = useState<BillingStatus | null>(null);
@@ -278,7 +280,10 @@ export default function Paywall() {
         style={[
           styles.screen,
           styles.center,
-          { backgroundColor: tokens.background, paddingBottom: insets.bottom + 16 },
+          {
+            backgroundColor: tokens.background,
+            paddingBottom: contentBottomInset + 16,
+          },
         ]}
       >
         <View style={styles.done}>
@@ -519,7 +524,7 @@ export default function Paywall() {
           {
             backgroundColor: tokens.background,
             borderTopColor: tokens.border,
-            paddingBottom: insets.bottom + 8,
+            paddingBottom: contentBottomInset + 8,
           },
         ]}
       >

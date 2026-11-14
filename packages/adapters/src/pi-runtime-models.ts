@@ -3,6 +3,7 @@ import type {
   Model,
   Models,
   ModelThinkingLevel,
+  MutableModels,
   ThinkingLevelMap,
 } from "@earendil-works/pi-ai";
 import { clampThinkingLevel } from "@earendil-works/pi-ai";
@@ -11,7 +12,7 @@ import type { AgentRunRequest } from "@rakazo/adapter-kit";
 import { canonicalPiProviderId, usableModelId } from "@rakazo/contracts";
 import { DEFAULT_OPENROUTER_MODEL_ID } from "./deployment-model.js";
 import { PiRuntimeCredentialStore, toOAuthCredential } from "./pi-credentials.js";
-import { liveModelSibling, withLiveImageInput } from "./pi-live-model.js";
+import { liveModelSibling, withLiveImageInput, withModelCapabilities } from "./pi-live-model.js";
 import { registerLocalProvider } from "./pi-local-provider.js";
 import { applyPiModelCompatibility } from "./pi-model-compat.js";
 import { CHATGPT_OAUTH_PROVIDER } from "./pi-oauth.js";
@@ -25,15 +26,19 @@ import {
   REASONING_MODEL_MAX_TOKENS,
   resolveCompletionMaxTokens,
 } from "./pi-runtime-limits.js";
+import { scopedRuntimeModels } from "./pi-runtime-scope.js";
 
 // Built on first use, not at module load: entry points call loadRootEnv() after
 // their imports, and ESM hoists those imports, so module-level env reads here
 // would run before .env is loaded and miss the local provider entirely.
 let catalogModelsCache: Models | undefined;
-function catalogModels(): Models {
-  catalogModelsCache ??= registerOpenAiCompatibleCatalog(
+export function createRuntimeModels(): MutableModels {
+  return registerOpenAiCompatibleCatalog(
     registerLocalProvider(applyPiModelCompatibility(builtinModels())),
   );
+}
+function catalogModels(): Models {
+  catalogModelsCache ??= createRuntimeModels();
   return catalogModelsCache;
 }
 
@@ -91,6 +96,7 @@ export function resolveRuntimeModel(modelConfig: AgentRunRequest["model"]): {
   const credentials = credentialStoreForRequest({ model: modelConfig }, provider);
   const models = modelsForRequest({ model: modelConfig }, provider, credentials);
   let model = models.getModel(provider, modelId);
+  const listed = model !== undefined;
   if (
     provider === "openrouter" &&
     !model &&
@@ -113,6 +119,9 @@ export function resolveRuntimeModel(modelConfig: AgentRunRequest["model"]): {
   }
   if (model && provider === CHATGPT_OAUTH_PROVIDER) {
     model = withLiveImageInput(model, modelConfig.acceptsImages);
+  }
+  if (model && !listed && provider !== OPENAI_COMPATIBLE_PROVIDER_ID) {
+    model = withModelCapabilities(model, modelConfig);
   }
   const apiKey = modelConfig.oauth
     ? undefined
@@ -172,7 +181,7 @@ export function modelsForRequest(
       contextWindow: request.model.contextWindow,
     });
   }
-  return catalogModels();
+  return scopedRuntimeModels() ?? catalogModels();
 }
 
 export function modelForCompletion(model: Model<Api>, configuredMaxTokens?: number): Model<Api> {

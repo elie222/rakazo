@@ -19,7 +19,7 @@ import { MarkdownLinkPrompt } from "./components/markdown-link-prompt";
 import { PageLoading } from "./components/PageLoading";
 import { SubscriptionGate } from "./components/SubscriptionGate";
 import { authClient } from "./lib/auth";
-import { getTicketBoardEnabled, subscribeTicketBoardEnabled } from "./lib/bootstrap";
+import { getLabs, subscribeLabs } from "./lib/bootstrap";
 import { syncCallIdentity } from "./lib/call-session";
 import { desktopBridge } from "./lib/desktop";
 import { syncWebLogoAvatarIdentity } from "./lib/logo-avatar-activity";
@@ -113,9 +113,9 @@ export function App() {
 function SessionApp() {
   const [searchParams] = useSearchParams();
   const next = signInNext(searchParams.get("next"));
-  const ticketBoardEnabled = useSyncExternalStore(
-    subscribeTicketBoardEnabled,
-    getTicketBoardEnabled,
+  const boardEnabled = useSyncExternalStore(
+    subscribeLabs,
+    () => getLabs().includes("board"),
     () => false,
   );
   const session = authClient.useSession();
@@ -188,22 +188,32 @@ function SessionApp() {
                   />
                 }
               />
-              <Route
-                path="/sign-in"
-                element={
-                  user ? <Navigate to={next ?? "/app"} replace /> : <AuthPage key="in" mode="in" />
-                }
-              />
-              <Route
-                path="/sign-up"
-                element={
-                  user ? (
-                    <Navigate to={newAccountDestination(next)} replace />
-                  ) : (
-                    <AuthPage key="up" mode="up" />
-                  )
-                }
-              />
+              {["/sign-in", "/sign-in/email"].map((path) => (
+                <Route
+                  key={path}
+                  path={path}
+                  element={
+                    user ? (
+                      <Navigate to={next ?? "/app"} replace />
+                    ) : (
+                      <AuthPage key={path} mode="in" />
+                    )
+                  }
+                />
+              ))}
+              {["/sign-up", "/sign-up/email"].map((path) => (
+                <Route
+                  key={path}
+                  path={path}
+                  element={
+                    user ? (
+                      <Navigate to={newAccountDestination(next)} replace />
+                    ) : (
+                      <AuthPage key={path} mode="up" />
+                    )
+                  }
+                />
+              ))}
               <Route
                 path="/forgot-password"
                 element={
@@ -292,7 +302,7 @@ function SessionApp() {
                   <Route path="/onboarding/:step?" element={<OnboardingPage />} />
                   <Route path="/app/artifacts" element={<ArtifactsPage />} />
                   <Route path="/app/artifacts/:artifactId" element={<ArtifactsPage />} />
-                  {ticketBoardEnabled ? <Route path="/app/board" element={<BoardPage />} /> : null}
+                  {boardEnabled ? <Route path="/app/board" element={<BoardPage />} /> : null}
                   <Route path="/app/x/:linkId" element={<NavLinkPage />} />
                 </Route>
               </Route>

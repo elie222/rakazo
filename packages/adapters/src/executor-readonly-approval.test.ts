@@ -14,7 +14,7 @@ import type { PrismaClient } from "@rakazo/db";
 import { createPendingSteeringRun, sendUserMessage } from "@rakazo/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DENIED_ACTION_ERROR, isApprovalPausedResult } from "./approval-effect.js";
-import { MAX_SHARED_MEMORY_CHARS } from "./builtin-tools.js";
+import { MAX_SHARED_MEMORY_CHARS } from "./builtin.tool-definition.js";
 import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
 import { createRunExecutor } from "./executor.js";
 import { fakeSpendingPrisma } from "./fake-spending.js";
@@ -460,6 +460,10 @@ function fixture({
       })),
     },
     taughtSkill: { findMany: vi.fn(async () => []), findFirst: vi.fn(async () => null) },
+    computer: {
+      findUnique: vi.fn(async () => null),
+      updateMany: vi.fn(async () => ({ count: 0 })),
+    },
     chatGroup: { findMany: vi.fn(async () => []) },
     botSection: { findMany: vi.fn(async () => []) },
     vaultCredential: { findMany: vi.fn(async () => []) },

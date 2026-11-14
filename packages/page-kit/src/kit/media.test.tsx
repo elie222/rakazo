@@ -391,6 +391,38 @@ describe("calendar", () => {
     render(<MonthView month="soon" />);
   });
 
+  it("sizes a week from visible events only, including the first and last day", () => {
+    render(
+      <WeekView
+        week="2026-11-09"
+        events={[
+          { date: "2026-11-08", start: 0, end: 1, title: "Previous week" },
+          { date: " 2026-11-09 ", start: 9, end: 10, title: "First day" },
+          { date: "2026-11-15", start: 10, end: 11, title: "Last day" },
+          { date: "2026-11-16", start: 22, end: 23, title: "Next week" },
+        ]}
+      />,
+    );
+    expect((host.querySelector(".rk-cal-body") as HTMLElement).style.height).toBe("88px");
+    expect(host.textContent).toContain("First day");
+    expect(host.textContent).toContain("Last day");
+    expect(host.textContent).not.toContain("Previous week");
+    expect(host.textContent).not.toContain("Next week");
+  });
+
+  it("uses the empty-week range when every event is outside the displayed days", () => {
+    render(
+      <WeekView
+        week="2026-12-28"
+        events={[
+          { date: "2026-12-27", start: 0, end: 1, title: "Before" },
+          { date: "2027-01-04", start: 22, end: 23, title: "After" },
+        ]}
+      />,
+    );
+    expect((host.querySelector(".rk-cal-body") as HTMLElement).style.height).toBe("440px");
+  });
+
   it("places week events by hour and draws the now line only on today", () => {
     render(
       <WeekView

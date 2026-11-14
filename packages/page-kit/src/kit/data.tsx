@@ -274,7 +274,9 @@ export type TableCell =
   | { text: ReactNode; tone?: Tone };
 
 function cellContent(cell: TableCell): ReactNode {
-  if (cell === null || typeof cell !== "object" || isValidElement(cell)) return cell as ReactNode;
+  if (cell === null || typeof cell !== "object" || isValidElement(cell) || Array.isArray(cell)) {
+    return cell as ReactNode;
+  }
   if (!("text" in cell)) return null;
   const tone = toneClass(cell.tone);
   return tone ? <span className={tone}>{cell.text}</span> : cell.text;
@@ -303,13 +305,14 @@ const LONG_TABLE = 15;
 const PAGE_ROWS = 200;
 
 function cellText(cell: TableCell): string {
+  if (Array.isArray(cell)) return cell.map((item) => cellText(item)).join("");
   if (typeof cell === "string" || typeof cell === "number") return String(cell);
   if (cell && typeof cell === "object" && !isValidElement(cell) && "text" in cell) {
     return cellText(cell.text as TableCell);
   }
   if (isValidElement(cell)) {
     const children = (cell.props as { children?: unknown }).children;
-    return typeof children === "string" || typeof children === "number" ? String(children) : "";
+    return cellText(children as TableCell);
   }
   return "";
 }

@@ -220,7 +220,14 @@ describe("recall outcome grading", () => {
     const reply = (id: string) => scenario(id).history!.messages[3]!;
     expect(reply("tool-steps-replayed-bare").text).toBe("Done.");
     expect(reply("tool-steps-replayed").text).toMatch(/^Done\. .+dark/);
-    expect(reply("tool-steps-replayed-bare").steps).toEqual(reply("tool-steps-replayed").steps);
+    // Each fixture dates its screen capture from its own build time, so compare without it.
+    const undated = (id: string) =>
+      JSON.stringify(reply(id).steps).replace(/capturedAt[^,]*/, "capturedAt");
+    expect(undated("tool-steps-replayed-bare")).toBe(undated("tool-steps-replayed"));
+    const capture = JSON.stringify(reply("tool-steps-replayed").steps).match(
+      /capturedAt\\":\\"([^\\]+)/,
+    )?.[1];
+    expect(Date.parse(capture!)).toBeGreaterThan(reply("tool-steps-replayed").createdAt.getTime());
   });
 
   it("shows the overclaim judge the record and what the bot checked just now", () => {
@@ -416,9 +423,10 @@ describe("recall outcome grading", () => {
       expect(new Set(anchors.map((a) => a.pass))).toEqual(new Set([true, false]));
     }
   });
+
   it("loads extra cases from a file, checked and graded like the built-in ones", () => {
     const file = path.join(mkdtempSync(path.join(tmpdir(), "recall-cases-")), "cases.jsonl");
-    const steps = [{ label: "Shell", count: 1, note: "Checking free space." }];
+    const steps = [{ label: "Shell", tool: "shell", count: 1, calls: [{ arguments: "{}" }] }];
     writeFileSync(
       file,
       [

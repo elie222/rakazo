@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 
 import type { ReactElement } from "react";
-import { act, StrictMode } from "react";
+import { act, Fragment, StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Bars, LineChart, Pie } from "./charts.js";
-import { Metrics, Table } from "./data.js";
+import { Metrics, Status, Table } from "./data.js";
 import {
   CalendarHeatmap,
   ColumnSeries,
@@ -47,6 +47,12 @@ const key = (target: Element, name: string) =>
   act(() => {
     target.dispatchEvent(new KeyboardEvent("keydown", { key: name, bubbles: true }));
   });
+const pointer = (target: Element, type: string, pointerType = "touch") =>
+  act(() => {
+    const event = new MouseEvent(type, { bubbles: true, clientX: 100, clientY: 50 });
+    Object.defineProperty(event, "pointerType", { value: pointerType });
+    target.dispatchEvent(event);
+  });
 const tip = (root: Element) => root.querySelector(".rk-tip")?.textContent ?? null;
 /** Charts measure their box; jsdom has none, so each observed box reports this width. */
 function stubWidth(width: number) {
@@ -85,6 +91,54 @@ describe("charts", () => {
     const chosen = mount(<Columns points={points} emphasis="none" />);
     expect(chosen.querySelectorAll("svg > g[data-emphasis]")).toHaveLength(3);
     expect(mount(<Columns points={[]} />).textContent).toBe("No data");
+  });
+
+  it("keeps a touch selection after release and dismisses it outside the chart", () => {
+    const root = mount(<Columns points={[{ label: "Jan", value: 12 }]} />);
+    const svg = root.querySelector('svg[role="img"]')!;
+    key(svg, "Home");
+    pointer(svg, "pointerdown");
+    expect(tip(root)).toBe("Jan12");
+    pointer(svg, "pointerup");
+    pointer(svg, "pointerout");
+    expect(tip(root)).toBe("Jan12");
+    pointer(document.body, "pointerdown");
+    expect(tip(root)).toBeNull();
+
+    pointer(svg, "pointerdown");
+    pointer(svg, "pointercancel");
+    pointer(svg, "pointerout");
+    expect(tip(root)).toBeNull();
+    pointer(svg, "pointerdown");
+    key(svg, "Escape");
+    expect(tip(root)).toBeNull();
+    pointer(svg, "pointermove", "mouse");
+    expect(tip(root)).toBe("Jan12");
+    pointer(svg, "pointerout", "mouse");
+    expect(tip(root)).toBeNull();
+    key(svg, "Home");
+    expect(tip(root)).toBe("Jan12");
+    act(() => svg.dispatchEvent(new FocusEvent("focusout", { bubbles: true })));
+    expect(tip(root)).toBeNull();
+  });
+
+  it("moves touch selection between charts without leaving the first tip open", () => {
+    const root = mount(
+      <>
+        <Columns points={[{ label: "Jan", value: 12 }]} />
+        <Columns points={[{ label: "Feb", value: 35 }]} />
+      </>,
+    );
+    const [first, second] = root.querySelectorAll('svg[role="img"]');
+    pointer(first!, "pointerdown");
+    pointer(first!, "pointerout");
+    expect(tip(root)).toBe("Jan12");
+    pointer(second!, "pointerdown");
+    pointer(second!, "pointerout");
+    expect(root.querySelectorAll(".rk-tip")).toHaveLength(1);
+    expect(tip(root)).toBe("Feb35");
+    pointer(document.body, "pointerdown");
+    expect(tip(root)).toBeNull();
   });
 
   it("stacks series to a round ceiling, marks a reference and totals the stack in its tip", () => {
@@ -819,6 +873,157 @@ describe("data display", () => {
     act(() => root.unmount());
     unmounted = true;
     expect(observers[1]!.disconnect).toHaveBeenCalledOnce();
+  });
+
+  it("renders React node arrays in table cells like fragments", () => {
+    const tags = ["Ready", "Reviewed"].map((tag) => <Status key={tag}>{tag}</Status>);
+    const root = mount(
+      <Table
+        columns={["Tags"]}
+        rows={[
+          [tags],
+          [<Fragment key="tags">{tags}</Fragment>],
+          [["Count: ", 0, null, false, [<strong key="nested">Nested</strong>]]],
+          [[]],
+          [{ text: tags, tone: "success" }],
+          ["Plain"],
+          [42],
+          [null],
+        ]}
+      />,
+    );
+    const cells = [...root.querySelectorAll("tbody td")];
+    expect(cells.map((cell) => cell.textContent)).toEqual([
+      "ReadyReviewed",
+      "ReadyReviewed",
+      "Count: 0Nested",
+      "",
+      "ReadyReviewed",
+      "Plain",
+      "42",
+      "",
+    ]);
+    expect(cells[0]!.innerHTML).toBe(cells[1]!.innerHTML);
+    expect(cells[2]!.querySelector("strong")?.textContent).toBe("Nested");
+  });
+
+  it("filters rows by labels rendered in array cells", () => {
+    const root = mount(
+      <Table
+        columns={["Tags"]}
+        rows={Array.from({ length: 16 }, (_, i) => [
+          [<Status key="tag">{i === 0 ? "Ready" : "Pending"}</Status>],
+        ])}
+      />,
+    );
+    const filter = root.querySelector<HTMLInputElement>("input")!;
+    act(() => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+      setter.call(filter, "Ready");
+      filter.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect([...root.querySelectorAll("tbody td")].map((cell) => cell.textContent)).toEqual([
+      "Ready",
+    ]);
+  });
+
+  it("filters nested formatting, fragments and toned cells by their full text", () => {
+    const root = mount(
+      <Table
+        columns={["Location"]}
+        rows={[
+          [
+            <strong key="north">
+              North <em>Depot</em>
+            </strong>,
+          ],
+          [
+            <Fragment key="south">
+              South{" "}
+              <span>
+                <em>Depot</em>
+              </span>
+            </Fragment>,
+          ],
+          [
+            {
+              text: (
+                <strong>
+                  West <em>Depot</em>
+                </strong>
+              ),
+              tone: "success",
+            },
+          ],
+          ...Array.from({ length: 13 }, (_, i) => [`Office ${i}`]),
+        ]}
+      />,
+    );
+    const filter = root.querySelector<HTMLInputElement>("input")!;
+    const search = (value: string) =>
+      act(() => {
+        const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+        setter.call(filter, value);
+        filter.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+    search("Depot");
+    expect([...root.querySelectorAll("tbody td")].map((cell) => cell.textContent)).toEqual([
+      "North Depot",
+      "South Depot",
+      "West Depot",
+    ]);
+    search("North Depot");
+    expect(root.querySelectorAll("tbody tr")).toHaveLength(1);
+    expect(root.querySelector("tbody td")?.textContent).toBe("North Depot");
+    search("Office 12");
+    expect(root.querySelector("tbody td")?.textContent).toBe("Office 12");
+  });
+
+  it("sorts nested formatted numbers by their complete value in both directions", () => {
+    const root = mount(
+      <Table
+        sortable
+        columns={["Amount"]}
+        rows={[
+          [
+            <strong key="two">
+              <em>2</em>
+            </strong>,
+          ],
+          [
+            <Fragment key="hundred">
+              1<span>00</span>
+            </Fragment>,
+          ],
+          [
+            {
+              text: (
+                <strong>
+                  1<em>2</em>
+                </strong>
+              ),
+              tone: "success",
+            },
+          ],
+          [3],
+          [
+            <span key="zero">
+              {null}
+              {false}
+              {0}
+            </span>,
+          ],
+        ]}
+      />,
+    );
+    const values = () => [...root.querySelectorAll("tbody td")].map((cell) => cell.textContent);
+    const button = root.querySelector<HTMLButtonElement>("th button")!;
+    act(() => button.click());
+    expect(values()).toEqual(["0", "2", "3", "12", "100"]);
+    act(() => button.click());
+    expect(values()).toEqual(["100", "12", "3", "2", "0"]);
+    act(() => button.click());
+    expect(values()).toEqual(["2", "100", "12", "3", "0"]);
   });
 
   it("sorts figures as numbers, filters long tables and pages very long ones", () => {

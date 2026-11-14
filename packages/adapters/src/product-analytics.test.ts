@@ -26,6 +26,28 @@ describe("content-free product analytics", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
+  it("logs events locally for the emulator without a key or network", async () => {
+    const fetch = vi.fn();
+    const analytics = createProductAnalytics({ ANALYTICS_PROVIDER: "emulator" }, fetch)!;
+    analytics.capture("internal-user-id", { name: "signed_in" });
+    await analytics.flush();
+    expect(fetch).not.toHaveBeenCalled();
+    expect(
+      createProductAnalytics({ ANALYTICS_PROVIDER: "emulator", NODE_ENV: "production" }, fetch),
+    ).toBeUndefined();
+  });
+
+  it("tags events with the variants of the running experiments", async () => {
+    const fetch = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
+    const analytics = createProductAnalytics(env, fetch)!;
+    analytics.capture("internal-user-id", { name: "signed_in" }, undefined, {
+      "plan-layout": "tiers",
+    });
+    await analytics.flush();
+    const body = JSON.parse(fetch.mock.calls[0]![1].body);
+    expect(body.batch[0].properties["$feature/plan-layout"]).toBe("tiers");
+  });
+
   it("only exports an allowlisted event and a pseudonymous identity", async () => {
     const fetch = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
     const analytics = createProductAnalytics(env, fetch)!;

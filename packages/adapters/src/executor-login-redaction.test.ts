@@ -186,6 +186,7 @@ async function runAfterFill(
     task: { findUniqueOrThrow: vi.fn(async () => ({ id: run.taskId, prompt: "Check the site" })) },
     computer: {
       updateMany: vi.fn(async () => ({ count: 1 })),
+      findUnique: vi.fn(async () => null),
       findFirst: vi.fn(async () => ({
         state: "running",
         restorePending: false,

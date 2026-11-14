@@ -515,6 +515,27 @@ describe("thread composer isolation", () => {
     expect(onEmptied).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps shared text when an earlier typing selection arrives late", () => {
+    type("draft");
+    act(() => composer.current!.insert("shared text"));
+    expect(composer.current!.snapshot().promptText).toBe("draft\nshared text");
+    select(5);
+    expect(field().value).toBe("draftshared text");
+    expect(composer.current!.snapshot().promptText).toBe("draft\nshared text");
+    type("draft\nshared text!");
+    select(18);
+    expect(composer.current!.snapshot().promptText).toBe("draft\nshared text!");
+  });
+
+  it("appends repeated shares to an empty or settled draft", () => {
+    act(() => composer.current!.insert("first"));
+    select(5);
+    act(() => composer.current!.insert("second"));
+    select(12);
+    expect(composer.current!.snapshot().promptText).toBe("first\nsecond");
+    expect(props.send).not.toHaveBeenCalled();
+  });
+
   it("keeps inserted text when backspacing into a mention afterwards", () => {
     type("ask @He");
     press("@{name}");

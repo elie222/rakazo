@@ -1,10 +1,10 @@
 import { FLEET_WRITE_TOOL_NAMES } from "@rakazo/contracts";
 import { runReadsThreadHistory, toolRequiresExplicitApproval } from "@rakazo/core";
-import { MODEL_CANNOT_SEE_MESSAGE } from "./model-vision.js";
-import { replyGuidanceForOfferedTools } from "./run-replies.js";
+import { MODEL_CANNOT_SEE_MESSAGE } from "./model-vision.prompt.js";
+import { replyGuidanceForOfferedTools } from "./run-replies.prompt.js";
 import type { UserComputerState } from "./run-tools-user-computer.js";
 import { SCHEDULE_TOOL_NAMES } from "./schedule-tools.js";
-import { DESKTOP_HELD_FOR_TAKEOVER_MESSAGE } from "./takeover-resume.js";
+import { DESKTOP_HELD_FOR_TAKEOVER_MESSAGE } from "./takeover-resume.prompt.js";
 
 /** Added to the turn prompt when the user spoke this message on a live voice call. */
 const VOICE_CALL_BASE_INSTRUCTION =
@@ -16,6 +16,24 @@ export function voiceCallInstruction(disabled?: ReadonlySet<string>): string {
   return builtinOffered(disabled, "end_call")
     ? VOICE_CALL_INSTRUCTION
     : VOICE_CALL_BASE_INSTRUCTION;
+}
+
+/** Opens the computer guidance on every run that has a computer. */
+export const COMPUTER_USE_INSTRUCTION =
+  "Use the computer only when the task needs files, commands, a browser, or an installed application. Answer directly from the conversation when sufficient; use connected tools for app data. A website with no connected app is still yours to use in the computer's browser, now and in scheduled routines, so a missing connection alone is never a reason to decline. Do not inspect the computer just to prepare for an unrelated task. If what you are about to buy, send or submit differs from what the user confirmed, such as a changed item or total, show the difference and confirm again first.";
+
+export const PRIVATE_WORKSPACE_INSTRUCTION =
+  "This entire computer workspace is your private home. Relative file paths and shell working directories start at its root.";
+
+/** Where commands run when the computer is a host with its own shell rather than a sandbox. */
+export function hostComputerInstruction(
+  computerKind: string | undefined,
+  host: { home: unknown; shell: unknown; platform: string },
+): string {
+  const shell = `Home: ${JSON.stringify(host.home)}. Shell: ${JSON.stringify(host.shell)}. The shell tool executes commands with that shell. Use its native syntax, paths and installed tools; do not assume Linux or bash.`;
+  return computerKind === "wuying"
+    ? `Commands run on a Windows cloud computer. ${shell} Files outside the bot workspace can be accessed through commands. The screen shows the Windows desktop; use the graphical tools for apps without a command line.`
+    : `Commands run on the user's ${host.platform} computer with their account permissions. ${shell} Local files outside the bot workspace can be accessed through commands. App launching is available through OS commands; graphical screen control is unavailable.`;
 }
 
 /** Cap the roster so a large Space cannot flood the prompt. */

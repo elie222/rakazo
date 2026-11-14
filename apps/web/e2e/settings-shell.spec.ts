@@ -145,6 +145,10 @@ test("settings shell is two-pane and deep-links Models Memory Voice Usage", asyn
   await deleteAccount.scrollIntoViewIfNeeded();
   await expect(deleteAccount).toBeVisible();
   await captureScreenshot(page, testInfo, "settings-general-delete-account");
+  await deleteAccount.click();
+  await expect(settings.getByLabel("Current password", { exact: true })).toBeVisible();
+  await captureScreenshot(page, testInfo, "settings-general-delete-confirmation");
+  await deleteAccount.click();
 
   await settings.getByTestId("settings-nav-models").click();
   await expect(settings).toHaveAttribute("data-settings-section", "models");
