@@ -994,9 +994,9 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     const actor = await actorFromMembership(
       requireMembership(
         prisma,
-        session.user.id,
+        session.user,
         request.headers.get("x-rakazo-space-id"),
-        session.session.id,
+        session.session,
       ),
     );
     return actor && { actor, sessionId: session.session.id };

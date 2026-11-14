@@ -250,12 +250,16 @@ describePostgres("organizations (PostgreSQL)", () => {
     // A helper started in Work and the turn relaying its result finish after the user moved on.
     await finishedRun(work.id, "helper", new Date(start + 1_000));
     await finishedRun(work.id, "helper_result", new Date(start + 2_000));
-    await expect(requireMembership(system, ada.userId)).resolves.toMatchObject({
+    await expect(
+      requireMembership(system, { id: ada.userId, email: ada.email }),
+    ).resolves.toMatchObject({
       spaceId: ada.spaceId,
     });
 
     await finishedRun(work.id, "user", new Date(start + 3_000));
-    await expect(requireMembership(system, ada.userId)).resolves.toMatchObject({
+    await expect(
+      requireMembership(system, { id: ada.userId, email: ada.email }),
+    ).resolves.toMatchObject({
       spaceId: work.id,
     });
   });
