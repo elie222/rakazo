@@ -469,6 +469,131 @@ describe("nextCronDate", () => {
   });
 });
 
+describe("nextCronDate across clock changes", () => {
+  const runsFrom = (cron: string, from: string, timezone: string, count: number) => {
+    const runs: string[] = [];
+    let at = new Date(from);
+    for (let run = 0; run < count; run++) {
+      at = nextCronDate(cron, at, timezone);
+      runs.push(at.toISOString());
+    }
+    return runs;
+  };
+
+  it.each([
+    // New York repeats 01:00-02:00 on 1 November: 05:00Z-06:00Z, then 06:00Z-07:00Z.
+    ["* * * * *", "2026-11-01T06:00:00Z", "America/New_York", "2026-11-01T07:00:00.000Z"],
+    ["* * * * *", "2026-11-01T06:30:00Z", "America/New_York", "2026-11-01T07:00:00.000Z"],
+    ["*/15 * * * *", "2026-11-01T06:20:00Z", "America/New_York", "2026-11-01T07:00:00.000Z"],
+    ["30 1 * * *", "2026-11-01T06:00:00Z", "America/New_York", "2026-11-02T06:30:00.000Z"],
+    // Berlin repeats 02:00-03:00 on 25 October: 00:00Z-01:00Z, then 01:00Z-02:00Z.
+    ["30 2 * * *", "2026-10-25T01:00:00Z", "Europe/Berlin", "2026-10-26T01:30:00.000Z"],
+    ["30 2 * * *", "2026-10-25T01:30:00Z", "Europe/Berlin", "2026-10-26T01:30:00.000Z"],
+    // Lord Howe repeats only 01:30-02:00 on 5 April: 14:30Z-15:00Z, then 15:00Z-15:30Z.
+    ["* * * * *", "2026-04-04T15:00:00Z", "Australia/Lord_Howe", "2026-04-04T15:30:00.000Z"],
+    ["45 1 * * *", "2026-04-04T15:00:00Z", "Australia/Lord_Howe", "2026-04-05T15:15:00.000Z"],
+  ])(
+    "never returns a past time for %s from %s in a repeated hour (%s)",
+    (cron, from, timezone, expected) => {
+      const next = nextCronDate(cron, new Date(from), timezone);
+      expect(next.getTime()).toBeGreaterThan(new Date(from).getTime());
+      expect(next.toISOString()).toBe(expected);
+    },
+  );
+
+  it.each([
+    [
+      "30 1 * * *",
+      "2026-10-31T12:00:00Z",
+      "America/New_York",
+      "2026-11-01T05:30:00.000Z",
+      "2026-11-02T06:30:00.000Z",
+    ],
+    [
+      "30 2 * * *",
+      "2026-10-24T12:00:00Z",
+      "Europe/Berlin",
+      "2026-10-25T00:30:00.000Z",
+      "2026-10-26T01:30:00.000Z",
+    ],
+    [
+      "45 1 * * *",
+      "2026-04-04T12:00:00Z",
+      "Australia/Lord_Howe",
+      "2026-04-04T14:45:00.000Z",
+      "2026-04-05T15:15:00.000Z",
+    ],
+  ])(
+    "runs a repeated time once, the first time it comes round (%s, %s, %s)",
+    (cron, from, timezone, first, following) => {
+      expect(runsFrom(cron, from, timezone, 2)).toEqual([first, following]);
+    },
+  );
+
+  it.each([
+    // New York skips 02:00-03:00 on 8 March; 03:00 is 07:00Z.
+    [
+      "30 2 * * *",
+      "2026-03-07T12:00:00Z",
+      "America/New_York",
+      "2026-03-08T07:00:00.000Z",
+      "2026-03-09T06:30:00.000Z",
+    ],
+    // Berlin skips 02:00-03:00 on 29 March; 03:00 is 01:00Z.
+    [
+      "30 2 * * *",
+      "2026-03-28T12:00:00Z",
+      "Europe/Berlin",
+      "2026-03-29T01:00:00.000Z",
+      "2026-03-30T00:30:00.000Z",
+    ],
+    // Lord Howe skips only 02:00-02:30 on 4 October; 02:30 is 15:30Z.
+    [
+      "15 2 * * *",
+      "2026-10-03T12:00:00Z",
+      "Australia/Lord_Howe",
+      "2026-10-03T15:30:00.000Z",
+      "2026-10-04T15:15:00.000Z",
+    ],
+    // Cairo skips 00:00-01:00 on 24 April; 01:00 is 22:00Z.
+    [
+      "30 0 * * *",
+      "2026-04-23T12:00:00Z",
+      "Africa/Cairo",
+      "2026-04-23T22:00:00.000Z",
+      "2026-04-24T21:30:00.000Z",
+    ],
+  ])(
+    "runs a skipped time once the clocks have moved, then returns to it (%s, %s, %s)",
+    (cron, from, timezone, moved, following) => {
+      expect(runsFrom(cron, from, timezone, 2)).toEqual([moved, following]);
+    },
+  );
+
+  it("runs once at the end of a skipped hour for every time inside it", () => {
+    expect(runsFrom("*/20 * * * *", "2026-03-08T06:30:00Z", "America/New_York", 3)).toEqual([
+      "2026-03-08T06:40:00.000Z",
+      "2026-03-08T07:00:00.000Z",
+      "2026-03-08T07:20:00.000Z",
+    ]);
+  });
+
+  it("keeps a zone without clock changes on its fixed offset across the same dates", () => {
+    for (const from of ["2026-03-07T12:00:00Z", "2026-10-24T12:00:00Z", "2026-10-31T12:00:00Z"]) {
+      const day = new Date(from).getTime() + 86_400_000;
+      // 02:30 in Kolkata is always 21:00Z the day before.
+      expect(runsFrom("30 2 * * *", from, "Asia/Kolkata", 2)).toEqual([
+        new Date(new Date(from).getTime() + 9 * 3_600_000).toISOString(),
+        new Date(day + 9 * 3_600_000).toISOString(),
+      ]);
+    }
+    expect(runsFrom("* * * * *", "2026-11-01T06:00:00Z", "Asia/Kolkata", 2)).toEqual([
+      "2026-11-01T06:01:00.000Z",
+      "2026-11-01T06:02:00.000Z",
+    ]);
+  });
+});
+
 describe("isOneShotRoutineCrons", () => {
   it("is one-shot only for a single @once schedule", () => {
     expect(isOneShotRoutineCrons([ONCE_ROUTINE_CRON])).toBe(true);
@@ -625,6 +750,56 @@ describe("anchored routine intervals", () => {
         new Date(expected),
       );
     }
+  });
+
+  it("returns a day interval to midnight after a run lands in a skipped hour", () => {
+    // Cairo has no midnight on 24 April, so that run moves to 01:00 (22:00Z).
+    const start = new Date("2026-04-21T22:00:00Z");
+    const runs: Date[] = [];
+    let anchor = start;
+    for (let run = 0; run < 4; run++) {
+      anchor = nextRoutineRunDate("0 0 */2 * *", anchor, anchor, "Africa/Cairo");
+      runs.push(anchor);
+    }
+    expect(runs).toEqual([
+      new Date("2026-04-23T22:00:00Z"),
+      new Date("2026-04-25T21:00:00Z"),
+      new Date("2026-04-27T21:00:00Z"),
+      new Date("2026-04-29T21:00:00Z"),
+    ]);
+    // Catching up from the first anchor lands on the same runs as stepping through them.
+    for (const [index, run] of runs.entries()) {
+      const previous = runs[index - 1] ?? start;
+      expect(nextRoutineRunDate("0 0 */2 * *", start, previous, "Africa/Cairo")).toEqual(run);
+    }
+  });
+
+  it.each([
+    // Cairo repeats 23:00-00:00 on 29 October; midnight after it is on standard time.
+    ["Africa/Cairo", "2026-10-27T21:00:00Z", ["2026-10-29T22:00:00Z", "2026-10-31T22:00:00Z"]],
+    // Havana repeats 00:00-01:00 on 1 November; the run takes the first midnight.
+    ["America/Havana", "2026-10-30T04:00:00Z", ["2026-11-01T04:00:00Z", "2026-11-03T05:00:00Z"]],
+    ["Asia/Kolkata", "2026-04-21T18:30:00Z", ["2026-04-23T18:30:00Z", "2026-04-25T18:30:00Z"]],
+  ])(
+    "keeps a day interval at midnight when clocks go back or never change (%s)",
+    (timezone, start, expected) => {
+      let anchor = new Date(start);
+      for (const iso of expected) {
+        anchor = nextRoutineRunDate("0 0 */2 * *", anchor, anchor, timezone);
+        expect(anchor).toEqual(new Date(iso));
+      }
+    },
+  );
+
+  it("stays strictly after now for an hourly interval in a repeated hour", () => {
+    const anchor = new Date("2026-11-01T05:00:00Z");
+    const now = new Date("2026-11-01T06:10:00Z");
+    expect(nextRoutineRunDate("0 */1 * * *", anchor, now, "America/New_York")).toEqual(
+      new Date("2026-11-01T07:00:00Z"),
+    );
+    expect(nextRoutineRunDate("*/10 * * * *", anchor, now, "America/New_York")).toEqual(
+      new Date("2026-11-01T07:00:00Z"),
+    );
   });
 
   it.each([
