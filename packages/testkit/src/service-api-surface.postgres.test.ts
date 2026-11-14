@@ -9,7 +9,7 @@ import type {
   ServiceRouteDefinition,
   ServiceScope,
 } from "@rakazo/contracts";
-import { SERVICE_API_PREFIX, SERVICE_ROUTES, SERVICE_SCOPES } from "@rakazo/contracts";
+import { readScopeOf, SERVICE_API_PREFIX, SERVICE_ROUTES, SERVICE_SCOPES } from "@rakazo/contracts";
 import { isOwnerStartedRun } from "@rakazo/core";
 import { createPendingSteeringRun } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -226,7 +226,10 @@ describeWithDatabase("service API surface", () => {
       const tokens = new Map<ServiceScope, string>();
       for (const [id, definition] of ROUTES) {
         if (!definition.scope) continue;
-        const others = EVERY_SCOPE.filter((scope) => scope !== definition.scope);
+        // A write scope carries its area's read scope, so leave out both.
+        const others = EVERY_SCOPE.filter(
+          (scope) => scope !== definition.scope && readScopeOf(scope) !== definition.scope,
+        );
         const token = tokens.get(definition.scope) ?? (await newKey(cookie, others)).token;
         tokens.set(definition.scope, token);
         const result = await api(token, definition.method, concrete(definition, bot.id));
@@ -1666,6 +1669,17 @@ describeWithDatabase("service API surface", () => {
         document.paths[path]?.[definition.method.toLowerCase()]?.["x-required-scope"],
       ]).toEqual([id, definition.scope]);
     }
+  });
+
+  it("gives a write scope the read scope of its area, so writing reads nothing new", async () => {
+    const { cookie } = await person();
+    const { credential, token } = await newKey(cookie, ["bots:write", "prompts:write"]);
+    expect(credential.scopes).toEqual(["bots:read", "bots:write", "prompts:write"]);
+    expect((await ok<{ scopes: string[] }>(token, "GET", "/me")).scopes).toEqual([
+      "bots:read",
+      "bots:write",
+      "prompts:write",
+    ]);
   });
 
   it("names the key and what it may do", async () => {

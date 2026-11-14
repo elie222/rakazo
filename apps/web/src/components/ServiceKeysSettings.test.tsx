@@ -152,6 +152,23 @@ describe("ServiceKeysSettings", () => {
     expect(container.textContent).toContain("Revoked");
   });
 
+  it("ticks and holds a write scope's read scope", async () => {
+    rpc.create.mockResolvedValue({ credential: key, token: "rks_secret" });
+    await act(async () => typeName("Writer"));
+    const box = (label: string) =>
+      [...container.querySelectorAll("label")].find((entry) => entry.textContent === label);
+    const control = (label: string) =>
+      document.getElementById(box(label)?.getAttribute("for") ?? "") as HTMLInputElement | null;
+    await act(async () => box("memory:write")?.click());
+    expect(control("memory:read")?.checked).toBe(true);
+    expect(control("memory:read")?.disabled).toBe(true);
+    await act(async () => button("Create key")?.click());
+    await settle();
+    expect(rpc.create).toHaveBeenCalledWith(
+      expect.objectContaining({ scopes: ["bots:read", "memory:read", "memory:write"] }),
+    );
+  });
+
   it("names each revoke button after its key", () => {
     expect(button("Revoke")?.getAttribute("aria-label")).toBe("Revoke Nightly");
   });
