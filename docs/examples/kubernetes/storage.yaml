@@ -1,0 +1,30 @@
+# See ../../self-host-kubernetes.md before applying.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: rakazo-database
+  labels:
+    rakazo.example/phase: foundation
+  namespace: rakazo
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: rakazo-data
+  labels:
+    rakazo.example/phase: foundation
+  namespace: rakazo
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 30Gi

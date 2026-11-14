@@ -1,0 +1,78 @@
+# See ../../self-host-kubernetes.md before applying.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: rakazo-example-computers
+  labels:
+    rakazo.example/phase: foundation
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: rakazo-sandboxes
+    resourceRules:
+      - apiGroups:
+          - ""
+        apiVersions:
+          - v1
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - pods
+          - pods/ephemeralcontainers
+  validations:
+    - expression: object.spec.containers.size() == 1 && object.spec.containers.all(c,
+        c.image == 'REPLACED_BY_KUSTOMIZE')
+      message: Computer pod exceeds the example sandbox boundary
+    - expression: "!has(object.spec.initContainers) && !has(object.spec.ephemeralContainers)"
+      message: Computer pod exceeds the example sandbox boundary
+    - expression:
+        has(object.spec.automountServiceAccountToken) && object.spec.automountServiceAccountToken
+        == false
+      message: Computer pod exceeds the example sandbox boundary
+    - expression: "!has(object.spec.volumes) || object.spec.volumes.size() == 0"
+      message: Computer pod exceeds the example sandbox boundary
+    - expression: "!has(object.spec.hostNetwork) || object.spec.hostNetwork == false"
+      message: Computer pod exceeds the example sandbox boundary
+    - expression: "!has(object.spec.hostPID) || object.spec.hostPID == false"
+      message: Computer pod exceeds the example sandbox boundary
+    - expression: "!has(object.spec.hostIPC) || object.spec.hostIPC == false"
+      message: Computer pod exceeds the example sandbox boundary
+    - expression: "!has(object.spec.serviceAccountName) || object.spec.serviceAccountName
+        == 'default'"
+      message: Computer pod exceeds the example sandbox boundary
+    - expression:
+        object.spec.containers.all(c, has(c.securityContext) && c.securityContext.allowPrivilegeEscalation
+        == false && c.securityContext.capabilities.drop.exists(x, x == 'ALL') && c.securityContext.seccompProfile.type
+        == 'RuntimeDefault')
+      message: Computer pod exceeds the example sandbox boundary
+    - expression: object.spec.containers.all(c, !has(c.envFrom) && (!has(c.env) || c.env.all(e,
+        !has(e.valueFrom))))
+      message: Computer pod exceeds the example sandbox boundary
+    - expression:
+        "!has(object.spec.securityContext) || ((!has(object.spec.securityContext.runAsUser)
+        || object.spec.securityContext.runAsUser == 1000) && (!has(object.spec.securityContext.runAsGroup)
+        || object.spec.securityContext.runAsGroup == 1000))"
+      message: Computer pod exceeds the example sandbox boundary
+    - expression: object.spec.containers.all(c, (!has(c.securityContext.runAsUser) ||
+        c.securityContext.runAsUser == 1000) && (!has(c.securityContext.runAsGroup)
+        || c.securityContext.runAsGroup == 1000) && (!has(c.ports) || c.ports.all(p,
+        !has(p.hostPort) || p.hostPort == 0)))
+      message: Computer pod exceeds the example sandbox boundary
+    - expression: object.spec.containers.all(c, (!has(c.securityContext.privileged)
+        || c.securityContext.privileged == false) && (!has(c.securityContext.capabilities.add)
+        || c.securityContext.capabilities.add.size() == 0))
+      message: Computer pod exceeds the example sandbox boundary
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: rakazo-example-computers
+  labels:
+    rakazo.example/phase: foundation
+spec:
+  policyName: rakazo-example-computers
+  validationActions:
+    - Deny
