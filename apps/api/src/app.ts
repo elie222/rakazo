@@ -868,10 +868,8 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     return response;
   };
   app.use("*", async (c, next) => {
-    // Later middleware can swap the request object, so remember the one a route reads.
-    const request = c.req.raw;
     await next();
-    for (const cookie of renewedSessionCookies.get(request) ?? []) {
+    for (const cookie of renewedSessionCookies.get(c.req.raw) ?? []) {
       c.header("set-cookie", cookie, { append: true });
     }
   });
