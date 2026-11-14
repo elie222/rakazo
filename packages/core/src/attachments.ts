@@ -8,7 +8,7 @@ import {
   isAttachmentImageMimeType,
 } from "@rakazo/contracts";
 import { isApprovalAskBlock, isSecretAskBlock } from "./action-approval.js";
-import { serviceOriginLine } from "./message-text.js";
+import { serviceOriginLine } from "./service-origin.prompt.js";
 
 export class AttachmentValidationError extends Error {
   constructor(message: string) {
