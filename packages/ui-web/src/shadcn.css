@@ -639,12 +639,13 @@
   );
   background-size: 200% 100%;
   background-clip: text;
-  color: transparent;
+  /* The fill, not the color, so a text color class next to it can't paint over the sweep. */
+  -webkit-text-fill-color: transparent;
   animation: text-shimmer 1.5s linear infinite;
 
   @media (prefers-reduced-motion: reduce) {
     background-image: none;
-    color: inherit;
+    -webkit-text-fill-color: currentColor;
     animation: none;
   }
 }
