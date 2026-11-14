@@ -777,6 +777,34 @@ describePostgres("cloud agent lifecycle and recovery (PostgreSQL + Cursor emulat
     expect(await h.state(id)).toMatchObject({ status: "finished", errorCount: 0 });
   });
 
+  it("leaves a rate-limited agent's scheduled poll alone when its status is read", async () => {
+    const h = await setup();
+    const id = await h.launch();
+    await h.poll(id);
+    h.wire.failNextRequest = 429;
+    await h.poll(id);
+    const before = await h.state(id);
+    expect(before.nextPollAt!.getTime()).toBeGreaterThan(Date.now() + 29_000);
+    h.enqueue.mockClear();
+    expect(await h.tool("status", { id })).toMatchObject({ id, status: "running" });
+    expect(h.enqueue).not.toHaveBeenCalled();
+    expect((await h.state(id)).nextPollAt).toEqual(before.nextPollAt);
+  });
+
+  it("keeps a cancel's immediate poll when the status is read afterwards", async () => {
+    const h = await setup();
+    const id = await h.launch();
+    await h.poll(id);
+    h.wire.failNextRequest = 429;
+    await h.poll(id);
+    h.enqueue.mockClear();
+    await h.tool("cancel", { id });
+    expect(h.enqueue).toHaveBeenCalledTimes(1);
+    expect(h.enqueue.mock.calls[0]![0].availableAt).toBeUndefined();
+    await h.tool("status", { id });
+    expect(h.enqueue).toHaveBeenCalledTimes(1);
+  });
+
   it("reports a follow-up to an expired agent as expired", async () => {
     const h = await setup();
     const id = await h.launch();
