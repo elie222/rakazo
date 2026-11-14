@@ -118,7 +118,7 @@ export default function ComputersSettings() {
         setPending(false);
       }
       if (focused.current) {
-        const loaded = await load(true);
+        const loaded = await load(visit.current === startedVisit);
         if (failed && loaded === false && visit.current === startedVisit) {
           setDevices((current) =>
             current && !current.some((item) => item.deviceId === device.deviceId)

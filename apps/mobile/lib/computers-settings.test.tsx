@@ -316,6 +316,33 @@ it("filters refresh results while a revoke is pending", async () => {
   expect(container.textContent).not.toContain("Laptop");
 });
 
+it("clears a newer visit's load error when an earlier removal reconciles", async () => {
+  let finishRemove!: () => void;
+  vi.mocked(listUserDevices)
+    .mockResolvedValueOnce([laptop, desk])
+    .mockRejectedValueOnce(new Error("list failed"))
+    .mockResolvedValueOnce([desk]);
+  vi.mocked(removeUserDevice).mockReturnValue(new Promise((resolve) => (finishRemove = resolve)));
+  await render();
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('[aria-label="Remove Laptop, Connected"]')?.click(),
+  );
+  await act(async () => confirmRemove()?.onPress?.());
+  await act(async () => {
+    blur();
+    focus();
+  });
+  await settle();
+  expect(container.textContent).toContain("list failed");
+  expect(container.textContent).toContain("Retry");
+
+  await act(async () => finishRemove());
+  await settle();
+  expect(container.textContent).toContain("Desk PCOffline");
+  expect(container.textContent).not.toContain("list failed");
+  expect(container.textContent).not.toContain("Retry");
+});
+
 it("ignores a previous visit's revoke error after a later removal succeeds", async () => {
   let failFirst!: (error: Error) => void;
   let finishSecond!: () => void;
