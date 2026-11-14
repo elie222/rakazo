@@ -106,6 +106,15 @@ function committedIndex() {
   if (previous) backup().moveSync(file(), { overwrite: true });
   return previous;
 }
+/** True when the saved index lists any unsent message, whoever owns it. Read errors propagate. */
+export function hasSavedUnsentSends(): boolean {
+  if ((committedIndex()?.length ?? 0) > 0) return true;
+  // Until a load marks its move complete, the earlier cache outbox still holds the queue.
+  if (!legacyRoot().exists || legacyDone().exists) return false;
+  return ["sends-v4.json", "sends-v4.json.bak"].some(
+    (name) => (readIndex(new File(legacyRoot(), name))?.length ?? 0) > 0,
+  );
+}
 function storedEntry(attempt: SendAttempt) {
   return {
     ...attempt,
