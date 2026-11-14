@@ -971,6 +971,37 @@ describe("an older server", () => {
 });
 
 describe("VaultSettings list", () => {
+  it.each([false, true])(
+    "points to this Space's own vault with an empty list %s",
+    async (empty) => {
+      spaceSettings.overrides.mockResolvedValue(["credentials"]);
+      if (empty) vault.list.mockResolvedValue([]);
+      await render();
+      const note = byTestId("vault-own-space-note");
+      expect(note.textContent).toBe(
+        "This Space keeps its own vault. Its bots save and use items there, not here: open the Space's settings, then Vault.",
+      );
+      if (empty) expect(find("vault-card")).toBeNull();
+      else
+        expect(note.compareDocumentPosition(byTestId("vault-card"))).toBe(
+          Node.DOCUMENT_POSITION_FOLLOWING,
+        );
+    },
+  );
+
+  it.each([
+    ["account", []],
+    ["account", ["models"]],
+    ["space", ["credentials"]],
+  ] as const)(
+    "omits the own vault note for %s scope with overrides %j",
+    async (scope, overrides) => {
+      spaceSettings.overrides.mockResolvedValue(overrides);
+      await render(scope);
+      expect(find("vault-own-space-note")).toBeNull();
+    },
+  );
+
   it("shows each item's title and what tells it apart, never a value", async () => {
     await render();
     expect(

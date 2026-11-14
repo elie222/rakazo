@@ -15,7 +15,7 @@ import {
 } from "@rakazo/contracts";
 import { vaultBotsChoosable } from "@rakazo/core";
 import { fetchFresh, writeSaved } from "@rakazo/core/query";
-import { vaultBotsNote, vaultSaveNotice } from "@rakazo/i18n/vault";
+import { vaultBotsNote, vaultOwnSpaceNote, vaultSaveNotice } from "@rakazo/i18n/vault";
 import {
   Button,
   DropdownMenu,
@@ -436,6 +436,11 @@ export function VaultSettings({
           }}
         />
       </div>
+      {ownVault ? (
+        <p data-testid="vault-own-space-note" className="text-body-sm text-muted-foreground">
+          {vaultOwnSpaceNote()}
+        </p>
+      ) : null}
       {listQuery.isError ? (
         <p className="text-body-sm text-destructive">
           <Trans>Could not load credentials.</Trans>
