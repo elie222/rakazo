@@ -1540,7 +1540,10 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             ? teamWorkspaceInstruction(bot.id)
             : PRIVATE_WORKSPACE_INSTRUCTION;
 
-        const reply = await createReplyState(deps, run, runSecrets);
+        const reply = await createReplyState(deps, run, runSecrets, {
+          // Earlier attempts reached a step when they saved a checkpoint before it.
+          resumesEarlierWork: storedTurnCheckpoint || Boolean(resumeCheckpoint),
+        });
         const script = scripted ? inferScript(task.prompt, takeoverResume?.checkpoint) : undefined;
         const state: RunState = {
           lease,

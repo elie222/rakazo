@@ -155,7 +155,11 @@ export async function createStatusLineWriter(
                     retire: key.retireOAuth,
                   }
                 : undefined,
-              callObserver: key.callObserver,
+              // Credit charges belong to the run, not to this request's own id.
+              callObserver: key.callObserver && {
+                ...key.callObserver,
+                beforeCall: (call) => key.callObserver!.beforeCall({ ...call, runId: scope.runId }),
+              },
             },
           },
           {

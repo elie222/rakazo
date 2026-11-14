@@ -38,6 +38,7 @@ export async function createReplyState(
   deps: ExecutorDeps,
   run: Run,
   secrets: string[],
+  { resumesEarlierWork = false }: { resumesEarlierWork?: boolean } = {},
 ): Promise<ReplyState> {
   const reply: ReplyState = {
     assembled: "",
@@ -61,6 +62,7 @@ export async function createReplyState(
     textSinceLastStep: "",
     narrationSoFar: "",
     narrationStatusShowing: false,
+    resumesEarlierWork,
     pendingToolNames: [],
     toolCalls: [],
     toolOutcomes: new Map(),
@@ -272,6 +274,8 @@ export function isOpeningAcknowledgement(ctx: RunContext, openingText: boolean, 
     !runAllowsSilentEmpty(ctx.run.trigger) &&
     !ctx.groupReplyOptional &&
     reply.midTurnProgressCount === 0 &&
+    // A resumed attempt's first step is not the run's: the opening moment has passed.
+    !reply.resumesEarlierWork &&
     // Only text written right before the run's first step, not a reply cut short by a message.
     firstStep !== undefined &&
     reply.toolCalls.every((call) => call.executionId === firstStep)

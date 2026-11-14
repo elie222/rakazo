@@ -127,6 +127,8 @@ export interface ReplyState {
   textSinceLastStep: string;
   /** The working line shows a note; tool status lines wait until the bot writes again. */
   narrationStatusShowing: boolean;
+  /** This attempt resumes work an earlier one began, so the run's first step is behind it. */
+  resumesEarlierWork: boolean;
   /** The latest step's own status line, kept to restore it when held text is cleared. */
   lastActivityLine?: string;
   /**

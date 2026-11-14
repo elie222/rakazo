@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { describeToolActivity, stepStatusOf } from "./pi-runtime-tools.js";
+import type { RunContext } from "./run-context.js";
+import { isOpeningAcknowledgement } from "./run-progress.js";
 import {
   longWorkProgressGuidance,
   replyGuidanceForOfferedTools,
@@ -87,6 +89,24 @@ describe("step status field", () => {
       );
       expect(guidance).toContain("live_status field");
       expect(guidance).not.toContain("message_user");
+    });
+
+    it("posts no opening when the attempt resumes earlier work", () => {
+      const ctx = (resumesEarlierWork: boolean) =>
+        ({
+          replyMode: "chat",
+          run: { trigger: "user" },
+          groupReplyOptional: false,
+          state: {
+            reply: {
+              midTurnProgressCount: 0,
+              resumesEarlierWork,
+              toolCalls: [{ executionId: "call-1" }],
+            },
+          },
+        }) as unknown as RunContext;
+      expect(isOpeningAcknowledgement(ctx(false), true, "I'll check that.")).toBe(true);
+      expect(isOpeningAcknowledgement(ctx(true), true, "I'll check that.")).toBe(false);
     });
 
     it("asks for the status field in the guidance", () => {
