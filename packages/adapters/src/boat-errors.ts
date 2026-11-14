@@ -6,7 +6,7 @@ import {
   SandboxUnavailableError,
   SandboxUnresponsiveError,
 } from "@rakazo/adapter-kit";
-import { redactSecrets } from "@rakazo/core";
+import { parseRetryAfter, redactSecrets } from "@rakazo/core";
 import { readBodyCapped } from "./web-ssrf.js";
 
 const MAX_BOAT_ERROR_RESPONSE_BYTES = 16 * 1024;
@@ -263,18 +263,11 @@ function retryAfterMs(
   response: Response,
   body: Record<string, unknown> | undefined,
 ): number | undefined {
-  const header = response.headers.get("Retry-After")?.trim();
-  const seconds =
+  const ms =
     typeof body?.retryAfter === "number"
-      ? body.retryAfter
-      : header && /^\d+$/.test(header)
-        ? Number(header)
-        : header
-          ? (Date.parse(header) - Date.now()) / 1_000
-          : Number.NaN;
-  if (Number.isFinite(seconds) && seconds > 0) {
-    return Math.min(Math.ceil(seconds * 1_000), BOAT_MAX_RETRY_AFTER_MS);
-  }
+      ? Math.ceil(body.retryAfter * 1_000)
+      : (parseRetryAfter(response.headers.get("Retry-After")) ?? 0);
+  if (ms > 0 && Number.isFinite(ms)) return Math.min(ms, BOAT_MAX_RETRY_AFTER_MS);
   return body?.code === BOAT_IP_RATE_LIMIT || body?.window === "minute"
     ? BOAT_RATE_WINDOW_MS
     : undefined;
