@@ -225,9 +225,8 @@ export function ServiceKeysSettings() {
                 {key.tokenPrefix}… {key.scopes.join(", ")}
               </div>
               <div className="truncate text-muted-foreground">{botsText(key)}</div>
-              <div className="truncate text-muted-foreground">
-                {expiryText(key)} · {lastUsedText(key)}
-              </div>
+              <div className="truncate text-muted-foreground">{expiryText(key)}</div>
+              <div className="truncate text-muted-foreground">{lastUsedText(key)}</div>
             </div>
             {key.revokedAt ? (
               <span className="text-body text-muted-foreground">
