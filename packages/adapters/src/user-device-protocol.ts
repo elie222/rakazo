@@ -17,7 +17,6 @@ export const userDeviceServerMessage = z.discriminatedUnion("type", [
   // "session-ended": the sign-in that paired it ended, so the next sign-in pairs again.
   z.object({ type: z.literal("revoked"), reason: userDeviceRevokeReason.optional() }),
 ]);
-export type UserDeviceServerMessage = z.infer<typeof userDeviceServerMessage>;
 
 /** One HostComputerFrame per message, tagged with the request id. */
 export const userDeviceClientMessage = z.discriminatedUnion("type", [

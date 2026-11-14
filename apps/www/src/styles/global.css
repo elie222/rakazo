@@ -2917,6 +2917,12 @@ td:last-child .pricing-hint__tip {
   font-size: 18px;
 }
 
+.platform-list .button {
+  flex: none;
+  width: 140px;
+  white-space: nowrap;
+}
+
 .brand-kit__logos {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
@@ -3720,10 +3726,6 @@ td:last-child .pricing-hint__tip {
   .button--small,
   .setup-copy {
     width: 100%;
-  }
-
-  .platform-list .button {
-    width: auto;
   }
 
   .card-grid-3,

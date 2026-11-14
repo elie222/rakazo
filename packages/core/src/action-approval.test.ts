@@ -15,6 +15,7 @@ import {
   isApprovalAskBlock,
   isOwnerStartedRun,
   isSecretAskBlock,
+  memoryWriteNeedsApproval,
   newSiteOutcome,
   outboundSiteGate,
   outsideRunToolRequiresApproval,
@@ -943,6 +944,31 @@ describe("connectorReadRequiresApproval", () => {
 
   it("asks before a read on a new connector once the run is tainted", () => {
     expect(connectorReadRequiresApproval({ tainted: true, connectorTrusted: false })).toBe(true);
+  });
+});
+
+describe("memoryWriteNeedsApproval", () => {
+  const readOutside = async () => true;
+  const readNothing = async () => false;
+
+  it.each(["remember", "save_memory", "save_shared_memory"])(
+    "gates %s only once outside content entered the run",
+    async (name) => {
+      await expect(memoryWriteNeedsApproval(name, readOutside)).resolves.toBe(true);
+      await expect(memoryWriteNeedsApproval(name, readNothing)).resolves.toBe(false);
+    },
+  );
+
+  it("leaves other tools alone and does not check the run for them", async () => {
+    let checked = false;
+    const check = async () => {
+      checked = true;
+      return true;
+    };
+    for (const name of ["recall_memory", "forget_memory", "write_file", "send_email"]) {
+      await expect(memoryWriteNeedsApproval(name, check)).resolves.toBe(false);
+    }
+    expect(checked).toBe(false);
   });
 });
 

@@ -16,6 +16,7 @@ import {
   supervisorFileWriteSchema,
   supervisorRequestBodyLimit,
 } from "./request-limits.js";
+import { SUPERVISOR_PUBLIC_PATHS } from "./routes.js";
 import type { ScreenAssignment } from "./supervisor-logic.js";
 import {
   AIMED_SCROLL_CONTROL_LABEL,
@@ -168,32 +169,29 @@ describe("sandbox supervisor Docker endpoint", () => {
 });
 
 describe("sandbox supervisor HTTP boundary", () => {
-  it("keeps health public while every computer route requires the service token", async () => {
+  it("keeps health public while every other registered route requires the service token", async () => {
     const health = await supervisorApp.request("/health");
     expect(health.status).toBe(200);
     await expect(health.json()).resolves.toMatchObject({ ok: true });
+    // A route joins this list only on purpose: anything else answers 401 without the token.
+    expect([...SUPERVISOR_PUBLIC_PATHS]).toEqual(["/health"]);
 
-    const protectedRequests: Array<[string, string]> = [
-      ["POST", "/computers"],
-      ["GET", "/computers/id"],
-      ["POST", "/computers/id/exec"],
-      ["POST", "/computers/id/observe"],
-      ["POST", "/computers/id/actions"],
-      ["POST", "/computers/id/browser"],
-      ["GET", "/computers/id/files"],
-      ["POST", "/computers/id/files"],
-      ["GET", "/computers/id/screen"],
-      ["POST", "/computers/id/screen-mode"],
-      ["POST", "/computers/id/terminal"],
-      ["DELETE", "/computers/id/screen"],
-      ["POST", "/computers/id/input"],
-      ["POST", "/computers/id/stop"],
-      ["DELETE", "/computers/id"],
-    ];
+    // Every pattern the app registers, middleware included, as one concrete request.
+    const protectedRequests = [
+      ...new Set(
+        supervisorApp.routes.map(({ method, path }) => {
+          const pathname = path.replace(/:[^/]+/g, "id").replace(/\*/g, "any");
+          return `${method === "ALL" ? "GET" : method} ${pathname}`;
+        }),
+      ),
+    ].filter((request) => !SUPERVISOR_PUBLIC_PATHS.has(request.split(" ")[1]!));
+    expect(protectedRequests).toContain("POST /computers/id/exec");
+    expect(protectedRequests).toContain("DELETE /computers/id");
 
-    for (const [method, pathname] of protectedRequests) {
+    for (const request of protectedRequests) {
+      const [method, pathname] = request.split(" ") as [string, string];
       const response = await supervisorApp.request(pathname, { method });
-      expect(response.status, `${method} ${pathname}`).toBe(401);
+      expect(response.status, request).toBe(401);
       await expect(response.json()).resolves.toEqual({ error: "unauthorized" });
     }
   });

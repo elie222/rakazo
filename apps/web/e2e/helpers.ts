@@ -84,6 +84,15 @@ export async function signup(
   await page.goto(verify ? "/sign-up?verify=email" : "/onboarding");
 }
 
+/** Opens the email form when the server offers a provider chooser first. */
+export async function openEmailSignIn(page: Page) {
+  const email = page.getByLabel("Email", { exact: true });
+  const choice = page.getByRole("button", { name: "Continue with email" });
+  await expect(email.or(choice)).toBeVisible();
+  if (await choice.isVisible()) await choice.click();
+  await expect(email).toBeVisible();
+}
+
 export async function signupThroughForm(
   page: Page,
   email: string,
@@ -92,7 +101,8 @@ export async function signupThroughForm(
   testInfo?: TestInfo,
 ) {
   await page.goto("/sign-up");
-  await expect(page.getByRole("heading", { name: "Create your Rakazo" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Create your account" })).toBeVisible();
+  await openEmailSignIn(page);
   if (testInfo) await captureScreenshot(page, testInfo, "01-sign-up");
   await page.getByPlaceholder("Your name").fill(name);
   await page.getByPlaceholder("Your email address").fill(email);
@@ -222,6 +232,7 @@ export async function openUserSettings(
     | "computer"
     | "billing"
     | "organization"
+    | "labs"
     | "updates",
 ) {
   // A reload keeps settings open because the URL holds them; closing clears the URL at once.
@@ -295,6 +306,7 @@ export async function pickReopenedModel(page: Page, model?: string) {
   await expect(search).toBeHidden();
 }
 
+/** Opens the page of the connection that runs a role's row, through the row's menu. */
 export async function manageModelConnection(
   page: Page,
   provider: string,
@@ -305,10 +317,13 @@ export async function manageModelConnection(
     .getByTestId(`model-role-row-${row}`)
     .getByRole("button", { name: / options$/ })
     .click();
-  await page.getByRole("menuitem", { name: `Manage ${provider}`, exact: true }).click();
-  const dialog = modelConnectionDialog(page, provider);
-  await expect(dialog).toBeVisible();
-  return dialog;
+  await page.getByRole("menuitem", { name: "Manage provider", exact: true }).click();
+  const name = provider.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const connection = page
+    .getByTestId("model-provider-page")
+    .filter({ has: page.getByRole("heading", { name: new RegExp(`^${name}`) }) });
+  await expect(connection).toBeVisible();
+  return connection;
 }
 
 export async function createNamedBot(

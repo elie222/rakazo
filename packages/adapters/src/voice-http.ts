@@ -1,7 +1,7 @@
 import type { VoiceVerifyResult } from "@rakazo/adapter-kit";
 import { VoiceAccountError } from "@rakazo/adapter-kit";
 import type { VoiceAccountErrorCode } from "@rakazo/contracts";
-import { cancelResponseBody } from "@rakazo/core";
+import { cancelResponseBody, deadlineSignal } from "@rakazo/core";
 import { readBodyCapped } from "./web-ssrf.js";
 
 /** A 2,000-character utterance should stay far below this, even at high MP3 bitrates. */
@@ -12,11 +12,6 @@ export const MAX_VOICE_JSON_BYTES = 1024 * 1024;
 /** Header-safe speech model id. A connection override wins over the deployment default. */
 export function isSpeechModelId(value: string): boolean {
   return /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(value);
-}
-
-/** Client disconnect plus a hard deadline — `context.signal` is always set. */
-export function voiceDeadline(signal: AbortSignal, ms: number): AbortSignal {
-  return AbortSignal.any([signal, AbortSignal.timeout(ms)]);
 }
 
 export async function readVoiceAudio(res: Response, signal?: AbortSignal): Promise<Uint8Array> {
@@ -214,9 +209,12 @@ export async function verifyVoiceHttpGet(options: {
   try {
     const res = await fetch(options.url, {
       headers: options.headers,
-      signal: voiceDeadline(options.signal, 20_000),
+      signal: deadlineSignal(20_000, options.signal),
     });
-    if (res.ok) return { ok: true };
+    if (res.ok) {
+      cancelResponseBody(res);
+      return { ok: true };
+    }
     const body = await readVoiceJson(res);
     return {
       ok: false,

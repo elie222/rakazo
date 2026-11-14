@@ -1,7 +1,7 @@
 import type { Actor } from "@rakazo/contracts";
 import { canonicalPiProviderId } from "@rakazo/contracts";
 import type { BotModelChangeDeps } from "./model-selection.js";
-import { modelCredentialAuthKindsForSpace } from "./model-selection.js";
+import { modelCredentialAuthKindsForSpace, spaceCanRunCatalogModel } from "./model-selection.js";
 import { listAvailablePiCatalog } from "./pi-catalog-availability.js";
 import type { PiCatalogEntry } from "./pi-models.js";
 import { listPiCatalog, offeredCatalog } from "./pi-models.js";
@@ -30,7 +30,7 @@ export async function connectedModelChoices(
     deps.hostedProvider,
   );
   return offeredCatalog(listAvailablePiCatalog(auth.byProvider, auth.byModel)).filter((entry) => {
-    if (entry.placeholder) return false;
+    if (entry.placeholder || !spaceCanRunCatalogModel(auth, entry)) return false;
     const kind = auth.byModel[entry.provider]?.[entry.id] ?? auth.byProvider[entry.provider];
     return kind !== undefined && kind !== "disconnected";
   });

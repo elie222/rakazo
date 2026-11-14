@@ -254,6 +254,61 @@ describe("voiceChatSummary", () => {
     expect(group?.kind === "voiceChat" && voiceChatSummary(group)).toBe("Deploy is green.");
   });
 
+  it.each([false, true])("skips a call request before spoken replies (closed: %s)", (closed) => {
+    const messages = [
+      message({
+        role: "bot",
+        callId: "call-1",
+        runId: "request-run",
+        blocks: [
+          {
+            kind: "call_request",
+            callId: "call-1",
+            status: "answered",
+            reason: "Review",
+            opening: "Ready?",
+            expiresAt: "2026-10-15T00:00:45Z",
+          },
+        ],
+      }),
+      message({ role: "user", callId: "call-1", runId: "voice-run" }),
+      message({ role: "bot", runId: "voice-run", blocks: [{ kind: "text", text: "  " }] }),
+      message({
+        role: "bot",
+        runId: "voice-run",
+        blocks: [{ kind: "text", text: "Deploy is green. I also restarted the worker." }],
+      }),
+      message({
+        role: "bot",
+        runId: "voice-run",
+        blocks: [{ kind: "text", text: "Later reply." }],
+      }),
+    ];
+    if (closed)
+      messages.push(
+        message({
+          role: "bot",
+          runId: "voice-run",
+          blocks: [{ kind: "voice_call", callId: "call-1", title: "", farewell: "Bye" }],
+        }),
+      );
+    const [group] = groupVoiceChats(messages);
+    expect(group?.kind === "voiceChat" && voiceChatSummary(group)).toBe("Deploy is green.");
+  });
+
+  it("leaves a call without spoken bot content empty", () => {
+    const [group] = groupVoiceChats([
+      message({ role: "user", callId: "call-1", runId: "voice-run" }),
+      message({ role: "bot", runId: "voice-run", blocks: [{ kind: "text", text: "  " }] }),
+      message({
+        role: "bot",
+        runId: "voice-run",
+        blocks: [{ kind: "voice_call", callId: "call-1", title: "", farewell: "Bye" }],
+      }),
+    ]);
+    expect(group?.kind === "voiceChat" && voiceChatSummary(group)).toBe("");
+  });
+
   it("prefers the title the bot hung up with", () => {
     const [group] = groupVoiceChats([
       message({ role: "user", callId: "call-1", runId: "run-1" }),

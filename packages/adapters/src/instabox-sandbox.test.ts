@@ -180,13 +180,14 @@ describe("instabox computer backend", () => {
     expect(emulator.computers.get(computer.id)!.state).toBe("suspended");
   });
 
-  it("pauses the computer when a timed-out job's kill is not confirmed", async () => {
+  it("keeps the computer running when a timed-out job had already exited", async () => {
     const { emulator, provider, computer } = await started();
     emulator.hangs = (command) => command.includes("infinity");
     emulator.jobKill = () => false;
-    await expect(run(provider, computer, 50)).rejects.toThrow("was paused");
-    expect(emulator.killedJobs).toHaveLength(3);
-    expect(emulator.computers.get(computer.id)!.state).toBe("suspended");
+    const events = await run(provider, computer, 50);
+    expect(events.at(-1)).toEqual({ type: "exit", code: 124 });
+    expect(emulator.killedJobs).toHaveLength(1);
+    expect(emulator.computers.get(computer.id)!.state).toBe("running");
   });
 
   it("retries a job kill that fails once", async () => {

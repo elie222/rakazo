@@ -68,6 +68,74 @@ describe("consent grants", () => {
       }),
     );
   });
+  it("discloses the user's connected environment and asks again when it moves", async () => {
+    const { deps, actor } = setup();
+    deps.cloudAgent = {
+      key: "test",
+      spaceId: actor.spaceId,
+      provider: { describe: () => ({ id: "cursor", capabilities: { offline: false } }) },
+    } as RouterDeps["cloudAgent"];
+    const forActor = vi.fn();
+    deps.userCloudAgents = {
+      forActor,
+      listForActor: async () => [],
+    } as unknown as RouterDeps["userCloudAgents"];
+    const recipients = async (baseUrl: string) => {
+      forActor.mockResolvedValue({
+        key: "mcp:server",
+        spaceId: actor.spaceId,
+        baseUrl,
+        provider: { describe: () => ({ id: "t3code", capabilities: { offline: false } }) },
+      });
+      return (await aiConsentStatus(deps, actor, { botId: "bot", uses: ["model"] })).recipients;
+    };
+    const first = await recipients("https://t3.example.test/mcp");
+    // Only an environment the target agent may use is disclosed for it.
+    expect(forActor).toHaveBeenCalledWith({
+      spaceId: actor.spaceId,
+      userId: actor.userId,
+      botIds: ["bot"],
+    });
+    // The agent's work goes to the user's own environment, and to the deployment's provider
+    // once that environment's approval runs out.
+    expect(first.map((entry) => entry.name)).toEqual(
+      expect.arrayContaining(["T3 Code (https://t3.example.test)", "Cursor"]),
+    );
+    const key = first.find((entry) => entry.name.startsWith("T3 Code"))!.key;
+    const moved = await recipients("https://t3-2.example.test/mcp");
+    expect(moved.find((entry) => entry.name.startsWith("T3 Code"))!.key).not.toBe(key);
+  });
+  it("allows what an agent's own check showed, wherever its work goes", async () => {
+    const { deps, actor, upsert } = setup();
+    const connection = (key: string, id: string, baseUrl?: string) => ({
+      key,
+      spaceId: actor.spaceId,
+      baseUrl,
+      provider: { describe: () => ({ id, capabilities: { offline: false } }) },
+    });
+    deps.cloudAgent = connection("deployment", "cursor") as RouterDeps["cloudAgent"];
+    const t3 = connection("mcp:one", "t3code", "https://one.example.test/mcp");
+    const other = connection("mcp:two", "t3code", "https://two.example.test/mcp");
+    // The target agent first has neither environment, so its work goes to the deployment, then
+    // only the second one; any agent's first choice is the first environment.
+    let assigned: typeof t3 | null = null;
+    deps.userCloudAgents = {
+      forActor: async ({ botIds }: { botIds?: string[] }) => (botIds ? assigned : t3),
+      listForActor: async () => [t3, other],
+    } as unknown as RouterDeps["userCloudAgents"];
+    for (const name of ["Cursor", "T3 Code (https://two.example.test)"]) {
+      if (name !== "Cursor") assigned = other;
+      const shown = await aiConsentStatus(deps, actor, { botId: "bot", uses: ["model"] });
+      const recipient = shown.recipients.find((entry) => entry.name === name)!;
+      // The client allows without the target, as mobile does.
+      await allowAiConsent(deps, actor, {
+        scope: shown.scope,
+        version: shown.version,
+        keys: [recipient.key],
+      });
+    }
+    expect(upsert).toHaveBeenCalledTimes(2);
+  });
   it("includes an inactive routine only when the check is for that routine", async () => {
     const { deps, actor } = setup();
     deps.env.agentRuntime = "pi";
