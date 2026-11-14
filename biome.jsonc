@@ -56,8 +56,6 @@
       "style": {
         "noNonNullAssertion": "off",
         "useImportType": { "level": "error", "options": { "style": "separatedType" } },
-        // An override replaces this rule's options instead of adding to them, so every override
-        // of it below repeats the vendor group. Keep the copies identical.
         "noRestrictedImports": {
           "level": "error",
           "options": {
@@ -176,207 +174,17 @@
         }
       }
     },
-    // Client code: no vendor SDKs and no server packages.
-    {
-      "includes": [
-        "apps/web/src/**",
-        "apps/mobile/**",
-        "packages/ui-web/**",
-        "packages/chat-ui/**",
-        "packages/page-kit/**",
-        "!apps/web/src/preview-middleware.ts"
-      ],
-      "linter": {
-        "rules": {
-          "style": {
-            "noRestrictedImports": {
-              "level": "error",
-              "options": {
-                "patterns": [
-                  {
-                    "group": [
-                      "@{alicloud,aws-sdk,axiomhq,boatdev,boxd-sh,chat-adapter}/**",
-                      "@{composio,darabonba,daytona,e2b,insforge,kubernetes}/**",
-                      "@{larksuiteoapi,opentelemetry,photon-ai,sentry,stripe}/**",
-                      "{chat-adapter-sendblue,mppx,novita-sandbox,railway,sendblue}",
-                      "{chat-adapter-sendblue,mppx,novita-sandbox,railway,sendblue}/**"
-                    ],
-                    "message": "This is a vendor SDK. Extend the provider-neutral interface in `@rakazo/adapter-kit`, implement it in `packages/adapters`, and load the SDK there with `import()`."
-                  },
-                  {
-                    "group": [
-                      "@rakazo/{adapter-kit,adapters,auth,db,memory,testkit}",
-                      "@rakazo/{adapter-kit,adapters,auth,db,memory,testkit}/**"
-                    ],
-                    "message": "Client code cannot import server packages. The API owns this logic: add it in `apps/api` and call it over RPC, with shared types in `@rakazo/contracts`."
-                  }
-                ]
-              }
-            }
-          }
-        }
-      }
-    },
-    // Client tests may use the test kit.
-    {
-      "includes": [
-        "apps/web/src/**/*.test.{ts,tsx}",
-        "apps/mobile/**/*.test.{ts,tsx}",
-        "packages/ui-web/**/*.test.{ts,tsx}",
-        "packages/chat-ui/**/*.test.{ts,tsx}",
-        "packages/page-kit/**/*.test.{ts,tsx}"
-      ],
-      "linter": {
-        "rules": {
-          "style": {
-            "noRestrictedImports": {
-              "level": "error",
-              "options": {
-                "patterns": [
-                  {
-                    "group": [
-                      "@{alicloud,aws-sdk,axiomhq,boatdev,boxd-sh,chat-adapter}/**",
-                      "@{composio,darabonba,daytona,e2b,insforge,kubernetes}/**",
-                      "@{larksuiteoapi,opentelemetry,photon-ai,sentry,stripe}/**",
-                      "{chat-adapter-sendblue,mppx,novita-sandbox,railway,sendblue}",
-                      "{chat-adapter-sendblue,mppx,novita-sandbox,railway,sendblue}/**"
-                    ],
-                    "message": "This is a vendor SDK. Extend the provider-neutral interface in `@rakazo/adapter-kit`, implement it in `packages/adapters`, and load the SDK there with `import()`."
-                  },
-                  {
-                    "group": [
-                      "@rakazo/{adapter-kit,adapters,auth,db,memory}",
-                      "@rakazo/{adapter-kit,adapters,auth,db,memory}/**"
-                    ],
-                    "message": "Client code cannot import server packages. The API owns this logic: add it in `apps/api` and call it over RPC, with shared types in `@rakazo/contracts`."
-                  }
-                ]
-              }
-            }
-          }
-        }
-      }
-    },
-    // Packages every other package may depend on.
-    {
-      "includes": ["packages/contracts/**", "packages/ui-tokens/**", "packages/logging/**"],
-      "linter": {
-        "rules": {
-          "style": {
-            "noRestrictedImports": {
-              "level": "error",
-              "options": {
-                "patterns": [
-                  {
-                    "group": [
-                      "@{alicloud,aws-sdk,axiomhq,boatdev,boxd-sh,chat-adapter}/**",
-                      "@{composio,darabonba,daytona,e2b,insforge,kubernetes}/**",
-                      "@{larksuiteoapi,opentelemetry,photon-ai,sentry,stripe}/**",
-                      "{chat-adapter-sendblue,mppx,novita-sandbox,railway,sendblue}",
-                      "{chat-adapter-sendblue,mppx,novita-sandbox,railway,sendblue}/**"
-                    ],
-                    "message": "This is a vendor SDK. Extend the provider-neutral interface in `@rakazo/adapter-kit`, implement it in `packages/adapters`, and load the SDK there with `import()`."
-                  },
-                  {
-                    "group": ["@rakazo/**"],
-                    "message": "This package sits at the bottom of the dependency graph and cannot import other `@rakazo/*` packages. Pass what it needs in as an argument, or move the code up to the package that depends on both."
-                  }
-                ]
-              }
-            }
-          }
-        }
-      }
-    },
-    {
-      "includes": ["packages/core/**"],
-      "linter": {
-        "rules": {
-          "style": {
-            "noRestrictedImports": {
-              "level": "error",
-              "options": {
-                "patterns": [
-                  {
-                    "group": [
-                      "@{alicloud,aws-sdk,axiomhq,boatdev,boxd-sh,chat-adapter}/**",
-                      "@{composio,darabonba,daytona,e2b,insforge,kubernetes}/**",
-                      "@{larksuiteoapi,opentelemetry,photon-ai,sentry,stripe}/**",
-                      "{chat-adapter-sendblue,mppx,novita-sandbox,railway,sendblue}",
-                      "{chat-adapter-sendblue,mppx,novita-sandbox,railway,sendblue}/**"
-                    ],
-                    "message": "This is a vendor SDK. Extend the provider-neutral interface in `@rakazo/adapter-kit`, implement it in `packages/adapters`, and load the SDK there with `import()`."
-                  },
-                  {
-                    "group": [
-                      "@rakazo/**",
-                      "!@rakazo/{contracts,ui-tokens}",
-                      "!@rakazo/{contracts,ui-tokens}/**"
-                    ],
-                    "message": "`@rakazo/core` may import only `@rakazo/contracts` and `@rakazo/ui-tokens`. Pass other dependencies in as arguments, or move the code to the package that owns them."
-                  }
-                ]
-              }
-            }
-          }
-        }
-      }
-    },
-    // Monitoring and logging sinks load their vendor SDK on demand; the layering rules above
-    // still apply to them.
-    {
-      "includes": ["apps/web/src/lib/monitoring.ts", "apps/mobile/lib/monitoring.ts"],
-      "linter": {
-        "rules": {
-          "style": {
-            "noRestrictedImports": {
-              "level": "error",
-              "options": {
-                "patterns": [
-                  {
-                    "group": [
-                      "@rakazo/{adapter-kit,adapters,auth,db,memory,testkit}",
-                      "@rakazo/{adapter-kit,adapters,auth,db,memory,testkit}/**"
-                    ],
-                    "message": "Client code cannot import server packages. The API owns this logic: add it in `apps/api` and call it over RPC, with shared types in `@rakazo/contracts`."
-                  }
-                ]
-              }
-            }
-          }
-        }
-      }
-    },
-    {
-      "includes": [
-        "packages/logging/src/sentry.ts",
-        "packages/logging/src/sentry.test.ts",
-        "packages/logging/src/axiom-sink.ts"
-      ],
-      "linter": {
-        "rules": {
-          "style": {
-            "noRestrictedImports": {
-              "level": "error",
-              "options": {
-                "patterns": [
-                  {
-                    "group": ["@rakazo/**"],
-                    "message": "This package sits at the bottom of the dependency graph and cannot import other `@rakazo/*` packages. Pass what it needs in as an argument, or move the code up to the package that depends on both."
-                  }
-                ]
-              }
-            }
-          }
-        }
-      }
-    },
-    // Adapters are where vendor SDKs live. The desktop monitoring sink and the screenshot
+    // Adapters are where vendor SDKs live. The monitoring and logging sinks and the screenshot
     // publisher load theirs on demand.
     {
       "includes": [
         "packages/adapters/**",
         "apps/desktop/src/monitoring.ts",
+        "apps/web/src/lib/monitoring.ts",
+        "apps/mobile/lib/monitoring.ts",
+        "packages/logging/src/sentry.ts",
+        "packages/logging/src/sentry.test.ts",
+        "packages/logging/src/axiom-sink.ts",
         "packages/testkit/src/cli/ios-screenshot-publish.ts"
       ],
       "linter": {
