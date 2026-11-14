@@ -35,7 +35,8 @@ A surface set to `null` does not have the feature.
 | `ios:<section>`                   | `pnpm ios:screenshots -- --section <section>` | PNGs and `index.html` in `test-report/ios-screenshots`                        |
 | `apps/desktop/e2e/<name>.spec.ts` | CI only, see Limits                           | Setup-window screenshots in the `desktop-e2e-screenshots` artifact            |
 
-- `pnpm test:e2e` needs Docker. Add `--grep=<title>` to run one test.
+- CI is the normal way to run a web spec (see Limits). A local `pnpm test:e2e`
+  needs Docker; add `--grep=<title>` to run one test.
 - CI runs the web specs on every push that can affect them, except the files in
   `nightlySpecs` in `apps/web/playwright.config.ts` and tests tagged `@nightly`,
   which run nightly. For one of those, say the PR run did not cover it.
@@ -64,8 +65,9 @@ with no evidence, a spec that only runs nightly.
 
 ## Limits
 
-- Never run the desktop Playwright suite on a maintainer's machine (AGENTS.md).
-  Push and let CI run it.
+- Never run the desktop Playwright suite on a maintainer's machine, and leave
+  the web e2e suite to CI as routine verification (AGENTS.md): update the spec,
+  push, and read the CI run. Run `pnpm test:e2e` locally only when asked to.
 - Nothing drives the desktop app beyond the specs in `apps/desktop/e2e`: setup,
   the local stack, launch, and window dragging.
 - Nothing drives Android from a command; the "mobile Android screenshots"
