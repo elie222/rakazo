@@ -1,5 +1,6 @@
 import { createComputerUpdates, isUnauthorizedError } from "@rakazo/core";
-import { rpc, spaceSelectionSeq } from "./api";
+import { rpc, spaceSelectionSeq, subscribeSpaceSelection } from "./api";
+
 export const computerUpdates = createComputerUpdates({
   list: async () => {
     const selection = spaceSelectionSeq();
@@ -16,4 +17,5 @@ export const computerUpdates = createComputerUpdates({
   },
   start: (botId, action) => rpc(`computer/${action}`, { botId }),
   dismiss: (id) => rpc("computer/dismissUpdate", { id }),
+  onSpaceChange: (listener) => subscribeSpaceSelection(listener),
 });

@@ -72,10 +72,22 @@ let spaceSelectionRequestGeneration = 0;
 export function spaceSelectionSeq(): number {
   return spaceSelectionRequestGeneration;
 }
+const spaceSelectionListeners = new Set<() => void>();
+let announcedSpaceId = "";
+/** Runs `listener` whenever the in-memory selection moves to another Space. */
+export function subscribeSpaceSelection(listener: () => void): () => void {
+  spaceSelectionListeners.add(listener);
+  return () => {
+    spaceSelectionListeners.delete(listener);
+  };
+}
 function bumpSpaceSelectionGeneration(): void {
   spaceSelectionGeneration += 1;
   // Another Space can belong to another organization, with its own invite link.
   selectedSpaceChanged();
+  if (cachedSpaceId === announcedSpaceId) return;
+  announcedSpaceId = cachedSpaceId;
+  for (const listener of spaceSelectionListeners) listener();
 }
 /** Orders complete endpoint transactions, including credential rollback. */
 let endpointChangeQueue: Promise<unknown> = Promise.resolve();

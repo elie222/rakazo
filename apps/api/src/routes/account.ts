@@ -66,6 +66,7 @@ import type { RouterContext } from "./context.js";
 import { HEARTBEAT, meDto, mergeStreams, withHeartbeats } from "./shared.js";
 
 const ROSTER_CHANGED = Symbol("roster changed");
+const COMPUTER_UPDATES_CHANGED = Symbol("computer updates changed");
 
 export function accountRoutes(ctx: RouterContext) {
   const { deps, os, authed } = ctx;
@@ -356,7 +357,7 @@ export function accountRoutes(ctx: RouterContext) {
     },
     notifications: {
       subscribe: authed.notifications.subscribe.handler(async function* ({ context }) {
-        const { followChatAlerts, followRosterChanges } = deps.events;
+        const { followChatAlerts, followRosterChanges, followComputerUpdateChanges } = deps.events;
         if (!followChatAlerts) throw new ORPCError("NOT_FOUND");
         const { spaceId, userId } = context.actor;
         const rosterChanges = async function* (
@@ -368,12 +369,27 @@ export function accountRoutes(ctx: RouterContext) {
             for await (const _ of followRosterChanges(userId, signal)) yield ROSTER_CHANGED;
           } catch {}
         };
+        const computerUpdateChanges = async function* (
+          signal: AbortSignal,
+        ): AsyncGenerator<typeof COMPUTER_UPDATES_CHANGED> {
+          if (!followComputerUpdateChanges) return;
+          // As with roster signals, the app keeps polling computer updates if these fail.
+          try {
+            for await (const _ of followComputerUpdateChanges(spaceId, signal))
+              yield COMPUTER_UPDATES_CHANGED;
+          } catch {}
+        };
         const frames = withHeartbeats(context, (signal) =>
-          mergeStreams(followChatAlerts(userId, spaceId, signal), rosterChanges(signal)),
+          mergeStreams(
+            followChatAlerts(userId, spaceId, signal),
+            rosterChanges(signal),
+            computerUpdateChanges(signal),
+          ),
         );
         for await (const next of frames) {
           if (next === HEARTBEAT) yield { type: "heartbeat" as const };
           else if (next === ROSTER_CHANGED) yield { type: "roster" as const };
+          else if (next === COMPUTER_UPDATES_CHANGED) yield { type: "computerUpdates" as const };
           else if (next.spaceId === spaceId) yield { type: "alert" as const, alert: next };
         }
       }),

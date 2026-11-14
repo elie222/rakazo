@@ -343,7 +343,7 @@ export function createRunReconciler(
       reconcileCloudAgents({ prisma, jobs, cloudAgent, userCloudAgents: deps.userCloudAgents }),
     reconcilePurchases: () => reconcilePurchases({ prisma, jobs, paymentWallet }),
     reconcileMediaVideos: () => reconcileMediaVideos({ prisma, jobs, mediaGeneration }),
-    reconcileComputerUpdates: () => reconcileComputerUpdates({ prisma, jobs }),
+    reconcileComputerUpdates: () => reconcileComputerUpdates({ prisma, jobs, events: deps.events }),
     reconcileSecurityEventRetention: createSecurityEventPruner(
       prisma,
       securityEventRetentionDays(),
