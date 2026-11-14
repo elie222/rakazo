@@ -804,6 +804,8 @@ function renderEnsureScreenCommand(
           // A stock image's style sets its wallpaper through fbsetbg, which opens an error dialog
           // on the screen when no wallpaper tool is installed. Paint the computer image's color.
           `  mkdir -p ${fluxHome}/bin && printf '#!/bin/sh\\nexec xsetroot -solid "#111113"\\n' >${fluxHome}/bin/fbsetbg && chmod +x ${fluxHome}/bin/fbsetbg`,
+          // Without $HOME/.fluxbox, fluxbox copies the system's default settings over its -rc file.
+          `  mkdir -p ${shellQuote(`${env.homeDir}/.fluxbox`)}`,
           `  PATH=${fluxHome}/bin:$PATH HOME=${shellQuote(env.homeDir)} CHROME_USER_DATA_DIR=${shellQuote(profile)} BROWSER=${browserLauncherPath(layout.displayNumber)} DISPLAY=${layout.display} nohup fluxbox -rc ${fluxHome}/.fluxbox/init 8>&- 9>&- </dev/null >${log}-fluxbox.log 2>&1 &`,
           "fi",
         ];

@@ -1,7 +1,12 @@
 import { InstaboxError } from "@insforge/instabox-sdk";
+import type { PageBrowserCommand } from "@rakazo/adapter-kit";
 import { describe, expect, it, vi } from "vitest";
+import { ComputerBrowserProvider } from "./computer-browser.js";
 import { INSTABOX_COMPUTER_TEMPLATE } from "./instabox-sandbox.js";
 import { emulatedInstabox, InstaboxEmulator } from "./instabox-sandbox.test-support.js";
+import { installPageBrowserCommand } from "./page-browser-install.js";
+import type { RemoteDesktopSdk } from "./remote-desktop-sandbox.js";
+import { RemoteDesktopSandboxProvider } from "./remote-desktop-sandbox.js";
 import { isSandboxGoneError } from "./sandbox-errors.js";
 import { assertSandboxWorkspaceContract } from "./sandbox-test-support.js";
 
@@ -296,5 +301,247 @@ describe("instabox computer sizes", () => {
     emulator.resizeError = outage;
     const reconnect = { ...request, providerRef: computer.id, providerKind: "instabox" as const };
     await expect(provider.provision({ ...reconnect, size: "large" }, ctx)).rejects.toBe(outage);
+  });
+});
+
+describe("instabox page tools", () => {
+  const fill: PageBrowserCommand = {
+    command: "act",
+    actions: [
+      {
+        kind: "fill",
+        ref: "e1",
+        text: "fake-vault-password",
+        origin: "https://example.com",
+        field: "password",
+      },
+    ],
+  };
+  const pageFiles = (emulator: InstaboxEmulator, id: string) =>
+    [...emulator.computers.get(id)!.files.keys()].filter((path) =>
+      path.startsWith("/tmp/rakazo-page-input-"),
+    );
+
+  it("offers the page tools, which the other remote desktops leave off", async () => {
+    const { provider } = await started();
+    expect(new ComputerBrowserProvider({ sandbox: provider }).describe().capabilities.page).toBe(
+      true,
+    );
+    const other = new RemoteDesktopSandboxProvider({
+      id: "e2b",
+      label: "E2B",
+      apiKey: "test",
+      sdk: {} as RemoteDesktopSdk,
+      template: "desktop",
+      isTimeoutError: () => false,
+    });
+    expect(other.pageBrowser).toBeUndefined();
+  });
+
+  it("installs the page tools from a file, since the installer is longer than a command may be", async () => {
+    const emulator = new InstaboxEmulator();
+    let written = "";
+    emulator.onWrite = (_path, data) => {
+      written = new TextDecoder().decode(data);
+    };
+    const { computer } = await started(emulator);
+    const installer = installPageBrowserCommand();
+    expect(Buffer.byteLength(installer)).toBeGreaterThan(65_536);
+    const script = emulator.requests
+      .find((name) => name.startsWith("write /tmp/rakazo-page-browser-"))
+      ?.slice("write ".length);
+    expect(script).toBeDefined();
+    expect(written).toBe(installer);
+    expect(emulator.computers.get(computer.id)!.files.has(script!)).toBe(false);
+    const install = emulator.commands.find((command) => command.includes(script!));
+    expect(install).toMatch(/^bash -c /);
+    expect(install).toContain("rm -f --");
+  });
+
+  it.each(["transfer", "run", "rejected command"])(
+    "keeps the desktop when the page tools fail to install (%s)",
+    async (failure) => {
+      const emulator = new InstaboxEmulator();
+      if (failure === "transfer") emulator.writeError = new Error("transfer failed");
+      else
+        emulator.fails = (command) => {
+          if (!command.startsWith("bash -c 'status=0; bash ")) return false;
+          if (failure === "rejected command") throw new Error("command failed");
+          return true;
+        };
+      const { provider, computer } = await started(emulator);
+      expect(
+        [...emulator.computers.get(computer.id)!.files.keys()].filter((path) =>
+          path.startsWith("/tmp/rakazo-page-browser-"),
+        ),
+      ).toEqual([]);
+      emulator.fails = () => false;
+      const events = [];
+      for await (const event of provider.execute(computer, { argv: ["echo", "ok"] }, ctx))
+        events.push(event);
+      expect(events).toEqual([
+        { type: "stdout", data: "ok\n" },
+        { type: "exit", code: 0 },
+      ]);
+    },
+  );
+
+  it.each(["transfer", "rejected command", "nonzero command"])(
+    "propagates cancellation during installer %s and removes the script",
+    async (stage) => {
+      const emulator = new InstaboxEmulator();
+      const controller = new AbortController();
+      const reason = new Error("prepare cancelled");
+      const { provider: create } = emulatedInstabox(emulator);
+      const provider = create();
+      const computer = await provider.provision(request, ctx);
+      if (stage === "transfer") {
+        emulator.onWrite = () => {
+          controller.abort(reason);
+          throw reason;
+        };
+      } else {
+        emulator.fails = (command) => {
+          if (!command.startsWith("bash -c 'status=0; bash ")) return false;
+          controller.abort(reason);
+          if (stage === "rejected command") throw reason;
+          return true;
+        };
+      }
+      await expect(provider.prepare(computer, { ...ctx, signal: controller.signal })).rejects.toBe(
+        reason,
+      );
+      expect(
+        [...emulator.computers.get(computer.id)!.files.keys()].filter((path) =>
+          path.startsWith("/tmp/rakazo-page-browser-"),
+        ),
+      ).toEqual([]);
+    },
+  );
+
+  it("gives up on a stalled install after two minutes and keeps the desktop", async () => {
+    vi.useFakeTimers();
+    try {
+      const emulator = new InstaboxEmulator();
+      emulator.hangs = (command) => command.startsWith("bash -c 'status=0; bash ");
+      const { provider: create } = emulatedInstabox(emulator);
+      const provider = create();
+      const computer = await provider.provision(request, ctx);
+      let prepared = false;
+      const preparing = provider.prepare(computer, ctx).then(() => {
+        prepared = true;
+      });
+      await vi.advanceTimersByTimeAsync(119_000);
+      expect(prepared).toBe(false);
+      await vi.advanceTimersByTimeAsync(2_000);
+      await preparing;
+      expect(emulator.killedJobs).toEqual([expect.stringMatching(/^bash -c 'status=0; bash /)]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not report a computer deleted during the install as prepared", async () => {
+    const emulator = new InstaboxEmulator();
+    const { provider: create } = emulatedInstabox(emulator);
+    const provider = create();
+    const computer = await provider.provision(request, ctx);
+    emulator.onWrite = (path) => {
+      if (path.startsWith("/tmp/rakazo-page-browser-")) emulator.computers.delete(computer.id);
+    };
+    const failure = await provider.prepare(computer, ctx).catch((error: unknown) => error);
+    expect(isSandboxGoneError(failure)).toBe(true);
+  });
+
+  it("does not report a computer paused for an installer it could not stop as prepared", async () => {
+    vi.useFakeTimers();
+    try {
+      const emulator = new InstaboxEmulator();
+      emulator.hangs = (command) => command.startsWith("bash -c 'status=0; bash ");
+      emulator.jobKill = () => new Error("kill unavailable");
+      const { provider: create } = emulatedInstabox(emulator);
+      const provider = create();
+      const computer = await provider.provision(request, ctx);
+      const preparing = provider.prepare(computer, ctx).catch((error: unknown) => error);
+      await vi.advanceTimersByTimeAsync(125_000);
+      expect(await preparing).toMatchObject({ name: "SandboxUnsafeStopError" });
+      expect(emulator.computers.get(computer.id)!.state).toBe("suspended");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each(["exit", "rejection"])(
+    "retries input cleanup after one transient %s",
+    async (failure) => {
+      const { emulator, provider, computer } = await started();
+      emulator.writeError = new Error("partial transfer");
+      let attempts = 0;
+      emulator.fails = (command) => {
+        if (!command.startsWith("rm -f -- '/tmp/rakazo-page-input-")) return false;
+        attempts++;
+        if (attempts !== 1) return false;
+        if (failure === "rejection") throw new Error("temporary transport failure");
+        return true;
+      };
+      await expect(provider.pageBrowser!(computer, fill, ctx)).rejects.toThrow(
+        "Could not transfer browser input",
+      );
+      expect(attempts).toBe(2);
+      expect(pageFiles(emulator, computer.id)).toEqual([]);
+    },
+  );
+
+  it("passes cancellation to the input transfer and removes a partial write", async () => {
+    const { emulator, provider, computer } = await started();
+    const controller = new AbortController();
+    emulator.onWrite = (_path, _data, signal) => {
+      expect(signal).toBe(controller.signal);
+      controller.abort();
+      signal!.throwIfAborted();
+    };
+    await expect(
+      provider.pageBrowser!(computer, fill, { ...ctx, signal: controller.signal }),
+    ).rejects.toThrow("Could not transfer browser input");
+    expect(pageFiles(emulator, computer.id)).toEqual([]);
+  });
+
+  it("passes a page request on stdin from a private file, never on a command line", async () => {
+    const { emulator, provider, computer } = await started();
+    const received: unknown[] = [];
+    emulator.pageBrowser = (request) => {
+      received.push(request);
+      return { exitCode: 0, stdout: JSON.stringify({ ok: true }) };
+    };
+    await expect(provider.pageBrowser!(computer, fill, ctx)).resolves.toEqual({ ok: true });
+    expect(received).toEqual([fill]);
+    expect(emulator.commands.every((command) => !command.includes("fake-vault-password"))).toBe(
+      true,
+    );
+    const write = emulator.requests.find((name) =>
+      name.startsWith("write /tmp/rakazo-page-input-"),
+    );
+    const folder = write!.slice("write ".length, write!.lastIndexOf("/"));
+    expect(emulator.commands).toContainEqual(`mkdir -m 700 -- '${folder}'`);
+    expect(pageFiles(emulator, computer.id)).toEqual([]);
+  });
+
+  it("reports a page request it could not send without running it, and cleans up", async () => {
+    const { emulator, provider, computer } = await started();
+    emulator.pageBrowser = () => ({ exitCode: 0, stdout: JSON.stringify({ ok: true }) });
+    emulator.writeError = new Error("fake-vault-password");
+    await expect(provider.pageBrowser!(computer, fill, ctx)).rejects.toThrow(
+      "Could not transfer browser input",
+    );
+    expect(emulator.commands.some((command) => command.includes("exec 0<"))).toBe(false);
+    expect(emulator.commands.at(-1)).toMatch(/^rm -f -- '\/tmp\/rakazo-page-input-/);
+  });
+
+  it("falls back to the desktop tools when the helper is missing", async () => {
+    const { emulator, provider, computer } = await started();
+    await expect(provider.pageBrowser!(computer, { command: "snapshot" }, ctx)).rejects.toThrow(
+      "Page browser unavailable or interrupted",
+    );
+    expect(pageFiles(emulator, computer.id)).toEqual([]);
   });
 });
