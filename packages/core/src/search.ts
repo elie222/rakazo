@@ -1,9 +1,9 @@
 import type { SearchHit } from "@rakazo/contracts";
 import { textBoundary, truncatePlainText } from "./markdown-plain.js";
 
-const URL_PATTERN = /https?:\/\/[^\s<>"'\]][^\s<>"']*/gi;
+const URL_PATTERN = /https?:\/\/[^\s<>"'`\]][^\s<>"'`]*/gi;
 
-const URL_START = /https?:\/\/[^\s<>"'\]]/gi;
+const URL_START = /https?:\/\/[^\s<>"'`\]]/gi;
 
 function linkEnd(text: string, start: number, limit: number): number {
   let parentheses = 0;

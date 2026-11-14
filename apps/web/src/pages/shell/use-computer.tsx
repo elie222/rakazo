@@ -9,6 +9,8 @@ import type {
 } from "@rakazo/contracts";
 import { isComputerAllowanceUsed } from "@rakazo/contracts";
 import {
+  COMPUTER_CONTROL_HEARTBEAT_MS,
+  COMPUTER_HEARTBEAT_MS,
   createScreenReconnects,
   isRetryableError,
   screenProbeUrl,
@@ -37,8 +39,8 @@ import {
 import type { Panel } from "../../lib/right-panel-state";
 import type { createSpaceRpc } from "../../lib/rpc";
 import {
+  computerBusyWithRun,
   computerPanelNeedsScreen,
-  computerTakeoverBlocked,
   screenMissing,
   screenReadLoaded,
   userHoldsComputerControl,
@@ -48,8 +50,6 @@ import { errorText } from "../../lib/user-error";
 // Caps the per-bot computer cache so a long session that opens many distinct bots
 // over time doesn't accumulate one entry per bot forever.
 const COMPUTER_CACHE_LIMIT = 20;
-// A remembered view shown on release must outlive the switch; an older one is read again.
-const VIEW_REUSE_MIN_REMAINING_MS = 60_000;
 
 type CachedComputer = { computer: ComputerStatus | null; screenUrl: string | null };
 
@@ -153,8 +153,6 @@ export function useComputerState({
   useEffect(() => {
     setHeldScreen(null);
   }, [computerOpen, panel]);
-  // Each bot's last read-only screen, which a release shows at once instead of after its call.
-  const viewScreenUrls = useRef(new Map<string, string>());
   // The Wuying URL a mounted frame signed in with, until its session ends. Reads keep it rather
   // than replace it, since each fresh login code signs the frame's session out.
   const liveWuyingUrl = useRef<string | null>(null);
@@ -450,21 +448,9 @@ export function useComputerState({
         }
         // A Wuying login code works once, so a cached one could only sign in as a spent code.
         cacheComputerFor(id, { screenUrl: screen.url?.startsWith("wuying:") ? null : screen.url });
-        if (proxiedScreenCapability(screen.url)?.policy === "view") {
-          viewScreenUrls.current.set(id, screen.url!);
-        }
       },
       fallbackError: t`Could not connect to the computer screen`,
     });
-  }
-
-  /** The bot's last read-only screen, while its capability still has time left. */
-  function viewScreenUrlFor(botId: string) {
-    const url = viewScreenUrls.current.get(botId) ?? null;
-    const capability = proxiedScreenCapability(url);
-    return capability && capability.expiresAt - Date.now() > VIEW_REUSE_MIN_REMAINING_MS
-      ? url
-      : null;
   }
 
   /** A retry the user pressed starts the visible screen's reconnects over. */
@@ -510,7 +496,6 @@ export function useComputerState({
     resetScreenReconnect,
     computerVisible,
     refreshComputerScreen,
-    viewScreenUrlFor,
   };
 }
 
@@ -575,7 +560,6 @@ export function useComputerControls({
     resetScreenReconnect,
     computerVisible,
     refreshComputerScreen,
-    viewScreenUrlFor,
   } = state;
   const [keepComputerRecovery, setKeepComputerRecovery] = useState(false);
   const recoveryHoldTimer = useRef<number | undefined>(undefined);
@@ -718,7 +702,7 @@ export function useComputerControls({
 
   // Opening the computer while its bot was running was refused as busy; boot it once the run
   // ends, or the open window is left on a stopped computer with nothing to press.
-  const computerBlockedByRun = computerTakeoverBlocked(computer, runStatus);
+  const computerBlockedByRun = computerBusyWithRun(computer, runStatus);
   useEffect(() => {
     if (computerBlockedByRun) return;
     const botId = computer?.botId;
@@ -743,21 +727,60 @@ export function useComputerControls({
     return () => window.removeEventListener("keydown", onKey);
   }, [computerOpen]);
 
+  const hasControl = userHoldsComputerControl(computer, computerBot?.id);
   useEffect(() => {
     const heartbeatBotId = computerBot?.id ?? active?.id;
     if ((panel !== "computer" && !computerOpen) || !heartbeatBotId || computer?.state !== "running")
       return;
-    // A computer panel left open in a hidden window must not keep the computer awake.
+    // Only a visible page checks in: a forgotten tab neither keeps the computer awake nor holds
+    // control, which lapses about a minute and a half after it was hidden.
     const ping = () => {
       if (document.visibilityState !== "visible") return;
       void rpc.computer.heartbeat({ botId: heartbeatBotId }).catch((error) => {
         if (!isRetryableError(error)) window.clearInterval(timer);
       });
     };
-    const timer = window.setInterval(ping, 60_000);
+    const timer = window.setInterval(
+      ping,
+      hasControl ? COMPUTER_CONTROL_HEARTBEAT_MS : COMPUTER_HEARTBEAT_MS,
+    );
     ping();
-    return () => window.clearInterval(timer);
-  }, [panel, computerOpen, computerBot?.id, active?.id, computer?.state]);
+    // Coming back checks in at once, so a short visit elsewhere keeps control.
+    document.addEventListener("visibilitychange", ping);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", ping);
+    };
+  }, [panel, computerOpen, computerBot?.id, active?.id, computer?.state, hasControl]);
+
+  // Control ends with the screen: closing it, switching chats, or leaving the page hands it back.
+  // The server tells the holder their lease, from Take control or teaching alike; the hand back
+  // names it, so a late one from an old page never ends newer control.
+  const heldBotId = hasControl && computerOpen ? computerBot?.id : undefined;
+  const heldLeaseId = heldBotId ? computer?.controlLeaseId : undefined;
+  useEffect(() => {
+    if (!heldBotId || !heldLeaseId) return;
+    const handBack = () =>
+      void rpc.computer
+        .release({ botId: heldBotId, leaseId: heldLeaseId }, { context: { keepalive: true } })
+        .catch(() => undefined);
+    window.addEventListener("pagehide", handBack);
+    return () => {
+      window.removeEventListener("pagehide", handBack);
+      handBack();
+    };
+  }, [heldBotId, heldLeaseId]);
+
+  // A control event says the screen is held but not by whom; the status read says, and gives the
+  // holder their lease.
+  const controlBotNeedsRead =
+    computer?.controlHolder === "user" && !computer.controlledByOther && !computer.controlLeaseId
+      ? computer.botId
+      : undefined;
+  useEffect(() => {
+    if (!controlBotNeedsRead || !computerOpen) return;
+    void refreshComputerFor(controlBotNeedsRead).catch(() => undefined);
+  }, [controlBotNeedsRead, computerOpen]);
 
   /** Open the computer view. Only an explicit Take control asks for the lease. */
   async function openComputer(botId?: string, takeControl = false) {
@@ -785,12 +808,11 @@ export function useComputerControls({
       return true;
     }
     const needsTakeover = takeControl && !userHoldsComputerControl(targetComputer, id);
-    const blocked = computerTakeoverBlocked(targetComputer, runStatus);
     try {
       await bootComputer({
         botId: id,
-        takeControl: needsTakeover && !blocked,
-        showProgress: (needsTakeover && !blocked) || targetComputer?.state !== "running",
+        takeControl: needsTakeover,
+        showProgress: needsTakeover || targetComputer?.state !== "running",
         force: targetComputer?.state !== "running",
       });
       return true;
@@ -808,15 +830,8 @@ export function useComputerControls({
   async function releaseComputer(reason?: ComputerReleaseReason) {
     const botId = computerBotIdRef.current ?? activeBotId.current;
     if (!botId) return;
-    // The read-only screen is safe to show at once; the release itself takes a while.
-    const view = computerBotIdRef.current === botId ? viewScreenUrlFor(botId) : null;
-    let controlScreen: string | null = null;
-    if (view) {
-      setScreenUrl((current) => {
-        controlScreen = current;
-        return view;
-      });
-    }
+    // Hand back and I'm done end whatever control this person holds on the bot's screen. Nothing
+    // changes here until the server answers; the screen then follows its state.
     try {
       await rpc.computer.release({ botId, reason });
       if (computerBotIdRef.current !== botId && activeBotId.current !== botId) return;
@@ -826,8 +841,6 @@ export function useComputerControls({
         await refreshGroupThread(groupId).catch(() => undefined);
       }
     } catch {
-      // Control stays with this person, so their screen goes back to it.
-      if (view) setScreenUrl((current) => (current === view ? controlScreen : current));
       if (computerBotIdRef.current !== botId && activeBotId.current !== botId) return;
       setComputerError(t`Could not continue`);
       setComputerErrorFromScreen(false);
@@ -859,7 +872,6 @@ export function useComputerControls({
   );
 
   const embeddedScreenUrl = embeddableScreenUrl(screenUrl);
-  const hasControl = userHoldsComputerControl(computer, computerBot?.id);
   const hideScreenLoadError = computerErrorFromScreen && Boolean(embeddedScreenUrl);
   const screenFailure =
     Boolean(screenLoadError) ||

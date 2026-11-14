@@ -263,10 +263,6 @@ describePostgres("direct run dispatch (PostgreSQL)", () => {
       data: { computerId: computer.id },
     });
     const waiting = await createRun({ status: "waiting_takeover" });
-    await system.computer.update({
-      where: { id: computer.id },
-      data: { controlRunId: waiting.id },
-    });
     const lease = await system.computerExecutionLease.create({
       data: {
         computerId: computer.id,
@@ -299,9 +295,6 @@ describePostgres("direct run dispatch (PostgreSQL)", () => {
           where: { threadId: identity.threadId, clientNonce: `stuck-expired:${waiting.id}` },
         }),
       ).toBe(1);
-      expect(await system.computer.findUniqueOrThrow({ where: { id: computer.id } })).toMatchObject(
-        { controlRunId: null },
-      );
     } finally {
       await host.stop();
       await system.run.updateMany({
@@ -332,7 +325,6 @@ describePostgres("direct run dispatch (PostgreSQL)", () => {
       data: {
         controlHolder: "user",
         controlBotId: bot.id,
-        controlRunId: waiting.id,
         controlLeaseId: randomUUID(),
         controlLeaseExpiresAt: new Date(Date.now() + 60_000),
       },

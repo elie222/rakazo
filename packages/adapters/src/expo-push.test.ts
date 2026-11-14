@@ -569,6 +569,8 @@ function recordingJobs() {
     enqueue: async (job) => {
       enqueued.push(job);
     },
+    enqueueIn: async () => undefined,
+    cancelIn: async () => undefined,
     cancel: async () => undefined,
     close: async () => undefined,
   };

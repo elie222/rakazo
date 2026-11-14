@@ -20,6 +20,7 @@ import type {
   McpConnector,
   McpOAuthBroker,
   MemoryProviderResolver,
+  MessagingDelivery,
   MessagingInstallations,
   PiOAuthLogins,
   PlanLimitsReader,
@@ -34,7 +35,7 @@ import type {
   WorkActivities,
 } from "@rakazo/adapters";
 import type { Auth } from "@rakazo/auth";
-import type { ModelCredential, NavLink } from "@rakazo/contracts";
+import type { LabFeature, ModelCredential, NavLink } from "@rakazo/contracts";
 import type { BoardEvents, PrismaClient, ThreadEvents } from "@rakazo/db";
 import type { BillingService } from "./billing.js";
 import { accountRoutes } from "./routes/account.js";
@@ -118,6 +119,8 @@ export interface RouterDeps {
   artifacts: ArtifactStore;
   dataDir: string;
   messagingInstallations?: MessagingInstallations;
+  /** Sends replies to the chat apps people message from; absent without one. */
+  messagingDelivery?: MessagingDelivery;
   messaging?: {
     enabled: boolean;
     providers: string[];
@@ -132,9 +135,10 @@ export interface RouterDeps {
   env: {
     /** Domain of bots' email addresses; unset when this server receives no email. */
     inboundEmailDomain?: string;
-    ticketBoardEnabled?: boolean;
     navLinks?: NavLink[];
     adminEmails?: string[];
+    /** Labs features this deployment turns on for every account. */
+    deploymentLabs?: LabFeature[];
     phoneCallsEnabled?: boolean;
     phoneCallRingSeconds?: number;
     maxUploadSizeBytes?: number;

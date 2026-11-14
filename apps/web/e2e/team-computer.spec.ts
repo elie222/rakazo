@@ -5,7 +5,6 @@ import {
   captureScreenshot,
   completeOnboarding,
   openBotPanelTab,
-  realSandboxTimeout,
   rpc,
   signup,
 } from "./helpers";
@@ -26,7 +25,7 @@ test("opening and releasing the computer keep a view-only stream; a failed relea
   const chrome = page.getByTestId("computer-chrome");
   const screen = page.getByTitle("Bot screen").last();
   const take = chrome.getByRole("button", { name: "Take control", exact: true });
-  const release = chrome.getByRole("button", { name: "Release control", exact: true });
+  const release = chrome.getByRole("button", { name: "Hand back control", exact: true });
   // The overlay covers the conversation header, which drags the desktop window.
   await expect(chrome).toHaveCSS("-webkit-app-region", "no-drag");
   const checkViewOnly = async () => {
@@ -73,7 +72,7 @@ test("opening and releasing the computer keep a view-only stream; a failed relea
   await expect(chrome).toBeHidden();
 });
 
-test("an active Team bot must be stopped before user takeover", async ({ page }, testInfo) => {
+test("a person can take control while a Team bot works", async ({ page }, testInfo) => {
   const stamp = Date.now();
 
   await signup(
@@ -89,7 +88,7 @@ test("an active Team bot must be stopped before user takeover", async ({ page },
   await expect
     .poll(async () => (await threadSnapshot(page, chiefId)).run?.status ?? "idle")
     .toBe("running");
-  await captureScreenshot(page, testInfo, "48-active-team-bot-blocks-takeover");
+  await captureScreenshot(page, testInfo, "48-active-team-bot-working");
   await expect
     .poll(
       async () => (await rpc<{ state: string }>(page, "computer/status", { botId: chiefId })).state,
@@ -106,56 +105,30 @@ test("an active Team bot must be stopped before user takeover", async ({ page },
     )
     .not.toBeNull();
 
-  const takeover = await rpcResponse(page, "computer/takeover", { botId: chiefId });
-  expect(takeover.ok).toBe(false);
-  expect(takeover.status).toBe(409);
-  await expect
-    .poll(async () => (await threadSnapshot(page, chiefId)).run?.status ?? "idle")
-    .toBe("running");
-
+  // A person can take control while the bot works; the bot's screen actions wait or are refused.
   await openBotPanelTab(page, "Computer");
   const sidePanel = page.getByTestId("side-panel");
-  await expect(sidePanel.getByRole("button", { name: /Take control/i })).toHaveCount(0);
   await page.getByTestId("computer-preview").hover();
-  const openBusy = sidePanel.getByTestId("computer-preview-open");
-  await expect(openBusy).toBeVisible();
-  await expect(openBusy.getByText("Open", { exact: true })).toBeVisible();
-  await openBusy.click();
+  await sidePanel.getByTestId("computer-preview-open").click();
   const chrome = page.getByTestId("computer-chrome");
-  await expect(page.getByRole("button", { name: "Close computer" })).toBeVisible();
-  // Open while the bot is busy must not grant control (takeover stays blocked).
-  await expect(chrome.getByText("You have control", { exact: true })).toHaveCount(0);
-  await expect(chrome.getByRole("button", { name: /Take control/i })).toHaveCount(0);
-  await captureScreenshot(page, testInfo, "48b-open-while-busy-no-control");
-  await page.getByRole("button", { name: "Close computer" }).click();
+  await chrome.getByRole("button", { name: "Take control", exact: true }).click();
+  await expect(
+    chrome.getByRole("button", { name: "Hand back control", exact: true }),
+  ).toBeVisible();
+  await captureScreenshot(page, testInfo, "48b-take-control-while-busy");
 
-  // Stop through the shell so the client refreshes computer status (API stop alone
-  // does not emit a terminal thread event).
-  await page.getByRole("button", { name: "Stop", exact: true }).click();
-  await waitForIdle(page, chiefId);
+  // Closing the computer hands control back.
+  await page.getByRole("button", { name: "Close computer" }).click();
   await expect
     .poll(
       async () =>
         (
-          await rpc<{ busyBotName: string | null }>(page, "computer/status", {
+          await rpc<{ controlHolder: string }>(page, "computer/status", {
             botId: chiefId,
           })
-        ).busyBotName,
+        ).controlHolder,
     )
-    .toBeNull();
-
-  // After stop, opening stays view-only until Take control is clicked.
-  await page.getByTestId("computer-preview").hover();
-  await page.getByTestId("computer-preview-open").click();
-  await expect(page.getByRole("button", { name: "Close computer" })).toBeVisible();
-  await expect(chrome.getByText("You have control", { exact: true })).toHaveCount(0);
-  await chrome.getByRole("button", { name: "Take control", exact: true }).click();
-  await expect(chrome.getByText("You have control", { exact: true })).toBeVisible();
-  await expect(chrome.getByRole("button", { name: "Release control", exact: true })).toBeVisible();
-  await captureScreenshot(page, testInfo, "49-team-computer-open-after-stop");
-  await chrome.getByRole("button", { name: "Release control", exact: true }).click();
-  await expect(chrome.getByRole("button", { name: "Take control", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Close computer" })).toBeVisible();
+    .toBe("none");
 });
 
 async function openComputerPanel(page: Page) {
@@ -179,22 +152,9 @@ async function sendMessage(page: Page, text: string) {
   return result.json.runId;
 }
 
-async function waitForIdle(page: Page, botId: string) {
-  await expect
-    .poll(async () => (await threadSnapshot(page, botId)).run?.status ?? "idle", {
-      timeout: realSandboxTimeout(90_000, 20_000),
-    })
-    .toBe("idle");
-}
-
 function threadSnapshot(page: Page, botId: string) {
   return rpc<{
     run: { id: string; status: string } | null;
     messages: Array<{ runId?: string | null }>;
   }>(page, "threads/get", { botId });
-}
-
-async function rpcResponse(page: Page, procedure: string, body: unknown) {
-  const response = await page.request.post(`/rpc/${procedure}`, { data: { json: body } });
-  return { ok: response.ok(), status: response.status() };
 }

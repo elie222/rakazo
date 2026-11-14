@@ -265,6 +265,7 @@ async function runLoop(
     },
     computer: {
       updateMany: vi.fn(async () => ({ count: 1 })),
+      findUnique: vi.fn(async () => null),
       findFirst: vi.fn(async () => ({
         state: "running",
         restorePending: false,

@@ -456,7 +456,7 @@ describe("T3 Code environments connected as MCP servers", () => {
     const result = await executeCloudAgentTool(
       {
         prisma,
-        jobs: { enqueue, cancel: vi.fn(), close: vi.fn() },
+        jobs: { enqueue, enqueueIn: vi.fn(), cancelIn: vi.fn(), cancel: vi.fn(), close: vi.fn() },
         events: { notify: vi.fn() },
         cloudAgent: { key: "deployment", spaceId: actor.spaceId } as CloudAgentConnection,
         userCloudAgents: new T3CodeConnections(prisma, f.oauth, f.transport),

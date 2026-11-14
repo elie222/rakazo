@@ -28,6 +28,7 @@ import {
   createRepos,
   createThreadMessageInTransaction,
   deletePageShareSecrets,
+  draftRecordingsOfLeaseInTransaction,
   expireComputerExecutionLeases,
   legacyTeamHomeKey,
   recordComputerRunEnd,
@@ -334,12 +335,20 @@ export async function archiveBot(
       data: { active: false, nextRunAt: null },
     });
     await expireComputerExecutionLeases(tx, { botId: bot.id });
+    // Archiving ends a person's control of the bot's screen, and the recording made under it.
+    const held = await tx.computer.findMany({
+      where: { controlBotId: bot.id, controlLeaseId: { not: null } },
+      select: { spaceId: true, controlLeaseId: true },
+    });
     await tx.computer.updateMany({
       where: {
         OR: [{ controlBotId: bot.id }, { executionBotId: bot.id }],
       },
       data: releasedComputerLease(),
     });
+    for (const { spaceId, controlLeaseId } of held) {
+      await draftRecordingsOfLeaseInTransaction(tx, { spaceId, leaseId: controlLeaseId! });
+    }
     if (dedicated) {
       await tx.computer.updateMany({
         where: { id: dedicated.id, state: { notIn: ["running", "quarantined"] } },
@@ -507,6 +516,7 @@ export async function destroyBot(
           ...botArtifacts.map((artifact) => artifact.storageKey),
           ...groupCleanup.artifactKeys,
         ],
+        removedGroupIds: groupCleanup.removedGroupIds,
         directMemory,
         groupMemberMemory: groupMemberMemory.map((run) => run.thread),
         groupMemory: groupCleanup.memory,
@@ -515,7 +525,7 @@ export async function destroyBot(
       };
     }, THREAD_LOCK_TRANSACTION_OPTIONS),
   );
-  if (!deletion) return;
+  if (!deletion) return { removedGroupIds: [] as string[], alreadyRemoved: true };
   await Promise.allSettled(
     deletion.cancelledGroupRuns.map((run) => deps.jobs.cancel(runJobKey(run.id))),
   );
@@ -591,6 +601,7 @@ export async function destroyBot(
     await removeStoredArtifacts(artifactStore, deletion.artifactKeys, context);
   }
   if (deps.secretStore) await forgetPageShareSecrets(deps.secretStore, deletion.pageShareSecrets);
+  return { removedGroupIds: deletion.removedGroupIds };
 }
 
 type DissolvableGroup = {
@@ -732,6 +743,7 @@ async function detachBotFromGroups(tx: Prisma.TransactionClient, botId: string) 
     await tx.chatGroup.deleteMany({ where: { id: { in: dissolvedGroupIds } } });
   }
   return {
+    removedGroupIds: dissolvedGroupIds,
     memory,
     artifactKeys: groupArtifacts.map((artifact) => artifact.storageKey),
     pageShareSecrets,
@@ -769,7 +781,6 @@ function releasedComputerLease() {
     controlUserId: null,
     controlLeaseExpiresAt: null,
     controlBotId: null,
-    controlRunId: null,
     executionRunId: null,
     executionBotId: null,
     executionLeaseExpiresAt: null,

@@ -12,7 +12,7 @@ import {
 import type { MessageBlock } from "@rakazo/contracts";
 import { cloudAgentHttpsUrl } from "@rakazo/core";
 import type { CloudAgent } from "@rakazo/db";
-import { appendEventInTransaction, Prisma } from "@rakazo/db";
+import { appendEventInTransaction, Prisma, THREAD_LOCK_TRANSACTION_OPTIONS } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { CloudAgentDeps } from "./cloud-agent-service.js";
 import { cloudAgentBlock, cloudAgentFor, enqueueCloudAgent } from "./cloud-agent-service.js";
@@ -74,6 +74,11 @@ export async function pollCloudAgent(
       return;
     }
     if (!agent.remoteId) {
+      // A refused launch created nothing remote, so a later cancel has nothing to stop.
+      if (agent.status !== "running") {
+        await finishPoll(deps, agent, {}, abandoned);
+        return;
+      }
       // Write dispatch intent before I/O; a crash replays the same idempotent create.
       const marked = await deps.prisma.cloudAgent.updateMany({
         where: fence(agent),
@@ -375,7 +380,7 @@ async function finishPoll(
       }
     }
     return { seq, wakeRunId, nextPollAt };
-  });
+  }, THREAD_LOCK_TRANSACTION_OPTIONS);
   if (!committed) return;
   if (committed.seq !== undefined)
     await deps.events.notify(agent.threadId, committed.seq).catch(() => undefined);

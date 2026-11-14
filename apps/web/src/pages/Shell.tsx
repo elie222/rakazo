@@ -6,7 +6,7 @@ import type {
   ThreadMessage,
   VoiceStatus,
 } from "@rakazo/contracts";
-import { DEFAULT_NEW_BOT_AVATAR_SET } from "@rakazo/contracts";
+import { DEFAULT_NEW_BOT_AVATAR_SET, hasLab } from "@rakazo/contracts";
 import {
   activeThreadRuns,
   answerableAskMessageIds,
@@ -69,6 +69,7 @@ import { errorText } from "../lib/user-error";
 import { HostComputerPrompt } from "./HostComputerPrompt";
 import { RoutineList } from "./RoutineList";
 import { ArchivedChats } from "./shell/archived-chats";
+import type { ChatMenuState, ChatMenuTarget } from "./shell/chat-context-menu";
 import { ChatContextMenu } from "./shell/chat-context-menu";
 import { ChatFindBar } from "./shell/chat-find-bar";
 import { ChatHeader } from "./shell/chat-header";
@@ -254,7 +255,7 @@ function SpaceShell() {
   const isMobileSidebar = useIsMobile();
   const pages = usePagesForChat();
   const miniSidebar = botsSidebarCollapsed && !isMobileSidebar;
-  const [botMenu, setBotMenu] = useState<{ kind: "bot" | "group"; id: string } | null>(null);
+  const [botMenu, setBotMenu] = useState<ChatMenuTarget | null>(null);
   const closeBotMenu = useCallback(() => setBotMenu(null), []);
   const currentSpaceId = selectedSpaceId() ?? bootstrapMe?.spaceId ?? null;
   // null: settings follow the space the app is showing.
@@ -873,6 +874,7 @@ function SpaceShell() {
         computersAreUnavailable(bootstrapMe?.sandboxProvider),
       billing: bootstrapMe?.billingEnabled === true,
       updates: Boolean(desktopBridge()?.update),
+      labs: Boolean(bootstrapMe?.labsAvailable.length),
     },
     onNewBot: () => dialogs.setCreateBotOpen(true),
     onNewGroup: () => setPanel("create-group"),
@@ -926,6 +928,16 @@ function SpaceShell() {
         navigate={navigate}
       />
     ) : null;
+  const chatMenu: ChatMenuState = {
+    menu: botMenu,
+    setMenu: setBotMenu,
+    content: botMenuContent,
+    // Search can list a chat the roster doesn't hold; it has no menu to show.
+    has: (target) =>
+      target.kind === "bot"
+        ? bots.some((bot) => bot.id === target.id)
+        : groups.some((group) => group.id === target.id),
+  };
   const shell = (
     <BotsSidebarLayout
       userId={userId}
@@ -965,6 +977,7 @@ function SpaceShell() {
         navigate={navigate}
         setNewSpaceOpen={dialogs.setNewSpaceOpen}
         setCreateBotOpen={dialogs.setCreateBotOpen}
+        chatMenu={chatMenu}
         roster={
           <SidebarRoster
             mini={miniSidebar}
@@ -991,11 +1004,9 @@ function SpaceShell() {
             displayedRunError={composer.displayedRunError}
             draggedBotId={rosterDrop.draggedBotId}
             setDraggedBotId={rosterDrop.setDraggedBotId}
-            botMenu={botMenu}
-            setBotMenu={setBotMenu}
+            chatMenu={chatMenu}
             reorderRosterBot={roster.reorderRosterBot}
             activeSnapshot={activeSnapshot}
-            botMenuContent={botMenuContent}
           />
         }
         archived={
@@ -1027,7 +1038,7 @@ function SpaceShell() {
         }
         footerLogos={footerLogos}
         user={session.data?.user}
-        ticketBoardEnabled={Boolean(bootstrapMe?.ticketBoardEnabled)}
+        boardEnabled={hasLab(bootstrapMe?.labs, "board")}
         navLinks={desktopBridge() ? [] : (bootstrapMe?.navLinks ?? [])}
         openSettings={openSettings}
         openIntegrations={() => setOverlay({ kind: "integrations" })}
@@ -1398,7 +1409,6 @@ function SpaceShell() {
           composerRunning={composerRunning}
           sending={sending}
           booting={booting}
-          runStatus={snapshot?.run?.status}
           sendError={sendError}
           embeddedScreenUrl={computerControls.embeddedScreenUrl}
           screenFrameKey={computerState.screenFrameKey}

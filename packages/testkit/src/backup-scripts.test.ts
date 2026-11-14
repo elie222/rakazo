@@ -58,11 +58,25 @@ function fixture() {
     docker,
     `#!/usr/bin/env -S node --
 const fs = require("node:fs");
+const path = require("node:path");
+const { spawnSync } = require("node:child_process");
 const args = process.argv.slice(2);
+const client = path.basename(process.argv[1]);
+if (client !== "docker") args.unshift(client);
 fs.appendFileSync(process.env.COMMAND_LOG, JSON.stringify(args) + "\\n");
 if (args[0] === "inspect") {
   console.log(process.env.FAKE_APPDATA);
-} else if (args[0] !== "compose") {
+} else if (args.includes("sh") && args[args.indexOf("sh") + 2]?.startsWith("exec ")) {
+  // Run the actual container-side shell, with fake database clients and env.
+  const result = spawnSync("/bin/sh", args.slice(args.indexOf("sh") + 1), {
+    env: { ...process.env,
+      POSTGRES_USER: process.env.FAKE_POSTGRES_USER ?? "rakazo",
+      POSTGRES_DB: process.env.FAKE_POSTGRES_DB ?? "rakazo",
+    },
+    stdio: "inherit",
+  });
+  process.exit(result.status ?? 1);
+} else if (args[0] !== "compose" && client === "docker") {
   process.exit(90);
 } else if (args.includes("pg_dump")) {
   if (process.env.FAIL_DUMP === "1") process.exit(2);
@@ -131,6 +145,9 @@ if (args[0] === "inspect") {
 `,
   );
   chmodSync(docker, 0o755);
+  for (const client of ["pg_dump", "psql", "pg_isready"]) {
+    symlinkSync(docker, path.join(bin, client));
+  }
   const tar = path.join(bin, "tar");
   write(
     tar,
@@ -295,6 +312,39 @@ function snapshotNames(root: string) {
 function contents(archive: string) {
   return execFileSync("/usr/bin/tar", ["-tzf", archive], { encoding: "utf8" });
 }
+
+describe("development database configuration", () => {
+  it.each([
+    ["rakazo", "rakazo"],
+    ["custom_admin", "custom_db"],
+    ["admin with spaces", "db with $dollar; punctuation"],
+  ])("uses container credentials %j / %j for backup and restore", (user, database) => {
+    const f = fixture();
+    const overrides = {
+      FAKE_POSTGRES_USER: user,
+      FAKE_POSTGRES_DB: database,
+      POSTGRES_USER: "different_host_user",
+      POSTGRES_DB: "different_host_database",
+    };
+    const backup = f.run("scripts/backup.sh", ["example"], overrides);
+    expect(backup.status, backup.stderr).toBe(0);
+    const restore = f.run(
+      "scripts/restore.sh",
+      [path.join(f.checkout, "backups/example")],
+      overrides,
+    );
+    expect(restore.status, restore.stderr).toBe(0);
+    const clients = f
+      .commands()
+      .filter((args) => ["pg_dump", "pg_isready", "psql"].some((client) => args.includes(client)));
+    expect(clients).toHaveLength(4);
+    for (const args of clients) {
+      expect(args[args.indexOf("-U") + 1]).toBe(user);
+      expect(args[args.indexOf("-d") + 1]).toBe(database);
+    }
+    expect(readFileSync(f.env.SQL_INPUT, "utf8")).toContain("CREATE TABLE example");
+  });
+});
 
 describe("development backup failures", () => {
   it.each([false, true])("archives data with a root env file present: %s", (hasEnv) => {
