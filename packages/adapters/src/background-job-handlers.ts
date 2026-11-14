@@ -183,8 +183,9 @@ export function createBackgroundJobHandlers(deps: {
       try {
         await deps.executor.wakeRoutine(payload.routineId, payload.scheduledFor);
       } finally {
-        // A wake moves the routine's next run, or pauses it, whether or not it starts one.
+        // A wake moves the routine's next run, or pauses it, and may queue or coalesce runs.
         await deps.events.publishSpaceChange?.(spaceId, "routines");
+        await deps.events.publishSpaceChange?.(spaceId, "runs");
       }
     }),
     "routine.retry": asOwner(run, async (payload, _execution, { spaceId }) => {
