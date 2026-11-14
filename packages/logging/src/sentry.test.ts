@@ -33,6 +33,9 @@ describe("sentry sink", () => {
     expect(sentryConfigFromEnv({ SENTRY_DSN: "https://errors.example.com/7" }).warning).toContain(
       "not a valid DSN",
     );
+    expect(
+      sentryConfigFromEnv({ SENTRY_DSN: "http://publickey@errors.example.com/7" }).warning,
+    ).toContain("not a valid DSN");
     expect(sentryConfigFromEnv({ SENTRY_DSN: "not a dsn" }).warning).toBeDefined();
     expect(
       sentryConfigFromEnv({
