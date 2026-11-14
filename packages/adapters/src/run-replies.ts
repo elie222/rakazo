@@ -125,8 +125,6 @@ export const DELEGATED_EMPTY_NOTICE =
 export const TOOL_STEPS_WITHOUT_RESPONSE =
   "The model finished its tool steps without a written response.";
 
-/** The message's text blocks joined, untrimmed. */
-
 /** True when the only written completion is the empty delegated notice after tool steps. */
 export function emptyDelegatedToolTurnShouldFail(blocks: MessageBlock[]): boolean {
   const text = messageBlocksText(blocks).trim();
