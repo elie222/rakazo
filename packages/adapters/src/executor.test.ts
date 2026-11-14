@@ -44,10 +44,10 @@ import {
 import { historyMyChatsAllowed } from "./run-tools-memory.js";
 import {
   loadCurrentTurnImages,
-  missingTurnImagesInstruction,
   settleSteeringAttachmentLoads,
   withRecentTurnImages,
 } from "./run-turn-images.js";
+import { missingTurnImagesInstruction } from "./run-turn-images.prompt.js";
 import { mainRole, withModelRoles } from "./testing/model-roles.js";
 import {
   appendToolCompletionAudit,

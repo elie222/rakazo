@@ -1,9 +1,9 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { promptSourceVersion } from "@rakazo/core/node/prompt-source-version";
+import { PROMPT_SOURCE_GLOBS, promptSourceVersion } from "@rakazo/core/node/prompt-source-version";
 import { describe, expect, it } from "vitest";
 import { promptVersion, promptVersionOf, promptVersionParts } from "./prompt-version.js";
 
@@ -85,3 +85,19 @@ it("embeds the development fingerprint in production bundles", () => {
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+it.each(["api", "worker"])(
+  "keeps %s build cache inputs aligned with definition discovery",
+  (app) => {
+    const config = JSON.parse(
+      readFileSync(new URL(`../../../apps/${app}/turbo.json`, import.meta.url), "utf8"),
+    );
+    expect(config.tasks.build.inputs.toSorted()).toEqual(
+      [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/packages/core/src/node/prompt-source-version.ts",
+        ...PROMPT_SOURCE_GLOBS.map((pattern) => `$TURBO_ROOT$/${pattern}`),
+      ].toSorted(),
+    );
+  },
+);

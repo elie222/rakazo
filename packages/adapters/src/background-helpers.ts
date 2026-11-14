@@ -15,7 +15,13 @@ import {
   THREAD_LOCK_TRANSACTION_OPTIONS,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
-import { helperPrompt, resultPrompt } from "./background-helpers.prompt.js";
+import {
+  BACKGROUND_HELPER_CHAT_REQUIRED,
+  backgroundHelperLimitNote,
+  helperPrompt,
+  resultPrompt,
+  startedNote,
+} from "./background-helpers.prompt.js";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { helperResultText, MAX_PARALLEL_SUBAGENTS } from "./pi-runtime-subagent.js";
 import type { RunContext } from "./run-context.js";
@@ -69,8 +75,7 @@ export async function startBackgroundHelper(
     !backgroundHelpersAllowed({ threadBotId: thread.botId, botId: bot.id, trigger: run.trigger })
   ) {
     return {
-      error:
-        "Background helpers start only from the user's own app chat with you. Run the helper inside this turn instead.",
+      error: BACKGROUND_HELPER_CHAT_REQUIRED,
     };
   }
   if (Boolean(input.modelProvider) !== Boolean(input.modelId)) {
@@ -155,7 +160,7 @@ export async function startBackgroundHelper(
   }, THREAD_LOCK_TRANSACTION_OPTIONS);
   if (committed === "full") {
     return {
-      error: `${MAX_PARALLEL_SUBAGENTS} background helpers are already working. Wait for a result before starting another.`,
+      error: backgroundHelperLimitNote(MAX_PARALLEL_SUBAGENTS),
     };
   }
   if (!committed) return started;
@@ -167,10 +172,6 @@ export async function startBackgroundHelper(
     getLogger().error("background helper enqueue", error);
   });
   return started;
-}
-
-function startedNote(name: string) {
-  return `Helper "${name}" is working in the background. End your turn now if nothing else needs doing; its result comes back to you later as a new message. Do not wait for it or check on it.`;
 }
 
 /**

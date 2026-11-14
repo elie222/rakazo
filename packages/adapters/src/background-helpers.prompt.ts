@@ -28,3 +28,14 @@ export function resultPrompt(name: string, status: "completed" | "failed", resul
       : "Pass it on to the user now with its actual substance. If it says memory, skills or routines should change, make that change yourself only when the user asked for it.",
   ].join("\n");
 }
+
+export function startedNote(name: string) {
+  return `Helper "${name}" is working in the background. End your turn now if nothing else needs doing; its result comes back to you later as a new message. Do not wait for it or check on it.`;
+}
+
+export const BACKGROUND_HELPER_CHAT_REQUIRED =
+  "Background helpers start only from the user's own app chat with you. Run the helper inside this turn instead.";
+
+export function backgroundHelperLimitNote(limit: number): string {
+  return `${limit} background helpers are already working. Wait for a result before starting another.`;
+}

@@ -63,4 +63,6 @@ versions for auxiliary judges or summaries.
 
 Keep prompt wording unchanged in organization-only changes. Existing offline
 behavior tests cover assembly and tool contracts; the source-version tests cover
-automatic discovery, conditional edits, schemas and production embedding.
+automatic discovery, conditional edits, schemas and production embedding. A contract
+test also checks both server build-cache configs against the exported discovery
+patterns, so adding a definition pattern cannot silently leave stale bundles cached.

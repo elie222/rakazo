@@ -94,13 +94,15 @@ import type { ExecutorDeps } from "./executor-deps.js";
 import type { FleetRun } from "./fleet-tools.js";
 import { loadBotGroupDirectory, loadGroupContext } from "./group-handoff.js";
 import {
-  formatCompactedSummary,
-  formatRecalledMemory,
   historyWindowSize,
   LEGACY_HISTORY_WINDOW_SIZE,
-  MAX_RECALLED_MEMORIES,
   selectCompactedHistory,
 } from "./history-compaction.js";
+import {
+  formatCompactedSummary,
+  formatRecalledMemory,
+  MAX_RECALLED_MEMORIES,
+} from "./history-compaction.prompt.js";
 import {
   historySpeaker,
   loadSpacePeople,
@@ -210,11 +212,11 @@ import {
 import {
   claimRunSteering,
   loadCurrentTurnImages,
-  missingTurnImagesInstruction,
   RECENT_TURN_IMAGE_TURNS,
   withLatestStepScreenshot,
   withRecentTurnImages,
 } from "./run-turn-images.js";
+import { missingTurnImagesInstruction } from "./run-turn-images.prompt.js";
 import { loadAgentScratchpadContext } from "./scratchpad-context.js";
 import { inferScript } from "./scripted-runtime.js";
 import { loadSharedSpaceNote } from "./shared-space-note.js";
