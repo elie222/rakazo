@@ -157,16 +157,17 @@ findings() {
     def decode:
       gsub("&#x27;|&#39;"; "'"'"'") | gsub("&quot;"; "\"") | gsub("&lt;"; "<")
       | gsub("&gt;"; ">") | gsub("&amp;"; "&");
+    def printable: explode | map(select(. >= 32 and (. < 127 or . > 159))) | implode;
     def qodo_current: .body | split("<summary><strong>Previous reviews</strong>")[0];
     def qodo_sha:
       [qodo_current | scan("<!-- https://github\\.com/[^ ]+/commit/([0-9a-f]{7,40}) -->") | .[0]] | first;
     def qodo_findings:
       [qodo_current | split("<summary>\\s+(?=\\d+\\.\\s)"; null) | .[1:][]
        | capture("^(?<n>\\d+)\\.\\s+(?<head>[\\s\\S]*?)</summary>(?<rest>[\\s\\S]*)")
-       | [.head | scan("<code>([^<]*)</code>") | .[0]] as $tags
+       | [.head | scan("<code>([^<]*)</code>") | .[0] | printable] as $tags
        | {n: (.n | tonumber),
           title: (.head | sub("<code>[\\s\\S]*$"; "") | gsub("<[^>]+>"; "") | decode
-                  | gsub("\\s+"; " ") | sub("^ "; "") | sub(" $"; "")),
+                  | gsub("\\s+"; " ") | printable | sub("^ "; "") | sub(" $"; "")),
           closed: ((.head | test("<s>")) or ($tags | any(test("Resolved|Outdated")))),
           new: ($tags | any(test("New"))),
           category: ($tags | map(select(test("New") | not)) | join(", ")),
