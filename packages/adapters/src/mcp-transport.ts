@@ -21,6 +21,7 @@ import {
 import { limitMcpResponseBody } from "./mcp-response-limit.js";
 import type { RemoteTransportDependencies, SafeRemoteFetch } from "./remote-mcp.js";
 import { createSafeRemoteFetch, listMcpTools } from "./remote-mcp.js";
+import { createTailnetFetch, isTailnetUrl } from "./tailnet-fetch.js";
 
 export type McpRemoteTransport = "streamable-http" | "sse";
 
@@ -139,7 +140,8 @@ export const MAX_AUTHORIZATION_URL_LENGTH = 8_192;
 // completed requests alive once the signal is no longer used.
 const requestSignalOwners = new WeakMap<AbortSignal, Request>();
 
-function validateUrl(raw: string | URL, policy: McpUrlPolicy = {}): URL {
+/** `viaTailnet`: tailnet hosts are reached through a bot's node, whose WireGuard carries plain HTTP. */
+function validateUrl(raw: string | URL, policy: McpUrlPolicy = {}, viaTailnet = false): URL {
   const url = new URL(raw.toString());
   const max = policy.maxUrlLength ?? DEFAULT_MAX_URL_LENGTH;
   if (url.toString().length > max) throw new Error(`MCP URL exceeds ${max} characters`);
@@ -149,7 +151,8 @@ function validateUrl(raw: string | URL, policy: McpUrlPolicy = {}): URL {
   if (
     url.protocol !== "https:" &&
     !(url.protocol === "http:" && policy.allowHttpLocalhost === true && local) &&
-    !(url.protocol === "http:" && policy.allowPrivateEndpoint === true)
+    !(url.protocol === "http:" && policy.allowPrivateEndpoint === true) &&
+    !(url.protocol === "http:" && viaTailnet && isTailnetUrl(url))
   ) {
     throw new Error("MCP remote URL must use HTTPS");
   }
@@ -198,15 +201,17 @@ export function secureFetch(
   const safeRemoteFetch = createSafeRemoteFetch(network.fetch, network.resolveHostname, {
     allowPrivateEndpoint: urlPolicy.allowPrivateEndpoint,
   });
+  const tailnetFetch = network.tailnet ? createTailnetFetch(network.tailnet) : undefined;
   const request = async (input: Request | URL | string, init?: RequestInit): Promise<Response> => {
     if (input instanceof Request) requestSignalOwners.set(input.signal, input);
     const source = new Request(input, init);
     // OAuth challenges and rediscovery can supply new URLs. Only the explicitly
     // configured local resource origin (including port) may bypass remote policy.
-    const url = validateUrl(source.url, {
-      ...urlPolicy,
-      allowHttpLocalhost: new URL(source.url).origin === localOrigin,
-    });
+    const url = validateUrl(
+      source.url,
+      { ...urlPolicy, allowHttpLocalhost: new URL(source.url).origin === localOrigin },
+      Boolean(tailnetFetch),
+    );
     const headers = new Headers();
     for (const [name, value] of source.headers) {
       const normalized = name.toLowerCase();
@@ -246,7 +251,9 @@ export function secureFetch(
     } satisfies RequestInit;
     const response = localHttp
       ? await (network.fetch ?? globalThis.fetch)(url, requestInit)
-      : await safeRemoteFetch(url, requestInit);
+      : tailnetFetch && isTailnetUrl(url)
+        ? await tailnetFetch(url, requestInit)
+        : await safeRemoteFetch(url, requestInit);
     if (response.status >= 300 && response.status < 400) {
       cancelResponseBody(response);
       throw new Error("MCP redirects are not permitted; configure the final HTTPS URL explicitly");
@@ -254,7 +261,9 @@ export function secureFetch(
     return limitMcpResponseBody(response, headers);
   };
   const result = request as SafeRemoteFetch;
-  result.close = () => safeRemoteFetch.close();
+  result.close = async () => {
+    await Promise.all([safeRemoteFetch.close(), tailnetFetch?.close()]);
+  };
   return result;
 }
 
@@ -375,7 +384,7 @@ export class McpSession {
   ): Promise<{ transport: McpRemoteTransport; usedFallback: boolean }> {
     if (this.connected || this.connecting)
       throw new Error("MCP session is already connected or connecting");
-    const url = validateUrl(options.url, options.urlPolicy);
+    const url = validateUrl(options.url, options.urlPolicy, Boolean(options.network?.tailnet));
     const safeFetch = secureFetch(
       url,
       options.urlPolicy ?? {},

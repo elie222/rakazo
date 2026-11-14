@@ -25,6 +25,8 @@ vi.mock("../../lib/rpc", () => {
       list: vi.fn().mockResolvedValue([]),
     },
     me: vi.fn().mockResolvedValue(null),
+    // This server can't put bots on a tailnet, so the panel shows no tailnet group.
+    tailnet: { status: vi.fn(async () => ({ unavailable: "unsupported", connection: null })) },
   };
   return {
     rpc,

@@ -1,4 +1,5 @@
-import type { ComputerSize } from "@rakazo/contracts";
+import type { Duplex } from "node:stream";
+import type { ComputerSize, TailnetDestination } from "@rakazo/contracts";
 import type {
   AdapterContext,
   AdapterDescriptor,
@@ -259,6 +260,26 @@ export interface SandboxProvider {
     options?: { discardUnsaved?: boolean },
   ): Promise<void>;
   destroy(computer: ComputerRef, context: AdapterContext): Promise<void>;
+}
+
+/**
+ * A private overlay network (a tailnet) that a bot joins as its own node. The node lives outside
+ * the bot's computer; the computer reaches it only through Rakazo, which authorizes every dial.
+ * Nodes only dial out: they accept no connections and route nobody else's traffic.
+ */
+export interface PrivateNetworkProvider {
+  describe(): AdapterDescriptor<{ ephemeralNodes: boolean }>;
+  /** Check the connection's credentials without leaving a node behind. */
+  verify(context: AdapterContext): Promise<void>;
+  /** Join the network as `nodeId`. Idempotent: a node already up is left as it is. */
+  join(
+    node: { nodeId: string; hostname: string; attributes: Record<string, string> },
+    context: AdapterContext,
+  ): Promise<void>;
+  /** A TCP connection from the node to a destination on the network. */
+  dial(nodeId: string, destination: TailnetDestination, context: AdapterContext): Promise<Duplex>;
+  /** Leave the network and drop the node's connections. An ephemeral node is deleted. */
+  leave(nodeId: string, context: AdapterContext): Promise<void>;
 }
 
 export interface ConnectorProvider {

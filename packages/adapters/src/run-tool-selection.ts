@@ -3,7 +3,12 @@ import {
   FLEET_TOOL_NAMES,
   FLEET_WRITE_TOOL_NAMES,
 } from "@rakazo/contracts";
-import { BACKGROUND_HELPER_TRIGGER, isBackgroundRunTrigger, isOwnerStartedRun } from "@rakazo/core";
+import {
+  BACKGROUND_HELPER_TRIGGER,
+  isBackgroundRunTrigger,
+  isOwnerStartedRun,
+  TAILNET_CONNECT_TOOL,
+} from "@rakazo/core";
 import { builtinAgentTools } from "./builtin-tools.js";
 import { selectCloudAgentTools } from "./cloud-agent-tools-select.js";
 import { selectMemoryTools } from "./memory-tools.js";
@@ -129,6 +134,8 @@ export function selectBuiltinToolsForRun(options: {
   followUpFromUser?: boolean;
   /** The person who started this run has their desktop connected (see userComputerOwner). */
   userComputer?: boolean;
+  /** The run's member let this bot onto their tailnet, so it may ask to reach hosts there. */
+  tailnet?: boolean;
   /** Their connected desktop can look at and drive its apps. */
   userComputerScreen?: boolean;
   /** The bot has an email address and this run is its owner's own, outside any group or channel. */
@@ -195,6 +202,7 @@ export function selectBuiltinToolsForRun(options: {
       ((emailMailbox && options.emailSend) || tool.name !== "send_email") &&
       (emailClaimOffered || tool.name !== "claim_email_address") &&
       (options.userComputer || tool.name !== "user_computer_shell") &&
+      (options.tailnet || tool.name !== TAILNET_CONNECT_TOOL) &&
       (options.userComputerScreen || !USER_COMPUTER_SCREEN_TOOLS.has(tool.name)) &&
       // Already on a call, or reached through a messaging channel that cannot ring.
       ((options.phoneCallsEnabled &&

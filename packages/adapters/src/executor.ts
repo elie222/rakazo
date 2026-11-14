@@ -19,6 +19,7 @@ import {
   promptInvokesSkill,
   redactSecrets,
   renderBotDirectory,
+  TAILNET_CONNECT_TOOL,
   userTurnMessageForRun,
 } from "@rakazo/core";
 import type { ThreadEvents } from "@rakazo/db";
@@ -1104,6 +1105,20 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             computerUse.screenRelease = { computer, context, keepWarm: false };
             recordComputerDisk(deps, storedComputer.id, computer, context);
             scheduleComputerSleep(deps.jobs, storedComputer.id);
+            // The browsers' tailnet proxy, in the background: tools never wait for it.
+            void deps.tailnet
+              ?.prepareComputer({
+                sandbox: deps.sandbox,
+                computerId: storedComputer.id,
+                computer,
+                member: { userId: run.userId, spaceId: run.spaceId, botId: bot.id },
+                context,
+              })
+              .catch((error: unknown) =>
+                getLogger().warn("tailnet browser proxy not prepared", {
+                  error: error instanceof Error ? error.message : String(error),
+                }),
+              );
             // Earlier attachments wait for the computer's first use; every start copies them
             // again, so they need no checkpoint, and each copy logs and skips its own failure.
             if (artifacts) {
@@ -1370,6 +1385,14 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                 return null;
               })),
         );
+        // Only the run's own member's connection counts, and only for bots they allowed.
+        const tailnetOffered = Boolean(
+          deps.tailnet &&
+            !disabledBuiltinTools.has(TAILNET_CONNECT_TOOL) &&
+            (await deps.tailnet
+              .environment({ runId, userId: run.userId, spaceId: run.spaceId, botId: bot.id })
+              .catch(() => undefined)),
+        );
         const builtins = [
           ...selectBuiltinToolsForRun({
             ticketBoardEnabled: deps.ticketBoardEnabled,
@@ -1400,6 +1423,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             followUpFromUser: sourceMessage?.role === "user",
             userComputer: userComputerShell,
             userComputerScreen,
+            tailnet: tailnetOffered,
             emailInbox,
             emailClaimable:
               Boolean(deps.inboundEmailDomain) && !emailName && run.userId === bot.userId,

@@ -456,6 +456,81 @@ describe("shared Linux desktop lifecycle", () => {
     },
   );
 
+  it("sends only tailnet hosts from a screen's browser to that display's tailnet proxy", () => {
+    const root = mkdtempSync(path.join(tmpdir(), "desktop-pac-test-"));
+    roots.push(root);
+    // The launcher as screen setup writes it, then run with a browser that records its flags.
+    const lines = ensureScreenCommand(2, "bot-1", "token", env).split("\n");
+    const start = lines.findIndex((line) => line.startsWith("printf %s '#!/bin/bash"));
+    const end = lines.findIndex((line) => line.endsWith(">/tmp/rakazo/browser-launch-22"));
+    expect(start).toBeGreaterThan(-1);
+    const launcher = path.join(root, "launch");
+    const write = lines
+      .slice(start, end + 1)
+      .join("\n")
+      .replace("/tmp/rakazo/browser-launch-22", launcher);
+    expect(spawnSync("bash", ["-c", write]).status).toBe(0);
+    const bin = path.join(root, "bin");
+    mkdirSync(bin);
+    writeFileSync(
+      path.join(bin, "rakazo-browser"),
+      `#!/bin/sh\nfor arg; do printf '%s\\n' "$arg"; done >"${root}/args"\n`,
+      { mode: 0o755 },
+    );
+    const ran = spawnSync("bash", [launcher], {
+      encoding: "utf8",
+      env: { PATH: `${bin}${path.delimiter}${process.env.PATH ?? ""}` },
+    });
+    expect(ran.status, ran.stderr).toBe(0);
+    const flag = readFileSync(path.join(root, "args"), "utf8")
+      .split("\n")
+      .find((arg) => arg.startsWith("--proxy-pac-url="));
+    const encoded = flag?.replace(
+      "--proxy-pac-url=data:application/x-ns-proxy-autoconfig;base64,",
+      "",
+    );
+    const pac = Buffer.from(encoded ?? "", "base64").toString("utf8");
+    const findProxy = new Function(`${pac}; return FindProxyForURL;`)() as (
+      url: string,
+      host: string,
+    ) => string;
+    const proxy = "PROXY 127.0.0.1:20022";
+    expect(
+      Object.fromEntries(
+        [
+          "nas.tail1234.ts.net",
+          "NAS.Tail1234.TS.NET",
+          "100.101.102.103",
+          "fd7a:115c:a1e0::1",
+          "ts.net",
+          "tail1234.ts.net",
+          "example.com",
+          "100.63.0.1",
+          "100.128.0.1",
+          "10.0.0.8",
+        ].map((host) => [host, findProxy(`https://${host}/`, host)]),
+      ),
+    ).toEqual({
+      "nas.tail1234.ts.net": proxy,
+      "NAS.Tail1234.TS.NET": proxy,
+      "100.101.102.103": proxy,
+      "fd7a:115c:a1e0::1": proxy,
+      "ts.net": "DIRECT",
+      "tail1234.ts.net": "DIRECT",
+      "example.com": "DIRECT",
+      "100.63.0.1": "DIRECT",
+      "100.128.0.1": "DIRECT",
+      "10.0.0.8": "DIRECT",
+    });
+  });
+
+  it("names the bot of each screen for the tailnet proxy, and forgets it when the screen stops", () => {
+    expect(ensureScreenCommand(2, "bot-1", "token", env)).toContain(
+      "printf %s 'bot-1' >/tmp/rakazo/screen-bot-22",
+    );
+    expect(stopExtraScreenCommand(2, "bot-1", env)).toContain("/tmp/rakazo/screen-bot-22");
+  });
+
   it("drops libnss_wrapper before the screen browser exec", () => {
     const command = ensureScreenCommand(0, "bot", "token");
     expect(command).toContain("*libnss_wrapper.so");

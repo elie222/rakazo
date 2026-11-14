@@ -61,6 +61,26 @@ RUN RAKAZO_ALLOW_DEV_SECRETS=1 pnpm --filter @rakazo/web build
 RUN find . -name node_modules -type d -prune -exec rm -rf {} + \
   && rm -rf apps/desktop apps/mobile apps/www docs examples
 
+# Tailscale's static binaries, pinned and checked by sha256. The API runs one userspace tailscaled
+# per bot node that joins a person's tailnet; no kernel device or extra privilege is needed.
+FROM node:24.22.2-bookworm@sha256:8fa96264f302f58bbb13aa7339c541547b56975766ce956c875da149452a3e40 AS tailscale
+ARG TARGETARCH
+ARG TAILSCALE_VERSION=1.104.4
+RUN set -eux; \
+  case "$TARGETARCH" in \
+    amd64) ts_sha256=624ea093d47d62cf56f17b8332d74b8decda4a1faa610ebc60a1de334b2b3dc9 ;; \
+    arm64) ts_sha256=a1c249ce6bdebef62e1ae3b997595555bce2ae4709bf95a718e9ca7a129dad7e ;; \
+    *) echo "unsupported architecture: $TARGETARCH" >&2; exit 1 ;; \
+  esac; \
+  archive="$(mktemp)"; \
+  curl -fsSL "https://pkgs.tailscale.com/stable/tailscale_${TAILSCALE_VERSION}_${TARGETARCH}.tgz" -o "$archive"; \
+  echo "$ts_sha256  $archive" | sha256sum -c -; \
+  mkdir -p /out; \
+  tar -xzf "$archive" -C /out --strip-components=1 \
+    "tailscale_${TAILSCALE_VERSION}_${TARGETARCH}/tailscaled" "tailscale_${TAILSCALE_VERSION}_${TARGETARCH}/tailscale"; \
+  rm -f "$archive"; \
+  /out/tailscale version
+
 FROM node:24.22.2-bookworm-slim@sha256:01d566e8d94d8c619591d78652babfccd3c6992a3dffa9ed5ab39e11cf6c70e9
 COPY infra/sandboxes/computer/apt-security.sh /tmp/apt-security.sh
 RUN /tmp/apt-security.sh
@@ -74,6 +94,7 @@ WORKDIR /app
 # --link keeps each layer independent of the ones below, so an unchanged one is reused as is.
 COPY --link --from=deps /app /app
 COPY --link --from=build /app /app
+COPY --link --from=tailscale /out/tailscaled /out/tailscale /usr/local/bin/
 RUN install -d -m 750 -o node -g node /data /app/apps/web/node_modules/.vite-temp /app/apps/web/asset-archive
 # Last root step, so a cached earlier layer cannot be the filesystem that ships.
 RUN /tmp/apt-security.sh --check && rm -f /tmp/apt-security.sh

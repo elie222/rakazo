@@ -1,4 +1,4 @@
-import type { ComputerRef } from "@rakazo/adapter-kit";
+import type { CommandRequest, ComputerRef } from "@rakazo/adapter-kit";
 import { encodeLoginSecret } from "@rakazo/contracts";
 import { installAuditEventStore } from "@rakazo/db";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -6,6 +6,7 @@ import { fakeAuditLog, fakeDatabase } from "./bot-secrets.test-support.js";
 import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
 import { createRunExecutor } from "./executor.js";
 import { EncryptedSecretStore } from "./secrets.js";
+import type { TailnetCommandAccess } from "./tailnet-tunnel.js";
 
 const COMPUTER: ComputerRef = {
   id: "sandbox-1",
@@ -45,6 +46,7 @@ async function runAfterFill(
     /** Another bot of the same owner runs on their Team Computer, reading a real vault. */
     teamVault?: ReturnType<typeof fakeDatabase>;
     printed?: string[];
+    tailnet?: TailnetCommandAccess;
   } = {},
 ) {
   const run = {
@@ -230,10 +232,14 @@ async function runAfterFill(
       updateMany: vi.fn(async () => ({ count: 1 })),
     },
   };
+  const commands: CommandRequest[] = [];
   const sandbox = {
     describe: () => ({ id: "e2b", capabilities: { graphical: true } }),
-    execute: vi.fn(async function* () {
-      yield { type: "stdout" as const, data: printed };
+    execute: vi.fn(async function* (_computer: ComputerRef, request: CommandRequest) {
+      commands.push(request);
+      // A command that prints its tunnel token, as `env` would.
+      const token = request.env?.RAKAZO_NET_TOKEN;
+      yield { type: "stdout" as const, data: token ? `${printed}\ntoken=${token}` : printed };
       yield { type: "exit" as const, code: 0 };
     }),
     readFile: vi.fn(async () => new TextEncoder().encode(printed)),
@@ -273,12 +279,13 @@ async function runAfterFill(
     jobs: { enqueue: vi.fn(async () => undefined) },
     notifications: { send: vi.fn(async () => undefined) },
     secrets: [],
+    tailnet: options.tailnet,
   } as unknown as Parameters<typeof createRunExecutor>[0]);
 
   await executor.continueRun(run.id, "worker-1");
   const loginLoads = load.mock.calls.filter(([, recordId]) => recordId === "login-1").length;
   const published = JSON.stringify([events.append.mock.calls, events.finalizeRun.mock.calls]);
-  return { toolResults, loginLoads, published };
+  return { toolResults, loginLoads, published, commands };
 }
 
 afterEach(() => {
@@ -466,6 +473,93 @@ describe("another bot's saved login on a Team Computer", () => {
     },
   );
 });
+
+describe("tailnet settings in shell commands", () => {
+  const TOKEN = "rtn1.fake-payload.fake-signature";
+
+  it("gives the run's commands the tunnel and hides its token", async () => {
+    const asked: unknown[] = [];
+    const { toolResults, commands } = await runAfterFill(
+      [{ name: "shell", args: { command: "env" } }],
+      {
+        savedLogin: false,
+        tailnet: {
+          prepareComputer: async () => undefined,
+          environment: async (run) => {
+            asked.push(run);
+            return {
+              RAKAZO_NET_URL: "https://rakazo.example.test/api/tailnet/connect",
+              RAKAZO_NET_TOKEN: TOKEN,
+              RAKAZO_NET_HELPER: "ZmFrZQ==",
+              RAKAZO_NET_VERSION: "v1",
+            };
+          },
+        },
+      },
+    );
+    // Once to offer tailnet_connect, then for each command; always as this run's member.
+    expect(new Set(asked.map((scope) => JSON.stringify(scope)))).toEqual(
+      new Set([
+        JSON.stringify({ runId: "run-2", userId: "user-1", spaceId: "space-1", botId: "bot-1" }),
+      ]),
+    );
+    expect(shellCommand(commands)?.env).toMatchObject({
+      RAKAZO_NET_URL: "https://rakazo.example.test/api/tailnet/connect",
+      RAKAZO_NET_TOKEN: TOKEN,
+      CLI_TOKEN: "fake-cli-token",
+    });
+    const text = JSON.stringify(toolResults);
+    expect(text).toContain("token=[redacted]");
+    expect(text).not.toContain(TOKEN);
+  });
+
+  it("refuses tailnet_connect in a run whose member didn't allow the bot", async () => {
+    const { toolResults } = await runAfterFill(
+      [{ name: "tailnet_connect", args: { host: "nas.tail1234.ts.net", port: 22 } }],
+      {
+        savedLogin: false,
+        tailnet: { environment: async () => undefined, prepareComputer: async () => undefined },
+      },
+    );
+    expect(JSON.stringify(toolResults)).toContain(
+      "Tailnet access is off for this bot. Connect your tailnet and turn it on in the bot's settings.",
+    );
+  });
+
+  it("refuses a destination off the tailnet before asking anyone", async () => {
+    const { toolResults } = await runAfterFill(
+      [{ name: "tailnet_connect", args: { host: "example.com", port: 22 } }],
+      {
+        savedLogin: false,
+        tailnet: {
+          prepareComputer: async () => undefined,
+          environment: async () => ({
+            RAKAZO_NET_URL: "https://rakazo.example.test/api/tailnet/connect",
+            RAKAZO_NET_TOKEN: TOKEN,
+            RAKAZO_NET_HELPER: "ZmFrZQ==",
+            RAKAZO_NET_VERSION: "v1",
+          }),
+        },
+      },
+    );
+    expect(JSON.stringify(toolResults)).toContain(
+      "host must be a *.ts.net name or a 100.x tailnet address, and port a TCP port",
+    );
+  });
+
+  it("runs commands without tunnel settings when the bot is not on a tailnet", async () => {
+    const { commands } = await runAfterFill([{ name: "shell", args: { command: "env" } }], {
+      savedLogin: false,
+      tailnet: { environment: async () => undefined, prepareComputer: async () => undefined },
+    });
+    expect(shellCommand(commands)?.env).not.toHaveProperty("RAKAZO_NET_TOKEN");
+  });
+});
+
+/** The bot's shell command, among the computer's own housekeeping commands. */
+function shellCommand(commands: CommandRequest[]): CommandRequest | undefined {
+  return commands.find((command) => command.argv[0] === "bash");
+}
 
 /** Models the run reads but these tests do not care about behave as empty tables. */
 function withEmptyModels<T extends object>(prisma: T): T {

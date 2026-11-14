@@ -34,6 +34,7 @@ export const BUILTIN_TOOL_NAMES = [
   "user_computer_shell",
   "user_computer_observe",
   "user_computer_act",
+  "tailnet_connect",
   "open_path",
   "launch_app",
   "request_takeover",

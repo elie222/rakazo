@@ -15,6 +15,10 @@ const mocks = vi.hoisted(() => ({
   instructions: "",
   description: "",
   crossSpaceCommunication: false,
+  tailnet: null as null | {
+    unavailable: null | string;
+    connection: null | { tag: string; botIds: string[] };
+  },
   avatarSet: undefined as "organic" | "rakazo" | undefined,
   focus: undefined as string | undefined,
   os: "ios",
@@ -100,6 +104,15 @@ vi.mock("./api", () => ({
         computerMode: "team",
         fleetManagement: false,
         crossSpaceCommunication: mocks.crossSpaceCommunication,
+      };
+    }
+    if (procedure === "tailnet/status") return mocks.tailnet;
+    if (procedure === "tailnet/setBotAccess") {
+      mocks.rpc(procedure, input);
+      const { botId, enabled } = input as { botId: string; enabled: boolean };
+      return {
+        unavailable: null,
+        connection: { tag: "tag:rakazo", botIds: enabled ? [botId] : [] },
       };
     }
     if (procedure === "scratchpad/list") return mocks.work;
@@ -360,6 +373,7 @@ describe("bot settings device voice menu", () => {
   let container: HTMLDivElement;
   beforeEach(() => {
     mocks.crossSpaceCommunication = false;
+    mocks.tailnet = null;
     mocks.avatarSet = undefined;
     vi.clearAllMocks();
     mocks.loadBot.mockReset();
@@ -403,6 +417,26 @@ describe("bot settings device voice menu", () => {
       botId: "bot-fixture",
       dailyCheckIns: false,
     });
+  });
+
+  it("shows tailnet access only once the member has connected a tailnet", async () => {
+    const tailnetSwitch = () =>
+      container.querySelector<HTMLButtonElement>('[aria-label="Reach machines on your tailnet"]');
+    mocks.tailnet = { unavailable: null, connection: null };
+    await render();
+    expect(tailnetSwitch()).toBeNull();
+    act(() => root.unmount());
+    root = createRoot(container);
+
+    mocks.tailnet = { unavailable: null, connection: { tag: "tag:rakazo", botIds: [] } };
+    await render();
+    expect(tailnetSwitch()?.getAttribute("aria-checked")).toBe("false");
+    await act(async () => tailnetSwitch()!.click());
+    expect(mocks.rpc).toHaveBeenCalledWith("tailnet/setBotAccess", {
+      botId: "bot-fixture",
+      enabled: true,
+    });
+    expect(tailnetSwitch()?.getAttribute("aria-checked")).toBe("true");
   });
 
   it.each([false, true])("loads and saves cross-space communication: %s", async (enabled) => {

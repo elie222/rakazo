@@ -1,3 +1,5 @@
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import type { JobPublisher, JobWorkerHost } from "@rakazo/adapter-kit";
 import { unwrapEnvFromKeyManager } from "@rakazo/adapters";
@@ -32,6 +34,7 @@ import {
   createRunRuntime,
   createRunSandbox,
   createRunSecretWriter,
+  createTailscaledNodeHost,
   createTicketChangeNotifier,
   ExpoPushProvider,
   GraphileJobPublisher,
@@ -54,6 +57,7 @@ import {
   SpaceMemoryProviderResolver,
   sandboxProviderOptionsFromEnv,
   shutdownPiTelemetry,
+  TailnetService,
   UserDevices,
   userDeviceForwardSecret,
   WorkActivities,
@@ -148,7 +152,13 @@ async function main() {
     prisma,
     secrets,
   });
-  const connectors = createConnectorRuntime(env, { prisma, secrets, events });
+  // Runs here reach MCP servers on members' tailnets from bot nodes of this process's own.
+  const tailnet = new TailnetService({
+    prisma,
+    secretStore: secrets,
+    nodeHost: await createTailscaledNodeHost(join(tmpdir(), "rakazo-tailnet")),
+  });
+  const connectors = createConnectorRuntime(env, { prisma, secrets, events, tailnet });
   // Never poll inbound here: Telegram allows a single getUpdates consumer,
   // and that is the API process, which owns the inbound sink.
   const messagingPlatforms = messagingPlatformsFromEnv(messagingEnvFromProcess(process.env)).filter(
@@ -299,6 +309,7 @@ async function main() {
         await secrets.close();
         await realtime.close();
         await connectors.mcp.close();
+        await tailnet.close();
         await connectors.installed.close();
         await prisma.$disconnect().catch(() => undefined);
         await pool.end().catch(() => undefined);

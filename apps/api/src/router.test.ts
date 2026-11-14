@@ -1564,6 +1564,7 @@ describe("MCP prepared credential updates", () => {
       },
       botSecret: { count: async () => 0 },
       vaultCredential: { count: async () => 0 },
+      tailnetConnection: { count: async () => 0 },
       integrationProviderConfig: { count: async () => 0 },
       $executeRaw: async () => 1,
       $queryRaw: async () => [],

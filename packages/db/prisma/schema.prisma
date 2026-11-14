@@ -735,6 +735,7 @@ model SpaceMember {
   modelRoleChoices SpaceModelRoleChoice[]
   settingOverrides SpaceSettingOverride[]
   threadReads      ThreadRead[]
+  tailnetConnection TailnetConnection?
 
   @@unique([spaceId, userId])
   @@index([organizationId, userId])
@@ -1146,6 +1147,26 @@ model Thread {
   @@index([spaceId, userId])
   @@index([helperBotId])
   @@map("threads")
+}
+
+/// A member's own tailnet connection in one Space: a tailnet admin's OAuth client, encrypted in
+/// `ciphertext`. Only runs this member starts use it, and only for `botIds`; other members of the
+/// Space never do, even with the same bot. Leaving the Space deletes it.
+model TailnetConnection {
+  id         String      @id
+  spaceId    String
+  userId     String
+  member     SpaceMember @relation(fields: [spaceId, userId], references: [spaceId, userId], onDelete: Cascade)
+  /// The tag every bot node joins with; also inside the ciphertext, kept here for display.
+  tag        String
+  ciphertext String
+  /// Bots this member let onto the tailnet. Empty until they choose one.
+  botIds     String[]    @default([])
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+
+  @@unique([spaceId, userId])
+  @@map("tailnet_connections")
 }
 
 /// One member's personal state for a chat: how far they've read, and whether they've snoozed

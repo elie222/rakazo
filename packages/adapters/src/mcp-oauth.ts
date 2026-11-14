@@ -43,6 +43,7 @@ import { REFRESH_REQUEST_TIMEOUT_MS, withRefreshLock } from "./refresh-lock.js";
 import type { RemoteTransportDependencies } from "./remote-mcp.js";
 import { persistPreparedSecret } from "./secret-persistence.js";
 import { deleteSecretBestEffort, holdSecretNotifications } from "./secret-store-factory.js";
+import type { TailnetRoute } from "./tailnet-fetch.js";
 
 type OAuthState = {
   tokens?: OAuthTokens;
@@ -451,7 +452,22 @@ type ProviderOptions = {
   refresh?: (heldRefreshToken: string) => Promise<TokenGrant>;
   /** The instance opt-in that lets OAuth URLs use plain HTTP on a private network. */
   allowPrivateEndpoint?: boolean;
+  /** Carries refreshes to a server on a tailnet through the run's bot node. */
+  tailnet?: TailnetRoute;
 };
+
+/**
+ * How the member signing in reaches `target` when it is on their tailnet, through one of their
+ * bots' nodes; undefined for any other address.
+ */
+export type McpOAuthTailnet = (target: string) => Promise<TailnetRoute | undefined>;
+
+function throughTailnet(
+  network: RemoteTransportDependencies,
+  tailnet: TailnetRoute | undefined,
+): RemoteTransportDependencies {
+  return tailnet ? { ...network, tailnet } : network;
+}
 
 /** Refresh before expiry to cover clock skew and request time. */
 export const TOKEN_REFRESH_SKEW_MS = 60_000;
@@ -735,11 +751,16 @@ export class StoredMcpOAuthProvider implements OAuthClientProvider {
   async redirectToAuthorization(url: URL): Promise<void> {
     let authorizationUrl: URL;
     try {
-      authorizationUrl = validateUrl(url, {
-        allowHttpLocalhost: true,
-        allowPrivateEndpoint: this.options.allowPrivateEndpoint,
-        maxUrlLength: MAX_AUTHORIZATION_URL_LENGTH,
-      });
+      // A sign-in page on the member's tailnet opens in their browser over the tailnet.
+      authorizationUrl = validateUrl(
+        url,
+        {
+          allowHttpLocalhost: true,
+          allowPrivateEndpoint: this.options.allowPrivateEndpoint,
+          maxUrlLength: MAX_AUTHORIZATION_URL_LENGTH,
+        },
+        Boolean(this.options.tailnet),
+      );
     } catch (error) {
       if (!this.options.onAuthorization) {
         await this.invalidateCredentials("tokens");
@@ -1193,11 +1214,11 @@ export class McpOAuthBroker {
     server: ServerRef,
     context: ActorRef,
     loaded?: { material: OAuthMaterial; secretId?: string },
-    onPersisted?: ProviderOptions["onPersisted"],
+    options: Pick<ProviderOptions, "onPersisted" | "tailnet"> = {},
   ): Promise<StoredMcpOAuthProvider | undefined> {
     const material = loaded ?? (await this.loadMaterial(server, context));
     if (!material.material.oauth) return undefined;
-    return this.createProvider(server, context, material, { onPersisted });
+    return this.createProvider(server, context, material, options);
   }
 
   async begin(input: {
@@ -1205,6 +1226,7 @@ export class McpOAuthBroker {
     spaceId: string;
     userId: string;
     redirectUri: string;
+    tailnet?: McpOAuthTailnet;
   }): Promise<
     | { status: "authorization_required"; sessionId: string; authorizationUrl: string }
     | { status: "already_connected" | "authorization_not_requested" }
@@ -1240,19 +1262,21 @@ export class McpOAuthBroker {
     }
     const sessionId = randomUUID();
     let authorizationUrl: URL | undefined;
+    const tailnet = await input.tailnet?.(target);
     const provider = this.createProvider(server, context, loaded, {
       redirectUri: input.redirectUri,
       state: sessionId,
       onAuthorization: (url) => {
         authorizationUrl = url;
       },
+      tailnet,
     });
     // Never destroy working tokens here: if this attempt fails (network error,
     // cancelled popup), the server keeps its valid connection. The SDK itself
     // invalidates dead tokens when a refresh is rejected with invalid_grant.
     const networkFetch = oauthFetch(
       target,
-      this.network,
+      throughTailnet(this.network, tailnet),
       server.endpoint ? loaded.material : withoutRequestCredentials(loaded.material),
       this.allowPrivateEndpoint,
     );
@@ -1340,6 +1364,7 @@ export class McpOAuthBroker {
     state: string;
     spaceId: string;
     userId: string;
+    tailnet?: McpOAuthTailnet;
   }): Promise<{ serverId: string; revision: number }> {
     await this.sweepExpiredPending();
     if (input.state !== input.sessionId) {
@@ -1387,6 +1412,8 @@ export class McpOAuthBroker {
         expiry: undefined,
       };
     }
+    // Before consuming the session, so a member without a bot on their tailnet can retry.
+    const tailnet = await input.tailnet?.(pending.endpoint);
     // Consume the session up front so a failed token exchange cannot be
     // retried with a replayed code; the user starts a fresh flow instead.
     this.pending.delete(input.sessionId);
@@ -1411,7 +1438,7 @@ export class McpOAuthBroker {
     }
     const networkFetch = oauthFetch(
       pending.endpoint,
-      this.network,
+      throughTailnet(this.network, tailnet),
       // Only for redacting errors: the exchange sends the client secret, but none of
       // the server's static headers.
       { oauth: { clientInformation: pending.provider.clientInformation() } },
@@ -1572,6 +1599,7 @@ export class McpOAuthBroker {
                     context,
                     held,
                     options.onPersisted,
+                    options.tailnet,
                   ),
                 ),
             }
@@ -1596,9 +1624,15 @@ export class McpOAuthBroker {
     context: ActorRef,
     held: string,
     onPersisted?: ProviderOptions["onPersisted"],
+    tailnet?: TailnetRoute,
   ): Promise<TokenGrant> {
     // Resolve the network before taking a connection for the lock.
-    const network = oauthFetch(target, this.network, {}, this.allowPrivateEndpoint);
+    const network = oauthFetch(
+      target,
+      throughTailnet(this.network, tailnet),
+      {},
+      this.allowPrivateEndpoint,
+    );
     let stored: { id: string; ciphertext: string } | undefined;
     let rotated: { material: OAuthMaterial; grant: TokenGrant; spent: string } | undefined;
     try {

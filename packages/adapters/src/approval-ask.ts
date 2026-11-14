@@ -9,9 +9,10 @@ import {
   redactSecrets,
   SITE_SENDING_TOOLS,
   sanitizeMessagingLabel,
+  TAILNET_CONNECT_TOOL,
   toolRequiresExplicitApproval,
 } from "@rakazo/core";
-import { urlSite } from "@rakazo/core/egress";
+import { requestSite, urlSite } from "@rakazo/core/egress";
 import { USER_COMPUTER_SCREEN_TOOLS, userComputerAppName } from "./user-computer-tools.js";
 
 export const MAX_APPROVAL_SUMMARY_LENGTH = 500;
@@ -159,6 +160,21 @@ export function buildApprovalAskBlock(
       status: "pending",
       actions: [
         { id: "allow", label: "Allow in this space" },
+        { id: "deny", label: "Deny" },
+      ],
+    };
+  }
+  if (toolName === TAILNET_CONNECT_TOOL) {
+    const site = requestSite(toolName, args);
+    return {
+      kind: "ask",
+      approvalEffectId: effectId,
+      text: `Connect to ${site ?? "a tailnet host"} on your tailnet?`,
+      ...(site ? { site } : {}),
+      status: "pending",
+      actions: [
+        { id: "allow", label: "Allow once" },
+        ...(site && !onceOnly ? [{ id: "always", label: `Always allow ${site}` }] : []),
         { id: "deny", label: "Deny" },
       ],
     };

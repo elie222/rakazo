@@ -528,6 +528,17 @@ export const computerTools: ToolHandlers = {
       // The run hid the values it loaded at its start, which refused to start without them.
       keyOutage: "unset",
     });
+    // Tunnel settings for rakazo-net, when this run's member let the bot onto their tailnet.
+    const tailnetEnvironment = await deps.tailnet
+      ?.environment({ runId, userId: run.userId, spaceId: run.spaceId, botId: bot.id })
+      .catch((error: unknown) => {
+        getLogger().warn("tailnet command settings unavailable", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return undefined;
+      });
+    if (tailnetEnvironment) addRunSecrets(ctx, [tailnetEnvironment.RAKAZO_NET_TOKEN]);
+    const env = { ...commandEnvironment.env, ...tailnetEnvironment };
     ctx.computer.checkpoint.markDirty();
     const commandEvent = {
       executionId,
@@ -601,8 +612,7 @@ export const computerTools: ToolHandlers = {
                   command,
                 ],
             cwd,
-            env:
-              Object.keys(commandEnvironment.env).length > 0 ? commandEnvironment.env : undefined,
+            env: Object.keys(env).length > 0 ? env : undefined,
             unsetEnv: commandEnvironment.unsetEnv,
             timeoutMs: sandboxCommandTimeoutMs(),
           },

@@ -68,6 +68,7 @@ const OUTSIDE_RUN_SAFE_BUILTIN_TOOLS = new Set([
 ]);
 
 const APPROVAL_REQUIRED_BUILTIN_TOOLS = new Set([
+  "tailnet_connect",
   "generate_image",
   "generate_video",
   "service_call",
@@ -345,6 +346,9 @@ export function newSiteOutcome(input: {
  * "Always allow" on a card naming that site allows the site, never the tool.
  */
 export const SITE_SENDING_TOOLS: ReadonlySet<string> = new Set(["web_fetch", "paid_request"]);
+
+/** Asks to reach one host and port on the tailnet of the person a bot works for. */
+export const TAILNET_CONNECT_TOOL = "tailnet_connect";
 
 export function siteAlwaysAllowed(rules: ActionApprovalRule[], site: string): boolean {
   return rules.some(

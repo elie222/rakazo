@@ -1,5 +1,5 @@
 import type { AgentToolExecutionObserver } from "@rakazo/adapter-kit";
-import { BACKGROUND_HELPER_TRIGGER, toolResultTaintsRun } from "@rakazo/core";
+import { BACKGROUND_HELPER_TRIGGER, TAILNET_CONNECT_TOOL, toolResultTaintsRun } from "@rakazo/core";
 import { isTerminatingReplyResult } from "./approval-effect.js";
 import { IMAGE_RETURNING_COMPUTER_TOOLS, MODEL_CANNOT_SEE_MESSAGE } from "./model-vision.js";
 import type { RunContext } from "./run-context.js";
@@ -25,6 +25,7 @@ import { pageTools } from "./run-tools-pages.js";
 import { preferenceTools } from "./run-tools-preferences.js";
 import { purchaseTools } from "./run-tools-purchases.js";
 import { secretTools } from "./run-tools-secrets.js";
+import { tailnetTools } from "./run-tools-tailnet.js";
 import { taskTools } from "./run-tools-tasks.js";
 import {
   USER_COMPUTER_ACT_TOOL,
@@ -35,6 +36,7 @@ import {
   userComputerShell,
 } from "./run-tools-user-computer.js";
 import { strategicInitiativeToolAllowed } from "./strategic-initiative.js";
+import { TAILNET_NOT_CONNECTED_MESSAGE } from "./tailnet-service.js";
 import { logToolRefusal } from "./tool-completion-audit.js";
 import { refusal } from "./tool-refusal.js";
 import { argumentGiven } from "./update-bot-patch.js";
@@ -55,6 +57,7 @@ const TOOL_HANDLERS = new Map<string, ToolHandler>([
   ...Object.entries(purchaseTools),
   ...Object.entries(preferenceTools),
   ...Object.entries(feedbackTools),
+  ...Object.entries(tailnetTools),
   ...Object.entries(emailTools),
   ...[...PAGE_BROWSER_TOOL_NAMES].map((name) => [name, pageBrowserTool] as const),
 ]);
@@ -154,6 +157,10 @@ async function dispatchTool(
     return refuse(
       refusal("memory_tool_unavailable", "This memory tool is unavailable in this run."),
     );
+  }
+  // Offered only when this run's member let the bot onto their tailnet.
+  if (name === TAILNET_CONNECT_TOOL && !ctx.tools.builtins.some((tool) => tool.name === name)) {
+    return refuse(refusal("tailnet_unavailable", TAILNET_NOT_CONNECTED_MESSAGE));
   }
   if (PAGE_BROWSER_TOOL_NAMES.has(name) && !ctx.computer.pageBrowserAllowed) {
     return refuse(

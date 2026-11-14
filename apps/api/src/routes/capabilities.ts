@@ -10,6 +10,7 @@ import {
   prepareGraphqlInstall,
   previewPluginInstall,
   sanitizeIntegrationError,
+  tailnetEndpoint,
   verifyMcpInstall,
 } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
@@ -26,6 +27,7 @@ import {
   reviewPluginSubmission,
 } from "../plugin-submissions.js";
 import type { RouterContext } from "./context.js";
+import { tailnetCheckRoute } from "./tailnet.js";
 
 export function capabilitiesRoutes(ctx: RouterContext) {
   const { deps, removeMcpServerInTransaction, authed } = ctx;
@@ -172,12 +174,18 @@ export function capabilitiesRoutes(ctx: RouterContext) {
         try {
           if (input.kind === "mcp") {
             ({ source, config } = applyMcpSourcePreset(source, config));
+            // A server on the member's tailnet is checked from one of their bots' devices.
+            const tailnet = await tailnetCheckRoute(
+              deps,
+              context.actor,
+              Boolean(tailnetEndpoint(source)),
+            );
             const verified = await verifyMcpInstall({
               source,
               config,
               credential,
               signal: context.signal,
-              remote: deps.remoteConnectors,
+              remote: { ...deps.remoteConnectors, tailnet },
               allowPrivateEndpoint: mayUsePrivateEndpoint(deps),
             });
             config = verified.config;

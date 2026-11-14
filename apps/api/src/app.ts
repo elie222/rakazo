@@ -1,4 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { onError } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/fetch";
 import type {
@@ -45,6 +47,9 @@ import {
   createRunSandbox,
   createRunSecretWriter,
   createSecretStore,
+  createTailnetApprovals,
+  createTailnetCommandAccess,
+  createTailscaledNodeHost,
   createTicketChangeNotifier,
   EmailEmulator,
   ExpoPushProvider,
@@ -69,6 +74,8 @@ import {
   StripeBillingProvider,
   sandboxProviderOptionsFromEnv,
   stripeBillingConfigFromEnv,
+  TailnetService,
+  tailnetServerOrigin,
   UserDeviceHub,
   UserDevices,
   userDeviceForwardSecret,
@@ -175,6 +182,7 @@ import { createAuthResponseAudit } from "./security-audit.js";
 import { mountSharedPages } from "./shared-pages.js";
 import { afterSpaceDeparture } from "./space-departure.js";
 import { createSpeechSummarizer } from "./speech-summary.js";
+import { createTailnetTunnel } from "./tailnet-tunnel.js";
 import { settleWithTimeout } from "./team-chat-startup.js";
 import { endUserDeviceSession, mountUserDeviceRoutes } from "./user-devices.js";
 import { mountVoiceHttpRoutes } from "./voice.js";
@@ -210,7 +218,7 @@ export interface AppHandles {
   runtime: AgentRuntime;
   awaitIdle?: () => Promise<void>;
   backgroundFailures?: () => Array<{ name: string; count: number }>;
-  /** Node `upgrade` listener for desktop device sockets; absent when the feature is off. */
+  /** Node `upgrade` listener: desktop device sockets and bots' tailnet tunnels. */
   handleUpgrade?: UserDeviceHub["handleUpgrade"];
   stop: () => Promise<void>;
 }
@@ -271,7 +279,11 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     ...envOverrides
   } = overrides;
   const env = { ...loadEnv(process.env), ...envOverrides };
-  const runtimeEnv: RunRuntimeEnv = { ...env, inboundEmailDomain: env.inboundEmail?.domain };
+  const runtimeEnv: RunRuntimeEnv = {
+    ...env,
+    inboundEmailDomain: env.inboundEmail?.domain,
+    tailnetServerOrigin: tailnetServerOrigin(env.webOrigin),
+  };
   const logger = loggerOverride ?? createServiceLogger({ service: SERVICE_NAMES.api });
   installLogger(logger);
   const poolMax = parsePositiveInteger(process.env.DB_POOL_MAX, 4);
@@ -314,6 +326,12 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   if (secrets.describe().capabilities.degraded)
     logger.warn("Secret storage degraded; encrypted credentials remain available");
   prisma = withSecretPersistence(prisma, secrets);
+  // Bot nodes on members' tailnets run in this process; without tailscaled the feature says why.
+  const tailnet = new TailnetService({
+    prisma,
+    secretStore: secrets,
+    nodeHost: await createTailscaledNodeHost(join(tmpdir(), "rakazo-tailnet")),
+  });
   installSecurityEventStore(prisma);
   installAuditEventStore(prisma);
   const unreadableMasterKeys = await verifyContentKeys(prisma);
@@ -325,6 +343,13 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   const events = createThreadEvents(prisma, realtime, {
     analytics,
     runSecretWriter: createRunSecretWriter(secrets),
+  });
+  const tailnetTunnel = createTailnetTunnel({
+    prisma,
+    tailnet,
+    events,
+    encryptionKey: env.encryptionKey,
+    authorize: createTailnetApprovals(prisma),
   });
   const ticketBoardEnabled = env.ticketBoardEnabled;
   const boardEvents = createBoardEvents(realtime);
@@ -475,7 +500,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   });
   const connectors = createConnectorRuntime(
     runtimeEnv,
-    { prisma, secrets, events },
+    { prisma, secrets, events, tailnet },
     {
       network: remoteConnectors,
       composio: composioOverride,
@@ -745,6 +770,16 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   );
 
   const router = createRouter({
+    tailnet: {
+      service: tailnet,
+      serverOrigin: runtimeEnv.tailnetServerOrigin,
+      computers: createTailnetCommandAccess({
+        prisma,
+        encryptionKey: env.encryptionKey,
+        serverOrigin: runtimeEnv.tailnetServerOrigin,
+        available: tailnet.available,
+      }),
+    },
     speechSummary:
       env.voiceSummaryMinChars === undefined
         ? undefined
@@ -1168,7 +1203,16 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     runtime,
     awaitIdle: inMemoryJobs ? () => inMemoryJobs.awaitIdle() : undefined,
     backgroundFailures: inMemoryJobs ? () => inMemoryJobs.failureCounts() : undefined,
-    handleUpgrade: userDeviceHub?.handleUpgrade,
+    handleUpgrade: (request, socket, head) => {
+      try {
+        if (tailnetTunnel.matches(request))
+          return tailnetTunnel.handleUpgrade(request, socket, head);
+        if (userDeviceHub) return userDeviceHub.handleUpgrade(request, socket, head);
+      } catch (error) {
+        getLogger().error("upgrade dispatch failed", error);
+      }
+      socket.destroy();
+    },
     stop: async () => {
       // Handlers still running would otherwise query the pool after it ends.
       const requestsSettled = settleWithTimeout(inFlight.settled(), REQUEST_DRAIN_MS);
@@ -1179,6 +1223,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       // Aborted runs hand themselves back while realtime is still open to announce them.
       const runsStopped = runs?.stop();
       await userDeviceHub?.close();
+      tailnetTunnel.close();
       await oauthLogins.abortAll();
       await messagingRuntime?.stop();
       await stopReferralEmails?.();
@@ -1192,6 +1237,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       await botEmail?.drain?.();
       await email?.drain?.();
       await jobs.close();
+      await tailnet.close();
       await secrets.close();
       await realtime.close();
       await mcp.close();

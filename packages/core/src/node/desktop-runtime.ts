@@ -412,6 +412,30 @@ function browserSessionBusLines(index: number | undefined, env: DesktopEnvironme
   return [`if [ -r ${bus} ]; then . ${bus}; else unset DBUS_SESSION_BUS_ADDRESS; fi`];
 }
 
+/** Display N's browser sends tailnet hosts to rakazo-net's proxy on this port base plus N. */
+export const TAILNET_SCREEN_PORT_BASE = 20000;
+
+/** The bot a display serves, for rakazo-net's browser proxy. */
+export function screenBotPath(displayNumber: number | string) {
+  return `/tmp/rakazo/screen-bot-${displayNumber}`;
+}
+
+/**
+ * Proxy auto-config for a screen's browser: `*.ts.net` names and tailnet addresses go to the
+ * display's rakazo-net proxy, which tunnels them through Rakazo; everything else is direct.
+ * Only the host is matched, so the browser never resolves a tailnet name itself.
+ */
+const TAILNET_PAC = [
+  "function FindProxyForURL(url, host) {",
+  '  host = host.toLowerCase().replace(/^\\[|\\]$/g, "");',
+  "  if (/^([a-z0-9-]+\\.){2,}ts\\.net\\.?$/.test(host) ||",
+  "      /^100\\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\\.[0-9]{1,3}\\.[0-9]{1,3}$/.test(host) ||",
+  "      /^fd7a:115c:a1e0:/.test(host))",
+  '    return "PROXY 127.0.0.1:__PORT__";',
+  '  return "DIRECT";',
+  "}",
+].join("\n");
+
 function browserLauncherCommand(
   index: number | undefined,
   screenId: string,
@@ -452,7 +476,8 @@ function browserLauncherCommand(
     '  if [ -n "$_kept" ]; then export LD_PRELOAD="$_kept"; else unset LD_PRELOAD; fi',
     "  unset _kept _rest _entry",
     "fi",
-    `exec "$browser" --test-type --no-sandbox --disable-dev-shm-usage --disable-gpu --enable-unsafe-swiftshader --no-first-run --no-default-browser-check --disable-session-crashed-bubble --hide-crash-restore-bubble --password-store=basic --restore-last-session --start-maximized --remote-debugging-address=127.0.0.1 --remote-debugging-port=${layout.debugPort} --user-data-dir=${shellQuote(browserProfilePathForScreen(screenId, env))} "$@"`,
+    `tailnet_pac=$(printf %s ${shellQuote(TAILNET_PAC)} | sed "s/__PORT__/$((${layout.displayNumber} + ${TAILNET_SCREEN_PORT_BASE}))/" | base64 | tr -d '\\n')`,
+    `exec "$browser" --test-type --no-sandbox --disable-dev-shm-usage --disable-gpu --enable-unsafe-swiftshader --no-first-run --no-default-browser-check --disable-session-crashed-bubble --hide-crash-restore-bubble --password-store=basic --restore-last-session --start-maximized --remote-debugging-address=127.0.0.1 --remote-debugging-port=${layout.debugPort} --user-data-dir=${shellQuote(browserProfilePathForScreen(screenId, env))} "--proxy-pac-url=data:application/x-ns-proxy-autoconfig;base64,$tailnet_pac" "$@"`,
   ].join("\n");
 }
 
@@ -739,7 +764,7 @@ function renderStopExtraScreenCommand(
     // Stop every client before touching browser state or recycling the display.
     renderStopScreenTransportsCommand(index, env),
     stopBrowserCommand(screenId, env),
-    `rm -f /tmp/rakazo/browser-profile-${layout.displayNumber} ${browserLauncherPath(layout.displayNumber)}`,
+    `rm -f /tmp/rakazo/browser-profile-${layout.displayNumber} ${browserLauncherPath(layout.displayNumber)} ${screenBotPath(layout.displayNumber)}`,
     ...renderStopScreenSessionCommand(index, env),
     ...(index === 0 && env.preservePrimaryDisplay
       ? []
@@ -840,6 +865,7 @@ function renderEnsureScreenCommand(
     `mkdir -p /tmp/rakazo ${shellQuote(path.posix.dirname(profile))}`,
     ...browserRunningFunction(profile, pidFile),
     `printf %s ${shellQuote(profile)} >/tmp/rakazo/browser-profile-${layout.displayNumber}`,
+    `printf %s ${shellQuote(screenId)} >${screenBotPath(layout.displayNumber)}`,
     ...renderStartScreenSessionCommand(index, env),
     "launch_browser() {",
     `  ${prepareBrowserProfileCommand(screenId, env)}`,

@@ -73,6 +73,22 @@ export function installPageBrowserFilesCommand(): string {
   ].join("\n");
 }
 
+/**
+ * rakazo-net, which a command with tailnet tunnel settings writes to its computer before it runs
+ * (see the shell launcher), with a version so a computer rewrites it only when it changed.
+ */
+export function tailnetHelper(): { base64: string; version: string } {
+  tailnetHelperCache ??= (() => {
+    const source = computerFile("rakazo-net");
+    return {
+      base64: Buffer.from(source).toString("base64"),
+      version: createHash("sha256").update(source).digest("hex").slice(0, 16),
+    };
+  })();
+  return tailnetHelperCache;
+}
+let tailnetHelperCache: { base64: string; version: string } | undefined;
+
 /** Everything a hosted Linux computer needs for the page tools; idempotent and cheap once done. */
 export function installPageBrowserCommand(): string {
   return [installAgentBrowserCommand(), installPageBrowserFilesCommand()]

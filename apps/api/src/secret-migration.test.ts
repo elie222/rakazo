@@ -19,6 +19,7 @@ function fixture() {
     vaultCredential: [
       { id: "vault-row", ciphertext: "fake-vault-ref", updatedAt: new Date("2026-09-01") },
     ],
+    tailnetConnection: [{ id: "tailnet-row", ciphertext: "fake-tailnet-ref" }],
     integrationProviderConfig: [{ id: "composio", ciphertext: "fake-config-ref" }],
   };
   const client = Object.fromEntries(
@@ -70,7 +71,7 @@ describe("migration persistence", () => {
     const f = fixture();
     const rows = [];
     for await (const row of f.repository.rows()) rows.push(row);
-    expect(rows).toHaveLength(104);
+    expect(rows).toHaveLength(105);
     expect(rows[0]).toMatchObject({ ephemeral: true, id: "row-000", label: "secret" });
     // A run's login and codes are short-lived too, and stay in local encryption.
     expect(rows.slice(0, 4).map((row) => row.ephemeral)).toEqual([true, true, true, true]);
@@ -82,6 +83,7 @@ describe("migration persistence", () => {
     });
     expect(rows.find((row) => row.id === "bot-row")?.recordId).toBe("bot-row");
     expect(rows.find((row) => row.id === "vault-row")?.recordId).toBe("vault-row");
+    expect(rows.find((row) => row.id === "tailnet-row")?.recordId).toBe("tailnet-row");
   });
   it("compares the original ref so a concurrent update or delete wins", async () => {
     const f = fixture();
@@ -96,7 +98,12 @@ describe("migration persistence", () => {
   });
   it("moves a vault value under its vault key to Infisical through the vault's reader", async () => {
     const f = fixture();
-    for (const rows of [f.tables.secret, f.tables.botSecret, f.tables.integrationProviderConfig])
+    for (const rows of [
+      f.tables.secret,
+      f.tables.botSecret,
+      f.tables.tailnetConnection,
+      f.tables.integrationProviderConfig,
+    ])
       rows.length = 0;
     const keys: SpaceKeyRecord[] = [];
     const provider = new LocalKeyProvider([{ id: "test", key: randomBytes(32) }]);

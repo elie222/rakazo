@@ -25,10 +25,11 @@ import {
   repeatsDeniedAction,
   resolveActionApprovalForTools,
   SITE_SENDING_TOOLS,
+  TAILNET_CONNECT_TOOL,
   toolRequiresApproval,
   toolRequiresExplicitApproval,
 } from "@rakazo/core";
-import { normalizedHttpUrl, urlSite } from "@rakazo/core/egress";
+import { normalizedHttpUrl, requestSite, urlSite } from "@rakazo/core/egress";
 import { approvalEffectKey, toolEffectIdempotencyKey } from "@rakazo/core/node/approval-effect-key";
 import type { AuditEventInput } from "@rakazo/db";
 import { recordAuditEvent, runSecretKind } from "@rakazo/db";
@@ -227,6 +228,25 @@ export async function gateToolCall(
     connectorKind,
     connectorProviders,
   );
+  // A tailnet destination is a site too: allowed by a site rule or this run's earlier approval.
+  const tailnetSite = name === TAILNET_CONNECT_TOOL ? requestSite(name, args) : undefined;
+  if (name === TAILNET_CONNECT_TOOL && !tailnetSite)
+    return {
+      result: refusal(
+        "tailnet_destination_invalid",
+        "host must be a *.ts.net name or a 100.x tailnet address, and port a TCP port",
+      ),
+    };
+  if (tailnetSite) {
+    // The card, the stored effect and the gateway's check all use the same destination.
+    const separator = tailnetSite.lastIndexOf(":");
+    args = {
+      host: tailnetSite.slice(0, separator).replace(/^\[|\]$/g, ""),
+      port: Number(tailnetSite.slice(separator + 1)),
+    };
+    effectRequest = args;
+  }
+  const site = fetchSite ?? tailnetSite;
   const siteGate =
     fetchUrl && fetchSite
       ? outboundSiteGate({
@@ -237,7 +257,13 @@ export async function gateToolCall(
             (await ctx.trust.loadTrustedSites()).has(fetchSite),
           rules: await ctx.trust.loadApprovalRules(),
         })
-      : "allow";
+      : tailnetSite
+        ? outboundSiteGate({
+            site: tailnetSite,
+            trusted: (await ctx.trust.loadTrustedSites()).has(tailnetSite),
+            rules: await ctx.trust.loadApprovalRules(),
+          })
+        : "allow";
   // A tool watch repeats its read unattended, so it passes the read check that call would now.
   const watchedTool = watch?.kind === "tool" ? watch.tool : undefined;
   const readTrusts = watchedTool
@@ -315,7 +341,7 @@ export async function gateToolCall(
       readOnly: declaredReadOnlyFor(toolName),
     })),
     wrapper: batch ? { name, connectorKind } : undefined,
-    site: fetchSite,
+    site,
     rules: await ctx.trust.loadApprovalRules(),
   });
   const approvalResolved =
@@ -556,7 +582,9 @@ export async function gateToolCall(
     return {
       result: refusal(
         "fetch_needs_approval_unattended",
-        `Fetching ${fetchSite} needs approval, and a webhook run cannot ask.`,
+        tailnetSite
+          ? `Connecting to ${tailnetSite} needs approval, and a webhook run cannot ask.`
+          : `Fetching ${fetchSite} needs approval, and a webhook run cannot ask.`,
       ),
     };
   }
@@ -669,7 +697,7 @@ export async function gateToolCall(
   }
   // Past the gate: this destination is now one the run was given. A search result's exact
   // URL trusts only that URL, never the rest of its site.
-  if (fetchSite && siteGate === "new") (await ctx.trust.loadTrustedSites()).add(fetchSite);
+  if (site && siteGate === "new") (await ctx.trust.loadTrustedSites()).add(site);
   if (viaConnector) {
     const trusted = await ctx.trust.loadTrustedConnectors();
     for (const trust of connectorTrusts) trusted.add(trust);

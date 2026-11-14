@@ -8,7 +8,7 @@ import { USER_DEVICE_CONNECT_PATH } from "@rakazo/contracts";
 import type { ProxyOptions, UserConfig } from "vite";
 import { createServer, loadConfigFromFile, preview } from "vite";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DEVICE_SOCKET } from "./api-proxy.js";
+import { DEVICE_SOCKET, TAILNET_SOCKET } from "./api-proxy.js";
 
 const configFile = path.resolve(import.meta.dirname, "../vite.config.ts");
 const cleanup: (() => Promise<void>)[] = [];
@@ -84,14 +84,14 @@ describe("vite.config", () => {
     },
   );
 
-  it("loads and forwards only the device socket's upgrades", async () => {
+  it("loads and forwards only the device socket's and tailnet tunnel's upgrades", async () => {
     const loaded = await loadConfigFromFile({ command: "serve", mode: "production" }, configFile);
     const config = loaded?.config as UserConfig;
     for (const proxy of [config.server?.proxy, config.preview?.proxy]) {
       const upgrades = Object.entries(proxy ?? {})
         .filter(([, options]) => (options as ProxyOptions).ws)
         .map(([context]) => context);
-      expect(upgrades).toEqual([DEVICE_SOCKET]);
+      expect(upgrades).toEqual([DEVICE_SOCKET, TAILNET_SOCKET]);
       expect(proxy).toHaveProperty("/api");
     }
   });
