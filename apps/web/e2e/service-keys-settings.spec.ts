@@ -32,12 +32,12 @@ test("creates an API key, shows it once, and revokes it", async ({ page }, testI
   const backup = settings.getByRole("listitem").filter({ hasText: "Backup" });
   await expect(backup).toBeVisible();
   const second = await settings.locator("code").textContent();
-  await key.getByRole("button", { name: "Revoke", exact: true }).click();
+  await key.getByRole("button", { name: "Revoke Nightly report", exact: true }).click();
   await expect(key).toContainText("Revoked");
   await expect(notice).toBeVisible();
   await expect(settings.locator("code")).toHaveText(second ?? "");
 
-  await backup.getByRole("button", { name: "Revoke", exact: true }).click();
+  await backup.getByRole("button", { name: "Revoke Backup", exact: true }).click();
   await expect(backup).toContainText("Revoked");
   await expect(notice).toBeHidden();
 });
