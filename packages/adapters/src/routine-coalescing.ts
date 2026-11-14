@@ -72,24 +72,17 @@ export async function findPendingRoutineTick(
   });
   if (!candidates.length) return null;
   const runIds = candidates.map((candidate) => candidate.id);
-  const [leases, computers] = await Promise.all([
-    tx.computerExecutionLease.findMany({
-      where: { runId: { in: runIds }, expiresAt: { gt: new Date() } },
-      select: { runId: true },
-    }),
-    tx.computer.findMany({
-      where: { controlRunId: { in: runIds } },
-      select: { controlRunId: true },
-    }),
-  ]);
+  const leases = await tx.computerExecutionLease.findMany({
+    where: { runId: { in: runIds }, expiresAt: { gt: new Date() } },
+    select: { runId: true },
+  });
   const held = new Set(leases.map(({ runId }) => runId));
-  const controlled = new Set(computers.map(({ controlRunId }) => controlRunId));
   let retained: { id: string; taskId: string } | null = null;
   const cancelledEvents: { threadId: string; seq: number }[] = [];
   for (const candidate of candidates) {
     // A stale pre-attempt timestamp/fence does not prove execution. Attempts,
     // effects, checkpoints and live computer ownership do.
-    if (held.has(candidate.id) || controlled.has(candidate.id)) continue;
+    if (held.has(candidate.id)) continue;
     // Dispatch can race the earlier read. Lock and recheck, including its exact
     // fence, so work claimed since the selection is never folded or cancelled.
     const locked = await tx.run.updateMany({

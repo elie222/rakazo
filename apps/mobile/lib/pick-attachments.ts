@@ -4,9 +4,9 @@ import {
   ATTACHMENT_MAX_BYTES,
   ATTACHMENT_MAX_COUNT,
 } from "@rakazo/contracts";
-import { inferAttachmentMimeType } from "@rakazo/core";
+import { inferAttachmentMimeType, isStaticPng, PNG_ANIMATION_HEADER_BYTES } from "@rakazo/core";
 import * as DocumentPicker from "expo-document-picker";
-import { File } from "expo-file-system";
+import { File, FileMode } from "expo-file-system";
 import type * as ImageManipulatorModule from "expo-image-manipulator";
 import * as ImagePicker from "expo-image-picker";
 import { requireOptionalNativeModule } from "expo-modules-core";
@@ -53,8 +53,25 @@ async function prepareImage(
   const mimeType = inferAttachmentMimeType(name, sourceMimeType ?? undefined);
   // Preserve animation and transparency in GIF and WebP images.
   if (mimeType === "image/gif" || mimeType === "image/webp") return { uri, name, mimeType };
-  if (!width || !height || Math.max(width, height) <= ATTACHMENT_IMAGE_MAX_EDGE) {
+  const needsResize = width && height && Math.max(width, height) > ATTACHMENT_IMAGE_MAX_EDGE;
+  // Unsupported photo formats (such as HEIC) need conversion even when already small.
+  if (!needsResize && mimeType) {
     return { uri, name, mimeType };
+  }
+  if (mimeType === "image/png") {
+    try {
+      const handle = new File(uri).open(FileMode.ReadOnly);
+      try {
+        if (!isStaticPng(await handle.readBytes(PNG_ANIMATION_HEADER_BYTES))) {
+          return { uri, name, mimeType };
+        }
+      } finally {
+        handle.close();
+      }
+    } catch {
+      // Never flatten a PNG when its animation metadata cannot be inspected.
+      return { uri, name, mimeType };
+    }
   }
   const manipulator = loadImageManipulator();
   if (!manipulator) return { uri, name, mimeType };
@@ -62,11 +79,13 @@ async function prepareImage(
     mimeType === "image/png" ? manipulator.SaveFormat.PNG : manipulator.SaveFormat.JPEG;
   try {
     const context = manipulator.ImageManipulator.manipulate(uri);
-    context.resize(
-      width >= height
-        ? { width: ATTACHMENT_IMAGE_MAX_EDGE }
-        : { height: ATTACHMENT_IMAGE_MAX_EDGE },
-    );
+    if (needsResize) {
+      context.resize(
+        width >= height
+          ? { width: ATTACHMENT_IMAGE_MAX_EDGE }
+          : { height: ATTACHMENT_IMAGE_MAX_EDGE },
+      );
+    }
     const image = await context.renderAsync();
     const saved = await image.saveAsync({ compress: ATTACHMENT_IMAGE_QUALITY, format });
     return {

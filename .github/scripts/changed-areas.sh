@@ -47,7 +47,8 @@ while IFS= read -r file; do
       packages/adapters/src/*computer* | packages/adapters/src/*desktop* | \
       packages/adapters/src/*sandbox* | packages/adapters/src/*host-* | \
       packages/adapters/src/home* | packages/adapters/src/native-shell* | \
-      packages/adapters/src/page-browser* | packages/adapters/src/file-handle-path*)
+      packages/adapters/src/page-browser* | packages/adapters/src/file-handle-path* | \
+      packages/adapters/src/workspace-save-*)
       native=true
       ;;
     infra/compose/*) compose=true ;;

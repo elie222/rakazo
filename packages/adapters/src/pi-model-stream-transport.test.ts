@@ -111,6 +111,24 @@ describe.each(["local", "openai-compatible"] as const)("%s model stream transpor
       }),
     ).rejects.toThrow("terminated (other side closed)");
   });
+
+  it("keeps thoughts a model writes into its answer text out of the reply", async () => {
+    const chunk = (content: string, finish_reason: string | null = null) =>
+      `data: ${JSON.stringify({ id: "fixture", choices: [{ index: 0, delta: { role: "assistant", content }, finish_reason }] })}\n\n`;
+    const events = await runTurn(provider, (response) => {
+      response.writeHead(200, { "content-type": "text/event-stream" });
+      response.write(chunk("<think>\nThe user wants a short "));
+      response.write(chunk("confirmation.\n</th"));
+      response.write(chunk("ink>\n\nRea"));
+      response.end(`${chunk("dy", "stop")}data: [DONE]\n\n`);
+    });
+    expect(events).toContainEqual(expect.objectContaining({ type: "done", text: "Ready" }));
+    const streamed = events
+      .flatMap((event) => (event.type === "text" ? [event.text] : []))
+      .join("");
+    expect(streamed).toBe("Ready");
+    expect(events).toContainEqual({ type: "thinking", active: true });
+  });
 });
 
 describe("local model stream through a proxy", () => {

@@ -782,6 +782,10 @@ export class StoredMcpOAuthProvider implements OAuthClientProvider {
     this.oauth().discoveryState = value;
     await this.persist();
   }
+  /** When the held access token lapses, if the grant says. */
+  accessTokenExpiresAt(): number | undefined {
+    return accessTokenExpiresAt(this.material.oauth);
+  }
   discoveryState(): OAuthDiscoveryState | undefined {
     return this.material.oauth?.discoveryState;
   }

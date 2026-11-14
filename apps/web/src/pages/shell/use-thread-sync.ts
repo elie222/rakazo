@@ -549,6 +549,11 @@ export function useThreadSync({
           // waiting_input: reconcile ask cards if a stale post-send refresh raced SSE.
           void snapshotRefresh.invalidate().catch(() => undefined);
         }
+        // The event does not say which tab sent it, so every tab showing this computer refreshes.
+        const computerBotId = computerBotIdRef.current;
+        if (isComputerStatusEvent(event) && computerBotId && event.botId === computerBotId) {
+          void refreshComputerScreen(computerBotId).catch(() => undefined);
+        }
         if (isRunTerminalEvent(event)) refreshRoutineHistory(event.runId);
       },
     });

@@ -1,3 +1,4 @@
+import { TAKEOVER_COMPUTER_PENDING_STATE } from "@rakazo/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   BrowserNotificationApi,
@@ -112,6 +113,31 @@ describe("browser notifications", () => {
       title: "Chief",
       body: "Ada Owner: Saturday works",
     });
+  });
+
+  it("tags a card that only asks for the computer like the takeover alert", () => {
+    const card = {
+      kind: "computer",
+      state: TAKEOVER_COMPUTER_PENDING_STATE,
+      text: "Sign in to continue.",
+    };
+    const tagFor = (blocks: unknown[], id: string) => {
+      const show = vi.fn();
+      deliverBrowserNotification(event({ id, payload: { role: "bot", blocks } }), "Chief", {
+        enabled: true,
+        pageVisible: false,
+        windowFocused: false,
+        permission: "granted",
+        notifiedEventIds: new Set(),
+        show,
+      });
+      return show.mock.calls[0]?.[2];
+    };
+    expect(tagFor([card], "event-card")).toBe("thread-1:takeover");
+    expect(tagFor([card, { kind: "text", text: "Also this." }], "event-mixed")).toBe("thread-1");
+    expect(tagFor([{ kind: "computer", state: "Done", text: "Back." }], "event-done")).toBe(
+      "thread-1",
+    );
   });
 
   it("puts the bot message in the native notification", () => {

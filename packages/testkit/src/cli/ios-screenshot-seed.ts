@@ -131,6 +131,12 @@ export async function seedIosScreenshotFixture(input: {
       botIds: [researcher.id, writer.id, support.id],
     });
   }
+  if (!groups.some((item) => item.name === "Review pair")) {
+    await rpc<GroupRow>(input.apiUrl, populated.headers, "groups/create", {
+      name: "Review pair",
+      botIds: [researcher.id, writer.id],
+    });
+  }
   const routines = await rpc<RoutineRow[]>(input.apiUrl, populated.headers, "routines/list", {
     botId: researcher.id,
   });
@@ -197,7 +203,12 @@ export async function seedIosScreenshotFixture(input: {
   // One of each kind people save: a website sign-in, a card, a contact, an API token, and a
   // command variable. The card number is a well-known test number, not a real card.
   const vault = await rpc<{ name: string }[]>(input.apiUrl, populated.headers, "vault/list");
-  const vaultEntries: { destination: BotSecretDestination; value: string; title?: string }[] = [
+  const vaultEntries: {
+    destination: BotSecretDestination;
+    value: string;
+    title?: string;
+    alsoOn?: string[];
+  }[] = [
     {
       title: "Help desk",
       destination: {
@@ -205,11 +216,15 @@ export async function seedIosScreenshotFixture(input: {
         origin: "https://help.example.com",
         auth: { type: "login" },
       },
+      // Also on another site, with an authenticator key (RFC 6238's test key), so the item and
+      // its editor show both.
+      alsoOn: ["https://support.example.com"],
       value: encodeLoginSecret({
         fields: [
           { label: "Email", value: "support@example.com", hidden: false },
           { label: "Password", value: "fixture-password", hidden: true },
         ],
+        otp: "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ",
       }),
     },
     {
@@ -661,7 +676,6 @@ const TICKETS = [
   { title: "Publish the changelog", status: "done" },
 ] as const;
 
-/** Board cards in several columns. Only an API with the board enabled shows them. */
 /** Two payments bots made with the wallet, as the spending limit lists them. */
 async function ensurePayments(
   prisma: ReturnType<typeof createDb>["prisma"],
@@ -697,12 +711,14 @@ async function ensurePayments(
   }
 }
 
+/** Board cards in several columns, with the board turned on in Labs so it shows. */
 async function ensureTickets(
   prisma: ReturnType<typeof createDb>["prisma"],
   spaceId: string,
   userId: string,
   botIds: string[],
 ) {
+  await prisma.user.update({ where: { id: userId }, data: { labs: ["board"] } });
   const board = await ensureBoard(prisma, spaceId);
   if (await prisma.ticket.count({ where: { boardId: board.id } })) return;
   for (const [index, ticket] of TICKETS.entries()) {

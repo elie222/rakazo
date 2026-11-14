@@ -1,6 +1,6 @@
 import { validateToolArguments } from "@earendil-works/pi-ai/utils/validation";
 import { describe, expect, it } from "vitest";
-import { builtinAgentTools } from "./builtin-tools.js";
+import { builtinAgentTools } from "./builtin.tool-definition.js";
 import { jsonField, parametersFor } from "./pi-runtime-tool-parameters.js";
 
 /** What the model is shown for a tool: the Pi parameters, serialised. */

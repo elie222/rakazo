@@ -18,9 +18,11 @@ import type {
   TransactionalEmailProvider,
   WebProvider,
 } from "@rakazo/adapter-kit";
+import type { LabFeature } from "@rakazo/contracts";
 import type { PrismaClient, RunLease, ThreadEvents } from "@rakazo/db";
-import type { CloudAgentConnection } from "./cloud-agent-factory.js";
+import type { CloudAgentConnection, UserCloudAgents } from "./cloud-agent-factory.js";
 import type { MemoryProviderResolver } from "./memory-provider-factory.js";
+import type { MessagingDelivery } from "./messaging-delivery.js";
 import type { CodexLiveCatalog } from "./pi-codex-catalog.js";
 import type { RemoteTransportDependencies } from "./remote-mcp.js";
 import type { TicketChangeNotifier } from "./ticket-changes.js";
@@ -55,7 +57,8 @@ export interface ExecutorDeps {
   jobs: JobPublisher;
   /** Publishes board-change signals and wakes ticket owners; absent disables both. */
   onTicketChange?: TicketChangeNotifier;
-  ticketBoardEnabled?: boolean;
+  /** Labs features this deployment turns on for every account. */
+  deploymentLabs?: readonly LabFeature[];
   phoneCallsEnabled?: boolean;
   /** The domain bot email addresses are on; absent when this server receives no email. */
   inboundEmailDomain?: string;
@@ -65,6 +68,8 @@ export interface ExecutorDeps {
   phoneCallRingSeconds?: number;
   /** Messaging surface; absent means zero identity queries and no chat prompts. */
   messaging?: { hasIdentity(botId: string): Promise<boolean> };
+  /** Sends what runs say to the chat apps their turns came from; absent without one. */
+  messagingDelivery?: MessagingDelivery;
   listConnectedPluginSlugs?: (userId: string) => Promise<string[]>;
   /** Builtin web_search / web_fetch. Defaults to keyless HTTP when omitted. */
   web?: WebProvider;
@@ -77,6 +82,8 @@ export interface ExecutorDeps {
   mcpAllowPrivateEndpoint?: boolean;
   /** Remote cloud coding agents. Null/omit means tools stay uninjected. */
   cloudAgent?: CloudAgentConnection | null;
+  /** Environments users connected themselves; a run uses its user's before the deployment's. */
+  userCloudAgents?: UserCloudAgents;
   /** The deployment's payment wallet. Null/omit means purchase tools stay uninjected. */
   paymentWallet?: PaymentWalletProvider | null;
   /** Optional Auto Review verifier. When omitted, the factory selects from env (llm | jev | scripted). */

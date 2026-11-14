@@ -22,4 +22,3 @@ export const IntegrationSetupStateSchema = z.object({
   webUrl: z.string().url(),
   providers: z.array(z.object({ id: IntegrationProviderIdSchema, configured: z.boolean() })),
 });
-export type IntegrationSetupState = z.infer<typeof IntegrationSetupStateSchema>;

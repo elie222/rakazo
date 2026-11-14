@@ -255,6 +255,26 @@ describe("checkPageSource", () => {
     ).toEqual({ ok: true, code: expect.any(String) });
   });
 
+  it.each([
+    "function () { return <Status />; }",
+    "() => <Status />",
+    "() => React.createElement(Status, null)",
+  ])("accepts a harmless kit-name helper before default export %s", (exported) => {
+    expect(
+      checkPageSource(
+        `function Status() { return <Text>Ready</Text>; }\nexport default ${exported};`,
+      ),
+    ).toEqual({ ok: true, code: expect.any(String) });
+  });
+
+  it("still rejects a recursive helper before an anonymous default export", () => {
+    expect(
+      checkPageSource(
+        "function Status() { return <Status />; }\nexport default function () { return <Status />; }",
+      ).ok,
+    ).toBe(false);
+  });
+
   it("limits a page's size in bytes, not characters, before parsing it", () => {
     const head = "const App = () => <Text>x</Text>;\n// ";
     const room = PAGE_SOURCE_MAX_BYTES - new TextEncoder().encode(page(head)).byteLength;
@@ -317,6 +337,17 @@ describe("checkPageSource", () => {
       expect(result.ok).toBe(false);
       expect(result.ok ? [] : result.errors).toContain(
         "line 1: useTheme() must be called inside a component, not at the top level of the file.",
+      );
+    });
+
+    it("handles a source-sized sequence of semicolon-free arrows and ends their scopes", () => {
+      const declarations = Array.from({ length: 12000 }, (_, i) => `const a${i}=()=>1`).join("\n");
+      const result = checkPageSource(
+        `${declarations}\nconst value=useState(0)\nexport default () => <Text>Hello</Text>`,
+      );
+      expect(result.ok).toBe(false);
+      expect(result.ok ? [] : result.errors).toContain(
+        "line 12001: useState() must be called inside a component, not at the top level of the file.",
       );
     });
 

@@ -78,7 +78,7 @@ dbTests("billing checkout coordination", () => {
       prisma.user.findUnique({ where: { id: userId } }),
     );
     const service = createBillingService({ prisma, provider, webOrigin: "https://example.test" });
-    await service.purchaseCredits(actor, { amountCents: 1000, monthly: true });
+    await service.purchaseCredits(actor, { amountCents: 2000, monthly: true });
     const results = await Promise.all(
       [1000, 2500, 5000].map((amountCents) =>
         service.purchaseCredits(actor, { amountCents, monthly: true }),
@@ -240,13 +240,13 @@ dbTests("checkout and organization deletion", () => {
       name: "monthly credit",
       modelCredits: true,
       open: (service: ReturnType<typeof createBillingService>, actor: Actor) =>
-        service.purchaseCredits(actor, { amountCents: 1000, monthly: true }),
+        service.purchaseCredits(actor, { amountCents: 2000, monthly: true }),
     },
     {
       name: "one-time credit",
       modelCredits: true,
       open: (service: ReturnType<typeof createBillingService>, actor: Actor) =>
-        service.purchaseCredits(actor, { amountCents: 1000, monthly: false }),
+        service.purchaseCredits(actor, { amountCents: 2000, monthly: false }),
     },
   ] as const;
 

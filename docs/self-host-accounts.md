@@ -205,12 +205,79 @@ on first use, refreshed in the background, and failures back off up to one minut
 reflects discovery, not a guarantee that the provider's token endpoint is currently reachable.
 
 Account deletion keeps the existing password confirmation for password users. Users without a
-password may delete after explicit provider reauthentication within five minutes; **Sign in again** starts a fresh
+password may delete after explicit organization SSO reauthentication within five minutes; **Sign in again** starts a fresh
 provider round-trip bound to the signed-in account. Choosing a different identity cannot confirm
 deletion or create another account in that flow. A stale or borrowed session alone cannot authorize deletion. With transactional
 email configured, **Send deletion code** sends a single-use code to the account email, valid for ten
 minutes. Enter it in account settings to confirm deletion. Email-code requests are rate-limited;
 invalid, expired or wrong-account codes fail. No password needs to be created for deletion.
+
+## Google and Apple sign-in
+
+Google and Apple sign-in are off until you set their credentials on the API. With nothing set,
+sign-in stays email and password (and any OpenID Connect provider you already configured). Each
+provider turns on only when its own values are complete. Email and password stay available next
+to the buttons.
+
+```env
+GOOGLE_CLIENT_ID=replace-with-client-id
+GOOGLE_CLIENT_SECRET=replace-with-client-secret
+
+APPLE_CLIENT_ID=replace-with-services-id
+APPLE_TEAM_ID=replace-with-team-id
+APPLE_KEY_ID=replace-with-key-id
+APPLE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nreplace-with-key\n-----END PRIVATE KEY-----"
+```
+
+Leave a pair empty to keep that provider off. `APPLE_PRIVATE_KEY` is the contents of the Sign in
+with Apple `.p8` file. A line break in the env value can be a real newline or the two characters
+`\n`. To mount the file instead, set `APPLE_PRIVATE_KEY_FILE` to its path and leave
+`APPLE_PRIVATE_KEY` empty. Set one of them, not both. In every Compose variant, this path is
+inside the API container: add an override for the `api` service with a read-only bind mount,
+for example `./secrets/apple.p8:/run/secrets/apple.p8:ro`, and set
+`APPLE_PRIVATE_KEY_FILE=/run/secrets/apple.p8`. The base Compose files do not mount host keys.
+
+The API signs Apple's client secret itself (ES256, from the key, team id, and key id), caches
+it, and signs a new one before it expires. Apple refuses a secret dated more than six months
+ahead, so there is nothing to rotate by hand and no client-secret JWT to paste in.
+
+Register these redirect URIs, using your public `BETTER_AUTH_URL` origin:
+
+```text
+https://app.example.com/api/auth/callback/google
+https://app.example.com/api/auth/callback/apple
+```
+
+For Google, create a web OAuth client and add that redirect URI. For Apple, create a Services ID
+(that value is `APPLE_CLIENT_ID`), enable Sign in with Apple on it, and return to the same
+redirect URI. The key is created under Keys with Sign in with Apple enabled; its id is
+`APPLE_KEY_ID`, and the team id is on the account page. Download the `.p8` once and store it
+with the API's other secrets.
+
+Web, desktop, and mobile use browser OAuth with the same callback URLs. iOS renders the native
+Apple button when available; it starts browser authorization rather than acquiring a bare identity
+token. Native token submission is not supported: the browser flow binds authorization to one-use
+server state and a nonce. The App Store requires an Apple option on a build that offers Google.
+
+Existing accounts connect Google, Apple, or generic OpenID Connect through authenticated
+linking in account settings. Matching provider and account emails never implicitly link them:
+historical provider verification does not prove current control of a mailbox hosted elsewhere.
+
+Linking requires the provider's verified email to match the verified Rakazo email. A different
+provider address, including Apple's Hide My Email relay address, cannot be linked to that account.
+
+Signup through Google or Apple follows the same closed registration and allowlist as email
+signup. The provider email must be verified before any social account is created. Google verification
+counts only for Gmail or a matching verified Workspace domain. Apple verification counts only for
+Apple-managed mailboxes and relay addresses. Other provider mailboxes cannot
+create an account through social signup; verify an account through email and link it in settings.
+
+Google and Apple sign-in and linking do not confirm sensitive actions. Their browser sessions
+may be cached; an account chooser, consent screen, or nonce does not prove fresh authentication.
+Use a password, an emailed confirmation code, or organization OIDC with verified fresh `auth_time`.
+Social-only accounts on servers without a supported confirmation method or email delivery cannot
+self-confirm sensitive actions, including account deletion. The operator must configure a supported
+method; the interface hides unavailable confirmation options.
 
 ## Directory provisioning (SCIM)
 

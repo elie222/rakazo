@@ -2,10 +2,11 @@ import { randomBytes } from "node:crypto";
 import { rm } from "node:fs/promises";
 import path from "node:path";
 import { startHostComputerServer } from "@rakazo/adapters/host-computer-server";
+import type { HostScreen } from "@rakazo/adapters/host-screen";
 import { readPrivateFile, writePrivateFile } from "./setup-store.js";
 
 /** App-private credentials and consent, never sent to a renderer or a connected remote server. */
-export async function prepareHostComputer(userDataDir: string) {
+export async function prepareHostComputer(userDataDir: string, screen?: HostScreen) {
   const configFile = path.join(userDataDir, "host-computer.json");
   const consentFile = path.join(userDataDir, "host-computer-consent");
   const raw = await readPrivateFile(configFile, 1024);
@@ -20,7 +21,7 @@ export async function prepareHostComputer(userDataDir: string) {
     /* Invalid local configuration is replaced. */
   }
   let server: Awaited<ReturnType<typeof startHostComputerServer>>;
-  const options = { root: path.join(userDataDir, "computers"), token };
+  const options = { root: path.join(userDataDir, "computers"), token, screen };
   try {
     server = await startHostComputerServer({ ...options, port });
   } catch (error) {

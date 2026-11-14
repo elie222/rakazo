@@ -93,4 +93,19 @@ describePostgres("space search with CONTENT_ENCRYPTION on and off (PostgreSQL)",
         expect(await snippets(db.prisma, "plan")).toEqual([]);
       }
     }));
+
+  it("never returns a delivery, plaintext or encrypted", () =>
+    system(async () => {
+      for (const db of [off, on]) {
+        await createThreadMessage(db.prisma, {
+          threadId,
+          role: "user",
+          blocks: [{ kind: "delivery" }, { kind: "text", text: "wombat lead payload" }],
+        });
+      }
+      await say(on.prisma, "the wombat summary");
+      for (const db of [on, off]) {
+        expect(await snippets(db.prisma, "wombat")).toEqual(["the wombat summary"]);
+      }
+    }));
 });
