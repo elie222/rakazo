@@ -363,15 +363,27 @@ PYTHON
 ```
 
 Do not advance this inventory after migration alone or a failed rollout. Before the
-next migration, apply the foundation phase to load the saved inventory, then create
-the newly named migration Job. If rolling back app images, restore the inventory
+next migration, apply the foundation phase to load the saved inventory, then recreate
+the migration Job. If rolling back app images, restore the inventory
 belonging to that release too. If the inventory is lost, use an explicit empty value
 until the active release is established; never unset the variable as a shortcut.
 
 For an upgrade, back up PostgreSQL, the data PVC and encryption keys first; test a
 restore. Drain running worker jobs before replacing the worker, as described in
-[upgrading](./self-host-upgrading.md). Update the pinned images, use a fresh migration
-Job name, wait for its success, then roll out the app. Jobs have immutable Pod
+[upgrading](./self-host-upgrading.md). Update the pinned images. From the example directory, after applying the foundation
+phase, archive the completed migration Job's logs and remove that Job before
+creating its replacement:
+
+```sh
+kubectl -n rakazo wait --for=condition=complete job/rakazo-migrate --timeout=300s
+kubectl -n rakazo logs job/rakazo-migrate > migration-previous.log
+# Continue only if both commands above succeed. Never delete a running Job.
+kubectl -n rakazo delete job rakazo-migrate
+kubectl apply -k . -l rakazo.example/phase=migrate
+kubectl -n rakazo wait --for=condition=complete job/rakazo-migrate --timeout=300s
+```
+
+Roll out the app only after the replacement succeeds. Jobs have immutable Pod
 templates; reapplying an old completed Job is not a new migration run. Bootstrap is
 for initial account creation, not password rotation.
 

@@ -334,15 +334,25 @@ ConfigMap이나 키가 없으면 보호장치 없이 진행하는 대신 Job이 
 이전 파일은 해당 릴리스 백업과 함께 보관하세요.
 
 마이그레이션만 성공했거나 앱 배포가 실패했을 때는 이 목록을 갱신하지 않습니다.
-다음 마이그레이션 전에 foundation 단계를 적용해 저장한 목록을 읽힌 뒤 새 이름의
-Job을 실행합니다. 앱 이미지를 롤백하면 해당 릴리스의 목록도 복원하세요.
+다음 마이그레이션 전에 foundation 단계를 적용해 저장한 목록을 읽힌 뒤 기존 Job을 교체합니다. 앱 이미지를 롤백하면 해당 릴리스의 목록도 복원하세요.
 목록을 잃었다면 실행 릴리스를 확인할 때까지 명시적인 빈 값을 사용하고,
 환경변수 자체를 빼서 보호장치를 건너뛰지 마세요.
 
 업그레이드 전에는 PostgreSQL, 데이터 볼륨, 암호화 키를 백업하고 복원도 시험하세요.
 [업그레이드 안내](../self-host-upgrading.md)에 따라 worker 작업을 마친 뒤 교체합니다.
-이미지를 갱신하고 새 이름의 마이그레이션 Job을 실행해 성공을 확인한 다음 앱을
-배포하세요. 완료된 옛 Job을 재적용한다고 새 마이그레이션이 실행되지는 않습니다.
+이미지를 갱신하고 예제 디렉터리에서 foundation 단계를 적용한 뒤 다음을 실행하세요.
+완료된 Job의 로그를 보관한 다음 Job을 교체합니다.
+
+```sh
+kubectl -n rakazo wait --for=condition=complete job/rakazo-migrate --timeout=300s
+kubectl -n rakazo logs job/rakazo-migrate > migration-previous.log
+# 위 두 명령이 성공한 경우에만 계속하세요. 실행 중인 Job은 삭제하지 마세요.
+kubectl -n rakazo delete job rakazo-migrate
+kubectl apply -k . -l rakazo.example/phase=migrate
+kubectl -n rakazo wait --for=condition=complete job/rakazo-migrate --timeout=300s
+```
+
+새 Job의 성공을 확인한 다음 앱을 배포하세요. 완료된 옛 Job을 재적용한다고 새 마이그레이션이 실행되지는 않습니다.
 첫 계정 생성 Job은 비밀번호 회전 도구가 아닙니다.
 
 이전 이미지·설정·백업을 함께 보관하세요. 앱 롤백은 데이터베이스와 호환되어야 하며,
