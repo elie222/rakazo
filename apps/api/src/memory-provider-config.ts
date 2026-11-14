@@ -217,7 +217,10 @@ async function saveMemoryProviderConnection(
                   ciphertext: stored.ciphertext,
                 },
               })
-            : { id: keptSecretId as string };
+            : await tx.secret.update({
+                where: { id: keptSecretId as string },
+                data: { userId: actor.userId },
+              });
           const config = await tx.spaceMemoryConfig.upsert({
             where: { spaceId: actor.spaceId },
             create: {

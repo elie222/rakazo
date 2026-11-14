@@ -73,6 +73,7 @@ function makeDeps(
     spaceMemoryConfig: { findUnique, update, upsert, delete: deleteConfig },
     secret: {
       create: secretCreate,
+      update: vi.fn().mockResolvedValue({ id: "secret-old" }),
       deleteMany: secretDeleteMany,
       findUnique: vi.fn().mockResolvedValue({ id: "secret-old", ciphertext: "old-cipher" }),
     },
