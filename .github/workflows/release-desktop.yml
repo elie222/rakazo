@@ -92,9 +92,16 @@ jobs:
       - name: Choose release platforms
         id: platforms
         shell: bash
+        env:
+          MAC_ONLY: ${{ vars.DESKTOP_RELEASE_MAC_ONLY }}
         run: |
           set -euo pipefail
           include='[{"os":"macos-26","artifact":"macos"},{"os":"ubuntu-24.04","artifact":"linux"},{"os":"windows-2022","artifact":"windows"}]'
+          case "$MAC_ONLY" in
+            true) include='[{"os":"macos-26","artifact":"macos"}]' ;;
+            false|"") ;;
+            *) echo 'DESKTOP_RELEASE_MAC_ONLY must be true or false.' >&2; exit 1 ;;
+          esac
           echo "include=$include" >> "$GITHUB_OUTPUT"
 
   build:
@@ -143,6 +150,10 @@ jobs:
             "https://github.com/${GITHUB_REPOSITORY}/releases/download/${RELEASE_TAG}"
           mkdir -p apps/desktop/build
           cp "$RUNNER_TEMP/server-bundle/server-bundle.json" apps/desktop/build/server-bundle.json
+
+      - name: Configure the macOS repository update feed
+        if: runner.os == 'macOS'
+        run: node apps/desktop/scripts/release-feed.mjs apps/desktop/package.json
 
       - name: Require macOS signing and notarization credentials
         if: runner.os == 'macOS'
@@ -261,9 +272,7 @@ jobs:
           rm -f "$entitlements"
           xcrun stapler validate "$app"
           spctl --assess --type execute --verbose=2 "$app"
-          grep -Fqx "provider: github" "$app/Contents/Resources/app-update.yml"
-          grep -Fqx "owner: elie222" "$app/Contents/Resources/app-update.yml"
-          grep -Fqx "repo: rakazo" "$app/Contents/Resources/app-update.yml"
+          node apps/desktop/scripts/release-feed.mjs --verify "$app/Contents/Resources/app-update.yml"
 
       - name: Verify and retain the server bundle the app names
         if: runner.os == 'macOS'
@@ -482,6 +491,7 @@ jobs:
           RELEASE_SHA: ${{ needs.validate.outputs.sha }}
           RELEASE_TAG: ${{ needs.validate.outputs.tag }}
           RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+          RELEASE_PLATFORMS: ${{ needs.validate.outputs.platforms }}
         shell: bash
         run: |
           set -euo pipefail
@@ -491,27 +501,44 @@ jobs:
             exit 1
           fi
 
-          test -f release-artifacts/latest-mac.yml
-          test -f release-artifacts/latest-linux.yml
-          compgen -G 'release-artifacts/*.dmg' >/dev/null
-          compgen -G 'release-artifacts/*.zip' >/dev/null
-          compgen -G 'release-artifacts/*.AppImage' >/dev/null
-          test -s "release-artifacts/rakazo-server-darwin-arm64-$RELEASE_VERSION.tar.xz"
-          for image in release-artifacts/*.AppImage; do
-            if [[ ! -s "$image.sig" ]]; then
-              echo "$image has no update signature." >&2
-              exit 1
-            fi
-          done
-          test -f release-artifacts/latest.yml
-          compgen -G 'release-artifacts/*.exe' >/dev/null
-          feeds=(
-            release-artifacts/latest-mac.yml
-            release-artifacts/latest-linux.yml
-            release-artifacts/latest.yml
-          )
+          feeds=()
+          while IFS= read -r platform; do
+            case "$platform" in
+              macos)
+                test -s "release-artifacts/rakazo-server-darwin-arm64-$RELEASE_VERSION.tar.xz"
+                test -f release-artifacts/latest-mac.yml
+                compgen -G 'release-artifacts/*.dmg' >/dev/null
+                compgen -G 'release-artifacts/*.zip' >/dev/null
+                feeds+=(release-artifacts/latest-mac.yml)
+                ;;
+              linux)
+                test -f release-artifacts/latest-linux.yml
+                compgen -G 'release-artifacts/*.AppImage' >/dev/null
+                for image in release-artifacts/*.AppImage; do
+                  if [[ ! -s "$image.sig" ]]; then
+                    echo "$image has no update signature." >&2
+                    exit 1
+                  fi
+                done
+                feeds+=(release-artifacts/latest-linux.yml)
+                ;;
+              windows)
+                test -f release-artifacts/latest.yml
+                compgen -G 'release-artifacts/*.exe' >/dev/null
+                feeds+=(release-artifacts/latest.yml)
+                ;;
+              *) echo 'Unknown release platform.' >&2; exit 1 ;;
+            esac
+          done < <(jq -r '.[].artifact' <<< "$RELEASE_PLATFORMS")
+          test "${#feeds[@]}" -gt 0
           for feed in "${feeds[@]}"; do
             grep -Fqx "version: $RELEASE_VERSION" "$feed"
+            case "$feed" in
+              *latest-mac.yml) installer='zip' ;;
+              *latest-linux.yml) installer='AppImage' ;;
+              *latest.yml) installer='exe' ;;
+            esac
+            sed -nE 's/^ *(- )?(url|path): +//p' "$feed" | grep -Eq "\.$installer$"
             # GitHub renames assets with spaces, so every file a feed names must upload under that name.
             sed -nE 's/^ *(- )?(url|path): +//p' "$feed" | while IFS= read -r file; do
               if [[ "$file" == */* || ! -f "release-artifacts/$file" ]]; then
