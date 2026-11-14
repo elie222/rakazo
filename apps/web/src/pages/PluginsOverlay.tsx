@@ -266,28 +266,21 @@ export function PluginsOverlay({
       // OAuth is the MCP server itself signing in, so it is saved first and then authorized.
       if (sourceKind === "mcp" && authType === "oauth") {
         const endpoint = sourceUrl.trim();
-        // A server already saved for this address keeps its grant and its agent assignments,
-        // so submitting again after a cancelled sign-in retries the authorization.
-        const existing = (await rpc.mcp.servers.list()).find(
-          (server) => server.endpoint === endpoint,
-        );
-        const server =
-          existing ??
-          (await rpc.mcp.servers.create({
-            slug: `integration-${newClientId().slice(0, 8)}`,
-            name,
-            transport: "streamable_http",
-            endpoint,
-          }));
+        const server = await rpc.mcp.servers.create({
+          slug: `integration-${newClientId().slice(0, 8)}`,
+          name,
+          transport: "streamable_http",
+          endpoint,
+        });
+        sourceForm.setCredential("");
+        sourceForm.setSourceKind(null);
+        setView("manage");
+        await refresh();
         const result = await connectMcpOauth(server.id);
-        // The server is saved either way; an unfinished sign-in can be retried from here.
         if (result === "cancelled") {
           setSourceError(t`Sign-in cancelled. Try again.`);
           return;
         }
-        sourceForm.setCredential("");
-        sourceForm.setSourceKind(null);
-        setView("manage");
         await refresh();
         if (result === "authorization_not_requested")
           setSourceError(t`This server did not request browser authorization.`);
