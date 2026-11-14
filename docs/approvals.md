@@ -68,10 +68,8 @@ is in another currency, is refused too. A wallet purchase that is denied, expire
 counting, and so does a press the page refused because it changed. A press that went through still
 counts if the shop later declines it.
 
-When the page browser can identify the clicked control, it treats explicitly marked,
-non-submitting payment-method tabs and radio options as selectors, not pay buttons.
-A button that submits a form or explicitly says **Place order** still asks,
-even with a tab or radio role.
+Choosing a payment method on a tab or radio option does not ask. A button that submits a form or
+says **Place order** still asks, even when it is marked as a tab or radio option.
 
 Below the limit, **Recent payments** lists the latest payments that count, with the site, the bot,
 when and how much, whether or not a limit is set.
