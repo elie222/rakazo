@@ -7,7 +7,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useLiveStream, useRosterSignals } from "./roster-signals";
 
 const streams = vi.hoisted(
-  () => [] as Array<{ signal: () => void; computerUpdates: () => void; end: () => void }>,
+  () =>
+    [] as Array<{
+      signal: () => void;
+      computerUpdates: () => void;
+      end: () => void;
+      fail: (error: unknown) => void;
+    }>,
 );
 const computerUpdates = vi.hoisted(() => ({ signalled: vi.fn() }));
 vi.mock("./computer-updates", () => ({ computerUpdates }));
@@ -29,8 +35,13 @@ vi.mock("./api-live", () => ({
     signal: AbortSignal,
     onComputerUpdates: () => void,
   ) =>
-    new Promise<void>((resolve) => {
-      streams.push({ signal: onSignal, computerUpdates: onComputerUpdates, end: resolve });
+    new Promise<void>((resolve, reject) => {
+      streams.push({
+        signal: onSignal,
+        computerUpdates: onComputerUpdates,
+        end: resolve,
+        fail: reject,
+      });
       signal.addEventListener("abort", () => resolve());
     }),
 }));
@@ -135,6 +146,17 @@ describe("useRosterSignals", () => {
     await act(async () => old.computerUpdates());
     expect(computerUpdates.signalled).not.toHaveBeenCalled();
     expect(spaceSelection.size).toBe(1);
+  });
+
+  it("after a refusal, waits for another Space instead of asking again", async () => {
+    await act(async () => root.render(<Harness enabled onChange={vi.fn()} />));
+    await act(async () => streams[0]!.fail(Object.assign(new Error("Forbidden"), { status: 403 })));
+    await act(() => vi.advanceTimersByTimeAsync(60_000));
+    expect(streams).toHaveLength(1);
+    await act(async () => {
+      for (const listener of spaceSelection) listener();
+    });
+    expect(streams).toHaveLength(2);
   });
 
   it("stays closed while disabled", async () => {

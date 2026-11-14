@@ -18,6 +18,19 @@ const setLive = (next: boolean) => {
   for (const listener of liveListeners) listener();
 };
 
+function nextSpaceSelection(signal: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    const done = () => {
+      unfollow();
+      signal.removeEventListener("abort", done);
+      resolve();
+    };
+    const unfollow = subscribeSpaceSelection(done);
+    signal.addEventListener("abort", done);
+    if (signal.aborted) done();
+  });
+}
+
 async function follow(signal: AbortSignal) {
   let retry = 1_000;
   while (!signal.aborted) {
@@ -49,7 +62,13 @@ async function follow(signal: AbortSignal) {
     if (signal.aborted) return;
     setLive(false);
     if (connection.signal.aborted) continue;
-    if (failure !== undefined && !isRetryableError(failure)) return;
+    if (failure !== undefined && !isRetryableError(failure)) {
+      // Asking again cannot change a refusal, but another Space may answer; signing out releases
+      // the stream anyway.
+      await nextSpaceSelection(signal);
+      retry = 1_000;
+      continue;
+    }
     if (opened) retry = 1_000;
     await abortableDelay(opened ? reconnectDelayMs(failure) : retryDelayMs(failure, retry), signal);
     retry = Math.min(retry * 2, 30_000);
