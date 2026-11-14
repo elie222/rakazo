@@ -15,7 +15,13 @@ const SCOPE = "@rakazo/";
 const LEAF_PACKAGES = ["packages/contracts", "packages/logging", "packages/ui-tokens"];
 const CORE = "packages/core";
 const CORE_MAY_IMPORT = ["packages/contracts", "packages/ui-tokens"];
-const DATABASE = "packages/db";
+const SERVER_PACKAGES = [
+  "packages/adapter-kit",
+  "packages/adapters",
+  "packages/auth",
+  "packages/db",
+  "packages/memory",
+];
 const CLIENT_CODE = [
   "apps/mobile",
   "apps/web",
@@ -66,9 +72,9 @@ const RULES = {
     title: "imports go through a package's exports map",
     fix: "Import a subpath the package exports; if none fits, add one to its package.json exports deliberately.",
   },
-  database: {
-    title: "UI packages and client apps never import the database",
-    fix: "Client code reaches data through the API. Move this to the API or a server package.",
+  server: {
+    title: "UI packages and client apps never import server packages",
+    fix: "Client code reaches this through the API: add it in apps/api and call it over RPC, with shared types in @rakazo/contracts.",
   },
   undeclared: {
     title: "imported workspace packages are declared dependencies",
@@ -200,7 +206,9 @@ function findViolations(sources, workspaces) {
       }
       if (target === TESTKIT && !testCode) flag("testkit");
       // Browser end-to-end specs run in Node and may seed the database.
-      if (target === DATABASE && CLIENT_CODE.includes(owner) && !testCode) flag("database");
+      if (SERVER_PACKAGES.includes(target) && CLIENT_CODE.includes(owner) && !testCode) {
+        flag("server");
+      }
     }
   }
 
@@ -374,12 +382,12 @@ test("resolves specifiers to packages and reports each rule", () => {
       "app: packages/testkit/src/browser.ts -> @rakazo/web",
       "app: packages/testkit/src/index.ts -> ../../../apps/api/src/app.ts",
       "core: packages/core/src/index.ts -> @rakazo/db",
-      "database: apps/web/src/app.tsx -> @rakazo/db",
       "exports: apps/web/src/app.tsx -> @rakazo/ui-web/src/internal",
       "leaf: packages/contracts/src/index.ts -> @rakazo/core",
       "relative: apps/web/src/app.tsx -> ../../../packages/contracts/src/index.ts",
       "relative: packages/testkit/src/index.ts -> ../../../apps/api/src/app.ts",
       "relative: scripts/build.mjs -> ../packages/core/src/index.ts",
+      "server: apps/web/src/app.tsx -> @rakazo/db",
       "testkit: apps/api/src/index.ts -> @rakazo/testkit",
       "undeclared: apps/web/package.json -> @rakazo/core",
       "unused: packages/ui-web/package.json -> @rakazo/contracts",
