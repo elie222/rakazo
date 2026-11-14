@@ -2,6 +2,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import type { AdapterContext } from "@rakazo/adapter-kit";
 import type { BotSecretDestination } from "@rakazo/contracts";
 import { decodeLoginSecret } from "@rakazo/contracts";
+import { redactSecrets } from "@rakazo/core";
 import {
   asSystem,
   ciphertextKeyId,
@@ -979,5 +980,31 @@ describePostgres("vault values under the content keys (PostgreSQL)", () => {
     );
     expect(redactions).toContain("fake-replaced-password");
     expect(redactions).toContain(otp);
+  });
+
+  it("hides a saved American Express number in the groups a page prints it in", async () => {
+    await runAsTenant(scope, () =>
+      storeBotSecret({
+        prisma: sealing.prisma,
+        secretStore,
+        scope,
+        destination: { name: "amex-test", origin: "", auth: { type: "card" } },
+        plaintext: JSON.stringify({
+          number: "378282246310005",
+          expMonth: 8,
+          expYear: 2030,
+          cvc: "1234",
+          name: "Alex Rivera",
+        }),
+      }),
+    );
+    const redactions = await runAsTenant(scope, () =>
+      loadLoginPasswordRedactions(sealing.prisma, secretStore, scope),
+    );
+    for (const printed of ["3782 822463 10005", "3782-822463-10005", "378282246310005"]) {
+      const hidden = redactSecrets(`Card on file: ${printed}`, redactions);
+      expect(hidden).not.toContain("10005");
+      expect(hidden).not.toContain("822463");
+    }
   });
 });

@@ -35,7 +35,12 @@ test("command palette switches bots and runs actions", async ({ page }, testInfo
   await captureScreenshot(page, testInfo, "command-palette-bots");
 
   const search = page.getByTestId("command-palette-search");
-  await search.fill("Research");
+  await expect(search).toBeFocused();
+  await palette.locator('[data-slot="input-group-addon"] svg').click();
+  await expect(search).toBeFocused();
+  await page.keyboard.type("Research");
+  await expect(search).toHaveValue("Research");
+  await captureScreenshot(page, testInfo, "command-palette-icon-focus");
   await expect(page.getByRole("option", { name: /Researcher/ })).toBeVisible();
   await expect(page.getByRole("option", { name: /Chief/ })).toHaveCount(0);
   await captureScreenshot(page, testInfo, "command-palette-filtered");

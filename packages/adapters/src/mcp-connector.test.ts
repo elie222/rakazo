@@ -230,6 +230,80 @@ describe("MCP connector session cache", () => {
     }
   });
 
+  it.each([
+    { repeated: false, rejectSetup: false, lostSessions: 0 },
+    { repeated: true, rejectSetup: false, lostSessions: 0 },
+    { repeated: false, rejectSetup: true, lostSessions: 0 },
+    { repeated: true, rejectSetup: true, lostSessions: 0 },
+    { repeated: false, rejectSetup: false, lostSessions: 1 },
+    { repeated: false, rejectSetup: true, lostSessions: 1 },
+    { repeated: false, rejectSetup: false, lostSessions: 2 },
+  ])(
+    "retries a credential change during connection (repeated: $repeated, rejected: $rejectSetup, lost sessions: $lostSessions)",
+    async ({ repeated, rejectSetup, lostSessions }) => {
+      const state = {
+        failNext: false,
+        initializations: 0,
+        sessionNotFound: lostSessions,
+        headers: [] as Record<string, string>[],
+        calls: [] as string[],
+      };
+      let changed: (ref: string) => void = () => {};
+      let token = "initial";
+      const fetch = mcpFetch(state);
+      vi.stubGlobal("fetch", async (input: string | URL | Request, init?: RequestInit) => {
+        const result = await fetch(input, init);
+        if (state.initializations === 1 || repeated) {
+          token = "rotated";
+          changed("secret-ref");
+          if (rejectSetup) return new Response("Old credential rejected", { status: 401 });
+        }
+        return result;
+      });
+      const assignment = { ...ASSIGNMENT, server: { ...SERVER, secretId: "secret-1" } };
+      const connector = new McpConnector(
+        {
+          mcpServer: NO_SHARED_SERVERS,
+          botMcpServer: { findMany: async () => [assignment], findFirst: async () => assignment },
+          secret: { findFirst: async () => ({ id: "secret-1", ciphertext: "secret-ref" }) },
+        } as never,
+        {
+          load: async () => JSON.stringify({ headers: { Authorization: `Bearer ${token}` } }),
+          onChange: (listener: typeof changed) => {
+            changed = listener;
+            return () => {};
+          },
+        } as never,
+        { network: TEST_NETWORK },
+      );
+      const context = {
+        operationId: "test",
+        traceId: "test",
+        spaceId: "w1",
+        userId: "u1",
+        botId: "bot-1",
+        signal: new AbortController().signal,
+      };
+      const close = vi.spyOn(McpSession.prototype, "close");
+      try {
+        const tools = await connector.discoverTools(context);
+        expect(state.initializations).toBe(lostSessions > 0 ? 3 : 2);
+        expect(state.calls).toEqual([]);
+        if (repeated || lostSessions > 1) {
+          expect(tools).toEqual(unavailableOnly());
+          expect(close).toHaveBeenCalledTimes(state.initializations);
+        } else {
+          expect(close).toHaveBeenCalledTimes(state.initializations - 1);
+          expect(tools).toMatchObject([{ name: "mcp__demo__echo" }]);
+          expect(state.headers.at(-1)?.authorization).toBe("Bearer rotated");
+        }
+      } finally {
+        await connector.close();
+        close.mockRestore();
+      }
+    },
+  );
+
   it("keeps sessions across unchanged TTL reads and reconnects on observed rotation", async () => {
     vi.useFakeTimers();
     const fake = infisicalFake();

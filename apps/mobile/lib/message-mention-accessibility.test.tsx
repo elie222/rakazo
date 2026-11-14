@@ -190,3 +190,96 @@ describe("bots named in a sent message", () => {
     ]);
   });
 });
+
+describe("bot authors after leaving a group", () => {
+  const bots = [
+    { id: "departed", name: "Ada" },
+    { id: "remaining", name: "Ben" },
+  ] as BubbleProps["bots"];
+  const members = [{ botId: "remaining", name: "Ben" }] as MobileSnapshot["members"];
+
+  function textFor(message: BubbleProps["message"], overrides: Partial<BubbleProps> = {}) {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    act(() =>
+      root.render(
+        <Bubble
+          groupId="group"
+          botName="Project group"
+          showBotSenderName
+          bots={bots}
+          members={members}
+          message={message}
+          {...overrides}
+        />,
+      ),
+    );
+    const text = container.textContent;
+    act(() => root.unmount());
+    vi.unstubAllGlobals();
+    return text;
+  }
+
+  it.each([
+    { blocks: [{ kind: "text", text: "Earlier reply" }] },
+    {
+      blocks: [
+        {
+          kind: "file",
+          name: "notes.txt",
+          artifactId: "artifact",
+          mimeType: "text/plain",
+          size: 5,
+        },
+      ],
+    },
+  ] satisfies { blocks: BubbleProps["message"]["blocks"] }[])(
+    "keeps the departed author's name on %j",
+    ({ blocks }) => {
+      const text = textFor({ id: "message", role: "bot", botId: "departed", blocks });
+      expect(text).toContain("Ada");
+      expect(text).not.toContain("Project group");
+    },
+  );
+
+  it("keeps both handoff names from the space roster", () => {
+    const text = textFor(
+      {
+        id: "handoff",
+        role: "bot",
+        blocks: [{ kind: "handoff", fromBotId: "departed", toBotId: "remaining", text: "Review" }],
+      },
+      { members: [] },
+    );
+    expect(text).toContain("Ada messaged Ben");
+  });
+
+  it("prefers the current member's name to the roster", () => {
+    expect(
+      textFor(
+        {
+          id: "message",
+          role: "bot",
+          botId: "remaining",
+          blocks: [{ kind: "text", text: "Reply" }],
+        },
+        { members: [{ botId: "remaining", name: "Updated Ben" }] as MobileSnapshot["members"] },
+      ),
+    ).toContain("Updated Ben");
+  });
+
+  it("does not add a sender header in a direct chat", () => {
+    expect(
+      textFor(
+        {
+          id: "message",
+          role: "bot",
+          botId: "departed",
+          blocks: [{ kind: "text", text: "Reply" }],
+        },
+        { groupId: undefined, showBotSenderName: false },
+      ),
+    ).not.toContain("Ada");
+  });
+});

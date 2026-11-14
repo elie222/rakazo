@@ -90,6 +90,12 @@ type SessionEntry = {
   /** Resolved credential values the child may echo in errors or tool output. */
   launchSecrets?: string[];
 };
+class McpSecretChangedError extends Error {
+  constructor() {
+    super("Secret changed during MCP connection; retry");
+  }
+}
+
 type PendingSession = {
   revision: number;
   promise: Promise<McpSession>;
@@ -923,8 +929,19 @@ export class McpConnector implements ConnectorProvider {
     use: (session: McpSession) => Promise<T>,
   ): Promise<T> {
     const sessionKey = this.sessionKey(server, context);
-    for (let attempt = 0; ; attempt += 1) {
-      const session = await this.sessionFor(server, context);
+    let retriedRotation = false;
+    let retriedSessionLoss = false;
+    for (;;) {
+      let session: McpSession;
+      try {
+        session = await this.sessionFor(server, context);
+      } catch (error) {
+        // No tool has run yet: reconnect once with the current credentials.
+        context.signal.throwIfAborted();
+        if (retriedRotation || !(error instanceof McpSecretChangedError)) throw error;
+        retriedRotation = true;
+        continue;
+      }
       this.inFlight.set(session, (this.inFlight.get(session) ?? 0) + 1);
       // A session in use is never reaped as idle.
       const entry = this.sessions.get(sessionKey);
@@ -932,7 +949,9 @@ export class McpConnector implements ConnectorProvider {
       try {
         return await use(session);
       } catch (error) {
-        if (attempt !== 0 || !isMcpSessionGoneError(error)) throw error;
+        context.signal.throwIfAborted();
+        if (retriedSessionLoss || !isMcpSessionGoneError(error)) throw error;
+        retriedSessionLoss = true;
         // Stop reusing the expired session immediately, but let its other requests
         // receive their own responses before closing the shared SDK client.
         if (this.sessions.get(sessionKey)?.session === session) this.sessions.delete(sessionKey);
@@ -1019,7 +1038,7 @@ export class McpConnector implements ConnectorProvider {
       }) => {
         if (this.connecting.get(sessionKey)?.invalidated) {
           await closeEntry({ session, credentialDir });
-          throw new Error("Secret changed during MCP connection; retry");
+          throw new McpSecretChangedError();
         }
         connected = {
           session,
@@ -1037,6 +1056,12 @@ export class McpConnector implements ConnectorProvider {
         this.sessions.set(sessionKey, connected);
         if (connected.stdio) this.startReaper();
         return session;
+      },
+      (error: unknown) => {
+        // connectSession has already closed the failed connection and sanitized its error.
+        // Share the rotation result with every caller waiting on this connection.
+        if (this.connecting.get(sessionKey)?.invalidated) throw new McpSecretChangedError();
+        throw error;
       },
     );
     this.connecting.set(sessionKey, { revision: server.revision, promise });

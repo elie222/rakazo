@@ -222,6 +222,55 @@ describe("keyless HTTP web provider", () => {
     ]);
   });
 
+  it("keeps surrogate pairs intact across fetch-tool pages", async () => {
+    const body = `${"a".repeat(99)}😀${"b".repeat(99)}🚀tail`;
+    const provider = new KeylessHttpWebProvider({
+      fetch: async () => new Response(body, { headers: { "content-type": "text/plain" } }),
+      resolveHostname: publicResolver,
+    });
+    let offset = 0;
+    let combined = "";
+    for (let page = 0; page < 10; page += 1) {
+      const result = await webFetchFromTool(provider, ctx, {
+        url: "https://example.test/doc",
+        maxChars: 100,
+        offset,
+      });
+      if ("error" in result) throw new Error(result.error);
+      expect(result.text).not.toMatch(/[\uD800-\uDFFF]/u);
+      if (!result.truncated) {
+        combined += result.text;
+        break;
+      }
+      const content = result.text.split("\n\n[Content truncated;")[0] ?? "";
+      expect(content.length).toBeLessThanOrEqual(100);
+      combined += content;
+      const next = Number(result.text.match(/continue with offset (\d+)/)?.[1]);
+      expect(next).toBe(offset + content.length);
+      expect(next).toBeGreaterThan(offset);
+      offset = next;
+    }
+    expect(combined).toBe(body);
+  });
+
+  it("uses the actual Unicode window length for the read limit", () => {
+    expect(pageWindow("a😀tail", 2, 9, 10)).toEqual({
+      text: "a\n\n[Content truncated; continue with offset 10]",
+      truncated: true,
+    });
+    expect(pageWindow("a😀tail", 2, 10, 10)).toEqual({
+      text: "a\n\n[Content truncated; stopped at the read limit]",
+      truncated: true,
+    });
+  });
+
+  it("does not suggest the same offset when no complete character fits", () => {
+    expect(pageWindow("😀tail", 1, 4)).toEqual({
+      text: "\n\n[Content truncated; stopped at the read limit]",
+      truncated: true,
+    });
+  });
+
   it("fetches readable page text with truncation", async () => {
     const long = Array.from({ length: 100 }, (_, i) => `w${i}`).join(" ");
     const html = `<html><head><title>Doc</title></head><body><article><p>${long}</p></article></body></html>`;

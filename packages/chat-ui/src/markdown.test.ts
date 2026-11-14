@@ -309,6 +309,29 @@ describe("closeUnterminatedFence", () => {
     expect(closeUnterminatedFence(markdown)).toBe(markdown);
   });
 
+  it("closes a partial fence in CRLF text", () => {
+    expect(closeUnterminatedFence("```ts\r\nconst value = 1;\r\n")).toBe(
+      "```ts\r\nconst value = 1;\r\n\n```",
+    );
+  });
+
+  it("recognises the closing fence in CRLF text", () => {
+    const markdown = "```ts\r\nconst value = 1;\r\n```\r\n\r\nDone";
+    expect(closeUnterminatedFence(markdown)).toBe(markdown);
+  });
+
+  it("keeps a CRLF fence open while the closing line carries text", () => {
+    expect(closeUnterminatedFence("```ts\r\ncode\r\n``` not closing\r\n")).toBe(
+      "```ts\r\ncode\r\n``` not closing\r\n\n```",
+    );
+  });
+
+  it("does not add a second fence when a stream stops between \\r and \\n", () => {
+    const closed = "```ts\r\ncode\r\n```\r";
+    expect(closeUnterminatedFence(closed)).toBe(closed);
+    expect(closeUnterminatedFence("```ts\r\ncode\r")).toBe("```ts\r\ncode\r\n```");
+  });
+
   it("does not open a backtick fence whose info string has a backtick", () => {
     for (const markdown of ["```npm``` is great\nmore", "```a`b\ntext", "   ``` `x`\ntext"]) {
       expect(closeUnterminatedFence(markdown)).toBe(markdown);

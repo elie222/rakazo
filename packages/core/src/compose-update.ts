@@ -17,8 +17,6 @@ export const PUBLISHED_IMAGE_REPO = "elie222/rakazo";
 
 /** The published server image. One image runs api, worker, and web. */
 export const OFFICIAL_SERVER_IMAGE = `ghcr.io/${PUBLISHED_IMAGE_REPO}/app`;
-/** The updater sidecar's image, published alongside the server image but tagged independently. */
-export const OFFICIAL_UPDATER_IMAGE = `ghcr.io/${PUBLISHED_IMAGE_REPO}/updater`;
 
 /**
  * The tag a deployment that has never run an update is on. It is deliberately *not* `latest`: no

@@ -36,7 +36,7 @@ describe("Stripe prepaid model credits", () => {
     const { provider, requests } = fixture();
     await provider.createCreditCheckout({
       customerId: "cus_fixture",
-      amountCents: 1000,
+      amountCents: 2000,
       monthly: true,
       successUrl: "https://example.test/return",
       cancelUrl: "https://example.test/app",
@@ -52,8 +52,8 @@ describe("Stripe prepaid model credits", () => {
       requests
         .find((r) => r.path === "/v1/prices" && r.params.has("unit_amount"))
         ?.params.get("unit_amount"),
-    ).toBe("1000");
-    expect(body.get("subscription_data[metadata][rakazo_credit_cents]")).toBe("1000");
+    ).toBe("2000");
+    expect(body.get("subscription_data[metadata][rakazo_credit_cents]")).toBe("2000");
     expect(body.has("subscription_data[trial_period_days]")).toBe(false);
   });
   it("creates top-ups as one-time payments without expiring other checkout sessions", async () => {
@@ -76,8 +76,8 @@ describe("Stripe prepaid model credits", () => {
   it("asks the bank to confirm the buyer of every credit purchase", async () => {
     const { provider, requests } = fixture();
     for (const [amountCents, monthly] of [
-      [1000, true],
-      [1000, false],
+      [2000, true],
+      [2000, false],
     ] as const)
       await provider.createCreditCheckout({
         customerId: "cus_fixture",
@@ -612,8 +612,8 @@ describe("Stripe prepaid model credits", () => {
     );
   });
   it("changes the renewal price without a charge or proration when downgrading", async () => {
-    const { provider, requests } = fixture({ "/v1/subscriptions": subscription(2000) });
-    await provider.setMonthlyCredits("cus_fixture", 1000);
+    const { provider, requests } = fixture({ "/v1/subscriptions": subscription(3000) });
+    await provider.setMonthlyCredits("cus_fixture", 2000);
     expect(requests.at(-1)!.params.get("proration_behavior")).toBe("none");
   });
   it("reuses a matching active plan instead of Checkout's archived inline product", async () => {

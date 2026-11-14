@@ -19,7 +19,7 @@ import {
   BOT_INSTRUCTIONS_MAX_LENGTH,
   GROUP_MEMBER_MIN,
 } from "@rakazo/contracts";
-import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
+import { ACTIVE_RUN_STATUSES, retry } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 import {
   cancelRunsInTransaction,
@@ -516,6 +516,7 @@ export async function destroyBot(
           ...botArtifacts.map((artifact) => artifact.storageKey),
           ...groupCleanup.artifactKeys,
         ],
+        removedGroupIds: groupCleanup.removedGroupIds,
         directMemory,
         groupMemberMemory: groupMemberMemory.map((run) => run.thread),
         groupMemory: groupCleanup.memory,
@@ -524,7 +525,7 @@ export async function destroyBot(
       };
     }, THREAD_LOCK_TRANSACTION_OPTIONS),
   );
-  if (!deletion) return;
+  if (!deletion) return { removedGroupIds: [] as string[], alreadyRemoved: true };
   await Promise.allSettled(
     deletion.cancelledGroupRuns.map((run) => deps.jobs.cancel(runJobKey(run.id))),
   );
@@ -600,6 +601,7 @@ export async function destroyBot(
     await removeStoredArtifacts(artifactStore, deletion.artifactKeys, context);
   }
   if (deps.secretStore) await forgetPageShareSecrets(deps.secretStore, deletion.pageShareSecrets);
+  return { removedGroupIds: deletion.removedGroupIds };
 }
 
 type DissolvableGroup = {
@@ -741,6 +743,7 @@ async function detachBotFromGroups(tx: Prisma.TransactionClient, botId: string) 
     await tx.chatGroup.deleteMany({ where: { id: { in: dissolvedGroupIds } } });
   }
   return {
+    removedGroupIds: dissolvedGroupIds,
     memory,
     artifactKeys: groupArtifacts.map((artifact) => artifact.storageKey),
     pageShareSecrets,
@@ -911,22 +914,16 @@ async function removeProfileOnceClosed(
   name: string,
   context: AdapterContext,
 ) {
-  for (let attempt = 1; ; attempt += 1) {
-    try {
-      await removeComputerWorkspaceDirectories(
-        sandbox,
-        computer,
-        ".browser-profiles",
-        [name],
-        context,
-      );
-      return;
-    } catch (error) {
-      if (!isBusyError(error) || attempt >= PROFILE_BUSY_ATTEMPTS) throw error;
-      await new Promise((resolve) => setTimeout(resolve, PROFILE_BUSY_RETRY_MS));
-      context.signal.throwIfAborted();
-    }
-  }
+  await retry(
+    () =>
+      removeComputerWorkspaceDirectories(sandbox, computer, ".browser-profiles", [name], context),
+    {
+      attempts: PROFILE_BUSY_ATTEMPTS,
+      delayMs: PROFILE_BUSY_RETRY_MS,
+      retryable: isBusyError,
+      signal: context.signal,
+    },
+  );
 }
 
 /** A Team Computer that is not running removes the folder when it next boots. */

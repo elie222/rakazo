@@ -14,6 +14,7 @@ import {
   DEFAULT_COMPATIBLE_TTS_MODEL,
   OPENAI_COMPATIBLE_PROVIDER_ID,
 } from "@rakazo/contracts";
+import { deadlineSignal } from "@rakazo/core";
 import {
   assertAllowedOpenAiCompatibleUrl,
   assertHttpsForKeyedOpenAiCompatibleUrl,
@@ -26,7 +27,6 @@ import {
   readVoiceJson,
   readVoiceText,
   speechUploadName,
-  voiceDeadline,
   voiceHttpError,
   voiceLanguageHint,
   voiceRequestError,
@@ -53,7 +53,7 @@ const MAX_VOICE_LABEL_LENGTH = 120;
 export interface OpenAiCompatibleVoiceSecret {
   kind: "openai_compatible";
   baseUrl: string;
-  /** A separate transcription server. Absent when `baseUrl` also transcribes. */
+  /** An explicit transcription server. Absent when transcription inherits the main connection. */
   sttBaseUrl?: string;
   apiKey?: string;
   /** Sent only to `sttBaseUrl`; `apiKey` never reaches the transcription server. */
@@ -99,15 +99,14 @@ export function serializeOpenAiCompatibleVoiceSecret(
   const sttInput = input.sttBaseUrl === undefined ? previous?.sttBaseUrl : input.sttBaseUrl.trim();
   const sttUrl = sttInput ? assertAllowedOpenAiCompatibleUrl(sttInput, policy) : undefined;
   const sttBaseUrl = sttInput ? normalizeOpenAiCompatibleBaseUrl(sttInput) : undefined;
-  const separateStt = sttBaseUrl && sttBaseUrl !== baseUrl ? sttBaseUrl : undefined;
   const sameStt =
-    previous && (previous.sttBaseUrl ?? previous.baseUrl) === (separateStt ?? baseUrl)
+    previous && (previous.sttBaseUrl ?? previous.baseUrl) === (sttBaseUrl ?? baseUrl)
       ? previous
       : undefined;
   const apiKey = input.apiKey?.trim() || same?.apiKey;
-  const sttApiKey = separateStt
+  const sttApiKey = sttBaseUrl
     ? input.sttApiKey?.trim() ||
-      (previous?.sttBaseUrl === separateStt ? previous.sttApiKey : undefined)
+      (previous?.sttBaseUrl === sttBaseUrl ? previous.sttApiKey : undefined)
     : undefined;
   for (const key of [apiKey, sttApiKey]) {
     if (key && !API_KEY_PATTERN.test(key)) {
@@ -119,7 +118,7 @@ export function serializeOpenAiCompatibleVoiceSecret(
   const secret: OpenAiCompatibleVoiceSecret = {
     kind: "openai_compatible",
     baseUrl,
-    ...(separateStt ? { sttBaseUrl: separateStt } : {}),
+    ...(sttBaseUrl ? { sttBaseUrl: sttBaseUrl } : {}),
     ...(apiKey ? { apiKey } : {}),
     ...(sttApiKey ? { sttApiKey } : {}),
     ttsModel: modelIdOrDefault(
@@ -354,7 +353,7 @@ export class OpenAiCompatibleVoiceProvider implements VoiceProvider {
     } catch (error) {
       return { ok: false, message: (error as Error).message };
     }
-    const signal = voiceDeadline(context.signal, VERIFY_DEADLINE_MS);
+    const signal = deadlineSignal(VERIFY_DEADLINE_MS, context.signal);
     const origin = new URL(secret.baseUrl).origin;
     try {
       let res = await this.fetch(endpoint(secret, "models"), {
@@ -390,7 +389,7 @@ export class OpenAiCompatibleVoiceProvider implements VoiceProvider {
         `${endpoint(secret, "audio/voices")}?model=${encodeURIComponent(secret.ttsModel)}`,
         {
           headers: headers(secret),
-          signal: voiceDeadline(context.signal, LIST_VOICES_DEADLINE_MS),
+          signal: deadlineSignal(LIST_VOICES_DEADLINE_MS, context.signal),
         },
       );
       if (!res.ok) {
@@ -409,7 +408,7 @@ export class OpenAiCompatibleVoiceProvider implements VoiceProvider {
 
   async synthesize(request: VoiceSynthesizeRequest, context: AdapterContext): Promise<SpeechClip> {
     const secret = parseOpenAiCompatibleVoiceSecret(request.apiKey);
-    const signal = voiceDeadline(request.signal ?? context.signal, SPEAK_DEADLINE_MS);
+    const signal = deadlineSignal(SPEAK_DEADLINE_MS, request.signal ?? context.signal);
     const langCode = kokoroLangCode(request.voiceId);
     const res = await this.fetch(endpoint(secret, "audio/speech"), {
       method: "POST",
@@ -456,7 +455,7 @@ export class OpenAiCompatibleVoiceProvider implements VoiceProvider {
       method: "POST",
       headers: bearer(apiKey),
       body: form,
-      signal: voiceDeadline(request.signal ?? context.signal, TRANSCRIBE_DEADLINE_MS),
+      signal: deadlineSignal(TRANSCRIBE_DEADLINE_MS, request.signal ?? context.signal),
     });
     const raw = await readVoiceText(res);
     const type = mediaType(res);

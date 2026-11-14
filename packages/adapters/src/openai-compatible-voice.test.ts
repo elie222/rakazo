@@ -145,7 +145,21 @@ describe("serializeOpenAiCompatibleVoiceSecret", () => {
     expect(backToMain.sttModel).toBe(DEFAULT_COMPATIBLE_STT_MODEL);
   });
 
-  it("stores a separate transcription server only when it differs from the main one", () => {
+  it("keeps a transcription key when both servers use the same address", () => {
+    const secret = serializeAsOwner({
+      baseUrl: "https://speech.example.com/v1",
+      apiKey: "speech-key",
+      sttBaseUrl: "https://speech.example.com",
+      sttApiKey: "transcription-key",
+    });
+    expect(parseOpenAiCompatibleVoiceSecret(secret)).toMatchObject({
+      sttBaseUrl: "https://speech.example.com/v1",
+      apiKey: "speech-key",
+      sttApiKey: "transcription-key",
+    });
+  });
+
+  it("stores an explicitly configured transcription server", () => {
     const split = serializeAsOwner({
       baseUrl: "http://192.168.1.20:8880",
       sttBaseUrl: " http://192.168.1.30:9000 ",
@@ -156,7 +170,7 @@ describe("serializeOpenAiCompatibleVoiceSecret", () => {
       baseUrl: "http://192.168.1.20:8880",
       sttBaseUrl: "http://192.168.1.20:8880/v1",
     });
-    expect(parseOpenAiCompatibleVoiceSecret(same).sttBaseUrl).toBeUndefined();
+    expect(parseOpenAiCompatibleVoiceSecret(same).sttBaseUrl).toBe("http://192.168.1.20:8880/v1");
     // Omitted keeps the saved transcription server; blank goes back to the main server.
     const kept = serializeAsOwner({ baseUrl: "http://192.168.1.20:8880" }, split);
     expect(parseOpenAiCompatibleVoiceSecret(kept).sttBaseUrl).toBe("http://192.168.1.30:9000/v1");
