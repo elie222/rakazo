@@ -259,7 +259,7 @@ export function vaultImportOrigin(cell: string): string | undefined {
     if (
       bare &&
       (!parsed.hostname.includes(".") ||
-        (/^[\d.]+$/.test(written) && !/^(\d+\.){3}\d+$/.test(written)))
+        (/^(\d+\.){3}\d+$/.test(parsed.hostname) && !/^(\d+\.){3}\d+$/.test(written)))
     )
       continue;
     if (parsed.protocol === "https:" && !parsed.username && !parsed.password) return parsed.origin;

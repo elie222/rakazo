@@ -171,12 +171,22 @@ describe("parseVaultCsv", () => {
     });
   });
 
-  it.each(["1", "3.14", "2.0.1", "12345", "3%2E14", "3.1\t4", "localhost.", "intranet.", "com."])(
-    "reads %j as no site: a number or a one-word host is not an address",
-    (cell) => {
-      expect(vaultImportOrigin(cell)).toBeUndefined();
-    },
-  );
+  it.each([
+    "1",
+    "3.14",
+    "2.0.1",
+    "12345",
+    "0x7f000001",
+    "0x7f.1",
+    "3.14\\login",
+    "3%2E14",
+    "3.1\t4",
+    "localhost.",
+    "intranet.",
+    "com.",
+  ])("reads %j as no site: a number or a one-word host is not an address", (cell) => {
+    expect(vaultImportOrigin(cell)).toBeUndefined();
+  });
 
   it.each([
     ["1%2E2%2E3%2E4", "https://1.2.3.4"],
