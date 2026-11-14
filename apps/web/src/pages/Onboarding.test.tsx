@@ -3,18 +3,20 @@
 import type { ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import type { NavigateFunction } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-const account = vi.hoisted(() => ({ load: (_me: unknown) => {} }));
+const account = vi.hoisted(() => ({ load: (_me: unknown) => {}, fail: (_error: Error) => {} }));
 
 vi.mock("../lib/rpc", () => ({
   selectedSpaceId: () => null,
   rpc: {
     me: vi.fn(
       () =>
-        new Promise((resolve) => {
+        new Promise((resolve, reject) => {
           account.load = resolve;
+          account.fail = reject;
         }),
     ),
     models: {
@@ -138,4 +140,37 @@ it("finds and searches a long custom endpoint list during onboarding", async () 
   await act(async () => document.querySelector<HTMLElement>("[cmdk-item]")!.click());
   expect(document.querySelector('[aria-label="Models from server"]')?.textContent).toBe("found-10");
   await act(async () => root.unmount());
+});
+
+it.each([
+  [
+    "arrives",
+    () => account.load({ needsModel: true, needsSignupSurvey: false, billingEnabled: false }),
+  ],
+  ["fails", () => account.fail(new Error("offline"))],
+])("stays on the next page when the account read %s after leaving", async (_outcome, settle) => {
+  const router = {} as { navigate: NavigateFunction; pathname: string };
+  function Router() {
+    router.navigate = useNavigate();
+    router.pathname = useLocation().pathname;
+    return null;
+  }
+  const root = createRoot(document.body.appendChild(document.createElement("div")));
+  await act(async () =>
+    root.render(
+      <MemoryRouter initialEntries={["/onboarding"]}>
+        <Router />
+        <Routes>
+          <Route path="/onboarding/:step?" element={<OnboardingPage />} />
+          <Route path="/sign-in" element={null} />
+        </Routes>
+      </MemoryRouter>,
+    ),
+  );
+  await act(async () => router.navigate("/sign-in"));
+  expect(router.pathname).toBe("/sign-in");
+
+  await act(async () => settle());
+  expect(router.pathname).toBe("/sign-in");
+  act(() => root.unmount());
 });
