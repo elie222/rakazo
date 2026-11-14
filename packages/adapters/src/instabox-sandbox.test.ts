@@ -477,6 +477,27 @@ describe("instabox page tools", () => {
     expect(isSandboxGoneError(failure)).toBe(true);
   });
 
+  it("keeps an early unsafe installer failure suspended without cleanup", async () => {
+    const emulator = new InstaboxEmulator();
+    const { provider: create } = emulatedInstabox(emulator);
+    const provider = create();
+    const computer = await provider.provision(request, ctx);
+    emulator.fails = (command) => {
+      if (command.startsWith("bash -c 'status=0; bash ")) throw new Error("connection lost");
+      return false;
+    };
+    emulator.jobKill = () => new Error("kill unavailable");
+    const failure = await provider.prepare(computer, ctx).catch((error: unknown) => error);
+    expect(failure).toMatchObject({ name: "SandboxUnsafeStopError" });
+    expect(emulator.computers.get(computer.id)!.state).toBe("suspended");
+    expect(
+      emulator.commands.some(
+        (command) =>
+          command.startsWith("bash -c 'rm -f --") && command.includes("/tmp/rakazo-page-browser-"),
+      ),
+    ).toBe(false);
+  });
+
   it("does not report a computer paused for an installer it could not stop as prepared", async () => {
     vi.useFakeTimers();
     try {

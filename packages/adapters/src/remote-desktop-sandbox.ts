@@ -376,6 +376,7 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
     // The installer carries the helper's files, more than one command may hold, so it runs from a file.
     const script = `/tmp/rakazo-page-browser-${randomUUID()}.sh`;
     let installed = false;
+    let unsafeStop = false;
     let stage = "transfer";
     let exitCode: number | undefined;
     const deadline = new AbortController();
@@ -399,17 +400,20 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
       exitCode = result.exitCode;
       installed = exitCode === 0;
     } catch (error) {
+      unsafeStop = isSandboxUnsafeStopError(error);
+      if (unsafeStop) throw error;
       context.signal.throwIfAborted();
-      // A deleted computer, or one paused because the installer would not stop, is not ready.
-      if (isSandboxGoneError(error) || isSandboxUnsafeStopError(error)) throw error;
+      // A deleted computer is not ready.
+      if (isSandboxGoneError(error)) throw error;
     } finally {
       clearTimeout(timer);
-      await this.runSetupCommand(
-        computer,
-        `rm -f -- ${shellQuote(script)}`,
-        undefined,
-        10_000,
-      ).catch(() => {});
+      if (!unsafeStop)
+        await this.runSetupCommand(
+          computer,
+          `rm -f -- ${shellQuote(script)}`,
+          undefined,
+          10_000,
+        ).catch(() => {});
     }
     context.signal.throwIfAborted();
     if (!installed)
@@ -431,6 +435,7 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
     context: AdapterContext,
   ): Promise<{ code: number; stdout: string }> {
     context.signal.throwIfAborted();
+    let unsafeStop = false;
     const page = privatePageInput();
     const created = await this.run(computer, page.create, { timeoutMs: 10_000 });
     if (created.exitCode !== 0) throw new Error("Could not prepare browser input");
@@ -443,7 +448,8 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
           }),
         );
       } catch (error) {
-        if (isSandboxGoneError(error) || isSandboxUnsafeStopError(error)) throw error;
+        unsafeStop = isSandboxUnsafeStopError(error);
+        if (isSandboxGoneError(error) || unsafeStop) throw error;
         throw new Error("Could not transfer browser input");
       }
       context.signal.throwIfAborted();
@@ -452,7 +458,8 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
       try {
         result = await this.run(computer, page.run(command), { timeoutMs });
       } catch (error) {
-        if (isSandboxGoneError(error) || isSandboxUnsafeStopError(error)) throw error;
+        unsafeStop = isSandboxUnsafeStopError(error);
+        if (isSandboxGoneError(error) || unsafeStop) throw error;
         context.signal.throwIfAborted();
         // The bot gets the page tools' own failure, never the provider's error text.
         throw new Error("Page browser unavailable or interrupted");
@@ -461,11 +468,12 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
       return { code: result.exitCode, stdout: result.stdout };
     } finally {
       let cleaned = false;
-      for (let attempt = 0; attempt < 2 && !cleaned; attempt++) {
+      for (let attempt = 0; attempt < 2 && !cleaned && !unsafeStop; attempt++) {
         cleaned = await this.run(computer, page.cleanup, { timeoutMs: 10_000 }).then(
           (result) => result.exitCode === 0,
           (error) => {
-            if (isSandboxGoneError(error) || isSandboxUnsafeStopError(error)) throw error;
+            unsafeStop = isSandboxUnsafeStopError(error);
+            if (isSandboxGoneError(error) || unsafeStop) throw error;
             return false;
           },
         );
