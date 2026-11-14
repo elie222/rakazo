@@ -987,6 +987,29 @@ describe("long user messages", () => {
     }
   });
 
+  it("gives renderText each run's offset in the whole message, across stacked paragraphs", () => {
+    const text = Array.from({ length: 60 }, (_, i) => `${line(i)} https://example.com/${i}`).join(
+      "\n",
+    );
+    const runs: Array<[string, number]> = [];
+    renderToStaticMarkup(
+      <LinkifiedText
+        color={darkTokens.foreground}
+        linkColor={darkTokens.link}
+        palette={darkTokens}
+        renderText={(run, start) => {
+          runs.push([run, start]);
+          return run;
+        }}
+      >
+        {text}
+      </LinkifiedText>,
+    );
+    expect(textBlocks(text).length).toBeGreaterThan(1);
+    expect(runs.length).toBe(60);
+    for (const [run, start] of runs) expect(text.slice(start, start + run.length)).toBe(run);
+  });
+
   it("keeps a single long line whole", () => {
     const text = "y".repeat(5000);
     expect(textBlocks(text)).toEqual([text]);

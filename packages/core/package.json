@@ -74,6 +74,11 @@
       "development": "./src/egress.ts",
       "default": "./src/egress.ts"
     },
+    "./page-links": {
+      "types": "./src/page-links.ts",
+      "development": "./src/page-links.ts",
+      "default": "./src/page-links.ts"
+    },
     "./signup-attribution": {
       "types": "./src/browser-signup-attribution.ts",
       "development": "./src/browser-signup-attribution.ts",

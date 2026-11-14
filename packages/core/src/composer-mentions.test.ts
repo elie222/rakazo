@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-
 import {
   appendConnectorIntent,
   buildComposerMentionOptions,
@@ -15,6 +14,7 @@ import {
   stripMentionToken,
   toThreadMentionPayload,
 } from "./composer-mentions.js";
+import { mentionedGroupBotIds } from "./group-mentions.js";
 
 describe("buildComposerMentionOptions", () => {
   it("lists bots groups routines connectors and everyone", () => {
@@ -285,7 +285,11 @@ describe("mentionConnectorsFrom", () => {
 });
 
 describe("filterComposerMentionTargets", () => {
-  const everyone = { kind: "everyone", name: "everyone" } as const;
+  const everyone = {
+    kind: "everyone",
+    name: "everyone",
+    aliases: ["everyone", "all", "所有人"],
+  } as const;
   const targets = [
     everyone,
     { kind: "bot", name: "Research Bot" },
@@ -310,9 +314,36 @@ describe("filterComposerMentionTargets", () => {
     expect(names("chef bot")).toEqual([]);
   });
 
-  it("answers to all and everyone for the everyone row only", () => {
+  it("answers to all, 所有人 and everyone for the everyone row only", () => {
     expect(names("al")).toEqual(["everyone"]);
     expect(names("every")).toEqual(["everyone"]);
+    expect(names("所有")).toEqual(["everyone"]);
+  });
+
+  it("leaves all to a group member named All, as routing does, but not to a bot outside it", () => {
+    const everyoneIn = (memberNames: string[]) =>
+      buildComposerMentionOptions({
+        query: "",
+        includeEveryone: true,
+        groupMemberNames: memberNames,
+        bots: [{ id: "bot-all", name: "All" }],
+        groups: [],
+        routines: [],
+        connectors: [],
+      });
+    const pick = (memberNames: string[], query: string) =>
+      filterComposerMentionTargets(everyoneIn(memberNames), query).map((t) => t.kind);
+    expect(pick(["All", "Chef"], "al")).toEqual(["bot"]);
+    expect(pick(["All", "Chef"], "every")).toEqual(["everyone"]);
+    // The bot named All is not in this group, so "all" still names everyone here.
+    expect(pick(["Chef"], "al")).toEqual(["everyone", "bot"]);
+    for (const members of [["All", "Chef"], ["Chef"]]) {
+      const routed = mentionedGroupBotIds({
+        text: "@all",
+        members: members.map((name) => ({ id: name, name })),
+      });
+      expect(routed).toEqual(members.includes("All") ? ["All"] : members);
+    }
   });
 });
 
@@ -334,6 +365,14 @@ describe("splitMentionText", () => {
   it("leaves text without a known name, an email address and a longer word alone", () => {
     expect(splitMentionText("mail ada@example.test or @Adam", targets)).toEqual([
       { text: "mail ada@example.test or @Adam" },
+    ]);
+  });
+
+  it("reads mentions the way group messages wake bots", () => {
+    expect(splitMentionText("请@Ada看下", targets)).toEqual([
+      { text: "请" },
+      { text: "@Ada", target: targets[0] },
+      { text: "看下" },
     ]);
   });
 });

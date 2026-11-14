@@ -2,6 +2,7 @@ import type { BotAvatarSet, Connection, ConnectionCatalogItem } from "@rakazo/co
 import type { CronLabels } from "./cron.js";
 import { ENGLISH_CRON_LABELS, formatCron } from "./cron.js";
 import { displayName } from "./display-name.js";
+import { CJK_CHAR, everyoneWords, mentionSpans } from "./group-mentions.js";
 
 export const COMPOSER_MENTION_KINDS = ["bot", "group", "routine", "connector", "everyone"] as const;
 
@@ -24,6 +25,8 @@ export type ComposerMention = {
   /** Connected connection row id when kind is connector + connected. */
   connectionId?: string;
   authStatus?: "connected" | "needs_auth";
+  /** On `everyone`: the words that name it in this group (see everyoneWords). */
+  aliases?: readonly string[];
 };
 
 export type MentionPickerBot = {
@@ -82,32 +85,26 @@ export function mentionConnectorsFrom(
   return options;
 }
 
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
 export function mentionChipKey(mention: Pick<ComposerMention, "kind" | "id">): string {
   return `${mention.kind}:${mention.id}`;
 }
 
-type MentionName = { name: string };
+type MentionName = { name: string; kind?: string };
 
 /** Recognize each full mention once, so a name is not also its shorter prefix. */
 function composerMentionSpans(text: string, mentions: readonly MentionName[]) {
-  const names = [...new Set(mentions.map((mention) => mention.name.trim()).filter(Boolean))].sort(
-    (a, b) => b.length - a.length,
-  );
-  if (names.length === 0) return [];
-  const pattern = new RegExp(
-    `(?<![\\p{L}\\p{N}_-])@(${names.map(escapeRegExp).join("|")})(?![\\p{L}\\p{N}_-])`,
-    "giu",
-  );
-  return [...text.matchAll(pattern)].map((match) => ({
-    start: match.index,
-    end: match.index + match[0].length,
-    name: match[1]!.toLowerCase(),
-  }));
+  return mentionSpans(
+    text,
+    mentions.map((mention) => mention.name),
+    mentions.filter((mention) => mention.kind === "everyone").map((mention) => mention.name),
+  ).map((span) => ({ ...span, name: span.name.toLowerCase() }));
 }
+
+// A name being typed starts after a space or, as in "请@Wr", Chinese, Japanese or Korean text.
+const PARTIAL_MENTION = new RegExp(
+  `(?:^|\\s|${CJK_CHAR})@((?:[\\p{L}\\p{M}\\p{N}_\\u200c\\u30fb-]|\\u200d)*)$`,
+  "u",
+);
 
 /** The active @query at a collapsed caret, including its full recognized name. */
 export type ComposerMentionQuery = { start: number; end: number; query: string };
@@ -132,9 +129,7 @@ export function composerMentionQuery(
     (span) => selectionStart > span.start && selectionStart <= span.end,
   );
   if (recognized) return { ...recognized, query: text.slice(recognized.start + 1, selectionStart) };
-  const match = /(?:^|\s)@((?:[\p{L}\p{M}\p{N}_\u200c\u30fb-]|\u200d)*)$/u.exec(
-    text.slice(0, selectionStart),
-  );
+  const match = PARTIAL_MENTION.exec(text.slice(0, selectionStart));
   if (!match) return null;
   const query = match[1] ?? "";
   const start = selectionStart - query.length - 1;
@@ -170,12 +165,11 @@ function pickerWords(value: string): string[] {
 /**
  * Picker order for a typed query: every query word must appear in the name, a word that starts
  * a name word counts more than one inside it, and ties keep the given order. `everyone` also
- * answers to `all`. An empty query keeps every target in order.
+ * answers to its `aliases`. An empty query keeps every target in order.
  */
-export function filterComposerMentionTargets<T extends Pick<ComposerMention, "kind" | "name">>(
-  targets: readonly T[],
-  query: string,
-): T[] {
+export function filterComposerMentionTargets<
+  T extends Pick<ComposerMention, "kind" | "name" | "aliases">,
+>(targets: readonly T[], query: string): T[] {
   const words = pickerWords(query);
   if (words.length === 0) return [...targets];
   const scored = targets.flatMap((target, index) => {
@@ -185,7 +179,7 @@ export function filterComposerMentionTargets<T extends Pick<ComposerMention, "ki
     for (const word of words) {
       if (
         target.kind === "everyone" &&
-        ["everyone", "all"].some((alias) => alias.startsWith(word))
+        (target.aliases ?? [target.name]).some((alias) => alias.startsWith(word))
       ) {
         score += 2;
       } else if (nameWords.some((nameWord) => nameWord.startsWith(word))) {
@@ -385,6 +379,11 @@ export function buildComposerMentionOptions(input: {
   connectors: readonly MentionPickerConnector[];
   currentGroupId?: string | null;
   includeEveryone?: boolean;
+  /**
+   * The group's members. A member named "all" or "所有人" takes that word from `everyone`, as when
+   * the message is routed (see everyoneWords); bots outside the group do not.
+   */
+  groupMemberNames?: readonly string[];
   /** Localized schedule words for routine subtitles; English when omitted. */
   cronLabels?: CronLabels;
   /** When omitted, return every match (catalog build). When set, apply after query filter. */
@@ -402,6 +401,7 @@ export function buildComposerMentionOptions(input: {
       name: "everyone",
       subtitle: "Everyone in this group",
       color: "#85858A",
+      aliases: everyoneWords(input.groupMemberNames ?? []),
     });
   }
 

@@ -46,16 +46,20 @@ vi.mock("./native", () => ({ native: {}, useResolvedAppearance: () => "dark" }))
 vi.mock("@rakazo/chat-ui/native", () => ({
   MarkdownLongPressContext: createContext(undefined),
   ChatMarkdown: () => null,
-  plainTextLinkParts: (text: string) =>
-    text
+  plainTextLinkParts: (text: string) => {
+    let start = 0;
+    return text
       .split(/(\[[^\]]*\]\(page:[^)]+\))/)
       .filter(Boolean)
       .map((piece) => {
         const page = piece.match(/^\[([^\]]*)\]\(page:([^)]+)\)$/);
-        return page
+        const part = page
           ? { type: "page", value: page[1], pageId: page[2] }
-          : { type: "text", value: piece };
-      }),
+          : { type: "text", value: piece, start };
+        start += piece.length;
+        return part;
+      });
+  },
   withBlockMentions: <T,>(blocks: T) => blocks,
 }));
 
