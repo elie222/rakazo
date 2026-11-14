@@ -187,8 +187,12 @@ export function createBackgroundJobHandlers(deps: {
         await deps.events.publishSpaceChange?.(spaceId, "routines");
       }
     }),
-    "routine.retry": asOwner(run, async (payload) => {
-      await deps.executor.retryRoutineRun(payload.runId);
+    "routine.retry": asOwner(run, async (payload, _execution, { spaceId }) => {
+      try {
+        await deps.executor.retryRoutineRun(payload.runId);
+      } finally {
+        await deps.events.publishSpaceChange?.(spaceId, "runs");
+      }
     }),
     "computer.update": asOwner(updatedComputer, async ({ updateId }) => {
       await performComputerUpdate(deps, updateId);

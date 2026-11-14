@@ -9,6 +9,7 @@ const SPACE_CHANGE_PROCEDURES: Record<string, readonly SpaceChangeKind[]> = {
   "routines.create": ["routines"],
   "routines.update": ["routines"],
   "routines.remove": ["routines"],
+  "routines.testRun": ["runs"],
   // Activity leaves out archived bots.
   "bots.restore": ["runs"],
   "bots.remove": ["runs"],
