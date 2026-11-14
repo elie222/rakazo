@@ -91,7 +91,7 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
     ) : mode === "in" ? (
       <Trans>Sign in to Rakazo</Trans>
     ) : mode === "up" ? (
-      <Trans>Create your Rakazo</Trans>
+      <Trans>Create your account</Trans>
     ) : (
       <Trans>Reset your password</Trans>
     );

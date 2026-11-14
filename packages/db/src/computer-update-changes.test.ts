@@ -57,3 +57,35 @@ describe("followComputerUpdateChanges", () => {
     await expect(publishComputerUpdateChange(failing as never, "space-1")).resolves.toBeUndefined();
   });
 });
+
+describe("publishComputerUpdateChange", () => {
+  it("retries through a short database outage", async () => {
+    let calls = 0;
+    const fanout = {
+      publish: async () => {
+        calls += 1;
+        if (calls === 1)
+          throw Object.assign(new Error("terminating connection"), { code: "57P01" });
+      },
+    };
+    await publishComputerUpdateChange(fanout as never, "space-1", { sleep: async () => {} });
+    expect(calls).toBe(1);
+    await tick();
+    expect(calls).toBe(2);
+  });
+
+  it("returns at once and gives up quietly on other failures", async () => {
+    let calls = 0;
+    const fanout = {
+      publish: async () => {
+        calls += 1;
+        throw new Error("bad payload");
+      },
+    };
+    await expect(
+      publishComputerUpdateChange(fanout as never, "space-1", { sleep: async () => {} }),
+    ).resolves.toBeUndefined();
+    await tick();
+    expect(calls).toBe(1);
+  });
+});

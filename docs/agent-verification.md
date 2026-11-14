@@ -874,5 +874,5 @@ waiving the live failure. The preserved report is
 `test-report/evals/archive/history-pr-opaque-cursor-qualification.json`. Its charge was
 USD 0.09108541 across 238 calls, fully reconciled with zero reservations or
 background/cleanup failures. Cumulative guarded spend is USD 1.52381059 of USD 5.
-The live qualification gate remains failed, so this PR must not merge merely
-because CI passes. No further paid run is active.
+That run left the live qualification gate failed. Passing CI does not clear a
+failed live qualification.

@@ -9,6 +9,7 @@ import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, View } from "rea
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { computerUpdates } from "../lib/computer-updates";
 import { useMobileTokens } from "../lib/native";
+import { useLiveStream } from "../lib/roster-signals";
 import { GlassSurface } from "./glass-surface";
 import { NativeActionButton } from "./native-action-button";
 import { NativeSymbol } from "./native-symbol";
@@ -26,6 +27,8 @@ export function ComputerUpdateProgress() {
   const [busy, setBusy] = useState(false);
   const authenticated = !["/sign-in"].includes(pathname);
   useEffect(() => (authenticated ? computerUpdates.watch() : undefined), [authenticated]);
+  // Updates are read only when the live stream signals, so it stays open wherever this shows.
+  useLiveStream(authenticated);
   const labels = [
     t`Getting ready`,
     t`Saving your workspace`,

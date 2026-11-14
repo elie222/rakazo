@@ -337,7 +337,7 @@ export default function SignIn() {
                     : presented && mode === "in"
                       ? t`Welcome back`
                       : presented && mode === "up"
-                        ? t`Create your Rakazo`
+                        ? t`Create your account`
                         : mode === "in"
                           ? t`Sign in to Rakazo`
                           : mode === "up"
