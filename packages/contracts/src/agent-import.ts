@@ -93,7 +93,6 @@ const warnings = z.array(AgentImportWarningSchema).default([]);
 const status = AgentImportStatusSchema.default({ kind: "ready" });
 
 export const AgentImportInstructionRoleSchema = z.enum(["persona", "working"]);
-export type AgentImportInstructionRole = z.infer<typeof AgentImportInstructionRoleSchema>;
 
 /** Unchanged from the template the source writes for a new agent. */
 const stock = z.boolean().default(false);
@@ -151,7 +150,6 @@ export const AgentImportModelSchema = z.object({
   /** `ready`: a connection exists; `needs_key`: only with this provider's key; `unknown`: not offered. */
   status: z.enum(["ready", "needs_key", "unknown"]),
 });
-export type AgentImportModel = z.infer<typeof AgentImportModelSchema>;
 
 export const AgentImportMcpServerSchema = z.object({
   id: z.string(),
@@ -164,7 +162,6 @@ export const AgentImportMcpServerSchema = z.object({
   warnings,
   status,
 });
-export type AgentImportMcpServer = z.infer<typeof AgentImportMcpServerSchema>;
 
 export const AgentImportRoutineSchema = z.object({
   id: z.string(),
@@ -174,7 +171,6 @@ export const AgentImportRoutineSchema = z.object({
   warnings,
   status,
 });
-export type AgentImportRoutine = z.infer<typeof AgentImportRoutineSchema>;
 
 export const AgentImportApiKeySchema = z.object({
   id: z.string(),
@@ -182,7 +178,6 @@ export const AgentImportApiKeySchema = z.object({
   title: z.string(),
   provider: z.string(),
 });
-export type AgentImportApiKey = z.infer<typeof AgentImportApiKeySchema>;
 
 export const AgentImportSkipReasonSchema = z.enum([
   "runtime",
@@ -233,7 +228,6 @@ export const AgentImportSelectionSchema = z.strictObject({
   routines: selectedIds.max(AGENT_IMPORT_MAX_FILES).default([]),
   apiKeys: selectedIds.max(AGENT_IMPORT_MAX_FILES).default([]),
 });
-export type AgentImportSelection = z.infer<typeof AgentImportSelectionSchema>;
 
 /** API keys and credential values are read only when the user opted in. */
 const includeSecrets = z.boolean().default(false);
