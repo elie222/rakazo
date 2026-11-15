@@ -1,6 +1,6 @@
 import { ORPCError } from "@orpc/server";
-import { createAdapterContext, runContinueJob, runJobKey } from "@rakazo/adapter-kit";
-import { settleCallRequest } from "@rakazo/adapters";
+import { createAdapterContext, runJobKey } from "@rakazo/adapter-kit";
+import { getActiveTeachingSession, settleCallRequest, wakeRun } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import {
   AttachmentValidationError,
@@ -264,9 +264,7 @@ export function threadsRoutes(ctx: RouterContext) {
               deps.prisma.$transaction(startRoutines),
             );
             for (const run of started) {
-              await deps.jobs.enqueue(runContinueJob(run.id)).catch((error) => {
-                getLogger().error("routine mention enqueue", error);
-              });
+              await wakeRun(deps.jobs, run.id);
             }
           }
         } catch (error) {
@@ -290,10 +288,7 @@ export function threadsRoutes(ctx: RouterContext) {
               await reactedBotId(target, input.messageId),
             ]))) &&
           (target.kind !== "bot" ||
-            (await assertTeachingSendAllowed(deps.prisma, context.actor.spaceId, target.botId).then(
-              () => true,
-              () => false,
-            )));
+            !(await getActiveTeachingSession(deps.prisma, context.actor.spaceId, target.botId)));
         const result = await reactToThreadMessage(
           deps,
           context.actor,
@@ -361,9 +356,7 @@ export function threadsRoutes(ctx: RouterContext) {
             clientNonce: input.clientNonce,
           });
           if (sent.taskId && sent.runId) {
-            await deps.jobs.enqueue(runContinueJob(sent.runId)).catch((error) => {
-              getLogger().error("follow-up enqueue", error);
-            });
+            await wakeRun(deps.jobs, sent.runId);
           }
           return { ok: true as const };
         }
@@ -462,9 +455,7 @@ export function threadsRoutes(ctx: RouterContext) {
             getLogger().error("group follow-up realtime notification", error);
           });
           if (committed.runId) {
-            await deps.jobs.enqueue(runContinueJob(committed.runId)).catch((error) => {
-              getLogger().error("group follow-up enqueue", error);
-            });
+            await wakeRun(deps.jobs, committed.runId);
           }
         }
         return { ok: true as const };
@@ -597,10 +588,7 @@ export function threadsRoutes(ctx: RouterContext) {
         await deps.events.notify(threadId, committed.eventSeq).catch((error) => {
           getLogger().error("call end realtime notification", error);
         });
-        // The queued run is durable; a missed wake is repaired by the reconciler.
-        await deps.jobs.enqueue(runContinueJob(committed.runId)).catch((error) => {
-          getLogger().error("call end enqueue", error);
-        });
+        await wakeRun(deps.jobs, committed.runId);
         return { ok: true as const };
       }),
       answer: authed.threads.answer.handler(async ({ context, input }) => {
@@ -630,10 +618,7 @@ export function threadsRoutes(ctx: RouterContext) {
             message: "This prompt is no longer awaiting an answer",
           });
         }
-        await deps.jobs.enqueue(runContinueJob(input.runId)).catch((error) => {
-          // The answer and queued run are durable; the reconciler repairs a missed immediate wake.
-          getLogger().error("thread answer enqueue", error);
-        });
+        await wakeRun(deps.jobs, input.runId);
         return { ok: true as const };
       }),
       markRead: authed.threads.markRead.handler(async ({ context, input }) => {

@@ -1,5 +1,5 @@
 import type { AgentRunRequest, ComputerRef, SemanticMemoryProvider } from "@rakazo/adapter-kit";
-import { DEFAULT_CONTEXT_STRATEGY, runContinueJob } from "@rakazo/adapter-kit";
+import { DEFAULT_CONTEXT_STRATEGY } from "@rakazo/adapter-kit";
 import type { MessageBlock, RunStatus } from "@rakazo/contracts";
 import { disabledBuiltinToolSet, hasLab, resolveLabs } from "@rakazo/contracts";
 import {
@@ -253,6 +253,7 @@ import {
   runReplaysToolHistory,
 } from "./tool-step-calls.js";
 import { restoreTurnCheckpoint } from "./turn-checkpoint.js";
+import { wakeRun } from "./wake-run.js";
 import { createWebProvider } from "./web-provider-factory.js";
 
 /** Same reach as the MCP connector: usable servers assigned to the bot or shared with every bot. */
@@ -356,6 +357,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
 
       const claimed = await claimRun(deps, run, workerId);
       if (!claimed) return;
+      await deps.events.publishSpaceChange?.(run.spaceId, "runs");
       const { fence, current } = claimed;
       const leaseTarget = await deps.prisma.bot.findUniqueOrThrow({
         where: { id: run.botId },
@@ -1243,7 +1245,12 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         const paymentWallet = deps.paymentWallet;
         const paymentWalletEnabled = paymentWallet
           ? await paymentWalletConnected(
-              { prisma: deps.prisma, secretStore: deps.secretStore, paymentWallet },
+              {
+                prisma: deps.prisma,
+                secretStore: deps.secretStore,
+                jobs: deps.jobs,
+                paymentWallet,
+              },
               run.userId,
             )
           : false;
@@ -2231,6 +2238,6 @@ async function cancelRunOfFormerMember(
   });
   if (!cancelled) return true;
   await deps.events.notify(run.threadId, cancelled.seq).catch(() => undefined);
-  if (cancelled.continuationId) await deps.jobs.enqueue(runContinueJob(cancelled.continuationId));
+  if (cancelled.continuationId) await wakeRun(deps.jobs, cancelled.continuationId);
   return true;
 }

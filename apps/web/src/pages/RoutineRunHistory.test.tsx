@@ -44,6 +44,7 @@ vi.mock("@rakazo/ui-web", () => ({
 }));
 
 import { queryClient, useSpaceQueries } from "../lib/query";
+import { spaceChanged } from "../lib/space-changes";
 import { RoutineRunHistory } from "./RoutineRunHistory";
 import { useThreadSync } from "./shell/use-thread-sync";
 
@@ -131,45 +132,51 @@ it("shows loading, then the latest runs as rows that open their chat", async () 
   }
 });
 
-it("stays hidden until the first run and picks it up on the next poll", async () => {
-  vi.useFakeTimers();
+it("stays hidden until the first run and picks it up when runs change", async () => {
   routines.history
     .mockResolvedValueOnce(page([]))
     .mockResolvedValue(page([{ ...run, messageId: null }]));
-  const view = await mounted();
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const view = await mounted({ client });
   try {
-    expect(view.container.querySelector('[data-testid="routine-run-history"]')).toBeNull();
-    await act(async () => vi.advanceTimersByTimeAsync(15_000));
-    expect(view.rows()).toHaveLength(1);
+    await view.settled(() =>
+      expect(view.container.querySelector('[data-testid="routine-run-history"]')).toBeNull(),
+    );
+    await act(async () => spaceChanged("runs", client));
+    await view.settled(() => expect(view.rows()).toHaveLength(1));
     expect(view.container.querySelector("a")).toBeNull();
   } finally {
     await view.close();
   }
 });
 
-it("says when history could not load and recovers on the next poll", async () => {
-  vi.useFakeTimers();
+it("says when history could not load and recovers when runs change", async () => {
   routines.history.mockRejectedValueOnce(new Error("offline")).mockResolvedValue(page([run]));
-  const view = await mounted();
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const view = await mounted({ client });
   try {
-    expect(view.container.querySelector('[role="alert"]')?.textContent).toContain(
-      "Could not load run history",
+    await view.settled(() =>
+      expect(view.container.querySelector('[role="alert"]')?.textContent).toContain(
+        "Could not load run history",
+      ),
     );
     expect(view.container.textContent).not.toContain("No runs yet");
-    await act(async () => vi.advanceTimersByTimeAsync(15_000));
+    await act(async () => spaceChanged("runs", client));
+    await view.settled(() => expect(view.rows()).toHaveLength(1));
     expect(view.container.querySelector('[role="alert"]')).toBeNull();
-    expect(view.rows()).toHaveLength(1);
   } finally {
     await view.close();
   }
 });
 
-it("stops polling after a refused request", async () => {
+it("never reads again on a timer, nor when only routines change", async () => {
   vi.useFakeTimers();
-  routines.history.mockRejectedValue(Object.assign(new Error("Forbidden"), { status: 403 }));
-  const view = await mounted();
+  routines.history.mockResolvedValue(page([run]));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const view = await mounted({ client });
   try {
     await act(async () => vi.advanceTimersByTimeAsync(60_000));
+    await act(async () => spaceChanged("routines", client));
     expect(routines.history).toHaveBeenCalledTimes(1);
   } finally {
     await view.close();

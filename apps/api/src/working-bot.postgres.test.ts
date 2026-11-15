@@ -96,11 +96,11 @@ describe.skipIf(!enabled)("working bot visibility (PostgreSQL)", () => {
               (row) => row.botId === bot.id,
             )?.status,
           ).toBe(status);
-          const resolved = await resolveThreadTarget(prisma, actor, { groupId: group.id });
-          expect(
-            resolved.kind === "group" &&
-              resolved.members.find((row) => row.botId === bot.id)?.status,
-          ).toBe(status);
+          const opened = await threadSnapshot(
+            { prisma },
+            await resolveThreadTarget(prisma, actor, { groupId: group.id }),
+          );
+          expect(opened.members?.find((row) => row.botId === bot.id)?.status).toBe(status);
         };
         await assertRosterStatus("running");
         for (const status of ["waiting_input", "waiting_takeover", "leased"] as const) {

@@ -70,7 +70,7 @@ export function RoutineEditor({
   const scheduleStatus = useQuery({
     ...queries.routines.list.queryOptions({ input: { botId: editing?.botId ?? "" } }),
     enabled: editing !== null && draft.active,
-    refetchInterval: 15_000,
+    refetchOnWindowFocus: "always",
     select: (routines) => routines.find((routine) => routine.id === editing?.id) ?? null,
   });
   // Null when this server receives no email or the bot is another member's, which hides the trigger.

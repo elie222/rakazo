@@ -2,6 +2,11 @@
 
 Run Rakazo on a public server with automatic HTTPS, hardened hosts and zero-downtime deploys.
 
+For a single-node cluster, see [Kubernetes / k3s installation](./self-host-kubernetes.md).
+Putting a cookie-based login gate in front of any deployment also needs
+[capability-aware screen routing](./self-host-kubernetes.md#add-a-login-gate-without-breaking-the-computer):
+a screen iframe can lack the outer cookie even after the user signs in.
+
 ## Public single-VM deployment
 
 `infra/compose/docker-compose.prod.yml` runs the hosted product with Postgres, the API, worker, web app,

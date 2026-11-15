@@ -64,6 +64,7 @@ import {
   ComputerProviderSettingsSchema,
   ComputerProviderUpdateSchema,
   ComputerReleaseReasonSchema,
+  ComputerScreenSchema,
   ComputerStatusSchema,
   ComputerUpdateSchema,
 } from "./computer.js";
@@ -289,6 +290,10 @@ const threadSendWithRoutinesInput = threadSendFields.safeExtend({
   routineIds: z.array(Id).min(1).max(64),
 });
 
+/** What a Space change signal tells apps to read again; each is a `notifications.subscribe` frame. */
+export const SpaceChangeKind = z.enum(["computerUpdates", "runs", "routines"]);
+export type SpaceChangeKind = z.infer<typeof SpaceChangeKind>;
+
 const spaceName = z.string().trim().min(1).max(60);
 const organizationName = spaceName;
 /** Every organization the signed-in user belongs to, and which one the current Space belongs to. */
@@ -463,7 +468,9 @@ export const appContract = {
       .input(z.object({ organizationId: Id }))
       .output(z.object({ ok: z.literal(true), activeSpaceId: Id })),
   },
-  bootstrap: oc.input(z.object({ botId: Id.optional() })).output(AppBootstrapSchema),
+  bootstrap: oc
+    .input(z.object({ botId: Id.optional(), groupId: Id.optional() }))
+    .output(AppBootstrapSchema),
   deployment: {
     get: oc.output(DeploymentSettingsSchema),
     update: oc
@@ -887,7 +894,7 @@ export const appContract = {
     commands: oc
       .input(botId)
       .output(z.array(ComputerCommandSchema.extend({ createdAt: z.string() }))),
-    screenUrl: oc.input(botId).output(z.object({ url: z.string().nullable() })),
+    screenUrl: oc.input(botId).output(ComputerScreenSchema),
     /** A still of the screen as an image data URL, or null when the computer is not running. */
     preview: oc
       .input(
@@ -929,6 +936,15 @@ export const appContract = {
       .output(SpaceMemoryConfigSchema),
     setDefaultScope: oc
       .input(z.object({ defaultMemoryScope: MemoryScopeSchema }))
+      .output(SpaceMemoryConfigSchema),
+    /** Change a connected provider's settings; credentials left out keep the stored ones. */
+    updateProvider: oc
+      .input(
+        z.object({
+          settings: z.record(z.string(), z.string()),
+          credentials: z.record(z.string(), z.string()).default({}),
+        }),
+      )
       .output(SpaceMemoryConfigSchema),
     disconnectProvider: oc.output(z.object({ ok: z.literal(true) })),
   },
@@ -1487,13 +1503,14 @@ export const appContract = {
   notifications: {
     /**
      * Run alerts for the signed-in user's chats in this space, live while connected. `roster`
-     * says `spaces.list` may have changed, and `computerUpdates` that `computer.updates` may have;
-     * each is sent once when the stream opens.
+     * says `spaces.list` may have changed, `computerUpdates` that `computer.updates` may have,
+     * `runs` that `runs.list` and `routines.history` may have, and `routines` that `routines.list`
+     * may have; each is sent once when the stream opens.
      */
     subscribe: oc.output(
       eventIterator(
         z.object({
-          type: z.enum(["alert", "roster", "computerUpdates", "heartbeat"]),
+          type: z.enum(["alert", "roster", ...SpaceChangeKind.options, "heartbeat"]),
           alert: ChatAlertSchema.optional(),
         }),
       ),
@@ -1610,6 +1627,10 @@ export const appContract = {
             speechModel: z.string().max(64).optional(),
             /** Self-hosted (OpenAI-compatible) server address and model ids. */
             baseUrl: z.string().max(2048).optional(),
+            /** Blank means the server at `baseUrl` transcribes; omitted keeps the saved one. */
+            sttBaseUrl: z.string().max(2048).optional(),
+            /** Sent only to the transcription server; blank keeps the saved one. */
+            sttApiKey: z.string().max(4096).optional(),
             ttsModel: z.string().max(200).optional(),
             sttModel: z.string().max(200).optional(),
             /** Where the connection becomes the default voice. */

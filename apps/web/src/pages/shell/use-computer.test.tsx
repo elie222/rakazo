@@ -30,9 +30,15 @@ let container: HTMLDivElement;
 let root: Root;
 let state: ComputerState;
 let codes = 0;
-let screenUrlFactory: () => string = () =>
-  `wuying://desktop?desktop_id=ecd-1&region_id=cn-hangzhou&auth_code=code-${++codes}&view_only=true`;
-const screenUrl = vi.fn(async () => ({ url: screenUrlFactory() }));
+type ScreenAnswer = { url: string; singleUseSignIn?: { screen: string } };
+/** What the server answers for a screen whose sign-in works once: it says so beside the URL. */
+const singleUseScreen = (signIn: string, view: "view" | "control" = "view"): ScreenAnswer => ({
+  url: `embedded-screen://desktop?code=${signIn}&view_only=${view === "view"}`,
+  singleUseSignIn: { screen: `desktop-1:${view}` },
+});
+const nextSingleUseScreen = () => singleUseScreen(`code-${++codes}`);
+let screenAnswer: () => ScreenAnswer = nextSingleUseScreen;
+const screenUrl = vi.fn(async () => screenAnswer());
 
 /** The hook with the frame the panel draws: gone while an error replaces the screen. */
 function Harness() {
@@ -55,7 +61,7 @@ function Harness() {
   ));
 }
 
-const code = () => /auth_code=([^&]+)/.exec(state.screenUrl ?? "")?.[1] ?? null;
+const code = () => /[?&]code=([^&]+)/.exec(state.screenUrl ?? "")?.[1] ?? null;
 
 async function read() {
   await act(async () => {
@@ -75,8 +81,7 @@ async function report(rakazoScreen: string) {
 beforeEach(async () => {
   vi.useFakeTimers();
   codes = 0;
-  screenUrlFactory = () =>
-    `wuying://desktop?desktop_id=ecd-1&region_id=cn-hangzhou&auth_code=code-${++codes}&view_only=true`;
+  screenAnswer = nextSingleUseScreen;
   screenUrl.mockClear();
   vi.stubGlobal(
     "fetch",
@@ -96,7 +101,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-it("shows a Wuying screen's failure and waits for Retry rather than spend another code", async () => {
+it("shows a single-use screen's failure and waits for Retry rather than spend another code", async () => {
   await read();
   expect(code()).toBe("code-1");
   await report("connecting");
@@ -110,7 +115,7 @@ it("shows a Wuying screen's failure and waits for Retry rather than spend anothe
   expect(container.querySelector("iframe")).toBeNull();
 });
 
-it("keeps a live Wuying frame's code, and reconnects every drop with a fresh code", async () => {
+it("keeps a live single-use frame's code, and reconnects every drop with a fresh code", async () => {
   await read();
   await report("connected");
   await read();
@@ -134,7 +139,7 @@ it("keeps a live Wuying frame's code, and reconnects every drop with a fresh cod
   expect(screenUrl).toHaveBeenCalledTimes(4);
 });
 
-it("shows a Wuying screen's error only after its reloads stop connecting", async () => {
+it("shows a single-use screen's error only after its reloads stop connecting", async () => {
   await read();
   await report("connected");
   await report("disconnected");
@@ -150,13 +155,74 @@ it("shows a Wuying screen's error only after its reloads stop connecting", async
   expect(state.screenLoadError).toBe("Could not connect to the computer screen");
 });
 
-it("never caches a Wuying login code", async () => {
+it("never caches a single-use screen URL", async () => {
   await read();
   expect(state.computerCacheRef.current.get("bot-1")?.screenUrl).toBeNull();
 });
 
+it("replaces a live single-use frame once the server names another screen", async () => {
+  await read();
+  await report("connected");
+  screenAnswer = () => singleUseScreen("takeover", "control");
+  await read();
+  expect(code()).toBe("takeover");
+});
+
+it("treats a screen as single-use on the server's word, whatever its URL looks like", async () => {
+  let tickets = 0;
+  screenAnswer = () => ({
+    url: `https://screens.example/session?ticket=${++tickets}`,
+    singleUseSignIn: { screen: "desktop-1:view" },
+  });
+  const ticket = () => new URL(state.screenUrl ?? "").searchParams.get("ticket");
+  await read();
+  expect(state.computerCacheRef.current.get("bot-1")?.screenUrl).toBeNull();
+  // Each frame loads exactly one sign-in.
+  expect(state.screenFrameKey).toContain(state.screenUrl);
+  await report("connected");
+  await read();
+  expect(ticket()).toBe("1");
+  // A drop comes back through a fresh read, never by loading the spent sign-in again.
+  await report("disconnected");
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1_000);
+  });
+  expect(ticket()).toBe("3");
+  // Once the reconnects run out, the error waits for Retry rather than spend another sign-in.
+  await report("failed");
+  for (const wait of [2_000, 4_000]) {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(wait);
+    });
+    await report("failed");
+  }
+  expect(state.screenLoadError).toBe("Could not connect to the computer screen");
+  await read();
+  expect(state.screenUrl).toBeNull();
+});
+
+it("reloads a dropped screen the server did not call single-use, whatever its URL looks like", async () => {
+  screenAnswer = () => ({ url: nextSingleUseScreen().url });
+  await read();
+  expect(state.computerCacheRef.current.get("bot-1")?.screenUrl).toBe(state.screenUrl);
+  expect(state.screenFrameKey).not.toContain(state.screenUrl);
+  await report("connected");
+  await read();
+  expect(code()).toBe("code-2");
+  const frameKey = state.screenFrameKey;
+  await report("connected");
+  await report("disconnected");
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1_000);
+  });
+  // The same URL loads again in a new frame; no fresh read is spent on it.
+  expect(code()).toBe("code-2");
+  expect(state.screenFrameKey).not.toBe(frameKey);
+  expect(screenUrl).toHaveBeenCalledTimes(2);
+});
+
 it("reconnects a proxied screen whose reload raced a restart, without the error", async () => {
-  screenUrlFactory = () => "/novnc/session/view/1.restart/vnc.html";
+  screenAnswer = () => ({ url: "/novnc/session/view/1.restart/vnc.html" });
   await read();
   await report("connected");
   // The screen restarts under the viewer: the proxy closes the socket, the app reloads the
@@ -176,7 +242,7 @@ it("reconnects a proxied screen whose reload raced a restart, without the error"
 });
 
 it("shows a proxied screen's error only after its reloads stop connecting", async () => {
-  screenUrlFactory = () => "/novnc/session/view/1.stuck/vnc.html";
+  screenAnswer = () => ({ url: "/novnc/session/view/1.stuck/vnc.html" });
   await read();
   await report("connected");
   await report("disconnected");
@@ -199,8 +265,8 @@ it("keeps one reconnect while its screen read is still pending", async () => {
   let release: (() => void) | undefined;
   screenUrl.mockImplementationOnce(
     () =>
-      new Promise<{ url: string }>((resolve) => {
-        release = () => resolve({ url: screenUrlFactory() });
+      new Promise<ScreenAnswer>((resolve) => {
+        release = () => resolve(screenAnswer());
       }),
   );
   screenUrl.mockImplementationOnce(async () => {
@@ -250,8 +316,8 @@ it("reconnects again after its read ends on an already rejoined screen", async (
   let release: (() => void) | undefined;
   screenUrl.mockImplementationOnce(
     () =>
-      new Promise<{ url: string }>((resolve) => {
-        release = () => resolve({ url: screenUrlFactory() });
+      new Promise<ScreenAnswer>((resolve) => {
+        release = () => resolve(screenAnswer());
       }),
   );
   await report("disconnected");
@@ -278,10 +344,10 @@ it("reconnects again after its read ends on an already rejoined screen", async (
 it("shows the error when a reconnect read never settles", async () => {
   await read();
   await report("connected");
-  let settle: ((value: { url: string }) => void) | undefined;
+  let settle: ((value: ScreenAnswer) => void) | undefined;
   screenUrl.mockImplementationOnce(
     () =>
-      new Promise<{ url: string }>((resolve) => {
+      new Promise<ScreenAnswer>((resolve) => {
         settle = resolve;
       }),
   );
@@ -299,7 +365,7 @@ it("shows the error when a reconnect read never settles", async () => {
   // An answer that arrives after the deadline does not commit: the screen keeps waiting
   // for Retry.
   await act(async () => {
-    settle?.({ url: screenUrlFactory() });
+    settle?.(screenAnswer());
   });
   expect(code()).toBeNull();
   expect(state.screenLoadError).toBe("Could not connect to the computer screen");
@@ -308,7 +374,7 @@ it("shows the error when a reconnect read never settles", async () => {
 it("leaves a reconnected screen showing when its hung read runs out of time", async () => {
   await read();
   await report("connected");
-  screenUrl.mockImplementationOnce(() => new Promise<{ url: string }>(() => undefined));
+  screenUrl.mockImplementationOnce(() => new Promise<ScreenAnswer>(() => undefined));
   await report("disconnected");
   await act(async () => {
     await vi.advanceTimersByTimeAsync(1_000);
@@ -321,7 +387,7 @@ it("leaves a reconnected screen showing when its hung read runs out of time", as
   });
   expect(state.screenLoadError).toBeNull();
   // A later drop reconnects again.
-  screenUrl.mockImplementationOnce(async () => ({ url: screenUrlFactory() }));
+  screenUrl.mockImplementationOnce(async () => screenAnswer());
   await report("disconnected");
   await act(async () => {
     await vi.advanceTimersByTimeAsync(1_000);
@@ -334,7 +400,7 @@ it("leaves a reconnected screen showing when its hung read runs out of time", as
 it("keeps a newer read's answer when the hung reconnect read runs out of time", async () => {
   await read();
   await report("connected");
-  screenUrl.mockImplementationOnce(() => new Promise<{ url: string }>(() => undefined));
+  screenUrl.mockImplementationOnce(() => new Promise<ScreenAnswer>(() => undefined));
   await report("disconnected");
   await act(async () => {
     await vi.advanceTimersByTimeAsync(1_000);
@@ -345,11 +411,11 @@ it("keeps a newer read's answer when the hung reconnect read runs out of time", 
   await act(async () => {
     await vi.advanceTimersByTimeAsync(14_000);
   });
-  const takeoverUrl = `wuying://desktop?desktop_id=ecd-1&region_id=cn-hangzhou&auth_code=takeover&view_only=false`;
-  let answerB: ((value: { url: string }) => void) | undefined;
+  const takeover = singleUseScreen("takeover", "control");
+  let answerB: ((value: ScreenAnswer) => void) | undefined;
   screenUrl.mockImplementationOnce(
     () =>
-      new Promise<{ url: string }>((resolve) => {
+      new Promise<ScreenAnswer>((resolve) => {
         answerB = (value) => resolve(value);
       }),
   );
@@ -361,9 +427,9 @@ it("keeps a newer read's answer when the hung reconnect read runs out of time", 
     await vi.advanceTimersByTimeAsync(1_000);
   });
   await act(async () => {
-    answerB?.({ url: takeoverUrl });
+    answerB?.(takeover);
   });
-  expect(state.screenUrl).toBe(takeoverUrl);
+  expect(state.screenUrl).toBe(takeover.url);
   expect(state.screenLoadError).toBeNull();
 });
 
@@ -379,10 +445,10 @@ async function reportFrom(frame: HTMLIFrameElement, rakazoScreen: string) {
 }
 
 it("keeps the replaced screen over its successor until that one connects", async () => {
-  screenUrlFactory = () => proxied("view", "v1");
+  screenAnswer = () => ({ url: proxied("view", "v1") });
   await read();
   const viewFrame = container.querySelector("iframe")!;
-  screenUrlFactory = () => proxied("control", "c1");
+  screenAnswer = () => ({ url: proxied("control", "c1") });
   await read();
   let frames = [...container.querySelectorAll("iframe")];
   expect(frames).toHaveLength(2);
@@ -396,6 +462,163 @@ it("keeps the replaced screen over its successor until that one connects", async
   frames = [...container.querySelectorAll("iframe")];
   expect(frames).toHaveLength(1);
   expect(frames[0]!.dataset.src).toContain("/control/");
+});
+
+it("lets this tab's own take or release skip one matching live event", () => {
+  state.expectOwnControlEvent("bot-1", "computer.takeover.granted");
+  expect(state.isOwnControlEvent("bot-2", "computer.takeover.granted")).toBe(false);
+  expect(state.isOwnControlEvent("bot-1", "computer.takeover.released")).toBe(false);
+  expect(state.isOwnControlEvent("bot-1", "computer.takeover.granted")).toBe(true);
+  expect(state.isOwnControlEvent("bot-1", "computer.takeover.granted")).toBe(false);
+  state.expectOwnControlEvent("bot-1", "computer.takeover.released");
+  vi.advanceTimersByTime(10_001);
+  expect(state.isOwnControlEvent("bot-1", "computer.takeover.released")).toBe(false);
+  // A takeover that returned an existing lease sent no event; a later lease's event still reads.
+  state.expectOwnControlEvent("bot-1", "computer.takeover.granted", "lease-1");
+  expect(state.isOwnControlEvent("bot-1", "computer.takeover.granted", "lease-2")).toBe(false);
+  expect(state.isOwnControlEvent("bot-1", "computer.takeover.granted", "lease-1")).toBe(true);
+  // A release that sent no event is forgotten once someone else's grant arrives.
+  state.expectOwnControlEvent("bot-1", "computer.takeover.released");
+  expect(state.isOwnControlEvent("bot-1", "computer.takeover.granted", "lease-3")).toBe(false);
+  expect(state.isOwnControlEvent("bot-1", "computer.takeover.released", "lease-3")).toBe(false);
+});
+
+it("keeps a quick release expectation when the take response arrives", async () => {
+  await act(async () => {
+    state.expectOwnControlEvent("bot-1", "computer.takeover.granted");
+    state.isOwnControlEvent("bot-1", "computer.takeover.granted", "lease-1");
+    expect(state.ownControlLease("bot-1")).toBe("lease-1");
+    state.expectOwnControlEvent("bot-1", "computer.takeover.released", "lease-1");
+    state.expectOwnControlEvent("bot-1", "computer.takeover.granted", "lease-1");
+    expect(state.isOwnControlEvent("bot-1", "computer.takeover.released", "lease-1")).toBe(true);
+  });
+});
+
+it("reuses the early grant screen read after the takeover response", async () => {
+  screenUrl.mockClear();
+  await act(async () => {
+    state.expectOwnControlEvent("bot-1", "computer.takeover.granted");
+    state.expectOwnControlEvent("bot-2", "computer.takeover.released", "lease-2");
+    expect(state.isOwnControlEvent("bot-1", "computer.takeover.granted", "lease-1")).toBe(true);
+    state.expectOwnControlEvent("bot-1", "computer.takeover.granted", "lease-1");
+    await state.refreshOwnControlScreen("bot-1");
+  });
+  expect(screenUrl).toHaveBeenCalledTimes(1);
+  await act(async () => {
+    state.expectOwnControlEvent("bot-1", "computer.takeover.granted");
+    await state.refreshOwnControlScreen("bot-1");
+  });
+  expect(screenUrl).toHaveBeenCalledTimes(2);
+});
+
+it("still reads the screen when the refresh after this tab's release fails", async () => {
+  const release = vi.fn(async () => ({ ok: true as const }));
+  let controls!: ReturnType<typeof useComputerControls>;
+  function Controls() {
+    controls = useComputerControls({
+      rpc: { computer: { release, screenUrl } } as never,
+      state,
+      panel: "computer",
+      active: undefined,
+      bots: [],
+      botsRef: { current: [] },
+      activeBotId: { current: "bot-1" },
+      activeGroupId: { current: undefined },
+      runStatus: undefined,
+      sandboxProvider: undefined,
+      refreshThread: vi.fn(async () => {
+        throw new Error("offline");
+      }),
+      refreshGroupThread: vi.fn(),
+      onUpgrade: vi.fn(),
+    });
+    return null;
+  }
+  await act(async () =>
+    root.render(
+      <>
+        <Harness />
+        <Controls />
+      </>,
+    ),
+  );
+  screenUrl.mockClear();
+  await act(async () => {
+    await controls.releaseComputer();
+  });
+  expect(release).toHaveBeenCalledWith({ botId: "bot-1", reason: undefined });
+  expect(state.isOwnControlEvent("bot-1", "computer.takeover.released")).toBe(false);
+  expect(screenUrl).toHaveBeenCalledTimes(1);
+});
+
+it("reads the new screen beside the thread refresh after this tab releases control", async () => {
+  const release = vi.fn(async () => ({ ok: true as const }));
+  let finishThread!: () => void;
+  const refreshThread = vi.fn(
+    () =>
+      new Promise<never>((resolve) => {
+        finishThread = () => resolve({} as never);
+      }),
+  );
+  let controls!: ReturnType<typeof useComputerControls>;
+  function Controls() {
+    controls = useComputerControls({
+      rpc: { computer: { release, screenUrl } } as never,
+      state,
+      panel: "computer",
+      active: undefined,
+      bots: [],
+      botsRef: { current: [] },
+      activeBotId: { current: "bot-1" },
+      activeGroupId: { current: undefined },
+      runStatus: undefined,
+      sandboxProvider: undefined,
+      refreshThread,
+      refreshGroupThread: vi.fn(),
+      onUpgrade: vi.fn(),
+    });
+    return null;
+  }
+  await act(async () =>
+    root.render(
+      <>
+        <Harness />
+        <Controls />
+      </>,
+    ),
+  );
+  screenUrl.mockClear();
+  let released!: Promise<void>;
+  await act(async () => {
+    released = controls.releaseComputer();
+  });
+  // The thread refresh is still out, and it was told to leave the screen alone.
+  expect(refreshThread).toHaveBeenCalledWith("bot-1", undefined, { readScreen: false });
+  expect(screenUrl).toHaveBeenCalledTimes(1);
+  await act(async () => {
+    finishThread();
+    await released;
+  });
+  expect(screenUrl).toHaveBeenCalledTimes(1);
+});
+
+it("does not recover the active chat screen over another computer pane", async () => {
+  act(() => {
+    state.computerBotIdRef.current = "bot-other";
+  });
+  screenUrl.mockClear();
+  await act(async () => {
+    await state.forgetOwnControlEvent("bot-1");
+  });
+  expect(screenUrl).not.toHaveBeenCalled();
+});
+
+it("reads no screen for a failed control call of a bot that is no longer shown", async () => {
+  state.expectOwnControlEvent("bot-2", "computer.takeover.granted");
+  screenUrl.mockClear();
+  await act(async () => state.forgetOwnControlEvent("bot-2"));
+  expect(state.isOwnControlEvent("bot-2", "computer.takeover.granted")).toBe(false);
+  expect(screenUrl).not.toHaveBeenCalled();
 });
 
 it("closes the computer view on Escape, but not on the Escape that ends an IME composition", async () => {
@@ -498,9 +721,57 @@ async function renderTakingControl(
     heartbeat,
     held,
     takeControl: () => controls.openComputer("bot-1", true),
+    openView: () => controls.openComputer("bot-1", false),
     handBack: (reason?: "done" | "skipped") => controls.releaseComputer(reason),
   };
 }
+
+it("takes control when a view-only boot is already in progress", async () => {
+  const takeover = vi.fn(async () => ({ leaseId: "lease-1", expiresAt: "" }));
+  const { openView, takeControl } = await renderTakingControl(takeover);
+  await act(async () => {
+    const opening = openView();
+    const taking = takeControl();
+    await Promise.all([opening, taking]);
+  });
+  expect(takeover).toHaveBeenCalledTimes(1);
+});
+
+it("ignores a second take while the first control request is pending", async () => {
+  let finish!: (value: { leaseId: string; expiresAt: string }) => void;
+  const takeover = vi.fn(
+    () =>
+      new Promise<{ leaseId: string; expiresAt: string }>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const { takeControl } = await renderTakingControl(takeover);
+  let first!: Promise<boolean>;
+  await act(async () => {
+    first = takeControl();
+  });
+  await act(async () => {
+    await takeControl();
+  });
+  expect(takeover).toHaveBeenCalledTimes(1);
+  expect(state.isOwnControlEvent("bot-1", "computer.takeover.granted", "lease-1")).toBe(true);
+  await act(async () => {
+    finish({ leaseId: "lease-1", expiresAt: "" });
+    await first;
+  });
+});
+
+it("matches a delayed release only to the lease handed back", async () => {
+  const { takeControl, handBack } = await renderTakingControl();
+  await act(async () => {
+    await takeControl();
+  });
+  await act(async () => {
+    await handBack();
+  });
+  expect(state.isOwnControlEvent("bot-1", "computer.takeover.released", "other-lease")).toBe(false);
+  expect(state.isOwnControlEvent("bot-1", "computer.takeover.released", "lease-1")).toBe(true);
+});
 
 it("hands its lease back when the computer closes, and keeps it while open", async () => {
   const { release, heartbeat, takeControl } = await renderTakingControl();
@@ -590,6 +861,27 @@ it("hands back whatever control the person holds when Hand back is pressed", asy
   });
   // Not scoped to this page's lease: the control may have come from another tab or teaching.
   expect(release).toHaveBeenCalledWith({ botId: "bot-1", reason: undefined });
+});
+
+it("skips only the live event of the lease this tab's takeover got", async () => {
+  const { takeControl } = await renderTakingControl();
+  await act(async () => {
+    await takeControl();
+  });
+  expect(state.isOwnControlEvent("bot-1", "computer.takeover.granted", "lease-2")).toBe(false);
+  expect(state.isOwnControlEvent("bot-1", "computer.takeover.granted", "lease-1")).toBe(true);
+});
+
+it("reads the screen for the live event of a takeover that failed", async () => {
+  const { takeControl } = await renderTakingControl(async () => {
+    throw new Error("offline");
+  });
+  await act(async () => {
+    await takeControl();
+  });
+  expect(state.isOwnControlEvent("bot-1", "computer.takeover.granted", "lease-1")).toBe(false);
+  expect(state.computerErrorFromScreen).toBe(false);
+  expect(state.computerError).toBeTruthy();
 });
 
 it("offers Upgrade instead of a retry once the computer hours are spent", async () => {

@@ -1,6 +1,8 @@
 import type { ProductEvent } from "@rakazo/contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { RECONNECT_SPREAD_MS } from "./retry-policy.js";
+import type { LiveThreadSnapshot } from "./thread-snapshot-events.js";
+import { mergeThreadSnapshot, reduceThreadSnapshot } from "./thread-snapshot-events.js";
 import { IDLE_TIMEOUT_MS, runThreadSubscription } from "./thread-subscription.js";
 
 const head = { threadId: "thread", cursor: 10 };
@@ -887,6 +889,77 @@ describe("thread subscription recovery", () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(callbacks.applyEvent).toHaveBeenCalledExactlyOnceWith(event(12));
     expect(callbacks.refresh).not.toHaveBeenCalled();
+    abort.abort();
+    channel.end();
+    await running;
+  });
+
+  it("keeps a finished run finished when a refresh gets ahead of the live stream", async () => {
+    vi.useFakeTimers();
+    const { abort, channel, callbacks } = setup();
+    const run = { id: "run-1", botId: "bot", status: "running" };
+    type Shown = LiveThreadSnapshot & { cursor: number };
+    let shown: Shown = { ...head, olderCursor: null, messages: [], run, activeRuns: [run] };
+    const running = runThreadSubscription({
+      ...callbacks,
+      currentSnapshot: () => shown,
+      applyEvent: (item) => {
+        shown = reduceThreadSnapshot(shown, item) ?? shown;
+      },
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    // The run asked, was answered and finished before the stream delivered any of it.
+    const refreshed: Shown = { ...shown, cursor: 14, run: null, activeRuns: [] };
+    shown = mergeThreadSnapshot(shown, refreshed);
+    channel.send({ ...event(12), type: "run.waiting_input", runId: run.id });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(shown).toBe(refreshed);
+    channel.send({ ...event(15), type: "run.started", runId: "run-2" });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(shown).toMatchObject({ cursor: 15, run: { id: "run-2", status: "running" } });
+    abort.abort();
+    channel.end();
+    await running;
+  });
+
+  it("keeps a group member working when a refresh covers its run's start", async () => {
+    vi.useFakeTimers();
+    const { abort, channel, callbacks } = setup();
+    const member = { botId: "bot", status: "idle" };
+    type Shown = LiveThreadSnapshot & { cursor: number };
+    let shown: Shown = {
+      ...head,
+      groupId: "group",
+      olderCursor: null,
+      messages: [],
+      run: null,
+      activeRuns: [],
+      members: [member],
+    };
+    const running = runThreadSubscription({
+      ...callbacks,
+      currentSnapshot: () => shown,
+      applyEvent: (item) => {
+        shown = reduceThreadSnapshot(shown, item) ?? shown;
+      },
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    // The refresh read the member's status with its cursor, so it already shows the run.
+    const run = { id: "run-1", botId: "bot", status: "running" };
+    const refreshed: Shown = {
+      ...shown,
+      cursor: 12,
+      run,
+      activeRuns: [run],
+      members: [{ ...member, status: "running" }],
+    };
+    shown = mergeThreadSnapshot(shown, refreshed);
+    channel.send({ ...event(12), type: "run.started", runId: run.id });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(shown).toBe(refreshed);
+    channel.send({ ...event(13), type: "run.completed", runId: run.id });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(shown).toMatchObject({ cursor: 13, activeRuns: [], members: [{ status: "idle" }] });
     abort.abort();
     channel.end();
     await running;

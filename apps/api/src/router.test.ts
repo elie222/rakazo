@@ -1085,7 +1085,9 @@ describe("thread answer delivery", () => {
       }),
     );
     expect(enqueue).toHaveBeenCalledOnce();
-    expect(sink.events.some((event) => event.message === "thread answer enqueue")).toBe(true);
+    expect(sink.events).toContainEqual(
+      expect.objectContaining({ message: "run wake failed", "run.id": "run-1" }),
+    );
     installLogger(createLogger({ service: "rakazo-api", level: "off", sinks: [] }));
   });
 });
@@ -4375,6 +4377,20 @@ describe("computer screen url", () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({
       json: { url: "desktop://screen/computer-1?view_only=true" },
+    });
+  });
+
+  it("says a screen signs in once, and names the view beside what it shows", async () => {
+    const { response } = await callScreenUrl(async () => ({
+      url: "embedded-screen://desktop?code=once",
+      singleUseSignIn: { screen: "desktop-1" },
+    }));
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      json: {
+        url: "embedded-screen://desktop?code=once&view_only=true",
+        singleUseSignIn: { screen: "desktop-1:view" },
+      },
     });
   });
 

@@ -11,62 +11,51 @@ const actor: Actor = {
   isDeploymentOwner: true,
 };
 
-describe("notifications.subscribe computer update signals", () => {
-  it("signals changes to the actor's Space's computer updates", async () => {
+const followChatAlerts = async function* (_userId: string, _spaceId: string, signal: AbortSignal) {
+  await new Promise((resolve) => signal.addEventListener("abort", resolve));
+};
+
+describe("notifications.subscribe space change signals", () => {
+  it("sends each change to the actor's Space as its own frame", async () => {
     const controller = new AbortController();
-    const followChatAlerts = vi.fn(async function* (
-      _userId: string,
-      _spaceId: string,
-      signal: AbortSignal,
-    ) {
-      await new Promise((resolve) => signal.addEventListener("abort", resolve));
-    });
-    const followComputerUpdateChanges = vi.fn(async function* () {
-      yield;
-      yield;
+    const followSpaceChanges = vi.fn(async function* () {
+      yield "computerUpdates" as const;
+      yield "runs" as const;
+      yield "routines" as const;
     });
     const client = createRouterClient(
       createRouter({
-        events: { followChatAlerts, followComputerUpdateChanges },
+        events: { followChatAlerts, followSpaceChanges },
       } as unknown as RouterDeps),
       { context: { actor, signal: controller.signal } },
     );
     try {
       const iterator = (await client.notifications.subscribe())[Symbol.asyncIterator]();
       expect((await iterator.next()).value).toEqual({ type: "computerUpdates" });
-      expect((await iterator.next()).value).toEqual({ type: "computerUpdates" });
-      expect(followComputerUpdateChanges).toHaveBeenCalledWith(
-        actor.spaceId,
-        expect.any(AbortSignal),
-      );
+      expect((await iterator.next()).value).toEqual({ type: "runs" });
+      expect((await iterator.next()).value).toEqual({ type: "routines" });
+      expect(followSpaceChanges).toHaveBeenCalledWith(actor.spaceId, expect.any(AbortSignal));
     } finally {
       controller.abort();
     }
   });
 
-  it("ends the stream half a minute after computer update signals fail", async () => {
+  it("ends the stream half a minute after space change signals fail", async () => {
     vi.useFakeTimers();
     const controller = new AbortController();
-    const followChatAlerts = vi.fn(async function* (
-      _userId: string,
-      _spaceId: string,
-      signal: AbortSignal,
-    ) {
-      await new Promise((resolve) => signal.addEventListener("abort", resolve));
-    });
-    const followComputerUpdateChanges = vi.fn(async function* () {
-      yield;
+    const followSpaceChanges = vi.fn(async function* () {
+      yield "runs" as const;
       throw new Error("subscribe failed");
     });
     const client = createRouterClient(
       createRouter({
-        events: { followChatAlerts, followComputerUpdateChanges },
+        events: { followChatAlerts, followSpaceChanges },
       } as unknown as RouterDeps),
       { context: { actor, signal: controller.signal } },
     );
     try {
       const iterator = (await client.notifications.subscribe())[Symbol.asyncIterator]();
-      expect((await iterator.next()).value).toEqual({ type: "computerUpdates" });
+      expect((await iterator.next()).value).toEqual({ type: "runs" });
       const started = Date.now();
       let endedAt: number | undefined;
       // Heartbeats and alerts keep flowing until the stream ends.
@@ -94,18 +83,39 @@ describe("notifications.subscribe computer update signals", () => {
 describe("computer.dismissUpdate", () => {
   it("signals the Space only when a failed update was dismissed", async () => {
     const updateMany = vi.fn(async () => ({ count: 1 }));
-    const publishComputerUpdateChange = vi.fn(async () => {});
+    const publishSpaceChange = vi.fn(async () => {});
     const client = createRouterClient(
       createRouter({
         prisma: { computerUpdate: { updateMany } },
-        events: { publishComputerUpdateChange },
+        events: { publishSpaceChange },
       } as unknown as RouterDeps),
       { context: { actor } },
     );
     await client.computer.dismissUpdate({ id: "update-1" });
-    expect(publishComputerUpdateChange).toHaveBeenCalledExactlyOnceWith(actor.spaceId);
+    expect(publishSpaceChange).toHaveBeenCalledExactlyOnceWith(actor.spaceId, "computerUpdates");
     updateMany.mockResolvedValueOnce({ count: 0 });
     await client.computer.dismissUpdate({ id: "update-1" });
-    expect(publishComputerUpdateChange).toHaveBeenCalledOnce();
+    expect(publishSpaceChange).toHaveBeenCalledOnce();
+  });
+});
+
+describe("space change procedures", () => {
+  it("signals routines after a routine is removed", async () => {
+    const publishSpaceChange = vi.fn(async () => {});
+    const client = createRouterClient(
+      createRouter({
+        prisma: {
+          routine: {
+            findFirst: vi.fn(async () => ({ id: "routine-1" })),
+            delete: vi.fn(async () => ({})),
+          },
+        },
+        jobs: { cancel: vi.fn(async () => {}) },
+        events: { publishSpaceChange },
+      } as unknown as RouterDeps),
+      { context: { actor } },
+    );
+    await client.routines.remove({ routineId: "routine-1" });
+    expect(publishSpaceChange).toHaveBeenCalledExactlyOnceWith(actor.spaceId, "routines");
   });
 });

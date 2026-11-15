@@ -51,6 +51,7 @@ import { rosterChangeFor } from "../roster-procedures.js";
 import type { RouterDeps } from "../router.js";
 import { createRoutineAnnouncer } from "../routines.js";
 import { procedureSecurityEvent } from "../security-audit.js";
+import { spaceChangesFor } from "../space-change-procedures.js";
 import { createTaughtSkillsService } from "../taught-skills.js";
 import { meDto } from "./shared.js";
 
@@ -433,6 +434,8 @@ export function createRouterContext(deps: RouterDeps) {
     if (event) await recordSecurityEvent(event);
     const rosterChange = rosterChangeFor(path, context.actor, input, result.output);
     if (rosterChange) void deps.events?.publishRosterChange?.(rosterChange);
+    for (const kind of spaceChangesFor(path))
+      void deps.events?.publishSpaceChange?.(context.actor.spaceId, kind);
     return result;
   });
 
@@ -441,7 +444,7 @@ export function createRouterContext(deps: RouterDeps) {
     return next();
   });
 
-  const boardEnabled = os.use(signedIn).use(async ({ context, next }) => {
+  const boardEnabled = authed.use(async ({ context, next }) => {
     if (deps.env?.deploymentLabs?.includes("board")) return next();
     const user = await deps.prisma.user.findUnique({
       where: { id: context.actor.userId },

@@ -208,7 +208,12 @@ export async function deployMigrations(input: {
         const retried =
           delay === undefined
             ? undefined
-            : await rollBackLockConflict(input.migrationUrl, migrationsPath).catch(() => undefined);
+            : await rollBackLockConflict(input.migrationUrl, migrationsPath).catch((checkError) => {
+                throw new AggregateError(
+                  [error, checkError],
+                  "Migration failed, and checking whether it lost a lock failed too",
+                );
+              });
         if (!retried) throw error;
         process.stdout.write(`${retried} lost a lock to running queries; retrying\n`);
         await new Promise((resolve) => setTimeout(resolve, delay));

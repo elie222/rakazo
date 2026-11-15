@@ -1,10 +1,10 @@
 import { ORPCError } from "@orpc/server";
-import { runContinueJob } from "@rakazo/adapter-kit";
 import {
   lockMcpOAuthMaterial,
   McpOAuthClientRequiredError,
   persistPreparedSecret,
   recordMcpServerHealth,
+  wakeRun,
 } from "@rakazo/adapters";
 import { MCP_OAUTH_REDIRECT_MISMATCH } from "@rakazo/contracts";
 import type { Prisma } from "@rakazo/db";
@@ -491,10 +491,7 @@ export function mcpRoutes(ctx: RouterContext) {
           );
           if (!row) throw new IsolationError();
           if (row.runId) {
-            // The queued run is durable; a missed wake is repaired by the reconciler.
-            await deps.jobs.enqueue(runContinueJob(row.runId)).catch((error) => {
-              getLogger().error("mcp connected enqueue", error);
-            });
+            await wakeRun(deps.jobs, row.runId);
           }
           return mcpAssignmentDto(row.assignment);
         }),

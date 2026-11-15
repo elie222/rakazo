@@ -10,6 +10,7 @@ import type {
   RemoteDesktopSdk,
 } from "./remote-desktop-sandbox.js";
 import { RemoteDesktopSandboxProvider } from "./remote-desktop-sandbox.js";
+import { deleteUnreferencedMachine } from "./sandbox-cleanup.js";
 import {
   isSandboxGoneError,
   isSandboxUnsafeStopError,
@@ -80,7 +81,8 @@ export interface InstaboxApi {
     spec?: InstaboxSpec,
   ): Promise<InstaboxMachine>;
   connect(id: string, resume: boolean): Promise<InstaboxMachine>;
-  kill(id: string): Promise<boolean>;
+  /** `timeoutMs` bounds each request and the wait for the delete to finish. */
+  kill(id: string, timeoutMs?: number): Promise<boolean>;
 }
 
 /** The SDK loads only when an instabox computer is used, never in the default runtime. */
@@ -91,7 +93,14 @@ export async function nativeInstaboxApi(apiKey: string): Promise<InstaboxApi> {
     create: (template, metadata, spec) =>
       Sandbox.create(template, { apiKey, metadata, vault: false, ...spec }),
     connect: (id, resume) => Sandbox.connect(id, { apiKey, resume }),
-    kill: (id) => Sandbox.kill(id, { apiKey }),
+    kill: (id, timeoutMs) =>
+      Sandbox.kill(id, {
+        apiKey,
+        ...(timeoutMs !== undefined && {
+          requestTimeoutMs: timeoutMs,
+          operationTimeoutMs: timeoutMs,
+        }),
+      }),
   };
 }
 
@@ -109,6 +118,7 @@ export class InstaboxSandboxProvider extends RemoteDesktopSandboxProvider {
       sdk: sdk ?? instaboxSdk(options.apiKey, options.onUnsafeStop),
       // Commands past their deadline come back as exit 124, never as an error.
       isTimeoutError: () => false,
+      pageBrowser: true,
     });
   }
 }
@@ -165,7 +175,9 @@ export function instaboxSdk(
         return await openDesktop(machine, true, pause(machine));
       } catch (error) {
         // Nothing has the new computer's reference yet, so nothing else would delete it.
-        await (await api()).kill(machine.sandboxId).catch(() => false);
+        await deleteUnreferencedMachine("instabox", machine.sandboxId, async (_signal, timeoutMs) =>
+          (await api()).kill(machine.sandboxId, timeoutMs),
+        );
         throw error;
       }
     },

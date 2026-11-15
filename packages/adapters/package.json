@@ -85,6 +85,7 @@
     "@types/nodemailer": "8.0.2",
     "@types/pg": "8.23.1",
     "@types/ws": "8.18.2",
+    "fast-check": "4.10.2",
     "typescript": "7.0.2",
     "vitest": "5.1.0"
   }

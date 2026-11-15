@@ -229,6 +229,7 @@ export * from "./scratchpad-tools.js";
 export * from "./scripted-auto-review.js";
 export * from "./scripted-runtime.js";
 export * from "./scripted-voice.js";
+export * from "./secret-cleanup.js";
 export * from "./secret-migration.js";
 export * from "./secret-persistence.js";
 export * from "./secret-store-factory.js";
@@ -267,6 +268,7 @@ export {
 } from "./vault-values.js";
 export * from "./voice-factory.js";
 export * from "./voice-model-connection.js";
+export * from "./wake-run.js";
 export * from "./wakeup.js";
 export * from "./web-limits.js";
 export * from "./web-provider-factory.js";
