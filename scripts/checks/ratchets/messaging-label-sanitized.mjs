@@ -5,27 +5,103 @@ export const include = ["**/*.prompt.ts", "packages/adapters/src/messaging-deliv
 
 const LABEL = /\b(?:senderName|fromLabel|channelName|channel\.name)\b/;
 const SANITIZED_CALL = "sanitizeMessagingLabel(";
-const QUOTES = new Set(['"', "'", "`"]);
+
+/** The index of the quote that closes the string at `index`, or -1 when the file is malformed. */
+function quoteEnd(text, index) {
+  const quote = text[index];
+  for (let cursor = index + 1; cursor < text.length; cursor += 1) {
+    if (text[cursor] === "\\") cursor += 1;
+    else if (text[cursor] === quote) return cursor;
+  }
+  return -1;
+}
+
+/** The index of the backtick that closes the template at `index`, or -1 when it never closes. */
+function templateEnd(text, index) {
+  for (let cursor = index + 1; cursor < text.length; cursor += 1) {
+    const character = text[cursor];
+    if (character === "\\") cursor += 1;
+    else if (character === "`") return cursor;
+    else if (character === "$" && text[cursor + 1] === "{") {
+      const end = interpolationEnd(text, cursor);
+      if (end === -1) return -1;
+      cursor = end;
+    }
+  }
+  return -1;
+}
 
 /** The index of the `}` that closes the `${` at `start`, or -1 when the file is malformed. */
 function interpolationEnd(text, start) {
   let depth = 1;
-  let quote = "";
   for (let index = start + 2; index < text.length; index += 1) {
     const character = text[index];
-    if (quote) {
-      if (character === "\\") index += 1;
-      else if (character === quote) quote = "";
-      continue;
-    }
-    if (QUOTES.has(character)) quote = character;
-    else if (character === "{") depth += 1;
+    if (character === '"' || character === "'") {
+      const end = quoteEnd(text, index);
+      if (end === -1) return -1;
+      index = end;
+    } else if (character === "`") {
+      const end = templateEnd(text, index);
+      if (end === -1) return -1;
+      index = end;
+    } else if (character === "{") depth += 1;
     else if (character === "}") {
       depth -= 1;
       if (depth === 0) return index;
     }
   }
   return -1;
+}
+
+/** Every `${...}` that a template literal in the file actually evaluates. */
+function* interpolations(text) {
+  let quote = "";
+  let template = false;
+  let comment = "";
+  for (let index = 0; index < text.length; index += 1) {
+    const character = text[index];
+    if (comment === "line") {
+      if (character === "\n") comment = "";
+      continue;
+    }
+    if (comment === "block") {
+      if (character === "*" && text[index + 1] === "/") {
+        comment = "";
+        index += 1;
+      }
+      continue;
+    }
+    if (quote) {
+      if (character === "\\") index += 1;
+      else if (character === quote) quote = "";
+      continue;
+    }
+    if (template) {
+      if (character === "\\") {
+        index += 1;
+        continue;
+      }
+      if (character === "`") {
+        template = false;
+        continue;
+      }
+      if (character === "$" && text[index + 1] === "{") {
+        const end = interpolationEnd(text, index);
+        if (end === -1) return;
+        yield { start: index, body: text.slice(index + 2, end) };
+        index = end;
+      }
+      continue;
+    }
+    if (character === "/" && text[index + 1] === "/") {
+      comment = "line";
+      index += 1;
+    } else if (character === "/" && text[index + 1] === "*") {
+      comment = "block";
+      index += 1;
+    } else if (character === '"' || character === "'") quote = character;
+    else if (character === "`") template = true;
+  }
 }
 
 /** The expression with every sanitizeMessagingLabel(...) call removed, so what remains is raw. */
@@ -60,21 +136,14 @@ function unsanitized(body) {
 /** Interpolations of a chat label that are not wrapped in sanitizeMessagingLabel(). */
 export function count(text) {
   const hits = [];
-  let start = text.indexOf("${");
-  while (start !== -1) {
-    const end = interpolationEnd(text, start);
-    if (end === -1) break;
-    const body = text.slice(start + 2, end);
-    const next = end + 1;
-    if (LABEL.test(unsanitized(body))) {
-      const lineStart = text.lastIndexOf("\n", start - 1) + 1;
-      const lineEnd = text.indexOf("\n", start);
-      hits.push({
-        line: text.slice(0, start).split("\n").length,
-        text: text.slice(lineStart, lineEnd === -1 ? undefined : lineEnd).trim(),
-      });
-    }
-    start = text.indexOf("${", next);
+  for (const { start, body } of interpolations(text)) {
+    if (!LABEL.test(unsanitized(body))) continue;
+    const lineStart = text.lastIndexOf("\n", start - 1) + 1;
+    const lineEnd = text.indexOf("\n", start);
+    hits.push({
+      line: text.slice(0, start).split("\n").length,
+      text: text.slice(lineStart, lineEnd === -1 ? undefined : lineEnd).trim(),
+    });
   }
   return hits;
 }
