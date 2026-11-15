@@ -11,7 +11,6 @@
   "apps/mobile/app/(settings)/model-settings.tsx": 4,
   "apps/mobile/app/(settings)/models.tsx": 2,
   "apps/mobile/app/(settings)/organization.tsx": 2,
-  "apps/mobile/app/(settings)/plugin.tsx": 8,
   "apps/mobile/app/(settings)/profile.tsx": 2,
   "apps/mobile/app/(settings)/signup-survey.tsx": 1,
   "apps/mobile/app/(settings)/spending-limit.tsx": 3,

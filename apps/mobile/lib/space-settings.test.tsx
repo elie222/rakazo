@@ -53,9 +53,10 @@ vi.mock("./api", () => ({
   rpc: state.rpc,
   currentApiBase: () => "https://app.example.test",
   selectedSpaceId: () => state.selectedSpace,
-  captureApiRequestContext: async (spaceId: string) => ({
+  captureApiRequestContext: async (spaceId: string | null = state.selectedSpace) => ({
     apiBase: "https://app.example.test",
-    headers: { "x-rakazo-space-id": spaceId },
+    sessionGeneration: 1,
+    headers: spaceId ? { "x-rakazo-space-id": spaceId } : {},
   }),
 }));
 vi.mock("./session", () => ({ currentSessionGeneration: () => 1 }));
@@ -131,6 +132,7 @@ vi.mock("../components/settings-group", () => ({
 const spaceContext = {
   requestContext: {
     apiBase: "https://app.example.test",
+    sessionGeneration: 1,
     headers: { "x-rakazo-space-id": "space-other" },
   },
 };

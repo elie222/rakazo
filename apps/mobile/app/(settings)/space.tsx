@@ -43,7 +43,7 @@ export default function SpaceSettings() {
   const open = (setting: SpaceSetting) =>
     router.push({ pathname: SETTING_SCREENS[setting], params: { spaceId: space } });
   const change = useSave({
-    spaceId: space,
+    target,
     // The answer is the Space's new list, kept even when nobody is left to see it.
     save: async (input: { setting: SpaceSetting; enabled: boolean }, send) =>
       setOverrides(await send("spaceSettings/setOverride", input)),

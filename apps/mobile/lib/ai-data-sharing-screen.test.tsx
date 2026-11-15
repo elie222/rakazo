@@ -25,7 +25,11 @@ vi.mock("./api", () => ({
   rpc: mocks.rpc,
   currentApiBase: () => "https://app.example.test",
   selectedSpaceId: () => "space-1",
-  captureApiRequestContext: async () => ({ apiBase: "https://app.example.test", headers: {} }),
+  captureApiRequestContext: async (spaceId: string | null = "space-1") => ({
+    apiBase: "https://app.example.test",
+    sessionGeneration: 1,
+    headers: spaceId ? { "x-rakazo-space-id": spaceId } : {},
+  }),
 }));
 vi.mock("./session", () => ({ currentSessionGeneration: () => 1 }));
 vi.mock("./app-foreground", () => ({ useAppForeground: () => true }));
@@ -155,6 +159,14 @@ function hold(write: string, answer = opened) {
   };
 }
 
+/** What every write carries: the server, session and space its save was started in. */
+const pinned = {
+  requestContext: {
+    apiBase: "https://app.example.test",
+    sessionGeneration: 1,
+    headers: { "x-rakazo-space-id": "space-1" },
+  },
+};
 it("shows each service's permission, and allows one only after its consent prompt", async () => {
   const allow = hold("aiConsent/allow");
   await render();
@@ -164,7 +176,7 @@ it("shows each service's permission, and allows one only after its consent promp
   await act(async () => toggle("Allow Speech on mobile").click());
   expect(mocks.prompt).toHaveBeenCalledWith(opened.recipients[1], undefined);
   expect(allow.calls()).toEqual([
-    ["aiConsent/allow", { scope: "mobile", version: "v1", keys: ["Speech"] }],
+    ["aiConsent/allow", { scope: "mobile", version: "v1", keys: ["Speech"] }, pinned],
   ]);
   expect(controls().map((control) => control.disabled)).toEqual([true, true, true]);
 
@@ -194,7 +206,7 @@ it("revokes one service without asking, and says so in an alert when that fails"
   await render();
   await act(async () => toggle("Allow Models on mobile").click());
   expect(mocks.prompt).not.toHaveBeenCalled();
-  expect(revoke.calls()).toEqual([["aiConsent/revoke", { key: "Models" }]]);
+  expect(revoke.calls()).toEqual([["aiConsent/revoke", { key: "Models" }, pinned]]);
 
   await revoke.finish(new Error("Server said no"));
   expect(lastAlert()).toMatchObject({ title: "AI data sharing", message: "Server said no" });
@@ -214,7 +226,7 @@ it("withdraws every permission only after a destructive confirm", async () => {
   expect(revoke.calls()).toEqual([]);
 
   await act(async () => lastAlert().press("Withdraw"));
-  expect(revoke.calls()).toEqual([["aiConsent/revoke", { key: null }]]);
+  expect(revoke.calls()).toEqual([["aiConsent/revoke", { key: null }, pinned]]);
   expect(controls().map((control) => control.disabled)).toEqual([true, true, true]);
   await revoke.finish(status({ Models: false, Speech: false }));
   expect(toggle("Allow Models on mobile").checked).toBe(false);

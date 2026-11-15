@@ -30,7 +30,11 @@ vi.mock("./api", () => ({
   rpc: mocks.rpc,
   currentApiBase: () => "https://app.example.test",
   selectedSpaceId: () => "space-1",
-  captureApiRequestContext: async () => ({ apiBase: "https://app.example.test", headers: {} }),
+  captureApiRequestContext: async (spaceId: string | null = "space-1") => ({
+    apiBase: "https://app.example.test",
+    sessionGeneration: 1,
+    headers: spaceId ? { "x-rakazo-space-id": spaceId } : {},
+  }),
 }));
 vi.mock("./session", () => ({ currentSessionGeneration: () => 1 }));
 vi.mock("expo-router", () => ({
@@ -176,6 +180,14 @@ function hold(write: string) {
   };
 }
 
+/** What every write carries: the server, session and space its save was started in. */
+const pinned = {
+  requestContext: {
+    apiBase: "https://app.example.test",
+    sessionGeneration: 1,
+    headers: { "x-rakazo-space-id": "space-1" },
+  },
+};
 it("opens a saved skill, saves an edit from the header, and deletes after a native confirm", async () => {
   mocks.params = { id: own.id };
   mocks.rpc.mockImplementation(async (proc: string, body: Record<string, unknown>) => {
@@ -195,13 +207,14 @@ it("opens a saved skill, saves an edit from the header, and deletes after a nati
   expect(save?.disabled).toBe(false);
   await act(async () => save?.click());
   unmount();
-  expect(mocks.rpc).toHaveBeenCalledWith("agentSkills/update", {
-    skillId: own.id,
-    content: `${own.content}Note what slipped.\n`,
-  });
+  expect(mocks.rpc).toHaveBeenCalledWith(
+    "agentSkills/update",
+    { skillId: own.id, content: `${own.content}Note what slipped.\n` },
+    pinned,
+  );
 
   await act(async () => button("Delete").click());
-  expect(mocks.rpc).not.toHaveBeenCalledWith("agentSkills/remove", expect.anything());
+  expect(mocks.rpc).not.toHaveBeenCalledWith("agentSkills/remove", expect.anything(), pinned);
   const [title, , buttons] = mocks.alert.mock.calls[0] as [
     string,
     undefined,
@@ -209,7 +222,7 @@ it("opens a saved skill, saves an edit from the header, and deletes after a nati
   ];
   expect(title).toBe("Delete weekly-review?");
   await act(async () => buttons.find((b) => b.text === "Delete")?.onPress?.());
-  expect(mocks.rpc).toHaveBeenCalledWith("agentSkills/remove", { skillId: own.id });
+  expect(mocks.rpc).toHaveBeenCalledWith("agentSkills/remove", { skillId: own.id }, pinned);
   expect(mocks.back).toHaveBeenCalled();
 });
 
@@ -227,7 +240,7 @@ it("keeps a skill that failed to load from being saved as a new one, and retries
   mocks.rpc.mockRejectedValueOnce(new Error("offline")).mockResolvedValueOnce(own);
   await render();
   expect(container.querySelector('[aria-label="SKILL.md"]')).toBeNull();
-  expect(mocks.rpc).not.toHaveBeenCalledWith("agentSkills/create", expect.anything());
+  expect(mocks.rpc).not.toHaveBeenCalledWith("agentSkills/create", expect.anything(), pinned);
   const retry = [...container.querySelectorAll("button")].find(
     (button) => button.textContent === "Retry",
   );
@@ -246,9 +259,11 @@ it("creates a new skill from the template and goes back", async () => {
   const { save, unmount } = headerSave();
   await act(async () => save?.click());
   unmount();
-  expect(mocks.rpc).toHaveBeenCalledWith("agentSkills/create", {
-    content: expect.stringContaining("name: my-skill"),
-  });
+  expect(mocks.rpc).toHaveBeenCalledWith(
+    "agentSkills/create",
+    { content: expect.stringContaining("name: my-skill") },
+    pinned,
+  );
   expect(mocks.back).toHaveBeenCalled();
 });
 

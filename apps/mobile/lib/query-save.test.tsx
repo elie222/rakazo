@@ -6,18 +6,27 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SaveSend } from "./query";
 import { queryClient, rpcQuery, useSave } from "./query";
+import type { SettingsTarget } from "./settings-target";
 
-const scope = vi.hoisted(() => ({ spaceId: "space-a", generation: 1, rpc: vi.fn() }));
+const scope = vi.hoisted(() => ({
+  spaceId: "space-a",
+  generation: 1,
+  rpc: vi.fn(),
+  /** Stands in for the context a save pins, when a test needs one that is not the current one. */
+  pinned: undefined as unknown,
+}));
 vi.mock("./api-server", () => ({}));
 vi.mock("./api-auth", () => ({}));
 vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   currentApiBase: () => "https://app.example.test",
   selectedSpaceId: () => scope.spaceId,
-  captureApiRequestContext: async (spaceId?: string) => ({
-    apiBase: "https://app.example.test",
-    headers: spaceId ? { space: spaceId } : {},
-  }),
+  captureApiRequestContext: async (spaceId: string | null = scope.spaceId) =>
+    scope.pinned ?? {
+      apiBase: "https://app.example.test",
+      sessionGeneration: scope.generation,
+      headers: spaceId ? { "x-rakazo-space-id": spaceId } : {},
+    },
   rpc: scope.rpc,
 }));
 vi.mock("./session", () => ({ currentSessionGeneration: () => scope.generation }));
@@ -36,13 +45,13 @@ const save = vi.fn<(name: string, send: SaveSend) => Promise<string>>();
 const onSaved = vi.fn();
 const onFailed = vi.fn();
 let closesScreen = false;
-let target: { spaceId?: string; account?: boolean } = {};
+let target: SettingsTarget | undefined;
 let screen: ReturnType<typeof useSave<string, string>> & { name: unknown };
 function Screen() {
   const read = rpcQuery("voice/status");
   const { data } = useQuery(read, queryClient);
   screen = {
-    ...useSave({ save, stale: [read.queryKey], onSaved, onFailed, closesScreen, ...target }),
+    ...useSave({ save, stale: [read.queryKey], onSaved, onFailed, closesScreen, target }),
     name: data,
   };
   return null;
@@ -55,7 +64,8 @@ beforeEach(async () => {
   queryClient.clear();
   scope.spaceId = "space-a";
   scope.generation = 1;
-  target = {};
+  scope.pinned = undefined;
+  target = undefined;
   scope.rpc.mockReset().mockResolvedValue("Before");
   save.mockReset();
   onSaved.mockReset();
@@ -231,10 +241,20 @@ const write = ["spaceSettings/setOverride", { setting: "voice", enabled: true }]
 const writes = (name: string, send: SaveSend) => send(...write).then(() => name);
 const sent = () => scope.rpc.mock.calls.filter(([proc]) => proc === write[0]);
 
+const named: SettingsTarget = { scope: "space", spaceId: "space-named" };
+const account: SettingsTarget = { scope: "account" };
 const targets = [
-  ["a named Space", { spaceId: "space-named" }],
-  ["the account", { account: true }],
+  ["a named Space", named],
+  ["the account", account],
 ] as const;
+/** The context a write carries: the server and session of the tap, and the Space it names. */
+const pinnedTo = (spaceId: string, sessionGeneration = 1) => ({
+  requestContext: {
+    apiBase: "https://app.example.test",
+    sessionGeneration,
+    headers: { "x-rakazo-space-id": spaceId },
+  },
+});
 
 describe.each(targets)("a save for %s", (_name, saveTarget) => {
   beforeEach(async () => {
@@ -283,28 +303,62 @@ describe.each(targets)("a save for %s", (_name, saveTarget) => {
   });
 });
 
-it("sends its writes as plain calls, and to a named Space with that Space's context", async () => {
+it("sends every write with the context pinned at the tap, whatever the save is for", async () => {
   save.mockImplementation(writes);
   await act(async () => screen.run("After"));
   await settle();
-  expect(sent()).toEqual([write]);
+  expect(sent()).toEqual([[...write, pinnedTo("space-a")]]);
 
-  target = { account: true };
+  // An account save is sent with the Space selected at the tap, which its scope leaves out.
+  target = account;
   await act(async () => root.render(<Screen />));
   await act(async () => screen.run("After"));
   await settle();
-  expect(sent()).toEqual([write, write]);
+  expect(sent()[1]).toEqual([...write, pinnedTo("space-a")]);
 
-  target = { spaceId: "space-named" };
+  target = named;
   await act(async () => root.render(<Screen />));
   await act(async () => screen.run("After"));
   await settle();
-  expect(sent()[2]).toEqual([
-    ...write,
-    {
-      requestContext: { apiBase: "https://app.example.test", headers: { space: "space-named" } },
-    },
-  ]);
+  expect(sent()[2]).toEqual([...write, pinnedTo("space-named")]);
+});
+
+it("pins the context when the save starts, not when it sends", async () => {
+  const prompt = deferred<void>();
+  save.mockImplementation(async (name, send) => {
+    await prompt.promise;
+    return writes(name, send);
+  });
+  target = account;
+  await act(async () => root.render(<Screen />));
+  await act(async () => screen.run("After"));
+  scope.spaceId = "space-b";
+  await act(async () => prompt.resolve());
+  await settle();
+  expect(sent()).toEqual([[...write, pinnedTo("space-a")]]);
+  expect(onSaved.mock.calls).toEqual([["After", "After"]]);
+});
+
+it.each([
+  ["server", { ...pinnedTo("space-a").requestContext, apiBase: "https://other.example.test" }],
+  ["session", pinnedTo("space-a", 2).requestContext],
+  ["Space", pinnedTo("space-b").requestContext],
+])("sends nothing with a context for another %s than the save's own", async (_part, context) => {
+  scope.pinned = context;
+  save.mockImplementation(writes);
+  await act(async () => screen.run("After"));
+  await settle();
+  expect(sent()).toEqual([]);
+  expect(screen.error).toEqual(new Error("Something went wrong. Try again."));
+});
+
+it("reports a save whose context could not be pinned, and sends nothing", async () => {
+  scope.pinned = Promise.reject(new Error("The server changed while starting the request"));
+  save.mockImplementation(writes);
+  await act(async () => screen.run("After"));
+  await settle();
+  expect(sent()).toEqual([]);
+  expect(screen.error).toEqual(new Error("The server changed while starting the request"));
 });
 
 it("sends nothing to the space selected after the save started", async () => {
@@ -323,12 +377,12 @@ it("sends nothing to the space selected after the save started", async () => {
 it.each(outcomes)(
   "shows nothing for a save that %s after the screen moved to another named Space",
   async (_outcome, finish) => {
-    target = { spaceId: "space-named" };
+    target = named;
     await act(async () => root.render(<Screen />));
     const saving = deferred<string>();
     save.mockReturnValue(saving.promise);
     await act(async () => screen.run("After"));
-    target = { spaceId: "space-other" };
+    target = { scope: "space", spaceId: "space-other" };
     await act(async () => root.render(<Screen />));
     expect(screen.pending).toBe(false);
     await act(async () => finish(saving));

@@ -19,7 +19,11 @@ vi.mock("./api", () => ({
   rpc: vi.fn(),
   currentApiBase: () => "https://app.example.test",
   selectedSpaceId: () => "space-1",
-  captureApiRequestContext: async () => ({ apiBase: "https://app.example.test", headers: {} }),
+  captureApiRequestContext: async (spaceId: string | null = "space-1") => ({
+    apiBase: "https://app.example.test",
+    sessionGeneration: 1,
+    headers: spaceId ? { "x-rakazo-space-id": spaceId } : {},
+  }),
 }));
 vi.mock("./session", () => ({ currentSessionGeneration: () => 1 }));
 vi.mock("./appearance", () => ({ mobileTokens: () => ({}) }));
@@ -198,6 +202,14 @@ async function save(times = 1) {
   return enabled;
 }
 /** Holds the room's save open, so a test decides when and how it ends. */
+/** What every write carries: the server, session and space its save was started in. */
+const pinned = {
+  requestContext: {
+    apiBase: "https://app.example.test",
+    sessionGeneration: 1,
+    headers: { "x-rakazo-space-id": "space-1" },
+  },
+};
 function holdSave() {
   const answers = vi.mocked(rpc).getMockImplementation()!;
   let finish!: (outcome?: Error) => void;
@@ -264,12 +276,16 @@ it("shows the bot's reply mode and rules until the room overrides them, then sav
   await click("GitHub: Group updates");
   await save();
 
-  expect(rpc).toHaveBeenCalledWith("externalConversations/updatePolicy", {
-    externalConversationId: "room-1",
-    teamChatAmbientEnabled: true,
-    teamChatRules: null,
-    automatedSenderPolicies: { B_GITHUB: { name: "GitHub", mode: "rollup", rollupHours: 6 } },
-  });
+  expect(rpc).toHaveBeenCalledWith(
+    "externalConversations/updatePolicy",
+    {
+      externalConversationId: "room-1",
+      teamChatAmbientEnabled: true,
+      teamChatRules: null,
+      automatedSenderPolicies: { B_GITHUB: { name: "GitHub", mode: "rollup", rollupHours: 6 } },
+    },
+    pinned,
+  );
   expect(back).toHaveBeenCalled();
 });
 
@@ -295,6 +311,7 @@ it("saves typed hours while the field still has focus", async () => {
     expect.objectContaining({
       automatedSenderPolicies: { B_GITHUB: { name: "GitHub", mode: "rollup", rollupHours: 12 } },
     }),
+    pinned,
   );
 });
 

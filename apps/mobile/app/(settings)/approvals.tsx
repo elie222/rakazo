@@ -18,7 +18,7 @@ import { SettingsGroup, SettingsRow } from "../../components/settings-group";
 import { mobileTokens } from "../../lib/appearance";
 import { native, useResolvedAppearance, useThemedStyles } from "../../lib/native";
 import { iosAtLeast } from "../../lib/native-controls";
-import { queryClient, rpcQuery, useSave } from "../../lib/query";
+import { queryClient, targetRpcQuery, useSave } from "../../lib/query";
 import { settingsTarget } from "../../lib/settings-target";
 import { useSideInsets } from "../../lib/side-insets";
 import { errorText } from "../../lib/user-error";
@@ -40,11 +40,9 @@ export default function ApprovalRules() {
   const colorScheme = useResolvedAppearance();
   const sideInsets = useSideInsets();
   const styles = useThemedStyles(createStyles);
-  // A Space override is read from and saved to that Space, else the selected one.
-  const overrideSpace = target.scope === "space" ? target.spaceId : undefined;
-  const rulesRead = rpcQuery("approvalRules/list", { scope }, overrideSpace);
+  const rulesRead = targetRpcQuery(target, "approvalRules/list", { scope });
   const rulesQuery = useQuery(rulesRead, queryClient);
-  const modeQuery = useQuery(rpcQuery("autoReview/get", { scope }, overrideSpace), queryClient);
+  const modeQuery = useQuery(targetRpcQuery(target, "autoReview/get", { scope }), queryClient);
   // Null until the first load lands.
   const rules = rulesQuery.data ?? null;
   // The approval mode, which decides which rules apply. Dims only once a fresh read confirms it,
@@ -67,7 +65,7 @@ export default function ApprovalRules() {
     queryClient.setQueryData(rulesRead.queryKey, (current) => current && update(current));
 
   const change = useSave({
-    spaceId: overrideSpace,
+    target,
     save: async ({ rule, action }: { rule: ActionApprovalRule; action: RuleAction }, send) => {
       // A read that started before a save never shows what it replaced.
       await queryClient.cancelQueries({ queryKey: rulesRead.queryKey });

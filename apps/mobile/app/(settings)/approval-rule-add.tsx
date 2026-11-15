@@ -9,7 +9,7 @@ import { LoadFailure } from "../../components/load-failure";
 import { SettingsGroup, SettingsRow } from "../../components/settings-group";
 import { mobileTokens } from "../../lib/appearance";
 import { native, useThemedStyles } from "../../lib/native";
-import { queryClient, rpcQuery, useSave } from "../../lib/query";
+import { queryClient, targetRpcQuery, useSave } from "../../lib/query";
 import { useScreenQuery } from "../../lib/screen-query";
 import { settingsTarget } from "../../lib/settings-target";
 import { useSideInsets } from "../../lib/side-insets";
@@ -28,8 +28,7 @@ export default function AddApprovalRule() {
   const navigation = useNavigation();
   const sideInsets = useSideInsets();
   const styles = useThemedStyles(createStyles);
-  const overrideSpace = target.scope === "space" ? target.spaceId : undefined;
-  const rulesRead = rpcQuery("approvalRules/list", { scope }, overrideSpace);
+  const rulesRead = targetRpcQuery(target, "approvalRules/list", { scope });
   // Shows the list the rules screen holds, and reads it again as the picker opens.
   const rulesQuery = useScreenQuery(rulesRead);
   const choices = useMemo(
@@ -38,7 +37,7 @@ export default function AddApprovalRule() {
   );
   const [query, setQuery] = useState("");
   const add = useSave({
-    spaceId: overrideSpace,
+    target,
     save: (choice: ApprovalRuleChoice, send) =>
       send("approvalRules/set", {
         scope,

@@ -38,13 +38,13 @@ import {
   SpaceAvailabilityPicker,
   useOwnSpaces,
 } from "../../components/space-availability";
-import { rpc } from "../../lib/api";
 import { mobileTokens } from "../../lib/appearance";
 import { loadLastBotId } from "../../lib/last-bot";
 import { native, useThemedStyles } from "../../lib/native";
 import { iosAtLeast } from "../../lib/native-controls";
 import type { PluginParams } from "../../lib/plugin-marketplace";
 import { sourceHref } from "../../lib/plugin-marketplace";
+import type { SaveSend } from "../../lib/query";
 import { queryClient, rpcQuery, useSave } from "../../lib/query";
 import { useScreenQuery } from "../../lib/screen-query";
 import { useSideInsets } from "../../lib/side-insets";
@@ -137,7 +137,10 @@ function PluginScreen() {
   const everywhere = reachesOtherSpaces(install?.availability, useOwnSpaces().length);
 
   const change = useSave({
-    save: (action: { key: string; failure: string; act: () => Promise<unknown> }) => action.act(),
+    save: (
+      action: { key: string; failure: string; act: (send: SaveSend) => Promise<unknown> },
+      send,
+    ) => action.act(send),
     stale: reads,
   });
   const pending = change.pending ? (change.input?.key ?? null) : null;
@@ -148,17 +151,17 @@ function PluginScreen() {
       : loadFailure
         ? errorText(loadFailure, t`Could not load plugin`)
         : null;
-  const run = (key: string, act: () => Promise<unknown>, failure: string) =>
+  const run = (key: string, act: (send: SaveSend) => Promise<unknown>, failure: string) =>
     change.run({ key, failure, act });
 
   /** The first part installs the plugin; later changes keep its pinned version. */
   const setParts = (key: string, next: PluginPart[], failure: string) =>
     run(
       key,
-      async () => {
-        if (install) await rpc("capabilities/pluginParts", { id: install.id, parts: next });
+      async (send) => {
+        if (install) await send("capabilities/pluginParts", { id: install.id, parts: next });
         else if (preview)
-          await rpc("capabilities/install", {
+          await send("capabilities/install", {
             kind: "plugin",
             name: preview.name,
             source: preview.pinnedSource ?? params.source,
@@ -184,10 +187,10 @@ function PluginScreen() {
     managedApp &&
     run(
       "header",
-      async () => {
+      async (send) => {
         const result = await connectCatalogItem(managedApp, connections, {
-          begin: (input) => rpc("connections/begin", input),
-          complete: (input) => rpc("connections/complete", input),
+          begin: (input) => send("connections/begin", input),
+          complete: (input) => send("connections/complete", input),
           openUrl: (url) => Linking.openURL(url),
           signal: new AbortController().signal,
         });
@@ -197,7 +200,7 @@ function PluginScreen() {
             t`Finish connecting in the browser, then refresh this page.`,
           );
         else if (botId)
-          void rpc("onboarding/appConnected", {
+          void send("onboarding/appConnected", {
             botId,
             provider: managedApp.slug,
             connectorId: managedApp.connectorId,
@@ -209,9 +212,9 @@ function PluginScreen() {
   const signIn = (server: McpServer) =>
     run(
       server.id,
-      async () => {
-        const { webUrl } = await rpc("integrationSetup/get");
-        const started = await rpc("mcp/oauth/begin", {
+      async (send) => {
+        const { webUrl } = await send("integrationSetup/get", undefined);
+        const started = await send("mcp/oauth/begin", {
           serverId: server.id,
           redirectUri: new URL("/mcp/oauth/callback", webUrl).toString(),
         });
@@ -226,7 +229,7 @@ function PluginScreen() {
   const enable = (server: McpServer) =>
     run(
       server.id,
-      () => rpc("mcp/assignments/approve", { botId, serverId: server.id }),
+      (send) => send("mcp/assignments/approve", { botId, serverId: server.id }),
       t`Could not enable tools`,
     );
 

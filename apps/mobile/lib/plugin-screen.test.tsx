@@ -21,8 +21,12 @@ vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   currentApiBase: () => "https://app.example.test",
   selectedSpaceId: () => "space-fixture",
-  captureApiRequestContext: async () => ({ apiBase: "https://app.example.test", headers: {} }),
-  rpc: (proc: string, input: unknown) => state.rpc(proc, input),
+  captureApiRequestContext: async (spaceId: string | null = "space-fixture") => ({
+    apiBase: "https://app.example.test",
+    sessionGeneration: 1,
+    headers: spaceId ? { "x-rakazo-space-id": spaceId } : {},
+  }),
+  rpc: (...call: unknown[]) => state.rpc(...call),
 }));
 vi.mock("./session", () => ({ currentSessionGeneration: () => 1 }));
 vi.mock("./app-foreground", () => ({ useAppForeground: () => true }));
@@ -176,6 +180,15 @@ async function press(label: string) {
   await settle();
 }
 
+/** What every write carries: the server, session and space its save was started in. */
+const pinned = {
+  requestContext: {
+    apiBase: "https://app.example.test",
+    sessionGeneration: 1,
+    headers: { "x-rakazo-space-id": "space-fixture" },
+  },
+};
+
 it("keeps an install that succeeded when the reload after it fails", async () => {
   await render();
   expect(headerLabel()).toBe("Connect");
@@ -185,6 +198,7 @@ it("keeps an install that succeeded when the reload after it fails", async () =>
   expect(state.rpc).toHaveBeenCalledWith(
     "capabilities/install",
     expect.objectContaining({ kind: "plugin", source: SOURCE, pluginParts: ["connector"] }),
+    pinned,
   );
   expect(container.textContent).toContain("Could not load plugin");
   expect(container.textContent).not.toContain("Could not install plugin");
@@ -212,10 +226,11 @@ it("keeps a connector enabled for the bot when the reload after it fails", async
   answers["mcp/assignments/approve"] = async () => ({});
   answers["mcp/servers/list"] = () => Promise.reject(new Error());
   await press("Use in this bot");
-  expect(state.rpc).toHaveBeenCalledWith("mcp/assignments/approve", {
-    botId: "bot-1",
-    serverId: "server-1",
-  });
+  expect(state.rpc).toHaveBeenCalledWith(
+    "mcp/assignments/approve",
+    { botId: "bot-1", serverId: "server-1" },
+    pinned,
+  );
   expect(container.textContent).toContain("Could not load plugin");
   expect(container.textContent).not.toContain("Could not enable tools");
 

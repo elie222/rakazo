@@ -10,6 +10,7 @@ import { resumeLiveNotifications } from "../../lib/live-notifications";
 import { native, useThemedStyles } from "../../lib/native";
 import { useSave } from "../../lib/query";
 import { loadSessionToken } from "../../lib/session";
+import { ACCOUNT_SETTINGS } from "../../lib/settings-target";
 import { useSideInsets } from "../../lib/side-insets";
 import type { UiLocale } from "../../lib/ui-locale";
 import { UI_LOCALES } from "../../lib/ui-locale";
@@ -20,7 +21,7 @@ export default function Language() {
   const locale = useUiLocale();
   const styles = useThemedStyles(createStyles);
   const change = useSave({
-    account: true,
+    target: ACCOUNT_SETTINGS,
     save: async (code: UiLocale, send) => {
       await setUiLocale(code);
       // Emails follow the app's language too; a failure leaves the next app start to save it.

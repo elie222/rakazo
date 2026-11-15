@@ -3,9 +3,10 @@ import type { RpcInput, RpcOutput, RpcPath } from "@rakazo/contracts";
 import type { DataTag, QueryFunction, QueryKey } from "@tanstack/react-query";
 import { QueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
-import type { RpcArgs } from "./api";
+import type { ApiRequestContext, RpcArgs } from "./api";
 import { captureApiRequestContext, currentApiBase, rpc, selectedSpaceId } from "./api";
 import { currentSessionGeneration } from "./session";
+import type { SettingsTarget } from "./settings-target";
 
 /**
  * Screens paint what they last saw and refresh it in the background, so reopening a settings
@@ -33,6 +34,16 @@ function sessionScope(): string[] {
 
 function spaceScope(spaceId?: string): string[] {
   return [...sessionScope(), `space:${spaceId ?? selectedSpaceId() ?? ""}`];
+}
+
+/**
+ * The scope of a pinned request, read from what the request itself carries: the server it goes
+ * to, the session it presents and the Space it names.
+ */
+function requestScope(context: ApiRequestContext, account: boolean): string {
+  const session = [`server:${context.apiBase}`, `session:${context.sessionGeneration}`];
+  const space = `space:${context.headers["x-rakazo-space-id"] ?? ""}`;
+  return (account ? session : [...session, space]).join("\n");
 }
 
 function scopedRpcQuery<P extends RpcPath>(
@@ -70,6 +81,20 @@ export function accountRpcQuery<P extends RpcPath>(proc: P, input?: RpcInput<P>)
 }
 
 /**
+ * One rpc read of what a settings screen edits: the named Space's copy, or the account's, which is
+ * the same whichever Space is selected.
+ */
+export function targetRpcQuery<P extends RpcPath>(
+  target: SettingsTarget,
+  proc: P,
+  input?: RpcInput<P>,
+) {
+  return target.scope === "space"
+    ? rpcQuery(proc, input, target.spaceId)
+    : accountRpcQuery(proc, input);
+}
+
+/**
  * The read behind a form, kept apart from every other reader of the same data: sent again each
  * time the screen opens and dropped when it leaves. A draft then starts from what is saved now,
  * never from an earlier visit's copy or one another screen cached.
@@ -95,18 +120,21 @@ export type SaveSend = <P extends RpcPath>(proc: P, input: RpcInput<P>) => Promi
  * `pending` is set by the same update as the tap and lasts until those reads are back, so a
  * control never offers the old state in between. `run` does nothing while a save is in flight,
  * even for a second tap in the same tick.
- * A save belongs to the server, session and Space it was started for: the `spaceId` the screen
- * names, else the Space selected at the tap, or no Space for `account`. `send` writes there and
- * nowhere else, and the save holds the controls and reports for as long as the screen shows that
- * Space, whatever is selected meanwhile. Once the screen has gone or shows another server, session
- * or Space, a save that ends shows nothing and skips `onSaved` and `onFailed`.
+ * A save belongs to the server, session and Space it was started for: the Space selected at the
+ * tap, or the `target` the screen names. Its request context is pinned with the tap, and `send`
+ * writes with that context and nothing else: the address, the credentials and the scope the save
+ * is judged by are one thing, and a write is refused once they are no longer current. The save
+ * holds the controls and reports for as long as the screen shows that scope, whatever is selected
+ * meanwhile. Once the screen has gone or shows another server, session or Space, a save that ends
+ * shows nothing and skips `onSaved` and `onFailed`.
  */
 export function useSave<Input = void, Saved = unknown>(options: {
   save: (input: Input, send: SaveSend) => Promise<Saved>;
-  /** The Space the screen edits when it is not the selected one: the one its `rpcQuery` reads name. */
-  spaceId?: string;
-  /** The signed-in user's own data, the same in every space, as `accountRpcQuery` reads it. */
-  account?: boolean;
+  /**
+   * What the screen edits when it is not the selected Space: the Space its `rpcQuery` reads name,
+   * or the account, as `accountRpcQuery` and `targetRpcQuery` read it.
+   */
+  target?: SettingsTarget;
   stale?: readonly QueryKey[];
   onSaved?: (saved: Saved, input: Input) => unknown;
   /** For an alert or undoing an optimistic change; `error` is for showing the failure inline. */
@@ -114,8 +142,10 @@ export function useSave<Input = void, Saved = unknown>(options: {
   /** `onSaved` leaves the screen, so a success stays pending instead of offering the controls again. */
   closesScreen?: boolean;
 }) {
-  const { spaceId, account } = options;
-  const scopeKey = () => (account ? sessionScope() : spaceScope(spaceId)).join("\n");
+  const { target } = options;
+  const account = target?.scope === "account";
+  const namedSpace = target?.scope === "space" ? target.spaceId : undefined;
+  const scopeKey = () => (account ? sessionScope() : spaceScope(namedSpace)).join("\n");
   const [saves, setSaves] = useState<
     Record<string, { input: Input; pending: boolean; error: Error | null }>
   >({});
@@ -144,10 +174,18 @@ export function useSave<Input = void, Saved = unknown>(options: {
         inFlight.current.delete(scope);
         setSaves((now) => ({ ...now, [scope]: { input, pending: false, error } }));
       };
+      // Pinned in the tick `scope` was read in; an account save is sent with the Space selected now.
+      const pinned = captureApiRequestContext(namedSpace).then(
+        (requestContext) => ({ requestContext }),
+        (failure: Error) => ({ failure }),
+      );
       const send: SaveSend = async (proc, body) => {
-        if (scopeKey() !== scope) throw new Error(t`Something went wrong. Try again.`);
-        if (account || !spaceId) return rpc(proc, ...([body] as RpcArgs<typeof proc>));
-        const requestContext = await captureApiRequestContext(spaceId);
+        const pin = await pinned;
+        if ("failure" in pin) throw pin.failure;
+        const { requestContext } = pin;
+        const sent = requestScope(requestContext, account);
+        if (sent !== scope || sent !== scopeKey())
+          throw new Error(t`Something went wrong. Try again.`);
         return rpc(proc, ...([body, { requestContext }] as RpcArgs<typeof proc>));
       };
       void (async () => {

@@ -22,6 +22,11 @@ vi.mock("./api", () => ({
   currentApiBase: () => "https://rakazo.test",
   rpc: vi.fn(async () => ({})),
   selectedSpaceId: () => scope.spaceId,
+  captureApiRequestContext: async (spaceId: string | null = scope.spaceId) => ({
+    apiBase: "https://rakazo.test",
+    sessionGeneration: 1,
+    headers: spaceId ? { "x-rakazo-space-id": spaceId } : {},
+  }),
 }));
 vi.mock("./session", () => ({
   currentSessionGeneration: () => 1,
@@ -68,6 +73,14 @@ vi.mock("react-native", () => {
   };
 });
 
+/** What every write carries: the server, session and space its save was started in. */
+const pinned = {
+  requestContext: {
+    apiBase: "https://rakazo.test",
+    sessionGeneration: 1,
+    headers: { "x-rakazo-space-id": "space-1" },
+  },
+};
 let container: HTMLDivElement;
 let root: Root;
 beforeEach(() => {
@@ -136,7 +149,7 @@ it.each(["ru", "de", "zh-TW"] as const)(
     });
     expect(i18n.getActiveUiLocale()).toBe(locale);
     expect(resumeLiveNotifications).toHaveBeenCalledWith("https://rakazo.test", "token", "space-1");
-    expect(rpc).toHaveBeenCalledExactlyOnceWith("preferences/update", { locale });
+    expect(rpc).toHaveBeenCalledExactlyOnceWith("preferences/update", { locale }, pinned);
     expectSelected(APP_LOCALE_LABELS[locale]);
     expect(row("English").getAttribute("aria-pressed")).toBe("false");
     expect([...container.querySelectorAll("button")].every((button) => !button.disabled)).toBe(

@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { act, createElement, useEffect } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
-import { beforeEach, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import AddApprovalRule from "../app/(settings)/approval-rule-add";
 import Approvals from "../app/(settings)/approvals";
 import { queryClient } from "./query";
@@ -48,7 +48,11 @@ vi.mock("./api", () => ({
   rpc: state.rpc,
   currentApiBase: () => "https://app.example.test",
   selectedSpaceId: () => state.selectedSpace,
-  captureApiRequestContext: async (spaceId: string) => ({ headers: { space: spaceId } }),
+  captureApiRequestContext: async (spaceId: string | null = state.selectedSpace) => ({
+    apiBase: "https://app.example.test",
+    sessionGeneration: 1,
+    headers: spaceId ? { "x-rakazo-space-id": spaceId } : {},
+  }),
 }));
 vi.mock("./session", () => ({ currentSessionGeneration: () => 1 }));
 vi.mock("./app-foreground", () => ({ useAppForeground: () => true }));
@@ -194,6 +198,14 @@ async function renderPicker() {
 }
 const tool = (label: string) =>
   [...container.querySelectorAll("span")].find((node) => node.textContent === label);
+/** What a request carries: the server and session it was started in, and the Space it names. */
+const pinnedTo = (spaceId: string) => ({
+  requestContext: {
+    apiBase: "https://app.example.test",
+    sessionGeneration: 1,
+    headers: { "x-rakazo-space-id": spaceId },
+  },
+});
 
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -266,16 +278,19 @@ it("moves and removes rules, keeping legacy category rules removable only", asyn
   expect(menuButton("Email", "Remove")).toBeDefined();
 
   await press(menuButton("example.com", "Blocked"));
-  expect(state.rpc).toHaveBeenCalledWith("approvalRules/set", {
-    scope: "account",
-    effect: "deny",
-    matchKind: "site",
-    matchValue: "example.com",
-  });
+  expect(state.rpc).toHaveBeenCalledWith(
+    "approvalRules/set",
+    { scope: "account", effect: "deny", matchKind: "site", matchValue: "example.com" },
+    pinnedTo("space-selected"),
+  );
   expect(rows()).toEqual(["Always allow: Send email", "Always ask: Email", "Blocked: example.com"]);
 
   await press(menuButton("Send email", "Remove"));
-  expect(state.rpc).toHaveBeenCalledWith("approvalRules/remove", { scope: "account", id: "tool" });
+  expect(state.rpc).toHaveBeenCalledWith(
+    "approvalRules/remove",
+    { scope: "account", id: "tool" },
+    pinnedTo("space-selected"),
+  );
   expect(rows()).toEqual(["Always ask: Email", "Blocked: example.com"]);
 });
 
@@ -302,10 +317,7 @@ it("dims every rule but blocks in Never ask, where only blocks apply", async () 
 it("edits a Space's own copy when opened with one", async () => {
   state.spaceId = "space-1";
   await render();
-  const spaceContext = {
-    signal: expect.any(AbortSignal),
-    requestContext: { headers: { space: "space-1" } },
-  };
+  const spaceContext = { signal: expect.any(AbortSignal), ...pinnedTo("space-1") };
   expect(state.rpc.mock.calls).toEqual([
     ["approvalRules/list", { scope: "space" }, spaceContext],
     ["autoReview/get", { scope: "space" }, spaceContext],
@@ -353,12 +365,11 @@ it("adds a tool from the picker, which searches and leaves out tools that have a
 
   await act(async () => state.search!.onChangeText({ nativeEvent: { text: "shel" } }));
   await press(tool("Shell"));
-  expect(state.rpc).toHaveBeenCalledWith("approvalRules/set", {
-    scope: "account",
-    effect: "require_approval",
-    matchKind: "tool",
-    matchValue: "shell",
-  });
+  expect(state.rpc).toHaveBeenCalledWith(
+    "approvalRules/set",
+    { scope: "account", effect: "require_approval", matchKind: "tool", matchValue: "shell" },
+    pinnedTo("space-selected"),
+  );
   expect(state.router.back).toHaveBeenCalled();
 });
 
@@ -388,7 +399,7 @@ it("opens the rules after saving when the picker was the first screen", async ()
   expect(state.rpc).toHaveBeenCalledWith(
     "approvalRules/set",
     { scope: "space", effect: "require_approval", matchKind: "tool", matchValue: "shell" },
-    { requestContext: { headers: { space: "space-1" } } },
+    pinnedTo("space-1"),
   );
   expect(state.router.back).not.toHaveBeenCalled();
   expect(state.router.replace).toHaveBeenCalledWith({
@@ -562,68 +573,69 @@ it("shows no error for a save that fails after the screen has gone", async () =>
   expect(container.querySelector("span[data-dimmed]")).toBeNull();
 });
 
-it.each([
+const outcomes = [
   ["succeeds", undefined],
   ["fails", new Error("offline")],
-])("leaves another space's rules alone when a save %s after the switch", async (_how, outcome) => {
-  state.rules = [rule({ id: "site", matchKind: "site", matchValue: "example.com" })];
-  await render();
-  const finish = holdSave();
-  await press(menuButton("example.com", "Blocked"));
-  state.selectedSpace = "space-elsewhere";
-  await render();
-  expect(container.querySelector("span[data-dimmed]")).toBeNull();
+] as const;
+// Neither belongs to the selected space, so selecting another one leaves their saves alone.
+const owners = [
+  ["the account's", undefined],
+  ["a named Space's", "space-1"],
+] as const;
 
-  await act(async () => finish(outcome));
-  expect(rows()).toEqual(["Always allow: example.com"]);
-  expect(container.textContent).not.toContain("Could not save that preference");
+describe.each(owners)("%s rules", (_owner, spaceId) => {
+  beforeEach(() => {
+    state.spaceId = spaceId;
+  });
+
+  it("are read once, whichever space is selected", async () => {
+    state.rules = [rule({ id: "tool", matchValue: "send_email" })];
+    await render();
+    const reads = state.rpc.mock.calls.length;
+    state.selectedSpace = "space-elsewhere";
+    await render();
+    expect(rows()).toEqual(["Always allow: Send email"]);
+    expect(state.rpc.mock.calls).toHaveLength(reads);
+  });
+
+  it.each(outcomes)(
+    "stay held for a save that %s after another space was selected, and show how it ended",
+    async (_how, outcome) => {
+      state.rules = [
+        rule({ id: "tool", matchValue: "send_email" }),
+        rule({ id: "site", matchKind: "site", matchValue: "example.com" }),
+      ];
+      await render();
+      const finish = holdSave();
+      await press(menuButton("example.com", "Blocked"));
+      state.selectedSpace = "space-elsewhere";
+      await render();
+      expect(container.querySelectorAll("span[data-dimmed]")).toHaveLength(2);
+      await press(menuButton("Send email", "Remove"));
+      expect(saves()).toHaveLength(1);
+
+      await act(async () => finish(outcome));
+      expect(container.querySelector("span[data-dimmed]")).toBeNull();
+      if (outcome) expect(container.textContent).toContain("Could not save that preference");
+      else expect(rows()).toEqual(["Always allow: Send email", "Blocked: example.com"]);
+    },
+  );
+
+  it.each(outcomes)(
+    "hold the picker for a save that %s after another space was selected, which then leaves or says why",
+    async (_how, outcome) => {
+      await renderPicker();
+      const finish = holdSave();
+      await press(tool("Shell"));
+      state.selectedSpace = "space-elsewhere";
+      await renderPicker();
+      expect(container.querySelectorAll("span:not([data-disabled])")).toHaveLength(0);
+      await press(tool("Write file"));
+      expect(saves()).toHaveLength(1);
+
+      await act(async () => finish(outcome));
+      expect(state.router.back).toHaveBeenCalledTimes(outcome ? 0 : 1);
+      if (outcome) expect(container.textContent).toContain("Could not save that preference");
+    },
+  );
 });
-
-it.each([
-  ["succeeds", undefined],
-  ["fails", new Error("offline")],
-])(
-  "holds a named Space's rules for a save that %s after another space was selected, and shows how it ended",
-  async (_how, outcome) => {
-    state.spaceId = "space-1";
-    state.rules = [
-      rule({ id: "tool", matchValue: "send_email" }),
-      rule({ id: "site", matchKind: "site", matchValue: "example.com" }),
-    ];
-    await render();
-    const finish = holdSave();
-    await press(menuButton("example.com", "Blocked"));
-    state.selectedSpace = "space-elsewhere";
-    await render();
-    expect(container.querySelectorAll("span[data-dimmed]")).toHaveLength(2);
-    await press(menuButton("Send email", "Remove"));
-    expect(saves()).toHaveLength(1);
-
-    await act(async () => finish(outcome));
-    expect(container.querySelector("span[data-dimmed]")).toBeNull();
-    if (outcome) expect(container.textContent).toContain("Could not save that preference");
-    else expect(rows()).toEqual(["Always allow: Send email", "Blocked: example.com"]);
-  },
-);
-
-it.each([
-  ["succeeds", undefined],
-  ["fails", new Error("offline")],
-])(
-  "holds a named Space's picker for a save that %s after another space was selected, then leaves or says why",
-  async (_how, outcome) => {
-    state.spaceId = "space-1";
-    await renderPicker();
-    const finish = holdSave();
-    await press(tool("Shell"));
-    state.selectedSpace = "space-elsewhere";
-    await renderPicker();
-    expect(container.querySelectorAll("span:not([data-disabled])")).toHaveLength(0);
-    await press(tool("Write file"));
-    expect(saves()).toHaveLength(1);
-
-    await act(async () => finish(outcome));
-    expect(state.router.back).toHaveBeenCalledTimes(outcome ? 0 : 1);
-    if (outcome) expect(container.textContent).toContain("Could not save that preference");
-  },
-);
