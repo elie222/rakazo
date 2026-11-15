@@ -10,6 +10,7 @@ import {
   databaseOutage,
   RunHistoryWriteError,
   readRunTimingFields,
+  retryWhileDatabaseUnavailable,
   settleReleasedTakeoverCards,
 } from "@rakazo/db";
 import { enrichLogContext, getLogger } from "@rakazo/logging";
@@ -92,14 +93,52 @@ export async function findContinuableRun(
 type ContinuableRun = NonNullable<Awaited<ReturnType<typeof findContinuableRun>>>;
 
 export async function claimRunAttempt(deps: ExecutorDeps, run: ContinuableRun, workerId: string) {
-  const runId = run.id;
   const takeover = takeoverContinuePlan(run);
-  const { resumeCheckpoint, heldForTakeover, takeoverResume } = takeover;
-
   const claimed = await claimRun(deps, run, workerId);
   if (!claimed) return;
+  const claim = { run, runId: run.id, workerId, ...claimed, takeover };
+  let started: Awaited<ReturnType<typeof startClaimedAttempt>>;
+  let setupFailure: { error: unknown } | undefined;
+  try {
+    started = await startClaimedAttempt(deps, claim);
+    if (!started) return;
+  } catch (error) {
+    // Nothing renews or releases the claim yet; an attempt lets the caller retry a failed setup.
+    setupFailure = { error };
+    started = {
+      computerLease: null,
+      // The failed write may have committed with its reply lost; a second row would stay running.
+      attempt: await retryWhileDatabaseUnavailable(
+        async () =>
+          (await deps.prisma.attempt.findFirst({
+            where: { runId: run.id, fence: claimed.fence },
+          })) ??
+          (await deps.prisma.attempt.create({
+            data: { runId: run.id, fence: claimed.fence, status: "running" },
+          })),
+        { source: "run setup", signal: deps.shutdownSignal },
+      ),
+      executionStartedAt: claimed.current.startedAt ?? new Date(),
+      firstLateSince: undefined,
+    };
+  }
+  return { ...claim, ...started, setupFailure };
+}
+
+type ClaimedRun = NonNullable<Awaited<ReturnType<typeof claimRun>>> & {
+  run: ContinuableRun;
+  runId: string;
+  workerId: string;
+  takeover: TakeoverContinuePlan;
+};
+
+/** Undefined when the run went back to waiting for its computer, or a newer claim owns it. */
+async function startClaimedAttempt(
+  deps: ExecutorDeps,
+  { run, runId, workerId, fence, current, takeover }: ClaimedRun,
+) {
+  const { resumeCheckpoint, heldForTakeover, takeoverResume } = takeover;
   await deps.events.publishSpaceChange?.(run.spaceId, "runs");
-  const { fence, current } = claimed;
   const leaseTarget = await deps.prisma.bot.findUniqueOrThrow({
     where: { id: run.botId },
     select: {
@@ -216,18 +255,7 @@ export async function claimRunAttempt(deps: ExecutorDeps, run: ContinuableRun, w
     await releaseComputerExecutionLease(deps.prisma, computerLease).catch(() => undefined);
     throw error;
   }
-  return {
-    run,
-    runId,
-    workerId,
-    fence,
-    current,
-    computerLease,
-    attempt,
-    executionStartedAt,
-    firstLateSince,
-    takeover,
-  };
+  return { computerLease, attempt, executionStartedAt, firstLateSince };
 }
 
 type RunClaim = NonNullable<Awaited<ReturnType<typeof claimRunAttempt>>>;
