@@ -19,13 +19,18 @@ const actor: Actor = {
 
 function mount(
   parseWebhook: BillingProvider["parseWebhook"],
-  options: { sync?: () => Promise<void>; actor?: Actor | null } = {},
+  options: {
+    sync?: () => Promise<void>;
+    reportPartnerSales?: () => Promise<void>;
+    actor?: Actor | null;
+  } = {},
 ) {
   const sync = vi.fn(options.sync ?? (async () => undefined));
+  const reportPartnerSales = vi.fn(options.reportPartnerSales ?? (async () => undefined));
   const syncForActor = vi.fn(async () => undefined);
   const app = new Hono();
   mountBillingRoutes(app, {
-    billing: { sync, syncForActor } as unknown as BillingService,
+    billing: { sync, syncForActor, reportPartnerSales } as unknown as BillingService,
     provider: { parseWebhook },
     webOrigin: "https://app.example.com",
     authenticate: async () => (options.actor === undefined ? actor : options.actor),
@@ -76,6 +81,16 @@ describe("billing webhook", () => {
     const { app } = mount(() => ({ customerId: "cus_1" }), {
       sync: async () => {
         throw new Error("provider unavailable");
+      },
+    });
+    const res = await app.request(BILLING_WEBHOOK_PATH, post("{}"));
+    expect(res.status).toBe(500);
+  });
+
+  it("fails the delivery so the provider retries when a partner withdrawal fails", async () => {
+    const { app } = mount(() => ({ customerId: "cus_1" }), {
+      reportPartnerSales: async () => {
+        throw new Error("partner program unavailable");
       },
     });
     const res = await app.request(BILLING_WEBHOOK_PATH, post("{}"));

@@ -33,6 +33,13 @@ export function mountBillingRoutes(
       getLogger().error("billing webhook sync failed", error);
       return c.json({ error: "Sync failed" }, 500);
     }
+    try {
+      await deps.billing.reportPartnerSales(parsed.customerId);
+    } catch (error) {
+      // A partner payout on a refunded payment is money lost, so the delivery is retried.
+      getLogger().error("partner program withdrawal failed", error);
+      return c.json({ error: "Partner program sync failed" }, 500);
+    }
     return c.json({ ok: true });
   });
 

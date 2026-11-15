@@ -332,7 +332,7 @@ it("keeps the partner link click a signup came from and reports the signup to th
   const partnerProgram = {
     trackSignup: vi.fn(async () => undefined),
     trackSale: vi.fn(async () => undefined),
-    refundSale: vi.fn(async () => undefined),
+    refundSale: vi.fn(async () => "withdrawn" as const),
   };
   const f = fixture({ partnerProgram });
   const response = await f.auth.handler(

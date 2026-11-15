@@ -4,6 +4,8 @@ import { z } from "zod";
 
 const API = "https://api.dub.co";
 const TIMEOUT_MS = 10_000;
+/** Commission states that will never be paid out, so there is nothing left to withdraw. */
+const SETTLED_WITHOUT_PAYOUT = new Set(["refunded", "canceled", "duplicate", "fraud"]);
 
 /** The affiliate program on Dub; enabled by `DUB_API_KEY`. */
 export function createDubPartnerProgram(
@@ -51,12 +53,19 @@ export function createDubPartnerProgram(
       const commissions = z
         .array(z.object({ id: z.string(), status: z.string() }))
         .parse(await request("GET", `/commissions?invoiceId=${encodeURIComponent(invoiceId)}`));
+      if (!commissions.length) return "not_found";
+      let paidOut = false;
       for (const commission of commissions) {
-        if (commission.status === "refunded") continue;
+        if (SETTLED_WITHOUT_PAYOUT.has(commission.status)) continue;
+        if (commission.status === "paid") {
+          paidOut = true;
+          continue;
+        }
         await request("PATCH", `/commissions/${encodeURIComponent(commission.id)}`, {
           status: "refunded",
         });
       }
+      return paidOut ? "already_paid" : "withdrawn";
     },
   };
 }

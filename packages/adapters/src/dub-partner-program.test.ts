@@ -13,7 +13,9 @@ function program(responses: Record<string, unknown> = {}) {
       auth: new Headers(init?.headers).get("authorization"),
     });
     const response = responses[`${init?.method} ${path}`];
-    return response instanceof Response ? response : Response.json(response ?? {});
+    return response instanceof Response
+      ? response
+      : Response.json(response ?? (path.startsWith("/commissions?") ? [] : {}));
   });
   return { program: createDubPartnerProgram("dub_fixture", fetchImpl as typeof fetch), requests };
 }
@@ -64,22 +66,29 @@ describe("Dub partner program", () => {
     });
   });
 
-  it("marks the invoice's open commissions refunded", async () => {
+  it("withdraws the invoice's unpaid commissions", async () => {
     const { program: dub, requests } = program({
       "GET /commissions?invoiceId=in_1": [
-        { id: "cm_open", status: "pending" },
+        { id: "cm_pending", status: "pending" },
+        { id: "cm_processed", status: "processed" },
         { id: "cm_done", status: "refunded" },
+        { id: "cm_canceled", status: "canceled" },
       ],
     });
-    await dub.refundSale("in_1");
-    expect(requests.slice(1)).toEqual([
-      {
-        method: "PATCH",
-        path: "/commissions/cm_open",
-        auth: "Bearer dub_fixture",
-        body: { status: "refunded" },
-      },
+    expect(await dub.refundSale("in_1")).toBe("withdrawn");
+    expect(requests.slice(1).map(({ method, path, body }) => [method, path, body])).toEqual([
+      ["PATCH", "/commissions/cm_pending", { status: "refunded" }],
+      ["PATCH", "/commissions/cm_processed", { status: "refunded" }],
     ]);
+  });
+
+  it("says when there is nothing yet to withdraw, or it was already paid out", async () => {
+    expect(await program().program.refundSale("in_none")).toBe("not_found");
+    const { program: dub, requests } = program({
+      "GET /commissions?invoiceId=in_paid": [{ id: "cm_paid", status: "paid" }],
+    });
+    expect(await dub.refundSale("in_paid")).toBe("already_paid");
+    expect(requests).toHaveLength(1);
   });
 
   it("accepts a write that succeeds with an empty body", async () => {

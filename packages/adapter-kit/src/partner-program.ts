@@ -18,6 +18,10 @@ export interface PartnerProgram {
     amountCents: number;
     currency: string;
   }): Promise<void>;
-  /** Withdraws the partner's earnings on a payment that was refunded or disputed. */
-  refundSale(invoiceId: string): Promise<void>;
+  /**
+   * Withdraws the partner's earnings on a payment that was refunded or lost to a dispute. Says
+   * `not_found` when the program has no earnings for it yet, and `already_paid` when they were paid
+   * out before the refund and must be recovered by hand.
+   */
+  refundSale(invoiceId: string): Promise<"withdrawn" | "not_found" | "already_paid">;
 }

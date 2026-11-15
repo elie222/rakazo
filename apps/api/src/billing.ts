@@ -61,7 +61,7 @@ import {
   syncBillingSnapshot,
   unexpiredCreditAccount,
 } from "@rakazo/db";
-import { bestEffort, getLogger } from "@rakazo/logging";
+import { getLogger } from "@rakazo/logging";
 import { applyAccessGrants } from "./access-grants.js";
 import { createExperiments } from "./experiments.js";
 import { createPartnerSales } from "./partner-sales.js";
@@ -115,6 +115,11 @@ export interface BillingService {
   changeTier(actor: Actor, tier: ByokTier): Promise<void>;
   /** Re-fetches the customer's subscription from the provider and overwrites the stored snapshot. */
   sync(customerId: string): Promise<void>;
+  /**
+   * Reports the customer's plan payments to the partner program and withdraws reversed ones, also
+   * for a customer whose organization was deleted. Rejects only when a withdrawal failed.
+   */
+  reportPartnerSales(customerId: string): Promise<void>;
   /** Syncs the actor's organization, e.g. on return from checkout before the webhook lands. */
   syncForActor(actor: Actor): Promise<void>;
   /** Pushes the organization's member count to the provider. Call when members change. */
@@ -263,12 +268,6 @@ export function createBillingService(deps: {
       }
     }
     const previous = await prisma.billingAccount.findUnique({ where: { customerId } });
-    // Also for a customer whose organization was deleted, so a later refund still withdraws its
-    // commission. Never holds up the sync; a missed report is retried by the next one.
-    void bestEffort(
-      "partner program sales report",
-      partnerSales.report(customerId, previous?.organizationId ?? null),
-    );
     // Assigned in the callback, which control-flow narrowing does not follow.
     let snapshot = null as BillingSubscriptionSnapshot | null;
     const written = await syncBillingSnapshot(prisma, customerId, async () => {
@@ -889,6 +888,13 @@ export function createBillingService(deps: {
     },
 
     sync,
+    async reportPartnerSales(customerId) {
+      const account = await prisma.billingAccount.findUnique({
+        where: { customerId },
+        select: { organizationId: true },
+      });
+      await partnerSales.report(customerId, account?.organizationId ?? null);
+    },
 
     async syncForActor(actor) {
       const { organizationId } = await organization(actor);

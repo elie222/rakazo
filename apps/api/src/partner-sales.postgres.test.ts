@@ -45,7 +45,9 @@ dbTests("partner program sales", () => {
     return {
       trackSignup: vi.fn(async () => {}),
       trackSale: vi.fn(async (_sale: Parameters<PartnerProgram["trackSale"]>[0]) => {}),
-      refundSale: vi.fn(async () => {}),
+      refundSale: vi.fn(
+        async (_invoiceId: string): ReturnType<PartnerProgram["refundSale"]> => "withdrawn",
+      ),
     } satisfies PartnerProgram;
   }
 
@@ -149,6 +151,64 @@ dbTests("partner program sales", () => {
     expect(program.trackSale).toHaveBeenCalledWith(
       expect.objectContaining({ customerId: founded, invoiceId: payment.invoiceId }),
     );
+  });
+
+  it("retries a withdrawal until the program has the earnings to withdraw", async () => {
+    const organizationId = await organization("early-refund", "click_9");
+    const program = fakeProgram();
+    let payments = [paid("in_early_refund")];
+    const sales = createPartnerSales({
+      prisma,
+      program,
+      provider: { listPlanPayments: async () => payments },
+    });
+    await sales.report("cus_early_refund", organizationId);
+    payments = payments.map((payment) => ({ ...payment, reversed: true }));
+    program.refundSale.mockResolvedValueOnce("not_found");
+    await expect(sales.report("cus_early_refund", organizationId)).rejects.toThrow(
+      "withdrawals failed",
+    );
+    await sales.report("cus_early_refund", organizationId);
+    await sales.report("cus_early_refund", organizationId);
+    expect(program.refundSale).toHaveBeenCalledTimes(2);
+  });
+
+  it("fails the run when a withdrawal fails, but still reports other payments", async () => {
+    const organizationId = await organization("withdrawal-down", "click_10");
+    const program = fakeProgram();
+    let payments = [paid("in_to_refund")];
+    const sales = createPartnerSales({
+      prisma,
+      program,
+      provider: { listPlanPayments: async () => payments },
+    });
+    await sales.report("cus_withdrawal_down", organizationId);
+    const renewal = paid("in_renewal_meanwhile");
+    payments = [{ ...payments[0]!, reversed: true }, renewal];
+    program.refundSale.mockRejectedValueOnce(new Error("unavailable"));
+    await expect(sales.report("cus_withdrawal_down", organizationId)).rejects.toThrow(
+      "withdrawals failed",
+    );
+    expect(program.trackSale).toHaveBeenLastCalledWith(
+      expect.objectContaining({ invoiceId: renewal.invoiceId }),
+    );
+  });
+
+  it("stops withdrawing a payout already made, leaving it to be recovered by hand", async () => {
+    const organizationId = await organization("paid-out", "click_11");
+    const program = fakeProgram();
+    let payments = [paid("in_paid_out")];
+    const sales = createPartnerSales({
+      prisma,
+      program,
+      provider: { listPlanPayments: async () => payments },
+    });
+    await sales.report("cus_paid_out", organizationId);
+    payments = payments.map((payment) => ({ ...payment, reversed: true }));
+    program.refundSale.mockResolvedValueOnce("already_paid");
+    await sales.report("cus_paid_out", organizationId);
+    await sales.report("cus_paid_out", organizationId);
+    expect(program.refundSale).toHaveBeenCalledTimes(1);
   });
 
   it("leaves organizations whose owner did not come from a partner alone", async () => {
