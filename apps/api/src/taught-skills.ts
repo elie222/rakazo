@@ -3,7 +3,6 @@ import { ORPCError } from "@orpc/server";
 import type { AgentHomeStore, JobPublisher, SandboxProvider } from "@rakazo/adapter-kit";
 import {
   createAdapterContext,
-  runContinueJob,
   skillTeachingExpireJob,
   skillTeachingExpireJobKey,
 } from "@rakazo/adapter-kit";
@@ -28,6 +27,7 @@ import {
   releaseTeachingComputerControlForBot,
   sandboxKindCapabilities,
   screenLeaseIdForRun,
+  wakeRun,
 } from "@rakazo/adapters";
 import type { Actor, MessageBlock, TaughtSkill } from "@rakazo/contracts";
 import type { SkillPlaybook, TeachRecordingEvent } from "@rakazo/core";
@@ -555,7 +555,7 @@ export function createTaughtSkillsService(deps: TaughtSkillsDeps) {
           trigger: "skill",
         },
       });
-      await deps.jobs.enqueue(runContinueJob(run.id));
+      await wakeRun(deps.jobs, run.id);
       return { runId: run.id };
     },
 
