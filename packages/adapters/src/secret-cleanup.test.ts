@@ -1,4 +1,5 @@
 import type { BackgroundJob } from "@rakazo/adapter-kit";
+import { SecretNotFoundError } from "@rakazo/adapter-kit";
 import { describe, expect, it, vi } from "vitest";
 import type { SecretCleanup, SecretCleanupDeps } from "./secret-cleanup.js";
 import {
@@ -95,6 +96,26 @@ describe("secret cleanup", () => {
     await expect(finishSecretCleanup(f.deps, cleanup)).resolves.toBeUndefined();
     expect(f.jobs.cancel).not.toHaveBeenCalled();
     expect([...f.queued.values()]).toEqual([secretCleanupJob(cleanup)]);
+  });
+
+  it("keeps the backup of a reference other rows still hold, since another drop may own it", async () => {
+    const f = fixture();
+    f.prisma.secret.count.mockResolvedValue(1);
+    await recordSecretCleanup(f.deps, tx, anyRow);
+    await finishSecretCleanup(f.deps, anyRow);
+    expect(f.secrets.delete).not.toHaveBeenCalled();
+    expect(f.jobs.cancel).not.toHaveBeenCalled();
+    expect(f.queued.size).toBe(1);
+  });
+
+  it("stops at an entry the store refuses under this record, instead of retrying the refusal", async () => {
+    const f = fixture();
+    await recordSecretCleanup(f.deps, tx, cleanup);
+    f.secrets.delete.mockRejectedValue(new SecretNotFoundError());
+    await finishSecretCleanup(f.deps, cleanup);
+    expect(f.jobs.enqueue).not.toHaveBeenCalled();
+    expect(f.queued.size).toBe(0);
+    await expect(retrySecretCleanup(f.deps, cleanup)).resolves.toBeUndefined();
   });
 
   it("still does not reject when the queue is unreachable too", async () => {

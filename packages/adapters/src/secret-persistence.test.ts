@@ -399,6 +399,38 @@ describe("secret persistence cleanup with a queue", () => {
     }
   });
 
+  it("records nothing for a change that leaves the reference in place", async () => {
+    const { fake, store, db, queue, prisma } = await setup();
+    const kept = await store.put("kept", context, { recordId: "row" });
+    db.tables.get("secret")!.push({ id: "row", ciphertext: kept.ref });
+    try {
+      await prisma.secret.update({ where: { id: "row" }, data: { kind: "one-time-code" } });
+      expect(queue.jobs.enqueueIn).not.toHaveBeenCalled();
+      expect(queue.jobs.enqueue).not.toHaveBeenCalled();
+      expect(fake.values.size).toBe(1);
+    } finally {
+      await store.close();
+    }
+  });
+
+  it("hands a write to the job when its rows cannot be read, cancelling no backup", async () => {
+    const { fake, store, db, queue, prisma, worker } = await setup();
+    const written = await store.put("written", context, { recordId: "row" });
+    const count = vi.spyOn(db.prisma.secret, "count");
+    try {
+      count.mockRejectedValueOnce(new Error("database unavailable"));
+      await prisma.secret.create({ data: { ...secretFields, ciphertext: written.ref } });
+      expect(queue.jobs.cancel).not.toHaveBeenCalled();
+      expect(queue.cleanups()).toEqual([{ ...dropped("row", written.ref), due: true }]);
+
+      await queue.runQueued(worker);
+      expect(fake.values.size).toBe(1);
+      await expect(store.load(written.ref, "row")).resolves.toBe("written");
+    } finally {
+      await store.close();
+    }
+  });
+
   it("retries removing a write its transaction rolled back", async () => {
     const { fake, store, queue, prisma, worker } = await setup();
     const unsaved = await store.put("unsaved", context, { recordId: "row" });

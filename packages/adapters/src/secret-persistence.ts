@@ -9,6 +9,7 @@ import {
   finishSecretCleanup,
   recordSecretCleanup,
   retrySecretCleanup,
+  secretCleanupJob,
   secretIsHeld,
 } from "./secret-cleanup.js";
 
@@ -24,6 +25,15 @@ type Jobs = SecretCleanupDeps["jobs"];
 /** The queue that retries a failed delete, once the process has built it. */
 export type SecretCleanupJobs = () => Jobs | undefined;
 const cleanupJobs = new WeakMap<object, SecretCleanupJobs>();
+
+/** Whether a mutation can leave a row without the reference it holds: a delete, or a new one. */
+function dropsReference(operation: string, input: Mutation): boolean {
+  if (operation.startsWith("create")) return false;
+  if (operation.startsWith("delete")) return true;
+  return [input.data, input.update]
+    .flat()
+    .some((value) => value !== undefined && "ciphertext" in value);
+}
 
 function cleanupOf(row: Candidate): SecretCleanup {
   return { kind: "secret_tables", recordId: row.id, ref: row.ciphertext };
@@ -50,10 +60,19 @@ async function deleteUnreferenced(
       continue;
     }
     const deps = { prisma, secrets: store, jobs };
-    // Left alone rather than cancelled: a backup recorded for it reads the rows again when it runs.
-    if (await bestEffort("check whether a secret is still held", secretIsHeld(deps, cleanup)))
+    if (recorded?.has(cleanup.ref)) {
+      await finishSecretCleanup(deps, cleanup);
       continue;
-    if (recorded?.has(cleanup.ref)) await finishSecretCleanup(deps, cleanup);
+    }
+    // A write its row holds needs no job at all, which is nearly every write.
+    const held = await bestEffort(
+      "check whether a written secret is held",
+      secretIsHeld(deps, cleanup),
+    );
+    if (held) continue;
+    // Not knowing is not "unheld": the job reads the rows again.
+    if (held === undefined)
+      await bestEffort("retry secret cleanup", jobs.enqueue(secretCleanupJob(cleanup)));
     else await cleanUpUnsavedSecret(deps, cleanup);
   }
 }
@@ -170,7 +189,8 @@ export function withSecretPersistence(
   ): Promise<void> {
     if (model in secretTables) {
       trackWrites(state, model, input);
-      if (!operation.startsWith("create")) {
+      // A change that leaves the reference in place has nothing to clean up after it.
+      if (dropsReference(operation, input)) {
         const old = await lockedRows(state, model, input.where);
         await dropping(
           state,
