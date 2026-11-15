@@ -111,7 +111,9 @@ export class GraphileJobPublisher implements JobPublisher {
       job.name,
       JSON.stringify(wrapJobPayload(job.payload)),
       job.queueName ?? null,
-      job.availableAt ?? null,
+      // As text with its zone: a Date is sent as UTC wall-clock time with none, which a database
+      // session in another time zone reads as local time.
+      job.availableAt?.toISOString() ?? null,
       job.maxAttempts ?? null,
       job.replaceKey ?? null,
     );
