@@ -2,6 +2,7 @@ import type { RunStatus } from "@rakazo/contracts";
 import { RUN_TRIGGERS, RunStatus as RunStatusSchema } from "@rakazo/contracts";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
+import { isRunTerminalEvent } from "./events.js";
 import { canTransition, isActive, isBackgroundRunTrigger, isTerminal } from "./run-state.js";
 import type {
   LiveThreadMessage,
@@ -18,6 +19,11 @@ import {
 const RUN_IDS = ["run-1", "run-2", "run-3"] as const;
 const BOT_IDS = ["bot-1", "bot-2"] as const;
 const CREATED_AT = "2026-08-16T00:00:00.000Z";
+const RUN_ACTIVATING_EVENTS = new Set([
+  "run.started",
+  "run.waiting_input",
+  "computer.takeover.requested",
+]);
 
 const runId = fc.constantFrom(...RUN_IDS);
 const scope = fc.record(
@@ -163,6 +169,24 @@ const reachedSnapshot = fc
   .tuple(baseSnapshot, fc.array(anyEvent, { maxLength: 12 }))
   .map(([snapshot, events]) => apply(snapshot, inStreamOrder(snapshot, events)));
 
+/**
+ * A thread's events as its stream numbers them. A run that ended is not started or paused again
+ * here; a retry, which starts an ended run with a later number, is a separate case.
+ */
+function streamLog(snapshot: LiveThreadSnapshot, events: readonly ThreadSnapshotEvent[]) {
+  const ended = new Set<string>();
+  return inStreamOrder(
+    snapshot,
+    events.filter((event) => {
+      if (event.runId && ended.has(event.runId) && RUN_ACTIVATING_EVENTS.has(event.type)) {
+        return false;
+      }
+      if (event.runId && isRunTerminalEvent(event)) ended.add(event.runId);
+      return true;
+    }),
+  );
+}
+
 function next(snapshot: LiveThreadSnapshot, event: ThreadSnapshotEvent) {
   return inStreamOrder(snapshot, [event])[0] as ThreadSnapshotEvent;
 }
@@ -263,30 +287,39 @@ describe("reduceThreadSnapshot properties", () => {
     );
   });
 
-  it("applies a run, message, helper or clear event twice with the same result as once", () => {
+  it("applies any numbered event twice with the same result as once", () => {
     fc.assert(
-      fc.property(reachedSnapshot, settingEvent, (snapshot, event) => {
+      fc.property(reachedSnapshot, anyEvent, (snapshot, event) => {
         const applied = next(snapshot, event);
         const once = reduceThreadSnapshot(snapshot, applied);
-        expect(reduceThreadSnapshot(once, applied)).toEqual(once);
+        expect(reduceThreadSnapshot(once, applied)).toBe(once);
       }),
       { seed: 42, numRuns: 150 },
     );
   });
 
-  it("moves the cursor to each event of a stream in order and never backward", () => {
+  it("moves the cursor to each newer event and ignores one the snapshot already covers", () => {
     fc.assert(
-      fc.property(baseSnapshot, fc.array(anyEvent, { maxLength: 12 }), (snapshot, events) => {
-        let current = snapshot;
-        for (const event of inStreamOrder(snapshot, events)) {
-          const reduced = reduceThreadSnapshot(current, event) as LiveThreadSnapshot;
-          expect(reduced.cursor).toBe(event.seq);
-          const unnumbered = reduceThreadSnapshot(reduced, { ...event, seq: undefined });
-          expect(unnumbered?.cursor).toBe(event.seq);
-          current = reduced;
-        }
-      }),
-      { seed: 42, numRuns: 100 },
+      fc.property(
+        baseSnapshot,
+        fc.array(fc.tuple(anyEvent, fc.option(fc.nat(15), { nil: undefined })), { maxLength: 20 }),
+        (snapshot, deliveries) => {
+          let current = snapshot;
+          for (const [event, seq] of deliveries) {
+            const reduced = reduceThreadSnapshot(current, {
+              ...event,
+              seq,
+              threadId: current.threadId,
+            }) as LiveThreadSnapshot;
+            if (seq === undefined) expect(reduced.cursor).toBe(current.cursor);
+            else if (current.cursor === undefined || seq > current.cursor)
+              expect(reduced.cursor).toBe(seq);
+            else expect(reduced).toBe(current);
+            current = reduced;
+          }
+        },
+      ),
+      { seed: 42, numRuns: 150 },
     );
   });
 
@@ -300,28 +333,32 @@ describe("reduceThreadSnapshot properties", () => {
     );
   });
 
-  it("keeps an ended run ended through later events that neither start nor pause it", () => {
+  it("keeps an ended run ended, whichever events of its thread arrive late, twice or out of order", () => {
     fc.assert(
       fc.property(
         reachedSnapshot,
-        runId,
-        runEnded,
-        fc.array(anyEvent, { maxLength: 10 }),
-        (snapshot, ended, end, later) => {
-          const revives = (event: ThreadSnapshotEvent) =>
-            event.runId === ended &&
-            ["run.started", "run.waiting_input", "computer.takeover.requested"].includes(
-              event.type,
-            );
-          const events = [{ ...end, runId: ended }, ...later.filter((event) => !revives(event))];
+        fc.array(anyEvent, { minLength: 1, maxLength: 12 }),
+        fc.array(fc.nat(), { maxLength: 12 }),
+        (snapshot, events, redelivered) => {
+          const log = streamLog(snapshot, events);
+          const ended = new Set<string>();
           let current = snapshot;
-          for (const event of inStreamOrder(snapshot, events)) {
-            current = reduceThreadSnapshot(current, event) as LiveThreadSnapshot;
-            expect(runIsActive(current, ended)).toBe(false);
-          }
+          const deliver = (event: ThreadSnapshotEvent) => {
+            const reduced = reduceThreadSnapshot(current, event) as LiveThreadSnapshot;
+            if (reduced !== current && event.runId && isRunTerminalEvent(event)) {
+              ended.add(event.runId);
+            }
+            current = reduced;
+            for (const id of ended) expect(runIsActive(current, id)).toBe(false);
+          };
+          log.forEach((event, index) => {
+            deliver(event);
+            const again = redelivered[index];
+            if (again !== undefined) deliver(log[again % log.length] as ThreadSnapshotEvent);
+          });
         },
       ),
-      { seed: 42, numRuns: 150 },
+      { seed: 42, numRuns: 300 },
     );
   });
 
