@@ -1,12 +1,22 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import type { BackgroundJobHandlers, JobPublisher } from "@rakazo/adapter-kit";
 import { runContinueJob } from "@rakazo/adapter-kit";
+import { deferred, flush } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
 import { currentDbContext } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { InMemoryRealtimeFanout } from "./realtime.js";
 import { RunExecutionHost } from "./run-execution.js";
-import { RunJobPublisher, RunStarter, RunWorkerHost, withRunWorker } from "./run-wakeup.js";
+import {
+  drainRuns,
+  RUN_DRAIN_MS,
+  RunJobPublisher,
+  RunStarter,
+  RunWorkerHost,
+  withRunWorker,
+} from "./run-wakeup.js";
 
 afterEach(() => vi.useRealTimers());
 
@@ -642,4 +652,116 @@ describe("durable direct run wakeups", () => {
       await f.starter.stop();
     }
   });
+});
+
+describe("a stopping process's runs", () => {
+  it("gives the runs in flight the drain limit, counted from the stop", () => {
+    vi.useFakeTimers();
+    const stopping = new AbortController();
+    const drain = drainRuns(stopping.signal);
+
+    // Time before the stop is not part of the limit.
+    vi.advanceTimersByTime(RUN_DRAIN_MS * 2);
+    expect(drain.signal.aborted).toBe(false);
+
+    stopping.abort();
+    expect(drain.signal.aborted).toBe(false);
+    vi.advanceTimersByTime(RUN_DRAIN_MS - 1);
+    expect(drain.signal.aborted).toBe(false);
+    vi.advanceTimersByTime(1);
+    expect(drain.signal.aborted).toBe(true);
+    expect(drain.signal.reason).toBe(stopping.signal.reason);
+  });
+
+  it("counts the limit for a process that was already stopping", () => {
+    vi.useFakeTimers();
+    const stopping = new AbortController();
+    stopping.abort();
+    const drain = drainRuns(stopping.signal, 1_000);
+
+    vi.advanceTimersByTime(999);
+    expect(drain.signal.aborted).toBe(false);
+    vi.advanceTimersByTime(1);
+    expect(drain.signal.aborted).toBe(true);
+  });
+
+  it("stops the runs with the process when it has no drain limit", () => {
+    const stopping = new AbortController();
+    const drain = drainRuns(stopping.signal, 0);
+
+    expect(drain.signal.aborted).toBe(false);
+    stopping.abort();
+    expect(drain.signal.aborted).toBe(true);
+  });
+
+  it.each(["before the stop", "during the drain"])(
+    "stops the runs at once when the drain is ended %s",
+    (when) => {
+      vi.useFakeTimers();
+      const stopping = new AbortController();
+      const drain = drainRuns(stopping.signal, 1_000);
+      if (when === "during the drain") stopping.abort();
+
+      drain.end();
+      expect(drain.signal.aborted).toBe(true);
+
+      stopping.abort();
+      drain.end();
+      expect(vi.getTimerCount()).toBe(0);
+    },
+  );
+
+  it("starts and takes nothing once stopping, and waits for the run in flight", async () => {
+    const f = fixture();
+    const stopping = new AbortController();
+    const leaving = new RunStarter(f.realtime, { signal: stopping.signal });
+    const turn = deferred();
+    const entered: string[] = [];
+    leaving.attach({
+      "run.continue": async ({ runId }, execution) => {
+        entered.push(runId);
+        execution!.onRunStarted();
+        await turn.promise;
+      },
+    } as BackgroundJobHandlers);
+    const handedOff: string[] = [];
+    await f.realtime.subscribe("runs:ready", (runId) => {
+      handedOff.push(runId);
+    });
+    leaving.start("in-flight");
+    await vi.waitFor(() => expect(entered).toEqual(["in-flight"]));
+
+    stopping.abort();
+    let stopped = false;
+    const stop = leaving.stop().then(() => {
+      stopped = true;
+    });
+    // One made due here goes to the other processes; one they hand over is left to them.
+    leaving.start("made-due");
+    leaving.take("handed-over");
+    await vi.waitFor(() => expect(handedOff).toEqual(["made-due"]));
+    await flush();
+    expect(entered).toEqual(["in-flight"]);
+    expect(stopped).toBe(false);
+
+    turn.resolve();
+    await stop;
+    expect(entered).toEqual(["in-flight"]);
+  });
+
+  // Docker kills the worker once its stop_grace_period runs out; a run killed mid-turn waits for
+  // its lease to expire instead of being handed back.
+  it.each(["docker-compose.yml", "docker-compose.images.yml", "docker-compose.prod.yml"])(
+    "hands the runs back long before %s kills a stopping worker",
+    (file) => {
+      const compose = readFileSync(
+        path.resolve(import.meta.dirname, "../../../infra/compose", file),
+        "utf8",
+      );
+      const worker = compose.slice(compose.indexOf("\n  worker:\n") + 1);
+      const block = worker.slice(0, worker.search(/\n {2}[a-z]/));
+      const minutes = Number(/\n {4}stop_grace_period: (\d+)m\n/.exec(block)?.[1]);
+      expect(minutes * 60_000).toBeGreaterThanOrEqual(RUN_DRAIN_MS * 2);
+    },
+  );
 });

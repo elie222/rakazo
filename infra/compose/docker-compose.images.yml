@@ -576,6 +576,7 @@ services:
     environment:
       <<: *app-environment
       GRAPHILE_WORKER_CONCURRENCY:
+      RUN_DRAIN_ENABLED:
     volumes:
       - appdata:/data
     networks:
