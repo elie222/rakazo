@@ -449,7 +449,7 @@ export function useComputerControls({
     Boolean(computerError && !hideScreenLoadError && computerErrorFromScreen) ||
     screenMissing({
       state: computer?.state,
-      kind: computer?.kind,
+      runsOnUserMachine: computer?.runsOnUserMachine,
       booting,
       screenUrlLoaded: Boolean(computerBot?.id && screenUrlLoadedBotId === computerBot.id),
       embeddedUrl: embeddedScreenUrl,
@@ -529,13 +529,13 @@ export function useComputerControls({
     ) : null;
   const computerPreviewScreen =
     !computerOpen &&
-    computer?.kind !== "desktop" &&
+    !computer?.runsOnUserMachine &&
     computer?.state === "running" &&
     Boolean(embeddedScreenUrl) &&
     !computerScreenError;
   const showingRecoveryHint =
     !computerOpen &&
-    computer?.kind !== "desktop" &&
+    !computer?.runsOnUserMachine &&
     !computerPreviewScreen &&
     !computerScreenError &&
     showComputerRecoveryHint;

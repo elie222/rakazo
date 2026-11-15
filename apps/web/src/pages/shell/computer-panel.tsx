@@ -96,7 +96,7 @@ function ComputerPreview({
     !computerBooting &&
     !computerScreenError &&
     !showComputerRecoveryHint &&
-    computer?.kind !== "desktop" &&
+    !computer?.runsOnUserMachine &&
     (!computer || computer.state === "stopped" || computer.state === "suspended");
   if (idle) {
     return (
@@ -148,7 +148,7 @@ function ComputerPreview({
           >
             <Trans>Open in full window</Trans>
           </div>
-        ) : computer?.kind === "desktop" ? (
+        ) : computer?.runsOnUserMachine ? (
           <DesktopKindEmptyState
             className={`grid h-full place-items-center px-6 text-center text-body text-muted-foreground/80 ${hideOnHover}`}
           />

@@ -1271,7 +1271,8 @@ export const appContract = {
           /** The card's own message, so it is found however far back it is. */
           messageId: Id.optional(),
           provider: z.string(),
-          connectorId: z.string().default("composio"),
+          /** Omitted for the server's default connector. */
+          connectorId: z.string().optional(),
         }),
       )
       .output(z.object({ ok: z.literal(true) })),
@@ -1288,7 +1289,8 @@ export const appContract = {
     begin: oc
       .input(
         z.object({
-          connectorId: z.string().default("composio"),
+          /** Omitted for the server's default connector. */
+          connectorId: z.string().optional(),
           provider: z.string(),
           displayName: z.string(),
         }),

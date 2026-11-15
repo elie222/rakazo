@@ -1,4 +1,4 @@
-import type { ByokTier, ComputerSize, SandboxKind } from "@rakazo/contracts";
+import type { ByokTier, ComputerSize } from "@rakazo/contracts";
 import {
   BYOK_TIERS,
   byokTierPriceCents,
@@ -59,23 +59,22 @@ function creditPlanHours(cents: number) {
   return computerHours((cents * CREDITS_SANDBOX_ALLOWANCE_PERCENT) / 100);
 }
 
-/** Display names for every sandbox a self-hosted deployment can use; typed so a new kind must be named. */
-const SANDBOX_NAMES: Record<Exclude<SandboxKind, "none" | "desktop" | "fake">, string> = {
-  docker: "Docker",
-  kubernetes: "Kubernetes",
-  incus: "Incus",
-  boat: "Boat",
-  boxd: "Boxd",
-  createos: "CreateOS",
-  daytona: "Daytona",
-  e2b: "E2B",
-  instabox: "InstaBox",
-  novita: "Novita",
-  railway: "Railway",
-  wuying: "Wuying",
-  "local-vm": "Apple container",
-};
-const SANDBOX_PROVIDERS = Object.values(SANDBOX_NAMES);
+/** Display names for every sandbox a self-hosted deployment can use. */
+const SANDBOX_PROVIDERS = [
+  "Docker",
+  "Kubernetes",
+  "Incus",
+  "Boat",
+  "Boxd",
+  "CreateOS",
+  "Daytona",
+  "E2B",
+  "InstaBox",
+  "Novita",
+  "Railway",
+  "Wuying",
+  "Apple container",
+];
 
 const CREDITS_PRICE = `From ${dollars(MODEL_CREDIT_AMOUNTS[0])}/mo`;
 

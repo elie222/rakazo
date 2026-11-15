@@ -321,7 +321,7 @@ export async function markAppConnected(
   actor: Actor,
   botId: string,
   provider: string,
-  connectorId = "composio",
+  connectorId = deps.connectors.defaultConnectorId,
   threadId?: string,
   messageId?: string,
 ): Promise<void> {
@@ -380,7 +380,7 @@ export async function markAppConnected(
     const events = [];
     for (const message of messages) {
       const next = changeMessageBlocks(message, (block) =>
-        connectedAppBlock(block, connectorId, entry.slug),
+        connectedAppBlock(block, connectorId, entry.slug, deps.connectors.defaultConnectorId),
       );
       if (!next) continue;
       await tx.message.update({ where: { id: message.id }, data: { blocks: next.stored } });

@@ -7,6 +7,7 @@ import {
   storedMessageBlocks,
   THREAD_LOCK_TRANSACTION_OPTIONS,
 } from "@rakazo/db";
+import { DEFAULT_CONNECTOR_ID } from "./connector-registry.js";
 
 const RECENT_MESSAGES = 50;
 
@@ -71,7 +72,7 @@ export async function connectApp(
       recent.some((message) =>
         storedMessageBlocks(message).some(
           (candidate) =>
-            matchesAppConnection(candidate, entry.connectorId, entry.slug) &&
+            matchesAppConnection(candidate, entry.connectorId, entry.slug, DEFAULT_CONNECTOR_ID) &&
             candidate.status === "pending",
         ),
       )
