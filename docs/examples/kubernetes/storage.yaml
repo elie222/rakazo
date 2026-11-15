@@ -28,7 +28,6 @@ spec:
   resources:
     requests:
       storage: 30Gi
-
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
