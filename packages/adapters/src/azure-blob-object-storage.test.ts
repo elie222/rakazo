@@ -34,6 +34,7 @@ function fakeBlobService() {
       res.end(payload);
     };
     const comp = query.get("comp");
+    const stalled = name.endsWith("/stalled") || name === "stalled";
     requests.push(`${req.method} ${name ? "blob" : "container"}${comp ? `?${comp}` : ""}`);
     if (account !== "devstoreaccount1" || container !== "test-container")
       return send(404, "<Error><Code>ContainerNotFound</Code></Error>", {
@@ -49,7 +50,7 @@ function fakeBlobService() {
         body: Buffer.concat(ids.map((id) => staged.get(`${name}/${id}`)!)),
         lastModified: new Date(),
       });
-      for (const key of [...staged.keys()]) if (key.startsWith(`${name}/`)) staged.delete(key);
+      for (const id of ids) staged.delete(`${name}/${id}`);
       return send(201);
     }
     if (req.method === "PUT") {
@@ -80,6 +81,17 @@ function fakeBlobService() {
           .join("")}</Blobs><NextMarker>${next}</NextMarker></EnumerationResults>`,
         { "Content-Type": "application/xml" },
       );
+    }
+    if (req.method === "GET" && stalled) {
+      // Headers and the first bytes, then silence.
+      res.writeHead(200, {
+        "Content-Length": 1_000_000,
+        "x-ms-blob-type": "BlockBlob",
+        ETag: '"blob"',
+        "Last-Modified": new Date().toUTCString(),
+      });
+      res.write(Buffer.alloc(10));
+      return;
     }
     if (req.method === "GET") {
       const blob = blobs.get(name);
@@ -156,6 +168,41 @@ describe("AzureBlobObjectStorage", () => {
       "PUT blob?block",
       "PUT blob?blocklist",
     ]);
+  });
+
+  it("keeps concurrent uploads to one key apart", async () => {
+    const source = (byte: number) =>
+      (async function* () {
+        for (let index = 0; index < 33; index += 1) {
+          await new Promise((resolve) => setTimeout(resolve, 1));
+          yield Buffer.alloc(1024 * 1024, byte);
+        }
+      })();
+    const shared = storage("concurrent/");
+    await Promise.all([shared.put("k", source(1)), shared.put("k", source(2))]);
+    const stored = fake.blobs.get("concurrent/k")!.body;
+    expect(stored.length).toBe(33 * 1024 * 1024);
+    expect(new Set(stored).size).toBe(1);
+  });
+
+  it("fails a read whose body stops after the first bytes", async () => {
+    const quick = new AzureBlobObjectStorage(
+      {
+        container: "test-container",
+        account: "devstoreaccount1",
+        accountKey: Buffer.from("fake-account-key").toString("base64"),
+        endpoint,
+        prefix: "",
+      },
+      300,
+    );
+    await expect(
+      (async () => {
+        for await (const _chunk of quick.get("stalled")) {
+          // drain
+        }
+      })(),
+    ).rejects.toThrow();
   });
 
   it("commits nothing when the source fails", async () => {

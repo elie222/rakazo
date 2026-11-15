@@ -1,10 +1,12 @@
-import type { Readable } from "node:stream";
+import { randomUUID } from "node:crypto";
 import type * as AzureSdk from "@azure/storage-blob";
 import type { ObjectStorage } from "@rakazo/adapter-kit";
 import { objectStorageConnectionFromEnv, PART_BYTES, parts } from "./object-storage-common.js";
 
-/** Idle bound per attempt, so a store that stops answering fails instead of waiting for good. */
+/** Bounds each request attempt, from sending it to receiving its response headers. */
 const TRY_TIMEOUT_MS = 120_000;
+/** A read fails when its body sends nothing for this long, so a store that stops answering mid-body cannot hang a restore. */
+const IDLE_BODY_TIMEOUT_MS = 60_000;
 const DELETE_CONCURRENCY = 16;
 
 export interface AzureBlobObjectStorageConfig {
@@ -37,7 +39,10 @@ export function azureBlobConfigFromEnv(
 export class AzureBlobObjectStorage implements ObjectStorage {
   private container?: Promise<{ sdk: typeof AzureSdk; client: AzureSdk.ContainerClient }>;
 
-  constructor(private readonly config: AzureBlobObjectStorageConfig) {}
+  constructor(
+    private readonly config: AzureBlobObjectStorageConfig,
+    private readonly idleBodyMs = IDLE_BODY_TIMEOUT_MS,
+  ) {}
 
   /** The SDK loads on first use, so deployments without object storage never load it. */
   private connect() {
@@ -70,10 +75,14 @@ export class AzureBlobObjectStorage implements ObjectStorage {
         await blob.upload(bytes, bytes.length);
         return;
       }
-      // Uncommitted blocks are discarded by the service, so a failed upload needs no cleanup.
+      // Block ids are unique to this call, so concurrent uploads to one key never commit each other's blocks.
+      // The service discards uncommitted blocks, so a failed upload needs no cleanup.
+      const uploadId = randomUUID();
       const blockIds: string[] = [];
       const stage = async (bytes: Buffer) => {
-        const blockId = Buffer.from(String(blockIds.length).padStart(8, "0")).toString("base64");
+        const blockId = Buffer.from(
+          `${uploadId}-${String(blockIds.length).padStart(8, "0")}`,
+        ).toString("base64");
         await blob.stageBlock(blockId, bytes, bytes.length);
         blockIds.push(blockId);
       };
@@ -89,9 +98,34 @@ export class AzureBlobObjectStorage implements ObjectStorage {
 
   async *get(key: string): AsyncGenerator<Uint8Array> {
     const { client } = await this.connect();
-    const { readableStreamBody } = await client.getBlobClient(this.key(key)).download(0);
-    if (!readableStreamBody) throw new Error("Object storage returned no body");
-    yield* readableStreamBody as Readable;
+    const controller = new AbortController();
+    let idle: NodeJS.Timeout | undefined;
+    const arm = () => {
+      clearTimeout(idle);
+      idle = setTimeout(
+        () =>
+          controller.abort(
+            Object.assign(new Error(`Object storage sent nothing for ${this.idleBodyMs} ms`), {
+              code: "ETIMEDOUT",
+            }),
+          ),
+        this.idleBodyMs,
+      );
+    };
+    arm();
+    try {
+      const { readableStreamBody } = await client
+        .getBlobClient(this.key(key))
+        .download(0, undefined, { abortSignal: controller.signal });
+      if (!readableStreamBody) throw new Error("Object storage returned no body");
+      for await (const chunk of readableStreamBody) {
+        clearTimeout(idle);
+        yield chunk as Uint8Array;
+        arm();
+      }
+    } finally {
+      clearTimeout(idle);
+    }
   }
 
   async *list(prefix: string): AsyncGenerator<{ key: string; lastModified: Date }> {
@@ -111,7 +145,9 @@ export class AzureBlobObjectStorage implements ObjectStorage {
       await Promise.all(
         keys
           .slice(start, start + DELETE_CONCURRENCY)
-          .map((key) => client.getBlobClient(this.key(key)).deleteIfExists()),
+          .map((key) =>
+            client.getBlobClient(this.key(key)).deleteIfExists({ deleteSnapshots: "include" }),
+          ),
       );
   }
 }
