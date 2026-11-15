@@ -22,7 +22,9 @@ export function createDubPartnerProgram(
     });
     if (!response.ok)
       throw new Error(`Partner program request ${method} ${path} failed: ${response.status}`);
-    return response.json();
+    // Writes need only the status; some succeed with an empty body.
+    const text = await response.text();
+    return text ? JSON.parse(text) : null;
   }
 
   return {

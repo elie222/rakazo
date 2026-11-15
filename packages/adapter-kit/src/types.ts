@@ -1645,6 +1645,7 @@ export interface BillingPlanPayment {
   amountCents: number;
   /** Lowercase ISO 4217 code. */
   currency: string;
+  createdAt: Date;
   paidAt: Date;
   /** Every payment on it refunded in full, or disputed. */
   reversed: boolean;

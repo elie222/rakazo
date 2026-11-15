@@ -4,6 +4,7 @@ ALTER TABLE "user" ADD COLUMN "signupPartnerClickId" TEXT;
 CREATE TABLE "partner_sales" (
     "invoiceId" TEXT NOT NULL,
     "customerId" TEXT NOT NULL,
+    "invoiceCreatedAt" TIMESTAMP(3) NOT NULL,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "refundedAt" TIMESTAMP(3),
 

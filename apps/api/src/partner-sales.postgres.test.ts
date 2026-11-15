@@ -34,7 +34,7 @@ dbTests("partner program sales", () => {
   function fakeProgram() {
     return {
       trackSignup: vi.fn(async () => {}),
-      trackSale: vi.fn(async () => {}),
+      trackSale: vi.fn(async (_sale: Parameters<PartnerProgram["trackSale"]>[0]) => {}),
       refundSale: vi.fn(async () => {}),
     } satisfies PartnerProgram;
   }
@@ -46,6 +46,7 @@ dbTests("partner program sales", () => {
       currency: "usd",
       reversed: false,
       ...extra,
+      createdAt: extra.createdAt ?? new Date(),
       paidAt: extra.paidAt ?? new Date(Date.now() + 1000),
     };
   }
@@ -160,8 +161,43 @@ dbTests("partner program sales", () => {
       program,
       provider: { listPlanPayments: async () => [paid("in_retried")] },
     });
-    await expect(sales.report("cus_retried", organizationId)).rejects.toThrow("unavailable");
+    await sales.report("cus_retried", organizationId);
     await sales.report("cus_retried", organizationId);
     expect(program.trackSale).toHaveBeenCalledTimes(2);
+  });
+
+  it("withdraws refunds even while the program keeps refusing another payment", async () => {
+    const organizationId = await organization("stuck", "click_6");
+    const program = fakeProgram();
+    let payments = [paid("in_refused"), paid("in_kept_stuck")];
+    const sales = createPartnerSales({
+      prisma,
+      program,
+      provider: { listPlanPayments: async () => payments },
+    });
+    program.trackSale.mockImplementation(async ({ invoiceId }) => {
+      if (invoiceId === payments[0]!.invoiceId) throw new Error("refused");
+    });
+    await sales.report("cus_stuck", organizationId);
+    payments = [payments[0]!, { ...payments[1]!, reversed: true }];
+    await sales.report("cus_stuck", organizationId);
+    expect(program.refundSale).toHaveBeenCalledWith(payments[1]!.invoiceId);
+  });
+
+  it("reads back to an invoice created long before a refund that comes after deletion", async () => {
+    const organizationId = await organization("late-paid", "click_7");
+    const program = fakeProgram();
+    const createdAt = new Date(Date.now() - 90 * 86_400_000);
+    let payments = [paid("in_late_paid", { createdAt })];
+    const listPlanPayments = vi.fn(async (_customerId: string, _since: Date) => payments);
+    const sales = createPartnerSales({ prisma, program, provider: { listPlanPayments } });
+    await sales.report("cus_late_paid", organizationId);
+    expect(listPlanPayments.mock.calls[0]![1].getTime()).toBeLessThan(Date.now() - 34 * 86_400_000);
+    await prisma.organization.delete({ where: { id: organizationId } });
+
+    payments = payments.map((payment) => ({ ...payment, reversed: true }));
+    await sales.report("cus_late_paid", null);
+    expect(listPlanPayments.mock.calls[1]![1]).toEqual(createdAt);
+    expect(program.refundSale).toHaveBeenCalledWith(payments[0]!.invoiceId);
   });
 });

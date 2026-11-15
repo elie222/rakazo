@@ -82,6 +82,15 @@ describe("Dub partner program", () => {
     ]);
   });
 
+  it("accepts a write that succeeds with an empty body", async () => {
+    const { program: dub } = program({
+      "POST /track/sale": new Response(null, { status: 204 }),
+    });
+    await expect(
+      dub.trackSale({ customerId: "user_1", invoiceId: "in_1", amountCents: 1, currency: "usd" }),
+    ).resolves.toBeUndefined();
+  });
+
   it("fails when the program refuses, so the caller can try again later", async () => {
     const { program: dub } = program({
       "POST /track/sale": new Response("{}", { status: 500 }),

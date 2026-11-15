@@ -546,9 +546,11 @@ model Referral {
 /// withdraw the commission.
 model PartnerSale {
   invoiceId  String    @id
-  customerId String
-  createdAt  DateTime  @default(now())
-  refundedAt DateTime?
+  customerId       String
+  /// When the provider created the invoice, so a later refund check reads back far enough.
+  invoiceCreatedAt DateTime
+  createdAt        DateTime  @default(now())
+  refundedAt       DateTime?
 
   @@index([customerId])
   @@map("partner_sales")

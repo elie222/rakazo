@@ -1,14 +1,15 @@
 import type { BillingProvider, PartnerProgram } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
 import { isOwnerRole } from "@rakazo/db";
+import { bestEffort } from "@rakazo/logging";
 
 /** How long before its payment a plan invoice can be created, as failed payments are retried. */
-const INVOICE_TO_PAYMENT_DAYS = 35;
+const INVOICE_TO_PAYMENT_MS = 35 * 86_400_000;
 
 /**
  * Reports a customer's own-key plan payments to the partner program when the organization's owner
  * signed up from a partner's link, and withdraws those later refunded or disputed, even once the
- * organization is gone. Credits never count, nor payments from before that owner joined.
+ * organization is gone. Credits never count, nor payments made before that owner joined.
  */
 export function createPartnerSales(deps: {
   prisma: PrismaClient;
@@ -32,52 +33,60 @@ export function createPartnerSales(deps: {
         : undefined;
       const open = await prisma.partnerSale.findMany({
         where: { customerId, refundedAt: null },
-        select: { invoiceId: true, createdAt: true },
-        orderBy: { createdAt: "asc" },
+        select: { invoiceId: true, invoiceCreatedAt: true },
       });
-      const firstOpen = open[0]?.createdAt;
-      const since = owner?.createdAt ?? firstOpen;
-      if (!since) return;
-      const openInvoices = new Set(open.map((sale) => sale.invoiceId));
-      const payments = await provider.listPlanPayments(
-        customerId,
-        new Date(
-          Math.min(
-            since.getTime(),
-            (firstOpen?.getTime() ?? Number.POSITIVE_INFINITY) -
-              INVOICE_TO_PAYMENT_DAYS * 86_400_000,
-          ),
-        ),
+      const since = Math.min(
+        owner ? owner.createdAt.getTime() - INVOICE_TO_PAYMENT_MS : Number.POSITIVE_INFINITY,
+        ...open.map((sale) => sale.invoiceCreatedAt.getTime()),
       );
+      if (!Number.isFinite(since)) return;
+      const payments = await provider.listPlanPayments(customerId, new Date(since));
+      const openInvoices = new Set(open.map((sale) => sale.invoiceId));
+
+      // Withdrawals first, each on its own, so no failing report can hold one back.
       for (const payment of payments) {
-        // A withdrawn sale's invoice stays reversed, so it is neither withdrawn nor reported again.
-        if (openInvoices.has(payment.invoiceId)) {
-          if (!payment.reversed) continue;
-          await program.refundSale(payment.invoiceId);
-          await prisma.partnerSale.update({
-            where: { invoiceId: payment.invoiceId },
-            data: { refundedAt: new Date() },
-          });
-          continue;
-        }
+        if (!openInvoices.has(payment.invoiceId) || !payment.reversed) continue;
+        await bestEffort(
+          `partner program refund ${payment.invoiceId}`,
+          program.refundSale(payment.invoiceId).then(() =>
+            prisma.partnerSale.update({
+              where: { invoiceId: payment.invoiceId },
+              data: { refundedAt: new Date() },
+            }),
+          ),
+        );
+      }
+      if (!owner) return;
+      for (const payment of payments) {
+        // A withdrawn sale's invoice stays reversed, so it is never reported again.
         if (
-          !owner ||
+          openInvoices.has(payment.invoiceId) ||
           payment.reversed ||
           payment.amountCents <= 0 ||
           payment.paidAt < owner.createdAt
         )
           continue;
-        await program.trackSale({
-          customerId: owner.userId,
-          invoiceId: payment.invoiceId,
-          amountCents: payment.amountCents,
-          currency: payment.currency,
-        });
-        // The program records each invoice once, so a concurrent sync reporting it too is harmless.
-        await prisma.partnerSale.createMany({
-          data: { invoiceId: payment.invoiceId, customerId },
-          skipDuplicates: true,
-        });
+        await bestEffort(
+          `partner program sale ${payment.invoiceId}`,
+          program
+            .trackSale({
+              customerId: owner.userId,
+              invoiceId: payment.invoiceId,
+              amountCents: payment.amountCents,
+              currency: payment.currency,
+            })
+            // The program records each invoice once, so a concurrent sync reporting it too is harmless.
+            .then(() =>
+              prisma.partnerSale.createMany({
+                data: {
+                  invoiceId: payment.invoiceId,
+                  customerId,
+                  invoiceCreatedAt: payment.createdAt,
+                },
+                skipDuplicates: true,
+              }),
+            ),
+        );
       }
     },
   };
