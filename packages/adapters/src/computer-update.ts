@@ -15,9 +15,9 @@ import { scheduleComputerSleep } from "./computer-idle.js";
 import {
   ComputerBusyError,
   ComputerSpaceDeletingError,
-  computerSupportsUpdate,
   replaceComputer,
 } from "./computer-lifecycle.js";
+import { sandboxKindCapabilities } from "./sandbox-kind-capabilities.js";
 
 type Deps = Parameters<typeof replaceComputer>[0];
 type QueueDeps = Pick<Deps, "prisma" | "jobs"> &
@@ -66,7 +66,7 @@ export async function queueComputerUpdate(
     // The following statement then observes their committed reservation.
     await tx.$queryRaw`SELECT id FROM computers WHERE id = ${computerId} FOR UPDATE`;
     const computer = await tx.computer.findUniqueOrThrow({ where: { id: computerId } });
-    if (action === "update" && !computerSupportsUpdate(computer.kind))
+    if (action === "update" && !sandboxKindCapabilities(computer.kind).inPlaceUpdate)
       throw new Error("Computer update is not available on this device");
     const idleTakeover = computer.controlHolder === "user" && computer.controlBotId === botId;
     // Holder "none" plus a lease means a provider revoke failed and control may remain.

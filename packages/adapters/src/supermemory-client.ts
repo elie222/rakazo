@@ -1,3 +1,4 @@
+import { bestEffort } from "@rakazo/logging";
 import type { LocalServiceConnection } from "./local-service-endpoint.js";
 import { fetchLocalService, parseServiceBaseUrl } from "./local-service-endpoint.js";
 import { readBodyCapped } from "./web-ssrf.js";
@@ -55,7 +56,7 @@ async function fetchSupermemory(
 }
 
 async function releaseUnreadBody(response: Response): Promise<void> {
-  await response.body?.cancel().catch(() => undefined);
+  await bestEffort("cancel unread response body", response.body?.cancel());
 }
 
 function requestSignal(signal?: AbortSignal): AbortSignal {
@@ -141,7 +142,7 @@ export async function searchSupermemory(
 async function readSupermemoryJson(response: Response, signal?: AbortSignal): Promise<unknown> {
   const declared = Number(response.headers.get("content-length") ?? 0);
   if (Number.isFinite(declared) && declared > MAX_SUPERMEMORY_RESPONSE_BYTES) {
-    await response.body?.cancel().catch(() => undefined);
+    await bestEffort("cancel unread response body", response.body?.cancel());
     throw new Error("Supermemory response is too large.");
   }
   let bytes: Uint8Array;
