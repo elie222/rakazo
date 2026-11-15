@@ -229,7 +229,8 @@ less than the owner's own instructions do:
   routine may run on mail its sender wrote for someone else, once per message.
 - Mail a mailbox rule forwards automatically starts the routine too. A rule that also forwards
   the bot's own mail back to it can start a run for each email the bot sends, up to the owner's
-  daily email allowance, so leave the bot's address out of the rule.
+  daily email allowance, so leave the bot's address out of the rule. Some mail servers mark a
+  rule's automatic reply the same way as its forward, so one of those can start the routine too.
 
 Files from either kind of mail are kept, but never as a new version of a file the owner already
 has.
