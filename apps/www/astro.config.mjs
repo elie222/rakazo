@@ -2,36 +2,14 @@ import react from "@astrojs/react";
 import { satteri } from "@astrojs/markdown-satteri";
 import sitemap from "@astrojs/sitemap";
 import tailwindcss from "@tailwindcss/vite";
-import { existsSync } from "node:fs";
 import { defineConfig } from "astro/config";
 import { isIndexedPath } from "./src/blog/indexability.ts";
+import { buildChecks } from "./src/build-checks.ts";
 import { docsCallouts } from "./src/docs-callouts.ts";
 import { LOCALE_HREFLANG, LOCALES } from "./src/i18n/locales.ts";
-import { ogPages, ogPublicPath } from "./src/og-pages.ts";
 import { resolveWwwPort } from "./www-port.mjs";
 
 const wwwPort = resolveWwwPort();
-
-/** Fails the build when a page, every blog post included, has no rendered Open Graph image. */
-let publicDir;
-const ogImages = {
-  name: "og-images",
-  hooks: {
-    "astro:config:done": ({ config }) => {
-      publicDir = config.publicDir;
-    },
-    "astro:build:start": () => {
-      const missing = ogPages()
-        .map((page) => ogPublicPath(page.id))
-        .filter((path) => !existsSync(new URL(`.${path}`, publicDir)));
-      if (missing.length > 0) {
-        throw new Error(
-          `Missing Open Graph images: ${missing.join(", ")}. Render them with scripts/render-og.mjs.`,
-        );
-      }
-    },
-  },
-};
 
 export default defineConfig({
   site: "https://rakazo.com",
@@ -44,7 +22,7 @@ export default defineConfig({
     },
   },
   integrations: [
-    ogImages,
+    buildChecks(),
     react(),
     sitemap({
       filter: (page) => isIndexedPath(new URL(page).pathname),
