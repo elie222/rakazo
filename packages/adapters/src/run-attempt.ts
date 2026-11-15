@@ -94,6 +94,8 @@ type ContinuableRun = NonNullable<Awaited<ReturnType<typeof findContinuableRun>>
 
 export async function claimRunAttempt(deps: ExecutorDeps, run: ContinuableRun, workerId: string) {
   const takeover = takeoverContinuePlan(run);
+  // The run was looked up a moment ago; a process that began stopping since then claims nothing.
+  if (deps.stoppingSignal?.aborted || deps.shutdownSignal?.aborted) return;
   const claimed = await claimRun(deps, run, workerId);
   if (!claimed) return;
   const claim = { run, runId: run.id, workerId, ...claimed, takeover };

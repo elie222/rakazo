@@ -36,6 +36,7 @@ const sink = createTestSink();
 
 function fixture(
   options: {
+    stoppingSignal?: AbortSignal;
     startedAt?: Date;
     switching?: boolean;
     dedicated?: boolean;
@@ -84,6 +85,7 @@ function fixture(
   const executor = createRunExecutor({
     prisma,
     jobs: { enqueue },
+    stoppingSignal: options.stoppingSignal,
   } as unknown as Parameters<typeof createRunExecutor>[0]);
   return {
     prisma,
@@ -207,6 +209,19 @@ it("reuses the attempt a failed write already committed, adding no second row", 
     where: { runId: "run-1", fence: expect.any(Number) },
   });
   expect(prisma.attempt.create).toHaveBeenCalledOnce();
+});
+
+it("claims nothing when the process begins stopping while the run is being looked up", async () => {
+  const stopping = new AbortController();
+  const { prisma, start } = fixture({ stoppingSignal: stopping.signal });
+  const run = await prisma.run.findUnique();
+  prisma.run.findUnique.mockImplementation(async () => {
+    stopping.abort();
+    return run;
+  });
+  await start();
+  expect(prisma.run.updateMany).not.toHaveBeenCalled();
+  expect(leases.acquire).not.toHaveBeenCalled();
 });
 
 it("stops a superseded claim before it settles the new attempt's takeover cards", async () => {
