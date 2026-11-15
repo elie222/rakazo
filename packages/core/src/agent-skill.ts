@@ -97,6 +97,7 @@ export function parseSkillMd(content: string): ParsedSkillMd | { error: string }
 }
 
 function parseSkillFrontmatter(text: string): unknown {
+  text = text.replace(/^(name|description):[ \t]+null[ \t]*$/gm, '$1: "null"');
   const options = { maxAliasCount: 100, stringKeys: true, uniqueKeys: false } as const;
   try {
     const parsed = parseYaml(text, options);
@@ -127,10 +128,17 @@ function repairLegacyFields(text: string): string {
 }
 
 function quoteLegacyColonScalars(text: string): string {
-  return text.replace(
-    /^([ \t]*(?:-[ \t]+)?[A-Za-z_][\w-]*:[ \t]+)(?!["'{[|>!&*?])([^\r\n]*:[ \t]+[^\r\n]*)$/gm,
-    (_line, prefix: string, value: string) => `${prefix}${JSON.stringify(value)}`,
-  );
+  return text
+    .split("\n")
+    .map((line) => {
+      const match = /^([ \t]*(?:-[ \t]+)?[A-Za-z_][\w-]*:[ \t]+)(.*)$/.exec(line);
+      if (!match) return line;
+      const prefix = match[1]!;
+      const value = match[2]!;
+      if (/^["'{[|>!&*?]/.test(value) || !/:[ \t]/.test(value)) return line;
+      return `${prefix}${JSON.stringify(value)}`;
+    })
+    .join("\n");
 }
 
 function repairUnknownStringEscapes(text: string): string {
@@ -149,8 +157,8 @@ function repairUnknownStringEscapes(text: string): string {
           text
             .slice(quote, index + 1)
             .replace(
-              /\\(?!["\\/0abtnvfreN_LP]|x[0-9a-fA-F]{2}|u[0-9a-fA-F]{4}|U[0-9a-fA-F]{8})/g,
-              (slash) => `${slash}${slash}`,
+              /\\(?:["\\/0abtnvfreN_LP]|x[0-9a-fA-F]{2}|u[0-9a-fA-F]{4}|U[0-9a-fA-F]{8})|\\/g,
+              (sequence) => (sequence.length === 1 ? `${sequence}${sequence}` : sequence),
             ),
         );
         start = index + 1;
@@ -420,5 +428,5 @@ function stringifyScalar(value: unknown): string {
 }
 
 function stringifySkillField(value: unknown): string {
-  return (value === null ? "null" : stringifyScalar(value)).trim();
+  return stringifyScalar(value).trim();
 }
