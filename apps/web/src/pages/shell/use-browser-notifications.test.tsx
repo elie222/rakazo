@@ -325,6 +325,22 @@ describe("useBrowserNotifications chat alerts", () => {
     root = createRoot(document.createElement("div"));
   });
 
+  it("preserves a question and reply while permission is pending", async () => {
+    FakeNotification.permission = "default";
+    visible = false;
+    await open({ botId: "bot-b" });
+    for (const event of [
+      reply("ask-pending", [{ kind: "ask", text: "Which repo?", status: "pending" }]),
+      reply("reply-pending", [{ kind: "text", text: "Saturday works." }]),
+    ]) {
+      act(() => hook.notifyBrowserForEvent(event, "thread-b", 4, true, "Scout", true, undefined));
+    }
+    expect(shown()).toEqual([]);
+    FakeNotification.permission = "granted";
+    act(() => hook.flushPendingBrowserNotifications());
+    expect(shown().map((notification) => notification[2])).toEqual(["thread-b:ask", "thread-b"]);
+  });
+
   it("drops a notification held for permission when the shell unmounts first", async () => {
     FakeNotification.permission = "default";
     visible = false;
@@ -397,7 +413,7 @@ describe("useBrowserNotifications chat alerts", () => {
         "group-g",
       ),
     );
-    expect(shown().map((row) => row[2])).toEqual(["thread-b", "thread-g"]);
+    expect(shown().map((row) => row[2])).toEqual(["thread-b:ask", "thread-g:ask"]);
     bots[0] = { id: "bot-b", name: "Scout", notifyOnFinish: true, snoozedUntil: earlier } as Bot;
     groups[0] = { id: "group-g", snoozedUntil: earlier };
     act(() =>

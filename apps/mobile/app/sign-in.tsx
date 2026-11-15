@@ -46,6 +46,7 @@ import { useMobileTokens } from "../lib/native";
 import { passkeysAvailable, signInWithPasskey } from "../lib/passkey";
 import { loadSessionToken } from "../lib/session";
 import { continueWithSso } from "../lib/sso";
+import { confirmUnsentSendLoss } from "../lib/unsent-send-warning";
 import { credentialIssueText, errorText } from "../lib/user-error";
 
 const CODE_LENGTH = 6;
@@ -197,6 +198,9 @@ export default function SignIn() {
         setCodeSent(true);
         return;
       }
+      // Everything past this point saves new credentials, which deletes the unsent
+      // queue a server-rejected session kept; ask first, like a sign-out does.
+      if (!(await confirmUnsentSendLoss("sign-in"))) return;
       if (usingCode) {
         const trimmedEmail = email.trim();
         await signInWithCode(
@@ -239,9 +243,13 @@ export default function SignIn() {
   }
 
   async function externalSignIn(run: () => Promise<boolean>) {
+    if (pending) return;
     setPending(true);
     setError(null);
     try {
+      // External sign-ins save credentials too, so the kept queue gets the same question;
+      // pending is already set, so the wait for the queue check cannot double-open it.
+      if (!(await confirmUnsentSendLoss("sign-in"))) return;
       if (await run()) await openApp();
     } catch (err) {
       setError(errorText(err, t`Could not continue`));

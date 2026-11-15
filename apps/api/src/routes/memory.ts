@@ -13,6 +13,7 @@ import {
   disconnectMemoryProvider,
   persistMemoryProviderConfig,
   serializeSpaceMemoryConfig,
+  updateMemoryProviderConfig,
   updateMemoryProviderDefaultScope,
 } from "../memory-provider-config.js";
 import type { RouterContext } from "./context.js";
@@ -138,6 +139,9 @@ export function memoryRoutes(ctx: RouterContext) {
       }),
       connectProvider: authed.memory.connectProvider.handler(async ({ context, input }) =>
         persistMemoryProviderConfig(deps, context.actor, input),
+      ),
+      updateProvider: authed.memory.updateProvider.handler(async ({ context, input }) =>
+        updateMemoryProviderConfig(deps, context.actor, input),
       ),
       setDefaultScope: authed.memory.setDefaultScope.handler(async ({ context, input }) =>
         updateMemoryProviderDefaultScope(deps, context.actor, input.defaultMemoryScope),

@@ -36,7 +36,7 @@ const BLOCKING_KINDS = new Set(["auth", "access", "model", "key", "credit", "spe
 export async function verifyModelServesAgents(
   config: Pick<
     AgentRunModel,
-    "provider" | "id" | "apiKey" | "accountId" | "gatewayId" | "maxTokens"
+    "provider" | "id" | "apiKey" | "accountId" | "gatewayId" | "projectId" | "region" | "maxTokens"
   >,
   options: { fetch?: typeof globalThis.fetch; signal?: AbortSignal } = {},
 ): Promise<void> {

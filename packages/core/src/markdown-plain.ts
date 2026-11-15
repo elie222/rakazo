@@ -301,7 +301,7 @@ function boundedPreviewSource(
   markdown: string,
   maxSource: number,
 ): { text: string; truncated: boolean } {
-  const normalized = markdown.replace(/\r\n/g, "\n");
+  const normalized = markdown.replace(/\r\n?/g, "\n");
   if (normalized.length <= maxSource) return { text: normalized, truncated: false };
   const body = normalized.trimStart();
   if (body.length <= maxSource) return { text: body, truncated: false };

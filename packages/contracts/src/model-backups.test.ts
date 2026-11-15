@@ -101,6 +101,20 @@ describe("connected backup model choices", () => {
     expect(offered(true)).not.toContain("custom-model");
     expect(offered(true)).not.toContain("hosted-vision");
   });
+  it.each([undefined, []])(
+    "keeps models with undeclared image support out of computer use (%j)",
+    (visionModelIds) => {
+      const local = {
+        ...credentials[1]!,
+        enabledModelIds: ["custom-model"],
+        visionModelIds,
+      };
+      expect(
+        connectedBackupOptions(catalog, [local], false).map((option) => option.modelId),
+      ).toContain("custom-model");
+      expect(connectedBackupOptions(catalog, [local], true)).toEqual([]);
+    },
+  );
   it("offers only non-placeholder catalog models for connected providers", () => {
     expect(connectedBackupOptions(catalog, credentials)).toEqual([
       {

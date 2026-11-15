@@ -13,6 +13,12 @@ export interface MemoryProviderConnectionDraft {
 export interface MemoryProviderSettingsFormProps {
   busy: boolean;
   advancedSettings: ReactNode;
+  /**
+   * Settings of the connected provider when editing it. Credentials are never sent back to the
+   * client, so a credential field left empty while editing keeps the stored one.
+   */
+  current?: Record<string, string>;
+  /** Connect, or save the edited settings; resolves true on success. */
   onConnect: (draft: MemoryProviderConnectionDraft) => Promise<boolean>;
 }
 
