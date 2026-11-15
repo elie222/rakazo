@@ -294,6 +294,30 @@ dbTests("partner program sales", () => {
     expect(sale.reportedAt).not.toBeNull();
   });
 
+  it("withdraws a sale reported after a refund event already found nothing to withdraw", async () => {
+    const organizationId = await organization("refund-first", "click_17");
+    const program = fakeProgram();
+    const payment = paid("in_refund_first");
+    const reporting = createPartnerSales({
+      prisma,
+      program,
+      provider: { listPlanPayments: async () => [payment] },
+    });
+    const refunding = createPartnerSales({
+      prisma,
+      program,
+      provider: { listPlanPayments: async () => [{ ...payment, reversed: true }] },
+    });
+    program.trackSale.mockImplementationOnce(async () => {
+      await refunding.report("cus_refund_first", organizationId);
+    });
+    await expect(reporting.report("cus_refund_first", organizationId)).rejects.toThrow(
+      "withdrawals failed",
+    );
+    await refunding.report("cus_refund_first", organizationId);
+    expect(program.refundSale).toHaveBeenCalledWith(payment.invoiceId);
+  });
+
   it("has nothing to do for a billing customer that no longer exists", async () => {
     const organizationId = await organization("gone", "click_14");
     await expect(

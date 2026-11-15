@@ -66,6 +66,23 @@ export function createPartnerSales(deps: {
 
       // Withdrawals first, each on its own, so no failing report can hold one back.
       const failed: unknown[] = [];
+      if (founder) {
+        // A reversed payment with no sale may be mid-report in another event: recording it as
+        // withdrawn makes that report find it closed, reopen it and retry to withdraw.
+        const unrecorded = payments.filter(
+          (payment) => payment.reversed && !openInvoices.has(payment.invoiceId),
+        );
+        if (unrecorded.length)
+          await prisma.partnerSale.createMany({
+            data: unrecorded.map((payment) => ({
+              invoiceId: payment.invoiceId,
+              customerId,
+              invoiceCreatedAt: payment.createdAt,
+              refundedAt: new Date(),
+            })),
+            skipDuplicates: true,
+          });
+      }
       for (const payment of payments) {
         const sale = openInvoices.get(payment.invoiceId);
         if (!sale || !payment.reversed) continue;

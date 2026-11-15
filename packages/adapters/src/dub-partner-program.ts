@@ -3,7 +3,8 @@ import { deadlineSignal } from "@rakazo/core";
 import { z } from "zod";
 
 const API = "https://api.dub.co";
-const TIMEOUT_MS = 10_000;
+/** Short, as billing webhooks wait on these calls. */
+const TIMEOUT_MS = 5_000;
 /** Commission states that will never be paid out, so there is nothing left to withdraw. */
 const SETTLED_WITHOUT_PAYOUT = new Set(["refunded", "canceled", "duplicate", "fraud"]);
 
