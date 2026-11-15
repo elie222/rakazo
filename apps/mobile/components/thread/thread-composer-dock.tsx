@@ -102,7 +102,9 @@ export function ThreadComposerDock({
   useEffect(report, [composerRestingPadding, hidden, onHeight]);
 
   return (
-    // Floats over the messages, which scroll underneath it; only its controls take touches.
+    // In flow, not absolutely positioned: the screen avoids the keyboard by adding padding to its
+    // parent, and padding never moves an absolutely positioned child, so the composer would sit
+    // behind the keyboard on Android 15+ where the window is no longer resized for it.
     <View pointerEvents="box-none" style={[columnPadding]}>
       {hidden ? null : <ThreadEdgeFade edge="bottom" style={fadeHeight} />}
       <View
