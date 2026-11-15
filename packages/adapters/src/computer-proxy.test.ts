@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 import {
   COMPUTER_PROXY_CONFIG_ENV,
@@ -46,6 +47,12 @@ describe("computerProxyFromEnv", () => {
     );
   });
 
+  it("rejects a password without a username instead of dropping it", () => {
+    expect(() => computerProxyFromEnv({ RAKAZO_COMPUTER_PROXY: "http://:secret@h:1" })).toThrow(
+      /needs a username/,
+    );
+  });
+
   it("rejects credentials tinyproxy would split", () => {
     expect(() => computerProxyFromEnv({ RAKAZO_COMPUTER_PROXY: "http://user:p%40ss@h:1" })).toThrow(
       /cannot contain/,
@@ -85,5 +92,9 @@ describe("computerProxyPrepareEnv", () => {
     expect(encoded).not.toContain("secret");
     expect(Buffer.from(encoded, "base64").toString()).toContain("Upstream http u:secret@h:8080");
     expect(PREPARE_COMPUTER_PROXY).not.toContain("secret");
+  });
+
+  it("is valid shell", () => {
+    expect(() => execFileSync("bash", ["-n", "-c", PREPARE_COMPUTER_PROXY])).not.toThrow();
   });
 });

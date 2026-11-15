@@ -61,6 +61,9 @@ export function computerProxyFromEnv(
       `${COMPUTER_PROXY_ENV}: the proxy username cannot contain spaces, ':', '@' or '"', and the password cannot contain spaces, '@' or '"'`,
     );
   }
+  if (password && !username) {
+    throw new Error(`${COMPUTER_PROXY_ENV}: a proxy password needs a username`);
+  }
   return {
     type,
     host: url.hostname.replace(/^\[|\]$/g, ""),
@@ -112,8 +115,7 @@ const BROWSER_POLICY_DIRS = [
 const PROXY_POLICY = JSON.stringify({
   ProxyMode: "fixed_servers",
   ProxyServer: `http://127.0.0.1:${COMPUTER_PROXY_PORT}`,
-  // Loopback stays direct: the bot's own tools reach the browser over its debugging port.
-  ProxyBypassList: "<-loopback>;localhost;127.0.0.1;[::1]",
+  // Chromium sends loopback direct by default, so the bot's tools still reach its debugging port.
 });
 
 /**
@@ -122,9 +124,14 @@ const PROXY_POLICY = JSON.stringify({
  */
 export const PREPARE_COMPUTER_PROXY = [
   'if [ "$(id -u)" -eq 0 ]; then root=""; else root="sudo -n"; fi',
+  // A stale pid file may name a reused pid, so only a process named tinyproxy counts as ours.
+  "computer_proxy_pid() {",
+  "  pid=$(cat /run/rakazo-proxy/tinyproxy.pid 2>/dev/null || true)",
+  '  [ -n "$pid" ] && [ "$(cat "/proc/$pid/comm" 2>/dev/null)" = tinyproxy ] && echo "$pid" || true',
+  "}",
   // Stops Rakazo's own instance and waits until its port is free, so a restart can bind it.
   "stop_computer_proxy() {",
-  "  pid=$(cat /run/rakazo-proxy/tinyproxy.pid 2>/dev/null || true)",
+  "  pid=$(computer_proxy_pid)",
   '  [ -n "$pid" ] || return 0',
   '  $root kill "$pid" 2>/dev/null || true',
   "  for _ in $(seq 1 50); do",
@@ -136,10 +143,17 @@ export const PREPARE_COMPUTER_PROXY = [
   `if [ -n "\${${COMPUTER_PROXY_CONFIG_ENV}:-}" ]; then`,
   "  if ! command -v tinyproxy >/dev/null; then",
   "    $root apt-get update -qq",
-  // policy-rc.d keeps the package from starting its own instance on a public port.
-  "    printf '#!/bin/sh\\nexit 101\\n' | $root sh -c 'cat > /usr/sbin/policy-rc.d && chmod 755 /usr/sbin/policy-rc.d'",
-  "    $root env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends tinyproxy",
-  "    $root rm -f /usr/sbin/policy-rc.d",
+  // policy-rc.d keeps the package from starting its own instance. An image's own policy is left
+  // alone, and ours is removed whether or not the install succeeds.
+  "    own_policy=0",
+  "    if [ ! -e /usr/sbin/policy-rc.d ]; then",
+  "      printf '#!/bin/sh\\nexit 101\\n' | $root sh -c 'cat > /usr/sbin/policy-rc.d && chmod 755 /usr/sbin/policy-rc.d'",
+  "      own_policy=1",
+  "    fi",
+  "    installed=0",
+  "    $root env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends tinyproxy && installed=1",
+  '    if [ "$own_policy" -eq 1 ]; then $root rm -f /usr/sbin/policy-rc.d; fi',
+  '    if [ "$installed" -ne 1 ]; then echo "could not install the computer proxy" >&2; exit 1; fi',
   "  fi",
   "  $root mkdir -p /etc/rakazo-proxy /run/rakazo-proxy /var/log/rakazo-proxy",
   "  $root chmod 700 /etc/rakazo-proxy",
@@ -152,8 +166,7 @@ export const PREPARE_COMPUTER_PROXY = [
   '  changed=1; $root cmp -s "$new" /etc/rakazo-proxy/tinyproxy.conf && changed=0',
   '  if [ "$changed" -eq 1 ]; then $root install -m 600 "$new" /etc/rakazo-proxy/tinyproxy.conf; fi',
   '  rm -f "$new"',
-  "  pid=$(cat /run/rakazo-proxy/tinyproxy.pid 2>/dev/null || true)",
-  '  running=0; [ -n "$pid" ] && $root kill -0 "$pid" 2>/dev/null && running=1',
+  '  running=0; [ -n "$(computer_proxy_pid)" ] && running=1',
   '  if [ "$running" -eq 1 ] && [ "$changed" -eq 1 ]; then stop_computer_proxy; running=0; fi',
   // Only Rakazo's own instance is ever stopped; policy-rc.d kept the package's from starting.
   '  if [ "$running" -eq 0 ]; then $root tinyproxy -c /etc/rakazo-proxy/tinyproxy.conf; fi',
@@ -166,7 +179,7 @@ export const PREPARE_COMPUTER_PROXY = [
   `  policy=${shellQuoteForScript(PROXY_POLICY)}`,
   `  for dir in ${BROWSER_POLICY_DIRS.join(" ")}; do`,
   '    [ "$(cat "$dir/rakazo-proxy.json" 2>/dev/null)" = "$policy" ] && continue',
-  '    printf \'%s\\n\' "$policy" | $root sh -c \'mkdir -p "$1" && cat > "$1/rakazo-proxy.json"\' sh "$dir" || echo "could not set the proxy policy in $dir" >&2',
+  '    printf \'%s\\n\' "$policy" | $root sh -c \'mkdir -p "$1" && cat > "$1/rakazo-proxy.json"\' sh "$dir"',
   "  done",
   "else",
   // The proxy was turned off: the browser goes direct again.
