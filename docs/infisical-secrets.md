@@ -56,9 +56,10 @@ Agent secret transaction retries write a fresh remote key per attempt. Failed
 remote writes attempt deletion with an independent two-second cleanup deadline.
 Cleanup is best effort and failures produce redacted warnings. Retry failed
 cleanup before revoking machine-identity access; there is no age-based pruning.
-Computer settings, messaging workspace credentials, payment wallet credentials
-and the sealed copies a purchase did not keep (a paid request, a card or a pay
-token) go further with a `secret.cleanup` background job. When a row stops
+Computer settings, messaging workspace credentials, payment wallet credentials,
+the sealed copies a purchase did not keep (a paid request, a card or a pay
+token) and the key an MCP sign-in refresh wrote when its save failed go further
+with a `secret.cleanup` background job. When a row stops
 holding a ref, the job is recorded in the transaction that drops it, so a crash
 after the commit still deletes the key. For a new write that was never saved,
 the job is recorded just before the delete is attempted. The delete is tried at
