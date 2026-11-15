@@ -19,13 +19,14 @@ function missingOgImages(pathnames: string[], dir: URL): string[] {
   });
 }
 
-/** Registered translations that were not built, and localized pages that are not registered. */
+/** Registered pages (English or translated) that were not built, and localized pages that are not registered. */
 function translationMismatches(pathnames: string[]): string[] {
   const built = new Set(pathnames.map((pathname) => `/${pathname}`));
   const registered = new Set(
-    Object.entries(TRANSLATED_PAGES).flatMap(([path, locales]) =>
-      locales.map((locale) => localizedPath(path, locale)),
-    ),
+    Object.entries(TRANSLATED_PAGES).flatMap(([path, locales]) => [
+      path,
+      ...locales.map((locale) => localizedPath(path, locale)),
+    ]),
   );
   const unbuilt = [...registered].filter((path) => !built.has(path));
   const unregistered = [...built].filter((path) => {

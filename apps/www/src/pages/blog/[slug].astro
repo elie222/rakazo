@@ -4,7 +4,7 @@ import type { CollectionEntry } from "astro:content";
 import type { BlogCategory } from "../../blog/categories";
 import { BLOG_CATEGORIES, CATEGORY_LABEL, categoryPath } from "../../blog/categories";
 import { categoryIsIndexed } from "../../blog/indexability";
-import { formatPostDate, isoDate } from "../../blog/format";
+import { BLOG_AUTHOR_PERSON, formatPostDate, isoDate } from "../../blog/format";
 import { sortPosts } from "../../blog/markdown";
 import ComparisonTable from "../../components/ComparisonTable.astro";
 import FaqList from "../../components/FaqList.astro";
@@ -89,7 +89,7 @@ const structuredData = post
       articleMeta={{
         published: post.data.published,
         modified: post.data.updated,
-        author: post.data.author,
+        authorUrl: BLOG_AUTHOR_PERSON.url,
       }}
       markdownAlternate={`/blog/${post.id}.md`}
     >
