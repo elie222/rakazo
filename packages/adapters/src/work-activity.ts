@@ -59,6 +59,12 @@ const MAX_CARDS_PER_USER = 5;
  * a moment later; a phone is started a card only once that would have happened.
  */
 const START_GRACE_MS = 10_000;
+/**
+ * iOS ends a card after this long. A card started by push whose token never came back, as when
+ * the app could not run in the background, can be neither updated nor ended: no other is started
+ * on that phone while it may still show, so such cards never pile up on the Lock Screen.
+ */
+const UNFOLLOWED_START_MS = 8 * 60 * 60_000;
 /** The card's height fits this many rows; the count covers the rest. */
 export const WORK_ACTIVITY_ROWS = 4;
 const LINE_MAX_CHARS = 120;
@@ -139,10 +145,11 @@ export class WorkActivities {
       );
     }
     // This phone shows the work now: it is started no other card for it, even once this one goes.
+    // A card started on it by push is followed from here on.
     await runAsSystem("record a phone's own live status card", () =>
       this.prisma.workActivityStartToken.updateMany({
         where: { userId, sessionId },
-        data: { startedAt: new Date() },
+        data: { startedAt: new Date(), unfollowedStartAt: null },
       }),
     );
     // A user's phones are few; the oldest cards beyond that end, so each update fans out a little.
@@ -172,10 +179,12 @@ export class WorkActivities {
         where: { tokenDigest, userId: { not: userId } },
       }),
     );
+    // The app runs, and hands over the token of each card it shows or ends it: no card started on
+    // this phone is left that the server cannot reach.
     const { count } = await runAsSystem("refresh a phone registered for live status cards", () =>
       this.prisma.workActivityStartToken.updateMany({
         where: { tokenDigest, userId },
-        data: { sessionId, createdAt: new Date() },
+        data: { sessionId, createdAt: new Date(), unfollowedStartAt: null },
       }),
     );
     if (!count) {
@@ -416,6 +425,7 @@ export class WorkActivities {
       sessionId: string;
       ciphertext: string;
       startedAt: Date | null;
+      unfollowedStartAt: Date | null;
     }>,
     live: Set<string>,
   ): Promise<Array<"sent" | "invalid" | "unavailable">> {
@@ -426,7 +436,9 @@ export class WorkActivities {
       (phone) =>
         live.has(phone.sessionId) &&
         !shown.has(phone.sessionId) &&
-        (!phone.startedAt || phone.startedAt < since),
+        (!phone.startedAt || phone.startedAt < since) &&
+        // The last card started here never reported its token and may still show, out of reach.
+        !(phone.unfollowedStartAt && phone.unfollowedStartAt.getTime() > now - UNFOLLOWED_START_MS),
     );
     if (!due.length) return [];
     const wait = newest.getTime() + START_GRACE_MS - now;
@@ -445,12 +457,14 @@ export class WorkActivities {
       due.map(async (phone): Promise<"sent" | "invalid" | "unavailable"> => {
         const where = { tokenDigest: phone.tokenDigest, userId, sessionId: phone.sessionId };
         const previous = phone.startedAt;
+        const unfollowed = phone.unfollowedStartAt;
         // Claimed before sending: the API and the worker both follow the user's work, and only
         // one of them starts the card. A phone signed out meanwhile has no row left to claim.
+        // The card stays unfollowed until the phone hands over its token.
         const { count } = await runAsSystem("claim a live status card start", () =>
           this.prisma.workActivityStartToken.updateMany({
             where: { ...where, startedAt: previous },
-            data: { startedAt },
+            data: { startedAt, unfollowedStartAt: startedAt },
           }),
         );
         if (!count) return "sent";
@@ -475,7 +489,7 @@ export class WorkActivities {
           await runAsSystem("release a live status card start", () =>
             this.prisma.workActivityStartToken.updateMany({
               where: { ...where, startedAt },
-              data: { startedAt: previous },
+              data: { startedAt: previous, unfollowedStartAt: unfollowed },
             }),
           );
         return result;
@@ -517,7 +531,9 @@ export class WorkActivities {
       if (isBackgroundRunTrigger(run.trigger) || run.trigger === BACKGROUND_HELPER_TRIGGER)
         continue;
       // A continuation is part of the stretch of work its chat began, so the oldest run counts.
-      started.push(run.createdAt.getTime());
+      // A routine starts no card by push: it is no one getting to work from another device, and
+      // one that runs every hour would light up each phone every hour. A card showing still lists it.
+      if (run.trigger !== "routine") started.push(run.createdAt.getTime());
       const key = `${run.threadId}:${run.botId}`;
       const newest = byChat.get(key);
       if (!newest) byChat.set(key, run);

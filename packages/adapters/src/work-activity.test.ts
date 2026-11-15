@@ -28,6 +28,7 @@ type Phone = {
   sessionId: string;
   ciphertext: string;
   startedAt: Date | null;
+  unfollowedStartAt?: Date | null;
 };
 
 const TOKEN = "ab".repeat(32);
@@ -532,10 +533,13 @@ describe("live status card of the user's bots at work", () => {
       // Until its card registers, or after the user dismissed it, the same work starts no other.
       await activities.sync("user-1");
       expect(start).toHaveBeenCalledTimes(2);
-      // New work after a pause starts one again.
+      // New work after a pause starts one again, on phones that handed over their cards' tokens.
       runs[0]!.status = "completed";
       run("2", { createdAt: new Date(Date.now() - 20_000) });
-      for (const phone of phones.values()) phone.startedAt = new Date(Date.now() - 30_000);
+      for (const phone of phones.values()) {
+        phone.startedAt = new Date(Date.now() - 30_000);
+        phone.unfollowedStartAt = null;
+      }
       await activities.sync("user-1");
       expect(start).toHaveBeenCalledTimes(4);
     });
@@ -644,6 +648,51 @@ describe("live status card of the user's bots at work", () => {
       expect(send).toHaveBeenCalled();
       await activities.sync("user-1");
       expect(start).toHaveBeenCalledTimes(2);
+    });
+
+    it("starts no other card while one it could not reach may still show", async () => {
+      const { activities, phones, runs, run, start } = setup();
+      await activities.registerStarts("user-1", "session-1", START_TOKEN);
+      await vi.waitFor(() => expect(start).toHaveBeenCalledOnce());
+      const phone = [...phones.values()][0]!;
+      // The app never ran to hand over the card's token, so nothing can end it.
+      expect(phone.unfollowedStartAt).toEqual(phone.startedAt);
+      const nextStretch = (id: string) => {
+        for (const old of runs) old.status = "completed";
+        run(id, { createdAt: new Date(Date.now() - 20_000) });
+        phone.startedAt = new Date(Date.now() - 30_000);
+      };
+      nextStretch("2");
+      await activities.sync("user-1");
+      expect(start).toHaveBeenCalledOnce();
+      // Once iOS has ended it, a new stretch of work shows again.
+      phone.unfollowedStartAt = new Date(Date.now() - 9 * 60 * 60_000);
+      await activities.sync("user-1");
+      expect(start).toHaveBeenCalledTimes(2);
+      // The app ran and handed over its tokens: the next stretch starts a card at once.
+      nextStretch("3");
+      await activities.registerStarts("user-1", "session-1", START_TOKEN);
+      await vi.waitFor(() => expect(start).toHaveBeenCalledTimes(3));
+      // So does a phone whose started card registered.
+      expect(await activities.register("user-1", "session-1", TOKEN)).toBe(true);
+      expect(phone.unfollowedStartAt).toBeNull();
+    });
+
+    it("starts no card for a routine, which a card showing still lists", async () => {
+      const { activities, runs, run, start, send } = setup();
+      runs[0]!.trigger = "routine";
+      await activities.registerStarts("user-1", "session-2", START_TOKEN);
+      await activities.sync("user-1");
+      expect(start).not.toHaveBeenCalled();
+      expect(await activities.register("user-1", "session-1", TOKEN)).toBe(true);
+      await vi.waitFor(() => expect(send).toHaveBeenCalledOnce());
+      expect(send.mock.calls[0]![1].state.rows).toEqual([
+        expect.objectContaining({ title: "Planner" }),
+      ]);
+      // Work the user set going elsewhere still starts one.
+      run("2");
+      await activities.sync("user-1");
+      await vi.waitFor(() => expect(start).toHaveBeenCalledOnce());
     });
 
     it("moves to a replacement session and to the account signed in last", async () => {
