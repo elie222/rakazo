@@ -11,7 +11,7 @@ dbTests("partner program sales", () => {
   let prisma: PrismaClient;
   let db: ReturnType<typeof createDb>;
 
-  async function organization(name: string, partnerClickId: string | null) {
+  async function organization(name: string, partnerClickId: string | null, role = "owner") {
     const id = `partner-${name}-${stamp}`;
     const createdAt = new Date();
     await prisma.user.create({
@@ -25,7 +25,7 @@ dbTests("partner program sales", () => {
     });
     await prisma.organization.create({ data: { id, name, slug: id, createdAt } });
     await prisma.member.create({
-      data: { id, organizationId: id, userId: id, role: "owner", createdAt },
+      data: { id, organizationId: id, userId: id, role, createdAt },
     });
     ids.push(id);
     return id;
@@ -46,6 +46,7 @@ dbTests("partner program sales", () => {
       currency: "usd",
       reversed: false,
       ...extra,
+      paidAt: extra.paidAt ?? new Date(Date.now() + 1000),
     };
   }
 
@@ -120,6 +121,22 @@ dbTests("partner program sales", () => {
     payments = payments.map((payment) => ({ ...payment, reversed: true }));
     await sales.report("cus_deleted", null);
     expect(program.refundSale).toHaveBeenCalledWith(payments[0]!.invoiceId);
+  });
+
+  it("credits an owner holding other roles too, but not payments from before they joined", async () => {
+    const organizationId = await organization("co-owner", "click_5", "admin, owner");
+    const program = fakeProgram();
+    const before = paid("in_before_joining", { paidAt: new Date(Date.now() - 86_400_000) });
+    const after = paid("in_after_joining");
+    await createPartnerSales({
+      prisma,
+      program,
+      provider: { listPlanPayments: async () => [before, after] },
+    }).report("cus_co_owner", organizationId);
+    expect(program.trackSale).toHaveBeenCalledTimes(1);
+    expect(program.trackSale).toHaveBeenCalledWith(
+      expect.objectContaining({ invoiceId: after.invoiceId }),
+    );
   });
 
   it("leaves organizations whose owner did not come from a partner alone", async () => {

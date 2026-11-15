@@ -264,8 +264,8 @@ export function createBillingService(deps: {
     }
     const previous = await prisma.billingAccount.findUnique({ where: { customerId } });
     // Also for a customer whose organization was deleted, so a later refund still withdraws its
-    // commission. A missed report is retried by the next sync of this customer.
-    await bestEffort(
+    // commission. Never holds up the sync; a missed report is retried by the next one.
+    void bestEffort(
       "partner program sales report",
       partnerSales.report(customerId, previous?.organizationId ?? null),
     );

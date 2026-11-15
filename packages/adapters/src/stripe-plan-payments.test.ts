@@ -2,56 +2,95 @@ import { describe, expect, it, vi } from "vitest";
 import { StripeBillingProvider } from "./stripe-billing.js";
 
 function provider(routes: Record<string, unknown>) {
-  return new StripeBillingProvider({
+  const paths: string[] = [];
+  const stripe = new StripeBillingProvider({
     secretKey: "sk_test_fixture",
     webhookSecret: "whsec_fixture",
     fetch: vi.fn(async (input) => {
       const url = new URL(String(input));
-      const key = `${url.pathname}${url.searchParams.get("invoice") ? `?${url.searchParams.get("invoice")}` : ""}`;
-      return Response.json({ data: routes[key] ?? [], has_more: false });
+      paths.push(`${url.pathname}${url.search}`);
+      const invoice = url.searchParams.get("invoice");
+      return Response.json({
+        data: routes[`${url.pathname}${invoice ? `?${invoice}` : ""}`] ?? [],
+        has_more: false,
+      });
     }),
   });
+  return { stripe, paths };
 }
 
 const plan = { subscription_details: { metadata: { rakazo_plan: "byok" } } };
+const paidAt = { paid_at: 1_800_000_000 };
+const since = new Date(1_790_000_000_000);
 
 describe("Stripe own-key plan payments", () => {
   it("lists paid own-key plan invoices before tax, leaving out credits and unpaid ones", async () => {
-    const payments = await provider({
+    const { stripe, paths } = provider({
       "/v1/invoices": [
         {
           id: "in_plan",
           currency: "usd",
           amount_paid: 1650,
           total_taxes: [{ amount: 150 }],
+          status_transitions: paidAt,
           parent: plan,
         },
-        { id: "in_trial", currency: "usd", amount_paid: 0, parent: plan },
+        {
+          id: "in_trial",
+          currency: "usd",
+          amount_paid: 0,
+          status_transitions: paidAt,
+          parent: plan,
+        },
         {
           id: "in_monthly_credits",
           currency: "usd",
           amount_paid: 2000,
+          status_transitions: paidAt,
           parent: { subscription_details: { metadata: { rakazo_credit_cents: "2000" } } },
         },
-        { id: "in_credit_top_up", currency: "usd", amount_paid: 2000, parent: null },
+        {
+          id: "in_credit_top_up",
+          currency: "usd",
+          amount_paid: 2000,
+          status_transitions: paidAt,
+          parent: null,
+        },
       ],
-    }).listPlanPayments("cus_fixture");
-    expect(payments).toEqual([
-      { invoiceId: "in_plan", amountCents: 1500, currency: "usd", reversed: false },
+    });
+    expect(await stripe.listPlanPayments("cus_fixture", since)).toEqual([
+      {
+        invoiceId: "in_plan",
+        amountCents: 1500,
+        currency: "usd",
+        paidAt: new Date(1_800_000_000_000),
+        reversed: false,
+      },
     ]);
+    expect(paths.every((path) => path.includes("created[gte]=1790000000"))).toBe(true);
   });
 
-  it("marks an invoice reversed when its payment was refunded or disputed", async () => {
-    const payments = await provider({
+  it("marks an invoice reversed only when every payment on it was refunded or disputed", async () => {
+    const invoice = (id: string) => ({
+      id,
+      currency: "usd",
+      amount_paid: 1500,
+      status_transitions: paidAt,
+      parent: plan,
+    });
+    const { stripe } = provider({
       "/v1/invoices": [
-        { id: "in_refunded", currency: "usd", amount_paid: 1500, parent: plan },
-        { id: "in_disputed", currency: "usd", amount_paid: 1500, parent: plan },
-        { id: "in_kept", currency: "usd", amount_paid: 1500, parent: plan },
+        invoice("in_refunded"),
+        invoice("in_disputed"),
+        invoice("in_kept"),
+        invoice("in_partly"),
       ],
       "/v1/charges": [
         { id: "ch_1", payment_intent: "pi_refunded", disputed: false, refunded: true },
         { id: "ch_2", payment_intent: "pi_disputed", disputed: true, refunded: false },
         { id: "ch_3", payment_intent: "pi_kept", disputed: false, refunded: false },
+        { id: "ch_4", payment_intent: "pi_partly_refunded", disputed: false, refunded: true },
+        { id: "ch_5", payment_intent: "pi_partly_kept", disputed: false, refunded: false },
       ],
       "/v1/invoice_payments?in_refunded": [
         { id: "ip_1", payment: { payment_intent: "pi_refunded" } },
@@ -60,11 +99,17 @@ describe("Stripe own-key plan payments", () => {
         { id: "ip_2", payment: { payment_intent: "pi_disputed" } },
       ],
       "/v1/invoice_payments?in_kept": [{ id: "ip_3", payment: { payment_intent: "pi_kept" } }],
-    }).listPlanPayments("cus_fixture");
+      "/v1/invoice_payments?in_partly": [
+        { id: "ip_4", payment: { payment_intent: "pi_partly_refunded" } },
+        { id: "ip_5", payment: { payment_intent: "pi_partly_kept" } },
+      ],
+    });
+    const payments = await stripe.listPlanPayments("cus_fixture", since);
     expect(payments.map(({ invoiceId, reversed }) => [invoiceId, reversed])).toEqual([
       ["in_refunded", true],
       ["in_disputed", true],
       ["in_kept", false],
+      ["in_partly", false],
     ]);
   });
 });

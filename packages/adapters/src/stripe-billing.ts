@@ -605,16 +605,18 @@ export class StripeBillingProvider implements BillingProvider {
     return purchases;
   }
 
-  async listPlanPayments(customerId: string): Promise<BillingPlanPayment[]> {
+  async listPlanPayments(customerId: string, since: Date): Promise<BillingPlanPayment[]> {
     const customer = encodeURIComponent(customerId);
+    const created = Math.floor(since.getTime() / 1000);
     const [invoices, charges] = await Promise.all([
       this.listPages(
-        `/v1/invoices?customer=${customer}&status=paid`,
+        `/v1/invoices?customer=${customer}&status=paid&created[gte]=${created}`,
         z.object({
           id: z.string(),
           currency: z.string(),
           amount_paid: z.number().int(),
           total_taxes: z.array(z.object({ amount: z.number().int() })).nullish(),
+          status_transitions: z.object({ paid_at: z.number().int().nullable() }),
           parent: z
             .object({
               subscription_details: z
@@ -625,7 +627,7 @@ export class StripeBillingProvider implements BillingProvider {
         }),
       ),
       this.listPages(
-        `/v1/charges?customer=${customer}`,
+        `/v1/charges?customer=${customer}&created[gte]=${created}`,
         z.object({
           payment_intent: z.string().nullable(),
           disputed: z.boolean(),
@@ -656,7 +658,10 @@ export class StripeBillingProvider implements BillingProvider {
         invoiceId: invoice.id,
         amountCents: Math.max(0, invoice.amount_paid - tax),
         currency: invoice.currency,
-        reversed: intents.some((paid) => reversedIntents.has(paid.payment.payment_intent ?? null)),
+        paidAt: fromSeconds(invoice.status_transitions.paid_at) ?? since,
+        reversed:
+          intents.length > 0 &&
+          intents.every((paid) => reversedIntents.has(paid.payment.payment_intent ?? null)),
       });
     }
     return payments;

@@ -568,8 +568,11 @@ export interface BillingProvider {
   /** Optional prepaid model usage capabilities; product code owns the balance ledger. */
   createCreditCheckout?(input: BillingCreditCheckoutRequest): Promise<{ url: string }>;
   listCreditPurchases?(customerId: string): Promise<BillingCreditPurchase[]>;
-  /** Paid own-key plan invoices, the payments a referring partner earns on. Credits never count. */
-  listPlanPayments?(customerId: string): Promise<BillingPlanPayment[]>;
+  /**
+   * Paid own-key plan invoices created since `since`, the payments a referring partner earns on.
+   * Credits never count.
+   */
+  listPlanPayments?(customerId: string, since: Date): Promise<BillingPlanPayment[]>;
   setMonthlyCredits?(customerId: string, amountCents: number): Promise<void>;
   /** Flat monthly own-key plan: access without credits. */
   createByokCheckout?(input: BillingByokCheckoutRequest): Promise<{ url: string }>;
