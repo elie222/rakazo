@@ -104,7 +104,20 @@ function parseSkillFrontmatter(text: string): unknown {
     assertSafeFrontmatter(parsed);
     return parsed;
   } catch (error) {
-    const repaired = repairUnknownStringEscapes(quoteLegacyColonScalars(repairLegacyFields(text)));
+    let blockIndent: number | undefined;
+    const repaired = text
+      .split("\n")
+      .map((line) => {
+        const indent = line.length - line.trimStart().length;
+        if (blockIndent !== undefined && (!line.trim() || indent > blockIndent)) return line;
+        blockIndent = undefined;
+        if (/:[ \t]*[>|][1-9+-]*(?:[ \t]+#.*)?[ \t]*$/.test(line)) {
+          blockIndent = indent;
+          return line;
+        }
+        return repairUnknownStringEscapes(quoteLegacyColonScalars(repairLegacyFields(line)));
+      })
+      .join("\n");
     if (repaired === text) throw error;
     const parsed = parseYaml(repaired, options);
     assertSafeFrontmatter(parsed);

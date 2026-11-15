@@ -454,6 +454,14 @@ function collectSkills(
       (!agentSkillBundle && !/^skills\/[^/]+\/SKILL\.md$/.test(path))
     )
       continue;
+    if ([UNFETCHED_FILE, OVERSIZED_FILE, UNREADABLE_FILE].includes(content)) {
+      skipped.push({
+        kind: "skill_invalid",
+        name: path,
+        reason: "Skill content is unavailable or exceeds import limits",
+      });
+      continue;
+    }
     const parsed = parseSkillMd(content);
     if ("error" in parsed) {
       skipped.push({ kind: "skill_invalid", name: path, reason: parsed.error });
@@ -819,7 +827,9 @@ export function parsePluginDirectory(input: {
     resolvedSha: input.resolvedSha,
     digest: `sha256:${createHash("sha256").update(JSON.stringify(canonical)).digest("hex")}`,
     skills,
-    mcpServers: collectMcpServers(files, typeof schema === "string" ? schema : undefined, skipped),
+    mcpServers: agentSkillBundle
+      ? []
+      : collectMcpServers(files, typeof schema === "string" ? schema : undefined, skipped),
     skipped,
     builtinNames,
   };
@@ -861,7 +871,8 @@ export function classifyPluginFiles(
   const skillPaths = paths.filter(isSkillDocumentPath);
   const hasMcpConfig = paths.some((path) => path === "mcp.json" || path === ".mcp.json");
   if (!hasManifest && !hasMcpConfig && skillPaths.length > 0) {
-    const validSkills = skillPaths.filter((path) => (sizes?.get(path) ?? 0) <= MAX_FILE_BYTES);
+    const selectedSkills = skillPaths.includes("SKILL.md") ? ["SKILL.md"] : skillPaths;
+    const validSkills = selectedSkills.filter((path) => (sizes?.get(path) ?? 0) <= MAX_FILE_BYTES);
     if (
       paths.length > MAX_TREE_ENTRIES ||
       skillPaths.length > MAX_CATALOG_SKILLS ||
