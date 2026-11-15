@@ -384,4 +384,218 @@ describe("redaction", () => {
       "cannot open [user]\\app.db",
     );
   });
+
+  it.each([
+    [
+      "postgres://app:hunter2secret@localhost:5432/db",
+      "postgres://app:[Redacted]@localhost:5432/db",
+    ],
+    ["postgres://app:hunter2secret@db:5432", "postgres://app:[Redacted]@db:5432"],
+    ["postgres://app:hunter2secret@10.0.0.5", "postgres://app:[Redacted]@10.0.0.5"],
+    ["redis://:pw@redis:6379", "redis://:[Redacted]@redis:6379"],
+    [
+      "DATABASE_URL=postgres://app:hunter2secret@localhost/db",
+      "DATABASE_URL=postgres://app:[Redacted]@localhost/db",
+    ],
+    [
+      "postgres://app:Secr3t!xyz@db.example.com:5432/db",
+      "postgres://app:[Redacted]@db.example.com:5432/db",
+    ],
+    ["amqp://guest:p@ss!w0rd@[::1]:5672/vhost", "amqp://guest:[Redacted]@[::1]:5672/vhost"],
+    ["mysql://app:pa/ss#w0rd@db/app", "mysql://app:[Redacted]@db/app"],
+    [
+      '{"cache":"redis://:hunter2secret@cache:6379","owner":"team"}',
+      '{"cache":"redis://:[Redacted]@cache:6379","owner":"team"}',
+    ],
+  ])("redacts the password in a connection string: %s", (text, expected) => {
+    expect(redactSensitiveText(text)).toBe(expected);
+  });
+
+  it("redacts secret fields in JSON embedded in a JSON string", () => {
+    expect(redactSensitiveText('{\\"password\\":\\"hunter2secret\\"}')).toBe(
+      '{\\"password\\":\\"[Redacted]\\"}',
+    );
+    const embedded = JSON.stringify({ body: JSON.stringify({ user: "u1", token: "fixture one" }) });
+    expect(redactSensitiveText(embedded)).toBe(
+      '{"body":"{\\"user\\":\\"u1\\",\\"token\\":\\"[Redacted]\\"}"}',
+    );
+  });
+
+  it.each([
+    ["Authorization: Negotiate hunter2secret", "Authorization=[Redacted]"],
+    ["Authorization: ApiKey hunter2secret", "Authorization=[Redacted]"],
+    [
+      'Authorization: Digest username="fixture", realm="fixture realm", response="hunter2secret" sent',
+      "Authorization=[Redacted] sent",
+    ],
+  ])("redacts the credential after any authorization scheme: %s", (text, expected) => {
+    expect(redactSensitiveText(text)).toBe(expected);
+  });
+
+  it.each([
+    ["Cookie: session=hunter2secret", "Cookie=[Redacted]"],
+    ["Cookie: theme=dark; session=hunter2secret was rejected", "Cookie=[Redacted] was rejected"],
+    ["Set-Cookie: session=hunter2secret; Path=/; HttpOnly", "Set-Cookie=[Redacted] HttpOnly"],
+    ["passwd=hunter2secret", "passwd=[Redacted]"],
+    ["credential=hunter2secret", "credential=[Redacted]"],
+  ])("redacts cookies and every secret-like name in free text: %s", (text, expected) => {
+    expect(redactSensitiveText(text)).toBe(expected);
+  });
+
+  it("treats one list of names as secret in structured keys", () => {
+    expect(
+      redactBindings({
+        passwd: "fixture",
+        my_api_key: "fixture",
+        "x-api-key": "fixture",
+        sessionCookie: "fixture",
+        userCredential: "fixture",
+        attempt: 2,
+      }),
+    ).toEqual({
+      passwd: "[Redacted]",
+      my_api_key: "[Redacted]",
+      "x-api-key": "[Redacted]",
+      sessionCookie: "[Redacted]",
+      userCredential: "[Redacted]",
+      attempt: 2,
+    });
+  });
+
+  it.each([
+    ['password="my pass phrase"', "password=[Redacted]"],
+    ["password='my pass phrase' attempt=2", "password=[Redacted] attempt=2"],
+    ['password="my pass phrase', "password=[Redacted]"],
+    ['--password "my pass phrase" --verbose', "--password [Redacted] --verbose"],
+  ])("redacts a whole quoted value: %s", (text, expected) => {
+    expect(redactSensitiveText(text)).toBe(expected);
+  });
+
+  it.each([
+    ['{"db.password":"x"}', '{"db.password":"[Redacted]"}'],
+    ["{'password': 'x'}", "{'password': '[Redacted]'}"],
+    ['{"token": 12345678}', '{"token": [Redacted]}'],
+    ['{"tokens": ["x"]}', '{"tokens": [Redacted]}'],
+    ['"password" => "x"', '"password" => "[Redacted]"'],
+    ['{"id":1,"tokens":["x","y z"],"ok":true}', '{"id":1,"tokens":[Redacted],"ok":true}'],
+    ["{ password: 'x y', attempt: 2 }", "{ password=[Redacted] attempt: 2 }"],
+  ])("redacts secret fields in other JSON and dictionary forms: %s", (text, expected) => {
+    expect(redactSensitiveText(text)).toBe(expected);
+  });
+
+  it.each([
+    ["secret-key=hunter2secret", "secret-key=[Redacted]"],
+    ["--secret-key hunter2secret", "--secret-key [Redacted]"],
+  ])("redacts kebab-case keys wherever the secret word sits: %s", (text, expected) => {
+    expect(redactSensitiveText(text)).toBe(expected);
+  });
+
+  it.each([
+    ["export_person@example.com_2026.csv", "[Redacted]_2026.csv"],
+    ["person@example.com2", "[Redacted]2"],
+    ["josé@example.com", "[Redacted]"],
+  ])("redacts an address whatever follows it or spells it: %s", (text, expected) => {
+    expect(redactSensitiveText(text)).toBe(expected);
+  });
+
+  it.each([
+    ["ak_hunter2_secret", "[Redacted]"],
+    ["token_eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.sig", "token_[Redacted]"],
+    ["_sk-hunter2secret", "_[Redacted]"],
+    ["sk_live_hunter2secret", "[Redacted]"],
+  ])("redacts keys and tokens glued to a word character: %s", (text, expected) => {
+    expect(redactSensitiveText(text)).toBe(expected);
+  });
+
+  it("redacts a shared page's link wherever its path starts", () => {
+    const token = "Zm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyZm9";
+    expect(redactSensitiveText(`url:/p/${token}`)).toBe("url:/p/[Redacted]");
+    expect(redactSensitiveText(`<a>/p/${token}</a>`)).toBe("<a>/p/[Redacted]</a>");
+    expect(redactSensitiveText(`next=%2Fp%2F${token}&from=mail`)).toBe(
+      "next=%2Fp%2F[Redacted]&from=mail",
+    );
+    expect(redactSensitiveText(`https://host/en/p/${token}`)).toBe("https://host/en/p/[Redacted]");
+    expect(
+      redactSensitiveText(`next=https%3A%2F%2Fapp.example.com%3A8443%2Fp%2Fplan-${token}`),
+    ).toBe("next=https%3A%2F%2Fapp.example.com%3A8443%2Fp%2F[Redacted]");
+  });
+
+  it("redacts a value and a path whole when a name in them holds a space", () => {
+    expect(redactSensitiveText("PASSWORD_FILE=C:\\Users\\Jane Doe\\pw.txt")).toBe(
+      "PASSWORD_FILE=[Redacted]",
+    );
+    expect(redactSensitiveText("cannot open /Users/Jane Doe/x")).toBe("cannot open /[user]/x");
+    expect(redactSensitiveText("cannot open /home/example-user and /tmp/x")).toBe(
+      "cannot open /[user] and /tmp/x",
+    );
+  });
+
+  it.each([
+    ["C:\\Users\\C:\\Users\\bob", "C:\\Users\\[user]"],
+    [
+      'Headers.append: "fake" is an invalid header value.person@example.com',
+      'Headers.append: "[Redacted]" is an invalid header [Redacted]',
+    ],
+    [
+      'https://a.example{"password":"a b"}/p/Zm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyZm9',
+      'https://a.example{"password":"[Redacted]"}/p/[Redacted]',
+    ],
+    ['password="a b",next=1 then [Redacted][user]', "password=[Redacted] then [Redacted][user]"],
+  ])("reaches its final text in one pass: %s", (text, expected) => {
+    const redacted = redactSensitiveText(text);
+    expect(redacted).toBe(expected);
+    expect(redactSensitiveText(redacted)).toBe(redacted);
+  });
+
+  it.each([
+    "http://localhost:3000/@vite/client",
+    "at load (http://[::1]:3000/@fs/app/index.js:1:2)",
+    '{"url":"http://localhost:3000","room":"a@b"}',
+    "https://registry.example.com:4873/@scope/pkg/-/pkg-1.0.0.tgz",
+    "docker://registry:5000/image@sha256:abcdef",
+    "file:///C:/work/app/index.js:10:5",
+    "GET /app/p/page1 200 in 12ms",
+    "task-12345678 finished; risk-assessment queued",
+    "break_ak_x keyJson.parse.call",
+    "C:\\Program Files\\App\\run.exe exited with 1",
+    "retry in 5s: upstream 503 (attempt 2/5), cache=miss",
+  ])("leaves text that only resembles a secret unchanged: %s", (text) => {
+    expect(redactSensitiveText(text)).toBe(text);
+  });
+
+  it.each([
+    ["a URL with a colon and no credentials", `"://a:b/".repeat(150_000)`],
+    ["a long URL password that never ends", `"://a:" + "b".repeat(1024 * 1024)`],
+    ["percent-encoded link paths", `"%2Fp%2F".repeat(150_000) + "@"`],
+    ["blank lines after a secret-named key", `"token=" + "\\n".repeat(1024 * 1024)`],
+    ["spaces after a secret-named flag", `"--token" + " ".repeat(1024 * 1024)`],
+    ["a secret-named flag before another flag", `"--token -".repeat(120_000)`],
+    ["quoted keys made of dotted secret names", `'"' + "token.".repeat(170_000)`],
+    [
+      "values that open a quote at ever deeper escaping",
+      `Array.from({ length: 600 }, (_, depth) => "token:" + "\\\\".repeat(depth % 9) + '"x ').join("").repeat(40)`,
+    ],
+    ["lists that never close", `'token:["a\\n'.repeat(100_000)`],
+    [
+      "header parameters",
+      `"cookie: a; b=1; ".repeat(60_000) + "authorization: a, b=\\"".repeat(40_000)`,
+    ],
+    ["profile names followed by more words", `"/Users/a a a a ".repeat(70_000)`],
+  ])("handles a megabyte of %s without blocking", (_name, expression) => {
+    const moduleUrl = new URL("./redaction.ts", import.meta.url).href;
+    const output = execFileSync(
+      process.execPath,
+      [
+        "--import",
+        "tsx",
+        "--input-type=module",
+        "-e",
+        `import { redactSensitiveText } from ${JSON.stringify(moduleUrl)};
+         const text = ${expression};
+         process.stdout.write(String(redactSensitiveText(text).length > 0));`,
+      ],
+      { encoding: "utf8", timeout: 5_000 },
+    );
+    expect(output).toBe("true");
+  });
 });

@@ -2,6 +2,8 @@ import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { redactSensitiveText } from "./redaction.js";
 
+const SEED = 42;
+const RUNS = 300;
 const LEAK_LENGTH = 6;
 
 function survivingPart(secret: string, output: string): string | undefined {
@@ -12,20 +14,40 @@ function survivingPart(secret: string, output: string): string | undefined {
   return undefined;
 }
 
+// A secret that also spells part of the text around it, or of the words redaction writes, would
+// be found there afterwards whether or not it was redacted.
+const WRITTEN = ' Bearer [Redacted] [user] " is an invalid header value.';
+const standsApart = (secret: string, text: string) =>
+  survivingPart(secret, text.split(secret).join(" ") + WRITTEN) === undefined;
+
 const chars = (alphabet: string, minLength: number, maxLength: number) =>
   fc.string({ unit: fc.constantFrom(...alphabet), minLength, maxLength });
 
 const UPPER = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 const LOWER = UPPER.toLowerCase();
 const DIGITS = "0123456789";
-const ALNUM = UPPER + LOWER + DIGITS;
+const LETTERS = UPPER + LOWER;
+const ALNUM = LETTERS + DIGITS;
 const BASE64URL = `${ALNUM}_-`;
 const VISIBLE_ASCII = Array.from({ length: 94 }, (_, i) => String.fromCharCode(33 + i)).join("");
 
 const alnum = chars(ALNUM, 12, 40);
+const visible = chars(VISIBLE_ASCII, 12, 40);
+// A value that opens with a quote runs to the quote that closes it, so a bare one opens otherwise.
+const bare = fc
+  .tuple(chars(VISIBLE_ASCII.replace(/["'\\]/g, ""), 1, 1), chars(VISIBLE_ASCII, 11, 39))
+  .map((parts) => parts.join(""));
 const endsAlnum = (body: fc.Arbitrary<string>) =>
   fc.tuple(body, chars(ALNUM, 1, 1)).map(([head, last]) => head + last);
 const base64url = endsAlnum(chars(BASE64URL, 12, 40));
+// Spaces inside, never at either end, so the phrase is one value only when its quotes are honoured.
+// No lower case, so no part of it can also be a word of the text around it.
+const phrase = fc
+  .array(chars(`${UPPER}${DIGITS}!#$%&()*+,-./:;<=>?@[]^_{|}~`, 3, 10), {
+    minLength: 2,
+    maxLength: 4,
+  })
+  .map((words) => words.join(" "));
 
 const word = fc.constantFrom(
   "request",
@@ -54,6 +76,7 @@ const before = fc.constantFrom(
   "=",
   " [",
   " <",
+  ">",
   "; ",
 );
 const after = fc.constantFrom(" ", "\n", ") ", '" ', "' ", "` ", ", ", ". ", "; ", "] ", "> ", "");
@@ -76,11 +99,15 @@ const bearer = fc
 
 const secretName = fc.constantFrom(
   "password",
+  "passwd",
   "secret",
   "token",
   "authorization",
+  "cookie",
+  "credential",
   "apikey",
   "api_key",
+  "api-key",
 );
 const mixedCase = (name: fc.Arbitrary<string>) =>
   fc
@@ -92,24 +119,20 @@ const mixedCase = (name: fc.Arbitrary<string>) =>
           ? value[0]!.toUpperCase() + value.slice(1)
           : value,
     );
-const assignmentKey = fc.oneof(
-  fc
-    .tuple(
-      fc.constantFrom("", "PG", "client_", "DB_", "x-", "Proxy-", "refresh"),
-      mixedCase(secretName),
-      fc.constantFrom("", "_value", "2", "Hash"),
-    )
-    .map((parts) => parts.join("")),
-  fc
-    .tuple(fc.constantFrom("", "x-", "X-"), mixedCase(fc.constant("api-key")))
-    .map((parts) => parts.join("")),
-);
+const assignmentKey = fc
+  .tuple(
+    fc.constantFrom("", "PG", "client_", "DB_", "x-", "Proxy-", "refresh", "db.", "--"),
+    mixedCase(secretName),
+    fc.constantFrom("", "_value", "2", "Hash", "-key", "-id", "_FILE"),
+  )
+  .map((parts) => parts.join(""));
+const assignmentSeparator = fc.constantFrom("=", ":", ": ", " = ", " : ", ":\t", " => ", "=>");
 const assignment = fc
   .tuple(
     assignmentKey,
-    fc.constantFrom("=", ":", ": ", " = ", " : ", ":\t"),
+    assignmentSeparator,
     fc.constantFrom("", "Basic ", "bearer ", "Digest ", "token "),
-    chars(VISIBLE_ASCII, 12, 40),
+    bare,
   )
   .map(
     ([key, separator, scheme, value]): Planted => ({
@@ -117,8 +140,65 @@ const assignment = fc
       secret: value,
     }),
   );
+const quotedAssignment = fc
+  .tuple(assignmentKey, assignmentSeparator, fc.constantFrom('"', "'"), phrase)
+  .map(
+    ([key, separator, quote, value]): Planted => ({
+      text: `${key}${separator}${quote}${value}${quote}`,
+      secret: value,
+    }),
+  );
+const flag = fc
+  .tuple(
+    fc.constantFrom("--", "--db-", "--client-"),
+    secretName,
+    fc.constantFrom("", "-key", "-file"),
+    fc.constantFrom(" ", "  ", "\t"),
+    fc.oneof(
+      fc.tuple(chars(ALNUM, 1, 1), visible).map((parts) => ({ text: parts.join(""), quote: "" })),
+      fc.tuple(phrase, fc.constantFrom('"', "'")).map(([text, quote]) => ({ text, quote })),
+    ),
+  )
+  .map(
+    ([dashes, name, suffix, gap, value]): Planted => ({
+      text: `${dashes}${name}${suffix}${gap}${value.quote}${value.text}${value.quote}`,
+      secret: value.text,
+    }),
+  );
 
-const jsonSecretName = fc.constantFrom(
+const authorizationHeader = fc
+  .tuple(
+    fc.constantFrom("Authorization", "authorization", "Proxy-Authorization", "X-Authorization"),
+    fc.constantFrom(": ", ":", "=", " = "),
+    fc.constantFrom("Negotiate", "ApiKey", "Mutual", "SCRAM-SHA-256", "Basic", "Bearer"),
+    fc.constantFrom(" ", "  ", "\t"),
+    visible,
+  )
+  .map(
+    ([name, separator, scheme, gap, credential]): Planted => ({
+      text: `${name}${separator}${scheme}${gap}${credential}`,
+      secret: credential,
+    }),
+  );
+const cookieHeader = fc
+  .tuple(
+    fc.constantFrom("Cookie", "cookie", "Set-Cookie"),
+    fc.constantFrom(": ", ":", "="),
+    fc.array(fc.tuple(chars(LOWER, 2, 8), alnum), { minLength: 0, maxLength: 2 }),
+    chars(LOWER, 2, 8),
+    alnum,
+    fc.constantFrom("", "; Path=/; HttpOnly"),
+  )
+  .map(
+    ([header, separator, others, name, value, attributes]): Planted => ({
+      text: `${header}${separator}${[...others, [name, value]]
+        .map((pair) => pair.join("="))
+        .join("; ")}${attributes}`,
+      secret: value,
+    }),
+  );
+
+const fieldName = fc.constantFrom(
   "password",
   "passwd",
   "secret",
@@ -131,71 +211,138 @@ const jsonSecretName = fc.constantFrom(
   "cookie",
   "credential",
 );
-const jsonField = fc
+const fieldKey = fc
   .tuple(
-    fc.constantFrom("", "access_", "x-", "client-", "user"),
-    mixedCase(jsonSecretName),
-    fc.constantFrom("", "_value", "-id", "s"),
-    fc.constantFrom(":", ": ", " : ", ":\n  "),
-    fc.string({ unit: "grapheme", minLength: 12, maxLength: 40 }),
+    fc.constantFrom("", "access_", "x-", "client-", "user", "db.", "config.auth."),
+    mixedCase(fieldName),
+    fc.constantFrom("", "_value", "-id", "s", ".hash"),
   )
+  .map((parts) => parts.join(""));
+const fieldSeparator = fc.constantFrom(":", ": ", " : ", ":\n  ", " => ", "=>");
+const jsonField = fc
+  .tuple(fieldKey, fieldSeparator, fc.string({ unit: "grapheme", minLength: 12, maxLength: 40 }))
   .map(
-    ([prefix, name, suffix, separator, value]): Planted => ({
-      text: `{"id":"r1","${prefix}${name}${suffix}"${separator}${JSON.stringify(value)},"code":401}`,
+    ([key, separator, value]): Planted => ({
+      text: `{"id":"r1","${key}"${separator}${JSON.stringify(value)},"code":401}`,
       secret: JSON.stringify(value).slice(1, -1),
     }),
   );
+const escaped = (json: string) => JSON.stringify(json).slice(1, -1);
+const escapedJsonField = fc
+  .tuple(
+    fieldKey,
+    fc.constantFrom(":", ": "),
+    fc.string({ unit: "grapheme", minLength: 12, maxLength: 40 }),
+    fc.boolean(),
+  )
+  .map(([key, separator, value, twice]): Planted => {
+    const once = {
+      text: escaped(`{"id":"r1","${key}"${separator}${JSON.stringify(value)},"code":401}`),
+      secret: escaped(JSON.stringify(value).slice(1, -1)),
+    };
+    return twice ? { text: escaped(once.text), secret: escaped(once.secret) } : once;
+  });
+const singleQuotedField = fc.tuple(fieldKey, fc.constantFrom(":", ": ", " : ", " => "), phrase).map(
+  ([key, separator, value]): Planted => ({
+    text: `{'id': 'r1', '${key}'${separator}'${value}', 'code': 401}`,
+    secret: value,
+  }),
+);
+const unquotedField = fc
+  .tuple(
+    fieldKey,
+    fieldSeparator,
+    fc.oneof(
+      chars(DIGITS, 12, 20).map((text) => ({ text, secret: text })),
+      fc
+        .tuple(fc.array(alnum, { maxLength: 2 }), alnum, fc.constantFrom(",", ", "))
+        .map(([others, secret, comma]) => ({
+          text: `[${[...others, secret].map((item) => JSON.stringify(item)).join(comma)}]`,
+          secret,
+        })),
+      fc.tuple(alnum, phrase).map(([name, secret]) => ({
+        text: `{"${name}": ${JSON.stringify(secret)}}`,
+        secret,
+      })),
+    ),
+    fc.constantFrom(",", "}", ", ", " }"),
+  )
+  .map(
+    ([key, separator, value, end]): Planted => ({
+      text: `{"id":"r1","${key}"${separator}${value.text}${end}"code":401}`,
+      secret: value.secret,
+    }),
+  );
 
+// A key or signed token stays one when it follows an underscore.
+const glued = fc.constantFrom("", "_", "id_", "key_");
 const bareKey = fc.oneof(
   fc
-    .tuple(fc.constantFrom("sk-", "sk-or-v1-"), base64url)
-    .map(([prefix, body]): Planted => ({ text: prefix + body, secret: body })),
+    .tuple(glued, fc.constantFrom("sk-", "sk-or-v1-"), base64url)
+    .map(([glue, prefix, body]): Planted => ({ text: glue + prefix + body, secret: body })),
   fc
-    .tuple(fc.constantFrom("ak_", "ck_"), alnum)
+    .tuple(fc.constantFrom("ak_", "ck_", "sk_live_", "sk_test_"), base64url)
     .map(([prefix, body]): Planted => ({ text: prefix + body, secret: body })),
 );
 
 const jwt = fc
-  .tuple(base64url, base64url, base64url)
-  .map(([header, payload, signature]): Planted => {
-    const text = `eyJ${header}.${payload}.${signature}`;
-    return { text, secret: text };
+  .tuple(glued, base64url, base64url, base64url)
+  .map(([glue, header, payload, signature]): Planted => {
+    const token = `eyJ${header}.${payload}.${signature}`;
+    return { text: glue + token, secret: token };
   });
 
 const email = fc
   .tuple(
-    chars(`${LOWER}${DIGITS}`, 1, 8),
-    chars(`${LOWER}${DIGITS}._%+-`, 0, 12),
+    chars(`${LOWER}${DIGITS}éüñяω`, 1, 8),
+    chars(`${LOWER}${DIGITS}._%+-éüñяω`, 0, 12),
     chars(`${LOWER}${DIGITS}`, 1, 4),
     fc.array(chars(`${LOWER}${DIGITS}-`, 1, 10), { minLength: 1, maxLength: 3 }),
     chars(LOWER, 2, 6),
     fc.boolean(),
+    fc.constantFrom("", "_2026.csv", "_", "7", "-export"),
   )
-  .map(([first, middle, last, labels, tld, upper]): Planted => {
+  .map(([first, middle, last, labels, tld, upper, tail]): Planted => {
     const address = `${first}${middle}${last}@${labels.join(".")}.${tld}`;
-    const text = upper ? address.toUpperCase() : address;
-    return { text, secret: text };
+    const secret = upper ? address.toUpperCase() : address;
+    return { text: secret + tail, secret };
   });
 
+const shareToken = fc
+  .tuple(fc.constantFrom("", "q3-plan-", "notes-"), base64url)
+  .map(([slug, token]) => ({ text: slug + token, secret: token }));
+const sharePath = fc.constantFrom("/p/", "/api/v1/pages/shared/");
 const shareLinkAt = (origin: fc.Arbitrary<string>) =>
-  fc
-    .tuple(
-      origin,
-      fc.constantFrom("/p/", "/api/v1/pages/shared/"),
-      fc.constantFrom("", "q3-plan-", "notes-"),
-      base64url,
-      fc.constantFrom("", "?x=1", "#top", "/"),
-    )
-    .map(
-      ([host, path, slug, token, tail]): Planted => ({
-        text: `${host}${path}${slug}${token}${tail}`,
-        secret: token,
-      }),
-    );
-const absoluteShareLink = shareLinkAt(
-  fc.constantFrom("https://app.example.com", "http://localhost:3000", "https://example.com:8443"),
-);
-const relativeShareLink = shareLinkAt(fc.constant(""));
+  fc.tuple(origin, sharePath, shareToken, fc.constantFrom("", "?x=1", "#top", "/", "&x=1")).map(
+    ([host, path, token, tail]): Planted => ({
+      text: `${host}${path}${token.text}${tail}`,
+      secret: token.secret,
+    }),
+  );
+const shareOrigin = fc
+  .tuple(
+    fc.constantFrom("https://app.example.com", "http://localhost:3000", "https://example.com:8443"),
+    fc.constantFrom("", "/en", "/pt-BR"),
+  )
+  .map((parts) => parts.join(""));
+const absoluteShareLink = shareLinkAt(shareOrigin);
+const relativeShareLink = shareLinkAt(fc.constantFrom("", "/en", "url:", "href=", "}"));
+const encodedShareLink = fc
+  .tuple(
+    fc.constantFrom("next=", "redirect="),
+    fc.oneof(fc.constant(""), shareOrigin),
+    sharePath,
+    shareToken,
+    fc.constantFrom("", "?x=1", "&x=1"),
+    fc.boolean(),
+  )
+  .map(([parameter, origin, path, token, tail, twice]): Planted => {
+    const once = encodeURIComponent(`${origin}${path}${token.text}`);
+    return {
+      text: `${parameter}${twice ? encodeURIComponent(once) : once}${tail}`,
+      secret: token.secret,
+    };
+  });
 
 const echoedHeader = fc
   .tuple(
@@ -211,52 +358,72 @@ const echoedHeader = fc
   );
 
 const accountName = endsAlnum(chars(`${LOWER}${DIGITS}._-`, 8, 20));
+const spacedName = fc.tuple(accountName, accountName).map((names) => names.join(" "));
 const posixProfile = fc
-  .tuple(fc.constantFrom("/home/", "/Users/"), accountName, fc.constantFrom("", "/app/data.db"))
-  .map(([root, name, rest]): Planted => ({ text: `${root}${name}${rest}`, secret: name }));
+  .tuple(
+    fc.constantFrom("/home/", "/Users/"),
+    fc.oneof(
+      fc.tuple(accountName, fc.constantFrom("", "/app/data.db")),
+      fc.tuple(spacedName, fc.constantFrom("/app/data.db", "/")),
+    ),
+  )
+  .map(([root, [name, rest]]): Planted => ({ text: `${root}${name}${rest}`, secret: name }));
 const windowsProfile = fc
   .tuple(
     fc.constantFrom("C:\\Users\\", "D:/Users/", "c:\\users\\"),
-    fc.oneof(
-      accountName,
-      fc.tuple(accountName, accountName).map((names) => names.join(" ")),
-    ),
+    fc.oneof(accountName, spacedName),
     fc.constantFrom("", "\\AppData\\app.db", "/app.db"),
   )
   .map(([root, name, rest]): Planted => ({ text: `${root}${name}${rest}`, secret: name }));
 
+// A password may hold any visible character, with two readings left to the URL itself: a number
+// that ends where a URL can is a port, so the password starts with a letter here, and an `@`
+// with a host and the end of the URL after it closes the credentials, so it holds either an `@`
+// or the characters that end a URL.
 const connectionString = fc
   .tuple(
-    fc.constantFrom("postgres", "postgresql", "redis", "https"),
-    fc.constantFrom("app", "admin", ""),
+    fc.constantFrom("", "DATABASE_URL=", "url: "),
+    fc.constantFrom("postgres", "postgresql", "mysql", "redis", "amqp", "mongodb+srv", "https"),
+    fc.constantFrom("app", "admin", "", "ops@example.com"),
     fc
-      .tuple(chars(ALNUM, 1, 1), endsAlnum(chars(`${ALNUM}._%+-`, 11, 40)))
+      .tuple(
+        chars(LETTERS, 1, 1),
+        fc.oneof(
+          chars(VISIBLE_ASCII.replace(/["'<>,;)\]}\\&/?#`]/g, ""), 11, 39),
+          chars(VISIBLE_ASCII.replace("@", ""), 11, 39),
+        ),
+      )
       .map((parts) => parts.join("")),
-    fc.constantFrom("db.example.com", "cache.internal.example.net", "example.org"),
+    fc.constantFrom("db.example.com", "example.org", "localhost", "db", "10.0.0.5", "[::1]"),
     fc.constantFrom("", ":5432", ":5432/app", "/app?sslmode=require"),
   )
   .map(
-    ([scheme, user, password, host, rest]): Planted => ({
-      text: `${scheme}://${user}:${password}@${host}${rest}`,
+    ([prefix, scheme, user, password, host, rest]): Planted => ({
+      text: `${prefix}${scheme}://${user}:${password}@${host}${rest}`,
       secret: password,
     }),
   );
 
-const stableShapes = {
+const shapes = {
   "a bearer token": bearer,
   "a value assigned to a secret-named key": assignment,
+  "a quoted value with spaces assigned to a secret-named key": quotedAssignment,
+  "a value after a secret-named command-line flag": flag,
+  "a credential after any authorization scheme": authorizationHeader,
+  "a cookie in a header": cookieHeader,
   "a JSON string field with a secret-named key": jsonField,
+  "a secret-named field in escaped JSON": escapedJsonField,
+  "a single-quoted field with a secret-named key": singleQuotedField,
+  "a number, list or object under a secret-named key": unquotedField,
   "a bare API key": bareKey,
   "a signed web token": jwt,
   "an email address": email,
   "a password in a connection string": connectionString,
   "a shared page link with its origin": absoluteShareLink,
-  "an account name in a POSIX profile path": posixProfile,
-};
-const shapes = {
-  ...stableShapes,
   "a shared page path": relativeShareLink,
+  "a percent-encoded shared page link": encodedShareLink,
   "an echoed header value": echoedHeader,
+  "an account name in a POSIX profile path": posixProfile,
   "an account name in a Windows profile path": windowsProfile,
 };
 const anyShape = fc.oneof(...Object.values(shapes));
@@ -267,7 +434,8 @@ function inText(planted: fc.Arbitrary<Planted>) {
     .map(([lead, open, { text, secret }, close, trail]) => ({
       text: `${lead}${open}${text}${close}${trail}`,
       secret,
-    }));
+    }))
+    .filter(({ text, secret }) => standsApart(secret, text));
 }
 
 const fragment = fc.constantFrom(
@@ -275,40 +443,59 @@ const fragment = fc.constantFrom(
   "'",
   ":",
   "=",
+  "=>",
   "@",
   "/",
   "\\",
   ".",
   "-",
+  "--",
   "_",
   " ",
   "\n",
   ",",
   ";",
   "&",
+  "%",
   "{",
   "}",
+  "[",
+  "]",
   "(",
   ")",
   "Bearer ",
+  "Negotiate ",
   "token",
   "password",
+  "passwd",
   "secret",
   "api-key",
   "authorization",
+  "Cookie: ",
+  "credential",
   "basic ",
   "sk-",
+  "sk_",
   "sk-or-v1-",
   "ak_",
   "eyJ",
   "://",
   "https://a.example",
+  "user:",
+  ":5432",
+  "/p/",
+  "%2Fp%2F",
+  "/en",
   "/home/",
   "/Users/",
+  "C:\\Users\\",
+  'Headers.append: "',
+  '" is an invalid header value.',
   "abcdefgh",
   "A1b2C3d4",
   "x",
   "9",
+  "é",
   ".com",
   "[Redacted]",
   "[user]",
@@ -330,32 +517,63 @@ const hostileUnit = fc.constantFrom(
   "_",
   " ",
   "\n",
+  ",",
+  ";",
+  "[",
+  "{",
+  "%",
   "a",
+  "é",
   "a@",
   "a.",
   "a@a.a1",
   "eyJ-",
   "eyJa.",
+  "_eyJ",
   "sk-",
+  "sk_",
   "ak_",
   "/p",
   "/p/",
+  "%2Fp%2F",
+  "/en/p/",
   "://",
+  "://a:",
+  "://a:b/",
+  "://a:1/",
   "token",
   "token ",
+  "token.",
+  "token-",
+  "token=",
+  "token=>",
   '"token":"',
   '"token":"\\',
+  '"a.token',
+  "'token':'",
+  'token:\\"',
+  'token:\\\\\\"',
+  "token:[",
+  'token:["',
+  "token:{",
+  "--token ",
+  "--token -",
+  "cookie: a; ",
+  "authorization: a, ",
+  "authorization: a ",
   '\\"',
   "Bearer ",
   "C:\\Users\\",
   "/home/",
+  "/Users/a ",
   'Headers.append: "',
+  "[Redacted]",
 );
 const hostile = fc
   .tuple(
-    fc.constantFrom("", "a@", '"token":"', "sk-", "eyJ", "https://", "token"),
+    fc.constantFrom("", "a@", '"token":"', "sk-", "eyJ", "https://", "token", "://a:b", "token="),
     fc.array(hostileUnit, { minLength: 1, maxLength: 3 }).map((units) => units.join("")),
-    fc.constantFrom("", '"', ":", "@a.aa", "/p/x", "\n"),
+    fc.constantFrom("", '"', ":", "@a.aa", "/p/x", "\n", "@", "]", '\\"'),
   )
   .map(([head, unit, tail]) => head + unit.repeat(Math.ceil(HOSTILE_LENGTH / unit.length)) + tail);
 
@@ -373,7 +591,7 @@ describe("redactSensitiveText properties", () => {
         fc.property(inText(shape), ({ text, secret }) => {
           expect(survivingPart(secret, redactSensitiveText(text))).toBeUndefined();
         }),
-        { seed: 42, numRuns: 300 },
+        { seed: SEED, numRuns: RUNS },
       );
     },
   );
@@ -388,12 +606,13 @@ describe("redactSensitiveText properties", () => {
         const text = pieces
           .map(([open, { text }, close, trail]) => `${open}${text}${close}${trail}`)
           .join(" ");
+        fc.pre(pieces.every(([, { secret }]) => standsApart(secret, text)));
         const redacted = redactSensitiveText(text);
         for (const [, { secret }] of pieces) {
           expect(survivingPart(secret, redacted)).toBeUndefined();
         }
       }),
-      { seed: 42, numRuns: 300 },
+      { seed: SEED, numRuns: RUNS },
     );
   });
 
@@ -402,7 +621,7 @@ describe("redactSensitiveText properties", () => {
       .array(
         fc.oneof(
           fragment,
-          fc.oneof(...Object.values(stableShapes)).map(({ text }) => text),
+          anyShape.map(({ text }) => text),
         ),
         { maxLength: 12 },
       )
@@ -412,7 +631,7 @@ describe("redactSensitiveText properties", () => {
         const redacted = redactSensitiveText(text);
         expect(redactSensitiveText(redacted)).toBe(redacted);
       }),
-      { seed: 42, numRuns: 1000 },
+      { seed: SEED, numRuns: RUNS * 4 },
     );
   });
 
@@ -428,20 +647,22 @@ describe("redactSensitiveText properties", () => {
       fc.property(plain, (text) => {
         expect(redactSensitiveText(text)).toBe(text);
       }),
-      { seed: 42, numRuns: 300 },
+      { seed: SEED, numRuns: RUNS },
     );
   });
 
-  it("redacts sixty thousand characters of pattern-starting text well within half a second", () => {
+  it("redacts pattern-starting text in time comparable to plain text of the same length", () => {
+    // Measured against plain text on the same machine, so a slow or busy runner cannot fail it.
+    // The plain text names a secret and holds an at sign, so no rule is skipped for it.
+    const plainText = "plain token words @ ".repeat(HOSTILE_LENGTH / 20);
+    const fastestOf = (text: string) =>
+      Math.min(...[0, 1, 2].map(() => elapsed(() => redactSensitiveText(text))));
+    const budget = Math.max(100, fastestOf(plainText) * 50);
     fc.assert(
       fc.property(hostile, (text) => {
-        const fastest = Math.min(
-          elapsed(() => redactSensitiveText(text)),
-          elapsed(() => redactSensitiveText(text)),
-        );
-        expect(fastest).toBeLessThan(500);
+        expect(fastestOf(text)).toBeLessThan(budget);
       }),
-      { seed: 42, numRuns: 40 },
+      { seed: SEED, numRuns: 80 },
     );
   });
 });
