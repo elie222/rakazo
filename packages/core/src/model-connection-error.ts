@@ -8,6 +8,11 @@ const MARKER = "•••";
  * status that holds it.
  */
 const MIN_KNOWN_SECRET_LENGTH = 4;
+/**
+ * A known value this long is hidden wherever it appears, inside other text included. A shorter
+ * one is hidden only where it stands alone, so a key of `local` leaves `localhost` readable.
+ */
+const MIN_HIDDEN_ANYWHERE_LENGTH = 8;
 
 const CREDENTIAL_NAME =
   "(?:api|access|auth|private|subscription)[ _-]?key|secret|token|password|passwd|authorization|credential";
@@ -324,15 +329,20 @@ function foldAsciiCase(text: string): string {
  * The values as entered, and as a URL or a JSON string would carry them. They are matched without
  * regard to letter case, so `%2f` hides what was encoded as `%2F`.
  */
-function knownSecretForms(secrets: ReadonlyArray<string | null | undefined>): string[] {
-  const forms = new Set<string>();
+function knownSecretForms(secrets: ReadonlyArray<string | null | undefined>) {
+  const anywhere = new Set<string>();
+  const alone = new Set<string>();
   for (const secret of secrets) {
     const entered = secret?.trim();
     if (!entered) continue;
     // A header value such as `Bearer abc1` is sent whole, and an error may repeat only its token.
+    // A short token that is a plain word (`Bearer token`) would blank that word in every message.
     const token = SCHEME_LED_VALUE.exec(entered)?.[1];
-    for (const value of [entered, token && !PLAIN_WORD.test(token) ? token : undefined]) {
+    const tokenIsKnown =
+      token && (token.length >= MIN_HIDDEN_ANYWHERE_LENGTH || !PLAIN_WORD.test(token));
+    for (const value of [entered, tokenIsKnown ? token : undefined]) {
       if (!value || value.length < MIN_KNOWN_SECRET_LENGTH) continue;
+      const forms = value.length < MIN_HIDDEN_ANYWHERE_LENGTH ? alone : anywhere;
       const json = JSON.stringify(value).slice(1, -1);
       forms.add(value).add(json).add(json.replaceAll("/", "\\/"));
       try {
@@ -343,17 +353,28 @@ function knownSecretForms(secrets: ReadonlyArray<string | null | undefined>): st
       }
     }
   }
-  return [...forms].map(foldAsciiCase);
+  return { anywhere: [...anywhere].map(foldAsciiCase), alone: [...alone] };
 }
 
 function redactKnownSecrets(text: string, secrets: ReadonlyArray<string | null | undefined>) {
+  const { anywhere, alone } = knownSecretForms(secrets);
   let output = "";
   let offset = 0;
-  for (const [start, end] of redactedRanges(foldAsciiCase(text), knownSecretForms(secrets))) {
+  for (const [start, end] of redactedRanges(foldAsciiCase(text), anywhere)) {
     output += text.slice(offset, start) + MARKER;
     offset = end;
   }
-  return output + text.slice(offset);
+  output += text.slice(offset);
+  if (alone.length === 0) return output;
+  // Longest first, so a value is not cut short by a shorter one it starts with.
+  const standingAlone = new RegExp(
+    `(?<![A-Za-z0-9])(?:${alone
+      .sort((a, b) => b.length - a.length)
+      .map((form) => form.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+      .join("|")})(?![A-Za-z0-9])`,
+    "gi",
+  );
+  return output.replace(standingAlone, MARKER);
 }
 
 /** The credentials a model connection form holds, for `sanitizeModelConnectionError`. */

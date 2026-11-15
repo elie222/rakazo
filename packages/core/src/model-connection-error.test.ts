@@ -281,6 +281,27 @@ describe("sanitizeModelConnectionError", () => {
       );
     });
 
+    it("redacts a known value under eight characters only where it stands alone", () => {
+      expect(
+        sanitizeModelConnectionError("local refused: connect ECONNREFUSED localhost:11434", [
+          "local",
+        ]),
+      ).toBe("••• refused: connect ECONNREFUSED localhost:11434");
+      expect(
+        sanitizeModelConnectionError("the beta flag is not true for betatesters", ["beta", "true"]),
+      ).toBe("the ••• flag is not ••• for betatesters");
+    });
+
+    it("redacts a longer known value inside other text", () => {
+      expect(sanitizeModelConnectionError("got xlocal-key-1y", ["local-key-1"])).toBe("got x•••y");
+    });
+
+    it("redacts a header's token by itself when it is long, even if it is all letters", () => {
+      expect(
+        sanitizeModelConnectionError("rejected ABCDEFGHIJKLMNOP", ["Bearer ABCDEFGHIJKLMNOP"]),
+      ).toBe("rejected •••");
+    });
+
     it("keeps the second word of a two-word header value that is not a token", () => {
       expect(sanitizeModelConnectionError("desktop client rejected", ["example desktop"])).toBe(
         "desktop client rejected",

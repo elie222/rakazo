@@ -410,17 +410,22 @@ describe("sanitizeModelConnectionError properties", () => {
       inMessage(anyShape).map(({ message }) => message),
     );
     // The marker itself is not a credential: a value made of it would read as already hidden.
-    const knownSecret = fc
-      .string({
-        unit: fc.oneof(
-          fc.constantFrom(...VISIBLE_ASCII, " ", "\t"),
-          fc.constantFrom("é", "ü", "日", "😀"),
-        ),
-        minLength: 4,
-        maxLength: 60,
-      })
-      .map((value) => value.trim())
-      .filter((value) => value.length >= 4);
+    const knownSecretOf = (minLength: number, maxLength: number) =>
+      fc
+        .string({
+          unit: fc.oneof(
+            fc.constantFrom(...VISIBLE_ASCII, " ", "\t"),
+            fc.constantFrom("é", "ü", "日", "😀"),
+          ),
+          minLength,
+          maxLength,
+        })
+        .map((value) => value.trim())
+        .filter((value) => value.length >= minLength);
+    const knownSecret = knownSecretOf(4, 60);
+    // From this length a known credential is hidden even inside other text.
+    const longKnownSecret = knownSecretOf(8, 60);
+    const shortKnownSecret = knownSecretOf(4, 7);
     const lowerCaseEscapes = (encoded: string) =>
       encoded.replace(/%[0-9A-F]{2}/g, (hex) => hex.toLowerCase());
     const mixedCaseEscapes = (encoded: string) =>
@@ -442,7 +447,7 @@ describe("sanitizeModelConnectionError properties", () => {
       fc.assert(
         fc.property(
           anyText,
-          knownSecret,
+          longKnownSecret,
           written,
           anyText,
           fc.constantFrom("", " ", "\n\t"),
@@ -451,6 +456,26 @@ describe("sanitizeModelConnectionError properties", () => {
             const cleaned = sanitizeModelConnectionError(message, [padding + secret + padding]);
             expect(cleaned).not.toContain(secret);
             expect(cleaned).not.toContain(write(secret));
+          },
+        ),
+        { seed: SEED, numRuns: 1000 },
+      );
+    });
+
+    it("never leaves a short one where it stands alone, as entered or encoded", () => {
+      const edge = fc.constantFrom(" ", "\n", "=", ":", '"', "'", "/", "&", "(", ")", ",");
+      fc.assert(
+        fc.property(
+          anyText,
+          edge,
+          shortKnownSecret,
+          written,
+          edge,
+          anyText,
+          (lead, before, secret, write, after, trail) => {
+            const alone = `${before}${write(secret)}${after}`;
+            const cleaned = sanitizeModelConnectionError(`${lead}${alone}${trail}`, [secret]);
+            expect(cleaned).not.toContain(alone);
           },
         ),
         { seed: SEED, numRuns: 1000 },
