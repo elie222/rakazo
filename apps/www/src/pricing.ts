@@ -137,6 +137,7 @@ const TIERS = (Object.keys(BYOK_TIERS) as ByokTier[]).flatMap((tier) => {
   return [
     {
       name: terms.name,
+      monthlyCents: monthly ?? 0,
       price: monthly === null ? "Free" : `${dollars(monthly)}/mo`,
       computerSize: terms.computerSize,
       hours: computerHours(terms.computerAllowanceCents),
@@ -231,6 +232,20 @@ export const PRICING_COMPARISON = {
     { feature: "Open source", cells: included(true) },
   ] satisfies { feature: string; hint?: string; cells: PricingCell[] }[],
 };
+
+/** Every plan's price, for structured data. */
+export const PRICE_OFFERS: readonly (
+  | { name: string; monthlyCents: number }
+  | { name: string; fromMonthlyCents: number; description: string }
+)[] = [
+  { name: SELF_HOSTED_PLAN.name, monthlyCents: 0 },
+  ...TIERS.map((tier) => ({ name: tier.name, monthlyCents: tier.monthlyCents })),
+  {
+    name: CREDITS_PLAN.name,
+    fromMonthlyCents: MODEL_CREDIT_AMOUNTS[0],
+    description: CREDITS_PLAN.note ?? "",
+  },
+];
 
 function markdownCell(cell: PricingCell) {
   if (cell === true) return "Yes";

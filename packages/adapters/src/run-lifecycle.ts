@@ -7,6 +7,7 @@ import {
   isTerminal,
   nextFence,
   redactSecrets,
+  truncatePlainText,
   userRunError,
 } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
@@ -162,6 +163,9 @@ export async function renewRunLease(
 /** Consecutive setup failures, including this one, after which a run fails instead of retrying. */
 export const RUN_SETUP_FAILURE_LIMIT = 8;
 
+/** The most of a setup failure's reason an attempt keeps; the log line has the whole error. */
+export const RUN_SETUP_FAILURE_REASON_MAX = 2_000;
+
 /** A paused turn's pending tool is not offered right now, such as while the user's own computer is offline. */
 export class PausedTurnToolsUnavailableError extends Error {
   constructor() {
@@ -174,7 +178,8 @@ export class PausedTurnToolsUnavailableError extends Error {
 
 /**
  * Setup failures in a row before the current attempt. Busy-computer and database waits are
- * setup_failed attempts without an error; they neither count nor break the streak.
+ * setup_failed attempts without an error; they neither count nor break the streak. Any error
+ * text counts: an earlier release wrote one fixed text where this one writes the reason.
  */
 export async function setupFailureStreak(prisma: PrismaClient, runId: string): Promise<number> {
   const recent = await prisma.attempt.findMany({
@@ -472,13 +477,20 @@ export async function retryRunSetup(
     setupError instanceof SandboxUnresponsiveError ||
     setupError instanceof PausedTurnToolsUnavailableError ||
     setupError instanceof VaultKeyUnavailableError;
+  // Named here, not left to the log context, so the line is found by run wherever it is written.
+  const runFields = {
+    "run.id": runId,
+    "space.id": run.spaceId,
+    "thread.id": run.threadId,
+    "bot.id": run.botId,
+  };
   // A lost lease aborted setup on purpose; whatever that interrupted is not a failure.
   if (databaseDown) {
     // Logged by the outage.
   } else if (providerOutage || !plan.leaseValid) {
-    getLogger().warn("run setup failed", { error: reportedSetupError });
+    getLogger().warn("run.setup_failed", { ...runFields, error: reportedSetupError });
   } else if (!computerBusy) {
-    getLogger().error("run setup failed", reportedSetupError);
+    getLogger().error("run.setup_failed", reportedSetupError, runFields);
   }
   // Every write below is fenced by this attempt's lease, so each may wait out a failover.
   const whileDatabaseDown = <T>(source: string, write: () => Promise<T>) =>
@@ -525,7 +537,9 @@ export async function retryRunSetup(
         where: { id: attempt.id },
         data: {
           status: "setup_failed",
-          error: retryForever ? null : "Run setup failed; retrying",
+          error: retryForever
+            ? null
+            : truncatePlainText(setupMessage, RUN_SETUP_FAILURE_REASON_MAX),
           finishedAt: new Date(),
         },
       }),

@@ -7,6 +7,7 @@ import { isIndexedPath } from "./src/blog/indexability.ts";
 import { buildChecks } from "./src/build-checks.ts";
 import { docsCallouts } from "./src/docs-callouts.ts";
 import { LOCALE_HREFLANG, LOCALES } from "./src/i18n/locales.ts";
+import { sitemapEntry } from "./src/sitemap.ts";
 import { resolveWwwPort } from "./www-port.mjs";
 
 const wwwPort = resolveWwwPort();
@@ -26,6 +27,7 @@ export default defineConfig({
     react(),
     sitemap({
       filter: (page) => isIndexedPath(new URL(page).pathname),
+      serialize: sitemapEntry,
       i18n: {
         defaultLocale: "en",
         locales: LOCALE_HREFLANG,

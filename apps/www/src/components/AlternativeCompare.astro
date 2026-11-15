@@ -22,6 +22,7 @@ const card = vsCard(page.slug);
   title={page.title}
   description={page.description}
   faq={page.faq}
+  article={{ headline: page.h1, parents: [{ name: "Alternatives", path: "/alternatives/" }] }}
   ogImage={ogPublicPath(page.slug)}
 >
   <p class="alt-crumb"><a href="/alternatives/">Alternatives</a></p>
