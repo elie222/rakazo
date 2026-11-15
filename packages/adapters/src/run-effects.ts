@@ -17,7 +17,7 @@ import {
   completeExternalEffect,
   parseCatalogApprovalTarget,
 } from "./approval-effect.js";
-import { USE_TOOL } from "./builtin-tool-bridge.js";
+import { USE_TOOL } from "./builtin.tool-definition.js";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { uniquifyInstalledToolName } from "./lazy-tool-catalog.js";
 import { runLeaseFor } from "./run-messages.js";
