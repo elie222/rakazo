@@ -157,6 +157,7 @@
       "desktop": null,
       "evidence": [
         "apps/web/e2e/composer-paste.spec.ts",
+        "apps/web/e2e/composer-slash.spec.ts",
         "apps/web/e2e/composer-send-failure.spec.ts",
         "apps/web/e2e/spreadsheet-attachments.spec.ts",
         "ios:thread"
