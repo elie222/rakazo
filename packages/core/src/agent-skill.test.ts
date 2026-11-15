@@ -302,6 +302,13 @@ description: Use when: the user asks for a status summary.
     }
   });
 
+  it("keeps legacy tab-indented metadata", () => {
+    const parsed = parseSkillMd(
+      "---\nname: Example\ndescription: Legacy tabs\nmetadata:\n\tversion: 1\n\ttags:\n\t\t- one\n---\n",
+    );
+    expect(parsed).toMatchObject({ frontmatter: { metadata: { version: 1, tags: ["one"] } } });
+  });
+
   it("handles long scalar separators during legacy repair", () => {
     const parsed = parseSkillMd(
       `---\nname: Example\ndescription:${" ".repeat(90_000)}plain\nmetadata: [\n---\n`,

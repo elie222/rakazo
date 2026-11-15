@@ -121,7 +121,8 @@ function parseSkillFrontmatter(text: string): unknown {
           blockIndent = indent;
           return line;
         }
-        return repairUnknownStringEscapes(quoteLegacyColonScalars(repairLegacyFields(line)));
+        const normalized = line.replace(/^[ \t]+/, (prefix) => prefix.replaceAll("\t", "  "));
+        return repairUnknownStringEscapes(quoteLegacyColonScalars(repairLegacyFields(normalized)));
       })
       .join("\n");
     if (repaired === text) throw error;
