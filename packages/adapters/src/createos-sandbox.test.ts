@@ -21,7 +21,12 @@ import {
   MAX_CREATEOS_SUCCESS_RESPONSE_BYTES,
 } from "./createos-sandbox.js";
 import { isSandboxGoneError } from "./sandbox-errors.js";
-import { MachineRecords, settleMachineCleanup, untilAborted } from "./sandbox-test-support.js";
+import {
+  assertSandboxReadLimit,
+  MachineRecords,
+  settleMachineCleanup,
+  untilAborted,
+} from "./sandbox-test-support.js";
 
 // Status polls wait a second between reads; the fakes below settle on the next read.
 vi.mock("node:timers/promises", async (importOriginal) => ({
@@ -138,6 +143,8 @@ function createosFixture(
     annotateScreen?: boolean;
     failConnectScreenIds?: string[];
     holdConnect?: { screenId: string; hit: number; gate: Promise<void>; onHold: () => void };
+    /** What `stat` reports for the one file the fixture serves; unset, it prints no size. */
+    statSize?: number;
   } = {},
 ) {
   const statuses = [...(options.statuses ?? ["running"])];
@@ -195,6 +202,9 @@ function createosFixture(
       }
       if (command.includes("os.listdir")) {
         return jsonResponse({ result: { stdout: WORKSPACE_LISTING, exit_code: 0 } });
+      }
+      if (options.statSize !== undefined && command.includes("'stat' '-c' '%s'")) {
+        return jsonResponse({ result: { stdout: `${options.statSize}\n`, exit_code: 0 } });
       }
       return jsonResponse({ result: { stdout: "hello\n", exit_code: 0 } });
     }
@@ -322,6 +332,18 @@ describe("CreateOSSandboxProvider", () => {
       `mkdir -p '/home/desktop/rakazo-home/notes' && cd '/home/desktop/rakazo-home/notes' && eval "$(cat)" && 'env' '-u' 'FAILED' '--' 'echo' 'hello'`,
     );
     expect(exec?.stdin).toBe("export TEST_VALUE='works'\n");
+  });
+
+  // The fixture serves one five-byte file. A stale size stands for a file that grew after
+  // it was measured, which only the capped download catches.
+  it.each([
+    ["the size the computer reports", 5],
+    ["the bytes that arrive when the reported size is stale", 0],
+  ])("refuses a file over a read's size limit by %s", async (_name, statSize) => {
+    await assertSandboxReadLimit(provider(createosFixture({ statSize })), computer, context, {
+      path: "notes.txt",
+      content: new TextEncoder().encode("notes"),
+    });
   });
 
   it("sends command secrets on stdin, never in command text", async () => {

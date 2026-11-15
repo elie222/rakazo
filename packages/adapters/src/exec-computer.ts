@@ -9,6 +9,7 @@ import type {
   PortableFile,
   ProcessEvent,
 } from "@rakazo/adapter-kit";
+import { SandboxFileTooLargeError } from "@rakazo/adapter-kit";
 import { boundedSandboxCommandTimeoutMs } from "@rakazo/core";
 import { COMPUTER_CACHE_ENV } from "@rakazo/core/node/desktop-runtime";
 import {
@@ -164,14 +165,14 @@ export class ExecComputer {
     const size = await this.run(computer, ["stat", "-c", "%s", "--", target], context);
     if (size.code !== 0) throw new Error(size.stderr || "could not inspect computer file");
     if (Number(size.stdout.trim()) > maxBytes) {
-      throw new Error(`computer file exceeds ${maxBytes} bytes`);
+      throw new SandboxFileTooLargeError(maxBytes);
     }
     const result = await this.collect(computer, ["cat", "--", target], context, maxBytes + 1);
     if (result.code !== 0) {
       throw new Error(result.stderr.toString("utf8") || "could not read computer file");
     }
     if (result.stdout.byteLength > maxBytes) {
-      throw new Error(`computer file exceeds ${maxBytes} bytes`);
+      throw new SandboxFileTooLargeError(maxBytes);
     }
     return new Uint8Array(result.stdout.buffer, result.stdout.byteOffset, result.stdout.byteLength);
   }
@@ -562,8 +563,7 @@ export class TarReader {
     if (type === "x") return { name, mode, size, kind: "pax" as const };
     if (type !== "0") return { name, mode, size, kind: "skip" as const };
     this.paxPath = undefined;
-    if (size > this.maxFileBytes)
-      throw new Error(`computer file exceeds ${this.maxFileBytes} bytes`);
+    if (size > this.maxFileBytes) throw new SandboxFileTooLargeError(this.maxFileBytes);
     return { name, mode, size, kind: "file" as const };
   }
 }

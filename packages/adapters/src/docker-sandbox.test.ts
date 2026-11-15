@@ -1,6 +1,7 @@
 import type { ProcessEvent } from "@rakazo/adapter-kit";
 import {
   SandboxDamagedError,
+  SandboxFileTooLargeError,
   SandboxRequestRejectedError,
   SandboxUnresponsiveError,
 } from "@rakazo/adapter-kit";
@@ -14,6 +15,7 @@ import {
   SCREEN_RELEASE_TIMEOUT_MS,
 } from "./docker-sandbox.js";
 import { isSandboxGoneError } from "./sandbox-errors.js";
+import { assertSandboxReadLimit } from "./sandbox-test-support.js";
 
 const context = {
   operationId: "docker-test",
@@ -640,6 +642,50 @@ describe("Docker sandbox", () => {
     await expect(
       provider.provision({ botId: "bot", homePath: "/tmp/bot" }, context),
     ).rejects.toThrow("Computer limit reached for space (max: 5)");
+  });
+
+  it("refuses a file over a read's size limit by type and returns one at the limit", async () => {
+    const content = new TextEncoder().encode("portable");
+    // The supervisor reads one byte past the limit and answers 413 when the file has it.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const maxBytes = Number(new URL(url).searchParams.get("maxBytes"));
+        return content.byteLength > maxBytes
+          ? Response.json({ error: `computer file exceeds ${maxBytes} bytes` }, { status: 413 })
+          : Response.json({ content: Buffer.from(content).toString("base64") });
+      }),
+    );
+    const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+
+    await assertSandboxReadLimit(
+      provider,
+      { id: "computer", botId: "bot", kind: "docker", providerRef: "computer" },
+      context,
+      { path: "notes/result.txt", content },
+    );
+  });
+
+  it("keeps a supervisor failure that only mentions a size as a failure", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json({ error: "argument list too large" }, { status: 404 })),
+    );
+    const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+
+    const error = await provider
+      .readFile(
+        { id: "computer", botId: "bot", kind: "docker", providerRef: "computer" },
+        "notes/result.txt",
+        context,
+        { maxBytes: 4 },
+      )
+      .then(
+        () => undefined,
+        (failure: unknown) => failure,
+      );
+    expect(error).not.toBeInstanceOf(SandboxFileTooLargeError);
+    expect(error).toMatchObject({ message: expect.stringContaining("sandbox file read failed") });
   });
 
   it("stops a streamed file response at the caller-derived encoded limit", async () => {
