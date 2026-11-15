@@ -144,5 +144,24 @@ test("diffStats: undefined means a missing file, like null", () => {
   assert.deepStrictEqual(diffStats(undefined, null), { add: 0, del: 0, kind: "none" });
 });
 
+test("diffStats counts match diffLines rows", () => {
+  const cases = [
+    ["a\nb\nc\n", "a\nX\nc\nd\n"],
+    ["a", "a\n"],
+    ["", "x\n"],
+    ["same\n", "same\n"],
+    [
+      Array.from({ length: 3000 }, (_, i) => `a${i}`).join("\n"),
+      Array.from({ length: 3000 }, (_, i) => `b${i}`).join("\n"),
+    ],
+  ];
+  for (const [before, after] of cases) {
+    const rows = diffLines(before, after);
+    const stats = diffStats(before, after);
+    assert.strictEqual(stats.add, rows.filter((r) => r.type === "add").length);
+    assert.strictEqual(stats.del, rows.filter((r) => r.type === "del").length);
+  }
+});
+
 if (process.exitCode) process.exit(1);
 console.log("All tests passed");

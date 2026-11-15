@@ -40,8 +40,9 @@
     return r;
   }
 
-  // Line diff of ctx/add/del rows. null means "file did not exist".
-  function diffLines(beforeText, afterText) {
+  // Walks the line diff and reports each ctx/add/del row to emit(type, a, b, entry). Shared by
+  // diffLines (builds rows) and diffStats (only counts), so counting never retains row objects.
+  function walkDiff(beforeText, afterText, emit) {
     const ids = { eol: new Map(), noEol: new Map(), next: 0 };
     const A = toEntries(beforeText, ids);
     const B = toEntries(afterText, ids);
@@ -53,14 +54,13 @@
     let end = 0;
     while (end < n - start && end < m - start && A[n - 1 - end].key === B[m - 1 - end].key) end++;
 
-    const out = [];
-    for (let k = 0; k < start; k++) out.push(row("ctx", k + 1, k + 1, A[k]));
+    for (let k = 0; k < start; k++) emit("ctx", k + 1, k + 1, A[k]);
 
     const an = n - start - end;
     const bm = m - start - end;
     if ((an + 1) * (bm + 1) > MAX_LCS_CELLS) {
-      for (let i = 0; i < an; i++) out.push(row("del", start + i + 1, null, A[start + i]));
-      for (let j = 0; j < bm; j++) out.push(row("add", null, start + j + 1, B[start + j]));
+      for (let i = 0; i < an; i++) emit("del", start + i + 1, null, A[start + i]);
+      for (let j = 0; j < bm; j++) emit("add", null, start + j + 1, B[start + j]);
     } else {
       const width = bm + 1;
       const dp = new Uint32Array((an + 1) * width);
@@ -78,23 +78,28 @@
         const x = A[start + i];
         const y = B[start + j];
         if (x.key === y.key) {
-          out.push(row("ctx", start + i + 1, start + j + 1, x));
+          emit("ctx", start + i + 1, start + j + 1, x);
           i++;
           j++;
         } else if (dp[(i + 1) * width + j] >= dp[i * width + j + 1]) {
-          out.push(row("del", start + i + 1, null, x));
+          emit("del", start + i + 1, null, x);
           i++;
         } else {
-          out.push(row("add", null, start + j + 1, y));
+          emit("add", null, start + j + 1, y);
           j++;
         }
       }
-      while (i < an) out.push(row("del", start + i + 1, null, A[start + i++]));
-      while (j < bm) out.push(row("add", null, start + j + 1, B[start + j++]));
+      while (i < an) emit("del", start + i + 1, null, A[start + i++]);
+      while (j < bm) emit("add", null, start + j + 1, B[start + j++]);
     }
 
-    for (let k = 0; k < end; k++)
-      out.push(row("ctx", n - end + k + 1, m - end + k + 1, A[n - end + k]));
+    for (let k = 0; k < end; k++) emit("ctx", n - end + k + 1, m - end + k + 1, A[n - end + k]);
+  }
+
+  // Line diff of ctx/add/del rows. null means "file did not exist".
+  function diffLines(beforeText, afterText) {
+    const out = [];
+    walkDiff(beforeText, afterText, (type, a, b, entry) => out.push(row(type, a, b, entry)));
     return out;
   }
 
@@ -110,13 +115,12 @@
       const lines = toLines(beforeText) || [];
       return { add: 0, del: lines.length, kind: "deleted" };
     }
-    const d = diffLines(beforeText, afterText);
     let add = 0;
     let del = 0;
-    for (const r of d) {
-      if (r.type === "add") add++;
-      else if (r.type === "del") del++;
-    }
+    walkDiff(beforeText, afterText, (type) => {
+      if (type === "add") add++;
+      else if (type === "del") del++;
+    });
     return { add, del, kind: add === 0 && del === 0 ? "unchanged" : "modified" };
   }
 
