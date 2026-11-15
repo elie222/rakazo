@@ -59,6 +59,8 @@ export function useComputerState({
     type: string;
     leaseId?: string;
     until: number;
+    screen?: Promise<unknown>;
+    consumed?: boolean;
   } | null>(null);
   const [screenUrl, setScreenUrl] = useState<string | null>(null);
   const screenUrlRef = useRef(screenUrl);
@@ -443,7 +445,15 @@ export function useComputerState({
     type: "computer.takeover.granted" | "computer.takeover.released",
     leaseId?: string,
   ) {
-    ownControlChange.current = { botId, type, leaseId, until: Date.now() + OWN_CONTROL_EVENT_MS };
+    const pending = ownControlChange.current;
+    const screen = pending?.botId === botId && pending.type === type ? pending.screen : undefined;
+    ownControlChange.current = {
+      botId,
+      type,
+      leaseId,
+      screen,
+      until: Date.now() + OWN_CONTROL_EVENT_MS,
+    };
   }
 
   /** A take or release that failed changed nothing; an event it held back still gets its read. */
@@ -464,8 +474,19 @@ export function useComputerState({
     }
     if (!own || own.botId !== botId || own.type !== type || Date.now() > own.until) return false;
     if (own.leaseId !== undefined && own.leaseId !== leaseId) return false;
+    if (own.consumed) return false;
+    if (own.type === "computer.takeover.granted" && own.leaseId === undefined) {
+      own.consumed = true;
+      own.screen ??= refreshComputerScreen(botId).catch(() => null);
+      return true;
+    }
     ownControlChange.current = null;
     return true;
+  }
+
+  function refreshOwnControlScreen(botId: string) {
+    const own = ownControlChange.current;
+    return own?.botId === botId && own.screen ? own.screen : refreshComputerScreen(botId);
   }
 
   /** A retry the user pressed starts the visible screen's reconnects over. */
@@ -511,6 +532,7 @@ export function useComputerState({
     resetScreenReconnect,
     computerVisible,
     refreshComputerScreen,
+    refreshOwnControlScreen,
     expectOwnControlEvent,
     forgetOwnControlEvent,
     isOwnControlEvent,

@@ -417,6 +417,17 @@ it("lets this tab's own take or release skip one matching live event", () => {
   expect(state.isOwnControlEvent("bot-1", "computer.takeover.released", "lease-3")).toBe(false);
 });
 
+it("reuses the early grant screen read after the takeover response", async () => {
+  screenUrl.mockClear();
+  await act(async () => {
+    state.expectOwnControlEvent("bot-1", "computer.takeover.granted");
+    expect(state.isOwnControlEvent("bot-1", "computer.takeover.granted", "lease-1")).toBe(true);
+    state.expectOwnControlEvent("bot-1", "computer.takeover.granted", "lease-1");
+    await state.refreshOwnControlScreen("bot-1");
+  });
+  expect(screenUrl).toHaveBeenCalledTimes(1);
+});
+
 it("still reads the screen when the refresh after this tab's release fails", async () => {
   const release = vi.fn(async () => ({ ok: true as const }));
   let controls!: ReturnType<typeof useComputerControls>;
@@ -660,7 +671,7 @@ it("ignores a second take while the first control request is pending", async () 
     await takeControl();
   });
   expect(takeover).toHaveBeenCalledTimes(1);
-  expect(state.isOwnControlEvent("bot-1", "computer.takeover.granted", "lease-1")).toBe(false);
+  expect(state.isOwnControlEvent("bot-1", "computer.takeover.granted", "lease-1")).toBe(true);
   await act(async () => {
     finish({ leaseId: "lease-1", expiresAt: "" });
     await first;

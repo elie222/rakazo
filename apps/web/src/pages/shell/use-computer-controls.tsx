@@ -86,6 +86,7 @@ export function useComputerControls({
     resetScreenReconnect,
     computerVisible,
     refreshComputerScreen,
+    refreshOwnControlScreen,
     expectOwnControlEvent,
     forgetOwnControlEvent,
   } = state;
@@ -156,6 +157,7 @@ export function useComputerControls({
         }
       }
       if (takeControl) {
+        expectOwnControlEvent(targetBotId, "computer.takeover.granted");
         const { leaseId } = await rpc.computer
           .takeover({ botId: targetBotId })
           .catch(async (error) => {
@@ -187,7 +189,7 @@ export function useComputerControls({
    */
   async function refreshAfterControlChange(targetBotId: string) {
     const shown = activeBotId.current === targetBotId || computerBotIdRef.current === targetBotId;
-    const screen = shown ? refreshComputerScreen(targetBotId).catch(() => null) : undefined;
+    const screen = shown ? refreshOwnControlScreen(targetBotId).catch(() => null) : undefined;
     await refreshComputerFor(targetBotId, false).catch(() => undefined);
     await screen;
   }

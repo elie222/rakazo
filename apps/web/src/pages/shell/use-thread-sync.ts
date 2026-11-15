@@ -137,6 +137,13 @@ export function useThreadSync({
     refreshComputerScreen,
     isOwnControlEvent,
   } = computerState;
+  function readControlEventScreen(botId: string, event: ProductEvent) {
+    const own = isOwnControlEvent(botId, event.type, event.payload.leaseId);
+    if (!own && event.payload.answered !== true)
+      void refreshComputerScreen(botId).catch(() => undefined);
+    return own;
+  }
+
   const threadRefreshEpoch = useRef(0);
   const groupRefreshEpoch = useRef(0);
   const [loadingOlder, setLoadingOlder] = useState(false);
@@ -464,7 +471,7 @@ export function useThreadSync({
           void snapshotRefresh.invalidate().catch(() => undefined);
         } else if (isComputerStatusEvent(event)) {
           // This tab's own take or release already reads the new screen.
-          const own = isOwnControlEvent(active.id, event.type, event.payload.leaseId);
+          const own = readControlEventScreen(active.id, event);
           // In a shared Space the event does not say who took control; the snapshot does. An own
           // grant may still be someone else's while this tab's call is out, so it reconciles too.
           if (event.type === "computer.takeover.granted" && computerRef.current?.shared) {
@@ -474,8 +481,6 @@ export function useThreadSync({
               );
             else void snapshotRefresh.invalidate().catch(() => undefined);
           }
-          if (!own && event.payload.answered !== true)
-            void refreshComputerScreen(active.id).catch(() => undefined);
         }
         if (isRunTerminalEvent(event)) refreshRoutineHistory(event.runId);
       },
@@ -566,9 +571,7 @@ export function useThreadSync({
         // The initiating tab already reads the screen; request answers do not change it.
         const computerBotId = computerBotIdRef.current;
         if (isComputerStatusEvent(event) && computerBotId && event.botId === computerBotId) {
-          const own = isOwnControlEvent(computerBotId, event.type, event.payload.leaseId);
-          if (!own && event.payload.answered !== true)
-            void refreshComputerScreen(computerBotId).catch(() => undefined);
+          readControlEventScreen(computerBotId, event);
         }
         if (isRunTerminalEvent(event)) refreshRoutineHistory(event.runId);
       },
