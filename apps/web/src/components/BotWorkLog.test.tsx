@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import type { ReactNode } from "react";
 import { act } from "react";
+import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 import { BotWorkLog } from "./BotWorkLog";
@@ -31,15 +32,20 @@ const command = {
   output: "",
 };
 
+let root: Root | undefined;
+
 async function render(result: Record<string, unknown>) {
   read.result = { refetch: read.refetch, ...result };
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  const root = createRoot(document.body.appendChild(document.createElement("div")));
-  await act(async () => root.render(<BotWorkLog botId="bot-1" />));
-  return root;
+  await act(async () => root?.unmount());
+  document.body.replaceChildren();
+  root = createRoot(document.body.appendChild(document.createElement("div")));
+  await act(async () => root?.render(<BotWorkLog botId="bot-1" />));
 }
 
-afterEach(() => {
+afterEach(async () => {
+  await act(async () => root?.unmount());
+  root = undefined;
   vi.clearAllMocks();
   vi.unstubAllGlobals();
   document.body.replaceChildren();
@@ -88,7 +94,6 @@ it("keeps a command's output behind its row until it is opened", async () => {
 it("says so when nothing was recorded, and offers a retry when the read fails", async () => {
   await render({ isPending: false, isError: false, data: [] });
   expect(document.body.textContent).toBe("No activity yet.");
-  document.body.replaceChildren();
   await render({ isPending: false, isError: true });
   expect(document.querySelector('[role="alert"]')?.textContent).toBe(
     "Couldn't load logs.Try again",
