@@ -389,6 +389,10 @@ it("saves once and goes back once when a tool is tapped twice", async () => {
   });
   expect(state.rpc.mock.calls.filter(([proc]) => proc === "approvalRules/set")).toHaveLength(1);
   expect(state.router.back).toHaveBeenCalledTimes(1);
+  // The picker stays held while it closes, so a tap then cannot add the rule or go back again.
+  await act(async () => tool("Shell")?.click());
+  expect(state.rpc.mock.calls.filter(([proc]) => proc === "approvalRules/set")).toHaveLength(1);
+  expect(state.router.back).toHaveBeenCalledTimes(1);
 });
 
 it("opens the rules after saving when the picker was the first screen", async () => {

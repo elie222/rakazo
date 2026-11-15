@@ -35,13 +35,18 @@ import { errorText } from "../../lib/user-error";
 
 /** Reply mode, instructions, and automated-sender handling for one team chat room. */
 export default function TeamConversationSettings() {
+  const { conversationId } = useLocalSearchParams<{ conversationId: string }>();
+  // Keyed by room, so another room never starts from this one's unsaved edits.
+  return <RoomSettings key={conversationId} conversationId={conversationId} />;
+}
+
+function RoomSettings({ conversationId }: { conversationId: string }) {
   const rootAvoidsKeyboard = useContext(CallKeyboardContext);
   const { t } = useLingui();
   const router = useRouter();
   const navigation = useNavigation();
   const tokens = useMobileTokens();
   const styles = useThemedStyles(createStyles);
-  const { conversationId } = useLocalSearchParams<{ conversationId: string }>();
   const spacesQuery = useQuery(formRead(rpcQuery("spaces/list")), queryClient);
   const botsQuery = useQuery(formRead(rpcQuery("bots/list")), queryClient);
   const room = spacesQuery.data?.current.externalConversations.find(
@@ -62,6 +67,7 @@ export default function TeamConversationSettings() {
     save: (policy: RpcInput<"externalConversations/updatePolicy">, send) =>
       send("externalConversations/updatePolicy", policy),
     onSaved: () => router.back(),
+    closesScreen: true,
     // Save sits in the header, so a failure needs to show where the person is looking.
     onFailed: (err) => Alert.alert(errorText(err, t`Could not save`)),
   });

@@ -50,6 +50,7 @@ export default function AddApprovalRule() {
       if (router.canGoBack()) router.back();
       else router.replace({ pathname: "/approvals", params: spaceId ? { spaceId } : {} });
     },
+    closesScreen: true,
   });
   const pending = add.pending;
   const loadError = rulesQuery.error

@@ -12,6 +12,7 @@ import { queryClient, rpcQuery } from "./query";
 const back = vi.fn();
 const alert = vi.hoisted(() => vi.fn());
 const navigation = vi.hoisted(() => ({ options: {} as Record<string, unknown> }));
+const route = vi.hoisted(() => ({ conversationId: "room-1" }));
 vi.mock("./api-server", () => ({}));
 vi.mock("./api-auth", () => ({}));
 vi.mock("./api-live", () => ({}));
@@ -40,7 +41,7 @@ vi.mock("expo-router", () => ({
   useNavigation: () => ({
     setOptions: (options: Record<string, unknown>) => Object.assign(navigation.options, options),
   }),
-  useLocalSearchParams: () => ({ conversationId: "room-1" }),
+  useLocalSearchParams: () => ({ conversationId: route.conversationId }),
   useRouter: () => ({ back }),
 }));
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
@@ -163,6 +164,16 @@ beforeEach(() => {
               automatedSenderPolicies: {},
               automatedSenders: [{ id: "B_GITHUB", name: "GitHub" }],
             },
+            {
+              id: "room-2",
+              botId: "bot-1",
+              provider: "slack",
+              displayName: "#support",
+              teamChatAmbientEnabled: null,
+              teamChatRules: null,
+              automatedSenderPolicies: {},
+              automatedSenders: [],
+            },
           ],
         },
       };
@@ -176,6 +187,7 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root.unmount());
   navigation.options = {};
+  route.conversationId = "room-1";
   vi.clearAllMocks();
   vi.unstubAllGlobals();
 });
@@ -375,6 +387,29 @@ it("holds Save while the room saves, and saves once for two taps", async () => {
   await held.finish();
   expect(back).toHaveBeenCalledTimes(1);
   expect(alert).not.toHaveBeenCalled();
+  // Save stays held while the screen closes, so a tap then cannot save or go back again.
+  expect(await save()).toBe(false);
+});
+
+it("starts another room from what was read for it, not from the last room's edits", async () => {
+  await render();
+  await click("Replies to: Every message");
+  expect(rows()).toContain("Replies to: Every message");
+
+  route.conversationId = "room-2";
+  await render();
+  expect(rows()).toContain("Replies to: Mentions only");
+  await save();
+  expect(rpc).toHaveBeenCalledWith(
+    "externalConversations/updatePolicy",
+    {
+      externalConversationId: "room-2",
+      teamChatAmbientEnabled: null,
+      teamChatRules: null,
+      automatedSenderPolicies: {},
+    },
+    pinned,
+  );
 });
 
 it("says so in an alert when the save fails, and lets Save be tapped again", async () => {

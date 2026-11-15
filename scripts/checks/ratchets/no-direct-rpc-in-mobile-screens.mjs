@@ -5,5 +5,6 @@ export const include = ["apps/mobile/{app,components}/**/*.{ts,tsx}"];
 
 export const exclude = ["**/*.{test,spec}.*"];
 
-// A call, a caller built for a settings target, an import alias, and `const call = rpc`.
-export const pattern = /(?<![\w.$])(?:rpc|settingsRpc)(?:\(|\s+as\s)|=\s*rpc\s*[;,)\n]/g;
+// A call (also through a namespace, `api.rpc(`), a caller built for a settings target, an import
+// alias, and `const call = rpc`.
+export const pattern = /(?<![\w$])(?:rpc|settingsRpc)(?:\(|\s+as\s)|=\s*rpc\s*[;,)\n]/g;
