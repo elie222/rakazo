@@ -33,6 +33,7 @@ import type { SkillPlaybook, TeachRecordingEvent } from "@rakazo/core";
 import {
   ACTIVE_RUN_STATUSES,
   buildPlaybookFromRecording,
+  ClientError,
   COMPUTER_USING_RUNS,
   formatSkillRunPrompt,
   teachRecordingTtlMs,
@@ -387,9 +388,8 @@ export function createTaughtSkillsService(deps: TaughtSkillsDeps) {
           });
         });
       } catch (error) {
-        if (error instanceof ORPCError) throw error;
         if (isUniqueViolation(error)) {
-          throw new ORPCError("CONFLICT", { message: "A teaching session is already active" });
+          throw new ClientError("CONFLICT", "A teaching session is already active");
         }
         throw error;
       }

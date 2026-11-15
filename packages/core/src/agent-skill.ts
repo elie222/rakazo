@@ -1,5 +1,6 @@
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { formatForcedSkillPrompt } from "./agent-skill.prompt.js";
+import { ClientError } from "./client-error.js";
 
 /**
  * Claude Agent Skills: reusable SKILL.md recipes shared across assistants.
@@ -205,11 +206,14 @@ function assertSafeFrontmatter(value: unknown): void {
   const checkedDepth = new Map<object, number>();
   const visit = (current: unknown, depth: number) => {
     if (depth > MAX_FRONTMATTER_DEPTH) {
-      throw new Error("SKILL.md frontmatter is nested too deeply.");
+      throw new ClientError("BAD_REQUEST", "SKILL.md frontmatter is nested too deeply.");
     }
     if (current === null || typeof current !== "object") return;
     if (ancestors.has(current)) {
-      throw new Error("SKILL.md frontmatter cannot contain recursive YAML aliases.");
+      throw new ClientError(
+        "BAD_REQUEST",
+        "SKILL.md frontmatter cannot contain recursive YAML aliases.",
+      );
     }
     if ((checkedDepth.get(current) ?? -1) >= depth) return;
     checkedDepth.set(current, depth);
@@ -231,11 +235,13 @@ export function buildSkillMd(input: {
 }): string {
   const name = input.name.trim();
   const description = input.description.trim();
-  if (!name) throw new Error("Skill name is required.");
-  if (!description) throw new Error("Skill description is required.");
-  if (name.length > 80) throw new Error("Skill name must be at most 80 characters.");
+  if (!name) throw new ClientError("BAD_REQUEST", "Skill name is required.");
+  if (!description) throw new ClientError("BAD_REQUEST", "Skill description is required.");
+  if (name.length > 80) {
+    throw new ClientError("BAD_REQUEST", "Skill name must be at most 80 characters.");
+  }
   if (description.length > 2000) {
-    throw new Error("Skill description must be at most 2000 characters.");
+    throw new ClientError("BAD_REQUEST", "Skill description must be at most 2000 characters.");
   }
   const merged: Record<string, unknown> = { ...(input.frontmatter ?? {}) };
   merged.name = name;

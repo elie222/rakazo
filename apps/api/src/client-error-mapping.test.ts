@@ -30,6 +30,9 @@ import {
 } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it } from "vitest";
+import { ArtifactListCursorError } from "./artifacts.js";
+import { NameTakenError } from "./availability.js";
+import { PageListCursorError, PageShareConflictError } from "./pages.js";
 import { handleRpcError } from "./rpc-errors.js";
 
 /** Each domain refusal with the answer its routes wrote by hand before the central mapping. */
@@ -91,6 +94,26 @@ const REFUSALS: Array<[error: Error, code: string, status: number, message: stri
   [new BotSectionNameConflictError(), "CONFLICT", 409, "Section name already used"],
   [new ComputerBusyError(), "CONFLICT", 409, "Computer is busy"],
   [new ComputerSpaceDeletingError(), "CONFLICT", 409, "Computer is busy"],
+  [new PageListCursorError(), "BAD_REQUEST", 400, "Invalid page list cursor"],
+  [
+    new PageShareConflictError(),
+    "CONFLICT",
+    409,
+    "The page's sharing changed at the same time; try again",
+  ],
+  [new ArtifactListCursorError(), "BAD_REQUEST", 400, "Invalid artifact cursor"],
+  [
+    new NameTakenError("skill"),
+    "CONFLICT",
+    409,
+    "A skill with that name already exists in one of these spaces.",
+  ],
+  [
+    new NameTakenError("mcpServer"),
+    "CONFLICT",
+    409,
+    "An MCP server with that name already exists in one of these spaces.",
+  ],
 ];
 
 /** What a client receives when a procedure throws `error`, through the app's error path. */
