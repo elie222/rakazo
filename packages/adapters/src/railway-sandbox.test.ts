@@ -4,7 +4,7 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
-import type { ComputerRef, ProcessEvent } from "@rakazo/adapter-kit";
+import type { AdapterContext, ComputerRef, ProcessEvent } from "@rakazo/adapter-kit";
 import { screenDisplayArgv, shellQuote } from "@rakazo/core/node/desktop-runtime";
 import type { RailwayGraphQLErrorItem, SandboxInfo } from "railway";
 import {
@@ -19,7 +19,11 @@ import WebSocket from "ws";
 import { LinuxDesktop } from "./linux-desktop.js";
 import { RailwaySandboxProvider } from "./railway-sandbox.js";
 import { isSandboxGoneError } from "./sandbox-errors.js";
-import { assertSandboxWorkspaceContract } from "./sandbox-test-support.js";
+import {
+  assertSandboxWorkspaceContract,
+  settleMachineCleanup,
+  untilAborted,
+} from "./sandbox-test-support.js";
 
 const sdk = { connect: Sandbox.connect, create: Sandbox.create };
 vi.spyOn(Sandbox, "connect");
@@ -821,6 +825,90 @@ describe("Railway computers", () => {
       ),
     ).rejects.toThrow();
     expect(sandbox.destroy).toHaveBeenCalledOnce();
+  });
+
+  describe("a sandbox created by a start that then fails", () => {
+    const start = (context: AdapterContext = ctx) =>
+      settleMachineCleanup(() =>
+        provider.provision({ botId: "bot", homePath: "/unused" }, context),
+      );
+    const withoutPrivateNetwork = () =>
+      vi.mocked(Sandbox.create).mockResolvedValue({
+        ...sandbox,
+        networkIsolation: "ISOLATED",
+      } as unknown as Sandbox);
+
+    it("is destroyed, trying a failed destroy again", async () => {
+      withoutPrivateNetwork();
+      sandbox.destroy.mockRejectedValueOnce(new Error("connection reset"));
+
+      const { error, left } = await start();
+
+      expect(error).toMatchObject({ message: expect.stringContaining("PRIVATE networking") });
+      expect(sandbox.destroy).toHaveBeenCalledTimes(2);
+      expect(left).toEqual([]);
+    });
+
+    it("is reported when it cannot be destroyed, and the start's own error stands", async () => {
+      withoutPrivateNetwork();
+      sandbox.destroy.mockRejectedValue(new Error("connection reset"));
+
+      const { error, left } = await start();
+
+      expect(error).toMatchObject({ message: expect.stringContaining("PRIVATE networking") });
+      expect(sandbox.destroy).toHaveBeenCalledTimes(4);
+      expect(left).toEqual([{ provider: "railway", machineId: "sandbox" }]);
+    });
+
+    it("is reported when a start cancelled during creation cannot destroy it, and the cancellation stands", async () => {
+      const controller = new AbortController();
+      const cancelled = new Error("run cancelled");
+      vi.mocked(Sandbox.create).mockImplementation(async () => {
+        controller.abort(cancelled);
+        return sandbox as unknown as Sandbox;
+      });
+      sandbox.destroy.mockRejectedValue(new Error("connection reset"));
+
+      const { error, left } = await start({ ...ctx, signal: controller.signal });
+
+      expect(error).toBe(cancelled);
+      expect(left).toEqual([{ provider: "railway", machineId: "sandbox" }]);
+    });
+
+    it("is reported within the cleanup's 20 seconds when Railway stops answering, ending each request", async () => {
+      const api = backboard();
+      const answer = vi.mocked(fetch).getMockImplementation()!;
+      const controller = new AbortController();
+      const cancelled = new Error("run cancelled");
+      const unanswered: AbortSignal[] = [];
+      let stalledAt = 0;
+      let endedAt = 0;
+      vi.mocked(fetch).mockImplementation(async (input, init) => {
+        if (controller.signal.aborted) {
+          stalledAt ||= Date.now();
+          unanswered.push(init?.signal as AbortSignal);
+          return untilAborted(init?.signal as AbortSignal);
+        }
+        const response = await answer(input, init);
+        if (api.operations.at(-1) === "RailwaySandboxCreate") controller.abort(cancelled);
+        return response;
+      });
+
+      const { error, left } = await settleMachineCleanup(() =>
+        provider
+          .provision({ botId: "bot", homePath: "/unused" }, { ...ctx, signal: controller.signal })
+          .finally(() => {
+            endedAt = Date.now();
+          }),
+      );
+
+      expect(error).toBe(cancelled);
+      expect(endedAt - stalledAt).toBe(20_000);
+      // A request used to wait 30 seconds of its own; each now ends with its 10 second try.
+      expect(unanswered).toHaveLength(2);
+      expect(unanswered.every((signal) => signal.aborted)).toBe(true);
+      expect(left).toEqual([{ provider: "railway", machineId: "created-1" }]);
+    });
   });
 
   it("preserves output and reports timeout as a nonzero exit", async () => {
