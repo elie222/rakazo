@@ -625,6 +625,20 @@ function connectionRefused(error: unknown, depth = 0): boolean {
   return connectionRefused(error.cause, depth + 1);
 }
 
+/**
+ * fetch raises a TypeError when the request could not be made or the response was cut off. Only
+ * one raised by the request or by reading its answer is the server's; any other is a fault.
+ */
+function overTransport<T>(call: Promise<T>): Promise<T> {
+  return call.catch((error: unknown) => {
+    if (!(error instanceof TypeError)) throw error;
+    throw new ConnectionSetupError(
+      connectionRefused(error) ? CONNECTION_REFUSED_MESSAGE : error.message,
+      { cause: error },
+    );
+  });
+}
+
 export async function probeOpenAiCompatibleModels(
   input: {
     baseUrl: string;
@@ -666,11 +680,9 @@ export async function probeOpenAiCompatibleModels(
     const { maxModelIds } = modelsProbeLimits(opts?.catalogProbe);
     while (true) {
       merged.throwIfAborted();
-      const response = await safeFetch(modelsUrl.href, {
-        headers,
-        redirect: "error",
-        signal: merged,
-      });
+      const response = await overTransport(
+        safeFetch(modelsUrl.href, { headers, redirect: "error", signal: merged }),
+      );
       if (response.type === "opaqueredirect" || (response.status >= 300 && response.status < 400)) {
         await response.body?.cancel().catch(() => undefined);
         throw new ConnectionSetupError(
@@ -683,7 +695,7 @@ export async function probeOpenAiCompatibleModels(
           `Model server returned ${response.status}. ${OPENAI_COMPAT_PROBE_HAND_FILL_HINT}`,
         );
       }
-      const body = await readBoundedJson(response, opts);
+      const body = await overTransport(readBoundedJson(response, opts));
       const pageIds = probeModelIds(body, opts);
       if (ids.length + pageIds.length > maxModelIds) {
         throw new ConnectionSetupError("Model server returned too many or overly long model ids");
@@ -718,13 +730,6 @@ export async function probeOpenAiCompatibleModels(
       if (signal?.aborted) throw error;
       throw new ConnectionSetupError(
         `Model server probe timed out. ${OPENAI_COMPAT_PROBE_HAND_FILL_HINT}`,
-      );
-    }
-    // fetch raises a TypeError when the request could not be made or the response was cut off.
-    if (error instanceof TypeError) {
-      throw new ConnectionSetupError(
-        connectionRefused(error) ? CONNECTION_REFUSED_MESSAGE : error.message,
-        { cause: error },
       );
     }
     throw error;

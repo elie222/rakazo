@@ -865,6 +865,25 @@ describe("openai-compatible provider", () => {
     ).rejects.toBe(fault);
   });
 
+  it("leaves a TypeError raised outside the request and its answer as a fault", async () => {
+    const fault = new TypeError("Cannot read properties of undefined");
+    // Read while the probe prepares its request, before anything is sent.
+    const options = Object.defineProperty({ ...OWNER }, "catalogProbe", {
+      enumerable: true,
+      get() {
+        throw fault;
+      },
+    });
+    await expect(
+      probeOpenAiCompatibleModels(
+        { baseUrl: "http://127.0.0.1:8000/v1" },
+        async () => Response.json({ data: [] }),
+        undefined,
+        options,
+      ),
+    ).rejects.toBe(fault);
+  });
+
   it("clarifies non-2xx probe failures with status and hand-fill hint", async () => {
     const fetchImpl = async () => new Response("nope", { status: 404 });
     await expect(

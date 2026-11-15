@@ -840,7 +840,15 @@ function voiceHttpError(c: Context, error: unknown) {
     return c.json({ error: error.message }, 409);
   }
   if (error instanceof ClientError) {
-    return c.json({ error: error.message }, clientErrorStatus(error.kind));
+    const status = clientErrorStatus(error.kind);
+    // An outage the caller is told to wait out is still a failure to look at.
+    if (status >= 500) {
+      getLogger().error("voice request unavailable", {
+        route: c.req.path,
+        reason: error.cause instanceof Error ? error.cause.name : error.kind,
+      });
+    }
+    return c.json({ error: error.message }, status);
   }
   if (error instanceof ORPCError) {
     const code = String(error.code ?? "BAD_REQUEST");

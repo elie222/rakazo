@@ -1,6 +1,7 @@
 import * as adapters from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
+import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { Hono } from "hono";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { VoiceDeps } from "./voice.js";
@@ -35,6 +36,43 @@ describe("voice HTTP routes answering a typed client error", () => {
 
     expect(response.status).toBe(status);
     await expect(response.json()).resolves.toEqual({ error: "Written for the person" });
+  });
+});
+
+describe("voice HTTP routes reporting what they answer", () => {
+  afterEach(() => installLogger(createLogger({ service: "rakazo-api", level: "off", sinks: [] })));
+
+  async function speak(refusal: ClientError) {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
+    const deps = {
+      prisma: { spaceSettingOverride: { findUnique: vi.fn().mockRejectedValue(refusal) } },
+    } as unknown as VoiceDeps;
+    const app = new Hono();
+    mountVoiceHttpRoutes(app, deps, async () => actor);
+    await app.request("/api/voice/speak", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text: "Hello" }),
+    });
+    return sink.events;
+  }
+
+  it("reports an outage with what caused it, and says nothing about a refusal", async () => {
+    class KeyServiceDown extends Error {
+      override name = "KeyServiceDown";
+    }
+    const outage = new ClientError("SERVICE_UNAVAILABLE", "Try again shortly.", undefined, {
+      cause: new KeyServiceDown("unreachable"),
+    });
+    expect(await speak(outage)).toEqual([
+      expect.objectContaining({
+        level: "error",
+        message: "voice request unavailable",
+        reason: "KeyServiceDown",
+      }),
+    ]);
+    expect(await speak(new ClientError("BAD_REQUEST", "Written for the person"))).toEqual([]);
   });
 });
 
