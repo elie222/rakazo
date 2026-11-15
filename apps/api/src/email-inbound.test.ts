@@ -193,6 +193,11 @@ describe("inbound email route", () => {
 
     expect((await post()).status).toBe(503);
     expect(sendUserMessage).not.toHaveBeenCalled();
+
+    const proven = setup({
+      message: email({ authenticated: false, senderAuthenticated: true, temporaryFailure: true }),
+    });
+    expect(await (await proven.post()).json()).toMatchObject({ ok: true, runId: "run-1" });
   });
 
   it("saves a message once and gives every copy the same delivery key", async () => {

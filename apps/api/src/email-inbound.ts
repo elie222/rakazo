@@ -109,8 +109,9 @@ export async function receiveBotEmail(deps: EmailInboundDeps, recipient: string,
   }
   if (!email.from) return ignored("no sender");
   dropped.senderDomain = domainOf(email.from.address);
-  // Saved as unverified, a message whose signature could be checked later would stay so.
-  if (!email.authenticated && email.temporaryFailure) {
+  // Saved as unverified, a message whose signature could be checked later would stay so. One
+  // whose sender is already proven is not held back by a second signature's lookup.
+  if (!email.senderAuthenticated && email.temporaryFailure) {
     getLogger().warn("inbound email signature could not be checked yet", dropped);
     return { retry: true as const };
   }
@@ -280,7 +281,10 @@ async function saveToInbox(
       return { id: row.id, files };
     }
     const kept = stored ?? (await storeAttachments(deps, bot, email, options.standalone));
-    await deps.prisma.botEmailMessage.update({ where, data: { attachments: kept } });
+    // Only a kept file is worth writing, so a copy whose files were refused never undoes another's.
+    if (kept.some((file) => file.artifactId)) {
+      await deps.prisma.botEmailMessage.update({ where, data: { attachments: kept } });
+    }
     return { id: row.id, files: kept };
   };
   if (found) return saved(found);
