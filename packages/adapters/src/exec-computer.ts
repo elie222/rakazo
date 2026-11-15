@@ -9,6 +9,7 @@ import type {
   PortableFile,
   ProcessEvent,
 } from "@rakazo/adapter-kit";
+import { SandboxFileTooLargeError } from "@rakazo/adapter-kit";
 import { boundedSandboxCommandTimeoutMs } from "@rakazo/core";
 import { COMPUTER_CACHE_ENV } from "@rakazo/core/node/desktop-runtime";
 import {
@@ -61,6 +62,16 @@ export type RawExec = (
   stdin?: Readable,
   tty?: boolean,
 ) => AsyncIterable<RawExecEvent>;
+
+class CommandOutputTooLargeError extends Error {
+  constructor(
+    message: string,
+    /** How much of the output was the command's own, not its diagnostics. */
+    readonly stdoutBytes: number,
+  ) {
+    super(message);
+  }
+}
 
 /**
  * Commands, files and workspace transfer for a computer started from the published computer
@@ -164,14 +175,21 @@ export class ExecComputer {
     const size = await this.run(computer, ["stat", "-c", "%s", "--", target], context);
     if (size.code !== 0) throw new Error(size.stderr || "could not inspect computer file");
     if (Number(size.stdout.trim()) > maxBytes) {
-      throw new Error(`computer file exceeds ${maxBytes} bytes`);
+      throw new SandboxFileTooLargeError(maxBytes);
     }
-    const result = await this.collect(computer, ["cat", "--", target], context, maxBytes + 1);
+    const result = await this.collect(computer, ["cat", "--", target], context, maxBytes + 1).catch(
+      (error: unknown) => {
+        // The file grew after its size was checked. Diagnostics alone are a failed read.
+        if (error instanceof CommandOutputTooLargeError && error.stdoutBytes > maxBytes)
+          throw new SandboxFileTooLargeError(maxBytes);
+        throw error;
+      },
+    );
     if (result.code !== 0) {
       throw new Error(result.stderr.toString("utf8") || "could not read computer file");
     }
     if (result.stdout.byteLength > maxBytes) {
-      throw new Error(`computer file exceeds ${maxBytes} bytes`);
+      throw new SandboxFileTooLargeError(maxBytes);
     }
     return new Uint8Array(result.stdout.buffer, result.stdout.byteOffset, result.stdout.byteLength);
   }
@@ -376,9 +394,12 @@ export class ExecComputer {
         continue;
       }
       outputBytes += event.data.byteLength;
-      if (outputBytes > maxOutputBytes)
-        throw new Error(`${this.label} command output is too large`);
       (event.type === "stdout" ? stdout : stderr).push(event.data);
+      if (outputBytes > maxOutputBytes)
+        throw new CommandOutputTooLargeError(
+          `${this.label} command output is too large`,
+          stdout.reduce((bytes, chunk) => bytes + chunk.byteLength, 0),
+        );
     }
     return { code, stdout: Buffer.concat(stdout), stderr: Buffer.concat(stderr) };
   }
@@ -562,8 +583,7 @@ export class TarReader {
     if (type === "x") return { name, mode, size, kind: "pax" as const };
     if (type !== "0") return { name, mode, size, kind: "skip" as const };
     this.paxPath = undefined;
-    if (size > this.maxFileBytes)
-      throw new Error(`computer file exceeds ${this.maxFileBytes} bytes`);
+    if (size > this.maxFileBytes) throw new SandboxFileTooLargeError(this.maxFileBytes);
     return { name, mode, size, kind: "file" as const };
   }
 }

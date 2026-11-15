@@ -640,7 +640,7 @@ export const ALTERNATIVES: readonly Alternative[] = [
       {
         question: "Can Rakazo use my Claude subscription?",
         answer:
-          "Use an Anthropic API key for Claude models. Pro and Max subscriptions do not include API credit. See Model subscriptions in the docs for provider restrictions.",
+          "Yes, when you self-host Rakazo from a source checkout for yourself. It runs Claude through the official Claude Code CLI, signed in with your Pro or Max account. On a shared server or the hosted plan, use an Anthropic API key. See Model subscriptions in the docs for details.",
       },
       {
         question: "Is Claude Duet open source or self-hosted?",

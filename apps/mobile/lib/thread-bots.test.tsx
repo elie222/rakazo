@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { deferred } from "@rakazo/core/test-async";
 import { act, createElement } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
@@ -13,15 +14,6 @@ vi.mock("expo-router", () => ({ useRouter: () => router }));
 vi.mock("./api", () => ({ rpc: vi.fn() }));
 vi.mock("./saved-chats", () => ({ loadSavedInbox: vi.fn(async () => null) }));
 
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  let reject!: (error: Error) => void;
-  const promise = new Promise<T>((yes, no) => {
-    resolve = yes;
-    reject = no;
-  });
-  return { promise, resolve, reject };
-}
 const group = (id: string, name: string) => ({ id, name }) as MobileGroup;
 
 describe("thread roster refresh", () => {

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { ORPCError } from "@orpc/server";
 import type { SandboxProvider } from "@rakazo/adapter-kit";
-import { computerControlExpireJobKey } from "@rakazo/adapter-kit";
+import { computerControlExpireJobKey, SandboxFileTooLargeError } from "@rakazo/adapter-kit";
 import {
   applyTeachingDesktopInput,
   checkpointAndStopComputer,
@@ -474,7 +474,7 @@ export function computerRoutes(ctx: RouterContext) {
               maxBytes: MAX_COMPUTER_TEXT_FILE_BYTES,
             })
             .catch((error: unknown) => {
-              if (error instanceof Error && /exceeds|too large/i.test(error.message)) {
+              if (error instanceof SandboxFileTooLargeError) {
                 throw new ClientError("BAD_REQUEST", "file is too large to preview");
               }
               throw error;
@@ -525,7 +525,7 @@ export function computerRoutes(ctx: RouterContext) {
             { maxBytes: attachmentMaxBytes(deps.env) },
           )
           .catch((error: unknown) => {
-            if (error instanceof Error && /exceeds|too large/i.test(error.message)) {
+            if (error instanceof SandboxFileTooLargeError) {
               throw new ClientError(
                 "BAD_REQUEST",
                 `File exceeds the ${attachmentSizeLabel(attachmentMaxBytes(deps.env))} download limit.`,

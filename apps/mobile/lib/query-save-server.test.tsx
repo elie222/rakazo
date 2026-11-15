@@ -2,6 +2,7 @@
 vi.mock("./ai-consent", () => ({ promptAiConsent: vi.fn() }));
 vi.mock("react-native", () => ({ Platform: { OS: "ios" } }));
 
+import { deferred, flush } from "@rakazo/core/test-async";
 import * as SecureStore from "expo-secure-store";
 import { act } from "react";
 import type { Root } from "react-dom/client";
@@ -89,25 +90,22 @@ afterEach(async () => {
 });
 
 async function settle() {
-  await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+  await act(flush);
 }
 const writes = () => requests.filter((request) => request.url.endsWith(`/rpc/${WRITE}`));
 
 /** Holds the next read of the stored session, as while a save waits for its credentials. */
 function holdTokenRead(answer: "as read" | "as stored by then") {
-  let release: () => void = () => undefined;
-  const held = new Promise<void>((resolve) => {
-    release = resolve;
-  });
+  const held = deferred();
   let waiting = true;
   vi.mocked(SecureStore.getItemAsync).mockImplementation(async (key) => {
     if (key !== SESSION_KEY || !waiting) return store.get(key) ?? null;
     waiting = false;
     const read = store.get(key) ?? null;
-    await held;
+    await held.promise;
     return answer === "as read" ? read : (store.get(key) ?? null);
   });
-  return release;
+  return held.resolve;
 }
 
 const targets: [string, SettingsTarget | undefined, string][] = [

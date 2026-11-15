@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 
 import { GROUP_MEMBER_MAX } from "@rakazo/contracts";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import type { ReactNode } from "react";
 import { act, useState } from "react";
 import type { Root } from "react-dom/client";
@@ -237,22 +239,22 @@ it("opens a member's profile from group settings without touching membership", a
 });
 
 it("keeps members closed while a save is running", async () => {
-  let finish = () => {};
-  rpc.mockImplementation((procedure: string) =>
-    procedure === "groups/update"
-      ? new Promise<void>((resolve) => {
-          finish = resolve;
-        })
-      : Promise.resolve(
-          procedure === "groups/list"
-            ? [group]
-            : procedure === "bots/list"
-              ? bots
-              : procedure === "bots/listArchived"
-                ? []
-                : undefined,
-        ),
-  );
+  let finish!: Deferred;
+  rpc.mockImplementation((procedure: string) => {
+    if (procedure === "groups/update") {
+      finish = deferred();
+      return finish.promise;
+    }
+    return Promise.resolve(
+      procedure === "groups/list"
+        ? [group]
+        : procedure === "bots/list"
+          ? bots
+          : procedure === "bots/listArchived"
+            ? []
+            : undefined,
+    );
+  });
   await act(async () => root.render(<GroupSettings />));
   await act(async () => {
     const input = container.querySelector<HTMLInputElement>('[placeholder="Group name"]')!;
@@ -263,7 +265,7 @@ it("keeps members closed while a save is running", async () => {
   expect(rpc).toHaveBeenCalledWith("groups/update", { groupId: "group-1", name: "Crew" });
   expect(openButtons()).toHaveLength(2);
   expect(openButtons().every((button) => button.disabled)).toBe(true);
-  await act(async () => finish());
+  await act(async () => finish.resolve());
 });
 
 it("removes deleted bots from an open group picker after deletion completes", async () => {
@@ -313,12 +315,9 @@ it("preserves archived membership when the bot is restored", async () => {
 
 it("ignores an older refresh after a deletion refresh completes", async () => {
   await act(async () => root.render(<GroupSettings />));
-  let resolveOld!: (value: MobileBot[]) => void;
-  const old = new Promise<MobileBot[]>((resolve) => {
-    resolveOld = resolve;
-  });
+  const old = deferred<MobileBot[]>();
   rpc.mockImplementation(async (procedure: string) =>
-    procedure === "groups/list" ? [group] : procedure === "bots/list" ? old : [],
+    procedure === "groups/list" ? [group] : procedure === "bots/list" ? old.promise : [],
   );
   await act(async () => notifyArchivedChatsChanged());
   rpc.mockImplementation(async (procedure: string) =>
@@ -329,7 +328,7 @@ it("ignores an older refresh after a deletion refresh completes", async () => {
         : [],
   );
   await act(async () => notifyArchivedChatsChanged());
-  await act(async () => resolveOld(bots));
+  await act(async () => old.resolve(bots));
   expect(switches().map((input) => input.getAttribute("aria-label"))).toEqual(["Writer"]);
 });
 

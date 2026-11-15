@@ -10,6 +10,7 @@ import {
   connectionCleanupJob,
   connectionCleanupJobKey,
   routineWakeupJob,
+  SandboxFileTooLargeError,
   SecretStoreUnavailableError,
 } from "@rakazo/adapter-kit";
 import type { McpOAuthSummary, PiOAuthConnected, PiOAuthPersist } from "@rakazo/adapters";
@@ -5609,10 +5610,10 @@ describe("computer terminal and file transfer", () => {
 
   it("answers 400 when a running computer's file is too large or not text to preview", async () => {
     const large = setup();
-    large.sandbox.readFile.mockRejectedValueOnce(new Error("computer file exceeds 2097152 bytes"));
+    large.sandbox.readFile.mockRejectedValueOnce(new SandboxFileTooLargeError(2 * 1024 * 1024));
     await expect(large.call("readFile", { path: "big.log" })).resolves.toMatchObject({
       status: 400,
-      body: { json: { message: "file is too large to preview" } },
+      body: { json: { code: "BAD_REQUEST", message: "file is too large to preview" } },
     });
 
     const binary = setup();
@@ -5659,6 +5660,26 @@ describe("computer terminal and file transfer", () => {
       status: 409,
     });
   });
+
+  it("answers 400 when a running computer's file is over the download limit", async () => {
+    const { sandbox, call } = setup();
+    sandbox.readFile.mockRejectedValueOnce(new SandboxFileTooLargeError(10 * 1024 * 1024));
+    await expect(call("downloadFile", { path: "big.zip" })).resolves.toMatchObject({
+      status: 400,
+      body: { json: { code: "BAD_REQUEST", message: "File exceeds the 10 MiB download limit." } },
+    });
+  });
+
+  it.each(["readFile", "downloadFile"] as const)(
+    "reports a computer failure that only mentions a size as a fault from %s",
+    async (route) => {
+      for (const message of ["request entity too large", "command output exceeds the buffer"]) {
+        const { sandbox, call } = setup();
+        sandbox.readFile.mockRejectedValueOnce(new Error(message));
+        await expect(call(route, { path: "notes.txt" })).resolves.toMatchObject({ status: 500 });
+      }
+    },
+  );
 });
 
 describe("integration setup authorization", () => {

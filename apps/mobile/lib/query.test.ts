@@ -1,3 +1,4 @@
+import { deferred, flush } from "@rakazo/core/test-async";
 import { QueryObserver } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { accountRpcQuery, formRead, queryClient, resetRpcQueries, rpcQuery } from "./query";
@@ -21,14 +22,6 @@ vi.mock("./api", () => ({
   rpc: scope.rpc,
 }));
 vi.mock("./session", () => ({ currentSessionGeneration: () => scope.generation }));
-
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => {
-    resolve = done;
-  });
-  return { promise, resolve };
-}
 
 beforeEach(() => {
   queryClient.clear();
@@ -109,7 +102,7 @@ describe("formRead", () => {
       await vi.waitFor(() => expect(observer.getCurrentResult().isSuccess).toBe(true));
       const read = observer.getCurrentResult().data;
       leave();
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      await flush();
       return { opened, read };
     };
 

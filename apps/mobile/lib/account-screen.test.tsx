@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import type { AccountSecurity } from "@rakazo/contracts";
+import { deferred } from "@rakazo/core/test-async";
 import * as SecureStore from "expo-secure-store";
 import type { ReactNode } from "react";
 import { act, createElement, useEffect } from "react";
@@ -590,17 +591,13 @@ it("keeps a failed off choice in memory and offers a native retry of that same c
 });
 
 it("ignores a failed older toggle even when the latest choice has the same value", async () => {
-  let fail!: (error: Error) => void;
-  haptics.save.mockReturnValueOnce(
-    new Promise<never>((_resolve, reject) => {
-      fail = reject;
-    }),
-  );
+  const fail = deferred<never>();
+  haptics.save.mockReturnValueOnce(fail.promise);
   const view = await renderAccount(General);
   await view.press("Haptics");
   await view.press("Haptics");
   await view.press("Haptics");
-  await act(async () => fail(new Error("old failure")));
+  await act(async () => fail.reject(new Error("old failure")));
   expect(haptics.save.mock.calls).toEqual([[false], [true], [false]]);
   expect(haptics.enabled).toBe(false);
   expect(Alert.alert).not.toHaveBeenCalled();
@@ -621,17 +618,13 @@ it("does not let an old retry overwrite a newer preference", async () => {
 });
 
 it("reports a current failed save and can retry after the account screen closes", async () => {
-  let fail!: (error: Error) => void;
-  haptics.save.mockReturnValueOnce(
-    new Promise<never>((_resolve, reject) => {
-      fail = reject;
-    }),
-  );
+  const fail = deferred<never>();
+  haptics.save.mockReturnValueOnce(fail.promise);
   const view = await renderAccount(General);
   await view.press("Haptics");
   await act(async () => root?.unmount());
   root = undefined;
-  await act(async () => fail(new Error("late failure")));
+  await act(async () => fail.reject(new Error("late failure")));
   expect(haptics.enabled).toBe(false);
   expect(Alert.alert).toHaveBeenCalledWith("Haptics", "Could not save", expect.any(Array));
   const retry = vi
@@ -642,12 +635,8 @@ it("reports a current failed save and can retry after the account screen closes"
 });
 
 it("keeps a late failure from an earlier settings visit silent after a newer same-value choice", async () => {
-  let fail!: (error: Error) => void;
-  haptics.save.mockReturnValueOnce(
-    new Promise<never>((_resolve, reject) => {
-      fail = reject;
-    }),
-  );
+  const fail = deferred<never>();
+  haptics.save.mockReturnValueOnce(fail.promise);
   const first = await renderAccount(General);
   await first.press("Haptics");
   await act(async () => root?.unmount());
@@ -657,7 +646,7 @@ it("keeps a late failure from an earlier settings visit silent after a newer sam
   await second.press("Haptics");
   await second.press("Haptics");
   expect(haptics.enabled).toBe(false);
-  await act(async () => fail(new Error("old visit failure")));
+  await act(async () => fail.reject(new Error("old visit failure")));
   expect(haptics.save.mock.calls).toEqual([[false], [true], [false]]);
   expect(Alert.alert).not.toHaveBeenCalled();
 });
