@@ -297,14 +297,14 @@ function onResult(session: Session, event: ResultEvent): void {
   if (heard.trim()) watchQuiet(session);
   // Android reports a phrase once and starts over, iOS grows one transcript: folding a
   // final into the carried text and clearing the live one covers both.
+  // Words after a final open a new phrase: the caller kept talking. Words between the end
+  // of speech and the final are the recognizer catching up on the same phrase.
+  if (heard.trim() && session.finalized) cancelGrace(session);
   if (event.isFinal) {
     session.carried = join(session.carried, heard);
     session.heard = "";
     session.finalized = true;
   } else {
-    // Words after a final open a new phrase: the caller kept talking. Words between the end
-    // of speech and the final are the recognizer catching up on the same phrase.
-    if (heard.trim() && session.finalized) cancelGrace(session);
     session.heard = heard;
   }
   const text = join(session.carried, session.heard);

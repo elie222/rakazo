@@ -220,6 +220,19 @@ describe("mobile dictation", () => {
     expect(onFinal).toHaveBeenCalledExactlyOnceWith("buy milk and");
   });
 
+  it("waits the full silence window when a new phrase arrives straight as a final", async () => {
+    const onFinal = vi.fn();
+    await listen({ onFinal, call: true });
+    fake.speechEnd();
+    fake.hear("buy milk", true);
+    vi.advanceTimersByTime(300);
+    fake.hear("and eggs", true);
+    vi.advanceTimersByTime(ENDPOINT_SILENCE_MS - 1);
+    expect(onFinal).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(onFinal).toHaveBeenCalledExactlyOnceWith("buy milk and eggs");
+  });
+
   it("waits the full silence window when the recognizer hears speech start again", async () => {
     const onFinal = vi.fn();
     await listen({ onFinal, call: true });
