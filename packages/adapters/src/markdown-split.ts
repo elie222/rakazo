@@ -309,7 +309,11 @@ function breakBefore(value: string, max: number, code: boolean): number {
   const space = code ? -1 : value.slice(0, max + 1).search(/\s\S*$/);
   if (space >= least) return space;
   // Emoji such as flags and skin tones are several code points that show as one character.
-  return characters.segment(value).containing(max)?.index ?? max;
+  const character = characters.segment(value).containing(max)?.index ?? max;
+  if (character > 0) return character;
+  // One character longer than a message, such as a letter under thousands of combining marks,
+  // is cut inside itself, between code points.
+  return max > 1 && /[\uDC00-\uDFFF]/.test(value[max] ?? "") ? max - 1 : max;
 }
 
 /** Drops the white space and line breaks a cut leaves at the end or start of a part. */

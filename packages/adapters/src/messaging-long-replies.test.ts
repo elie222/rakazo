@@ -256,6 +256,16 @@ describe.each<Provider>(["telegram", "whatsapp"])("a long %s reply's parts", (pr
     for (const sent of sends) expect(sent.replace(/^a/, "").split(emoji).join("")).toBe("");
   });
 
+  it("cuts inside one character that is longer than a message", async () => {
+    // A letter under thousands of combining marks is a single character to the reader.
+    const body = `a${"\u0301".repeat(6000)}`;
+    const sends = await deliver(provider, body);
+
+    expect(sends.length).toBeGreaterThan(1);
+    for (const sent of sends) expect(sent.length).toBeLessThanOrEqual(LIMIT);
+    expect(sends.join("")).toBe(body);
+  });
+
   it("sends a reply nested too deep to render as the text it was written as", async () => {
     const body = `${"- ".repeat(747)}a`;
     const sends = await deliver(provider, body);
