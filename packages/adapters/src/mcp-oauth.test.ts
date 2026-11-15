@@ -313,6 +313,8 @@ describe("MCP OAuth", () => {
           const row = rows.find((candidate) => candidate.id === where.id);
           return row ? { ...row } : null;
         },
+        findUnique: async ({ where }: { where: { id: string } }) =>
+          rows.find((candidate) => candidate.id === where.id) ?? null,
         create: async ({ data }: { data: { id: string; ciphertext: string } }) => {
           rows.push({ id: data.id, ciphertext: data.ciphertext });
           return data;
@@ -333,8 +335,16 @@ describe("MCP OAuth", () => {
       $transaction: async <T>(callback: (tx: unknown) => Promise<T>, options?: unknown) => {
         transactionOptions.push(options);
         let release: (() => void) | undefined;
+        const created: string[] = [];
         const tx = {
           ...tables,
+          secret: {
+            ...tables.secret,
+            create: (args: { data: { id: string; ciphertext: string } }) => {
+              created.push(args.data.id);
+              return tables.secret.create(args);
+            },
+          },
           $queryRaw: async () => [],
           $executeRaw: async (sql: TemplateStringsArray) => {
             lockSettings.push(sql.join("?"));
@@ -350,6 +360,10 @@ describe("MCP OAuth", () => {
         };
         try {
           return await callback(tx);
+        } catch (error) {
+          // A rolled-back transaction keeps none of the secret rows it created.
+          for (const id of created) await tables.secret.deleteMany({ where: { id } });
+          throw error;
         } finally {
           if (release) credentialLocked = false;
           release?.();
@@ -767,6 +781,42 @@ describe("MCP OAuth", () => {
 
     expect(await provider.tokens()).toMatchObject({ access_token: "access-1" });
     expect(server.requests.map((request) => request.get("refresh_token"))).toEqual(["old-refresh"]);
+    expect((await shared.stored()).oauth?.tokens).toMatchObject({ refresh_token: "refresh-1" });
+  });
+
+  it("keeps the refreshed grant when its save commits but the reply is lost", async () => {
+    const server = rotatingAuthServer();
+    const shared = sharedCredentials(expiringMaterial(EXPIRED()));
+    const { provider } = await shared.startProcess(server.fetch);
+    const transaction = shared.prisma.$transaction;
+    let lost = false;
+    shared.prisma.$transaction = async (callback, options) => {
+      const result = await transaction(callback, options);
+      if (lost) return result;
+      lost = true;
+      throw new Error("connection terminated unexpectedly");
+    };
+
+    expect(await provider.tokens()).toMatchObject({ access_token: "access-1" });
+    expect(lost).toBe(true);
+    expect(server.requests.map((request) => request.get("refresh_token"))).toEqual(["old-refresh"]);
+    expect((await shared.stored()).oauth?.tokens).toMatchObject({ refresh_token: "refresh-1" });
+  });
+
+  it("deletes the entry a refresh wrote when its save rolls back", async () => {
+    const server = rotatingAuthServer();
+    const shared = sharedCredentials(expiringMaterial(EXPIRED()));
+    const { provider } = await shared.startProcess(server.fetch);
+    const update = shared.tables.mcpServer.update;
+    let failures = 1;
+    shared.tables.mcpServer.update = async (args) => {
+      if (failures-- > 0) throw new Error("connection terminated unexpectedly");
+      return update(args);
+    };
+
+    expect(await provider.tokens()).toMatchObject({ access_token: "access-1" });
+    // The seeded grant is entry 1 and the save that rolled back wrote entry 2.
+    await expect(shared.secrets.load("cipher-2")).rejects.toThrow("secret not found");
     expect((await shared.stored()).oauth?.tokens).toMatchObject({ refresh_token: "refresh-1" });
   });
 
