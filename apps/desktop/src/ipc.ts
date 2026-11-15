@@ -40,16 +40,20 @@ export function sentFrom(window: IpcWindow, event: IpcCaller): boolean {
       event.senderFrame === event.sender.mainFrame
     );
   } catch {
+    // Reading a frame that has gone throws. That caller is refused like any other, and
+    // `handleIpc` reports the refusal.
     return false;
   }
 }
 
-const reported = new Set<IpcChannelName>();
+/** A page that keeps calling cannot flood the reports, and one early report cannot hide a later caller. */
+const REPORT_EVERY_MS = 10 * 60_000;
+const reportedAt = new Map<IpcChannelName, number>();
 
 function refuse(channel: IpcChannelName) {
-  // Once per channel, so a page that keeps calling cannot flood the reports.
-  if (!reported.has(channel)) {
-    reported.add(channel);
+  const last = reportedAt.get(channel);
+  if (last === undefined || Date.now() - last >= REPORT_EVERY_MS) {
+    reportedAt.set(channel, Date.now());
     reportDesktopError(new Error(`Refused IPC call to ${channel}`), "desktop.ipc", {
       "ipc.channel": channel,
     });

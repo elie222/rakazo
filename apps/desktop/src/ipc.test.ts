@@ -146,6 +146,28 @@ describe("handleIpc", () => {
     );
   });
 
+  it("reports a channel's refusals again once ten minutes have passed", () => {
+    const { setup } = open();
+    const [name] = Object.keys(ipcChannels).filter(
+      (channel) => ipcChannels[channel as IpcChannelName].from === "app",
+    ) as IpcChannelName[];
+    handleIpc(name!, vi.fn() as never);
+    const refused = () =>
+      expect(() => mocks.invoke.get(name!)?.(setup.event)).toThrow("may not call");
+    vi.useFakeTimers({ toFake: ["Date"], now: Date.now() + 60 * 60_000 });
+    try {
+      refused();
+      refused();
+      expect(reportDesktopError).toHaveBeenCalledTimes(1);
+
+      vi.setSystemTime(Date.now() + 10 * 60_000);
+      refused();
+      expect(reportDesktopError).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("answers a synchronous channel through the event", () => {
     const { setup } = open();
     const locale = { lang: "es", dir: "ltr" as const, messages: { Continue: "Continuar" } };
