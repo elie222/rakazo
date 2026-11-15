@@ -5,7 +5,7 @@ import {
   sandboxKindCapabilities,
 } from "@rakazo/adapters";
 import type { ComputerStatus } from "@rakazo/contracts";
-import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
+import { ACTIVE_RUN_STATUSES, isTerminal } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 
 /** What this bot is doing with its computer: which run holds it, and whether one waits for a person. */
@@ -35,7 +35,8 @@ export async function resolveComputerWork(
   const runActive = Boolean(
     run?.status && (ACTIVE_RUN_STATUSES as readonly string[]).includes(run.status),
   );
-  const working = run?.status !== "waiting_takeover" && (leaseActive || runActive);
+  const runEnded = Boolean(run?.status && isTerminal(run.status));
+  const working = run?.status !== "waiting_takeover" && !runEnded && (leaseActive || runActive);
   return { busyBotName: working ? input.botName : null, takeoverRequested: Boolean(waiting) };
 }
 

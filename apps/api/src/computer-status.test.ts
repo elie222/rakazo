@@ -1,6 +1,31 @@
 import { ComputerStatusSchema } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
-import { toComputerStatus } from "./computer-status.js";
+import { resolveComputerWork, toComputerStatus } from "./computer-status.js";
+
+describe("resolveComputerWork", () => {
+  const work = (lease: { expiresAt: Date; runId: string } | null, status: string | null) =>
+    resolveComputerWork(
+      {
+        computerExecutionLease: { findUnique: async () => lease },
+        run: {
+          findFirst: async () => null,
+          findUnique: async () => (status ? { status } : null),
+        },
+      } as never,
+      { computerId: "computer-1", botId: "bot-1", botName: "Writer" },
+    );
+  const live = { expiresAt: new Date(Date.now() + 60_000), runId: "run-1" };
+
+  it("shows the bot busy while its run holds an unexpired lease", async () => {
+    expect((await work(live, "running")).busyBotName).toBe("Writer");
+  });
+
+  it("frees the computer once the lease's run has ended, before the lease is released", async () => {
+    for (const status of ["completed", "failed", "cancelled"]) {
+      expect((await work(live, status)).busyBotName).toBeNull();
+    }
+  });
+});
 
 describe("toComputerStatus", () => {
   it("shows a quarantined computer as an error without making its screen available", () => {
