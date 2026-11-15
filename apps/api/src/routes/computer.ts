@@ -708,6 +708,14 @@ export function computerRoutes(ctx: RouterContext) {
             undefined,
             session.headers,
           ),
+          // The view is part of what a screen shows: taking or releasing control changes it.
+          ...(session.singleUseSignIn
+            ? {
+                singleUseSignIn: {
+                  screen: `${session.singleUseSignIn.screen}:${holder ? "control" : "view"}`,
+                },
+              }
+            : {}),
         };
       }),
       preview: authed.computer.preview.handler(async ({ context, input }) => {
