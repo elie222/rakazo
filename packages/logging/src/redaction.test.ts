@@ -455,6 +455,11 @@ describe("redaction", () => {
       "Cookie: sid=fixture; csrf_token=fixture; session=hunter2secret sent",
       "Cookie=[Redacted] sent",
     ],
+    ["Cookie: session_token=fixture; theme=dark; sid=hunter2secret", "Cookie=[Redacted]"],
+    ["Cookie: csrftoken=fixture; sid=hunter2secret was rejected", "Cookie=[Redacted] was rejected"],
+    ["Authorization: Digest token=fixture, response=hunter2secret", "Authorization=[Redacted]"],
+    ["Cookie: sid=fixture,token=fixture; id=hunter2secret", "Cookie=[Redacted]"],
+    ['Cookie: token="fixture"; sid=hunter2secret', "Cookie=[Redacted]"],
     ["Authorization: Negotiate fixture, password=Basic hunter2secret", "Authorization=[Redacted]"],
     ["Set-Cookie: session=hunter2secret; Path=/; HttpOnly", "Set-Cookie=[Redacted] HttpOnly"],
     ["passwd=hunter2secret", "passwd=[Redacted]"],
@@ -516,11 +521,28 @@ describe("redaction", () => {
   it.each([
     ["token=fixture,password: hunter2secret", "token=[Redacted]"],
     ['password="fixture",token="hunter2 secret" sent', "password=[Redacted] sent"],
-    ['token=[fixture {"password":\n  "hunter2 secret"}', "token=[Redacted]}"],
+    ['token=[fixture {"password":\n  "hunter2 secret"}', "token=[Redacted]"],
     ['{"token": fixture;"password": "hunter2 secret","id":1}', '{"token": [Redacted],"id":1}'],
     ["api_key=fixture&secret= hunter2secret page=2", "api_key=[Redacted] page=2"],
     ["Cookie: sid=fixture; token= hunter2secret", "Cookie=[Redacted]"],
     ["Cookie: X-Cookie: sid=hunter2secret", "Cookie=[Redacted]"],
+    ["token=fixture,password=Basic hunter2secret", "token=[Redacted]"],
+    ["token=[fixture],password=Basic hunter2secret", "token=[Redacted]"],
+    ["Cookie: sid=fixture, Authorization=Negotiate hunter2secret", "Cookie=[Redacted]"],
+    ["Cookie: sid=fixture; theme=dark,token=Basic hunter2secret", "Cookie=[Redacted]"],
+    ["authorization=fixture, password=>Digest hunter2secret", "authorization=[Redacted]"],
+    ["token=[fixture '/tmp/run --password ']hunter2 secret' sent", "token=[Redacted]"],
+    ["token=[fixture 'password => ']hunter2 secret' sent", "token=[Redacted]"],
+    ['password=token ="fixture --password "hunter2 secret" sent', "password=[Redacted]"],
+    ["password=token :'fixture password='hunter2 secret one' sent", "password=[Redacted]"],
+    [
+      'password=fixture,"token":"fixture one","secret":"hunter2 secret","id":1 sent',
+      "password=[Redacted] sent",
+    ],
+    [
+      '{"token": fixture;"password":"fixture one";"secret":"hunter2 secret","id":1}',
+      '{"token": [Redacted],"id":1}',
+    ],
   ])("redacts a value whose key follows another value directly: %s", (text, expected) => {
     const redacted = redactSensitiveText(text);
     expect(redacted).toBe(expected);
@@ -594,7 +616,75 @@ describe("redaction", () => {
       'https://a.example{"password":"[Redacted]"}/p/[Redacted]',
     ],
     ['password="a b",next=1 then [Redacted][user]', "password=[Redacted] then [Redacted][user]"],
-  ])("reaches its final text in one pass: %s", (text, expected) => {
+    ["person@example.com--token hunter2secret", "[Redacted]--token [Redacted]"],
+    ["https://host/person@example.com/p/hunter2secret", "https://host/[Redacted]/p/[Redacted]"],
+    ["amqp://app:hunter2/home/Jane Doe/secret@mq:5672", "amqp://app:[Redacted]@mq:5672"],
+    ['token=fixture;"password": hunter2,secret', "token=[Redacted]"],
+  ])("reaches text that redacting again leaves alone: %s", (text, expected) => {
+    const redacted = redactSensitiveText(text);
+    expect(redacted).toBe(expected);
+    expect(redactSensitiveText(redacted)).toBe(redacted);
+  });
+
+  it.each([
+    ["/p/hunter2".repeat(12), "/p/[Redacted]".repeat(12)],
+    [`${"-://a".repeat(12)}@a.aa`, `${"-://a".repeat(11)}-:[Redacted]@a.aa`],
+    [`password="a b"${',"token":"hunter2 secret"'.repeat(12)} sent`, "password=[Redacted] sent"],
+    ["person@example.com--token ".repeat(12), "[Redacted]--token [Redacted] ".repeat(6)],
+    ["person@example.com_".repeat(12), `${"[Redacted]".repeat(12)}_`],
+  ])(
+    "settles text that repeats one shape more often than the rules repeat: %s",
+    (text, expected) => {
+      const redacted = redactSensitiveText(text);
+      expect(redacted).toBe(expected);
+      expect(redactSensitiveText(redacted)).toBe(redacted);
+    },
+  );
+
+  it.each([
+    ["password=\uFDD0realsecret", "password=[Redacted]"],
+    ["password=\uFDD1realsecret", "password=[Redacted]"],
+    ["\uFDD0--token realsecret", "\uFFFD--token [Redacted]"],
+    ["postgres://\uFDD1:realsecret@db/app", "postgres://\uFFFD:[Redacted]@db/app"],
+    ["plain \uFDD0 text \uFDD1", "plain \uFFFD text \uFFFD"],
+  ])("takes its private placeholder characters out of the input: %j", (text, expected) => {
+    const redacted = redactSensitiveText(text);
+    expect(redacted).toBe(expected);
+    expect(redactSensitiveText(redacted)).toBe(redacted);
+  });
+
+  it.each([
+    ["password=[Redacted]realsecret", "password=[Redacted]"],
+    ["password=[user]realsecret", "password=[Redacted]"],
+    ["password=[Redacted],realsecret", "password=[Redacted]"],
+    ['password=[Redacted]"realsecret"', "password=[Redacted]"],
+    ["password: [Redacted][user]realsecret sent", "password=[Redacted] sent"],
+    ["--token [Redacted]realsecret", "--token [Redacted]"],
+    ['{"password": [Redacted]realsecret,"id":1}', '{"password": [Redacted],"id":1}'],
+  ])("reads a value that starts with a marker to its end: %s", (text, expected) => {
+    const redacted = redactSensitiveText(text);
+    expect(redacted).toBe(expected);
+    expect(redactSensitiveText(redacted)).toBe(redacted);
+  });
+
+  it.each([
+    ["[Redacted]--token realsecret", "[Redacted]--token [Redacted]"],
+    ["[user]--password realsecret", "[user]--password [Redacted]"],
+    [
+      "postgres://[Redacted]:realsecret@db:5432/app",
+      "postgres://[Redacted]:[Redacted]@db:5432/app",
+    ],
+    ["postgres://app:[Redacted]realsecret@db/app", "postgres://app:[Redacted]@db/app"],
+    ["postgres://app:real[user]secret@db/app", "postgres://app:[Redacted]@db/app"],
+    ["postgres://app:fixture:[Redacted]@realsecret@db/app", "postgres://app:[Redacted]@db/app"],
+    ["[user]/p/Zm9vYmFyZm9vYmFyZm9vYmFy", "[user]/p/[Redacted]"],
+    ["/p/[Redacted]Zm9vYmFyZm9vYmFyZm9vYmFy", "/p/[Redacted]"],
+    [
+      'Headers.append: "[Redacted]" realsecret" is an invalid header value.',
+      'Headers.append: "[Redacted]" is an invalid header value.',
+    ],
+    ["Bearer [Redacted]realsecret", "Bearer [Redacted]"],
+  ])("lets no marker in the input stop a rule early: %s", (text, expected) => {
     const redacted = redactSensitiveText(text);
     expect(redacted).toBe(expected);
     expect(redactSensitiveText(redacted)).toBe(redacted);
@@ -666,6 +756,31 @@ describe("redaction", () => {
       `"cookie: a; b=1; ".repeat(60_000) + "authorization: a, b=\\"".repeat(40_000)`,
     ],
     ["profile names followed by more words", `"/Users/a a a a ".repeat(70_000)`],
+    [
+      "strings in a list that end in flags",
+      `"token=[" + "'a --a-a- ',".repeat(60_000) + "token=['" + "-".repeat(400 * 1024) + " ']"`,
+    ],
+    ["values that run into keys with a scheme", `"token=a,token=basic ".repeat(50_000)`],
+    ["redactions that each start a flag", `"a@a.aa--token ".repeat(70_000)`],
+    ["link paths that each follow a redaction", `"a@a.aa/p/a".repeat(90_000)`],
+    ["link paths that each follow a link", `"/p/a".repeat(250_000)`],
+    ["stray placeholder characters", `"token=\\uFDD0 \\uFDD1--token ".repeat(60_000)`],
+    ["URLs that each end in the next one", `"a@" + "-://a".repeat(200_000) + "@"`],
+    ["URLs that each end in the next one before an address", `"-://a".repeat(200_000) + "@a.aa"`],
+    [
+      "quoted values that end in a secret-named key",
+      `'token="a token="'.repeat(30_000) + ('token="a token:' + " ".repeat(200) + '"').repeat(1_000) + 'token:\\\\"a --token \\\\"'.repeat(15_000)`,
+    ],
+    [
+      "runs of address characters that are no address",
+      `"a@a.".repeat(125_000) + "a.".repeat(250_000) + "@"`,
+    ],
+    ["cookies with secret-named parameters", `"cookie: token=a; b=1; ".repeat(45_000)`],
+    ["addresses in a row", `"a@a.aa_".repeat(140_000)`],
+    [
+      "quoted fields glued to a bare key",
+      `"token=a" + ',"token":"a b"'.repeat(70_000) + '"token": a' + ';"token":"a b"'.repeat(70_000)`,
+    ],
   ])("handles a megabyte of %s without blocking", (_name, expression) => {
     const moduleUrl = new URL("./redaction.ts", import.meta.url).href;
     const output = execFileSync(

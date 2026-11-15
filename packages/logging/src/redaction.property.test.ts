@@ -196,12 +196,17 @@ const authorizationHeader = fc
       secret: credential,
     }),
   );
+// A cookie's own name is often secret-like, and the cookies after it are still the header's.
+const cookieName = fc.oneof(
+  chars(LOWER, 2, 8),
+  fc.constantFrom("session_token", "csrftoken", "auth-token", "secret"),
+);
 const cookieHeader = fc
   .tuple(
     fc.constantFrom("Cookie", "cookie", "Set-Cookie"),
     fc.constantFrom(": ", ":", "="),
-    fc.array(fc.tuple(chars(LOWER, 2, 8), alnum), { minLength: 0, maxLength: 2 }),
-    chars(LOWER, 2, 8),
+    fc.array(fc.tuple(cookieName, alnum), { minLength: 0, maxLength: 2 }),
+    cookieName,
     alnum,
     fc.constantFrom("", "; Path=/; HttpOnly"),
   )
@@ -243,20 +248,36 @@ const jsonField = fc
       secret: JSON.stringify(value).slice(1, -1),
     }),
   );
-// The key of the second value follows the first value with nothing between them but punctuation.
+// The key of the second value follows the first value with nothing between them but punctuation,
+// or as the next parameter of a header.
 const gluedAssignment = fc
   .tuple(
     fc.oneof(
       alnum.map((value) => `token=${value}`),
       phrase.map((value) => `password="${value}"`),
       alnum.map((value) => `token=[${value}`),
+      alnum.map((value) => `token=[${value}]`),
       alnum.map((value) => `"token": ${value}`),
+      alnum.map((value) => `Cookie: sid=${value}`),
+      alnum.map((value) => `Authorization: Negotiate ${value}`),
     ),
-    fc.constantFrom(",", ";", "&", " {"),
+    fc.constantFrom(",", ";", "&", " {", ", ", ";  "),
     fc.oneof(
       fc
-        .tuple(secretName, fc.constantFrom("=", ": ", " = ", ":\n  "), bare)
-        .map(([key, separator, value]) => ({ text: `${key}${separator}${value}`, secret: value })),
+        .tuple(
+          secretName,
+          fc.constantFrom("=", ": ", " = ", ":\n  ", "=>"),
+          fc.constantFrom("", "Basic ", "digest "),
+          bare,
+        )
+        .map(([key, separator, scheme, value]) => ({
+          text: `${key}${separator}${scheme}${value}`,
+          secret: value,
+        })),
+      fc.tuple(visible).map(([value]) => ({
+        text: `Authorization=Negotiate ${value}`,
+        secret: value,
+      })),
       fc.tuple(secretName, fieldSeparator, phrase).map(([key, separator, value]) => ({
         text: `"${key}"${separator}"${value}"`,
         secret: value,
@@ -463,6 +484,50 @@ const connectionStringList = fc
     }),
   );
 
+// The markers redaction writes and the two characters it works with, as they may stand in text
+// that is redacted: a marker stops no rule, whatever is written straight after it.
+const marker = fc.constantFrom("[Redacted]", "[user]", "\uFDD0", "\uFDD1");
+const afterMarker = fc.oneof(
+  fc
+    .tuple(assignmentKey, assignmentSeparator, marker, visible)
+    .map(([key, separator, mark, value]) => ({
+      text: `${key}${separator}${mark}${value}`,
+      secret: value,
+    })),
+  fc.tuple(fieldKey, fieldSeparator, marker, alnum).map(([key, separator, mark, value]) => ({
+    text: `{"id":"r1","${key}"${separator}${mark}${value},"code":401}`,
+    secret: value,
+  })),
+  fc.tuple(secretName, marker, visible).map(([name, mark, value]) => ({
+    text: `--${name} ${mark}${value}`,
+    secret: value,
+  })),
+  fc.tuple(marker, base64url).map(([mark, token]) => ({
+    text: `Bearer ${mark}${token}`,
+    secret: token,
+  })),
+  fc
+    .tuple(fc.constantFrom("", "/en"), sharePath, marker, base64url)
+    .map(([locale, path, mark, token]) => ({
+      text: `${locale}${path}${mark}${token}`,
+      secret: token,
+    })),
+  fc
+    .tuple(
+      fc.constantFrom(
+        (mark: string) => `${mark}:`,
+        (mark: string) => `app:${mark}`,
+        (mark: string) => `ops${mark}:`,
+      ),
+      marker,
+      urlPassword,
+    )
+    .map(([credentials, mark, password]) => ({
+      text: `postgres://${credentials(mark)}${password}@db.example.com:5432/app`,
+      secret: password,
+    })),
+);
+
 const shapes = {
   "a bearer token": bearer,
   "a value assigned to a secret-named key": assignment,
@@ -487,6 +552,7 @@ const shapes = {
   "an echoed header value": echoedHeader,
   "an account name in a POSIX profile path": posixProfile,
   "an account name in a Windows profile path": windowsProfile,
+  "a secret written straight after a marker": afterMarker,
 };
 const anyShape = fc.oneof(...Object.values(shapes));
 
@@ -495,6 +561,28 @@ function inText(planted: fc.Arbitrary<Planted>) {
     .tuple(prose, before, planted, after, prose)
     .map(([lead, open, { text, secret }, close, trail]) => ({
       text: `${lead}${open}${text}${close}${trail}`,
+      secret,
+    }))
+    .filter(({ text, secret }) => standsApart(secret, text));
+}
+
+// Markers at any place in the text around a secret, most often right against it.
+function amongMarkers(planted: fc.Arbitrary<Planted>) {
+  const place = fc.oneof(fc.constant(0), fc.nat());
+  const marked = (side: "before" | "after") =>
+    fc.array(fc.tuple(marker, place), { maxLength: 2 }).map((marks) => (text: string) => {
+      let result = text;
+      for (const [mark, at] of marks) {
+        const offset = at % (result.length + 1);
+        const index = side === "before" ? result.length - offset : offset;
+        result = result.slice(0, index) + mark + result.slice(index);
+      }
+      return result;
+    });
+  return fc
+    .tuple(prose, before, marked("before"), planted, marked("after"), after, prose)
+    .map(([lead, open, markBefore, { text, secret }, markAfter, close, trail]) => ({
+      text: `${markBefore(lead + open)}${text}${markAfter(close + trail)}`,
       secret,
     }))
     .filter(({ text, secret }) => standsApart(secret, text));
@@ -614,6 +702,8 @@ const fragment = fc.constantFrom(
   ".com",
   "[Redacted]",
   "[user]",
+  "\uFDD0",
+  "\uFDD1",
   '\\"',
   "email",
 );
@@ -699,6 +789,14 @@ const hostileUnit = fc.constantFrom(
   "/Users/a ",
   'Headers.append: "',
   "[Redacted]",
+  "[user]--token ",
+  "\uFDD0",
+  "a@a.aa--token ",
+  "a@a.aa/p/a",
+  "a@a.aa_",
+  "-://a",
+  ',"token":"a b"',
+  ';"token":"a"',
 );
 const hostile = fc
   .tuple(
@@ -707,6 +805,27 @@ const hostile = fc
     fc.constantFrom("", '"', ":", "@a.aa", "/p/x", "\n", "@", "]", '\\"'),
   )
   .map(([head, unit, tail]) => head + unit.repeat(Math.ceil(HOSTILE_LENGTH / unit.length)) + tail);
+
+// The same few pieces many times over: a rule that took one more of them on each pass would still
+// be taking them on the next.
+const repeated = fc
+  .tuple(
+    fc.constantFrom("", "a@", '"token":"', "https://", "token=", "--token ", "/p/a"),
+    fc
+      .array(
+        fc.oneof(
+          hostileUnit,
+          fragment,
+          anyShape.map(({ text }) => text),
+        ),
+        { minLength: 1, maxLength: 3 },
+      )
+      .map((units) => units.join("")),
+    fc.constantFrom("", " ", ",", ";", "/", "&", "\n"),
+    fc.integer({ min: 10, max: 24 }),
+    fc.constantFrom("", '"', "@a.aa", "/p/x", "]", " sent"),
+  )
+  .map(([head, unit, glue, times, tail]) => head + (unit + glue).repeat(times) + tail);
 
 function elapsed(run: () => void): number {
   const start = performance.now();
@@ -721,6 +840,20 @@ describe("redactSensitiveText properties", () => {
       fc.assert(
         fc.property(inText(shape), ({ text, secret }) => {
           expect(survivingPart(secret, redactSensitiveText(text))).toBeUndefined();
+        }),
+        { seed: SEED, numRuns: RUNS },
+      );
+    },
+  );
+
+  it.each(Object.entries(shapes))(
+    "never leaves %s among markers written in the text around it",
+    (_name, shape) => {
+      fc.assert(
+        fc.property(amongMarkers(shape), ({ text, secret }) => {
+          const redacted = redactSensitiveText(text);
+          expect(survivingPart(secret, redacted)).toBeUndefined();
+          expect(redactSensitiveText(redacted)).toBe(redacted);
         }),
         { seed: SEED, numRuns: RUNS },
       );
@@ -766,6 +899,16 @@ describe("redactSensitiveText properties", () => {
     );
   });
 
+  it("changes nothing when redacting again text that repeated one shape many times", () => {
+    fc.assert(
+      fc.property(repeated, (text) => {
+        const redacted = redactSensitiveText(text);
+        expect(redactSensitiveText(redacted)).toBe(redacted);
+      }),
+      { seed: SEED, numRuns: RUNS },
+    );
+  });
+
   it("returns text that cannot form a sensitive shape unchanged", () => {
     const plain = fc.string({
       unit: fc.oneof(
@@ -777,6 +920,22 @@ describe("redactSensitiveText properties", () => {
     fc.assert(
       fc.property(plain, (text) => {
         expect(redactSensitiveText(text)).toBe(text);
+      }),
+      { seed: SEED, numRuns: RUNS },
+    );
+  });
+
+  it("replaces its private characters in the input and writes no marker for them", () => {
+    const plain = fc.string({
+      unit: fc.oneof(
+        fc.constantFrom(...VISIBLE_ASCII.replace(/[:=@/\\bBkKJ]/g, ""), " ", "\n"),
+        fc.constantFrom("\uFDD0", "\uFDD1", "\uFFFD"),
+      ),
+      maxLength: 200,
+    });
+    fc.assert(
+      fc.property(plain, (text) => {
+        expect(redactSensitiveText(text)).toBe(text.replace(/[\uFDD0\uFDD1]/g, "\uFFFD"));
       }),
       { seed: SEED, numRuns: RUNS },
     );
