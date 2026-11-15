@@ -827,6 +827,30 @@ export const builtinAgentTools: ConnectorTool[] = [
     readOnly: true,
   },
   {
+    name: "places_search",
+    description:
+      'Find places on a map and show them to the user as a places card (a map with pins and a list with address and distance). Use it for "pharmacies near X", "museums in Berlin" or "where is <address>". Pass what to look for as `query`, and where as `near` (a place name) or latitude and longitude. Read-only; does not need a computer. The card shows the details, so reply in a sentence or two and do not repeat the list.',
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: {
+          type: "string",
+          description: 'A kind of place, a name or an address, such as "pharmacy" or "Louvre".',
+        },
+        near: {
+          type: "string",
+          description:
+            'A place name to search around, such as "Lisbon". Omit when giving coordinates.',
+        },
+        latitude: { type: "number", description: "Latitude, -90 to 90, with longitude." },
+        longitude: { type: "number", description: "Longitude, -180 to 180, with latitude." },
+        limit: { type: "number", description: "Most places to show, 1 to 20 (default 10)." },
+      },
+      required: ["query"],
+    },
+    readOnly: true,
+  },
+  {
     name: "service_search",
     description:
       "Find a paid data service by the job it does: map places, search results, work emails, people and company profiles, social posts, SEO and backlink data. Returns service ids, prices in USD per call, and params. Then call one with service_call.",

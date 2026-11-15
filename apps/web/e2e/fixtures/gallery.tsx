@@ -505,6 +505,64 @@ const team: Scenario = {
   ],
 };
 
+/** Lisbon pharmacies at fixed coordinates; the tile host does not resolve, so only pins draw. */
+const placesFixture: Extract<MessageBlock, { kind: "places" }>["card"] = {
+  query: "pharmacy",
+  centre: { latitude: 38.7139, longitude: -9.1394 },
+  places: [
+    {
+      id: "p1",
+      name: "Farmácia Estácio",
+      category: "Pharmacy",
+      address: "Praça Dom Pedro IV 12, Lisbon",
+      latitude: 38.7149,
+      longitude: -9.1399,
+      distanceM: 120,
+      hours: "Mo-Fr 09:00-20:00; Sa 09:00-13:00",
+    },
+    {
+      id: "p2",
+      name: "Farmácia Normal",
+      category: "Pharmacy",
+      address: "Rua da Prata 20, Lisbon",
+      latitude: 38.7112,
+      longitude: -9.1368,
+      distanceM: 390,
+    },
+    {
+      id: "p3",
+      name: "Farmácia do Chiado",
+      category: "Pharmacy",
+      address: "Rua Garrett 40, Lisbon",
+      latitude: 38.7106,
+      longitude: -9.1427,
+      distanceM: 520,
+      hours: "Mo-Su 08:00-22:00",
+    },
+    {
+      id: "p4",
+      name: "Farmácia Central da Baixa e do Rossio com um nome muito comprido",
+      category: "Pharmacy",
+      address: "Rua do Ouro 100, Lisbon",
+      latitude: 38.7087,
+      longitude: -9.1366,
+      distanceM: 780,
+    },
+  ],
+  map: { tileUrl: "https://example.test/tiles/{z}/{x}/{y}.png", attribution: "Map data" },
+  attribution: { name: "© OpenStreetMap contributors", url: "https://example.test/copyright" },
+};
+
+const places: Scenario = {
+  id: "places",
+  label: "Places",
+  messages: [
+    user("Find a pharmacy near me"),
+    bot([{ kind: "places", card: placesFixture }]),
+    say("Four pharmacies are within 800 metres."),
+  ],
+};
+
 const rich: Scenario = {
   id: "rich",
   label: "Rich content",
@@ -680,6 +738,7 @@ const SCENARIOS: Scenario[] = [
   working,
   team,
   rich,
+  places,
   calls,
 ];
 

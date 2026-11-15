@@ -240,6 +240,19 @@ export function inferScript(
       },
     ];
   }
+  const places = /^(?:@\S+\s+)?call places_search with (.+?)(?:\nthen say ([\s\S]+))?$/s.exec(
+    words.trim(),
+  );
+  const placesArgs = places ? jsonObject(places[1]!) : undefined;
+  if (places && placesArgs) {
+    return [
+      {
+        assistant: places[2],
+        toolCalls: [{ name: "places_search", args: placesArgs }],
+        complete: true,
+      },
+    ];
+  }
   if (lower.includes("can you check my gmail inbox?")) {
     return [
       {
