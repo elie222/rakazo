@@ -89,6 +89,16 @@ describeJourneys("required product journeys", () => {
     };
   }
 
+  /** A run lets go of its computer a moment after its row turns terminal. */
+  async function waitForComputerRelease(botId: string) {
+    await waitForDatabase(
+      async () =>
+        (await prisma.computerExecutionLease.count({
+          where: { botId, expiresAt: { gt: new Date() } },
+        })) === 0,
+    );
+  }
+
   async function sendGroupAndWait(
     app: App,
     cookie: string,
@@ -588,6 +598,8 @@ describeJourneys("required product journeys", () => {
     expect(chiefFile.content).toContain("isolation-ok");
     const computer = await rpc<{ state: string }>(app, ada, "computer/status", { botId: chief.id });
     expect(computer.state).toBe("running");
+    // Stop is refused while another bot's run still holds the shared computer.
+    await waitForComputerRelease(coder.id);
     await rpc(app, ada, "computer/stop", { botId: chief.id });
     const persisted = await rpc<{ content: string }>(app, ada, "computer/readFile", {
       botId: chief.id,
@@ -2214,6 +2226,7 @@ describeJourneys("required product journeys", () => {
       instructions: "",
       notifyOnFinish: false,
     });
+    await waitForComputerRelease(bot.id);
     await rpc(app, cookie, "computer/stop", { botId: peer.id });
     const update = await rpc<{ id: string }>(app, cookie, "computer/update", { botId: bot.id });
     await waitForDatabase(
