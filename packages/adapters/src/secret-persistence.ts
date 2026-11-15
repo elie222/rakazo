@@ -137,6 +137,8 @@ export function withSecretPersistence(
     const queue = jobs?.();
     if (!queue) return;
     for (const row of rows) {
+      // One job stands for a reference however many of the rows share it.
+      if (state.recorded.has(row.ciphertext)) continue;
       const dropped = cleanupOf(row);
       await recordSecretCleanup({ secrets: store, jobs: queue }, state.client!, dropped);
       state.recorded.set(dropped.ref, dropped);

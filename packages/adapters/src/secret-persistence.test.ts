@@ -399,6 +399,25 @@ describe("secret persistence cleanup with a queue", () => {
     }
   });
 
+  it("records one backup for a reference that several dropped rows share", async () => {
+    const { fake, store, db, queue, prisma } = await setup();
+    const shared = await store.put("shared", context, { recordId: "row" });
+    db.tables
+      .get("secret")!
+      .push(
+        { id: "row", ciphertext: shared.ref, userId: "user" },
+        { id: "row-2", ciphertext: shared.ref, userId: "user" },
+      );
+    try {
+      await prisma.user.deleteMany({ where: { id: "user" } });
+      expect(queue.jobs.enqueueIn).toHaveBeenCalledOnce();
+      expect(fake.values.size).toBe(0);
+      expect(queue.queued.size).toBe(0);
+    } finally {
+      await store.close();
+    }
+  });
+
   it("records nothing for a change that leaves the reference in place", async () => {
     const { fake, store, db, queue, prisma } = await setup();
     const kept = await store.put("kept", context, { recordId: "row" });
