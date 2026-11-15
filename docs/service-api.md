@@ -114,7 +114,7 @@ A stream closes after 15 minutes, so reconnect with the last id. A key may hold 
 
 ## For agents
 
-`POST /api/service/v1/mcp` serves the same routes as Model Context Protocol tools over streamable HTTP, with the key as the bearer token. Each tool is one route: path and query parameters are top-level arguments, the JSON body is `body`, and `idempotencyKey` is optional (one is made up when you leave it out, so pass your own to make a retry safe). A key is offered only the tools its permissions and bot list allow.
+`POST /api/service/v1/mcp` serves the same routes as Model Context Protocol tools over streamable HTTP, with the key as the bearer token. Each tool is one route: path and query parameters are top-level arguments, the JSON body is `body`, and a tool that writes takes a required `idempotencyKey`, the same as the `Idempotency-Key` header. A key is offered only the tools its permissions and bot list allow.
 
 A tool call is carried out as the HTTP request it stands for, so limits, permissions and the audit log are the same either way. Live events are not offered as a tool.
 
