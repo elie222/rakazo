@@ -444,7 +444,7 @@ export function createRouterContext(deps: RouterDeps) {
     return next();
   });
 
-  const boardEnabled = os.use(signedIn).use(async ({ context, next }) => {
+  const boardEnabled = authed.use(async ({ context, next }) => {
     if (deps.env?.deploymentLabs?.includes("board")) return next();
     const user = await deps.prisma.user.findUnique({
       where: { id: context.actor.userId },
