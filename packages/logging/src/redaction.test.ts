@@ -394,8 +394,8 @@ describe("redaction", () => {
     ["postgres://app:hunter2secret@10.0.0.5", "postgres://app:[Redacted]@10.0.0.5"],
     ["redis://:pw@redis:6379", "redis://:[Redacted]@redis:6379"],
     [
-      "DATABASE_URL=postgres://app:hunter2secret@localhost/db",
-      "DATABASE_URL=postgres://app:[Redacted]@localhost/db",
+      "DATABASE_URL=postgres://app:hunter2secret@localhost:5432/db",
+      "DATABASE_URL=postgres://app:[Redacted]@localhost:5432/db",
     ],
     [
       "postgres://app:Secr3t!xyz@db.example.com:5432/db",
@@ -403,6 +403,22 @@ describe("redaction", () => {
     ],
     ["amqp://guest:p@ss!w0rd@[::1]:5672/vhost", "amqp://guest:[Redacted]@[::1]:5672/vhost"],
     ["mysql://app:pa/ss#w0rd@db/app", "mysql://app:[Redacted]@db/app"],
+    ["postgres://app:Adm1n@2024#Prod@db:5432/app", "postgres://app:[Redacted]@db:5432/app"],
+    ["mysql://app:p@ss,w0rd@db.example.com/app", "mysql://app:[Redacted]@db.example.com/app"],
+    ["postgres://app:)hunter2secret@my_db", "postgres://app:[Redacted]@my_db"],
+    ['postgres://app:pa"ss@db/app failed', "postgres://app:[Redacted]@db/app failed"],
+    [
+      "cannot reach postgres://app:p@ss@db: timeout",
+      "cannot reach postgres://app:[Redacted]@db: timeout",
+    ],
+    [
+      "amqp://app:hunter2secret@mq1:5672,amqp://app:hunter3secret@mq2:5672",
+      "amqp://app:[Redacted]@mq1:5672,amqp://app:[Redacted]@mq2:5672",
+    ],
+    [
+      "postgres://app:hunter2secret@db1:5432,db2:5432/app?target_session_attrs=any",
+      "postgres://app:[Redacted]@db1:5432,db2:5432/app?target_session_attrs=any",
+    ],
     [
       '{"cache":"redis://:hunter2secret@cache:6379","owner":"team"}',
       '{"cache":"redis://:[Redacted]@cache:6379","owner":"team"}',
@@ -435,6 +451,11 @@ describe("redaction", () => {
   it.each([
     ["Cookie: session=hunter2secret", "Cookie=[Redacted]"],
     ["Cookie: theme=dark; session=hunter2secret was rejected", "Cookie=[Redacted] was rejected"],
+    [
+      "Cookie: sid=fixture; csrf_token=fixture; session=hunter2secret sent",
+      "Cookie=[Redacted] sent",
+    ],
+    ["Authorization: Negotiate fixture, password=Basic hunter2secret", "Authorization=[Redacted]"],
     ["Set-Cookie: session=hunter2secret; Path=/; HttpOnly", "Set-Cookie=[Redacted] HttpOnly"],
     ["passwd=hunter2secret", "passwd=[Redacted]"],
     ["credential=hunter2secret", "credential=[Redacted]"],
@@ -478,15 +499,40 @@ describe("redaction", () => {
     ['{"tokens": ["x"]}', '{"tokens": [Redacted]}'],
     ['"password" => "x"', '"password" => "[Redacted]"'],
     ['{"id":1,"tokens":["x","y z"],"ok":true}', '{"id":1,"tokens":[Redacted],"ok":true}'],
+    ["{'tokens': ['x]', 'y z'], 'ok': True}", "{'tokens': [Redacted], 'ok': True}"],
+    ['{"tokens": [\n  "x",\n  "y z"\n], "ok": true}', '{"tokens": [Redacted], "ok": true}'],
+    ["token=[fixture next='a] hunter2 secret'", "token=[Redacted]"],
+    ["token=[fixture' password='a] hunter2 secret' sent", "token=[Redacted]"],
+    ["secrets: { token: 'fixture', user: 'a b' } sent", "secrets=[Redacted]"],
+    [
+      '{"tokens":{"access_token":"x","refresh_token":"y z"},"expires_in":3600}',
+      '{"tokens":[Redacted],"expires_in":3600}',
+    ],
     ["{ password: 'x y', attempt: 2 }", "{ password=[Redacted] attempt: 2 }"],
   ])("redacts secret fields in other JSON and dictionary forms: %s", (text, expected) => {
     expect(redactSensitiveText(text)).toBe(expected);
   });
 
   it.each([
+    ["token=fixture,password: hunter2secret", "token=[Redacted]"],
+    ['password="fixture",token="hunter2 secret" sent', "password=[Redacted] sent"],
+    ['token=[fixture {"password":\n  "hunter2 secret"}', "token=[Redacted]}"],
+    ['{"token": fixture;"password": "hunter2 secret","id":1}', '{"token": [Redacted],"id":1}'],
+    ["api_key=fixture&secret= hunter2secret page=2", "api_key=[Redacted] page=2"],
+    ["Cookie: sid=fixture; token= hunter2secret", "Cookie=[Redacted]"],
+    ["Cookie: X-Cookie: sid=hunter2secret", "Cookie=[Redacted]"],
+  ])("redacts a value whose key follows another value directly: %s", (text, expected) => {
+    const redacted = redactSensitiveText(text);
+    expect(redacted).toBe(expected);
+    expect(redactSensitiveText(redacted)).toBe(redacted);
+  });
+
+  it.each([
     ["secret-key=hunter2secret", "secret-key=[Redacted]"],
     ["--secret-key hunter2secret", "--secret-key [Redacted]"],
-  ])("redacts kebab-case keys wherever the secret word sits: %s", (text, expected) => {
+    ["jwt.secret.key=hunter2secret", "jwt.secret.key=[Redacted]"],
+    ["password.hash = hunter2secret", "password.hash=[Redacted]"],
+  ])("redacts kebab-case and dotted keys wherever the secret word sits: %s", (text, expected) => {
     expect(redactSensitiveText(text)).toBe(expected);
   });
 
@@ -510,7 +556,9 @@ describe("redaction", () => {
   it("redacts a shared page's link wherever its path starts", () => {
     const token = "Zm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyZm9";
     expect(redactSensitiveText(`url:/p/${token}`)).toBe("url:/p/[Redacted]");
+    expect(redactSensitiveText(`>/p/${token}`)).toBe(">/p/[Redacted]");
     expect(redactSensitiveText(`<a>/p/${token}</a>`)).toBe("<a>/p/[Redacted]</a>");
+    expect(redactSensitiveText(`next=%2Fp%2F${token}`)).toBe("next=%2Fp%2F[Redacted]");
     expect(redactSensitiveText(`next=%2Fp%2F${token}&from=mail`)).toBe(
       "next=%2Fp%2F[Redacted]&from=mail",
     );
@@ -524,6 +572,7 @@ describe("redaction", () => {
     expect(redactSensitiveText("PASSWORD_FILE=C:\\Users\\Jane Doe\\pw.txt")).toBe(
       "PASSWORD_FILE=[Redacted]",
     );
+    expect(redactSensitiveText("/Users/Jane Doe/x")).toBe("/[user]/x");
     expect(redactSensitiveText("cannot open /Users/Jane Doe/x")).toBe("cannot open /[user]/x");
     expect(redactSensitiveText("cannot open /home/example-user and /tmp/x")).toBe(
       "cannot open /[user] and /tmp/x",
@@ -535,6 +584,10 @@ describe("redaction", () => {
     [
       'Headers.append: "fake" is an invalid header value.person@example.com',
       'Headers.append: "[Redacted]" is an invalid header [Redacted]',
+    ],
+    [
+      'Headers.append: "fake" is an invalid header value. Tell person@example.com about it',
+      'Headers.append: "[Redacted]" is an invalid header value. Tell [Redacted] about it',
     ],
     [
       'https://a.example{"password":"a b"}/p/Zm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyZm9',
@@ -554,6 +607,11 @@ describe("redaction", () => {
     "https://registry.example.com:4873/@scope/pkg/-/pkg-1.0.0.tgz",
     "docker://registry:5000/image@sha256:abcdef",
     "file:///C:/work/app/index.js:10:5",
+    "file://C:/work/node_modules/@scope/pkg/index.js",
+    "at refresh (/app/src/auth/token.ts:42:13)",
+    "at reset (file:///app/dist/password-reset.js:10:5)",
+    "listening on http://localhost:3000. Contact @ops",
+    "redis://cache-1:6379,redis://cache-2:6379 handle=@ops",
     "GET /app/p/page1 200 in 12ms",
     "task-12345678 finished; risk-assessment queued",
     "break_ak_x keyJson.parse.call",
@@ -565,6 +623,25 @@ describe("redaction", () => {
 
   it.each([
     ["a URL with a colon and no credentials", `"://a:b/".repeat(150_000)`],
+    ["URLs with credentials", `"://a:b@c/".repeat(120_000)`],
+    ["a URL password made of at signs", `"://a:" + "b@".repeat(512 * 1024)`],
+    ["dots after the credentials in a URL", `"://a:b@" + ".".repeat(1024 * 1024) + "%"`],
+    ["colons after the credentials in a URL", `"://a:b@" + "c:".repeat(512 * 1024) + "%"`],
+    ["URL passwords that open a quote", `('://a:"' + "b".repeat(300)).repeat(3_500)`],
+    ["a port followed by full stops", `"://a:1" + ".".repeat(1024 * 1024) + "@"`],
+    [
+      "dotted keys",
+      `("token." + "a".repeat(500) + ".").repeat(2_000) + "token.a.b.c.d ".repeat(60_000)`,
+    ],
+    ["a value full of secret names", `"token=" + ",token".repeat(170_000)`],
+    [
+      "values full of quoted secret names",
+      `"token=" + ',"token" '.repeat(40_000) + "token=[" + ',"a.token"  '.repeat(50_000)`,
+    ],
+    [
+      "an open list full of secret names and spaces",
+      `"token=[" + ("token" + " ".repeat(200)).repeat(5_000)`,
+    ],
     ["a long URL password that never ends", `"://a:" + "b".repeat(1024 * 1024)`],
     ["percent-encoded link paths", `"%2Fp%2F".repeat(150_000) + "@"`],
     ["blank lines after a secret-named key", `"token=" + "\\n".repeat(1024 * 1024)`],
@@ -576,6 +653,14 @@ describe("redaction", () => {
       `Array.from({ length: 600 }, (_, depth) => "token:" + "\\\\".repeat(depth % 9) + '"x ').join("").repeat(40)`,
     ],
     ["lists that never close", `'token:["a\\n'.repeat(100_000)`],
+    [
+      "lists of escaped strings that never close",
+      `'token:[\\\\"a\\n'.repeat(60_000) + '"token":{\\\\"a\\n'.repeat(40_000)`,
+    ],
+    [
+      "values that each end in the next secret-named key",
+      `"token=a,token=\\n".repeat(30_000) + "token=a,token : ".repeat(30_000) + 'token="a",token='.repeat(30_000)`,
+    ],
     [
       "header parameters",
       `"cookie: a; b=1; ".repeat(60_000) + "authorization: a, b=\\"".repeat(40_000)`,

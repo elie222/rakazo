@@ -104,18 +104,53 @@ const POSIX_PROFILE = String.raw`(?:\/Users\/|\/home\/)(?:[${MARKS}]*[^/\s${MARK
 
 const QUOTE = String.raw`\\{0,8}["']`;
 const SEPARATOR = String.raw`\s*(?::|=>?)\s*`;
-const STRING = String.raw`"(?:\\[\s\S]|[^"\\])*"`;
+// The text so far ends in a secret-named key, and in its separator. The start of the word is
+// checked before the names in it, so a long word is read once.
+const NAMED = String.raw`(?=[\w.-]*?(?:${SECRET_NAMES}|email))(?<![\w.-])[\w.-]+(?:${QUOTE})?`;
+const AFTER_KEY = String.raw`${NAMED}\s*(?::|=>?)`;
+// A run that ends before the next space would cut short the value of a secret-named key it meets,
+// so it stops once it has taken that key and the key's value is read as a value.
+const upToNextKey = (char: string) => `(?:(?<!${AFTER_KEY})${char})*`;
+// A run up to the next space takes a plain value whole, and stops only where the key opens a
+// quoted or bracketed one.
+const NON_SPACE = String.raw`(?:(?!(?<=${AFTER_KEY})(?:${QUOTE}|[[{]))\S)`;
+// A string stays on its line, so one that never closes is not read again from every line after.
+const STRING = String.raw`"(?:\\[^\n]|[^"\\\n])*"|'(?:\\[^\n]|[^'\\\n])*'`;
 // Quoted at any escaping depth; an escaped quote inside an escaped value has a backslash before it.
 const quoted = (name: string) =>
   String.raw`(?=(?<${name}>${QUOTE}))(?:["'](?:\\[\s\S]|(?!\k<${name}>)[^\\])*|\\{1,8}["'][\s\S]*?(?<!\\))\k<${name}>`;
+// In a list or object a secret-named key stands in a string with its value after it, as JSON
+// writes it. A bare one, or a string that ends in one, means the quotes are not paired the way
+// they read, and the value is not taken as closed.
+const ITEM = String.raw`(?:(?:${STRING})(?<!${AFTER_KEY}["'])|(?!(?<![\w-])(?=[\w-]*?(?:${SECRET_NAMES})))[^\][{}"'])`;
 // A list or object on one level.
-const BRACKETED = String.raw`\[(?:${STRING}|[^\][{}"])*\]|\{(?:${STRING}|[^{}[\]"])*\}`;
+const BRACKETED = String.raw`\[${ITEM}*\]|\{${ITEM}*\}`;
 // A quote that never closes, or a nested list or object, takes the rest of its line.
 const UNCLOSED = String.raw`${QUOTE}[^\n]*|[[{][^\n]*`;
-const CREDENTIAL = String.raw`(?:(?:basic|bearer|digest|token)\s+)?\S+`;
-// A header goes on after a comma or semicolon for as long as `name=value` parameters follow. A
-// parameter with a secret name is left to start a match of its own.
-const PARAMETERS = String.raw`(?:(?<=[,;])[ \t]+(?![\w.-]*?(?:${SECRET_NAMES}))[\w.-]+=(?:"[^"\n]*")?\S*)*`;
+const SCHEME = String.raw`(?:basic|bearer|digest|token)\s+`;
+const CREDENTIAL = `(?:${SCHEME})?${NON_SPACE}+`;
+// A header goes on after a comma or semicolon for as long as `name=value` parameters follow, and
+// a secret-named one may hold a scheme and its credential.
+const PARAMETERS = String.raw`(?:(?<=[,;])[ \t]+[\w.-]+=(?:"[^"\n]*")?(?:(?<=${AFTER_KEY})${SCHEME})?${NON_SPACE}*)*`;
+const value = (field: string, free: string) =>
+  [
+    // An earlier redaction stands alone, so redacting twice cannot take more than redacting once.
+    `(?:[${MARKS}]`,
+    // After a quoted key the value ends where its field does, so the fields beside it stay.
+    `|(?<=["']${SEPARATOR})(?:${quoted(field)}|${BRACKETED}|${UNCLOSED}`,
+    String.raw`|[^\s,}\]]${upToNextKey(String.raw`[^\s,}\]]`)})`,
+    // Elsewhere what is glued to the closing quote goes too, up to a quote that may open a field.
+    `|${quoted(free)}${upToNextKey(String.raw`[^\s"']`)}|(?:${BRACKETED})${NON_SPACE}*|${UNCLOSED}`,
+    // A profile path is one value although the account name in it may hold spaces.
+    `|(?:${WINDOWS_PROFILE}|${POSIX_PROFILE})${NON_SPACE}*`,
+    // Whatever the scheme, its credential goes with it.
+    String.raw`|(?<=authorization[\w-]*${SEPARATOR})(?:[a-z][\w-]*[ \t]+)?${NON_SPACE}+${PARAMETERS}`,
+    String.raw`|(?<=cookie[\w-]*${SEPARATOR})${CREDENTIAL}${PARAMETERS}`,
+    `|${CREDENTIAL})`,
+  ].join("");
+// A value that stopped at the next secret-named key, with its separator taken or still to come,
+// takes the value that key names too, so no key goes without one.
+const NEXT_VALUE = String.raw`(?:(?<=${AFTER_KEY})>?\s*|(?<=${NAMED})${SEPARATOR})(?=\S)`;
 const KEY_START = String.raw`(?<![\w-])`;
 // A value after a secret-named key: `key=value`, `"key": value`, `key => value` or `--key value`.
 // Each key starts once, at the start of its word, and its lookahead admits only words that contain
@@ -124,22 +159,14 @@ const KEYED_SECRET = new RegExp(
   [
     // A quoted key may be dotted and follows the structured rule for addresses.
     String.raw`${KEY_START}(?:((?<=["'])(?=[\w.-]*?(?:${SECRET_NAMES}|email))[\w.-]+(?=${QUOTE})`,
-    String.raw`|(?=[\w-]*?(?:${SECRET_NAMES}))[\w-]+)(${QUOTE})?(${SEPARATOR})`,
+    // A bare key goes on through dotted parts only before `=`: `name.ext:` is a file and a line.
+    String.raw`|(?=[\w-]*?(?:${SECRET_NAMES}))[\w-]+(?:(?:\.[\w-]+){1,4}(?=\s*=))?)`,
+    `(${QUOTE})?(${SEPARATOR})`,
     // A flag starts its word; after a redaction it is the rest of a word that was not a flag.
     // Looking for the value's first character here keeps a long run of spaces from being retried.
     String.raw`|(?<![${MARKS}])(--(?=[\w-]*?(?:${SECRET_NAMES}))[\w-]+[ \t]+)(?!-))(?=\S)`,
-    // An earlier redaction stands alone, so redacting twice cannot take more than redacting once.
-    `(?:[${MARKS}]`,
-    // After a quoted key the value ends where its field does, so the fields beside it stay.
-    String.raw`|(?<=["']${SEPARATOR})(?:${quoted("field")}|${BRACKETED}|${UNCLOSED}|[^\s,}\]]+)`,
-    // Elsewhere what is glued to the closing quote goes too, up to a quote that may open a field.
-    String.raw`|${quoted("free")}[^\s"']*|(?:${BRACKETED})\S*|${UNCLOSED}`,
-    // A profile path is one value although the account name in it may hold spaces.
-    String.raw`|(?:${WINDOWS_PROFILE}|${POSIX_PROFILE})\S*`,
-    // Whatever the scheme, its credential goes with it.
-    String.raw`|(?<=authorization[\w-]*${SEPARATOR})(?:[a-z][\w-]*[ \t]+)?\S+${PARAMETERS}`,
-    String.raw`|(?<=cookie[\w-]*${SEPARATOR})${CREDENTIAL}${PARAMETERS}`,
-    `|${CREDENTIAL})`,
+    value("field", "free"),
+    `(?:${NEXT_VALUE}${value("nextField", "nextFree")})*`,
   ].join(""),
   "gi",
 );
@@ -147,14 +174,18 @@ const KEYED_SECRET = new RegExp(
 const BEARER = /\bBearer\s+[^\s"',;&]+/gi;
 
 const URL_END = String.raw`\s"'<>,;)\]}\\&/?#\x60`;
-const HOST = String.raw`(?:[A-Za-z0-9.${WORLD}-]+|\[[0-9A-Fa-f:.]+\])(?::\d{1,5})?(?=[${URL_END}]|$)`;
-// The password in `scheme://user:password@host`, whatever characters it holds: up to the first
-// `@` that a host and the end of the URL follow, or else to the last `@` before the path, or
-// the last one at all. A number that ends where a URL can is a port, not a password.
+// What ends a URL in text whatever the URL holds; the other characters may be part of a password.
+const URL_STOP = String.raw`\s"'<>\\\x60`;
+// A password never runs into the next URL, so each one is scanned once however many share a line.
+const urlRun = (stops: string) => String.raw`(?:(?!:\/\/)[^${stops}${MARKS}])`;
+// The password in `scheme://user:password@host`, whatever characters it holds: up to the last `@`
+// before the URL stops, even when that takes a path with an `@` in it. A password that holds a
+// quote runs past it to the first `@`, for a short way only so the text after a URL without
+// credentials stays. A number that ends where a URL or its sentence can is a port, and a letter
+// before a path is a drive.
 const URL_CREDENTIALS = new RegExp(
-  String.raw`(:\/\/[^:[${URL_END}${MARKS}]*:)(?:${REDACTED_MARK}@|(?!\d{0,5}(?:[${URL_END}]|$))` +
-    String.raw`(?:[^\s${MARKS}]{0,128}?@(?=${HOST})|[^\s/?#${MARKS}]*@` +
-    String.raw`|[^\s${MARKS}]{0,128}@(?:[^\s/?#${MARKS}]*@)?))`,
+  String.raw`(:\/\/(?![A-Za-z]:[\\/])[^:[${URL_END}${MARKS}]*:)(?!\d{1,5}[.:!]*(?:[${URL_END}]|$))` +
+    `(?:${urlRun(URL_STOP)}*@|${urlRun("\\s")}{0,128}?@)`,
   "g",
 );
 

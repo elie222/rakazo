@@ -33,9 +33,10 @@ const VISIBLE_ASCII = Array.from({ length: 94 }, (_, i) => String.fromCharCode(3
 
 const alnum = chars(ALNUM, 12, 40);
 const visible = chars(VISIBLE_ASCII, 12, 40);
-// A value that opens with a quote runs to the quote that closes it, so a bare one opens otherwise.
+// A value that opens with a quote runs to the quote that closes it, and `=>` is a separator, so a
+// bare one opens otherwise.
 const bare = fc
-  .tuple(chars(VISIBLE_ASCII.replace(/["'\\]/g, ""), 1, 1), chars(VISIBLE_ASCII, 11, 39))
+  .tuple(chars(VISIBLE_ASCII.replace(/["'\\>]/g, ""), 1, 1), chars(VISIBLE_ASCII, 11, 39))
   .map((parts) => parts.join(""));
 const endsAlnum = (body: fc.Arbitrary<string>) =>
   fc.tuple(body, chars(ALNUM, 1, 1)).map(([head, last]) => head + last);
@@ -140,6 +141,21 @@ const assignment = fc
       secret: value,
     }),
   );
+// A bare key goes on through dotted parts before `=`; before `:` it would be a file and a line.
+const dottedAssignment = fc
+  .tuple(
+    fc.constantFrom("", "app.", "jwt.", "--"),
+    mixedCase(secretName),
+    fc.constantFrom(".key", ".hash", ".value.raw", ".v1.primary.current.id"),
+    fc.constantFrom("=", " = ", " => ", "=>"),
+    bare,
+  )
+  .map(
+    ([prefix, name, rest, separator, value]): Planted => ({
+      text: `${prefix}${name}${rest}${separator}${value}`,
+      secret: value,
+    }),
+  );
 const quotedAssignment = fc
   .tuple(assignmentKey, assignmentSeparator, fc.constantFrom('"', "'"), phrase)
   .map(
@@ -225,6 +241,32 @@ const jsonField = fc
     ([key, separator, value]): Planted => ({
       text: `{"id":"r1","${key}"${separator}${JSON.stringify(value)},"code":401}`,
       secret: JSON.stringify(value).slice(1, -1),
+    }),
+  );
+// The key of the second value follows the first value with nothing between them but punctuation.
+const gluedAssignment = fc
+  .tuple(
+    fc.oneof(
+      alnum.map((value) => `token=${value}`),
+      phrase.map((value) => `password="${value}"`),
+      alnum.map((value) => `token=[${value}`),
+      alnum.map((value) => `"token": ${value}`),
+    ),
+    fc.constantFrom(",", ";", "&", " {"),
+    fc.oneof(
+      fc
+        .tuple(secretName, fc.constantFrom("=", ": ", " = ", ":\n  "), bare)
+        .map(([key, separator, value]) => ({ text: `${key}${separator}${value}`, secret: value })),
+      fc.tuple(secretName, fieldSeparator, phrase).map(([key, separator, value]) => ({
+        text: `"${key}"${separator}"${value}"`,
+        secret: value,
+      })),
+    ),
+  )
+  .map(
+    ([first, glue, second]): Planted => ({
+      text: `${first}${glue}${second.text}`,
+      secret: second.secret,
     }),
   );
 const escaped = (json: string) => JSON.stringify(json).slice(1, -1);
@@ -376,26 +418,34 @@ const windowsProfile = fc
   )
   .map(([root, name, rest]): Planted => ({ text: `${root}${name}${rest}`, secret: name }));
 
-// A password may hold any visible character, with two readings left to the URL itself: a number
-// that ends where a URL can is a port, so the password starts with a letter here, and an `@`
-// with a host and the end of the URL after it closes the credentials, so it holds either an `@`
-// or the characters that end a URL.
+// A password may hold any visible character. Three readings are left to the URL itself: a number
+// that ends where a URL can is a port, `://` starts the next URL, and a quote ends a URL in text,
+// so a password holds a quote or an `@` but not both.
+const URL_STOPS = "\"'<>\\`";
+const withoutUrlStops = VISIBLE_ASCII.split("")
+  .filter((char) => !URL_STOPS.includes(char))
+  .join("");
+const urlPassword = fc
+  .oneof(chars(VISIBLE_ASCII.replace("@", ""), 12, 40), chars(`${withoutUrlStops}@@@@`, 12, 40))
+  .filter(
+    (password) => !/^\d{1,5}[.:!]*["'<>,;)\]}\\&/?#`]/.test(password) && !password.includes("://"),
+  );
 const connectionString = fc
   .tuple(
     fc.constantFrom("", "DATABASE_URL=", "url: "),
-    fc.constantFrom("postgres", "postgresql", "mysql", "redis", "amqp", "mongodb+srv", "https"),
+    fc.constantFrom("postgres", "postgresql", "mysql", "redis", "amqp", "sftp", "https"),
     fc.constantFrom("app", "admin", "", "ops@example.com"),
-    fc
-      .tuple(
-        chars(LETTERS, 1, 1),
-        fc.oneof(
-          chars(VISIBLE_ASCII.replace(/["'<>,;)\]}\\&/?#`]/g, ""), 11, 39),
-          chars(VISIBLE_ASCII.replace("@", ""), 11, 39),
-        ),
-      )
-      .map((parts) => parts.join("")),
-    fc.constantFrom("db.example.com", "example.org", "localhost", "db", "10.0.0.5", "[::1]"),
-    fc.constantFrom("", ":5432", ":5432/app", "/app?sslmode=require"),
+    urlPassword,
+    fc.constantFrom(
+      "db.example.com",
+      "example.org",
+      "localhost",
+      "db",
+      "my_db",
+      "10.0.0.5",
+      "[::1]",
+    ),
+    fc.constantFrom("", ":5432", ":5432/app", "/app?sslmode=require", ": refused", "."),
   )
   .map(
     ([prefix, scheme, user, password, host, rest]): Planted => ({
@@ -403,11 +453,22 @@ const connectionString = fc
       secret: password,
     }),
   );
+// Several URLs with credentials in one list, as a cluster's addresses are written.
+const connectionStringList = fc
+  .tuple(alnum, urlPassword, alnum, fc.constantFrom(",", ";", ", "))
+  .map(
+    ([first, password, last, comma]): Planted => ({
+      text: `amqp://app:${first}@mq1:5672${comma}amqp://app:${password}@mq2:5672${comma}amqp://app:${last}@mq3`,
+      secret: password,
+    }),
+  );
 
 const shapes = {
   "a bearer token": bearer,
   "a value assigned to a secret-named key": assignment,
+  "a value assigned to a dotted key with a secret name in it": dottedAssignment,
   "a quoted value with spaces assigned to a secret-named key": quotedAssignment,
+  "a value whose secret-named key follows another value directly": gluedAssignment,
   "a value after a secret-named command-line flag": flag,
   "a credential after any authorization scheme": authorizationHeader,
   "a cookie in a header": cookieHeader,
@@ -419,6 +480,7 @@ const shapes = {
   "a signed web token": jwt,
   "an email address": email,
   "a password in a connection string": connectionString,
+  "a password in a list of connection strings": connectionStringList,
   "a shared page link with its origin": absoluteShareLink,
   "a shared page path": relativeShareLink,
   "a percent-encoded shared page link": encodedShareLink,
@@ -437,6 +499,57 @@ function inText(planted: fc.Arbitrary<Planted>) {
     }))
     .filter(({ text, secret }) => standsApart(secret, text));
 }
+
+// Lines a service logs all day that only resemble a secret: its names in prose and file names,
+// ports, paths, and at signs that are not addresses.
+const name = chars(LOWER, 3, 8).map((letters) => `n${letters}`);
+const count = fc.integer({ min: 0, max: 99_999 });
+const benignLine = fc.oneof(
+  fc.constantFrom(
+    "the token expired",
+    "password reset requested",
+    "invalid credentials",
+    "missing authorization header",
+    "cookie banner dismissed",
+    "secret rotation scheduled",
+    "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON",
+    "ENOENT: no such file or directory, open '/app/secrets.json'",
+    "2026-11-15T10:42:07.123Z worker started",
+    "risk-assessment queued",
+    "file:///C:/work/app/index.js:10:5",
+  ),
+  fc.tuple(name, count, count).map(([id, a, b]) => `GET /api/v1/items/${id} 200 in ${a}ms #${b}`),
+  fc.tuple(name, count).map(([id, port]) => `http://localhost:${port}/${id}?page=2&sort=asc`),
+  fc.tuple(name, name).map(([host, id]) => `https://${host}.example.com:8443/@${id}/${id}.js`),
+  fc
+    .tuple(
+      name,
+      fc.constantFrom("token", "password-reset", "secrets/index", "auth/credential-store"),
+      count,
+      count,
+    )
+    .map(([fn, file, line, column]) => `at ${fn} (file:///app/src/${file}.ts:${line}:${column})`),
+  fc.tuple(name, count).map(([fn, line]) => `at ${fn} (/app/src/auth/token.ts:${line}:13)`),
+  fc
+    .tuple(name, name, count)
+    .map(([id, tag, n]) => `{"id":"${id}","status":"ok","count":${n},"tags":["${tag}","b"]}`),
+  fc.tuple(name, count, count).map(([id, a, b]) => `retry=${a} timeout=${b}s status=${id}`),
+  fc
+    .tuple(name, count)
+    .map(([id, code]) => `C:\\Program Files\\${id}\\run.exe exited with ${code}`),
+  fc.tuple(name, count).map(([id, port]) => `redis://${id}-1:${port},redis://${id}-2:${port}`),
+  fc.tuple(name, count).map(([id, port]) => `listening on http://${id}:${port}.`),
+  fc.tuple(name, name).map(([registry, image]) => `docker://${registry}:5000/${image}@sha256:0a1b`),
+  fc.tuple(name, name).map(([scope, id]) => `file://C:/work/node_modules/@${scope}/${id}/index.js`),
+  fc.tuple(name, count, count).map(([id, major, minor]) => `@scope/${id}@${major}.${minor}.0`),
+  fc.tuple(name, count).map(([id, n]) => `task-${n} finished for @${id} (${n}%)`),
+);
+const benign = fc
+  .tuple(
+    benignLine,
+    fc.array(fc.tuple(fc.constantFrom(" ", "\n", "; ", " | ", ", "), benignLine), { maxLength: 3 }),
+  )
+  .map(([first, rest]) => first + rest.map((parts) => parts.join("")).join(""));
 
 const fragment = fc.constantFrom(
   '"',
@@ -482,7 +595,9 @@ const fragment = fc.constantFrom(
   "://",
   "https://a.example",
   "user:",
+  "@db",
   ":5432",
+  ".key=",
   "/p/",
   "%2Fp%2F",
   "/en",
@@ -541,11 +656,27 @@ const hostileUnit = fc.constantFrom(
   "://a:",
   "://a:b/",
   "://a:1/",
+  "://a:1.",
+  "://a:b@",
+  '://a:"',
+  "b@",
+  "@a",
+  "@a:",
   "token",
   "token ",
   "token.",
   "token-",
+  "token.a",
+  "token.a.b.c.d ",
   "token=",
+  ",token",
+  ',"token" ',
+  ",token: ",
+  ',"token":"',
+  "token=a,token=\n",
+  "token=[",
+  'token:[\\"a\n',
+  "cookie: token=a; ",
   "token=>",
   '"token":"',
   '"token":"\\',
@@ -645,6 +776,15 @@ describe("redactSensitiveText properties", () => {
     });
     fc.assert(
       fc.property(plain, (text) => {
+        expect(redactSensitiveText(text)).toBe(text);
+      }),
+      { seed: SEED, numRuns: RUNS },
+    );
+  });
+
+  it("returns lines that only resemble a secret unchanged", () => {
+    fc.assert(
+      fc.property(benign, (text) => {
         expect(redactSensitiveText(text)).toBe(text);
       }),
       { seed: SEED, numRuns: RUNS },
