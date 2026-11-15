@@ -198,7 +198,8 @@ async function dropAuthorization(
 ): Promise<void> {
   if (await authorizationInUse(tx, target, target.ref)) return;
   // Cancelling by id keeps the authorization URL from creating an untracked account later;
-  // an account id is resolved only when the connector cannot cancel.
+  // an account id is resolved only when the connector cannot cancel, and that lookup rejects
+  // when the provider could not be asked.
   if (connector.cancelAuthorizationRequest) {
     await connector.cancelAuthorizationRequest(target.ref, context);
     return;
