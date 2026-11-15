@@ -64,7 +64,13 @@ export function referencedSkillResources(body: string, siblings: readonly string
       new RegExp(`(?:^|[^\\w./-])(?:\\./)?${directory}/(?=$|[^\\w./-]|\\.(?:$|\\s))`).test(body),
     ),
   );
-  const explicitlyNamed = new Set(siblings.filter((path) => bodyReferencesSkillPath(body, path)));
+  const tokens = new Set(
+    (body.match(/[^\s`"'<>()[\]{}]+/g) ?? []).map((token) =>
+      token.replace(/^[./]+/, "").replace(/[.,;:!?]+$/, ""),
+    ),
+  );
+  const explicitlyNamed = new Set(siblings.filter((path) => tokens.has(path)));
+
   return siblings.filter((path) => {
     const first = path.split("/")[0] ?? "";
     return (
@@ -73,20 +79,4 @@ export function referencedSkillResources(body: string, siblings: readonly string
       (body.includes("{baseDir}") && SKILL_RESOURCE_DIRS.includes(first))
     );
   });
-}
-
-export function bodyReferencesSkillPath(body: string, path: string): boolean {
-  const escaped = path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const exactPath = new RegExp(
-    `(?:^|[^\\w./-])${escaped}(?=$|[^\\w./-]|\\.(?=$|\\s|[,;:!?)}\\]]))`,
-  );
-  if (path.includes("/"))
-    return exactPath.test(body) || body.includes(`./${path}`) || body.includes(`{baseDir}/${path}`);
-  if (/\.[^./]+$/.test(path)) return exactPath.test(body);
-  return (
-    body.includes(`\`${path}\``) ||
-    body.includes(`./${path}`) ||
-    body.includes(`${path}/`) ||
-    body.includes(`](${path})`)
-  );
 }

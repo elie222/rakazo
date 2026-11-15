@@ -741,6 +741,12 @@ export function parsePluginDirectory(input: {
   let schema: string | undefined;
   let rawManifest: Record<string, unknown> | undefined;
   const agentSkillBundle = !manifestPath;
+  if (
+    agentSkillBundle &&
+    [...files.keys()].some((path) => /^\.[^/]+-plugin\/plugin\.json$/.test(path))
+  ) {
+    throw new Error("Unsupported plugin manifest");
+  }
   if (manifestPath) {
     const raw: unknown = JSON.parse(files.get(manifestPath) ?? "");
     if (!object(raw)) throw new Error("Plugin manifest must be an object");
