@@ -67,8 +67,9 @@ export function referencedSkillResources(body: string, siblings: readonly string
     ),
   );
   const tokens = new Set(
-    (body.match(/[^\s`"'<>()[\]{}]+/g) ?? []).map((token) =>
+    [...(body.match(/[^\s`"'<>()[\]{}]+/g) ?? []), ...body.split(/[`"()<>]/)].map((token) =>
       token
+        .trim()
         .split("#", 1)[0]!
         .replace(/^[./]+/, "")
         .replace(/[.,;:!?]+$/, ""),

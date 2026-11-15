@@ -18,6 +18,15 @@ describe("referencedSkillResources", () => {
       ]),
     ).toEqual(["references/guide.md"]);
   });
+  it("includes spaced filenames in quoted references and Markdown links", () => {
+    expect(
+      referencedSkillResources("Read `my guide.md` and [other](<other guide.md>).", [
+        "my guide.md",
+        "other guide.md",
+        "unrelated.md",
+      ]),
+    ).toEqual(["my guide.md", "other guide.md"]);
+  });
   const paths = ["references/guide.md", "references/other.md", "src/main.ts"];
   it("includes a directory mentioned alongside an individual file", () => {
     expect(
