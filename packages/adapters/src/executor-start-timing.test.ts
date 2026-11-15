@@ -182,11 +182,15 @@ describe("execution start timing", () => {
         if (failure === "database error") throw new Error("database unavailable");
         return { count: 0 };
       });
-      if (failure === "database error")
-        await expect(start()).rejects.toThrow("database unavailable");
-      else await start();
+      if (failure === "database error") {
+        // The failed setup is recorded as an attempt, and this fixture's attempt write fails too.
+        await expect(start()).rejects.toThrow("attempt setup failed");
+        expect(prisma.attempt.create).toHaveBeenCalledOnce();
+      } else {
+        await start();
+        expect(prisma.attempt.create).not.toHaveBeenCalled();
+      }
       expect(leases.release).toHaveBeenCalledWith(prisma, lease);
-      expect(prisma.attempt.create).not.toHaveBeenCalled();
       expect(sink.events.some((event) => event.message === "run.execution_started")).toBe(false);
     },
   );

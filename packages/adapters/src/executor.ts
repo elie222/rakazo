@@ -83,6 +83,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         // integration and computer setup must not occupy a queue dispatch slot.
         onRunStarted?.();
         hold.dispatchHandedOff = Boolean(onRunStarted);
+        if (hold.setupFailure) throw hold.setupFailure.error;
         const turn = await assembleRunTurn(services, hold);
         if (!turn) return;
         await runModelTurn(services, hold, turn);

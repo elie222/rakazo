@@ -8,6 +8,7 @@ import {
   readMessageBlocks,
   teamChatRunFromOwner,
 } from "@rakazo/db";
+import { bestEffort } from "@rakazo/logging";
 import { formatAgentEnvironmentInstruction } from "./agent-environment.prompt.js";
 import { loadBotMessageContext } from "./bot-messages.js";
 import {
@@ -360,6 +361,8 @@ export async function connectRun(
   const discoveredPromise = deps.connector
     ? deps.connector.discoverTools(context)
     : Promise.resolve([]);
+  // Awaited steps later: if one before it throws, a rejection here would stop the process.
+  void bestEffort("tool discovery", discoveredPromise);
   // A connection that cannot be read now leaves the cloud-agent tools out of this turn only.
   const cloudAgentPromise = cloudAgentForActor(executorDeps, {
     spaceId: run.spaceId,
