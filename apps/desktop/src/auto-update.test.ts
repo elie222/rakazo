@@ -1,3 +1,5 @@
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import { describe, expect, it, vi } from "vitest";
 import type { ElectronAutoUpdater, UpdaterEvent } from "./auto-update.js";
 import {
@@ -48,14 +50,6 @@ function fakeUpdater(overrides: Partial<ElectronAutoUpdater> = {}) {
       listeners.get(event)?.(payload);
     },
   };
-}
-
-function deferred() {
-  let resolve!: () => void;
-  const promise = new Promise<void>((done) => {
-    resolve = done;
-  });
-  return { promise, resolve };
 }
 
 describe("updaterSupport", () => {
@@ -675,13 +669,11 @@ describe("DesktopUpdateController", () => {
 
     it("offers the update only after the verifier passes it", async () => {
       const fake = verifiedUpdater();
-      let pass!: () => void;
-      const verify = vi.fn(
-        () =>
-          new Promise<void>((resolve) => {
-            pass = resolve;
-          }),
-      );
+      let pass!: Deferred;
+      const verify = vi.fn(() => {
+        pass = deferred();
+        return pass.promise;
+      });
       const controller = new DesktopUpdateController(
         packaged,
         async () => fake.updater,
@@ -698,7 +690,7 @@ describe("DesktopUpdateController", () => {
       controller.installOnQuit();
       expect(fake.updater.quitAndInstall).not.toHaveBeenCalled();
 
-      pass();
+      pass.resolve();
       expect(await downloading).toMatchObject({ phase: "ready", availableVersion: "0.2.0" });
       controller.installOnQuit();
       controller.installOnQuit();
@@ -780,8 +772,11 @@ describe("DesktopUpdateController", () => {
 
     it("stays failed when the updater errors while a verification is pending", async () => {
       const fake = verifiedUpdater();
-      let pass!: () => void;
-      const verify = vi.fn(() => new Promise<void>((resolve) => (pass = resolve)));
+      let pass!: Deferred;
+      const verify = vi.fn(() => {
+        pass = deferred();
+        return pass.promise;
+      });
       const controller = new DesktopUpdateController(
         packaged,
         async () => fake.updater,
@@ -792,7 +787,7 @@ describe("DesktopUpdateController", () => {
       await controller.check(false);
       await vi.waitFor(() => expect(verify).toHaveBeenCalled());
       fake.emit("error", new Error("download failed"));
-      pass();
+      pass.resolve();
       await Promise.resolve();
       expect(controller.state().phase).toBe("error");
       controller.installOnQuit();
