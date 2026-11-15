@@ -3,7 +3,7 @@
 import { createHash } from "node:crypto";
 import type { PluginPreview } from "@rakazo/contracts";
 import { McpServerConfigInput } from "@rakazo/contracts";
-import { buildSkillMd, findSkillByName, parseSkillMd } from "@rakazo/core";
+import { buildSkillMd, deadlineSignal, findSkillByName, parseSkillMd } from "@rakazo/core";
 import { z } from "zod";
 import { BUILTIN_AGENT_SKILLS } from "./builtin-skills.js";
 import { assertNoSensitiveQuery } from "./connector-http.js";
@@ -218,7 +218,7 @@ export async function fetchGitHubRepo(
   if (url.hostname !== "github.com")
     throw new Error("Only public github.com plugin sources are supported right now");
   const repo = url.pathname;
-  const deadline = AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(30_000)]);
+  const deadline = deadlineSignal(30_000, signal);
   const commit = JSON.parse(
     await read(
       `https://api.github.com/repos${repo}/commits/${encodeURIComponent(ref.ref ?? "HEAD")}`,
@@ -276,9 +276,7 @@ export async function fetchGitHubRepo(
     nestedSkillFolders.some((folder) => path.startsWith(folder));
   if (catalogMode && skillDocuments.length > MAX_CATALOG_SKILLS)
     throw new Error("Skill catalog has too many skills");
-  const contentDeadline = catalogMode
-    ? AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(CATALOG_FETCH_TIMEOUT_MS)])
-    : deadline;
+  const contentDeadline = catalogMode ? deadlineSignal(CATALOG_FETCH_TIMEOUT_MS, signal) : deadline;
 
   const contents = new Map<string, string>();
   const entryByPath = new Map(entries.map((entry) => [entry.path, entry]));
