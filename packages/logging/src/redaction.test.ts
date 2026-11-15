@@ -427,6 +427,15 @@ describe("redaction", () => {
     expect(redactSensitiveText(text)).toBe(expected);
   });
 
+  it("redacts an escaped value too long to be read as closed, with nothing of it left", () => {
+    const secret = `sk${"A1b2".repeat(600)}`;
+    const cleaned = redactSensitiveText(`{\\"password\\":\\"${secret}\\",\\"code\\":1}`);
+    expect(cleaned).not.toContain(secret.slice(0, 12));
+    expect(cleaned).not.toContain(secret.slice(-12));
+    expect(cleaned).toContain("[Redacted]");
+    expect(redactSensitiveText(cleaned)).toBe(cleaned);
+  });
+
   it("redacts secret fields in JSON embedded in a JSON string", () => {
     expect(redactSensitiveText('{\\"password\\":\\"hunter2secret\\"}')).toBe(
       '{\\"password\\":\\"[Redacted]\\"}',
@@ -776,6 +785,7 @@ describe("redaction", () => {
       `"a@a.".repeat(125_000) + "a.".repeat(250_000) + "@"`,
     ],
     ["cookies with secret-named parameters", `"cookie: token=a; b=1; ".repeat(45_000)`],
+    ["keys before unclosed escaped quotes, a line each", `'token:\\\\"a\\n'.repeat(100_000)`],
     ["addresses in a row", `"a@a.aa_".repeat(140_000)`],
     [
       "quoted fields glued to a bare key",
@@ -794,7 +804,9 @@ describe("redaction", () => {
          const text = ${expression};
          process.stdout.write(String(redactSensitiveText(text).length > 0));`,
       ],
-      { encoding: "utf8", timeout: 5_000 },
+      // Linear work on a megabyte takes well under a second; a pattern that rescans takes
+      // minutes. The limit sits far from both, so a slow or busy runner does not fail it.
+      { encoding: "utf8", timeout: 30_000 },
     );
     expect(output).toBe("true");
   });

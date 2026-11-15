@@ -119,8 +119,12 @@ const NOT_OPENING = String.raw`(?<!(?=[\w.-]*?(?:${SECRET_NAMES}|email))(?<![\w.
 // A string stays on its line, so one that never closes is not read again from every line after.
 const STRING = String.raw`"(?:\\[^\n]|[^"\\\n])*"|'(?:\\[^\n]|[^'\\\n])*'`;
 // Quoted at any escaping depth; an escaped quote inside an escaped value has a backslash before it.
+// An escaped quote closes on its own line and within this many characters. Without a bound,
+// each key before an unclosed escaped quote would be read to the end of the text, which is
+// quadratic in the number of such keys; a longer value is taken as unclosed, to its line's end.
+const ESCAPED_VALUE_MAX = 1024;
 const quoted = (name: string) =>
-  String.raw`(?=(?<${name}>${QUOTE}))(?:["'](?:\\[\s\S]|(?!\k<${name}>)[^\\])*|\\{1,8}["'][\s\S]*?(?<!\\))\k<${name}>${NOT_OPENING}`;
+  String.raw`(?=(?<${name}>${QUOTE}))(?:["'](?:\\[\s\S]|(?!\k<${name}>)[^\\])*|\\{1,8}["'][^\n]{0,${ESCAPED_VALUE_MAX}}?(?<!\\))\k<${name}>${NOT_OPENING}`;
 // In a list or object a secret-named key stands in a string with its value after it, as JSON
 // writes it. A bare one means the value is not taken as closed.
 const ITEM = String.raw`(?:(?:${STRING})${NOT_OPENING}|(?!(?<![\w-])(?=[\w-]*?(?:${SECRET_NAMES})))[^\][{}"'])`;
