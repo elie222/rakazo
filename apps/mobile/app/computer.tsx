@@ -50,6 +50,8 @@ import {
   nextLoadedScreenUrl,
   previewPlaceholder,
   retainScreenSource,
+  SCREEN_PAGE_CONTROLS_HIDDEN,
+  SCREEN_VIEWPORT_LOCK,
   screenPageState,
   screenPageStatus,
   screenStreamKey,
@@ -856,7 +858,9 @@ function ScreenWebView({
       key={`${nativeKeyboard ? "keys" : "view"}:${sourceUrl.current}`}
       source={{ uri: sourceUrl.current }}
       injectedJavaScriptBeforeContentLoaded={
-        nativeKeyboard ? NATIVE_COMPUTER_KEYBOARD_BOOT : undefined
+        nativeKeyboard
+          ? `${SCREEN_VIEWPORT_LOCK}${SCREEN_PAGE_CONTROLS_HIDDEN}${NATIVE_COMPUTER_KEYBOARD_BOOT}`
+          : SCREEN_VIEWPORT_LOCK
       }
       injectedJavaScript={
         nativeKeyboard && keyboardSession ? computerKeyboardReadyProbe(keyboardSession) : undefined
@@ -894,6 +898,9 @@ function ScreenWebView({
       setSupportMultipleWindows={false}
       scrollEnabled={false}
       overScrollMode="never"
+      // The page never zooms; see SCREEN_VIEWPORT_LOCK.
+      setBuiltInZoomControls={false}
+      setDisplayZoomControls={false}
       onError={onError}
       onHttpError={onError}
       onRenderProcessGone={onRendererLost}

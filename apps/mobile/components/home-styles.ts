@@ -10,7 +10,7 @@ export const CREATE_MENU_GAP = 6;
 /** The header's circle buttons. */
 export const HEADER_CIRCLE = 48;
 /** The bottom bar's circle and search field, and the space around them. */
-export const BOTTOM_BAR = { control: 56, top: 12, minBottom: 16 };
+export const BOTTOM_BAR = { control: 56, top: 12 };
 
 export function createHomeStyles() {
   const tokens = mobileTokens();

@@ -2,6 +2,7 @@ import { useLingui } from "@lingui/react/macro";
 import { useRouter } from "expo-router";
 import { Platform, Pressable, Text, View } from "react-native";
 import { translucentColor } from "../lib/color";
+import { floatingBarBottom } from "../lib/content-bottom-inset";
 import { useMobileTokens, useThemedStyles } from "../lib/native";
 import { androidRipple } from "../lib/ripple";
 import { GlassIconButton } from "./glass-icon-button";
@@ -11,7 +12,7 @@ import { NativeSymbol } from "./native-symbol";
 
 /** The bar's height above the screen's bottom edge, for the list and pills it floats over. */
 export function inboxBottomBarHeight(bottomInset: number) {
-  return BOTTOM_BAR.top + BOTTOM_BAR.control + Math.max(bottomInset, BOTTOM_BAR.minBottom);
+  return BOTTOM_BAR.top + BOTTOM_BAR.control + floatingBarBottom(bottomInset);
 }
 
 /**
@@ -39,7 +40,7 @@ export function InboxBottomBar({
       style={[
         styles.bottomBar,
         {
-          paddingBottom: Math.max(bottomInset, BOTTOM_BAR.minBottom),
+          paddingBottom: floatingBarBottom(bottomInset),
           paddingLeft: 16 + columnInsets.left,
           paddingRight: 16 + columnInsets.right,
           // Rows scrolling under the bar fade into the page.

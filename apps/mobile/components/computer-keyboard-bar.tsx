@@ -8,6 +8,7 @@ import { useKeyboardState } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { ComputerKeyboardCommand, ComputerKeyName } from "../lib/computer-keyboard";
 import { commandsForKeyboardChange, computerKeyboardChanges } from "../lib/computer-keyboard";
+import { floatingBarBottom } from "../lib/content-bottom-inset";
 import { useMobileTokens, useResolvedAppearance } from "../lib/native";
 import { androidRipple, withAlpha } from "../lib/ripple";
 import { NativeSymbol } from "./native-symbol";
@@ -218,7 +219,7 @@ export function ComputerKeyboardBar({
       style={[
         styles.bar,
         landscape && styles.barLandscape,
-        { paddingBottom: keyboardVisible ? 8 : Math.max(insets.bottom, 12) },
+        { paddingBottom: keyboardVisible ? 8 : floatingBarBottom(insets.bottom) },
       ]}
     >
       <TextInput
@@ -272,7 +273,7 @@ export function ComputerKeyboardBar({
                 pressed && { opacity: 0.8 },
               ]}
             >
-              <NativeSymbol {...keyboardSymbol} size={28} color={tokens.primaryForeground} />
+              <NativeSymbol {...keyboardSymbol} size={26} color={tokens.primaryForeground} />
             </Pressable>
             <View style={[pill, styles.portraitPill]}>
               {modifierKeys}
@@ -293,6 +294,9 @@ export function ComputerKeyboardBar({
     </View>
   );
 }
+
+/** The upright bar's height: the keyboard circle and the key pill beside it match exactly. */
+const BAR_HEIGHT = 56;
 
 const styles = StyleSheet.create({
   bar: { gap: 10, paddingHorizontal: 16, paddingTop: 8 },
@@ -315,12 +319,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   portraitRow: { flexDirection: "row", alignItems: "center", gap: 8 },
-  portraitPill: { flex: 1, minHeight: 56, justifyContent: "space-around" },
+  portraitPill: { flex: 1, height: BAR_HEIGHT, justifyContent: "space-around" },
   arrowRow: { flexDirection: "row", justifyContent: "flex-end" },
+  // The same height as the key pill beside it.
   keyboard: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    width: BAR_HEIGHT,
+    height: BAR_HEIGHT,
+    borderRadius: BAR_HEIGHT / 2,
     alignItems: "center",
     justifyContent: "center",
     overflow: "hidden",
