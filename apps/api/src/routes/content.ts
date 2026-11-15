@@ -4,7 +4,7 @@ import { planLimitsReader, readMemberPlanLimits, resolveBotWorkspacePath } from 
 import type { ExportManifest } from "@rakazo/contracts";
 import { attachmentMaxBytes, resolveBotAvatarSet } from "@rakazo/contracts";
 import { AttachmentValidationError } from "@rakazo/core";
-import { IsolationError, LISTED_ARTIFACT, parseComputerMode } from "@rakazo/db";
+import { IsolationError, LISTED_ARTIFACT, parseComputerMode, Prisma } from "@rakazo/db";
 import {
   ArtifactListCursorError,
   createOwnedArtifact,
@@ -200,6 +200,191 @@ export function contentRoutes(ctx: RouterContext) {
             .sort(
               (a, b) => (b.totalTokens ?? 0) - (a.totalTokens ?? 0) || b.modelCalls - a.modelCalls,
             ),
+        };
+      }),
+      breakdown: authed.usage.breakdown.handler(async ({ context, input }) => {
+        const where = {
+          spaceId: context.actor.spaceId,
+          userId: context.actor.userId,
+        } as const;
+        const now = new Date();
+        let since: Date | null = null;
+        if (input.range === "today") {
+          since = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+        } else if (input.range === "7d") {
+          since = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        } else if (input.range === "30d") {
+          since = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        }
+        const rangeFilter = since ? Prisma.sql`AND u."createdAt" >= ${since}` : Prisma.empty;
+        const modelFilter =
+          input.provider && input.model
+            ? Prisma.sql`AND u.provider = ${input.provider} AND u.model = ${input.model}`
+            : input.provider
+              ? Prisma.sql`AND u.provider = ${input.provider}`
+              : input.model
+                ? Prisma.sql`AND u.model = ${input.model}`
+                : Prisma.empty;
+        const botFilter = input.botId ? Prisma.sql`AND u."botId" = ${input.botId}` : Prisma.empty;
+
+        type TotalsRow = {
+          modelCalls: bigint | number;
+          runs: bigint | number;
+          inputTokens: number | bigint | null;
+          inputComplete: boolean;
+          outputTokens: number | bigint | null;
+          outputComplete: boolean;
+          totalTokens: number | bigint | null;
+          totalComplete: boolean;
+          costUsd: number | null;
+          costComplete: boolean;
+        };
+        type ModelRow = TotalsRow & { provider: string; model: string };
+        type TimeRow = Omit<TotalsRow, "runs"> & { bucket: Date };
+        type BotRow = TotalsRow & { botId: string; name: string | null; deleted: boolean };
+
+        const toNum = (v: bigint | number | null | undefined) =>
+          v == null ? 0 : typeof v === "bigint" ? Number(v) : v;
+        const toNullableInt = (v: number | bigint | null, complete: boolean) =>
+          complete ? Math.round(toNum(v)) : null;
+        const toNullableFloat = (v: number | null, complete: boolean) => (complete ? (v ?? 0) : null);
+        const totalsOf = (row: TotalsRow) => ({
+          runs: "runs" in row ? toNum((row as { runs?: bigint | number }).runs) : 0,
+          modelCalls: toNum(row.modelCalls),
+          inputTokens: toNullableInt(row.inputTokens, Boolean(row.inputComplete)),
+          outputTokens: toNullableInt(row.outputTokens, Boolean(row.outputComplete)),
+          totalTokens: toNullableInt(row.totalTokens, Boolean(row.totalComplete)),
+          costUsd: toNullableFloat(row.costUsd, Boolean(row.costComplete)),
+        });
+
+        const totalsSelect = Prisma.sql`
+          COUNT(*)::bigint AS "modelCalls",
+          COUNT(DISTINCT COALESCE(u."parentRunId", u."runId")) FILTER (WHERE COALESCE(u."parentRunId", u."runId") IS NOT NULL)::bigint AS runs,
+          SUM(u."inputTokens")::double precision AS "inputTokens",
+          BOOL_AND(u."inputTokens" IS NOT NULL) AS "inputComplete",
+          SUM(u."outputTokens")::double precision AS "outputTokens",
+          BOOL_AND(u."outputTokens" IS NOT NULL) AS "outputComplete",
+          SUM(u."totalTokens")::double precision AS "totalTokens",
+          BOOL_AND(u."totalTokens" IS NOT NULL) AS "totalComplete",
+          SUM(u."costUsd")::double precision AS "costUsd",
+          BOOL_AND(u."costUsd" IS NOT NULL) AS "costComplete"
+        `;
+
+        const [totalsRows, modelRows, timeRows, botRows] = await Promise.all([
+          deps.prisma.$queryRaw<TotalsRow[]>(Prisma.sql`
+            SELECT ${totalsSelect}
+            FROM usage_records u
+            WHERE u."spaceId" = ${where.spaceId} AND u."userId" = ${where.userId}
+              ${rangeFilter} ${modelFilter} ${botFilter}
+          `),
+          deps.prisma.$queryRaw<ModelRow[]>(Prisma.sql`
+            SELECT u.provider, u.model, ${totalsSelect}
+            FROM usage_records u
+            WHERE u."spaceId" = ${where.spaceId} AND u."userId" = ${where.userId}
+              ${rangeFilter} ${modelFilter} ${botFilter}
+            GROUP BY u.provider, u.model
+            ORDER BY COALESCE(SUM(u."totalTokens"), 0) DESC, COUNT(*) DESC
+          `),
+          deps.prisma.$queryRaw<TimeRow[]>(Prisma.sql`
+            SELECT date_trunc('day', u."createdAt" AT TIME ZONE 'UTC') AS bucket,
+              COUNT(*)::bigint AS "modelCalls",
+              SUM(u."inputTokens")::double precision AS "inputTokens",
+              BOOL_AND(u."inputTokens" IS NOT NULL) AS "inputComplete",
+              SUM(u."outputTokens")::double precision AS "outputTokens",
+              BOOL_AND(u."outputTokens" IS NOT NULL) AS "outputComplete",
+              SUM(u."totalTokens")::double precision AS "totalTokens",
+              BOOL_AND(u."totalTokens" IS NOT NULL) AS "totalComplete",
+              SUM(u."costUsd")::double precision AS "costUsd",
+              BOOL_AND(u."costUsd" IS NOT NULL) AS "costComplete"
+            FROM usage_records u
+            WHERE u."spaceId" = ${where.spaceId} AND u."userId" = ${where.userId}
+              ${rangeFilter} ${modelFilter} ${botFilter}
+            GROUP BY bucket
+            ORDER BY bucket ASC
+          `),
+          // Bot selector lists all bots with usage in range+model filter (not narrowed by selected bot).
+          deps.prisma.$queryRaw<BotRow[]>(Prisma.sql`
+            SELECT u."botId" AS "botId",
+              COALESCE(b.name, bd.name, 'Deleted bot') AS name,
+              (b.id IS NULL) AS deleted,
+              ${totalsSelect}
+            FROM usage_records u
+            LEFT JOIN bots b ON b.id = u."botId"
+            LEFT JOIN bot_deletions bd ON bd.id = u."botId"
+            WHERE u."spaceId" = ${where.spaceId} AND u."userId" = ${where.userId}
+              AND u."botId" IS NOT NULL
+              ${rangeFilter} ${modelFilter}
+            GROUP BY u."botId", b.id, b.name, bd.name
+            ORDER BY COALESCE(SUM(u."totalTokens"), 0) DESC, COUNT(*) DESC
+          `),
+        ]);
+
+        const rawTotals =
+          totalsRows[0] ??
+          ({
+            modelCalls: 0,
+            runs: 0,
+            inputTokens: null,
+            inputComplete: true,
+            outputTokens: null,
+            outputComplete: true,
+            totalTokens: null,
+            totalComplete: true,
+            costUsd: null,
+            costComplete: true,
+          } satisfies TotalsRow);
+        const totals = (() => {
+          if (toNum(rawTotals.modelCalls) === 0) {
+            return {
+              runs: 0,
+              modelCalls: 0,
+              inputTokens: 0,
+              outputTokens: 0,
+              totalTokens: 0,
+              costUsd: 0,
+            };
+          }
+          return totalsOf({
+            ...rawTotals,
+            inputComplete: Boolean(rawTotals.inputComplete),
+            outputComplete: Boolean(rawTotals.outputComplete),
+            totalComplete: Boolean(rawTotals.totalComplete),
+            costComplete: Boolean(rawTotals.costComplete),
+          });
+        })();
+
+        return {
+          range: input.range,
+          totals,
+          models: modelRows.map((row) => {
+            const t = totalsOf({ ...row, runs: 0 });
+            return {
+              provider: row.provider,
+              model: row.model,
+              modelCalls: t.modelCalls,
+              inputTokens: t.inputTokens,
+              outputTokens: t.outputTokens,
+              totalTokens: t.totalTokens,
+              costUsd: t.costUsd,
+            };
+          }),
+          overTime: timeRows.map((row) => {
+            const t = totalsOf({ ...row, runs: 0 });
+            return {
+              date: row.bucket.toISOString(),
+              modelCalls: t.modelCalls,
+              inputTokens: t.inputTokens,
+              outputTokens: t.outputTokens,
+              totalTokens: t.totalTokens,
+              costUsd: t.costUsd,
+            };
+          }),
+          bots: botRows.map((row) => ({
+            id: row.botId,
+            name: row.name ?? "Deleted bot",
+            deleted: row.deleted,
+            ...totalsOf(row),
+          })),
         };
       }),
     },

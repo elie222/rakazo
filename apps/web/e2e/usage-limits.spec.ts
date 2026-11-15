@@ -48,6 +48,58 @@ const summary = {
   ],
 };
 
+const breakdown = {
+  range: "30d",
+  bots: [
+    {
+      id: "bot-1",
+      name: "Assistant",
+      deleted: false,
+      runs: 42,
+      inputTokens: 910_000,
+      outputTokens: 86_000,
+      totalTokens: 996_000,
+      costUsd: 4.2,
+      modelCalls: 180,
+    },
+  ],
+  totals: {
+    runs: 42,
+    inputTokens: 910_000,
+    outputTokens: 86_000,
+    totalTokens: 996_000,
+    costUsd: 4.2,
+    modelCalls: 180,
+  },
+  models: summary.models,
+  overTime: [
+    {
+      date: "2026-11-10T00:00:00.000Z",
+      inputTokens: 310_000,
+      outputTokens: 26_000,
+      totalTokens: 336_000,
+      costUsd: 1.4,
+      modelCalls: 60,
+    },
+    {
+      date: "2026-11-11T00:00:00.000Z",
+      inputTokens: 300_000,
+      outputTokens: 30_000,
+      totalTokens: 330_000,
+      costUsd: 1.4,
+      modelCalls: 60,
+    },
+    {
+      date: "2026-11-12T00:00:00.000Z",
+      inputTokens: 300_000,
+      outputTokens: 30_000,
+      totalTokens: 330_000,
+      costUsd: 1.4,
+      modelCalls: 60,
+    },
+  ],
+};
+
 async function enableBilling(route: Route, path: "me" | "bootstrap") {
   const response = await route.fetch();
   const body = (await response.json()) as { json?: Record<string, unknown> };
@@ -77,6 +129,7 @@ test("account menu shows the usage hint and Usage shows allowances and credits o
 }, testInfo) => {
   await page.route("**/rpc/usage/limits", (route) => route.fulfill({ json: { json: plans } }));
   await page.route("**/rpc/usage/summary", (route) => route.fulfill({ json: { json: summary } }));
+  await page.route("**/rpc/usage/breakdown", (route) => route.fulfill({ json: { json: breakdown } }));
   const stamp = Date.now();
   await signup(page, `usage-limits-${stamp}@rakazo.test`, "password12", "Usage limits");
   await completeOnboarding(page);

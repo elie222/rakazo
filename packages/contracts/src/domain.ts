@@ -1168,6 +1168,53 @@ export const UsageSummarySchema = UsageTotalsSchema.extend({
 });
 export type UsageSummary = z.infer<typeof UsageSummarySchema>;
 
+export const UsageDateRangeSchema = z.enum(["today", "7d", "30d", "all"]);
+export type UsageDateRange = z.infer<typeof UsageDateRangeSchema>;
+
+export const UsageBreakdownInputSchema = z.object({
+  /** Omit or null to include every bot. */
+  botId: Id.nullish(),
+  provider: z.string().min(1).optional(),
+  model: z.string().min(1).optional(),
+  range: UsageDateRangeSchema.default("30d"),
+});
+export type UsageBreakdownInput = z.infer<typeof UsageBreakdownInputSchema>;
+
+export const UsageBreakdownModelSchema = UsageTotalsSchema.required().extend({
+  provider: z.string(),
+  model: z.string(),
+});
+export type UsageBreakdownModel = z.infer<typeof UsageBreakdownModelSchema>;
+
+export const UsageBreakdownPointSchema = UsageTotalsSchema.required().extend({
+  /** Start of the UTC bucket, ISO 8601. */
+  date: z.string(),
+});
+export type UsageBreakdownPoint = z.infer<typeof UsageBreakdownPointSchema>;
+
+export const UsageBreakdownBotSchema = z.object({
+  id: Id,
+  name: z.string(),
+  deleted: z.boolean(),
+  runs: z.number(),
+  inputTokens: z.number().nullable(),
+  outputTokens: z.number().nullable(),
+  totalTokens: z.number().nullable(),
+  costUsd: z.number().nullable(),
+  modelCalls: z.number(),
+});
+export type UsageBreakdownBot = z.infer<typeof UsageBreakdownBotSchema>;
+
+export const UsageBreakdownSchema = z.object({
+  range: UsageDateRangeSchema,
+  /** Each bot with usage in the range, for the bot selector. */
+  bots: z.array(UsageBreakdownBotSchema),
+  totals: UsageTotalsSchema.required().extend({ runs: z.number() }),
+  models: z.array(UsageBreakdownModelSchema),
+  overTime: z.array(UsageBreakdownPointSchema),
+});
+export type UsageBreakdown = z.infer<typeof UsageBreakdownSchema>;
+
 /** One rolling allowance of a model subscription the member signed in with. */
 export const PlanLimitWindowSchema = z.object({
   period: z.enum(["session", "week", "month"]),

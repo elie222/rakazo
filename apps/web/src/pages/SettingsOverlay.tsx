@@ -451,7 +451,7 @@ export function SettingsOverlay({
                   {section === "usage" ? (
                     <>
                       <PlanUsage />
-                      <UsageSettingsPanel usage={usage} panelRef={usageRef} />
+                      <UsageSettingsPanel panelRef={usageRef} />
                     </>
                   ) : null}
                   {section === "computer" && showComputer ? (
