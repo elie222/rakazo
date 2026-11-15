@@ -273,7 +273,16 @@ async function saveToInbox(
   const where = { botId_key: { botId: bot.id, key: email.key } };
   const select = { id: true, attachments: true } as const;
   const found = await deps.prisma.botEmailMessage.findUnique({ where, select });
-  if (found) return { id: found.id, files: found.attachments as InboxFile[] };
+  if (found) {
+    const files = found.attachments as InboxFile[];
+    // A copy that did not name the bot was saved without its files; this one has earned them.
+    if (!options.keepFiles || !files.length || files.some((file) => file.artifactId)) {
+      return { id: found.id, files };
+    }
+    const kept = await storeAttachments(deps, bot, email, options.standalone);
+    await deps.prisma.botEmailMessage.update({ where, data: { attachments: kept } });
+    return { id: found.id, files: kept };
+  }
   if (options.capped) {
     const recent = await deps.prisma.botEmailMessage.count({
       where: { botId: bot.id, sent: false, receivedAt: { gte: new Date(Date.now() - DAY_MS) } },

@@ -89,6 +89,13 @@ function setup(
     botEmailMessage: {
       findUnique: vi.fn(findSaved),
       findUniqueOrThrow: vi.fn(findSaved),
+      update: vi.fn(
+        async (args: { where: { botId_key: { key: string } }; data: { attachments: unknown } }) => {
+          const row = inbox.get(args.where.botId_key.key);
+          if (row) row.attachments = args.data.attachments;
+          return row;
+        },
+      ),
       count: vi.fn(async () => options.savedToday ?? 0),
       create: saveEmail,
     },
@@ -303,6 +310,29 @@ describe("inbound email route", () => {
     // A readdressed copy of an old message must not replace the owner's current file.
     expect(storeAttachment).toHaveBeenCalledWith(expect.objectContaining({ standalone: true }));
     expect(saveEmail.mock.calls[0]?.[0].data).toMatchObject({ verified: false });
+  });
+
+  it("keeps the files of a copy that names the bot after one that did not", async () => {
+    const storeAttachment = vi.fn(async () => ({
+      id: "artifact-1",
+      name: "invoice.pdf",
+      mimeType: "application/pdf",
+      size: 3,
+    }));
+    const message = email({
+      authenticated: false,
+      senderAuthenticated: true,
+      attachments: [{ name: "invoice.pdf", mimeType: "application/pdf", bytes: new Uint8Array(3) }],
+    });
+    const { post, readEmail, sendUserMessage } = setup({ storeAttachment, message });
+    readEmail.mockResolvedValueOnce({ ...message, to: ["someone@example.test"] });
+
+    await post();
+    expect(storeAttachment).not.toHaveBeenCalled();
+    await post();
+
+    const sent = sendUserMessage.mock.calls[0]?.[0] as unknown as { blocks: unknown[] };
+    expect(sent.blocks).toHaveLength(3);
   });
 
   it.each([
