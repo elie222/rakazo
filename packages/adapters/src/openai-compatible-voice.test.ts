@@ -675,6 +675,14 @@ describe("OpenAiCompatibleVoiceProvider", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it("falls back to the message when a refusal's detail list is empty", async () => {
+    const body = JSON.stringify({ detail: [], message: "Model unavailable" });
+    const fetchMock = vi.fn().mockResolvedValue(new Response(body, { status: 503 }));
+    await expect(
+      provider(fetchMock).synthesize({ text: "Hi", voiceId: "alloy", apiKey: keyless }, ctx),
+    ).rejects.toThrow(/Model unavailable/);
+  });
+
   it("surfaces the server's error detail when speaking fails", async () => {
     const fetchMock = vi
       .fn()
