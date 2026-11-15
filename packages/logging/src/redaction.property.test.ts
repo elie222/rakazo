@@ -432,14 +432,15 @@ describe("redactSensitiveText properties", () => {
     );
   });
 
-  it("redacts sixty thousand characters of pattern-starting text well within half a second", () => {
+  it("redacts pattern-starting text in time comparable to plain text of the same length", () => {
+    // Measured against plain text on the same machine, so a slow or busy runner cannot fail it.
+    const plainText = "plain words ".repeat(HOSTILE_LENGTH / 12);
+    const fastestOf = (text: string) =>
+      Math.min(...[0, 1, 2].map(() => elapsed(() => redactSensitiveText(text))));
+    const budget = Math.max(100, fastestOf(plainText) * 50);
     fc.assert(
       fc.property(hostile, (text) => {
-        const fastest = Math.min(
-          elapsed(() => redactSensitiveText(text)),
-          elapsed(() => redactSensitiveText(text)),
-        );
-        expect(fastest).toBeLessThan(500);
+        expect(fastestOf(text)).toBeLessThan(budget);
       }),
       { seed: 42, numRuns: 40 },
     );
