@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 import { createLogger } from "./logger.js";
-import { redactBindings, redactSensitiveText } from "./redaction.js";
+import { KEYED_SECRET_PATTERN_LENGTH, redactBindings, redactSensitiveText } from "./redaction.js";
 import { createTestSink } from "./test-sink.js";
 
 describe("redaction", () => {
@@ -629,6 +629,12 @@ describe("redaction", () => {
       "(http://db:5432) refused",
     ])
       expect(redactSensitiveText(text)).toBe(text);
+  });
+
+  it("keeps the keyed-secret pattern under the size at which the engine stops optimising it", () => {
+    // Past about twenty thousand characters every logged string is redacted two to three times
+    // slower. Adding a secret name grows the pattern many times over, so this fails first.
+    expect(KEYED_SECRET_PATTERN_LENGTH).toBeLessThan(20_000);
   });
 
   it("leaves an error's name and a file path that hold a secret word as they are", () => {

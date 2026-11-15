@@ -192,6 +192,8 @@ const KEYED_SECRET = new RegExp(
   ].join(""),
   "gi",
 );
+/** Exported for the test that keeps the pattern under the size at which the engine slows. */
+export const KEYED_SECRET_PATTERN_LENGTH = KEYED_SECRET.source.length;
 type KeyedGroups = Partial<
   Record<"key" | "keyQuote" | "separator" | "bareKey" | "flag" | "quotedField", string>
 >;
