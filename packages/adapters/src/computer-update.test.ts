@@ -93,7 +93,7 @@ function fixture(status = "queued") {
     $transaction: vi.fn(async (fn) => fn(prisma)),
   };
   const jobs = { enqueue: vi.fn(async () => {}) };
-  const events = { publishComputerUpdateChange: vi.fn(async (_spaceId: string) => {}) };
+  const events = { publishSpaceChange: vi.fn(async (_spaceId: string, _kind: string) => {}) };
   const deps = { prisma, jobs, events } as unknown as Parameters<typeof performComputerUpdate>[0];
   return { row, rows, computer, computerUpdate, deps, jobs, events };
 }
@@ -120,7 +120,7 @@ describe("background computer maintenance", () => {
   it("signals the Space when the update starts, at each stage, and when it ends", async () => {
     const { row, deps, events } = fixture();
     const signalledAt: string[] = [];
-    events.publishComputerUpdateChange.mockImplementation(async (spaceId) => {
+    events.publishSpaceChange.mockImplementation(async (spaceId) => {
       expect(spaceId).toBe("space");
       signalledAt.push(`${row.status}:${row.stage}`);
     });
@@ -136,16 +136,16 @@ describe("background computer maintenance", () => {
       "completed:recreating",
     ]);
     await performComputerUpdate(deps, row.id);
-    expect(events.publishComputerUpdateChange).toHaveBeenCalledTimes(4);
+    expect(events.publishSpaceChange).toHaveBeenCalledTimes(4);
   });
   it("signals the Space only when reconciliation changes an update", async () => {
     const { row, deps, events } = fixture();
     await reconcileComputerUpdates(deps);
-    expect(events.publishComputerUpdateChange).not.toHaveBeenCalled();
+    expect(events.publishSpaceChange).not.toHaveBeenCalled();
     row.status = "running";
     await reconcileComputerUpdates(deps);
     expect(row.status).toBe("interrupted");
-    expect(events.publishComputerUpdateChange).toHaveBeenCalledExactlyOnceWith("space");
+    expect(events.publishSpaceChange).toHaveBeenCalledExactlyOnceWith("space", "computerUpdates");
   });
   it("still signals committed reconciliation changes when a later step fails", async () => {
     const { row, rows, deps, events, jobs } = fixture("running");
@@ -153,7 +153,7 @@ describe("background computer maintenance", () => {
     jobs.enqueue.mockRejectedValueOnce(new Error("queue unavailable"));
     await expect(reconcileComputerUpdates(deps)).rejects.toThrow("queue unavailable");
     expect(row.status).toBe("interrupted");
-    expect(events.publishComputerUpdateChange).toHaveBeenCalledExactlyOnceWith("space");
+    expect(events.publishSpaceChange).toHaveBeenCalledExactlyOnceWith("space", "computerUpdates");
   });
   it("records a failure without exposing the provider error or replaying replacement", async () => {
     const { row, deps } = fixture();
@@ -840,7 +840,7 @@ function takeoverQueue(
   const events = {
     append: vi.fn(async () => ({ threadId: "thread-1", seq: 1 })),
     draftRecordingsOfLease: vi.fn(async (): Promise<string[]> => []),
-    publishComputerUpdateChange: vi.fn(async () => {}),
+    publishSpaceChange: vi.fn(async () => {}),
   };
   const deps = { prisma, jobs, sandbox: { setScreenControl }, events } as unknown as Parameters<
     typeof queueComputerUpdate

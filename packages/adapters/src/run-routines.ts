@@ -20,7 +20,6 @@ import {
   spaceTakesWork,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
-import { sanitizedError } from "@rakazo/logging/monitoring";
 import { protectedComputerLifecycleRefusal } from "./desktop-command-guard.js";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { routineRunModelPin } from "./model-selection.js";
@@ -28,6 +27,7 @@ import { findPendingRoutineTick, routineTimerNonce } from "./routine-coalescing.
 import { nextRoutineWatchAt, parseRoutineWatch, tickRoutineWatch } from "./routine-watch.js";
 import { notifyRun } from "./run-notifications.js";
 import { listAgentSkillRecords } from "./skill-tools.js";
+import { wakeRun } from "./wake-run.js";
 
 /** A routine run stopped by a transient model error gets one more try this much later. */
 const ROUTINE_RETRY_DELAY_MS = 12 * 60_000;
@@ -303,21 +303,7 @@ export async function wakeRoutine(deps: ExecutorDeps, routineId: string, schedul
     }
   }
   // Enqueue continuation first so a thread-signal failure cannot strand the run.
-  try {
-    await deps.jobs.enqueue({
-      ...runContinueJob(claimed.id),
-      ...(claimed.coalesced ? { keepExisting: true } : {}),
-    });
-  } catch (error) {
-    // The committed run and advanced schedule are the durable source of
-    // truth. Another tick or dispatcher may already own them; recovery scans
-    // repair missed notifications without rolling back committed work.
-    getLogger().warn("routine.run_wakeup_failed", {
-      "routine.id": routine.id,
-      "run.id": claimed.id,
-      error: sanitizedError(error),
-    });
-  }
+  await wakeRun(deps.jobs, claimed.id, { keepExisting: claimed.coalesced });
   if (claimed.coalesced) {
     getLogger().info("routine.coalesced", {
       "routine.id": routine.id,

@@ -41,6 +41,7 @@ import { checkpointComputerWorkspace } from "./computer-workspace.js";
 import { HomeSaveConflictError } from "./home-object-store.js";
 import { sandboxAllowanceUsedUp } from "./sandbox-allowance.js";
 import { isSandboxDamagedError, isSandboxGoneError } from "./sandbox-errors.js";
+import { sandboxKindCapabilities, sandboxKindsWhere } from "./sandbox-kind-capabilities.js";
 
 export const DEFAULT_SANDBOX_IDLE_MS = 10 * 60 * 1000;
 /**
@@ -242,7 +243,7 @@ export async function cancelComputerRunWork(
       await sandbox.cancelRunWork(computer, computerId, runId, context);
       return;
     }
-    if (computer.kind === "desktop") return;
+    if (sandboxKindCapabilities(computer.kind).runsOnUserMachine) return;
 
     for await (const _event of sandbox.execute(
       computer,
@@ -262,6 +263,7 @@ export async function stopCancelledGroupRuns(
     prisma: PrismaClient;
     jobs: Pick<JobPublisher, "cancel">;
     sandbox: Pick<SandboxProvider, "execute" | "cancelRunWork" | "releaseScreen">;
+    events?: Pick<ThreadEvents, "publishSpaceChange">;
   },
   actor: { spaceId: string; userId: string },
   cancelled: {
@@ -276,6 +278,8 @@ export async function stopCancelledGroupRuns(
     >;
   },
 ): Promise<void> {
+  if (cancelled.cancelledRunIds.length > 0)
+    await deps.events?.publishSpaceChange?.(actor.spaceId, "runs");
   await Promise.all(
     cancelled.cancelledRunIds.map((runId) =>
       deps.jobs.cancel(runJobKey(runId)).catch(() => undefined),
@@ -389,7 +393,7 @@ function activeLimitReached(
   runningSince: Date | null | undefined,
 ): boolean {
   // Electron owns a native computer's lifetime.
-  if (ref.kind === "desktop") return false;
+  if (sandboxKindCapabilities(ref.kind).runsOnUserMachine) return false;
   const limit =
     sandbox.billsWhileRunning?.(ref) === true
       ? computerMaxActiveMs()
@@ -433,7 +437,7 @@ export async function sleepComputerIfIdle(
   let computer = await loadComputer(deps.prisma, computerId);
   if (!computer?.providerRef || !mayNeedSleep(computer)) return;
   // Native computers have no provisioned runtime to suspend; Electron owns their lifetime.
-  if (computer.kind === "desktop") return;
+  if (sandboxKindCapabilities(computer.kind).runsOnUserMachine) return;
 
   if (computer.controlBotId && computer.controlLeaseId && !hasActiveComputerControl(computer)) {
     try {
@@ -975,7 +979,7 @@ export function createIdleComputerSweeper(
     const computers = await deps.prisma.computer.findMany({
       where: {
         providerRef: { not: null },
-        kind: { not: "desktop" },
+        kind: { notIn: sandboxKindsWhere((capabilities) => capabilities.runsOnUserMachine) },
         OR: [{ state: "running" }, { state: "suspending", updatedAt: { lte: abandonedBefore } }],
       },
       select: { id: true },

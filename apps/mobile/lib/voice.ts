@@ -519,7 +519,7 @@ export async function speakUtterance(
   return renderUtterance(text, opts, requestContext);
 }
 
-/** Asks before audio or text goes to the voice provider; throws AiConsentBlocked on a refusal. */
+/** Asks before audio or text reaches a voice recipient the user has not allowed yet; throws AiConsentBlocked on a refusal. */
 export async function ensureVoiceConsent(
   requestContext: ApiRequestContext,
   scope?: SettingsScope,

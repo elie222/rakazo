@@ -3,6 +3,7 @@ import { chatSnoozed } from "@rakazo/core";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useRef } from "react";
 import {
+  browserNotificationTag,
   deliverBrowserNotification as deliverNativeBrowserNotification,
   shouldNotifyBrowser,
 } from "../../lib/browser-notifications";
@@ -10,6 +11,7 @@ import { computerUpdates } from "../../lib/computer-updates";
 import { followStream } from "../../lib/follow-stream";
 import { notificationIcon, prepareNotificationIcons } from "../../lib/notification-icon";
 import type { RpcClient } from "../../lib/rpc";
+import { isReadChangeKind, spaceChanged } from "../../lib/space-changes";
 
 type PendingBrowserNotification = {
   event: Pick<ProductEvent, "id" | "type" | "threadId" | "botId" | "payload">;
@@ -123,6 +125,7 @@ export function useBrowserNotifications(
       (frame) => {
         if (frame.type === "roster") rosterRef.current?.changed();
         else if (frame.type === "computerUpdates") computerUpdates.signalled();
+        else if (isReadChangeKind(frame.type)) void spaceChanged(frame.type);
         else if (frame.alert) show(frame.alert);
       },
     );
@@ -213,13 +216,13 @@ export function useBrowserNotifications(
       if (snoozedOrdinaryReply(event, chatFor(pending))) return;
       if (typeof Notification === "undefined" || Notification.permission === "denied") return;
       if (Notification.permission === "default") {
-        pendingBrowserNotifications.current.set(event.threadId, pending);
+        pendingBrowserNotifications.current.set(browserNotificationTag(event), pending);
         return;
       }
       if (deliverBrowserNotification(pending)) {
-        pendingBrowserNotifications.current.delete(event.threadId);
+        pendingBrowserNotifications.current.delete(browserNotificationTag(event));
       } else {
-        pendingBrowserNotifications.current.set(event.threadId, pending);
+        pendingBrowserNotifications.current.set(browserNotificationTag(event), pending);
       }
     },
     [deliverBrowserNotification],

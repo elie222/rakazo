@@ -1,5 +1,7 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import { retryConversationMemoryPurge } from "./conversation-memory-cleanup.js";
+import { createHindsightProvider } from "./hindsight-memory-provider.js";
 import type { MemoryProviderResolver } from "./memory-provider-factory.js";
 
 const payload = {
@@ -34,6 +36,17 @@ describe("retryConversationMemoryPurge", () => {
         botId: payload.botId,
       }),
     );
+  });
+
+  it("retries a pre-upgrade purge bound to the saved trailing-slash URL", async () => {
+    const baseUrl = "http://127.0.0.1:8888/";
+    const legacy = createHash("sha256")
+      .update(JSON.stringify(["version-1", baseUrl]))
+      .digest("hex");
+    const provider = createHindsightProvider({ mode: "local", baseUrl }, {}, "version-1");
+    const { deps, purgeHistory } = fixture(provider.connectionIdentity);
+    await retryConversationMemoryPurge(deps, { ...payload, connectionIdentity: legacy });
+    expect(purgeHistory).toHaveBeenCalledTimes(1);
   });
 
   it("never sends the old purge through a replacement connection", async () => {

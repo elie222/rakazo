@@ -15,9 +15,9 @@ import { scheduleComputerSleep } from "./computer-idle.js";
 import {
   ComputerBusyError,
   ComputerSpaceDeletingError,
-  computerSupportsUpdate,
   replaceComputer,
 } from "./computer-lifecycle.js";
+import { sandboxKindCapabilities } from "./sandbox-kind-capabilities.js";
 
 type Deps = Parameters<typeof replaceComputer>[0];
 type QueueDeps = Pick<Deps, "prisma" | "jobs"> &
@@ -66,7 +66,7 @@ export async function queueComputerUpdate(
     // The following statement then observes their committed reservation.
     await tx.$queryRaw`SELECT id FROM computers WHERE id = ${computerId} FOR UPDATE`;
     const computer = await tx.computer.findUniqueOrThrow({ where: { id: computerId } });
-    if (action === "update" && !computerSupportsUpdate(computer.kind))
+    if (action === "update" && !sandboxKindCapabilities(computer.kind).inPlaceUpdate)
       throw new Error("Computer update is not available on this device");
     const idleTakeover = computer.controlHolder === "user" && computer.controlBotId === botId;
     // Holder "none" plus a lease means a provider revoke failed and control may remain.
@@ -503,7 +503,8 @@ export async function performComputerUpdate(deps: Deps, updateId: string) {
         }),
   );
   if (claimed.count !== 1) return; // Never replay a destructive operation on job redelivery.
-  const announce = () => deps.events.publishComputerUpdateChange?.(target.computer.spaceId);
+  const announce = () =>
+    deps.events.publishSpaceChange?.(target.computer.spaceId, "computerUpdates");
   await announce();
   const update = await deps.prisma.computerUpdate.findUniqueOrThrow({
     where: { id: updateId },
@@ -601,7 +602,7 @@ async function finishUpdate(
 
 export async function reconcileComputerUpdates(
   deps: Pick<Deps, "prisma" | "jobs"> & {
-    events?: Pick<ThreadEvents, "publishComputerUpdateChange">;
+    events?: Pick<ThreadEvents, "publishSpaceChange">;
   },
 ) {
   const select = (where: Prisma.ComputerUpdateWhereInput) =>
@@ -630,7 +631,8 @@ export async function reconcileComputerUpdates(
     await reconcile(deps, updates, changedSpaces);
   } finally {
     // A later failure must not cost the changes already committed their signal.
-    for (const spaceId of changedSpaces) await deps.events?.publishComputerUpdateChange?.(spaceId);
+    for (const spaceId of changedSpaces)
+      await deps.events?.publishSpaceChange?.(spaceId, "computerUpdates");
   }
 }
 

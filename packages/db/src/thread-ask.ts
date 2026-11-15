@@ -37,6 +37,7 @@ import { createThreadMessageInTransaction, loadMessageAuthor } from "./messages.
 import { deleteRunSecretsInTransaction } from "./run-secrets.js";
 import { RUN_TURN_CHECKPOINT_KIND } from "./run-turn-checkpoint.js";
 import { recordSecurityEvent } from "./security-events.js";
+import { publishSpaceChange } from "./space-changes.js";
 import { createPendingSteeringRun } from "./thread-steering.js";
 import { THREAD_LOCK_TRANSACTION_OPTIONS } from "./transaction-retry.js";
 
@@ -524,6 +525,7 @@ export async function answerRunInput(
     });
   }
   await notifyRealtime(realtime, committed.threadId, committed.seq);
+  await publishSpaceChange(realtime, input.spaceId, "runs");
   return true;
 }
 
@@ -772,6 +774,7 @@ export async function pauseRunForInput(
     committed.seq,
     committed.firstResponseRunId,
   );
+  await publishSpaceChange(realtime, input.spaceId, "runs");
   return { continuationRunId: committed.continuationRunId };
 }
 

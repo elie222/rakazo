@@ -1,5 +1,5 @@
 import type { AgentRunRequest, ComputerRef, SemanticMemoryProvider } from "@rakazo/adapter-kit";
-import { DEFAULT_CONTEXT_STRATEGY, runContinueJob } from "@rakazo/adapter-kit";
+import { DEFAULT_CONTEXT_STRATEGY } from "@rakazo/adapter-kit";
 import type { MessageBlock, RunStatus } from "@rakazo/contracts";
 import { disabledBuiltinToolSet, hasLab, resolveLabs } from "@rakazo/contracts";
 import {
@@ -120,7 +120,6 @@ import {
   runModelChoice,
 } from "./model-selection.js";
 import { modelAcceptsImageInput } from "./model-vision.js";
-import { usesNativeShell } from "./native-shell.js";
 import { createPaidServiceProvider } from "./paid-services-factory.js";
 import { paymentWalletConnected } from "./payment-wallets.js";
 import { restoreComputerModels } from "./pi-runtime-computer-mode.js";
@@ -217,6 +216,7 @@ import {
   withRecentTurnImages,
 } from "./run-turn-images.js";
 import { missingTurnImagesInstruction } from "./run-turn-images.prompt.js";
+import { sandboxKindCapabilities } from "./sandbox-kind-capabilities.js";
 import { loadAgentScratchpadContext } from "./scratchpad-context.js";
 import { inferScript } from "./scripted-runtime.js";
 import { loadSharedSpaceNote } from "./shared-space-note.js";
@@ -253,6 +253,7 @@ import {
   runReplaysToolHistory,
 } from "./tool-step-calls.js";
 import { restoreTurnCheckpoint } from "./turn-checkpoint.js";
+import { wakeRun } from "./wake-run.js";
 import { createWebProvider } from "./web-provider-factory.js";
 
 /** Same reach as the MCP connector: usable servers assigned to the bot or shared with every bot. */
@@ -356,6 +357,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
 
       const claimed = await claimRun(deps, run, workerId);
       if (!claimed) return;
+      await deps.events.publishSpaceChange?.(run.spaceId, "runs");
       const { fence, current } = claimed;
       const leaseTarget = await deps.prisma.bot.findUniqueOrThrow({
         where: { id: run.botId },
@@ -1219,7 +1221,8 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           .filter(Boolean)
           .join("\n\n");
         const graphical =
-          computerKind !== "desktop" && deps.sandbox.describe().capabilities.graphical;
+          !sandboxKindCapabilities(computerKind).runsOnUserMachine &&
+          deps.sandbox.describe().capabilities.graphical;
         // Gate on the pair written to the run row above; re-deriving it would drop the
         // deployment fallback and gate a vision-capable default as text-only.
         const modelSeesImages = modelAcceptsImageInput(
@@ -1492,23 +1495,22 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           disabledBuiltinTools,
           new Set(tools.map((tool) => tool.name)),
         );
-        const hostEnvironment =
-          computerKind && usesNativeShell(computerKind)
-            ? await deps.sandbox
-                .environment?.(
-                  {
-                    id: storedComputer.providerRef ?? storedComputer.id,
-                    botId: storedComputer.homeKey,
-                    kind: computerKind as ComputerRef["kind"],
-                    providerRef: storedComputer.providerRef ?? "",
-                  },
-                  {
-                    ...context,
-                    signal: AbortSignal.any([context.signal, AbortSignal.timeout(2000)]),
-                  },
-                )
-                .catch(() => undefined)
-            : undefined;
+        const hostEnvironment = sandboxKindCapabilities(computerKind).nativeShell
+          ? await deps.sandbox
+              .environment?.(
+                {
+                  id: storedComputer.providerRef ?? storedComputer.id,
+                  botId: storedComputer.homeKey,
+                  kind: computerKind as ComputerRef["kind"],
+                  providerRef: storedComputer.providerRef ?? "",
+                },
+                {
+                  ...context,
+                  signal: AbortSignal.any([context.signal, AbortSignal.timeout(2000)]),
+                },
+              )
+              .catch(() => undefined)
+          : undefined;
         const hostInstruction = hostEnvironment
           ? hostComputerInstruction(computerKind, hostEnvironment)
           : undefined;
@@ -2231,6 +2233,6 @@ async function cancelRunOfFormerMember(
   });
   if (!cancelled) return true;
   await deps.events.notify(run.threadId, cancelled.seq).catch(() => undefined);
-  if (cancelled.continuationId) await deps.jobs.enqueue(runContinueJob(cancelled.continuationId));
+  if (cancelled.continuationId) await wakeRun(deps.jobs, cancelled.continuationId);
   return true;
 }
