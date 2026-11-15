@@ -947,6 +947,18 @@ export interface BackgroundJobPayloads {
   /** The previous release's interim-message mirror; drained by the new delivery path. */
   "messaging.progress": { runId: string };
   "messaging.credential-cleanup": { installationId: string; ref: string };
+  /**
+   * Backup for removing an authorization a connection flow left at the provider with no local
+   * row. `ref` names one authorization request or account; without it, the app's accounts that
+   * no local row references.
+   */
+  "connection.cleanup": {
+    spaceId: string;
+    userId: string;
+    connectorId: string;
+    provider: string;
+    ref?: string;
+  };
   /** Backup for answering one inbound team-chat message, and the end of its routine routing. */
   "team_chat.engage": { externalMessageId: string };
   /** Decide whether a conversation's unanswered team-chat messages need the bot. */

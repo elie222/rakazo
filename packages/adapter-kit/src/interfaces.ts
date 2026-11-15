@@ -302,7 +302,11 @@ export interface ManagedConnectorProvider
   listReconnectRefs?(context: AdapterContext): Promise<string[]>;
   connectionReady(context: AdapterContext, externalId: string): Promise<boolean>;
   warmDirectory?(): Promise<void>;
-  /** Map a begin() state or stored ref to the concrete remote account id, skipping excluded ids. */
+  /**
+   * Map a begin() state or stored ref to the concrete remote account id, skipping excluded ids.
+   * Resolves undefined only when the provider holds no such account; rejects when it could not
+   * be asked.
+   */
   resolveConnectedAccountId?(
     userId: string,
     slug: string,

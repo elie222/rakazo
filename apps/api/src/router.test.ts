@@ -4,9 +4,11 @@ import path from "node:path";
 import type { InferRouterInitialContext } from "@orpc/server";
 import { createRouterClient } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/fetch";
-import type { ManagedConnectorProvider } from "@rakazo/adapter-kit";
+import type { BackgroundJob, ManagedConnectorProvider } from "@rakazo/adapter-kit";
 import {
   ConnectorAuthUnavailableError,
+  connectionCleanupJob,
+  connectionCleanupJobKey,
   routineWakeupJob,
   SecretStoreUnavailableError,
 } from "@rakazo/adapter-kit";
@@ -26,6 +28,7 @@ import {
   ModelSignInError,
   modelCredentialDto,
   parseModelSecret,
+  providerScopeKey,
   SAVED_LOGIN_UNREADABLE,
   screenLeaseIdForRun,
   serializeModelSecret,
@@ -45,13 +48,14 @@ import type { PrismaClient } from "@rakazo/db";
 import {
   AnswerTooLongError,
   configureProviderTransactionPool,
+  IsolationError,
   Prisma,
   runProviderTransaction,
 } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mainRole, withModelRoles } from "../../../packages/adapters/src/testing/model-roles.js";
-import { providerScopeKey } from "./connection-flows.js";
+import { beginConnection } from "./connection-flows.js";
 import { createModelConnector, prepareModelReconnectSettings } from "./model-credentials.js";
 import type { RouterDeps } from "./router.js";
 import {
@@ -3334,6 +3338,7 @@ describe("connections.begin", () => {
       return { state: "request-1", authorizationUrl: "https://provider.test/authorize" };
     });
     const cancelAuthorizationRequest = vi.fn(async () => undefined);
+    const jobs = { enqueue: vi.fn(async () => undefined), cancel: vi.fn(async () => undefined) };
     const rootUpdateMany = vi.fn().mockResolvedValue({ count: 1 });
     const tx = {
       $executeRaw: vi.fn().mockResolvedValue(undefined),
@@ -3350,6 +3355,7 @@ describe("connections.begin", () => {
     const handler = new RPCHandler(
       createRouter({
         prisma,
+        jobs,
         connectors: { managed: vi.fn(() => ({ begin, cancelAuthorizationRequest })) },
         env: {
           defaultProvider: "fake",
@@ -3390,6 +3396,12 @@ describe("connections.begin", () => {
       expect(prisma.$transaction).toHaveBeenCalledTimes(1);
       expect(tx.connection.updateMany).not.toHaveBeenCalled();
       expect(cancelAuthorizationRequest).toHaveBeenCalledWith("request-1", expect.anything());
+      // The removal is recorded before it is tried, and the record goes once it is done.
+      expect(jobs.enqueue).toHaveBeenCalledTimes(1);
+      expect(jobs.enqueue.mock.invocationCallOrder[0]).toBeLessThan(
+        cancelAuthorizationRequest.mock.invocationCallOrder[0]!,
+      );
+      expect(jobs.cancel).toHaveBeenCalledWith(connectionCleanupJobKey(LEFTOVER_REQUEST));
       expect(rootUpdateMany).toHaveBeenCalledWith(
         expect.objectContaining({ data: { status: "error" } }),
       );
@@ -3398,6 +3410,127 @@ describe("connections.begin", () => {
       await holder;
       vi.useRealTimers();
     }
+  });
+
+  const LEFTOVER_REQUEST = {
+    spaceId: "workspace-1",
+    userId: "user-1",
+    connectorId: "composio",
+    provider: "gmail",
+    ref: "request-1",
+  };
+  const { ref: _ref, ...LEFTOVER_APP } = LEFTOVER_REQUEST;
+
+  /** A begin whose row a revoke took while the provider was answering. */
+  function lostBegin(connector: Record<string, unknown>, state: string) {
+    const jobs = {
+      enqueue: vi.fn(async (_job: BackgroundJob) => undefined),
+      enqueueIn: vi.fn(async (_tx: unknown, _job: BackgroundJob) => undefined),
+      cancel: vi.fn(async (_key: string) => undefined),
+    };
+    const tx = {
+      $executeRaw: vi.fn().mockResolvedValue(undefined),
+      connection: {
+        findMany: vi.fn().mockResolvedValue([]),
+        create: vi.fn().mockResolvedValue({ id: "conn-1", status: "pending" }),
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+      },
+    };
+    const prisma = {
+      connection: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
+      $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(tx)),
+    } as unknown as PrismaClient;
+    const begin = vi.fn(async () => ({ state, authorizationUrl: "https://provider.test/go" }));
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
+    const call = () =>
+      beginConnection(
+        {
+          prisma,
+          jobs,
+          connectors: { managed: () => ({ begin, ...connector }) },
+          env: { webOrigin: "http://127.0.0.1:5173" },
+        } as unknown as RouterDeps,
+        { actor: { spaceId: "workspace-1", userId: "user-1" } as Actor },
+        { connectorId: "composio", provider: "gmail", displayName: "Gmail" },
+      );
+    const errors = () =>
+      sink.events
+        .filter((event) => event.level === "error" && event.message.startsWith("connections."))
+        .map((event) => event.message);
+    return { call, jobs, tx, errors };
+  }
+
+  it("records the removal with the lost race and deletes the record once it is done", async () => {
+    const cancelAuthorizationRequest = vi.fn(async () => undefined);
+    const { call, jobs, tx, errors } = lostBegin({ cancelAuthorizationRequest }, "request-1");
+
+    await expect(call()).rejects.toBeInstanceOf(IsolationError);
+    expect(jobs.enqueueIn).toHaveBeenCalledWith(
+      tx,
+      expect.objectContaining({
+        name: "connection.cleanup",
+        payload: LEFTOVER_REQUEST,
+        availableAt: expect.any(Date),
+      }),
+    );
+    expect(cancelAuthorizationRequest).toHaveBeenCalledWith("request-1", expect.anything());
+    expect(jobs.cancel).toHaveBeenCalledWith(connectionCleanupJobKey(LEFTOVER_REQUEST));
+    expect(jobs.enqueue).not.toHaveBeenCalled();
+    expect(errors()).toEqual([]);
+  });
+
+  it("hands a failed removal to its backup job and answers the lost race as before", async () => {
+    const cancelAuthorizationRequest = vi.fn(async () => {
+      throw new Error("provider unavailable");
+    });
+    const { call, jobs, errors } = lostBegin({ cancelAuthorizationRequest }, "request-1");
+
+    await expect(call()).rejects.toBeInstanceOf(IsolationError);
+    // Enqueued again with no run-at: the queue retries it now.
+    expect(jobs.enqueue).toHaveBeenCalledWith(connectionCleanupJob(LEFTOVER_REQUEST));
+    expect(jobs.cancel).not.toHaveBeenCalled();
+    expect(errors()).toEqual(["connections.begin leftover cleanup failed; retrying"]);
+  });
+
+  it("retries instead of skipping the revoke when the provider cannot be asked for the account", async () => {
+    const revoke = vi.fn(async () => undefined);
+    const resolveConnectedAccountId = vi.fn(async (): Promise<string | undefined> => {
+      throw new Error("provider unavailable");
+    });
+    const unreachable = lostBegin({ revoke, resolveConnectedAccountId }, "request-1");
+
+    await expect(unreachable.call()).rejects.toBeInstanceOf(IsolationError);
+    expect(revoke).not.toHaveBeenCalled();
+    expect(unreachable.jobs.enqueue).toHaveBeenCalledWith(connectionCleanupJob(LEFTOVER_REQUEST));
+    expect(unreachable.jobs.cancel).not.toHaveBeenCalled();
+
+    // The provider answering that it holds no such account is the normal outcome.
+    resolveConnectedAccountId.mockResolvedValue(undefined);
+    const absent = lostBegin({ revoke, resolveConnectedAccountId }, "request-1");
+    await expect(absent.call()).rejects.toBeInstanceOf(IsolationError);
+    expect(revoke).not.toHaveBeenCalled();
+    expect(absent.jobs.enqueue).not.toHaveBeenCalled();
+    expect(absent.jobs.cancel).toHaveBeenCalledWith(connectionCleanupJobKey(LEFTOVER_REQUEST));
+  });
+
+  it("retries the unreferenced-account cleanup when its database read fails", async () => {
+    const revokeUnreferencedAccounts = vi.fn(async () => undefined);
+    const { call, jobs, tx, errors } = lostBegin({ revokeUnreferencedAccounts }, "gmail");
+    tx.connection.findMany
+      // begin's own lookup of rows to reuse
+      .mockResolvedValueOnce([])
+      .mockRejectedValueOnce(new Error("database unavailable"));
+
+    await expect(call()).rejects.toBeInstanceOf(IsolationError);
+    expect(jobs.enqueueIn).toHaveBeenCalledWith(
+      tx,
+      expect.objectContaining({ name: "connection.cleanup", payload: LEFTOVER_APP }),
+    );
+    expect(revokeUnreferencedAccounts).not.toHaveBeenCalled();
+    expect(jobs.enqueue).toHaveBeenCalledWith(connectionCleanupJob(LEFTOVER_APP));
+    expect(jobs.cancel).not.toHaveBeenCalled();
+    expect(errors()).toEqual(["connections.begin leftover cleanup failed; retrying"]);
   });
 
   it("answers with the connector auth code when the app has no usable sign-in", async () => {
@@ -4068,6 +4201,50 @@ describe("connections.complete", () => {
 
     await expect(complete()).resolves.toMatchObject({ body: { json: { status: "connected" } } });
     expect(row.providerRef).toBe("account-1");
+  });
+
+  it("leaves the row for the next poll when the provider cannot be asked for the account", async () => {
+    const { complete, connector, row, sink } = pollFixture("pending");
+    const resolveConnectedAccountId = vi.fn(async (): Promise<string | undefined> => {
+      throw new Error("provider unavailable");
+    });
+    Object.assign(connector, { resolveConnectedAccountId });
+
+    await expect(complete()).resolves.toMatchObject({
+      status: 200,
+      body: { json: { status: "pending" } },
+    });
+    expect(row).toMatchObject({ status: "pending", providerRef: "gmail" });
+    expect(sink.events.filter((event) => event.level === "error")).toEqual([
+      expect.objectContaining({
+        message: "connections.complete could not resolve the connected account",
+        connectionId: "conn-1",
+      }),
+    ]);
+
+    resolveConnectedAccountId.mockResolvedValue("account-1");
+    await expect(complete()).resolves.toMatchObject({ body: { json: { status: "connected" } } });
+    expect(row.providerRef).toBe("account-1");
+  });
+
+  it("keeps a superseded row removable when its account cannot be resolved", async () => {
+    const { complete, connector, row, sink } = pollFixture("revoked");
+    row.providerRef = "request-1";
+    Object.assign(connector, {
+      resolveConnectedAccountId: vi.fn(async () => {
+        throw new Error("provider unavailable");
+      }),
+    });
+
+    expect((await complete()).status).not.toBe(200);
+    expect(connector.revoke).not.toHaveBeenCalled();
+    expect(sink.events.filter((event) => event.level === "error")).toEqual([
+      expect.objectContaining({
+        message: "connections.complete remote cleanup failed for revoked row",
+      }),
+    ]);
+    // Back in the account list, so removing it again revokes the remote account.
+    expect(row.status).toBe("pending");
   });
 
   it("reports a superseded connection as revoked instead of failing", async () => {

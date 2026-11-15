@@ -90,6 +90,7 @@ export * from "./computer-tools.js";
 export * from "./computer-update.js";
 export * from "./computer-workspace.js";
 export * from "./configured-sandbox.js";
+export * from "./connection-cleanup.js";
 export * from "./connector-catalog.js";
 export * from "./connector-registry.js";
 export {

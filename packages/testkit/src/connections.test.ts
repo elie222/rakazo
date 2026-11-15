@@ -208,6 +208,41 @@ describeWithDatabase("Composio catalog reconciliation", () => {
     ).resolves.toContainEqual(expect.objectContaining({ slug: "GMAIL", connected: false }));
   });
 
+  it("removes the authorization of a begin that lost its row once the provider answers again", async () => {
+    const cookie = await signup(app, `lost-begin-${stamp}@rakazo.test`, "Lost Begin");
+    const actor = await rpc<Actor>(app, cookie, "me");
+    const begin = composio.begin.bind(composio);
+    vi.spyOn(composio, "begin").mockImplementation(async (request, context) => {
+      const started = await begin(request, context);
+      // The connection is removed while the provider is still answering.
+      await asSystem(handles.prisma).connection.updateMany({
+        where: { spaceId: actor.spaceId, userId: actor.userId, provider: "GMAIL" },
+        data: { status: "revoked" },
+      });
+      return started;
+    });
+    const cancel = composio.cancelAuthorizationRequest.bind(composio);
+    const cancelled = vi
+      .spyOn(composio, "cancelAuthorizationRequest")
+      .mockImplementation(cancel)
+      .mockRejectedValueOnce(new Error("provider unavailable"));
+
+    await expect(
+      rpc(app, cookie, "connections/begin", {
+        connectorId: "composio",
+        provider: "GMAIL",
+        displayName: "Gmail",
+      }),
+    ).rejects.toThrow();
+
+    // The failed removal went to its backup job, which the queue ran.
+    await vi.waitFor(() => expect(cancelled).toHaveBeenCalledTimes(2), { timeout: 10_000 });
+    await vi.waitFor(
+      async () => expect(await composio.listConnectedAccountIds(actor.userId, "GMAIL")).toEqual([]),
+      { timeout: 10_000 },
+    );
+  });
+
   it("marks a connected account Composio reports dead as needing reconnect", async () => {
     const cookie = await signup(app, `reconnect-${stamp}@rakazo.test`, "Reconnect");
     const work = await rpc<{ connectionId: string }>(app, cookie, "connections/begin", {

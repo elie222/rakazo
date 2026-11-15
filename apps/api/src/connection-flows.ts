@@ -1,22 +1,33 @@
 import { ORPCError } from "@orpc/server";
-import type { AdapterContext } from "@rakazo/adapter-kit";
-import { ConnectorAuthUnavailableError } from "@rakazo/adapter-kit";
+import type {
+  AdapterContext,
+  BackgroundJobPayloads,
+  ManagedConnectorProvider,
+} from "@rakazo/adapter-kit";
 import {
-  advisoryLock,
+  ConnectorAuthUnavailableError,
+  connectionCleanupJob,
+  connectionCleanupJobKey,
+} from "@rakazo/adapter-kit";
+import {
+  CONNECTION_CLEANUP_ATTEMPT_MS,
+  CONNECTION_CLEANUP_BACKUP_MS,
+  dropAuthorization,
+  dropLeftoverAuthorization,
+  dropUnreferencedAccounts,
+  leftoverAuthorization,
+  lockProviderConnectionScope,
   pickReusableConnection,
   prepareManagedConnectorForTransaction,
+  providerLockTransaction,
+  providerScopeKey,
   sanitizeIntegrationError,
 } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import { isIntegrationProviderId } from "@rakazo/contracts";
-import type { Prisma, PrismaClient } from "@rakazo/db";
-import {
-  IsolationError,
-  ProviderTransactionBusyError,
-  recordSecurityEvent,
-  runProviderTransaction,
-} from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
+import type { Prisma } from "@rakazo/db";
+import { IsolationError, ProviderTransactionBusyError, recordSecurityEvent } from "@rakazo/db";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import type { RouterDeps } from "./router.js";
 import { connectionCreatedEvent } from "./security-audit.js";
 
@@ -44,54 +55,6 @@ function shouldRestoreLocalAfterRemoteRevokeFailure(error: unknown): boolean {
   return isRemoteRevokePreDeleteFailure(error) || !isAmbiguousRemoteRevokeFailure(error);
 }
 
-/**
- * Concrete account ids still referenced by active local rows. When any row still
- * only has the provider slug (or no ref), orphan cleanup must not run — a sibling
- * may have created its remote account before persisting the concrete id.
- */
-function concreteKeepAccountIds(
-  refs: Array<string | null | undefined>,
-  provider: string,
-): { keepIds: string[]; canRevokeUnreferenced: boolean } {
-  const keepIds: string[] = [];
-  let canRevokeUnreferenced = true;
-  for (const ref of refs) {
-    const value = ref?.trim();
-    if (!value || value === provider) {
-      canRevokeUnreferenced = false;
-      continue;
-    }
-    keepIds.push(value);
-  }
-  return { keepIds, canRevokeUnreferenced };
-}
-
-/** Connection flows hold the provider lock across provider calls (45s budget plus database work). */
-const PROVIDER_LOCK_TRANSACTION_MS = 60_000;
-
-/**
- * The scope one connection flow serializes on: one user's rows for one provider. The
- * advisory locks and the provider transaction gate share it, so the gate queues only
- * behind work the database would serialize anyway.
- */
-export function providerScopeKey(
-  owner: Pick<Actor, "spaceId" | "userId">,
-  connectorId: string,
-  provider: string,
-): string {
-  // Avoid NUL separators in the lock key; text params may truncate at a zero byte and break begin.
-  return `space:${owner.spaceId}|user:${owner.userId}|connector:${connectorId}|provider:${provider}`;
-}
-
-async function lockProviderConnectionScope(
-  tx: Prisma.TransactionClient,
-  owner: Pick<Actor, "spaceId" | "userId">,
-  connectorId: string,
-  provider: string,
-): Promise<void> {
-  await advisoryLock(tx, "connection-provider", providerScopeKey(owner, connectorId, provider));
-}
-
 /** Like lockProviderConnectionScope, but returns false instead of waiting for a holder. */
 async function tryLockProviderConnectionScope(
   tx: Prisma.TransactionClient,
@@ -102,24 +65,6 @@ async function tryLockProviderConnectionScope(
   const [row] = await tx.$queryRaw<Array<{ locked: boolean }>>`
     SELECT pg_try_advisory_xact_lock(hashtext('connection-provider'), hashtext(${providerScopeKey(owner, connectorId, provider)})) AS locked`;
   return row?.locked === true;
-}
-
-/**
- * A provider-lock transaction, run through the provider transaction gate keyed to its
- * scope, so a slow provider pins at most one pooled connection per scope and a bounded
- * share of the pool overall, however many requests are waiting.
- */
-function providerLockTransaction<T>(
-  prisma: PrismaClient,
-  scope: string,
-  fn: (tx: Prisma.TransactionClient) => Promise<T>,
-  waitMs = PROVIDER_LOCK_TRANSACTION_MS,
-): Promise<T> {
-  return runProviderTransaction(
-    scope,
-    () => prisma.$transaction(fn, { timeout: PROVIDER_LOCK_TRANSACTION_MS }),
-    waitMs,
-  );
 }
 
 /** How long a poll of connections/complete waits for the slot before reporting the row as is. */
@@ -137,6 +82,59 @@ export function connectionContext(
     userId: actor.userId,
     signal: signal ?? new AbortController().signal,
   };
+}
+
+/**
+ * Removes what a begin that lost its row left at the provider. The keyed backup job is the
+ * durable record: a failed attempt hands over to it, a finished one deletes it.
+ */
+async function removeLeftoverAuthorization(
+  deps: Pick<RouterDeps, "prisma" | "jobs">,
+  connector: ManagedConnectorProvider,
+  leftover: BackgroundJobPayloads["connection.cleanup"],
+  backedUp: boolean,
+): Promise<void> {
+  const where = {
+    connectorId: leftover.connectorId,
+    provider: leftover.provider,
+    ...(leftover.ref ? { providerRef: leftover.ref } : {}),
+  };
+  if (!backedUp) {
+    try {
+      await deps.jobs.enqueue(connectionCleanupJob(leftover, cleanupBackupAt()));
+    } catch (error) {
+      getLogger().error("connections.begin could not record its leftover cleanup", error, where);
+    }
+  }
+  try {
+    // Not the request signal: a caller that hangs up must not cut the removal short.
+    await dropLeftoverAuthorization(
+      deps.prisma,
+      connector,
+      leftover,
+      connectionContext(
+        leftover,
+        "connections.begin",
+        AbortSignal.timeout(CONNECTION_CLEANUP_ATTEMPT_MS),
+      ),
+    );
+  } catch (error) {
+    getLogger().error("connections.begin leftover cleanup failed; retrying", error, where);
+    // A backup already recorded still runs at its own time when this cannot reach the queue.
+    await bestEffort(
+      "retry leftover connection cleanup now",
+      deps.jobs.enqueue(connectionCleanupJob(leftover)),
+    );
+    return;
+  }
+  await bestEffort(
+    "delete the finished connection cleanup's backup job",
+    deps.jobs.cancel(connectionCleanupJobKey(leftover)),
+  );
+}
+
+function cleanupBackupAt(): Date {
+  return new Date(Date.now() + CONNECTION_CLEANUP_BACKUP_MS);
 }
 
 export async function beginConnection(
@@ -203,6 +201,16 @@ export async function beginConnection(
       },
       connectionContext(context.actor, "connections.begin", context.signal),
     );
+    const leftover = leftoverAuthorization(
+      connector,
+      {
+        spaceId: context.actor.spaceId,
+        userId: context.actor.userId,
+        connectorId: input.connectorId,
+        provider: input.provider,
+      },
+      auth.state,
+    );
     // Re-take the provider lock and only advance still-pending rows so a
     // concurrent revoke cannot be overwritten back to pending/connected.
     let busy = false;
@@ -224,7 +232,11 @@ export async function beginConnection(
             metadata: { state: auth.state },
           },
         });
-        return updated.count > 0;
+        if (updated.count > 0) return true;
+        // Lost to a revoke: removing what begin left at the provider commits with that outcome.
+        if (leftover)
+          await deps.jobs.enqueueIn(tx, connectionCleanupJob(leftover, cleanupBackupAt()));
+        return false;
       },
     ).catch((error: unknown) => {
       if (!(error instanceof ProviderTransactionBusyError)) throw error;
@@ -235,73 +247,10 @@ export async function beginConnection(
       await recordSecurityEvent(connectionCreatedEvent("connections.begin", row.id, context.actor));
     }
     if (!applied) {
-      // Revoke won the race, or the result could not be saved in time. Clean up the
-      // remote authorization without a provider-wide slug delete.
-      const state = auth.state?.trim();
-      const adapterContext = connectionContext(context.actor, "connections.begin", context.signal);
-      if (state && state !== input.provider) {
-        // A provider whose browser OAuth stores an authorization-request id in auth.state.
-        // Cancel that request by id so the authorization URL cannot later create an
-        // untracked remote; resolve an ACTIVE account id only when cancel is unavailable.
-        if (connector.cancelAuthorizationRequest) {
-          await connector.cancelAuthorizationRequest(state, adapterContext).catch(() => undefined);
-        } else {
-          const revokeRef = connector.resolveConnectedAccountId
-            ? await connector
-                .resolveConnectedAccountId(
-                  context.actor.userId,
-                  input.provider,
-                  state,
-                  [],
-                  context.actor.spaceId,
-                )
-                .catch(() => undefined)
-            : state;
-          if (revokeRef) {
-            await connector.revoke(revokeRef, adapterContext).catch(() => undefined);
-          }
-        }
-      } else if (state === input.provider) {
-        // A provider whose begin only returns the app slug. Drop remotes that no
-        // remaining local row still references so a lost race cannot leave
-        // an orphan authorization, without wiping sibling accounts.
-        if (connector.revokeUnreferencedAccounts) {
-          // Hold the provider lock across the keep-id snapshot and remote
-          // cleanup so a concurrent complete cannot persist a providerRef
-          // that this cleanup then deletes as unreferenced.
-          await providerLockTransaction(
-            deps.prisma,
-            providerScopeKey(context.actor, input.connectorId, input.provider),
-            async (tx) => {
-              await lockProviderConnectionScope(
-                tx,
-                context.actor,
-                input.connectorId,
-                input.provider,
-              );
-              const kept = await tx.connection.findMany({
-                where: {
-                  spaceId: context.actor.spaceId,
-                  userId: context.actor.userId,
-                  connectorId: input.connectorId,
-                  provider: input.provider,
-                  status: { in: ["connected", "pending", "error"] },
-                },
-                select: { providerRef: true },
-              });
-              const { keepIds, canRevokeUnreferenced } = concreteKeepAccountIds(
-                kept.map((entry) => entry.providerRef),
-                input.provider,
-              );
-              // Skip while any sibling still lacks a concrete account id —
-              // otherwise slug-only pending refs are dropped from keepIds and
-              // revokeUnreferencedAccounts deletes that sibling's remote auth.
-              if (!canRevokeUnreferenced) return;
-              await connector.revokeUnreferencedAccounts?.(input.provider, keepIds, adapterContext);
-            },
-          ).catch(() => undefined);
-        }
-      }
+      // Revoke won the race, or the result could not be saved in time. Remove the remote
+      // authorization by its own id, or the app's accounts no local row references, never
+      // by a provider-wide slug delete that would take sibling accounts with it.
+      if (leftover) await removeLeftoverAuthorization(deps, connector, leftover, !busy);
       if (busy) throw new ProviderTransactionBusyError();
       throw new IsolationError();
     }
@@ -414,50 +363,21 @@ export async function completeConnection(
             });
           };
           const pendingRef = current.providerRef?.trim();
+          const owner = { spaceId: context.actor.spaceId, userId: context.actor.userId };
           try {
             if (pendingRef && pendingRef !== current.provider) {
-              if (transactionConnector.cancelAuthorizationRequest) {
-                await transactionConnector.cancelAuthorizationRequest(pendingRef, revokedContext);
-              } else {
-                const revokeRef = transactionConnector.resolveConnectedAccountId
-                  ? await transactionConnector
-                      .resolveConnectedAccountId(
-                        context.actor.userId,
-                        current.provider,
-                        pendingRef,
-                        [],
-                        context.actor.spaceId,
-                      )
-                      .catch(() => undefined)
-                  : pendingRef;
-                if (revokeRef) {
-                  await transactionConnector.revoke(revokeRef, revokedContext);
-                }
-              }
+              await dropAuthorization(
+                transactionConnector,
+                { ...owner, provider: current.provider, ref: pendingRef },
+                revokedContext,
+              );
             } else {
-              if (transactionConnector.revokeUnreferencedAccounts) {
-                const kept = await tx.connection.findMany({
-                  where: {
-                    spaceId: context.actor.spaceId,
-                    userId: context.actor.userId,
-                    connectorId: existing.connectorId,
-                    provider: existing.provider,
-                    status: { in: ["connected", "pending", "error"] },
-                  },
-                  select: { providerRef: true },
-                });
-                const { keepIds, canRevokeUnreferenced } = concreteKeepAccountIds(
-                  kept.map((entry) => entry.providerRef),
-                  existing.provider,
-                );
-                if (canRevokeUnreferenced) {
-                  await transactionConnector.revokeUnreferencedAccounts(
-                    existing.provider,
-                    keepIds,
-                    revokedContext,
-                  );
-                }
-              }
+              await dropUnreferencedAccounts(
+                tx,
+                transactionConnector,
+                { ...owner, connectorId: existing.connectorId, provider: existing.provider },
+                revokedContext,
+              );
             }
           } catch (error) {
             getLogger().error("connections.complete remote cleanup failed for revoked row", error, {
@@ -496,15 +416,13 @@ export async function completeConnection(
         // right remote authorization. Prefer an account id not already used
         // by a sibling row for the same provider.
         const resolveAccountId = (ref: string | null | undefined, excludeIds: string[]) =>
-          transactionConnector
-            .resolveConnectedAccountId?.(
-              context.actor.userId,
-              existing.provider,
-              ref,
-              excludeIds,
-              context.actor.spaceId,
-            )
-            .catch(() => undefined);
+          transactionConnector.resolveConnectedAccountId?.(
+            context.actor.userId,
+            existing.provider,
+            ref,
+            excludeIds,
+            context.actor.spaceId,
+          );
         let resolvedAccountId: string | undefined;
         if (transactionConnector.resolveConnectedAccountId) {
           const siblings = await tx.connection.findMany({
@@ -524,20 +442,35 @@ export async function completeConnection(
           // sibling's account. If a sibling ref cannot be resolved yet, leave
           // this row pending so a later complete can re-resolve safely.
           const excludeIds: string[] = [];
-          for (const sibling of siblings) {
-            const ref = sibling.providerRef?.trim();
-            // Slug-only refs cannot identify a concrete remote account; resolving
-            // them would pick an arbitrary ACTIVE id and over-exclude.
-            if (!ref || ref === existing.provider) {
-              // A connected row has no claim on a newer account a sibling may have just authorized.
-              if (current.status === "connected" && sibling.status === "pending") return current;
-              continue;
+          try {
+            for (const sibling of siblings) {
+              const ref = sibling.providerRef?.trim();
+              // Slug-only refs cannot identify a concrete remote account; resolving
+              // them would pick an arbitrary ACTIVE id and over-exclude.
+              if (!ref || ref === existing.provider) {
+                // A connected row has no claim on a newer account a sibling may have just authorized.
+                if (current.status === "connected" && sibling.status === "pending") return current;
+                continue;
+              }
+              const resolvedSiblingId = await resolveAccountId(ref, []);
+              if (!resolvedSiblingId) return current;
+              excludeIds.push(resolvedSiblingId);
             }
-            const resolvedSiblingId = await resolveAccountId(ref, []);
-            if (!resolvedSiblingId) return current;
-            excludeIds.push(resolvedSiblingId);
+            resolvedAccountId = await resolveAccountId(current.providerRef, excludeIds);
+          } catch (error) {
+            // Not being able to ask is not "no account": connecting the row now would store a
+            // ref revoke cannot target. Leave it for the next poll.
+            getLogger().error(
+              "connections.complete could not resolve the connected account",
+              error,
+              {
+                connectionId: current.id,
+                connectorId: existing.connectorId,
+                provider: existing.provider,
+              },
+            );
+            return current;
           }
-          resolvedAccountId = await resolveAccountId(current.providerRef, excludeIds);
         }
 
         // When a resolver exists and providerRef is still a request-scoped

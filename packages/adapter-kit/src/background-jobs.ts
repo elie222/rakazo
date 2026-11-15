@@ -63,6 +63,13 @@ const payloadSchemas = {
     installationId: z.string().min(1),
     ref: z.string().min(1),
   }),
+  "connection.cleanup": z.object({
+    spaceId: z.string().min(1),
+    userId: z.string().min(1),
+    connectorId: z.string().min(1),
+    provider: z.string().min(1),
+    ref: z.string().min(1).optional(),
+  }),
   "team_chat.engage": z.object({ externalMessageId: z.string().min(1) }),
   "team_chat.ambient": z.object({ conversationId: z.string().min(1) }),
   "cloud_agent.poll": z.object({ agentId: z.string().min(1) }),
@@ -290,6 +297,26 @@ export function memoryPurgeHistoryJob(
     name: "memory.purge-history",
     payload,
     replaceKey: `memory.purge-history:${JSON.stringify([payload.spaceId, payload.botId, payload.threadId, payload.generations, payload.connectionIdentity])}`,
+    maxAttempts: 12,
+  };
+}
+
+export function connectionCleanupJobKey(
+  payload: BackgroundJobPayloads["connection.cleanup"],
+): string {
+  return `connection.cleanup:${JSON.stringify([payload.spaceId, payload.userId, payload.connectorId, payload.provider, payload.ref ?? null])}`;
+}
+
+/** Without `availableAt` it runs now, which is how a failed direct attempt hands over. */
+export function connectionCleanupJob(
+  payload: BackgroundJobPayloads["connection.cleanup"],
+  availableAt?: Date,
+): BackgroundJob {
+  return {
+    name: "connection.cleanup",
+    payload,
+    ...(availableAt ? { availableAt } : {}),
+    replaceKey: connectionCleanupJobKey(payload),
     maxAttempts: 12,
   };
 }

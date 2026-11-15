@@ -27,6 +27,8 @@ import { pollCloudAgent } from "./cloud-agent-poll.js";
 import { expireComputerControl, scheduleComputerControlExpiry } from "./computer-control.js";
 import { rateLimitEnds, scheduleComputerSleep, sleepComputerIfIdle } from "./computer-idle.js";
 import { performComputerUpdate } from "./computer-update.js";
+import { retryConnectionCleanup } from "./connection-cleanup.js";
+import type { ConnectorRegistry } from "./connector-registry.js";
 import {
   abandonRetainedConversation,
   retainRunConversation,
@@ -93,6 +95,7 @@ export function createBackgroundJobHandlers(deps: {
   deploymentModelConfigured?: boolean;
   messagingDelivery?: MessagingDelivery;
   teamChat?: TeamChat;
+  connectors?: Pick<ConnectorRegistry, "managed">;
   cloudAgent?: CloudAgentConnection | null;
   userCloudAgents?: UserCloudAgents;
   paymentWallet?: PaymentWalletProvider | null;
@@ -165,6 +168,14 @@ export function createBackgroundJobHandlers(deps: {
         });
       });
     },
+    "connection.cleanup": asOwner(
+      async (payload: BackgroundJobPayloads["connection.cleanup"]) => payload,
+      async (payload) => {
+        // Fail rather than finish, so the queue keeps the job for a process that has connectors.
+        if (!deps.connectors) throw new Error("connection cleanup has no connector registry");
+        await retryConnectionCleanup({ prisma: deps.prisma, connectors: deps.connectors }, payload);
+      },
+    ),
     // The previous release's jobs, drained once by this one.
     "messaging.deliver": async ({ runId }) => {
       if (runId) await delivery?.deliverRun(runId);

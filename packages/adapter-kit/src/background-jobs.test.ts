@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  connectionCleanupJob,
+  connectionCleanupJobKey,
   dispatchBackgroundJob,
   HISTORY_COMPACT_MAX_ATTEMPTS,
   historyCompactJob,
@@ -34,6 +36,7 @@ function handlers(): BackgroundJobHandlers {
     "messaging.deliver": vi.fn(async () => undefined),
     "messaging.progress": vi.fn(async () => undefined),
     "messaging.credential-cleanup": vi.fn(async () => undefined),
+    "connection.cleanup": vi.fn(async () => undefined),
     "team_chat.engage": vi.fn(async () => undefined),
     "team_chat.ambient": vi.fn(async () => undefined),
     "cloud_agent.poll": vi.fn(async () => undefined),
@@ -116,6 +119,27 @@ describe("background job contracts", () => {
     expect(() =>
       parseBackgroundJob("messaging.credential-cleanup", { ref: "encrypted-reference" }),
     ).toThrow();
+  });
+
+  it("keys connection cleanup by what it removes, so a retry replaces its backup", async () => {
+    const app = {
+      spaceId: "space-1",
+      userId: "user-1",
+      connectorId: "connector-1",
+      provider: "mail",
+    };
+    const request = { ...app, ref: "request-1" };
+    const backup = connectionCleanupJob(request, new Date(60_000));
+    const retry = connectionCleanupJob(request);
+    expect(backup).toMatchObject({ payload: request, availableAt: new Date(60_000) });
+    expect(retry).not.toHaveProperty("availableAt");
+    expect(retry.replaceKey).toBe(backup.replaceKey);
+    expect(connectionCleanupJobKey(app)).not.toBe(backup.replaceKey);
+
+    const target = handlers();
+    await dispatchBackgroundJob(target, "connection.cleanup", app);
+    expect(target["connection.cleanup"]).toHaveBeenCalledWith(app);
+    expect(() => parseBackgroundJob("connection.cleanup", { ...app, userId: "" })).toThrow();
   });
 
   it("validates and dispatches a typed job", async () => {
