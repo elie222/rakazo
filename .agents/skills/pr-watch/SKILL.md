@@ -35,10 +35,16 @@ PRD="$(git rev-parse --show-toplevel)/.agents/skills/pr-watch/pr-digest"
   change the approach instead of repeating it. Stop and ask when progress needs
   a maintainer decision or access you do not have. Report what was tried and
   what remains unresolved.
-- Repeated base updates can also create a loop. If main keeps advancing before
-  checks finish, explain the cycle and ask for a merge strategy rather than
-  indefinitely merging and restarting CI. Preserve the user's current-base
-  requirement unless they change it.
+- Keep the PR head stable while CI and review run. Being behind the base alone
+  is not a reason to merge it or restart checks. Update the base only to resolve
+  conflicts, satisfy enforced branch protection, or meet an explicit user
+  requirement. Merge the base; never rebase or force-push without authorization.
+- If the user requires the current base, check it once checks and reviews finish,
+  not on each notification. If it advanced, explain that another update restarts
+  CI and ask whether a green, mergeable head may land without the latest base.
+  Preserve the requirement until they relax it; reuse their answer thereafter.
+  When GitHub's merge queue is configured, prefer it for testing against the
+  current base without repeatedly restarting the PR branch's checks.
 
 ## The cycle
 
