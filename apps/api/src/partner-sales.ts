@@ -97,7 +97,8 @@ export function createPartnerSales(deps: {
           failed.push(error);
         }
       }
-      if (founder) await reportSales(customerId, founder.userId, payments, openInvoices);
+      if (founder)
+        failed.push(...(await reportSales(customerId, founder.userId, payments, openInvoices)));
       if (failed.length)
         throw new AggregateError(failed, "Partner program withdrawals failed; retry the event");
     },
@@ -108,8 +109,9 @@ export function createPartnerSales(deps: {
     userId: string,
     payments: BillingPlanPayment[],
     recorded: Map<string, { reportedAt: Date | null }>,
-  ): Promise<void> {
-    if (!program) return;
+  ): Promise<Error[]> {
+    const reopened: Error[] = [];
+    if (!program) return reopened;
     for (const payment of payments) {
       // A withdrawn sale's invoice stays reversed, so it is never reported again.
       if (payment.reversed || payment.amountCents <= 0) continue;
@@ -133,12 +135,21 @@ export function createPartnerSales(deps: {
             amountCents: payment.amountCents,
             currency: payment.currency,
           });
-          await prisma.partnerSale.update({
-            where: { invoiceId: payment.invoiceId },
+          const confirmed = await prisma.partnerSale.updateMany({
+            where: { invoiceId: payment.invoiceId, refundedAt: null },
             data: { reportedAt: new Date() },
           });
+          if (confirmed.count) return;
+          // A concurrent refund closed the sale while it was being sent, so the earnings just
+          // created would escape withdrawal: reopen it and have the event retried to withdraw them.
+          await prisma.partnerSale.update({
+            where: { invoiceId: payment.invoiceId },
+            data: { refundedAt: null, reportedAt: new Date() },
+          });
+          reopened.push(new Error(`Partner sale ${payment.invoiceId} was refunded while sent`));
         })(),
       );
     }
+    return reopened;
   }
 }

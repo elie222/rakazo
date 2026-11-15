@@ -91,13 +91,13 @@ describe("billing webhook", () => {
     expect(res.status).toBe(500);
   });
 
-  it("syncs the customer of a payment an event names, such as a dispute's charge", async () => {
+  it("reconciles partner earnings for a disputed payment's customer, leaving credits alone", async () => {
     const { app, sync, reportPartnerSales } = mount(() => ({ paymentId: "ch_1" }), {
       customerForPayment: async (paymentId) => (paymentId === "ch_1" ? "cus_1" : null),
     });
     const res = await app.request(BILLING_WEBHOOK_PATH, post("{}"));
     expect(res.status).toBe(200);
-    expect(sync).toHaveBeenCalledWith("cus_1");
+    expect(sync).not.toHaveBeenCalled();
     expect(reportPartnerSales).toHaveBeenCalledWith("cus_1");
   });
 

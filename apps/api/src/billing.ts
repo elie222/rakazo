@@ -117,7 +117,8 @@ export interface BillingService {
   sync(customerId: string): Promise<void>;
   /**
    * Reports the customer's plan payments to the partner program and withdraws reversed ones, also
-   * for a customer whose organization was deleted. Rejects only when a withdrawal failed.
+   * for a customer whose organization was deleted. Rejects when a withdrawal failed or the
+   * payments could not be read; a failed sale report is left for the next event.
    */
   reportPartnerSales(customerId: string): Promise<void>;
   /** Syncs the actor's organization, e.g. on return from checkout before the webhook lands. */

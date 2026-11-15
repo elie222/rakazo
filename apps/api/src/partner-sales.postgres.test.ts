@@ -271,6 +271,29 @@ dbTests("partner program sales", () => {
     expect(program.refundSale).toHaveBeenCalledTimes(1);
   });
 
+  it("reopens a sale refunded while it was being sent, so its earnings are withdrawn", async () => {
+    const organizationId = await organization("raced", "click_16");
+    const program = fakeProgram();
+    const payment = paid("in_raced");
+    const sales = createPartnerSales({
+      prisma,
+      program,
+      provider: { listPlanPayments: async () => [payment] },
+    });
+    program.trackSale.mockImplementationOnce(async () => {
+      await prisma.partnerSale.update({
+        where: { invoiceId: payment.invoiceId },
+        data: { refundedAt: new Date() },
+      });
+    });
+    await expect(sales.report("cus_raced", organizationId)).rejects.toThrow("withdrawals failed");
+    const sale = await prisma.partnerSale.findUniqueOrThrow({
+      where: { invoiceId: payment.invoiceId },
+    });
+    expect(sale.refundedAt).toBeNull();
+    expect(sale.reportedAt).not.toBeNull();
+  });
+
   it("has nothing to do for a billing customer that no longer exists", async () => {
     const organizationId = await organization("gone", "click_14");
     await expect(

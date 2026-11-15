@@ -37,18 +37,23 @@ export function mountBillingRoutes(
       return c.json({ error: "Sync failed" }, 500);
     }
     if (!customerId) return c.json({ ok: true });
-    try {
-      await deps.billing.sync(customerId);
-    } catch (error) {
-      // A non-2xx makes the provider retry the delivery.
-      getLogger().error("billing webhook sync failed", error);
-      return c.json({ error: "Sync failed" }, 500);
+    // An event about a payment, such as a dispute, only reconciles partner earnings: credit
+    // balances keep reading disputes as before.
+    if ("customerId" in parsed) {
+      try {
+        await deps.billing.sync(customerId);
+      } catch (error) {
+        // A non-2xx makes the provider retry the delivery.
+        getLogger().error("billing webhook sync failed", error);
+        return c.json({ error: "Sync failed" }, 500);
+      }
     }
     try {
       await deps.billing.reportPartnerSales(customerId);
     } catch (error) {
-      // A partner payout on a refunded payment is money lost, so the delivery is retried.
-      getLogger().error("partner program withdrawal failed", error);
+      // Withdrawing a partner payout on a refunded payment must not be dropped, so the delivery is
+      // retried, as it is when its payments could not be read.
+      getLogger().error("partner program reconciliation failed", error);
       return c.json({ error: "Partner program sync failed" }, 500);
     }
     return c.json({ ok: true });
