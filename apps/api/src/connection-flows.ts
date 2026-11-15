@@ -9,9 +9,10 @@ import {
   connectionCleanupJob,
   connectionCleanupJobKey,
 } from "@rakazo/adapter-kit";
+import type { ConnectionCleanupOutcome } from "@rakazo/adapters";
 import {
-  CONNECTION_CLEANUP_ATTEMPT_MS,
   CONNECTION_CLEANUP_BACKUP_MS,
+  connectionCleanupRetryAt,
   dropAuthorization,
   dropLeftoverAuthorization,
   dropUnreferencedAccounts,
@@ -22,10 +23,10 @@ import {
   providerLockTransaction,
   providerScopeKey,
   sanitizeIntegrationError,
+  tryLockProviderConnectionScope,
 } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import { isIntegrationProviderId } from "@rakazo/contracts";
-import type { Prisma } from "@rakazo/db";
 import { IsolationError, ProviderTransactionBusyError, recordSecurityEvent } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
 import type { RouterDeps } from "./router.js";
@@ -55,18 +56,6 @@ function shouldRestoreLocalAfterRemoteRevokeFailure(error: unknown): boolean {
   return isRemoteRevokePreDeleteFailure(error) || !isAmbiguousRemoteRevokeFailure(error);
 }
 
-/** Like lockProviderConnectionScope, but returns false instead of waiting for a holder. */
-async function tryLockProviderConnectionScope(
-  tx: Prisma.TransactionClient,
-  owner: Pick<Actor, "spaceId" | "userId">,
-  connectorId: string,
-  provider: string,
-): Promise<boolean> {
-  const [row] = await tx.$queryRaw<Array<{ locked: boolean }>>`
-    SELECT pg_try_advisory_xact_lock(hashtext('connection-provider'), hashtext(${providerScopeKey(owner, connectorId, provider)})) AS locked`;
-  return row?.locked === true;
-}
-
 /** How long a poll of connections/complete waits for the slot before reporting the row as is. */
 const COMPLETE_POLL_SLOT_WAIT_MS = 2_000;
 
@@ -85,8 +74,10 @@ export function connectionContext(
 }
 
 /**
- * Removes what a begin that lost its row left at the provider. The keyed backup job is the
- * durable record: a failed attempt hands over to it, a finished one deletes it.
+ * Removes what a begin whose result was not saved left at the provider. The keyed backup job is
+ * the durable record: only a finished removal deletes it, and an attempt that failed, found the
+ * scope busy or could not decide yet hands over to it. Never rejects, so the caller's own error
+ * is the one reported.
  */
 async function removeLeftoverAuthorization(
   deps: Pick<RouterDeps, "prisma" | "jobs">,
@@ -99,32 +90,45 @@ async function removeLeftoverAuthorization(
     provider: leftover.provider,
     ...(leftover.ref ? { providerRef: leftover.ref } : {}),
   };
-  if (!backedUp) {
+  let recorded = backedUp;
+  /** Records the backup job, or moves the recorded one; an earlier record survives a failure. */
+  const record = async (availableAt?: Date) => {
     try {
-      await deps.jobs.enqueue(connectionCleanupJob(leftover, cleanupBackupAt()));
+      await deps.jobs.enqueue(connectionCleanupJob(leftover, availableAt));
+      recorded = true;
     } catch (error) {
-      getLogger().error("connections.begin could not record its leftover cleanup", error, where);
+      getLogger().warn("connections.begin could not record its leftover cleanup", {
+        error,
+        ...where,
+      });
     }
-  }
+  };
+  /** Leaves an unfinished removal to the job, and says so when nothing is left to retry it. */
+  const handOver = async (availableAt?: Date) => {
+    await record(availableAt);
+    if (recorded) return;
+    getLogger().error(
+      "connections.begin leftover cleanup has no backup job; remove the authorization at the provider by hand",
+      { spaceId: leftover.spaceId, userId: leftover.userId, ...where },
+    );
+  };
+  if (!recorded) await record(cleanupBackupAt());
+  let outcome: ConnectionCleanupOutcome;
   try {
-    // Not the request signal: a caller that hangs up must not cut the removal short.
-    await dropLeftoverAuthorization(
+    // Its own time budget, not the request signal: a caller that hangs up must not cut it short.
+    outcome = await dropLeftoverAuthorization(
       deps.prisma,
       connector,
       leftover,
-      connectionContext(
-        leftover,
-        "connections.begin",
-        AbortSignal.timeout(CONNECTION_CLEANUP_ATTEMPT_MS),
-      ),
+      "connections.begin",
     );
   } catch (error) {
     getLogger().error("connections.begin leftover cleanup failed; retrying", error, where);
-    // A backup already recorded still runs at its own time when this cannot reach the queue.
-    await bestEffort(
-      "retry leftover connection cleanup now",
-      deps.jobs.enqueue(connectionCleanupJob(leftover)),
-    );
+    await handOver();
+    return;
+  }
+  if (outcome !== "done") {
+    await handOver(connectionCleanupRetryAt(outcome));
     return;
   }
   await bestEffort(
@@ -135,6 +139,33 @@ async function removeLeftoverAuthorization(
 
 function cleanupBackupAt(): Date {
   return new Date(Date.now() + CONNECTION_CLEANUP_BACKUP_MS);
+}
+
+/**
+ * Whether the row holds a begin's result although saving it reported a failure: a commit can
+ * land without its answer arriving. A read that fails too counts as not saved.
+ */
+async function savedBeginResult(
+  deps: Pick<RouterDeps, "prisma">,
+  actor: Pick<Actor, "spaceId" | "userId">,
+  connectionId: string,
+  state: string,
+): Promise<boolean> {
+  try {
+    const saved = await deps.prisma.connection.count({
+      where: {
+        id: connectionId,
+        spaceId: actor.spaceId,
+        userId: actor.userId,
+        providerRef: state,
+        status: { in: ["connected", "pending", "error"] },
+      },
+    });
+    return saved > 0;
+  } catch (error) {
+    getLogger().warn("connections.begin could not check whether its result was saved", { error });
+    return false;
+  }
 }
 
 export async function beginConnection(
@@ -213,46 +244,50 @@ export async function beginConnection(
     );
     // Re-take the provider lock and only advance still-pending rows so a
     // concurrent revoke cannot be overwritten back to pending/connected.
-    let busy = false;
-    const applied = await providerLockTransaction(
-      deps.prisma,
-      providerScopeKey(context.actor, input.connectorId, input.provider),
-      async (tx) => {
-        await lockProviderConnectionScope(tx, context.actor, input.connectorId, input.provider);
-        const updated = await tx.connection.updateMany({
-          where: {
-            id: row.id,
-            spaceId: context.actor.spaceId,
-            userId: context.actor.userId,
-            status: "pending",
-          },
-          data: {
-            status: auth.authorizationUrl ? "pending" : "connected",
-            providerRef: auth.state || null,
-            metadata: { state: auth.state },
-          },
-        });
-        if (updated.count > 0) return true;
-        // Lost to a revoke: removing what begin left at the provider commits with that outcome.
-        if (leftover)
-          await deps.jobs.enqueueIn(tx, connectionCleanupJob(leftover, cleanupBackupAt()));
-        return false;
-      },
-    ).catch((error: unknown) => {
-      if (!(error instanceof ProviderTransactionBusyError)) throw error;
-      busy = true;
-      return false;
-    });
-    if (applied && !auth.authorizationUrl) {
-      await recordSecurityEvent(connectionCreatedEvent("connections.begin", row.id, context.actor));
+    let applied: boolean;
+    try {
+      applied = await providerLockTransaction(
+        deps.prisma,
+        providerScopeKey(context.actor, input.connectorId, input.provider),
+        async (tx) => {
+          await lockProviderConnectionScope(tx, context.actor, input.connectorId, input.provider);
+          const updated = await tx.connection.updateMany({
+            where: {
+              id: row.id,
+              spaceId: context.actor.spaceId,
+              userId: context.actor.userId,
+              status: "pending",
+            },
+            data: {
+              status: auth.authorizationUrl ? "pending" : "connected",
+              providerRef: auth.state || null,
+              metadata: { state: auth.state },
+            },
+          });
+          if (updated.count > 0) return true;
+          // Lost to a revoke: removing what begin left at the provider commits with that outcome.
+          if (leftover)
+            await deps.jobs.enqueueIn(tx, connectionCleanupJob(leftover, cleanupBackupAt()));
+          return false;
+        },
+      );
+    } catch (error) {
+      // The slot stayed busy, or the transaction or its job write failed, after the provider had
+      // already answered. Unless the row holds the result after all, nothing refers to what the
+      // provider created, so remove it by its own id, or the app's accounts no local row
+      // references, never by a provider-wide slug delete that would take sibling accounts too.
+      const unsaved =
+        error instanceof ProviderTransactionBusyError ||
+        !(await savedBeginResult(deps, context.actor, row.id, auth.state));
+      if (leftover && unsaved) await removeLeftoverAuthorization(deps, connector, leftover, false);
+      throw error;
     }
     if (!applied) {
-      // Revoke won the race, or the result could not be saved in time. Remove the remote
-      // authorization by its own id, or the app's accounts no local row references, never
-      // by a provider-wide slug delete that would take sibling accounts with it.
-      if (leftover) await removeLeftoverAuthorization(deps, connector, leftover, !busy);
-      if (busy) throw new ProviderTransactionBusyError();
+      if (leftover) await removeLeftoverAuthorization(deps, connector, leftover, true);
       throw new IsolationError();
+    }
+    if (!auth.authorizationUrl) {
+      await recordSecurityEvent(connectionCreatedEvent("connections.begin", row.id, context.actor));
     }
     return { connectionId: row.id, authorizationUrl: auth.authorizationUrl };
   } catch (error) {
@@ -372,12 +407,24 @@ export async function completeConnection(
                 revokedContext,
               );
             } else {
-              await dropUnreferencedAccounts(
+              const scope = {
+                ...owner,
+                connectorId: existing.connectorId,
+                provider: existing.provider,
+              };
+              const outcome = await dropUnreferencedAccounts(
                 tx,
                 transactionConnector,
-                { ...owner, connectorId: existing.connectorId, provider: existing.provider },
+                scope,
                 revokedContext,
               );
+              // A sibling still connecting may own any of the accounts. Nothing polls this row
+              // again, so a job removes the unreferenced ones once the sibling has saved its own.
+              if (outcome === "undecided")
+                await deps.jobs.enqueueIn(
+                  tx,
+                  connectionCleanupJob(scope, connectionCleanupRetryAt("undecided")),
+                );
             }
           } catch (error) {
             getLogger().error("connections.complete remote cleanup failed for revoked row", error, {
@@ -563,6 +610,7 @@ export async function revokeConnection(
 ) {
   type RemoteRevoke = {
     connectorId: string;
+    provider: string;
     connectionRef: string;
     accountSpecific: boolean;
   };
@@ -704,6 +752,7 @@ export async function revokeConnection(
       return {
         remote: {
           connectorId: row.connectorId,
+          provider: row.provider,
           connectionRef,
           accountSpecific,
         },
@@ -752,6 +801,28 @@ export async function revokeConnection(
         // The caller hung up mid-revoke: the row is already handled, nothing to report.
         if (context.signal?.aborted) getLogger().warn(message, where);
         else getLogger().error(message, error, where);
+        // The account may still be active at the provider, and no row can remove it any more.
+        try {
+          await deps.jobs.enqueue(
+            connectionCleanupJob({
+              spaceId: context.actor.spaceId,
+              userId: context.actor.userId,
+              connectorId: outcome.remote.connectorId,
+              provider: outcome.remote.provider,
+              ref: outcome.remote.connectionRef,
+            }),
+          );
+        } catch (unrecorded) {
+          getLogger().error(
+            "connections.revoke could not record its cleanup; remove the authorization at the provider by hand",
+            unrecorded,
+            {
+              ...where,
+              provider: outcome.remote.provider,
+              providerRef: outcome.remote.connectionRef,
+            },
+          );
+        }
       }
       if (error instanceof ORPCError) throw error;
       throw new ORPCError("BAD_REQUEST", { message: sanitizeIntegrationError(error) });

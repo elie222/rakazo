@@ -173,7 +173,10 @@ export function createBackgroundJobHandlers(deps: {
       async (payload) => {
         // Fail rather than finish, so the queue keeps the job for a process that has connectors.
         if (!deps.connectors) throw new Error("connection cleanup has no connector registry");
-        await retryConnectionCleanup({ prisma: deps.prisma, connectors: deps.connectors }, payload);
+        await retryConnectionCleanup(
+          { prisma: deps.prisma, connectors: deps.connectors, jobs: deps.jobs },
+          payload,
+        );
       },
     ),
     // The previous release's jobs, drained once by this one.

@@ -1,12 +1,15 @@
 import type {
   AdapterContext,
   BackgroundJobPayloads,
+  JobPublisher,
   ManagedConnectorProvider,
 } from "@rakazo/adapter-kit";
+import { connectionCleanupJob, RetryJobLaterError } from "@rakazo/adapter-kit";
 import type { Prisma, PrismaClient } from "@rakazo/db";
-import { runProviderTransaction } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
+import { ProviderTransactionBusyError, runProviderTransaction } from "@rakazo/db";
+import { getLogger, unwrapJobPayload } from "@rakazo/logging";
 import { advisoryLock } from "./advisory-lock.js";
+import { sanitizeIntegrationError } from "./composio-connector.js";
 import type { ConnectorRegistry } from "./connector-registry.js";
 import { prepareManagedConnectorForTransaction } from "./integration-provider-settings.js";
 
@@ -16,12 +19,41 @@ type ConnectionCleanup = BackgroundJobPayloads["connection.cleanup"];
 /** Connection flows hold the provider lock across provider calls (45s budget plus database work). */
 export const PROVIDER_LOCK_TRANSACTION_MS = 60_000;
 
-/** One attempt's provider budget, short of the lock transaction's timeout. */
+/**
+ * One attempt's provider budget, short of the lock transaction's timeout. It starts when the
+ * provider call does, never while the attempt is still waiting for its scope.
+ */
 export const CONNECTION_CLEANUP_ATTEMPT_MS = 45_000;
 
-/** When the backup job runs if the direct attempt never reports back: its lock wait, its call, a margin. */
+/** How long a cleanup waits for its scope's slot before leaving the scope to the flow that has it. */
+const CONNECTION_CLEANUP_SLOT_WAIT_MS = 2_000;
+
+/** When the backup job runs if the direct attempt never reports back: its slot wait, its call, a margin. */
 export const CONNECTION_CLEANUP_BACKUP_MS =
-  PROVIDER_LOCK_TRANSACTION_MS + CONNECTION_CLEANUP_ATTEMPT_MS + 15_000;
+  CONNECTION_CLEANUP_SLOT_WAIT_MS + CONNECTION_CLEANUP_ATTEMPT_MS + 15_000;
+
+/** When a cleanup that found another flow holding its scope runs again. */
+const CONNECTION_CLEANUP_BUSY_RETRY_MS = 15_000;
+
+/** The soonest a cleanup looks again at accounts a sibling's unfinished connection may still own. */
+const CONNECTION_CLEANUP_UNDECIDED_RETRY_MS = 60_000;
+
+/**
+ * How one attempt ended. Only `done` (removed, or nothing left to remove) lets the backup job
+ * go: `busy` means another flow holds the scope, `undecided` that a sibling's unfinished
+ * connection may still own the accounts.
+ */
+export type ConnectionCleanupOutcome = "done" | "busy" | "undecided";
+
+/** When the backup job of an attempt that could not finish runs again. */
+export function connectionCleanupRetryAt(outcome: "busy" | "undecided"): Date {
+  return new Date(
+    Date.now() +
+      (outcome === "busy"
+        ? CONNECTION_CLEANUP_BUSY_RETRY_MS
+        : CONNECTION_CLEANUP_UNDECIDED_RETRY_MS),
+  );
+}
 
 const ACTIVE_STATUSES = ["connected", "pending", "error"];
 
@@ -46,6 +78,18 @@ export async function lockProviderConnectionScope(
   provider: string,
 ): Promise<void> {
   await advisoryLock(tx, "connection-provider", providerScopeKey(owner, connectorId, provider));
+}
+
+/** Like lockProviderConnectionScope, but returns false instead of waiting for a holder. */
+export async function tryLockProviderConnectionScope(
+  tx: Prisma.TransactionClient,
+  owner: { spaceId: string; userId: string },
+  connectorId: string,
+  provider: string,
+): Promise<boolean> {
+  const [row] = await tx.$queryRaw<Array<{ locked: boolean }>>`
+    SELECT pg_try_advisory_xact_lock(hashtext('connection-provider'), hashtext(${providerScopeKey(owner, connectorId, provider)})) AS locked`;
+  return row?.locked === true;
 }
 
 /**
@@ -134,14 +178,15 @@ export async function dropAuthorization(
 /**
  * Delete the provider's accounts for one app that no active local row references. The caller
  * holds the provider lock, so a concurrent complete cannot save an account id this deletes.
+ * `undecided` while a sibling has not saved its account id yet: any of them may be its own.
  */
 export async function dropUnreferencedAccounts(
   tx: Pick<Prisma.TransactionClient, "connection">,
   connector: ManagedConnectorProvider,
   scope: ConnectionScope,
   context: AdapterContext,
-): Promise<void> {
-  if (!connector.revokeUnreferencedAccounts) return;
+): Promise<"done" | "undecided"> {
+  if (!connector.revokeUnreferencedAccounts) return "done";
   const kept = await tx.connection.findMany({
     where: {
       spaceId: scope.spaceId,
@@ -156,76 +201,161 @@ export async function dropUnreferencedAccounts(
     kept.map((entry) => entry.providerRef),
     scope.provider,
   );
-  // A sibling without a concrete account id may own any of them.
-  if (!canRevokeUnreferenced) return;
+  if (!canRevokeUnreferenced) return "undecided";
   await connector.revokeUnreferencedAccounts(scope.provider, keepIds, context);
+  return "done";
 }
 
-/** One attempt at removing what a lost begin left behind. Rejects when it could not finish. */
+function cleanupContext(
+  owner: { spaceId: string; userId: string },
+  operationId: string,
+): AdapterContext {
+  return {
+    operationId,
+    traceId: operationId,
+    spaceId: owner.spaceId,
+    userId: owner.userId,
+    signal: AbortSignal.timeout(CONNECTION_CLEANUP_ATTEMPT_MS),
+  };
+}
+
+/**
+ * Runs `fn` holding the scope's provider lock, or answers `busy` without waiting when another
+ * flow has it: that flow may be mid provider call, and waiting it out would pin a pooled
+ * connection and leave no time for this attempt's own call.
+ */
+async function whileScopeIsFree<T>(
+  prisma: PrismaClient,
+  scope: ConnectionScope,
+  fn: (tx: Prisma.TransactionClient) => Promise<T>,
+): Promise<T | "busy"> {
+  try {
+    return await providerLockTransaction(
+      prisma,
+      providerScopeKey(scope, scope.connectorId, scope.provider),
+      async (tx) =>
+        (await tryLockProviderConnectionScope(tx, scope, scope.connectorId, scope.provider))
+          ? fn(tx)
+          : "busy",
+      CONNECTION_CLEANUP_SLOT_WAIT_MS,
+    );
+  } catch (error) {
+    if (error instanceof ProviderTransactionBusyError) return "busy";
+    throw error;
+  }
+}
+
+/**
+ * The direct attempt at removing what a begin whose result was not saved left behind. Rejects
+ * when the provider or the database could not be asked.
+ */
 export async function dropLeftoverAuthorization(
   prisma: PrismaClient,
   connector: ManagedConnectorProvider,
   leftover: ConnectionCleanup,
-  context: AdapterContext,
-): Promise<void> {
+  operationId: string,
+): Promise<ConnectionCleanupOutcome> {
   const { ref } = leftover;
-  if (ref) return dropAuthorization(connector, { ...leftover, ref }, context);
-  await providerLockTransaction(
-    prisma,
-    providerScopeKey(leftover, leftover.connectorId, leftover.provider),
-    async (tx) => {
-      await lockProviderConnectionScope(tx, leftover, leftover.connectorId, leftover.provider);
-      await dropUnreferencedAccounts(tx, connector, leftover, context);
-    },
+  if (ref) {
+    await dropAuthorization(connector, { ...leftover, ref }, cleanupContext(leftover, operationId));
+    return "done";
+  }
+  return whileScopeIsFree(prisma, leftover, (tx) =>
+    dropUnreferencedAccounts(tx, connector, leftover, cleanupContext(leftover, operationId)),
   );
 }
 
-/** The backup job: the queue retries a rejection, so nothing here catches one. */
+function cleanupReferences(cleanup: ConnectionCleanup) {
+  return {
+    spaceId: cleanup.spaceId,
+    userId: cleanup.userId,
+    connectorId: cleanup.connectorId,
+    provider: cleanup.provider,
+    ...(cleanup.ref ? { providerRef: cleanup.ref } : {}),
+  };
+}
+
+/**
+ * The backup job. It finishes only when the removal happened or nothing is left to remove;
+ * every other ending rejects, so the queue retries it, or reschedules it under its own key.
+ */
 export async function retryConnectionCleanup(
-  deps: { prisma: PrismaClient; connectors: Pick<ConnectorRegistry, "managed"> },
+  deps: {
+    prisma: PrismaClient;
+    connectors: Pick<ConnectorRegistry, "managed">;
+    jobs: Pick<JobPublisher, "enqueue">;
+  },
   payload: ConnectionCleanup,
 ): Promise<void> {
   const configured = deps.connectors.managed(payload.connectorId);
-  const prepared = configured ? await prepareManagedConnectorForTransaction(configured) : undefined;
-  const connector = prepared?.provider;
-  if (!connector) {
-    // Without the connector's credentials nothing can reach the provider, now or on a retry.
-    getLogger().error("connection cleanup dropped: its connector is no longer configured", {
-      connectorId: payload.connectorId,
-      provider: payload.provider,
-      ...(payload.ref ? { providerRef: payload.ref } : {}),
-    });
+  if (!configured) {
+    // The registry lists every managed connector of this release, with or without credentials,
+    // so an id it does not list is a connector this deployment no longer has: no retry can reach
+    // its provider.
+    getLogger().error(
+      "connection cleanup abandoned: this deployment has no such connector; remove the authorization at the provider by hand",
+      cleanupReferences(payload),
+    );
     return;
   }
-  const context: AdapterContext = {
-    operationId: "connection.cleanup",
-    traceId: "connection.cleanup",
-    spaceId: payload.spaceId,
-    userId: payload.userId,
-    signal: AbortSignal.timeout(CONNECTION_CLEANUP_ATTEMPT_MS),
-  };
-  await providerLockTransaction(
-    deps.prisma,
-    providerScopeKey(payload, payload.connectorId, payload.provider),
-    async (tx) => {
-      await lockProviderConnectionScope(tx, payload, payload.connectorId, payload.provider);
-      if (prepared.recheck && !(await prepared.recheck(tx)))
-        throw new Error("Integration credentials changed during connection cleanup");
-      const { ref } = payload;
-      if (!ref) return dropUnreferencedAccounts(tx, connector, payload, context);
-      // A flow that ran since the failure may have saved this account on a row, which owns it now.
-      const adopted = await tx.connection.findFirst({
-        where: {
-          spaceId: payload.spaceId,
-          userId: payload.userId,
-          connectorId: payload.connectorId,
-          provider: payload.provider,
-          providerRef: ref,
-          status: { in: ACTIVE_STATUSES },
-        },
-        select: { id: true },
-      });
-      if (!adopted) await dropAuthorization(connector, { ...payload, ref }, context);
+  const prepared = await prepareManagedConnectorForTransaction(configured);
+  const connector = prepared.provider;
+  // Credentials that are missing now may be saved again, so this attempt fails and is retried.
+  if (!connector) throw new Error("connection cleanup has no credentials for its connector");
+  const outcome = await whileScopeIsFree(deps.prisma, payload, async (tx) => {
+    if (prepared.recheck && !(await prepared.recheck(tx)))
+      throw new Error("Integration credentials changed during connection cleanup");
+    const context = cleanupContext(payload, "connection.cleanup");
+    const { ref } = payload;
+    if (!ref) return dropUnreferencedAccounts(tx, connector, payload, context);
+    // A flow that ran since the failure may have saved this account on a row, which owns it now.
+    const adopted = await tx.connection.findFirst({
+      where: {
+        spaceId: payload.spaceId,
+        userId: payload.userId,
+        connectorId: payload.connectorId,
+        provider: payload.provider,
+        providerRef: ref,
+        status: { in: ACTIVE_STATUSES },
+      },
+      select: { id: true },
+    });
+    if (!adopted) await dropAuthorization(connector, { ...payload, ref }, context);
+    return "done" as const;
+  });
+  if (outcome === "busy") {
+    // Not a failed attempt: replacing the job under its key starts it afresh, so a scope that
+    // other flows keep busy never uses up its retries.
+    await deps.jobs.enqueue(connectionCleanupJob(payload, connectionCleanupRetryAt("busy")));
+    return;
+  }
+  if (outcome === "undecided") throw new RetryJobLaterError(CONNECTION_CLEANUP_UNDECIDED_RETRY_MS);
+}
+
+function isConnectionCleanup(payload: unknown): payload is ConnectionCleanup {
+  return (
+    payload !== null &&
+    typeof payload === "object" &&
+    "connectorId" in payload &&
+    "provider" in payload &&
+    "spaceId" in payload &&
+    "userId" in payload
+  );
+}
+
+/** The queue emits this once a `connection.cleanup` job has used its last attempt. */
+export function recordConnectionCleanupAttemptsExhausted(
+  job: { task_identifier: string; payload: unknown; attempts: number },
+  error: unknown,
+): void {
+  if (job.task_identifier !== "connection.cleanup") return;
+  const { payload } = unwrapJobPayload(job.payload);
+  getLogger().error(
+    "connection cleanup gave up; remove the authorization at the provider by hand",
+    {
+      ...(isConnectionCleanup(payload) ? cleanupReferences(payload) : {}),
+      "job.attempts": job.attempts,
+      reason: sanitizeIntegrationError(error),
     },
   );
 }

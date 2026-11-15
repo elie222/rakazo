@@ -1,11 +1,14 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { connectionCleanupJob, connectionCleanupJobKey } from "@rakazo/adapter-kit";
+import type { InMemoryJobQueue } from "@rakazo/adapters";
 import {
   ComposioConnector,
   EncryptedSecretStore,
   FakeComposioClient,
   InstalledConnectorProvider,
+  lockProviderConnectionScope,
   PipedreamConnector,
   ThirdPartyConnectorEmulator,
 } from "@rakazo/adapters";
@@ -32,6 +35,7 @@ describeWithDatabase("Composio catalog reconciliation", () => {
   let app: App;
   let fake: FakeComposioClient;
   let composio: ComposioConnector;
+  let pipedream: PipedreamConnector;
   let thirdParties: ThirdPartyConnectorEmulator;
   let connectionOrdinal = 0;
   const stamp = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -42,7 +46,7 @@ describeWithDatabase("Composio catalog reconciliation", () => {
     fake = new FakeComposioClient();
     composio = new ComposioConnector({ client: fake });
     thirdParties = new ThirdPartyConnectorEmulator();
-    const pipedream = new PipedreamConnector(
+    pipedream = new PipedreamConnector(
       {
         clientId: "fake-client-id",
         clientSecret: "fake-client-secret",
@@ -241,6 +245,172 @@ describeWithDatabase("Composio catalog reconciliation", () => {
       async () => expect(await composio.listConnectedAccountIds(actor.userId, "GMAIL")).toEqual([]),
       { timeout: 10_000 },
     );
+  });
+
+  /** The queued cleanup for `cleanup`, while the test's in-memory queue still holds one. */
+  const queuedCleanup = (cleanup: Parameters<typeof connectionCleanupJobKey>[0]) =>
+    (handles.jobs as unknown as InMemoryJobQueue).keyedJob(connectionCleanupJobKey(cleanup));
+  const cleanupFailures = () =>
+    handles.backgroundFailures?.().find((failure) => failure.name === "connection.cleanup")
+      ?.count ?? 0;
+  /** Runs the queued cleanup as the queue does once it is due. */
+  async function runCleanupNow(cleanup: Parameters<typeof connectionCleanupJob>[0]) {
+    await handles.jobs.enqueue(connectionCleanupJob(cleanup));
+    await handles.awaitIdle?.();
+  }
+
+  it("removes the authorization when saving a begin's result fails, once the provider answers again", async () => {
+    const cookie = await signup(app, `unsaved-begin-${stamp}@rakazo.test`, "Unsaved Begin");
+    const actor = await rpc<Actor>(app, cookie, "me");
+    const begin = composio.begin.bind(composio);
+    vi.spyOn(composio, "begin").mockImplementation(async (request, context) => {
+      const started = await begin(request, context);
+      await asSystem(handles.prisma).connection.updateMany({
+        where: { spaceId: actor.spaceId, userId: actor.userId, provider: "GMAIL" },
+        data: { status: "revoked" },
+      });
+      return started;
+    });
+    // Recording the lost race fails, which fails the transaction that was to save the result.
+    vi.spyOn(handles.jobs, "enqueueIn").mockRejectedValueOnce(new Error("queue unavailable"));
+    const cancel = composio.cancelAuthorizationRequest.bind(composio);
+    const cancelled = vi
+      .spyOn(composio, "cancelAuthorizationRequest")
+      .mockImplementation(cancel)
+      .mockRejectedValueOnce(new Error("provider unavailable"));
+
+    await expect(
+      rpc(app, cookie, "connections/begin", {
+        connectorId: "composio",
+        provider: "GMAIL",
+        displayName: "Gmail",
+      }),
+    ).rejects.toThrow();
+
+    await vi.waitFor(() => expect(cancelled).toHaveBeenCalledTimes(2), { timeout: 10_000 });
+    await vi.waitFor(
+      async () => expect(await composio.listConnectedAccountIds(actor.userId, "GMAIL")).toEqual([]),
+      { timeout: 10_000 },
+    );
+  });
+
+  it("leaves a busy scope alone, removes the authorization once it is free, and can run again", async () => {
+    const cookie = await signup(app, `busy-cleanup-${stamp}@rakazo.test`, "Busy Cleanup");
+    const actor = await rpc<Actor>(app, cookie, "me");
+    await connectRemote(composio, actor, "GMAIL");
+    const [ref] = await composio.listConnectedAccountIds(actor.userId, "GMAIL");
+    const cleanup = {
+      spaceId: actor.spaceId,
+      userId: actor.userId,
+      connectorId: "composio",
+      provider: "GMAIL",
+      ref: ref!,
+    };
+    const cancelled = vi.spyOn(composio, "cancelAuthorizationRequest");
+    const failures = cleanupFailures();
+
+    // Another flow holds this user's scope for the app, as it does across its provider call.
+    let lockTaken = () => {};
+    const locked = new Promise<void>((resolve) => {
+      lockTaken = resolve;
+    });
+    let release = () => {};
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const holder = runAsSystem("hold a connection scope", () =>
+      handles.prisma.$transaction(
+        async (tx) => {
+          await lockProviderConnectionScope(tx, actor, "composio", "GMAIL");
+          lockTaken();
+          await released;
+        },
+        { timeout: 30_000 },
+      ),
+    );
+    await locked;
+    try {
+      await runCleanupNow(cleanup);
+      expect(cancelled).not.toHaveBeenCalled();
+      // Not a failed try: it waits under its own key for a little later.
+      expect(cleanupFailures()).toBe(failures);
+      expect(queuedCleanup(cleanup)?.availableAt?.getTime()).toBeGreaterThan(Date.now());
+    } finally {
+      release();
+      await holder;
+    }
+
+    await runCleanupNow(cleanup);
+    expect(await composio.listConnectedAccountIds(actor.userId, "GMAIL")).toEqual([]);
+    expect(queuedCleanup(cleanup)).toBeUndefined();
+
+    // A removal that already happened is safe to repeat.
+    await runCleanupNow(cleanup);
+    expect(cancelled).toHaveBeenCalledTimes(2);
+    expect(cleanupFailures()).toBe(failures);
+  });
+
+  it("keeps the cleanup of a lost begin until a sibling has saved its account", async () => {
+    const cookie = await signup(app, `sibling-cleanup-${stamp}@rakazo.test`, "Sibling Cleanup");
+    const actor = await rpc<Actor>(app, cookie, "me");
+    const cleanup = {
+      spaceId: actor.spaceId,
+      userId: actor.userId,
+      connectorId: "pipedream",
+      provider: "linear",
+    };
+    const swept = vi.spyOn(pipedream, "revokeUnreferencedAccounts");
+    const deletions = () =>
+      thirdParties.records.filter(
+        (record) =>
+          record.provider === "pipedream" &&
+          record.operation === "revoke" &&
+          record.app === "linear",
+      ).length;
+    const deleted = deletions();
+    const start = () =>
+      rpc<{ connectionId: string }>(app, cookie, "connections/begin", {
+        connectorId: "pipedream",
+        provider: "linear",
+        displayName: "Linear",
+      });
+
+    // A sibling is still connecting: its row names the app, not yet an account.
+    const sibling = await start();
+    const begin = pipedream.begin.bind(pipedream);
+    vi.spyOn(pipedream, "begin").mockImplementationOnce(async (request, context) => {
+      const started = await begin(request, context);
+      // The second connection is removed while the provider is still answering.
+      await asSystem(handles.prisma).connection.updateMany({
+        where: {
+          spaceId: actor.spaceId,
+          userId: actor.userId,
+          provider: "linear",
+          id: { not: sibling.connectionId },
+        },
+        data: { status: "revoked" },
+      });
+      return started;
+    });
+    await expect(start()).rejects.toThrow();
+
+    // Which accounts are in use cannot be told yet, so nothing is deleted and the job stays.
+    expect(swept).not.toHaveBeenCalled();
+    expect(queuedCleanup(cleanup)).toBeDefined();
+    await runCleanupNow(cleanup);
+    expect(swept).not.toHaveBeenCalled();
+
+    await expect(
+      rpc<{ status: string }>(app, cookie, "connections/complete", {
+        connectionId: sibling.connectionId,
+      }),
+    ).resolves.toMatchObject({ status: "connected" });
+
+    await runCleanupNow(cleanup);
+    expect(swept).toHaveBeenCalledWith("linear", ["account-linear"], expect.anything());
+    expect(queuedCleanup(cleanup)).toBeUndefined();
+    // The sibling's own account is kept.
+    expect(deletions()).toBe(deleted);
   });
 
   it("marks a connected account Composio reports dead as needing reconnect", async () => {
