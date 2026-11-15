@@ -16,6 +16,8 @@ import {
   resolvePurchaseCardFill,
   resolvePurchasePayTokenFill,
 } from "./purchase-service.js";
+import type { SecretCleanup } from "./secret-cleanup.js";
+import { retrySecretCleanup } from "./secret-cleanup.js";
 
 vi.mock("./payment-wallets.js", () => ({
   withPaymentWalletCredential: async (
@@ -46,13 +48,14 @@ function setup(paidRequestFetch?: typeof fetch) {
       return { id: ref, ref, ciphertext: ref };
     },
     load: async (ref: string) => secrets.get(ref)!,
-    delete: async (ref: string) => {
+    delete: vi.fn(async (ref: string) => {
       secrets.delete(ref);
-    },
-  } as never;
+    }),
+    isRemote: () => true,
+  };
   const deps = {
     prisma: db.prisma,
-    secretStore,
+    secretStore: secretStore as never,
     jobs: queue.jobs,
     paymentWallet: wallet,
     paidRequestFetch: {
@@ -72,7 +75,7 @@ function setup(paidRequestFetch?: typeof fetch) {
     executePurchaseTool(deps, context(operationId), { threadId: fixture.threadId }, name, args);
   const paid = (args: Record<string, unknown>, operationId?: string) =>
     executePaidRequest(deps, context(operationId), { threadId: fixture.threadId }, args);
-  return { ...db, ...queue, wallet, deps, call, paid, secrets };
+  return { ...db, ...queue, wallet, deps, call, paid, secrets, secretStore };
 }
 
 describe("request_purchase", () => {
@@ -590,6 +593,42 @@ describe("paid_request", () => {
     });
     expect(api.seen.every((call) => !call.authorization)).toBe(true);
     expect(env.purchases[0]!.status).toBe("approved");
+  });
+
+  it("removes the sealed request of a purchase that was never recorded, retrying a failed removal", async () => {
+    const env = setup(paidApi().fetch);
+    const cleanup = { prisma: env.deps.prisma, secrets: env.secretStore };
+    env.wallet.createPurchase = async () => {
+      throw new PaymentWalletRequestRejected("The amount is over the wallet's limit.");
+    };
+    const refused = { error: "The amount is over the wallet's limit." };
+    expect((await env.paid(paidArgs)).result).toEqual(refused);
+    expect(env.secrets.size).toBe(0);
+
+    env.secretStore.delete.mockRejectedValueOnce(new Error("secret store unavailable"));
+    expect((await env.paid(paidArgs, "op-2")).result).toEqual(refused);
+    expect(env.secrets.size).toBe(1);
+    const unused = { kind: "purchase_request", recordId: "purchase-request:op-2" } as const;
+    const retry = env.enqueued.at(-1)!;
+    expect(retry).toMatchObject({
+      name: "secret.cleanup",
+      payload: { ...unused, ref: expect.any(String) },
+    });
+    expect(retry).not.toHaveProperty("availableAt");
+    expect(JSON.stringify(retry)).not.toContain("days");
+    await retrySecretCleanup(cleanup, retry.payload as SecretCleanup);
+    expect(env.secrets.size).toBe(0);
+  });
+
+  it("never removes the sealed request a recorded purchase still needs", async () => {
+    const { env } = await approvedPurchase();
+    const ref = env.purchases[0]!.requestCiphertext!;
+    await retrySecretCleanup(
+      { prisma: env.deps.prisma, secrets: env.secretStore },
+      { kind: "purchase_request", recordId: "purchase-request:op-1", ref },
+    );
+    expect(env.secretStore.delete).not.toHaveBeenCalled();
+    expect(env.secrets.has(ref)).toBe(true);
   });
 
   it("waits for the owner's approval", async () => {

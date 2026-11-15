@@ -278,8 +278,8 @@ it("keeps a completed reconnect successful when external cleanup needs a retry",
   expect(f.getInstallation()?.ciphertext).toBe("new-ref");
   expect(f.cleanupJobs.enqueue).toHaveBeenCalledWith(
     expect.objectContaining({
-      name: "messaging.credential-cleanup",
-      payload: { installationId: id, ref: "sealed-token" },
+      name: "secret.cleanup",
+      payload: { kind: "messaging_installation", recordId: id, ref: "sealed-token" },
     }),
   );
 });
@@ -292,6 +292,8 @@ it("keeps a completed disconnect successful when external cleanup needs a retry"
   await expect(f.manager.remove(actor, id)).resolves.toBeUndefined();
   expect(f.getInstallation()).toBeNull();
   expect(f.cleanupJobs.enqueue).toHaveBeenCalledWith(
-    expect.objectContaining({ payload: { installationId: id, ref: "sealed-token" } }),
+    expect.objectContaining({
+      payload: { kind: "messaging_installation", recordId: id, ref: "sealed-token" },
+    }),
   );
 });

@@ -12,6 +12,7 @@ import { IsolationError, runAsSystem } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { credentialDigest } from "./credential-digest.js";
 import { installationSenderAddress } from "./installed-messaging-surface.js";
+import { secretCleanupJob } from "./secret-cleanup.js";
 
 /** OAuth state is short-lived, single-use and tied to a user, space and bot. */
 export class MessagingInstallations implements MessagingInstallationStore {
@@ -310,12 +311,9 @@ export class MessagingInstallations implements MessagingInstallationStore {
     } catch {
       getLogger().warn("messaging credential cleanup failed; queuing retry");
       try {
-        await this.cleanupJobs?.enqueue({
-          name: "messaging.credential-cleanup",
-          payload: { installationId, ref },
-          replaceKey: `messaging.credential-cleanup:${credentialDigest(ref)}`,
-          maxAttempts: 20,
-        });
+        await this.cleanupJobs?.enqueue(
+          secretCleanupJob({ kind: "messaging_installation", recordId: installationId, ref }),
+        );
       } catch {
         getLogger().warn("messaging credential cleanup retry could not be queued");
       }

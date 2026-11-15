@@ -24,6 +24,7 @@ import {
   walletSupports,
   withPurchaseWallet,
 } from "./purchase-service.js";
+import { cleanUpUnsavedSecret, purchaseRequestRecordId } from "./secret-cleanup.js";
 import type { SafeHttpResponse } from "./web-ssrf.js";
 import { fetchSafeHttpRequest } from "./web-ssrf.js";
 
@@ -82,7 +83,7 @@ export async function executePaidRequest(
     });
   }
   // Headers and body can hold personal data or keys, so the request to send again is sealed.
-  const recordId = `purchase-request:${context.operationId}`;
+  const recordId = purchaseRequestRecordId(context.operationId);
   const sealed = await deps.secretStore.put(JSON.stringify(request), context, { recordId });
   const url = new URL(request.url);
   const result = await createPurchase(deps, provider, context, run, {
@@ -100,7 +101,11 @@ export async function executePaidRequest(
     select: { requestCiphertext: true },
   });
   if (saved?.requestCiphertext !== sealed.ciphertext) {
-    await deps.secretStore.delete(sealed.ciphertext, { recordId }).catch(() => undefined);
+    // No purchase holds this copy: the wallet refused, or a replay recorded its own.
+    await cleanUpUnsavedSecret(
+      { prisma: deps.prisma, secrets: deps.secretStore, jobs: deps.jobs },
+      { kind: "purchase_request", recordId, ref: sealed.ciphertext },
+    );
   }
   return plain(result);
 }
@@ -135,7 +140,7 @@ async function payApproved(
   }
   const request = JSON.parse(
     await deps.secretStore.load(purchase.requestCiphertext!, {
-      recordId: `purchase-request:${purchase.operationKey}`,
+      recordId: purchaseRequestRecordId(purchase.operationKey),
     }),
   ) as StoredRequest;
 

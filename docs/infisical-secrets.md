@@ -56,6 +56,9 @@ Agent secret transaction retries write a fresh remote key per attempt. Failed
 remote writes attempt deletion with an independent two-second cleanup deadline.
 Cleanup is best effort and failures produce redacted warnings. Retry failed
 cleanup before revoking machine-identity access; there is no age-based pruning.
+Computer settings, messaging credentials and unused paid-request copies go
+further: a `secret.cleanup` background job, recorded with the write, retries a
+failed deletion and skips a ref that is in use again.
 A process crash between the external write and database persistence can leave an
 unreferenced key; reconcile such keys against database refs during maintenance.
 

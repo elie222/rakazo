@@ -59,6 +59,16 @@ const payloadSchemas = {
   "messaging.reply": z.object({ runId: z.string().min(1) }),
   "messaging.deliver": z.object({ runId: z.string().min(1).optional() }),
   "messaging.progress": z.object({ runId: z.string().min(1) }),
+  "secret.cleanup": z.object({
+    kind: z.enum([
+      "secret_row",
+      "messaging_installation",
+      "deployment_computer_provider",
+      "purchase_request",
+    ]),
+    recordId: z.string().min(1),
+    ref: z.string().min(1),
+  }),
   "messaging.credential-cleanup": z.object({
     installationId: z.string().min(1),
     ref: z.string().min(1),
