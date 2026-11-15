@@ -50,6 +50,8 @@ export const BUILTIN_TOOL_NAMES = [
   "generate_image",
   "generate_video",
   "add_mcp_server",
+  "list_mcp_servers",
+  "request_mcp_server",
   "remember",
   "save_shared_memory",
   "web_search",

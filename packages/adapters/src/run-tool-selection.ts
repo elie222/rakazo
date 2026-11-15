@@ -20,6 +20,7 @@ export const READ_ONLY_AGENT_TOOLS = new Set([
   "computer_observe",
   "list_files",
   "list_fleet",
+  "list_mcp_servers",
   "read_file",
   "read_history",
   "read_email",

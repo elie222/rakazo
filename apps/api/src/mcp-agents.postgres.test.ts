@@ -5,6 +5,7 @@ import type { Actor } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { createDb, runAsSystem, runAsTenant } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { requestMcpServerFromTool } from "../../../packages/adapters/src/mcp-server-access.js";
 import type { RouterDeps } from "./router.js";
 import { createRouter } from "./router.js";
 
@@ -18,6 +19,7 @@ describe.skipIf(!enabled)("MCP server agents (PostgreSQL)", () => {
   const organizationId = `mcp-agents-org-${suffix}`;
   const secrets = new EncryptedSecretStore("fake-mcp-agents-test-encryption-key");
   const botIds = { chief: `mcp-agents-chief-${suffix}`, writer: `mcp-agents-writer-${suffix}` };
+  const jobs = { enqueue: vi.fn(async () => undefined) };
   const client = () =>
     createRouterClient(
       createRouter({
@@ -27,6 +29,7 @@ describe.skipIf(!enabled)("MCP server agents (PostgreSQL)", () => {
           resolveHostname: async () => [{ address: "203.0.113.10", family: 4 }],
         },
         events: { notify: vi.fn() },
+        jobs,
         env: { webOrigin: "http://localhost:5173", defaultProvider: "fake", defaultModel: "fake" },
         dataDir: "/tmp/mcp-agents-db-test",
       } as unknown as RouterDeps),
@@ -123,6 +126,85 @@ describe.skipIf(!enabled)("MCP server agents (PostgreSQL)", () => {
         client().mcp.servers.agents({ id: "other-server", allBots: true }),
       ).rejects.toThrow();
       expect((await client().mcp.servers.list())[0]?.allBots).toBe(true);
+    }),
+  );
+  it(
+    "connects a server a bot asked for in chat and lets the bot carry on",
+    asActor(async () => {
+      const server = await client().mcp.servers.create({
+        transport: "streamable_http",
+        slug: "ticket-desk",
+        name: "Ticket Desk",
+        endpoint: "https://mcp.ticket-desk.test/mcp",
+        headers: {},
+        enabled: true,
+      });
+      await client().mcp.servers.agents({ id: server.id, allBots: false, botIds: [] });
+      const scope = {
+        spaceId: actor.spaceId,
+        userId: actor.userId,
+        botId: botIds.writer,
+        threadId: `mcp-agents-thread-${suffix}`,
+      };
+      await prisma.thread.create({
+        data: {
+          id: scope.threadId,
+          spaceId: scope.spaceId,
+          userId: scope.userId,
+          botId: scope.botId,
+        },
+      });
+      const task = await prisma.task.create({
+        data: { ...scope, prompt: "Triage the open tickets", status: "running" },
+      });
+      const asking = await prisma.run.create({
+        data: { ...scope, taskId: task.id, status: "running", trigger: "user" },
+      });
+
+      const requested = await requestMcpServerFromTool(
+        { prisma, events: { notify: vi.fn(async () => undefined) }, secretStore: secrets } as never,
+        { ...scope, id: asking.id },
+        scope.botId,
+        { slug: "ticket-desk" },
+      );
+      expect(requested).toMatchObject({ ok: true, server_id: server.id, status: "pending" });
+      const [message] = await prisma.message.findMany({ where: { threadId: scope.threadId } });
+      expect(message?.blocks).toEqual([
+        {
+          kind: "mcp_approval",
+          name: "Ticket Desk",
+          serverId: server.id,
+          transport: "streamable_http",
+          endpoint: "https://mcp.ticket-desk.test/mcp",
+          needsOAuth: true,
+          status: "pending",
+        },
+      ]);
+
+      // The continuation waits for the asking turn to end.
+      await prisma.run.update({ where: { id: asking.id }, data: { status: "completed" } });
+      await client().mcp.assignments.approve({
+        botId: scope.botId,
+        serverId: server.id,
+        threadId: scope.threadId,
+      });
+
+      expect(
+        await prisma.botMcpServer.findFirst({
+          where: { botId: scope.botId, serverId: server.id },
+          select: { allowAllTools: true },
+        }),
+      ).toEqual({ allowAllTools: true });
+      const continuation = await prisma.run.findFirst({
+        where: { threadId: scope.threadId, status: "queued" },
+        select: { id: true, trigger: true },
+      });
+      expect(continuation?.trigger).toBe("user");
+      expect(jobs.enqueue).toHaveBeenCalledWith(
+        expect.objectContaining({ name: "run.continue", payload: { runId: continuation?.id } }),
+      );
+      const [painted] = await prisma.message.findMany({ where: { threadId: scope.threadId } });
+      expect(painted?.blocks).toMatchObject([{ status: "connected" }]);
     }),
   );
 });

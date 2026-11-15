@@ -7,6 +7,7 @@ import { collectLogIds } from "./composio-connector.js";
 import { connectApp } from "./connect-app.js";
 import { redactConnectorPayload, sanitizeConnectorError } from "./connector-safety.js";
 import { mcpAppViewArguments, mcpAppViewResult } from "./mcp-app.js";
+import { listMcpServersForBot, requestMcpServerFromTool } from "./mcp-server-access.js";
 import { addMcpServerFromTool } from "./mcp-server-tool.js";
 import { serviceCallFromTool, serviceSearchFromTool } from "./paid-service-tools.js";
 import type { RunContext } from "./run-context.js";
@@ -188,6 +189,14 @@ export const integrationTools: ToolHandlers = {
     const { deps, run, bot } = ctx;
     const { args, executionId } = call;
     return call.finish(await addMcpServerFromTool(deps, run, bot.id, args, executionId));
+  },
+  async list_mcp_servers(ctx, call) {
+    const { deps, run, bot } = ctx;
+    return call.finish(await listMcpServersForBot(deps, run, bot.id));
+  },
+  async request_mcp_server(ctx, call) {
+    const { deps, run, bot } = ctx;
+    return call.finish(await requestMcpServerFromTool(deps, run, bot.id, call.args));
   },
   async connect_app(ctx, call) {
     const { deps, run, runId, context } = ctx;
