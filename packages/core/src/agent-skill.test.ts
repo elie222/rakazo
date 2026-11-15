@@ -270,6 +270,20 @@ description: Use when: the user asks for a status summary.
     expect(parsed).toMatchObject({ error: expect.any(String) });
   });
 
+  it("preserves legacy indicator-prefixed descriptions", () => {
+    for (const description of ["[WIP] thing", "*bold* text", "@user helper", "`code` helper"]) {
+      expect(parseSkillMd(`---\nname: Example\ndescription: ${description}\n---\n`)).toMatchObject({
+        description,
+      });
+    }
+  });
+
+  it("uses YAML comment semantics for plain descriptions", () => {
+    expect(parseSkillMd("---\nname: Example\ndescription: foo # note\n---\n")).toMatchObject({
+      description: "foo",
+    });
+  });
+
   it("rejects malformed YAML after many blank lines", () => {
     const parsed = parseSkillMd(`---\n${"\n".repeat(90_000)}invalid: [\n---\n`);
     expect(parsed).toMatchObject({ error: expect.any(String) });
