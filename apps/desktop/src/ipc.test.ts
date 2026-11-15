@@ -135,6 +135,30 @@ describe("sentFrom", () => {
     },
   );
 
+  it("accepts the window a switch is replacing only where the channel says so", () => {
+    const { app: previous, setup } = open();
+    expect(sentFrom("appOrReplaced", previous.event)).toBe(true);
+    expect(sentFrom("appOrReplaced", setup.event)).toBe(false);
+
+    const next = switchServer(previous);
+    expect(sentFrom("appOrReplaced", previous.event)).toBe(true);
+    expect(sentFrom("appOrReplaced", next.event)).toBe(true);
+    expect(sentFrom("app", previous.event)).toBe(false);
+    expect(sentFrom("setup", previous.event)).toBe(false);
+    for (const [, event] of strangers(previous))
+      expect(sentFrom("appOrReplaced", event)).toBe(false);
+    expect(sentFrom("appOrReplaced", setup.event)).toBe(false);
+    previous.frame.url = "https://other.example.com/app/bot";
+    expect(sentFrom("appOrReplaced", previous.event)).toBe(false);
+    previous.frame.url = `${APP_URL}/app/bot`;
+
+    desktop.replacedAppWindow = Object.assign(previous.win, { isDestroyed: () => true });
+    expect(sentFrom("appOrReplaced", previous.event)).toBe(false);
+    Object.assign(previous.win, { isDestroyed: () => false });
+    desktop.replacedAppWindow = null;
+    expect(sentFrom("appOrReplaced", previous.event)).toBe(false);
+  });
+
   it("refuses a window that is closed, replaced or was opened for no server", () => {
     const { app, setup } = open();
     appWindowTargets.delete(app.win);
@@ -176,7 +200,7 @@ describe("handleIpc", () => {
     for (const name of names) {
       const { from, sync, refused }: IpcChannel = ipcChannels[name];
       register(name, handler);
-      const [own, other] = from === "app" ? [app, setup] : [setup, app];
+      const [own, other] = from === "setup" ? [setup, app] : [app, setup];
       for (const [who, event] of [...strangers(own), ["the other window", other.event] as const]) {
         if (sync) {
           const reply: IpcCaller & { returnValue?: unknown } = { ...event };
@@ -247,8 +271,6 @@ describe("handleIpc", () => {
     // Dictation cleanup and the calls a page makes without waiting get an answer.
     await expect(page.speech!.stop(1)).resolves.toBeUndefined();
     await expect(page.speech!.abort(1)).resolves.toBeUndefined();
-    await expect(page.window.close()).resolves.toBeUndefined();
-    await expect(page.window.minimize()).resolves.toBeUndefined();
     await expect(page.server!.change()).resolves.toBeUndefined();
     await expect(page.locale!.set("es")).resolves.toBeUndefined();
     await expect(page.computer!.revokeAccess()).resolves.toBeUndefined();
@@ -261,6 +283,15 @@ describe("handleIpc", () => {
     await expect(page.update.state()).resolves.toBe(LIVE_ANSWER);
     // A sign-in that did not open is a failure its caller handles.
     await expect(page.oauth.open!("https://sign-in.invalid")).rejects.toThrow("may not call");
+    // Only its own window's controls are still answered.
+    expect(names.filter((name) => ipcChannels[name].from === "appOrReplaced")).toEqual([
+      "desktop.window.close",
+      "desktop.window.minimize",
+      "desktop.window.state",
+      "desktop.window.toggleMaximize",
+    ]);
+    for (const call of ["close", "minimize", "state", "toggleMaximize"] as const)
+      await expect(page.window[call](), call).resolves.toBe("handled");
     // The page a switch replaces is expected to keep calling.
     expect(reportDesktopError).not.toHaveBeenCalled();
   });

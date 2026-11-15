@@ -26,12 +26,16 @@ export type IpcHandler<Name extends IpcChannelName> = (
 
 /**
  * Whether a call came from that window's own page: never a subframe or another window, and for
- * the app window never another origin. `handleIpc` asks before every handler; a handler that
+ * an app window never another origin. `handleIpc` asks before every handler; a handler that
  * waits on something asks again before it acts.
  */
 export function sentFrom(window: IpcWindow, event: IpcCaller): boolean {
   try {
-    if (window === "app") return fromAppFrame(permissionTarget(), event);
+    if (window !== "setup")
+      return (
+        fromAppFrame(permissionTarget(), event) ||
+        (window === "appOrReplaced" && fromAppFrame(replacedAppTarget(), event))
+      );
     const setup = desktop.setupWindow;
     return (
       setup !== null &&

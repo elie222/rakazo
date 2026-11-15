@@ -11,10 +11,9 @@ import type {
   DesktopSetup,
   RakazoDesktopDevice,
 } from "@rakazo/contracts";
-import type { Session } from "electron";
+import type { BrowserWindow, Session } from "electron";
 import {
   app,
-  BrowserWindow,
   clipboard,
   desktopCapturer,
   dialog,
@@ -106,6 +105,7 @@ import { destroySetupWindow, registerSetupIpc, showSetupWindow } from "./setup-w
 import { StackStopMenuAvailability } from "./stop-local-stack.js";
 import { createSystemSpeech } from "./system-speech.js";
 import { createUserDeviceAccess, deviceName } from "./user-device.js";
+import { registerWindowControls } from "./window-controls.js";
 import { isMcpOAuthServerId, mcpOAuthPartition } from "./window-open.js";
 
 process.setSourceMapsEnabled(true);
@@ -883,31 +883,7 @@ app.whenReady().then(async () => {
   handleIpc("desktop.server.change", () => {
     showSetupWindow();
   });
-  const windowFrom = (event: IpcCaller) => BrowserWindow.fromWebContents(event.sender);
-  handleIpc("desktop.window.close", (event) => {
-    windowFrom(event)?.close();
-  });
-  handleIpc("desktop.window.minimize", (event) => {
-    windowFrom(event)?.minimize();
-  });
-  handleIpc("desktop.window.toggleMaximize", (event) => {
-    const win = windowFrom(event);
-    if (!win) return;
-    if (win.isMaximized() || win.isFullScreen()) {
-      win.setFullScreen(false);
-      if (win.isMaximized()) win.unmaximize();
-    } else {
-      win.maximize();
-    }
-  });
-  handleIpc("desktop.window.state", (event) => {
-    const win = windowFrom(event);
-    return {
-      minimized: win?.isMinimized() ?? false,
-      maximized: win?.isMaximized() ?? false,
-      fullScreen: win?.isFullScreen() ?? false,
-    };
-  });
+  registerWindowControls();
   const updateState = () => desktop.desktopUpdater.state();
   handleIpc("desktop.update.state", updateState, updateState);
   handleIpc("desktop.update.check", () => desktop.desktopUpdater.check(true), updateState);

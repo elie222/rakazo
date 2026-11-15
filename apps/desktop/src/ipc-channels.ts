@@ -1,10 +1,12 @@
 import type { RakazoDesktop, RakazoSetup } from "@rakazo/contracts";
 
 /**
- * The window whose own page may call a channel. Its main frame only, and for the app window
- * only while that frame shows the server the window was opened for.
+ * The window whose own page may call a channel. Its main frame only, and for an app window
+ * only while that frame shows the server the window was opened for. `appOrReplaced` also
+ * takes the window a server switch is replacing: only for a channel whose handler acts on
+ * the window that sent the call and on nothing else.
  */
-export type IpcWindow = "app" | "setup";
+export type IpcWindow = "app" | "appOrReplaced" | "setup";
 
 type BridgeMethod = (...args: never[]) => unknown;
 
@@ -47,6 +49,14 @@ const appPage = <Method extends BridgeMethod>(refused: Refused<Method>): IpcChan
 const appPageLive = <Method extends BridgeMethod>(): IpcChannel<Method> & {
   refused: typeof LIVE;
 } => ({ from: "app", refused: LIVE });
+/**
+ * The page's own title-bar buttons are the only window controls where the window has no native
+ * frame, and the window a switch is replacing can still be on screen while the next server loads.
+ */
+const ownWindow = <Method extends BridgeMethod>(refused: Refused<Method>): IpcChannel<Method> => ({
+  from: "appOrReplaced",
+  refused,
+});
 const setupPage = <Method extends BridgeMethod>(refused: Refused<Method>): IpcChannel<Method> => ({
   from: "setup",
   refused,
@@ -89,14 +99,14 @@ export const ipcChannels = {
   "desktop.update.download": appPageLive<Desktop["update"]["download"]>(),
   "desktop.update.install": appPageLive<Desktop["update"]["install"]>(),
   "desktop.update.state": appPageLive<Desktop["update"]["state"]>(),
-  "desktop.window.close": appPage<Desktop["window"]["close"]>(undefined),
-  "desktop.window.minimize": appPage<Desktop["window"]["minimize"]>(undefined),
-  "desktop.window.state": appPage<Desktop["window"]["state"]>({
+  "desktop.window.close": ownWindow<Desktop["window"]["close"]>(undefined),
+  "desktop.window.minimize": ownWindow<Desktop["window"]["minimize"]>(undefined),
+  "desktop.window.state": ownWindow<Desktop["window"]["state"]>({
     minimized: false,
     maximized: false,
     fullScreen: false,
   }),
-  "desktop.window.toggleMaximize": appPage<Desktop["window"]["toggleMaximize"]>(undefined),
+  "desktop.window.toggleMaximize": ownWindow<Desktop["window"]["toggleMaximize"]>(undefined),
   "desktop.setup.locale": setupPageSync<() => RakazoSetup["locale"]>(),
   "desktop.setup.openLink": setupPage<RakazoSetup["openLink"]>(undefined),
   "desktop.setup.quit": setupPage<RakazoSetup["quit"]>(undefined),

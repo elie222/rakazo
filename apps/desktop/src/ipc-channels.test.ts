@@ -6,7 +6,13 @@ import { ipcChannels } from "./ipc-channels.js";
 
 const srcDir = import.meta.dirname;
 const channels: [string, IpcChannel][] = Object.entries(ipcChannels);
-const PRELOADS: Record<IpcWindow, string> = { app: "preload.cjs", setup: "setup-preload.cjs" };
+/** The preload of the window whose page may call: one for an app window, replaced or not. */
+const PRELOADS = {
+  app: "preload.cjs",
+  appOrReplaced: "preload.cjs",
+  setup: "setup-preload.cjs",
+} as const satisfies Record<IpcWindow, string>;
+type Preload = (typeof PRELOADS)[IpcWindow];
 
 /** Channels named as string literals in `call("…"`, failing when a call names its channel any other way. */
 function literalChannels(source: string, call: RegExp, file: string): string[] {
@@ -18,8 +24,7 @@ function literalChannels(source: string, call: RegExp, file: string): string[] {
   return named.sort();
 }
 
-function preloadChannels(window: IpcWindow, method: "invoke" | "sendSync") {
-  const file = PRELOADS[window];
+function preloadChannels(file: Preload, method: "invoke" | "sendSync") {
   const source = readFileSync(path.join(srcDir, file), "utf8");
   expect(source, `${file} must not send one-way messages`).not.toMatch(/ipcRenderer\.send\(/);
   return literalChannels(source, new RegExp(`ipcRenderer\\.${method}\\(`), file);
@@ -39,13 +44,18 @@ describe("desktop IPC channels", () => {
     expect(handledChannels()).toEqual(channels.map(([name]) => name).sort());
   });
 
-  it.each(["app", "setup"] as const)("exposes exactly the %s window's channels", (window) => {
-    const mapped = (sync: boolean) =>
-      channels
-        .filter(([, channel]) => channel.from === window && (channel.sync === true) === sync)
-        .map(([name]) => name)
-        .sort();
-    expect(preloadChannels(window, "invoke")).toEqual(mapped(false));
-    expect(preloadChannels(window, "sendSync")).toEqual(mapped(true));
-  });
+  it.each(["preload.cjs", "setup-preload.cjs"] as const)(
+    "exposes in %s exactly its window's channels",
+    (file) => {
+      const mapped = (sync: boolean) =>
+        channels
+          .filter(
+            ([, channel]) => PRELOADS[channel.from] === file && (channel.sync === true) === sync,
+          )
+          .map(([name]) => name)
+          .sort();
+      expect(preloadChannels(file, "invoke")).toEqual(mapped(false));
+      expect(preloadChannels(file, "sendSync")).toEqual(mapped(true));
+    },
+  );
 });
