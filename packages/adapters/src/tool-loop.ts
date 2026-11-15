@@ -168,7 +168,7 @@ export function advanceToolCallLoopGuard(
   const sameStep = response !== undefined && response === streak.response && name === streak.name;
   const sameResult = sameStep
     ? { sameResult: streak.sameResult, sameResultCount: streak.sameResultCount }
-    : sameResultRun(streak, name, previousResult);
+    : sameResultRun(streak, name, previousResult, response);
   return {
     streak: { ...next, name, response, ...(same ? { results, failures } : {}), ...sameResult },
     // The first call has no answer yet, so six identical failing calls have five failures.
@@ -179,9 +179,19 @@ export function advanceToolCallLoopGuard(
   };
 }
 
-/** The same-result run after a new step: another tool or an unknown answer starts it over. */
-function sameResultRun(streak: LoopGuardStreak, name: string, previousResult?: string) {
-  if (name !== streak.name || previousResult === undefined) return { sameResultCount: 1 };
+/**
+ * The same-result run after a new step: another tool or an unknown answer starts it over. A tool
+ * that follows another in one response starts at zero, since that response called more than it.
+ */
+function sameResultRun(
+  streak: LoopGuardStreak,
+  name: string,
+  previousResult?: string,
+  response?: number,
+) {
+  if (name !== streak.name)
+    return { sameResultCount: response !== undefined && response === streak.response ? 0 : 1 };
+  if (previousResult === undefined) return { sameResultCount: 1 };
   // The previous step's answer is known now, so the run holds it and this call.
   if (streak.sameResult !== undefined && streak.sameResult !== previousResult)
     return { sameResult: previousResult, sameResultCount: 2 };

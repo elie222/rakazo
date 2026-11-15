@@ -372,6 +372,15 @@ describe("advanceToolCallLoopGuard", () => {
     expect(response).toBe(25);
   });
 
+  it("does not count a response that also called another tool", () => {
+    const ack = returned({ ok: true });
+    const { response } = stopsAtResponse((n) => [
+      ...(n === 1 ? [{ name: "read_file", args: { path: "a" }, result: returned("a") }] : []),
+      { name: "message_user", args: { message: progress(n) }, result: ack },
+    ]);
+    expect(response).toBe(26);
+  });
+
   it("starts the same-result run over when the answer changes", () => {
     const { response } = stopsAtResponse((n) => [
       { name: "message_user", args: { message: progress(n) }, result: returned({ ok: n > 10 }) },
