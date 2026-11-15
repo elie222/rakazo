@@ -38,6 +38,7 @@ import {
   findVoiceCredential,
   findVoicePreference,
   IsolationError,
+  isDatabaseUnavailable,
   lockSpaceSettings,
   newestVoiceCredentialOrder,
   Prisma,
@@ -416,11 +417,16 @@ export async function persistVoiceCredential(
     );
   } catch (error) {
     if (error instanceof VoiceAccountError) throw new ClientError("BAD_REQUEST", error.message);
-    if (input.signal?.aborted || !signInRenewalFailed(error)) throw error;
-    // The failure's text can quote the provider, so only its kind is logged.
+    // A cancelled request and a database outage are known by the error itself.
+    if (input.signal?.aborted || isDatabaseUnavailable(error)) throw error;
+    // The failure's text can quote the provider, so only its kind is logged or reported.
+    const reason = error instanceof Error ? error.name : "unknown";
+    if (!signInRenewalFailed(error)) {
+      throw new Error(`Voice could not resolve the model connection (${reason})`);
+    }
     getLogger().warn("voice could not use the model connection", {
       provider: input.provider,
-      reason: error instanceof Error ? error.name : "unknown",
+      reason,
     });
     throw new ClientError(
       "BAD_REQUEST",

@@ -147,9 +147,24 @@ describe("saving a voice connection linked to the model connection", () => {
     });
   });
 
-  it("lets a failure that is not the provider's through as a fault", async () => {
-    const fault = new Error("database gone");
+  it("reports a failure it does not recognise as a fault, by kind and without its text", async () => {
+    const failure = new RangeError('provider said {"access_token":"abc123"}', {
+      cause: new Error("Authorization: Bearer abc123"),
+    });
 
-    await expect(save(fault)).rejects.toBe(fault);
+    const thrown = await save(failure).catch((error: unknown) => error);
+
+    expect(thrown).toBeInstanceOf(Error);
+    expect(thrown).not.toHaveProperty("code", "BAD_REQUEST");
+    expect((thrown as Error).message).toBe(
+      "Voice could not resolve the model connection (RangeError)",
+    );
+    expect((thrown as Error).cause).toBeUndefined();
+  });
+
+  it("lets a database outage through as itself, so the request is retried", async () => {
+    const outage = Object.assign(new Error("Can't reach database server"), { code: "P1001" });
+
+    await expect(save(outage)).rejects.toBe(outage);
   });
 });
