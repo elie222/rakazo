@@ -156,7 +156,6 @@ export function useComputerControls({
         }
       }
       if (takeControl) {
-        expectOwnControlEvent(targetBotId, "computer.takeover.granted");
         const { leaseId } = await rpc.computer
           .takeover({ botId: targetBotId })
           .catch(async (error) => {
@@ -410,11 +409,17 @@ export function useComputerControls({
     runId: string | undefined,
     reason: ComputerReleaseReason,
   ) {
-    await rpc.computer.release({ botId, runId, reason });
+    const leaseId =
+      computerRef.current?.botId === botId ? computerRef.current.controlLeaseId : undefined;
+    if (leaseId) expectOwnControlEvent(botId, "computer.takeover.released", leaseId);
+    await rpc.computer.release({ botId, runId, reason }).catch(async (error) => {
+      await forgetOwnControlEvent(botId);
+      throw error;
+    });
     const groupId = activeGroupId.current;
     await Promise.all([
       computerBotIdRef.current === botId || activeBotId.current === botId
-        ? refreshComputerFor(botId).catch(() => undefined)
+        ? refreshAfterControlChange(botId).catch(() => undefined)
         : undefined,
       // A group card may belong to a bot that is neither open nor active.
       groupId ? refreshGroupThread(groupId).catch(() => undefined) : undefined,

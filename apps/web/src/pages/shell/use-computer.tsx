@@ -450,7 +450,7 @@ export function useComputerState({
   async function forgetOwnControlEvent(botId: string) {
     if (ownControlChange.current?.botId === botId) ownControlChange.current = null;
     // Only the bot on screen; another bot's read would discard the shown bot's own read.
-    if (activeBotId.current === botId || computerBotIdRef.current === botId) {
+    if ((computerBotIdRef.current ?? activeBotId.current) === botId) {
       await refreshComputerScreen(botId).catch(() => undefined);
     }
   }

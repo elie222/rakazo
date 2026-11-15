@@ -508,6 +508,17 @@ it("reads the new screen beside the thread refresh after this tab releases contr
   expect(screenUrl).toHaveBeenCalledTimes(1);
 });
 
+it("does not recover the active chat screen over another computer pane", async () => {
+  act(() => {
+    state.computerBotIdRef.current = "bot-other";
+  });
+  screenUrl.mockClear();
+  await act(async () => {
+    await state.forgetOwnControlEvent("bot-1");
+  });
+  expect(screenUrl).not.toHaveBeenCalled();
+});
+
 it("reads no screen for a failed control call of a bot that is no longer shown", async () => {
   state.expectOwnControlEvent("bot-2", "computer.takeover.granted");
   screenUrl.mockClear();
@@ -649,6 +660,7 @@ it("ignores a second take while the first control request is pending", async () 
     await takeControl();
   });
   expect(takeover).toHaveBeenCalledTimes(1);
+  expect(state.isOwnControlEvent("bot-1", "computer.takeover.granted", "lease-1")).toBe(false);
   await act(async () => {
     finish({ leaseId: "lease-1", expiresAt: "" });
     await first;
