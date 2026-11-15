@@ -31,6 +31,7 @@ import {
 import { PortableFileBatcher } from "./computer-workspace.js";
 import { LinuxDesktop, onBotScreen, PREPARE_LINUX_DESKTOP } from "./linux-desktop.js";
 import { installPageBrowserCommand, privatePageInput } from "./page-browser-install.js";
+import { deleteUnreferencedMachine } from "./sandbox-cleanup.js";
 import { sandboxCommandArgv } from "./sandbox-command-environment.js";
 import { abortedCommandEvents, timedOutCommandEvents } from "./sandbox-command-events.js";
 import { isSandboxGoneError, sandboxNotFoundError } from "./sandbox-errors.js";
@@ -563,14 +564,14 @@ export class DaytonaSandboxProvider implements SandboxProvider {
     }
   }
 
-  private async deleteAbandoned(name: string): Promise<void> {
-    try {
-      await (await this.client.get(name)).delete(60);
-    } catch (error) {
-      if (!(await isDaytonaSandboxMissing(error))) {
-        getLogger().error("delete Daytona sandbox left by a failed create", error);
+  private deleteAbandoned(name: string): Promise<void> {
+    return deleteUnreferencedMachine("daytona", name, async (_signal, timeoutMs) => {
+      try {
+        await (await this.client.get(name)).delete(timeoutMs / 1_000);
+      } catch (error) {
+        if (!(await isDaytonaSandboxMissing(error))) throw error;
       }
-    }
+    });
   }
 
   private async workspaceRoot(sandbox: DaytonaSandbox): Promise<string> {

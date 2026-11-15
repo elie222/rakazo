@@ -143,7 +143,8 @@ export async function provisionMessagingIdentity(
         botId,
       },
     });
-  } catch {
+  } catch (error) {
+    if (!isUniqueViolation(error)) throw error;
     // A concurrent first-inbound won the (provider, address) race; report its result.
     const winner = await prisma.messagingIdentity.findUnique({ where });
     if (!winner) {
