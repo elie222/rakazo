@@ -25,7 +25,7 @@ describe("inline app cards", () => {
     const card = appConnectCard(entry);
     const other = { ...card, connectorId: "other" };
     const text: MessageBlock = { kind: "text", text: "hello" };
-    const connected = { ...card, status: "connected" };
+    const connected: MessageBlock = { ...card, status: "connected" };
     expect(connectedAppBlock(card, "catalog", "gcal")).toEqual(connected);
     for (const block of [other, text, connected])
       expect(connectedAppBlock(block, "catalog", "gcal")).toBe(block);

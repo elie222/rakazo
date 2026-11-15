@@ -61,7 +61,6 @@ export interface AuditEventInput {
  *   the Space's name, in the oldest organization they own.
  * - Without a vault scope (an older client), an event in a Space is treated as a Space vault item.
  */
-const AuditMetadataValue = AuditEventMetadataSchema.valueType;
 const VAULT_TARGETS = new Set(["vault_credential", "bot_secret"]);
 const VAULT_FIELDS_FOR_OTHERS = new Set(["procedure", "kind", "scope", "tool"]);
 
@@ -334,6 +333,8 @@ export function auditEventDto(row: AuditEventRow): AuditEvent {
     metadata: storedAuditMetadata(row),
   };
 }
+
+const AuditMetadataValue = AuditEventMetadataSchema.valueType;
 
 /**
  * Checked key by key: audit events are forwarded once and never again, so one value in another

@@ -26,6 +26,8 @@ async function teamChatRun(input: {
   ownerAddress?: string | null;
   linkedAddresses?: string[];
   sharedChannel?: boolean;
+  /** The waking message's stored blocks, for a row that holds more than blocks. */
+  sourceBlocks?: unknown;
 }) {
   const [waking, ...batched] = input.senders.map((sender, index) => ({
     id: `external-${index}`,
@@ -134,9 +136,12 @@ async function teamChatRun(input: {
       ),
       findFirst: vi.fn(async () => null),
       findUnique: vi.fn(async () => ({
-        blocks: input.sharedChannel
-          ? [{ kind: "channel_message", channelId: "channel-1" }]
-          : [{ kind: "text", text: "Slack message from Pat:\n\nWhat do you remember?" }],
+        id: "source-1",
+        blocks:
+          input.sourceBlocks ??
+          (input.sharedChannel
+            ? [{ kind: "channel_message", channelId: "channel-1" }]
+            : [{ kind: "text", text: "Slack message from Pat:\n\nWhat do you remember?" }]),
         clientNonce: `teamchat:slack:${waking.providerEventId}`,
       })),
       create: vi.fn(async ({ data }: { data: object }) => ({ id: "message-1", ...data })),
@@ -345,6 +350,22 @@ describe("team chat runs from the owner", () => {
     expect(result.sawOwnerToolResult).toBe(true);
     expect(result.toldNonOwner).toBe(false);
     for (const tool of ownerOnlyTools) expect(result.tools).toContain(tool);
+  });
+});
+
+describe("runs whose waking message is stored beside entries that are not blocks", () => {
+  const owner = { senders: [{ senderId: "T1:U-OWNER" }], ownerAddress: "T1:U-OWNER" };
+  const stray = [{ text: "no kind" }, null];
+
+  it.each([
+    ["still shows its channel message", [{ kind: "channel_message", channelId: "c-1" }, ...stray]],
+    ["may have lost its channel message", [{ kind: "text", text: "What's new?" }, ...stray]],
+    ["is not a list", { kind: "text", text: "What's new?" }],
+  ])("get a channel's limits when the message %s", async (_case, sourceBlocks) => {
+    const result = await teamChatRun({ ...owner, sourceBlocks });
+    expect(result.sawOwnerState).toBe(false);
+    expect(result.sawOwnerToolResult).toBe(false);
+    for (const tool of ownerOnlyTools) expect(result.tools).not.toContain(tool);
   });
 });
 

@@ -1,5 +1,5 @@
 import type { MessageBlock } from "@rakazo/contracts";
-import type { Prisma } from "./generated/prisma/client.js";
+import type { Prisma } from "./client.js";
 import { warnJsonColumnOnce } from "./json-column.js";
 
 type StoredMessage = { id: string; blocks: unknown };

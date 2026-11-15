@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 
 export const message =
-  'Do not cast a value read from a JSON column to its shape. Read it with readJsonColumn(schema, value, { table, column, id }, "reject" | { fallback }) from @rakazo/db, which checks it and makes the reader choose what a row in another shape means; message blocks have storedMessageBlocks(message). A property that only shares a column\'s name is a false positive: rename the local or narrow it with a type guard.';
+  'Do not cast a value read from a JSON column to its shape. Read it with readJsonColumn(schema, value, { table, column, id }, "reject" | { fallback }) from @rakazo/db, which checks it and makes the reader choose what a row in another shape means; message blocks have storedMessageBlocks(message), readMessageBlocks(message) where a missing block decides something, and changeMessageBlocks(message, change) to write one back. A property that only shares a column\'s name is a false positive: rename the local or narrow it with a type guard.';
 
 // The server code that holds database rows. Clients and packages/core read wire shapes instead.
 export const include = ["{apps/{api,worker},packages/{adapters,auth,db,memory}}/src/**/*.{ts,mts}"];
