@@ -856,9 +856,11 @@ describePostgres("Graphile background jobs (PostgreSQL contract)", () => {
       await rolledBack((tx) => publisher.enqueueIn(tx, messagingSendJob(outboundId, dueAt)));
       expect(await keyedRow(key)).toBeNull();
 
-      await system.$transaction((tx) =>
-        publisher.enqueueIn(tx, messagingSendJob(outboundId, dueAt)),
-      );
+      // A session in another time zone still schedules the job for the same instant.
+      await system.$transaction(async (tx) => {
+        await tx.$executeRawUnsafe("set local time zone 'Asia/Kolkata'");
+        await publisher.enqueueIn(tx, messagingSendJob(outboundId, dueAt));
+      });
       expect(await keyedRow(key)).toMatchObject({
         attempts: 0,
         maxAttempts: MESSAGING_SEND_MAX_ATTEMPTS,

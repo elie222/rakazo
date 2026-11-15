@@ -2259,6 +2259,34 @@ describe("conversation order", () => {
     expect(t.world.outbound.every((row) => row.sourceMessageId === "m-1")).toBe(true);
   });
 
+  it("adds no parts to a reply the previous release split at other points", async () => {
+    const t = setup();
+    linkProvider(t.world, TELEGRAM);
+    const queued = { kind: "dm", identityId: "mi-1", threadId: null, sourceMessageId: "m-1" };
+    seedRow(t.world, {
+      ...queued,
+      id: "first half",
+      idempotencyKey: "msg:m-1",
+      status: "sent",
+      providerHandle: "42",
+    });
+    seedRow(t.world, {
+      ...queued,
+      id: "second half",
+      idempotencyKey: "msg:m-1:2",
+      createdAt: new Date(1_001),
+    });
+    addRun(t.world, { replies: [text("m-1", longReply), text("m-2", "Done.")] });
+    await t.delivery.deliverRun("run-1");
+
+    expect(inSendOrder(t).map((row) => [row.idempotencyKey, row.body])).toEqual([
+      ["msg:m-1", "first half"],
+      ["msg:m-1:2", "second half"],
+      ["msg:m-2", "Done."],
+    ]);
+    expect(bodies(t)).toEqual(["second half", "Done."]);
+  });
+
   it("re-sends only the parts that failed, in order", async () => {
     const t = setup();
     linkProvider(t.world, WHATSAPP);
