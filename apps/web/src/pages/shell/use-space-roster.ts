@@ -14,7 +14,7 @@ import { replaceEqualDeep } from "@tanstack/react-query";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { takeInitialBootstrap } from "../../lib/bootstrap";
-import { linkedBotRoute } from "../../lib/bootstrap-target";
+import { linkedBotRoute, linkedGroupRoute } from "../../lib/bootstrap-target";
 import { localTimezone } from "../../lib/local-timezone";
 import { markOnce } from "../../lib/performance";
 import type { ChatTarget } from "../../lib/query";
@@ -280,7 +280,7 @@ export function useSpaceBootstrap({
   chat: ChatTarget | undefined;
   navigate: Navigation["navigate"];
   redirectKeepingOverlay: Navigation["redirectKeepingOverlay"];
-  /** Opens a linked bot that lives in another of the user's Spaces. */
+  /** Opens a linked chat that lives in another of the user's Spaces. */
   openSpaceChat: RefObject<(spaceId: string, path: string) => void>;
 }) {
   const {
@@ -356,7 +356,7 @@ export function useSpaceBootstrap({
   useEffect(() => {
     let cancelled = false;
     const appliedAtStart = botsRefreshApplied.current;
-    void takeInitialBootstrap(botId ?? startChat?.botId)
+    void takeInitialBootstrap(botId ?? startChat?.botId, groupId)
       .then((bootstrap) => {
         // Kept for the space it belongs to, so switching back to it can paint at once.
         saveSeed(bootstrap);
@@ -403,7 +403,7 @@ export function useSpaceBootstrap({
         }
         // Checked before the roster gate: a refresh that landed first may already have moved away.
         const linked = groupId
-          ? undefined
+          ? linkedGroupRoute(bootstrap, groupId, window.location.search)
           : linkedBotRoute(bootstrap, botId, window.location.search);
         if (linked) {
           openSpaceChat.current(linked.spaceId, linked.path);

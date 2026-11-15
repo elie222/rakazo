@@ -467,7 +467,9 @@ export const appContract = {
       .input(z.object({ organizationId: Id }))
       .output(z.object({ ok: z.literal(true), activeSpaceId: Id })),
   },
-  bootstrap: oc.input(z.object({ botId: Id.optional() })).output(AppBootstrapSchema),
+  bootstrap: oc
+    .input(z.object({ botId: Id.optional(), groupId: Id.optional() }))
+    .output(AppBootstrapSchema),
   deployment: {
     get: oc.output(DeploymentSettingsSchema),
     update: oc
