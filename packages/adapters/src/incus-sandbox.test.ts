@@ -18,7 +18,11 @@ import {
   incusTlsOptions,
   ociImageSource,
 } from "./incus-sandbox.js";
-import { assertSandboxWorkspaceContract, provisionPrepared } from "./sandbox-test-support.js";
+import {
+  assertSandboxWorkspaceContract,
+  provisionPrepared,
+  settleMachineCleanup,
+} from "./sandbox-test-support.js";
 
 const context: AdapterContext = {
   operationId: "operation",
@@ -595,6 +599,46 @@ describe("IncusSandboxProvider", () => {
       ),
     ).rejects.toThrow("did not become ready");
     expect(fake.instances.size).toBe(0);
+  });
+
+  describe("a new instance that does not become ready", () => {
+    /** The instance never answers on its gateway, and stopping it fails `stopFailures` times. */
+    async function start(stopFailures: number) {
+      const fake = new FakeIncus((command) =>
+        command.some((arg) => arg.includes("/dev/tcp")) ? { code: 1 } : {},
+      );
+      const request = fake.request.bind(fake);
+      let stops = 0;
+      vi.spyOn(fake, "request").mockImplementation(async (method, path, body, signal) => {
+        if (method === "PUT" && path.includes("/state") && ++stops <= stopFailures)
+          throw new IncusError("Instance is busy", 500);
+        return request(method, path, body, signal);
+      });
+      const outcome = await settleMachineCleanup(() =>
+        providerFor(fake, { readyTimeoutMs: 1 }).provision(
+          { botId: "bot-a", homePath: "/unused" },
+          context,
+        ),
+      );
+      return { ...outcome, stops, instances: [...fake.instances.keys()] };
+    }
+
+    it("is removed, trying a failed removal again", async () => {
+      const { error, left, stops, instances } = await start(1);
+
+      expect(error).toMatchObject({ message: expect.stringContaining("did not become ready") });
+      expect(stops).toBe(2);
+      expect(instances).toEqual([]);
+      expect(left).toEqual([]);
+    });
+
+    it("is reported when it cannot be removed, and the start's own error stands", async () => {
+      const { error, left, stops, instances } = await start(4);
+
+      expect(error).toMatchObject({ message: expect.stringContaining("did not become ready") });
+      expect(stops).toBe(4);
+      expect(left).toEqual([{ provider: "incus", machineId: instances[0] }]);
+    });
   });
 
   it("rejects an instance that disappears while starting", async () => {

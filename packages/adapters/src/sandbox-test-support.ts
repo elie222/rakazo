@@ -1,5 +1,35 @@
 import type { AdapterContext, ComputerRef, SandboxProvider } from "@rakazo/adapter-kit";
-import { expect } from "vitest";
+import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
+import { expect, vi } from "vitest";
+
+/**
+ * Runs work that ends by deleting a machine nothing points at, without waiting out the pauses
+ * between tries. Returns what the work rejected with and the machines it reported as left behind.
+ */
+export async function settleMachineCleanup(work: () => Promise<unknown>) {
+  const sink = createTestSink();
+  installLogger(createLogger({ service: "test", sinks: [sink] }));
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+  try {
+    let error: unknown;
+    let settled = false;
+    void work()
+      .catch((failure: unknown) => {
+        error = failure;
+      })
+      .finally(() => {
+        settled = true;
+      });
+    while (!settled) await vi.advanceTimersByTimeAsync(1_000);
+    const left = sink.events
+      .filter((event) => event.level === "error" && event.message === "sandbox.cleanup_failed")
+      .map(({ provider, machineId }) => ({ provider, machineId }));
+    return { error, left };
+  } finally {
+    vi.useRealTimers();
+    installLogger(createLogger({ service: "test", level: "off", sinks: [] }));
+  }
+}
 
 export async function provisionPrepared(
   provider: SandboxProvider,

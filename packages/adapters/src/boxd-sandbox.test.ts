@@ -6,7 +6,7 @@ import { describe, expect, it, onTestFinished, vi } from "vitest";
 import { BOXD_COMPUTER_SNAPSHOT, BoxdSandboxProvider } from "./boxd-sandbox.js";
 import { BOXD_WORKSPACE, FakeBoxd, fakeBoxdProvider } from "./boxd-sandbox.test-support.js";
 import { isSandboxGoneError } from "./sandbox-errors.js";
-import { assertSandboxWorkspaceContract } from "./sandbox-test-support.js";
+import { assertSandboxWorkspaceContract, settleMachineCleanup } from "./sandbox-test-support.js";
 
 const ctx = {
   operationId: "op",
@@ -261,5 +261,121 @@ describe("boxd computers", () => {
       built: false,
     });
     expect(boxd.calls).not.toContain("create");
+  });
+
+  describe("a machine no computer points at", () => {
+    const lostReply = new Error("reply lost");
+    /** boxd creates the machine, and the reply never arrives. */
+    function providerLosingCreateReply(boxd: FakeBoxd) {
+      boxd.snapshots.set(BOXD_COMPUTER_SNAPSHOT, "ready");
+      const client = boxd.client();
+      const { create } = client.machines;
+      client.machines.create = (async (params: Parameters<typeof create>[0]) => {
+        await create(params);
+        throw lostReply;
+      }) as typeof create;
+      return new BoxdSandboxProvider({}, client);
+    }
+    const provision = (provider: BoxdSandboxProvider, context: AdapterContext = ctx) =>
+      settleMachineCleanup(() =>
+        provider.provision({ botId: "bot", homePath: "/unused" }, context),
+      );
+
+    it("deletes the machine a lost create reply hid, trying a failed delete again", async () => {
+      const boxd = new FakeBoxd();
+      boxd.failures.set("delete", [new Error("connection reset")]);
+
+      const { error, left } = await provision(providerLosingCreateReply(boxd));
+
+      expect(error).toBe(lostReply);
+      expect(boxd.machines.size).toBe(0);
+      expect(left).toEqual([]);
+    });
+
+    it("reports the machine a lost create reply hid when it cannot be deleted", async () => {
+      const boxd = new FakeBoxd();
+      boxd.failures.set(
+        "delete",
+        Array.from({ length: 4 }, () => new Error("connection reset")),
+      );
+
+      const { error, left } = await provision(providerLosingCreateReply(boxd));
+
+      expect(error).toBe(lostReply);
+      const [machine] = [...boxd.machines.values()];
+      expect(left).toEqual([{ provider: "boxd", machineId: machine!.name }]);
+    });
+
+    it("deletes nothing after boxd refuses a create", async () => {
+      const boxd = new FakeBoxd();
+      boxd.failures.set("create", [new RateLimitError("too many machines", 8)]);
+
+      const { error, left } = await provision(fakeBoxdProvider(boxd));
+
+      expect(error).toBeInstanceOf(SandboxRateLimitError);
+      expect(boxd.calls).not.toContain("delete");
+      expect(left).toEqual([]);
+    });
+
+    it("keeps the cancellation as the error when a start cancelled during create cannot delete its machine", async () => {
+      const cancelled = new Error("run cancelled");
+      const start = async (deleteFailures: number) => {
+        const boxd = new FakeBoxd();
+        boxd.snapshots.set(BOXD_COMPUTER_SNAPSHOT, "ready");
+        boxd.failures.set(
+          "delete",
+          Array.from({ length: deleteFailures }, () => new Error("connection reset")),
+        );
+        const controller = new AbortController();
+        const client = boxd.client();
+        const { create } = client.machines;
+        client.machines.create = (async (params: Parameters<typeof create>[0]) => {
+          const machine = await create(params);
+          controller.abort(cancelled);
+          return machine;
+        }) as typeof create;
+        const outcome = await provision(new BoxdSandboxProvider({}, client), {
+          ...ctx,
+          signal: controller.signal,
+        });
+        return { ...outcome, machines: [...boxd.machines.keys()] };
+      };
+
+      expect(await start(1)).toEqual({ error: cancelled, left: [], machines: [] });
+      expect(await start(4)).toEqual({
+        error: cancelled,
+        left: [{ provider: "boxd", machineId: "machine-1" }],
+        machines: ["machine-1"],
+      });
+    });
+
+    it("deletes the snapshot build machine, trying a failed delete again", async () => {
+      const boxd = new FakeBoxd();
+      boxd.failures.set("delete", [new Error("connection reset")]);
+      const provider = new BoxdSandboxProvider({}, boxd.client());
+
+      const { error, left } = await settleMachineCleanup(() => provider.buildComputerSnapshot());
+
+      expect(error).toBeUndefined();
+      expect(boxd.snapshots.get(BOXD_COMPUTER_SNAPSHOT)).toBe("ready");
+      expect(boxd.machines.size).toBe(0);
+      expect(left).toEqual([]);
+    });
+
+    it("reports a snapshot build machine it cannot delete and keeps the build's own error", async () => {
+      const boxd = new FakeBoxd();
+      const refused = new Error("snapshot refused");
+      boxd.failures.set("snapshots.create", [refused]);
+      boxd.failures.set(
+        "delete",
+        Array.from({ length: 4 }, () => new Error("connection reset")),
+      );
+      const provider = new BoxdSandboxProvider({}, boxd.client());
+
+      const { error, left } = await settleMachineCleanup(() => provider.buildComputerSnapshot());
+
+      expect(error).toBe(refused);
+      expect(left).toEqual([{ provider: "boxd", machineId: "machine-1" }]);
+    });
   });
 });

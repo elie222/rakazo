@@ -69,6 +69,7 @@ import {
   VERIFY_LINUX_DESKTOP,
 } from "./linux-desktop.js";
 import { installAgentBrowserCommand, installPageBrowserCommand } from "./page-browser-install.js";
+import { deleteUnreferencedMachine } from "./sandbox-cleanup.js";
 import { sandboxCommandArgv } from "./sandbox-command-environment.js";
 import { abortedCommandEvents, timedOutCommandEvents } from "./sandbox-command-events.js";
 import { isSandboxGoneError, sandboxNotFoundError } from "./sandbox-errors.js";
@@ -392,7 +393,9 @@ export class BoatSandboxProvider implements SandboxProvider {
       }
       return { name, built: true };
     } finally {
-      await this.client.deleteSandbox(sandbox.id).catch(() => undefined);
+      await deleteUnreferencedMachine("boat", sandbox.id, () =>
+        this.client.deleteSandbox(sandbox.id),
+      );
     }
   }
 

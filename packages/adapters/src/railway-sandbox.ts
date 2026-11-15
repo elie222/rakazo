@@ -34,6 +34,7 @@ import {
   onBotScreen,
   PREPARE_LINUX_DESKTOP,
 } from "./linux-desktop.js";
+import { deleteUnreferencedMachine } from "./sandbox-cleanup.js";
 import { sandboxCommandArgv } from "./sandbox-command-environment.js";
 import { abortedCommandEvents } from "./sandbox-command-events.js";
 import { readBodyCapped } from "./web-ssrf.js";
@@ -203,11 +204,11 @@ export class RailwaySandboxProvider implements SandboxProvider {
       ) {
         createdId = error.id;
       }
-      if (createdId) await this.destroy(this.ref(createdId, request.botId, true), context);
+      if (createdId) await this.deleteUnreferenced(createdId);
       throw error;
     }
     if (context.signal.aborted) {
-      await this.destroy(this.ref(sandbox.id, request.botId, true), context);
+      await this.deleteUnreferenced(sandbox.id);
       context.signal.throwIfAborted();
     }
     return this.ref(sandbox.id, request.botId, true);
@@ -497,13 +498,21 @@ export class RailwaySandboxProvider implements SandboxProvider {
   }
 
   async destroy(computer: ComputerRef, _context: AdapterContext) {
+    await this.delete(computer.providerRef);
+  }
+
+  private async delete(id: string) {
     const railway = await loadRailway();
     try {
       // Cleanup must still run when provisioning or preparation was canceled.
-      await remove(railway, await connectSandbox(railway, computer.providerRef, this.options));
+      await remove(railway, await connectSandbox(railway, id, this.options));
     } catch (error) {
       if (!(error instanceof railway.SandboxNotFoundError)) throw error;
     }
+  }
+
+  private deleteUnreferenced(id: string): Promise<void> {
+    return deleteUnreferencedMachine("railway", id, () => this.delete(id));
   }
 
   private async connect(computer: ComputerRef, context: AdapterContext) {

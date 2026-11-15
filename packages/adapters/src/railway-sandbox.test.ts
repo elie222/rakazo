@@ -4,7 +4,7 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
-import type { ComputerRef, ProcessEvent } from "@rakazo/adapter-kit";
+import type { AdapterContext, ComputerRef, ProcessEvent } from "@rakazo/adapter-kit";
 import { screenDisplayArgv, shellQuote } from "@rakazo/core/node/desktop-runtime";
 import type { RailwayGraphQLErrorItem, SandboxInfo } from "railway";
 import {
@@ -19,7 +19,7 @@ import WebSocket from "ws";
 import { LinuxDesktop } from "./linux-desktop.js";
 import { RailwaySandboxProvider } from "./railway-sandbox.js";
 import { isSandboxGoneError } from "./sandbox-errors.js";
-import { assertSandboxWorkspaceContract } from "./sandbox-test-support.js";
+import { assertSandboxWorkspaceContract, settleMachineCleanup } from "./sandbox-test-support.js";
 
 const sdk = { connect: Sandbox.connect, create: Sandbox.create };
 vi.spyOn(Sandbox, "connect");
@@ -821,6 +821,55 @@ describe("Railway computers", () => {
       ),
     ).rejects.toThrow();
     expect(sandbox.destroy).toHaveBeenCalledOnce();
+  });
+
+  describe("a sandbox created by a start that then fails", () => {
+    const start = (context: AdapterContext = ctx) =>
+      settleMachineCleanup(() =>
+        provider.provision({ botId: "bot", homePath: "/unused" }, context),
+      );
+    const withoutPrivateNetwork = () =>
+      vi.mocked(Sandbox.create).mockResolvedValue({
+        ...sandbox,
+        networkIsolation: "ISOLATED",
+      } as unknown as Sandbox);
+
+    it("is destroyed, trying a failed destroy again", async () => {
+      withoutPrivateNetwork();
+      sandbox.destroy.mockRejectedValueOnce(new Error("connection reset"));
+
+      const { error, left } = await start();
+
+      expect(error).toMatchObject({ message: expect.stringContaining("PRIVATE networking") });
+      expect(sandbox.destroy).toHaveBeenCalledTimes(2);
+      expect(left).toEqual([]);
+    });
+
+    it("is reported when it cannot be destroyed, and the start's own error stands", async () => {
+      withoutPrivateNetwork();
+      sandbox.destroy.mockRejectedValue(new Error("connection reset"));
+
+      const { error, left } = await start();
+
+      expect(error).toMatchObject({ message: expect.stringContaining("PRIVATE networking") });
+      expect(sandbox.destroy).toHaveBeenCalledTimes(4);
+      expect(left).toEqual([{ provider: "railway", machineId: "sandbox" }]);
+    });
+
+    it("is reported when a start cancelled during creation cannot destroy it, and the cancellation stands", async () => {
+      const controller = new AbortController();
+      const cancelled = new Error("run cancelled");
+      vi.mocked(Sandbox.create).mockImplementation(async () => {
+        controller.abort(cancelled);
+        return sandbox as unknown as Sandbox;
+      });
+      sandbox.destroy.mockRejectedValue(new Error("connection reset"));
+
+      const { error, left } = await start({ ...ctx, signal: controller.signal });
+
+      expect(error).toBe(cancelled);
+      expect(left).toEqual([{ provider: "railway", machineId: "sandbox" }]);
+    });
   });
 
   it("preserves output and reports timeout as a nonzero exit", async () => {

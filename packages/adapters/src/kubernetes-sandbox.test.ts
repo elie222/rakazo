@@ -10,7 +10,11 @@ import { encodeTarEntry, TarReader } from "./exec-computer.js";
 import type { KubernetesSandboxSdk } from "./kubernetes-sandbox.js";
 import { KubernetesSandboxProvider } from "./kubernetes-sandbox.js";
 import { isSandboxGoneError } from "./sandbox-errors.js";
-import { assertSandboxWorkspaceContract, provisionPrepared } from "./sandbox-test-support.js";
+import {
+  assertSandboxWorkspaceContract,
+  provisionPrepared,
+  settleMachineCleanup,
+} from "./sandbox-test-support.js";
 
 const TAR_END = Buffer.alloc(1024);
 
@@ -1326,11 +1330,56 @@ describe("KubernetesSandboxProvider", () => {
       controller.abort(new Error("caller cancelled"));
       await vi.waitFor(() => expect(del).toHaveBeenCalledOnce());
       expect(outcome).toBe("pending");
-      await vi.advanceTimersByTimeAsync(10_000);
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(del).toHaveBeenCalledTimes(4);
       expect(outcome).toEqual(new Error("caller cancelled"));
     } finally {
       timeout.mockRestore();
       vi.useRealTimers();
     }
+  });
+
+  describe("a pod created by a start that then fails", () => {
+    const failedPod = { ...readyPod, status: { phase: "Failed" } };
+    const start = async (del: KubernetesSandboxSdk["core"]["deleteNamespacedPod"]) => {
+      const read = vi
+        .fn()
+        .mockRejectedValueOnce(Object.assign(new Error("missing"), { code: 404 }))
+        .mockResolvedValue(failedPod);
+      const create = vi.fn().mockResolvedValue(readyPod);
+      const provider = providerFor({
+        readNamespacedPod: read,
+        createNamespacedPod: create,
+        deleteNamespacedPod: del,
+      });
+      const outcome = await settleMachineCleanup(() =>
+        provider.provision({ botId: "bot-a", homePath: "/unused" }, context),
+      );
+      const pod: string = create.mock.calls[0]![0].body.metadata.name;
+      return { ...outcome, pod };
+    };
+
+    it("is deleted, trying a failed delete again", async () => {
+      const del = vi
+        .fn()
+        .mockRejectedValueOnce(new Error("connection reset"))
+        .mockResolvedValue({ status: "Success" });
+
+      const { error, left, pod } = await start(del);
+
+      expect(error).toEqual(new Error(`Kubernetes pod ${pod} entered phase Failed`));
+      expect(del).toHaveBeenCalledTimes(2);
+      expect(left).toEqual([]);
+    });
+
+    it("is reported when it cannot be deleted, and the start's own error stands", async () => {
+      const del = vi.fn().mockRejectedValue(new Error("connection reset"));
+
+      const { error, left, pod } = await start(del);
+
+      expect(error).toEqual(new Error(`Kubernetes pod ${pod} entered phase Failed`));
+      expect(del).toHaveBeenCalledTimes(4);
+      expect(left).toEqual([{ provider: "kubernetes", machineId: pod }]);
+    });
   });
 });

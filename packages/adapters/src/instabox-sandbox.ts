@@ -10,6 +10,7 @@ import type {
   RemoteDesktopSdk,
 } from "./remote-desktop-sandbox.js";
 import { RemoteDesktopSandboxProvider } from "./remote-desktop-sandbox.js";
+import { deleteUnreferencedMachine } from "./sandbox-cleanup.js";
 import {
   isSandboxGoneError,
   isSandboxUnsafeStopError,
@@ -166,7 +167,9 @@ export function instaboxSdk(
         return await openDesktop(machine, true, pause(machine));
       } catch (error) {
         // Nothing has the new computer's reference yet, so nothing else would delete it.
-        await (await api()).kill(machine.sandboxId).catch(() => false);
+        await deleteUnreferencedMachine("instabox", machine.sandboxId, async () =>
+          (await api()).kill(machine.sandboxId),
+        );
         throw error;
       }
     },
