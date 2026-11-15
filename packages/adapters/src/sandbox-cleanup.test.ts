@@ -204,12 +204,28 @@ describe("deleting a machine nothing points at", () => {
       expect(due[1]?.dueInMs).toBeGreaterThanOrEqual(31 * 60_000);
     });
 
+    it("writes a record again when the first write fails", async () => {
+      const records = new MachineRecords();
+      const write = records.record.bind(records);
+      const record = vi
+        .fn<typeof write>()
+        .mockRejectedValueOnce(new Error("database unavailable"))
+        .mockImplementation(write);
+      records.record = record;
+      const startedAt = Date.now();
+
+      await settleMachineCleanup(() => recordUnreferencedMachine(records, machine));
+
+      expect(record).toHaveBeenCalledTimes(2);
+      expect(records.dueIn(startedAt)).toMatchObject([machine]);
+    });
+
     it("never rejects when the records cannot be written", async () => {
       const broken = new MachineRecords();
       broken.record = () => Promise.reject(new Error("database unavailable"));
       broken.clear = () => Promise.reject(new Error("database unavailable"));
 
-      await expect(recordUnreferencedMachine(broken, machine)).resolves.toBeUndefined();
+      await settleMachineCleanup(() => recordUnreferencedMachine(broken, machine));
       const failed = await cleanupRecorded(
         vi.fn<Remove>().mockRejectedValue(new Error("connection reset")),
         broken,

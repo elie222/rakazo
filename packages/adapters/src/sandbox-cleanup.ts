@@ -32,8 +32,22 @@ export async function recordUnreferencedMachine(
 ): Promise<void> {
   await bestEffort(
     "record a provider machine no computer stores yet",
-    records?.record(machine, new Date(Date.now() + usedForMs + BACKUP_MARGIN_MS)),
+    writeRecord(records, machine, new Date(Date.now() + usedForMs + BACKUP_MARGIN_MS)),
   );
+}
+
+/** The record is all that deletes its machine later, so a write that fails is tried again. */
+async function writeRecord(
+  records: UnreferencedMachineRecords | undefined,
+  machine: UnreferencedMachine,
+  deleteAt: Date,
+): Promise<void> {
+  if (!records) return;
+  await retry(() => records.record(machine, deleteAt), {
+    attempts: 3,
+    retryable: () => true,
+    delayMs: [200, 1_000],
+  });
 }
 
 /**
@@ -76,7 +90,7 @@ export async function deleteUnreferencedMachine(
     });
     await bestEffort(
       "hand a provider machine that could not be deleted to its backup",
-      records?.record(machine, new Date()),
+      writeRecord(records, machine, new Date()),
     );
     return;
   }

@@ -404,7 +404,7 @@ export class BoatSandboxProvider implements SandboxProvider {
       return { name, built: true };
     } finally {
       await deleteUnreferencedMachine(this.machines, machine, (signal) =>
-        this.client.deleteSandbox(sandbox.id, { signal }),
+        this.deleteMachine(machine, signal),
       );
     }
   }
