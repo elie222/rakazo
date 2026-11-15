@@ -244,6 +244,7 @@ export function PluginsOverlay({
     setSourceError(null);
     setOauthError(null);
     sourceAction.current += 1;
+    if (pending === "install-source") setPending(null);
   }
 
   function beginCatalogSurface(
@@ -257,6 +258,7 @@ export function PluginsOverlay({
     setSourceError(null);
     setOauthError(null);
     sourceAction.current += 1;
+    if (pending === "install-source") setPending(null);
   }
 
   async function installSource() {
@@ -366,15 +368,16 @@ export function PluginsOverlay({
     setSourceError(null);
     setOauthError(null);
     sourceAction.current += 1;
+    if (pending === "install-source") setPending(null);
     setView(next);
   }
 
   function leaveSource() {
-    if (pending === "install-source") setPending(null);
     sourceForm.close();
     setSourceError(null);
     setOauthError(null);
     sourceAction.current += 1;
+    if (pending === "install-source") setPending(null);
     setView(sourceBack);
   }
 
