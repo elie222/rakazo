@@ -224,6 +224,21 @@ it("clears its button when the action is null, and brings it back", () => {
   });
 });
 
+it("clears its button when the action stops being given", () => {
+  render({ title: "Notes", action: save() });
+  render({ title: "Notes" });
+  expect(state.setOptions.mock.lastCall?.[0]).toStrictEqual({
+    title: "Notes",
+    headerRight: undefined,
+  });
+  render({ title: "Notes" });
+  expect(state.setOptions).toHaveBeenCalledTimes(2);
+
+  render({ action: save() });
+  render({});
+  expect(state.setOptions.mock.lastCall?.[0]).toStrictEqual({ headerRight: undefined });
+});
+
 it("leaves alone what it was not given", () => {
   render({});
   expect(state.setOptions).not.toHaveBeenCalled();

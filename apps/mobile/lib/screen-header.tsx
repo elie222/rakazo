@@ -21,7 +21,8 @@ export type ScreenHeaderAction = {
  * different, and a press always runs the handler of the latest render.
  *
  * A `title` left out keeps the one the layout gave the route. An `action` left out leaves the
- * trailing side alone; `null` clears the button this hook put there.
+ * trailing side alone, and `null` clears it. A button this hook put there never outlives its
+ * action: it is cleared when the action stops being given, too.
  */
 export function useScreenHeader({
   title,
@@ -32,6 +33,7 @@ export function useScreenHeader({
 }) {
   const navigation = useNavigation();
   const latest = useRef(action);
+  const installed = useRef(false);
   useLayoutEffect(() => {
     latest.current = action;
   });
@@ -42,13 +44,15 @@ export function useScreenHeader({
   const prominence = action?.prominence ?? "primary";
 
   useLayoutEffect(() => {
-    if (title === undefined && trailing === "untouched") return;
+    const clears = trailing === "cleared" || (trailing === "untouched" && installed.current);
+    if (title === undefined && trailing === "untouched" && !clears) return;
     const options: NativeStackNavigationOptions = title === undefined ? {} : { title };
     const press = () => {
       const now = latest.current;
       if (now && !now.disabled && !now.busy) now.onPress();
     };
-    if (trailing === "cleared") {
+    installed.current = trailing === "shown";
+    if (clears) {
       if (iosAtLeast(26)) options.unstable_headerRightItems = undefined;
       else options.headerRight = undefined;
     } else if (trailing === "shown" && iosAtLeast(26)) {
