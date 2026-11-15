@@ -14,7 +14,7 @@ Open **Settings → Approvals** and pick a **Mode**:
   recalls automatically, its notes and chat history don't make it ask.
 - **Auto**: an approval model checks each action against what you asked for. Actions that fit go
   ahead; the bot asks when one is off-task, or can't be undone and you didn't ask for it.
-- **Never ask**: every action runs without waiting.
+- **Never ask**: every action runs without waiting, except browser-recognized payments, which always ask.
 
 **Auto** needs an **Approval model**, set in **Settings → Models**. See [Models](./models.md).
 
@@ -49,8 +49,13 @@ In **Auto** and **Ask**, these always show a card, and **Always allow** doesn't 
 - Changing a bot's instructions or model, and creating a space.
 - A routine that watches a command, or that names a site the run found in outside content.
 
-**Never ask** runs all of them. The one exception is accepting another owner's bot connection, which
-it refuses when someone else started the run or outside content entered it.
+**Never ask** runs these actions, but refuses accepting another owner's bot connection when
+someone else started the run or outside content entered it.
+
+A pay button the page browser recognizes always asks in every mode, including **Never ask**, even
+with an **Always allow** rule. Clicking a text input, textarea or editable field is not a payment.
+If a page check fails or cannot read the page, it asks only when the page itself shows payment
+signals; a failed check alone does not show a payment card.
 
 ## Spending limit
 

@@ -607,15 +607,29 @@ class PurchaseTest(unittest.TestCase):
         FakePurchases.shows = None
         self.assertTrue(self.act([{"kind": "click", "ref": "e10"}], FakeAgentBrowser())["ok"])
 
-    def test_a_page_that_cannot_be_read_refuses_the_click_with_the_card_for_an_unknown_page(self):
+    def test_a_page_that_cannot_be_read_does_not_invent_a_purchase(self):
         FakePurchases.fails = True
         browser = FakeAgentBrowser()
         result = self.act([{"kind": "click", "ref": "e8"}], browser)
-        self.assertEqual(result["purchase"], {**helper.UNREADABLE_PURCHASE, "site": ""})
-        self.assertEqual(browser.actions(), [])
-        # The user allowed that card: the click goes ahead.
-        step = {"kind": "click", "ref": "e8", "approved": True, "site": "", "label": "", "amount": ""}
-        self.assertTrue(self.act([step], FakeAgentBrowser())["ok"])
+        self.assertTrue(result["ok"])
+        self.assertEqual(browser.actions(), [["click", "@e8"]])
+
+    def test_a_failed_site_read_uses_the_page_payment_signals(self):
+        for shows in (None, PAY):
+            with self.subTest(shows=shows), patch.object(FakePurchases, "site", side_effect=RuntimeError("gone")):
+                FakePurchases.shows = shows
+                result = self.act([{"kind": "click", "ref": "e8"}], FakeAgentBrowser())
+                self.assertEqual(result["ok"], shows is None)
+                if shows:
+                    self.assertEqual(result["purchase"], {**shows, "site": ""})
+                    checked = page(FakeAgentBrowser()).purchase_check({"actions": [{"kind": "click", "ref": "e8"}]})
+                    self.assertEqual(checked["purchase"]["label"], PAY["label"])
+
+    def test_a_textbox_inside_a_payment_frame_never_asks(self):
+        FakePurchases.shows = PAY
+        browser = FakeAgentBrowser()
+        self.assertTrue(self.act([{"kind": "click", "ref": "e12"}], browser)["ok"])
+        self.assertEqual(browser.actions(), [["scrollintoview", "@e11"], ["click", "@e12"]])
 
     def test_a_control_out_of_view_is_scrolled_to_before_it_is_checked(self):
         browser = pays(FakeAgentBrowser())
@@ -731,7 +745,7 @@ class PurchaseSiteTest(unittest.TestCase):
     def test_a_document_replaced_while_the_check_starts_is_read_again(self):
         self.assertEqual(self.site([self.GONE, 7]), ("tickets.example.test", 2))
 
-    def test_a_page_that_keeps_losing_its_document_still_fails_and_asks(self):
+    def test_a_page_that_keeps_losing_its_document_still_fails(self):
         error, _ = self.site([self.GONE] * 10)
         self.assertIs(error, self.GONE)
 
@@ -796,12 +810,15 @@ class DesktopPurchaseTest(unittest.TestCase):
         found.ask = ask
         self.assertEqual(found.desktop({"enter": True}), shows)
 
-    def test_a_check_that_fails_asks_by_what_the_page_shows_and_an_unreadable_page_asks(self):
+    def test_a_failed_or_unreadable_check_asks_only_when_the_page_shows_payment_signals(self):
         found, _ = self.purchases({"pagePoint": RuntimeError("gone"),
                                    "paymentPage": {"purchase": None, "frames": False}})
         self.assertIsNone(found.desktop({"points": [{"x": 1, "y": 2}]}))
         found, _ = self.purchases({"pagePoint": RuntimeError("gone"), "paymentPage": RuntimeError("gone")})
-        self.assertEqual(found.desktop({"points": [{"x": 1, "y": 2}]}), helper.UNREADABLE_PURCHASE)
+        self.assertIsNone(found.desktop({"points": [{"x": 1, "y": 2}]}))
+        found, _ = self.purchases({"pagePoint": RuntimeError("gone"),
+                                   "paymentPage": {"purchase": PAY, "frames": False}})
+        self.assertEqual(found.desktop({"points": [{"x": 1, "y": 2}]}), PAY)
 
     def test_a_page_with_a_payment_frame_is_asked_again_with_the_frame(self):
         shows = {**PAY, "reason": "payment_page"}
@@ -845,6 +862,20 @@ class DesktopPurchaseTest(unittest.TestCase):
         with patch.object(secrets, "payment_frames", return_value=[]), \
                 patch.object(secrets, "world_in", return_value=4), patch.object(secrets, "eval_json"):
             self.assertEqual(found.click({"x": 0, "y": 0, "width": 10, "height": 10}, False), PAY)
+
+    def test_a_text_field_in_a_same_process_frame_does_not_use_payment_signals(self):
+        found, asked = self.purchases({"purchaseAt": {"purchase": None, "inFrame": True},
+                                      "paymentPage": {"purchase": PAY, "frames": False}})
+        calls = {"DOM.getNodeForLocation": {"backendNodeId": 9, "frameId": "inner"},
+                 "Page.getFrameTree": {"frameTree": {"frame": {"id": "top"}}},
+                 "DOM.describeNode": {"node": {"nodeName": "INPUT"}},
+                 "DOM.resolveNode": {"object": {"objectId": "field"}},
+                 "Runtime.callFunctionOn": {"result": {"value": False}}}
+        found.client.call.side_effect = lambda method, *args, **kwargs: calls[method]
+        with patch.object(secrets, "payment_frames", return_value=[]), \
+                patch.object(secrets, "world_in", return_value=4), patch.object(secrets, "eval_json"):
+            self.assertIsNone(found.click({"x": 0, "y": 0, "width": 10, "height": 10}, False))
+        self.assertFalse(any(call.startswith("paymentPage") for _, call in asked))
 
 
 class ActTest(unittest.TestCase):
