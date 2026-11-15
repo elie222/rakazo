@@ -92,6 +92,7 @@ export async function connectMcpOauth(serverId: string): Promise<McpOauthResult>
     unsubscribe = browser?.onOAuthCallback((callback) => {
       if (callback.serverId !== serverId || callback.state !== started.sessionId) return;
       captured = true;
+      window.clearTimeout(timeoutTimer);
       if (callback.code === null) return finish("cancelled");
       void rpc.mcp.oauth
         .complete({ sessionId: callback.state, code: callback.code, state: callback.state })

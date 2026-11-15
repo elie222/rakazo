@@ -329,9 +329,9 @@ export function McpServersOverlay({
     setError(null);
     try {
       setOauthPending(server.id);
-      await rpc.mcp.oauth.disconnect({ serverId: server.id });
       // Forget the provider's cookies too, so the next Connect can pick another account.
       await mcpBrowser?.clear(server.id);
+      await rpc.mcp.oauth.disconnect({ serverId: server.id });
       await refresh();
     } catch (err) {
       setError(errorDetails(err, t`Could not disconnect OAuth`));

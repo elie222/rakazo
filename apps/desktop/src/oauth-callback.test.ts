@@ -121,5 +121,8 @@ describe("MCP sign-in callbacks", () => {
     expect(
       mcpOAuthCallbackFrom(`${appOrigin}/mcp/oauth/callback?error=access_denied`, appOrigin),
     ).toBeUndefined();
+    expect(
+      mcpOAuthCallbackFrom(`${appOrigin}/mcp/oauth/callback?code=c&error=&state=s`, appOrigin),
+    ).toEqual({ code: "c", state: "s" });
   });
 });

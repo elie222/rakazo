@@ -31,11 +31,12 @@ export function mcpOAuthCallbackFrom(
   if (target.searchParams.getAll("state").length !== 1) return undefined;
   const state = target.searchParams.get("state")?.trim();
   if (!state) return undefined;
+  const codes = target.searchParams.getAll("code");
+  if (codes.length > 1) return undefined;
+  const code = codes[0]?.trim();
+  if (code) return { code, state };
   // A refusal (the user declined, or the provider did) ends the sign-in too.
-  if (target.searchParams.getAll("error").length === 1) return { code: null, state };
-  if (target.searchParams.getAll("code").length !== 1) return undefined;
-  const code = target.searchParams.get("code")?.trim();
-  return code ? { code, state } : undefined;
+  return target.searchParams.get("error")?.trim() ? { code: null, state } : undefined;
 }
 
 /**
