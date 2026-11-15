@@ -206,7 +206,6 @@ const groupTargetInclude = {
           name: true,
           color: true,
           avatarSet: true,
-          runs: activeRunSelection,
         },
       },
     },

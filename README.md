@@ -345,6 +345,7 @@ Chinese guides cover [self-hosting](./docs/zh-CN/self-host.md), [models](./docs/
 - [Tools and integrations](./docs/self-host-integrations.md)
 - [Computer providers](./docs/self-host-sandbox-providers.md)
 - [Docker computers](./docs/self-host-docker-computers.md)
+- [Kubernetes / k3s installation](./docs/self-host-kubernetes.md) ([한국어](./docs/ko-KR/self-host-kubernetes.md))
 - [Storage and encryption](./docs/self-host-storage.md)
 - [Production deployment](./docs/self-host-production.md)
 - [Backup and restore](./docs/self-host-backups.md)

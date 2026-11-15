@@ -66,7 +66,7 @@ test("phone composer menu and settings panel stay tappable", async ({ page }, te
   // Tap at the start edge, where the sidebar swipe strip runs beside the chat.
   await page
     .getByTestId("slash-picker")
-    .getByRole("button", { name: "Chat Settings" })
+    .getByRole("option", { name: "Chat Settings" })
     .click({ position: { x: 4, y: 8 }, timeout: 5_000 });
   const settings = page.getByTestId("bot-settings");
   await expect(settings).toBeVisible();

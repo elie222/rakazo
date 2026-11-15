@@ -20,6 +20,7 @@ import type { ConnectOptions, Sandbox, SandboxStatus } from "railway";
 import WebSocket from "ws";
 import { z } from "zod";
 import { computerIdleSleepEnabled, sandboxIdleMs } from "./computer-idle.js";
+import { computerProxyPrepareEnv, PREPARE_COMPUTER_PROXY } from "./computer-proxy.js";
 import {
   normalizeWorkspacePath,
   shellQuote,
@@ -225,7 +226,14 @@ export class RailwaySandboxProvider implements SandboxProvider {
   }
 
   async prepare(computer: ComputerRef, context: AdapterContext): Promise<void> {
-    await this.checked(computer, PREPARE_RAILWAY_DESKTOP, context, 300_000);
+    // The proxy config travels in the environment so credentials never reach a command line.
+    await this.checked(
+      computer,
+      PREPARE_RAILWAY_DESKTOP,
+      context,
+      300_000,
+      computerProxyPrepareEnv(),
+    );
   }
 
   async *execute(
@@ -520,10 +528,11 @@ export class RailwaySandboxProvider implements SandboxProvider {
     command: string,
     context: AdapterContext,
     timeoutMs = 120_000,
+    env: Record<string, string> = {},
   ) {
     const sandbox = await this.connect(computer, context);
     return sandbox.exec(`bash -c ${shellQuote(command)}`, {
-      env: COMPUTER_CACHE_ENV,
+      env: { ...COMPUTER_CACHE_ENV, ...env },
       timeoutSec: timeoutMs / 1_000,
       maxOutputBytes: MAX_RESPONSE_BYTES,
       signal: context.signal,
@@ -535,8 +544,9 @@ export class RailwaySandboxProvider implements SandboxProvider {
     command: string,
     context: AdapterContext,
     timeoutMs: number,
+    env: Record<string, string> = {},
   ) {
-    const result = await this.run(computer, command, context, timeoutMs);
+    const result = await this.run(computer, command, context, timeoutMs, env);
     if (result.exitCode !== 0 || result.timedOut || result.truncated) {
       throw new Error(result.stderr || "could not prepare Railway computer");
     }
@@ -710,5 +720,6 @@ const PREPARE_RAILWAY_DESKTOP = [
   "exec 9>/tmp/rakazo-prepare.lock; flock -w 300 9",
   PREPARE_LINUX_DESKTOP,
   INSTALL_LINUX_BROWSER,
+  PREPARE_COMPUTER_PROXY,
   `mkdir -p ${WORKSPACE}/.browser-profiles`,
 ].join("\n");

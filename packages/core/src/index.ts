@@ -123,6 +123,7 @@ export * from "./tool-activity.js";
 export * from "./translate.js";
 export * from "./ui-locale.js";
 export * from "./unread-divider.js";
+export * from "./user-device-client.js";
 export * from "./user-error.js";
 export * from "./vault.js";
 export * from "./voice-chat-groups.js";
