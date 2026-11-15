@@ -56,8 +56,8 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
     { id: "all", label: t`All time` },
   ];
 
-  // The lists keep the previous result while the next one loads; the numbers never do.
-  const fresh = isPlaceholderData ? undefined : data;
+  // The lists keep the previous result while the next one loads; the numbers never do, nor after a failed read.
+  const fresh = isPlaceholderData || isError ? undefined : data;
   const bots = data?.bots ?? [];
   const models = fresh?.models ?? [];
   const overTime = fresh?.overTime ?? [];
