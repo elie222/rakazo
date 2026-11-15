@@ -27,6 +27,12 @@ export default function BotLogs() {
       contentContainerStyle={[styles.content, stacked && styles.compactContent]}
       contentInsetAdjustmentBehavior="automatic"
     >
+      {error ? (
+        <LoadFailure
+          message={errorText(error, t`Couldn't load logs.`)}
+          onRetry={() => void refetch()}
+        />
+      ) : null}
       {data?.length ? (
         <SettingsGroup>
           {data.map((entry) => {
@@ -59,14 +65,9 @@ export default function BotLogs() {
             );
           })}
         </SettingsGroup>
-      ) : data ? (
+      ) : data || !botId ? (
         <Text style={styles.empty}>{t`No activity yet.`}</Text>
-      ) : error ? (
-        <LoadFailure
-          message={errorText(error, t`Couldn't load logs.`)}
-          onRetry={() => void refetch()}
-        />
-      ) : (
+      ) : error ? null : (
         <ActivityIndicator />
       )}
     </ScrollView>

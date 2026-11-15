@@ -465,16 +465,14 @@ export function botsRoutes(ctx: RouterContext) {
           select: { id: true, runId: true, createdAt: true, payload: true },
         });
         const runIds = [...new Set(calls.flatMap((call) => (call.runId ? [call.runId] : [])))];
-        // A command writes a running and a done event after its call, so these are the newest few.
         const actions = await deps.prisma.event.findMany({
           where: {
             ...where,
             type: "computer.command",
             runId: { in: runIds },
-            createdAt: { gte: calls.at(-1)?.createdAt },
           },
           orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-          take: BOT_WORK_LOG_LIMIT * 2,
+          take: BOT_WORK_LOG_LIMIT * 4,
           select: { runId: true, payload: true },
         });
         // Two runs can name a call the same, so an action is told apart by its run too.
