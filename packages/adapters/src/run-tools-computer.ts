@@ -44,7 +44,7 @@ import {
   desktopProtectionGuardMessage,
   protectedComputerLifecycleRefusal,
 } from "./desktop-command-guard.js";
-import { nativeShellCommandArgv, usesNativeShell } from "./native-shell.js";
+import { nativeShellCommandArgv } from "./native-shell.js";
 import { purchaseApprovalOf } from "./purchase-gate.js";
 import { resolvePurchaseCardFill, resolvePurchasePayTokenFill } from "./purchase-service.js";
 import type { RunContext } from "./run-context.js";
@@ -53,6 +53,7 @@ import { builtinOffered } from "./run-instructions.prompt.js";
 import { computerScreenToolResult } from "./run-lifecycle.js";
 import type { ToolCall, ToolHandlers } from "./run-tool-gate.js";
 import { auditToolCall } from "./run-tool-gate.js";
+import { sandboxKindCapabilities } from "./sandbox-kind-capabilities.js";
 import { awaitScreenTurn } from "./screen-turn.js";
 import {
   isRunningShellCommand,
@@ -577,7 +578,7 @@ export const computerTools: ToolHandlers = {
       const computer = await ctx.computer.get("tool", name);
       const shellEnvironment =
         ctx.computer.hostEnvironment ??
-        (usesNativeShell(computer.kind)
+        (sandboxKindCapabilities(computer.kind).nativeShell
           ? await deps.sandbox.environment?.(computer, context)
           : undefined);
       // The computer is sent the command with its variables here, so each is a use from then on,
