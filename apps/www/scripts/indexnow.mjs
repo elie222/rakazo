@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 const SITE = "https://rakazo.com";
 const ENDPOINT = "https://api.indexnow.org/indexnow";
 const BATCH_SIZE = 10_000;
+const REQUEST_TIMEOUT_MS = 30_000;
 
 class HttpError extends Error {}
 
@@ -68,11 +69,13 @@ function changedSince(urls, since) {
 }
 
 function onSite(url) {
-  return URL.canParse(url) && new URL(url).host === new URL(SITE).host;
+  if (!URL.canParse(url)) return false;
+  const { protocol, host } = new URL(url);
+  return protocol === "https:" && host === new URL(SITE).host;
 }
 
 async function fetchText(url) {
-  const response = await fetch(url);
+  const response = await fetch(url, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
   if (!response.ok) throw new HttpError(`GET ${url} answered ${response.status}`);
   return response.text();
 }
@@ -93,6 +96,7 @@ async function submit(urlList, key) {
       method: "POST",
       headers: { "Content-Type": "application/json; charset=utf-8" },
       body: JSON.stringify({ host, key, keyLocation: `${SITE}/${key}.txt`, urlList: batch }),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
     const body = await response.text();
     if (response.status === 200 || response.status === 202) {
@@ -109,7 +113,8 @@ async function skipOnNetworkError(label, work) {
     return await work();
   } catch (error) {
     // Node's fetch reports network failures as a TypeError with the underlying cause.
-    const network = error instanceof TypeError && error.cause !== undefined;
+    const network =
+      (error instanceof TypeError && error.cause !== undefined) || error?.name === "TimeoutError";
     if (!network && !(error instanceof HttpError)) throw error;
     console.log(`::warning::${label} skipped: ${error.cause?.message ?? error.message}`);
     return undefined;
