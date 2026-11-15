@@ -341,7 +341,6 @@ function toolUsageLine(parts: {
   return `${parts.computerInstruction} ${clauses.join(" ")}`;
 }
 
-// Ordering matters: stable blocks first, volatile ones last, so the prefix stays cacheable.
 /** Names the apps a run reaches through plugin tools, so it uses them before browsing. */
 export function connectedPluginsInstruction(
   plugins: readonly { displayName: string; connectorId: string; provider: string }[],
@@ -383,6 +382,7 @@ export function formatSharedSpaceNote(memberNames: string[], requesterName?: str
     .join(" ");
 }
 
+// Ordering matters: stable blocks first, volatile ones last, so the prefix stays cacheable.
 export function userTurnInstructions(parts: {
   botInstructions: string;
   groupContext: string | undefined;
