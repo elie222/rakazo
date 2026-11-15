@@ -108,6 +108,12 @@ export function MemorySettingsOverlay({
       await rpc.memory.disconnectProvider();
       return null;
     },
+    // What is remembered and how much room it has are read through the connected provider.
+    stale: [
+      queries.memory.providerConfig.queryKey(),
+      queries.memory.list.key(),
+      queries.memory.budget.key(),
+    ],
     onSaved: (next, input) => {
       if (input.kind === "disconnect") setAddingProvider(false);
       if (input.kind === "disconnect" || input.kind === "update") setEditingProvider(false);

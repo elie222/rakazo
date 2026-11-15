@@ -10,6 +10,9 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const memory = vi.hoisted(() => ({
   providers: vi.fn(),
+  providerConfig: vi.fn(),
+  list: vi.fn(),
+  budget: vi.fn(),
   connectProvider: vi.fn(),
   updateProvider: vi.fn(),
   setDefaultScope: vi.fn(),
@@ -102,7 +105,7 @@ async function render(config: SpaceMemoryConfig | null) {
     ),
   );
   await settle();
-  return { onConfigChange, onBusyChange };
+  return { onConfigChange, onBusyChange, client };
 }
 
 function button(name: string) {
@@ -233,6 +236,16 @@ it("changes the default scope and disconnects", async () => {
   await click(button("Disconnect"));
   expect(memory.disconnectProvider).toHaveBeenCalledOnce();
   expect(onConfigChange).toHaveBeenLastCalledWith(null);
+});
+
+it("reads the connection and what is remembered again after a change", async () => {
+  memory.disconnectProvider.mockResolvedValue(undefined);
+  const { client } = await render(connected);
+  const invalidated = vi.spyOn(client, "invalidateQueries");
+  await click(button("Disconnect"));
+  const keys = JSON.stringify(invalidated.mock.calls.map(([filter]) => filter?.queryKey));
+  for (const read of ["providerConfig", "list", "budget"])
+    expect(keys).toContain(`"memory","${read}"`);
 });
 
 it("offers a retry when the providers fail to load, and keeps the connection once they do", async () => {
