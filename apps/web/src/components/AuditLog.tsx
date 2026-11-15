@@ -2,6 +2,7 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import type { AuditEvent } from "@rakazo/contracts";
 import { Button, SectionHeading } from "@rakazo/ui-web";
 import { useInfiniteQuery, useMutation } from "@tanstack/react-query";
+import { downloadArtifactBytes } from "../lib/artifact-open";
 import { queryClient } from "../lib/query";
 import { rpc, withSpaceHeaders } from "../lib/rpc";
 import { errorCode, errorText } from "../lib/user-error";
@@ -21,14 +22,10 @@ async function downloadExport(): Promise<void> {
     credentials: "include",
   });
   if (!response.ok) throw new Error(`Export failed (${response.status})`);
-  const url = URL.createObjectURL(await response.blob());
-  const link = document.createElement("a");
-  link.href = url;
-  link.download =
+  const name =
     /filename="([^"]+)"/.exec(response.headers.get("content-disposition") ?? "")?.[1] ??
     "rakazo-audit-log.jsonl";
-  link.click();
-  URL.revokeObjectURL(url);
+  downloadArtifactBytes(name, "application/x-ndjson", new Uint8Array(await response.arrayBuffer()));
 }
 
 /** The organization's audit log, newest first. Shown only to those the server lets read it. */
@@ -61,6 +58,11 @@ export function AuditLog({ organizationId }: { organizationId: string }) {
       {log.isError ? (
         <p role="alert" className="text-body-sm text-destructive">
           {errorText(log.error, t`Could not load the log.`)}
+        </p>
+      ) : null}
+      {download.isError ? (
+        <p role="alert" className="text-body-sm text-destructive">
+          {errorText(download.error, t`Could not export the log.`)}
         </p>
       ) : null}
       {events.length > 0 ? (

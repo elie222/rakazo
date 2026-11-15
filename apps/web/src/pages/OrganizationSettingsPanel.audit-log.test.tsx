@@ -174,3 +174,23 @@ it("exports the log of the selected Space", async () => {
   vi.unstubAllGlobals();
   click.mockRestore();
 });
+
+it("says so when the export fails", async () => {
+  api.events.mockResolvedValue({ events: [event("e1")], nextCursor: null });
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => new Response("no", { status: 500 })),
+  );
+  await open();
+
+  const exportButton = [...container.querySelectorAll("button")].find(
+    (button) => button.textContent === "Export",
+  )!;
+  await act(async () => exportButton.click());
+  await vi.waitFor(() =>
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      "Could not export the log.",
+    ),
+  );
+  vi.unstubAllGlobals();
+});
