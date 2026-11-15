@@ -1,5 +1,4 @@
 import type { RakazoDesktopOAuthCallback } from "@rakazo/contracts";
-import { MCP_OAUTH_CALLBACK_PATH } from "@rakazo/contracts";
 
 export type OAuthCallbackFromOptions = {
   /** SSO callbacks must reach the API, including a loopback API on a separate port. */
@@ -7,6 +6,9 @@ export type OAuthCallbackFromOptions = {
   /** App renderer origins — their `/callback` routes must not be treated as paste-flow codes. */
   excludeOrigins?: readonly string[];
 };
+
+/** The web app route a provider sends an MCP sign-in back to (a registered redirect URI). */
+export const MCP_OAUTH_CALLBACK_PATH = "/mcp/oauth/callback";
 
 export const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
 

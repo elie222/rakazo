@@ -1,7 +1,8 @@
-import { MCP_OAUTH_CALLBACK_PATH, MCP_SIGNIN_WINDOW_PREFIX } from "@rakazo/contracts";
+import { MCP_SIGNIN_WINDOW_PREFIX } from "@rakazo/contracts";
 import { desktopBridge } from "./desktop";
 import { MCP_OAUTH_CHANNEL } from "./mcp-oauth-channel";
 import { rpc } from "./rpc";
+import { MCP_OAUTH_CALLBACK_PATH } from "./sign-in-next";
 
 export { MCP_OAUTH_CHANNEL } from "./mcp-oauth-channel";
 
