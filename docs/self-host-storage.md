@@ -29,11 +29,11 @@ It never prints the key. Store a copy somewhere other than the server and its ba
 
 **The switch.** `CONTENT_ENCRYPTION=on|off` in `.env`:
 
-| Install | Unset means |
-| --- | --- |
-| Compose files, published images, Railway | `on` |
-| Desktop app, **This computer** | `off` (the computer's disk encryption covers it) |
-| Source checkout with `NODE_ENV=development` or `RAKAZO_ALLOW_DEV_SECRETS=1` | `off` |
+| Install                                                                     | Unset means                                      |
+| --------------------------------------------------------------------------- | ------------------------------------------------ |
+| Compose files, published images, Railway                                    | `on`                                             |
+| Desktop app, **This computer**                                              | `off` (the computer's disk encryption covers it) |
+| Source checkout with `NODE_ENV=development` or `RAKAZO_ALLOW_DEV_SECRETS=1` | `off`                                            |
 
 With `off`, new content and files are stored readable, so you can query your own database
 directly and a lost key cannot lose them. Content encrypted earlier still reads with the key, so

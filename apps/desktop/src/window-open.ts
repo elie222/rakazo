@@ -22,7 +22,11 @@ export function shouldOpenInAppPopup(
 
   const isHttp = target.protocol === "http:" || target.protocol === "https:";
   if (appOrigin !== null && target.origin === appOrigin) return isHttp;
-  return target.protocol === "https:" && OAUTH_POPUP_NAMES.has(frameName);
+  return (
+    target.protocol === "https:" &&
+    (OAUTH_POPUP_NAMES.has(frameName) ||
+      (frameName.startsWith("rakazo-mcp-oauth:") && frameName.length > "rakazo-mcp-oauth:".length))
+  );
 }
 
 /** Keep auth cookies in the parent app's server-specific session. */

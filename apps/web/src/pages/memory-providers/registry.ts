@@ -1,5 +1,6 @@
 import type { SpaceMemoryConfig } from "@rakazo/contracts";
-import type { ComponentType } from "react";
+import type { ComponentType, ReactNode } from "react";
+import { HindsightSettingsForm } from "./HindsightSettingsForm";
 import { HonchoSettingsForm } from "./HonchoSettingsForm";
 import { SerenitySettingsForm } from "./SerenitySettingsForm";
 import { SupermemorySettingsForm } from "./SupermemorySettingsForm";
@@ -11,6 +12,13 @@ export interface MemoryProviderConnectionDraft {
 
 export interface MemoryProviderSettingsFormProps {
   busy: boolean;
+  advancedSettings: ReactNode;
+  /**
+   * Settings of the connected provider when editing it. Credentials are never sent back to the
+   * client, so a credential field left empty while editing keeps the stored one.
+   */
+  current?: Record<string, string>;
+  /** Connect, or save the edited settings; resolves true on success. */
   onConnect: (draft: MemoryProviderConnectionDraft) => Promise<boolean>;
 }
 
@@ -51,6 +59,15 @@ export const MEMORY_PROVIDER_SETTINGS: readonly MemoryProviderSettingsRegistrati
       if (mode === "local")
         return [`Self-hosted (${baseUrl})`, workspaceId].filter(Boolean).join(", ");
       return workspaceId ? `Honcho Cloud (${workspaceId})` : "Honcho Cloud";
+    },
+  },
+  {
+    id: "hindsight",
+    name: "Hindsight",
+    SettingsForm: HindsightSettingsForm,
+    connectedLabel: (config) => {
+      const { mode, baseUrl } = config.settings;
+      return mode === "local" ? `Self-hosted (${baseUrl})` : "Hindsight Cloud";
     },
   },
 ];

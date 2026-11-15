@@ -77,6 +77,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     fonts-dejavu-core \
     fonts-noto-cjk \
     fonts-noto-color-emoji \
+    fonts-thai-tlwg \
     locales \
     dbus-x11 \
     xdg-desktop-portal \
@@ -96,6 +97,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     fd-find \
     file \
     sqlite3 \
+    nftables \
   && rm -rf /var/lib/apt/lists/* \
   && pdftotext -v \
   && pdfinfo -v \

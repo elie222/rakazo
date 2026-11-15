@@ -11,8 +11,7 @@ import { MemoryObjectStorage } from "../../../packages/adapters/src/object-stora
 import { homeRetentionSweep } from "./home-retention.js";
 
 const databaseUrl = process.env.DATABASE_URL;
-const describePostgres =
-  process.env.VERIFY_DATABASE && databaseUrl ? describe.sequential : describe.skip;
+const describePostgres = process.env.VERIFY_DATABASE && databaseUrl ? describe : describe.skip;
 const DAY = 24 * 60 * 60 * 1000;
 
 describePostgres("saved home retention (PostgreSQL)", () => {

@@ -1,9 +1,9 @@
+import { MAX_TRANSCRIPTION_RESPONSE_BYTES, VOICE_RESPONSE_TIMEOUT_MS } from "@rakazo/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   combineTranscript,
   Dictation,
-  MAX_TRANSCRIPTION_RESPONSE_BYTES,
-  TRANSCRIPTION_RESPONSE_TIMEOUT_MS,
+  MAX_ENDPOINT_RECORDING_MS,
   transcriptionLanguage,
   webSpeechAvailable,
   webSpeechNeedsServerFallback,
@@ -376,7 +376,7 @@ describe("Dictation recorder fallback", () => {
     await dictation.listen({ mode: "hold", transcribe: true, onFinal: () => undefined });
     dictation.submitHold();
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
-    await vi.advanceTimersByTimeAsync(TRANSCRIPTION_RESPONSE_TIMEOUT_MS);
+    await vi.advanceTimersByTimeAsync(VOICE_RESPONSE_TIMEOUT_MS);
 
     expect(dictation.state.error).toBe("Transcription request timed out.");
   });
@@ -793,6 +793,72 @@ describe("Dictation recorder fallback", () => {
     await vi.waitFor(() => expect(onFinal).toHaveBeenCalledExactlyOnceWith("hello there"));
     expect(fetchMock).toHaveBeenCalledOnce();
     vi.useRealTimers();
+  });
+
+  it.each([
+    ["sends a recording that never goes quiet", 0.6, "hello"],
+    ["drops a recording that never heard speech", 0, ""],
+  ])("%s once it reaches the length cap", async (_case, loudness, final) => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+    vi.stubGlobal(
+      "AudioContext",
+      class {
+        state = "running";
+        createMediaStreamSource() {
+          return { connect() {} };
+        }
+        createAnalyser() {
+          return {
+            fftSize: 2048,
+            getByteTimeDomainData: (data: Uint8Array) =>
+              data.fill(Math.round(128 + loudness * 127)),
+          };
+        }
+        close() {
+          return Promise.resolve();
+        }
+      },
+    );
+    const track = { stop: vi.fn() };
+    vi.stubGlobal("navigator", {
+      mediaDevices: { getUserMedia: vi.fn(async () => ({ getTracks: () => [track] })) },
+      language: "en-US",
+    });
+    const fetchMock = vi.fn(async () => Response.json({ text: "hello" }));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal(
+      "MediaRecorder",
+      class {
+        state = "inactive";
+        ondataavailable: ((event: { data: Blob }) => void) | null = null;
+        onstop: (() => void) | null = null;
+        start() {
+          this.state = "recording";
+        }
+        stop() {
+          this.state = "inactive";
+          this.ondataavailable?.({ data: new Blob(["audio"], { type: "audio/webm" }) });
+          this.onstop?.();
+        }
+      },
+    );
+
+    const onFinal = vi.fn();
+    const dictation = new Dictation();
+    const seen: boolean[] = [];
+    dictation.subscribe(() => seen.push(dictation.recording));
+    await dictation.listen({ mode: "endpoint", transcribe: true, onFinal });
+    expect(dictation.recording).toBe(true);
+    expect(seen.at(-1)).toBe(true);
+    vi.setSystemTime(Date.now() + MAX_ENDPOINT_RECORDING_MS - 1_000);
+    await vi.advanceTimersByTimeAsync(960);
+    expect(onFinal).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(80);
+    await Promise.resolve();
+    expect(onFinal).toHaveBeenCalledExactlyOnceWith(final);
+    expect(fetchMock).toHaveBeenCalledTimes(final ? 1 : 0);
+    expect(track.stop).toHaveBeenCalledOnce();
+    expect(dictation.recording).toBe(false);
   });
 
   it("does not let a replaced recorder tear down the new silence detector", async () => {

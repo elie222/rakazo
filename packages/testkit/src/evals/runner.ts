@@ -1,15 +1,22 @@
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import type { AgentRuntime, JobPublisher, NotificationProvider } from "@rakazo/adapter-kit";
-import { runJobKey } from "@rakazo/adapter-kit";
+import { historyCompactJob, runJobKey } from "@rakazo/adapter-kit";
 import {
   CapturingNotificationProvider,
   MessagingTeamChatEmulator,
   messageBot,
 } from "@rakazo/adapters";
 import type { MessageBlock, ModelConnectInput, ReplyMode, RunStatus } from "@rakazo/contracts";
-import { ACTIVE_RUN_STATUSES, attachmentComputerPath, isTerminal } from "@rakazo/core";
+import {
+  ACTIVE_RUN_STATUSES,
+  attachmentComputerPath,
+  isTerminal,
+  splitToolHistory,
+} from "@rakazo/core";
 import type { createDb } from "@rakazo/db";
 import { createThreadEvents } from "@rakazo/db";
+import type { HostedApp } from "../apps/mcp-host.js";
+import { hostOverMcp } from "../apps/mcp-host.js";
 import { discardBotIntroRun } from "../discard-bot-intro.js";
 import { sessionCookieHeader } from "../index.js";
 import { asSystem } from "../system-db.js";
@@ -17,12 +24,15 @@ import type { EvalCase, Evidence, SettingsSnapshot } from "./cases.js";
 import { EMPTY_SETTINGS, wakesRoutines } from "./cases.js";
 import type { ClarificationBlock } from "./clarification.js";
 import { expectedClarificationText } from "./clarification.js";
+import { EvalFailure, judgeOutcome, observe, settle, withinDeadline } from "./grading.js";
+import type { HistoryMessage } from "./history-fixtures.js";
 import type { DiagnosticToolObservation, HistoryDiagnostic } from "./history-observer.js";
 import type { EvalJudge } from "./judge.js";
 import type { CacheDecisionMeasurement, EvalPricing } from "./measurement.js";
 import { measureCalls } from "./measurement.js";
 import type { FailureCategory, TrialResult } from "./report.js";
-import { emptyTrial, redact } from "./report.js";
+import { emptyTrial, evidenceSnapshot, redact } from "./report.js";
+import { browserScreen } from "./sandbox.js";
 import { EvalServices } from "./services.js";
 import type { RoutineEvidence } from "./silence.js";
 import { SilenceObserver } from "./silence-observer.js";
@@ -73,15 +83,6 @@ export type TrialOptions = {
 };
 const WAITING_STATUSES = ["waiting_input", "waiting_approval", "paused"];
 
-class EvalFailure extends Error {
-  constructor(
-    readonly category: FailureCategory,
-    message: string,
-  ) {
-    super(message);
-  }
-}
-
 /** No coaching retries: scenario setup turns are intentional steps, never repair prompts. */
 export async function runTrial(
   scenario: EvalCase,
@@ -97,6 +98,8 @@ export async function runTrial(
     capabilities: { groups: false },
   });
   scenario.configure?.(services);
+  const apps = scenario.apps?.(new Date()) ?? [];
+  const hostedApps: HostedApp[] = [];
   const notifications = new CapturingNotificationProvider();
   const realtime = new SilenceObserver();
   const routineRuns: RoutineEvidence[] = [];
@@ -123,6 +126,7 @@ export async function runTrial(
   let messagingAddress = "";
   let messagingOriginThreadId: string | null = null;
   const secrets = [options.connection.apiKey ?? "", options.connection.baseUrl ?? ""];
+
   let phase: FailureCategory = "harness";
   const seenTools = new Map<string, { name: string }>();
   let clearedToolCount = 0;
@@ -153,6 +157,7 @@ export async function runTrial(
     if (!db) return;
     const usage = await db.usageRecord.findMany({
       where: { OR: actorScopes(actors) },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     });
     for (const row of usage)
       seenUsage.set(row.id, {
@@ -165,6 +170,11 @@ export async function runTrial(
       });
   };
   try {
+    for (const service of apps) {
+      const hosted = await hostOverMcp(service, randomBytes(24).toString("base64url"));
+      hostedApps.push(hosted);
+      secrets.push(hosted.token, hosted.endpoint);
+    }
     // A forced wake runs now; the agent is told it is the routine's due time instead.
     let clockShiftMs = 0;
     const now = () => new Date(Date.now() + clockShiftMs);
@@ -192,6 +202,15 @@ export async function runTrial(
       if (!signup.ok) throw new EvalFailure("harness", `Fixture signup failed (${signup.status})`);
       cookie = sessionCookieHeader(signup);
       await rpc(app, cookie, "models/connect", options.connection);
+      // Added the way a person adds a remote MCP server: an endpoint and a bearer token.
+      for (const [index, service] of apps.entries())
+        await rpc(app, cookie, "mcp/servers/create", {
+          transport: "streamable_http",
+          slug: service.kind,
+          name: service.displayName,
+          endpoint: hostedApps[index]!.endpoint,
+          secret: hostedApps[index]!.token,
+        });
       for (const provider of scenario.connections ?? ["GMAIL", "CRM", "GITHUB"])
         await rpc(app, cookie, "connections/begin", {
           connectorId: "composio",
@@ -289,6 +308,12 @@ export async function runTrial(
       messaging.resetWitnesses();
       // Ask mode asks before any change, so the write stops at its approval card.
       if (scenario.approvalTool) await rpc(app, cookie, "autoReview/set", { mode: "ask" });
+      for (const tool of scenario.alwaysAllowTools ?? [])
+        await rpc(app, cookie, "approvalRules/set", {
+          effect: "always_allow",
+          matchKind: "tool",
+          matchValue: tool,
+        });
     };
     await setupActor();
     if (scenario.computerFiles?.length) {
@@ -360,14 +385,44 @@ export async function runTrial(
           size: artifact.size,
         });
       }
+      // A seeded step call that kept a screenshot names it `seed:screen-dark` or `seed:screen-light`;
+      // the screenshot is uploaded as the product stores one, and the call refers to it.
+      const screens = new Map<string, string>();
+      const seededSteps = new Map<number, NonNullable<HistoryMessage["steps"]>>();
+      for (const m of scenario.history.messages) {
+        if (!m.steps) continue;
+        const steps = [];
+        for (const step of m.steps) {
+          const calls = [];
+          for (const call of step.calls ?? []) {
+            const seed = /^seed:screen-(dark|light)$/.exec(call.image?.artifactId ?? "");
+            if (!seed) {
+              calls.push(call);
+              continue;
+            }
+            if (!screens.has(seed[1]!)) {
+              const artifact = await rpc<{ id: string }>(app, cookie, "artifacts/create", {
+                botId,
+                name: `screenshot-${seed[1]}.png`,
+                mimeType: "image/png",
+                contentBase64: Buffer.from(browserScreen(seed[1] === "dark")).toString("base64"),
+              });
+              screens.set(seed[1]!, artifact.id);
+            }
+            calls.push({ ...call, image: { artifactId: screens.get(seed[1]!)! } });
+          }
+          steps.push(step.calls ? { ...step, calls } : step);
+        }
+        seededSteps.set(m.seq, steps);
+      }
       // Direct synthetic fixture setup, never pay a model to author filler.
       for (let offset = 0; offset < scenario.history.messages.length; offset += 500) {
         await prisma.message.createMany({
-          data: scenario.history.messages.slice(offset, offset + 500).map((m) => ({
-            threadId: thread.id,
-            seq: m.seq,
-            role: m.role,
-            blocks: [
+          data: scenario.history.messages.slice(offset, offset + 500).map((m) => {
+            // Kept calls are stored apart from the blocks, as every product message write does.
+            const { blocks, toolHistory } = splitToolHistory([
+              // A reply that used tools stores its steps ahead of its text, as live replies do.
+              ...(m.steps ? [{ kind: "steps", steps: seededSteps.get(m.seq) ?? m.steps }] : []),
               ...(m.text ? [{ kind: "text", text: m.text }] : []),
               ...(files.has(m.seq) ? [files.get(m.seq)!] : []),
               ...(m.subagentResult
@@ -382,10 +437,17 @@ export async function runTrial(
                     },
                   ]
                 : []),
-            ],
-            createdAt: m.createdAt,
-            ...(m.role === "bot" ? { botId: botAuthor(m.author) } : {}),
-          })),
+            ] as MessageBlock[]);
+            return {
+              threadId: thread.id,
+              seq: m.seq,
+              role: m.role,
+              blocks,
+              ...(toolHistory ? { toolHistory: JSON.stringify(toolHistory) } : {}),
+              createdAt: m.createdAt,
+              ...(m.role === "bot" ? { botId: botAuthor(m.author) } : {}),
+            };
+          }),
         });
       }
       if (scenario.history.messages.some((m) => m.subagentResult)) {
@@ -447,6 +509,21 @@ export async function runTrial(
             : {}),
         },
       });
+      if (scenario.history.compact) {
+        // The product's own compaction job summarizes the oldest batch, paid like any turn's.
+        await trial.jobs.enqueue(historyCompactJob(thread.id, actors[actors.length - 1]!.userId));
+        if (!trial.awaitIdle) throw new EvalFailure("harness", "Compaction needs an idle queue");
+        await withinDeadline(trial.awaitIdle(), deadline);
+        const { historyCompactedUpToSeq } = await prisma.thread.findUniqueOrThrow({
+          where: { id: thread.id },
+          select: { historyCompactedUpToSeq: true },
+        });
+        if (historyCompactedUpToSeq === null)
+          throw new EvalFailure(
+            "harness",
+            "Seeded history was not compacted; only the current context strategy compacts",
+          );
+      }
     }
     if (scenario.taughtSkill) {
       // Human-authored fixture setup via the same API as the teaching UI; no model work is prefilled.
@@ -971,8 +1048,18 @@ export async function runTrial(
     ]);
     await captureTools();
     const finalStep = scenario.steps.length;
+    const historySummary =
+      scenario.history?.compact && seededThreadId
+        ? (
+            await prisma.thread.findUnique({
+              where: { id: seededThreadId },
+              select: { historyCompactionSummary: true },
+            })
+          )?.historyCompactionSummary
+        : undefined;
     const evidence: Evidence = {
       text: lastText,
+      ...(historySummary ? { historySummary } : {}),
       replies,
       memberReplies,
       routineRuns,
@@ -984,6 +1071,7 @@ export async function runTrial(
       records: services.records,
       notes: services.notes,
       calls: services.calls,
+      apps: Object.fromEntries(apps.map((service) => [service.kind, service])),
       routines,
       routinesCreated,
       memory: memories.map((m) => m.content).join("\n"),
@@ -1018,36 +1106,27 @@ export async function runTrial(
         ...(peerExchanges.length ? { "peer-exchanges": JSON.stringify(peerExchanges) } : {}),
         ...(memberReplies ? { "member-replies": JSON.stringify(memberReplies) } : {}),
         ...(evidence.toolCalls.length ? { "tool-calls": JSON.stringify(evidence.toolCalls) } : {}),
+        ...(apps.length
+          ? {
+              "app-calls": JSON.stringify(
+                Object.fromEntries(apps.map((service) => [service.kind, service.calls])),
+              ),
+              "app-writes": JSON.stringify(
+                Object.fromEntries(apps.map((service) => [service.kind, service.writes])),
+              ),
+            }
+          : {}),
         "memory-snapshot": evidence.memory,
       }).map(([key, value]) => [key, value === null ? null : redact(value, secrets)]),
     );
-    if (scenario.judge && result.criteria.every((c) => c.pass)) {
-      if (!options.judge) throw new EvalFailure("incomplete", "Semantic grading requires a judge");
-      try {
-        const judgment = await withinDeadline(
-          options.judge(
-            scenario.judge(evidence),
-            AbortSignal.timeout(Math.max(1, deadline - Date.now())),
-          ),
-          deadline,
-        );
-        result.judgment = { pass: judgment.pass, reason: redact(judgment.reason, secrets) };
-        result.criteria.push({ id: "semantic-outcome", pass: judgment.pass });
-      } catch (error) {
-        throw new EvalFailure(
-          "incomplete",
-          `Judge unavailable: ${error instanceof Error ? error.message : "Unknown judge failure"}`,
-        );
-      }
-    }
-    result.status =
-      result.criteria.length > 0 && result.criteria.every((c) => c.pass) ? "passed" : "failed";
-    result.category = result.status === "passed" ? null : "agent";
-    result.reason = result.status === "passed" ? null : "Outcome criteria failed";
-    if (result.status === "failed" && handles.harnessIssues?.length) {
-      result.category = "harness";
-      result.reason = handles.harnessIssues.join(" ");
-    }
+    // Kept so a new rubric can grade the trial again without running the bot.
+    if (scenario.judge || scenario.observe) result.evidence = evidenceSnapshot(evidence, secrets);
+    const grading = { judge: options.judge, deadline, secrets };
+    await judgeOutcome(scenario, evidence, result, grading);
+    if (handles.harnessIssues?.length) result.harnessIssues = [...handles.harnessIssues];
+    settle(scenario, result, handles.harnessIssues ?? []);
+    const observations = await observe(scenario, evidence, grading);
+    if (observations) result.observations = observations;
   } catch (error) {
     result.status = "failed";
     result.category = error instanceof EvalFailure ? error.category : phase;
@@ -1056,6 +1135,7 @@ export async function runTrial(
       secrets,
     );
   } finally {
+    if (!handles) await Promise.all(hostedApps.map((hosted) => hosted.close()));
     if (handles) {
       try {
         // Stopping each bot covers only its own chat; a member's run can still wait in the
@@ -1076,6 +1156,8 @@ export async function runTrial(
       } catch {
         result.cleanupFailed = true;
       }
+      // After the trial's work stopped, so no run is cut off mid-call.
+      await Promise.all(hostedApps.map((hosted) => hosted.close()));
       try {
         await handles.finalizeBackground?.();
       } catch {
@@ -1104,6 +1186,9 @@ export async function runTrial(
                 },
               }),
               summaryPresent: !!state.historyCompactionSummary?.trim(),
+              ...(scenario.history?.compact
+                ? { summary: redact(state.historyCompactionSummary ?? "", secrets) || null }
+                : {}),
               generation: state.historyCompactionGeneration,
             };
         }
@@ -1451,21 +1536,4 @@ export async function cleanupActors(
   }
   if (!stable) failures.push(new Error("Trial scope did not become idle"));
   if (failures.length) throw new Error("Trial work could not be stopped", { cause: failures });
-}
-
-async function withinDeadline<T>(work: Promise<T>, deadline: number): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    return await Promise.race([
-      work,
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(
-          () => reject(new Error("Background work exceeded trial deadline")),
-          Math.max(1, deadline - Date.now()),
-        );
-      }),
-    ]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
 }

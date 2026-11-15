@@ -2,6 +2,7 @@ import { MODEL_REQUIRED_SEND_ERROR } from "@rakazo/core";
 import { router } from "expo-router";
 import { Alert } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { hasSavedUnsentSends } from "./outbox-disk";
 import { loadVerifiedIntegrationsScope, snapshotSessionToken } from "./session";
 import type { SendAttempt } from "./thread-feedback";
 import {
@@ -31,7 +32,7 @@ vi.mock("./api", () => ({
 }));
 vi.mock("./artifact-cache-session", () => ({ artifactCacheSession: async () => "ns-a" }));
 vi.mock("./integrations-cache", () => ({}));
-vi.mock("./outbox-disk", () => ({ outboxDisk: {} }));
+vi.mock("./outbox-disk", () => ({ outboxDisk: {}, hasSavedUnsentSends: vi.fn(() => false) }));
 vi.mock("./session", () => ({
   currentReadySessionGeneration: () => session.ready,
   currentSessionGeneration: () => session.generation,
@@ -55,7 +56,6 @@ vi.mock("./thread-feedback", () => ({
   sendWaitingMessages: vi.fn(async () => undefined),
   unsentSendsReadable: vi.fn(() => true),
 }));
-vi.mock("./i18n", () => ({ t: (message: string) => `translated: ${message}` }));
 
 const { notDelivered } = vi.mocked(configureUnsentSends).mock.calls[0]![0];
 function attempt(error: string): SendAttempt {
@@ -73,11 +73,11 @@ describe("notDelivered", () => {
   it("offers Models settings and cancellation for the missing-model rejection", () => {
     notDelivered(attempt(` ${MODEL_REQUIRED_SEND_ERROR} `));
     const [title, message, buttons] = vi.mocked(Alert.alert).mock.calls[0]!;
-    expect(title).toBe("translated: Add an AI model to keep chatting");
+    expect(title).toBe("Add an AI model to keep chatting");
     expect(message).toBeUndefined();
     expect(buttons).toEqual([
-      { text: "translated: Not Now", style: "cancel" },
-      { text: "translated: Add model", onPress: expect.any(Function), isPreferred: true },
+      { text: "Not Now", style: "cancel" },
+      { text: "Add model", onPress: expect.any(Function), isPreferred: true },
     ]);
     expect(router.push).not.toHaveBeenCalled();
     buttons![1]!.onPress!();
@@ -85,7 +85,7 @@ describe("notDelivered", () => {
   });
   it("keeps the existing alert for unrelated errors", () => {
     notDelivered(attempt("Rejected"));
-    expect(Alert.alert).toHaveBeenCalledWith("translated: Failed to send message", "Rejected");
+    expect(Alert.alert).toHaveBeenCalledWith("Failed to send message", "Rejected");
     expect(router.push).not.toHaveBeenCalled();
   });
 });
@@ -211,6 +211,26 @@ describe("unsentSendsRestored", () => {
     vi.mocked(snapshotSessionToken).mockResolvedValueOnce({ ok: true, value: "" });
     await expect(prepareUnsentSends()).rejects.toThrow("signed out");
     await expect(unsentSendsRestored()).resolves.toBe(true);
+  });
+
+  it("reports an unknown queue when signed out with messages a rejected session left on disk", async () => {
+    session.generation = 29;
+    vi.mocked(loadVerifiedIntegrationsScope).mockRejectedValueOnce(new Error("signed out"));
+    vi.mocked(snapshotSessionToken).mockResolvedValueOnce({ ok: true, value: "" });
+    vi.mocked(hasSavedUnsentSends).mockReturnValueOnce(true);
+    await expect(prepareUnsentSends()).rejects.toThrow("signed out");
+    await expect(unsentSendsRestored()).resolves.toBe(false);
+  });
+
+  it("reports an unknown queue when signed out and the saved queue cannot be read", async () => {
+    session.generation = 30;
+    vi.mocked(loadVerifiedIntegrationsScope).mockRejectedValueOnce(new Error("signed out"));
+    vi.mocked(snapshotSessionToken).mockResolvedValueOnce({ ok: true, value: "" });
+    vi.mocked(hasSavedUnsentSends).mockImplementationOnce(() => {
+      throw new Error("OUTBOX_STORAGE_UNAVAILABLE");
+    });
+    await expect(prepareUnsentSends()).rejects.toThrow("signed out");
+    await expect(unsentSendsRestored()).resolves.toBe(false);
   });
 
   it("follows a restore that replaces the awaited one", async () => {

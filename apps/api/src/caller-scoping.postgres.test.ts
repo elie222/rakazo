@@ -20,9 +20,7 @@ import type { WebhookDeps } from "./webhook.js";
 import { mountWebhookHttpRoutes, WEBHOOK_SECRET_KIND } from "./webhook.js";
 
 const describePostgres =
-  process.env.VERIFY_DATABASE === "1" && process.env.DATABASE_URL
-    ? describe.sequential
-    : describe.skip;
+  process.env.VERIFY_DATABASE === "1" && process.env.DATABASE_URL ? describe : describe.skip;
 
 const image: MessageBlock[] = [
   { kind: "image", artifactId: "image-1", name: "picture.png", mimeType: "image/png" },
@@ -271,10 +269,8 @@ describePostgres("caller and tenant scoping (PostgreSQL)", () => {
   it("runs authenticated procedures inside the caller's tenant", async () => {
     const own = await bot(shared, userA, { name: "Own" });
     const elsewhere = await bot(other, userA, { name: "Elsewhere" });
-    const router = createRouter({
-      prisma: runtime.prisma,
-      env: { ticketBoardEnabled: true },
-    } as unknown as RouterDeps);
+    await system.user.update({ where: { id: userA }, data: { labs: ["board"] } });
+    const router = createRouter({ prisma: runtime.prisma, env: {} } as unknown as RouterDeps);
     const call = async (procedure: string) => {
       const { response } = await new RPCHandler(router).handle(
         new Request(`https://api.example.test/rpc/${procedure}`, {

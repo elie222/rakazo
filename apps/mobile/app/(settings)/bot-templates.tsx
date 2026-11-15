@@ -1,3 +1,4 @@
+import { useLingui } from "@lingui/react/macro";
 import { useQuery } from "@tanstack/react-query";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback } from "react";
@@ -7,7 +8,6 @@ import { BotTemplateIcon } from "../../components/bot-template-icon";
 import { NativeActionButton } from "../../components/native-action-button";
 import { SettingsGroup, SettingsRow } from "../../components/settings-group";
 import { botTemplateCopy } from "../../lib/bot-template-copy";
-import { useI18n } from "../../lib/i18n";
 import { native, useThemedStyles } from "../../lib/native";
 import { queryClient, rpcQuery } from "../../lib/query";
 import { useSideInsets } from "../../lib/side-insets";
@@ -18,7 +18,7 @@ export default function BotTemplatesScreen() {
   const router = useRouter();
   const sideInsets = useSideInsets();
   const styles = useThemedStyles(createStyles);
-  const { t } = useI18n();
+  const { t } = useLingui();
   const templates = useQuery(rpcQuery("bots/templates"), queryClient);
   const { refetch } = templates;
   const open = (id: string) => router.push({ pathname: "/bot-template", params: { id } });
@@ -40,18 +40,18 @@ export default function BotTemplatesScreen() {
         {templates.error && !templates.data ? (
           <View style={styles.list}>
             <Text style={styles.error}>
-              {errorText(templates.error, t("Could not load templates"))}
+              {errorText(templates.error, t`Could not load templates`)}
             </Text>
             <NativeActionButton
               fill={false}
-              label={t("Retry")}
+              label={t`Retry`}
               onPress={() => void refetch()}
               prominence="secondary"
             />
           </View>
         ) : null}
         {templates.isPending ? (
-          <ActivityIndicator color={native.secondaryLabel} accessibilityLabel={t("Loading…")} />
+          <ActivityIndicator color={native.secondaryLabel} accessibilityLabel={t`Loading…`} />
         ) : null}
         {templates.data?.length ? (
           <SettingsGroup>

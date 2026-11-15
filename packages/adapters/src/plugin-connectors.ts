@@ -409,6 +409,22 @@ function collectCommands(
   return out;
 }
 
+/** Domains of the apps that publish plugin catalogs. Their relays authorize only their own
+ * app's accounts and OAuth clients, as do headers named for them. */
+const CATALOG_VENDOR_DOMAINS = ["cursor.com", "cursor.sh", "grok.com", "x.ai"];
+const CATALOG_VENDOR_HEADER = /^x-(cursor|grok|xai)-/i;
+
+/** A server on a catalog vendor's domain, or one that sends that vendor's headers. An `auth`
+ * block (handled by the caller) pins an OAuth client registered to the vendor's app, whose
+ * redirect URIs are that app's. */
+function catalogVendorOnly(endpoint: string, headers: Record<string, string>): boolean {
+  const host = new URL(endpoint).hostname.replace(/\.$/, "");
+  return (
+    CATALOG_VENDOR_DOMAINS.some((domain) => host === domain || host.endsWith(`.${domain}`)) ||
+    Object.keys(headers).some((key) => CATALOG_VENDOR_HEADER.test(key))
+  );
+}
+
 function collectMcpServers(
   files: Map<string, string>,
   schema: string | undefined,
@@ -491,6 +507,10 @@ function collectMcpServers(
         name,
         reason: "Unsafe endpoint query or invalid headers",
       });
+      continue;
+    }
+    if ("auth" in entry || catalogVendorOnly(config.data.endpoint, config.data.headers)) {
+      skipped.push({ kind: "mcp_invalid", name, reason: "Works only in the catalog's own app" });
       continue;
     }
     out.push({ name, transport, endpoint: config.data.endpoint, headers: config.data.headers });

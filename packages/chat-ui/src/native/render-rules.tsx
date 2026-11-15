@@ -3,10 +3,7 @@ import type {
   MarkdownStyleMap,
   RenderRules,
 } from "@ronradtke/react-native-markdown-display";
-import {
-  FitImage,
-  renderRules as libraryRenderRules,
-} from "@ronradtke/react-native-markdown-display";
+import { renderRules as libraryRenderRules } from "@ronradtke/react-native-markdown-display";
 import type { ReactNode } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import {
@@ -23,7 +20,7 @@ import { astText, cellPlainText, enclosingLink, soleRemoteImage } from "./ast";
 import { MarkdownMention, MarkdownPageChip } from "./chips";
 import { CodeFence, CodeScrollView, MermaidFence, ProseFence } from "./code";
 import { contraryDirection } from "./direction";
-import { LinkedRemoteImage, RemoteMarkdownImage } from "./images";
+import { FitImage, LinkedRemoteImage, RemoteMarkdownImage } from "./images";
 import {
   ISOLATE,
   isWebsiteLink,

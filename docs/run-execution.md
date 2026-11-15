@@ -9,6 +9,10 @@ process creates them. No queue, scan, shared slot or notification sits between a
 due run and its start, so one slow or stuck run never delays another. A run due
 later starts from a timer in the process that scheduled it.
 
+Code that makes a run due calls `wakeRun` after its commit. A nudge that fails is
+logged and never fails the work that recorded the run; recovery starts the run from
+its row.
+
 Each start claims the run through the executor's atomic lease and fence checks, so
 however many API and worker processes run, a run executes once. Model streams and
 tools run independently after durable ownership and heartbeats are established.
@@ -43,13 +47,13 @@ existing dispatch and recovery behavior.
 Structured logs emit `run.execution_started`, `run.first_response`, and
 `run.finished`. Timing fields contain durations in milliseconds:
 
-| Field | Meaning |
-| --- | --- |
-| `run.pre_run_wait_ms` | Source message to run creation, including steering held behind earlier work. |
-| `run.queue_wait_ms` | Run creation to its first execution start. |
-| `run.first_response_ms` | Source message to first persisted visible reply text or reply card. |
-| `run.total_ms` | Source message to run completion or failure. |
-| `run.execution_wall_ms` | First execution start to completion, including retries and human waits. |
+| Field                   | Meaning                                                                      |
+| ----------------------- | ---------------------------------------------------------------------------- |
+| `run.pre_run_wait_ms`   | Source message to run creation, including steering held behind earlier work. |
+| `run.queue_wait_ms`     | Run creation to its first execution start.                                   |
+| `run.first_response_ms` | Source message to first persisted visible reply text or reply card.          |
+| `run.total_ms`          | Source message to run completion or failure.                                 |
+| `run.execution_wall_ms` | First execution start to completion, including retries and human waits.      |
 
 These are run-level measurements. Multiple steering messages can share one run;
 its selected source message defines the timing origin. When a run has no source

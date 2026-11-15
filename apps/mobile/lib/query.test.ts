@@ -17,7 +17,6 @@ vi.mock("./api", () => ({
   rpc: scope.rpc,
 }));
 vi.mock("./session", () => ({ currentSessionGeneration: () => scope.generation }));
-vi.mock("./i18n", () => ({ t: (text: string) => text }));
 
 function deferred<T>() {
   let resolve!: (value: T) => void;

@@ -145,6 +145,10 @@ export class PipedreamConnector implements ManagedConnectorProvider {
     );
   }
 
+  async needsReconnect(context: AdapterContext, externalId: string): Promise<boolean> {
+    return approvedAccounts(context, externalId).length === 0;
+  }
+
   async warmDirectory(): Promise<void> {
     await this.apps();
   }

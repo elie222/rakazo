@@ -26,7 +26,6 @@ vi.mock("./session", () => ({
   loadSessionToken: async () => "token",
   currentSessionGeneration: () => scope.generation,
 }));
-vi.mock("./i18n", () => ({ t: (text: string) => text }));
 
 function deferred<T>() {
   let resolve!: (value: T) => void;

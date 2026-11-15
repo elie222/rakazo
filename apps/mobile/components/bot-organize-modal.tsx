@@ -1,5 +1,6 @@
+import { useLingui } from "@lingui/react/macro";
 import { SNOOZE_PRESETS, snoozePresetTime } from "@rakazo/core";
-import type { ReactNode } from "react";
+import type { ComponentRef, ReactNode } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ViewStyle } from "react-native";
 import {
@@ -21,7 +22,6 @@ import {
 } from "react-native-keyboard-controller";
 import { mobileTokens } from "../lib/appearance";
 import { confirmDeleteSection } from "../lib/confirm-delete-section";
-import { useI18n } from "../lib/i18n";
 import { SNOOZE_LABELS } from "../lib/inbox-swipe";
 import type { MobileBot, MobileBotSection } from "../lib/mobile-types";
 import { native, useThemedStyles } from "../lib/native";
@@ -62,14 +62,14 @@ export function BotOrganizeModal({
 }) {
   const Sheet = useNativeSheet();
   const styles = useThemedStyles(createBotOrganizeStyles);
-  const { t } = useI18n();
+  const { t, i18n } = useLingui();
   const currentSection = sections.find((section) => section.id === bot.sectionId) ?? null;
   const [mode, setMode] = useState<"idle" | "create" | "rename">("idle");
   const [name, setName] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function save(request: () => Promise<void>, fallback = t("Could not update chat")) {
+  async function save(request: () => Promise<void>, fallback = t`Could not update chat`) {
     if (saving) return;
     setSaving(true);
     setError(null);
@@ -99,8 +99,7 @@ export function BotOrganizeModal({
     if (!currentSection) return;
     confirmDeleteSection(
       currentSection,
-      t,
-      () => void save(() => onDeleteSection(currentSection.id), t("Could not delete section")),
+      () => void save(() => onDeleteSection(currentSection.id), t`Could not delete section`),
     );
   }
 
@@ -130,7 +129,7 @@ export function BotOrganizeModal({
           android={bot.pinned ? "pin-outline" : "pin"}
           size={18}
         />
-        <Text style={styles.actionLabel}>{bot.pinned ? t("Unpin") : t("Pin")}</Text>
+        <Text style={styles.actionLabel}>{bot.pinned ? t`Unpin` : t`Pin`}</Text>
       </Pressable>
       {typeof bot.notifyOnFinish === "boolean" ? (
         <Pressable
@@ -145,7 +144,7 @@ export function BotOrganizeModal({
             size={18}
           />
           <Text style={styles.actionLabel}>
-            {bot.notifyOnFinish ? t("Silence notifications") : t("Resume notifications")}
+            {bot.notifyOnFinish ? t`Silence notifications` : t`Resume notifications`}
           </Text>
         </Pressable>
       ) : null}
@@ -157,12 +156,12 @@ export function BotOrganizeModal({
           style={({ pressed }) => [styles.action, pressed && styles.pressed]}
         >
           <NativeSymbol ios="moon.zzz" android="moon-outline" size={18} />
-          <Text style={styles.actionLabel}>{t("Unsnooze")}</Text>
+          <Text style={styles.actionLabel}>{t`Unsnooze`}</Text>
         </Pressable>
       ) : null}
       {onSnooze && !snoozed ? (
         <>
-          <Text style={styles.sectionLabel}>{t("Snooze")}</Text>
+          <Text style={styles.sectionLabel}>{t`Snooze`}</Text>
           {SNOOZE_PRESETS.map((preset) => (
             <Pressable
               key={preset}
@@ -173,12 +172,12 @@ export function BotOrganizeModal({
               }
               style={({ pressed }) => [styles.action, pressed && styles.pressed]}
             >
-              <Text style={styles.actionLabel}>{t(SNOOZE_LABELS[preset])}</Text>
+              <Text style={styles.actionLabel}>{i18n._(SNOOZE_LABELS[preset])}</Text>
             </Pressable>
           ))}
         </>
       ) : null}
-      <Text style={styles.sectionLabel}>{t("Move to")}</Text>
+      <Text style={styles.sectionLabel}>{t`Move to`}</Text>
       <ScrollView
         style={styles.sectionOptions}
         keyboardShouldPersistTaps="handled"
@@ -194,7 +193,7 @@ export function BotOrganizeModal({
           />
         ))}
         <SectionOption
-          label={t("Unassigned")}
+          label={t`Unassigned`}
           selected={bot.sectionId === null}
           disabled={saving || bot.sectionId === null}
           onPress={() => void save(() => onUpdate({ sectionId: null }))}
@@ -207,13 +206,13 @@ export function BotOrganizeModal({
             value={name}
             onChangeText={setName}
             maxLength={60}
-            placeholder={t("Section name")}
+            placeholder={t`Section name`}
             placeholderTextColor={native.secondaryLabel}
             style={[styles.newSectionInput, Sheet ? styles.nativeSheetInput : null]}
           />
           <NativeActionButton
-            label={mode === "rename" ? t("Save") : t("Create")}
-            accessibilityLabel={mode === "rename" ? t("Save section name") : t("Create section")}
+            label={mode === "rename" ? t`Save` : t`Create`}
+            accessibilityLabel={mode === "rename" ? t`Save section name` : t`Create section`}
             fill={false}
             style={{ alignSelf: "center" }}
             disabled={
@@ -237,7 +236,7 @@ export function BotOrganizeModal({
             style={({ pressed }) => [styles.action, pressed && styles.pressed]}
           >
             <NativeSymbol ios="folder.badge.plus" android="folder-outline" size={18} />
-            <Text style={styles.actionLabel}>{t("New section")}</Text>
+            <Text style={styles.actionLabel}>{t`New section`}</Text>
           </Pressable>
           {currentSection ? (
             <Pressable
@@ -246,7 +245,7 @@ export function BotOrganizeModal({
               style={({ pressed }) => [styles.action, pressed && styles.pressed]}
             >
               <NativeSymbol ios="pencil" android="pencil-outline" size={18} />
-              <Text style={styles.actionLabel}>{t("Rename section")}</Text>
+              <Text style={styles.actionLabel}>{t`Rename section`}</Text>
             </Pressable>
           ) : null}
           {currentSection ? (
@@ -262,14 +261,14 @@ export function BotOrganizeModal({
                 size={18}
                 color={mobileTokens().destructive}
               />
-              <Text style={[styles.actionLabel, styles.destructive]}>{t("Delete section")}</Text>
+              <Text style={[styles.actionLabel, styles.destructive]}>{t`Delete section`}</Text>
             </Pressable>
           ) : null}
         </>
       )}
       {error ? <Text style={styles.error}>{error}</Text> : null}
       <NativeActionButton
-        label={t("Cancel")}
+        label={t`Cancel`}
         prominence="secondary"
         fill
         style={styles.cancel}
@@ -302,7 +301,7 @@ export function BotOrganizeModal({
     <Modal transparent animationType="fade" onRequestClose={onClose}>
       <KeyboardAvoidingView style={styles.overlay}>
         <Pressable
-          accessibilityLabel={t("Close chat organization")}
+          accessibilityLabel={t`Close chat organization`}
           style={StyleSheet.absoluteFill}
           onPress={onClose}
         />
@@ -323,11 +322,12 @@ function FormSheetKeyboardAvoidingView({
   style: ViewStyle;
   children: ReactNode;
 }) {
-  const ref = useRef<View>(null);
+  // The library still types its ref as the View component, not the host instance it holds.
+  const ref = useRef<ComponentRef<typeof SheetKeyboardAvoidingView>>(null);
   const [offset, setOffset] = useState(0);
   const measure = useCallback(() => {
     const tag = findNodeHandle(ref.current);
-    if (tag === null) return;
+    if (tag == null) return;
     KeyboardControllerNative.viewPositionInWindow(tag).then(
       ({ y }) => setOffset(y),
       () => {},

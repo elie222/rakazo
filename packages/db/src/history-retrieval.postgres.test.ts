@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { HistorySearchInputSchema } from "@rakazo/contracts";
 import { escapeJsonSearchWildcards } from "@rakazo/core";
@@ -9,7 +10,7 @@ import { readHistory, searchHistory } from "./history-retrieval.js";
 
 // Temporary synthetic tables shadow product tables. Never inspect existing chat content.
 const enabled = process.env.VERIFY_DATABASE && process.env.DATABASE_URL;
-const postgres = enabled ? describe.sequential : describe.skip;
+const postgres = enabled ? describe : describe.skip;
 postgres("history retrieval (PostgreSQL)", () => {
   let pool: Pool;
   let prisma: PrismaClient;
@@ -20,6 +21,16 @@ postgres("history retrieval (PostgreSQL)", () => {
     botId: "synthetic-bot",
   };
   beforeAll(async () => {
+    // The migration's own statement, so the tested predicate cannot drift from production.
+    const toolWorkIndex = readFileSync(
+      new URL(
+        "../prisma/migrations/20261210120000_message_tool_work_idx/migration.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    )
+      .replace(/^--.*$/gm, "")
+      .replace("CONCURRENTLY ", "");
     pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 1 });
     prisma = new PrismaClient({ adapter: new PrismaPg(pool, { schema: "pg_temp" }) });
     await pool.query(`
@@ -42,8 +53,9 @@ postgres("history retrieval (PostgreSQL)", () => {
         jsonb_build_array(jsonb_build_object('kind','text','text', CASE WHEN n = 100 THEN 'exports use batching' ELSE 'filler exchange ' || n END))
         FROM generate_series(1,10000) n;
       CREATE INDEX synthetic_history_fts ON messages USING GIN (to_tsvector('simple',jsonb_path_query_array(blocks,
-        '$[*] ? (@.kind == "text" || @.kind == "channel_message" || @.kind == "bot_message_received" || @.kind == "bot_message_sent" || @.kind == "handoff").text')::text || jsonb_path_query_array(blocks, '$[*] ? (@.kind == "subagent").task')::text || jsonb_path_query_array(blocks, '$[*] ? (@.kind == "subagent").result')::text || translate(jsonb_path_query_array(blocks, '$[*] ? (@.kind == "file" || @.kind == "image").name')::text, '._-', '   ')));
+        '$[*] ? (@.kind == "text" || @.kind == "channel_message" || @.kind == "bot_message_received" || @.kind == "bot_message_sent" || @.kind == "handoff").text')::text || jsonb_path_query_array(blocks, '$[*] ? (@.kind == "subagent").task')::text || jsonb_path_query_array(blocks, '$[*] ? (@.kind == "subagent").result')::text || translate(jsonb_path_query_array(blocks, '$[*] ? (@.kind == "file" || @.kind == "image").name')::text, '._-', '   ') || jsonb_path_query_array(blocks, '$[*] ? (@.kind == "steps").steps[*].label')::text || jsonb_path_query_array(blocks, '$[*] ? (@.kind == "steps").steps[*].note')::text));
       CREATE INDEX synthetic_history_seq ON messages ("threadId",seq);
+      ${toolWorkIndex}
       ANALYZE messages;
       ALTER TABLE bots ADD COLUMN name text DEFAULT 'History bot';
       ALTER TABLE chat_groups ADD COLUMN name text DEFAULT 'History group';
@@ -163,6 +175,127 @@ postgres("history retrieval (PostgreSQL)", () => {
         executionMs: plan["Execution Time"],
       })}\n`,
     );
+  });
+  it("finds an earlier reply by its tool step note and returns the steps it ran", async () => {
+    await pool.query(
+      `INSERT INTO messages VALUES ('steps-reply', 'synthetic-thread', 10001, 'bot', NULL, NULL,
+      '2026-03-01T00:00:00Z', $1::jsonb)`,
+      [
+        JSON.stringify([
+          {
+            kind: "steps",
+            steps: [{ label: "Shell", count: 2, note: "Installing Quillfeather into Chromium." }],
+          },
+          { kind: "text", text: "Done." },
+        ]),
+      ],
+    );
+    const querySpy = vi.spyOn(prisma, "$queryRaw");
+    const results = await searchHistory(prisma, scope, { query: "quillfeather" });
+    const searchQuery = querySpy.mock.calls[0]![0] as Prisma.Sql;
+    querySpy.mockRestore();
+    expect(results.messages.map((message) => message.messageId)).toEqual(["steps-reply"]);
+    expect(results.messages[0]!.text).toContain(
+      "- Shell ×2: Installing Quillfeather into Chromium.",
+    );
+    const explained = await pool.query(
+      `EXPLAIN (FORMAT JSON) ${searchQuery.text}`,
+      searchQuery.values,
+    );
+    expect(JSON.stringify(explained.rows[0]["QUERY PLAN"])).toContain("synthetic_history_fts");
+    await pool.query(`DELETE FROM messages WHERE id = 'steps-reply'`);
+  });
+  it("keeps a reply made only of tool steps when search is narrowed to bot replies", async () => {
+    await pool.query(
+      `INSERT INTO messages VALUES ('steps-only-reply', 'synthetic-thread', 10002, 'bot', NULL, NULL,
+      '2026-03-01T00:00:00Z', $1::jsonb)`,
+      [
+        JSON.stringify([
+          {
+            kind: "steps",
+            steps: [{ label: "Shell", count: 1, note: "Pruning Larkspur caches." }],
+          },
+        ]),
+      ],
+    );
+    const results = await searchHistory(prisma, scope, {
+      query: "larkspur",
+      kinds: ["bot_replies"],
+    });
+    expect(results.messages.map((message) => message.messageId)).toEqual(["steps-only-reply"]);
+    await pool.query(`DELETE FROM messages WHERE id = 'steps-only-reply'`);
+  });
+  it("lists only replies that used tools when browsing tool work without a keyword", async () => {
+    await pool.query(
+      `INSERT INTO messages VALUES ('browsed-steps', 'synthetic-thread', 10003, 'bot', NULL, NULL,
+      '2026-03-01T00:00:00Z', $1::jsonb)`,
+      [
+        JSON.stringify([
+          { kind: "steps", steps: [{ label: "Shell", count: 1, note: "Adding a dark theme." }] },
+          { kind: "text", text: "Sites show dark now." },
+        ]),
+      ],
+    );
+    const results = await searchHistory(prisma, scope, { kinds: ["tool_work"] });
+    expect(results.messages.map((message) => message.messageId)).toEqual(["browsed-steps"]);
+    expect(results.messages[0]!.text).toContain("- Shell: Adding a dark theme.");
+    // An empty search here points at that earlier tool work.
+    const empty = await searchHistory(prisma, scope, { query: "quillfeather zebra" });
+    expect(empty.messages).toEqual([]);
+    expect(empty.note).toContain('kinds ["tool_work"]');
+    const emptyToolWork = await searchHistory(prisma, scope, {
+      query: "quillfeather zebra",
+      kinds: ["tool_work"],
+    });
+    expect(emptyToolWork.messages).toEqual([]);
+    expect(emptyToolWork.note).toContain('kinds ["tool_work"] and no query');
+    await pool.query(`DELETE FROM messages WHERE id = 'browsed-steps'`);
+    const plain = await searchHistory(prisma, scope, { query: "quillfeather zebra" });
+    expect(plain.note).not.toContain("tool_work");
+  });
+  it("finds tool work in other chats through the tool work index", async () => {
+    await pool.query(
+      `INSERT INTO threads VALUES ('tool-elsewhere','synthetic-space','synthetic-user','synthetic-bot',NULL)`,
+    );
+    await pool.query(
+      `INSERT INTO messages VALUES ('elsewhere-steps', 'tool-elsewhere', 1, 'bot', NULL, NULL,
+      '2026-03-01T00:00:00Z', $1::jsonb)`,
+      [
+        JSON.stringify([
+          { kind: "steps", steps: [{ label: "Shell", count: 1, note: "Adding a dark theme." }] },
+        ]),
+      ],
+    );
+    const granted = { ...scope, allowMyChats: true };
+    const explain = async (sql: Prisma.Sql) =>
+      JSON.stringify(
+        (await pool.query(`EXPLAIN (FORMAT JSON) ${sql.text}`, sql.values)).rows[0]["QUERY PLAN"],
+      );
+    // An empty all-chats search points at tool work that exists only in another chat.
+    const querySpy = vi.spyOn(prisma, "$queryRaw");
+    const empty = await searchHistory(prisma, granted, {
+      scope: "my_chats",
+      query: "quillfeather zebra",
+    });
+    const check = querySpy.mock.calls.at(-1)![0] as Prisma.Sql;
+    querySpy.mockClear();
+    expect(empty.note).toContain('scope "my_chats", kinds ["tool_work"]');
+    expect(check.sql).toContain("SELECT 1 FROM messages");
+    expect(await explain(check)).toContain("messages_tool_work_idx");
+    // Listing it across chats reads the same index instead of every message's blocks.
+    const listed = await searchHistory(prisma, granted, {
+      scope: "my_chats",
+      kinds: ["tool_work"],
+    });
+    const browse = querySpy.mock.calls[0]![0] as Prisma.Sql;
+    querySpy.mockRestore();
+    expect(listed.messages.map((message) => message.messageId)).toEqual(["elsewhere-steps"]);
+    expect(await explain(browse)).toContain("messages_tool_work_idx");
+    // A this-chat search still offers only this chat's tool work.
+    const here = await searchHistory(prisma, scope, { query: "quillfeather zebra" });
+    expect(here.note).not.toContain("tool_work");
+    await pool.query(`DELETE FROM messages WHERE id = 'elsewhere-steps';
+      DELETE FROM threads WHERE id = 'tool-elsewhere'`);
   });
   it("keeps query-specific continuation available after a narrower empty query in the 10k corpus", async () => {
     await pool.query(`INSERT INTO messages SELECT 'continuation-' || n, 'synthetic-thread', n, 'user', NULL, NULL,

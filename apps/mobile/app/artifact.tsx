@@ -1,10 +1,12 @@
+import { ph, t } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
 import { ChatMarkdown } from "@rakazo/chat-ui/native";
 import type { ArtifactVersion, ArtifactWithContent } from "@rakazo/contracts";
 import { artifactPreviewKind } from "@rakazo/contracts";
 import type { File } from "expo-file-system";
-import { useLocalSearchParams, useNavigation, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import type { ReactNode } from "react";
-import { useCallback, useEffect, useLayoutEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -30,7 +32,6 @@ import {
   removeArtifact,
 } from "../lib/artifacts";
 import { useFloatingHeaderInset } from "../lib/floating-header";
-import { t, useI18n } from "../lib/i18n";
 import { presentMessageActionSheet } from "../lib/message-action-sheet";
 import { native, useResolvedAppearance, useThemedStyles } from "../lib/native";
 import { iosAtLeast } from "../lib/native-controls";
@@ -82,8 +83,17 @@ export default function ArtifactDetailScreen() {
   const { artifactId, exact } = useLocalSearchParams<{ artifactId: string; exact?: string }>();
   const navigation = useNavigation();
   const router = useRouter();
+  const deletionContext = useRef<object | null>(null);
+  useFocusEffect(
+    useCallback(() => {
+      deletionContext.current = {};
+      return () => {
+        deletionContext.current = null;
+      };
+    }, [artifactId]),
+  );
   const headerInset = useFloatingHeaderInset();
-  const { t } = useI18n();
+  const { t } = useLingui();
   const colorScheme = useResolvedAppearance();
   const styles = useThemedStyles(createStyles);
 
@@ -126,7 +136,7 @@ export default function ArtifactDetailScreen() {
         if (!cancelled) {
           setContent({
             status: "error",
-            message: errorText(error, t("Could not load this artifact.")),
+            message: errorText(error, t`Could not load this artifact.`),
           });
         }
       });
@@ -137,26 +147,33 @@ export default function ArtifactDetailScreen() {
 
   const confirmDelete = useCallback(() => {
     if (content.status !== "ready") return;
+    const context = deletionContext.current;
+    if (!context) return;
+    const isCurrent = () => deletionContext.current === context;
     const name = content.artifact.name;
     const versionCount = versions?.length ?? 1;
     Alert.alert(
-      t('Delete "{name}"?', { name }),
+      t`Delete "${name}"?`,
       versionCount > 1
-        ? t("This deletes all {count} versions of this artifact. This can't be undone.", {
-            count: versionCount,
-          })
-        : t("This can't be undone."),
+        ? t`This deletes all ${ph({ count: versionCount })} versions of this artifact. This can't be undone.`
+        : t`This can't be undone.`,
       [
-        { text: t("Cancel"), style: "cancel" },
+        { text: t`Cancel`, style: "cancel" },
         {
-          text: t("Delete"),
+          text: t`Delete`,
           style: "destructive",
-          onPress: () =>
+          onPress: () => {
+            if (!isCurrent()) return;
             void removeArtifact(artifactId)
-              .then(() => router.back())
-              .catch((error: unknown) =>
-                Alert.alert(t("Could not delete this artifact"), errorText(error, t("Try again."))),
-              ),
+              .then(() => {
+                if (isCurrent()) router.back();
+              })
+              .catch((error: unknown) => {
+                if (isCurrent()) {
+                  Alert.alert(t`Could not delete this artifact`, errorText(error, t`Try again.`));
+                }
+              });
+          },
         },
       ],
     );
@@ -181,10 +198,10 @@ export default function ArtifactDetailScreen() {
   function pickVersion() {
     if (!versions || versions.length < 2) return;
     presentMessageActionSheet({
-      title: t("Versions"),
+      title: t`Versions`,
       selected: versions.findIndex((version) => version.id === selectedVersionId),
-      cancel: t("Cancel"),
-      more: t("More"),
+      cancel: t`Cancel`,
+      more: t`More`,
       colorScheme,
       actions: versions.map((version) => ({
         text: `v${version.version} (${formatActivityRelativeTime(version.createdAt)})`,
@@ -198,7 +215,7 @@ export default function ArtifactDetailScreen() {
     try {
       await shareLocalFile(content.file.uri, content.artifact.mimeType, content.artifact.name);
     } catch (error) {
-      Alert.alert(t("Could not share this artifact"), errorText(error, t("Try again.")));
+      Alert.alert(t`Could not share this artifact`, errorText(error, t`Try again.`));
     }
   }, [content, t]);
 
@@ -209,7 +226,7 @@ export default function ArtifactDetailScreen() {
         content.status === "ready" ? (
           <View style={styles.headerActions}>
             <Pressable
-              accessibilityLabel={t("Share")}
+              accessibilityLabel={t`Share`}
               hitSlop={8}
               onPress={() => void share()}
               style={styles.headerButton}
@@ -217,7 +234,7 @@ export default function ArtifactDetailScreen() {
               <NativeSymbol ios="square.and.arrow.up" android="share-social-outline" size={19} />
             </Pressable>
             <Pressable
-              accessibilityLabel={t("Delete")}
+              accessibilityLabel={t`Delete`}
               hitSlop={8}
               onPress={confirmDelete}
               style={styles.headerButton}
@@ -238,13 +255,13 @@ export default function ArtifactDetailScreen() {
                 ? [
                     {
                       type: "button" as const,
-                      label: t("Share"),
+                      label: t`Share`,
                       icon: { type: "sfSymbol" as const, name: "square.and.arrow.up" },
                       onPress: () => void share(),
                     },
                     {
                       type: "button" as const,
-                      label: t("Delete"),
+                      label: t`Delete`,
                       icon: { type: "sfSymbol" as const, name: "trash" },
                       tintColor: mobileTokens().destructive,
                       onPress: confirmDelete,
@@ -380,7 +397,7 @@ function ArtifactPreview({
   }
   return (
     <View style={styles.centered}>
-      <Text style={styles.errorText}>{t("No preview for this file type.")}</Text>
+      <Text style={styles.errorText}>{t`No preview for this file type.`}</Text>
     </View>
   );
 }

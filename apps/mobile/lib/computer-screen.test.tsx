@@ -199,10 +199,6 @@ vi.mock("../components/glass-icon-button", () => {
   };
 });
 
-vi.mock("../components/computer-maintenance-actions", () => ({
-  ComputerMaintenanceActions: () => null,
-}));
-
 vi.mock("../components/computer-mode-picker", () => {
   return {
     ComputerModePicker: (props: {
@@ -224,12 +220,6 @@ vi.mock("./api-server", () => ({}));
 vi.mock("./api-auth", () => ({}));
 vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({ currentApiBase: () => apiBase.current, rpc }));
-
-vi.mock("./i18n", () => {
-  const t = (text: string, values?: Record<string, string>) =>
-    text.replace(/\{(\w+)\}/g, (_, key: string) => values?.[key] ?? key);
-  return { t, useI18n: () => ({ t }) };
-});
 
 vi.mock("./native", () => ({
   useMobileTokens: () => ({
@@ -456,7 +446,7 @@ describe("computer screen", () => {
     });
     const view = await render();
     const release = Array.from(view.querySelectorAll("button")).find(
-      (button) => button.textContent === "Release",
+      (button) => button.textContent === "Hand back control",
     );
     expect(release).toBeDefined();
     await act(async () => release?.click());
@@ -804,7 +794,7 @@ describe("computer screen", () => {
     expect(scroll?.contains(view.querySelector("[data-keyboard-bar]"))).toBe(true);
   });
 
-  it("closes the keyboard as soon as Release is tapped, even if the release fails", async () => {
+  it("closes the keyboard as soon as Hand back is tapped, even if the release fails", async () => {
     const held = { ...botWorking, controlHolder: "user" as const, controlBotId: "bot-1" };
     respond({ ...held, busyBotName: null });
     let fail: (error: Error) => void = () => undefined;
@@ -824,7 +814,7 @@ describe("computer screen", () => {
     const bar = () => fullWindow?.querySelector<HTMLElement>("[data-keyboard-bar]");
     expect(bar()?.dataset.active).toBe("true");
     const release = Array.from(fullWindow?.querySelectorAll("button") ?? []).find(
-      (button) => button.textContent === "Release",
+      (button) => button.textContent === "Hand back control",
     );
     await act(async () => release?.click());
     expect(calls("computer/release")).toHaveLength(1);
@@ -833,6 +823,82 @@ describe("computer screen", () => {
     await act(async () => fail(new Error("offline")));
     await settle();
     expect(bar()?.dataset.active).toBe("true");
+  });
+
+  /** Control this screen takes with Take control; the server's status names its lease. */
+  function respondTakingControl() {
+    let held = false;
+    rpc.mockImplementation(async (method: string) => {
+      if (method === "computer/takeover") {
+        held = true;
+        return { leaseId: "lease-1", expiresAt: new Date().toISOString() };
+      }
+      if (method === "computer/status") {
+        return held
+          ? {
+              ...botWorking,
+              controlHolder: "user",
+              controlBotId: "bot-1",
+              controlLeaseId: "lease-1",
+              busyBotName: null,
+            }
+          : { ...botWorking, busyBotName: null };
+      }
+      if (method === "computer/screenUrl") return { url: "https://screen.example.test/embed" };
+      return {};
+    });
+  }
+
+  async function takeControl(view: HTMLElement) {
+    await act(async () => takeControlButtons(view)[0]?.click());
+    await settle();
+  }
+
+  it("hands its lease back when the full window closes, and checks in often while holding it", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    try {
+      respondTakingControl();
+      const view = await render();
+      await takeControl(view);
+      const beats = calls("computer/heartbeat").length;
+      await act(async () => vi.advanceTimersByTime(15_000));
+      expect(calls("computer/heartbeat").length).toBeGreaterThan(beats);
+      expect(calls("computer/release")).toHaveLength(0);
+
+      await act(async () =>
+        view.querySelector<HTMLButtonElement>('[aria-label="Close computer"]')?.click(),
+      );
+      await settle();
+      expect(calls("computer/release")).toEqual([
+        ["computer/release", { botId: "bot-1", leaseId: "lease-1" }],
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("hands its lease back when the computer screen goes away while open", async () => {
+    respondTakingControl();
+    const view = await render();
+    await takeControl(view);
+    act(() => root?.unmount());
+    root = undefined;
+    expect(calls("computer/release")).toEqual([
+      ["computer/release", { botId: "bot-1", leaseId: "lease-1" }],
+    ]);
+  });
+
+  it("hands back whatever control it holds when Hand back is pressed", async () => {
+    respond({ ...botWorking, controlHolder: "user", controlBotId: "bot-1", busyBotName: null });
+    const view = await render();
+    await act(async () => preview(view).click());
+    await settle();
+    const handBack = Array.from(
+      view.querySelector("section")?.querySelectorAll("button") ?? [],
+    ).find((button) => button.textContent === "Hand back control");
+    await act(async () => handBack?.click());
+    await settle();
+    expect(calls("computer/release")[0]).toEqual(["computer/release", { botId: "bot-1" }]);
   });
 
   it("loads the screen again when the app returns from the background", async () => {
@@ -1297,6 +1363,43 @@ describe("computer screen", () => {
       expect(view.textContent).not.toContain("Couldn't start the computer");
       expect(tryAgain(view)).toBeUndefined();
       expect(view.querySelector("section")).toBeNull();
+    });
+
+    it("keeps and later hands back a Take control the server granted after timing out", async () => {
+      status = idle;
+      const base = rpc.getMockImplementation()!;
+      rpc.mockImplementation((method: string, ...rest: unknown[]) => {
+        if (method !== "computer/takeover") return base(method, ...rest);
+        // The server granted control after the app stopped waiting for the answer.
+        status = {
+          ...idle,
+          controlHolder: "user",
+          controlBotId: "bot-1",
+          controlLeaseId: "lease-1",
+        };
+        return Promise.reject(
+          Object.defineProperty(new Error("Request timed out"), "name", {
+            value: "TimeoutError",
+          }),
+        );
+      });
+      const view = await render();
+      await act(async () => boots[0]?.resolve());
+      await settle();
+
+      await act(async () => takeControlButtons(view)[0]?.click());
+      await settle();
+      expect(view.textContent).not.toContain("Request timed out");
+      expect(view.querySelector("section")).not.toBeNull();
+
+      await act(async () =>
+        view.querySelector<HTMLButtonElement>('[aria-label="Close computer"]')?.click(),
+      );
+      await settle();
+      expect(calls("computer/release")).toContainEqual([
+        "computer/release",
+        { botId: "bot-1", leaseId: "lease-1" },
+      ]);
     });
 
     it("keeps following the boot after the request times out", async () => {

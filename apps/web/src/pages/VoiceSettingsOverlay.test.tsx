@@ -17,8 +17,12 @@ const voice = vi.hoisted(() => ({
   setSpeechModel: vi.fn(),
 }));
 
-const { speak } = vi.hoisted(() => ({ speak: vi.fn(async () => undefined) }));
+const { speak, activeCall } = vi.hoisted(() => ({
+  speak: vi.fn(async () => undefined),
+  activeCall: { current: null as { phase: string } | null },
+}));
 vi.mock("../lib/tts.js", () => ({ speaker: { speak, state: {} } }));
+vi.mock("../lib/call-session", () => ({ useCallSession: () => activeCall.current }));
 vi.mock("../lib/rpc", () => ({
   rpc: { voice },
   rpcForSpace: () => ({ voice }),
@@ -614,6 +618,40 @@ it.each([null, "space-edited"])("plays a sample for the bound space %s", async (
   }
 });
 
+it("does not play a sample during a call", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  speak.mockClear();
+  activeCall.current = { phase: "speaking" };
+  voice.catalog.mockResolvedValue([
+    { id: "fish-audio", name: "Fish Audio", description: "", transcribe: true },
+  ]);
+  voice.credentials.mockResolvedValue([fish]);
+  voice.status.mockResolvedValue({ ready: true, provider: fish.provider });
+  voice.voices.mockResolvedValue([{ id: fish.voiceId, label: "Aria" }]);
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(async () => {
+      root.render(
+        withQueries(<VoiceSettingsOverlay embedded scope="account" onClose={() => undefined} />),
+      );
+    });
+    const sample = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Hear a sample",
+    );
+    if (!sample) throw new Error("Missing sample button");
+    expect(sample.disabled).toBe(true);
+    await act(async () => sample.click());
+    expect(speak).not.toHaveBeenCalled();
+  } finally {
+    activeCall.current = null;
+    await act(async () => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
 it("reopens with the cached providers and refreshes them in the background", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   voice.catalog
@@ -781,6 +819,46 @@ it("shows what a disconnect left, not a read sent before it", async () => {
     );
     await act(async () => second.unmount());
   } finally {
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("reports a disconnect as disconnected when the read after it fails", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  voice.catalog
+    .mockReset()
+    .mockResolvedValue([
+      { id: "elevenlabs", name: "ElevenLabs", description: "", transcribe: true },
+    ]);
+  // The first read opens the form; the one after the disconnect fails.
+  voice.credentials.mockReset().mockResolvedValueOnce([eleven]).mockRejectedValue({});
+  voice.status.mockReset().mockResolvedValue({ ready: true, provider: "elevenlabs" });
+  voice.voices.mockReset().mockResolvedValue([{ id: "rachel", label: "Rachel" }]);
+  voice.disconnect.mockReset().mockResolvedValue(undefined);
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(async () => {
+      root.render(
+        withQueries(<VoiceSettingsOverlay embedded scope="account" onClose={() => undefined} />),
+      );
+    });
+    await vi.waitFor(() => expect(container.textContent).toContain("ElevenLabs (Connected)"));
+    const disconnect = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Disconnect",
+    );
+    if (!disconnect) throw new Error("Missing disconnect button");
+    await act(async () => disconnect.click());
+    await vi.waitFor(() => expect(voice.credentials).toHaveBeenCalledTimes(2));
+    expect(container.querySelector("p.text-destructive")?.textContent).toBe(
+      "Could not load voice settings",
+    );
+    expect(container.textContent).not.toContain("(Connected)");
+    expect(container.querySelector('input[placeholder="Paste your API key"]')).not.toBeNull();
+  } finally {
+    await act(async () => root.unmount());
     container.remove();
     vi.unstubAllGlobals();
   }
@@ -1010,6 +1088,98 @@ it("connects a keyless provider without asking for a key", async () => {
     container.remove();
     vi.unstubAllGlobals();
   }
+});
+
+describe("a provider the account's model connection can authenticate", () => {
+  const xai = { id: "xai", name: "xAI", description: "", transcribe: true };
+  const type = async (input: HTMLInputElement, value: string) => {
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+      setter?.call(input, value);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  };
+  const button = (container: HTMLElement, text: string) =>
+    [...container.querySelectorAll("button")].find((entry) => entry.textContent === text);
+
+  async function open(catalogEntry: object, credentials: object[] = []) {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    voice.catalog.mockReset().mockResolvedValue([catalogEntry]);
+    voice.credentials.mockReset().mockResolvedValue(credentials);
+    voice.status.mockReset().mockResolvedValue({
+      configured: credentials.length > 0,
+      ready: credentials.length > 0,
+      transcribe: false,
+      provider: credentials.length ? "xai" : null,
+      voiceId: "",
+    });
+    voice.voices.mockReset().mockResolvedValue([{ id: "eve", label: "Eve" }]);
+    voice.connect
+      .mockReset()
+      .mockResolvedValue({ ...fish, provider: "xai", voiceId: "eve", hasKey: false });
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(
+        withQueries(<VoiceSettingsOverlay embedded scope="account" onClose={() => undefined} />),
+      );
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    return {
+      container,
+      async close() {
+        await act(async () => root.unmount());
+        container.remove();
+        vi.unstubAllGlobals();
+      },
+    };
+  }
+
+  it("connects with an empty key through the model connection", async () => {
+    const { container, close } = await open({ ...xai, modelConnection: true });
+    try {
+      const key = labelledInput(container, "API key");
+      expect(key.placeholder).toBe("Optional");
+      expect(button(container, "Connect")?.disabled).toBe(false);
+      // A typed key still has to look like one.
+      await type(key, "short");
+      expect(button(container, "Connect")?.disabled).toBe(true);
+      await type(key, "   ");
+      await act(async () => button(container, "Connect")!.click());
+      expect(voice.connect).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ provider: "xai", apiKey: "" }),
+      );
+    } finally {
+      await close();
+    }
+  });
+
+  it("still requires a key when the account has no model connection", async () => {
+    const { container, close } = await open(xai);
+    try {
+      expect(labelledInput(container, "API key").placeholder).toBe("Paste your API key");
+      expect(button(container, "Connect")?.disabled).toBe(true);
+    } finally {
+      await close();
+    }
+  });
+
+  it("offers only Disconnect once linked to the model connection", async () => {
+    const { container, close } = await open({ ...xai, modelConnection: true }, [
+      { ...fish, provider: "xai", voiceId: "eve", hasKey: false },
+    ]);
+    try {
+      expect(container.textContent).not.toContain("API key");
+      expect(button(container, "Replace key")).toBeUndefined();
+      expect(button(container, "Connect")).toBeUndefined();
+      expect(button(container, "Disconnect")).toBeTruthy();
+    } finally {
+      await close();
+    }
+  });
 });
 
 it.each(["account", "space"] as const)(

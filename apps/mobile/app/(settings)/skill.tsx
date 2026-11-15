@@ -1,3 +1,5 @@
+import { ph } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
 import type { AgentSkill } from "@rakazo/contracts";
 import type { NativeStackNavigationOptions } from "expo-router";
 import { useLocalSearchParams, useNavigation, useRouter } from "expo-router";
@@ -15,7 +17,6 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeActionButton } from "../../components/native-action-button";
 import { rpc } from "../../lib/api";
 import { mobileTokens } from "../../lib/appearance";
-import { useI18n } from "../../lib/i18n";
 import { native, useThemedStyles } from "../../lib/native";
 import { iosAtLeast } from "../../lib/native-controls";
 import { useSideInsets } from "../../lib/side-insets";
@@ -36,7 +37,7 @@ export default function SkillScreen() {
   const router = useRouter();
   const sideInsets = useSideInsets();
   const styles = useThemedStyles(createStyles);
-  const { t } = useI18n();
+  const { t } = useLingui();
   const [skill, setSkill] = useState<AgentSkill | null>(null);
   const [draft, setDraft] = useState(params.id ? "" : NEW_SKILL_TEMPLATE);
   const [loading, setLoading] = useState(Boolean(params.id));
@@ -57,7 +58,7 @@ export default function SkillScreen() {
           setDraft(found.content);
         })
         .catch((reason) => {
-          if (live.current) setError(errorText(reason, t("Could not load skill")));
+          if (live.current) setError(errorText(reason, t`Could not load skill`));
         })
         .finally(() => {
           if (live.current) setLoading(false);
@@ -84,7 +85,7 @@ export default function SkillScreen() {
         router.back();
       }
     } catch (reason) {
-      if (live.current) setError(errorText(reason, t("Could not save skill")));
+      if (live.current) setError(errorText(reason, t`Could not save skill`));
     } finally {
       if (live.current) setBusy(false);
     }
@@ -94,10 +95,10 @@ export default function SkillScreen() {
 
   function confirmDelete() {
     if (!skill) return;
-    Alert.alert(t("Delete {name}?", { name: skill.name }), undefined, [
-      { text: t("Cancel"), style: "cancel" },
+    Alert.alert(t`Delete ${ph({ name: skill.name })}?`, undefined, [
+      { text: t`Cancel`, style: "cancel" },
       {
-        text: t("Delete"),
+        text: t`Delete`,
         style: "destructive",
         onPress: () => {
           setBusy(true);
@@ -106,7 +107,7 @@ export default function SkillScreen() {
             .then(() => router.back())
             .catch((reason) => {
               if (!live.current) return;
-              setError(errorText(reason, t("Could not delete skill")));
+              setError(errorText(reason, t`Could not delete skill`));
               setBusy(false);
             });
         },
@@ -115,7 +116,7 @@ export default function SkillScreen() {
   }
 
   useLayoutEffect(() => {
-    const title = skill?.name ?? (params.id ? "" : t("New skill"));
+    const title = skill?.name ?? (params.id ? "" : t`New skill`);
     navigation.setOptions({
       title,
       ...(readOnly
@@ -125,7 +126,7 @@ export default function SkillScreen() {
               unstable_headerRightItems: () => [
                 {
                   type: "button" as const,
-                  label: t("Save"),
+                  label: t`Save`,
                   variant: "prominent" as const,
                   tintColor: mobileTokens().primary,
                   disabled: !canSave,
@@ -138,7 +139,7 @@ export default function SkillScreen() {
                 <NativeActionButton
                   disabled={!canSave}
                   fill={false}
-                  label={t("Save")}
+                  label={t`Save`}
                   onPress={() => void saveRef.current()}
                 />
               ),
@@ -155,7 +156,7 @@ export default function SkillScreen() {
         keyboardShouldPersistTaps="handled"
       >
         {loading ? (
-          <ActivityIndicator color={native.secondaryLabel} accessibilityLabel={t("Loading…")} />
+          <ActivityIndicator color={native.secondaryLabel} accessibilityLabel={t`Loading…`} />
         ) : unloaded ? null : (
           <TextInput
             value={draft}
@@ -178,7 +179,7 @@ export default function SkillScreen() {
         {unloaded && !loading ? (
           <NativeActionButton
             fill={false}
-            label={t("Retry")}
+            label={t`Retry`}
             onPress={() => setAttempt((count) => count + 1)}
             prominence="secondary"
           />
@@ -187,7 +188,7 @@ export default function SkillScreen() {
           <NativeActionButton
             disabled={busy}
             fill={false}
-            label={t("Delete")}
+            label={t`Delete`}
             onPress={confirmDelete}
             prominence="destructive"
           />

@@ -25,6 +25,7 @@ import {
   COMPUTER_IMAGE,
   COMPUTER_IMAGE_CONTEXT_FILES,
   computerBridgeNameFor,
+  computerComputeGpusMatch,
   computerDnsMatches,
   computerHomeStorage,
   computerMountsMatch,
@@ -42,6 +43,7 @@ import {
   legacyNetworkOwnedSolelyBy,
   parseMemoryBytes,
   publishedLoopbackControlHostPort,
+  resolveComputerComputeGpus,
   resolveComputerControlEndpoint,
   resolveComputerDns,
   resolveComputerEgressMode,
@@ -206,6 +208,53 @@ describe("graphical computer spec", () => {
     expect(containerCreateOptions({ ...base, dns: ["1.1.1.1"] }).HostConfig).toMatchObject({
       Dns: ["1.1.1.1"],
     });
+  });
+
+  it("gives computers host GPUs only when configured", () => {
+    const base = {
+      name: "rakazo-bot-x",
+      image: "img",
+      botId: "x",
+      spaceId: "s",
+      homePath: "/data/x",
+    };
+    expect(resolveComputerComputeGpus(undefined)).toBeUndefined();
+    expect(resolveComputerComputeGpus("  ")).toBeUndefined();
+    expect(resolveComputerComputeGpus(" all ")).toBe(-1);
+    expect(resolveComputerComputeGpus("2")).toBe(2);
+    // Counts too large to hold exactly, including ones that would become Infinity.
+    const huge = ["9007199254740993", "9".repeat(400)];
+    for (const value of ["0", "-1", "1.5", "ALL", "all,1", "device=0", "two", ...huge])
+      expect(() => resolveComputerComputeGpus(value)).toThrow(/SANDBOX_COMPUTER_COMPUTE_GPUS/);
+
+    expect(containerCreateOptions(base).HostConfig).not.toHaveProperty("DeviceRequests");
+    const all = containerCreateOptions({ ...base, computeGpus: -1 }).HostConfig;
+    // No driver: Docker selects the host's GPU driver, so no vendor is named here.
+    expect(all.DeviceRequests).toEqual([{ Count: -1, Capabilities: [["gpu"]] }]);
+    // The GPU does not loosen the rest of the sandbox.
+    expect(all).toMatchObject({ CapDrop: ["ALL"], SecurityOpt: ["no-new-privileges:true"] });
+  });
+
+  it("matches a computer's GPUs to the configured ones", () => {
+    // As Docker reports a request after creation, with the fields it fills in.
+    const reported = (count: number) => ({
+      Driver: "",
+      Count: count,
+      DeviceIDs: null,
+      Capabilities: [["gpu"]],
+      Options: {},
+    });
+    expect(computerComputeGpusMatch(undefined, undefined)).toBe(true);
+    expect(computerComputeGpusMatch(null, undefined)).toBe(true);
+    expect(computerComputeGpusMatch([], undefined)).toBe(true);
+    expect(computerComputeGpusMatch([reported(-1)] as never, -1)).toBe(true);
+    expect(computerComputeGpusMatch([reported(2)] as never, 2)).toBe(true);
+    // A computer created before the setting was turned on, or after it was turned off, is replaced.
+    expect(computerComputeGpusMatch(undefined, -1)).toBe(false);
+    expect(computerComputeGpusMatch([reported(-1)] as never, undefined)).toBe(false);
+    // So is one created with a different count.
+    expect(computerComputeGpusMatch([reported(1)] as never, 2)).toBe(false);
+    expect(computerComputeGpusMatch([reported(-1)] as never, 1)).toBe(false);
   });
 
   it("parses computer host mounts, with none when unset", () => {
@@ -725,6 +774,37 @@ describe("graphical computer spec", () => {
     expect(dockerfile).toMatch(/sha256sum -c/);
     expect(dockerfile).toMatch(/\/usr\/local\/bin --strip-components=2 "gh_/);
     expect(dockerfile).toMatch(/gh --version/);
+  });
+
+  it("ships file search, identification, and SQLite commands", () => {
+    const dockerfile = readFileSync(
+      path.resolve(import.meta.dirname, "../../computer/Dockerfile"),
+      "utf8",
+    );
+    const runtimeStage = dockerfile.slice(dockerfile.lastIndexOf("FROM debian:"));
+    const install = runtimeStage.match(
+      /apt-get install -y --no-install-recommends ([\s\S]*?)&& rm -rf \/var\/lib\/apt\/lists\/\*/,
+    )?.[1];
+    expect(install).toBeDefined();
+    const packages = install?.split(/\s+/);
+    // Every apt package behind a command the shell environment map names.
+    for (const name of [
+      "curl",
+      "git",
+      "jq",
+      "openssh-client",
+      "unzip",
+      "ripgrep",
+      "fd-find",
+      "file",
+      "sqlite3",
+    ]) {
+      expect(packages).toContain(name);
+    }
+    expect(runtimeStage).toContain("ln -s /usr/bin/fdfind /usr/local/bin/fd");
+    for (const command of ["rg", "fd", "file", "sqlite3"]) {
+      expect(runtimeStage).toContain(`&& ${command} --version`);
+    }
   });
 
   it("ships document text extractors", () => {
@@ -1870,6 +1950,8 @@ describe("graphical computer spec", () => {
               "spec = importlib.util.spec_from_file_location('control', sys.argv[1])",
               "module = importlib.util.module_from_spec(spec)",
               "spec.loader.exec_module(module)",
+              // The fixture launcher lives outside the image's trusted command folders.
+              "module.CHILD_PATH = sys.argv[3] + ':' + module.CHILD_PATH",
               "argv = ['env', 'DISPLAY=:1', 'rakazo-browser', sys.argv[2]]",
               "try:",
               "    module.run_control_argv(argv, ':1')",
@@ -1881,6 +1963,7 @@ describe("graphical computer spec", () => {
             ].join("\n"),
             path.join(root, "control.py"),
             "https://example.com/unanswered",
+            bin,
           ],
           { env: launchEnv, encoding: "utf8" },
         );

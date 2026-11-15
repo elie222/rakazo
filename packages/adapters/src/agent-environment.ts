@@ -1,13 +1,5 @@
 import { redactSecrets } from "@rakazo/core";
 
-export function formatAgentEnvironmentInstruction(
-  environment: Record<string, string>,
-): string | undefined {
-  const names = Object.keys(environment).sort();
-  if (names.length === 0) return undefined;
-  return `Managed credentials are available to shell commands as these environment variables: ${names.join(", ")}. Use them without printing, logging, or embedding their values in files or messages.`;
-}
-
 export function redactShellStreams(
   snapshot: { stdout: string; stderr: string },
   secrets: string[],
@@ -96,7 +88,7 @@ function splitsSurrogatePair(text: string, index: number): boolean {
 
 function publishWithheld(text: string, holdStart: number, holdEnd: number): string {
   if (holdStart <= 0 && holdEnd <= 0) return text;
-  let start = holdStart > 0 ? holdStart : 0;
+  let start = Math.max(holdStart, 0);
   let end = holdEnd > 0 ? text.length - holdEnd : text.length;
   // Keep a surrogate pair out of the published view rather than splitting it.
   if (splitsSurrogatePair(text, start)) start += 1;

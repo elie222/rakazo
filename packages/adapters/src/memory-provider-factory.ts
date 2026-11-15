@@ -2,12 +2,20 @@ import type { DurableMemoryScope, SecretStore, SemanticMemoryProvider } from "@r
 import type { PrismaClient } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import {
+  createHindsightProvider,
+  HINDSIGHT_PROVIDER_ID,
+  hindsightRequiresPrivateEndpoint,
+  parseRecallBanks,
+  prepareHindsightConnection,
+} from "./hindsight-memory-provider.js";
+import {
   createHonchoProvider,
   HONCHO_PROVIDER_ID,
   honchoRequiresPrivateEndpoint,
   prepareHonchoConnection,
 } from "./honcho-memory-provider.js";
 import { revalidateLocalServiceSettings } from "./local-service-endpoint.js";
+import { normalizeSerenityEndpoint } from "./serenity-client.js";
 import {
   classifySerenityConnectionSettings,
   createSerenityProvider,
@@ -63,8 +71,46 @@ interface MemoryProviderAdapter {
   create(
     settings: Record<string, string>,
     credentials: Record<string, string>,
+    connectionVersion?: string,
   ): SemanticMemoryProvider;
   decodeLegacyCredentials?(plaintext: string): Record<string, string> | null;
+  /**
+   * Everything the stored credentials can reach with these settings, normalized as prepare
+   * saves it. When this changes, the stored credentials must not follow.
+   */
+  credentialTarget(settings: Record<string, string>): string;
+}
+
+/** Cloud, or the self-hosted server's base URL. */
+function serviceTarget(settings: Record<string, string>, defaultMode?: "cloud"): string {
+  const mode = settings.mode ?? defaultMode;
+  if (mode === "cloud") return "cloud";
+  // Clients drop trailing slashes, so they name the same server.
+  return `${mode ?? ""} ${settings.baseUrl?.trim().replace(/\/+$/, "") ?? ""}`;
+}
+
+function serenityTarget(settings: Record<string, string>): string {
+  const endpoint = settings.endpoint?.trim() ?? "";
+  try {
+    return normalizeSerenityEndpoint(endpoint);
+  } catch {
+    return endpoint;
+  }
+}
+
+function honchoTarget(settings: Record<string, string>): string {
+  // The key can reach other workspaces and peers, so those are part of what it reaches.
+  return JSON.stringify([
+    serviceTarget(settings, "cloud"),
+    settings.workspaceId?.trim() ?? "",
+    settings.userPeerId?.trim() ?? "",
+  ]);
+}
+
+function hindsightTarget(settings: Record<string, string>): string {
+  // The key can read other banks, so the banks recalled are part of what it reaches.
+  const recallBanks = parseRecallBanks(settings.recallBanks).sort();
+  return JSON.stringify([serviceTarget(settings, "cloud"), recallBanks]);
 }
 
 const MEMORY_PROVIDER_ADAPTERS: ReadonlyMap<string, MemoryProviderAdapter> = new Map([
@@ -76,6 +122,7 @@ const MEMORY_PROVIDER_ADAPTERS: ReadonlyMap<string, MemoryProviderAdapter> = new
       prepare: prepareSupermemoryConnection,
       create: createSupermemoryProvider,
       decodeLegacyCredentials: decodeLegacySupermemoryCredentials,
+      credentialTarget: (settings: Record<string, string>) => serviceTarget(settings),
     },
   ],
   [
@@ -89,6 +136,7 @@ const MEMORY_PROVIDER_ADAPTERS: ReadonlyMap<string, MemoryProviderAdapter> = new
         options?: { allowPrivateEndpoint?: boolean },
       ) => prepareSerenityConnection(settings, credentials, undefined, options),
       create: createSerenityProvider,
+      credentialTarget: serenityTarget,
     },
   ],
   [
@@ -98,6 +146,17 @@ const MEMORY_PROVIDER_ADAPTERS: ReadonlyMap<string, MemoryProviderAdapter> = new
       revalidate: revalidateLocalServiceSettings,
       prepare: prepareHonchoConnection,
       create: createHonchoProvider,
+      credentialTarget: honchoTarget,
+    },
+  ],
+  [
+    HINDSIGHT_PROVIDER_ID,
+    {
+      requiresPrivateEndpoint: hindsightRequiresPrivateEndpoint,
+      revalidate: revalidateLocalServiceSettings,
+      prepare: prepareHindsightConnection,
+      create: createHindsightProvider,
+      credentialTarget: hindsightTarget,
     },
   ],
 ]);
@@ -114,6 +173,14 @@ export function memoryProviderRequiresPrivateEndpoint(
   settings: Record<string, string>,
 ): boolean {
   return memoryProviderAdapter(provider).requiresPrivateEndpoint(settings);
+}
+
+/** Where a provider's stored credentials would be sent and what they could read there. */
+export function memoryProviderCredentialTarget(
+  provider: string,
+  settings: Record<string, string>,
+): string {
+  return memoryProviderAdapter(provider).credentialTarget(settings);
 }
 
 /**
@@ -143,8 +210,9 @@ export function createMemoryProvider(
   provider: string,
   settings: Record<string, string>,
   credentials: Record<string, string>,
+  connectionVersion?: string,
 ): SemanticMemoryProvider {
-  return memoryProviderAdapter(provider).create(settings, credentials);
+  return memoryProviderAdapter(provider).create(settings, credentials, connectionVersion);
 }
 
 export function toStringRecord(value: unknown): Record<string, string> {
@@ -166,6 +234,15 @@ function decodeCredentials(provider: string, plaintext: string): Record<string, 
   const legacyCredentials = memoryProviderAdapter(provider).decodeLegacyCredentials?.(plaintext);
   if (legacyCredentials) return legacyCredentials;
   throw new Error(`Stored credentials for memory provider "${provider}" are invalid.`);
+}
+
+/** Decrypts a Space's stored provider credentials. */
+export async function loadMemoryProviderCredentials(
+  secrets: Pick<SecretStore, "load">,
+  provider: string,
+  secret: { id: string; ciphertext: string },
+): Promise<Record<string, string>> {
+  return decodeCredentials(provider, await secrets.load(secret.ciphertext, secret.id));
 }
 
 export class SpaceMemoryProviderResolver implements MemoryProviderResolver {
@@ -192,12 +269,19 @@ export class SpaceMemoryProviderResolver implements MemoryProviderResolver {
       getLogger().warn("Semantic memory disabled: endpoint revalidation failed");
       return null;
     }
-    const credentials = decodeCredentials(
+    const credentials = await loadMemoryProviderCredentials(
+      this.secrets,
       config.provider,
-      await this.secrets.load(config.secret.ciphertext, config.secret.id),
+      config.secret,
     );
     return {
-      provider: createMemoryProvider(config.provider, settings, credentials),
+      provider: createMemoryProvider(
+        config.provider,
+        settings,
+        credentials,
+        // Memory connection saves create a new secret ID when credentials change.
+        JSON.stringify([config.id, config.secretId, config.provider]),
+      ),
       defaultScope: config.defaultMemoryScope === "shared" ? "shared" : "isolated",
     };
   }

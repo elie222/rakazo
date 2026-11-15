@@ -1,3 +1,4 @@
+import { EmailRecipientRejectedError } from "@rakazo/adapter-kit";
 import { describe, expect, it, vi } from "vitest";
 import { ResendEmailProvider } from "./resend-email.js";
 
@@ -28,6 +29,61 @@ describe("ResendEmailProvider", () => {
       expect(first[1]!.headers).toMatchObject({ authorization: "Bearer fake-api-key" });
       expect(JSON.parse(first[1]!.body as string)).toEqual({ from: config.from, ...message });
     }
+  });
+
+  it.each([
+    [429, "2", 2_000],
+    [503, "2", 2_000],
+    [429, "Thu, 22 Oct 2026 10:00:02 GMT", 2_000],
+    [429, null, 250],
+    [429, "invalid", 250],
+  ])("honors retry timing for HTTP %s and header %s", async (status, header, delay) => {
+    vi.useFakeTimers({ now: Date.parse("2026-10-22T10:00:00Z") });
+    try {
+      const request = vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(
+          Response.json(
+            {},
+            {
+              status,
+              headers: header === null ? {} : { "retry-after": header },
+            },
+          ),
+        )
+        .mockResolvedValueOnce(Response.json({ id: "email-1" }));
+      const sent = new ResendEmailProvider(config, { fetch: request }).send(message);
+      await vi.advanceTimersByTimeAsync(delay - 1);
+      expect(request).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1);
+      await sent;
+      expect(request).toHaveBeenCalledTimes(2);
+      expect(request.mock.calls[0]![1]!.headers).toEqual(request.mock.calls[1]![1]!.headers);
+      expect(request.mock.calls[0]![1]!.signal).toBe(request.mock.calls[1]![1]!.signal);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps the delivery deadline while waiting for Retry-After", async () => {
+    const request = vi
+      .fn<typeof fetch>()
+      .mockImplementation(async () =>
+        Response.json({}, { status: 429, headers: { "retry-after": "2" } }),
+      );
+    await expect(provider(request, 20).send(message)).rejects.toThrow("timed out");
+    expect(request).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not let Retry-After add attempts", async () => {
+    const request = vi
+      .fn<typeof fetch>()
+      .mockImplementation(async () =>
+        Response.json({}, { status: 429, headers: { "retry-after": "0" } }),
+      );
+    const email = new ResendEmailProvider(config, { fetch: request, retryDelaysMs: [] });
+    await expect(email.send(message)).rejects.toThrow("HTTP 429");
+    expect(request).toHaveBeenCalledTimes(1);
   });
 
   it("sends the configured reply-to address", async () => {
@@ -96,9 +152,26 @@ describe("ResendEmailProvider", () => {
         { status: 422 },
       ),
     );
-    await expect(provider(request).send(message)).rejects.toThrow(
+    const delivery = provider(request).send(message);
+    await expect(delivery).rejects.toThrow(
       /^Resend email request failed \(HTTP 422: validation_error: Invalid `to` field: <address>\)$/,
     );
+    await expect(delivery).rejects.toBeInstanceOf(EmailRecipientRejectedError);
+    expect(request).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not treat other validation errors as a refused recipient", async () => {
+    const request = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        Response.json(
+          { statusCode: 422, name: "validation_error", message: "Invalid `from` field." },
+          { status: 422 },
+        ),
+      );
+    const delivery = provider(request).send(message);
+    await expect(delivery).rejects.toThrow(/HTTP 422/);
+    await expect(delivery).rejects.not.toBeInstanceOf(EmailRecipientRejectedError);
   });
 
   it("does not read an oversized error body", async () => {

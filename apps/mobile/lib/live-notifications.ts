@@ -1,8 +1,9 @@
+import { t } from "@lingui/core/macro";
 import { requireNativeModule } from "expo-modules-core";
 import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
 import { apiBaseWarning, normalizeApiBase } from "./endpoint";
-import { getActiveUiLocale, t } from "./i18n";
+import { getActiveUiLocale } from "./i18n";
 import { serverHeaders } from "./server-headers";
 
 export interface LiveNotificationSettings {
@@ -122,7 +123,7 @@ export async function setLiveNotificationSettings(
   if (settings.liveConnection) {
     const existing = await Notifications.getPermissionsAsync();
     const granted = existing.granted || (await Notifications.requestPermissionsAsync()).granted;
-    if (!granted) throw new Error(t("Android blocked notifications."));
+    if (!granted) throw new Error(t`Android blocked notifications.`);
   }
   await nativeNotifications.setSettings(
     settings,

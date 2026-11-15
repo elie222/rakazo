@@ -1,3 +1,4 @@
+import { t } from "@lingui/core/macro";
 import type { NativeStackNavigationOptions } from "expo-router";
 import { router } from "expo-router";
 import { Pressable } from "react-native";
@@ -25,8 +26,7 @@ export type ChatSplit = { split: boolean; inboxHidden: boolean; foldActive?: boo
  * title its data without changing the buttons' shape.
  */
 export function chatRouteHeader(
-  route: { key: string; params?: object },
-  t: (text: string) => string,
+  route: { key?: string; params?: object },
   { split, inboxHidden, foldActive }: ChatSplit,
   canInvite = false,
 ): NativeStackNavigationOptions {
@@ -37,19 +37,18 @@ export function chatRouteHeader(
   return {
     headerTitleAlign: "center",
     ...threadEdgeOptions(),
-    headerTitle: () => <ChatHeaderTitle routeKey={route.key} params={params} />,
+    headerTitle: () => <ChatHeaderTitle routeKey={route.key ?? ""} params={params} />,
     ...threadHeaderRight({
       inGroup: Boolean(groupId),
       readOnly,
-      t,
       color,
       onGroupSettings: () =>
         router.push({ pathname: "/group-settings", params: { groupId: groupId ?? "" } }),
       onInvite: canInvite && botId ? openInvite : undefined,
     }),
-    ...threadHeaderLeft({ split, inboxHidden, foldActive, t, color }),
+    ...threadHeaderLeft({ split, inboxHidden, foldActive, color }),
     // An archived chat offers Restore; the open chat gives it its action.
-    ...(readOnly ? trailingHeaderOptions(t("Restore"), () => undefined) : {}),
+    ...(readOnly ? trailingHeaderOptions(t`Restore`, () => undefined) : {}),
   };
 }
 
@@ -58,9 +57,8 @@ export function threadHeaderLeft({
   split,
   inboxHidden,
   foldActive,
-  t,
   color,
-}: ChatSplit & { t: (text: string) => string; color: string }): NativeStackNavigationOptions {
+}: ChatSplit & { color: string }): NativeStackNavigationOptions {
   if (!split || foldActive) {
     // Folding back takes the list away, so the chat gets its back button again. Folded like
     // a book, the list stays beside the chat, so it needs neither.
@@ -70,7 +68,7 @@ export function threadHeaderLeft({
       ...(iosAtLeast(26) ? { unstable_headerLeftItems: () => [] } : {}),
     };
   }
-  const label = inboxHidden ? t("Show chats") : t("Hide chats");
+  const label = inboxHidden ? t`Show chats` : t`Hide chats`;
   return {
     headerBackVisible: false,
     ...(iosAtLeast(26)

@@ -45,7 +45,7 @@
     "id": "compose",
     "title": "Compose",
     "flow": "flows/compose.yaml",
-    "screens": ["new-space", "new-group"]
+    "screens": ["new-space", "new-bot", "new-group"]
   },
   {
     "id": "split-view",
@@ -59,11 +59,14 @@
     "flow": "flows/settings.yaml",
     "screens": [
       "account",
+      "general",
+      "profile",
       "change-password",
       "models",
       "integrations",
       "voice",
       "ai-data-sharing",
+      "labs",
       "routine",
       "routine-runs",
       "bot-settings",
@@ -77,7 +80,7 @@
     "id": "models",
     "title": "Models",
     "flow": "flows/models.yaml",
-    "screens": ["models", "model-picker", "model-connection"]
+    "screens": ["models", "model-picker", "model-settings", "model-connection"]
   },
   {
     "id": "bots",
@@ -116,6 +119,12 @@
       "space",
       "space-members"
     ]
+  },
+  {
+    "id": "vault",
+    "title": "Vault logins",
+    "flow": "flows/vault.yaml",
+    "screens": ["vault"]
   },
   {
     "id": "messaging",

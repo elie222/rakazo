@@ -83,8 +83,11 @@ export function MemorySettingsOverlay({
   const [defaultScope, setDefaultScope] = useState<"isolated" | "shared">(
     config?.defaultMemoryScope ?? "isolated",
   );
-  const [pending, setPending] = useState<"connect" | "disconnect" | "scope" | null>(null);
+  const [pending, setPending] = useState<"connect" | "disconnect" | "scope" | "update" | null>(
+    null,
+  );
   const [addingProvider, setAddingProvider] = useState(false);
+  const [editingProvider, setEditingProvider] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -105,7 +108,7 @@ export function MemorySettingsOverlay({
     return () => onBusyChange?.(false);
   }, [onBusyChange]);
 
-  function markPending(next: "connect" | "disconnect" | "scope" | null) {
+  function markPending(next: "connect" | "disconnect" | "scope" | "update" | null) {
     setPending(next);
     onBusyChange?.(next !== null);
   }
@@ -130,12 +133,30 @@ export function MemorySettingsOverlay({
     }
   }
 
+  async function updateProvider(draft: MemoryProviderConnectionDraft) {
+    if (!registration) return false;
+    setError(null);
+    markPending("update");
+    try {
+      const next = await rpc.memory.updateProvider(draft);
+      onConfigChange(next);
+      setEditingProvider(false);
+      return true;
+    } catch (err) {
+      setError(errorText(err, t`Could not save ${registration.name}`));
+      return false;
+    } finally {
+      markPending(null);
+    }
+  }
+
   async function disconnect() {
     setError(null);
     markPending("disconnect");
     try {
       await rpc.memory.disconnectProvider();
       setAddingProvider(false);
+      setEditingProvider(false);
       onConfigChange(null);
     } catch (err) {
       setError(errorText(err, t`Could not disconnect memory provider`));
@@ -207,19 +228,53 @@ export function MemorySettingsOverlay({
                   onChange={(scope) => void updateDefaultScope(scope)}
                 />
               </div>
-              <Button
-                variant="outline"
-                type="button"
-                disabled={busy}
-                onClick={() => void disconnect()}
-                className="mt-5"
-              >
-                {pending === "disconnect" ? (
-                  <Trans>Disconnecting…</Trans>
-                ) : (
-                  <Trans>Disconnect</Trans>
-                )}
-              </Button>
+              {editingProvider && registration ? (
+                <>
+                  <registration.SettingsForm
+                    busy={busy}
+                    current={config.settings}
+                    onConnect={updateProvider}
+                    advancedSettings={null}
+                  />
+                  <Button
+                    variant="ghost"
+                    type="button"
+                    disabled={busy}
+                    onClick={() => {
+                      setEditingProvider(false);
+                      setError(null);
+                    }}
+                    className="mt-5 ml-2"
+                  >
+                    <Trans>Cancel</Trans>
+                  </Button>
+                </>
+              ) : (
+                <div className="mt-5 flex gap-2">
+                  {registration ? (
+                    <Button
+                      variant="outline"
+                      type="button"
+                      disabled={busy}
+                      onClick={() => setEditingProvider(true)}
+                    >
+                      <Trans>Edit</Trans>
+                    </Button>
+                  ) : null}
+                  <Button
+                    variant="outline"
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void disconnect()}
+                  >
+                    {pending === "disconnect" ? (
+                      <Trans>Disconnecting…</Trans>
+                    ) : (
+                      <Trans>Disconnect</Trans>
+                    )}
+                  </Button>
+                </div>
+              )}
             </section>
           ) : !addingProvider ? (
             <Button
@@ -235,9 +290,6 @@ export function MemorySettingsOverlay({
               <SectionHeading id={providerSelectId} variant="heading">
                 <Trans>Provider</Trans>
               </SectionHeading>
-              <p className="mt-1 text-body-sm text-muted-foreground">
-                <Trans>Lets bots save and recall facts by meaning, alongside MEMORY.md.</Trans>
-              </p>
               {MEMORY_PROVIDER_SETTINGS.length > 1 ? (
                 <div className="mt-3">
                   <NativeSelect
@@ -258,11 +310,21 @@ export function MemorySettingsOverlay({
                 <p className="mt-3 text-body text-foreground">{registration.name}</p>
               )}
 
-              <div className="mt-4">
-                <ScopePicker value={defaultScope} disabled={busy} onChange={setDefaultScope} />
-              </div>
-
-              <registration.SettingsForm busy={busy} onConnect={connect} />
+              <p className="mt-3 text-body-sm text-muted-foreground">
+                <Trans>
+                  An external memory service for storing and recalling context across chats.
+                </Trans>
+              </p>
+              <registration.SettingsForm
+                key={registration.id}
+                busy={busy}
+                onConnect={connect}
+                advancedSettings={
+                  <div className="mt-4">
+                    <ScopePicker value={defaultScope} disabled={busy} onChange={setDefaultScope} />
+                  </div>
+                }
+              />
             </section>
           ) : (
             <p className="text-body-sm text-destructive">

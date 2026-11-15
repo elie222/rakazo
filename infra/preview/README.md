@@ -41,4 +41,3 @@ is billed only while running. See [Fly pricing](https://fly.io/docs/about/pricin
 
 Until the token is set, the deploy and cleanup workflows skip themselves, but every pull request
 still builds an image, so set this up before merging the workflows.
-

@@ -1,3 +1,4 @@
+import { t } from "@lingui/core/macro";
 import type { RpcInput, RpcOutput, RpcPath, ThreadSnapshot } from "@rakazo/contracts";
 import { CLIENT_UPDATE_REQUIRED_STATUS, parseServerHeaders } from "@rakazo/contracts";
 import {
@@ -17,8 +18,8 @@ import * as SecureStore from "expo-secure-store";
 import { promptAiConsent } from "./ai-consent";
 import type { EndpointResult } from "./endpoint";
 import { defaultApiBase, normalizeApiBase } from "./endpoint";
-import { t } from "./i18n";
 import { identityLabels } from "./identity-display";
+import { resumeLiveNotifications } from "./live-notifications";
 import {
   newMobileAvatarSnapshotRequest,
   rememberMobileAvatarSnapshot,
@@ -71,10 +72,22 @@ let spaceSelectionRequestGeneration = 0;
 export function spaceSelectionSeq(): number {
   return spaceSelectionRequestGeneration;
 }
+const spaceSelectionListeners = new Set<() => void>();
+let announcedSpaceId = "";
+/** Runs `listener` whenever the in-memory selection moves to another Space. */
+export function subscribeSpaceSelection(listener: () => void): () => void {
+  spaceSelectionListeners.add(listener);
+  return () => {
+    spaceSelectionListeners.delete(listener);
+  };
+}
 function bumpSpaceSelectionGeneration(): void {
   spaceSelectionGeneration += 1;
   // Another Space can belong to another organization, with its own invite link.
   selectedSpaceChanged();
+  if (cachedSpaceId === announcedSpaceId) return;
+  announcedSpaceId = cachedSpaceId;
+  for (const listener of spaceSelectionListeners) listener();
 }
 /** Orders complete endpoint transactions, including credential rollback. */
 let endpointChangeQueue: Promise<unknown> = Promise.resolve();
@@ -180,10 +193,10 @@ export async function captureApiRequestContext(
   const apiBase = currentApiBase();
   const headers = await authHeaders(spaceId);
   if (apiBase !== currentApiBase()) {
-    throw new Error(t("The server changed while starting the request"));
+    throw new Error(t`The server changed while starting the request`);
   }
   if (generation !== currentSessionGeneration())
-    throw new Error(t("Something went wrong. Try again."));
+    throw new Error(t`Something went wrong. Try again.`);
   return { apiBase, headers, sessionGeneration: generation };
 }
 /** Revoking other sessions also refuses this one until the replacement is saved. */
@@ -661,7 +674,7 @@ async function request(
       consentContext?.sessionGeneration !== undefined &&
       consentContext.sessionGeneration !== currentSessionGeneration()
     )
-      throw new Error(t("Something went wrong. Try again."));
+      throw new Error(t`Something went wrong. Try again.`);
     let res: Response;
     const correlation = clientCorrelationHeaders();
     try {
@@ -695,7 +708,11 @@ async function request(
       noteServerReachable(!isUnreachableStatus(res.status));
     if (proc === "aiConsent/status" && res.status === 404) {
       cancelResponseBody(res);
-      throw new Error(t("Update your server to use AI data sharing in this mobile version."));
+      throw new Error(t`Update your server to use AI data sharing in this mobile version.`);
+    }
+    if (proc === "vault/import" && res.status === 404) {
+      cancelResponseBody(res);
+      throw new Error(t`Update your server to import logins.`);
     }
     const parsed: { json?: unknown } = await readBoundedJsonResponse<{ json?: unknown }>(
       res,
@@ -788,6 +805,12 @@ async function request(
           if (!selectedSpaceId()) {
             cachedSpaceId = previousSpaceId;
             bumpSpaceSelectionGeneration();
+            if (requestSessionGeneration === currentSessionGeneration()) {
+              void resumeSelectedSpaceNotifications(
+                previousSpaceId,
+                spaceSelectionGeneration,
+              ).catch(() => undefined);
+            }
           }
           throw retryError;
         }
@@ -848,6 +871,22 @@ export function httpError(message: string, res: Response, code?: string): Error 
     retryAfterMs: { value: parseRetryAfter(res.headers.get("retry-after")) },
   });
 }
+export async function resumeSelectedSpaceNotifications(
+  id: string,
+  generation: number,
+): Promise<void> {
+  const apiBase = currentApiBase();
+  const sessionGeneration = currentSessionGeneration();
+  const token = await loadSessionToken();
+  if (
+    generation !== currentSpaceSelectionGeneration() ||
+    sessionGeneration !== currentSessionGeneration() ||
+    apiBase !== currentApiBase()
+  )
+    return;
+  await resumeLiveNotifications(apiBase, token, id).catch(() => undefined);
+}
+
 /** Claims the in-memory Space selection ("" clears it) and starts a new selection epoch. */
 export function setSelectedSpace(id: string): void {
   cachedSpaceId = id;

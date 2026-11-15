@@ -14,6 +14,7 @@ import {
   connectedModelChoices,
   credentialForModel,
   modelOptionKey,
+  modelThinkingLevels,
   parseModelOptionKey,
   resolveSelectableModelId,
 } from "@rakazo/core";
@@ -71,6 +72,7 @@ export function BotSettings({
   tab = "settings",
   onTabChange,
   computer,
+  computerActions,
   routines,
   memoryProviderConfigured,
   onSave,
@@ -83,6 +85,7 @@ export function BotSettings({
   tab?: BotPanelTab;
   onTabChange?: (tab: BotPanelTab) => void;
   computer?: ReactNode;
+  computerActions?: ReactNode;
   routines?: ReactNode;
   focusModel?: number;
   onOpenConnections?: () => void;
@@ -289,10 +292,10 @@ export function BotSettings({
         )
       : undefined;
   const effectiveCredential = credentialForModel(credentials, effectiveProvider, effectiveModelId);
-  const thinkingOptions = (
-    effectiveCredential?.thinkingLevels ??
-    effectiveEntry?.thinkingLevels ??
-    []
+  const thinkingOptions = modelThinkingLevels(
+    effectiveCredential,
+    effectiveEntry,
+    effectiveModelId,
   ).filter((level) => level !== "off");
   const defaultThinkingLevel = effectiveCredential?.thinkingLevel ?? "medium";
 
@@ -593,6 +596,7 @@ export function BotSettings({
               memoryProviderConfigured={memoryProviderConfigured}
               memoryScope={memoryScope}
               onMemoryScopeChange={setMemoryScope}
+              actions={computerActions}
             />
             <VoiceGroup
               ids={ids}

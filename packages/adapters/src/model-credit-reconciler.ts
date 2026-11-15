@@ -10,6 +10,7 @@ import {
   runAsSystem,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { PAID_SERVICE_USAGE_PROVIDER } from "./paid-service-tools.js";
 
 /**
  * When the provider never reports a cost, a call that reached it is charged for the tokens we
@@ -151,7 +152,9 @@ export function createModelCreditReconciler(deps: {
                 where: { id: call.runId },
                 select: { status: true, leaseExpiresAt: true, error: true },
               });
-              stoppedByUser = run?.status === "cancelled" && run.error == null;
+              // A deleted run cannot prove the call was not stopped by its user.
+              // Keep the conservative full-rate count until provider evidence replaces it.
+              stoppedByUser = !run || (run.status === "cancelled" && run.error == null);
               running =
                 !usage &&
                 (run?.status === "leased" || run?.status === "running") &&
@@ -159,10 +162,15 @@ export function createModelCreditReconciler(deps: {
                 run.leaseExpiresAt > now;
               if (running) reason = "call is still running";
             }
+            // A paid service has no usage lookup and may have charged the deployment's account,
+            // so an unfinished call goes to review instead of settling at no cost.
+            const unfinishedPaidService = call.provider === PAID_SERVICE_USAGE_PROVIDER && !usage;
+            if (unfinishedPaidService) reason = "paid service call did not finish";
             // Without a receipt the call may still be running, so only the last attempt settles it.
             if (
               !(usage && hasFinalModelCost(usage)) &&
               !running &&
+              !unfinishedPaidService &&
               (lastAttempt || (usage && !canLookUp))
             ) {
               const fallback = fallbackUsage(usage, -call.amountMicros, stoppedByUser);

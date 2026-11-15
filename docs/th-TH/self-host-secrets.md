@@ -6,13 +6,13 @@
 
 `bash install-images.sh` (เมื่อยังไม่มี `.env`) คัดลอก `.env.images.example` แล้วเติมคีย์ว่างด้วย `openssl`:
 
-| Key | การเติม |
-| --- | --- |
-| `POSTGRES_PASSWORD` | `openssl rand -hex 16` |
-| `POSTGRES_APP_PASSWORD` | `openssl rand -hex 16` |
-| `BETTER_AUTH_SECRET` | `openssl rand -hex 32` |
-| `ENCRYPTION_KEY` | `openssl rand -hex 32` |
-| `SCREEN_PROXY_SECRET` | `openssl rand -hex 32` |
+| Key                        | การเติม                 |
+| -------------------------- | ---------------------- |
+| `POSTGRES_PASSWORD`        | `openssl rand -hex 16` |
+| `POSTGRES_APP_PASSWORD`    | `openssl rand -hex 16` |
+| `BETTER_AUTH_SECRET`       | `openssl rand -hex 32` |
+| `ENCRYPTION_KEY`           | `openssl rand -hex 32` |
+| `SCREEN_PROXY_SECRET`      | `openssl rand -hex 32` |
 | `SANDBOX_SUPERVISOR_TOKEN` | `openssl rand -hex 32` |
 
 รันซ้ำ **เก็บ** `.env` เดิม ไม่หมุน secret คีย์บังคับว่างจะ fail ตอน validate Compose

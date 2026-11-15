@@ -14,7 +14,7 @@ import {
 
 // Creating schemas and running migrations need the owner login.
 const databaseUrl = process.env.DATABASE_MIGRATION_URL ?? process.env.DATABASE_URL;
-const dbTests = process.env.VERIFY_DATABASE && databaseUrl ? describe.sequential : describe.skip;
+const dbTests = process.env.VERIFY_DATABASE && databaseUrl ? describe : describe.skip;
 const dbPackageDir = fileURLToPath(new URL("..", import.meta.url));
 
 dbTests("deferred migrations", () => {

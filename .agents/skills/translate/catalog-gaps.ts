@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Lists, fills and checks untranslated entries in the web Lingui catalogs.
+// Lists, fills and checks untranslated entries in the shared Lingui catalogs.
 //
 //   node catalog-gaps.ts list <locale>          JSON array of untranslated entries
 //   node catalog-gaps.ts apply <locale> <file>  fill empty entries from a {key: translation}
@@ -13,7 +13,7 @@ import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const LOCALES_DIR = "apps/web/src/locales";
+const LOCALES_DIR = "packages/i18n/locales";
 const SOURCE_LOCALE = "en";
 
 export type Gap = { key: string; msgctxt: string | null; msgid: string; notes: string[] };

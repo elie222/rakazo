@@ -22,8 +22,7 @@ import { RunJobPublisher, RunStarter, RunWorkerHost } from "./run-wakeup.js";
 import { GraphileJobPublisher } from "./wakeup.js";
 
 const url = process.env.DATABASE_URL;
-const describePostgres =
-  process.env.VERIFY_DATABASE === "1" && url ? describe.sequential : describe.skip;
+const describePostgres = process.env.VERIFY_DATABASE === "1" && url ? describe : describe.skip;
 
 describePostgres("direct run dispatch (PostgreSQL)", () => {
   let db: ReturnType<typeof createDb>;
@@ -264,10 +263,6 @@ describePostgres("direct run dispatch (PostgreSQL)", () => {
       data: { computerId: computer.id },
     });
     const waiting = await createRun({ status: "waiting_takeover" });
-    await system.computer.update({
-      where: { id: computer.id },
-      data: { controlRunId: waiting.id },
-    });
     const lease = await system.computerExecutionLease.create({
       data: {
         computerId: computer.id,
@@ -300,9 +295,6 @@ describePostgres("direct run dispatch (PostgreSQL)", () => {
           where: { threadId: identity.threadId, clientNonce: `stuck-expired:${waiting.id}` },
         }),
       ).toBe(1);
-      expect(await system.computer.findUniqueOrThrow({ where: { id: computer.id } })).toMatchObject(
-        { controlRunId: null },
-      );
     } finally {
       await host.stop();
       await system.run.updateMany({
@@ -333,7 +325,6 @@ describePostgres("direct run dispatch (PostgreSQL)", () => {
       data: {
         controlHolder: "user",
         controlBotId: bot.id,
-        controlRunId: waiting.id,
         controlLeaseId: randomUUID(),
         controlLeaseExpiresAt: new Date(Date.now() + 60_000),
       },

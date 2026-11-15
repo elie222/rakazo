@@ -18,7 +18,7 @@ type NativeWorkActivities = {
   refreshWorkActivity(): Promise<void>;
   endWorkActivity(): Promise<void>;
   addListener(
-    name: "onWorkActivityToken",
+    name: "onWorkActivityToken" | "onWorkActivityStartToken",
     callback: (event: { token: string }) => void,
   ): { remove(): void };
 };
@@ -31,7 +31,8 @@ const activities = native?.startWorkActivity ? native : null;
 
 /**
  * Keeps the card in step for the app's lifetime: hands its token to the server, re-checks it on
- * launch and whenever the app opens, and ends it on sign-out.
+ * launch and whenever the app opens, and ends it on sign-out. Also hands over the phone's token
+ * for starting cards, so work begun from another device shows here too.
  */
 export function startWorkActivities(): () => void {
   if (!activities) return () => undefined;
@@ -50,6 +51,10 @@ export function startWorkActivities(): () => void {
       // An unanswered request proves nothing; the next open asks again.
       .catch(() => undefined);
   });
+  // The phone's token for starting cards, on each refresh and whenever iOS changes it.
+  const starts = card.addListener("onWorkActivityStartToken", ({ token }) => {
+    rpc("notifications/registerWorkActivityStarts", { token }).catch(() => undefined);
+  });
   const refresh = () => void card.refreshWorkActivity().catch(() => undefined);
   const opens = AppState.addEventListener("change", (state) => {
     if (state === "active") refresh();
@@ -62,11 +67,14 @@ export function startWorkActivities(): () => void {
     void snapshotSessionToken().then((session) => {
       if (generation !== currentSessionGeneration()) return;
       if (session.ok && !session.value) return card.endWorkActivity();
+      // Signed in: the new session follows the card and starts this phone's next ones.
+      if (session.ok) refresh();
     });
   });
   refresh();
   return () => {
     tokens.remove();
+    starts.remove();
     opens.remove();
     sessions();
   };
@@ -74,7 +82,8 @@ export function startWorkActivities(): () => void {
 
 /**
  * Shows the user's bots at work on the Lock Screen and in the Dynamic Island, starting with the
- * one just sent a message. iOS hides it while the app is open.
+ * one just sent a message. iOS hides it while the app is open. Check server support first:
+ * a card cannot be followed until iOS supplies its token, after it has already appeared.
  */
 export function startWorkActivity(input: {
   title: string;
@@ -83,7 +92,12 @@ export function startWorkActivity(input: {
 }): void {
   if (!activities) return;
   const { botId = null, groupId = null } = input.target as { botId?: string; groupId?: string };
-  void activities
-    .startWorkActivity(input.title, input.spaceId, botId, groupId)
+  const generation = currentSessionGeneration();
+  void rpc("notifications/followWorkActivity", {})
+    .then(({ following }) => {
+      if (!following || generation !== currentSessionGeneration()) return;
+      return activities.startWorkActivity(input.title, input.spaceId, botId, groupId);
+    })
+    // An older server without the preflight, or an unreachable one, cannot confirm support.
     .catch(() => undefined);
 }

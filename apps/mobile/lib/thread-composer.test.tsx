@@ -56,7 +56,7 @@ vi.mock("expo-file-system", () => {
     create() {
       files.set(this.uri, "");
     }
-    write(text: string) {
+    writeSync(text: string) {
       disk.writes += 1;
       // A full disk leaves the file empty, as a failed native write would.
       if (disk.full) throw new Error("No space left on device");
@@ -220,7 +220,18 @@ vi.mock("./native", () => ({
   useMobileTokens: () => ({ link: "token-link" }),
   useResolvedAppearance: () => "light",
 }));
-vi.mock("./i18n", () => ({ useI18n: () => ({ t: (text: string) => text }) }));
+const dictation = vi.hoisted(() => ({
+  status: "idle",
+  toggle: vi.fn(),
+  cancel: vi.fn(),
+  onWords: (_text: string, _final?: boolean) => {},
+}));
+vi.mock("./composer-dictation", () => ({
+  useComposerDictation: (opts: { onWords: (text: string, final?: boolean) => void }) => {
+    dictation.onWords = opts.onWords;
+    return dictation;
+  },
+}));
 
 const skill = {
   id: "skill-1",
@@ -238,13 +249,11 @@ const props: Omit<ComponentProps<typeof ThreadComposer>, "ref"> = {
   attachmentIds: [],
   botId: "bot-1",
   onCall: false,
-  working: false,
   sending: false,
   styles: { circleButton: {}, composerFill: {} },
   attachActions: [],
   attachFrom: vi.fn(),
   send: vi.fn(async () => {}),
-  stop: vi.fn(async () => {}),
   startVoiceCall: vi.fn(async () => {}),
   onSlashAction: vi.fn(),
 };
@@ -305,8 +314,15 @@ describe("thread composer isolation", () => {
   function type(value: string) {
     act(() => input.change(value));
   }
+  /** A button by its label; `{name}` in it stands for any filled-in name. */
+  function labelled(label: string) {
+    const [before, after] = label.split("{name}");
+    if (after === undefined) return `button[aria-label="${label}"]`;
+    // An empty prefix or suffix matches nothing in CSS, so only a non-empty one is checked.
+    return `button[aria-label]${before ? `[aria-label^="${before}"]` : ""}${after ? `[aria-label$="${after}"]` : ""}`;
+  }
   function press(label: string) {
-    const button = container.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!;
+    const button = container.querySelector<HTMLButtonElement>(labelled(label))!;
     expect(button).not.toBeNull();
     act(() => button.click());
   }
@@ -320,6 +336,7 @@ describe("thread composer isolation", () => {
     disk.full = false;
     disk.moveFails = false;
     appState.listeners.clear();
+    dictation.status = "idle";
     mentionApi.generation = 1;
     mentionApi.rpc.mockReset().mockResolvedValue([]);
     mentionApi.capture.mockReset().mockImplementation(async () => ({
@@ -353,7 +370,7 @@ describe("thread composer isolation", () => {
     expect(field().value).toBe("ask @Helper now");
     expect(JSON.parse(field().dataset.mentions!)).toEqual(["@Helper"]);
     expect(container.querySelector('[data-testid="mention-chip"]')).toBeNull();
-    expect(container.querySelector('button[aria-label="Remove mention {name}"]')).toBeNull();
+    expect(container.querySelector('button[aria-label^="Remove mention "]')).toBeNull();
   });
 
   it("tints a mention in the link color without a background", () => {
@@ -433,7 +450,7 @@ describe("thread composer isolation", () => {
   });
 
   function pickerRows() {
-    return [...container.querySelectorAll<HTMLButtonElement>('button[aria-label="@{name}"]')];
+    return [...container.querySelectorAll<HTMLButtonElement>('button[aria-label^="@"]')];
   }
 
   it("lists one row per bot with its avatar and name, at most five", () => {
@@ -498,6 +515,27 @@ describe("thread composer isolation", () => {
     expect(onEmptied).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps shared text when an earlier typing selection arrives late", () => {
+    type("draft");
+    act(() => composer.current!.insert("shared text"));
+    expect(composer.current!.snapshot().promptText).toBe("draft\nshared text");
+    select(5);
+    expect(field().value).toBe("draftshared text");
+    expect(composer.current!.snapshot().promptText).toBe("draft\nshared text");
+    type("draft\nshared text!");
+    select(18);
+    expect(composer.current!.snapshot().promptText).toBe("draft\nshared text!");
+  });
+
+  it("appends repeated shares to an empty or settled draft", () => {
+    act(() => composer.current!.insert("first"));
+    select(5);
+    act(() => composer.current!.insert("second"));
+    select(12);
+    expect(composer.current!.snapshot().promptText).toBe("first\nsecond");
+    expect(props.send).not.toHaveBeenCalled();
+  });
+
   it("keeps inserted text when backspacing into a mention afterwards", () => {
     type("ask @He");
     press("@{name}");
@@ -560,7 +598,7 @@ describe("thread composer isolation", () => {
     press("@{name}");
     expect(composer.current!.snapshot().mentions).toEqual([bot]);
     select(10);
-    const options = container.querySelectorAll<HTMLButtonElement>('button[aria-label="@{name}"]');
+    const options = container.querySelectorAll<HTMLButtonElement>('button[aria-label^="@"]');
     expect(options).toHaveLength(2);
     act(() => options[1]!.click());
     expect(container.querySelector("input")!.value).toBe("before @HelperOther ");
@@ -568,7 +606,7 @@ describe("thread composer isolation", () => {
   });
 
   function pickMentionAt(index: number) {
-    const options = container.querySelectorAll<HTMLButtonElement>('button[aria-label="@{name}"]');
+    const options = container.querySelectorAll<HTMLButtonElement>('button[aria-label^="@"]');
     expect(options.length).toBeGreaterThan(index);
     act(() => options[index]!.click());
   }
@@ -1183,6 +1221,53 @@ describe("thread composer isolation", () => {
     expect(container.querySelector('[data-testid="slash-picker"]')).toBeNull();
     press("Call");
     expect(props.startVoiceCall).toHaveBeenCalledOnce();
+  });
+
+  it("adds dictated words after the draft, and drops them once the draft is edited", () => {
+    type("Remind me");
+    press("Dictate");
+    expect(dictation.toggle).toHaveBeenCalledOnce();
+    act(() => dictation.onWords("to buy"));
+    act(() => dictation.onWords("to buy milk"));
+    expect(container.querySelector("input")!.value).toBe("Remind me to buy milk");
+    type("Remind me to buy milk!");
+    act(() => dictation.onWords("to buy milk and eggs"));
+    expect(container.querySelector("input")!.value).toBe("Remind me to buy milk!");
+  });
+
+  function sendButton() {
+    return container.querySelector<HTMLButtonElement>('button[aria-label="Send"]')!;
+  }
+
+  it("keeps Send disabled while a dictation is still recording", () => {
+    dictation.status = "listening";
+    type("Please check");
+    const send = sendButton();
+    expect(send.disabled).toBe(true);
+    act(() => send.click());
+    expect(props.send).not.toHaveBeenCalled();
+  });
+
+  it("keeps Send disabled while dictating a message that is only an attachment", () => {
+    dictation.status = "listening";
+    render({ attachmentIds: ["file-1"] });
+    const send = sendButton();
+    expect(send.disabled).toBe(true);
+    act(() => send.click());
+    expect(props.send).not.toHaveBeenCalled();
+  });
+
+  it("adds a provider's transcript after text typed while it recorded", () => {
+    type("Note");
+    press("Dictate");
+    type("Note:");
+    act(() => dictation.onWords("call the bank", true));
+    expect(container.querySelector("input")!.value).toBe("Note: call the bank");
+  });
+
+  it("hides the mic while a call has the microphone", () => {
+    render({ onCall: true });
+    expect(container.querySelector('button[aria-label="Dictate"]')).toBeNull();
   });
 
   it("focuses the input when its padding wrapper is pressed without adding an accessibility stop", () => {

@@ -5,6 +5,7 @@ import { Button, Input, Switch, Textarea } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronLeft, X } from "lucide-react";
 import { useId } from "react";
+import { useIdentityConfirmation } from "../components/ConfirmIdentityDialog";
 import { useSpaceQueries } from "../lib/query";
 import type { RoutineDraftState } from "../lib/routine-draft";
 import { routineNeedsOneShotArm } from "../lib/routine-draft";
@@ -37,6 +38,8 @@ export function RoutineEditor({
   onTestRun,
   onDelete,
   onEnsureWebhook,
+  onRevealWebhook,
+  onHideWebhook,
 }: {
   bot: { id: string; name: string };
   draft: RoutineDraftState;
@@ -55,9 +58,14 @@ export function RoutineEditor({
   onTestRun: () => void;
   onDelete: () => void;
   onEnsureWebhook: () => Promise<void>;
+  onRevealWebhook: () => Promise<void>;
+  onHideWebhook: () => void;
 }) {
   const { t } = useLingui();
   const fieldId = useId();
+  const { withIdentityConfirmation, identityDialog } = useIdentityConfirmation();
+  // Closing the confirmation is a choice, and other failures show as the editor's error.
+  const revealWebhook = () => void withIdentityConfirmation(onRevealWebhook).catch(() => undefined);
   const queries = useSpaceQueries();
   const scheduleStatus = useQuery({
     ...queries.routines.list.queryOptions({ input: { botId: editing?.botId ?? "" } }),
@@ -122,11 +130,14 @@ export function RoutineEditor({
           <Trans>Active</Trans>
         </label>
         <div className="flex items-center gap-2">
-          <Button variant="secondary" disabled={saving || running} onClick={onDelete}>
-            <Trans>Delete</Trans>
-          </Button>
+          {/* A draft is discarded by going back; only a saved routine can be deleted. */}
+          {editing ? (
+            <Button variant="secondary" disabled={saving || running} onClick={onDelete}>
+              <Trans>Delete</Trans>
+            </Button>
+          ) : null}
           <Button variant="secondary" disabled={!canTest} onClick={onTestRun}>
-            {running ? t`Running…` : t`Test run`}
+            {running ? t`Running…` : t`Run now`}
           </Button>
         </div>
       </div>
@@ -161,7 +172,7 @@ export function RoutineEditor({
       </label>
 
       <div className="mt-5 text-body text-muted-foreground">
-        <div className="flex items-baseline gap-2">
+        <div className="flex items-center gap-2">
           <Trans>When to run</Trans>
           <span className="text-label text-muted-foreground/70">{timezone}</span>
           <RoutineModelSettings draft={draft} onChange={onChange} fieldId={fieldId} />
@@ -169,31 +180,19 @@ export function RoutineEditor({
 
         <div className="mt-2 space-y-2">
           {draft.schedules.map((preset, index) => (
-            <div key={index} className="relative">
-              <RoutineSchedule
-                value={preset}
-                onChange={(next) =>
-                  onChange({
-                    ...draft,
-                    schedules: draft.schedules.map((item, i) => (i === index ? next : item)),
-                  })
-                }
-              />
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                aria-label={t`Remove schedule`}
-                onClick={() =>
-                  onChange({
-                    ...draft,
-                    schedules: draft.schedules.filter((_, i) => i !== index),
-                  })
-                }
-                className="absolute top-2 right-2 text-muted-foreground"
-              >
-                <X />
-              </Button>
-            </div>
+            <RoutineSchedule
+              key={index}
+              value={preset}
+              onChange={(next) =>
+                onChange({
+                  ...draft,
+                  schedules: draft.schedules.map((item, i) => (i === index ? next : item)),
+                })
+              }
+              onRemove={() =>
+                onChange({ ...draft, schedules: draft.schedules.filter((_, i) => i !== index) })
+              }
+            />
           ))}
 
           {draft.webhookEnabled ? (
@@ -205,6 +204,8 @@ export function RoutineEditor({
               configured={webhook.configured}
               onRemove={() => onChange({ ...draft, webhookEnabled: false })}
               onRotate={() => void onEnsureWebhook()}
+              onReveal={revealWebhook}
+              onHide={onHideWebhook}
             />
           ) : null}
 
@@ -217,6 +218,8 @@ export function RoutineEditor({
               configured={webhook.configured}
               onRemove={() => onChange({ ...draft, githubEnabled: false })}
               onRotate={() => void onEnsureWebhook()}
+              onReveal={revealWebhook}
+              onHide={onHideWebhook}
             />
           ) : null}
 
@@ -273,12 +276,6 @@ export function RoutineEditor({
           webhookConfigured={webhook.configured}
           onEnsureWebhook={onEnsureWebhook}
         />
-
-        {!hasTriggers ? (
-          <p className="mt-2 text-label text-muted-foreground/70">
-            <Trans>Add a trigger to run this routine.</Trans>
-          </p>
-        ) : null}
       </div>
 
       <div className="mt-5">
@@ -293,6 +290,7 @@ export function RoutineEditor({
       ) : null}
 
       {editing ? <RoutineRunHistory key={editing.id} routineId={editing.id} /> : null}
+      {identityDialog}
     </div>
   );
 }

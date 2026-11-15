@@ -91,7 +91,7 @@ Gmail, Slack, GitHub, Notion, Linear and thousands more, plus your own MCP serve
 
 ### On every device
 
-Web, desktop, iPhone, and Android, all talking to the same server.
+Web, desktop, iPhone, iPad, and Android, all talking to the same server.
 
 <img src="./docs/screenshots/readme/mobile.png" alt="The bot list and a chat on iPhone" width="100%">
 
@@ -113,7 +113,7 @@ The installer downloads the Compose files, creates `.env` with random secrets, a
 It preserves an existing `.env` when rerun.
 
 Open [http://127.0.0.1:5173](http://127.0.0.1:5173), create an account, and connect a model.
-Local Docker computers are on by default. Optional remote providers: `e2b`, `novita`, `daytona`, `createos`, `boat`, `boxd`, or `railway`
+Local Docker computers are on by default. Optional remote providers: `e2b`, `novita`, `daytona`, `createos`, `boat`, `boxd`, `instabox`, or `railway`
 with the matching API key.
 
 Default image tag is `edge` (main builds, `linux/amd64` + `linux/arm64`). Details and tags:
@@ -145,8 +145,8 @@ Or [deploy on Railway](https://railway.com/new/template/rakazo-template); see th
 
 ## Local development (source checkout)
 
-You need Node.js 22.22.2 or newer in the 22.x line, Node.js 24.x, or Node.js 26+;
-pnpm 12; and Docker. Node.js 23.x and 25.x are not supported.
+You need Node.js 24.15.0 or newer in the 24.x line, or Node.js 26+; pnpm 12;
+and Docker. Node.js 25.x is not supported.
 
 ```bash
 git clone https://github.com/elie222/rakazo.git
@@ -168,13 +168,15 @@ in `.env`. The supervisor discovers Docker Desktop's user socket automatically;
 
 Managed app catalogs are optional. Set `COMPOSIO_API_KEY` for Composio, or the
 `PIPEDREAM_CLIENT_ID`, `PIPEDREAM_CLIENT_SECRET`, and `PIPEDREAM_PROJECT_ID` trio for Pipedream
-Connect. Users can add an HTTPS MCP server, Treg endpoint, or OpenAPI JSON document from
-**Integrations** without enabling either managed catalog. Connector credentials are encrypted on the
-server and are never returned by the API.
+Connect. Users can add an HTTPS MCP server or OpenAPI JSON document from **Integrations** without
+enabling either managed catalog. Connector credentials are encrypted on the server and are never
+returned by the API.
 
-Treg is usage-metered. Self-hosters supply their own Treg token; operators embedding Treg in a
-hosted product should review [Treg's integration terms](https://treg.to/integrate.md), which require
-a written agreement for hosted resale.
+Paid data services (map places, search results, work emails, profiles, SEO data) are optional too.
+Set `PAID_SERVICES_PROVIDER=treg` and `PAID_SERVICES_API_KEY` to an org-scoped
+[Treg](https://treg.to) token, and bots can find and call them on the deployment's account. When
+model credits are on, each call is charged to the organization's credits at the provider's cost
+plus 20%.
 
 ```bash
 pnpm install
@@ -258,15 +260,21 @@ pnpm --filter @rakazo/desktop dev
 ```
 
 On first run the desktop app asks whether to run Rakazo on this computer or connect to an existing
-server. **This computer** installs and starts the published images with Docker Compose (the same
-files as `infra/compose/install-images.sh`) under the app's data directory, so Docker Desktop,
-OrbStack, or Docker Engine must be installed; the app links to them when it is not. Installed
+server. **This computer** can run without Docker on Apple silicon Macs with macOS 26 or later
+when the build includes a server bundle. Fresh setups use this path: the app downloads the server
+and computer runtime as needed. Existing Docker setups are offered a move while Docker is running;
+choosing **Keep Docker** leaves them on Docker.
+
+Other builds and platforms use Docker Compose to install and start the published images (the same
+files as `infra/compose/install-images.sh`) under the app's data directory. This path needs Docker
+Desktop, OrbStack, or Docker Engine. Without one, setup offers the Docker Desktop download, opens
+an installed Docker app that is not running, and continues on its own once Docker answers. Installed
 builds pin the image tag to their own version; unpackaged builds pull `edge`. Developers running
 `pnpm dev` should pick **Existing instance** with `http://127.0.0.1:5173` instead. Public servers
 must use HTTPS; HTTP is accepted only for loopback and private LAN addresses (not link-local). The
 app verifies Rakazo's health endpoint before saving, and later launches go straight to that
-instance. The stack keeps running after the app quits; **Stop Local Stack** in the application
-menu turns it off.
+instance. The Docker stack keeps running after the app quits; the Docker-free server stops with the app.
+**Stop Local Stack** in the application menu stops the managed stack without quitting.
 
 On Linux the desktop app ships as an AppImage, which needs FUSE 2 (`libfuse.so.2`). Distributions
 that only include FUSE 3, such as Fedora Silverblue or Ubuntu 24.04, show
@@ -279,7 +287,7 @@ chmod +x Rakazo-*.AppImage
 ./Rakazo-*.AppImage --appimage-extract-and-run
 ```
 
-**This computer** looks for the `docker` CLI and does not detect Podman. To try another
+The Docker path of **This computer** looks for the `docker` CLI and does not detect Podman. To try another
 Docker-compatible CLI that supports the `compose` commands, set `RAKAZO_DOCKER_BINARY` to its path
 before starting the app.
 
@@ -294,8 +302,8 @@ Mobile build and release instructions live in [docs/mobile-release.md](./docs/mo
 
 The web (and Electron-hosted) UI supports English, Deutsch, 한국어, Türkçe, हिन्दी,
 Português (Brasil), 简体中文, 繁體中文, Español, Русский, Français, עברית, Nederlands, 日本語, and Polski under
-**Settings → Language**. The Expo app ships English, 简体中文, 繁體中文, Русский, Deutsch,
-Nederlands, 日本語, Español, and Polski catalogs, and **Account → Language** lists all nine. A device language or
+**Settings → Language**. The Expo app ships the same 15 languages under
+**Account → Language**. A device language or
 `EXPO_PUBLIC_DEFAULT_UI_LOCALE` still selects the starting catalog before a saved choice.
 Native Electron setup and menus also support the web UI's languages, following the saved app
 choice or, on first launch, the system language. The marketing homepage (`apps/www`) offers all

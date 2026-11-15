@@ -83,6 +83,9 @@ function SettingsFixture() {
         onUsageOpen={() => {}}
         timezone="UTC"
         onTimezoneChange={async () => {}}
+        labs={[]}
+        labsAvailable={[]}
+        onLabsChange={async () => {}}
         onClose={() => {}}
         section="general"
         onSectionChange={() => {}}

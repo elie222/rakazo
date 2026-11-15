@@ -1,4 +1,5 @@
 import { createServer, Socket } from "node:net";
+import { EmailRecipientRejectedError } from "@rakazo/adapter-kit";
 import nodemailer from "nodemailer";
 import { describe, expect, it, vi } from "vitest";
 import { SmtpEmailProvider } from "./smtp-email.js";
@@ -161,6 +162,24 @@ describe("SmtpEmailProvider", () => {
     } finally {
       await server.close();
     }
+  });
+
+  it("reports a permanently refused recipient without retrying", async () => {
+    const refused = Object.assign(new Error("Recipient command failed: 550 no such user"), {
+      code: "EENVELOPE",
+      command: "RCPT TO",
+      responseCode: 550,
+    });
+    const sendMail = vi.fn().mockRejectedValue(refused);
+    const provider = new SmtpEmailProvider(
+      { url: "smtp://smtp.example.test", from: "a@example.test" },
+      { transport: { sendMail } as never, sleep: async () => undefined },
+    );
+
+    const delivery = provider.send({ to: "ada@example.test", subject: "Hi", text: "Hello" });
+    await expect(delivery).rejects.toThrow("SMTP server rejected the recipient (550)");
+    await expect(delivery).rejects.toBeInstanceOf(EmailRecipientRejectedError);
+    expect(sendMail).toHaveBeenCalledTimes(1);
   });
 
   it("retries a delivery whose connection never receives a greeting", async () => {

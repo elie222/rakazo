@@ -1,0 +1,60 @@
+---
+import Button from "../components/Button.astro";
+import EnterpriseIllustration from "../components/EnterpriseIllustration.astro";
+import Footer from "../components/Footer.astro";
+import Header from "../components/Header.astro";
+import {
+  ENTERPRISE_CONTACT_EMAIL,
+  ENTERPRISE_DESCRIPTION,
+  ENTERPRISE_FEATURES,
+  ENTERPRISE_H1,
+  ENTERPRISE_LEAD,
+  ENTERPRISE_TITLE,
+} from "../enterprise";
+import { githubStarsLabel } from "../github";
+import BaseLayout from "../layouts/BaseLayout.astro";
+import { ogPublicPath } from "../og-pages";
+import { SELF_HOST_GUIDE_PATH } from "../site";
+
+const starsLabel = await githubStarsLabel();
+---
+
+<BaseLayout
+  title={ENTERPRISE_TITLE}
+  description={ENTERPRISE_DESCRIPTION}
+  localeAlternates={false}
+  ogImage={ogPublicPath("enterprise")}
+>
+  <div class="container">
+    <Header starsLabel={starsLabel} />
+    <main id="main" class="enterprise">
+      <h1 class="section-heading">{ENTERPRISE_H1}</h1>
+      <p class="lead">{ENTERPRISE_LEAD}</p>
+      <div class="hero__actions">
+        <Button href={`mailto:${ENTERPRISE_CONTACT_EMAIL}`} data-attr="enterprise-contact">Talk to us</Button>
+        <Button href={SELF_HOST_GUIDE_PATH} variant="secondary" data-attr="enterprise-self-host">
+          Self-hosting guide
+        </Button>
+      </div>
+      <div class="card-grid-3 enterprise__features">
+        {
+          ENTERPRISE_FEATURES.map((feature) => (
+            <article class="feature-card">
+              <EnterpriseIllustration kind={feature.kind} />
+              <h2>
+                <a
+                  href={feature.link.href}
+                  {...(feature.link.href.startsWith("/") ? {} : { target: "_blank", rel: "noopener" })}
+                >
+                  {feature.title}
+                </a>
+              </h2>
+              <p>{feature.body}</p>
+            </article>
+          ))
+        }
+      </div>
+    </main>
+    <Footer />
+  </div>
+</BaseLayout>

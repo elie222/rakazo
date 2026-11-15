@@ -61,13 +61,6 @@ vi.mock("./native", () => ({
   useMobileTokens: () => ({ card: "token-card" }),
   useResolvedAppearance: () => "light",
 }));
-vi.mock("./i18n", () => ({
-  useI18n: () => ({
-    locale: "en",
-    t: (key: string, values?: Record<string, string>) =>
-      key.replace(/\{(\w+)\}/g, (_, name: string) => values?.[name] ?? name),
-  }),
-}));
 
 const details =
   '403: {"message":"OpenRouter weekly key limit exceeded; resets 2026-10-21T00:00:00Z"}';
@@ -137,7 +130,7 @@ describe("run error recovery", () => {
     "This connection's request limit is too small. Choose another model.",
     "The model hit its output limit before finishing its reply.",
   ])("offers model recovery without suggesting a key failure for %s", (details) => {
-    const label = runErrorActionLabel((key) => key, normalizeRunError(details));
+    const label = runErrorActionLabel(normalizeRunError(details));
     expect(label).toBe("Change model");
     const node = mount(
       createElement(RunErrorSheet, {
@@ -184,7 +177,7 @@ describe("inline error card", () => {
     const onDetails = vi.fn();
     function Notice() {
       const error = useRunError(details, false);
-      const actionLabel = error ? runErrorActionLabel((key) => key, error) : null;
+      const actionLabel = error ? runErrorActionLabel(error) : null;
       return createElement(ThreadErrorNotice, {
         error: null,
         summary: error?.summary ?? null,

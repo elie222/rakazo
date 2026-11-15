@@ -1,6 +1,6 @@
 import type { ProductEvent } from "@rakazo/contracts";
 import { abortableDelay } from "./async.js";
-import { isRetryableError, retryDelayMs } from "./retry-policy.js";
+import { isRetryableError, reconnectDelayMs, retryDelayMs } from "./retry-policy.js";
 
 type ThreadHead = { threadId: string; cursor: number };
 type SnapshotRecovery =
@@ -25,8 +25,9 @@ export async function runThreadSubscription(options: {
   beforeEvent?: (event: ProductEvent) => void;
   applyEvent: (event: ProductEvent) => void;
   onEvent: (event: ProductEvent, initial: ThreadHead) => void;
+  random?: () => number;
 }): Promise<void> {
-  const { signal } = options;
+  const { signal, random = Math.random } = options;
   const stopped = Symbol("stopped");
   // A 401 (session gone), 426 (build retired) or other 4xx is the server's answer: retrying
   // cannot succeed and only polls the server. A 429 may ask for a longer wait.
@@ -66,7 +67,7 @@ export async function runThreadSubscription(options: {
     return null;
   };
   const wait = async (ms: number, abort: AbortSignal) => {
-    const delay = retryDelayMs(lastFailure, ms);
+    const delay = retryDelayMs(lastFailure, ms, random);
     lastFailure = undefined;
     await abortableDelay(delay, abort);
     return !isStopped() && !abort.aborted;
@@ -132,12 +133,14 @@ export async function runThreadSubscription(options: {
       const attempt = new AbortController();
       activeAttempt = attempt;
       const attemptGeneration = ++generation;
+      let opened = false;
       try {
         const events = await untilAborted(
           options.subscribe(cursor, attempt.signal),
           attempt.signal,
         );
         if (events === stopped || isStopped() || generation !== attemptGeneration) continue;
+        opened = true;
         const iterator = events[Symbol.asyncIterator]();
         try {
           let pending: Promise<IteratorResult<ProductEvent>> | undefined;
@@ -209,6 +212,13 @@ export async function runThreadSubscription(options: {
       const reconnect = new AbortController();
       activeAttempt = reconnect;
       try {
+        const spread = opened ? reconnectDelayMs(lastFailure, random) : 0;
+        if (spread > 0) {
+          lastFailure = undefined;
+          await abortableDelay(spread, reconnect.signal);
+          if (isStopped()) return;
+          if (generation !== attemptGeneration) continue;
+        }
         await untilAborted(options.refresh().catch(noteFailure), reconnect.signal);
         if (isStopped()) return;
         commitRecovery();

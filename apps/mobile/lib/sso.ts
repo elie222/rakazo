@@ -1,6 +1,8 @@
+import { t } from "@lingui/core/macro";
+import { SIGNUP_SURFACE_HEADER } from "@rakazo/contracts";
+import { Platform } from "react-native";
 import { authHeaders, currentApiBase, fetchMobileJson } from "./api";
 import { clearSpace } from "./api-server";
-import { t } from "./i18n";
 import {
   currentSessionGeneration,
   replaceSessionTokenIfCurrent,
@@ -14,6 +16,7 @@ let inFlight = false;
 /** Better Auth Expo proxy transfers the state cookie into the native auth browser. */
 export async function continueWithSso(
   action: "sign-in" | "link" | "reauthenticate" = "sign-in",
+  provider = "oidc",
 ): Promise<boolean> {
   if (inFlight) return false;
   inFlight = true;
@@ -22,7 +25,7 @@ export async function continueWithSso(
     const generation = currentSessionGeneration();
     const requireCurrentSession = () => {
       if (apiBase !== currentApiBase() || generation !== currentSessionGeneration())
-        throw new Error(t("Could not continue"));
+        throw new Error(t`Could not continue`);
     };
     const callbackURL = action === "sign-in" ? "rakazo://sign-in" : "rakazo://account";
     const headers = action === "sign-in" ? {} : await authHeaders();
@@ -30,7 +33,7 @@ export async function continueWithSso(
     const previous = action === "reauthenticate" ? await sessionUser(apiBase, headers) : undefined;
     // The token the server replaces is the one these requests carry; a second read could differ.
     const previousToken = headers.authorization?.slice("Bearer ".length) ?? "";
-    if (action === "reauthenticate" && !previousToken) throw new Error(t("Could not continue"));
+    if (action === "reauthenticate" && !previousToken) throw new Error(t`Could not continue`);
     requireCurrentSession();
     const { response, body, invalidJson } = await fetchMobileJson<{ url?: string; code?: string }>(
       `${apiBase}/api/auth/${action === "link" ? "link-social" : "sign-in/social"}`,
@@ -40,10 +43,11 @@ export async function continueWithSso(
           "content-type": "application/json",
           origin: "rakazo://",
           "x-skip-oauth-proxy": "true",
+          [SIGNUP_SURFACE_HEADER]: Platform.OS,
           ...headers,
         },
         body: JSON.stringify({
-          provider: "oidc",
+          provider,
           callbackURL,
           errorCallbackURL: callbackURL,
           disableRedirect: true,
@@ -56,7 +60,7 @@ export async function continueWithSso(
       throw new Error(authResponseErrorText(response.status, body, invalidJson));
     const authorization = new URL(body.url);
     if (authorization.protocol !== "https:" || !authorization.searchParams.get("state"))
-      throw new Error(t("Could not continue"));
+      throw new Error(t`Could not continue`);
     const params = new URLSearchParams({ authorizationURL: authorization.href });
     const stateCookie = response.headers
       .get("set-cookie")
@@ -64,7 +68,7 @@ export async function continueWithSso(
     if (stateCookie) params.set("oauthState", decodeURIComponent(stateCookie));
     // Defer the new native module so password auth still works in older binaries.
     const { openAuthSessionAsync } = await import("expo-web-browser").catch(() => {
-      throw new Error(t("Could not continue"));
+      throw new Error(t`Could not continue`);
     });
     const result = await openAuthSessionAsync(
       `${apiBase}/api/auth/expo-authorization-proxy?${params}`,
@@ -77,10 +81,10 @@ export async function continueWithSso(
       callback.host !== new URL(callbackURL).host ||
       (callback.pathname && callback.pathname !== "/")
     )
-      throw new Error(t("Could not continue"));
+      throw new Error(t`Could not continue`);
     if (callback.searchParams.has("error"))
       throw new Error(
-        authErrorText({ code: callback.searchParams.get("error") }, t("Could not continue")),
+        authErrorText({ code: callback.searchParams.get("error") }, t`Could not continue`),
       );
     requireCurrentSession();
     if (action === "link") return true;
@@ -88,14 +92,14 @@ export async function continueWithSso(
     const token = cookie
       ? tokenFromAuthResponse(new Response(null, { headers: { "set-cookie": cookie } }), null)
       : "";
-    if (!token) throw new Error(t("Sign-in did not return a session"));
+    if (!token) throw new Error(t`Sign-in did not return a session`);
     const user = await sessionUser(apiBase, { authorization: `Bearer ${token}` });
     if (!user || (action === "reauthenticate" && (!previous || previous !== user)))
-      throw new Error(t("Could not continue"));
+      throw new Error(t`Could not continue`);
     requireCurrentSession();
     try {
       if (action === "sign-in" && !(await clearSpace()))
-        throw new Error(t("Could not save your sign-in on this device. Try again."));
+        throw new Error(t`Could not save your sign-in on this device. Try again.`);
       // The same account keeps its unsent messages and their cache, like a password change.
       if (action === "reauthenticate")
         return await rotateSessionTokenIfCurrent(generation, previousToken, token);
