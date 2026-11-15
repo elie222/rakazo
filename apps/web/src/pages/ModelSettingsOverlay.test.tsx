@@ -497,7 +497,10 @@ it("returns to the provider list when a refresh removes the open model", async (
     ]);
     await typeInto(labeled(view.container, "Maximum output tokens")!, "2000");
     await click(buttons(view.container, "Save").find((entry) => entry.textContent === "Save"));
-    expect(view.container.querySelector('[data-testid="model-settings-page"]')).toBeNull();
+    // The save, the refresh after it and the return to the list each take their own turn.
+    await vi.waitFor(() =>
+      expect(view.container.querySelector('[data-testid="model-settings-page"]')).toBeNull(),
+    );
     expect(view.container.textContent).toContain("model-b");
     expect(labeled(view.container, "Maximum output tokens")).toBeNull();
   } finally {
