@@ -671,6 +671,19 @@ describe("mobile trackpad touches", () => {
     });
   });
 
+  it("right-clicks for a fresh batched tap after a lost drag end", () => {
+    withTrackpad((fixture) => {
+      fixture.touch("touchstart", 1, 50, 250);
+      fixture.touch("touchmove", 1, 70, 250);
+      const second = { identifier: 3, clientX: 90, clientY: 250 };
+      fixture.touch("touchstart", 2, 50, 250, [], [second]);
+      fixture.touch("touchend", 2, 50, 250, [second]);
+      fixture.touch("touchend", 3, 90, 250);
+      expect(mouseDowns(fixture)).toHaveLength(1);
+      expect(mouseDowns(fixture)[0].button).toBe(2);
+    });
+  });
+
   it("right-clicks on a two-finger tap", () => {
     withTrackpad((fixture) => {
       const first = { identifier: 1, clientX: 50, clientY: 250 };

@@ -273,7 +273,7 @@ export function attachMobileTrackpad(
     if (touches.length >= 2) {
       // A second finger turns the gesture into a scroll; it never moves or clicks.
       if (!twoFinger) {
-        scrolled = touchId !== null && moved;
+        scrolled = moved && touches.some((touch) => touch.identifier === touchId);
         twoFingerStart = touches.map(({ identifier, clientX, clientY }) => ({
           identifier,
           clientX,
