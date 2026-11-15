@@ -67,8 +67,8 @@ export function createPartnerSales(deps: {
       // Withdrawals first, each on its own, so no failing report can hold one back.
       const failed: unknown[] = [];
       if (founder) {
-        // A reversed payment with no sale may be mid-report in another event: recording it as
-        // withdrawn makes that report find it closed, reopen it and retry to withdraw.
+        // A reversed payment with no sale may be about to be reported by another event: recording
+        // it as withdrawn stops that report from sending it.
         const unrecorded = payments.filter(
           (payment) => payment.reversed && !openInvoices.has(payment.invoiceId),
         );
@@ -91,7 +91,7 @@ export function createPartnerSales(deps: {
           // The earnings may still appear, so the sale stays open and every later event looks
           // again; only the first day retries the event itself.
           if (outcome === "not_found") {
-            if (Date.now() - sale.createdAt.getTime() < EARNINGS_SETTLE_MS)
+            if (Date.now() - (sale.reportedAt ?? sale.createdAt).getTime() < EARNINGS_SETTLE_MS)
               throw new Error(`Partner earnings for ${payment.invoiceId} are not created yet`);
             // Even an unconfirmed send may still create earnings, so the sale stays open and every
             // later event for the customer looks again.
@@ -112,8 +112,7 @@ export function createPartnerSales(deps: {
           failed.push(error);
         }
       }
-      if (founder)
-        failed.push(...(await reportSales(customerId, founder.userId, payments, openInvoices)));
+      if (founder) await reportSales(customerId, founder.userId, payments, openInvoices);
       if (failed.length)
         throw new AggregateError(failed, "Partner program withdrawals failed; retry the event");
     },
@@ -124,9 +123,8 @@ export function createPartnerSales(deps: {
     userId: string,
     payments: BillingPlanPayment[],
     recorded: Map<string, { reportedAt: Date | null }>,
-  ): Promise<Error[]> {
-    const reopened: Error[] = [];
-    if (!program) return reopened;
+  ): Promise<void> {
+    if (!program) return;
     for (const payment of payments) {
       // A withdrawn sale's invoice stays reversed, so it is never reported again.
       if (payment.reversed || payment.amountCents <= 0) continue;
@@ -134,7 +132,6 @@ export function createPartnerSales(deps: {
       await bestEffort(
         `partner program sale ${payment.invoiceId}`,
         (async () => {
-          // Recorded before it is sent, so a later refund finds it even if the confirmation is lost.
           await prisma.partnerSale.createMany({
             data: {
               invoiceId: payment.invoiceId,
@@ -143,28 +140,31 @@ export function createPartnerSales(deps: {
             },
             skipDuplicates: true,
           });
-          // The program records each invoice once, so sending it again is harmless.
-          await program.trackSale({
-            customerId: userId,
-            invoiceId: payment.invoiceId,
-            amountCents: payment.amountCents,
-            currency: payment.currency,
-          });
-          const confirmed = await prisma.partnerSale.updateMany({
-            where: { invoiceId: payment.invoiceId, refundedAt: null },
+          // Marked sent before sending, and only while not refunded: a refund that comes after
+          // then always finds it to withdraw, and one that came first stops the send.
+          const claimed = await prisma.partnerSale.updateMany({
+            where: { invoiceId: payment.invoiceId, refundedAt: null, reportedAt: null },
             data: { reportedAt: new Date() },
           });
-          if (confirmed.count) return;
-          // A concurrent refund closed the sale while it was being sent, so the earnings just
-          // created would escape withdrawal: reopen it and have the event retried to withdraw them.
-          await prisma.partnerSale.update({
-            where: { invoiceId: payment.invoiceId },
-            data: { refundedAt: null, reportedAt: new Date() },
-          });
-          reopened.push(new Error(`Partner sale ${payment.invoiceId} was refunded while sent`));
+          if (!claimed.count) return;
+          try {
+            // The program records each invoice once, so sending it again is harmless.
+            await program.trackSale({
+              customerId: userId,
+              invoiceId: payment.invoiceId,
+              amountCents: payment.amountCents,
+              currency: payment.currency,
+            });
+          } catch (error) {
+            // Sent again by the next event; a refund meanwhile still finds it open to withdraw.
+            await prisma.partnerSale.updateMany({
+              where: { invoiceId: payment.invoiceId, refundedAt: null },
+              data: { reportedAt: null },
+            });
+            throw error;
+          }
         })(),
       );
     }
-    return reopened;
   }
 }

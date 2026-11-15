@@ -240,7 +240,10 @@ dbTests("partner program sales", () => {
     await sales.report("cus_missing_earnings", organizationId);
     await prisma.partnerSale.update({
       where: { invoiceId: payments[0]!.invoiceId },
-      data: { createdAt: new Date(Date.now() - 2 * 86_400_000) },
+      data: {
+        createdAt: new Date(Date.now() - 2 * 86_400_000),
+        reportedAt: new Date(Date.now() - 2 * 86_400_000),
+      },
     });
     payments = payments.map((payment) => ({ ...payment, reversed: true }));
     program.refundSale.mockResolvedValueOnce("not_found");
@@ -271,30 +274,24 @@ dbTests("partner program sales", () => {
     expect(program.refundSale).toHaveBeenCalledTimes(2);
   });
 
-  it("reopens a sale refunded while it was being sent, so its earnings are withdrawn", async () => {
-    const organizationId = await organization("raced", "click_16");
+  it("does not send a sale a refund already recorded as withdrawn", async () => {
+    const organizationId = await organization("refunded-first", "click_16");
     const program = fakeProgram();
-    const payment = paid("in_raced");
-    const sales = createPartnerSales({
+    const payment = paid("in_refunded_first");
+    await createPartnerSales({
+      prisma,
+      program,
+      provider: { listPlanPayments: async () => [{ ...payment, reversed: true }] },
+    }).report("cus_refunded_first", organizationId);
+    await createPartnerSales({
       prisma,
       program,
       provider: { listPlanPayments: async () => [payment] },
-    });
-    program.trackSale.mockImplementationOnce(async () => {
-      await prisma.partnerSale.update({
-        where: { invoiceId: payment.invoiceId },
-        data: { refundedAt: new Date() },
-      });
-    });
-    await expect(sales.report("cus_raced", organizationId)).rejects.toThrow("withdrawals failed");
-    const sale = await prisma.partnerSale.findUniqueOrThrow({
-      where: { invoiceId: payment.invoiceId },
-    });
-    expect(sale.refundedAt).toBeNull();
-    expect(sale.reportedAt).not.toBeNull();
+    }).report("cus_refunded_first", organizationId);
+    expect(program.trackSale).not.toHaveBeenCalled();
   });
 
-  it("withdraws a sale reported after a refund event already found nothing to withdraw", async () => {
+  it("withdraws a sale refunded while it was being sent", async () => {
     const organizationId = await organization("refund-first", "click_17");
     const program = fakeProgram();
     const payment = paid("in_refund_first");
@@ -311,11 +308,24 @@ dbTests("partner program sales", () => {
     program.trackSale.mockImplementationOnce(async () => {
       await refunding.report("cus_refund_first", organizationId);
     });
-    await expect(reporting.report("cus_refund_first", organizationId)).rejects.toThrow(
-      "withdrawals failed",
-    );
-    await refunding.report("cus_refund_first", organizationId);
+    await reporting.report("cus_refund_first", organizationId);
     expect(program.refundSale).toHaveBeenCalledWith(payment.invoiceId);
+  });
+
+  it("keeps a sale the program took but did not acknowledge open for withdrawal", async () => {
+    const organizationId = await organization("unacknowledged", "click_18");
+    const program = fakeProgram();
+    let payments = [paid("in_unacknowledged")];
+    const sales = createPartnerSales({
+      prisma,
+      program,
+      provider: { listPlanPayments: async () => payments },
+    });
+    program.trackSale.mockRejectedValueOnce(new Error("acknowledgement lost"));
+    await sales.report("cus_unacknowledged", organizationId);
+    payments = payments.map((payment) => ({ ...payment, reversed: true }));
+    await sales.report("cus_unacknowledged", organizationId);
+    expect(program.refundSale).toHaveBeenCalledWith(payments[0]!.invoiceId);
   });
 
   it("has nothing to do for a billing customer that no longer exists", async () => {

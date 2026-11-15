@@ -550,7 +550,7 @@ model PartnerSale {
   /// When the provider created the invoice, so a later refund check reads back far enough.
   invoiceCreatedAt DateTime
   createdAt        DateTime  @default(now())
-  /// Null until the program confirmed the sale; recorded first so a refund can never miss it.
+  /// When the sale was sent, set just before sending; cleared when the send failed so it is retried.
   reportedAt       DateTime?
   refundedAt       DateTime?
 
