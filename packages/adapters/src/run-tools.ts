@@ -204,9 +204,14 @@ async function dispatchTool(
     if (!isToolError(result)) outcome = "success";
     return result;
   } finally {
+    const route = gate.call.connectorCall.route;
     await auditToolCall(ctx, gate.call.name, outcome, {
       effectId: gate.call.applied.effect.id,
       autoApproved: gate.call.bypassApproval,
+      ...(route?.connectionId && {
+        connectorId: route.connectorId,
+        connectionId: route.connectionId,
+      }),
     });
   }
 }
