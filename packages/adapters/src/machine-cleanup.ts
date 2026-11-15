@@ -9,7 +9,6 @@ import { machineCleanupJob, machineCleanupJobKey } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
 import { runAsSystem } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
-import { endAbandonedBoot } from "./computer-lifecycle.js";
 
 /** One try's provider budget; the queue's backoff spaces the tries. */
 const ATTEMPT_MS = 30_000;
@@ -53,11 +52,12 @@ async function deleteUnlessKept(
   machine: UnreferencedMachine,
 ): Promise<void> {
   const { provider, machineId, homeKey } = machine;
-  // The decision rests on one read, so it cannot fall between a start storing the machine and
-  // leaving "booting": activation does both in a single write. A start's later writes are fenced
-  // on its claim, so once its computer has left "booting" without storing the machine it never
-  // will.
-  const read = () =>
+  // One read, so it cannot fall between a start storing the machine and leaving "booting":
+  // activation does both in a single write. A start's later writes are fenced on its claim, so
+  // once its computer has left "booting" without storing the machine it never will. A start that
+  // died stays "booting" until the computer is started again, so its machine waits here and the
+  // last try reports it.
+  const holders = await runAsSystem("check whether a computer keeps a provider machine", () =>
     deps.prisma.computer.findMany({
       where: {
         OR: [
@@ -65,20 +65,8 @@ async function deleteUnlessKept(
           ...(homeKey ? [{ homeKey, state: "booting" }] : []),
         ],
       },
-      select: { id: true, state: true, updatedAt: true },
-    });
-  const holders = await runAsSystem(
-    "decide whether a computer keeps a provider machine",
-    async () => {
-      const found = await read();
-      const boots = found.filter((holder) => holder.state === "booting");
-      if (boots.length === 0) return found;
-      // A start that died never leaves "booting" by itself, so the lifecycle ends it by its own
-      // rule for an abandoned boot, and what the computers store is read again after that.
-      for (const boot of boots)
-        if (!(await endAbandonedBoot(deps.prisma, boot))) throw new Error(STARTING);
-      return read();
-    },
+      select: { state: true },
+    }),
   );
   if (holders.some((holder) => holder.state === "booting")) throw new Error(STARTING);
   if (holders.length > 0) return;

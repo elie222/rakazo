@@ -12,55 +12,18 @@ import { deleteUnreferencedMachine, recordUnreferencedMachine } from "./sandbox-
 import { settleMachineCleanup } from "./sandbox-test-support.js";
 import { InMemoryJobQueue } from "./wakeup.js";
 
-type ComputerRow = {
-  id: string;
-  homeKey: string;
-  kind: string;
-  providerRef: string | null;
-  state: string;
-  updatedAt: Date;
-  maintenanceId: string | null;
-  restorePending: boolean;
-  /** Whether a run on this computer still heartbeats, or an execution lease on it is live. */
-  held?: "run" | "lease";
-};
+type ComputerRow = { homeKey: string; kind: string; providerRef: string | null; state: string };
 
-/**
- * Stored computers, answering the job's read as the database would, and the lifecycle's write
- * that ends an abandoned boot: it lands only on the claim it was read with, and never while an
- * execution lease is live.
- */
+/** Stored computers, answering the one read the job makes as the database would. */
 function computers(rows: ComputerRow[]) {
   const findMany = vi.fn(async ({ where }: { where: { OR: Array<Partial<ComputerRow>> } }) =>
-    rows
-      .filter((row) =>
-        where.OR.some((filter) =>
-          Object.entries(filter).every(([key, value]) => row[key as keyof ComputerRow] === value),
-        ),
-      )
-      .map((row) => ({ ...row })),
+    rows.filter((row) =>
+      where.OR.some((filter) =>
+        Object.entries(filter).every(([key, value]) => row[key as keyof ComputerRow] === value),
+      ),
+    ),
   );
-  const updateMany = vi.fn(
-    async ({ where, data }: { where: Partial<ComputerRow>; data: Partial<ComputerRow> }) => {
-      const row = rows.find(
-        (candidate) =>
-          candidate.id === where.id &&
-          candidate.state === where.state &&
-          candidate.updatedAt.getTime() === where.updatedAt?.getTime() &&
-          candidate.maintenanceId === where.maintenanceId &&
-          candidate.held !== "lease",
-      );
-      if (!row) return { count: 0 };
-      Object.assign(row, data, { updatedAt: new Date() });
-      return { count: 1 };
-    },
-  );
-  const findFirst = vi.fn(async ({ where }: { where: { bot: { computerId: string } } }) =>
-    rows.some((row) => row.id === where.bot.computerId && row.held === "run")
-      ? { id: "run-1" }
-      : null,
-  );
-  return { computer: { findMany, updateMany }, run: { findFirst } } as unknown as PrismaClient;
+  return { computer: { findMany } } as unknown as PrismaClient;
 }
 
 /** A provider's machines, deleted by id alone. */
@@ -75,18 +38,12 @@ function provider(existing: string[]) {
 const machine = { provider: "fake", machineId: "machine-1", homeKey: "home-1" };
 const key = machineCleanupJobKey(machine.provider, machine.machineId);
 const stored = (row: Partial<ComputerRow>): ComputerRow => ({
-  id: row.homeKey ?? "home-1",
   homeKey: "home-1",
   kind: "fake",
   providerRef: null,
   state: "running",
-  updatedAt: new Date(),
-  maintenanceId: null,
-  restorePending: false,
   ...row,
 });
-/** Older than the lifecycle takes a live boot's claim to be. */
-const longAgo = () => new Date(Date.now() - 60 * 60_000);
 
 afterEach(() => installLogger(createLogger({ service: "test", level: "off", sinks: [] })));
 
@@ -216,63 +173,6 @@ describe("the cleanup of a machine no computer points at", () => {
       retryMachineCleanup({ prisma, sandbox }, { provider: "fake", machineId: "machine-1" }),
     ).rejects.toThrow("still in progress");
     expect(deleteMachine).not.toHaveBeenCalled();
-  });
-
-  it("ends a start that died, then deletes the machine it never stored", async () => {
-    const row = stored({ state: "booting", updatedAt: longAgo() });
-    const { sandbox, machines } = provider(["machine-1"]);
-
-    await retryMachineCleanup({ prisma: computers([row]), sandbox }, machine);
-
-    expect(machines.size).toBe(0);
-    // Left as a failed start leaves it: startable, and restored when it next starts.
-    expect(row).toMatchObject({ state: "error", providerRef: null, restorePending: true });
-  });
-
-  it("ends a start that died but keeps the machine its computer stores", async () => {
-    const row = stored({ state: "booting", providerRef: "machine-1", updatedAt: longAgo() });
-    const { sandbox, machines, deleteMachine } = provider(["machine-1"]);
-
-    await retryMachineCleanup({ prisma: computers([row]), sandbox }, machine);
-
-    expect(deleteMachine).not.toHaveBeenCalled();
-    expect(machines.has("machine-1")).toBe(true);
-    expect(row).toMatchObject({ state: "error", providerRef: "machine-1" });
-  });
-
-  it.each([
-    ["a run on its computer still heartbeats", { held: "run" }],
-    ["an execution lease on its computer is live", { held: "lease" }],
-    ["an update has reserved its computer", { maintenanceId: "update-1" }],
-  ] as const)("leaves an old start alone while %s", async (_name, holder) => {
-    const row = stored({ state: "booting", updatedAt: longAgo(), ...holder });
-    const { sandbox, deleteMachine } = provider(["machine-1"]);
-
-    await expect(
-      retryMachineCleanup({ prisma: computers([row]), sandbox }, machine),
-    ).rejects.toThrow("still in progress");
-
-    expect(deleteMachine).not.toHaveBeenCalled();
-    expect(row.state).toBe("booting");
-  });
-
-  it("leaves a start alone that took the abandoned one over after the read", async () => {
-    const row = stored({ state: "booting", updatedAt: longAgo() });
-    const { sandbox, deleteMachine } = provider(["machine-1"]);
-    const prisma = computers([row]);
-    // A new start claims the computer between the job's read and its write.
-    vi.mocked(prisma.computer.findMany).mockImplementationOnce((async () => {
-      const read = [{ ...row }];
-      row.updatedAt = new Date();
-      return read;
-    }) as unknown as typeof prisma.computer.findMany);
-
-    await expect(retryMachineCleanup({ prisma, sandbox }, machine)).rejects.toThrow(
-      "still in progress",
-    );
-
-    expect(deleteMachine).not.toHaveBeenCalled();
-    expect(row.state).toBe("booting");
   });
 
   it("keeps failing, and so being retried, while no provider can delete by id", async () => {

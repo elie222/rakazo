@@ -165,34 +165,6 @@ async function hasLiveForeignRunLease(
   return live !== null;
 }
 
-/**
- * Ends a boot nobody holds any more, as that boot's own failure handling would have. The rule
- * is the one a later start uses to take such a boot over: a claim older than an execution-lease
- * TTL, no run still heartbeating on the computer, and no live execution lease. The write
- * compares the claim stamp, so the start it ends can no longer store a machine or change the
- * row, and no lock is held for whatever the caller does next. The computer is left to be
- * restored, as by any start that takes over a boot it cannot see the progress of. A boot under
- * maintenance is left to the update that reserved it. False while the boot may be live.
- */
-export async function endAbandonedBoot(
-  prisma: PrismaClient,
-  computer: { id: string; updatedAt: Date },
-): Promise<boolean> {
-  if (!isAbandonedLifecycleClaim(computer.updatedAt)) return false;
-  if (await hasLiveForeignRunLease(prisma, computer.id)) return false;
-  const ended = await prisma.computer.updateMany({
-    where: {
-      id: computer.id,
-      state: "booting",
-      updatedAt: computer.updatedAt,
-      maintenanceId: null,
-      ...heldByNobodyElse(null),
-    },
-    data: { state: "error", restorePending: true },
-  });
-  return ended.count === 1;
-}
-
 export class ComputerBusyError extends Error {
   constructor() {
     super("Computer is busy");

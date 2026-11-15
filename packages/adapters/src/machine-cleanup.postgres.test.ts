@@ -208,54 +208,15 @@ describePostgres("machine cleanup (PostgreSQL)", () => {
     expect(sandbox.boxes.has(machine.machineId)).toBe(true);
   });
 
-  it("ends a start nobody holds any more, which then cannot store the machine", async () => {
-    // The start claims the computer twenty minutes ago and never gets past setting it up.
+  it("waits for a start it has not heard from, and leaves its computer alone", async () => {
     await prisma.computer.update({
       where: { id: computerId },
-      data: { updatedAt: new Date(Date.now() - 30 * 60_000) },
+      data: { state: "booting", updatedAt: new Date(Date.now() - 30 * 60_000) },
     });
-    vi.useFakeTimers({ toFake: ["Date"], now: Date.now() - 20 * 60_000 });
-    let settingUp!: () => void;
-    const reached = new Promise<void>((resolve) => {
-      settingUp = resolve;
-    });
-    let finishSetup!: () => void;
-    vi.spyOn(sandbox, "prepare").mockImplementationOnce(
-      () =>
-        new Promise<void>((resolve) => {
-          finishSetup = resolve;
-          settingUp();
-        }),
-    );
-    const stalled = start();
-    stalled.catch(() => undefined);
-    await reached;
-    vi.useRealTimers();
 
-    // A live execution lease means its worker may only be slow.
-    const lease = await prisma.computerExecutionLease.create({
-      data: {
-        computerId,
-        botId: identity.botId,
-        runId: randomUUID(),
-        expiresAt: new Date(Date.now() + 60_000),
-      },
-    });
     await expect(cleanup()).rejects.toThrow("still in progress");
+
     expect(await row()).toMatchObject({ state: "booting" });
     expect(sandbox.deleteMachine).not.toHaveBeenCalled();
-
-    await prisma.computerExecutionLease.update({
-      where: { id: lease.id },
-      data: { expiresAt: new Date(Date.now() - 1) },
-    });
-    await cleanup();
-    expect(await row()).toMatchObject({ state: "error", providerRef: null, restorePending: true });
-    expect(sandbox.deleteMachine).toHaveBeenCalledWith(machine, expect.any(AbortSignal));
-
-    // The start it ended comes back to life: its writes no longer land.
-    finishSetup();
-    await expect(stalled).rejects.toThrow();
-    expect(await row()).toMatchObject({ state: "error", providerRef: null, restorePending: true });
   });
 });
