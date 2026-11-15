@@ -21,7 +21,14 @@ import { modelPickerRequest } from "./model-picker-selection";
 import { queryClient } from "./query";
 
 const savedEndpoint = "https://models.example.test/v1";
-const { push, back, replace, params, rpcCalls, saved } = vi.hoisted(() => ({
+const { push, back, replace, params, rpcCalls, saved, pinnedTo, focus } = vi.hoisted(() => ({
+  focus: { on: true },
+  /** What a request pinned to a Space carries: its server, its session and the Space's header. */
+  pinnedTo: (spaceId: string) => ({
+    apiBase: "https://app.example.test",
+    sessionGeneration: 1,
+    headers: { "x-rakazo-space-id": spaceId },
+  }),
   push: vi.fn(),
   back: vi.fn(),
   replace: vi.fn(),
@@ -54,6 +61,9 @@ const { push, back, replace, params, rpcCalls, saved } = vi.hoisted(() => ({
     // A failed save either keeps the bot's own model or finds it already cleared elsewhere.
     failBotUpdates: {} as Record<string, "kept" | "changed elsewhere">,
     needsModel: false,
+    enabledModelIds: undefined as string[] | undefined,
+    /** Procedures that answer with a failure. */
+    failing: [] as string[],
   },
 }));
 const settingsRouter = { push, back, replace };
@@ -65,9 +75,7 @@ vi.mock("./api-auth", () => ({}));
 vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   currentApiBase: () => "https://app.example.test",
-  captureApiRequestContext: async (spaceId = "space-fixture") => ({
-    headers: { "x-rakazo-space-id": spaceId },
-  }),
+  captureApiRequestContext: async (spaceId = "space-fixture") => pinnedTo(spaceId),
   selectedSpaceId: () => "space-fixture",
   rpc: async (
     procedure: string,
@@ -76,6 +84,7 @@ vi.mock("./api", () => ({
   ) => {
     rpcCalls.push([procedure, input, options]);
     if (saved.held) await saved.held;
+    if (saved.failing.includes(procedure)) throw new Error("offline");
     if (saved.failMe && procedure === "me") throw new Error("offline");
     if (procedure === "me")
       return {
@@ -159,16 +168,19 @@ vi.mock("./api", () => ({
           ...(saved.reasoning ? { reasoning: true } : {}),
           ...(saved.thinkingLevel ? { thinkingLevel: saved.thinkingLevel } : {}),
           ...(saved.modelSettings ? { modelSettings: saved.modelSettings } : {}),
+          ...(saved.enabledModelIds ? { enabledModelIds: saved.enabledModelIds } : {}),
         },
       ];
     return [];
   },
 }));
+vi.mock("./app-foreground", () => ({ useAppForeground: () => true }));
 vi.mock("expo-router", () => ({
   useRouter: () => settingsRouter,
   useNavigation: () => ({ setOptions: vi.fn() }),
   useLocalSearchParams: () => params,
-  useFocusEffect: (effect: () => (() => void) | undefined) => useEffect(effect, [effect]),
+  useFocusEffect: (effect: () => (() => void) | undefined) =>
+    useEffect(() => (focus.on ? effect() : undefined), [effect, focus.on]),
 }));
 vi.mock("@expo/ui/community/menu", () => ({
   MenuView: ({
@@ -458,7 +470,7 @@ it("hands a connected model back to the slot that asked for it", async () => {
 });
 
 describe("a Space's model override", () => {
-  const otherSpace = { headers: { "x-rakazo-space-id": "space-other" } };
+  const otherSpace = pinnedTo("space-other");
 
   it("edits that Space's lists in that Space and leaves connections to the account", async () => {
     params.spaceId = "space-other";
@@ -587,7 +599,7 @@ it("moves bots off their own model onto the main model, keeping failed ones list
       [
         "bots/update",
         { botId: "bot-inbox", modelProvider: null, modelId: null, thinkingLevel: null },
-        { requestContext: { headers: { "x-rakazo-space-id": "space-fixture" } } },
+        { requestContext: pinnedTo("space-fixture") },
       ],
     ]);
     expect(container.textContent).toContain("1 bot now uses the space default.");
@@ -775,6 +787,142 @@ it("resets a customized model to its defaults", async () => {
     delete params.credentialId;
     delete params.modelId;
   }
+});
+
+describe("a model's own settings", () => {
+  const saves = () => rpcCalls.filter(([procedure]) => procedure === "models/saveModelSettings");
+  const reads = () => rpcCalls.filter(([procedure]) => procedure === "models/credentials").length;
+  const button = (label: string) =>
+    [...container.querySelectorAll("button")].find((node) => node.textContent === label);
+  const show = () => act(async () => root.render(createElement(ModelSettingsScreen)));
+  function hold() {
+    let release!: () => void;
+    saved.held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    return async () => {
+      saved.held = null;
+      await act(async () => release());
+    };
+  }
+
+  beforeEach(async () => {
+    params.credentialId = "credential-fixture";
+    params.modelId = "model-fixture";
+    await remount(show);
+  });
+  afterEach(() => {
+    delete params.credentialId;
+    delete params.modelId;
+    saved.held = null;
+    saved.failing = [];
+    saved.enabledModelIds = undefined;
+    focus.on = true;
+  });
+
+  it("saves once for two taps in one tick, and holds Save until the settings are read again", async () => {
+    await change("Maximum output tokens", "8192");
+    const readsBefore = reads();
+    const release = hold();
+    await act(async () => {
+      button("Save")!.click();
+      button("Save")!.click();
+    });
+    expect(saves()).toHaveLength(1);
+    expect(button("Saving…")?.disabled).toBe(true);
+    saved.modelSettings = { "model-fixture": { maxTokens: 8192 } };
+    try {
+      await release();
+      expect(saves()).toHaveLength(1);
+      expect(reads()).toBe(readsBefore + 1);
+      expect(container.textContent).toContain("Saved.");
+      expect(field("Maximum output tokens")?.value).toBe("8192");
+      // Nothing is left to save once the form shows what was read back.
+      expect(button("Save")).toBeUndefined();
+    } finally {
+      saved.modelSettings = undefined;
+    }
+  });
+
+  it("says the settings could not be read after a save, not that the save failed", async () => {
+    await change("Maximum output tokens", "8192");
+    saved.failing = ["models/credentials"];
+    await saveConnection();
+    expect(saves()).toHaveLength(1);
+    expect(container.textContent).toContain("Could not load model settings");
+    expect(container.textContent).not.toContain("Could not save model settings");
+    expect(container.textContent).not.toContain("Saved.");
+    // The edit stays, and Save is offered again.
+    expect(field("Maximum output tokens")?.value).toBe("8192");
+    expect(button("Save")?.disabled).toBe(false);
+  });
+
+  it("says so when the save fails, keeps the edit, and lets Save be tapped again", async () => {
+    await change("Maximum output tokens", "8192");
+    const readsBefore = reads();
+    saved.failing = ["models/saveModelSettings"];
+    await saveConnection();
+    expect(container.textContent).toContain("Could not save model settings");
+    expect(reads()).toBe(readsBefore);
+    expect(field("Maximum output tokens")?.value).toBe("8192");
+    saved.failing = [];
+    await saveConnection();
+    expect(saves()).toHaveLength(2);
+    expect(container.textContent).toContain("Saved.");
+  });
+
+  it("starts another model from what is read for it, not from the last model's edits", async () => {
+    saved.enabledModelIds = ["model-fixture", "model-other"];
+    await remount(show);
+    await change("Maximum output tokens", "8192");
+    const release = hold();
+    params.modelId = "model-other";
+    await show();
+    // Nothing to edit or save until this model's own read is back.
+    expect(field("Maximum output tokens")).toBeNull();
+    expect(button("Save")).toBeUndefined();
+    await release();
+    expect(field("Maximum output tokens")?.value).toBe("");
+    expect(button("Save")).toBeUndefined();
+  });
+
+  it("does not carry one model's Saved notice over to the next model", async () => {
+    saved.enabledModelIds = ["model-fixture", "model-other"];
+    await remount(show);
+    await change("Maximum output tokens", "8192");
+    await saveConnection();
+    expect(container.textContent).toContain("Saved.");
+    params.modelId = "model-other";
+    await show();
+    expect(field("Maximum output tokens")).not.toBeNull();
+    expect(container.textContent).not.toContain("Saved.");
+  });
+
+  it("reads the settings again on a later visit instead of showing the earlier copy", async () => {
+    const release = hold();
+    await remount(show);
+    expect(field("Maximum output tokens")).toBeNull();
+    saved.modelSettings = { "model-fixture": { maxTokens: 8192 } };
+    try {
+      await release();
+      expect(field("Maximum output tokens")?.value).toBe("8192");
+    } finally {
+      saved.modelSettings = undefined;
+    }
+  });
+
+  it("reads the settings again on return to the screen, and starts again from what is saved", async () => {
+    await change("Maximum output tokens", "8192");
+    const readsBefore = reads();
+    focus.on = false;
+    await show();
+    expect(reads()).toBe(readsBefore);
+    expect(field("Maximum output tokens")?.value).toBe("8192");
+    focus.on = true;
+    await show();
+    expect(reads()).toBe(readsBefore + 1);
+    expect(field("Maximum output tokens")?.value).toBe("");
+  });
 });
 
 it("keeps setup help and API key collapsible for generic compatible servers", async () => {

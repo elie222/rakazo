@@ -19,6 +19,7 @@ import type { ComputerSize, ComputerUpdate } from "@rakazo/contracts";
 import {
   ACTIVE_RUN_STATUSES,
   abortableDelay,
+  ClientError,
   COMPUTER_USING_RUNS,
   isRetryableError,
   parseScreenLeaseId,
@@ -165,9 +166,9 @@ async function hasLiveForeignRunLease(
   return live !== null;
 }
 
-export class ComputerBusyError extends Error {
+export class ComputerBusyError extends ClientError {
   constructor() {
-    super("Computer is busy");
+    super("CONFLICT", "Computer is busy");
     this.name = "ComputerBusyError";
   }
 }

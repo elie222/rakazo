@@ -29,10 +29,10 @@ Read a sample of the frozen hits before committing, and tighten the pattern unti
 Fixing a violation needs no baseline edit: a count below the baseline passes. To lock in the gains, run:
 
 ```
-node scripts/checks/ratchets.mjs --tighten
+node scripts/checks/ratchets.mjs --tighten <rule-name>
 ```
 
-It lowers counts to the current ones and drops files that are gone or clean. It never raises a count or adds a file.
+It lowers that rule's counts to the current ones and drops files that are gone or clean. It never raises a count or adds a file. Name the rule you worked on, so the PR leaves other baselines alone; without a name it tightens every rule.
 
 ### Raising a baseline
 

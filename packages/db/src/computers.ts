@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { ComputerMode } from "@rakazo/contracts";
-import { isTerminal } from "@rakazo/core";
+import { ClientError, isTerminal } from "@rakazo/core";
 import type { PrismaClient } from "./client.js";
 import { Prisma } from "./client.js";
 import { runAsSystem, runAsSystemInTransaction } from "./row-security.js";
@@ -157,9 +157,9 @@ export function resolveDefaultComputerMode(
   return mode;
 }
 
-export class ComputerLimitError extends Error {
+export class ComputerLimitError extends ClientError {
   constructor(limit: number) {
-    super(`User computer limit (${limit}) reached`);
+    super("BAD_REQUEST", `User computer limit (${limit}) reached`);
     this.name = "ComputerLimitError";
   }
 }
