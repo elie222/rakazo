@@ -12,3 +12,6 @@ export function formatPostDate(value: Date): string {
 export function isoDate(value: Date): string {
   return value.toISOString().slice(0, 10);
 }
+
+/** What a post's head says about it: og:type article, its dates and author. */
+export type ArticleMeta = { published: Date; modified: Date; author: string };

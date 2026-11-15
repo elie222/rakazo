@@ -1,6 +1,7 @@
 ---
 import type { FaqItem } from "../alternatives";
 import { faqPageSchema } from "../alternatives";
+import type { ArticleMeta } from "../blog/format";
 import { githubStarsLabel } from "../github";
 import BaseLayout from "../layouts/BaseLayout.astro";
 import Footer from "./Footer.astro";
@@ -12,7 +13,7 @@ type Props = {
   faq?: readonly FaqItem[];
   structuredData?: object;
   ogImage?: string;
-  ogType?: string;
+  article?: ArticleMeta;
   index?: boolean;
   wide?: boolean;
   markdownAlternate?: string;
@@ -24,7 +25,7 @@ const {
   faq,
   structuredData: structuredDataProp,
   ogImage,
-  ogType,
+  article,
   index = true,
   wide = false,
   markdownAlternate,
@@ -38,9 +39,8 @@ const structuredData =
   title={title}
   description={description}
   structuredData={structuredData}
-  localeAlternates={false}
   ogImage={ogImage}
-  ogType={ogType}
+  article={article}
   index={index}
   markdownAlternate={markdownAlternate}
 >

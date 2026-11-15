@@ -13,7 +13,8 @@ import { blogPostStructuredData } from "../../blog/structured-data";
 import ComparisonTable from "../../components/ComparisonTable.astro";
 import FaqList from "../../components/FaqList.astro";
 import SiteFrame from "../../components/SiteFrame.astro";
-import { blogOgId, ogPublicPath } from "../../og-pages";
+import { blogOgId } from "../../blog/og";
+import { ogPublicPath } from "../../og-pages";
 import { SITE_URL } from "../../site";
 
 type Props =
@@ -89,7 +90,11 @@ const structuredData = post
       description={post.data.description}
       structuredData={structuredData}
       ogImage={ogPublicPath(blogOgId(post.id))}
-      ogType="article"
+      article={{
+        published: post.data.published,
+        modified: post.data.updated,
+        author: post.data.author,
+      }}
     >
       <p class="alt-crumb">
         <a href="/blog/">Blog</a>

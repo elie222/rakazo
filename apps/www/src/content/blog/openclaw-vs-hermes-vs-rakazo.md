@@ -1,5 +1,6 @@
 ---
 title: "OpenClaw vs Hermes Agent vs Rakazo: which is simplest to run?"
+ogTitle: "OpenClaw vs Hermes Agent vs Rakazo"
 description: "Rakazo, OpenClaw, and Hermes Agent are open source and can run on your hardware. The simplest one is the product shape you actually want: chat, a gateway, or a desktop agent."
 published: "2026-10-07"
 updated: "2026-10-07"

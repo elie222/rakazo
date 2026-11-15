@@ -1,5 +1,6 @@
 ---
 title: "Claude Duet vs Grok Bot, and an open source alternative"
+ogTitle: "Claude Duet vs Grok Bot"
 description: "Anthropic released Claude Duet on October 21, 2026. How it compares with xAI's Grok Bot, and with Rakazo, the open source option you run yourself."
 published: "2026-10-24"
 updated: "2026-10-24"
