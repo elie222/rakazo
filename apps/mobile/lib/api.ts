@@ -207,25 +207,30 @@ export function passwordChangeInFlight() {
 export async function fetchAuthenticatedAccountJson<T>(
   path: string,
   init: RequestInit,
-  invalidJsonFallback?: T,
+  invalidJsonFallback: T,
 ): Promise<{ response: Response; body: T; invalidJson?: boolean }> {
   const context = await captureApiRequestContext(null);
-  const result = await fetchMobileJson<T>(
+  return withMobileResponse(
     `${context.apiBase}${path}`,
     { ...init, headers: { origin: "rakazo://", ...context.headers } },
-    invalidJsonFallback,
     context.apiBase,
+    async (response, signal) => {
+      if (
+        response.status === 401 &&
+        context.headers.authorization &&
+        context.apiBase === currentApiBase() &&
+        context.sessionGeneration === currentSessionGeneration() &&
+        !passwordChangesInFlight
+      ) {
+        await rejectSession();
+      }
+      if (!response.ok || init.method === "DELETE") {
+        cancelResponseBody(response);
+        return { response, body: invalidJsonFallback };
+      }
+      return readMobileJson(response, signal, invalidJsonFallback);
+    },
   );
-  if (
-    result.response.status === 401 &&
-    context.headers.authorization &&
-    context.apiBase === currentApiBase() &&
-    context.sessionGeneration === currentSessionGeneration() &&
-    !passwordChangesInFlight
-  ) {
-    await rejectSession();
-  }
-  return result;
 }
 
 export async function fetchMobileJson<T>(
@@ -234,36 +239,44 @@ export async function fetchMobileJson<T>(
   invalidJsonFallback?: T,
   apiBase = currentApiBase(),
 ): Promise<{ response: Response; body: T; invalidJson?: boolean }> {
+  return withMobileResponse(input, init, apiBase, (response, signal) =>
+    readMobileJson(response, signal, invalidJsonFallback),
+  );
+}
+
+async function readMobileJson<T>(
+  response: Response,
+  signal: AbortSignal,
+  invalidJsonFallback?: T,
+): Promise<{ response: Response; body: T; invalidJson?: boolean }> {
+  try {
+    const body = await readBoundedJsonResponse<T>(response, MAX_MOBILE_AUTH_RESPONSE_BYTES, signal);
+    return { response, body };
+  } catch (error) {
+    if (invalidJsonFallback !== undefined && error instanceof SyntaxError) {
+      return { response, body: invalidJsonFallback, invalidJson: true };
+    }
+    throw requestError(error, signal);
+  }
+}
+
+async function withMobileResponse<T>(
+  input: Parameters<typeof fetch>[0],
+  init: RequestInit,
+  apiBase: string,
+  read: (response: Response, signal: AbortSignal) => Promise<T>,
+): Promise<T> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(new Error("Request timed out")), RPC_TIMEOUT_MS);
   try {
     const response = await withAbort(
-      fetchServer(
-        input,
-        {
-          ...init,
-          signal: controller.signal,
-        },
-        apiBase,
-      ),
+      fetchServer(input, { ...init, signal: controller.signal }, apiBase),
       controller.signal,
       "Request timed out",
     ).catch((error: unknown) => {
       throw requestError(error, controller.signal);
     });
-    try {
-      const body = await readBoundedJsonResponse<T>(
-        response,
-        MAX_MOBILE_AUTH_RESPONSE_BYTES,
-        controller.signal,
-      );
-      return { response, body };
-    } catch (error) {
-      if (invalidJsonFallback !== undefined && error instanceof SyntaxError) {
-        return { response, body: invalidJsonFallback, invalidJson: true };
-      }
-      throw requestError(error, controller.signal);
-    }
+    return await read(response, controller.signal);
   } finally {
     clearTimeout(timer);
   }

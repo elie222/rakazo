@@ -29,6 +29,7 @@ import { saveServerHeaders } from "./server-headers";
 import { restoreSessionToken, saveSessionToken } from "./session.js";
 import type { UnsentDisk } from "./thread-feedback.js";
 import { configureUnsentSends } from "./thread-feedback.js";
+import { listUserDevices, removeUserDevice } from "./user-devices";
 
 vi.mock("expo-secure-store", () => ({
   getItemAsync: vi.fn(),
@@ -128,6 +129,53 @@ describe("mobile API requests", () => {
       setCachedApiBase(originalBase);
     }
   });
+
+  it.each(["list", "remove"])(
+    "ignores oversized missing-route bodies for device %s",
+    async (operation) => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => new Response("x".repeat(1024 * 1024), { status: 404 })),
+      );
+      if (operation === "list") await expect(listUserDevices()).resolves.toEqual([]);
+      else await expect(removeUserDevice("fixture-device")).resolves.toBeUndefined();
+    },
+  );
+
+  it("still bounds successful device lists", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("x".repeat(1024 * 1024))),
+    );
+    await expect(listUserDevices()).rejects.toThrow();
+  });
+
+  it.each(["malformed", "oversized"])(
+    "rejects the session even with a %s account 401 body",
+    async (body) => {
+      const store = new Map<string, string>([["rakazo.session_token", "expired-token"]]);
+      mockSecureStore(store);
+      await loadApiBase();
+      const rejected = vi.fn();
+      const unsubscribe = subscribeSessionRejected(rejected);
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(
+          async () =>
+            new Response(body === "malformed" ? "not json" : "x".repeat(1024 * 1024), {
+              status: 401,
+            }),
+        ),
+      );
+      try {
+        await expect(listUserDevices()).rejects.toThrow("Could not load");
+        expect(rejected).toHaveBeenCalledOnce();
+        expect(store.has("rakazo.session_token")).toBe(false);
+      } finally {
+        unsubscribe();
+      }
+    },
+  );
 
   it("does not send a captured old bearer after the session changes", async () => {
     await saveSessionToken("fake-session-a");
