@@ -1,5 +1,26 @@
+import type { AdapterContext, ComputerRef } from "@rakazo/adapter-kit";
+import { SandboxFileTooLargeError } from "@rakazo/adapter-kit";
 import { describe, expect, it, vi } from "vitest";
-import { encodeTarEntry, TarReader } from "./exec-computer.js";
+import type { RawExec } from "./exec-computer.js";
+import { ExecComputer, encodeTarEntry, TarReader } from "./exec-computer.js";
+
+describe("reading a file with a size limit", () => {
+  it("refuses a file that grew past the limit after its size was checked, by type", async () => {
+    const exec: RawExec = async function* (_computer, command) {
+      // The timeout wrapper's words come first; the tool and its arguments follow.
+      const tool = command.includes("stat") ? "stat" : "cat";
+      yield { type: "stdout", data: Buffer.from(tool === "stat" ? "4" : "x".repeat(64)) };
+      yield { type: "exit", code: 0 };
+    };
+    const computer = new ExecComputer(exec, "test");
+    const context = { signal: new AbortController().signal } as AdapterContext;
+    const read = computer.readFile({ id: "computer-1" } as ComputerRef, "notes.txt", context, {
+      maxBytes: 8,
+    });
+    await expect(read).rejects.toBeInstanceOf(SandboxFileTooLargeError);
+    await expect(read).rejects.toMatchObject({ maxBytes: 8 });
+  });
+});
 
 describe("workspace archive packets", () => {
   it("reads a large file without repeatedly copying its accumulated bytes", () => {

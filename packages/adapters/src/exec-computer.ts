@@ -67,6 +67,8 @@ export type RawExec = (
  * Commands, files and workspace transfer for a computer started from the published computer
  * image, over any exec transport. Providers supply the transport and the machine lifecycle.
  */
+class CommandOutputTooLargeError extends Error {}
+
 export class ExecComputer {
   constructor(
     private readonly exec: RawExec,
@@ -167,7 +169,14 @@ export class ExecComputer {
     if (Number(size.stdout.trim()) > maxBytes) {
       throw new SandboxFileTooLargeError(maxBytes);
     }
-    const result = await this.collect(computer, ["cat", "--", target], context, maxBytes + 1);
+    const result = await this.collect(computer, ["cat", "--", target], context, maxBytes + 1).catch(
+      (error: unknown) => {
+        // The file grew after its size was checked.
+        if (error instanceof CommandOutputTooLargeError)
+          throw new SandboxFileTooLargeError(maxBytes);
+        throw error;
+      },
+    );
     if (result.code !== 0) {
       throw new Error(result.stderr.toString("utf8") || "could not read computer file");
     }
@@ -378,7 +387,7 @@ export class ExecComputer {
       }
       outputBytes += event.data.byteLength;
       if (outputBytes > maxOutputBytes)
-        throw new Error(`${this.label} command output is too large`);
+        throw new CommandOutputTooLargeError(`${this.label} command output is too large`);
       (event.type === "stdout" ? stdout : stderr).push(event.data);
     }
     return { code, stdout: Buffer.concat(stdout), stderr: Buffer.concat(stderr) };
