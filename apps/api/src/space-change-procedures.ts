@@ -14,6 +14,8 @@ const SPACE_CHANGE_PROCEDURES: Record<string, readonly SpaceChangeKind[]> = {
   "threads.sendWithRoutines": ["runs"],
   "threads.react": ["runs"],
   "threads.endCall": ["runs"],
+  "threads.followUp": ["runs"],
+  "skills.testRun": ["runs"],
   // Activity leaves out archived bots.
   "bots.restore": ["runs", "routines"],
   "bots.remove": ["runs", "routines"],
