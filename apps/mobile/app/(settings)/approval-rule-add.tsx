@@ -1,7 +1,6 @@
 import { useLingui } from "@lingui/react/macro";
 import type { ApprovalRuleChoice } from "@rakazo/core";
 import { approvalRuleChoices, listSearch } from "@rakazo/core";
-import { useQuery } from "@tanstack/react-query";
 import { useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import { useLayoutEffect, useMemo, useState } from "react";
 import { ScrollView, StyleSheet, Text } from "react-native";
@@ -11,6 +10,7 @@ import { SettingsGroup, SettingsRow } from "../../components/settings-group";
 import { mobileTokens } from "../../lib/appearance";
 import { native, useThemedStyles } from "../../lib/native";
 import { queryClient, rpcQuery, useSave } from "../../lib/query";
+import { useScreenQuery } from "../../lib/screen-query";
 import { settingsTarget } from "../../lib/settings-target";
 import { useSideInsets } from "../../lib/side-insets";
 import { errorText } from "../../lib/user-error";
@@ -30,7 +30,8 @@ export default function AddApprovalRule() {
   const styles = useThemedStyles(createStyles);
   const overrideSpace = target.scope === "space" ? target.spaceId : undefined;
   const rulesRead = rpcQuery("approvalRules/list", { scope }, overrideSpace);
-  const rulesQuery = useQuery(rulesRead, queryClient);
+  // Shows the list the rules screen holds, and reads it again as the picker opens.
+  const rulesQuery = useScreenQuery(rulesRead);
   const choices = useMemo(
     () => (rulesQuery.data ? approvalRuleChoices(rulesQuery.data) : null),
     [rulesQuery.data],

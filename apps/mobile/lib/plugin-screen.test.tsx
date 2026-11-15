@@ -236,6 +236,19 @@ it("shows the preview again after a failed read and Retry", async () => {
   expect(container.textContent).toContain("https://notes.example.test/mcp");
 });
 
+it("reads the preview again on a later visit", async () => {
+  await render();
+  expect(container.textContent).toContain("https://notes.example.test/mcp");
+  await act(async () => root.render(null));
+
+  answers["capabilities/pluginPreview"] = async () => ({
+    ...preview,
+    mcpServers: [{ ...preview.mcpServers[0], endpoint: "https://moved.example.test/mcp" }],
+  });
+  await render();
+  expect(container.textContent).toContain("https://moved.example.test/mcp");
+});
+
 it("clears a failed connect when Retry reads the preview again", async () => {
   state.params = { ...state.params, managedConnectorId: "test", managedSlug: "notes" };
   answers["connections/catalog"] = async () => [

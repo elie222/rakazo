@@ -18,7 +18,7 @@ import { NativeActionButton } from "../../components/native-action-button";
 import { mobileTokens } from "../../lib/appearance";
 import { native, useThemedStyles } from "../../lib/native";
 import { iosAtLeast } from "../../lib/native-controls";
-import { queryClient, rpcQuery, useSave } from "../../lib/query";
+import { formRead, queryClient, rpcQuery, useSave } from "../../lib/query";
 import { useSideInsets } from "../../lib/side-insets";
 import { errorText } from "../../lib/user-error";
 
@@ -43,9 +43,8 @@ function SkillEditor({ id }: { id?: string }) {
   const sideInsets = useSideInsets();
   const styles = useThemedStyles(createStyles);
   const { t } = useLingui();
-  const skillRead = rpcQuery("agentSkills/get", { skillId: id ?? "" });
-  // Dropped on leaving, so the editor opens on what is saved now and never on an earlier visit's copy.
-  const skillQuery = useQuery({ ...skillRead, enabled: Boolean(id), gcTime: 0 }, queryClient);
+  const skillRead = formRead(rpcQuery("agentSkills/get", { skillId: id ?? "" }));
+  const skillQuery = useQuery({ ...skillRead, enabled: Boolean(id) }, queryClient);
   const skill = skillQuery.data ?? null;
   const loading = skillQuery.isFetching && !skill;
   const [edited, setDraft] = useState<string | null>(null);

@@ -51,6 +51,7 @@ vi.mock("./api", () => ({
   captureApiRequestContext: async (spaceId: string) => ({ headers: { space: spaceId } }),
 }));
 vi.mock("./session", () => ({ currentSessionGeneration: () => 1 }));
+vi.mock("./app-foreground", () => ({ useAppForeground: () => true }));
 vi.mock("expo-router", () => ({
   useFocusEffect: (effect: () => undefined | (() => void)) => useEffect(effect, [effect]),
   useLocalSearchParams: () => ({ spaceId: state.spaceId }),
@@ -359,6 +360,14 @@ it("adds a tool from the picker, which searches and leaves out tools that have a
     matchValue: "shell",
   });
   expect(state.router.back).toHaveBeenCalled();
+});
+
+it("reads the rules again when the picker opens, so a tool given a rule elsewhere is left out", async () => {
+  await render();
+  state.rules = [rule({ id: "elsewhere", matchValue: "shell" })];
+  await renderPicker();
+  expect(tool("Shell")).toBeUndefined();
+  expect(tool("Write file")).toBeDefined();
 });
 
 it("saves once and goes back once when a tool is tapped twice", async () => {

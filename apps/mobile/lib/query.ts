@@ -69,6 +69,23 @@ export function accountRpcQuery<P extends RpcPath>(proc: P, input?: RpcInput<P>)
   return scopedRpcQuery(sessionScope, proc, input);
 }
 
+/**
+ * The read behind a form, kept apart from every other reader of the same data: sent again each
+ * time the screen opens and dropped when it leaves. A draft then starts from what is saved now,
+ * never from an earlier visit's copy or one another screen cached.
+ */
+export function formRead<T>(read: {
+  queryKey: DataTag<QueryKey, T, Error>;
+  queryFn: QueryFunction<T>;
+}) {
+  return {
+    queryKey: [...read.queryKey, "form"] as unknown as DataTag<QueryKey, T, Error>,
+    queryFn: read.queryFn,
+    gcTime: 0,
+    refetchOnMount: "always" as const,
+  };
+}
+
 /** One rpc write of a save. It is refused once the save's server, session or Space is no longer current. */
 export type SaveSend = <P extends RpcPath>(proc: P, input: RpcInput<P>) => Promise<RpcOutput<P>>;
 
@@ -165,6 +182,14 @@ export function useSave<Input = void, Saved = unknown>(options: {
 /** Forgets every cached read; the session registers this so sign-out never shows old data. */
 export function clearQueries(): void {
   queryClient.clear();
+}
+
+/**
+ * Forgets what one procedure answered, in every Space and for every input, once something outside
+ * its readers has changed it. A screen showing it reads it again; the rest start from nothing.
+ */
+export function resetRpcQueries(proc: RpcPath): Promise<void> {
+  return queryClient.resetQueries({ predicate: (query) => query.queryKey.includes(proc) });
 }
 
 /** Forgets the reads sent to these Spaces, as when leaving their organization. */

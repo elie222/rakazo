@@ -7,7 +7,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import TeamConversationSettings from "../app/(settings)/team-conversation";
 import { rpc } from "./api";
-import { queryClient } from "./query";
+import { queryClient, rpcQuery } from "./query";
 
 const back = vi.fn();
 const alert = vi.hoisted(() => vi.fn());
@@ -337,6 +337,14 @@ it("reads the room again on a later visit instead of showing the earlier copy", 
   );
   await settle();
   expect(rows()).toContain("Replies to: Every message");
+});
+
+it("reads the bot again instead of showing the copy another screen just cached", async () => {
+  queryClient.setQueryData(rpcQuery("bots/list").queryKey, [
+    { id: "bot-1", name: "Chief", teamChatAmbientEnabled: true, teamChatRules: null },
+  ] as never);
+  await render();
+  expect(rows()).toContain("Replies to: Mentions only");
 });
 
 it("holds Save while the room saves, and saves once for two taps", async () => {

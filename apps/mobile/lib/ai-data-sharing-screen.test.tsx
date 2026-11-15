@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 import type { ReactNode } from "react";
-import { act } from "react";
+import { act, useEffect } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import AiDataSharing from "../app/(settings)/ai-data-sharing";
-import { queryClient } from "./query";
+import { queryClient, resetRpcQueries } from "./query";
 
 type AlertButton = { text: string; onPress?: () => void };
 const mocks = vi.hoisted(() => ({
@@ -28,6 +28,10 @@ vi.mock("./api", () => ({
   captureApiRequestContext: async () => ({ apiBase: "https://app.example.test", headers: {} }),
 }));
 vi.mock("./session", () => ({ currentSessionGeneration: () => 1 }));
+vi.mock("./app-foreground", () => ({ useAppForeground: () => true }));
+vi.mock("expo-router", () => ({
+  useFocusEffect: (effect: () => void) => useEffect(effect, [effect]),
+}));
 vi.mock("./ai-consent", () => ({
   aiDataDisclosure: (use: string) => `About ${use}`,
   promptAiConsent: mocks.prompt,
@@ -235,6 +239,42 @@ it("offers a retry in an alert when the permissions fail to load", async () => {
   await settle();
   expect(toggle("Allow Models on mobile").checked).toBe(true);
   expect(mocks.alert).toHaveBeenCalledTimes(1);
+});
+
+it("reads the permissions again on a later visit, so one allowed elsewhere shows as allowed", async () => {
+  mocks.rpc.mockResolvedValue(opened);
+  await render();
+  expect(toggle("Allow Speech on mobile").checked).toBe(false);
+
+  await act(async () => root.render(null));
+  mocks.rpc.mockResolvedValue(status({ Models: true, Speech: true }));
+  await render();
+  expect(toggle("Allow Speech on mobile").checked).toBe(true);
+});
+
+it("reads the permissions again while open, once a consent prompt elsewhere has allowed one", async () => {
+  mocks.rpc.mockResolvedValue(opened);
+  await render();
+  mocks.rpc.mockResolvedValue(status({ Models: true, Speech: true }));
+  await act(async () => resetRpcQueries("aiConsent/status"));
+  await settle();
+  expect(toggle("Allow Speech on mobile").checked).toBe(true);
+});
+
+it("keeps a change when a read that started before it lands afterwards", async () => {
+  const revoke = hold("aiConsent/revoke");
+  await render();
+  const answer = mocks.rpc.getMockImplementation()!;
+  let land!: (read: typeof opened) => void;
+  mocks.rpc.mockImplementation((proc: string) =>
+    proc === "aiConsent/status" ? new Promise((resolve) => (land = resolve)) : answer(proc),
+  );
+  await act(async () => void queryClient.refetchQueries());
+  await act(async () => toggle("Allow Models on mobile").click());
+  await revoke.finish(status({ Models: false, Speech: false }));
+  await act(async () => land(opened));
+  await settle();
+  expect(toggle("Allow Models on mobile").checked).toBe(false);
 });
 
 it("says when no AI service is configured", async () => {

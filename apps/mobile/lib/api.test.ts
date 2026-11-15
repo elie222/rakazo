@@ -17,6 +17,7 @@ import {
   rpc,
   selectedSpaceId,
   setCachedApiBase,
+  subscribeAiConsentGranted,
   subscribeServerReachable,
   subscribeSessionRejected,
 } from "./api.js";
@@ -616,8 +617,16 @@ describe("mobile API requests", () => {
         });
       }),
     );
+    const granted = vi.fn(() => calls.push("told"));
+    const unsubscribe = subscribeAiConsentGranted(granted);
     await rpc("threads/send", { botId: "bot-1", text: "authorized content" });
-    expect(calls).toEqual(["/rpc/aiConsent/status", "/rpc/aiConsent/allow", "/rpc/threads/send"]);
+    unsubscribe();
+    expect(calls).toEqual([
+      "/rpc/aiConsent/status",
+      "/rpc/aiConsent/allow",
+      "told",
+      "/rpc/threads/send",
+    ]);
     expect(promptAiConsent).toHaveBeenLastCalledWith(recipient, "https://example.com/privacy");
   });
 
@@ -687,11 +696,15 @@ describe("mobile API requests", () => {
       }),
     );
 
+    const granted = vi.fn();
+    const unsubscribe = subscribeAiConsentGranted(granted);
     const results = await Promise.allSettled([
       rpc("threads/send", { botId: "bot-1", text: "keep this draft" }),
       rpc("threads/send", { botId: "bot-1", text: "keep this draft" }),
     ]);
+    unsubscribe();
 
+    expect(granted).not.toHaveBeenCalled();
     expect(results.every((result) => result.status === "rejected")).toBe(true);
     expect(promptAiConsent).toHaveBeenCalledTimes(1);
     expect(calls.filter((path) => path.endsWith("/aiConsent/allow"))).toHaveLength(0);

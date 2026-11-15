@@ -30,7 +30,7 @@ import { mobileTokens } from "../../lib/appearance";
 import { CallKeyboardContext } from "../../lib/call-keyboard-context";
 import { native, useMobileTokens, useThemedStyles } from "../../lib/native";
 import { iosAtLeast } from "../../lib/native-controls";
-import { queryClient, rpcQuery, useSave } from "../../lib/query";
+import { formRead, queryClient, rpcQuery, useSave } from "../../lib/query";
 import { errorText } from "../../lib/user-error";
 
 /** Reply mode, instructions, and automated-sender handling for one team chat room. */
@@ -42,9 +42,8 @@ export default function TeamConversationSettings() {
   const tokens = useMobileTokens();
   const styles = useThemedStyles(createStyles);
   const { conversationId } = useLocalSearchParams<{ conversationId: string }>();
-  // Dropped on leaving, so the form opens on the room's saved settings, never an earlier visit's.
-  const spacesQuery = useQuery({ ...rpcQuery("spaces/list"), gcTime: 0 }, queryClient);
-  const botsQuery = useQuery(rpcQuery("bots/list"), queryClient);
+  const spacesQuery = useQuery(formRead(rpcQuery("spaces/list")), queryClient);
+  const botsQuery = useQuery(formRead(rpcQuery("bots/list")), queryClient);
   const room = spacesQuery.data?.current.externalConversations.find(
     (candidate) => candidate.id === conversationId,
   );

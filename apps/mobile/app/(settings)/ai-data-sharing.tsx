@@ -2,7 +2,7 @@ import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import type { AiRecipient } from "@rakazo/contracts";
 import { AI_PRIVACY_URL } from "@rakazo/contracts";
-import { useQuery } from "@tanstack/react-query";
+import { writeSaved } from "@rakazo/core/query";
 import { useEffect } from "react";
 import { ActivityIndicator, Alert, Linking, ScrollView, StyleSheet } from "react-native";
 import {
@@ -20,6 +20,7 @@ import {
 } from "../../lib/ai-data-sharing";
 import { native, useThemedStyles } from "../../lib/native";
 import { queryClient, rpcQuery, useSave } from "../../lib/query";
+import { useScreenQuery } from "../../lib/screen-query";
 import { useSideInsets } from "../../lib/side-insets";
 import { errorText } from "../../lib/user-error";
 
@@ -27,7 +28,8 @@ export default function AiDataSharing() {
   const sideInsets = useSideInsets();
   const { t } = useLingui();
   const statusRead = rpcQuery("aiConsent/status");
-  const { data, error: loadError, refetch } = useQuery(statusRead, queryClient);
+  // Read on every visit: a consent prompt elsewhere, or another device, can change it meanwhile.
+  const { data, error: loadError, refetch } = useScreenQuery(statusRead);
   const status = data ?? null;
   const placeholder = aiDataSharingPlaceholder(status, Boolean(loadError));
   const styles = useThemedStyles(createStyles);
@@ -55,7 +57,8 @@ export default function AiDataSharing() {
                   keys: [ask.recipient.key],
                 })
               : null;
-      if (saved) queryClient.setQueryData(statusRead.queryKey, saved);
+      // A read that started before the change never puts back what it replaced.
+      if (saved) await writeSaved(queryClient, statusRead.queryKey, () => saved);
     },
     onFailed: (cause) =>
       Alert.alert(t`AI data sharing`, errorText(cause, t`Could not load permissions.`)),

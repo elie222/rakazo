@@ -116,7 +116,12 @@ function PluginScreen() {
     installs.find((row) => row.kind === "plugin" && row.source === source);
   const previewRead = rpcQuery("capabilities/pluginPreview", { source: params.source });
   const previewQuery = useQuery(
-    { ...previewRead, enabled: loaded && !savedAs(params.installedSource) },
+    {
+      ...previewRead,
+      enabled: loaded && !savedAs(params.installedSource),
+      // The plugin's publisher can change it at any time, so every visit reads it again.
+      staleTime: 0,
+    },
     queryClient,
   );
   const preview = previewQuery.data ?? null;
