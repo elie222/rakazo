@@ -867,6 +867,8 @@ describe("redaction", () => {
       `"a@a.".repeat(125_000) + "a.".repeat(250_000) + "@"`,
     ],
     ["cookies with secret-named parameters", `"cookie: token=a; b=1; ".repeat(45_000)`],
+    ["lowercase key prefixes joined by hyphens", `"ak_-".repeat(250_000)`],
+    ["lowercase key prefixes joined by underscores", `"ck_a_".repeat(200_000)`],
     ["keys before unclosed escaped quotes, a line each", `'token:\\\\"a\\n'.repeat(100_000)`],
     ["addresses in a row", `"a@a.aa_".repeat(140_000)`],
     [

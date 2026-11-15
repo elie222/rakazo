@@ -249,10 +249,25 @@ const EMAIL = new RegExp(String.raw`${EMAIL_LOCAL}+@[A-Z0-9.${WORLD}-]+\.[A-Z${W
 const EMAILS = new RegExp(`(?<!${EMAIL_LOCAL})(?:${EMAIL.source})+`, "gi");
 
 // A hyphenated key or a signed token may follow an underscore, but never a letter or digit:
-// `task-1234` is a word. After a two-letter prefix, underscores and hyphens belong to a key only
-// when a digit or capital shows it is random: `ck_orders_amount_positive` names a constraint.
-const BARE_SECRET =
-  /(?:(?:(?<![A-Za-z0-9])sk-|\bsk_)[A-Za-z0-9_-]{8,}|\b[ac]k_(?:(?=[a-z_-]*[A-Z0-9])[A-Za-z0-9_-]+|[A-Za-z0-9]+))\b/g;
+// `task-1234` is a word. Each candidate is taken whole, in one step, and `redactBareKey` decides
+// what in it is a key, so a long run of prefixes is read once.
+const BARE_SECRET = /(?:(?:(?<![A-Za-z0-9])sk-|\bsk_)[A-Za-z0-9_-]{8,}|\b[ac]k_[A-Za-z0-9_-]+)\b/g;
+const SHORT_PREFIX = /^[ac]k_/;
+const SHORT_KEY = /^[ac]k_[A-Za-z0-9]+$/;
+/**
+ * After a two-letter prefix, underscores and hyphens belong to a key only when a digit or a
+ * capital shows it is random: `ck_orders_amount_positive` names a constraint. Without one, each
+ * hyphen-separated part is a key only when it is a prefix and one run of letters.
+ */
+function redactBareKey(candidate: string): string {
+  const tail = candidate.slice(3);
+  if (!SHORT_PREFIX.test(candidate) || /[A-Z0-9]/.test(tail) || !/[_-]/.test(tail))
+    return REDACTED_MARK;
+  return candidate
+    .split("-")
+    .map((part) => (SHORT_KEY.test(part) ? REDACTED_MARK : part))
+    .join("-");
+}
 // Consume failed JWT headers once; keys within a failed header still need redaction.
 const BARE_SECRET_CANDIDATE = new RegExp(
   String.raw`${BARE_SECRET.source}|(?<![A-Za-z0-9])eyJ[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)?\b`,
@@ -302,9 +317,11 @@ const RULES: Rule[] = [
       : text,
   (text) =>
     text.replace(BARE_SECRET_CANDIDATE, (candidate) =>
-      candidate.startsWith("eyJ") && !candidate.includes(".")
-        ? candidate.replace(BARE_SECRET, REDACTED_MARK)
-        : REDACTED_MARK,
+      candidate.startsWith("eyJ")
+        ? candidate.includes(".")
+          ? REDACTED_MARK
+          : candidate.replace(BARE_SECRET, redactBareKey)
+        : redactBareKey(candidate),
     ),
   (text) => text.replace(WINDOWS_PROFILE_PATH, USER_MARK),
   (text) => text.replace(POSIX_PROFILE_PATH, `/${USER_MARK}`),
