@@ -1,5 +1,5 @@
 import type { ProviderSettingsField } from "@rakazo/contracts";
-import { HONCHO_PROVIDER_ID } from "./honcho-memory-provider.js";
+import { HONCHO_PROVIDER_ID, UNRESERVED_HONCHO_PEER_PATTERN } from "./honcho-memory-provider.js";
 import type { SettingsMemoryProvider } from "./memory-provider-descriptor.js";
 import {
   connectionModeFields,
@@ -55,7 +55,7 @@ export const honchoMemorySettings: SettingsMemoryProvider = {
         RESOURCE_ID,
         {
           // Rakazo writes to these peers, so they cannot be read as the user's own peer.
-          pattern: "^(?!rakazo-shared$)(?!bot-)",
+          pattern: UNRESERVED_HONCHO_PEER_PATTERN,
           message: "rakazo-shared and IDs starting with bot- are reserved for Rakazo.",
         },
       ],

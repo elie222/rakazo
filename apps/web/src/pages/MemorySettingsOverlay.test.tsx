@@ -235,8 +235,18 @@ it("changes the default scope and disconnects", async () => {
   expect(onConfigChange).toHaveBeenLastCalledWith(null);
 });
 
+it("offers a retry when the providers fail to load, and keeps the connection once they do", async () => {
+  memory.providers.mockRejectedValueOnce(new Error("offline"));
+  await render(connected);
+  expect(host.querySelector('[role="alert"]')).not.toBeNull();
+  expect(() => button("Disconnect")).toThrow();
+  await click(button("Retry"));
+  expect(host.querySelector('[role="alert"]')).toBeNull();
+  expect(button("Edit")).toBeDefined();
+});
+
 it("still shows a connection whose provider the server does not describe", async () => {
-  memory.providers.mockRejectedValue(new Error("not found"));
+  memory.providers.mockRejectedValue(Object.assign(new Error("not found"), { code: "NOT_FOUND" }));
   await render({ ...connected, provider: "retired", connectionLabel: undefined });
   expect(host.textContent).toContain("retired");
   expect(() => button("Edit")).toThrow();

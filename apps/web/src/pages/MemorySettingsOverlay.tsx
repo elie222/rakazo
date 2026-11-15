@@ -21,7 +21,7 @@ import type { ProviderSettingsDraft } from "../components/ProviderSettingsForm";
 import { ProviderSettingsForm } from "../components/ProviderSettingsForm";
 import { SETTINGS_CONTENT_WIDTH } from "../components/SettingsRows";
 import { useSave, useSpaceQueries } from "../lib/query";
-import { errorText } from "../lib/user-error";
+import { errorCode, errorText } from "../lib/user-error";
 import { SpaceMemorySection } from "./KnowledgeSection";
 
 type MemoryScope = "isolated" | "shared";
@@ -82,8 +82,10 @@ export function MemorySettingsOverlay({
   const queries = useSpaceQueries();
   const providerSelectId = useId();
   const providersQuery = useQuery(queries.memory.providers.queryOptions());
-  // An older server has no providers to describe: nothing can be connected or edited.
-  const providers = providersQuery.data ?? (providersQuery.isError ? [] : undefined);
+  // A server from before this call has no providers to describe: nothing can be connected or
+  // edited. Any other failure is a load to retry, not an empty list.
+  const olderServer = errorCode(providersQuery.error) === "NOT_FOUND";
+  const providers = providersQuery.data ?? (olderServer ? [] : undefined);
   const [selectedProvider, setSelectedProvider] = useState(config?.provider);
   const [defaultScope, setDefaultScope] = useState<MemoryScope>(
     config?.defaultMemoryScope ?? "isolated",
@@ -166,7 +168,14 @@ export function MemorySettingsOverlay({
 
           <SpaceMemorySection />
 
-          {config === undefined || providers === undefined ? (
+          {providers === undefined && providersQuery.isError ? (
+            <div role="alert" className="text-body-sm text-destructive">
+              {errorText(providersQuery.error)}
+              <Button variant="ghost" size="sm" onClick={() => void providersQuery.refetch()}>
+                {t`Retry`}
+              </Button>
+            </div>
+          ) : config === undefined || providers === undefined ? (
             <p className="text-body-sm text-muted-foreground">
               <Spinner aria-label={t`Loading memory settings…`} />
             </p>
