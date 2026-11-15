@@ -57,9 +57,6 @@ function createViewZoom(surface) {
     surface.style.transform = zoom === 1 ? "" : `translate(${panX}px, ${panY}px) scale(${zoom})`;
   };
   return {
-    get zoomed() {
-      return zoom > 1;
-    },
     refresh: apply,
     // Zoom around a client point so what is under it stays put.
     step(direction, x, y) {
@@ -201,8 +198,9 @@ export function attachMobileTrackpad(
   };
   const showPointer = () => {
     if (!pointer) return;
-    pointer.hidden = !enabled || cursorX == null;
-    if (!pointer.hidden) pointer.style.transform = `translate(${cursorX}px, ${cursorY}px)`;
+    const hidden = !enabled || cursorX == null;
+    pointer.toggleAttribute("hidden", hidden);
+    if (!hidden) pointer.style.transform = `translate(${cursorX}px, ${cursorY}px)`;
   };
   const positionCursor = (deltaX = 0, deltaY = 0) => {
     const target = canvas();
@@ -263,11 +261,15 @@ export function attachMobileTrackpad(
   };
   const changedTouch = (event, identifier) =>
     Array.from(event.changedTouches ?? []).find((touch) => touch.identifier === identifier);
+  const surfaceTouches = (event) =>
+    typeof surface.contains === "function"
+      ? Array.from(event.touches ?? []).filter((touch) => surface.contains(touch.target))
+      : Array.from(event.targetTouches ?? event.touches ?? []);
   const averageY = (touches) => (touches[0].clientY + touches[1].clientY) / 2;
   const onTouchStart = (event) => {
     if (!enabled) return;
     consume(event);
-    const touches = Array.from(event.touches ?? []);
+    const touches = surfaceTouches(event);
     if (touches.length >= 2) {
       // A second finger turns the gesture into a scroll; it never moves or clicks.
       if (!twoFinger) {
@@ -299,7 +301,7 @@ export function attachMobileTrackpad(
     if (!enabled) return;
     consume(event);
     if (twoFinger) {
-      const touches = Array.from(event.touches ?? []);
+      const touches = surfaceTouches(event);
       if (touches.length < 2) {
         scrolled = true;
         return;
@@ -334,7 +336,7 @@ export function attachMobileTrackpad(
     consume(event);
     if (twoFinger) {
       if (!clicks) scrolled = true;
-      if ((event.touches?.length ?? 0) > 0) return;
+      if (surfaceTouches(event).length > 0) return;
       twoFinger = false;
       touchId = null;
       if (clicks && !scrolled) click(2);
@@ -397,7 +399,7 @@ export function attachMobileTrackpad(
     surface.classList.remove("trackpad-active");
     view.reset();
     if (viewControls) viewControls.hidden = true;
-    if (pointer) pointer.hidden = true;
+    pointer?.toggleAttribute("hidden", true);
   };
 }
 

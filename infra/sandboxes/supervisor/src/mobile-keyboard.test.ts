@@ -34,10 +34,6 @@ function trackpadFixture() {
   const viewListeners = new Map<string, (event: unknown) => void>();
   const viewControls = {
     hidden: true,
-    zoomed: false,
-    toggleAttribute(name: string, on: boolean) {
-      if (name === "data-zoomed") this.zoomed = on;
-    },
     addEventListener: (type: string, listener: (event: unknown) => void) =>
       viewListeners.set(type, listener),
     removeEventListener: () => {},
@@ -50,7 +46,13 @@ function trackpadFixture() {
   const buttonListeners = new Map<string, () => void>();
   const mouseEvents: { type: string; clientX: number; clientY: number; button?: number }[] = [];
   const wheelDeltas: number[] = [];
-  const pointer = { hidden: true, style: { transform: "" } };
+  const pointer = {
+    hidden: true,
+    style: { transform: "" },
+    toggleAttribute(name: string, hidden: boolean) {
+      if (name === "hidden") this.hidden = hidden;
+    },
+  };
   const overlay = {
     style: { display: "none" },
     events: [] as string[],
@@ -117,9 +119,11 @@ function trackpadFixture() {
     clientY: number,
     others: TouchLike[] = [],
     batched: TouchLike[] = [],
+    targetTouches?: TouchLike[],
   ) => {
     const changed = [{ identifier, clientX, clientY }, ...batched];
     const event: TouchEventLike = {
+      ...(targetTouches ? { targetTouches } : {}),
       changedTouches: changed,
       touches: type === "touchend" || type === "touchcancel" ? others : [...changed, ...others],
       defaultPrevented: false,
@@ -652,6 +656,19 @@ describe("mobile trackpad touches", () => {
         expect(mouseDowns(fixture)).toHaveLength(0);
       });
     }
+  });
+
+  it("ignores fingers held on separate controls", () => {
+    withTrackpad((fixture) => {
+      const control = { identifier: 2, clientX: 300, clientY: 400 };
+      const screen = { identifier: 1, clientX: 50, clientY: 250 };
+      fixture.touch("touchstart", 1, 50, 250, [control], [], [screen]);
+      fixture.touch("touchmove", 1, 70, 250, [control], [], [{ ...screen, clientX: 70 }]);
+      fixture.touch("touchend", 1, 70, 250, [control], [], []);
+      expect(fixture.mouseEvents.at(-1)).toMatchObject({ type: "mousemove", clientX: 120 });
+      expect(fixture.wheelDeltas).toHaveLength(0);
+      expect(mouseDowns(fixture)).toHaveLength(0);
+    });
   });
 
   it("right-clicks on a two-finger tap", () => {
