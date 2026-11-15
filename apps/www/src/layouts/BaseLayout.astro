@@ -79,7 +79,9 @@ const englishVersion = versions.find((version) => version.locale === DEFAULT_LOC
     {
       versions
         .filter((version) => version.locale !== locale)
-        .map((version) => <meta property="og:locale:alternate" content={LOCALE_OG[version.locale]} />)
+        .map((version) => (
+          <meta property="og:locale:alternate" content={LOCALE_OG[version.locale]} />
+        ))
     }
     {
       article && (

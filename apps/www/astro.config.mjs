@@ -13,13 +13,17 @@ import { resolveWwwPort } from "./www-port.mjs";
 const wwwPort = resolveWwwPort();
 
 /** Fails the build when a page, every blog post included, has no rendered Open Graph image. */
+let publicDir;
 const ogImages = {
   name: "og-images",
   hooks: {
     "astro:config:done": ({ config }) => {
+      publicDir = config.publicDir;
+    },
+    "astro:build:start": () => {
       const missing = ogPages()
         .map((page) => ogPublicPath(page.id))
-        .filter((path) => !existsSync(new URL(`.${path}`, config.publicDir)));
+        .filter((path) => !existsSync(new URL(`.${path}`, publicDir)));
       if (missing.length > 0) {
         throw new Error(
           `Missing Open Graph images: ${missing.join(", ")}. Render them with scripts/render-og.mjs.`,

@@ -1,4 +1,5 @@
-import { DEFAULT_LOCALE, isLocale, LOCALES, type Locale } from "./locales";
+import type { Locale } from "./locales";
+import { DEFAULT_LOCALE, isLocale, LOCALES } from "./locales";
 
 /**
  * Pages that exist in more languages than English, keyed by their English path, with the

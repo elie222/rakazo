@@ -2,7 +2,8 @@ import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { OgPage } from "../og-pages";
-import { type BlogCategory, categoryFromFrontmatter, FRONTMATTER } from "./indexability";
+import type { BlogCategory } from "./indexability";
+import { categoryFromFrontmatter, FRONTMATTER } from "./indexability";
 
 const blogDir = join(dirname(fileURLToPath(import.meta.url)), "../content/blog");
 
@@ -18,8 +19,10 @@ function frontmatterString(markdown: string, key: string): string | undefined {
   const block = FRONTMATTER.exec(markdown)?.[1] ?? "";
   const value = new RegExp(`^${key}:[ \\t]*(.*?)[ \\t]*$`, "m").exec(block)?.[1];
   if (!value) return undefined;
-  if (value.startsWith('"')) return JSON.parse(value) as string;
-  if (value.startsWith("'")) return value.slice(1, -1).replaceAll("''", "'");
+  const doubleQuoted = /^("(?:[^"\\]|\\.)*")/.exec(value)?.[1];
+  if (doubleQuoted) return JSON.parse(doubleQuoted) as string;
+  const singleQuoted = /^'((?:[^']|'')*)'/.exec(value)?.[1];
+  if (singleQuoted !== undefined) return singleQuoted.replaceAll("''", "'");
   return value.replace(/\s+#.*$/, "");
 }
 
