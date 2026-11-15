@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   rpc: vi.fn(),
   alert: vi.fn(),
   prompt: vi.fn(),
+  focused: true,
 }));
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("./native", () => ({
@@ -35,6 +36,7 @@ vi.mock("./session", () => ({ currentSessionGeneration: () => 1 }));
 vi.mock("./app-foreground", () => ({ useAppForeground: () => true }));
 vi.mock("expo-router", () => ({
   useFocusEffect: (effect: () => void) => useEffect(effect, [effect]),
+  useIsFocused: () => mocks.focused,
 }));
 vi.mock("./ai-consent", () => ({
   aiDataDisclosure: (use: string) => `About ${use}`,
@@ -104,6 +106,7 @@ let root: Root;
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   queryClient.clear();
+  mocks.focused = true;
   mocks.prompt.mockResolvedValue(true);
   container = document.createElement("div");
   document.body.appendChild(container);
@@ -250,6 +253,22 @@ it("offers a retry in an alert when the permissions fail to load", async () => {
   await act(async () => answer(opened));
   await settle();
   expect(toggle("Allow Models on mobile").checked).toBe(true);
+  expect(mocks.alert).toHaveBeenCalledTimes(1);
+});
+
+it("holds a failed read's alert while another screen covers this one, until the return", async () => {
+  mocks.rpc.mockResolvedValue(opened);
+  await render();
+  mocks.focused = false;
+  await render();
+  mocks.rpc.mockRejectedValue(new Error("Server said no"));
+  await act(async () => resetRpcQueries("aiConsent/status"));
+  await settle();
+  expect(mocks.alert).not.toHaveBeenCalled();
+
+  mocks.focused = true;
+  await render();
+  expect(lastAlert()).toMatchObject({ title: "AI data sharing", message: "Server said no" });
   expect(mocks.alert).toHaveBeenCalledTimes(1);
 });
 

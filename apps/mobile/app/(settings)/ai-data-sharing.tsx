@@ -3,6 +3,7 @@ import { useLingui } from "@lingui/react/macro";
 import type { AiRecipient } from "@rakazo/contracts";
 import { AI_PRIVACY_URL } from "@rakazo/contracts";
 import { writeSaved } from "@rakazo/core/query";
+import { useIsFocused } from "expo-router";
 import { useEffect } from "react";
 import { ActivityIndicator, Alert, Linking, ScrollView, StyleSheet } from "react-native";
 import {
@@ -34,13 +35,15 @@ export default function AiDataSharing() {
   const placeholder = aiDataSharingPlaceholder(status, Boolean(loadError));
   const styles = useThemedStyles(createStyles);
   const stacked = useStackedSettings();
+  // A read can fail while another screen covers this one; its alert waits for the return.
+  const focused = useIsFocused();
   useEffect(() => {
-    if (!loadError) return;
+    if (!loadError || !focused) return;
     Alert.alert(t`AI data sharing`, errorText(loadError, t`Could not load permissions.`), [
       { text: t`Cancel`, style: "cancel" },
       { text: t`Retry`, onPress: () => void refetch() },
     ]);
-  }, [loadError, refetch, t]);
+  }, [loadError, focused, refetch, t]);
 
   const change = useSave({
     save: async (ask: { recipient: AiRecipient; allowed: boolean } | "withdraw", send) => {
