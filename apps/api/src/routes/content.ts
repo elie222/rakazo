@@ -4,7 +4,7 @@ import { planLimitsReader, readMemberPlanLimits, resolveBotWorkspacePath } from 
 import type { ExportManifest } from "@rakazo/contracts";
 import { attachmentMaxBytes, resolveBotAvatarSet } from "@rakazo/contracts";
 import { AttachmentValidationError } from "@rakazo/core";
-import { IsolationError, LISTED_ARTIFACT, parseComputerMode, Prisma } from "@rakazo/db";
+import { IsolationError, LISTED_ARTIFACT, Prisma, parseComputerMode } from "@rakazo/db";
 import {
   ArtifactListCursorError,
   createOwnedArtifact,
@@ -247,7 +247,8 @@ export function contentRoutes(ctx: RouterContext) {
           v == null ? 0 : typeof v === "bigint" ? Number(v) : v;
         const toNullableInt = (v: number | bigint | null, complete: boolean) =>
           complete ? Math.round(toNum(v)) : null;
-        const toNullableFloat = (v: number | null, complete: boolean) => (complete ? (v ?? 0) : null);
+        const toNullableFloat = (v: number | null, complete: boolean) =>
+          complete ? (v ?? 0) : null;
         const totalsOf = (row: TotalsRow) => ({
           runs: "runs" in row ? toNum((row as { runs?: bigint | number }).runs) : 0,
           modelCalls: toNum(row.modelCalls),
@@ -270,7 +271,7 @@ export function contentRoutes(ctx: RouterContext) {
           BOOL_AND(u."costUsd" IS NOT NULL) AS "costComplete"
         `;
 
-        const [totalsRows, modelRows, timeRows, botRows] = await Promise.all([
+        const [totalsRows, modelRows, timeRows, botRows, modelOptionRows] = await Promise.all([
           deps.prisma.$queryRaw<TotalsRow[]>(Prisma.sql`
             SELECT ${totalsSelect}
             FROM usage_records u
@@ -302,7 +303,7 @@ export function contentRoutes(ctx: RouterContext) {
             GROUP BY bucket
             ORDER BY bucket ASC
           `),
-          // Bot selector lists all bots with usage in range+model filter (not narrowed by selected bot).
+          // The selectors list everything used in the range, so any bot/model pair stays selectable.
           deps.prisma.$queryRaw<BotRow[]>(Prisma.sql`
             SELECT u."botId" AS "botId",
               COALESCE(b.name, bd.name, 'Deleted bot') AS name,
@@ -313,8 +314,16 @@ export function contentRoutes(ctx: RouterContext) {
             LEFT JOIN bot_deletions bd ON bd.id = u."botId"
             WHERE u."spaceId" = ${where.spaceId} AND u."userId" = ${where.userId}
               AND u."botId" IS NOT NULL
-              ${rangeFilter} ${modelFilter}
+              ${rangeFilter}
             GROUP BY u."botId", b.id, b.name, bd.name
+            ORDER BY COALESCE(SUM(u."totalTokens"), 0) DESC, COUNT(*) DESC
+          `),
+          deps.prisma.$queryRaw<{ provider: string; model: string }[]>(Prisma.sql`
+            SELECT u.provider, u.model
+            FROM usage_records u
+            WHERE u."spaceId" = ${where.spaceId} AND u."userId" = ${where.userId}
+              ${rangeFilter}
+            GROUP BY u.provider, u.model
             ORDER BY COALESCE(SUM(u."totalTokens"), 0) DESC, COUNT(*) DESC
           `),
         ]);
@@ -356,6 +365,7 @@ export function contentRoutes(ctx: RouterContext) {
         return {
           range: input.range,
           totals,
+          modelOptions: modelOptionRows.map(({ provider, model }) => ({ provider, model })),
           models: modelRows.map((row) => {
             const t = totalsOf({ ...row, runs: 0 });
             return {

@@ -1209,6 +1209,8 @@ export const UsageBreakdownSchema = z.object({
   range: UsageDateRangeSchema,
   /** Each bot with usage in the range, for the bot selector. */
   bots: z.array(UsageBreakdownBotSchema),
+  /** Every model used in the range, for the model selector. */
+  modelOptions: z.array(z.object({ provider: z.string(), model: z.string() })),
   totals: UsageTotalsSchema.required().extend({ runs: z.number() }),
   models: z.array(UsageBreakdownModelSchema),
   overTime: z.array(UsageBreakdownPointSchema),

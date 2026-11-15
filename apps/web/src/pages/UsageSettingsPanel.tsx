@@ -1,0 +1,351 @@
+import { Trans, useLingui } from "@lingui/react/macro";
+import type { UsageSummary } from "@rakazo/contracts";
+import {
+  Field,
+  FieldLabel,
+  NativeSelect,
+  NativeSelectOption,
+  ToggleGroup,
+  ToggleGroupItem,
+} from "@rakazo/ui-web";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@rakazo/ui-web/components/ui/table";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import type { RefObject } from "react";
+import { useEffect, useState } from "react";
+import { useSpaceQueries } from "../lib/query";
+
+export function UsageSettingsPanel({
+  usage,
+  panelRef,
+}: {
+  usage?: UsageSummary | null;
+  panelRef?: RefObject<HTMLDivElement | null>;
+}) {
+  // Legacy summary view for existing tests/callers; the settings overlay uses the full breakdown.
+  if (usage !== undefined) {
+    return <UsageSummaryView usage={usage} panelRef={panelRef} />;
+  }
+  return <UsageBreakdownView panelRef={panelRef} />;
+}
+
+function UsageSummaryView({
+  usage,
+  panelRef,
+}: {
+  usage?: UsageSummary | null;
+  panelRef?: RefObject<HTMLDivElement | null>;
+}) {
+  const { t, i18n } = useLingui();
+  const count = new Intl.NumberFormat(i18n.locale);
+  const usd = new Intl.NumberFormat(i18n.locale, { style: "currency", currency: "USD" });
+  const number = (value: number | null | undefined) => (value == null ? "—" : count.format(value));
+  const cost = (value: number | null | undefined) =>
+    value == null ? "—" : value > 0 && value < 0.01 ? `<${usd.format(0.01)}` : usd.format(value);
+  const models = usage?.models ?? [];
+  return (
+    <div ref={panelRef} tabIndex={-1} data-testid="usage-settings" className="outline-none">
+      {usage ? (
+        <dl className="grid grid-cols-3 gap-3">
+          {[
+            { label: t`Runs`, value: number(usage.runs) },
+            { label: t`Tokens`, value: number(usage.totalTokens) },
+            { label: t`Cost`, value: cost(usage.costUsd) },
+          ].map((stat) => (
+            <div key={stat.label} className="rounded-xl border border-border px-4 py-3">
+              <dt className="text-body-sm text-muted-foreground">{stat.label}</dt>
+              <dd className="mt-1 text-heading3 font-medium tabular-nums text-foreground">
+                {stat.value}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      ) : null}
+      {models.length > 0 ? (
+        <div className="mt-4 rounded-xl border border-border px-2">
+          <Table className="text-body">
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="text-muted-foreground">
+                  <Trans>Model</Trans>
+                </TableHead>
+                <TableHead className="text-right text-muted-foreground">
+                  <Trans>Calls</Trans>
+                </TableHead>
+                <TableHead className="text-right text-muted-foreground">
+                  <Trans>Input</Trans>
+                </TableHead>
+                <TableHead className="text-right text-muted-foreground">
+                  <Trans>Output</Trans>
+                </TableHead>
+                <TableHead className="text-right text-muted-foreground">
+                  <Trans>Cost</Trans>
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {models.map((row) => (
+                <TableRow key={`${row.provider}:${row.model}`} className="hover:bg-transparent">
+                  <TableCell>
+                    <div className="text-foreground">{row.model}</div>
+                    <div className="text-label text-muted-foreground">{row.provider}</div>
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {number(row.modelCalls)}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {number(row.inputTokens)}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {number(row.outputTokens)}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">{cost(row.costUsd)}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+type UsageDateRange = "today" | "7d" | "30d" | "all";
+
+function UsageBreakdownView({ panelRef }: { panelRef?: RefObject<HTMLDivElement | null> }) {
+  const { t, i18n } = useLingui();
+  const queries = useSpaceQueries();
+  const [range, setRange] = useState<UsageDateRange>("30d");
+  const [botId, setBotId] = useState<string>("all");
+  const [modelKey, setModelKey] = useState<string>("all");
+
+  const input = {
+    range,
+    ...(botId !== "all" ? { botId } : {}),
+    ...(modelKey !== "all"
+      ? (([provider, model]) => ({ provider, model }))(JSON.parse(modelKey) as [string, string])
+      : {}),
+  };
+
+  const { data, isLoading } = useQuery({
+    ...queries.usage.breakdown.queryOptions({ input }),
+    placeholderData: keepPreviousData,
+    staleTime: 30_000,
+  });
+
+  const count = new Intl.NumberFormat(i18n.locale);
+  const usd = new Intl.NumberFormat(i18n.locale, { style: "currency", currency: "USD" });
+  const number = (value: number | null | undefined) => (value == null ? "—" : count.format(value));
+  const cost = (value: number | null | undefined) =>
+    value == null ? "—" : value > 0 && value < 0.01 ? `<${usd.format(0.01)}` : usd.format(value);
+
+  const ranges: { id: UsageDateRange; label: string }[] = [
+    { id: "today", label: t`Today` },
+    { id: "7d", label: t`7 days` },
+    { id: "30d", label: t`30 days` },
+    { id: "all", label: t`All time` },
+  ];
+
+  const bots = data?.bots ?? [];
+  const models = data?.models ?? [];
+  const overTime = data?.overTime ?? [];
+  const totals = data?.totals ?? {
+    runs: 0,
+    modelCalls: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    totalTokens: 0,
+    costUsd: 0,
+  };
+  const modelOptions = (data?.modelOptions ?? []).map((m) => ({
+    key: JSON.stringify([m.provider, m.model]),
+    label: m.model,
+  }));
+
+  // A new date range can drop the selected bot or model from the lists: go back to all.
+  useEffect(() => {
+    if (!data) return;
+    if (botId !== "all" && !data.bots.some((b) => b.id === botId)) setBotId("all");
+    if (modelKey !== "all" && !modelOptions.some((m) => m.key === modelKey)) setModelKey("all");
+  }, [data, botId, modelKey, modelOptions]);
+
+  const maxTokens = Math.max(1, ...overTime.map((p) => p.totalTokens ?? 0));
+
+  return (
+    <div
+      ref={panelRef}
+      tabIndex={-1}
+      data-testid="usage-settings"
+      className="space-y-4 outline-none"
+    >
+      <div className="flex flex-wrap items-end gap-3">
+        <Field className="min-w-[180px] flex-1">
+          <FieldLabel>
+            <Trans>Bot</Trans>
+          </FieldLabel>
+          <NativeSelect
+            value={botId}
+            onChange={(e) => setBotId(e.target.value)}
+            aria-label={t`Bot`}
+          >
+            <NativeSelectOption value="all">{t`All bots`}</NativeSelectOption>
+            {bots.map((bot) => (
+              <NativeSelectOption key={bot.id} value={bot.id}>
+                {bot.deleted ? t`${bot.name} (deleted)` : bot.name}
+              </NativeSelectOption>
+            ))}
+          </NativeSelect>
+        </Field>
+        <Field className="min-w-[180px] flex-1">
+          <FieldLabel>
+            <Trans>Model</Trans>
+          </FieldLabel>
+          <NativeSelect
+            value={modelKey}
+            onChange={(e) => setModelKey(e.target.value)}
+            aria-label={t`Model`}
+          >
+            <NativeSelectOption value="all">{t`All models`}</NativeSelectOption>
+            {modelOptions.map((m) => (
+              <NativeSelectOption key={m.key} value={m.key}>
+                {m.label}
+              </NativeSelectOption>
+            ))}
+          </NativeSelect>
+        </Field>
+        <Field className="min-w-[220px]">
+          <FieldLabel>
+            <Trans>Date range</Trans>
+          </FieldLabel>
+          <ToggleGroup
+            aria-label={t`Date range`}
+            value={[range]}
+            onValueChange={([next]) => {
+              if (next) setRange(next as UsageDateRange);
+            }}
+            spacing={1}
+            className="grid grid-cols-4 rounded-lg bg-muted p-1"
+          >
+            {ranges.map((r) => (
+              <ToggleGroupItem
+                key={r.id}
+                value={r.id}
+                className="text-body-sm aria-pressed:bg-background aria-pressed:shadow-sm"
+              >
+                {r.label}
+              </ToggleGroupItem>
+            ))}
+          </ToggleGroup>
+        </Field>
+      </div>
+
+      <dl className="grid grid-cols-3 gap-3">
+        {[
+          { label: t`Runs`, value: number(totals.runs) },
+          { label: t`Tokens`, value: number(totals.totalTokens) },
+          { label: t`Cost`, value: cost(totals.costUsd) },
+        ].map((stat) => (
+          <div key={stat.label} className="rounded-xl border border-border px-4 py-3">
+            <dt className="text-body-sm text-muted-foreground">{stat.label}</dt>
+            <dd className="mt-1 text-heading3 font-medium tabular-nums text-foreground">
+              {stat.value}
+            </dd>
+          </div>
+        ))}
+      </dl>
+
+      {overTime.length > 0 ? (
+        <div className="rounded-xl border border-border px-4 py-3">
+          <p className="mb-3 text-body-sm text-muted-foreground">
+            <Trans>Usage over time</Trans>
+          </p>
+          <div className="flex h-28 items-end gap-1">
+            {overTime.map((point) => {
+              const value = point.totalTokens ?? 0;
+              const height = Math.max(4, Math.round((value / maxTokens) * 100));
+              const day = new Date(point.date).toLocaleDateString(i18n.locale, {
+                month: "short",
+                day: "numeric",
+                timeZone: "UTC",
+              });
+              return (
+                <div key={point.date} className="flex min-w-0 flex-1 flex-col items-center gap-1">
+                  <div className="flex w-full flex-1 items-end">
+                    <div
+                      className="w-full rounded-sm bg-foreground/70"
+                      style={{ height: `${height}%` }}
+                      title={`${day}: ${number(point.totalTokens)} tokens, ${cost(point.costUsd)}`}
+                    />
+                  </div>
+                  <span className="w-full truncate text-center text-[10px] leading-none text-muted-foreground">
+                    {day}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
+
+      {models.length > 0 ? (
+        <div className="rounded-xl border border-border px-2">
+          <Table className="text-body">
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="text-muted-foreground">
+                  <Trans>Model</Trans>
+                </TableHead>
+                <TableHead className="text-right text-muted-foreground">
+                  <Trans>Calls</Trans>
+                </TableHead>
+                <TableHead className="text-right text-muted-foreground">
+                  <Trans>Input</Trans>
+                </TableHead>
+                <TableHead className="text-right text-muted-foreground">
+                  <Trans>Output</Trans>
+                </TableHead>
+                <TableHead className="text-right text-muted-foreground">
+                  <Trans>Cost</Trans>
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {models.map((row) => (
+                <TableRow key={`${row.provider}:${row.model}`} className="hover:bg-transparent">
+                  <TableCell>
+                    <div className="text-foreground">{row.model}</div>
+                    <div className="text-label text-muted-foreground">{row.provider}</div>
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {number(row.modelCalls)}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {number(row.inputTokens)}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {number(row.outputTokens)}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">{cost(row.costUsd)}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      ) : isLoading ? (
+        <p className="text-body-sm text-muted-foreground">
+          <Trans>Loading usage…</Trans>
+        </p>
+      ) : (
+        <p className="text-body-sm text-muted-foreground">
+          <Trans>No usage for this selection.</Trans>
+        </p>
+      )}
+    </div>
+  );
+}

@@ -63,6 +63,7 @@ const breakdown = {
       modelCalls: 180,
     },
   ],
+  modelOptions: [{ provider: "subscription", model: "example-large" }],
   totals: {
     runs: 42,
     inputTokens: 910_000,
@@ -129,7 +130,9 @@ test("account menu shows the usage hint and Usage shows allowances and credits o
 }, testInfo) => {
   await page.route("**/rpc/usage/limits", (route) => route.fulfill({ json: { json: plans } }));
   await page.route("**/rpc/usage/summary", (route) => route.fulfill({ json: { json: summary } }));
-  await page.route("**/rpc/usage/breakdown", (route) => route.fulfill({ json: { json: breakdown } }));
+  await page.route("**/rpc/usage/breakdown", (route) =>
+    route.fulfill({ json: { json: breakdown } }),
+  );
   const stamp = Date.now();
   await signup(page, `usage-limits-${stamp}@rakazo.test`, "password12", "Usage limits");
   await completeOnboarding(page);
@@ -152,8 +155,33 @@ test("account menu shows the usage hint and Usage shows allowances and credits o
   );
   await expect(cards.nth(1)).toContainText("work@example.com");
   await expect(settings.getByTestId("credit-balance")).toHaveCount(0);
-  await expect(settings.getByText("example-large")).toBeVisible();
+  await expect(settings.getByRole("cell", { name: /example-large/ })).toBeVisible();
+  await expect(settings.getByRole("combobox", { name: "Bot" })).toHaveValue("all");
+  await expect(settings.getByRole("combobox", { name: "Bot" }).getByRole("option")).toHaveText([
+    "All bots",
+    "Assistant",
+  ]);
+  await expect(settings.getByRole("button", { name: "30 days" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await expect(settings.getByText("Usage over time")).toBeVisible();
   await captureScreenshot(page, testInfo, "usage-limits-settings");
+
+  const requests: string[] = [];
+  page.on("request", (request) => {
+    if (request.url().includes("/rpc/usage/breakdown")) requests.push(request.postData() ?? "");
+  });
+  await settings.getByRole("combobox", { name: "Bot" }).selectOption({ label: "Assistant" });
+  await settings.getByRole("button", { name: "7 days" }).click();
+  await expect(settings.getByRole("button", { name: "7 days" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await expect
+    .poll(() => requests.some((body) => body.includes('"botId":"bot-1"') && body.includes('"7d"')))
+    .toBe(true);
+  await captureScreenshot(page, testInfo, "usage-limits-settings-filtered");
 
   await page.route("**/api/auth/capabilities", async (route) => {
     const response = await route.fetch();

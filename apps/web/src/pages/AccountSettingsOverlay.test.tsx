@@ -2,6 +2,7 @@
 
 import type { AccountSecurity } from "@rakazo/contracts";
 import type * as UiWeb from "@rakazo/ui-web";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { act, useEffect } from "react";
 import { createRoot } from "react-dom/client";
@@ -10,7 +11,8 @@ import { afterEach, expect, it, vi } from "vitest";
 
 vi.mock("@lingui/react/macro", () => ({
   useLingui: () => ({
-    t: (strings: TemplateStringsArray) => strings.join(""),
+    t: (strings: TemplateStringsArray, ...values: unknown[]) =>
+      strings.reduce((text, part, index) => `${text}${values[index - 1] ?? ""}${part}`),
     i18n: { locale: "en" },
   }),
   Trans: ({ children }: { children: ReactNode }) => children,
@@ -72,6 +74,22 @@ vi.mock("@rakazo/ui-web", async (importOriginal) => ({
     <div data-testid={testId} />
   ),
   cn: (...values: unknown[]) => values.filter(Boolean).join(" "),
+}));
+
+const breakdownCalls = vi.hoisted(() => ({ fetch: vi.fn() }));
+
+vi.mock("../lib/query", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/query")>()),
+  useSpaceQueries: () => ({
+    usage: {
+      breakdown: {
+        queryOptions: ({ input }: { input: unknown }) => ({
+          queryKey: ["usage-breakdown", input],
+          queryFn: () => breakdownCalls.fetch(input),
+        }),
+      },
+    },
+  }),
 }));
 
 vi.mock("../lib/auth-capabilities", () => ({
@@ -139,7 +157,8 @@ import {
 import { localTimezone } from "../lib/local-timezone";
 import { remoteImagesPreference } from "../lib/remote-images-preference";
 import { TOOL_ACTIVITY_STORAGE_KEY } from "../lib/tool-activity-preference";
-import { GeneralSettingsPanels, UsageSettingsPanel } from "./AccountSettingsOverlay";
+import { GeneralSettingsPanels } from "./AccountSettingsOverlay";
+import { UsageSettingsPanel } from "./UsageSettingsPanel";
 
 afterEach(() => {
   localStorage.clear();
@@ -393,6 +412,146 @@ it("shows usage totals and a per-model breakdown", async () => {
   } finally {
     await act(async () => root.unmount());
     vi.unstubAllGlobals();
+  }
+});
+
+const point = (modelCalls: number, totalTokens: number, costUsd: number | null) => ({
+  modelCalls,
+  inputTokens: totalTokens - 1,
+  outputTokens: 1,
+  totalTokens,
+  costUsd,
+});
+
+const usageFor = (input: { botId?: string; provider?: string; model?: string; range: string }) => ({
+  range: input.range,
+  bots: [
+    { id: "bot-a", name: "Alpha", deleted: false, runs: 2, ...point(3, 400, 0.04) },
+    { id: "bot-b", name: "Old bot", deleted: true, runs: 1, ...point(1, 67, 0.003) },
+  ],
+  modelOptions: [
+    { provider: "p:1", model: "m1" },
+    { provider: "p", model: "m2" },
+  ],
+  totals: {
+    runs: input.botId ? 2 : 3,
+    ...point(input.botId ? 3 : 4, input.botId ? 400 : 467, 0.04),
+  },
+  models: [
+    { provider: input.provider ?? "p:1", model: input.model ?? "m1", ...point(3, 400, 0.04) },
+  ],
+  overTime: [{ date: "2026-11-10T00:00:00.000Z", ...point(3, 400, 0.04) }],
+});
+
+const settle = () => act(async () => new Promise<void>((resolve) => setTimeout(resolve, 0)));
+
+async function renderBreakdown() {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  breakdownCalls.fetch.mockImplementation(async (input) => usageFor(input));
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  await act(async () =>
+    root.render(
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
+        <UsageSettingsPanel />
+      </QueryClientProvider>,
+    ),
+  );
+  await settle();
+  return {
+    container,
+    unmount: async () => {
+      await act(async () => root.unmount());
+      container.remove();
+      vi.unstubAllGlobals();
+    },
+  };
+}
+
+it("shows every bot's usage first, then narrows it by bot, model and date range", async () => {
+  breakdownCalls.fetch.mockReset();
+  const { container, unmount } = await renderBreakdown();
+  try {
+    const totals = () => [...container.querySelectorAll("dd")].map((node) => node.textContent);
+    const select = (label: string) =>
+      container.querySelector<HTMLSelectElement>(`select[aria-label="${label}"]`)!;
+    const choose = async (element: HTMLSelectElement, value: string) => {
+      await act(async () => {
+        element.value = value;
+        element.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+      await settle();
+    };
+    expect(breakdownCalls.fetch).toHaveBeenLastCalledWith({ range: "30d" });
+    expect(totals()).toEqual(["3", "467", "$0.04"]);
+    expect([...select("Bot").options].map((option) => option.textContent)).toEqual([
+      "All bots",
+      "Alpha",
+      "Old bot (deleted)",
+    ]);
+
+    await choose(select("Bot"), "bot-a");
+    expect(breakdownCalls.fetch).toHaveBeenLastCalledWith({ range: "30d", botId: "bot-a" });
+    expect(totals()).toEqual(["2", "400", "$0.04"]);
+
+    // The model list keeps every model, and a model whose provider id has a colon survives.
+    const first = select("Model").options[1]!.value;
+    await choose(select("Model"), first);
+    expect(breakdownCalls.fetch).toHaveBeenLastCalledWith({
+      range: "30d",
+      botId: "bot-a",
+      provider: "p:1",
+      model: "m1",
+    });
+    expect([...select("Model").options].map((option) => option.textContent)).toEqual([
+      "All models",
+      "m1",
+      "m2",
+    ]);
+
+    const sevenDays = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "7 days",
+    )!;
+    await act(async () => sevenDays.click());
+    await settle();
+    expect(breakdownCalls.fetch).toHaveBeenLastCalledWith({
+      range: "7d",
+      botId: "bot-a",
+      provider: "p:1",
+      model: "m1",
+    });
+  } finally {
+    await unmount();
+  }
+});
+
+it("goes back to all bots when the chosen bot has no usage in the new range", async () => {
+  breakdownCalls.fetch.mockReset();
+  const { container, unmount } = await renderBreakdown();
+  try {
+    const bot = container.querySelector<HTMLSelectElement>('select[aria-label="Bot"]')!;
+    await act(async () => {
+      bot.value = "bot-b";
+      bot.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await settle();
+    expect(bot.value).toBe("bot-b");
+    breakdownCalls.fetch.mockImplementation(async (input) => ({
+      ...usageFor(input),
+      bots: [{ id: "bot-a", name: "Alpha", deleted: false, runs: 2, ...point(3, 400, 0.04) }],
+    }));
+    const today = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Today",
+    )!;
+    await act(async () => today.click());
+    await settle();
+    expect(bot.value).toBe("all");
+    expect(breakdownCalls.fetch).toHaveBeenLastCalledWith({ range: "today" });
+  } finally {
+    await unmount();
   }
 });
 
