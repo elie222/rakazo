@@ -20,7 +20,7 @@ export const MCP_OAUTH_CALLBACK_PATH = "/mcp/oauth/callback";
 export function mcpOAuthCallbackFrom(
   url: string,
   appOrigin: string,
-): { code: string; state: string } | { error: string } | undefined {
+): { code: string | null; state: string } | undefined {
   let target: URL;
   try {
     target = new URL(url);
@@ -28,18 +28,14 @@ export function mcpOAuthCallbackFrom(
     return undefined;
   }
   if (target.origin !== appOrigin || target.pathname !== MCP_OAUTH_CALLBACK_PATH) return undefined;
-  // A refusal ends the sign-in too; its text is what the callback page would show.
-  if (target.searchParams.getAll("error").length === 1) {
-    const error =
-      target.searchParams.get("error_description")?.trim() ||
-      target.searchParams.get("error")?.trim();
-    return error ? { error } : undefined;
-  }
-  if (target.searchParams.getAll("code").length !== 1) return undefined;
   if (target.searchParams.getAll("state").length !== 1) return undefined;
-  const code = target.searchParams.get("code")?.trim();
   const state = target.searchParams.get("state")?.trim();
-  return code && state ? { code, state } : undefined;
+  if (!state) return undefined;
+  // A refusal (the user declined, or the provider did) ends the sign-in too.
+  if (target.searchParams.getAll("error").length === 1) return { code: null, state };
+  if (target.searchParams.getAll("code").length !== 1) return undefined;
+  const code = target.searchParams.get("code")?.trim();
+  return code ? { code, state } : undefined;
 }
 
 /**

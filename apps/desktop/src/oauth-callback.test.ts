@@ -111,15 +111,15 @@ describe("MCP sign-in callbacks", () => {
     ).toBeUndefined();
   });
 
-  it("reports a refusal the provider sends back instead of leaving its window open", () => {
+  it("reports a refusal for its attempt instead of leaving its window open", () => {
     expect(
       mcpOAuthCallbackFrom(
-        `${appOrigin}/mcp/oauth/callback?error=access_denied&error_description=Wrong+account`,
+        `${appOrigin}/mcp/oauth/callback?error=access_denied&state=s`,
         appOrigin,
       ),
-    ).toEqual({ error: "Wrong account" });
+    ).toEqual({ code: null, state: "s" });
     expect(
       mcpOAuthCallbackFrom(`${appOrigin}/mcp/oauth/callback?error=access_denied`, appOrigin),
-    ).toEqual({ error: "access_denied" });
+    ).toBeUndefined();
   });
 });

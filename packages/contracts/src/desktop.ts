@@ -37,10 +37,12 @@ export interface RakazoDesktopOAuthCallback {
 }
 
 /** A code the app's own MCP callback page carried, captured before that page loads. */
-export type RakazoDesktopMcpOAuthCallback =
-  | { serverId: string; code: string; state: string }
-  /** The provider refused or the user cancelled; the text is the provider's own. */
-  | { serverId: string; error: string };
+export interface RakazoDesktopMcpOAuthCallback {
+  serverId: string;
+  /** Null when the provider refused or the user declined. */
+  code: string | null;
+  state: string;
+}
 
 export interface RakazoDesktopDevice {
   /** Null until paired. */
