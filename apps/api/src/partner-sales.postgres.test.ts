@@ -249,6 +249,28 @@ dbTests("partner program sales", () => {
     expect(program.refundSale).toHaveBeenCalledTimes(2);
   });
 
+  it("closes a refunded sale the program never confirmed once a day has passed", async () => {
+    const organizationId = await organization("never-confirmed", "click_15");
+    const program = fakeProgram();
+    let payments = [paid("in_never_confirmed")];
+    const sales = createPartnerSales({
+      prisma,
+      program,
+      provider: { listPlanPayments: async () => payments },
+    });
+    program.trackSale.mockRejectedValueOnce(new Error("program down"));
+    await sales.report("cus_never_confirmed", organizationId);
+    await prisma.partnerSale.update({
+      where: { invoiceId: payments[0]!.invoiceId },
+      data: { createdAt: new Date(Date.now() - 2 * 86_400_000) },
+    });
+    payments = payments.map((payment) => ({ ...payment, reversed: true }));
+    program.refundSale.mockResolvedValue("not_found");
+    await sales.report("cus_never_confirmed", organizationId);
+    await sales.report("cus_never_confirmed", organizationId);
+    expect(program.refundSale).toHaveBeenCalledTimes(1);
+  });
+
   it("has nothing to do for a billing customer that no longer exists", async () => {
     const organizationId = await organization("gone", "click_14");
     await expect(

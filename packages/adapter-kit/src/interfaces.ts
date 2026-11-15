@@ -609,8 +609,16 @@ export interface BillingProvider {
   /** Sets seats on the customer's subscription; a no-op when none can still take updates. */
   updateSeats(customerId: string, seats: number): Promise<void>;
   cancelCustomerSubscriptions(customerId: string): Promise<void>;
-  /** Verifies the signature. `null` means the request is not authentic. */
-  parseWebhook(rawBody: string, headers: Headers): { customerId: string } | "ignored" | null;
+  /**
+   * Verifies the signature. `null` means the request is not authentic. An event about a payment
+   * rather than a customer, such as a dispute, names the payment for `customerForPayment`.
+   */
+  parseWebhook(
+    rawBody: string,
+    headers: Headers,
+  ): { customerId: string } | { paymentId: string } | "ignored" | null;
+  /** The customer a payment named by `parseWebhook` belongs to, or null when it has none. */
+  customerForPayment?(paymentId: string): Promise<string | null>;
 }
 
 export interface ExecutionRunner {

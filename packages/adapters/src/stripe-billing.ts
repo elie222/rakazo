@@ -792,6 +792,13 @@ export class StripeBillingProvider implements BillingProvider {
     );
   }
 
+  async customerForPayment(paymentId: string): Promise<string | null> {
+    const charge = z
+      .object({ customer: z.union([z.string(), z.object({ id: z.string() })]).nullable() })
+      .parse(await this.request("GET", `/v1/charges/${encodeURIComponent(paymentId)}`));
+    return typeof charge.customer === "string" ? charge.customer : (charge.customer?.id ?? null);
+  }
+
   parseWebhook(rawBody: string, headers: Headers) {
     return parseStripeWebhook(this.config.webhookSecret, rawBody, headers, this.now());
   }
@@ -1063,7 +1070,7 @@ export function parseStripeWebhook(
   rawBody: string,
   headers: Headers,
   nowMs: number,
-): { customerId: string } | "ignored" | null {
+): { customerId: string } | { paymentId: string } | "ignored" | null {
   const parts = (headers.get("stripe-signature") ?? "").split(",").map((part) => part.split("="));
   const timestamp = Number(parts.find(([key]) => key === "t")?.[1]);
   if (!Number.isFinite(timestamp)) return null;
@@ -1094,7 +1101,11 @@ export function parseStripeWebhook(
       : typeof (customer as { id?: unknown } | undefined)?.id === "string"
         ? (customer as { id: string }).id
         : undefined;
-  return customerId ? { customerId } : "ignored";
+  if (customerId) return { customerId };
+  // A dispute names only its charge.
+  return object?.object === "dispute" && typeof object.charge === "string"
+    ? { paymentId: object.charge }
+    : "ignored";
 }
 
 export function stripeBillingConfigFromEnv(env: {

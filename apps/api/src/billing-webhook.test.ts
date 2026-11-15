@@ -23,6 +23,7 @@ function mount(
     sync?: () => Promise<void>;
     reportPartnerSales?: () => Promise<void>;
     actor?: Actor | null;
+    customerForPayment?: (paymentId: string) => Promise<string | null>;
   } = {},
 ) {
   const sync = vi.fn(options.sync ?? (async () => undefined));
@@ -31,11 +32,14 @@ function mount(
   const app = new Hono();
   mountBillingRoutes(app, {
     billing: { sync, syncForActor, reportPartnerSales } as unknown as BillingService,
-    provider: { parseWebhook },
+    provider: {
+      parseWebhook,
+      ...(options.customerForPayment ? { customerForPayment: options.customerForPayment } : {}),
+    },
     webOrigin: "https://app.example.com",
     authenticate: async () => (options.actor === undefined ? actor : options.actor),
   });
-  return { app, sync, syncForActor };
+  return { app, sync, syncForActor, reportPartnerSales };
 }
 
 function post(body: string) {
@@ -85,6 +89,16 @@ describe("billing webhook", () => {
     });
     const res = await app.request(BILLING_WEBHOOK_PATH, post("{}"));
     expect(res.status).toBe(500);
+  });
+
+  it("syncs the customer of a payment an event names, such as a dispute's charge", async () => {
+    const { app, sync, reportPartnerSales } = mount(() => ({ paymentId: "ch_1" }), {
+      customerForPayment: async (paymentId) => (paymentId === "ch_1" ? "cus_1" : null),
+    });
+    const res = await app.request(BILLING_WEBHOOK_PATH, post("{}"));
+    expect(res.status).toBe(200);
+    expect(sync).toHaveBeenCalledWith("cus_1");
+    expect(reportPartnerSales).toHaveBeenCalledWith("cus_1");
   });
 
   it("fails the delivery so the provider retries when a partner withdrawal fails", async () => {
