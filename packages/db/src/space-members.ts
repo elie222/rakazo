@@ -1,4 +1,5 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { ClientError } from "@rakazo/core";
 import { GUEST_ROLE, isOwnerRole } from "./billing.js";
 import { cancelRunsInTransaction } from "./cancel-runs.js";
 import type { PrismaClient } from "./client.js";
@@ -22,47 +23,46 @@ export const SPACE_INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 /** Open links per Space, so a lost or leaked batch stays small. */
 export const MAX_OPEN_SPACE_INVITES = 20;
 
-export class SpaceInviteLimitError extends Error {
+export class SpaceInviteLimitError extends ClientError {
   constructor() {
-    super("Too many open invite links; wait for some to be used or expire");
+    super("BAD_REQUEST", "Too many open invite links; wait for some to be used or expire");
     this.name = "SpaceInviteLimitError";
   }
 }
 
-/** Owner-only actions. `code` lets a caller outside the RPC boundary answer FORBIDDEN as-is. */
-export class SpaceOwnerRequiredError extends Error {
-  readonly code = "FORBIDDEN";
+/** Owner-only actions. */
+export class SpaceOwnerRequiredError extends ClientError {
   constructor() {
-    super("Only the space owner can do that");
+    super("FORBIDDEN", "Only the space owner can do that");
     this.name = "SpaceOwnerRequiredError";
   }
 }
 
 /** One answer for unknown, expired, and used links, so none can be told apart. */
-export class SpaceInviteNotFoundError extends Error {
+export class SpaceInviteNotFoundError extends ClientError {
   constructor() {
-    super("This invite link is invalid or has expired");
+    super("NOT_FOUND", "This invite link is invalid or has expired");
     this.name = "SpaceInviteNotFoundError";
   }
 }
 
-export class SpaceMemberNotFoundError extends Error {
+export class SpaceMemberNotFoundError extends ClientError {
   constructor() {
-    super("Member not found");
+    super("NOT_FOUND", "Member not found");
     this.name = "SpaceMemberNotFoundError";
   }
 }
 
-export class CannotRemoveSpaceOwnerError extends Error {
+export class CannotRemoveSpaceOwnerError extends ClientError {
   constructor() {
-    super("The space owner cannot be removed");
+    super("BAD_REQUEST", "The space owner cannot be removed");
     this.name = "CannotRemoveSpaceOwnerError";
   }
 }
 
-export class SpaceOwnerCannotLeaveError extends Error {
+export class SpaceOwnerCannotLeaveError extends ClientError {
   constructor() {
-    super("The space owner cannot leave; delete the space instead");
+    super("BAD_REQUEST", "The space owner cannot leave; delete the space instead");
     this.name = "SpaceOwnerCannotLeaveError";
   }
 }
