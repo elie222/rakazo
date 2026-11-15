@@ -119,16 +119,22 @@ describe("execution start timing", () => {
     },
   );
 
-  it("waits without a retry timer while another run of the bot holds the computer", async () => {
-    leases.acquire.mockRejectedValue(new ComputerBusyError());
-    const { prisma, enqueue, start } = fixture({ heldBy: "lease-of-run-0" });
-    await start();
-    expect(enqueue).not.toHaveBeenCalled();
-    expect(prisma.run.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({ status: "queued", wakeAt: null }),
-      }),
-    );
+  it("waits due, without a retry timer, while another run of the bot holds the computer", async () => {
+    const now = new Date("2026-11-01T12:00:00Z");
+    vi.useFakeTimers({ toFake: ["Date"], now });
+    try {
+      leases.acquire.mockRejectedValue(new ComputerBusyError());
+      const { prisma, enqueue, start } = fixture({ heldBy: "lease-of-run-0" });
+      await start();
+      expect(enqueue).not.toHaveBeenCalled();
+      expect(prisma.run.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ status: "queued", wakeAt: now }),
+        }),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it.each([undefined, new Date("2026-01-01T00:00:00Z")])(

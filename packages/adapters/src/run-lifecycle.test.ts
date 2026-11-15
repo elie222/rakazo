@@ -2,7 +2,7 @@ import { runContinueJob } from "@rakazo/adapter-kit";
 import { describe, expect, it, vi } from "vitest";
 import { returnHelperOutcome } from "./background-helpers.js";
 import type { ExecutorDeps } from "./executor-deps.js";
-import { failRunBeforeTurn, startNextWaitingRun } from "./run-lifecycle.js";
+import { failRunBeforeTurn, requeueComputerRun, startNextWaitingRun } from "./run-lifecycle.js";
 import { notifyRun } from "./run-notifications.js";
 
 vi.mock("./run-notifications.js", () => ({ notifyRun: vi.fn(async () => undefined) }));
@@ -44,6 +44,45 @@ describe("starting the next run waiting for a bot's computer", () => {
     const f = deps(null);
     await startNextWaitingRun(f.deps, "bot", "finished");
     expect(f.enqueue).not.toHaveBeenCalled();
+  });
+});
+
+describe("parking a run until its bot's computer is released", () => {
+  function parking() {
+    // The first write is for a run whose takeover was already answered; none here.
+    const updateMany = vi.fn(async () => ({ count: 1 })).mockResolvedValueOnce({ count: 0 });
+    const enqueue = vi.fn(async () => undefined);
+    return {
+      deps: { prisma: { run: { updateMany } }, jobs: { enqueue } } as unknown as ExecutorDeps,
+      updateMany,
+      enqueue,
+    };
+  }
+
+  it("leaves the run due for the release, and a takeover wait for its person", async () => {
+    const now = new Date("2026-11-01T12:00:00Z");
+    vi.useFakeTimers({ now });
+    try {
+      const queued = parking();
+      await requeueComputerRun(queued.deps, "run", "worker", 3, null, false, true);
+      expect(queued.updateMany).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ status: "queued", wakeAt: now }),
+        }),
+      );
+      expect(queued.enqueue).not.toHaveBeenCalled();
+
+      const held = parking();
+      await requeueComputerRun(held.deps, "run", "worker", 3, null, true, true);
+      expect(held.updateMany).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ status: "waiting_takeover", wakeAt: null }),
+        }),
+      );
+      expect(held.enqueue).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

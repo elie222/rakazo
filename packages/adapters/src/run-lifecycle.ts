@@ -269,9 +269,12 @@ export async function writeComputerRunRequeue(
     leaseOwner: workerId,
     leaseFence: fence,
   };
+  // With no retry timer a queued run is due now. Set, so the legacy retry trigger does not
+  // stamp a delay that makes the release, which starts only due runs, pass over it.
+  const queuedWakeAt = retryAt ?? new Date();
   const releasedHold = {
     status: "queued" as const,
-    wakeAt: retryAt,
+    wakeAt: queuedWakeAt,
     error,
     leaseOwner: null,
     leaseExpiresAt: null,
@@ -284,12 +287,10 @@ export async function writeComputerRunRequeue(
     data: releasedHold,
   });
   if (preserve.count === 1) return true;
+  const requeue = computerRunRequeueData(resumeCheckpoint, error, heldForTakeover);
   const planned = await deps.prisma.run.updateMany({
     where: { ...whereLease, checkpoint: null },
-    data: {
-      ...computerRunRequeueData(resumeCheckpoint, error, heldForTakeover),
-      wakeAt: releasedHold.wakeAt,
-    },
+    data: { ...requeue, wakeAt: requeue.status === "queued" ? queuedWakeAt : retryAt },
   });
   if (planned.count === 1) return true;
   const retried = await deps.prisma.run.updateMany({
