@@ -263,6 +263,12 @@ export function createBillingService(deps: {
       }
     }
     const previous = await prisma.billingAccount.findUnique({ where: { customerId } });
+    // Also for a customer whose organization was deleted, so a later refund still withdraws its
+    // commission. A missed report is retried by the next sync of this customer.
+    await bestEffort(
+      "partner program sales report",
+      partnerSales.report(customerId, previous?.organizationId ?? null),
+    );
     // Assigned in the callback, which control-flow narrowing does not follow.
     let snapshot = null as BillingSubscriptionSnapshot | null;
     const written = await syncBillingSnapshot(prisma, customerId, async () => {
@@ -284,11 +290,6 @@ export function createBillingService(deps: {
           "error.message": error instanceof Error ? error.message : String(error),
         });
       }
-    // A missed report is retried by the next sync of this customer.
-    await bestEffort(
-      "partner program sales report",
-      partnerSales.report(previous.organizationId, customerId),
-    );
     if (live && hasBillingAccess(live.status))
       await referrals.settle(previous.organizationId, live.cardFingerprint);
     if (!modelCredits || !live) return;

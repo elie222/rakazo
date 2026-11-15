@@ -55,6 +55,7 @@ dbTests("partner program sales", () => {
   });
 
   afterAll(async () => {
+    await prisma.partnerSale.deleteMany({ where: { invoiceId: { endsWith: stamp } } });
     await prisma.organization.deleteMany({ where: { id: { in: ids } } });
     await prisma.user.deleteMany({ where: { id: { in: ids } } });
     await db.prisma.$disconnect();
@@ -70,8 +71,8 @@ dbTests("partner program sales", () => {
       program,
       provider: { listPlanPayments: async () => payments },
     });
-    await sales.report(organizationId, "cus_referred");
-    await sales.report(organizationId, "cus_referred");
+    await sales.report("cus_referred", organizationId);
+    await sales.report("cus_referred", organizationId);
     expect(program.trackSale).toHaveBeenCalledTimes(1);
     expect(program.trackSale).toHaveBeenCalledWith({
       customerId: organizationId,
@@ -81,7 +82,7 @@ dbTests("partner program sales", () => {
     });
 
     payments.push(paid("in_renewal"));
-    await sales.report(organizationId, "cus_referred");
+    await sales.report("cus_referred", organizationId);
     expect(program.trackSale).toHaveBeenCalledTimes(2);
   });
 
@@ -94,13 +95,30 @@ dbTests("partner program sales", () => {
       program,
       provider: { listPlanPayments: async () => payments },
     });
-    await sales.report(organizationId, "cus_refunded");
+    await sales.report("cus_refunded", organizationId);
     expect(program.trackSale).toHaveBeenCalledTimes(1);
 
     payments = payments.map((payment) => ({ ...payment, reversed: true }));
-    await sales.report(organizationId, "cus_refunded");
-    await sales.report(organizationId, "cus_refunded");
+    await sales.report("cus_refunded", organizationId);
+    await sales.report("cus_refunded", organizationId);
     expect(program.refundSale).toHaveBeenCalledTimes(1);
+    expect(program.refundSale).toHaveBeenCalledWith(payments[0]!.invoiceId);
+  });
+
+  it("withdraws a commission refunded after its organization was deleted", async () => {
+    const organizationId = await organization("deleted", "click_4");
+    const program = fakeProgram();
+    let payments = [paid("in_before_deletion")];
+    const sales = createPartnerSales({
+      prisma,
+      program,
+      provider: { listPlanPayments: async () => payments },
+    });
+    await sales.report("cus_deleted", organizationId);
+    await prisma.organization.delete({ where: { id: organizationId } });
+
+    payments = payments.map((payment) => ({ ...payment, reversed: true }));
+    await sales.report("cus_deleted", null);
     expect(program.refundSale).toHaveBeenCalledWith(payments[0]!.invoiceId);
   });
 
@@ -109,8 +127,8 @@ dbTests("partner program sales", () => {
     const program = fakeProgram();
     const listPlanPayments = vi.fn(async () => [paid("in_direct")]);
     await createPartnerSales({ prisma, program, provider: { listPlanPayments } }).report(
-      organizationId,
       "cus_direct",
+      organizationId,
     );
     expect(listPlanPayments).not.toHaveBeenCalled();
     expect(program.trackSale).not.toHaveBeenCalled();
@@ -125,8 +143,8 @@ dbTests("partner program sales", () => {
       program,
       provider: { listPlanPayments: async () => [paid("in_retried")] },
     });
-    await expect(sales.report(organizationId, "cus_retried")).rejects.toThrow("unavailable");
-    await sales.report(organizationId, "cus_retried");
+    await expect(sales.report("cus_retried", organizationId)).rejects.toThrow("unavailable");
+    await sales.report("cus_retried", organizationId);
     expect(program.trackSale).toHaveBeenCalledTimes(2);
   });
 });
