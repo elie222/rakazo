@@ -21,15 +21,13 @@ import {
 } from "@rakazo/ui-web";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { useSpaceQueries } from "../lib/query";
+import { useSave, useSpaceQueries } from "../lib/query";
 import { formatRelativeTime } from "../lib/relative-time";
-import { useSpaceRpc } from "../lib/space-rpc";
 import { errorText } from "../lib/user-error";
 import { SettingsGroup, SettingsRow } from "./SettingsRows";
 
 /** The account's spending limit, once the user has a way to pay. */
 export function SpendingLimitSettings() {
-  const rpc = useSpaceRpc();
   const { t, i18n } = useLingui();
   const queries = useSpaceQueries();
   const queryClient = useQueryClient();
@@ -37,8 +35,14 @@ export function SpendingLimitSettings() {
   const status = query.data;
   const [editing, setEditing] = useState<SpendingLimit | null>(null);
   const [amountText, setAmountText] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const save = useSave({
+    save: async (next: SpendingLimit | null, rpc) => {
+      const saved: SpendingStatus = await rpc.spendingLimit.set({ limit: next });
+      await writeSaved(queryClient, queries.spendingLimit.get.queryKey(), () => saved);
+    },
+    onSaved: () => setEditing(null),
+  });
+  const saving = save.pending;
   const payments = useQuery({
     ...queries.spendingLimit.payments.queryOptions(),
     enabled: Boolean(status?.shown),
@@ -74,22 +78,7 @@ export function SpendingLimitSettings() {
     const start = limit ?? { amount: 0, currency: "usd" as const, period: "month" as const };
     setEditing(start);
     setAmountText(limit ? String(limit.amount / 100) : "");
-    setError(null);
-  }
-
-  async function save(next: SpendingLimit | null) {
-    if (saving) return;
-    setSaving(true);
-    setError(null);
-    try {
-      const saved: SpendingStatus = await rpc.spendingLimit.set({ limit: next });
-      await writeSaved(queryClient, queries.spendingLimit.get.queryKey(), () => saved);
-      setEditing(null);
-    } catch (err) {
-      setError(errorText(err, t`Could not save spending limit`));
-    } finally {
-      setSaving(false);
-    }
+    save.reset();
   }
 
   const amount = parseLimitInput(amountText);
@@ -118,7 +107,7 @@ export function SpendingLimitSettings() {
             className="mt-2 flex flex-wrap items-center gap-2"
             onSubmit={(event) => {
               event.preventDefault();
-              if (amount !== null) void save({ ...editing, amount });
+              if (amount !== null) save.run({ ...editing, amount });
             }}
           >
             <Input
@@ -190,14 +179,18 @@ export function SpendingLimitSettings() {
                 size="sm"
                 className="text-destructive hover:text-destructive"
                 disabled={saving}
-                onClick={() => void save(null)}
+                onClick={() => save.run(null)}
               >
                 <Trans>Remove</Trans>
               </Button>
             ) : null}
           </form>
         ) : null}
-        {error ? <p className="mt-1 text-body-sm text-destructive">{error}</p> : null}
+        {save.error ? (
+          <p className="mt-1 text-body-sm text-destructive">
+            {errorText(save.error, t`Could not save spending limit`)}
+          </p>
+        ) : null}
       </SettingsRow>
       {payments?.length ? <RecentPayments payments={payments} money={money} /> : null}
     </SettingsGroup>
