@@ -186,7 +186,11 @@ async function main(args) {
     for (const rule of rules) {
       // With a name, only that rule: a PR then leaves the baselines it did not work on alone.
       if (args[1] && rule.name !== args[1]) continue;
-      if (!existsSync(rule.baselinePath)) continue;
+      if (!existsSync(rule.baselinePath)) {
+        // Asked for by name, so say why nothing was written.
+        if (args[1]) console.log(`${rule.name} has no baseline: there is nothing to tighten.`);
+        continue;
+      }
       writeFileSync(
         rule.baselinePath,
         formatBaseline(tighten(readBaseline(rule), found.get(rule.name))),
