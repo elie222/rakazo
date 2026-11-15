@@ -41,29 +41,32 @@ function fakeDb(roles: Record<string, string> = {}) {
     spaceId: "space-1",
     threadId: "thread-1",
   };
+  const updateMany = vi.fn(
+    async ({
+      where,
+      data,
+    }: {
+      where: { pausedAt: null | object };
+      data: { pausedAt: Date | null };
+    }) => {
+      if ((where.pausedAt === null) !== (bot.pausedAt === null)) return { count: 0 };
+      bot.pausedAt = data.pausedAt;
+      return { count: 1 };
+    },
+  );
   const tx = {
-    $queryRaw: vi.fn(async () => []),
+    $queryRaw: vi.fn(async () => (bot.pausedAt ? [{ id: bot.id, pausedAt: bot.pausedAt }] : [])),
     space: { findUnique: vi.fn(async () => ({ deletingAt: null })) },
-    bot: { findUnique: vi.fn(async () => ({ pausedAt: bot.pausedAt })) },
+    bot: { findUnique: vi.fn(async () => ({ pausedAt: bot.pausedAt })), updateMany },
     run: { findMany: vi.fn(async () => [run]) },
+    computer: { updateMany: vi.fn() },
+    steeringMessage: { deleteMany: vi.fn() },
     computerExecutionLease: { updateMany: vi.fn() },
   };
   const prisma = {
     bot: {
       findFirst: vi.fn(async () => bot),
-      updateMany: vi.fn(
-        async ({
-          where,
-          data,
-        }: {
-          where: { pausedAt: null | object };
-          data: { pausedAt: Date | null };
-        }) => {
-          if ((where.pausedAt === null) !== (bot.pausedAt === null)) return { count: 0 };
-          bot.pausedAt = data.pausedAt;
-          return { count: 1 };
-        },
-      ),
+      updateMany,
     },
     spaceMember: {
       findUnique: vi.fn(async ({ where }: { where: { spaceId_userId: { userId: string } } }) => {
