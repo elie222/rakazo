@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { InferRouterInitialContext } from "@orpc/server";
-import { createRouterClient } from "@orpc/server";
+import { createRouterClient, onError } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/fetch";
 import type { ManagedConnectorProvider } from "@rakazo/adapter-kit";
 import {
@@ -61,6 +61,7 @@ import {
   HEARTBEAT_MS,
   SESSION_RECHECK_MS,
 } from "./router.js";
+import { handleRpcError } from "./rpc-errors.js";
 
 const withRoleDeps = (deps: RouterDeps) => {
   withModelRoles(deps.prisma);
@@ -4533,7 +4534,10 @@ describe("computer terminal and file transfer", () => {
       },
       dataDir: "/tmp/rakazo-router-test",
     } as unknown as RouterDeps;
-    const handler = new RPCHandler(createRouter(deps));
+    const handler = new RPCHandler(createRouter(deps), {
+      // As the app does, so a domain error answers with its own status.
+      clientInterceptors: [onError((error, { path }) => handleRpcError(error, path))],
+    });
     const call = async (procedure: string, json: Record<string, unknown>) => {
       const response = await handle(
         handler,
@@ -7974,6 +7978,10 @@ describe("bot restore computer quota", () => {
     };
     const handler = new RPCHandler(
       createRouter({ prisma, env: { sandboxProvider: "fake" } } as unknown as RouterDeps),
+      {
+        // As the app does, so a domain error answers with its own status.
+        clientInterceptors: [onError((error, { path }) => handleRpcError(error, path))],
+      },
     );
     const call = async () =>
       handle(
@@ -8049,6 +8057,10 @@ describe("group restore with archived bots", () => {
     };
     const handler = new RPCHandler(
       createRouter({ prisma, env: { sandboxProvider: "fake" } } as unknown as RouterDeps),
+      {
+        // As the app does, so a domain error answers with its own status.
+        clientInterceptors: [onError((error, { path }) => handleRpcError(error, path))],
+      },
     );
     const call = async () =>
       handle(
