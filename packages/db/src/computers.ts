@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { ComputerMode } from "@rakazo/contracts";
+import { ComputerModeSchema } from "@rakazo/contracts";
 import { isTerminal } from "@rakazo/core";
 import type { PrismaClient } from "./client.js";
 import { Prisma } from "./client.js";
@@ -150,11 +151,9 @@ export function resolveMaxComputersPerUser(
 export function resolveDefaultComputerMode(
   value = process.env.COMPUTER_DEFAULT_MODE,
 ): ComputerMode {
-  const mode = value?.trim() || "team";
-  if (mode !== "team" && mode !== "dedicated") {
-    throw new Error("COMPUTER_DEFAULT_MODE must be team or dedicated");
-  }
-  return mode;
+  const mode = ComputerModeSchema.safeParse(value?.trim() || "team");
+  if (!mode.success) throw new Error("COMPUTER_DEFAULT_MODE must be team or dedicated");
+  return mode.data;
 }
 
 export class ComputerLimitError extends Error {
