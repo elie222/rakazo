@@ -368,6 +368,34 @@ describeWithDatabase("service API surface", () => {
         `/bots/${bot.id}/routines/${routine.id}/history`,
       );
       expect(history.runs.map((entry) => entry.id)).toContain(run.runId);
+      // Another member's run of the same routine stays out, as in every other run listing.
+      const mine = await db.run.findUniqueOrThrow({ where: { id: run.runId } });
+      const { actor: someoneElse } = await person();
+      const owner = {
+        spaceId: mine.spaceId,
+        userId: someoneElse.userId,
+        botId: bot.id,
+        threadId: mine.threadId,
+      };
+      const task = await db.task.create({
+        data: { ...owner, prompt: "their run", status: "completed" },
+      });
+      const theirs = await db.run.create({
+        data: {
+          ...owner,
+          taskId: task.id,
+          routineId: routine.id,
+          status: "completed",
+          trigger: "routine",
+        },
+      });
+      const filtered = await ok<{ runs: Array<{ id: string }> }>(
+        token,
+        "GET",
+        `/bots/${bot.id}/routines/${routine.id}/history`,
+      );
+      expect(filtered.runs.map((entry) => entry.id)).toContain(run.runId);
+      expect(filtered.runs.map((entry) => entry.id)).not.toContain(theirs.id);
       // A cursor that is valid JSON of the wrong shape is a bad request, not a server error.
       for (const cursor of [{}, { id: "x", createdAt: "not a date" }, null, "text"]) {
         const after = Buffer.from(JSON.stringify(cursor)).toString("base64url");
@@ -958,7 +986,12 @@ describeWithDatabase("service API surface", () => {
       const large = "m".repeat(200_000);
       const memory = await mcp(token, "tools/call", {
         name: "updateMemory",
-        arguments: { botId: bot.id, documentId: doc.id, body: { content: large } },
+        arguments: {
+          botId: bot.id,
+          documentId: doc.id,
+          body: { content: large },
+          idempotencyKey: "mcp-memory",
+        },
       });
       expect(memory.status).toBe(200);
       expect(memory.json.result?.isError, memory.json.result?.content?.[0]?.text).not.toBe(true);
@@ -966,7 +999,7 @@ describeWithDatabase("service API surface", () => {
       const reader = await newKey(cookie, ["bots:read"]);
       const refused = await mcp(reader.token, "tools/call", {
         name: "sendPrompt",
-        arguments: { botId: bot.id, body: { text: "no" } },
+        arguments: { botId: bot.id, body: { text: "no" }, idempotencyKey: "mcp-no" },
       });
       expect(refused.json.result?.isError).toBe(true);
       expect(refused.json.result?.content?.[0]?.text).toContain("forbidden");
@@ -982,6 +1015,11 @@ describeWithDatabase("service API surface", () => {
         [{ botId: bot.id, body: { text: "x" }, extra: 1 }, 'Unknown argument "extra".'],
         [
           { botId: bot.id, body: { text: "x" }, idempotencyKey: 5 },
+          'Argument "idempotencyKey" is missing or malformed.',
+        ],
+        // A write with no key is refused, so a retried tool call cannot write twice.
+        [
+          { botId: bot.id, body: { text: "x" } },
           'Argument "idempotencyKey" is missing or malformed.',
         ],
       ] as const) {
