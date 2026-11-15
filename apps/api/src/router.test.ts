@@ -4645,7 +4645,9 @@ describe("connections.complete", () => {
       body: { json: { status: "pending" } },
     });
     expect(row).toMatchObject({ status: "pending", providerRef: "gmail" });
-    expect(sink.events.filter((event) => event.level === "error")).toEqual([
+    // A warning: an outage repeats it on every poll, and the next poll asks again.
+    expect(sink.events.filter((event) => event.level === "error")).toEqual([]);
+    expect(sink.events.filter((event) => event.level === "warn")).toEqual([
       expect.objectContaining({
         message: "connections.complete could not resolve the connected account",
         connectionId: "conn-1",

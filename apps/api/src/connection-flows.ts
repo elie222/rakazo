@@ -464,16 +464,14 @@ export async function completeConnection(
             resolvedAccountId = await resolveAccountId(current.providerRef, excludeIds);
           } catch (error) {
             // Not being able to ask is not "no account": connecting the row now would store a
-            // ref revoke cannot target. Leave it for the next poll.
-            getLogger().error(
-              "connections.complete could not resolve the connected account",
+            // ref revoke cannot target. Leave it for the next poll, which asks again: a warning,
+            // since a provider outage repeats it on every poll of every pending connection.
+            getLogger().warn("connections.complete could not resolve the connected account", {
               error,
-              {
-                connectionId: current.id,
-                connectorId: existing.connectorId,
-                provider: existing.provider,
-              },
-            );
+              connectionId: current.id,
+              connectorId: existing.connectorId,
+              provider: existing.provider,
+            });
             return current;
           }
         }
