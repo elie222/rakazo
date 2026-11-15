@@ -396,8 +396,23 @@ it("starts another room from what was read for it, not from the last room's edit
   await click("Replies to: Every message");
   expect(rows()).toContain("Replies to: Every message");
 
+  // The second room waits for its own read: the copy read for the first room is not shown.
+  const answers = vi.mocked(rpc).getMockImplementation() as (...args: unknown[]) => unknown;
+  let land!: () => void;
+  const landed = new Promise<void>((resolve) => {
+    land = resolve;
+  });
+  vi.mocked(rpc).mockImplementation((async (...args: unknown[]) => {
+    await landed;
+    return answers(...args);
+  }) as never);
   route.conversationId = "room-2";
   await render();
+  expect(rows()).toEqual([]);
+  expect(navigation.options.headerRight).toBeUndefined();
+
+  await act(async () => land());
+  await settle();
   expect(rows()).toContain("Replies to: Mentions only");
   await save();
   expect(rpc).toHaveBeenCalledWith(

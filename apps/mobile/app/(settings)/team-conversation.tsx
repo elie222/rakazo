@@ -53,7 +53,9 @@ function RoomSettings({ conversationId }: { conversationId: string }) {
     (candidate) => candidate.id === conversationId,
   );
   const roomBot = botsQuery.data?.find((candidate) => candidate.id === room?.botId);
-  const loaded = room && roomBot ? { conversation: room, bot: roomBot } : null;
+  // A copy read for the room shown before this one is not what Save may start from.
+  const fresh = spacesQuery.isFetchedAfterMount && botsQuery.isFetchedAfterMount;
+  const loaded = fresh && room && roomBot ? { conversation: room, bot: roomBot } : null;
   const ready = Boolean(loaded);
   const failedRead = [spacesQuery, botsQuery].find((read) => read.isError && !read.isFetching);
   const loadError = failedRead ? errorText(failedRead.error) : null;
