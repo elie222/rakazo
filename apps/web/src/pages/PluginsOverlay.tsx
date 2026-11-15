@@ -29,7 +29,7 @@ import {
   Spinner,
 } from "@rakazo/ui-web";
 import { ChevronDown, ChevronRight, LayoutTemplate, X } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { IntegrationSetup } from "../components/integrations/IntegrationSetup";
 import type {
   ManagedAppLink,
@@ -75,6 +75,7 @@ export function PluginsOverlay({
   const [confirmingSource, setConfirmingSource] = useState<string | null>(null);
   const spaceCount = useOwnSpaces().length;
   const [sourceError, setSourceError] = useState<string | null>(null);
+  const sourceAction = useRef(0);
   const [oauthError, setOauthError] = useState<string | null>(null);
   const [view, setView] = useState<OverlayView>("browse");
   const [publicCatalogQuery, setPublicCatalogQuery] = useState("");
@@ -242,6 +243,7 @@ export function PluginsOverlay({
     sourceForm.start(kind, preset);
     setSourceError(null);
     setOauthError(null);
+    sourceAction.current += 1;
   }
 
   function beginCatalogSurface(
@@ -254,6 +256,7 @@ export function PluginsOverlay({
     sourceForm.startFromCatalog(result, surface, surface.source);
     setSourceError(null);
     setOauthError(null);
+    sourceAction.current += 1;
   }
 
   async function installSource() {
@@ -265,7 +268,9 @@ export function PluginsOverlay({
       (sourcePreset?.name ?? (sourceKind === "graphql" ? "GraphQL" : "Custom connector"));
     setSourceError(null);
     setOauthError(null);
+    sourceAction.current += 1;
     setPending("install-source");
+    const action = sourceAction.current;
     let savedForOauth = false;
     try {
       // OAuth is the MCP server itself signing in, so it is saved first and then authorized.
@@ -278,11 +283,13 @@ export function PluginsOverlay({
         setView("manage");
         await refresh().catch(() => undefined);
         const result = await connectMcpOauth(server.id);
+        if (action !== sourceAction.current) return;
         if (result === "cancelled") {
           setOauthError(t`Sign-in cancelled. Retry in Manage MCP servers.`);
           return;
         }
         await refresh().catch(() => undefined);
+        if (action !== sourceAction.current) return;
         if (result === "authorization_not_requested")
           setOauthError(t`This server did not request browser authorization.`);
         return;
@@ -310,7 +317,9 @@ export function PluginsOverlay({
       await refresh();
     } catch (err) {
       if (savedForOauth) {
+        if (action !== sourceAction.current) return;
         await refresh().catch(() => undefined);
+        if (action !== sourceAction.current) return;
         setOauthError(
           errorCode(err) === MCP_OAUTH_CLIENT_REQUIRED
             ? t`This server needs an OAuth client ID. Add one in Manage MCP servers.`
@@ -333,6 +342,7 @@ export function PluginsOverlay({
     setPending(install.id);
     setSourceError(null);
     setOauthError(null);
+    sourceAction.current += 1;
     try {
       await rpc.capabilities.remove({ id: install.id });
       await updateIntegrations((current) => ({
@@ -351,6 +361,7 @@ export function PluginsOverlay({
     setDetailKey(null);
     setSourceError(null);
     setOauthError(null);
+    sourceAction.current += 1;
     setView(next);
   }
 
@@ -358,6 +369,7 @@ export function PluginsOverlay({
     sourceForm.close();
     setSourceError(null);
     setOauthError(null);
+    sourceAction.current += 1;
     setView(sourceBack);
   }
 
