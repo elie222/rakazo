@@ -137,7 +137,8 @@ export function useSpaceQueries(): SpaceQueries {
  */
 export function useSave<Input = void, Saved = unknown>(options: {
   save: (input: Input, rpc: RpcClient) => Promise<Saved>;
-  stale?: readonly QueryKey[];
+  /** The reads the save makes out of date, which may depend on what was saved. */
+  stale?: readonly QueryKey[] | ((input: Input) => readonly QueryKey[]);
   onSaved?: (saved: Saved, input: Input) => unknown;
   /** For a toast or undoing an optimistic change; `error` is for showing the failure inline. */
   onFailed?: (error: Error, input: Input) => unknown;
@@ -183,11 +184,19 @@ export function useSave<Input = void, Saved = unknown>(options: {
       const rpc = spaceId ? rpcForSpace(spaceId) : createSpaceRpc(null);
       void (async () => save(input, rpc))().then(
         async (saved) => {
+          const reads = typeof stale === "function" ? stale(input) : stale;
           await Promise.allSettled(
-            stale.map((queryKey) => queryClient.invalidateQueries({ queryKey })),
+            reads.map((queryKey) => queryClient.invalidateQueries({ queryKey })),
           );
           if (!closesScreen || !shown()) finish(null);
-          if (shown()) void onSaved?.(saved, input);
+          if (!shown()) return;
+          try {
+            await onSaved?.(saved, input);
+          } catch (error) {
+            // The save went through; what failed came after it, such as leaving the screen. The
+            // controls come back with the reason instead of staying held.
+            finish(error as Error);
+          }
         },
         (error: Error) => {
           finish(error);

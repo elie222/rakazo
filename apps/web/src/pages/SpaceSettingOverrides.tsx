@@ -31,19 +31,19 @@ export function SpaceSettingOverrides({
   const queryClient = useQueryClient();
   const overrides = useQuery(queries.spaceSettings.overrides.queryOptions());
   const [confirmingReset, setConfirmingReset] = useState<SpaceSetting | null>(null);
+  const affectedReads: Record<SpaceSetting, QueryKey[]> = {
+    models: [queries.models.key(), queries.me.key()],
+    voice: [queries.voice.key()],
+    confirmations: [queries.approvalRules.key(), queries.autoReview.key()],
+    credentials: [queries.vault.key()],
+  };
   const override = useSave({
     save: async ({ setting, enabled }: { setting: SpaceSetting; enabled: boolean }, rpc) => {
       const next = await rpc.spaceSettings.setOverride({ setting, enabled });
       await writeSaved(queryClient, queries.spaceSettings.overrides.queryKey(), () => next);
-      // Reads that omit a scope get whichever copy applies, so they change with the override.
-      const affected: Record<SpaceSetting, QueryKey[]> = {
-        models: [queries.models.key(), queries.me.key()],
-        voice: [queries.voice.key()],
-        confirmations: [queries.approvalRules.key(), queries.autoReview.key()],
-        credentials: [queries.vault.key()],
-      };
-      for (const queryKey of affected[setting]) void queryClient.invalidateQueries({ queryKey });
     },
+    // Reads that omit a scope get whichever copy applies, so they change with the override.
+    stale: ({ setting }) => affectedReads[setting],
     onSaved: () => setConfirmingReset(null),
     onFailed: () => setConfirmingReset(null),
   });

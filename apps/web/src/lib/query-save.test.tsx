@@ -46,12 +46,13 @@ const save = vi.fn<(name: string, rpc: RpcClient) => Promise<string>>();
 const onSaved = vi.fn();
 const onFailed = vi.fn();
 let closesScreen = false;
+let stale: Parameters<typeof useSave<string, string>>[0]["stale"] = [READ];
 let userId = "user-a";
 let boundSpaceId: string | null | undefined;
 let screen: ReturnType<typeof useSave<string, string>> & { name: unknown };
 function Screen() {
   const { data } = useQuery({ queryKey: READ, queryFn: read });
-  screen = { ...useSave({ save, stale: [READ], onSaved, onFailed, closesScreen }), name: data };
+  screen = { ...useSave({ save, stale, onSaved, onFailed, closesScreen }), name: data };
   return null;
 }
 
@@ -77,6 +78,7 @@ beforeEach(async () => {
   userId = "user-a";
   boundSpaceId = undefined;
   closesScreen = false;
+  stale = [READ];
   read.mockReset().mockResolvedValue("Before");
   save.mockReset();
   onSaved.mockReset();
@@ -209,6 +211,32 @@ it("offers a save that closes the screen again when it fails", async () => {
   expect(screen.error).toEqual(new Error("Name taken"));
   await act(async () => screen.run("After"));
   expect(save).toHaveBeenCalledTimes(2);
+});
+
+it("gives the controls back, with the reason, when what follows a save that closes the screen fails", async () => {
+  closesScreen = true;
+  await render();
+  save.mockResolvedValue("After");
+  onSaved.mockRejectedValueOnce(new Error("Could not open it"));
+  await act(async () => screen.run("After"));
+  await settle();
+  expect(screen.pending).toBe(false);
+  expect(screen.error).toEqual(new Error("Could not open it"));
+  await act(async () => screen.run("After"));
+  expect(save).toHaveBeenCalledTimes(2);
+});
+
+it("reads again what the saved input makes out of date", async () => {
+  const named = vi.fn((_input: string) => [READ]);
+  stale = named;
+  await render();
+  save.mockResolvedValue("After");
+  read.mockResolvedValue("After");
+  await act(async () => screen.run("After"));
+  await settle();
+  expect(named).toHaveBeenCalledWith("After");
+  expect(screen.name).toBe("After");
+  expect(screen.pending).toBe(false);
 });
 
 describe("a save whose screen has gone", () => {
