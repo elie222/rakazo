@@ -47,8 +47,8 @@ import type { MemoryProviderResolver } from "./memory-provider-factory.js";
 import { forgetPageShareSecrets } from "./page-share-secrets.js";
 import { removePiBotSessions } from "./pi-session.js";
 import { isSandboxGoneError } from "./sandbox-errors.js";
-import { wakeRun } from "./wake-run.js";
 import { sandboxKindCapabilities } from "./sandbox-kind-capabilities.js";
+import { wakeRun } from "./wake-run.js";
 
 export function confirmSpawnedBotName(confirmName: string, botName: string) {
   if (confirmName !== botName) {
