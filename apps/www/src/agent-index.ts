@@ -116,7 +116,7 @@ export async function agentResourceGroups(): Promise<AgentResourceGroup[]> {
       ],
     },
     {
-      id: "docs",
+      id: "doc",
       heading: "Docs",
       resources: DOCS_PAGES.map((page) => ({
         id: page.slug,
