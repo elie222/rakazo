@@ -14,7 +14,7 @@ export async function confirmUnsentSendLoss(action: UnsentSendLossAction): Promi
   // The persisted queue loads asynchronously at startup; reading the in-memory list
   // before that lands, or after it failed, would treat an unknown queue as empty.
   if ((await unsentSendsRestored()) && !hasUnsentSends()) return true;
-  const copy = {
+  const { message, confirmLabel } = {
     "sign-out": {
       message: t`Signing out deletes unsent messages.`,
       confirmLabel: t`Sign out anyway`,
@@ -28,7 +28,6 @@ export async function confirmUnsentSendLoss(action: UnsentSendLossAction): Promi
       confirmLabel: t`Switch anyway`,
     },
   }[action];
-  const { message, confirmLabel } = copy;
   return new Promise((resolve) => {
     Alert.alert(t`Unsent messages`, message, [
       { text: t`Cancel`, style: "cancel", onPress: () => resolve(false) },
