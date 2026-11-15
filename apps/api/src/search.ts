@@ -14,6 +14,7 @@ import {
   INDEXED_MESSAGE,
   LISTED_ARTIFACT,
   Prisma,
+  storedMessageBlocks,
   UNINDEXED_MESSAGE,
 } from "@rakazo/db";
 
@@ -335,7 +336,7 @@ export async function querySpaceSearch(
     `,
     );
     for (const row of messageRows) {
-      pushMessageHits(row.blocks as MessageBlock[], {
+      pushMessageHits(storedMessageBlocks(row), {
         botId: row.botId,
         botName: row.botName,
         messageId: row.id,
@@ -374,7 +375,7 @@ export async function querySpaceSearch(
     `,
     );
     for (const row of groupMessageRows) {
-      pushMessageHits(row.blocks as MessageBlock[], {
+      pushMessageHits(storedMessageBlocks(row), {
         groupId: row.groupId,
         groupName: row.groupName,
         messageId: row.id,

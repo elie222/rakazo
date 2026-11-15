@@ -36,6 +36,7 @@ import {
   notifyCommittedEvent,
   notifyRealtime,
 } from "./event-stream.js";
+import { readMessageBlocks } from "./message-blocks.js";
 import type { RunLease } from "./messages.js";
 import {
   assertRunCanWriteHistory,
@@ -498,7 +499,7 @@ export async function sendUserMessage(
                 trigger: true,
                 status: true,
                 userId: true,
-                sourceMessage: { select: { blocks: true } },
+                sourceMessage: { select: { id: true, blocks: true } },
               },
             })
           : [];
@@ -507,14 +508,16 @@ export async function sendUserMessage(
       const channelId = messagingChannelId(input.blocks);
       // A run acts with its sender's accounts, so another person's message waits for a run of
       // their own.
-      const steersRun = (run: (typeof activeRuns)[number]) =>
-        run.userId === input.userId &&
-        messageSteersRun(
-          input.trigger,
-          run.trigger,
-          channelId,
-          messagingChannelId(run.sourceMessage?.blocks as MessageBlock[] | undefined),
-        );
+      const steersRun = (run: (typeof activeRuns)[number]) => {
+        if (run.userId !== input.userId) return false;
+        const source = run.sourceMessage ? readMessageBlocks(run.sourceMessage) : undefined;
+        const runChannelId = messagingChannelId(source?.blocks);
+        // A source that lost entries may have lost its channel marker, so a chat-app message
+        // cannot be matched to that run's chat and gets a run of its own.
+        if (input.trigger === "messaging" && source?.intact === false && !runChannelId)
+          return false;
+        return messageSteersRun(input.trigger, run.trigger, channelId, runChannelId);
+      };
       const holdingRuns = activeRuns.filter(
         (run) => !messageBypassesTakeoverWait(run, fromGroup || steersRun(run)),
       );

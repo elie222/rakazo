@@ -1430,6 +1430,60 @@ describe("deliverRun to a group", () => {
     expect(t.events.sendUserMessage).not.toHaveBeenCalled();
   });
 
+  // Entries a stored message holds that are not blocks: readers drop them and keep the rest.
+  const stray = [{ text: "no kind" }, null];
+
+  it("posts to the group when the channel message is stored beside entries that are not blocks", async () => {
+    const t = setup();
+    groupRun(t.world, [text("m-1", "found it")]);
+    t.world.messages.find((message) => message.id === "src-run-1")!.blocks.push(...stray);
+    await t.delivery.deliverRun("run-1");
+
+    expect(requests(t)).toEqual([
+      { threadId: "sendblue:grp-1", body: "Alice's agent: found it", idempotencyKey: "msg:m-1" },
+    ]);
+  });
+
+  it.each([
+    ["lost entries and shows no channel message", stray],
+    ["is not a list", { kind: "channel_message", channelId: "ch-1" }],
+  ])("keeps the reply in the app when the source message %s", async (_case, source) => {
+    const t = setup();
+    addRun(t.world, { source: source as unknown[], replies: [text("m-1", "for the group")] });
+    await t.delivery.deliverRun("run-1");
+
+    expect(t.world.outbound).toEqual([]);
+    expect(t.sendToThread).not.toHaveBeenCalled();
+  });
+
+  it("keeps a privately answered run out of the group when the ask is stored beside entries that are not blocks", async () => {
+    const t = setup();
+    groupRun(t.world, [
+      {
+        id: "ask-1",
+        blocks: [
+          { kind: "ask", text: "Details?", status: "answered", answer: "Private detail" },
+          ...stray,
+        ],
+      },
+      text("reply-1", "Reply containing private detail"),
+    ]);
+    await t.delivery.deliverRun("run-1");
+
+    expect(t.world.outbound).toEqual([]);
+    expect(t.sendToThread).not.toHaveBeenCalled();
+    expect(peerContext(t)).toEqual([]);
+  });
+
+  it("keeps a run out of the group when a reply lost entries that may have been its answered ask", async () => {
+    const t = setup();
+    groupRun(t.world, [{ id: "reply-1", blocks: [{ kind: "text", text: "An update" }, ...stray] }]);
+    await t.delivery.deliverRun("run-1");
+
+    expect(t.world.outbound).toEqual([]);
+    expect(t.sendToThread).not.toHaveBeenCalled();
+  });
+
   it("still posts a reply alongside an unanswered ask", async () => {
     const t = setup();
     groupRun(t.world, [

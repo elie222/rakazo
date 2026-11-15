@@ -253,7 +253,7 @@ export async function restoreBotUnderComputerQuota(
   }
 
   if (isTransactionClient(prisma)) {
-    return restore(prisma as RestoreTx);
+    return restore(prisma);
   }
   if (limit <= 0) {
     await prisma.bot.update({ where: { id: input.botId }, data: { archivedAt: null } });

@@ -5,10 +5,14 @@ import type {
   CloudAgentSnapshot,
 } from "@rakazo/adapter-kit";
 import { CloudAgentRequestRejected, CloudAgentRetryLater } from "@rakazo/adapter-kit";
-import type { MessageBlock } from "@rakazo/contracts";
 import { cloudAgentHttpsUrl } from "@rakazo/core";
 import type { CloudAgent } from "@rakazo/db";
-import { appendEventInTransaction, Prisma, THREAD_LOCK_TRANSACTION_OPTIONS } from "@rakazo/db";
+import {
+  appendEventInTransaction,
+  changeMessageBlocks,
+  Prisma,
+  THREAD_LOCK_TRANSACTION_OPTIONS,
+} from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { CloudAgentDeps } from "./cloud-agent-service.js";
 import { cloudAgentBlock, cloudAgentFor, enqueueCloudAgent } from "./cloud-agent-service.js";
@@ -330,11 +334,15 @@ async function finishPoll(
     let wakeRunId: string | undefined;
     if (message && !detached) {
       const nextBlock = cloudAgentBlock(saved);
-      const blocks = (message.blocks as MessageBlock[]).map((block) =>
-        block.kind === "cloud_agent" && block.agentId === agent.id ? nextBlock : block,
+      const next = changeMessageBlocks(message, (block) =>
+        block.kind === "cloud_agent" &&
+        block.agentId === agent.id &&
+        JSON.stringify(block) !== JSON.stringify(nextBlock)
+          ? nextBlock
+          : block,
       );
-      if (JSON.stringify(blocks) !== JSON.stringify(message.blocks)) {
-        await tx.message.update({ where: { id: message.id }, data: { blocks } });
+      if (next) {
+        await tx.message.update({ where: { id: message.id }, data: { blocks: next.stored } });
         const event = await appendEventInTransaction(tx, {
           spaceId: agent.spaceId,
           threadId: agent.threadId,

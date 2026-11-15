@@ -35,12 +35,15 @@ import {
   isPartialReplyClientNonce,
   loadRunHistoryMessages,
   loadRunTurnCheckpoint,
+  mayBeChannelMessage,
   parseComputerMode,
   RunHistoryWriteError,
+  readMessageBlocks,
   readRunTimingFields,
   recordUsage,
   retryWhileDatabaseUnavailable,
   settleReleasedTakeoverCards,
+  storedMessageBlocks,
   teamChatRunFromOwner,
 } from "@rakazo/db";
 import { enrichLogContext, getLogger } from "@rakazo/logging";
@@ -590,12 +593,20 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           run.trigger === "messaging" && run.sourceMessageId
             ? await deps.prisma.message.findUnique({
                 where: { id: run.sourceMessageId },
-                select: { blocks: true, clientNonce: true },
+                select: { id: true, blocks: true, clientNonce: true },
               })
             : null;
-        const sourceBlocks = messagingSource?.blocks as MessageBlock[] | undefined;
+        const source = messagingSource ? readMessageBlocks(messagingSource) : undefined;
+        const sourceBlocks = source?.blocks;
         const channelId = messagingChannelId(sourceBlocks);
-        const messagingChannelRun = isMessagingChannelRun(run.trigger, sourceBlocks);
+        // A source that lost entries may have lost its channel marker: the run gets a channel's
+        // limits, and its reply is not sent to a chat app (see MessagingDelivery.deliverRun).
+        const messagingChannelRun =
+          isMessagingChannelRun(run.trigger, sourceBlocks) || source?.intact === false;
+        // Without the marker nothing says which of the thread's messages that channel may see,
+        // so the run reads only the message that woke it and gets no history tools.
+        const unknownChannelSourceId =
+          messagingChannelRun && !channelId ? messagingSource?.id : undefined;
         const [
           { bot, ownerLabs },
           thread,
@@ -634,7 +645,16 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
               space: { select: { _count: { select: { memberships: true } } } },
             },
           }),
-          loadRunHistoryMessages(deps.prisma, run, LEGACY_HISTORY_WINDOW_SIZE, channelId),
+          loadRunHistoryMessages(
+            deps.prisma,
+            run,
+            LEGACY_HISTORY_WINDOW_SIZE,
+            channelId
+              ? { channelId }
+              : unknownChannelSourceId
+                ? { sourceMessageId: unknownChannelSourceId }
+                : undefined,
+          ),
           run.trigger === "bot_message"
             ? loadBotMessageContext(deps.prisma, run.sourceMessageId)
             : Promise.resolve(undefined),
@@ -877,7 +897,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             id: message.id,
             role: message.role,
             runId: message.runId,
-            blocks: message.blocks as MessageBlock[],
+            blocks: storedMessageBlocks(message),
           }));
         const currentTurnMessage = userTurnMessageForRun(
           run.trigger,
@@ -904,7 +924,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         });
         // The content extension decrypts imageHandling after filtering on plain kind.
         const confirmedRunImages = currentRunImageMessages.flatMap((message) =>
-          (message.blocks as MessageBlock[]).filter(
+          storedMessageBlocks(message).filter(
             (block) => block.kind === "image" && block.imageHandling === "confirm",
           ),
         );
@@ -1313,6 +1333,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             ? await deps.prisma.message.findUnique({
                 where: { id: run.sourceMessageId },
                 select: {
+                  id: true,
                   clientNonce: true,
                   role: true,
                   blocks: true,
@@ -1400,7 +1421,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             // A call rings the bot's own person, whose chat it is; other members of a shared
             // Space reach it by message for now.
             phoneCallsEnabled: deps.phoneCallsEnabled && run.userId === bot.userId,
-            historyRetrievalEnabled: contextStrategy !== "current",
+            historyRetrievalEnabled: contextStrategy !== "current" && !unknownChannelSourceId,
             graphicalToolsAllowed,
             pageBrowserAllowed,
             groupId: thread.groupId,
@@ -1463,7 +1484,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           ownerStartedRun,
           messagingChannelRun: nonOwnerChatRun,
           sourceMessage,
-          ownerChatMessageBlocks: nonOwnerChatRun ? undefined : messagingSource?.blocks,
+          ownerChatMessageBlocks: nonOwnerChatRun ? undefined : sourceBlocks,
           connectedPlugins,
         });
         // Outbound destinations this run may reach without asking. See outboundSiteGate and
@@ -1608,7 +1629,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                 Boolean(
                   channelId ||
                     thread.externalConversationId ||
-                    messagingChannelId(sourceMessage?.blocks as MessageBlock[] | undefined),
+                    (sourceMessage && mayBeChannelMessage(sourceMessage)),
                 ),
             ),
             voiceCall,

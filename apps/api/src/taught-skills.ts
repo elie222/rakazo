@@ -39,10 +39,12 @@ import {
 } from "@rakazo/core";
 import type { createRepos, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
+  changeMessageBlocks,
   clearEndedRunState,
   expireComputerExecutionLeases,
   IsolationError,
   isUniqueViolation,
+  storedMessageBlocks,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { takeComputerControl } from "./computer-control.js";
@@ -232,17 +234,12 @@ async function updateSkillDraftMessage(
   });
 
   for (const message of messages) {
-    const parsed = message.blocks as MessageBlock[];
-    if (!Array.isArray(parsed)) continue;
-    const index = parsed.findIndex(
+    const existing = storedMessageBlocks(message).find(
       (block) => block.kind === "skill_draft" && block.skillId === skill.id,
     );
-    if (index === -1) continue;
-    const existing = parsed[index];
     if (existing?.kind !== "skill_draft") continue;
     const playbook = input.playbook ?? parsePlaybook(skill.playbook);
-    const nextBlocks: MessageBlock[] = [...parsed];
-    nextBlocks[index] = {
+    const draft: MessageBlock = {
       kind: "skill_draft",
       skillId: skill.id,
       name: input.name ?? existing.name,
@@ -250,16 +247,18 @@ async function updateSkillDraftMessage(
       playbook,
       status: input.status ?? existing.status,
     };
+    const next = changeMessageBlocks(message, (block) => (block === existing ? draft : block));
+    if (!next) return;
     await deps.prisma.message.update({
       where: { id: message.id },
-      data: { blocks: nextBlocks as never },
+      data: { blocks: next.stored },
     });
     await deps.events.append({
       spaceId: actor.spaceId,
       threadId: bot.thread.id,
       botId: bot.id,
       type: "thread.message.updated",
-      payload: { messageId: message.id, role: "bot", blocks: nextBlocks },
+      payload: { messageId: message.id, role: "bot", blocks: next.blocks },
     });
     return;
   }

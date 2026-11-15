@@ -789,7 +789,9 @@ describeIntegration("run executor lifecycle", () => {
     );
     expect(claimed.map((item) => item.messageId)).toEqual([publicSend.messageId]);
     const history = await runAsSystem("background job run.continue", () =>
-      loadRunHistoryMessages(handles.prisma, seeded.run, 100, channel.channelId),
+      loadRunHistoryMessages(handles.prisma, seeded.run, 100, {
+        channelId: channel.channelId,
+      }),
     );
     expect(history.map((message) => message.id).sort()).toEqual(
       [source.id, publicSend.messageId].sort(),
@@ -829,12 +831,9 @@ describeIntegration("run executor lifecycle", () => {
     expect(
       (
         await runAsSystem("background job run.continue", () =>
-          loadRunHistoryMessages(
-            handles.prisma,
-            { ...seeded.run, id: "next-group-run" },
-            100,
-            channel.channelId,
-          ),
+          loadRunHistoryMessages(handles.prisma, { ...seeded.run, id: "next-group-run" }, 100, {
+            channelId: channel.channelId,
+          }),
         )
       )
         .map((message) => message.id)

@@ -1,9 +1,8 @@
 import type { AgentRunRequest, AgentRuntime, JobPublisher } from "@rakazo/adapter-kit";
 import { historyCompactJob } from "@rakazo/adapter-kit";
-import type { MessageBlock } from "@rakazo/contracts";
 import { blocksToAgentHistoryText, botMessageContext } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
-import { recordUsage, runAsTenant } from "@rakazo/db";
+import { recordUsage, runAsTenant, storedMessageBlocks } from "@rakazo/db";
 import { getLogger, unwrapJobPayload } from "@rakazo/logging";
 import { resolveDeploymentModel } from "./deployment-model.js";
 import {
@@ -251,6 +250,7 @@ export async function compactHistory(
 
   let fromSeqExclusive = previousCursor ?? NOTHING_COMPACTED;
   let batch: Array<{
+    id: string;
     seq: number;
     role: string;
     botId?: string | null;
@@ -268,6 +268,7 @@ export async function compactHistory(
       orderBy: { seq: "desc" },
       take: LEGACY_HISTORY_WINDOW_SIZE + 1,
       select: {
+        id: true,
         seq: true,
         role: true,
         botId: true,
@@ -303,6 +304,7 @@ export async function compactHistory(
       orderBy: { seq: "asc" },
       take: range.take,
       select: {
+        id: true,
         seq: true,
         role: true,
         botId: true,
@@ -324,7 +326,7 @@ export async function compactHistory(
     message.role === "bot"
       ? (message.botId ?? thread.botId!)
       : message.role === "user"
-        ? botMessageContext(message.blocks as MessageBlock[])?.fromBotId
+        ? botMessageContext(storedMessageBlocks(message))?.fromBotId
         : undefined;
   const [botNames, people] = await Promise.all([
     loadBotNames(deps.prisma, thread.spaceId, [
@@ -340,8 +342,7 @@ export async function compactHistory(
     return message.role === "user" ? personLineSpeaker(people, message) : message.role;
   };
   const transcriptParts = batch.map(
-    (message) =>
-      `${speaker(message)}: ${blocksToAgentHistoryText(message.blocks as MessageBlock[])}`,
+    (message) => `${speaker(message)}: ${blocksToAgentHistoryText(storedMessageBlocks(message))}`,
   );
   let transcript = transcriptParts.join("\n\n");
   if (transcript.length > MAX_TRANSCRIPT_CHARS) {

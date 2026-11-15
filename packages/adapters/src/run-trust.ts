@@ -7,7 +7,12 @@ import {
   siteAlwaysAllowed,
 } from "@rakazo/core";
 import { sitesInText, urlSite } from "@rakazo/core/egress";
-import { findAutoReviewPreference, listApprovalRules, storedBatchActions } from "@rakazo/db";
+import {
+  findAutoReviewPreference,
+  listApprovalRules,
+  storedBatchActions,
+  storedMessageBlocks,
+} from "@rakazo/db";
 import { boundDirectApprovalDetails, catalogApprovalDetails } from "./approval-effect.js";
 import type { ExecutorDeps } from "./executor-deps.js";
 import type { EffectiveModelRole } from "./model-roles.js";
@@ -62,9 +67,9 @@ export function createRunTrustLoaders(
     taskPrompt: string;
     ownerStartedRun: boolean;
     messagingChannelRun: boolean;
-    sourceMessage: { role: string; blocks: unknown } | null;
+    sourceMessage: { id: string; role: string; blocks: unknown } | null;
     /** The owner's own chat-app message that started a messaging run; absent for anyone else. */
-    ownerChatMessageBlocks?: unknown;
+    ownerChatMessageBlocks?: MessageBlock[];
     connectedPlugins: readonly { provider: string }[];
   },
 ) {
@@ -118,12 +123,12 @@ export function createRunTrustLoaders(
       // The executor passes chat-app blocks only for the owner's own message.
       const ownerBlocks =
         ownerStartedRun && !messagingChannelRun && sourceMessage?.role === "user"
-          ? sourceMessage.blocks
+          ? storedMessageBlocks(sourceMessage)
           : run.trigger === "messaging"
             ? ownerChatMessageBlocks
             : undefined;
       if (ownerBlocks) {
-        return (ownerBlocks as MessageBlock[])
+        return ownerBlocks
           .flatMap((block) => (block.kind === "text" ? [block.text] : []))
           .join("\n");
       }

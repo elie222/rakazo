@@ -4,7 +4,9 @@ import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   appendEventInTransaction,
   availableInSpace,
+  changeMessageBlocks,
   IsolationError,
+  storedMessageBlocks,
   withTransactionRetry,
 } from "@rakazo/db";
 import { requireBotThread } from "./bot-thread.js";
@@ -120,7 +122,7 @@ async function rewriteCards(
     });
     for (const message of messages) {
       if (message.botId && message.botId !== input.botId) continue;
-      const blocks = message.blocks as MessageBlock[];
+      const blocks = storedMessageBlocks(message);
       const matching = blocks.filter((block): block is ApprovalBlock =>
         isApproval(block, input.serverId),
       );
@@ -130,12 +132,13 @@ async function rewriteCards(
         else if (block.status === "connected") connected = true;
       }
       if (!matching.some(selectable)) continue;
-      const next = blocks.map((block) =>
+      const next = changeMessageBlocks(message, (block) =>
         isApproval(block, input.serverId) && selectable(block)
           ? { ...block, status: input.status }
           : block,
       );
-      await tx.message.update({ where: { id: message.id }, data: { blocks: next } });
+      if (!next) continue;
+      await tx.message.update({ where: { id: message.id }, data: { blocks: next.stored } });
       flipped += 1;
       const eventBotId = message.botId ?? thread.botId ?? input.botId;
       if (!eventBotId) continue;
@@ -144,7 +147,7 @@ async function rewriteCards(
         threadId: thread.id,
         botId: eventBotId,
         type: "thread.message.updated",
-        payload: { messageId: message.id, role: "bot", blocks: next },
+        payload: { messageId: message.id, role: "bot", blocks: next.blocks },
       });
       seqs.push({ threadId: thread.id, seq: event.seq });
     }
@@ -233,16 +236,13 @@ async function closeServerCards(
   });
   const seqs: ThreadSeq[] = [];
   for (const message of messages) {
-    const blocks = message.blocks as MessageBlock[];
-    if (!blocks.some((block) => isApproval(block, serverId) && block.status !== "dismissed")) {
-      continue;
-    }
-    const next = blocks.map((block) =>
+    const next = changeMessageBlocks(message, (block) =>
       isApproval(block, serverId) && block.status !== "dismissed"
         ? { ...block, status: "dismissed" as const }
         : block,
     );
-    await client.message.update({ where: { id: message.id }, data: { blocks: next } });
+    if (!next) continue;
+    await client.message.update({ where: { id: message.id }, data: { blocks: next.stored } });
     const eventBotId = message.botId ?? message.thread?.botId;
     if (!eventBotId) continue;
     const event = await appendEventInTransaction(client, {
@@ -250,7 +250,7 @@ async function closeServerCards(
       threadId: message.threadId,
       botId: eventBotId,
       type: "thread.message.updated",
-      payload: { messageId: message.id, role: "bot", blocks: next },
+      payload: { messageId: message.id, role: "bot", blocks: next.blocks },
     });
     seqs.push({ threadId: message.threadId, seq: event.seq });
   }

@@ -16,6 +16,8 @@ import {
   AVAILABILITY_SELECT,
   availableInSpace,
   isUniqueViolation,
+  JsonObject,
+  readJsonColumn,
   runAsSystemInTransaction,
   spaceAvailability,
 } from "@rakazo/db";
@@ -244,6 +246,22 @@ export function lockPluginInstalls(tx: Prisma.TransactionClient, actor: Actor) {
   return lockOwner(tx, actor.userId, "plugin");
 }
 
+/**
+ * An install's stored settings. To show them, a row that holds no object reads as none (with a
+ * warning). A change is planned from them and written back over them, so `"reject"` fails it.
+ */
+export function installConfig(
+  install: { id: string; config: unknown },
+  onMismatch: "reject" | { fallback: Record<string, never> } = { fallback: {} },
+): Record<string, unknown> {
+  return readJsonColumn(
+    JsonObject,
+    install.config,
+    { table: "capability_installs", column: "config", id: install.id },
+    onMismatch,
+  );
+}
+
 function installDto(row: {
   id: string;
   spaceId: string;
@@ -264,7 +282,7 @@ function installDto(row: {
     version: row.version,
     digest: row.digest,
     secretConfigured: false,
-    config: row.config as Record<string, unknown>,
+    config: installConfig(row),
     availability: spaceAvailability(row),
     createdAt: row.createdAt.toISOString(),
   };
@@ -384,7 +402,7 @@ export async function setPluginParts(
   if (!existing?.version || !existing.digest)
     throw new ORPCError("NOT_FOUND", { message: "Plugin is not installed" });
   if (!input.parts.length) return null;
-  const current = installedPluginParts(existing.config as Record<string, unknown>);
+  const current = installedPluginParts(installConfig(existing, "reject"));
   const adding = input.parts.filter((part) => !current.includes(part));
   const removing = current.filter((part) => !input.parts.includes(part));
   const plugin = adding.length
@@ -406,7 +424,8 @@ export async function setPluginParts(
           if (!install) throw new ORPCError("NOT_FOUND", { message: "Plugin is not installed" });
           const owned = { userId: actor.userId, installId: install.id };
           // The plan above was made from an unlocked read; another change since then invalidates it.
-          const locked = installedPluginParts(install.config as Record<string, unknown>);
+          const config = installConfig(install, "reject");
+          const locked = installedPluginParts(config);
           if (locked.length !== current.length || locked.some((part) => !current.includes(part)))
             throw new ORPCError("CONFLICT", { message: "Plugin changed. Reload and try again" });
           if (removing.includes("connector")) {
@@ -426,7 +445,7 @@ export async function setPluginParts(
             where: { id: install.id },
             data: {
               config: {
-                ...(install.config as Record<string, unknown>),
+                ...config,
                 // Re-read at the pinned commit, so the saved preview matches what is installed now.
                 ...(plugin ? pluginPreviewDto(plugin) : {}),
                 parts,

@@ -480,4 +480,23 @@ describe("plugin RPC boundary", () => {
     ).rejects.toMatchObject({ code: "CONFLICT" });
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
+  it("refuses to change parts when the stored settings are not an object, and writes nothing", async () => {
+    const { deps, prisma } = setup();
+    prisma.capabilityInstall.findFirst.mockResolvedValue({
+      id: "install-test",
+      kind: "plugin",
+      source,
+      version: sha,
+      digest: `sha256:${"0".repeat(64)}`,
+      config: ["skills"],
+    } as never);
+    await expect(
+      setPluginParts({ ...deps, removeServer: vi.fn() }, actor, {
+        id: "install-test",
+        parts: ["skills"],
+      }),
+    ).rejects.toMatchObject({ row: { table: "capability_installs", column: "config" } });
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(prisma.capabilityInstall.update).not.toHaveBeenCalled();
+  });
 });

@@ -6,11 +6,12 @@ import {
   isConversationalRun,
   STOPPED_HELPER_RESULT,
 } from "@rakazo/core";
-import type { Prisma } from "@rakazo/db";
 import {
   appendEventInTransaction,
   assertRunCanWriteHistory,
+  changeMessageBlocks,
   createThreadMessageInTransaction,
+  storedMessageBlocks,
   THREAD_LOCK_TRANSACTION_OPTIONS,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -210,7 +211,7 @@ export async function returnHelperOutcome(
       where: { id: run.sourceMessageId, threadId: source.threadId },
       select: { id: true, threadId: true, blocks: true },
     });
-    const blocks = Array.isArray(card?.blocks) ? (card.blocks as MessageBlock[]) : [];
+    const blocks = card ? storedMessageBlocks(card) : [];
     const helper = blocks.find((block): block is HelperBlock => block.kind === "subagent");
     // The chat was cleared since: nothing is left to settle or answer.
     if (!card || !helper) return null;
@@ -224,11 +225,10 @@ export async function returnHelperOutcome(
       progress: undefined,
       result,
     };
-    const nextBlocks = blocks.map((block) => (block === helper ? settled : block));
-    await tx.message.update({
-      where: { id: card.id },
-      data: { blocks: nextBlocks as Prisma.InputJsonValue },
-    });
+    const next = changeMessageBlocks(card, (block) => (block === helper ? settled : block));
+    if (!next) return null;
+    const nextBlocks = next.blocks;
+    await tx.message.update({ where: { id: card.id }, data: { blocks: next.stored } });
     const event = await appendEventInTransaction(tx, {
       spaceId: run.spaceId,
       threadId: card.threadId,

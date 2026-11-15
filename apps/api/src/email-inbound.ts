@@ -10,12 +10,13 @@ import {
   hasValidBearerToken,
   sanitizeMessagingLabel,
 } from "@rakazo/core";
-import type { ThreadEvents } from "@rakazo/db";
+import type { EmailAttachment, ThreadEvents } from "@rakazo/db";
 import {
   appendEventInTransaction,
   createThreadMessageInTransaction,
   isUniqueViolation,
   SpaceDeletionInProgressError,
+  storedEmailAttachments,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { Hono } from "hono";
@@ -258,10 +259,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const LIST_STORED_MAX = 100;
 
 /** A file of a saved email: kept as an artifact, or named only because it was refused. */
-export type InboxFile = { name: string } & (
-  | { artifactId: string; mimeType: string; size: number }
-  | { artifactId?: undefined; mimeType?: undefined; size?: undefined }
-);
+export type InboxFile = EmailAttachment;
 
 /** Save the message to the bot's inbox once, or find it saved; null when the inbox is full. */
 async function saveToInbox(
@@ -276,7 +274,7 @@ async function saveToInbox(
   const found = await deps.prisma.botEmailMessage.findUnique({ where, select });
   // A copy that did not name the bot is saved without its files; one that has earned them adds them.
   const saved = async (row: { id: string; attachments: unknown }, stored?: InboxFile[]) => {
-    const files = row.attachments as InboxFile[];
+    const files = storedEmailAttachments(row);
     if (!options.keepFiles || !files.length || files.some((file) => file.artifactId)) {
       return { id: row.id, files };
     }
