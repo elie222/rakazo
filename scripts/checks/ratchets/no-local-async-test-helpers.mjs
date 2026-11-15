@@ -26,6 +26,10 @@ const LOOP = /^([ \t]*)(?:(?:for|while) \([^\n]*\{|do \{)$/gm;
 const TIMER_SLEEP =
   /\bawait new Promise(?:<[^>]*>)?\(\s*\(?\s*\w+\s*\)?\s*=>\s*\{?\s*setTimeout\(\s*\w+\s*,\s*(?!0\s*\))/g;
 const LEAVES = /\b(?:return|break|throw)\b/;
+// `while (!ready)` sleeps until its own condition changes; `while (true)` needs a way out to poll.
+const CONDITIONED = /^[ \t]*while \((?!true\))/;
+const BRACELESS_POLL =
+  /^[ \t]*while \((?!true\))[^\n]*\)\s*await new Promise(?:<[^>]*>)?\(\s*\(?\s*\w+\s*\)?\s*=>\s*setTimeout\(/gm;
 
 /**
  * A promise whose resolvers are captured, a promise resolved by a timer that is already due, and
@@ -43,8 +47,10 @@ export function count(text) {
       text: text.slice(lineStart, lineEnd === -1 ? undefined : lineEnd).trim(),
     });
   }
+  for (const match of text.matchAll(BRACELESS_POLL))
+    hits.push({ line: lineOf(match.index), text: match[0].split("\n")[0].trim() });
   const sleeps = [...text.matchAll(TIMER_SLEEP)];
-  if (sleeps.length === 0) return hits;
+  if (sleeps.length === 0) return hits.sort((a, b) => a.line - b.line);
   const loops = [...text.matchAll(LOOP)].map((match) => {
     const start = match.index + match[0].length;
     // Formatted code closes a block at the first line indented no deeper than its opener.
@@ -55,7 +61,9 @@ export function count(text) {
   for (const sleep of sleeps) {
     // The innermost loop around the sleep is the one that polls.
     const loop = loops.findLast(({ start, end }) => start < sleep.index && sleep.index < end);
-    if (loop && LEAVES.test(text.slice(loop.start, loop.end))) polls.add(loop.match);
+    if (!loop) continue;
+    if (CONDITIONED.test(loop.match[0]) || LEAVES.test(text.slice(loop.start, loop.end)))
+      polls.add(loop.match);
   }
   for (const match of polls) hits.push({ line: lineOf(match.index), text: match[0].trim() });
   return hits.sort((a, b) => a.line - b.line);

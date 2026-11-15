@@ -96,6 +96,20 @@ do {
   ]);
 });
 
+test("counts a loop that sleeps until its own condition changes, braced or not", () => {
+  const text = `while (releases.length < 4) await new Promise((resolve) => setTimeout(resolve, 5));
+while (!settled) {
+  await new Promise((resolve) => setTimeout(resolve, 5));
+}
+while (true) {
+  await new Promise((resolve) => setTimeout(resolve, 5));
+}`;
+  assert.deepEqual(count(text), [
+    { line: 1, text: "while (releases.length < 4) await new Promise((resolve) => setTimeout(" },
+    { line: 2, text: "while (!settled) {" },
+  ]);
+});
+
 test("ignores a sleep outside a loop, a paced loop that never leaves early, and vi.waitFor", () => {
   const text = `await new Promise((resolve) => setTimeout(resolve, 75));
 for (const chunk of chunks) {
