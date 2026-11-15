@@ -33,7 +33,6 @@ vi.mock("./session", () => ({
   },
 }));
 
-const appState = vi.hoisted(() => ({ current: "active", listeners: new Set<() => void>() }));
 vi.mock("react-native", () => ({
   AppState: {
     get currentState() {
@@ -172,14 +171,9 @@ describe("useRosterSignals", () => {
   it("reads again when the app returns to the foreground", async () => {
     const runs = vi.fn();
     await act(async () => root.render(<Changes kind="runs" onChange={runs} />));
-    const background = async (state: string) =>
-      act(async () => {
-        appState.current = state;
-        for (const listener of appState.listeners) listener();
-      });
-    await background("background");
+    await act(async () => appState.set("background"));
     expect(runs).not.toHaveBeenCalled();
-    await background("active");
+    await act(async () => appState.set("active"));
     expect(runs).toHaveBeenCalledOnce();
   });
 
