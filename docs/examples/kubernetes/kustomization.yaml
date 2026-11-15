@@ -42,7 +42,12 @@ replacements:
     targets:
       - select:
           kind: NetworkPolicy
-          name: rakazo-(api|worker)
+          name: rakazo-api
+        fieldPaths:
+          - spec.egress.5.to.0.ipBlock.cidr
+      - select:
+          kind: NetworkPolicy
+          name: rakazo-worker
         fieldPaths:
           - spec.egress.5.to.0.ipBlock.cidr
   # Render the image boundary from the same setting as API/worker; no runtime
