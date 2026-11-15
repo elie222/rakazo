@@ -131,12 +131,15 @@ function quoteLegacyColonScalars(text: string): string {
   return text
     .split("\n")
     .map((line) => {
-      const match = /^([ \t]*(?:-[ \t]+)?[A-Za-z_][\w-]*:[ \t]+)(.*)$/.exec(line);
-      if (!match) return line;
-      const prefix = match[1]!;
-      const value = match[2]!;
+      const colon = line.indexOf(":");
+      if (colon < 0 || !/^[ \t]*(?:-[ \t]+)?[A-Za-z_][\w-]*$/.test(line.slice(0, colon)))
+        return line;
+      let start = colon + 1;
+      while (line[start] === " " || line[start] === "\t") start++;
+      if (start === colon + 1) return line;
+      const value = line.slice(start);
       if (/^["'{[|>!&*?]/.test(value) || !/:[ \t]/.test(value)) return line;
-      return `${prefix}${JSON.stringify(value)}`;
+      return `${line.slice(0, start)}${JSON.stringify(value)}`;
     })
     .join("\n");
 }

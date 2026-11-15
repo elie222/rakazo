@@ -284,6 +284,13 @@ description: Use when: the user asks for a status summary.
     });
   });
 
+  it("handles long scalar separators during legacy repair", () => {
+    const parsed = parseSkillMd(
+      `---\nname: Example\ndescription:${" ".repeat(90_000)}plain\nmetadata: [\n---\n`,
+    );
+    expect(parsed).toMatchObject({ error: expect.any(String) });
+  });
+
   it("rejects malformed YAML after many blank lines", () => {
     const parsed = parseSkillMd(`---\n${"\n".repeat(90_000)}invalid: [\n---\n`);
     expect(parsed).toMatchObject({ error: expect.any(String) });
