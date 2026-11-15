@@ -91,6 +91,23 @@ describe("Infisical lifecycle and REST", () => {
     await a.close();
     await b.close();
   });
+  it("says which refs name a remote entry that only a delete removes", async () => {
+    const encrypted = new EncryptedSecretStore("test-key");
+    const composed = new ComposedSecretStore(
+      new EncryptedSecretStore("test-key"),
+      new InfisicalSecretStore(infisicalFake().options),
+    );
+    await composed.start();
+    const remote = await composed.put("remote", secretTestContext);
+    const local = await composed.put("otp", secretTestContext, { ephemeral: true });
+    const inline = await encrypted.put("inline", secretTestContext);
+    expect(composed.isRemote(remote.ref)).toBe(true);
+    expect(composed.isRemote(local.ref)).toBe(false);
+    expect(composed.isRemote(inline.ref)).toBe(false);
+    expect(encrypted.isRemote(inline.ref)).toBe(false);
+    expect(new ComposedSecretStore(encrypted).isRemote(remote.ref)).toBe(false);
+    await composed.close();
+  });
   it("deduplicates login, reauthenticates proactively, retries 401 once and honours Retry-After on 429 and backs off 5xx", async () => {
     const fake = infisicalFake();
     let now = 0;

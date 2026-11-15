@@ -85,11 +85,12 @@ export function voiceErrorDetail(body: unknown): string {
   if (typeof record.detail === "string" && record.detail.trim()) return record.detail.trim();
   // Validation errors (422) list each problem as `{ loc, msg, type }`.
   if (Array.isArray(record.detail)) {
-    return record.detail
+    const joined = record.detail
       .map((item) => (item && typeof item === "object" ? (item as { msg?: unknown }).msg : item))
       .filter((msg): msg is string => typeof msg === "string" && !!msg.trim())
       .map((msg) => msg.trim())
       .join("; ");
+    if (joined) return joined;
   }
   if (
     record.detail &&
