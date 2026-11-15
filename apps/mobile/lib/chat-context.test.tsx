@@ -77,7 +77,7 @@ it("reads a nonselectable date heading", () => {
   expect(container.firstElementChild?.getAttribute("role")).toBe("header");
   expect(container.firstElementChild?.getAttribute("data-selectable")).toBe("false");
   // A timestamp separator is tertiary text.
-  expect(container.firstElementChild?.getAttribute("data-color")).toBe(lightTokens.faintForeground);
+  expect(container.firstElementChild?.getAttribute("data-color")).toBe(lightTokens.mutedForeground);
 });
 it("navigates to the authoritative reply target and hides subsequent lines", () => {
   const onJump = vi.fn();

@@ -2,6 +2,7 @@ import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import type { PageVisibility } from "@rakazo/contracts";
 import { accountDisplay } from "@rakazo/core";
+import { typeScale } from "@rakazo/ui-tokens";
 import * as Clipboard from "expo-clipboard";
 import { useLocalSearchParams } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
@@ -235,16 +236,9 @@ function Avatar({ owner }: { owner: ReturnType<typeof accountDisplay> }) {
 
 const styles = StyleSheet.create({
   center: { flex: 1, alignItems: "center", justifyContent: "center", padding: 24 },
-  content: { paddingTop: 16, paddingBottom: 24 },
-  heading: {
-    paddingHorizontal: 20,
-    paddingBottom: 4,
-    fontSize: 16,
-    lineHeight: 22,
-    fontWeight: "500",
-    letterSpacing: -0.44,
-  },
-  error: { paddingHorizontal: 20, fontSize: 12, lineHeight: 16 },
+  content: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 32, gap: 20 },
+  heading: { paddingHorizontal: 18, ...typeScale.headline },
+  error: { paddingHorizontal: 18, ...typeScale.caption },
   avatar: {
     width: 32,
     height: 32,

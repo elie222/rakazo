@@ -125,7 +125,7 @@ export default function BotProfile() {
             color={bot.color}
             avatarSet={bot.avatarSet}
             identity={bot.id}
-            size={96}
+            size={112}
             status={bot.status}
           />
         ) : (
@@ -222,12 +222,12 @@ export default function BotProfile() {
 function createStyles() {
   return StyleSheet.create({
     screen: { flex: 1, backgroundColor: native.groupedPage },
-    content: { flexGrow: 1, paddingHorizontal: 16, paddingTop: 16, paddingBottom: 32, gap: 28 },
+    content: { flexGrow: 1, paddingHorizontal: 16, paddingTop: 4, paddingBottom: 32, gap: 20 },
     compactContent: { paddingHorizontal: 8 },
-    identity: { alignItems: "center", gap: 8 },
+    identity: { alignItems: "center", gap: 10 },
     edit: { alignSelf: "center", marginTop: 4 },
-    avatarSpace: { width: 96, height: 96 },
-    name: { color: native.label, fontSize: 22, fontWeight: "600", textAlign: "center" },
+    avatarSpace: { width: 112, height: 112 },
+    name: { color: native.label, fontSize: 26, lineHeight: 32, textAlign: "center" },
   });
 }
 

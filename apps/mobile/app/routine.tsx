@@ -88,7 +88,7 @@ export default function RoutineDetail() {
   return (
     <ScrollView
       style={[{ flex: 1, backgroundColor: native.groupedPage }, sideInsets]}
-      contentContainerStyle={{ padding: 24, gap: 24 }}
+      contentContainerStyle={{ paddingHorizontal: 20, paddingVertical: 24, gap: 24 }}
       contentInsetAdjustmentBehavior="automatic"
       automaticallyAdjustKeyboardInsets={!rootAvoidsKeyboard}
       keyboardShouldPersistTaps="handled"
@@ -225,19 +225,21 @@ function RoutineView({
           }
         />
       </SettingsGroup>
-      <View style={{ gap: 7 }}>
+      <View style={{ gap: 8 }}>
         <SettingsLabel>{t`Instruction`}</SettingsLabel>
         <Text
           selectable
           style={{
             color: tokens.foreground,
             fontSize: 17,
-            lineHeight: 24,
-            borderRadius: 16,
+            lineHeight: 25,
+            borderRadius: 22,
             borderCurve: "continuous",
+            borderWidth: 1,
+            borderColor: tokens.glassStroke,
             overflow: "hidden",
             backgroundColor: native.groupedCell,
-            padding: 16,
+            padding: 20,
           }}
         >
           {routine.prompt}
@@ -422,7 +424,6 @@ function RoutineEditor({
               disabled={!canSave}
               busy={saving}
               onPress={() => void save()}
-              style={{ borderRadius: 24 }}
             />
           ),
           ...(iosAtLeast(26)
@@ -467,7 +468,7 @@ function RoutineEditor({
           onChangeText={(name) => update({ name })}
         />
       </SettingsGroup>
-      <View style={{ gap: 7 }}>
+      <View style={{ gap: 8 }}>
         <SettingsLabel>{t`Instruction`}</SettingsLabel>
         <GrowingTextInput
           label={t`Instruction`}
@@ -475,6 +476,7 @@ function RoutineEditor({
           onChangeText={(prompt) => update({ prompt })}
           backgroundColor={native.groupedCell}
           fontSize={17}
+          inset={20}
         />
       </View>
       {/* A one-shot's schedule is fixed, but web triggers on it can still be removed. */}

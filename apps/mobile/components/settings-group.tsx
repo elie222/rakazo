@@ -50,7 +50,6 @@ export function SettingsGroup({
   children: ReactNode;
 }) {
   const styles = useThemedStyles(createSettingsStyles);
-  const stacked = useStackedSettings();
   const rows = Children.toArray(children).filter(isValidElement);
   if (rows.length === 0) return null;
   return (
@@ -59,9 +58,7 @@ export function SettingsGroup({
       <View style={styles.card}>
         {rows.map((row, index) => (
           <Fragment key={row.key}>
-            {index > 0 ? (
-              <View style={[styles.separator, stacked && styles.compactSeparator]} />
-            ) : null}
+            {index > 0 ? <View style={styles.separator} /> : null}
             {row}
           </Fragment>
         ))}
@@ -79,7 +76,7 @@ export function SettingsInputRow(props: Omit<TextInputProps, "style">) {
     <TextInput
       placeholderTextColor={native.tertiaryLabel}
       {...props}
-      style={[styles.row, styles.title, stacked && styles.compactRow]}
+      style={[styles.row, styles.inputText, stacked && styles.compactRow]}
     />
   );
 }
@@ -226,20 +223,22 @@ export function SettingsSwitch({
 function createSettingsStyles() {
   const tokens = mobileTokens();
   return StyleSheet.create({
-    group: { gap: 7 },
+    group: { gap: 8 },
     groupLabel: {
       color: native.secondaryLabel,
-      ...typeScale.caption,
-      paddingStart: 16,
+      ...typeScale.secondary,
+      paddingStart: 18,
     },
     footer: {
       color: native.secondaryLabel,
       ...typeScale.caption,
-      paddingHorizontal: 16,
+      paddingHorizontal: 18,
     },
     card: {
-      borderRadius: 16,
+      borderRadius: 20,
       borderCurve: "continuous",
+      borderWidth: 1,
+      borderColor: tokens.glassStroke,
       overflow: "hidden",
       backgroundColor: native.groupedCell,
     },
@@ -247,28 +246,29 @@ function createSettingsStyles() {
       // iOS draws sheets scaled down slightly, which makes a one-pixel line fall between
       // pixels and vanish at some offsets. Two pixels always leave at least one visible.
       height: StyleSheet.hairlineWidth * 2,
-      marginStart: 16,
       backgroundColor: native.separator,
     },
     row: {
-      minHeight: 52,
-      paddingHorizontal: 16,
-      paddingVertical: 12,
+      minHeight: 60,
+      paddingStart: 18,
+      paddingEnd: 16,
+      paddingVertical: 14,
       flexDirection: "row",
       alignItems: "center",
-      gap: 12,
+      gap: 14,
     },
     compactLabel: { paddingStart: 12 },
-    compactSeparator: { marginStart: 12 },
     compactRow: { paddingHorizontal: 12, gap: 8 },
     titleColumn: { flex: 1, flexShrink: 1, gap: 2 },
     stackedSwitch: { alignSelf: "flex-start", marginTop: 6 },
-    title: { color: native.label, fontSize: 17 },
-    prominent: { fontSize: 20, fontWeight: "600" },
-    detail: { color: native.secondaryLabel, ...typeScale.caption },
+    title: { color: native.label, fontSize: 17, lineHeight: 24 },
+    // A single-line field centers its text itself; a line height would push it off center.
+    inputText: { color: native.label, fontSize: 17 },
+    prominent: { ...typeScale.title },
+    detail: { color: native.secondaryLabel, fontSize: 14, lineHeight: 20 },
     destructive: { color: tokens.destructive },
     tinted: { color: tokens.link },
-    value: { flexShrink: 1, color: native.secondaryLabel, fontSize: 17 },
+    value: { flexShrink: 1, color: native.secondaryLabel, ...typeScale.secondary },
     // A long value truncates instead of pushing the title out of the row.
     inlineValue: { maxWidth: "60%" },
     pressed: { backgroundColor: native.fillPressed },

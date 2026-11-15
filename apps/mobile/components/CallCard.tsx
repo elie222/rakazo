@@ -132,14 +132,7 @@ export function CallCard() {
     <GlassSurface
       shape="roundedRectangle"
       style={[styles.card, { marginBottom: playback.status === "idle" ? insets.bottom + 8 : 0 }]}
-      fallbackStyle={[
-        styles.cardFallback,
-        {
-          backgroundColor: tokens.glassFill,
-          borderColor: tokens.glassStroke,
-          shadowColor: tokens.foreground,
-        },
-      ]}
+      fallbackStyle={[styles.cardFallback, { shadowColor: tokens.foreground }]}
     >
       {Platform.OS !== "android" || !serviceStarted ? <KeepCallAwake /> : null}
       <View style={styles.row}>
@@ -253,15 +246,11 @@ function RoundButton({
       accessibilityLabel={label}
       ios={ios}
       android={android}
-      size={44}
       color={color}
       tint={background}
       selected={selected}
       onPress={onPress}
-      fallbackStyle={[
-        styles.buttonFallback,
-        { borderColor: border, backgroundColor: background ?? "transparent" },
-      ]}
+      fallbackStyle={{ borderColor: border, backgroundColor: background ?? "transparent" }}
     />
   );
 }
@@ -320,8 +309,6 @@ const styles = StyleSheet.create({
     padding: 12,
   },
   cardFallback: {
-    borderRadius: 18,
-    borderWidth: StyleSheet.hairlineWidth,
     shadowOpacity: 0.18,
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 4 },
@@ -345,7 +332,6 @@ const styles = StyleSheet.create({
   },
   initialText: { fontSize: 13, fontWeight: "600" },
   actions: { flexDirection: "row", justifyContent: "center", gap: 12, marginTop: 12 },
-  buttonFallback: { borderWidth: StyleSheet.hairlineWidth },
-  transcript: { marginTop: 12, paddingTop: 10, borderTopWidth: StyleSheet.hairlineWidth, gap: 5 },
+  transcript: { marginTop: 12, paddingTop: 10, borderTopWidth: 1, gap: 5 },
   line: { ...typeScale.secondary, writingDirection: "auto" },
 });

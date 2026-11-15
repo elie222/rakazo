@@ -28,8 +28,15 @@ vi.mock("react-native", () => ({
       { type: "button", disabled, "aria-label": accessibilityLabel, onClick: onPress },
       children,
     ),
+  Platform: { OS: "android" },
+  Text: ({ children }: { children?: ReactNode }) => createElement("em", null, children),
+  View: ({ children }: { children?: ReactNode }) => createElement("div", null, children),
 }));
-vi.mock("expo-router", () => ({ useRouter: () => ({ push }) }));
+vi.mock("expo-router", () => ({
+  useRouter: () => ({ push }),
+  useNavigation: () => ({ canGoBack: () => true }),
+}));
+vi.mock("./split-view", () => ({ useSplitView: () => ({ split: false, contentWidth: 390 }) }));
 vi.mock("../components/glass-surface", () => ({
   GlassSurface: ({ children }: { children?: ReactNode }) => createElement("div", null, children),
 }));
@@ -39,10 +46,16 @@ vi.mock("../components/chat-title-avatar", () => ({
     createElement("i", { "data-color": bot?.color ?? "slot", "data-status": status }),
 }));
 vi.mock("../components/group-seats", () => ({
-  GroupSeats: ({ members, size }: { members: { botId: string }[]; size: number }) =>
+  GroupSeats: ({
+    seats,
+  }: {
+    seats: ({ kind: "member"; member: { botId: string } } | { kind: "group" })[];
+  }) =>
     createElement("s", {
-      "data-members": members.map((member) => member.botId).join(","),
-      "data-size": size,
+      "data-members": seats
+        .flatMap((seat) => (seat.kind === "member" ? [seat.member.botId] : []))
+        .join(","),
+      "data-mark": String(seats.some((seat) => seat.kind === "group")),
     }),
 }));
 vi.mock("../components/chat-title-label", () => ({
@@ -193,9 +206,8 @@ it("seats a group's members from the inbox on the first frame, then from the ope
   );
   render({ groupId: "group-1", name: "Team" });
   expect(seats()?.getAttribute("data-members")).toBe("b2,b1");
-  expect(seats()?.getAttribute("data-size")).toBe("28");
   // Seats sit before the name, in place of a one-to-one chat's avatar.
-  expect(seats()?.nextElementSibling).toBe(name());
+  expect(seats()!.compareDocumentPosition(name()!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   let clear = () => {};
   act(() => {
     clear = publishChatTitle("thread-1", {
@@ -232,4 +244,63 @@ it("shows a group identity even with no roster, and never on a one-to-one chat",
   act(() => setSearchInbox(inbox([helper], [{ id: "group-1", members: [member("b1")] }])));
   render({ botId: "bot-1" });
   expect(seats()).toBeNull();
+});
+
+const statusLine = () => container.querySelector("b + div")?.textContent ?? null;
+const count = () =>
+  Array.from(container.querySelectorAll("em"))
+    .map((node) => node.textContent)
+    .find((text) => text?.startsWith("+")) ?? null;
+const publishMembers = (members: { botId: string; name: string; status?: string }[]) =>
+  act(() => {
+    publishChatTitle("thread-1", {
+      bot: undefined,
+      status: undefined,
+      composing: false,
+      name: "Release crew",
+      members: members.map((one) => ({ ...one, color: "#2A92FE::shape_2" })),
+      opens: { pathname: "/group-settings", params: { groupId: "group-1" } },
+    });
+  });
+
+it("stacks three of a bigger group and counts the rest beside the stack", () => {
+  render({ groupId: "group-1", name: "Release crew" });
+  publishMembers(["a", "b", "c", "d", "e"].map((id) => ({ botId: id, name: id })));
+  expect(seats()?.getAttribute("data-members")).toBe("a,b,c");
+  expect(count()).toBe("+2");
+  expect(statusLine()).toBeNull();
+});
+
+it("shows no count for a group of three or fewer", () => {
+  render({ groupId: "group-1", name: "Release crew" });
+  publishMembers(["a", "b", "c"].map((id) => ({ botId: id, name: id })));
+  expect(seats()?.getAttribute("data-members")).toBe("a,b,c");
+  expect(count()).toBeNull();
+});
+
+it("leads with the bot that needs the user and says so under the name", () => {
+  render({ groupId: "group-1", name: "Operations" });
+  publishMembers([
+    { botId: "a", name: "Chief" },
+    { botId: "b", name: "QA", status: "running" },
+    { botId: "c", name: "Expenses" },
+    { botId: "d", name: "Inbox", status: "waiting_input" },
+  ]);
+  expect(seats()?.getAttribute("data-members")).toBe("d,b,a");
+  expect(statusLine()).toBe("Inbox needs you");
+});
+
+it("names a working bot only while it works", () => {
+  render({ groupId: "group-1", name: "Release crew" });
+  publishMembers([
+    { botId: "a", name: "Coding" },
+    { botId: "b", name: "QA", status: "running" },
+  ]);
+  expect(seats()?.getAttribute("data-members")).toBe("b,a");
+  expect(statusLine()).toBe("QA is working");
+  publishMembers([
+    { botId: "a", name: "Coding" },
+    { botId: "b", name: "QA", status: "completed" },
+  ]);
+  expect(statusLine()).toBeNull();
 });

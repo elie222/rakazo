@@ -12,6 +12,7 @@ import {
   screenProbeUrl,
   waitForScreenPage,
 } from "@rakazo/core";
+import { typeScale } from "@rakazo/ui-tokens";
 import { useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -64,7 +65,6 @@ import {
 import { tabletopLayout } from "../lib/fold-layout";
 import { useFoldRegions } from "../lib/fold-regions";
 import { useMobileTokens } from "../lib/native";
-import { iosAtLeast } from "../lib/native-controls";
 import { useSideInsets } from "../lib/side-insets";
 import { stacksAtTextScale } from "../lib/text-scale";
 import { useComputerBoot } from "../lib/use-computer-boot";
@@ -469,7 +469,7 @@ export default function Computer() {
     // native keyboard bar, must never just dismiss the computer keyboard; only the bar closes it.
     <ScrollView
       style={[{ flex: 1, backgroundColor: tokens.background }, sideInsets]}
-      contentContainerStyle={{ padding: 24 }}
+      contentContainerStyle={{ padding: 16 }}
       contentInsetAdjustmentBehavior="automatic"
       keyboardShouldPersistTaps="always"
     >
@@ -517,7 +517,9 @@ export default function Computer() {
         style={{
           height: 360,
           minHeight: 220,
-          borderRadius: 14,
+          borderRadius: 22,
+          borderWidth: 1,
+          borderColor: tokens.border,
           overflow: "hidden",
           backgroundColor: tokens.card,
         }}
@@ -650,10 +652,8 @@ export default function Computer() {
                 alignItems: "center",
                 justifyContent: "space-between",
                 gap: 12,
-                borderBottomWidth: iosAtLeast(26) ? 0 : 1,
-                borderBottomColor: tokens.border,
-                paddingHorizontal: 14,
-                paddingVertical: 4,
+                paddingHorizontal: 16,
+                paddingVertical: 8,
               }}
             >
               <View
@@ -670,8 +670,7 @@ export default function Computer() {
                   style={{
                     flexShrink: 1,
                     color: tokens.foreground,
-                    fontSize: 15.5,
-                    fontWeight: "500",
+                    ...typeScale.cardTitle,
                   }}
                 >
                   {label}
@@ -701,8 +700,6 @@ export default function Computer() {
                   onPress={() => setComputerOpen(false)}
                   ios="xmark"
                   android="close"
-                  size={36}
-                  iconSize={16}
                 />
               </View>
             </SafeAreaView>
@@ -896,5 +893,5 @@ function ScreenWebView({
 }
 
 const styles = StyleSheet.create({
-  sharedBrowser: { fontSize: 12, paddingHorizontal: 14, paddingBottom: 4 },
+  sharedBrowser: { ...typeScale.footnote, paddingHorizontal: 16, paddingBottom: 4 },
 });

@@ -18,7 +18,7 @@ import { cancelHeaderOptions } from "../components/sheet-header";
 import { rpc } from "../lib/api";
 import { askForModelBeforeFirstBot, createInboxBot } from "../lib/create-inbox-bot";
 import { openChatFromInbox } from "../lib/inbox-changes";
-import { native, useMobileTokens } from "../lib/native";
+import { useMobileTokens } from "../lib/native";
 import { useSideInsets } from "../lib/side-insets";
 import { errorText } from "../lib/user-error";
 
@@ -113,11 +113,11 @@ export default function NewBot() {
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
         style={[{ flex: 1, backgroundColor: tokens.background }, sideInsets]}
-        contentContainerStyle={{ padding: 24 }}
+        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24 }}
         keyboardShouldPersistTaps="handled"
       >
-        <View style={{ alignItems: "center", marginTop: 8, marginBottom: 24 }}>
-          <BotAvatar color={look.color} identity={identity} avatarSet={avatarSet} size={96} />
+        <View style={{ height: 200, alignItems: "center", justifyContent: "center" }}>
+          <BotAvatar color={look.color} identity={identity} avatarSet={avatarSet} size={160} />
         </View>
         <TextInput
           autoFocus
@@ -133,14 +133,16 @@ export default function NewBot() {
           returnKeyType="done"
           onSubmitEditing={() => void create()}
           style={{
-            height: 56,
-            borderRadius: 11,
-            backgroundColor: native.fill,
+            height: 64,
+            borderRadius: 22,
+            borderCurve: "continuous",
+            borderWidth: 1,
+            borderColor: tokens.border,
+            backgroundColor: tokens.card,
             color: tokens.foreground,
             fontSize: 22,
-            fontWeight: "600",
             textAlign: "center",
-            paddingHorizontal: 14,
+            paddingHorizontal: 16,
           }}
         />
         <View style={{ marginTop: 24 }}>
@@ -161,7 +163,7 @@ export default function NewBot() {
           label={pending ? t`Creating…` : t`Create`}
           disabled={!trimmed || pending}
           onPress={() => void create()}
-          style={{ marginTop: 28, borderRadius: 28 }}
+          style={{ marginTop: 32 }}
         />
       </ScrollView>
     </>

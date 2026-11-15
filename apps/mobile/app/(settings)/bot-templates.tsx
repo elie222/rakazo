@@ -82,6 +82,6 @@ function createStyles() {
     screen: { flex: 1, backgroundColor: native.page },
     content: { padding: 16, gap: 14 },
     list: { gap: 8 },
-    error: { color: native.secondaryLabel, fontSize: 14 },
+    error: { color: native.secondaryLabel, fontSize: 16, lineHeight: 22 },
   });
 }

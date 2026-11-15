@@ -1,6 +1,7 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import { GROUP_MEMBER_MAX, GROUP_MEMBER_MIN } from "@rakazo/contracts";
+import { typeScale } from "@rakazo/ui-tokens";
 import { useState } from "react";
 import { AccessibilityInfo, Pressable, Text, TextInput, View } from "react-native";
 import type { MobileBot } from "../lib/mobile-types";
@@ -36,9 +37,14 @@ export function BotChipPicker({
           flexWrap: "wrap",
           alignItems: "center",
           gap: 8,
-          padding: 12,
-          borderRadius: 11,
-          backgroundColor: native.fill,
+          minHeight: 56,
+          paddingVertical: 10,
+          paddingHorizontal: 18,
+          borderRadius: 28,
+          borderCurve: "continuous",
+          borderWidth: 1,
+          borderColor: tokens.border,
+          backgroundColor: tokens.card,
         }}
       >
         <Text style={{ color: tokens.mutedForeground, fontSize: 16 }}>{t`To:`}</Text>
@@ -54,8 +60,10 @@ export function BotChipPicker({
                 flexDirection: "row",
                 alignItems: "center",
                 gap: 6,
-                padding: 5,
-                borderRadius: 16,
+                paddingVertical: 6,
+                paddingStart: 6,
+                paddingEnd: 10,
+                borderRadius: 999,
                 backgroundColor: native.fillPressed,
                 opacity: pressed ? 0.6 : 1,
                 maxWidth: "100%",
@@ -113,8 +121,9 @@ export function BotChipPicker({
             style={({ pressed }) => ({
               flexDirection: "row",
               alignItems: "center",
-              gap: 12,
-              paddingVertical: 12,
+              gap: 14,
+              minHeight: 60,
+              paddingHorizontal: 4,
               opacity: pressed ? 0.6 : 1,
             })}
           >
@@ -122,10 +131,19 @@ export function BotChipPicker({
               color={bot.color}
               avatarSet={bot.avatarSet}
               identity={bot.id}
-              size={36}
+              size={40}
               status={bot.status}
             />
-            <Text style={{ color: tokens.foreground, fontSize: 16, flex: 1 }}>{bot.name}</Text>
+            <Text
+              style={{
+                color: tokens.foreground,
+                fontSize: typeScale.cardTitle.fontSize,
+                lineHeight: typeScale.cardTitle.lineHeight,
+                flex: 1,
+              }}
+            >
+              {bot.name}
+            </Text>
           </Pressable>
         ))}
       </View>

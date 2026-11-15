@@ -1,12 +1,16 @@
-import { typeScale } from "@rakazo/ui-tokens";
+import { fontWeight, typeScale } from "@rakazo/ui-tokens";
 import { StyleSheet } from "react-native";
 import { mobileTokens } from "../lib/appearance";
 import { native } from "../lib/native";
 
-export const INBOX_ROW = { padding: 16, gap: 12, avatarSize: 62 };
+export const INBOX_ROW = { padding: 24, gap: 16, avatarSize: 52 };
 export const COMPACT_INBOX_ROW = { padding: 12, gap: 10 };
-// Drops the Android create menu below the header pill; the trigger's negative margin keeps the layout.
+// Drops the Android create menu below the header circle; the trigger's negative margin keeps the layout.
 export const CREATE_MENU_GAP = 6;
+/** The header's circle buttons. */
+export const HEADER_CIRCLE = 48;
+/** The bottom bar's circle and search field, and the space around them. */
+export const BOTTOM_BAR = { control: 56, top: 12, minBottom: 16 };
 
 export function createHomeStyles() {
   const tokens = mobileTokens();
@@ -28,52 +32,67 @@ export function createHomeStyles() {
       flexDirection: "row",
       alignItems: "center",
       justifyContent: "space-between",
+      gap: 8,
       paddingHorizontal: 16,
-      paddingTop: 8,
-      paddingBottom: 10,
-    },
-    headerActions: {
-      flexDirection: "row",
-      alignItems: "center",
-      padding: 2,
+      paddingTop: 12,
+      paddingBottom: 8,
     },
     headerCircle: {
-      width: 44,
-      height: 44,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    // Where Liquid Glass is unavailable.
-    headerFill: {
-      borderRadius: 22,
-      backgroundColor: native.fillPressed,
-    },
-    headerButton: {
-      width: 40,
-      height: 40,
-      borderRadius: 20,
+      width: HEADER_CIRCLE,
+      height: HEADER_CIRCLE,
+      borderRadius: HEADER_CIRCLE / 2,
       alignItems: "center",
       justifyContent: "center",
       overflow: "hidden",
     },
+    circleButton: {
+      flex: 1,
+      alignSelf: "stretch",
+      alignItems: "center",
+      justifyContent: "center",
+      borderRadius: 999,
+      overflow: "hidden",
+    },
     createMenuAnchor: {
-      height: 40 + CREATE_MENU_GAP,
+      height: HEADER_CIRCLE + CREATE_MENU_GAP,
       paddingBottom: CREATE_MENU_GAP,
-    },
-    headerButtonActive: {
-      backgroundColor: native.fill,
-    },
-    headerButtonAccent: {
-      backgroundColor: tokens.primary,
     },
     profileInitials: {
       color: native.label,
-      fontSize: 15,
-      fontWeight: "600",
+      fontSize: 16,
+      fontWeight: fontWeight.medium,
+    },
+    bottomBar: {
+      position: "absolute",
+      left: 0,
+      right: 0,
+      bottom: 0,
+      flexDirection: "row",
+      gap: 10,
+      paddingTop: BOTTOM_BAR.top,
+    },
+    searchField: {
+      flex: 1,
+      height: BOTTOM_BAR.control,
+    },
+    searchPressable: {
+      flex: 1,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 12,
+      paddingHorizontal: 20,
+      borderRadius: 999,
+      overflow: "hidden",
+    },
+    searchPlaceholder: {
+      flex: 1,
+      color: native.secondaryLabel,
+      fontSize: 18,
+      lineHeight: 24,
     },
     error: {
       color: native.secondaryLabel,
-      paddingHorizontal: 20,
+      paddingHorizontal: INBOX_ROW.padding,
       paddingBottom: 8,
     },
     listArea: {
@@ -85,48 +104,52 @@ export function createHomeStyles() {
     },
     empty: {
       color: native.secondaryLabel,
-      fontSize: 16,
-      paddingHorizontal: 20,
+      ...typeScale.secondary,
+      paddingHorizontal: INBOX_ROW.padding,
       paddingTop: 28,
     },
     row: {
       flexDirection: "row",
       alignItems: "center",
       paddingHorizontal: INBOX_ROW.padding,
-      paddingVertical: 14,
+      paddingVertical: 12,
       gap: INBOX_ROW.gap,
     },
     rowSelected: {
       marginHorizontal: 12,
-      paddingHorizontal: 4,
-      borderRadius: 12,
+      paddingHorizontal: INBOX_ROW.padding - 12,
+      borderRadius: 22,
       backgroundColor: native.fillPressed,
     },
     pinnedTiles: {
       flexDirection: "row",
       flexWrap: "wrap",
+      justifyContent: "center",
       paddingHorizontal: 8,
-      paddingTop: 4,
-      paddingBottom: 12,
+      paddingTop: 12,
+      paddingBottom: 20,
     },
     pinnedTile: {
       width: "33.33%",
       alignItems: "center",
       paddingVertical: 8,
       paddingHorizontal: 4,
-      borderRadius: 16,
-      gap: 4,
+      borderRadius: 22,
+      gap: 10,
+    },
+    pinnedLabel: {
+      maxWidth: "100%",
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
     },
     pinnedName: {
-      color: native.secondaryLabel,
-      fontSize: 13,
-      fontWeight: "500",
+      flexShrink: 1,
+      color: native.label,
+      ...typeScale.body,
+      lineHeight: 22,
       textAlign: "center",
       writingDirection: "auto",
-    },
-    pinnedUnread: {
-      color: native.label,
-      fontWeight: "700",
     },
     compactRow: {
       paddingHorizontal: COMPACT_INBOX_ROW.padding,
@@ -142,7 +165,7 @@ export function createHomeStyles() {
     },
     rowTop: {
       flexDirection: "row",
-      alignItems: "flex-start",
+      alignItems: "center",
       gap: 8,
     },
     titleRow: {
@@ -153,41 +176,45 @@ export function createHomeStyles() {
       alignItems: "center",
       gap: 6,
     },
-    rowMeta: {
+    rowBottom: {
       flexDirection: "row",
       alignItems: "center",
-      gap: 7,
+      gap: 8,
     },
     name: {
       flexShrink: 0,
       maxWidth: "100%",
       color: native.label,
       ...typeScale.cardTitle,
+      fontWeight: fontWeight.regular,
       writingDirection: "auto",
     },
+    unreadName: {
+      fontWeight: fontWeight.medium,
+    },
     time: {
-      color: native.tertiaryLabel,
+      color: native.secondaryLabel,
       ...typeScale.caption,
     },
     preview: {
+      flex: 1,
       color: native.secondaryLabel,
       ...typeScale.secondary,
       writingDirection: "auto",
     },
     unreadPreview: {
       color: native.label,
-      fontWeight: "600",
     },
     unreadDot: {
-      width: 8,
-      height: 8,
-      borderRadius: 4,
+      width: 10,
+      height: 10,
+      borderRadius: 5,
       backgroundColor: tokens.unread,
     },
     spaceHeading: {
       flexDirection: "row",
       alignItems: "center",
-      paddingHorizontal: 16,
+      paddingHorizontal: INBOX_ROW.padding,
       paddingTop: 8,
     },
     spaceSelect: {
@@ -197,8 +224,8 @@ export function createHomeStyles() {
     },
     spaceTitle: {
       color: native.label,
-      fontSize: 14,
-      fontWeight: "600",
+      ...typeScale.secondary,
+      fontWeight: fontWeight.medium,
       writingDirection: "auto",
     },
     spaceActions: {
@@ -209,7 +236,7 @@ export function createHomeStyles() {
     },
     recoveryAction: {
       minHeight: 44,
-      paddingHorizontal: 20,
+      paddingHorizontal: INBOX_ROW.padding,
       justifyContent: "center",
     },
     sectionHeadingRow: { flexDirection: "row", alignItems: "center", paddingRight: 16 },
@@ -220,47 +247,25 @@ export function createHomeStyles() {
       flexDirection: "row",
       alignItems: "center",
       gap: 6,
-      paddingHorizontal: 16,
-      paddingTop: 12,
-      paddingBottom: 4,
+      paddingHorizontal: INBOX_ROW.padding,
+      paddingTop: 10,
+      paddingBottom: 6,
     },
     archivedRow: { flex: 0, width: "100%" },
     sectionTitle: {
       flexShrink: 1,
       color: native.secondaryLabel,
-      ...typeScale.secondary,
+      ...typeScale.body,
+      lineHeight: 22,
     },
     sectionCount: {
       color: native.tertiaryLabel,
       ...typeScale.caption,
       fontVariant: ["tabular-nums"],
     },
-    sectionHeading: {
-      color: native.secondaryLabel,
-      ...typeScale.secondary,
-      paddingHorizontal: 16,
-      paddingTop: 12,
-      paddingBottom: 4,
-    },
     activitySection: {
       marginBottom: 4,
       paddingBottom: 4,
-    },
-    activityGap: {
-      paddingTop: 16,
-    },
-    groupAvatar: {
-      width: 48,
-      height: 48,
-      borderRadius: 24,
-      backgroundColor: native.fill,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    groupAvatarLabel: {
-      color: native.secondaryLabel,
-      fontSize: 16,
-      fontWeight: "600",
     },
   });
 }

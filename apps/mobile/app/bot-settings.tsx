@@ -28,6 +28,7 @@ import { BotContextCards } from "../components/bot-context-cards";
 import { BotLookPicker } from "../components/bot-look-picker";
 import { useComputerMaintenanceRows } from "../components/computer-maintenance-actions";
 import { ComputerModePicker } from "../components/computer-mode-picker";
+import { GlassSurface } from "../components/glass-surface";
 import { glassHeaderOptions } from "../components/glass-title";
 import { GrowingTextInput } from "../components/growing-text-input";
 import type { MenuPickerChoice } from "../components/menu-picker";
@@ -530,7 +531,7 @@ export default function BotSettingsScreen() {
       <ScrollView
         ref={scrollRef}
         style={[{ flex: 1, backgroundColor: tokens.background }, sideInsets]}
-        contentContainerStyle={{ padding: 24 }}
+        contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 24 }}
         automaticallyAdjustKeyboardInsets={!rootAvoidsKeyboard}
         contentInsetAdjustmentBehavior="automatic"
         keyboardShouldPersistTaps="handled"
@@ -548,21 +549,23 @@ export default function BotSettingsScreen() {
                 color={color}
                 avatarSet={avatarSet}
                 identity={bot.id}
-                size={64}
+                size={112}
                 status={bot.status}
               />
-              <View
+              <GlassSurface
+                shape="circle"
                 style={{
                   position: "absolute",
                   right: 0,
                   bottom: 0,
-                  padding: 4,
-                  borderRadius: 12,
-                  backgroundColor: tokens.card,
+                  width: 32,
+                  height: 32,
+                  alignItems: "center",
+                  justifyContent: "center",
                 }}
               >
-                <NativeSymbol ios="pencil" android="pencil" size={12} color={tokens.foreground} />
-              </View>
+                <NativeSymbol ios="pencil" android="pencil" size={16} color={tokens.foreground} />
+              </GlassSurface>
             </Pressable>
           </View>
         ) : null}
@@ -601,7 +604,7 @@ export default function BotSettingsScreen() {
             justifyContent: "space-between",
           }}
         >
-          <Text style={{ color: native.secondaryLabel, ...typeScale.caption, paddingStart: 16 }}>
+          <Text style={{ color: tokens.mutedForeground, ...typeScale.secondary, paddingStart: 20 }}>
             {t`Advanced`}
           </Text>
           <Chevron expanded={advancedOpen} />
@@ -700,7 +703,7 @@ export default function BotSettingsScreen() {
                 value={replyMode}
               />
             </SettingsGroup>
-            <View style={{ gap: 7 }}>
+            <View style={{ gap: 8 }}>
               <View
                 style={{
                   flexDirection: "row",
@@ -854,7 +857,7 @@ export default function BotSettingsScreen() {
           onRequestClose={() => setAvatarOpen(false)}
         >
           <ScrollView
-            contentContainerStyle={{ padding: 24, gap: 16 }}
+            contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 24, gap: 24 }}
             style={{ backgroundColor: tokens.background }}
           >
             <NativeActionButton label={t`Done`} onPress={() => setAvatarOpen(false)} />

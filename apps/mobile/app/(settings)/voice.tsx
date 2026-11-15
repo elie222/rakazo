@@ -7,6 +7,7 @@ import {
   voiceConnectionForm,
 } from "@rakazo/contracts";
 import { fetchFresh, writeSaved } from "@rakazo/core/query";
+import { typeScale } from "@rakazo/ui-tokens";
 import { isCancelledError } from "@tanstack/react-query";
 import { useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useCallback, useMemo, useRef, useState } from "react";
@@ -805,31 +806,47 @@ function createVoiceStyles() {
   const tokens = mobileTokens();
   return StyleSheet.create({
     screen: { flex: 1, backgroundColor: native.page },
-    content: { padding: 20, gap: 10 },
+    content: { paddingHorizontal: 20, paddingVertical: 16, gap: 12 },
     error: { color: tokens.destructive, marginBottom: 8 },
-    group: { borderRadius: 14, backgroundColor: native.fill, overflow: "hidden" },
+    group: {
+      borderRadius: 22,
+      borderCurve: "continuous",
+      backgroundColor: tokens.card,
+      borderWidth: 1,
+      borderColor: tokens.glassStroke,
+      overflow: "hidden",
+    },
     groupRow: {
-      minHeight: 52,
-      paddingHorizontal: 16,
-      paddingVertical: 10,
+      minHeight: 60,
+      paddingHorizontal: 20,
+      paddingVertical: 12,
       flexDirection: "row",
       alignItems: "center",
-      gap: 12,
+      gap: 14,
     },
     groupDivider: {
-      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopWidth: StyleSheet.hairlineWidth * 2,
       borderTopColor: native.separator,
     },
     rowCopy: { flex: 1 },
-    cardTitle: { color: native.label, fontSize: 16 },
-    fieldLabel: { color: native.label, marginTop: 16 },
+    cardTitle: { color: native.label, fontSize: 18, lineHeight: 24 },
+    fieldLabel: {
+      color: native.secondaryLabel,
+      ...typeScale.secondary,
+      marginTop: 16,
+      paddingStart: 20,
+    },
     input: {
       marginTop: 8,
-      borderRadius: 12,
-      backgroundColor: native.fill,
+      minHeight: 56,
+      borderRadius: 28,
+      backgroundColor: tokens.card,
+      borderWidth: 1,
+      borderColor: tokens.glassStroke,
       color: native.label,
-      paddingHorizontal: 14,
+      paddingHorizontal: 20,
       paddingVertical: 12,
+      fontSize: 17,
     },
     disabled: { opacity: 0.4 },
     pressed: { opacity: 0.7 },

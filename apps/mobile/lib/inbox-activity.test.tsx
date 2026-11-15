@@ -25,7 +25,10 @@ vi.mock("./activity", () => ({
   activityStatusLabel: (status: string) => status,
   formatActivityRelativeTime: () => "",
 }));
-vi.mock("../components/home-styles", () => ({ createHomeStyles: () => ({}) }));
+vi.mock("../components/home-styles", () => ({
+  createHomeStyles: () => ({}),
+  INBOX_ROW: { avatarSize: 52 },
+}));
 vi.mock("../components/bot-avatar", () => ({ BotAvatar: () => <i /> }));
 vi.mock("../components/group-avatar", () => ({ GroupAvatar: () => <i /> }));
 vi.mock("../components/inbox-rows", () => ({

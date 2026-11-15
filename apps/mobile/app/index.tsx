@@ -30,6 +30,7 @@ import { BotOrganizeModal } from "../components/bot-organize-modal";
 import { HomeErrorState } from "../components/home-error-state";
 import { createHomeStyles } from "../components/home-styles";
 import { ActivitySection } from "../components/inbox-activity";
+import { InboxBottomBar, inboxBottomBarHeight } from "../components/inbox-bottom-bar";
 import { InboxHeader } from "../components/inbox-header";
 import { InboxListFooter, SWIPE_ROWS, useInboxRenderItem } from "../components/inbox-render-item";
 import { CompactRowsContext, SelectedChatContext } from "../components/inbox-rows";
@@ -439,6 +440,9 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
   const nativeHeader = iosAtLeast(26) && !embedded && !onShareSelect;
   const headerHeight = useHeaderHeightIfAny();
   const listRef = useRef<FlatList<InboxItem>>(null);
+  // The share picker only picks a chat, so it has no activity toggle or search to float.
+  const bottomBar = !onShareSelect;
+  const listBottomInset = bottomBar ? inboxBottomBarHeight(contentBottomInset) : contentBottomInset;
   const jumpSignals = useSyncExternalStore(
     mobileLogoAvatarActivity.subscribe,
     useMemo(() => {
@@ -465,7 +469,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     listRef,
     // The Liquid Glass header floats over the list; the older header sits above it.
     topInset: nativeHeader ? headerHeight : 0,
-    bottomInset: contentBottomInset,
+    bottomInset: listBottomInset,
   });
   const router = useRouter();
   const pathname = usePathname();
@@ -651,8 +655,6 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     ready,
     hasSession,
     initials,
-    activityMode,
-    toggleActivityMode,
     runCreateAction,
     headerTitle,
   });
@@ -830,8 +832,6 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
         <InboxHeader
           embedded={embedded}
           initials={initials}
-          activityMode={activityMode}
-          toggleActivityMode={toggleActivityMode}
           runCreateAction={runCreateAction}
           columnInsets={columnInsets}
           title={headerTitle?.()}
@@ -860,6 +860,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
                     right: Math.max(0, columnInsets.right - insets.right),
                   }}
                   column={columnInsets}
+                  bottomInset={bottomBar ? listBottomInset : undefined}
                   avatarViewport={avatarViewport}
                   onRefresh={refreshInbox}
                   signals={jumpSignals}
@@ -881,6 +882,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
                   contentContainerStyle={[
                     styles.list,
                     { paddingLeft: columnInsets.left, paddingRight: columnInsets.right },
+                    bottomBar && { paddingBottom: listBottomInset + 16 },
                   ]}
                   contentInsetAdjustmentBehavior="automatic"
                   refreshControl={
@@ -905,6 +907,14 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
             {SWIPE_ROWS || onShareSelect || refreshing || inboxHasNoChats(rows)
               ? null
               : unreadJump.overlay}
+            {bottomBar ? (
+              <InboxBottomBar
+                activityMode={activityMode}
+                toggleActivityMode={toggleActivityMode}
+                bottomInset={contentBottomInset}
+                columnInsets={columnInsets}
+              />
+            ) : null}
           </View>
         </CompactRowsContext.Provider>
       </SelectedChatContext.Provider>

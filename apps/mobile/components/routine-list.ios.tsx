@@ -78,15 +78,15 @@ export function RoutineList({
                       modifiers={[
                         frame({ height: StyleSheet.hairlineWidth * 2 }),
                         foregroundStyle(native.separator),
-                        padding({ leading: 16 }),
+                        padding({ leading: 20 }),
                       ]}
                     />
                   ) : null}
                   <HStack
-                    spacing={12}
+                    spacing={14}
                     modifiers={[
-                      padding({ horizontal: 16, vertical: 12 }),
-                      frame({ minHeight: 52 }),
+                      padding({ horizontal: 20, vertical: 14 }),
+                      frame({ minHeight: 60 }),
                     ]}
                   >
                     <Button
@@ -111,7 +111,7 @@ export function RoutineList({
                           <Text
                             modifiers={[
                               lineLimit(2),
-                              font({ textStyle: "footnote" }),
+                              font({ textStyle: "subheadline" }),
                               foregroundStyle({ type: "hierarchical", style: "secondary" }),
                             ]}
                           >

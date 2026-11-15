@@ -8,6 +8,7 @@ import {
   botLookWithShape,
   SHIPPED_BOT_AVATAR_SHAPE_KEYS,
 } from "@rakazo/core";
+import { typeScale } from "@rakazo/ui-tokens";
 import type { ReactNode } from "react";
 import { Pressable, Text, View } from "react-native";
 import { useMobileTokens } from "../lib/native";
@@ -40,7 +41,7 @@ export function BotLookPicker({
   const labeled = !organicIdentities;
 
   return (
-    <View style={{ gap: 20 }}>
+    <View style={{ gap: 24 }}>
       {avatarSet === "organic" ? (
         <View>
           {labeled ? <Label>{t`Shape`}</Label> : null}
@@ -95,18 +96,18 @@ export function BotLookPicker({
                 disabled={disabled}
                 onPress={() => onChange(botLookWithColor(value, option))}
                 style={{
-                  width: 40,
-                  height: 40,
-                  borderRadius: 20,
-                  padding: 3,
+                  width: 48,
+                  height: 48,
+                  borderRadius: 24,
+                  padding: 2,
                   borderWidth: 2,
-                  borderColor: selected ? tokens.foreground : "transparent",
+                  borderColor: selected ? tokens.mutedForeground : "transparent",
                 }}
               >
                 <View
                   style={{
                     flex: 1,
-                    borderRadius: 20,
+                    borderRadius: 999,
                     backgroundColor: option,
                     borderWidth: 1,
                     borderColor: tokens.border,
@@ -125,13 +126,16 @@ const grid = {
   flexDirection: "row",
   flexWrap: "wrap",
   justifyContent: "center",
-  gap: 10,
+  columnGap: 6,
+  rowGap: 10,
 } as const;
 
 function Label({ children }: { children: string }) {
   const tokens = useMobileTokens();
   return (
-    <Text style={{ color: tokens.mutedForeground, fontSize: 14, marginBottom: 8 }}>{children}</Text>
+    <Text style={{ color: tokens.mutedForeground, ...typeScale.caption, marginBottom: 8 }}>
+      {children}
+    </Text>
   );
 }
 
@@ -158,9 +162,9 @@ function Choice({
       onPress={onPress}
       style={{
         padding: 4,
-        borderRadius: 14,
+        borderRadius: 999,
         borderWidth: 2,
-        borderColor: selected ? tokens.foreground : "transparent",
+        borderColor: selected ? tokens.mutedForeground : "transparent",
       }}
     >
       {children}

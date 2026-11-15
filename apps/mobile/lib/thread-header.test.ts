@@ -1,6 +1,8 @@
 import { expect, it, vi } from "vitest";
-import { createThreadHeaderStyles } from "../components/thread-header-styles";
-import { HEADER_CONTROL_SIZE } from "./native-controls";
+import {
+  CHAT_HEADER_CONTROL_SIZE,
+  createThreadHeaderStyles,
+} from "../components/thread-header-styles";
 
 vi.mock("react-native", () => ({
   Platform: { OS: "ios", Version: 26 },
@@ -17,21 +19,16 @@ vi.mock("./appearance", () => ({
 
 it("sizes the chat title like the header buttons beside it", () => {
   const { titleCapsule } = createThreadHeaderStyles();
-  expect(titleCapsule.minHeight).toBe(HEADER_CONTROL_SIZE);
+  expect(titleCapsule.minHeight).toBe(CHAT_HEADER_CONTROL_SIZE);
   expect(titleCapsule).not.toHaveProperty("paddingVertical");
 });
 
-it("pads the chat title 14 at its start and 10 at its end, mirrored for right-to-left", () => {
+it("pads the chat title 7 at its start and 19 at its end, mirrored for right-to-left", () => {
   const { titleCapsule } = createThreadHeaderStyles();
-  expect(titleCapsule).toMatchObject({ paddingStart: 14, paddingEnd: 10 });
+  expect(titleCapsule).toMatchObject({ paddingStart: 7, paddingEnd: 19 });
   for (const side of ["paddingHorizontal", "paddingLeft", "paddingRight"]) {
     expect(titleCapsule).not.toHaveProperty(side);
   }
-});
-
-it("uses a borderless fallback title fill and leaves the header buttons clear", () => {
-  const styles = createThreadHeaderStyles();
-  expect(styles.titleCapsuleFill).not.toHaveProperty("borderWidth");
 });
 
 it("lets a long chat name give way to the avatars beside it", () => {
@@ -39,11 +36,11 @@ it("lets a long chat name give way to the avatars beside it", () => {
   expect(title.flexShrink).toBe(1);
 });
 
-it("sets the chat title in medium 17 on a 22 line, in the text colour", () => {
+it("sets the chat title in medium 18 on a 24 line, in the text colour", () => {
   const { title } = createThreadHeaderStyles();
   expect(title).toMatchObject({
-    fontSize: 17,
-    lineHeight: 22,
+    fontSize: 18,
+    lineHeight: 24,
     fontWeight: "500",
     color: "foreground",
   });

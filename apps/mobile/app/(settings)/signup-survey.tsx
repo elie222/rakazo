@@ -155,14 +155,14 @@ function ChoiceRow<T extends string>({
 function createStyles() {
   return StyleSheet.create({
     screen: { flex: 1, backgroundColor: native.groupedPage },
-    content: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 32, gap: 28 },
+    content: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 32, gap: 28 },
     compactContent: { paddingHorizontal: 8 },
     input: {
-      minHeight: 48,
-      paddingHorizontal: 16,
-      paddingVertical: 12,
+      minHeight: 60,
+      paddingHorizontal: 20,
+      paddingVertical: 14,
       color: native.label,
-      fontSize: 16,
+      fontSize: 18,
     },
     multiline: { minHeight: 96 },
   });

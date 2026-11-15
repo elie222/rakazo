@@ -223,7 +223,7 @@ function createStyles() {
   const tokens = mobileTokens();
   return StyleSheet.create({
     screen: { flex: 1, backgroundColor: native.groupedPage },
-    content: { width: "100%", padding: 20, gap: 24, paddingBottom: 40 },
+    content: { width: "100%", padding: 16, gap: 24, paddingBottom: 40 },
     error: { color: tokens.destructive, fontSize: 14 },
   });
 }

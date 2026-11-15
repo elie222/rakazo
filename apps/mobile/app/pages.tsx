@@ -3,6 +3,7 @@ import { useLingui } from "@lingui/react/macro";
 import { PageIcon } from "@rakazo/chat-ui/native";
 import type { PageSummary } from "@rakazo/contracts";
 import { PAGE_TITLE_MAX_LENGTH } from "@rakazo/contracts";
+import { typeScale } from "@rakazo/ui-tokens";
 import * as Clipboard from "expo-clipboard";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";
@@ -131,7 +132,7 @@ export default function PagesScreen() {
   const pinned = listed.items.filter((page) => page.pinned);
   const rest = listed.items.filter((page) => !page.pinned);
   return (
-    <ScrollView contentInsetAdjustmentBehavior="automatic">
+    <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.content}>
       {problem ? (
         <Text accessibilityRole="alert" style={[styles.problem, { color: tokens.destructive }]}>
           {problem}
@@ -156,6 +157,7 @@ export default function PagesScreen() {
 
 const styles = StyleSheet.create({
   center: { flex: 1, alignItems: "center", justifyContent: "center", padding: 24 },
-  message: { fontSize: 15, textAlign: "center" },
-  problem: { paddingHorizontal: 20, paddingTop: 12, fontSize: 13 },
+  content: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 32, gap: 20 },
+  message: { ...typeScale.secondary, textAlign: "center" },
+  problem: { paddingHorizontal: 18, ...typeScale.caption },
 });

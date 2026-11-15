@@ -107,11 +107,11 @@ describe("guarded Android Compose switch", () => {
   );
 
   it.each([
-    ["light", "#34C759", "#7676801F", "#F2F2F1", "#6C6C70"],
-    ["dark", "#30D158", "#7676803D", "#EBEBF599", "transparent"],
+    ["light", "#161616", "#FAFAFA", "#E6E6E6", "#6C6C70", "#6C6C70"],
+    ["dark", "#FFFFFF", "#161616", "#333333", "#9E9E9E", "transparent"],
   ] as const)(
-    "uses green and neutral colors in %s with a compact host",
-    async (scheme, green, track, thumb, border) => {
+    "uses the ink when on and neutral colors when off in %s with a compact host",
+    async (scheme, ink, onThumb, track, thumb, border) => {
       state.scheme = scheme;
       const { render, getViewConfig } = await load();
       await render();
@@ -127,12 +127,12 @@ describe("guarded Android Compose switch", () => {
         value: true,
         enabled: true,
         colors: {
-          checkedTrackColor: green,
-          checkedThumbColor: "#FFFFFF",
+          checkedTrackColor: ink,
+          checkedThumbColor: onThumb,
           uncheckedTrackColor: track,
           uncheckedThumbColor: thumb,
           uncheckedBorderColor: border,
-          disabledCheckedTrackColor: green,
+          disabledCheckedTrackColor: ink,
           disabledUncheckedTrackColor: track,
           disabledUncheckedBorderColor: border,
         },

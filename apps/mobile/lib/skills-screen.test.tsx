@@ -37,6 +37,7 @@ vi.mock("../components/bot-template-icon", () => ({ BotTemplateIcon: () => null 
 vi.mock("../components/plugin-icon", () => ({ PluginIcon: () => null }));
 vi.mock("../components/row-accessories", () => ({ Chevron: () => null }));
 vi.mock("../components/skill-symbol", () => ({ SkillSymbol: () => null }));
+vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
 vi.mock("../components/native-action-button", () => ({
   NativeActionButton: ({ label, onPress }: { label: string; onPress: () => void }) => (
     <button type="button" onClick={onPress}>

@@ -10,6 +10,7 @@ import { iosAtLeast } from "../lib/native-controls";
 import { useConfirmationGuard } from "../lib/use-confirmation-guard";
 import { useLeaveDeletedChat } from "../lib/use-leave-deleted-chat";
 import { errorText } from "../lib/user-error";
+import { GlassSurface } from "./glass-surface";
 import { NativeSymbol } from "./native-symbol";
 
 export type BotProfileAction = {
@@ -120,13 +121,13 @@ function BotProfileMenu({
       }
     >
       {/* A sized trigger: an unsized one can collapse to zero width on some Android builds. */}
-      <View
-        accessible
-        accessibilityRole="button"
-        accessibilityLabel={label}
-        style={{ width: 44, height: 44, alignItems: "center", justifyContent: "center" }}
-      >
-        <NativeSymbol ios="ellipsis" android="ellipsis-horizontal" size={21} color={color} />
+      <View accessible accessibilityRole="button" accessibilityLabel={label}>
+        <GlassSurface
+          shape="circle"
+          style={{ width: 48, height: 48, alignItems: "center", justifyContent: "center" }}
+        >
+          <NativeSymbol ios="ellipsis" android="ellipsis-horizontal" size={24} color={color} />
+        </GlassSurface>
       </View>
     </MenuView>
   );

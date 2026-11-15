@@ -110,5 +110,5 @@ export function IncomingCall() {
 }
 const styles = StyleSheet.create({
   screen: { flex: 1, alignItems: "center", justifyContent: "center", gap: 32, padding: 32 },
-  name: { fontSize: 28, fontWeight: "600" },
+  name: { fontSize: 28, fontWeight: "500" },
 });

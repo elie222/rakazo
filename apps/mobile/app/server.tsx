@@ -149,17 +149,28 @@ export default function ServerScreen() {
             placeholderTextColor={tokens.mutedForeground}
             returnKeyType="go"
             style={{
-              backgroundColor: tokens.muted,
-              borderRadius: 13,
-              padding: 16,
+              minHeight: 56,
+              backgroundColor: tokens.card,
+              borderWidth: 1,
+              borderColor: tokens.glassStroke,
+              borderRadius: 28,
+              paddingHorizontal: 20,
+              paddingVertical: 16,
               color: tokens.foreground,
-              fontSize: 16,
+              fontSize: 17,
             }}
             textContentType="URL"
             value={draft}
           />
           {warning ? (
-            <Text style={{ color: tokens.mutedForeground, marginTop: 12, fontSize: 13 }}>
+            <Text
+              style={{
+                color: tokens.mutedForeground,
+                marginTop: 12,
+                paddingHorizontal: 20,
+                fontSize: 14,
+              }}
+            >
               {warning}
             </Text>
           ) : null}

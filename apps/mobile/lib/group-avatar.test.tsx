@@ -12,7 +12,12 @@ vi.mock("react-native", () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement("span", null, children),
 }));
 vi.mock("./native", () => ({
-  native: { fillPressed: "fill-pressed", secondaryLabel: "secondary-label", label: "label" },
+  native: {
+    fillPressed: "fill-pressed",
+    secondaryLabel: "secondary-label",
+    label: "label",
+    page: "page",
+  },
   useThemedStyles: <T,>(factory: () => T) => factory(),
 }));
 vi.mock("../components/bot-avatar", () => ({
@@ -52,5 +57,16 @@ describe("mobile group avatar", () => {
     render(Array.from({ length: 6 }, (_, index) => member(index)));
     expect(container.querySelectorAll("[data-member]")).toHaveLength(2);
     expect(container.textContent).toContain("+4");
+  });
+  it("puts a working member on top of the stack", () => {
+    render([
+      member(0),
+      member(1),
+      { ...member(2), status: "running" } as ReturnType<typeof member>,
+    ]);
+    const shown = Array.from(container.querySelectorAll("[data-member]"), (node) =>
+      node.getAttribute("data-member"),
+    );
+    expect(shown).toEqual(["bot-2", "bot-0", "bot-1"]);
   });
 });

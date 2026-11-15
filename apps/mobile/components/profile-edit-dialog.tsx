@@ -1,8 +1,9 @@
 import { useLingui } from "@lingui/react/macro";
+import { typeScale } from "@rakazo/ui-tokens";
 import type { ReactNode } from "react";
 import { useState } from "react";
 import { Alert, Modal, Platform, Pressable, Text, TextInput, View } from "react-native";
-import { native, useMobileTokens } from "../lib/native";
+import { useMobileTokens } from "../lib/native";
 import { NativeActionButton } from "./native-action-button";
 import { NativeSymbol } from "./native-symbol";
 
@@ -46,13 +47,18 @@ export function useTextEditDialog(
     Platform.OS !== "ios" && asked ? (
       <Modal transparent animationType="fade" onRequestClose={() => setAsked(null)}>
         <View
-          style={{ flex: 1, justifyContent: "center", padding: 24, backgroundColor: native.fill }}
+          style={{
+            flex: 1,
+            justifyContent: "center",
+            padding: 24,
+            backgroundColor: tokens.overlay,
+          }}
         >
           <View
             accessibilityViewIsModal
-            style={{ padding: 24, gap: 16, borderRadius: 16, backgroundColor: tokens.card }}
+            style={{ padding: 24, gap: 16, borderRadius: 28, backgroundColor: tokens.card }}
           >
-            <Text style={{ color: tokens.foreground, fontSize: 18 }}>{label}</Text>
+            <Text style={{ color: tokens.foreground, ...typeScale.title }}>{label}</Text>
             <TextInput
               autoFocus
               accessibilityLabel={label}
@@ -60,7 +66,16 @@ export function useTextEditDialog(
               onChangeText={(draft) => setAsked({ ...asked, draft })}
               maxLength={maxLength}
               onSubmitEditing={() => commit(asked.draft, asked.onCommit)}
-              style={{ minHeight: 44, color: tokens.foreground }}
+              style={{
+                minHeight: 56,
+                borderRadius: 28,
+                borderWidth: 1,
+                borderColor: tokens.glassStroke,
+                backgroundColor: tokens.background,
+                paddingHorizontal: 20,
+                fontSize: 17,
+                color: tokens.foreground,
+              }}
             />
             <NativeActionButton
               label={t`Save`}
@@ -117,9 +132,9 @@ export function ProfileEditDialog({
           <Text
             style={{
               textAlign: "center",
-              fontSize: large ? 22 : 14,
-              lineHeight: large ? 26 : 18,
-              fontWeight: large ? "600" : "400",
+              fontSize: large ? 22 : 16,
+              lineHeight: large ? 28 : 22,
+              fontWeight: large ? "500" : "400",
               color: large ? tokens.foreground : tokens.mutedForeground,
             }}
           >

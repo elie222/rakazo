@@ -19,7 +19,7 @@ import { SheetCloseButton } from "../components/sheet-close-button";
 import { CallKeyboardContext } from "../lib/call-keyboard-context";
 import { hapticSuccess } from "../lib/haptics";
 import type { MobileBot } from "../lib/mobile-types";
-import { native, useMobileTokens } from "../lib/native";
+import { useMobileTokens } from "../lib/native";
 import { iosAtLeast } from "../lib/native-controls";
 import { formRead, queryClient, rpcQuery, useSave } from "../lib/query";
 import { addToSearchInbox, isSearchInboxSession, searchInboxSession } from "../lib/search-inbox";
@@ -116,7 +116,6 @@ export default function NewGroup() {
                 disabled={!valid}
                 size="compact"
                 onPress={() => setStep("name")}
-                style={{ borderRadius: 24 }}
               />
             ) : null,
           ...(iosAtLeast(26)
@@ -162,7 +161,8 @@ export default function NewGroup() {
           contentInsetAdjustmentBehavior="automatic"
           style={[{ flex: 1 }, sideInsets]}
           contentContainerStyle={{
-            padding: 24,
+            paddingHorizontal: 16,
+            paddingBottom: 24,
             paddingTop: Platform.OS === "ios" ? 24 : headerHeight + 24,
           }}
           keyboardDismissMode="on-drag"
@@ -195,14 +195,16 @@ export default function NewGroup() {
                 returnKeyType="done"
                 onSubmitEditing={create}
                 style={{
-                  height: 56,
-                  borderRadius: 11,
-                  backgroundColor: native.fill,
+                  height: 64,
+                  borderRadius: 22,
+                  borderCurve: "continuous",
+                  borderWidth: 1,
+                  borderColor: tokens.border,
+                  backgroundColor: tokens.card,
                   color: tokens.foreground,
                   fontSize: 22,
-                  fontWeight: "600",
                   textAlign: "center",
-                  paddingHorizontal: 14,
+                  paddingHorizontal: 16,
                 }}
               />
               <NativeActionButton
@@ -211,7 +213,7 @@ export default function NewGroup() {
                 prominence={name.trim() ? "primary" : "secondary"}
                 disabled={pending}
                 onPress={create}
-                style={{ marginTop: 24, borderRadius: 28 }}
+                style={{ marginTop: 32 }}
               />
               {error ? (
                 <Text style={{ color: tokens.destructive, marginTop: 12 }}>{error}</Text>

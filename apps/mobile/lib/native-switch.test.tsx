@@ -95,16 +95,16 @@ describe("iOS switch tint", () => {
 
 describe("Android switch colors", () => {
   it.each([
-    ["light", "#34C759"],
-    ["dark", "#30D158"],
+    ["light", "#161616", "#FAFAFA"],
+    ["dark", "#FFFFFF", "#161616"],
   ] as const)(
-    "defaults to green on and platform off/thumb in app %s",
-    async (preference, green) => {
+    "defaults to the ink on with a page-coloured thumb and a platform off track in app %s",
+    async (preference, ink, thumb) => {
       system.scheme = preference === "light" ? "dark" : "light";
       await setAppearancePreference(preference);
       renderToStaticMarkup(<AndroidSwitch {...props} />);
-      expect(androidSwitch.mock.lastCall?.[0].trackColor).toEqual({ true: green });
-      expect(androidSwitch.mock.lastCall?.[0].thumbColor).toBeUndefined();
+      expect(androidSwitch.mock.lastCall?.[0].trackColor).toEqual({ true: ink });
+      expect(androidSwitch.mock.lastCall?.[0].thumbColor).toBe(thumb);
     },
   );
 

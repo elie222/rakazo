@@ -507,7 +507,7 @@ function createStyles() {
       backgroundColor: native.fill,
     },
     chipActive: { backgroundColor: tokens.primary },
-    chipLabel: { color: native.label, fontSize: 13, fontWeight: "600" },
+    chipLabel: { color: native.label, fontSize: 13, fontWeight: "500" },
     chipLabelActive: { color: tokens.primaryForeground },
     listView: { flex: 1 },
     list: { paddingBottom: 32 },
@@ -531,7 +531,7 @@ function createStyles() {
     },
     rowBody: { flex: 1, minWidth: 0, gap: 3 },
     rowTop: { flexDirection: "row", alignItems: "center", gap: 6 },
-    rowName: { flex: 1, minWidth: 0, color: native.label, fontSize: 15, fontWeight: "600" },
+    rowName: { flex: 1, minWidth: 0, color: native.label, fontSize: 15, fontWeight: "500" },
     badge: {
       color: native.secondaryLabel,
       fontSize: 10.5,

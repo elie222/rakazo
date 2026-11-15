@@ -1,5 +1,6 @@
 import { useLingui } from "@lingui/react/macro";
 import { GROUP_MEMBER_MAX, GROUP_MEMBER_MIN, GROUP_NAME_MAX_LENGTH } from "@rakazo/contracts";
+import { typeScale } from "@rakazo/ui-tokens";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useContext, useEffect, useRef, useState } from "react";
 import { ScrollView, Text, TextInput } from "react-native";
@@ -11,7 +12,7 @@ import { notifyArchivedChatsChanged, onArchivedChatsChanged } from "../lib/archi
 import { confirmDeleteGroup } from "../lib/bot-lifecycle";
 import { CallKeyboardContext } from "../lib/call-keyboard-context";
 import type { MobileBot, MobileGroup } from "../lib/mobile-types";
-import { native, useMobileTokens } from "../lib/native";
+import { useMobileTokens } from "../lib/native";
 import { useSideInsets } from "../lib/side-insets";
 import { errorText } from "../lib/user-error";
 
@@ -125,13 +126,15 @@ export default function GroupSettingsScreen() {
       <Stack.Screen options={glassHeaderOptions(t`Group settings`)} />
       <ScrollView
         style={[{ flex: 1, backgroundColor: tokens.background }, sideInsets]}
-        contentContainerStyle={{ padding: 24 }}
+        contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 24 }}
         automaticallyAdjustKeyboardInsets={!rootAvoidsKeyboard}
         contentInsetAdjustmentBehavior="automatic"
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
       >
-        <Text style={{ color: tokens.mutedForeground, fontSize: 14 }}>{t`Name`}</Text>
+        <Text style={{ color: tokens.mutedForeground, ...typeScale.secondary, paddingStart: 20 }}>
+          {t`Name`}
+        </Text>
         <TextInput
           value={name}
           onChangeText={setName}
@@ -141,11 +144,14 @@ export default function GroupSettingsScreen() {
           returnKeyType="done"
           style={{
             marginTop: 8,
-            backgroundColor: native.fill,
-            borderRadius: 11,
-            padding: 14,
+            height: 56,
+            borderRadius: 28,
+            borderWidth: 1,
+            borderColor: tokens.border,
+            backgroundColor: tokens.card,
+            paddingHorizontal: 20,
             color: tokens.foreground,
-            fontSize: 16,
+            fontSize: typeScale.secondary.fontSize,
           }}
         />
         {group ? (

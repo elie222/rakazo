@@ -1,4 +1,5 @@
 import { useLingui } from "@lingui/react/macro";
+import { typeScale } from "@rakazo/ui-tokens";
 import { Stack, useNavigation, useRouter } from "expo-router";
 import { useState } from "react";
 import { Alert, ScrollView, Text, TextInput } from "react-native";
@@ -6,7 +7,7 @@ import { NativeActionButton } from "../components/native-action-button";
 import { cancelHeaderOptions } from "../components/sheet-header";
 import { selectSpace } from "../lib/api-server";
 import { hapticSuccess } from "../lib/haptics";
-import { native, useMobileTokens } from "../lib/native";
+import { useMobileTokens } from "../lib/native";
 import { refreshOrganizations } from "../lib/organizations";
 import { useSave } from "../lib/query";
 import { isSearchInboxSession, searchInboxSession } from "../lib/search-inbox";
@@ -50,10 +51,12 @@ export default function NewSpace() {
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
         style={[{ flex: 1, backgroundColor: tokens.background }, sideInsets]}
-        contentContainerStyle={{ padding: 24 }}
+        contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 24 }}
         keyboardShouldPersistTaps="handled"
       >
-        <Text style={{ color: tokens.mutedForeground, fontSize: 14 }}>{t`Name`}</Text>
+        <Text style={{ color: tokens.mutedForeground, ...typeScale.secondary, paddingStart: 20 }}>
+          {t`Name`}
+        </Text>
         <TextInput
           autoFocus
           value={name}
@@ -65,11 +68,14 @@ export default function NewSpace() {
           returnKeyType="done"
           style={{
             marginTop: 8,
-            backgroundColor: native.fill,
-            borderRadius: 11,
-            padding: 14,
+            height: 56,
+            borderRadius: 28,
+            borderWidth: 1,
+            borderColor: tokens.border,
+            backgroundColor: tokens.card,
+            paddingHorizontal: 20,
             color: tokens.foreground,
-            fontSize: 16,
+            fontSize: typeScale.secondary.fontSize,
           }}
         />
         {error ? <Text style={{ color: tokens.destructive, marginTop: 14 }}>{error}</Text> : null}
@@ -77,7 +83,7 @@ export default function NewSpace() {
           disabled={!name.trim() || pending}
           label={pending ? t`Creating…` : t`Create space`}
           onPress={create}
-          style={{ marginTop: 20 }}
+          style={{ marginTop: 24 }}
         />
       </ScrollView>
     </>

@@ -210,7 +210,7 @@ export default function ArchivedBots() {
       <ScrollView
         style={[{ flex: 1, backgroundColor: tokens.background }, sideInsets]}
         contentInsetAdjustmentBehavior="automatic"
-        contentContainerStyle={{ padding: 24, gap: 12 }}
+        contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 24, gap: 12 }}
       >
         {failure ??
           (bots ? (
@@ -223,7 +223,7 @@ export default function ArchivedBots() {
   return (
     <>
       {failure ? (
-        <View style={{ paddingHorizontal: 24, paddingTop: headerInset + 24, gap: 12 }}>
+        <View style={{ paddingHorizontal: 16, paddingTop: headerInset + 24, gap: 12 }}>
           {failure}
         </View>
       ) : null}

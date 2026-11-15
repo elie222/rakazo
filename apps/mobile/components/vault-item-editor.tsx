@@ -4,6 +4,7 @@ import type { ContactFields, VaultKind, VaultPolicy, VaultRevealed } from "@raka
 import { commandVariableName, decodeLoginSecret, VAULT_ALSO_ON_LIMIT } from "@rakazo/contracts";
 import { vaultAccessControls, vaultLoginSave } from "@rakazo/core";
 import { secretAnswerErrorText, vaultPolicyLabels } from "@rakazo/i18n/vault";
+import { typeScale } from "@rakazo/ui-tokens";
 import type { ReactNode } from "react";
 import { useRef, useState } from "react";
 import type { TextInputInstance, TextInputProps } from "react-native";
@@ -625,26 +626,33 @@ function createStyles() {
       paddingBottom: 12,
     },
     content: { paddingHorizontal: 20, paddingBottom: 40, gap: 16 },
-    title: { color: tokens.foreground, fontSize: 20, fontWeight: "600" },
-    group: { backgroundColor: tokens.muted, borderRadius: 13, overflow: "hidden" },
-    row: { paddingHorizontal: 16, paddingTop: 10, paddingBottom: 8, gap: 2 },
-    label: { color: tokens.mutedForeground, fontSize: 13 },
-    input: { color: tokens.foreground, fontSize: 17, paddingVertical: 4, minHeight: 28 },
+    title: { color: tokens.foreground, ...typeScale.title },
+    group: {
+      backgroundColor: tokens.card,
+      borderRadius: 22,
+      borderCurve: "continuous",
+      borderWidth: 1,
+      borderColor: tokens.glassStroke,
+      overflow: "hidden",
+    },
+    row: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 10, gap: 2 },
+    label: { color: tokens.mutedForeground, fontSize: 14 },
+    input: { color: tokens.foreground, fontSize: 18, paddingVertical: 4, minHeight: 30 },
     brand: {
       position: "absolute",
-      right: 16,
+      right: 20,
       top: 34,
       color: tokens.mutedForeground,
       fontSize: 13,
     },
     separator: {
-      height: StyleSheet.hairlineWidth,
+      height: StyleSheet.hairlineWidth * 2,
       backgroundColor: tokens.border,
-      marginStart: 16,
+      marginStart: 20,
     },
     pair: { flexDirection: "row" },
     half: { flex: 1 },
-    pairEnd: { borderStartWidth: StyleSheet.hairlineWidth, borderColor: tokens.border },
+    pairEnd: { borderStartWidth: StyleSheet.hairlineWidth * 2, borderColor: tokens.border },
     placeholder: { color: tokens.faintForeground },
     error: { color: tokens.destructive, fontSize: 13 },
   });

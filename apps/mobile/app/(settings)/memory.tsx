@@ -1,4 +1,5 @@
 import { useLingui } from "@lingui/react/macro";
+import { typeScale } from "@rakazo/ui-tokens";
 import { useQuery } from "@tanstack/react-query";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useState } from "react";
@@ -86,8 +87,8 @@ export default function MemoryScreen() {
 function createStyles() {
   return StyleSheet.create({
     screen: { flex: 1, backgroundColor: native.groupedPage },
-    content: { padding: 20, gap: 16 },
-    secondary: { color: native.secondaryLabel, fontSize: 15 },
-    error: { color: mobileTokens().destructive, fontSize: 13 },
+    content: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 32, gap: 20 },
+    secondary: { color: native.secondaryLabel, ...typeScale.secondary, paddingHorizontal: 18 },
+    error: { color: mobileTokens().destructive, ...typeScale.caption, paddingHorizontal: 18 },
   });
 }

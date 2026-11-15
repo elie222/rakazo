@@ -235,7 +235,10 @@ export default function Paywall() {
             accessible
             accessibilityLabel={t`Account`}
             accessibilityRole="button"
-            style={styles.account}
+            style={[
+              styles.account,
+              { backgroundColor: tokens.glassFill, borderColor: tokens.glassStroke },
+            ]}
           >
             <NativeSymbol
               ios="person.crop.circle"
@@ -581,10 +584,10 @@ function PlanCard({
         styles.plan,
         {
           backgroundColor: tokens.card,
-          borderColor: selected ? tokens.primary : tokens.border,
+          borderColor: selected ? tokens.primary : tokens.glassStroke,
           borderWidth: selected ? 2 : 1,
           // The thicker border must not shift the content.
-          padding: selected ? 15 : 16,
+          padding: selected ? 19 : 20,
         },
       ]}
     >
@@ -685,7 +688,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingHorizontal: 20,
   },
-  account: { width: 40, height: 40, alignItems: "center", justifyContent: "center" },
+  account: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   content: {
     width: "100%",
     maxWidth: FORM_COLUMN_WIDTH,
@@ -696,7 +706,7 @@ const styles = StyleSheet.create({
     gap: 28,
   },
   hero: { alignItems: "center", gap: 16 },
-  title: { fontSize: 30, lineHeight: 36, fontWeight: "600", textAlign: "center" },
+  title: { fontSize: 30, lineHeight: 36, fontWeight: "500", textAlign: "center" },
   lead: { ...typeScale.body, textAlign: "center" },
   features: { gap: 14 },
   feature: { flexDirection: "row", alignItems: "center", gap: 12 },
@@ -711,17 +721,17 @@ const styles = StyleSheet.create({
   },
   featureLabel: { ...typeScale.body, flex: 1 },
   plans: { gap: 12 },
-  plan: { borderRadius: 18, gap: 8 },
+  plan: { borderRadius: 22, borderCurve: "continuous", gap: 8 },
   planHeader: { flexDirection: "row", alignItems: "center", gap: 10 },
   planTitle: { ...typeScale.cardTitle, flex: 1 },
   planBody: { paddingLeft: 32, gap: 2 },
   planPress: { gap: 8 },
   planAccessory: { marginTop: 4, marginLeft: 32 },
-  price: { fontSize: 22, lineHeight: 28, fontWeight: "600" },
+  price: { fontSize: 22, lineHeight: 28, fontWeight: "500" },
   planDetail: typeScale.secondary,
   amount: { flexDirection: "row", alignItems: "center", gap: 6, alignSelf: "flex-start" },
   priceRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
-  badge: { borderRadius: 999, paddingHorizontal: 9, paddingVertical: 3 },
+  badge: { borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4 },
   badgeLabel: { ...typeScale.footnote, fontWeight: "600" },
   timeline: { paddingHorizontal: 4 },
   step: { flexDirection: "row", gap: 12 },

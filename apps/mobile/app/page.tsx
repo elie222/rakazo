@@ -24,6 +24,9 @@ import {
   pageTapStart,
 } from "../lib/pages";
 
+/** Android's close and share circles, the size of the app's other round buttons. */
+const ROUND_SIZE = 48;
+
 type Loaded =
   | { status: "loading" }
   | { status: "error"; error: unknown }
@@ -42,9 +45,11 @@ export default function PageScreen() {
   const pageBackground = webTokensForAppearance(theme).background;
   const [loaded, setLoaded] = useState<Loaded>({ status: "loading" });
   const [attempt, setAttempt] = useState(0);
-  // iOS keeps the native glass button as it is; Android's bordered button becomes a card circle.
+  // iOS keeps the native glass button as it is; Android's becomes the raised circle.
   const round =
-    Platform.OS === "ios" ? undefined : [styles.round, { backgroundColor: tokens.card }];
+    Platform.OS === "ios"
+      ? undefined
+      : [styles.round, { backgroundColor: tokens.card, borderColor: tokens.border }];
 
   useEffect(() => {
     let active = true;
@@ -178,15 +183,16 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: "center", justifyContent: "center", padding: 24 },
   controls: {
     position: "absolute",
-    left: 12,
-    right: 12,
+    left: 16,
+    right: 16,
     flexDirection: "row",
     justifyContent: "space-between",
   },
   round: {
-    width: HEADER_CONTROL_SIZE,
-    minHeight: HEADER_CONTROL_SIZE,
-    borderRadius: HEADER_CONTROL_SIZE / 2,
+    width: ROUND_SIZE,
+    minHeight: ROUND_SIZE,
+    borderRadius: ROUND_SIZE / 2,
+    borderWidth: 1,
     paddingHorizontal: 0,
     paddingVertical: 0,
   },

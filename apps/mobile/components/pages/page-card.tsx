@@ -3,6 +3,7 @@ import { useLingui } from "@lingui/react/macro";
 import { PageIcon } from "@rakazo/chat-ui/native";
 import type { MessageBlock, PageDetail } from "@rakazo/contracts";
 import { pageCardSuperseded } from "@rakazo/core";
+import { typeScale } from "@rakazo/ui-tokens";
 import { useRouter } from "expo-router";
 import { createContext, useContext, useEffect, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
@@ -120,7 +121,7 @@ export function PageCard({ block, messageId }: { block: PageBlock; messageId: st
         styles.card,
         {
           backgroundColor: tokens.card,
-          borderColor: `${tokens.foreground}1F`,
+          borderColor: tokens.border,
           opacity: pressed ? 0.85 : 1,
         },
       ]}
@@ -132,7 +133,7 @@ export function PageCard({ block, messageId }: { block: PageBlock; messageId: st
           width={width}
         />
       )}
-      <View style={[styles.footer, { borderTopColor: `${tokens.foreground}0A` }]}>
+      <View style={[styles.footer, { borderTopColor: tokens.border }]}>
         <PageIcon colors={tokens} style={styles.icon} />
         <View style={styles.footerText}>
           <Text numberOfLines={1} style={[styles.title, { color: tokens.foreground }]}>
@@ -150,12 +151,18 @@ export function PageCard({ block, messageId }: { block: PageBlock; messageId: st
 const styles = StyleSheet.create({
   card: {
     width: "100%",
-    borderRadius: 24,
+    borderRadius: 22,
+    borderCurve: "continuous",
     borderWidth: 1,
     overflow: "hidden",
   },
   fade: { position: "absolute", left: 0, right: 0, bottom: 0 },
-  unavailable: { fontSize: 15, textAlign: "center", marginTop: 40, paddingHorizontal: 20 },
+  unavailable: {
+    ...typeScale.secondary,
+    textAlign: "center",
+    marginTop: 40,
+    paddingHorizontal: 20,
+  },
   footer: {
     height: 72,
     flexDirection: "row",
@@ -167,6 +174,6 @@ const styles = StyleSheet.create({
   },
   icon: { transform: [{ translateY: -3 }] },
   footerText: { flex: 1, minWidth: 0 },
-  title: { fontSize: 17, lineHeight: 22 },
-  kind: { fontSize: 15, lineHeight: 20, marginTop: 4 },
+  title: { fontSize: typeScale.cardTitle.fontSize, lineHeight: typeScale.cardTitle.lineHeight },
+  kind: { ...typeScale.secondary, marginTop: 2 },
 });

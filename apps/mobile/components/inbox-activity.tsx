@@ -13,7 +13,7 @@ import { useThemedStyles } from "../lib/native";
 import type { SpaceActivityStatus } from "../lib/use-space-activity";
 import { BotAvatar } from "./bot-avatar";
 import { GroupAvatar } from "./group-avatar";
-import { createHomeStyles } from "./home-styles";
+import { createHomeStyles, INBOX_ROW } from "./home-styles";
 import type { RowMenuProps } from "./inbox-rows";
 import { ChatSwipe, ConversationRow, FALLBACK_COLOR, SectionToggle } from "./inbox-rows";
 
@@ -156,7 +156,7 @@ export function ActivitySection({
                     params: { groupId: group.id, name: group.name },
                   })
                 }
-                avatar={<GroupAvatar members={group.members} />}
+                avatar={<GroupAvatar members={group.members} size={INBOX_ROW.avatarSize} />}
                 {...actions}
               />
             )),
@@ -177,6 +177,7 @@ export function ActivitySection({
                     identity={bot.id}
                     color={bot.color}
                     avatarSet={bot.avatarSet}
+                    size={INBOX_ROW.avatarSize}
                     motion="lazy"
                   />
                 }
@@ -253,6 +254,7 @@ function ActivityRow({
           color={bot?.color ?? FALLBACK_COLOR}
           avatarSet={bot?.avatarSet}
           status={run.status}
+          size={INBOX_ROW.avatarSize}
           motion="lazy"
         />
       }

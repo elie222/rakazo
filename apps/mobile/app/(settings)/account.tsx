@@ -5,14 +5,12 @@ import { hasLab, modelCreditsUsd } from "@rakazo/contracts";
 import { accountDisplay, formatTimeUntil } from "@rakazo/core";
 import type { Href } from "expo-router";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
-import type { ComponentProps } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { AppMark } from "../../components/app-mark";
 import { ApprovalModeRow, ApprovalRulesRow } from "../../components/approval-settings-rows";
 import { NativeActionButton } from "../../components/native-action-button";
-import { NativeSymbol } from "../../components/native-symbol";
 import { SettingsGroup, SettingsRow, useStackedSettings } from "../../components/settings-group";
 import { SpendingLimitRow, useSpendingStatus } from "../../components/spending-limit-row";
 import { rpc, selectedSpaceId } from "../../lib/api";
@@ -23,7 +21,7 @@ import { replaceWithSignIn } from "../../lib/auth-routing";
 import { endCallBeforeSessionEnd } from "../../lib/call-session";
 import { dateLocaleForUi, useUiLocale } from "../../lib/i18n";
 import type { MobileMe } from "../../lib/mobile-types";
-import { native, useMobileTokens, useThemedStyles } from "../../lib/native";
+import { native, useThemedStyles } from "../../lib/native";
 import { activeOrganization, useOrganizations } from "../../lib/organizations";
 import { createSettingsPageStyles } from "../../lib/settings-page-styles";
 import { isSettingsLink, openFromSettingsSheet } from "../../lib/settings-sheet";
@@ -33,8 +31,7 @@ import { openStoreListing, useStoreUpdateAvailable } from "../../lib/store-updat
 import { confirmUnsentSendLoss } from "../../lib/unsent-send-warning";
 import { errorText } from "../../lib/user-error";
 
-type Icon = Pick<ComponentProps<typeof NativeSymbol>, "ios" | "android">;
-type SettingsLink = { title: string; href: Href; icon: Icon };
+type SettingsLink = { title: string; href: Href };
 
 /** The settings hub: the account, then shortcuts, settings and admin, each one row deep. */
 export default function Account() {
@@ -42,7 +39,6 @@ export default function Account() {
   const { t } = useLingui();
   const locale = useUiLocale();
   const router = useRouter();
-  const tokens = useMobileTokens();
   const { focus } = useLocalSearchParams<{ focus?: string }>();
   const [me, setMe] = useState<MobileMe | null>(null);
   const account = accountDisplay(me ?? {}, t`Your account`);
@@ -66,16 +62,12 @@ export default function Account() {
   const spending = useSpendingStatus();
   const organizations = useOrganizations().data;
 
-  const icon = ({ ios, android }: Icon) => (
-    <NativeSymbol ios={ios} android={android} color={tokens.mutedForeground} />
-  );
-  const settingsLink = ({ title, href, icon: glyph }: SettingsLink) => (
+  const settingsLink = ({ title, href }: SettingsLink) => (
     <SettingsRow
       key={typeof href === "string" ? href : href.pathname}
       accessibilityRole="button"
       chevron="right"
       disabled={signingOut}
-      leading={icon(glyph)}
       // Artifacts, Board and Members live on the root stack, so they close the sheet first.
       onPress={() =>
         typeof href === "string" && isSettingsLink(href)
@@ -222,24 +214,20 @@ export default function Account() {
     {
       title: t`Integrations`,
       href: "/integrations",
-      icon: { ios: "puzzlepiece.extension", android: "extension-puzzle-outline" },
     },
     {
       title: t`Skills`,
       href: "/skills",
-      icon: { ios: "scroll", android: "document-text-outline" },
     },
     {
       title: t`Artifacts`,
       href: "/artifacts",
-      icon: { ios: "folder", android: "folder-outline" },
     },
     ...(hasLab(me?.labs, "board")
       ? [
           {
             title: t`Board`,
             href: "/board",
-            icon: { ios: "rectangle.split.3x1", android: "grid-outline" },
           } as const,
         ]
       : []),
@@ -285,71 +273,52 @@ export default function Account() {
             {
               title: t`General`,
               href: "/general",
-              icon: { ios: "gearshape", android: "settings-outline" },
             } as const,
             {
               title: t`Models`,
               href: "/models",
-              icon: { ios: "cpu", android: "hardware-chip-outline" },
             } as const,
           ].map(settingsLink)}
-          <ApprovalModeRow
-            key="approvals"
-            approvals={approvals}
-            disabled={signingOut}
-            leading={icon({ ios: "checkmark.shield", android: "shield-checkmark-outline" })}
-          />
+          <ApprovalModeRow key="approvals" approvals={approvals} disabled={signingOut} />
           {approvals.ruleCount ? (
             <ApprovalRulesRow
               key="approval-rules"
               count={approvals.ruleCount}
               disabled={signingOut}
-              leading={icon({ ios: "list.bullet", android: "list-outline" })}
               onPress={() => router.push("/approvals")}
             />
           ) : null}
           {settingsLink({
             title: t`Vault`,
             href: "/vault",
-            icon: { ios: "key", android: "key-outline" },
           })}
           {settingsLink({
             title: t`Computers`,
             href: "/computers",
-            icon: { ios: "desktopcomputer", android: "desktop-outline" },
           })}
           {me?.paymentWalletProvider
             ? settingsLink({
                 title: t`Wallet`,
                 href: "/wallet",
-                icon: { ios: "wallet.pass", android: "wallet-outline" },
               })
             : null}
           {spending?.shown ? (
-            <SpendingLimitRow
-              key="spending-limit"
-              status={spending}
-              disabled={signingOut}
-              leading={icon({ ios: "dollarsign.circle", android: "cash-outline" })}
-            />
+            <SpendingLimitRow key="spending-limit" status={spending} disabled={signingOut} />
           ) : null}
           {[
             {
               title: t`Memory`,
               href: "/memory",
-              icon: { ios: "brain", android: { material: "brain" } },
             } as const,
             {
               title: t`Voice`,
               href: "/voice",
-              icon: { ios: "speaker.wave.2", android: "volume-high-outline" },
             } as const,
             ...(messagingEnabled
               ? [
                   {
                     title: t`Messaging`,
                     href: "/messaging",
-                    icon: { ios: "message", android: "chatbubble-outline" },
                   } as const,
                 ]
               : []),
@@ -358,7 +327,6 @@ export default function Account() {
                   {
                     title: t`Labs`,
                     href: "/labs",
-                    icon: { ios: "flask", android: "flask-outline" },
                   } as const,
                 ]
               : []),
@@ -371,7 +339,6 @@ export default function Account() {
               key="organization"
               accessibilityRole="button"
               chevron="right"
-              leading={icon({ ios: "building.2", android: "business-outline" })}
               onPress={() => router.push("/organization")}
               title={t`Organization`}
               value={activeOrganization(organizations)?.name}
@@ -385,14 +352,12 @@ export default function Account() {
                   pathname: "/space-members",
                   params: { spaceId: selectedSpaceId() ?? me.spaceId },
                 },
-                icon: { ios: "person.2", android: "people-outline" },
               })
             : null}
           {me?.billingEnabled
             ? settingsLink({
                 title: t`Billing`,
                 href: "/billing",
-                icon: { ios: "creditcard", android: "card-outline" },
               })
             : null}
         </SettingsGroup>

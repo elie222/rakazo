@@ -5,9 +5,9 @@ import type { JumpDirection } from "../lib/offscreen-unreads";
 import { GlassSurface } from "./glass-surface";
 import { NativeSymbol } from "./native-symbol";
 
-export const UNREAD_JUMP_PILL_HEIGHT = 38;
+export const UNREAD_JUMP_PILL_HEIGHT = 44;
 
-/** An unread-blue glass capsule with a directional chevron and label. */
+/** An unread-blue capsule with its label and a directional chevron. */
 export function UnreadJumpPill({
   direction,
   label,
@@ -33,18 +33,17 @@ export function UnreadJumpPill({
         tint={tokens.unread}
         style={styles.pill}
         fallbackStyle={{
-          backgroundColor: tokens.unread,
-          boxShadow: "0 2px 6px rgba(0, 0, 0, 0.22)",
+          borderWidth: 0,
+          boxShadow: "0 6px 20px rgba(0, 0, 0, 0.5)",
         }}
       >
+        <Text style={[styles.label, { color: onFill }]}>{label}</Text>
         <NativeSymbol
           ios={direction === "above" ? "chevron.up" : "chevron.down"}
           android={direction === "above" ? "chevron-up" : "chevron-down"}
-          size={16}
-          weight="semibold"
+          size={20}
           color={onFill}
         />
-        <Text style={[styles.label, { color: onFill }]}>{label}</Text>
       </GlassSurface>
     </Pressable>
   );
@@ -57,11 +56,12 @@ const styles = StyleSheet.create({
     gap: 6,
     height: UNREAD_JUMP_PILL_HEIGHT,
     borderRadius: UNREAD_JUMP_PILL_HEIGHT / 2,
-    paddingStart: 12,
-    paddingEnd: 14,
+    paddingStart: 20,
+    paddingEnd: 16,
   },
   label: {
-    ...typeScale.secondary,
+    ...typeScale.body,
+    lineHeight: 22,
     fontWeight: fontWeight.medium,
   },
 });

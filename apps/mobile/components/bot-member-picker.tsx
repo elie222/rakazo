@@ -1,10 +1,11 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import { GROUP_MEMBER_MAX, GROUP_MEMBER_MIN } from "@rakazo/contracts";
+import { typeScale } from "@rakazo/ui-tokens";
 import { useState } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import type { MobileBot } from "../lib/mobile-types";
-import { native, useMobileTokens } from "../lib/native";
+import { useMobileTokens } from "../lib/native";
 import { BotAvatar } from "./bot-avatar";
 import { NativeActionButton } from "./native-action-button";
 import { NativeSwitch } from "./native-switch";
@@ -41,7 +42,7 @@ export function BotMemberPicker({
   return (
     <View style={{ marginTop: 20 }}>
       <View style={styles.header}>
-        <Text style={{ color: tokens.mutedForeground, fontSize: 14 }}>
+        <Text style={{ color: tokens.mutedForeground, ...typeScale.secondary, paddingStart: 20 }}>
           {t`Members (${ph({ count: selected.length })})`}
         </Text>
         <NativeActionButton
@@ -60,14 +61,24 @@ export function BotMemberPicker({
             accessibilityLabel={t`Filter bots`}
             style={{
               marginTop: 8,
-              backgroundColor: native.fill,
-              borderRadius: 11,
-              padding: 10,
+              height: 56,
+              borderRadius: 28,
+              borderWidth: 1,
+              borderColor: tokens.border,
+              backgroundColor: tokens.card,
+              paddingHorizontal: 20,
               color: tokens.foreground,
               fontSize: 16,
             }}
           />
-          <Text style={{ color: tokens.mutedForeground, fontSize: 14, marginTop: 8 }}>
+          <Text
+            style={{
+              color: tokens.mutedForeground,
+              ...typeScale.caption,
+              marginTop: 8,
+              paddingStart: 20,
+            }}
+          >
             {t`Pick ${ph({ min: GROUP_MEMBER_MIN })}–${ph({ max: GROUP_MEMBER_MAX })}`}
           </Text>
         </>
@@ -81,7 +92,7 @@ export function BotMemberPicker({
                 color={bot.color}
                 avatarSet={bot.avatarSet}
                 identity={bot.id}
-                size={34}
+                size={40}
                 status={bot.status}
               />
               <Text style={[styles.name, { color: tokens.foreground }]}>{bot.name}</Text>
@@ -127,7 +138,11 @@ export function BotMemberPicker({
 
 const styles = StyleSheet.create({
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  row: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 12 },
-  identity: { flex: 1, flexDirection: "row", alignItems: "center", gap: 12 },
-  name: { flex: 1, fontSize: 16 },
+  row: { flexDirection: "row", alignItems: "center", gap: 14, minHeight: 60, paddingVertical: 10 },
+  identity: { flex: 1, flexDirection: "row", alignItems: "center", gap: 14 },
+  name: {
+    flex: 1,
+    fontSize: typeScale.cardTitle.fontSize,
+    lineHeight: typeScale.cardTitle.lineHeight,
+  },
 });

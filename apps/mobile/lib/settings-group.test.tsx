@@ -206,7 +206,7 @@ describe("settings group", () => {
     expect(view.innerHTML).toBe("");
   });
 
-  it("sets the group label, row detail and footer at 14pt on an 18pt line", () => {
+  it("sets the row title at 17/24, the detail at 14/20, the group label at 16/22 and the footer at 14/18", () => {
     const view = render(
       <SettingsGroup label="Appearance" footer="Applies on this device.">
         <SettingsRow title="Language" detail="Follows the system" />
@@ -219,10 +219,10 @@ describe("settings group", () => {
       return Object.assign({}, ...[JSON.parse(span?.dataset.style ?? "null")].flat());
     };
 
-    for (const content of ["Appearance", "Follows the system", "Applies on this device."]) {
-      expect(textStyle(content)).toMatchObject({ fontSize: 14, lineHeight: 18 });
-    }
-    expect(textStyle("Language")).toMatchObject({ fontSize: 17 });
+    expect(textStyle("Appearance")).toMatchObject({ fontSize: 16, lineHeight: 22 });
+    expect(textStyle("Follows the system")).toMatchObject({ fontSize: 14, lineHeight: 20 });
+    expect(textStyle("Applies on this device.")).toMatchObject({ fontSize: 14, lineHeight: 18 });
+    expect(textStyle("Language")).toMatchObject({ fontSize: 17, lineHeight: 24 });
   });
 
   it("announces the group label as a header", () => {

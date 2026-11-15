@@ -1,11 +1,12 @@
 import { useLingui } from "@lingui/react/macro";
 import type { MemoryDocument, ScratchpadItem } from "@rakazo/contracts";
 import { isEmptyBotMemory } from "@rakazo/contracts";
+import { typeScale } from "@rakazo/ui-tokens";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { rpc } from "../lib/api";
-import { native, useMobileTokens } from "../lib/native";
+import { useMobileTokens } from "../lib/native";
 import { errorText } from "../lib/user-error";
 import { NativeSymbol } from "./native-symbol";
 import { useTextEditDialog } from "./profile-edit-dialog";
@@ -57,8 +58,26 @@ export function BotContextCards({ botId }: { botId: string }) {
       setBusy(false);
     }
   }
-  const heading = { color: tokens.mutedForeground, fontSize: 12, fontWeight: "500" as const };
-  const card = { backgroundColor: native.fill, borderRadius: 12, padding: 16, gap: 12 };
+  const heading = { color: tokens.mutedForeground, ...typeScale.secondary, paddingStart: 20 };
+  const card = {
+    backgroundColor: tokens.card,
+    borderWidth: 1,
+    borderColor: tokens.border,
+    borderRadius: 22,
+    borderCurve: "continuous" as const,
+    overflow: "hidden" as const,
+  };
+  // Rows inset to the group's text edge, a hairline between each, as in the shared settings groups.
+  const row = (index: number) => ({
+    minHeight: 60,
+    paddingStart: 20,
+    paddingEnd: 16,
+    paddingVertical: 14,
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    gap: 14,
+    ...(index > 0 ? { borderTopWidth: 1, borderTopColor: tokens.border } : null),
+  });
   return (
     <>
       {work.length ? (
@@ -90,11 +109,8 @@ export function BotContextCards({ botId }: { botId: string }) {
             </Pressable>
           </View>
           <View style={card}>
-            {(allWork ? work : work.slice(0, 5)).map((item) => (
-              <View
-                key={item.id}
-                style={{ minHeight: 44, flexDirection: "row", gap: 12, alignItems: "center" }}
-              >
+            {(allWork ? work : work.slice(0, 5)).map((item, index) => (
+              <View key={item.id} style={row(index)}>
                 <Pressable
                   accessibilityLabel={`${t`Complete`} ${item.title}`}
                   accessibilityRole="checkbox"
@@ -123,9 +139,11 @@ export function BotContextCards({ botId }: { botId: string }) {
                   />
                 </Pressable>
                 <View style={{ flex: 1 }}>
-                  <Text style={{ color: tokens.foreground, fontSize: 14 }}>{item.title}</Text>
+                  <Text style={{ color: tokens.foreground, ...rowTitle }}>{item.title}</Text>
                   {item.notes ? (
-                    <Text style={{ color: tokens.mutedForeground, fontSize: 12, marginTop: 4 }}>
+                    <Text
+                      style={{ color: tokens.mutedForeground, ...typeScale.caption, marginTop: 2 }}
+                    >
                       {item.notes}
                     </Text>
                   ) : null}
@@ -136,7 +154,7 @@ export function BotContextCards({ botId }: { botId: string }) {
               <Pressable
                 accessibilityRole="button"
                 onPress={() => setAllWork(true)}
-                style={{ minHeight: 44, alignItems: "center", justifyContent: "center" }}
+                style={[row(1), { justifyContent: "center" }]}
               >
                 <Text style={{ color: tokens.mutedForeground }}>{t`Show more`}</Text>
               </Pressable>
@@ -151,7 +169,7 @@ export function BotContextCards({ botId }: { botId: string }) {
             {t`Memory`}
           </Text>
           <View style={card}>
-            {(allDocs ? docs : docs.slice(0, 5)).map((doc) => (
+            {(allDocs ? docs : docs.slice(0, 5)).map((doc, index) => (
               <Pressable
                 key={doc.id}
                 accessibilityRole="button"
@@ -159,22 +177,16 @@ export function BotContextCards({ botId }: { botId: string }) {
                 onPress={() =>
                   router.push({ pathname: "/memory-note", params: { id: doc.id, botId } })
                 }
-                style={{
-                  minHeight: 44,
-                  flexDirection: "row",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: 12,
-                }}
+                style={row(index)}
               >
-                <Text numberOfLines={1} style={{ color: tokens.foreground, fontSize: 14, flex: 1 }}>
+                <Text numberOfLines={1} style={{ color: tokens.foreground, ...rowTitle, flex: 1 }}>
                   {doc.path}
                 </Text>
                 <NativeSymbol
                   ios="chevron.right"
                   android="chevron-forward"
-                  size={14}
-                  color={native.tertiaryLabel}
+                  size={16}
+                  color={tokens.mutedForeground}
                 />
               </Pressable>
             ))}
@@ -182,7 +194,7 @@ export function BotContextCards({ botId }: { botId: string }) {
               <Pressable
                 accessibilityRole="button"
                 onPress={() => setAllDocs(true)}
-                style={{ minHeight: 44, alignItems: "center", justifyContent: "center" }}
+                style={[row(1), { justifyContent: "center" }]}
               >
                 <Text style={{ color: tokens.mutedForeground }}>{t`Show more`}</Text>
               </Pressable>
@@ -194,3 +206,6 @@ export function BotContextCards({ botId }: { botId: string }) {
     </>
   );
 }
+
+/** A row title in the grouped lists. */
+const rowTitle = { fontSize: 17, lineHeight: 24 };

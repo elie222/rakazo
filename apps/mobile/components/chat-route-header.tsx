@@ -1,16 +1,17 @@
 import { t } from "@lingui/core/macro";
 import type { NativeStackNavigationOptions } from "expo-router";
 import { router } from "expo-router";
-import { Pressable } from "react-native";
+import { Platform, View } from "react-native";
 import { mobileTokens } from "../lib/appearance";
 import { iosAtLeast } from "../lib/native-controls";
 import { setInboxHidden } from "../lib/split-view";
 import { threadEdgeOptions } from "../lib/thread-edges";
 import type { ChatTitleParams } from "./chat-header-title";
 import { ChatHeaderTitle } from "./chat-header-title";
-import { NativeSymbol } from "./native-symbol";
+import { GlassIconButton } from "./glass-icon-button";
 import { trailingHeaderOptions } from "./sheet-header";
 import { openInvite, threadHeaderRight } from "./thread-header-right";
+import { CHAT_HEADER_CONTROL_SIZE } from "./thread-header-styles";
 
 /**
  * Whether the chat sits beside the chat list, whether that list is hidden, and whether a
@@ -35,7 +36,8 @@ export function chatRouteHeader(
   const readOnly = params.readOnly === "1";
   const color = mobileTokens().foreground;
   return {
-    headerTitleAlign: "center",
+    // Android sets the title pill beside the back button; iOS centres it.
+    headerTitleAlign: Platform.OS === "android" ? "left" : "center",
     ...threadEdgeOptions(),
     headerTitle: () => <ChatHeaderTitle routeKey={route.key ?? ""} params={params} />,
     ...threadHeaderRight({
@@ -61,7 +63,27 @@ export function threadHeaderLeft({
 }: ChatSplit & { color: string }): NativeStackNavigationOptions {
   if (!split || foldActive) {
     // Folding back takes the list away, so the chat gets its back button again. Folded like
-    // a book, the list stays beside the chat, so it needs neither.
+    // a book, the list stays beside the chat, so it needs neither. Android draws the back
+    // button as the header's circle; iOS keeps its own.
+    if (!split && Platform.OS === "android") {
+      return {
+        headerBackVisible: false,
+        headerLeft: ({ canGoBack }) =>
+          canGoBack ? (
+            // The title pill sits 8pt after the back circle.
+            <View style={{ marginEnd: 8 }}>
+              <GlassIconButton
+                accessibilityLabel={t`Back`}
+                onPress={() => router.back()}
+                ios="chevron.backward"
+                android="chevron-back"
+                size={CHAT_HEADER_CONTROL_SIZE}
+                color={color}
+              />
+            </View>
+          ) : null,
+      };
+    }
     return {
       headerBackVisible: !split,
       headerLeft: undefined,
@@ -84,19 +106,14 @@ export function threadHeaderLeft({
         }
       : {}),
     headerLeft: () => (
-      <Pressable
-        accessibilityRole="button"
+      <GlassIconButton
         accessibilityLabel={label}
-        hitSlop={8}
         onPress={() => setInboxHidden(!inboxHidden)}
-      >
-        <NativeSymbol
-          ios={inboxHidden ? "sidebar.left" : "arrow.up.left.and.arrow.down.right"}
-          android={inboxHidden ? "contract-outline" : "expand-outline"}
-          size={21}
-          color={color}
-        />
-      </Pressable>
+        ios={inboxHidden ? "sidebar.left" : "arrow.up.left.and.arrow.down.right"}
+        android={inboxHidden ? "contract-outline" : "expand-outline"}
+        size={CHAT_HEADER_CONTROL_SIZE}
+        color={color}
+      />
     ),
   };
 }

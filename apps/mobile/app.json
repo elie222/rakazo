@@ -39,6 +39,7 @@
       "expo-localization",
       "@react-native-vector-icons/ionicons",
       "@react-native-vector-icons/material-design-icons",
+      "@react-native-vector-icons/material-icons",
       [
         "expo-notifications",
         {

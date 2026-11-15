@@ -7,7 +7,6 @@ import { Alert, TextInput, View } from "react-native";
 import { mobileTokens } from "../lib/appearance";
 import type { AskAction } from "../lib/ask-action-label";
 import { askActionLabel } from "../lib/ask-action-label";
-import { native } from "../lib/native";
 import { errorText } from "../lib/user-error";
 import { NativeActionButton } from "./native-action-button";
 
@@ -68,7 +67,13 @@ export function AskActions({
           maxLength={BOT_INSTRUCTIONS_MAX_LENGTH}
           value={draft}
           onChangeText={setDraft}
-          style={{ color: tokens.foreground, backgroundColor: native.fill, padding: 12 }}
+          style={{
+            color: tokens.foreground,
+            backgroundColor: tokens.secondary,
+            borderRadius: 12,
+            paddingHorizontal: 12,
+            paddingVertical: 10,
+          }}
         />
       ) : null}
       <View

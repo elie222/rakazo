@@ -12,6 +12,7 @@ import { useUiLocale } from "../../lib/i18n";
 import { useMobileTokens, useResolvedAppearance } from "../../lib/native";
 import { pageActionAllowed, pageMessage, pageTapStart } from "../../lib/pages";
 import { SandboxedHtmlPreview } from "../sandboxed-html-preview";
+import { WIDGET_CARD_RADIUS } from "../widget-card";
 
 type AppBlock = Extract<MessageBlock, { kind: "app" }>;
 
@@ -161,5 +162,5 @@ export function McpAppCard({ block, target }: { block: AppBlock; target: MobileA
 const styles = StyleSheet.create({
   card: { width: "100%", gap: 6 },
   server: { fontSize: 12, paddingHorizontal: 4 },
-  frame: { overflow: "hidden", borderRadius: 20 },
+  frame: { overflow: "hidden", borderRadius: WIDGET_CARD_RADIUS },
 });

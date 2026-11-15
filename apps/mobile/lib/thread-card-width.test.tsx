@@ -272,14 +272,14 @@ describe("thread cards", () => {
         }
       }
       expect(styleOf(outer.firstElementChild)).toMatchObject({
-        borderRadius: 20,
-        paddingHorizontal: 14,
-        paddingVertical: 12,
+        borderRadius: 22,
+        paddingHorizontal: 18,
+        paddingVertical: role === "user" ? 12 : 14,
       });
       expect(styleOf(outer.lastElementChild)).toMatchObject({
-        borderRadius: 20,
-        paddingHorizontal: 14,
-        paddingVertical: 12,
+        borderRadius: 22,
+        paddingHorizontal: 18,
+        paddingVertical: role === "user" ? 12 : 14,
       });
       act(() =>
         container.querySelector<HTMLButtonElement>('button[aria-label="screenshot.png"]')!.click(),
@@ -318,11 +318,12 @@ describe("thread cards", () => {
     expect(container.children).toHaveLength(1);
     expect(styleOf(container.firstElementChild)).toMatchObject({
       width: "90%",
-      borderRadius: 18,
+      borderRadius: 22,
+      borderWidth: 1,
     });
     if (block.kind === "subagent") {
       expect(styleOf(container.querySelector("button[aria-expanded]"))).toMatchObject({
-        paddingHorizontal: 16,
+        paddingHorizontal: 14,
         paddingTop: 14,
         paddingBottom: 14,
         minHeight: 44,
@@ -333,7 +334,7 @@ describe("thread cards", () => {
       );
     } else {
       expect(styleOf(container.firstElementChild)).toMatchObject({
-        paddingHorizontal: 16,
+        paddingHorizontal: 14,
         paddingVertical: 14,
       });
     }
@@ -554,11 +555,11 @@ describe("thread cards", () => {
   });
 
   it.each([
-    ["an unmarked", undefined, undefined, 15],
-    ["a text", "text" as const, undefined, 15],
+    ["an unmarked", undefined, undefined, 16],
+    ["a text", "text" as const, undefined, 16],
     ["a code", "code" as const, "Menlo", 14],
     ["an unmarked approval", undefined, "Menlo", 14, "effect-1"],
-    ["a text approval", "text" as const, undefined, 15, "effect-1"],
+    ["a text approval", "text" as const, undefined, 16, "effect-1"],
   ])(
     "sets %s question detail in its font",
     (_, detailFormat, fontFamily, fontSize, effectId?: string) => {

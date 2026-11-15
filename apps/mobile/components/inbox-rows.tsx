@@ -108,18 +108,22 @@ export function ConversationRow({
       <View style={styles.rowBody}>
         <View style={styles.rowTop}>
           <View style={styles.titleRow}>
-            <Text style={styles.name} numberOfLines={1} ellipsizeMode="tail">
+            <Text
+              style={[styles.name, unread && styles.unreadName]}
+              numberOfLines={1}
+              ellipsizeMode="tail"
+            >
               {title}
             </Text>
           </View>
-          <View style={styles.rowMeta}>
-            {time ? <Text style={styles.time}>{time}</Text> : null}
-            {unread ? <View accessibilityElementsHidden style={styles.unreadDot} /> : null}
-          </View>
+          {time ? <Text style={styles.time}>{time}</Text> : null}
         </View>
-        <Text style={[styles.preview, unread && styles.unreadPreview]} numberOfLines={1}>
-          {preview}
-        </Text>
+        <View style={styles.rowBottom}>
+          <Text style={[styles.preview, unread && styles.unreadPreview]} numberOfLines={1}>
+            {preview}
+          </Text>
+          {unread ? <View accessibilityElementsHidden style={styles.unreadDot} /> : null}
+        </View>
       </View>
     </DragSafePressable>
   );
@@ -147,8 +151,8 @@ export function ArchivedChatsRow({ count, onPress }: { count: number; onPress: (
       <NativeSymbol
         ios="chevron.right"
         android="chevron-forward"
-        size={12}
-        color={native.tertiaryLabel}
+        size={16}
+        color={native.secondaryLabel}
       />
     </DragSafePressable>
   );
@@ -208,8 +212,8 @@ export function SectionChevron({ collapsed }: { collapsed: boolean }) {
       <NativeSymbol
         ios="chevron.right"
         android="chevron-forward"
-        size={12}
-        color={native.tertiaryLabel}
+        size={16}
+        color={native.secondaryLabel}
       />
     </Animated.View>
   );
@@ -238,7 +242,7 @@ export const PinnedTiles = memo(function PinnedTiles({
   const selectedId = useContext(SelectedChatContext);
   // Three tiles share the row, so a narrow pane shrinks the avatars instead of overlapping them.
   const [rowWidth, setRowWidth] = useState(0);
-  const avatarSize = rowWidth > 0 ? Math.min(84, Math.floor((rowWidth - 16) / 3 - 8)) : 84;
+  const avatarSize = rowWidth > 0 ? Math.min(104, Math.floor((rowWidth - 16) / 3 - 8)) : 104;
   return (
     <View
       style={styles.pinnedTiles}
@@ -299,9 +303,12 @@ function PinnedName({ chat, name }: { chat: PinnedChat; name: string }) {
   const waiting = useWaitingOnYou(chat.kind === "bot" ? chat.bot : undefined);
   const marked = (chat.kind === "bot" ? chat.bot.unread : chat.group.unread) || waiting;
   return (
-    <Text style={[styles.pinnedName, marked && styles.pinnedUnread]} numberOfLines={1}>
-      {name}
-    </Text>
+    <View style={styles.pinnedLabel}>
+      <Text style={styles.pinnedName} numberOfLines={1}>
+        {name}
+      </Text>
+      {marked ? <View accessibilityElementsHidden style={styles.unreadDot} /> : null}
+    </View>
   );
 }
 

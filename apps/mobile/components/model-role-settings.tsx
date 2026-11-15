@@ -558,8 +558,8 @@ const rowMenuStyles = StyleSheet.create({
   fullWidth: { width: "100%" },
   row: { flexDirection: "row", alignItems: "center" },
   content: { flex: 1 },
-  button: { borderRadius: 22, overflow: "hidden", marginEnd: 16 },
-  buttonInner: { width: 44, height: 44, alignItems: "center", justifyContent: "center" },
+  button: { borderRadius: 24, overflow: "hidden", marginEnd: 16 },
+  buttonInner: { width: 48, height: 48, alignItems: "center", justifyContent: "center" },
 });
 
 function createStyles() {
@@ -574,7 +574,7 @@ function createStyles() {
     error: {
       color: tokens.destructive,
       fontSize: 15,
-      paddingHorizontal: 16,
+      paddingHorizontal: 20,
       paddingVertical: 10,
     },
   });

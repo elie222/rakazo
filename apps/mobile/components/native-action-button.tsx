@@ -61,11 +61,11 @@ export function NativeActionButton({
               : variant === "text" || small || compact
                 ? undefined
                 : 48,
-          borderRadius: 12,
+          borderRadius: 999,
           alignItems: "center",
           justifyContent: align === "start" ? "flex-start" : "center",
           alignSelf: stretches ? "stretch" : "flex-start",
-          paddingHorizontal: variant === "text" ? 0 : small ? 6 : compact ? 0 : 16,
+          paddingHorizontal: variant === "text" ? 0 : small ? 12 : compact ? 0 : 20,
           paddingVertical: variant === "text" ? 8 : small ? 6 : compact ? 8 : 12,
           backgroundColor: colors.background,
           borderWidth: colors.border ? 1 : 0,

@@ -1,6 +1,7 @@
 import { useLingui } from "@lingui/react/macro";
 import type { AccountSecurity } from "@rakazo/contracts";
 import { identityConfirmationProviders } from "@rakazo/contracts";
+import { typeScale } from "@rakazo/ui-tokens";
 import { useState } from "react";
 import {
   Modal,
@@ -245,7 +246,7 @@ export function useAccountDeletion({
   return { request, run, pending, error: open ? null : error, dialog };
 }
 
-const DIALOG_PADDING = 18;
+const DIALOG_PADDING = 24;
 
 function createStyles() {
   const tokens = mobileTokens();
@@ -268,8 +269,9 @@ function createStyles() {
       flexGrow: 0,
       flexShrink: 1,
       maxHeight: "100%",
-      borderRadius: 14,
-      backgroundColor: native.page,
+      borderRadius: 28,
+      borderCurve: "continuous",
+      backgroundColor: tokens.dialog,
     },
     dialog: {
       padding: DIALOG_PADDING,
@@ -277,21 +279,21 @@ function createStyles() {
     },
     dialogTitle: {
       color: native.label,
-      fontSize: 17,
-      fontWeight: "600",
+      ...typeScale.title,
     },
     dialogBody: {
       color: native.secondaryLabel,
-      fontSize: 14,
-      lineHeight: 20,
+      ...typeScale.secondary,
     },
     dialogInput: {
-      height: 48,
-      borderRadius: 12,
-      backgroundColor: native.fill,
+      height: 56,
+      borderRadius: 28,
+      backgroundColor: tokens.card,
+      borderWidth: 1,
+      borderColor: tokens.glassStroke,
       color: native.label,
-      paddingHorizontal: 14,
-      fontSize: 16,
+      paddingHorizontal: 20,
+      fontSize: 17,
     },
     dialogError: {
       color: tokens.destructive,

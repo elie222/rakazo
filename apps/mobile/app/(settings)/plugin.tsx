@@ -8,6 +8,7 @@ import {
   installedPluginParts,
   isCatalogItemConnected,
 } from "@rakazo/core";
+import { typeScale } from "@rakazo/ui-tokens";
 import { useQuery } from "@tanstack/react-query";
 import type { NativeStackNavigationOptions } from "expo-router";
 import {
@@ -593,7 +594,7 @@ function createStyles() {
     sourceLink: { flexDirection: "row", alignItems: "center", gap: 4, alignSelf: "flex-start" },
     description: { color: native.secondaryLabel, fontSize: 15, lineHeight: 21 },
     section: { gap: 8 },
-    sectionTitle: { color: native.label, fontSize: 15, fontWeight: "600", paddingHorizontal: 4 },
+    sectionTitle: { color: native.label, ...typeScale.headline, paddingHorizontal: 4 },
     sectionHeader: {
       flexDirection: "row",
       alignItems: "center",
@@ -601,8 +602,15 @@ function createStyles() {
       gap: 12,
     },
     count: { color: native.secondaryLabel, fontWeight: "400" },
-    card: { borderRadius: 14, backgroundColor: native.fill, overflow: "hidden" },
-    item: { paddingHorizontal: 14, paddingVertical: 12, gap: 10 },
+    card: {
+      borderRadius: 22,
+      borderCurve: "continuous",
+      backgroundColor: tokens.card,
+      borderWidth: 1,
+      borderColor: tokens.glassStroke,
+      overflow: "hidden",
+    },
+    item: { paddingHorizontal: 20, paddingVertical: 14, gap: 10 },
     itemRow: { flexDirection: "row", alignItems: "center", gap: 12 },
     itemActions: {
       flexDirection: "row",
@@ -611,9 +619,9 @@ function createStyles() {
       gap: 8,
       paddingLeft: 27,
     },
-    divider: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: native.separator },
-    title: { color: native.label, fontSize: 15, fontWeight: "500" },
-    secondary: { color: native.secondaryLabel, fontSize: 13 },
+    divider: { borderTopWidth: StyleSheet.hairlineWidth * 2, borderTopColor: native.separator },
+    title: { color: native.label, fontSize: 18, lineHeight: 24 },
+    secondary: { color: native.secondaryLabel, ...typeScale.caption },
     more: { color: native.label, fontSize: 14, textAlign: "right" },
     errorRow: { gap: 8 },
     error: { color: tokens.destructive, fontSize: 14 },

@@ -1,8 +1,9 @@
 import { useLingui } from "@lingui/react/macro";
 import type { ComputerMode } from "@rakazo/contracts";
 import { BOT_COMPUTER_MODES } from "@rakazo/contracts";
+import { typeScale } from "@rakazo/ui-tokens";
 import { Text, View } from "react-native";
-import { native, useMobileTokens } from "../lib/native";
+import { useMobileTokens } from "../lib/native";
 import { NativeSegmentedControl } from "./native-segmented-control";
 
 export function ComputerModePicker({
@@ -23,7 +24,14 @@ export function ComputerModePicker({
       style={
         plain
           ? { gap: 8 }
-          : { marginTop: 16, padding: 16, borderRadius: 14, backgroundColor: native.fill }
+          : {
+              marginTop: 16,
+              padding: 18,
+              borderRadius: 22,
+              borderWidth: 1,
+              borderColor: tokens.border,
+              backgroundColor: tokens.card,
+            }
       }
     >
       {!plain ? (
@@ -31,7 +39,12 @@ export function ComputerModePicker({
           style={
             plain
               ? { color: tokens.mutedForeground, fontSize: 14 }
-              : { color: tokens.foreground, marginBottom: 12, fontSize: 16, fontWeight: "600" }
+              : {
+                  color: tokens.foreground,
+                  marginBottom: 12,
+                  ...typeScale.secondary,
+                  fontWeight: "500",
+                }
           }
         >
           {t`Computer`}

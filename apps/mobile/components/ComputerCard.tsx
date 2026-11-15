@@ -6,7 +6,7 @@ import {
   TAKEOVER_COMPUTER_PENDING_STATE,
   TAKEOVER_COMPUTER_SKIPPED_STATE,
 } from "@rakazo/core";
-import { typeScale } from "@rakazo/ui-tokens";
+import { fontWeight, typeScale } from "@rakazo/ui-tokens";
 import { useEffect, useState } from "react";
 import type { ViewProps } from "react-native";
 import {
@@ -21,20 +21,26 @@ import {
 } from "react-native";
 import { rpc } from "../lib/api";
 import { threadCardWidth } from "../lib/message-presentation";
-import { native, useMobileTokens, useResolvedAppearance } from "../lib/native";
+import { useMobileTokens, useResolvedAppearance } from "../lib/native";
 import { useThreadReadOnly } from "../lib/thread-read-only";
 import { errorText } from "../lib/user-error";
 import { NativeActionButton } from "./native-action-button";
 import { NativeSymbol } from "./native-symbol";
+import { widgetCardSurface } from "./widget-card";
 
 const styles = StyleSheet.create({
-  card: { borderRadius: 18, paddingHorizontal: 16, paddingVertical: 14 },
+  card: { paddingHorizontal: 14, paddingVertical: 12 },
   header: { alignItems: "center", flexDirection: "row", gap: 8 },
-  icon: { alignItems: "center", borderRadius: 7, height: 28, justifyContent: "center", width: 28 },
+  icon: { alignItems: "center", height: 28, justifyContent: "center", width: 28 },
   title: { flexShrink: 0, ...typeScale.cardTitle },
   summary: { flex: 1, ...typeScale.caption },
-  heading: { marginTop: 12, ...typeScale.cardTitle },
-  body: { marginTop: 2 },
+  status: {
+    flexShrink: 0,
+    marginStart: "auto",
+    ...typeScale.caption,
+    fontWeight: fontWeight.medium,
+  },
+  body: { marginTop: 10 },
   preview: {
     aspectRatio: 16 / 10,
     borderRadius: 10,
@@ -88,6 +94,11 @@ export function ComputerCard({
         : block.state === TAKEOVER_COMPUTER_DONE_STATE
           ? t`Done`
           : block.state;
+  const statusColor = pending
+    ? tokens.warning
+    : block.state === TAKEOVER_COMPUTER_DONE_STATE
+      ? tokens.success
+      : tokens.mutedForeground;
   const open = pending || expanded;
   const canAct = Boolean(onOpen) && !readOnly;
 
@@ -105,7 +116,7 @@ export function ComputerCard({
 
   const header = (
     <View style={styles.header}>
-      <View style={[styles.icon, { backgroundColor: native.fill }]}>
+      <View style={styles.icon}>
         <NativeSymbol
           ios="laptopcomputer"
           android="laptop-outline"
@@ -122,16 +133,17 @@ export function ComputerCard({
       </Text>
       {open ? null : (
         <Text numberOfLines={1} style={[styles.summary, { color: tokens.mutedForeground }]}>
-          {label} · {block.text}
+          {block.text}
         </Text>
       )}
+      <Text style={[styles.status, { color: statusColor }]}>{label}</Text>
     </View>
   );
 
   return (
     <View
       testID="computer-card"
-      style={[styles.card, { width: threadCardWidth(windowWidth), backgroundColor: native.fill }]}
+      style={[styles.card, widgetCardSurface(tokens), { width: threadCardWidth(windowWidth) }]}
     >
       {pending ? (
         header
@@ -147,7 +159,6 @@ export function ComputerCard({
       )}
       {open ? (
         <>
-          <Text style={[styles.heading, { color: tokens.foreground }]}>{label}</Text>
           {block.text ? (
             <View style={styles.body}>
               <ChatMarkdown palette={tokens} colorScheme={colorScheme}>
@@ -166,7 +177,7 @@ export function ComputerCard({
                   {
                     backgroundColor: tokens.background,
                     borderColor: tokens.border,
-                    borderWidth: StyleSheet.hairlineWidth,
+                    borderWidth: 1,
                   },
                 ]}
               />

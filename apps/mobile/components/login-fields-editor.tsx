@@ -136,12 +136,22 @@ export function LoginFieldsEditor({
 function createStyles() {
   const tokens = mobileTokens();
   return StyleSheet.create({
-    group: { backgroundColor: tokens.muted, borderRadius: 13, overflow: "hidden" },
-    row: { flexDirection: "row", alignItems: "center", minHeight: 52, paddingHorizontal: 16 },
-    separated: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: tokens.border },
-    input: { flex: 1, minWidth: 0, paddingVertical: 16, color: tokens.foreground },
-    remove: { minWidth: 44, minHeight: 44, marginRight: -8 },
-    switchLabel: { flex: 1, color: tokens.foreground, fontSize: 17 },
+    group: {
+      backgroundColor: tokens.card,
+      borderRadius: 22,
+      borderCurve: "continuous",
+      borderWidth: 1,
+      borderColor: tokens.glassStroke,
+      overflow: "hidden",
+    },
+    row: { flexDirection: "row", alignItems: "center", minHeight: 60, paddingHorizontal: 20 },
+    separated: {
+      borderBottomWidth: StyleSheet.hairlineWidth * 2,
+      borderBottomColor: tokens.border,
+    },
+    input: { flex: 1, minWidth: 0, paddingVertical: 16, color: tokens.foreground, fontSize: 18 },
+    remove: { minWidth: 48, minHeight: 48, marginRight: -12 },
+    switchLabel: { flex: 1, color: tokens.foreground, fontSize: 18 },
     placeholder: { color: tokens.faintForeground },
   });
 }

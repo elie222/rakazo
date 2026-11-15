@@ -111,9 +111,9 @@ export function FailedSendBubble({
     >
       <View
         style={{
-          borderRadius: 20,
+          borderRadius: 22,
           backgroundColor: tokens.chatUser,
-          paddingHorizontal: 14,
+          paddingHorizontal: 18,
           paddingVertical: 12,
           gap: 8,
           opacity: 0.8,

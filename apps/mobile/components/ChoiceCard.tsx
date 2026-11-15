@@ -10,24 +10,24 @@ import {
   DISMISSED_CHOICE_ANSWER_ID,
   threadCardWidth,
 } from "../lib/message-presentation";
-import { native, useMobileTokens } from "../lib/native";
+import { useMobileTokens } from "../lib/native";
 import { useThreadReadOnly } from "../lib/thread-read-only";
 import { errorText } from "../lib/user-error";
 import { GlassIconButton } from "./glass-icon-button";
 import { NativeSymbol } from "./native-symbol";
+import { widgetCardSurface } from "./widget-card";
 
 const styles = StyleSheet.create({
   card: {
-    borderRadius: 18,
     gap: 10,
-    paddingHorizontal: 16,
+    paddingHorizontal: 14,
     paddingVertical: 14,
   },
   header: { alignItems: "flex-start", flexDirection: "row", gap: 8 },
   heading: { flex: 1, gap: 2 },
   letter: {
     alignItems: "center",
-    borderRadius: 7,
+    borderRadius: 12,
     height: 24,
     justifyContent: "center",
     width: 24,
@@ -36,6 +36,7 @@ const styles = StyleSheet.create({
   option: {
     alignItems: "center",
     borderRadius: 12,
+    borderWidth: 1,
     flexDirection: "row",
     gap: 12,
     minHeight: 48,
@@ -97,13 +98,7 @@ export function ChoiceCard({
   return (
     <View
       testID="choice-card"
-      style={[
-        styles.card,
-        {
-          width: threadCardWidth(windowWidth),
-          backgroundColor: native.fill,
-        },
-      ]}
+      style={[styles.card, widgetCardSurface(tokens), { width: threadCardWidth(windowWidth) }]}
     >
       <View style={styles.header}>
         <View style={styles.heading}>
@@ -129,7 +124,6 @@ export function ChoiceCard({
             android="close"
             size={30}
             iconSize={13}
-            fallbackStyle={{ backgroundColor: native.fillPressed }}
             disabled={busy}
             onPress={() => void submit(DISMISSED_CHOICE_ANSWER_ID)}
           />
@@ -149,12 +143,13 @@ export function ChoiceCard({
               style={({ pressed }) => [
                 styles.option,
                 {
-                  backgroundColor: pressed || chosen ? native.fillPressed : native.page,
+                  backgroundColor: pressed || chosen ? tokens.secondary : "transparent",
+                  borderColor: chosen ? tokens.primary : tokens.input,
                   opacity: busy ? 0.6 : 1,
                 },
               ]}
             >
-              <View style={[styles.letter, { backgroundColor: native.fill }]}>
+              <View style={[styles.letter, { backgroundColor: tokens.secondary }]}>
                 <Text style={[styles.letterText, { color: tokens.mutedForeground }]}>
                   {option.letter}
                 </Text>

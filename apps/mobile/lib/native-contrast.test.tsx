@@ -106,7 +106,7 @@ it.each([
         const fg = String(native.tertiaryLabel);
         const rgb = (hex: string) => [1, 3, 5].map((i) => Number.parseInt(hex.slice(i, i + 2), 16));
         const backdrop = rgb(bg);
-        const alpha = Number.parseInt(fg.slice(7, 9), 16) / 255;
+        const alpha = fg.length > 7 ? Number.parseInt(fg.slice(7, 9), 16) / 255 : 1;
         const composite = rgb(fg).map((value, i) => value * alpha + backdrop[i]! * (1 - alpha));
         const luminance = (channels: number[]) =>
           channels.reduce((sum, value, i) => {

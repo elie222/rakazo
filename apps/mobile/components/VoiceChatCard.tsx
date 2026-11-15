@@ -5,8 +5,9 @@ import { typeScale } from "@rakazo/ui-tokens";
 import { useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import type { MobileMessage } from "../lib/mobile-types";
-import { native, useMobileTokens } from "../lib/native";
+import { useMobileTokens } from "../lib/native";
 import { NativeSymbol } from "./native-symbol";
+import { widgetCardSurface } from "./widget-card";
 
 function clock(seconds: number): string {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
@@ -19,7 +20,7 @@ export function VoiceChatCard({ group }: { group: VoiceChatGroup<MobileMessage> 
   const [open, setOpen] = useState(false);
   const summary = voiceChatSummary(group);
   return (
-    <View style={[styles.card, { backgroundColor: native.fill }]}>
+    <View style={[styles.card, widgetCardSurface(tokens)]}>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={open ? t`Hide transcript` : t`Show transcript`}
@@ -27,7 +28,12 @@ export function VoiceChatCard({ group }: { group: VoiceChatGroup<MobileMessage> 
         onPress={() => setOpen((wasOpen) => !wasOpen)}
         style={styles.header}
       >
-        <NativeSymbol ios="waveform" android="pulse-outline" size={16} color={tokens.foreground} />
+        <NativeSymbol
+          ios="waveform"
+          android="pulse-outline"
+          size={18}
+          color={tokens.mutedForeground}
+        />
         <Text style={[styles.title, { color: tokens.foreground }]}>{t`Voice chat`}</Text>
         <Text style={[styles.duration, { color: tokens.mutedForeground }]}>
           {clock(voiceChatDuration(group))}
@@ -57,7 +63,7 @@ export function VoiceChatCard({ group }: { group: VoiceChatGroup<MobileMessage> 
                 key={message.id}
                 style={[
                   styles.bot,
-                  { backgroundColor: native.fillPressed, color: tokens.foreground },
+                  { backgroundColor: tokens.secondary, color: tokens.foreground },
                 ]}
               >
                 {text}
@@ -78,7 +84,6 @@ const styles = StyleSheet.create({
   card: {
     alignSelf: "flex-start",
     maxWidth: "88%",
-    borderRadius: 18,
   },
   // 40 tall around the 22 pt title line, growing with it at larger text sizes.
   header: {
@@ -86,7 +91,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 8,
     paddingHorizontal: 12,
-    paddingVertical: 9,
+    paddingVertical: 8,
     minHeight: 40,
   },
   title: typeScale.cardTitle,

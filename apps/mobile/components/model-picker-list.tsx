@@ -2,6 +2,7 @@ import { useLingui } from "@lingui/react/macro";
 import { withConnectionName } from "@rakazo/contracts";
 import type { ChatModelChoice } from "@rakazo/core";
 import { groupModelChoices, modelChoiceSearchText } from "@rakazo/core";
+import { typeScale } from "@rakazo/ui-tokens";
 import { useNavigation } from "expo-router";
 import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import type { ListViewToken } from "react-native";
@@ -285,23 +286,23 @@ export function ModelPickerList({
 function createStyles() {
   return StyleSheet.create({
     screen: { flex: 1, backgroundColor: native.page },
-    content: { paddingHorizontal: 16 },
-    sectionHeading: { paddingBottom: 7 },
-    sectionGap: { height: 20 },
+    content: { paddingHorizontal: 20 },
+    sectionHeading: { paddingBottom: 8 },
+    sectionGap: { height: 24 },
     trailing: { flexDirection: "row", alignItems: "center", gap: 10 },
-    cell: { backgroundColor: native.fill, overflow: "hidden" },
-    first: { borderTopLeftRadius: 16, borderTopRightRadius: 16, borderCurve: "continuous" },
-    last: { borderBottomLeftRadius: 16, borderBottomRightRadius: 16, borderCurve: "continuous" },
+    cell: { backgroundColor: native.groupedCell, overflow: "hidden" },
+    first: { borderTopLeftRadius: 22, borderTopRightRadius: 22, borderCurve: "continuous" },
+    last: { borderBottomLeftRadius: 22, borderBottomRightRadius: 22, borderCurve: "continuous" },
     separator: {
-      height: StyleSheet.hairlineWidth,
-      marginStart: 16,
+      height: StyleSheet.hairlineWidth * 2,
+      marginStart: 20,
       backgroundColor: native.separator,
     },
     empty: {
       color: native.secondaryLabel,
-      fontSize: 15,
-      paddingHorizontal: 16,
-      paddingVertical: 10,
+      ...typeScale.secondary,
+      paddingHorizontal: 20,
+      paddingVertical: 12,
       textAlign: "center",
     },
   });

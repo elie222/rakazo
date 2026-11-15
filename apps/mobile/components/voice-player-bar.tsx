@@ -1,9 +1,9 @@
 import { useLingui } from "@lingui/react/macro";
+import { fontWeight, typeScale } from "@rakazo/ui-tokens";
 import { useSyncExternalStore } from "react";
 import { Pressable, StyleSheet, Text } from "react-native";
 import { mobileTokens } from "../lib/appearance";
 import { useThemedStyles } from "../lib/native";
-import { iosAtLeast } from "../lib/native-controls";
 import {
   getVoicePlaybackState,
   pauseVoicePlayback,
@@ -35,7 +35,7 @@ export function VoicePlayerBar({
   const paused = playback.status === "paused";
 
   return (
-    <GlassSurface style={[styles.bar, style]} fallbackStyle={styles.barFallback}>
+    <GlassSurface style={[styles.bar, style]}>
       <NativeSymbol ios="waveform" android="pulse-outline" size={16} color={speakerColor} />
       <Text numberOfLines={1} style={[styles.name, { color: speakerColor }]}>
         {playback.speaker?.name || t`Bot`}
@@ -82,13 +82,14 @@ function VoiceControlButton({
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       onPress={onPress}
-      style={({ pressed }) => [
-        styles.button,
-        !iosAtLeast(26) && styles.buttonFallback,
-        pressed && { opacity: 0.6 },
-      ]}
+      style={({ pressed }) => [styles.button, pressed && { opacity: 0.6 }]}
     >
-      <NativeSymbol ios={ios} android={android} size={14} color={mobileTokens().foreground} />
+      <NativeSymbol
+        ios={ios}
+        android={android}
+        size={18}
+        color={mobileTokens().secondaryForeground}
+      />
     </Pressable>
   );
 }
@@ -97,32 +98,22 @@ function createStyles() {
   const tokens = mobileTokens();
   return StyleSheet.create({
     bar: {
-      marginHorizontal: 14,
+      marginHorizontal: 16,
       flexDirection: "row",
       alignItems: "center",
       gap: 10,
-      paddingVertical: 10,
-      paddingHorizontal: 16,
+      minHeight: 56,
+      paddingStart: 20,
+      paddingEnd: 7,
     },
-    barFallback: {
-      borderRadius: 18,
-      paddingHorizontal: 10,
-      borderWidth: 1,
-      borderColor: tokens.glassStroke,
-      backgroundColor: tokens.glassFill,
-    },
-    name: { flexGrow: 1, flexShrink: 1, fontSize: 13, fontWeight: "600" },
+    name: { flexGrow: 1, flexShrink: 1, ...typeScale.secondary, fontWeight: fontWeight.medium },
     button: {
-      width: 34,
-      height: 34,
-      borderRadius: 17,
+      width: 40,
+      height: 40,
+      borderRadius: 20,
       alignItems: "center",
       justifyContent: "center",
-    },
-    buttonFallback: {
-      borderWidth: 1,
-      borderColor: tokens.border,
-      backgroundColor: tokens.background,
+      backgroundColor: tokens.secondary,
     },
   });
 }

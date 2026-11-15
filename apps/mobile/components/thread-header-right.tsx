@@ -1,9 +1,9 @@
 import { t } from "@lingui/core/macro";
 import type { NativeStackNavigationOptions } from "expo-router";
 import { router } from "expo-router";
-import { Pressable } from "react-native";
 import { iosAtLeast } from "../lib/native-controls";
-import { NativeSymbol } from "./native-symbol";
+import { GlassIconButton } from "./glass-icon-button";
+import { CHAT_HEADER_CONTROL_SIZE } from "./thread-header-styles";
 
 export function openInvite() {
   router.push("/invite");
@@ -48,19 +48,14 @@ export function threadHeaderRight({
         }
       : { unstable_headerRightItems: undefined }),
     headerRight: () => (
-      <Pressable
-        accessibilityRole="button"
+      <GlassIconButton
         accessibilityLabel={label}
-        hitSlop={8}
         onPress={onPress}
-      >
-        <NativeSymbol
-          ios={inGroup ? "gearshape" : "gift"}
-          android={inGroup ? "settings-outline" : "gift-outline"}
-          size={21}
-          color={color}
-        />
-      </Pressable>
+        ios={inGroup ? "gearshape" : "gift"}
+        android={inGroup ? "settings-outline" : "gift-outline"}
+        size={CHAT_HEADER_CONTROL_SIZE}
+        color={color}
+      />
     ),
   };
 }

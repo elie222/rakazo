@@ -14,7 +14,7 @@ const MARKER_GAP = 8;
 const LINK_TILE_SIZE = 18;
 const minorHeading = {
   ...typeScale.secondary,
-  fontWeight: fontWeight.semibold,
+  fontWeight: fontWeight.medium,
   marginTop: 0,
   marginBottom: 0,
 } as const;
@@ -28,7 +28,7 @@ const codeText = {
 // The library pads code blocks by 10 already.
 const codeBox = {
   borderWidth: 0,
-  borderRadius: 10,
+  borderRadius: 14,
 };
 
 export function markdownStyles(palette: ColorTokens) {
@@ -62,7 +62,7 @@ export function markdownStyles(palette: ColorTokens) {
     heading3: {
       color: palette.foreground,
       ...typeScale.body,
-      fontWeight: fontWeight.semibold,
+      fontWeight: fontWeight.medium,
       marginTop: 0,
       marginBottom: 0,
     },
@@ -176,8 +176,8 @@ export function markdownStyles(palette: ColorTokens) {
       gap: 6,
       minHeight: 32,
       maxWidth: "100%",
-      paddingHorizontal: 10,
-      borderRadius: 8,
+      paddingHorizontal: 12,
+      borderRadius: 16,
       borderWidth: 1,
       borderColor: palette.border,
       backgroundColor: palette.background,

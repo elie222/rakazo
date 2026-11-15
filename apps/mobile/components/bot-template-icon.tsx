@@ -19,7 +19,7 @@ export const BOT_TEMPLATES_SYMBOL: TemplateSymbol = {
   android: "grid-outline",
 };
 
-/** A template's mark in a rounded tile; unknown templates share the templates mark. */
+/** A template's mark in a round tile; unknown templates share the templates mark. */
 export function BotTemplateIcon({ id, size = 32 }: { id?: string; size?: number }) {
   const symbol = (id && SYMBOLS[id]) || BOT_TEMPLATES_SYMBOL;
   return (
@@ -29,8 +29,7 @@ export function BotTemplateIcon({ id, size = 32 }: { id?: string; size?: number 
       style={{
         width: size,
         height: size,
-        borderRadius: size * 0.3,
-        borderCurve: "continuous",
+        borderRadius: size / 2,
         backgroundColor: native.fillPressed,
         alignItems: "center",
         justifyContent: "center",

@@ -4,6 +4,7 @@ import { ChatMarkdown } from "@rakazo/chat-ui/native";
 import type { Bot, BotTemplateListing } from "@rakazo/contracts";
 import { isBotTemplateChanged } from "@rakazo/contracts";
 import { botTemplateApps, formatCron } from "@rakazo/core";
+import { typeScale } from "@rakazo/ui-tokens";
 import { useQuery } from "@tanstack/react-query";
 import { useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import type { ReactNode } from "react";
@@ -227,19 +228,21 @@ function TemplateDetail({
 function createStyles() {
   return StyleSheet.create({
     screen: { flex: 1, backgroundColor: native.groupedPage },
-    content: { padding: 20, gap: 20 },
+    content: { paddingHorizontal: 16, paddingVertical: 20, gap: 20 },
     failure: { gap: 10 },
     header: { flexDirection: "row", alignItems: "center", gap: 14 },
     grow: { flex: 1, gap: 2, minWidth: 0 },
-    name: { color: native.label, fontSize: 22, fontWeight: "600" },
-    secondary: { color: native.secondaryLabel, fontSize: 15 },
+    name: { color: native.label, ...typeScale.title },
+    secondary: { color: native.secondaryLabel, ...typeScale.secondary },
     sample: {
-      paddingHorizontal: 16,
-      paddingVertical: 12,
-      borderRadius: 16,
+      paddingHorizontal: 20,
+      paddingVertical: 14,
+      borderRadius: 22,
       borderCurve: "continuous",
+      borderWidth: 1,
+      borderColor: native.separator,
       backgroundColor: native.groupedCell,
     },
-    body: { paddingHorizontal: 16, paddingBottom: 14, paddingTop: 10 },
+    body: { paddingHorizontal: 20, paddingBottom: 14, paddingTop: 10 },
   });
 }
