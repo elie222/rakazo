@@ -233,19 +233,17 @@ function isWithinSkillFolder(path: string, folder: string): boolean {
   return folder ? path.startsWith(folder) : path !== "SKILL.md";
 }
 
-function ownedBySkill(path: string, document: string, documents: readonly string[]): boolean {
+function ownedBySkill(path: string, document: string, documents: ReadonlySet<string>): boolean {
   const folder = skillFolder(document);
-  return (
-    path !== document &&
-    isWithinSkillFolder(path, folder) &&
-    !documents.some(
-      (other) =>
-        other !== document &&
-        skillFolder(other).startsWith(folder) &&
-        skillFolder(other) !== folder &&
-        path.startsWith(skillFolder(other)),
-    )
-  );
+  if (path === document || !isWithinSkillFolder(path, folder)) return false;
+  for (
+    let slash = path.lastIndexOf("/");
+    slash >= folder.length;
+    slash = path.lastIndexOf("/", slash - 1)
+  ) {
+    if (documents.has(`${path.slice(0, slash + 1)}SKILL.md`)) return false;
+  }
+  return true;
 }
 
 function isAgentSkillResourcePath(path: string): boolean {
@@ -447,18 +445,13 @@ export async function fetchGitHubRepo(
     const resourceWanted: string[] = [];
     const scheduled = new Set<string>();
     const resources = new Map<string, string[]>();
+    const documents = new Set(skillDocuments.map((document) => document.path));
     for (const skill of skillDocuments) {
       const parsed = parseSkillMd(contents.get(skill.absolutePath) ?? "");
       if ("error" in parsed) continue;
       const folder = skillFolder(skill.path);
       const siblings = entries
-        .filter((entry) =>
-          ownedBySkill(
-            entry.path,
-            skill.path,
-            skillDocuments.map((document) => document.path),
-          ),
-        )
+        .filter((entry) => ownedBySkill(entry.path, skill.path, documents))
         .map((entry) => (folder ? entry.path.slice(folder.length) : entry.path));
       const referenced = referencedSkillResources(parsed.body, siblings);
       if (referenced.length) resources.set(skill.path, referenced);
@@ -539,6 +532,7 @@ function collectSkills(
   agentSkillBundle = false,
 ): PluginSkillEntry[] {
   const skills: PluginSkillEntry[] = [];
+  const documents = new Set([...files.keys()].filter(isSkillDocumentPath));
   for (const [path, content] of files) {
     if (
       !isSkillDocumentPath(path) ||
@@ -561,7 +555,7 @@ function collectSkills(
     }
     const folder = skillFolder(path);
     const companions = [...files]
-      .filter(([p]) => ownedBySkill(p, path, [...files.keys()].filter(isSkillDocumentPath)))
+      .filter(([p]) => ownedBySkill(p, path, documents))
       .map(([p, text]) => [folder ? p.slice(folder.length) : p, text] as [string, string]);
     let storedCompanions = companions;
     if (agentSkillBundle) {
