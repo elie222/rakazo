@@ -126,12 +126,38 @@ function callEnd(text, open) {
   return -1;
 }
 
+/** The unsanitized part of each interpolation inside the template literal at [from, to). */
+function rawInsideTemplate(text, from, to) {
+  let out = "";
+  for (let index = from; index < to; index += 1) {
+    const character = text[index];
+    if (character === "\\") index += 1;
+    else if (character === "$" && text[index + 1] === "{") {
+      const end = interpolationEnd(text, index);
+      if (end === -1) return out;
+      out += unsanitized(text.slice(index + 2, end));
+      index = end;
+    }
+  }
+  return out;
+}
+
 /** The expression with every standalone sanitizeMessagingLabel(...) call removed, so what remains is raw. */
 function unsanitized(body) {
   let rest = "";
   let index = 0;
   while (index < body.length) {
     const character = body[index];
+    if (character === "/" && body[index + 1] === "/") {
+      const end = body.indexOf("\n", index);
+      index = end === -1 ? body.length : end;
+      continue;
+    }
+    if (character === "/" && body[index + 1] === "*") {
+      const end = body.indexOf("*/", index + 2);
+      index = end === -1 ? body.length : end + 2;
+      continue;
+    }
     if (character === '"' || character === "'") {
       const end = quoteEnd(body, index);
       if (end === -1) return `${rest}${body.slice(index)}`;
@@ -142,7 +168,8 @@ function unsanitized(body) {
     if (character === "`") {
       const end = templateEnd(body, index);
       if (end === -1) return `${rest}${body.slice(index)}`;
-      rest += body.slice(index, end + 1);
+      // Only a template's interpolations are evaluated; its text is a string.
+      rest += rawInsideTemplate(body, index + 1, end);
       index = end + 1;
       continue;
     }
