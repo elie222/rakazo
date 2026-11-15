@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 
+import { ORPCError } from "@orpc/client";
 import type { AgentSkillCatalogEntry } from "@rakazo/contracts";
+import { deferred } from "@rakazo/core/test-async";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
@@ -230,8 +232,11 @@ it("deletes a bot memory document after confirmation but never MEMORY.md", async
     await act(async () => button("projects/retired.md").click());
     await act(async () => button("Delete").click());
     expect(memoryApi.remove).not.toHaveBeenCalled();
+    memoryApi.list.mockResolvedValueOnce([doc("memory-index", "MEMORY.md")] as never);
     await act(async () => button("Confirm delete").click());
+    await settle();
     expect(memoryApi.remove).toHaveBeenCalledWith({ documentId: "memory-project" });
+    expect(memoryApi.list).toHaveBeenCalledTimes(2);
     expect(container.textContent).not.toContain("projects/retired.md");
     expect(container.textContent).toContain("MEMORY.md");
   } finally {
@@ -359,7 +364,9 @@ it("keeps the last cleared memory document available to reopen in the session", 
       Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(field, "");
       field.dispatchEvent(new Event("input", { bubbles: true }));
     });
+    memoryApi.list.mockResolvedValueOnce([{ ...doc, content: "", revision: 2 }] as never);
     await act(async () => button("Save").click());
+    await settle();
     expect(memoryApi.update).toHaveBeenCalledWith({
       documentId: "memory",
       content: "",
@@ -493,5 +500,105 @@ it("says how much memory no longer reaches the bot", async () => {
     });
     await act(async () => root.unmount());
     vi.unstubAllGlobals();
+  }
+});
+
+async function openMemory() {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const doc = { id: "memory", path: "notes/plan.md", content: "Saved", revision: 1 };
+  memoryApi.list.mockReset().mockResolvedValue([doc] as never);
+  memoryApi.update.mockReset();
+  memoryApi.remove.mockReset();
+  memoryApi.budget.mockClear();
+  const host = document.createElement("div");
+  const root = createRoot(host);
+  const button = (text: string) =>
+    [...host.querySelectorAll("button")].find((node) => node.textContent === text)!;
+  await show(root, <KnowledgeSection botId="fixture" />);
+  await act(async () => button("notes/plan.md").click());
+  await act(async () => {
+    const field = host.querySelector("textarea")!;
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
+      field,
+      "Edited",
+    );
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  return {
+    doc,
+    host,
+    button,
+    async cleanup() {
+      await act(async () => root.unmount());
+      vi.unstubAllGlobals();
+    },
+  };
+}
+
+it("saves a memory document once, holds the editor meanwhile, then reads the list and budget again", async () => {
+  const memory = await openMemory();
+  try {
+    const saving = deferred<object>();
+    memoryApi.update.mockReturnValue(saving.promise);
+    await act(async () => {
+      memory.button("Save").click();
+      memory.button("Save").click();
+    });
+    expect(memoryApi.update).toHaveBeenCalledTimes(1);
+    expect(memory.host.querySelector("textarea")?.disabled).toBe(true);
+    expect(memory.button("Cancel").disabled).toBe(true);
+    expect(memory.button("notes/plan.md").disabled).toBe(true);
+
+    const reads = [memoryApi.list.mock.calls.length, memoryApi.budget.mock.calls.length];
+    const saved = { ...memory.doc, content: "Edited", revision: 2 };
+    memoryApi.list.mockResolvedValue([saved] as never);
+    await act(async () => saving.resolve(saved));
+    await settle();
+    expect(memoryApi.list).toHaveBeenCalledTimes(reads[0]! + 1);
+    expect(memoryApi.budget).toHaveBeenCalledTimes(reads[1]! + 1);
+    expect(memory.host.querySelector("textarea")).toBeNull();
+    expect(memory.button("notes/plan.md").disabled).toBe(false);
+  } finally {
+    await memory.cleanup();
+  }
+});
+
+it("says when a memory document was not saved or removed, and offers the editor again", async () => {
+  const memory = await openMemory();
+  try {
+    memoryApi.update.mockRejectedValue(new Error("offline"));
+    await act(async () => memory.button("Save").click());
+    await settle();
+    expect(memory.host.textContent).toContain("Could not save");
+    expect(memory.host.querySelector("textarea")?.disabled).toBe(false);
+    expect(memory.host.querySelector("textarea")?.value).toBe("Edited");
+
+    memoryApi.remove.mockRejectedValue(new Error("offline"));
+    await act(async () => memory.button("Delete").click());
+    await act(async () => memory.button("Confirm delete").click());
+    await settle();
+    expect(memory.host.textContent).toContain("Could not remove");
+    expect(memory.host.textContent).not.toContain("Could not save");
+    expect(memory.button("Confirm delete").disabled).toBe(false);
+    expect(memoryApi.list).toHaveBeenCalledTimes(1);
+  } finally {
+    await memory.cleanup();
+  }
+});
+
+it("says a document changed elsewhere instead of failing the save, and reads the latest", async () => {
+  const memory = await openMemory();
+  try {
+    memoryApi.update.mockRejectedValue(new ORPCError("CONFLICT", { message: "Changed" }));
+    memoryApi.list.mockResolvedValue([{ ...memory.doc, content: "Theirs", revision: 2 }] as never);
+    await act(async () => memory.button("Save").click());
+    await settle();
+    expect(memory.host.textContent).toContain("Document changed. Reopen to edit");
+    expect(memory.host.textContent).not.toContain("Could not save");
+    expect(memoryApi.list).toHaveBeenCalledTimes(2);
+    expect(memory.host.querySelector("textarea")?.value).toBe("Edited");
+    expect(memory.button("Save").disabled).toBe(true);
+  } finally {
+    await memory.cleanup();
   }
 });

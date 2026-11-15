@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { i18n } from "@lingui/core";
+import { deferred } from "@rakazo/core/test-async";
 import type * as UiWeb from "@rakazo/ui-web";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
@@ -1796,6 +1797,61 @@ it("renames a connection", async () => {
       credentialId: "cred-deepseek-work",
       label: "Client work",
     });
+  } finally {
+    await view.unmount();
+  }
+});
+
+it("renames once, holds Save meanwhile, then reads the connections again", async () => {
+  const renaming = deferred<{ ok: true }>();
+  models.rename.mockReturnValue(renaming.promise);
+  models.credentials.mockResolvedValue([deepseekCredential, workCredential]);
+  const view = await renderSettings();
+  try {
+    await openProvider("DeepSeek (Work)");
+    const input = view.container.querySelector<HTMLInputElement>("input[maxlength]");
+    if (!input) throw new Error("Missing name field");
+    await typeInto(input, "Client work");
+    const save = () => input.form?.querySelector<HTMLButtonElement>('button[type="submit"]');
+    await act(async () => {
+      input.form?.requestSubmit();
+      input.form?.requestSubmit();
+    });
+    expect(models.rename).toHaveBeenCalledTimes(1);
+    expect(save()?.disabled).toBe(true);
+    expect(save()?.textContent).toBe("Saving…");
+
+    const reads = models.credentials.mock.calls.length;
+    models.credentials.mockResolvedValue([
+      deepseekCredential,
+      { ...workCredential, label: "Client work" },
+    ]);
+    await act(async () => renaming.resolve({ ok: true }));
+    await vi.waitFor(() => expect(save()).toBeNull());
+    expect(models.credentials.mock.calls.length).toBeGreaterThan(reads);
+  } finally {
+    await view.unmount();
+  }
+});
+
+it("says why a rename failed and offers Save again", async () => {
+  models.rename.mockRejectedValue({ code: "INTERNAL_SERVER_ERROR" });
+  models.credentials.mockResolvedValue([deepseekCredential, workCredential]);
+  const view = await renderSettings();
+  try {
+    await openProvider("DeepSeek (Work)");
+    const input = view.container.querySelector<HTMLInputElement>("input[maxlength]");
+    if (!input) throw new Error("Missing name field");
+    await typeInto(input, "Client work");
+    await act(async () => {
+      input.form?.requestSubmit();
+    });
+    await vi.waitFor(() =>
+      expect(input.form?.textContent).toContain("Could not rename connection"),
+    );
+    const save = input.form?.querySelector<HTMLButtonElement>('button[type="submit"]');
+    expect(save?.disabled).toBe(false);
+    expect(save?.textContent).toBe("Save");
   } finally {
     await view.unmount();
   }
