@@ -185,6 +185,22 @@ export type ApiRequestContext = {
 export function aiConsentCoalesceKey(requestContext: ApiRequestContext): string {
   return [requestContext.apiBase, requestContext.headers["x-rakazo-space-id"] ?? ""].join("\u0000");
 }
+const aiConsentListeners = new Set<() => void>();
+/** Runs after a consent prompt's Allow is saved, so whatever shows the permissions reads them again. */
+export function subscribeAiConsentGranted(listener: () => void): () => void {
+  aiConsentListeners.add(listener);
+  return () => {
+    aiConsentListeners.delete(listener);
+  };
+}
+/** Saves the Allow of a consent prompt shown outside the permissions screen. */
+export async function allowPromptedAiConsent(
+  input: RpcInput<"aiConsent/allow">,
+  requestContext?: ApiRequestContext,
+): Promise<void> {
+  await rpc("aiConsent/allow", input, { requestContext });
+  for (const listener of aiConsentListeners) listener();
+}
 /** Pins a request to the current server and session, and to a Space (the selected one by default). */
 export async function captureApiRequestContext(
   spaceId: string | null = selectedSpaceId(),
@@ -674,12 +690,11 @@ async function request(
         rpc("aiConsent/status", { uses, ...consentTarget }, { requestContext: consentContext }),
       prompt: promptAiConsent,
       allow: (input) =>
-        rpc(
-          "aiConsent/allow",
+        allowPromptedAiConsent(
           consentTarget.settingsScope
             ? { ...input, settingsScope: consentTarget.settingsScope }
             : input,
-          { requestContext: consentContext },
+          consentContext,
         ),
       coalesceKey: consentContext ? aiConsentCoalesceKey(consentContext) : undefined,
     });
