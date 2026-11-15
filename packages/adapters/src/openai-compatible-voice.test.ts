@@ -9,6 +9,7 @@ import {
   parseCompatibleVoiceList,
   parseOpenAiCompatibleVoiceSecret,
   serializeOpenAiCompatibleVoiceSecret,
+  suggestedVoices,
 } from "./openai-compatible-voice.js";
 
 /** Fixtures save as the deployment owner, who may use local speech servers. */
@@ -53,6 +54,22 @@ afterEach(() => {
 });
 
 describe("serializeOpenAiCompatibleVoiceSecret", () => {
+  it("identifies rejected transcription addresses", () => {
+    expect(() =>
+      serializeAsOwner({
+        baseUrl: "http://127.0.0.1:8810",
+        sttBaseUrl: "ftp://speech.example.com",
+      }),
+    ).toThrow(/^Transcription server URL:/);
+    expect(() =>
+      serializeAsOwner({
+        baseUrl: "http://127.0.0.1:8810",
+        sttBaseUrl: "http://speech.example.com",
+        sttApiKey: "test-key",
+      }),
+    ).toThrow(/^Transcription server URL:.*HTTPS/);
+  });
+
   it("refuses a private speech server unless private endpoints are allowed", async () => {
     expect(() =>
       serializeOpenAiCompatibleVoiceSecret({ baseUrl: "http://192.168.1.20:8880" }),
@@ -76,6 +93,7 @@ describe("serializeOpenAiCompatibleVoiceSecret", () => {
     });
     expect(openAiCompatibleVoiceServer(keyed)).toEqual({
       endpoint: "http://192.168.1.20:8880/v1",
+      sttEndpoint: "",
       ttsModel: "kokoro",
       sttModel: "whisper-1",
     });
@@ -119,6 +137,139 @@ describe("serializeOpenAiCompatibleVoiceSecret", () => {
     );
     expect(moved.apiKey).toBeUndefined();
     expect(moved.ttsModel).toBe(DEFAULT_COMPATIBLE_TTS_MODEL);
+  });
+
+  it("keeps the saved transcription model only for the same transcription server", () => {
+    const newStt = parseOpenAiCompatibleVoiceSecret(
+      serializeAsOwner(
+        { baseUrl: "http://192.168.1.20:8880", sttBaseUrl: "http://192.168.1.30:9000" },
+        keyed,
+      ),
+    );
+    expect(newStt).toMatchObject({ ttsModel: "kokoro", sttModel: DEFAULT_COMPATIBLE_STT_MODEL });
+    const split = serializeAsOwner({
+      baseUrl: "http://192.168.1.20:8880",
+      sttBaseUrl: "http://192.168.1.30:9000",
+      sttModel: "whisper-large",
+    });
+    const mainMoved = parseOpenAiCompatibleVoiceSecret(
+      serializeAsOwner({ baseUrl: "http://192.168.1.21:8880" }, split),
+    );
+    expect(mainMoved.sttModel).toBe("whisper-large");
+    const backToMain = parseOpenAiCompatibleVoiceSecret(
+      serializeAsOwner({ baseUrl: "http://192.168.1.20:8880", sttBaseUrl: "" }, split),
+    );
+    expect(backToMain.sttModel).toBe(DEFAULT_COMPATIBLE_STT_MODEL);
+  });
+
+  it("keeps a transcription key when both servers use the same address", () => {
+    const secret = serializeAsOwner({
+      baseUrl: "https://speech.example.com/v1",
+      apiKey: "speech-key",
+      sttBaseUrl: "https://speech.example.com",
+      sttApiKey: "transcription-key",
+    });
+    expect(parseOpenAiCompatibleVoiceSecret(secret)).toMatchObject({
+      sttBaseUrl: "https://speech.example.com/v1",
+      apiKey: "speech-key",
+      sttApiKey: "transcription-key",
+    });
+  });
+
+  it("stores an explicitly configured transcription server", () => {
+    const split = serializeAsOwner({
+      baseUrl: "http://192.168.1.20:8880",
+      sttBaseUrl: " http://192.168.1.30:9000 ",
+    });
+    expect(parseOpenAiCompatibleVoiceSecret(split).sttBaseUrl).toBe("http://192.168.1.30:9000/v1");
+    expect(openAiCompatibleVoiceServer(split)?.sttEndpoint).toBe("http://192.168.1.30:9000/v1");
+    const same = serializeAsOwner({
+      baseUrl: "http://192.168.1.20:8880",
+      sttBaseUrl: "http://192.168.1.20:8880/v1",
+    });
+    expect(parseOpenAiCompatibleVoiceSecret(same).sttBaseUrl).toBe("http://192.168.1.20:8880/v1");
+    // Omitted keeps the saved transcription server; blank goes back to the main server.
+    const kept = serializeAsOwner({ baseUrl: "http://192.168.1.20:8880" }, split);
+    expect(parseOpenAiCompatibleVoiceSecret(kept).sttBaseUrl).toBe("http://192.168.1.30:9000/v1");
+    const cleared = serializeAsOwner(
+      { baseUrl: "http://192.168.1.20:8880", sttBaseUrl: "" },
+      split,
+    );
+    expect(parseOpenAiCompatibleVoiceSecret(cleared).sttBaseUrl).toBeUndefined();
+  });
+
+  it("keeps each key with its own server", () => {
+    const split = serializeAsOwner({
+      baseUrl: "http://192.168.1.20:8880",
+      sttBaseUrl: "http://192.168.1.30:9000",
+      apiKey: "main-test-key",
+      sttApiKey: "stt-test-key",
+    });
+    expect(parseOpenAiCompatibleVoiceSecret(split)).toMatchObject({
+      apiKey: "main-test-key",
+      sttApiKey: "stt-test-key",
+    });
+    // A client that does not know the fields keeps the transcription server and its key.
+    const rekeyed = parseOpenAiCompatibleVoiceSecret(
+      serializeAsOwner({ baseUrl: "http://192.168.1.20:8880", apiKey: "new-test-key" }, split),
+    );
+    expect(rekeyed).toMatchObject({
+      apiKey: "new-test-key",
+      sttBaseUrl: "http://192.168.1.30:9000/v1",
+      sttApiKey: "stt-test-key",
+    });
+    // Moving only the main server leaves the transcription server and its key alone.
+    const mainMoved = parseOpenAiCompatibleVoiceSecret(
+      serializeAsOwner({ baseUrl: "http://192.168.1.21:8880" }, split),
+    );
+    expect(mainMoved).toMatchObject({
+      baseUrl: "http://192.168.1.21:8880/v1",
+      sttBaseUrl: "http://192.168.1.30:9000/v1",
+      sttApiKey: "stt-test-key",
+    });
+    expect(mainMoved.apiKey).toBeUndefined();
+    const moved = parseOpenAiCompatibleVoiceSecret(
+      serializeAsOwner(
+        { baseUrl: "http://192.168.1.20:8880", sttBaseUrl: "http://192.168.1.31:9000" },
+        split,
+      ),
+    );
+    expect(moved.apiKey).toBe("main-test-key");
+    expect(moved.sttApiKey).toBeUndefined();
+    const single = parseOpenAiCompatibleVoiceSecret(
+      serializeAsOwner({ baseUrl: "http://192.168.1.20:8880", sttApiKey: "stt-test-key" }),
+    );
+    expect(single.sttApiKey).toBeUndefined();
+  });
+
+  it("checks the transcription server like the main server", () => {
+    expect(() =>
+      serializeOpenAiCompatibleVoiceSecret({
+        baseUrl: "http://192.168.1.20:8880",
+        sttBaseUrl: "http://192.168.1.30:9000",
+      }),
+    ).toThrow(
+      "Private model endpoints need MCP_ALLOW_PRIVATE_ENDPOINT=true on the API and worker.",
+    );
+    expect(() =>
+      serializeAsOwner({ baseUrl: "http://127.0.0.1:8810", sttBaseUrl: "http://169.254.169.254" }),
+    ).toThrow(/blocked/);
+    vi.stubEnv("RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC", "1");
+    expect(() =>
+      serializeAsOwner({
+        baseUrl: "http://127.0.0.1:8810",
+        sttBaseUrl: "http://speech.example.com",
+        sttApiKey: "stt-test-key",
+      }),
+    ).toThrow(/must use HTTPS/);
+    // The main key never goes to the transcription server, so it does not need HTTPS there.
+    expect(() =>
+      serializeAsOwner({
+        baseUrl: "http://127.0.0.1:8810",
+        sttBaseUrl: "http://speech.example.com",
+        apiKey: "local-test-key",
+      }),
+    ).not.toThrow();
   });
 
   it("rejects a key that could break the Authorization header", () => {
@@ -167,6 +318,45 @@ describe("parseCompatibleVoiceList", () => {
       data: [{ id: "af_alloy" }, { id: 7 }, { id: "" }, { id: "af_heart" }, { id: "af_alloy" }],
     });
     expect(voices.map((voice) => voice.id)).toEqual(["af_heart", "af_alloy"]);
+  });
+});
+
+describe("suggestedVoices", () => {
+  it("reads the voices a strict server says the model takes", () => {
+    expect(
+      suggestedVoices({
+        error: {
+          message:
+            'Voice "alloy" is not supported by model "tts-qwen3-0-6b". Try using a supported voice: Vivian, Serena, Ono_Anna, Sohee, Uncle_Fu, ....',
+        },
+      }),
+    ).toEqual(["Vivian", "Serena", "Ono_Anna", "Sohee", "Uncle_Fu"]);
+  });
+
+  it("keeps the list short and drops anything that is not a voice id", () => {
+    const many = Array.from({ length: 20 }, (_, index) => `voice${index}`).join(", ");
+    expect(suggestedVoices({ detail: `valid voices: ${many}` })).toHaveLength(8);
+    expect(suggestedVoices({ detail: "Supported voices: tara, a b, tara" })).toEqual(["tara"]);
+    // Brackets a server wraps an id in are not part of it.
+    expect(suggestedVoices({ detail: "Supported voices: <tara>" })).toEqual(["tara"]);
+  });
+
+  it("keeps a dotted id whole", () => {
+    expect(suggestedVoices({ detail: "valid voices: voice.v1, Serena." })).toEqual([
+      "voice.v1",
+      "Serena",
+    ]);
+    expect(suggestedVoices({ detail: "valid voices: voice.v1." })).toEqual(["voice.v1"]);
+  });
+
+  it("does not read an explicitly unsupported list as alternatives", () => {
+    expect(suggestedVoices({ detail: "unsupported voices: evil, bad" })).toEqual([]);
+  });
+
+  it("finds nothing in a body that names no list", () => {
+    expect(suggestedVoices({ detail: 'Voice "alloy" is not supported by model "x"' })).toEqual([]);
+    expect(suggestedVoices({ detail: "supported voices are these" })).toEqual([]);
+    expect(suggestedVoices(null)).toEqual([]);
   });
 });
 
@@ -329,6 +519,170 @@ describe("OpenAiCompatibleVoiceProvider", () => {
     expect(JSON.parse(String(calledInit(fetchMock).body))).not.toHaveProperty("lang_code");
   });
 
+  it("retries without lang_code when a strict server names it as unrecognized", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            error: "Invalid request parameters",
+            details: { _errors: ["Unrecognized key(s) in object: 'lang_code'"] },
+          }),
+          { status: 400 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(new Uint8Array([1, 2, 3]), { headers: { "content-type": "audio/mpeg" } }),
+      );
+    await expect(
+      provider(fetchMock).synthesize({ text: "Hi", voiceId: "af_heart", apiKey: keyed }, ctx),
+    ).resolves.toMatchObject({ mimeType: "audio/mpeg" });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(String(calledInit(fetchMock).body))).toHaveProperty("lang_code");
+    expect(JSON.parse(String(calledInit(fetchMock, 1).body))).not.toHaveProperty("lang_code");
+  });
+
+  it("retries without lang_code when only a structured keys array names it", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ issues: [{ code: "unrecognized_keys", keys: ["lang_code"] }] }),
+          { status: 422 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(new Uint8Array([1]), { headers: { "content-type": "audio/mpeg" } }),
+      );
+    await expect(
+      provider(fetchMock).synthesize({ text: "Hi", voiceId: "af_heart", apiKey: keyed }, ctx),
+    ).resolves.toMatchObject({ mimeType: "audio/mpeg" });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(String(calledInit(fetchMock, 1).body))).not.toHaveProperty("lang_code");
+  });
+
+  it("keeps lang_code off the substitute once the server has refused it", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: "Unrecognized key(s) in object: 'lang_code'" }), {
+          status: 400,
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ error: "Voice af_heart is retired. Try a supported voice: af_bella." }),
+          { status: 400 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(new Uint8Array([1]), { headers: { "content-type": "audio/mpeg" } }),
+      );
+    await expect(
+      provider(fetchMock).synthesize({ text: "Hi", voiceId: "af_heart", apiKey: keyed }, ctx),
+    ).resolves.toMatchObject({ voiceId: "af_bella" });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(JSON.parse(String(calledInit(fetchMock, 1).body))).not.toHaveProperty("lang_code");
+    expect(JSON.parse(String(calledInit(fetchMock, 2).body))).not.toHaveProperty("lang_code");
+  });
+
+  it("drops lang_code from a suggested Kokoro voice when the server refuses it", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: "Voice alloy is unknown. Valid voices: af_bella." }), {
+          status: 400,
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: "Unrecognized key(s) in object: 'lang_code'" }), {
+          status: 400,
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(new Uint8Array([1]), { headers: { "content-type": "audio/mpeg" } }),
+      );
+    await expect(
+      provider(fetchMock).synthesize({ text: "Hi", voiceId: "alloy", apiKey: keyed }, ctx),
+    ).resolves.toMatchObject({ voiceId: "af_bella" });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(JSON.parse(String(calledInit(fetchMock, 1).body))).toHaveProperty("lang_code");
+    expect(JSON.parse(String(calledInit(fetchMock, 2).body))).not.toHaveProperty("lang_code");
+  });
+
+  it("retries with the voice the server suggests and reports the one it used", async () => {
+    const refusal = {
+      error: {
+        message:
+          'Voice "alloy" is not supported by model "tts-qwen3-0-6b". Try using a supported voice: Vivian, Serena.',
+      },
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(refusal), { status: 400 }))
+      .mockResolvedValueOnce(
+        new Response(new Uint8Array([1, 2, 3]), { headers: { "content-type": "audio/mpeg" } }),
+      );
+    await expect(
+      provider(fetchMock).synthesize({ text: "Hi", voiceId: "alloy", apiKey: keyless }, ctx),
+    ).resolves.toMatchObject({ mimeType: "audio/mpeg", voiceId: "Vivian" });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(String(calledInit(fetchMock, 1).body)).voice).toBe("Vivian");
+  });
+
+  it("reports the requested voice only when it was not substituted", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(new Uint8Array([1]), { headers: { "content-type": "audio/mpeg" } }),
+      );
+    await expect(
+      provider(fetchMock).synthesize({ text: "Hi", voiceId: "alloy", apiKey: keyless }, ctx),
+    ).resolves.not.toHaveProperty("voiceId");
+  });
+
+  it("reports the substitute's own refusal, including an array-shaped detail", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            error: 'Voice "alloy" is not supported. Try using a supported voice: Vivian.',
+          }),
+          { status: 400 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ detail: [{ msg: "Voice Vivian is retired." }] }), {
+          status: 422,
+        }),
+      );
+    await expect(
+      provider(fetchMock).synthesize({ text: "Hi", voiceId: "alloy", apiKey: keyless }, ctx),
+    ).rejects.toThrow(/Voice Vivian is retired\./);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not retry a 400 that never mentions lang_code", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ error: 'Voice "alloy" is not supported by model' }), {
+        status: 400,
+      }),
+    );
+    await expect(
+      provider(fetchMock).synthesize({ text: "Hi", voiceId: "af_heart", apiKey: keyed }, ctx),
+    ).rejects.toThrow(/not supported/);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("falls back to the message when a refusal's detail list is empty", async () => {
+    const body = JSON.stringify({ detail: [], message: "Model unavailable" });
+    const fetchMock = vi.fn().mockResolvedValue(new Response(body, { status: 503 }));
+    await expect(
+      provider(fetchMock).synthesize({ text: "Hi", voiceId: "alloy", apiKey: keyless }, ctx),
+    ).rejects.toThrow(/Model unavailable/);
+  });
+
   it("surfaces the server's error detail when speaking fails", async () => {
     const fetchMock = vi
       .fn()
@@ -402,6 +756,43 @@ describe("OpenAiCompatibleVoiceProvider", () => {
     expect(form.get("response_format")).toBe("json");
     expect(form.get("language")).toBe("en");
     expect((form.get("file") as File).name).toBe("speech.m4a");
+  });
+
+  it("transcribes on the separate transcription server and speaks on the main one", async () => {
+    const split = serializeAsOwner({
+      baseUrl: "http://192.168.1.20:8880",
+      sttBaseUrl: "http://192.168.1.30:9000",
+      apiKey: "main-test-key",
+      sttApiKey: "stt-test-key",
+    });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response('{"text":"hi"}'))
+      .mockResolvedValueOnce(
+        new Response(new Uint8Array([1]), { headers: { "content-type": "audio/mpeg" } }),
+      );
+    await provider(fetchMock).transcribe(
+      { audio: new Uint8Array([1]), mimeType: "audio/webm", apiKey: split },
+      ctx,
+    );
+    await provider(fetchMock).synthesize({ text: "hi", voiceId: "af_heart", apiKey: split }, ctx);
+    expect(calledUrl(fetchMock, 0)).toBe("http://192.168.1.30:9000/v1/audio/transcriptions");
+    expect(calledInit(fetchMock, 0).headers).toEqual({ authorization: "Bearer stt-test-key" });
+    expect(calledUrl(fetchMock, 1)).toBe("http://192.168.1.20:8880/v1/audio/speech");
+    expect(calledInit(fetchMock, 1).headers).toMatchObject({
+      authorization: "Bearer main-test-key",
+    });
+    const keylessStt = serializeAsOwner({
+      baseUrl: "http://192.168.1.20:8880",
+      sttBaseUrl: "http://192.168.1.30:9000",
+      apiKey: "main-test-key",
+    });
+    const sttOnly = vi.fn().mockResolvedValue(new Response('{"text":"hi"}'));
+    await provider(sttOnly).transcribe(
+      { audio: new Uint8Array([1]), mimeType: "audio/webm", apiKey: keylessStt },
+      ctx,
+    );
+    expect(calledInit(sttOnly).headers).toEqual({});
   });
 
   it("accepts a plain-text transcript body", async () => {

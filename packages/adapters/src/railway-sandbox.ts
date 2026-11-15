@@ -13,13 +13,14 @@ import type {
   ScreenRequest,
   TerminalRequest,
 } from "@rakazo/adapter-kit";
-import { boundedSandboxCommandTimeoutMs } from "@rakazo/core";
+import { anySignal, boundedSandboxCommandTimeoutMs } from "@rakazo/core";
 import { COMPUTER_CACHE_ENV } from "@rakazo/core/node/desktop-runtime";
 import type * as Railway from "railway";
 import type { ConnectOptions, Sandbox, SandboxStatus } from "railway";
 import WebSocket from "ws";
 import { z } from "zod";
 import { computerIdleSleepEnabled, sandboxIdleMs } from "./computer-idle.js";
+import { computerProxyPrepareEnv, PREPARE_COMPUTER_PROXY } from "./computer-proxy.js";
 import {
   normalizeWorkspacePath,
   shellQuote,
@@ -33,6 +34,7 @@ import {
   onBotScreen,
   PREPARE_LINUX_DESKTOP,
 } from "./linux-desktop.js";
+import { deleteUnreferencedMachine } from "./sandbox-cleanup.js";
 import { sandboxCommandArgv } from "./sandbox-command-environment.js";
 import { abortedCommandEvents } from "./sandbox-command-events.js";
 import { readBodyCapped } from "./web-ssrf.js";
@@ -202,11 +204,11 @@ export class RailwaySandboxProvider implements SandboxProvider {
       ) {
         createdId = error.id;
       }
-      if (createdId) await this.destroy(this.ref(createdId, request.botId, true), context);
+      if (createdId) await this.deleteUnreferenced(createdId);
       throw error;
     }
     if (context.signal.aborted) {
-      await this.destroy(this.ref(sandbox.id, request.botId, true), context);
+      await this.deleteUnreferenced(sandbox.id);
       context.signal.throwIfAborted();
     }
     return this.ref(sandbox.id, request.botId, true);
@@ -225,7 +227,14 @@ export class RailwaySandboxProvider implements SandboxProvider {
   }
 
   async prepare(computer: ComputerRef, context: AdapterContext): Promise<void> {
-    await this.checked(computer, PREPARE_RAILWAY_DESKTOP, context, 300_000);
+    // The proxy config travels in the environment so credentials never reach a command line.
+    await this.checked(
+      computer,
+      PREPARE_RAILWAY_DESKTOP,
+      context,
+      300_000,
+      computerProxyPrepareEnv(),
+    );
   }
 
   async *execute(
@@ -489,13 +498,22 @@ export class RailwaySandboxProvider implements SandboxProvider {
   }
 
   async destroy(computer: ComputerRef, _context: AdapterContext) {
+    await this.delete(computer.providerRef);
+  }
+
+  private async delete(id: string, signal?: AbortSignal) {
     const railway = await loadRailway();
+    const options = signal ? { ...this.options, fetch: fetchUntil(signal) } : this.options;
     try {
       // Cleanup must still run when provisioning or preparation was canceled.
-      await remove(railway, await connectSandbox(railway, computer.providerRef, this.options));
+      await remove(railway, await connectSandbox(railway, id, options));
     } catch (error) {
       if (!(error instanceof railway.SandboxNotFoundError)) throw error;
     }
+  }
+
+  private deleteUnreferenced(id: string): Promise<void> {
+    return deleteUnreferencedMachine("railway", id, (signal) => this.delete(id, signal));
   }
 
   private async connect(computer: ComputerRef, context: AdapterContext) {
@@ -520,10 +538,11 @@ export class RailwaySandboxProvider implements SandboxProvider {
     command: string,
     context: AdapterContext,
     timeoutMs = 120_000,
+    env: Record<string, string> = {},
   ) {
     const sandbox = await this.connect(computer, context);
     return sandbox.exec(`bash -c ${shellQuote(command)}`, {
-      env: COMPUTER_CACHE_ENV,
+      env: { ...COMPUTER_CACHE_ENV, ...env },
       timeoutSec: timeoutMs / 1_000,
       maxOutputBytes: MAX_RESPONSE_BYTES,
       signal: context.signal,
@@ -535,8 +554,9 @@ export class RailwaySandboxProvider implements SandboxProvider {
     command: string,
     context: AdapterContext,
     timeoutMs: number,
+    env: Record<string, string> = {},
   ) {
-    const result = await this.run(computer, command, context, timeoutMs);
+    const result = await this.run(computer, command, context, timeoutMs, env);
     if (result.exitCode !== 0 || result.timedOut || result.truncated) {
       throw new Error(result.stderr || "could not prepare Railway computer");
     }
@@ -641,6 +661,15 @@ class RailwayWebSocket extends WebSocket {
   }
 }
 
+/** Railway requests that also end when `signal` does. */
+function fetchUntil(signal: AbortSignal): typeof railwayFetch {
+  return (input, init) =>
+    railwayFetch(input, {
+      ...init,
+      signal: init?.signal ? anySignal([init.signal, signal]) : signal,
+    });
+}
+
 async function railwayFetch(
   input: Parameters<typeof fetch>[0],
   init?: RequestInit,
@@ -710,5 +739,6 @@ const PREPARE_RAILWAY_DESKTOP = [
   "exec 9>/tmp/rakazo-prepare.lock; flock -w 300 9",
   PREPARE_LINUX_DESKTOP,
   INSTALL_LINUX_BROWSER,
+  PREPARE_COMPUTER_PROXY,
   `mkdir -p ${WORKSPACE}/.browser-profiles`,
 ].join("\n");

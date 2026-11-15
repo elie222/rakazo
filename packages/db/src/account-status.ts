@@ -26,7 +26,7 @@ export async function accountDeactivated(
  */
 export async function cancelDeactivatedAccountRuns(
   prisma: PrismaClient,
-  events: Pick<ThreadEvents, "notify">,
+  events: Pick<ThreadEvents, "notify" | "publishSpaceChange">,
   userId: string,
   runId?: string,
 ): Promise<number> {
@@ -50,6 +50,7 @@ export async function cancelDeactivatedAccountRuns(
     await events.notify(threadId, event.seq).catch((error) => {
       getLogger().error("deactivated account run cancellation notification", error);
     });
+    await events.publishSpaceChange?.(event.spaceId, "runs");
   }
   return cancelled;
 }
@@ -59,7 +60,7 @@ async function cancelInThread(
   userId: string,
   threadId: string,
   where: Prisma.RunWhereInput,
-): Promise<{ seq: number } | null> {
+): Promise<{ seq: number; spaceId: string } | null> {
   await tx.$queryRaw`SELECT id FROM threads WHERE id = ${threadId} FOR UPDATE`;
   // Reactivation can land between the caller's check and this lock.
   if (!(await accountDeactivated(tx, userId))) return null;
@@ -114,5 +115,5 @@ async function cancelInThread(
     seq = event.seq;
   }
   await tx.event.deleteMany({ where: { runId: { in: ids }, ...transientRunEventsWhere() } });
-  return { seq };
+  return { seq, spaceId: cancelled[0]!.spaceId };
 }

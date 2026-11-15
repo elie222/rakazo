@@ -1,4 +1,4 @@
-import { readdir, readFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 
 export interface IosScreenshotSection {
@@ -51,23 +51,4 @@ export async function loadIosScreenshotCatalog(
     sections.push({ id, title: title.trim(), flow, screens });
   }
   return sections;
-}
-
-/** Route names under the mobile app/ folder, without route groups, layouts, or Expo Router hooks. */
-export async function mobileAppRoutes(dir: string, prefix = ""): Promise<string[]> {
-  const routes: string[] = [];
-  for (const entry of await readdir(dir, { withFileTypes: true })) {
-    if (entry.isDirectory()) {
-      const group = /^\(.*\)$/.test(entry.name);
-      routes.push(
-        ...(await mobileAppRoutes(
-          path.join(dir, entry.name),
-          group ? prefix : `${prefix}${entry.name}/`,
-        )),
-      );
-    } else if (/\.tsx$/.test(entry.name) && !/^[_+]/.test(entry.name)) {
-      routes.push(`${prefix}${entry.name.replace(/\.tsx$/, "")}`);
-    }
-  }
-  return routes;
 }

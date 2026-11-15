@@ -33,6 +33,7 @@ import {
   workspacePath,
 } from "./computer-support.js";
 import { PORTABLE_TRANSFER_BATCH_BYTES } from "./computer-workspace.js";
+import { deleteUnreferencedMachine } from "./sandbox-cleanup.js";
 import { sandboxCommandArgv } from "./sandbox-command-environment.js";
 import { abortedCommandEvents, timedOutCommandEvents } from "./sandbox-command-events.js";
 import { sandboxNotFoundError } from "./sandbox-errors.js";
@@ -1047,18 +1048,22 @@ print(json.dumps(out))
     return (result.result?.stdout ?? "").trim();
   }
 
-  /** Best-effort delete so a sandbox that will not run stops counting against the quota. */
-  private async abandonSandbox(id: string): Promise<void> {
-    const context: AdapterContext = {
-      operationId: "createos.abandon",
-      traceId: "createos.abandon",
-      spaceId: "createos",
-      userId: "createos",
-      signal: AbortSignal.timeout(10_000),
-    };
-    await this.request("DELETE", `/v1/sandboxes/${encodeURIComponent(id)}`, context).catch(
-      () => undefined,
-    );
+  /** Deletes a sandbox that will not run, so it stops counting against the quota. */
+  private abandonSandbox(id: string): Promise<void> {
+    return deleteUnreferencedMachine("createos", id, async (signal) => {
+      const context: AdapterContext = {
+        operationId: "createos.abandon",
+        traceId: "createos.abandon",
+        spaceId: "createos",
+        userId: "createos",
+        signal,
+      };
+      try {
+        await this.request("DELETE", `/v1/sandboxes/${encodeURIComponent(id)}`, context);
+      } catch (error) {
+        if (!isCreateOSSandboxGone(error)) throw error;
+      }
+    });
   }
 
   private async applyAction(

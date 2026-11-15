@@ -270,7 +270,7 @@ export function computerRoutes(ctx: RouterContext) {
           throw error;
         } finally {
           // A refused start can still have dismissed earlier failures.
-          await deps.events.publishComputerUpdateChange?.(context.actor.spaceId);
+          await deps.events.publishSpaceChange?.(context.actor.spaceId, "computerUpdates");
         }
       }),
       reset: authed.computer.reset.handler(async ({ context, input }) =>
@@ -291,7 +291,7 @@ export function computerRoutes(ctx: RouterContext) {
             throw new ORPCError("CONFLICT", { message: "Computer is busy" });
           throw error;
         } finally {
-          await deps.events.publishComputerUpdateChange?.(context.actor.spaceId);
+          await deps.events.publishSpaceChange?.(context.actor.spaceId, "computerUpdates");
         }
       }),
       updates: authed.computer.updates.handler(async ({ context }) => {
@@ -333,7 +333,7 @@ export function computerRoutes(ctx: RouterContext) {
           data: { status: "dismissed" },
         });
         if (dismissed.count > 0)
-          await deps.events.publishComputerUpdateChange?.(context.actor.spaceId);
+          await deps.events.publishSpaceChange?.(context.actor.spaceId, "computerUpdates");
         return { ok: true as const };
       }),
       dismissDiskWarning: authed.computer.dismissDiskWarning.handler(async ({ context, input }) => {
@@ -708,6 +708,14 @@ export function computerRoutes(ctx: RouterContext) {
             undefined,
             session.headers,
           ),
+          // The view is part of what a screen shows: taking or releasing control changes it.
+          ...(session.singleUseSignIn
+            ? {
+                singleUseSignIn: {
+                  screen: `${session.singleUseSignIn.screen}:${holder ? "control" : "view"}`,
+                },
+              }
+            : {}),
         };
       }),
       preview: authed.computer.preview.handler(async ({ context, input }) => {

@@ -22,7 +22,11 @@ import { getLogger } from "@rakazo/logging";
 import { cardRedactionForms } from "./bot-secrets.js";
 import type { PaymentWalletDeps } from "./payment-wallets.js";
 import { withPaymentWalletCredential } from "./payment-wallets.js";
-import { deleteSecretBestEffort } from "./secret-store-factory.js";
+import {
+  cleanUpUnsavedSecret,
+  purchaseCardRecordId,
+  purchaseTokenRecordId,
+} from "./secret-cleanup.js";
 import { releaseUnpaidPurchase, spendingRefusalError } from "./spending-gate.js";
 import type { SafeWebFetchOptions } from "./web-ssrf.js";
 
@@ -110,10 +114,15 @@ export function providerError(error: unknown) {
   throw error;
 }
 
-type WalletStoreDeps = Pick<PurchaseDeps, "prisma" | "secretStore">;
+type WalletStoreDeps = Pick<PurchaseDeps, "prisma" | "secretStore" | "jobs">;
 
 function walletDeps(deps: WalletStoreDeps, provider: PaymentWalletProvider): PaymentWalletDeps {
-  return { prisma: deps.prisma, secretStore: deps.secretStore, paymentWallet: provider };
+  return {
+    prisma: deps.prisma,
+    secretStore: deps.secretStore,
+    jobs: deps.jobs,
+    paymentWallet: provider,
+  };
 }
 
 export function withPurchaseWallet<T>(
@@ -375,7 +384,7 @@ export function purchaseContext(purchase: Purchase, use: string): AdapterContext
  * `redactions` keep the number out of anything the run records afterwards.
  */
 export async function resolvePurchaseCardFill(
-  deps: Omit<PurchaseDeps, "jobs">,
+  deps: PurchaseDeps,
   run: { spaceId: string; userId: string; botId: string },
   purchaseId: string,
   field: PurchaseCardField,
@@ -426,7 +435,7 @@ export async function resolvePurchaseCardFill(
  * page fill path holds it, and later runs of the bot keep hiding it.
  */
 export async function resolvePurchasePayTokenFill(
-  deps: Omit<PurchaseDeps, "jobs">,
+  deps: PurchaseDeps,
   run: { spaceId: string; userId: string; botId: string },
   purchaseId: string,
 ): Promise<
@@ -468,7 +477,8 @@ export async function sealOnce(
   context: AdapterContext,
 ) {
   if (purchase[column]) return;
-  const recordId = sealedRecordId(purchase.id, column);
+  const card = column === "cardCiphertext";
+  const recordId = card ? purchaseCardRecordId(purchase.id) : purchaseTokenRecordId(purchase.id);
   const stored = await deps.secretStore.put(plaintext, context, { recordId });
   const saved = await deps.prisma.purchase
     .updateMany({
@@ -476,11 +486,11 @@ export async function sealOnce(
       data: { [column]: stored.ciphertext },
     })
     .catch(() => ({ count: 0 }));
-  if (!saved.count) await deleteSecretBestEffort(deps.secretStore, stored.ciphertext, { recordId });
-}
-
-function sealedRecordId(purchaseId: string, column: "cardCiphertext" | "tokenCiphertext") {
-  return `${column === "cardCiphertext" ? "purchase-card" : "purchase-token"}:${purchaseId}`;
+  if (!saved.count)
+    await cleanUpUnsavedSecret(
+      { prisma: deps.prisma, secrets: deps.secretStore, jobs: deps.jobs },
+      { kind: card ? "purchase_card" : "purchase_token", recordId, ref: stored.ciphertext },
+    );
 }
 
 /** Single-use cards and tokens stop working well within this, and with them the reason to hide one. */
@@ -509,14 +519,14 @@ export async function loadPurchaseRedactions(
     try {
       if (row.cardCiphertext) {
         const number = await deps.secretStore.load(row.cardCiphertext, {
-          recordId: sealedRecordId(row.id, "cardCiphertext"),
+          recordId: purchaseCardRecordId(row.id),
         });
         for (const form of cardRedactionForms(number)) forms.add(form);
       }
       if (row.tokenCiphertext) {
         const tokens = JSON.parse(
           await deps.secretStore.load(row.tokenCiphertext, {
-            recordId: sealedRecordId(row.id, "tokenCiphertext"),
+            recordId: purchaseTokenRecordId(row.id),
           }),
         ) as unknown;
         for (const token of Array.isArray(tokens) ? tokens : [])

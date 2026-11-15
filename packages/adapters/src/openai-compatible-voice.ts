@@ -27,6 +27,7 @@ import {
   readVoiceJson,
   readVoiceText,
   speechUploadName,
+  voiceErrorDetail,
   voiceHttpError,
   voiceLanguageHint,
   voiceRequestError,
@@ -48,12 +49,24 @@ const MAX_SERVER_DETAIL_LENGTH = 160;
 /** A voice list is shown to the user, so it stays small: ids, short names, a few hundred. */
 const MAX_LISTED_VOICES = 500;
 const MAX_VOICE_LABEL_LENGTH = 120;
+/** Off-the-shelf voice ids are short and boring, so anything else in a hint is dropped. */
+const SUGGESTED_VOICE_ID = /^[\w.-]{1,64}$/;
+const MAX_SUGGESTED_VOICES = 8;
+const SUGGESTION_TAIL_LENGTH = 400;
+const MAX_SUGGESTION_LEAD = 20;
+/** "supported voice(s):", "try using a supported voice:", "valid voices are:". */
+const VOICE_HINT_PHRASE =
+  /\b(?:supported|valid|available|allowed)\s+voices?|\btry\s+(?:using\s+)?(?:one\s+of\s+)?(?:the\s+|a\s+)?(?:supported\s+|valid\s+)?voices?/i;
 
 /** What the encrypted voice secret holds for a self-hosted speech server. */
 export interface OpenAiCompatibleVoiceSecret {
   kind: "openai_compatible";
   baseUrl: string;
+  /** An explicit transcription server. Absent when transcription inherits the main connection. */
+  sttBaseUrl?: string;
   apiKey?: string;
+  /** Sent only to `sttBaseUrl`; `apiKey` never reaches the transcription server. */
+  sttApiKey?: string;
   ttsModel: string;
   sttModel: string;
 }
@@ -69,14 +82,18 @@ function modelIdOrDefault(value: string | undefined, fallback: string, label: st
 
 /**
  * Validate the connection form and return the secret plaintext to store. The base URL
- * gets /v1 like model connections do; public hosts stay behind the same gate. Blank
- * fields keep the previous key and models, but only for the same server, so a key is
- * never carried to a new address.
+ * gets /v1 like model connections do; public hosts stay behind the same gate, and so
+ * does a separate transcription server, which has its own key. Blank fields keep the
+ * previous keys and models, but only for the same server, so a key is never carried to
+ * a new address. An omitted transcription server keeps the previous one; blank means the
+ * main server transcribes.
  */
 export function serializeOpenAiCompatibleVoiceSecret(
   input: {
     baseUrl: string;
+    sttBaseUrl?: string;
     apiKey?: string;
+    sttApiKey?: string;
     ttsModel?: string;
     sttModel?: string;
   },
@@ -87,22 +104,54 @@ export function serializeOpenAiCompatibleVoiceSecret(
   const baseUrl = normalizeOpenAiCompatibleBaseUrl(input.baseUrl);
   const previous = previousPlaintext ? tryParseSecret(previousPlaintext) : undefined;
   const same = previous?.baseUrl === baseUrl ? previous : undefined;
+  // The transcription server and its key belong together, whatever happens to the main one.
+  const sttInput = input.sttBaseUrl === undefined ? previous?.sttBaseUrl : input.sttBaseUrl.trim();
+  let sttUrl: URL | undefined;
+  try {
+    sttUrl = sttInput ? assertAllowedOpenAiCompatibleUrl(sttInput, policy) : undefined;
+  } catch (error) {
+    throw new Error(
+      `Transcription server URL: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  const sttBaseUrl = sttInput ? normalizeOpenAiCompatibleBaseUrl(sttInput) : undefined;
+  const sameStt =
+    previous && (previous.sttBaseUrl ?? previous.baseUrl) === (sttBaseUrl ?? baseUrl)
+      ? previous
+      : undefined;
   const apiKey = input.apiKey?.trim() || same?.apiKey;
-  if (apiKey && !API_KEY_PATTERN.test(apiKey)) {
-    throw new Error("That API key has characters a key cannot contain.");
+  const sttApiKey = sttBaseUrl
+    ? input.sttApiKey?.trim() ||
+      (previous?.sttBaseUrl === sttBaseUrl ? previous.sttApiKey : undefined)
+    : undefined;
+  for (const key of [apiKey, sttApiKey]) {
+    if (key && !API_KEY_PATTERN.test(key)) {
+      throw new Error("That API key has characters a key cannot contain.");
+    }
   }
   assertHttpsForKeyedOpenAiCompatibleUrl(url, apiKey);
+  if (sttUrl) {
+    try {
+      assertHttpsForKeyedOpenAiCompatibleUrl(sttUrl, sttApiKey);
+    } catch (error) {
+      throw new Error(
+        `Transcription server URL: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
   const secret: OpenAiCompatibleVoiceSecret = {
     kind: "openai_compatible",
     baseUrl,
+    ...(sttBaseUrl ? { sttBaseUrl: sttBaseUrl } : {}),
     ...(apiKey ? { apiKey } : {}),
+    ...(sttApiKey ? { sttApiKey } : {}),
     ttsModel: modelIdOrDefault(
       input.ttsModel || same?.ttsModel,
       DEFAULT_COMPATIBLE_TTS_MODEL,
       "Speech",
     ),
     sttModel: modelIdOrDefault(
-      input.sttModel || same?.sttModel,
+      input.sttModel || sameStt?.sttModel,
       DEFAULT_COMPATIBLE_STT_MODEL,
       "Transcription",
     ),
@@ -132,7 +181,13 @@ export function parseOpenAiCompatibleVoiceSecret(plaintext: string): OpenAiCompa
   return {
     kind: "openai_compatible",
     baseUrl: record.baseUrl,
+    ...(typeof record.sttBaseUrl === "string" && record.sttBaseUrl
+      ? { sttBaseUrl: record.sttBaseUrl }
+      : {}),
     ...(typeof record.apiKey === "string" && record.apiKey ? { apiKey: record.apiKey } : {}),
+    ...(typeof record.sttApiKey === "string" && record.sttApiKey
+      ? { sttApiKey: record.sttApiKey }
+      : {}),
     ttsModel: typeof record.ttsModel === "string" ? record.ttsModel : DEFAULT_COMPATIBLE_TTS_MODEL,
     sttModel: typeof record.sttModel === "string" ? record.sttModel : DEFAULT_COMPATIBLE_STT_MODEL,
   };
@@ -141,6 +196,8 @@ export function parseOpenAiCompatibleVoiceSecret(plaintext: string): OpenAiCompa
 /** The non-secret part of a saved connection, for settings and disclosures. */
 export interface OpenAiCompatibleVoiceServer {
   endpoint: string;
+  /** Empty when the main server transcribes. */
+  sttEndpoint: string;
   ttsModel: string;
   sttModel: string;
 }
@@ -154,6 +211,7 @@ export function openAiCompatibleVoiceServer(
   try {
     return {
       endpoint: normalizeOpenAiCompatibleBaseUrl(secret.baseUrl),
+      sttEndpoint: secret.sttBaseUrl ? normalizeOpenAiCompatibleBaseUrl(secret.sttBaseUrl) : "",
       ttsModel: secret.ttsModel,
       sttModel: secret.sttModel,
     };
@@ -167,23 +225,74 @@ export function openAiCompatibleVoiceServer(
  * server: enough for "model not found", too little to read another service through it.
  */
 function serverError(status: number, what: string, body: unknown, apiKey?: string): Error {
-  const detail =
-    body && typeof body === "object"
-      ? (body as { detail?: unknown; error?: unknown; message?: unknown })
-      : {};
-  const nestedError =
-    detail.error && typeof detail.error === "object"
-      ? (detail.error as { message?: unknown }).message
-      : undefined;
-  const raw = [detail.detail, detail.message, detail.error, nestedError].find(
-    (value): value is string => typeof value === "string" && value.trim() !== "",
-  );
-  const redacted = apiKey ? raw?.replaceAll(apiKey, "[redacted]") : raw;
+  const raw = voiceErrorDetail(body);
+  const redacted = apiKey ? raw.replaceAll(apiKey, "[redacted]") : raw;
   const short = redacted
-    ?.replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]+/gu, " ")
+    .replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]+/gu, " ")
     .trim()
     .slice(0, MAX_SERVER_DETAIL_LENGTH);
   return voiceRequestError(status, PROVIDER_NAME, what, short ? { detail: short } : null, body);
+}
+
+/**
+ * A strict server that refuses a voice usually names the ones the model takes
+ * ("Try using a supported voice: Vivian, Serena, ..."), so offer those back rather than
+ * leaving the user to guess. The phrase is matched first and the ids are read up to the
+ * first sentence break, so a body that names no list yields nothing.
+ */
+export function suggestedVoices(body: unknown): string[] {
+  let text: string;
+  try {
+    text = JSON.stringify(body) ?? "";
+  } catch {
+    return [];
+  }
+  const phrase = VOICE_HINT_PHRASE.exec(text);
+  if (!phrase) return [];
+  const end = phrase.index + phrase[0].length;
+  const tail = text.slice(end, end + SUGGESTION_TAIL_LENGTH).replaceAll("\\", "");
+  const colon = tail.indexOf(":");
+  if (colon === -1 || colon > MAX_SUGGESTION_LEAD) return [];
+  const voices: string[] = [];
+  // "voice.v1" is one id, so a period only splits when it ends a sentence. Commas,
+  // semicolons and newlines always do.
+  const listed = tail
+    .slice(colon + 1)
+    .replace(/\.(?=\s|$)/g, "\n")
+    .replace(/[;,]/g, "\n");
+  for (const part of listed.split("\n")) {
+    if (voices.length >= MAX_SUGGESTED_VOICES) break;
+    // The slice carries the closing JSON quoting, so trim to the id grammar first and drop the
+    // sentence period a last entry can end with.
+    const id = part
+      .trim()
+      .replace(/^[^\w.-]+|[^\w.-]+$/g, "")
+      .replace(/\.$/, "");
+    if (!/[a-z0-9]/i.test(id) || !SUGGESTED_VOICE_ID.test(id) || voices.includes(id)) continue;
+    voices.push(id);
+  }
+  return voices;
+}
+
+/** A strict server names the key it refuses, so that key can be dropped and retried. */
+const UNRECOGNIZED_KEY_WORD =
+  /unrecognized|unrecognised|unknown|unexpected|unsupported|not allowed|extra/i;
+
+function rejectsKey(body: unknown, key: string): boolean {
+  if (!body) return false;
+  let text: string;
+  try {
+    text = JSON.stringify(body);
+  } catch {
+    return false;
+  }
+  // The field is named either as a JSON string in a structured `keys` array or in prose, where
+  // a server may quote it with single quotes, backticks or nothing at all. The bare name has to
+  // count too, or "Unrecognized key(s) in object: 'lang_code'" only works when a keys array
+  // happens to accompany it.
+  const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const named = new RegExp(`(^|["'\\s])["'\`]?${escaped}["'\`]?($|[^\\w])`);
+  return named.test(text) && UNRECOGNIZED_KEY_WORD.test(text);
 }
 
 const KOKORO_ID = /^([abefhijpz])([fm])_([a-z]+)$/;
@@ -274,14 +383,18 @@ export function parseCompatibleVoiceList(body: unknown): VoiceInfo[] {
 }
 
 function headers(secret: OpenAiCompatibleVoiceSecret, extra?: Record<string, string>) {
+  return bearer(secret.apiKey, extra);
+}
+
+function bearer(apiKey: string | undefined, extra?: Record<string, string>) {
   return {
-    ...(secret.apiKey ? { authorization: `Bearer ${secret.apiKey}` } : {}),
+    ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}),
     ...extra,
   };
 }
 
-function endpoint(secret: OpenAiCompatibleVoiceSecret, path: string): string {
-  return `${normalizeOpenAiCompatibleBaseUrl(secret.baseUrl)}/${path}`;
+function endpoint(secret: OpenAiCompatibleVoiceSecret, path: string, baseUrl = secret.baseUrl) {
+  return `${normalizeOpenAiCompatibleBaseUrl(baseUrl)}/${path}`;
 }
 
 /**
@@ -371,28 +484,53 @@ export class OpenAiCompatibleVoiceProvider implements VoiceProvider {
   async synthesize(request: VoiceSynthesizeRequest, context: AdapterContext): Promise<SpeechClip> {
     const secret = parseOpenAiCompatibleVoiceSecret(request.apiKey);
     const signal = deadlineSignal(SPEAK_DEADLINE_MS, request.signal ?? context.signal);
-    const langCode = kokoroLangCode(request.voiceId);
-    const res = await this.fetch(endpoint(secret, "audio/speech"), {
-      method: "POST",
-      headers: headers(secret, { "content-type": "application/json" }),
-      body: JSON.stringify({
-        model: secret.ttsModel,
-        voice: request.voiceId,
-        input: request.text,
-        response_format: "mp3",
-        // Kokoro servers otherwise read every voice with English pronunciation.
-        ...(langCode ? { lang_code: langCode } : {}),
-      }),
-      signal,
-    });
-    if (!res.ok) throw serverError(res.status, "speaking", await readVoiceJson(res), secret.apiKey);
-    const type = mediaType(res);
-    // mp3 was requested; servers label it audio/mpeg or audio/mp3. Anything else is not a clip.
-    if (type !== "audio/mpeg" && type !== "audio/mp3") {
-      await res.body?.cancel().catch(() => undefined);
-      throw new Error(`${PROVIDER_NAME} did not return MP3 audio.`);
+    // Set once the server has refused lang_code, so no later attempt sends it again.
+    let langRefused = false;
+    /**
+     * Speaks with one voice. Kokoro servers otherwise read every voice with English
+     * pronunciation, but strict servers reject the whole body over a key they do not know, so a
+     * refusal naming lang_code is retried once without it. Resolves with the failed response's
+     * body when the attempt still fails.
+     */
+    const attempt = async (voice: string): Promise<{ res: Response; refusal?: unknown }> => {
+      const send = (lang: string | undefined) =>
+        this.fetch(endpoint(secret, "audio/speech"), {
+          method: "POST",
+          headers: headers(secret, { "content-type": "application/json" }),
+          body: JSON.stringify({
+            model: secret.ttsModel,
+            voice,
+            input: request.text,
+            response_format: "mp3",
+            ...(lang ? { lang_code: lang } : {}),
+          }),
+          signal,
+        });
+      const langCode = langRefused ? undefined : kokoroLangCode(voice);
+      let res = await send(langCode);
+      if (res.ok) return { res };
+      let refusal = await readVoiceJson(res);
+      if (langCode && isRefusal(res) && rejectsKey(refusal, "lang_code")) {
+        langRefused = true;
+        res = await send(undefined);
+        if (res.ok) return { res };
+        refusal = await readVoiceJson(res);
+      }
+      return { res, refusal };
+    };
+    const first = await attempt(request.voiceId);
+    if (first.res.ok) return speechClip(first.res, signal);
+    // A strict server that refuses the voice may name the ones the model takes; trying the
+    // first keeps the request alive, and the clip reports the voice it really used.
+    const alternative = isRefusal(first.res)
+      ? suggestedVoices(first.refusal).find((voice) => voice !== request.voiceId)
+      : undefined;
+    if (!alternative) {
+      throw serverError(first.res.status, "speaking", first.refusal, secret.apiKey);
     }
-    return { bytes: await readVoiceAudio(res, signal), mimeType: "audio/mpeg" };
+    const second = await attempt(alternative);
+    if (second.res.ok) return speechClip(second.res, signal, alternative);
+    throw serverError(second.res.status, "speaking", second.refusal, secret.apiKey);
   }
 
   async transcribe(
@@ -400,6 +538,7 @@ export class OpenAiCompatibleVoiceProvider implements VoiceProvider {
     context: AdapterContext,
   ): Promise<{ text: string }> {
     const secret = parseOpenAiCompatibleVoiceSecret(request.apiKey);
+    const apiKey = secret.sttBaseUrl ? secret.sttApiKey : secret.apiKey;
     const form = new FormData();
     form.set("model", secret.sttModel);
     // mlx-audio streams NDJSON unless asked for the OpenAI shape.
@@ -411,16 +550,17 @@ export class OpenAiCompatibleVoiceProvider implements VoiceProvider {
       new Blob([new Uint8Array(request.audio)], { type: request.mimeType || "audio/webm" }),
       speechUploadName(request.mimeType),
     );
-    const res = await this.fetch(endpoint(secret, "audio/transcriptions"), {
+    const url = endpoint(secret, "audio/transcriptions", secret.sttBaseUrl);
+    const res = await this.fetch(url, {
       method: "POST",
-      headers: headers(secret),
+      headers: bearer(apiKey),
       body: form,
       signal: deadlineSignal(TRANSCRIBE_DEADLINE_MS, request.signal ?? context.signal),
     });
     const raw = await readVoiceText(res);
     const type = mediaType(res);
     if (!res.ok) {
-      throw serverError(res.status, "transcribing", parseJson(raw), secret.apiKey);
+      throw serverError(res.status, "transcribing", parseJson(raw), apiKey);
     }
     if (type && type !== "text/plain" && type !== "application/json") {
       throw new Error(`${PROVIDER_NAME} did not return a transcript.`);
@@ -435,6 +575,28 @@ export class OpenAiCompatibleVoiceProvider implements VoiceProvider {
     }
     return { text: raw.trim() };
   }
+}
+
+function isRefusal(res: Response): boolean {
+  return res.status === 400 || res.status === 422;
+}
+
+/** mp3 was requested; servers label it audio/mpeg or audio/mp3. Anything else is not a clip. */
+async function speechClip(
+  res: Response,
+  signal: AbortSignal,
+  voiceId?: string,
+): Promise<SpeechClip> {
+  const type = mediaType(res);
+  if (type !== "audio/mpeg" && type !== "audio/mp3") {
+    await res.body?.cancel().catch(() => undefined);
+    throw new Error(`${PROVIDER_NAME} did not return MP3 audio.`);
+  }
+  return {
+    bytes: await readVoiceAudio(res, signal),
+    mimeType: "audio/mpeg",
+    ...(voiceId ? { voiceId } : {}),
+  };
 }
 
 function parseJson(raw: string | null): unknown {

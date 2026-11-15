@@ -65,6 +65,9 @@ describe("createBackgroundJobHandlers", () => {
     const continueRun = vi.fn(async () => {
       order.push("continue");
     });
+    const publishSpaceChange = vi.fn(async (_spaceId: string, kind: string) => {
+      order.push(`signal:${kind}`);
+    });
     const delivery = {
       deliverRun: vi.fn(async (runId: string, _options?: { progress?: boolean }) => {
         order.push(`deliver:${runId}`);
@@ -82,17 +85,18 @@ describe("createBackgroundJobHandlers", () => {
     const handlers = createBackgroundJobHandlers({
       executor: { continueRun },
       prisma: { run: owned() },
+      events: { publishSpaceChange },
       workerId: "worker-1",
       messagingDelivery: delivery,
       teamChat,
     } as unknown as Parameters<typeof createBackgroundJobHandlers>[0]);
-    return { handlers, delivery, teamChat, order };
+    return { handlers, delivery, teamChat, order, continueRun, publishSpaceChange };
   }
 
   it("sends what a run said once its turn ends, without failing the run when sending fails", async () => {
     const { handlers, delivery, order } = chatHandlers();
     await handlers["run.continue"]({ runId: "run-1" });
-    expect(order).toEqual(["continue", "deliver:run-1"]);
+    expect(order).toEqual(["continue", "signal:runs", "deliver:run-1"]);
 
     const failure = new Error("chat app unavailable");
     delivery.deliverRun.mockRejectedValueOnce(failure);
@@ -101,6 +105,13 @@ describe("createBackgroundJobHandlers", () => {
       "messaging reply delivery error",
       failure,
     );
+  });
+
+  it("signals the run's Space even when its turn throws", async () => {
+    const { handlers, continueRun, publishSpaceChange } = chatHandlers();
+    continueRun.mockRejectedValueOnce(new Error("setup failed"));
+    await expect(handlers["run.continue"]({ runId: "run-1" })).rejects.toThrow("setup failed");
+    expect(publishSpaceChange).toHaveBeenCalledExactlyOnceWith(owner.spaceId, "runs");
   });
 
   it("sends a recorded chat message from its backup job with the job's attempt", async () => {
@@ -338,7 +349,29 @@ describe("createBackgroundJobHandlers", () => {
   });
 });
 
-it("retries retired messaging credentials without deleting a currently referenced credential", async () => {
+it("retries a secret cleanup without deleting a reference that is in use again", async () => {
+  const remove = vi.fn(async () => undefined);
+  const findUnique = vi.fn(async () => ({ ciphertext: "active-ref" }));
+  const handlers = createBackgroundJobHandlers({
+    prisma: { messagingInstallation: { findUnique }, secret: { findUnique } },
+    secretStore: { delete: remove },
+  } as unknown as Parameters<typeof createBackgroundJobHandlers>[0]);
+  const cleanup = { kind: "secret_row", recordId: "secret-a" } as const;
+  await handlers["secret.cleanup"]({ ...cleanup, ref: "active-ref" });
+  expect(findUnique).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "secret-a" } }));
+  expect(remove).not.toHaveBeenCalled();
+  await handlers["secret.cleanup"]({ ...cleanup, ref: "retired-ref" });
+  expect(remove).toHaveBeenCalledWith(
+    "retired-ref",
+    expect.objectContaining({ recordId: "secret-a" }),
+  );
+  remove.mockRejectedValueOnce(new Error("secret store temporarily unavailable") as never);
+  await expect(handlers["secret.cleanup"]({ ...cleanup, ref: "retired-ref" })).rejects.toThrow(
+    "temporarily unavailable",
+  );
+});
+
+it("drains the previous release's messaging credential cleanup jobs the same way", async () => {
   const remove = vi.fn(async () => undefined);
   const findUnique = vi.fn(async () => ({ ciphertext: "active-ref" }));
   const handlers = createBackgroundJobHandlers({
@@ -354,14 +387,13 @@ it("retries retired messaging credentials without deleting a currently reference
     installationId: "install-a",
     ref: "retired-ref",
   });
+  expect(findUnique).toHaveBeenLastCalledWith(
+    expect.objectContaining({ where: { id: "install-a" } }),
+  );
   expect(remove).toHaveBeenCalledWith(
     "retired-ref",
     expect.objectContaining({ recordId: "install-a" }),
   );
-  remove.mockRejectedValueOnce(new Error("secret store temporarily unavailable") as never);
-  await expect(
-    handlers["messaging.credential-cleanup"]({ installationId: "install-a", ref: "retired-ref" }),
-  ).rejects.toThrow("temporarily unavailable");
 });
 
 describe("memory.retain-turn", () => {
