@@ -20,6 +20,7 @@ import { getLogger } from "@rakazo/logging";
 import { normalizeWorkspacePath, teamBotWorkspaceDirectory } from "./computer-support.js";
 import { createStagingDirectory, LocalAgentHomeStore } from "./home.js";
 import { isSandboxDamagedError } from "./sandbox-errors.js";
+import { sandboxKindCapabilities } from "./sandbox-kind-capabilities.js";
 import { shouldSkipPortableWorkspaceFile, WORKSPACE_SAVE_LIMITS } from "./workspace-save-policy.js";
 
 export { shouldSkipPortableWorkspaceFile, WORKSPACE_SAVE_LIMITS } from "./workspace-save-policy.js";
@@ -68,11 +69,6 @@ const FREE_DISK_CHECK_BYTES = 256 * 1024 * 1024;
 /** Disk a file costs beyond its contents, so many small files still trigger the check. */
 const FILE_DISK_OVERHEAD_BYTES = 4096;
 
-/** Docker computers mount the server's home directory, whichever store keeps it. */
-export function mountsServerHome(kind: string) {
-  return kind === "docker";
-}
-
 /** The computer already reads and writes the server's home directory, so there is nothing to copy. */
 async function homeIsMounted(
   home: AgentHomeStore,
@@ -81,11 +77,13 @@ async function homeIsMounted(
   context: AdapterContext,
 ) {
   if (!(home instanceof LocalAgentHomeStore)) return false;
-  if (mountsServerHome(computer.kind)) return true;
+  const { serverHomeMount } = sandboxKindCapabilities(computer.kind);
+  // An "always" computer mounts the server's home directory whichever store keeps it.
+  if (serverHomeMount === "always") return true;
   // Object-backed homes must hydrate and export even when a claim was configured.
   if (home.describe().id !== "local-fs") return false;
   return (
-    computer.kind === "kubernetes" && (await sandbox.hasMountedHome?.(computer, context)) === true
+    serverHomeMount === "optional" && (await sandbox.hasMountedHome?.(computer, context)) === true
   );
 }
 
@@ -446,7 +444,7 @@ export async function checkpointRunComputerWorkspace(
 ): Promise<string | undefined> {
   if (
     computerRecord.scope !== "team" ||
-    computer.kind === "docker" ||
+    sandboxKindCapabilities(computer.kind).serverHomeMount === "always" ||
     (await homeIsMounted(deps.home, deps.sandbox, computer, context))
   ) {
     return checkpointAndRecordComputerWorkspace(deps, computerRecord, computer, context);

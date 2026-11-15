@@ -49,7 +49,6 @@ import { AvatarViewportScope, createAvatarViewport } from "../lib/avatar-life";
 import { useContentBottomInset } from "../lib/content-bottom-inset";
 import type { CreateAction } from "../lib/create-chooser";
 import { useHeaderHeightIfAny } from "../lib/floating-header";
-import { useForegroundPoll } from "../lib/foreground-poll";
 import { hapticImpact, hapticSelection } from "../lib/haptics";
 import { useUiLocale } from "../lib/i18n";
 import { onInboxChanged, onOpenChatFromInbox } from "../lib/inbox-changes";
@@ -81,7 +80,6 @@ import {
 import type { OrganizeTarget } from "../lib/organize-target";
 import { findOrganizeTarget } from "../lib/organize-target";
 import { offerPasskeyOnce } from "../lib/passkey";
-import { INBOX_POLL_INTERVAL_MS, INBOX_SIGNALLED_POLL_INTERVAL_MS } from "../lib/poll-cadence";
 import { registerPushToken } from "../lib/push";
 import { hasSignedInBefore, rememberSignedIn } from "../lib/returning-user";
 import { useRosterSignals } from "../lib/roster-signals";
@@ -269,15 +267,10 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     };
   }, [hasSession]);
 
-  // The embedded pane is visible beside the chat, so it keeps polling even when
+  // The embedded pane is visible beside the chat, so it keeps following changes even when
   // the chat route owns focus.
   const inboxShown = hasSession && (embedded || isFocused);
-  const rosterSignalsLive = useRosterSignals(loadBots, inboxShown);
-  useForegroundPoll(
-    loadBots,
-    rosterSignalsLive ? INBOX_SIGNALLED_POLL_INTERVAL_MS : INBOX_POLL_INTERVAL_MS,
-    inboxShown,
-  );
+  useRosterSignals(loadBots, inboxShown);
   useEffect(() => onInboxChanged(() => void refreshBots().catch(() => undefined)), [refreshBots]);
 
   const archivedCount = useArchivedCount(me?.spaceId, hasSession);
