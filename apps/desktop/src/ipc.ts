@@ -10,7 +10,7 @@ import type {
   IpcResult,
   IpcWindow,
 } from "./ipc-channels.js";
-import { ipcChannels } from "./ipc-channels.js";
+import { ipcChannels, REJECTS } from "./ipc-channels.js";
 import { reportDesktopError } from "./monitoring.js";
 
 export type IpcCaller = Pick<IpcMainInvokeEvent, "sender" | "senderFrame">;
@@ -50,7 +50,7 @@ export function sentFrom(window: IpcWindow, event: IpcCaller): boolean {
 const REPORT_EVERY_MS = 10 * 60_000;
 const reportedAt = new Map<IpcChannelName, number>();
 
-function refuse(channel: IpcChannelName) {
+function reportRefusal(channel: IpcChannelName) {
   const last = reportedAt.get(channel);
   if (last === undefined || Date.now() - last >= REPORT_EVERY_MS) {
     reportedAt.set(channel, Date.now());
@@ -58,30 +58,31 @@ function refuse(channel: IpcChannelName) {
       "ipc.channel": channel,
     });
   }
-  return new Error(`This page may not call ${channel}.`);
 }
 
 /**
  * The only way to answer a page. The channel map says which window may call; any other caller
- * is refused and reported before the handler runs.
+ * is refused and reported before the handler runs, and answered with what the map says a
+ * refused caller gets. Any other rejection is the handler's own failure.
  */
 export function handleIpc<Name extends IpcChannelName>(channel: Name, handler: IpcHandler<Name>) {
-  const { from, sync }: IpcChannel = ipcChannels[channel];
+  const { from, sync, refused }: IpcChannel = ipcChannels[channel];
   const answer = handler as (event: IpcCaller, ...args: unknown[]) => unknown;
   if (sync) {
     ipcMain.on(channel, (event, ...args: unknown[]) => {
-      // `sendSync` blocks the page until it has an answer, so a refusal answers null.
       if (sentFrom(from, event)) {
         event.returnValue = answer(event, ...args);
       } else {
-        refuse(channel);
-        event.returnValue = null;
+        reportRefusal(channel);
+        event.returnValue = refused;
       }
     });
     return;
   }
   ipcMain.handle(channel, (event, ...args: unknown[]) => {
-    if (!sentFrom(from, event)) throw refuse(channel);
-    return answer(event, ...args);
+    if (sentFrom(from, event)) return answer(event, ...args);
+    reportRefusal(channel);
+    if (refused === REJECTS) throw new Error(`This page may not call ${channel}.`);
+    return refused;
   });
 }

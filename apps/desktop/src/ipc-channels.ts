@@ -8,16 +8,46 @@ export type IpcWindow = "app" | "setup";
 
 type BridgeMethod = (...args: never[]) => unknown;
 
+/**
+ * For a channel whose bridge method has no answer that means nothing was done: a refused caller
+ * gets a rejection, like a handler that failed. Every page caller of one already takes a failure
+ * to mean the thing did not happen. A new answer is not an option: the app window shows whatever
+ * release its server runs, and a page written before the answer existed would misread it.
+ */
+export const REJECTS = Symbol("rejects");
+
 export type IpcChannel<Method extends BridgeMethod = BridgeMethod> = {
   readonly from: IpcWindow;
   /** Answered through `sendSync`, so the handler cannot wait for anything. */
   readonly sync?: true;
+  /**
+   * What a refused caller is answered with: the bridge method's own answer for nothing done.
+   * The app's page is refused whenever its window is not the app window, as it is while
+   * another server is being opened, so this is what the page sees then.
+   */
+  readonly refused: unknown;
   /** Never set: carries the type of the bridge method the preload backs with this channel. */
   readonly method?: Method;
 };
 
-const appPage = <Method extends BridgeMethod>(): IpcChannel<Method> => ({ from: "app" });
-const setupPage = <Method extends BridgeMethod>(): IpcChannel<Method> => ({ from: "setup" });
+type Refused<Method extends BridgeMethod> = Awaited<ReturnType<Method>> | typeof REJECTS;
+
+const appPage = <Method extends BridgeMethod>(refused: Refused<Method>): IpcChannel<Method> => ({
+  from: "app",
+  refused,
+});
+const setupPage = <Method extends BridgeMethod>(refused: Refused<Method>): IpcChannel<Method> => ({
+  from: "setup",
+  refused,
+});
+/** `sendSync` cannot reject, so a refused caller reads null and the preload supplies English. */
+const setupPageSync = <Method extends BridgeMethod>(): IpcChannel<Method> & { sync: true } => ({
+  from: "setup",
+  sync: true,
+  refused: null,
+});
+
+const SETUP_NOT_ACTIVE = { ok: false, error: "Setup is not active." };
 
 type Desktop = { [Key in keyof RakazoDesktop]-?: NonNullable<RakazoDesktop[Key]> };
 
@@ -28,38 +58,42 @@ type Desktop = { [Key in keyof RakazoDesktop]-?: NonNullable<RakazoDesktop[Key]>
  * copies the preloads unbundled. `ipc-channels.test.ts` fails when the three disagree.
  */
 export const ipcChannels = {
-  "desktop.badge.set": appPage<Desktop["badge"]["set"]>(),
-  "desktop.clipboard.write": appPage<Desktop["clipboard"]["writeText"]>(),
-  "desktop.computer.requestAccess": appPage<Desktop["computer"]["requestAccess"]>(),
-  "desktop.computer.revokeAccess": appPage<Desktop["computer"]["revokeAccess"]>(),
-  "desktop.device.setAllowed": appPage<Desktop["device"]["setAllowed"]>(),
-  "desktop.device.state": appPage<Desktop["device"]["state"]>(),
-  "desktop.locale.set": appPage<Desktop["locale"]["set"]>(),
-  "desktop.mcpBrowser.clear": appPage<Desktop["mcpBrowser"]["clear"]>(),
-  "desktop.monitoring.enabled": appPage<Desktop["monitoring"]["enabled"]>(),
-  "desktop.oauth.cancel": appPage<NonNullable<Desktop["oauth"]["cancel"]>>(),
-  "desktop.oauth.open": appPage<NonNullable<Desktop["oauth"]["open"]>>(),
-  "desktop.passkeys.rpIds": appPage<Desktop["passkeys"]["rpIds"]>(),
-  "desktop.server.change": appPage<Desktop["server"]["change"]>(),
-  "desktop.speech.abort": appPage<Desktop["speech"]["abort"]>(),
-  "desktop.speech.start": appPage<Desktop["speech"]["start"]>(),
-  "desktop.speech.stop": appPage<Desktop["speech"]["stop"]>(),
-  "desktop.update.check": appPage<Desktop["update"]["check"]>(),
-  "desktop.update.download": appPage<Desktop["update"]["download"]>(),
-  "desktop.update.install": appPage<Desktop["update"]["install"]>(),
-  "desktop.update.state": appPage<Desktop["update"]["state"]>(),
-  "desktop.window.close": appPage<Desktop["window"]["close"]>(),
-  "desktop.window.minimize": appPage<Desktop["window"]["minimize"]>(),
-  "desktop.window.state": appPage<Desktop["window"]["state"]>(),
-  "desktop.window.toggleMaximize": appPage<Desktop["window"]["toggleMaximize"]>(),
-  "desktop.setup.locale": { ...setupPage<() => RakazoSetup["locale"]>(), sync: true as const },
-  "desktop.setup.openLink": setupPage<RakazoSetup["openLink"]>(),
-  "desktop.setup.quit": setupPage<RakazoSetup["quit"]>(),
-  "desktop.setup.save": setupPage<RakazoSetup["save"]>(),
-  "desktop.setup.stack.start": setupPage<RakazoSetup["stack"]["start"]>(),
-  "desktop.setup.stack.state": setupPage<RakazoSetup["stack"]["state"]>(),
-  "desktop.setup.state": setupPage<RakazoSetup["state"]>(),
-  "desktop.setup.test": setupPage<RakazoSetup["test"]>(),
+  "desktop.badge.set": appPage<Desktop["badge"]["set"]>(false),
+  "desktop.clipboard.write": appPage<Desktop["clipboard"]["writeText"]>(false),
+  "desktop.computer.requestAccess": appPage<Desktop["computer"]["requestAccess"]>(REJECTS),
+  "desktop.computer.revokeAccess": appPage<Desktop["computer"]["revokeAccess"]>(undefined),
+  "desktop.device.setAllowed": appPage<Desktop["device"]["setAllowed"]>(null),
+  "desktop.device.state": appPage<Desktop["device"]["state"]>(null),
+  "desktop.locale.set": appPage<Desktop["locale"]["set"]>(undefined),
+  "desktop.mcpBrowser.clear": appPage<Desktop["mcpBrowser"]["clear"]>(REJECTS),
+  "desktop.monitoring.enabled": appPage<Desktop["monitoring"]["enabled"]>(false),
+  "desktop.oauth.cancel": appPage<NonNullable<Desktop["oauth"]["cancel"]>>(undefined),
+  "desktop.oauth.open": appPage<NonNullable<Desktop["oauth"]["open"]>>(REJECTS),
+  "desktop.passkeys.rpIds": appPage<Desktop["passkeys"]["rpIds"]>([]),
+  "desktop.server.change": appPage<Desktop["server"]["change"]>(undefined),
+  "desktop.speech.abort": appPage<Desktop["speech"]["abort"]>(undefined),
+  "desktop.speech.start": appPage<Desktop["speech"]["start"]>(false),
+  "desktop.speech.stop": appPage<Desktop["speech"]["stop"]>(undefined),
+  "desktop.update.check": appPage<Desktop["update"]["check"]>(REJECTS),
+  "desktop.update.download": appPage<Desktop["update"]["download"]>(REJECTS),
+  "desktop.update.install": appPage<Desktop["update"]["install"]>(REJECTS),
+  "desktop.update.state": appPage<Desktop["update"]["state"]>(REJECTS),
+  "desktop.window.close": appPage<Desktop["window"]["close"]>(undefined),
+  "desktop.window.minimize": appPage<Desktop["window"]["minimize"]>(undefined),
+  "desktop.window.state": appPage<Desktop["window"]["state"]>({
+    minimized: false,
+    maximized: false,
+    fullScreen: false,
+  }),
+  "desktop.window.toggleMaximize": appPage<Desktop["window"]["toggleMaximize"]>(undefined),
+  "desktop.setup.locale": setupPageSync<() => RakazoSetup["locale"]>(),
+  "desktop.setup.openLink": setupPage<RakazoSetup["openLink"]>(undefined),
+  "desktop.setup.quit": setupPage<RakazoSetup["quit"]>(undefined),
+  "desktop.setup.save": setupPage<RakazoSetup["save"]>(SETUP_NOT_ACTIVE),
+  "desktop.setup.stack.start": setupPage<RakazoSetup["stack"]["start"]>(REJECTS),
+  "desktop.setup.stack.state": setupPage<RakazoSetup["stack"]["state"]>(REJECTS),
+  "desktop.setup.state": setupPage<RakazoSetup["state"]>(REJECTS),
+  "desktop.setup.test": setupPage<RakazoSetup["test"]>(SETUP_NOT_ACTIVE),
 };
 
 export type IpcChannelName = keyof typeof ipcChannels;
