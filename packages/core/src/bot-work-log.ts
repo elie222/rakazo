@@ -1,7 +1,7 @@
 import type { BotWorkLogEntry } from "@rakazo/contracts";
 import { formatFileSize } from "./format-file-size.js";
 
-/** What a work log row shows: the command or path, else the tool's name; a file's size; a failed command's exit code. */
+/** What a work log row shows: the command or path, else the tool's name; a file's size; a failed command's exit code; a command that has not finished. */
 export function workLogRow(entry: BotWorkLogEntry) {
   const { action } = entry;
   return {
@@ -11,5 +11,6 @@ export function workLogRow(entry: BotWorkLogEntry) {
         ? formatFileSize(action.bytes)
         : null,
     exitCode: action?.exitCode || null,
+    running: action?.status === "running",
   };
 }

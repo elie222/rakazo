@@ -36,3 +36,9 @@ it("shows a written file's size and only a failed command's exit code", () => {
   expect(workLogRow(entry("shell", { exitCode: 0 })).exitCode).toBeNull();
   expect(workLogRow(entry("shell", { exitCode: null })).exitCode).toBeNull();
 });
+
+it("marks a command that has not finished", () => {
+  expect(workLogRow(entry("shell", { status: "running", exitCode: null })).running).toBe(true);
+  expect(workLogRow(entry("shell", { status: "done" })).running).toBe(false);
+  expect(workLogRow(entry("web_search")).running).toBe(false);
+});

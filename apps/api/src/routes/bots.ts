@@ -465,16 +465,26 @@ export function botsRoutes(ctx: RouterContext) {
           select: { id: true, runId: true, createdAt: true, payload: true },
         });
         const runIds = [...new Set(calls.flatMap((call) => (call.runId ? [call.runId] : [])))];
+        // A command writes a running and a done event after its call, so these are the newest few.
         const actions = await deps.prisma.event.findMany({
-          where: { ...where, type: "computer.command", runId: { in: runIds } },
-          orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-          select: { payload: true },
+          where: {
+            ...where,
+            type: "computer.command",
+            runId: { in: runIds },
+            createdAt: { gte: calls.at(-1)?.createdAt },
+          },
+          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+          take: BOT_WORK_LOG_LIMIT * 2,
+          select: { runId: true, payload: true },
         });
-        const byExecution = new Map(
+        // Two runs can name a call the same, so an action is told apart by its run too.
+        const byRunExecution = new Map(
           foldComputerCommands(
-            actions.flatMap((event) => {
+            actions.reverse().flatMap((event) => {
               const parsed = ComputerCommandSchema.safeParse(event.payload);
-              return parsed.success ? [parsed.data] : [];
+              return parsed.success
+                ? [{ ...parsed.data, executionId: `${event.runId}/${parsed.data.executionId}` }]
+                : [];
             }),
           ).map((action) => [action.executionId, action]),
         );
@@ -482,14 +492,21 @@ export function botsRoutes(ctx: RouterContext) {
           const payload = call.payload as { name?: unknown; executionId?: unknown };
           const action =
             typeof payload.executionId === "string"
-              ? byExecution.get(payload.executionId)
+              ? byRunExecution.get(`${call.runId}/${payload.executionId}`)
               : undefined;
           return {
             id: call.id,
             createdAt: call.createdAt.toISOString(),
             runId: call.runId,
             tool: String(payload.name ?? ""),
-            ...(action ? { action } : {}),
+            ...(action
+              ? {
+                  action: {
+                    ...action,
+                    executionId: action.executionId.slice(call.runId!.length + 1),
+                  },
+                }
+              : {}),
           };
         });
       }),

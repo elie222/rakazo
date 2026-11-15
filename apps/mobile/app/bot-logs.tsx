@@ -2,7 +2,7 @@ import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import { workLogRow } from "@rakazo/core";
 import { useLocalSearchParams } from "expo-router";
-import { ActivityIndicator, ScrollView, StyleSheet, Text } from "react-native";
+import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text } from "react-native";
 import { LoadFailure } from "../components/load-failure";
 import { SettingsGroup, SettingsRow, useStackedSettings } from "../components/settings-group";
 import { formatActivityRelativeTime } from "../lib/activity";
@@ -30,21 +30,31 @@ export default function BotLogs() {
       {data?.length ? (
         <SettingsGroup>
           {data.map((entry) => {
-            const { title, size, exitCode } = workLogRow(entry);
+            const { title, size, exitCode, running } = workLogRow(entry);
+            const extra = exitCode
+              ? t`Exit code ${ph({ code: exitCode })}`
+              : running
+                ? t`Running`
+                : size;
+            const output = entry.action?.output;
             return (
               <SettingsRow
                 key={entry.id}
                 title={title}
                 detail={
-                  exitCode
-                    ? t`${ph({ tool: entry.tool })}, exit code ${ph({ code: exitCode })}`
-                    : size
-                      ? t`${ph({ tool: entry.tool })}, ${ph({ size })}`
-                      : title === entry.tool
-                        ? undefined
-                        : entry.tool
+                  extra
+                    ? t`${ph({ tool: entry.tool })}, ${ph({ extra })}`
+                    : title === entry.tool
+                      ? undefined
+                      : entry.tool
                 }
                 value={formatActivityRelativeTime(entry.createdAt)}
+                {...(output
+                  ? {
+                      accessibilityRole: "button" as const,
+                      onPress: () => Alert.alert(title, output),
+                    }
+                  : {})}
               />
             );
           })}
@@ -53,7 +63,7 @@ export default function BotLogs() {
         <Text style={styles.empty}>{t`No activity yet.`}</Text>
       ) : error ? (
         <LoadFailure
-          message={errorText(error, t`Could not load logs.`)}
+          message={errorText(error, t`Couldn't load logs.`)}
           onRetry={() => void refetch()}
         />
       ) : (

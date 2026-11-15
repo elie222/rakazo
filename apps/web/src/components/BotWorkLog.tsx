@@ -15,7 +15,7 @@ import { formatRelativeTime } from "../lib/relative-time";
 function WorkLogRow({ entry }: { entry: BotWorkLogEntry }) {
   const { t } = useLingui();
   const { action } = entry;
-  const { title, size, exitCode } = workLogRow(entry);
+  const { title, size, exitCode, running } = workLogRow(entry);
   const summary = (
     <span className="flex min-w-0 flex-1 flex-col">
       <span className="truncate font-mono text-body-sm text-foreground" dir="auto">
@@ -24,6 +24,7 @@ function WorkLogRow({ entry }: { entry: BotWorkLogEntry }) {
       <span className="flex flex-wrap gap-x-2 text-label text-muted-foreground">
         {title !== entry.tool ? <span>{entry.tool}</span> : null}
         {size ? <span>{size}</span> : null}
+        {running ? <span>{t`Running`}</span> : null}
         {exitCode ? <span className="text-destructive">{t`Exit code ${exitCode}`}</span> : null}
         <span>{formatRelativeTime(entry.createdAt)}</span>
       </span>
