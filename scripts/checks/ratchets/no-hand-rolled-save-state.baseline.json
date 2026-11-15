@@ -1,7 +1,6 @@
 {
   "apps/web/src/components/AccountAccess.tsx": 1,
   "apps/web/src/components/AccountDataSettings.tsx": 1,
-  "apps/web/src/components/ApprovalRulesSettings.tsx": 1,
   "apps/web/src/components/ComputerDeviceSettings.tsx": 1,
   "apps/web/src/components/ComputerMaintenanceActions.tsx": 1,
   "apps/web/src/components/ComputerProviderSettings.tsx": 1,
@@ -38,8 +37,6 @@
   "apps/web/src/pages/LabsSettingsPanel.tsx": 1,
   "apps/web/src/pages/McpServersOverlay.tsx": 2,
   "apps/web/src/pages/MemorySettingsOverlay.tsx": 1,
-  "apps/web/src/pages/OrganizationSettingsPanel.tsx": 1,
-  "apps/web/src/pages/PaymentWalletSettingsPanel.tsx": 1,
   "apps/web/src/pages/Paywall.tsx": 1,
   "apps/web/src/pages/PluginSubmissionsPanel.tsx": 1,
   "apps/web/src/pages/ScratchpadSection.tsx": 1,

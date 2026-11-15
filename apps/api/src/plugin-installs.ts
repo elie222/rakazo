@@ -323,44 +323,47 @@ export async function installPlugin(
     const source = plugin.source.gitUrl + (plugin.source.subdir ? `#${plugin.source.subdir}` : "");
     const scope = { spaceId: actor.spaceId, userId: actor.userId };
     try {
-      const row = await deps.prisma.$transaction(async (tx) => {
-        await lockPluginInstalls(tx, actor);
-        // One install per plugin and account, since it is available in all the user's spaces.
-        const installed = await runAsSystemInTransaction(
-          tx,
-          "owner's plugin installs across their spaces",
-          () =>
-            tx.capabilityInstall.findFirst({
-              where: { userId: actor.userId, kind: "plugin", source },
-            }),
-        );
-        if (installed) {
-          throw new ORPCError("CONFLICT", { message: "This plugin is already installed" });
-        }
-        const everywhere = { spaceId: actor.spaceId, allSpaces: true, availableIn: [] };
-        if (parts.includes("skills")) await assertSkillNamesFree(tx, actor, plugin, everywhere);
-        const install = await tx.capabilityInstall.create({
-          data: {
-            ...scope,
-            allSpaces: true,
-            kind: "plugin",
-            name: input.name.trim() || plugin.name,
-            source,
-            version: plugin.resolvedSha,
-            digest: plugin.digest,
-            config: {
-              ...pluginPreviewDto(plugin),
-              requestedRef: plugin.source.ref ?? null,
-              subdir: plugin.source.subdir ?? null,
-              parts,
-            } as Prisma.InputJsonValue,
-          },
-        });
-        const placed = { ...install, availableIn: [] };
-        if (parts.includes("skills")) await addSkills(tx, placed, plugin);
-        await addServers(tx, placed, plugin, prepared);
-        return placed;
-      });
+      const row = await deps.prisma.$transaction(
+        async (tx) => {
+          await lockPluginInstalls(tx, actor);
+          // One install per plugin and account, since it is available in all the user's spaces.
+          const installed = await runAsSystemInTransaction(
+            tx,
+            "owner's plugin installs across their spaces",
+            () =>
+              tx.capabilityInstall.findFirst({
+                where: { userId: actor.userId, kind: "plugin", source },
+              }),
+          );
+          if (installed) {
+            throw new ORPCError("CONFLICT", { message: "This plugin is already installed" });
+          }
+          const everywhere = { spaceId: actor.spaceId, allSpaces: true, availableIn: [] };
+          if (parts.includes("skills")) await assertSkillNamesFree(tx, actor, plugin, everywhere);
+          const install = await tx.capabilityInstall.create({
+            data: {
+              ...scope,
+              allSpaces: true,
+              kind: "plugin",
+              name: input.name.trim() || plugin.name,
+              source,
+              version: plugin.resolvedSha,
+              digest: plugin.digest,
+              config: {
+                ...pluginPreviewDto(plugin),
+                requestedRef: plugin.source.ref ?? null,
+                subdir: plugin.source.subdir ?? null,
+                parts,
+              } as Prisma.InputJsonValue,
+            },
+          });
+          const placed = { ...install, availableIn: [] };
+          if (parts.includes("skills")) await addSkills(tx, placed, plugin);
+          await addServers(tx, placed, plugin, prepared);
+          return placed;
+        },
+        { timeout: 60_000 },
+      );
       return installDto(row);
     } catch (error) {
       if (isUniqueViolation(error)) {
@@ -411,45 +414,48 @@ export async function setPluginParts(
   const servers = plugin && added.includes("connector") ? plugin.mcpServers : [];
   return withPreparedServers(deps, actor, servers, signal, async (prepared) => {
     try {
-      const row = await deps.prisma.$transaction(async (tx) => {
-        await lockPluginInstalls(tx, actor);
-        const install = await tx.capabilityInstall.findFirst({
-          where: { ...availableInSpace(actor), id: existing.id },
-          include: { availableIn: AVAILABILITY_SELECT },
-        });
-        if (!install) throw new ORPCError("NOT_FOUND", { message: "Plugin is not installed" });
-        const owned = { userId: actor.userId, installId: install.id };
-        // The plan above was made from an unlocked read; another change since then invalidates it.
-        const config = installConfig(install, "reject");
-        const locked = installedPluginParts(config);
-        if (locked.length !== current.length || locked.some((part) => !current.includes(part)))
-          throw new ORPCError("CONFLICT", { message: "Plugin changed. Reload and try again" });
-        if (removing.includes("connector")) {
-          const rows = await tx.mcpServer.findMany({
-            where: owned,
-            select: { id: true, secretId: true },
+      const row = await deps.prisma.$transaction(
+        async (tx) => {
+          await lockPluginInstalls(tx, actor);
+          const install = await tx.capabilityInstall.findFirst({
+            where: { ...availableInSpace(actor), id: existing.id },
+            include: { availableIn: AVAILABILITY_SELECT },
           });
-          for (const server of rows) await deps.removeServer(tx, server);
-        }
-        if (removing.includes("skills")) await tx.agentSkill.deleteMany({ where: owned });
-        if (plugin && added.includes("skills")) {
-          await assertSkillNamesFree(tx, actor, plugin, install);
-          await addSkills(tx, install, plugin);
-        }
-        if (plugin) await addServers(tx, install, plugin, prepared);
-        const updated = await tx.capabilityInstall.update({
-          where: { id: install.id },
-          data: {
-            config: {
-              ...config,
-              // Re-read at the pinned commit, so the saved preview matches what is installed now.
-              ...(plugin ? pluginPreviewDto(plugin) : {}),
-              parts,
-            } as Prisma.InputJsonValue,
-          },
-        });
-        return { ...updated, availableIn: install.availableIn };
-      });
+          if (!install) throw new ORPCError("NOT_FOUND", { message: "Plugin is not installed" });
+          const owned = { userId: actor.userId, installId: install.id };
+          // The plan above was made from an unlocked read; another change since then invalidates it.
+          const config = installConfig(install, "reject");
+          const locked = installedPluginParts(config);
+          if (locked.length !== current.length || locked.some((part) => !current.includes(part)))
+            throw new ORPCError("CONFLICT", { message: "Plugin changed. Reload and try again" });
+          if (removing.includes("connector")) {
+            const rows = await tx.mcpServer.findMany({
+              where: owned,
+              select: { id: true, secretId: true },
+            });
+            for (const server of rows) await deps.removeServer(tx, server);
+          }
+          if (removing.includes("skills")) await tx.agentSkill.deleteMany({ where: owned });
+          if (plugin && added.includes("skills")) {
+            await assertSkillNamesFree(tx, actor, plugin, install);
+            await addSkills(tx, install, plugin);
+          }
+          if (plugin) await addServers(tx, install, plugin, prepared);
+          const updated = await tx.capabilityInstall.update({
+            where: { id: install.id },
+            data: {
+              config: {
+                ...config,
+                // Re-read at the pinned commit, so the saved preview matches what is installed now.
+                ...(plugin ? pluginPreviewDto(plugin) : {}),
+                parts,
+              } as Prisma.InputJsonValue,
+            },
+          });
+          return { ...updated, availableIn: install.availableIn };
+        },
+        { timeout: 60_000 },
+      );
       return installDto(row);
     } catch (error) {
       if (isUniqueViolation(error)) {
