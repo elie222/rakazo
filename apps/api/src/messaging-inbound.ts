@@ -34,13 +34,10 @@ import {
 import { getLogger } from "@rakazo/logging";
 import type { InboundAttachmentStore } from "./inbound-attachments.js";
 import { storeInboundAttachments } from "./inbound-attachments.js";
+import { formatMessagingEventPrompt } from "./inbound-delivery.prompt.js";
 import type { MessagingReceipts } from "./messaging-receipts.js";
 import { cancelThreadRuns, finishThreadStop, STOPPED_BY_MESSAGE_NOTE } from "./thread-stop.js";
-import {
-  deliverWebhookEvent,
-  formatUntrustedDeliveryPayload,
-  inboundEventName,
-} from "./webhook-inbound.js";
+import { deliverWebhookEvent } from "./webhook-inbound.js";
 
 export interface MessagingInboundDeps {
   prisma: PrismaClient;
@@ -381,8 +378,7 @@ export async function wakeMessageRoutines(
   });
   if (routines.length === 0) return false;
 
-  const provider = inboundEventName(event.provider);
-  const prompt = formatUntrustedDeliveryPayload(`[Messaging Event: ${provider}]`, {
+  const prompt = formatMessagingEventPrompt(event.provider, {
     provider: event.provider,
     kind: event.isDirect ? "direct" : "channel",
     handle: event.handle,

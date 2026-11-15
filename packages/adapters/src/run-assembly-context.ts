@@ -28,7 +28,12 @@ import type { RunExecutorServices, RunHold } from "./run-attempt.js";
 import type { RunContext, RunState } from "./run-context.js";
 import { restoreTurnCheckpointEffects } from "./run-context.js";
 import { buildApprovalContinuation } from "./run-effects.js";
-import { BOT_DIRECTORY_LIMIT, voiceCallInstruction } from "./run-instructions.prompt.js";
+import {
+  BOT_DIRECTORY_LIMIT,
+  connectedPluginsInstruction,
+  taughtSkillsInstruction,
+  voiceCallInstruction,
+} from "./run-instructions.prompt.js";
 import { createReplyState } from "./run-progress.js";
 import { historyMyChatsAllowed } from "./run-tools-memory.js";
 import { withLatestStepScreenshot, withRecentTurnImages } from "./run-turn-images.js";
@@ -269,25 +274,16 @@ export async function buildTurnPrompt(
   const { callEndRun, disabledBuiltinTools, ownerStartedRun, voiceCall } = parts.capabilities;
   const { approvedEffects, tools } = parts.tools;
   const { ctx } = parts;
-  const pluginLine =
-    connectedPlugins.length > 0
-      ? `Connected plugins: ${connectedPlugins.map((row) => `${row.displayName} (${row.connectorId}:${row.provider})`).join(", ")}. Prefer those plugin tools over the computer browser or web search when reading app data (repos, releases, mail, calendar, and similar).`
-      : "No plugins are connected yet.";
+  const pluginLine = connectedPluginsInstruction(connectedPlugins);
   const runSavedSkills = nonOwnerChatRun ? [] : savedSkills;
   const runAgentSkills = nonOwnerChatRun ? builtinAgentSkillRecords() : agentSkills;
   const taughtSkillIndex = runSavedSkills.slice(0, 20);
-  const taughtSkillsLine =
-    taughtSkillIndex.length > 0
-      ? `Saved taught skills:\n${taughtSkillIndex
-          .map((skill) => {
-            const playbook = parsePlaybook(skill.playbook);
-            const name = skill.name || skill.goal.slice(0, 80);
-            return `- ${name}: ${playbook.whenToUse || skill.goal}`;
-          })
-          .join(
-            "\n",
-          )}\nWhen the user asks to run a taught skill by name, follow that skill's playbook exactly. The full playbook is included in the user task when they invoke it.`
-      : undefined;
+  const taughtSkillsLine = taughtSkillsInstruction(
+    taughtSkillIndex.map((skill) => ({
+      name: skill.name || skill.goal.slice(0, 80),
+      whenToUse: parsePlaybook(skill.playbook).whenToUse || skill.goal,
+    })),
+  );
   const agentSkillsLine = formatSkillsCatalogInstruction(runAgentSkills);
   const missingImagesInstruction = missingTurnImagesInstruction(turnBlocks, currentTurnImages);
   const taskPrompt = expandSkillReferencesInPrompt(
