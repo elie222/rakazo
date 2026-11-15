@@ -21,6 +21,8 @@ const sources = {
   "apps/mobile/components/thread/header.tsx": `${effect}navigation.setOptions(\n  options,\n);\n`,
   "apps/mobile/lib/use-home-header.ts":
     "const { setOptions } = navigation;\nsetOptions({ title });\n",
+  "apps/mobile/app/optional.tsx":
+    "navigation?.setOptions?.(options);\nnavigation.setOptions (options);\n",
   "apps/mobile/app/converted.tsx": "useScreenHeader({ title });\nresetOptions();\n",
   "apps/mobile/lib/screen-header.tsx": "navigation.setOptions(options);\n",
   "apps/mobile/lib/note-screen.test.tsx":
@@ -38,6 +40,7 @@ test("counts every setOptions call in the mobile app's screens, components and h
     Object.fromEntries([...found].map(([file, hits]) => [file, hits.map((hit) => hit.line)])),
     {
       "apps/mobile/app/(settings)/note.tsx": [2],
+      "apps/mobile/app/optional.tsx": [1, 2],
       "apps/mobile/components/thread/header.tsx": [2, 4],
       "apps/mobile/lib/use-home-header.ts": [2],
     },
@@ -72,6 +75,10 @@ test("a new call fails with a message that names the hook, and a frozen one pass
   const grown = violations({ ...frozen, "apps/mobile/components/thread/header.tsx": 1 }, found);
   assert.deepEqual(
     grown.map(({ file }) => file),
-    ["apps/mobile/app/(settings)/note.tsx", "apps/mobile/components/thread/header.tsx"],
+    [
+      "apps/mobile/app/(settings)/note.tsx",
+      "apps/mobile/components/thread/header.tsx",
+      "apps/mobile/app/optional.tsx",
+    ],
   );
 });

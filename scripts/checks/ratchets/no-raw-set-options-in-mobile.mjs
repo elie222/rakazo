@@ -5,4 +5,4 @@ export const include = ["apps/mobile/**/*.{ts,tsx}"];
 
 export const exclude = ["apps/mobile/lib/screen-header.tsx", "**/*.{test,spec}.*"];
 
-export const pattern = /(?<![\w$])setOptions\(/g;
+export const pattern = /(?<![\w$])setOptions\s*(?:\?\.\s*)?\(/g;
