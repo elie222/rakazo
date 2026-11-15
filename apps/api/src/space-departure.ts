@@ -1,6 +1,5 @@
 import type { JobPublisher, SandboxProvider } from "@rakazo/adapter-kit";
-import { runContinueJob } from "@rakazo/adapter-kit";
-import { expireComputerControl, stopCancelledGroupRuns } from "@rakazo/adapters";
+import { expireComputerControl, stopCancelledGroupRuns, wakeRun } from "@rakazo/adapters";
 import type { PrismaClient, SpaceDeparture, ThreadEvents } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 
@@ -37,11 +36,5 @@ export async function afterSpaceDeparture(
       }),
     ),
   );
-  await Promise.all(
-    departure.continuationRunIds.map((runId) =>
-      deps.jobs.enqueue(runContinueJob(runId)).catch((error) => {
-        getLogger().error("steering continuation enqueue", error);
-      }),
-    ),
-  );
+  await Promise.all(departure.continuationRunIds.map((runId) => wakeRun(deps.jobs, runId)));
 }

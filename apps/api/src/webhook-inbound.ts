@@ -1,16 +1,16 @@
 import type { JobPublisher, SecretStore } from "@rakazo/adapter-kit";
-import { runContinueJob, SecretStoreUnavailableError } from "@rakazo/adapter-kit";
+import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
 import type { InboundSource } from "@rakazo/adapters";
 import {
   inboundDeliveryClientNonce,
   inboundRoutineModelPin,
   isPermanentDecryptFailure,
+  wakeRun,
 } from "@rakazo/adapters";
 import type { MessageBlock } from "@rakazo/contracts";
 import { escapePromptData, inboundRoutineBlock, messageBlockForArtifact } from "@rakazo/core";
 import type { PrismaClient, SendUserMessageInput } from "@rakazo/db";
 import { accountDeactivated, SpaceDeletionInProgressError } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
 import type { Context } from "hono";
 
 export const WEBHOOK_MAX_BODY_BYTES = 64 * 1024;
@@ -331,9 +331,7 @@ export async function deliverWebhookEvent(
   });
 
   if (sent.runId) {
-    await deps.jobs.enqueue(runContinueJob(sent.runId)).catch((error) => {
-      getLogger().error(`${input.source} run enqueue error`, error);
-    });
+    await wakeRun(deps.jobs, sent.runId);
   }
 
   return { ok: true as const, messageId: sent.messageId, runId: sent.runId, seq: sent.seq };

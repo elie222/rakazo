@@ -1,4 +1,3 @@
-import { runContinueJob } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
 import {
   ACTIVE_RUN_STATUSES,
@@ -26,6 +25,7 @@ import type { ExecutorDeps } from "./executor-deps.js";
 import { helperResultText, MAX_PARALLEL_SUBAGENTS } from "./pi-runtime-subagent.js";
 import type { RunContext } from "./run-context.js";
 import { runLeaseFor } from "./run-messages.js";
+import { wakeRun } from "./wake-run.js";
 
 const RESULT_LIMIT = 12_000;
 
@@ -167,10 +167,7 @@ export async function startBackgroundHelper(
   await deps.events.notify(thread.id, committed.eventSeq).catch((error) => {
     getLogger().error("background helper card notification", error);
   });
-  await deps.jobs.enqueue(runContinueJob(committed.helperRunId)).catch((error) => {
-    // The queued run is durable; the job reconciler repairs a missed wake.
-    getLogger().error("background helper enqueue", error);
-  });
+  await wakeRun(deps.jobs, committed.helperRunId);
   return started;
 }
 
@@ -282,10 +279,5 @@ export async function returnHelperOutcome(
   await deps.events.notify(committed.threadId, committed.eventSeq).catch((error) => {
     getLogger().error("background helper card notification", error);
   });
-  if (committed.wakeRunId) {
-    // A missed enqueue is repaired by the job reconciler, like any queued run.
-    await deps.jobs?.enqueue(runContinueJob(committed.wakeRunId)).catch((error) => {
-      getLogger().error("background helper result enqueue", error);
-    });
-  }
+  if (committed.wakeRunId && deps.jobs) await wakeRun(deps.jobs, committed.wakeRunId);
 }

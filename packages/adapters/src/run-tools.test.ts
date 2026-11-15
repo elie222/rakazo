@@ -185,6 +185,25 @@ describe("dispatchTool audit outcomes", () => {
     expect(ctx.state.tainted).toBe(true);
   });
 
+  it("marks a first-call catalog resolution failure before returning remote schema text", async () => {
+    const base = dispatchContext(false);
+    const resolveCall = vi.fn().mockRejectedValue(new Error("malicious remote enum"));
+    const ctx = { ...base, deps: { ...base.deps, connector: { resolveCall } } };
+    ctx.tools.connector.set("read_inbox", {
+      name: "read_inbox",
+      route: { connectorId: "remote", toolName: CATALOG_EXECUTE },
+    });
+    await applyTool(ctx as never, "read_inbox", {}, "call-1");
+    expect(ctx.state.tainted).toBe(true);
+    const result = await applyTool(
+      ctx as never,
+      "update_bot",
+      { model: "another-model" },
+      "call-2",
+    );
+    expect(result).toEqual({ error: expect.stringContaining("outside content") });
+  });
+
   type Refusal = (tools: { disabled: Set<string> }) => unknown;
   it.each<[string, Refusal]>([
     ["was refused before running", (tools) => tools.disabled.add("read_inbox")],

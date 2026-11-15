@@ -323,3 +323,45 @@ test("Honcho memory settings empty and filled", async ({ page }, testInfo) => {
   await expect(documents).toBeVisible();
   await captureScreenshot(page, testInfo, "memory-dark-bottom");
 });
+
+test("a connected memory provider edits with its saved settings", async ({ page }, testInfo) => {
+  // The connection is served by the route below; nothing is saved or sent to Hindsight.
+  const stamp = Date.now();
+  await signup(page, `memory-edit-${stamp}@rakazo.test`, "password12", "Memory settings");
+  await completeOnboarding(page);
+  await page.route(/\/rpc\/memory\/providerConfig(\?|$)/, (route) =>
+    route.fulfill({
+      json: {
+        json: {
+          provider: "hindsight",
+          settings: { recallBanks: "other-app", retainConversations: "false" },
+          defaultMemoryScope: "isolated",
+          updatedAt: "2026-11-01T00:00:00.000Z",
+        },
+      },
+    }),
+  );
+  await page.reload();
+  const settings = await openUserSettings(page, "memory");
+  const memory = settings.getByTestId("memory-settings");
+  await memory.getByRole("button", { name: "Edit", exact: true }).click();
+  await memory.getByRole("button", { name: "Advanced", exact: true }).click();
+  await expect(memory.getByRole("button", { name: "Cloud", exact: true })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await expect(memory.getByLabel("API key", { exact: true })).toHaveAttribute(
+    "placeholder",
+    "Saved",
+  );
+  await expect(memory.getByLabel("Recall from banks", { exact: true })).toHaveValue("other-app");
+  await expect(memory.getByRole("switch", { name: "Learn from conversations" })).not.toBeChecked();
+  const save = memory.getByRole("button", { name: "Save", exact: true });
+  // Nothing the stored key can reach has changed, so it saves without the key.
+  await expect(save).toBeEnabled();
+  await save.evaluate((element) => element.scrollIntoView({ block: "center" }));
+  await captureScreenshot(page, testInfo, "memory-provider-edit");
+  // Another bank is something more the key could read, so it is asked for again.
+  await memory.getByLabel("Recall from banks", { exact: true }).fill("other-app,journal");
+  await expect(save).toBeDisabled();
+});
