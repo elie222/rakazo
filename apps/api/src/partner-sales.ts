@@ -3,13 +3,13 @@ import type { PrismaClient } from "@rakazo/db";
 import { isOwnerRole } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
 
-/** How long before its payment a plan invoice can be created, as failed payments are retried. */
-const INVOICE_TO_PAYMENT_MS = 35 * 86_400_000;
+/** A founding owner joins as signup creates the organization; anyone later did not create it. */
+const FOUNDING_WINDOW_MS = 60_000;
 
 /**
- * Reports a customer's own-key plan payments to the partner program when the organization's owner
- * signed up from a partner's link, and withdraws those later refunded or disputed, even once the
- * organization is gone. Credits never count, nor payments made before that owner joined.
+ * Reports a customer's own-key plan payments to the partner program when the organization was
+ * created by an account that signed up from a partner's link, and withdraws those later refunded or
+ * lost to a dispute, even once the organization is gone. Credits never count.
  */
 export function createPartnerSales(deps: {
   prisma: PrismaClient;
@@ -22,21 +22,29 @@ export function createPartnerSales(deps: {
     /** `organizationId` is null when the customer's organization was deleted. */
     async report(customerId: string, organizationId: string | null): Promise<void> {
       if (!program || !provider.listPlanPayments) return;
-      const owner = organizationId
-        ? (
-            await prisma.member.findMany({
-              where: { organizationId, user: { signupPartnerClickId: { not: null } } },
-              select: { userId: true, role: true, createdAt: true },
-              orderBy: { createdAt: "asc" },
-            })
-          ).find((member) => isOwnerRole(member.role))
-        : undefined;
+      const organization = organizationId
+        ? await prisma.organization.findUnique({
+            where: { id: organizationId },
+            select: {
+              createdAt: true,
+              members: {
+                where: { user: { signupPartnerClickId: { not: null } } },
+                select: { userId: true, role: true, createdAt: true },
+              },
+            },
+          })
+        : null;
+      const founder = organization?.members.find(
+        (member) =>
+          isOwnerRole(member.role) &&
+          member.createdAt.getTime() - organization.createdAt.getTime() < FOUNDING_WINDOW_MS,
+      );
       const open = await prisma.partnerSale.findMany({
         where: { customerId, refundedAt: null },
         select: { invoiceId: true, invoiceCreatedAt: true },
       });
       const since = Math.min(
-        owner ? owner.createdAt.getTime() - INVOICE_TO_PAYMENT_MS : Number.POSITIVE_INFINITY,
+        founder && organization ? organization.createdAt.getTime() : Number.POSITIVE_INFINITY,
         ...open.map((sale) => sale.invoiceCreatedAt.getTime()),
       );
       if (!Number.isFinite(since)) return;
@@ -56,21 +64,16 @@ export function createPartnerSales(deps: {
           ),
         );
       }
-      if (!owner) return;
+      if (!founder) return;
       for (const payment of payments) {
         // A withdrawn sale's invoice stays reversed, so it is never reported again.
-        if (
-          openInvoices.has(payment.invoiceId) ||
-          payment.reversed ||
-          payment.amountCents <= 0 ||
-          payment.paidAt < owner.createdAt
-        )
+        if (openInvoices.has(payment.invoiceId) || payment.reversed || payment.amountCents <= 0)
           continue;
         await bestEffort(
           `partner program sale ${payment.invoiceId}`,
           program
             .trackSale({
-              customerId: owner.userId,
+              customerId: founder.userId,
               invoiceId: payment.invoiceId,
               amountCents: payment.amountCents,
               currency: payment.currency,

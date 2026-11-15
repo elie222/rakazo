@@ -11,7 +11,11 @@ dbTests("partner program sales", () => {
   let prisma: PrismaClient;
   let db: ReturnType<typeof createDb>;
 
-  async function organization(name: string, partnerClickId: string | null, role = "owner") {
+  async function organization(
+    name: string,
+    partnerClickId: string | null,
+    { role = "owner", joinedAfterMs = 0 } = {},
+  ) {
     const id = `partner-${name}-${stamp}`;
     const createdAt = new Date();
     await prisma.user.create({
@@ -25,7 +29,13 @@ dbTests("partner program sales", () => {
     });
     await prisma.organization.create({ data: { id, name, slug: id, createdAt } });
     await prisma.member.create({
-      data: { id, organizationId: id, userId: id, role, createdAt },
+      data: {
+        id,
+        organizationId: id,
+        userId: id,
+        role,
+        createdAt: new Date(createdAt.getTime() + joinedAfterMs),
+      },
     });
     ids.push(id);
     return id;
@@ -47,7 +57,6 @@ dbTests("partner program sales", () => {
       reversed: false,
       ...extra,
       createdAt: extra.createdAt ?? new Date(),
-      paidAt: extra.paidAt ?? new Date(Date.now() + 1000),
     };
   }
 
@@ -124,19 +133,21 @@ dbTests("partner program sales", () => {
     expect(program.refundSale).toHaveBeenCalledWith(payments[0]!.invoiceId);
   });
 
-  it("credits an owner holding other roles too, but not payments from before they joined", async () => {
-    const organizationId = await organization("co-owner", "click_5", "admin, owner");
+  it("credits a founder holding other roles too, but not a referred owner who joined later", async () => {
     const program = fakeProgram();
-    const before = paid("in_before_joining", { paidAt: new Date(Date.now() - 86_400_000) });
-    const after = paid("in_after_joining");
-    await createPartnerSales({
+    const founded = await organization("founder", "click_5", { role: "admin, owner" });
+    const joined = await organization("promoted", "click_8", { joinedAfterMs: 5 * 60_000 });
+    const payment = paid("in_founder");
+    const sales = createPartnerSales({
       prisma,
       program,
-      provider: { listPlanPayments: async () => [before, after] },
-    }).report("cus_co_owner", organizationId);
+      provider: { listPlanPayments: async () => [payment] },
+    });
+    await sales.report("cus_founder", founded);
+    await sales.report("cus_promoted", joined);
     expect(program.trackSale).toHaveBeenCalledTimes(1);
     expect(program.trackSale).toHaveBeenCalledWith(
-      expect.objectContaining({ invoiceId: after.invoiceId }),
+      expect.objectContaining({ customerId: founded, invoiceId: payment.invoiceId }),
     );
   });
 
@@ -192,7 +203,6 @@ dbTests("partner program sales", () => {
     const listPlanPayments = vi.fn(async (_customerId: string, _since: Date) => payments);
     const sales = createPartnerSales({ prisma, program, provider: { listPlanPayments } });
     await sales.report("cus_late_paid", organizationId);
-    expect(listPlanPayments.mock.calls[0]![1].getTime()).toBeLessThan(Date.now() - 34 * 86_400_000);
     await prisma.organization.delete({ where: { id: organizationId } });
 
     payments = payments.map((payment) => ({ ...payment, reversed: true }));

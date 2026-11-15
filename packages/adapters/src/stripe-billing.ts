@@ -617,7 +617,6 @@ export class StripeBillingProvider implements BillingProvider {
           amount_paid: z.number().int(),
           created: z.number().int(),
           total_taxes: z.array(z.object({ amount: z.number().int() })).nullish(),
-          status_transitions: z.object({ paid_at: z.number().int().nullable() }),
           parent: z
             .object({
               subscription_details: z
@@ -677,7 +676,6 @@ export class StripeBillingProvider implements BillingProvider {
         amountCents: Math.max(0, invoice.amount_paid - tax),
         currency: invoice.currency,
         createdAt: fromSeconds(invoice.created)!,
-        paidAt: fromSeconds(invoice.status_transitions.paid_at) ?? since,
         reversed:
           intents.length > 0 &&
           intents.every((paid) => reversedIntents.has(paid.payment.payment_intent ?? null)),

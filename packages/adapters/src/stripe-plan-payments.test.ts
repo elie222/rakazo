@@ -20,7 +20,6 @@ function provider(routes: Record<string, unknown>) {
 }
 
 const plan = { subscription_details: { metadata: { rakazo_plan: "byok" } } };
-const paidAt = { paid_at: 1_800_000_000 };
 const since = new Date(1_790_000_000_000);
 
 describe("Stripe own-key plan payments", () => {
@@ -33,7 +32,6 @@ describe("Stripe own-key plan payments", () => {
           amount_paid: 1650,
           total_taxes: [{ amount: 150 }],
           created: 1_799_000_000,
-          status_transitions: paidAt,
           parent: plan,
         },
         {
@@ -41,7 +39,6 @@ describe("Stripe own-key plan payments", () => {
           currency: "usd",
           amount_paid: 0,
           created: 1_799_000_000,
-          status_transitions: paidAt,
           parent: plan,
         },
         {
@@ -49,7 +46,6 @@ describe("Stripe own-key plan payments", () => {
           currency: "usd",
           amount_paid: 2000,
           created: 1_799_000_000,
-          status_transitions: paidAt,
           parent: { subscription_details: { metadata: { rakazo_credit_cents: "2000" } } },
         },
         {
@@ -57,7 +53,6 @@ describe("Stripe own-key plan payments", () => {
           currency: "usd",
           amount_paid: 2000,
           created: 1_799_000_000,
-          status_transitions: paidAt,
           parent: null,
         },
       ],
@@ -68,7 +63,6 @@ describe("Stripe own-key plan payments", () => {
         amountCents: 1500,
         currency: "usd",
         createdAt: new Date(1_799_000_000_000),
-        paidAt: new Date(1_800_000_000_000),
         reversed: false,
       },
     ]);
@@ -81,7 +75,6 @@ describe("Stripe own-key plan payments", () => {
       currency: "usd",
       amount_paid: 1500,
       created: 1_799_000_000,
-      status_transitions: paidAt,
       parent: plan,
     });
     const { stripe } = provider({
