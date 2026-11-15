@@ -55,7 +55,19 @@ export function routinesRoutes(ctx: RouterContext) {
         }));
       }),
       history: authed.routines.history.handler(async ({ context, input }) =>
-        listRoutineRuns(deps.prisma, context.actor, input.routineId, input.before, input.limit),
+        listRoutineRuns(
+          deps.prisma,
+          context.actor,
+          input.routineId,
+          input.before,
+          input.limit,
+          context.serviceOrigin
+            ? {
+                userId: context.actor.userId,
+                outsideGroups: context.serviceOrigin.botIds.length > 0,
+              }
+            : {},
+        ),
       ),
       list: authed.routines.list.handler(async ({ context, input }) => {
         await repos.getBot(context.actor, input.botId);

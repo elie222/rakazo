@@ -11,6 +11,8 @@ export async function listRoutineRuns(
   routineId: string,
   before?: RoutineRunCursor,
   limit = ROUTINE_HISTORY_PAGE_SIZE,
+  // A service key reads only its creator's runs, and no group chat runs when limited to some bots.
+  only: { userId?: string; outsideGroups?: boolean } = {},
 ): Promise<RoutineHistory> {
   const routine = await prisma.routine.findFirst({
     where: {
@@ -27,6 +29,8 @@ export async function listRoutineRuns(
       routineId,
       botId: routine.botId,
       spaceId: actor.spaceId,
+      ...(only.userId ? { userId: only.userId } : {}),
+      ...(only.outsideGroups ? { thread: { groupId: null } } : {}),
       ...(before
         ? {
             OR: [
