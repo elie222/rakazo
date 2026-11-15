@@ -4512,6 +4512,26 @@ describe("connections.complete", () => {
     expect(jobs.enqueue).not.toHaveBeenCalled();
   });
 
+  it("does not start the provider call when waiting for the lock used up its time", async () => {
+    const { revoke, connector, connection, row, jobs } = pollFixture("connected");
+    row.providerRef = "account-1";
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      // The transaction has run for 50 of its 60 seconds by the time the call would start.
+      connection.count.mockImplementation((async () => {
+        vi.setSystemTime(Date.now() + 50_000);
+        return 0;
+      }) as never);
+
+      expect((await revoke()).status).not.toBe(200);
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(connector.revoke).not.toHaveBeenCalled();
+    expect(row.status).toBe("connected");
+    expect(jobs.enqueueIn).not.toHaveBeenCalled();
+  });
+
   it("keeps the row as it was when the provider clearly removed nothing", async () => {
     const { revoke, connector, row, jobs } = pollFixture("connected");
     row.providerRef = "account-1";

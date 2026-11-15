@@ -14,6 +14,7 @@ import {
   dropLeftoverAuthorization,
   leftoverAuthorization,
   lockProviderConnectionScope,
+  PROVIDER_LOCK_TRANSACTION_MS,
   pickReusableConnection,
   prepareManagedConnectorForTransaction,
   providerLockTransaction,
@@ -560,6 +561,11 @@ export async function completeConnection(
   };
 }
 
+/** A removal's provider call ends this long into its transaction, leaving time to commit. */
+const REVOKE_CALL_ENDS_BY_MS = PROVIDER_LOCK_TRANSACTION_MS - 15_000;
+/** Less than this left and the provider call would likely be cut off part-way. */
+const MIN_REVOKE_CALL_MS = 10_000;
+
 export async function revokeConnection(
   deps: RouterDeps,
   context: { actor: Actor; signal?: AbortSignal },
@@ -587,6 +593,7 @@ export async function revokeConnection(
       ? providerScopeKey(context.actor, snapshot.connectorId, snapshot.provider)
       : `connection:${input.connectionId}`,
     async (tx): Promise<{ uncertain?: unknown }> => {
+      const startedAt = Date.now();
       const row = await tx.connection.findFirst({
         where: {
           id: input.connectionId,
@@ -663,10 +670,13 @@ export async function revokeConnection(
           message: `Connector ${row.connectorId} is not configured`,
         });
       }
+      // The call ends before the transaction's own timeout, counted from its start, so a late
+      // remote delete cannot succeed after local status has already rolled back. Waiting for the
+      // lock uses that time too: with too little left, the call is not started at all.
+      const callMs = REVOKE_CALL_ENDS_BY_MS - (Date.now() - startedAt);
+      if (callMs < MIN_REVOKE_CALL_MS) throw new ProviderTransactionBusyError();
       try {
-        // Abort before the 60s Prisma transaction timeout so a late remote
-        // delete cannot succeed after local status has already rolled back.
-        const signals = [AbortSignal.timeout(45_000)];
+        const signals = [AbortSignal.timeout(callMs)];
         if (context.signal) signals.unshift(context.signal);
         const revokeSignal = signals.length === 1 ? signals[0]! : AbortSignal.any(signals);
         await connector.revoke(
