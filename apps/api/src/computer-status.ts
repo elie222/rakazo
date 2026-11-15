@@ -12,7 +12,7 @@ import type { PrismaClient } from "@rakazo/db";
 
 /** What this bot is doing with its computer: which run holds it, and whether one waits for a person. */
 export async function resolveComputerWork(
-  prisma: PrismaClient,
+  prisma: Pick<PrismaClient, "computerExecutionLease" | "run">,
   input: {
     computerId: string | null | undefined;
     botId: string;

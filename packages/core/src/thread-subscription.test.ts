@@ -922,6 +922,49 @@ describe("thread subscription recovery", () => {
     await running;
   });
 
+  it("keeps a group member working when a refresh covers its run's start", async () => {
+    vi.useFakeTimers();
+    const { abort, channel, callbacks } = setup();
+    const member = { botId: "bot", status: "idle" };
+    type Shown = LiveThreadSnapshot & { cursor: number };
+    let shown: Shown = {
+      ...head,
+      groupId: "group",
+      olderCursor: null,
+      messages: [],
+      run: null,
+      activeRuns: [],
+      members: [member],
+    };
+    const running = runThreadSubscription({
+      ...callbacks,
+      currentSnapshot: () => shown,
+      applyEvent: (item) => {
+        shown = reduceThreadSnapshot(shown, item) ?? shown;
+      },
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    // The refresh read the member's status with its cursor, so it already shows the run.
+    const run = { id: "run-1", botId: "bot", status: "running" };
+    const refreshed: Shown = {
+      ...shown,
+      cursor: 12,
+      run,
+      activeRuns: [run],
+      members: [{ ...member, status: "running" }],
+    };
+    shown = mergeThreadSnapshot(shown, refreshed);
+    channel.send({ ...event(12), type: "run.started", runId: run.id });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(shown).toBe(refreshed);
+    channel.send({ ...event(13), type: "run.completed", runId: run.id });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(shown).toMatchObject({ cursor: 13, activeRuns: [], members: [{ status: "idle" }] });
+    abort.abort();
+    channel.end();
+    await running;
+  });
+
   it("swallows heartbeats without applying them or advancing the cursor", async () => {
     vi.useFakeTimers();
     const { abort, channel, callbacks } = setup();

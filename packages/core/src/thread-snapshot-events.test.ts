@@ -1625,6 +1625,33 @@ describe("events the snapshot already covers", () => {
     expect(once?.messages).toHaveLength(1);
     expect(reduceThreadSnapshot(once, delta)).toBe(once);
   });
+
+  it("keeps a group member's status from the snapshot when its run's events arrive late", () => {
+    const run = threadRun("run-1", "bot-member");
+    const member = { botId: "bot-member", name: "Member", color: "#8B5CF6" };
+    const group = { ...snapshot([]), botId: undefined, groupId: "group-1" };
+    const started = event({ type: "run.started", seq: 11, botId: "bot-member", runId: run.id });
+    const completed = event({ type: "run.completed", seq: 12, botId: "bot-member", runId: run.id });
+
+    const working: ThreadSnapshot = {
+      ...group,
+      cursor: 11,
+      members: [{ ...member, status: "running" }],
+      run,
+      activeRuns: [run],
+    };
+    expect(reduceThreadSnapshot(working, started)).toBe(working);
+    expect(reduceThreadSnapshot(working, completed)?.members?.[0]?.status).toBe("idle");
+
+    const finished: ThreadSnapshot = {
+      ...group,
+      cursor: 12,
+      members: [{ ...member, status: "idle" }],
+      activeRuns: [],
+    };
+    expect(reduceThreadSnapshot(finished, started)).toBe(finished);
+    expect(reduceThreadSnapshot(finished, completed)).toBe(finished);
+  });
 });
 
 function snapshot(messages: ThreadMessage[], olderCursor: number | null = null): ThreadSnapshot {
