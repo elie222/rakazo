@@ -16,7 +16,7 @@ import type {
   TerminalRequest,
 } from "@rakazo/adapter-kit";
 import type { ComputerSize } from "@rakazo/contracts";
-import { boundedSandboxCommandTimeoutMs } from "@rakazo/core";
+import { boundedSandboxCommandTimeoutMs, retry } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import { sandboxIdleMs } from "./computer-idle.js";
 import {
@@ -472,13 +472,23 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
       return { code: result.exitCode, stdout: result.stdout };
     } finally {
       let cleaned = false;
-      for (let attempt = 0; attempt < 2 && !cleaned && !unsafeStop; attempt++) {
-        cleaned = await this.run(computer, page.cleanup, { timeoutMs: 10_000 }).then(
-          (result) => result.exitCode === 0,
-          (error) => {
-            unsafeStop = isSandboxUnsafeStopError(error);
-            if (isSandboxGoneError(error) || unsafeStop) throw error;
-            return false;
+      if (!unsafeStop) {
+        await retry(
+          async () => {
+            const result = await this.run(computer, page.cleanup, { timeoutMs: 10_000 });
+            if (result.exitCode !== 0) throw new Error("Browser input cleanup failed");
+          },
+          {
+            attempts: 2,
+            delayMs: 0,
+            retryable: (error) => !isSandboxGoneError(error) && !isSandboxUnsafeStopError(error),
+          },
+        ).then(
+          () => {
+            cleaned = true;
+          },
+          (error: unknown) => {
+            if (isSandboxGoneError(error) || isSandboxUnsafeStopError(error)) throw error;
           },
         );
       }
