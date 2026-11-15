@@ -15,7 +15,7 @@ import {
   GROUP_MEMBER_MIN,
 } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES, retry } from "@rakazo/core";
-import type { Prisma, PrismaClient } from "@rakazo/db";
+import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   cancelRunsInTransaction,
   clearEndedRunState,
@@ -216,6 +216,7 @@ type BotLifecycleDeps = {
   sandbox: SandboxProvider;
   home: AgentHomeStore;
   jobs: JobPublisher;
+  events?: Pick<ThreadEvents, "publishSpaceChange">;
   dataDir?: string;
   memoryProviders?: MemoryProviderResolver;
   artifacts?: ArtifactStore;
@@ -356,6 +357,9 @@ export async function archiveBot(
     });
     return cancelled;
   });
+  // Activity leaves out archived bots' runs, and their routines are paused.
+  await deps.events?.publishSpaceChange?.(bot.spaceId, "runs");
+  await deps.events?.publishSpaceChange?.(bot.spaceId, "routines");
   await Promise.allSettled([
     ...cancelledRuns.map((run) => deps.jobs.cancel(runJobKey(run.id))),
     ...activeRoutines.map((routine) => deps.jobs.cancel(routineJobKey(routine.id))),

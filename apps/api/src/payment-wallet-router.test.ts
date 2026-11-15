@@ -66,10 +66,12 @@ function walletDeps(paymentWallet: PaymentWalletProvider | null) {
     delete: vi.fn(async (ref: string) => {
       values.delete(ref);
     }),
+    isRemote: () => false,
   };
   const deps = {
     prisma: prisma as unknown as PrismaClient,
     secrets,
+    jobs: { enqueue: vi.fn(), enqueueIn: vi.fn(), cancel: vi.fn() },
     paymentWallet,
     env: {
       defaultProvider: "fake",

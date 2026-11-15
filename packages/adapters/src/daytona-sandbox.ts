@@ -30,7 +30,8 @@ import {
 } from "./computer-support.js";
 import { PortableFileBatcher } from "./computer-workspace.js";
 import { LinuxDesktop, onBotScreen, PREPARE_LINUX_DESKTOP } from "./linux-desktop.js";
-import { installPageBrowserCommand } from "./page-browser-install.js";
+import { installPageBrowserCommand, privatePageInput } from "./page-browser-install.js";
+import { deleteUnreferencedMachine } from "./sandbox-cleanup.js";
 import { sandboxCommandArgv } from "./sandbox-command-environment.js";
 import { abortedCommandEvents, timedOutCommandEvents } from "./sandbox-command-events.js";
 import { isSandboxGoneError, sandboxNotFoundError } from "./sandbox-errors.js";
@@ -124,11 +125,10 @@ export class DaytonaSandboxProvider implements SandboxProvider {
     runWithInput: async (computer, command, input, timeoutMs, context) => {
       context.signal.throwIfAborted();
       const sandbox = await this.box(computer);
-      const directory = `/tmp/rakazo-page-input-${randomUUID()}`;
-      const file = `${directory}/request`;
+      const page = privatePageInput();
       const timeout = Math.max(1, Math.ceil(timeoutMs / 1_000));
       const created = await sandbox.process.executeCommand(
-        `mkdir -m 700 -- ${shellQuote(directory)}`,
+        page.create,
         undefined,
         undefined,
         timeout,
@@ -137,14 +137,14 @@ export class DaytonaSandboxProvider implements SandboxProvider {
       try {
         context.signal.throwIfAborted();
         try {
-          await sandbox.fs.uploadFile(Buffer.from(input), file, timeout);
+          await sandbox.fs.uploadFile(Buffer.from(input), page.file, timeout);
         } catch {
           throw new Error("Could not transfer browser input");
         }
         context.signal.throwIfAborted();
         try {
           const result = await sandbox.process.executeCommand(
-            `bash -c ${shellQuote(`exec 0< ${shellQuote(file)} || exit 1; rm -f -- ${shellQuote(file)} && rmdir -- ${shellQuote(directory)} || exit 1; ${command}`)}`,
+            page.run(command),
             undefined,
             undefined,
             timeout,
@@ -161,7 +161,7 @@ export class DaytonaSandboxProvider implements SandboxProvider {
         let cleaned = false;
         try {
           const result = await sandbox.process.executeCommand(
-            `rm -f -- ${shellQuote(file)} && { rmdir -- ${shellQuote(directory)} 2>/dev/null || test ! -e ${shellQuote(directory)}; }`,
+            page.cleanup,
             undefined,
             undefined,
             10,
@@ -564,14 +564,14 @@ export class DaytonaSandboxProvider implements SandboxProvider {
     }
   }
 
-  private async deleteAbandoned(name: string): Promise<void> {
-    try {
-      await (await this.client.get(name)).delete(60);
-    } catch (error) {
-      if (!(await isDaytonaSandboxMissing(error))) {
-        getLogger().error("delete Daytona sandbox left by a failed create", error);
+  private deleteAbandoned(name: string): Promise<void> {
+    return deleteUnreferencedMachine("daytona", name, async (_signal, timeoutMs) => {
+      try {
+        await (await this.client.get(name)).delete(timeoutMs / 1_000);
+      } catch (error) {
+        if (!(await isDaytonaSandboxMissing(error))) throw error;
       }
-    }
+    });
   }
 
   private async workspaceRoot(sandbox: DaytonaSandbox): Promise<string> {

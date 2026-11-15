@@ -682,6 +682,9 @@ importers:
       cross-env:
         specifier: 10.1.0
         version: 10.1.0
+      fast-check:
+        specifier: 4.10.2
+        version: 4.10.2
       typescript:
         specifier: 7.0.2
         version: 7.0.2
@@ -1060,6 +1063,9 @@ importers:
       '@types/ws':
         specifier: 8.18.2
         version: 8.18.2
+      fast-check:
+        specifier: 4.10.2
+        version: 4.10.2
       typescript:
         specifier: 7.0.2
         version: 7.0.2
@@ -1328,6 +1334,9 @@ importers:
         specifier: 4.13.17
         version: 4.13.17
     devDependencies:
+      fast-check:
+        specifier: 4.10.2
+        version: 4.10.2
       typescript:
         specifier: 7.0.2
         version: 7.0.2

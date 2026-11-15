@@ -357,6 +357,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
 
       const claimed = await claimRun(deps, run, workerId);
       if (!claimed) return;
+      await deps.events.publishSpaceChange?.(run.spaceId, "runs");
       const { fence, current } = claimed;
       const leaseTarget = await deps.prisma.bot.findUniqueOrThrow({
         where: { id: run.botId },
@@ -1244,7 +1245,12 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         const paymentWallet = deps.paymentWallet;
         const paymentWalletEnabled = paymentWallet
           ? await paymentWalletConnected(
-              { prisma: deps.prisma, secretStore: deps.secretStore, paymentWallet },
+              {
+                prisma: deps.prisma,
+                secretStore: deps.secretStore,
+                jobs: deps.jobs,
+                paymentWallet,
+              },
               run.userId,
             )
           : false;

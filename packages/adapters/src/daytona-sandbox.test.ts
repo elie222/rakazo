@@ -25,6 +25,7 @@ import { DaytonaSandboxProvider } from "./daytona-sandbox.js";
 import { desktopCommandResponder } from "./linux-desktop.test-support.js";
 import { installPageBrowserCommand } from "./page-browser-install.js";
 import { isSandboxGoneError } from "./sandbox-errors.js";
+import { settleMachineCleanup } from "./sandbox-test-support.js";
 
 const context = {
   operationId: "test",
@@ -824,6 +825,50 @@ describe("DaytonaSandboxProvider", () => {
     expect(fixture.get).toHaveBeenCalledWith(name);
     expect(fixture.deleteSandbox).toHaveBeenCalledOnce();
     expect(fixture.remote.missing).toBe(true);
+  });
+
+  describe("a sandbox a timed-out create left behind", () => {
+    const timeout = new DaytonaTimeoutError(
+      "Failed to create and start sandbox within 120 seconds",
+    );
+    async function start(fixture: ReturnType<typeof daytonaFixture>) {
+      fixture.create.mockImplementationOnce(async (params) => {
+        fixture.remote.name = params.name;
+        fixture.remote.missing = false;
+        fixture.remote.state = "creating";
+        throw timeout;
+      });
+      const provider = new DaytonaSandboxProvider({}, fixture.client);
+      const outcome = await settleMachineCleanup(() =>
+        provider.provision({ botId: "bot-a", homePath: "/unused" }, context),
+      );
+      return { ...outcome, name: fixture.create.mock.calls[0]?.[0].name };
+    }
+
+    it("is deleted when the first delete fails", async () => {
+      const fixture = daytonaFixture();
+      fixture.deleteSandbox.mockRejectedValueOnce(new Error("connection reset"));
+
+      const { error, left } = await start(fixture);
+
+      expect(error).toBe(timeout);
+      expect(fixture.deleteSandbox).toHaveBeenCalledTimes(2);
+      expect(fixture.remote.missing).toBe(true);
+      expect(left).toEqual([]);
+    });
+
+    it("is reported by name when it cannot be deleted, and the timeout stands", async () => {
+      const fixture = daytonaFixture();
+      fixture.deleteSandbox.mockRejectedValue(new Error("connection reset"));
+
+      const { error, left, name } = await start(fixture);
+
+      expect(error).toBe(timeout);
+      expect(fixture.deleteSandbox).toHaveBeenCalledTimes(4);
+      // Seconds: what its try has left of the cleanup's time, never a minute of its own.
+      expect(fixture.deleteSandbox).toHaveBeenNthCalledWith(1, 10);
+      expect(left).toEqual([{ provider: "daytona", machineId: name }]);
+    });
   });
 
   it("surfaces a create that Daytona rejected without leaving anything to delete", async () => {
