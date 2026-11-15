@@ -3,6 +3,7 @@ import type { PrismaClient } from "@rakazo/db";
 import {
   expireModelCredits,
   hasFinalModelCost,
+  JsonColumnMismatchError,
   MICROS_PER_DOLLAR,
   Prisma,
   RECONCILED_ESTIMATE_COST_SOURCE,
@@ -42,6 +43,29 @@ const StoredUsage = z
     countedTokens: CountedTokens.extend({ ifStopped: CountedTokens.optional() }).nullish(),
   })
   .nullable() satisfies z.ZodType<AgentUsage | null>;
+
+/**
+ * The stored receipt, or why it could not be read. A receipt in another shape is never priced,
+ * in whole or in part, but the provider may still answer for its call.
+ */
+function storedUsage(call: { id: string; usage: unknown }): {
+  usage: AgentUsage | null;
+  unreadable?: JsonColumnMismatchError;
+} {
+  try {
+    return {
+      usage: readJsonColumn(
+        StoredUsage,
+        call.usage,
+        { table: "model_credit_entries", column: "usage", id: call.id },
+        "reject",
+      ),
+    };
+  } catch (error) {
+    if (!(error instanceof JsonColumnMismatchError)) throw error;
+    return { usage: null, unreadable: error };
+  }
+}
 
 /**
  * When the provider never reports a cost, a call that reached it is charged for the tokens we
@@ -159,13 +183,8 @@ export function createModelCreditReconciler(deps: {
           try {
             if (!call.callId || !call.userId || !call.spaceId || !call.provider || !call.model)
               throw new Error("Legacy reservation requires manual attribution");
-            // A receipt in another shape fails this attempt, and the hold goes to review.
-            let usage: AgentUsage | null = readJsonColumn(
-              StoredUsage,
-              call.usage,
-              { table: "model_credit_entries", column: "usage", id: call.id },
-              "reject",
-            );
+            const receipt = storedUsage(call);
+            let usage = receipt.usage;
             let reconciled = false;
             const canLookUp = lookup?.provider === call.provider && !!call.providerRequestId;
             if (canLookUp) {
@@ -181,6 +200,9 @@ export function createModelCreditReconciler(deps: {
                 reason = error instanceof Error ? error.message : String(error);
               }
             }
+            // Only the provider's answer settles a call whose receipt is in another shape. Without
+            // one the attempt fails, and the hold goes to review after the last.
+            if (receipt.unreadable && !reconciled) throw receipt.unreadable;
             // Stop cancels the run; a deploy or a stalled stream aborts the call but not the run,
             // and a stuck-run cancel records why in `error`.
             let stoppedByUser = false;

@@ -34,7 +34,7 @@ import { notifyCommittedEvent, notifyRealtime } from "./event-stream.js";
 import type { FinalizeRunResult } from "./events.js";
 import { appendEventInTransaction, transientRunEventsWhere } from "./events.js";
 import { JsonObject, readJsonColumn } from "./json-column.js";
-import { storedMessageBlocks } from "./message-blocks.js";
+import { readMessageBlocks } from "./message-blocks.js";
 import { createThreadMessageInTransaction, loadMessageAuthor } from "./messages.js";
 import { deleteRunSecretsInTransaction } from "./run-secrets.js";
 import { RUN_TURN_CHECKPOINT_KIND } from "./run-turn-checkpoint.js";
@@ -672,7 +672,9 @@ export async function eligibleWaitingTextAnswer(
         select: { id: true, seq: true, role: true, blocks: true, replyToMessageId: true },
       });
       if (!latest) return null;
-      if (!messageReaction({ ...latest, blocks: storedMessageBlocks(latest) })) {
+      // A row that lost entries held more than the one emoji a reaction is.
+      const { blocks, intact } = readMessageBlocks(latest);
+      if (!intact || !messageReaction({ ...latest, blocks })) {
         if (latest.id !== found.messageId) return null;
         break;
       }

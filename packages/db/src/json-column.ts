@@ -23,13 +23,27 @@ export const JsonObject = z.custom<Record<string, unknown>>(
 const WARNED_ROWS_MAX = 1000;
 const warnedRows = new Set<string>();
 
+/** Warns once per row. `detail` is counts only, never the stored value. */
+export function warnJsonColumnOnce(
+  message: string,
+  row: JsonColumnRow,
+  detail?: Record<string, number | string>,
+): void {
+  const key = `${row.table}.${row.column}:${row.id}`;
+  if (warnedRows.has(key)) return;
+  if (warnedRows.size >= WARNED_ROWS_MAX) warnedRows.clear();
+  warnedRows.add(key);
+  getLogger().warn(message, { ...row, ...detail });
+}
+
 /**
  * Reads a JSON column through its schema, so a row an older release, a migration or a bug wrote
  * in another shape is handled at the read instead of surfacing later as a missing property.
  *
  * Each reader picks what a mismatch means: `"reject"` throws for a value the code cannot work
  * without, and `{ fallback }` returns the stated default and warns once per row where an old
- * shape is expected and harmless.
+ * shape is expected and harmless. The fallback is a default to show, not what the row holds:
+ * never write it back, and never decide access from it.
  */
 export function readJsonColumn<T>(
   schema: JsonSchema<T>,
@@ -40,11 +54,6 @@ export function readJsonColumn<T>(
   const parsed = schema.safeParse(value);
   if (parsed.success) return parsed.data;
   if (onMismatch === "reject") throw new JsonColumnMismatchError(row);
-  const key = `${row.table}.${row.column}:${row.id}`;
-  if (!warnedRows.has(key)) {
-    if (warnedRows.size >= WARNED_ROWS_MAX) warnedRows.clear();
-    warnedRows.add(key);
-    getLogger().warn("Stored JSON column does not match its schema; using the fallback", row);
-  }
+  warnJsonColumnOnce("Stored JSON column does not match its schema; using the fallback", row);
   return onMismatch.fallback;
 }

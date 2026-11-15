@@ -9,8 +9,8 @@ import { cloudAgentHttpsUrl } from "@rakazo/core";
 import type { CloudAgent } from "@rakazo/db";
 import {
   appendEventInTransaction,
+  changeMessageBlocks,
   Prisma,
-  storedMessageBlocks,
   THREAD_LOCK_TRANSACTION_OPTIONS,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -334,11 +334,15 @@ async function finishPoll(
     let wakeRunId: string | undefined;
     if (message && !detached) {
       const nextBlock = cloudAgentBlock(saved);
-      const blocks = storedMessageBlocks(message).map((block) =>
-        block.kind === "cloud_agent" && block.agentId === agent.id ? nextBlock : block,
+      const next = changeMessageBlocks(message, (block) =>
+        block.kind === "cloud_agent" &&
+        block.agentId === agent.id &&
+        JSON.stringify(block) !== JSON.stringify(nextBlock)
+          ? nextBlock
+          : block,
       );
-      if (JSON.stringify(blocks) !== JSON.stringify(message.blocks)) {
-        await tx.message.update({ where: { id: message.id }, data: { blocks } });
+      if (next) {
+        await tx.message.update({ where: { id: message.id }, data: { blocks: next.stored } });
         const event = await appendEventInTransaction(tx, {
           spaceId: agent.spaceId,
           threadId: agent.threadId,

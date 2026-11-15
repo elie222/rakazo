@@ -13,9 +13,10 @@ import {
   phoneCallSettings,
   ringingCall,
 } from "@rakazo/core";
-import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
+import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   appendEventInTransaction,
+  changeMessageBlocks,
   createThreadMessageInTransaction,
   isUniqueViolation,
   runAsSystem,
@@ -134,8 +135,7 @@ export async function settleCallRequest(
       },
     });
     if (!message?.botId) return null;
-    const before = storedMessageBlocks(message);
-    const block = callRequestBlock(before);
+    const block = callRequestBlock(storedMessageBlocks(message));
     if (!block || !input.from.includes(block.status)) return null;
     const expired = block.status === "ringing" && !callIsRinging(block);
     const next: CallRequestBlock = {
@@ -143,12 +143,14 @@ export async function settleCallRequest(
       ...(input.status ? { status: expired ? "missed" : input.status } : {}),
       ...(input.durationSeconds === undefined ? {} : { durationSeconds: input.durationSeconds }),
     };
-    const blocks = [next, ...before.slice(1)];
+    const changed = changeMessageBlocks(message, (entry) => (entry === block ? next : entry));
+    if (!changed) return null;
+    const { blocks } = changed;
     // Compare-and-set on the stored status (a plaintext copy beside the encrypted
     // block): a concurrent settle leaves this one a no-op.
     const updated = await tx.message.updateMany({
       where: { id: message.id, blocks: { path: ["0", "status"], equals: block.status } },
-      data: { blocks: blocks as Prisma.InputJsonValue },
+      data: { blocks: changed.stored },
     });
     if (updated.count !== 1) return null;
     const event = await appendEventInTransaction(tx, {
@@ -396,17 +398,17 @@ export async function endCallFromTool(
     }
   }
   if (existing) {
-    const before = storedMessageBlocks(existing);
-    const blocks = before.map((block) =>
-      block.kind === "voice_call" && block.callId === callId
-        ? { ...block, title, ...(farewell ? { farewell } : {}) }
-        : block,
-    );
-    changed = JSON.stringify(blocks) !== JSON.stringify(before);
-    if (changed) {
+    const next = changeMessageBlocks(existing, (block) => {
+      if (block.kind !== "voice_call" || block.callId !== callId) return block;
+      const titled = { ...block, title, ...(farewell ? { farewell } : {}) };
+      return JSON.stringify(titled) === JSON.stringify(block) ? block : titled;
+    });
+    changed = next !== null;
+    if (next) {
+      const { blocks } = next;
       await deps.prisma.message.update({
         where: { id: existing.id },
-        data: { blocks: blocks as Prisma.InputJsonValue },
+        data: { blocks: next.stored },
       });
       await deps.events.append({
         spaceId: run.spaceId,

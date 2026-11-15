@@ -283,3 +283,28 @@ describe("cancelled search", () => {
     expect(prisma.artifact.findMany).not.toHaveBeenCalled();
   });
 });
+
+it("finds text stored beside entries that are not blocks, in a bot chat and in a group", async () => {
+  const { prisma } = fixture(0);
+  const blocks = [{ text: "no kind" }, { kind: "text", text: "the quarterly report" }, null];
+  // The message scans are tagged templates: their first argument is the SQL's literal parts.
+  prisma.$queryRaw.mockImplementation(async (sql: readonly string[] | object) => {
+    const text = Array.isArray(sql) ? sql.join("") : "";
+    if (text.includes('b.id AS "botId"'))
+      return [
+        { id: "message-1", threadId: "thread-1", seq: 3, blocks, botId: "bot-1", botName: "Bot" },
+      ];
+    if (text.includes('g.id AS "groupId"'))
+      return [
+        { id: "message-2", threadId: "thread-2", seq: 4, blocks, groupId: "g-1", groupName: "G" },
+      ];
+    return [];
+  });
+
+  const hits = await querySpaceSearch(prisma as never, actor, "report");
+
+  expect(hits).toMatchObject([
+    { kind: "message", botId: "bot-1", messageId: "message-1", seq: 3 },
+    { kind: "message", groupId: "g-1", messageId: "message-2", seq: 4 },
+  ]);
+});

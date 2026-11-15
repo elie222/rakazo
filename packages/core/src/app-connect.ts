@@ -61,14 +61,15 @@ export function matchesAppConnection(
   );
 }
 
-export function connectedAppBlocks(
-  blocks: MessageBlock[],
+/** The block as connecting the app leaves it: the same block unless it is that app's open card. */
+export function connectedAppBlock(
+  block: MessageBlock,
   connectorId: string,
   provider: string,
-): MessageBlock[] {
-  return blocks.map((block) =>
-    matchesAppConnection(block, connectorId, provider) ? { ...block, status: "connected" } : block,
-  );
+): MessageBlock {
+  return matchesAppConnection(block, connectorId, provider) && block.status !== "connected"
+    ? { ...block, status: "connected" }
+    : block;
 }
 
 /** Shared completion input for inline cards on every client. */

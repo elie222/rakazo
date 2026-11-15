@@ -35,8 +35,10 @@ import {
   isPartialReplyClientNonce,
   loadRunHistoryMessages,
   loadRunTurnCheckpoint,
+  mayBeChannelMessage,
   parseComputerMode,
   RunHistoryWriteError,
+  readMessageBlocks,
   readRunTimingFields,
   recordUsage,
   retryWhileDatabaseUnavailable,
@@ -594,9 +596,13 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                 select: { id: true, blocks: true, clientNonce: true },
               })
             : null;
-        const sourceBlocks = messagingSource ? storedMessageBlocks(messagingSource) : undefined;
+        const source = messagingSource ? readMessageBlocks(messagingSource) : undefined;
+        const sourceBlocks = source?.blocks;
         const channelId = messagingChannelId(sourceBlocks);
-        const messagingChannelRun = isMessagingChannelRun(run.trigger, sourceBlocks);
+        // A source that lost entries may have lost its channel marker: the run gets a channel's
+        // limits, and its reply is not sent to a chat app (see MessagingDelivery.deliverRun).
+        const messagingChannelRun =
+          isMessagingChannelRun(run.trigger, sourceBlocks) || source?.intact === false;
         const [
           { bot, ownerLabs },
           thread,
@@ -1610,9 +1616,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                 Boolean(
                   channelId ||
                     thread.externalConversationId ||
-                    messagingChannelId(
-                      sourceMessage ? storedMessageBlocks(sourceMessage) : undefined,
-                    ),
+                    (sourceMessage && mayBeChannelMessage(sourceMessage)),
                 ),
             ),
             voiceCall,

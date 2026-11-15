@@ -6,10 +6,10 @@ import {
   isConversationalRun,
   STOPPED_HELPER_RESULT,
 } from "@rakazo/core";
-import type { Prisma } from "@rakazo/db";
 import {
   appendEventInTransaction,
   assertRunCanWriteHistory,
+  changeMessageBlocks,
   createThreadMessageInTransaction,
   storedMessageBlocks,
   THREAD_LOCK_TRANSACTION_OPTIONS,
@@ -225,11 +225,10 @@ export async function returnHelperOutcome(
       progress: undefined,
       result,
     };
-    const nextBlocks = blocks.map((block) => (block === helper ? settled : block));
-    await tx.message.update({
-      where: { id: card.id },
-      data: { blocks: nextBlocks as Prisma.InputJsonValue },
-    });
+    const next = changeMessageBlocks(card, (block) => (block === helper ? settled : block));
+    if (!next) return null;
+    const nextBlocks = next.blocks;
+    await tx.message.update({ where: { id: card.id }, data: { blocks: next.stored } });
     const event = await appendEventInTransaction(tx, {
       spaceId: run.spaceId,
       threadId: card.threadId,

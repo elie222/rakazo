@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   appConnectCard,
   appConnectedInput,
-  connectedAppBlocks,
+  connectedAppBlock,
   matchAppCatalog,
 } from "./app-connect.js";
 
@@ -25,11 +25,10 @@ describe("inline app cards", () => {
     const card = appConnectCard(entry);
     const other = { ...card, connectorId: "other" };
     const text: MessageBlock = { kind: "text", text: "hello" };
-    expect(connectedAppBlocks([card, other, text], "catalog", "gcal")).toEqual([
-      { ...card, status: "connected" },
-      other,
-      text,
-    ]);
+    const connected = { ...card, status: "connected" };
+    expect(connectedAppBlock(card, "catalog", "gcal")).toEqual(connected);
+    for (const block of [other, text, connected])
+      expect(connectedAppBlock(block, "catalog", "gcal")).toBe(block);
     expect(card.description).toBe("Search events and schedule meetings.");
     expect(appConnectedInput("bot", "group-thread", card)).toEqual({
       botId: "bot",

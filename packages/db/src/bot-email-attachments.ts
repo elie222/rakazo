@@ -9,7 +9,9 @@ const EmailAttachments = z.array(
       mimeType: z.string(),
       size: z.number(),
     }),
-    z.object({ name: z.string() }),
+    // Named only. A kept file in another shape must not read as this one: the inbox would store
+    // the files again and write them over the row.
+    z.object({ name: z.string(), artifactId: z.undefined().optional() }),
   ]),
 );
 /** A file an email carried: its name, and the kept artifact when the sender earned one. */

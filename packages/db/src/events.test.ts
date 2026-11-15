@@ -3857,6 +3857,67 @@ describe("queue admission beside pending cards", () => {
     });
   });
 
+  describe("a waiting message stored beside entries that are not blocks", () => {
+    const stray = [{ text: "no kind" }, null];
+    const group = { kind: "channel_message", provider: "sendblue", channelId: "channel-1" };
+    const owner = [{ kind: "text", text: "Status?" }];
+    const row = (id: string, originTrigger: string | null, blocks: unknown) => ({
+      id,
+      userId: "user-1",
+      originTrigger,
+      message: { id: `message-${id}`, blocks, seq: 1 },
+    });
+    const continuation = async (rows: ReturnType<typeof row>[]) => {
+      const tx = {
+        run: {
+          findFirst: vi.fn().mockResolvedValue(null),
+          create: vi.fn().mockResolvedValue({ id: "continuation" }),
+        },
+        steeringMessage: { findMany: vi.fn().mockResolvedValue(rows), updateMany: vi.fn() },
+        task: { create: vi.fn().mockResolvedValue({ id: "task-new" }) },
+      };
+      await createPendingSteeringRun(tx as never, {
+        spaceId: "space-1",
+        threadId: "thread-1",
+        botId: "bot-1",
+      });
+      return {
+        claimed: tx.steeringMessage.updateMany.mock.calls[0]?.[0].where.id.in,
+        trigger: tx.run.create.mock.calls[0]?.[0].data.trigger,
+      };
+    };
+
+    it.each([
+      ["a group text whose channel message is still there", [group, ...stray]],
+      ["a chat-app text that may have lost its channel message", [...owner, ...stray]],
+      ["a chat-app text that is not a list", { kind: "text", text: "Status?" }],
+    ])("answers %s apart from the owner's private messages", async (_case, blocks) => {
+      expect(
+        await continuation([row("group", "messaging", blocks), row("owner", null, owner)]),
+      ).toEqual({
+        claimed: ["owner"],
+        trigger: "follow_up",
+      });
+      expect(await continuation([row("group", "messaging", blocks)])).toEqual({
+        claimed: ["group"],
+        trigger: "messaging",
+      });
+    });
+
+    it.each([
+      ["whose channel message is still there", [group, ...stray]],
+      ["that may have lost its channel message", [...owner, ...stray]],
+    ])(
+      "never starts an owner follow-up from a row queued before origins were recorded %s",
+      async (_case, blocks) => {
+        expect(await continuation([row("legacy", null, blocks)])).toEqual({
+          claimed: ["legacy"],
+          trigger: "messaging",
+        });
+      },
+    );
+  });
+
   it("creates a pending steering continuation without attaching it to a paused run", async () => {
     const tx = {
       run: {

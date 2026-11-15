@@ -34,6 +34,7 @@ import {
   databaseCapacityBackoffMs,
   databaseOutage,
   isDatabaseUnavailable,
+  readMessageBlocks,
   runAsSystem,
   SpaceDeletionInProgressError,
   storedMessageBlocks,
@@ -301,7 +302,8 @@ export class MessagingDelivery {
           if (lane) lanes.push(lane);
         }
       } else if (run.trigger === "messaging") {
-        const channelBlock = (run.sourceMessage ? storedMessageBlocks(run.sourceMessage) : []).find(
+        const source = run.sourceMessage ? readMessageBlocks(run.sourceMessage) : undefined;
+        const channelBlock = source?.blocks.find(
           (block): block is Extract<MessageBlock, { kind: "channel_message" }> =>
             block.kind === "channel_message",
         );
@@ -310,7 +312,9 @@ export class MessagingDelivery {
             const lane = await this.recordChannelRun(run, channelBlock);
             if (lane) lanes.push(lane);
           }
-        } else {
+        } else if (source?.intact !== false) {
+          // A source that lost entries may have lost its channel marker, so a group reply could
+          // land in the owner's direct chat: that one stays in the app.
           const lane = await this.recordDirectRun(run, options.progress ?? false);
           if (lane) lanes.push(lane);
         }
@@ -957,12 +961,14 @@ export class MessagingDelivery {
     });
     // Ask answers are entered privately in the app. Check the same snapshot as the replies so a
     // resumed run cannot publish an answer-influenced response.
+    // A reply that lost entries may have lost its answered ask, so it is not published either.
     if (
-      replies.some((message) =>
-        storedMessageBlocks(message).some(
-          (block) => block.kind === "ask" && block.status === "answered",
-        ),
-      )
+      replies.some((message) => {
+        const { blocks, intact } = readMessageBlocks(message);
+        return (
+          !intact || blocks.some((block) => block.kind === "ask" && block.status === "answered")
+        );
+      })
     )
       return undefined;
     const linkedPages = linkedPageIds(replies);

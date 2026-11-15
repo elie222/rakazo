@@ -1,14 +1,10 @@
 import type { ConnectorRegistry } from "@rakazo/adapters";
 import type { Actor, ConnectionCatalogItem, MessageBlock } from "@rakazo/contracts";
-import {
-  appConnectCard,
-  connectedAppBlocks,
-  matchAppCatalog,
-  matchesAppConnection,
-} from "@rakazo/core";
+import { appConnectCard, connectedAppBlock, matchAppCatalog } from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   appendEventInTransaction,
+  changeMessageBlocks,
   createThreadMessageInTransaction,
   IsolationError,
   storedMessageBlocks,
@@ -220,12 +216,14 @@ export async function dismissFocus(
     });
     const pending = recent.find((message) => messageHasPendingChoice(storedMessageBlocks(message)));
     if (!pending) return null;
-    const blocks = storedMessageBlocks(pending).map((block) =>
+    const next = changeMessageBlocks(pending, (block) =>
       block.kind === "choice" && !block.answerId
         ? { ...block, answerId: FOCUS_DISMISSED_ANSWER_ID }
         : block,
     );
-    await tx.message.update({ where: { id: pending.id }, data: { blocks } });
+    if (!next) return null;
+    const { blocks } = next;
+    await tx.message.update({ where: { id: pending.id }, data: { blocks: next.stored } });
     const event = await appendEventInTransaction(tx, {
       spaceId: target.spaceId,
       threadId: target.threadId,
@@ -258,10 +256,12 @@ export async function chooseFocus(
     });
     const pending = recent.find((message) => messageHasPendingChoice(storedMessageBlocks(message)));
     if (!pending) return null;
-    const blocks = storedMessageBlocks(pending).map((block) =>
+    const next = changeMessageBlocks(pending, (block) =>
       block.kind === "choice" ? { ...block, answerId: option.id } : block,
     );
-    await tx.message.update({ where: { id: pending.id }, data: { blocks } });
+    if (!next) return null;
+    const { blocks } = next;
+    await tx.message.update({ where: { id: pending.id }, data: { blocks: next.stored } });
     const event = await appendEventInTransaction(tx, {
       spaceId: target.spaceId,
       threadId: target.threadId,
@@ -379,21 +379,16 @@ export async function markAppConnected(
     const messages = [...new Map([...first, ...latest, ...own].map((m) => [m.id, m])).values()];
     const events = [];
     for (const message of messages) {
-      const blocks = storedMessageBlocks(message);
-      if (
-        !blocks.some(
-          (block) =>
-            matchesAppConnection(block, connectorId, entry.slug) && block.status !== "connected",
-        )
-      )
-        continue;
-      const next = connectedAppBlocks(blocks, connectorId, entry.slug);
-      await tx.message.update({ where: { id: message.id }, data: { blocks: next } });
+      const next = changeMessageBlocks(message, (block) =>
+        connectedAppBlock(block, connectorId, entry.slug),
+      );
+      if (!next) continue;
+      await tx.message.update({ where: { id: message.id }, data: { blocks: next.stored } });
       events.push(
         await appendEventInTransaction(tx, {
           ...target,
           type: "thread.message.updated",
-          payload: { messageId: message.id, role: "bot", blocks: next },
+          payload: { messageId: message.id, role: "bot", blocks: next.blocks },
         }),
       );
     }
