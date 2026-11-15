@@ -1,0 +1,42 @@
+name: Publish client download
+description: Retain one independently built client in GitHub Releases without changing the latest channel.
+inputs:
+  platform:
+    description: Client platform
+    required: true
+  artifact:
+    description: Installer artifact name
+    required: true
+  signing:
+    description: Signing status for the download notes
+    required: true
+runs:
+  using: composite
+  steps:
+    - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      with:
+        name: ${{ inputs.artifact }}
+        path: client-downloads
+    - shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        GH_REPO: ${{ github.repository }}
+        CLIENT_PLATFORM: ${{ inputs.platform }}
+        SIGNING_STATUS: ${{ inputs.signing }}
+        SOURCE_SHA: ${{ github.sha }}
+      run: |
+        set -euo pipefail
+        mapfile -d '' files < <(find client-downloads -type f \( -name '*.apk' -o -name '*.dmg' -o -name '*.zip' -o -name '*.exe' \) -print0)
+        (( ${#files[@]} > 0 ))
+        tag="botone-$CLIENT_PLATFORM-$GITHUB_RUN_ID"
+        notes="$RUNNER_TEMP/client-release-notes.md"
+        printf 'Client: %s\n\n%s\n\nSource commit: %s\n\n[Build details](%s/%s/actions/runs/%s)\n' \
+          "$CLIENT_PLATFORM" "$SIGNING_STATUS" "$SOURCE_SHA" "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" > "$notes"
+        if gh release view "$tag" > /dev/null 2>&1; then
+          gh release upload "$tag" "${files[@]}" --clobber
+        else
+          gh release create "$tag" "${files[@]}" --target "$SOURCE_SHA" \
+            --title "BotONE $CLIENT_PLATFORM $GITHUB_RUN_NUMBER" --notes-file "$notes" --latest=false
+        fi
+        url=$(gh release view "$tag" --json url --jq .url)
+        printf '[Download installer](%s)\n' "$url" >> "$GITHUB_STEP_SUMMARY"
