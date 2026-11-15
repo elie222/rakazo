@@ -832,7 +832,7 @@ describe("sandbox idle", () => {
     expect(findMany).toHaveBeenCalledExactlyOnceWith({
       where: {
         providerRef: { not: null },
-        kind: { not: "desktop" },
+        kind: { notIn: ["desktop"] },
         OR: [{ state: "running" }, { state: "suspending", updatedAt: { lte: abandonedBefore } }],
       },
       select: { id: true },

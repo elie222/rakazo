@@ -116,6 +116,7 @@ import {
 } from "@rakazo/db";
 import type { Logger } from "@rakazo/logging";
 import {
+  bestEffort,
   createServiceLogger,
   enrichLogContext,
   getLogger,
@@ -175,6 +176,7 @@ import { createAuthResponseAudit } from "./security-audit.js";
 import { mountSharedPages } from "./shared-pages.js";
 import { afterSpaceDeparture } from "./space-departure.js";
 import { createSpeechSummarizer } from "./speech-summary.js";
+import { SYSTEM_CONTEXT_PATHS } from "./system-context-routes.js";
 import { settleWithTimeout } from "./team-chat-startup.js";
 import { endUserDeviceSession, mountUserDeviceRoutes } from "./user-devices.js";
 import { mountVoiceHttpRoutes } from "./voice.js";
@@ -914,15 +916,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   mountScriptAssets(app);
   mountSharedPages(app, prisma, requestClientIp);
   const auditAuthResponse = createAuthResponseAudit();
-  // Account and session tables, signup bootstrap and account deletion span tenants;
-  // webhooks authenticate a bot or provider, then resolve the tenant from it.
-  for (const [path, reason] of [
-    ["/api/auth/*", "authentication"],
-    ["/api/v1/bots/*", "bot webhook"],
-    ["/api/v1/email/*", "inbound email"],
-    ["/api/v1/messaging/*", "messaging webhook"],
-    ["/api/v1/phone/*", "messaging webhook"],
-  ] as const) {
+  for (const [path, reason] of SYSTEM_CONTEXT_PATHS) {
     app.use(path, (_c, next) => runAsSystem(reason, next));
   }
   if (directory) {
@@ -1195,9 +1189,9 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       await realtime.close();
       await mcp.close();
       await installed.close();
-      await prisma.$disconnect().catch(() => undefined);
-      await created.pool?.end().catch(() => undefined);
-      await ownedJobPool?.end().catch(() => undefined);
+      await bestEffort("disconnect database client", prisma.$disconnect());
+      await bestEffort("close database pool", created.pool?.end());
+      await bestEffort("close job database pool", ownedJobPool?.end());
       await analytics?.flush();
       await logger.flush({ timeoutMs: 2_000 });
     },
