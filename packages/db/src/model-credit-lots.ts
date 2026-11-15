@@ -1,8 +1,28 @@
 import { randomUUID } from "node:crypto";
+import { z } from "zod";
 import type { Prisma } from "./generated/prisma/client.js";
+import { readJsonColumn } from "./json-column.js";
 
 type Tx = Prisma.TransactionClient;
+const CreditAllocations = z
+  .array(z.looseObject({ lotId: z.string(), amountMicros: z.string().regex(/^-?\d+$/) }))
+  .nullable();
 export type CreditAllocation = { lotId: string; amountMicros: string };
+
+/** The lots a call drew from. Refunds are computed from them, so another shape is rejected. */
+export function storedCreditAllocations(entry: {
+  id: string;
+  allocations: unknown;
+}): CreditAllocation[] {
+  return (
+    readJsonColumn(
+      CreditAllocations,
+      entry.allocations,
+      { table: "model_credit_entries", column: "allocations", id: entry.id },
+      "reject",
+    ) ?? []
+  );
+}
 export const allocatedMicros = (allocations: CreditAllocation[]) =>
   allocations.reduce((sum, item) => sum + BigInt(item.amountMicros), 0n);
 const positive = (amount: bigint) => (amount > 0n ? amount : 0n);
@@ -59,7 +79,7 @@ export async function prepareCreditLots(tx: Tx, organizationId: string, now = ne
     Array<{
       id: string;
       amountMicros: bigint;
-      allocations: CreditAllocation[];
+      allocations: unknown;
       fundedMicros: bigint;
     }>
   >`
@@ -70,7 +90,7 @@ export async function prepareCreditLots(tx: Tx, organizationId: string, now = ne
     const spent = positive(-call.amountMicros);
     const allocations = await returnCreditLots(
       tx,
-      call.allocations,
+      storedCreditAllocations(call),
       call.fundedMicros - spent,
       now,
     );

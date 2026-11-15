@@ -19,6 +19,7 @@ import {
   createThreadMessageInTransaction,
   isUniqueViolation,
   runAsSystem,
+  storedMessageBlocks,
   THREAD_LOCK_TRANSACTION_OPTIONS,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -133,7 +134,7 @@ export async function settleCallRequest(
       },
     });
     if (!message?.botId) return null;
-    const before = Array.isArray(message.blocks) ? (message.blocks as MessageBlock[]) : [];
+    const before = storedMessageBlocks(message);
     const block = callRequestBlock(before);
     if (!block || !input.from.includes(block.status)) return null;
     const expired = block.status === "ringing" && !callIsRinging(block);
@@ -340,10 +341,10 @@ export async function reconcileCallRequests(deps: { prisma: PrismaClient; jobs: 
     },
     orderBy: { createdAt: "asc" },
     take: 100,
-    select: { threadId: true, blocks: true },
+    select: { id: true, threadId: true, blocks: true },
   });
   for (const message of messages) {
-    const block = callRequestBlock(message.blocks as MessageBlock[]);
+    const block = callRequestBlock(storedMessageBlocks(message));
     if (block)
       await deps.jobs.enqueue(
         callExpireJob(message.threadId, block.callId, new Date(block.expiresAt)),
@@ -395,7 +396,7 @@ export async function endCallFromTool(
     }
   }
   if (existing) {
-    const before = Array.isArray(existing.blocks) ? (existing.blocks as MessageBlock[]) : [];
+    const before = storedMessageBlocks(existing);
     const blocks = before.map((block) =>
       block.kind === "voice_call" && block.callId === callId
         ? { ...block, title, ...(farewell ? { farewell } : {}) }

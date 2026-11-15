@@ -2,15 +2,19 @@ import type {
   AuditEvent,
   AuditEventFilter,
   AuditEventListInput,
-  AuditEventMetadata,
   AuditEventPage,
   AuditOutcome,
 } from "@rakazo/contracts";
-import { AuditActorTypeSchema, AuditOutcomeSchema } from "@rakazo/contracts";
+import {
+  AuditActorTypeSchema,
+  AuditEventMetadataSchema,
+  AuditOutcomeSchema,
+} from "@rakazo/contracts";
 import { getLogger } from "@rakazo/logging";
 import { GUEST_ROLE, ownedOrganizationId } from "./billing.js";
 import type { Prisma, PrismaClient } from "./client.js";
 import { parsePositiveInteger } from "./client.js";
+import { readJsonColumn } from "./json-column.js";
 import { runAsSystem } from "./row-security.js";
 import { IsolationError } from "./scope.js";
 import { securityEventMetadata, securityRequestCaller } from "./security-events.js";
@@ -325,7 +329,12 @@ export function auditEventDto(row: AuditEventRow): AuditEvent {
     threadId: row.threadId,
     ip: row.ip,
     userAgent: row.userAgent,
-    metadata: (row.metadata ?? {}) as AuditEventMetadata,
+    metadata: readJsonColumn(
+      AuditEventMetadataSchema,
+      row.metadata ?? {},
+      { table: "audit_events", column: "metadata", id: row.id },
+      { fallback: {} },
+    ),
   };
 }
 

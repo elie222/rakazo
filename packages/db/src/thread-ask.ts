@@ -33,6 +33,8 @@ import { contentEncryptionOf } from "./content-encryption.js";
 import { notifyCommittedEvent, notifyRealtime } from "./event-stream.js";
 import type { FinalizeRunResult } from "./events.js";
 import { appendEventInTransaction, transientRunEventsWhere } from "./events.js";
+import { JsonObject, readJsonColumn } from "./json-column.js";
+import { storedMessageBlocks } from "./message-blocks.js";
 import { createThreadMessageInTransaction, loadMessageAuthor } from "./messages.js";
 import { deleteRunSecretsInTransaction } from "./run-secrets.js";
 import { RUN_TURN_CHECKPOINT_KIND } from "./run-turn-checkpoint.js";
@@ -366,11 +368,17 @@ async function commitAnswerRunInput(
         const stored = await tx.externalEffect.findUniqueOrThrow({
           where: { id: approvalEffect!.id },
         });
-        const request = stored.request as Record<string, Prisma.InputJsonValue>;
+        // The approved action is rebuilt from this request, so another shape is rejected.
+        const request = readJsonColumn(
+          JsonObject,
+          stored.request,
+          { table: "external_effects", column: "request", id: stored.id },
+          "reject",
+        );
         await tx.externalEffect.update({
           where: { id: approvalEffect!.id },
           data: {
-            request: { ...request, instructions: editedInstructions },
+            request: { ...request, instructions: editedInstructions } as Prisma.InputJsonObject,
             idempotencyKey: approvalEffectKey(input.runId, approvalEffect!.kind, {
               ...request,
               instructions: editedInstructions,
@@ -664,7 +672,7 @@ export async function eligibleWaitingTextAnswer(
         select: { id: true, seq: true, role: true, blocks: true, replyToMessageId: true },
       });
       if (!latest) return null;
-      if (!messageReaction({ ...latest, blocks: latest.blocks as MessageBlock[] })) {
+      if (!messageReaction({ ...latest, blocks: storedMessageBlocks(latest) })) {
         if (latest.id !== found.messageId) return null;
         break;
       }

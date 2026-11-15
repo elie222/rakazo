@@ -9,6 +9,7 @@ import {
 } from "@rakazo/core";
 import { isPageCardMessage } from "@rakazo/core/message-quote";
 import type { PrismaClient } from "@rakazo/db";
+import { storedMessageBlocks } from "@rakazo/db";
 
 type QuotedMessage = {
   id: string;
@@ -24,7 +25,7 @@ type ReplyMessage = QuotedMessage & {
 };
 
 function messageBlocks(message: QuotedMessage): MessageBlock[] {
-  return Array.isArray(message.blocks) ? (message.blocks as MessageBlock[]) : [];
+  return storedMessageBlocks(message);
 }
 
 function replyContext(source: ReplyMessage, threadId: string): string | undefined {

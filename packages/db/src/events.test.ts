@@ -4712,7 +4712,9 @@ describe("sendUserMessage", () => {
 
     expect(tx.run.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        select: expect.objectContaining({ sourceMessage: { select: { blocks: true } } }),
+        select: expect.objectContaining({
+          sourceMessage: { select: { id: true, blocks: true } },
+        }),
       }),
     );
     expect(tx.run.create).not.toHaveBeenCalled();

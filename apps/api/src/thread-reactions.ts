@@ -8,6 +8,7 @@ import {
   createThreadMessageInTransaction,
   IsolationError,
   loadMessageAuthor,
+  storedMessageBlocks,
   THREAD_LOCK_TRANSACTION_OPTIONS,
   touchGroupUpdatedAt,
 } from "@rakazo/db";
@@ -136,14 +137,11 @@ async function reactionReplyBotId(
     where: { threadId: target.threadId, seq: { gt: parent.seq } },
     orderBy: { seq: "asc" },
     take: 51,
-    select: { role: true, blocks: true, replyToMessageId: true },
+    select: { id: true, role: true, blocks: true, replyToMessageId: true },
   });
   if (newer.length > 50) return undefined;
   const onlyReactions = newer.every((message) =>
-    messageReaction({
-      ...message,
-      blocks: Array.isArray(message.blocks) ? (message.blocks as MessageBlock[]) : [],
-    }),
+    messageReaction({ ...message, blocks: storedMessageBlocks(message) }),
   );
   return onlyReactions ? parent.botId : undefined;
 }

@@ -158,6 +158,19 @@ describe("model credit reconciler", () => {
     expect(charged()?.costUsd).toBeCloseTo(0.04);
   });
 
+  it("sends a receipt stored in another shape to review instead of pricing it", async () => {
+    const updateMany = await reconcile({
+      usage: { ...stopped, countedTokens: { inputTokens: "100000", outputTokens: 2_000 } },
+      reconciliationAttempts: 5,
+    });
+    expect(recordUsage).not.toHaveBeenCalled();
+    expect(updateMany).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ reconciliationState: "needs_review" }),
+      }),
+    );
+  });
+
   it("holds counted tokens it has no price for", async () => {
     const updateMany = await reconcile({
       usage: { ...stopped, pricingSnapshot: null },

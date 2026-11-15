@@ -44,6 +44,7 @@ import {
   expireComputerExecutionLeases,
   IsolationError,
   isUniqueViolation,
+  storedMessageBlocks,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { takeComputerControl } from "./computer-control.js";
@@ -246,8 +247,7 @@ async function updateSkillDraftMessage(
   });
 
   for (const message of messages) {
-    const parsed = message.blocks as MessageBlock[];
-    if (!Array.isArray(parsed)) continue;
+    const parsed = storedMessageBlocks(message);
     const index = parsed.findIndex(
       (block) => block.kind === "skill_draft" && block.skillId === skill.id,
     );

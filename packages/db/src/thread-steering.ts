@@ -8,6 +8,7 @@ import {
 } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "./client.js";
 import { appendEventInTransaction } from "./events.js";
+import { storedMessageBlocks } from "./message-blocks.js";
 import { THREAD_LOCK_TRANSACTION_OPTIONS, withTransactionRetry } from "./transaction-retry.js";
 
 export interface ClaimSteeringInput {
@@ -59,13 +60,13 @@ async function claimSteeringOnce(
         spaceId: true,
         userId: true,
         trigger: true,
-        sourceMessage: { select: { blocks: true } },
+        sourceMessage: { select: { id: true, blocks: true } },
       },
     });
     if (!run || run.trigger === "created") return [];
     const channelId =
       run.trigger === "messaging"
-        ? messagingChannelId(run.sourceMessage?.blocks as MessageBlock[] | undefined)
+        ? messagingChannelId(run.sourceMessage ? storedMessageBlocks(run.sourceMessage) : undefined)
         : undefined;
     const directMessage = run.trigger === "messaging" && !channelId;
     // Pending rows from another chat stay for their own continuation.
@@ -95,7 +96,7 @@ async function claimSteeringOnce(
               : {}),
         },
       },
-      include: { message: { select: { blocks: true, seq: true } } },
+      include: { message: { select: { id: true, blocks: true, seq: true } } },
       orderBy: [{ message: { seq: "asc" } }, { id: "asc" }],
     });
     if (steering.length === 0) return [];
@@ -120,7 +121,7 @@ async function claimSteeringOnce(
     // In a group chat the row's user is the bot's owner, not the sender, so the sender is
     // matched by the address it wrote from.
     const groupSenders = steering.flatMap((item) =>
-      (item.message.blocks as MessageBlock[]).filter((block) => block.kind === "channel_message"),
+      storedMessageBlocks(item.message).filter((block) => block.kind === "channel_message"),
     );
     const ownAddresses = new Set(
       groupSenders.length === 0
@@ -139,27 +140,30 @@ async function claimSteeringOnce(
           ).map((identity) => `${identity.provider}:${identity.address}`),
     );
     const sentByRunPerson = (item: (typeof steering)[number]) => {
-      const group = (item.message.blocks as MessageBlock[]).find(
+      const group = storedMessageBlocks(item.message).find(
         (block) => block.kind === "channel_message",
       );
       return group
         ? ownAddresses.has(`${group.provider}:${group.fromAddress}`)
         : item.userId === run.userId;
     };
-    return steering.map((item) => ({
-      id: item.id,
-      messageId: item.messageId,
-      text: blocksToAgentHistoryText(item.message.blocks as MessageBlock[]),
-      blocks: item.message.blocks as MessageBlock[],
-      origin:
-        item.originTrigger === "webhook"
-          ? ("webhook" as const)
-          : sentByRunPerson(item)
-            ? ("user" as const)
-            : item.originTrigger === "messaging"
-              ? ("messaging" as const)
-              : ("member" as const),
-    }));
+    return steering.map((item) => {
+      const blocks = storedMessageBlocks(item.message);
+      return {
+        id: item.id,
+        messageId: item.messageId,
+        text: blocksToAgentHistoryText(blocks),
+        blocks,
+        origin:
+          item.originTrigger === "webhook"
+            ? ("webhook" as const)
+            : sentByRunPerson(item)
+              ? ("user" as const)
+              : item.originTrigger === "messaging"
+                ? ("messaging" as const)
+                : ("member" as const),
+      };
+    });
   }, THREAD_LOCK_TRANSACTION_OPTIONS);
 }
 
@@ -250,7 +254,7 @@ export async function createPendingSteeringRun(
       userId,
       prompt:
         origin === "webhook"
-          ? blocksToAgentHistoryText(source.message.blocks as MessageBlock[])
+          ? blocksToAgentHistoryText(storedMessageBlocks(source.message))
           : STEERING_CONTINUATION_PROMPT,
       status: "queued",
     },
@@ -271,7 +275,9 @@ export async function createPendingSteeringRun(
           ? "webhook"
           : origin === "private" &&
               batch.every(
-                (item) => item.originTrigger === null && !hasChannelMessage(item.message.blocks),
+                (item) =>
+                  item.originTrigger === null &&
+                  !hasChannelMessage(storedMessageBlocks(item.message)),
               )
             ? "follow_up"
             : "messaging",
@@ -310,16 +316,16 @@ function continuationModelPin(
   };
 }
 
-export function hasChannelMessage(blocks: unknown): boolean {
-  return (blocks as MessageBlock[]).some((block) => block.kind === "channel_message");
+export function hasChannelMessage(blocks: readonly MessageBlock[]): boolean {
+  return blocks.some((block) => block.kind === "channel_message");
 }
 
 function steeringOrigin(item: {
   originTrigger: string | null;
-  message: { blocks: unknown };
+  message: { id: string; blocks: unknown };
 }): string {
   if (item.originTrigger === "webhook") return "webhook";
   if (item.originTrigger !== "messaging") return "private";
-  const channelId = messagingChannelId(item.message.blocks as MessageBlock[] | undefined);
+  const channelId = messagingChannelId(storedMessageBlocks(item.message));
   return channelId ? `channel:${channelId}` : "private";
 }

@@ -36,6 +36,7 @@ import {
   isDatabaseUnavailable,
   runAsSystem,
   SpaceDeletionInProgressError,
+  storedMessageBlocks,
   THREAD_LOCK_TRANSACTION_OPTIONS,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -300,7 +301,7 @@ export class MessagingDelivery {
           if (lane) lanes.push(lane);
         }
       } else if (run.trigger === "messaging") {
-        const channelBlock = ((run.sourceMessage?.blocks ?? []) as MessageBlock[]).find(
+        const channelBlock = (run.sourceMessage ? storedMessageBlocks(run.sourceMessage) : []).find(
           (block): block is Extract<MessageBlock, { kind: "channel_message" }> =>
             block.kind === "channel_message",
         );
@@ -958,7 +959,7 @@ export class MessagingDelivery {
     // resumed run cannot publish an answer-influenced response.
     if (
       replies.some((message) =>
-        (message.blocks as MessageBlock[]).some(
+        storedMessageBlocks(message).some(
           (block) => block.kind === "ask" && block.status === "answered",
         ),
       )
@@ -1138,11 +1139,7 @@ export class MessagingDelivery {
     const ambient = message.kind === "ambient";
     const body =
       run.status === "completed"
-        ? teamChatResponseText(
-            Array.isArray(reply?.blocks) ? (reply.blocks as MessageBlock[]) : [],
-            run.bot.name,
-            ambient,
-          )
+        ? teamChatResponseText(reply ? storedMessageBlocks(reply) : [], run.bot.name, ambient)
         : ambient
           ? ""
           : `${run.bot.name} could not complete that request. Open Rakazo for details.`;
@@ -1192,11 +1189,7 @@ export class MessagingDelivery {
     const body =
       run.status === "failed"
         ? `${run.bot.name} could not complete the delegated request. Open Rakazo for details.`
-        : teamChatResponseText(
-            Array.isArray(reply?.blocks) ? (reply.blocks as MessageBlock[]) : [],
-            run.bot.name,
-            true,
-          );
+        : teamChatResponseText(reply ? storedMessageBlocks(reply) : [], run.bot.name, true);
     if (!body) return undefined;
     const lane = {
       identityId: null,

@@ -6,11 +6,42 @@ import {
   MICROS_PER_DOLLAR,
   Prisma,
   RECONCILED_ESTIMATE_COST_SOURCE,
+  readJsonColumn,
   recordUsage,
   runAsSystem,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { z } from "zod";
 import { PAID_SERVICE_USAGE_PROVIDER } from "./paid-service-tools.js";
+
+const tokens = z.number().nullable();
+const CountedTokens = z.object({ inputTokens: z.number(), outputTokens: z.number() });
+/**
+ * A call's receipt as recordModelCreditReceipt stored it. Fields the settlement does not read
+ * pass through, and a missing count reads as unavailable, as it does in AgentUsage.
+ */
+const StoredUsage = z
+  .looseObject({
+    providerRequestId: z.string().nullish(),
+    operationKind: z
+      .enum(["answer", "setup", "retrieval", "subagent", "compaction"])
+      .optional()
+      .catch(undefined),
+    inputTokens: tokens.default(null),
+    outputTokens: tokens.default(null),
+    cacheReadTokens: tokens.optional(),
+    cacheWriteTokens: tokens.optional(),
+    cacheWrite1hTokens: tokens.optional(),
+    reasoningTokens: tokens.optional(),
+    totalTokens: tokens.optional(),
+    costUsd: tokens.optional(),
+    costSource: z.string().nullish(),
+    pricingVersion: z.string().nullish(),
+    pricingSnapshot: z.record(z.string(), z.unknown()).nullish(),
+    usageSource: z.string().nullish(),
+    countedTokens: CountedTokens.extend({ ifStopped: CountedTokens.optional() }).nullish(),
+  })
+  .nullable() satisfies z.ZodType<AgentUsage | null>;
 
 /**
  * When the provider never reports a cost, a call that reached it is charged for the tokens we
@@ -128,7 +159,13 @@ export function createModelCreditReconciler(deps: {
           try {
             if (!call.callId || !call.userId || !call.spaceId || !call.provider || !call.model)
               throw new Error("Legacy reservation requires manual attribution");
-            let usage = call.usage as unknown as AgentUsage | null;
+            // A receipt in another shape fails this attempt, and the hold goes to review.
+            let usage: AgentUsage | null = readJsonColumn(
+              StoredUsage,
+              call.usage,
+              { table: "model_credit_entries", column: "usage", id: call.id },
+              "reject",
+            );
             let reconciled = false;
             const canLookUp = lookup?.provider === call.provider && !!call.providerRequestId;
             if (canLookUp) {

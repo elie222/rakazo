@@ -5,6 +5,7 @@ import {
   appendEventInTransaction,
   availableInSpace,
   IsolationError,
+  storedMessageBlocks,
   withTransactionRetry,
 } from "@rakazo/db";
 import { requireBotThread } from "./bot-thread.js";
@@ -120,7 +121,7 @@ async function rewriteCards(
     });
     for (const message of messages) {
       if (message.botId && message.botId !== input.botId) continue;
-      const blocks = message.blocks as MessageBlock[];
+      const blocks = storedMessageBlocks(message);
       const matching = blocks.filter((block): block is ApprovalBlock =>
         isApproval(block, input.serverId),
       );
@@ -233,7 +234,7 @@ async function closeServerCards(
   });
   const seqs: ThreadSeq[] = [];
   for (const message of messages) {
-    const blocks = message.blocks as MessageBlock[];
+    const blocks = storedMessageBlocks(message);
     if (!blocks.some((block) => isApproval(block, serverId) && block.status !== "dismissed")) {
       continue;
     }

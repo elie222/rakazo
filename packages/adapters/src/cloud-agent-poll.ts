@@ -5,10 +5,14 @@ import type {
   CloudAgentSnapshot,
 } from "@rakazo/adapter-kit";
 import { CloudAgentRequestRejected, CloudAgentRetryLater } from "@rakazo/adapter-kit";
-import type { MessageBlock } from "@rakazo/contracts";
 import { cloudAgentHttpsUrl } from "@rakazo/core";
 import type { CloudAgent } from "@rakazo/db";
-import { appendEventInTransaction, Prisma, THREAD_LOCK_TRANSACTION_OPTIONS } from "@rakazo/db";
+import {
+  appendEventInTransaction,
+  Prisma,
+  storedMessageBlocks,
+  THREAD_LOCK_TRANSACTION_OPTIONS,
+} from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { CloudAgentDeps } from "./cloud-agent-service.js";
 import { cloudAgentBlock, cloudAgentFor, enqueueCloudAgent } from "./cloud-agent-service.js";
@@ -330,7 +334,7 @@ async function finishPoll(
     let wakeRunId: string | undefined;
     if (message && !detached) {
       const nextBlock = cloudAgentBlock(saved);
-      const blocks = (message.blocks as MessageBlock[]).map((block) =>
+      const blocks = storedMessageBlocks(message).map((block) =>
         block.kind === "cloud_agent" && block.agentId === agent.id ? nextBlock : block,
       );
       if (JSON.stringify(blocks) !== JSON.stringify(message.blocks)) {

@@ -4,7 +4,6 @@ import { MODEL_CREDITS_EXHAUSTED_ERROR, MODEL_UNPRICED_FOR_CREDITS_ERROR } from 
 import type { PrismaClient } from "./client.js";
 import type { Prisma } from "./generated/prisma/client.js";
 import { enforceModelCreditCap } from "./model-credit-cap.js";
-import type { CreditAllocation } from "./model-credit-lots.js";
 import {
   allocateCreditLots,
   allocatedMicros,
@@ -12,6 +11,7 @@ import {
   prepareCreditLots,
   resizeCreditLot,
   returnCreditLots,
+  storedCreditAllocations,
   syncLotBalance,
 } from "./model-credit-lots.js";
 import { isUniqueViolation } from "./prisma-errors.js";
@@ -209,7 +209,7 @@ export async function settleModelCreditsTx(
   if (!entry || (!entry.pending && !reconcile)) return;
   const amountMicros = -BigInt(Math.ceil(costUsd * MICROS_PER_DOLLAR));
   if (!entry.pending && amountMicros === entry.amountMicros) return;
-  let allocations = (entry.allocations ?? []) as CreditAllocation[];
+  let allocations = storedCreditAllocations(entry);
   const difference = amountMicros - entry.amountMicros;
   if (difference > 0n) {
     const funded = allocatedMicros(allocations);

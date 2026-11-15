@@ -11,6 +11,7 @@ import {
   appendEventInTransaction,
   assertRunCanWriteHistory,
   createThreadMessageInTransaction,
+  storedMessageBlocks,
   THREAD_LOCK_TRANSACTION_OPTIONS,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -210,7 +211,7 @@ export async function returnHelperOutcome(
       where: { id: run.sourceMessageId, threadId: source.threadId },
       select: { id: true, threadId: true, blocks: true },
     });
-    const blocks = Array.isArray(card?.blocks) ? (card.blocks as MessageBlock[]) : [];
+    const blocks = card ? storedMessageBlocks(card) : [];
     const helper = blocks.find((block): block is HelperBlock => block.kind === "subagent");
     // The chat was cleared since: nothing is left to settle or answer.
     if (!card || !helper) return null;

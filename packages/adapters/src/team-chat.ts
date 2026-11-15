@@ -5,7 +5,7 @@ import {
   teamChatEngageJob,
   teamChatEngageJobKey,
 } from "@rakazo/adapter-kit";
-import type { AutomatedSenderPolicies, MessageBlock } from "@rakazo/contracts";
+import type { AutomatedSenderPolicies } from "@rakazo/contracts";
 import { ATTACHMENT_MAX_COUNT, AutomatedSenderPoliciesSchema } from "@rakazo/contracts";
 import {
   messageBlockForArtifact,
@@ -18,6 +18,7 @@ import {
   runAsSystem,
   SendClaimLostError,
   SpaceDeletionInProgressError,
+  storedMessageBlocks,
   teamChatRunClientNonce,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -238,12 +239,12 @@ export class TeamChat {
           id: { in: batch?.messageIds.length ? batch.messageIds : [message.id] },
         },
       },
-      select: { blocks: true },
+      select: { id: true, blocks: true },
       orderBy: { seq: "asc" },
     });
     const fileBlocks = transcripts
-      .flatMap(({ blocks }) =>
-        (blocks as MessageBlock[]).filter(
+      .flatMap((transcript) =>
+        storedMessageBlocks(transcript).filter(
           (block) => block.kind === "file" || block.kind === "image",
         ),
       )

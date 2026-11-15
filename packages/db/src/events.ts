@@ -36,6 +36,7 @@ import {
   notifyCommittedEvent,
   notifyRealtime,
 } from "./event-stream.js";
+import { storedMessageBlocks } from "./message-blocks.js";
 import type { RunLease } from "./messages.js";
 import {
   assertRunCanWriteHistory,
@@ -498,7 +499,7 @@ export async function sendUserMessage(
                 trigger: true,
                 status: true,
                 userId: true,
-                sourceMessage: { select: { blocks: true } },
+                sourceMessage: { select: { id: true, blocks: true } },
               },
             })
           : [];
@@ -513,7 +514,9 @@ export async function sendUserMessage(
           input.trigger,
           run.trigger,
           channelId,
-          messagingChannelId(run.sourceMessage?.blocks as MessageBlock[] | undefined),
+          messagingChannelId(
+            run.sourceMessage ? storedMessageBlocks(run.sourceMessage) : undefined,
+          ),
         );
       const holdingRuns = activeRuns.filter(
         (run) => !messageBypassesTakeoverWait(run, fromGroup || steersRun(run)),

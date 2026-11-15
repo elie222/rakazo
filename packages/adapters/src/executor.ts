@@ -41,6 +41,7 @@ import {
   recordUsage,
   retryWhileDatabaseUnavailable,
   settleReleasedTakeoverCards,
+  storedMessageBlocks,
   teamChatRunFromOwner,
 } from "@rakazo/db";
 import { enrichLogContext, getLogger } from "@rakazo/logging";
@@ -590,10 +591,10 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           run.trigger === "messaging" && run.sourceMessageId
             ? await deps.prisma.message.findUnique({
                 where: { id: run.sourceMessageId },
-                select: { blocks: true, clientNonce: true },
+                select: { id: true, blocks: true, clientNonce: true },
               })
             : null;
-        const sourceBlocks = messagingSource?.blocks as MessageBlock[] | undefined;
+        const sourceBlocks = messagingSource ? storedMessageBlocks(messagingSource) : undefined;
         const channelId = messagingChannelId(sourceBlocks);
         const messagingChannelRun = isMessagingChannelRun(run.trigger, sourceBlocks);
         const [
@@ -877,7 +878,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             id: message.id,
             role: message.role,
             runId: message.runId,
-            blocks: message.blocks as MessageBlock[],
+            blocks: storedMessageBlocks(message),
           }));
         const currentTurnMessage = userTurnMessageForRun(
           run.trigger,
@@ -904,7 +905,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         });
         // The content extension decrypts imageHandling after filtering on plain kind.
         const confirmedRunImages = currentRunImageMessages.flatMap((message) =>
-          (message.blocks as MessageBlock[]).filter(
+          storedMessageBlocks(message).filter(
             (block) => block.kind === "image" && block.imageHandling === "confirm",
           ),
         );
@@ -1313,6 +1314,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             ? await deps.prisma.message.findUnique({
                 where: { id: run.sourceMessageId },
                 select: {
+                  id: true,
                   clientNonce: true,
                   role: true,
                   blocks: true,
@@ -1463,7 +1465,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           ownerStartedRun,
           messagingChannelRun: nonOwnerChatRun,
           sourceMessage,
-          ownerChatMessageBlocks: nonOwnerChatRun ? undefined : messagingSource?.blocks,
+          ownerChatMessageBlocks: nonOwnerChatRun ? undefined : sourceBlocks,
           connectedPlugins,
         });
         // Outbound destinations this run may reach without asking. See outboundSiteGate and
@@ -1608,7 +1610,9 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                 Boolean(
                   channelId ||
                     thread.externalConversationId ||
-                    messagingChannelId(sourceMessage?.blocks as MessageBlock[] | undefined),
+                    messagingChannelId(
+                      sourceMessage ? storedMessageBlocks(sourceMessage) : undefined,
+                    ),
                 ),
             ),
             voiceCall,
