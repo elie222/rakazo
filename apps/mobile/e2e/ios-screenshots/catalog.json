@@ -59,6 +59,7 @@
     "flow": "flows/settings.yaml",
     "screens": [
       "account",
+      "computers",
       "general",
       "profile",
       "change-password",
