@@ -15,6 +15,7 @@ const state = vi.hoisted(() => ({
   overrides: [] as string[],
   focusCount: 0,
   rules: [] as { id: string }[],
+  selectedSpace: "space-selected",
 }));
 type SwitchProps = {
   accessibilityLabel?: string;
@@ -51,7 +52,7 @@ vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   rpc: state.rpc,
   currentApiBase: () => "https://app.example.test",
-  selectedSpaceId: () => "space-selected",
+  selectedSpaceId: () => state.selectedSpace,
   captureApiRequestContext: async (spaceId: string) => ({
     apiBase: "https://app.example.test",
     headers: { "x-rakazo-space-id": spaceId },
@@ -135,9 +136,17 @@ const spaceContext = {
 };
 let root: Root;
 let container: HTMLDivElement;
+async function settle() {
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+}
 async function render() {
   await act(async () => root.render(createElement(SpaceSettings)));
-  await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+  await settle();
+}
+/** A save reports back a tick after the tap that started it. */
+async function press(node: HTMLElement) {
+  await act(async () => node.click());
+  await settle();
 }
 const control = (label: string) =>
   container.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`);
@@ -148,6 +157,7 @@ beforeEach(async () => {
   state.overrides = [];
   state.focusCount = 0;
   state.rules = [];
+  state.selectedSpace = "space-selected";
   state.push.mockReset();
   state.alert.mockReset();
   state.rpc
@@ -186,7 +196,7 @@ it("follows the account until a setting is customized, then opens the same scree
     expect(control(`Customize ${name}`)?.checked).toBe(false);
   expect(container.querySelector("button")).toBeNull();
 
-  await act(async () => control("Customize Models")!.click());
+  await press(control("Customize Models")!);
   expect(state.rpc).toHaveBeenCalledWith(
     "spaceSettings/setOverride",
     { setting: "models", enabled: true },
@@ -205,7 +215,7 @@ it("follows the account until a setting is customized, then opens the same scree
     params: { spaceId: "space-other" },
   });
 
-  await act(async () => control("Customize Models")!.click());
+  await press(control("Customize Models")!);
   expect(state.rpc).toHaveBeenLastCalledWith(
     "spaceSettings/setOverride",
     { setting: "models", enabled: false },
@@ -221,7 +231,7 @@ it("shows the Space's approval mode and rules right here once approvals are cust
   expect(state.rpc).not.toHaveBeenCalledWith("autoReview/get", expect.anything(), spaceContext);
 
   state.rules = [{ id: "rule-1" }];
-  await act(async () => control("Customize Approvals")!.click());
+  await press(control("Customize Approvals")!);
   expect(state.rpc).toHaveBeenCalledWith(
     "spaceSettings/setOverride",
     { setting: "confirmations", enabled: true },
@@ -245,12 +255,12 @@ it("shows the Space's approval mode and rules right here once approvals are cust
     params: { spaceId: "space-other" },
   });
 
-  await act(async () => control("Customize Approvals")!.click());
+  await press(control("Customize Approvals")!);
   expect(rows()).toEqual(["Models", "Voice", "Approvals", "Vault"]);
 });
 
 it("holds the Approvals switch while the Space's mode is saving", async () => {
-  await act(async () => control("Customize Approvals")!.click());
+  await press(control("Customize Approvals")!);
   const base = state.rpc.getMockImplementation()!;
   let finish: () => void = () => undefined;
   state.rpc.mockImplementation((proc: string, input?: Record<string, unknown>) =>
@@ -281,7 +291,7 @@ const alertButton = (text: string) =>
   (state.alert.mock.lastCall![2] as AlertButton[]).find((button) => button.text === text)!;
 
 it("opens the Vault for the Space, and deletes its credentials only once confirmed", async () => {
-  await act(async () => control("Customize Vault")!.click());
+  await press(control("Customize Vault")!);
   expect(state.rpc).toHaveBeenCalledWith(
     "spaceSettings/setOverride",
     { setting: "credentials", enabled: true },
@@ -306,6 +316,7 @@ it("opens the Vault for the Space, and deletes its credentials only once confirm
 
   await act(async () => control("Customize Vault")!.click());
   await act(async () => alertButton("Delete").onPress?.());
+  await settle();
   expect(state.rpc).toHaveBeenCalledWith(
     "spaceSettings/setOverride",
     { setting: "credentials", enabled: false },
@@ -318,7 +329,7 @@ it("turns other settings off without asking", async () => {
   state.overrides = ["voice"];
   state.focusCount += 1;
   await render();
-  await act(async () => control("Customize Voice")!.click());
+  await press(control("Customize Voice")!);
   expect(state.alert).not.toHaveBeenCalled();
   expect(control("Customize Voice")?.checked).toBe(false);
 });
@@ -363,9 +374,84 @@ it("keeps a failed save's error when a read that was pending then succeeds", asy
   state.focusCount += 1;
   await render();
 
-  await act(async () => control("Customize Models")!.click());
+  await press(control("Customize Models")!);
   expect(container.textContent).toContain("Could not save that preference");
 
   await act(async () => finishRead());
   expect(container.textContent).toContain("Could not save that preference");
+});
+
+it("keeps a saved setting, with no save error, when the next read fails", async () => {
+  await press(control("Customize Voice")!);
+  expect(control("Customize Voice")?.checked).toBe(true);
+
+  const base = state.rpc.getMockImplementation()!;
+  state.rpc.mockImplementation(async (proc: string, input?: Record<string, unknown>) => {
+    if (proc === "spaceSettings/overrides") throw new Error("offline");
+    return base(proc, input);
+  });
+  state.focusCount += 1;
+  await render();
+  expect(control("Customize Voice")?.checked).toBe(true);
+  expect(control("Customize Voice")?.disabled).toBe(false);
+  expect(container.textContent).toContain("Something went wrong. Try again.");
+  expect(container.textContent).not.toContain("Could not save that preference");
+});
+
+/** Holds the save open, so a test decides when and how it ends. */
+function holdSave() {
+  const base = state.rpc.getMockImplementation()!;
+  let finish!: (outcome?: Error) => void;
+  state.rpc.mockImplementation((proc: string, input?: Record<string, unknown>) =>
+    proc === "spaceSettings/setOverride"
+      ? new Promise((resolve, reject) => {
+          finish = (outcome) => (outcome ? reject(outcome) : resolve(base(proc, input)));
+        })
+      : base(proc, input),
+  );
+  const saves = () =>
+    state.rpc.mock.calls.filter(([proc]) => proc === "spaceSettings/setOverride").length;
+  return { finish: (outcome?: Error) => finish(outcome), saves };
+}
+
+it("does not start a second save while one runs", async () => {
+  const save = holdSave();
+  await press(control("Customize Models")!);
+  for (const name of ["Models", "Voice", "Approvals", "Vault"]) {
+    expect(control(`Customize ${name}`)?.disabled).toBe(true);
+    await press(control(`Customize ${name}`)!);
+  }
+  expect(save.saves()).toBe(1);
+
+  await act(async () => save.finish());
+  await settle();
+  expect(control("Customize Models")?.checked).toBe(true);
+  expect(control("Customize Voice")?.disabled).toBe(false);
+});
+
+it("opens nothing when the save ends after the screen has gone", async () => {
+  const save = holdSave();
+  await press(control("Customize Models")!);
+  await act(async () => root.render(createElement("div")));
+  await act(async () => save.finish());
+  await settle();
+  expect(state.push).not.toHaveBeenCalled();
+
+  // The Space's list is its own, so the answer is still kept for the next visit.
+  await render();
+  expect(control("Customize Models")?.checked).toBe(true);
+});
+
+it.each([
+  ["succeeds", undefined],
+  ["fails", new Error("offline")],
+])("shows nothing for a save that %s after another space was selected", async (_how, outcome) => {
+  const save = holdSave();
+  await press(control("Customize Models")!);
+  state.selectedSpace = "space-elsewhere";
+  await act(async () => save.finish(outcome));
+  await settle();
+  expect(state.push).not.toHaveBeenCalled();
+  expect(container.textContent).not.toContain("Could not save that preference");
+  expect(control("Customize Voice")?.disabled).toBe(false);
 });

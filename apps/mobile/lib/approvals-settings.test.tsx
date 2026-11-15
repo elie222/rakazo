@@ -19,6 +19,7 @@ type Rule = {
 const state = vi.hoisted(() => ({
   rpc: vi.fn(),
   spaceId: undefined as string | undefined,
+  selectedSpace: "space-selected",
   settings: { mode: "ask", enabled: false, skipApprovals: false, checkerAvailable: false },
   rules: [] as Rule[],
   headerItems: [] as { label: string; onPress: () => void }[],
@@ -46,7 +47,7 @@ vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   rpc: state.rpc,
   currentApiBase: () => "https://app.example.test",
-  selectedSpaceId: () => "space-selected",
+  selectedSpaceId: () => state.selectedSpace,
   captureApiRequestContext: async (spaceId: string) => ({ headers: { space: spaceId } }),
 }));
 vi.mock("./session", () => ({ currentSessionGeneration: () => 1 }));
@@ -168,15 +169,24 @@ const rule = (overrides: Partial<Rule> & Pick<Rule, "id">): Rule => ({
   ...overrides,
 });
 
+async function settle() {
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+}
 async function render() {
   await act(async () => root.render(createElement(Approvals)));
-  await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+  await settle();
+}
+/** A save reports back a tick after the tap that started it. */
+async function press(node: HTMLElement | undefined) {
+  await act(async () => node!.click());
+  await settle();
 }
 
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   queryClient.clear();
   state.spaceId = undefined;
+  state.selectedSpace = "space-selected";
   state.settings = { mode: "ask", enabled: false, skipApprovals: false, checkerAvailable: false };
   state.rules = [];
   state.headerItems = [];
@@ -242,7 +252,7 @@ it("moves and removes rules, keeping legacy category rules removable only", asyn
   expect(menuButton("Email", "Always allow")).toBeUndefined();
   expect(menuButton("Email", "Remove")).toBeDefined();
 
-  await act(async () => menuButton("example.com", "Blocked")!.click());
+  await press(menuButton("example.com", "Blocked"));
   expect(state.rpc).toHaveBeenCalledWith("approvalRules/set", {
     scope: "account",
     effect: "deny",
@@ -251,7 +261,7 @@ it("moves and removes rules, keeping legacy category rules removable only", asyn
   });
   expect(rows()).toEqual(["Always allow: Send email", "Always ask: Email", "Blocked: example.com"]);
 
-  await act(async () => menuButton("Send email", "Remove")!.click());
+  await press(menuButton("Send email", "Remove"));
   expect(state.rpc).toHaveBeenCalledWith("approvalRules/remove", { scope: "account", id: "tool" });
   expect(rows()).toEqual(["Always ask: Email", "Blocked: example.com"]);
 });
@@ -397,10 +407,102 @@ it("keeps a saved move when a read that started before it lands later", async ()
   );
   await act(async () => root.render(createElement("div")));
   await render();
-  await act(async () => menuButton("example.com", "Blocked")!.click());
+  await press(menuButton("example.com", "Blocked"));
   expect(rows()).toEqual(["Blocked: example.com"]);
   await act(async () =>
     finishRead([rule({ id: "site", matchKind: "site", matchValue: "example.com" })]),
   );
   expect(rows()).toEqual(["Blocked: example.com"]);
+});
+
+it("keeps a saved move, with no save error, when the next read fails", async () => {
+  state.rules = [rule({ id: "site", matchKind: "site", matchValue: "example.com" })];
+  await render();
+  await press(menuButton("example.com", "Blocked"));
+  expect(rows()).toEqual(["Blocked: example.com"]);
+
+  const fallback = state.rpc.getMockImplementation()!;
+  state.rpc.mockImplementation(async (proc: string, ...rest: unknown[]) => {
+    if (proc === "approvalRules/list") throw new Error("offline");
+    return fallback(proc, ...(rest as [Record<string, unknown>]));
+  });
+  await act(async () => root.render(createElement("div")));
+  await render();
+  expect(rows()).toEqual(["Blocked: example.com"]);
+  expect(container.querySelector("span[data-dimmed]")).toBeNull();
+  expect(container.textContent).toContain("Something went wrong. Try again.");
+  expect(container.textContent).not.toContain("Could not save that preference");
+});
+
+/** Holds a rule's save open, so a test decides when and how it ends. */
+function holdSave() {
+  const fallback = state.rpc.getMockImplementation()!;
+  let finish!: (outcome?: Error) => void;
+  state.rpc.mockImplementation((proc: string, ...rest: unknown[]) =>
+    proc === "approvalRules/set"
+      ? new Promise((resolve, reject) => {
+          finish = (outcome) =>
+            outcome
+              ? reject(outcome)
+              : resolve(fallback(proc, ...(rest as [Record<string, unknown>])));
+        })
+      : fallback(proc, ...(rest as [Record<string, unknown>])),
+  );
+  return (outcome?: Error) => finish(outcome);
+}
+const saves = () =>
+  state.rpc.mock.calls.filter(
+    ([proc]) => proc === "approvalRules/set" || proc === "approvalRules/remove",
+  );
+
+it("does not start a second save while one runs", async () => {
+  state.rules = [
+    rule({ id: "tool", matchValue: "send_email" }),
+    rule({ id: "site", matchKind: "site", matchValue: "example.com" }),
+  ];
+  await render();
+  const finish = holdSave();
+  await press(menuButton("example.com", "Blocked"));
+  expect(container.querySelectorAll("span[data-dimmed]")).toHaveLength(2);
+  await press(menuButton("Send email", "Remove"));
+  await press(menuButton("example.com", "Always ask"));
+  expect(saves()).toHaveLength(1);
+
+  await act(async () => finish());
+  await settle();
+  expect(rows()).toEqual(["Always allow: Send email", "Blocked: example.com"]);
+  expect(container.querySelector("span[data-dimmed]")).toBeNull();
+});
+
+it("shows no error for a save that fails after the screen has gone", async () => {
+  state.rules = [rule({ id: "site", matchKind: "site", matchValue: "example.com" })];
+  await render();
+  const finish = holdSave();
+  await press(menuButton("example.com", "Blocked"));
+  await act(async () => root.render(createElement("div")));
+  await act(async () => finish(new Error("offline")));
+  await settle();
+
+  await render();
+  expect(rows()).toEqual(["Always allow: example.com"]);
+  expect(container.textContent).not.toContain("Could not save that preference");
+  expect(container.querySelector("span[data-dimmed]")).toBeNull();
+});
+
+it.each([
+  ["succeeds", undefined],
+  ["fails", new Error("offline")],
+])("leaves another space's rules alone when a save %s after the switch", async (_how, outcome) => {
+  state.rules = [rule({ id: "site", matchKind: "site", matchValue: "example.com" })];
+  await render();
+  const finish = holdSave();
+  await press(menuButton("example.com", "Blocked"));
+  state.selectedSpace = "space-elsewhere";
+  await render();
+  expect(container.querySelector("span[data-dimmed]")).toBeNull();
+
+  await act(async () => finish(outcome));
+  await settle();
+  expect(rows()).toEqual(["Always allow: example.com"]);
+  expect(container.textContent).not.toContain("Could not save that preference");
 });

@@ -69,6 +69,18 @@ export function accountRpcQuery<P extends RpcPath>(proc: P, input?: RpcInput<P>)
 }
 
 /**
+ * One rpc write, for `useSave` to send: a screen names the procedure and never calls it. A
+ * `spaceId` sends it to that Space instead of the selected one, as `rpcQuery` does for a read.
+ */
+export function rpcSave<P extends RpcPath>(proc: P, spaceId?: string) {
+  return async (input: RpcInput<P>): Promise<RpcOutput<P>> => {
+    if (!spaceId) return rpc(proc, ...([input] as RpcArgs<P>));
+    const requestContext = await captureApiRequestContext(spaceId);
+    return rpc(proc, ...([input, { requestContext }] as RpcArgs<P>));
+  };
+}
+
+/**
  * One save and the reads it makes out of date. Only the save can fail it: once it succeeds those
  * reads are marked stale and read again, and a read that fails reports itself, never the save.
  * `pending` lasts until they are back, so a control never offers the old state in between.
