@@ -40,7 +40,7 @@ msgstr "{0, plural, one {# मुफ़्त महीना} other {# मु�
 #. placeholder {0}: models.length
 #: apps/web/src/pages/model-settings/provider-page.tsx
 msgid "{0, plural, one {# model} other {# models}}"
-msgstr ""
+msgstr "{0, plural, one {# मॉडल} other {# मॉडल}}"
 
 #. placeholder {0}: skills.length - shownSkills.length
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
@@ -239,7 +239,7 @@ msgstr "{count, plural, one {{peer} के साथ # संदेश} other {{
 
 #: apps/mobile/components/model-providers.tsx
 msgid "{count, plural, one {# model} other {# models}}"
-msgstr ""
+msgstr "{count, plural, one {# मॉडल} other {# मॉडल}}"
 
 #: apps/web/src/components/markdown-copy.tsx
 msgid "{count, plural, one {# row} other {# rows}}"
@@ -883,7 +883,7 @@ msgstr "कमांड का आउटपुट"
 #: apps/mobile/app/(settings)/labs.tsx
 #: apps/web/src/pages/LabsSettingsPanel.tsx
 msgid "A kanban board of tickets your bots can work on"
-msgstr ""
+msgstr "टिकटों का एक कानबान बोर्ड, जिन पर आपके बॉट काम कर सकते हैं"
 
 #: apps/mobile/components/approval-settings-rows.tsx
 #: apps/web/src/components/ApprovalRulesSettings.tsx
@@ -2937,7 +2937,7 @@ msgstr "कनेक्शन"
 
 #: apps/mobile/app/(settings)/model-settings.tsx
 msgid "Connection not found"
-msgstr ""
+msgstr "कनेक्शन नहीं मिला"
 
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/mobile/app/(settings)/plugin.tsx
@@ -3023,7 +3023,7 @@ msgstr "ईमेल के साथ जारी रखें"
 #: apps/mobile/components/social-sign-in-buttons.tsx
 #: apps/web/src/components/SocialSignInButtons.tsx
 msgid "Continue with passkey"
-msgstr ""
+msgstr "पासकी के साथ जारी रखें"
 
 #: apps/mobile/components/computer-keyboard-bar.tsx
 msgid "Control"
@@ -3867,7 +3867,7 @@ msgstr "सहेजा नहीं जा सका"
 #. placeholder {0}: registration.name
 #: apps/web/src/pages/MemorySettingsOverlay.tsx
 msgid "Could not save {0}"
-msgstr ""
+msgstr "{0} सहेजा नहीं जा सका"
 
 #: apps/web/src/components/ApprovalRulesSettings.tsx
 msgid "Could not save Auto Review"
@@ -3893,7 +3893,7 @@ msgstr "मॉडल सहेजा नहीं जा सका"
 #: apps/mobile/app/(settings)/model-settings.tsx
 #: apps/web/src/pages/model-settings/model-settings-panel.tsx
 msgid "Could not save model settings"
-msgstr ""
+msgstr "मॉडल सेटिंग्स सहेजी नहीं जा सकीं"
 
 #: apps/mobile/app/routine.tsx
 #: apps/web/src/pages/shell/use-routine-editor.ts
@@ -4191,7 +4191,7 @@ msgstr "बॉट शैली अपडेट नहीं हो सकी"
 
 #: apps/web/src/pages/LabsSettingsPanel.tsx
 msgid "Couldn't update Labs"
-msgstr ""
+msgstr "Labs अपडेट नहीं हो सका"
 
 #: apps/web/src/pages/MessagingSettingsPanel.tsx
 msgid "Couldn't update messaging settings"
@@ -6115,7 +6115,7 @@ msgstr "लेबल"
 #: apps/mobile/app/(settings)/labs.tsx
 #: apps/web/src/pages/settings-nav.ts
 msgid "Labs"
-msgstr ""
+msgstr "Labs"
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/(settings)/general.tsx
@@ -6144,7 +6144,7 @@ msgstr "पिछली जाँच {0}: कोई बदलाव नहीं
 
 #: apps/web/src/components/SocialSignInButtons.tsx
 msgid "Last used"
-msgstr ""
+msgstr "पिछली बार इस्तेमाल किया"
 
 #: apps/web/src/components/DesktopUpdates.tsx
 msgid "Later"
@@ -6412,7 +6412,7 @@ msgstr "MCP सर्वर प्रबंधित करें"
 #: apps/mobile/components/model-role-settings.tsx
 #: apps/web/src/pages/ModelRoleSettings.tsx
 msgid "Manage model"
-msgstr ""
+msgstr "मॉडल प्रबंधित करें"
 
 #: apps/mobile/app/bot-settings.tsx
 #: apps/web/src/pages/shell/bot-settings-sections.tsx
@@ -6422,7 +6422,7 @@ msgstr "अन्य बॉट प्रबंधित करें"
 #: apps/mobile/components/model-role-settings.tsx
 #: apps/web/src/pages/ModelRoleSettings.tsx
 msgid "Manage provider"
-msgstr ""
+msgstr "प्रोवाइडर प्रबंधित करें"
 
 #: apps/web/src/pages/plugins/domain-search.tsx
 msgid "Manual"
@@ -6482,7 +6482,7 @@ msgstr "अधिकतम आउटपुट टोकन"
 #: apps/mobile/app/(settings)/model-settings.tsx
 #: apps/web/src/pages/model-settings/model-settings-panel.tsx
 msgid "Maximum output tokens must be below the context limit."
-msgstr ""
+msgstr "अधिकतम आउटपुट टोकन कॉन्टेक्स्ट सीमा से कम होने चाहिए।"
 
 #: apps/web/src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "MCP endpoint"
@@ -7191,7 +7191,7 @@ msgstr "“{query}” से कोई पेज मेल नहीं खा�
 
 #: apps/mobile/app/(settings)/computers.tsx
 msgid "No paired computers"
-msgstr ""
+msgstr "कोई पेयर किया गया कंप्यूटर नहीं"
 
 #. js-lingui-explicit-id
 #: packages/i18n/src/vault.ts
@@ -7967,7 +7967,7 @@ msgstr "पिन किए गए"
 
 #: apps/web/src/components/ComputerDeviceSettings.tsx
 msgid "Plain HTTP does not pair this computer. Use HTTPS, or a loopback server."
-msgstr ""
+msgstr "सादा HTTP इस कंप्यूटर को पेयर नहीं करता। HTTPS या लूपबैक सर्वर का उपयोग करें।"
 
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/web/src/components/ModelCredits.tsx
@@ -8098,7 +8098,7 @@ msgstr "प्रोग्राम: {name}"
 #: apps/web/src/pages/model-settings/connection-controls.tsx
 #: apps/web/src/pages/onboarding/model-step.tsx
 msgid "Project ID"
-msgstr ""
+msgstr "प्रोजेक्ट ID"
 
 #: apps/web/src/components/teach/TeachRecordingChrome.tsx
 msgid "Protected input"
@@ -8424,12 +8424,12 @@ msgstr "{0} को समूह से हटाएँ"
 #. placeholder {0}: device.name
 #: apps/mobile/app/(settings)/computers.tsx
 msgid "Remove {0}, {status}"
-msgstr ""
+msgstr "{0} हटाएँ, {status}"
 
 #. placeholder {0}: device.name
 #: apps/mobile/app/(settings)/computers.tsx
 msgid "Remove {0}?"
-msgstr ""
+msgstr "{0} हटाएँ?"
 
 #: apps/web/src/components/ApprovalRulesSettings.tsx
 msgid "Remove {label}"
@@ -8676,7 +8676,7 @@ msgstr "पासवर्ड रीसेट करें"
 #: apps/mobile/app/(settings)/model-settings.tsx
 #: apps/web/src/pages/model-settings/model-settings-panel.tsx
 msgid "Reset to defaults"
-msgstr ""
+msgstr "डिफ़ॉल्ट पर रीसेट करें"
 
 #: apps/mobile/app/sign-in.tsx
 #: apps/web/src/pages/Auth.tsx
@@ -9016,7 +9016,7 @@ msgstr "सहेजें"
 
 #: apps/web/src/pages/plugins/source-form.tsx
 msgid "Save and sign in"
-msgstr ""
+msgstr "सहेजें और साइन इन करें"
 
 #: apps/mobile/app/(settings)/memory-note.tsx
 msgid "Save mine"
@@ -9582,7 +9582,7 @@ msgstr "फिर से साइन इन करें"
 
 #: apps/mobile/lib/unsent-send-warning.ts
 msgid "Sign in anyway"
-msgstr ""
+msgstr "फिर भी साइन इन करें"
 
 #. placeholder {0}: new URL(oauth.verificationUri).hostname
 #: apps/web/src/pages/model-settings/connection-controls.tsx
@@ -9633,7 +9633,7 @@ msgstr "Rakazo के लिए साइन अप करें"
 
 #: apps/web/src/pages/PluginsOverlay.tsx
 msgid "Sign-in cancelled. Retry in Manage MCP servers."
-msgstr ""
+msgstr "साइन-इन रद्द हो गया। MCP सर्वर प्रबंधित करें में फिर कोशिश करें।"
 
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 msgid "Sign-in cancelled. Try again."
@@ -9651,7 +9651,7 @@ msgstr "साइन-अप से कोई सत्र नहीं मिल
 
 #: apps/mobile/lib/unsent-send-warning.ts
 msgid "Signing in deletes unsent messages."
-msgstr ""
+msgstr "साइन इन करने से बिना भेजे गए संदेश डिलीट हो जाते हैं।"
 
 #: apps/mobile/lib/unsent-send-warning.ts
 msgid "Signing out deletes unsent messages."
@@ -10519,7 +10519,7 @@ msgstr "यह कंप्यूटर"
 
 #: apps/mobile/app/(settings)/computers.tsx
 msgid "This computer will stop running bots for your account"
-msgstr ""
+msgstr "यह कंप्यूटर आपके खाते के लिए बॉट चलाना बंद कर देगा"
 
 #. js-lingui-explicit-id
 #: packages/i18n/src/run-error.ts
@@ -10703,7 +10703,7 @@ msgstr "यह सर्वर पहले से कनेक्टेड ह�
 
 #: apps/web/src/pages/PluginsOverlay.tsx
 msgid "This server needs an OAuth client ID. Add one in Manage MCP servers."
-msgstr ""
+msgstr "इस सर्वर को OAuth क्लाइंट ID चाहिए। MCP सर्वर प्रबंधित करें में एक जोड़ें।"
 
 #. js-lingui-explicit-id
 #: packages/i18n/src/run-error.ts
@@ -10855,7 +10855,7 @@ msgstr "ट्रांसक्रिप्ट"
 #: apps/mobile/app/(settings)/voice.tsx
 #: apps/web/src/pages/VoiceSettingsOverlay.tsx
 msgid "Transcription API key"
-msgstr ""
+msgstr "ट्रांसक्रिप्शन API कुंजी"
 
 #: apps/mobile/app/(settings)/voice.tsx
 #: apps/web/src/pages/VoiceSettingsOverlay.tsx
@@ -10873,7 +10873,7 @@ msgstr "ट्रांसक्रिप्शन प्रतिक्रि�
 #: apps/mobile/app/(settings)/voice.tsx
 #: apps/web/src/pages/VoiceSettingsOverlay.tsx
 msgid "Transcription server URL"
-msgstr ""
+msgstr "ट्रांसक्रिप्शन सर्वर URL"
 
 #: apps/mobile/app/(settings)/team-conversation.tsx
 #: apps/web/src/pages/ExternalConversationSettings.tsx

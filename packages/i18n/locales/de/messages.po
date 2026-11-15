@@ -40,7 +40,7 @@ msgstr "{0, plural, one {# Gratismonat} other {# Gratismonate}}"
 #. placeholder {0}: models.length
 #: apps/web/src/pages/model-settings/provider-page.tsx
 msgid "{0, plural, one {# model} other {# models}}"
-msgstr ""
+msgstr "{0, plural, one {# Modell} other {# Modelle}}"
 
 #. placeholder {0}: skills.length - shownSkills.length
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
@@ -239,7 +239,7 @@ msgstr "{count, plural, one {# Nachricht mit {peer}} other {# Nachrichten mit {p
 
 #: apps/mobile/components/model-providers.tsx
 msgid "{count, plural, one {# model} other {# models}}"
-msgstr ""
+msgstr "{count, plural, one {# Modell} other {# Modelle}}"
 
 #: apps/web/src/components/markdown-copy.tsx
 msgid "{count, plural, one {# row} other {# rows}}"
@@ -883,7 +883,7 @@ msgstr "Ausgabe eines Befehls"
 #: apps/mobile/app/(settings)/labs.tsx
 #: apps/web/src/pages/LabsSettingsPanel.tsx
 msgid "A kanban board of tickets your bots can work on"
-msgstr ""
+msgstr "Ein Kanban-Board mit Tickets, die deine Bots bearbeiten können"
 
 #: apps/mobile/components/approval-settings-rows.tsx
 #: apps/web/src/components/ApprovalRulesSettings.tsx
@@ -2937,7 +2937,7 @@ msgstr "Verbindung"
 
 #: apps/mobile/app/(settings)/model-settings.tsx
 msgid "Connection not found"
-msgstr ""
+msgstr "Verbindung nicht gefunden"
 
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/mobile/app/(settings)/plugin.tsx
@@ -3023,7 +3023,7 @@ msgstr "Mit E-Mail fortfahren"
 #: apps/mobile/components/social-sign-in-buttons.tsx
 #: apps/web/src/components/SocialSignInButtons.tsx
 msgid "Continue with passkey"
-msgstr ""
+msgstr "Mit Passkey fortfahren"
 
 #: apps/mobile/components/computer-keyboard-bar.tsx
 msgid "Control"
@@ -3867,7 +3867,7 @@ msgstr "Speichern fehlgeschlagen"
 #. placeholder {0}: registration.name
 #: apps/web/src/pages/MemorySettingsOverlay.tsx
 msgid "Could not save {0}"
-msgstr ""
+msgstr "{0} konnte nicht gespeichert werden"
 
 #: apps/web/src/components/ApprovalRulesSettings.tsx
 msgid "Could not save Auto Review"
@@ -3893,7 +3893,7 @@ msgstr "Modell konnte nicht gespeichert werden"
 #: apps/mobile/app/(settings)/model-settings.tsx
 #: apps/web/src/pages/model-settings/model-settings-panel.tsx
 msgid "Could not save model settings"
-msgstr ""
+msgstr "Modelleinstellungen konnten nicht gespeichert werden"
 
 #: apps/mobile/app/routine.tsx
 #: apps/web/src/pages/shell/use-routine-editor.ts
@@ -4191,7 +4191,7 @@ msgstr "Bot-Stil konnte nicht aktualisiert werden"
 
 #: apps/web/src/pages/LabsSettingsPanel.tsx
 msgid "Couldn't update Labs"
-msgstr ""
+msgstr "Labs konnten nicht aktualisiert werden"
 
 #: apps/web/src/pages/MessagingSettingsPanel.tsx
 msgid "Couldn't update messaging settings"
@@ -6115,7 +6115,7 @@ msgstr "Bezeichnung"
 #: apps/mobile/app/(settings)/labs.tsx
 #: apps/web/src/pages/settings-nav.ts
 msgid "Labs"
-msgstr ""
+msgstr "Labs"
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/(settings)/general.tsx
@@ -6144,7 +6144,7 @@ msgstr "Letzte Prüfung {0}: keine Änderungen"
 
 #: apps/web/src/components/SocialSignInButtons.tsx
 msgid "Last used"
-msgstr ""
+msgstr "Zuletzt verwendet"
 
 #: apps/web/src/components/DesktopUpdates.tsx
 msgid "Later"
@@ -6412,7 +6412,7 @@ msgstr "MCP-Server verwalten"
 #: apps/mobile/components/model-role-settings.tsx
 #: apps/web/src/pages/ModelRoleSettings.tsx
 msgid "Manage model"
-msgstr ""
+msgstr "Modell verwalten"
 
 #: apps/mobile/app/bot-settings.tsx
 #: apps/web/src/pages/shell/bot-settings-sections.tsx
@@ -6422,7 +6422,7 @@ msgstr "Andere Bots verwalten"
 #: apps/mobile/components/model-role-settings.tsx
 #: apps/web/src/pages/ModelRoleSettings.tsx
 msgid "Manage provider"
-msgstr ""
+msgstr "Anbieter verwalten"
 
 #: apps/web/src/pages/plugins/domain-search.tsx
 msgid "Manual"
@@ -6482,7 +6482,7 @@ msgstr "Maximale Ausgabetokens"
 #: apps/mobile/app/(settings)/model-settings.tsx
 #: apps/web/src/pages/model-settings/model-settings-panel.tsx
 msgid "Maximum output tokens must be below the context limit."
-msgstr ""
+msgstr "Die maximalen Ausgabetokens müssen unter dem Kontextlimit liegen."
 
 #: apps/web/src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "MCP endpoint"
@@ -7191,7 +7191,7 @@ msgstr "Keine Seiten passen zu „{query}“."
 
 #: apps/mobile/app/(settings)/computers.tsx
 msgid "No paired computers"
-msgstr ""
+msgstr "Keine gekoppelten Computer"
 
 #. js-lingui-explicit-id
 #: packages/i18n/src/vault.ts
@@ -7967,7 +7967,7 @@ msgstr "Angeheftet"
 
 #: apps/web/src/components/ComputerDeviceSettings.tsx
 msgid "Plain HTTP does not pair this computer. Use HTTPS, or a loopback server."
-msgstr ""
+msgstr "Mit einfachem HTTP wird dieser Computer nicht gekoppelt. Verwende HTTPS oder einen Loopback-Server."
 
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/web/src/components/ModelCredits.tsx
@@ -8098,7 +8098,7 @@ msgstr "Programm: {name}"
 #: apps/web/src/pages/model-settings/connection-controls.tsx
 #: apps/web/src/pages/onboarding/model-step.tsx
 msgid "Project ID"
-msgstr ""
+msgstr "Projekt-ID"
 
 #: apps/web/src/components/teach/TeachRecordingChrome.tsx
 msgid "Protected input"
@@ -8424,12 +8424,12 @@ msgstr "{0} aus der Gruppe entfernen"
 #. placeholder {0}: device.name
 #: apps/mobile/app/(settings)/computers.tsx
 msgid "Remove {0}, {status}"
-msgstr ""
+msgstr "{0} entfernen, {status}"
 
 #. placeholder {0}: device.name
 #: apps/mobile/app/(settings)/computers.tsx
 msgid "Remove {0}?"
-msgstr ""
+msgstr "{0} entfernen?"
 
 #: apps/web/src/components/ApprovalRulesSettings.tsx
 msgid "Remove {label}"
@@ -8676,7 +8676,7 @@ msgstr "Passwort zurücksetzen"
 #: apps/mobile/app/(settings)/model-settings.tsx
 #: apps/web/src/pages/model-settings/model-settings-panel.tsx
 msgid "Reset to defaults"
-msgstr ""
+msgstr "Auf Standards zurücksetzen"
 
 #: apps/mobile/app/sign-in.tsx
 #: apps/web/src/pages/Auth.tsx
@@ -9016,7 +9016,7 @@ msgstr "Speichern"
 
 #: apps/web/src/pages/plugins/source-form.tsx
 msgid "Save and sign in"
-msgstr ""
+msgstr "Speichern und anmelden"
 
 #: apps/mobile/app/(settings)/memory-note.tsx
 msgid "Save mine"
@@ -9582,7 +9582,7 @@ msgstr "Erneut anmelden"
 
 #: apps/mobile/lib/unsent-send-warning.ts
 msgid "Sign in anyway"
-msgstr ""
+msgstr "Trotzdem anmelden"
 
 #. placeholder {0}: new URL(oauth.verificationUri).hostname
 #: apps/web/src/pages/model-settings/connection-controls.tsx
@@ -9633,7 +9633,7 @@ msgstr "Bei Rakazo registrieren"
 
 #: apps/web/src/pages/PluginsOverlay.tsx
 msgid "Sign-in cancelled. Retry in Manage MCP servers."
-msgstr ""
+msgstr "Anmeldung abgebrochen. Versuche es unter „MCP-Server verwalten“ erneut."
 
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 msgid "Sign-in cancelled. Try again."
@@ -9651,7 +9651,7 @@ msgstr "Die Registrierung hat keine Sitzung zurückgegeben"
 
 #: apps/mobile/lib/unsent-send-warning.ts
 msgid "Signing in deletes unsent messages."
-msgstr ""
+msgstr "Beim Anmelden werden ungesendete Nachrichten gelöscht."
 
 #: apps/mobile/lib/unsent-send-warning.ts
 msgid "Signing out deletes unsent messages."
@@ -10519,7 +10519,7 @@ msgstr "dieser Computer"
 
 #: apps/mobile/app/(settings)/computers.tsx
 msgid "This computer will stop running bots for your account"
-msgstr ""
+msgstr "Dieser Computer führt keine Bots mehr für dein Konto aus"
 
 #. js-lingui-explicit-id
 #: packages/i18n/src/run-error.ts
@@ -10703,7 +10703,7 @@ msgstr "Dieser Server ist bereits verbunden. Trenne zuerst die Verbindung, um ih
 
 #: apps/web/src/pages/PluginsOverlay.tsx
 msgid "This server needs an OAuth client ID. Add one in Manage MCP servers."
-msgstr ""
+msgstr "Dieser Server benötigt eine OAuth-Client-ID. Füge eine unter „MCP-Server verwalten“ hinzu."
 
 #. js-lingui-explicit-id
 #: packages/i18n/src/run-error.ts
@@ -10855,7 +10855,7 @@ msgstr "Transkript"
 #: apps/mobile/app/(settings)/voice.tsx
 #: apps/web/src/pages/VoiceSettingsOverlay.tsx
 msgid "Transcription API key"
-msgstr ""
+msgstr "Transkriptions-API-Schlüssel"
 
 #: apps/mobile/app/(settings)/voice.tsx
 #: apps/web/src/pages/VoiceSettingsOverlay.tsx
@@ -10873,7 +10873,7 @@ msgstr "Transkriptionsantwort ist zu groß."
 #: apps/mobile/app/(settings)/voice.tsx
 #: apps/web/src/pages/VoiceSettingsOverlay.tsx
 msgid "Transcription server URL"
-msgstr ""
+msgstr "Transkriptionsserver-URL"
 
 #: apps/mobile/app/(settings)/team-conversation.tsx
 #: apps/web/src/pages/ExternalConversationSettings.tsx

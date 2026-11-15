@@ -40,7 +40,7 @@ msgstr "{0, plural, one {חודש חינם אחד} two {# חודשים חינם}
 #. placeholder {0}: models.length
 #: apps/web/src/pages/model-settings/provider-page.tsx
 msgid "{0, plural, one {# model} other {# models}}"
-msgstr ""
+msgstr "{0, plural, one {מודל אחד} two {# מודלים} other {# מודלים}}"
 
 #. placeholder {0}: skills.length - shownSkills.length
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
@@ -239,7 +239,7 @@ msgstr "{count, plural, one {הודעה אחת עם {peer}} two {# הודעות 
 
 #: apps/mobile/components/model-providers.tsx
 msgid "{count, plural, one {# model} other {# models}}"
-msgstr ""
+msgstr "{count, plural, one {מודל אחד} two {# מודלים} other {# מודלים}}"
 
 #: apps/web/src/components/markdown-copy.tsx
 msgid "{count, plural, one {# row} other {# rows}}"
@@ -883,7 +883,7 @@ msgstr "פלט של פקודה"
 #: apps/mobile/app/(settings)/labs.tsx
 #: apps/web/src/pages/LabsSettingsPanel.tsx
 msgid "A kanban board of tickets your bots can work on"
-msgstr ""
+msgstr "לוח קנבן של כרטיסים שהבוטים שלך יכולים לעבוד עליהם"
 
 #: apps/mobile/components/approval-settings-rows.tsx
 #: apps/web/src/components/ApprovalRulesSettings.tsx
@@ -2937,7 +2937,7 @@ msgstr "חיבור"
 
 #: apps/mobile/app/(settings)/model-settings.tsx
 msgid "Connection not found"
-msgstr ""
+msgstr "החיבור לא נמצא"
 
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/mobile/app/(settings)/plugin.tsx
@@ -3023,7 +3023,7 @@ msgstr "המשך עם אימייל"
 #: apps/mobile/components/social-sign-in-buttons.tsx
 #: apps/web/src/components/SocialSignInButtons.tsx
 msgid "Continue with passkey"
-msgstr ""
+msgstr "המשך עם מפתח גישה"
 
 #: apps/mobile/components/computer-keyboard-bar.tsx
 msgid "Control"
@@ -3867,7 +3867,7 @@ msgstr "השמירה נכשלה"
 #. placeholder {0}: registration.name
 #: apps/web/src/pages/MemorySettingsOverlay.tsx
 msgid "Could not save {0}"
-msgstr ""
+msgstr "לא ניתן לשמור את {0}"
 
 #: apps/web/src/components/ApprovalRulesSettings.tsx
 msgid "Could not save Auto Review"
@@ -3893,7 +3893,7 @@ msgstr "לא ניתן לשמור את המודל"
 #: apps/mobile/app/(settings)/model-settings.tsx
 #: apps/web/src/pages/model-settings/model-settings-panel.tsx
 msgid "Could not save model settings"
-msgstr ""
+msgstr "לא ניתן לשמור את הגדרות המודל"
 
 #: apps/mobile/app/routine.tsx
 #: apps/web/src/pages/shell/use-routine-editor.ts
@@ -4191,7 +4191,7 @@ msgstr "לא ניתן לעדכן את סגנון הבוט"
 
 #: apps/web/src/pages/LabsSettingsPanel.tsx
 msgid "Couldn't update Labs"
-msgstr ""
+msgstr "לא ניתן לעדכן את Labs"
 
 #: apps/web/src/pages/MessagingSettingsPanel.tsx
 msgid "Couldn't update messaging settings"
@@ -6115,7 +6115,7 @@ msgstr "תווית"
 #: apps/mobile/app/(settings)/labs.tsx
 #: apps/web/src/pages/settings-nav.ts
 msgid "Labs"
-msgstr ""
+msgstr "Labs"
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/(settings)/general.tsx
@@ -6144,7 +6144,7 @@ msgstr "בדיקה אחרונה {0}: אין שינויים"
 
 #: apps/web/src/components/SocialSignInButtons.tsx
 msgid "Last used"
-msgstr ""
+msgstr "שימוש אחרון"
 
 #: apps/web/src/components/DesktopUpdates.tsx
 msgid "Later"
@@ -6412,7 +6412,7 @@ msgstr "ניהול שרתי MCP"
 #: apps/mobile/components/model-role-settings.tsx
 #: apps/web/src/pages/ModelRoleSettings.tsx
 msgid "Manage model"
-msgstr ""
+msgstr "ניהול מודל"
 
 #: apps/mobile/app/bot-settings.tsx
 #: apps/web/src/pages/shell/bot-settings-sections.tsx
@@ -6422,7 +6422,7 @@ msgstr "ניהול בוטים אחרים"
 #: apps/mobile/components/model-role-settings.tsx
 #: apps/web/src/pages/ModelRoleSettings.tsx
 msgid "Manage provider"
-msgstr ""
+msgstr "ניהול ספק"
 
 #: apps/web/src/pages/plugins/domain-search.tsx
 msgid "Manual"
@@ -6482,7 +6482,7 @@ msgstr "מספר טוקנים מרבי בפלט"
 #: apps/mobile/app/(settings)/model-settings.tsx
 #: apps/web/src/pages/model-settings/model-settings-panel.tsx
 msgid "Maximum output tokens must be below the context limit."
-msgstr ""
+msgstr "מספר הטוקנים המרבי בפלט חייב להיות נמוך ממגבלת ההקשר."
 
 #: apps/web/src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "MCP endpoint"
@@ -7191,7 +7191,7 @@ msgstr "אין דפים שתואמים ל-„{query}”."
 
 #: apps/mobile/app/(settings)/computers.tsx
 msgid "No paired computers"
-msgstr ""
+msgstr "אין מחשבים מצומדים"
 
 #. js-lingui-explicit-id
 #: packages/i18n/src/vault.ts
@@ -7967,7 +7967,7 @@ msgstr "מוצמדים"
 
 #: apps/web/src/components/ComputerDeviceSettings.tsx
 msgid "Plain HTTP does not pair this computer. Use HTTPS, or a loopback server."
-msgstr ""
+msgstr "HTTP רגיל לא מצמיד את המחשב הזה. יש להשתמש ב-HTTPS או בשרת loopback."
 
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/web/src/components/ModelCredits.tsx
@@ -8098,7 +8098,7 @@ msgstr "תוכנה: {name}"
 #: apps/web/src/pages/model-settings/connection-controls.tsx
 #: apps/web/src/pages/onboarding/model-step.tsx
 msgid "Project ID"
-msgstr ""
+msgstr "מזהה פרויקט"
 
 #: apps/web/src/components/teach/TeachRecordingChrome.tsx
 msgid "Protected input"
@@ -8424,12 +8424,12 @@ msgstr "הסרת {0} מהקבוצה"
 #. placeholder {0}: device.name
 #: apps/mobile/app/(settings)/computers.tsx
 msgid "Remove {0}, {status}"
-msgstr ""
+msgstr "הסרת {0}, {status}"
 
 #. placeholder {0}: device.name
 #: apps/mobile/app/(settings)/computers.tsx
 msgid "Remove {0}?"
-msgstr ""
+msgstr "להסיר את {0}?"
 
 #: apps/web/src/components/ApprovalRulesSettings.tsx
 msgid "Remove {label}"
@@ -8676,7 +8676,7 @@ msgstr "איפוס סיסמה"
 #: apps/mobile/app/(settings)/model-settings.tsx
 #: apps/web/src/pages/model-settings/model-settings-panel.tsx
 msgid "Reset to defaults"
-msgstr ""
+msgstr "איפוס לברירות המחדל"
 
 #: apps/mobile/app/sign-in.tsx
 #: apps/web/src/pages/Auth.tsx
@@ -9016,7 +9016,7 @@ msgstr "שמירה"
 
 #: apps/web/src/pages/plugins/source-form.tsx
 msgid "Save and sign in"
-msgstr ""
+msgstr "שמירה והתחברות"
 
 #: apps/mobile/app/(settings)/memory-note.tsx
 msgid "Save mine"
@@ -9582,7 +9582,7 @@ msgstr "התחברות מחדש"
 
 #: apps/mobile/lib/unsent-send-warning.ts
 msgid "Sign in anyway"
-msgstr ""
+msgstr "להתחבר בכל זאת"
 
 #. placeholder {0}: new URL(oauth.verificationUri).hostname
 #: apps/web/src/pages/model-settings/connection-controls.tsx
@@ -9633,7 +9633,7 @@ msgstr "הרשמה ל-Rakazo"
 
 #: apps/web/src/pages/PluginsOverlay.tsx
 msgid "Sign-in cancelled. Retry in Manage MCP servers."
-msgstr ""
+msgstr "ההתחברות בוטלה. אפשר לנסות שוב בניהול שרתי MCP."
 
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 msgid "Sign-in cancelled. Try again."
@@ -9651,7 +9651,7 @@ msgstr "ההרשמה לא החזירה סשן"
 
 #: apps/mobile/lib/unsent-send-warning.ts
 msgid "Signing in deletes unsent messages."
-msgstr ""
+msgstr "התחברות מוחקת הודעות שלא נשלחו."
 
 #: apps/mobile/lib/unsent-send-warning.ts
 msgid "Signing out deletes unsent messages."
@@ -10519,7 +10519,7 @@ msgstr "המחשב הזה"
 
 #: apps/mobile/app/(settings)/computers.tsx
 msgid "This computer will stop running bots for your account"
-msgstr ""
+msgstr "המחשב הזה יפסיק להריץ בוטים עבור החשבון שלך"
 
 #. js-lingui-explicit-id
 #: packages/i18n/src/run-error.ts
@@ -10703,7 +10703,7 @@ msgstr "השרת הזה כבר מחובר. יש לנתק אותו קודם כד�
 
 #: apps/web/src/pages/PluginsOverlay.tsx
 msgid "This server needs an OAuth client ID. Add one in Manage MCP servers."
-msgstr ""
+msgstr "השרת הזה דורש מזהה לקוח OAuth. יש להוסיף אחד בניהול שרתי MCP."
 
 #. js-lingui-explicit-id
 #: packages/i18n/src/run-error.ts
@@ -10855,7 +10855,7 @@ msgstr "תמליל"
 #: apps/mobile/app/(settings)/voice.tsx
 #: apps/web/src/pages/VoiceSettingsOverlay.tsx
 msgid "Transcription API key"
-msgstr ""
+msgstr "מפתח API לתמלול"
 
 #: apps/mobile/app/(settings)/voice.tsx
 #: apps/web/src/pages/VoiceSettingsOverlay.tsx
@@ -10873,7 +10873,7 @@ msgstr "תשובת התמלול גדולה מדי."
 #: apps/mobile/app/(settings)/voice.tsx
 #: apps/web/src/pages/VoiceSettingsOverlay.tsx
 msgid "Transcription server URL"
-msgstr ""
+msgstr "כתובת שרת התמלול"
 
 #: apps/mobile/app/(settings)/team-conversation.tsx
 #: apps/web/src/pages/ExternalConversationSettings.tsx
