@@ -1,6 +1,6 @@
 import { ORPCError } from "@orpc/server";
 import { createAdapterContext, runJobKey } from "@rakazo/adapter-kit";
-import { settleCallRequest, wakeRun } from "@rakazo/adapters";
+import { getActiveTeachingSession, settleCallRequest, wakeRun } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import {
   AttachmentValidationError,
@@ -288,10 +288,7 @@ export function threadsRoutes(ctx: RouterContext) {
               await reactedBotId(target, input.messageId),
             ]))) &&
           (target.kind !== "bot" ||
-            (await assertTeachingSendAllowed(deps.prisma, context.actor.spaceId, target.botId).then(
-              () => true,
-              () => false,
-            )));
+            !(await getActiveTeachingSession(deps.prisma, context.actor.spaceId, target.botId)));
         const result = await reactToThreadMessage(
           deps,
           context.actor,

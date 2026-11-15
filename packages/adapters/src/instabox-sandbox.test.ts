@@ -8,7 +8,7 @@ import { installPageBrowserCommand } from "./page-browser-install.js";
 import type { RemoteDesktopSdk } from "./remote-desktop-sandbox.js";
 import { RemoteDesktopSandboxProvider } from "./remote-desktop-sandbox.js";
 import { isSandboxGoneError } from "./sandbox-errors.js";
-import { assertSandboxWorkspaceContract } from "./sandbox-test-support.js";
+import { assertSandboxWorkspaceContract, settleMachineCleanup } from "./sandbox-test-support.js";
 
 const ctx = {
   operationId: "test",
@@ -614,5 +614,49 @@ describe("instabox page tools", () => {
       "Page browser unavailable or interrupted",
     );
     expect(pageFiles(emulator, computer.id)).toEqual([]);
+  });
+
+  describe("a computer created by a start that then fails", () => {
+    const unpublished = new Error("gateway refused");
+    /** The computer is created, and publishing its gateway fails. */
+    function start(emulator: InstaboxEmulator) {
+      const create = emulator.create.bind(emulator);
+      vi.spyOn(emulator, "create").mockImplementation(async (...args) => {
+        const machine = await create(...args);
+        machine.ports.publish = async () => {
+          throw unpublished;
+        };
+        return machine;
+      });
+      const instabox = emulatedInstabox(emulator).provider();
+      return settleMachineCleanup(() => instabox.provision(request, ctx));
+    }
+
+    it("is deleted, trying a failed delete again", async () => {
+      const emulator = new InstaboxEmulator();
+      const kill = emulator.kill.bind(emulator);
+      vi.spyOn(emulator, "kill")
+        .mockRejectedValueOnce(new Error("connection reset"))
+        .mockImplementation(kill);
+
+      const { error, left } = await start(emulator);
+
+      expect(error).toBe(unpublished);
+      expect(emulator.computers.size).toBe(0);
+      expect(left).toEqual([]);
+    });
+
+    it("is reported when it cannot be deleted, and the start's own error stands", async () => {
+      const emulator = new InstaboxEmulator();
+      const kill = vi.spyOn(emulator, "kill").mockRejectedValue(new Error("connection reset"));
+
+      const { error, left } = await start(emulator);
+
+      expect(error).toBe(unpublished);
+      expect(kill).toHaveBeenCalledTimes(4);
+      // Each delete may take what its try has left of the cleanup's time, never instabox's default.
+      expect(kill).toHaveBeenNthCalledWith(1, "m_test1", 10_000);
+      expect(left).toEqual([{ provider: "instabox", machineId: "m_test1" }]);
+    });
   });
 });

@@ -151,6 +151,12 @@ export interface ScreenSession {
   /** Provider credentials for the server proxy only; never return these to clients. */
   headers?: Record<string, string>;
   url: string | null;
+  /**
+   * Set when the URL signs in with a code that works once and ends the session an earlier code
+   * opened. `screen` names what the URL shows apart from that code: two sessions with the same
+   * value show the same screen.
+   */
+  singleUseSignIn?: { screen: string };
   mimeType: string;
   close(): Promise<void>;
 }

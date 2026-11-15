@@ -4,6 +4,7 @@ import type { SecretStore } from "@rakazo/adapter-kit";
 import type { PluginMcpServerEntry, PluginRepoFetcher } from "@rakazo/adapters";
 import {
   buildMcpCredentialBlob,
+  isPluginLoadFault,
   persistPreparedSecret,
   pluginPreviewDto,
   previewPluginInstall,
@@ -18,6 +19,7 @@ import {
   runAsSystemInTransaction,
   spaceAvailability,
 } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
 import { assertNameFreeWhereAvailable, lockOwner } from "./availability.js";
 
 export type PluginInstallDeps = {
@@ -34,6 +36,16 @@ type PreparedServer = {
   index: number;
 };
 
+/**
+ * The caller named the address, so failing to reach or read it is their answer, not a server
+ * error; this returns for the caller to give it. A cancelled request and a fault in our own
+ * code are rethrown.
+ */
+export function rethrowUnlessPluginSourceFailed(error: unknown, signal?: AbortSignal): void {
+  if (signal?.aborted || isPluginLoadFault(error)) throw error;
+  getLogger().warn("plugin source not loaded", { error });
+}
+
 async function loadPlugin(
   deps: PluginInstallDeps,
   source: string,
@@ -43,7 +55,8 @@ async function loadPlugin(
   let plugin: LoadedPlugin;
   try {
     plugin = await previewPluginInstall({ source, fetcher: deps.fetcher, signal });
-  } catch {
+  } catch (error) {
+    rethrowUnlessPluginSourceFailed(error, signal);
     throw new ORPCError("BAD_REQUEST", {
       message: "Could not load a supported plugin from this repository",
     });
@@ -119,7 +132,8 @@ async function assertSkillNamesFree(
         skill.name,
         spaceAvailability(install),
       );
-    } catch {
+    } catch (error) {
+      if (!(error instanceof ORPCError) || error.code !== "CONFLICT") throw error;
       throw new ORPCError("CONFLICT", { message: "A plugin skill name is already in use" });
     }
   }

@@ -15,6 +15,7 @@ const state = vi.hoisted(() => ({
   select: vi.fn(),
   cached: vi.fn(),
   call: vi.fn(),
+  leavingSession: vi.fn(),
   remount: vi.fn(),
   stop: vi.fn(),
 }));
@@ -25,7 +26,10 @@ vi.mock("../../lib/bootstrap", () => ({
 vi.mock("../../lib/bootstrap-target", () => ({
   initialBootstrapTarget: () => ({ botId: "target" }),
 }));
-vi.mock("../../lib/call-session", () => ({ getSnapshot: state.call }));
+vi.mock("../../lib/call-session", () => ({
+  getSnapshot: state.call,
+  isLeavingSession: state.leavingSession,
+}));
 vi.mock("../../lib/organizations", () => ({ leaveOrganization: async () => {} }));
 vi.mock("../../lib/query", () => ({
   queryClient: { getQueryData: state.cached },
@@ -86,6 +90,7 @@ beforeEach(() => {
   state.prime.mockImplementation(() => new Promise<void>((resolve) => pending.push(resolve)));
   state.cached.mockReturnValue(undefined);
   state.call.mockReturnValue(null);
+  state.leavingSession.mockReturnValue(false);
   state.select.mockReturnValue(true);
   state.remount.mockImplementation((commit: () => boolean) => commits.push(commit));
   root = createRoot(document.createElement("div"));
@@ -219,6 +224,32 @@ describe("pending space switches", () => {
     expect(state.remount).not.toHaveBeenCalled();
     expect(state.select).toHaveBeenCalledWith("new-space");
     expect(ended).toEqual([false]);
+  });
+
+  it.each(["finishes loading", "fails to load"])(
+    "selects no space when the other one %s after signing out began",
+    async (outcome) => {
+      if (outcome === "fails to load") {
+        state.prime.mockReturnValue(Promise.reject(new Error("offline")));
+      }
+      act(() => open("new-space", "/app/new"));
+      state.leavingSession.mockReturnValue(true);
+      expect(live()).toBe(false);
+      await act(async () => {
+        pending[0]?.();
+        await Promise.resolve();
+      });
+      expect(state.remount).not.toHaveBeenCalled();
+      expect(state.select).not.toHaveBeenCalled();
+      expect(ended).toEqual([false]);
+    },
+  );
+
+  it("selects no space when a call's reload is reached after signing out began", async () => {
+    state.call.mockReturnValue({});
+    state.leavingSession.mockReturnValue(true);
+    await act(async () => open("new-space", "/app/new"));
+    expect(state.select).not.toHaveBeenCalled();
   });
 
   it("abandons a pending transition after browser history navigation", async () => {
