@@ -213,15 +213,23 @@ Mail whose signature leaves **To** or **Cc** unsigned stays unverified, even whe
 relay reports an aligned SPF pass. SPF authorizes a sending server, not the message's intended
 recipient, so it cannot prevent replay through a same-domain forwarder.
 
-Only verified mail that names the bot in **To** or **Cc** starts anything, and never an automatic
-reply or mailing-list mail. The owner's own mail sent **To** the bot starts it in its chat, once
-the owner has confirmed their account's email address; mail that only copies the bot is saved. An
-email trigger
-starts its routine for the owner's own address, or for anyone at the owner's email domain when
-the routine allows it. Mail that claims the owner's address but fails the check posts a
-note in the bot's chat, at most once a day, without any of its content. That usually means the
-owner's domain does not sign its own mail: Google Workspace and Microsoft 365 need DKIM turned on
-for a custom domain. Mail services that do not sign recipients cannot start work by email.
+Only mail that names the bot in **To** or **Cc** starts anything, and never an automatic reply or
+mailing-list mail. The owner's own verified mail sent **To** the bot starts it in its chat, once
+the owner has confirmed their account's email address; mail that only copies the bot is saved.
+Mail that claims the owner's address but fails the check posts a note in the bot's chat, at most
+once a day, without any of its content. That usually means the owner's domain does not sign its
+own mail: Google Workspace and Microsoft 365 need DKIM turned on for a custom domain.
+
+An email trigger starts its routine for the owner's own address, or for anyone at the owner's
+email domain when the routine allows it. A routine reads the mail as outside data, so it asks for
+less than the owner's own instructions do:
+
+- The sender's domain must sign **From** and **Subject**, but need not sign **To** and **Cc**,
+  which Microsoft 365 leaves out. Anyone holding such a message could send it on to the bot, so a
+  routine may run on mail its sender wrote for someone else, once per message.
+- Mail a mailbox rule forwards automatically starts the routine too, files included. A forward
+  that answers mail the bot itself sent starts nothing, so a rule that forwards everything cannot
+  loop.
 
 A routine's mail reaches the bot as outside data, never as instructions. In the owner's own mail,
 the bot follows what the owner asks but treats anything forwarded or quoted as data. Runs started
