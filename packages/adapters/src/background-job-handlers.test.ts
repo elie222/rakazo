@@ -349,7 +349,29 @@ describe("createBackgroundJobHandlers", () => {
   });
 });
 
-it("retries retired messaging credentials without deleting a currently referenced credential", async () => {
+it("retries a secret cleanup without deleting a reference that is in use again", async () => {
+  const remove = vi.fn(async () => undefined);
+  const findUnique = vi.fn(async () => ({ ciphertext: "active-ref" }));
+  const handlers = createBackgroundJobHandlers({
+    prisma: { messagingInstallation: { findUnique }, secret: { findUnique } },
+    secretStore: { delete: remove },
+  } as unknown as Parameters<typeof createBackgroundJobHandlers>[0]);
+  const cleanup = { kind: "secret_row", recordId: "secret-a" } as const;
+  await handlers["secret.cleanup"]({ ...cleanup, ref: "active-ref" });
+  expect(findUnique).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "secret-a" } }));
+  expect(remove).not.toHaveBeenCalled();
+  await handlers["secret.cleanup"]({ ...cleanup, ref: "retired-ref" });
+  expect(remove).toHaveBeenCalledWith(
+    "retired-ref",
+    expect.objectContaining({ recordId: "secret-a" }),
+  );
+  remove.mockRejectedValueOnce(new Error("secret store temporarily unavailable") as never);
+  await expect(handlers["secret.cleanup"]({ ...cleanup, ref: "retired-ref" })).rejects.toThrow(
+    "temporarily unavailable",
+  );
+});
+
+it("drains the previous release's messaging credential cleanup jobs the same way", async () => {
   const remove = vi.fn(async () => undefined);
   const findUnique = vi.fn(async () => ({ ciphertext: "active-ref" }));
   const handlers = createBackgroundJobHandlers({
@@ -365,14 +387,13 @@ it("retries retired messaging credentials without deleting a currently reference
     installationId: "install-a",
     ref: "retired-ref",
   });
+  expect(findUnique).toHaveBeenLastCalledWith(
+    expect.objectContaining({ where: { id: "install-a" } }),
+  );
   expect(remove).toHaveBeenCalledWith(
     "retired-ref",
     expect.objectContaining({ recordId: "install-a" }),
   );
-  remove.mockRejectedValueOnce(new Error("secret store temporarily unavailable") as never);
-  await expect(
-    handlers["messaging.credential-cleanup"]({ installationId: "install-a", ref: "retired-ref" }),
-  ).rejects.toThrow("temporarily unavailable");
 });
 
 describe("memory.retain-turn", () => {

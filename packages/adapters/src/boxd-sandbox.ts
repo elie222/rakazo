@@ -42,6 +42,7 @@ import {
   PREPARE_LINUX_DESKTOP,
   VERIFY_LINUX_DESKTOP,
 } from "./linux-desktop.js";
+import { deleteUnreferencedMachine } from "./sandbox-cleanup.js";
 import { sandboxCommandArgv } from "./sandbox-command-environment.js";
 import { abortedCommandEvents, timedOutCommandEvents } from "./sandbox-command-events.js";
 import { sandboxNotFoundError } from "./sandbox-errors.js";
@@ -194,12 +195,12 @@ export class BoxdSandboxProvider implements SandboxProvider {
         ? this.client.machines.create({ ...params, fromSnapshot })
         : this.client.machines.create(params));
     } catch (error) {
-      // A lost reply can hide a machine created under this name.
-      await this.client.machines.delete(name).catch(() => undefined);
+      // A lost reply can hide a machine created under this name; a refusal created none.
+      if (!(await createRefused(error))) await this.deleteUnreferenced(name);
       throw await providerError(error);
     }
     if (context.signal.aborted) {
-      await this.destroy(this.ref(machine.id, request.botId, true), context);
+      await this.deleteUnreferenced(machine.id);
       context.signal.throwIfAborted();
     }
     return this.ref(machine.id, request.botId, true);
@@ -240,7 +241,7 @@ export class BoxdSandboxProvider implements SandboxProvider {
       }
       return { name, built: true };
     } finally {
-      await this.client.machines.delete(machine.id).catch(() => undefined);
+      await this.deleteUnreferenced(machine.id);
     }
   }
 
@@ -496,11 +497,20 @@ export class BoxdSandboxProvider implements SandboxProvider {
   async destroy(computer: ComputerRef, _context: AdapterContext) {
     const id = this.id(computer);
     this.forget(id);
+    await this.delete(id);
+  }
+
+  private async delete(id: string): Promise<void> {
     try {
       await this.client.machines.delete(id);
     } catch (error) {
       if (!(error instanceof (await boxdSdk()).NotFoundError)) throw await providerError(error);
     }
+  }
+
+  /** The SDK's delete takes no signal or deadline, so the cleanup stops waiting for it instead. */
+  private deleteUnreferenced(id: string): Promise<void> {
+    return deleteUnreferencedMachine("boxd", id, () => this.delete(id));
   }
 
   /** Brings the machine up, starting or waking it as needed, and says whether it was asleep. */
@@ -727,6 +737,16 @@ function machineGone(id: string, cause?: unknown): Error {
 
 function isMachineGone(error: unknown): boolean {
   return error instanceof Error && error.name === "SandboxNotFoundError";
+}
+
+/** Whether boxd answered a create with a refusal, which a delete would only meet again. */
+async function createRefused(error: unknown): Promise<boolean> {
+  const { AuthenticationError, PermissionDeniedError, RateLimitError } = await boxdSdk();
+  return (
+    error instanceof RateLimitError ||
+    error instanceof AuthenticationError ||
+    error instanceof PermissionDeniedError
+  );
 }
 
 /** boxd's rate limit and a missing machine, as the errors the computer lifecycle acts on. */

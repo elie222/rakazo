@@ -15,6 +15,7 @@ import {
   paymentWalletStatus,
   withPaymentWalletCredential,
 } from "./payment-wallets.js";
+import { fakeCleanupJobs } from "./secret-cleanup.test-support.js";
 
 const actor = { userId: "user-1", spaceId: "space-1" };
 const NOW = new Date("2026-10-27T12:00:00.000Z");
@@ -89,15 +90,24 @@ function fakePrisma() {
       },
     ),
   };
+  let lostAfterCommit: Error | undefined;
   const prisma = {
     paymentWallet,
     $executeRaw: vi.fn(async () => 1),
-    $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(prisma)),
+    $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => {
+      const result = await fn(prisma);
+      if (lostAfterCommit) throw lostAfterCommit;
+      return result;
+    }),
   };
-  return { prisma, rows };
+  /** Every later transaction commits, but its caller never learns it did. */
+  const loseProcessAfterCommit = () => {
+    lostAfterCommit = new Error("process lost after commit");
+  };
+  return { prisma, rows, loseProcessAfterCommit };
 }
 
-function fakeSecrets() {
+function fakeSecrets(remote: boolean) {
   const values = new Map<string, string>();
   let sequence = 0;
   const store = {
@@ -112,9 +122,10 @@ function fakeSecrets() {
       if (value === undefined) throw new Error("missing");
       return value;
     }),
-    delete: vi.fn(async (ref: string) => {
+    delete: vi.fn(async (ref: string, _context?: unknown) => {
       values.delete(ref);
     }),
+    isRemote: () => remote,
   };
   return { store, values };
 }
@@ -155,16 +166,34 @@ function fakeProvider(id = "fake") {
   return provider;
 }
 
-function setup(options: { provider?: ReturnType<typeof fakeProvider> | null } = {}) {
-  const { prisma, rows } = fakePrisma();
-  const { store, values } = fakeSecrets();
+/** `remote` is whether the secret store keeps credentials elsewhere, as a hosted one does. */
+function setup(
+  options: { provider?: ReturnType<typeof fakeProvider> | null; remote?: boolean } = {},
+) {
+  const { prisma, rows, loseProcessAfterCommit } = fakePrisma();
+  const { store, values } = fakeSecrets(options.remote ?? true);
   const provider = options.provider === undefined ? fakeProvider() : options.provider;
+  const cleanup = fakeCleanupJobs();
   const deps: PaymentWalletDeps = {
     prisma: prisma as unknown as PrismaClient,
     secretStore: store as unknown as SecretStore,
+    jobs: cleanup.jobs,
     paymentWallet: provider as unknown as PaymentWalletProvider | null,
   };
-  return { deps, prisma, rows, store, values, provider };
+  /** The worker's attempt at every queued cleanup. */
+  const runCleanupJobs = () =>
+    cleanup.runQueued({ prisma: deps.prisma, secrets: deps.secretStore });
+  return {
+    deps,
+    prisma,
+    rows,
+    store,
+    values,
+    provider,
+    cleanup,
+    runCleanupJobs,
+    loseProcessAfterCommit,
+  };
 }
 
 async function connected(env: ReturnType<typeof setup>) {
@@ -501,5 +530,122 @@ describe("payment wallet connection", () => {
       }),
     ).rejects.toThrow("merchant down");
     expect(env.rows).toHaveLength(1);
+  });
+});
+
+describe("payment wallet secret cleanup", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(NOW);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const walletSecret = (ref: string) => ({
+    kind: "payment_wallet",
+    recordId: `payment-wallet:${actor.userId}`,
+    ref,
+  });
+
+  it("records the cleanup with the disconnect and removes it once the credential is deleted", async () => {
+    const env = setup();
+    await connected(env);
+    const before = env.rows[0]!.ciphertext;
+    env.cleanup.jobs.enqueueIn.mockClear();
+    env.store.delete.mockClear();
+    await disconnectPaymentWallet(env.deps, actor);
+    expect(env.cleanup.jobs.enqueueIn).toHaveBeenCalledWith(
+      env.prisma,
+      expect.objectContaining({ payload: walletSecret(before), availableAt: expect.any(Date) }),
+    );
+    expect(env.store.delete).toHaveBeenCalledWith(
+      before,
+      expect.objectContaining({ recordId: `payment-wallet:${actor.userId}` }),
+    );
+    expect(env.cleanup.queued.size).toBe(0);
+  });
+
+  it("retries a failed delete from the job without failing the disconnect", async () => {
+    const env = setup();
+    await connected(env);
+    const before = env.rows[0]!.ciphertext;
+    env.store.delete.mockRejectedValueOnce(new Error("secret store unavailable"));
+    expect(await disconnectPaymentWallet(env.deps, actor)).toEqual({ status: "disconnected" });
+    expect(env.values.has(before)).toBe(true);
+    expect(env.cleanup.cleanups()).toEqual([{ ...walletSecret(before), due: true }]);
+    await env.runCleanupJobs();
+    expect(env.values.size).toBe(0);
+  });
+
+  it("deletes a forgotten credential from the job when the process is lost after the commit", async () => {
+    const env = setup();
+    await connected(env);
+    const before = env.rows[0]!.ciphertext;
+    env.loseProcessAfterCommit();
+    await expect(disconnectPaymentWallet(env.deps, actor)).rejects.toThrow(
+      "process lost after commit",
+    );
+    expect(env.rows).toHaveLength(0);
+    expect(env.values.has(before)).toBe(true);
+    expect(env.cleanup.cleanups()).toEqual([{ ...walletSecret(before), due: false }]);
+    await env.runCleanupJobs();
+    expect(env.values.size).toBe(0);
+  });
+
+  it("keeps a refreshed credential that was saved and deletes only the one it replaced", async () => {
+    const env = setup();
+    await connected(env);
+    const before = env.rows[0]!.ciphertext;
+    vi.setSystemTime(new Date(NOW.getTime() + 2 * 3_600_000));
+    env.loseProcessAfterCommit();
+    await expect(withPaymentWalletCredential(env.deps, actor, async () => 1)).rejects.toThrow(
+      "process lost after commit",
+    );
+    const saved = env.rows[0]!.ciphertext;
+    expect(saved).not.toBe(before);
+    // The direct attempt at the new credential found the wallet holding it and left it alone.
+    expect(env.values.has(saved)).toBe(true);
+    expect(env.values.has(before)).toBe(true);
+    expect(env.cleanup.cleanups()).toEqual([{ ...walletSecret(before), due: false }]);
+    await env.runCleanupJobs();
+    expect([...env.values.keys()]).toEqual([saved]);
+  });
+
+  it("deletes a finished sign-in's state from the job when the process is lost after the commit", async () => {
+    const env = setup();
+    await connectPaymentWallet(env.deps, actor);
+    const signIn = env.rows[0]!.ciphertext;
+    vi.setSystemTime(new Date(Date.now() + 5_000));
+    env.loseProcessAfterCommit();
+    await expect(paymentWalletStatus(env.deps, actor)).rejects.toThrow("process lost after commit");
+    const saved = env.rows[0]!.ciphertext;
+    expect(env.rows[0]?.status).toBe("connected");
+    expect(env.values.has(saved)).toBe(true);
+    expect(env.cleanup.cleanups()).toEqual([{ ...walletSecret(signIn), due: false }]);
+    await env.runCleanupJobs();
+    expect([...env.values.keys()]).toEqual([saved]);
+  });
+
+  it("never deletes the credential the wallet holds, from a late job either", async () => {
+    const env = setup();
+    await connected(env);
+    const held = env.rows[0]!.ciphertext;
+    await env.deps.jobs.enqueue({ name: "secret.cleanup", payload: walletSecret(held) as never });
+    env.store.delete.mockClear();
+    await env.runCleanupJobs();
+    expect(env.store.delete).not.toHaveBeenCalled();
+    expect(env.values.has(held)).toBe(true);
+  });
+
+  it("copies no sealed credential into a job when the store keeps it in the row", async () => {
+    const env = setup({ remote: false });
+    await connected(env);
+    vi.setSystemTime(new Date(NOW.getTime() + 2 * 3_600_000));
+    await withPaymentWalletCredential(env.deps, actor, async () => 1);
+    env.store.delete.mockRejectedValueOnce(new Error("notification failed"));
+    expect(await disconnectPaymentWallet(env.deps, actor)).toEqual({ status: "disconnected" });
+    expect(env.cleanup.jobs.enqueue).not.toHaveBeenCalled();
+    expect(env.cleanup.jobs.enqueueIn).not.toHaveBeenCalled();
   });
 });

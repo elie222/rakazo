@@ -600,7 +600,7 @@ export class FakeBoatApi implements BoatSandboxSdk {
     };
   }
 
-  async deleteSandbox(sandboxId: string): Promise<void> {
+  async deleteSandbox(sandboxId: string, _init?: { signal?: AbortSignal }): Promise<void> {
     this.check();
     this.sandboxes.delete(sandboxId);
   }

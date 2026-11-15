@@ -40,7 +40,7 @@ import {
   WorkspaceTooLargeError,
 } from "@rakazo/adapter-kit";
 import type { ComputerSize } from "@rakazo/contracts";
-import { boundedSandboxCommandTimeoutMs } from "@rakazo/core";
+import { boundedSandboxCommandTimeoutMs, deadlineSignal } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import {
   BoatApiError,
@@ -69,6 +69,7 @@ import {
   VERIFY_LINUX_DESKTOP,
 } from "./linux-desktop.js";
 import { installAgentBrowserCommand, installPageBrowserCommand } from "./page-browser-install.js";
+import { deleteUnreferencedMachine } from "./sandbox-cleanup.js";
 import { sandboxCommandArgv } from "./sandbox-command-environment.js";
 import { abortedCommandEvents, timedOutCommandEvents } from "./sandbox-command-events.js";
 import { isSandboxGoneError, sandboxNotFoundError } from "./sandbox-errors.js";
@@ -148,7 +149,7 @@ const BOAT_API_METHODS = [
 /** The Boat API surface the adapter uses. Failures are the SDK's raw `ResponseError`s. */
 export type BoatSandboxSdk = Pick<BoatApi, (typeof BOAT_API_METHODS)[number]> & {
   /** Resolves once the sandbox no longer exists, including when it never did. */
-  deleteSandbox(sandboxId: string): Promise<void>;
+  deleteSandbox(sandboxId: string, init?: { signal?: AbortSignal }): Promise<void>;
 };
 
 const RUNNABLE_STATES = new Set<SandboxStateEnum>(["ready", "idle", "running"]);
@@ -392,7 +393,9 @@ export class BoatSandboxProvider implements SandboxProvider {
       }
       return { name, built: true };
     } finally {
-      await this.client.deleteSandbox(sandbox.id).catch(() => undefined);
+      await deleteUnreferencedMachine("boat", sandbox.id, (signal) =>
+        this.client.deleteSandbox(sandbox.id, { signal }),
+      );
     }
   }
 
@@ -1603,10 +1606,10 @@ function createBoatSdk(
     ]),
   ) as Pick<BoatApi, (typeof BOAT_API_METHODS)[number]>;
   return Object.assign(methods, {
-    deleteSandbox: async (sandboxId: string) => {
+    deleteSandbox: async (sandboxId: string, init?: { signal?: AbortSignal }) => {
       const url = `${apiUrl}/sandboxes/${encodeURIComponent(sandboxId)}`;
       const headers = { Authorization: `Bearer ${config.apiKey}` };
-      const signal = AbortSignal.timeout(BOAT_DELETE_TIMEOUT_MS);
+      const signal = deadlineSignal(BOAT_DELETE_TIMEOUT_MS, init?.signal);
       try {
         await withAbort(gate.wait(signal), signal);
         const response = await fetch(url, {
@@ -1633,6 +1636,7 @@ function createBoatSdk(
       } catch (error) {
         if (!signal.aborted || error !== signal.reason) throw error;
       }
+      init?.signal?.throwIfAborted();
       throw new Error(`Boat ${sandboxId} was not deleted within 60 seconds`);
     },
   });

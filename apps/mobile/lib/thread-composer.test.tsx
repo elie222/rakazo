@@ -1213,6 +1213,58 @@ describe("thread composer isolation", () => {
     expect(composer.current!.snapshot().skill).toBeNull();
   });
 
+  it("offers skills only mid-message and attaches a picked one without wiping the draft", () => {
+    const picker = () => container.querySelector('[data-testid="slash-picker"]');
+    type("Hello @He");
+    press("@{name}");
+    // Mid-message the menu offers skills only, and follows the caret.
+    type("Hello @Helper /sett");
+    expect(picker()).toBeNull();
+    type("Hello @Helper /W");
+    expect(picker()).not.toBeNull();
+    select(5);
+    expect(picker()).toBeNull();
+    type("Hello @Helper ");
+    type("Hello @Helper run /Wri now");
+    select(22);
+    press("Skill {name}");
+    expect(field().value).toBe("Hello @Helper run now");
+    expect(JSON.parse(field().dataset.mentions!)).toEqual(["@Helper"]);
+    expect(JSON.parse(field().dataset.selection!)).toEqual({ start: 18, end: 18 });
+    // One skill per message: another / offers nothing once the draft has one.
+    type("Hello @Helper run now /W");
+    expect(picker()).toBeNull();
+    type("Hello @Helper run now");
+    expect(composer.current!.snapshot()).toMatchObject({
+      promptText: "/Writing\nHello @Helper run now",
+      mentions: [bot],
+      skill,
+    });
+  });
+
+  it("turns a skill picked at the start of a longer draft into the chip, keeping the rest", () => {
+    type("Hello @He");
+    press("@{name}");
+    type("/Wri Hello @Helper ");
+    select(4);
+    press("Skill {name}");
+    expect(composer.current!.snapshot()).toMatchObject({
+      skill,
+      promptText: "/Writing\nHello @Helper ",
+      mentions: [bot],
+    });
+    expect(field().value).toBe("Hello @Helper ");
+    expect(JSON.parse(field().dataset.mentions!)).toEqual(["@Helper"]);
+  });
+
+  it("takes the chip after a blank line and keeps the text after the caret", () => {
+    type("\n/Wri，总结");
+    select(5);
+    press("Skill {name}");
+    expect(composer.current!.snapshot()).toMatchObject({ skill, promptText: "/Writing\n，总结" });
+    expect(field().value).toBe("，总结");
+  });
+
   it("clears a slash query before routing and uses the call control for an empty draft", () => {
     type("/settings");
     press("Chat Settings");
