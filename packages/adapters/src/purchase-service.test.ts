@@ -367,6 +367,49 @@ describe("resolvePurchaseCardFill", () => {
     expect(env.secrets.size).toBe(1);
     expect(env.secrets.has(env.purchases[0]!.cardCiphertext!)).toBe(true);
   });
+
+  it("retries deleting a sealed card that lost the race, and spares one the purchase saved after all", async () => {
+    const env = setup();
+    await env.call("request_purchase", request);
+    env.purchases[0]!.status = "approved";
+    const run = { spaceId: fixture.spaceId, userId: fixture.userId, botId: fixture.botId };
+    const cleanup = { prisma: env.deps.prisma, secrets: env.secretStore };
+    const purchase = env.deps.prisma.purchase as unknown as {
+      updateMany: (args: unknown) => Promise<{ count: number }>;
+    };
+    const save = purchase.updateMany;
+    // Another run's copy is saved first, and the store is down when this one is removed.
+    purchase.updateMany = async () => {
+      env.purchases[0]!.cardCiphertext = "sealed-by-another-run";
+      return { count: 0 };
+    };
+    env.secretStore.delete.mockRejectedValueOnce(new Error("secret store unavailable"));
+    await resolvePurchaseCardFill(env.deps, run, "purchase-1", "number");
+    expect(env.secrets.size).toBe(1);
+    const [backup, retry] = env.enqueued.filter((job) => job.name === "secret.cleanup");
+    const unused = { kind: "purchase_card", recordId: "purchase-card:purchase-1" };
+    expect(backup).toMatchObject({
+      payload: { ...unused, ref: expect.any(String) },
+      availableAt: expect.any(Date),
+    });
+    expect(retry).toMatchObject({ payload: backup!.payload });
+    expect(retry).not.toHaveProperty("availableAt");
+    await retrySecretCleanup(cleanup, retry!.payload as SecretCleanup);
+    expect(env.secrets.size).toBe(0);
+
+    // The save committed but its answer was lost, so the purchase holds this copy.
+    env.purchases[0]!.cardCiphertext = null;
+    purchase.updateMany = async (args) => {
+      await save(args);
+      throw new Error("response lost");
+    };
+    env.secretStore.delete.mockClear();
+    await resolvePurchaseCardFill(env.deps, run, "purchase-1", "number");
+    const held = env.purchases[0]!.cardCiphertext!;
+    await retrySecretCleanup(cleanup, { ...unused, ref: held } as SecretCleanup);
+    expect(env.secretStore.delete).not.toHaveBeenCalled();
+    expect(env.secrets.has(held)).toBe(true);
+  });
 });
 
 describe("pay token purchases", () => {
@@ -618,6 +661,35 @@ describe("paid_request", () => {
     expect(JSON.stringify(retry)).not.toContain("days");
     await retrySecretCleanup(cleanup, retry.payload as SecretCleanup);
     expect(env.secrets.size).toBe(0);
+  });
+
+  it("removes the sealed request when recording the purchase fails, unless the purchase holds it", async () => {
+    const env = setup(paidApi().fetch);
+    const purchase = env.deps.prisma.purchase as unknown as {
+      upsert: (args: unknown) => Promise<unknown>;
+    };
+    const record = purchase.upsert;
+    purchase.upsert = async () => {
+      throw new Error("database unavailable");
+    };
+    await expect(env.paid(paidArgs)).rejects.toThrow("database unavailable");
+    expect(env.secrets.size).toBe(0);
+    // Recorded before the attempt, so a process lost during it still leaves the job.
+    expect(env.enqueued.filter((job) => job.name === "secret.cleanup")).toMatchObject([
+      {
+        payload: { kind: "purchase_request", recordId: "purchase-request:op-1" },
+        availableAt: expect.any(Date),
+      },
+    ]);
+
+    purchase.upsert = async (args) => {
+      await record(args);
+      throw new Error("response lost");
+    };
+    env.secretStore.delete.mockClear();
+    await expect(env.paid(paidArgs, "op-2")).rejects.toThrow("response lost");
+    expect(env.secretStore.delete).not.toHaveBeenCalled();
+    expect(env.secrets.has(env.purchases[0]!.requestCiphertext!)).toBe(true);
   });
 
   it("never removes the sealed request a recorded purchase still needs", async () => {

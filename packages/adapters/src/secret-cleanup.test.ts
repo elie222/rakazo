@@ -16,11 +16,16 @@ const cleanup: SecretCleanup = { kind: "secret_row", recordId: "secret-a", ref: 
 /** Each kind of record holds `held`; `remote` is whether the store keeps values elsewhere. */
 function fixture(held: string | null = null, remote = true) {
   const row = (column: string) => vi.fn(async () => (held === null ? null : { [column]: held }));
+  /** A purchase holds `held` in whichever of its sealed columns is read. */
+  const purchase = vi.fn(async ({ select }: { select: Record<string, boolean> }) =>
+    held === null ? null : Object.fromEntries(Object.keys(select).map((column) => [column, held])),
+  );
   const prisma = {
     secret: { findUnique: row("ciphertext") },
     messagingInstallation: { findUnique: row("ciphertext") },
     deploymentSettings: { findUnique: row("computerProviderCipher") },
-    purchase: { findUnique: row("requestCiphertext") },
+    purchase: { findUnique: purchase },
+    paymentWallet: { findUnique: row("ciphertext") },
   };
   const queued = new Map<string, BackgroundJob>();
   const queue = async (job: BackgroundJob) => {
@@ -113,18 +118,58 @@ describe("secret cleanup", () => {
   });
 
   it.each([
-    ["secret_row", "secret-a", "secret", { id: "secret-a" }],
-    ["messaging_installation", "install-a", "messagingInstallation", { id: "install-a" }],
-    ["deployment_computer_provider", "deployment", "deploymentSettings", { id: "default" }],
-    ["purchase_request", "purchase-request:op-1", "purchase", { operationKey: "op-1" }],
+    ["secret_row", "secret-a", "secret", { id: "secret-a" }, "ciphertext"],
+    [
+      "messaging_installation",
+      "install-a",
+      "messagingInstallation",
+      { id: "install-a" },
+      "ciphertext",
+    ],
+    [
+      "deployment_computer_provider",
+      "deployment",
+      "deploymentSettings",
+      { id: "default" },
+      "computerProviderCipher",
+    ],
+    [
+      "purchase_request",
+      "purchase-request:op-1",
+      "purchase",
+      { operationKey: "op-1" },
+      "requestCiphertext",
+    ],
+    [
+      "purchase_card",
+      "purchase-card:purchase-1",
+      "purchase",
+      { id: "purchase-1" },
+      "cardCiphertext",
+    ],
+    [
+      "purchase_token",
+      "purchase-token:purchase-1",
+      "purchase",
+      { id: "purchase-1" },
+      "tokenCiphertext",
+    ],
+    [
+      "payment_wallet",
+      "payment-wallet:user-1",
+      "paymentWallet",
+      { userId: "user-1" },
+      "ciphertext",
+    ],
   ] as const)(
     "spares a %s reference that is in use again",
-    async (kind, recordId, table, where) => {
+    async (kind, recordId, table, where, column) => {
       const inUse = fixture(REF);
       await retrySecretCleanup(inUse.deps, { kind, recordId, ref: REF });
-      expect(inUse.prisma[table].findUnique).toHaveBeenCalledWith(
-        expect.objectContaining({ where }),
-      );
+      expect(inUse.prisma[table].findUnique).toHaveBeenCalledWith({
+        where,
+        select: { [column]: true },
+      });
       expect(inUse.secrets.delete).not.toHaveBeenCalled();
       await finishSecretCleanup(inUse.deps, { kind, recordId, ref: REF });
       expect(inUse.secrets.delete).not.toHaveBeenCalled();

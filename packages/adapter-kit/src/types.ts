@@ -972,7 +972,10 @@ export type SecretCleanupKind =
   | "secret_row"
   | "messaging_installation"
   | "deployment_computer_provider"
-  | "purchase_request";
+  | "purchase_request"
+  | "purchase_card"
+  | "purchase_token"
+  | "payment_wallet";
 
 export type BackgroundJobName = keyof BackgroundJobPayloads;
 

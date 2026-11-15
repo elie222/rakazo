@@ -16,7 +16,7 @@ export type SecretCleanup = BackgroundJobPayloads["secret.cleanup"];
 export interface SecretCleanupDeps {
   prisma: Pick<
     PrismaClient,
-    "secret" | "messagingInstallation" | "deploymentSettings" | "purchase"
+    "secret" | "messagingInstallation" | "deploymentSettings" | "purchase" | "paymentWallet"
   >;
   secrets: Pick<SecretStore, "delete" | "isRemote">;
   jobs: Pick<JobPublisher, "enqueue" | "enqueueIn" | "cancel">;
@@ -25,9 +25,24 @@ export interface SecretCleanupDeps {
 const ATTEMPT_MS = 10_000;
 const BACKUP_MS = ATTEMPT_MS + 5_000;
 const PURCHASE_REQUEST_RECORD = "purchase-request:";
+const PURCHASE_CARD_RECORD = "purchase-card:";
+const PURCHASE_TOKEN_RECORD = "purchase-token:";
+const PAYMENT_WALLET_RECORD = "payment-wallet:";
 
 export function purchaseRequestRecordId(operationKey: string): string {
   return PURCHASE_REQUEST_RECORD + operationKey;
+}
+
+export function purchaseCardRecordId(purchaseId: string): string {
+  return PURCHASE_CARD_RECORD + purchaseId;
+}
+
+export function purchaseTokenRecordId(purchaseId: string): string {
+  return PURCHASE_TOKEN_RECORD + purchaseId;
+}
+
+export function paymentWalletRecordId(userId: string): string {
+  return PAYMENT_WALLET_RECORD + userId;
 }
 
 type Holders = SecretCleanupDeps["prisma"];
@@ -56,6 +71,27 @@ const heldRef: Record<
         select: { requestCiphertext: true },
       })
     )?.requestCiphertext,
+  purchase_card: async (prisma, recordId) =>
+    (
+      await prisma.purchase.findUnique({
+        where: { id: recordId.slice(PURCHASE_CARD_RECORD.length) },
+        select: { cardCiphertext: true },
+      })
+    )?.cardCiphertext,
+  purchase_token: async (prisma, recordId) =>
+    (
+      await prisma.purchase.findUnique({
+        where: { id: recordId.slice(PURCHASE_TOKEN_RECORD.length) },
+        select: { tokenCiphertext: true },
+      })
+    )?.tokenCiphertext,
+  payment_wallet: async (prisma, recordId) =>
+    (
+      await prisma.paymentWallet.findUnique({
+        where: { userId: recordId.slice(PAYMENT_WALLET_RECORD.length) },
+        select: { ciphertext: true },
+      })
+    )?.ciphertext,
 };
 
 /** Keyed by a digest, so the queue's own key never carries the reference. */
