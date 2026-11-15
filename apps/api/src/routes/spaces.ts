@@ -37,7 +37,7 @@ import {
   setSpaceSettingOverride,
   spaceSettingOverrides,
 } from "@rakazo/db";
-import { otherSpaceOfBot } from "../bot-space.js";
+import { otherSpaceOfBot, otherSpaceOfGroup } from "../bot-space.js";
 import type { RouterDeps } from "../router.js";
 import { listRoutinesDto } from "../routines.js";
 import { deleteSpaceWithContent } from "../space-deletion.js";
@@ -345,6 +345,10 @@ export function spacesRoutes(ctx: RouterContext) {
         input.botId && !requested
           ? await otherSpaceOfBot(deps.prisma, actor, input.botId)
           : undefined;
+      const groupSpaceId =
+        input.groupId && !groups.some((group) => group.id === input.groupId)
+          ? await otherSpaceOfGroup(deps.prisma, actor, input.groupId)
+          : undefined;
       const active = requested ?? bots[0];
       const [thread, routines] = active
         ? await Promise.all([
@@ -365,6 +369,7 @@ export function spacesRoutes(ctx: RouterContext) {
         routines,
         spaces: navigation.spaces,
         ...(botSpaceId ? { botSpaceId } : {}),
+        ...(groupSpaceId ? { groupSpaceId } : {}),
       };
     }),
   };

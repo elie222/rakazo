@@ -134,6 +134,28 @@ test("create, switch, rename and delete an organization", async ({ page }, testI
   await expect.poll(() => selectedSpace(page)).toBe(work.defaultSpaceId);
   await expect(page).toHaveURL((url) => url.pathname === workChat);
 
+  // So does a link to a group chat there.
+  const inWork = async <T>(procedure: string, json: unknown) => {
+    const response = await page.request.post(`/rpc/${procedure}`, {
+      headers: { "x-rakazo-space-id": work.defaultSpaceId },
+      data: { json },
+    });
+    expect(response.ok()).toBe(true);
+    return ((await response.json()) as { json: T }).json;
+  };
+  const scout = await inWork<{ id: string }>("bots/create", {
+    name: "Scout",
+    computerMode: "team",
+  });
+  const standup = await inWork<{ id: string }>("groups/create", {
+    name: "Standup",
+    botIds: [workChat.split("/")[2], scout.id],
+  });
+  await switchFromAvatarMenu(page, "Personal", personal.defaultSpaceId);
+  await page.goto(`/app/g/${standup.id}`);
+  await expect.poll(() => selectedSpace(page)).toBe(work.defaultSpaceId);
+  await expect(page).toHaveURL((url) => url.pathname === `/app/g/${standup.id}`);
+
   settings = await openUserSettings(page);
   await settings.getByTestId("settings-nav-organization").click();
   const organization = settings.getByTestId("organization-settings");
