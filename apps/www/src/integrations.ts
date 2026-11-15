@@ -3,6 +3,7 @@ import type { PluginCategory } from "@rakazo/core";
 import { PLUGIN_CATEGORIES } from "@rakazo/core";
 import { z } from "zod";
 import { CATALOG_URL, INTEGRATION_CLAIMS_URL, SITE_URL } from "./site";
+import { breadcrumbNode } from "./structured-data";
 
 const IntegrationSchema = z.object({
   slug: z.string().regex(/^[a-z0-9_-]+$/),
@@ -257,18 +258,13 @@ export const CHAT_CHANNELS = [
 ] as const;
 
 export function integrationBreadcrumbs(integration: Integration) {
+  const path = integrationPath(integration.slug);
   return {
     "@context": "https://schema.org",
-    "@type": "BreadcrumbList",
-    itemListElement: [
-      { "@type": "ListItem", position: 1, name: "Integrations", item: `${SITE_URL}${INTEGRATIONS_PATH}` },
-      {
-        "@type": "ListItem",
-        position: 2,
-        name: integration.name,
-        item: `${SITE_URL}${integrationPath(integration.slug)}`,
-      },
-    ],
+    ...breadcrumbNode(new URL(path, SITE_URL).toString(), [
+      { name: "Integrations", path: INTEGRATIONS_PATH },
+      { name: integration.name, path },
+    ]),
   };
 }
 
