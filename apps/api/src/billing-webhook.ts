@@ -26,6 +26,9 @@ export function mountBillingRoutes(
     const parsed = deps.provider.parseWebhook(raw, c.req.raw.headers);
     if (parsed === null) return c.json({ error: "Invalid signature" }, 400);
     if (parsed === "ignored") return c.json({ ok: true });
+    // A payment event only reconciles partner earnings.
+    if (!("customerId" in parsed) && !deps.billing.partnerProgramEnabled)
+      return c.json({ ok: true });
     let customerId: string | null;
     try {
       customerId =

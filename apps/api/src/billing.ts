@@ -121,6 +121,8 @@ export interface BillingService {
    * payments could not be read; a failed sale report is left for the next event.
    */
   reportPartnerSales(customerId: string): Promise<void>;
+  /** Whether a partner program is configured to report to. */
+  partnerProgramEnabled: boolean;
   /** Syncs the actor's organization, e.g. on return from checkout before the webhook lands. */
   syncForActor(actor: Actor): Promise<void>;
   /** Pushes the organization's member count to the provider. Call when members change. */
@@ -889,6 +891,7 @@ export function createBillingService(deps: {
     },
 
     sync,
+    partnerProgramEnabled: Boolean(deps.partnerProgram),
     async reportPartnerSales(customerId) {
       const account = await prisma.billingAccount.findUnique({
         where: { customerId },
