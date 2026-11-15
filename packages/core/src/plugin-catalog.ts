@@ -242,7 +242,7 @@ function brandKey(name: string): string {
     .normalize("NFC")
     .toLowerCase()
     .replace(/ς/g, "σ")
-    .replace(/[^\p{L}\p{N}]/gu, "");
+    .replace(/[^\p{L}\p{M}\p{N}]/gu, "");
 }
 
 /** The managed app a plugin is for, matched by name, so one brand is listed once. */

@@ -126,6 +126,12 @@ describe("managedAppFor", () => {
       ]),
     ).toEqual({ name: "α\u0301", slug: "accented" });
     expect(managedAppFor(entry({ name: "plugin", displayName: "α" }), apps)).toBeUndefined();
+    expect(
+      managedAppFor(entry({ name: "plugin", displayName: "क" }), [{ name: "कि", slug: "ki" }]),
+    ).toBeUndefined();
+    expect(
+      managedAppFor(entry({ name: "plugin", displayName: "I" }), [{ name: "İ", slug: "dotted" }]),
+    ).toBeUndefined();
   });
 
   it("matches Greek sigma case variants", () => {
