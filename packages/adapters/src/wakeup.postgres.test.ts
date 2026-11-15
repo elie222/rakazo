@@ -1097,13 +1097,18 @@ describePostgres("Graphile background jobs (PostgreSQL contract)", () => {
       await host.start(target);
       await publisher.enqueue(connectionCleanupJob(cleanup));
       // The busy try cost nothing: the job that failed once has used one try of its full budget.
-      await waitFor(async () =>
+      await waitFor(async () => {
+        expect(tries).toBe(2);
         expect(await budget()).toEqual({
           attempts: 1,
           max_attempts: CONNECTION_CLEANUP_MAX_ATTEMPTS,
-        }),
-      );
-      expect(tries).toBe(2);
+        });
+        const { rows } = await testPool().query(
+          "select locked_at from graphile_worker._private_jobs where key = $1",
+          [key],
+        );
+        expect(rows[0]?.locked_at).toBeNull();
+      });
 
       // Skip to its last try.
       await testPool().query(
