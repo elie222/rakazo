@@ -201,6 +201,7 @@ import {
   SpendingPaymentSchema,
   SpendingStatusSchema,
 } from "./payments.js";
+import { MemoryProviderDescriptorSchema } from "./provider-settings.js";
 import { MessageReactionSchema } from "./reactions.js";
 import { RoutineWatchSchema } from "./routine-watch.js";
 import {
@@ -924,6 +925,8 @@ export const appContract = {
     remove: oc.input(z.object({ documentId: Id })).output(z.object({ ok: z.literal(true) })),
     exportMarkdown: oc.input(z.object({ botId: Id.optional() })).output(z.string()),
     providerConfig: oc.output(SpaceMemoryConfigSchema.nullable()),
+    /** The providers a Space can connect, with the settings form each one asks for. */
+    providers: oc.output(z.array(MemoryProviderDescriptorSchema)),
     connectProvider: oc
       .input(
         z.object({
