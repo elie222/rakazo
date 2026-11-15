@@ -56,6 +56,12 @@ describe("changedSince", () => {
     ]);
   });
 
+  it("keeps a date-only lastmod on the day of the timestamp", () => {
+    expect(changedSince(urls, new Date("2026-11-16T09:00:00Z"))).toEqual([
+      "https://rakazo.com/search?q=a&b=c",
+    ]);
+  });
+
   it("submits nothing when no page has a lastmod", () => {
     const bare = parseSitemap("<urlset><url><loc>https://rakazo.com/</loc></url></urlset>").urls;
     expect(changedSince(bare, new Date(0))).toEqual([]);

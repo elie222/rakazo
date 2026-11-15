@@ -11,6 +11,8 @@ const SITE = "https://rakazo.com";
 const ENDPOINT = "https://api.indexnow.org/indexnow";
 const BATCH_SIZE = 10_000;
 
+class HttpError extends Error {}
+
 const publicDir = join(dirname(fileURLToPath(import.meta.url)), "../public");
 
 // The key is the name of its file in public/, so it lives in one place.
@@ -47,27 +49,36 @@ export function parseSitemap(xml) {
   };
 }
 
-/** Pages on the site whose lastmod is after `since`; pages without a lastmod are left out. */
+/**
+ * Pages on the site whose lastmod is after `since`; pages without a lastmod are left out.
+ * A date-only lastmod counts from the start of `since`'s day, so a page edited later that day
+ * is kept.
+ */
 export function changedSince(urls, since) {
   const cutoff = since.getTime();
-  const { host } = new URL(SITE);
+  const dayCutoff = Date.UTC(since.getUTCFullYear(), since.getUTCMonth(), since.getUTCDate());
   return urls.flatMap(({ loc, lastmod }) => {
-    const modified = lastmod ? Date.parse(lastmod) : Number.NaN;
-    if (!(modified > cutoff) || new URL(loc).host !== host) return [];
-    return [loc];
+    if (!lastmod || !onSite(loc)) return [];
+    const modified = Date.parse(lastmod);
+    const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(lastmod);
+    return (dateOnly ? modified >= dayCutoff : modified > cutoff) ? [loc] : [];
   });
+}
+
+function onSite(url) {
+  return new URL(url).host === new URL(SITE).host;
 }
 
 async function fetchText(url) {
   const response = await fetch(url);
-  if (!response.ok) throw new Error(`GET ${url} answered ${response.status}`);
+  if (!response.ok) throw new HttpError(`GET ${url} answered ${response.status}`);
   return response.text();
 }
 
 async function sitemapUrls() {
   const index = parseSitemap(await fetchText(`${SITE}/sitemap-index.xml`));
   const children = await Promise.all(
-    index.sitemaps.map(async (loc) => parseSitemap(await fetchText(loc)).urls),
+    index.sitemaps.filter(onSite).map(async (loc) => parseSitemap(await fetchText(loc)).urls),
   );
   return [...index.urls, ...children.flat()];
 }
@@ -81,12 +92,25 @@ async function submit(urlList, key) {
       headers: { "Content-Type": "application/json; charset=utf-8" },
       body: JSON.stringify({ host, key, keyLocation: `${SITE}/${key}.txt`, urlList: batch }),
     });
+    const body = await response.text();
     if (response.status === 200 || response.status === 202) {
       console.log(`IndexNow accepted ${batch.length} URLs (${response.status}).`);
     } else {
-      const body = await response.text().catch(() => "");
       console.log(`::warning::IndexNow answered ${response.status}: ${body.slice(0, 500)}`);
     }
+  }
+}
+
+// Network and HTTP failures are best-effort; anything else is a bug and fails the run.
+async function bestEffort(label, work) {
+  try {
+    return await work();
+  } catch (error) {
+    // Node's fetch reports network failures as a TypeError with the underlying cause.
+    const network = error instanceof TypeError && error.cause !== undefined;
+    if (!network && !(error instanceof HttpError)) throw error;
+    console.log(`::warning::${label} skipped: ${error.cause?.message ?? error.message}`);
+    return undefined;
   }
 }
 
@@ -98,21 +122,18 @@ async function main(sinceArg) {
     return;
   }
   const key = indexNowKey();
-  try {
-    const urls = await sitemapUrls();
-    if (!urls.some((url) => url.lastmod)) {
-      console.log("The sitemap has no <lastmod>, so nothing is submitted.");
-      return;
-    }
-    const changed = changedSince(urls, since);
-    if (changed.length === 0) {
-      console.log(`No pages changed since ${since.toISOString()}.`);
-      return;
-    }
-    await submit(changed, key);
-  } catch (error) {
-    console.log(`::warning::IndexNow ping skipped: ${error.message}`);
+  const urls = await bestEffort("Reading the sitemap", sitemapUrls);
+  if (!urls) return;
+  if (!urls.some((url) => url.lastmod)) {
+    console.log("The sitemap has no <lastmod>, so nothing is submitted.");
+    return;
   }
+  const changed = changedSince(urls, since);
+  if (changed.length === 0) {
+    console.log(`No pages changed since ${since.toISOString()}.`);
+    return;
+  }
+  await bestEffort("IndexNow ping", () => submit(changed, key));
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) await main(process.argv[2]);
