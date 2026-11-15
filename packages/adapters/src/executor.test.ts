@@ -1216,6 +1216,7 @@ function compatiblePrismaParts(modelId: string, plaintext: string) {
   );
   return withModelRoles(
     {
+      userBotModelConnection: { findUnique: vi.fn(async () => null) },
       userModelPreference: { findFirst },
       userModelCredential: {
         findMany: vi.fn(async () => []),
@@ -3280,6 +3281,7 @@ description: Prepare standup notes
         message: { findMany: vi.fn(async () => []) },
         task: { findUniqueOrThrow: vi.fn(async () => ({ id: "task-1", prompt: "hello" })) },
         connection: { findMany: vi.fn(async () => []) },
+        userBotModelConnection: { findUnique: vi.fn(async () => null) },
         userModelPreference: {
           findFirst: vi.fn(async () =>
             stored
@@ -3417,6 +3419,7 @@ description: Prepare standup notes
       message: { findMany: vi.fn(async () => []) },
       task: { findUniqueOrThrow: vi.fn(async () => ({ id: "task-1", prompt: "hello" })) },
       connection: { findMany: vi.fn(async () => []) },
+      userBotModelConnection: { findUnique: vi.fn(async () => null) },
       userModelPreference: {
         findFirst: vi.fn(async (args: { where: { isDefault?: boolean } }) =>
           args.where.isDefault
@@ -3557,6 +3560,7 @@ description: Prepare standup notes
           billing: null,
         })),
       },
+      userBotModelConnection: { findUnique: vi.fn(async () => null) },
       userModelPreference: {
         findFirst: vi.fn(async (args: { where: { isDefault?: boolean } }) =>
           args.where.isDefault
@@ -3629,6 +3633,7 @@ description: Prepare standup notes
           thinkingLevel: "high",
         })),
       },
+      userBotModelConnection: { findUnique: vi.fn(async () => null) },
       userModelPreference: { findFirst },
       userModelCredential: { findMany: vi.fn(async () => []), findFirst: vi.fn(async () => null) },
       deploymentSettings: { findUnique: vi.fn(async () => null) },
@@ -3662,6 +3667,62 @@ description: Prepare standup notes
     );
   });
 
+  it("runs a bot's model on the connection its member chose for it", async () => {
+    const findUnique = vi.fn(async () => ({
+      provider: "xai",
+      modelId: "grok-4.6",
+      credentialId: "credential-chosen",
+      bot: { modelProvider: "xai", modelId: "grok-4.6" },
+    }));
+    const credentialFindFirst = vi.fn(async () => ({
+      id: "credential-chosen",
+      userId: "user-1",
+      provider: "xai",
+      label: "Chosen",
+      secretId: "secret-chosen",
+      userPreferences: [],
+    }));
+    const prisma = {
+      user: { findUnique: vi.fn(async () => null) },
+      bot: {
+        findFirst: vi.fn(async () => ({
+          modelProvider: "xai",
+          modelId: "grok-4.6",
+          thinkingLevel: "high",
+        })),
+      },
+      userBotModelConnection: { findUnique },
+      userModelPreference: { findFirst: vi.fn(async () => null) },
+      userModelCredential: { findMany: vi.fn(async () => []), findFirst: credentialFindFirst },
+      deploymentSettings: { findUnique: vi.fn(async () => null) },
+      secret: {
+        findMany: vi.fn(async () => []),
+        findFirst: vi.fn(async () => ({ id: "secret-chosen", ciphertext: "fixture-ciphertext" })),
+        findUnique: vi.fn(async () => null),
+      },
+    } as unknown as PrismaClient;
+    withSpaceMain(prisma, "openrouter", "deepseek/deepseek-v4-flash-0731");
+    const executor = createRunExecutor({
+      prisma,
+      secretStore: { load: vi.fn(async () => "fixture-model-key"), put: vi.fn() },
+    } as unknown as Parameters<typeof createRunExecutor>[0]);
+
+    await expect(
+      executor.resolveModel({ userId: "user-1", spaceId: "ws-1", botId: "bot-1" }),
+    ).resolves.toMatchObject({ provider: "xai", id: "grok-4.6" });
+
+    expect(findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { userId_botId: { userId: "user-1", botId: "bot-1" } },
+      }),
+    );
+    expect(credentialFindFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "credential-chosen", userId: "user-1", provider: "xai" },
+      }),
+    );
+  });
+
   it("resolves an explicit subagent model within the active user and space", async () => {
     const preference = modelPreference({
       provider: "xai",
@@ -3678,6 +3739,7 @@ description: Prepare standup notes
     const prisma = {
       user: { findUnique: vi.fn(async () => null) },
       deploymentSettings: { findUnique: vi.fn(async () => null) },
+      userBotModelConnection: { findUnique: vi.fn(async () => null) },
       userModelPreference: { findFirst },
       userModelCredential: { findMany: vi.fn(async () => []), findFirst: vi.fn(async () => null) },
       secret: {
@@ -3730,6 +3792,7 @@ description: Prepare standup notes
     const plaintext = compatibleSecret(["newest-model"]);
     const prisma = {
       user: { findUnique: vi.fn(async () => null) },
+      userBotModelConnection: { findUnique: vi.fn(async () => null) },
       userModelPreference: { findFirst },
       userModelCredential: { findMany: vi.fn(async () => []), findFirst: vi.fn(async () => null) },
       secret: {
@@ -3798,6 +3861,7 @@ description: Prepare standup notes
       };
       const prisma = {
         user: { findUnique: vi.fn(async () => null) },
+        userBotModelConnection: { findUnique: vi.fn(async () => null) },
         userModelPreference: {
           findMany: vi.fn(async () => [preference]),
           findFirst: vi.fn(async () => null),
@@ -4107,6 +4171,7 @@ description: Prepare standup notes
           thinkingLevel: null,
         })),
       },
+      userBotModelConnection: { findUnique: vi.fn(async () => null) },
       userModelPreference: {
         findFirst: vi.fn(async () =>
           modelPreference({
@@ -4152,6 +4217,7 @@ description: Prepare standup notes
           thinkingLevel: null,
         })),
       },
+      userBotModelConnection: { findUnique: vi.fn(async () => null) },
       userModelPreference: {
         findFirst: vi.fn(async () =>
           modelPreference({
@@ -4218,6 +4284,7 @@ description: Prepare standup notes
             thinkingLevel: null,
           })),
         },
+        userBotModelConnection: { findUnique: vi.fn(async () => null) },
         userModelPreference: {
           findFirst: vi.fn(async () =>
             modelPreference({
@@ -4295,6 +4362,7 @@ description: Prepare standup notes
           thinkingLevel: null,
         })),
       },
+      userBotModelConnection: { findUnique: vi.fn(async () => null) },
       userModelPreference: {
         findFirst: vi.fn(async () =>
           modelPreference({
@@ -4345,6 +4413,7 @@ description: Prepare standup notes
           thinkingLevel: null,
         })),
       },
+      userBotModelConnection: { findUnique: vi.fn(async () => null) },
       userModelPreference: { findFirst },
       userModelCredential: { findMany: vi.fn(async () => []), findFirst: vi.fn(async () => null) },
       deploymentSettings: { findUnique: vi.fn(async () => null) },
@@ -4395,6 +4464,7 @@ description: Prepare standup notes
     const prisma = {
       user: { findUnique: vi.fn(async () => null) },
       bot: { findFirst: vi.fn(async () => bot) },
+      userBotModelConnection: { findUnique: vi.fn(async () => null) },
       userModelPreference: { findFirst },
       userModelCredential: { findMany: vi.fn(async () => []), findFirst: vi.fn(async () => null) },
       deploymentSettings: { findUnique: vi.fn(async () => null) },
@@ -4453,6 +4523,7 @@ description: Prepare standup notes
           thinkingLevel: "high",
         })),
       },
+      userBotModelConnection: { findUnique: vi.fn(async () => null) },
       userModelPreference: { findFirst },
       userModelCredential: { findMany: vi.fn(async () => []), findFirst: vi.fn(async () => null) },
       deploymentSettings: { findUnique: vi.fn(async () => null) },
@@ -4496,6 +4567,7 @@ description: Prepare standup notes
           billingEnabled: false,
           runtime: { describe: () => ({ capabilities: { scripted: provider === "scripted" } }) },
           prisma: {
+            userBotModelConnection: { findUnique: vi.fn(async () => null) },
             userModelPreference: { findFirst: async () => null },
             userModelCredential: { findFirst: async () => null },
             deploymentSettings: {
@@ -4521,6 +4593,7 @@ description: Prepare standup notes
     const prisma = {
       user: { findUnique: vi.fn(async () => null) },
       bot: { findFirst: vi.fn(async () => null) },
+      userBotModelConnection: { findUnique: vi.fn(async () => null) },
       userModelPreference: { findFirst: vi.fn(async () => null) },
       userModelCredential: { findMany: vi.fn(async () => []), findFirst: vi.fn(async () => null) },
       deploymentSettings: {
@@ -4561,6 +4634,7 @@ description: Prepare standup notes
           thinkingLevel: "high",
         })),
       },
+      userBotModelConnection: { findUnique: vi.fn(async () => null) },
       userModelPreference: { findFirst },
       userModelCredential: { findMany: vi.fn(async () => []), findFirst: vi.fn(async () => null) },
       deploymentSettings: { findUnique: vi.fn(async () => null) },

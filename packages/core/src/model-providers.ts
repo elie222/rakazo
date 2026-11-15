@@ -147,6 +147,8 @@ export type ConnectedModelChoice = {
 };
 
 type CatalogModelRef = {
+  /** The provider's connections that can run it, when not all of them can. */
+  credentialIds?: readonly string[];
   managed?: boolean;
   provider: string;
   id: string;
@@ -355,6 +357,129 @@ export function connectedModelChoices(
     seen.add(choice.key);
     return true;
   });
+}
+
+/** A choice tied to one connection, when its provider has several. */
+export type ConnectionModelChoice = ConnectedModelChoice & { credentialId?: string };
+
+const CONNECTION_KEY_SEPARATOR = "@@";
+
+export function connectionChoiceKey(credentialId: string, modelKey: string): string {
+  return `${credentialId}${CONNECTION_KEY_SEPARATOR}${modelKey}`;
+}
+
+/** Splits a picker key; a model id may itself contain the separator, after the provider's `::`. */
+export function parseConnectionChoiceKey(key: string): {
+  credentialId?: string;
+  modelKey: string;
+} {
+  const separator = key.indexOf(CONNECTION_KEY_SEPARATOR);
+  const model = key.indexOf("::");
+  if (separator <= 0 || (model >= 0 && model < separator)) return { modelKey: key };
+  return {
+    credentialId: key.slice(0, separator),
+    modelKey: key.slice(separator + CONNECTION_KEY_SEPARATOR.length),
+  };
+}
+
+/**
+ * Which picker row shows a bot's model: the row for that connection when there is one, otherwise
+ * the row for the model alone.
+ */
+export function connectionPickerKey(
+  choices: readonly { key: string }[],
+  modelKey: string,
+  credentialId: string | null | undefined,
+): string {
+  const key = credentialId && modelKey ? connectionChoiceKey(credentialId, modelKey) : "";
+  return key && choices.some((choice) => choice.key === key) ? key : modelKey;
+}
+
+/**
+ * What picking a row in a bot's model list changes. Thinking levels belong to the model and its
+ * connection, so the level is dropped when the model changes or the connection does not offer it.
+ */
+export function pickBotModelChoice(
+  key: string,
+  current: {
+    modelKey: string;
+    thinkingLevel: string;
+    credentials: readonly { id: string; thinkingLevels?: readonly string[] | null }[];
+  },
+): { credentialId: string | null; modelKey: string; resetThinking: boolean } {
+  const { credentialId, modelKey } = parseConnectionChoiceKey(key);
+  const levels = current.credentials.find(
+    (credential) => credential.id === credentialId,
+  )?.thinkingLevels;
+  return {
+    credentialId: credentialId ?? null,
+    modelKey,
+    resetThinking:
+      modelKey !== current.modelKey || Boolean(levels && !levels.includes(current.thinkingLevel)),
+  };
+}
+
+/**
+ * Whether a bot's picker holds an unsaved connection. `pending` is undefined until a row is
+ * picked, and null when the picked row has no connection, which removes a saved choice.
+ */
+export function botConnectionChanged(
+  pending: string | null | undefined,
+  saved: { credentialId: string | null; pinned: boolean } | null | undefined,
+): boolean {
+  if (pending === undefined) return false;
+  // With the saved choice still unknown, a picked row with no connection has to be sent.
+  if (pending === null) return saved ? saved.pinned : true;
+  return pending !== saved?.credentialId || !saved?.pinned;
+}
+
+/**
+ * The models to offer one bot. A provider with several connections is listed once per
+ * connection, under that connection's name, so choosing a model also chooses what runs it.
+ */
+export function connectionModelChoices(
+  credentials: readonly (CredentialModelRef & { id: string })[],
+  catalog: readonly CatalogModelRef[],
+): ConnectionModelChoice[] {
+  const provider = (entry: { provider: string }) => canonicalPiProviderId(entry.provider);
+  const counts = new Map<string, number>();
+  for (const credential of credentials)
+    counts.set(provider(credential), (counts.get(provider(credential)) ?? 0) + 1);
+  const several = (entry: { provider: string }) => (counts.get(provider(entry)) ?? 0) > 1;
+  const separate = credentials.filter(several).flatMap((credential) => {
+    const listed = catalog.filter((entry) => provider(entry) === provider(credential));
+    const served = listed.filter(
+      (entry) =>
+        !entry.managed && (!entry.credentialIds || entry.credentialIds.includes(credential.id)),
+    );
+    return (
+      connectedModelChoices([credential], served)
+        // A saved or enabled id comes back as free-form, even one this connection does not serve.
+        .filter(
+          (choice) =>
+            served.some((entry) => entry.id === choice.modelId) ||
+            !listed.some((entry) => entry.id === choice.modelId),
+        )
+        .map((choice) => ({
+          ...choice,
+          key: connectionChoiceKey(credential.id, choice.key),
+          credentialId: credential.id,
+          label: withConnectionName(choice.modelLabel ?? choice.modelId, credential.label),
+          providerLabel: credential.label,
+        }))
+    );
+  });
+  const shared = connectedModelChoices(
+    credentials.filter((credential) => !several(credential)),
+    catalog,
+  );
+  // Funded models run on the deployment's key, so they are listed once, under no connection.
+  const funded = (choice: ConnectedModelChoice) =>
+    catalog.some(
+      (entry) =>
+        entry.managed && provider(entry) === provider(choice) && entry.id === choice.modelId,
+    );
+  return [...separate, ...shared.filter((choice) => !several(choice) || funded(choice))];
 }
 
 export type ChatModelChoice = {

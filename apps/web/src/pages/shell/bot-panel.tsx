@@ -10,12 +10,15 @@ import type {
 } from "@rakazo/contracts";
 import { BOT_NAME_MAX_LENGTH, isBuiltinToolName, resolveBotAvatarSet } from "@rakazo/contracts";
 import {
+  botConnectionChanged,
   chatModelChoices,
-  connectedModelChoices,
+  connectionModelChoices,
+  connectionPickerKey,
   credentialForModel,
   modelOptionKey,
   modelThinkingLevels,
   parseModelOptionKey,
+  pickBotModelChoice,
   resolveSelectableModelId,
 } from "@rakazo/core";
 import { Button, Input, Tabs, TabsContent, TabsList, TabsTrigger } from "@rakazo/ui-web";
@@ -109,6 +112,7 @@ export function BotSettings({
     voiceId?: string | null;
     modelProvider?: string | null;
     modelId?: string | null;
+    modelConnectionId?: string | null;
     thinkingLevel?: ThinkingLevel | null;
     disabledBuiltinTools?: string[];
   }) => Promise<void>;
@@ -192,6 +196,22 @@ export function BotSettings({
     credentialsQuery.data !== undefined &&
     catalogQuery.data !== undefined &&
     meQuery.data !== undefined;
+  const connectionOptions = queries.bots.modelConnection.queryOptions({
+    input: { botId: bot.id },
+  });
+  const connectionQuery = useQuery({
+    ...connectionOptions,
+    // The answer is for one model, so another session changing it must not reuse this one.
+    queryKey: [
+      ...connectionOptions.queryKey,
+      bot.modelProvider,
+      bot.modelId,
+    ] as unknown as typeof connectionOptions.queryKey,
+    enabled: Boolean(bot.modelProvider && bot.modelId),
+    ...refresh,
+  });
+  const [pendingConnection, setPendingConnection] = useState<string | null | undefined>(undefined);
+  const connectionChanged = botConnectionChanged(pendingConnection, connectionQuery.data);
   const [saving, setSaving] = useState(false);
   const [savedAdvanced, setSavedAdvanced] = useState(() => JSON.stringify(advancedValues(bot)));
   const advancedSnapshot = JSON.stringify([
@@ -205,8 +225,10 @@ export function BotSettings({
   const dirty =
     name.trim() !== savedNameRef.current.trim() ||
     advancedSnapshot !== savedAdvanced ||
+    connectionChanged ||
     description.trim() !== savedDescriptionRef.current;
   const [error, setError] = useState<string | null>(null);
+  const shownError = error ?? (connectionQuery.isError ? t`Could not load model settings` : null);
   const saveQueueRef = useRef(Promise.resolve());
   const executeSaveRef = useRef<
     (
@@ -250,7 +272,11 @@ export function BotSettings({
     };
     const saved = JSON.parse(savedAdvanced) as unknown[];
     const next = advancedValues(bot);
-    if (modelKey === saved[0]) setModelKey(next[0]);
+    if (modelKey === saved[0]) {
+      setModelKey(next[0]);
+      // A connection picked for the model that just left does not apply to this one.
+      if (next[0] !== saved[0]) setPendingConnection(undefined);
+    }
     if (thinkingLevel === saved[1]) setThinkingLevel(next[1]);
     if (computerMode === saved[2]) setComputerMode(next[2]);
     if (memoryScope === saved[3]) setMemoryScope(next[3]);
@@ -259,7 +285,7 @@ export function BotSettings({
     setSavedAdvanced(JSON.stringify(next));
   }, [bot]);
 
-  const connectedOptions = connectedModelChoices(credentials, catalog);
+  const connectedOptions = connectionModelChoices(credentials, catalog);
   const storedModel = modelKey ? parseModelOptionKey(modelKey) : null;
   const selectedModel = storedModel
     ? {
@@ -274,9 +300,13 @@ export function BotSettings({
   const defaultEntry = me?.defaultModel
     ? catalogEntry(catalog, me.defaultProvider, me.defaultModel)
     : undefined;
+  // A provider with several connections lists each one; show the one that runs this model now.
+  const runningConnection = connectionQuery.data?.credentialId ?? null;
+  const shownConnection = pendingConnection === undefined ? runningConnection : pendingConnection;
+  const pickerValue = connectionPickerKey(connectedOptions, selectedModelKey, shownConnection);
   const modelChoices = chatModelChoices(
     connectedOptions,
-    selectedModelKey,
+    pickerValue,
     t`Space default`,
     defaultEntry?.images,
   );
@@ -291,7 +321,13 @@ export function BotSettings({
             resolveSelectableModelId(catalog, entry.provider, entry.id) === effectiveModelId,
         )
       : undefined;
-  const effectiveCredential = credentialForModel(credentials, effectiveProvider, effectiveModelId);
+  // Thinking levels belong to the connection, so read them from the one the bot will run on.
+  const chosenCredential =
+    shownConnection && pickerValue !== selectedModelKey
+      ? credentials.find((credential) => credential.id === shownConnection)
+      : undefined;
+  const effectiveCredential =
+    chosenCredential ?? credentialForModel(credentials, effectiveProvider, effectiveModelId);
   const thinkingOptions = modelThinkingLevels(
     effectiveCredential,
     effectiveEntry,
@@ -365,6 +401,7 @@ export function BotSettings({
         voiceId: voiceId || null,
         modelProvider: selected?.provider ?? null,
         modelId: selected?.modelId ?? null,
+        ...(pendingConnection || connectionChanged ? { modelConnectionId: pendingConnection } : {}),
         ...(modelMetaReady &&
         (thinkingOptions.length > 0 ||
           (selected?.provider ?? null) !== bot.modelProvider ||
@@ -413,6 +450,11 @@ export function BotSettings({
         avatarSet: nextAvatarSet,
         notifyOnFinish: nextNotify,
       };
+      if (pendingConnection !== undefined) {
+        // A failed refresh leaves the previous answer cached, so the saved pick stays on screen.
+        const refreshed = await connectionQuery.refetch();
+        if (!refreshed.isError) setPendingConnection(undefined);
+      }
       if (nextName) savedNameRef.current = nextName;
       savedDescriptionRef.current = nextDescription;
       setSavedAdvanced(
@@ -580,10 +622,16 @@ export function BotSettings({
               containerRef={modelRef}
               onOpenConnections={onOpenConnections}
               choices={modelChoices}
-              value={selectedModelKey}
+              value={pickerValue}
               onModelChange={(key) => {
-                setModelKey(key);
-                setThinkingLevel("");
+                const pick = pickBotModelChoice(key, {
+                  modelKey: selectedModelKey,
+                  thinkingLevel,
+                  credentials,
+                });
+                setPendingConnection(pick.credentialId);
+                setModelKey(pick.modelKey);
+                if (pick.resetThinking) setThinkingLevel("");
               }}
               thinkingOptions={thinkingOptions}
               thinkingLevel={thinkingLevel}
@@ -677,7 +725,7 @@ export function BotSettings({
           ) : null}
         </TabsContent>
       </Tabs>
-      {error ? <p className="mt-2 text-body-sm text-destructive">{error}</p> : null}
+      {shownError ? <p className="mt-2 text-body-sm text-destructive">{shownError}</p> : null}
     </div>
   );
 }

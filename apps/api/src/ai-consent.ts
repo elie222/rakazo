@@ -19,6 +19,7 @@ import type {
 } from "@rakazo/contracts";
 import { AI_DISCLOSURE_VERSION, AI_PRIVACY_URL } from "@rakazo/contracts";
 import {
+  findBotModelCredential,
   findDefaultVoiceCredential,
   findModelCredential,
   findModelCredentialById,
@@ -69,7 +70,7 @@ export async function aiConsentStatus(
               archivedAt: null,
               ...(botIds ? { id: { in: botIds } } : {}),
             },
-            select: { modelProvider: true, modelId: true, thinkingLevel: true },
+            select: { id: true, modelProvider: true, modelId: true, thinkingLevel: true },
           })
         : [],
       // An active routine with its own model is another recipient for this bot.
@@ -88,7 +89,7 @@ export async function aiConsentStatus(
                 ? [{ active: true }, { id: query.routineId }]
                 : [{ active: true }],
             },
-            select: { modelProvider: true, modelId: true, thinkingLevel: true },
+            select: { botId: true, modelProvider: true, modelId: true, thinkingLevel: true },
           })
         : [],
       uses.includes("voice")
@@ -124,9 +125,10 @@ export async function aiConsentStatus(
       (target ? [...bots, ...routines] : [null, ...bots, ...routines]).map(async (override) => {
         const overrideCredential =
           override?.modelProvider && override.modelId
-            ? await findModelCredential(
+            ? await findBotModelCredential(
                 deps.prisma,
                 actor,
+                "botId" in override ? override.botId : override.id,
                 override.modelProvider,
                 override.modelId,
               )

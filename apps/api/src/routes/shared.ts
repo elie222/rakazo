@@ -1,7 +1,7 @@
 import { ORPCError } from "@orpc/server";
 import {
   deploymentModelRole,
-  findConnectedModelCredential,
+  findConnectedBotModelCredential,
   hasHostedModelCredits,
   hostCredentialSource,
   mcpStdioAvailable,
@@ -148,15 +148,16 @@ export async function modelSetup(deps: RouterDeps, actor: Actor) {
 export async function botsRunOwnModels(deps: RouterDeps, actor: Actor, botIds: string[]) {
   const bots = await deps.prisma.bot.findMany({
     where: { id: { in: botIds }, spaceId: actor.spaceId },
-    select: { modelProvider: true, modelId: true, thinkingLevel: true },
+    select: { id: true, modelProvider: true, modelId: true, thinkingLevel: true },
   });
   const credentials = await Promise.all(
     bots.map(async (bot) => {
       const overrideCredential = bot.modelProvider
-        ? await findConnectedModelCredential(
+        ? await findConnectedBotModelCredential(
             deps.prisma,
             deps.secrets,
             actor,
+            bot.id,
             bot.modelProvider,
             bot.modelId,
           )

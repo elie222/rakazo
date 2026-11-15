@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { AgentRunModel, AgentRuntime, SecretStore } from "@rakazo/adapter-kit";
 import { redactSecrets } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
-import { findModelCredential, recordUsage } from "@rakazo/db";
+import { findBotModelCredential, recordUsage } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import {
   persistRefreshedModelCredential,
@@ -198,7 +198,13 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
     const requestedProvider = this.deps.providerOverride ?? bot.modelProvider;
     const requestedModel = this.deps.modelOverride ?? bot.modelId;
     const overrideCredential = requestedProvider
-      ? await findModelCredential(this.deps.prisma, scope, requestedProvider)
+      ? await findBotModelCredential(
+          this.deps.prisma,
+          scope,
+          bot.id,
+          requestedProvider,
+          requestedModel,
+        )
       : null;
     const explicitJudgeOverride = Boolean(this.deps.providerOverride && this.deps.modelOverride);
     const useOverride = Boolean(

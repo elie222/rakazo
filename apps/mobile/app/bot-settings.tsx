@@ -8,13 +8,17 @@ import {
   resolveBotAvatarSet,
 } from "@rakazo/contracts";
 import {
+  botConnectionChanged,
   botLookState,
+  connectionModelChoices,
+  connectionPickerKey,
   credentialForModel,
   DEFAULT_BOT_AVATAR_COLOR,
   MODEL_SEARCH_THRESHOLD,
   modelOptionKey,
   modelThinkingLevels,
   parseModelOptionKey,
+  pickBotModelChoice,
   resolveSelectableModelId,
 } from "@rakazo/core";
 import { typeScale } from "@rakazo/ui-tokens";
@@ -95,6 +99,13 @@ export default function BotSettingsScreen() {
   const [me, setMe] = useState<MobileMe | null>(null);
   const [modelMetaReady, setModelMetaReady] = useState(false);
   const [modelMetaError, setModelMetaError] = useState<string | null>(null);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
+  const [savedConnection, setSavedConnection] = useState<{
+    credentialId: string | null;
+    pinned: boolean;
+  } | null>(null);
+  // Undefined until a row is picked; null when the picked row has no connection.
+  const [pendingConnection, setPendingConnection] = useState<string | null | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
   const computerMaintenanceRows = useComputerMaintenanceRows(botId);
   const [deviceVoiceEnabled, setDeviceVoiceEnabled] = useState(false);
@@ -241,6 +252,26 @@ export default function BotSettingsScreen() {
       });
   }, [t]);
 
+  // The answer is for one model, so ask again when the saved model changes.
+  const savedProvider = bot?.modelProvider;
+  const savedModelId = bot?.modelId;
+  useEffect(() => {
+    setConnectionError(null);
+    setSavedConnection(null);
+    if (!savedProvider || !savedModelId) return;
+    let current = true;
+    void rpc("bots/modelConnection", { botId })
+      .then((next) => {
+        if (current) setSavedConnection(next);
+      })
+      .catch((err) => {
+        if (current) setConnectionError(errorText(err, t`Could not load model settings`));
+      });
+    return () => {
+      current = false;
+    };
+  }, [botId, savedProvider, savedModelId, t]);
+
   const storedModel = modelKey ? parseModelOptionKey(modelKey) : null;
   const selectedModel = storedModel
     ? {
@@ -262,7 +293,21 @@ export default function BotSettingsScreen() {
             resolveSelectableModelId(catalog, entry.provider, entry.id) === effectiveModelId,
         )
       : undefined;
-  const effectiveCredential = credentialForModel(credentials, effectiveProvider, effectiveModelId);
+  const connectedOptions = useMemo(
+    () => connectionModelChoices(credentials, catalog),
+    [catalog, credentials],
+  );
+  const shownConnection =
+    pendingConnection === undefined ? (savedConnection?.credentialId ?? null) : pendingConnection;
+  const pickerValue = connectionPickerKey(connectedOptions, selectedModelKey, shownConnection);
+  const connectionChanged = botConnectionChanged(pendingConnection, savedConnection);
+  // Thinking levels belong to the connection, so read them from the one the bot will run on.
+  const chosenCredential =
+    shownConnection && pickerValue !== selectedModelKey
+      ? credentials.find((credential) => credential.id === shownConnection)
+      : undefined;
+  const effectiveCredential =
+    chosenCredential ?? credentialForModel(credentials, effectiveProvider, effectiveModelId);
   const thinkingOptions = modelThinkingLevels(
     effectiveCredential,
     effectiveEntry,
@@ -270,8 +315,8 @@ export default function BotSettingsScreen() {
   ).filter((level) => level !== "off");
 
   const modelChoices = useMemo(
-    () => chatModelPickerChoices(me, catalog, credentials, selectedModelKey),
-    [catalog, credentials, me, selectedModelKey, t],
+    () => chatModelPickerChoices(me, catalog, credentials, pickerValue, connectedOptions),
+    [catalog, connectedOptions, credentials, me, pickerValue, t],
   );
 
   const thinkingChoices: MenuPickerChoice[] = useMemo(
@@ -290,9 +335,15 @@ export default function BotSettingsScreen() {
   }, [focus]);
 
   function selectModel(key: string) {
-    if (key === selectedModelKey) return;
-    setModelKey(key);
-    setThinkingLevel("");
+    const pick = pickBotModelChoice(key, {
+      modelKey: selectedModelKey,
+      thinkingLevel,
+      credentials,
+    });
+    if (key === pickerValue && !pick.credentialId) return;
+    setPendingConnection(pick.credentialId);
+    setModelKey(pick.modelKey);
+    if (pick.resetThinking) setThinkingLevel("");
   }
 
   // The searchable model list hands its pick back as a one-shot route param.
@@ -411,6 +462,7 @@ export default function BotSettingsScreen() {
         avatarSet?: BotAvatarSet;
         modelProvider?: string | null;
         modelId?: string | null;
+        modelConnectionId?: string | null;
         thinkingLevel?: ThinkingLevel | null;
         autoSpeak?: boolean;
       } = { botId };
@@ -431,6 +483,7 @@ export default function BotSettingsScreen() {
         input.modelProvider = selected?.provider ?? null;
         input.modelId = selected?.modelId ?? null;
       }
+      if (pendingConnection || connectionChanged) input.modelConnectionId = pendingConnection;
       if (modelMetaReady && (modelChanged || thinkingChanged)) {
         input.thinkingLevel = thinkingOptions.length
           ? ((thinkingLevel || null) as ThinkingLevel | null)
@@ -450,8 +503,20 @@ export default function BotSettingsScreen() {
         const updated = await rpc("bots/update", input);
         // Saved edits and their history become the baseline, so a retry after a failed switch write
         // does not resend them.
-        const { botId: _botId, expectedInstructions: _expected, ...saved } = input;
+        const {
+          botId: _botId,
+          expectedInstructions: _expected,
+          modelConnectionId,
+          ...saved
+        } = input;
         setBot((prev) => (prev ? { ...prev, ...saved, ...updated } : prev));
+        if (modelConnectionId !== undefined) {
+          setSavedConnection({
+            credentialId: modelConnectionId,
+            pinned: modelConnectionId !== null,
+          });
+          setPendingConnection(undefined);
+        }
       }
       await Promise.all([
         dailyCheckInsSave.flush(),
@@ -480,6 +545,7 @@ export default function BotSettingsScreen() {
       autoSpeak !== bot.autoSpeak ||
       (selectedModel?.provider ?? null) !== (bot.modelProvider ?? null) ||
       (selectedModel?.modelId ?? null) !== (bot.modelId ?? null) ||
+      connectionChanged ||
       (thinkingLevel || null) !== (bot.thinkingLevel ?? null));
 
   const hasVoiceMenu = !voiceError && voices.length > 1;
@@ -615,7 +681,7 @@ export default function BotSettingsScreen() {
                 scrollRef.current?.scrollTo({ y: modelY.current, animated: true });
             }}
           >
-            <SettingsGroup label={t`Model`} footer={modelMetaError ?? undefined}>
+            <SettingsGroup label={t`Model`} footer={modelMetaError ?? connectionError ?? undefined}>
               <MenuPicker
                 choices={modelChoices}
                 label={t`Model`}
@@ -626,11 +692,11 @@ export default function BotSettingsScreen() {
                     ? () =>
                         router.push({
                           pathname: "/bot-model",
-                          params: { botId, value: selectedModelKey },
+                          params: { botId, value: pickerValue },
                         })
                     : undefined
                 }
-                value={selectedModelKey}
+                value={pickerValue}
               />
               {thinkingOptions.length ? (
                 <MenuPicker

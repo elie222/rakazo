@@ -3,7 +3,7 @@ import type { CodexLiveCatalog, parseModelSecret } from "@rakazo/adapters";
 import { findConnectedModelCredential, validateConnectedModelChoice } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import { OPENAI_COMPATIBLE_PROVIDER_ID, usableModelId } from "@rakazo/contracts";
-import { modelRoleTarget, runAsSystem } from "@rakazo/db";
+import { botModelConnectionApplies, modelRoleTarget, runAsSystem } from "@rakazo/db";
 import type { RouterDeps } from "./router.js";
 
 /**
@@ -19,18 +19,53 @@ async function compatibleModelPins(
   const where = { userId: actor.userId, modelId };
   const pin = { spaceId: true, modelId: true } as const;
   const role = { modelId: true, role: true, position: true, credentialId: true } as const;
+  const chosenConnection = {
+    where: { userId: actor.userId },
+    select: { provider: true, modelId: true, credentialId: true },
+  } as const;
   // A connection is the account's, so its pins are checked in every Space it is used in.
-  const [bots, routines, accountRoles, spaceRoles] = await runAsSystem(
+  const [bots, routines, sharedBotChoices, accountRoles, spaceRoles] = await runAsSystem(
     "model pins across the account's Spaces",
     () =>
       Promise.all([
         deps.prisma.bot.findMany({
           where: { ...where, archivedAt: null, modelProvider: provider },
-          select: { ...pin, name: true },
+          select: {
+            ...pin,
+            name: true,
+            modelConnections: chosenConnection,
+          },
         }),
         deps.prisma.routine.findMany({
           where: { ...where, modelProvider: provider, bot: { archivedAt: null } },
-          select: { ...pin, name: true },
+          select: {
+            ...pin,
+            name: true,
+            bot: {
+              select: { modelProvider: true, modelId: true, modelConnections: chosenConnection },
+            },
+          },
+        }),
+        // A member can choose this connection for a bot someone else owns.
+        deps.prisma.userBotModelConnection.findMany({
+          where: {
+            userId: actor.userId,
+            provider,
+            modelId,
+            bot: {
+              archivedAt: null,
+              userId: { not: actor.userId },
+              modelProvider: provider,
+              modelId,
+              space: { memberships: { some: { userId: actor.userId } } },
+            },
+          },
+          select: {
+            provider: true,
+            modelId: true,
+            credentialId: true,
+            bot: { select: { name: true, spaceId: true, modelId: true } },
+          },
         }),
         deps.prisma.userModelRoleChoice.findMany({ where: { ...where, provider }, select: role }),
         deps.prisma.spaceModelRoleChoice.findMany({
@@ -43,8 +78,29 @@ async function compatibleModelPins(
         }),
       ]),
   );
+  const chosenConnectionId = (
+    rows: Array<{ provider: string; modelId: string; credentialId: string }>,
+    modelId: string | null,
+  ) => rows.find((row) => botModelConnectionApplies(row, provider, modelId))?.credentialId;
   return {
-    named: [...bots, ...routines],
+    named: [
+      // A bot's model, and a routine's on the same model, run on the connection chosen for the bot.
+      ...bots.map(({ modelConnections, ...bot }) => ({
+        ...bot,
+        credentialId: chosenConnectionId(modelConnections, bot.modelId),
+      })),
+      ...routines.map(({ bot, ...routine }) => ({
+        ...routine,
+        credentialId:
+          bot.modelProvider === provider && bot.modelId === routine.modelId
+            ? chosenConnectionId(bot.modelConnections, routine.modelId)
+            : undefined,
+      })),
+      // A choice left behind on a model the bot has moved off no longer runs anything.
+      ...sharedBotChoices
+        .filter((choice) => botModelConnectionApplies(choice, provider, choice.bot.modelId))
+        .map(({ bot: { modelId: _botModel, ...bot }, ...choice }) => ({ ...bot, ...choice })),
+    ],
     backups: [...accountRoles.map((row) => ({ ...row, spaceId: null })), ...spaceRoles],
   };
 }
@@ -107,7 +163,11 @@ export async function assertCompatibleDefaultChange(
   deps: RouterDeps,
   actor: Actor,
   modelId: string,
-  thinking: { enabledModelIds?: string[]; storedEnabledModelIds?: string[] },
+  thinking: {
+    credentialId?: string;
+    enabledModelIds?: string[];
+    storedEnabledModelIds?: string[];
+  },
 ) {
   const requested = modelId.trim();
   const enabled = thinking.enabledModelIds ?? [];
@@ -130,7 +190,8 @@ export async function assertCompatibleDefaultChange(
         (row) => !(row.role === "main" && row.position === 0 && row.spaceId === replacedSpaceId),
       ),
     },
-    () => true,
+    // A row pinned to another connection is unaffected by this connection's default.
+    (row) => !row.credentialId || row.credentialId === thinking.credentialId,
   );
 }
 

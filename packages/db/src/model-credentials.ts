@@ -307,6 +307,73 @@ export async function findModelCredential(
   );
 }
 
+/** A member's connection choice applies only while the bot is on the model it was made for. */
+export function botModelConnectionApplies(
+  pin: { provider: string; modelId: string },
+  provider: string,
+  modelId: string | null | undefined,
+) {
+  return pin.modelId === modelId && storedPiProviderIds(provider).includes(pin.provider);
+}
+
+/** The connection a member chose for this bot's model, while the bot is still on that model. */
+export async function botModelConnectionId(
+  prisma: Pick<PrismaClient, "userBotModelConnection">,
+  scope: Pick<ModelCredentialScope, "userId">,
+  botId: string,
+  provider: string,
+  modelId: string | null | undefined,
+) {
+  const pin = await prisma.userBotModelConnection.findUnique({
+    where: { userId_botId: { userId: scope.userId, botId } },
+    select: {
+      provider: true,
+      modelId: true,
+      credentialId: true,
+      bot: { select: { modelProvider: true, modelId: true } },
+    },
+  });
+  // A routine can stay on a model its bot has left; the choice went with the bot.
+  return pin?.bot.modelProvider &&
+    botModelConnectionApplies(pin, pin.bot.modelProvider, pin.bot.modelId) &&
+    botModelConnectionApplies(pin, provider, modelId)
+    ? pin.credentialId
+    : undefined;
+}
+
+/** A copy of a bot runs on the connection this member chose for the original. */
+export async function copyBotModelConnection(
+  prisma: Pick<PrismaClient, "userBotModelConnection">,
+  scope: Pick<ModelCredentialScope, "userId">,
+  source: { id: string; modelProvider: string | null; modelId: string | null },
+  botId: string,
+) {
+  const { modelProvider: provider, modelId } = source;
+  if (!provider || !modelId) return;
+  const credentialId = await botModelConnectionId(prisma, scope, source.id, provider, modelId);
+  if (!credentialId) return;
+  await prisma.userBotModelConnection.create({
+    data: { userId: scope.userId, botId, provider, modelId, credentialId },
+  });
+}
+
+/** The connection that serves a bot's model for this member: their choice, or the usual one. */
+export async function findBotModelCredential(
+  prisma: Pick<
+    PrismaClient,
+    "userBotModelConnection" | "userModelCredential" | "userModelPreference"
+  >,
+  scope: ModelCredentialScope,
+  botId: string,
+  provider: string,
+  modelId: string | null | undefined,
+) {
+  const credentialId = await botModelConnectionId(prisma, scope, botId, provider, modelId);
+  return credentialId
+    ? findModelCredentialById(prisma, scope, credentialId, provider)
+    : findModelCredential(prisma, scope, provider, modelId);
+}
+
 /** One connection by id, with its own model; null when it is gone. */
 export async function findModelCredentialById(
   prisma: Pick<PrismaClient, "userModelCredential">,
