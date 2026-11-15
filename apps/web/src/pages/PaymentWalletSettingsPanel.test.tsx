@@ -12,13 +12,29 @@ const paymentWallet = vi.hoisted(() => ({
   connect: vi.fn(),
   disconnect: vi.fn(),
 }));
-const api = vi.hoisted(() => ({ paymentWallet }));
-vi.mock("../lib/rpc", () => ({
-  rpc: api,
-  rpcForSpace: () => api,
-  createSpaceRpc: () => api,
-  selectedSpaceId: () => null,
-}));
+/** The space each connect or disconnect named. */
+const wrote = vi.hoisted(() => [] as (string | null)[]);
+vi.mock("../lib/rpc", () => {
+  const clientFor = (spaceId: string | null) => ({
+    paymentWallet: {
+      status: () => paymentWallet.status(),
+      connect: () => {
+        wrote.push(spaceId);
+        return paymentWallet.connect();
+      },
+      disconnect: () => {
+        wrote.push(spaceId);
+        return paymentWallet.disconnect();
+      },
+    },
+  });
+  return {
+    rpc: clientFor(null),
+    rpcForSpace: clientFor,
+    createSpaceRpc: clientFor,
+    selectedSpaceId: () => null,
+  };
+});
 vi.mock("@lingui/react/macro", () => {
   const t = (parts: TemplateStringsArray, ...values: unknown[]) =>
     parts.reduce(
@@ -55,6 +71,7 @@ vi.mock("@rakazo/ui-web", () => {
   };
 });
 
+import { SpaceRpcProvider } from "../lib/space-rpc";
 import { PaymentWalletSettingsPanel } from "./PaymentWalletSettingsPanel";
 
 const connecting = {
@@ -78,6 +95,7 @@ beforeEach(() => {
   document.body.append(container);
   root = createRoot(container);
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  wrote.length = 0;
   open = vi.spyOn(window, "open").mockReturnValue(null);
 });
 
@@ -89,16 +107,29 @@ afterEach(() => {
   vi.resetAllMocks();
 });
 
-async function render() {
+async function render(shown = true) {
   await act(async () =>
     root.render(
       <QueryClientProvider client={client}>
-        <PaymentWalletSettingsPanel provider={{ id: "link", name: "Link" }} />
+        <SpaceRpcProvider spaceId="space-window">
+          {shown ? <PaymentWalletSettingsPanel provider={{ id: "link", name: "Link" }} /> : null}
+        </SpaceRpcProvider>
       </QueryClientProvider>,
     ),
   );
   await act(async () => vi.advanceTimersByTimeAsync(0));
 }
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
+const alert = () => container.querySelector('[role="alert"]')?.textContent ?? null;
+const dialog = () => container.querySelector('[role="alertdialog"]');
 
 function button(label: string) {
   const match = [...container.querySelectorAll("button")].filter(
@@ -191,4 +222,86 @@ it("says so when connecting fails", async () => {
   await act(async () => button("Connect").click());
   expect(container.querySelector('[role="alert"]')?.textContent).toBeTruthy();
   expect(open).not.toHaveBeenCalled();
+});
+
+it("connects once for two clicks in one tick, in the window's space", async () => {
+  paymentWallet.status.mockResolvedValue(disconnected);
+  paymentWallet.connect.mockResolvedValue(connecting);
+  await render();
+  await act(async () => {
+    button("Connect").click();
+    button("Connect").click();
+  });
+  expect(paymentWallet.connect).toHaveBeenCalledTimes(1);
+  expect(wrote).toEqual(["space-window"]);
+  expect(open).toHaveBeenCalledTimes(1);
+  expect(code()).toBe("WXYZ-1234");
+  expect(button("Cancel").disabled).toBe(false);
+});
+
+it("holds the confirmation while disconnecting, and disconnects once", async () => {
+  const disconnecting = deferred<typeof disconnected>();
+  paymentWallet.status.mockResolvedValue(connected);
+  paymentWallet.disconnect.mockReturnValue(disconnecting.promise);
+  await render();
+  await act(async () => button("Disconnect").click());
+  await act(async () => {
+    button("Disconnect").click();
+    button("Disconnect").click();
+  });
+  expect(paymentWallet.disconnect).toHaveBeenCalledTimes(1);
+  expect(dialog()).not.toBeNull();
+  expect(button("Disconnect").disabled).toBe(true);
+  expect(button("Cancel").disabled).toBe(true);
+
+  await act(async () => disconnecting.resolve(disconnected));
+  expect(dialog()).toBeNull();
+  expect(button("Connect").disabled).toBe(false);
+  expect(alert()).toBeNull();
+});
+
+it("closes the confirmation and says so when disconnecting fails, until the next try starts", async () => {
+  paymentWallet.status.mockResolvedValue(connected);
+  paymentWallet.disconnect.mockRejectedValueOnce(new Error("The wallet is busy"));
+  await render();
+  await act(async () => button("Disconnect").click());
+  await act(async () => button("Disconnect").click());
+  expect(dialog()).toBeNull();
+  expect(alert()).toBe("The wallet is busy");
+  expect(button("Disconnect").disabled).toBe(false);
+
+  paymentWallet.disconnect.mockReturnValue(deferred<typeof disconnected>().promise);
+  await act(async () => button("Disconnect").click());
+  await act(async () => button("Disconnect").click());
+  expect(alert()).toBeNull();
+});
+
+it("keeps the sign-in it started, with its controls, when its page cannot be opened", async () => {
+  paymentWallet.status.mockResolvedValue(disconnected);
+  paymentWallet.connect.mockResolvedValue(connecting);
+  open.mockImplementation(() => {
+    throw new Error("The page could not be opened");
+  });
+  await render();
+  await act(async () => button("Connect").click());
+  expect(alert()).toBe("The page could not be opened");
+  expect(code()).toBe("WXYZ-1234");
+  expect(button("Open").disabled).toBe(false);
+  expect(button("Cancel").disabled).toBe(false);
+});
+
+it("does not open the sign-in page once the panel has gone, and shows the sign-in on return", async () => {
+  const connectingNow = deferred<typeof connecting>();
+  paymentWallet.status.mockResolvedValue(disconnected);
+  paymentWallet.connect.mockReturnValue(connectingNow.promise);
+  await render();
+  await act(async () => button("Connect").click());
+  await render(false);
+  paymentWallet.status.mockResolvedValue(connecting);
+  await act(async () => connectingNow.resolve(connecting));
+  expect(open).not.toHaveBeenCalled();
+
+  await render();
+  expect(code()).toBe("WXYZ-1234");
+  expect(button("Open").disabled).toBe(false);
 });
