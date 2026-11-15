@@ -33,6 +33,7 @@ import {
   createRunSandbox,
   createRunSecretWriter,
   createTicketChangeNotifier,
+  drainRuns,
   ExpoPushProvider,
   GraphileJobPublisher,
   homeStorageSweeper,
@@ -45,6 +46,7 @@ import {
   PiAgentRuntime,
   PostgresRealtimeFanout,
   PrismaPushTokenStore,
+  RUN_DRAIN_MS,
   RunJobPublisher,
   RunStarter,
   RunWorkerHost,
@@ -160,6 +162,13 @@ async function main() {
   const artifacts = createArtifactStore(env.dataDir, prisma);
   const shutdown = new AbortController();
   const inMemoryJobs = process.env.WAKEUP_DRIVER === "memory" ? new InMemoryJobQueue() : undefined;
+  // A stop lets the runs this worker is executing end their turn before they are handed back.
+  // Only where the deployment says a stopping worker is left alone that long: one killed
+  // within seconds would leave a run mid-turn waiting for its lease to expire.
+  const runDrain = drainRuns(
+    shutdown.signal,
+    process.env.RUN_DRAIN_ENABLED === "true" ? RUN_DRAIN_MS : 0,
+  );
   const runs = new RunStarter(realtime, { signal: shutdown.signal });
   const jobs: JobPublisher =
     inMemoryJobs ?? new RunJobPublisher(prisma, new GraphileJobPublisher(pool, prisma), runs);
@@ -250,7 +259,8 @@ async function main() {
       },
     ),
     paymentWallet,
-    shutdownSignal: shutdown.signal,
+    stoppingSignal: shutdown.signal,
+    shutdownSignal: runDrain.signal,
   });
 
   const jobHost: JobWorkerHost =
@@ -316,6 +326,11 @@ async function main() {
         await logger.flush({ timeoutMs: 2_000 });
       }
     })());
+  // A failure hands the running turns back at once, as a process that may not be sound should.
+  const stopNow = () => {
+    runDrain.end();
+    return stop();
+  };
   // Exit rather than wait on a hung job that was handed back, which another worker now retries.
   // process.exitCode keeps a crash that arrives while draining from exiting as a clean stop.
   stopOnShutdownSignals(() =>
@@ -338,13 +353,13 @@ async function main() {
   process.on("uncaughtException", (error) => {
     logger.error("uncaughtException", error);
     process.exitCode = 1;
-    void stop().finally(() => process.exit(1));
+    void stopNow().finally(() => process.exit(1));
   });
   process.on("unhandledRejection", (reason) => {
     if (databaseOutage.failed(reason, "job queue")) return;
     logger.error("unhandledRejection", reason);
     process.exitCode = 1;
-    void stop().finally(() => process.exit(1));
+    void stopNow().finally(() => process.exit(1));
   });
 
   // Direct runs may already be active while the scheduler waits for the database: out of
@@ -358,7 +373,7 @@ async function main() {
     } catch (error) {
       if (stopping) return;
       if (!databaseOutage.failed(error, "worker start", { fromDatabaseConnection: true })) {
-        await stop();
+        await stopNow();
         throw error;
       }
       await sleep(databaseCapacityBackoffMs(attempt), undefined, { signal: shutdown.signal }).catch(
