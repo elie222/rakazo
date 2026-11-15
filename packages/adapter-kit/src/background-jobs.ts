@@ -6,6 +6,7 @@ import type {
   BackgroundJobHandlers,
   BackgroundJobName,
   BackgroundJobPayloads,
+  UnreferencedMachine,
 } from "./types.js";
 
 const payloadSchemas = {
@@ -82,6 +83,11 @@ const payloadSchemas = {
     connectorId: z.string().min(1),
     provider: z.string().min(1),
     ref: z.string().min(1).optional(),
+  }),
+  "computer.machine-cleanup": z.object({
+    provider: z.string().min(1),
+    machineId: z.string().min(1),
+    homeKey: z.string().min(1).optional(),
   }),
   "team_chat.engage": z.object({ externalMessageId: z.string().min(1) }),
   "team_chat.ambient": z.object({ conversationId: z.string().min(1) }),
@@ -338,6 +344,27 @@ export function connectionCleanupJob(
     ...(availableAt ? { availableAt } : {}),
     replaceKey: connectionCleanupJobKey(payload),
     maxAttempts: CONNECTION_CLEANUP_MAX_ATTEMPTS,
+  };
+}
+
+export function machineCleanupJobKey(provider: string, machineId: string): string {
+  return `computer.machine-cleanup:${JSON.stringify([provider, machineId])}`;
+}
+
+/**
+ * The queue's backoff spreads these tries over almost three days, which outlasts a long provider
+ * outage; the last one to fail reports the machine.
+ */
+export const MACHINE_CLEANUP_MAX_ATTEMPTS = 20;
+
+/** The record of one machine no stored computer points at: its delete, due at `availableAt`. */
+export function machineCleanupJob(machine: UnreferencedMachine, availableAt: Date): BackgroundJob {
+  return {
+    name: "computer.machine-cleanup",
+    payload: machine,
+    availableAt,
+    replaceKey: machineCleanupJobKey(machine.provider, machine.machineId),
+    maxAttempts: MACHINE_CLEANUP_MAX_ATTEMPTS,
   };
 }
 

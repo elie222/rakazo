@@ -38,6 +38,7 @@ import { retryConversationMemoryPurge } from "./conversation-memory-cleanup.js";
 import type { createRunExecutor } from "./executor.js";
 import type { ExpoPushProvider } from "./expo-push.js";
 import { compactHistory } from "./history-compaction.js";
+import { retryMachineCleanup } from "./machine-cleanup.js";
 import { pollMediaVideo } from "./media-video-poll.js";
 import type { MemoryProviderResolver } from "./memory-provider-factory.js";
 import type { MessagingDelivery } from "./messaging-delivery.js";
@@ -171,6 +172,10 @@ export function createBackgroundJobHandlers(deps: {
         );
       },
     ),
+    // The machine belongs to no Space: nothing stores it.
+    "computer.machine-cleanup": async (machine, _execution, attempt) => {
+      await retryMachineCleanup(deps, machine, attempt);
+    },
     // The previous release's jobs, drained once by this one.
     "messaging.credential-cleanup": async ({ installationId, ref }) => {
       await retrySecretCleanup(cleanupDeps, {

@@ -59,6 +59,7 @@ function handlers(overrides: Partial<BackgroundJobHandlers> = {}): BackgroundJob
     "secret.cleanup": vi.fn(async () => undefined),
     "messaging.credential-cleanup": vi.fn(async () => undefined),
     "connection.cleanup": vi.fn(async () => undefined),
+    "computer.machine-cleanup": vi.fn(async () => undefined),
     "team_chat.engage": vi.fn(async () => undefined),
     "team_chat.ambient": vi.fn(async () => undefined),
     "cloud_agent.poll": vi.fn(async () => undefined),

@@ -6,7 +6,10 @@ import {
   HISTORY_COMPACT_MAX_ATTEMPTS,
   historyCompactJob,
   historyCompactJobKey,
+  MACHINE_CLEANUP_MAX_ATTEMPTS,
   MESSAGING_SEND_MAX_ATTEMPTS,
+  machineCleanupJob,
+  machineCleanupJobKey,
   memoryPurgeHistoryJob,
   memoryRetainTurnJob,
   messagingSendJob,
@@ -38,6 +41,7 @@ function handlers(): BackgroundJobHandlers {
     "secret.cleanup": vi.fn(async () => undefined),
     "messaging.credential-cleanup": vi.fn(async () => undefined),
     "connection.cleanup": vi.fn(async () => undefined),
+    "computer.machine-cleanup": vi.fn(async () => undefined),
     "team_chat.engage": vi.fn(async () => undefined),
     "team_chat.ambient": vi.fn(async () => undefined),
     "cloud_agent.poll": vi.fn(async () => undefined),
@@ -150,6 +154,28 @@ describe("background job contracts", () => {
     await dispatchBackgroundJob(target, "connection.cleanup", app);
     expect(target["connection.cleanup"]).toHaveBeenCalledWith(app);
     expect(() => parseBackgroundJob("connection.cleanup", { ...app, userId: "" })).toThrow();
+  });
+
+  it("keys a machine's cleanup by provider and machine, so a new delete time replaces the old", async () => {
+    const machine = { provider: "provider-a", machineId: "machine-1", homeKey: "home-1" };
+    const backup = machineCleanupJob(machine, new Date(960_000));
+    const now = machineCleanupJob({ provider: "provider-a", machineId: "machine-1" }, new Date(0));
+    expect(backup).toMatchObject({
+      payload: machine,
+      availableAt: new Date(960_000),
+      maxAttempts: MACHINE_CLEANUP_MAX_ATTEMPTS,
+    });
+    expect(now.replaceKey).toBe(backup.replaceKey);
+    expect(backup.replaceKey).toBe(machineCleanupJobKey("provider-a", "machine-1"));
+    expect(machineCleanupJobKey("provider-a", "machine-2")).not.toBe(backup.replaceKey);
+    expect(machineCleanupJobKey("provider-b", "machine-1")).not.toBe(backup.replaceKey);
+
+    const target = handlers();
+    await dispatchBackgroundJob(target, "computer.machine-cleanup", machine);
+    expect(target["computer.machine-cleanup"]).toHaveBeenCalledWith(machine);
+    expect(() =>
+      parseBackgroundJob("computer.machine-cleanup", { provider: "provider-a", machineId: "" }),
+    ).toThrow();
   });
 
   it("validates and dispatches a typed job", async () => {

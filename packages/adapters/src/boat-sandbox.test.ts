@@ -32,7 +32,7 @@ import { ComputerBrowserProvider } from "./computer-browser.js";
 import { PREPARE_LINUX_DESKTOP } from "./linux-desktop.js";
 import { installPageBrowserCommand } from "./page-browser-install.js";
 import { isSandboxGoneError } from "./sandbox-errors.js";
-import { settleMachineCleanup, untilAborted } from "./sandbox-test-support.js";
+import { MachineRecords, settleMachineCleanup, untilAborted } from "./sandbox-test-support.js";
 
 // Polling waits advance a virtual clock, so state and deadline tests run instantly.
 vi.mock("node:timers/promises", async (importOriginal) => ({
@@ -2632,5 +2632,62 @@ describe("Boat computer snapshot", () => {
     expect(error).toBeUndefined();
     expect(remove).toHaveBeenCalledTimes(2);
     expect(left).toEqual([{ provider: "boat", machineId: "bx_fake1" }]);
+  });
+
+  it("records the snapshot build sandbox while it builds, and no longer once it is deleted", async () => {
+    const api = new FakeBoatApi();
+    api.savedSnapshots.clear();
+    const records = new MachineRecords();
+    const save = api.saveSavedSnapshot.bind(api);
+    let whileBuilding: ReturnType<MachineRecords["dueIn"]> = [];
+    vi.spyOn(api, "saveSavedSnapshot").mockImplementation((...args) => {
+      whileBuilding = records.dueIn();
+      return save(...args);
+    });
+    const provider = new BoatSandboxProvider(
+      { apiKey: "test-key", unreferencedMachines: records },
+      api,
+    );
+
+    await provider.buildComputerSnapshot();
+
+    expect(whileBuilding).toMatchObject([{ provider: "boat", machineId: "bx_fake1" }]);
+    // Past the longest a build may run, so the job never takes a sandbox a build still uses.
+    expect(whileBuilding[0]?.dueInMs).toBeGreaterThan(30 * 60_000);
+    expect(records.due.size).toBe(0);
+  });
+
+  it("hands a snapshot build sandbox it cannot delete to the records", async () => {
+    const api = new FakeBoatApi();
+    api.savedSnapshots.clear();
+    vi.spyOn(api, "deleteSandbox").mockRejectedValue(new Error("connection reset"));
+    const records = new MachineRecords();
+    const provider = new BoatSandboxProvider(
+      { apiKey: "test-key", unreferencedMachines: records },
+      api,
+    );
+
+    let endedAt = 0;
+    await settleMachineCleanup(async () => {
+      await provider.buildComputerSnapshot();
+      endedAt = Date.now();
+    });
+
+    expect(records.dueIn(endedAt)).toEqual([
+      { provider: "boat", machineId: "bx_fake1", dueInMs: 0 },
+    ]);
+  });
+
+  it("deletes a sandbox from its id alone, and counts one already gone as deleted", async () => {
+    const api = new FakeBoatApi();
+    const provider = new BoatSandboxProvider({ apiKey: "test-key" }, api);
+    const computer = await provider.provision({ botId: "bot-a", homePath: "/unused" }, context);
+    const machine = { provider: "boat", machineId: computer.providerRef };
+    const signal = AbortSignal.timeout(5_000);
+
+    await provider.deleteMachine(machine, signal);
+
+    expect(api.state(computer.providerRef)).toBeUndefined();
+    await expect(provider.deleteMachine(machine, signal)).resolves.toBeUndefined();
   });
 });
