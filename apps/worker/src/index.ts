@@ -62,7 +62,7 @@ import {
   withRunWorker,
   withSecretPersistence,
 } from "@rakazo/adapters";
-import { resolveSupervisorToken } from "@rakazo/core";
+import { abortableDelay, resolveSupervisorToken } from "@rakazo/core";
 import {
   createBoardEvents,
   createDb,
@@ -303,7 +303,10 @@ async function main() {
         await connectors.mcp.close();
         await connectors.installed.close();
         await bestEffort("disconnect database client", prisma.$disconnect());
-        await bestEffort("close database pool", pool.end());
+        // Once the job hosts have stopped, only work they gave up on can still hold a
+        // connection, such as Graphile's listener whose UNLISTEN never answered, so the
+        // wait is bounded; the process exits right after.
+        await Promise.race([bestEffort("close database pool", pool.end()), abortableDelay(10_000)]);
       } finally {
         await analytics?.flush();
         await shutdownPiTelemetry();

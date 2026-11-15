@@ -36,6 +36,7 @@ function handlers(): BackgroundJobHandlers {
     "messaging.reply": vi.fn(async () => undefined),
     "messaging.deliver": vi.fn(async () => undefined),
     "messaging.progress": vi.fn(async () => undefined),
+    "secret.cleanup": vi.fn(async () => undefined),
     "messaging.credential-cleanup": vi.fn(async () => undefined),
     "computer.machine-cleanup": vi.fn(async () => undefined),
     "team_chat.engage": vi.fn(async () => undefined),
@@ -110,6 +111,15 @@ describe("background job contracts", () => {
     const cause = new Error("rate limited");
     const error = new RetryJobLaterError(30_000, { cause });
     expect({ delayMs: error.delayMs, cause: error.cause }).toEqual({ delayMs: 30_000, cause });
+  });
+
+  it("validates and dispatches a secret cleanup by reference and kind", async () => {
+    const target = handlers();
+    const payload = { kind: "secret_row", recordId: "secret-a", ref: "remote-reference" } as const;
+    await dispatchBackgroundJob(target, "secret.cleanup", payload);
+    expect(target["secret.cleanup"]).toHaveBeenCalledWith(payload);
+    expect(() => parseBackgroundJob("secret.cleanup", { ...payload, kind: "unknown" })).toThrow();
+    expect(() => parseBackgroundJob("secret.cleanup", { ...payload, recordId: "" })).toThrow();
   });
 
   it("validates and dispatches retired messaging credential cleanup", async () => {

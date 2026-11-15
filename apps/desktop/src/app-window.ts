@@ -10,7 +10,7 @@ import { contextMenuTemplate } from "./context-menu.js";
 import { appWindowTargets, desktop } from "./desktop-state.js";
 import { t, withDetail } from "./i18n.js";
 import { reportDesktopError } from "./monitoring.js";
-import { oauthCallbackFrom } from "./oauth-callback.js";
+import { mcpOAuthCallbackFrom, oauthCallbackFrom } from "./oauth-callback.js";
 import {
   bundledRendererCandidates,
   bundledRendererHeaders,
@@ -24,7 +24,12 @@ import {
   servesBundledRenderer,
   sessionPartitionForServerUrl,
 } from "./setup-config.js";
-import { oauthPopupSessionPreferences, shouldOpenInAppPopup } from "./window-open.js";
+import {
+  mcpOAuthPartition,
+  mcpOAuthPopupServerId,
+  oauthPopupSessionPreferences,
+  shouldOpenInAppPopup,
+} from "./window-open.js";
 import { browserWindowOptions, developmentIconFile, warmWindowTtlMs } from "./window-options.js";
 
 export const PROBE_TIMEOUT_MS = 8_000;
@@ -173,9 +178,13 @@ export function createWindow(url: string, partition: string | null) {
   const appOrigin = targetOrigin ?? safeOrigin(url);
   win.webContents.setWindowOpenHandler(({ url: childUrl, frameName }) => {
     if (shouldOpenInAppPopup(appOrigin, childUrl, frameName)) {
+      // An MCP server signs in through a jar of its own so accounts never mix.
+      const mcpServerId = mcpOAuthPopupServerId(frameName);
       return {
         action: "allow",
-        overrideBrowserWindowOptions: oauthPopupWindowOptions(partition),
+        overrideBrowserWindowOptions: oauthPopupWindowOptions(
+          mcpServerId === null ? partition : mcpOAuthPartition(url, mcpServerId),
+        ),
       };
     }
     const external = safeExternalUrl(childUrl);
@@ -205,6 +214,7 @@ export function createWindow(url: string, partition: string | null) {
   // the user on a blank window holding the authorization code in a URL they
   // cannot read. Capture it here and hand it to the app instead.
   win.webContents.on("did-create-window", (popup, { frameName }) => {
+    const mcpServerId = mcpOAuthPopupServerId(frameName);
     const capture = (details: {
       preventDefault: () => void;
       url: string;
@@ -212,6 +222,19 @@ export function createWindow(url: string, partition: string | null) {
     }) => {
       // will-redirect can fire for iframes; only the top-level callback counts.
       if (details.isMainFrame === false) return;
+      if (mcpServerId !== null && appOrigin !== null) {
+        const mcpCallback = mcpOAuthCallbackFrom(details.url, appOrigin);
+        if (mcpCallback) {
+          details.preventDefault();
+          if (!win.isDestroyed())
+            win.webContents.send("desktop.mcpBrowser.callback", {
+              serverId: mcpServerId,
+              ...mcpCallback,
+            });
+          if (!popup.isDestroyed()) popup.close();
+          return;
+        }
+      }
       const callback = oauthCallbackFrom(details.url, {
         frameName,
         excludeOrigins: appOrigin !== null ? [appOrigin] : [],

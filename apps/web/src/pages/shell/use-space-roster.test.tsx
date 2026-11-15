@@ -29,7 +29,10 @@ vi.mock("../../lib/bootstrap", () => ({
   primeSpaceBootstrap: state.prime,
   discardPrimedBootstrap: () => {},
 }));
-vi.mock("../../lib/call-session", () => ({ getSnapshot: () => null }));
+vi.mock("../../lib/call-session", () => ({
+  getSnapshot: () => null,
+  isLeavingSession: () => false,
+}));
 vi.mock("../../lib/organizations", () => ({ leaveOrganization: async () => {} }));
 vi.mock("../../lib/query", () => ({
   queryClient: { getQueryData: () => undefined, setQueryData: () => {} },
@@ -58,9 +61,12 @@ let shell: {
 /** Settles the load of the other space, in the order the switches asked for it. */
 let spaceLoads: Array<{ finish: () => void; fail: () => void }>;
 
-function bootstrapOf(spaceId: string, botId?: string) {
+function bootstrapOf(spaceId: string, botId?: string, groupId?: string) {
   const { bots, groups } = server[spaceId]!;
   const botSpaceId = Object.keys(server).find((id) => botId && server[id]!.bots.includes(botId));
+  const groupSpaceId = Object.keys(server).find(
+    (id) => groupId && id !== spaceId && server[id]!.groups.includes(groupId),
+  );
   return {
     me: { spaceId, timezone: "UTC" },
     bots: bots.map((id) => ({ id, spaceId }) as Bot),
@@ -71,6 +77,7 @@ function bootstrapOf(spaceId: string, botId?: string) {
     spaces: [],
     routines: [],
     ...(botSpaceId ? { botSpaceId } : {}),
+    ...(groupSpaceId ? { groupSpaceId } : {}),
   } as unknown as AppBootstrap;
 }
 
@@ -166,6 +173,19 @@ async function rosterSignal() {
   });
 }
 
+/** Opens `path` with its first load held back; the returned function answers it. */
+async function openHoldingFirstLoad(path: string) {
+  let answer!: (bootstrap: AppBootstrap) => void;
+  state.take.mockReturnValueOnce(new Promise<AppBootstrap>((resolve) => (answer = resolve)));
+  await open(path);
+  const [botId, groupId] = state.take.mock.calls[0]!;
+  return () =>
+    act(async () => {
+      answer(bootstrapOf("personal", botId, groupId));
+      await vi.advanceTimersByTimeAsync(50);
+    });
+}
+
 async function finishLoadingSpace(index = 0, outcome: "finish" | "fail" = "finish") {
   await act(async () => {
     spaceLoads[index]![outcome]();
@@ -183,7 +203,9 @@ beforeEach(() => {
     work: { bots: ["sales", "support"], groups: ["standup"] },
   };
   spaceLoads = [];
-  state.take.mockImplementation(async (botId?: string) => bootstrapOf(state.space, botId));
+  state.take.mockImplementation(async (botId?: string, groupId?: string) =>
+    bootstrapOf(state.space, botId, groupId),
+  );
   state.prime.mockImplementation(
     (spaceId: string, botId?: string) =>
       new Promise<AppBootstrap>((resolve, reject) =>
@@ -321,4 +343,126 @@ describe("a roster re-read while the shell opens a chat in another space", () =>
     expect(state.space).toBe("club");
     expect(window.location.pathname).toBe("/app/chess");
   });
+});
+
+describe("a first load that answers after the user moved on", () => {
+  it.each([
+    ["a group", "/app/g/standup"],
+    ["a bot", "/app/sales"],
+    ["a group that is gone", "/app/g/retired"],
+    ["a bot that is gone", "/app/retired"],
+  ])("stays on the chat opened while a link to %s was loading", async (_, link) => {
+    const answerFirstLoad = await openHoldingFirstLoad(link);
+    act(() => void shell.navigate("/app/errands"));
+    await answerFirstLoad();
+    expect(state.prime).not.toHaveBeenCalled();
+    expect(window.location.pathname).toBe("/app/errands");
+    await rosterSignal();
+    expect(state.space).toBe("personal");
+    expect(window.location.pathname).toBe("/app/errands");
+  });
+
+  it.each([
+    ["a group", "/app/g/standup"],
+    ["a bot", "/app/sales"],
+  ])("opens a link to %s that the user came back to", async (_, link) => {
+    const answerFirstLoad = await openHoldingFirstLoad(link);
+    act(() => void shell.navigate("/app/errands"));
+    act(() => void shell.navigate(link));
+    await answerFirstLoad();
+    await finishLoadingSpace();
+    expect(state.space).toBe("work");
+    expect(window.location.pathname).toBe(link);
+  });
+
+  it.each([
+    ["a group in another space", "/app/g/standup"],
+    ["a bot in another space", "/app/sales"],
+    ["a group that is gone", "/app/g/retired"],
+    ["a bot that is gone", "/app/retired"],
+  ])("keeps a switch the user started while a link to %s was loading", async (_, link) => {
+    server.club = { bots: ["chess"], groups: [] };
+    const answerFirstLoad = await openHoldingFirstLoad(link);
+    act(() => shell.openSpaceChat("club", "/app/chess"));
+    await answerFirstLoad();
+    expect(state.prime).toHaveBeenCalledTimes(1);
+    expect(window.location.pathname).toBe(link);
+    await finishLoadingSpace();
+    expect(state.space).toBe("club");
+    expect(window.location.pathname).toBe("/app/chess");
+  });
+});
+
+describe("a link to a group chat in another space", () => {
+  it("opens the group in its space, keeping the link's query", async () => {
+    await open("/app/g/standup?message=m1");
+    expect(state.prime).toHaveBeenCalledWith("work", undefined, undefined);
+    expect(window.location.pathname).toBe("/app/g/standup");
+    await finishLoadingSpace();
+    expect(state.space).toBe("work");
+    expect(window.location.pathname + window.location.search).toBe("/app/g/standup?message=m1");
+  });
+
+  it("opens the group in its space when the signal came during the first load", async () => {
+    let firstLoad!: (bootstrap: AppBootstrap) => void;
+    state.take.mockReturnValueOnce(new Promise<AppBootstrap>((resolve) => (firstLoad = resolve)));
+    await open("/app/g/standup");
+    await rosterSignal();
+    await act(async () => {
+      firstLoad(bootstrapOf("personal", undefined, "standup"));
+      await vi.advanceTimersByTimeAsync(50);
+    });
+    expect(window.location.pathname).toBe("/app/g/standup");
+    await finishLoadingSpace();
+    expect(state.space).toBe("work");
+    expect(window.location.pathname).toBe("/app/g/standup");
+  });
+
+  it("opens the group in its space when the signal comes while that space loads", async () => {
+    await open("/app/g/standup");
+    await rosterSignal();
+    await rosterSignal();
+    expect(window.location.pathname).toBe("/app/g/standup");
+    await finishLoadingSpace();
+    expect(state.space).toBe("work");
+    expect(window.location.pathname).toBe("/app/g/standup");
+  });
+
+  it("moves off the group after the switch was given up", async () => {
+    await open("/app/g/standup");
+    act(() => void shell.navigate("/app/g/retired"));
+    await rosterSignal();
+    expect(window.location.pathname).toBe("/app/home");
+    await finishLoadingSpace();
+    expect(state.space).toBe("personal");
+    expect(window.location.pathname).toBe("/app/home");
+  });
+
+  it("moves off a group that no space of the user's has", async () => {
+    await open("/app/g/retired");
+    expect(state.prime).not.toHaveBeenCalled();
+    expect(state.space).toBe("personal");
+    expect(window.location.pathname).toBe("/app/home");
+  });
+
+  it("moves off the group when it is archived just after its space opened", async () => {
+    await open("/app/g/standup");
+    await finishLoadingSpace();
+    expect(state.space).toBe("work");
+    server.work!.groups = [];
+    await rosterSignal();
+    expect(window.location.pathname).toBe("/app/sales");
+    expect(state.space).toBe("work");
+  });
+
+  it.each(["finish", "fail"] as const)(
+    "moves off the group when its space cannot be selected (%s)",
+    async (outcome) => {
+      state.storageWritable = false;
+      await open("/app/g/standup");
+      await finishLoadingSpace(0, outcome);
+      expect(state.space).toBe("personal");
+      expect(window.location.pathname).toBe("/app/home");
+    },
+  );
 });

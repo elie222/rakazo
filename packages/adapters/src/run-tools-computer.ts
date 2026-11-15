@@ -337,7 +337,12 @@ export async function pageBrowserTool(ctx: RunContext, call: ToolCall) {
               const paymentWallet = deps.paymentWallet;
               if (!paymentWallet) return { error: "Card fills are unavailable here." };
               const resolved = await resolvePurchaseCardFill(
-                { prisma: deps.prisma, secretStore: deps.secretStore, paymentWallet },
+                {
+                  prisma: deps.prisma,
+                  secretStore: deps.secretStore,
+                  jobs: deps.jobs,
+                  paymentWallet,
+                },
                 run,
                 step.purchase,
                 step.field,
@@ -408,7 +413,12 @@ export async function pageBrowserTool(ctx: RunContext, call: ToolCall) {
               const paymentWallet = deps.paymentWallet;
               if (!paymentWallet) return { error: "Pay tokens are unavailable here." };
               const resolved = await resolvePurchasePayTokenFill(
-                { prisma: deps.prisma, secretStore: deps.secretStore, paymentWallet },
+                {
+                  prisma: deps.prisma,
+                  secretStore: deps.secretStore,
+                  jobs: deps.jobs,
+                  paymentWallet,
+                },
                 run,
                 step.purchase,
               );

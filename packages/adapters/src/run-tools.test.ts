@@ -245,6 +245,53 @@ describe("dispatchTool audit outcomes", () => {
     ]);
   });
 
+  it("records the connected account a connector call used", async () => {
+    const execute = vi.fn(async function* () {
+      yield { type: "result", data: { ok: true } };
+    });
+    const base = dispatchContext(false);
+    const ctx = { ...base, deps: { ...base.deps, connector: { execute } } };
+    const route = {
+      connectorId: "remote",
+      resourceId: "server-1",
+      toolName: "create_event",
+      connectionId: "connection-1",
+    };
+    ctx.tools.connector.set("create_event", { name: "create_event", route });
+    vi.mocked(gateToolCall).mockResolvedValueOnce({
+      call: {
+        name: "create_event",
+        args: {},
+        executionId: "call-1",
+        observer: undefined,
+        connectorCall: { tool: "create_event", args: {}, executionId: "call-1", route },
+        effectKey: "effect-create_event",
+        applied: { effect: { id: "effect-create_event" } },
+        nextApprovedTool: undefined,
+        bypassApproval: false,
+        claimedEffect: false,
+        persistEffectResult: async () => true,
+        finish: async (result: unknown) => result,
+        claimOrReturn: async () => undefined,
+      },
+    } as never);
+
+    await applyTool(ctx as never, "create_event", {}, "call-1");
+
+    expect(audited).toEqual([
+      {
+        tool: "create_event",
+        outcome: "success",
+        metadata: {
+          effectId: "effect-create_event",
+          autoApproved: false,
+          connectorId: "remote",
+          connectionId: "connection-1",
+        },
+      },
+    ]);
+  });
+
   it("records every owner-settings refusal of update_preferences as a failure", async () => {
     const ctx = dispatchContext(true);
     const first = await applyTool(

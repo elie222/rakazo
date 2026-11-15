@@ -871,6 +871,8 @@ export interface VoiceInfo {
 export interface SpeechClip {
   bytes: Uint8Array;
   mimeType: "audio/mpeg" | "audio/wav" | "audio/ogg";
+  /** The voice actually used, when the provider substituted one for the requested voice. */
+  voiceId?: string;
 }
 
 export interface VoiceCapabilities {
@@ -963,6 +965,13 @@ export interface BackgroundJobPayloads {
   "messaging.deliver": { runId?: string };
   /** The previous release's interim-message mirror; drained by the new delivery path. */
   "messaging.progress": { runId: string };
+  /**
+   * Backup for deleting one secret-store entry that nothing refers to any more. `kind` names what
+   * held the reference and `recordId` its record, so the job can confirm the entry is still
+   * unreferenced. `ref` is the store's reference to a remote entry, never a value.
+   */
+  "secret.cleanup": { kind: SecretCleanupKind; recordId: string; ref: string };
+  /** The previous release's `secret.cleanup` for a messaging installation. */
   "messaging.credential-cleanup": { installationId: string; ref: string };
   /** Deletes a provider machine once no stored computer points at it and none may still keep it. */
   "computer.machine-cleanup": UnreferencedMachine;
@@ -978,6 +987,16 @@ export interface BackgroundJobPayloads {
   /** Read an Expo push receipt; the token is identified by its digest, never stored. */
   "push.receipt": { userId: string; ticketId: string; tokenDigest: string };
 }
+
+/** What held a secret-store reference before it was replaced or dropped. */
+export type SecretCleanupKind =
+  | "secret_row"
+  | "messaging_installation"
+  | "deployment_computer_provider"
+  | "purchase_request"
+  | "purchase_card"
+  | "purchase_token"
+  | "payment_wallet";
 
 export type BackgroundJobName = keyof BackgroundJobPayloads;
 

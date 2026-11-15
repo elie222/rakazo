@@ -41,6 +41,7 @@ import { pollMediaVideo } from "./media-video-poll.js";
 import type { MemoryProviderResolver } from "./memory-provider-factory.js";
 import type { MessagingDelivery } from "./messaging-delivery.js";
 import { pollPurchase } from "./purchase-poll.js";
+import { retrySecretCleanup } from "./secret-cleanup.js";
 import { expireTaughtSkillTeaching } from "./teaching-session.js";
 import type { TeamChat } from "./team-chat.js";
 
@@ -102,6 +103,7 @@ export function createBackgroundJobHandlers(deps: {
   maxUploadSizeBytes?: number;
 }): BackgroundJobHandlers {
   const delivery = deps.messagingDelivery;
+  const cleanupDeps = { prisma: deps.prisma, secrets: deps.secretStore };
   const run = ({ runId }: { runId: string }) =>
     deps.prisma.run.findUnique({ where: { id: runId }, select: OWNER });
   const routine = ({ routineId }: { routineId: string }) =>
@@ -153,24 +155,21 @@ export function createBackgroundJobHandlers(deps: {
     "messaging.reply": async ({ runId }) => {
       await delivery?.deliverRun(runId);
     },
-    "messaging.credential-cleanup": async ({ installationId, ref }) => {
-      await runAsSystem("clean up a retired messaging credential", async () => {
-        const installation = await deps.prisma.messagingInstallation.findUnique({
-          where: { id: installationId },
-          select: { ciphertext: true },
-        });
-        if (installation?.ciphertext === ref) return;
-        await deps.secretStore.delete(ref, {
-          recordId: installationId,
-          signal: AbortSignal.timeout(10_000),
-        });
-      });
+    "secret.cleanup": async (cleanup) => {
+      await retrySecretCleanup(cleanupDeps, cleanup);
     },
     // The machine belongs to no Space: nothing stores it.
     "computer.machine-cleanup": async (machine, _execution, attempt) => {
       await retryMachineCleanup(deps, machine, attempt);
     },
     // The previous release's jobs, drained once by this one.
+    "messaging.credential-cleanup": async ({ installationId, ref }) => {
+      await retrySecretCleanup(cleanupDeps, {
+        kind: "messaging_installation",
+        recordId: installationId,
+        ref,
+      });
+    },
     "messaging.deliver": async ({ runId }) => {
       if (runId) await delivery?.deliverRun(runId);
       await delivery?.drainAll();
