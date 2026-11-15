@@ -383,6 +383,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["memory/exportMarkdown", {}],
       ["memory/remove"],
       ["memory/providerConfig"],
+      ["memory/providers"],
       ["memory/connectProvider"],
       ["memory/updateProvider"],
       ["memory/setDefaultScope"],

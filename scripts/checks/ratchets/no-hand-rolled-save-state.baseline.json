@@ -36,7 +36,6 @@
   "apps/web/src/pages/KnowledgeSection.tsx": 2,
   "apps/web/src/pages/LabsSettingsPanel.tsx": 1,
   "apps/web/src/pages/McpServersOverlay.tsx": 2,
-  "apps/web/src/pages/MemorySettingsOverlay.tsx": 1,
   "apps/web/src/pages/Paywall.tsx": 1,
   "apps/web/src/pages/PluginSubmissionsPanel.tsx": 1,
   "apps/web/src/pages/ScratchpadSection.tsx": 1,

@@ -1306,6 +1306,8 @@ export const SpaceMemoryConfigSchema = z.object({
   settings: z.record(z.string(), z.string()),
   defaultMemoryScope: MemoryScopeSchema,
   updatedAt: z.string(),
+  /** One line naming the connection, written by the provider. Absent from older servers. */
+  connectionLabel: z.string().optional(),
 });
 export type SpaceMemoryConfig = z.infer<typeof SpaceMemoryConfigSchema>;
 
