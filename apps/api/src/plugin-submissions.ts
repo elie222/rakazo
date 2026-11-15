@@ -30,6 +30,7 @@ import type { Context } from "hono";
 import { Hono } from "hono";
 import { readBoundedBody } from "./http-body.js";
 import { assertMcpRemoteEndpoint } from "./mcp-servers.js";
+import { rethrowUnlessPluginSourceFailed } from "./plugin-installs.js";
 import type { RouterDeps } from "./router.js";
 import { throttleKey, windowCounter } from "./window-counter.js";
 
@@ -268,7 +269,8 @@ export async function reviewPluginSubmission(
       source: row.source,
       signal,
       fetcher: deps.pluginRepoFetcher,
-    }).catch(() => {
+    }).catch((error) => {
+      rethrowUnlessPluginSourceFailed(error, signal);
       throw new ORPCError("BAD_REQUEST", {
         message: "Could not preview a supported plugin from this repository",
       });
