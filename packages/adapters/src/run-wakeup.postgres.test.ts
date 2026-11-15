@@ -17,7 +17,9 @@ import {
 } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import type { ExecutorDeps } from "./executor-deps.js";
 import { InMemoryRealtimeFanout } from "./realtime.js";
+import { claimRun, requeueComputerRun, startNextWaitingRun } from "./run-lifecycle.js";
 import { RunJobPublisher, RunStarter, RunWorkerHost } from "./run-wakeup.js";
 import { GraphileJobPublisher } from "./wakeup.js";
 
@@ -52,7 +54,13 @@ describePostgres("direct run dispatch (PostgreSQL)", () => {
     }
   });
   async function createRun(
-    data: { status?: string; wakeAt?: Date; leaseExpiresAt?: Date; trigger?: string } = {},
+    data: {
+      status?: string;
+      wakeAt?: Date;
+      leaseExpiresAt?: Date;
+      trigger?: string;
+      botId?: string;
+    } = {},
   ) {
     const { userId, spaceId, botId, threadId } = identity;
     const task = await system.task.create({
@@ -560,6 +568,64 @@ describePostgres("direct run dispatch (PostgreSQL)", () => {
     } finally {
       await host.stop();
     }
+  });
+
+  it("starts a run parked behind its bot's held computer when the computer is released, with no recovery scan", async () => {
+    const bot = await system.bot.create({
+      data: { spaceId: identity.spaceId, userId: identity.userId, name: "Parked", color: "ink" },
+    });
+    const holder = await createRun({ botId: bot.id, status: "running" });
+    const parked = await createRun({ botId: bot.id });
+    const starter = new RunStarter(new InMemoryRealtimeFanout());
+    const deps = {
+      prisma: system,
+      jobs: new RunJobPublisher(system, background(), starter),
+    } as unknown as ExecutorDeps;
+    const entered: string[] = [];
+    starter.attach({
+      "run.continue": async ({ runId }) => {
+        entered.push(runId);
+      },
+    } as BackgroundJobHandlers);
+    try {
+      const claimed = await claimRun(deps, parked, "worker");
+      await requeueComputerRun(deps, parked.id, "worker", claimed!.fence, null, false, true);
+      await startNextWaitingRun(deps, bot.id, holder.id);
+      await wait(() => expect(entered).toEqual([parked.id]));
+      const waiting = await system.run.findUniqueOrThrow({ where: { id: parked.id } });
+      expect(await claimRun(deps, waiting, "worker")).toBeDefined();
+    } finally {
+      await starter.stop();
+      await system.bot.delete({ where: { id: bot.id } });
+    }
+  });
+
+  it("leaves a run due when its takeover was answered while it was still pausing", async () => {
+    const run = await createRun({ status: "running" });
+    await system.run.update({
+      where: { id: run.id },
+      data: { leaseOwner: "worker", leaseFence: 1, checkpoint: "takeover" },
+    });
+    const attempt = await system.attempt.create({
+      data: { runId: run.id, fence: 1, status: "running" },
+    });
+    const paused = await runAsSystem("takeover pause fixture", () =>
+      createThreadEvents(db.prisma).pauseRunForTakeover({
+        spaceId: identity.spaceId,
+        threadId: identity.threadId,
+        botId: identity.botId,
+        runId: run.id,
+        attemptId: attempt.id,
+        leaseOwner: "worker",
+        leaseFence: 1,
+        reason: "fixture",
+      }),
+    );
+    expect(paused).toEqual({ continuationRunId: run.id });
+    const queued = await system.run.findUniqueOrThrow({ where: { id: run.id } });
+    expect(queued.status).toBe("queued");
+    expect(queued.wakeAt!.getTime()).toBeLessThanOrEqual(Date.now());
+    await system.run.update({ where: { id: run.id }, data: { status: "completed" } });
   });
 
   it("commits first response timing with output, once across retries, and rolls both back on failure", async () => {
