@@ -10,6 +10,7 @@ import type {
   VoiceVerifyResult,
 } from "@rakazo/adapter-kit";
 import {
+  ConnectionSetupError,
   DEFAULT_COMPATIBLE_STT_MODEL,
   DEFAULT_COMPATIBLE_TTS_MODEL,
   OPENAI_COMPATIBLE_PROVIDER_ID,
@@ -71,11 +72,18 @@ export interface OpenAiCompatibleVoiceSecret {
   sttModel: string;
 }
 
+/** Names the field a refused transcription URL came from; any other failure passes through. */
+function transcriptionUrlError(error: unknown): unknown {
+  return error instanceof ConnectionSetupError
+    ? new ConnectionSetupError(`Transcription server URL: ${error.message}`)
+    : error;
+}
+
 function modelIdOrDefault(value: string | undefined, fallback: string, label: string): string {
   const trimmed = value?.trim() ?? "";
   if (!trimmed) return fallback;
   if (trimmed.length > MAX_MODEL_ID_LENGTH || !MODEL_ID_PATTERN.test(trimmed)) {
-    throw new Error(`${label} model id is not valid.`);
+    throw new ConnectionSetupError(`${label} model id is not valid.`);
   }
   return trimmed;
 }
@@ -110,9 +118,7 @@ export function serializeOpenAiCompatibleVoiceSecret(
   try {
     sttUrl = sttInput ? assertAllowedOpenAiCompatibleUrl(sttInput, policy) : undefined;
   } catch (error) {
-    throw new Error(
-      `Transcription server URL: ${error instanceof Error ? error.message : String(error)}`,
-    );
+    throw transcriptionUrlError(error);
   }
   const sttBaseUrl = sttInput ? normalizeOpenAiCompatibleBaseUrl(sttInput) : undefined;
   const sameStt =
@@ -126,7 +132,7 @@ export function serializeOpenAiCompatibleVoiceSecret(
     : undefined;
   for (const key of [apiKey, sttApiKey]) {
     if (key && !API_KEY_PATTERN.test(key)) {
-      throw new Error("That API key has characters a key cannot contain.");
+      throw new ConnectionSetupError("That API key has characters a key cannot contain.");
     }
   }
   assertHttpsForKeyedOpenAiCompatibleUrl(url, apiKey);
@@ -134,9 +140,7 @@ export function serializeOpenAiCompatibleVoiceSecret(
     try {
       assertHttpsForKeyedOpenAiCompatibleUrl(sttUrl, sttApiKey);
     } catch (error) {
-      throw new Error(
-        `Transcription server URL: ${error instanceof Error ? error.message : String(error)}`,
-      );
+      throw transcriptionUrlError(error);
     }
   }
   const secret: OpenAiCompatibleVoiceSecret = {

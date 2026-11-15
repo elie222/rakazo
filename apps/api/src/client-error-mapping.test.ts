@@ -165,6 +165,44 @@ describe("domain refusals answered by the central mapping", () => {
     });
   });
 
+  it("answers an ended session exactly as a bare unauthorized answer", async () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
+
+    const mapped = await answer(new ClientError("UNAUTHORIZED", "Unauthorized"));
+
+    expect(mapped).toEqual(await answer(new ORPCError("UNAUTHORIZED")));
+    expect(mapped).toMatchObject({
+      status: 401,
+      body: { json: { code: "UNAUTHORIZED", status: 401, message: "Unauthorized" } },
+    });
+    expect(sink.events).toEqual([]);
+  });
+
+  it("answers a known outage as unavailable and still reports it with its cause", async () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
+    const outage = new ClientError("SERVICE_UNAVAILABLE", "Service Unavailable", undefined, {
+      cause: new Error("key service unreachable"),
+    });
+
+    const mapped = await answer(outage);
+
+    expect(mapped).toMatchObject({
+      status: 503,
+      body: { json: { code: "SERVICE_UNAVAILABLE", status: 503, message: "Service Unavailable" } },
+    });
+    expect(sink.events).toMatchObject([
+      {
+        level: "error",
+        message: "rpc fail failed",
+        error: { cause: { cause: { message: "key service unreachable" } } },
+      },
+    ]);
+    sink.events.length = 0;
+    expect(mapped).toEqual(await answer(new ORPCError("SERVICE_UNAVAILABLE")));
+  });
+
   it("reports a path that leaves the workspace as a server failure unless a route answers it", async () => {
     // The path may be one a computer provider listed, not one the caller typed.
     const sink = createTestSink();

@@ -1,6 +1,10 @@
 import { ORPCError } from "@orpc/server";
 import type { AdapterContext, SecretStore } from "@rakazo/adapter-kit";
-import { VoiceAccountError } from "@rakazo/adapter-kit";
+import {
+  isModelCredentialRejected,
+  isTransientModelError,
+  VoiceAccountError,
+} from "@rakazo/adapter-kit";
 import {
   createVoiceProvider,
   isModelConnectionVoiceSecret,
@@ -24,8 +28,8 @@ import type {
   VoiceCredential,
   VoiceStatus,
 } from "@rakazo/contracts";
-import { SettingsScopeSchema } from "@rakazo/contracts";
-import { speakable, toUtterances } from "@rakazo/core";
+import { ConnectionSetupError, SettingsScopeSchema } from "@rakazo/contracts";
+import { ClientError, speakable, toUtterances } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import {
   deleteUnreferencedCredentialSecret,
@@ -47,6 +51,7 @@ import {
 import { getLogger } from "@rakazo/logging";
 import { markExpectedFailure } from "@rakazo/logging/hono";
 import type { Context, Hono } from "hono";
+import { clientErrorStatus } from "./client-error-status.js";
 import { readBoundedBody } from "./http-body.js";
 import type { SpeechSummarizer } from "./speech-summary.js";
 
@@ -241,9 +246,8 @@ export function voiceCredentialPlaintext(input: {
       { allowPrivate: input.allowPrivateEndpoint },
     );
   } catch (error) {
-    throw new ORPCError("BAD_REQUEST", {
-      message: error instanceof Error ? error.message : "That server URL is not valid.",
-    });
+    if (error instanceof ConnectionSetupError) throw new ClientError("BAD_REQUEST", error.message);
+    throw error;
   }
 }
 
@@ -264,6 +268,15 @@ export async function loadDefaultVoiceCredential(
   signal?: AbortSignal,
 ) {
   return loadVoiceCredential(deps, actor, undefined, scope, signal);
+}
+
+/** The provider refused to renew the linked sign-in, or was down or too slow to answer. */
+function signInRenewalFailed(error: unknown): boolean {
+  return (
+    isTransientModelError(error) ||
+    isModelCredentialRejected(error) ||
+    (error instanceof Error && error.name === "TimeoutError")
+  );
 }
 
 /** Keep refresh failures and linked-connection refusals safe for display. */
@@ -402,18 +415,17 @@ export async function persistVoiceCredential(
       input.signal,
     );
   } catch (error) {
-    if (error instanceof VoiceAccountError) {
-      throw new ORPCError("BAD_REQUEST", { message: error.message });
-    }
-    if (input.signal?.aborted) throw error;
-    // A refresh that timed out or failed to reach the provider; its text can quote the provider.
+    if (error instanceof VoiceAccountError) throw new ClientError("BAD_REQUEST", error.message);
+    if (input.signal?.aborted || !signInRenewalFailed(error)) throw error;
+    // The failure's text can quote the provider, so only its kind is logged.
     getLogger().warn("voice could not use the model connection", {
       provider: input.provider,
       reason: error instanceof Error ? error.name : "unknown",
     });
-    throw new ORPCError("BAD_REQUEST", {
-      message: `Couldn't use the ${voiceCatalogEntry(input.provider)?.name ?? input.provider} connection from Models. Try again.`,
-    });
+    throw new ClientError(
+      "BAD_REQUEST",
+      `Couldn't use the ${voiceCatalogEntry(input.provider)?.name ?? input.provider} connection from Models. Try again.`,
+    );
   }
   const verified = await provider.verify(apiKey, voiceContext(actor, input.signal));
   if (!verified.ok) {
@@ -811,11 +823,8 @@ function optionalString(value: unknown): string | undefined {
 
 function decodeAudioBase64(value: string): Uint8Array {
   if (!value.trim()) throw new ORPCError("BAD_REQUEST", { message: "Recording is empty." });
-  try {
-    return new Uint8Array(Buffer.from(value, "base64"));
-  } catch {
-    throw new ORPCError("BAD_REQUEST", { message: "Recording is not valid audio." });
-  }
+  // Decoding skips what is not base64 rather than failing; an empty result is refused later.
+  return new Uint8Array(Buffer.from(value, "base64"));
 }
 
 /** Spent credit is 402; any other refusal is 403, never 401, which clients read as a lost session. */
@@ -829,6 +838,9 @@ function voiceHttpError(c: Context, error: unknown) {
   }
   if (error instanceof NoVoiceConfigured) {
     return c.json({ error: error.message }, 409);
+  }
+  if (error instanceof ClientError) {
+    return c.json({ error: error.message }, clientErrorStatus(error.kind));
   }
   if (error instanceof ORPCError) {
     const code = String(error.code ?? "BAD_REQUEST");
@@ -858,6 +870,7 @@ export function isVoiceProviderFailure(error: unknown) {
   return (
     error instanceof Error &&
     (Object.getPrototypeOf(error) === Error.prototype ||
+      error instanceof ConnectionSetupError ||
       error.name === "AbortError" ||
       error.name === "TimeoutError")
   );

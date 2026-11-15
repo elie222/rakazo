@@ -1,4 +1,4 @@
-import { MODEL_KEY_FORMAT_ERROR } from "@rakazo/contracts";
+import { ConnectionSetupError, MODEL_KEY_FORMAT_ERROR } from "@rakazo/contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SpaceCatalogAuth } from "./model-selection.js";
 import { defaultCatalogModelId, spaceCanRunCatalogModel } from "./model-selection.js";
@@ -57,6 +57,21 @@ describe("catalog provider authentication", () => {
       expect(fetchImpl).toHaveBeenCalledOnce();
     },
   );
+
+  it("raises a refused key and an untestable provider as setup errors", async () => {
+    await expect(
+      probeCatalogProviderModels(
+        { provider: "openrouter", apiKey: "fixture-key" },
+        async () => new Response("private upstream details", { status: 401 }),
+      ),
+    ).rejects.toBeInstanceOf(ConnectionSetupError);
+    await expect(
+      probeCatalogProviderModels({ provider: "openai-compatible", apiKey: "fixture-key" }),
+    ).rejects.toBeInstanceOf(ConnectionSetupError);
+    await expect(
+      verifyCatalogProviderApiKey({ provider: "openrouter", apiKey: "sk-fixture-ключ" }),
+    ).rejects.toBeInstanceOf(ConnectionSetupError);
+  });
 
   it.each([302, 429, 503])(
     "lets an upstream failure (%i) through as inconclusive",
