@@ -136,11 +136,14 @@ export function useThreadSync({
     computerBotIdRef,
     refreshComputerScreen,
     isOwnControlEvent,
+    isOwnAnswer,
   } = computerState;
   function readControlEventScreen(botId: string, event: ProductEvent) {
-    const own = isOwnControlEvent(botId, event.type, event.payload.leaseId);
-    if (!own && event.payload.answered !== true)
-      void refreshComputerScreen(botId).catch(() => undefined);
+    const own =
+      event.payload.answered === true
+        ? isOwnAnswer(botId)
+        : isOwnControlEvent(botId, event.type, event.payload.leaseId);
+    if (!own) void refreshComputerScreen(botId).catch(() => undefined);
     return own;
   }
 

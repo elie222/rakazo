@@ -79,6 +79,7 @@ function syncInput({
       computerBotIdRef: ref(null),
       refreshComputerScreen: vi.fn(async () => {}),
       isOwnControlEvent: vi.fn(() => false),
+      isOwnAnswer: vi.fn(() => false),
     },
     active: inGroup ? undefined : { id: "bot-1", name: "Bot", ...bot },
     activeGroup: inGroup ? { id: "group-1", name: "Group" } : undefined,
@@ -162,6 +163,7 @@ it.each([false, true])(
     const input = syncInput({ inGroup: true, get, commitSnapshot });
     input.computerState.computerBotIdRef.current = "bot-computer";
     vi.mocked(input.computerState.isOwnControlEvent).mockReturnValue(own);
+    vi.mocked(input.computerState.isOwnAnswer).mockReturnValue(own);
     function Probe() {
       useThreadSync(input);
       return null;
@@ -189,7 +191,7 @@ it.each([false, true])(
     );
     subscription.onEvent(released("bot-other"), snapshot);
     await flush();
-    expect(input.computerState.refreshComputerScreen).toHaveBeenCalledTimes(own ? 0 : 1);
+    expect(input.computerState.refreshComputerScreen).toHaveBeenCalledTimes(own ? 0 : 2);
     act(() => root.unmount());
   },
 );
@@ -213,6 +215,7 @@ it.each([
       commitSnapshot: vi.fn(),
     });
     vi.mocked(input.computerState.isOwnControlEvent).mockReturnValue(own);
+    vi.mocked(input.computerState.isOwnAnswer).mockReturnValue(own);
     function Probe() {
       useThreadSync(input);
       return null;

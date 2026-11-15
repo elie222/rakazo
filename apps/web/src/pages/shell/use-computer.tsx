@@ -67,6 +67,7 @@ export function useComputerState({
       }
     >(),
   );
+  const ownAnswers = useRef(new Map<string, number>());
   const [screenUrl, setScreenUrl] = useState<string | null>(null);
   const screenUrlRef = useRef(screenUrl);
   const [screenUrlLoadedBotId, setScreenUrlLoadedBotId] = useState<string | null>(null);
@@ -469,6 +470,7 @@ export function useComputerState({
 
   /** A take or release that failed changed nothing; an event it held back still gets its read. */
   async function forgetOwnControlEvent(botId: string) {
+    ownAnswers.current.delete(botId);
     ownControlChange.current.delete(botId);
     // Only the bot on screen; another bot's read would discard the shown bot's own read.
     if ((computerBotIdRef.current ?? activeBotId.current) === botId) {
@@ -493,6 +495,19 @@ export function useComputerState({
     }
     ownControlChange.current.delete(botId);
     return true;
+  }
+
+  function expectOwnAnswer(botId: string) {
+    for (const [id, until] of ownAnswers.current) {
+      if (Date.now() > until) ownAnswers.current.delete(id);
+    }
+    ownAnswers.current.set(botId, Date.now() + OWN_CONTROL_EVENT_MS);
+  }
+
+  function isOwnAnswer(botId: string) {
+    const until = ownAnswers.current.get(botId);
+    ownAnswers.current.delete(botId);
+    return until !== undefined && Date.now() <= until;
   }
 
   function refreshOwnControlScreen(botId: string) {
@@ -545,6 +560,8 @@ export function useComputerState({
     resetScreenReconnect,
     computerVisible,
     refreshComputerScreen,
+    expectOwnAnswer,
+    isOwnAnswer,
     refreshOwnControlScreen,
     expectOwnControlEvent,
     forgetOwnControlEvent,

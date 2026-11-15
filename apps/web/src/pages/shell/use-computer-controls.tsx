@@ -87,6 +87,7 @@ export function useComputerControls({
     computerVisible,
     refreshComputerScreen,
     refreshOwnControlScreen,
+    expectOwnAnswer,
     expectOwnControlEvent,
     forgetOwnControlEvent,
   } = state;
@@ -388,6 +389,7 @@ export function useComputerControls({
     try {
       const leaseId = computerRef.current?.controlLeaseId;
       if (leaseId) expectOwnControlEvent(botId, "computer.takeover.released", leaseId);
+      if (reason !== undefined) expectOwnAnswer(botId);
       await rpc.computer.release({ botId, reason }).catch(async (error) => {
         await forgetOwnControlEvent(botId);
         throw error;
@@ -414,6 +416,7 @@ export function useComputerControls({
     const leaseId =
       computerRef.current?.botId === botId ? computerRef.current.controlLeaseId : undefined;
     if (leaseId) expectOwnControlEvent(botId, "computer.takeover.released", leaseId);
+    expectOwnAnswer(botId);
     await rpc.computer.release({ botId, runId, reason }).catch(async (error) => {
       await forgetOwnControlEvent(botId);
       throw error;
