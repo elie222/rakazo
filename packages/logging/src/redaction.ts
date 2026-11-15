@@ -164,7 +164,10 @@ const KEY_START = String.raw`(?<![\w-])`;
 // A quoted key may be dotted and follows the structured rule for addresses.
 const QUOTED_KEY = String.raw`(?<=["'])(?=[\w.-]*?(?:${SECRET_NAMES}|email))[\w.-]+(?=${QUOTE})`;
 // A bare key goes on through dotted parts only before `=`: `name.ext:` is a file and a line.
-const BARE_KEY = String.raw`(?=[\w-]*?(?:${SECRET_NAMES}))[\w-]+(?:(?:\.[\w-]+){1,4}(?=\s*=))?`;
+// Before a colon, a word that ends as an error's name does, or the last part of a file path, is
+// not a key: `CredentialsProviderError: …` and `/etc/passwd: permission denied` are messages.
+const NOT_A_MESSAGE = String.raw`(?![\w-]*(?:Error|Exception|Warning)\s*:)(?!(?<=[\\/])[\w-]+\s*:)`;
+const BARE_KEY = String.raw`${NOT_A_MESSAGE}(?=[\w-]*?(?:${SECRET_NAMES}))[\w-]+(?:(?:\.[\w-]+){1,4}(?=\s*=))?`;
 // A flag starts its word.
 const FLAG = String.raw`--(?=[\w-]*?(?:${SECRET_NAMES}))[\w-]+[ \t]+`;
 // A value after a secret-named key: `key=value`, `"key": value`, `key => value` or `--key value`.

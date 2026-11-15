@@ -631,6 +631,22 @@ describe("redaction", () => {
       expect(redactSensitiveText(text)).toBe(text);
   });
 
+  it("leaves an error's name and a file path that hold a secret word as they are", () => {
+    for (const text of [
+      "CredentialsProviderError: Could not load credentials from any providers",
+      "TokenExpiredError: jwt expired",
+      "InvalidPasswordException: Incorrect username or password.",
+      "open /etc/passwd: permission denied",
+      "C:\\app\\secrets: access is denied",
+    ])
+      expect(redactSensitiveText(text)).toBe(text);
+    // A key before a colon is still a key.
+    expect(redactSensitiveText("password: hunter2secret")).toBe("password=[Redacted]");
+    expect(redactSensitiveText("credential: hunter2secret")).toBe("credential=[Redacted]");
+    expect(redactSensitiveText("db_passwd: hunter2secret")).toBe("db_passwd=[Redacted]");
+    expect(redactSensitiveText("/login?token=hunter2secret")).toBe("/login?token=[Redacted]");
+  });
+
   it("redacts a value and a path whole when a name in them holds a space", () => {
     expect(redactSensitiveText("PASSWORD_FILE=C:\\Users\\Jane Doe\\pw.txt")).toBe(
       "PASSWORD_FILE=[Redacted]",
