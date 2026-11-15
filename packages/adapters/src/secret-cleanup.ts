@@ -16,7 +16,14 @@ export type SecretCleanup = BackgroundJobPayloads["secret.cleanup"];
 export interface SecretCleanupDeps {
   prisma: Pick<
     PrismaClient,
-    "secret" | "messagingInstallation" | "deploymentSettings" | "purchase" | "paymentWallet"
+    | "secret"
+    | "botSecret"
+    | "vaultCredential"
+    | "integrationProviderConfig"
+    | "messagingInstallation"
+    | "deploymentSettings"
+    | "purchase"
+    | "paymentWallet"
   >;
   secrets: Pick<SecretStore, "delete" | "isRemote">;
   jobs: Pick<JobPublisher, "enqueue" | "enqueueIn" | "cancel">;
@@ -50,10 +57,20 @@ type Holders = SecretCleanupDeps["prisma"];
 /** The reference each kind of record holds now, which a cleanup must never delete. */
 const heldRef: Record<
   SecretCleanupKind,
-  (prisma: Holders, recordId: string) => Promise<string | null | undefined>
+  (prisma: Holders, recordId: string, ref: string) => Promise<string | null | undefined>
 > = {
   secret_row: async (prisma, id) =>
     (await prisma.secret.findUnique({ where: { id }, select: { ciphertext: true } }))?.ciphertext,
+  // Rows of these tables can share one reference, so any of them holding it counts.
+  secret_tables: async (prisma, _recordId, ref) => {
+    const where = { ciphertext: ref };
+    const rows =
+      (await prisma.secret.count({ where })) ||
+      (await prisma.botSecret.count({ where })) ||
+      (await prisma.vaultCredential.count({ where })) ||
+      (await prisma.integrationProviderConfig.count({ where }));
+    return rows ? ref : null;
+  },
   messaging_installation: async (prisma, id) =>
     (await prisma.messagingInstallation.findUnique({ where: { id }, select: { ciphertext: true } }))
       ?.ciphertext,
@@ -114,18 +131,27 @@ function backupJob(cleanup: SecretCleanup): BackgroundJob {
   return secretCleanupJob(cleanup, new Date(Date.now() + BACKUP_MS));
 }
 
+/** Whether a record holds the reference now, read as the system so every Space's rows count. */
+export async function secretIsHeld(
+  deps: Pick<SecretCleanupDeps, "prisma">,
+  { kind, recordId, ref }: SecretCleanup,
+): Promise<boolean> {
+  const held = await runAsSystem("check that nothing refers to a secret before deleting it", () =>
+    heldRef[kind](deps.prisma, recordId, ref),
+  );
+  return held === ref;
+}
+
 /**
  * Deletes a store entry unless its record refers to it again. The direct attempt and the job
  * share this, so neither deletes a reference a later write brought back into use.
  */
 async function deleteUnreferencedSecret(
   deps: Pick<SecretCleanupDeps, "prisma" | "secrets">,
-  { kind, recordId, ref }: SecretCleanup,
+  cleanup: SecretCleanup,
 ): Promise<void> {
-  const held = await runAsSystem("check that nothing refers to a secret before deleting it", () =>
-    heldRef[kind](deps.prisma, recordId),
-  );
-  if (held === ref) return;
+  if (await secretIsHeld(deps, cleanup)) return;
+  const { recordId, ref } = cleanup;
   await deps.secrets.delete(ref, { recordId, signal: AbortSignal.timeout(ATTEMPT_MS) });
 }
 

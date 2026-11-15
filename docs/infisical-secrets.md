@@ -56,7 +56,9 @@ Agent secret transaction retries write a fresh remote key per attempt. Failed
 remote writes attempt deletion with an independent two-second cleanup deadline.
 Cleanup is best effort and failures produce redacted warnings. Retry failed
 cleanup before revoking machine-identity access; there is no age-based pruning.
-Computer settings, messaging workspace credentials, payment wallet credentials,
+Credential rows, bot secrets, vault items and integration provider settings
+(the replacement, row deletion, parent deletion and rollback above), computer
+settings, messaging workspace credentials, payment wallet credentials,
 the sealed copies a purchase did not keep (a paid request, a card or a pay
 token) and the key an MCP sign-in refresh wrote when its save failed go further
 with a `secret.cleanup` background job. When a row stops
@@ -65,7 +67,9 @@ after the commit still deletes the key. For a new write that was never saved,
 the job is recorded just before the delete is attempted. The delete is tried at
 once; success removes the job and a failure leaves it to the queue's retries.
 Both the direct delete and the job first read the record and skip a ref it
-holds again. Only Infisical refs are recorded: an encrypted ref is the sealed
+holds again. Credential rows, bot secrets, vault items and integration provider
+settings can share a ref, so for them that read counts every row of all four
+tables, in every Space. Only Infisical refs are recorded: an encrypted ref is the sealed
 value itself, leaves with its row, and is never copied into a job. Every other
 path is best effort as described above: a failed delete is logged, not retried.
 A process crash between the external write and database persistence can leave an

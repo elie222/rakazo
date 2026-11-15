@@ -13,15 +13,28 @@ import {
 const REF = "remote:entry-1";
 const cleanup: SecretCleanup = { kind: "secret_row", recordId: "secret-a", ref: REF };
 
+const SECRET_TABLES = [
+  "secret",
+  "botSecret",
+  "vaultCredential",
+  "integrationProviderConfig",
+] as const;
+const anyRow: SecretCleanup = { kind: "secret_tables", recordId: "secret-a", ref: REF };
+
 /** Each kind of record holds `held`; `remote` is whether the store keeps values elsewhere. */
 function fixture(held: string | null = null, remote = true) {
   const row = (column: string) => vi.fn(async () => (held === null ? null : { [column]: held }));
+  /** How many of a secret table's rows hold the reference asked about. */
+  const count = () => vi.fn(async (_args: { where: { ciphertext: string } }) => 0);
   /** A purchase holds `held` in whichever of its sealed columns is read. */
   const purchase = vi.fn(async ({ select }: { select: Record<string, boolean> }) =>
     held === null ? null : Object.fromEntries(Object.keys(select).map((column) => [column, held])),
   );
   const prisma = {
-    secret: { findUnique: row("ciphertext") },
+    secret: { findUnique: row("ciphertext"), count: count() },
+    botSecret: { count: count() },
+    vaultCredential: { count: count() },
+    integrationProviderConfig: { count: count() },
     messagingInstallation: { findUnique: row("ciphertext") },
     deploymentSettings: { findUnique: row("computerProviderCipher") },
     purchase: { findUnique: purchase },
@@ -184,6 +197,34 @@ describe("secret cleanup", () => {
       }
     },
   );
+
+  it.each(SECRET_TABLES)(
+    "spares a reference a %s row holds, whichever row dropped it",
+    async (table) => {
+      const f = fixture();
+      f.prisma[table].count.mockResolvedValue(1);
+      await retrySecretCleanup(f.deps, anyRow);
+      await finishSecretCleanup(f.deps, anyRow);
+      expect(f.prisma[table].count).toHaveBeenCalledWith({ where: { ciphertext: REF } });
+      expect(f.secrets.delete).not.toHaveBeenCalled();
+    },
+  );
+
+  it("deletes a reference only after counting every secret table", async () => {
+    const f = fixture();
+    await retrySecretCleanup(f.deps, anyRow);
+    for (const table of SECRET_TABLES)
+      expect(f.prisma[table].count).toHaveBeenCalledWith({ where: { ciphertext: REF } });
+    expect(f.secrets.delete).toHaveBeenCalledWith(
+      REF,
+      expect.objectContaining({ recordId: "secret-a" }),
+    );
+    f.prisma.integrationProviderConfig.count.mockRejectedValueOnce(
+      new Error("database unavailable"),
+    );
+    await expect(retrySecretCleanup(f.deps, anyRow)).rejects.toThrow("database unavailable");
+    expect(f.secrets.delete).toHaveBeenCalledTimes(1);
+  });
 
   it("leaves a failed retry to the queue's own retries", async () => {
     const f = fixture();

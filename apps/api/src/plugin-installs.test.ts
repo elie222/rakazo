@@ -319,7 +319,10 @@ describe("confirmed plugin installation", () => {
     await expect(
       installPlugin(deps, actor, { source, name: "Example", config: {}, pluginDigest: digest }),
     ).rejects.toThrow("store unavailable");
-    expect(secrets.delete).toHaveBeenCalledWith("encrypted-header-material", "secret-test");
+    expect(secrets.delete).toHaveBeenCalledWith(
+      "encrypted-header-material",
+      expect.objectContaining({ recordId: "secret-test" }),
+    );
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 

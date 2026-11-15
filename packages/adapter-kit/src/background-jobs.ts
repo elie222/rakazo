@@ -63,6 +63,7 @@ const payloadSchemas = {
   "secret.cleanup": z.object({
     kind: z.enum([
       "secret_row",
+      "secret_tables",
       "messaging_installation",
       "deployment_computer_provider",
       "purchase_request",

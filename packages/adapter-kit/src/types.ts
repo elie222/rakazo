@@ -1003,6 +1003,7 @@ export interface BackgroundJobPayloads {
 /** What held a secret-store reference before it was replaced or dropped. */
 export type SecretCleanupKind =
   | "secret_row"
+  | "secret_tables"
   | "messaging_installation"
   | "deployment_computer_provider"
   | "purchase_request"
