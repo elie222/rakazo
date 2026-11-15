@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import type { ReactNode } from "react";
 import { act } from "react";
 import type { Root } from "react-dom/client";
@@ -135,19 +137,17 @@ async function type(value: string) {
 }
 
 it("confirms space creation once after the server accepts the trimmed name", async () => {
-  let finish!: (space: { id: string; name: string }) => void;
-  state.rpc.mockImplementation(
-    () =>
-      new Promise((resolve) => {
-        finish = resolve;
-      }),
-  );
+  let finish!: Deferred<{ id: string; name: string }>;
+  state.rpc.mockImplementation(() => {
+    finish = deferred<{ id: string; name: string }>();
+    return finish.promise;
+  });
   await type("  Work  ");
   await act(async () => container.querySelector("button")!.click());
   expect(state.rpc).toHaveBeenCalledWith("spaces/create", { name: "Work" }, sentFrom("space-1"));
   expect(state.hapticSuccess).not.toHaveBeenCalled();
   expect(container.querySelector("button")?.disabled).toBe(true);
-  await act(async () => finish({ id: "space-new", name: "Work" }));
+  await act(async () => finish.resolve({ id: "space-new", name: "Work" }));
   expect(state.hapticSuccess).toHaveBeenCalledOnce();
   expect(state.selectSpace).toHaveBeenCalledWith("space-new");
 });
@@ -184,18 +184,16 @@ it("does not confirm a space created after the session changes", async () => {
 });
 
 it("does not confirm space creation after its screen loses focus", async () => {
-  let finish!: (space: { id: string; name: string }) => void;
-  state.rpc.mockImplementation(
-    () =>
-      new Promise((resolve) => {
-        finish = resolve;
-      }),
-  );
+  let finish!: Deferred<{ id: string; name: string }>;
+  state.rpc.mockImplementation(() => {
+    finish = deferred<{ id: string; name: string }>();
+    return finish.promise;
+  });
   await type("Work");
   await act(async () => container.querySelector("button")!.click());
   expect(state.rpc).toHaveBeenCalledWith("spaces/create", { name: "Work" }, sentFrom("space-1"));
   state.focused = false;
-  await act(async () => finish({ id: "space-new", name: "Work" }));
+  await act(async () => finish.resolve({ id: "space-new", name: "Work" }));
   expect(state.hapticSuccess).not.toHaveBeenCalled();
   // The space exists by then, so it is still opened.
   expect(state.selectSpace).toHaveBeenCalledWith("space-new");

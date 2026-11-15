@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { BOT_COLORS, BOT_SETTINGS_SECTIONS } from "@rakazo/contracts";
+import { deferred } from "@rakazo/core/test-async";
 import * as Notifications from "expo-notifications";
 import type { ComponentProps, ReactNode } from "react";
 import { act, createElement, useEffect } from "react";
@@ -44,16 +45,6 @@ const offered = [
   { identifier: "voice-a", name: "Alice", language: "en-US" },
   { identifier: "voice-b", name: "Beth", language: "en-GB" },
 ];
-
-function deferredSave<T = void>() {
-  let resolve!: (value: T) => void;
-  let reject!: (reason: Error) => void;
-  const promise = new Promise<T>((resolveSave, rejectSave) => {
-    resolve = resolveSave;
-    reject = rejectSave;
-  });
-  return { promise, resolve, reject };
-}
 
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("./bot-voices", () => ({
@@ -523,7 +514,7 @@ describe("bot settings device voice menu", () => {
           createdAt: "2026-10-01T00:00:00Z",
         },
       ];
-      const restore = deferredSave<{ id: string; instructions: string }>();
+      const restore = deferred<{ id: string; instructions: string }>();
       mocks.rpc.mockReturnValue(restore.promise);
       await render();
       await act(async () =>
@@ -566,7 +557,7 @@ describe("bot settings device voice menu", () => {
         createdAt: "2026-10-01T00:00:00Z",
       },
     ];
-    const save = deferredSave();
+    const save = deferred();
     mocks.rpc.mockReturnValue(save.promise);
     await render();
     const history = container.querySelector('[data-menu="Instruction history"]')!;
@@ -863,7 +854,7 @@ describe("bot settings device voice menu", () => {
         },
       },
     ] as never);
-    const first = deferredSave<{ threadId: string }>();
+    const first = deferred<{ threadId: string }>();
     mocks.rpc.mockReturnValueOnce(first.promise);
     await render();
     const toggle = container.querySelector<HTMLButtonElement>(
@@ -905,7 +896,7 @@ describe("bot settings device voice menu", () => {
   });
 
   it("dismisses direct-chat notifications when muting before the bot loads", async () => {
-    const loading = deferredSave();
+    const loading = deferred();
     mocks.loadBot.mockReturnValueOnce(loading.promise);
     mocks.rpc.mockResolvedValueOnce({ threadId: "thread-fixture" });
     vi.mocked(Notifications.getPresentedNotificationsAsync).mockResolvedValue([
@@ -956,7 +947,7 @@ describe("bot settings device voice menu", () => {
   });
 
   it("queues notifications and ignores an older failure before saving the latest choice", async () => {
-    const first = deferredSave();
+    const first = deferred();
     mocks.rpc.mockReturnValueOnce(first.promise);
     await render();
     const toggle = container.querySelector<HTMLButtonElement>(
@@ -989,8 +980,8 @@ describe("bot settings device voice menu", () => {
   ])(
     "serializes name edits (first fails: $firstFails, latest fails: $latestFails)",
     async ({ firstFails, latestFails }) => {
-      const first = deferredSave();
-      const last = deferredSave();
+      const first = deferred();
+      const last = deferred();
       mocks.rpc.mockReturnValueOnce(first.promise).mockReturnValueOnce(last.promise);
       await render();
       const edit = async (value: string) => {
@@ -1084,8 +1075,8 @@ describe("bot settings device voice menu", () => {
   });
 
   it("keeps the switch and Save enabled while saving and coalesces rapid toggles", async () => {
-    const first = deferredSave();
-    const last = deferredSave();
+    const first = deferred();
+    const last = deferred();
     mocks.rpc.mockReturnValueOnce(first.promise).mockReturnValueOnce(last.promise);
     await render();
     const toggle = container.querySelector<HTMLButtonElement>('[aria-label="Manage other bots"]')!;
@@ -1116,8 +1107,8 @@ describe("bot settings device voice menu", () => {
   it.each([false, true])(
     "waits for the full bot management queue before leaving (failure: %s)",
     async (fails) => {
-      const first = deferredSave();
-      const last = deferredSave();
+      const first = deferred();
+      const last = deferred();
       let fleetCalls = 0;
       mocks.rpc.mockImplementation((_procedure: string, input: { fleetManagement?: boolean }) =>
         input.fleetManagement === undefined
@@ -1208,7 +1199,7 @@ describe("bot settings device voice menu", () => {
   });
 
   it("coalesces a queued value matching the confirmed save", async () => {
-    const first = deferredSave();
+    const first = deferred();
     mocks.rpc.mockReturnValueOnce(first.promise);
     await render();
     const toggle = container.querySelector<HTMLButtonElement>('[aria-label="Manage other bots"]')!;
@@ -1298,8 +1289,8 @@ describe("bot settings device voice menu", () => {
         ...offered,
         { identifier: "voice-c", name: "Clara", language: "en-US" },
       ]);
-      const first = deferredSave();
-      const latest = deferredSave();
+      const first = deferred();
+      const latest = deferred();
       mocks.setVoiceForBot.mockReturnValueOnce(first.promise).mockReturnValueOnce(latest.promise);
       await render();
       const actions = () => [...menu()!.querySelectorAll("button")];

@@ -1,3 +1,4 @@
+import { flush } from "@rakazo/core/test-async";
 import { beforeEach, expect, it, vi } from "vitest";
 
 // Storage that outlives a restart: the keychain and the saved outbox.
@@ -64,8 +65,6 @@ vi.mock("./model-settings", () => ({ askToAddModel: () => {} }));
 vi.mock("./i18n", () => ({ t: (text: string) => text }));
 vi.mock("./user-error", () => ({ errorText: (_: unknown, fallback: string) => fallback }));
 
-const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
-
 /** A message that could not be sent yet, as the outbox saves it. */
 function waiting() {
   return {
@@ -87,7 +86,7 @@ async function launch() {
   const warning = await import("./unsent-send-warning");
   const session = await import("./session");
   const stop = sends.startUnsentSends();
-  await settle();
+  await flush();
   return { ...warning, ...session, stop };
 }
 

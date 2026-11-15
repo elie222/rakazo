@@ -1,3 +1,4 @@
+import { deferred } from "@rakazo/core/test-async";
 import * as SecureStore from "expo-secure-store";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type * as LastBot from "./last-bot";
@@ -70,16 +71,13 @@ async function stall(operation: "write" | "delete") {
       key === "rakazo.last_bot_id" ? new Promise<void>(() => {}) : remove(key),
     );
   } else {
-    let started!: () => void;
-    const writing = new Promise<void>((resolve) => {
-      started = resolve;
-    });
+    const writing = deferred();
     vi.mocked(SecureStore.setItemAsync).mockImplementationOnce(() => {
-      started();
+      writing.resolve();
       return new Promise<void>(() => {});
     });
     void lastBot.saveLastBotId("unfinished", "space-a");
-    await writing;
+    await writing.promise;
   }
 }
 

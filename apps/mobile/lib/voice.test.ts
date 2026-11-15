@@ -1,4 +1,6 @@
 import { MAX_VOICE_AUDIO_BYTES, VOICE_RESPONSE_TIMEOUT_MS } from "@rakazo/core";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred, flush } from "@rakazo/core/test-async";
 import { createAudioPlayer, setAudioModeAsync, setIsAudioActiveAsync } from "expo-audio";
 import * as SecureStore from "expo-secure-store";
 import * as Speech from "expo-speech";
@@ -416,12 +418,12 @@ describe("hosted voice playback controls", () => {
       await waitFor(() => calls === 2);
       expect(ControllableAudio.instances).toHaveLength(1);
 
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      await flush();
       expect(unhandled).toEqual([]);
 
       firstAudio.onended?.();
       await expect(outcome).resolves.toBe("Offline.");
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      await flush();
       expect(unhandled).toEqual([]);
     } finally {
       process.off("unhandledRejection", onUnhandled);
@@ -637,15 +639,14 @@ describe("hosted voice playback controls", () => {
   });
 
   it("does not play the next queued message when Stop lands while it is preparing", async () => {
-    let releasePrepare: (() => void) | undefined;
+    let releasePrepare: Deferred | undefined;
     let prepareCalls = 0;
     vi.mocked(rpc).mockImplementation(async (proc, body) => {
       if (proc === "aiConsent/status") return { version: "2026-09-14", recipients: [] } as never;
       prepareCalls += 1;
       if (prepareCalls === 2) {
-        await new Promise<void>((resolve) => {
-          releasePrepare = resolve;
-        });
+        releasePrepare = deferred();
+        await releasePrepare.promise;
       }
       const text = (body as { text?: string } | undefined)?.text ?? "";
       return { ready: true, utterances: [text] } as never;
@@ -663,7 +664,7 @@ describe("hosted voice playback controls", () => {
 
     stopVoicePlayback();
     expect(getVoicePlaybackState().status).toBe("idle");
-    releasePrepare?.();
+    releasePrepare?.resolve();
     for (let step = 0; step < 20; step++) await Promise.resolve();
     if (ControllableAudio.instances.length > 1) ControllableAudio.instances[1]!.onended?.();
 
@@ -1107,7 +1108,7 @@ describe("call audio", () => {
 
 async function flushDeviceSpeechImport() {
   for (let i = 0; i < 5; i++) await Promise.resolve();
-  await new Promise((resolve) => setTimeout(resolve, 0));
+  await flush();
 }
 
 describe("on-device speech", () => {
@@ -1365,11 +1366,8 @@ describe("on-device speech", () => {
   });
 
   it("awaits Speech.stop before speaking and skips if a newer session started during stop", async () => {
-    let releaseStop: () => void = () => undefined;
-    const stopPending = new Promise<void>((resolve) => {
-      releaseStop = resolve;
-    });
-    vi.mocked(Speech.stop).mockReturnValue(stopPending);
+    const stopPending = deferred();
+    vi.mocked(Speech.stop).mockReturnValue(stopPending.promise);
     vi.mocked(Speech.speak).mockImplementation((_text, options) => options?.onDone?.());
 
     const first = speakWithDeviceVoice("Hello there.");
@@ -1378,7 +1376,7 @@ describe("on-device speech", () => {
 
     const second = speakWithDeviceVoice("Different message.");
     await flushDeviceSpeechImport();
-    releaseStop();
+    stopPending.resolve();
     await flushDeviceSpeechImport();
 
     await expect(first).resolves.toBe(true);
