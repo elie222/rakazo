@@ -357,18 +357,18 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
       // breaking migration notice, a fatal job write), and during a relaunch there is no
       // runner yet. The supervise loop settles only once the current runner's promise does,
       // which waits for every job that runner claimed, so the stop waits for both.
-      const runnerStop = Promise.all([
-        this.runner?.stop(),
-        this.superviseTask?.catch(() => undefined),
-      ]);
+      const runnerStopped = this.runner?.stop();
+      const runnerStop = Promise.allSettled([runnerStopped, this.superviseTask]);
       const finished = await Promise.race([
         runnerStop.then(() => true),
         abandoned.then(() => false),
       ]);
+      // Surfaces a failed runner stop, but only once its jobs have settled.
+      if (finished) await runnerStopped;
       // The drain deadline failed the hung handlers. Their failure writes unlock those jobs for
       // another worker, so they get the idle bound to land.
       if (!finished && gaveUpOnWork) {
-        await Promise.race([runnerStop.catch(() => undefined), this.sleep(idleMs)]);
+        await Promise.race([runnerStop, this.sleep(idleMs)]);
       }
     } finally {
       this.onWorkChanged = undefined;

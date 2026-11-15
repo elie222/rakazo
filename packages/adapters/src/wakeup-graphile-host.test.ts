@@ -832,6 +832,43 @@ describe("GraphileJobWorkerHost runner lifecycle", () => {
     }
   });
 
+  it("waits for a running job before surfacing a failed runner stop", async () => {
+    vi.useFakeTimers();
+    const failure = new Error("fixture stop failure");
+    const graphile = mockRunner(async () => {
+      throw failure;
+    });
+    run.mockResolvedValueOnce(graphile.runner);
+    const host = new GraphileJobWorkerHost({} as Pool, {
+      concurrency: 1,
+      idleStopTimeoutMs: IDLE_MS,
+      drainTimeoutMs: DRAIN_MS,
+    });
+    const release = deferred();
+    const target = handlers();
+    target["computer.sleep"] = async () => {
+      await release.promise;
+    };
+    try {
+      await host.start(target);
+      const dispatched = run.mock.calls[0]![0].taskList["computer.sleep"](
+        { computerId: "saving" },
+        helpers,
+      );
+      const stopping = host.stop();
+      const stopped = settles(stopping);
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(stopped.settled).toBe(false);
+      release.resolve();
+      await dispatched;
+      graphile.resolveLife();
+      await expect(stopping).rejects.toBe(failure);
+    } finally {
+      release.resolve();
+      graphile.resolveLife();
+    }
+  });
+
   it("stops an idle host within the idle bound when Graphile's own shutdown stalls", async () => {
     vi.useFakeTimers();
     run.mockResolvedValueOnce(selfStoppingRunner().runner);
