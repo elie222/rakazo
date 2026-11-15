@@ -1,58 +1,261 @@
 import { randomUUID } from "node:crypto";
-import type { SandboxProvider } from "@rakazo/adapter-kit";
-import type { PrismaClient } from "@rakazo/db";
-import { asSystem, createDb } from "@rakazo/db";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { retryMachineCleanup } from "./machine-cleanup.js";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import type {
+  AdapterContext,
+  ComputerRef,
+  UnreferencedMachine,
+  UnreferencedMachineRecords,
+} from "@rakazo/adapter-kit";
+import { machineCleanupJobKey } from "@rakazo/adapter-kit";
+import type { PrismaClient, ThreadEvents } from "@rakazo/db";
+import {
+  asSystem,
+  createDb,
+  provisionMessagingIdentity,
+  runAsSystem,
+  runAsTenant,
+} from "@rakazo/db";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { provisionComputer } from "./computer-lifecycle.js";
+import { FakeSandboxProvider } from "./fake-sandbox.js";
+import { LocalAgentHomeStore } from "./home.js";
+import { machineCleanupRecords, retryMachineCleanup } from "./machine-cleanup.js";
+import { recordUnreferencedMachine } from "./sandbox-cleanup.js";
+import { GraphileJobPublisher } from "./wakeup.js";
 
 const url = process.env.DATABASE_URL;
 const describePostgres = process.env.VERIFY_DATABASE === "1" && url ? describe : describe.skip;
 
+/** The fake provider, recording each machine it creates as a remote provider does. */
+class RecordingSandbox extends FakeSandboxProvider {
+  readonly deleteMachine = vi.fn(async (machine: UnreferencedMachine) => {
+    this.boxes.delete(machine.machineId);
+  });
+  private readonly records: UnreferencedMachineRecords;
+
+  constructor(records: UnreferencedMachineRecords) {
+    super();
+    this.records = records;
+  }
+
+  override async provision(
+    request: { botId: string; homePath: string },
+    context: AdapterContext,
+  ): Promise<ComputerRef> {
+    const ref = await super.provision(request, context);
+    if (ref.fresh)
+      await recordUnreferencedMachine(this.records, {
+        provider: ref.kind,
+        machineId: ref.providerRef,
+        homeKey: request.botId,
+      });
+    return ref;
+  }
+}
+
 describePostgres("machine cleanup (PostgreSQL)", () => {
-  const id = randomUUID();
-  const machine = { provider: "fake", machineId: `${id}-machine`, homeKey: id };
+  const address = `machines-${randomUUID()}@example.test`;
   let db: ReturnType<typeof createDb>;
-  let system: PrismaClient;
+  let prisma: PrismaClient;
+  let jobs: GraphileJobPublisher;
+  let identity: Awaited<ReturnType<typeof provisionMessagingIdentity>>;
+  let computerId: string;
+  let machine: UnreferencedMachine;
+  let key: string;
+  let dataDir: string;
+  let sandbox: RecordingSandbox;
+
+  const row = () => prisma.computer.findUniqueOrThrow({ where: { id: computerId } });
+  const queued = async () =>
+    (await db.pool.query("select 1 from graphile_worker._private_jobs where key = $1", [key]))
+      .rowCount === 1;
+  const cleanup = () => retryMachineCleanup({ prisma: db.prisma, sandbox }, machine);
+  // As a run starts it: scoped to its Space, with the queue the deployment uses.
+  const start = () =>
+    runAsTenant({ spaceId: identity.spaceId, userId: identity.userId }, () =>
+      provisionComputer(
+        {
+          prisma: db.prisma,
+          sandbox,
+          home: new LocalAgentHomeStore(dataDir),
+          jobs,
+          events: { append: vi.fn() } as unknown as ThreadEvents,
+          dataDir,
+        },
+        computerId,
+        {
+          operationId: "start",
+          traceId: "start",
+          spaceId: identity.spaceId,
+          userId: identity.userId,
+          botId: identity.botId,
+          signal: new AbortController().signal,
+        },
+      ),
+    );
 
   beforeAll(async () => {
     db = createDb(url!);
-    system = asSystem(db.prisma);
-    await system.user.create({
-      data: { id, name: "Machine Owner", email: `${id}@example.test`, emailVerified: false },
+    prisma = asSystem(db.prisma);
+    jobs = new GraphileJobPublisher(db.pool, db.prisma);
+    identity = await runAsSystem("machine cleanup fixture", () =>
+      provisionMessagingIdentity(
+        db.prisma,
+        { provider: "email", address },
+        { signupsEnabled: undefined, signupAllowlist: undefined },
+      ),
+    );
+    const bot = await prisma.bot.findUniqueOrThrow({ where: { id: identity.botId } });
+    computerId = bot.computerId!;
+    const { homeKey } = await row();
+    machine = { provider: "fake", machineId: `fake-${homeKey}`, homeKey };
+    key = machineCleanupJobKey(machine.provider, machine.machineId);
+  });
+
+  beforeEach(async () => {
+    dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-machine-cleanup-"));
+    sandbox = new RecordingSandbox(machineCleanupRecords(jobs));
+    await prisma.computerExecutionLease.deleteMany({ where: { computerId } });
+    await prisma.computer.update({
+      where: { id: computerId },
+      data: { kind: "fake", state: "stopped", providerRef: null, restorePending: false },
     });
-    await system.organization.create({
-      data: { id, name: "Machines", slug: id, createdAt: new Date() },
-    });
-    await system.space.create({ data: { id, organizationId: id, name: "Machines" } });
-    await system.computer.create({
-      data: { id, spaceId: id, userId: id, scopeKey: id, homeKey: id, kind: "fake" },
-    });
+    await jobs.cancel(key);
+  });
+
+  afterEach(async () => {
+    vi.useRealTimers();
+    sandbox.close();
+    await rm(dataDir, { recursive: true, force: true });
   });
 
   afterAll(async () => {
     if (!db) return;
-    await system.organization.deleteMany({ where: { id } });
-    await system.user.deleteMany({ where: { id } });
+    await jobs.cancel(key).catch(() => undefined);
+    await jobs.close();
+    await prisma.messagingIdentity.deleteMany({ where: { address } });
+    if (identity) {
+      await prisma.organization.deleteMany({ where: { id: identity.spaceId } });
+      await prisma.user.deleteMany({ where: { id: identity.userId } });
+    }
     await db.prisma.$disconnect();
     await db.pool.end();
   });
 
   it("waits out the start, keeps the machine a computer stores, and deletes one no computer kept", async () => {
-    const deleteMachine = vi.fn(async () => undefined);
-    const deps = { prisma: db.prisma, sandbox: { deleteMachine } as unknown as SandboxProvider };
+    await prisma.computer.update({ where: { id: computerId }, data: { state: "booting" } });
+    await expect(cleanup()).rejects.toThrow("still in progress");
 
-    await system.computer.update({ where: { id }, data: { state: "booting" } });
-    await expect(retryMachineCleanup(deps, machine)).rejects.toThrow("still in progress");
-
-    await system.computer.update({
-      where: { id },
+    await prisma.computer.update({
+      where: { id: computerId },
       data: { state: "running", providerRef: machine.machineId },
     });
-    await retryMachineCleanup(deps, machine);
-    expect(deleteMachine).not.toHaveBeenCalled();
+    await cleanup();
+    expect(sandbox.deleteMachine).not.toHaveBeenCalled();
 
-    await system.computer.update({ where: { id }, data: { providerRef: `${id}-replacement` } });
-    await retryMachineCleanup(deps, machine);
-    expect(deleteMachine).toHaveBeenCalledWith(machine, expect.any(AbortSignal));
+    await prisma.computer.update({
+      where: { id: computerId },
+      data: { providerRef: `${machine.machineId}-replacement` },
+    });
+    await cleanup();
+    expect(sandbox.deleteMachine).toHaveBeenCalledWith(machine, expect.any(AbortSignal));
+  });
+
+  it("leaves no job behind a start that succeeds, and a late job still deletes nothing", async () => {
+    // The record is there while the start still runs.
+    vi.spyOn(sandbox, "prepare").mockImplementationOnce(async () => {
+      expect(await queued()).toBe(true);
+    });
+
+    await start();
+
+    expect(await row()).toMatchObject({ state: "running", providerRef: machine.machineId });
+    expect(await queued()).toBe(false);
+
+    // A record whose removal was missed: the job reads that a computer stores the machine.
+    await recordUnreferencedMachine(machineCleanupRecords(jobs), machine);
+    await cleanup();
+    expect(sandbox.deleteMachine).not.toHaveBeenCalled();
+    expect(sandbox.boxes.has(machine.machineId)).toBe(true);
+  });
+
+  it("keeps the job behind a start that fails, and the job finds the machine deleted", async () => {
+    vi.spyOn(sandbox, "prepare").mockRejectedValueOnce(new Error("setup failed"));
+
+    await expect(start()).rejects.toThrow("setup failed");
+
+    expect(await row()).toMatchObject({ state: "error", providerRef: null });
+    expect(sandbox.boxes.has(machine.machineId)).toBe(false);
+    expect(await queued()).toBe(true);
+    await cleanup();
+    expect(sandbox.deleteMachine).toHaveBeenCalledWith(machine, expect.any(AbortSignal));
+  });
+
+  it("drops the job when a failed start stores the machine it could not delete", async () => {
+    vi.spyOn(sandbox, "prepare").mockRejectedValueOnce(new Error("setup failed"));
+    vi.spyOn(sandbox, "destroy").mockRejectedValueOnce(new Error("provider deletion failed"));
+
+    await expect(start()).rejects.toThrow();
+
+    expect(await row()).toMatchObject({
+      state: "error",
+      providerRef: machine.machineId,
+      restorePending: true,
+    });
+    expect(await queued()).toBe(false);
+    expect(sandbox.boxes.has(machine.machineId)).toBe(true);
+  });
+
+  it("ends a start nobody holds any more, which then cannot store the machine", async () => {
+    // The start claims the computer twenty minutes ago and never gets past setting it up.
+    await prisma.computer.update({
+      where: { id: computerId },
+      data: { updatedAt: new Date(Date.now() - 30 * 60_000) },
+    });
+    vi.useFakeTimers({ toFake: ["Date"], now: Date.now() - 20 * 60_000 });
+    let settingUp!: () => void;
+    const reached = new Promise<void>((resolve) => {
+      settingUp = resolve;
+    });
+    let finishSetup!: () => void;
+    vi.spyOn(sandbox, "prepare").mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishSetup = resolve;
+          settingUp();
+        }),
+    );
+    const stalled = start();
+    stalled.catch(() => undefined);
+    await reached;
+    vi.useRealTimers();
+
+    // A live execution lease means its worker may only be slow.
+    const lease = await prisma.computerExecutionLease.create({
+      data: {
+        computerId,
+        botId: identity.botId,
+        runId: randomUUID(),
+        expiresAt: new Date(Date.now() + 60_000),
+      },
+    });
+    await expect(cleanup()).rejects.toThrow("still in progress");
+    expect(await row()).toMatchObject({ state: "booting" });
+    expect(sandbox.deleteMachine).not.toHaveBeenCalled();
+
+    await prisma.computerExecutionLease.update({
+      where: { id: lease.id },
+      data: { expiresAt: new Date(Date.now() - 1) },
+    });
+    await cleanup();
+    expect(await row()).toMatchObject({ state: "error", providerRef: null, restorePending: true });
+    expect(sandbox.deleteMachine).toHaveBeenCalledWith(machine, expect.any(AbortSignal));
+
+    // The start it ended comes back to life: its writes no longer land.
+    finishSetup();
+    await expect(stalled).rejects.toThrow();
+    expect(await row()).toMatchObject({ state: "error", providerRef: null, restorePending: true });
   });
 });

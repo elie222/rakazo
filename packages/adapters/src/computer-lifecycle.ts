@@ -8,6 +8,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import {
   computerControlExpireJobKey,
+  machineCleanupJobKey,
   SandboxAllowanceUsedError,
   SandboxRateLimitError,
   SandboxSizeUnavailableError,
@@ -162,6 +163,34 @@ async function hasLiveForeignRunLease(
     select: { id: true },
   });
   return live !== null;
+}
+
+/**
+ * Ends a boot nobody holds any more, as that boot's own failure handling would have. The rule
+ * is the one a later start uses to take such a boot over: a claim older than an execution-lease
+ * TTL, no run still heartbeating on the computer, and no live execution lease. The write
+ * compares the claim stamp, so the start it ends can no longer store a machine or change the
+ * row, and no lock is held for whatever the caller does next. The computer is left to be
+ * restored, as by any start that takes over a boot it cannot see the progress of. A boot under
+ * maintenance is left to the update that reserved it. False while the boot may be live.
+ */
+export async function endAbandonedBoot(
+  prisma: PrismaClient,
+  computer: { id: string; updatedAt: Date },
+): Promise<boolean> {
+  if (!isAbandonedLifecycleClaim(computer.updatedAt)) return false;
+  if (await hasLiveForeignRunLease(prisma, computer.id)) return false;
+  const ended = await prisma.computer.updateMany({
+    where: {
+      id: computer.id,
+      state: "booting",
+      updatedAt: computer.updatedAt,
+      maintenanceId: null,
+      ...heldByNobodyElse(null),
+    },
+    data: { state: "error", restorePending: true },
+  });
+  return ended.count === 1;
 }
 
 export class ComputerBusyError extends Error {
@@ -570,35 +599,42 @@ export async function provisionComputer(
     const continued =
       existing.state === "running" && existing.runningSince && !ref.started && !replacement;
     const runningSince = continued ? existing.runningSince! : new Date();
-    const activated = await deps.prisma.computer.updateMany({
-      where: {
-        id: computerId,
-        state: "booting",
-        updatedAt: claimStamp,
-        ...previousRef,
-        maintenanceId: existing.maintenanceId ?? null,
-        ...(context.botId ? { bots: { some: { id: context.botId, archivedAt: null } } } : {}),
-      },
-      data: {
-        state: "running",
-        providerRef: ref.providerRef,
-        kind: ref.kind,
-        restorePending: false,
-        runningSince,
-        ...(!reconnecting
-          ? {
-              controlHolder: activeControl ? "user" : controlHolder,
-              ...(!activeControl
-                ? {
-                    controlLeaseId: null,
-                    controlUserId: null,
-                    controlLeaseExpiresAt: null,
-                    controlBotId: null,
-                  }
-                : {}),
-            }
-          : {}),
-      },
+    // One write stores the machine and leaves "booting", and the same transaction drops the
+    // record that would delete the machine later: from here the computer answers for it.
+    const activated = await deps.prisma.$transaction(async (tx) => {
+      const stored = await tx.computer.updateMany({
+        where: {
+          id: computerId,
+          state: "booting",
+          updatedAt: claimStamp,
+          ...previousRef,
+          maintenanceId: existing.maintenanceId ?? null,
+          ...(context.botId ? { bots: { some: { id: context.botId, archivedAt: null } } } : {}),
+        },
+        data: {
+          state: "running",
+          providerRef: ref.providerRef,
+          kind: ref.kind,
+          restorePending: false,
+          runningSince,
+          ...(!reconnecting
+            ? {
+                controlHolder: activeControl ? "user" : controlHolder,
+                ...(!activeControl
+                  ? {
+                      controlLeaseId: null,
+                      controlUserId: null,
+                      controlLeaseExpiresAt: null,
+                      controlBotId: null,
+                    }
+                  : {}),
+              }
+            : {}),
+        },
+      });
+      if (stored.count === 1)
+        await deps.jobs.cancelIn(tx, machineCleanupJobKey(ref.kind, ref.providerRef));
+      return stored;
     });
     if (activated.count !== 1) {
       throw busy("activation_lost");
@@ -633,33 +669,41 @@ export async function provisionComputer(
         ? await rollbackProvisionedComputer(deps.sandbox, provisioned, context, error)
         : undefined;
     const unsafeStop = isSandboxUnsafeStopError(error) || isSandboxUnsafeStopError(rollbackError);
+    // A machine that could not be rolled back stays the computer's, to be resumed or replaced.
+    const kept =
+      (!reconnecting || (unsafeStop && provisioned?.fresh === true)) && rollbackError
+        ? provisioned
+        : undefined;
     try {
-      await deps.prisma.computer.updateMany({
-        where: {
-          id: computerId,
-          state: "booting",
-          updatedAt: claimStamp,
-          ...previousRef,
-          maintenanceId: existing.maintenanceId ?? null,
-        },
-        data: {
-          state:
-            (reconnecting || rollbackError) && unsafeStop
-              ? "quarantined"
-              : reconnecting && !existing.restorePending && !incomplete
-                ? "running"
-                : "error",
-          ...((!reconnecting || (unsafeStop && provisioned?.fresh === true)) &&
-          rollbackError &&
-          provisioned
-            ? {
-                providerRef: provisioned.providerRef,
-                kind: provisioned.kind,
-                restorePending: replaces(provisioned),
-              }
-            : {}),
-          ...(incomplete ? { restorePending: true } : {}),
-        },
+      await deps.prisma.$transaction(async (tx) => {
+        const recorded = await tx.computer.updateMany({
+          where: {
+            id: computerId,
+            state: "booting",
+            updatedAt: claimStamp,
+            ...previousRef,
+            maintenanceId: existing.maintenanceId ?? null,
+          },
+          data: {
+            state:
+              (reconnecting || rollbackError) && unsafeStop
+                ? "quarantined"
+                : reconnecting && !existing.restorePending && !incomplete
+                  ? "running"
+                  : "error",
+            ...(kept
+              ? {
+                  providerRef: kept.providerRef,
+                  kind: kept.kind,
+                  restorePending: replaces(kept),
+                }
+              : {}),
+            ...(incomplete ? { restorePending: true } : {}),
+          },
+        });
+        // Stored, so its record goes too. One this write did not store keeps its record.
+        if (kept && recorded.count === 1)
+          await deps.jobs.cancelIn(tx, machineCleanupJobKey(kept.kind, kept.providerRef));
       });
     } catch (recordError) {
       throw new AggregateError(
