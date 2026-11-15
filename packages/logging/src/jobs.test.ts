@@ -109,6 +109,29 @@ describe("job correlation envelope", () => {
       level: "error",
     });
   });
+  it("logs a rejection that only asks for a later try as waiting, not as an error", async () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-worker", sinks: [sink] }));
+    const later = new Error("try again later");
+    await expect(
+      runCorrelatedJob({
+        name: "connection.cleanup",
+        payload: {},
+        run: async () => {
+          throw later;
+        },
+        waiting: (error) => error === later,
+      }),
+    ).rejects.toBe(later);
+    expect(sink.events).toEqual([
+      expect.objectContaining({
+        message: "job.completed",
+        level: "info",
+        "job.outcome": "waiting",
+      }),
+    ]);
+  });
+
   it("keeps failed queue outcomes without reporting an already reported cause twice", async () => {
     const sink = createTestSink();
     const logger = createLogger({ service: "rakazo-worker", sinks: [sink] });

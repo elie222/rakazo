@@ -38,6 +38,9 @@ const CONNECTION_CLEANUP_BUSY_RETRY_MS = 15_000;
 /** The soonest a cleanup looks again at accounts a sibling's unfinished connection may still own. */
 const CONNECTION_CLEANUP_UNDECIDED_RETRY_MS = 60_000;
 
+/** The soonest a cleanup looks again for credentials its connector does not have right now. */
+const CONNECTION_CLEANUP_NO_CREDENTIALS_RETRY_MS = 10 * 60_000;
+
 /**
  * How one attempt ended. Only `done` (removed, or nothing left to remove) lets the backup job
  * go: `busy` means another flow holds the scope, `undecided` that a sibling's unfinished
@@ -149,14 +152,41 @@ export function leftoverAuthorization(
 }
 
 /**
- * Cancel an authorization request, or revoke the account it became. The provider holding
- * nothing for the ref is success; failing to ask it rejects, so the caller retries.
+ * Whether an active row of the scope has saved this authorization request or account. Every
+ * removal by id asks this first, holding the scope's provider lock, so the answer cannot change
+ * before the provider call: begin, complete and revoke save their references under that lock.
+ * It rejects when the database cannot be asked, which is never "not in use".
  */
-export async function dropAuthorization(
+export async function authorizationInUse(
+  tx: Pick<Prisma.TransactionClient, "connection">,
+  scope: ConnectionScope,
+  ref: string,
+): Promise<boolean> {
+  const referring = await tx.connection.count({
+    where: {
+      spaceId: scope.spaceId,
+      userId: scope.userId,
+      connectorId: scope.connectorId,
+      provider: scope.provider,
+      providerRef: ref,
+      status: { in: ACTIVE_STATUSES },
+    },
+  });
+  return referring > 0;
+}
+
+/**
+ * Cancel an authorization request, or revoke the account it became, unless an active row has
+ * saved it. The caller holds the scope's provider lock. The provider holding nothing for the
+ * ref is success; failing to ask it, or the database, rejects, so the caller retries.
+ */
+async function dropAuthorization(
+  tx: Pick<Prisma.TransactionClient, "connection">,
   connector: ManagedConnectorProvider,
-  target: { spaceId: string; userId: string; provider: string; ref: string },
+  target: ConnectionScope & { ref: string },
   context: AdapterContext,
 ): Promise<void> {
+  if (await authorizationInUse(tx, target, target.ref)) return;
   // Cancelling by id keeps the authorization URL from creating an untracked account later;
   // an account id is resolved only when the connector cannot cancel.
   if (connector.cancelAuthorizationRequest) {
@@ -172,7 +202,10 @@ export async function dropAuthorization(
         target.spaceId,
       )
     : target.ref;
-  if (accountId) await connector.revoke(accountId, context);
+  if (!accountId) return;
+  // A row may have saved the account under the id the request resolved to.
+  if (accountId !== target.ref && (await authorizationInUse(tx, target, accountId))) return;
+  await connector.revoke(accountId, context);
 }
 
 /**
@@ -180,7 +213,7 @@ export async function dropAuthorization(
  * holds the provider lock, so a concurrent complete cannot save an account id this deletes.
  * `undecided` while a sibling has not saved its account id yet: any of them may be its own.
  */
-export async function dropUnreferencedAccounts(
+async function dropUnreferencedAccounts(
   tx: Pick<Prisma.TransactionClient, "connection">,
   connector: ManagedConnectorProvider,
   scope: ConnectionScope,
@@ -246,8 +279,25 @@ async function whileScopeIsFree<T>(
 }
 
 /**
- * The direct attempt at removing what a begin whose result was not saved left behind. Rejects
- * when the provider or the database could not be asked.
+ * One removal, by the caller holding the scope's provider lock: the authorization or account the
+ * cleanup names unless an active row has saved it, or the app's accounts no active row references.
+ */
+export async function dropLeftover(
+  tx: Pick<Prisma.TransactionClient, "connection">,
+  connector: ManagedConnectorProvider,
+  cleanup: ConnectionCleanup,
+  context: AdapterContext,
+): Promise<"done" | "undecided"> {
+  const { ref } = cleanup;
+  if (!ref) return dropUnreferencedAccounts(tx, connector, cleanup, context);
+  await dropAuthorization(tx, connector, { ...cleanup, ref }, context);
+  return "done";
+}
+
+/**
+ * The direct attempt at a removal, made exactly as the backup job makes it: under the scope's
+ * provider lock, and never for something an active row has saved. Rejects when the provider or
+ * the database could not be asked.
  */
 export async function dropLeftoverAuthorization(
   prisma: PrismaClient,
@@ -255,13 +305,8 @@ export async function dropLeftoverAuthorization(
   leftover: ConnectionCleanup,
   operationId: string,
 ): Promise<ConnectionCleanupOutcome> {
-  const { ref } = leftover;
-  if (ref) {
-    await dropAuthorization(connector, { ...leftover, ref }, cleanupContext(leftover, operationId));
-    return "done";
-  }
   return whileScopeIsFree(prisma, leftover, (tx) =>
-    dropUnreferencedAccounts(tx, connector, leftover, cleanupContext(leftover, operationId)),
+    dropLeftover(tx, connector, leftover, cleanupContext(leftover, operationId)),
   );
 }
 
@@ -278,6 +323,8 @@ function cleanupReferences(cleanup: ConnectionCleanup) {
 /**
  * The backup job. It finishes only when the removal happened or nothing is left to remove;
  * every other ending rejects, so the queue retries it, or reschedules it under its own key.
+ * An attempt that is only waiting (busy scope, undecided accounts, credentials not there right
+ * now) is not reported as a failure; a failed one is, and so is the job giving up.
  */
 export async function retryConnectionCleanup(
   deps: {
@@ -300,28 +347,13 @@ export async function retryConnectionCleanup(
   }
   const prepared = await prepareManagedConnectorForTransaction(configured);
   const connector = prepared.provider;
-  // Credentials that are missing now may be saved again, so this attempt fails and is retried.
-  if (!connector) throw new Error("connection cleanup has no credentials for its connector");
+  // Credentials that are missing now may be saved again, so the job waits for them.
+  if (!connector) throw new RetryJobLaterError(CONNECTION_CLEANUP_NO_CREDENTIALS_RETRY_MS);
   const outcome = await whileScopeIsFree(deps.prisma, payload, async (tx) => {
-    if (prepared.recheck && !(await prepared.recheck(tx)))
-      throw new Error("Integration credentials changed during connection cleanup");
-    const context = cleanupContext(payload, "connection.cleanup");
-    const { ref } = payload;
-    if (!ref) return dropUnreferencedAccounts(tx, connector, payload, context);
+    // Credentials saved between preparing them and taking the lock: the next try has the new ones.
+    if (prepared.recheck && !(await prepared.recheck(tx))) return "busy" as const;
     // A flow that ran since the failure may have saved this account on a row, which owns it now.
-    const adopted = await tx.connection.findFirst({
-      where: {
-        spaceId: payload.spaceId,
-        userId: payload.userId,
-        connectorId: payload.connectorId,
-        provider: payload.provider,
-        providerRef: ref,
-        status: { in: ACTIVE_STATUSES },
-      },
-      select: { id: true },
-    });
-    if (!adopted) await dropAuthorization(connector, { ...payload, ref }, context);
-    return "done" as const;
+    return dropLeftover(tx, connector, payload, cleanupContext(payload, "connection.cleanup"));
   });
   if (outcome === "busy") {
     // Not a failed attempt: replacing the job under its key starts it afresh, so a scope that

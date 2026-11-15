@@ -208,6 +208,17 @@ export function jobQueueLogger(outage: DatabaseOutage): Logger {
     const log = consoleLogFactory(scope);
     return (level, message, meta) => {
       const error = (meta as { error?: unknown } | undefined)?.error ?? new Error(message);
+      // A job that asked for a later try failed nothing, unless that was its last one.
+      const job = (meta as { job?: { attempts: number; max_attempts: number } } | undefined)?.job;
+      if (
+        level === "error" &&
+        error instanceof RetryJobLaterError &&
+        job &&
+        job.attempts < job.max_attempts
+      ) {
+        log("info", message, meta);
+        return;
+      }
       const fromDatabaseConnection = !(meta as { failure?: unknown } | undefined)?.failure;
       if (
         (level === "error" || level === "warning") &&
@@ -348,6 +359,8 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
                 payload: unpacked.payload,
                 correlation: unpacked.correlation,
                 run: () => dispatchJob(handlers, name, unpacked.payload, execution, attempt),
+                waiting: (error) =>
+                  error instanceof RetryJobLaterError && attempt.number < attempt.max,
               });
             const job = { name };
             this.running.add(job);

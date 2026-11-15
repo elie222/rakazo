@@ -15,6 +15,7 @@ import { createLogger, createTestSink, installLogger, wrapJobPayload } from "@ra
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createBackgroundJobHandlers } from "./background-job-handlers.js";
 import {
+  dropLeftoverAuthorization,
   leftoverAuthorization,
   providerScopeKey,
   recordConnectionCleanupAttemptsExhausted,
@@ -31,7 +32,8 @@ const request = { ...scope, ref: "request-1" };
 
 function cleanupJob(connector: Record<string, unknown> | undefined) {
   const connection = {
-    findFirst: vi.fn(async (): Promise<{ id: string } | null> => null),
+    // Active rows that have saved the authorization being removed.
+    count: vi.fn(async (_args: { where: { providerRef: string } }) => 0),
     findMany: vi.fn(async (): Promise<Array<{ providerRef: string | null }>> => []),
   };
   const integrationProviderConfig = { findUnique: vi.fn(async (): Promise<null> => null) };
@@ -102,14 +104,41 @@ describe("connection.cleanup", () => {
   it("leaves an account that a row has saved since the failure", async () => {
     const cancelAuthorizationRequest = vi.fn(async () => undefined);
     const { run, connection } = cleanupJob({ cancelAuthorizationRequest });
-    connection.findFirst.mockResolvedValue({ id: "connection-2" });
+    connection.count.mockResolvedValue(1);
 
-    await run(request);
-    expect(connection.findFirst).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({ ...scope, providerRef: "request-1" }),
-      }),
+    await expect(run(request)).resolves.toBeUndefined();
+    expect(connection.count).toHaveBeenCalledWith({
+      where: {
+        ...scope,
+        providerRef: "request-1",
+        status: { in: ["connected", "pending", "error"] },
+      },
+    });
+    expect(cancelAuthorizationRequest).not.toHaveBeenCalled();
+  });
+
+  it("leaves an account a row has saved under the id its request resolved to", async () => {
+    const revoke = vi.fn(async () => undefined);
+    const resolveConnectedAccountId = vi.fn(async (): Promise<string | undefined> => "account-1");
+    const { run, connection } = cleanupJob({ revoke, resolveConnectedAccountId });
+    connection.count.mockImplementation(async ({ where }) =>
+      where.providerRef === "account-1" ? 1 : 0,
     );
+
+    await expect(run(request)).resolves.toBeUndefined();
+    expect(revoke).not.toHaveBeenCalled();
+
+    connection.count.mockResolvedValue(0);
+    await run(request);
+    expect(revoke).toHaveBeenCalledWith("account-1", expect.anything());
+  });
+
+  it("fails, removing nothing, when it cannot read which rows have saved the authorization", async () => {
+    const cancelAuthorizationRequest = vi.fn(async () => undefined);
+    const { run, connection } = cleanupJob({ cancelAuthorizationRequest });
+    connection.count.mockRejectedValue(new Error("database unavailable"));
+
+    await expect(run(request)).rejects.toThrow("database unavailable");
     expect(cancelAuthorizationRequest).not.toHaveBeenCalled();
   });
 
@@ -273,10 +302,10 @@ describe("connection.cleanup", () => {
     expect(jobs.enqueue).not.toHaveBeenCalled();
   });
 
-  it("fails, so the queue retries, while its connector cannot be prepared, and removes once it can", async () => {
+  it("stays queued while its connector cannot be prepared, and removes once it can", async () => {
     const cancelAuthorizationRequest = vi.fn(async () => undefined);
     const fallbacks: { composio?: ManagedConnectorProvider } = {};
-    const { prisma, errors } = cleanupJob(undefined);
+    const { prisma, jobs, errors } = cleanupJob(undefined);
     const settings = new IntegrationProviderSettings(
       prisma as unknown as PrismaClient,
       {} as SecretStore,
@@ -288,7 +317,7 @@ describe("connection.cleanup", () => {
       .find((provider) => provider.describe().id === "composio");
     const handlers = createBackgroundJobHandlers({
       prisma,
-      jobs: { enqueue: vi.fn() },
+      jobs,
       connectors: { managed: () => configured },
     } as unknown as Parameters<typeof createBackgroundJobHandlers>[0]);
     const cleanup = { ...request, connectorId: "composio" };
@@ -298,13 +327,79 @@ describe("connection.cleanup", () => {
       new Error("database unavailable"),
     );
     await expect(handlers["connection.cleanup"](cleanup)).rejects.toThrow("database unavailable");
-    await expect(handlers["connection.cleanup"](cleanup)).rejects.toThrow("no credentials");
+    // Missing credentials are waited for, which the queue does not report as a failed try.
+    await expect(handlers["connection.cleanup"](cleanup)).rejects.toBeInstanceOf(
+      RetryJobLaterError,
+    );
     expect(cancelAuthorizationRequest).not.toHaveBeenCalled();
     expect(errors()).toEqual([]);
 
+    // Credentials saved between preparing them and taking the lock: tried again soon, with them.
     fallbacks.composio = { cancelAuthorizationRequest } as unknown as ManagedConnectorProvider;
+    prisma.integrationProviderConfig.findUnique
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ ciphertext: "saved-meanwhile" } as never);
+    await expect(handlers["connection.cleanup"](cleanup)).resolves.toBeUndefined();
+    expect(cancelAuthorizationRequest).not.toHaveBeenCalled();
+    expect(jobs.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ payload: cleanup, availableAt: expect.any(Date) }),
+    );
+
     await expect(handlers["connection.cleanup"](cleanup)).resolves.toBeUndefined();
     expect(cancelAuthorizationRequest).toHaveBeenCalledWith("request-1", expect.anything());
+    expect(errors()).toEqual([]);
+  });
+});
+
+describe("a direct removal", () => {
+  function directRemoval(connector: Record<string, unknown>) {
+    const { prisma, connection, tx } = cleanupJob(connector);
+    const run = () =>
+      dropLeftoverAuthorization(
+        prisma as unknown as PrismaClient,
+        connector as unknown as ManagedConnectorProvider,
+        request,
+        "connections.begin",
+      );
+    return { run, connection, tx, prisma };
+  }
+
+  it("takes the scope's lock and reads which rows refer to the authorization before removing it", async () => {
+    const cancelAuthorizationRequest = vi.fn(async () => undefined);
+    const { run, connection, tx } = directRemoval({ cancelAuthorizationRequest });
+
+    await expect(run()).resolves.toBe("done");
+    const [locked, read, removed] = [
+      tx.$queryRaw.mock.invocationCallOrder[0]!,
+      connection.count.mock.invocationCallOrder[0]!,
+      cancelAuthorizationRequest.mock.invocationCallOrder[0]!,
+    ];
+    expect(locked).toBeLessThan(read);
+    expect(read).toBeLessThan(removed);
+  });
+
+  it("never removes an authorization an active row has saved", async () => {
+    const cancelAuthorizationRequest = vi.fn(async () => undefined);
+    const revoke = vi.fn(async () => undefined);
+    for (const connector of [{ cancelAuthorizationRequest }, { revoke }]) {
+      const { run, connection } = directRemoval(connector);
+      connection.count.mockResolvedValue(1);
+      await expect(run()).resolves.toBe("done");
+    }
+    expect(cancelAuthorizationRequest).not.toHaveBeenCalled();
+    expect(revoke).not.toHaveBeenCalled();
+  });
+
+  it("removes nothing while another flow holds the scope, or when the rows cannot be read", async () => {
+    const cancelAuthorizationRequest = vi.fn(async () => undefined);
+    const busy = directRemoval({ cancelAuthorizationRequest });
+    busy.tx.$queryRaw.mockResolvedValueOnce([{ locked: false }]);
+    await expect(busy.run()).resolves.toBe("busy");
+
+    const unreadable = directRemoval({ cancelAuthorizationRequest });
+    unreadable.connection.count.mockRejectedValue(new Error("database unavailable"));
+    await expect(unreadable.run()).rejects.toThrow("database unavailable");
+    expect(cancelAuthorizationRequest).not.toHaveBeenCalled();
   });
 });
 

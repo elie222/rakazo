@@ -3313,15 +3313,25 @@ describe("connections.begin", () => {
         displayName: "Gmail",
         status: "pending",
         providerRef: null,
-        metadata: {},
+        metadata: { attempt: expect.any(String) },
       },
+    });
+    // The result is saved, and a failure recorded, only while the row is still this attempt's.
+    const { attempt } = update.mock.calls[0]![0].data.metadata;
+    expect(updateMany).toHaveBeenCalledWith({
+      where: expect.objectContaining({
+        id: "conn-old",
+        status: "pending",
+        metadata: { path: ["attempt"], equals: attempt },
+      }),
+      data: expect.objectContaining({ providerRef: "gmail-state" }),
     });
     await expect(response.json()).resolves.toMatchObject({
       json: { connectionId: "conn-old" },
     });
   });
 
-  it("cancels the remote authorization when its result cannot be saved before the slot frees", async () => {
+  it("leaves the removal to its job when its result cannot be saved before the slot frees", async () => {
     vi.useFakeTimers();
     let releaseSlot = () => {};
     let holder: Promise<void> = Promise.resolve();
@@ -3338,7 +3348,10 @@ describe("connections.begin", () => {
       return { state: "request-1", authorizationUrl: "https://provider.test/authorize" };
     });
     const cancelAuthorizationRequest = vi.fn(async () => undefined);
-    const jobs = { enqueue: vi.fn(async () => undefined), cancel: vi.fn(async () => undefined) };
+    const jobs = {
+      enqueue: vi.fn(async (_job: BackgroundJob) => undefined),
+      cancel: vi.fn(async () => undefined),
+    };
     const rootUpdateMany = vi.fn().mockResolvedValue({ count: 1 });
     const tx = {
       $executeRaw: vi.fn().mockResolvedValue(undefined),
@@ -3389,19 +3402,20 @@ describe("connections.begin", () => {
           },
         },
       );
-      await vi.advanceTimersByTimeAsync(60_000);
+      await vi.advanceTimersByTimeAsync(70_000);
       const response = await handled;
 
       expect(response.status).not.toBe(200);
       expect(prisma.$transaction).toHaveBeenCalledTimes(1);
       expect(tx.connection.updateMany).not.toHaveBeenCalled();
-      expect(cancelAuthorizationRequest).toHaveBeenCalledWith("request-1", expect.anything());
-      // The removal is recorded before it is tried, and the record goes once it is done.
-      expect(jobs.enqueue).toHaveBeenCalledTimes(1);
-      expect(jobs.enqueue.mock.invocationCallOrder[0]).toBeLessThan(
-        cancelAuthorizationRequest.mock.invocationCallOrder[0]!,
+      // A removal needs the scope as much as the save did: without it nothing is removed, and
+      // the recorded job stays for when the scope is free.
+      expect(cancelAuthorizationRequest).not.toHaveBeenCalled();
+      expect(jobs.enqueue).toHaveBeenCalledTimes(2);
+      expect(jobs.enqueue).toHaveBeenLastCalledWith(
+        expect.objectContaining({ payload: LEFTOVER_REQUEST, availableAt: expect.any(Date) }),
       );
-      expect(jobs.cancel).toHaveBeenCalledWith(connectionCleanupJobKey(LEFTOVER_REQUEST));
+      expect(jobs.cancel).not.toHaveBeenCalled();
       expect(rootUpdateMany).toHaveBeenCalledWith(
         expect.objectContaining({ data: { status: "error" } }),
       );
@@ -3436,6 +3450,8 @@ describe("connections.begin", () => {
         findMany: vi.fn().mockResolvedValue([]),
         create: vi.fn().mockResolvedValue({ id: "conn-1", status: "pending" }),
         updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+        // Active rows that have saved the authorization a removal names.
+        count: vi.fn().mockResolvedValue(0),
       },
     };
     const root = {
@@ -3460,12 +3476,14 @@ describe("connections.begin", () => {
         { actor: { spaceId: "workspace-1", userId: "user-1" } as Actor },
         { connectorId: "composio", provider: "gmail", displayName: "Gmail" },
       );
-    const errors = () =>
+    const logged = (level: string) =>
       sink.events
-        .filter((event) => event.level === "error" && event.message.startsWith("connections."))
+        .filter((event) => event.level === level && event.message.startsWith("connections."))
         .map((event) => event.message);
+    const errors = () => logged("error");
+    const warnings = () => logged("warn");
     const events = () => sink.events.filter((event) => event.level === "error");
-    return { call, jobs, tx, root, prisma, errors, events };
+    return { call, jobs, tx, root, prisma, errors, warnings, events };
   }
 
   it("records the removal with the lost race and deletes the record once it is done", async () => {
@@ -3485,19 +3503,82 @@ describe("connections.begin", () => {
     expect(jobs.cancel).toHaveBeenCalledWith(connectionCleanupJobKey(LEFTOVER_REQUEST));
     expect(jobs.enqueue).not.toHaveBeenCalled();
     expect(errors()).toEqual([]);
+    // Removed as the job would: holding the scope's lock, after reading who refers to it.
+    expect(tx.connection.count).toHaveBeenCalledWith({
+      where: expect.objectContaining({ providerRef: "request-1" }),
+    });
+    const [locked, read, removed] = [
+      tx.$queryRaw.mock.invocationCallOrder[0]!,
+      tx.connection.count.mock.invocationCallOrder[0]!,
+      cancelAuthorizationRequest.mock.invocationCallOrder[0]!,
+    ];
+    expect(locked).toBeLessThan(read);
+    expect(read).toBeLessThan(removed);
+  });
+
+  it("saves its result only while the row is still its own attempt's", async () => {
+    // A revoke took the row and a later begin reused it: pending again, but not this attempt's.
+    const cancelAuthorizationRequest = vi.fn(async () => undefined);
+    const { call, jobs, tx, root } = lostBegin({ cancelAuthorizationRequest }, "request-1");
+
+    await expect(call()).rejects.toBeInstanceOf(IsolationError);
+    const { attempt } = tx.connection.create.mock.calls[0]![0].data.metadata;
+    expect(attempt).toEqual(expect.any(String));
+    expect(tx.connection.updateMany).toHaveBeenCalledWith({
+      where: expect.objectContaining({
+        id: "conn-1",
+        status: "pending",
+        metadata: { path: ["attempt"], equals: attempt },
+      }),
+      data: expect.objectContaining({ providerRef: "request-1" }),
+    });
+    // Its own authorization is removed, and the other attempt's row is not marked failed.
+    expect(cancelAuthorizationRequest).toHaveBeenCalledWith("request-1", expect.anything());
+    expect(jobs.cancel).toHaveBeenCalledWith(connectionCleanupJobKey(LEFTOVER_REQUEST));
+    expect(root.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("never removes an authorization that an active row has saved", async () => {
+    // The provider answered begin with an account a sibling connection already uses.
+    const cancelAuthorizationRequest = vi.fn(async () => undefined);
+    const revoke = vi.fn(async () => undefined);
+    for (const connector of [{ cancelAuthorizationRequest }, { revoke }]) {
+      const { call, jobs, tx, errors } = lostBegin(connector, "request-1");
+      tx.connection.count.mockResolvedValue(1);
+
+      await expect(call()).rejects.toBeInstanceOf(IsolationError);
+      // Nothing is left to remove, so the recorded job goes.
+      expect(jobs.cancel).toHaveBeenCalledWith(connectionCleanupJobKey(LEFTOVER_REQUEST));
+      expect(errors()).toEqual([]);
+    }
+    expect(cancelAuthorizationRequest).not.toHaveBeenCalled();
+    expect(revoke).not.toHaveBeenCalled();
+  });
+
+  it("keeps the backup job, removing nothing, when it cannot read who refers to the authorization", async () => {
+    const cancelAuthorizationRequest = vi.fn(async () => undefined);
+    const { call, jobs, tx } = lostBegin({ cancelAuthorizationRequest }, "request-1");
+    tx.connection.count.mockRejectedValue(new Error("database unavailable"));
+
+    await expect(call()).rejects.toBeInstanceOf(IsolationError);
+    expect(cancelAuthorizationRequest).not.toHaveBeenCalled();
+    expect(jobs.enqueue).toHaveBeenCalledWith(connectionCleanupJob(LEFTOVER_REQUEST));
+    expect(jobs.cancel).not.toHaveBeenCalled();
   });
 
   it("hands a failed removal to its backup job and answers the lost race as before", async () => {
     const cancelAuthorizationRequest = vi.fn(async () => {
       throw new Error("provider unavailable");
     });
-    const { call, jobs, errors } = lostBegin({ cancelAuthorizationRequest }, "request-1");
+    const { call, jobs, errors, warnings } = lostBegin({ cancelAuthorizationRequest }, "request-1");
 
     await expect(call()).rejects.toBeInstanceOf(IsolationError);
     // Enqueued again with no run-at: the queue retries it now.
     expect(jobs.enqueue).toHaveBeenCalledWith(connectionCleanupJob(LEFTOVER_REQUEST));
     expect(jobs.cancel).not.toHaveBeenCalled();
-    expect(errors()).toEqual(["connections.begin leftover cleanup failed; retrying"]);
+    // A job has it, so nobody has to act: not an error.
+    expect(warnings()).toEqual(["connections.begin leftover cleanup failed; retrying"]);
+    expect(errors()).toEqual([]);
   });
 
   it("retries instead of skipping the revoke when the provider cannot be asked for the account", async () => {
@@ -3537,7 +3618,7 @@ describe("connections.begin", () => {
     expect(revokeUnreferencedAccounts).not.toHaveBeenCalled();
     expect(jobs.enqueue).toHaveBeenCalledWith(connectionCleanupJob(LEFTOVER_APP));
     expect(jobs.cancel).not.toHaveBeenCalled();
-    expect(errors()).toEqual(["connections.begin leftover cleanup failed; retrying"]);
+    expect(errors()).toEqual([]);
   });
 
   it("keeps the backup job while a sibling's unfinished connection may own the accounts", async () => {
@@ -3644,7 +3725,6 @@ describe("connections.begin", () => {
       unreachable.jobs.enqueue.mockRejectedValue(new Error("queue unavailable"));
       await expect(unreachable.call()).rejects.toBeInstanceOf(ORPCError);
       expect(unreachable.errors()).toEqual([
-        "connections.begin leftover cleanup failed; retrying",
         "connections.begin leftover cleanup has no backup job; remove the authorization at the provider by hand",
       ]);
       expect(unreachable.events().at(-1)).toMatchObject({
@@ -3667,6 +3747,52 @@ describe("connections.begin", () => {
       });
       expect(cancelAuthorizationRequest).not.toHaveBeenCalled();
       expect(jobs.enqueue).not.toHaveBeenCalled();
+    });
+
+    it("removes nothing itself when it cannot tell whether the result was saved", async () => {
+      // The save committed, but neither its answer nor the read that would show it arrived.
+      const cancelAuthorizationRequest = vi.fn(async () => undefined);
+      const revoke = vi.fn(async () => undefined);
+      for (const connector of [{ cancelAuthorizationRequest }, { revoke }]) {
+        const { call, jobs, root, tx, errors } = lostBegin(connector, "request-1");
+        jobs.enqueueIn.mockRejectedValue(new Error("connection lost at commit"));
+        root.count.mockRejectedValue(new Error("database unavailable"));
+
+        await expect(call()).rejects.toBeInstanceOf(ORPCError);
+        // The job decides later, under the lock, where it can read the row.
+        expect(jobs.enqueue).toHaveBeenCalledTimes(1);
+        expect(jobs.enqueue).toHaveBeenCalledWith(connectionCleanupJob(LEFTOVER_REQUEST));
+        expect(jobs.cancel).not.toHaveBeenCalled();
+        expect(tx.connection.count).not.toHaveBeenCalled();
+        expect(errors()).toEqual([]);
+      }
+      expect(cancelAuthorizationRequest).not.toHaveBeenCalled();
+      expect(revoke).not.toHaveBeenCalled();
+    });
+
+    it("leaves the authorization and names it when neither the database nor the queue answers", async () => {
+      const cancelAuthorizationRequest = vi.fn(async () => undefined);
+      const { call, jobs, root, errors, events } = lostBegin(
+        { cancelAuthorizationRequest },
+        "request-1",
+      );
+      jobs.enqueueIn.mockRejectedValue(new Error("connection lost at commit"));
+      jobs.enqueue.mockRejectedValue(new Error("queue unavailable"));
+      root.count.mockRejectedValue(new Error("database unavailable"));
+
+      await expect(call()).rejects.toBeInstanceOf(ORPCError);
+      // An authorization nothing may refer to is the lesser harm next to deleting one in use.
+      expect(cancelAuthorizationRequest).not.toHaveBeenCalled();
+      expect(errors()).toEqual([
+        "connections.begin could not tell whether its result was saved, and has no backup job; if no connection uses the authorization, remove it at the provider by hand",
+      ]);
+      expect(events().at(-1)).toMatchObject({
+        spaceId: "workspace-1",
+        userId: "user-1",
+        connectorId: "composio",
+        provider: "gmail",
+        providerRef: "request-1",
+      });
     });
   });
 
@@ -4201,9 +4327,22 @@ describe("connections.complete", () => {
       $executeRaw: vi.fn(async () => undefined),
       $queryRaw: vi.fn(async () => [{ locked: true }]),
     };
+    const transaction = { open: false };
     const prisma = {
       ...client,
-      $transaction: vi.fn(async (fn: (tx: typeof client) => Promise<unknown>) => fn(client)),
+      // A transaction that rejects leaves the row as it found it.
+      $transaction: vi.fn(async (fn: (tx: typeof client) => Promise<unknown>) => {
+        const before = { ...row };
+        transaction.open = true;
+        try {
+          return await fn(client);
+        } catch (error) {
+          Object.assign(row, before);
+          throw error;
+        } finally {
+          transaction.open = false;
+        }
+      }),
     } as unknown as PrismaClient;
     const connector = {
       complete: vi.fn(),
@@ -4260,38 +4399,110 @@ describe("connections.complete", () => {
       return { status: response.status, body: await response.json() };
     }
     const securityEvents = () => sink.events.filter((event) => event.message === "security.event");
-    return { complete, revoke, connector, connection, client, jobs, securityEvents, row, sink };
+    return {
+      complete,
+      revoke,
+      connector,
+      connection,
+      client,
+      jobs,
+      securityEvents,
+      row,
+      sink,
+      transaction,
+    };
   }
 
+  const ACCOUNT_CLEANUP = {
+    spaceId: "workspace-1",
+    userId: "user-1",
+    connectorId: "composio",
+    provider: "gmail",
+    ref: "account-1",
+  };
+
   it.each([
-    ["the caller cancelled", true, "warn"],
-    ["an uncertain remote failure", false, "error"],
-  ])("keeps the row revoked after %s and logs it at %s", async (_case, cancelled, level) => {
-    const { revoke, connector, row, sink, jobs } = pollFixture("connected");
+    ["the caller cancelled", true],
+    ["an uncertain remote failure", false],
+  ])(
+    "keeps the row revoked after %s, with a job to finish the removal",
+    async (_case, cancelled) => {
+      const { revoke, connector, row, sink, jobs, client } = pollFixture("connected");
+      row.providerRef = "account-1";
+      const request = new AbortController();
+      connector.revoke.mockImplementation(async () => {
+        if (cancelled) request.abort();
+        throw new Error("Request was cancelled by the caller: Request was aborted.");
+      });
+
+      await expect(revoke(request.signal)).resolves.toMatchObject({ status: 400 });
+      expect(row.status).toBe("revoked");
+      // A job has the removal, so nobody has to act: not an error.
+      expect(
+        sink.events
+          .filter((event) => event.message.startsWith("connections.revoke"))
+          .map((event) => event.level),
+      ).toEqual(["warn"]);
+      // No row can remove the account any more, so the job that does commits with the revoked row.
+      expect(jobs.enqueueIn).toHaveBeenCalledWith(client, connectionCleanupJob(ACCOUNT_CLEANUP));
+      expect(jobs.enqueue).not.toHaveBeenCalled();
+    },
+  );
+
+  it("removes the account inside the transaction that revokes the row", async () => {
+    // A process that dies around the provider call rolls the row back, so it stays the record.
+    const { revoke, connector, row, jobs, transaction } = pollFixture("connected");
     row.providerRef = "account-1";
-    const request = new AbortController();
     connector.revoke.mockImplementation(async () => {
-      if (cancelled) request.abort();
-      throw new Error("Request was cancelled by the caller: Request was aborted.");
+      expect(transaction.open).toBe(true);
+      expect(row.status).toBe("revoked");
     });
 
-    await expect(revoke(request.signal)).resolves.toMatchObject({ status: 400 });
+    await expect(revoke()).resolves.toMatchObject({ status: 200 });
+    expect(connector.revoke).toHaveBeenCalledWith("account-1", expect.anything());
     expect(row.status).toBe("revoked");
-    expect(
-      sink.events
-        .filter((event) => event.message.startsWith("connections.revoke"))
-        .map((event) => event.level),
-    ).toEqual([level]);
-    // No row can remove the account any more, so a job does once the provider answers.
-    expect(jobs.enqueue).toHaveBeenCalledWith(
-      connectionCleanupJob({
-        spaceId: "workspace-1",
-        userId: "user-1",
-        connectorId: "composio",
-        provider: "gmail",
-        ref: "account-1",
+    expect(jobs.enqueueIn).not.toHaveBeenCalled();
+    expect(jobs.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("keeps the row as it was when the provider clearly removed nothing", async () => {
+    const { revoke, connector, row, jobs } = pollFixture("connected");
+    row.providerRef = "account-1";
+    connector.revoke.mockRejectedValue(new Error("403 forbidden"));
+
+    await expect(revoke()).resolves.toMatchObject({ status: 400 });
+    // Still connected, so removing it again is how the authorization goes.
+    expect(row.status).toBe("connected");
+    expect(jobs.enqueueIn).not.toHaveBeenCalled();
+    expect(jobs.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("keeps the row when an uncertain removal's job cannot be recorded", async () => {
+    const { revoke, connector, row, jobs } = pollFixture("connected");
+    row.providerRef = "account-1";
+    connector.revoke.mockRejectedValue(new Error("fetch failed"));
+    jobs.enqueueIn.mockRejectedValue(new Error("queue unavailable"));
+
+    expect((await revoke()).status).not.toBe(200);
+    expect(row.status).toBe("connected");
+  });
+
+  it("leaves the account at the provider while another active row has saved it", async () => {
+    const { revoke, connector, connection, row, jobs } = pollFixture("connected");
+    row.providerRef = "account-1";
+    connection.count.mockImplementation((async ({ where }: { where: { providerRef?: string } }) =>
+      where.providerRef === "account-1" ? 1 : 0) as never);
+
+    await expect(revoke()).resolves.toMatchObject({ status: 200 });
+    expect(connection.count).toHaveBeenCalledWith({
+      where: expect.objectContaining({
+        providerRef: "account-1",
+        status: { in: ["connected", "pending", "error"] },
       }),
-    );
+    });
+    expect(row.status).toBe("revoked");
+    expect(connector.revoke).not.toHaveBeenCalled();
+    expect(jobs.enqueueIn).not.toHaveBeenCalled();
   });
 
   it("records nothing but keeps the account id when the catalog connected the row first", async () => {
@@ -4379,8 +4590,11 @@ describe("connections.complete", () => {
     expect(row.providerRef).toBe("account-1");
   });
 
-  it("keeps a superseded row removable when its account cannot be resolved", async () => {
-    const { complete, connector, row, sink } = pollFixture("revoked");
+  const REQUEST_CLEANUP = { ...ACCOUNT_CLEANUP, ref: "request-1" };
+  const { ref: _account, ...APP_CLEANUP } = ACCOUNT_CLEANUP;
+
+  it("records a job when a superseded row's authorization cannot be removed", async () => {
+    const { complete, connector, row, sink, jobs } = pollFixture("revoked");
     row.providerRef = "request-1";
     Object.assign(connector, {
       resolveConnectedAccountId: vi.fn(async () => {
@@ -4388,15 +4602,68 @@ describe("connections.complete", () => {
       }),
     });
 
-    expect((await complete()).status).not.toBe(200);
+    // Still revoked, and reported so, which ends the polling: the job has the removal now.
+    await expect(complete()).resolves.toMatchObject({
+      status: 200,
+      body: { json: { status: "revoked" } },
+    });
+    expect(row.status).toBe("revoked");
     expect(connector.revoke).not.toHaveBeenCalled();
-    expect(sink.events.filter((event) => event.level === "error")).toEqual([
+    expect(jobs.enqueue).toHaveBeenCalledWith(connectionCleanupJob(REQUEST_CLEANUP));
+    expect(sink.events.filter((event) => event.level === "error")).toEqual([]);
+    expect(sink.events.filter((event) => event.level === "warn")).toEqual([
       expect.objectContaining({
         message: "connections.complete remote cleanup failed for revoked row",
       }),
     ]);
-    // Back in the account list, so removing it again revokes the remote account.
-    expect(row.status).toBe("pending");
+  });
+
+  it("records a job when a superseded row's unreferenced accounts cannot be removed", async () => {
+    const { complete, connector, row, jobs } = pollFixture("revoked");
+    Object.assign(connector, {
+      revokeUnreferencedAccounts: vi.fn(async () => {
+        throw new Error("provider unavailable");
+      }),
+    });
+
+    await expect(complete()).resolves.toMatchObject({ body: { json: { status: "revoked" } } });
+    expect(row.status).toBe("revoked");
+    expect(jobs.enqueue).toHaveBeenCalledWith(connectionCleanupJob(APP_CLEANUP));
+  });
+
+  it("names what to remove by hand when a superseded row's failed removal cannot be recorded", async () => {
+    const { complete, connector, row, sink, jobs } = pollFixture("revoked");
+    row.providerRef = "request-1";
+    connector.revoke.mockRejectedValue(new Error("provider unavailable"));
+    jobs.enqueue.mockRejectedValue(new Error("queue unavailable"));
+
+    // Reported as a failure, so the next poll tries the removal again.
+    expect((await complete()).status).not.toBe(200);
+    expect(row.status).toBe("revoked");
+    expect(sink.events.filter((event) => event.level === "error")).toEqual([
+      expect.objectContaining({
+        message:
+          "connections.complete could not record its cleanup; remove the authorization at the provider by hand",
+        connectionId: "conn-1",
+        providerRef: "request-1",
+      }),
+    ]);
+  });
+
+  it("leaves a superseded row's account alone once an active row has saved it", async () => {
+    const { complete, connector, connection, row, jobs } = pollFixture("revoked");
+    row.providerRef = "account-1";
+    connection.count.mockResolvedValue(1 as never);
+
+    await expect(complete()).resolves.toMatchObject({ body: { json: { status: "revoked" } } });
+    expect(connection.count).toHaveBeenCalledWith({
+      where: expect.objectContaining({
+        providerRef: "account-1",
+        status: { in: ["connected", "pending", "error"] },
+      }),
+    });
+    expect(connector.revoke).not.toHaveBeenCalled();
+    expect(jobs.enqueue).not.toHaveBeenCalled();
   });
 
   it("records a cleanup job when a superseded row's accounts cannot be told apart yet", async () => {

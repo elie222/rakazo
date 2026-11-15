@@ -84,6 +84,8 @@ export async function runCorrelatedJob<T>(options: {
   payload: unknown;
   correlation?: JobCorrelation;
   run: () => Promise<T>;
+  /** True for a rejection that only asks for a later try: logged as waiting, never as an error. */
+  waiting?: (error: unknown) => boolean;
 }): Promise<T> {
   const logger = getLogger();
   const correlation = options.correlation ?? createJobCorrelation();
@@ -105,8 +107,13 @@ export async function runCorrelatedJob<T>(options: {
       });
       return result;
     } catch (error) {
+      const duration = { "job.duration_ms": Math.round(performance.now() - started) };
+      if (options.waiting?.(error)) {
+        logger.info("job.completed", { ...duration, "job.outcome": "waiting" });
+        throw error;
+      }
       logger.error("job.completed", error, {
-        "job.duration_ms": Math.round(performance.now() - started),
+        ...duration,
         "job.outcome": "error",
         "error.report": !wasReportedError(error),
       });

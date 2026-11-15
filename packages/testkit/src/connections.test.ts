@@ -413,6 +413,192 @@ describeWithDatabase("Composio catalog reconciliation", () => {
     expect(deletions()).toBe(deleted);
   });
 
+  /** One connected Gmail account, with what its row and the provider hold for it. */
+  async function connectedGmail(label: string) {
+    const cookie = await signup(app, `${label}-${stamp}@rakazo.test`, label);
+    const actor = await rpc<Actor>(app, cookie, "me");
+    const { connectionId } = await rpc<{ connectionId: string }>(app, cookie, "connections/begin", {
+      connectorId: "composio",
+      provider: "GMAIL",
+      displayName: "Gmail",
+    });
+    const row = await asSystem(handles.prisma).connection.findUniqueOrThrow({
+      where: { id: connectionId },
+      select: { providerRef: true },
+    });
+    const cleanup = {
+      spaceId: actor.spaceId,
+      userId: actor.userId,
+      connectorId: "composio",
+      provider: "GMAIL",
+      ref: row.providerRef!,
+    };
+    const remote = () => composio.listConnectedAccountIds(actor.userId, "GMAIL");
+    const status = async () => (await statuses([connectionId]))[0]?.status;
+    return { cookie, actor, connectionId, cleanup, remote, status };
+  }
+
+  it("leaves the authorization to its row when a begin's save turns out to have landed", async () => {
+    const cookie = await signup(app, `landed-save-${stamp}@rakazo.test`, "Landed Save");
+    const actor = await rpc<Actor>(app, cookie, "me");
+    const own = { spaceId: actor.spaceId, userId: actor.userId, provider: "GMAIL" };
+    const cancelled = vi.spyOn(composio, "cancelAuthorizationRequest");
+    const begin = composio.begin.bind(composio);
+    let state = "";
+    vi.spyOn(composio, "begin").mockImplementation(async (request, context) => {
+      const started = await begin(request, context);
+      state = started.state;
+      await asSystem(handles.prisma).connection.updateMany({
+        where: own,
+        data: { status: "revoked" },
+      });
+      return started;
+    });
+    // Saving reports a failure, yet the row holds the result: a commit whose answer was lost.
+    vi.spyOn(handles.jobs, "enqueueIn").mockImplementationOnce(async () => {
+      await asSystem(handles.prisma).connection.updateMany({
+        where: own,
+        data: { status: "connected", providerRef: state },
+      });
+      throw new Error("connection lost at commit");
+    });
+
+    await expect(
+      rpc(app, cookie, "connections/begin", {
+        connectorId: "composio",
+        provider: "GMAIL",
+        displayName: "Gmail",
+      }),
+    ).rejects.toThrow();
+    await handles.awaitIdle?.();
+
+    expect(cancelled).not.toHaveBeenCalled();
+    expect(await composio.listConnectedAccountIds(actor.userId, "GMAIL")).toEqual([state]);
+    const cleanup = { ...own, connectorId: "composio", ref: state };
+    expect(queuedCleanup(cleanup)).toBeUndefined();
+
+    // A begin that could not tell whether its save landed leaves the decision to the job,
+    // which reads the row under the provider lock and finds the authorization in use.
+    await runCleanupNow(cleanup);
+    expect(cancelled).not.toHaveBeenCalled();
+    expect(await composio.listConnectedAccountIds(actor.userId, "GMAIL")).toEqual([state]);
+    expect(queuedCleanup(cleanup)).toBeUndefined();
+  });
+
+  it("never removes an account a lost begin was answered with while another row uses it", async () => {
+    const { cookie, actor, connectionId, cleanup, remote, status } =
+      await connectedGmail("shared-answer");
+    const cancelled = vi.spyOn(composio, "cancelAuthorizationRequest");
+    // The provider answers the second begin with the account the first connection uses, and
+    // the second connection is removed while it does.
+    vi.spyOn(composio, "begin").mockImplementationOnce(async () => {
+      await asSystem(handles.prisma).connection.updateMany({
+        where: {
+          spaceId: actor.spaceId,
+          userId: actor.userId,
+          provider: "GMAIL",
+          id: { not: connectionId },
+        },
+        data: { status: "revoked" },
+      });
+      return { authorizationUrl: null, state: cleanup.ref };
+    });
+
+    await expect(
+      rpc(app, cookie, "connections/begin", {
+        connectorId: "composio",
+        provider: "GMAIL",
+        displayName: "Gmail again",
+      }),
+    ).rejects.toThrow();
+    await handles.awaitIdle?.();
+
+    expect(cancelled).not.toHaveBeenCalled();
+    expect(await remote()).toEqual([cleanup.ref]);
+    expect(await status()).toBe("connected");
+    expect(queuedCleanup(cleanup)).toBeUndefined();
+  });
+
+  it("finishes a superseded connection's failed removal from its job", async () => {
+    const { cookie, connectionId, cleanup, remote } = await connectedGmail("superseded");
+    // Revoked with its authorization still at the provider, as after an uncertain removal.
+    await asSystem(handles.prisma).connection.update({
+      where: { id: connectionId },
+      data: { status: "revoked" },
+    });
+    const cancel = composio.cancelAuthorizationRequest.bind(composio);
+    const cancelled = vi
+      .spyOn(composio, "cancelAuthorizationRequest")
+      .mockImplementation(cancel)
+      .mockRejectedValueOnce(new Error("provider unavailable"));
+
+    await expect(
+      rpc<{ status: string }>(app, cookie, "connections/complete", { connectionId }),
+    ).resolves.toMatchObject({ status: "revoked" });
+
+    // The poll's removal failed; the job it recorded removed the authorization.
+    await vi.waitFor(() => expect(cancelled).toHaveBeenCalledTimes(2), { timeout: 10_000 });
+    await vi.waitFor(async () => expect(await remote()).toEqual([]), { timeout: 10_000 });
+    await handles.awaitIdle?.();
+    expect(queuedCleanup(cleanup)).toBeUndefined();
+  });
+
+  it("keeps a connection whose removal the provider refused, and removes it on the next try", async () => {
+    const { cookie, connectionId, cleanup, remote, status } = await connectedGmail("refused");
+    const revoke = composio.revoke.bind(composio);
+    vi.spyOn(composio, "revoke")
+      .mockImplementation(revoke)
+      .mockRejectedValueOnce(new Error("403 forbidden"));
+
+    await expect(rpc(app, cookie, "connections/revoke", { connectionId })).rejects.toThrow();
+    // Nothing was removed, so the row is as it was: the record of the authorization.
+    expect(await status()).toBe("connected");
+    expect(await remote()).toEqual([cleanup.ref]);
+    expect(queuedCleanup(cleanup)).toBeUndefined();
+
+    await rpc(app, cookie, "connections/revoke", { connectionId });
+    expect(await status()).toBe("revoked");
+    expect(await remote()).toEqual([]);
+  });
+
+  it("leaves an uncertain removal to a job that commits with the revoked connection", async () => {
+    const { cookie, connectionId, remote, status } = await connectedGmail("uncertain");
+    const cancelled = vi.spyOn(composio, "cancelAuthorizationRequest");
+    // The provider call times out after the delete may have been sent.
+    vi.spyOn(composio, "revoke").mockRejectedValueOnce(new Error("fetch failed"));
+
+    await expect(rpc(app, cookie, "connections/revoke", { connectionId })).rejects.toThrow();
+    expect(await status()).toBe("revoked");
+
+    await vi.waitFor(() => expect(cancelled).toHaveBeenCalledTimes(1), { timeout: 10_000 });
+    await vi.waitFor(async () => expect(await remote()).toEqual([]), { timeout: 10_000 });
+  });
+
+  it("removes a shared account only with the last connection that refers to it", async () => {
+    const { cookie, actor, connectionId, cleanup, remote, status } =
+      await connectedGmail("shared-account");
+    const sibling = await asSystem(handles.prisma).connection.create({
+      data: {
+        spaceId: actor.spaceId,
+        userId: actor.userId,
+        connectorId: "composio",
+        provider: "GMAIL",
+        displayName: "Same account",
+        status: "connected",
+        providerRef: cleanup.ref,
+      },
+    });
+    const revoked = vi.spyOn(composio, "revoke");
+
+    await rpc(app, cookie, "connections/revoke", { connectionId });
+    expect(await status()).toBe("revoked");
+    expect(revoked).not.toHaveBeenCalled();
+    expect(await remote()).toEqual([cleanup.ref]);
+
+    await rpc(app, cookie, "connections/revoke", { connectionId: sibling.id });
+    expect(await remote()).toEqual([]);
+  });
+
   it("marks a connected account Composio reports dead as needing reconnect", async () => {
     const cookie = await signup(app, `reconnect-${stamp}@rakazo.test`, "Reconnect");
     const work = await rpc<{ connectionId: string }>(app, cookie, "connections/begin", {

@@ -950,6 +950,43 @@ describePostgres("Graphile background jobs (PostgreSQL contract)", () => {
     }
   });
 
+  it("counts a waiting connection cleanup's try without reporting a failure", async () => {
+    const publisher = new GraphileJobPublisher(testPool());
+    const host = new GraphileJobWorkerHost(testPool(), { concurrency: 1, pollInterval: 25 });
+    const cleanup = {
+      spaceId: "space-1",
+      userId: "user-1",
+      connectorId: "connector-1",
+      provider: "mail",
+      ref: `waiting-${Date.now()}`,
+    };
+    const key = connectionCleanupJobKey(cleanup);
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-worker", sinks: [sink] }));
+    const target = handlers({
+      // Cannot decide yet: asks for a later try, as the cleanup does for undecided accounts.
+      "connection.cleanup": async () => {
+        throw new RetryJobLaterError(60_000);
+      },
+    });
+    try {
+      await host.start(target);
+      await publisher.enqueue(connectionCleanupJob(cleanup));
+      await waitFor(async () =>
+        expect(await jobState(key)).toMatchObject({ attempts: 1, locked_at: null }),
+      );
+      expect(sink.events.filter((event) => event.level === "error")).toEqual([]);
+      expect(sink.events).toContainEqual(
+        expect.objectContaining({ message: "job.completed", "job.outcome": "waiting" }),
+      );
+    } finally {
+      await host.stop();
+      await publisher.cancel(key).catch(() => undefined);
+      await publisher.close();
+      installLogger(createLogger({ service: "rakazo-worker", level: "off", sinks: [] }));
+    }
+  });
+
   it("keeps a connection cleanup through a busy scope and failed tries, and reports it once it gives up", async () => {
     const publisher = new GraphileJobPublisher(testPool());
     const host = new GraphileJobWorkerHost(testPool(), { concurrency: 1, pollInterval: 25 });
