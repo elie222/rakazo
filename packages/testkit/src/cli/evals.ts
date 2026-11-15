@@ -330,7 +330,9 @@ async function main() {
     limitations: [
       "Does not evaluate browser perception, native recording perception, or real external services.",
       "Silence cases observe routine chat, transient progress, and provider notification requests; native push delivery and UI pixels are outside the fixture.",
-      "What replies, saved files and memory mean is graded by a calibrated LLM judge under the suite's rubric; effects, identifiers and structured output are checked deterministically.",
+      suiteJudge
+        ? "What replies, saved files and memory mean is graded by a calibrated LLM judge under the suite's rubric; effects, identifiers and structured output are checked deterministically."
+        : "This suite has no LLM judge: every criterion is a check in code.",
       "Cost uses provider-reported charges where available and explicit pricing estimates otherwise. Spend reservations are a guard, not a billing guarantee.",
       "Tool trace contains names and statuses only; raw requests and responses are omitted. The tool-calls artifact keeps model-supplied arguments, with only configured secrets redacted.",
     ],
