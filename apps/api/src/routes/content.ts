@@ -287,7 +287,7 @@ export function contentRoutes(ctx: RouterContext) {
             ORDER BY COALESCE(SUM(u."totalTokens"), 0) DESC, COUNT(*) DESC
           `),
           deps.prisma.$queryRaw<TimeRow[]>(Prisma.sql`
-            SELECT date_trunc('day', u."createdAt" AT TIME ZONE 'UTC') AS bucket,
+            SELECT date_trunc('day', u."createdAt") AS bucket,
               COUNT(*)::bigint AS "modelCalls",
               SUM(u."inputTokens")::double precision AS "inputTokens",
               BOOL_AND(u."inputTokens" IS NOT NULL) AS "inputComplete",

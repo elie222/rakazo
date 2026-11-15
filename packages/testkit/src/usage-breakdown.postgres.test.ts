@@ -16,6 +16,13 @@ process.env.AGENT_RUNTIME = "scripted";
 const hasDb = process.env.VERIFY_DATABASE === "1" && Boolean(process.env.DATABASE_URL);
 const describeBreakdown = hasDb ? describe : describe.skip;
 const DAY = 24 * 60 * 60 * 1000;
+const utcMidnight = (at: number) => new Date(at - (at % DAY)).toISOString();
+
+// The "today" range is read when the endpoint runs: never seed across a UTC midnight.
+async function pastUtcMidnight() {
+  const left = DAY - (Date.now() % DAY);
+  if (left < 90_000) await new Promise((resolve) => setTimeout(resolve, left + 1000));
+}
 
 describeBreakdown("usage.breakdown", () => {
   let app: App;
@@ -42,6 +49,7 @@ describeBreakdown("usage.breakdown", () => {
   });
 
   it("attributes usage to bots, counts a run once across its subagents and honours every filter", async () => {
+    await pastUtcMidnight();
     const cookie = await signup(app, `usage-breakdown-${stamp}@rakazo.test`, "Breakdown");
     const create = (name: string) =>
       rpc<{ id: string }>(app, cookie, "bots/create", {
@@ -63,6 +71,9 @@ describeBreakdown("usage.breakdown", () => {
     const runBOld = `run-b-old-${stamp}`;
     const runGone = `run-gone-${stamp}`;
     const now = Date.now();
+    // Just after a UTC midnight, where a database session in another timezone is still on the
+    // previous calendar day, so a day bucket cut in the session's timezone lands on the wrong day.
+    const dayStart = now - (now % DAY);
     const row = (
       botId: string | null,
       runId: string | null,
@@ -81,7 +92,7 @@ describeBreakdown("usage.breakdown", () => {
       outputTokens: tokens.output,
       totalTokens: tokens.input + tokens.output,
       costUsd: tokens.cost,
-      createdAt: new Date(now - ageMs),
+      createdAt: new Date(dayStart - ageMs + 1000),
       ...extra,
     });
     await prisma.usageRecord.createMany({
@@ -163,7 +174,12 @@ describeBreakdown("usage.breakdown", () => {
       [1, 15],
       [4, 200],
     ]);
-    expect(month.overTime.every((p) => p.date.endsWith("T00:00:00.000Z"))).toBe(true);
+    // Days are UTC days whatever timezone the database session runs in.
+    expect(month.overTime.map((p) => p.date)).toEqual([
+      utcMidnight(now - 20 * DAY),
+      utcMidnight(now - 2 * DAY),
+      utcMidnight(now),
+    ]);
 
     expect(summary(await get({ range: "today" }))).toEqual({ runs: 2, calls: 4, tokens: 200 });
     expect(summary(await get({ range: "7d" }))).toEqual({ runs: 3, calls: 5, tokens: 215 });
@@ -217,7 +233,7 @@ describeBreakdown("usage.breakdown", () => {
     const elsewhere = await rpc<UsageBreakdown>(app, other, "usage/breakdown", { range: "all" });
     expect(summary(elsewhere)).toEqual({ runs: 1, calls: 1, tokens: 1_000_000 });
     expect(names(elsewhere)).toEqual(["Elsewhere"]);
-  }, 60000);
+  }, 150000);
 });
 
 async function signup(app: App, email: string, name: string) {

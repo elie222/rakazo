@@ -1,5 +1,4 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { UsageSummary } from "@rakazo/contracts";
 import {
   Field,
   FieldLabel,
@@ -21,104 +20,9 @@ import type { RefObject } from "react";
 import { useEffect, useState } from "react";
 import { useSpaceQueries } from "../lib/query";
 
-export function UsageSettingsPanel({
-  usage,
-  panelRef,
-}: {
-  usage?: UsageSummary | null;
-  panelRef?: RefObject<HTMLDivElement | null>;
-}) {
-  // Legacy summary view for existing tests/callers; the settings overlay uses the full breakdown.
-  if (usage !== undefined) {
-    return <UsageSummaryView usage={usage} panelRef={panelRef} />;
-  }
-  return <UsageBreakdownView panelRef={panelRef} />;
-}
-
-function UsageSummaryView({
-  usage,
-  panelRef,
-}: {
-  usage?: UsageSummary | null;
-  panelRef?: RefObject<HTMLDivElement | null>;
-}) {
-  const { t, i18n } = useLingui();
-  const count = new Intl.NumberFormat(i18n.locale);
-  const usd = new Intl.NumberFormat(i18n.locale, { style: "currency", currency: "USD" });
-  const number = (value: number | null | undefined) => (value == null ? "—" : count.format(value));
-  const cost = (value: number | null | undefined) =>
-    value == null ? "—" : value > 0 && value < 0.01 ? `<${usd.format(0.01)}` : usd.format(value);
-  const models = usage?.models ?? [];
-  return (
-    <div ref={panelRef} tabIndex={-1} data-testid="usage-settings" className="outline-none">
-      {usage ? (
-        <dl className="grid grid-cols-3 gap-3">
-          {[
-            { label: t`Runs`, value: number(usage.runs) },
-            { label: t`Tokens`, value: number(usage.totalTokens) },
-            { label: t`Cost`, value: cost(usage.costUsd) },
-          ].map((stat) => (
-            <div key={stat.label} className="rounded-xl border border-border px-4 py-3">
-              <dt className="text-body-sm text-muted-foreground">{stat.label}</dt>
-              <dd className="mt-1 text-heading3 font-medium tabular-nums text-foreground">
-                {stat.value}
-              </dd>
-            </div>
-          ))}
-        </dl>
-      ) : null}
-      {models.length > 0 ? (
-        <div className="mt-4 rounded-xl border border-border px-2">
-          <Table className="text-body">
-            <TableHeader>
-              <TableRow className="hover:bg-transparent">
-                <TableHead className="text-muted-foreground">
-                  <Trans>Model</Trans>
-                </TableHead>
-                <TableHead className="text-right text-muted-foreground">
-                  <Trans>Calls</Trans>
-                </TableHead>
-                <TableHead className="text-right text-muted-foreground">
-                  <Trans>Input</Trans>
-                </TableHead>
-                <TableHead className="text-right text-muted-foreground">
-                  <Trans>Output</Trans>
-                </TableHead>
-                <TableHead className="text-right text-muted-foreground">
-                  <Trans>Cost</Trans>
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {models.map((row) => (
-                <TableRow key={`${row.provider}:${row.model}`} className="hover:bg-transparent">
-                  <TableCell>
-                    <div className="text-foreground">{row.model}</div>
-                    <div className="text-label text-muted-foreground">{row.provider}</div>
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {number(row.modelCalls)}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {number(row.inputTokens)}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {number(row.outputTokens)}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">{cost(row.costUsd)}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
 type UsageDateRange = "today" | "7d" | "30d" | "all";
 
-function UsageBreakdownView({ panelRef }: { panelRef?: RefObject<HTMLDivElement | null> }) {
+export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivElement | null> }) {
   const { t, i18n } = useLingui();
   const queries = useSpaceQueries();
   const [range, setRange] = useState<UsageDateRange>("30d");
@@ -133,7 +37,7 @@ function UsageBreakdownView({ panelRef }: { panelRef?: RefObject<HTMLDivElement 
       : {}),
   };
 
-  const { data, isLoading } = useQuery({
+  const { data, isError, isPlaceholderData } = useQuery({
     ...queries.usage.breakdown.queryOptions({ input }),
     placeholderData: keepPreviousData,
     staleTime: 30_000,
@@ -152,28 +56,27 @@ function UsageBreakdownView({ panelRef }: { panelRef?: RefObject<HTMLDivElement 
     { id: "all", label: t`All time` },
   ];
 
+  // The lists keep the previous result while the next one loads; the numbers never do.
+  const fresh = isPlaceholderData ? undefined : data;
   const bots = data?.bots ?? [];
-  const models = data?.models ?? [];
-  const overTime = data?.overTime ?? [];
-  const totals = data?.totals ?? {
-    runs: 0,
-    modelCalls: 0,
-    inputTokens: 0,
-    outputTokens: 0,
-    totalTokens: 0,
-    costUsd: 0,
-  };
-  const modelOptions = (data?.modelOptions ?? []).map((m) => ({
+  const models = fresh?.models ?? [];
+  const overTime = fresh?.overTime ?? [];
+  const totals = fresh?.totals;
+  const modelNames = data?.modelOptions ?? [];
+  const modelOptions = modelNames.map((m) => ({
     key: JSON.stringify([m.provider, m.model]),
-    label: m.model,
+    label:
+      modelNames.filter((other) => other.model === m.model).length > 1
+        ? `${m.model} (${m.provider})`
+        : m.model,
   }));
 
   // A new date range can drop the selected bot or model from the lists: go back to all.
   useEffect(() => {
-    if (!data) return;
+    if (!data || isPlaceholderData) return;
     if (botId !== "all" && !data.bots.some((b) => b.id === botId)) setBotId("all");
     if (modelKey !== "all" && !modelOptions.some((m) => m.key === modelKey)) setModelKey("all");
-  }, [data, botId, modelKey, modelOptions]);
+  }, [data, isPlaceholderData, botId, modelKey, modelOptions]);
 
   const maxTokens = Math.max(1, ...overTime.map((p) => p.totalTokens ?? 0));
 
@@ -247,9 +150,9 @@ function UsageBreakdownView({ panelRef }: { panelRef?: RefObject<HTMLDivElement 
 
       <dl className="grid grid-cols-3 gap-3">
         {[
-          { label: t`Runs`, value: number(totals.runs) },
-          { label: t`Tokens`, value: number(totals.totalTokens) },
-          { label: t`Cost`, value: cost(totals.costUsd) },
+          { label: t`Runs`, value: number(totals?.runs) },
+          { label: t`Tokens`, value: number(totals?.totalTokens) },
+          { label: t`Cost`, value: cost(totals?.costUsd) },
         ].map((stat) => (
           <div key={stat.label} className="rounded-xl border border-border px-4 py-3">
             <dt className="text-body-sm text-muted-foreground">{stat.label}</dt>
@@ -280,10 +183,10 @@ function UsageBreakdownView({ panelRef }: { panelRef?: RefObject<HTMLDivElement 
                     <div
                       className="w-full rounded-sm bg-foreground/70"
                       style={{ height: `${height}%` }}
-                      title={`${day}: ${number(point.totalTokens)} tokens, ${cost(point.costUsd)}`}
+                      title={`${day}: ${number(point.totalTokens)}, ${cost(point.costUsd)}`}
                     />
                   </div>
-                  <span className="w-full truncate text-center text-[10px] leading-none text-muted-foreground">
+                  <span className="w-full truncate text-center text-caption text-muted-foreground">
                     {day}
                   </span>
                 </div>
@@ -337,7 +240,11 @@ function UsageBreakdownView({ panelRef }: { panelRef?: RefObject<HTMLDivElement 
             </TableBody>
           </Table>
         </div>
-      ) : isLoading ? (
+      ) : isError ? (
+        <p className="text-body-sm text-muted-foreground">
+          <Trans>Could not load usage.</Trans>
+        </p>
+      ) : !fresh ? (
         <p className="text-body-sm text-muted-foreground">
           <Trans>Loading usage…</Trans>
         </p>
