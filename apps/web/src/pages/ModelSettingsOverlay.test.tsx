@@ -1145,6 +1145,26 @@ it("keeps a saved model listed, unticked, after a refused save", async () => {
   }
 });
 
+it("hides a credential in a refused save's message", async () => {
+  models.connect.mockRejectedValue(
+    new Error("Incorrect API key provided: example-1234. Check the key."),
+  );
+  const view = await renderCompatible({
+    ...compatibleCredential,
+    enabledModelIds: ["model-a", "model-b"],
+  });
+  try {
+    await act(async () => {
+      modelCheckbox(view.container, "model-b").click();
+    });
+    await click(buttons(view.container, "Save")[0]);
+    expect(view.container.textContent).toContain("Incorrect API key provided: •••. Check the key.");
+    expect(view.container.textContent).not.toContain("example-1234");
+  } finally {
+    await view.unmount();
+  }
+});
+
 function baseUrlField(container: HTMLElement) {
   const input = container.querySelector("#model-base-url");
   if (!(input instanceof HTMLInputElement)) throw new Error("Missing server URL field");

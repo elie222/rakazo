@@ -68,8 +68,8 @@ New credentials use versioned AES-GCM with per-record salt and row-bound AAD. Le
 
 Each bot computer has a home: its files, logged-in browser profiles and CLI tokens. By default
 homes live under `DATA_DIR/homes` on the server. Set `OBJECT_STORAGE_BUCKET` to keep them in any
-S3-compatible bucket instead, so `DATA_DIR` is only a cache and API and worker hosts no longer need
-a shared disk for homes. Leave it unset to keep homes on local disk, as before.
+S3-compatible bucket or an Azure Blob Storage container instead, so `DATA_DIR` is only a cache and
+API and worker hosts no longer need a shared disk for homes. Leave it unset to keep homes on local disk, as before.
 The same connection also stores new artifacts; see [shared storage migration](#shared-storage-migration)
 for migrating existing files and push registrations.
 
@@ -79,10 +79,28 @@ OBJECT_STORAGE_ENDPOINT=https://storage.example.com
 OBJECT_STORAGE_REGION=us-east-1
 OBJECT_STORAGE_ACCESS_KEY_ID=replace-me
 OBJECT_STORAGE_SECRET_ACCESS_KEY=replace-me
+# Optional: s3 (the default) or azure-blob, below.
+OBJECT_STORAGE_PROTOCOL=s3
 # Optional: a key prefix, when the bucket holds anything else.
 OBJECT_STORAGE_PREFIX=
 # Optional: true for services that address buckets in the path rather than the host name.
 OBJECT_STORAGE_PATH_STYLE=false
+```
+
+**Azure Blob Storage.** Azure Blob is not S3-compatible, so it has its own backend. Set
+`OBJECT_STORAGE_PROTOCOL=azure-blob` and reuse the same settings: the bucket is the container name,
+the access key ID is the storage account name and the secret access key is one of the account's
+access keys. `OBJECT_STORAGE_ENDPOINT` is optional and is the account URL, for example
+`http://127.0.0.1:10000/devstoreaccount1` for a local emulator or the account's URL in a sovereign
+cloud; it defaults to `https://<account>.blob.core.windows.net`. `OBJECT_STORAGE_REGION` and
+`OBJECT_STORAGE_PATH_STYLE` do not apply. The container must already exist. For the versioning and lifecycle
+advice below, use the account's blob versioning and lifecycle management.
+
+```env
+OBJECT_STORAGE_PROTOCOL=azure-blob
+OBJECT_STORAGE_BUCKET=rakazo-homes
+OBJECT_STORAGE_ACCESS_KEY_ID=mystorageaccount
+OBJECT_STORAGE_SECRET_ACCESS_KEY=replace-me
 ```
 
 Only the API and worker read these settings. Bot computers never receive the credentials or
@@ -155,7 +173,7 @@ The same key must be configured on every API and worker replica. Registrations r
 bound to their authenticated session; deleting an account also deletes its registration.
 
 With `OBJECT_STORAGE_BUCKET` configured, new artifact contents use the existing
-S3-compatible connection alongside computer homes. Artifact contents are always encrypted
+object storage connection alongside computer homes. Artifact contents are always encrypted
 before upload using the space's content key and authenticated segments bound to the
 artifact identity. This applies even with `CONTENT_ENCRYPTION=off`. Metadata and access
 checks remain in Postgres; clients and sandboxes receive neither bucket credentials nor
