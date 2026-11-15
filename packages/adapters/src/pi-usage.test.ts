@@ -1016,25 +1016,70 @@ describe("Pi usage accounting", () => {
     expect(push).not.toHaveBeenCalled();
     expect(fetcher).not.toHaveBeenCalled();
   });
-  it("retains bytes and observes fragmented CRLF SSE with explicit zeros", async () => {
-    const bytes = new TextEncoder().encode('data: {"usage":{"prompt_tokens":0}}\r\n\r\n');
-    const reported = new Set<"inputTokens">();
+  it.each(["\n", "\r\n", "\r"])(
+    "retains bytes and observes fragmented SSE with %j line endings",
+    async (newline) => {
+      const bytes = new TextEncoder().encode(
+        [
+          'data: {"id":"request-test",',
+          'data: "usage":{"prompt_tokens":0,"completion_tokens":0,"total_tokens":7}}',
+          "",
+          "",
+        ].join(newline),
+      );
+      const reported = new Set<"inputTokens" | "outputTokens" | "totalTokens">();
+      const onRequestId = vi.fn();
+      const fetcher = usageReportingFetch(
+        async () =>
+          new Response(
+            new ReadableStream({
+              start(controller) {
+                for (const byte of bytes) {
+                  controller.enqueue(new Uint8Array([byte]));
+                  controller.enqueue(new Uint8Array());
+                }
+                controller.close();
+              },
+            }),
+            { headers: { "content-type": "text/event-stream" } },
+          ),
+        reported,
+        onRequestId,
+      );
+      const response = await fetcher("https://model.example.test");
+      expect(new Uint8Array(await response.arrayBuffer())).toEqual(bytes);
+      expect(reported).toEqual(new Set(["inputTokens", "outputTokens", "totalTokens"]));
+      expect(onRequestId).toHaveBeenCalledWith("request-test");
+      expect(normalizePiUsage({ input: 0, output: 0 }, model, reported)).toMatchObject({
+        inputTokens: 0,
+        outputTokens: 0,
+        totalTokens: 7,
+      });
+    },
+  );
+  it("drops oversized CR frames and recovers for mixed line endings", async () => {
+    const text = `data: {"id":"oversized","padding":"${"x".repeat(262144)}"}\r\r`;
+    const tail = 'data: {"id":"valid","usage":{"total_tokens":9}}\r\n\rdata: [DONE]\n\n';
+    const onRequestId = vi.fn();
+    const reported = new Set<"totalTokens">();
     const fetcher = usageReportingFetch(
       async () =>
         new Response(
           new ReadableStream({
             start(controller) {
-              for (const byte of bytes) controller.enqueue(new Uint8Array([byte]));
+              controller.enqueue(new TextEncoder().encode(text.slice(0, -2)));
+              controller.enqueue(new TextEncoder().encode(text.slice(-2) + tail));
               controller.close();
             },
           }),
           { headers: { "content-type": "text/event-stream" } },
         ),
       reported,
+      onRequestId,
     );
-    const response = await fetcher("https://model.example.test");
-    expect(new Uint8Array(await response.arrayBuffer())).toEqual(bytes);
-    expect(reported.has("inputTokens")).toBe(true);
+    expect(await (await fetcher("https://model.example.test")).text()).toBe(text + tail);
+    expect(onRequestId.mock.calls).toEqual([["valid"]]);
+    expect(normalizePiUsage(undefined, model, reported).totalTokens).toBe(9);
   });
   it("records reported totalTokens and request id from WebSocket provider stream events when fetch is unused", async () => {
     const codexModel: Model<Api> = {
