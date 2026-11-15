@@ -243,6 +243,10 @@ Caddy example, the optional `@native` route requires **both** a matching
 `X-Access-Key` and an `/api/*` or `/rpc/*` path. Missing/wrong keys still go through
 the Google gate. An unset or malformed configured key leaves this route disabled.
 
+Local computers are not supported behind this optional gate: their connection
+client cannot send the access header. Use the Kubernetes computers configured
+by this guide.
+
 This gate does not support native passkeys or app links as configured: platform
 verifiers cannot authenticate to fetch `/.well-known/apple-app-site-association`
 or `/.well-known/assetlinks.json`. Use account password sign-in. Supporting those
