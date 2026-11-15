@@ -127,10 +127,13 @@ export class Speaker {
   /**
    * Says `text` once everything already queued has been said, as a call does with a reply it
    * speaks while the bot still writes it. Settles like `speak`. Options apply when nothing is
-   * queued; later text joins the speech already under way.
+   * queued or still playing; later text joins the speech already under way.
    */
   async queue(text: string, opts: SpeakOptions = {}): Promise<string | undefined> {
-    if (!this.feed || this.feed.stopped) {
+    // Speech that already played to the end does not carry its options, such as the message
+    // it read, over to this text.
+    if (!this.feed || this.feed.stopped || this.queued === 0) {
+      this.feed?.stop();
       this.feed = this.newFeed(opts);
       this.messageId = opts.messageId;
     }

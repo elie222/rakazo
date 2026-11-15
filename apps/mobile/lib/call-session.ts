@@ -866,6 +866,8 @@ function speakAndListen(text: string, { queue = false, continues = false } = {})
   clearEchoGuard();
   const { botId } = state;
   const speakingCallId = callId;
+  // Sentences of a reply said as it is written, as opposed to its rest or a goodbye.
+  const writtenRunId = queue ? streamRunId : null;
   // Bump before anything else: this attempt supersedes all older ones, even if it then
   // declines to speak, so only the newest speech below may run its handlers.
   const speechId = ++speechSeq;
@@ -899,6 +901,9 @@ function speakAndListen(text: string, { queue = false, continues = false } = {})
   void deps
     .speak(botId, text, queue)
     .catch((error: unknown) => {
+      // A failed clip may have gone unheard: the finished reply is said whole instead. Later
+      // sentences of the same speech fail with it, so this holds even when one superseded it.
+      if (writtenRunId) replySpeech.forget(writtenRunId);
       if (superseded()) return;
       if (error instanceof AiConsentBlocked) {
         blockedByConsent = true;
@@ -946,8 +951,8 @@ function onCallEnded(ended: CallEnded): void {
   botEndedCall = true;
   if (hangUpTimer) clearTimeout(hangUpTimer);
   hangUpTimer = setTimeout(endCall, CALL_FAREWELL_TIMEOUT_MS);
-  // A reply being said as it is written ends with what was already queued, then the goodbye.
-  const afterReply = streamRunId !== null;
+  // A reply still being said, as it is written or after it landed, ends before the goodbye.
+  const afterReply = streamRunId !== null || state.phase === "speaking";
   sealStream();
   const farewell = ended.farewell?.trim();
   // Nothing to say: hang up instead of waiting out the fallback.

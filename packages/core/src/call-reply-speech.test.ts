@@ -261,6 +261,16 @@ describe("createCallReplySpeech", () => {
       );
     });
 
+    it("is said whole after saying part of it failed, and nothing more is taken first", () => {
+      const reply = call();
+      expect(reply.hear(shownText("Booked for Friday. The ho"))).toBe("Booked for Friday.");
+      reply.speech.forget("run-1");
+      expect(reply.hear(shownDelta("tel is close. Any"))).toBe("");
+      expect(
+        reply.speech.finish("run-1", "Booked for Friday. The hotel is close. Anything else?"),
+      ).toBe("Booked for Friday. The hotel is close. Anything else?");
+    });
+
     it("finishes another run's reply without touching this one", () => {
       const reply = call();
       reply.hear(shownText("Booked for Friday. The"));

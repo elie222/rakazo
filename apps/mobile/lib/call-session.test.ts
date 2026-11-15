@@ -2606,6 +2606,44 @@ describe("mobile call session on a timer", () => {
       await tick();
       expect(getSnapshot()).toBeNull();
     });
+
+    it("says the bot's goodbye after the end of the reply still playing", async () => {
+      const fake = fakes({ onDevice: true });
+      startCall({ botId: "bot-1", botName: "Ada", transcribe: false }, fake.deps);
+      await tick();
+      fake.hear("book it and hang up");
+      await tick();
+      const id = callIdFromClientNonce(String(fake.send.mock.calls[0]?.[2]));
+      fake.thread(writing("Booked for Friday. The ho"));
+      await tick();
+      finish(fake, "Booked for Friday. The hotel is close.");
+      await tick();
+      expect(fake.spoken).toEqual(["Booked for Friday.", "The hotel is close."]);
+
+      fake.endedCall(id, "Talk soon.");
+      await tick();
+      expect(fake.spoken).toEqual(["Booked for Friday.", "The hotel is close.", "Talk soon."]);
+      expect(fake.queued).toEqual([true, true, true]);
+    });
+
+    it("says the whole reply once it lands when saying part of it failed", async () => {
+      const fake = fakes({ onDevice: true });
+      await callWaitingOnRun(fake);
+      fake.thread(writing("Booked for Friday. The ho"));
+      await tick();
+      fake.speeches[0]?.reject(new Error("Voice request failed."));
+      await tick();
+      fake.thread(writing("Booked for Friday. The hotel is close. Any"));
+      await tick();
+      expect(fake.spoken).toEqual(["Booked for Friday."]);
+
+      finish(fake, "Booked for Friday. The hotel is close. Anything else?");
+      await tick();
+      expect(fake.spoken).toEqual([
+        "Booked for Friday.",
+        "Booked for Friday. The hotel is close. Anything else?",
+      ]);
+    });
   });
 });
 

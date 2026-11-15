@@ -524,8 +524,8 @@ function speakFarewell(payload: Record<string, unknown>) {
   const farewell = typeof payload.farewell === "string" ? payload.farewell.trim() : "";
   const messageId = typeof payload.messageId === "string" ? payload.messageId : undefined;
   if (messageId) spokenMessageIds.add(messageId);
-  // A reply being said as it is written ends with what was already queued, then the goodbye.
-  const afterReply = streamRunId !== null;
+  // A reply still being said, as it is written or after it landed, ends before the goodbye.
+  const afterReply = streamRunId !== null || speaker.isSpeaking();
   sealStream();
   // Nothing to say: hang up instead of waiting out the fallback.
   if (!farewell) {
@@ -827,7 +827,12 @@ function speakAsWritten(runId: string | null, messages: readonly ThreadMessage[]
   set({ exchanges: withBotSpeech(state.exchanges, sentences, continues), heard: "" });
   spokenMemory.remember(sentences);
   // Until the reply lands as a message, the live message on screen is what is being read.
-  void speaker.queue(sentences, { botId: state.botId, messageId: progressMessageId({ runId }) });
+  void speaker
+    .queue(sentences, { botId: state.botId, messageId: progressMessageId({ runId }) })
+    .then(() => {
+      // A failed clip may have gone unheard: the finished reply is said whole instead.
+      if (speaker.state.error) replySpeech.forget(runId);
+    });
 }
 
 /** The caller cut in: nothing more of the reply being written is said until it is whole. */

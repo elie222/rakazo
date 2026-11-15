@@ -48,6 +48,7 @@ vi.mock("./tts.js", () => ({
     unlock: vi.fn(),
     isSpeaking: vi.fn(() => false),
     subscribe: vi.fn(() => () => undefined),
+    state: { status: "idle" } as { status: string; error?: string },
   },
 }));
 
@@ -1617,6 +1618,68 @@ describe("call session", () => {
       });
       expect(queue).toHaveBeenLastCalledWith("Talk soon", expect.anything());
       expect(speak).not.toHaveBeenCalled();
+    });
+
+    it("says the goodbye after the end of the reply still playing when the bot hangs up", async () => {
+      await answeredCall({ botId: "call-bot", botName: "Ada", transcribe: false });
+      const feed = vi.mocked(runThreadSubscription).mock.calls[0]?.[0];
+      getThread.mockResolvedValue(
+        snapshot([streamingMessage("Booked for Friday. The ho", true)], runningRun) as never,
+      );
+      await heard("book it and hang up");
+      const callId = callIdFromClientNonce(String(send.mock.calls[0]?.[0]?.clientNonce));
+      getThread.mockResolvedValue(
+        snapshot([botMessage("message-1", "Booked for Friday. The hotel is close.")]) as never,
+      );
+      await feed?.refresh();
+      expect(queue).toHaveBeenLastCalledWith("The hotel is close.", expect.anything());
+
+      isSpeaking.mockReturnValue(true);
+      feed?.onEvent?.(callEndedEvent(String(callId), "Talk soon"), {
+        threadId: "thread-1",
+        cursor: 3,
+      });
+      expect(queue).toHaveBeenLastCalledWith("Talk soon", expect.anything());
+      expect(speak).not.toHaveBeenCalled();
+    });
+
+    it("says the whole reply once it lands when saying part of it failed", async () => {
+      await answeredCall({ botId: "call-bot", botName: "Ada", transcribe: false });
+      const feed = vi.mocked(runThreadSubscription).mock.calls[0]?.[0];
+      queue.mockImplementationOnce(async () => {
+        speaker.state.error = "Voice request failed.";
+        return "Voice request failed.";
+      });
+      getThread.mockResolvedValue(
+        snapshot([streamingMessage("Booked for Friday. The ho", true)], runningRun) as never,
+      );
+      try {
+        await heard("book the flight");
+        expect(queue).toHaveBeenCalledExactlyOnceWith("Booked for Friday.", expect.anything());
+        await Promise.resolve();
+
+        getThread.mockResolvedValue(
+          snapshot(
+            [streamingMessage("Booked for Friday. The hotel is close. Any", true)],
+            runningRun,
+          ) as never,
+        );
+        await feed?.refresh();
+        expect(queue).toHaveBeenCalledTimes(1);
+
+        getThread.mockResolvedValue(
+          snapshot([
+            botMessage("message-1", "Booked for Friday. The hotel is close. Anything else?"),
+          ]) as never,
+        );
+        await feed?.refresh();
+        expect(queue).toHaveBeenLastCalledWith(
+          "Booked for Friday. The hotel is close. Anything else?",
+          expect.objectContaining({ messageId: "message-1" }),
+        );
+      } finally {
+        speaker.state.error = undefined;
+      }
     });
   });
 });

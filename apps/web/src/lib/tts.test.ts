@@ -138,6 +138,29 @@ describe("Speaker", () => {
     expect(speaker.state).toEqual({ status: "idle" });
   });
 
+  it("names the message of new queued speech once the speech before it played to the end", async () => {
+    let finish: () => void = () => undefined;
+    stubAudio((audio) => {
+      finish = () => audio.onended?.();
+      return Promise.resolve();
+    });
+    const speaker = new Speaker();
+    vi.spyOn(
+      speaker as unknown as { prepare: (text: string) => Promise<string[]> },
+      "prepare",
+    ).mockImplementation(async (text) => [text]);
+
+    const opening = speaker.speak("Hi, it's Ada.", { botId: "bot-1" });
+    await vi.waitFor(() => expect(speaker.state.caption).toBe("Hi, it's Ada."));
+    finish();
+    await opening;
+    expect(speaker.state).toEqual({ status: "idle" });
+
+    void speaker.queue("Booked.", { botId: "bot-1", messageId: "progress:run-2" });
+    await vi.waitFor(() => expect(speaker.state.caption).toBe("Booked."));
+    expect(speaker.isSpeaking("progress:run-2")).toBe(true);
+  });
+
   it("plays every clip through the element a tap unlocked", async () => {
     const played: string[] = [];
     const elements = stubAudio((audio) => {

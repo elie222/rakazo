@@ -188,6 +188,19 @@ export function createCallReplySpeech() {
       return sentences.slice(index).join(" ");
     },
 
+    /**
+     * Saying the reply failed, so what was taken may not have been heard: nothing more is
+     * taken, and the finished reply is said whole.
+     */
+    forget(runId: string): void {
+      const current = reply;
+      if (current?.runId !== runId) return;
+      current.said = [];
+      current.saidOf.clear();
+      current.cutOff = undefined;
+      current.held = true;
+    },
+
     clear(): void {
       reply = null;
     },
