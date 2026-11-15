@@ -4,6 +4,7 @@ import type { SecretStore } from "@rakazo/adapter-kit";
 import type { PluginMcpServerEntry, PluginRepoFetcher } from "@rakazo/adapters";
 import {
   buildMcpCredentialBlob,
+  isTransientFetchError,
   persistPreparedSecret,
   pluginPreviewDto,
   previewPluginInstall,
@@ -43,7 +44,9 @@ async function loadPlugin(
   let plugin: LoadedPlugin;
   try {
     plugin = await previewPluginInstall({ source, fetcher: deps.fetcher, signal });
-  } catch {
+  } catch (error) {
+    // A cancelled request or a failing host says nothing about the plugin.
+    if (signal?.aborted || isTransientFetchError(error)) throw error;
     throw new ORPCError("BAD_REQUEST", {
       message: "Could not load a supported plugin from this repository",
     });
@@ -119,7 +122,8 @@ async function assertSkillNamesFree(
         skill.name,
         spaceAvailability(install),
       );
-    } catch {
+    } catch (error) {
+      if (!(error instanceof ORPCError) || error.code !== "CONFLICT") throw error;
       throw new ORPCError("CONFLICT", { message: "A plugin skill name is already in use" });
     }
   }

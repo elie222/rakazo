@@ -282,7 +282,7 @@ export async function expireStaleComputerControl(
     // retry it so the row does not sit busy forever.
     if (computer.controlLeaseId) {
       await expireComputerControl(deps, computer.id, computer.controlLeaseId).catch(
-        () => undefined,
+        logFailedControlExpiry,
       );
       return true;
     }
@@ -291,10 +291,15 @@ export async function expireStaleComputerControl(
   const leaseId = computer.controlLeaseId;
   // Keep a failed revoke's lease id so reconciliation can retry provider shutdown.
   if (leaseId) {
-    await expireComputerControl(deps, computer.id, leaseId).catch(() => undefined);
+    await expireComputerControl(deps, computer.id, leaseId).catch(logFailedControlExpiry);
     return true;
   }
-  return clearInactiveUserComputerControl(deps.prisma, computer.id).catch(() => false);
+  return clearInactiveUserComputerControl(deps.prisma, computer.id);
+}
+
+// The read that found the stale lease still answers; the lease stays spent for the next retry.
+function logFailedControlExpiry(error: unknown) {
+  getLogger().error("stale computer control expiry", error);
 }
 
 export async function computerScreenContext(

@@ -145,7 +145,10 @@ function routes(prisma: never, email = new EmailEmulator()) {
   return { submit, claims, open, email };
 }
 
-beforeEach(() => preview.mockReset());
+// A returned function would run as the test's cleanup, so the mock itself must not be returned.
+beforeEach(() => {
+  preview.mockReset();
+});
 
 describe("public plugin submissions", () => {
   it("stores the repository, branch and folder and emails the submitter and admins", async () => {
@@ -289,6 +292,27 @@ describe("reviewing submissions", () => {
     });
     await reviewPluginSubmission(deps, { id: "sub-1", decision: "approve" });
     expect(rows[0]!.status).toBe("approved");
+  });
+
+  it("tells the admin when the repository holds no plugin it can preview", async () => {
+    const { deps, rows } = await submitted();
+    preview.mockRejectedValue(new Error("No plugin manifest found"));
+    await expect(
+      reviewPluginSubmission(deps, { id: "sub-1", decision: "approve" }),
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: "Could not preview a supported plugin from this repository",
+    });
+    expect(rows[0]!.status).toBe("pending");
+  });
+
+  it("reports a failing host as itself, not as an unreadable plugin", async () => {
+    const { deps, rows } = await submitted();
+    preview.mockRejectedValue(new Error("Request failed: HTTP 503"));
+    await expect(
+      reviewPluginSubmission(deps, { id: "sub-1", decision: "approve" }),
+    ).rejects.toThrow("Request failed: HTTP 503");
+    expect(rows[0]!.status).toBe("pending");
   });
 
   it("refuses a plugin with nothing to install", async () => {

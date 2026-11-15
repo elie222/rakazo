@@ -37,6 +37,11 @@ const fetcher = async () => ({
     },
   ],
 });
+function failingFetcher(error: Error): typeof fetcher {
+  return async () => {
+    throw error;
+  };
+}
 function setup() {
   const prisma = {
     $executeRaw: vi.fn(),
@@ -168,9 +173,39 @@ describe("confirmed plugin installation", () => {
     ] as never);
     await expect(installPlugin(deps, actor, await input())).rejects.toMatchObject({
       code: "CONFLICT",
+      message: "A plugin skill name is already in use",
     });
     expect(prisma.capabilityInstall.create).not.toHaveBeenCalled();
     expect(prisma.agentSkill.create).not.toHaveBeenCalled();
+  });
+  it("reports a failed skill name check as the failure, not as a name clash", async () => {
+    const { deps, prisma } = setup();
+    prisma.agentSkill.findMany.mockRejectedValueOnce(new Error("database unavailable"));
+    await expect(installPlugin(deps, actor, await input())).rejects.toThrow("database unavailable");
+    expect(prisma.capabilityInstall.create).not.toHaveBeenCalled();
+  });
+  it("tells the user when the repository holds no plugin it can load", async () => {
+    const { deps, prisma } = setup();
+    const unreadable = failingFetcher(new Error("No plugin manifest found"));
+    await expect(
+      installPlugin({ ...deps, fetcher: unreadable }, actor, await input()),
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: "Could not load a supported plugin from this repository",
+    });
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+  it("reports a failing host or a cancelled request as itself, not as an unreadable plugin", async () => {
+    const { deps } = setup();
+    const args = await input();
+    const hostDown = failingFetcher(new Error("Request failed: HTTP 503"));
+    await expect(installPlugin({ ...deps, fetcher: hostDown }, actor, args)).rejects.toThrow(
+      "Request failed: HTTP 503",
+    );
+    const dropped = failingFetcher(new Error("socket closed"));
+    await expect(
+      installPlugin({ ...deps, fetcher: dropped }, actor, args, AbortSignal.abort()),
+    ).rejects.toThrow("socket closed");
   });
   it("installs the other skills when one repeats a built-in skill", async () => {
     const { deps, prisma } = setup();
@@ -258,12 +293,12 @@ describe("confirmed plugin installation", () => {
 });
 
 describe("plugin RPC boundary", () => {
-  function client(currentActor: Actor | null = actor) {
+  function client(currentActor: Actor | null = actor, pluginRepoFetcher = fetcher) {
     const { deps, prisma } = setup();
     const router = createRouter({
       prisma: deps.prisma,
       secrets: deps.secrets,
-      pluginRepoFetcher: deps.fetcher,
+      pluginRepoFetcher,
       remoteConnectors: { resolveHostname: async () => [{ address: "203.0.113.10", family: 4 }] },
       env: { webOrigin: "http://localhost:5173", defaultProvider: "fake", defaultModel: "fake" },
       dataDir: "/tmp/plugin-rpc-test",
@@ -285,6 +320,17 @@ describe("plugin RPC boundary", () => {
       rpc.capabilities.install({ kind: "plugin", source, name: "Example", config: {} }),
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
     expect(prisma.capabilityInstall.create).not.toHaveBeenCalled();
+  });
+  it("previews an unreadable plugin as a bad request and a failing host as the failure", async () => {
+    const unreadable = client(actor, failingFetcher(new Error("No plugin manifest found")));
+    await expect(unreadable.rpc.capabilities.pluginPreview({ source })).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: "Could not preview a supported plugin from this repository",
+    });
+    const hostDown = client(actor, failingFetcher(new Error("Request failed: HTTP 503")));
+    await expect(hostDown.rpc.capabilities.pluginPreview({ source })).rejects.toThrow(
+      "Request failed: HTTP 503",
+    );
   });
   it("adds only the chosen parts and records them", async () => {
     const { deps, prisma, secrets } = setup();

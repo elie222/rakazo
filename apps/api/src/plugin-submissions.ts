@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { ORPCError } from "@orpc/server";
 import type { TransactionalEmail } from "@rakazo/adapter-kit";
-import { parsePluginSource, previewPluginInstall } from "@rakazo/adapters";
+import { isTransientFetchError, parsePluginSource, previewPluginInstall } from "@rakazo/adapters";
 import {
   emailLocale,
   integrationClaimConfirmEmail,
@@ -268,7 +268,9 @@ export async function reviewPluginSubmission(
       source: row.source,
       signal,
       fetcher: deps.pluginRepoFetcher,
-    }).catch(() => {
+    }).catch((error) => {
+      // A cancelled request or a failing host says nothing about the plugin.
+      if (signal?.aborted || isTransientFetchError(error)) throw error;
       throw new ORPCError("BAD_REQUEST", {
         message: "Could not preview a supported plugin from this repository",
       });

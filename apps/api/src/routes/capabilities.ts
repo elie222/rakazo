@@ -285,8 +285,12 @@ export function capabilitiesRoutes(ctx: RouterContext) {
             installedSource: `${preview.source.gitUrl}${preview.source.subdir ? `#${preview.source.subdir}` : ""}`,
           };
         } catch (error) {
-          // Only content we can't support leaves browse; a slow or failing GitHub is retried.
-          if (!isTransientFetchError(error)) pluginMarketplace.markUnreadable(input.source);
+          const hostFailed = isTransientFetchError(error);
+          // A cancelled request or a failing host says nothing about the plugin; an endpoint it
+          // names that is refused (an ORPCError) does.
+          if (!(error instanceof ORPCError) && (context.signal?.aborted || hostFailed)) throw error;
+          // Only content we can't support leaves browse.
+          if (!hostFailed) pluginMarketplace.markUnreadable(input.source);
           throw new ORPCError("BAD_REQUEST", {
             message: "Could not preview a supported plugin from this repository",
           });
