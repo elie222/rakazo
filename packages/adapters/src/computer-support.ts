@@ -2,7 +2,6 @@ import { createHash } from "node:crypto";
 import path from "node:path";
 import type { ComputerAction, ComputerObservation, ComputerRef } from "@rakazo/adapter-kit";
 import type { ComputerMode } from "@rakazo/contracts";
-import { ClientError } from "@rakazo/core";
 
 export function toComputerRef(computer: {
   homeKey: string;
@@ -63,10 +62,13 @@ export function clampRounded(value: number, min: number, max: number): number {
   return Math.min(Math.max(Math.round(value), min), max);
 }
 
-/** A path a caller asked for that leaves the folder they may use. */
-export class WorkspacePathError extends ClientError {
+/**
+ * A path that leaves the folder it must stay in. Not a refusal by itself: the path may be one a
+ * provider listed, which is a fault to log. A route that passes a caller's own path answers it.
+ */
+export class WorkspacePathError extends Error {
   constructor(message: string) {
-    super("BAD_REQUEST", message);
+    super(message);
     this.name = "WorkspacePathError";
   }
 }

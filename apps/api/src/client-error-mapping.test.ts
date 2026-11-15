@@ -91,12 +91,6 @@ const REFUSALS: Array<[error: Error, code: string, status: number, message: stri
   [new BotSectionNameConflictError(), "CONFLICT", 409, "Section name already used"],
   [new ComputerBusyError(), "CONFLICT", 409, "Computer is busy"],
   [new ComputerSpaceDeletingError(), "CONFLICT", 409, "Computer is busy"],
-  [
-    new WorkspacePathError("Path escapes the bot workspace"),
-    "BAD_REQUEST",
-    400,
-    "Path escapes the bot workspace",
-  ],
 ];
 
 /** What a client receives when a procedure throws `error`, through the app's error path. */
@@ -146,6 +140,17 @@ describe("domain refusals answered by the central mapping", () => {
       status: 400,
       body: { json: { code: "NAME_TAKEN", status: 400, message: "Pick another name" } },
     });
+  });
+
+  it("reports a path that leaves the workspace as a server failure unless a route answers it", async () => {
+    // The path may be one a computer provider listed, not one the caller typed.
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
+
+    await expect(
+      answer(new WorkspacePathError("Path escapes the computer workspace")),
+    ).resolves.toMatchObject({ status: 500 });
+    expect(sink.events).toMatchObject([{ level: "error", message: "rpc fail failed" }]);
   });
 
   it("still reports an error that carries no client answer as a server failure", async () => {

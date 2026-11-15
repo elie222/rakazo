@@ -27,6 +27,7 @@ import {
   sleepDeferReason,
   toComputerRef,
   touchRunningComputer,
+  WorkspacePathError,
 } from "@rakazo/adapters";
 import {
   attachmentMaxBytes,
@@ -559,11 +560,15 @@ export function computerRoutes(ctx: RouterContext) {
           });
         }
         await keepComputerAwake(deps, computer.id);
-        const storedPath = resolveBotUploadPath(
-          parseComputerMode(computer.scope),
-          bot.id,
-          input.path,
-        );
+        let storedPath: string;
+        try {
+          storedPath = resolveBotUploadPath(parseComputerMode(computer.scope), bot.id, input.path);
+        } catch (error) {
+          // This path is the caller's own, so leaving the workspace is theirs to fix.
+          if (error instanceof WorkspacePathError)
+            throw new ClientError("BAD_REQUEST", error.message);
+          throw error;
+        }
         await deps.sandbox.writeFile(
           toComputerRef(computer),
           { path: storedPath, content },
