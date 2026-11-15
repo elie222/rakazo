@@ -1,3 +1,4 @@
+import { deferred } from "@rakazo/core/test-async";
 import { beforeEach, expect, it, vi } from "vitest";
 import { queryClient } from "./query";
 import {
@@ -26,14 +27,6 @@ vi.mock("./session", () => ({
   loadSessionToken: async () => "token",
   currentSessionGeneration: () => scope.generation,
 }));
-
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => {
-    resolve = done;
-  });
-  return { promise, resolve };
-}
 
 beforeEach(() => {
   queryClient.clear();

@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { deferred } from "@rakazo/core/test-async";
 import { notifyManager } from "@tanstack/react-query";
 import type { CSSProperties, ReactNode, Ref } from "react";
 import { act, createElement, useEffect, useImperativeHandle } from "react";
@@ -900,12 +901,8 @@ describe("provider connection screen", () => {
   it("aborts pending subscription sign-in when the screen unmounts", async () => {
     mocks.connected = false;
     mocks.subscriptionSignIn = true;
-    let completeSignIn!: (result: { status: "ready" }) => void;
-    mocks.completeOAuth.mockReturnValueOnce(
-      new Promise((resolve) => {
-        completeSignIn = resolve;
-      }),
-    );
+    const completeSignIn = deferred<{ status: "ready" }>();
+    mocks.completeOAuth.mockReturnValueOnce(completeSignIn.promise);
     await renderConnection({ makeDefault: true });
     await act(async () => buttonWithText("Sign in")!.click());
     expect(mocks.rpc).toHaveBeenCalledWith(
@@ -917,7 +914,7 @@ describe("provider connection screen", () => {
     act(() => root.render(null));
     expect(signal.aborted).toBe(true);
     expect(mocks.rpc).toHaveBeenCalledWith("models/cancelOAuth", { loginId: "login-fixture" });
-    await act(async () => completeSignIn({ status: "ready" }));
+    await act(async () => completeSignIn.resolve({ status: "ready" }));
     expect(mocks.rpc).not.toHaveBeenCalledWith("models/finishOAuth", expect.anything());
   });
 });

@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 
 import { i18n } from "@lingui/core";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred, flush } from "@rakazo/core/test-async";
 import type { ReactNode } from "react";
 import { act, createElement, useEffect, useState } from "react";
 import type { Root } from "react-dom/client";
@@ -392,7 +394,7 @@ const alertButton = (text: string) =>
   (state.alert.mock.lastCall![2] as AlertButton[]).find((entry) => entry.text === text)!;
 
 // Lets a list read land and the screen paint it.
-const settle = () => act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+const settle = () => act(flush);
 async function render() {
   await act(async () => root.render(createElement(Vault)));
   await settle();
@@ -1056,17 +1058,15 @@ it("shows an error when revealing fails", async () => {
 it("drops a value that arrives once another screen covers this one", async () => {
   await render();
   await open("api.github.com");
-  let finish!: (value: { value: string }) => void;
-  state.rpc.mockImplementationOnce(
-    () =>
-      new Promise((resolve) => {
-        finish = resolve;
-      }),
-  );
+  let finish!: Deferred<{ value: string }>;
+  state.rpc.mockImplementationOnce(() => {
+    finish = deferred<{ value: string }>();
+    return finish.promise;
+  });
   await act(async () => button("Show", dialog())!.click());
   state.focused = false;
   await render();
-  await act(async () => finish({ value: "example-value" }));
+  await act(async () => finish.resolve({ value: "example-value" }));
   expect(state.alert).not.toHaveBeenCalled();
 
   state.focused = true;
@@ -1156,19 +1156,17 @@ it("drops an import's result that arrives once another screen covers this one", 
   });
   await render();
   await act(async () => button("Import CSV", menu("New item"))!.click());
-  let finish!: (value: unknown) => void;
-  state.rpc.mockImplementationOnce(
-    () =>
-      new Promise((resolve) => {
-        finish = resolve;
-      }),
-  );
+  let finish!: Deferred<unknown>;
+  state.rpc.mockImplementationOnce(() => {
+    finish = deferred<unknown>();
+    return finish.promise;
+  });
   const review = state.alert.mock.calls.length;
   const imported = alertButton("Import").onPress?.();
   state.focused = false;
   await render();
   await act(async () => {
-    finish({
+    finish.resolve({
       added: 1,
       skipped: { notHttps: 0, noPassword: 0, duplicate: 0, invalid: 0, limit: 0 },
       notSaved: [],

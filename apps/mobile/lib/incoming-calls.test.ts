@@ -1,3 +1,4 @@
+import { deferred } from "@rakazo/core/test-async";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const fake = vi.hoisted(() => ({
@@ -96,13 +97,6 @@ const block = () => ({
 const tick = async () => {
   for (let i = 0; i < 15; i++) await Promise.resolve();
 };
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => {
-    resolve = done;
-  });
-  return { promise, resolve };
-}
 let stop: (() => void) | undefined;
 beforeEach(() => {
   // Retry and reconnect waits are jittered; pin them to their unjittered values.

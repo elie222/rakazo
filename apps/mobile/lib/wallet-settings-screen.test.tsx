@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { deferred } from "@rakazo/core/test-async";
 import { notifyManager } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { act, useEffect } from "react";
@@ -198,15 +199,6 @@ it("shows nothing to connect when the deployment has no wallet", async () => {
   expect(container.querySelectorAll("button")).toHaveLength(0);
 });
 
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  let reject!: (error: Error) => void;
-  const promise = new Promise<T>((yes, no) => {
-    resolve = yes;
-    reject = no;
-  });
-  return { promise, resolve, reject };
-}
 const disconnected = { status: "disconnected" as const };
 const connected = { status: "connected" as const, connectedAt: "2026-10-27T12:01:00Z" };
 const failure = () => container.querySelector('[role="alert"]')?.textContent ?? null;
