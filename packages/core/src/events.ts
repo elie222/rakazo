@@ -695,11 +695,15 @@ function redactedRanges(value: string, secrets: Iterable<string>): Array<[number
   return ranges;
 }
 
-export function redactSecrets(value: string, secrets: readonly string[]): string {
+export function redactSecrets(
+  value: string,
+  secrets: readonly string[],
+  marker = "[redacted]",
+): string {
   let output = "";
   let offset = 0;
   for (const [start, end] of redactedRanges(value, secrets)) {
-    output += `${value.slice(offset, start)}[redacted]`;
+    output += value.slice(offset, start) + marker;
     offset = end;
   }
   return output + value.slice(offset);

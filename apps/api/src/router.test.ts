@@ -5164,6 +5164,26 @@ describe("OpenAI-compatible model probes", () => {
     expect(JSON.stringify(response)).not.toContain("fake-session-secret");
   });
 
+  it("hides the saved key and headers in a failed probe's message", async () => {
+    const { client, fetch, load } = fixture();
+    load.mockResolvedValue(
+      JSON.stringify({
+        kind: "openai_compatible",
+        baseUrl,
+        apiKey: "fake-saved-key",
+        headers: { "x-session": "fake-session-secret" },
+      }),
+    );
+    fetch.mockRejectedValue(
+      new TypeError(
+        'Headers.append: "Bearer fake-saved-key" after fake-session-secret is invalid.',
+      ),
+    );
+    await expect(client.models.probeOpenAiCompatible({ baseUrl })).rejects.toThrow(
+      'Headers.append: "Bearer •••" after ••• is invalid.',
+    );
+  });
+
   it("sends a saved key with Anthropic headers for the Anthropic Messages protocol", async () => {
     const { client, fetch, load } = fixture();
     load.mockResolvedValue(

@@ -37,7 +37,12 @@ import {
   storedPiProviderIds,
   usableModelId,
 } from "@rakazo/contracts";
-import { catalogEntryFor, clampCatalogThinkingLevel, modelSettingsDefaults } from "@rakazo/core";
+import {
+  catalogEntryFor,
+  clampCatalogThinkingLevel,
+  modelSettingsDefaults,
+  sanitizeModelConnectionError,
+} from "@rakazo/core";
 import {
   deleteUnreferencedCredentialSecret,
   findNewestUserModelCredential,
@@ -409,6 +414,22 @@ export async function prepareModelReconnectSettings(
   };
 }
 
+/**
+ * What a client is told when a connection attempt fails. The attempt's own credentials are
+ * hidden here, so a client that does not hide them itself never receives them.
+ */
+export function modelConnectionErrorMessage(
+  error: unknown,
+  fallback: string,
+  attempt: { apiKey?: string; headers?: Record<string, string> },
+): string {
+  if (!(error instanceof Error)) return fallback;
+  return sanitizeModelConnectionError(error.message, [
+    attempt.apiKey,
+    ...Object.values(attempt.headers ?? {}),
+  ]);
+}
+
 export function throwIfAborted(signal?: AbortSignal) {
   if (signal?.aborted) throw signal.reason ?? new Error("Request cancelled");
 }
@@ -422,6 +443,8 @@ export function createModelConnector(deps: RouterDeps, codexCatalog: CodexLiveCa
     const credential = await modelConnectionTarget(deps, actor, input.provider, input.credentialId);
     let plaintext: string;
     let expectedSecret: ModelCredentialInput["expectedSecret"];
+    // Starts as what the request carries; a saved key or headers it reuses replace it once read.
+    let attempt: { apiKey?: string; headers?: Record<string, string> } = input;
     try {
       let previousPlaintext: string | undefined;
       let omitVisionModelIds = false;
@@ -456,6 +479,8 @@ export function createModelConnector(deps: RouterDeps, codexCatalog: CodexLiveCa
         }
       }
       const saved = parseModelSecret(plaintext);
+      if (saved.kind === "api_key") attempt = { apiKey: saved.key };
+      else if (saved.kind === "openai_compatible") attempt = saved;
       const replacingKey = Boolean(input.apiKey?.trim());
       // A replacement key must still repair a decryptable but malformed saved secret.
       const previous =
@@ -493,7 +518,7 @@ export function createModelConnector(deps: RouterDeps, codexCatalog: CodexLiveCa
       }
     } catch (error) {
       throw new ORPCError("BAD_REQUEST", {
-        message: error instanceof Error ? error.message : "Invalid model connection",
+        message: modelConnectionErrorMessage(error, "Invalid model connection", attempt),
       });
     }
     if (input.provider === OPENAI_COMPATIBLE_PROVIDER_ID) {

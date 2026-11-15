@@ -53,6 +53,7 @@ import { markExpectedFailure } from "@rakazo/logging/hono";
 import { mayUsePrivateEndpoint } from "../mcp-servers.js";
 import { firstModelConnectAnalytics } from "../model-connect-analytics.js";
 import {
+  modelConnectionErrorMessage,
   modelConnectionTarget,
   persistModelCredential,
   prepareAllowedThinkingLevels,
@@ -330,7 +331,10 @@ export function modelsRoutes(ctx: RouterContext) {
             return { models };
           } catch (error) {
             throw new ORPCError("BAD_REQUEST", {
-              message: error instanceof Error ? error.message : "Could not list models",
+              message: modelConnectionErrorMessage(error, "Could not list models", {
+                apiKey,
+                headers,
+              }),
             });
           }
         },
@@ -345,7 +349,7 @@ export function modelsRoutes(ctx: RouterContext) {
           return { models };
         } catch (error) {
           throw new ORPCError("BAD_REQUEST", {
-            message: error instanceof Error ? error.message : "Could not list models",
+            message: modelConnectionErrorMessage(error, "Could not list models", input),
           });
         }
       }),

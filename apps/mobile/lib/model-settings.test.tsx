@@ -37,7 +37,9 @@ const { push, back, replace, params, rpcCalls, saved } = vi.hoisted(() => ({
     label: "Fixture",
     held: null as Promise<void> | null,
     failMe: false,
-    failConnect: false,
+    failConnect: false as boolean | string,
+    failProbe: undefined as string | undefined,
+    showServerMessages: false,
     apiProtocol: undefined as string | undefined,
     reasoning: false,
     thinkingLevel: undefined as string | undefined,
@@ -83,6 +85,8 @@ vi.mock("./api", () => ({
         defaultModel: "model-fixture",
         needsModel: saved.needsModel,
       };
+    if (procedure === "models/probeOpenAiCompatible" && saved.failProbe)
+      throw new Error(saved.failProbe);
     if (procedure === "models/probeOpenAiCompatible")
       return { models: Array.from({ length: 11 }, (_, index) => `found-${index}`) };
     if (procedure === "models/role") return { primary: null, backups: [] };
@@ -101,7 +105,10 @@ vi.mock("./api", () => ({
       return {};
     }
     if (procedure === "models/connect") {
-      if (saved.failConnect) throw new Error("connection refused");
+      if (saved.failConnect)
+        throw new Error(
+          typeof saved.failConnect === "string" ? saved.failConnect : "connection refused",
+        );
       const form = input as {
         provider: string;
         baseUrl?: string;
@@ -202,7 +209,8 @@ vi.mock("./native", () => ({
   useThemedStyles: (createStyles: () => unknown) => createStyles(),
 }));
 vi.mock("./user-error", () => ({
-  errorText: (_: unknown, fallback = "Something went wrong. Try again.") => fallback,
+  errorText: (error: unknown, fallback = "Something went wrong. Try again.") =>
+    saved.showServerMessages && error instanceof Error ? error.message : fallback,
 }));
 vi.mock("./message-action-sheet", () => ({ presentMessageActionSheet: vi.fn() }));
 vi.mock("../components/native-switch", () => ({
@@ -882,6 +890,8 @@ describe("connection success with a failed refresh", () => {
   afterEach(() => {
     saved.failMe = false;
     saved.failConnect = false;
+    saved.failProbe = undefined;
+    saved.showServerMessages = false;
   });
 
   it("keeps a new saved connection and clears its key when refreshing fails", async () => {
@@ -936,5 +946,30 @@ describe("connection success with a failed refresh", () => {
     expect(container.textContent).toContain("Could not connect this provider");
     expect(field("API key")?.value).toBe("synthetic-test-key");
     expect(field("API key")?.placeholder).not.toBe("Paste a replacement key");
+  });
+
+  it("hides the typed key when a failed connection's message repeats it", async () => {
+    await remount(() => renderConnection({ credentialId: null, baseUrl: "https://ollama.com/v1" }));
+    await change("API key", "synthetic-test-key");
+    await change("Model id", "model-fixture");
+    saved.failConnect = "The provider did not accept synthetic-test-key for this model.";
+    saved.showServerMessages = true;
+    await saveConnection();
+    expect(container.textContent).toContain("The provider did not accept ••• for this model.");
+    expect(container.textContent).not.toContain("synthetic-test-key");
+  });
+
+  it("hides the typed key when a failed model search's message repeats it", async () => {
+    await remount(() => renderConnection({ credentialId: null, baseUrl: "https://ollama.com/v1" }));
+    await change("API key", "synthetic-test-key");
+    saved.failProbe = "The server refused the header value synthetic-test-key.";
+    saved.showServerMessages = true;
+    await act(async () =>
+      [...container.querySelectorAll("button")]
+        .find((button) => button.textContent === "Find models")!
+        .click(),
+    );
+    expect(container.textContent).toContain("The server refused the header value •••.");
+    expect(container.textContent).not.toContain("synthetic-test-key");
   });
 });

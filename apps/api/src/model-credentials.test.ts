@@ -89,3 +89,71 @@ describe("project routing connection checks", () => {
       );
   });
 });
+
+describe("failed connection messages", () => {
+  function connector(check: () => Promise<void>) {
+    const saved = {
+      id: "credential-fixture",
+      userId: "user-fixture",
+      provider: "google-vertex",
+      secretId: "secret-fixture",
+    };
+    const deps = {
+      env: {},
+      prisma: {
+        userModelCredential: { findFirst: vi.fn(async () => saved) },
+        secret: { findFirst: vi.fn(async () => ({ ciphertext: "fixture-ciphertext" })) },
+      },
+      secrets: {
+        load: vi.fn(async () =>
+          JSON.stringify({
+            kind: "api_key",
+            key: "fixture-saved-key",
+            projectId: "example-project",
+            region: "global",
+          }),
+        ),
+      },
+      modelConnectionCheck: check,
+    } as unknown as RouterDeps;
+    const { verifyModelConnection } = createModelConnector(deps, {} as CodexLiveCatalog);
+    return (input: Record<string, unknown>) =>
+      verifyModelConnection(
+        { userId: "user-fixture", spaceId: "space-fixture" } as Actor,
+        ModelConnectInputSchema.parse({
+          provider: saved.provider,
+          credentialId: saved.id,
+          modelId: "gemini-4-hydrogen",
+          ...input,
+        }),
+        undefined,
+      );
+  }
+
+  it("hides the key the request carries", async () => {
+    const verify = connector(async () => {
+      throw new Error("The provider did not accept replacement-fixture-key for this project.");
+    });
+    await expect(verify({ apiKey: "replacement-fixture-key" })).rejects.toThrow(
+      "The provider did not accept ••• for this project.",
+    );
+  });
+
+  it("hides a saved key the request reuses, which the client never held", async () => {
+    const verify = connector(async () => {
+      throw new Error("The provider did not accept fixture-saved-key for this project.");
+    });
+    await expect(verify({ region: "us-central1" })).rejects.toThrow(
+      "The provider did not accept ••• for this project.",
+    );
+  });
+
+  it("hides a credential it was not given, by its shape", async () => {
+    const verify = connector(async () => {
+      throw new Error("Incorrect API key provided: other-fixture-1234. Check the key.");
+    });
+    await expect(verify({ apiKey: "replacement-fixture-key" })).rejects.toThrow(
+      "Incorrect API key provided: •••. Check the key.",
+    );
+  });
+});
