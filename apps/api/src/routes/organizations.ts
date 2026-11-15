@@ -1,16 +1,12 @@
 import { ORPCError } from "@orpc/server";
 import {
-  CannotDeleteLastOrganizationError,
   createOrganizationForUser,
   firstOrganizationSpace,
   InvalidSpaceNameError,
   listMemberOrganizations,
-  OrganizationLimitError,
   recordAuditEvent,
   renameOrganization,
   runAsSystem,
-  SharedOrganizationError,
-  SpaceDeletionInProgressError,
 } from "@rakazo/db";
 import { deleteOrganization } from "../account-deletion.js";
 import type { RouterContext } from "./context.js";
@@ -33,8 +29,6 @@ export function organizationsRoutes(ctx: RouterContext) {
               name: input.name,
             });
           } catch (error) {
-            if (error instanceof OrganizationLimitError)
-              throw new ORPCError("BAD_REQUEST", { message: error.message });
             if (error instanceof InvalidSpaceNameError) throw invalidOrganizationName();
             throw error;
           }
@@ -72,18 +66,7 @@ export function organizationsRoutes(ctx: RouterContext) {
       remove: authed.organizations.remove.handler(({ context, input }) =>
         runAsSystem("delete an organization with its content", async () => {
           const { userId } = context.actor;
-          try {
-            await deleteOrganization(deps, userId, input.organizationId);
-          } catch (error) {
-            if (
-              error instanceof CannotDeleteLastOrganizationError ||
-              error instanceof SharedOrganizationError
-            )
-              throw new ORPCError("BAD_REQUEST", { message: error.message });
-            if (error instanceof SpaceDeletionInProgressError)
-              throw new ORPCError("CONFLICT", { message: error.message });
-            throw error;
-          }
+          await deleteOrganization(deps, userId, input.organizationId);
           return {
             ok: true as const,
             activeSpaceId: await firstOrganizationSpace(deps.prisma, userId),

@@ -17,12 +17,19 @@ vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("./api-server", () => ({}));
 vi.mock("./api-auth", () => ({}));
 vi.mock("./api-live", () => ({}));
+const scope = vi.hoisted(() => ({ spaceId: "space-1" }));
 vi.mock("./api", () => ({
   currentApiBase: () => "https://rakazo.test",
   rpc: vi.fn(async () => ({})),
-  selectedSpaceId: () => "space-1",
+  selectedSpaceId: () => scope.spaceId,
+  captureApiRequestContext: async (spaceId: string | null = scope.spaceId) => ({
+    apiBase: "https://rakazo.test",
+    sessionGeneration: 1,
+    headers: spaceId ? { "x-rakazo-space-id": spaceId } : {},
+  }),
 }));
 vi.mock("./session", () => ({
+  currentSessionGeneration: () => 1,
   loadSessionToken: async () => "token",
 }));
 vi.mock("./live-notifications", () => ({ resumeLiveNotifications: vi.fn(async () => undefined) }));
@@ -66,6 +73,14 @@ vi.mock("react-native", () => {
   };
 });
 
+/** What every write carries: the server, session and space its save was started in. */
+const pinned = {
+  requestContext: {
+    apiBase: "https://rakazo.test",
+    sessionGeneration: 1,
+    headers: { "x-rakazo-space-id": "space-1" },
+  },
+};
 let container: HTMLDivElement;
 let root: Root;
 beforeEach(() => {
@@ -73,6 +88,7 @@ beforeEach(() => {
   vi.mocked(setItemAsync).mockReset();
   vi.mocked(resumeLiveNotifications).mockClear();
   vi.mocked(rpc).mockClear();
+  scope.spaceId = "space-1";
   i18n.resetI18nForTests();
   vi.spyOn(i18n, "setUiLocale");
   container = document.createElement("div");
@@ -84,6 +100,12 @@ afterEach(async () => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
+
+async function press(label: string) {
+  await act(async () => row(label).click());
+}
+const rowsDisabled = () =>
+  [...container.querySelectorAll("button")].map((button) => button.disabled);
 
 function row(label: string) {
   const button = container.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`);
@@ -114,7 +136,7 @@ it.each(["ru", "de", "zh-TW"] as const)(
     );
     expectSelected("English");
 
-    await act(async () => row(APP_LOCALE_LABELS[locale]).click());
+    await press(APP_LOCALE_LABELS[locale]);
     expect(i18n.setUiLocale).toHaveBeenCalledExactlyOnceWith(locale);
     expect(setItemAsync).toHaveBeenCalledExactlyOnceWith(UI_LOCALE_STORAGE_KEY, locale);
     expect(i18n.getActiveUiLocale()).toBe("en");
@@ -127,7 +149,7 @@ it.each(["ru", "de", "zh-TW"] as const)(
     });
     expect(i18n.getActiveUiLocale()).toBe(locale);
     expect(resumeLiveNotifications).toHaveBeenCalledWith("https://rakazo.test", "token", "space-1");
-    expect(rpc).toHaveBeenCalledExactlyOnceWith("preferences/update", { locale });
+    expect(rpc).toHaveBeenCalledExactlyOnceWith("preferences/update", { locale }, pinned);
     expectSelected(APP_LOCALE_LABELS[locale]);
     expect(row("English").getAttribute("aria-pressed")).toBe("false");
     expect([...container.querySelectorAll("button")].every((button) => !button.disabled)).toBe(
@@ -135,3 +157,90 @@ it.each(["ru", "de", "zh-TW"] as const)(
     );
   },
 );
+
+/** Holds the change open, so a test decides when and how it ends. */
+function holdChange() {
+  let finish!: (outcome?: Error) => void;
+  vi.mocked(i18n.setUiLocale).mockImplementationOnce(
+    (locale) =>
+      new Promise((resolve, reject) => {
+        finish = (outcome) => {
+          if (outcome) return reject(outcome);
+          i18n.resetI18nForTests(locale);
+          resolve(locale);
+        };
+      }),
+  );
+  return async (outcome?: Error) => {
+    await act(async () => finish(outcome));
+  };
+}
+
+it("does not start a second change while one runs", async () => {
+  const finish = holdChange();
+  await act(async () => root.render(<Language />));
+  await press("Deutsch");
+  expect(rowsDisabled()).not.toContain(false);
+  await press("Deutsch");
+  await press("English");
+  expect(i18n.setUiLocale).toHaveBeenCalledExactlyOnceWith("de");
+
+  await finish();
+  expectSelected("Deutsch");
+  expect(rowsDisabled()).not.toContain(true);
+});
+
+it("shows a failed change, and clears it when the next one starts", async () => {
+  let finish = holdChange();
+  await act(async () => root.render(<Language />));
+  await press("Deutsch");
+  await finish(new Error("no storage"));
+  expect(container.textContent).toContain("Could not change language");
+  expectSelected("English");
+  expect(rowsDisabled()).not.toContain(true);
+
+  finish = holdChange();
+  await press("Deutsch");
+  expect(container.textContent).not.toContain("Could not change language");
+  await finish();
+  expectSelected("Deutsch");
+  expect(container.textContent).not.toContain("Could not change language");
+});
+
+it("keeps the new language, with no error, when what follows the change fails", async () => {
+  vi.mocked(resumeLiveNotifications).mockRejectedValueOnce(new Error("offline"));
+  vi.mocked(rpc).mockRejectedValueOnce(new Error("offline"));
+  await act(async () => root.render(<Language />));
+  await press("Deutsch");
+  expectSelected("Deutsch");
+  expect(container.textContent).not.toContain("Could not change language");
+  expect(rowsDisabled()).not.toContain(true);
+});
+
+it("holds the rows for a change that fails after another space was selected, then says so", async () => {
+  const finish = holdChange();
+  await act(async () => root.render(<Language />));
+  await press("Deutsch");
+  scope.spaceId = "space-2";
+  await act(async () => root.render(<Language />));
+  expect(rowsDisabled()).not.toContain(false);
+  await press("English");
+  expect(i18n.setUiLocale).toHaveBeenCalledExactlyOnceWith("de");
+
+  await finish(new Error("no storage"));
+  expect(container.textContent).toContain("Could not change language");
+  expect(rowsDisabled()).not.toContain(true);
+});
+
+it("leaves a later visit alone when a change fails after the screen has gone", async () => {
+  const finish = holdChange();
+  await act(async () => root.render(<Language />));
+  await press("Deutsch");
+  await act(async () => root.render(<div />));
+  await finish(new Error("no storage"));
+
+  await act(async () => root.render(<Language />));
+  expect(container.textContent).not.toContain("Could not change language");
+  expect(rowsDisabled()).not.toContain(true);
+  expectSelected("English");
+});

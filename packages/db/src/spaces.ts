@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { displayName } from "@rakazo/core";
+import { ClientError, displayName } from "@rakazo/core";
 import { GUEST_ROLE, isOwnerRole, ownedOrganizationId } from "./billing.js";
 import type { PrismaClient } from "./client.js";
 import { Prisma } from "./client.js";
@@ -12,58 +12,58 @@ import { withTransactionRetry } from "./transaction-retry.js";
 /** Per member, per organization: one person cannot fan out unbounded boundaries. */
 const MAX_SPACES_PER_MEMBER = 32;
 
-export class SpaceLimitError extends Error {
+export class SpaceLimitError extends ClientError {
   constructor() {
-    super("Space limit reached");
+    super("BAD_REQUEST", "Space limit reached");
     this.name = "SpaceLimitError";
   }
 }
 
-export class InvalidSpaceNameError extends Error {
+export class InvalidSpaceNameError extends ClientError {
   constructor() {
-    super("Space name must be readable and between 1 and 60 characters");
+    super("BAD_REQUEST", "Space name must be readable and between 1 and 60 characters");
     this.name = "InvalidSpaceNameError";
   }
 }
 
-export class SpaceNotFoundError extends Error {
+export class SpaceNotFoundError extends ClientError {
   constructor() {
-    super("Space not found");
+    super("NOT_FOUND", "Space not found");
     this.name = "SpaceNotFoundError";
   }
 }
 
-export class CannotDeleteDefaultSpaceError extends Error {
+export class CannotDeleteDefaultSpaceError extends ClientError {
   constructor() {
-    super("The default space cannot be deleted");
+    super("BAD_REQUEST", "The default space cannot be deleted");
     this.name = "CannotDeleteDefaultSpaceError";
   }
 }
 
-export class CannotDeleteLastSpaceError extends Error {
+export class CannotDeleteLastSpaceError extends ClientError {
   constructor() {
-    super("The last remaining space cannot be deleted");
+    super("BAD_REQUEST", "The last remaining space cannot be deleted");
     this.name = "CannotDeleteLastSpaceError";
   }
 }
 
-export class CannotDeleteSpaceAsNonOwnerError extends Error {
+export class CannotDeleteSpaceAsNonOwnerError extends ClientError {
   constructor() {
-    super("Only the space owner can delete it");
+    super("FORBIDDEN", "Only the space owner can delete it");
     this.name = "CannotDeleteSpaceAsNonOwnerError";
   }
 }
 
-export class CannotRenameSpaceAsNonOwnerError extends Error {
+export class CannotRenameSpaceAsNonOwnerError extends ClientError {
   constructor() {
-    super("Only the space owner can rename it");
+    super("FORBIDDEN", "Only the space owner can rename it");
     this.name = "CannotRenameSpaceAsNonOwnerError";
   }
 }
 
-export class SpaceDeletionInProgressError extends Error {
+export class SpaceDeletionInProgressError extends ClientError {
   constructor() {
-    super("Space deletion is already in progress");
+    super("CONFLICT", "Space deletion is already in progress");
     this.name = "SpaceDeletionInProgressError";
   }
 }

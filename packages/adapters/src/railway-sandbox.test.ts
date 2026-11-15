@@ -21,6 +21,7 @@ import { RailwaySandboxProvider } from "./railway-sandbox.js";
 import { isSandboxGoneError } from "./sandbox-errors.js";
 import {
   assertSandboxWorkspaceContract,
+  MachineRecords,
   settleMachineCleanup,
   untilAborted,
 } from "./sandbox-test-support.js";
@@ -909,6 +910,55 @@ describe("Railway computers", () => {
       expect(unanswered.every((signal) => signal.aborted)).toBe(true);
       expect(left).toEqual([{ provider: "railway", machineId: "created-1" }]);
     });
+
+    it("is handed to the records when it cannot be destroyed", async () => {
+      withoutPrivateNetwork();
+      sandbox.destroy.mockRejectedValue(new Error("connection reset"));
+      const records = new MachineRecords();
+      const recording = new RailwaySandboxProvider({
+        token: "test",
+        environmentId: "environment",
+        unreferencedMachines: records,
+      });
+
+      await settleMachineCleanup(() =>
+        recording.provision({ botId: "bot", homePath: "/unused" }, ctx),
+      );
+
+      expect([...records.due.values()].map((entry) => entry.machine)).toEqual([
+        { provider: "railway", machineId: "sandbox", homeKey: "bot" },
+      ]);
+    });
+  });
+
+  it("records a new sandbox for its computer when Railway's create reply names it", async () => {
+    backboard();
+    const records = new MachineRecords();
+    const recording = new RailwaySandboxProvider({
+      token: "test",
+      environmentId: "environment",
+      unreferencedMachines: records,
+    });
+
+    const computer = await recording.provision({ botId: "bot", homePath: "/unused" }, ctx);
+
+    expect(computer.providerRef).toBe("created-1");
+    expect(records.dueIn()).toMatchObject([
+      { provider: "railway", machineId: "created-1", homeKey: "bot" },
+    ]);
+    expect(records.dueIn()[0]?.dueInMs).toBeGreaterThan(15 * 60_000);
+  });
+
+  it("destroys a sandbox from its id alone, and counts one already gone as destroyed", async () => {
+    const api = backboard({});
+    const signal = AbortSignal.timeout(5_000);
+
+    await provider.deleteMachine({ provider: "railway", machineId: "sandbox" }, signal);
+
+    expect(api.operations).toContain("RailwaySandboxDestroy");
+    await expect(
+      provider.deleteMachine({ provider: "railway", machineId: "never-made" }, signal),
+    ).resolves.toBeUndefined();
   });
 
   it("preserves output and reports timeout as a nonzero exit", async () => {

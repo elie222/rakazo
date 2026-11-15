@@ -9,7 +9,7 @@ import {
 } from "@rakazo/core";
 import { useQuery } from "@tanstack/react-query";
 import { useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
-import { useCallback, useLayoutEffect, useMemo, useState } from "react";
+import { useCallback, useLayoutEffect, useMemo } from "react";
 import { ScrollView, StyleSheet, Text } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LoadFailure } from "../../components/load-failure";
@@ -18,8 +18,8 @@ import { SettingsGroup, SettingsRow } from "../../components/settings-group";
 import { mobileTokens } from "../../lib/appearance";
 import { native, useResolvedAppearance, useThemedStyles } from "../../lib/native";
 import { iosAtLeast } from "../../lib/native-controls";
-import { queryClient, rpcQuery } from "../../lib/query";
-import { settingsRpc, settingsTarget } from "../../lib/settings-target";
+import { queryClient, targetRpcQuery, useSave } from "../../lib/query";
+import { settingsTarget } from "../../lib/settings-target";
 import { useSideInsets } from "../../lib/side-insets";
 import { errorText } from "../../lib/user-error";
 
@@ -33,7 +33,6 @@ type RuleAction = ActionApprovalRule["effect"] | "remove";
 export default function ApprovalRules() {
   const { spaceId } = useLocalSearchParams<{ spaceId?: string }>();
   const target = useMemo(() => settingsTarget(spaceId), [spaceId]);
-  const rpc = useMemo(() => settingsRpc(target), [target]);
   const scope = target.scope;
   const { t } = useLingui();
   const navigation = useNavigation();
@@ -41,11 +40,9 @@ export default function ApprovalRules() {
   const colorScheme = useResolvedAppearance();
   const sideInsets = useSideInsets();
   const styles = useThemedStyles(createStyles);
-  // Sent where `rpc` sends its calls: a Space override to that Space, else the selected one.
-  const overrideSpace = target.scope === "space" ? target.spaceId : undefined;
-  const rulesRead = rpcQuery("approvalRules/list", { scope }, overrideSpace);
+  const rulesRead = targetRpcQuery(target, "approvalRules/list", { scope });
   const rulesQuery = useQuery(rulesRead, queryClient);
-  const modeQuery = useQuery(rpcQuery("autoReview/get", { scope }, overrideSpace), queryClient);
+  const modeQuery = useQuery(targetRpcQuery(target, "autoReview/get", { scope }), queryClient);
   // Null until the first load lands.
   const rules = rulesQuery.data ?? null;
   // The approval mode, which decides which rules apply. Dims only once a fresh read confirms it,
@@ -54,8 +51,6 @@ export default function ApprovalRules() {
   const loadError = rulesQuery.error
     ? errorText(rulesQuery.error, t`Something went wrong. Try again.`)
     : null;
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const { refetch: refetchRules } = rulesQuery;
   const { refetch: refetchMode } = modeQuery;
 
@@ -69,26 +64,15 @@ export default function ApprovalRules() {
   const setRules = (update: (current: ActionApprovalRule[]) => ActionApprovalRule[]) =>
     queryClient.setQueryData(rulesRead.queryKey, (current) => current && update(current));
 
-  async function save(change: () => Promise<void>) {
-    setPending(true);
-    setError(null);
-    try {
+  const change = useSave({
+    target,
+    save: async ({ rule, action }: { rule: ActionApprovalRule; action: RuleAction }, send) => {
       // A read that started before a save never shows what it replaced.
       await queryClient.cancelQueries({ queryKey: rulesRead.queryKey });
       // Keeping the rules shown also clears a failed refresh's error.
       setRules((current) => current);
-      await change();
-    } catch (err) {
-      setError(errorText(err, t`Could not save that preference`));
-    } finally {
-      setPending(false);
-    }
-  }
-
-  const applyRuleAction = (rule: ActionApprovalRule, action: RuleAction) =>
-    save(async () => {
       if (action === "remove") {
-        await rpc("approvalRules/remove", { scope, id: rule.id });
+        await send("approvalRules/remove", { scope, id: rule.id });
         setRules((current) => current.filter((entry) => entry.id !== rule.id));
         return;
       }
@@ -98,7 +82,7 @@ export default function ApprovalRules() {
         !approvalRuleEffectChoices(rule).includes(action)
       )
         return;
-      const saved = await rpc("approvalRules/set", {
+      const saved = await send("approvalRules/set", {
         scope,
         effect: action,
         matchKind: rule.matchKind,
@@ -114,7 +98,10 @@ export default function ApprovalRules() {
           return sameMatch ? [] : [entry];
         }),
       );
-    });
+    },
+  });
+  const pending = change.pending;
+  const error = change.error ? errorText(change.error, t`Could not save that preference`) : null;
 
   const canAdd = rules !== null && !loadError;
   useLayoutEffect(() => {
@@ -170,7 +157,7 @@ export default function ApprovalRules() {
           <LoadFailure
             message={failure}
             onRetry={() => {
-              setError(null);
+              if (change.error) change.reset();
               void queryClient.resetQueries({ queryKey: rulesRead.queryKey });
               void refetchMode();
             }}
@@ -203,7 +190,7 @@ export default function ApprovalRules() {
                     colorScheme={colorScheme}
                     onPressAction={(event) => {
                       const action = event.nativeEvent.event;
-                      if (!pending && isRuleAction(action)) void applyRuleAction(rule, action);
+                      if (isRuleAction(action)) change.run({ rule, action });
                     }}
                     title={title}
                   >

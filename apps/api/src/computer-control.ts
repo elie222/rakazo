@@ -228,19 +228,11 @@ export async function runComputerReplace(
     });
   }
   const manualRunId = `${mode}:${randomUUID()}`;
-  let lease: ComputerExecutionLease | null;
-  try {
-    lease = await acquireComputerExecutionLease(deps.prisma, {
-      computerId: bot.computer.id,
-      runId: manualRunId,
-      botId: bot.id,
-    });
-  } catch (error) {
-    if (error instanceof ComputerBusyError) {
-      throw new ORPCError("CONFLICT", { message: "Computer is busy" });
-    }
-    throw error;
-  }
+  const lease = await acquireComputerExecutionLease(deps.prisma, {
+    computerId: bot.computer.id,
+    runId: manualRunId,
+    botId: bot.id,
+  });
   try {
     await replaceComputer(
       deps,
@@ -255,11 +247,6 @@ export async function runComputerReplace(
       { handBackIdleTakeover: true },
     );
     scheduleComputerSleep(deps.jobs, bot.computer.id);
-  } catch (error) {
-    if (error instanceof ComputerBusyError) {
-      throw new ORPCError("CONFLICT", { message: "Computer is busy" });
-    }
-    throw error;
   } finally {
     await releaseComputerExecutionLease(deps.prisma, lease);
   }

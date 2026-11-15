@@ -8,13 +8,9 @@ import {
   VoiceAccountError,
 } from "@rakazo/adapter-kit";
 import { ComputerRecoveryRequiredError } from "@rakazo/adapters";
-import {
-  databaseOutage,
-  IsolationError,
-  ProviderTransactionBusyError,
-  SpaceDeletionInProgressError,
-  SpaceOwnerRequiredError,
-} from "@rakazo/db";
+import type { ClientErrorKind } from "@rakazo/core";
+import { ClientError } from "@rakazo/core";
+import { databaseOutage, IsolationError, ProviderTransactionBusyError } from "@rakazo/db";
 import { enrichLogContext, getLogContext, getLogger } from "@rakazo/logging";
 import { markExpectedFailure } from "@rakazo/logging/hono";
 import type { Context } from "hono";
@@ -24,6 +20,14 @@ import { voiceAccountErrorStatus } from "./voice.js";
 /** How long a client waits before asking again while the database fails over. */
 export const DATABASE_RETRY_AFTER_SECONDS = 5;
 const DATABASE_UNAVAILABLE = "db.unavailable";
+
+const CLIENT_ERROR_STATUS: Record<ClientErrorKind, number> = {
+  BAD_REQUEST: 400,
+  FORBIDDEN: 403,
+  NOT_FOUND: 404,
+  CONFLICT: 409,
+  TOO_MANY_REQUESTS: 429,
+};
 
 /**
  * Whether a request failed because the database is unavailable. The outage logs it once for
@@ -73,12 +77,14 @@ export function handleRpcError(
   if (failedOnDatabaseOutage(error)) {
     throw new ORPCError("SERVICE_UNAVAILABLE", { cause: error });
   }
-  if (error instanceof SpaceOwnerRequiredError) {
-    throw new ORPCError("FORBIDDEN", { message: error.message, cause: error });
-  }
-  // A Space being deleted takes no new work; the caller learns it, nothing failed.
-  if (error instanceof SpaceDeletionInProgressError) {
-    throw new ORPCError("CONFLICT", { message: error.message, cause: error });
+  // A domain refusal carries its own answer, so no route translates it: the caller learns what
+  // they did, nothing failed.
+  if (error instanceof ClientError) {
+    throw new ORPCError(error.code, {
+      status: CLIENT_ERROR_STATUS[error.kind],
+      message: error.message,
+      cause: error,
+    });
   }
   // The user's own voice account refused the request: theirs to fix.
   if (error instanceof VoiceAccountError) {

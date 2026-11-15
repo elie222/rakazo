@@ -497,7 +497,10 @@ it("returns to the provider list when a refresh removes the open model", async (
     ]);
     await typeInto(labeled(view.container, "Maximum output tokens")!, "2000");
     await click(buttons(view.container, "Save").find((entry) => entry.textContent === "Save"));
-    expect(view.container.querySelector('[data-testid="model-settings-page"]')).toBeNull();
+    // The save, the refresh after it and the return to the list each take their own turn.
+    await vi.waitFor(() =>
+      expect(view.container.querySelector('[data-testid="model-settings-page"]')).toBeNull(),
+    );
     expect(view.container.textContent).toContain("model-b");
     expect(labeled(view.container, "Maximum output tokens")).toBeNull();
   } finally {
@@ -1140,6 +1143,26 @@ it("keeps a saved model listed, unticked, after a refused save", async () => {
     );
     expect(view.container.textContent).toContain("In use by Helper");
     expect(modelCheckbox(view.container, "model-b").checked).toBe(false);
+  } finally {
+    await view.unmount();
+  }
+});
+
+it("hides a credential in a refused save's message", async () => {
+  models.connect.mockRejectedValue(
+    new Error("Incorrect API key provided: example-1234. Check the key."),
+  );
+  const view = await renderCompatible({
+    ...compatibleCredential,
+    enabledModelIds: ["model-a", "model-b"],
+  });
+  try {
+    await act(async () => {
+      modelCheckbox(view.container, "model-b").click();
+    });
+    await click(buttons(view.container, "Save")[0]);
+    expect(view.container.textContent).toContain("Incorrect API key provided: •••. Check the key.");
+    expect(view.container.textContent).not.toContain("example-1234");
   } finally {
     await view.unmount();
   }

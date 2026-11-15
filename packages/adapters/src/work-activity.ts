@@ -570,13 +570,12 @@ export class WorkActivities {
         }),
       );
       if (newest === known?.seq && progress[0]) newest = progress[0].seq;
-      const step = progress.find(({ payload }) => {
+      const [text] = progress.flatMap(({ payload }) => {
         const event = payload as { activity?: unknown; text?: unknown };
-        return event.activity === true && typeof event.text === "string";
+        return event.activity === true && typeof event.text === "string" ? [event.text] : [];
       });
-      if (step) {
+      if (text !== undefined) {
         // An empty step is the bot clearing its last one.
-        const text = (step.payload as { text: string }).text;
         line = truncatePlainText(text.trim().replace(/\s+/g, " "), LINE_MAX_CHARS);
         break;
       }

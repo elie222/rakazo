@@ -1,5 +1,12 @@
-import type { BackgroundJob, BackgroundJobHandlers } from "@rakazo/adapter-kit";
+import type {
+  BackgroundJob,
+  BackgroundJobHandlers,
+  ManagedConnectorProvider,
+} from "@rakazo/adapter-kit";
 import {
+  CONNECTION_CLEANUP_MAX_ATTEMPTS,
+  connectionCleanupJob,
+  connectionCleanupJobKey,
   MESSAGING_SEND_MAX_ATTEMPTS,
   messagingSendJob,
   messagingSendJobKey,
@@ -8,8 +15,10 @@ import {
 } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
 import { asSystem, createDb, createPool, currentDbContext, runAsTenant } from "@rakazo/db";
+import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { Pool } from "pg";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { dropLeftoverAuthorization } from "./connection-cleanup.js";
 import {
   createDeadJobPruner,
   createReservedGraphileJobWorkerHost,
@@ -49,6 +58,8 @@ function handlers(overrides: Partial<BackgroundJobHandlers> = {}): BackgroundJob
     "messaging.progress": vi.fn(async () => undefined),
     "secret.cleanup": vi.fn(async () => undefined),
     "messaging.credential-cleanup": vi.fn(async () => undefined),
+    "connection.cleanup": vi.fn(async () => undefined),
+    "computer.machine-cleanup": vi.fn(async () => undefined),
     "team_chat.engage": vi.fn(async () => undefined),
     "team_chat.ambient": vi.fn(async () => undefined),
     "cloud_agent.poll": vi.fn(async () => undefined),
@@ -855,9 +866,11 @@ describePostgres("Graphile background jobs (PostgreSQL contract)", () => {
       await rolledBack((tx) => publisher.enqueueIn(tx, messagingSendJob(outboundId, dueAt)));
       expect(await keyedRow(key)).toBeNull();
 
-      await system.$transaction((tx) =>
-        publisher.enqueueIn(tx, messagingSendJob(outboundId, dueAt)),
-      );
+      // A session in another time zone still schedules the job for the same instant.
+      await system.$transaction(async (tx) => {
+        await tx.$executeRawUnsafe("set local time zone 'Asia/Kolkata'");
+        await publisher.enqueueIn(tx, messagingSendJob(outboundId, dueAt));
+      });
       expect(await keyedRow(key)).toMatchObject({
         attempts: 0,
         maxAttempts: MESSAGING_SEND_MAX_ATTEMPTS,
@@ -939,6 +952,183 @@ describePostgres("Graphile background jobs (PostgreSQL contract)", () => {
       );
       const failed = await jobState(key);
       expect(failed!.run_at.getTime()).toBeGreaterThanOrEqual(askedAt!.getTime() + delayMs);
+    } finally {
+      await host.stop();
+      await publisher.cancel(key).catch(() => undefined);
+      await publisher.close();
+    }
+  });
+
+  it("logs a job that asks for a later try as a failed try, with what it waits for", async () => {
+    const publisher = new GraphileJobPublisher(testPool());
+    const host = new GraphileJobWorkerHost(testPool(), { concurrency: 1, pollInterval: 25 });
+    const cleanup = {
+      spaceId: "space-1",
+      userId: "user-1",
+      connectorId: "connector-1",
+      provider: "mail",
+      ref: `waiting-${Date.now()}`,
+    };
+    const key = connectionCleanupJobKey(cleanup);
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-worker", sinks: [sink] }));
+    const target = handlers({
+      // Cannot decide yet: asks for a later try, as the cleanup does for undecided accounts.
+      "connection.cleanup": async () => {
+        throw new RetryJobLaterError(60_000, { cause: new Error("still connecting") });
+      },
+    });
+    const started = Date.now();
+    try {
+      await host.start(target);
+      await publisher.enqueue(connectionCleanupJob(cleanup));
+      await waitFor(async () =>
+        expect(await jobState(key)).toMatchObject({ attempts: 1, locked_at: null }),
+      );
+      // The same record every job's retry-later gets: an error with its cause, never a quiet one.
+      const completed = sink.events.filter((event) => event.message === "job.completed");
+      expect(completed).toEqual([
+        expect.objectContaining({
+          level: "error",
+          "job.type": "connection.cleanup",
+          "job.outcome": "error",
+          error: expect.objectContaining({
+            cause: expect.objectContaining({ message: "still connecting" }),
+          }),
+        }),
+      ]);
+      expect((await jobState(key))!.run_at.getTime()).toBeGreaterThanOrEqual(started + 60_000);
+    } finally {
+      await host.stop();
+      await publisher.cancel(key).catch(() => undefined);
+      await publisher.close();
+      installLogger(createLogger({ service: "rakazo-worker", level: "off", sinks: [] }));
+    }
+  });
+
+  it("deletes a finished direct cleanup's job with its transaction, and leaves the job an app's cleanups share", async () => {
+    const db = createDb(databaseUrl!);
+    const publisher = new GraphileJobPublisher(testPool());
+    const deps = { prisma: asSystem(db.prisma), jobs: publisher };
+    const app = {
+      spaceId: `space-${Date.now()}`,
+      userId: "user-1",
+      connectorId: "connector-1",
+      provider: "mail",
+    };
+    const request = { ...app, ref: "request-1" };
+    const dueAt = new Date(Date.now() + 60 * 60 * 1000);
+    const direct = (connector: Record<string, unknown>, leftover: typeof app) =>
+      dropLeftoverAuthorization(
+        deps,
+        connector as unknown as ManagedConnectorProvider,
+        leftover,
+        "connections.begin",
+      );
+    try {
+      await publisher.enqueue(connectionCleanupJob(request, dueAt));
+      await publisher.enqueue(connectionCleanupJob(app, dueAt));
+
+      // A removal that fails keeps its job: the delete rolls back with the transaction.
+      await expect(
+        direct(
+          {
+            cancelAuthorizationRequest: async () => {
+              throw new Error("provider unavailable");
+            },
+          },
+          request,
+        ),
+      ).rejects.toThrow("provider unavailable");
+      expect(await keyedRow(connectionCleanupJobKey(request))).not.toBeNull();
+
+      const cancelAuthorizationRequest = vi.fn(async () => {
+        // Still recorded while the provider is being asked.
+        expect(await keyedRow(connectionCleanupJobKey(request))).not.toBeNull();
+      });
+      await expect(direct({ cancelAuthorizationRequest }, request)).resolves.toBe("done");
+      expect(cancelAuthorizationRequest).toHaveBeenCalledTimes(1);
+      expect(await keyedRow(connectionCleanupJobKey(request))).toBeNull();
+
+      // Another begin in the scope may have recorded this job since the accounts were listed.
+      const revokeUnreferencedAccounts = vi.fn(async () => undefined);
+      await expect(direct({ revokeUnreferencedAccounts }, app)).resolves.toBe("done");
+      expect(revokeUnreferencedAccounts).toHaveBeenCalledWith("mail", [], expect.anything());
+      expect(await keyedRow(connectionCleanupJobKey(app))).toMatchObject({ runAt: dueAt });
+    } finally {
+      await publisher.cancel(connectionCleanupJobKey(request)).catch(() => undefined);
+      await publisher.cancel(connectionCleanupJobKey(app)).catch(() => undefined);
+      await publisher.close();
+      await db.prisma.$disconnect();
+      await db.pool.end();
+    }
+  });
+
+  it("keeps a connection cleanup through a busy scope and failed tries, and reports it once it gives up", async () => {
+    const publisher = new GraphileJobPublisher(testPool());
+    const host = new GraphileJobWorkerHost(testPool(), { concurrency: 1, pollInterval: 25 });
+    const cleanup = {
+      spaceId: "space-1",
+      userId: "user-1",
+      connectorId: "connector-1",
+      provider: "mail",
+      ref: `request-${Date.now()}`,
+    };
+    const key = connectionCleanupJobKey(cleanup);
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-worker", sinks: [sink] }));
+    const budget = async () => {
+      const { rows } = await testPool().query<{ attempts: number; max_attempts: number }>(
+        "select attempts, max_attempts from graphile_worker._private_jobs where key = $1",
+        [key],
+      );
+      return rows[0];
+    };
+    let tries = 0;
+    const target = handlers({
+      "connection.cleanup": async (payload) => {
+        tries += 1;
+        // A busy scope: the job replaces itself under its key and finishes, as its handler does.
+        if (tries === 1) return publisher.enqueue(connectionCleanupJob(payload, new Date()));
+        throw new Error("provider unavailable");
+      },
+    });
+    try {
+      await host.start(target);
+      await publisher.enqueue(connectionCleanupJob(cleanup));
+      // The busy try cost nothing: the job that failed once has used one try of its full budget.
+      await waitFor(async () =>
+        expect(await budget()).toEqual({
+          attempts: 1,
+          max_attempts: CONNECTION_CLEANUP_MAX_ATTEMPTS,
+        }),
+      );
+      expect(tries).toBe(2);
+
+      // Skip to its last try.
+      await testPool().query(
+        `update graphile_worker._private_jobs set attempts = max_attempts - 1, run_at = now()
+         where key = $1 and locked_at is null`,
+        [key],
+      );
+      await waitFor(() =>
+        expect(
+          sink.events.filter((event) => event.message.startsWith("connection cleanup gave up")),
+        ).toEqual([
+          expect.objectContaining({
+            level: "error",
+            connectorId: "connector-1",
+            provider: "mail",
+            providerRef: cleanup.ref,
+          }),
+        ]),
+      );
+      expect(tries).toBe(3);
+      // The exhausted job keeps its payload until the dead-job retention passes.
+      expect(await budget()).toEqual({
+        attempts: CONNECTION_CLEANUP_MAX_ATTEMPTS,
+        max_attempts: CONNECTION_CLEANUP_MAX_ATTEMPTS,
+      });
     } finally {
       await host.stop();
       await publisher.cancel(key).catch(() => undefined);

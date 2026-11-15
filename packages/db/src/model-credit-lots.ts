@@ -1,14 +1,44 @@
 import { randomUUID } from "node:crypto";
+import { z } from "zod";
 import type { Prisma } from "./generated/prisma/client.js";
+import { JsonColumnMismatchError, readJsonColumn, reportJsonColumnOnce } from "./json-column.js";
 
 type Tx = Prisma.TransactionClient;
+const CreditAllocations = z
+  .array(z.looseObject({ lotId: z.string(), amountMicros: z.string().regex(/^-?\d+$/) }))
+  .nullable();
 export type CreditAllocation = { lotId: string; amountMicros: string };
+
+/** The lots a call drew from. Refunds are computed from them, so another shape is rejected. */
+export function storedCreditAllocations(entry: {
+  id: string;
+  allocations: unknown;
+}): CreditAllocation[] {
+  return (
+    readJsonColumn(
+      CreditAllocations,
+      entry.allocations,
+      { table: "model_credit_entries", column: "allocations", id: entry.id },
+      "reject",
+    ) ?? []
+  );
+}
 export const allocatedMicros = (allocations: CreditAllocation[]) =>
   allocations.reduce((sum, item) => sum + BigInt(item.amountMicros), 0n);
 const positive = (amount: bigint) => (amount > 0n ? amount : 0n);
 
-/** Keep old-release writes and pre-lot balances usable during a rolling deployment. */
-export async function prepareCreditLots(tx: Tx, organizationId: string, now = new Date()) {
+/**
+ * Keep old-release writes and pre-lot balances usable during a rolling deployment.
+ *
+ * Returns the micros withheld: what released calls whose allocations cannot be read hold beyond
+ * their cost. Which lots that came from is not known, so it is neither returned to a lot nor
+ * spendable until the row is repaired. Pass it to `syncLotBalance`.
+ */
+export async function prepareCreditLots(
+  tx: Tx,
+  organizationId: string,
+  now = new Date(),
+): Promise<bigint> {
   const purchases = await tx.$queryRaw<
     Array<{ id: string; lotId: string | null; amountMicros: bigint; createdAt: Date }>
   >`
@@ -59,36 +89,49 @@ export async function prepareCreditLots(tx: Tx, organizationId: string, now = ne
     Array<{
       id: string;
       amountMicros: bigint;
-      allocations: CreditAllocation[];
+      allocations: unknown;
       fundedMicros: bigint;
     }>
   >`
     SELECT id,"amountMicros",allocations,"fundedMicros" FROM model_credit_entries
     WHERE "organizationId"=${organizationId} AND source LIKE 'call:%'
       AND "fundedMicros">GREATEST(-"amountMicros",0)`;
+  let withheldMicros = 0n;
   for (const call of released) {
-    const spent = positive(-call.amountMicros);
-    const allocations = await returnCreditLots(
-      tx,
-      call.allocations,
-      call.fundedMicros - spent,
-      now,
-    );
+    const excess = call.fundedMicros - positive(-call.amountMicros);
+    let stored: CreditAllocation[];
+    try {
+      stored = storedCreditAllocations(call);
+    } catch (error) {
+      if (!(error instanceof JsonColumnMismatchError)) throw error;
+      // One unreadable row must not stop the organisation's calls and purchases. The row is left
+      // as it is, so it is found again on every pass until someone repairs it.
+      reportJsonColumnOnce(
+        "Credit allocations cannot be read; their excess is withheld",
+        error.row,
+      );
+      withheldMicros += excess;
+      continue;
+    }
+    const allocations = await returnCreditLots(tx, stored, excess, now);
     await tx.modelCreditEntry.update({
       where: { id: call.id },
       data: { allocations, fundedMicros: allocatedMicros(allocations) },
     });
   }
-  await syncLotBalance(tx, organizationId);
+  await syncLotBalance(tx, organizationId, withheldMicros);
+  return withheldMicros;
 }
 
-export async function syncLotBalance(tx: Tx, organizationId: string) {
+/** `withheldMicros` is what `prepareCreditLots` returned in this transaction: no lot is minted for it. */
+export async function syncLotBalance(tx: Tx, organizationId: string, withheldMicros: bigint) {
   const account = await tx.modelCreditAccount.findUniqueOrThrow({ where: { organizationId } });
   const total = await tx.modelCreditLot.aggregate({
     where: { organizationId, availableMicros: { gt: 0n } },
     _sum: { availableMicros: true },
   });
-  const difference = positive(account.balanceMicros) - (total._sum.availableMicros ?? 0n);
+  const difference =
+    positive(account.balanceMicros - withheldMicros) - (total._sum.availableMicros ?? 0n);
   if (difference > 0n)
     await tx.modelCreditLot.create({
       data: {

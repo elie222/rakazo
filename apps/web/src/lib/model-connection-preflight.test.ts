@@ -4,7 +4,6 @@ import {
   loadStoredModelAuth,
   modelPreflightSuccessMessage,
   runModelConnectionPreflight,
-  sanitizeModelConnectionError,
   unavailableSelectedModel,
 } from "./model-connection-preflight.js";
 
@@ -14,47 +13,6 @@ vi.mock("@lingui/core/macro", () => ({
     (value === 1 ? forms.one : forms.other).replaceAll("#", String(value)),
 }));
 
-describe("sanitizeModelConnectionError", () => {
-  it("redacts api key patterns", () => {
-    expect(sanitizeModelConnectionError("Invalid sk-secretkey1234567890")).not.toContain(
-      "sk-secretkey1234567890",
-    );
-  });
-
-  it.each([
-    ["a JSON error body", 'Invalid {"api_key": "EXAMPLE_PLACEHOLDER"}', "EXAMPLE_PLACEHOLDER"],
-    [
-      "a camel-case key with spaces around =",
-      "apiKey = EXAMPLE_PLACEHOLDER",
-      "EXAMPLE_PLACEHOLDER",
-    ],
-    ["a bearer token with base64 characters", "Bearer EXAMPLE+PLACE/HOLDER==", "PLACE/HOLDER"],
-    ["a single-quoted value", "api-key: 'EXAMPLE_PLACEHOLDER'", "EXAMPLE_PLACEHOLDER"],
-  ])("redacts the whole secret in %s", (_label, raw, secret) => {
-    const cleaned = sanitizeModelConnectionError(raw);
-    expect(cleaned).not.toContain(secret);
-    expect(cleaned).toContain("•••");
-  });
-
-  it("keeps the text around a redacted JSON value", () => {
-    expect(sanitizeModelConnectionError('{"api_key": "EXAMPLE_PLACEHOLDER", "code": 401}')).toBe(
-      '{"•••, "code": 401}',
-    );
-  });
-
-  it.each([
-    ["a quoted value with a space", '{"api_key": "EXAMPLE PLACEHOLDER"}', "PLACEHOLDER"],
-    [
-      "a quoted value with a comma and brace",
-      'api_key: "EX,AMPLE}PLACEHOLDER" rest',
-      "PLACEHOLDER",
-    ],
-    ["a single-quoted value with a space", "api_key='EXAMPLE PLACEHOLDER'", "PLACEHOLDER"],
-  ])("redacts the whole quoted value in %s", (_label, raw, secret) => {
-    expect(sanitizeModelConnectionError(raw)).not.toContain(secret);
-  });
-});
-
 describe("classifyModelConnectionFailure", () => {
   it("detects rate limits and timeouts", () => {
     expect(classifyModelConnectionFailure(new Error("429 rate limit")).outcome).toBe("rate_limit");
@@ -62,6 +20,14 @@ describe("classifyModelConnectionFailure", () => {
     expect(classifyModelConnectionFailure(new Error("The operation was aborted")).outcome).toBe(
       "unknown",
     );
+  });
+
+  it("reads the kind of failure from the provider's words, even ones the key repeats", () => {
+    const failure = classifyModelConnectionFailure(new Error("unauthorized: invalid key"), {
+      secrets: ["unauthorized"],
+    });
+    expect(failure.outcome).toBe("unauthorized");
+    expect(failure.message).toBe("•••: invalid key");
   });
 
   it.each([
@@ -79,6 +45,24 @@ describe("classifyModelConnectionFailure", () => {
     "connect ECONNREFUSED 10.0.0.1:34010",
   ])("does not read a port or id as a status code in %j", (message) => {
     expect(classifyModelConnectionFailure(new Error(message)).outcome).toBe("unreachable");
+  });
+
+  it("hides the credentials the connection was tested with, wherever the message has them", () => {
+    const failure = classifyModelConnectionFailure(
+      new Error("401 denied for EXAMPLE-PLACEHOLDER-KEY with tenant EXAMPLE-HEADER-VALUE"),
+      { secrets: ["EXAMPLE-PLACEHOLDER-KEY", "EXAMPLE-HEADER-VALUE", undefined] },
+    );
+    expect(failure).toMatchObject({
+      outcome: "unauthorized",
+      message: "401 denied for ••• with tenant •••",
+    });
+  });
+
+  it("hides a credential shape it was not told about", () => {
+    expect(
+      classifyModelConnectionFailure(new Error("Incorrect API key provided: EXAMPLE-1234."))
+        .message,
+    ).toBe("Incorrect API key provided: •••.");
   });
 
   it("keeps manual model entry for custom servers and catalog picks for catalog providers", () => {
@@ -278,6 +262,22 @@ describe("runModelConnectionPreflight", () => {
     if (!result.ok) {
       expect(result.failure.outcome).toBe("unavailable_model");
     }
+  });
+
+  it("hides the tested key in a failed probe's message", async () => {
+    const result = await runModelConnectionPreflight({
+      authKind: "api-key",
+      provider: "openrouter",
+      apiKey: " EXAMPLE-PLACEHOLDER-KEY ",
+      catalogProbe: true,
+      probeCatalog: async () => {
+        throw new Error('Headers.append: "Bearer EXAMPLE-PLACEHOLDER-KEY" is an invalid header.');
+      },
+    });
+    expect(result).toMatchObject({
+      ok: false,
+      failure: { message: 'Headers.append: "Bearer •••" is an invalid header.' },
+    });
   });
 
   it("rejects providers without a pinned catalog endpoint", async () => {

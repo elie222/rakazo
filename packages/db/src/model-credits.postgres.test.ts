@@ -1,6 +1,8 @@
+import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { PrismaClient } from "./client.js";
 import { createDb } from "./client.js";
+import { JsonColumnMismatchError } from "./json-column.js";
 import {
   creditAccount,
   expireModelCredits,
@@ -322,6 +324,79 @@ dbTests("model credits ledger", () => {
       _sum: { amountMicros: true },
     });
     expect(journal._sum.amountMicros).toBe(0n);
+  });
+  it("withholds one unreadable entry's excess while purchases, calls and settlements go on", async () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-api", sinks: [sink], level: "debug" }));
+    const lots = async () =>
+      (
+        await prisma.modelCreditLot.aggregate({
+          where: { organizationId },
+          _sum: { availableMicros: true },
+        })
+      )._sum.availableMicros;
+    await grant("monthly", 1000, renewal);
+    const unreadable = await reserve(8);
+    // The previous API settles the hold at $3 and credits the wallet, leaving the lots to the
+    // next pass, which finds allocations it cannot read.
+    await prisma.$transaction(async (tx) => {
+      await tx.modelCreditEntry.update({
+        where: { id: unreadable },
+        data: { pending: false, amountMicros: -3_000_000n, allocations: [{ lotId: "lot-marker" }] },
+      });
+      await tx.modelCreditAccount.update({
+        where: { organizationId },
+        data: { balanceMicros: { increment: 5_000_000n } },
+      });
+    });
+
+    await grant("topup", 1000);
+    expect(await balance()).toBe(17_000_000n);
+    const call = await reserve(4);
+    await settleModelCredits(prisma, call, 1, beforeRenewal);
+    expect(await balance()).toBe(16_000_000n);
+
+    // The $5 the entry holds beyond its cost stays in the wallet but is in no lot and cannot be
+    // spent, and the entry is left as it was.
+    expect(await lots()).toBe(11_000_000n);
+    expect(
+      await prisma.modelCreditLot.count({
+        where: { organizationId, id: { startsWith: "legacy:" } },
+      }),
+    ).toBe(0);
+    await expect(reserve(12)).rejects.toThrow("credits");
+    // Only the entry's own settlement is refused.
+    await expect(
+      prisma.$transaction((tx) => settleModelCreditsTx(tx, unreadable, 2, true, beforeRenewal)),
+    ).rejects.toBeInstanceOf(JsonColumnMismatchError);
+    expect(await balance()).toBe(16_000_000n);
+    expect(
+      await prisma.modelCreditEntry.findUniqueOrThrow({ where: { id: unreadable } }),
+    ).toMatchObject({
+      allocations: [{ lotId: "lot-marker" }],
+      fundedMicros: 8_000_000n,
+      amountMicros: -3_000_000n,
+    });
+    const reports = sink.events.filter((event) => event.level === "error");
+    expect(reports.map(({ table, column, id }) => ({ table, column, id }))).toEqual([
+      { table: "model_credit_entries", column: "allocations", id: unreadable },
+    ]);
+    expect(JSON.stringify(reports)).not.toContain("lot-marker");
+
+    // Once repaired, the excess goes back to the monthly grant it came from and expires with it.
+    const monthly = await prisma.modelCreditLot.findFirstOrThrow({
+      where: { organizationId, expiresAt: renewal },
+    });
+    await prisma.modelCreditEntry.update({
+      where: { id: unreadable },
+      data: { allocations: [{ lotId: monthly.id, amountMicros: "8000000" }] },
+    });
+    await expireModelCredits(prisma, organizationId, renewal);
+    expect(await balance()).toBe(10_000_000n);
+    expect(await lots()).toBe(10_000_000n);
+    expect(
+      (await prisma.modelCreditEntry.findUniqueOrThrow({ where: { id: unreadable } })).fundedMicros,
+    ).toBe(3_000_000n);
   });
   it("rejects a replay that changes an invoice service period", async () => {
     await grant("monthly", 1000, renewal);

@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Actor, OrganizationList } from "@rakazo/contracts";
+import { ClientError } from "@rakazo/core";
 import { GUEST_ROLE, LIVE_ORGANIZATION as LIVE } from "./billing.js";
 import { createOrganizationWithDefaultSpace } from "./bootstrap-user.js";
 import type { PrismaClient } from "./client.js";
@@ -17,23 +18,23 @@ import { withTransactionRetry } from "./transaction-retry.js";
 
 export const MAX_ORGANIZATIONS_PER_USER = 10;
 
-export class OrganizationLimitError extends Error {
+export class OrganizationLimitError extends ClientError {
   constructor() {
-    super(`You can have up to ${MAX_ORGANIZATIONS_PER_USER} organizations.`);
+    super("BAD_REQUEST", `You can have up to ${MAX_ORGANIZATIONS_PER_USER} organizations.`);
     this.name = "OrganizationLimitError";
   }
 }
 
-export class CannotDeleteLastOrganizationError extends Error {
+export class CannotDeleteLastOrganizationError extends ClientError {
   constructor() {
-    super("Your only organization cannot be deleted");
+    super("BAD_REQUEST", "Your only organization cannot be deleted");
     this.name = "CannotDeleteLastOrganizationError";
   }
 }
 
-export class SharedOrganizationError extends Error {
+export class SharedOrganizationError extends ClientError {
   constructor() {
-    super("An organization with other members cannot be deleted");
+    super("BAD_REQUEST", "An organization with other members cannot be deleted");
     this.name = "SharedOrganizationError";
   }
 }

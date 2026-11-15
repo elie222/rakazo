@@ -6,11 +6,16 @@ import type {
   AuditEventPage,
   AuditOutcome,
 } from "@rakazo/contracts";
-import { AuditActorTypeSchema, AuditOutcomeSchema } from "@rakazo/contracts";
+import {
+  AuditActorTypeSchema,
+  AuditEventMetadataSchema,
+  AuditOutcomeSchema,
+} from "@rakazo/contracts";
 import { getLogger } from "@rakazo/logging";
 import { GUEST_ROLE, ownedOrganizationId } from "./billing.js";
 import type { Prisma, PrismaClient } from "./client.js";
 import { parsePositiveInteger } from "./client.js";
+import { JsonObject, readJsonColumn, warnJsonColumnOnce } from "./json-column.js";
 import { runAsSystem } from "./row-security.js";
 import { IsolationError } from "./scope.js";
 import { securityEventMetadata, securityRequestCaller } from "./security-events.js";
@@ -325,8 +330,32 @@ export function auditEventDto(row: AuditEventRow): AuditEvent {
     threadId: row.threadId,
     ip: row.ip,
     userAgent: row.userAgent,
-    metadata: (row.metadata ?? {}) as AuditEventMetadata,
+    metadata: storedAuditMetadata(row),
   };
+}
+
+const AuditMetadataValue = AuditEventMetadataSchema.valueType;
+
+/**
+ * Checked key by key: audit events are forwarded once and never again, so one value in another
+ * shape must not blank the rest of what the event recorded.
+ */
+function storedAuditMetadata(row: { id: string; metadata: unknown }): AuditEventMetadata {
+  const column = { table: "audit_events", column: "metadata", id: row.id };
+  const stored = Object.entries(
+    readJsonColumn(JsonObject, row.metadata ?? {}, column, { fallback: {} }),
+  );
+  const kept = stored.filter(([, value]) => AuditMetadataValue.safeParse(value).success);
+  if (kept.length < stored.length) {
+    warnJsonColumnOnce(
+      "Stored audit metadata holds values in another shape; reading the rest",
+      column,
+      {
+        dropped: stored.length - kept.length,
+      },
+    );
+  }
+  return Object.fromEntries(kept) as AuditEventMetadata;
 }
 
 export const DEFAULT_AUDIT_EVENT_RETENTION_DAYS = 365;
