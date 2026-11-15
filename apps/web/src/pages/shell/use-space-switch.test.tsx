@@ -45,6 +45,7 @@ let commits: Array<() => boolean>;
 let navigationRevision: { current: number };
 let overlayRevision: { current: number };
 let navigate: ReturnType<typeof vi.fn>;
+let switchingSpace: { current: () => boolean };
 
 function Harness() {
   open = useOpenSpaceChat({
@@ -54,6 +55,7 @@ function Harness() {
     navigationRevision,
     overlayRevision,
     closeMobileSidebar: () => {},
+    switchingSpace,
   });
   return null;
 }
@@ -73,6 +75,7 @@ beforeEach(() => {
   navigationRevision = { current: 0 };
   overlayRevision = { current: 0 };
   navigate = vi.fn();
+  switchingSpace = { current: () => false };
   state.prime.mockImplementation(() => new Promise<void>((resolve) => pending.push(resolve)));
   state.cached.mockReturnValue(undefined);
   state.call.mockReturnValue(null);
@@ -99,6 +102,7 @@ describe("pending space switches", () => {
         bootstrapSpaceId: "old-space",
         userId: "user",
         closeMobileSidebar: () => {},
+        switchingSpace: { current: () => false },
       });
       return null;
     }
@@ -163,6 +167,14 @@ describe("pending space switches", () => {
     expect(commits[0]!()).toBe(false);
     expect(navigate).not.toHaveBeenCalled();
     expect(state.select).not.toHaveBeenCalled();
+  });
+
+  it("reports a switch as on its way until it is abandoned", () => {
+    expect(switchingSpace.current()).toBe(false);
+    act(() => open("new-space", "/app/new"));
+    expect(switchingSpace.current()).toBe(true);
+    navigationRevision.current++;
+    expect(switchingSpace.current()).toBe(false);
   });
 
   it("abandons a pending transition after browser history navigation", async () => {

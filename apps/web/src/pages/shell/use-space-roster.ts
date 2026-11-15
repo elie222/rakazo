@@ -74,6 +74,8 @@ export function useSpaceRoster({
   routeBotId.current = botId;
   const routeGroupId = useRef<string | undefined>(groupId);
   routeGroupId.current = groupId;
+  /** Whether a switch to another space is on its way; the switch sets it. */
+  const switchingSpace = useRef(() => false);
 
   const refreshBots = useCallback(
     async (includeArchived = false, replaceBotOrder = false) => {
@@ -127,6 +129,8 @@ export function useSpaceRoster({
         navigate("/onboarding", { replace: true });
         return;
       }
+      // The chat a switch is opening is in the other space's roster, and moving the route cancels it.
+      if (switchingSpace.current()) return;
       const currentGroupId = routeGroupId.current;
       if (currentGroupId) {
         if (!groupList.some((group) => group.id === currentGroupId)) {
@@ -216,6 +220,7 @@ export function useSpaceRoster({
     botsRefreshApplied,
     routeBotId,
     routeGroupId,
+    switchingSpace,
     refreshBots,
     reorderRosterBot,
     addCreatedBot,

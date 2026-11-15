@@ -1,3 +1,4 @@
+import type { RefObject } from "react";
 import { useCallback, useEffect, useRef } from "react";
 import { discardPrimedBootstrap, primeSpaceBootstrap } from "../../lib/bootstrap";
 import { initialBootstrapTarget } from "../../lib/bootstrap-target";
@@ -21,6 +22,7 @@ export function useOpenSpaceChat({
   navigationRevision,
   overlayRevision,
   closeMobileSidebar,
+  switchingSpace,
 }: {
   bootstrapSpaceId: string | undefined;
   userId: string | undefined;
@@ -28,6 +30,8 @@ export function useOpenSpaceChat({
   navigationRevision: ReturnType<typeof useShellNavigation>["navigationRevision"];
   overlayRevision: ReturnType<typeof useShellNavigation>["overlayRevision"];
   closeMobileSidebar: () => void;
+  /** Set to whether the latest switch is still on its way, so nothing else moves the route under it. */
+  switchingSpace: RefObject<() => boolean>;
 }) {
   const spaceSwitchRequest = useRef(0);
   useEffect(() => {
@@ -84,6 +88,7 @@ export function useOpenSpaceChat({
           Boolean(getCallSnapshot()),
         );
       const current = () => decision() !== "abandon";
+      switchingSpace.current = current;
       // A space visited before opens at once with what it showed then, refreshing behind it.
       const cached = queryClient.getQueryData(spaceSeedKey(userId ?? null, spaceId));
       const primed = primeSpaceBootstrap(spaceId, target.botId, cached);
