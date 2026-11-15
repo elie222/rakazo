@@ -41,9 +41,9 @@ export function buildServiceTools(): ServiceTool[] {
         properties.idempotencyKey = {
           type: "string",
           pattern: "^[A-Za-z0-9._:-]{1,128}$",
-          description:
-            "Repeat the same value to retry this exact call safely. One is made up when omitted.",
+          description: "Repeat the same value to retry this exact call safely.",
         };
+        required.push("idempotencyKey");
       }
       return {
         name,

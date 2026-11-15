@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import type { ServiceScope, ServiceTool } from "@rakazo/contracts";
 import {
   buildServiceTools,
@@ -91,8 +90,9 @@ function requestFor(
   if ("idempotency" in definition && definition.idempotency) {
     used.add("idempotencyKey");
     const key = input.idempotencyKey;
-    if (key !== undefined && typeof key !== "string") invalid ??= "idempotencyKey";
-    headers["idempotency-key"] = typeof key === "string" ? key : `mcp-${randomUUID()}`;
+    // Required, as over HTTP: a made-up key would let a retried tool call write twice.
+    if (typeof key === "string") headers["idempotency-key"] = key;
+    else invalid ??= "idempotencyKey";
   }
   const unknown = Object.keys(input).find((key) => !used.has(key));
   if (unknown) return `Unknown argument "${unknown}".`;
