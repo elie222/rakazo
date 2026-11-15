@@ -666,5 +666,5 @@ deployment, and give Rakazo its own proxy login with a usage cap so a leak is li
 revoke.
 
 The setting applies to every bot. It covers the browser only: terminal commands go direct. The
-username cannot contain spaces, `:`, `@` or `"`, and the password cannot contain spaces, `@` or
-`"`. Changing or clearing the variable takes effect the next time each computer starts.
+username cannot contain spaces, control characters, `:`, `@`, `"` or `#`, and the password cannot
+contain spaces, control characters, `@`, `"` or `#`. Changing or clearing the variable takes effect the next time each computer starts.

@@ -13,6 +13,8 @@
  * can read them. The docs tell operators to use a dedicated, usage-capped proxy login.
  */
 
+import { shellQuote } from "./computer-support.js";
+
 export const COMPUTER_PROXY_ENV = "RAKAZO_COMPUTER_PROXY";
 /** Name of the variable that carries the generated tinyproxy config into the prepare command. */
 export const COMPUTER_PROXY_CONFIG_ENV = "RAKAZO_COMPUTER_PROXY_CONFIG";
@@ -55,10 +57,11 @@ export function computerProxyFromEnv(
   }
   const username = decodeURIComponent(url.username);
   const password = decodeURIComponent(url.password);
-  // tinyproxy reads "user:pass@host:port" without decoding, so these characters would split it.
-  if (/[\s:@"]/.test(username) || /[\s@"]/.test(password)) {
+  // tinyproxy reads "user:pass@host:port" without decoding, so these characters would split it,
+  // start a comment, or end the line.
+  if (/[\s\p{Cc}:@"#]/u.test(username) || /[\s\p{Cc}@"#]/u.test(password)) {
     throw new Error(
-      `${COMPUTER_PROXY_ENV}: the proxy username cannot contain spaces, ':', '@' or '"', and the password cannot contain spaces, '@' or '"'`,
+      `${COMPUTER_PROXY_ENV}: the proxy username cannot contain spaces, control characters, ':', '@', '"' or '#', and the password cannot contain spaces, control characters, '@', '"' or '#'`,
     );
   }
   if (password && !username) {
@@ -176,7 +179,7 @@ export const PREPARE_COMPUTER_PROXY = [
   "    sleep 0.1",
   "  done",
   '  if [ "$ready" -ne 1 ]; then echo "the computer proxy did not start" >&2; exit 1; fi',
-  `  policy=${shellQuoteForScript(PROXY_POLICY)}`,
+  `  policy=${shellQuote(PROXY_POLICY)}`,
   `  for dir in ${BROWSER_POLICY_DIRS.join(" ")}; do`,
   '    [ "$(cat "$dir/rakazo-proxy.json" 2>/dev/null)" = "$policy" ] && continue',
   '    printf \'%s\\n\' "$policy" | $root sh -c \'mkdir -p "$1" && cat > "$1/rakazo-proxy.json"\' sh "$dir"',
@@ -188,7 +191,3 @@ export const PREPARE_COMPUTER_PROXY = [
   "  $root rm -f /etc/rakazo-proxy/tinyproxy.conf",
   "fi",
 ].join("\n");
-
-function shellQuoteForScript(value: string) {
-  return `'${value.replaceAll("'", "'\\''")}'`;
-}

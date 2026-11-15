@@ -57,6 +57,11 @@ describe("computerProxyFromEnv", () => {
     expect(() => computerProxyFromEnv({ RAKAZO_COMPUTER_PROXY: "http://user:p%40ss@h:1" })).toThrow(
       /cannot contain/,
     );
+    for (const password of ["p%23x", "p%00x"]) {
+      expect(() =>
+        computerProxyFromEnv({ RAKAZO_COMPUTER_PROXY: `http://u:${password}@h:1` }),
+      ).toThrow(/cannot contain/);
+    }
   });
 });
 
