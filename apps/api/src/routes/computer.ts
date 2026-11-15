@@ -34,7 +34,12 @@ import {
   ComputerCommandSchema,
   foldComputerCommands,
 } from "@rakazo/contracts";
-import { ACTIVE_RUN_STATUSES, COMPUTER_USING_RUNS, scrollDirection } from "@rakazo/core";
+import {
+  ACTIVE_RUN_STATUSES,
+  ClientError,
+  COMPUTER_USING_RUNS,
+  scrollDirection,
+} from "@rakazo/core";
 import { addScreenProxyCapability } from "@rakazo/core/node/screen-capability";
 import type { ComputerRunEnd } from "@rakazo/db";
 import {
@@ -477,7 +482,7 @@ export function computerRoutes(ctx: RouterContext) {
             content = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
           } catch (error) {
             if (!(error instanceof TypeError)) throw error;
-            throw new ORPCError("BAD_REQUEST", { message: "file is not a text file" });
+            throw new ClientError("BAD_REQUEST", "file is not a text file");
           }
         } else {
           try {

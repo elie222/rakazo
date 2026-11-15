@@ -88,3 +88,28 @@ test("ignores other errors and names that only start the same", () => {
 }`;
   assert.deepEqual(lines(text), []);
 });
+
+test("counts a throw in a catch whose clause holds comments", () => {
+  const text = `try {
+  run();
+} catch /* why */ (error) /* still why */ {
+  throw new ORPCError("BAD_REQUEST");
+}
+try {
+  run();
+} catch // none
+{
+  throw new ORPCError("CONFLICT");
+}`;
+  assert.deepEqual(lines(text), [4, 10]);
+});
+
+test("reads a regex after an arrow as a regex, so a bracket in it closes nothing", () => {
+  const text = `try {
+  run();
+} catch {
+  const closes = (s) => /\\)/.test(s);
+  throw new ORPCError("BAD_REQUEST");
+}`;
+  assert.deepEqual(lines(text), [5]);
+});

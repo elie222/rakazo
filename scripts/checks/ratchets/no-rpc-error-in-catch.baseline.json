@@ -11,7 +11,7 @@
   "apps/api/src/routes/account.ts": 2,
   "apps/api/src/routes/bots.ts": 2,
   "apps/api/src/routes/capabilities.ts": 3,
-  "apps/api/src/routes/computer.ts": 7,
+  "apps/api/src/routes/computer.ts": 6,
   "apps/api/src/routes/content.ts": 2,
   "apps/api/src/routes/mcp.ts": 4,
   "apps/api/src/routes/memory.ts": 1,
