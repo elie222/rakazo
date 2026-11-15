@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import type { MemoryProviderDescriptor, SpaceMemoryConfig } from "@rakazo/contracts";
+import { flush } from "@rakazo/core/test-async";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { act } from "react";
@@ -81,9 +82,7 @@ afterEach(() => {
 /** Lets a read or a save answer, and the screen draw what it answered. */
 async function settle() {
   for (let turn = 0; turn < 3; turn += 1) {
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    });
+    await act(flush);
   }
 }
 
