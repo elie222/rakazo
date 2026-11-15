@@ -284,6 +284,13 @@ description: Use when: the user asks for a status summary.
     });
   });
 
+  it("rejects malformed block comments containing Unicode separators", () => {
+    const parsed = parseSkillMd(
+      `---\nname: Example\ndescription: |${" ".repeat(45_000)}#${" ".repeat(45_000)}\u2028bad\nmetadata: [\n---\n`,
+    );
+    expect(parsed).toMatchObject({ error: expect.any(String) });
+  });
+
   it("handles long scalar separators during legacy repair", () => {
     const parsed = parseSkillMd(
       `---\nname: Example\ndescription:${" ".repeat(90_000)}plain\nmetadata: [\n---\n`,

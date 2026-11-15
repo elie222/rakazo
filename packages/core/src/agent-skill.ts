@@ -111,7 +111,13 @@ function parseSkillFrontmatter(text: string): unknown {
         const indent = line.length - line.trimStart().length;
         if (blockIndent !== undefined && (!line.trim() || indent > blockIndent)) return line;
         blockIndent = undefined;
-        if (/:[ \t]*[>|][1-9+-]*(?:[ \t]+#.*)?[ \t]*$/.test(line)) {
+        const colon = line.indexOf(":");
+        const header = colon < 0 ? "" : line.slice(colon + 1).trim();
+        const comment = header.indexOf("#");
+        const separatedComment =
+          comment > 0 && (header[comment - 1] === " " || header[comment - 1] === "\t");
+        const indicator = separatedComment ? header.slice(0, comment).trimEnd() : header;
+        if (/^[>|][1-9+-]*$/.test(indicator)) {
           blockIndent = indent;
           return line;
         }
