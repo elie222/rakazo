@@ -420,6 +420,9 @@ describe("mentionedGroupBotIds", () => {
     expect(mentionedGroupBotIds({ text: "@王 你看下", members: [wang] })).toEqual(["w"]);
     expect(mentionedGroupBotIds({ text: "@王，你看下", members: [wang] })).toEqual(["w"]);
     expect(mentionedGroupBotIds({ text: "@王五 看下", members: [wang, wangwu] })).toEqual(["ww"]);
+    const su = { id: "s", name: "スー" };
+    expect(mentionedGroupBotIds({ text: "@スーパー見て", members: [su] })).toEqual([]);
+    expect(mentionedGroupBotIds({ text: "@スー 見て", members: [su] })).toEqual(["s"]);
   });
 });
 

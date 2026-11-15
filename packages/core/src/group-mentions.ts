@@ -23,9 +23,12 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-/** Chinese, Japanese and Korean, whose text runs straight on from a name ("@Writer你看下"). */
+/**
+ * Chinese, Japanese and Korean, whose text runs straight on from a name ("@Writer你看下"), with
+ * the long-vowel mark ("スー"), which Unicode files under no single script.
+ */
 export const CJK_CHAR =
-  "[\\p{Script=Han}\\p{Script=Hiragana}\\p{Script=Katakana}\\p{Script=Hangul}]";
+  "[\\p{Script=Han}\\p{Script=Hiragana}\\p{Script=Katakana}\\p{Script=Hangul}\\u30fc\\uff70]";
 // Any other letter, a digit, "_" or "-" joins a name to the text around it. CJK text ends a name
 // only after a name that does not itself end in CJK: "@Writer你看下" names Writer, but "@王五" is
 // not "@王".
