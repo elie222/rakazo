@@ -278,6 +278,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["bots/list"],
       ["bots/listArchived"],
       ["bots/get", { botId: "missing-bot" }],
+      ["bots/workLog", { botId: "missing-bot" }],
       ["bots/create", botInput("Unauthenticated")],
       ["bots/duplicate", { botId: "missing-bot" }],
       ["bots/importPreview", { files: [{ path: "SOUL.md", content: "Calm." }] }],
@@ -700,6 +701,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
 
     const botIdCalls: Array<[string, unknown]> = [
       ["bots/get", { botId: ownerBot.id }],
+      ["bots/workLog", { botId: ownerBot.id }],
       ["bots/duplicate", { botId: ownerBot.id }],
       ["bots/update", { botId: ownerBot.id, name: "Stolen Bot" }],
       ["bots/archive", { botId: ownerBot.id }],

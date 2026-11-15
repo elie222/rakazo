@@ -59,6 +59,7 @@ import {
   CreateBotFromTemplateInput,
   CreateBotFromTemplateOutput,
 } from "./bot-template.js";
+import { BotWorkLogEntrySchema } from "./bot-work-log.js";
 import {
   ComputerModeSchema,
   ComputerProviderSettingsSchema,
@@ -611,6 +612,8 @@ export const appContract = {
     list: oc.output(z.array(BotSchema)),
     listArchived: oc.output(z.array(BotSchema)),
     get: oc.input(botId).output(BotSchema),
+    /** The tools a bot called most recently across its runs, newest first. */
+    workLog: oc.input(botId).output(z.array(BotWorkLogEntrySchema)),
     create: oc.input(CreateBotInput).output(BotSchema),
     importPreview: oc.input(AgentImportPreviewInput).output(AgentImportPlanSchema),
     importCreate: oc.input(AgentImportCreateInput).output(BotSchema),

@@ -24,6 +24,7 @@ import { Mail } from "lucide-react";
 import type { ReactNode } from "react";
 import { Suspense, useEffect, useId, useRef, useState } from "react";
 import { BotEmailAddressField } from "../../components/BotEmailAddressField";
+import { BotWorkLog } from "../../components/BotWorkLog";
 import { ErrorBoundary, SectionLoadFailed } from "../../components/ErrorBoundary";
 import { InstructionSettings } from "../../components/InstructionSettings";
 import { PagesList } from "../../components/pages/PagesList";
@@ -64,9 +65,9 @@ function advancedValues(bot: Bot) {
   ] as const;
 }
 
-export type BotPanelTab = "computer" | "routines" | "pages" | "settings";
+export type BotPanelTab = "computer" | "routines" | "pages" | "logs" | "settings";
 
-/** A bot's profile above its Computer, Routines, Pages and Advanced tabs. */
+/** A bot's profile above its Computer, Routines, Pages, Logs and Advanced tabs. */
 export function BotSettings({
   bot,
   tab = "settings",
@@ -541,6 +542,9 @@ export function BotSettings({
           <TabsTrigger value="pages">
             <Trans>Pages</Trans>
           </TabsTrigger>
+          <TabsTrigger value="logs">
+            <Trans>Logs</Trans>
+          </TabsTrigger>
           <TabsTrigger value="settings">
             <Trans>Advanced</Trans>
           </TabsTrigger>
@@ -553,6 +557,9 @@ export function BotSettings({
         </TabsContent>
         <TabsContent value="pages" className="pt-4">
           {tab === "pages" ? <PagesList botId={bot.id} /> : null}
+        </TabsContent>
+        <TabsContent value="logs" className="pt-4">
+          {tab === "logs" ? <BotWorkLog botId={bot.id} /> : null}
         </TabsContent>
         {/* Stays mounted so scratchpad and knowledge drafts survive a tab switch. */}
         <TabsContent value="settings" keepMounted data-testid="bot-settings-advanced">

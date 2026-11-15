@@ -273,6 +273,7 @@ it("shows the profile and the Advanced tab's controls", async () => {
     "Computer",
     "Routines",
     "Pages",
+    "Logs",
     "Advanced",
   ]);
   expect(

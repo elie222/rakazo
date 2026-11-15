@@ -2,6 +2,7 @@ export type Panel =
   | "computer"
   | "routines"
   | "pages"
+  | "logs"
   | "settings"
   | "routine"
   | "create-group"
@@ -15,6 +16,7 @@ const durablePanels: readonly Panel[] = [
   "computer",
   "routines",
   "pages",
+  "logs",
   "settings",
   "routine",
   "group-settings",
