@@ -240,6 +240,7 @@ const callbacks = {
   createBotInSpace: action,
   deleteSection: action,
   editSectionFromMenu: action,
+  promptRenameSection: action,
   groupAction: action,
   openBot: action,
   openGroup: action,
@@ -1170,6 +1171,7 @@ it.each([
 
 it("lets screen readers reach a heading's long-press menu through the heading", () => {
   const deleteSection = vi.fn();
+  const promptRenameSection = vi.fn();
   const confirmDeleteSpace = vi.fn();
   render(
     <List
@@ -1191,14 +1193,18 @@ it("lets screen readers reach a heading's long-press menu through the heading", 
         { type: "heading", key: "section:s1", title: "Ideas", sectionId: "s1" } as InboxItem,
       ]}
       spaceId="space-home"
-      options={{ deleteSection, confirmDeleteSpace }}
+      options={{ deleteSection, promptRenameSection, confirmDeleteSpace }}
     />,
   );
   const space = container.querySelector<HTMLElement>('button[aria-label="Work"]')!;
   // A disabled item is left out; here none is.
   expect(space.dataset.actions).toBe("new-bot members settings delete");
   const section = container.querySelector<HTMLElement>('button[aria-label="Collapse Ideas"]')!;
-  expect(section.dataset.actions).toBe("delete");
+  // Rename comes first, as in the chat rows' menu.
+  expect(section.dataset.actions).toBe("rename delete");
+  act(() => ui.a11yActions.get("Collapse Ideas")!({ nativeEvent: { actionName: "rename" } }));
+  expect(promptRenameSection).toHaveBeenCalledWith({ id: "s1", name: "Ideas" });
+  expect(deleteSection).not.toHaveBeenCalled();
   act(() => ui.a11yActions.get("Collapse Ideas")!({ nativeEvent: { actionName: "delete" } }));
   expect(deleteSection).toHaveBeenCalledWith({ id: "s1", name: "Ideas" });
   act(() => ui.a11yActions.get("Work")!({ nativeEvent: { actionName: "delete" } }));

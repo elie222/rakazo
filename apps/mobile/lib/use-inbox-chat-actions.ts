@@ -321,6 +321,22 @@ export function useInboxChatActions({
     [createSection, renameSection, t],
   );
 
+  /** Renames a section from its heading's menu, with the iOS name prompt. */
+  const promptRenameSection = useCallback(
+    (section: { id: string; name: string }) =>
+      promptSectionName({
+        title: t`Rename section`,
+        cancelLabel: t`Cancel`,
+        submitLabel: t`Save`,
+        defaultValue: section.name,
+        onSubmit: (name) =>
+          void renameSection(section.id, name).catch((err) =>
+            Alert.alert(t`Could not rename section`, errorText(err, t`Try again.`)),
+          ),
+      }),
+    [renameSection, t],
+  );
+
   const deleteSection = useCallback(
     (section: { id: string; name: string }) => {
       confirmDeleteSection(section, () => {
@@ -347,6 +363,7 @@ export function useInboxChatActions({
     renameSection,
     organizeFromMenu,
     editSectionFromMenu,
+    promptRenameSection,
     deleteSection,
     snoozeChat,
   };
