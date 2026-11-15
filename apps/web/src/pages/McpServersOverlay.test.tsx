@@ -18,7 +18,7 @@ const mocks = vi.hoisted(() => ({
 }));
 const access = vi.hoisted(() => ({ all: vi.fn(), bots: vi.fn() }));
 const api = vi.hoisted(() => ({
-  mcp: { servers: mocks, assignments: { all: access.all } },
+  mcp: { servers: mocks, assignments: { all: access.all }, oauth: { disconnect: vi.fn() } },
   bots: { list: access.bots },
 }));
 // One space, so no "Available in" choice appears.
@@ -195,6 +195,43 @@ function server(id: string, status = "unknown") {
     enabled: true,
   } as McpServer;
 }
+
+function oauthServer(id: string) {
+  return {
+    id,
+    name: id,
+    transport: "streamable_http",
+    endpoint: "https://provider.example.com/mcp",
+    oauthStatus: "connected",
+    health: { status: "ok" },
+    enabled: true,
+  } as McpServer;
+}
+
+it("disconnecting also empties the server's own sign-in browser", async () => {
+  const clear = vi.fn().mockResolvedValue(undefined);
+  window.rakazoDesktop = {
+    platform: "darwin",
+    mcpBrowser: { clear, onOAuthCallback: () => () => {} },
+  } as unknown as NonNullable<Window["rakazoDesktop"]>;
+  mocks.list.mockReset().mockResolvedValue([oauthServer("Mobbin")]);
+  api.mcp.oauth.disconnect.mockReset().mockResolvedValue({ ok: true });
+  const host = document.createElement("div");
+  const root = createRoot(host);
+  try {
+    await act(async () => root.render(overlay()));
+    await vi.waitFor(() => expect(host.textContent).toContain("Disconnect"));
+    const item = Array.from(host.querySelectorAll("button")).find(
+      (button) => button.textContent === "Disconnect",
+    );
+    await act(async () => item?.click());
+    await vi.waitFor(() => expect(clear).toHaveBeenCalledWith("Mobbin"));
+    expect(api.mcp.oauth.disconnect).toHaveBeenCalledWith({ serverId: "Mobbin" });
+  } finally {
+    await act(async () => root.unmount());
+    delete window.rakazoDesktop;
+  }
+});
 
 it("offers stdio only where the deployment runs it, and still shows existing stdio servers", async () => {
   mocks.list
