@@ -603,6 +603,10 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         // limits, and its reply is not sent to a chat app (see MessagingDelivery.deliverRun).
         const messagingChannelRun =
           isMessagingChannelRun(run.trigger, sourceBlocks) || source?.intact === false;
+        // Without the marker nothing says which of the thread's messages that channel may see,
+        // so the run reads only the message that woke it and gets no history tools.
+        const unknownChannelSourceId =
+          messagingChannelRun && !channelId ? messagingSource?.id : undefined;
         const [
           { bot, ownerLabs },
           thread,
@@ -641,7 +645,16 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
               space: { select: { _count: { select: { memberships: true } } } },
             },
           }),
-          loadRunHistoryMessages(deps.prisma, run, LEGACY_HISTORY_WINDOW_SIZE, channelId),
+          loadRunHistoryMessages(
+            deps.prisma,
+            run,
+            LEGACY_HISTORY_WINDOW_SIZE,
+            channelId
+              ? { channelId }
+              : unknownChannelSourceId
+                ? { sourceMessageId: unknownChannelSourceId }
+                : undefined,
+          ),
           run.trigger === "bot_message"
             ? loadBotMessageContext(deps.prisma, run.sourceMessageId)
             : Promise.resolve(undefined),
@@ -1408,7 +1421,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             // A call rings the bot's own person, whose chat it is; other members of a shared
             // Space reach it by message for now.
             phoneCallsEnabled: deps.phoneCallsEnabled && run.userId === bot.userId,
-            historyRetrievalEnabled: contextStrategy !== "current",
+            historyRetrievalEnabled: contextStrategy !== "current" && !unknownChannelSourceId,
             graphicalToolsAllowed,
             pageBrowserAllowed,
             groupId: thread.groupId,

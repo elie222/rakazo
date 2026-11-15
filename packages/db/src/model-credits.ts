@@ -76,7 +76,7 @@ export async function reconcileCreditPurchase(
   await creditAccount(prisma, organizationId);
   return prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT "organizationId" FROM model_credit_accounts WHERE "organizationId" = ${organizationId} FOR UPDATE`;
-    await prepareCreditLots(tx, organizationId, now);
+    const withheldMicros = await prepareCreditLots(tx, organizationId, now);
     await expireCreditLots(tx, organizationId, now);
     const source = `purchase:${purchase.id}`;
     const existing = await tx.modelCreditEntry.findUnique({ where: { source } });
@@ -121,7 +121,7 @@ export async function reconcileCreditPurchase(
       update: {},
     });
     await resizeCreditLot(tx, entry.id, amountMicros, expiresAt);
-    await syncLotBalance(tx, organizationId);
+    await syncLotBalance(tx, organizationId, withheldMicros);
     await expireCreditLots(tx, organizationId, now);
     return Number(delta);
   });
@@ -161,10 +161,10 @@ export async function reserveModelCredits(
     }
     if (attribution?.userId && account?.modelCreditCapMicros != null)
       await enforceModelCreditCap(tx, attribution.userId, amountMicros);
-    await prepareCreditLots(tx, organizationId, now);
+    const withheldMicros = await prepareCreditLots(tx, organizationId, now);
     await expireCreditLots(tx, organizationId, now);
     const reserved = await tx.modelCreditAccount.updateMany({
-      where: { organizationId, balanceMicros: { gte: amountMicros } },
+      where: { organizationId, balanceMicros: { gte: amountMicros + withheldMicros } },
       data: { balanceMicros: { decrement: amountMicros } },
     });
     if (reserved.count !== 1) throw new Error(MODEL_CREDITS_EXHAUSTED_ERROR);
@@ -203,7 +203,7 @@ export async function settleModelCreditsTx(
   if (!scope) return;
   await tx.$queryRaw`SELECT "organizationId" FROM model_credit_accounts WHERE "organizationId"=${scope.organizationId} FOR UPDATE`;
   await tx.$queryRaw`SELECT id FROM model_credit_entries WHERE id=${reservationId} FOR UPDATE`;
-  await prepareCreditLots(tx, scope.organizationId, now);
+  const withheldMicros = await prepareCreditLots(tx, scope.organizationId, now);
   await expireCreditLots(tx, scope.organizationId, now);
   const entry = await tx.modelCreditEntry.findUnique({ where: { id: reservationId } });
   if (!entry || (!entry.pending && !reconcile)) return;
@@ -227,7 +227,7 @@ export async function settleModelCreditsTx(
     where: { organizationId: entry.organizationId },
     data: { balanceMicros: { increment: amountMicros - entry.amountMicros } },
   });
-  await syncLotBalance(tx, entry.organizationId);
+  await syncLotBalance(tx, entry.organizationId, withheldMicros);
 }
 
 /** Unknown usage leaves a visible hold; no timeout can invent a zero-cost result. */

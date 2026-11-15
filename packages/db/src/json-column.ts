@@ -23,8 +23,8 @@ export const JsonObject = z.custom<Record<string, unknown>>(
 const WARNED_ROWS_MAX = 1000;
 const warnedRows = new Set<string>();
 
-/** Warns once per row. `detail` is counts only, never the stored value. */
-export function warnJsonColumnOnce(
+function logJsonColumnOnce(
+  level: "warn" | "error",
   message: string,
   row: JsonColumnRow,
   detail?: Record<string, number | string>,
@@ -33,7 +33,24 @@ export function warnJsonColumnOnce(
   if (warnedRows.has(key)) return;
   if (warnedRows.size >= WARNED_ROWS_MAX) warnedRows.clear();
   warnedRows.add(key);
-  getLogger().warn(message, { ...row, ...detail });
+  getLogger()[level](message, { ...row, ...detail });
+}
+
+/** Warns once per row. `detail` is counts only, never the stored value. */
+export function warnJsonColumnOnce(
+  message: string,
+  row: JsonColumnRow,
+  detail?: Record<string, number | string>,
+): void {
+  logJsonColumnOnce("warn", message, row, detail);
+}
+
+/**
+ * Reports once per row, as an error, a rejected value its reader worked around: the row is left
+ * out so the work around it goes on, and someone has to repair it.
+ */
+export function reportJsonColumnOnce(message: string, row: JsonColumnRow): void {
+  logJsonColumnOnce("error", message, row);
 }
 
 /**

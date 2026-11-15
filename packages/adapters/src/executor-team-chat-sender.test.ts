@@ -17,6 +17,40 @@ const OWNER_MEMORY = "Owner's door code is 4821";
 const OWNER_NOTE = "Plan the owner's surprise party";
 /** What an owner-only tool returned to an earlier reply, kept for the bot's own later turns. */
 const OWNER_TOOL_RESULT = "Inbox: offer letter from the owner's new employer";
+/** The earlier reply itself, part of the owner's private exchange in the thread. */
+const PRIVATE_REPLY = "You have one new email.";
+const CHANNEL_HISTORY = "Lunch at noon?";
+
+type HistoryClause = {
+  id?: string;
+  role?: string;
+  runId?: string;
+  blocks?: { array_contains: [{ channelId: string }] };
+};
+/** The history loader's filter, applied the way the database applies it. */
+function inHistory(
+  row: {
+    id: string;
+    role: string;
+    runId: string | null;
+    blocks: { kind: string; channelId?: string }[];
+  },
+  where: { OR?: HistoryClause[] },
+) {
+  return (
+    !where.OR ||
+    where.OR.some((clause) =>
+      clause.id
+        ? row.id === clause.id
+        : row.role === clause.role &&
+          (clause.blocks
+            ? row.blocks.some(
+                (block) => block.channelId === clause.blocks?.array_contains[0].channelId,
+              )
+            : row.runId === clause.runId),
+    )
+  );
+}
 
 type Sender = { senderId: string; senderIsBot?: boolean };
 
@@ -101,38 +135,61 @@ async function teamChatRun(input: {
     },
     message: {
       // The history loader asks for tool history; an earlier reply read the owner's inbox.
-      findMany: vi.fn(async (args: { select?: { toolHistory?: boolean } }) =>
-        args.select?.toolHistory
-          ? [
-              {
-                id: "reply-0",
-                threadId: "thread-1",
-                seq: 0,
-                role: "bot",
-                botId: "bot-1",
-                runId: "run-0",
-                blocks: [
-                  { kind: "steps", steps: [{ label: "Read email", count: 1 }] },
-                  { kind: "text", text: "You have one new email." },
+      findMany: vi.fn(
+        async (args: { select?: { toolHistory?: boolean }; where: { OR?: HistoryClause[] } }) => {
+          if (!args.select?.toolHistory) return [];
+          const row = {
+            threadId: "thread-1",
+            botId: null as string | null,
+            runId: null as string | null,
+            toolHistory: null as string | null,
+            authorUserId: null,
+            createdAt: new Date("2026-11-01T00:00:00Z"),
+            replyToMessageId: null,
+            replyQuote: null,
+            replyTo: null,
+            clientNonce: null,
+            steeringMessages: [],
+          };
+          return [
+            {
+              ...row,
+              id: "reply-0",
+              seq: 1,
+              role: "bot",
+              botId: "bot-1",
+              runId: "run-0",
+              blocks: [
+                { kind: "steps", steps: [{ label: "Read email", count: 1 }] },
+                { kind: "text", text: PRIVATE_REPLY },
+              ],
+              toolHistory: JSON.stringify({
+                steps: [
+                  {
+                    tool: "read_email",
+                    calls: [{ arguments: "{}", result: OWNER_TOOL_RESULT }],
+                  },
                 ],
-                toolHistory: JSON.stringify({
-                  steps: [
-                    {
-                      tool: "read_email",
-                      calls: [{ arguments: "{}", result: OWNER_TOOL_RESULT }],
-                    },
-                  ],
-                }),
-                authorUserId: null,
-                createdAt: new Date("2026-11-01T00:00:00Z"),
-                replyToMessageId: null,
-                replyQuote: null,
-                replyTo: null,
-                clientNonce: null,
-                steeringMessages: [],
-              },
-            ]
-          : [],
+              }),
+            },
+            {
+              ...row,
+              id: "channel-0",
+              seq: 0,
+              role: "user",
+              blocks: [
+                {
+                  kind: "channel_message",
+                  provider: "slack",
+                  channelId: "channel-1",
+                  fromAddress: "T1:U-PAT",
+                  fromLabel: "Pat",
+                  text: CHANNEL_HISTORY,
+                },
+              ],
+            },
+          ].filter((message) => inHistory(message, args.where));
+        },
       ),
       findFirst: vi.fn(async () => null),
       findUnique: vi.fn(async () => ({
@@ -306,6 +363,8 @@ async function teamChatRun(input: {
     context,
     sawOwnerState: context.includes(OWNER_MEMORY) || context.includes(OWNER_NOTE),
     sawOwnerToolResult: JSON.stringify(request.history).includes(OWNER_TOOL_RESULT),
+    sawPrivateReply: JSON.stringify(request.history).includes(PRIVATE_REPLY),
+    sawChannelHistory: JSON.stringify(request.history).includes(CHANNEL_HISTORY),
     toldNonOwner: context.includes("someone other than your owner"),
   };
 }
@@ -366,6 +425,44 @@ describe("runs whose waking message is stored beside entries that are not blocks
     expect(result.sawOwnerState).toBe(false);
     expect(result.sawOwnerToolResult).toBe(false);
     for (const tool of ownerOnlyTools) expect(result.tools).not.toContain(tool);
+  });
+
+  it("read the channel their message still names, and nothing private", async () => {
+    const result = await teamChatRun({
+      ...owner,
+      sourceBlocks: [{ kind: "channel_message", channelId: "channel-1" }, ...stray],
+    });
+    expect(result.sawChannelHistory).toBe(true);
+    expect(result.sawPrivateReply).toBe(false);
+    expect(result.tools).toContain("search_history");
+  });
+
+  it.each([
+    ["may have lost its channel message", [{ kind: "text", text: "What's new?" }, ...stray]],
+    ["is not a list", { kind: "text", text: "What's new?" }],
+  ])("read none of the thread when the message %s", async (_case, sourceBlocks) => {
+    const result = await teamChatRun({ ...owner, sourceBlocks });
+    expect(result.sawPrivateReply).toBe(false);
+    expect(result.sawChannelHistory).toBe(false);
+    for (const tool of ["search_history", "read_history"]) expect(result.tools).not.toContain(tool);
+  });
+});
+
+describe("what an intact waking message lets its run read", () => {
+  it("gives the owner's private run the whole thread", async () => {
+    const result = await teamChatRun({
+      senders: [{ senderId: "T1:U-OWNER" }],
+      ownerAddress: "T1:U-OWNER",
+    });
+    expect(result.sawPrivateReply).toBe(true);
+    expect(result.sawChannelHistory).toBe(true);
+    expect(result.tools).toContain("search_history");
+  });
+
+  it("gives a channel run its channel's messages only", async () => {
+    const result = await teamChatRun({ senders: [{ senderId: "member" }], sharedChannel: true });
+    expect(result.sawChannelHistory).toBe(true);
+    expect(result.sawPrivateReply).toBe(false);
   });
 });
 
