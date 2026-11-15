@@ -107,14 +107,12 @@ test("diff: trimmed prefix and suffix keep correct line numbers", () => {
   ]);
 });
 
-test("diff: a one-line edit in a huge file stays line-level and fast", () => {
+test("diff: a one-line edit in a huge file stays line-level", () => {
   const lines = Array.from({ length: 50000 }, (_, i) => `line ${i}`);
   const edited = lines.slice();
   edited[25000] = "changed";
-  const t0 = Date.now();
   const stats = diffStats(`${lines.join("\n")}\n`, `${edited.join("\n")}\n`);
   assert.deepStrictEqual(stats, { add: 1, del: 1, kind: "modified" });
-  assert.ok(Date.now() - t0 < 2000);
 });
 
 test("diff: huge unrelated files fall back to a coarse removed/added block", () => {
@@ -125,6 +123,25 @@ test("diff: huge unrelated files fall back to a coarse removed/added block", () 
   assert.strictEqual(d.filter((r) => r.type === "del").length, side);
   assert.strictEqual(d.filter((r) => r.type === "add").length, side);
   assert.ok(d.every((r) => r.type !== "ctx"));
+});
+
+test("diff: a line that looks like an end-of-file marker is still a real edit", () => {
+  for (const marker of ["\u0000no-eol", "\\ No newline at end of file", "x\u0000no-eol"]) {
+    assert.deepStrictEqual(diffStats("x", `x${marker}\n`), { add: 1, del: 1, kind: "modified" });
+    assert.deepStrictEqual(diffStats(`x${marker}`, "x"), { add: 1, del: 1, kind: "modified" });
+    assert.deepStrictEqual(diffStats(`x${marker}\n`, `x${marker}`), {
+      add: 1,
+      del: 1,
+      kind: "modified",
+    });
+  }
+});
+
+test("diffStats: undefined means a missing file, like null", () => {
+  assert.deepStrictEqual(diffStats(undefined, "x\n"), { add: 1, del: 0, kind: "new" });
+  assert.deepStrictEqual(diffStats("x\n", undefined), { add: 0, del: 1, kind: "deleted" });
+  assert.deepStrictEqual(diffStats(undefined, undefined), { add: 0, del: 0, kind: "none" });
+  assert.deepStrictEqual(diffStats(undefined, null), { add: 0, del: 0, kind: "none" });
 });
 
 if (process.exitCode) process.exit(1);

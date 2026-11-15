@@ -5,7 +5,6 @@
   // Above this many LCS cells (after trimming the shared prefix and suffix) the middle is
   // reported as one removed block plus one added block instead of a line-level diff.
   const MAX_LCS_CELLS = 4_000_000;
-  const NO_EOL = "\u0000no-eol";
 
   function toLines(text) {
     if (text === null || text === undefined) return null;
@@ -16,15 +15,22 @@
     return parts;
   }
 
-  // Lines with a comparison key. A last line without a trailing newline never equals the same
-  // text with one, so adding or removing the final newline shows up as a change.
-  function toEntries(text) {
+  // Lines with a comparison key. Each distinct (text, has-final-newline) pair gets its own integer
+  // id, so a last line without a trailing newline never equals the same text with one (adding or
+  // removing the final newline shows up as a change) and no line content can collide with a marker.
+  function toEntries(text, ids) {
     const lines = toLines(text);
     if (lines === null) return [];
     const noEol = text !== "" && !text.endsWith("\n");
     return lines.map((line, i) => {
       const last = noEol && i === lines.length - 1;
-      return { text: line, key: last ? line + NO_EOL : line, noEol: last };
+      const table = last ? ids.noEol : ids.eol;
+      let key = table.get(line);
+      if (key === undefined) {
+        key = ids.next++;
+        table.set(line, key);
+      }
+      return { text: line, key, noEol: last };
     });
   }
 
@@ -36,8 +42,9 @@
 
   // Line diff of ctx/add/del rows. null means "file did not exist".
   function diffLines(beforeText, afterText) {
-    const A = toEntries(beforeText);
-    const B = toEntries(afterText);
+    const ids = { eol: new Map(), noEol: new Map(), next: 0 };
+    const A = toEntries(beforeText, ids);
+    const B = toEntries(afterText, ids);
     const n = A.length;
     const m = B.length;
 
@@ -91,7 +98,9 @@
     return out;
   }
 
-  function diffStats(beforeText, afterText) {
+  function diffStats(rawBefore, rawAfter) {
+    const beforeText = rawBefore === undefined ? null : rawBefore;
+    const afterText = rawAfter === undefined ? null : rawAfter;
     if (beforeText === null && afterText === null) return { add: 0, del: 0, kind: "none" };
     if (beforeText === null) {
       const lines = toLines(afterText) || [];
