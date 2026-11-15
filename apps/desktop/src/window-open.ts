@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { MCP_SIGNIN_WINDOW_PREFIX } from "@rakazo/contracts";
 
 const OAUTH_POPUP_NAMES = new Set([
   "rakazo-app-connect",
@@ -8,17 +9,10 @@ const OAUTH_POPUP_NAMES = new Set([
   "rakazo-plugin-connect",
 ]);
 
-/**
- * A per-server MCP sign-in window's name carries its server id after this
- * prefix. Distinct from the session-named `rakazo-mcp-oauth:` windows, which
- * sign in through the app's own session.
- */
-const MCP_OAUTH_POPUP_PREFIX = "rakazo-mcp-signin:";
-
 /** A server id from a per-server MCP sign-in window name; null otherwise. */
 export function mcpOAuthPopupServerId(frameName: string): string | null {
-  if (!frameName.startsWith(MCP_OAUTH_POPUP_PREFIX)) return null;
-  const serverId = frameName.slice(MCP_OAUTH_POPUP_PREFIX.length);
+  if (!frameName.startsWith(MCP_SIGNIN_WINDOW_PREFIX)) return null;
+  const serverId = frameName.slice(MCP_SIGNIN_WINDOW_PREFIX.length);
   return isMcpOAuthServerId(serverId) ? serverId : null;
 }
 

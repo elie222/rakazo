@@ -37,6 +37,15 @@ export interface RakazoDesktopOAuthCallback {
 }
 
 /** A code the app's own MCP callback page carried, captured before that page loads. */
+/** The web app route a provider sends an MCP sign-in back to. */
+export const MCP_OAUTH_CALLBACK_PATH = "/mcp/oauth/callback";
+
+/**
+ * A per-server MCP sign-in window is named this prefix plus its server id, so
+ * the desktop shell can give it that server's own browser session.
+ */
+export const MCP_SIGNIN_WINDOW_PREFIX = "rakazo-mcp-signin:";
+
 export interface RakazoDesktopMcpOAuthCallback {
   serverId: string;
   /** Null when the provider refused or the user declined. */

@@ -1,3 +1,4 @@
+import { MCP_OAUTH_CALLBACK_PATH, MCP_SIGNIN_WINDOW_PREFIX } from "@rakazo/contracts";
 import { desktopBridge } from "./desktop";
 import { MCP_OAUTH_CHANNEL } from "./mcp-oauth-channel";
 import { rpc } from "./rpc";
@@ -24,7 +25,7 @@ export type McpOauthResult =
  * callback page; the main process captures the code and reports it instead. */
 /** Where providers send the user back; a pre-registered client must allow it. */
 export function mcpOAuthRedirectUri(): string {
-  return `${window.location.origin}/mcp/oauth/callback`;
+  return `${window.location.origin}${MCP_OAUTH_CALLBACK_PATH}`;
 }
 
 export async function connectMcpOauth(serverId: string): Promise<McpOauthResult> {
@@ -34,7 +35,9 @@ export async function connectMcpOauth(serverId: string): Promise<McpOauthResult>
   const popup = window.open(
     started.authorizationUrl,
     // The desktop shell gives a per-server window its own browser session.
-    browser ? `rakazo-mcp-signin:${serverId}` : `${MCP_OAUTH_CHANNEL}:${started.sessionId}`,
+    browser
+      ? `${MCP_SIGNIN_WINDOW_PREFIX}${serverId}`
+      : `${MCP_OAUTH_CHANNEL}:${started.sessionId}`,
     "popup,width=560,height=720",
   );
   if (!popup) {

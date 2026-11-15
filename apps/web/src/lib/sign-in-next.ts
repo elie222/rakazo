@@ -1,4 +1,6 @@
-export const MCP_OAUTH_CALLBACK_PATH = "/mcp/oauth/callback";
+import { MCP_OAUTH_CALLBACK_PATH } from "@rakazo/contracts";
+
+export { MCP_OAUTH_CALLBACK_PATH };
 export const SLACK_INSTALL_CALLBACK_PATH = "/messaging/slack/callback";
 
 const INVITE_PATH = /^\/invite\/[A-Za-z0-9_-]{1,200}$/;
