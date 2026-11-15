@@ -1,6 +1,6 @@
 // Tells IndexNow (Bing, Yandex and other engines) which pages changed since the previous
-// production deploy, read from the live sitemap's <lastmod>. Best-effort: problems are
-// reported as warnings and never fail the run.
+// production deploy, read from the live sitemap's <lastmod>. Best-effort: network and HTTP
+// failures are reported as warnings and do not fail the run.
 //
 // Usage: node apps/www/scripts/indexnow.mjs <since ISO timestamp>
 import { readdirSync } from "node:fs";
@@ -16,8 +16,10 @@ class HttpError extends Error {}
 const publicDir = join(dirname(fileURLToPath(import.meta.url)), "../public");
 
 // The key is the name of its file in public/, so it lives in one place.
-export function indexNowKey(files = readdirSync(publicDir)) {
-  const keys = files.flatMap((file) => /^([0-9a-f]{32})\.txt$/.exec(file)?.[1] ?? []);
+function indexNowKey() {
+  const keys = readdirSync(publicDir).flatMap(
+    (file) => /^([0-9a-f]{32})\.txt$/.exec(file)?.[1] ?? [],
+  );
   if (keys.length !== 1) throw new Error(`Expected one IndexNow key file, found ${keys.length}`);
   return keys[0];
 }
@@ -42,7 +44,7 @@ function entries(xml, element) {
 }
 
 /** Child sitemaps of a sitemap index and pages of a urlset; a document has one or the other. */
-export function parseSitemap(xml) {
+function parseSitemap(xml) {
   return {
     sitemaps: entries(xml, "sitemap").map((entry) => entry.loc),
     urls: entries(xml, "url"),
@@ -54,7 +56,7 @@ export function parseSitemap(xml) {
  * A date-only lastmod counts from the start of `since`'s day, so a page edited later that day
  * is kept.
  */
-export function changedSince(urls, since) {
+function changedSince(urls, since) {
   const cutoff = since.getTime();
   const dayCutoff = Date.UTC(since.getUTCFullYear(), since.getUTCMonth(), since.getUTCDate());
   return urls.flatMap(({ loc, lastmod }) => {
@@ -66,7 +68,7 @@ export function changedSince(urls, since) {
 }
 
 function onSite(url) {
-  return new URL(url).host === new URL(SITE).host;
+  return URL.canParse(url) && new URL(url).host === new URL(SITE).host;
 }
 
 async function fetchText(url) {
@@ -102,7 +104,7 @@ async function submit(urlList, key) {
 }
 
 // Network and HTTP failures are best-effort; anything else is a bug and fails the run.
-async function bestEffort(label, work) {
+async function skipOnNetworkError(label, work) {
   try {
     return await work();
   } catch (error) {
@@ -122,7 +124,7 @@ async function main(sinceArg) {
     return;
   }
   const key = indexNowKey();
-  const urls = await bestEffort("Reading the sitemap", sitemapUrls);
+  const urls = await skipOnNetworkError("Reading the sitemap", sitemapUrls);
   if (!urls) return;
   if (!urls.some((url) => url.lastmod)) {
     console.log("The sitemap has no <lastmod>, so nothing is submitted.");
@@ -133,7 +135,7 @@ async function main(sinceArg) {
     console.log(`No pages changed since ${since.toISOString()}.`);
     return;
   }
-  await bestEffort("IndexNow ping", () => submit(changed, key));
+  await skipOnNetworkError("IndexNow ping", () => submit(changed, key));
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) await main(process.argv[2]);
