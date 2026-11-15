@@ -227,9 +227,12 @@ less than the owner's own instructions do:
 - The sender's domain must sign **From** and **Subject**, but need not sign **To** and **Cc**,
   which Microsoft 365 leaves out. Anyone holding such a message could send it on to the bot, so a
   routine may run on mail its sender wrote for someone else, once per message.
-- Mail a mailbox rule forwards automatically starts the routine too, files included. A forward
-  that answers mail the bot itself sent starts nothing, so a rule that forwards everything cannot
-  loop.
+- Mail a mailbox rule forwards automatically starts the routine too. A rule that also forwards
+  the bot's own mail back to it can start a run for each email the bot sends, up to the owner's
+  daily email allowance, so leave the bot's address out of the rule.
+
+Files from either kind of mail are kept, but never as a new version of a file the owner already
+has.
 
 A routine's mail reaches the bot as outside data, never as instructions. In the owner's own mail,
 the bot follows what the owner asks but treats anything forwarded or quoted as data. Runs started
