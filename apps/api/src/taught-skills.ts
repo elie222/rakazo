@@ -6,12 +6,11 @@ import {
   skillTeachingExpireJob,
   skillTeachingExpireJobKey,
 } from "@rakazo/adapter-kit";
-import type { ComputerExecutionLease, TaughtSkillRow, TeachComputerInput } from "@rakazo/adapters";
+import type { TaughtSkillRow, TeachComputerInput } from "@rakazo/adapters";
 import {
   acquireComputerExecutionLease,
   anotherPersonHoldsControl,
   appendRecordingEvent,
-  ComputerBusyError,
   captureTeachingSnapshot,
   completeTeachingSession,
   emptyRecording,
@@ -136,19 +135,11 @@ async function ensureGraphicalComputer(
   if (bot.computer.state !== "running" || !bot.computer.providerRef) {
     const ctx = createAdapterContext(actor, bot.id, "skills.start");
     const manualRunId = `teach:${randomUUID()}`;
-    let lease: ComputerExecutionLease | null;
-    try {
-      lease = await acquireComputerExecutionLease(deps.prisma, {
-        computerId: bot.computer.id,
-        runId: manualRunId,
-        botId: bot.id,
-      });
-    } catch (error) {
-      if (error instanceof ComputerBusyError) {
-        throw new ORPCError("CONFLICT", { message: "Computer is busy" });
-      }
-      throw error;
-    }
+    const lease = await acquireComputerExecutionLease(deps.prisma, {
+      computerId: bot.computer.id,
+      runId: manualRunId,
+      botId: bot.id,
+    });
     const computerId = bot.computer.id;
     try {
       await getLogger().withContext({ reason: "teaching" }, () =>
@@ -157,11 +148,6 @@ async function ensureGraphicalComputer(
           screenLeaseId: screenLeaseIdForRun(lease, manualRunId),
         }),
       );
-    } catch (error) {
-      if (error instanceof ComputerBusyError) {
-        throw new ORPCError("CONFLICT", { message: "Computer is busy" });
-      }
-      throw error;
     } finally {
       await releaseComputerExecutionLease(deps.prisma, lease);
     }

@@ -22,11 +22,12 @@ vi.mock("expo-router", () => ({
   useFocusEffect: (effect: () => void) => useEffect(effect, [effect]),
 }));
 
-function Screen({ focused, enabled }: { focused: boolean; enabled?: boolean }) {
-  return focused ? <Focused enabled={enabled} /> : null;
+type Options = { enabled?: boolean; onForeground?: boolean };
+function Screen({ focused, ...options }: { focused: boolean } & Options) {
+  return focused ? <Focused {...options} /> : null;
 }
-function Focused({ enabled }: { enabled?: boolean }) {
-  const { data } = useScreenQuery(rpcQuery("voice/status"), { enabled });
+function Focused(options: Options) {
+  const { data } = useScreenQuery(rpcQuery("voice/status"), options);
   return <p>{String(data)}</p>;
 }
 
@@ -47,7 +48,7 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-async function render(props: { focused: boolean; enabled?: boolean }) {
+async function render(props: { focused: boolean } & Options) {
   await act(async () => root.render(<Screen {...props} />));
   await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
 }
@@ -71,6 +72,18 @@ it("reads again when the app comes back to the foreground", async () => {
   await render({ focused: true });
   expect(state.rpc).toHaveBeenCalledTimes(2);
   expect(container.textContent).toBe("second");
+});
+
+it("reads on focus only, not on return to the foreground, when asked to", async () => {
+  await render({ focused: true, onForeground: false });
+  state.foreground = false;
+  await render({ focused: true, onForeground: false });
+  state.foreground = true;
+  await render({ focused: true, onForeground: false });
+  expect(state.rpc).toHaveBeenCalledTimes(1);
+  await render({ focused: false, onForeground: false });
+  await render({ focused: true, onForeground: false });
+  expect(state.rpc).toHaveBeenCalledTimes(2);
 });
 
 it("does not read while disabled", async () => {
