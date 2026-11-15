@@ -316,7 +316,9 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   await secrets.start();
   if (secrets.describe().capabilities.degraded)
     logger.warn("Secret storage degraded; encrypted credentials remain available");
-  prisma = withSecretPersistence(prisma, secrets);
+  // The queue is built from this client below; a secret dropped before then gets no retry.
+  let secretCleanupJobs: JobPublisher | undefined;
+  prisma = withSecretPersistence(prisma, secrets, () => secretCleanupJobs);
   installSecurityEventStore(prisma);
   installAuditEventStore(prisma);
   const unreadableMasterKeys = await verifyContentKeys(prisma);
@@ -374,6 +376,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       ),
       runs!,
     );
+  secretCleanupJobs = jobs;
   const ticketChanges = createTicketChangeNotifier({
     boardEvents,
     jobs,

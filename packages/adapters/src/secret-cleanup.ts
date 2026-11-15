@@ -6,6 +6,7 @@ import type {
   SecretCleanupKind,
   SecretStore,
 } from "@rakazo/adapter-kit";
+import { SecretNotFoundError } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
 import { runAsSystem } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
@@ -16,7 +17,14 @@ export type SecretCleanup = BackgroundJobPayloads["secret.cleanup"];
 export interface SecretCleanupDeps {
   prisma: Pick<
     PrismaClient,
-    "secret" | "messagingInstallation" | "deploymentSettings" | "purchase" | "paymentWallet"
+    | "secret"
+    | "botSecret"
+    | "vaultCredential"
+    | "integrationProviderConfig"
+    | "messagingInstallation"
+    | "deploymentSettings"
+    | "purchase"
+    | "paymentWallet"
   >;
   secrets: Pick<SecretStore, "delete" | "isRemote">;
   jobs: Pick<JobPublisher, "enqueue" | "enqueueIn" | "cancel">;
@@ -50,10 +58,20 @@ type Holders = SecretCleanupDeps["prisma"];
 /** The reference each kind of record holds now, which a cleanup must never delete. */
 const heldRef: Record<
   SecretCleanupKind,
-  (prisma: Holders, recordId: string) => Promise<string | null | undefined>
+  (prisma: Holders, recordId: string, ref: string) => Promise<string | null | undefined>
 > = {
   secret_row: async (prisma, id) =>
     (await prisma.secret.findUnique({ where: { id }, select: { ciphertext: true } }))?.ciphertext,
+  // Rows of these tables can share one reference, so any of them holding it counts.
+  secret_tables: async (prisma, _recordId, ref) => {
+    const where = { ciphertext: ref };
+    const rows =
+      (await prisma.secret.count({ where })) ||
+      (await prisma.botSecret.count({ where })) ||
+      (await prisma.vaultCredential.count({ where })) ||
+      (await prisma.integrationProviderConfig.count({ where }));
+    return rows ? ref : null;
+  },
   messaging_installation: async (prisma, id) =>
     (await prisma.messagingInstallation.findUnique({ where: { id }, select: { ciphertext: true } }))
       ?.ciphertext,
@@ -114,19 +132,41 @@ function backupJob(cleanup: SecretCleanup): BackgroundJob {
   return secretCleanupJob(cleanup, new Date(Date.now() + BACKUP_MS));
 }
 
+/** Kinds whose reference several records can hold, so one job key can stand for several drops. */
+const SHARED_REFERENCE_KINDS: ReadonlySet<SecretCleanupKind> = new Set(["secret_tables"]);
+
+/** Whether a record holds the reference now, read as the system so every Space's rows count. */
+export async function secretIsHeld(
+  deps: Pick<SecretCleanupDeps, "prisma">,
+  { kind, recordId, ref }: SecretCleanup,
+): Promise<boolean> {
+  const held = await runAsSystem("check that nothing refers to a secret before deleting it", () =>
+    heldRef[kind](deps.prisma, recordId, ref),
+  );
+  return held === ref;
+}
+
 /**
  * Deletes a store entry unless its record refers to it again. The direct attempt and the job
  * share this, so neither deletes a reference a later write brought back into use.
  */
 async function deleteUnreferencedSecret(
   deps: Pick<SecretCleanupDeps, "prisma" | "secrets">,
-  { kind, recordId, ref }: SecretCleanup,
-): Promise<void> {
-  const held = await runAsSystem("check that nothing refers to a secret before deleting it", () =>
-    heldRef[kind](deps.prisma, recordId),
-  );
-  if (held === ref) return;
-  await deps.secrets.delete(ref, { recordId, signal: AbortSignal.timeout(ATTEMPT_MS) });
+  cleanup: SecretCleanup,
+): Promise<"held" | "done"> {
+  if (await secretIsHeld(deps, cleanup)) return "held";
+  const { kind, recordId, ref } = cleanup;
+  try {
+    await deps.secrets.delete(ref, { recordId, signal: AbortSignal.timeout(ATTEMPT_MS) });
+  } catch (error) {
+    if (!(error instanceof SecretNotFoundError)) throw error;
+    // A store can keep an entry under the record that wrote it. Another record's attempt is
+    // refused the same way every time, so retrying it only repeats the refusal.
+    getLogger().warn("secret cleanup cannot reach the entry under this record", {
+      "secret.kind": kind,
+    });
+  }
+  return "done";
 }
 
 /**
@@ -158,14 +198,18 @@ export async function finishSecretCleanup(
     );
     return;
   }
+  let outcome: "held" | "done";
   try {
-    await deleteUnreferencedSecret(deps, cleanup);
+    outcome = await deleteUnreferencedSecret(deps, cleanup);
   } catch (error) {
     getLogger().error("secret cleanup failed; retrying", error, { "secret.kind": cleanup.kind });
     // A backup already recorded still runs at its own time when this cannot reach the queue.
     await bestEffort("retry secret cleanup now", deps.jobs.enqueue(secretCleanupJob(cleanup)));
     return;
   }
+  // The backup under this key may be another transaction's, recorded as it dropped the same
+  // reference. It reads the records again when it runs, so it stays.
+  if (outcome === "held" && SHARED_REFERENCE_KINDS.has(cleanup.kind)) return;
   await bestEffort(
     "delete the finished secret cleanup's backup job",
     deps.jobs.cancel(secretCleanupJobKey(cleanup.ref)),
@@ -187,6 +231,14 @@ export async function cleanUpUnsavedSecret(
     }
   }
   await finishSecretCleanup(deps, cleanup);
+}
+
+/** One attempt with nothing behind it: where there is no queue, the caller reports a failure. */
+export async function attemptSecretCleanup(
+  deps: Pick<SecretCleanupDeps, "prisma" | "secrets">,
+  cleanup: SecretCleanup,
+): Promise<void> {
+  await deleteUnreferencedSecret(deps, cleanup);
 }
 
 /** The job's attempt: a failure is logged with its kind and left to the queue's retries. */

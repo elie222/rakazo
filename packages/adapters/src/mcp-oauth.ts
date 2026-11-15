@@ -42,7 +42,7 @@ import {
 import { REFRESH_REQUEST_TIMEOUT_MS, withRefreshLock } from "./refresh-lock.js";
 import type { RemoteTransportDependencies } from "./remote-mcp.js";
 import type { SecretCleanup, SecretCleanupDeps } from "./secret-cleanup.js";
-import { cleanUpUnsavedSecret, retrySecretCleanup } from "./secret-cleanup.js";
+import { attemptSecretCleanup, cleanUpUnsavedSecret } from "./secret-cleanup.js";
 import { persistPreparedSecret } from "./secret-persistence.js";
 import { holdSecretNotifications } from "./secret-store-factory.js";
 
@@ -1691,7 +1691,7 @@ export class McpOAuthBroker {
     };
     const deps = { prisma: this.prisma, secrets: this.secrets };
     if (this.cleanupJobs) await cleanUpUnsavedSecret({ ...deps, jobs: this.cleanupJobs }, cleanup);
-    else await bestEffort("delete an unsaved MCP credential", retrySecretCleanup(deps, cleanup));
+    else await bestEffort("delete an unsaved MCP credential", attemptSecretCleanup(deps, cleanup));
   }
 
   private async replaceMaterial(
