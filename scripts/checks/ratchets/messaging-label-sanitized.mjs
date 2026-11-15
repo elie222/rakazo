@@ -104,30 +104,62 @@ function* interpolations(text) {
   }
 }
 
-/** The expression with every sanitizeMessagingLabel(...) call removed, so what remains is raw. */
+/** The index just past the `)` that closes the `(` at `open`, or -1 when it never closes. */
+function callEnd(text, open) {
+  let depth = 0;
+  for (let index = open; index < text.length; index += 1) {
+    const character = text[index];
+    if (character === '"' || character === "'") {
+      const end = quoteEnd(text, index);
+      if (end === -1) return -1;
+      index = end;
+    } else if (character === "`") {
+      const end = templateEnd(text, index);
+      if (end === -1) return -1;
+      index = end;
+    } else if (character === "(") depth += 1;
+    else if (character === ")") {
+      depth -= 1;
+      if (depth === 0) return index + 1;
+    }
+  }
+  return -1;
+}
+
+/** The expression with every standalone sanitizeMessagingLabel(...) call removed, so what remains is raw. */
 function unsanitized(body) {
   let rest = "";
   let index = 0;
   while (index < body.length) {
+    const character = body[index];
+    if (character === '"' || character === "'") {
+      const end = quoteEnd(body, index);
+      if (end === -1) return `${rest}${body.slice(index)}`;
+      rest += body.slice(index, end + 1);
+      index = end + 1;
+      continue;
+    }
+    if (character === "`") {
+      const end = templateEnd(body, index);
+      if (end === -1) return `${rest}${body.slice(index)}`;
+      rest += body.slice(index, end + 1);
+      index = end + 1;
+      continue;
+    }
     const at = body.indexOf(SANITIZED_CALL, index);
     if (at === -1) {
       rest += body.slice(index);
       break;
     }
-    rest += body.slice(index, at);
-    let depth = 0;
-    let end = at + SANITIZED_CALL.length - 1;
-    for (; end < body.length; end += 1) {
-      const character = body[end];
-      if (character === "(") depth += 1;
-      else if (character === ")") {
-        depth -= 1;
-        if (depth === 0) {
-          end += 1;
-          break;
-        }
-      }
+    const end = callEnd(body, at + SANITIZED_CALL.length - 1);
+    // A name that merely ends in the call, like `mySanitizeMessagingLabel(`, is not the sanitizer.
+    const standalone = at === 0 || !/[A-Za-z0-9_$.]/.test(body[at - 1]);
+    if (!standalone || end === -1) {
+      rest += body.slice(index, at + SANITIZED_CALL.length);
+      index = at + SANITIZED_CALL.length;
+      continue;
     }
+    rest += body.slice(index, at);
     index = end;
   }
   return rest;
