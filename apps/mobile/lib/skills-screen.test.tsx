@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("./native-controls", () => ({ iosAtLeast: () => false }));
+vi.mock("./appearance", () => ({ mobileTokens: () => ({}) }));
 vi.mock("./native", () => ({ native: {}, useThemedStyles: (create: () => unknown) => create() }));
 vi.mock("./session", () => ({ currentSessionGeneration: () => 1 }));
 vi.mock("./api-server", () => ({}));
