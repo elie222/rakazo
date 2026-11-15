@@ -1,6 +1,10 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
-import type { AutomatedSenderPolicies, AutomatedSenderPolicyMode } from "@rakazo/contracts";
+import type {
+  AutomatedSenderPolicies,
+  AutomatedSenderPolicyMode,
+  RpcInput,
+} from "@rakazo/contracts";
 import type { ListenMode } from "@rakazo/core";
 import {
   AUTOMATED_SENDER_MODES,
@@ -26,7 +30,7 @@ import { mobileTokens } from "../../lib/appearance";
 import { CallKeyboardContext } from "../../lib/call-keyboard-context";
 import { native, useMobileTokens, useThemedStyles } from "../../lib/native";
 import { iosAtLeast } from "../../lib/native-controls";
-import { queryClient, rpcQuery, rpcSave, useSave } from "../../lib/query";
+import { queryClient, rpcQuery, useSave } from "../../lib/query";
 import { errorText } from "../../lib/user-error";
 
 /** Reply mode, instructions, and automated-sender handling for one team chat room. */
@@ -56,7 +60,8 @@ export default function TeamConversationSettings() {
   // Typed hours stay a draft until saved, so Save works while the field still has focus.
   const [hoursDrafts, setHoursDrafts] = useState<Record<string, string>>({});
   const change = useSave({
-    save: rpcSave("externalConversations/updatePolicy"),
+    save: (policy: RpcInput<"externalConversations/updatePolicy">, send) =>
+      send("externalConversations/updatePolicy", policy),
     onSaved: () => router.back(),
     // Save sits in the header, so a failure needs to show where the person is looking.
     onFailed: (err) => Alert.alert(errorText(err, t`Could not save`)),

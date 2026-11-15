@@ -19,7 +19,7 @@ import {
   groupAiRecipients,
 } from "../../lib/ai-data-sharing";
 import { native, useThemedStyles } from "../../lib/native";
-import { queryClient, rpcQuery, rpcSave, useSave } from "../../lib/query";
+import { queryClient, rpcQuery, useSave } from "../../lib/query";
 import { useSideInsets } from "../../lib/side-insets";
 import { errorText } from "../../lib/user-error";
 
@@ -40,18 +40,16 @@ export default function AiDataSharing() {
     ]);
   }, [loadError, refetch, t]);
 
-  const revoke = rpcSave("aiConsent/revoke");
-  const allow = rpcSave("aiConsent/allow");
   const change = useSave({
-    save: async (ask: { recipient: AiRecipient; allowed: boolean } | "withdraw") => {
+    save: async (ask: { recipient: AiRecipient; allowed: boolean } | "withdraw", send) => {
       if (!status) return;
       const saved =
         ask === "withdraw"
-          ? await revoke({ key: null })
+          ? await send("aiConsent/revoke", { key: null })
           : !ask.allowed
-            ? await revoke({ key: ask.recipient.key })
+            ? await send("aiConsent/revoke", { key: ask.recipient.key })
             : (await promptAiConsent(ask.recipient, status.privacyUrl))
-              ? await allow({
+              ? await send("aiConsent/allow", {
                   scope: status.scope,
                   version: status.version,
                   keys: [ask.recipient.key],

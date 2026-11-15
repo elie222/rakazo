@@ -19,7 +19,7 @@ import { botTemplateCopy } from "../../lib/bot-template-copy";
 import { cronLabels } from "../../lib/cron";
 import { useUiLocale } from "../../lib/i18n";
 import { native, useMobileTokens, useResolvedAppearance, useThemedStyles } from "../../lib/native";
-import { queryClient, rpcQuery, rpcSave, useSave } from "../../lib/query";
+import { queryClient, rpcQuery, useSave } from "../../lib/query";
 import type { SearchInboxSession } from "../../lib/search-inbox";
 import { addToSearchInbox, searchInboxSession } from "../../lib/search-inbox";
 import { openFromSettingsSheet } from "../../lib/settings-sheet";
@@ -120,12 +120,20 @@ function TemplateDetail({
     });
   }
 
-  const createBot = rpcSave("bots/createFromTemplate");
   const open = useSave({
-    save: async ({ existingId }: { existingId: string | null; askedIn: SearchInboxSession }) =>
+    save: async (
+      { existingId }: { existingId: string | null; askedIn: SearchInboxSession },
+      send,
+    ) =>
       existingId
         ? queryClient.fetchQuery({ ...rpcQuery("bots/get", { botId: existingId }), staleTime: 0 })
-        : (await createBot({ templateId: template.id, version: template.version, name })).bot,
+        : (
+            await send("bots/createFromTemplate", {
+              templateId: template.id,
+              version: template.version,
+              name,
+            })
+          ).bot,
     onSaved: (bot, { askedIn }) => {
       // An answer that lands once the screen is covered doesn't open its bot from elsewhere.
       if (!navigation.isFocused()) return;

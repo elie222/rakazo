@@ -434,15 +434,46 @@ it("opens nothing when the save ends after the screen has gone", async () => {
   expect(control("Customize Models")?.checked).toBe(true);
 });
 
+it("runs one save, and opens its screen, when two switches are tapped in the same tick", async () => {
+  const save = holdSave();
+  await act(async () => {
+    control("Customize Models")!.click();
+    control("Customize Voice")!.click();
+  });
+  expect(save.saves()).toBe(1);
+  await act(async () => save.finish());
+  expect(state.push.mock.calls).toEqual([
+    [{ pathname: "/models", params: { spaceId: "space-other" } }],
+  ]);
+  expect(control("Customize Models")?.checked).toBe(true);
+  expect(control("Customize Voice")?.checked).toBe(false);
+});
+
 it.each([
   ["succeeds", undefined],
   ["fails", new Error("offline")],
-])("shows nothing for a save that %s after another space was selected", async (_how, outcome) => {
-  const save = holdSave();
-  await press(control("Customize Models")!);
-  state.selectedSpace = "space-elsewhere";
-  await act(async () => save.finish(outcome));
-  expect(state.push).not.toHaveBeenCalled();
-  expect(container.textContent).not.toContain("Could not save that preference");
-  expect(control("Customize Voice")?.disabled).toBe(false);
-});
+])(
+  "holds the switches for a save that %s after another space was selected, and shows how it ended",
+  async (_how, outcome) => {
+    const save = holdSave();
+    await press(control("Customize Models")!);
+    state.selectedSpace = "space-elsewhere";
+    await render();
+    for (const name of ["Models", "Voice", "Approvals", "Vault"]) {
+      expect(control(`Customize ${name}`)?.disabled).toBe(true);
+      await press(control(`Customize ${name}`)!);
+    }
+    expect(save.saves()).toBe(1);
+
+    await act(async () => save.finish(outcome));
+    expect(control("Customize Voice")?.disabled).toBe(false);
+    if (outcome) {
+      expect(container.textContent).toContain("Could not save that preference");
+      expect(state.push).not.toHaveBeenCalled();
+    } else {
+      expect(state.push.mock.calls).toEqual([
+        [{ pathname: "/models", params: { spaceId: "space-other" } }],
+      ]);
+    }
+  },
+);

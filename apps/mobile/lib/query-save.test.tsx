@@ -3,20 +3,24 @@ import { useQuery } from "@tanstack/react-query";
 import { act } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { SaveSend } from "./query";
 import { queryClient, rpcQuery, useSave } from "./query";
 
-const scope = vi.hoisted(() => ({ spaceId: "space-a", rpc: vi.fn() }));
+const scope = vi.hoisted(() => ({ spaceId: "space-a", generation: 1, rpc: vi.fn() }));
 vi.mock("./api-server", () => ({}));
 vi.mock("./api-auth", () => ({}));
 vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   currentApiBase: () => "https://app.example.test",
   selectedSpaceId: () => scope.spaceId,
-  captureApiRequestContext: async () => ({ apiBase: "https://app.example.test", headers: {} }),
+  captureApiRequestContext: async (spaceId?: string) => ({
+    apiBase: "https://app.example.test",
+    headers: spaceId ? { space: spaceId } : {},
+  }),
   rpc: scope.rpc,
 }));
-vi.mock("./session", () => ({ currentSessionGeneration: () => 1 }));
+vi.mock("./session", () => ({ currentSessionGeneration: () => scope.generation }));
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -28,16 +32,17 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
-const save = vi.fn<(name: string) => Promise<string>>();
+const save = vi.fn<(name: string, send: SaveSend) => Promise<string>>();
 const onSaved = vi.fn();
 const onFailed = vi.fn();
 let closesScreen = false;
+let target: { spaceId?: string; account?: boolean } = {};
 let screen: ReturnType<typeof useSave<string, string>> & { name: unknown };
 function Screen() {
   const read = rpcQuery("voice/status");
   const { data } = useQuery(read, queryClient);
   screen = {
-    ...useSave({ save, stale: [read.queryKey], onSaved, onFailed, closesScreen }),
+    ...useSave({ save, stale: [read.queryKey], onSaved, onFailed, closesScreen, ...target }),
     name: data,
   };
   return null;
@@ -49,6 +54,8 @@ beforeEach(async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   queryClient.clear();
   scope.spaceId = "space-a";
+  scope.generation = 1;
+  target = {};
   scope.rpc.mockReset().mockResolvedValue("Before");
   save.mockReset();
   onSaved.mockReset();
@@ -135,12 +142,12 @@ it("runs one save when called twice in the same tick, and again once that one ha
     screen.run("After");
     screen.run("Twice");
   });
-  expect(save.mock.calls).toEqual([["After"]]);
+  expect(save.mock.calls).toEqual([["After", expect.any(Function)]]);
   await act(async () => saving.resolve("After"));
   await settle();
   expect(onSaved.mock.calls).toEqual([["After", "After"]]);
   await act(async () => screen.run("Again"));
-  expect(save).toHaveBeenLastCalledWith("Again");
+  expect(save).toHaveBeenLastCalledWith("Again", expect.any(Function));
 });
 
 it("stays pending after a save that closes the screen, and takes no other save", async () => {
@@ -193,7 +200,7 @@ it.each(outcomes)(
     await act(async () => root.render(<Screen />));
     expect(screen.pending).toBe(false);
     await act(async () => screen.run("Here"));
-    expect(save).toHaveBeenLastCalledWith("Here");
+    expect(save).toHaveBeenLastCalledWith("Here", expect.any(Function));
     await act(async () => finish(saving));
     await settle();
     expect(onSaved).not.toHaveBeenCalled();
@@ -201,5 +208,133 @@ it.each(outcomes)(
     expect(screen.pending).toBe(true);
     expect(screen.error).toBeNull();
     expect(screen.input).toBe("Here");
+  },
+);
+
+it("picks up a save again when its space is selected again before it ends", async () => {
+  const saving = deferred<string>();
+  save.mockReturnValue(saving.promise);
+  await act(async () => screen.run("After"));
+  scope.spaceId = "space-b";
+  await act(async () => root.render(<Screen />));
+  scope.spaceId = "space-a";
+  await act(async () => root.render(<Screen />));
+  expect(screen.pending).toBe(true);
+  act(() => screen.run("Twice"));
+  expect(save).toHaveBeenCalledTimes(1);
+  await act(async () => saving.resolve("After"));
+  await settle();
+  expect(onSaved.mock.calls).toEqual([["After", "After"]]);
+});
+
+const write = ["spaceSettings/setOverride", { setting: "voice", enabled: true }] as const;
+const writes = (name: string, send: SaveSend) => send(...write).then(() => name);
+const sent = () => scope.rpc.mock.calls.filter(([proc]) => proc === write[0]);
+
+const targets = [
+  ["a named Space", { spaceId: "space-named" }],
+  ["the account", { account: true }],
+] as const;
+
+describe.each(targets)("a save for %s", (_name, saveTarget) => {
+  beforeEach(async () => {
+    target = saveTarget;
+    await act(async () => root.render(<Screen />));
+  });
+
+  it.each(outcomes)(
+    "stays pending, takes no other save and reports when it %s after another space was selected",
+    async (outcome, finish) => {
+      const saving = deferred<string>();
+      save.mockReturnValue(saving.promise);
+      await act(async () => screen.run("After"));
+      scope.spaceId = "space-b";
+      await act(async () => root.render(<Screen />));
+      expect(screen.pending).toBe(true);
+      act(() => screen.run("Twice"));
+      expect(save).toHaveBeenCalledTimes(1);
+
+      await act(async () => finish(saving));
+      await settle();
+      expect(screen.pending).toBe(false);
+      if (outcome === "succeeds") {
+        expect(onSaved.mock.calls).toEqual([["After", "After"]]);
+        expect(screen.error).toBeNull();
+      } else {
+        expect(onFailed.mock.calls).toEqual([[new Error("late"), "After"]]);
+        expect(screen.error).toEqual(new Error("late"));
+      }
+    },
+  );
+
+  it("sends nothing once the session it was started in has ended", async () => {
+    const prompt = deferred<void>();
+    save.mockImplementation(async (name, send) => {
+      await prompt.promise;
+      return writes(name, send);
+    });
+    await act(async () => screen.run("After"));
+    scope.generation = 2;
+    await act(async () => prompt.resolve());
+    await settle();
+    expect(sent()).toEqual([]);
+    expect(onSaved).not.toHaveBeenCalled();
+    expect(onFailed).not.toHaveBeenCalled();
+  });
+});
+
+it("sends its writes as plain calls, and to a named Space with that Space's context", async () => {
+  save.mockImplementation(writes);
+  await act(async () => screen.run("After"));
+  await settle();
+  expect(sent()).toEqual([write]);
+
+  target = { account: true };
+  await act(async () => root.render(<Screen />));
+  await act(async () => screen.run("After"));
+  await settle();
+  expect(sent()).toEqual([write, write]);
+
+  target = { spaceId: "space-named" };
+  await act(async () => root.render(<Screen />));
+  await act(async () => screen.run("After"));
+  await settle();
+  expect(sent()[2]).toEqual([
+    ...write,
+    {
+      requestContext: { apiBase: "https://app.example.test", headers: { space: "space-named" } },
+    },
+  ]);
+});
+
+it("sends nothing to the space selected after the save started", async () => {
+  const prompt = deferred<void>();
+  save.mockImplementation(async (name, send) => {
+    await prompt.promise;
+    return writes(name, send);
+  });
+  await act(async () => screen.run("After"));
+  scope.spaceId = "space-b";
+  await act(async () => prompt.resolve());
+  await settle();
+  expect(sent()).toEqual([]);
+});
+
+it.each(outcomes)(
+  "shows nothing for a save that %s after the screen moved to another named Space",
+  async (_outcome, finish) => {
+    target = { spaceId: "space-named" };
+    await act(async () => root.render(<Screen />));
+    const saving = deferred<string>();
+    save.mockReturnValue(saving.promise);
+    await act(async () => screen.run("After"));
+    target = { spaceId: "space-other" };
+    await act(async () => root.render(<Screen />));
+    expect(screen.pending).toBe(false);
+    await act(async () => finish(saving));
+    await settle();
+    expect(onSaved).not.toHaveBeenCalled();
+    expect(onFailed).not.toHaveBeenCalled();
+    expect(screen.error).toBeNull();
   },
 );

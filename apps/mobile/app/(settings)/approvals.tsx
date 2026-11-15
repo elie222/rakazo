@@ -18,7 +18,7 @@ import { SettingsGroup, SettingsRow } from "../../components/settings-group";
 import { mobileTokens } from "../../lib/appearance";
 import { native, useResolvedAppearance, useThemedStyles } from "../../lib/native";
 import { iosAtLeast } from "../../lib/native-controls";
-import { queryClient, rpcQuery, rpcSave, useSave } from "../../lib/query";
+import { queryClient, rpcQuery, useSave } from "../../lib/query";
 import { settingsTarget } from "../../lib/settings-target";
 import { useSideInsets } from "../../lib/side-insets";
 import { errorText } from "../../lib/user-error";
@@ -66,16 +66,15 @@ export default function ApprovalRules() {
   const setRules = (update: (current: ActionApprovalRule[]) => ActionApprovalRule[]) =>
     queryClient.setQueryData(rulesRead.queryKey, (current) => current && update(current));
 
-  const removeRule = rpcSave("approvalRules/remove", overrideSpace);
-  const setRule = rpcSave("approvalRules/set", overrideSpace);
   const change = useSave({
-    save: async ({ rule, action }: { rule: ActionApprovalRule; action: RuleAction }) => {
+    spaceId: overrideSpace,
+    save: async ({ rule, action }: { rule: ActionApprovalRule; action: RuleAction }, send) => {
       // A read that started before a save never shows what it replaced.
       await queryClient.cancelQueries({ queryKey: rulesRead.queryKey });
       // Keeping the rules shown also clears a failed refresh's error.
       setRules((current) => current);
       if (action === "remove") {
-        await removeRule({ scope, id: rule.id });
+        await send("approvalRules/remove", { scope, id: rule.id });
         setRules((current) => current.filter((entry) => entry.id !== rule.id));
         return;
       }
@@ -85,7 +84,7 @@ export default function ApprovalRules() {
         !approvalRuleEffectChoices(rule).includes(action)
       )
         return;
-      const saved = await setRule({
+      const saved = await send("approvalRules/set", {
         scope,
         effect: action,
         matchKind: rule.matchKind,

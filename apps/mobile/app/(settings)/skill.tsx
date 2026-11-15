@@ -18,7 +18,7 @@ import { NativeActionButton } from "../../components/native-action-button";
 import { mobileTokens } from "../../lib/appearance";
 import { native, useThemedStyles } from "../../lib/native";
 import { iosAtLeast } from "../../lib/native-controls";
-import { queryClient, rpcQuery, rpcSave, useSave } from "../../lib/query";
+import { queryClient, rpcQuery, useSave } from "../../lib/query";
 import { useSideInsets } from "../../lib/side-insets";
 import { errorText } from "../../lib/user-error";
 
@@ -52,9 +52,9 @@ function SkillEditor({ id }: { id?: string }) {
   const draft = edited ?? skill?.content ?? (id ? "" : NEW_SKILL_TEMPLATE);
 
   const save = useSave({
-    save: async (content: string) => {
-      if (skill) return rpcSave("agentSkills/update")({ skillId: skill.id, content });
-      await rpcSave("agentSkills/create")({ content });
+    save: async (content: string, send) => {
+      if (skill) return send("agentSkills/update", { skillId: skill.id, content });
+      await send("agentSkills/create", { content });
       return null;
     },
     onSaved: (saved) => {
@@ -63,7 +63,7 @@ function SkillEditor({ id }: { id?: string }) {
     },
   });
   const remove = useSave({
-    save: rpcSave("agentSkills/remove"),
+    save: (skillId: string, send) => send("agentSkills/remove", { skillId }),
     onSaved: () => router.back(),
     closesScreen: true,
   });
@@ -97,7 +97,7 @@ function SkillEditor({ id }: { id?: string }) {
         style: "destructive",
         onPress: () => {
           save.reset();
-          remove.run({ skillId: skill.id });
+          remove.run(skill.id);
         },
       },
     ]);

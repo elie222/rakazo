@@ -69,17 +69,8 @@ export function accountRpcQuery<P extends RpcPath>(proc: P, input?: RpcInput<P>)
   return scopedRpcQuery(sessionScope, proc, input);
 }
 
-/**
- * One rpc write, for `useSave` to send: a screen names the procedure and never calls it. A
- * `spaceId` sends it to that Space instead of the selected one, as `rpcQuery` does for a read.
- */
-export function rpcSave<P extends RpcPath>(proc: P, spaceId?: string) {
-  return async (input: RpcInput<P>): Promise<RpcOutput<P>> => {
-    if (!spaceId) return rpc(proc, ...([input] as RpcArgs<P>));
-    const requestContext = await captureApiRequestContext(spaceId);
-    return rpc(proc, ...([input, { requestContext }] as RpcArgs<P>));
-  };
-}
+/** One rpc write of a save. It is refused once the save's server, session or Space is no longer current. */
+export type SaveSend = <P extends RpcPath>(proc: P, input: RpcInput<P>) => Promise<RpcOutput<P>>;
 
 /**
  * One save and the reads it makes out of date. Only the save can fail it: once it succeeds those
@@ -87,11 +78,18 @@ export function rpcSave<P extends RpcPath>(proc: P, spaceId?: string) {
  * `pending` is set by the same update as the tap and lasts until those reads are back, so a
  * control never offers the old state in between. `run` does nothing while a save is in flight,
  * even for a second tap in the same tick.
- * A save that ends after the screen has gone, or after the server, session or space changed,
- * shows nothing and skips `onSaved` and `onFailed`.
+ * A save belongs to the server, session and Space it was started for: the `spaceId` the screen
+ * names, else the Space selected at the tap, or no Space for `account`. `send` writes there and
+ * nowhere else, and the save holds the controls and reports for as long as the screen shows that
+ * Space, whatever is selected meanwhile. Once the screen has gone or shows another server, session
+ * or Space, a save that ends shows nothing and skips `onSaved` and `onFailed`.
  */
 export function useSave<Input = void, Saved = unknown>(options: {
-  save: (input: Input) => Promise<Saved>;
+  save: (input: Input, send: SaveSend) => Promise<Saved>;
+  /** The Space the screen edits when it is not the selected one: the one its `rpcQuery` reads name. */
+  spaceId?: string;
+  /** The signed-in user's own data, the same in every space, as `accountRpcQuery` reads it. */
+  account?: boolean;
   stale?: readonly QueryKey[];
   onSaved?: (saved: Saved, input: Input) => unknown;
   /** For an alert or undoing an optimistic change; `error` is for showing the failure inline. */
@@ -99,12 +97,16 @@ export function useSave<Input = void, Saved = unknown>(options: {
   /** `onSaved` leaves the screen, so a success stays pending instead of offering the controls again. */
   closesScreen?: boolean;
 }) {
-  type Sent = { input: Input; scope: string };
-  const [state, setState] = useState<{ sent: Sent; pending: boolean; error: Error | null } | null>(
-    null,
-  );
+  const { spaceId, account } = options;
+  const scopeKey = () => (account ? sessionScope() : spaceScope(spaceId)).join("\n");
+  const [saves, setSaves] = useState<
+    Record<string, { input: Input; pending: boolean; error: Error | null }>
+  >({});
   // React state is a render behind; this is what a second call in the same tick is checked against.
-  const inFlight = useRef<Sent | null>(null);
+  const inFlight = useRef(new Set<string>());
+  // What the screen shows by the time a save ends, which can differ from what it was started for.
+  const shownScope = useRef(scopeKey);
+  shownScope.current = scopeKey;
   const mounted = useRef(false);
   useEffect(() => {
     mounted.current = true;
@@ -112,22 +114,27 @@ export function useSave<Input = void, Saved = unknown>(options: {
       mounted.current = false;
     };
   }, []);
-  const current = state?.sent.scope === spaceScope().join("\n") ? state : null;
+  const current = saves[scopeKey()];
   return {
     run(input: Input) {
-      const scope = spaceScope().join("\n");
-      if (inFlight.current?.scope === scope) return;
-      const sent = { input, scope };
-      inFlight.current = sent;
-      setState({ sent, pending: true, error: null });
+      const scope = scopeKey();
+      if (inFlight.current.has(scope)) return;
+      inFlight.current.add(scope);
+      setSaves((now) => ({ ...now, [scope]: { input, pending: true, error: null } }));
       const { save, stale = [], onSaved, onFailed, closesScreen } = options;
-      const shown = () => mounted.current && spaceScope().join("\n") === scope;
+      const shown = () => mounted.current && shownScope.current() === scope;
       const finish = (error: Error | null) => {
-        if (inFlight.current === sent) inFlight.current = null;
-        setState((now) => (now?.sent === sent ? { sent, pending: false, error } : now));
+        inFlight.current.delete(scope);
+        setSaves((now) => ({ ...now, [scope]: { input, pending: false, error } }));
+      };
+      const send: SaveSend = async (proc, body) => {
+        if (scopeKey() !== scope) throw new Error(t`Something went wrong. Try again.`);
+        if (account || !spaceId) return rpc(proc, ...([body] as RpcArgs<typeof proc>));
+        const requestContext = await captureApiRequestContext(spaceId);
+        return rpc(proc, ...([body, { requestContext }] as RpcArgs<typeof proc>));
       };
       void (async () => {
-        const saved = await save(input);
+        const saved = await save(input, send);
         await Promise.all(stale.map((queryKey) => queryClient.invalidateQueries({ queryKey })));
         return saved;
       })().then(
@@ -143,9 +150,15 @@ export function useSave<Input = void, Saved = unknown>(options: {
     },
     pending: current?.pending ?? false,
     /** What the pending or failed save was sent with. */
-    input: current?.sent.input,
+    input: current?.input,
     error: current?.error ?? null,
-    reset: () => setState((now) => (now?.pending ? now : null)),
+    reset: () => {
+      const scope = scopeKey();
+      setSaves((now) => {
+        const { [scope]: shown, ...rest } = now;
+        return shown && !shown.pending ? rest : now;
+      });
+    },
   };
 }
 

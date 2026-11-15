@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { accountRpcQuery, queryClient, rpcQuery, rpcSave } from "./query";
+import { accountRpcQuery, queryClient, rpcQuery } from "./query";
 
 const scope = vi.hoisted(() => ({
   apiBase: "https://app.example.test",
@@ -77,19 +77,5 @@ describe("rpcQuery keys", () => {
     const otherSession = key();
     scope.apiBase = "https://other.example.test";
     expect(new Set([first, otherSession, key()]).size).toBe(3);
-  });
-});
-
-describe("rpcSave", () => {
-  it("sends the write as a plain call, and to a named Space with that Space's context", async () => {
-    scope.rpc.mockResolvedValue(["voice"]);
-    const input = { setting: "voice", enabled: true } as const;
-    await expect(rpcSave("spaceSettings/setOverride")(input)).resolves.toEqual(["voice"]);
-    expect(scope.rpc.mock.calls).toEqual([["spaceSettings/setOverride", input]]);
-
-    await rpcSave("spaceSettings/setOverride", "space-b")(input);
-    expect(scope.rpc).toHaveBeenLastCalledWith("spaceSettings/setOverride", input, {
-      requestContext: { apiBase: scope.apiBase, headers: { space: "space-b" } },
-    });
   });
 });

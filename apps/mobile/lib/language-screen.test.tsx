@@ -204,13 +204,18 @@ it("keeps the new language, with no error, when what follows the change fails", 
   expect(rowsDisabled()).not.toContain(true);
 });
 
-it("shows nothing for a change that fails after another space was selected", async () => {
+it("holds the rows for a change that fails after another space was selected, then says so", async () => {
   const finish = holdChange();
   await act(async () => root.render(<Language />));
   await press("Deutsch");
   scope.spaceId = "space-2";
+  await act(async () => root.render(<Language />));
+  expect(rowsDisabled()).not.toContain(false);
+  await press("English");
+  expect(i18n.setUiLocale).toHaveBeenCalledExactlyOnceWith("de");
+
   await finish(new Error("no storage"));
-  expect(container.textContent).not.toContain("Could not change language");
+  expect(container.textContent).toContain("Could not change language");
   expect(rowsDisabled()).not.toContain(true);
 });
 

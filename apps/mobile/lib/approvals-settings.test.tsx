@@ -569,3 +569,52 @@ it.each([
   expect(rows()).toEqual(["Always allow: example.com"]);
   expect(container.textContent).not.toContain("Could not save that preference");
 });
+
+it.each([
+  ["succeeds", undefined],
+  ["fails", new Error("offline")],
+])(
+  "holds a named Space's rules for a save that %s after another space was selected, and shows how it ended",
+  async (_how, outcome) => {
+    state.spaceId = "space-1";
+    state.rules = [
+      rule({ id: "tool", matchValue: "send_email" }),
+      rule({ id: "site", matchKind: "site", matchValue: "example.com" }),
+    ];
+    await render();
+    const finish = holdSave();
+    await press(menuButton("example.com", "Blocked"));
+    state.selectedSpace = "space-elsewhere";
+    await render();
+    expect(container.querySelectorAll("span[data-dimmed]")).toHaveLength(2);
+    await press(menuButton("Send email", "Remove"));
+    expect(saves()).toHaveLength(1);
+
+    await act(async () => finish(outcome));
+    expect(container.querySelector("span[data-dimmed]")).toBeNull();
+    if (outcome) expect(container.textContent).toContain("Could not save that preference");
+    else expect(rows()).toEqual(["Always allow: Send email", "Blocked: example.com"]);
+  },
+);
+
+it.each([
+  ["succeeds", undefined],
+  ["fails", new Error("offline")],
+])(
+  "holds a named Space's picker for a save that %s after another space was selected, then leaves or says why",
+  async (_how, outcome) => {
+    state.spaceId = "space-1";
+    await renderPicker();
+    const finish = holdSave();
+    await press(tool("Shell"));
+    state.selectedSpace = "space-elsewhere";
+    await renderPicker();
+    expect(container.querySelectorAll("span:not([data-disabled])")).toHaveLength(0);
+    await press(tool("Write file"));
+    expect(saves()).toHaveLength(1);
+
+    await act(async () => finish(outcome));
+    expect(state.router.back).toHaveBeenCalledTimes(outcome ? 0 : 1);
+    if (outcome) expect(container.textContent).toContain("Could not save that preference");
+  },
+);

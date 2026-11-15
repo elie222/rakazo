@@ -8,7 +8,7 @@ import { mobileTokens } from "../../lib/appearance";
 import { getActiveUiLocale, setUiLocale, useUiLocale } from "../../lib/i18n";
 import { resumeLiveNotifications } from "../../lib/live-notifications";
 import { native, useThemedStyles } from "../../lib/native";
-import { rpcSave, useSave } from "../../lib/query";
+import { useSave } from "../../lib/query";
 import { loadSessionToken } from "../../lib/session";
 import { useSideInsets } from "../../lib/side-insets";
 import type { UiLocale } from "../../lib/ui-locale";
@@ -20,11 +20,12 @@ export default function Language() {
   const locale = useUiLocale();
   const styles = useThemedStyles(createStyles);
   const change = useSave({
-    save: async (code: UiLocale) => {
+    account: true,
+    save: async (code: UiLocale, send) => {
       await setUiLocale(code);
       // Emails follow the app's language too; a failure leaves the next app start to save it.
       void reportUiLocale(getActiveUiLocale, (locale) =>
-        rpcSave("preferences/update")({ locale }),
+        send("preferences/update", { locale }),
       ).catch(() => undefined);
       // Native notification copy follows the locale, but a failure there must
       // not read as a failed language change: the choice is already applied.

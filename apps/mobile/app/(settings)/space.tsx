@@ -13,7 +13,7 @@ import { SettingsGroup, SettingsRow } from "../../components/settings-group";
 import { mobileTokens } from "../../lib/appearance";
 import { useApprovalSettings } from "../../lib/approval-settings";
 import { native, useThemedStyles } from "../../lib/native";
-import { queryClient, rpcQuery, rpcSave, useSave } from "../../lib/query";
+import { queryClient, rpcQuery, useSave } from "../../lib/query";
 import { settingsTarget } from "../../lib/settings-target";
 import { useSideInsets } from "../../lib/side-insets";
 import { errorText } from "../../lib/user-error";
@@ -43,9 +43,10 @@ export default function SpaceSettings() {
   const open = (setting: SpaceSetting) =>
     router.push({ pathname: SETTING_SCREENS[setting], params: { spaceId: space } });
   const change = useSave({
+    spaceId: space,
     // The answer is the Space's new list, kept even when nobody is left to see it.
-    save: async (input: { setting: SpaceSetting; enabled: boolean }) =>
-      setOverrides(await rpcSave("spaceSettings/setOverride", space)(input)),
+    save: async (input: { setting: SpaceSetting; enabled: boolean }, send) =>
+      setOverrides(await send("spaceSettings/setOverride", input)),
     onSaved: (_saved, { setting, enabled }) => {
       if (enabled && setting !== "confirmations") open(setting);
     },

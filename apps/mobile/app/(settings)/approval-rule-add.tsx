@@ -10,7 +10,7 @@ import { LoadFailure } from "../../components/load-failure";
 import { SettingsGroup, SettingsRow } from "../../components/settings-group";
 import { mobileTokens } from "../../lib/appearance";
 import { native, useThemedStyles } from "../../lib/native";
-import { queryClient, rpcQuery, rpcSave, useSave } from "../../lib/query";
+import { queryClient, rpcQuery, useSave } from "../../lib/query";
 import { settingsTarget } from "../../lib/settings-target";
 import { useSideInsets } from "../../lib/side-insets";
 import { errorText } from "../../lib/user-error";
@@ -36,10 +36,10 @@ export default function AddApprovalRule() {
     [rulesQuery.data],
   );
   const [query, setQuery] = useState("");
-  const setRule = rpcSave("approvalRules/set", overrideSpace);
   const add = useSave({
-    save: (choice: ApprovalRuleChoice) =>
-      setRule({
+    spaceId: overrideSpace,
+    save: (choice: ApprovalRuleChoice, send) =>
+      send("approvalRules/set", {
         scope,
         effect: "require_approval",
         matchKind: choice.matchKind,
