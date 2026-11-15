@@ -376,7 +376,7 @@ export async function fetchGitHubRepo(
   const wanted: string[] = [];
   const addWanted = (path: string, maxFiles: number) => {
     const entry = entryByPath.get(path);
-    if (!entry || scheduled.has(entry.absolutePath)) return false;
+    if (!entry) return false;
     if ((entry.size ?? 0) > MAX_FILE_BYTES) {
       if (!hasManifest) {
         contents.set(entry.absolutePath, UNFETCHED_FILE);
