@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { Session } from "electron";
-import { app, BrowserWindow, ipcMain, Menu, net, screen, session, shell } from "electron";
+import { app, BrowserWindow, Menu, net, screen, session, shell } from "electron";
 import type { AppDocumentState } from "./app-document-state.js";
 import { waitForMountedAppDocument } from "./app-document-state.js";
 import { LAUNCH_CHECK_DELAY_MS } from "./auto-update.js";
@@ -37,19 +37,8 @@ export const PROBE_TIMEOUT_MS = 8_000;
 export class ServerUnavailable extends Error {}
 const bundledRendererInstallations = new Set<string>();
 const WARM_WINDOW_TTL_MS = warmWindowTtlMs(process.env.RAKAZO_WARM_WINDOW_TTL_MS);
-export function permissionTarget() {
-  if (desktop.mainWindow === null || desktop.mainWindow.isDestroyed()) return null;
-  const url = appWindowTargets.get(desktop.mainWindow);
-  return url === undefined ? null : { webContents: desktop.mainWindow.webContents, url };
-}
 export function markOnce(name: string) {
   if (performance.getEntriesByName(name).length === 0) performance.mark(name);
-}
-export function windowFrom(event: Electron.IpcMainInvokeEvent) {
-  return BrowserWindow.fromWebContents(event.sender);
-}
-export function fromMainWindow(event: Electron.IpcMainInvokeEvent) {
-  return desktop.mainWindow !== null && windowFrom(event) === desktop.mainWindow;
 }
 /** Dock/taskbar icon for unpackaged launches; packaged builds get theirs from electron-builder. */
 export function developmentIcon() {
@@ -485,21 +474,10 @@ export function remoteServerOrigin() {
   const target = appWindowTargets.get(desktop.mainWindow);
   return target === undefined ? null : safeOrigin(target);
 }
-export function safeOrigin(targetUrl: string) {
+function safeOrigin(targetUrl: string) {
   try {
     return new URL(targetUrl).origin;
   } catch {
     return null;
   }
-}
-/** Answers an IPC channel only for senders `isSender` accepts; any other sender gets `refused()`. */
-export function handleOnlyFrom(
-  isSender: (event: Electron.IpcMainInvokeEvent) => boolean,
-  channel: string,
-  handler: (event: Electron.IpcMainInvokeEvent, ...args: unknown[]) => unknown,
-  refused: () => unknown = () => undefined,
-) {
-  ipcMain.handle(channel, (event, ...args: unknown[]) =>
-    isSender(event) ? handler(event, ...args) : refused(),
-  );
 }

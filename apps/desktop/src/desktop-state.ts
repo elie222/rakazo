@@ -1,5 +1,6 @@
 import type { DesktopSetup } from "@rakazo/contracts";
 import type { BrowserWindow } from "electron";
+import type { AppTarget } from "./app-frame.js";
 import type { DesktopUpdateController } from "./auto-update.js";
 import type { prepareHostComputer } from "./host-computer.js";
 import type { StackController } from "./local-stack.js";
@@ -39,3 +40,10 @@ export const desktop = {
 };
 
 export const appWindowTargets = new WeakMap<BrowserWindow, string>();
+
+/** The app window and the server it was opened for. */
+export function permissionTarget(): AppTarget | null {
+  if (desktop.mainWindow === null || desktop.mainWindow.isDestroyed()) return null;
+  const url = appWindowTargets.get(desktop.mainWindow);
+  return url === undefined ? null : { webContents: desktop.mainWindow.webContents, url };
+}

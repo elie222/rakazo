@@ -1,6 +1,10 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import { createServer } from "node:http";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { _electron as electron, expect, test } from "@playwright/test";
 import type { RakazoDesktop } from "@rakazo/contracts";
+import { shownWindow } from "./shown-window.js";
 
 const fixture = `<!doctype html>
 <html lang="en">
@@ -9,17 +13,32 @@ const fixture = `<!doctype html>
 </html>`;
 
 test("launches with a narrow preload bridge and an isolated renderer", async () => {
+  // The bridge answers only the server the window was opened for, so the fixture is served.
+  const server = createServer((request, response) => {
+    if (request.url === "/api/monitoring/config") {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ dsn: null }));
+      return;
+    }
+    response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+    response.end(fixture);
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  if (address === null || typeof address === "string") throw new Error("fixture has no port");
+  const userData = await mkdtemp(path.join(tmpdir(), "rakazo-desktop-e2e-"));
   const app = await electron.launch({
     args: ["."],
     cwd: path.resolve(import.meta.dirname, ".."),
     env: {
       ...process.env,
-      RAKAZO_WEB_URL: `data:text/html;charset=utf-8,${encodeURIComponent(fixture)}`,
+      RAKAZO_PERFORMANCE_USER_DATA: userData,
+      RAKAZO_WEB_URL: `http://127.0.0.1:${address.port}`,
     },
   });
 
   try {
-    const page = await app.firstWindow();
+    const page = await shownWindow(app);
     await expect(page.getByText("Desktop fixture ready")).toBeVisible();
     await expect(page).toHaveTitle("Rakazo desktop smoke");
 
@@ -125,5 +144,7 @@ test("launches with a narrow preload bridge and an isolated renderer", async () 
     });
   } finally {
     await app.close();
+    await rm(userData, { recursive: true, force: true });
+    await new Promise<void>((resolve) => server.close(() => resolve()));
   }
 });

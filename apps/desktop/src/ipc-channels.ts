@@ -1,0 +1,78 @@
+import type { RakazoDesktop, RakazoSetup } from "@rakazo/contracts";
+
+/**
+ * The window whose own page may call a channel. Its main frame only, and for the app window
+ * only while that frame shows the server the window was opened for.
+ */
+export type IpcWindow = "app" | "setup";
+
+type BridgeMethod = (...args: never[]) => unknown;
+
+export type IpcChannel<Method extends BridgeMethod = BridgeMethod> = {
+  readonly from: IpcWindow;
+  /** Answered through `sendSync`, so the handler cannot wait for anything. */
+  readonly sync?: true;
+  /** Never set: carries the type of the bridge method the preload backs with this channel. */
+  readonly method?: Method;
+};
+
+const appPage = <Method extends BridgeMethod>(): IpcChannel<Method> => ({ from: "app" });
+const setupPage = <Method extends BridgeMethod>(): IpcChannel<Method> => ({ from: "setup" });
+
+type Desktop = { [Key in keyof RakazoDesktop]-?: NonNullable<RakazoDesktop[Key]> };
+
+/**
+ * Every channel a page can call, and who may call it. Types come from the bridge contracts the
+ * pages are written against. `handleIpc` registers from this map and the preloads name the same
+ * channels as literal strings: a sandboxed preload can only require `electron`, and the build
+ * copies the preloads unbundled. `ipc-channels.test.ts` fails when the three disagree.
+ */
+export const ipcChannels = {
+  "desktop.badge.set": appPage<Desktop["badge"]["set"]>(),
+  "desktop.clipboard.write": appPage<Desktop["clipboard"]["writeText"]>(),
+  "desktop.computer.requestAccess": appPage<Desktop["computer"]["requestAccess"]>(),
+  "desktop.computer.revokeAccess": appPage<Desktop["computer"]["revokeAccess"]>(),
+  "desktop.device.setAllowed": appPage<Desktop["device"]["setAllowed"]>(),
+  "desktop.device.state": appPage<Desktop["device"]["state"]>(),
+  "desktop.locale.set": appPage<Desktop["locale"]["set"]>(),
+  "desktop.mcpBrowser.clear": appPage<Desktop["mcpBrowser"]["clear"]>(),
+  "desktop.monitoring.enabled": appPage<Desktop["monitoring"]["enabled"]>(),
+  "desktop.oauth.cancel": appPage<NonNullable<Desktop["oauth"]["cancel"]>>(),
+  "desktop.oauth.open": appPage<NonNullable<Desktop["oauth"]["open"]>>(),
+  "desktop.passkeys.rpIds": appPage<Desktop["passkeys"]["rpIds"]>(),
+  "desktop.server.change": appPage<Desktop["server"]["change"]>(),
+  "desktop.speech.abort": appPage<Desktop["speech"]["abort"]>(),
+  "desktop.speech.start": appPage<Desktop["speech"]["start"]>(),
+  "desktop.speech.stop": appPage<Desktop["speech"]["stop"]>(),
+  "desktop.update.check": appPage<Desktop["update"]["check"]>(),
+  "desktop.update.download": appPage<Desktop["update"]["download"]>(),
+  "desktop.update.install": appPage<Desktop["update"]["install"]>(),
+  "desktop.update.state": appPage<Desktop["update"]["state"]>(),
+  "desktop.window.close": appPage<Desktop["window"]["close"]>(),
+  "desktop.window.minimize": appPage<Desktop["window"]["minimize"]>(),
+  "desktop.window.state": appPage<Desktop["window"]["state"]>(),
+  "desktop.window.toggleMaximize": appPage<Desktop["window"]["toggleMaximize"]>(),
+  "desktop.setup.locale": { ...setupPage<() => RakazoSetup["locale"]>(), sync: true as const },
+  "desktop.setup.openLink": setupPage<RakazoSetup["openLink"]>(),
+  "desktop.setup.quit": setupPage<RakazoSetup["quit"]>(),
+  "desktop.setup.save": setupPage<RakazoSetup["save"]>(),
+  "desktop.setup.stack.start": setupPage<RakazoSetup["stack"]["start"]>(),
+  "desktop.setup.stack.state": setupPage<RakazoSetup["stack"]["state"]>(),
+  "desktop.setup.state": setupPage<RakazoSetup["state"]>(),
+  "desktop.setup.test": setupPage<RakazoSetup["test"]>(),
+};
+
+export type IpcChannelName = keyof typeof ipcChannels;
+
+type MethodOf<Name extends IpcChannelName> = NonNullable<(typeof ipcChannels)[Name]["method"]>;
+
+/** What the page passes, as its bridge is typed. Handlers still receive each one as `unknown`. */
+export type IpcArgs<Name extends IpcChannelName> = Parameters<MethodOf<Name>>;
+
+export type IpcResult<Name extends IpcChannelName> = Awaited<ReturnType<MethodOf<Name>>>;
+
+export type IpcIsSync<Name extends IpcChannelName> = (typeof ipcChannels)[Name] extends {
+  sync: true;
+}
+  ? true
+  : false;

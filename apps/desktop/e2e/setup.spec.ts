@@ -795,7 +795,7 @@ test("the app window stays on its server when a link redirects to another site",
       elsewhereUrl,
     );
     await expect(appWindow.getByText("Another site")).toBeVisible();
-    expect(await openSignIn(appWindow)).toContain("Invalid sign-in request.");
+    expect(await openSignIn(appWindow)).toContain("may not call desktop.oauth.open");
     expect(await openedUrls()).toEqual([elsewhereUrl, elsewhereUrl, signInUrl]);
   } finally {
     await app?.close();
