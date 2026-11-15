@@ -46,7 +46,7 @@ it("gives the desktop shell a per-server sign-in window and completes its captur
     await vi.waitFor(() => expect(captured).toBeTypeOf("function"));
     expect(window.open).toHaveBeenCalledWith(
       authorizationUrl,
-      "rakazo-mcp-oauth:clx123",
+      "rakazo-mcp-signin:clx123",
       "popup,width=560,height=720",
     );
 
@@ -68,19 +68,19 @@ it("gives the desktop shell a per-server sign-in window and completes its captur
   }
 });
 
-it("keeps the browser flow's shared window name and callback page", async () => {
+it("keeps the browser flow's session-named window and callback page", async () => {
   openPopup();
 
   const connecting = connectMcpOauth("clx123");
   await vi.waitFor(() =>
     expect(window.open).toHaveBeenCalledWith(
       authorizationUrl,
-      MCP_OAUTH_CHANNEL,
+      `${MCP_OAUTH_CHANNEL}:session-1`,
       "popup,width=560,height=720",
     ),
   );
   const callbackPage = new BroadcastChannel(MCP_OAUTH_CHANNEL);
-  callbackPage.postMessage({ type: "mcp-oauth-complete" });
+  callbackPage.postMessage({ type: "mcp-oauth-complete", sessionId: "session-1" });
   callbackPage.close();
 
   await expect(connecting).resolves.toBe("connected");

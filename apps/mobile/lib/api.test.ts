@@ -10,10 +10,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { promptAiConsent } from "./ai-consent";
 import {
   captureApiRequestContext,
+  fetchAuthenticatedAccountJson,
+  fetchMobileJson,
   isServerReachable,
   MAX_MOBILE_RPC_RESPONSE_BYTES,
   rpc,
   selectedSpaceId,
+  setCachedApiBase,
   subscribeServerReachable,
   subscribeSessionRejected,
 } from "./api.js";
@@ -22,9 +25,11 @@ import { subscribeThread } from "./api-live.js";
 import { loadApiBase, selectSpace } from "./api-server.js";
 import { resumeLiveNotifications } from "./live-notifications.js";
 import type { MobileModelCredential } from "./mobile-types.js";
+import { saveServerHeaders } from "./server-headers";
 import { restoreSessionToken, saveSessionToken } from "./session.js";
 import type { UnsentDisk } from "./thread-feedback.js";
 import { configureUnsentSends } from "./thread-feedback.js";
+import { listUserDevices, removeUserDevice } from "./user-devices";
 
 vi.mock("expo-secure-store", () => ({
   getItemAsync: vi.fn(),
@@ -53,6 +58,124 @@ describe("mobile API requests", () => {
     vi.mocked(resumeLiveNotifications).mockClear();
     await restoreSessionToken("");
   });
+
+  it("rejects an expired account session without sending the selected Space", async () => {
+    const store = new Map<string, string>([
+      ["rakazo.session_token", "expired-token"],
+      ["rakazo.space_id", "space-a"],
+    ]);
+    mockSecureStore(store);
+    await loadApiBase();
+    const rejected = vi.fn();
+    const unsubscribe = subscribeSessionRejected(rejected);
+    const fetchMock = vi.fn(
+      async (_input: unknown, _init?: RequestInit) => new Response(null, { status: 401 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      const result = await fetchAuthenticatedAccountJson("/api/devices", {}, {});
+      expect(result.response.status).toBe(401);
+      expect(result.body).toEqual({});
+      expect(fetchMock.mock.calls[0]?.[1]?.headers).not.toHaveProperty("x-rakazo-space-id");
+      expect(rejected).toHaveBeenCalledOnce();
+      expect(store.has("rakazo.session_token")).toBe(false);
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it.each(["session", "server"])("ignores an account 401 after the %s changes", async (change) => {
+    const store = new Map<string, string>([["rakazo.session_token", "old-token"]]);
+    mockSecureStore(store);
+    await loadApiBase();
+    const originalBase = (await captureApiRequestContext(null)).apiBase;
+    const rejected = vi.fn();
+    const unsubscribe = subscribeSessionRejected(rejected);
+    const { fetchMock, fetchStarted, resolveFetch } = deferredFetch();
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      const pending = fetchAuthenticatedAccountJson("/api/devices", {}, {});
+      await fetchStarted;
+      if (change === "session") await saveSessionToken("new-token");
+      else setCachedApiBase("https://other.example.test");
+      resolveFetch(new Response(null, { status: 401 }));
+      await pending;
+      expect(rejected).not.toHaveBeenCalled();
+      expect(store.get("rakazo.session_token")).toBe(
+        change === "session" ? "new-token" : "old-token",
+      );
+    } finally {
+      setCachedApiBase(originalBase);
+      unsubscribe();
+    }
+  });
+
+  it("uses a pinned server's access headers after the selected server changes", async () => {
+    const apiBase = "https://captured.example.test";
+    const originalBase = (await captureApiRequestContext(null)).apiBase;
+    expect(await saveServerHeaders(apiBase, { "x-access-key": "fake-access-key" })).toBe(true);
+    setCachedApiBase("https://replacement.example.test");
+    const fetchMock = vi.fn(async (_input: unknown, _init?: RequestInit) => jsonResponse({}));
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      await fetchMobileJson(`${apiBase}/api/devices`, {}, {}, apiBase);
+      expect(fetchMock.mock.calls[0]?.[0]).toBe(`${apiBase}/api/devices`);
+      expect(new Headers(fetchMock.mock.calls[0]?.[1]?.headers).get("x-access-key")).toBe(
+        "fake-access-key",
+      );
+      expect(fetchMock.mock.calls[0]?.[1]?.redirect).toBe("error");
+    } finally {
+      await saveServerHeaders(apiBase, {});
+      setCachedApiBase(originalBase);
+    }
+  });
+
+  it.each(["list", "remove"])(
+    "ignores oversized missing-route bodies for device %s",
+    async (operation) => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => new Response("x".repeat(1024 * 1024), { status: 404 })),
+      );
+      if (operation === "list") await expect(listUserDevices()).resolves.toEqual([]);
+      else await expect(removeUserDevice("fixture-device")).resolves.toBeUndefined();
+    },
+  );
+
+  it("still bounds successful device lists", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("x".repeat(1024 * 1024))),
+    );
+    await expect(listUserDevices()).rejects.toThrow();
+  });
+
+  it.each(["malformed", "oversized"])(
+    "rejects the session even with a %s account 401 body",
+    async (body) => {
+      const store = new Map<string, string>([["rakazo.session_token", "expired-token"]]);
+      mockSecureStore(store);
+      await loadApiBase();
+      const rejected = vi.fn();
+      const unsubscribe = subscribeSessionRejected(rejected);
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(
+          async () =>
+            new Response(body === "malformed" ? "not json" : "x".repeat(1024 * 1024), {
+              status: 401,
+            }),
+        ),
+      );
+      try {
+        await expect(listUserDevices()).rejects.toThrow("Could not load");
+        expect(rejected).toHaveBeenCalledOnce();
+        expect(store.has("rakazo.session_token")).toBe(false);
+      } finally {
+        unsubscribe();
+      }
+    },
+  );
 
   it("does not send a captured old bearer after the session changes", async () => {
     await saveSessionToken("fake-session-a");
@@ -903,6 +1026,8 @@ describe("mobile API requests", () => {
       await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
       // The server already revoked the old token; a poll lands before the new one arrives.
       await expect(rpc("bots/list")).rejects.toThrow("Unauthorized");
+      const accountResult = await fetchAuthenticatedAccountJson("/api/devices", {}, {});
+      expect(accountResult.response.status).toBe(401);
       resolveChange(jsonResponse({ token: "rotated-token", user: { id: "user-1" } }));
       await pending;
 

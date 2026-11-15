@@ -556,7 +556,15 @@
       "id": "account-settings",
       "name": "Settings",
       "web": ["?settings=general"],
-      "mobile": ["account", "general", "profile", "change-password", "language", "ai-data-sharing"],
+      "mobile": [
+        "account",
+        "general",
+        "profile",
+        "change-password",
+        "language",
+        "ai-data-sharing",
+        "computers"
+      ],
       "desktop": null,
       "evidence": [
         "apps/web/e2e/settings-shell.spec.ts",

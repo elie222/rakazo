@@ -8,10 +8,14 @@ const OAUTH_POPUP_NAMES = new Set([
   "rakazo-plugin-connect",
 ]);
 
-/** An MCP sign-in window's name carries the server it belongs to after this prefix. */
-const MCP_OAUTH_POPUP_PREFIX = "rakazo-mcp-oauth:";
+/**
+ * A per-server MCP sign-in window's name carries its server id after this
+ * prefix. Distinct from the session-named `rakazo-mcp-oauth:` windows, which
+ * sign in through the app's own session.
+ */
+const MCP_OAUTH_POPUP_PREFIX = "rakazo-mcp-signin:";
 
-/** A server id from an MCP sign-in window name; null for the shared browser name. */
+/** A server id from a per-server MCP sign-in window name; null otherwise. */
 export function mcpOAuthPopupServerId(frameName: string): string | null {
   if (!frameName.startsWith(MCP_OAUTH_POPUP_PREFIX)) return null;
   const serverId = frameName.slice(MCP_OAUTH_POPUP_PREFIX.length);
@@ -49,7 +53,10 @@ export function shouldOpenInAppPopup(
   if (appOrigin !== null && target.origin === appOrigin) return isHttp;
   return (
     target.protocol === "https:" &&
-    (OAUTH_POPUP_NAMES.has(frameName) || mcpOAuthPopupServerId(frameName) !== null)
+    (OAUTH_POPUP_NAMES.has(frameName) ||
+      (frameName.startsWith("rakazo-mcp-oauth:") &&
+        frameName.length > "rakazo-mcp-oauth:".length) ||
+      mcpOAuthPopupServerId(frameName) !== null)
   );
 }
 

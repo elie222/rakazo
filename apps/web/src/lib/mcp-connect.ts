@@ -27,23 +27,14 @@ export function mcpOAuthRedirectUri(): string {
   return `${window.location.origin}/mcp/oauth/callback`;
 }
 
-/** A per-server name keeps the desktop shell's cookie jar in step with the popup. */
-export function mcpOAuthWindowName(serverId: string, perServerBrowser: boolean): string {
-  return perServerBrowser ? `${MCP_OAUTH_CHANNEL}:${serverId}` : MCP_OAUTH_CHANNEL;
-}
-
-/** Whether this window is an MCP sign-in popup, shared or per-server. */
-export function isMcpOAuthPopupWindow(name: string): boolean {
-  return name === MCP_OAUTH_CHANNEL || name.startsWith(`${MCP_OAUTH_CHANNEL}:`);
-}
-
 export async function connectMcpOauth(serverId: string): Promise<McpOauthResult> {
   const started = await rpc.mcp.oauth.begin({ serverId, redirectUri: mcpOAuthRedirectUri() });
   if (started.status !== "authorization_required") return started.status;
   const browser = desktopBridge()?.mcpBrowser;
   const popup = window.open(
     started.authorizationUrl,
-    mcpOAuthWindowName(serverId, browser !== undefined),
+    // The desktop shell gives a per-server window its own browser session.
+    browser ? `rakazo-mcp-signin:${serverId}` : `${MCP_OAUTH_CHANNEL}:${started.sessionId}`,
     "popup,width=560,height=720",
   );
   if (!popup) {
@@ -58,17 +49,16 @@ export async function connectMcpOauth(serverId: string): Promise<McpOauthResult>
     let pollTimer = 0;
     let timeoutTimer = 0;
     let unsubscribe: (() => void) | undefined;
-    const settle = (done: () => void) => {
+    const finish = (result: McpOauthResult | Error) => {
       if (settled) return;
       settled = true;
       window.clearInterval(pollTimer);
       window.clearTimeout(timeoutTimer);
       channel.close();
       unsubscribe?.();
-      done();
+      if (result instanceof Error) reject(result);
+      else resolve(result);
     };
-    const finish = (result: McpOauthResult) => settle(() => resolve(result));
-    const fail = (error: unknown) => settle(() => reject(error));
     // COOP makes an open popup read as closed, but it keeps focus until the
     // user really closes it.
     pollTimer = window.setInterval(() => {
@@ -86,7 +76,14 @@ export async function connectMcpOauth(serverId: string): Promise<McpOauthResult>
       finish("cancelled");
     }, MCP_OAUTH_TIMEOUT_MS);
     channel.onmessage = (event: MessageEvent) => {
-      if ((event.data as { type?: string } | null)?.type !== "mcp-oauth-complete") return;
+      const message = event.data as { type?: string; sessionId?: string; message?: string } | null;
+      if (message?.sessionId !== started.sessionId) return;
+      const type = message?.type;
+      if (type === "mcp-oauth-failed") {
+        finish(new Error(message?.message));
+        return;
+      }
+      if (type !== "mcp-oauth-complete") return;
       finish("connected");
     };
     unsubscribe = browser?.onOAuthCallback((callback) => {
@@ -96,10 +93,14 @@ export async function connectMcpOauth(serverId: string): Promise<McpOauthResult>
       if (callback.code === null) return finish("cancelled");
       void rpc.mcp.oauth
         .complete({ sessionId: callback.state, code: callback.code, state: callback.state })
-        .then(() => {
-          channel.postMessage({ type: "mcp-oauth-complete" });
-          finish("connected");
-        }, fail);
+        .then(
+          () => {
+            // Other open views refresh on the same signal the callback page sends.
+            channel.postMessage({ type: "mcp-oauth-complete", sessionId: started.sessionId });
+            finish("connected");
+          },
+          (error: unknown) => finish(error instanceof Error ? error : new Error(String(error))),
+        );
     });
   });
 }
