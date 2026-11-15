@@ -12,7 +12,6 @@ import { RunTriggerSchema } from "./runs.js";
 import { SpaceAvailabilitySchema } from "./space-availability.js";
 
 export const MemoryScopeSchema = z.enum(["isolated", "shared"]);
-export type MemoryScopeValue = z.infer<typeof MemoryScopeSchema>;
 
 /**
  * Deprecated account-level setting. Per-bot rendering uses avatarSet. Kept for older
@@ -56,7 +55,6 @@ export const AppLocaleSchema = z.enum([
   "ja",
   "pl",
 ]);
-export type AvatarStyle = z.infer<typeof AvatarStyleSchema>;
 
 export { AGENT_SECRET_NAME_PATTERN };
 
@@ -72,7 +70,6 @@ export const AgentSecretInputSchema = z.object({
   name: z.string().trim().regex(AGENT_SECRET_NAME_PATTERN),
   value: z.string().min(1).max(16_384),
 });
-export type AgentSecretInput = z.infer<typeof AgentSecretInputSchema>;
 
 export const InstructionVersionSchema = z.object({
   id: Id,
@@ -249,7 +246,6 @@ export type UpdateGroupInput = z.infer<typeof UpdateGroupInput>;
 export const GroupDetailSchema = GroupSchema.extend({
   messages: z.array(ThreadMessageSchema).optional(),
 });
-export type GroupDetail = z.infer<typeof GroupDetailSchema>;
 
 export const BotSectionName = z.string().trim().min(1).max(60);
 
@@ -390,7 +386,6 @@ export const SpaceSchema = z.object({
 export type Space = z.infer<typeof SpaceSchema>;
 
 export const SpaceRoleSchema = z.enum(["owner", "member"]);
-export type SpaceRole = z.infer<typeof SpaceRoleSchema>;
 
 export const SpaceMemberSchema = z.object({
   userId: Id,
@@ -415,7 +410,6 @@ export const SpaceInviteLinkSchema = z.object({
   url: z.string().url(),
   expiresAt: z.string(),
 });
-export type SpaceInviteLink = z.infer<typeof SpaceInviteLinkSchema>;
 
 export const SpaceInvitePreviewSchema = z.object({
   spaceId: Id,
@@ -649,7 +643,6 @@ export const CreateRoutineInput = z
 export type CreateRoutineInput = z.infer<typeof CreateRoutineInput>;
 
 export const ScratchpadItemStatusSchema = z.enum(["open", "parked", "done"]);
-export type ScratchpadItemStatus = z.infer<typeof ScratchpadItemStatusSchema>;
 
 export const ScratchpadItemSchema = z.object({
   id: Id,
@@ -670,7 +663,6 @@ export const CreateScratchpadItemInput = z.object({
 });
 
 export const TaughtSkillStatusSchema = z.enum(["recording", "drafting", "draft", "saved"]);
-export type TaughtSkillStatus = z.infer<typeof TaughtSkillStatusSchema>;
 
 export const SkillPlaybookSchema = z.object({
   whenToUse: z.string(),
@@ -1011,7 +1003,6 @@ export const PluginSubmissionInputSchema = z.object({
   testing: z.string().trim().min(1).max(4000),
   tested: z.literal(true),
 });
-export type PluginSubmissionInput = z.infer<typeof PluginSubmissionInputSchema>;
 
 /** An app's owner claiming its integration page so it links to their site. */
 export const IntegrationClaimInputSchema = z.object({
@@ -1024,7 +1015,6 @@ export const IntegrationClaimInputSchema = z.object({
   name: z.string().trim().min(1).max(80),
   website: HttpsUrlSchema,
 });
-export type IntegrationClaimInput = z.infer<typeof IntegrationClaimInputSchema>;
 
 export const IntegrationClaimSchema = z.object({
   slug: z.string(),
@@ -1213,7 +1203,6 @@ export const MessagingLinkedIdentitySchema = z.object({
   botId: Id,
   botName: z.string(),
 });
-export type MessagingLinkedIdentity = z.infer<typeof MessagingLinkedIdentitySchema>;
 
 export const MessagingInstallationSummarySchema = z.object({
   id: Id,
@@ -1387,7 +1376,6 @@ export const ServerUpdateSourceSchema = z.object({
   branch: z.string().max(200),
   official: z.boolean(),
 });
-export type ServerUpdateSource = z.infer<typeof ServerUpdateSourceSchema>;
 
 export const ServerUpdateStepSchema = z.object({
   id: z.string().max(40),
@@ -1399,11 +1387,9 @@ export const ServerUpdateStepSchema = z.object({
 
 /** How an update reaches new code: published images, a build on the server, or a git checkout. */
 export const ServerUpdateStrategySchema = z.enum(["pull", "build", "checkout"]);
-export type ServerUpdateStrategy = z.infer<typeof ServerUpdateStrategySchema>;
 
 /** `sidecar` is the Compose deployment; `checkout` is a supervised source install. */
 export const ServerUpdateModeSchema = z.enum(["sidecar", "checkout", "unavailable"]);
-export type ServerUpdateMode = z.infer<typeof ServerUpdateModeSchema>;
 
 /**
  * What Settings should render for a deployment owner.
@@ -1412,7 +1398,6 @@ export type ServerUpdateMode = z.infer<typeof ServerUpdateModeSchema>;
  * `source`: git checkout / `pnpm dev`; show terminal commands, never a fake Apply.
  */
 export const ServerUpdateInstallKindSchema = z.enum(["sidecar", "compose", "source"]);
-export type ServerUpdateInstallKind = z.infer<typeof ServerUpdateInstallKindSchema>;
 
 export const ServerUpdateRunSchema = z.object({
   startedAt: z.iso.datetime(),
@@ -1463,7 +1448,6 @@ export const ServerUpdateStatusSchema = z.object({
   running: z.boolean(),
   lastRun: ServerUpdateRunSchema.nullable(),
 });
-export type ServerUpdateStatus = z.infer<typeof ServerUpdateStatusSchema>;
 
 export const ServerUpdateCheckSchema = z.object({
   status: z.enum(["unavailable", "dirty", "up-to-date", "available"]),
@@ -1474,13 +1458,11 @@ export const ServerUpdateCheckSchema = z.object({
   targetTag: z.string().nullable(),
   behindBy: z.number().int().nonnegative(),
 });
-export type ServerUpdateCheck = z.infer<typeof ServerUpdateCheckSchema>;
 
 export const ServerUpdateRequestSchema = z.object({
   repoUrl: z.string().max(400).optional(),
   branch: z.string().max(200).optional(),
 });
-export type ServerUpdateRequest = z.infer<typeof ServerUpdateRequestSchema>;
 
 export const MeSchema = z.object({
   maxUploadSizeBytes: z.number().int().positive().optional(),

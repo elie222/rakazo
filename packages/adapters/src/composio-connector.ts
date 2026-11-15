@@ -136,8 +136,6 @@ function asObject(value: unknown): Record<string, unknown> | undefined {
     : undefined;
 }
 
-export type ComposioCatalogItem = Omit<ConnectorCatalogItem, "connectorId">;
-
 export interface ComposioProvider extends ManagedConnectorProvider {
   warmDirectory(): Promise<void>;
   listConnectedSlugs(userId: string): Promise<string[]>;
