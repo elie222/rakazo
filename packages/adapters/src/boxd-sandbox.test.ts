@@ -203,6 +203,43 @@ describe("boxd computers", () => {
     expect(probe).toHaveBeenCalledTimes(2);
   });
 
+  it("opens a terminal through the screen proxy, behind its own token", async () => {
+    const boxd = new FakeBoxd();
+    const provider = fakeBoxdProvider(boxd);
+    const computer = await provider.provision({ botId: "bot", homePath: "/unused" }, ctx);
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn<typeof fetch>()
+        .mockResolvedValue(new Response(null, { headers: { "x-boxd-proxy": "ready" } })),
+    );
+    onTestFinished(() => {
+      vi.unstubAllGlobals();
+    });
+    const control = await provider.connectScreen(
+      computer,
+      { view: "stream", interactive: true, controlToken: "control-lease" },
+      ctx,
+    );
+    const terminal = await provider.connectTerminal(
+      computer,
+      { controlToken: "control-lease" },
+      ctx,
+    );
+    const url = new URL(terminal.url);
+
+    expect(url.origin).toBe(new URL(control.url!).origin);
+    expect(url.pathname).toBe("/vnc.html");
+    const token = new URLSearchParams(url.searchParams.get("path")!.split("?")[1]).get("token");
+    expect(token).toMatch(/^[0-9a-f-]{36}$/);
+    // The shell server starts in the machine and joins the gateway on the proxied port.
+    const started = boxd.commands.findLast(({ command }) => command.includes("rakazo-terminal.py"));
+    expect(started?.command).toContain(String(token));
+    expect(started?.command).toContain("/tmp/rakazo/sockets/terminal-");
+    expect(started?.command).toContain("0.0.0.0:6100");
+    expect(started?.command).toContain(BOXD_WORKSPACE);
+  });
+
   it("suspends on stop, and treats a repeated stop or destroy of a deleted machine as done", async () => {
     const boxd = new FakeBoxd();
     const provider = fakeBoxdProvider(boxd);
