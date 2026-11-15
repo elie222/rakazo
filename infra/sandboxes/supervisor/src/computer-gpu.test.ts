@@ -4,7 +4,7 @@ import { lstatSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync }
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { computerGpuMatches, resolveComputerGpu } from "./computer-gpu.js";
+import { BROWSER_GPU_ENV, computerGpuMatches, resolveComputerGpu } from "./computer-gpu.js";
 import { containerCreateOptions } from "./computer-spec.js";
 
 describe("computer render node", () => {
@@ -128,16 +128,22 @@ describe("computer render node", () => {
 
   it("matches a computer's render node to the configured one", () => {
     const gpu = { node: "/dev/dri/renderD128", gid: 993 };
-    const created = (want?: typeof gpu) =>
-      containerCreateOptions({
+    // A computer as Docker's inspect reports it after creation.
+    const created = (want?: typeof gpu) => {
+      const options = containerCreateOptions({
         name: "rakazo-bot-x",
         image: "img",
         botId: "x",
         spaceId: "s",
         homePath: "/data/x",
         ...(want ? { gpu: want } : {}),
-      }) as unknown as Parameters<typeof computerGpuMatches>[0];
-    expect(computerGpuMatches({ HostConfig: {} } as never, undefined)).toBe(true);
+      });
+      return {
+        HostConfig: options.HostConfig,
+        Config: { Env: options.Env },
+      } as unknown as Parameters<typeof computerGpuMatches>[0];
+    };
+    expect(computerGpuMatches({ HostConfig: {}, Config: {} } as never, undefined)).toBe(true);
     expect(computerGpuMatches(created(), undefined)).toBe(true);
     expect(computerGpuMatches(created(gpu), gpu)).toBe(true);
     // Turning the setting on or off, or moving it to another node or group, replaces the computer.
@@ -154,6 +160,16 @@ describe("computer render node", () => {
     // Podman's inspect leaves the permissions empty; that is unreported, not read-only.
     readOnly.HostConfig.Devices[0]!.CgroupPermissions = "";
     expect(computerGpuMatches(readOnly as never, gpu)).toBe(true);
+    // The browser renders on the node only when told to, so a computer created without that
+    // setting is replaced, and so is one that keeps it after the node is turned off.
+    const withoutIntent = created(gpu);
+    withoutIntent.Config.Env = withoutIntent.Config.Env?.filter(
+      (entry) => entry !== BROWSER_GPU_ENV,
+    );
+    expect(computerGpuMatches(withoutIntent, gpu)).toBe(false);
+    const staleIntent = created();
+    staleIntent.Config.Env = [...(staleIntent.Config.Env ?? []), BROWSER_GPU_ENV];
+    expect(computerGpuMatches(staleIntent, undefined)).toBe(false);
   });
 });
 

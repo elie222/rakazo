@@ -10,6 +10,9 @@ export interface ComputerGpu {
   gid: number;
 }
 
+/** Tells the computer's browser to render on the node; set only with a render node. */
+export const BROWSER_GPU_ENV = "RAKAZO_BROWSER_GPU=1";
+
 const RENDER_NODE = /^\/dev\/dri\/renderD\d+$/;
 /** DRM's character device major; render nodes take minors from 128, below are display nodes. */
 const DRM_MAJOR = 226;
@@ -79,15 +82,20 @@ export function computerGpuHostConfig(gpu: ComputerGpu | undefined) {
   };
 }
 
-/** Whether a computer has exactly the configured render node; devices are fixed at creation. */
+/**
+ * Whether a computer has exactly the configured render node and the browser setting that goes
+ * with it; devices and environment are fixed at creation.
+ */
 export function computerGpuMatches(
-  info: Pick<Docker.ContainerInspectInfo, "HostConfig">,
+  info: Pick<Docker.ContainerInspectInfo, "HostConfig" | "Config">,
   desired: ComputerGpu | undefined,
 ) {
   const devices = info.HostConfig.Devices ?? [];
   const groups = info.HostConfig.GroupAdd ?? [];
-  if (!desired) return devices.length === 0 && groups.length === 0;
+  const browserGpu = (info.Config.Env ?? []).includes(BROWSER_GPU_ENV);
+  if (!desired) return devices.length === 0 && groups.length === 0 && !browserGpu;
   return (
+    browserGpu &&
     devices.length === 1 &&
     devices[0]?.PathOnHost === desired.node &&
     devices[0]?.PathInContainer === desired.node &&
