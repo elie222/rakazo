@@ -1,5 +1,6 @@
 import { clearInactiveUserComputerControl, expireComputerControl } from "@rakazo/adapters";
-import { getLogger } from "@rakazo/logging";
+import type { TestSink } from "@rakazo/logging";
+import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { expireStaleComputerControl } from "./computer-control.js";
 import type { RouterDeps } from "./router.js";
@@ -19,36 +20,45 @@ const lapsed = {
 };
 
 describe("expireStaleComputerControl", () => {
-  let logged: ReturnType<typeof vi.spyOn>;
+  let sink: TestSink;
+  const expiryFailed = {
+    level: "warn",
+    message: "stale computer control expiry failed",
+    "computer.id": "computer-1",
+    "control.lease.id": "lease-1",
+    error: { message: "provider unavailable" },
+  };
 
   beforeEach(() => {
     vi.mocked(expireComputerControl).mockReset();
     vi.mocked(clearInactiveUserComputerControl).mockReset();
-    logged = vi.spyOn(getLogger(), "error").mockImplementation(() => undefined);
+    sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
   });
-  afterEach(() => logged.mockRestore());
+  afterEach(() => {
+    installLogger(createLogger({ service: "rakazo-api", level: "off", sinks: [] }));
+  });
 
   it("ends a lapsed lease and asks the caller to read the computer again", async () => {
     vi.mocked(expireComputerControl).mockResolvedValue(true);
     await expect(expireStaleComputerControl(deps, lapsed)).resolves.toBe(true);
     expect(expireComputerControl).toHaveBeenCalledWith(deps, "computer-1", "lease-1");
-    expect(logged).not.toHaveBeenCalled();
+    expect(sink.events).toEqual([]);
   });
 
-  it("reports a failed expiry while the read that found it still answers", async () => {
-    const failure = new Error("provider unavailable");
-    vi.mocked(expireComputerControl).mockRejectedValue(failure);
+  it("warns with the computer and lease on each read that fails to expire a stuck lease", async () => {
+    vi.mocked(expireComputerControl).mockRejectedValue(new Error("provider unavailable"));
     await expect(expireStaleComputerControl(deps, lapsed)).resolves.toBe(true);
-    expect(logged).toHaveBeenCalledWith("stale computer control expiry", failure);
+    await expect(expireStaleComputerControl(deps, lapsed)).resolves.toBe(true);
+    expect(sink.events).toMatchObject([expiryFailed, expiryFailed]);
   });
 
-  it("reports a failed retry of a revoke that stopped half way", async () => {
-    const failure = new Error("provider unavailable");
-    vi.mocked(expireComputerControl).mockRejectedValue(failure);
+  it("warns the same way for a failed retry of a revoke that stopped half way", async () => {
+    vi.mocked(expireComputerControl).mockRejectedValue(new Error("provider unavailable"));
     await expect(
       expireStaleComputerControl(deps, { ...lapsed, controlHolder: "none" }),
     ).resolves.toBe(true);
-    expect(logged).toHaveBeenCalledWith("stale computer control expiry", failure);
+    expect(sink.events).toMatchObject([expiryFailed]);
   });
 
   it("clears control left without a lease", async () => {

@@ -4,7 +4,7 @@ import type { SecretStore } from "@rakazo/adapter-kit";
 import type { PluginMcpServerEntry, PluginRepoFetcher } from "@rakazo/adapters";
 import {
   buildMcpCredentialBlob,
-  isTransientFetchError,
+  isPluginLoadFault,
   persistPreparedSecret,
   pluginPreviewDto,
   previewPluginInstall,
@@ -19,6 +19,7 @@ import {
   runAsSystemInTransaction,
   spaceAvailability,
 } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
 import { assertNameFreeWhereAvailable, lockOwner } from "./availability.js";
 
 export type PluginInstallDeps = {
@@ -35,6 +36,16 @@ type PreparedServer = {
   index: number;
 };
 
+/**
+ * The caller named the address, so failing to reach or read it is their answer, not a server
+ * error; this returns for the caller to give it. A cancelled request and a fault in our own
+ * code are rethrown.
+ */
+export function rethrowUnlessPluginSourceFailed(error: unknown, signal?: AbortSignal): void {
+  if (signal?.aborted || isPluginLoadFault(error)) throw error;
+  getLogger().warn("plugin source not loaded", { error });
+}
+
 async function loadPlugin(
   deps: PluginInstallDeps,
   source: string,
@@ -45,8 +56,7 @@ async function loadPlugin(
   try {
     plugin = await previewPluginInstall({ source, fetcher: deps.fetcher, signal });
   } catch (error) {
-    // A cancelled request or a failing host says nothing about the plugin.
-    if (signal?.aborted || isTransientFetchError(error)) throw error;
+    rethrowUnlessPluginSourceFailed(error, signal);
     throw new ORPCError("BAD_REQUEST", {
       message: "Could not load a supported plugin from this repository",
     });

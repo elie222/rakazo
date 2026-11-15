@@ -2,7 +2,8 @@ import { createRouterClient } from "@orpc/server";
 import type { SecretStore } from "@rakazo/adapter-kit";
 import { BUILTIN_AGENT_SKILLS, previewPluginInstall } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
-import { describe, expect, it, vi } from "vitest";
+import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { installPlugin, setPluginParts } from "./plugin-installs.js";
 import type { RouterDeps } from "./router.js";
 import { createRouter } from "./router.js";
@@ -42,6 +43,21 @@ function failingFetcher(error: Error): typeof fetcher {
     throw error;
   };
 }
+// The shapes the network stack gives these failures.
+const unreachable = {
+  "the host does not resolve": Object.assign(new Error("getaddrinfo ENOTFOUND example.invalid"), {
+    code: "ENOTFOUND",
+  }),
+  "the connection is refused": new TypeError("fetch failed", {
+    cause: Object.assign(new Error("connect ECONNREFUSED 203.0.113.10:443"), {
+      code: "ECONNREFUSED",
+    }),
+  }),
+  "the host times out": new DOMException(
+    "The operation was aborted due to timeout",
+    "TimeoutError",
+  ),
+};
 function setup() {
   const prisma = {
     $executeRaw: vi.fn(),
@@ -101,6 +117,10 @@ async function input() {
     pluginDigest: (await previewPluginInstall({ source, fetcher })).digest,
   };
 }
+
+afterEach(() => {
+  installLogger(createLogger({ service: "rakazo-api", level: "off", sinks: [] }));
+});
 
 describe("confirmed plugin installation", () => {
   it("persists read-only skills and native MCP rows atomically, not credentials in config", async () => {
@@ -195,17 +215,36 @@ describe("confirmed plugin installation", () => {
     });
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
-  it("reports a failing host or a cancelled request as itself, not as an unreadable plugin", async () => {
+  it.each(Object.entries(unreachable))(
+    "tells the user when %s, without an error report",
+    async (_case, error) => {
+      const { deps, prisma } = setup();
+      const sink = createTestSink();
+      installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
+      await expect(
+        installPlugin({ ...deps, fetcher: failingFetcher(error) }, actor, await input()),
+      ).rejects.toMatchObject({
+        code: "BAD_REQUEST",
+        message: "Could not load a supported plugin from this repository",
+      });
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+      expect(sink.events).toMatchObject([{ level: "warn", message: "plugin source not loaded" }]);
+    },
+  );
+  it("lets a cancelled request and a fault in the loader propagate", async () => {
     const { deps } = setup();
     const args = await input();
-    const hostDown = failingFetcher(new Error("Request failed: HTTP 503"));
-    await expect(installPlugin({ ...deps, fetcher: hostDown }, actor, args)).rejects.toThrow(
-      "Request failed: HTTP 503",
-    );
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
     const dropped = failingFetcher(new Error("socket closed"));
     await expect(
       installPlugin({ ...deps, fetcher: dropped }, actor, args, AbortSignal.abort()),
     ).rejects.toThrow("socket closed");
+    const fault = failingFetcher(new TypeError("Cannot read properties of undefined"));
+    await expect(installPlugin({ ...deps, fetcher: fault }, actor, args)).rejects.toThrow(
+      "Cannot read properties of undefined",
+    );
+    expect(sink.events).toEqual([]);
   });
   it("installs the other skills when one repeats a built-in skill", async () => {
     const { deps, prisma } = setup();
@@ -321,15 +360,19 @@ describe("plugin RPC boundary", () => {
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
     expect(prisma.capabilityInstall.create).not.toHaveBeenCalled();
   });
-  it("previews an unreadable plugin as a bad request and a failing host as the failure", async () => {
-    const unreadable = client(actor, failingFetcher(new Error("No plugin manifest found")));
-    await expect(unreadable.rpc.capabilities.pluginPreview({ source })).rejects.toMatchObject({
-      code: "BAD_REQUEST",
-      message: "Could not preview a supported plugin from this repository",
-    });
-    const hostDown = client(actor, failingFetcher(new Error("Request failed: HTTP 503")));
-    await expect(hostDown.rpc.capabilities.pluginPreview({ source })).rejects.toThrow(
-      "Request failed: HTTP 503",
+  it("previews an unreadable plugin or an unreachable host as a bad request", async () => {
+    for (const error of [new Error("No plugin manifest found"), ...Object.values(unreachable)]) {
+      const failing = client(actor, failingFetcher(error));
+      await expect(failing.rpc.capabilities.pluginPreview({ source })).rejects.toMatchObject({
+        code: "BAD_REQUEST",
+        message: "Could not preview a supported plugin from this repository",
+      });
+    }
+  });
+  it("lets a fault in the loader fail the preview as a server error", async () => {
+    const fault = client(actor, failingFetcher(new TypeError("Cannot read properties of null")));
+    await expect(fault.rpc.capabilities.pluginPreview({ source })).rejects.toThrow(
+      "Cannot read properties of null",
     );
   });
   it("adds only the chosen parts and records them", async () => {

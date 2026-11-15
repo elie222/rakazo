@@ -306,12 +306,30 @@ describe("reviewing submissions", () => {
     expect(rows[0]!.status).toBe("pending");
   });
 
-  it("reports a failing host as itself, not as an unreadable plugin", async () => {
+  it("tells the admin when the repository cannot be reached", async () => {
     const { deps, rows } = await submitted();
-    preview.mockRejectedValue(new Error("Request failed: HTTP 503"));
+    preview.mockRejectedValue(
+      new TypeError("fetch failed", { cause: new Error("connect ECONNREFUSED 203.0.113.10:443") }),
+    );
     await expect(
       reviewPluginSubmission(deps, { id: "sub-1", decision: "approve" }),
-    ).rejects.toThrow("Request failed: HTTP 503");
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: "Could not preview a supported plugin from this repository",
+    });
+    expect(rows[0]!.status).toBe("pending");
+  });
+
+  it("lets a cancelled review and a fault in the loader propagate", async () => {
+    const { deps, rows } = await submitted();
+    preview.mockRejectedValue(new Error("socket closed"));
+    await expect(
+      reviewPluginSubmission(deps, { id: "sub-1", decision: "approve" }, AbortSignal.abort()),
+    ).rejects.toThrow("socket closed");
+    preview.mockRejectedValue(new TypeError("Cannot read properties of undefined"));
+    await expect(
+      reviewPluginSubmission(deps, { id: "sub-1", decision: "approve" }),
+    ).rejects.toThrow("Cannot read properties of undefined");
     expect(rows[0]!.status).toBe("pending");
   });
 
