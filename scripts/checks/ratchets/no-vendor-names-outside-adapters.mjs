@@ -3,9 +3,7 @@ import { readFileSync } from "node:fs";
 export const message =
   "Outside packages/adapters a provider id is an opaque string: do not name a vendor, branch on its id, or sniff a string only it produces. Name the capability instead, declare it in the provider's descriptor or capabilities in packages/adapters, and read labels, settings fields and defaults from the descriptor the server sends.";
 
-export const include = [
-  "{apps,packages,infra,scripts}/**/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs,prisma}",
-];
+export const include = ["{apps,packages}/**/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs,prisma}"];
 
 export const exclude = [
   "packages/adapters/**",
@@ -24,11 +22,9 @@ export const exclude = [
   "apps/api/src/{app,env,index,monitoring,native-monitoring}.ts",
   "apps/api/src/cli/**",
   "apps/worker/src/index.ts",
-  // Build, deployment and tooling configuration.
+  // Build configuration. Deployment and tooling under infra/ and scripts/ are not included at all.
   "apps/*/{vite,playwright,metro,app}.config.{ts,js}",
   "apps/desktop/scripts/**",
-  "infra/**",
-  "scripts/**",
   // The monitoring and logging sinks, which lint also lets load their vendor's SDK.
   "{apps/desktop/src,apps/web/src/lib,apps/mobile/lib}/monitoring.ts",
   "packages/logging/src/{sentry,axiom,axiom-sink}.ts",
