@@ -70,6 +70,7 @@ export function useSpaceRoster({
   const botsRefreshEpoch = useRef(0);
   const botsRefreshApplied = useRef(0);
   const initialRoutingPending = useRef(true);
+  const initialRoute = useRef({ botId, groupId });
   const archivedBotsRefreshEpoch = useRef(0);
   const routeBotId = useRef<string | undefined>(botId);
   routeBotId.current = botId;
@@ -114,7 +115,17 @@ export function useSpaceRoster({
       setSpaces((previous) => replaceEqualDeep(previous, navigation.spaces));
       setInitialBotsLoaded(true);
       botsRefreshApplied.current = request;
-      if (initialRoutingPending.current) return;
+      if (
+        routeBotId.current !== initialRoute.current.botId ||
+        routeGroupId.current !== initialRoute.current.groupId
+      )
+        initialRoutingPending.current = false;
+      if (
+        initialRoutingPending.current &&
+        routeBotId.current === initialRoute.current.botId &&
+        routeGroupId.current === initialRoute.current.groupId
+      )
+        return;
       if (
         includeArchived &&
         list.length === 0 &&
@@ -391,7 +402,10 @@ export function useSpaceBootstrap({
           return;
         }
         initialRoutingPending.current = false;
-        if (!applyBotLists) return;
+        if (!applyBotLists) {
+          void refreshBots().catch(() => undefined);
+          return;
+        }
         // A shell that reopened from cache is already on a chat; it moves only if that chat is gone.
         if (
           seed &&
