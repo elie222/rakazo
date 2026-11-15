@@ -39,6 +39,14 @@ describe("referencedSkillResources", () => {
       ]),
     ).toEqual(["references/foo(bar).md", "references/run!"]);
   });
+  it("matches URL-encoded filenames without changing path ownership", () => {
+    expect(
+      referencedSkillResources("[guide](docs/my%20guide.md#setup)", [
+        "docs/my guide.md",
+        "unrelated.md",
+      ]),
+    ).toEqual(["docs/my guide.md"]);
+  });
   const paths = ["references/guide.md", "references/other.md", "src/main.ts"];
   it("includes a directory mentioned alongside an individual file", () => {
     expect(

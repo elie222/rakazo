@@ -79,7 +79,9 @@ export function referencedSkillResources(body: string, siblings: readonly string
       return [raw, withoutFragment, withoutFragment.replace(/[.,;:!?]+$/, "")];
     }),
   );
-  const explicitlyNamed = new Set(siblings.filter((path) => tokens.has(path)));
+  const explicitlyNamed = new Set(
+    siblings.filter((path) => tokens.has(path) || tokens.has(encodeURI(path))),
+  );
 
   return siblings.filter((path) => {
     const first = path.split("/")[0] ?? "";
