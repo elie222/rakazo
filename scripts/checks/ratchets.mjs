@@ -181,14 +181,17 @@ async function main(args) {
   const rules = await loadRules();
   const found = scan(rules, repoFiles());
   if (args[0] === "--tighten") {
-    if (args[1] && !rules.some((rule) => rule.name === args[1]))
-      throw new Error(`No rule named ${args[1]} in scripts/checks/ratchets/`);
+    // An empty name is still a name: `--tighten "$RULE"` with RULE unset must not sweep every rule.
+    const named = args.length > 1 ? args[1] : undefined;
+    if (named !== undefined && !rules.some((rule) => rule.name === named))
+      throw new Error(`No rule named "${named}" in scripts/checks/ratchets/`);
     for (const rule of rules) {
       // With a name, only that rule: a PR then leaves the baselines it did not work on alone.
-      if (args[1] && rule.name !== args[1]) continue;
+      if (named !== undefined && rule.name !== named) continue;
       if (!existsSync(rule.baselinePath)) {
         // Asked for by name, so say why nothing was written.
-        if (args[1]) console.log(`${rule.name} has no baseline: there is nothing to tighten.`);
+        if (named !== undefined)
+          console.log(`${rule.name} has no baseline: there is nothing to tighten.`);
         continue;
       }
       writeFileSync(
