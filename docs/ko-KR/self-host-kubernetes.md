@@ -233,6 +233,11 @@ Google 인증 입구가 필요하다면
 일치할 때만** 통과시킵니다. 키가 없거나 틀리면 Google 인증을 유지합니다.
 서버에 설정한 키가 없거나 형식이 틀려도 이 경로는 비활성 상태입니다.
 
+이 게이트의 기본 설정에서는 네이티브 패스키와 앱 링크를 지원하지 않습니다.
+플랫폼 검증기는 인증 없이 `/.well-known/apple-app-site-association`과
+`/.well-known/assetlinks.json`을 가져와야 합니다. 계정 비밀번호로 로그인하세요.
+해당 기능을 지원하려면 서버 연결 설정과 두 파일에 대한 공개 접근이 필요합니다.
+
 비밀 관리 도구로 무작위 32바이트를 소문자 16진수 64자로 생성하세요.
 비공개 터미널에서는 `python3 -c 'import secrets; print(secrets.token_hex(32))'`로도
 만들 수 있습니다. 값을 안전하게 보관하고 **Caddy 프로세스 환경변수**
@@ -364,9 +369,9 @@ ConfigMap이나 키가 없으면 보호장치 없이 진행하는 대신 Job이 
 (
   set -eu
   # Proceed only when the Job is terminal; never delete a running Job.
-  terminal=$(kubectl -n rakazo get job rakazo-migrate -o jsonpath='{.status.conditions[?(@.status=="True")].type}')
-  case "$terminal" in
-    Complete) ;;
+  complete=$(kubectl -n rakazo get job rakazo-migrate -o jsonpath='{.status.conditions[?(@.type=="Complete")].status}')
+  case "$complete" in
+    True) ;;
     *) echo "Stop: inspect and recover the migration before replacing this Job."; exit 1 ;;
   esac
   kubectl -n rakazo logs job/rakazo-migrate > migration-previous.log

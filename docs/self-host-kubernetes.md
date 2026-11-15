@@ -243,6 +243,11 @@ Caddy example, the optional `@native` route requires **both** a matching
 `X-Access-Key` and an `/api/*` or `/rpc/*` path. Missing/wrong keys still go through
 the Google gate. An unset or malformed configured key leaves this route disabled.
 
+This gate does not support native passkeys or app links as configured: platform
+verifiers cannot authenticate to fetch `/.well-known/apple-app-site-association`
+or `/.well-known/assetlinks.json`. Use account password sign-in. Supporting those
+features requires server association setup and public access to those exact files.
+
 Generate 32 random bytes as 64 lowercase hex characters using your secret manager
 (or `python3 -c 'import secrets; print(secrets.token_hex(32))'` in a private terminal).
 Store it securely as `RAKAZO_NATIVE_ACCESS_KEY` in the **Caddy process environment**,
@@ -399,9 +404,9 @@ migration records.
 (
   set -eu
   # Proceed only when the Job is terminal; never delete a running Job.
-  terminal=$(kubectl -n rakazo get job rakazo-migrate -o jsonpath='{.status.conditions[?(@.status=="True")].type}')
-  case "$terminal" in
-    Complete) ;;
+  complete=$(kubectl -n rakazo get job rakazo-migrate -o jsonpath='{.status.conditions[?(@.type=="Complete")].status}')
+  case "$complete" in
+    True) ;;
     *) echo "Stop: inspect and recover the migration before replacing this Job."; exit 1 ;;
   esac
   kubectl -n rakazo logs job/rakazo-migrate > migration-previous.log
