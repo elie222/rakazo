@@ -80,9 +80,12 @@ test.beforeEach(async () => {
 });
 
 test.afterEach(async () => {
-  await app?.close();
-  app = undefined;
-  await rm(userData, { recursive: true, force: true });
+  try {
+    await app?.close();
+  } finally {
+    app = undefined;
+    await rm(userData, { recursive: true, force: true });
+  }
 });
 
 function launch(extraEnv: Record<string, string> = {}) {
@@ -795,7 +798,7 @@ test("the app window stays on its server when a link redirects to another site",
       elsewhereUrl,
     );
     await expect(appWindow.getByText("Another site")).toBeVisible();
-    expect(await openSignIn(appWindow)).toContain("Invalid sign-in request.");
+    expect(await openSignIn(appWindow)).toContain("may not call desktop.oauth.open");
     expect(await openedUrls()).toEqual([elsewhereUrl, elsewhereUrl, signInUrl]);
   } finally {
     await app?.close();
