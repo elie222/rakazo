@@ -7,7 +7,13 @@ import { DISCORD_URL, GITHUB_URL, SITE_NAME, SITE_URL, X_URL } from "./site";
 const LEGAL_NAME = "Inbox Zero Inc.";
 
 export const ORGANIZATION_ID = `${SITE_URL}/#organization`;
-const ORGANIZATION = { "@id": ORGANIZATION_ID };
+/** Points at the home page's Organization, and names it for readers that see one page alone. */
+const ORGANIZATION = {
+  "@type": "Organization",
+  "@id": ORGANIZATION_ID,
+  name: SITE_NAME,
+  url: `${SITE_URL}/`,
+};
 const SOFTWARE_ID = `${SITE_URL}/#software`;
 
 function graph(nodes: readonly object[]) {
@@ -115,7 +121,6 @@ export function pageArticleStructuredData(input: PageArticleInput, ...nodes: rea
       headline: input.headline,
       description: input.description,
       crumbs: [...(input.parents ?? []), { name: input.crumb ?? input.headline, path: input.path }],
-      published: date,
       modified: date,
       image: input.image,
     },
