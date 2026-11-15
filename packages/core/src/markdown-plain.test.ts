@@ -1,5 +1,11 @@
+import fc from "fast-check";
 import { describe, expect, it, vi } from "vitest";
-import { plainTextFromMarkdown, truncatedPlainText } from "./markdown-plain.js";
+import {
+  plainTextFromMarkdown,
+  textBoundary,
+  truncatedPlainText,
+  truncatePlainText,
+} from "./markdown-plain.js";
 
 describe("plainTextFromMarkdown", () => {
   it("reads only a bounded preview of the source unless the caller raises the limit", () => {
@@ -389,5 +395,68 @@ describe("plainTextFromMarkdown HTML comments", () => {
   it("keeps comments written as literal code or escaped text", () => {
     expect(plainTextFromMarkdown("`<!-- x > hidden -->`")).toBe("<!-- x > hidden -->");
     expect(plainTextFromMarkdown("\\<!-- x > hidden -->")).toBe("<!-- x > hidden -->");
+  });
+});
+
+describe("plain text truncation properties", () => {
+  const characters = [
+    "a",
+    " ",
+    "\n",
+    "e\u0301",
+    "😀",
+    "𠮷",
+    "👨\u200d👩\u200d👧",
+    "🇮🇱",
+    "क्\u200dष",
+    "葛\u{e0100}",
+  ];
+  const text = fc.array(fc.constantFrom(...characters), { maxLength: 40 }).map((c) => c.join(""));
+  const markdown = fc
+    .array(
+      fc.constantFrom(...characters, "**", "_", "`", "~~", "[", "](", ")", "<b>", "|", "\\", "# "),
+      { maxLength: 40 },
+    )
+    .map((pieces) => pieces.join(""));
+  const LONE_SURROGATE = /[\ud800-\udfff]/u;
+
+  it("cuts text to a prefix within the limit, giving up at most one unit to keep a surrogate pair whole", () => {
+    fc.assert(
+      fc.property(text, fc.nat(100), (text, limit) => {
+        const cut = truncatePlainText(text, limit);
+        expect(text.startsWith(cut)).toBe(true);
+        expect(cut.length).toBeLessThanOrEqual(limit);
+        expect(cut).not.toMatch(LONE_SURROGATE);
+        if (text.length <= limit) expect(cut).toBe(text);
+        else expect(cut.length).toBeGreaterThanOrEqual(limit - 1);
+      }),
+      { seed: 42, numRuns: 200 },
+    );
+  });
+
+  it("places a boundary at the offset or one unit earlier, leaving whole characters on both sides", () => {
+    fc.assert(
+      fc.property(text, fc.nat(100), (text, at) => {
+        const offset = Math.min(at, text.length);
+        const boundary = textBoundary(text, offset);
+        expect([0, 1]).toContain(offset - boundary);
+        expect(text.slice(0, boundary)).not.toMatch(LONE_SURROGATE);
+        expect(text.slice(boundary)).not.toMatch(LONE_SURROGATE);
+        expect(textBoundary(text, boundary)).toBe(boundary);
+      }),
+      { seed: 42, numRuns: 200 },
+    );
+  });
+
+  it("previews any Markdown within the limit without half a character", () => {
+    fc.assert(
+      fc.property(markdown, fc.nat(100), (markdown, limit) => {
+        const preview = truncatedPlainText(markdown, limit);
+        expect(preview.length).toBeLessThanOrEqual(limit);
+        expect(preview).not.toMatch(LONE_SURROGATE);
+        expect(plainTextFromMarkdown(markdown).startsWith(preview)).toBe(true);
+      }),
+      { seed: 42, numRuns: 200 },
+    );
   });
 });

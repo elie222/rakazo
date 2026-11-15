@@ -69,7 +69,7 @@ import { HEARTBEAT, meDto, mergeStreams, withHeartbeats } from "./shared.js";
 const ROSTER_CHANGED = Symbol("roster changed");
 const COMPUTER_UPDATES_CHANGED = Symbol("computer updates changed");
 
-const COMPUTER_UPDATES_FAILURE_HOLD_MS = 30_000;
+const SIGNAL_FAILURE_HOLD_MS = 30_000;
 
 export function accountRoutes(ctx: RouterContext) {
   const { deps, os, authed } = ctx;
@@ -367,10 +367,14 @@ export function accountRoutes(ctx: RouterContext) {
           signal: AbortSignal,
         ): AsyncGenerator<typeof ROSTER_CHANGED> {
           if (!followRosterChanges) return;
-          // Chat alerts keep flowing if roster signals fail; the client falls back to polling.
+          // The app re-reads the roster only on these signals, so a failure ends the stream the
+          // same way computer updates do below.
           try {
             for await (const _ of followRosterChanges(userId, signal)) yield ROSTER_CHANGED;
-          } catch {}
+          } catch (error) {
+            await abortableDelay(SIGNAL_FAILURE_HOLD_MS, signal);
+            throw error;
+          }
         };
         const computerUpdateChanges = async function* (
           signal: AbortSignal,
@@ -383,7 +387,7 @@ export function accountRoutes(ctx: RouterContext) {
             for await (const _ of followComputerUpdateChanges(spaceId, signal))
               yield COMPUTER_UPDATES_CHANGED;
           } catch (error) {
-            await abortableDelay(COMPUTER_UPDATES_FAILURE_HOLD_MS, signal);
+            await abortableDelay(SIGNAL_FAILURE_HOLD_MS, signal);
             throw error;
           }
         };
