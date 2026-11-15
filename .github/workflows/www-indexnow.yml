@@ -1,0 +1,51 @@
+name: www-indexnow
+
+# After a production deploy of rakazo.com, tells IndexNow which pages changed since the previous one.
+# Vercel reports www deploys as "Production" deployments; the API's own "production" deployments
+# come from a workflow, so the creator tells them apart (environment names compare case-insensitively).
+on:
+  deployment_status:
+
+permissions: {}
+
+concurrency:
+  group: www-indexnow
+
+jobs:
+  ping:
+    name: Ping IndexNow
+    if: >-
+      github.event.deployment_status.state == 'success' &&
+      github.event.deployment.environment == 'Production' &&
+      github.event.deployment.creator.login == 'vercel[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      deployments: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          sparse-checkout: apps/www
+          persist-credentials: false
+      - name: Find the previous production deploy
+        id: previous
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          CURRENT_ID: ${{ github.event.deployment.id }}
+          CURRENT_CREATED: ${{ github.event.deployment.created_at }}
+        run: |
+          for id in $(gh api "repos/$REPO/deployments?environment=Production&per_page=50" --jq \
+            ".[] | select(.creator.login == \"vercel[bot]\" and .id != $CURRENT_ID and .created_at < \"$CURRENT_CREATED\") | .id"); do
+            if [ "$(gh api "repos/$REPO/deployments/$id/statuses?per_page=1" --jq '.[0].state')" = success ]; then
+              echo "since=$(gh api "repos/$REPO/deployments/$id" --jq .created_at)" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          done
+          echo "::warning::No earlier successful production deploy found; nothing is submitted."
+      - name: Ping IndexNow
+        if: steps.previous.outputs.since != ''
+        env:
+          SINCE: ${{ steps.previous.outputs.since }}
+        run: node apps/www/scripts/indexnow.mjs "$SINCE"
