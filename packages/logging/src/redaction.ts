@@ -252,11 +252,11 @@ const EMAILS = new RegExp(`(?<!${EMAIL_LOCAL})(?:${EMAIL.source})+`, "gi");
 // `task-1234` is a word. Each candidate is taken whole, in one step, and `redactBareKey` decides
 // what in it is a key, so a long run of prefixes is read once.
 const BARE_SECRET = /(?:(?:(?<![A-Za-z0-9])sk-|\bsk_)[A-Za-z0-9_-]{8,}|\b[ac]k_[A-Za-z0-9_-]+)\b/g;
-const SHORT_PREFIX = /^[ac]k_/;
-const SHORT_KEY = /^[ac]k_[A-Za-z0-9]+$/;
+const SHORT_PREFIX = /^[acs]k_/;
+const SHORT_KEY = /^[acs]k_[A-Za-z0-9]+$/;
 /**
  * After a two-letter prefix, underscores and hyphens belong to a key only when a digit or a
- * capital shows it is random: `ck_orders_amount_positive` names a constraint. Without one, each
+ * capital shows it is random: `ck_orders_amount_positive` and `sk_customer_id` are names. Without one, each
  * hyphen-separated part is a key only when it is a prefix and one run of letters.
  */
 function redactBareKey(candidate: string): string {

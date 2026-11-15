@@ -641,11 +641,13 @@ describe("redaction", () => {
     for (const text of [
       'violates check constraint "ck_orders_amount_positive"',
       "duplicate key value violates unique constraint ak_users_email",
+      'column "sk_customer_id" of relation "sk_order_lines" does not exist',
     ])
       expect(redactSensitiveText(text)).toBe(text);
     expect(redactSensitiveText("denied ak_hunter2_secret here")).toBe("denied [Redacted] here");
     expect(redactSensitiveText("denied ck_Ab-Cd_efGH here")).toBe("denied [Redacted] here");
     expect(redactSensitiveText("denied ak_secretvaluehere now")).toBe("denied [Redacted] now");
+    expect(redactSensitiveText("denied sk_fixture_A1b2C3d4 now")).toBe("denied [Redacted] now");
   });
 
   it("leaves an error's name and a file path that hold a secret word as they are", () => {
