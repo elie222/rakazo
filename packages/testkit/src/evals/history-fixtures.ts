@@ -193,8 +193,8 @@ const SCENARIOS: Record<
     forbidden: [],
     expectation: {
       expected:
-        "The background investigation found that the ledger-indexer component caused the slowness, and the report file is aurora-investigation.txt. Approval is still pending and nothing was deployed; a reply saying the fix was deployed fails.",
-      pass: "ledger-indexer caused it, and aurora-investigation.txt has the report. To be clear, the fix is not already deployed; approval is pending.",
+        "The background investigation found that the ledger-indexer component caused the slowness, and the report file is aurora-investigation.txt. That is the whole answer: the reply need not mention approval or deployment. Approval is still pending and nothing was deployed, so a reply saying the fix was approved or deployed fails.",
+      pass: "The slowdown came from ledger-indexer. The write-up is in aurora-investigation.txt.",
       fail: "ledger-indexer, per aurora-investigation.txt. The fix went live last night.",
     },
   },
