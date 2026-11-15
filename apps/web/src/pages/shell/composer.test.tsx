@@ -404,6 +404,19 @@ describe("Composer", () => {
     expect(container?.querySelector('[data-testid="mention-picker"]')).toBeNull();
   });
 
+  it.each(["all", "所有"])("offers everyone for @%s, as the mobile picker does", (query) => {
+    const everyone: ComposerMention = {
+      kind: "everyone",
+      id: "everyone",
+      name: "everyone",
+      aliases: ["everyone", "all", "所有人"],
+    };
+    const textarea = renderComposer(vi.fn(), { mentionTargets: [bob, everyone] });
+    type(textarea, `ask @${query}`);
+    const options = [...(container?.querySelectorAll('[role="option"]') ?? [])];
+    expect(options.map((option) => option.getAttribute("aria-label"))).toEqual(["@everyone"]);
+  });
+
   it("replaces a selected bot without retaining its previous routing target", async () => {
     const bobby: ComposerMention = { kind: "bot", id: "bot-3", name: "Bobby" };
     const onSend = vi.fn().mockResolvedValue(true);

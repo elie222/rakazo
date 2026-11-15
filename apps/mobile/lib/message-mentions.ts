@@ -1,7 +1,7 @@
 import { plainTextLinkParts } from "@rakazo/chat-ui/native";
 import type { BotAvatarSet } from "@rakazo/contracts";
 import type { MentionTextPart } from "@rakazo/core";
-import { displayName, splitMentionText } from "@rakazo/core";
+import { displayName, everyoneWords, groupMentionNames, splitMentionText } from "@rakazo/core";
 import type { ReactNode } from "react";
 import { createContext } from "react";
 
@@ -13,7 +13,7 @@ export const MessageMentionsContext = createContext<((id: string) => ReactNode) 
 /** A group member a sent message can name with `@Name`, or everyone in the group. */
 export type UserMentionTarget =
   | { kind: "bot"; id: string; name: string; color: string; avatarSet?: BotAvatarSet }
-  | { kind: "everyone"; id: "everyone"; name: "everyone" };
+  | { kind: "everyone"; id: "everyone"; name: string };
 
 /** Who a sent message's `@Name` can refer to; absent outside groups. */
 export const UserMentionsContext = createContext<
@@ -27,14 +27,21 @@ export const UserMentionsContext = createContext<
 /**
  * The targets a sent message can name: the group's members, plus everyone with two or more. A name
  * two members share, or a bot named everyone, stays plain text: the text alone cannot say which
- * one was meant.
+ * one was meant. The other words for everyone show only when the message wakes every member with
+ * them.
  */
 export function userMentionTargets(
   members: readonly { botId: string; name: string; color: string; avatarSet?: BotAvatarSet }[],
+  text: string,
 ): UserMentionTarget[] {
   const named = members.map((member) => ({ member, name: displayName(member.name, "Bot") }));
-  const everyone = members.length >= 2;
-  const counts = new Map<string, number>(everyone ? [["everyone", 1]] : []);
+  const names = named.map(({ name }) => name);
+  const written = new Set(groupMentionNames(text, names).map((name) => name.toLowerCase()));
+  const everyone =
+    members.length >= 2
+      ? everyoneWords(names).filter((word) => word === "everyone" || written.has(word))
+      : [];
+  const counts = new Map<string, number>(everyone.map((word) => [word, 1]));
   for (const { name } of named)
     counts.set(name.toLowerCase(), (counts.get(name.toLowerCase()) ?? 0) + 1);
   const targets: UserMentionTarget[] = named
@@ -46,7 +53,9 @@ export function userMentionTargets(
       color: member.color,
       avatarSet: member.avatarSet,
     }));
-  if (everyone) targets.unshift({ kind: "everyone", id: "everyone", name: "everyone" });
+  targets.unshift(
+    ...everyone.map((name) => ({ kind: "everyone" as const, id: "everyone" as const, name })),
+  );
   return targets;
 }
 

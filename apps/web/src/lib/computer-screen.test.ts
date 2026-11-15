@@ -7,7 +7,6 @@ import {
   loadComputerScreen,
   probeScreen,
   probeScreenStatus,
-  sameEmbeddedComputerScreen,
   screenFrameError,
   screenFrameMessage,
   screenFrameStarted,
@@ -91,20 +90,23 @@ describe("computer screen requests", () => {
     });
     expect(commit).toHaveBeenCalledExactlyOnceWith({ url: null, error: "Could not connect" });
   });
-});
 
-describe("sameEmbeddedComputerScreen", () => {
-  const screen = (code: string, viewOnly = "true", desktop = "ecd-1") =>
-    `embedded-screen://desktop?desktop_id=${desktop}&region_id=cn-hangzhou&auth_code=${code}&view_only=${viewOnly}`;
-
-  it("keeps a connected embedded screen when only its login code changes", () => {
-    expect(sameEmbeddedComputerScreen(screen("a"), screen("b"))).toBe(true);
-    expect(sameEmbeddedComputerScreen(screen("a"), screen("b", "false"))).toBe(false);
-    expect(sameEmbeddedComputerScreen(screen("a"), screen("b", "true", "ecd-2"))).toBe(false);
-    expect(sameEmbeddedComputerScreen(null, screen("b"))).toBe(false);
-    expect(
-      sameEmbeddedComputerScreen("http://127.0.0.1:5173/novnc/a", "http://127.0.0.1:5173/novnc/a"),
-    ).toBe(false);
+  it("hands on the server's word that a screen signs in once", async () => {
+    const commit = vi.fn();
+    await loadComputerScreen({
+      load: async () => ({
+        url: "https://screen.example/session",
+        singleUseSignIn: { screen: "desktop-1:view" },
+      }),
+      isCurrent: () => true,
+      commit,
+      fallbackError: "Could not connect",
+    });
+    expect(commit).toHaveBeenCalledExactlyOnceWith({
+      url: "https://screen.example/session",
+      singleUseSignIn: { screen: "desktop-1:view" },
+      error: null,
+    });
   });
 });
 

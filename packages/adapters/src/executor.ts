@@ -1245,7 +1245,12 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         const paymentWallet = deps.paymentWallet;
         const paymentWalletEnabled = paymentWallet
           ? await paymentWalletConnected(
-              { prisma: deps.prisma, secretStore: deps.secretStore, paymentWallet },
+              {
+                prisma: deps.prisma,
+                secretStore: deps.secretStore,
+                jobs: deps.jobs,
+                paymentWallet,
+              },
               run.userId,
             )
           : false;

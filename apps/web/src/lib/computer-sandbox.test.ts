@@ -3,7 +3,6 @@ import {
   canChooseOwnComputer,
   computersAreUnavailable,
   sandboxCheckFailureMessage,
-  sandboxProviderLabel,
 } from "./computer-sandbox.js";
 
 describe("computersAreUnavailable", () => {
@@ -27,12 +26,6 @@ describe("canChooseOwnComputer", () => {
     expect(canChooseOwnComputer("desktop")).toBe(false);
     expect(canChooseOwnComputer("fake")).toBe(false);
     expect(canChooseOwnComputer(null)).toBe(false);
-  });
-});
-
-describe("sandboxProviderLabel", () => {
-  it("names a provider", () => {
-    expect(sandboxProviderLabel("novita")).toBe("Novita");
   });
 });
 

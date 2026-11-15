@@ -502,6 +502,8 @@ export interface SecretStore {
   load(ref: string, context: SecretContext): Promise<string>;
   /** Inline encrypted refs have no remote resource; removal is owned by persistence. */
   delete(ref: string, context: SecretContext): Promise<void>;
+  /** Whether the ref names a remote resource, which stays until `delete` removes it. */
+  isRemote(ref: string): boolean;
   redact(value: string): string;
   onChange(listener: SecretChangeListener): () => void;
   start(): Promise<void>;

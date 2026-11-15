@@ -5011,6 +5011,20 @@ describe("computer screen url", () => {
     });
   });
 
+  it("says a screen signs in once, and names the view beside what it shows", async () => {
+    const { response } = await callScreenUrl(async () => ({
+      url: "embedded-screen://desktop?code=once",
+      singleUseSignIn: { screen: "desktop-1" },
+    }));
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      json: {
+        url: "embedded-screen://desktop?code=once&view_only=true",
+        singleUseSignIn: { screen: "desktop-1:view" },
+      },
+    });
+  });
+
   it("clears the row instead of 500ing when the provider says the sandbox is gone", async () => {
     const { response, updateMany, endRun } = await callScreenUrl(() =>
       Promise.reject(

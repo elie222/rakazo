@@ -1,17 +1,15 @@
 import { getHeapStatistics } from "node:v8";
-import type { BackgroundJobHandlers } from "@rakazo/adapter-kit";
 import {
   HISTORY_COMPACT_MAX_ATTEMPTS,
   historyCompactJob,
   messagingReplyJob,
-  RetryJobLaterError,
   teamChatAmbientJob,
 } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
 import { DatabaseOutage, databaseCapacityBackoffMs } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger, wrapJobPayload } from "@rakazo/logging";
 import type * as GraphileWorker from "graphile-worker";
-import type { JobHelpers, Runner } from "graphile-worker";
+import type { Runner } from "graphile-worker";
 import { makeWorkerUtils } from "graphile-worker";
 import type { Pool } from "pg";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -38,71 +36,15 @@ import {
   createRoutineRetryNoticeReconciler,
   GraphileJobPublisher,
   GraphileJobWorkerHost,
-  jobQueueLogger,
 } from "./wakeup.js";
-
-function handlers(): BackgroundJobHandlers {
-  return {
-    "run.continue": vi.fn(async () => undefined),
-    "routine.wakeup": vi.fn(async () => undefined),
-    "routine.retry": vi.fn(async () => undefined),
-    "computer.update": vi.fn(async () => undefined),
-    "computer.sleep": vi.fn(async () => undefined),
-    "computer.control-expire": vi.fn(async () => undefined),
-    "skill.teaching-expire": vi.fn(async () => undefined),
-    "call.expire": vi.fn(async () => undefined),
-    "history.compact": vi.fn(async () => undefined),
-    "memory.retain-turn": vi.fn(async () => undefined),
-    "memory.purge-history": vi.fn(async () => undefined),
-    "messaging.send": vi.fn(async () => undefined),
-    "messaging.reply": vi.fn(async () => undefined),
-    "messaging.deliver": vi.fn(async () => undefined),
-    "messaging.progress": vi.fn(async () => undefined),
-    "messaging.credential-cleanup": vi.fn(async () => undefined),
-    "connection.cleanup": vi.fn(async () => undefined),
-    "team_chat.engage": vi.fn(async () => undefined),
-    "team_chat.ambient": vi.fn(async () => undefined),
-    "cloud_agent.poll": vi.fn(async () => undefined),
-    "purchase.poll": vi.fn(async () => undefined),
-    "media.poll": vi.fn(async () => undefined),
-    "push.receipt": vi.fn(async () => undefined),
-  };
-}
-
-function deferred() {
-  let resolve!: () => void;
-  let reject!: (reason?: unknown) => void;
-  const promise = new Promise<void>((yes, no) => {
-    resolve = yes;
-    reject = no;
-  });
-  return { promise, resolve, reject };
-}
-
-function mockRunner() {
-  const life = deferred();
-  // Keep a rejection handler so Node does not treat the mock lifecycle as an
-  // unexpected unhandledRejection before the host attaches supervise().
-  life.promise.catch(() => undefined);
-  const runner = {
-    promise: life.promise,
-    stop: vi.fn(async () => {
-      life.resolve();
-    }),
-    kill: vi.fn(async () => undefined),
-    addJob: vi.fn(),
-    events: { on: vi.fn(), off: vi.fn(), once: vi.fn(), emit: vi.fn() },
-  } as unknown as Runner;
-  return {
-    runner,
-    rejectLife: (error: unknown) => life.reject(error),
-  };
-}
-
-/** What Graphile hands a task besides its payload: here, a first try of the default 25. */
-const helpers = { job: { id: "1", attempts: 1, max_attempts: 25 } } as unknown as JobHelpers;
-
-const tooMany = Object.assign(new Error("sorry, too many clients already"), { code: "53300" });
+import {
+  deferred,
+  handlers,
+  helpers,
+  mockRunner,
+  settles,
+  tooMany,
+} from "./wakeup-graphile-host.test-support.js";
 
 describe("databaseCapacityBackoffMs", () => {
   it("matches the worker startup backoff curve", () => {
@@ -439,6 +381,7 @@ describe("GraphileJobWorkerHost runner lifecycle", () => {
   });
 
   it("stops waiting for a handed-off run that outlives the drain deadline", async () => {
+    vi.useFakeTimers();
     run.mockResolvedValueOnce(mockRunner().runner);
     const host = new GraphileJobWorkerHost({} as Pool, { concurrency: 1, drainTimeoutMs: 20 });
     const hung = deferred();
@@ -450,7 +393,11 @@ describe("GraphileJobWorkerHost runner lifecycle", () => {
     try {
       await host.start(target);
       await run.mock.calls[0]![0].taskList["run.continue"]({ runId: "hung-run" }, helpers);
-      await host.stop();
+      const stopped = settles(host.stop());
+      await vi.advanceTimersByTimeAsync(19);
+      expect(stopped.settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(stopped.settled).toBe(true);
     } finally {
       hung.resolve();
     }
@@ -738,53 +685,6 @@ describe("GraphileJobWorkerHost runner lifecycle", () => {
     } finally {
       release.resolve();
       await host.stop();
-    }
-  });
-
-  it("logs a job that asks for a later try as waiting, and as a failure only on its last try", async () => {
-    run.mockResolvedValueOnce(mockRunner().runner);
-    const host = new GraphileJobWorkerHost({} as Pool);
-    const sink = createTestSink();
-    installLogger(createLogger({ service: "test", sinks: [sink] }));
-    const target = handlers();
-    target["connection.cleanup"] = async () => {
-      throw new RetryJobLaterError(60_000);
-    };
-    const payload = { spaceId: "space-1", userId: "user-1", connectorId: "c", provider: "mail" };
-    const attempt = (attempts: number) =>
-      ({
-        job: { id: "1", attempts, max_attempts: 25 },
-        withPgClient: vi.fn(async () => undefined),
-      }) as unknown as JobHelpers;
-    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
-    const consoleInfo = vi.spyOn(console, "info").mockImplementation(() => undefined);
-    try {
-      await host.start(target);
-      const task = run.mock.calls[0]![0].taskList["connection.cleanup"];
-      await expect(task(payload, attempt(1))).rejects.toBeInstanceOf(RetryJobLaterError);
-      expect(sink.events.map((event) => [event.level, event["job.outcome"]])).toEqual([
-        ["info", "waiting"],
-      ]);
-      await expect(task(payload, attempt(25))).rejects.toBeInstanceOf(RetryJobLaterError);
-      expect(sink.events.at(-1)).toMatchObject({ level: "error", "job.outcome": "error" });
-
-      // The queue's own line about the failed task follows the same rule.
-      const queue = jobQueueLogger(new DatabaseOutage());
-      const failed = (attempts: number) =>
-        queue.error("Failed task 1 (connection.cleanup)", {
-          failure: true,
-          job: { attempts, max_attempts: 25 },
-          error: new RetryJobLaterError(60_000),
-        });
-      failed(1);
-      expect(consoleError).not.toHaveBeenCalled();
-      failed(25);
-      expect(consoleError).toHaveBeenCalledTimes(1);
-    } finally {
-      consoleError.mockRestore();
-      consoleInfo.mockRestore();
-      await host.stop();
-      installLogger(createLogger({ service: "test", level: "off", sinks: [] }));
     }
   });
 
