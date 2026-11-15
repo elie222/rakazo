@@ -327,17 +327,7 @@ export async function fetchGitHubRepo(
     const skillDocument =
       (hasManifest && /^skills\/[^/]+\/SKILL\.md$/.test(path)) ||
       (!hasManifest && (singleSkillMode ? path === "SKILL.md" : isSkillDocumentPath(path)));
-    const standaloneResource =
-      singleSkillMode &&
-      skillDocuments.some((skill) => {
-        const folder = skillFolder(skill.path);
-        return (
-          isWithinSkillFolder(path, folder) &&
-          path !== skill.path &&
-          isAgentSkillResourcePath(folder ? path.slice(folder.length) : path)
-        );
-      });
-    if (standardComponent || skillDocument || standaloneResource) {
+    if (standardComponent || skillDocument) {
       const limit = catalogMode ? MAX_CATALOG_FILES : MAX_FILES;
       if (!addWanted(path, limit) && !catalogMode && (entry.size ?? 0) <= MAX_FILE_BYTES) {
         throw new Error("Plugin directory has too many files");
@@ -366,7 +356,7 @@ export async function fetchGitHubRepo(
 
   await download(wanted);
 
-  if (catalogMode) {
+  if (!hasManifest) {
     const resourceWanted: string[] = [];
     const scheduled = new Set<string>();
     const resources = new Map<string, string[]>();

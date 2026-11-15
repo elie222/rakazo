@@ -60,15 +60,16 @@ export function isAgentSkillResourcePath(path: string): boolean {
 
 export function referencedSkillResources(body: string, siblings: readonly string[]): string[] {
   const mentionedDirectories = new Set(
-    SKILL_RESOURCE_DIRS.filter((directory) => body.includes(`${directory}/`)),
+    SKILL_RESOURCE_DIRS.filter((directory) =>
+      new RegExp(`(?:^|[^\\w./-])${directory}/(?=$|[^\\w./-]|\\.(?:$|\\s))`).test(body),
+    ),
   );
   const explicitlyNamed = new Set(siblings.filter((path) => bodyReferencesSkillPath(body, path)));
-  const explicitDirectories = new Set([...explicitlyNamed].map((path) => path.split("/")[0] ?? ""));
   return siblings.filter((path) => {
     const first = path.split("/")[0] ?? "";
     return (
       explicitlyNamed.has(path) ||
-      (mentionedDirectories.has(first) && !explicitDirectories.has(first)) ||
+      mentionedDirectories.has(first) ||
       (body.includes("{baseDir}") && SKILL_RESOURCE_DIRS.includes(first))
     );
   });
