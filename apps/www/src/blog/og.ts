@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { OgPage } from "../og-pages";
-import type { BlogCategory } from "./indexability";
+import type { BlogCategory } from "./categories";
 import { categoryFromFrontmatter, FRONTMATTER } from "./indexability";
 
 const blogDir = join(dirname(fileURLToPath(import.meta.url)), "../content/blog");

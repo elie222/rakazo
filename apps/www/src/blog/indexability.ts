@@ -1,20 +1,11 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-
-export const BLOG_CATEGORIES = ["comparisons", "guides", "roundups", "product"] as const;
-
-export type BlogCategory = (typeof BLOG_CATEGORIES)[number];
+import type { BlogCategory } from "./categories";
+import { BLOG_CATEGORIES, categoryPath } from "./categories";
 
 /** A category page stays out of the index until it has this many posts. */
 export const CATEGORY_INDEX_MIN = 3;
-
-export const CATEGORY_LABEL: Record<BlogCategory, string> = {
-  comparisons: "Comparisons",
-  guides: "Guides",
-  roundups: "Roundups",
-  product: "Product",
-};
 
 const blogDir = join(dirname(fileURLToPath(import.meta.url)), "../content/blog");
 
@@ -56,10 +47,6 @@ export function categoryCounts(): Map<BlogCategory, number> {
 
 export function categoryIsIndexed(category: BlogCategory): boolean {
   return categoryIsIndexedAtCount(categoryCounts().get(category) ?? 0);
-}
-
-export function categoryPath(category: BlogCategory): string {
-  return `/blog/${category}/`;
 }
 
 function normalizePath(pathname: string): string {
