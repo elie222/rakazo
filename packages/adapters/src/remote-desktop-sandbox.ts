@@ -170,7 +170,9 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
 
   constructor(
     private readonly config: {
-      id: "e2b" | "novita" | "instabox";
+      id: ComputerRef["kind"];
+      /** Header carrying the sandbox's traffic token, where the provider's gateway requires one. */
+      trafficAccessHeader?: string;
       label: string;
       apiKey: string;
       sdk: RemoteDesktopSdk;
@@ -385,15 +387,16 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
       await this.desktops.connectTerminal(computer, request, context),
     );
   }
-  /** Restricted E2B sandboxes require this header; a missing token stays off the request. */
+  /** A missing token stays off the request. */
   private withTrafficAccess<T extends { url: string | null }>(
     computer: ComputerRef,
     session: T,
   ): T & { headers?: Record<string, string> } {
-    if (this.config.id !== "e2b") return session;
+    const header = this.config.trafficAccessHeader;
+    if (!header) return session;
     const token = this.boxes.get(sandboxId(computer))?.trafficAccessToken;
     if (!token) return session;
-    return { ...session, headers: { "e2b-traffic-access-token": token } };
+    return { ...session, headers: { [header]: token } };
   }
   async setScreenControl(
     computer: ComputerRef,

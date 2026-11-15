@@ -26,6 +26,7 @@ import {
   recordTeachingInputEvent,
   releaseComputerExecutionLease,
   releaseTeachingComputerControlForBot,
+  sandboxKindCapabilities,
   screenLeaseIdForRun,
 } from "@rakazo/adapters";
 import type { Actor, MessageBlock, TaughtSkill } from "@rakazo/contracts";
@@ -124,7 +125,7 @@ async function ensureGraphicalComputer(
   actor: Actor,
   bot: Awaited<ReturnType<ReturnType<typeof createRepos>["getBot"]>>,
 ) {
-  if (bot.computer?.kind === "desktop") {
+  if (sandboxKindCapabilities(bot.computer?.kind).runsOnUserMachine) {
     throw new ORPCError("BAD_REQUEST", {
       message: "Teaching needs a graphical sandbox computer, not a desktop host",
     });
@@ -170,7 +171,7 @@ async function ensureGraphicalComputer(
   if (!bot.computer?.providerRef || bot.computer.state !== "running") {
     throw new ORPCError("BAD_REQUEST", { message: "Computer must be running to teach" });
   }
-  if (bot.computer.kind === "desktop") {
+  if (sandboxKindCapabilities(bot.computer.kind).runsOnUserMachine) {
     throw new ORPCError("BAD_REQUEST", {
       message: "Teaching needs a graphical sandbox computer, not a desktop host",
     });

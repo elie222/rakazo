@@ -32,6 +32,8 @@ export class E2BSandboxProvider extends RemoteDesktopSandboxProvider {
   constructor(apiKey: string, sdk: RemoteDesktopSdk = e2bSdk) {
     super({
       id: "e2b",
+      // Restricted sandboxes require this header.
+      trafficAccessHeader: "e2b-traffic-access-token",
       label: "E2B",
       apiKey,
       sdk,
