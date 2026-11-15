@@ -45,6 +45,8 @@ export default function AddApprovalRule() {
         matchKind: choice.matchKind,
         matchValue: choice.matchValue,
       }),
+    // The picker leaves out tools that have a rule, so its list is read again with the save.
+    stale: [rulesRead.queryKey],
     onSaved: () => {
       // Opened by a link as the first screen, there is nothing to go back to.
       if (router.canGoBack()) router.back();

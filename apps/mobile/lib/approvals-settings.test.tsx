@@ -370,6 +370,11 @@ it("adds a tool from the picker, which searches and leaves out tools that have a
     { scope: "account", effect: "require_approval", matchKind: "tool", matchValue: "shell" },
     pinnedTo("space-selected"),
   );
+  // The list the picker builds its choices from is read again once the rule is saved.
+  const procs = state.rpc.mock.calls.map(([proc]) => proc);
+  expect(procs.lastIndexOf("approvalRules/list")).toBeGreaterThan(
+    procs.indexOf("approvalRules/set"),
+  );
   expect(state.router.back).toHaveBeenCalled();
 });
 
