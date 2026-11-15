@@ -351,7 +351,13 @@ ConfigMap이나 키가 없으면 보호장치 없이 진행하는 대신 Job이 
 완료된 Job의 로그를 보관한 다음 Job을 교체합니다.
 
 ```sh
-kubectl -n rakazo wait --for=condition=complete job/rakazo-migrate --timeout=300s
+# Proceed only when the Job is terminal; never delete a running Job.
+terminal=$(kubectl -n rakazo get job rakazo-migrate -o jsonpath='{.status.conditions[?(@.status=="True")].type}')
+case "$terminal" in
+  Complete|Failed) ;;
+  *) echo "Migration is not terminal; stop here."; exit 1 ;;
+esac
+# For Failed, inspect the logs and fix the cause before deleting and retrying.
 kubectl -n rakazo logs job/rakazo-migrate > migration-previous.log
 # 위 두 명령이 성공한 경우에만 계속하세요. 실행 중인 Job은 삭제하지 마세요.
 kubectl -n rakazo delete job rakazo-migrate

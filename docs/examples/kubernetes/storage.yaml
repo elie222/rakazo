@@ -28,3 +28,19 @@ spec:
   resources:
     requests:
       storage: 30Gi
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: rakazo-web-assets
+  labels:
+    rakazo.example/phase: foundation
+  namespace: rakazo
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 2Gi

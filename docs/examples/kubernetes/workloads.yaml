@@ -260,12 +260,19 @@ spec:
             - --port
             - "5173"
           workingDir: /app/apps/web
+          volumeMounts:
+            - name: web-assets
+              mountPath: /app/apps/web/asset-archive
           ports:
             - containerPort: 5173
           readinessProbe:
             tcpSocket:
               port: 5173
             periodSeconds: 5
+      volumes:
+        - name: web-assets
+          persistentVolumeClaim:
+            claimName: rakazo-web-assets
       terminationGracePeriodSeconds: 60
 ---
 apiVersion: v1

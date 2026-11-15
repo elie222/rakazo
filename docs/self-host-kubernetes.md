@@ -380,13 +380,19 @@ both digests while restoring the old app configuration, so either running releas
 can still start computers.
 
 Update the pinned images. From the example directory, after applying the foundation
-phase, archive the completed migration Job's logs and remove that Job before
+phase, archive the terminal migration Job's logs and remove that Job before
 creating its replacement:
 
 ```sh
-kubectl -n rakazo wait --for=condition=complete job/rakazo-migrate --timeout=300s
+# Proceed only when the Job is terminal; never delete a running Job.
+terminal=$(kubectl -n rakazo get job rakazo-migrate -o jsonpath='{.status.conditions[?(@.status=="True")].type}')
+case "$terminal" in
+  Complete|Failed) ;;
+  *) echo "Migration is not terminal; stop here."; exit 1 ;;
+esac
+# For Failed, inspect the logs and fix the cause before deleting and retrying.
 kubectl -n rakazo logs job/rakazo-migrate > migration-previous.log
-# Continue only if both commands above succeed. Never delete a running Job.
+# Continue only if the terminal check and log capture succeed.
 kubectl -n rakazo delete job rakazo-migrate
 kubectl apply -k . -l rakazo.example/phase=migrate
 kubectl -n rakazo wait --for=condition=complete job/rakazo-migrate --timeout=300s
