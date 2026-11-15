@@ -911,6 +911,33 @@ describe("Railway computers", () => {
     expect(url.searchParams.has("token")).toBe(false);
   });
 
+  it("opens a terminal on the screen domain, behind its own token", async () => {
+    sandbox.exec.mockResolvedValue({
+      stdout: "RAKAZO_DESKTOP=0:screen-token",
+      stderr: "",
+      exitCode: 0,
+      timedOut: false,
+    });
+    const terminal = await provider.connectTerminal(
+      computer,
+      { controlToken: "control-lease" },
+      ctx,
+    );
+    const url = new URL(terminal.url);
+
+    expect(url.origin).toBe("https://screen-test.up.railway.app");
+    const token = new URLSearchParams(url.searchParams.get("path")!.split("?")[1]).get("token");
+    expect(token).toMatch(/^[0-9a-f-]{36}$/);
+    // The shell server starts in the sandbox and joins the gateway on the port with the domain.
+    const started = sandbox.exec.mock.calls
+      .map(([command]) => String(command))
+      .findLast((command) => command.includes("rakazo-terminal.py"));
+    expect(started).toContain(String(token));
+    expect(started).toContain("/tmp/rakazo/sockets/terminal-");
+    expect(started).toContain("0.0.0.0:6080 8>&-");
+    expect(started).toContain("/home/rakazo");
+  });
+
   it.each([
     "127.0.0.1",
     "localhost",
