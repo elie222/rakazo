@@ -8,7 +8,8 @@ export const exclude = ["**/*.{test,spec}.*", "**/*{.,-}test-support.*", "**/tes
 // White space and comments may sit between `catch`, its binding and its block.
 const GAP = "(?:\\s|\\/\\*[^]*?\\*\\/|\\/\\/[^\\n]*)*";
 const CATCH_CLAUSE = new RegExp(`catch${GAP}(?:\\([^)]*\\)${GAP})?\\{`, "y");
-const CATCH_CALLBACK = /\.catch\s*\(/y;
+// With or without a type argument: `.catch<unknown>(`.
+const CATCH_CALLBACK = /\.catch\s*(?:<[^>()]*>\s*)?\(/y;
 const THROWN = /new\s+ORPCError\b/y;
 // `>` is the end of an arrow: `(s) => /x/.test(s)`.
 const REGEX_MAY_FOLLOW = /(?:^|[(,=:[!&|?{};>]|\breturn)\s*$/;

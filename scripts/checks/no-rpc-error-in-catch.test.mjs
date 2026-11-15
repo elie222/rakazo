@@ -113,3 +113,10 @@ test("reads a regex after an arrow as a regex, so a bracket in it closes nothing
 }`;
   assert.deepEqual(lines(text), [5]);
 });
+
+test("counts a throw in a .catch() callback that has a type argument", () => {
+  const text = `const row = await create().catch<unknown>((error) => {
+  throw new ORPCError("CONFLICT");
+});`;
+  assert.deepEqual(lines(text), [2]);
+});
