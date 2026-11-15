@@ -3,6 +3,38 @@ import { canonicalPiProviderId } from "@rakazo/contracts";
 
 /** Apply provider protocol capabilities before catalog and runtime selection. */
 export function applyPiModelCompatibility(models: MutableModels): MutableModels {
+  // Pi 1.5.x predates Hydrogen. Keep this override only until the bundled catalog catches up.
+  // https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/4-hydrogen
+  for (const id of ["google", "google-vertex"]) {
+    const provider = models.getProvider?.(id);
+    const sibling = provider?.getModels().find((model) => model.id === "gemini-4-argon");
+    if (
+      !provider ||
+      !sibling ||
+      provider.getModels().some((model) => model.id === "gemini-4-hydrogen")
+    )
+      continue;
+    const hydrogen = {
+      ...sibling,
+      id: "gemini-4-hydrogen",
+      name: "Gemini 4 Hydrogen",
+      contextWindow: 1_048_576,
+      // A single streaming segment; automatic long-decode continuation is not implemented.
+      maxTokens: 65_536,
+      cost: { input: 1.5, output: 7.5, cacheRead: 0.075, cacheWrite: 0 },
+      thinkingLevelMap: {
+        off: null,
+        minimal: null,
+        low: "low",
+        medium: "medium",
+        high: "high",
+        xhigh: "xhigh",
+        max: null,
+      },
+    };
+    const entries = [...provider.getModels(), hydrogen];
+    models.setProvider({ ...provider, getModels: () => entries });
+  }
   const provider = models.getProvider?.("amazon-bedrock");
   if (provider) {
     const guardedId = "in.anthropic.claude-haiku-4-5-20251001-v1:0";

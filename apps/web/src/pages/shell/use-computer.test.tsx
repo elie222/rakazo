@@ -398,6 +398,163 @@ it("keeps the replaced screen over its successor until that one connects", async
   expect(frames[0]!.dataset.src).toContain("/control/");
 });
 
+it("lets this tab's own take or release skip one matching live event", () => {
+  state.expectOwnControlEvent("bot-1", "computer.takeover.granted");
+  expect(state.isOwnControlEvent("bot-2", "computer.takeover.granted")).toBe(false);
+  expect(state.isOwnControlEvent("bot-1", "computer.takeover.released")).toBe(false);
+  expect(state.isOwnControlEvent("bot-1", "computer.takeover.granted")).toBe(true);
+  expect(state.isOwnControlEvent("bot-1", "computer.takeover.granted")).toBe(false);
+  state.expectOwnControlEvent("bot-1", "computer.takeover.released");
+  vi.advanceTimersByTime(10_001);
+  expect(state.isOwnControlEvent("bot-1", "computer.takeover.released")).toBe(false);
+  // A takeover that returned an existing lease sent no event; a later lease's event still reads.
+  state.expectOwnControlEvent("bot-1", "computer.takeover.granted", "lease-1");
+  expect(state.isOwnControlEvent("bot-1", "computer.takeover.granted", "lease-2")).toBe(false);
+  expect(state.isOwnControlEvent("bot-1", "computer.takeover.granted", "lease-1")).toBe(true);
+  // A release that sent no event is forgotten once someone else's grant arrives.
+  state.expectOwnControlEvent("bot-1", "computer.takeover.released");
+  expect(state.isOwnControlEvent("bot-1", "computer.takeover.granted", "lease-3")).toBe(false);
+  expect(state.isOwnControlEvent("bot-1", "computer.takeover.released", "lease-3")).toBe(false);
+});
+
+it("keeps a quick release expectation when the take response arrives", async () => {
+  await act(async () => {
+    state.expectOwnControlEvent("bot-1", "computer.takeover.granted");
+    state.isOwnControlEvent("bot-1", "computer.takeover.granted", "lease-1");
+    expect(state.ownControlLease("bot-1")).toBe("lease-1");
+    state.expectOwnControlEvent("bot-1", "computer.takeover.released", "lease-1");
+    state.expectOwnControlEvent("bot-1", "computer.takeover.granted", "lease-1");
+    expect(state.isOwnControlEvent("bot-1", "computer.takeover.released", "lease-1")).toBe(true);
+  });
+});
+
+it("reuses the early grant screen read after the takeover response", async () => {
+  screenUrl.mockClear();
+  await act(async () => {
+    state.expectOwnControlEvent("bot-1", "computer.takeover.granted");
+    state.expectOwnControlEvent("bot-2", "computer.takeover.released", "lease-2");
+    expect(state.isOwnControlEvent("bot-1", "computer.takeover.granted", "lease-1")).toBe(true);
+    state.expectOwnControlEvent("bot-1", "computer.takeover.granted", "lease-1");
+    await state.refreshOwnControlScreen("bot-1");
+  });
+  expect(screenUrl).toHaveBeenCalledTimes(1);
+  await act(async () => {
+    state.expectOwnControlEvent("bot-1", "computer.takeover.granted");
+    await state.refreshOwnControlScreen("bot-1");
+  });
+  expect(screenUrl).toHaveBeenCalledTimes(2);
+});
+
+it("still reads the screen when the refresh after this tab's release fails", async () => {
+  const release = vi.fn(async () => ({ ok: true as const }));
+  let controls!: ReturnType<typeof useComputerControls>;
+  function Controls() {
+    controls = useComputerControls({
+      rpc: { computer: { release, screenUrl } } as never,
+      state,
+      panel: "computer",
+      active: undefined,
+      bots: [],
+      botsRef: { current: [] },
+      activeBotId: { current: "bot-1" },
+      activeGroupId: { current: undefined },
+      runStatus: undefined,
+      sandboxProvider: undefined,
+      refreshThread: vi.fn(async () => {
+        throw new Error("offline");
+      }),
+      refreshGroupThread: vi.fn(),
+      onUpgrade: vi.fn(),
+    });
+    return null;
+  }
+  await act(async () =>
+    root.render(
+      <>
+        <Harness />
+        <Controls />
+      </>,
+    ),
+  );
+  screenUrl.mockClear();
+  await act(async () => {
+    await controls.releaseComputer();
+  });
+  expect(release).toHaveBeenCalledWith({ botId: "bot-1", reason: undefined });
+  expect(state.isOwnControlEvent("bot-1", "computer.takeover.released")).toBe(false);
+  expect(screenUrl).toHaveBeenCalledTimes(1);
+});
+
+it("reads the new screen beside the thread refresh after this tab releases control", async () => {
+  const release = vi.fn(async () => ({ ok: true as const }));
+  let finishThread!: () => void;
+  const refreshThread = vi.fn(
+    () =>
+      new Promise<never>((resolve) => {
+        finishThread = () => resolve({} as never);
+      }),
+  );
+  let controls!: ReturnType<typeof useComputerControls>;
+  function Controls() {
+    controls = useComputerControls({
+      rpc: { computer: { release, screenUrl } } as never,
+      state,
+      panel: "computer",
+      active: undefined,
+      bots: [],
+      botsRef: { current: [] },
+      activeBotId: { current: "bot-1" },
+      activeGroupId: { current: undefined },
+      runStatus: undefined,
+      sandboxProvider: undefined,
+      refreshThread,
+      refreshGroupThread: vi.fn(),
+      onUpgrade: vi.fn(),
+    });
+    return null;
+  }
+  await act(async () =>
+    root.render(
+      <>
+        <Harness />
+        <Controls />
+      </>,
+    ),
+  );
+  screenUrl.mockClear();
+  let released!: Promise<void>;
+  await act(async () => {
+    released = controls.releaseComputer();
+  });
+  // The thread refresh is still out, and it was told to leave the screen alone.
+  expect(refreshThread).toHaveBeenCalledWith("bot-1", undefined, { readScreen: false });
+  expect(screenUrl).toHaveBeenCalledTimes(1);
+  await act(async () => {
+    finishThread();
+    await released;
+  });
+  expect(screenUrl).toHaveBeenCalledTimes(1);
+});
+
+it("does not recover the active chat screen over another computer pane", async () => {
+  act(() => {
+    state.computerBotIdRef.current = "bot-other";
+  });
+  screenUrl.mockClear();
+  await act(async () => {
+    await state.forgetOwnControlEvent("bot-1");
+  });
+  expect(screenUrl).not.toHaveBeenCalled();
+});
+
+it("reads no screen for a failed control call of a bot that is no longer shown", async () => {
+  state.expectOwnControlEvent("bot-2", "computer.takeover.granted");
+  screenUrl.mockClear();
+  await act(async () => state.forgetOwnControlEvent("bot-2"));
+  expect(state.isOwnControlEvent("bot-2", "computer.takeover.granted")).toBe(false);
+  expect(screenUrl).not.toHaveBeenCalled();
+});
+
 it("closes the computer view on Escape, but not on the Escape that ends an IME composition", async () => {
   function Controls() {
     state = useComputerState({
@@ -498,9 +655,57 @@ async function renderTakingControl(
     heartbeat,
     held,
     takeControl: () => controls.openComputer("bot-1", true),
+    openView: () => controls.openComputer("bot-1", false),
     handBack: (reason?: "done" | "skipped") => controls.releaseComputer(reason),
   };
 }
+
+it("takes control when a view-only boot is already in progress", async () => {
+  const takeover = vi.fn(async () => ({ leaseId: "lease-1", expiresAt: "" }));
+  const { openView, takeControl } = await renderTakingControl(takeover);
+  await act(async () => {
+    const opening = openView();
+    const taking = takeControl();
+    await Promise.all([opening, taking]);
+  });
+  expect(takeover).toHaveBeenCalledTimes(1);
+});
+
+it("ignores a second take while the first control request is pending", async () => {
+  let finish!: (value: { leaseId: string; expiresAt: string }) => void;
+  const takeover = vi.fn(
+    () =>
+      new Promise<{ leaseId: string; expiresAt: string }>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const { takeControl } = await renderTakingControl(takeover);
+  let first!: Promise<boolean>;
+  await act(async () => {
+    first = takeControl();
+  });
+  await act(async () => {
+    await takeControl();
+  });
+  expect(takeover).toHaveBeenCalledTimes(1);
+  expect(state.isOwnControlEvent("bot-1", "computer.takeover.granted", "lease-1")).toBe(true);
+  await act(async () => {
+    finish({ leaseId: "lease-1", expiresAt: "" });
+    await first;
+  });
+});
+
+it("matches a delayed release only to the lease handed back", async () => {
+  const { takeControl, handBack } = await renderTakingControl();
+  await act(async () => {
+    await takeControl();
+  });
+  await act(async () => {
+    await handBack();
+  });
+  expect(state.isOwnControlEvent("bot-1", "computer.takeover.released", "other-lease")).toBe(false);
+  expect(state.isOwnControlEvent("bot-1", "computer.takeover.released", "lease-1")).toBe(true);
+});
 
 it("hands its lease back when the computer closes, and keeps it while open", async () => {
   const { release, heartbeat, takeControl } = await renderTakingControl();
@@ -590,6 +795,27 @@ it("hands back whatever control the person holds when Hand back is pressed", asy
   });
   // Not scoped to this page's lease: the control may have come from another tab or teaching.
   expect(release).toHaveBeenCalledWith({ botId: "bot-1", reason: undefined });
+});
+
+it("skips only the live event of the lease this tab's takeover got", async () => {
+  const { takeControl } = await renderTakingControl();
+  await act(async () => {
+    await takeControl();
+  });
+  expect(state.isOwnControlEvent("bot-1", "computer.takeover.granted", "lease-2")).toBe(false);
+  expect(state.isOwnControlEvent("bot-1", "computer.takeover.granted", "lease-1")).toBe(true);
+});
+
+it("reads the screen for the live event of a takeover that failed", async () => {
+  const { takeControl } = await renderTakingControl(async () => {
+    throw new Error("offline");
+  });
+  await act(async () => {
+    await takeControl();
+  });
+  expect(state.isOwnControlEvent("bot-1", "computer.takeover.granted", "lease-1")).toBe(false);
+  expect(state.computerErrorFromScreen).toBe(false);
+  expect(state.computerError).toBeTruthy();
 });
 
 it("offers Upgrade instead of a retry once the computer hours are spent", async () => {

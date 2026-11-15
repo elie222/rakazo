@@ -5,8 +5,7 @@ import type {
   ProductAnalytics,
   SandboxProvider,
 } from "@rakazo/adapter-kit";
-import { runContinueJob } from "@rakazo/adapter-kit";
-import { notifyMemberMessage } from "@rakazo/adapters";
+import { notifyMemberMessage, wakeRun } from "@rakazo/adapters";
 import type { Actor, GroupMember, MessageBlock, ReplyPreview } from "@rakazo/contracts";
 import {
   GROUP_MEMBER_MIN,
@@ -165,14 +164,7 @@ export async function enqueueRunsNeedingContinue(
   runs: Array<{ id: string; status: string }>,
 ) {
   await Promise.all(
-    runs
-      .filter((run) => RUNS_NEEDING_CONTINUE.has(run.status))
-      .map((run) =>
-        jobs.enqueue(runContinueJob(run.id)).catch((error) => {
-          // The queued run is durable; the reconciler repairs a missed immediate wake.
-          getLogger().error("thread send enqueue", error);
-        }),
-      ),
+    runs.filter((run) => RUNS_NEEDING_CONTINUE.has(run.status)).map((run) => wakeRun(jobs, run.id)),
   );
 }
 
