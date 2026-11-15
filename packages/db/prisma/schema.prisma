@@ -36,6 +36,8 @@ model User {
   signupUtmContent             String?
   signupUtmTerm                String?
   signupReferringDomain        String?
+  /// The partner program click this account signed up from; its organizations' plan payments credit that partner.
+  signupPartnerClickId         String?
   image                       String?
   createdAt                   DateTime                     @default(now())
   updatedAt                   DateTime                     @updatedAt
@@ -478,6 +480,7 @@ model Organization {
   referralCode ReferralCode?
   referredBy   Referral?           @relation("ReferredOrganization")
   referrals    Referral[]          @relation("ReferrerOrganization")
+  partnerSales PartnerSale[]
 
   @@unique([slug])
   @@map("organization")
@@ -537,6 +540,18 @@ model Referral {
 
   @@index([referrerOrganizationId])
   @@map("referrals")
+}
+
+/// A plan payment reported to the partner program, so each is reported, and refunded, once.
+model PartnerSale {
+  invoiceId      String       @id
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdAt      DateTime     @default(now())
+  refundedAt     DateTime?
+
+  @@index([organizationId])
+  @@map("partner_sales")
 }
 
 model AccessGrant {

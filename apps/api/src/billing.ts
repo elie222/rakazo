@@ -5,6 +5,7 @@ import type {
   BillingPrice,
   BillingProvider,
   BillingSubscriptionSnapshot,
+  PartnerProgram,
   ProductAnalytics,
   SandboxProvider,
 } from "@rakazo/adapter-kit";
@@ -60,9 +61,10 @@ import {
   syncBillingSnapshot,
   unexpiredCreditAccount,
 } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import { applyAccessGrants } from "./access-grants.js";
 import { createExperiments } from "./experiments.js";
+import { createPartnerSales } from "./partner-sales.js";
 import { createReferrals } from "./referrals.js";
 
 export { TRIAL_DAYS };
@@ -190,6 +192,7 @@ export function createBillingService(deps: {
   webOrigin: string;
   analytics?: ProductAnalytics;
   experiments?: ReturnType<typeof createExperiments>;
+  partnerProgram?: PartnerProgram;
 }): BillingService {
   const { prisma, provider } = deps;
   const experiments = deps.experiments ?? createExperiments(undefined);
@@ -199,6 +202,7 @@ export function createBillingService(deps: {
   const mobileReturnUrl = `${returnUrl}?client=mobile`;
   const modelCredits = provider.describe().capabilities.modelCredits === true;
   const referrals = createReferrals(deps);
+  const partnerSales = createPartnerSales({ ...deps, program: deps.partnerProgram });
   let cachedPrice: { value: BillingPrice; expiresAt: number } | undefined;
 
   async function price(): Promise<BillingPrice | null> {
@@ -280,6 +284,11 @@ export function createBillingService(deps: {
           "error.message": error instanceof Error ? error.message : String(error),
         });
       }
+    // A missed report is retried by the next sync of this customer.
+    await bestEffort(
+      "partner program sales report",
+      partnerSales.report(previous.organizationId, customerId),
+    );
     if (live && hasBillingAccess(live.status))
       await referrals.settle(previous.organizationId, live.cardFingerprint);
     if (!modelCredits || !live) return;

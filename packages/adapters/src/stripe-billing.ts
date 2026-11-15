@@ -5,6 +5,7 @@ import type {
   BillingCheckoutRequest,
   BillingCreditCheckoutRequest,
   BillingCreditPurchase,
+  BillingPlanPayment,
   BillingPrice,
   BillingProvider,
   BillingSubscriptionSnapshot,
@@ -602,6 +603,63 @@ export class StripeBillingProvider implements BillingProvider {
       purchases.push({ id: invoice.id, amountCents, expiresAt });
     }
     return purchases;
+  }
+
+  async listPlanPayments(customerId: string): Promise<BillingPlanPayment[]> {
+    const customer = encodeURIComponent(customerId);
+    const [invoices, charges] = await Promise.all([
+      this.listPages(
+        `/v1/invoices?customer=${customer}&status=paid`,
+        z.object({
+          id: z.string(),
+          currency: z.string(),
+          amount_paid: z.number().int(),
+          total_taxes: z.array(z.object({ amount: z.number().int() })).nullish(),
+          parent: z
+            .object({
+              subscription_details: z
+                .object({ metadata: z.record(z.string(), z.string()).nullish() })
+                .nullish(),
+            })
+            .nullish(),
+        }),
+      ),
+      this.listPages(
+        `/v1/charges?customer=${customer}`,
+        z.object({
+          payment_intent: z.string().nullable(),
+          disputed: z.boolean(),
+          refunded: z.boolean(),
+        }),
+      ),
+    ]);
+    const reversedIntents = new Set(
+      charges
+        .filter((charge) => charge.payment_intent && (charge.disputed || charge.refunded))
+        .map((charge) => charge.payment_intent),
+    );
+    const payments: BillingPlanPayment[] = [];
+    for (const invoice of invoices) {
+      if (
+        invoice.amount_paid <= 0 ||
+        invoice.parent?.subscription_details?.metadata?.[BYOK_PLAN_METADATA] !== "byok"
+      )
+        continue;
+      const tax = (invoice.total_taxes ?? []).reduce((sum, item) => sum + item.amount, 0);
+      const intents = reversedIntents.size
+        ? await this.listPages(
+            `/v1/invoice_payments?invoice=${encodeURIComponent(invoice.id)}&status=paid`,
+            z.object({ payment: z.object({ payment_intent: z.string().optional() }) }),
+          )
+        : [];
+      payments.push({
+        invoiceId: invoice.id,
+        amountCents: Math.max(0, invoice.amount_paid - tax),
+        currency: invoice.currency,
+        reversed: intents.some((paid) => reversedIntents.has(paid.payment.payment_intent ?? null)),
+      });
+    }
+    return payments;
   }
 
   private async listPages<T>(path: string, schema: z.ZodType<T>): Promise<T[]> {

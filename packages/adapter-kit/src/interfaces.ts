@@ -16,6 +16,7 @@ import type {
   BillingCheckoutRequest,
   BillingCreditCheckoutRequest,
   BillingCreditPurchase,
+  BillingPlanPayment,
   BillingPrice,
   BillingSubscriptionSnapshot,
   BrowserActRequest,
@@ -567,6 +568,8 @@ export interface BillingProvider {
   /** Optional prepaid model usage capabilities; product code owns the balance ledger. */
   createCreditCheckout?(input: BillingCreditCheckoutRequest): Promise<{ url: string }>;
   listCreditPurchases?(customerId: string): Promise<BillingCreditPurchase[]>;
+  /** Paid own-key plan invoices, the payments a referring partner earns on. Credits never count. */
+  listPlanPayments?(customerId: string): Promise<BillingPlanPayment[]>;
   setMonthlyCredits?(customerId: string, amountCents: number): Promise<void>;
   /** Flat monthly own-key plan: access without credits. */
   createByokCheckout?(input: BillingByokCheckoutRequest): Promise<{ url: string }>;

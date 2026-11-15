@@ -1,5 +1,7 @@
 import type { SignupAttribution as Attribution } from "@rakazo/contracts";
 import {
+  PARTNER_CLICK_COOKIE,
+  PartnerClickId,
   SIGNUP_ATTRIBUTION_COOKIE,
   SIGNUP_SURFACE_HEADER,
   SignupAttribution,
@@ -24,4 +26,14 @@ export function signupAttributionFromHeaders(headers?: Headers): Attribution {
   const attribution = signupAttributionFromCookie(headers?.get("cookie") ?? "");
   const surface = SignupSurface.safeParse(headers?.get(SIGNUP_SURFACE_HEADER));
   return { ...attribution, ...(surface.success ? { surface: surface.data } : {}) };
+}
+
+export function partnerClickFromHeaders(headers?: Headers): string | undefined {
+  const value = (headers?.get("cookie") ?? "")
+    .split(";")
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(`${PARTNER_CLICK_COOKIE}=`))
+    ?.slice(PARTNER_CLICK_COOKIE.length + 1);
+  const click = PartnerClickId.safeParse(value);
+  return click.success ? click.data : undefined;
 }
