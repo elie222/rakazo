@@ -25,10 +25,13 @@ const without = (alphabet: string, excluded: string) =>
 const endsAlnum = (body: fc.Arbitrary<string>) =>
   fc.tuple(body, chars(ALNUM, 1, 1)).map(([head, last]) => head + last);
 
-// A quote opens or closes a quoted value, and a plain word after sentence-like wording is prose;
-// an unquoted credential has no quote and is not a word.
+// A quote opens or closes a quoted value, a bracket opens an object or array, and a plain word
+// after sentence-like wording is prose; an unquoted credential starts with neither and is not a
+// word.
 const unquoted = (alphabet: string) =>
-  chars(without(alphabet, "\"'`"), 12, 40).filter((value) => /\d/.test(value));
+  chars(without(alphabet, "\"'`"), 12, 40).filter(
+    (value) => /\d/.test(value) && !/^[{[]/.test(value),
+  );
 
 const word = fc.constantFrom(
   "request",
@@ -59,16 +62,7 @@ const bareKey = fc
 
 const schemeToken = fc
   .tuple(
-    fc.constantFrom(
-      "Bearer",
-      "bearer",
-      "Basic",
-      "Authorization: Bearer",
-      "Authorization: Basic",
-      "Authorization: Digest",
-      "authorization=Token",
-      "Proxy-Authorization: Negotiate",
-    ),
+    fc.constantFrom("Bearer", "bearer", "Basic", "token: Bearer", "x-auth-token=Token"),
     fc.constantFrom(" ", "  ", "\t"),
     fc.oneof(
       unquoted(`${ALNUM}_.~+/=-`),
@@ -108,7 +102,6 @@ const credentialName = fc.constantFrom(
   "password",
   "DB_PASSWORD",
   "secret",
-  "Authorization",
   "credential",
 );
 const separator = fc.constantFrom("=", ":", ": ", " = ", " : ", ":\t");
@@ -145,6 +138,74 @@ const assigned = fc
       openEnded,
     }),
   );
+
+const withDigit = (alphabet: string) => chars(alphabet, 12, 40).filter((value) => /\d/.test(value));
+
+// The whole value is the credential, under any scheme and in any number of parts: to the closing
+// quote when it is quoted, else to the end of the line.
+const authorizationHeader = fc
+  .tuple(
+    fc.constantFrom("", '"', '\\"'),
+    fc.constantFrom(
+      "Authorization",
+      "authorization",
+      "Proxy-Authorization",
+      "X-Upstream-Authorization",
+    ),
+    separator,
+    fc.constantFrom("", "Bearer ", "Basic  ", "LongSchemeX ", "AWS4-HMAC-SHA256 ", "Custom2\t"),
+    fc.oneof(
+      fc
+        .tuple(
+          unquoted(VISIBLE_ASCII),
+          fc.array(withDigit(VISIBLE_ASCII), { maxLength: 2 }),
+          fc.constantFrom(" ", ", "),
+        )
+        .map(([first, more, gap]) => ({ value: [first, ...more].join(gap), quote: "" })),
+      withDigit(without(`${VISIBLE_ASCII} `, '"\\')).map((value) => ({ value, quote: '"' })),
+    ),
+  )
+  .map(
+    ([nameQuote, name, gap, scheme, { value, quote }]): Planted => ({
+      text: `${nameQuote}${name}${nameQuote}${gap}${quote}${scheme}${value}${quote}`,
+      secret: value,
+      openEnded: !quote,
+    }),
+  );
+
+// Written as a field, a credential that is an object or array is hidden to its closing bracket,
+// whatever its strings hold; cut off, it hides the rest of its line.
+const nestedCredential = fc
+  .tuple(
+    fc.oneof(
+      fc.tuple(
+        fc.constantFrom("api_key", "apiKey", "x-api-key", "client_secret", "tokens", "password"),
+        fc.constantFrom("=", " = ", ":"),
+      ),
+      fc.tuple(
+        fc.constantFrom('"api_key"', '"access_token"', '"credentials"', "'secret'"),
+        fc.constantFrom(":", ": ", "="),
+      ),
+    ),
+    chars(`${VISIBLE_ASCII} `, 12, 40),
+    fc.constantFrom<(value: string) => string>(
+      (value) => `{"value":${value}}`,
+      (value) => `[${value}]`,
+      (value) => `{"a": {"b": ${value}}, "c": [1, 2]}`,
+      (value) => `{"note":"a } ] b","value":${value}}`,
+      (value) => `[{"id":1},\n  ${value}\n]`,
+    ),
+    fc.constantFrom("plain", "escaped", "cut off"),
+  )
+  .map(([[name, gap], value, wrap, form]): Planted => {
+    const nested = wrap(JSON.stringify(value));
+    if (form === "plain") return { text: `${name}${gap}${nested}`, secret: value };
+    if (form === "escaped") {
+      return { text: `${name}${gap}${JSON.stringify(nested).slice(1, -1)}`, secret: value };
+    }
+    const cutOff = value.replace(/["\\]/g, "x");
+    return { text: `${name}${gap}{"value":"${cutOff}`, secret: cutOff, openEnded: true };
+  });
 
 const jsonBody = fc
   .tuple(
@@ -184,6 +245,8 @@ const shapes = {
   "a bare key": bareKey,
   "a token after an authorization scheme": schemeToken,
   "a credential assigned bare, quoted, backticked, escaped or cut off": assigned,
+  "the value of an Authorization header under any scheme": authorizationHeader,
+  "a credential that is an object or array": nestedCredential,
   "a credential in a JSON body": jsonBody,
   "a credential in a URL query": queryParameter,
   "a credential in a URL's userinfo": urlUserinfo,
@@ -326,6 +389,7 @@ describe("sanitizeModelConnectionError properties", () => {
       "Incorrect",
       "provided.",
       "token:",
+      "Authorization:",
       "missing,",
     );
     const sentence = fc
@@ -352,16 +416,26 @@ describe("sanitizeModelConnectionError properties", () => {
           fc.constantFrom(...VISIBLE_ASCII, " ", "\t"),
           fc.constantFrom("é", "ü", "日", "😀"),
         ),
-        minLength: 8,
+        minLength: 4,
         maxLength: 60,
       })
       .map((value) => value.trim())
-      .filter((value) => value.length >= 8);
+      .filter((value) => value.length >= 4);
+    const lowerCaseEscapes = (encoded: string) =>
+      encoded.replace(/%[0-9A-F]{2}/g, (hex) => hex.toLowerCase());
+    const mixedCaseEscapes = (encoded: string) =>
+      encoded.replace(/%[0-9A-F]{2}/g, (hex, index: number) =>
+        index % 2 ? hex.toLowerCase() : hex,
+      );
     const written = fc.constantFrom<(secret: string) => string>(
       (secret) => secret,
       (secret) => encodeURIComponent(secret),
+      (secret) => lowerCaseEscapes(encodeURIComponent(secret)),
+      (secret) => mixedCaseEscapes(encodeURIComponent(secret)),
       (secret) => encodeURIComponent(secret).replaceAll("%20", "+"),
+      (secret) => lowerCaseEscapes(encodeURIComponent(secret)).replaceAll("%20", "+"),
       (secret) => JSON.stringify(secret).slice(1, -1),
+      (secret) => JSON.stringify(secret).slice(1, -1).replaceAll("/", "\\/"),
     );
 
     it("never leaves it anywhere in the message, as entered or encoded", () => {

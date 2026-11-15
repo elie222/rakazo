@@ -414,20 +414,34 @@ export async function prepareModelReconnectSettings(
   };
 }
 
+type ConnectionCredentials = { apiKey?: string; headers?: Record<string, string> };
+
 /**
- * What a client is told when a connection attempt fails. The attempt's own credentials are
- * hidden here, so a client that does not hide them itself never receives them.
+ * What a client is told when a connection attempt fails. Every credential the attempt could have
+ * sent is hidden here, so a client that does not hide them itself never receives them.
  */
 export function modelConnectionErrorMessage(
   error: unknown,
   fallback: string,
-  attempt: { apiKey?: string; headers?: Record<string, string> },
+  ...attempted: ConnectionCredentials[]
 ): string {
   if (!(error instanceof Error)) return fallback;
-  return sanitizeModelConnectionError(error.message, [
-    attempt.apiKey,
-    ...Object.values(attempt.headers ?? {}),
-  ]);
+  return sanitizeModelConnectionError(
+    error.message,
+    attempted.flatMap(({ apiKey, headers }) => [apiKey, ...Object.values(headers ?? {})]),
+  );
+}
+
+/** The key and headers a saved connection holds, which a request that leaves them out reuses. */
+function savedConnectionCredentials(plaintext: string): ConnectionCredentials {
+  try {
+    const saved = parseModelSecret(plaintext);
+    if (saved.kind === "api_key") return { apiKey: saved.key };
+    if (saved.kind === "openai_compatible") return saved;
+  } catch {
+    // A corrupt saved secret is never sent.
+  }
+  return {};
 }
 
 export function throwIfAborted(signal?: AbortSignal) {
@@ -443,8 +457,8 @@ export function createModelConnector(deps: RouterDeps, codexCatalog: CodexLiveCa
     const credential = await modelConnectionTarget(deps, actor, input.provider, input.credentialId);
     let plaintext: string;
     let expectedSecret: ModelCredentialInput["expectedSecret"];
-    // Starts as what the request carries; a saved key or headers it reuses replace it once read.
-    let attempt: { apiKey?: string; headers?: Record<string, string> } = input;
+    // What the request carries, then the saved key and headers it may reuse, once they are read.
+    const attempted: ConnectionCredentials[] = [input];
     try {
       let previousPlaintext: string | undefined;
       let omitVisionModelIds = false;
@@ -457,6 +471,7 @@ export function createModelConnector(deps: RouterDeps, codexCatalog: CodexLiveCa
         if (secret) {
           try {
             previousPlaintext = await deps.secrets.load(secret.ciphertext, credential.secretId);
+            attempted.push(savedConnectionCredentials(previousPlaintext));
           } catch (error) {
             // Explicit key replacement must still succeed when the prior ciphertext is
             // unreadable. Omitting visionModelIds keeps a partial one-model list from
@@ -479,8 +494,6 @@ export function createModelConnector(deps: RouterDeps, codexCatalog: CodexLiveCa
         }
       }
       const saved = parseModelSecret(plaintext);
-      if (saved.kind === "api_key") attempt = { apiKey: saved.key };
-      else if (saved.kind === "openai_compatible") attempt = saved;
       const replacingKey = Boolean(input.apiKey?.trim());
       // A replacement key must still repair a decryptable but malformed saved secret.
       const previous =
@@ -518,7 +531,7 @@ export function createModelConnector(deps: RouterDeps, codexCatalog: CodexLiveCa
       }
     } catch (error) {
       throw new ORPCError("BAD_REQUEST", {
-        message: modelConnectionErrorMessage(error, "Invalid model connection", attempt),
+        message: modelConnectionErrorMessage(error, "Invalid model connection", ...attempted),
       });
     }
     if (input.provider === OPENAI_COMPATIBLE_PROVIDER_ID) {

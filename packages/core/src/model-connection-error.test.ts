@@ -56,6 +56,56 @@ describe("sanitizeModelConnectionError", () => {
     expect(sanitizeModelConnectionError(raw)).toBe(cleaned);
   });
 
+  it.each([
+    ["an unrecognised scheme", `Authorization: LongSchemeX ${S}`, "Authorization: •••"],
+    ["a scheme with digits", `authorization=AWS4-HMAC-SHA256 ${S}`, "authorization=•••"],
+    [
+      "a credential in several parts",
+      `Proxy-Authorization: Digest username="user", response="${S}"`,
+      "Proxy-Authorization: •••",
+    ],
+    [
+      "a quoted value",
+      `{"authorization": "Custom2 ${S}, signature=${S}", "code": 401}`,
+      '{"authorization": "•••", "code": 401}',
+    ],
+    [
+      "only its own line",
+      `Authorization: Custom2 ${S} was rejected.\nTry again.`,
+      "Authorization: •••.\nTry again.",
+    ],
+  ])("hides the whole value of an Authorization header with %s", (_label, raw, cleaned) => {
+    expect(sanitizeModelConnectionError(raw)).toBe(cleaned);
+  });
+
+  it.each([
+    ["an object", `api_key={"value":"${S}"} rejected`, "api_key=••• rejected"],
+    ["an array", `tokens=["${S}","${S}"], retry`, "tokens=•••, retry"],
+    [
+      "an object in a JSON body",
+      `{"api_key": {"value": "${S}", "note": "a } b"}, "code": 401}`,
+      '{"api_key": •••, "code": 401}',
+    ],
+    [
+      "an object in escaped JSON",
+      `{\\"api_key\\":{\\"value\\":\\"${S}\\"},\\"code\\":401}`,
+      '{\\"api_key\\":•••,\\"code\\":401}',
+    ],
+    [
+      "an object over several lines",
+      `"client_secret": {\n  "value": "${S}"\n}\nTry again.`,
+      '"client_secret": •••\nTry again.',
+    ],
+    [
+      "an object that never closes",
+      `api_key={"value":"${S}" ${S}\nTry again.`,
+      "api_key=•••\nTry again.",
+    ],
+    ["an unquoted value that opens with a bracket", `api_key=[ab]${S} rest`, "api_key=••• rest"],
+  ])("hides a credential that is %s", (_label, raw, cleaned) => {
+    expect(sanitizeModelConnectionError(raw)).toBe(cleaned);
+  });
+
   it("redacts a value inside escaped JSON", () => {
     expect(sanitizeModelConnectionError(`{\\"api_key\\": \\"${S}\\", \\"code\\": 401}`)).toBe(
       '{\\"api_key\\": \\"•••\\", \\"code\\": 401}',
@@ -85,7 +135,7 @@ describe("sanitizeModelConnectionError", () => {
     [
       "a token after a scheme after another credential word",
       `credentials rejected: authorization=Token ${S} by server`,
-      "credentials rejected: authorization=••• by server",
+      "credentials rejected: authorization=•••",
     ],
     [
       "a quoted value after an unquoted one",
@@ -124,6 +174,14 @@ describe("sanitizeModelConnectionError", () => {
       "api key provided ",
       "token=a,",
       "token=[",
+      "token=[\n",
+      'token={"a":"',
+      "Authorization: Custom a1 ",
+      "Authorization: -",
+      "Authorization: abc ",
+      'api_key={"a":"x"} ',
+      '"token":{',
+      'credentials: "token"=',
       "?key=",
       "authorization=Token ",
       '"token":',
@@ -145,6 +203,9 @@ describe("sanitizeModelConnectionError", () => {
     "Could not reach the model server. Check that it's running.",
     '401: {"message":"Invalid API key"}',
     "invalid_api_key: Incorrect API key provided",
+    "Authorization: Bearer token is missing (code 401).",
+    '{"error":{"message":"missing authorization: required","type":"invalid_request_error"}}',
+    '{"error": "authorization: invalid credentials", "code": 401}',
     'provider API error (400): 400 "Incorrect API key provided."',
   ])("keeps prose that carries no credential: %j", (message) => {
     expect(sanitizeModelConnectionError(message)).toBe(message);
@@ -191,6 +252,11 @@ describe("sanitizeModelConnectionError", () => {
       ["URL-encoded", `GET /v1/models?k=${encodeURIComponent(`a/b+${S}=`)}`, `a/b+${S}=`],
       ["form-encoded", `body k=a+b%2F${S}`, `a b/${S}`],
       ["JSON-escaped", `{"detail":"got a\\"${S}\\\\"}`, `a"${S}\\`],
+      ["URL-encoded in lower case", `GET /v1/models?k=a%2fb%2b${S}%3d`, `a/b+${S}=`],
+      ["URL-encoded in mixed case", `GET /v1/models?k=a%2Fb%2b${S}%3D`, `a/b+${S}=`],
+      ["JSON-escaped with escaped slashes", `{"detail":"got a\\/${S}"}`, `a/${S}`],
+      ["in another letter case", `denied for ${S.toLowerCase()}`],
+      ["as the token of a header value sent with its scheme", `denied for ${S}`, `Bearer ${S}`],
     ])("redacts a known value %s", (_label, raw, secret = S) => {
       const cleaned = sanitizeModelConnectionError(raw, [secret]);
       expect(cleaned).not.toContain(S);
@@ -209,9 +275,21 @@ describe("sanitizeModelConnectionError", () => {
       ).toBe("sent ••• with •••");
     });
 
-    it("does not treat a short value as a credential", () => {
-      expect(sanitizeModelConnectionError("Model server returned 401.", ["401", "server"])).toBe(
-        "Model server returned 401.",
+    it("redacts a known value of four characters", () => {
+      expect(sanitizeModelConnectionError("denied for a1b2 on this server", ["a1b2"])).toBe(
+        "denied for ••• on this server",
+      );
+    });
+
+    it("keeps the second word of a two-word header value that is not a token", () => {
+      expect(sanitizeModelConnectionError("desktop client rejected", ["example desktop"])).toBe(
+        "desktop client rejected",
+      );
+    });
+
+    it("leaves a shorter value, which would blank ordinary text", () => {
+      expect(sanitizeModelConnectionError("API key x returned 401.", ["401", "key", "x"])).toBe(
+        "API key x returned 401.",
       );
     });
   });

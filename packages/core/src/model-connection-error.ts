@@ -1,9 +1,13 @@
-import { redactSecrets } from "./events.js";
+import { redactedRanges } from "./events.js";
 
 const MARKER = "•••";
 
-/** Shorter values, such as a local server's placeholder key, also appear in ordinary text. */
-const MIN_KNOWN_SECRET_LENGTH = 8;
+/**
+ * A known credential is hidden everywhere it appears, so a shorter one cannot be: a one-character
+ * header value would blank every occurrence of that character, and `key` or `401` every word and
+ * status that holds it.
+ */
+const MIN_KNOWN_SECRET_LENGTH = 4;
 
 const CREDENTIAL_NAME =
   "(?:api|access|auth|private|subscription)[ _-]?key|secret|token|password|passwd|authorization|credential";
@@ -14,6 +18,7 @@ const NAME_QUOTE = "(?:\\\\{0,3}[\"'`])?";
 // of the text.
 const NAMED_START = `(?:${CREDENTIAL_NAME}|(?<=[?&])key(?==))[A-Za-z0-9_-]{0,40}${NAME_QUOTE}([ \\t][A-Za-z]+)?${NAME_QUOTE}\\s*[:=](?!\\/\\/)\\s*`;
 const NEXT_NAME = new RegExp(NAMED_START, "gi");
+const NAME_HERE = new RegExp(NAMED_START, "iy");
 
 // Every alternative ends where a credential starts.
 const CREDENTIAL_START = new RegExp(
@@ -28,18 +33,27 @@ const CREDENTIAL_START = new RegExp(
 
 const QUOTE = /(\\*)(["'`])/y;
 // An unquoted value ends at a quote, so one inside a JSON string leaves the string closed.
-const BARE_VALUE = /[^\s"'`]+/y;
-const QUERY_VALUE = /[^\s"'`&#]+/y;
-const BARE_KEY = /[A-Za-z0-9_.~+/=*-]+/y;
-const SEPARATOR = /\s*[:=]\s*/y;
+const BARE_VALUE = /[^\s"'`]/;
+const QUERY_VALUE = /[^\s"'`&#]/;
+const BARE_KEY = /[A-Za-z0-9_.~+/=*-]/;
+const SEPARATOR = /\s*[:=](?!\/\/)\s*/y;
 const ONLY_OPENING_BRACKETS = /^[{[]+$/;
+const ONLY_OPENING_PUNCTUATION = /^[\s{["'`\\]*$/;
 const AUTH_SCHEME = /[A-Za-z]{2,10}[ \t]+/y;
 /** Shorter words after an unknown scheme are status codes and prose, not credentials. */
 const MIN_SCHEME_CREDENTIAL_LENGTH = 8;
 const PLAIN_WORD = /^(?:[A-Za-z][a-z]*|[A-Z]+)$/;
+const HEADER_OPENING = /([^\s"'`]*)([ \t]*)([^\s"'`]*)/y;
+const AUTHORIZATION_HEADER = /^authorization(?![A-Za-z0-9_-])[^\r\n]*$/i;
+const QUOTED_NAME = /["'`]\s*:\s*$/;
+/** Longer than any credential object a provider error repeats. */
+const MAX_NESTED_VALUE_LENGTH = 2000;
 const CLOSING_PUNCTUATION = new Set(".,;:)]}>\\");
 const MAX_CLOSING_PUNCTUATION = 3;
-const NAME_PREFIX = /[A-Za-z0-9_.-]/;
+const CLOSES_PROSE = new Set([...CLOSING_PUNCTUATION, '"', "'", "`"]);
+const SCHEME_LED_VALUE = /^[A-Za-z][A-Za-z0-9_-]*[ \t]+(\S+)$/;
+// The marker counts, so a parameter stays one once a key in its name is hidden.
+const NAME_PREFIX = /[A-Za-z0-9_.•-]/;
 const MAX_NAME_PREFIX_LENGTH = 64;
 
 /** The secret is `[start, end)`; the search for the next one goes on at `resume`. */
@@ -51,7 +65,7 @@ function matchAt(pattern: RegExp, text: string, at: number): string | undefined 
 }
 
 /** An unfinished quote hides the rest of its line, since nothing marks where the secret stops. */
-function quotedSpan(text: string, at: number): Span | undefined {
+function quotedSpan(text: string, at: number, limit = text.length): Span | undefined {
   QUOTE.lastIndex = at;
   const open = QUOTE.exec(text);
   if (!open) return undefined;
@@ -59,7 +73,7 @@ function quotedSpan(text: string, at: number): Span | undefined {
   const quote = open[2]!;
   const start = at + open[0].length;
   let slashes = 0;
-  for (let index = start; index < text.length; index += 1) {
+  for (let index = start; index < limit; index += 1) {
     const char = text[index]!;
     if (char === "\\") {
       slashes += 1;
@@ -73,7 +87,8 @@ function quotedSpan(text: string, at: number): Span | undefined {
     }
     slashes = 0;
   }
-  return { start, end: text.length, resume: text.length };
+  const end = Math.max(start, limit);
+  return { start, end, resume: end };
 }
 
 /** Where the `?` or `&` is that makes the name at `nameAt` a URL query parameter. */
@@ -95,27 +110,33 @@ function nextNameAt(text: string, at: number): number | undefined {
   return nameSearch.found;
 }
 
+/** Where the next credential's name starts, which no value before it runs past. */
+function nextNameLimit(text: string, at: number): number {
+  const name = nextNameAt(text, at);
+  // A query parameter keeps its `?` or `&`, which is what marks it as one.
+  return name === undefined ? text.length : (queryMark(text, name, at) ?? name);
+}
+
 /**
  * An unquoted value runs to the next space or quote, or to the name of the next credential when
  * it ran into one (`a,password="b c"`, `credentials: api_key = "b c"`), which is then read in
  * turn. Sentence and bracket punctuation at its end belongs to the message.
  */
-function bareSpan(text: string, at: number, pattern: RegExp): Span | undefined {
-  const name = nextNameAt(text, at);
-  // A query parameter keeps its `?` or `&`, which is what marks it as one.
-  const limit = name === undefined ? text.length : (queryMark(text, name, at) ?? name);
-  const token = matchAt(pattern, text.slice(at, limit), 0);
-  if (!token || ONLY_OPENING_BRACKETS.test(token)) return undefined;
-  let end = at + token.length;
+function bareSpan(text: string, at: number, valueChar: RegExp): Span | undefined {
+  const limit = nextNameLimit(text, at);
+  let end = at;
+  while (end < limit && valueChar.test(text[end]!)) end += 1;
+  if (end === at || ONLY_OPENING_BRACKETS.test(text.slice(at, end))) return undefined;
   const least = Math.max(at, end - MAX_CLOSING_PUNCTUATION);
   while (end > least && CLOSING_PUNCTUATION.has(text[end - 1]!)) end -= 1;
   return end > at ? { start: at, end, resume: end } : undefined;
 }
 
-function readsAsProse(text: string, span: Span): boolean {
-  let end = span.end;
-  while (end > span.start && CLOSING_PUNCTUATION.has(text[end - 1]!)) end -= 1;
-  return PLAIN_WORD.test(text.slice(span.start, end));
+/** A plain word, with any punctuation or quote that closes the sentence around it. */
+function readsAsProse(word: string): boolean {
+  let end = word.length;
+  while (end > 0 && CLOSES_PROSE.has(word[end - 1]!)) end -= 1;
+  return PLAIN_WORD.test(word.slice(0, end));
 }
 
 /**
@@ -132,12 +153,15 @@ function valueSpan(
   for (let quoted = quotedSpan(text, valueAt); quoted; quoted = quotedSpan(text, valueAt)) {
     const separator = matchAt(SEPARATOR, text, quoted.resume);
     if (separator === undefined) return quoted;
-    // A quoted string before a separator is the name of the value after it.
+    // A quoted string before a separator is the name of the value after it; when that name is a
+    // credential's own, it is read in turn, by the rules for its name.
+    const name = nextNameAt(text, valueAt);
+    if (name !== undefined && name < quoted.resume) return undefined;
     valueAt = quoted.resume + separator.length;
     proseAllowed = /:\s/.test(separator);
   }
   const bare = bareSpan(text, valueAt, options.bare ?? BARE_VALUE);
-  if (bare && !(proseAllowed && readsAsProse(text, bare))) return bare;
+  if (bare && !(proseAllowed && readsAsProse(text.slice(bare.start, bare.end)))) return bare;
   return valueAt > at ? { start: valueAt, end: valueAt, resume: valueAt } : undefined;
 }
 
@@ -151,9 +175,106 @@ function schemeLedSpan(text: string, at: number): Span | undefined {
   return { start: at, end: credential.end, resume: credential.resume };
 }
 
-function assignedSpan(text: string, at: number, query: boolean, proseAllowed: boolean) {
-  if (query) return valueSpan(text, at, { bare: QUERY_VALUE, proseAllowed });
-  return schemeLedSpan(text, at) ?? valueSpan(text, at, { proseAllowed });
+/** Where the line holding `from` ends, looking no further than `limit`. */
+function lineEnd(text: string, from: number, limit = text.length): number {
+  let end = from;
+  while (end < limit && text[end] !== "\n" && text[end] !== "\r") end += 1;
+  return end;
+}
+
+/**
+ * An `Authorization` header's whole value is its credential, whatever scheme it opens with: to
+ * its closing quote, or else to the end of its line. The credential is the first word or, after
+ * a scheme, the second: when those are plain words (`Authorization: Bearer token is missing`),
+ * the value is prose.
+ */
+function headerSpan(text: string, at: number): Span | undefined {
+  const quoted = quotedSpan(text, at);
+  if (quoted) return quoted;
+  HEADER_OPENING.lastIndex = at;
+  const [opening, first, gap, second] = HEADER_OPENING.exec(text) ?? [];
+  if (!opening || !first) return undefined;
+  const after = at + opening.length;
+  // After a gap, a second word that is missing before the line ends is one that opens a quote.
+  const lone = !second && (!gap || lineEnd(text, after, after + 1) === after);
+  if (readsAsProse(first) && (lone || readsAsProse(second ?? ""))) return undefined;
+  const resume = lineEnd(text, after);
+  let end = resume;
+  while (end > at && /\s/.test(text[end - 1]!)) end -= 1;
+  const least = Math.max(at, end - MAX_CLOSING_PUNCTUATION);
+  while (end > least && CLOSING_PUNCTUATION.has(text[end - 1]!)) end -= 1;
+  return { start: at, end, resume };
+}
+
+/**
+ * A credential that is an object or array (`api_key={"value":"…"}`) is hidden to the bracket that
+ * closes it, not counting brackets inside its strings. The search for that bracket stops at the
+ * name of the next credential, which is read in turn; a value that has not closed by then, or
+ * within reach, is hidden to there or to the end of its line.
+ */
+function nestedSpan(text: string, at: number): Span | undefined {
+  if (text[at] !== "{" && text[at] !== "[") return undefined;
+  const limit = nextNameLimit(text, at);
+  const reach = Math.min(limit, at + MAX_NESTED_VALUE_LENGTH);
+  let depth = 0;
+  let index = at;
+  while (index < reach) {
+    const char = text[index]!;
+    if (char === "\\" || char === '"' || char === "'" || char === "`") {
+      const string = quotedSpan(text, index, reach);
+      if (string) index = string.resume;
+      else while (text[index] === "\\") index += 1;
+      continue;
+    }
+    index += 1;
+    if (char === "{" || char === "[") depth += 1;
+    if (char !== "}" && char !== "]") continue;
+    depth -= 1;
+    if (depth > 0) continue;
+    // What follows the bracket unbroken (`[ab]cd`) is more of the same unquoted value.
+    const end = bareSpan(text, index, BARE_VALUE)?.end ?? index;
+    return { start: at, end, resume: end };
+  }
+  let end = lineEnd(text, at, limit);
+  while (end > at && /\s/.test(text[end - 1]!)) end -= 1;
+  // Only the punctuation that opens the next credential's own field: nothing to hide here.
+  if (ONLY_OPENING_PUNCTUATION.test(text.slice(at, end))) return undefined;
+  return { start: at, end, resume: end };
+}
+
+type AssignedName = {
+  /** `?access_token=` and `&key=` end their value at the next parameter. */
+  query: boolean;
+  header: boolean;
+  /** Written as a field (`api_key=`, `"api_key": `), not as the wording of a sentence. */
+  field: boolean;
+  proseAllowed: boolean;
+};
+
+function assignedSpan(text: string, at: number, name: AssignedName): Span | undefined {
+  const { proseAllowed } = name;
+  if (name.query) return valueSpan(text, at, { bare: QUERY_VALUE, proseAllowed });
+  if (name.header) return headerSpan(text, at);
+  return (
+    (name.field ? nestedSpan(text, at) : undefined) ??
+    schemeLedSpan(text, at) ??
+    valueSpan(text, at, { proseAllowed })
+  );
+}
+
+function assignedName(
+  text: string,
+  nameAt: number,
+  found: string,
+  wordBeforeSeparator: string | undefined,
+): AssignedName {
+  const proseAllowed = wordBeforeSeparator !== undefined || /:\s+$/.test(found);
+  return {
+    query: found.endsWith("=") && queryMark(text, nameAt) !== undefined,
+    header: wordBeforeSeparator === undefined && AUTHORIZATION_HEADER.test(found),
+    field: !proseAllowed || QUOTED_NAME.test(found),
+    proseAllowed,
+  };
 }
 
 function userinfoSpan(at: number, userinfo: string): Span {
@@ -169,19 +290,22 @@ function redactCredentialShapes(text: string): string {
   for (let match = CREDENTIAL_START.exec(text); match; match = CREDENTIAL_START.exec(text)) {
     const at = CREDENTIAL_START.lastIndex;
     const [found, wordBeforeSeparator, schemeGap, userinfo, bareKey] = match;
+    if (wordBeforeSeparator !== undefined) {
+      // In `credentials api_key=…` the word before the separator is the name, read by its rules.
+      const wordAt = match.index + found.lastIndexOf(wordBeforeSeparator) + 1;
+      NAME_HERE.lastIndex = wordAt;
+      if (NAME_HERE.test(text)) {
+        CREDENTIAL_START.lastIndex = wordAt;
+        continue;
+      }
+    }
     const span = bareKey
       ? bareSpan(text, match.index, BARE_KEY)
       : userinfo !== undefined
         ? userinfoSpan(at, userinfo)
         : schemeGap
           ? valueSpan(text, at, { proseAllowed: true })
-          : assignedSpan(
-              text,
-              at,
-              // `?access_token=` and `&key=` end their value at the next parameter.
-              found.endsWith("=") && queryMark(text, match.index) !== undefined,
-              wordBeforeSeparator !== undefined || /:\s+$/.test(found),
-            );
+          : assignedSpan(text, at, assignedName(text, match.index, found, wordBeforeSeparator));
     if (!span) continue;
     CREDENTIAL_START.lastIndex = Math.max(at, span.resume);
     if (span.end <= span.start) continue;
@@ -191,23 +315,45 @@ function redactCredentialShapes(text: string): string {
   return output + text.slice(offset);
 }
 
-/** The values as entered, and as a URL or a JSON string would carry them. */
+/** Keeps the length, so a place in the folded text is the same place in the original. */
+function foldAsciiCase(text: string): string {
+  return text.replace(/[A-Z]+/g, (letters) => letters.toLowerCase());
+}
+
+/**
+ * The values as entered, and as a URL or a JSON string would carry them. They are matched without
+ * regard to letter case, so `%2f` hides what was encoded as `%2F`.
+ */
 function knownSecretForms(secrets: ReadonlyArray<string | null | undefined>): string[] {
   const forms = new Set<string>();
   for (const secret of secrets) {
-    const value = secret?.trim();
-    if (!value || value.length < MIN_KNOWN_SECRET_LENGTH) continue;
-    forms.add(value);
-    forms.add(JSON.stringify(value).slice(1, -1));
-    try {
-      const encoded = encodeURIComponent(value);
-      forms.add(encoded);
-      forms.add(encoded.replaceAll("%20", "+"));
-    } catch {
-      // A lone surrogate has no URL encoding.
+    const entered = secret?.trim();
+    if (!entered) continue;
+    // A header value such as `Bearer abc1` is sent whole, and an error may repeat only its token.
+    const token = SCHEME_LED_VALUE.exec(entered)?.[1];
+    for (const value of [entered, token && !PLAIN_WORD.test(token) ? token : undefined]) {
+      if (!value || value.length < MIN_KNOWN_SECRET_LENGTH) continue;
+      const json = JSON.stringify(value).slice(1, -1);
+      forms.add(value).add(json).add(json.replaceAll("/", "\\/"));
+      try {
+        const encoded = encodeURIComponent(value);
+        forms.add(encoded).add(encoded.replaceAll("%20", "+"));
+      } catch {
+        // A lone surrogate has no URL encoding.
+      }
     }
   }
-  return [...forms];
+  return [...forms].map(foldAsciiCase);
+}
+
+function redactKnownSecrets(text: string, secrets: ReadonlyArray<string | null | undefined>) {
+  let output = "";
+  let offset = 0;
+  for (const [start, end] of redactedRanges(foldAsciiCase(text), knownSecretForms(secrets))) {
+    output += text.slice(offset, start) + MARKER;
+    offset = end;
+  }
+  return output + text.slice(offset);
 }
 
 /** The credentials a model connection form holds, for `sanitizeModelConnectionError`. */
@@ -228,5 +374,5 @@ export function sanitizeModelConnectionError(
   raw: string,
   knownSecrets: ReadonlyArray<string | null | undefined> = [],
 ): string {
-  return redactCredentialShapes(redactSecrets(raw.trim(), knownSecretForms(knownSecrets), MARKER));
+  return redactCredentialShapes(redactKnownSecrets(raw.trim(), knownSecrets));
 }
