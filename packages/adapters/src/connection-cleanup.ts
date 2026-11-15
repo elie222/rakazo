@@ -4,7 +4,11 @@ import type {
   JobPublisher,
   ManagedConnectorProvider,
 } from "@rakazo/adapter-kit";
-import { connectionCleanupJob, RetryJobLaterError } from "@rakazo/adapter-kit";
+import {
+  connectionCleanupJob,
+  connectionCleanupJobKey,
+  RetryJobLaterError,
+} from "@rakazo/adapter-kit";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 import { ProviderTransactionBusyError, runProviderTransaction } from "@rakazo/db";
 import { getLogger, unwrapJobPayload } from "@rakazo/logging";
@@ -35,8 +39,11 @@ export const CONNECTION_CLEANUP_BACKUP_MS =
 /** When a cleanup that found another flow holding its scope runs again. */
 const CONNECTION_CLEANUP_BUSY_RETRY_MS = 15_000;
 
-/** The soonest a cleanup looks again at accounts a sibling's unfinished connection may still own. */
-const CONNECTION_CLEANUP_UNDECIDED_RETRY_MS = 60_000;
+/**
+ * The soonest a cleanup looks again at accounts a sibling's unfinished connection may still own:
+ * long enough for someone who is authorizing that connection to finish.
+ */
+const CONNECTION_CLEANUP_UNDECIDED_RETRY_MS = 10 * 60_000;
 
 /** The soonest a cleanup looks again for credentials its connector does not have right now. */
 const CONNECTION_CLEANUP_NO_CREDENTIALS_RETRY_MS = 10 * 60_000;
@@ -117,15 +124,18 @@ export function providerLockTransaction<T>(
  * Concrete account ids still referenced by active local rows. When any row still
  * only has the provider slug (or no ref), orphan cleanup must not run — a sibling
  * may have created its remote account before persisting the concrete id.
+ * A failed row with no ref is the exception: only a begin that saved nothing leaves one, so it
+ * owns no account, and counting it would make a failed begin wait on its own row forever.
  */
 function concreteKeepAccountIds(
-  refs: Array<string | null | undefined>,
+  rows: Array<{ providerRef: string | null; status: string }>,
   provider: string,
 ): { keepIds: string[]; canRevokeUnreferenced: boolean } {
   const keepIds: string[] = [];
   let canRevokeUnreferenced = true;
-  for (const ref of refs) {
-    const value = ref?.trim();
+  for (const row of rows) {
+    const value = row.providerRef?.trim();
+    if (!value && row.status === "error") continue;
     if (!value || value === provider) {
       canRevokeUnreferenced = false;
       continue;
@@ -228,12 +238,9 @@ async function dropUnreferencedAccounts(
       provider: scope.provider,
       status: { in: ACTIVE_STATUSES },
     },
-    select: { providerRef: true },
+    select: { providerRef: true, status: true },
   });
-  const { keepIds, canRevokeUnreferenced } = concreteKeepAccountIds(
-    kept.map((entry) => entry.providerRef),
-    scope.provider,
-  );
+  const { keepIds, canRevokeUnreferenced } = concreteKeepAccountIds(kept, scope.provider);
   if (!canRevokeUnreferenced) return "undecided";
   await connector.revokeUnreferencedAccounts(scope.provider, keepIds, context);
   return "done";
@@ -298,16 +305,29 @@ export async function dropLeftover(
  * The direct attempt at a removal, made exactly as the backup job makes it: under the scope's
  * provider lock, and never for something an active row has saved. Rejects when the provider or
  * the database could not be asked.
+ *
+ * A finished removal of one authorization deletes its backup job in the same transaction, still
+ * holding the lock that other flows record a job for that authorization under: it cannot delete
+ * one recorded after the removal. Cleanups of an app's unreferenced accounts share one job per
+ * scope, which may be another flow's record by now, so that job is left to run and find nothing.
  */
 export async function dropLeftoverAuthorization(
-  prisma: PrismaClient,
+  deps: { prisma: PrismaClient; jobs: Pick<JobPublisher, "cancelIn"> },
   connector: ManagedConnectorProvider,
   leftover: ConnectionCleanup,
   operationId: string,
 ): Promise<ConnectionCleanupOutcome> {
-  return whileScopeIsFree(prisma, leftover, (tx) =>
-    dropLeftover(tx, connector, leftover, cleanupContext(leftover, operationId)),
-  );
+  return whileScopeIsFree(deps.prisma, leftover, async (tx) => {
+    const outcome = await dropLeftover(
+      tx,
+      connector,
+      leftover,
+      cleanupContext(leftover, operationId),
+    );
+    if (outcome === "done" && leftover.ref)
+      await deps.jobs.cancelIn(tx, connectionCleanupJobKey(leftover));
+    return outcome;
+  });
 }
 
 function cleanupReferences(cleanup: ConnectionCleanup) {
@@ -322,9 +342,9 @@ function cleanupReferences(cleanup: ConnectionCleanup) {
 
 /**
  * The backup job. It finishes only when the removal happened or nothing is left to remove;
- * every other ending rejects, so the queue retries it, or reschedules it under its own key.
- * An attempt that is only waiting (busy scope, undecided accounts, credentials not there right
- * now) is not reported as a failure; a failed one is, and so is the job giving up.
+ * every other ending rejects, so the queue retries it with its backoff and gives up after its
+ * last attempt, or reschedules it under its own key. Only a busy scope reschedules: another flow
+ * holds it for seconds, so that wait is not one of the job's attempts.
  */
 export async function retryConnectionCleanup(
   deps: {
@@ -348,7 +368,10 @@ export async function retryConnectionCleanup(
   const prepared = await prepareManagedConnectorForTransaction(configured);
   const connector = prepared.provider;
   // Credentials that are missing now may be saved again, so the job waits for them.
-  if (!connector) throw new RetryJobLaterError(CONNECTION_CLEANUP_NO_CREDENTIALS_RETRY_MS);
+  if (!connector)
+    throw new RetryJobLaterError(CONNECTION_CLEANUP_NO_CREDENTIALS_RETRY_MS, {
+      cause: new Error("The connector has no credentials to remove the authorization with"),
+    });
   const outcome = await whileScopeIsFree(deps.prisma, payload, async (tx) => {
     // Credentials saved between preparing them and taking the lock: the next try has the new ones.
     if (prepared.recheck && !(await prepared.recheck(tx))) return "busy" as const;
@@ -361,7 +384,10 @@ export async function retryConnectionCleanup(
     await deps.jobs.enqueue(connectionCleanupJob(payload, connectionCleanupRetryAt("busy")));
     return;
   }
-  if (outcome === "undecided") throw new RetryJobLaterError(CONNECTION_CLEANUP_UNDECIDED_RETRY_MS);
+  if (outcome === "undecided")
+    throw new RetryJobLaterError(CONNECTION_CLEANUP_UNDECIDED_RETRY_MS, {
+      cause: new Error("An unfinished connection of this app may own the accounts"),
+    });
 }
 
 function isConnectionCleanup(payload: unknown): payload is ConnectionCleanup {

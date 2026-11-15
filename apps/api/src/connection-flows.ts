@@ -5,12 +5,7 @@ import type {
   BackgroundJobPayloads,
   ManagedConnectorProvider,
 } from "@rakazo/adapter-kit";
-import {
-  ConnectorAuthUnavailableError,
-  connectionCleanupJob,
-  connectionCleanupJobKey,
-} from "@rakazo/adapter-kit";
-import type { ConnectionCleanupOutcome } from "@rakazo/adapters";
+import { ConnectorAuthUnavailableError, connectionCleanupJob } from "@rakazo/adapter-kit";
 import {
   authorizationInUse,
   CONNECTION_CLEANUP_BACKUP_MS,
@@ -29,7 +24,7 @@ import {
 import type { Actor } from "@rakazo/contracts";
 import { isIntegrationProviderId } from "@rakazo/contracts";
 import { IsolationError, ProviderTransactionBusyError, recordSecurityEvent } from "@rakazo/db";
-import { bestEffort, getLogger } from "@rakazo/logging";
+import { getLogger } from "@rakazo/logging";
 import type { RouterDeps } from "./router.js";
 import { connectionCreatedEvent } from "./security-audit.js";
 
@@ -76,10 +71,11 @@ export function connectionContext(
 
 /**
  * Removes what a begin whose result was not saved left at the provider. The keyed backup job is
- * the durable record: only a finished removal deletes it, and an attempt that failed, found the
- * scope busy or could not decide yet hands over to it. The attempt itself takes the scope's
- * provider lock and leaves alone what an active row has saved, as the job does. Never rejects,
- * so the caller's own error is the one reported.
+ * the durable record: an attempt that failed, found the scope busy or could not decide yet hands
+ * over to it, and only a finished removal deletes it. The attempt itself takes the scope's
+ * provider lock and leaves alone what an active row has saved, as the job does, so it needs no
+ * answer to whether the begin's save landed: a row that holds the result keeps the authorization.
+ * Never rejects, so the caller's own error is the one reported.
  */
 async function removeLeftoverAuthorization(
   deps: Pick<RouterDeps, "prisma" | "jobs">,
@@ -115,86 +111,18 @@ async function removeLeftoverAuthorization(
     );
   };
   if (!recorded) await record(cleanupBackupAt());
-  let outcome: ConnectionCleanupOutcome;
   try {
     // Its own time budget, not the request signal: a caller that hangs up must not cut it short.
-    outcome = await dropLeftoverAuthorization(
-      deps.prisma,
-      connector,
-      leftover,
-      "connections.begin",
-    );
+    const outcome = await dropLeftoverAuthorization(deps, connector, leftover, "connections.begin");
+    if (outcome !== "done") await handOver(connectionCleanupRetryAt(outcome));
   } catch (error) {
     getLogger().warn("connections.begin leftover cleanup failed; retrying", { error, ...where });
     await handOver();
-    return;
   }
-  if (outcome !== "done") {
-    await handOver(connectionCleanupRetryAt(outcome));
-    return;
-  }
-  await bestEffort(
-    "delete the finished connection cleanup's backup job",
-    deps.jobs.cancel(connectionCleanupJobKey(leftover)),
-  );
 }
 
 function cleanupBackupAt(): Date {
   return new Date(Date.now() + CONNECTION_CLEANUP_BACKUP_MS);
-}
-
-/**
- * Whether the row holds a begin's result although saving it reported a failure: a commit can
- * land without its answer arriving. A read that fails too settles nothing, so it is `unknown`,
- * never `unsaved`: the row may refer to the authorization.
- */
-async function beginResultSaved(
-  deps: Pick<RouterDeps, "prisma">,
-  actor: Pick<Actor, "spaceId" | "userId">,
-  connectionId: string,
-  state: string,
-): Promise<"saved" | "unsaved" | "unknown"> {
-  try {
-    const saved = await deps.prisma.connection.count({
-      where: {
-        id: connectionId,
-        spaceId: actor.spaceId,
-        userId: actor.userId,
-        providerRef: state,
-        status: { in: ["connected", "pending", "error"] },
-      },
-    });
-    return saved > 0 ? "saved" : "unsaved";
-  } catch (error) {
-    getLogger().warn("connections.begin could not check whether its result was saved", { error });
-    return "unknown";
-  }
-}
-
-/**
- * A begin that cannot tell whether its result was saved removes nothing itself: the row may
- * refer to the authorization. The job decides once it can read the rows under the provider lock.
- */
-async function leaveLeftoverToJob(
-  deps: Pick<RouterDeps, "jobs">,
-  leftover: BackgroundJobPayloads["connection.cleanup"],
-): Promise<void> {
-  try {
-    await deps.jobs.enqueue(connectionCleanupJob(leftover));
-  } catch (error) {
-    // Deleting an authorization that is in use is the greater harm, so it is left where it is.
-    getLogger().error(
-      "connections.begin could not tell whether its result was saved, and has no backup job; if no connection uses the authorization, remove it at the provider by hand",
-      error,
-      {
-        spaceId: leftover.spaceId,
-        userId: leftover.userId,
-        connectorId: leftover.connectorId,
-        provider: leftover.provider,
-        ...(leftover.ref ? { providerRef: leftover.ref } : {}),
-      },
-    );
-  }
 }
 
 export async function beginConnection(
@@ -256,85 +184,40 @@ export async function beginConnection(
       });
     },
   );
-  const ownPendingRow = {
+  // Exactly what the first transaction wrote: this attempt's row, with no result saved on it.
+  const unsavedRow = {
     id: row.id,
     spaceId: context.actor.spaceId,
     userId: context.actor.userId,
     status: "pending",
-    metadata: { path: ["attempt"], equals: attempt },
+    metadata: { equals: { attempt } },
   };
+  /**
+   * Marks the row failed while it holds nothing. A row whose save landed, even one that reported
+   * a failure, stays what the save made it: it is the record of the authorization, and a later
+   * begin that reused it as a failed row would drop that record.
+   */
+  const markFailed = async () => {
+    try {
+      await deps.prisma.connection.updateMany({ where: unsavedRow, data: { status: "error" } });
+    } catch (error) {
+      getLogger().warn("connections.begin could not mark its connection failed", {
+        error,
+        connectionId: row.id,
+      });
+    }
+  };
+  let auth: Awaited<ReturnType<ManagedConnectorProvider["begin"]>>;
   try {
-    const auth = await connector.begin(
+    auth = await connector.begin(
       {
         provider: input.provider,
         redirectUrl: `${deps.env.webOrigin}/integrations/callback`,
       },
       connectionContext(context.actor, "connections.begin", context.signal),
     );
-    const leftover = leftoverAuthorization(
-      connector,
-      {
-        spaceId: context.actor.spaceId,
-        userId: context.actor.userId,
-        connectorId: input.connectorId,
-        provider: input.provider,
-      },
-      auth.state,
-    );
-    // Re-take the provider lock and only advance the row while it is still this attempt's, so
-    // a concurrent revoke cannot be overwritten back to pending/connected, and neither can the
-    // result of a later begin that reused the row.
-    let applied: boolean;
-    try {
-      applied = await providerLockTransaction(
-        deps.prisma,
-        providerScopeKey(context.actor, input.connectorId, input.provider),
-        async (tx) => {
-          await lockProviderConnectionScope(tx, context.actor, input.connectorId, input.provider);
-          const updated = await tx.connection.updateMany({
-            where: ownPendingRow,
-            data: {
-              status: auth.authorizationUrl ? "pending" : "connected",
-              providerRef: auth.state || null,
-              metadata: { state: auth.state, attempt },
-            },
-          });
-          if (updated.count > 0) return true;
-          // Lost the row: removing what begin left at the provider commits with that outcome.
-          if (leftover)
-            await deps.jobs.enqueueIn(tx, connectionCleanupJob(leftover, cleanupBackupAt()));
-          return false;
-        },
-      );
-    } catch (error) {
-      // The slot stayed busy, or the transaction or its job write failed, after the provider had
-      // already answered. When the row does not hold the result, nothing refers to what the
-      // provider created, so remove it by its own id, or the app's accounts no local row
-      // references, never by a provider-wide slug delete that would take sibling accounts too.
-      if (leftover) {
-        // A busy slot means the transaction never started, so nothing was saved.
-        const result =
-          error instanceof ProviderTransactionBusyError
-            ? "unsaved"
-            : await beginResultSaved(deps, context.actor, row.id, auth.state);
-        if (result === "unsaved")
-          await removeLeftoverAuthorization(deps, connector, leftover, false);
-        else if (result === "unknown") await leaveLeftoverToJob(deps, leftover);
-      }
-      throw error;
-    }
-    if (!applied) {
-      if (leftover) await removeLeftoverAuthorization(deps, connector, leftover, true);
-      throw new IsolationError();
-    }
-    if (!auth.authorizationUrl) {
-      await recordSecurityEvent(connectionCreatedEvent("connections.begin", row.id, context.actor));
-    }
-    return { connectionId: row.id, authorizationUrl: auth.authorizationUrl };
   } catch (error) {
-    if (error instanceof IsolationError) throw error;
-    await deps.prisma.connection.updateMany({ where: ownPendingRow, data: { status: "error" } });
-    if (error instanceof ProviderTransactionBusyError) throw error;
+    await markFailed();
     if (error instanceof ConnectorAuthUnavailableError) {
       getLogger().warn("connections.begin app has no usable auth config", {
         connectorId: input.connectorId,
@@ -345,6 +228,59 @@ export async function beginConnection(
     }
     throw new ORPCError("BAD_REQUEST", { message: sanitizeIntegrationError(error) });
   }
+  const leftover = leftoverAuthorization(
+    connector,
+    {
+      spaceId: context.actor.spaceId,
+      userId: context.actor.userId,
+      connectorId: input.connectorId,
+      provider: input.provider,
+    },
+    auth.state,
+  );
+  // Re-take the provider lock and only advance the row while it is still this attempt's, so
+  // a concurrent revoke cannot be overwritten back to pending/connected, and neither can the
+  // result of a later begin that reused the row.
+  let applied: boolean;
+  try {
+    applied = await providerLockTransaction(
+      deps.prisma,
+      providerScopeKey(context.actor, input.connectorId, input.provider),
+      async (tx) => {
+        await lockProviderConnectionScope(tx, context.actor, input.connectorId, input.provider);
+        const updated = await tx.connection.updateMany({
+          where: unsavedRow,
+          data: {
+            status: auth.authorizationUrl ? "pending" : "connected",
+            providerRef: auth.state || null,
+            metadata: { state: auth.state, attempt },
+          },
+        });
+        if (updated.count > 0) return true;
+        // Lost the row: removing what begin left at the provider commits with that outcome.
+        if (leftover)
+          await deps.jobs.enqueueIn(tx, connectionCleanupJob(leftover, cleanupBackupAt()));
+        return false;
+      },
+    );
+  } catch (error) {
+    // The slot stayed busy, or the transaction or its job write failed, after the provider had
+    // already answered. The row is marked failed first, or the removal would wait for it as for
+    // a connection still in flight.
+    await markFailed();
+    if (leftover) await removeLeftoverAuthorization(deps, connector, leftover, false);
+    if (error instanceof ProviderTransactionBusyError || error instanceof IsolationError)
+      throw error;
+    throw new ORPCError("BAD_REQUEST", { message: sanitizeIntegrationError(error) });
+  }
+  if (!applied) {
+    if (leftover) await removeLeftoverAuthorization(deps, connector, leftover, true);
+    throw new IsolationError();
+  }
+  if (!auth.authorizationUrl) {
+    await recordSecurityEvent(connectionCreatedEvent("connections.begin", row.id, context.actor));
+  }
+  return { connectionId: row.id, authorizationUrl: auth.authorizationUrl };
 }
 
 export async function completeConnection(

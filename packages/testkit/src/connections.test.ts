@@ -472,13 +472,12 @@ describeWithDatabase("Composio catalog reconciliation", () => {
     ).rejects.toThrow();
     await handles.awaitIdle?.();
 
+    // The removal read the row under the provider lock and found the authorization in use.
     expect(cancelled).not.toHaveBeenCalled();
     expect(await composio.listConnectedAccountIds(actor.userId, "GMAIL")).toEqual([state]);
     const cleanup = { ...own, connectorId: "composio", ref: state };
-    expect(queuedCleanup(cleanup)).toBeUndefined();
 
-    // A begin that could not tell whether its save landed leaves the decision to the job,
-    // which reads the row under the provider lock and finds the authorization in use.
+    // The job reads it the same way. (This queue cannot delete a job inside a transaction.)
     await runCleanupNow(cleanup);
     expect(cancelled).not.toHaveBeenCalled();
     expect(await composio.listConnectedAccountIds(actor.userId, "GMAIL")).toEqual([state]);
@@ -516,6 +515,171 @@ describeWithDatabase("Composio catalog reconciliation", () => {
     expect(cancelled).not.toHaveBeenCalled();
     expect(await remote()).toEqual([cleanup.ref]);
     expect(await status()).toBe("connected");
+
+    await runCleanupNow(cleanup);
+    expect(cancelled).not.toHaveBeenCalled();
+    expect(await remote()).toEqual([cleanup.ref]);
+    expect(queuedCleanup(cleanup)).toBeUndefined();
+  });
+
+  /**
+   * The next begin's save reports a failure after the provider answered. Its row is left
+   * `saved`, as by a commit whose answer was lost, or holding nothing, as by a save that never
+   * ran. Returns what the provider answered with.
+   */
+  function failNextBeginSave(
+    connector: ComposioConnector | PipedreamConnector,
+    own: { spaceId: string; userId: string; provider: string },
+    left: "saved" | "unsaved",
+  ) {
+    const rows = asSystem(handles.prisma).connection;
+    const answer = { state: "" };
+    let attempt: unknown;
+    const begin = connector.begin.bind(connector);
+    vi.spyOn(connector, "begin").mockImplementationOnce(async (request, context) => {
+      const started = await begin(request, context);
+      answer.state = started.state;
+      const row = await rows.findFirstOrThrow({ where: { ...own, status: "pending" } });
+      attempt = (row.metadata as { attempt?: unknown }).attempt;
+      // Taking the row for a moment makes the save record the lost race, which then fails it.
+      await rows.updateMany({ where: own, data: { status: "revoked" } });
+      // A browser authorization: a saved row stays pending until the user has authorized.
+      return { ...started, authorizationUrl: "https://provider.example.test/authorize" };
+    });
+    vi.spyOn(handles.jobs, "enqueueIn").mockImplementationOnce(async () => {
+      await rows.updateMany({
+        where: own,
+        data:
+          left === "saved"
+            ? {
+                status: "pending",
+                providerRef: answer.state,
+                metadata: { state: answer.state, attempt: attempt as string },
+              }
+            : { status: "pending" },
+      });
+      throw new Error("connection lost at commit");
+    });
+    return answer;
+  }
+
+  it("keeps a saved authorization on its row when the save reports a failure, so a later begin cannot drop it", async () => {
+    const cookie = await signup(app, `saved-row-${stamp}@rakazo.test`, "Saved Row");
+    const actor = await rpc<Actor>(app, cookie, "me");
+    const own = { spaceId: actor.spaceId, userId: actor.userId, provider: "GMAIL" };
+    const cancelled = vi.spyOn(composio, "cancelAuthorizationRequest");
+    const answer = failNextBeginSave(composio, own, "saved");
+    const start = () =>
+      rpc<{ connectionId: string }>(app, cookie, "connections/begin", {
+        connectorId: "composio",
+        provider: "GMAIL",
+        displayName: "Gmail",
+      });
+    const rows = () =>
+      asSystem(handles.prisma).connection.findMany({
+        where: own,
+        select: { id: true, status: true, providerRef: true },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      });
+
+    await expect(start()).rejects.toThrow();
+    await handles.awaitIdle?.();
+
+    // The row is what the save made it, not a failed row a later begin would reuse.
+    const [saved] = await rows();
+    expect(answer.state).not.toBe("");
+    expect(saved).toMatchObject({ status: "pending", providerRef: answer.state });
+    expect(cancelled).not.toHaveBeenCalled();
+    expect(await composio.listConnectedAccountIds(actor.userId, "GMAIL")).toEqual([answer.state]);
+
+    const next = await start();
+    expect(next.connectionId).not.toBe(saved!.id);
+    expect(await rows()).toContainEqual(saved);
+
+    // Its job finds the authorization in use too.
+    await runCleanupNow({ ...own, connectorId: "composio", ref: answer.state });
+    expect(cancelled).not.toHaveBeenCalled();
+    expect(await composio.listConnectedAccountIds(actor.userId, "GMAIL")).toContain(answer.state);
+  });
+
+  it("removes what a failed begin left under the app's name although its own row is still there", async () => {
+    const cookie = await signup(app, `own-row-${stamp}@rakazo.test`, "Own Row");
+    const actor = await rpc<Actor>(app, cookie, "me");
+    const own = { spaceId: actor.spaceId, userId: actor.userId, provider: "linear" };
+    const cleanup = { ...own, connectorId: "pipedream" };
+    const swept = vi.spyOn(pipedream, "revokeUnreferencedAccounts");
+    const failures = cleanupFailures();
+    failNextBeginSave(pipedream, own, "unsaved");
+
+    await expect(
+      rpc(app, cookie, "connections/begin", {
+        connectorId: "pipedream",
+        provider: "linear",
+        displayName: "Linear",
+      }),
+    ).rejects.toThrow();
+
+    // Nothing was saved, so the begin's row is failed with no reference and owns no account:
+    // the removal does not wait for it.
+    await expect(
+      asSystem(handles.prisma).connection.findMany({
+        where: own,
+        select: { status: true, providerRef: true },
+      }),
+    ).resolves.toEqual([{ status: "error", providerRef: null }]);
+    expect(swept).toHaveBeenCalledTimes(1);
+    expect(swept).toHaveBeenCalledWith("linear", [], expect.anything());
+
+    // Neither does its job, which finishes instead of waiting for the row to go.
+    await runCleanupNow(cleanup);
+    expect(swept).toHaveBeenCalledTimes(2);
+    expect(cleanupFailures()).toBe(failures);
+    expect(queuedCleanup(cleanup)).toBeUndefined();
+  });
+
+  it("keeps the cleanup another begin recorded for the same app when its own removal finishes", async () => {
+    const cookie = await signup(app, `shared-key-${stamp}@rakazo.test`, "Shared Key");
+    const actor = await rpc<Actor>(app, cookie, "me");
+    const cleanup = {
+      spaceId: actor.spaceId,
+      userId: actor.userId,
+      connectorId: "pipedream",
+      provider: "linear",
+    };
+    const begin = pipedream.begin.bind(pipedream);
+    vi.spyOn(pipedream, "begin").mockImplementationOnce(async (request, context) => {
+      const started = await begin(request, context);
+      // The connection is removed while the provider is still answering.
+      await asSystem(handles.prisma).connection.updateMany({
+        where: { spaceId: actor.spaceId, userId: actor.userId, provider: "linear" },
+        data: { status: "revoked" },
+      });
+      return started;
+    });
+    const sweep = pipedream.revokeUnreferencedAccounts.bind(pipedream);
+    const otherDueAt = new Date(Date.now() + 5 * 60_000);
+    const swept = vi
+      .spyOn(pipedream, "revokeUnreferencedAccounts")
+      .mockImplementationOnce(async (slug, keep, context) => {
+        await sweep(slug, keep, context);
+        // Another begin records its cleanup after this one listed the accounts. Both name
+        // only the app, so they share one job.
+        await handles.jobs.enqueue(connectionCleanupJob(cleanup, otherDueAt));
+      });
+
+    await expect(
+      rpc(app, cookie, "connections/begin", {
+        connectorId: "pipedream",
+        provider: "linear",
+        displayName: "Linear",
+      }),
+    ).rejects.toThrow();
+
+    expect(swept).toHaveBeenCalledTimes(1);
+    // The other begin's record is still there, to run when it is due.
+    expect(queuedCleanup(cleanup)?.availableAt).toEqual(otherDueAt);
+    await runCleanupNow(cleanup);
+    expect(swept).toHaveBeenCalledTimes(2);
     expect(queuedCleanup(cleanup)).toBeUndefined();
   });
 

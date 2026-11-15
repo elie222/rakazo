@@ -3316,13 +3316,14 @@ describe("connections.begin", () => {
         metadata: { attempt: expect.any(String) },
       },
     });
-    // The result is saved, and a failure recorded, only while the row is still this attempt's.
+    // The result is saved, and a failure recorded, only while the row is still this attempt's
+    // and holds nothing yet.
     const { attempt } = update.mock.calls[0]![0].data.metadata;
     expect(updateMany).toHaveBeenCalledWith({
       where: expect.objectContaining({
         id: "conn-old",
         status: "pending",
-        metadata: { path: ["attempt"], equals: attempt },
+        metadata: { equals: { attempt } },
       }),
       data: expect.objectContaining({ providerRef: "gmail-state" }),
     });
@@ -3350,7 +3351,7 @@ describe("connections.begin", () => {
     const cancelAuthorizationRequest = vi.fn(async () => undefined);
     const jobs = {
       enqueue: vi.fn(async (_job: BackgroundJob) => undefined),
-      cancel: vi.fn(async () => undefined),
+      cancelIn: vi.fn(async () => undefined),
     };
     const rootUpdateMany = vi.fn().mockResolvedValue({ count: 1 });
     const tx = {
@@ -3415,7 +3416,7 @@ describe("connections.begin", () => {
       expect(jobs.enqueue).toHaveBeenLastCalledWith(
         expect.objectContaining({ payload: LEFTOVER_REQUEST, availableAt: expect.any(Date) }),
       );
-      expect(jobs.cancel).not.toHaveBeenCalled();
+      expect(jobs.cancelIn).not.toHaveBeenCalled();
       expect(rootUpdateMany).toHaveBeenCalledWith(
         expect.objectContaining({ data: { status: "error" } }),
       );
@@ -3440,7 +3441,8 @@ describe("connections.begin", () => {
     const jobs = {
       enqueue: vi.fn(async (_job: BackgroundJob) => undefined),
       enqueueIn: vi.fn(async (_tx: unknown, _job: BackgroundJob) => undefined),
-      cancel: vi.fn(async (_key: string) => undefined),
+      // A finished removal deletes its backup job in the transaction that holds the scope's lock.
+      cancelIn: vi.fn(async (_tx: unknown, _key: string) => undefined),
     };
     const tx = {
       $executeRaw: vi.fn().mockResolvedValue(undefined),
@@ -3500,7 +3502,7 @@ describe("connections.begin", () => {
       }),
     );
     expect(cancelAuthorizationRequest).toHaveBeenCalledWith("request-1", expect.anything());
-    expect(jobs.cancel).toHaveBeenCalledWith(connectionCleanupJobKey(LEFTOVER_REQUEST));
+    expect(jobs.cancelIn).toHaveBeenCalledWith(tx, connectionCleanupJobKey(LEFTOVER_REQUEST));
     expect(jobs.enqueue).not.toHaveBeenCalled();
     expect(errors()).toEqual([]);
     // Removed as the job would: holding the scope's lock, after reading who refers to it.
@@ -3528,13 +3530,13 @@ describe("connections.begin", () => {
       where: expect.objectContaining({
         id: "conn-1",
         status: "pending",
-        metadata: { path: ["attempt"], equals: attempt },
+        metadata: { equals: { attempt } },
       }),
       data: expect.objectContaining({ providerRef: "request-1" }),
     });
     // Its own authorization is removed, and the other attempt's row is not marked failed.
     expect(cancelAuthorizationRequest).toHaveBeenCalledWith("request-1", expect.anything());
-    expect(jobs.cancel).toHaveBeenCalledWith(connectionCleanupJobKey(LEFTOVER_REQUEST));
+    expect(jobs.cancelIn).toHaveBeenCalledWith(tx, connectionCleanupJobKey(LEFTOVER_REQUEST));
     expect(root.updateMany).not.toHaveBeenCalled();
   });
 
@@ -3548,7 +3550,7 @@ describe("connections.begin", () => {
 
       await expect(call()).rejects.toBeInstanceOf(IsolationError);
       // Nothing is left to remove, so the recorded job goes.
-      expect(jobs.cancel).toHaveBeenCalledWith(connectionCleanupJobKey(LEFTOVER_REQUEST));
+      expect(jobs.cancelIn).toHaveBeenCalledWith(tx, connectionCleanupJobKey(LEFTOVER_REQUEST));
       expect(errors()).toEqual([]);
     }
     expect(cancelAuthorizationRequest).not.toHaveBeenCalled();
@@ -3563,7 +3565,7 @@ describe("connections.begin", () => {
     await expect(call()).rejects.toBeInstanceOf(IsolationError);
     expect(cancelAuthorizationRequest).not.toHaveBeenCalled();
     expect(jobs.enqueue).toHaveBeenCalledWith(connectionCleanupJob(LEFTOVER_REQUEST));
-    expect(jobs.cancel).not.toHaveBeenCalled();
+    expect(jobs.cancelIn).not.toHaveBeenCalled();
   });
 
   it("hands a failed removal to its backup job and answers the lost race as before", async () => {
@@ -3575,7 +3577,7 @@ describe("connections.begin", () => {
     await expect(call()).rejects.toBeInstanceOf(IsolationError);
     // Enqueued again with no run-at: the queue retries it now.
     expect(jobs.enqueue).toHaveBeenCalledWith(connectionCleanupJob(LEFTOVER_REQUEST));
-    expect(jobs.cancel).not.toHaveBeenCalled();
+    expect(jobs.cancelIn).not.toHaveBeenCalled();
     // A job has it, so nobody has to act: not an error.
     expect(warnings()).toEqual(["connections.begin leftover cleanup failed; retrying"]);
     expect(errors()).toEqual([]);
@@ -3591,7 +3593,7 @@ describe("connections.begin", () => {
     await expect(unreachable.call()).rejects.toBeInstanceOf(IsolationError);
     expect(revoke).not.toHaveBeenCalled();
     expect(unreachable.jobs.enqueue).toHaveBeenCalledWith(connectionCleanupJob(LEFTOVER_REQUEST));
-    expect(unreachable.jobs.cancel).not.toHaveBeenCalled();
+    expect(unreachable.jobs.cancelIn).not.toHaveBeenCalled();
 
     // The provider answering that it holds no such account is the normal outcome.
     resolveConnectedAccountId.mockResolvedValue(undefined);
@@ -3599,7 +3601,10 @@ describe("connections.begin", () => {
     await expect(absent.call()).rejects.toBeInstanceOf(IsolationError);
     expect(revoke).not.toHaveBeenCalled();
     expect(absent.jobs.enqueue).not.toHaveBeenCalled();
-    expect(absent.jobs.cancel).toHaveBeenCalledWith(connectionCleanupJobKey(LEFTOVER_REQUEST));
+    expect(absent.jobs.cancelIn).toHaveBeenCalledWith(
+      absent.tx,
+      connectionCleanupJobKey(LEFTOVER_REQUEST),
+    );
   });
 
   it("retries the unreferenced-account cleanup when its database read fails", async () => {
@@ -3617,7 +3622,7 @@ describe("connections.begin", () => {
     );
     expect(revokeUnreferencedAccounts).not.toHaveBeenCalled();
     expect(jobs.enqueue).toHaveBeenCalledWith(connectionCleanupJob(LEFTOVER_APP));
-    expect(jobs.cancel).not.toHaveBeenCalled();
+    expect(jobs.cancelIn).not.toHaveBeenCalled();
     expect(errors()).toEqual([]);
   });
 
@@ -3631,7 +3636,7 @@ describe("connections.begin", () => {
 
     await expect(call()).rejects.toBeInstanceOf(IsolationError);
     expect(revokeUnreferencedAccounts).not.toHaveBeenCalled();
-    expect(jobs.cancel).not.toHaveBeenCalled();
+    expect(jobs.cancelIn).not.toHaveBeenCalled();
     expect(jobs.enqueue).toHaveBeenLastCalledWith(
       expect.objectContaining({ payload: LEFTOVER_APP, availableAt: expect.any(Date) }),
     );
@@ -3645,7 +3650,7 @@ describe("connections.begin", () => {
 
     await expect(call()).rejects.toBeInstanceOf(IsolationError);
     expect(revokeUnreferencedAccounts).not.toHaveBeenCalled();
-    expect(jobs.cancel).not.toHaveBeenCalled();
+    expect(jobs.cancelIn).not.toHaveBeenCalled();
     expect(jobs.enqueue).toHaveBeenLastCalledWith(
       expect.objectContaining({ payload: LEFTOVER_APP, availableAt: expect.any(Date) }),
     );
@@ -3672,7 +3677,7 @@ describe("connections.begin", () => {
   describe("when saving the result fails after the provider answered", () => {
     it("removes the authorization and still reports the failure", async () => {
       const cancelAuthorizationRequest = vi.fn(async () => undefined);
-      const { call, jobs, root } = lostBegin({ cancelAuthorizationRequest }, "request-1");
+      const { call, jobs, tx, root } = lostBegin({ cancelAuthorizationRequest }, "request-1");
       // The lost race's job write fails, which fails its transaction.
       jobs.enqueueIn.mockRejectedValue(new Error("queue unavailable"));
 
@@ -3685,9 +3690,20 @@ describe("connections.begin", () => {
         cancelAuthorizationRequest.mock.invocationCallOrder[0]!,
       );
       expect(cancelAuthorizationRequest).toHaveBeenCalledWith("request-1", expect.anything());
-      expect(jobs.cancel).toHaveBeenCalledWith(connectionCleanupJobKey(LEFTOVER_REQUEST));
-      expect(root.updateMany).toHaveBeenCalledWith(
-        expect.objectContaining({ data: { status: "error" } }),
+      expect(jobs.cancelIn).toHaveBeenCalledWith(tx, connectionCleanupJobKey(LEFTOVER_REQUEST));
+      // The row is marked failed only while it is exactly what this begin first wrote, and
+      // before the removal, which would otherwise wait for it as for a connection in flight.
+      const { attempt } = tx.connection.create.mock.calls[0]![0].data.metadata;
+      expect(root.updateMany).toHaveBeenCalledWith({
+        where: expect.objectContaining({
+          id: "conn-1",
+          status: "pending",
+          metadata: { equals: { attempt } },
+        }),
+        data: { status: "error" },
+      });
+      expect(root.updateMany.mock.invocationCallOrder[0]).toBeLessThan(
+        tx.$queryRaw.mock.invocationCallOrder[0]!,
       );
     });
 
@@ -3705,7 +3721,7 @@ describe("connections.begin", () => {
       await expect(call()).rejects.toBeInstanceOf(ORPCError);
       expect(cancelAuthorizationRequest).toHaveBeenCalledTimes(1);
       expect(jobs.enqueue).toHaveBeenLastCalledWith(connectionCleanupJob(LEFTOVER_REQUEST));
-      expect(jobs.cancel).not.toHaveBeenCalled();
+      expect(jobs.cancelIn).not.toHaveBeenCalled();
     });
 
     it("still removes the authorization when the queue cannot be reached, and says so if it cannot", async () => {
@@ -3736,34 +3752,38 @@ describe("connections.begin", () => {
     });
 
     it("leaves a result that was saved after all to its row", async () => {
-      const cancelAuthorizationRequest = vi.fn(async () => undefined);
-      const { call, jobs, root } = lostBegin({ cancelAuthorizationRequest }, "request-1");
-      jobs.enqueueIn.mockRejectedValue(new Error("connection lost at commit"));
-      root.count.mockResolvedValue(1);
-
-      await expect(call()).rejects.toBeInstanceOf(ORPCError);
-      expect(root.count).toHaveBeenCalledWith({
-        where: expect.objectContaining({ id: "conn-1", providerRef: "request-1" }),
-      });
-      expect(cancelAuthorizationRequest).not.toHaveBeenCalled();
-      expect(jobs.enqueue).not.toHaveBeenCalled();
-    });
-
-    it("removes nothing itself when it cannot tell whether the result was saved", async () => {
-      // The save committed, but neither its answer nor the read that would show it arrived.
+      // The save committed without its answer arriving: the row holds the authorization.
       const cancelAuthorizationRequest = vi.fn(async () => undefined);
       const revoke = vi.fn(async () => undefined);
       for (const connector of [{ cancelAuthorizationRequest }, { revoke }]) {
-        const { call, jobs, root, tx, errors } = lostBegin(connector, "request-1");
+        const { call, jobs, tx, errors } = lostBegin(connector, "request-1");
         jobs.enqueueIn.mockRejectedValue(new Error("connection lost at commit"));
-        root.count.mockRejectedValue(new Error("database unavailable"));
+        tx.connection.count.mockResolvedValue(1);
 
         await expect(call()).rejects.toBeInstanceOf(ORPCError);
-        // The job decides later, under the lock, where it can read the row.
-        expect(jobs.enqueue).toHaveBeenCalledTimes(1);
-        expect(jobs.enqueue).toHaveBeenCalledWith(connectionCleanupJob(LEFTOVER_REQUEST));
-        expect(jobs.cancel).not.toHaveBeenCalled();
-        expect(tx.connection.count).not.toHaveBeenCalled();
+        // The removal reads the rows under the scope's lock, as the job would, and finds it in use.
+        expect(tx.connection.count).toHaveBeenCalledWith({
+          where: expect.objectContaining({ providerRef: "request-1" }),
+        });
+        expect(jobs.cancelIn).toHaveBeenCalledWith(tx, connectionCleanupJobKey(LEFTOVER_REQUEST));
+        expect(errors()).toEqual([]);
+      }
+      expect(cancelAuthorizationRequest).not.toHaveBeenCalled();
+      expect(revoke).not.toHaveBeenCalled();
+    });
+
+    it("removes nothing itself when it cannot read whether the result was saved", async () => {
+      const cancelAuthorizationRequest = vi.fn(async () => undefined);
+      const revoke = vi.fn(async () => undefined);
+      for (const connector of [{ cancelAuthorizationRequest }, { revoke }]) {
+        const { call, jobs, tx, errors } = lostBegin(connector, "request-1");
+        jobs.enqueueIn.mockRejectedValue(new Error("connection lost at commit"));
+        tx.connection.count.mockRejectedValue(new Error("database unavailable"));
+
+        await expect(call()).rejects.toBeInstanceOf(ORPCError);
+        // The job decides later, under the lock, once it can read the row.
+        expect(jobs.enqueue).toHaveBeenLastCalledWith(connectionCleanupJob(LEFTOVER_REQUEST));
+        expect(jobs.cancelIn).not.toHaveBeenCalled();
         expect(errors()).toEqual([]);
       }
       expect(cancelAuthorizationRequest).not.toHaveBeenCalled();
@@ -3772,19 +3792,19 @@ describe("connections.begin", () => {
 
     it("leaves the authorization and names it when neither the database nor the queue answers", async () => {
       const cancelAuthorizationRequest = vi.fn(async () => undefined);
-      const { call, jobs, root, errors, events } = lostBegin(
+      const { call, jobs, tx, errors, events } = lostBegin(
         { cancelAuthorizationRequest },
         "request-1",
       );
       jobs.enqueueIn.mockRejectedValue(new Error("connection lost at commit"));
       jobs.enqueue.mockRejectedValue(new Error("queue unavailable"));
-      root.count.mockRejectedValue(new Error("database unavailable"));
+      tx.connection.count.mockRejectedValue(new Error("database unavailable"));
 
       await expect(call()).rejects.toBeInstanceOf(ORPCError);
       // An authorization nothing may refer to is the lesser harm next to deleting one in use.
       expect(cancelAuthorizationRequest).not.toHaveBeenCalled();
       expect(errors()).toEqual([
-        "connections.begin could not tell whether its result was saved, and has no backup job; if no connection uses the authorization, remove it at the provider by hand",
+        "connections.begin leftover cleanup has no backup job; remove the authorization at the provider by hand",
       ]);
       expect(events().at(-1)).toMatchObject({
         spaceId: "workspace-1",
@@ -3794,6 +3814,33 @@ describe("connections.begin", () => {
         providerRef: "request-1",
       });
     });
+
+    it("still removes the authorization when its row cannot be marked failed", async () => {
+      const cancelAuthorizationRequest = vi.fn(async () => undefined);
+      const { call, jobs, root } = lostBegin({ cancelAuthorizationRequest }, "request-1");
+      jobs.enqueueIn.mockRejectedValue(new Error("queue unavailable"));
+      root.updateMany.mockRejectedValue(new Error("database unavailable"));
+
+      await expect(call()).rejects.toBeInstanceOf(ORPCError);
+      expect(cancelAuthorizationRequest).toHaveBeenCalledWith("request-1", expect.anything());
+    });
+  });
+
+  it("leaves the job shared by an app's cleanups for the queue to run", async () => {
+    // Every cleanup of an app's accounts in one scope shares a job key. Deleting the job after
+    // this removal could take the record another begin made since the accounts were listed.
+    const revokeUnreferencedAccounts = vi.fn(async () => undefined);
+    const { call, jobs, tx, errors } = lostBegin({ revokeUnreferencedAccounts }, "gmail");
+
+    await expect(call()).rejects.toBeInstanceOf(IsolationError);
+    expect(revokeUnreferencedAccounts).toHaveBeenCalledTimes(1);
+    expect(jobs.enqueueIn).toHaveBeenCalledWith(
+      tx,
+      expect.objectContaining({ payload: LEFTOVER_APP, availableAt: expect.any(Date) }),
+    );
+    expect(jobs.cancelIn).not.toHaveBeenCalled();
+    expect(jobs.enqueue).not.toHaveBeenCalled();
+    expect(errors()).toEqual([]);
   });
 
   it("answers with the connector auth code when the app has no usable sign-in", async () => {

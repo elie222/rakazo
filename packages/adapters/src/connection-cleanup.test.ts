@@ -34,7 +34,9 @@ function cleanupJob(connector: Record<string, unknown> | undefined) {
   const connection = {
     // Active rows that have saved the authorization being removed.
     count: vi.fn(async (_args: { where: { providerRef: string } }) => 0),
-    findMany: vi.fn(async (): Promise<Array<{ providerRef: string | null }>> => []),
+    findMany: vi.fn(
+      async (): Promise<Array<{ providerRef: string | null; status?: string }>> => [],
+    ),
   };
   const integrationProviderConfig = { findUnique: vi.fn(async (): Promise<null> => null) };
   const tx = {
@@ -177,6 +179,46 @@ describe("connection.cleanup", () => {
       "mail",
       ["account-1", "account-2"],
       expect.anything(),
+    );
+  });
+
+  it("does not wait for a failed connection that saved nothing", async () => {
+    const revokeUnreferencedAccounts = vi.fn(async () => undefined);
+    const { run, connection } = cleanupJob({ revokeUnreferencedAccounts });
+    // The begin this cleanup is for left its own row failed, with no reference: it owns nothing.
+    connection.findMany.mockResolvedValue([
+      { providerRef: "account-1", status: "connected" },
+      { providerRef: null, status: "error" },
+    ]);
+    await expect(run(scope)).resolves.toBeUndefined();
+    expect(revokeUnreferencedAccounts).toHaveBeenCalledWith(
+      "mail",
+      ["account-1"],
+      expect.anything(),
+    );
+
+    // A failed row that names the app, or one still connecting, may own an account.
+    for (const sibling of [
+      { providerRef: "mail", status: "error" },
+      { providerRef: null, status: "pending" },
+      { providerRef: null, status: "connected" },
+    ]) {
+      revokeUnreferencedAccounts.mockClear();
+      connection.findMany.mockResolvedValue([sibling]);
+      await expect(run(scope)).rejects.toBeInstanceOf(RetryJobLaterError);
+      expect(revokeUnreferencedAccounts).not.toHaveBeenCalled();
+    }
+  });
+
+  it("says what it waits for when it asks the queue for a later try", async () => {
+    const { run, connection } = cleanupJob({ revokeUnreferencedAccounts: vi.fn() });
+    connection.findMany.mockResolvedValue([{ providerRef: null, status: "pending" }]);
+
+    const waiting = await run(scope).catch((error: unknown) => error);
+    expect(waiting).toBeInstanceOf(RetryJobLaterError);
+    expect((waiting as RetryJobLaterError).delayMs).toBe(10 * 60_000);
+    expect((waiting as RetryJobLaterError).cause).toEqual(
+      new Error("An unfinished connection of this app may own the accounts"),
     );
   });
 
@@ -352,39 +394,49 @@ describe("connection.cleanup", () => {
 });
 
 describe("a direct removal", () => {
-  function directRemoval(connector: Record<string, unknown>) {
+  function directRemoval(
+    connector: Record<string, unknown>,
+    leftover: typeof scope & { ref?: string } = request,
+  ) {
     const { prisma, connection, tx } = cleanupJob(connector);
+    const jobs = { cancelIn: vi.fn(async (_tx: unknown, _key: string) => undefined) };
     const run = () =>
       dropLeftoverAuthorization(
-        prisma as unknown as PrismaClient,
+        { prisma: prisma as unknown as PrismaClient, jobs },
         connector as unknown as ManagedConnectorProvider,
-        request,
+        leftover,
         "connections.begin",
       );
-    return { run, connection, tx, prisma };
+    return { run, connection, tx, prisma, jobs };
   }
 
   it("takes the scope's lock and reads which rows refer to the authorization before removing it", async () => {
     const cancelAuthorizationRequest = vi.fn(async () => undefined);
-    const { run, connection, tx } = directRemoval({ cancelAuthorizationRequest });
+    const { run, connection, tx, jobs } = directRemoval({ cancelAuthorizationRequest });
 
     await expect(run()).resolves.toBe("done");
-    const [locked, read, removed] = [
+    const [locked, read, removed, unrecorded] = [
       tx.$queryRaw.mock.invocationCallOrder[0]!,
       connection.count.mock.invocationCallOrder[0]!,
       cancelAuthorizationRequest.mock.invocationCallOrder[0]!,
+      jobs.cancelIn.mock.invocationCallOrder[0]!,
     ];
     expect(locked).toBeLessThan(read);
     expect(read).toBeLessThan(removed);
+    // The backup job goes in the transaction that holds the lock, after the removal.
+    expect(removed).toBeLessThan(unrecorded);
+    expect(jobs.cancelIn).toHaveBeenCalledWith(tx, connectionCleanupJobKey(request));
   });
 
   it("never removes an authorization an active row has saved", async () => {
     const cancelAuthorizationRequest = vi.fn(async () => undefined);
     const revoke = vi.fn(async () => undefined);
     for (const connector of [{ cancelAuthorizationRequest }, { revoke }]) {
-      const { run, connection } = directRemoval(connector);
+      const { run, connection, jobs } = directRemoval(connector);
       connection.count.mockResolvedValue(1);
       await expect(run()).resolves.toBe("done");
+      // The row keeps the authorization, so nothing is left for the job.
+      expect(jobs.cancelIn).toHaveBeenCalledTimes(1);
     }
     expect(cancelAuthorizationRequest).not.toHaveBeenCalled();
     expect(revoke).not.toHaveBeenCalled();
@@ -395,11 +447,38 @@ describe("a direct removal", () => {
     const busy = directRemoval({ cancelAuthorizationRequest });
     busy.tx.$queryRaw.mockResolvedValueOnce([{ locked: false }]);
     await expect(busy.run()).resolves.toBe("busy");
+    expect(busy.jobs.cancelIn).not.toHaveBeenCalled();
 
     const unreadable = directRemoval({ cancelAuthorizationRequest });
     unreadable.connection.count.mockRejectedValue(new Error("database unavailable"));
     await expect(unreadable.run()).rejects.toThrow("database unavailable");
+    expect(unreadable.jobs.cancelIn).not.toHaveBeenCalled();
     expect(cancelAuthorizationRequest).not.toHaveBeenCalled();
+  });
+
+  it("keeps the job when the removal failed, and fails when the job cannot be deleted", async () => {
+    const refused = directRemoval({
+      cancelAuthorizationRequest: vi.fn(async () => {
+        throw new Error("provider unavailable");
+      }),
+    });
+    await expect(refused.run()).rejects.toThrow("provider unavailable");
+    expect(refused.jobs.cancelIn).not.toHaveBeenCalled();
+
+    // The transaction fails with the delete, so the caller hands over to the job that remains.
+    const undeleted = directRemoval({ cancelAuthorizationRequest: vi.fn(async () => undefined) });
+    undeleted.jobs.cancelIn.mockRejectedValue(new Error("queue unavailable"));
+    await expect(undeleted.run()).rejects.toThrow("queue unavailable");
+  });
+
+  it("leaves the job that every cleanup of an app's accounts in the scope shares", async () => {
+    // Another flow may have recorded that job since this one listed the accounts.
+    const revokeUnreferencedAccounts = vi.fn(async () => undefined);
+    const { run, jobs } = directRemoval({ revokeUnreferencedAccounts }, scope);
+
+    await expect(run()).resolves.toBe("done");
+    expect(revokeUnreferencedAccounts).toHaveBeenCalledTimes(1);
+    expect(jobs.cancelIn).not.toHaveBeenCalled();
   });
 });
 
