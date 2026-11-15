@@ -121,6 +121,15 @@ describe("sanitizeModelConnectionError", () => {
     );
   });
 
+  it("redacts a short token after a scheme in a credential field, but not a plain word", () => {
+    expect(sanitizeModelConnectionError("rejected token=Bearer abc1 for this call")).toBe(
+      "rejected token=••• for this call",
+    );
+    expect(sanitizeModelConnectionError("rejected token=Bearer missing")).toBe(
+      "rejected token=••• missing",
+    );
+  });
+
   it("redacts the value of an indexed field", () => {
     expect(sanitizeModelConnectionError("bad api_keys[0]=EXAMPLE1placeholder2VALUE3 sent")).toBe(
       "bad api_keys[0]=••• sent",

@@ -45,6 +45,7 @@ const SEPARATOR = /\s*[:=](?!\/\/)\s*/y;
 const ONLY_OPENING_BRACKETS = /^[{[]+$/;
 const ONLY_OPENING_PUNCTUATION = /^[\s{["'`\\]*$/;
 const AUTH_SCHEME = /[A-Za-z]{2,10}[ \t]+/y;
+const KNOWN_SCHEME = /^(?:bearer|basic|digest|negotiate|token)[ \t]+$/i;
 /** Shorter words after an unknown scheme are status codes and prose, not credentials. */
 const MIN_SCHEME_CREDENTIAL_LENGTH = 8;
 const PLAIN_WORD = /^(?:[A-Za-z][a-z]*|[A-Z]+)$/;
@@ -174,8 +175,12 @@ function valueSpan(
 function schemeLedSpan(text: string, at: number): Span | undefined {
   const scheme = matchAt(AUTH_SCHEME, text, at);
   const credential = scheme && valueSpan(text, at + scheme.length, { proseAllowed: true });
-  if (!credential || credential.end - credential.start < MIN_SCHEME_CREDENTIAL_LENGTH) {
-    return undefined;
+  if (!credential) return undefined;
+  if (credential.end - credential.start < MIN_SCHEME_CREDENTIAL_LENGTH) {
+    // After a scheme everyone knows, a short second word is still the credential unless it
+    // reads as a plain word (`Bearer token`).
+    const word = text.slice(credential.start, credential.end);
+    if (!KNOWN_SCHEME.test(scheme) || readsAsProse(word)) return undefined;
   }
   return { start: at, end: credential.end, resume: credential.resume };
 }
