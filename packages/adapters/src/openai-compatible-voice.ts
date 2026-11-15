@@ -454,52 +454,53 @@ export class OpenAiCompatibleVoiceProvider implements VoiceProvider {
   async synthesize(request: VoiceSynthesizeRequest, context: AdapterContext): Promise<SpeechClip> {
     const secret = parseOpenAiCompatibleVoiceSecret(request.apiKey);
     const signal = deadlineSignal(SPEAK_DEADLINE_MS, request.signal ?? context.signal);
-    const langCode = kokoroLangCode(request.voiceId);
-    const speak = (voice: string, lang: string | undefined) =>
-      this.fetch(endpoint(secret, "audio/speech"), {
-        method: "POST",
-        headers: headers(secret, { "content-type": "application/json" }),
-        body: JSON.stringify({
-          model: secret.ttsModel,
-          voice,
-          input: request.text,
-          response_format: "mp3",
-          // Kokoro servers otherwise read every voice with English pronunciation.
-          ...(lang ? { lang_code: lang } : {}),
-        }),
-        signal,
-      });
-    let res = await speak(request.voiceId, langCode);
-    let refusal: unknown;
-    // Set once the server has refused lang_code, so the substitute cannot add it back.
+    // Set once the server has refused lang_code, so no later attempt sends it again.
     let langRefused = false;
-    // Some OpenAI-compatible servers reject the whole body over a key they do not know,
-    // so a rejection naming lang_code is retried once without it. Any other 400 keeps its
-    // own detail, and servers that accept the hint keep the pronunciation.
-    if (!res.ok && langCode && (res.status === 400 || res.status === 422)) {
-      refusal = await readVoiceJson(res);
-      if (rejectsKey(refusal, "lang_code")) {
+    /**
+     * Speaks with one voice. Kokoro servers otherwise read every voice with English
+     * pronunciation, but strict servers reject the whole body over a key they do not know, so a
+     * refusal naming lang_code is retried once without it. Resolves with the failed response's
+     * body when the attempt still fails.
+     */
+    const attempt = async (voice: string): Promise<{ res: Response; refusal?: unknown }> => {
+      const send = (lang: string | undefined) =>
+        this.fetch(endpoint(secret, "audio/speech"), {
+          method: "POST",
+          headers: headers(secret, { "content-type": "application/json" }),
+          body: JSON.stringify({
+            model: secret.ttsModel,
+            voice,
+            input: request.text,
+            response_format: "mp3",
+            ...(lang ? { lang_code: lang } : {}),
+          }),
+          signal,
+        });
+      const langCode = langRefused ? undefined : kokoroLangCode(voice);
+      let res = await send(langCode);
+      if (res.ok) return { res };
+      let refusal = await readVoiceJson(res);
+      if (langCode && isRefusal(res) && rejectsKey(refusal, "lang_code")) {
         langRefused = true;
-        res = await speak(request.voiceId, undefined);
-        refusal = undefined;
+        res = await send(undefined);
+        if (res.ok) return { res };
+        refusal = await readVoiceJson(res);
       }
+      return { res, refusal };
+    };
+    const first = await attempt(request.voiceId);
+    if (first.res.ok) return speechClip(first.res, signal);
+    // A strict server that refuses the voice may name the ones the model takes; trying the
+    // first keeps the request alive, and the clip reports the voice it really used.
+    const alternative = isRefusal(first.res)
+      ? suggestedVoices(first.refusal).find((voice) => voice !== request.voiceId)
+      : undefined;
+    if (!alternative) {
+      throw serverError(first.res.status, "speaking", first.refusal, secret.apiKey);
     }
-    if (!res.ok) {
-      const refused = refusal ?? (await readVoiceJson(res));
-      // A strict server that refuses the voice may name the ones the model takes; trying the
-      // first keeps the request alive, and the clip reports the voice it really used.
-      const alternative =
-        res.status === 400 || res.status === 422
-          ? suggestedVoices(refused).find((voice) => voice !== request.voiceId)
-          : undefined;
-      if (alternative) {
-        res = await speak(alternative, langRefused ? undefined : kokoroLangCode(alternative));
-        if (res.ok) return speechClip(res, signal, alternative);
-        throw serverError(res.status, "speaking", await readVoiceJson(res), secret.apiKey);
-      }
-      throw serverError(res.status, "speaking", refused, secret.apiKey);
-    }
-    return speechClip(res, signal);
+    const second = await attempt(alternative);
+    if (second.res.ok) return speechClip(second.res, signal, alternative);
+    throw serverError(second.res.status, "speaking", second.refusal, secret.apiKey);
   }
 
   async transcribe(
@@ -542,6 +543,10 @@ export class OpenAiCompatibleVoiceProvider implements VoiceProvider {
     }
     return { text: raw.trim() };
   }
+}
+
+function isRefusal(res: Response): boolean {
+  return res.status === 400 || res.status === 422;
 }
 
 /** mp3 was requested; servers label it audio/mpeg or audio/mp3. Anything else is not a clip. */

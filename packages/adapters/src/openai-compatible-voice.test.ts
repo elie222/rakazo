@@ -436,6 +436,30 @@ describe("OpenAiCompatibleVoiceProvider", () => {
     expect(JSON.parse(String(calledInit(fetchMock, 2).body))).not.toHaveProperty("lang_code");
   });
 
+  it("drops lang_code from a suggested Kokoro voice when the server refuses it", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: "Voice alloy is unknown. Valid voices: af_bella." }), {
+          status: 400,
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: "Unrecognized key(s) in object: 'lang_code'" }), {
+          status: 400,
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(new Uint8Array([1]), { headers: { "content-type": "audio/mpeg" } }),
+      );
+    await expect(
+      provider(fetchMock).synthesize({ text: "Hi", voiceId: "alloy", apiKey: keyed }, ctx),
+    ).resolves.toMatchObject({ voiceId: "af_bella" });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(JSON.parse(String(calledInit(fetchMock, 1).body))).toHaveProperty("lang_code");
+    expect(JSON.parse(String(calledInit(fetchMock, 2).body))).not.toHaveProperty("lang_code");
+  });
+
   it("retries with the voice the server suggests and reports the one it used", async () => {
     const refusal = {
       error: {
