@@ -320,7 +320,12 @@ export interface ManagedConnectorProvider
   listReconnectRefs?(context: AdapterContext): Promise<string[]>;
   connectionReady(context: AdapterContext, externalId: string): Promise<boolean>;
   warmDirectory?(): Promise<void>;
-  /** Map a begin() state or stored ref to the concrete remote account id, skipping excluded ids. */
+  /**
+   * Map a begin() state or stored ref to the concrete remote account id, skipping excluded ids.
+   * A connector without `cancelAuthorizationRequest` must reject here when the provider could
+   * not be asked: connection cleanup removes an authorization through this lookup then, and
+   * reads undefined as nothing left to remove.
+   */
   resolveConnectedAccountId?(
     userId: string,
     slug: string,
