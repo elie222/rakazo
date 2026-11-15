@@ -68,7 +68,11 @@ export async function connectMcpOauth(serverId: string): Promise<McpOauthResult>
       // that message its turn before counting the closed window as a cancel.
       window.clearInterval(pollTimer);
       window.setTimeout(() => {
-        if (!captured) finish("cancelled");
+        if (captured) return;
+        // COOP can misreport an open popup as closed; close it so a sign-in
+        // nobody is waiting for cannot be finished there.
+        popup.close();
+        finish("cancelled");
       }, CAPTURE_GRACE_MS);
     }, 500);
     timeoutTimer = window.setTimeout(() => {
