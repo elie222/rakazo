@@ -15,8 +15,8 @@ type LinkifiedTextProps = {
   color: string;
   linkColor: string;
   palette: ColorTokens;
-  /** Renders the runs between links (and where each starts in the text); plain strings by default. */
-  renderText?: (text: string, start: number) => ReactNode;
+  /** Renders the runs between links, which are plain strings by default. */
+  renderText?: (text: string) => ReactNode;
   onOpenPage?: (pageId: string) => void;
 };
 
@@ -68,13 +68,12 @@ export const LinkifiedText = memo(function LinkifiedText({
     textDecorationColor: linkColor,
   };
   const style = [{ color, ...typeScale.body }, contraryDirection(children) && layout.farSideText];
-  // `offset` is where `text` starts in `children`, so renderText always gets whole-text offsets.
-  const paragraph = (text: string, key?: number, offset = 0) => (
+  const paragraph = (text: string, key?: number) => (
     <Text key={key} style={style}>
       {plainTextLinkParts(text).map((part, index) => {
         if (part.type === "text") {
           return renderText ? (
-            <Fragment key={index}>{renderText(part.value, offset + part.start)}</Fragment>
+            <Fragment key={index}>{renderText(part.value)}</Fragment>
           ) : (
             part.value
           );
@@ -130,14 +129,5 @@ export const LinkifiedText = memo(function LinkifiedText({
   );
   const blocks = textBlocks(children);
   if (blocks.length === 1) return paragraph(children);
-  let offset = 0;
-  return (
-    <View>
-      {blocks.map((block, index) => {
-        const start = offset;
-        offset += block.length + 1;
-        return paragraph(block, index, start);
-      })}
-    </View>
-  );
+  return <View>{blocks.map((block, index) => paragraph(block, index))}</View>;
 });

@@ -2,7 +2,6 @@
 
 import type { MessageBlock } from "@rakazo/contracts";
 import { urlSite } from "@rakazo/core/egress";
-import { PAGE_REPLY_LINK } from "@rakazo/core/page-links";
 import LinkifyIt from "linkify-it";
 import type { ReactNode } from "react";
 import { createContext, useContext, useEffect, useSyncExternalStore } from "react";
@@ -215,19 +214,21 @@ const protocolPattern = /^([a-z][a-z\d+.-]*):/i;
 const safeProtocols = new Set(["http", "https", "mailto", "tel"]);
 
 export type PlainTextPart =
-  /** `start` is where the run begins in the source text. */
-  | { type: "text"; value: string; start: number }
+  | { type: "text"; value: string }
   | { type: "link"; value: string; href: string }
   | { type: "page"; value: string; pageId: string };
 
-function appendPlainText(parts: PlainTextPart[], value: string, start: number) {
+// The link pageReply puts before a sent reply: `[title](page:<pageId>)`, title brackets escaped.
+const PLAIN_PAGE_LINK = /\[((?:\\[\\[\]]|[^\\[\]\n])*)\]\(page:([A-Za-z0-9_-]{1,64})\)/g;
+
+function appendPlainText(parts: PlainTextPart[], value: string) {
   if (!value) return;
   const previous = parts.at(-1);
   if (previous?.type === "text") {
     previous.value += value;
     return;
   }
-  parts.push({ type: "text", value, start });
+  parts.push({ type: "text", value });
 }
 
 /**
@@ -238,20 +239,20 @@ function appendPlainText(parts: PlainTextPart[], value: string, start: number) {
 export function plainTextLinkParts(text: string): PlainTextPart[] {
   const parts: PlainTextPart[] = [];
   let cursor = 0;
-  for (const match of text.matchAll(PAGE_REPLY_LINK)) {
-    if (match.index > cursor) parts.push(...urlLinkParts(text.slice(cursor, match.index), cursor));
+  for (const match of text.matchAll(PLAIN_PAGE_LINK)) {
+    if (match.index > cursor) parts.push(...urlLinkParts(text.slice(cursor, match.index)));
     const value = match[1]!.replace(/\\([\\[\]])/g, "$1");
     parts.push({ type: "page", value, pageId: match[2]! });
     cursor = match.index + match[0].length;
   }
-  if (cursor === 0) return urlLinkParts(text, 0);
-  if (cursor < text.length) parts.push(...urlLinkParts(text.slice(cursor), cursor));
+  if (cursor === 0) return urlLinkParts(text);
+  if (cursor < text.length) parts.push(...urlLinkParts(text.slice(cursor)));
   return parts;
 }
 
-function urlLinkParts(text: string, offset: number): PlainTextPart[] {
+function urlLinkParts(text: string): PlainTextPart[] {
   const matches = plainTextLinkify.match(text);
-  if (!matches || matches.length === 0) return [{ type: "text", value: text, start: offset }];
+  if (!matches || matches.length === 0) return [{ type: "text", value: text }];
 
   const parts: PlainTextPart[] = [];
   let cursor = 0;
@@ -259,9 +260,9 @@ function urlLinkParts(text: string, offset: number): PlainTextPart[] {
     if (match.index < cursor || match.lastIndex <= match.index) continue;
     const value = text.slice(match.index, match.lastIndex);
     const href = sanitizeMarkdownUrl(match.url);
-    appendPlainText(parts, text.slice(cursor, match.index), offset + cursor);
+    appendPlainText(parts, text.slice(cursor, match.index));
     if (!href) {
-      appendPlainText(parts, value, offset + match.index);
+      appendPlainText(parts, value);
       cursor = match.lastIndex;
       continue;
     }
@@ -269,8 +270,8 @@ function urlLinkParts(text: string, offset: number): PlainTextPart[] {
     cursor = match.lastIndex;
   }
 
-  appendPlainText(parts, text.slice(cursor), offset + cursor);
-  return parts.length > 0 ? parts : [{ type: "text", value: text, start: offset }];
+  appendPlainText(parts, text.slice(cursor));
+  return parts.length > 0 ? parts : [{ type: "text", value: text }];
 }
 
 export function sanitizeMarkdownUrl(url: string, allowRelative = false): string | undefined {

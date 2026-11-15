@@ -1,13 +1,7 @@
 import { plainTextLinkParts } from "@rakazo/chat-ui/native";
 import type { BotAvatarSet } from "@rakazo/contracts";
 import type { MentionTextPart } from "@rakazo/core";
-import {
-  displayName,
-  everyoneWords,
-  groupMentionCheck,
-  groupMentionNames,
-  splitMentionText,
-} from "@rakazo/core";
+import { displayName, everyoneWords, groupMentionNames, splitMentionText } from "@rakazo/core";
 import type { ReactNode } from "react";
 import { createContext } from "react";
 
@@ -33,7 +27,8 @@ export const UserMentionsContext = createContext<
 /**
  * The targets a sent message can name: the group's members, plus everyone with two or more. A name
  * two members share, or a bot named everyone, stays plain text: the text alone cannot say which
- * one was meant. The other words for everyone show only where they wake every member.
+ * one was meant. The other words for everyone show only when the message wakes every member with
+ * them.
  */
 export function userMentionTargets(
   members: readonly { botId: string; name: string; color: string; avatarSet?: BotAvatarSet }[],
@@ -64,46 +59,6 @@ export function userMentionTargets(
   return targets;
 }
 
-type MentionCheck = ReturnType<typeof groupMentionCheck>;
-
-function everyoneCheck(text: string, targets: readonly UserMentionTarget[]): MentionCheck {
-  const everyone = targets
-    .filter((target) => target.kind === "everyone")
-    .map((target) => target.name.toLowerCase());
-  return groupMentionCheck(text, everyone);
-}
-
-/**
- * Text cut into plain runs and the mentions it makes, read the way the group reads them: "@all" in
- * code or a package name stays plain even where another "@all" in the message wakes everyone.
- * `within` reads a run at `offset` in the whole message, since code and links can span runs.
- */
-export function splitUserMentions(
-  text: string,
-  targets: readonly UserMentionTarget[],
-  within?: { counts: MentionCheck; offset: number },
-): MentionTextPart<UserMentionTarget>[] {
-  const counts = within?.counts ?? everyoneCheck(text, targets);
-  let start = within?.offset ?? 0;
-  return splitMentionText(text, targets).map((part) => {
-    const span = { start, end: start + part.text.length, name: part.text.slice(1) };
-    start = span.end;
-    return part.target?.kind === "everyone" && !counts(span) ? { text: part.text } : part;
-  });
-}
-
-/**
- * Splits the text run of `text` that starts at `start` (between its links), read against the whole
- * message: whether an "@all" counts depends on code and links that one run alone may cut off.
- */
-export function userMentionRuns(
-  text: string,
-  targets: readonly UserMentionTarget[],
-): (run: string, start: number) => MentionTextPart<UserMentionTarget>[] {
-  const counts = everyoneCheck(text, targets);
-  return (run, start) => splitUserMentions(run, targets, { counts, offset: start });
-}
-
 /**
  * A sent message cut into plain runs and mentions; a link, email address or page link is never
  * searched for names.
@@ -112,9 +67,8 @@ export function textWithMentions(
   text: string,
   targets: readonly UserMentionTarget[],
 ): MentionTextPart<UserMentionTarget>[] {
-  const runs = userMentionRuns(text, targets);
   return plainTextLinkParts(text).flatMap((piece) =>
-    piece.type === "text" ? runs(piece.value, piece.start) : [{ text: piece.value }],
+    piece.type === "text" ? splitMentionText(piece.value, targets) : [{ text: piece.value }],
   );
 }
 

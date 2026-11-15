@@ -35,17 +35,11 @@ vi.mock("react-native", () => ({
 }));
 vi.mock("@rakazo/chat-ui/native", () => {
   // Stands in for the real link finder, which has its own tests: explicit URLs and emails.
-  const plainTextLinkParts = (text: string) => {
-    let start = 0;
-    return text
+  const plainTextLinkParts = (text: string) =>
+    text
       .split(/(https?:\/\/\S+|[^\s@]+@[^\s@]+\.[a-z]+)/)
-      .map((value, index) => {
-        const part = { type: index % 2 ? "link" : "text", value, href: value, start };
-        start += value.length;
-        return part;
-      })
+      .map((value, index) => ({ type: index % 2 ? "link" : "text", value, href: value }))
       .filter((part) => part.value);
-  };
   return {
     ChatMarkdown: ({ children }: { children?: ReactNode }) => createElement("p", null, children),
     plainTextLinkParts,
@@ -54,7 +48,7 @@ vi.mock("@rakazo/chat-ui/native", () => {
       renderText,
     }: {
       children: string;
-      renderText?: (text: string, start: number) => ReactNode;
+      renderText?: (text: string) => ReactNode;
     }) =>
       createElement(
         "b",
@@ -63,7 +57,7 @@ vi.mock("@rakazo/chat-ui/native", () => {
           createElement(
             Fragment,
             { key: index },
-            part.type === "text" && renderText ? renderText(part.value, part.start) : part.value,
+            part.type === "text" && renderText ? renderText(part.value) : part.value,
           ),
         ),
       ),
@@ -185,24 +179,6 @@ describe("sent message mentions", () => {
       render(text);
       expect(container.querySelector("[data-symbol]")).toBeNull();
       expect(container.textContent).toBe(text);
-    },
-  );
-
-  it.each([
-    ["run `@all` then @all", "run `@all` then all"],
-    ["@all then @all/pkg", "all then @all/pkg"],
-    ["`a` @all `b`", "`a` all `b`"],
-  ])("draws only the @all in %s that wakes everyone", (text, shown) => {
-    render(text);
-    expect(container.querySelectorAll('[data-symbol="person.3"]')).toHaveLength(1);
-    expect(container.textContent).toBe(shown);
-  });
-
-  it.each(["```\nhttps://x.test\n```\n@all", "https://x.test    @all"])(
-    "reads @all against the whole message when a link splits it: %s",
-    (text) => {
-      render(text);
-      expect(container.querySelectorAll('[data-symbol="person.3"]')).toHaveLength(1);
     },
   );
 

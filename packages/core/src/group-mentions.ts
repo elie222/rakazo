@@ -129,30 +129,22 @@ function insideRanges(ranges: readonly [number, number][], position: number): bo
 }
 
 /**
- * Whether each mention in `text` counts in a group. "all" and "所有人" turn up in ordinary text far
- * more than "everyone", so among `everyone` (see everyoneWords) they don't count in code or as
- * part of a link, an address or a package: "x.com/@all", "a@all.com", "@all/pkg".
+ * The names a group message mentions, as written, each read once with its longest name. "all" and
+ * "所有人" turn up in ordinary text far more than "everyone", so they don't count in code or as part
+ * of a link, an address or a package: "x.com/@all", "a@all.com", "@all/pkg".
  */
-export function groupMentionCheck(
-  text: string,
-  everyone: readonly string[],
-): (span: { start: number; end: number; name: string }) => boolean {
-  let quoted: [number, number][] | undefined;
-  return (span) => {
-    const word = span.name.toLowerCase();
-    if (word === "everyone" || !everyone.includes(word)) return true;
-    if (/[/\\.:@+]/.test(text[span.start - 1] ?? "")) return false;
-    if (/^[./\\][\p{L}\p{N}_-]/u.test(text.slice(span.end, span.end + 3))) return false;
-    quoted ??= quotedRanges(text);
-    return !insideRanges(quoted, span.start);
-  };
-}
-
-/** The names a group message mentions, as written, each read once with its longest name. */
 export function groupMentionNames(text: string, memberNames: readonly string[]): string[] {
   const words = everyoneWords(memberNames);
+  let quoted: [number, number][] | undefined;
   return mentionSpans(text, [...words, ...memberNames], words)
-    .filter(groupMentionCheck(text, words))
+    .filter((span) => {
+      const word = span.name.toLowerCase();
+      if (word === "everyone" || !words.includes(word)) return true;
+      if (/[/\\.:@+]/.test(text[span.start - 1] ?? "")) return false;
+      if (/^[./\\][\p{L}\p{N}_-]/u.test(text.slice(span.end, span.end + 3))) return false;
+      quoted ??= quotedRanges(text);
+      return !insideRanges(quoted, span.start);
+    })
     .map((span) => span.name);
 }
 
