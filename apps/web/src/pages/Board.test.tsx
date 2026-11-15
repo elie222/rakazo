@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { deferred } from "@rakazo/core/test-async";
 import type * as UiWeb from "@rakazo/ui-web";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
@@ -500,5 +501,131 @@ it("does not repeat a posted comment a refresh already brought", async () => {
     expect(commentsText(page).split("New note")).toHaveLength(2);
   } finally {
     await page.cleanup();
+  }
+});
+
+async function openNewTicket(page: { container: HTMLElement }, title: string) {
+  await act(async () =>
+    Array.from(page.container.querySelectorAll("button"))
+      .find((button) => button.textContent === "New ticket")!
+      .click(),
+  );
+  const input = page.container.querySelector("input")!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, title);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  const form = page.container.querySelector("form")!;
+  return {
+    submit: () => form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
+    create: () =>
+      Array.from(page.container.querySelectorAll("button")).find(
+        (button) => button.textContent === "Create",
+      ),
+  };
+}
+
+it("creates one ticket when submitted twice, holds the form meanwhile, then lists it and closes", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  api.bots.list.mockResolvedValue([bot("bot-1", "Helper")]);
+  api.tickets.list.mockReset().mockResolvedValue({ tickets: [] });
+  const creating = deferred<object>();
+  api.tickets.create.mockReset().mockReturnValue(creating.promise);
+  const page = await renderBoard();
+  try {
+    const form = await openNewTicket(page, "Launch");
+    await act(async () => {
+      form.submit();
+      form.submit();
+    });
+    expect(api.tickets.create).toHaveBeenCalledTimes(1);
+    expect(form.create()?.disabled).toBe(true);
+
+    const reads = api.tickets.list.mock.calls.length;
+    api.tickets.list.mockResolvedValue({ tickets: [ticket("Launch", "ticket-1")] });
+    await act(async () => creating.resolve({}));
+    await settle();
+    expect(api.tickets.list).toHaveBeenCalledTimes(reads + 1);
+    expect(form.create()).toBeUndefined();
+    expect(page.container.querySelector('[data-testid="board-card-ticket-1"]')).not.toBeNull();
+  } finally {
+    await page.cleanup();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("shows why a ticket was not saved and offers the form again", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  api.bots.list.mockResolvedValue([bot("bot-1", "Helper")]);
+  api.tickets.list.mockReset().mockResolvedValue({ tickets: [] });
+  api.tickets.create.mockReset().mockRejectedValue(new TypeError("Failed to fetch"));
+  const page = await renderBoard();
+  try {
+    const form = await openNewTicket(page, "Launch");
+    await act(async () => form.submit());
+    await settle();
+    expect(page.container.querySelector('[role="alert"]')?.textContent).toBe(
+      "Could not reach the server",
+    );
+    expect(form.create()?.disabled).toBe(false);
+  } finally {
+    await page.cleanup();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("closes a saved ticket even when the board cannot be read again", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  api.bots.list.mockResolvedValue([bot("bot-1", "Helper")]);
+  api.tickets.list.mockReset().mockResolvedValue({ tickets: [] });
+  api.tickets.create.mockReset().mockResolvedValue({});
+  const page = await renderBoard();
+  try {
+    const form = await openNewTicket(page, "Launch");
+    api.tickets.list.mockRejectedValue(new TypeError("Failed to fetch"));
+    await act(async () => form.submit());
+    await settle();
+    // Left open with an error, a second Create would add the ticket twice.
+    expect(form.create()).toBeUndefined();
+    expect(api.tickets.create).toHaveBeenCalledTimes(1);
+  } finally {
+    await page.cleanup();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("holds the comment box while a comment posts, and says when it fails", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  api.bots.list.mockResolvedValue([bot("bot-1", "Helper")]);
+  api.tickets.list.mockReset().mockResolvedValue({
+    tickets: [ticket("Ship", "ticket-1", "todo", "RAK-1", "bot-1")],
+  });
+  api.tickets.comments.mockReset().mockResolvedValue([]);
+  const posting = deferred<object>();
+  api.tickets.comment.mockReset().mockReturnValue(posting.promise);
+  const page = await renderBoard();
+  try {
+    await openTicketAndComment(page, "New note");
+    const box = page.container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Comment"]');
+    const post = () =>
+      Array.from(page.container.querySelectorAll("button")).find(
+        (button) => button.textContent === "Comment",
+      );
+    expect(post()?.disabled).toBe(true);
+    await act(async () =>
+      box!.closest("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
+    );
+    expect(api.tickets.comment).toHaveBeenCalledTimes(1);
+
+    await act(async () => posting.reject(new TypeError("Failed to fetch")));
+    await settle();
+    expect(page.container.querySelector('[role="alert"]')?.textContent).toBe(
+      "Could not reach the server",
+    );
+    expect(post()?.disabled).toBe(false);
+    expect(box?.value).toBe("New note");
+  } finally {
+    await page.cleanup();
+    vi.unstubAllGlobals();
   }
 });
