@@ -38,6 +38,7 @@
     "tsx": "4.23.15"
   },
   "devDependencies": {
+    "@rakazo/testkit": "workspace:*",
     "typescript": "7.0.2",
     "vitest": "5.1.0"
   }
