@@ -51,7 +51,7 @@ describe.skipIf(!databaseUrl)("raw routes", () => {
     ).toEqual([]);
   });
 
-  it("refuses a request without credentials on every route not reviewed as sessionless", async () => {
+  it("refuses a request without credentials, by each method, unless reviewed as sessionless", async () => {
     const { webOrigin } = loadEnv(process.env);
     const answered: string[] = [];
     for (const route of rawRoutes(handles.app).filter((route) => !reviewed.includes(route))) {
@@ -73,14 +73,15 @@ describe.skipIf(!databaseUrl)("raw routes", () => {
         "credentials. Refuse it before any work with 401 or 403 (a browser navigation may " +
         "redirect to the web app instead). If the route is meant to be public, or knows its " +
         "caller by a signed link, a shared secret or a signature, add it to SESSIONLESS_ROUTES " +
-        "with how.",
+        "with how. If only one branch of it answers, add that branch by its query.",
     ).toEqual([]);
   });
 
   it("reviews only routes the app registers", () => {
     const registered = rawRoutes(handles.app);
     expect(
-      reviewed.filter((route) => !registered.includes(route)),
+      // A key with a query reviews one branch of the route it names.
+      reviewed.filter((route) => !registered.includes(route.replace(/\?.*$/, ""))),
       "SESSIONLESS_ROUTES lists a route this app does not register. Remove the entry, or " +
         "switch on the feature that mounts it in this test.",
     ).toEqual([]);

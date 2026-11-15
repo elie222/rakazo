@@ -63,6 +63,7 @@ it("builds requests without credentials that reach a route", async () => {
 
   expect(await reached("GET /api/v1/bots/:botId/avatar")).toEqual([
     { method: "GET", path: "/api/v1/bots/anonymous/avatar", headers: [], body: null, status: 200 },
+    { method: "HEAD", path: "/api/v1/bots/anonymous/avatar", headers: [], body: null, status: 200 },
   ]);
   expect(await reached("POST /api/upload")).toEqual([
     {
@@ -73,8 +74,17 @@ it("builds requests without credentials that reach a route", async () => {
       status: 200,
     },
   ]);
-  expect((await reached("ALL /api/*")).map(({ method, path }) => `${method} ${path}`)).toEqual([
-    "GET /api/anonymous",
-    "POST /api/anonymous",
+  expect(
+    (await reached("ALL /api/*")).map(
+      ({ method, path, body, status }) => `${method} ${path} ${body} ${status}`,
+    ),
+  ).toEqual([
+    "HEAD /api/anonymous null 200",
+    "GET /api/anonymous null 200",
+    "POST /api/anonymous {} 200",
+    "PUT /api/anonymous {} 200",
+    "DELETE /api/anonymous {} 200",
+    "PATCH /api/anonymous {} 200",
+    "QUERY /api/anonymous {} 200",
   ]);
 });

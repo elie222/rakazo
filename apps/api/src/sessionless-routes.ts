@@ -2,6 +2,10 @@
  * Every raw route that answers a request with no signed-in session, with how it knows its caller.
  * RPC procedures share one sign-in step; a raw route checks its caller itself, so one that is not
  * listed here must refuse a request that carries no credentials.
+ *
+ * A key with a query names one branch of a route that otherwise refuses. No probe can find such a
+ * branch, so a route that answers a query, header or body field before checking its caller lists
+ * that branch here.
  */
 export const SESSIONLESS_ROUTES: Readonly<Record<string, string>> = {
   "GET /api/auth/capabilities": "public: sign-in options from configuration, no database",
@@ -22,6 +26,8 @@ export const SESSIONLESS_ROUTES: Readonly<Record<string, string>> = {
     "none: redirects to the web app, where the signed-in installer finishes; no database",
   "POST /api/v1/phone/webhook": "the platform's signature, checked by its adapter",
   "POST /api/v1/billing/webhook": "the billing provider's signature, checked by its adapter",
+  "GET /api/v1/billing/return?client=mobile":
+    "none: redirects to the mobile app's own link, a constant the request cannot change; no database",
   "GET /api/account/export": "a one-time token in the link, issued to the signed-in user",
   "GET /api/v1/integration-claims/confirm": "a one-time token in the emailed link",
   "GET /api/v1/pages/shared/:token": "public to anyone holding the page's share link",
