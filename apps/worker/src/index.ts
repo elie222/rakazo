@@ -39,6 +39,7 @@ import {
   InMemoryJobQueue,
   installedMessaging,
   isMessagingSurfaceEnabled,
+  machineCleanupRecords,
   messagingEnvFromProcess,
   messagingPlatformsFromEnv,
   PiAgentRuntime,
@@ -140,14 +141,6 @@ async function main() {
       : new PiAgentRuntime({ sessionRoot: resolvePiSessionRoot(env.dataDir) });
   const sandboxProvider = resolveSandboxProvider(process.env);
   const sandboxOptions = sandboxProviderOptionsFromEnv(process.env);
-  const sandbox = await createRunSandbox(sandboxProvider, {
-    ...sandboxOptions,
-    supervisorUrl: process.env.SANDBOX_SUPERVISOR_URL ?? "http://127.0.0.1:7091",
-    supervisorToken: sandboxProvider === "docker" ? resolveSupervisorToken(process.env) : undefined,
-    dataDir: env.dataDir,
-    prisma,
-    secrets,
-  });
   const connectors = createConnectorRuntime(env, { prisma, secrets, events });
   // Never poll inbound here: Telegram allows a single getUpdates consumer,
   // and that is the API process, which owns the inbound sink.
@@ -169,6 +162,15 @@ async function main() {
   const runs = new RunStarter(realtime, { signal: shutdown.signal });
   const jobs: JobPublisher =
     inMemoryJobs ?? new RunJobPublisher(prisma, new GraphileJobPublisher(pool, prisma), runs);
+  const sandbox = await createRunSandbox(sandboxProvider, {
+    ...sandboxOptions,
+    supervisorUrl: process.env.SANDBOX_SUPERVISOR_URL ?? "http://127.0.0.1:7091",
+    supervisorToken: sandboxProvider === "docker" ? resolveSupervisorToken(process.env) : undefined,
+    dataDir: env.dataDir,
+    prisma,
+    secrets,
+    unreferencedMachines: machineCleanupRecords(jobs),
+  });
   const { messaging, installations: messagingInstallations } = installedMessaging(
     prisma,
     secrets,

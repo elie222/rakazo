@@ -53,6 +53,7 @@ import {
   InMemoryRealtimeFanout,
   installedMessaging,
   isMessagingSurfaceEnabled,
+  machineCleanupRecords,
   messagingPlatformsFromEnv,
   ObjectAgentHomeStore,
   PiAgentRuntime,
@@ -397,6 +398,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       dataDir: env.dataDir,
       prisma,
       secrets,
+      unreferencedMachines: machineCleanupRecords(jobs),
     }));
   const memoryProviders = new SpaceMemoryProviderResolver(prisma, secrets);
   const oauthLogins = new PiOAuthLogins<ModelCredential>(undefined, { prisma, secrets });

@@ -11,6 +11,7 @@ import type {
   ScreenRequest,
   SecretStore,
   TerminalRequest,
+  UnreferencedMachine,
   WorkspaceDirectoryRequest,
   WorkspaceExportLimits,
 } from "@rakazo/adapter-kit";
@@ -531,5 +532,18 @@ export class ConfiguredSandbox implements SandboxProvider {
 
   async destroy(computer: ComputerRef, context: AdapterContext) {
     return (await this.route(computer)).destroy(computer, context);
+  }
+
+  async deleteMachine(machine: UnreferencedMachine, signal: AbortSignal) {
+    const provider = await this.route({
+      kind: machine.provider as ComputerRef["kind"],
+      botId: machine.homeKey ?? "",
+      providerRef: machine.machineId,
+    });
+    // The deployment's own provider answers for every kind Settings cannot select, so it may be
+    // another kind than the machine's: asking it would only report a machine it never had as gone.
+    if (provider.describe().id !== machine.provider || !provider.deleteMachine)
+      throw new Error("No configured computer provider can delete this machine");
+    return provider.deleteMachine(machine, signal);
   }
 }

@@ -30,6 +30,17 @@ export interface AdapterContext {
   connectedProviders?: string[];
 }
 
+/**
+ * A provider machine no stored computer points at: one a start created and has not stored, or a
+ * snapshot build's. `provider` is the computer kind it would be stored under, and `machineId`
+ * the reference it would be stored as. `homeKey` names the computer it was created for.
+ */
+export interface UnreferencedMachine {
+  provider: string;
+  machineId: string;
+  homeKey?: string;
+}
+
 export interface ConnectedConnector {
   id: string;
   connectorId: string;
@@ -947,6 +958,8 @@ export interface BackgroundJobPayloads {
   /** The previous release's interim-message mirror; drained by the new delivery path. */
   "messaging.progress": { runId: string };
   "messaging.credential-cleanup": { installationId: string; ref: string };
+  /** Deletes a provider machine once no stored computer points at it and none may still keep it. */
+  "computer.machine-cleanup": UnreferencedMachine;
   /** Backup for answering one inbound team-chat message, and the end of its routine routing. */
   "team_chat.engage": { externalMessageId: string };
   /** Decide whether a conversation's unanswered team-chat messages need the bot. */

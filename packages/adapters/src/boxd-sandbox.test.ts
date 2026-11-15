@@ -7,7 +7,11 @@ import type { BoxdSandboxClient } from "./boxd-sandbox.js";
 import { BOXD_COMPUTER_SNAPSHOT, BoxdSandboxProvider } from "./boxd-sandbox.js";
 import { BOXD_WORKSPACE, FakeBoxd, fakeBoxdProvider } from "./boxd-sandbox.test-support.js";
 import { isSandboxGoneError } from "./sandbox-errors.js";
-import { assertSandboxWorkspaceContract, settleMachineCleanup } from "./sandbox-test-support.js";
+import {
+  assertSandboxWorkspaceContract,
+  MachineRecords,
+  settleMachineCleanup,
+} from "./sandbox-test-support.js";
 
 const ctx = {
   operationId: "op",
@@ -307,6 +311,7 @@ describe("boxd computers", () => {
     function providerLosingCreateReply(
       boxd: FakeBoxd,
       remove?: BoxdSandboxClient["machines"]["delete"],
+      unreferencedMachines?: MachineRecords,
     ) {
       boxd.snapshots.set(BOXD_COMPUTER_SNAPSHOT, "ready");
       const client = boxd.client();
@@ -316,7 +321,7 @@ describe("boxd computers", () => {
         await create(params);
         throw lostReply;
       }) as typeof create;
-      return new BoxdSandboxProvider({}, client);
+      return new BoxdSandboxProvider({ unreferencedMachines }, client);
     }
     const provision = (provider: BoxdSandboxProvider, context: AdapterContext = ctx) =>
       settleMachineCleanup(() =>
@@ -442,6 +447,77 @@ describe("boxd computers", () => {
 
       expect(error).toBe(refused);
       expect(left).toEqual([{ provider: "boxd", machineId: "machine-1" }]);
+    });
+
+    it("records a new machine for its computer as soon as boxd returns it", async () => {
+      const boxd = new FakeBoxd();
+      boxd.snapshots.set(BOXD_COMPUTER_SNAPSHOT, "ready");
+      const records = new MachineRecords();
+      const provider = new BoxdSandboxProvider({ unreferencedMachines: records }, boxd.client());
+
+      const computer = await provider.provision({ botId: "bot", homePath: "/unused" }, ctx);
+
+      const [recorded] = records.dueIn();
+      expect(recorded).toMatchObject({
+        provider: "boxd",
+        machineId: computer.providerRef,
+        homeKey: "bot",
+      });
+      // Not due while the start that made it may still be storing it.
+      expect(recorded?.dueInMs).toBeGreaterThan(15 * 60_000);
+    });
+
+    it("hands a machine a lost create reply hid to the records, by the name it was created under", async () => {
+      const boxd = new FakeBoxd();
+      boxd.failures.set(
+        "delete",
+        Array.from({ length: 4 }, () => new Error("connection reset")),
+      );
+      const records = new MachineRecords();
+
+      await provision(providerLosingCreateReply(boxd, undefined, records));
+
+      const [machine] = [...boxd.machines.values()];
+      expect([...records.due.values()].map((entry) => entry.machine)).toEqual([
+        { provider: "boxd", machineId: machine!.name, homeKey: "bot" },
+      ]);
+    });
+
+    it("records the snapshot build machine while it builds, and no longer once it is deleted", async () => {
+      const boxd = new FakeBoxd();
+      const records = new MachineRecords();
+      const client = boxd.client();
+      const { create } = client.snapshots;
+      let whileBuilding: ReturnType<MachineRecords["dueIn"]> = [];
+      client.snapshots.create = (async (...args: Parameters<typeof create>) => {
+        whileBuilding = records.dueIn();
+        return create(...args);
+      }) as typeof create;
+      const provider = new BoxdSandboxProvider({ unreferencedMachines: records }, client);
+
+      await provider.buildComputerSnapshot();
+
+      expect(whileBuilding).toMatchObject([{ provider: "boxd", machineId: "machine-1" }]);
+      // Past the longest a build may run, so the job never takes a machine a build still uses.
+      expect(whileBuilding[0]?.dueInMs).toBeGreaterThan(30 * 60_000);
+      expect(records.due.size).toBe(0);
+    });
+
+    it("deletes a machine from its id or name alone, and counts one already gone as deleted", async () => {
+      const boxd = new FakeBoxd();
+      const provider = fakeBoxdProvider(boxd);
+      const signal = AbortSignal.timeout(5_000);
+      const byId = await provider.provision({ botId: "bot", homePath: "/unused" }, ctx);
+      await provider.provision({ botId: "other", homePath: "/unused" }, ctx);
+      const byName = [...boxd.machines.values()].find((entry) => entry.id !== byId.providerRef);
+
+      await provider.deleteMachine({ provider: "boxd", machineId: byId.providerRef }, signal);
+      await provider.deleteMachine({ provider: "boxd", machineId: byName!.name }, signal);
+
+      expect(boxd.machines.size).toBe(0);
+      await expect(
+        provider.deleteMachine({ provider: "boxd", machineId: byId.providerRef }, signal),
+      ).resolves.toBeUndefined();
     });
   });
 });
