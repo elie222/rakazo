@@ -46,10 +46,43 @@ function computerProviderIds() {
     new URL("../../../packages/adapters/src/sandbox-kind-capabilities.ts", import.meta.url),
     "utf8",
   );
-  const declared = /sandboxCapabilitiesByKind[^=]*=\s*\{([^}]*)\}/.exec(source)?.[1] ?? "";
-  const ids = [...declared.matchAll(/^\s*"?([\w-]+)"?\s*:/gm)].map((match) => match[1]);
-  if (ids.length === 0) throw new Error("No computer provider ids found in packages/adapters");
+  const ids = topLevelKeys(source, /sandboxCapabilitiesByKind[^=]*=\s*\{/);
+  // The map and its declaration files change together; a short read means the map changed shape.
+  const declared = [...source.matchAll(/from "\.\/[\w-]+-capabilities\.js"/g)].length;
+  if (ids.length === 0 || ids.length < declared) {
+    throw new Error(
+      `Read ${ids.length} computer provider ids from packages/adapters but ${declared} are declared; update computerProviderIds in this rule`,
+    );
+  }
   return ids.filter((id) => !UNCHECKED_COMPUTER_IDS.has(id));
+}
+
+/** Keys at the top level of the object literal that `opening` ends at, however entries are written. */
+function topLevelKeys(source, opening) {
+  const start = opening.exec(source);
+  if (!start) return [];
+  const keys = [];
+  let depth = 1;
+  let at = start.index + start[0].length;
+  const key = /\s*"?([\w-]+)"?\s*:/y;
+  let expectKey = true;
+  for (; at < source.length && depth > 0; at += 1) {
+    if (depth === 1 && expectKey) {
+      key.lastIndex = at;
+      const match = key.exec(source);
+      if (match) {
+        keys.push(match[1]);
+        at = key.lastIndex - 1;
+        expectKey = false;
+        continue;
+      }
+    }
+    const char = source[at];
+    if (char === "{" || char === "[" || char === "(") depth += 1;
+    else if (char === "}" || char === "]" || char === ")") depth -= 1;
+    else if (char === "," && depth === 1) expectKey = true;
+  }
+  return keys;
 }
 
 // The other families have no registry to read, so their vendors are listed: the names in adapter
