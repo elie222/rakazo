@@ -173,6 +173,19 @@ async function rosterSignal() {
   });
 }
 
+/** Opens `path` with its first load held back; the returned function answers it. */
+async function openHoldingFirstLoad(path: string) {
+  let answer!: (bootstrap: AppBootstrap) => void;
+  state.take.mockReturnValueOnce(new Promise<AppBootstrap>((resolve) => (answer = resolve)));
+  await open(path);
+  const [botId, groupId] = state.take.mock.calls[0]!;
+  return () =>
+    act(async () => {
+      answer(bootstrapOf("personal", botId, groupId));
+      await vi.advanceTimersByTimeAsync(50);
+    });
+}
+
 async function finishLoadingSpace(index = 0, outcome: "finish" | "fail" = "finish") {
   await act(async () => {
     spaceLoads[index]![outcome]();
@@ -327,6 +340,54 @@ describe("a roster re-read while the shell opens a chat in another space", () =>
     await finishLoadingSpace(0);
     expect(window.location.pathname).toBe("/app/home");
     await finishLoadingSpace(1);
+    expect(state.space).toBe("club");
+    expect(window.location.pathname).toBe("/app/chess");
+  });
+});
+
+describe("a first load that answers after the user moved on", () => {
+  it.each([
+    ["a group", "/app/g/standup"],
+    ["a bot", "/app/sales"],
+    ["a group that is gone", "/app/g/retired"],
+    ["a bot that is gone", "/app/retired"],
+  ])("stays on the chat opened while a link to %s was loading", async (_, link) => {
+    const answerFirstLoad = await openHoldingFirstLoad(link);
+    act(() => void shell.navigate("/app/errands"));
+    await answerFirstLoad();
+    expect(state.prime).not.toHaveBeenCalled();
+    expect(window.location.pathname).toBe("/app/errands");
+    await rosterSignal();
+    expect(state.space).toBe("personal");
+    expect(window.location.pathname).toBe("/app/errands");
+  });
+
+  it.each([
+    ["a group", "/app/g/standup"],
+    ["a bot", "/app/sales"],
+  ])("opens a link to %s that the user came back to", async (_, link) => {
+    const answerFirstLoad = await openHoldingFirstLoad(link);
+    act(() => void shell.navigate("/app/errands"));
+    act(() => void shell.navigate(link));
+    await answerFirstLoad();
+    await finishLoadingSpace();
+    expect(state.space).toBe("work");
+    expect(window.location.pathname).toBe(link);
+  });
+
+  it.each([
+    ["a group in another space", "/app/g/standup"],
+    ["a bot in another space", "/app/sales"],
+    ["a group that is gone", "/app/g/retired"],
+    ["a bot that is gone", "/app/retired"],
+  ])("keeps a switch the user started while a link to %s was loading", async (_, link) => {
+    server.club = { bots: ["chess"], groups: [] };
+    const answerFirstLoad = await openHoldingFirstLoad(link);
+    act(() => shell.openSpaceChat("club", "/app/chess"));
+    await answerFirstLoad();
+    expect(state.prime).toHaveBeenCalledTimes(1);
+    expect(window.location.pathname).toBe(link);
+    await finishLoadingSpace();
     expect(state.space).toBe("club");
     expect(window.location.pathname).toBe("/app/chess");
   });
