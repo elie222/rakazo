@@ -121,7 +121,7 @@ export function computerRoutes(ctx: RouterContext) {
         } catch (error) {
           // The bot was deleted or moved to another computer while this boot waited.
           if (isRecordNotFound(error)) {
-            throw new ORPCError("NOT_FOUND", { message: "Computer no longer exists" });
+            throw new ClientError("NOT_FOUND", "Computer no longer exists");
           }
           throw error;
         } finally {
@@ -475,7 +475,7 @@ export function computerRoutes(ctx: RouterContext) {
             })
             .catch((error: unknown) => {
               if (error instanceof Error && /exceeds|too large/i.test(error.message)) {
-                throw new ORPCError("BAD_REQUEST", { message: "file is too large to preview" });
+                throw new ClientError("BAD_REQUEST", "file is too large to preview");
               }
               throw error;
             });
@@ -492,11 +492,11 @@ export function computerRoutes(ctx: RouterContext) {
             });
           } catch (error) {
             if (error instanceof Error && error.message.startsWith("agent home file exceeds ")) {
-              throw new ORPCError("BAD_REQUEST", { message: "file is too large to preview" });
+              throw new ClientError("BAD_REQUEST", "file is too large to preview");
             }
             // The file browser can ask for a file deleted since it last listed.
             if (error instanceof Error && "code" in error && error.code === "ENOENT") {
-              throw new ORPCError("NOT_FOUND", { message: "file not found" });
+              throw new ClientError("NOT_FOUND", "file not found");
             }
             throw error;
           }
@@ -526,9 +526,10 @@ export function computerRoutes(ctx: RouterContext) {
           )
           .catch((error: unknown) => {
             if (error instanceof Error && /exceeds|too large/i.test(error.message)) {
-              throw new ORPCError("BAD_REQUEST", {
-                message: `File exceeds the ${attachmentSizeLabel(attachmentMaxBytes(deps.env))} download limit.`,
-              });
+              throw new ClientError(
+                "BAD_REQUEST",
+                `File exceeds the ${attachmentSizeLabel(attachmentMaxBytes(deps.env))} download limit.`,
+              );
             }
             throw error;
           });
@@ -672,7 +673,7 @@ export function computerRoutes(ctx: RouterContext) {
           )
           .catch(async (error: unknown) => {
             if (isComputerScreenUnavailable(error)) {
-              throw new ORPCError("CONFLICT", { message: computerScreenUnavailableMessage(error) });
+              throw new ClientError("CONFLICT", computerScreenUnavailableMessage(error));
             }
             return clearGoneSandbox(deps, computer, error);
           });

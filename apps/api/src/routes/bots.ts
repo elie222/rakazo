@@ -51,7 +51,7 @@ import {
   vaultImportLogin,
   vaultImportOrigin,
 } from "@rakazo/contracts";
-import { ACTIVE_RUN_STATUSES, COMPUTER_USING_RUNS, displayName } from "@rakazo/core";
+import { ACTIVE_RUN_STATUSES, ClientError, COMPUTER_USING_RUNS, displayName } from "@rakazo/core";
 import type { Prisma } from "@rakazo/db";
 import {
   botProfileLabelsChanged,
@@ -594,9 +594,10 @@ export function botsRoutes(ctx: RouterContext) {
           },
         }).catch((error) => {
           if (input.expectedSettings && isRecordNotFound(error))
-            throw new ORPCError("CONFLICT", {
-              message: "Settings changed; review the current settings first.",
-            });
+            throw new ClientError(
+              "CONFLICT",
+              "Settings changed; review the current settings first.",
+            );
           throw error;
         });
         for (const setting of changedBotSettings(existing, input)) {
@@ -688,7 +689,7 @@ export function botsRoutes(ctx: RouterContext) {
           return updated;
         } catch (error) {
           // Removing the bot mid-switch also deletes its dedicated computer.
-          if (isRecordNotFound(error)) throw new ORPCError("NOT_FOUND");
+          if (isRecordNotFound(error)) throw new ClientError("NOT_FOUND", "Not Found");
           throw error;
         } finally {
           await deps.prisma.bot.updateMany({

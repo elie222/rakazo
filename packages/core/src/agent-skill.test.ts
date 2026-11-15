@@ -420,6 +420,19 @@ clip: |
     );
   });
 
+  it("refuses fields their author must change as a bad request", () => {
+    for (const fields of [
+      { name: "", description: "ok" },
+      { name: "ok", description: "" },
+      { name: "N".repeat(81), description: "ok" },
+      { name: "ok", description: "D".repeat(2001) },
+    ]) {
+      expect(() => buildSkillMd({ ...fields, body: "body" })).toThrow(
+        expect.objectContaining({ name: "ClientError", kind: "BAD_REQUEST" }),
+      );
+    }
+  });
+
   it.each([2, 3])(
     "round-trips multiline keep-chomp values with %i trailing newlines",
     (trailing) => {
