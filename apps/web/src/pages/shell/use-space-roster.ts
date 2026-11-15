@@ -69,8 +69,6 @@ export function useSpaceRoster({
   }, [bootstrapMe?.phoneCallsEnabled]);
   const botsRefreshEpoch = useRef(0);
   const botsRefreshApplied = useRef(0);
-  const initialRoutingPending = useRef(true);
-  const initialRoute = useRef({ botId, groupId });
   const archivedBotsRefreshEpoch = useRef(0);
   const routeBotId = useRef<string | undefined>(botId);
   routeBotId.current = botId;
@@ -117,17 +115,6 @@ export function useSpaceRoster({
       setSpaces((previous) => replaceEqualDeep(previous, navigation.spaces));
       setInitialBotsLoaded(true);
       botsRefreshApplied.current = request;
-      if (
-        routeBotId.current !== initialRoute.current.botId ||
-        routeGroupId.current !== initialRoute.current.groupId
-      )
-        initialRoutingPending.current = false;
-      if (
-        initialRoutingPending.current &&
-        routeBotId.current === initialRoute.current.botId &&
-        routeGroupId.current === initialRoute.current.groupId
-      )
-        return;
       if (
         includeArchived &&
         list.length === 0 &&
@@ -249,7 +236,6 @@ export function useSpaceRoster({
     setBootstrapMe,
     callsEnabledRef,
     botsRefreshApplied,
-    initialRoutingPending,
     routeBotId,
     routeGroupId,
     beginSpaceSwitch,
@@ -316,7 +302,6 @@ export function useSpaceBootstrap({
     setBootstrapMe,
     callsEnabledRef,
     botsRefreshApplied,
-    initialRoutingPending,
     routeBotId,
     routeGroupId,
     refreshBots,
@@ -424,11 +409,7 @@ export function useSpaceBootstrap({
           openSpaceChat.current(linked.spaceId, linked.path);
           return;
         }
-        initialRoutingPending.current = false;
-        if (!applyBotLists) {
-          void refreshBots().catch(() => undefined);
-          return;
-        }
+        if (!applyBotLists) return;
         // A shell that reopened from cache is already on a chat; it moves only if that chat is gone.
         if (
           seed &&
@@ -461,7 +442,6 @@ export function useSpaceBootstrap({
       })
       .catch(() => {
         if (cancelled) return;
-        initialRoutingPending.current = false;
         if (!seed) setBootstrapMe(null);
         return refreshBots(true).catch(() => {
           if (!cancelled) setInitialLoadFailed(true);
