@@ -164,6 +164,12 @@ function quoteLegacyColonScalars(text: string): string {
 }
 
 function repairUnknownStringEscapes(text: string): string {
+  try {
+    parseYaml(text);
+    return text;
+  } catch {
+    // Only invalid YAML needs compatibility repair; valid scalars keep literal backslashes.
+  }
   const parts: string[] = [];
   let start = 0;
   let quote = -1;

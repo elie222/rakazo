@@ -291,6 +291,17 @@ description: Use when: the user asks for a status summary.
     expect(parsed).toMatchObject({ error: expect.any(String) });
   });
 
+  it("keeps backslashes literal in valid scalars when another line needs repair", () => {
+    for (const value of [String.raw`Reads "C:\Users\me"`, String.raw`'path "C:\dir"'`]) {
+      const parsed = parseSkillMd(
+        `---\nname: Example\ndescription: ${value}\nmetadata: a: b\n---\n`,
+      );
+      expect(parsed).toMatchObject({
+        description: value.startsWith("'") ? value.slice(1, -1) : value,
+      });
+    }
+  });
+
   it("handles long scalar separators during legacy repair", () => {
     const parsed = parseSkillMd(
       `---\nname: Example\ndescription:${" ".repeat(90_000)}plain\nmetadata: [\n---\n`,
