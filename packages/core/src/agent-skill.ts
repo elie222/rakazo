@@ -103,12 +103,27 @@ function parseSkillFrontmatter(text: string): unknown {
     assertSafeFrontmatter(parsed);
     return parsed;
   } catch (error) {
-    const repaired = repairUnknownStringEscapes(quoteLegacyColonScalars(text));
+    const repaired = repairUnknownStringEscapes(quoteLegacyColonScalars(repairLegacyFields(text)));
     if (repaired === text) throw error;
     const parsed = parseYaml(repaired, options);
     assertSafeFrontmatter(parsed);
     return parsed;
   }
+}
+
+function repairLegacyFields(text: string): string {
+  return text.replace(
+    /^(name|description):[ \t]+([^\r\n]+)$/gm,
+    (line, key: string, value: string) => {
+      if (/^["'>|]/.test(value)) return line;
+      try {
+        parseYaml(value);
+        return line;
+      } catch {
+        return `${key}: ${JSON.stringify(value)}`;
+      }
+    },
+  );
 }
 
 function quoteLegacyColonScalars(text: string): string {
@@ -149,6 +164,7 @@ function repairUnknownStringEscapes(text: string): string {
 
 function assertSafeFrontmatter(value: unknown): void {
   const ancestors = new Set<object>();
+  const checkedDepth = new Map<object, number>();
   const visit = (current: unknown, depth: number) => {
     if (depth > MAX_FRONTMATTER_DEPTH) {
       throw new Error("SKILL.md frontmatter is nested too deeply.");
@@ -157,6 +173,8 @@ function assertSafeFrontmatter(value: unknown): void {
     if (ancestors.has(current)) {
       throw new Error("SKILL.md frontmatter cannot contain recursive YAML aliases.");
     }
+    if ((checkedDepth.get(current) ?? -1) >= depth) return;
+    checkedDepth.set(current, depth);
     ancestors.add(current);
     for (const child of Array.isArray(current) ? current : Object.values(current)) {
       visit(child, depth + 1);

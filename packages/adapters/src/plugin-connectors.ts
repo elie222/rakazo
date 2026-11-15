@@ -233,6 +233,21 @@ function isWithinSkillFolder(path: string, folder: string): boolean {
   return folder ? path.startsWith(folder) : path !== "SKILL.md";
 }
 
+function ownedBySkill(path: string, document: string, documents: readonly string[]): boolean {
+  const folder = skillFolder(document);
+  return (
+    path !== document &&
+    isWithinSkillFolder(path, folder) &&
+    !documents.some(
+      (other) =>
+        other !== document &&
+        skillFolder(other).startsWith(folder) &&
+        skillFolder(other) !== folder &&
+        path.startsWith(skillFolder(other)),
+    )
+  );
+}
+
 function isAgentSkillResourcePath(path: string): boolean {
   const filename = path.split("/").at(-1) ?? "";
   const directory = path.split("/")[0] ?? "";
@@ -361,7 +376,7 @@ export async function fetchGitHubRepo(
   const wanted: string[] = [];
   const addWanted = (path: string, maxFiles: number) => {
     const entry = entryByPath.get(path);
-    if (!entry) return false;
+    if (!entry || scheduled.has(entry.absolutePath)) return false;
     if ((entry.size ?? 0) > MAX_FILE_BYTES) {
       if (!hasManifest) {
         contents.set(entry.absolutePath, UNFETCHED_FILE);
@@ -430,13 +445,20 @@ export async function fetchGitHubRepo(
 
   if (catalogMode) {
     const resourceWanted: string[] = [];
+    const scheduled = new Set<string>();
     const resources = new Map<string, string[]>();
     for (const skill of skillDocuments) {
       const parsed = parseSkillMd(contents.get(skill.absolutePath) ?? "");
       if ("error" in parsed) continue;
       const folder = skillFolder(skill.path);
       const siblings = entries
-        .filter((entry) => isWithinSkillFolder(entry.path, folder) && entry.path !== skill.path)
+        .filter((entry) =>
+          ownedBySkill(
+            entry.path,
+            skill.path,
+            skillDocuments.map((document) => document.path),
+          ),
+        )
         .map((entry) => (folder ? entry.path.slice(folder.length) : entry.path));
       const referenced = referencedSkillResources(parsed.body, siblings);
       if (referenced.length) resources.set(skill.path, referenced);
@@ -452,7 +474,7 @@ export async function fetchGitHubRepo(
       const candidates = paths
         .map((path) => entryByPath.get(folder ? `${folder}${path}` : path))
         .filter((entry): entry is (typeof entries)[number] => {
-          if (!entry) return false;
+          if (!entry || scheduled.has(entry.absolutePath)) return false;
           return (
             contents.get(entry.absolutePath) === UNFETCHED_FILE &&
             isAgentSkillResourcePath(folder ? entry.path.slice(folder.length) : entry.path)
@@ -471,6 +493,7 @@ export async function fetchGitHubRepo(
       for (const entry of fetchableCandidates) {
         fetched++;
         resourceWanted.push(entry.absolutePath);
+        scheduled.add(entry.absolutePath);
       }
       catalogBytes += candidateBytes;
     }
@@ -538,7 +561,7 @@ function collectSkills(
     }
     const folder = skillFolder(path);
     const companions = [...files]
-      .filter(([p]) => isWithinSkillFolder(p, folder) && p !== path)
+      .filter(([p]) => ownedBySkill(p, path, [...files.keys()].filter(isSkillDocumentPath)))
       .map(([p, text]) => [folder ? p.slice(folder.length) : p, text] as [string, string]);
     let storedCompanions = companions;
     if (agentSkillBundle) {
