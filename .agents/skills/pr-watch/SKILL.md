@@ -36,15 +36,26 @@ PRD="$(git rev-parse --show-toplevel)/.agents/skills/pr-watch/pr-digest"
   a maintainer decision or access you do not have. Report what was tried and
   what remains unresolved.
 - Keep the PR head stable while CI and review run. Being behind the base alone
-  is not a reason to merge it or restart checks. Update the base only to resolve
-  conflicts, satisfy enforced branch protection, or meet an explicit user
-  requirement. Merge the base; never rebase or force-push without authorization.
-- If the user requires the current base, check it once checks and reviews finish,
-  not on each notification. If it advanced, explain that another update restarts
-  CI and ask whether a green, mergeable head may land without the latest base.
-  Preserve the requirement until they relax it; reuse their answer thereafter.
-  When GitHub's merge queue is configured, prefer it for testing against the
-  current base without repeatedly restarting the PR branch's checks.
+  is not a reason to merge it or restart checks.
+- Once checks and reviews finish, fetch the base and review changes since the
+  PR's merge base for interactions with this PR. AI reviewers must assess the
+  combined behavior, including related changes in different files: authorization,
+  secret handling, validation, sandbox boundaries, migrations, dependencies and CI
+  can interact without a textual conflict. Read the relevant implementations;
+  passing checks and separate PR approvals do not establish combined safety.
+- If the base changes are unrelated, merge the reviewed, green head when branch
+  protection and user instructions permit. For conflicts or a plausible material
+  interaction, merge the base, review the combined diff and run affected checks;
+  push and wait for required CI and automated review on that head. Do not restart
+  this cycle for unrelated base advances. Ask when an interaction needs judgment
+  or cannot be adequately verified.
+- Enforced branch protection and explicit current-base requirements still apply.
+  Check base freshness after CI finishes, not on each notification. If that
+  requirement repeatedly restarts CI, ask once for permission to use this
+  interaction-based policy and reuse the answer. Never bypass required checks.
+  Prefer GitHub's merge queue when configured; it tests combined changes but
+  does not replace the interaction review above. Merge base updates; never
+  rebase or force-push without authorization.
 
 ## The cycle
 
