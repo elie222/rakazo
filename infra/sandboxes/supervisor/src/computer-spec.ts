@@ -652,6 +652,8 @@ export function containerCreateOptions(input: ComputerCreateInput) {
       "NPM_CONFIG_PREFIX=/home/rakazo/.local",
       "PIP_USER=1",
       ...(input.controlToken ? [`RAKAZO_COMPUTER_CONTROL_TOKEN=${input.controlToken}`] : []),
+      // Only the render node setting is for the browser; compute GPUs alone keep it in software.
+      ...(input.gpu ? ["RAKAZO_BROWSER_GPU=1"] : []),
       ...computerLocaleEnv(input.locale),
     ],
     Labels: {

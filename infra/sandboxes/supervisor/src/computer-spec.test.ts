@@ -1131,10 +1131,11 @@ describe("graphical computer spec", () => {
       chmodSync(timeout, 0o755);
       const integrated = "\tdeviceType         = PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU";
       const cpuOnly = "\tdeviceType         = PHYSICAL_DEVICE_TYPE_CPU";
-      const run = (args: string[] = [], devices = integrated) => {
+      const run = (args: string[] = [], devices = integrated, intent = "1") => {
         const result = spawnSync("sh", [script, ...args], {
           env: {
             ...process.env,
+            RAKAZO_BROWSER_GPU: intent,
             DISPLAY: ":1",
             HOME: path.join(temp, "home"),
             PATH: `${bin}${path.delimiter}${process.env.PATH ?? ""}`,
@@ -1173,6 +1174,13 @@ describe("graphical computer spec", () => {
           "--no-first-run",
           "https://example.test/a b",
         ]);
+
+        // Without the render node setting (GPUs only for programs), the browser stays in software.
+        for (const intent of ["", "0"]) {
+          const compute = run(launcher, integrated, intent);
+          expect(compute).toEqual(expect.arrayContaining(software));
+          expect(compute).not.toContain(vulkan[0]);
+        }
 
         // A GPU the image's Mesa cannot drive, or only a software Vulkan device, stays in software.
         for (const devices of ["", cpuOnly]) {

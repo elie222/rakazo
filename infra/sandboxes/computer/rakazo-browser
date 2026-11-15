@@ -438,8 +438,11 @@ fi
 # With a render node passed in, ANGLE on Vulkan renders on that GPU; under Xvfb
 # the default and EGL paths fall back to software and lose WebGL. A GPU that
 # the image's Mesa cannot drive would lose WebGL on Vulkan too, so that path
-# needs vulkaninfo to list a real GPU.
+# needs vulkaninfo to list a real GPU. The supervisor sets RAKAZO_BROWSER_GPU
+# only for that render node: GPUs passed in for programs leave the browser in
+# software.
 gpu_usable() {
+  [ "${RAKAZO_BROWSER_GPU:-}" = 1 ] || return 1
   for node in /dev/dri/renderD*; do
     [ -r "$node" ] && [ -w "$node" ] || continue
     timeout 5 vulkaninfo --summary 2>/dev/null |

@@ -102,6 +102,23 @@ describe("computer render node", () => {
     expect(gpu).not.toHaveProperty("Privileged");
   });
 
+  it("tells the browser to render on the GPU only with a render node", () => {
+    const base = {
+      name: "rakazo-bot-x",
+      image: "img",
+      botId: "x",
+      spaceId: "s",
+      homePath: "/data/x",
+    };
+    const intent = "RAKAZO_BROWSER_GPU=1";
+    expect(containerCreateOptions(base).Env).not.toContain(intent);
+    // Compute GPUs are for programs; the browser keeps software rendering with them alone.
+    expect(containerCreateOptions({ ...base, computeGpus: -1 }).Env).not.toContain(intent);
+    const gpu = { node: "/dev/dri/renderD128", gid: 993 };
+    expect(containerCreateOptions({ ...base, gpu }).Env).toContain(intent);
+    expect(containerCreateOptions({ ...base, gpu, computeGpus: -1 }).Env).toContain(intent);
+  });
+
   it("matches a computer's render node to the configured one", () => {
     const gpu = { node: "/dev/dri/renderD128", gid: 993 };
     const created = (want?: typeof gpu) =>
