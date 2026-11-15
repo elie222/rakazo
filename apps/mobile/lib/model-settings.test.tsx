@@ -167,6 +167,7 @@ vi.mock("./api", () => ({
     return [];
   },
 }));
+vi.mock("./app-foreground", () => ({ useAppForeground: () => true }));
 vi.mock("expo-router", () => ({
   useRouter: () => settingsRouter,
   useNavigation: () => ({ setOptions: vi.fn() }),

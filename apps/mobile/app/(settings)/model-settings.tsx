@@ -14,9 +14,8 @@ import {
   modelSettingsRequest,
 } from "@rakazo/core";
 import type { DataTag, QueryFunction, QueryKey } from "@tanstack/react-query";
-import { useQuery } from "@tanstack/react-query";
-import { useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
+import { useLocalSearchParams, useNavigation, useRouter } from "expo-router";
+import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import {
   AccessibilityInfo,
   ActivityIndicator,
@@ -33,6 +32,7 @@ import { NativeSwitch } from "../../components/native-switch";
 import type { MobileModel, MobileModelCredential } from "../../lib/mobile-types";
 import { native, useThemedStyles } from "../../lib/native";
 import { formRead, queryClient, targetRpcQuery, useSave } from "../../lib/query";
+import { useScreenQuery } from "../../lib/screen-query";
 import type { SettingsTarget } from "../../lib/settings-target";
 import { settingsTarget } from "../../lib/settings-target";
 import { errorText } from "../../lib/user-error";
@@ -100,16 +100,13 @@ function ModelSettingsForm(route: ModelRoute) {
   const router = useRouter();
   const { t } = useLingui();
   const target = useMemo(() => settingsTarget(spaceId), [spaceId]);
-  const read = formRead(modelRead(target, route, t`Connection not found`));
   // Every read answers with its own object, so an edit can tell which read it was made on.
-  const query = useQuery({ ...read, structuralSharing: false }, queryClient);
-  const { refetch } = query;
+  const read = {
+    ...formRead(modelRead(target, route, t`Connection not found`)),
+    structuralSharing: false,
+  };
   // Read again on each return to the screen. Not on app foreground: a read replaces the draft.
-  useFocusEffect(
-    useCallback(() => {
-      void refetch({ cancelRefetch: false });
-    }, [refetch]),
-  );
+  const query = useScreenQuery(read, { onForeground: false });
   // A copy read before this screen opened is not what the form may start from.
   const loaded = query.isFetchedAfterMount ? query.data : undefined;
   // Edits belong to the read they were made on; the next one starts from what is saved.
