@@ -142,12 +142,14 @@ describe("managedAppFor", () => {
   });
 
   it("does not match empty, punctuation-only or emoji-only keys", () => {
-    const apps = [{ name: "!!!", slug: "calendar" }];
-    for (const displayName of ["", "---", "📒"]) {
+    const apps = [{ name: "\u2708\uFE0F", slug: "calendar" }];
+    for (const displayName of ["", "---", "📒", "\u2615\uFE0F"]) {
       expect(managedAppFor(entry({ name: "notes", displayName }), apps)).toBeUndefined();
     }
     expect(managedAppFor(entry({ name: "", displayName: "" }), apps)).toBeUndefined();
-    expect(managedAppFor(entry({ name: "calendar", displayName: "!!!" }), apps)).toBe(apps[0]);
+    expect(managedAppFor(entry({ name: "calendar", displayName: "\u2708\uFE0F" }), apps)).toBe(
+      apps[0],
+    );
   });
 });
 

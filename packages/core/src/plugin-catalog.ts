@@ -238,11 +238,13 @@ export function matchesPluginQuery(
 }
 
 function brandKey(name: string): string {
-  return name
+  const key = name
     .normalize("NFC")
     .toLowerCase()
     .replace(/ς/g, "σ")
     .replace(/[^\p{L}\p{M}\p{N}]/gu, "");
+  // Marks alone (such as emoji variation selectors) do not name a brand.
+  return /[\p{L}\p{N}]/u.test(key) ? key : "";
 }
 
 /** The managed app a plugin is for, matched by name, so one brand is listed once. */
