@@ -143,7 +143,7 @@ export function groupMentionNames(text: string, memberNames: readonly string[]):
     .filter((span) => {
       const word = span.name.toLowerCase();
       if (word === "everyone" || !words.includes(word)) return true;
-      if (/[/\\.:@+]/.test(text[span.start - 1] ?? "")) return false;
+      if (/[/\\.@+]/.test(text[span.start - 1] ?? "")) return false;
       if (/^[./\\][\p{L}\p{N}_-]/u.test(text.slice(span.end, span.end + 3))) return false;
       quoted ??= quotedRanges(text);
       return !insideRanges(quoted, span.start);

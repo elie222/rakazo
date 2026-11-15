@@ -316,7 +316,6 @@ describe("mentionedGroupBotIds", () => {
     "~~~\nping @all",
     "```\ncode ``` still code, @all\n```",
     "张三@all.com",
-    "a:@all",
     "@@all",
     "run `@all` here",
     "```\nping @所有人\n```",
@@ -331,7 +330,7 @@ describe("mentionedGroupBotIds", () => {
     expect(mentionedGroupBotIds({ text, members })).toEqual([]);
   });
 
-  it.each(["`x` @所有人 `y`", "`a` @all `b`", "``a`` @all ``b``"])(
+  it.each(["`x` @所有人 `y`", "`a` @all `b`", "``a`` @all ``b``", "cc:@all", "Re:@所有人"])(
     "reads @all between two code spans: %s",
     (text) => {
       expect(mentionedGroupBotIds({ text, members })).toEqual(["a", "b", "c"]);
