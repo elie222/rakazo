@@ -865,6 +865,8 @@ describe("DaytonaSandboxProvider", () => {
 
       expect(error).toBe(timeout);
       expect(fixture.deleteSandbox).toHaveBeenCalledTimes(4);
+      // Seconds: what its try has left of the cleanup's time, never a minute of its own.
+      expect(fixture.deleteSandbox).toHaveBeenNthCalledWith(1, 10);
       expect(left).toEqual([{ provider: "daytona", machineId: name }]);
     });
   });

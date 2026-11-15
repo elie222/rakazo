@@ -3,6 +3,7 @@ import type { AdapterContext, ComputerRef, ProcessEvent } from "@rakazo/adapter-
 import { SandboxRateLimitError, WorkspaceTooLargeError } from "@rakazo/adapter-kit";
 import { screenDisplayArgv, shellQuote } from "@rakazo/core/node/desktop-runtime";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
+import type { BoxdSandboxClient } from "./boxd-sandbox.js";
 import { BOXD_COMPUTER_SNAPSHOT, BoxdSandboxProvider } from "./boxd-sandbox.js";
 import { BOXD_WORKSPACE, FakeBoxd, fakeBoxdProvider } from "./boxd-sandbox.test-support.js";
 import { isSandboxGoneError } from "./sandbox-errors.js";
@@ -266,9 +267,13 @@ describe("boxd computers", () => {
   describe("a machine no computer points at", () => {
     const lostReply = new Error("reply lost");
     /** boxd creates the machine, and the reply never arrives. */
-    function providerLosingCreateReply(boxd: FakeBoxd) {
+    function providerLosingCreateReply(
+      boxd: FakeBoxd,
+      remove?: BoxdSandboxClient["machines"]["delete"],
+    ) {
       boxd.snapshots.set(BOXD_COMPUTER_SNAPSHOT, "ready");
       const client = boxd.client();
+      if (remove) client.machines.delete = remove;
       const { create } = client.machines;
       client.machines.create = (async (params: Parameters<typeof create>[0]) => {
         await create(params);
@@ -302,6 +307,30 @@ describe("boxd computers", () => {
       const { error, left } = await provision(providerLosingCreateReply(boxd));
 
       expect(error).toBe(lostReply);
+      const [machine] = [...boxd.machines.values()];
+      expect(left).toEqual([{ provider: "boxd", machineId: machine!.name }]);
+    });
+
+    it("stops waiting after 20 seconds for a delete boxd never answers, and reports the machine", async () => {
+      const boxd = new FakeBoxd();
+      let startedAt = 0;
+      let endedAt = 0;
+      const remove = vi.fn(() => {
+        startedAt ||= Date.now();
+        return new Promise<void>(() => {});
+      });
+
+      const { error, left } = await settleMachineCleanup(() =>
+        providerLosingCreateReply(boxd, remove)
+          .provision({ botId: "bot", homePath: "/unused" }, ctx)
+          .finally(() => {
+            endedAt = Date.now();
+          }),
+      );
+
+      expect(error).toBe(lostReply);
+      expect(endedAt - startedAt).toBe(20_000);
+      expect(remove).toHaveBeenCalledTimes(2);
       const [machine] = [...boxd.machines.values()];
       expect(left).toEqual([{ provider: "boxd", machineId: machine!.name }]);
     });

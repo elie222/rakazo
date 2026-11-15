@@ -208,7 +208,9 @@ export class KubernetesSandboxProvider implements SandboxProvider {
       await this.waitForReady(podName, context.signal);
     } catch (error) {
       if (fresh) {
-        await deleteUnreferencedMachine("kubernetes", podName, () => this.deletePod(podName));
+        await deleteUnreferencedMachine("kubernetes", podName, (signal) =>
+          this.deletePod(podName, signal),
+        );
       }
       throw error;
     }
@@ -531,10 +533,13 @@ export class KubernetesSandboxProvider implements SandboxProvider {
     }
   }
 
-  private async deletePod(name: string): Promise<void> {
+  /** Cancellation must not skip cleanup, so a caller passes only a deadline of its own. */
+  private async deletePod(
+    name: string,
+    signal = AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  ): Promise<void> {
     try {
-      // Cancellation must not skip cleanup, so only the request deadline bounds it.
-      await this.request(AbortSignal.timeout(REQUEST_TIMEOUT_MS), (core, options) =>
+      await this.request(signal, (core, options) =>
         core.deleteNamespacedPod(
           {
             name,

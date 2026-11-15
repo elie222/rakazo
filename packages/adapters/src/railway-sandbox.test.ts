@@ -19,7 +19,11 @@ import WebSocket from "ws";
 import { LinuxDesktop } from "./linux-desktop.js";
 import { RailwaySandboxProvider } from "./railway-sandbox.js";
 import { isSandboxGoneError } from "./sandbox-errors.js";
-import { assertSandboxWorkspaceContract, settleMachineCleanup } from "./sandbox-test-support.js";
+import {
+  assertSandboxWorkspaceContract,
+  settleMachineCleanup,
+  untilAborted,
+} from "./sandbox-test-support.js";
 
 const sdk = { connect: Sandbox.connect, create: Sandbox.create };
 vi.spyOn(Sandbox, "connect");
@@ -869,6 +873,41 @@ describe("Railway computers", () => {
 
       expect(error).toBe(cancelled);
       expect(left).toEqual([{ provider: "railway", machineId: "sandbox" }]);
+    });
+
+    it("is reported within the cleanup's 20 seconds when Railway stops answering, ending each request", async () => {
+      const api = backboard();
+      const answer = vi.mocked(fetch).getMockImplementation()!;
+      const controller = new AbortController();
+      const cancelled = new Error("run cancelled");
+      const unanswered: AbortSignal[] = [];
+      let stalledAt = 0;
+      let endedAt = 0;
+      vi.mocked(fetch).mockImplementation(async (input, init) => {
+        if (controller.signal.aborted) {
+          stalledAt ||= Date.now();
+          unanswered.push(init?.signal as AbortSignal);
+          return untilAborted(init?.signal as AbortSignal);
+        }
+        const response = await answer(input, init);
+        if (api.operations.at(-1) === "RailwaySandboxCreate") controller.abort(cancelled);
+        return response;
+      });
+
+      const { error, left } = await settleMachineCleanup(() =>
+        provider
+          .provision({ botId: "bot", homePath: "/unused" }, { ...ctx, signal: controller.signal })
+          .finally(() => {
+            endedAt = Date.now();
+          }),
+      );
+
+      expect(error).toBe(cancelled);
+      expect(endedAt - stalledAt).toBe(20_000);
+      // A request used to wait 30 seconds of its own; each now ends with its 10 second try.
+      expect(unanswered).toHaveLength(2);
+      expect(unanswered.every((signal) => signal.aborted)).toBe(true);
+      expect(left).toEqual([{ provider: "railway", machineId: "created-1" }]);
     });
   });
 

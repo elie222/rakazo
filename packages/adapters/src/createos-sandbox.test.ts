@@ -21,7 +21,7 @@ import {
   MAX_CREATEOS_SUCCESS_RESPONSE_BYTES,
 } from "./createos-sandbox.js";
 import { isSandboxGoneError } from "./sandbox-errors.js";
-import { settleMachineCleanup } from "./sandbox-test-support.js";
+import { settleMachineCleanup, untilAborted } from "./sandbox-test-support.js";
 
 // Status polls wait a second between reads; the fakes below settle on the next read.
 vi.mock("node:timers/promises", async (importOriginal) => ({
@@ -1189,8 +1189,11 @@ describe("CreateOS sandbox lifecycle", () => {
   );
 
   describe("a sandbox created by a start that then fails", () => {
-    /** The new sandbox ends up failed, and its delete answers 500 `deleteFailures` times. */
-    async function start(deleteFailures: number) {
+    /**
+     * The new sandbox ends up failed. Its delete answers 500 `deleteFailures` times, or with
+     * `stalled`, is never answered.
+     */
+    async function start(deleteFailures: number, stalled = false) {
       const plane = createosControlPlane();
       let deletes = 0;
       const fetchImpl = (async (input: URL | RequestInfo, init?: RequestInit) => {
@@ -1198,8 +1201,10 @@ describe("CreateOS sandbox lifecycle", () => {
         if (route === "GET /v1/sandboxes/sbx-new-1") {
           return jsonResponse({ id: "sbx-new-1", status: "failed" });
         }
-        if (route === "DELETE /v1/sandboxes/sbx-new-1" && ++deletes <= deleteFailures) {
-          return errorResponse(500, "internal error");
+        if (route === "DELETE /v1/sandboxes/sbx-new-1") {
+          deletes += 1;
+          if (stalled) return untilAborted(init?.signal as AbortSignal);
+          if (deletes <= deleteFailures) return errorResponse(500, "internal error");
         }
         return plane.fetchImpl(input, init);
       }) as typeof fetch;
@@ -1224,6 +1229,15 @@ describe("CreateOS sandbox lifecycle", () => {
         error: new Error("CreateOS sandbox is failed"),
         left: [{ provider: "createos", machineId: "sbx-new-1" }],
         deletes: 4,
+        status: "creating",
+      });
+    });
+
+    it("is reported after two tries when CreateOS never answers the delete", async () => {
+      expect(await start(0, true)).toEqual({
+        error: new Error("CreateOS sandbox is failed"),
+        left: [{ provider: "createos", machineId: "sbx-new-1" }],
+        deletes: 2,
         status: "creating",
       });
     });

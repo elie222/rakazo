@@ -240,9 +240,7 @@ export class IncusSandboxProvider implements SandboxProvider {
     try {
       await this.waitForReady(name, request.botId, context);
     } catch (error) {
-      await deleteUnreferencedMachine("incus", name, () =>
-        this.remove(name, AbortSignal.timeout(STOP_TIMEOUT_MS)),
-      );
+      await deleteUnreferencedMachine("incus", name, (signal) => this.remove(name, signal));
       throw error;
     }
     return { id: name, botId: request.botId, kind: "incus", providerRef: name, fresh: true };

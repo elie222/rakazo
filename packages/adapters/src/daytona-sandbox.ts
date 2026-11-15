@@ -565,9 +565,9 @@ export class DaytonaSandboxProvider implements SandboxProvider {
   }
 
   private deleteAbandoned(name: string): Promise<void> {
-    return deleteUnreferencedMachine("daytona", name, async () => {
+    return deleteUnreferencedMachine("daytona", name, async (_signal, timeoutMs) => {
       try {
-        await (await this.client.get(name)).delete(60);
+        await (await this.client.get(name)).delete(timeoutMs / 1_000);
       } catch (error) {
         if (!(await isDaytonaSandboxMissing(error))) throw error;
       }

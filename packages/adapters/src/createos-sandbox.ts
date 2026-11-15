@@ -1050,13 +1050,13 @@ print(json.dumps(out))
 
   /** Deletes a sandbox that will not run, so it stops counting against the quota. */
   private abandonSandbox(id: string): Promise<void> {
-    return deleteUnreferencedMachine("createos", id, async () => {
+    return deleteUnreferencedMachine("createos", id, async (signal) => {
       const context: AdapterContext = {
         operationId: "createos.abandon",
         traceId: "createos.abandon",
         spaceId: "createos",
         userId: "createos",
-        signal: AbortSignal.timeout(10_000),
+        signal,
       };
       try {
         await this.request("DELETE", `/v1/sandboxes/${encodeURIComponent(id)}`, context);

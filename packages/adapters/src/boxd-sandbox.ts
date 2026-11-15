@@ -508,6 +508,7 @@ export class BoxdSandboxProvider implements SandboxProvider {
     }
   }
 
+  /** The SDK's delete takes no signal or deadline, so the cleanup stops waiting for it instead. */
   private deleteUnreferenced(id: string): Promise<void> {
     return deleteUnreferencedMachine("boxd", id, () => this.delete(id));
   }

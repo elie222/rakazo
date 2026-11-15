@@ -1329,9 +1329,11 @@ describe("KubernetesSandboxProvider", () => {
       await vi.waitFor(() => expect(read).toHaveBeenCalledTimes(2));
       controller.abort(new Error("caller cancelled"));
       await vi.waitFor(() => expect(del).toHaveBeenCalledOnce());
+      await vi.advanceTimersByTimeAsync(19_000);
       expect(outcome).toBe("pending");
-      await vi.advanceTimersByTimeAsync(60_000);
-      expect(del).toHaveBeenCalledTimes(4);
+      await vi.advanceTimersByTimeAsync(1_000);
+      // Two tries of 10 seconds each fill the cleanup's 20 seconds.
+      expect(del).toHaveBeenCalledTimes(2);
       expect(outcome).toEqual(new Error("caller cancelled"));
     } finally {
       timeout.mockRestore();

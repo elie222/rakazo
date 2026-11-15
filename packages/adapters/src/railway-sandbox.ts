@@ -13,7 +13,7 @@ import type {
   ScreenRequest,
   TerminalRequest,
 } from "@rakazo/adapter-kit";
-import { boundedSandboxCommandTimeoutMs } from "@rakazo/core";
+import { anySignal, boundedSandboxCommandTimeoutMs } from "@rakazo/core";
 import { COMPUTER_CACHE_ENV } from "@rakazo/core/node/desktop-runtime";
 import type * as Railway from "railway";
 import type { ConnectOptions, Sandbox, SandboxStatus } from "railway";
@@ -501,18 +501,19 @@ export class RailwaySandboxProvider implements SandboxProvider {
     await this.delete(computer.providerRef);
   }
 
-  private async delete(id: string) {
+  private async delete(id: string, signal?: AbortSignal) {
     const railway = await loadRailway();
+    const options = signal ? { ...this.options, fetch: fetchUntil(signal) } : this.options;
     try {
       // Cleanup must still run when provisioning or preparation was canceled.
-      await remove(railway, await connectSandbox(railway, id, this.options));
+      await remove(railway, await connectSandbox(railway, id, options));
     } catch (error) {
       if (!(error instanceof railway.SandboxNotFoundError)) throw error;
     }
   }
 
   private deleteUnreferenced(id: string): Promise<void> {
-    return deleteUnreferencedMachine("railway", id, () => this.delete(id));
+    return deleteUnreferencedMachine("railway", id, (signal) => this.delete(id, signal));
   }
 
   private async connect(computer: ComputerRef, context: AdapterContext) {
@@ -658,6 +659,15 @@ class RailwayWebSocket extends WebSocket {
   constructor(url: string, protocols?: string | string[]) {
     super(url, protocols, { maxPayload: MAX_RESPONSE_BYTES, handshakeTimeout: 30_000 });
   }
+}
+
+/** Railway requests that also end when `signal` does. */
+function fetchUntil(signal: AbortSignal): typeof railwayFetch {
+  return (input, init) =>
+    railwayFetch(input, {
+      ...init,
+      signal: init?.signal ? anySignal([init.signal, signal]) : signal,
+    });
 }
 
 async function railwayFetch(

@@ -32,7 +32,7 @@ import { ComputerBrowserProvider } from "./computer-browser.js";
 import { PREPARE_LINUX_DESKTOP } from "./linux-desktop.js";
 import { installPageBrowserCommand } from "./page-browser-install.js";
 import { isSandboxGoneError } from "./sandbox-errors.js";
-import { settleMachineCleanup } from "./sandbox-test-support.js";
+import { settleMachineCleanup, untilAborted } from "./sandbox-test-support.js";
 
 // Polling waits advance a virtual clock, so state and deadline tests run instantly.
 vi.mock("node:timers/promises", async (importOriginal) => ({
@@ -2460,7 +2460,7 @@ describe("Boat computer snapshot", () => {
       expect(builds).toEqual([{ ttlSeconds: 1800, noEnv: true }]);
       const buildId = api.savedSnapshots.get(BOAT_COMPUTER_SNAPSHOT)?.sourceSandboxId;
       expect([first.id, second.id, third.id]).not.toContain(buildId);
-      expect(remove).toHaveBeenCalledWith(buildId);
+      expect(remove).toHaveBeenCalledWith(buildId, { signal: expect.any(AbortSignal) });
       expect(api.state(buildId!)).toBeUndefined();
       expect(
         sink.events
@@ -2584,7 +2584,7 @@ describe("Boat computer snapshot", () => {
       cause: { message: "exit 1: Xvfb did not start" },
     });
     expect(api.savedSnapshots.size).toBe(0);
-    expect(remove).toHaveBeenCalledWith("bx_fake1");
+    expect(remove).toHaveBeenCalledWith("bx_fake1", { signal: expect.any(AbortSignal) });
   });
 
   it("deletes the snapshot build sandbox, trying a failed delete again", async () => {
@@ -2616,6 +2616,21 @@ describe("Boat computer snapshot", () => {
 
     expect(error).toBe(refused);
     expect(remove).toHaveBeenCalledTimes(4);
+    expect(left).toEqual([{ provider: "boat", machineId: "bx_fake1" }]);
+  });
+
+  it("reports a snapshot build sandbox after two tries when Boat never answers its delete", async () => {
+    const api = new FakeBoatApi();
+    api.savedSnapshots.clear();
+    const remove = vi
+      .spyOn(api, "deleteSandbox")
+      .mockImplementation((_id, init) => untilAborted(init?.signal as AbortSignal));
+    const provider = new BoatSandboxProvider({ apiKey: "test-key" }, api);
+
+    const { error, left } = await settleMachineCleanup(() => provider.buildComputerSnapshot());
+
+    expect(error).toBeUndefined();
+    expect(remove).toHaveBeenCalledTimes(2);
     expect(left).toEqual([{ provider: "boat", machineId: "bx_fake1" }]);
   });
 });

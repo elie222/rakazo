@@ -81,7 +81,8 @@ export interface InstaboxApi {
     spec?: InstaboxSpec,
   ): Promise<InstaboxMachine>;
   connect(id: string, resume: boolean): Promise<InstaboxMachine>;
-  kill(id: string): Promise<boolean>;
+  /** `timeoutMs` bounds each request and the wait for the delete to finish. */
+  kill(id: string, timeoutMs?: number): Promise<boolean>;
 }
 
 /** The SDK loads only when an instabox computer is used, never in the default runtime. */
@@ -92,7 +93,14 @@ export async function nativeInstaboxApi(apiKey: string): Promise<InstaboxApi> {
     create: (template, metadata, spec) =>
       Sandbox.create(template, { apiKey, metadata, vault: false, ...spec }),
     connect: (id, resume) => Sandbox.connect(id, { apiKey, resume }),
-    kill: (id) => Sandbox.kill(id, { apiKey }),
+    kill: (id, timeoutMs) =>
+      Sandbox.kill(id, {
+        apiKey,
+        ...(timeoutMs !== undefined && {
+          requestTimeoutMs: timeoutMs,
+          operationTimeoutMs: timeoutMs,
+        }),
+      }),
   };
 }
 
@@ -167,8 +175,8 @@ export function instaboxSdk(
         return await openDesktop(machine, true, pause(machine));
       } catch (error) {
         // Nothing has the new computer's reference yet, so nothing else would delete it.
-        await deleteUnreferencedMachine("instabox", machine.sandboxId, async () =>
-          (await api()).kill(machine.sandboxId),
+        await deleteUnreferencedMachine("instabox", machine.sandboxId, async (_signal, timeoutMs) =>
+          (await api()).kill(machine.sandboxId, timeoutMs),
         );
         throw error;
       }

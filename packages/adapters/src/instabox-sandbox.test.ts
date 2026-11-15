@@ -654,6 +654,8 @@ describe("instabox page tools", () => {
 
       expect(error).toBe(unpublished);
       expect(kill).toHaveBeenCalledTimes(4);
+      // Each delete may take what its try has left of the cleanup's time, never instabox's default.
+      expect(kill).toHaveBeenNthCalledWith(1, "m_test1", 10_000);
       expect(left).toEqual([{ provider: "instabox", machineId: "m_test1" }]);
     });
   });
