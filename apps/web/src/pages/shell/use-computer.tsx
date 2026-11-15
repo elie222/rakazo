@@ -54,14 +54,19 @@ export function useComputerState({
   const bootsInFlight = useRef(new Map<string, symbol>());
   // A take or release of control this tab asked for. Its own call reads the new
   // screen, so the matching live event must not start a second read that discards the first.
-  const ownControlChange = useRef<{
-    botId: string;
-    type: string;
-    leaseId?: string;
-    until: number;
-    screen?: Promise<unknown>;
-    consumed?: boolean;
-  } | null>(null);
+  const ownControlChange = useRef(
+    new Map<
+      string,
+      {
+        botId: string;
+        type: string;
+        leaseId?: string;
+        until: number;
+        screen?: Promise<unknown>;
+        consumed?: boolean;
+      }
+    >(),
+  );
   const [screenUrl, setScreenUrl] = useState<string | null>(null);
   const screenUrlRef = useRef(screenUrl);
   const [screenUrlLoadedBotId, setScreenUrlLoadedBotId] = useState<string | null>(null);
@@ -445,20 +450,26 @@ export function useComputerState({
     type: "computer.takeover.granted" | "computer.takeover.released",
     leaseId?: string,
   ) {
-    const pending = ownControlChange.current;
-    const screen = pending?.botId === botId && pending.type === type ? pending.screen : undefined;
-    ownControlChange.current = {
+    for (const [id, change] of ownControlChange.current) {
+      if (Date.now() > change.until) ownControlChange.current.delete(id);
+    }
+    const pending = ownControlChange.current.get(botId);
+    const screen =
+      leaseId !== undefined && pending?.leaseId === undefined && pending?.type === type
+        ? pending.screen
+        : undefined;
+    ownControlChange.current.set(botId, {
       botId,
       type,
       leaseId,
       screen,
       until: Date.now() + OWN_CONTROL_EVENT_MS,
-    };
+    });
   }
 
   /** A take or release that failed changed nothing; an event it held back still gets its read. */
   async function forgetOwnControlEvent(botId: string) {
-    if (ownControlChange.current?.botId === botId) ownControlChange.current = null;
+    ownControlChange.current.delete(botId);
     // Only the bot on screen; another bot's read would discard the shown bot's own read.
     if ((computerBotIdRef.current ?? activeBotId.current) === botId) {
       await refreshComputerScreen(botId).catch(() => undefined);
@@ -467,10 +478,10 @@ export function useComputerState({
 
   /** True once for the live event of a control change this tab asked for. */
   function isOwnControlEvent(botId: string, type: string, leaseId?: unknown) {
-    const own = ownControlChange.current;
+    const own = ownControlChange.current.get(botId);
     // A release that sent no event must not swallow the release after someone's later grant.
     if (own?.botId === botId && own.type !== type && type === "computer.takeover.granted") {
-      ownControlChange.current = null;
+      ownControlChange.current.delete(botId);
     }
     if (!own || own.botId !== botId || own.type !== type || Date.now() > own.until) return false;
     if (own.leaseId !== undefined && own.leaseId !== leaseId) return false;
@@ -480,13 +491,15 @@ export function useComputerState({
       own.screen ??= refreshComputerScreen(botId).catch(() => null);
       return true;
     }
-    ownControlChange.current = null;
+    ownControlChange.current.delete(botId);
     return true;
   }
 
   function refreshOwnControlScreen(botId: string) {
-    const own = ownControlChange.current;
-    return own?.botId === botId && own.screen ? own.screen : refreshComputerScreen(botId);
+    const own = ownControlChange.current.get(botId);
+    const screen = own && Date.now() <= own.until ? own.screen : undefined;
+    if (own) own.screen = undefined;
+    return screen ?? refreshComputerScreen(botId);
   }
 
   /** A retry the user pressed starts the visible screen's reconnects over. */

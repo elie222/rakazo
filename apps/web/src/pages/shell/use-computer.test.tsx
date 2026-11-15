@@ -421,11 +421,17 @@ it("reuses the early grant screen read after the takeover response", async () =>
   screenUrl.mockClear();
   await act(async () => {
     state.expectOwnControlEvent("bot-1", "computer.takeover.granted");
+    state.expectOwnControlEvent("bot-2", "computer.takeover.released", "lease-2");
     expect(state.isOwnControlEvent("bot-1", "computer.takeover.granted", "lease-1")).toBe(true);
     state.expectOwnControlEvent("bot-1", "computer.takeover.granted", "lease-1");
     await state.refreshOwnControlScreen("bot-1");
   });
   expect(screenUrl).toHaveBeenCalledTimes(1);
+  await act(async () => {
+    state.expectOwnControlEvent("bot-1", "computer.takeover.granted");
+    await state.refreshOwnControlScreen("bot-1");
+  });
+  expect(screenUrl).toHaveBeenCalledTimes(2);
 });
 
 it("still reads the screen when the refresh after this tab's release fails", async () => {
