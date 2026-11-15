@@ -1,17 +1,10 @@
+import { deferred } from "@rakazo/core/test-async";
 import { describe, expect, it, vi } from "vitest";
 import { createAppOpener } from "./app-opener.js";
 
-function deferred() {
-  let resolve!: (opened: boolean) => void;
-  const promise = new Promise<boolean>((done) => {
-    resolve = done;
-  });
-  return { promise, resolve };
-}
-
 describe("app opener", () => {
   it("lets a reopen join the launch already in flight", async () => {
-    const launch = deferred();
+    const launch = deferred<boolean>();
     const openOnce = vi.fn(() => launch.promise);
     const opener = createAppOpener(openOnce);
 
@@ -25,7 +18,7 @@ describe("app opener", () => {
   });
 
   it("never hands a pending launch's result to a server switch", async () => {
-    const launch = deferred();
+    const launch = deferred<boolean>();
     const openOnce = vi.fn((_url: string, _switching: boolean) => launch.promise);
     const opener = createAppOpener(openOnce);
 

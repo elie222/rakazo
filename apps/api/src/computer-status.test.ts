@@ -14,6 +14,29 @@ describe("toComputerStatus", () => {
       }),
     ).toMatchObject({ state: "error", screenAvailable: false });
   });
+  it("reads a computer whose provider this build does not have without throwing", () => {
+    const status = toComputerStatus("bot", {
+      kind: "a-provider-since-removed",
+      state: "stopped",
+      scope: "team",
+      controlHolder: "none",
+      homeRevision: "saved",
+    });
+    expect(ComputerStatusSchema.parse(status)).toMatchObject({
+      kind: "a-provider-since-removed",
+      state: "stopped",
+      screenAvailable: false,
+      terminalAvailable: false,
+    });
+    expect(status.runsOnUserMachine).toBeUndefined();
+  });
+  it("says when the computer is the person's own machine", () => {
+    const computer = { state: "running", scope: "team", controlHolder: "none", homeRevision: "r" };
+    expect(toComputerStatus("bot", { ...computer, kind: "desktop" }).runsOnUserMachine).toBe(true);
+    expect(toComputerStatus("bot", { ...computer, kind: "docker" })).not.toHaveProperty(
+      "runsOnUserMachine",
+    );
+  });
   it("warns at 90% full until the user hides it, and again once the disk fills further", () => {
     const computer = {
       kind: "docker",

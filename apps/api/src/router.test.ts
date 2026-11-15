@@ -72,6 +72,11 @@ const withRoleDeps = (deps: RouterDeps) => {
   return deps;
 };
 const createRouter = (deps: RouterDeps) => createRouterWith(withRoleDeps(deps));
+/** A handler that answers errors as the app does, so a domain error keeps its own status. */
+const appHandler = (deps: RouterDeps) =>
+  new RPCHandler(createRouter(deps), {
+    clientInterceptors: [onError((error, { path }) => handleRpcError(error, path))],
+  });
 const enqueueBotIntroRun = (deps: RouterDeps, ...rest: [Actor, Bot]) =>
   enqueueBotIntroRunWith(withRoleDeps(deps), ...rest);
 
@@ -1148,7 +1153,7 @@ describe("answers the server can't save", () => {
     } satisfies Actor;
     const answer = `fake-code-${"x".repeat(16_400)}`;
     const response = await handle(
-      new RPCHandler(createRouter(deps)),
+      appHandler(deps),
       new Request("http://127.0.0.1/rpc/threads/answer", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -3489,6 +3494,34 @@ describe("connections.begin", () => {
     return { call, jobs, tx, root, prisma, errors, warnings, events };
   }
 
+  it("answers a connector this build does not have with a client error", async () => {
+    const managed = vi.fn(() => undefined);
+    const begin = (deps: object, connectorId?: string) =>
+      beginConnection(
+        { connectors: { defaultConnectorId: "first-connector", managed }, ...deps } as never,
+        { actor: { spaceId: "workspace-1", userId: "user-1" } as Actor },
+        { connectorId, provider: "gmail", displayName: "Gmail" },
+      );
+    const refusal = { name: "ClientError", kind: "BAD_REQUEST" };
+    await expect(begin({}, "a-provider-since-removed")).rejects.toMatchObject({
+      ...refusal,
+      message: "Connector a-provider-since-removed is not configured",
+    });
+    expect(managed).toHaveBeenLastCalledWith("a-provider-since-removed");
+    // A request that names no connector means the one the server's registry calls the default.
+    await expect(begin({})).rejects.toMatchObject({
+      ...refusal,
+      message: "Connector first-connector is not configured",
+    });
+    expect(managed).toHaveBeenLastCalledWith("first-connector");
+    // Saved integration settings answer only for the providers they have.
+    const integrationSettings = { has: vi.fn(() => false), resolve: vi.fn() };
+    await expect(begin({ integrationSettings }, "a-provider-since-removed")).rejects.toMatchObject(
+      refusal,
+    );
+    expect(integrationSettings.resolve).not.toHaveBeenCalled();
+  });
+
   it("records the removal with the lost race and deletes the record once it is done", async () => {
     const cancelAuthorizationRequest = vi.fn(async () => undefined);
     const { call, jobs, tx, errors } = lostBegin({ cancelAuthorizationRequest }, "request-1");
@@ -5038,7 +5071,7 @@ describe("computer screen url", () => {
       },
       dataDir: "/tmp/rakazo-router-test",
     } as unknown as RouterDeps;
-    const handler = new RPCHandler(createRouter(deps));
+    const handler = appHandler(deps);
     const response = await handle(
       handler,
       new Request("http://127.0.0.1/rpc/computer/screenUrl", {
@@ -5234,10 +5267,7 @@ describe("computer terminal and file transfer", () => {
       },
       dataDir: "/tmp/rakazo-router-test",
     } as unknown as RouterDeps;
-    const handler = new RPCHandler(createRouter(deps), {
-      // As the app does, so a domain error answers with its own status.
-      clientInterceptors: [onError((error, { path }) => handleRpcError(error, path))],
-    });
+    const handler = appHandler(deps);
     const call = async (procedure: string, json: Record<string, unknown>) => {
       const response = await handle(
         handler,
@@ -8540,7 +8570,7 @@ describe("bot model auth on save", () => {
       preferenceFindFirst,
       secretFindFirst,
       botUpdate,
-      handler: new RPCHandler(createRouter(deps)),
+      handler: appHandler(deps),
     };
   }
 
@@ -9085,14 +9115,12 @@ describe("routines.update", () => {
         ),
       },
     };
-    const handler = new RPCHandler(
-      createRouter({
-        prisma,
-        env: { sandboxProvider: "fake" },
-        events: { append: vi.fn(async () => undefined) },
-        jobs: { enqueue, cancel },
-      } as unknown as RouterDeps),
-    );
+    const handler = appHandler({
+      prisma,
+      env: { sandboxProvider: "fake" },
+      events: { append: vi.fn(async () => undefined) },
+      jobs: { enqueue, cancel },
+    } as unknown as RouterDeps);
     const call = (patch: Record<string, unknown> = {}) =>
       handle(
         handler,
@@ -11424,17 +11452,37 @@ describe("routine watch creation boundaries", () => {
       crons: [],
       watch: null,
     }));
-    const client = createRouterClient(
-      createRouter({
-        prisma: {
-          bot: { findFirst: findBot },
-          routine: { findFirst: findRoutine, create, update },
-        },
-        env: { sandboxProvider: "fake" },
-      } as unknown as RouterDeps),
-      { context: { actor } as never },
-    );
-    return { client, create, update, findBot, findRoutine };
+    const deps = {
+      prisma: {
+        bot: { findFirst: findBot },
+        routine: { findFirst: findRoutine, create, update },
+      },
+      env: { sandboxProvider: "fake" },
+    } as unknown as RouterDeps;
+    const client = createRouterClient(createRouter(deps), { context: { actor } as never });
+    const handler = appHandler(deps);
+    /** What the app answers, for the create and then the update of a routine with this watch. */
+    const answers = async (watch: Record<string, unknown>) => {
+      const calls = [
+        ["create", { botId: "bot-1", name: "Check", prompt: "Check changes", watch }],
+        ["update", { routineId: "routine-1", watch }],
+      ] as const;
+      const responses = [];
+      for (const [procedure, json] of calls) {
+        const response = await handle(
+          handler,
+          new Request(`http://127.0.0.1/rpc/routines/${procedure}`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ json }),
+          }),
+          { prefix: "/rpc", context: { actor } },
+        );
+        responses.push({ status: response.status, body: await response.text() });
+      }
+      return responses;
+    };
+    return { client, create, update, findBot, findRoutine, answers };
   }
 
   it("rejects team file escapes on create and update before writing", async () => {
@@ -11450,6 +11498,32 @@ describe("routine watch creation boundaries", () => {
       code: "BAD_REQUEST",
       message: expect.stringContaining("inside the bot's folder"),
     });
+    expect(create).not.toHaveBeenCalled();
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("answers a watched path outside the bot's folder as the caller's to fix", async () => {
+    const { answers, create, update } = fixture();
+    const watch = { kind: "files", paths: ["/etc"], everyMinutes: 5, loud: false };
+    for (const { status, body } of await answers(watch)) {
+      expect(status).toBe(400);
+      expect(JSON.parse(body).json).toMatchObject({
+        code: "BAD_REQUEST",
+        message: "The watched path must stay inside the bot's folder.",
+      });
+    }
+    expect(create).not.toHaveBeenCalled();
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("reports a failure to check the watch as a server fault, without its message", async () => {
+    const { answers, create, update, findBot } = fixture();
+    findBot.mockResolvedValue({ id: "bot-1", computer: { scope: "mainframe" } });
+    const watch = { kind: "files", paths: ["notes"], everyMinutes: 5, loud: false };
+    for (const { status, body } of await answers(watch)) {
+      expect(status).toBe(500);
+      expect(body).not.toContain("mainframe");
+    }
     expect(create).not.toHaveBeenCalled();
     expect(update).not.toHaveBeenCalled();
   });

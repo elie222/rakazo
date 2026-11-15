@@ -120,7 +120,9 @@ async function main() {
   const secrets = await createWorkerSecretStore(process.env, realtime);
   if (secrets.describe().capabilities.degraded)
     logger.warn("Secret storage degraded; encrypted credentials remain available");
-  prisma = withSecretPersistence(prisma, secrets);
+  // The queue is built from this client below; a secret dropped before then gets no retry.
+  let secretCleanupJobs: JobPublisher | undefined;
+  prisma = withSecretPersistence(prisma, secrets, () => secretCleanupJobs);
   installSecurityEventStore(prisma);
   installAuditEventStore(prisma);
   const unreadableMasterKeys = await verifyContentKeys(prisma);
@@ -141,7 +143,6 @@ async function main() {
       : new PiAgentRuntime({ sessionRoot: resolvePiSessionRoot(env.dataDir) });
   const sandboxProvider = resolveSandboxProvider(process.env);
   const sandboxOptions = sandboxProviderOptionsFromEnv(process.env);
-  const connectors = createConnectorRuntime(env, { prisma, secrets, events });
   // Never poll inbound here: Telegram allows a single getUpdates consumer,
   // and that is the API process, which owns the inbound sink.
   const messagingPlatforms = messagingPlatformsFromEnv(messagingEnvFromProcess(process.env)).filter(
@@ -162,6 +163,8 @@ async function main() {
   const runs = new RunStarter(realtime, { signal: shutdown.signal });
   const jobs: JobPublisher =
     inMemoryJobs ?? new RunJobPublisher(prisma, new GraphileJobPublisher(pool, prisma), runs);
+  secretCleanupJobs = jobs;
+  const connectors = createConnectorRuntime(env, { prisma, secrets, events, jobs });
   const sandbox = await createRunSandbox(sandboxProvider, {
     ...sandboxOptions,
     supervisorUrl: process.env.SANDBOX_SUPERVISOR_URL ?? "http://127.0.0.1:7091",

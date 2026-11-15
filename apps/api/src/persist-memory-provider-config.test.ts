@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   disconnectMemoryProvider,
   persistMemoryProviderConfig,
+  serializeSpaceMemoryConfig,
   updateMemoryProviderConfig,
   updateMemoryProviderDefaultScope,
 } from "./memory-provider-config.js";
@@ -166,6 +167,7 @@ describe("persistMemoryProviderConfig", () => {
         settings,
         defaultMemoryScope: "isolated",
         updatedAt: "2026-08-19T00:00:00.000Z",
+        connectionLabel: "Honcho Cloud (team-notes)",
       });
       expect(JSON.stringify(result)).not.toMatch(/apiKey|hch-test-key|cipher|secret/);
     } finally {
@@ -384,6 +386,7 @@ describe("persistMemoryProviderConfig", () => {
       settings: { mode: "cloud", baseUrl: "https://api.supermemory.ai" },
       defaultMemoryScope: "isolated",
       updatedAt: "2026-08-19T00:00:00.000Z",
+      connectionLabel: "Supermemory Cloud",
     });
     expect(transaction).toHaveBeenCalledOnce();
     vi.unstubAllGlobals();
@@ -528,6 +531,30 @@ describe("updateMemoryProviderDefaultScope", () => {
 
     await expect(updateMemoryProviderDefaultScope(deps, actor, "shared")).rejects.toThrow();
     expect(update).not.toHaveBeenCalled();
+  });
+});
+
+describe("serializeSpaceMemoryConfig", () => {
+  const stored = {
+    settings: { mode: "local", baseUrl: "http://10.0.0.8:8888", ignored: 1 },
+    defaultMemoryScope: "shared",
+    updatedAt: new Date("2026-08-19T00:00:00.000Z"),
+  };
+
+  it("names the connection in the provider's words", () => {
+    expect(serializeSpaceMemoryConfig({ ...stored, provider: "hindsight" })).toEqual({
+      provider: "hindsight",
+      settings: { mode: "local", baseUrl: "http://10.0.0.8:8888" },
+      defaultMemoryScope: "shared",
+      updatedAt: "2026-08-19T00:00:00.000Z",
+      connectionLabel: "Self-hosted (http://10.0.0.8:8888)",
+    });
+  });
+
+  it("still serializes a connection whose provider this build does not have", () => {
+    expect(serializeSpaceMemoryConfig({ ...stored, provider: "retired" })).not.toHaveProperty(
+      "connectionLabel",
+    );
   });
 });
 
@@ -702,6 +729,59 @@ describe("updateMemoryProviderConfig", () => {
         settings: nextSettings,
         credentials: { apiKey: "sm_new_key_12345" },
       }),
+    );
+  });
+
+  it("refuses settings the provider's form would not send, before probing or writing", async () => {
+    const { deps, prepareConnection, transaction } = updateDeps({ existing: null });
+    for (const [provider, settings, message] of [
+      ["honcho", { workspaceId: "has space" }, "Use up to 512 letters, digits, _ or -."],
+      [
+        "honcho",
+        { workspaceId: "team", userPeerId: "bot-1" },
+        "rakazo-shared and IDs starting with bot- are reserved for Rakazo.",
+      ],
+      ["hindsight", { recallBudget: "deepest" }, "recallBudget is not one of its choices"],
+      ["serenity", { allowWrites: "false" }, "Serenity endpoint is required."],
+    ] as const) {
+      await expect(
+        persistMemoryProviderConfig(deps, actor, {
+          provider,
+          settings,
+          credentials: { apiKey: "sm_test_key_12345" },
+          defaultMemoryScope: "isolated",
+        }),
+      ).rejects.toMatchObject({ code: "BAD_REQUEST", message });
+    }
+    expect(prepareConnection).not.toHaveBeenCalled();
+    expect(deps.secrets.put).not.toHaveBeenCalled();
+    expect(transaction).not.toHaveBeenCalled();
+  });
+
+  it("carries over a stored setting no field of the form edits", async () => {
+    const { deps, prepareConnection } = updateDeps({
+      existing: {
+        ...connected,
+        provider: "honcho",
+        settings: { reasoningLevel: "high", workspaceId: "team" },
+      },
+    });
+    await updateMemoryProviderConfig(deps, actor, {
+      settings: { mode: "cloud", workspaceId: "team" },
+      credentials: {},
+    });
+    expect(prepareConnection).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        settings: { mode: "cloud", workspaceId: "team", reasoningLevel: "high" },
+      }),
+    );
+    // An edit that names the setting still decides it.
+    await updateMemoryProviderConfig(deps, actor, {
+      settings: { reasoningLevel: "low", workspaceId: "team" },
+      credentials: {},
+    });
+    expect(prepareConnection).toHaveBeenLastCalledWith(
+      expect.objectContaining({ settings: { reasoningLevel: "low", workspaceId: "team" } }),
     );
   });
 

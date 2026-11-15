@@ -236,6 +236,7 @@ vi.mock("./native", () => ({
 }));
 
 vi.mock("./native-controls", () => ({ iosAtLeast: () => false }));
+vi.mock("./appearance", () => ({ mobileTokens: () => ({}) }));
 
 const botWorking: ComputerStatus = {
   botId: "bot-1",

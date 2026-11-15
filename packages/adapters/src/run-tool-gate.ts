@@ -48,7 +48,7 @@ import {
   resolveAutoReviewChecker,
 } from "./auto-review.js";
 import { reviewWithBackups } from "./auto-review-backups.js";
-import { RAKAZO_DOCS_URLS } from "./builtin-skills.js";
+import { RAKAZO_DOCS_URLS } from "./builtin-skills.prompt.js";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { CATALOG_LOAD, CATALOG_SEARCH } from "./lazy-tool-catalog.js";
 import { findConnectedModelCredential } from "./model-selection.js";

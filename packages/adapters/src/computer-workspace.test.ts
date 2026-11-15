@@ -200,7 +200,7 @@ describe("provider-neutral computer workspace", () => {
       const computer = {
         ...(await provider.provision({ botId: "bot-1", homePath: "/ignored" }, context)),
         // A Docker computer mounts the home, so its save only records a new revision.
-        kind: kind as ComputerRef["kind"],
+        kind: kind,
       };
       await provider.writeFile(computer, { path: "a.txt", content: Buffer.from("a") }, context);
       const exportWorkspace = vi.spyOn(provider, "exportWorkspace");

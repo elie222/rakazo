@@ -5,6 +5,7 @@ import { BotAvatar, Button } from "@rakazo/ui-web";
 import { HardDrive, Maximize2, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { ComputersUnavailableHint } from "../../components/ComputersUnavailableHint";
+import { runsOnUserMachine } from "../../lib/computer-sandbox";
 import { screenFrames, screenIframeSandbox } from "../../lib/computer-screen";
 import { computerLabel, computerPlaceholder, DesktopKindEmptyState } from "./computer-view";
 
@@ -96,7 +97,7 @@ function ComputerPreview({
     !computerBooting &&
     !computerScreenError &&
     !showComputerRecoveryHint &&
-    computer?.kind !== "desktop" &&
+    !runsOnUserMachine(computer) &&
     (!computer || computer.state === "stopped" || computer.state === "suspended");
   if (idle) {
     return (
@@ -148,7 +149,7 @@ function ComputerPreview({
           >
             <Trans>Open in full window</Trans>
           </div>
-        ) : computer?.kind === "desktop" ? (
+        ) : runsOnUserMachine(computer) ? (
           <DesktopKindEmptyState
             className={`grid h-full place-items-center px-6 text-center text-body text-muted-foreground/80 ${hideOnHover}`}
           />

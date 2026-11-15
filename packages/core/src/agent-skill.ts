@@ -1,4 +1,6 @@
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
+import { formatForcedSkillPrompt } from "./agent-skill.prompt.js";
+import { ClientError } from "./client-error.js";
 
 /**
  * Claude Agent Skills: reusable SKILL.md recipes shared across assistants.
@@ -204,11 +206,14 @@ function assertSafeFrontmatter(value: unknown): void {
   const checkedDepth = new Map<object, number>();
   const visit = (current: unknown, depth: number) => {
     if (depth > MAX_FRONTMATTER_DEPTH) {
-      throw new Error("SKILL.md frontmatter is nested too deeply.");
+      throw new ClientError("BAD_REQUEST", "SKILL.md frontmatter is nested too deeply.");
     }
     if (current === null || typeof current !== "object") return;
     if (ancestors.has(current)) {
-      throw new Error("SKILL.md frontmatter cannot contain recursive YAML aliases.");
+      throw new ClientError(
+        "BAD_REQUEST",
+        "SKILL.md frontmatter cannot contain recursive YAML aliases.",
+      );
     }
     if ((checkedDepth.get(current) ?? -1) >= depth) return;
     checkedDepth.set(current, depth);
@@ -230,11 +235,13 @@ export function buildSkillMd(input: {
 }): string {
   const name = input.name.trim();
   const description = input.description.trim();
-  if (!name) throw new Error("Skill name is required.");
-  if (!description) throw new Error("Skill description is required.");
-  if (name.length > 80) throw new Error("Skill name must be at most 80 characters.");
+  if (!name) throw new ClientError("BAD_REQUEST", "Skill name is required.");
+  if (!description) throw new ClientError("BAD_REQUEST", "Skill description is required.");
+  if (name.length > 80) {
+    throw new ClientError("BAD_REQUEST", "Skill name must be at most 80 characters.");
+  }
   if (description.length > 2000) {
-    throw new Error("Skill description must be at most 2000 characters.");
+    throw new ClientError("BAD_REQUEST", "Skill description must be at most 2000 characters.");
   }
   const merged: Record<string, unknown> = { ...(input.frontmatter ?? {}) };
   merged.name = name;
@@ -250,30 +257,6 @@ export function buildSkillMd(input: {
   const frontmatter = stringifyYaml(ordered, { indent: 2, lineWidth: 0 }).replace(/\n$/, "");
   const body = input.body.replace(/^\r?\n/, "");
   return `---\n${frontmatter}\n---\n${body.startsWith("\n") ? body : `\n${body}`}`;
-}
-
-export function skillCatalogLine(entry: Pick<SkillCatalogEntry, "name" | "description">): string {
-  return `- ${entry.name}: ${entry.description}`;
-}
-
-export function formatSkillsCatalogInstruction(entries: SkillCatalogEntry[]): string | undefined {
-  if (entries.length === 0) return undefined;
-  const lines = entries.map(skillCatalogLine).join("\n");
-  return [
-    "Available Claude Agent Skills (SKILL.md recipes shared across assistants; generic how-tos, not account-specific routines). The Pi runtime already understands this format; we persist and inject them:",
-    lines,
-    "When a skill matches the user's request, call skill_read for that name and follow it immediately. Prefer matching skills over improvising multi-step recipes.",
-    "Users can force a skill with /Name in the composer. Routines may mention a skill as @Name — that loads the skill at fire time.",
-    "Create a skill with skill_create when a multi-step task is worth repeating (or when asked). After creating one, mention /Name so the user can open it.",
-    "Only skill_update / skill_delete user-created skills (not builtin or plugin).",
-  ].join("\n");
-}
-
-export function formatForcedSkillPrompt(name: string, content: string, rest?: string): string {
-  const parts = [`Use skill: ${name}`, "", content.trim()];
-  const trailing = rest?.trim();
-  if (trailing) parts.push("", trailing);
-  return parts.join("\n");
 }
 
 /** Detect a composer-forced skill (`/Name` or `Use skill: Name`) at the start of a prompt. */

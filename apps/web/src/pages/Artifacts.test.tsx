@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { deferred } from "@rakazo/core/test-async";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
@@ -7,7 +8,7 @@ import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, expect, it, vi } from "vitest";
 
-const api = vi.hoisted(() => ({ listSpace: vi.fn() }));
+const api = vi.hoisted(() => ({ listSpace: vi.fn(), remove: vi.fn() }));
 const rpcClient = vi.hoisted(() => ({ artifacts: api, bootstrap: vi.fn() }));
 vi.mock("../lib/rpc", () => ({
   rpc: rpcClient,
@@ -33,8 +34,13 @@ vi.mock("@rakazo/chat-ui/web", () => ({
 vi.mock("@rakazo/ui-web", () => {
   const Container = ({ children }: { children?: ReactNode }) => <div>{children}</div>;
   return {
-    AlertDialog: Container,
-    AlertDialogAction: Container,
+    AlertDialog: ({ children }: { children?: ReactNode }) => (
+      <div role="alertdialog">{children}</div>
+    ),
+    AlertDialogAction: ({
+      variant: _variant,
+      ...props
+    }: ComponentProps<"button"> & { variant?: string }) => <button {...props} />,
     AlertDialogCancel: Container,
     AlertDialogContent: Container,
     AlertDialogDescription: Container,
@@ -324,6 +330,94 @@ it.each([
     await page.cleanup();
     queryClient.clear();
     vi.useRealTimers();
+    vi.unstubAllGlobals();
+  }
+});
+
+async function askToDelete(page: { container: HTMLElement }) {
+  await act(async () =>
+    page.container.querySelector<HTMLButtonElement>('button[aria-label^="Delete"]')!.click(),
+  );
+  const dialog = () => page.container.querySelector('[role="alertdialog"]');
+  return { dialog, confirm: () => dialog()?.querySelector("button") };
+}
+
+it("deletes an artifact once, holds the confirmation meanwhile, then reads the list again", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  api.listSpace.mockReset().mockResolvedValue({
+    items: [artifact("notes.md", "artifact-1"), artifact("plan.md", "artifact-2")],
+    nextCursor: null,
+  });
+  const removing = deferred<void>();
+  api.remove.mockReset().mockReturnValue(removing.promise);
+  const page = await renderArtifacts();
+  try {
+    const { dialog, confirm } = await askToDelete(page);
+    await act(async () => {
+      confirm()!.click();
+      confirm()!.click();
+    });
+    expect(api.remove.mock.calls).toEqual([[{ artifactId: "artifact-1" }]]);
+    expect(confirm()?.disabled).toBe(true);
+    expect(confirm()?.textContent).toBe("Deleting…");
+
+    api.listSpace.mockResolvedValue({
+      items: [artifact("plan.md", "artifact-2")],
+      nextCursor: null,
+    });
+    await act(async () => removing.resolve());
+    await vi.waitFor(() => expect(dialog()).toBeNull());
+    expect(api.listSpace).toHaveBeenCalledTimes(2);
+    expect(page.container.textContent).not.toContain("notes.md");
+    expect(page.container.textContent).toContain("plan.md");
+  } finally {
+    await page.cleanup();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("drops a deleted artifact from the list even when the list cannot be read again", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  api.listSpace.mockReset().mockResolvedValue({
+    items: [artifact("notes.md", "artifact-1"), artifact("plan.md", "artifact-2")],
+    nextCursor: null,
+  });
+  api.remove.mockReset().mockResolvedValue(undefined);
+  const page = await renderArtifacts();
+  try {
+    const { dialog, confirm } = await askToDelete(page);
+    api.listSpace.mockRejectedValue(new TypeError("Failed to fetch"));
+    await act(async () => confirm()!.click());
+    await vi.waitFor(() => expect(dialog()).toBeNull());
+    expect(page.container.textContent).not.toContain("notes.md");
+    expect(page.container.textContent).toContain("plan.md");
+  } finally {
+    await page.cleanup();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("says why an artifact was not deleted and offers the confirmation again", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  api.listSpace.mockReset().mockResolvedValue({
+    items: [artifact("notes.md", "artifact-1")],
+    nextCursor: null,
+  });
+  api.remove.mockReset().mockRejectedValue({ code: "INTERNAL_SERVER_ERROR" });
+  const page = await renderArtifacts();
+  try {
+    const { dialog, confirm } = await askToDelete(page);
+    await act(async () => confirm()!.click());
+    await vi.waitFor(() =>
+      expect(dialog()?.querySelector('[role="alert"]')?.textContent).toBe(
+        "Could not delete this artifact.",
+      ),
+    );
+    expect(confirm()?.disabled).toBe(false);
+    expect(page.container.textContent).toContain("notes.md");
+    expect(api.listSpace).toHaveBeenCalledTimes(1);
+  } finally {
+    await page.cleanup();
     vi.unstubAllGlobals();
   }
 });

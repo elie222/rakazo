@@ -154,14 +154,14 @@ function isComputerState(value: unknown): value is ComputerStatus["state"] {
 
 export function screenMissing(options: {
   state: ComputerStatus["state"] | undefined;
-  kind: ComputerStatus["kind"] | undefined;
+  runsOnUserMachine: boolean | undefined;
   booting: boolean;
   screenUrlLoaded: boolean;
   embeddedUrl: string | null;
 }): boolean {
   return (
     options.state === "running" &&
-    options.kind !== "desktop" &&
+    !options.runsOnUserMachine &&
     !options.booting &&
     options.screenUrlLoaded &&
     !options.embeddedUrl

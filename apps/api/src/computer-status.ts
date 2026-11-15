@@ -81,7 +81,7 @@ export function toComputerStatus(
     holdsUserControl(computer, viewerId)
       ? computer.controlLeaseId
       : undefined;
-  const kind = (computer?.kind ?? "fake") as ComputerStatus["kind"];
+  const kind = computer?.kind ?? "fake";
   const state =
     kind === "none"
       ? "stopped"
@@ -122,6 +122,7 @@ export function toComputerStatus(
     busyBotName: work.busyBotName,
     canUpdate: capabilities.inPlaceUpdate,
     terminalAvailable: capabilities.terminal,
+    ...(capabilities.runsOnUserMachine ? { runsOnUserMachine: true } : {}),
     ...(diskFull ? { diskFullPercent: diskPercent } : {}),
   };
 }

@@ -3,7 +3,7 @@ import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import { BUILTIN_AGENT_SKILLS } from "./builtin-skills.js";
+import { BUILTIN_AGENT_SKILLS } from "./builtin-skills.prompt.js";
 import type { PluginRepoFile } from "./plugin-connectors.js";
 import {
   classifyPluginFiles,

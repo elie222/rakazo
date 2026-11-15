@@ -337,6 +337,7 @@ test("a connected memory provider edits with its saved settings", async ({ page 
           settings: { recallBanks: "other-app", retainConversations: "false" },
           defaultMemoryScope: "isolated",
           updatedAt: "2026-11-01T00:00:00.000Z",
+          connectionLabel: "Hindsight Cloud",
         },
       },
     }),
