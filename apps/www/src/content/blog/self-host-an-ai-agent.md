@@ -1,5 +1,6 @@
 ---
 title: "How to self-host an AI agent with Docker"
+ogTitle: "How to self-host an AI agent"
 description: "Install Rakazo with the published Docker images, create an account, connect a model, and keep the database on your machine. Image pulls vary, and a public server takes longer."
 published: "2026-10-07"
 updated: "2026-11-15"

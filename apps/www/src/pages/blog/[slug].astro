@@ -4,12 +4,13 @@ import type { CollectionEntry } from "astro:content";
 import type { BlogCategory } from "../../blog/categories";
 import { BLOG_CATEGORIES, CATEGORY_LABEL, categoryPath } from "../../blog/categories";
 import { categoryIsIndexed } from "../../blog/indexability";
-import { formatPostDate, isoDate } from "../../blog/format";
+import { BLOG_AUTHOR_PERSON, formatPostDate, isoDate } from "../../blog/format";
 import { sortPosts } from "../../blog/markdown";
 import ComparisonTable from "../../components/ComparisonTable.astro";
 import FaqList from "../../components/FaqList.astro";
 import SiteFrame from "../../components/SiteFrame.astro";
-import { blogOgId, ogPublicPath } from "../../og-pages";
+import { blogOgId } from "../../blog/og";
+import { ogPublicPath } from "../../og-pages";
 import { SITE_URL } from "../../site";
 import { blogPostStructuredData } from "../../structured-data";
 
@@ -85,7 +86,11 @@ const structuredData = post
       description={post.data.description}
       structuredData={structuredData}
       ogImage={ogPublicPath(blogOgId(post.id))}
-      ogType="article"
+      articleMeta={{
+        published: post.data.published,
+        modified: post.data.updated,
+        authorUrl: BLOG_AUTHOR_PERSON.url,
+      }}
       markdownAlternate={`/blog/${post.id}.md`}
     >
       <p class="alt-crumb">

@@ -1,5 +1,6 @@
 ---
 import type { FaqItem } from "../alternatives";
+import type { ArticleMeta } from "../blog/format";
 import { githubStarsLabel } from "../github";
 import BaseLayout from "../layouts/BaseLayout.astro";
 import type { PageArticleInput } from "../structured-data";
@@ -20,7 +21,8 @@ type Props = {
   /** More nodes for the article's graph, such as an ItemList. */
   nodes?: readonly object[];
   ogImage?: string;
-  ogType?: string;
+  /** Published and modified times for the article meta tags. */
+  articleMeta?: ArticleMeta;
   index?: boolean;
   wide?: boolean;
   markdownAlternate?: string;
@@ -34,7 +36,7 @@ const {
   article,
   nodes = [],
   ogImage,
-  ogType,
+  articleMeta,
   index = true,
   wide = false,
   markdownAlternate,
@@ -56,9 +58,8 @@ const structuredData =
   title={title}
   description={description}
   structuredData={structuredData}
-  localeAlternates={false}
   ogImage={ogImage}
-  ogType={ogType}
+  article={articleMeta}
   index={index}
   markdownAlternate={markdownAlternate}
 >

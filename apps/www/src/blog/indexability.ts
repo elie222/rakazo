@@ -9,7 +9,7 @@ export const CATEGORY_INDEX_MIN = 3;
 
 const blogDir = join(dirname(fileURLToPath(import.meta.url)), "../content/blog");
 
-const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---/;
+export const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---/;
 const CATEGORY_LINE = /^category:\s*["']?([a-z]+)["']?(?:\s+#.*)?\s*$/m;
 const UPDATED_LINE = /^updated:\s*["']?(\d{4}-\d{2}-\d{2})["']?\s*$/m;
 

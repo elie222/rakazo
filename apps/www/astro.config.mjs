@@ -4,6 +4,7 @@ import sitemap from "@astrojs/sitemap";
 import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "astro/config";
 import { isIndexedPath } from "./src/blog/indexability.ts";
+import { buildChecks } from "./src/build-checks.ts";
 import { docsCallouts } from "./src/docs-callouts.ts";
 import { LOCALE_HREFLANG, LOCALES } from "./src/i18n/locales.ts";
 import { sitemapEntry } from "./src/sitemap.ts";
@@ -22,6 +23,7 @@ export default defineConfig({
     },
   },
   integrations: [
+    buildChecks(),
     react(),
     sitemap({
       filter: (page) => isIndexedPath(new URL(page).pathname),
