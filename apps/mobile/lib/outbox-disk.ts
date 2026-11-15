@@ -111,9 +111,11 @@ export function hasSavedUnsentSends(): boolean {
   if ((committedIndex()?.length ?? 0) > 0) return true;
   // Until a load marks its move complete, the earlier cache outbox still holds the queue.
   if (!legacyRoot().exists || legacyDone().exists) return false;
-  return ["sends-v4.json", "sends-v4.json.bak"].some(
-    (name) => (readIndex(new File(legacyRoot(), name))?.length ?? 0) > 0,
-  );
+  // Like committedIndex, the backup counts only when the index is missing or corrupt.
+  const legacy =
+    readIndex(new File(legacyRoot(), "sends-v4.json")) ??
+    readIndex(new File(legacyRoot(), "sends-v4.json.bak"));
+  return (legacy?.length ?? 0) > 0;
 }
 function storedEntry(attempt: SendAttempt) {
   return {

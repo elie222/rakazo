@@ -375,6 +375,9 @@ it("reports the earlier cache outbox's backup index too", () => {
   files.set("cache/outbox/sends-v4.json.bak", files.get("cache/outbox/sends-v4.json")!);
   files.delete("cache/outbox/sends-v4.json");
   expect(hasSavedUnsentSends()).toBe(true);
+  // A readable index wins over a stale backup, as on load.
+  files.set("cache/outbox/sends-v4.json", "[]");
+  expect(hasSavedUnsentSends()).toBe(false);
 });
 it("moves an earlier cache outbox to documents", async () => {
   legacy("nonce-a");
