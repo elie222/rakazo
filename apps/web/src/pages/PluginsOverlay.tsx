@@ -277,19 +277,23 @@ export function PluginsOverlay({
       if (sourceKind === "mcp" && authType === "oauth") {
         const server = await rpc.mcp.servers.create(customMcpServerInput(name, sourceUrl));
         savedForOauth = true;
+        if (action !== sourceAction.current) {
+          await refresh().catch(() => undefined);
+          return;
+        }
         setPending(null);
         sourceForm.setCredential("");
         sourceForm.setSourceKind(null);
         setView("manage");
         await refresh().catch(() => undefined);
+        if (action !== sourceAction.current) return;
         const result = await connectMcpOauth(server.id);
+        await refresh().catch(() => undefined);
         if (action !== sourceAction.current) return;
         if (result === "cancelled") {
           setOauthError(t`Sign-in cancelled. Retry in Manage MCP servers.`);
           return;
         }
-        await refresh().catch(() => undefined);
-        if (action !== sourceAction.current) return;
         if (result === "authorization_not_requested")
           setOauthError(t`This server did not request browser authorization.`);
         return;
@@ -317,7 +321,6 @@ export function PluginsOverlay({
       await refresh();
     } catch (err) {
       if (savedForOauth) {
-        if (action !== sourceAction.current) return;
         await refresh().catch(() => undefined);
         if (action !== sourceAction.current) return;
         setOauthError(
@@ -327,9 +330,10 @@ export function PluginsOverlay({
         );
         return;
       }
-      setSourceError(errorText(err, t`Could not install connector`));
+      if (action === sourceAction.current)
+        setSourceError(errorText(err, t`Could not install connector`));
     } finally {
-      if (!savedForOauth) setPending(null);
+      if (!savedForOauth && action === sourceAction.current) setPending(null);
     }
   }
 
@@ -366,6 +370,7 @@ export function PluginsOverlay({
   }
 
   function leaveSource() {
+    if (pending === "install-source") setPending(null);
     sourceForm.close();
     setSourceError(null);
     setOauthError(null);
