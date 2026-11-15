@@ -14,7 +14,13 @@ import { useSpaceBootstrap, useSpaceRoster } from "./use-space-roster";
 import { useOpenSpaceChat } from "./use-space-switch";
 import type { ThreadState } from "./use-thread-state";
 
-const state = vi.hoisted(() => ({ space: "personal", take: vi.fn(), prime: vi.fn() }));
+const state = vi.hoisted(() => ({
+  space: "personal",
+  /** Whether the browser's storage accepts a newly selected space. */
+  storageWritable: true,
+  take: vi.fn(),
+  prime: vi.fn(),
+}));
 vi.mock("@lingui/react/macro", () => ({
   useLingui: () => ({ t: (parts: TemplateStringsArray) => parts.join("") }),
 }));
@@ -34,8 +40,8 @@ vi.mock("../../lib/query", () => ({
 vi.mock("../../lib/rpc", () => ({
   selectedSpaceId: () => state.space,
   selectSpace: (id: string) => {
-    state.space = id;
-    return true;
+    if (state.storageWritable) state.space = id;
+    return state.space === id;
   },
 }));
 vi.mock("../../lib/tts", () => ({ speaker: { stop: () => {} } }));
@@ -49,8 +55,8 @@ let shell: {
   navigate: NavigateFunction;
   openSpaceChat: (spaceId: string, path: string) => void;
 };
-/** Finishes loading the other space, in the order the switches asked for it. */
-let spaceLoaded: Array<() => void>;
+/** Settles the load of the other space, in the order the switches asked for it. */
+let spaceLoads: Array<{ finish: () => void; fail: () => void }>;
 
 function bootstrapOf(spaceId: string, botId?: string) {
   const { bots, groups } = server[spaceId]!;
@@ -127,7 +133,7 @@ function SpaceShell() {
     navigationRevision,
     overlayRevision,
     closeMobileSidebar: () => {},
-    switchingSpace: roster.switchingSpace,
+    beginSpaceSwitch: roster.beginSpaceSwitch,
   });
   useLayoutEffect(() => {
     openSpaceChatRef.current = openSpaceChat;
@@ -160,9 +166,9 @@ async function rosterSignal() {
   });
 }
 
-async function finishLoadingSpace(index = 0) {
+async function finishLoadingSpace(index = 0, outcome: "finish" | "fail" = "finish") {
   await act(async () => {
-    spaceLoaded[index]!();
+    spaceLoads[index]![outcome]();
     await vi.advanceTimersByTimeAsync(0);
   });
 }
@@ -171,16 +177,20 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.useFakeTimers();
   state.space = "personal";
+  state.storageWritable = true;
   server = {
     personal: { bots: ["home", "errands"], groups: [] },
     work: { bots: ["sales", "support"], groups: ["standup"] },
   };
-  spaceLoaded = [];
+  spaceLoads = [];
   state.take.mockImplementation(async (botId?: string) => bootstrapOf(state.space, botId));
   state.prime.mockImplementation(
     (spaceId: string, botId?: string) =>
-      new Promise<AppBootstrap>((resolve) =>
-        spaceLoaded.push(() => resolve(bootstrapOf(spaceId, botId))),
+      new Promise<AppBootstrap>((resolve, reject) =>
+        spaceLoads.push({
+          finish: () => resolve(bootstrapOf(spaceId, botId)),
+          fail: () => reject(new Error("offline")),
+        }),
       ),
   );
   root = createRoot(document.createElement("div"));
@@ -258,5 +268,57 @@ describe("a roster re-read while the shell opens a chat in another space", () =>
     await rosterSignal();
     expect(window.location.pathname).toBe("/app/support");
     expect(state.space).toBe("work");
+  });
+
+  it.each(["finish", "fail"] as const)(
+    "moves off a linked chat whose space cannot be selected (%s)",
+    async (outcome) => {
+      state.storageWritable = false;
+      await open("/app/sales");
+      await finishLoadingSpace(0, outcome);
+      expect(state.space).toBe("personal");
+      expect(window.location.pathname).toBe("/app/home");
+    },
+  );
+
+  it("moves off a chat that is gone after another space could not be selected", async () => {
+    await open("/app/home");
+    state.storageWritable = false;
+    act(() => shell.openSpaceChat("work", "/app/g/standup"));
+    await finishLoadingSpace();
+    expect(state.space).toBe("personal");
+    expect(window.location.pathname).toBe("/app/home");
+    server.personal!.bots = ["errands"];
+    await rosterSignal();
+    expect(window.location.pathname).toBe("/app/errands");
+  });
+
+  it.each([
+    ["a navigation to the same chat", () => void shell.navigate("/app/home")],
+    ["a browser history event", () => void window.dispatchEvent(new PopStateEvent("popstate"))],
+  ])("moves off a chat archived during a switch given up by %s", async (_, giveUp) => {
+    await open("/app/home");
+    act(() => shell.openSpaceChat("work", "/app/g/standup"));
+    server.personal!.bots = ["errands"];
+    await rosterSignal();
+    expect(window.location.pathname).toBe("/app/home");
+    act(giveUp);
+    await finishLoadingSpace();
+    expect(state.space).toBe("personal");
+    expect(window.location.pathname).toBe("/app/errands");
+  });
+
+  it("keeps a second switch when the first one's space finishes loading", async () => {
+    server.club = { bots: ["chess"], groups: [] };
+    await open("/app/home");
+    act(() => shell.openSpaceChat("work", "/app/g/standup"));
+    server.personal!.bots = ["errands"];
+    await rosterSignal();
+    act(() => shell.openSpaceChat("club", "/app/chess"));
+    await finishLoadingSpace(0);
+    expect(window.location.pathname).toBe("/app/home");
+    await finishLoadingSpace(1);
+    expect(state.space).toBe("club");
+    expect(window.location.pathname).toBe("/app/chess");
   });
 });

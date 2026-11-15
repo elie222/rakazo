@@ -45,7 +45,13 @@ let commits: Array<() => boolean>;
 let navigationRevision: { current: number };
 let overlayRevision: { current: number };
 let navigate: ReturnType<typeof vi.fn>;
-let switchingSpace: { current: () => boolean };
+/** Whether the latest switch says it is still on its way, and how each switch ended. */
+let live: () => boolean;
+let ended: boolean[];
+function beginSpaceSwitch(check: () => boolean) {
+  live = check;
+  return (leftSpace: boolean) => void ended.push(leftSpace);
+}
 
 function Harness() {
   open = useOpenSpaceChat({
@@ -55,7 +61,7 @@ function Harness() {
     navigationRevision,
     overlayRevision,
     closeMobileSidebar: () => {},
-    switchingSpace,
+    beginSpaceSwitch,
   });
   return null;
 }
@@ -75,7 +81,8 @@ beforeEach(() => {
   navigationRevision = { current: 0 };
   overlayRevision = { current: 0 };
   navigate = vi.fn();
-  switchingSpace = { current: () => false };
+  live = () => false;
+  ended = [];
   state.prime.mockImplementation(() => new Promise<void>((resolve) => pending.push(resolve)));
   state.cached.mockReturnValue(undefined);
   state.call.mockReturnValue(null);
@@ -102,7 +109,7 @@ describe("pending space switches", () => {
         bootstrapSpaceId: "old-space",
         userId: "user",
         closeMobileSidebar: () => {},
-        switchingSpace: { current: () => false },
+        beginSpaceSwitch,
       });
       return null;
     }
@@ -169,12 +176,49 @@ describe("pending space switches", () => {
     expect(state.select).not.toHaveBeenCalled();
   });
 
-  it("reports a switch as on its way until it is abandoned", () => {
-    expect(switchingSpace.current()).toBe(false);
+  it("reports a switch as on its way until it is abandoned, then ends it", async () => {
     act(() => open("new-space", "/app/new"));
-    expect(switchingSpace.current()).toBe(true);
+    expect(live()).toBe(true);
     navigationRevision.current++;
-    expect(switchingSpace.current()).toBe(false);
+    expect(live()).toBe(false);
+    expect(ended).toEqual([]);
+    await ready();
+    expect(ended).toEqual([false]);
+  });
+
+  it("ends a switch that left for the other space", async () => {
+    act(() => open("new-space", "/app/new"));
+    await ready();
+    await act(async () => expect(commits[0]!()).toBe(true));
+    expect(ended).toEqual([true]);
+  });
+
+  it("ends a switch whose space could not be selected", async () => {
+    state.select.mockReturnValue(false);
+    act(() => open("new-space", "/app/new"));
+    await ready();
+    await act(async () => expect(commits[0]!()).toBe(false));
+    expect(ended).toEqual([false]);
+    expect(state.discard).toHaveBeenCalledOnce();
+  });
+
+  it("ends a switch whose commit throws", async () => {
+    state.select.mockImplementation(() => {
+      throw new Error("storage");
+    });
+    act(() => open("new-space", "/app/new"));
+    await ready();
+    await act(async () => expect(commits[0]).toThrow("storage"));
+    expect(ended).toEqual([false]);
+  });
+
+  it("ends a switch whose space failed to load and could not be reloaded into", async () => {
+    state.select.mockReturnValue(false);
+    state.prime.mockReturnValue(Promise.reject(new Error("offline")));
+    await act(async () => open("new-space", "/app/new"));
+    expect(state.remount).not.toHaveBeenCalled();
+    expect(state.select).toHaveBeenCalledWith("new-space");
+    expect(ended).toEqual([false]);
   });
 
   it("abandons a pending transition after browser history navigation", async () => {
