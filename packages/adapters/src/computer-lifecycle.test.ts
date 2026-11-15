@@ -24,8 +24,6 @@ import {
   acquireComputerExecutionLease,
   acquireDedicatedScreenLeaseFence,
   ComputerBusyError,
-  computerSupportsTerminal,
-  computerSupportsUpdate,
   holdComputerExecutionLeaseForTakeover,
   provisionComputer,
   releaseComputerExecutionLease,
@@ -2963,13 +2961,6 @@ function leasePrisma(options: {
 }
 
 describe("computer replacement", () => {
-  it("exposes update availability by sandbox kind", () => {
-    expect(computerSupportsUpdate("e2b")).toBe(true);
-    expect(computerSupportsUpdate("desktop")).toBe(false);
-    expect(computerSupportsUpdate("wuying")).toBe(false);
-    expect(computerSupportsUpdate("none")).toBe(false);
-  });
-
   it("replaces a wedged computer and restores the durable home", async () => {
     const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-replace-"));
     const homeRoot = await mkdtemp(path.join(tmpdir(), "rakazo-replace-home-"));
@@ -4179,14 +4170,6 @@ function replaceDeps(
     } as unknown as ThreadEvents,
   };
 }
-
-describe("computer terminal capability", () => {
-  it("allows Novita terminals through the product capability gate", () => {
-    expect(computerSupportsTerminal("novita")).toBe(true);
-    expect(computerSupportsTerminal("unknown")).toBe(false);
-    expect(computerSupportsTerminal("none")).toBe(false);
-  });
-});
 
 /** The values of each raw run-closing statement, in order. */
 function closedRuns(harness: { prisma: PrismaClient }) {

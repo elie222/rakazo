@@ -47,7 +47,6 @@ import { toComputerRef } from "./computer-support.js";
 import {
   checkpointComputerWorkspace,
   ensureComputerWorkspaceLayout,
-  mountsServerHome,
   removeDeletedBotWorkspaces,
   restoreComputerWorkspace,
 } from "./computer-workspace.js";
@@ -59,6 +58,7 @@ import {
   isSandboxGoneError,
   isSandboxUnsafeStopError,
 } from "./sandbox-errors.js";
+import { sandboxKindCapabilities } from "./sandbox-kind-capabilities.js";
 
 type ComputerUpdateProgress = (
   stage: Exclude<ComputerUpdate["stage"], "preparing">,
@@ -432,19 +432,20 @@ export async function provisionComputer(
     // A computer that mounts the server's home boots on the object store's cached copy, so that
     // copy must hold the stored revision before provision. The kind is the one provision will
     // produce; any other computer downloads the revision only if a replacement restores it below.
-    // Only a Docker computer's own reconnect may find its live copy there.
+    // Only the reconnect of a computer that mounts it may find its live copy there.
     const cache = deps.home instanceof ObjectAgentHomeStore ? deps.home : undefined;
     // Once this start holds the claim and before anything recreates the folder, so a deleted
     // cache comes back downloaded, never as an empty folder taken for the stored revision.
     await cache?.forgetMissingCache(existing.homeKey);
     const hydrated =
       cache !== undefined &&
-      mountsServerHome(
+      sandboxKindCapabilities(
         (await deps.sandbox.provisionKind?.(existing.homeKey)) ?? deps.sandbox.describe().id,
-      );
+      ).serverHomeMount === "always";
     if (hydrated)
       await cache.hydrate(existing.homeKey, {
-        keepLiveCache: reconnecting && existing.kind === "docker",
+        keepLiveCache:
+          reconnecting && sandboxKindCapabilities(existing.kind).serverHomeMount === "always",
       });
     await mkdir(homePath, { recursive: true });
     await onProgress?.("recreating");
@@ -540,7 +541,7 @@ export async function provisionComputer(
     }
     // Provision chooses its kind again, so a host change since the check above can mount a cache
     // that was not brought up to date. Failing rolls this computer back; the next start downloads.
-    if (cache && !hydrated && mountsServerHome(ref.kind))
+    if (cache && !hydrated && sandboxKindCapabilities(ref.kind).serverHomeMount === "always")
       throw new Error("Computer host changed while it was starting");
     const replacement = replaces(ref);
     if (replacement) {
@@ -1029,26 +1030,6 @@ export async function releaseComputerExecutionLease(
 }
 
 export type ComputerReplaceMode = "recover" | "reset" | "update";
-
-export function computerSupportsUpdate(kind: string): boolean {
-  return kind !== "desktop" && kind !== "wuying" && kind !== "none";
-}
-
-/** Kinds whose provider opens a user terminal through the shared Linux screen gateway. */
-export function computerSupportsTerminal(kind: string): boolean {
-  return (
-    kind === "docker" ||
-    kind === "e2b" ||
-    kind === "novita" ||
-    kind === "instabox" ||
-    kind === "daytona" ||
-    kind === "boat" ||
-    kind === "kubernetes" ||
-    kind === "incus" ||
-    kind === "local-vm" ||
-    kind === "fake"
-  );
-}
 
 export async function replaceComputer(
   deps: {
