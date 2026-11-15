@@ -1,12 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
+import { floatingBarBottom } from "./content-bottom-inset";
 
 vi.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({ bottom: 0 }) }));
-vi.mock("./call-keyboard-context", async () => {
-  const { createContext } = await import("react");
-  return { CallKeyboardContext: createContext(false) };
-});
-
-const { floatingBarBottom } = await import("./content-bottom-inset");
+vi.mock("./call-keyboard-context", () => ({ CallKeyboardContext: {} }));
 
 describe("floatingBarBottom", () => {
   it("keeps a gap above Android's three-button bar, whose whole height is the inset", () => {

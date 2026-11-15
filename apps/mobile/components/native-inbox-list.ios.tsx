@@ -188,7 +188,13 @@ export function NativeInboxList<Item>({
       )}
       {spacer(
         "bottom",
-        bottomInset !== undefined ? bottomInset + 16 : headerInset > 0 ? bottom + 32 : 32,
+        // A floating bar's height counts the safe area; before iOS 26 (no floating header) the
+        // list already stops above it, so only the rest is spacer.
+        bottomInset !== undefined
+          ? bottomInset - (headerInset > 0 ? 0 : bottom) + 16
+          : headerInset > 0
+            ? bottom + 32
+            : 32,
         onGeometryChange(({ width }) => {
           if (width > 0) setRowWidth((current) => (current === width ? current : width));
         }),
