@@ -1,6 +1,8 @@
 import type { RealtimeFanout } from "@rakazo/adapter-kit";
 import { abortableDelay } from "@rakazo/core";
+import { getLogger } from "@rakazo/logging";
 import type { PrismaClient } from "./client.js";
+import { retryWhileDatabaseUnavailable } from "./database-outage.js";
 import { ChangeLatch, threadTopic } from "./event-stream.js";
 import { runAsSystem } from "./row-security.js";
 
@@ -17,16 +19,30 @@ const IDLE_WAIT_MS = 60_000;
 const spaceTopic = (spaceId: string) => `roster-space:${spaceId}`;
 const userTopic = (userId: string) => `roster-user:${userId}`;
 
-export async function publishRosterChange(
+const PUBLISH_RETRY_MS = 15_000;
+
+/**
+ * Apps re-read the roster only on these signals, so a publish rides out a short database outage in
+ * the background, without holding up the change. Past that it gives up; apps catch up when their
+ * stream reopens.
+ */
+export function publishRosterChange(
   realtime: RealtimeFanout | undefined,
   change: RosterChange,
+  options: { sleep?: (ms: number) => Promise<void> } = {},
 ): Promise<void> {
-  if (!realtime) return;
+  if (!realtime) return Promise.resolve();
   const topics = [
     ...(change.spaceIds ?? []).map(spaceTopic),
     ...(change.userIds ?? []).map(userTopic),
   ];
-  await Promise.all(topics.map((topic) => realtime.publish(topic, "").catch(() => undefined)));
+  for (const topic of topics)
+    void retryWhileDatabaseUnavailable(() => realtime.publish(topic, ""), {
+      source: "roster signal",
+      waitMs: PUBLISH_RETRY_MS,
+      ...options,
+    }).catch((error: unknown) => getLogger().warn("roster signal not published", { error }));
+  return Promise.resolve();
 }
 
 export function loadRosterScope(prisma: PrismaClient, userId: string): Promise<RosterScope> {

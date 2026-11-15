@@ -2,6 +2,7 @@ import type { ComputerRef, SandboxProvider } from "@rakazo/adapter-kit";
 import { SANDBOX_HOURLY_COST_MICROS } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { MICROS_PER_DOLLAR, sandboxAllowancePlan, sandboxRunHours } from "@rakazo/db";
+import { sandboxKindCapabilities } from "./sandbox-kind-capabilities.js";
 
 type AllowanceDeps = { prisma: PrismaClient; sandbox: SandboxProvider };
 
@@ -10,7 +11,7 @@ export function sandboxHourlyCostMicros(
   sandbox: SandboxProvider,
   computer: Pick<ComputerRef, "kind">,
 ): number {
-  if (computer.kind === "desktop") return 0;
+  if (sandboxKindCapabilities(computer.kind).runsOnUserMachine) return 0;
   return sandbox.billsWhileRunning?.(computer) ? SANDBOX_HOURLY_COST_MICROS : 0;
 }
 

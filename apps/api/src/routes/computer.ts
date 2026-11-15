@@ -8,8 +8,6 @@ import {
   ComputerBusyError,
   checkpointAndStopComputer,
   computerScreenUnavailableMessage,
-  computerSupportsTerminal,
-  computerSupportsUpdate,
   computerUpdateView,
   controlLeaseExpiresAt,
   diskUsedPercent,
@@ -25,6 +23,7 @@ import {
   resolveBotUploadPath,
   resolveBotWorkspaceCwd,
   resolveBotWorkspacePath,
+  sandboxKindCapabilities,
   scheduleComputerSleep,
   screenLeaseIdForRun,
   sleepDeferReason,
@@ -259,7 +258,7 @@ export function computerRoutes(ctx: RouterContext) {
         const bot = await repos.getBot(context.actor, input.botId);
         if (!bot.computer) throw new IsolationError();
         assertNotAnotherPersonsControl(bot.computer, context.actor);
-        if (!computerSupportsUpdate(bot.computer.kind))
+        if (!sandboxKindCapabilities(bot.computer.kind).inPlaceUpdate)
           throw new ORPCError("BAD_REQUEST", {
             message: "Computer recovery is not available on this device",
           });
@@ -281,7 +280,7 @@ export function computerRoutes(ctx: RouterContext) {
         const bot = await repos.getBot(context.actor, input.botId);
         if (!bot.computer) throw new IsolationError();
         assertNotAnotherPersonsControl(bot.computer, context.actor);
-        if (!computerSupportsUpdate(bot.computer.kind))
+        if (!sandboxKindCapabilities(bot.computer.kind).inPlaceUpdate)
           throw new ORPCError("BAD_REQUEST", {
             message: "Computer update is not available on this device",
           });
@@ -618,7 +617,7 @@ export function computerRoutes(ctx: RouterContext) {
           !computer?.providerRef ||
           computer.state !== "running" ||
           !deps.sandbox.connectTerminal ||
-          !computerSupportsTerminal(computer.kind)
+          !sandboxKindCapabilities(computer.kind).terminal
         ) {
           return { url: null };
         }

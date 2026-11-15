@@ -34,7 +34,15 @@ vi.mock("./session", () => ({
 }));
 
 vi.mock("react-native", () => ({
-  AppState: { currentState: "active", addEventListener: () => ({ remove: () => {} }) },
+  AppState: {
+    get currentState() {
+      return appState.current;
+    },
+    addEventListener: (_event: string, listener: () => void) => {
+      appState.listeners.add(listener);
+      return { remove: () => appState.listeners.delete(listener) };
+    },
+  },
 }));
 
 vi.mock("./api-live", () => ({
@@ -54,9 +62,16 @@ vi.mock("./api-live", () => ({
     }),
 }));
 
-let live = false;
+const appState = vi.hoisted(() => ({
+  current: "active",
+  listeners: new Set<() => void>(),
+  set(next: string) {
+    this.current = next;
+    for (const listener of this.listeners) listener();
+  },
+}));
 function Harness({ onChange, enabled }: { onChange: () => void; enabled: boolean }) {
-  live = useRosterSignals(onChange, enabled);
+  useRosterSignals(onChange, enabled);
   return null;
 }
 function Stream() {
@@ -75,7 +90,7 @@ describe("useRosterSignals", () => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     streams.length = 0;
     vi.clearAllMocks();
-    live = false;
+    appState.current = "active";
     container = document.createElement("div");
     document.body.append(container);
     root = createRoot(container);
@@ -88,25 +103,37 @@ describe("useRosterSignals", () => {
     vi.unstubAllGlobals();
   });
 
-  it("goes live on the first signal and reloads on each one after it", async () => {
+  it("reads once when shown, then on every signal and never on a timer", async () => {
     const onChange = vi.fn();
     await act(async () => root.render(<Harness enabled onChange={onChange} />));
     expect(streams).toHaveLength(1);
-    await act(async () => streams[0]!.signal());
-    expect(live).toBe(true);
-    expect(onChange).not.toHaveBeenCalled();
-    await act(async () => streams[0]!.signal());
     expect(onChange).toHaveBeenCalledTimes(1);
+    await act(async () => streams[0]!.signal());
+    await act(async () => streams[0]!.signal());
+    expect(onChange).toHaveBeenCalledTimes(3);
+    await act(() => vi.advanceTimersByTimeAsync(10 * 60_000));
+    expect(onChange).toHaveBeenCalledTimes(3);
   });
 
-  it("drops back to polling when the stream ends, then reconnects", async () => {
+  it("re-reads on the opening signal of a reconnect", async () => {
     const onChange = vi.fn();
     await act(async () => root.render(<Harness enabled onChange={onChange} />));
     await act(async () => streams[0]!.signal());
     await act(async () => streams[0]!.end());
-    expect(live).toBe(false);
     await act(() => vi.advanceTimersByTimeAsync(1_000));
     expect(streams).toHaveLength(2);
+    expect(onChange).toHaveBeenCalledTimes(2);
+    await act(async () => streams[1]!.signal());
+    expect(onChange).toHaveBeenCalledTimes(3);
+  });
+
+  it("re-reads when the app returns to the foreground", async () => {
+    const onChange = vi.fn();
+    await act(async () => root.render(<Harness enabled onChange={onChange} />));
+    await act(async () => appState.set("background"));
+    expect(onChange).toHaveBeenCalledTimes(1);
+    await act(async () => appState.set("active"));
+    expect(onChange).toHaveBeenCalledTimes(2);
   });
 
   it("passes computer update signals on", async () => {
@@ -126,7 +153,6 @@ describe("useRosterSignals", () => {
       ),
     );
     await act(async () => streams[0]!.signal());
-    await act(async () => streams[0]!.signal());
     expect(onChange).not.toHaveBeenCalled();
     const other = vi.fn();
     await act(async () =>
@@ -139,9 +165,10 @@ describe("useRosterSignals", () => {
       ),
     );
     expect(streams).toHaveLength(1);
-    await act(async () => streams[0]!.signal());
     expect(onChange).toHaveBeenCalledOnce();
-    expect(other).toHaveBeenCalledOnce();
+    await act(async () => streams[0]!.signal());
+    expect(onChange).toHaveBeenCalledTimes(2);
+    expect(other).toHaveBeenCalledTimes(2);
   });
 
   it("reopens for a newly selected Space, ignoring the old stream's late signals", async () => {
