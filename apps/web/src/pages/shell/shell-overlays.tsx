@@ -207,7 +207,7 @@ export function SettingsOverlays({
               prev ? { ...prev, botAvatarSet: nextMe.botAvatarSet } : nextMe,
             );
             // Unpinned bots were restyled with it. The save already succeeded, so a failed
-            // refresh only waits for the roster's next poll.
+            // refresh only waits for the roster's next re-read.
             void refreshSpaces().catch(() => undefined);
           }}
           labs={parseLabs(bootstrapMe?.labs)}
