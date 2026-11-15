@@ -147,9 +147,11 @@ export async function settleCallRequest(
     if (!changed) return null;
     const { blocks } = changed;
     // Compare-and-set on the stored status (a plaintext copy beside the encrypted
-    // block): a concurrent settle leaves this one a no-op.
+    // block): a concurrent settle leaves this one a no-op. The card is matched where the row
+    // stores it, which is past any entry a read drops.
+    const at = (message.blocks as unknown[]).indexOf(block);
     const updated = await tx.message.updateMany({
-      where: { id: message.id, blocks: { path: ["0", "status"], equals: block.status } },
+      where: { id: message.id, blocks: { path: [String(at), "status"], equals: block.status } },
       data: { blocks: changed.stored },
     });
     if (updated.count !== 1) return null;

@@ -45,7 +45,9 @@ import {
   availableInSpace,
   createThreadMessageInTransaction,
   isUniqueViolation,
+  JsonColumnMismatchError,
   readJsonColumn,
+  reportJsonColumnOnce,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { z } from "zod";
@@ -742,15 +744,25 @@ export async function agentImportSetupState(
     }),
   ]);
   const needed = new Map(
-    imports.flatMap((row) =>
-      // Setup is judged against this checklist, so a record in another shape is rejected.
-      readJsonColumn(
-        ImportRecordSchema,
-        row.created,
-        { table: "agent_imports", column: "created", id: row.id },
-        "reject",
-      ).mcpServers.map((server) => [server.id, server] as const),
-    ),
+    imports.flatMap((row) => {
+      // Setup is judged against this checklist, so a record in another shape is rejected. Only
+      // that import is left out: its servers read as not set up, and the others are judged.
+      try {
+        return readJsonColumn(
+          ImportRecordSchema,
+          row.created,
+          { table: "agent_imports", column: "created", id: row.id },
+          "reject",
+        ).mcpServers.map((server) => [server.id, server] as const);
+      } catch (error) {
+        if (!(error instanceof JsonColumnMismatchError)) throw error;
+        reportJsonColumnOnce(
+          "An import's checklist cannot be read; its setup is not judged",
+          error.row,
+        );
+        return [];
+      }
+    }),
   );
   const given = new Set(assigned.map((row) => row.serverId));
   const nonBlank = (value: string | undefined) => typeof value === "string" && value.trim() !== "";

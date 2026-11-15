@@ -16,8 +16,10 @@ function prismaWith(options: {
   updated?: number;
   expiresAt?: string;
   beside?: unknown[];
+  before?: unknown[];
 }) {
   const blocks: unknown[] = [
+    ...(options.before ?? []),
     {
       kind: "call_request",
       callId: "call-1",
@@ -184,6 +186,23 @@ describe("settleCallRequest", () => {
         data: expect.objectContaining({ payload: expect.objectContaining({ blocks: [answered] }) }),
       }),
     );
+  });
+
+  it("settles a call stored after an entry that is not a block, matching the card where it is stored", async () => {
+    const stray = { text: "no kind" };
+    const prisma = prismaWith({ before: [stray] });
+    const settled = await settleCallRequest(
+      { prisma, events: { notify: vi.fn(async () => undefined) } },
+      { threadId: "thread-1", callId: "call-1", from: ["ringing"], status: "answered" },
+    );
+
+    expect(settled).toMatchObject({ status: "answered" });
+    expect(prisma.message.updateMany).toHaveBeenCalledWith({
+      where: { id: "message-1", blocks: { path: ["1", "status"], equals: "ringing" } },
+      data: {
+        blocks: [stray, expect.objectContaining({ kind: "call_request", status: "answered" })],
+      },
+    });
   });
 
   it("keeps a committed answer recoverable when notification fails", async () => {
