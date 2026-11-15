@@ -76,8 +76,22 @@ vi.mock("./ripple", () => ({ androidRipple: () => undefined, withAlpha: () => ""
 vi.mock("../components/native-symbol", () => ({
   NativeSymbol: ({ ios }: { ios: string }) => <i data-icon={ios} />,
 }));
-const clipboard = vi.hoisted(() => ({ text: "" }));
-vi.mock("expo-clipboard", () => ({ getStringAsync: async () => clipboard.text }));
+const clipboard = vi.hoisted(() => ({
+  text: "",
+  fail: false,
+  pending: undefined as ((text: string) => void) | undefined,
+}));
+vi.mock("expo-clipboard", () => ({
+  getStringAsync: () => {
+    if (clipboard.fail) return Promise.reject(new Error("refused"));
+    if (clipboard.pending !== undefined) {
+      return new Promise<string>((resolve) => {
+        clipboard.pending = resolve;
+      });
+    }
+    return Promise.resolve(clipboard.text);
+  },
+}));
 
 async function renderBar(landscape = false) {
   const view = document.createElement("div");
@@ -195,6 +209,40 @@ describe("computer keyboard accessory", () => {
       }
       expect(bar.button("Right")).not.toBeNull();
       expect(bar.button("Paste from your phone")).not.toBeNull();
+    } finally {
+      await bar.unmount();
+    }
+  });
+
+  it("ends a latched Ctrl on paste, so the next key goes out plain", async () => {
+    const bar = await renderBar();
+    try {
+      clipboard.text = "abc";
+      await bar.click("Control");
+      await bar.click("Paste from your phone");
+      expect(bar.onCommand).toHaveBeenLastCalledWith({ type: "text", text: "abc" });
+      expect(bar.button("Control")!.getAttribute("aria-pressed")).toBe("false");
+      await bar.click("Escape");
+      expect(bar.onCommand).toHaveBeenLastCalledWith({ type: "key", name: "Escape" });
+    } finally {
+      await bar.unmount();
+    }
+  });
+
+  it("drops a paste whose clipboard answers after control ends, and one the OS refuses", async () => {
+    const bar = await renderBar();
+    try {
+      clipboard.pending = () => {};
+      await bar.click("Paste from your phone");
+      await bar.setActive(false);
+      await act(async () => clipboard.pending?.("late"));
+      clipboard.pending = undefined;
+      expect(bar.onCommand).not.toHaveBeenCalled();
+      await bar.setActive(true);
+      clipboard.fail = true;
+      await bar.click("Paste from your phone");
+      clipboard.fail = false;
+      expect(bar.onCommand).not.toHaveBeenCalled();
     } finally {
       await bar.unmount();
     }

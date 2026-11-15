@@ -333,6 +333,16 @@ describe("settings group", () => {
     expect(columnText(render(row))).toBe("LanguageEnglish");
   });
 
+  it("tightens a row's side padding to 12 at large text sizes", () => {
+    fontScale = 1.353;
+    const view = render(<SettingsRow title="Language" value="English" />);
+    const row = [...view.querySelectorAll<HTMLElement>("[data-style]")].find((node) =>
+      (node.dataset.style ?? "").includes('"minHeight":60'),
+    );
+    const style = Object.assign({}, ...[JSON.parse(row?.dataset.style ?? "null")].flat());
+    expect(style).toMatchObject({ paddingStart: 12, paddingEnd: 12 });
+  });
+
   it("moves the switch under its label at large text sizes", () => {
     const row = <SettingsSwitch label="Stream replies" value={false} onChange={() => undefined} />;
     const beforeSwitch = (view: HTMLElement) =>

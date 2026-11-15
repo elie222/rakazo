@@ -258,7 +258,8 @@ function createSettingsStyles() {
       gap: 14,
     },
     compactLabel: { paddingStart: 12 },
-    compactRow: { paddingHorizontal: 12, gap: 8 },
+    // Start/end padding, so it wins over the row's own start and end.
+    compactRow: { paddingStart: 12, paddingEnd: 12, gap: 8 },
     titleColumn: { flex: 1, flexShrink: 1, gap: 2 },
     stackedSwitch: { alignSelf: "flex-start", marginTop: 6 },
     title: { color: native.label, fontSize: 17, lineHeight: 24 },

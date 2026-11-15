@@ -296,15 +296,18 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
       return [{ ...member, status: run.status }];
     });
   }, [inGroup, snap?.activeRuns, snap?.members, snap?.run]);
-  // The title's members carry their live run, so a bot asking or working leads its stack.
-  const titleMembers = useMemo(
-    () =>
-      groupMembers?.map((member) => ({
-        ...member,
-        status: activeGroupBots.find((bot) => bot.botId === member.botId)?.status,
-      })),
-    [groupMembers, activeGroupBots],
-  );
+  // The title's members carry their live run, so a bot asking or working leads its stack. A bot
+  // with several runs shows the one waiting on the user, else any active one.
+  const titleMembers = useMemo(() => {
+    const active = (snap?.activeRuns ?? (snap?.run ? [snap.run] : [])).filter((run) =>
+      isActiveStatus(run.status),
+    );
+    return groupMembers?.map((member) => {
+      const runs = active.filter((run) => run.botId === member.botId);
+      const status = (runs.find((run) => isRunWaitingOnUser(run.status)) ?? runs[0])?.status;
+      return { ...member, status };
+    });
+  }, [groupMembers, snap?.activeRuns, snap?.run]);
   // A bot waiting on the user (an ask card, a computer takeover) can still be stopped, but its
   // card is the state: no typing dots under it.
   const workingGroupBots = activeGroupBots.filter((bot) => isRunWorking(bot.status));

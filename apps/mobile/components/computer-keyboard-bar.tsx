@@ -50,6 +50,8 @@ export function ComputerKeyboardBar({
   const [open, setOpen] = useState(false);
   const [controlLatched, setControlLatched] = useState(false);
   const [arrowsShown, setArrowsShown] = useState(false);
+  const activeRef = useRef(active);
+  activeRef.current = active;
 
   // Backgrounding is left to iOS, which keeps the keyboard and brings it back on return. A blur
   // while in the background is never seen by the keyboard tracking, which leaves a gap.
@@ -135,11 +137,19 @@ export function ComputerKeyboardBar({
     if (control.current) latch(false);
   }
 
-  /** Types the phone's clipboard on the remote, where its caret is. */
+  /**
+   * Types the phone's clipboard on the remote, where its caret is. A paste is a whole entry,
+   * so it ends a latched Ctrl rather than leaving it for the next key. It reads `active` again
+   * after the clipboard answers, so a hand back meanwhile drops the text.
+   */
   async function paste() {
-    if (!active) return;
-    const text = await Clipboard.getStringAsync().catch(() => "");
-    if (text && active) onCommand({ type: "text", text });
+    if (!activeRef.current) return;
+    if (control.current) latch(false);
+    // The OS may refuse the read (Android and iOS gate clipboard access); then, as with an empty
+    // clipboard, there is nothing to type. `@rakazo/logging`'s bestEffort is server-only: its
+    // package root loads node:async_hooks, which React Native cannot bundle.
+    const text = await Clipboard.getStringAsync().catch((): string => "");
+    if (text && activeRef.current) onCommand({ type: "text", text });
   }
 
   const arrows: Array<{ name: ComputerKeyName; symbol: Symbol; label: string }> = [
@@ -310,6 +320,7 @@ const styles = StyleSheet.create({
     left: 0,
   },
   pill: {
+    maxWidth: "100%",
     flexDirection: "row",
     alignItems: "center",
     gap: 2,
@@ -319,7 +330,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   portraitRow: { flexDirection: "row", alignItems: "center", gap: 8 },
-  portraitPill: { flex: 1, height: BAR_HEIGHT, justifyContent: "space-around" },
+  portraitPill: { flex: 1, minWidth: 0, height: BAR_HEIGHT, justifyContent: "space-around" },
   arrowRow: { flexDirection: "row", justifyContent: "flex-end" },
   // The same height as the key pill beside it.
   keyboard: {
@@ -330,10 +341,14 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     overflow: "hidden",
   },
+  // Keys keep a 44pt target until the window is too narrow to fit the bar; then they share
+  // what there is, so no key falls off the edge.
   key: {
-    minWidth: 44,
+    flexShrink: 1,
+    minWidth: 0,
+    width: 44,
     height: 44,
-    paddingHorizontal: 10,
+    paddingHorizontal: 4,
     borderRadius: 22,
     alignItems: "center",
     justifyContent: "center",
