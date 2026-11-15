@@ -218,7 +218,9 @@ mailing-list mail. The owner's own verified mail sent **To** the bot starts it i
 the owner has confirmed their account's email address; mail that only copies the bot is saved.
 Mail that claims the owner's address but fails the check posts a note in the bot's chat, at most
 once a day, without any of its content. That usually means the owner's domain does not sign its
-own mail: Google Workspace and Microsoft 365 need DKIM turned on for a custom domain.
+own mail: Google Workspace and Microsoft 365 need DKIM turned on for a custom domain. Mail from
+a service that leaves recipients unsigned, as Microsoft 365 does, stays unverified even then: it
+can start a routine, but not the bot's chat.
 
 An email trigger starts its routine for the owner's own address, or for anyone at the owner's
 email domain when the routine allows it. A routine reads the mail as outside data, so it asks for

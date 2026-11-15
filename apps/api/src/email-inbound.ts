@@ -273,16 +273,17 @@ async function saveToInbox(
   const where = { botId_key: { botId: bot.id, key: email.key } };
   const select = { id: true, attachments: true } as const;
   const found = await deps.prisma.botEmailMessage.findUnique({ where, select });
-  if (found) {
-    const files = found.attachments as InboxFile[];
-    // A copy that did not name the bot was saved without its files; this one has earned them.
+  // A copy that did not name the bot is saved without its files; one that has earned them adds them.
+  const saved = async (row: { id: string; attachments: unknown }, stored?: InboxFile[]) => {
+    const files = row.attachments as InboxFile[];
     if (!options.keepFiles || !files.length || files.some((file) => file.artifactId)) {
-      return { id: found.id, files };
+      return { id: row.id, files };
     }
-    const kept = await storeAttachments(deps, bot, email, options.standalone);
+    const kept = stored ?? (await storeAttachments(deps, bot, email, options.standalone));
     await deps.prisma.botEmailMessage.update({ where, data: { attachments: kept } });
-    return { id: found.id, files: kept };
-  }
+    return { id: row.id, files: kept };
+  };
+  if (found) return saved(found);
   if (options.capped) {
     const recent = await deps.prisma.botEmailMessage.count({
       where: { botId: bot.id, sent: false, receivedAt: { gte: new Date(Date.now() - DAY_MS) } },
@@ -317,8 +318,7 @@ async function saveToInbox(
   } catch (error) {
     if (!isUniqueViolation(error)) throw error;
     // Another delivery of the same message saved it first; its files have the same nonces.
-    const row = await deps.prisma.botEmailMessage.findUniqueOrThrow({ where, select });
-    return { id: row.id, files: row.attachments as InboxFile[] };
+    return saved(await deps.prisma.botEmailMessage.findUniqueOrThrow({ where, select }), files);
   }
 }
 
