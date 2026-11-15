@@ -220,7 +220,9 @@ function headerSpan(text: string, at: number): Span | undefined {
 function nestedSpan(text: string, at: number): Span | undefined {
   if (text[at] !== "{" && text[at] !== "[") return undefined;
   const limit = nextNameLimit(text, at);
-  const reach = Math.min(limit, at + MAX_NESTED_VALUE_LENGTH);
+  // To its closing bracket even past a credential name inside it: a field beside that one
+  // belongs to the same credential.
+  const reach = Math.min(text.length, at + MAX_NESTED_VALUE_LENGTH);
   let depth = 0;
   let index = at;
   while (index < reach) {

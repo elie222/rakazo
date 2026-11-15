@@ -106,6 +106,12 @@ describe("sanitizeModelConnectionError", () => {
     expect(sanitizeModelConnectionError(raw)).toBe(cleaned);
   });
 
+  it("redacts a credential object whole, the fields beside a named one included", () => {
+    expect(
+      sanitizeModelConnectionError('bad api_key={"token":"AAAA1111","value":"BBBB2222"} sent'),
+    ).toBe("bad api_key=••• sent");
+  });
+
   it("redacts the value of an indexed field", () => {
     expect(sanitizeModelConnectionError("bad api_keys[0]=EXAMPLE1placeholder2VALUE3 sent")).toBe(
       "bad api_keys[0]=••• sent",
