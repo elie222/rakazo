@@ -1,3 +1,4 @@
+import { bestEffort } from "@rakazo/logging";
 import type { LocalServiceConnection } from "./local-service-endpoint.js";
 import { fetchLocalService } from "./local-service-endpoint.js";
 import { readBodyCapped } from "./web-ssrf.js";
@@ -81,7 +82,7 @@ async function hindsightRequest(
     return { ok: false, error: "Hindsight is unreachable or the request timed out." };
   }
   if (!response.ok || !options.readJson) {
-    await response.body?.cancel().catch(() => undefined);
+    await bestEffort("cancel unread response body", response.body?.cancel());
     if (response.status === 404 && options.allowNotFound) return { ok: true, value: null };
     return response.ok
       ? { ok: true, value: undefined }
