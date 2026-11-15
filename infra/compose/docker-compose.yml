@@ -17,8 +17,9 @@ x-app-environment: &app-environment # Runtime
   AWS_KMS_SECRET_ACCESS_KEY:
   # on encrypts new content at rest; off stores it readable (docs/self-host-storage.md#content-encryption).
   CONTENT_ENCRYPTION: ${CONTENT_ENCRYPTION:-on}
-  # Optional: keep computer homes and artifacts in S3-compatible storage (docs/self-host-storage.md#shared-storage-migration).
+  # Optional: keep computer homes and artifacts in S3-compatible or Azure Blob storage (docs/self-host-storage.md#shared-storage-migration).
   OBJECT_STORAGE_BUCKET:
+  OBJECT_STORAGE_PROTOCOL:
   OBJECT_STORAGE_ENDPOINT:
   OBJECT_STORAGE_REGION:
   OBJECT_STORAGE_ACCESS_KEY_ID:

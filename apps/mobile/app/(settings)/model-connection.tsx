@@ -19,7 +19,9 @@ import {
   connectionModels,
   createModelProbe,
   initialModelProbeState,
+  modelConnectionFormSecrets,
   modelConnectRequest,
+  sanitizeModelConnectionError,
   savedCompatibleModelIds,
 } from "@rakazo/core";
 import { useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
@@ -318,6 +320,13 @@ export default function ModelConnection() {
     clearFeedback();
   }
 
+  function connectionErrorText(err: unknown, fallback: string): string {
+    return sanitizeModelConnectionError(
+      errorText(err, fallback),
+      modelConnectionFormSecrets({ apiKey, headerRows }),
+    );
+  }
+
   async function probeServerModels() {
     if (!baseUrl.trim()) return;
     Keyboard.dismiss();
@@ -349,7 +358,7 @@ export default function ModelConnection() {
       },
       onError: (err) =>
         publishFeedback("probe", {
-          error: errorText(err, t`Could not reach this model server`),
+          error: connectionErrorText(err, t`Could not reach this model server`),
         }),
     });
   }
@@ -425,7 +434,7 @@ export default function ModelConnection() {
       }
     } catch (err) {
       publishFeedback("connection", {
-        error: errorText(err, t`Could not connect this provider`),
+        error: connectionErrorText(err, t`Could not connect this provider`),
       });
     } finally {
       setPending(null);
