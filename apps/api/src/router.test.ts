@@ -236,10 +236,18 @@ describe("account preferences", () => {
         throw new SecretStoreUnavailableError();
       }),
     } as never;
-    const client = createRouterClient(createRouter(deps), { context: { actor } as never });
-    await expect(client.models.credentials()).rejects.toMatchObject({
-      code: "SERVICE_UNAVAILABLE",
-      status: 503,
+    const response = await handle(
+      appHandler(deps),
+      new Request("http://127.0.0.1/rpc/models/credentials", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{}",
+      }),
+      { prefix: "/rpc", context: { actor } as never },
+    );
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({
+      json: { code: "SERVICE_UNAVAILABLE", status: 503, message: "Service Unavailable" },
     });
   });
 
@@ -634,6 +642,60 @@ describe("account preferences", () => {
     });
     if (enabled) expect(register).toHaveBeenCalledWith(actor.userId, "session-phone", token);
     else expect(register).not.toHaveBeenCalled();
+  });
+
+  describe("registering a device from a session that was signed out meanwhile", () => {
+    const registrations = [
+      ["notifications/registerPush", { token: "ExponentPushToken[fake-token]" }],
+      [
+        "notifications/registerCallPush",
+        {
+          deviceId: "11111111-1111-4111-8111-111111111111",
+          platform: "android",
+          expoToken: "ExponentPushToken[fake-token]",
+        },
+      ],
+    ] as const;
+    const register = (deps: RouterDeps, actor: Actor, path: string, body: unknown) =>
+      handle(
+        appHandler(deps),
+        new Request(`http://127.0.0.1/rpc/${path}`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ json: body }),
+        }),
+        { prefix: "/rpc", context: { actor, sessionId: "session-phone" } as never },
+      );
+    const failingStore = (error: Error) => ({
+      load: vi.fn(async () => undefined),
+      save: vi.fn().mockRejectedValue(error),
+      saveDevice: vi.fn().mockRejectedValue(error),
+      importLegacy: vi.fn(async () => false),
+      endSession: vi.fn(async () => undefined),
+      remove: vi.fn(async () => undefined),
+    });
+
+    it.each(registrations)("answers %s as unauthorized", async (path, body) => {
+      const { deps, actor } = preferencesDeps("robot");
+      deps.pushTokens = failingStore(new adapters.PushSessionEndedError());
+
+      const response = await register(deps, actor, path, body);
+
+      expect(response.status).toBe(401);
+      expect(await response.json()).toEqual({
+        json: { defined: false, code: "UNAUTHORIZED", status: 401, message: "Unauthorized" },
+      });
+    });
+
+    it.each(registrations)("reports any other %s failure as a server fault", async (path, body) => {
+      const { deps, actor } = preferencesDeps("robot");
+      deps.pushTokens = failingStore(new Error("token table is locked"));
+
+      const response = await register(deps, actor, path, body);
+
+      expect(response.status).toBe(500);
+      expect(JSON.stringify(await response.json())).not.toContain("token table");
+    });
   });
 
   it("ends only the calling session's push registration, keeping another session's", async () => {
@@ -5867,10 +5929,89 @@ describe("OpenAI-compatible model probes", () => {
     const client = createRouterClient(createRouter(deps), {
       context: { actor: options.actor ?? actor } as never,
     });
-    return { client, fetch, credentials, findCredential, findCredentials, findSecret, load };
+    return { client, deps, fetch, credentials, findCredential, findCredentials, findSecret, load };
   }
 
   afterEach(() => vi.restoreAllMocks());
+
+  /** The answer a client receives, through the app's error translation. */
+  const probeOverHttp = (deps: RouterDeps, path: string, body: unknown) =>
+    handle(
+      appHandler(deps),
+      new Request(`http://127.0.0.1/rpc/${path}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ json: body }),
+      }),
+      { prefix: "/rpc", context: { actor } as never },
+    );
+
+  it("tells the member what the server answered when it refuses the probe", async () => {
+    const { deps, fetch } = fixture();
+    fetch.mockResolvedValue(new Response("no", { status: 401 }));
+
+    const response = await probeOverHttp(deps, "models/probeOpenAiCompatible", { baseUrl });
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({
+      json: {
+        code: "BAD_REQUEST",
+        message: "Model server returned 401. You can still Connect with an explicit model id.",
+      },
+    });
+  });
+
+  it("tells the member the server could not be reached", async () => {
+    const { deps, fetch } = fixture();
+    fetch.mockRejectedValue(new TypeError("fetch failed"));
+
+    const response = await probeOverHttp(deps, "models/probeOpenAiCompatible", { baseUrl });
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({
+      json: { code: "BAD_REQUEST", message: "fetch failed" },
+    });
+  });
+
+  it("reports a probe that fails for a reason of our own as a server fault", async () => {
+    const { deps, fetch } = fixture();
+    fetch.mockRejectedValue(new Error("egress proxy pool exhausted"));
+
+    const response = await probeOverHttp(deps, "models/probeOpenAiCompatible", { baseUrl });
+
+    expect(response.status).toBe(500);
+    expect(JSON.stringify(await response.json())).not.toContain("egress proxy");
+  });
+
+  it("tells the member a catalog provider rejected the key", async () => {
+    const { deps } = fixture();
+    deps.modelConnectionFetch = vi.fn(async () => new Response("no", { status: 401 }));
+
+    const response = await probeOverHttp(deps, "models/probeCatalog", {
+      provider: "deepseek",
+      apiKey: "fake-typed-key",
+    });
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({
+      json: { code: "BAD_REQUEST", message: "API key was rejected by the provider." },
+    });
+  });
+
+  it("reports a catalog probe that fails for a reason of our own as a server fault", async () => {
+    const { deps } = fixture();
+    vi.spyOn(adapters, "probeCatalogProviderModels").mockRejectedValue(
+      new Error("catalog registry failed to load"),
+    );
+
+    const response = await probeOverHttp(deps, "models/probeCatalog", {
+      provider: "deepseek",
+      apiKey: "fake-typed-key",
+    });
+
+    expect(response.status).toBe(500);
+    expect(JSON.stringify(await response.json())).not.toContain("catalog registry");
+  });
 
   it("does not inject the connection transport into non-Ollama probes", async () => {
     const { client } = fixture();
@@ -6207,7 +6348,7 @@ describe("model credential persistence", () => {
         deploymentModelConfigured: options?.deploymentModelConfigured ?? false,
       },
     } as unknown as RouterDeps;
-    return { upsert, finish, deps, handler: new RPCHandler(createRouter(deps)) };
+    return { upsert, finish, deps, handler: appHandler(deps) };
   }
 
   /** A sign-in whose provider exchange returned `login`: begin hands over the save, and
@@ -7113,7 +7254,7 @@ describe("model settings", () => {
         agentRuntime: "pi",
       },
     } as unknown as RouterDeps;
-    const handler = new RPCHandler(createRouter(deps));
+    const handler = appHandler(deps);
     const call = (body: unknown) =>
       handle(
         handler,
@@ -8042,7 +8183,7 @@ describe("codex live catalog", () => {
         codexCatalog: { read },
         refreshExpiredModelCredential,
       } as unknown as RouterDeps;
-      const handler = new RPCHandler(createRouter(deps));
+      const handler = appHandler(deps);
 
       const response = await call(handler, "models/setDefault", {
         provider: "openai-codex",
