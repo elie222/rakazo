@@ -119,6 +119,9 @@ export function useSpaceRoster({
       setSpaces((previous) => replaceEqualDeep(previous, navigation.spaces));
       setInitialBotsLoaded(true);
       botsRefreshApplied.current = request;
+      // The shell outlives its route until the page it left for has loaded and rendered, so a
+      // route decided here would pull the user back from that page.
+      if (!initialBootstrapTarget(window.location.pathname, false)) return;
       if (
         includeArchived &&
         list.length === 0 &&

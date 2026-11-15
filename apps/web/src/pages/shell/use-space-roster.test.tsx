@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 import type { AppBootstrap, Bot, Group } from "@rakazo/contracts";
-import { act, useLayoutEffect, useRef, useState } from "react";
+import type { ComponentType } from "react";
+import { act, lazy, Suspense, useLayoutEffect, useRef, useState } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import type { NavigateFunction } from "react-router-dom";
-import { BrowserRouter, useMatch } from "react-router-dom";
+import { BrowserRouter, Route, Routes, useMatch } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { createSpaceRpc } from "../../lib/rpc";
 import { useSpaceEpoch } from "../../lib/space-switch";
@@ -60,6 +61,9 @@ let shell: {
 };
 /** Settles the load of the other space, in the order the switches asked for it. */
 let spaceLoads: Array<{ finish: () => void; fail: () => void }>;
+/** While set, roster re-reads wait for it before answering. */
+let rosterHeld: Promise<void> | undefined;
+let onboardingShown: boolean;
 
 function bootstrapOf(spaceId: string, botId?: string, groupId?: string) {
   const { bots, groups } = server[spaceId]!;
@@ -85,6 +89,7 @@ function rpcOf(spaceId: string) {
   return {
     spaces: {
       list: async () => {
+        if (rosterHeld) await rosterHeld;
         const { bots, groups, botSections } = bootstrapOf(spaceId);
         return { current: { bots, groups, botSections }, spaces: [] };
       },
@@ -165,6 +170,34 @@ async function open(path: string) {
   );
 }
 
+function OnboardingPage() {
+  useLayoutEffect(() => {
+    onboardingShown = true;
+    return () => {
+      onboardingShown = false;
+    };
+  }, []);
+  return null;
+}
+
+/** The shell among the app's pages: onboarding is another route, whose code may still be loading. */
+async function openApp(path: string, Onboarding: ComponentType = OnboardingPage) {
+  window.history.replaceState({ idx: 0 }, "", path);
+  await act(async () =>
+    root.render(
+      <BrowserRouter useTransitions={false}>
+        <Suspense fallback={null}>
+          <Routes>
+            <Route path="/app" element={<ShellPage />} />
+            <Route path="/app/:botId" element={<ShellPage />} />
+            <Route path="/onboarding" element={<Onboarding />} />
+          </Routes>
+        </Suspense>
+      </BrowserRouter>,
+    ),
+  );
+}
+
 /** A roster signal from the server, and the re-read it starts. */
 async function rosterSignal() {
   await act(async () => {
@@ -203,6 +236,8 @@ beforeEach(() => {
     work: { bots: ["sales", "support"], groups: ["standup"] },
   };
   spaceLoads = [];
+  rosterHeld = undefined;
+  onboardingShown = false;
   state.take.mockImplementation(async (botId?: string, groupId?: string) =>
     bootstrapOf(state.space, botId, groupId),
   );
@@ -342,6 +377,62 @@ describe("a roster re-read while the shell opens a chat in another space", () =>
     await finishLoadingSpace(1);
     expect(state.space).toBe("club");
     expect(window.location.pathname).toBe("/app/chess");
+  });
+});
+
+describe("a first load that sends an empty space to onboarding", () => {
+  let answerFirstLoad: () => void;
+  beforeEach(() => {
+    server.work = { bots: [], groups: [] };
+    state.space = "work";
+    state.take.mockReturnValueOnce(
+      new Promise<AppBootstrap>((resolve) => {
+        answerFirstLoad = () => resolve(bootstrapOf("work"));
+      }),
+    );
+  });
+
+  it("stays on onboarding when the roster is re-read while onboarding's code loads", async () => {
+    let finishLoadingCode!: () => void;
+    const LoadingOnboarding = lazy(
+      () =>
+        new Promise<{ default: ComponentType }>((resolve) => {
+          finishLoadingCode = () => resolve({ default: OnboardingPage });
+        }),
+    );
+    await openApp("/app", LoadingOnboarding);
+    // The stream opens with a signal, which is held until the first load settles.
+    await rosterSignal();
+    await act(async () => {
+      answerFirstLoad();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(window.location.pathname).toBe("/onboarding");
+    await act(() => vi.advanceTimersByTimeAsync(50));
+    expect(window.location.pathname).toBe("/onboarding");
+    await act(async () => finishLoadingCode());
+    expect(window.location.pathname).toBe("/onboarding");
+    expect(onboardingShown).toBe(true);
+  });
+
+  it("stays on onboarding when a re-read answers before the shell has gone", async () => {
+    await openApp("/app");
+    let answerRoster!: () => void;
+    rosterHeld = new Promise((resolve) => {
+      answerRoster = resolve;
+    });
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"));
+      await vi.advanceTimersByTimeAsync(50);
+    });
+    // Both answers arrive before React has rendered the page the first one moved to.
+    await act(async () => {
+      answerFirstLoad();
+      answerRoster();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(window.location.pathname).toBe("/onboarding");
+    expect(onboardingShown).toBe(true);
   });
 });
 
