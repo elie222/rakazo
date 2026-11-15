@@ -12,6 +12,7 @@ const catalogDir = path.join(mobileDir, "e2e", "ios-screenshots");
 
 /** Screens the catalog cannot reach yet, and why. Capture one and remove it here. */
 const UNCOVERED: Record<string, string> = {
+  "bot-logs": "needs a fixture bot with recorded tool calls to list",
   "integration-setup": "redirects to Integrations",
   share: "Android only: iOS has no share extension yet",
 };

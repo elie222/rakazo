@@ -397,16 +397,25 @@ describe("bot profile", () => {
     routinesRow().click();
     button("Pages").click();
     button("Artifacts").click();
+    button("Logs").click();
     button("Computer").click();
     expect(push.mock.calls).toEqual([
       [{ pathname: "/bot-settings", params: { botId: "bot-fixture" } }],
       [{ pathname: "/routines", params: { botId: "bot-fixture", name: "Fixture" } }],
       [{ pathname: "/pages", params: { botId: "bot-fixture" } }],
       [{ pathname: "/artifacts", params: { botId: "bot-fixture" } }],
+      [{ pathname: "/bot-logs", params: { botId: "bot-fixture" } }],
       [{ pathname: "/computer", params: { botId: "bot-fixture", name: "Fixture" } }],
     ]);
     const rows = [...container.querySelectorAll("button")].map((node) => node.textContent);
-    expect(rows.slice(0, 5)).toEqual(["Edit", "Routines0 on", "Pages", "Artifacts", "Computer"]);
+    expect(rows.slice(0, 6)).toEqual([
+      "Edit",
+      "Routines0 on",
+      "Pages",
+      "Artifacts",
+      "Logs",
+      "Computer",
+    ]);
   });
 
   it("keeps the bot's less common actions in its … menu, and clears the open chat", async () => {
