@@ -40,6 +40,10 @@ describePostgres("a stopping process and the runs it is executing (PostgreSQL)",
   let system: PrismaClient;
   let dataDir: string;
   const organizations: string[] = [];
+  let defaultModelBefore: {
+    defaultModelProvider: string | null;
+    defaultModelId: string | null;
+  } | null;
   type Turn = { runId: string; signal: AbortSignal; finish: Deferred };
   const processes: Array<{ turns: Turn[]; exit: () => Promise<void> }> = [];
   const wait = (assertion: () => Promise<void> | void) =>
@@ -50,6 +54,10 @@ describePostgres("a stopping process and the runs it is executing (PostgreSQL)",
     prisma = db.prisma;
     system = asSystem(prisma);
     dataDir = await mkdtemp(join(tmpdir(), "rakazo-run-drain-"));
+    defaultModelBefore = await system.deploymentSettings.findUnique({
+      where: { id: "default" },
+      select: { defaultModelProvider: true, defaultModelId: true },
+    });
     await system.deploymentSettings.upsert({
       where: { id: "default" },
       create: {
@@ -67,16 +75,22 @@ describePostgres("a stopping process and the runs it is executing (PostgreSQL)",
     // A turn still held open would keep its process from stopping.
     for (const { turns } of processes) for (const turn of turns) turn.finish.resolve();
     await Promise.all(processes.splice(0).map(({ exit }) => exit()));
-    // Every process scans the whole database, so nothing a test left may stay runnable.
+    // Every process scans the whole database, so nothing a test here left may stay runnable.
+    const ours = { space: { organizationId: { in: organizations } } };
     await system.run.updateMany({
-      where: { status: { in: ["queued", "leased", "running"] } },
+      where: { ...ours, status: { in: ["queued", "leased", "running"] } },
       data: { status: "cancelled", leaseOwner: null, leaseExpiresAt: null },
     });
-    await system.computerExecutionLease.deleteMany({});
+    await system.computerExecutionLease.deleteMany({ where: { computer: ours } });
   });
 
   afterAll(async () => {
     if (!prisma) return;
+    // The row may be another file's by now, so only the two columns set here are put back.
+    await system.deploymentSettings.update({
+      where: { id: "default" },
+      data: defaultModelBefore ?? { defaultModelProvider: null, defaultModelId: null },
+    });
     await system.organization.deleteMany({ where: { id: { in: organizations } } });
     await system.user.deleteMany({ where: { id: { in: organizations } } });
     await prisma.$disconnect();
