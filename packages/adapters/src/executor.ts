@@ -150,11 +150,13 @@ import {
   BOT_DIRECTORY_LIMIT,
   botEmailInstruction,
   COMPUTER_USE_INSTRUCTION,
+  connectedPluginsInstruction,
   dockerComputerToolInstruction,
   hostComputerInstruction,
   PRIVATE_WORKSPACE_INSTRUCTION,
   persistentComputerInstruction,
   runIdentityInstruction,
+  taughtSkillsInstruction,
   threadContextForRun,
   userTurnInstructions,
   voiceCallInstruction,
@@ -1677,25 +1679,16 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           settleRunningHelpers: settleHelpers,
           stopHeartbeatAfterCompletion,
         };
-        const pluginLine =
-          connectedPlugins.length > 0
-            ? `Connected plugins: ${connectedPlugins.map((row) => `${row.displayName} (${row.connectorId}:${row.provider})`).join(", ")}. Prefer those plugin tools over the computer browser or web search when reading app data (repos, releases, mail, calendar, and similar).`
-            : "No plugins are connected yet.";
+        const pluginLine = connectedPluginsInstruction(connectedPlugins);
         const runSavedSkills = nonOwnerChatRun ? [] : savedSkills;
         const runAgentSkills = nonOwnerChatRun ? builtinAgentSkillRecords() : agentSkills;
         const taughtSkillIndex = runSavedSkills.slice(0, 20);
-        const taughtSkillsLine =
-          taughtSkillIndex.length > 0
-            ? `Saved taught skills:\n${taughtSkillIndex
-                .map((skill) => {
-                  const playbook = parsePlaybook(skill.playbook);
-                  const name = skill.name || skill.goal.slice(0, 80);
-                  return `- ${name}: ${playbook.whenToUse || skill.goal}`;
-                })
-                .join(
-                  "\n",
-                )}\nWhen the user asks to run a taught skill by name, follow that skill's playbook exactly. The full playbook is included in the user task when they invoke it.`
-            : undefined;
+        const taughtSkillsLine = taughtSkillsInstruction(
+          taughtSkillIndex.map((skill) => ({
+            name: skill.name || skill.goal.slice(0, 80),
+            whenToUse: parsePlaybook(skill.playbook).whenToUse || skill.goal,
+          })),
+        );
         const agentSkillsLine = formatSkillsCatalogInstruction(runAgentSkills);
         const missingImagesInstruction = missingTurnImagesInstruction(
           turnBlocks,

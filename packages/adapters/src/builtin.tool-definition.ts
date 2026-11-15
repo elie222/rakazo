@@ -1944,6 +1944,57 @@ export const builtinAgentTools: ConnectorTool[] = [
   },
 ];
 
+export const FIND_TOOL = "find_tool";
+export const USE_TOOL = "use_tool";
+
+/** The two tools that reach built-ins left out of the tool list; `nameIndex` lists those by area. */
+export function bridgeToolDefinitions(nameIndex: string): ConnectorTool[] {
+  return [
+    {
+      name: FIND_TOOL,
+      description: `Get the parameters of built-in tools not in your tool list, including ones your instructions name. Call this before use_tool. Pass names for exact tools or query to search.\n${nameIndex}`,
+      inputSchema: {
+        type: "object",
+        properties: {
+          names: { type: "array", items: { type: "string" }, maxItems: 5 },
+          query: { type: "string", maxLength: 200, description: "Words describing the task" },
+        },
+      },
+      readOnly: true,
+    },
+    {
+      name: USE_TOOL,
+      description: "Run a built-in tool whose parameters find_tool returned in this turn.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          name: { type: "string" },
+          arguments: { type: "object", description: "Arguments matching its parameters" },
+        },
+        required: ["name", "arguments"],
+      },
+    },
+  ];
+}
+
+/** The switch into computer mode for the main model, or back out of it for the computer model. */
+export function computerModeToolDefinition(entering: boolean): ConnectorTool {
+  const field = entering ? "goal" : "summary";
+  return {
+    name: entering ? "enter_computer_mode" : "leave_computer_mode",
+    description: entering
+      ? "Hand off a concrete GUI goal to computer mode before any browser or desktop action. Call this alone; computer mode continues in the same run."
+      : "Finish computer work and return a summary to the main model in this same run. Call this alone.",
+    inputSchema: {
+      type: "object",
+      properties: { [field]: { type: "string", minLength: 1 } },
+      required: [field],
+      additionalProperties: false,
+    },
+    readOnly: true,
+  };
+}
+
 /** Agent-connection tools, exposed only when the messaging surface is enabled. */
 export const agentConnectionTools: ConnectorTool[] = [
   {

@@ -5,12 +5,11 @@ import {
   extractForcedSkillName,
   extractRoutineSkillMentions,
   findSkillByName,
-  formatForcedSkillPrompt,
-  formatSkillsCatalogInstruction,
   mergeBuiltinSkills,
   parseSkillMd,
   renameRoutineSkillMentions,
 } from "./agent-skill.js";
+import { formatForcedSkillPrompt, formatSkillsCatalogInstruction } from "./agent-skill.prompt.js";
 
 describe("built-in skill merging", () => {
   it("uses the same normalized names for catalog precedence and prompt expansion", () => {

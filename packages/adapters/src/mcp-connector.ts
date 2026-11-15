@@ -48,6 +48,7 @@ import {
 } from "./lazy-tool-catalog.js";
 import { mcpToolAppResourceUri, readMcpApp } from "./mcp-app.js";
 import { closeMcpResource } from "./mcp-close.js";
+import { UNAVAILABLE_TOOL, unavailableTool } from "./mcp-connector.tool-definition.js";
 import type { McpOAuthBroker, OAuthMaterial } from "./mcp-oauth.js";
 import {
   accessTokenExpiresAt,
@@ -235,8 +236,6 @@ function recoveredSince(
   return server.healthStatus === "ok" && (server.healthCheckedAt?.getTime() ?? 0) > since;
 }
 
-/** Route name of the stand-in tool for an assigned server whose discovery failed. */
-const UNAVAILABLE_TOOL = "__rakazo_unavailable";
 /** Skip rewriting an unchanged health observation more often than this. */
 const HEALTH_REWRITE_MS = 60_000;
 
@@ -283,25 +282,6 @@ export function mcpStdioOptionsFromEnv(
     idleMs: positiveInteger(env.MCP_STDIO_IDLE_MS, true) ?? DEFAULT_MCP_STDIO_IDLE_MS,
     discoveryTimeoutMs:
       positiveInteger(env.MCP_DISCOVERY_TIMEOUT_MS, true) ?? DEFAULT_MCP_DISCOVERY_TIMEOUT_MS,
-  };
-}
-
-/** Stand-in for an assigned server whose tools could not be listed, so the model can say
- * why instead of concluding the server is not assigned. Calling it returns the reason. */
-function unavailableTool(server: McpServer, reason: string): ConnectorTool {
-  const brief = reason.length > 400 ? `${reason.slice(0, 400)}...` : reason;
-  return {
-    name: `mcp__${server.slug}__unavailable`,
-    description: `The MCP server "${server.name}" is assigned to you but is unavailable right now, so none of its tools can be used. Reason: ${brief}. Tell the user it failed to start rather than saying it is not assigned. Calling this tool returns the same error.`,
-    inputSchema: { type: "object", properties: {}, additionalProperties: false },
-    readOnly: true,
-    route: {
-      connectorId: "mcp",
-      resourceId: server.id,
-      resourceRevision: server.revision,
-      toolName: UNAVAILABLE_TOOL,
-      catalogGroup: server.slug,
-    },
   };
 }
 
