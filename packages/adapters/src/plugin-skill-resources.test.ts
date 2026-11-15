@@ -2,6 +2,14 @@ import { describe, expect, it } from "vitest";
 import { referencedSkillResources } from "./plugin-skill-resources.js";
 
 describe("referencedSkillResources", () => {
+  it("resolves relative directory links and custom companion links", () => {
+    expect(
+      referencedSkillResources(
+        "[references](./references/) Read {baseDir}/docs/api.md and [README](README).",
+        ["references/one.md", "docs/api.md", "README", "src/unrelated.ts"],
+      ),
+    ).toEqual(["references/one.md", "docs/api.md", "README"]);
+  });
   const paths = ["references/guide.md", "references/other.md", "src/main.ts"];
   it("includes a directory mentioned alongside an individual file", () => {
     expect(

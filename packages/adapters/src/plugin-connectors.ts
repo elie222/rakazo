@@ -790,7 +790,7 @@ export function parsePluginDirectory(input: {
       }
     }
   }
-  for (const name of unsupportedParts([...files.keys()]))
+  for (const name of agentSkillBundle ? [] : unsupportedParts([...files.keys()]))
     skipped.push({ kind: "editor_only", name, reason: "Runs only inside an editor" });
   for (const [path, content] of files)
     if (content === UNREADABLE_FILE && UNREADABLE_COMPONENT.test(path))

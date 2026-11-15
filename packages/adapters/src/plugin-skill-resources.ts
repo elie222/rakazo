@@ -61,7 +61,7 @@ export function isAgentSkillResourcePath(path: string): boolean {
 export function referencedSkillResources(body: string, siblings: readonly string[]): string[] {
   const mentionedDirectories = new Set(
     SKILL_RESOURCE_DIRS.filter((directory) =>
-      new RegExp(`(?:^|[^\\w./-])${directory}/(?=$|[^\\w./-]|\\.(?:$|\\s))`).test(body),
+      new RegExp(`(?:^|[^\\w./-])(?:\\./)?${directory}/(?=$|[^\\w./-]|\\.(?:$|\\s))`).test(body),
     ),
   );
   const explicitlyNamed = new Set(siblings.filter((path) => bodyReferencesSkillPath(body, path)));
@@ -80,7 +80,13 @@ export function bodyReferencesSkillPath(body: string, path: string): boolean {
   const exactPath = new RegExp(
     `(?:^|[^\\w./-])${escaped}(?=$|[^\\w./-]|\\.(?=$|\\s|[,;:!?)}\\]]))`,
   );
-  if (path.includes("/")) return exactPath.test(body) || body.includes(`./${path}`);
+  if (path.includes("/"))
+    return exactPath.test(body) || body.includes(`./${path}`) || body.includes(`{baseDir}/${path}`);
   if (/\.[^./]+$/.test(path)) return exactPath.test(body);
-  return body.includes(`\`${path}\``) || body.includes(`./${path}`) || body.includes(`${path}/`);
+  return (
+    body.includes(`\`${path}\``) ||
+    body.includes(`./${path}`) ||
+    body.includes(`${path}/`) ||
+    body.includes(`](${path})`)
+  );
 }
