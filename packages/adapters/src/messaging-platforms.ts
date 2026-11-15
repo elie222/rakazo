@@ -1,25 +1,14 @@
 import { createHash } from "node:crypto";
-import type { TelegramAdapter } from "@chat-adapter/telegram";
-import {
-  createTelegramAdapter,
-  escapeMarkdownV2,
-  TelegramFormatConverter,
-} from "@chat-adapter/telegram";
-import {
-  createWhatsAppAdapter,
-  splitMessage,
-  WhatsAppAdapter,
-  WhatsAppApiError,
-} from "@chat-adapter/whatsapp";
+import { TelegramAdapter, TelegramFormatConverter } from "@chat-adapter/telegram";
+import { createWhatsAppAdapter, WhatsAppAdapter, WhatsAppApiError } from "@chat-adapter/whatsapp";
 import type { HttpInstance } from "@larksuiteoapi/node-sdk";
 import type { MessagingInboundMessage, MessagingOutboundStatus } from "@rakazo/adapter-kit";
 import { getLogger } from "@rakazo/logging";
-import type { Adapter } from "chat";
+import type { Adapter, AdapterPostableMessage, CardElement, Root } from "chat";
 import {
   ConsoleLogger,
   convertEmojiPlaceholders,
   isLinkNode,
-  markdownToPlainText,
   parseMarkdown,
   text,
   toPlainText,
@@ -32,6 +21,7 @@ import { boundInboundMarkdown } from "./chat-sdk-surface.js";
 import { LazyLarkAdapter } from "./lark/lazy-adapter.js";
 import { Domain } from "./lark/thread-id.js";
 import { lazyChatAdapter } from "./lazy-chat-adapter.js";
+import { splitMarkdown } from "./markdown-split.js";
 import { LazyPhotonAdapter } from "./photon/lazy-adapter.js";
 import { isVitestRuntime } from "./test-runtime.js";
 
@@ -509,69 +499,66 @@ function withTelegramRedelivery(adapter: TelegramAdapter) {
 
 /** Split before enqueueing so retries only resend the parts that failed. */
 export function splitOutboundBody(provider: string, body: string): string[] {
-  if (provider === "whatsapp") return splitWhatsAppPart(body);
-  if (provider !== "telegram" && !provider.startsWith("telegram-")) return [body];
-
-  return splitTelegramPart(body);
-}
-
-/** Split like the SDK, which counts UTF-16 units, but never end a part on half an emoji. */
-function splitKeepingPairs(body: string): string[] {
-  const parts: string[] = [];
-  let rest = body;
-  while (rest.length > MESSAGE_PART_LIMIT) {
-    // The SDK's first part only depends on the first MESSAGE_PART_LIMIT units.
-    const [first = ""] = splitMessage(rest.slice(0, MESSAGE_PART_LIMIT + 1));
-    const part = first.length > 1 && /[\uD800-\uDBFF]$/.test(first) ? first.slice(0, -1) : first;
-    parts.push(part);
-    rest = rest.slice(part.length).trimStart();
-  }
-  return rest || parts.length === 0 ? [...parts, rest] : parts;
+  if (!body.trim()) return [];
+  const sent =
+    provider === "whatsapp"
+      ? whatsappPayloads
+      : provider === "telegram" || provider.startsWith("telegram-")
+        ? telegramPayloads
+        : undefined;
+  return sent ? splitMarkdown(body, { limit: MESSAGE_PART_LIMIT, sent }) : [body];
 }
 
 const telegramFormat = new TelegramFormatConverter();
 
-/** Plain text drops a link's address, so write it after the label first. */
-function plainTextWithLinkAddresses(markdown: string): string {
-  const ast = walkAst(parseMarkdown(markdown), (node) => {
-    if (!isLinkNode(node)) return node;
-    const label = toPlainText({
-      type: "root",
-      children: [{ type: "paragraph", children: node.children }],
-    });
-    if (!label) return text(node.url);
-    const bare = node.url.replace(/^(?:https?:\/\/|mailto:)/, "");
-    if (label === node.url || label === bare || label === bare.replace(/\/$/, "")) {
-      return text(label);
-    }
-    return text(`${label} (${node.url})`);
-  });
-  return toPlainText(ast);
+/**
+ * The plain text sent when Telegram rejects a reply's formatting. Plain text drops the address of
+ * a link or image, so each is written after its label first. `ast` is rewritten.
+ */
+export function telegramFallbackText(
+  markdown: string,
+  ast: Root = parseMarkdown(markdown),
+): string {
+  const plainText = toPlainText(
+    walkAst(ast, (node) => {
+      const link = isLinkNode(node);
+      if (!link && node.type !== "image") return node;
+      const label = link
+        ? toPlainText({ type: "root", children: [{ type: "paragraph", children: node.children }] })
+        : (node.alt ?? "");
+      if (!label) return text(node.url);
+      const bare = node.url.replace(/^(?:https?:\/\/|mailto:)/, "");
+      if (label === node.url || label === bare || label === bare.replace(/\/$/, "")) {
+        return text(label);
+      }
+      return text(`${label} (${node.url})`);
+    }),
+  );
+  return plainText.trim() ? plainText : markdown;
 }
 
-function splitTelegramPart(body: string, literal = false): string[] {
-  const markdown = literal ? escapeMarkdownV2(body) : body;
-  const plainText = literal ? body : markdownToPlainText(body);
-  // The adapter truncates *after* rendering and emoji conversion, including
-  // its plain-text fallback. Measure both payloads in UTF-16 units as it does.
-  const payloads = [telegramFormat.fromMarkdown(markdown), plainText.trim() ? plainText : markdown];
-  if (
-    markdown.length <= MESSAGE_PART_LIMIT &&
-    payloads.every((text) => convertEmojiPlaceholders(text, "gchat").length <= MESSAGE_PART_LIMIT)
-  ) {
-    return [markdown];
+/** The adapter builds its plain-text fallback itself; this is its one seam for that text. */
+class TelegramAdapterWithLinkAddresses extends TelegramAdapter {
+  protected override renderPlainTextMessage(
+    message: AdapterPostableMessage,
+    card: CardElement | null,
+  ): string {
+    return !card && typeof message === "object" && "markdown" in message
+      ? telegramFallbackText(message.markdown)
+      : super.renderPlainTextMessage(message, card);
   }
+}
 
-  // Parse before splitting: cutting Markdown can turn code into prose and
-  // consume literal backslashes. Oversized formatted replies use escaped text.
-  if (!literal && plainText !== body) {
-    return splitTelegramPart(plainTextWithLinkAddresses(body), true);
-  }
-
-  const parts = splitKeepingPairs(body);
-  if (parts.length > 1) return parts.flatMap((part) => splitTelegramPart(part, literal));
-
-  return halve(body).flatMap((half) => splitTelegramPart(half, literal));
+/**
+ * Both texts the adapter may send for a Markdown part, as it renders them: MarkdownV2, and the
+ * plain text it falls back to when Telegram rejects that. It truncates either past the limit.
+ */
+function telegramPayloads(markdown: string): string[] {
+  const ast = parseMarkdown(markdown);
+  // The fallback rewrites the tree, so the formatted text is rendered first.
+  return [telegramFormat.fromAst(ast), telegramFallbackText(markdown, ast)].map((text) =>
+    convertEmojiPlaceholders(text, "gchat"),
+  );
 }
 
 /** Exposes the adapter's Markdown rendering, which the package does not export. */
@@ -583,7 +570,11 @@ class WhatsAppRenderer extends WhatsAppAdapter {
 
 let whatsappRenderer: WhatsAppRenderer | undefined;
 
-function splitWhatsAppPart(body: string): string[] {
+/**
+ * The text the adapter sends for a Markdown part. Past the limit it splits the rendered text
+ * again, outside the queue's per-part retries and through any formatting.
+ */
+function whatsappPayloads(markdown: string): string[] {
   whatsappRenderer ??= new WhatsAppRenderer({
     accessToken: "",
     appSecret: "",
@@ -592,22 +583,7 @@ function splitWhatsAppPart(body: string): string[] {
     userName: "",
     verifyToken: "",
   });
-  // The adapter re-splits anything that renders past the limit, outside the
-  // queue's per-part retries and without keeping UTF-16 pairs together.
-  if (whatsappRenderer.render(body).length <= MESSAGE_PART_LIMIT) return [body];
-
-  const parts = splitKeepingPairs(body);
-  return (parts.length > 1 ? parts : halve(body)).flatMap(splitWhatsAppPart);
-}
-
-/** Refines chunks that only grow beyond the limit during rendering. */
-function halve(body: string): string[] {
-  const midpoint = Math.floor(body.length / 2);
-  const prefix = body.slice(0, midpoint);
-  let boundary = Math.max(prefix.lastIndexOf("\n"), prefix.lastIndexOf(" "));
-  if (boundary < midpoint / 2) boundary = midpoint;
-  if (/[\uD800-\uDBFF]/.test(body[boundary - 1]!)) boundary--;
-  return [body.slice(0, boundary), body.slice(boundary)];
+  return [whatsappRenderer.render(markdown)];
 }
 
 /** Sendblue reports outbound delivery as webhooks the Chat SDK ignores. */
@@ -661,7 +637,7 @@ function telegramAdapter(
   secretToken: string,
   options: { pollInboundMessages?: boolean },
 ) {
-  return createTelegramAdapter({
+  return new TelegramAdapterWithLinkAddresses({
     botToken,
     secretToken,
     // Auto mode long-polls when no webhook is registered, for deployments
