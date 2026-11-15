@@ -10,6 +10,14 @@ describe("referencedSkillResources", () => {
       ),
     ).toEqual(["references/one.md", "docs/api.md", "README"]);
   });
+  it("does not require unrelated assets when a baseDir file is referenced", () => {
+    expect(
+      referencedSkillResources("Read {baseDir}/references/guide.md", [
+        "references/guide.md",
+        "scripts/output.bin",
+      ]),
+    ).toEqual(["references/guide.md"]);
+  });
   const paths = ["references/guide.md", "references/other.md", "src/main.ts"];
   it("includes a directory mentioned alongside an individual file", () => {
     expect(
