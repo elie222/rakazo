@@ -289,6 +289,10 @@ const threadSendWithRoutinesInput = threadSendFields.safeExtend({
   routineIds: z.array(Id).min(1).max(64),
 });
 
+/** What a Space change signal tells apps to read again; each is a `notifications.subscribe` frame. */
+export const SpaceChangeKind = z.enum(["computerUpdates", "runs", "routines"]);
+export type SpaceChangeKind = z.infer<typeof SpaceChangeKind>;
+
 const spaceName = z.string().trim().min(1).max(60);
 const organizationName = spaceName;
 /** Every organization the signed-in user belongs to, and which one the current Space belongs to. */
@@ -1496,13 +1500,14 @@ export const appContract = {
   notifications: {
     /**
      * Run alerts for the signed-in user's chats in this space, live while connected. `roster`
-     * says `spaces.list` may have changed, and `computerUpdates` that `computer.updates` may have;
-     * each is sent once when the stream opens.
+     * says `spaces.list` may have changed, `computerUpdates` that `computer.updates` may have,
+     * `runs` that `runs.list` and `routines.history` may have, and `routines` that `routines.list`
+     * may have; each is sent once when the stream opens.
      */
     subscribe: oc.output(
       eventIterator(
         z.object({
-          type: z.enum(["alert", "roster", "computerUpdates", "heartbeat"]),
+          type: z.enum(["alert", "roster", ...SpaceChangeKind.options, "heartbeat"]),
           alert: ChatAlertSchema.optional(),
         }),
       ),

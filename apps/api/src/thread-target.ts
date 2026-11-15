@@ -1130,6 +1130,8 @@ export async function sendThreadMessage(
     // Subscribers catch up from the durable event cursor after a missed realtime wake.
     getLogger().error("thread send realtime notification", error);
   });
+  if (committed.runs.length > 0 || committed.routineRuns.length > 0)
+    await deps.events.publishSpaceChange?.(actor.spaceId, "runs");
   if (
     memberMessageAlerts({
       callId,
