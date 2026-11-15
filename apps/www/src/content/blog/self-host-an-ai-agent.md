@@ -2,7 +2,7 @@
 title: "How to self-host an AI agent with Docker"
 description: "Install Rakazo with the published Docker images, create an account, connect a model, and keep the database on your machine. Image pulls vary, and a public server takes longer."
 published: "2026-10-07"
-updated: "2026-11-16"
+updated: "2026-11-15"
 author: "Elie Steinbock"
 category: "guides"
 tldr: "The published-image installer is a short script: Docker, Compose, curl, and OpenSSL, then an account and a model. Pull time depends on your connection. A public hostname, TLS, and a secrets review are a longer job than the first local chat."
@@ -48,7 +48,7 @@ comparison:
     - topic: "Published images"
       cells:
         - "One installer in an empty directory, then an account and a model."
-        - "A fixed install time. Image pulls vary."
+        - "A promise of a fixed install time. Image pulls vary."
     - topic: "This computer"
       cells:
         - "The desktop app can start the same published images locally."
