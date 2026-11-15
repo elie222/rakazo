@@ -1,6 +1,6 @@
 # GitHub 四平台测试构建
 
-`BotONE client test builds` 在 GitHub 托管机器上实际编译 Android、iOS、macOS 和 Windows，不调用 EAS 云构建。只接受手动触发，不监听代码提交、PR、标签或定时事件，也不创建 Release、上传商店或发布 OTA。
+`BotONE client test builds` 在 GitHub 托管机器上实际编译 Android、iOS、macOS 和 Windows，不调用 EAS 云构建。只接受手动触发，不监听代码提交、PR、标签或定时事件。Android、macOS 和 Windows 安装包在构建成功后自动保存到 GitHub Pre-release；iOS 只保留 Actions 产物。不上传商店或发布 OTA。
 
 ## 手动运行
 
@@ -9,7 +9,12 @@
 1. 打开自己的仓库，进入 **Actions → BotONE client test builds**。
 2. 点击 **Run workflow**，选择包含该配置的分支。
 3. 在 `platform` 选择 `android`、`ios`、`macos`、`windows`，或选择 `all`。
-4. 运行结束后，在该次运行底部的 **Artifacts** 下载对应产物。产物保留一天，避免长时间占用存储；需要长期保留请及时下载。
+4. Android、macOS 和 Windows 构建结束后，在 **Publish preview downloads** 的运行摘要打开下载链接，或到仓库 **Releases** 下载。每次运行对应 `botone-preview-运行编号`，标记为 Pre-release，不替换正式版的 Latest。
+5. iOS 模拟器包仍在该次运行底部的 **Artifacts** 下载，保留一天，不上传 Release。只选择 iOS 时不会创建 Release。
+
+Release 附件不使用 Actions 的一天保留期，可以长期下载；不要删除需要保留的 Release 或附件。其余平台也会保留一天的 Actions 产物，供发布步骤读取。某个平台失败不会阻止发布其他已成功上传的安装包；全部失败时不创建空 Release。重跑同一次运行的发布 Job 会补充或替换同名附件。
+
+发布步骤使用工作流自带的 `GITHUB_TOKEN`，只有独立发布 Job 取得 `contents: write` 权限，无需新增个人访问令牌。安装包仍使用下表的测试签名，进入 Releases 不代表已经具备正式签名。
 
 命令行也可以手动触发，`OWNER/REPO` 替换为自己的仓库：
 

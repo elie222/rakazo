@@ -1,6 +1,6 @@
 name: BotONE client test builds
 
-# Deliberately manual only. These artifacts are not store releases.
+# Deliberately manual only. Installers are published as previews, never to stores.
 on:
   workflow_dispatch:
     inputs:
@@ -193,3 +193,53 @@ jobs:
           if-no-files-found: error
           compression-level: 0
           retention-days: 1
+
+  release:
+    name: Publish preview downloads
+    needs: [validate, android, desktop]
+    # A failed desktop matrix can still have a successful platform worth retaining.
+    if: ${{ !cancelled() && needs.validate.result == 'success' && inputs.platform != 'ios' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          # Explicit platform list: never download iOS apps or build logs for release.
+          pattern: botone-{android,macos,windows}-preview-${{ github.run_number }}
+          path: preview-downloads
+          merge-multiple: true
+      - name: Publish successful installers
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: botone-preview-${{ github.run_number }}
+          SOURCE_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=(preview-downloads/*.apk preview-downloads/*.dmg preview-downloads/*.zip preview-downloads/*.exe)
+          if (( ${#files[@]} == 0 )); then
+            echo 'No successful installer artifacts to publish.' >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          notes="$RUNNER_TEMP/preview-release-notes.md"
+          cat > "$notes" <<EOF
+          Preview installers from commit $SOURCE_SHA.
+
+          Android uses development signing. macOS is ad hoc signed and not notarized. Windows is unsigned.
+          iOS simulator apps remain in Actions artifacts.
+
+          [Build details]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)
+          EOF
+          if gh release view "$RELEASE_TAG" > /dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" "${files[@]}" --clobber
+          else
+            gh release create "$RELEASE_TAG" "${files[@]}" \
+              --target "$SOURCE_SHA" --title "BotONE Preview $GITHUB_RUN_NUMBER" \
+              --notes-file "$notes" --prerelease --latest=false
+          fi
+          url=$(gh release view "$RELEASE_TAG" --json url --jq .url)
+          printf '### Preview downloads\n\n[Download installers](%s)\n' "$url" >> "$GITHUB_STEP_SUMMARY"
