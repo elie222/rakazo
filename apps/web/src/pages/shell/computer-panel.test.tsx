@@ -107,14 +107,20 @@ it.each([null, computer("stopped"), computer("suspended")])(
   },
 );
 
-it("shows the person's own machine from what the server says, never from the kind", async () => {
-  await render({ ...computer("running"), kind: "desktop" });
+it("shows the person's own machine from what the server says", async () => {
+  await render({ ...computer("running"), kind: "desktop", runsOnUserMachine: false });
   expect(container.querySelector("iframe")).not.toBeNull();
   await render({ ...computer("running"), kind: "any-kind", runsOnUserMachine: true });
   expect(container.querySelector("iframe")).toBeNull();
   expect(container.textContent).toContain("This bot runs on this computer");
   await render({ ...computer("stopped"), kind: "any-kind", runsOnUserMachine: true });
   expect(container.querySelector('[data-state="idle"]')).toBeNull();
+});
+
+it("still shows the person's own machine when an older server names it only by kind", async () => {
+  await render({ ...computer("running"), kind: "desktop" });
+  expect(container.querySelector("iframe")).toBeNull();
+  expect(container.textContent).toContain("This bot runs on this computer");
 });
 
 it("shows a computer of a kind this build does not know like any other", async () => {
