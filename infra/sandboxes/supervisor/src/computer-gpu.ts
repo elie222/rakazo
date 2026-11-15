@@ -64,6 +64,9 @@ export function resolveComputerGpu(
   }
   const problem = renderNodeProblem(hostDevice(stats));
   if (problem) throw fail(`${node} ${problem}`);
+  // Every computer user joins the node's group; group 0 would reach root-group files.
+  if (stats.gid === 0)
+    throw fail(`${node} is owned by group 0; give the node its own group, such as render`);
   return { node, gid: stats.gid };
 }
 

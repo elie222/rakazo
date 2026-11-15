@@ -249,8 +249,9 @@ services:
 The bind only lets the supervisor read the nodes' type, number and group. It cannot open them because it gets no `--device`: Docker's device policy refuses the open (`Operation not permitted`), not the read-only bind.
 Only DRM render nodes are accepted, never `card*`: the node must be character device 226 with a
 minor of 128 or more, and not a symlink (Docker follows a symlink to whatever device it names).
-Each computer joins the node's own group. The supervisor refuses to start when the node is
-missing, not visible, or another device, and checks it again before it creates or starts each
+Each computer joins the node's own group, so the node must not be owned by the root group (give
+it a group such as `render`). The supervisor refuses to start when the node is missing, not
+visible, another device, or owned by group 0, and checks it again before it creates or starts each
 computer.
 
 WARNING: the render node enlarges the sandbox's kernel attack surface. Page code (WebGL, WebGPU,

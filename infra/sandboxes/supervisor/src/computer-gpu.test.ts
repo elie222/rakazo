@@ -72,6 +72,13 @@ describe("computer render node", () => {
     }
   });
 
+  it("refuses a render node owned by the root group", () => {
+    // Every computer user would join group 0 and reach root-group files in shared folders.
+    expect(() => resolveComputerGpu("/dev/dri/renderD128", () => device(226, 128, 0))).toThrow(
+      /is owned by group 0; give the node its own group, such as render/,
+    );
+  });
+
   it("passes the render node and its group into computers only when configured", () => {
     const base = {
       name: "rakazo-bot-x",
