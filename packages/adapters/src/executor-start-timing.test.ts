@@ -77,6 +77,7 @@ function fixture(
     // Stop at attempt setup so the fixture exercises only the real startup path.
     attempt: {
       create: vi.fn(async () => Promise.reject(new Error("attempt setup failed"))),
+      findFirst: vi.fn(async (): Promise<{ id: string } | null> => null),
     },
   };
   const enqueue = vi.fn(async () => undefined);
@@ -194,6 +195,18 @@ describe("execution start timing", () => {
       expect(sink.events.some((event) => event.message === "run.execution_started")).toBe(false);
     },
   );
+});
+
+it("reuses the attempt a failed write already committed, adding no second row", async () => {
+  const { prisma, start } = fixture({});
+  leases.acquire.mockResolvedValue(lease);
+  prisma.attempt.findFirst.mockResolvedValue({ id: "attempt-1" });
+  // What follows the claim is outside this fixture; only the attempt rows matter here.
+  await start().catch(() => undefined);
+  expect(prisma.attempt.findFirst).toHaveBeenCalledWith({
+    where: { runId: "run-1", fence: expect.any(Number) },
+  });
+  expect(prisma.attempt.create).toHaveBeenCalledOnce();
 });
 
 it("stops a superseded claim before it settles the new attempt's takeover cards", async () => {

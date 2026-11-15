@@ -107,11 +107,15 @@ export async function claimRunAttempt(deps: ExecutorDeps, run: ContinuableRun, w
     setupFailure = { error };
     started = {
       computerLease: null,
+      // The failed write may have committed with its reply lost; a second row would stay running.
       attempt: await retryWhileDatabaseUnavailable(
-        () =>
-          deps.prisma.attempt.create({
+        async () =>
+          (await deps.prisma.attempt.findFirst({
+            where: { runId: run.id, fence: claimed.fence },
+          })) ??
+          (await deps.prisma.attempt.create({
             data: { runId: run.id, fence: claimed.fence, status: "running" },
-          }),
+          })),
         { source: "run setup", signal: deps.shutdownSignal },
       ),
       executionStartedAt: claimed.current.startedAt ?? new Date(),
