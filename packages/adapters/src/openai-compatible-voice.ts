@@ -27,6 +27,7 @@ import {
   readVoiceJson,
   readVoiceText,
   speechUploadName,
+  voiceErrorDetail,
   voiceHttpError,
   voiceLanguageHint,
   voiceRequestError,
@@ -170,39 +171,15 @@ export function openAiCompatibleVoiceServer(
   }
 }
 
-/** A detail can be a string, an array of messages or a nested object with either. */
-function errorMessage(value: unknown): string | undefined {
-  if (typeof value === "string" && value.trim() !== "") return value;
-  if (Array.isArray(value)) {
-    const parts = value.map(errorMessage).filter((part) => part !== undefined);
-    return parts.length ? parts.join("; ") : undefined;
-  }
-  if (value && typeof value === "object") {
-    const inner = value as { msg?: unknown; message?: unknown };
-    return errorMessage(inner.msg) ?? errorMessage(inner.message);
-  }
-  return undefined;
-}
-
 /**
  * Any private address is allowed, so echo only a short, single-line error from the
  * server: enough for "model not found", too little to read another service through it.
  */
 function serverError(status: number, what: string, body: unknown, apiKey?: string): Error {
-  const detail =
-    body && typeof body === "object"
-      ? (body as { detail?: unknown; error?: unknown; message?: unknown })
-      : {};
-  const nestedError =
-    detail.error && typeof detail.error === "object"
-      ? (detail.error as { message?: unknown }).message
-      : undefined;
-  const raw = [detail.detail, detail.message, detail.error, nestedError]
-    .map(errorMessage)
-    .find((value) => value !== undefined);
-  const redacted = apiKey ? raw?.replaceAll(apiKey, "[redacted]") : raw;
+  const raw = voiceErrorDetail(body);
+  const redacted = apiKey ? raw.replaceAll(apiKey, "[redacted]") : raw;
   const short = redacted
-    ?.replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]+/gu, " ")
+    .replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]+/gu, " ")
     .trim()
     .slice(0, MAX_SERVER_DETAIL_LENGTH);
   return voiceRequestError(status, PROVIDER_NAME, what, short ? { detail: short } : null, body);
