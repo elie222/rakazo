@@ -78,6 +78,7 @@ const CATALOG_FETCH_TIMEOUT_MS = 60_000;
 const MAX_BYTES = 4_000_000;
 const MAX_CATALOG_BYTES = 30_000_000;
 const MAX_FILE_BYTES = 100_000;
+const HIDDEN_PLUGIN_MANIFEST = /^\.[^/]+-plugin\/plugin\.json$/;
 const FULL_SHA = /^[a-f0-9]{40}$/;
 const SCHEMAS = new Set([
   "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
@@ -741,10 +742,7 @@ export function parsePluginDirectory(input: {
   let schema: string | undefined;
   let rawManifest: Record<string, unknown> | undefined;
   const agentSkillBundle = !manifestPath;
-  if (
-    agentSkillBundle &&
-    [...files.keys()].some((path) => /^\.[^/]+-plugin\/plugin\.json$/.test(path))
-  ) {
+  if (agentSkillBundle && [...files.keys()].some((path) => HIDDEN_PLUGIN_MANIFEST.test(path))) {
     throw new Error("Unsupported plugin manifest");
   }
   if (manifestPath) {
@@ -874,6 +872,7 @@ export function classifyPluginFiles(
   sizes?: ReadonlyMap<string, number>,
 ): PluginCompleteness | "incomplete" | null {
   const hasManifest = paths.some((path) => MANIFESTS.includes(path));
+  if (!hasManifest && paths.some((path) => HIDDEN_PLUGIN_MANIFEST.test(path))) return "incomplete";
   const skillPaths = paths.filter(isSkillDocumentPath);
   const hasMcpConfig = paths.some((path) => path === "mcp.json" || path === ".mcp.json");
   if (!hasManifest && !hasMcpConfig && skillPaths.length > 0) {
