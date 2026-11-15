@@ -55,7 +55,6 @@
   "packages/adapters/src/executor-readonly-approval.test.ts": 1,
   "packages/adapters/src/executor-user-progress.test.ts": 1,
   "packages/adapters/src/executor.test.ts": 1,
-  "packages/adapters/src/executor.ts": 1,
   "packages/adapters/src/fleet-tools.test.ts": 1,
   "packages/adapters/src/fleet-tools.ts": 1,
   "packages/adapters/src/hindsight-memory-provider.test.ts": 1,
