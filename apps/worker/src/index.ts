@@ -78,7 +78,7 @@ import {
   runAsSystem,
   verifyContentKeys,
 } from "@rakazo/db";
-import { SERVICE_NAMES } from "@rakazo/logging";
+import { bestEffort, SERVICE_NAMES } from "@rakazo/logging";
 import { createRootLogger } from "@rakazo/logging/axiom";
 import { watchEventLoopStalls } from "@rakazo/logging/event-loop";
 import { MarkdownMemoryStore } from "@rakazo/memory";
@@ -300,8 +300,8 @@ async function main() {
         await realtime.close();
         await connectors.mcp.close();
         await connectors.installed.close();
-        await prisma.$disconnect().catch(() => undefined);
-        await pool.end().catch(() => undefined);
+        await bestEffort("disconnect database client", prisma.$disconnect());
+        await bestEffort("close database pool", pool.end());
       } finally {
         await analytics?.flush();
         await shutdownPiTelemetry();
