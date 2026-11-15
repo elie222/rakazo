@@ -36,4 +36,15 @@ describe("blogOgPage", () => {
       title: "A long title: with a colon",
     });
   });
+
+  it("reads single-quoted and plain titles from the frontmatter only", () => {
+    const body = '\n```yaml\nogTitle: "Not the title"\n```\n';
+    expect(
+      blogOgPage("post", `---\ntitle: 'It''s here'\ncategory: guides\n---${body}`).title,
+    ).toBe("It's here");
+    expect(
+      blogOgPage("post", `---\ntitle: Plain title # note\ncategory: guides\n---${body}`).title,
+    ).toBe("Plain title");
+    expect(() => blogOgPage("post", `---\ncategory: guides\n---\ntitle: "Body"\n`)).toThrow();
+  });
 });

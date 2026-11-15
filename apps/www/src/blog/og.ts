@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { OgPage } from "../og-pages";
-import { type BlogCategory, categoryFromFrontmatter } from "./indexability";
+import { type BlogCategory, categoryFromFrontmatter, FRONTMATTER } from "./indexability";
 
 const blogDir = join(dirname(fileURLToPath(import.meta.url)), "../content/blog");
 
@@ -13,9 +13,14 @@ const KICKER: Record<BlogCategory, string> = {
   product: "Product",
 };
 
-function frontmatterString(text: string, key: string): string | undefined {
-  const value = new RegExp(`^${key}:\\s*(".*")\\s*$`, "m").exec(text)?.[1];
-  return value === undefined ? undefined : (JSON.parse(value) as string);
+/** A one-line YAML string from the frontmatter block: double-quoted, single-quoted or plain. */
+function frontmatterString(markdown: string, key: string): string | undefined {
+  const block = FRONTMATTER.exec(markdown)?.[1] ?? "";
+  const value = new RegExp(`^${key}:[ \\t]*(.*?)[ \\t]*$`, "m").exec(block)?.[1];
+  if (!value) return undefined;
+  if (value.startsWith('"')) return JSON.parse(value) as string;
+  if (value.startsWith("'")) return value.slice(1, -1).replaceAll("''", "'");
+  return value.replace(/\s+#.*$/, "");
 }
 
 export function blogOgId(slug: string): string {
