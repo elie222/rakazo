@@ -36,7 +36,15 @@ function interpolationEnd(text, start) {
   let depth = 1;
   for (let index = start + 2; index < text.length; index += 1) {
     const character = text[index];
-    if (character === '"' || character === "'") {
+    if (character === "/" && text[index + 1] === "/") {
+      const newline = text.indexOf("\n", index);
+      if (newline === -1) return -1;
+      index = newline;
+    } else if (character === "/" && text[index + 1] === "*") {
+      const close = text.indexOf("*/", index + 2);
+      if (close === -1) return -1;
+      index = close + 1;
+    } else if (character === '"' || character === "'") {
       const end = quoteEnd(text, index);
       if (end === -1) return -1;
       index = end;
@@ -109,7 +117,15 @@ function callEnd(text, open) {
   let depth = 0;
   for (let index = open; index < text.length; index += 1) {
     const character = text[index];
-    if (character === '"' || character === "'") {
+    if (character === "/" && text[index + 1] === "/") {
+      const newline = text.indexOf("\n", index);
+      if (newline === -1) return -1;
+      index = newline;
+    } else if (character === "/" && text[index + 1] === "*") {
+      const close = text.indexOf("*/", index + 2);
+      if (close === -1) return -1;
+      index = close + 1;
+    } else if (character === '"' || character === "'") {
       const end = quoteEnd(text, index);
       if (end === -1) return -1;
       index = end;
@@ -161,7 +177,8 @@ function unsanitized(body) {
     if (character === '"' || character === "'") {
       const end = quoteEnd(body, index);
       if (end === -1) return `${rest}${body.slice(index)}`;
-      rest += body.slice(index, end + 1);
+      // A quoted string is a value, so its words are not label names.
+      rest += " ";
       index = end + 1;
       continue;
     }
