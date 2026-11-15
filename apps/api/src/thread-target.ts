@@ -39,7 +39,6 @@ import {
   IsolationError,
   loadMessageAuthor,
   lockSpaceGroup,
-  primaryActiveRun,
   retireWaitingQuestionInTransaction,
   SpaceDeletionInProgressError,
   spaceTakesWork,
@@ -70,7 +69,8 @@ export type ThreadTarget =
       groupId: string;
       threadId: string;
       groupName: string;
-      members: GroupMember[];
+      // A member's status changes with thread events, so the snapshot reads it with its cursor.
+      members: Omit<GroupMember, "status">[];
       memberBotIds: string[];
     };
 
@@ -397,7 +397,6 @@ export async function resolveThreadTarget(
       name: member.bot.name,
       color: member.bot.color,
       avatarSet: resolveBotAvatarSet(member.bot.avatarSet),
-      status: primaryActiveRun(member.bot.runs)?.status ?? "idle",
     }));
     return {
       kind: "group",

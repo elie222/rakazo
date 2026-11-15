@@ -66,7 +66,7 @@ export * from "./spaces.js";
 export * from "./spending.js";
 export * from "./teaching-recordings.js";
 export * from "./thread-ask.js";
-export { primaryActiveRun } from "./thread-listing.js";
+export { botRunStatuses, primaryActiveRun } from "./thread-listing.js";
 export * from "./thread-reads.js";
 export type { ClaimedSteeringMessage, ClaimSteeringInput } from "./thread-steering.js";
 export {
