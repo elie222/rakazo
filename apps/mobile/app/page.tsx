@@ -120,7 +120,14 @@ export default function PageScreen() {
       {loaded.status === "ready" ? (
         // The page starts below the round buttons; its own top padding keeps the title clear.
         <View
-          style={[styles.screen, { paddingTop: insets.top + HEADER_CONTROL_SIZE }]}
+          style={[
+            styles.screen,
+            // Clear of the buttons: Android's 48pt circles sit 6pt below the safe area.
+            {
+              paddingTop:
+                insets.top + (Platform.OS === "android" ? 6 + ROUND_SIZE : HEADER_CONTROL_SIZE),
+            },
+          ]}
           onTouchStart={({ nativeEvent }) => {
             // A second finger makes it a pinch.
             const { pageX, pageY, touches } = nativeEvent;

@@ -82,12 +82,16 @@ describe("groupTitleStatus", () => {
 
 describe("groupTitleWidth", () => {
   it("fills the pane between a circle on each side", () => {
-    expect(groupTitleWidth(390, { leading: true, trailing: true })).toBe(246);
+    expect(groupTitleWidth(390, { leading: "circle", trailing: "circle" })).toBe(246);
   });
 
-  it("takes the room of a missing circle", () => {
-    expect(groupTitleWidth(390, { leading: false, trailing: true })).toBe(302);
-    expect(groupTitleWidth(390, { leading: true, trailing: false })).toBe(302);
+  it("takes the room of a missing control", () => {
+    expect(groupTitleWidth(390, { leading: null, trailing: "circle" })).toBe(302);
+    expect(groupTitleWidth(390, { leading: "circle", trailing: null })).toBe(302);
+  });
+
+  it("leaves Restore its wider room on an archived chat", () => {
+    expect(groupTitleWidth(390, { leading: "circle", trailing: "text" })).toBe(198);
   });
 });
 

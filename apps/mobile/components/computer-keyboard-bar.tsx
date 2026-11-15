@@ -1,23 +1,35 @@
 import { useLingui } from "@lingui/react/macro";
+import * as Clipboard from "expo-clipboard";
+import type { ComponentProps, ReactNode } from "react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { TextInputInstance } from "react-native";
-import { StyleSheet, TextInput, View } from "react-native";
+import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { useKeyboardState } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { ComputerKeyboardCommand, ComputerKeyName } from "../lib/computer-keyboard";
 import { commandsForKeyboardChange, computerKeyboardChanges } from "../lib/computer-keyboard";
 import { useMobileTokens, useResolvedAppearance } from "../lib/native";
-import { NativeActionButton } from "./native-action-button";
+import { androidRipple, withAlpha } from "../lib/ripple";
+import { NativeSymbol } from "./native-symbol";
 
 // Some Android keyboards report a Backspace key press just after the change that deleted with it.
 const DELETE_KEY_PRESS_MS = 50;
 
+type Symbol = Pick<ComponentProps<typeof NativeSymbol>, "ios" | "android">;
+
+/**
+ * The keys floating over the bot's screen while you control it. Upright, a keyboard circle
+ * beside a pill of Esc, Tab, Ctrl, the arrow keys (shown on request, above the bar) and paste;
+ * sideways, all of them in one centred pill so the screen keeps its height.
+ */
 export function ComputerKeyboardBar({
   active,
+  landscape,
   onCommand,
 }: {
   /** False once the screen is closing; the bar can stay mounted while it animates away. */
   active: boolean;
+  landscape: boolean;
   onCommand: (command: ComputerKeyboardCommand) => void;
 }) {
   const { t } = useLingui();
@@ -36,6 +48,7 @@ export function ComputerKeyboardBar({
   const control = useRef(false);
   const [open, setOpen] = useState(false);
   const [controlLatched, setControlLatched] = useState(false);
+  const [arrowsShown, setArrowsShown] = useState(false);
 
   // Backgrounding is left to iOS, which keeps the keyboard and brings it back on return. A blur
   // while in the background is never seen by the keyboard tracking, which leaves a gap.
@@ -121,24 +134,91 @@ export function ComputerKeyboardBar({
     if (control.current) latch(false);
   }
 
-  const keys: Array<{ name: ComputerKeyName; label: string; accessibilityLabel: string }> = [
-    { name: "Escape", label: "Esc", accessibilityLabel: t`Escape` },
-    { name: "Tab", label: "Tab", accessibilityLabel: t`Tab` },
-    { name: "ArrowLeft", label: "←", accessibilityLabel: t`Left` },
-    { name: "ArrowDown", label: "↓", accessibilityLabel: t`Down` },
-    { name: "ArrowUp", label: "↑", accessibilityLabel: t`Up` },
-    { name: "ArrowRight", label: "→", accessibilityLabel: t`Right` },
+  /** Types the phone's clipboard on the remote, where its caret is. */
+  async function paste() {
+    if (!active) return;
+    const text = await Clipboard.getStringAsync().catch(() => "");
+    if (text && active) onCommand({ type: "text", text });
+  }
+
+  const arrows: Array<{ name: ComputerKeyName; symbol: Symbol; label: string }> = [
+    { name: "ArrowLeft", symbol: { ios: "arrow.left", android: "arrow-back" }, label: t`Left` },
+    { name: "ArrowDown", symbol: { ios: "arrow.down", android: "arrow-down" }, label: t`Down` },
+    { name: "ArrowUp", symbol: { ios: "arrow.up", android: "arrow-up" }, label: t`Up` },
+    {
+      name: "ArrowRight",
+      symbol: { ios: "arrow.right", android: "arrow-forward" },
+      label: t`Right`,
+    },
   ];
+  const key = (
+    content: ReactNode,
+    accessibilityLabel: string,
+    onPress: () => void,
+    selected?: boolean,
+  ) => (
+    <Pressable
+      key={accessibilityLabel}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      accessibilityState={selected === undefined ? undefined : { selected }}
+      android_ripple={androidRipple(withAlpha(tokens.foreground, 0.14))}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.key,
+        selected && { backgroundColor: tokens.primary },
+        pressed && { opacity: 0.6 },
+      ]}
+    >
+      {typeof content === "string" ? (
+        <Text
+          allowFontScaling={false}
+          style={[
+            styles.keyLabel,
+            { color: selected ? tokens.primaryForeground : tokens.foreground },
+          ]}
+        >
+          {content}
+        </Text>
+      ) : (
+        content
+      )}
+    </Pressable>
+  );
+  const icon = (symbol: Symbol, selected?: boolean) => (
+    <NativeSymbol
+      {...symbol}
+      size={22}
+      color={selected ? tokens.primaryForeground : tokens.foreground}
+    />
+  );
+  const divider = (id: string) => (
+    <View key={id} style={[styles.divider, { backgroundColor: tokens.border }]} />
+  );
+  const keyboardLabel = open ? t`Hide keyboard` : t`Show keyboard`;
+  const keyboardSymbol: Symbol = { ios: "keyboard", android: { material: "keyboard-outline" } };
+  const modifierKeys = [
+    key("Esc", t`Escape`, () => press("Escape")),
+    key("Tab", t`Tab`, () => press("Tab")),
+    key("Ctrl", t`Control`, () => latch(!control.current), controlLatched),
+  ];
+  const arrowKeys = arrows.map((arrow) =>
+    key(icon(arrow.symbol), arrow.label, () => press(arrow.name)),
+  );
+  const pasteKey = key(
+    icon({ ios: "doc.on.clipboard", android: "clipboard-outline" }),
+    t`Paste from your phone`,
+    () => void paste(),
+  );
+  const pill = [styles.pill, { backgroundColor: tokens.card, borderColor: tokens.border }];
 
   return (
     <View
+      pointerEvents="box-none"
       style={[
         styles.bar,
-        {
-          borderTopColor: tokens.border,
-          backgroundColor: tokens.background,
-          paddingBottom: keyboardVisible ? 8 : Math.max(insets.bottom, 8),
-        },
+        landscape && styles.barLandscape,
+        { paddingBottom: keyboardVisible ? 8 : Math.max(insets.bottom, 12) },
       ]}
     >
       <TextInput
@@ -162,63 +242,61 @@ export function ComputerKeyboardBar({
         accessibilityLabel={t`Computer keyboard`}
         style={styles.input}
       />
-      <NativeActionButton
-        accessibilityLabel={open ? t`Hide keyboard` : t`Show keyboard`}
-        icon={{ ios: "keyboard", android: "keypad-outline" }}
-        size="compact"
-        prominence="secondary"
-        fill
-        selected={open}
-        onPress={toggle}
-        style={styles.toggle}
-      />
-      {keys.slice(0, 2).map((key) => (
-        <NativeActionButton
-          key={key.name}
-          label={key.label}
-          accessibilityLabel={key.accessibilityLabel}
-          size="compact"
-          prominence="secondary"
-          fill
-          onPress={() => press(key.name)}
-          style={styles.key}
-        />
-      ))}
-      <NativeActionButton
-        label="Ctrl"
-        accessibilityLabel={t`Control`}
-        size="compact"
-        prominence="secondary"
-        fill
-        selected={controlLatched}
-        onPress={() => latch(!control.current)}
-        style={styles.key}
-      />
-      {keys.slice(2).map((key) => (
-        <NativeActionButton
-          key={key.name}
-          label={key.label}
-          accessibilityLabel={key.accessibilityLabel}
-          size="compact"
-          prominence="secondary"
-          fill
-          onPress={() => press(key.name)}
-          style={styles.key}
-        />
-      ))}
+      {landscape ? (
+        <View style={pill}>
+          {key(icon(keyboardSymbol, open), keyboardLabel, toggle, open)}
+          {divider("after-keyboard")}
+          {modifierKeys}
+          {divider("after-modifiers")}
+          {arrowKeys}
+          {divider("after-arrows")}
+          {pasteKey}
+        </View>
+      ) : (
+        <>
+          {arrowsShown ? (
+            <View pointerEvents="box-none" style={styles.arrowRow}>
+              <View style={pill}>{arrowKeys}</View>
+            </View>
+          ) : null}
+          <View style={styles.portraitRow}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={keyboardLabel}
+              accessibilityState={{ selected: open }}
+              android_ripple={androidRipple(withAlpha(tokens.primaryForeground, 0.2))}
+              onPress={toggle}
+              style={({ pressed }) => [
+                styles.keyboard,
+                { backgroundColor: tokens.primary },
+                pressed && { opacity: 0.8 },
+              ]}
+            >
+              <NativeSymbol {...keyboardSymbol} size={28} color={tokens.primaryForeground} />
+            </Pressable>
+            <View style={[pill, styles.portraitPill]}>
+              {modifierKeys}
+              {key(
+                icon(
+                  { ios: "arrow.up.and.down.and.arrow.left.and.right", android: "move" },
+                  arrowsShown,
+                ),
+                t`Arrow keys`,
+                () => setArrowsShown((shown) => !shown),
+                arrowsShown,
+              )}
+              {pasteKey}
+            </View>
+          </View>
+        </>
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  bar: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    borderTopWidth: 1,
-    paddingHorizontal: 8,
-    paddingTop: 8,
-  },
+  bar: { gap: 10, paddingHorizontal: 16, paddingTop: 8 },
+  barLandscape: { alignItems: "center" },
   input: {
     position: "absolute",
     width: 1,
@@ -227,6 +305,35 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
   },
-  toggle: { width: 40 },
-  key: { flex: 1, minWidth: 0 },
+  pill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 2,
+    minHeight: 52,
+    paddingHorizontal: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  portraitRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  portraitPill: { flex: 1, minHeight: 56, justifyContent: "space-around" },
+  arrowRow: { flexDirection: "row", justifyContent: "flex-end" },
+  keyboard: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+  },
+  key: {
+    minWidth: 44,
+    height: 44,
+    paddingHorizontal: 10,
+    borderRadius: 22,
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+  },
+  keyLabel: { fontSize: 15, fontWeight: "500" },
+  divider: { width: 1, height: 24, marginHorizontal: 2 },
 });

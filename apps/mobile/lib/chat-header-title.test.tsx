@@ -36,7 +36,10 @@ vi.mock("expo-router", () => ({
   useRouter: () => ({ push }),
   useNavigation: () => ({ canGoBack: () => true }),
 }));
-vi.mock("./split-view", () => ({ useSplitView: () => ({ split: false, contentWidth: 390 }) }));
+vi.mock("./split-view", () => ({
+  useSplitView: () => ({ split: false, foldActive: false, contentWidth: 390 }),
+}));
+vi.mock("./referral", () => ({ useReferral: () => null }));
 vi.mock("../components/glass-surface", () => ({
   GlassSurface: ({ children }: { children?: ReactNode }) => createElement("div", null, children),
 }));

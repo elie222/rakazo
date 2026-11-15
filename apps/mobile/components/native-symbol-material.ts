@@ -95,4 +95,9 @@ export const materialIconFor: Record<string, ComponentProps<typeof MaterialIcons
   "mic-outline": "mic-none",
   "contract-outline": "close-fullscreen",
   "expand-outline": "open-in-full",
+  "arrow-back": "arrow-back",
+  "arrow-forward": "arrow-forward",
+  "arrow-down": "arrow-downward",
+  move: "open-with",
+  "clipboard-outline": "content-paste",
 };

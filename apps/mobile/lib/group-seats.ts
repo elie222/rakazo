@@ -75,24 +75,31 @@ export function groupSeatGap(size = GROUP_SEAT_SIZE): number {
   return (2 * size) / 36;
 }
 
-/** Header layout: the screen inset, the circle buttons and the gap between a circle and the pill. */
+/** Header layout: the screen inset, the circle buttons and the gap between a control and the pill. */
 const HEADER_INSET = 16;
 const HEADER_CIRCLE = 48;
 const HEADER_GAP = 8;
+/** Room for a text button such as Restore, which is wider than a circle. */
+const HEADER_TEXT_BUTTON = 96;
+
+/** What the header draws on one side of the title. */
+export type HeaderSide = "circle" | "text" | null;
 
 /**
- * The width a group's title pill fills on Android: the chat pane less its insets and the circle
- * (with its gap) on each side that has one.
+ * The width a chat's title pill may take on Android: the chat pane less its insets and
+ * whatever control (with its gap) sits on each side.
  */
 export function groupTitleWidth(
   paneWidth: number,
-  { leading, trailing }: { leading: boolean; trailing: boolean },
+  { leading, trailing }: { leading: HeaderSide; trailing: HeaderSide },
 ): number {
-  const circle = HEADER_CIRCLE + HEADER_GAP;
-  return Math.max(
-    0,
-    paneWidth - 2 * HEADER_INSET - (leading ? circle : 0) - (trailing ? circle : 0),
-  );
+  const side = (control: HeaderSide) =>
+    control === "circle"
+      ? HEADER_CIRCLE + HEADER_GAP
+      : control === "text"
+        ? HEADER_TEXT_BUTTON + HEADER_GAP
+        : 0;
+  return Math.max(0, paneWidth - 2 * HEADER_INSET - side(leading) - side(trailing));
 }
 
 /** One face or the "+N" chip in a group's list avatar, placed within its square. */

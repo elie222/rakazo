@@ -10,6 +10,7 @@ import { chatTitleRoute } from "../lib/chat-settings-route";
 import { groupTitleSeats, groupTitleStatus, groupTitleWidth } from "../lib/group-seats";
 import type { MobileBot, MobileGroup } from "../lib/mobile-types";
 import { useThemedStyles } from "../lib/native";
+import { useReferral } from "../lib/referral";
 import { useInboxBot, useInboxGroup } from "../lib/search-inbox";
 import { useSplitView } from "../lib/split-view";
 import { ChatTitleAvatar } from "./chat-title-avatar";
@@ -81,7 +82,8 @@ export function ChatHeaderTitle({
   const { t } = useLingui();
   const router = useRouter();
   const navigation = useNavigation();
-  const { split, contentWidth } = useSplitView();
+  const { split, foldActive, contentWidth } = useSplitView();
+  const canInvite = Boolean(useReferral());
   const styles = useThemedStyles(createThreadHeaderStyles);
   const published = useSyncExternalStore(subscribe, () => titles.get(routeKey));
   const inboxBot = useInboxBot(params.botId);
@@ -104,11 +106,13 @@ export function ChatHeaderTitle({
   const label = safeDisplayName(title.name, inGroup ? t`Group` : t`Bot`) || t`Thread`;
   const opens = title.opens;
   const readOnly = params.readOnly === "1";
-  // The pill fills the header between its circles on Android; iOS centres it in its own bar.
+  // The pill fills the header between the controls actually drawn beside it on Android; iOS
+  // centres it in its own bar. Left: the back circle, or beside the chat list its toggle (none
+  // while a fold keeps the list there). Right: Restore for an archived chat, else the group's
+  // gear or a bot chat's invite gift when the account can invite.
   const width = groupTitleWidth(contentWidth, {
-    leading: split || navigation.canGoBack(),
-    // A group's gear, or a bot chat's invite gift; an archived chat has neither.
-    trailing: !readOnly,
+    leading: (split ? !foldActive : navigation.canGoBack()) ? "circle" : null,
+    trailing: readOnly ? "text" : inGroup || canInvite ? "circle" : null,
   });
   if (inGroup) {
     const { seats, more } = groupTitleSeats(members);
