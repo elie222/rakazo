@@ -7,7 +7,6 @@ import {
   anotherPersonHoldsControl,
   ComputerBusyError,
   clearInactiveUserComputerControl,
-  computerSupportsUpdate,
   controlLeaseExpiresAt,
   enqueueTakeoverContinuation,
   expireComputerControl,
@@ -17,6 +16,7 @@ import {
   releaseComputerControlLease,
   releaseComputerExecutionLease,
   replaceComputer,
+  sandboxKindCapabilities,
   scheduleComputerControlExpiry,
   scheduleComputerSleep,
   screenLeaseIdForRun,
@@ -222,7 +222,7 @@ export async function runComputerReplace(
   if (!bot.computer) throw new IsolationError();
   // Stopping, resetting or updating would end someone else's control of the screen.
   assertNotAnotherPersonsControl(bot.computer, context.actor);
-  if (mode === "update" && !computerSupportsUpdate(bot.computer.kind)) {
+  if (mode === "update" && !sandboxKindCapabilities(bot.computer.kind).inPlaceUpdate) {
     throw new ORPCError("BAD_REQUEST", {
       message: "Computer update is not available on this device",
     });
