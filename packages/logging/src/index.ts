@@ -1,3 +1,4 @@
+export { bestEffort } from "./best-effort.js";
 export { createConsoleSink } from "./console-sink.js";
 export {
   enrichLogContext,

@@ -4,6 +4,7 @@ import {
   ModelHeaderRowsSchema,
   matchCompatibleEndpointPreset,
   modelHeadersInput,
+  modelRoutingInput,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   openAiCompatibleConnectReady,
 } from "@rakazo/contracts";
@@ -73,8 +74,9 @@ export function useOnboardingModel({
     baseUrl,
     routingReady,
     gatewayId,
+    projectId,
+    region,
     headerRows,
-    needsRouting,
     isOpenAiCompatible,
     modelId,
     modelsForProvider,
@@ -238,7 +240,12 @@ export function useOnboardingModel({
         await rpc.models.connect({
           provider,
           apiKey,
-          ...(needsRouting ? { accountId: accountId.trim(), gatewayId: gatewayId.trim() } : {}),
+          ...modelRoutingInput(selected?.routingFields, {
+            accountId,
+            gatewayId,
+            projectId,
+            region,
+          }),
           modelId,
           label: selected?.providerName ?? provider,
         });

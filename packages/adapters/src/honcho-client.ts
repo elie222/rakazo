@@ -1,3 +1,4 @@
+import { bestEffort } from "@rakazo/logging";
 import type { LocalServiceConnection } from "./local-service-endpoint.js";
 import { fetchLocalService } from "./local-service-endpoint.js";
 import { truncateUtf8 } from "./utf8.js";
@@ -92,7 +93,7 @@ async function honchoRequest(
     };
   }
   if (!response.ok || !options.readJson) {
-    await response.body?.cancel().catch(() => undefined);
+    await bestEffort("cancel unread response body", response.body?.cancel());
     if (response.status === 404 && options.allowNotFound) return { ok: true, value: null };
     return response.ok
       ? { ok: true, value: undefined }

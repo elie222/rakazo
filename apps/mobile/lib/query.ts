@@ -1,7 +1,7 @@
 import { t } from "@lingui/core/macro";
 import type { RpcInput, RpcOutput, RpcPath } from "@rakazo/contracts";
 import type { DataTag, QueryFunction, QueryKey } from "@tanstack/react-query";
-import { QueryClient } from "@tanstack/react-query";
+import { QueryClient, useMutation } from "@tanstack/react-query";
 import type { RpcArgs } from "./api";
 import { captureApiRequestContext, currentApiBase, rpc, selectedSpaceId } from "./api";
 import { currentSessionGeneration } from "./session";
@@ -66,6 +66,51 @@ export function rpcQuery<P extends RpcPath>(proc: P, input?: RpcInput<P>, spaceI
 /** One rpc read of the signed-in user's own data, the same in every space: cached once per session. */
 export function accountRpcQuery<P extends RpcPath>(proc: P, input?: RpcInput<P>) {
   return scopedRpcQuery(sessionScope, proc, input);
+}
+
+/**
+ * One save and the reads it makes out of date. Only the save can fail it: once it succeeds those
+ * reads are marked stale and read again, and a read that fails reports itself, never the save.
+ * `pending` lasts until they are back, so a control never offers the old state in between.
+ * A save that ends after the screen has gone, or after the server, session or space changed,
+ * shows nothing and skips `onSaved`.
+ */
+export function useSave<Input = void, Saved = unknown>(options: {
+  save: (input: Input) => Promise<Saved>;
+  stale?: readonly QueryKey[];
+  onSaved?: (saved: Saved, input: Input) => unknown;
+}) {
+  const mutation = useMutation(
+    {
+      mutationFn: async ({ input }: { input: Input; scope: string }) => {
+        const { save, stale = [] } = options;
+        const saved = await save(input);
+        await Promise.all(stale.map((queryKey) => queryClient.invalidateQueries({ queryKey })));
+        return saved;
+      },
+    },
+    queryClient,
+  );
+  const sent = mutation.variables;
+  const current = sent?.scope === spaceScope().join("\n");
+  return {
+    run(input: Input) {
+      const scope = spaceScope().join("\n");
+      mutation.mutate(
+        { input, scope },
+        {
+          onSuccess: (saved) => {
+            if (spaceScope().join("\n") === scope) void options.onSaved?.(saved, input);
+          },
+        },
+      );
+    },
+    pending: current && mutation.isPending,
+    /** What the pending or failed save was sent with. */
+    input: current ? sent.input : undefined,
+    error: current ? mutation.error : null,
+    reset: mutation.reset,
+  };
 }
 
 /** Forgets every cached read; the session registers this so sign-out never shows old data. */

@@ -1,7 +1,7 @@
 import type { AdapterContext, ComputerRef, SandboxProvider } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
-import { usesNativeShell } from "./native-shell.js";
+import { sandboxKindCapabilities } from "./sandbox-kind-capabilities.js";
 
 const MEASURE_TIMEOUT_MS = 5_000;
 /** How full the disk is before the bot is told at the start of a run. */
@@ -21,7 +21,8 @@ export async function measureComputerDisk(
   computer: ComputerRef,
   context: AdapterContext,
 ): Promise<ComputerDisk | undefined> {
-  if (usesNativeShell(computer.kind) || computer.kind === "none") return undefined;
+  if (sandboxKindCapabilities(computer.kind).nativeShell || computer.kind === "none")
+    return undefined;
   let stdout = "";
   let exitCode: number | undefined;
   try {

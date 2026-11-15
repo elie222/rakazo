@@ -37,9 +37,10 @@ import { scheduleComputerSleep } from "./computer-idle.js";
 import { ComputerBusyError, provisionComputer } from "./computer-lifecycle.js";
 import { resolveBotWorkspaceCwd, teamBotWorkspaceDirectory } from "./computer-support.js";
 import { connectedContext, selectRunConnections } from "./connection-context.js";
-import { nativeShellCommandArgv, usesNativeShell } from "./native-shell.js";
+import { nativeShellCommandArgv } from "./native-shell.js";
 import { isEgressRefused } from "./network-address.js";
 import { loadPurchaseRedactions } from "./purchase-service.js";
+import { sandboxKindCapabilities } from "./sandbox-kind-capabilities.js";
 import { recordVaultItemUse } from "./vault-activity.js";
 import type { SafeWebFetchOptions } from "./web-ssrf.js";
 import { fetchSafeHttpRequest } from "./web-ssrf.js";
@@ -524,7 +525,8 @@ async function readComputer(
   if (watch.kind === "command") {
     // The guard reads bash, so it protects the Linux desktop and never a native shell.
     const guarded =
-      !usesNativeShell(bot.computer.kind) && deps.sandbox.describe().capabilities.graphical;
+      !sandboxKindCapabilities(bot.computer.kind).nativeShell &&
+      deps.sandbox.describe().capabilities.graphical;
     const refusal = guarded ? deps.commandRefusal?.(watch.command ?? "") : undefined;
     if (refusal) {
       throw new RoutineWatchError(
@@ -580,7 +582,7 @@ async function readComputer(
   if (watch.kind === "command") {
     // Runs this shell command on the bot's computer every interval, in its folder,
     // without a model or per-run approval: equivalent to the bot running it itself.
-    const shellEnvironment = usesNativeShell(bot.computer.kind)
+    const shellEnvironment = sandboxKindCapabilities(bot.computer.kind).nativeShell
       ? await deps.sandbox.environment?.(computer, ctx)
       : undefined;
     const argv = shellEnvironment
