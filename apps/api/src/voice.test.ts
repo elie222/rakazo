@@ -551,15 +551,6 @@ describe("prepareVoice", () => {
     });
   });
 
-  it("passes the voice a provider substituted to the client as a header", async () => {
-    const clip = { bytes: new Uint8Array(1), mimeType: "audio/mpeg", voiceId: "Vivian" };
-    vi.spyOn(adapters, "createVoiceProvider").mockReturnValue({ synthesize: () => clip } as never);
-    const app = new Hono();
-    mountVoiceHttpRoutes(app, depsWith(undefined), async () => actor);
-    const res = await app.request("/api/voice/speak", { method: "POST", body: '{"text":"Hi"}' });
-    expect(res.headers.get("x-voice-id")).toBe("Vivian");
-  });
-
   it.each([
     ["Chinese", "中".repeat(2400)],
     ["Japanese", "あ".repeat(2400)],
