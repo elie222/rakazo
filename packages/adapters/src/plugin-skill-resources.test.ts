@@ -27,6 +27,10 @@ describe("referencedSkillResources", () => {
       ]),
     ).toEqual(["my guide.md", "other guide.md"]);
   });
+  it("does not treat parent or absolute references as local files", () => {
+    expect(referencedSkillResources("Read ../shared.md and /shared.md", ["shared.md"])).toEqual([]);
+    expect(referencedSkillResources("Read ./shared.md", ["shared.md"])).toEqual(["shared.md"]);
+  });
   const paths = ["references/guide.md", "references/other.md", "src/main.ts"];
   it("includes a directory mentioned alongside an individual file", () => {
     expect(

@@ -66,13 +66,15 @@ export function referencedSkillResources(body: string, siblings: readonly string
       ).test(body),
     ),
   );
+  const localBody = body.replaceAll("{baseDir}/", "./");
   const tokens = new Set(
-    [...(body.match(/[^\s`"'<>()[\]{}]+/g) ?? []), ...body.split(/[`"()<>]/)].map((token) =>
-      token
-        .trim()
-        .split("#", 1)[0]!
-        .replace(/^[./]+/, "")
-        .replace(/[.,;:!?]+$/, ""),
+    [...(localBody.match(/[^\s`"'<>()[\]{}]+/g) ?? []), ...localBody.split(/[`"()<>]/)].map(
+      (token) =>
+        token
+          .trim()
+          .split("#", 1)[0]!
+          .replace(/^\.\//, "")
+          .replace(/[.,;:!?]+$/, ""),
     ),
   );
   const explicitlyNamed = new Set(siblings.filter((path) => tokens.has(path)));
