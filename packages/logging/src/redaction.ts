@@ -102,7 +102,9 @@ const WINDOWS_PROFILE = String.raw`[A-Z]:[\\/]Users[\\/][${MARKS}]*(?:${WINDOWS_
 const MORE_WORDS = String.raw`(?: [\w.${WORLD}${MARKS}-]+){1,3}(?=\/)`;
 const POSIX_PROFILE = String.raw`(?:\/Users\/|\/home\/)(?:[${MARKS}]*[^/\s${MARKS}][^/\s]*(?:${MORE_WORDS})?|[${MARKS}]+${MORE_WORDS})`;
 
-const QUOTE = String.raw`\\{0,8}["']`;
+// A quote, plain or escaped. JSON nested in strings four deep puts fifteen backslashes before it.
+const MAX_QUOTE_ESCAPES = 16;
+const QUOTE = String.raw`\\{0,${MAX_QUOTE_ESCAPES}}["']`;
 const SEPARATOR = String.raw`\s*(?::|=>?)\s*`;
 // The text so far ends in a secret-named key, and in its separator. The start of the word is
 // checked before the names in it, so a long word is read once.
@@ -124,7 +126,7 @@ const STRING = String.raw`"(?:\\[^\n]|[^"\\\n])*"|'(?:\\[^\n]|[^'\\\n])*'`;
 // quadratic in the number of such keys; a longer value is taken as unclosed, to its line's end.
 const ESCAPED_VALUE_MAX = 1024;
 const quoted = (name: string) =>
-  String.raw`(?=(?<${name}>${QUOTE}))(?:["'](?:\\[\s\S]|(?!\k<${name}>)[^\\])*|\\{1,8}["'][^\n]{0,${ESCAPED_VALUE_MAX}}?(?<!\\))\k<${name}>${NOT_OPENING}`;
+  String.raw`(?=(?<${name}>${QUOTE}))(?:["'](?:\\[\s\S]|(?!\k<${name}>)[^\\])*|\\{1,${MAX_QUOTE_ESCAPES}}["'][^\n]{0,${ESCAPED_VALUE_MAX}}?(?<!\\))\k<${name}>${NOT_OPENING}`;
 // In a list or object a secret-named key stands in a string with its value after it, as JSON
 // writes it. A bare one means the value is not taken as closed.
 const ITEM = String.raw`(?:(?:${STRING})${NOT_OPENING}|(?!(?<![\w-])(?=[\w-]*?(?:${SECRET_NAMES})))[^\][{}"'])`;
@@ -166,7 +168,9 @@ const QUOTED_KEY = String.raw`(?<=["'])(?=[\w.-]*?(?:${SECRET_NAMES}|email))[\w.
 // A bare key goes on through dotted parts only before `=`: `name.ext:` is a file and a line.
 // Before a colon, a word that ends as an error's name does, or the last part of a file path, is
 // not a key: `CredentialsProviderError: …` and `/etc/passwd: permission denied` are messages.
-const NOT_A_MESSAGE = String.raw`(?![\w-]*(?:Error|Exception|Warning)\s*:)(?!(?<=[\\/])[\w-]+\s*:)`;
+// Only a forward slash marks a path here: a backslash also starts an escape, and the `n` of an
+// escaped line break sits right before a header's name (`\nAuthorization: …`).
+const NOT_A_MESSAGE = String.raw`(?![\w-]*(?:Error|Exception|Warning)\s*:)(?!(?<=\/)[\w-]+\s*:)`;
 const BARE_KEY = String.raw`${NOT_A_MESSAGE}(?=[\w-]*?(?:${SECRET_NAMES}))[\w-]+(?:(?:\.[\w-]+){1,4}(?=\s*=))?`;
 // A flag starts its word.
 const FLAG = String.raw`--(?=[\w-]*?(?:${SECRET_NAMES}))[\w-]+[ \t]+`;

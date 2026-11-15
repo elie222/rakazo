@@ -637,7 +637,6 @@ describe("redaction", () => {
       "TokenExpiredError: jwt expired",
       "InvalidPasswordException: Incorrect username or password.",
       "open /etc/passwd: permission denied",
-      "C:\\app\\secrets: access is denied",
     ])
       expect(redactSensitiveText(text)).toBe(text);
     // A key before a colon is still a key.
@@ -645,6 +644,24 @@ describe("redaction", () => {
     expect(redactSensitiveText("credential: hunter2secret")).toBe("credential=[Redacted]");
     expect(redactSensitiveText("db_passwd: hunter2secret")).toBe("db_passwd=[Redacted]");
     expect(redactSensitiveText("/login?token=hunter2secret")).toBe("/login?token=[Redacted]");
+  });
+
+  it("redacts a header after an escaped line break, as a serialized multi-line error holds it", () => {
+    const failure = JSON.stringify({
+      detail:
+        "request failed\nAuthorization: Basic aHVudGVyMnNlY3JldA==\nCookie: sid=hunter2secret",
+    });
+    const cleaned = redactSensitiveText(failure);
+    expect(cleaned).not.toContain("aHVudGVyMnNlY3JldA");
+    expect(cleaned).not.toContain("hunter2secret");
+  });
+
+  it("redacts a secret field in JSON serialized into a string four times over", () => {
+    let nested = JSON.stringify({ password: "hunter2secret" });
+    for (let depth = 0; depth < 4; depth += 1) nested = JSON.stringify(nested);
+    // Fifteen backslashes stand before each quote by now.
+    expect(nested).toContain(`${"\\".repeat(15)}"password`);
+    expect(redactSensitiveText(nested)).not.toContain("hunter2secret");
   });
 
   it("redacts a value and a path whole when a name in them holds a space", () => {
