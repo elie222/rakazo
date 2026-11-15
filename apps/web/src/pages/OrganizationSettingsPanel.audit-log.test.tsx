@@ -21,6 +21,7 @@ vi.mock("@lingui/react/macro", () => ({
 vi.mock("../lib/rpc", () => ({
   rpc: { audit: { events: api.events }, organizations: {} },
   selectedSpaceId: () => "space-1",
+  withSpaceHeaders: () => new Headers({ "x-rakazo-space-id": "space-1" }),
   clearSpaceSelection: vi.fn(),
   selectSpace: vi.fn(),
 }));
@@ -111,17 +112,27 @@ it("lists the organization's audit log and loads older events on request", async
   await open();
 
   const log = container.querySelector('[data-testid="audit-log"]')!;
-  expect(log.textContent).toContain("Helper · connection.used");
-  expect(log.textContent).toContain("denied");
-  expect(log.textContent).toContain("Calendar · calendar · conn-9");
-  expect(log.querySelector("a")?.getAttribute("href")).toBe("/api/audit-events/export");
+  const rowText = () => [...log.querySelectorAll("li span")].map((span) => span.textContent);
+  expect(rowText()).toEqual(
+    expect.arrayContaining([
+      "connection.used",
+      "denied",
+      "Helper",
+      "Calendar",
+      "calendar",
+      "conn-9",
+    ]),
+  );
+  expect(log.textContent).not.toContain("·");
   expect(api.events).toHaveBeenCalledWith({ limit: 50 });
 
   const more = [...log.querySelectorAll("button")].find(
     (button) => button.textContent === "Load more",
   )!;
   await act(async () => more.click());
-  await vi.waitFor(() => expect(log.textContent).toContain("Ada · credential.created"));
+  await vi.waitFor(() =>
+    expect(rowText()).toEqual(expect.arrayContaining(["credential.created", "Ada"])),
+  );
   expect(api.events).toHaveBeenLastCalledWith({ limit: 50, cursor: "e2" });
   expect(log.textContent).not.toContain("Load more");
   // A normal outcome is not repeated on every row; only an unusual one is shown.
@@ -133,4 +144,33 @@ it("hides the log from members the server does not let read it", async () => {
   await open();
   expect(container.querySelector('[data-testid="organization-settings"]')).not.toBeNull();
   expect(container.querySelector('[data-testid="audit-log"]')).toBeNull();
+});
+
+it("exports the log of the selected Space", async () => {
+  api.events.mockResolvedValue({ events: [event("e1")], nextCursor: null });
+  const fetchMock = vi.fn(
+    async () =>
+      new Response("{}\n", {
+        headers: {
+          "content-disposition": 'attachment; filename="rakazo-audit-log-2026-01-01.jsonl"',
+        },
+      }),
+  );
+  vi.stubGlobal("fetch", fetchMock);
+  URL.createObjectURL = vi.fn(() => "blob:audit");
+  URL.revokeObjectURL = vi.fn();
+  const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+  await open();
+
+  const exportButton = [...container.querySelectorAll("button")].find(
+    (button) => button.textContent === "Export",
+  )!;
+  await act(async () => exportButton.click());
+  await vi.waitFor(() => expect(click).toHaveBeenCalled());
+
+  const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+  expect(url).toBe("/api/audit-events/export");
+  expect(new Headers(init.headers).get("x-rakazo-space-id")).toBe("space-1");
+  vi.unstubAllGlobals();
+  click.mockRestore();
 });

@@ -1,17 +1,34 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { AuditEvent } from "@rakazo/contracts";
-import { Button, buttonVariants, SectionHeading } from "@rakazo/ui-web";
-import { useInfiniteQuery } from "@tanstack/react-query";
+import { Button, SectionHeading } from "@rakazo/ui-web";
+import { useInfiniteQuery, useMutation } from "@tanstack/react-query";
 import { queryClient } from "../lib/query";
-import { rpc } from "../lib/rpc";
+import { rpc, withSpaceHeaders } from "../lib/rpc";
 import { errorCode, errorText } from "../lib/user-error";
 
 const PAGE_SIZE = 50;
 
-function connectionIds(event: AuditEvent): string {
-  return [event.metadata.connectorId, event.metadata.connectionId]
-    .filter((id): id is string => typeof id === "string")
-    .join(" · ");
+function detailLabels(event: AuditEvent): string[] {
+  return [event.targetLabel, event.metadata.connectorId, event.metadata.connectionId].filter(
+    (value): value is string => typeof value === "string" && value.length > 0,
+  );
+}
+
+/** A plain link cannot send the selected Space, so the export could come from another organization. */
+async function downloadExport(): Promise<void> {
+  const response = await fetch("/api/audit-events/export", {
+    headers: withSpaceHeaders(),
+    credentials: "include",
+  });
+  if (!response.ok) throw new Error(`Export failed (${response.status})`);
+  const url = URL.createObjectURL(await response.blob());
+  const link = document.createElement("a");
+  link.href = url;
+  link.download =
+    /filename="([^"]+)"/.exec(response.headers.get("content-disposition") ?? "")?.[1] ??
+    "rakazo-audit-log.jsonl";
+  link.click();
+  URL.revokeObjectURL(url);
 }
 
 /** The organization's audit log, newest first. Shown only to those the server lets read it. */
@@ -27,6 +44,7 @@ export function AuditLog({ organizationId }: { organizationId: string }) {
     },
     queryClient,
   );
+  const download = useMutation({ mutationFn: downloadExport }, queryClient);
   if (log.isPending || errorCode(log.error) === "FORBIDDEN") return null;
   const events = log.data?.pages.flatMap((page) => page.events) ?? [];
   const nextCursor = log.data?.pages.at(-1)?.nextCursor ?? null;
@@ -36,13 +54,9 @@ export function AuditLog({ organizationId }: { organizationId: string }) {
         <SectionHeading>
           <Trans>Log</Trans>
         </SectionHeading>
-        <a
-          href="/api/audit-events/export"
-          download
-          className={buttonVariants({ variant: "outline" })}
-        >
+        <Button variant="outline" disabled={download.isPending} onClick={() => download.mutate()}>
           <Trans>Export</Trans>
-        </a>
+        </Button>
       </div>
       {log.isError ? (
         <p role="alert" className="text-body-sm text-destructive">
@@ -54,16 +68,17 @@ export function AuditLog({ organizationId }: { organizationId: string }) {
           {events.map((event) => (
             <li key={event.id} className="px-4 py-3 text-body">
               <div className="flex flex-wrap justify-between gap-x-4">
-                <span className="min-w-0 break-words">
-                  {event.actorLabel ?? event.actorType} · {event.action}
-                </span>
+                <span className="min-w-0 break-words">{event.action}</span>
                 {event.outcome === "success" ? null : (
                   <span className="text-muted-foreground">{event.outcome}</span>
                 )}
               </div>
               <div className="flex flex-wrap justify-between gap-x-4 text-body-sm text-muted-foreground">
-                <span className="min-w-0 break-words">
-                  {[event.targetLabel, connectionIds(event)].filter(Boolean).join(" · ")}
+                <span className="flex min-w-0 flex-wrap gap-x-3 break-words">
+                  <span>{event.actorLabel ?? event.actorType}</span>
+                  {detailLabels(event).map((label) => (
+                    <span key={label}>{label}</span>
+                  ))}
                 </span>
                 <time dateTime={event.createdAt}>{new Date(event.createdAt).toLocaleString()}</time>
               </div>

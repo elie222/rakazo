@@ -11,10 +11,7 @@ test("an organization owner reads the audit log in organization settings", async
   const settings = await openUserSettings(page, "organization");
   const log = settings.getByTestId("audit-log");
   await expect(log.getByRole("heading", { name: "Log" })).toBeVisible();
-  await expect(log.getByRole("link", { name: "Export" })).toHaveAttribute(
-    "href",
-    "/api/audit-events/export",
-  );
+  await expect(log.getByRole("button", { name: "Export" })).toBeEnabled();
   await expect(log.getByRole("listitem").filter({ hasText: "space.created" })).toContainText(
     "Audited space",
   );
