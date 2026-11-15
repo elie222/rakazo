@@ -6,6 +6,7 @@ CREATE TABLE "partner_sales" (
     "customerId" TEXT NOT NULL,
     "invoiceCreatedAt" TIMESTAMP(3) NOT NULL,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "reportedAt" TIMESTAMP(3),
     "refundedAt" TIMESTAMP(3),
 
     CONSTRAINT "partner_sales_pkey" PRIMARY KEY ("invoiceId")

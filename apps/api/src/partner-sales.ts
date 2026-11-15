@@ -1,4 +1,5 @@
 import type { BillingPlanPayment, BillingProvider, PartnerProgram } from "@rakazo/adapter-kit";
+import { BillingCustomerNotFoundError } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
 import { isOwnerRole } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
@@ -46,14 +47,21 @@ export function createPartnerSales(deps: {
       );
       const open = await prisma.partnerSale.findMany({
         where: { customerId, refundedAt: null },
-        select: { invoiceId: true, invoiceCreatedAt: true, createdAt: true },
+        select: { invoiceId: true, invoiceCreatedAt: true, createdAt: true, reportedAt: true },
       });
       const since = Math.min(
         founder && organization ? organization.createdAt.getTime() : Number.POSITIVE_INFINITY,
         ...open.map((sale) => sale.invoiceCreatedAt.getTime()),
       );
       if (!Number.isFinite(since)) return;
-      const payments = await provider.listPlanPayments(customerId, new Date(since));
+      let payments: BillingPlanPayment[];
+      try {
+        payments = await provider.listPlanPayments(customerId, new Date(since));
+      } catch (error) {
+        // A deleted billing customer takes no more payments or refunds.
+        if (error instanceof BillingCustomerNotFoundError) return;
+        throw error;
+      }
       const openInvoices = new Map(open.map((sale) => [sale.invoiceId, sale]));
 
       // Withdrawals first, each on its own, so no failing report can hold one back.
@@ -63,8 +71,16 @@ export function createPartnerSales(deps: {
         if (!sale || !payment.reversed) continue;
         try {
           const outcome = await program.refundSale(payment.invoiceId);
-          if (outcome === "not_found" && Date.now() - sale.createdAt.getTime() < EARNINGS_SETTLE_MS)
-            throw new Error(`Partner earnings for ${payment.invoiceId} are not created yet`);
+          // The earnings may still appear, so the sale stays open and every later event looks
+          // again; only the first day retries the event itself.
+          if (outcome === "not_found") {
+            if (Date.now() - sale.createdAt.getTime() < EARNINGS_SETTLE_MS)
+              throw new Error(`Partner earnings for ${payment.invoiceId} are not created yet`);
+            getLogger().warn("partner earnings to withdraw not found yet", {
+              "billing.invoice_id": payment.invoiceId,
+            });
+            continue;
+          }
           if (outcome === "already_paid")
             getLogger().error("partner commission was paid out before its refund; recover it", {
               "billing.invoice_id": payment.invoiceId,
@@ -87,32 +103,37 @@ export function createPartnerSales(deps: {
     customerId: string,
     userId: string,
     payments: BillingPlanPayment[],
-    recorded: Map<string, unknown>,
+    recorded: Map<string, { reportedAt: Date | null }>,
   ): Promise<void> {
     if (!program) return;
     for (const payment of payments) {
       // A withdrawn sale's invoice stays reversed, so it is never reported again.
-      if (recorded.has(payment.invoiceId) || payment.reversed || payment.amountCents <= 0) continue;
+      if (payment.reversed || payment.amountCents <= 0) continue;
+      if (recorded.get(payment.invoiceId)?.reportedAt) continue;
       await bestEffort(
         `partner program sale ${payment.invoiceId}`,
-        program
-          .trackSale({
+        (async () => {
+          // Recorded before it is sent, so a later refund finds it even if the confirmation is lost.
+          await prisma.partnerSale.createMany({
+            data: {
+              invoiceId: payment.invoiceId,
+              customerId,
+              invoiceCreatedAt: payment.createdAt,
+            },
+            skipDuplicates: true,
+          });
+          // The program records each invoice once, so sending it again is harmless.
+          await program.trackSale({
             customerId: userId,
             invoiceId: payment.invoiceId,
             amountCents: payment.amountCents,
             currency: payment.currency,
-          })
-          // The program records each invoice once, so a concurrent sync reporting it too is harmless.
-          .then(() =>
-            prisma.partnerSale.createMany({
-              data: {
-                invoiceId: payment.invoiceId,
-                customerId,
-                invoiceCreatedAt: payment.createdAt,
-              },
-              skipDuplicates: true,
-            }),
-          ),
+          });
+          await prisma.partnerSale.update({
+            where: { invoiceId: payment.invoiceId },
+            data: { reportedAt: new Date() },
+          });
+        })(),
       );
     }
   }

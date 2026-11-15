@@ -550,6 +550,8 @@ model PartnerSale {
   /// When the provider created the invoice, so a later refund check reads back far enough.
   invoiceCreatedAt DateTime
   createdAt        DateTime  @default(now())
+  /// Null until the program confirmed the sale; recorded first so a refund can never miss it.
+  reportedAt       DateTime?
   refundedAt       DateTime?
 
   @@index([customerId])

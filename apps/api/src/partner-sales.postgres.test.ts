@@ -1,4 +1,5 @@
 import type { BillingPlanPayment, PartnerProgram } from "@rakazo/adapter-kit";
+import { BillingCustomerNotFoundError } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
 import { asSystem, createDb } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -209,6 +210,58 @@ dbTests("partner program sales", () => {
     await sales.report("cus_paid_out", organizationId);
     await sales.report("cus_paid_out", organizationId);
     expect(program.refundSale).toHaveBeenCalledTimes(1);
+  });
+
+  it("withdraws a sale whose confirmation was lost once its payment is refunded", async () => {
+    const organizationId = await organization("unconfirmed", "click_12");
+    const program = fakeProgram();
+    let payments = [paid("in_unconfirmed")];
+    const sales = createPartnerSales({
+      prisma,
+      program,
+      provider: { listPlanPayments: async () => payments },
+    });
+    program.trackSale.mockRejectedValueOnce(new Error("timed out after the program took it"));
+    await sales.report("cus_unconfirmed", organizationId);
+    payments = payments.map((payment) => ({ ...payment, reversed: true }));
+    await sales.report("cus_unconfirmed", organizationId);
+    expect(program.refundSale).toHaveBeenCalledWith(payments[0]!.invoiceId);
+  });
+
+  it("keeps looking for earnings that are still missing a day after the sale", async () => {
+    const organizationId = await organization("missing-earnings", "click_13");
+    const program = fakeProgram();
+    let payments = [paid("in_missing_earnings")];
+    const sales = createPartnerSales({
+      prisma,
+      program,
+      provider: { listPlanPayments: async () => payments },
+    });
+    await sales.report("cus_missing_earnings", organizationId);
+    await prisma.partnerSale.update({
+      where: { invoiceId: payments[0]!.invoiceId },
+      data: { createdAt: new Date(Date.now() - 2 * 86_400_000) },
+    });
+    payments = payments.map((payment) => ({ ...payment, reversed: true }));
+    program.refundSale.mockResolvedValueOnce("not_found");
+    await sales.report("cus_missing_earnings", organizationId);
+    await sales.report("cus_missing_earnings", organizationId);
+    expect(program.refundSale).toHaveBeenCalledTimes(2);
+  });
+
+  it("has nothing to do for a billing customer that no longer exists", async () => {
+    const organizationId = await organization("gone", "click_14");
+    await expect(
+      createPartnerSales({
+        prisma,
+        program: fakeProgram(),
+        provider: {
+          listPlanPayments: async () => {
+            throw new BillingCustomerNotFoundError();
+          },
+        },
+      }).report("cus_gone", organizationId),
+    ).resolves.toBeUndefined();
   });
 
   it("leaves organizations whose owner did not come from a partner alone", async () => {
