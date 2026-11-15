@@ -637,7 +637,17 @@ export function ThreadComposer({
                 <Pressable
                   accessibilityLabel={t`Remove skill ${ph({ name: selectedSkill.name })}`}
                   hitSlop={8}
-                  onPress={() => setSelectedSkill(null)}
+                  onPress={() => {
+                    setSelectedSkill(null);
+                    setSlashQuery(
+                      composerSlashQuery(
+                        draftRef.current,
+                        nativeSelection.current.start,
+                        nativeSelection.current.end,
+                        bindingsRef.current,
+                      ),
+                    );
+                  }}
                 >
                   <NativeSymbol
                     ios="xmark"

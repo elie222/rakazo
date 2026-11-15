@@ -134,6 +134,15 @@ export function useComposerTriggers({
   function removeSkill() {
     markEdited();
     setSelectedSkill(null);
+    const field = getField();
+    const query = composerSlashQuery(
+      draft,
+      field?.selectionStart ?? draft.length,
+      field?.selectionEnd ?? draft.length,
+      mentionBindings,
+    );
+    setSlashQuery(query);
+    if (query?.start === 0) onSlashOpen?.();
   }
 
   const mentionOptions = useMemo(() => {
