@@ -1,5 +1,4 @@
 import { createHash } from "node:crypto";
-import { createSlackAdapter } from "@chat-adapter/slack";
 import type { TelegramAdapter } from "@chat-adapter/telegram";
 import {
   createTelegramAdapter,
@@ -16,13 +15,23 @@ import type { HttpInstance } from "@larksuiteoapi/node-sdk";
 import type { MessagingInboundMessage, MessagingOutboundStatus } from "@rakazo/adapter-kit";
 import { getLogger } from "@rakazo/logging";
 import type { Adapter } from "chat";
-import { ConsoleLogger, convertEmojiPlaceholders, markdownToPlainText } from "chat";
-import { createSendblueAdapter } from "chat-adapter-sendblue";
+import {
+  ConsoleLogger,
+  convertEmojiPlaceholders,
+  isLinkNode,
+  markdownToPlainText,
+  parseMarkdown,
+  text,
+  toPlainText,
+  walkAst,
+} from "chat";
+import type { SendblueAdapterConfig, SendblueThreadId } from "chat-adapter-sendblue";
 import type { ClientOptions as SendblueClientOptions } from "sendblue";
 import type { MessagingPlatform } from "./chat-sdk-surface.js";
 import { boundInboundMarkdown } from "./chat-sdk-surface.js";
 import { LazyLarkAdapter } from "./lark/lazy-adapter.js";
 import { Domain } from "./lark/thread-id.js";
+import { lazyChatAdapter } from "./lazy-chat-adapter.js";
 import { LazyPhotonAdapter } from "./photon/lazy-adapter.js";
 import { isVitestRuntime } from "./test-runtime.js";
 
@@ -39,6 +48,9 @@ export interface MessagingEnvironmentValues {
   sendbluePhoneNumber?: string | undefined;
   slackBotToken?: string | undefined;
   slackSigningSecret?: string | undefined;
+  teamsAppId?: string | undefined;
+  teamsAppPassword?: string | undefined;
+  teamsAppTenantId?: string | undefined;
   whatsappAccessToken?: string | undefined;
   whatsappPhoneNumberId?: string | undefined;
   whatsappAppSecret?: string | undefined;
@@ -73,6 +85,9 @@ export function messagingEnvFromProcess(
     sendbluePhoneNumber: clean(env.SENDBLUE_PHONE_NUMBER),
     slackBotToken: clean(env.SLACK_BOT_TOKEN),
     slackSigningSecret: clean(env.SLACK_SIGNING_SECRET),
+    teamsAppId: clean(env.TEAMS_APP_ID),
+    teamsAppPassword: clean(env.TEAMS_APP_PASSWORD),
+    teamsAppTenantId: clean(env.TEAMS_APP_TENANT_ID),
     whatsappAccessToken: clean(env.WHATSAPP_ACCESS_TOKEN),
     whatsappPhoneNumberId: clean(env.WHATSAPP_PHONE_NUMBER_ID),
     whatsappAppSecret: clean(env.WHATSAPP_APP_SECRET),
@@ -189,7 +204,7 @@ export function messagingPlatformsFromEnv(
     env.sendbluePhoneNumber
   ) {
     const lineNumber = env.sendbluePhoneNumber;
-    const adapter = createSendblueAdapter({
+    const config: Partial<SendblueAdapterConfig> = {
       apiKey: env.sendblueApiKeyId,
       apiSecret: env.sendblueApiSecret,
       defaultFromNumber: lineNumber,
@@ -199,36 +214,47 @@ export function messagingPlatformsFromEnv(
       ...(env.apiUrl?.startsWith("https://")
         ? { statusCallbackUrl: new URL("/api/v1/messaging/webhook/sendblue", env.apiUrl).href }
         : {}),
-    });
+    };
     // chat@4.39 derives thread.isDM solely from the optional Adapter.isDM
     // hook, and chat-adapter-sendblue@0.2.0 omits it — without this every
     // 1:1 message would route as a group. Derive it from the thread id.
-    // The SDK's own retries (twice, no idempotency key) would duplicate
-    // texts and stall the outbox drain; the outbox owns retries instead.
-    Object.assign(adapter, {
-      isDM: (threadId: string) => !adapter.decodeThreadId(threadId).groupId,
-      sdk: adapter.getSdk().withOptions({
-        maxRetries: 0,
-        timeout: MESSAGING_SEND_TIMEOUT_MS,
-        ...options.sendblueTransport,
-      }),
-    });
+    const isDM = (threadId: string) => !decodeSendblueThreadId(threadId).groupId;
+    const adapter = lazyChatAdapter(
+      "sendblue",
+      async () => {
+        const { createSendblueAdapter } = await import("chat-adapter-sendblue");
+        const sendblue = createSendblueAdapter(config);
+        // The SDK's own retries (twice, no idempotency key) would duplicate
+        // texts and stall the outbox drain; the outbox owns retries instead.
+        Object.assign(sendblue, {
+          isDM,
+          sdk: sendblue.getSdk().withOptions({
+            maxRetries: 0,
+            timeout: MESSAGING_SEND_TIMEOUT_MS,
+            ...options.sendblueTransport,
+          }),
+        });
+        return sendblue;
+      },
+      { encodeThreadId: encodeSendblueThreadId, decodeThreadId: decodeSendblueThreadId, isDM },
+    );
     platforms.push({
       provider: "sendblue",
       capabilities: { direct: true, groups: true, receipt: "typing" },
       adapter,
       address: lineNumber,
       directThreadId: (address) =>
-        adapter.encodeThreadId({ fromNumber: lineNumber, contactNumber: address }),
+        encodeSendblueThreadId({ fromNumber: lineNumber, contactNumber: address }),
       peekStatuses: parseSendblueStatuses,
       participants: (raw) => sendblueParticipants(raw, lineNumber),
+      rosterAt: (raw) => sendblueRosterAt(raw),
       channelName: (raw) => sendblueGroupName(raw),
       transport: (raw) => sendblueTransport(raw),
     });
   }
 
   if (env.slackBotToken && env.slackSigningSecret) {
-    const adapter = createSlackAdapter({
+    const config = {
       botToken: env.slackBotToken,
       signingSecret: env.slackSigningSecret,
       // WebClient defaults to ten retries over ~30 minutes with no timeout,
@@ -239,16 +265,21 @@ export function messagingPlatformsFromEnv(
         rejectRateLimitedCalls: true,
         timeout: MESSAGING_SEND_TIMEOUT_MS,
       },
+    };
+    const adapter = lazyChatAdapter("slack", async () => {
+      const { createSlackAdapter } = await import("@chat-adapter/slack");
+      const slack = createSlackAdapter(config);
+      boundInboundMarkdown(slack);
+      // Slack's reactions.add fails with already_reacted when a replayed inbound reacts twice.
+      const addReaction = slack.addReaction.bind(slack);
+      Object.assign(slack, {
+        addReaction: (threadId, messageId, emoji) =>
+          addReaction(threadId, messageId, emoji).catch((error: unknown) => {
+            if (slackPlatformError(error) !== "already_reacted") throw error;
+          }),
+      } satisfies Pick<Adapter, "addReaction">);
+      return slack;
     });
-    boundInboundMarkdown(adapter);
-    // Slack's reactions.add fails with already_reacted when a replayed inbound reacts twice.
-    const addReaction = adapter.addReaction.bind(adapter);
-    Object.assign(adapter, {
-      addReaction: (threadId, messageId, emoji) =>
-        addReaction(threadId, messageId, emoji).catch((error: unknown) => {
-          if (slackPlatformError(error) !== "already_reacted") throw error;
-        }),
-    } satisfies Pick<Adapter, "addReaction">);
     platforms.push({
       provider: "slack",
       capabilities: { direct: true, groups: true, receipt: "reaction" },
@@ -256,6 +287,27 @@ export function messagingPlatformsFromEnv(
       enrichTeamRoom: enrichSlackTeamRoom,
       redeliveryKeys: slackRedeliveryKeys,
       isPermanentSendError: (error) => SLACK_PERMANENT_ERRORS.has(slackPlatformError(error) ?? ""),
+    });
+  }
+
+  // Single-tenant credentials keep enterprise installations scoped to their tenant.
+  // Channels and group chats stay disabled until their room semantics are mapped.
+  if (env.teamsAppId && env.teamsAppPassword && env.teamsAppTenantId) {
+    const config = {
+      appId: env.teamsAppId,
+      appPassword: env.teamsAppPassword,
+      appTenantId: env.teamsAppTenantId,
+      appType: "SingleTenant" as const,
+    };
+    platforms.push({
+      provider: "teams",
+      capabilities: { direct: true, groups: false, receipt: "typing" },
+      adapter: lazyChatAdapter("teams", async () => {
+        const { createTeamsAdapter } = await import("@chat-adapter/teams");
+        const adapter = createTeamsAdapter(config);
+        boundInboundMarkdown(adapter);
+        return adapter;
+      }),
     });
   }
 
@@ -321,20 +373,23 @@ export function messagingPlatformsFromEnv(
   // token the adapter accepts unsigned webhook posts. Encrypt key and
   // domain are optional (event encryption / open.feishu.cn vs open.larksuite.com).
   if (env.larkAppId && env.larkAppSecret && env.larkVerificationToken) {
+    // Webhook-only: ws/long-connection incoming would consume events so
+    // the HTTP webhook at /api/v1/messaging/webhook/lark never sees them.
+    const adapter = new LazyLarkAdapter({
+      ...(options.larkTransport ? { httpInstance: options.larkTransport } : {}),
+      appId: env.larkAppId,
+      appSecret: env.larkAppSecret,
+      verificationToken: env.larkVerificationToken,
+      // Explicit defaults prevent the adapter from rereading untrimmed process.env values.
+      encryptKey: env.larkEncryptKey ?? "",
+      domain: env.larkDomain?.toLowerCase() === "lark" ? Domain.Lark : Domain.Feishu,
+    });
     platforms.push({
       provider: "lark",
       capabilities: { direct: true, groups: false, receipt: null },
-      // Webhook-only: ws/long-connection incoming would consume events so
-      // the HTTP webhook at /api/v1/messaging/webhook/lark never sees them.
-      adapter: new LazyLarkAdapter({
-        ...(options.larkTransport ? { httpInstance: options.larkTransport } : {}),
-        appId: env.larkAppId,
-        appSecret: env.larkAppSecret,
-        verificationToken: env.larkVerificationToken,
-        // Explicit defaults prevent the adapter from rereading untrimmed process.env values.
-        encryptKey: env.larkEncryptKey ?? "",
-        domain: env.larkDomain?.toLowerCase() === "lark" ? Domain.Lark : Domain.Feishu,
-      }),
+      adapter,
+      postOnce: (threadId, message, idempotencyKey) =>
+        adapter.postMessage(threadId, message, idempotencyKey),
     });
   }
 
@@ -403,6 +458,24 @@ export function isMessagingSurfaceEnabled(
 /** Bounds one vendor send so a hung request cannot stall the sequential outbox drain. */
 const MESSAGING_SEND_TIMEOUT_MS = 10_000;
 
+/** chat-adapter-sendblue's thread ids, available before its module loads. */
+function encodeSendblueThreadId({ fromNumber, contactNumber, groupId }: SendblueThreadId): string {
+  const from = Buffer.from(fromNumber).toString("base64url");
+  if (groupId) return `sendblue:${from}:g:${Buffer.from(groupId).toString("base64url")}`;
+  return `sendblue:${from}:${Buffer.from(contactNumber ?? "").toString("base64url")}`;
+}
+
+function decodeSendblueThreadId(threadId: string): SendblueThreadId {
+  const [prefix, from, rest, group] = threadId.split(":");
+  if (prefix !== "sendblue" || from === undefined || rest === undefined) {
+    throw new Error(`Invalid Sendblue thread ID: ${threadId}`);
+  }
+  const fromNumber = Buffer.from(from, "base64url").toString();
+  return rest === "g" && group
+    ? { fromNumber, groupId: Buffer.from(group, "base64url").toString() }
+    : { fromNumber, contactNumber: Buffer.from(rest, "base64url").toString() };
+}
+
 /** Slack errors a retry cannot fix: the bot cannot reach the channel or its token is dead. */
 const SLACK_PERMANENT_ERRORS = new Set([
   "channel_not_found",
@@ -458,6 +531,24 @@ function splitKeepingPairs(body: string): string[] {
 
 const telegramFormat = new TelegramFormatConverter();
 
+/** Plain text drops a link's address, so write it after the label first. */
+function plainTextWithLinkAddresses(markdown: string): string {
+  const ast = walkAst(parseMarkdown(markdown), (node) => {
+    if (!isLinkNode(node)) return node;
+    const label = toPlainText({
+      type: "root",
+      children: [{ type: "paragraph", children: node.children }],
+    });
+    if (!label) return text(node.url);
+    const bare = node.url.replace(/^(?:https?:\/\/|mailto:)/, "");
+    if (label === node.url || label === bare || label === bare.replace(/\/$/, "")) {
+      return text(label);
+    }
+    return text(`${label} (${node.url})`);
+  });
+  return toPlainText(ast);
+}
+
 function splitTelegramPart(body: string, literal = false): string[] {
   const markdown = literal ? escapeMarkdownV2(body) : body;
   const plainText = literal ? body : markdownToPlainText(body);
@@ -473,7 +564,9 @@ function splitTelegramPart(body: string, literal = false): string[] {
 
   // Parse before splitting: cutting Markdown can turn code into prose and
   // consume literal backslashes. Oversized formatted replies use escaped text.
-  if (!literal && plainText !== body) return splitTelegramPart(plainText, true);
+  if (!literal && plainText !== body) {
+    return splitTelegramPart(plainTextWithLinkAddresses(body), true);
+  }
 
   const parts = splitKeepingPairs(body);
   if (parts.length > 1) return parts.flatMap((part) => splitTelegramPart(part, literal));
@@ -682,6 +775,15 @@ function sendblueParticipants(raw: unknown, lineNumber: string): string[] {
   return participants.filter(
     (entry): entry is string => typeof entry === "string" && entry !== lineNumber,
   );
+}
+
+/** When Sendblue says the roster was current: the message's send time. */
+function sendblueRosterAt(raw: unknown): Date | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const sent = (raw as { date_sent?: unknown }).date_sent;
+  if (typeof sent !== "string") return null;
+  const at = new Date(sent);
+  return Number.isNaN(at.getTime()) ? null : at;
 }
 
 function sendblueGroupName(raw: unknown): string | null {

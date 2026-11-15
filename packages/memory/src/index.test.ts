@@ -34,7 +34,6 @@ describe("memory store contract shape", () => {
     expect(findMany).toHaveBeenCalledWith({
       where: {
         spaceId: "workspace-1",
-        userId: "user-1",
         scope: "bot",
         botId: "bot-1",
       },
@@ -55,7 +54,6 @@ describe("memory store contract shape", () => {
       where: {
         id: "memory-9",
         spaceId: "workspace-1",
-        userId: "user-1",
         scope: "bot",
         botId: "bot-1",
         path: "projects/retired.md",
@@ -73,7 +71,6 @@ describe("memory store contract shape", () => {
       where: {
         id: "missing",
         spaceId: "workspace-1",
-        userId: "user-1",
         scope: "user",
         botId: null,
         path: "projects/retired.md",

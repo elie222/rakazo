@@ -27,6 +27,7 @@ function prismaWith(options: {
     },
   ];
   const tx = {
+    $executeRaw: vi.fn(async () => 0),
     $queryRaw: vi.fn(async () => []),
     thread: { update: vi.fn(async () => ({ nextEventSeq: 1 })) },
     event: { create: vi.fn(async () => ({ seq: 0 })) },
@@ -125,6 +126,17 @@ describe("call_user", () => {
     ]);
     expect(newCallRequest({ reason: "", opening: "Hi" })).toEqual({ error: "reason is required." });
   });
+
+  it("does not split an emoji when it shortens the reason or opening", () => {
+    const request = newCallRequest({
+      reason: `${"r".repeat(119)}😀tail`,
+      opening: `${"o".repeat(239)}😀tail`,
+    });
+    if ("error" in request) throw new Error(request.error);
+    const block = request.blocks[0] as { reason: string; opening: string };
+    expect(block.reason).toBe("r".repeat(119));
+    expect(block.opening).toBe("o".repeat(239));
+  });
 });
 
 describe("settleCallRequest", () => {
@@ -149,6 +161,7 @@ describe("settleCallRequest", () => {
         }),
       }),
     );
+    expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), { timeout: 20_000 });
   });
 
   it("keeps a committed answer recoverable when notification fails", async () => {
@@ -244,6 +257,7 @@ describe("requestUserCall security", () => {
     let saved: { id: string; blocks: unknown; botId: string; thread: { spaceId: string } } | null =
       null;
     const tx = {
+      $executeRaw: vi.fn(async () => 0),
       $queryRaw: vi.fn(async () => []),
       thread: {
         findFirst: vi.fn(
@@ -292,7 +306,13 @@ describe("requestUserCall security", () => {
       prisma,
       phoneCallsEnabled: true,
       events: { append: vi.fn(), notify: vi.fn(async () => undefined) } as unknown as ThreadEvents,
-      jobs: { enqueue: vi.fn(async () => undefined), cancel: vi.fn(), close: vi.fn() },
+      jobs: {
+        enqueue: vi.fn(async () => undefined),
+        enqueueIn: vi.fn(),
+        cancelIn: vi.fn(),
+        cancel: vi.fn(),
+        close: vi.fn(),
+      },
     };
     return { deps, tx, saved: () => saved };
   }
@@ -413,7 +433,12 @@ describe("requestUserCall security", () => {
     ]);
     expect(results.filter((result) => "ok" in result)).toHaveLength(1);
     expect(tx.message.create).toHaveBeenCalledOnce();
-    expect(tx.$queryRaw).toHaveBeenCalledTimes(2);
+    // The ring lock, once per attempt; the rest set and restore the unread mark's system context.
+    expect(
+      tx.$queryRaw.mock.calls.filter((call) =>
+        ((call as unknown[])[0] as TemplateStringsArray).join("?").includes("pg_advisory"),
+      ),
+    ).toHaveLength(2);
     expect(deps.jobs.enqueue).toHaveBeenCalledOnce();
   });
 

@@ -14,21 +14,27 @@ import type {
   ScreenSession,
   TerminalRequest,
 } from "@rakazo/adapter-kit";
+import type { ComputerSize } from "@rakazo/contracts";
 import { boundedSandboxCommandTimeoutMs } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import { sandboxIdleMs } from "./computer-idle.js";
-import { normalizeWorkspacePath, shellQuote, workspacePath } from "./computer-support.js";
-import { PORTABLE_TRANSFER_BATCH_BYTES } from "./computer-workspace.js";
+import {
+  normalizeWorkspacePath,
+  shellQuote,
+  workspaceCwd,
+  workspacePath,
+} from "./computer-support.js";
+import { PortableFileBatcher } from "./computer-workspace.js";
 import { LinuxDesktop, onBotScreen, PREPARE_LINUX_DESKTOP } from "./linux-desktop.js";
 import { sandboxCommandArgv } from "./sandbox-command-environment.js";
-import { isSandboxGoneError } from "./sandbox-errors.js";
+import { isSandboxGoneError, sandboxNotFoundError } from "./sandbox-errors.js";
 import { shouldSkipPortableWorkspaceFile } from "./workspace-save-policy.js";
 
 const DISPLAY_START = 20;
 const REMOTE_WORKSPACE = "/home/user/rakazo-home";
 const REMOTE_BROWSER_PROFILES = `${REMOTE_WORKSPACE}/.browser-profiles`;
 
-/** Common boundary used by the E2B and Novita desktop SDKs. */
+/** Common boundary used by the E2B, Novita and instabox desktop SDKs. */
 export interface CommandResult {
   exitCode: number;
   stdout: string;
@@ -52,6 +58,7 @@ interface EntryInfo {
 
 export interface RemoteDesktop {
   readonly sandboxId: string;
+  readonly trafficAccessToken?: string;
   setTimeout(timeoutMs: number): Promise<void>;
   getHost(port: number): string;
   commands: {
@@ -73,10 +80,17 @@ export interface RemoteDesktop {
 }
 
 export interface RemoteDesktopSdk {
+  /** `size` is the plan's size for a new computer; an SDK without sizes ignores it. */
   create(
     template: string,
     options: ReturnType<typeof remoteDesktopCreateOptions>,
+    size?: ComputerSize,
   ): Promise<RemoteDesktop>;
+  /**
+   * Moves a stopped or paused computer to `size` before it starts; a running one keeps its size.
+   * Throws `SandboxSizeUnavailableError` when the computer cannot start at that size.
+   */
+  resize?(id: string, size: ComputerSize, options: { apiKey: string }): Promise<void>;
   connect(id: string, options: { apiKey: string; timeoutMs: number }): Promise<RemoteDesktop>;
   connectRunning?(
     id: string,
@@ -100,7 +114,13 @@ export function remoteDesktopCreateOptions(botId: string, apiKey: string) {
 }
 
 // How the SDKs report a sandbox that is not running. Sandboxes pause on timeout, so this usually
-// means paused rather than deleted; only a failed resume proves the sandbox is gone.
+// means paused rather than deleted; only a failed resume proves the sandbox is gone. Newer SDKs
+// name the error instead, including one for a sandbox they could not reach to check.
+const SANDBOX_NOT_RUNNING_NAMES = new Set([
+  "SandboxNotFoundError",
+  "SandboxNotRunningError",
+  "SandboxUnreachableError",
+]);
 const SANDBOX_NOT_RUNNING =
   /likely due to sandbox timeout|killed or reached its end of life|probably not running anymore/i;
 
@@ -110,7 +130,7 @@ const COMMAND_DEADLINE = /^deadline_exceeded|exceeding 'timeoutMs'/;
 function isSandboxNotRunning(error: unknown): boolean {
   return (
     error instanceof Error &&
-    (error.name === "SandboxNotFoundError" || SANDBOX_NOT_RUNNING.test(error.message))
+    (SANDBOX_NOT_RUNNING_NAMES.has(error.name) || SANDBOX_NOT_RUNNING.test(error.message))
   );
 }
 
@@ -150,7 +170,9 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
 
   constructor(
     private readonly config: {
-      id: "e2b" | "novita";
+      id: ComputerRef["kind"];
+      /** Header carrying the sandbox's traffic token, where the provider's gateway requires one. */
+      trafficAccessHeader?: string;
       label: string;
       apiKey: string;
       sdk: RemoteDesktopSdk;
@@ -263,11 +285,17 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
       homePath: string;
       providerRef?: string;
       providerKind?: ComputerRef["kind"];
+      size?: ComputerSize;
     },
     _context: AdapterContext,
   ): Promise<ComputerRef> {
     if (request.providerRef && request.providerKind === this.config.id) {
       try {
+        if (request.size && this.config.sdk.resize) {
+          await this.config.sdk.resize(request.providerRef, request.size, {
+            apiKey: this.config.apiKey,
+          });
+        }
         const desktop = await this.box(
           {
             id: request.providerRef,
@@ -292,6 +320,7 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
     }
     const desktop = await this.createDesktop(
       remoteDesktopCreateOptions(request.botId, this.config.apiKey),
+      request.size,
     );
     this.boxes.set(desktop.sandboxId, desktop);
     this.lastTouchedAt.set(desktop.sandboxId, Date.now());
@@ -332,7 +361,7 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
   ): AsyncIterable<ProcessEvent> {
     const request = onBotScreen(requested, context, DISPLAY_START);
     const result = await this.run(computer, sandboxCommandArgv(request).map(shellQuote).join(" "), {
-      cwd: remoteCwd(request.cwd),
+      cwd: workspaceCwd(REMOTE_WORKSPACE, request.cwd, ["/home/user"]),
       envs: request.env,
       signal: context.signal,
       timeoutMs: boundedSandboxCommandTimeoutMs(request.timeoutMs),
@@ -347,10 +376,27 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
     request: ScreenRequest,
     context: AdapterContext,
   ): Promise<ScreenSession> {
-    return this.desktops.connectScreen(computer, request, context);
+    return this.withTrafficAccess(
+      computer,
+      await this.desktops.connectScreen(computer, request, context),
+    );
   }
   async connectTerminal(computer: ComputerRef, request: TerminalRequest, context: AdapterContext) {
-    return this.desktops.connectTerminal(computer, request, context);
+    return this.withTrafficAccess(
+      computer,
+      await this.desktops.connectTerminal(computer, request, context),
+    );
+  }
+  /** A missing token stays off the request. */
+  private withTrafficAccess<T extends { url: string | null }>(
+    computer: ComputerRef,
+    session: T,
+  ): T & { headers?: Record<string, string> } {
+    const header = this.config.trafficAccessHeader;
+    if (!header) return session;
+    const token = this.boxes.get(sandboxId(computer))?.trafficAccessToken;
+    if (!token) return session;
+    return { ...session, headers: { [header]: token } };
   }
   async setScreenControl(
     computer: ComputerRef,
@@ -443,27 +489,17 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
     context: AdapterContext,
   ): Promise<void> {
     await this.desktops.stopBrowsers(computer, context);
-    let batch: PortableFile[] = [];
-    let batchBytes = 0;
-    const flush = async () => {
+    const batcher = new PortableFileBatcher<PortableFile>(32, (file) => file.content.byteLength);
+    const flush = async (batch: PortableFile[]) => {
       if (!batch.length) return;
-      const files = batch;
-      await this.use(computer, (desktop) => writeRemoteFiles(desktop, files, context));
-      batch = [];
-      batchBytes = 0;
+      await this.use(computer, (desktop) => writeRemoteFiles(desktop, batch, context));
     };
     for await (const file of files) {
       if (shouldSkipPortableWorkspaceFile(file.path)) continue;
-      if (
-        batch.length >= 32 ||
-        batchBytes + file.content.byteLength > PORTABLE_TRANSFER_BATCH_BYTES
-      ) {
-        await flush();
-      }
-      batch.push(file);
-      batchBytes += file.content.byteLength;
+      const full = batcher.add(file);
+      if (full) await flush(full);
     }
-    await flush();
+    await flush(batcher.take());
     // Imported browser profiles remain dormant until their owning bot needs a desktop.
   }
 
@@ -507,9 +543,14 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
   /** Prefer the right-sized template; an account that has not built it keeps the stock one. */
   private async createDesktop(
     options: ReturnType<typeof remoteDesktopCreateOptions>,
+    size: ComputerSize | undefined,
   ): Promise<RemoteDesktop> {
+    const create = (template: string) =>
+      size
+        ? this.config.sdk.create(template, options, size)
+        : this.config.sdk.create(template, options);
     try {
-      return await this.config.sdk.create(this.config.template, options);
+      return await create(this.config.template);
     } catch (error) {
       if (!this.config.fallbackTemplate || !isTemplateMissingError(error)) throw error;
       getLogger().warn(
@@ -518,7 +559,7 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
           template: this.config.template,
         },
       );
-      return this.config.sdk.create(this.config.fallbackTemplate, options);
+      return create(this.config.fallbackTemplate);
     }
   }
 
@@ -683,25 +724,6 @@ async function* walkRemoteWorkspace(
   for (const relative of directories) yield* walkRemoteWorkspace(desktop, relative, context);
 }
 
-function remoteCwd(cwd: string | undefined): string {
-  if (
-    !cwd ||
-    cwd === "." ||
-    cwd === "/" ||
-    cwd === "/home/rakazo" ||
-    cwd === "/home/user" ||
-    cwd === REMOTE_WORKSPACE
-  ) {
-    return REMOTE_WORKSPACE;
-  }
-  const relative = cwd.startsWith(`${REMOTE_WORKSPACE}/`)
-    ? cwd.slice(REMOTE_WORKSPACE.length + 1)
-    : cwd.startsWith("/home/rakazo/")
-      ? cwd.slice("/home/rakazo/".length)
-      : cwd;
-  return workspacePath(REMOTE_WORKSPACE, relative);
-}
-
 function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
   return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
 }
@@ -716,7 +738,5 @@ function isBeingKilled(error: unknown): boolean {
 
 /** Named so isSandboxGoneError lets callers replace the sandbox. */
 function sandboxGoneError(label: string, id: string, cause: unknown): Error {
-  return Object.assign(new Error(`${label} sandbox ${id} is being deleted`, { cause }), {
-    name: "SandboxNotFoundError",
-  });
+  return sandboxNotFoundError(`${label} sandbox ${id} is being deleted`, { cause });
 }

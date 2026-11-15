@@ -5,9 +5,16 @@ import type { CSSProperties, ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { MobileMessage } from "./api";
+import { AskActions } from "../components/AskActions";
 import { messageRowLayout } from "./message-row-layout";
+import type { MobileMessage } from "./mobile-types";
 import { answerThreadMessage } from "./thread-answer";
+
+vi.mock("./haptics", () => ({
+  hapticImpact: vi.fn(),
+  hapticSelection: vi.fn(),
+  hapticSuccess: vi.fn(),
+}));
 
 type SheetProps = {
   destination: string;
@@ -74,13 +81,11 @@ vi.mock("react-native", async () => {
 });
 
 vi.mock("./native", () => ({
+  native: { fill: "fill" },
   useMobileTokens: () => ({ success: "success", mutedForeground: "muted" }),
 }));
 
-vi.mock("./i18n", () => ({
-  t: (text: string) => text,
-  useI18n: () => ({ t: (text: string) => text }),
-}));
+vi.mock("./appearance", () => ({ mobileTokens: () => ({ foreground: "foreground" }) }));
 
 vi.mock("../components/native-action-button", async () => {
   const { createElement } = await import("react");
@@ -90,6 +95,7 @@ vi.mock("../components/native-action-button", async () => {
       onPress,
       disabled,
       prominence = "primary",
+      selected,
       fill,
       style,
     }: {
@@ -97,6 +103,7 @@ vi.mock("../components/native-action-button", async () => {
       onPress: () => void;
       disabled?: boolean;
       prominence?: string;
+      selected?: boolean;
       fill?: boolean;
       style?: CSSProperties;
     }) =>
@@ -107,6 +114,7 @@ vi.mock("../components/native-action-button", async () => {
           onClick: onPress,
           disabled,
           "data-prominence": prominence,
+          "data-selected": selected?.toString(),
           "data-fill": fill,
           style,
         },
@@ -115,6 +123,9 @@ vi.mock("../components/native-action-button", async () => {
   };
 });
 
+vi.mock("../components/vault-tile", () => ({
+  VaultTile: ({ children }: { children: ReactNode }) => children,
+}));
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
 
 vi.mock("../components/vault-item-editor", async () => {
@@ -161,12 +172,14 @@ async function render(
   ask: Record<string, unknown>,
   onAnswer: () => Promise<void> = async () => undefined,
   onDismiss: () => Promise<void> = async () => undefined,
+  answerIsSeparate?: boolean,
 ) {
   await act(async () =>
     root.render(
       <AskBlock
         ask={{ kind: "ask", text: longTitle, status: "pending", ...ask } as Ask}
         canAnswer
+        answerIsSeparate={answerIsSeparate}
         canDismiss
         onAnswer={onAnswer}
         onDismiss={onDismiss}
@@ -176,6 +189,16 @@ async function render(
   );
   return container.querySelector("span")!;
 }
+
+it("keeps an answered question without repeating the user's reply or leaving answer controls", async () => {
+  await render({ status: "answered", answer: "Help with my project" });
+  expect(container.textContent).toContain("Help with my project");
+  await render({ status: "answered", answer: "Help with my project" }, undefined, undefined, true);
+  expect(container.textContent).toBe(longTitle);
+  expect(container.querySelector("span")?.dataset.color).toBe("muted");
+  expect(container.querySelector("input")).toBeNull();
+  expect(container.querySelector("button")).toBeNull();
+});
 
 it("caps a secret card's title at two lines and leaves question titles whole", async () => {
   const login = await render({
@@ -320,6 +343,7 @@ it("closes the current sheet and keeps the card saved when refresh fails", async
         readOnly: false,
         rpc,
         isCurrentTarget: () => true,
+        isFocused: () => true,
         refresh,
         markRead: vi.fn(),
       },
@@ -420,9 +444,10 @@ it("shows a dismissed secret card as a muted Dismissed and a saved one as Saved"
   expect(state("Sent")?.dataset.color).toBe("success");
 });
 
-it("offers Dismiss only on secret cards", async () => {
+it("leaves ordinary question answers to the composer", async () => {
   await render({});
-  expect(buttons()).toEqual(["Send answer"]);
+  expect(buttons()).toEqual([]);
+  expect(container.querySelector("input")).toBeNull();
 });
 
 it("dismisses a login card directly without opening the sheet", async () => {
@@ -548,6 +573,15 @@ it("uses the full column for wide asks and reserves only the visible avatar gutt
       },
     ],
     mcpApproval: [{ kind: "mcp_approval", serverId: "server-1", name: "Example" }],
+    page: [{ kind: "page", pageId: "page-1", version: 1, title: "Plan" }],
+    options: [
+      {
+        kind: "ask",
+        text: "Which one?",
+        status: "pending",
+        actions: [{ id: "choice-1", label: "A longer option than the question" }],
+      },
+    ],
   };
   const measure = (kind: keyof typeof blocks, avatar: boolean, inGroup: boolean) =>
     messageRowLayout(blocks[kind] as MobileMessage["blocks"], {
@@ -569,13 +603,27 @@ it("uses the full column for wide asks and reserves only the visible avatar gutt
     expect(regular.maxWidth).toBe(avatar ? undefined : "90%");
     expect(regular.menuMaxWidth).toBe(avatar ? 360 - gutter : 324);
   }
-  // Connect cards take the full bubble width rather than shrinking to their button.
-  for (const kind of ["appConnect", "mcpApproval"] as const) {
+  for (const kind of ["appConnect", "mcpApproval", "options", "page"] as const) {
     const card = measure(kind, false, false);
     expect(card.width).toBe("90%");
     expect(card.maxWidth).toBe("90%");
     expect(card.menuMaxWidth).toBe(324);
     expect(card.menuFullWidth).toBe(true);
+  }
+  const allow = [
+    { id: "allow", label: "Allow" },
+    { id: "deny", label: "Deny" },
+  ];
+  for (const ask of [
+    { approvalEffectId: "approval-1" },
+    { instructionUpdate: { botId: "bot-1", before: "", after: "Be brief", reason: "" } },
+  ]) {
+    const layout = messageRowLayout(
+      [{ kind: "ask", text: "Allow?", status: "pending", actions: allow, ...ask }],
+      { inGroup: false, columnWidth: 400 },
+    );
+    expect(layout.menuFullWidth).toBe(false);
+    expect(layout.width).toBeUndefined();
   }
 });
 
@@ -614,3 +662,90 @@ it.each([
     expect(container.querySelectorAll("button").length).toBeGreaterThan(0);
   },
 );
+
+it("stacks option buttons in a non-wrapping full-width column and keeps approvals in a wrapping row", async () => {
+  const actions = [
+    { id: "choice-1", label: "Plan a trip" },
+    { id: "choice-2", label: "Write something" },
+  ];
+  for (const approval of [false, true]) {
+    await act(async () =>
+      root.render(
+        <AskActions actions={actions} approval={approval} onAnswer={async () => undefined} />,
+      ),
+    );
+    const buttons = [...container.querySelectorAll("button")];
+    const row = buttons[0]!.parentElement!;
+    expect(buttons.map((b) => b.getAttribute("data-fill"))).toEqual(
+      approval ? ["false", "false"] : ["true", "true"],
+    );
+    expect(row.style.flexDirection).toBe(approval ? "row" : "column");
+    expect(row.style.flexWrap).toBe(approval ? "wrap" : "nowrap");
+  }
+});
+
+it.each([undefined, "pending", "answered"] as const)(
+  "only widens option questions while their buttons are displayed (status: %s)",
+  (status) => {
+    const layout = messageRowLayout(
+      [
+        {
+          kind: "ask",
+          text: "Which one?",
+          status,
+          actions: [{ id: "choice-1", label: "Plan a trip" }],
+        },
+      ],
+      { inGroup: false, columnWidth: 400 },
+    );
+    expect(layout.width).toBe(status === "answered" ? undefined : "90%");
+    expect(layout.menuFullWidth).toBe(status !== "answered");
+  },
+);
+
+it("keeps pending approvals primary without adding a selection state", async () => {
+  await act(async () =>
+    root.render(
+      <AskActions
+        approval
+        actions={[
+          { id: "allow", label: "Allow once" },
+          { id: "always", label: "Always allow" },
+          { id: "deny", label: "Deny" },
+        ]}
+        onAnswer={async () => undefined}
+      />,
+    ),
+  );
+  const actions = [...container.querySelectorAll("button")];
+  expect(actions.map((button) => button.getAttribute("data-prominence"))).toEqual([
+    "primary",
+    "primary",
+    "secondary",
+  ]);
+  expect(actions.map((button) => button.getAttribute("data-selected"))).toEqual([null, null, null]);
+});
+
+it("only marks question options selected after an answer exists", async () => {
+  const actions = [
+    { id: "first", label: "First" },
+    { id: "second", label: "Second" },
+  ];
+  for (const selectedAnswer of [undefined, "first"]) {
+    await act(async () =>
+      root.render(
+        <AskActions
+          approval={false}
+          actions={actions}
+          selectedAnswer={selectedAnswer}
+          onAnswer={async () => undefined}
+        />,
+      ),
+    );
+    expect(
+      [...container.querySelectorAll("button")].map((button) =>
+        button.getAttribute("data-selected"),
+      ),
+    ).toEqual(selectedAnswer ? ["true", "false"] : [null, null]);
+  }
+});

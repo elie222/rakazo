@@ -3,7 +3,8 @@ import type { z } from "zod";
 
 /**
  * Models wrap JSON in prose or fences and break its syntax; repair it before checking the shape.
- * A reply cut off before its closing brace is rejected, so repair never completes a verdict.
+ * The candidate runs from the first "{" to the last "}", so a later object cut off mid-reply is
+ * dropped silently; callers that act on the result must check the whole reply themselves.
  */
 export function parseModelJson<T extends z.ZodType>(
   text: string,

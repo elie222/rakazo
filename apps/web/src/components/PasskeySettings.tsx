@@ -1,16 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  Button,
-  Input,
-} from "@rakazo/ui-web";
+import { Button, Input } from "@rakazo/ui-web";
 import { Pencil, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { authClient } from "../lib/auth";
@@ -21,6 +10,7 @@ import {
   usePasskeysVersion,
 } from "../lib/passkeys";
 import { formatRelativeTime } from "../lib/relative-time";
+import { ConfirmDialog } from "./ConfirmDialog";
 import { SettingsRow } from "./SettingsRows";
 
 type PasskeyRow = {
@@ -117,7 +107,7 @@ function PasskeyList({ onRetry }: { onRetry: () => void }) {
         }
       >
         {loadFailed ? (
-          <div role="alert" className="mt-2 flex items-center gap-2 text-[13.5px] text-destructive">
+          <div role="alert" className="mt-2 flex items-center gap-2 text-body text-destructive">
             <Trans>Could not load</Trans>
             <Button variant="outline" size="xs" onClick={onRetry}>
               <Trans>Retry</Trans>
@@ -125,7 +115,7 @@ function PasskeyList({ onRetry }: { onRetry: () => void }) {
           </div>
         ) : null}
         {error && !deleting ? (
-          <p role="alert" className="mt-2 text-[12.5px] text-destructive">
+          <p role="alert" className="mt-2 text-body-sm text-destructive">
             {error}
           </p>
         ) : null}
@@ -166,9 +156,9 @@ function PasskeyList({ onRetry }: { onRetry: () => void }) {
                 </form>
               ) : (
                 <>
-                  <p className="flex min-w-0 flex-1 items-baseline gap-2 text-[14px] text-foreground">
+                  <p className="flex min-w-0 flex-1 items-baseline gap-2 text-body text-foreground">
                     <span className="truncate">{passkeyLabel(passkey, t`Passkey`)}</span>
-                    <span className="shrink-0 text-[12.5px] text-muted-foreground">
+                    <span className="shrink-0 text-body-sm text-muted-foreground">
                       {formatRelativeTime(new Date(passkey.createdAt).toISOString())}
                     </span>
                   </p>
@@ -198,37 +188,18 @@ function PasskeyList({ onRetry }: { onRetry: () => void }) {
         </ul>
       ) : null}
       {deleting ? (
-        <AlertDialog
-          open
-          onOpenChange={(open) => {
-            if (!open && !pending) {
-              setDeleting(null);
-              setError(null);
-            }
+        <ConfirmDialog
+          onCancel={() => {
+            setDeleting(null);
+            setError(null);
           }}
-        >
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>{t`Delete "${passkeyLabel(deleting, t`Passkey`)}"?`}</AlertDialogTitle>
-              <AlertDialogDescription>
-                <Trans>This can't be undone.</Trans>
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            {error ? <p className="text-[13.5px] text-destructive">{error}</p> : null}
-            <AlertDialogFooter>
-              <AlertDialogCancel disabled={pending}>
-                <Trans>Cancel</Trans>
-              </AlertDialogCancel>
-              <AlertDialogAction
-                variant="destructive"
-                disabled={pending}
-                onClick={() => void remove()}
-              >
-                {pending ? <Trans>Deleting…</Trans> : <Trans>Delete</Trans>}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+          title={t`Delete "${passkeyLabel(deleting, t`Passkey`)}"?`}
+          description={<Trans>This can't be undone.</Trans>}
+          error={error}
+          busy={pending}
+          onConfirm={() => void remove()}
+          confirmLabel={pending ? <Trans>Deleting…</Trans> : <Trans>Delete</Trans>}
+        />
       ) : null}
     </div>
   );

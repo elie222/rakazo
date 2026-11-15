@@ -6,6 +6,7 @@ import {
   BUILTIN_AGENT_SKILLS,
   isCatalogModelChoice,
   readAgentImportSettings,
+  readGrokBotImportSettings,
 } from "@rakazo/adapters";
 import type {
   Actor,
@@ -34,6 +35,7 @@ import {
   combineImportedInstructions,
   parseAgentImport,
   readAgentImportFolder,
+  readGrokBotExportJson,
   renameRoutineSkillMentions,
   resolveAgentImportNames,
 } from "@rakazo/core";
@@ -42,6 +44,7 @@ import {
   appendEventInTransaction,
   availableInSpace,
   createThreadMessageInTransaction,
+  isUniqueViolation,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 
@@ -160,7 +163,7 @@ async function takenNames(db: Reader, actor: Actor) {
   };
 }
 
-type Built = {
+export type Built = {
   plan: AgentImportPlan;
   settings: (AgentImportSettings & { keyValues: Map<string, string> }) | null;
   routineInputs: Map<string, CreateRoutineInputType>;
@@ -178,16 +181,25 @@ async function buildPlan(
   const base = parsePlan(files, input.skillFiles);
   const taken = await takenNames(services.prisma, actor);
   const plan = resolveAgentImportNames(base, taken);
-  const folder =
-    base.source === "document" ? null : readAgentImportFolder(files, { includeSecrets });
   const routineInputs = new Map<string, CreateRoutineInputType>();
   const mcpConfigs = new Map<string, ImportedMcpServer & { slug: string }>();
   const connectedKeyIds = new Set<string>();
-  if (!folder) return { plan, settings: null, routineInputs, mcpConfigs, connectedKeyIds };
-  const settings = readAgentImportSettings(folder, {
-    includeSecrets,
-    stdioAllowed: await services.stdioAllowed(actor),
-  });
+  let settings: Built["settings"];
+  if (base.source === "grok_bot") {
+    // parsePlan has checked that this file holds exactly one Bot.
+    const [bot] = readGrokBotExportJson(files[0]?.content ?? "");
+    settings = bot ? readGrokBotImportSettings(bot) : null;
+  } else {
+    const folder =
+      base.source === "document" ? null : readAgentImportFolder(files, { includeSecrets });
+    settings = folder
+      ? readAgentImportSettings(folder, {
+          includeSecrets,
+          stdioAllowed: await services.stdioAllowed(actor),
+        })
+      : null;
+  }
+  if (!settings) return { plan, settings: null, routineInputs, mcpConfigs, connectedKeyIds };
 
   let model: AgentImportPlan["model"] = null;
   if (settings.model) {
@@ -222,13 +234,15 @@ async function buildPlan(
     };
   });
 
-  const saved = (
-    await services.prisma.user.findUnique({
-      where: { id: actor.userId },
-      select: { timezone: true },
-    })
-  )?.timezone;
-  const fallbackZone = saved && isValidTimeZone(saved) ? saved : "UTC";
+  const originalSkillNames = new Map(base.skills.map((skill) => [skill.id, skill.name]));
+  const previewSkillNames = new Map<string, string>([
+    ...taken.skillNames.map((name): [string, string] => [name, name]),
+    ...plan.skills.flatMap((skill): [string, string][] => {
+      const original = originalSkillNames.get(skill.id);
+      return original ? [[original, skill.name]] : [];
+    }),
+  ]);
+  const fallbackZone = await savedTimeZone(services.prisma, actor);
   const routines = settings.routines.flatMap((routine) => {
     const timezone = routine.timezone ?? fallbackZone;
     const parsed = CreateRoutineInput.safeParse({
@@ -241,7 +255,8 @@ async function buildPlan(
       active: false,
     });
     if (!parsed.success) {
-      skipped.push({ path: `cron/jobs.json: ${routine.title}`, reason: "unsupported" });
+      const file = base.source === "grok_bot" ? "routines" : "cron/jobs.json";
+      skipped.push({ path: `${file}: ${routine.title}`, reason: "unsupported" });
       return [];
     }
     routineInputs.set(routine.id, parsed.data);
@@ -249,7 +264,7 @@ async function buildPlan(
       {
         id: routine.id,
         title: routine.title,
-        content: `${routine.cron} (${timezone})\n\n${routine.prompt}`,
+        content: `${routine.cron} (${timezone})\n\n${renameRoutineSkillMentions(routine.prompt, previewSkillNames)}`,
         warnings: routine.warnings,
         status: { kind: "needs_setup" as const, needs: [{ kind: "turn_on" as const }] },
       },
@@ -263,6 +278,14 @@ async function buildPlan(
     mcpConfigs,
     connectedKeyIds,
   };
+}
+
+/** The user's saved time zone, for routines that don't name one. */
+export async function savedTimeZone(prisma: PrismaClient, actor: Actor): Promise<string> {
+  const saved = (
+    await prisma.user.findUnique({ where: { id: actor.userId }, select: { timezone: true } })
+  )?.timezone;
+  return saved && isValidTimeZone(saved) ? saved : "UTC";
 }
 
 export async function previewAgentImport(
@@ -302,9 +325,43 @@ export async function createImportedBot<PreparedKey>(
   input: AgentImportCreateInput,
   signal?: AbortSignal,
 ): Promise<Bot> {
-  const owner = { spaceId: actor.spaceId, userId: actor.userId };
   const { importKey, ...request } = input;
-  const digest = requestDigest(request);
+  const written = await writeImportedBot(
+    services,
+    actor,
+    {
+      ...input,
+      digest: requestDigest(request),
+      build: () => buildPlan(services as AgentImportServices, actor, input),
+    },
+    signal,
+  );
+  return written.bot;
+}
+
+/** A bot to create from a plan: an import's files or a template build it. */
+export type ImportedBotRequest = Pick<
+  AgentImportCreateInput,
+  "importKey" | "selection" | "name" | "description" | "computerMode" | "color" | "avatarSet"
+> & {
+  /** Of the request without its key: reusing a key for another request is refused. */
+  digest: string;
+  build: () => Promise<Built>;
+  /** Posted before the checklist, such as cards for apps the bot works with. */
+  cards?: MessageBlock[];
+  /** Runs first in the create's transaction. */
+  beforeWrite?: (tx: Prisma.TransactionClient) => Promise<void>;
+};
+
+/** `created` is false when the key's earlier create is returned instead. */
+export async function writeImportedBot<PreparedKey>(
+  services: AgentImportServices<PreparedKey>,
+  actor: Actor,
+  input: ImportedBotRequest,
+  signal?: AbortSignal,
+): Promise<{ bot: Bot; created: boolean }> {
+  const owner = { spaceId: actor.spaceId, userId: actor.userId };
+  const { importKey, digest } = input;
   const already = async () => {
     if (!importKey) return null;
     const found = await services.prisma.agentImport.findFirst({
@@ -322,12 +379,8 @@ export async function createImportedBot<PreparedKey>(
     return services.findBot(actor, found.botId);
   };
   const retried = await already();
-  if (retried) return retried;
-  const { plan, settings, routineInputs, mcpConfigs, connectedKeyIds } = await buildPlan(
-    services as AgentImportServices,
-    actor,
-    input,
-  );
+  if (retried) return { bot: retried, created: false };
+  const { plan, settings, routineInputs, mcpConfigs, connectedKeyIds } = await input.build();
   const instructions = combineImportedInstructions(
     selected(plan.instructions, input.selection.instructions),
   );
@@ -441,6 +494,7 @@ export async function createImportedBot<PreparedKey>(
     for (const list of [record.mcpServers, credentials, routineRows, setup, added]) {
       list.length = 0;
     }
+    await input.beforeWrite?.(tx);
     for (const prepared of preparedKeys) {
       const credential = await services.writeModelKey(tx, actor, prepared);
       if (credential) credentials.push(credential);
@@ -584,6 +638,14 @@ export async function createImportedBot<PreparedKey>(
         providerName: plan.model.providerName,
       });
     }
+    if (input.cards?.length) {
+      const message = await createThreadMessageInTransaction(tx, {
+        threadId: thread.id,
+        role: "bot",
+        blocks: input.cards,
+      });
+      await announceAdded(tx, botId, message, thread.id, input.cards);
+    }
     if (setup.length) {
       const checklist: MessageBlock[] = [{ kind: "import_setup", items: setup }];
       const message = await createThreadMessageInTransaction(tx, {
@@ -622,7 +684,7 @@ export async function createImportedBot<PreparedKey>(
     // Two requests with one import key: the second's transaction lost the race.
     const winner = isUniqueViolation(error) ? await already() : null;
     if (!winner) throw error;
-    return winner;
+    return { bot: winner, created: false };
   }
   const settle = (label: string) => (error: unknown) => {
     getLogger().error(label, error);
@@ -645,7 +707,7 @@ export async function createImportedBot<PreparedKey>(
       .announceRoutine(actor, { id: bot.id, thread }, row)
       .catch(settle("imported routine notice"));
   }
-  return bot;
+  return { bot, created: true };
 }
 
 /** Only the actor's own rows are read; unknown ids are not done. */
@@ -781,8 +843,4 @@ function freeSlug(slug: string, used: Set<string>): string {
 /** Daily logs and other notes first (in plan order, oldest first), then USER.md, then MEMORY.md. */
 function curatedRank(path: string): number {
   return path === MEMORY_INDEX_PATH ? 2 : path === "USER.md" ? 1 : 0;
-}
-
-function isUniqueViolation(error: unknown): boolean {
-  return Boolean(error && typeof error === "object" && "code" in error && error.code === "P2002");
 }

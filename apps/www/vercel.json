@@ -1,4 +1,5 @@
 {
+  "installCommand": "corepack pnpm install",
   "redirects": [
     {
       "source": "/",
@@ -16,6 +17,26 @@
       "source": "/sitemap.xml",
       "destination": "/sitemap-index.xml",
       "statusCode": 301
+    },
+    {
+      "source": "/x",
+      "destination": "https://x.com/rakazobot",
+      "permanent": false
+    },
+    {
+      "source": "/twitter",
+      "destination": "https://x.com/rakazobot",
+      "permanent": false
+    },
+    {
+      "source": "/github",
+      "destination": "https://github.com/elie222/rakazo",
+      "permanent": false
+    },
+    {
+      "source": "/discord",
+      "destination": "https://discord.gg/RWwKa2Sn7h",
+      "permanent": false
     }
   ],
   "headers": [

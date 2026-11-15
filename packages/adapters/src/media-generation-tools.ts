@@ -8,6 +8,7 @@ import { MediaGenerationError } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
 import { messageBlockForArtifact } from "@rakazo/core";
 import type { ExternalEffect, Prisma, PrismaClient } from "@rakazo/db";
+import { isUniqueViolation } from "@rakazo/db";
 import { z } from "zod";
 import { mediaPromptSchema, validateGeneratedMedia } from "./media-generation-provider.js";
 
@@ -130,8 +131,7 @@ export async function generateMediaFromTool(options: {
             });
             break;
           } catch (error) {
-            if (!(error && typeof error === "object" && "code" in error && error.code === "P2002"))
-              throw error;
+            if (!isUniqueViolation(error)) throw error;
           }
         }
         if (!reservation)

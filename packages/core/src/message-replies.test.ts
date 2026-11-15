@@ -1,10 +1,14 @@
 import type { MessageBlock } from "@rakazo/contracts";
 import { ReplyPreviewSchema } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
-import { messageReplyPreview } from "./message-quote.js";
+import { deriveMessageQuote, messageReplyPreview } from "./message-quote.js";
 import {
   channelMessageSender,
   isPageOriginReply,
+  memberMessageAlerts,
+  messageUnreadFor,
+  otherAuthor,
+  payloadAuthor,
   previewMessageText,
   replyAttachment,
   replyLabel,
@@ -114,6 +118,48 @@ it("localizes legacy image-only quotes while retaining real selected caption tex
   ).toBe("photo.png");
 });
 
+describe("message authors", () => {
+  const ana = { id: "user-a", name: "Ana" };
+
+  it("names only someone other than me", () => {
+    expect(otherAuthor(ana, "user-b")).toEqual(ana);
+    expect(otherAuthor(ana, "user-a")).toBeUndefined();
+    expect(otherAuthor(undefined, "user-b")).toBeUndefined();
+    // Before the session loads, nobody is named rather than everyone.
+    expect(otherAuthor(ana, undefined)).toBeUndefined();
+  });
+
+  it("counts a bot's message and another member's as unread, never my own", () => {
+    expect(messageUnreadFor({ role: "bot" }, "user-a")).toBe(true);
+    expect(messageUnreadFor({ role: "user", author: ana }, "user-b")).toBe(true);
+    expect(messageUnreadFor({ role: "user", author: ana }, "user-a")).toBe(false);
+    // A message with no known author, such as a webhook's, leaves the chat as it was.
+    expect(messageUnreadFor({ role: "user" }, "user-b")).toBe(false);
+  });
+
+  it("alerts the space for typed text, not a spoken call turn, a reaction or a file alone", () => {
+    const typed = [{ kind: "text", text: "Saturday works" }];
+    expect(memberMessageAlerts({ blocks: typed })).toBe(true);
+    expect(memberMessageAlerts({ blocks: typed, callId: "call-1" })).toBe(false);
+    expect(memberMessageAlerts({ blocks: [{ kind: "file", name: "plan.pdf" }] })).toBe(false);
+    expect(memberMessageAlerts({ blocks: [{ kind: "text", text: "  " }] })).toBe(false);
+    // A reaction is a one-emoji reply; a typed reply with words still alerts.
+    const reply = (text: string) => ({
+      blocks: [{ kind: "text", text }],
+      replyToMessageId: "message-1",
+    });
+    expect(memberMessageAlerts(reply("👍"))).toBe(false);
+    expect(memberMessageAlerts(reply("Yes, Saturday"))).toBe(true);
+  });
+
+  it("reads a live event's author and keeps the known one across updates", () => {
+    expect(payloadAuthor({ author: ana })).toEqual({ author: ana });
+    expect(payloadAuthor({}, { author: ana })).toEqual({ author: ana });
+    expect(payloadAuthor({ author: { id: "user-a" } })).toEqual({});
+    expect(payloadAuthor({})).toEqual({});
+  });
+});
+
 describe("channelMessageSender", () => {
   const channel = {
     kind: "channel_message" as const,
@@ -135,6 +181,15 @@ describe("channelMessageSender", () => {
 });
 
 describe("previewMessageText", () => {
+  it("never previews or quotes a delivery's hidden prompt", () => {
+    const blocks: MessageBlock[] = [
+      { kind: "delivery" },
+      { kind: "text", text: 'Run routine "Triage":\nTriage this.' },
+    ];
+    expect(messageReplyPreview(blocks, "user")).toEqual({ role: "user", text: "" });
+    expect(deriveMessageQuote(blocks, "Triage this.", "plain-text")).toBeUndefined();
+  });
+
   const labels = { photo: "Photo", attachment: "Attachment", message: "Message" };
 
   it("joins text, reading bot Markdown as plain text", () => {
@@ -174,6 +229,103 @@ describe("previewMessageText", () => {
         labels,
       ),
     ).toBe("On my way");
+  });
+
+  it.each(["pending", "answered"] as const)(
+    "previews a %s question before the server preview arrives",
+    (status) => {
+      const blocks: MessageBlock[] = [
+        { kind: "ask", text: "Which release?", status, detail: "Extra context", answer: "Stable" },
+      ];
+      expect(previewMessageText({ role: "bot", blocks }, labels)).toBe("Which release?");
+      expect(previewMessageText({ role: "bot", blocks }, labels)).toBe(
+        messageReplyPreview(blocks, "bot").text,
+      );
+    },
+  );
+
+  it.each([
+    "\n  Which release?  \nMore context",
+    "\r\n  Which release?  \r\nMore context",
+    "a".repeat(300),
+    `${"a".repeat(279)}😀more`,
+    `${" ".repeat(100_000)}Outside the preview limit`,
+  ])("matches the server preview for bounded question text: %j", (text) => {
+    const blocks: MessageBlock[] = [{ kind: "ask", text }];
+    expect(previewMessageText({ role: "bot", blocks }, labels)).toBe(
+      messageReplyPreview(blocks, "bot").text || labels.message,
+    );
+  });
+
+  it("does not expose delivery questions in local reply previews", () => {
+    const blocks: MessageBlock[] = [{ kind: "delivery" }, { kind: "ask", text: "Hidden question" }];
+    expect(previewMessageText({ role: "bot", blocks }, labels)).toBe(labels.message);
+    expect(messageReplyPreview(blocks, "bot").text).toBe("");
+  });
+
+  it("keeps channel text ahead of ordinary questions after sending", () => {
+    const blocks: MessageBlock[] = [
+      { kind: "ask", text: "Which release?" },
+      {
+        kind: "channel_message",
+        provider: "test",
+        channelId: "channel",
+        fromAddress: "sender",
+        fromLabel: "Sender",
+        text: "Channel context",
+      },
+    ];
+    expect(previewMessageText({ role: "bot", blocks }, labels)).toBe("Channel context");
+    expect(messageReplyPreview(blocks, "bot").text).toBe("Channel context");
+    expect(
+      messageReplyPreview([...blocks, { kind: "text", text: "Primary context" }], "bot").text,
+    ).toBe("Primary context");
+  });
+
+  it("keeps mixed-card question previews stable after sending", () => {
+    const blocks: MessageBlock[] = [
+      { kind: "choice", question: "Pick a channel", options: [] },
+      { kind: "ask", text: "Which release?" },
+    ];
+    expect(previewMessageText({ role: "bot", blocks }, labels)).toBe("Which release?");
+    expect(messageReplyPreview(blocks, "bot").text).toBe("Which release?");
+  });
+
+  it("keeps text ahead of questions and questions ahead of attachments", () => {
+    const ask: MessageBlock = { kind: "ask", text: "Which release?" };
+    expect(
+      previewMessageText(
+        { role: "bot", blocks: [ask, { kind: "text", text: "**Context**" }] },
+        labels,
+      ),
+    ).toBe("Context");
+    expect(previewMessageText({ role: "bot", blocks: [image, ask] }, labels)).toBe(
+      "Which release?",
+    );
+    expect(
+      previewMessageText(
+        {
+          role: "bot",
+          blocks: [
+            { kind: "ask", text: "  " },
+            { kind: "ask", text: " Use **stable**? " },
+          ],
+        },
+        labels,
+      ),
+    ).toBe("Use **stable**?");
+  });
+
+  it.each([
+    { kind: "ask", text: "Secret request", input: "secret" },
+    { kind: "ask", text: "Approval", approvalEffectId: "approval" },
+    {
+      kind: "ask",
+      text: "Instructions",
+      instructionUpdate: { botId: "bot", before: "", after: "New", reason: "Update" },
+    },
+  ] satisfies MessageBlock[])("does not expand protected-card previews: %j", (block) => {
+    expect(previewMessageText({ role: "bot", blocks: [block] }, labels)).toBe("Message");
   });
 
   it("falls back to attachment labels, then a generic label", () => {

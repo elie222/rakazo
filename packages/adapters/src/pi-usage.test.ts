@@ -5,6 +5,7 @@ import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type { AgentRuntimeEvent, AgentUsage } from "@rakazo/adapter-kit";
 import { Agent } from "undici";
 import { describe, expect, it, vi } from "vitest";
+import { estimateTextTokens, lowTextTokens } from "./context-selection.js";
 import {
   createOpenAiCompatibleFetch,
   registerOpenAiCompatibleRuntime,
@@ -333,7 +334,7 @@ describe("Pi usage accounting", () => {
     const settlement = new Promise<void>((resolve) => {
       finishSettlement = resolve;
     });
-    const afterCall = vi.fn(async () => settlement);
+    const afterCall = vi.fn(async (_reservation: string, _usage: AgentUsage | null) => settlement);
     const models = {
       streamSimple: () => {
         throw new Error("Synthetic provider exception");
@@ -357,7 +358,182 @@ describe("Pi usage accounting", () => {
     expect((await next).value).toMatchObject({ type: "error" });
     expect(afterCall).toHaveBeenCalledWith(
       "reservation",
-      expect.objectContaining({ costUsd: null }),
+      expect.objectContaining({
+        inputTokens: null,
+        outputTokens: null,
+        totalTokens: null,
+        costUsd: null,
+      }),
+    );
+    expect(afterCall.mock.calls[0]?.[1]).not.toHaveProperty("countedTokens");
+  });
+  it.each([
+    ["the call is aborted", true],
+    ["the provider drops it", false],
+  ])("keeps our own token count when %s before usage arrives", async (_case, aborted) => {
+    const controller = new AbortController();
+    const afterCall = vi.fn();
+    const beforeCall = vi.fn((_call: { inputTokensEstimate: number }) => "reservation");
+    const answer = "x".repeat(52);
+    const frame = {
+      id: "gen_partial",
+      choices: [{ index: 0, delta: { role: "assistant", content: answer }, finish_reason: null }],
+    };
+    let drop = () => {};
+    const stream = await observedPiStream(
+      builtinModels(),
+      model,
+      { systemPrompt: "Fixture", messages: [{ role: "user", content: "test", timestamp: 1 }] },
+      {
+        apiKey: "fake-fixture-key",
+        signal: controller.signal,
+        fetch: async (_input, init) =>
+          new Response(
+            new ReadableStream({
+              start(body) {
+                body.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(frame)}\n\n`));
+                drop = () => body.error(new Error("connection reset"));
+                init?.signal?.addEventListener("abort", drop);
+              },
+            }),
+            { headers: { "content-type": "text/event-stream" } },
+          ),
+      },
+      vi.fn(),
+      { beforeCall, afterCall },
+    );
+    for await (const event of stream)
+      if (event.type === "text_delta") aborted ? controller.abort() : drop();
+    const inputTokens = beforeCall.mock.calls[0]![0].inputTokensEstimate;
+    expect(afterCall).toHaveBeenCalledOnce();
+    expect(afterCall).toHaveBeenCalledWith(
+      "reservation",
+      expect.objectContaining({
+        providerRequestId: "gen_partial",
+        costUsd: null,
+        countedTokens: {
+          inputTokens,
+          outputTokens: 10,
+          ...(aborted
+            ? { ifStopped: { inputTokens, outputTokens: estimateTextTokens(answer) } }
+            : {}),
+        },
+      }),
+    );
+  });
+  it("counts the streamed answer when the terminal error carries no content", async () => {
+    const afterCall = vi.fn();
+    const usage = {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 0,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    };
+    const message = (text: string) => ({
+      role: "assistant",
+      content: text ? [{ type: "text", text }] : [],
+      usage,
+      stopReason: "error",
+    });
+    const events = [
+      { type: "text_delta", delta: "x".repeat(50), partial: message("x".repeat(50)) },
+      { type: "error", reason: "error", error: message("") },
+    ];
+    const models = {
+      streamSimple: () => ({
+        async *[Symbol.asyncIterator]() {
+          yield* events;
+        },
+        result: async () => message(""),
+      }),
+    } as unknown as Parameters<typeof observedPiStream>[0];
+    const stream = await observedPiStream(models, model, { messages: [] }, undefined, vi.fn(), {
+      beforeCall: () => "reservation",
+      afterCall,
+    });
+    for await (const _event of stream) {
+    }
+    expect(afterCall.mock.calls[0]?.[1]).toMatchObject({
+      countedTokens: { outputTokens: lowTextTokens("x".repeat(50)) },
+    });
+  });
+  it("does not count a call whose provider refused to start it", async () => {
+    const afterCall = vi.fn();
+    const models = {
+      streamSimple: () => {
+        throw new Error("Synthetic missing credentials");
+      },
+    } as unknown as Parameters<typeof observedPiStream>[0];
+    const stream = await observedPiStream(
+      models,
+      { ...model, provider: "google", api: "google-generative-ai" },
+      { messages: [] },
+      undefined,
+      vi.fn(),
+      { beforeCall: () => "reservation", afterCall },
+    );
+    for await (const _event of stream) {
+    }
+    expect(afterCall.mock.calls[0]?.[1]).not.toHaveProperty("countedTokens");
+  });
+  it("does not count a request that failed to connect", async () => {
+    const afterCall = vi.fn();
+    const stream = await observedPiStream(
+      builtinModels(),
+      model,
+      { systemPrompt: "Fixture", messages: [{ role: "user", content: "test", timestamp: 1 }] },
+      {
+        apiKey: "fake-fixture-key",
+        fetch: async () => {
+          throw new TypeError("fetch failed");
+        },
+      },
+      vi.fn(),
+      { beforeCall: () => "reservation", afterCall },
+    );
+    for await (const _event of stream) {
+    }
+    expect(afterCall).toHaveBeenCalledOnce();
+    expect(afterCall.mock.calls[0]?.[1]).not.toHaveProperty("countedTokens");
+  });
+  it("counts the prompt of a call stopped after sending but before any response", async () => {
+    const controller = new AbortController();
+    const afterCall = vi.fn();
+    const beforeCall = vi.fn((_call: { inputTokensEstimate: number }) => "reservation");
+    const stream = await observedPiStream(
+      builtinModels(),
+      model,
+      { systemPrompt: "Fixture", messages: [{ role: "user", content: "test", timestamp: 1 }] },
+      {
+        apiKey: "fake-fixture-key",
+        signal: controller.signal,
+        fetch: (_input, init) =>
+          new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener("abort", () => reject(new Error("aborted")));
+            controller.abort();
+          }),
+      },
+      vi.fn(),
+      { beforeCall, afterCall },
+    );
+    for await (const _event of stream) {
+    }
+    expect(afterCall).toHaveBeenCalledWith(
+      "reservation",
+      expect.objectContaining({
+        providerRequestId: null,
+        costUsd: null,
+        countedTokens: {
+          inputTokens: beforeCall.mock.calls[0]![0].inputTokensEstimate,
+          outputTokens: 0,
+          ifStopped: {
+            inputTokens: beforeCall.mock.calls[0]![0].inputTokensEstimate,
+            outputTokens: 0,
+          },
+        },
+      }),
     );
   });
   it("does not derive an unsafe integer total from valid component counts", () => {
@@ -408,11 +584,78 @@ describe("Pi usage accounting", () => {
       expect(events).toHaveLength(1);
       expect(afterCall).toHaveBeenCalledWith(
         "reservation",
-        expect.objectContaining({ costUsd: 0, usageSource: "provider-rejected" }),
+        expect.objectContaining({
+          inputTokens: 0,
+          outputTokens: 0,
+          cacheReadTokens: 0,
+          cacheWriteTokens: 0,
+          cacheWrite1hTokens: 0,
+          reasoningTokens: 0,
+          totalTokens: 0,
+          costUsd: 0,
+          pricingVersion: null,
+          usageSource: "provider-rejected",
+        }),
       );
-      expect(events[0]).toMatchObject({ costUsd: 0, costSource: "provider-rejection" });
+      expect(events[0]).toMatchObject({
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        cacheWrite1hTokens: 0,
+        reasoningTokens: 0,
+        totalTokens: 0,
+        costUsd: 0,
+        costSource: "provider-rejection",
+      });
     },
   );
+  it("records zero usage for a rejected call at the normalizer", async () => {
+    const fields = new Set<keyof AgentUsage>();
+    const wrapped = usageReportingFetch(
+      async () =>
+        new Response(JSON.stringify({ error: { message: "Synthetic rejection" } }), {
+          status: 403,
+          headers: { "content-type": "application/json" },
+        }),
+      fields,
+    );
+    await wrapped("https://model.example.test/v1");
+    // Bogus token values attached to a rejected response must lose to the
+    // rejected classification; nothing is generated, so nothing was spent.
+    expect(
+      normalizePiUsage(
+        {
+          input: 12,
+          output: 5,
+          cacheRead: 3,
+          cacheWrite: 2,
+          cacheWrite1h: 1,
+          reasoning: 4,
+          totalTokens: 25,
+        },
+        model,
+        fields,
+      ),
+    ).toMatchObject({
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      cacheWrite1hTokens: 0,
+      reasoningTokens: 0,
+      totalTokens: 0,
+      costUsd: 0,
+      costSource: "provider-rejection",
+      pricingVersion: null,
+      usageSource: "provider-rejected",
+    });
+  });
+  it("keeps a reported zero on a successful call instead of unknown", async () => {
+    const { events } = await run({ prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 });
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ inputTokens: 0, outputTokens: 0, totalTokens: 0 });
+  });
   it.each([408, 500, 503])("retains uncertainty for HTTP %s", async (status) => {
     const afterCall = vi.fn();
     const stream = await observedPiStream(
@@ -430,7 +673,12 @@ describe("Pi usage accounting", () => {
     }
     expect(afterCall).toHaveBeenCalledWith(
       "reservation",
-      expect.objectContaining({ costUsd: null }),
+      expect.objectContaining({
+        inputTokens: null,
+        outputTokens: null,
+        totalTokens: null,
+        costUsd: null,
+      }),
     );
   });
   it("prepares context before budget reservation and provider execution", async () => {

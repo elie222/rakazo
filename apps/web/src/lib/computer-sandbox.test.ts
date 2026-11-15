@@ -1,11 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   canChooseOwnComputer,
-  classifySandboxProvider,
   computersAreUnavailable,
   sandboxCheckFailureMessage,
-  sandboxEnvGuidanceLines,
-  sandboxEnvGuidanceText,
   sandboxProviderLabel,
 } from "./computer-sandbox.js";
 
@@ -33,30 +30,9 @@ describe("canChooseOwnComputer", () => {
   });
 });
 
-describe("classifySandboxProvider", () => {
-  it("classifies none, docker, and hosted providers", () => {
-    expect(classifySandboxProvider("none")).toBe("none");
-    expect(classifySandboxProvider(null)).toBe("none");
-    expect(classifySandboxProvider("docker")).toBe("docker");
-    expect(classifySandboxProvider("e2b")).toBe("hosted");
-    expect(classifySandboxProvider("novita")).toBe("hosted");
+describe("sandboxProviderLabel", () => {
+  it("names a provider", () => {
     expect(sandboxProviderLabel("novita")).toBe("Novita");
-  });
-});
-
-describe("sandboxEnvGuidanceText", () => {
-  it("uses placeholder tokens and activates only one provider", () => {
-    const text = sandboxEnvGuidanceText();
-    expect(text).toContain("SANDBOX_SUPERVISOR_TOKEN=<generate-a-secret>");
-    expect(text).not.toMatch(/sk-[a-zA-Z0-9]{10,}/);
-    expect(sandboxEnvGuidanceLines().filter((line) => /^SANDBOX_PROVIDER=/.test(line))).toEqual([
-      "SANDBOX_PROVIDER=docker",
-    ]);
-    expect(text).toContain("# SANDBOX_PROVIDER=e2b");
-    expect(text).toContain("# SANDBOX_PROVIDER=novita");
-    expect(text).toContain("# Build template: pnpm sandbox:novita-template");
-    expect(text).toContain("# SANDBOX_PROVIDER=daytona");
-    expect(text).toContain("# SANDBOX_PROVIDER=boat");
   });
 });
 

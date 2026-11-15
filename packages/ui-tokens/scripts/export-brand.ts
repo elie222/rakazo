@@ -41,7 +41,8 @@ async function ico(input: Buffer, name: string, sizes: number[]) {
   let offset = header.length;
   frames.forEach((frame, index) => {
     const entry = 6 + index * 16;
-    header[entry] = header[entry + 1] = sizes[index] === 256 ? 0 : sizes[index];
+    const size = sizes[index] ?? 0;
+    header[entry] = header[entry + 1] = size === 256 ? 0 : size;
     header.writeUInt16LE(1, entry + 4);
     header.writeUInt16LE(32, entry + 6);
     header.writeUInt32LE(frame.length, entry + 8);

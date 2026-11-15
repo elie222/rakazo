@@ -10,6 +10,7 @@ import {
   DEFAULT_COMPATIBLE_STT_MODEL,
   DEFAULT_COMPATIBLE_TTS_MODEL,
   OPENAI_COMPATIBLE_PROVIDER_ID,
+  voiceConnectionForm,
 } from "@rakazo/contracts";
 import { fetchFresh } from "@rakazo/core/query";
 import {
@@ -28,6 +29,7 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { XIcon } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useCallSession } from "../lib/call-session";
 import { useSpaceQueries } from "../lib/query";
 import { useBoundSpaceId, useSpaceRpc } from "../lib/space-rpc";
 import { speaker } from "../lib/tts";
@@ -50,7 +52,7 @@ export function VoiceSettingsOverlay({
   scope: SettingsScope;
 }) {
   const rpc = useSpaceRpc();
-  const spaceId = useBoundSpaceId();
+  const spaceId = useBoundSpaceId() ?? null;
   const queries = useSpaceQueries();
   const queryClient = useQueryClient();
   const scoped = { input: { scope } };
@@ -69,6 +71,7 @@ export function VoiceSettingsOverlay({
     return { catalog, credentials, status, provider, credential, voices };
   });
   const { t } = useLingui();
+  const call = useCallSession();
   const apiKeyId = useId();
   const voiceSelectId = useId();
   const speechModelId = useId();
@@ -98,6 +101,9 @@ export function VoiceSettingsOverlay({
   const [baseUrl, setBaseUrl] = useState(cached?.credential?.endpoint ?? "");
   const [ttsModel, setTtsModel] = useState(cached?.credential?.ttsModel ?? "");
   const [sttModel, setSttModel] = useState(cached?.credential?.sttModel ?? "");
+  // The connection fields as last rendered, read when a connect finishes.
+  const connection = useRef({ speechModel, baseUrl, ttsModel, sttModel });
+  connection.current = { speechModel, baseUrl, ttsModel, sttModel };
   const speechModelSave = useRef<string | null>(null);
   const voicesRequest = useRef(0);
   const [loading, setLoading] = useState(!cached);
@@ -227,34 +233,66 @@ export function VoiceSettingsOverlay({
   // Connections are managed from the account; a Space can still connect one it lacks.
   const managesConnection = scope === "account" || !credential;
   const keyless = Boolean(selected?.keyless);
-  const canConnect = keyless || (selfHosted ? Boolean(baseUrl.trim()) : apiKey.trim().length >= 8);
+  const { keyOptional, linked, canConnect } = voiceConnectionForm({
+    entry: selected,
+    credential,
+    apiKey,
+    baseUrl,
+  });
 
   async function connectKey() {
     if (!selected || !canConnect) return;
     setError(null);
     setNotice(null);
+    // What this connect carries; anything typed after this point was not saved.
+    const sentApiKey = apiKey;
+    const sent = connection.current;
     markPending("connect");
     try {
-      await rpc.voice.connect({
-        scope,
-        provider: selected.id,
-        apiKey: apiKey.trim(),
-        // The server drops this voice when the address or speech model really changed.
-        voiceId: voiceId || undefined,
-        ...(selected.id === "fish-audio" ? { speechModel: speechModel.trim() } : {}),
-        ...(selfHosted
-          ? {
-              baseUrl: baseUrl.trim(),
-              ttsModel: ttsModel.trim() || undefined,
-              sttModel: sttModel.trim() || undefined,
-            }
-          : {}),
-      });
-      setApiKey("");
-      await refresh(selected.id);
+      let connected: VoiceCredential;
+      try {
+        connected = await rpc.voice.connect({
+          scope,
+          provider: selected.id,
+          apiKey: sentApiKey.trim(),
+          // The server drops this voice when the address or speech model really changed.
+          voiceId: voiceId || undefined,
+          ...(selected.speechModel ? { speechModel: speechModel.trim() } : {}),
+          ...(selfHosted
+            ? {
+                baseUrl: baseUrl.trim(),
+                ttsModel: ttsModel.trim() || undefined,
+                sttModel: sttModel.trim() || undefined,
+              }
+            : {}),
+        });
+      } catch (err) {
+        setError(errorText(err, t`Could not connect this voice provider`));
+        return;
+      }
+      // A key typed while the connect ran was not saved; keep it for the next try.
+      setApiKey((current) => (current === sentApiKey ? "" : current));
+      // The connect saved the voice the server kept for these values, and the
+      // disabled field cannot hold a newer edit, so the voice follows the saved one.
+      edited.current.delete("voiceId");
+      // The connect saved the values it carried, which the server may have normalized or
+      // filled in; fields typed meanwhile keep theirs.
+      for (const field of CONNECTION_FIELDS) {
+        if (connection.current[field] === sent[field]) edited.current.delete(field);
+      }
       setNotice(t`Connected ${selected.name}.`);
-    } catch (err) {
-      setError(errorText(err, t`Could not connect this voice provider`));
+      // The saved connection (the server may have picked another voice for a new address) shows
+      // at once in untouched fields, so a failed read after it cannot leave stale values to send.
+      const nextCredentials = credentials.some((entry) => entry.provider === connected.provider)
+        ? credentials.map((entry) => (entry.provider === connected.provider ? connected : entry))
+        : [...credentials, connected];
+      setCredentials(nextCredentials);
+      queryClient.setQueryData(queries.voice.credentials.queryKey(scoped), nextCredentials);
+      void showProvider(selected.id, nextCredentials, true).catch(() => undefined);
+      // The connect is saved; a failed read after it only leaves the form behind.
+      await refresh(selected.id, { keepForm: true }).catch((err: unknown) =>
+        setError(errorText(err, t`Could not load voice settings`)),
+      );
     } finally {
       markPending(null);
     }
@@ -266,11 +304,23 @@ export function VoiceSettingsOverlay({
     setNotice(null);
     markPending("disconnect");
     try {
-      await rpc.voice.disconnect({ provider: providerId });
+      try {
+        await rpc.voice.disconnect({ provider: providerId });
+      } catch (err) {
+        setError(errorText(err, t`Could not disconnect this voice provider`));
+        return;
+      }
       setApiKey("");
-      await refresh(providerId);
-    } catch (err) {
-      setError(errorText(err, t`Could not disconnect this voice provider`));
+      if (providerId === providerRef.current) setVoiceId("");
+      const drop = (current: VoiceCredential[]) =>
+        current.filter((entry) => entry.provider !== providerId);
+      setCredentials(drop);
+      queryClient.setQueryData(queries.voice.credentials.queryKey(scoped), (current) =>
+        current ? drop(current) : current,
+      );
+      await refresh(providerId).catch((err: unknown) =>
+        setError(errorText(err, t`Could not load voice settings`)),
+      );
     } finally {
       markPending(null);
     }
@@ -283,17 +333,23 @@ export function VoiceSettingsOverlay({
     markPending("voice");
     setError(null);
     try {
-      await rpc.voice.setVoice({ scope, voiceId: nextVoiceId, provider: selected?.id });
-      await refresh(selected?.id, { keepForm: true });
-    } catch (err) {
-      setError(errorText(err, t`Could not save that voice`));
+      try {
+        await rpc.voice.setVoice({ scope, voiceId: nextVoiceId, provider: selected?.id });
+      } catch (err) {
+        setError(errorText(err, t`Could not save that voice`));
+        return;
+      }
+      // The voice is saved; a failed read after it only leaves the form behind.
+      await refresh(selected?.id, { keepForm: true }).catch((err: unknown) =>
+        setError(errorText(err, t`Could not load voice settings`)),
+      );
     } finally {
       markPending(null);
     }
   }
 
   async function saveSpeechModel() {
-    if (!credential || selected?.id !== "fish-audio") return;
+    if (!credential || !selected?.speechModel) return;
     const next = speechModel.trim();
     if (next === credential.speechModel) return;
     if (speechModelSave.current === next) return;
@@ -322,6 +378,8 @@ export function VoiceSettingsOverlay({
   }
 
   async function testVoice() {
+    // The sample uses the call's speaker, so it would cut off the reply.
+    if (call) return;
     setError(null);
     setNotice(null);
     markPending("test");
@@ -352,8 +410,8 @@ export function VoiceSettingsOverlay({
           />
         </div>
       ) : null}
-      {error ? <p className="mb-4 text-sm text-destructive">{error}</p> : null}
-      {notice ? <p className="mb-4 text-sm text-success">{notice}</p> : null}
+      {error ? <p className="mb-4 text-body text-destructive">{error}</p> : null}
+      {notice ? <p className="mb-4 text-body text-success">{notice}</p> : null}
       {catalog.length ? (
         <Field>
           <FieldLabel htmlFor={providerSelectId}>
@@ -410,7 +468,7 @@ export function VoiceSettingsOverlay({
                   />
                 </Field>
               ) : null}
-              {keyless ? null : (
+              {keyless || linked ? null : (
                 <Field className="mt-5">
                   <FieldLabel htmlFor={apiKeyId}>
                     <Trans>API key</Trans>
@@ -422,7 +480,7 @@ export function VoiceSettingsOverlay({
                     value={apiKey}
                     onChange={(event) => setApiKey(event.target.value)}
                     placeholder={
-                      selfHosted
+                      selfHosted || keyOptional
                         ? t`Optional`
                         : credential
                           ? t`Paste a replacement key`
@@ -469,15 +527,18 @@ export function VoiceSettingsOverlay({
                   </Field>
                 </>
               ) : null}
-              {keyless && credential ? null : (
+              {(keyless && credential) || linked ? null : (
                 <Button
                   type="button"
                   className="mt-3"
                   disabled={busy || !canConnect}
                   onClick={() => void connectKey()}
                 >
+                  {/* A keyless option has nothing to connect; choosing it turns voice on. */}
                   {pending === "connect" ? (
                     <Trans>Connecting…</Trans>
+                  ) : keyless ? (
+                    <Trans>Turn on</Trans>
                   ) : credential && selfHosted ? (
                     <Trans>Reconnect</Trans>
                   ) : credential ? (
@@ -498,6 +559,8 @@ export function VoiceSettingsOverlay({
                 >
                   {pending === "disconnect" ? (
                     <Trans>Disconnecting…</Trans>
+                  ) : keyless ? (
+                    <Trans>Turn off</Trans>
                   ) : (
                     <Trans>Disconnect</Trans>
                   )}
@@ -560,7 +623,7 @@ export function VoiceSettingsOverlay({
                   </NativeSelect>
                 )}
               </Field>
-              {selected.id === "fish-audio" ? (
+              {selected.speechModel ? (
                 <Field className="mt-6">
                   <FieldLabel htmlFor={speechModelId}>
                     <Trans>Speech model</Trans>
@@ -590,7 +653,7 @@ export function VoiceSettingsOverlay({
                 type="button"
                 variant="secondary"
                 className="mt-4"
-                disabled={busy || !status?.ready}
+                disabled={busy || !status?.ready || call !== null}
                 onClick={() => void testVoice()}
               >
                 {pending === "test" ? <Trans>Playing…</Trans> : <Trans>Hear a sample</Trans>}
@@ -653,4 +716,6 @@ function selectedProvider(
 
 const NO_VOICES: VoiceInfo[] = [];
 
-type EditableField = "voiceId" | "speechModel" | "baseUrl" | "ttsModel" | "sttModel";
+const CONNECTION_FIELDS = ["speechModel", "baseUrl", "ttsModel", "sttModel"] as const;
+
+type EditableField = "voiceId" | (typeof CONNECTION_FIELDS)[number];

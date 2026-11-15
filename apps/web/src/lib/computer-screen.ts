@@ -104,6 +104,27 @@ export async function bootComputerOnce<T>(
   }
 }
 
+/** A proxied screen's policy and expiry, which its capability path carries in the clear. */
+export function proxiedScreenCapability(
+  url: string | null,
+): { policy: "view" | "control"; expiresAt: number } | null {
+  const match = url ? /\/novnc\/session\/(view|control)\/(\d+)\./.exec(url) : null;
+  return match ? { policy: match[1] as "view" | "control", expiresAt: Number(match[2]) } : null;
+}
+
+/**
+ * The frames a screen draws. A held predecessor comes first, so React keeps its element in place
+ * (a moved iframe reloads), then the live frame.
+ */
+export function screenFrames(
+  key: string | undefined,
+  url: string,
+  held: { url: string; key: string } | null | undefined,
+): Array<{ key: string; url: string; held: boolean }> {
+  const live = { key: key ?? "screen", url, held: false };
+  return held ? [{ ...held, held: true }, live] : [live];
+}
+
 /** Only pages the web proxy serves carry the shim that reports their state to the app. */
 export function isProxiedScreenUrl(url: string | null): url is string {
   return screenIframeSandbox(url) !== undefined;

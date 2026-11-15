@@ -15,7 +15,7 @@ describe("listSpaceGroupsForSpaces", () => {
         updatedAt: new Date("2026-08-20T00:00:00.000Z"),
         thread: {
           id: "thread-1",
-          unread: true,
+          reads: [{ unread: true, snoozedUntil: new Date("2026-08-21T09:00:00.000Z") }],
         },
         members: [
           { bot: { id: "bot-1", name: "Triage", color: "#111", runs: [] } },
@@ -48,14 +48,8 @@ describe("listSpaceGroupsForSpaces", () => {
         },
       ]),
     } as unknown as PrismaClient);
-    const actor = {
-      spaceId: "workspace-1",
-      userId: "user-1",
-      email: "user@example.test",
-      isDeploymentOwner: false,
-    };
 
-    await expect(repos.listSpaceGroupsForSpaces(actor, ["workspace-2"])).resolves.toEqual([
+    await expect(repos.listSpaceGroupsForSpaces(["workspace-2"], "user-1")).resolves.toEqual([
       {
         id: "group-1",
         spaceId: "workspace-2",
@@ -74,6 +68,7 @@ describe("listSpaceGroupsForSpaces", () => {
         ],
         preview: "Escalation pending",
         unread: true,
+        snoozedUntil: "2026-08-21T09:00:00.000Z",
         updatedAt: "2026-08-20T00:00:00.000Z",
       },
     ]);
@@ -299,7 +294,6 @@ describe("archiveGroup", () => {
         where: {
           id: "group-1",
           spaceId: actor.spaceId,
-          userId: actor.userId,
         },
         select: { archivedAt: true, thread: { select: { id: true } } },
       }),
@@ -457,7 +451,7 @@ describe("createGroup", () => {
       archivedAt: null,
       createdAt: new Date("2026-10-10T00:00:00.000Z"),
       updatedAt: new Date("2026-10-10T00:00:00.000Z"),
-      thread: { id: "thread-1", unread: false, messages: [] },
+      thread: { id: "thread-1", reads: [{ unread: false }], messages: [] },
       members: [
         { bot: { id: "lead", name: "Lead", color: "#111", runs: [] } },
         { bot: { id: "build", name: "Build", color: "#222", runs: [] } },
@@ -538,7 +532,7 @@ describe("listGroups archived", () => {
     archivedAt: archived ? new Date("2026-10-20T00:00:00.000Z") : null,
     createdAt: new Date("2026-10-01T00:00:00.000Z"),
     updatedAt: new Date("2026-10-20T00:00:00.000Z"),
-    thread: { id: `thread-${id}`, unread: false, messages: [] },
+    thread: { id: `thread-${id}`, reads: [{ unread: false }], messages: [] },
     members,
   });
 
@@ -575,13 +569,23 @@ describe("listGroups archived", () => {
     };
     expect(query.where).toEqual({
       spaceId: "space-1",
-      userId: "user-1",
       OR: [
         { archivedAt: { not: null } },
         { members: { some: { bot: { archivedAt: { not: null } } } } },
       ],
     });
     expect(query.include.members.where).toBeUndefined();
+  });
+
+  it("skips a member whose bot was deleted between the member and bot reads", async () => {
+    const deleted = { bot: null } as unknown as ReturnType<typeof member>;
+    const { repos: groupRepos } = repos([
+      group("losing-a-bot", false, [member("a"), member("b"), deleted]),
+      group("left-with-one-bot", false, [member("c"), deleted]),
+    ]);
+    const listed = await groupRepos.listGroups(actor);
+    expect(listed.map((item) => item.id)).toEqual(["losing-a-bot"]);
+    expect(listed[0]!.members.map((item) => item.botId)).toEqual(["a", "b"]);
   });
 
   it("keeps the active list to groups with enough active bots", async () => {
@@ -593,7 +597,6 @@ describe("listGroups archived", () => {
     expect(listed.map((item) => item.id)).toEqual(["openable"]);
     expect(findMany.mock.calls[0]![0].where).toEqual({
       spaceId: "space-1",
-      userId: "user-1",
       archivedAt: null,
     });
   });

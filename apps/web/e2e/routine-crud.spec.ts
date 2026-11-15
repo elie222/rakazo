@@ -191,6 +191,42 @@ test("routine editing updates in place, preserves timezone, deletion persists, a
   await expect(updatedButton).toHaveCount(0);
 });
 
+test("an email trigger claims the bot's address and saves who can start it", async ({
+  page,
+}, testInfo) => {
+  const stamp = Date.now();
+  await signup(page, `routine-email-${stamp}@rakazo.test`, "password12", "Routine Email");
+  await completeOnboarding(page);
+  const botId = activeBotId(page);
+  await openBotPanelTab(page, "Routines");
+
+  await page.getByRole("button", { name: "Create Routine" }).click();
+  await page.locator("label:has-text('Name') input").fill("Inbox triage");
+  await page.locator("label:has-text('Instruction') textarea").fill("Summarize what I forward.");
+  await page.getByRole("button", { name: "Add trigger" }).click();
+  await page.getByRole("menuitem", { name: "Email" }).click();
+
+  const name = page.getByRole("textbox", { name: "Email address" });
+  await expect(name).not.toHaveValue("");
+  await name.fill("postmaster");
+  await page.getByRole("button", { name: "Claim" }).click();
+  await expect(page.getByRole("alert")).toHaveText("That address isn't available");
+  await name.fill(`triage-${stamp}`);
+  await page.getByRole("button", { name: "Claim" }).click();
+  await expect(page.getByText(`triage-${stamp}@bots.rakazo.test`)).toBeVisible();
+  await page.getByRole("combobox", { name: "Who can start it" }).selectOption("domain");
+  await captureScreenshot(page, testInfo, "routine-email-trigger");
+
+  expect(await saveAndReturn(page, "routines/create")).toMatchObject({ emailSenders: "domain" });
+  await expect(page.getByRole("button", { name: /Inbox triage/ })).toContainText("Email");
+  const [saved] = await rpc<Routine[]>(page, "routines/list", { botId });
+  expect(saved).toMatchObject({ name: "Inbox triage", crons: [], emailSenders: "domain" });
+  expect(await rpc(page, "bots/emailAddress", { botId })).toEqual({
+    domain: "bots.rakazo.test",
+    address: `triage-${stamp}@bots.rakazo.test`,
+  });
+});
+
 test("a successful routine create is not reported as failed when refresh fails", {
   tag: "@nightly",
 }, async ({ page }) => {
@@ -410,13 +446,17 @@ test("change-trigger screenshot walkthrough", { tag: "@nightly" }, async ({ page
   await card
     .getByRole("textbox", { name: "Command", exact: true })
     .fill("curl -s https://example.com/status.json");
-  await card.getByRole("textbox", { name: "Fields that mark a change" }).fill("status, updatedAt");
+  await card
+    .getByRole("textbox", { name: "Fields to compare (optional)" })
+    .fill("status, updatedAt");
   await captureScreenshot(page, testInfo, "routine-watch-07-command");
 
   await kind.selectOption("tool");
   await card.getByRole("textbox", { name: "Tool name", exact: true }).fill("brain_changed");
   await card.getByRole("textbox", { name: "Tool arguments (JSON)" }).fill('{"path":"reports/"}');
-  await card.getByRole("textbox", { name: "Fields that mark a change" }).fill("id, modifiedTime");
+  await card
+    .getByRole("textbox", { name: "Fields to compare (optional)" })
+    .fill("id, modifiedTime");
   await captureScreenshot(page, testInfo, "routine-watch-08-tool");
 
   await card.getByRole("textbox", { name: "Tool name", exact: true }).fill("");
@@ -456,4 +496,62 @@ test("change-trigger screenshot walkthrough", { tag: "@nightly" }, async ({ page
     paths: ["inbox/", "reports/latest.csv"],
   });
   await captureScreenshot(page, testInfo, "routine-watch-10-saved-list");
+});
+
+test("an HTTPS change trigger saves and reopens", async ({ page }, testInfo) => {
+  await signup(page, `http-watch-${Date.now()}@rakazo.test`, "password12", "Routine Watch");
+  await completeOnboarding(page);
+  const botId = activeBotId(page);
+  await openBotPanelTab(page, "Routines");
+  await page.getByRole("button", { name: "Create Routine" }).click();
+  await page.locator("label:has-text('Name') input").fill("Status watch");
+  await page.locator("label:has-text('Instruction') textarea").fill("Report what changed.");
+  // Keep this saved watch inactive: no real endpoint is contacted by the offline UI test.
+  await page.getByRole("switch", { name: "Active", exact: true }).click();
+  await page.getByRole("button", { name: "Add trigger" }).click();
+  await page.getByRole("menuitem", { name: "When something changes" }).click();
+  const card = page.getByTestId("routine-watch-card");
+  await card.getByRole("combobox", { name: "What to watch" }).selectOption("http");
+  await card.getByRole("textbox", { name: "HTTPS URL" }).fill("https://example.com/status");
+  await card.getByRole("spinbutton", { name: "Check every" }).fill("5");
+  const fields = card.getByRole("textbox", { name: "Fields to compare (optional)" });
+  await expect(fields).toBeVisible();
+  const selectorBox = await card.getByRole("combobox", { name: "What to watch" }).boundingBox();
+  const urlBox = await card.getByRole("textbox", { name: "HTTPS URL" }).boundingBox();
+  expect(selectorBox?.width).toBe(urlBox?.width);
+  expect(selectorBox?.height).toBe(urlBox?.height);
+  await captureScreenshot(page, testInfo, "routine-http-watch");
+  await fields.fill("id, modifiedTime");
+  await card.getByRole("switch", { name: "Report unchanged checks" }).click();
+  const help = card.getByRole("button", { name: "About Report unchanged checks" });
+  await help.hover();
+  const explanation = page
+    .getByText("Post a chat message when a check finds no changes. The routine won't run.", {
+      exact: true,
+    })
+    .last();
+  await expect(explanation).toBeVisible();
+  await captureScreenshot(page, testInfo, "routine-http-watch-help");
+  await page.keyboard.press("Escape");
+  expect(await saveAndReturn(page, "routines/create")).toMatchObject({
+    active: false,
+    crons: [],
+    watch: {
+      kind: "http",
+      url: "https://example.com/status",
+      everyMinutes: 5,
+      track: ["id", "modifiedTime"],
+      loud: true,
+    },
+  });
+  const [saved] = await rpc<Routine[]>(page, "routines/list", { botId });
+  expect(saved?.watch).toMatchObject({ kind: "http", url: "https://example.com/status" });
+  await page.getByRole("button", { name: /Status watch/ }).click();
+  await expect(card.getByRole("combobox", { name: "What to watch" })).toHaveValue("http");
+  await expect(card.getByRole("textbox", { name: "HTTPS URL" })).toHaveValue(
+    "https://example.com/status",
+  );
+  await expect(fields).toBeVisible();
+  await expect(fields).toHaveValue("id, modifiedTime");
+  await expect(card.getByRole("switch", { name: "Report unchanged checks" })).toBeChecked();
 });

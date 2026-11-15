@@ -46,7 +46,9 @@ describe("an import the server refused", () => {
   it("is translated in every language", () => {
     for (const locale of UI_LOCALES.filter((item) => item !== "en")) {
       const catalog = readFileSync(
-        fileURLToPath(new URL(`../locales/${locale}/messages.po`, import.meta.url)),
+        fileURLToPath(
+          new URL(`../../../../packages/i18n/locales/${locale}/messages.po`, import.meta.url),
+        ),
         "utf8",
       );
       for (const message of [

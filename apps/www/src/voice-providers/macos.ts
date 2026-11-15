@@ -74,7 +74,7 @@ export const macos: VoiceProvider = {
       heading: "When to choose macOS voices",
       paragraphs: [
         "Choose them when you run Rakazo on your own Mac and want bots to speak right away, with nothing to sign up for, nothing to install and nothing to pay. Speech is made on the machine running Rakazo, with no vendor involved, then sent to whichever device is listening.",
-        "For voices that also transcribe, a [self-hosted speech server](/voice-providers/self-hosted/) keeps everything on your own hardware and works on Linux too; on a Mac, mlx-audio runs Kokoro and Whisper quickly. Hosted providers sound more natural and need a key: [ElevenLabs](/voice-providers/elevenlabs/) and [Fish Audio](/voice-providers/fish-audio/) clone voices, [OpenAI](/voice-providers/openai/) is the simplest, and [Cartesia](/voice-providers/cartesia/) is built for low latency. The [voice provider comparison](/voice-providers/) shows all six.",
+        "For voices that also transcribe, a [self-hosted speech server](/voice-providers/self-hosted/) keeps everything on your own hardware and works on Linux too; on a Mac, mlx-audio runs Kokoro and Whisper quickly. Hosted providers sound more natural and need an account: [ElevenLabs](/voice-providers/elevenlabs/) and [Fish Audio](/voice-providers/fish-audio/) clone voices, [OpenAI](/voice-providers/openai/) is the simplest, xAI can use the Grok sign-in you connect for models, and [Cartesia](/voice-providers/cartesia/) is built for low latency. The [voice provider comparison](/voice-providers/) shows every option.",
       ],
     },
     {

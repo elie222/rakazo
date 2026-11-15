@@ -2,13 +2,13 @@ import type { OAuthCredential } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type { ModelCredentialFailedState, ModelCredentialRetireReason } from "@rakazo/adapter-kit";
 import { describe, expect, it, vi } from "vitest";
+import { serializeModelSecret } from "./model-secret.js";
 import { PiRuntimeCredentialStore } from "./pi-credentials.js";
 import {
   matchesFailedOAuthSecret,
   OAUTH_ACCOUNT_CHANGED_ERROR,
   OAUTH_RECONNECT_REQUIRED_ERROR,
   RetiredModelCredentialError,
-  serializeModelSecret,
 } from "./pi-oauth.js";
 
 function credential(overrides: Partial<OAuthCredential> = {}): OAuthCredential {
@@ -404,5 +404,35 @@ describe("PiRuntimeCredentialStore", () => {
 
     expect(persisted.map((entry) => entry.access)).toEqual(["new-access", "newer-access"]);
     expect(retire).not.toHaveBeenCalled();
+  });
+
+  it("ends a coordinated refresh when its time runs out and reports a cancelled one", async () => {
+    // The coordinated refresh hands over a signal that ends a provider call it is waiting on.
+    const storeFor = (signal: AbortSignal) =>
+      new PiRuntimeCredentialStore(
+        "openai-codex",
+        credential({ access: "old-access" }),
+        undefined,
+        undefined,
+        async (held, refresh) => (await refresh(held, signal)) ?? held,
+      );
+    const timeout = new AbortController();
+    const hanging = storeFor(timeout.signal).modify("openai-codex", () => new Promise(() => {}));
+    timeout.abort(new Error("refresh timed out"));
+    await expect(hanging).rejects.toThrow("refresh timed out");
+
+    // A run cancelled while the refresh ran does not report the refresh as done.
+    const cancel = new AbortController();
+    const store = storeFor(new AbortController().signal);
+    const cancelled = store.modify(
+      "openai-codex",
+      async () => {
+        cancel.abort(new Error("run cancelled"));
+        return credential({ access: "new-access" });
+      },
+      { signal: cancel.signal },
+    );
+    await expect(cancelled).rejects.toThrow("run cancelled");
+    expect(store.accessToken).toBe("old-access");
   });
 });

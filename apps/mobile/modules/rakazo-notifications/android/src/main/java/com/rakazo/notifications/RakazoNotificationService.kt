@@ -173,20 +173,23 @@ class RakazoNotificationService : Service() {
                 }
               }) {
                 if (reply != null) {
-                  post(
-                    run,
-                    NotificationCopy(
-                      title = when {
-                        run.trigger == "routine" ->
-                          copyContext.getString(R.string.rakazo_scheduled_title, run.botName)
-                        run.groupName != null ->
-                          copyContext.getString(R.string.rakazo_replied_group, run.botName, run.groupName)
-                        else -> copyContext.getString(R.string.rakazo_replied, run.botName)
-                      },
-                      body = reply.ifBlank { run.prompt },
-                      channel = if (run.trigger == "routine") Channels.SCHEDULED else Channels.MESSAGES,
-                    ),
-                  )
+                  val bodyText = reply.ifBlank { run.prompt }
+                  if (bodyText.isNotBlank()) {
+                    post(
+                      run,
+                      NotificationCopy(
+                        title = when {
+                          run.trigger == "routine" ->
+                            copyContext.getString(R.string.rakazo_scheduled_title, run.botName)
+                          run.groupName != null ->
+                            copyContext.getString(R.string.rakazo_replied_group, run.botName, run.groupName)
+                          else -> copyContext.getString(R.string.rakazo_replied, run.botName)
+                        },
+                        body = bodyText,
+                        channel = if (run.trigger == "routine") Channels.SCHEDULED else Channels.MESSAGES,
+                      ),
+                    )
+                  }
                 }
               }
               persistCompleted(true)
@@ -728,6 +731,10 @@ private fun takeFencedCode(
 
 /** Matching `>` for a tag at `<`, ignoring `>` inside quoted attributes. Mirrors htmlTagClose. */
 private fun htmlTagClose(text: String, open: Int): Int {
+  if (text.startsWith("<!--", open)) {
+    val close = text.indexOf("-->", open + 4)
+    return if (close == -1) text.length - 1 else close + 2
+  }
   var quote: Char? = null
   var gtInOpenQuote = -1
   for (i in open + 1 until text.length) {

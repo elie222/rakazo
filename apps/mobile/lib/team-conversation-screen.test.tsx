@@ -10,6 +10,9 @@ import { rpc } from "./api";
 
 const back = vi.fn();
 const navigation = vi.hoisted(() => ({ options: {} as Record<string, unknown> }));
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({ rpc: vi.fn() }));
 vi.mock("./appearance", () => ({ mobileTokens: () => ({}) }));
 vi.mock("./native", () => ({
@@ -19,12 +22,6 @@ vi.mock("./native", () => ({
 }));
 vi.mock("./user-error", () => ({
   errorText: (_: unknown, fallback = "Something went wrong. Try again.") => fallback,
-}));
-vi.mock("./i18n", () => ({
-  useI18n: () => ({
-    t: (message: string, values: Record<string, string> = {}) =>
-      message.replace(/\{(\w+)\}/g, (_, key: string) => values[key] ?? ""),
-  }),
 }));
 vi.mock("../lib/native-controls", () => ({ iosAtLeast: () => false }));
 vi.mock("expo-router", () => ({

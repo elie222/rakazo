@@ -1,30 +1,16 @@
+import { useLingui } from "@lingui/react/macro";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import type { TextInputInstance } from "react-native";
 import { StyleSheet, TextInput, View } from "react-native";
 import { useKeyboardState } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { ComputerKeyboardCommand, ComputerKeyName } from "../lib/computer-keyboard";
 import { commandsForKeyboardChange, computerKeyboardChanges } from "../lib/computer-keyboard";
-import { useI18n } from "../lib/i18n";
 import { useMobileTokens, useResolvedAppearance } from "../lib/native";
 import { NativeActionButton } from "./native-action-button";
 
 // Some Android keyboards report a Backspace key press just after the change that deleted with it.
 const DELETE_KEY_PRESS_MS = 50;
-
-function keySpecs(t: (message: string) => string): Array<{
-  name: ComputerKeyName;
-  label: string;
-  accessibilityLabel: string;
-}> {
-  return [
-    { name: "Escape", label: "Esc", accessibilityLabel: t("Escape") },
-    { name: "Tab", label: "Tab", accessibilityLabel: t("Tab") },
-    { name: "ArrowLeft", label: "←", accessibilityLabel: t("Left") },
-    { name: "ArrowDown", label: "↓", accessibilityLabel: t("Down") },
-    { name: "ArrowUp", label: "↑", accessibilityLabel: t("Up") },
-    { name: "ArrowRight", label: "→", accessibilityLabel: t("Right") },
-  ];
-}
 
 export function ComputerKeyboardBar({
   active,
@@ -34,12 +20,12 @@ export function ComputerKeyboardBar({
   active: boolean;
   onCommand: (command: ComputerKeyboardCommand) => void;
 }) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const tokens = useMobileTokens();
   const appearance = useResolvedAppearance();
   const insets = useSafeAreaInsets();
   const keyboardVisible = useKeyboardState((state) => state.isVisible);
-  const inputRef = useRef<TextInput>(null);
+  const inputRef = useRef<TextInputInstance>(null);
   // The field's text as last handled, updated at once. A keystroke can be reported twice before
   // React re-renders; measured from here, the repeat finds nothing new to send.
   const handled = useRef("");
@@ -135,7 +121,14 @@ export function ComputerKeyboardBar({
     if (control.current) latch(false);
   }
 
-  const keys = keySpecs(t);
+  const keys: Array<{ name: ComputerKeyName; label: string; accessibilityLabel: string }> = [
+    { name: "Escape", label: "Esc", accessibilityLabel: t`Escape` },
+    { name: "Tab", label: "Tab", accessibilityLabel: t`Tab` },
+    { name: "ArrowLeft", label: "←", accessibilityLabel: t`Left` },
+    { name: "ArrowDown", label: "↓", accessibilityLabel: t`Down` },
+    { name: "ArrowUp", label: "↑", accessibilityLabel: t`Up` },
+    { name: "ArrowRight", label: "→", accessibilityLabel: t`Right` },
+  ];
 
   return (
     <View
@@ -163,11 +156,11 @@ export function ComputerKeyboardBar({
         autoCorrect={false}
         spellCheck={false}
         keyboardAppearance={appearance}
-        accessibilityLabel={t("Computer keyboard")}
+        accessibilityLabel={t`Computer keyboard`}
         style={styles.input}
       />
       <NativeActionButton
-        accessibilityLabel={open ? t("Hide keyboard") : t("Show keyboard")}
+        accessibilityLabel={open ? t`Hide keyboard` : t`Show keyboard`}
         icon={{ ios: "keyboard", android: "keypad-outline" }}
         size="compact"
         prominence="secondary"
@@ -190,7 +183,7 @@ export function ComputerKeyboardBar({
       ))}
       <NativeActionButton
         label="Ctrl"
-        accessibilityLabel={t("Control")}
+        accessibilityLabel={t`Control`}
         size="compact"
         prominence="secondary"
         fill

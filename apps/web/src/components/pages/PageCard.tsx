@@ -113,12 +113,12 @@ function PagePreview({
           <div className="h-5 w-2/5 rounded-[6px] bg-foreground/[0.06]" />
           <div className="h-3 w-3/5 rounded-[5px] bg-foreground/[0.05]" />
           <div className="mt-2 grid grid-cols-3 gap-2">
-            <div className="h-12 rounded-[8px] bg-foreground/[0.05]" />
-            <div className="h-12 rounded-[8px] bg-foreground/[0.05]" />
-            <div className="h-12 rounded-[8px] bg-foreground/[0.05]" />
+            <div className="h-12 rounded-sm bg-foreground/[0.05]" />
+            <div className="h-12 rounded-sm bg-foreground/[0.05]" />
+            <div className="h-12 rounded-sm bg-foreground/[0.05]" />
           </div>
           {failed ? (
-            <p className="text-center text-muted-foreground text-sm">{t`This page couldn't load`}</p>
+            <p className="text-center text-muted-foreground text-body">{t`This page couldn't load`}</p>
           ) : null}
         </div>
       )}
@@ -162,10 +162,10 @@ export function PageCard({
       <div className="flex h-[73px] items-center gap-[14px] border-t border-foreground/[0.04] px-5">
         <PageTileIcon />
         <div className="min-w-0">
-          <div className="relative top-[1px] truncate text-[15px] leading-[21px] text-foreground">
+          <div className="relative top-[1px] truncate text-body-lg leading-[21px] text-foreground">
             {title}
           </div>
-          <div className="truncate text-[14px] leading-[20px] text-muted-foreground">
+          <div className="truncate text-body text-muted-foreground">
             {onOpen === undefined ? (
               <Trans>Page · Deleted</Trans>
             ) : updated ? (

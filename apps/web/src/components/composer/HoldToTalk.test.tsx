@@ -49,6 +49,7 @@ vi.mock("../../lib/dictation", () => ({
       onFinal = null;
       emit({ status: "idle", transcript: "" });
     }),
+    state: { status: "listening", transcript: "" },
   },
 }));
 

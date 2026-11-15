@@ -2,7 +2,7 @@ import type { ComputerRef } from "@rakazo/adapter-kit";
 import { runCodeKind } from "@rakazo/db";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { encodeRunCode } from "./bot-secrets.js";
-import { builtinAgentTools } from "./builtin-tools.js";
+import { builtinAgentTools } from "./builtin.tool-definition.js";
 import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
 import { createRunExecutor } from "./executor.js";
 import type * as RunNotificationsModule from "./run-notifications.js";
@@ -62,7 +62,9 @@ function recordingPrisma(models: Record<string, Record<string, unknown>>, calls:
           return async (fn: (tx: unknown) => unknown) => fn(prisma);
         }
         if (model === "$queryRaw") return async () => [{ locked: 1 }];
-        const methods = models[model] ?? {};
+        const methods =
+          models[model] ??
+          (model === "spaceMember" ? { findUnique: () => ({ id: "member-1" }) } : {});
         return new Proxy(methods, {
           get: (target, method: string) => {
             const impl = (target[method] ?? fallback[method]) as

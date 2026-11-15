@@ -56,6 +56,42 @@ describe("Model stream idle watchdog", () => {
     vi.unstubAllEnvs();
   });
 
+  it("allows prolonged inactivity when the idle timeout is disabled", async () => {
+    vi.useFakeTimers();
+    vi.stubEnv("MODEL_STREAM_IDLE_TIMEOUT_MS", "0");
+
+    const watchdog = modelStreamIdleWatchdog(undefined);
+    watchdog.ping();
+
+    await vi.advanceTimersByTimeAsync(13_800_000);
+
+    expect(watchdog.signal.aborted).toBe(false);
+    expect(vi.getTimerCount()).toBe(0);
+
+    watchdog.dispose();
+  });
+
+  it("preserves explicit cancellation with the idle timeout disabled", async () => {
+    vi.useFakeTimers();
+    vi.stubEnv("MODEL_STREAM_IDLE_TIMEOUT_MS", "0");
+
+    const upstream = new AbortController();
+    const watchdog = modelStreamIdleWatchdog(upstream.signal);
+    watchdog.ping();
+
+    await vi.advanceTimersByTimeAsync(13_800_000);
+    expect(watchdog.signal.aborted).toBe(false);
+
+    const reason = new Error("User cancelled the agent");
+    upstream.abort(reason);
+
+    expect(watchdog.signal.aborted).toBe(true);
+    expect(watchdog.signal.reason).toBe(reason);
+    expect(vi.getTimerCount()).toBe(0);
+
+    watchdog.dispose();
+  });
+
   it("waits out a configured idle bound longer than the default", async () => {
     vi.useFakeTimers();
     vi.stubEnv("MODEL_STREAM_IDLE_TIMEOUT_MS", "240000");

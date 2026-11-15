@@ -4,8 +4,8 @@ import type { ReactElement, ReactNode } from "react";
 import { useMemo } from "react";
 import type { ListRenderItem } from "react-native";
 import { ActivityIndicator, FlatList, Platform, ScrollView, StyleSheet, View } from "react-native";
-import type { MobileMessage } from "../../lib/api";
 import { mobileTokens } from "../../lib/appearance";
+import type { MobileMessage } from "../../lib/mobile-types";
 import type { ThreadColumnPadding } from "../../lib/thread-edges";
 import type { ThreadListScroll } from "../../lib/thread-list-scroll";
 import type { useThreadPaging } from "../../lib/thread-paging";
@@ -139,7 +139,7 @@ export function ThreadMessageList({
             maintainVisibleContentPosition={liveMessageListPosition}
             scrollEventThrottle={16}
             {...scroll.liveListHandlers}
-            ListFooterComponent={loadEarlierControl}
+            ListFooterComponent={loadEarlierControl ?? undefined}
             ListHeaderComponent={
               <View onLayout={() => scroll.performScroll(behavior.current.onLayout())}>
                 {errorNotice}

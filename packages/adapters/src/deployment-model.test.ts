@@ -29,7 +29,7 @@ describe("resolveDeploymentModel", () => {
     };
     expect(resolveDeploymentModel(both)).toEqual({
       provider: "openrouter",
-      model: "openai/gpt-6-luna",
+      model: "anthropic/claude-haiku-5.5",
       key: "or-key",
       configured: true,
       hostCredentials: false,

@@ -12,8 +12,10 @@ Download it from [rakazo.com](https://rakazo.com). The Linux AppImage needs FUSE
 The first time it opens, the app asks which server to use:
 
 - **Rakazo Cloud**: sign in to your rakazo.com account.
-- **This computer**: run your own Rakazo locally in Docker. If Docker isn't installed, the app links
-  to Docker Desktop, OrbStack and Docker Engine. Everything, including your bots' computers, then
+- **This computer**: run your own Rakazo locally in Docker. If Docker isn't installed, the app offers
+  the Docker Desktop download (Docker Engine on Linux) and carries on by itself once Docker is
+  installed and open; if Docker is installed but stopped, the app opens it. Everything, including
+  your bots' computers, then
   runs on your machine. It is yours alone: once you create your account, it accepts no other.
 - **Existing instance**: connect to a Rakazo server you or your team already run. Enter its
   **Server address** and choose **Check connection**.
@@ -52,12 +54,24 @@ The app checks for updates and downloads them in the background. When one is rea
 **Install update** button appears at the bottom of the sidebar, or choose **Restart** when asked.
 **Check for Updates…** in the app menu checks now.
 
+## Dictation
+
+On a Mac, dictation uses the Mac's own speech recognition, so it works without a
+[voice provider](./voice-and-calls.md). If you declined the permission prompt, allow Rakazo under
+**Speech Recognition** and **Microphone** in System Settings.
+
 ## Shortcuts
 
-Windows and Linux use Ctrl where macOS uses Cmd. The desktop app lists them in its menus.
+Windows and Linux use Ctrl where macOS uses Cmd. Press Cmd+/ to see every shortcut that works where
+you are.
 
 - Cmd+N: create a bot, group or space.
-- Cmd+K: open the command menu to jump to any bot.
+- Cmd+Shift+N (desktop app): start a group chat.
+- Cmd+K: open the command menu to jump to a bot, page or setting, or run an action.
+- Cmd+Shift+M: connect apps.
+- Cmd+Shift+, : open the chat's details.
+- Cmd+I: jump to the message box.
+- Cmd+D in an empty message box: dictate. Press it again to send.
 - Cmd+1 to Cmd+9 (desktop app): open one of the first nine bots in the sidebar.
 - Ctrl+Tab / Ctrl+Shift+Tab (desktop app): switch to the next or previous bot.
 - Cmd/Ctrl+Shift+Down / Cmd/Ctrl+Shift+Up (browser): switch to the next or previous bot.

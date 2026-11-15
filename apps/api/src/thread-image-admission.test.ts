@@ -9,7 +9,10 @@ import { sendThreadMessage } from "./thread-target.js";
 function fixture(group = false) {
   const model = { modelProvider: "openrouter", modelId: "deepseek/deepseek-v4-pro" };
   const tx = {
+    space: { findUnique: vi.fn(async () => null) },
+    user: { findMany: vi.fn().mockResolvedValue([]) },
     secret: { findFirst: vi.fn().mockResolvedValue({ id: "secret-1", ciphertext: "synthetic" }) },
+    $executeRaw: vi.fn(async () => 0),
     $queryRaw: vi.fn().mockResolvedValue([{ id: "group-1" }]),
     chatGroup: {
       findFirst: vi.fn().mockResolvedValue({
@@ -308,6 +311,43 @@ describe("current image send admission", () => {
     });
   });
 
+  it("follows a listed-only model's own image setting, but never over the catalog", async () => {
+    const { tx, send } = fixture();
+    const settingsFor = (modelId: string, images: boolean) => ({
+      deployment: null,
+      secrets: {
+        load: vi.fn(async () =>
+          JSON.stringify({
+            kind: "api_key",
+            key: "sk-synthetic",
+            models: { [modelId]: { images } },
+          }),
+        ),
+      },
+    });
+    tx.bot.findFirst.mockResolvedValue({
+      id: "bot-1",
+      modelProvider: "openrouter",
+      modelId: "fixture/future-model",
+    });
+    await expect(send(settingsFor("fixture/future-model", true))).resolves.toMatchObject({
+      runId: "run-1",
+    });
+    await expect(send(settingsFor("fixture/future-model", false))).rejects.toMatchObject({
+      code: "CONFLICT",
+      message: "This model cannot read images. Choose a model that supports images.",
+    });
+    tx.bot.findFirst.mockResolvedValue({
+      id: "bot-1",
+      modelProvider: "openrouter",
+      modelId: "deepseek/deepseek-v4-pro",
+    });
+    await expect(send(settingsFor("deepseek/deepseek-v4-pro", true))).rejects.toMatchObject({
+      code: "CONFLICT",
+      message: "This model cannot read images. Choose a model that supports images.",
+    });
+  });
+
   it("does not require image support for document attachments", async () => {
     const { tx, send } = fixture();
     tx.artifact.findMany.mockResolvedValue([
@@ -357,6 +397,7 @@ describe("current image send admission", () => {
         taskId: "task-active",
         status: "running",
         trigger: "user",
+        userId: "user-1",
         modelProvider: "openrouter",
         modelId: "deepseek/deepseek-v4-pro",
         modelPinned: false,
@@ -443,6 +484,7 @@ describe("current image send admission", () => {
         taskId: "task-waiting",
         status: "waiting_input",
         trigger: "routine",
+        userId: "user-1",
         modelProvider: "openrouter",
         modelId: "deepseek/deepseek-v4-pro",
         modelPinned: true,
@@ -465,6 +507,7 @@ describe("current image send admission", () => {
           id: "obsolete",
           taskId: "obsolete-task",
           status: "waiting_input",
+          userId: "user-1",
           trigger: "routine",
           modelProvider: "openrouter",
           modelId: "deepseek/deepseek-v4-pro",

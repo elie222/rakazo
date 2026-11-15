@@ -23,6 +23,7 @@ const routine: Routine = {
   webhookEnabled: false,
   githubEnabled: false,
   messageProvider: null,
+  emailSenders: null,
   modelProvider: null,
   modelId: null,
   thinkingLevel: null,
@@ -39,6 +40,7 @@ let finishUpdate: (saved: Routine) => void;
 const update = vi.fn();
 const rotateWebhookSecret = vi.fn();
 let activeBot: Bot;
+const activeBotId = { current: "" };
 
 function Harness() {
   editor = useRoutineEditor({
@@ -46,7 +48,7 @@ function Harness() {
       typeof createSpaceRpc
     >,
     active: activeBot,
-    activeBotId: { current: activeBot.id },
+    activeBotId,
     timezone: "UTC",
     messageProviders: [],
     setBots: () => {},
@@ -59,6 +61,7 @@ function Harness() {
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   activeBot = { id: "bot-1", webhookConfigured: false } as Bot;
+  activeBotId.current = activeBot.id;
   update.mockImplementation(() => new Promise<Routine>((resolve) => (finishUpdate = resolve)));
   root = createRoot(document.createElement("div"));
   act(() => root.render(<Harness />));
@@ -152,4 +155,29 @@ it("keeps each bot's revealed secret when rotations overlap", async () => {
   activeBot = { id: "bot-1", webhookConfigured: true } as Bot;
   act(() => root.render(<Harness />));
   expect(editor.editorProps!.webhook.secret).toBe("secret-1");
+});
+
+it("shows why a key cannot be set instead of leaving the rejection unhandled", async () => {
+  rotateWebhookSecret.mockRejectedValue(
+    Object.assign(new Error("Forbidden"), { code: "FORBIDDEN", status: 403 }),
+  );
+  await act(async () => {
+    await editor.editorProps!.onEnsureWebhook();
+  });
+  expect(editor.editorProps!.error).toBe("Only the bot's creator can set its webhook key.");
+});
+
+it("drops a key failure that arrives after switching to another bot", async () => {
+  let fail!: (error: Error) => void;
+  rotateWebhookSecret.mockImplementation(() => new Promise((_resolve, reject) => (fail = reject)));
+  let ensuring!: Promise<void>;
+  act(() => {
+    ensuring = editor.editorProps!.onEnsureWebhook() as Promise<void>;
+  });
+  activeBotId.current = "bot-2";
+  await act(async () => {
+    fail(Object.assign(new Error("Forbidden"), { code: "FORBIDDEN" }));
+    await ensuring;
+  });
+  expect(editor.editorProps!.error).toBeNull();
 });

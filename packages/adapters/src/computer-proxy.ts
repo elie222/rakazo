@@ -8,7 +8,9 @@
  * Chrome cannot send proxy credentials from policy, so each computer runs tinyproxy on
  * loopback. It forwards to the upstream with the credentials, and a managed Chrome policy points
  * the browser at it. The credentials reach the computer only through the prepare command's
- * environment and a root-only config file; they never appear in a command line or a log.
+ * environment and a root-only config file, so they stay out of command lines and logs. They are
+ * not secret from the computer's users: bot commands run as root, so anyone who can use a bot
+ * can read them. The docs tell operators to use a dedicated, usage-capped proxy login.
  */
 
 export const COMPUTER_PROXY_ENV = "RAKAZO_COMPUTER_PROXY";

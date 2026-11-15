@@ -5,12 +5,18 @@ import { toHast } from "mdast-util-to-hast";
 import remarkGfm from "remark-gfm";
 import remarkParse from "remark-parse";
 import { unified } from "unified";
+import { isQuestionAskBlock } from "./ask-kind.js";
 import { blocksToAgentHistoryText } from "./attachments.js";
-import { replyAttachment } from "./message-replies.js";
+import {
+  compactReplyExcerpt,
+  MAX_QUOTABLE_SOURCE_LENGTH,
+  replyAttachment,
+} from "./message-replies.js";
+import { isDeliveryMessage } from "./message-visibility.js";
 
 const markdownParser = unified().use(remarkParse).use(remarkGfm);
-/** Past this much source text in one message, quote derivation refuses to run. */
-export const MAX_QUOTABLE_SOURCE_LENGTH = 100_000;
+
+export { MAX_QUOTABLE_SOURCE_LENGTH } from "./message-replies.js";
 
 type MdastNode = { type?: string; value?: string; children?: MdastNode[] };
 
@@ -91,6 +97,8 @@ export function deriveMessageQuote(
   quoteHint: string,
   format: "markdown" | "plain-text",
 ): string | undefined {
+  // A delivery's text is the bot's hidden prompt, never quoted.
+  if (isDeliveryMessage(blocks)) return undefined;
   const hint = normalizeWithOffsets(truncateReplyQuote(quoteHint.trim())).text;
   if (!hint) return undefined;
 
@@ -125,19 +133,18 @@ export function deriveMessageQuote(
 export function messageReplyExcerpt(blocks: MessageBlock[], role: string): string {
   for (const block of [
     ...blocks.filter((block) => block.kind === "text"),
-    ...blocks.filter((block) => block.kind !== "text"),
+    ...blocks.filter((block) => block.kind === "channel_message"),
+    ...blocks.filter(isQuestionAskBlock),
+    ...blocks.filter(
+      (block) =>
+        block.kind !== "text" && block.kind !== "channel_message" && !isQuestionAskBlock(block),
+    ),
   ]) {
     const source = replyBlockText(block).slice(0, MAX_QUOTABLE_SOURCE_LENGTH);
     const visible =
       block.kind === "text" && role !== "user" ? visibleTextFromMarkdown(source) : source;
-    const first = visible
-      .split(/\r?\n/u)
-      .map((line) => line.trim())
-      .find(Boolean);
-    if (first) {
-      const excerpt = first.slice(0, 280);
-      return /[\uD800-\uDBFF]$/u.test(excerpt) ? excerpt.slice(0, -1) : excerpt;
-    }
+    const excerpt = compactReplyExcerpt(visible);
+    if (excerpt) return excerpt;
   }
   return "";
 }
@@ -175,12 +182,16 @@ function replyBlockText(block: MessageBlock): string {
     case "mcp_approval":
     case "chart":
       return block.name;
+    case "app":
+      return block.server;
     case "import_setup":
       if (block.undone) return "";
       return block.items.map((item) => ("name" in item ? item.name : item.title)).join(", ");
     case "image":
     case "file":
       return block.name || blocksToAgentHistoryText([block]);
+    case "delivery":
+      return "";
   }
 }
 
@@ -194,7 +205,10 @@ export function messageReplyPreview(
   blocks: MessageBlock[],
   role: ReplyPreview["role"],
   botId?: string,
+  author?: ReplyPreview["author"],
 ): ReplyPreview {
+  // A delivery's prompt and files stay hidden, even from a reply to it.
+  if (isDeliveryMessage(blocks)) return { role, botId, ...(author ? { author } : {}), text: "" };
   const attachment = replyAttachment(blocks);
   const caption = messageReplyExcerpt(
     blocks.filter((block) => block.kind !== "image" && block.kind !== "file"),
@@ -202,5 +216,12 @@ export function messageReplyPreview(
   );
   const text = caption || (attachment?.kind === "file" ? attachment.name : "");
   const page = isPageCardMessage(blocks);
-  return { role, botId, text, ...(attachment ? { attachment } : {}), ...(page ? { page } : {}) };
+  return {
+    role,
+    botId,
+    ...(author ? { author } : {}),
+    text,
+    ...(attachment ? { attachment } : {}),
+    ...(page ? { page } : {}),
+  };
 }

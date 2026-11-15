@@ -3,7 +3,7 @@
 import type { Routine } from "@rakazo/contracts";
 import { notifyManager } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import { act, createElement, useEffect } from "react";
+import { act, createElement, useEffect, useLayoutEffect } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -18,12 +18,19 @@ import { queryClient } from "./query";
 import type * as RoutineHelpers from "./routine";
 import { ROUTINES_POLL_MS, ROUTINES_RETRY_MS } from "./routine-store";
 
+vi.mock("./haptics", () => ({
+  hapticImpact: vi.fn(),
+  hapticSelection: vi.fn(),
+  hapticSuccess: vi.fn(),
+}));
+
 const {
   rpc,
   push,
   alert,
   afterChatNotifyChange,
   listSpaceArtifacts,
+  removeArtifact,
   params,
   color,
   focus,
@@ -36,28 +43,39 @@ const {
   alert: vi.fn(),
   afterChatNotifyChange: vi.fn(async () => undefined),
   listSpaceArtifacts: vi.fn(),
+  removeArtifact: vi.fn(),
   params: { current: {} as Record<string, string> },
   color: new Proxy({}, { get: (_, key) => String(key) }),
   focus: new Set<() => (() => void) | undefined>(),
   session: { generation: 0 },
   requestContext: vi.fn(),
-  screen: { options: {} as Record<string, unknown> },
+  screen: {
+    options: {} as Record<string, unknown>,
+    search: null as null | { onChangeText: (event: { nativeEvent: { text: string } }) => void },
+    // A short list makes FlatList ask for more as soon as it lays out, before effects run.
+    endOnLayout: false,
+  },
 }));
 
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   rpc,
   currentApiBase: () => "https://api.example",
-  loadSessionToken: async () => "token",
   selectedSpaceId: () => "space-a",
   captureApiRequestContext: requestContext,
 }));
-vi.mock("./session", () => ({ currentSessionGeneration: () => session.generation }));
+vi.mock("./session", () => ({
+  loadSessionToken: async () => "token",
+  currentSessionGeneration: () => session.generation,
+}));
 vi.mock("./live-notifications", () => ({ afterChatNotifyChange }));
 vi.mock("./artifacts", () => ({
   listSpaceArtifacts,
-  matchesArtifactQuery: () => true,
-  removeArtifact: vi.fn(),
+  matchesArtifactQuery: (item: { name: string }, query: string) => item.name.includes(query),
+  removeArtifact,
 }));
 vi.mock("expo-router", () => ({
   Stack: {
@@ -67,7 +85,14 @@ vi.mock("expo-router", () => ({
     },
   },
   useRouter: () => ({ push }),
-  useNavigation: () => ({ setOptions: vi.fn() }),
+  useNavigationContainerRef: () => ({
+    getCurrentRoute: () => ({ name: "bot-profile", params: params.current }),
+  }),
+  useNavigation: () => ({
+    setOptions: (options: { headerSearchBarOptions?: typeof screen.search }) => {
+      screen.search = options.headerSearchBarOptions ?? null;
+    },
+  }),
   useLocalSearchParams: () => params.current,
   useFocusEffect: (effect: () => (() => void) | undefined) => {
     useEffect(effect, [effect]);
@@ -92,7 +117,8 @@ vi.mock("react-native", () => {
     ActivityIndicator: () => createElement("progress"),
     Alert: { alert },
     BackHandler: { addEventListener: () => ({ remove: () => undefined }) },
-    RefreshControl: () => null,
+    RefreshControl: ({ onRefresh }: { onRefresh: () => void }) =>
+      createElement("button", { type: "button", onClick: onRefresh }, "Refresh files"),
     ScrollView: view,
     View: view,
     Text: ({ children }: { children?: ReactNode }) => createElement("span", null, children),
@@ -121,10 +147,38 @@ vi.mock("react-native", () => {
     FlatList: ({
       ListHeaderComponent,
       ListEmptyComponent,
+      data = [],
+      keyExtractor,
+      renderItem,
+      onEndReached,
+      refreshControl,
     }: {
       ListHeaderComponent?: ReactNode;
       ListEmptyComponent?: ReactNode;
-    }) => createElement("div", null, ListHeaderComponent, ListEmptyComponent),
+      data?: unknown[];
+      keyExtractor?: (item: unknown) => string;
+      renderItem?: (info: { item: unknown }) => ReactNode;
+      onEndReached?: () => void;
+      refreshControl?: ReactNode;
+    }) => {
+      useLayoutEffect(() => {
+        if (screen.endOnLayout) onEndReached?.();
+      });
+      return createElement(
+        "div",
+        null,
+        ListHeaderComponent,
+        refreshControl,
+        data.length === 0
+          ? ListEmptyComponent
+          : data.map((item) =>
+              createElement("div", { key: keyExtractor?.(item) }, renderItem?.({ item })),
+            ),
+        onEndReached
+          ? createElement("button", { type: "button", onClick: onEndReached }, "End of list")
+          : null,
+      );
+    },
   };
 });
 vi.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({ bottom: 0 }) }));
@@ -134,16 +188,6 @@ vi.mock("./native", () => ({
   useThemedStyles: (createStyles: () => unknown) => createStyles(),
 }));
 vi.mock("./appearance", () => ({ mobileTokens: () => color }));
-vi.mock("./i18n", () => {
-  const t = (text: string, values: Record<string, string | number> = {}) =>
-    text.replace(/\{(\w+)\}/g, (match, key: string) => String(values[key] ?? match));
-  return {
-    t,
-    useI18n: () => ({ t, locale: "en" }),
-    getActiveUiLocale: () => "en",
-    dateLocaleForUi: () => "en-US",
-  };
-});
 vi.mock("./routine", async (importOriginal) => ({
   ...(await importOriginal<typeof RoutineHelpers>()),
   deviceTimeZone: () => "Europe/Berlin",
@@ -177,6 +221,31 @@ vi.mock("../components/run-error-sheet", () => ({
     details ? createElement("dialog", { open: true }, details) : null,
 }));
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
+vi.mock("../components/native-segmented-control", () => ({
+  NativeSegmentedControl: ({
+    options,
+    onChange,
+  }: {
+    options: { value: string; label: string }[];
+    onChange: (value: string) => void;
+  }) =>
+    createElement(
+      "nav",
+      null,
+      options.map((option) =>
+        createElement(
+          "button",
+          { key: option.value, type: "button", onClick: () => onChange(option.value) },
+          option.label,
+        ),
+      ),
+    ),
+}));
+vi.mock("../components/routine-email-trigger", () => ({ RoutineEmailTrigger: () => null }));
+vi.mock("../components/bot-email", () => ({
+  useBotEmail: () => ({ address: null, ownerDomain: "", setAddress: () => undefined }),
+  useBotEmailRows: () => [],
+}));
 vi.mock("../components/row-accessories", () => ({ Chevron: () => null }));
 
 const routine = (id: string, name: string, partial: Partial<Routine> = {}) => ({
@@ -189,6 +258,7 @@ const routine = (id: string, name: string, partial: Partial<Routine> = {}) => ({
   webhookEnabled: false,
   githubEnabled: false,
   messageProvider: null,
+  emailSenders: null,
   nextRunAt: null,
   createdAt: "2026-01-01T00:00:00.000Z",
   ...partial,
@@ -227,6 +297,14 @@ async function render(element: ReactNode) {
   await act(async () => {
     root.render(element);
   });
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
 }
 
 function button(label: string) {
@@ -1060,6 +1138,9 @@ describe("routine detail", () => {
     await render(createElement(BotProfile));
     act(() => root.unmount());
     root = createRoot(container);
+    // The detail opens after that read; on a fast machine both can fall in one millisecond.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(Date.now() + 1);
 
     let load!: (rows: unknown) => void;
     profileRpc(() => new Promise((resolve) => (load = resolve)));
@@ -1269,9 +1350,417 @@ describe("artifacts opened for one bot", () => {
     params.current = { botId: "bot-fixture" };
   });
 
+  it.each(["refresh", "pagination"])(
+    "does not restore deleted files from a stale %s response",
+    async (mode) => {
+      const file = {
+        id: "file-a",
+        name: "report.md",
+        botId: "bot-fixture",
+        groupId: null,
+        runId: null,
+        description: null,
+        mimeType: "text/markdown",
+        size: 6,
+        version: 1,
+        versionCount: 1,
+        createdAt: "2026-11-01T00:00:00.000Z",
+      };
+      const stale = deferred<{ items: (typeof file)[]; nextCursor: string | null }>();
+      listSpaceArtifacts.mockResolvedValue({ items: [], nextCursor: "fresh-page" });
+      listSpaceArtifacts.mockResolvedValueOnce({ items: [file], nextCursor: "page-2" });
+      listSpaceArtifacts.mockReturnValueOnce(stale.promise);
+      removeArtifact.mockResolvedValue(undefined);
+      await render(createElement(ArtifactsScreen));
+      await act(async () => button(mode === "refresh" ? "Refresh files" : "End of list").click());
+      act(() =>
+        button("report.md").dispatchEvent(new MouseEvent("contextmenu", { bubbles: true })),
+      );
+      await act(async () =>
+        alert.mock.lastCall?.[2]
+          .find((action: { style?: string }) => action.style === "destructive")
+          .onPress(),
+      );
+      expect(removeArtifact).toHaveBeenCalledWith("file-a");
+      expect(container.textContent).not.toContain("report.md");
+      await act(async () => stale.resolve({ items: [file], nextCursor: "stale-page" }));
+      expect(container.textContent).not.toContain("report.md");
+      expect(listSpaceArtifacts).toHaveBeenLastCalledWith({
+        botId: "bot-fixture",
+        madeByBots: false,
+        limit: 30,
+      });
+      await act(async () => button("End of list").click());
+      expect(listSpaceArtifacts).toHaveBeenLastCalledWith(
+        expect.objectContaining({ cursor: "fresh-page" }),
+      );
+    },
+  );
+
+  it.each([false, true])(
+    "blocks pagination during deletion refresh and resumes search (%s)",
+    async (search) => {
+      const file = {
+        id: "file-a",
+        name: "report.md",
+        botId: "bot-fixture",
+        groupId: null,
+        runId: null,
+        description: null,
+        mimeType: "text/markdown",
+        size: 6,
+        version: 1,
+        versionCount: 1,
+        createdAt: "2026-11-01T00:00:00.000Z",
+      };
+      const fresh = deferred<{ items: (typeof file)[]; nextCursor: string | null }>();
+      listSpaceArtifacts.mockResolvedValueOnce({ items: [file], nextCursor: "old-page" });
+      listSpaceArtifacts.mockReturnValueOnce(fresh.promise);
+      removeArtifact.mockResolvedValueOnce(undefined);
+      await render(createElement(ArtifactsScreen));
+      act(() =>
+        button("report.md").dispatchEvent(new MouseEvent("contextmenu", { bubbles: true })),
+      );
+      await act(async () =>
+        alert.mock.lastCall?.[2]
+          .find((action: { style?: string }) => action.style === "destructive")
+          .onPress(),
+      );
+      if (search) {
+        act(() => screen.search?.onChangeText({ nativeEvent: { text: "nothing-matches" } }));
+      }
+      await act(async () => button("End of list").click());
+      expect(listSpaceArtifacts).toHaveBeenCalledTimes(2);
+      listSpaceArtifacts.mockResolvedValueOnce({ items: [], nextCursor: null });
+      await act(async () => fresh.resolve({ items: [], nextCursor: "old-page" }));
+      await act(async () => button("End of list").click());
+      expect(listSpaceArtifacts).toHaveBeenLastCalledWith(
+        expect.objectContaining({ cursor: "old-page" }),
+      );
+    },
+  );
+
+  it("keeps a failed deletion's file and allows the pending refresh to finish", async () => {
+    const file = {
+      id: "file-a",
+      name: "report.md",
+      botId: "bot-fixture",
+      groupId: null,
+      runId: null,
+      description: null,
+      mimeType: "text/markdown",
+      size: 6,
+      version: 1,
+      versionCount: 1,
+      createdAt: "2026-11-01T00:00:00.000Z",
+    };
+    const stale = deferred<{ items: (typeof file)[]; nextCursor: null }>();
+    listSpaceArtifacts.mockResolvedValueOnce({ items: [file], nextCursor: null });
+    listSpaceArtifacts.mockReturnValueOnce(stale.promise);
+    removeArtifact.mockRejectedValueOnce(new Error("Deletion failed"));
+    await render(createElement(ArtifactsScreen));
+    await act(async () => button("Refresh files").click());
+    act(() => button("report.md").dispatchEvent(new MouseEvent("contextmenu", { bubbles: true })));
+    await act(async () =>
+      alert.mock.lastCall?.[2]
+        .find((action: { style?: string }) => action.style === "destructive")
+        .onPress(),
+    );
+    expect(alert.mock.lastCall?.[0]).toBe("Could not delete this artifact");
+    await act(async () =>
+      stale.resolve({ items: [{ ...file, name: "updated.md" }], nextCursor: null }),
+    );
+    expect(container.textContent).toContain("updated.md");
+    expect(listSpaceArtifacts).toHaveBeenCalledTimes(2);
+  });
+
+  it("reloads the current filter when deletion finishes after a filter change", async () => {
+    const file = {
+      id: "file-a",
+      name: "report.md",
+      botId: "bot-fixture",
+      groupId: null,
+      runId: null,
+      description: null,
+      mimeType: "text/markdown",
+      size: 6,
+      version: 1,
+      versionCount: 1,
+      createdAt: "2026-11-01T00:00:00.000Z",
+    };
+    const deletion = deferred<void>();
+    const stale = deferred<{ items: (typeof file)[]; nextCursor: null }>();
+    listSpaceArtifacts.mockResolvedValue({ items: [], nextCursor: null });
+    listSpaceArtifacts.mockResolvedValueOnce({ items: [file], nextCursor: null });
+    listSpaceArtifacts.mockReturnValueOnce(stale.promise);
+    removeArtifact.mockReturnValueOnce(deletion.promise);
+    await render(createElement(ArtifactsScreen));
+    act(() => button("report.md").dispatchEvent(new MouseEvent("contextmenu", { bubbles: true })));
+    await act(async () =>
+      alert.mock.lastCall?.[2]
+        .find((action: { style?: string }) => action.style === "destructive")
+        .onPress(),
+    );
+    await act(async () => button("Other").click());
+    await act(async () => deletion.resolve());
+    expect(listSpaceArtifacts).toHaveBeenLastCalledWith({
+      botId: "other-bot",
+      madeByBots: false,
+      limit: 30,
+    });
+    await act(async () => stale.resolve({ items: [file], nextCursor: null }));
+    expect(container.textContent).not.toContain("report.md");
+    expect(container.textContent).toContain("No artifacts yet");
+  });
+
+  it("shows an error when the deletion refresh supersedes a filter load and fails", async () => {
+    const file = {
+      id: "file-a",
+      name: "report.md",
+      botId: "bot-fixture",
+      groupId: null,
+      runId: null,
+      description: null,
+      mimeType: "text/markdown",
+      size: 6,
+      version: 1,
+      versionCount: 1,
+      createdAt: "2026-11-01T00:00:00.000Z",
+    };
+    const deletion = deferred<void>();
+    const stale = deferred<{ items: (typeof file)[]; nextCursor: null }>();
+    listSpaceArtifacts.mockResolvedValue({ items: [], nextCursor: null });
+    listSpaceArtifacts.mockResolvedValueOnce({ items: [file], nextCursor: null });
+    listSpaceArtifacts.mockReturnValueOnce(stale.promise);
+    listSpaceArtifacts.mockRejectedValueOnce(new Error("Could not load artifacts."));
+    removeArtifact.mockReturnValueOnce(deletion.promise);
+    await render(createElement(ArtifactsScreen));
+    act(() => button("report.md").dispatchEvent(new MouseEvent("contextmenu", { bubbles: true })));
+    await act(async () =>
+      alert.mock.lastCall?.[2]
+        .find((action: { style?: string }) => action.style === "destructive")
+        .onPress(),
+    );
+    await act(async () => button("Other").click());
+    await act(async () => deletion.resolve());
+    expect(listSpaceArtifacts).toHaveBeenLastCalledWith({
+      botId: "other-bot",
+      madeByBots: false,
+      limit: 30,
+    });
+    await act(async () => stale.resolve({ items: [file], nextCursor: null }));
+    expect(container.textContent).not.toContain("report.md");
+    expect(container.querySelector("progress")).toBeNull();
+    expect(container.textContent).toContain("Could not load artifacts.");
+    await act(async () => button("Refresh files").click());
+    expect(container.textContent).toContain("No artifacts yet");
+    expect(container.textContent).not.toContain("Could not load artifacts.");
+  });
+
+  it("keeps displayed files when a background refresh fails", async () => {
+    const file = {
+      id: "file-a",
+      name: "report.md",
+      botId: "bot-fixture",
+      groupId: null,
+      runId: null,
+      description: null,
+      mimeType: "text/markdown",
+      size: 6,
+      version: 1,
+      versionCount: 1,
+      createdAt: "2026-11-01T00:00:00.000Z",
+    };
+    listSpaceArtifacts.mockResolvedValueOnce({ items: [file], nextCursor: null });
+    listSpaceArtifacts.mockRejectedValueOnce(new Error("Could not load artifacts."));
+    await render(createElement(ArtifactsScreen));
+    await act(async () => button("Refresh files").click());
+    expect(container.textContent).toContain("report.md");
+    expect(container.textContent).not.toContain("Could not load artifacts.");
+    expect(container.querySelector("progress")).toBeNull();
+  });
+
   it("loads only the profile bot's artifacts initially", async () => {
     await render(createElement(ArtifactsScreen));
     expect(listSpaceArtifacts).toHaveBeenCalledTimes(1);
-    expect(listSpaceArtifacts).toHaveBeenCalledWith({ botId: "bot-fixture", limit: 30 });
+    expect(listSpaceArtifacts).toHaveBeenCalledWith({
+      botId: "bot-fixture",
+      madeByBots: false,
+      limit: 30,
+    });
   });
+
+  it("lists only what bots made while Made by bots is chosen", async () => {
+    await render(createElement(ArtifactsScreen));
+    expect(container.textContent).toContain("No artifacts yet");
+    await act(async () => button("Made by bots").click());
+    expect(listSpaceArtifacts).toHaveBeenLastCalledWith({
+      botId: "bot-fixture",
+      madeByBots: true,
+      limit: 30,
+    });
+    expect(container.textContent).toContain("No matching artifacts");
+    expect(container.textContent).not.toContain("No artifacts yet");
+    await act(async () => button("All files").click());
+    expect(listSpaceArtifacts).toHaveBeenLastCalledWith({
+      botId: "bot-fixture",
+      madeByBots: false,
+      limit: 30,
+    });
+    expect(container.textContent).toContain("No artifacts yet");
+  });
+
+  it("keeps Made by bots on the next page and when the screen comes back", async () => {
+    const file = (id: string, name: string) => ({
+      id,
+      name,
+      botId: "bot-fixture",
+      groupId: null,
+      runId: `run-${id}`,
+      description: null,
+      mimeType: "text/markdown",
+      size: 6,
+      version: 1,
+      versionCount: 1,
+      createdAt: "2026-11-01T00:00:00.000Z",
+    });
+    listSpaceArtifacts.mockImplementation(
+      async (input: { madeByBots?: boolean; cursor?: string }) =>
+        !input.madeByBots
+          ? { items: [], nextCursor: null }
+          : input.cursor
+            ? { items: [file("b", "second-report.md")], nextCursor: null }
+            : { items: [file("a", "first-report.md")], nextCursor: "page-2" },
+    );
+    await render(createElement(ArtifactsScreen));
+    await act(async () => button("Made by bots").click());
+    expect(container.textContent).toContain("first-report.md");
+
+    await act(async () => button("End of list").click());
+    expect(listSpaceArtifacts).toHaveBeenLastCalledWith({
+      botId: "bot-fixture",
+      madeByBots: true,
+      cursor: "page-2",
+      limit: 30,
+    });
+    expect(container.textContent).toContain("first-report.md");
+    expect(container.textContent).toContain("second-report.md");
+
+    await act(async () => {
+      for (const effect of focus) effect();
+    });
+    expect(listSpaceArtifacts).toHaveBeenLastCalledWith({
+      botId: "bot-fixture",
+      madeByBots: true,
+      limit: 30,
+    });
+  });
+
+  it("never pages the new filter with the old filter's cursor", async () => {
+    const file = (id: string, name: string, runId: string | null) => ({
+      id,
+      name,
+      botId: "bot-fixture",
+      groupId: null,
+      runId,
+      description: null,
+      mimeType: "text/markdown",
+      size: 6,
+      version: 1,
+      versionCount: 1,
+      createdAt: "2026-11-01T00:00:00.000Z",
+    });
+    listSpaceArtifacts.mockImplementation(
+      async (input: { madeByBots?: boolean; cursor?: string }) => {
+        if (input.cursor) throw new Error("page 2 failed");
+        return input.madeByBots
+          ? { items: [file("a", "report.md", "run-a")], nextCursor: null }
+          : { items: [file("u", "my-upload.txt", null)], nextCursor: "all-files-2" };
+      },
+    );
+    await render(createElement(ArtifactsScreen));
+    await act(async () =>
+      screen.search?.onChangeText({ nativeEvent: { text: "nothing-matches" } }),
+    );
+    expect(listSpaceArtifacts).toHaveBeenLastCalledWith(
+      expect.objectContaining({ madeByBots: false, cursor: "all-files-2" }),
+    );
+    screen.endOnLayout = true;
+    try {
+      await act(async () => button("Made by bots").click());
+    } finally {
+      screen.endOnLayout = false;
+    }
+    const crossed = listSpaceArtifacts.mock.calls.filter(
+      ([input]) => input.madeByBots === true && input.cursor !== undefined,
+    );
+    expect(crossed).toEqual([]);
+  });
+
+  it("never pages another bot with the previous bot's cursor", async () => {
+    const file = (id: string, name: string, runId: string | null) => ({
+      id,
+      name,
+      botId: "bot-fixture",
+      groupId: null,
+      runId,
+      description: null,
+      mimeType: "text/markdown",
+      size: 6,
+      version: 1,
+      versionCount: 1,
+      createdAt: "2026-11-01T00:00:00.000Z",
+    });
+    listSpaceArtifacts.mockImplementation(async (input: { botId?: string; cursor?: string }) => {
+      if (input.cursor) throw new Error("page 2 failed");
+      return input.botId === "bot-fixture"
+        ? { items: [file("u", "my-upload.txt", null)], nextCursor: "fixture-2" }
+        : { items: [file("o", "other.txt", null)], nextCursor: null };
+    });
+    await render(createElement(ArtifactsScreen));
+    await act(async () =>
+      screen.search?.onChangeText({ nativeEvent: { text: "nothing-matches" } }),
+    );
+    expect(listSpaceArtifacts).toHaveBeenLastCalledWith(
+      expect.objectContaining({ botId: "bot-fixture", cursor: "fixture-2" }),
+    );
+    screen.endOnLayout = true;
+    try {
+      await act(async () => button("Other").click());
+    } finally {
+      screen.endOnLayout = false;
+    }
+    const crossed = listSpaceArtifacts.mock.calls.filter(
+      ([input]) => input.botId !== "bot-fixture" && input.cursor !== undefined,
+    );
+    expect(crossed).toEqual([]);
+  });
+
+  for (const label of ["Fixture", "All files"]) {
+    it(`keeps paging after tapping the already chosen ${label}`, async () => {
+      listSpaceArtifacts.mockImplementation(async (input: { cursor?: string }) => ({
+        items: [
+          {
+            id: input.cursor ? "b" : "a",
+            name: input.cursor ? "second.md" : "first.md",
+            botId: "bot-fixture",
+            groupId: null,
+            runId: null,
+            description: null,
+            mimeType: "text/markdown",
+            size: 6,
+            version: 1,
+            versionCount: 1,
+            createdAt: "2026-11-01T00:00:00.000Z",
+          },
+        ],
+        nextCursor: input.cursor ? null : "page-2",
+      }));
+      await render(createElement(ArtifactsScreen));
+      expect(container.textContent).toContain("first.md");
+      await act(async () => button(label).click());
+      await act(async () => button("End of list").click());
+      expect(container.textContent).toContain("second.md");
+    });
+  }
 });

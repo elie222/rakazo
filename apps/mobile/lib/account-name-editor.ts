@@ -1,3 +1,4 @@
+import { t } from "@lingui/core/macro";
 import type { Alert } from "react-native";
 
 type Dependencies<T> = {
@@ -6,7 +7,6 @@ type Dependencies<T> = {
   saveVersion: { current: number };
   Platform: { OS: string };
   Alert: Pick<typeof Alert, "prompt">;
-  t: (message: string) => string;
   errorText: (error: unknown, fallback: string) => string;
   updateAccountName: (name: string) => Promise<void>;
   refresh: () => Promise<T>;
@@ -19,14 +19,14 @@ type Dependencies<T> = {
 };
 
 export function createAccountNameEditor<T>(deps: Dependencies<T>) {
-  const { t, pending } = deps;
+  const { pending } = deps;
   function prompt(value: string, message?: string) {
     deps.Alert.prompt(
-      t("Edit name"),
+      t`Edit name`,
       message,
       [
-        { text: t("Cancel"), style: "cancel" },
-        { text: t("Save"), isPreferred: true, onPress: (draft?: string) => saveName(draft ?? "") },
+        { text: t`Cancel`, style: "cancel" },
+        { text: t`Save`, isPreferred: true, onPress: (draft?: string) => saveName(draft ?? "") },
       ],
       "plain-text",
       value,
@@ -41,7 +41,7 @@ export function createAccountNameEditor<T>(deps: Dependencies<T>) {
       return;
     }
     if (name.length > 80) {
-      const message = t("Use 80 characters or fewer");
+      const message = t`Use 80 characters or fewer`;
       if (deps.Platform.OS === "ios") prompt(value, message);
       else deps.setNameError(message);
       return;
@@ -62,7 +62,7 @@ export function createAccountNameEditor<T>(deps: Dependencies<T>) {
         })
         .catch(() => undefined);
     } catch (error) {
-      failure = deps.errorText(error, t("Could not update name"));
+      failure = deps.errorText(error, t`Could not update name`);
       if (deps.Platform.OS !== "ios") deps.setNameError(failure);
     } finally {
       pending.current = false;

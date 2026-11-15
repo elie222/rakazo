@@ -1,5 +1,5 @@
 import { lookup } from "node:dns/promises";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import {
   ipVersion,
@@ -14,6 +14,7 @@ import {
   redactConnectorPayload,
   sanitizeConnectorError,
 } from "./connector-safety.js";
+import { createMcpClient } from "./mcp-output-schema.js";
 import type { ResolvedAddress, ResolveHostname } from "./network-address.js";
 import { createAddressCheckedLookup } from "./network-address.js";
 import type { RemoteTransportDependencies, SafeRemoteFetch } from "./remote-mcp.js";
@@ -202,6 +203,7 @@ function verbErrorMessage(payload: unknown, fallback: string): string {
 /** Surface hosted gateway rate limits plainly instead of as an opaque transport error. */
 function assertNotRateLimited(response: Response): Response {
   if (response.status !== 429) return response;
+  cancelResponseBody(response);
   const retryAfter = response.headers.get("retry-after")?.trim();
   // Retry-After is either delta-seconds or an HTTP date.
   const when = !retryAfter ? null : /^\d+$/.test(retryAfter) ? `${retryAfter}s` : retryAfter;
@@ -275,6 +277,8 @@ export function createSerenityPrivateLanFetch(
         cancelResponseBody(response);
         throw new Error("Serenity MCP redirects are not permitted; configure the final URL.");
       }
+      // The dispatcher must be able to close before the caller can inspect the response.
+      if (response.status === 429) cancelResponseBody(response);
       return response;
     } catch (error) {
       throw new Error(
@@ -326,7 +330,7 @@ async function withSerenityClient<T>(
       return assertNotRateLimited(response);
     },
   });
-  const client = new Client({ name: "rakazo", version: "0.1.0" }, { capabilities: {} });
+  const client = createMcpClient({ name: "rakazo", version: "0.1.0" }, { capabilities: {} });
   try {
     await client.connect(transport, { signal: requestSignal, timeout: SERENITY_TIMEOUT_MS });
     // A server or proxy may echo the bearer token it received; never hand it to the model.

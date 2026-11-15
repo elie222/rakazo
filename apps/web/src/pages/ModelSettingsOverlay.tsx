@@ -1,43 +1,45 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { SettingsScope } from "@rakazo/contracts";
 import {
-  compatibleConnectionName,
   connectionDisplayName,
-  isOllamaCloudBaseUrl,
-  OLLAMA_CLOUD_BASE_URL,
+  modelRoleChoiceKey,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   savedCompatibleEndpointMatches,
 } from "@rakazo/contracts";
-import { popularModelProvidersFirst } from "@rakazo/core";
+import { catalogEntryFor, connectionModels, popularModelProvidersFirst } from "@rakazo/core";
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
   Button,
   Dialog,
   DialogClose,
   DialogContent,
   DialogHeader,
   DialogTitle,
-  ModelThinkingOptions,
+  DropdownMenuItem,
   Spinner,
 } from "@rakazo/ui-web";
+import { useQuery } from "@tanstack/react-query";
 import { X } from "lucide-react";
+import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
+import { ConfirmDialog } from "../components/ConfirmDialog";
+import { SettingsPageHeader } from "../components/SettingsPageHeader";
 import type { ModelCredential } from "../lib/model-auth";
+import { useSpaceQueries } from "../lib/query";
 import type { ModelRoleConnectIntent } from "./ModelRoleSettings";
-import { ModelRoleSettings } from "./ModelRoleSettings";
+import { ModelRoleSettings, useModelRole } from "./ModelRoleSettings";
 import { CompatibleModelFields } from "./model-settings/compatible-model-fields";
 import { CompatibleKeyControls, ConnectionControls } from "./model-settings/connection-controls";
+import { ModelSettingsPanel } from "./model-settings/model-settings-panel";
+import { ProviderModelCount, ProviderPage } from "./model-settings/provider-page";
 import { ConnectionNameField, ProvidersSection } from "./model-settings/providers-section";
 import type { ConnectableProvider } from "./model-settings/role-model-picker";
-import { SpaceBotsModelNotice } from "./model-settings/space-bots-model";
+import { SpaceBotsModelButton } from "./model-settings/space-bots-model";
 import { useModelSettings } from "./model-settings/use-model-settings";
+
+/** A connection's page, or a model's, with where its Back returns. */
+type SettingsPage =
+  | { kind: "provider"; credentialId: string }
+  | { kind: "model"; credentialId: string; modelId: string; back: SettingsPage | null };
 
 export function ModelSettingsOverlay({
   onClose,
@@ -67,6 +69,7 @@ export function ModelSettingsOverlay({
     credentials,
     disconnectCredential,
     disconnectName,
+    endpointPresets,
     error,
     groups,
     handleClose,
@@ -74,7 +77,6 @@ export function ModelSettingsOverlay({
     intentRef,
     isOpenAiCompatible,
     loading,
-    maxTokens,
     me,
     notice,
     pending,
@@ -84,30 +86,32 @@ export function ModelSettingsOverlay({
     selectedConnectionName,
     selectedProviderName,
     setConfirmDisconnect,
-    setMaxTokens,
-    setNotice,
     settingsDirty,
   } = model;
-  // Where the connection form opens: under a role's list, under a provider row, or at the
-  // end of Providers when adding one. The rest of the page stays where it was.
+  // Where a new connection's form opens: under a role's list, or at the end of Providers.
+  // The rest of the page stays where it was.
   const [connectionAt, setConnectionAt] = useState<string | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     panelRef.current?.scrollIntoView?.({ block: "nearest" });
   }, [connectionAt]);
+  // A connection's or a model's own page, opened in place of the lists.
+  const [page, setPage] = useState<SettingsPage | null>(null);
+  const pageRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    pageRef.current?.scrollIntoView?.({ block: "start" });
+  }, [page]);
 
   // Adding another account is open to every provider, connected or not.
   const allProviders = popularModelProvidersFirst<ConnectableProvider>(
     [
       ...groups.map((group) => ({ id: group.id, name: group.name })),
       ...(groups.some((group) => group.id === OPENAI_COMPATIBLE_PROVIDER_ID)
-        ? [
-            {
-              id: OPENAI_COMPATIBLE_PROVIDER_ID,
-              name: t`Ollama Cloud`,
-              baseUrl: OLLAMA_CLOUD_BASE_URL,
-            },
-          ]
+        ? endpointPresets.map((preset) => ({
+            id: OPENAI_COMPATIBLE_PROVIDER_ID,
+            name: preset.name,
+            baseUrl: preset.baseUrl,
+          }))
         : []),
     ],
     (entry) => entry.id,
@@ -115,7 +119,10 @@ export function ModelSettingsOverlay({
   );
   const providers = allProviders.filter((entry) =>
     entry.baseUrl
-      ? !isOllamaCloudBaseUrl(credentialByProvider.get(OPENAI_COMPATIBLE_PROVIDER_ID)?.baseUrl)
+      ? !savedCompatibleEndpointMatches(
+          credentialByProvider.get(OPENAI_COMPATIBLE_PROVIDER_ID)?.baseUrl ?? "",
+          entry.baseUrl,
+        )
       : !credentialByProvider.has(entry.id),
   );
   const connectionName = (entry: ModelCredential) => {
@@ -127,11 +134,29 @@ export function ModelSettingsOverlay({
     );
   };
   const providerLabel = (id: string) =>
-    compatibleConnectionName(
-      credentialByProvider.get(id)?.baseUrl,
-      groups.find((group) => group.id === id)?.name ?? id,
-    );
-  // The Ollama Cloud preset shares the compatible provider id with a saved local server.
+    credentialByProvider.get(id)?.endpointName ??
+    groups.find((group) => group.id === id)?.name ??
+    id;
+  // The approval model only judges actions in Auto, so it shows only then. A Space may
+  // inherit Approvals from the account, so its page asks for whichever copy applies there.
+  const queries = useSpaceQueries();
+  const approvalMode = useQuery(
+    queries.autoReview.get.queryOptions({ input: scope === "account" ? { scope } : {} }),
+  ).data?.mode;
+  // Screen work runs on the main model unless it cannot read images, so the computer-use
+  // list shows only then, once one is chosen, or when asked for from the main model's menu.
+  const [computerOpened, setComputerOpened] = useState(false);
+  const mainRole = useModelRole(me, scope, "main");
+  const computerRole = useModelRole(me, scope, "computer");
+  const mainChoice = mainRole?.primary ?? mainRole?.deploymentPrimary ?? null;
+  // The server answers as runs do. A model it could not check may not see, so the list shows.
+  const mainSeesImages = !mainChoice || mainRole?.seesImages === true;
+  const showComputer =
+    computerOpened ||
+    !mainSeesImages ||
+    Boolean(computerRole?.primary || computerRole?.backups.length);
+
+  // A hosted preset shares the compatible provider id with a saved local server.
   const connected = Boolean(
     credential &&
       (!isOpenAiCompatible || savedCompatibleEndpointMatches(baseUrl, credential.baseUrl)),
@@ -144,6 +169,7 @@ export function ModelSettingsOverlay({
     credentialId: string | null,
     at: string,
   ) {
+    setPage(null);
     model.chooseProvider(next.id, next.baseUrl, credentialId);
     intentRef.current = {
       makeDefault: intent?.makeDefault ?? false,
@@ -161,6 +187,24 @@ export function ModelSettingsOverlay({
     intentRef.current = null;
     setConnectionAt(null);
   }
+
+  function openProvider(credentialId: string) {
+    const target = credentials.find((entry) => entry.id === credentialId);
+    if (!target) return;
+    closeConnection();
+    model.chooseProvider(target.provider, undefined, target.id);
+    setPage({ kind: "provider", credentialId });
+  }
+
+  function openModel(credentialId: string, modelId: string, back: SettingsPage | null) {
+    closeConnection();
+    setPage({ kind: "model", credentialId, modelId, back });
+  }
+
+  const providerModels = (entry: ModelCredential) => connectionModels(entry, catalog);
+
+  const catalogEntry = (provider: string, modelId: string) =>
+    catalogEntryFor(catalog, provider, modelId);
 
   const disconnectButton = connected ? (
     <Button
@@ -185,17 +229,6 @@ export function ModelSettingsOverlay({
     ) : credential ? (
       <>
         <ConnectionControls {...model} />
-        <ModelThinkingOptions
-          showThinking={false}
-          disabled={busy}
-          advancedLabel={t`Advanced`}
-          maxTokens={maxTokens}
-          onMaxTokensChange={(value) => {
-            setMaxTokens(value);
-            setNotice(null);
-          }}
-          maxTokensLabel={t`Maximum output tokens`}
-        />
         {settingsDirty ? (
           <Button
             type="button"
@@ -213,7 +246,7 @@ export function ModelSettingsOverlay({
     ) : (
       <>
         {provider === me?.hostCredentialProvider ? (
-          <p className="mb-5 text-[13px] leading-[1.5] text-muted-foreground">
+          <p className="mb-5 text-body-sm leading-[1.5] text-muted-foreground">
             <Trans>
               Uses this server's own {hostCredentialSource} credentials to access{" "}
               {selectedProviderName}.
@@ -226,18 +259,30 @@ export function ModelSettingsOverlay({
   ) : null;
 
   // Under its own Providers row the row is the heading, so the form sits there unframed.
-  const panelFor = (framed: boolean) => (
+  const panelFrame = ({
+    framed,
+    testId,
+    title,
+    onClose,
+    children,
+  }: {
+    framed: boolean;
+    testId: string;
+    title: ReactNode;
+    onClose: () => void;
+    children: ReactNode;
+  }) => (
     <div
       ref={panelRef}
       className={framed ? "mt-3 rounded-xl border border-border px-4 py-4" : "pt-1"}
-      data-testid="model-connection"
+      data-testid={testId}
     >
       <div className={framed ? "mb-3 flex items-center justify-between gap-3" : "sr-only"}>
         <h4
-          data-testid="model-connection-title"
-          className="min-w-0 truncate text-[15px] font-medium text-foreground"
+          data-testid={`${testId}-title`}
+          className="flex min-w-0 items-baseline gap-2 text-body-lg font-medium text-foreground"
         >
-          {connected ? selectedConnectionName : <Trans>Connect {selectedProviderName}</Trans>}
+          {title}
         </h4>
         <Button
           type="button"
@@ -246,18 +291,37 @@ export function ModelSettingsOverlay({
           className="-me-1.5 shrink-0 text-muted-foreground"
           aria-label={t`Close`}
           tabIndex={framed ? undefined : -1}
-          onClick={closeConnection}
+          onClick={onClose}
         >
           <X />
         </Button>
       </div>
+      {children}
+    </div>
+  );
+
+  const panelFor = (framed: boolean) =>
+    panelFrame({
+      framed,
+      testId: "model-connection",
+      title: (
+        <span className="truncate">
+          {connected ? selectedConnectionName : <Trans>Connect {selectedProviderName}</Trans>}
+        </span>
+      ),
+      onClose: closeConnection,
+      children: connectionPanel,
+    });
+
+  const connectionPanel = (
+    <>
       {error ? (
-        <p className="mb-4 text-sm text-destructive" role="alert">
+        <p className="mb-4 text-body text-destructive" role="alert">
           {error}
         </p>
       ) : null}
       {notice ? (
-        <p className="mb-4 text-sm text-success" role="status">
+        <p className="mb-4 text-body text-success" role="status">
           {notice}
         </p>
       ) : null}
@@ -273,18 +337,18 @@ export function ModelSettingsOverlay({
         ) : null}
         {connection}
       </fieldset>
-    </div>
+    </>
   );
 
   const content = (
     <>
       {error && !connectionAt ? (
-        <p className="mb-4 text-sm text-destructive" role="alert">
+        <p className="mb-4 text-body text-destructive" role="alert">
           {error}
         </p>
       ) : null}
       {notice && !connectionAt ? (
-        <p className="mb-4 text-sm text-success" role="status">
+        <p className="mb-4 text-body text-success" role="status">
           {notice}
         </p>
       ) : null}
@@ -300,50 +364,67 @@ export function ModelSettingsOverlay({
             providers={providers}
             providerLabel={providerLabel}
             onConnect={(next, intent) => openConnection(next, intent, null, "main")}
-            onManage={(id, credentialId) =>
-              openConnection({ id, name: id }, null, credentialId, "main")
-            }
+            onManage={(_id, credentialId) => openProvider(credentialId)}
+            onManageModel={(choice) => openModel(choice.credentialId, choice.modelId, null)}
             panel={connectionAt === "main" ? panelFor(true) : null}
             thinking
             onChanged={() => void refresh()}
+            headerAction={
+              // Waits for the main role so its first key is what was already saved.
+              mainRole && !me.needsModel ? (
+                <SpaceBotsModelButton
+                  mainModelKey={`${me.spaceId}:${
+                    mainChoice
+                      ? modelRoleChoiceKey(mainChoice)
+                      : `${me.defaultProvider ?? ""}:${me.defaultModel ?? ""}`
+                  }`}
+                />
+              ) : null
+            }
+            primaryMenuItems={
+              showComputer ? null : (
+                <DropdownMenuItem onClick={() => setComputerOpened(true)}>
+                  <Trans>Computer-use model…</Trans>
+                </DropdownMenuItem>
+              )
+            }
           />
-          {me.needsModel ? null : (
-            <SpaceBotsModelNotice
-              refreshKey={`${me.spaceId}:${me.defaultProvider ?? ""}:${me.defaultModel ?? ""}`}
+          {approvalMode === "auto" ? (
+            <ModelRoleSettings
+              userId={me.userId}
+              spaceId={me.spaceId}
+              scope={scope}
+              credentials={credentials}
+              modelRole="approval"
+              title={t`Approval model`}
+              defaultLabel={t`Choose a model`}
+              providers={providers}
+              providerLabel={providerLabel}
+              onConnect={(next, intent) => openConnection(next, intent, null, "approval")}
+              onManage={(_id, credentialId) => openProvider(credentialId)}
+              onManageModel={(choice) => openModel(choice.credentialId, choice.modelId, null)}
+              panel={connectionAt === "approval" ? panelFor(true) : null}
             />
-          )}
-          <ModelRoleSettings
-            userId={me.userId}
-            spaceId={me.spaceId}
-            scope={scope}
-            credentials={credentials}
-            modelRole="approval"
-            title={t`Approval model`}
-            defaultLabel={t`Choose a model`}
-            providers={providers}
-            providerLabel={providerLabel}
-            onConnect={(next, intent) => openConnection(next, intent, null, "approval")}
-            onManage={(id, credentialId) =>
-              openConnection({ id, name: id }, null, credentialId, "approval")
-            }
-            panel={connectionAt === "approval" ? panelFor(true) : null}
-          />
-          <ModelRoleSettings
-            userId={me.userId}
-            spaceId={me.spaceId}
-            scope={scope}
-            credentials={credentials}
-            modelRole="computer"
-            title={t`Computer-use model`}
-            defaultLabel={t`Same as main model`}
-            providers={providers}
-            providerLabel={providerLabel}
-            onConnect={(next, intent) => openConnection(next, intent, null, "computer")}
-            onManage={(id, credentialId) =>
-              openConnection({ id, name: id }, null, credentialId, "computer")
-            }
-            panel={connectionAt === "computer" ? panelFor(true) : null}
-          />
+          ) : null}
+          {showComputer ? (
+            <ModelRoleSettings
+              userId={me.userId}
+              spaceId={me.spaceId}
+              scope={scope}
+              credentials={credentials}
+              modelRole="computer"
+              title={t`Computer-use model`}
+              defaultLabel={
+                mainSeesImages ? t`Same as main model` : t`Choose a model that can see the screen`
+              }
+              providers={providers}
+              providerLabel={providerLabel}
+              onConnect={(next, intent) => openConnection(next, intent, null, "computer")}
+              onManage={(_id, credentialId) => openProvider(credentialId)}
+              onManageModel={(choice) => openModel(choice.credentialId, choice.modelId, null)}
+              panel={connectionAt === "computer" ? panelFor(true) : null}
+            />
+          ) : null}
           {scope === "space" ? null : (
             <ProvidersSection
               credentials={credentials}
@@ -351,22 +432,9 @@ export function ModelSettingsOverlay({
               name={connectionName}
               disabled={busy}
               onAdd={(next) => openConnection(next, null, null, "providers:add")}
-              onOpen={(entry) =>
-                connectionAt === `providers:${entry.id}`
-                  ? closeConnection()
-                  : openConnection(
-                      { id: entry.provider, name: entry.provider },
-                      null,
-                      entry.id,
-                      `providers:${entry.id}`,
-                    )
-              }
-              panel={
-                connectionAt?.startsWith("providers:")
-                  ? panelFor(connectionAt === "providers:add")
-                  : null
-              }
-              panelAt={connectionAt?.slice("providers:".length) ?? null}
+              onOpen={(entry) => openProvider(entry.id)}
+              detail={(entry) => <ProviderModelCount models={providerModels(entry)} />}
+              panel={connectionAt === "providers:add" ? panelFor(true) : null}
             />
           )}
         </>
@@ -378,44 +446,87 @@ export function ModelSettingsOverlay({
           />
         </div>
       ) : catalog.length ? null : (
-        <p className="text-[13px] leading-[1.5] text-muted-foreground">
+        <p className="text-body-sm leading-[1.5] text-muted-foreground">
           <Trans>No model catalog is available.</Trans>
         </p>
       )}
-      <AlertDialog open={confirmDisconnect} onOpenChange={setConfirmDisconnect}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              <Trans>Disconnect {disconnectName}?</Trans>
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              <Trans>This removes the connection from every space.</Trans>
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>
-              <Trans>Cancel</Trans>
-            </AlertDialogCancel>
-            <AlertDialogAction
-              variant="destructive"
-              disabled={pending === "disconnect"}
-              onClick={() => {
-                setConfirmDisconnect(false);
-                setConnectionAt(null);
-                intentRef.current = null;
-                void disconnectCredential();
-              }}
-            >
-              <Trans>Disconnect</Trans>
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </>
   );
 
+  const disconnectDialog = (
+    <ConfirmDialog
+      open={confirmDisconnect}
+      onCancel={() => setConfirmDisconnect(false)}
+      title={<Trans>Disconnect {disconnectName}?</Trans>}
+      description={<Trans>This removes the connection from every space.</Trans>}
+      confirmDisabled={pending === "disconnect"}
+      onConfirm={() => {
+        setConfirmDisconnect(false);
+        setConnectionAt(null);
+        setPage(null);
+        intentRef.current = null;
+        void disconnectCredential();
+      }}
+      confirmLabel={<Trans>Disconnect</Trans>}
+    />
+  );
+
+  const pageCredential = page
+    ? credentials.find((entry) => entry.id === page.credentialId)
+    : undefined;
+  const modelRemoved =
+    page?.kind === "model" &&
+    pageCredential &&
+    !loading &&
+    !providerModels(pageCredential).some((entry) => entry.id === page.modelId);
+  useEffect(() => {
+    if (modelRemoved && page) setPage({ kind: "provider", credentialId: page.credentialId });
+  }, [modelRemoved, page]);
+  const body =
+    page && pageCredential ? (
+      <div ref={pageRef}>
+        {page.kind === "provider" || modelRemoved ? (
+          <ProviderPage
+            title={connected ? selectedConnectionName : connectionName(pageCredential)}
+            connection={connectionPanel}
+            models={providerModels(pageCredential)}
+            onBack={() => setPage(null)}
+            onOpenModel={(modelId) => openModel(pageCredential.id, modelId, page)}
+          />
+        ) : (
+          <div data-testid="model-settings-page">
+            <div className="mb-6">
+              <SettingsPageHeader
+                title={catalogEntry(pageCredential.provider, page.modelId)?.label ?? page.modelId}
+                subtitle={connectionName(pageCredential)}
+                onBack={() =>
+                  page.back?.kind === "provider"
+                    ? openProvider(page.back.credentialId)
+                    : setPage(page.back)
+                }
+              />
+            </div>
+            <ModelSettingsPanel
+              key={`${pageCredential.id}:${page.modelId}`}
+              credential={pageCredential}
+              modelId={page.modelId}
+              entry={catalogEntry(pageCredential.provider, page.modelId)}
+              onSaved={() => refresh({ keepForm: true })}
+            />
+          </div>
+        )}
+      </div>
+    ) : (
+      content
+    );
+
   if (embedded) {
-    return <div data-testid="model-settings">{content}</div>;
+    return (
+      <div data-testid="model-settings">
+        {body}
+        {disconnectDialog}
+      </div>
+    );
   }
 
   return (
@@ -425,10 +536,7 @@ export function ModelSettingsOverlay({
         if (!open) handleClose();
       }}
     >
-      <DialogContent
-        showCloseButton={false}
-        className="flex h-[760px] max-h-[calc(100%-2rem)] w-[1080px] max-w-[calc(100%-2rem)] flex-col gap-0 overflow-hidden rounded-2xl bg-card p-0 sm:max-w-[1080px]"
-      >
+      <DialogContent showCloseButton={false} size="2xl" className="bg-card">
         <DialogHeader className="flex-row items-start justify-between px-6 pt-6 sm:px-8 sm:pt-7">
           <DialogTitle className="text-heading2 font-medium text-foreground">
             <Trans>Models</Trans>
@@ -440,7 +548,10 @@ export function ModelSettingsOverlay({
           </DialogClose>
         </DialogHeader>
         <div className="rk-scroll min-h-0 flex-1 overflow-y-auto px-6 py-6 sm:px-8">
-          <div className="max-w-[600px]">{content}</div>
+          <div className="max-w-[600px]">
+            {body}
+            {disconnectDialog}
+          </div>
         </div>
       </DialogContent>
     </Dialog>

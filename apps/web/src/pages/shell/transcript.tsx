@@ -2,6 +2,7 @@ import { i18n } from "@lingui/core";
 import { useLingui } from "@lingui/react/macro";
 import type {
   BotAvatarSet,
+  ComputerReleaseReason,
   LoginFieldInput,
   MessageReaction,
   ThreadMessage,
@@ -16,6 +17,7 @@ import {
   peerExchangeLines,
   projectBotMentions,
   projectMessageReactions,
+  separateAskAnswers,
   timeSeparatorIds,
   unreadDividerMessageId,
   voiceChatHoldsMessage,
@@ -66,6 +68,7 @@ export const Transcript = memo(function Transcript({
   followRequest,
   artifactTarget,
   transcript,
+  meId,
   showToolActivity,
   olderCursor,
   unreadAfterSeq,
@@ -74,6 +77,7 @@ export const Transcript = memo(function Transcript({
   dismissableAskIds,
   running,
   workingBots,
+  workingRoutine,
   userBubble,
   onCallBack,
   onLoadOlder,
@@ -93,8 +97,10 @@ export const Transcript = memo(function Transcript({
   onAddRoutine,
   voiceReady,
   speakingMessageId,
+  callHoldsSpeaker,
   onSpeak,
   onOpenComputer,
+  onReleaseComputer,
   onOpenImportSetup,
   rpc,
 }: {
@@ -105,6 +111,7 @@ export const Transcript = memo(function Transcript({
   followRequest: number;
   artifactTarget: ArtifactTarget;
   transcript: FoldedTranscript<ThreadMessage>;
+  meId?: string;
   showToolActivity: boolean;
   olderCursor: number | null;
   /** The seq read up to when this chat opened; null when nothing was unread. */
@@ -114,6 +121,7 @@ export const Transcript = memo(function Transcript({
   dismissableAskIds: Set<string>;
   running: boolean;
   workingBots: GroupAvatarMember[];
+  workingRoutine?: string;
   /** Your bubbles take the bot's color in its own chat. */
   userBubble?: { background: string; foreground: string };
   /** Calls the bot back from a missed call in the transcript. */
@@ -143,8 +151,14 @@ export const Transcript = memo(function Transcript({
   onAddRoutine: (name: string, prompt: string) => void;
   voiceReady: boolean;
   speakingMessageId: string | null;
+  callHoldsSpeaker: boolean;
   onSpeak: (message: ThreadMessage) => void;
-  onOpenComputer: (botId?: string) => void;
+  onOpenComputer: (botId?: string, takeControl?: boolean) => void;
+  onReleaseComputer: (
+    botId: string,
+    runId: string | undefined,
+    reason: ComputerReleaseReason,
+  ) => Promise<void>;
   onOpenImportSetup?: (target: ImportSetupTarget) => void;
   rpc: ReturnType<typeof createSpaceRpc>;
 }) {
@@ -223,6 +237,10 @@ export const Transcript = memo(function Transcript({
     [onJumpToMessage],
   );
   const reactionView = useMemo(() => projectMessageReactions(pageView.visibleMessages), [pageView]);
+  const separateAnswers = useMemo(
+    () => separateAskAnswers(reactionView.visibleMessages),
+    [reactionView.visibleMessages],
+  );
   const visibleReceipts = reactionView.visibleMessages.filter((message) =>
     messageHasVisibleBlocks(message.blocks, showToolActivity),
   );
@@ -231,8 +249,9 @@ export const Transcript = memo(function Transcript({
     (message) => !exchanges.lineOf.has(message.id) || exchanges.lines.has(message.id),
   );
   const separatorIds = timeSeparatorIds(shownMessages);
-  const unreadDividerId = unreadDividerMessageId(shownMessages, unreadAfterSeq, olderCursor);
-  const workingLabel = liveActivityLine(messages) ?? t`Working…`;
+  const unreadDividerId = unreadDividerMessageId(shownMessages, unreadAfterSeq, olderCursor, meId);
+  const workingLabel =
+    liveActivityLine(messages) ?? (workingRoutine ? t`Running ${workingRoutine}…` : t`Working…`);
   const [quoteDraft, setQuoteDraft] = useState<{
     message: ThreadMessage;
     text: string;
@@ -568,7 +587,7 @@ export const Transcript = memo(function Transcript({
               ) : null}
               <div
                 data-message-id={message.id}
-                className={peerReceipt ? "relative py-0.5" : "group/message relative hover:z-[1]"}
+                className={peerReceipt ? "relative" : "group/message relative hover:z-[1]"}
               >
                 <div
                   className={
@@ -586,12 +605,23 @@ export const Transcript = memo(function Transcript({
                               (block) => block.kind === "ask" || block.kind === "mcp_approval",
                             )
                           ? "relative w-full min-w-0 max-w-xl"
-                          : `relative ${message.blocks.some((block) => block.kind === "app_connect" || block.kind === "page") || pageView.pages.has(message.id) ? "w-full" : "w-fit"} min-w-0 ${bubbleFrameWidth(message.role)}`
+                          : `relative ${
+                              message.blocks.some(
+                                (block) =>
+                                  block.kind === "app_connect" ||
+                                  block.kind === "page" ||
+                                  block.kind === "computer",
+                              ) || pageView.pages.has(message.id)
+                                ? "w-full"
+                                : "w-fit"
+                            } min-w-0 ${bubbleFrameWidth(message.role)}`
                     }
                   >
                     <MessageView
                       artifactTarget={artifactTarget}
                       message={message}
+                      separateAnswers={separateAnswers.get(message.id)}
+                      meId={meId}
                       markedUnread={message.id === markedUnreadMessageId}
                       mentions={mentionView.mentions.get(message.id)}
                       pages={pageView.pages.get(message.id)}
@@ -622,8 +652,10 @@ export const Transcript = memo(function Transcript({
                       onAddRoutine={onAddRoutine}
                       voiceReady={voiceReady}
                       speaking={speakingMessageId === message.id}
+                      callHoldsSpeaker={callHoldsSpeaker}
                       onSpeak={onSpeak}
                       onOpenComputer={onOpenComputer}
+                      onReleaseComputer={onReleaseComputer}
                       onOpenImportSetup={onOpenImportSetup}
                       rpc={rpc}
                       showToolActivity={showToolActivity}
@@ -644,7 +676,7 @@ export const Transcript = memo(function Transcript({
                     {[...messageReactions].map(([emoji, count]) => (
                       <span
                         key={emoji}
-                        className="rounded-full border border-border bg-muted px-2 py-0.5 text-xs"
+                        className="rounded-full border border-border bg-muted px-2 py-0.5 text-label"
                       >
                         {emoji}
                         {count > 1 ? ` ${count}` : ""}

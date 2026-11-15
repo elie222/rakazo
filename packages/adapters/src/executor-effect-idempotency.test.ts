@@ -152,7 +152,10 @@ function fixture(runId = "run-1") {
     ),
   };
   const prisma = {
+    space: { findUnique: vi.fn(async () => null) },
+    spaceMember: { findUnique: vi.fn(async () => ({ id: "member-1" })) },
     $transaction: vi.fn(async (write: (tx: unknown) => unknown) => write(prisma)),
+    $executeRaw: vi.fn(async () => 0),
     $queryRaw: vi.fn(async () => []),
     user: { findUnique: vi.fn(async () => null) },
     run: {
@@ -179,6 +182,10 @@ function fixture(runId = "run-1") {
       create: vi.fn(async () => ({ id: "attempt-1" })),
       update: vi.fn(),
       updateMany: vi.fn(async () => ({ count: 1 })),
+      count: vi.fn(async () => 1),
+    },
+    steeringMessage: {
+      findFirst: vi.fn(async () => null),
     },
     thread: {
       findUniqueOrThrow: vi.fn(async () => ({ id: run.threadId, groupId: null })),

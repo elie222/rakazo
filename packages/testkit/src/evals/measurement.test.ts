@@ -48,6 +48,95 @@ it("reserves concurrent spend and retains estimated spend after failed calls", (
   expect(budget.reservedUsd).toBe(0);
   expect(() => new SpendBudget().reserve(1, 1)).toThrow("pricing");
 });
+it("reserves another model's call at its own cost bound, never at the eval model's rates", () => {
+  const budget = new SpendBudget(5, pricing);
+  const id = budget.reserveCostBound(0.36);
+  budget.settleUsage(id, { inputTokens: 1000, outputTokens: 500, totalTokens: 1500 });
+  // No provider charge and no catalog estimate: the model's own bound is spent, not 0.002 USD
+  // of eval-model rates for these tokens.
+  expect(budget.usedUsd).toBeCloseTo(0.36);
+  expect(() => budget.reserveCostBound(5)).toThrow("cap");
+  expect(() => budget.reserveCostBound(Number.NaN)).toThrow("conservative");
+});
+it("settles a bounded reservation at the call's own reported or catalog-estimated charge", () => {
+  const budget = new SpendBudget(5, pricing);
+  const reported = budget.reserveCostBound(0.36);
+  budget.settleUsage(reported, {
+    inputTokens: 10,
+    outputTokens: 4,
+    costUsd: 0.002,
+    costSource: "provider-reported",
+  });
+  expect(budget.usedUsd).toBeCloseTo(0.002);
+  const catalog = budget.reserveCostBound(0.36);
+  budget.settleUsage(catalog, {
+    inputTokens: 10,
+    outputTokens: 4,
+    costUsd: 0.02,
+    costSource: "pi-catalog-estimate",
+  });
+  expect(budget.usedUsd).toBeCloseTo(0.022);
+});
+it("keeps eval-model reservations working after a bounded call reports one-hour writes", () => {
+  const budget = new SpendBudget(1, { ...pricing, cacheWrite1h: 6 });
+  const id = budget.reserveCostBound(0.01);
+  budget.settleUsage(id, {
+    inputTokens: 0,
+    outputTokens: 10,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 100,
+    cacheWrite1hTokens: 100,
+    totalTokens: 110,
+  });
+  expect(budget.usedUsd).toBeCloseTo(0.01);
+  expect(() => budget.reserve(100, 10)).not.toThrow();
+});
+it("prices another model's reported call at its own charge when the pricing covers the eval model", () => {
+  const evalModel = { provider: "compatible", modelId: "cheap-eval-model" };
+  const catalogued = measureCalls(
+    [
+      {
+        id: "eval",
+        provider: "compatible",
+        modelId: "cheap-eval-model",
+        inputTokens: 1000,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+      },
+      {
+        id: "checker",
+        provider: "compatible",
+        modelId: "expensive-checker-model",
+        inputTokens: 10,
+        outputTokens: 4,
+        costUsd: 0.36,
+        costSource: "pi-catalog-estimate",
+      },
+    ],
+    pricing,
+    undefined,
+    evalModel,
+  );
+  expect(catalogued.costUsd).toBeCloseTo(0.001 + 0.36);
+  expect(catalogued.costSources).toEqual(["explicit-pricing-estimate", "pi-catalog-estimate"]);
+  expect(
+    measureCalls(
+      [
+        {
+          id: "checker",
+          provider: "compatible",
+          modelId: "expensive-checker-model",
+          inputTokens: 10,
+          outputTokens: 4,
+        },
+      ],
+      pricing,
+      undefined,
+      evalModel,
+    ).costUsd,
+  ).toBeNull();
+});
 it("generates reproducible 10k originals and rejects obsolete decisions and writes", () => {
   const fixture = historyFixture(10000, "changed");
   expect(fixture).toEqual(historyFixture(10000, "changed"));

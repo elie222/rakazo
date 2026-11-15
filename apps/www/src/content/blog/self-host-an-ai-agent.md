@@ -84,7 +84,7 @@ The software is Apache-2.0. This install runs the same product as Rakazo Cloud, 
 
 For published images, the guide asks for Docker Engine 26 or newer, because bot home volumes use API 1.45 subpaths. You also need the Compose plugin, curl, and OpenSSL. You do not install Node.js for this path.
 
-A source checkout is different. It wants Node.js 22.22.2 or newer on the 22.x line, Node.js 24.x, or Node.js 26 or newer, plus pnpm 9 and Docker. Node.js 23.x and 25.x are not supported. Use that path when you are developing Rakazo. It is not required to run the published images.
+A source checkout is different. It wants Node.js 24.15.0 or newer on the 24.x line, or Node.js 26 or newer, plus pnpm 12 and Docker. Node.js 25.x is not supported. Use that path when you are developing Rakazo. It is not required to run the published images.
 
 ## Install the published images
 

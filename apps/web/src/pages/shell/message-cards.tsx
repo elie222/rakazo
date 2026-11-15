@@ -74,11 +74,11 @@ export function ChoiceCard({
             <X size={16} strokeWidth={1.8} />
           </Button>
         ) : null}
-        <div className="pe-8 text-[15.5px] text-foreground/90">
+        <div className="pe-8 text-body-lg text-foreground/90">
           <OnboardingFocusQuestion question={block.question} />
         </div>
         {block.subtitle ? (
-          <div className="mt-0.5 text-[13px] text-foreground/75">{block.subtitle}</div>
+          <div className="mt-0.5 text-body-sm text-foreground/75">{block.subtitle}</div>
         ) : null}
         <div className="mt-2.5 space-y-0.5">
           {block.options.map((option) => (
@@ -97,7 +97,7 @@ export function ChoiceCard({
             </OptionRow>
           ))}
         </div>
-        {error ? <p className="mt-2 text-xs text-destructive">{error}</p> : null}
+        {error ? <p className="mt-2 text-label text-destructive">{error}</p> : null}
       </BuiCard>
     </div>
   );
@@ -207,16 +207,16 @@ export function AppConnectCard({
           <img
             src={block.logo}
             alt=""
-            className="h-10 w-10 rounded-[10px] bg-favicon-plate object-contain p-1"
+            className="h-10 w-10 rounded-md bg-favicon-plate object-contain p-1"
           />
         ) : (
-          <span className="grid h-10 w-10 place-items-center rounded-[10px] bg-muted text-[15px] text-foreground">
+          <span className="grid h-10 w-10 place-items-center rounded-md bg-muted text-body-lg text-foreground">
             {block.name.slice(0, 1).toUpperCase()}
           </span>
         )}
         <span className="min-w-0 flex-1">
-          <span className="block text-[15px] font-medium text-foreground">{block.name}</span>
-          <span className="block truncate text-[13px] text-muted-foreground">
+          <span className="block text-body-lg font-medium text-foreground">{block.name}</span>
+          <span className="block truncate text-body-sm text-muted-foreground">
             {block.description}
           </span>
         </span>
@@ -228,7 +228,7 @@ export function AppConnectCard({
           </Button>
         )}
       </div>
-      {error ? <p className="mt-2 text-xs text-destructive">{error}</p> : null}
+      {error ? <p className="mt-2 text-label text-destructive">{error}</p> : null}
     </BuiCard>
   );
 }
@@ -287,21 +287,21 @@ function ChartCanvas({
   }, [spec, data, width, height, t]);
   if (error)
     return (
-      <div className="text-[13px] text-destructive">
+      <div className="text-body-sm text-destructive">
         <Trans>Chart failed to render: {error}</Trans>
       </div>
     );
   return (
     <div className="text-foreground/75">
       {meta.title ? (
-        <div className="mb-1 text-[14.5px] font-semibold text-foreground">{meta.title}</div>
+        <div className="mb-1 text-body-lg font-semibold text-foreground">{meta.title}</div>
       ) : null}
       {meta.swatches.length > 0 ? (
         <div className="mb-2 flex flex-wrap gap-x-3 gap-y-1">
           {meta.swatches.map((swatch) => (
             <span
               key={swatch.label}
-              className="flex items-center gap-1.5 text-[12px] text-muted-foreground"
+              className="flex items-center gap-1.5 text-label text-muted-foreground"
             >
               {/* Series colours are data-driven and intentionally distinct. */}
               <span
@@ -398,17 +398,17 @@ export function McpApprovalCard({
   return (
     <BuiCard data-testid="mcp-approval-card" className="w-full min-w-0 max-w-xl p-4">
       <div className="flex items-center gap-2">
-        <span className="grid h-7 w-7 place-items-center rounded-lg bg-muted text-xs text-foreground">
+        <span className="grid h-7 w-7 place-items-center rounded-lg bg-muted text-label text-foreground">
           M
         </span>
-        <span className="text-[14.5px] font-medium text-foreground">
+        <span className="text-body-lg font-medium text-foreground">
           <Trans>Connect MCP server “{name}”</Trans>
         </span>
       </div>
-      <p className="mt-1.5 truncate text-[12px] text-muted-foreground">{summary}</p>
+      <p className="mt-1.5 truncate text-label text-muted-foreground">{summary}</p>
       {state === "pending" || state === "connecting" ? (
         <>
-          <p className="mt-2 text-[13px] leading-[1.5] text-foreground/75">
+          <p className="mt-2 text-body-sm leading-[1.5] text-foreground/75">
             {needsOAuth
               ? t`Authorize this server so agents can use its tools. A popup opens.`
               : t`Approve this server to let your agent use its tools.`}
@@ -438,7 +438,7 @@ export function McpApprovalCard({
         </div>
       ) : null}
       {state === "dismissed" ? (
-        <p className="mt-2 text-[13px] text-muted-foreground">
+        <p className="mt-2 text-body-sm text-muted-foreground">
           <Trans>Dismissed. Reconnect anytime from MCP settings.</Trans>
         </p>
       ) : null}
@@ -471,7 +471,7 @@ export function ChartBlockView({
   const expandedViewport = chartViewport(viewport.width, viewport.height);
   return (
     <>
-      <div className="group relative w-[552px] max-w-full rounded-[20px] bg-muted p-4">
+      <div className="group relative w-[552px] max-w-full rounded-2xl bg-muted p-4">
         <ChartCanvas spec={spec} data={data} width={520} />
         <Button
           variant="outline"
@@ -488,7 +488,7 @@ export function ChartBlockView({
           className="max-h-[92vh] w-[min(1320px,94vw)] max-w-none overflow-auto p-8 sm:max-w-none"
         >
           <div className="flex items-center justify-between">
-            <DialogTitle className="text-[13px] font-normal text-muted-foreground">
+            <DialogTitle className="text-body-sm font-normal text-muted-foreground">
               {name}
             </DialogTitle>
             <DialogClose
@@ -550,14 +550,12 @@ export function ArtifactImage({
         <button
           type="button"
           onClick={() => setOpen(true)}
-          className="max-w-[240px] overflow-hidden rounded-[20px]"
+          className="max-w-[240px] overflow-hidden rounded-2xl"
         >
           <img src={src} alt={name} className="max-h-48 w-full object-cover" />
         </button>
       ) : (
-        <div className="rounded-[20px] bg-muted px-4 py-3 text-[14px] text-muted-foreground">
-          {name}
-        </div>
+        <div className="rounded-2xl bg-muted px-4 py-3 text-body text-muted-foreground">{name}</div>
       )}
       {src ? (
         <Dialog open={open} onOpenChange={setOpen}>

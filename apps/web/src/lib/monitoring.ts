@@ -171,14 +171,22 @@ const INJECTED =
   /window\.(?:__firefox__|ethereum)\b|Failed to execute '(?:removeChild|insertBefore)' on 'Node'|^Object Not Found Matching Id:/;
 
 /**
+ * A lazy chunk that did not load (Chrome, Safari, Firefox wording): a dropped connection or a
+ * deploy the recovery reload could not fix. The error boundary offers a refresh.
+ */
+const CHUNK_LOAD =
+  /^(?:Failed to fetch dynamically imported module|Importing a module script failed|error loading dynamically imported module)/;
+
+/**
  * The network rather than the code (offline, a timeout or cancellation, a gateway answer while the
- * server restarts), or someone else's code: this app only throws errors, never bare objects.
+ * server restarts, a chunk that did not load), or someone else's code: this app only throws
+ * errors, never bare objects.
  */
 function isNotAppBug(error: unknown): boolean {
   if (typeof error === "object" && error !== null && !(error instanceof Error)) return true;
   if (isAbandonedRequest(error) || isServerUnreachable(error)) return true;
   const message = error instanceof Error ? error.message : typeof error === "string" ? error : "";
-  return INJECTED.test(message);
+  return INJECTED.test(message) || CHUNK_LOAD.test(message);
 }
 
 /**

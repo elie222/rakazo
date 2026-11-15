@@ -1,0 +1,53 @@
+name: preview-build
+
+# Builds a pull request's preview image, including from forks. This half runs the pull request's
+# code, so it gets a read-only token and no secrets; preview-deploy.yml picks up the image.
+# See infra/preview/README.md.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - "apps/api/**"
+      - "apps/web/**"
+      - "apps/worker/**"
+      - "packages/**"
+      - "infra/compose/Dockerfile"
+      - "infra/preview/**"
+      - "patches/**"
+      - "scripts/**"
+      - ".dockerignore"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: preview-build-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build preview image
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - name: Build
+        env:
+          GIT_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          docker build -f infra/compose/Dockerfile --build-arg GIT_SHA="$GIT_SHA" \
+            -t rakazo-server:preview .
+          docker build --build-arg SERVER_IMAGE=rakazo-server:preview -t rakazo-preview:pr \
+            infra/preview
+          docker save rakazo-preview:pr | zstd -T0 -3 -q -o "$RUNNER_TEMP/preview-image.tar.zst"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: preview-image
+          path: ${{ runner.temp }}/preview-image.tar.zst
+          retention-days: 1
+          compression-level: 0

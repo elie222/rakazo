@@ -18,6 +18,7 @@ import { modelPickerRequest } from "./model-picker-selection";
 import { queryClient } from "./query";
 
 const mocks = vi.hoisted(() => ({
+  showMenu: vi.fn(),
   scrollToLocation: vi.fn(),
   scrollTo: vi.fn(),
   reportVisibleRows: true,
@@ -96,19 +97,32 @@ vi.mock("./appearance", () => ({ mobileTokens: () => ({}) }));
 vi.mock("./message-action-sheet", () => ({ presentMessageActionSheet: vi.fn() }));
 vi.mock("./live-notifications", () => ({ afterChatNotifyChange: vi.fn(async () => undefined) }));
 
-vi.mock("./session", () => ({ currentSessionGeneration: () => 1 }));
+vi.mock("./session", () => ({
+  loadSessionToken: async () => "token",
+  currentSessionGeneration: () => 1,
+}));
 // Cache updates reach the screen inside act instead of on a later timer.
 notifyManager.setScheduler((callback) => callback());
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   currentApiBase: () => "https://app.example.test",
-  loadSessionToken: async () => "token",
   captureApiRequestContext: async () => ({ headers: {} }),
   selectedSpaceId: () => "space-fixture",
   rpc: async (procedure: string, input?: unknown, options?: { signal?: AbortSignal }) => {
     const cloudflare = mocks.gateway
-      ? { provider: "cloudflare-ai-gateway", providerName: "Cloudflare AI Gateway" }
+      ? {
+          provider: "cloudflare-ai-gateway",
+          providerName: "Cloudflare AI Gateway",
+          routingFields: ["accountId", "gatewayId"],
+        }
       : mocks.workers
-        ? { provider: "cloudflare-workers-ai", providerName: "Cloudflare Workers AI" }
+        ? {
+            provider: "cloudflare-workers-ai",
+            providerName: "Cloudflare Workers AI",
+            routingFields: ["accountId"],
+          }
         : undefined;
     const result = mocks.rpc(procedure, input);
     if (procedure === "models/connect") {
@@ -122,7 +136,16 @@ vi.mock("./api", () => ({
       mocks.savedMaxTokens = saved.maxTokens ?? undefined;
       if (saved.accountId) mocks.savedAccountId = saved.accountId;
       if (saved.gatewayId) mocks.savedGatewayId = saved.gatewayId;
-      return { id: CREDENTIAL_ID };
+      return {
+        id: CREDENTIAL_ID,
+        provider: cloudflare?.provider ?? "openrouter",
+        label: cloudflare?.providerName ?? "OpenRouter",
+        maxTokens: mocks.savedMaxTokens,
+        accountId: mocks.savedAccountId,
+        gatewayId: mocks.savedGatewayId,
+        modelId: "vendor/model-1",
+        hasKey: true,
+      };
     }
     if (procedure === "models/beginOAuth")
       return {
@@ -192,6 +215,7 @@ vi.mock("./api", () => ({
                   ...entry,
                   provider: cloudflare?.provider ?? entry.provider,
                   providerName: cloudflare?.providerName ?? entry.providerName,
+                  ...(cloudflare ? { routingFields: cloudflare.routingFields } : {}),
                 })),
                 ...(mocks.extraProviders
                   ? ["Anthropic", "Google", "OpenAI", "Other", "Last"].map((name) => ({
@@ -264,13 +288,17 @@ vi.mock("react-native", () => {
     accessibilityLabel,
     accessibilityRole,
     accessibilityValue,
+    onAccessibilityAction,
   }: {
     children?: ReactNode;
     accessibilityLabel?: string;
     accessibilityRole?: string;
     accessibilityValue?: { text: string };
-  }) =>
-    createElement(
+    onAccessibilityAction?: (event: { nativeEvent: { actionName: string } }) => void;
+  }) => {
+    if (accessibilityLabel && onAccessibilityAction)
+      mocks.rowAccessibilityActions.set(accessibilityLabel, onAccessibilityAction);
+    return createElement(
       "div",
       {
         "aria-label": accessibilityLabel,
@@ -279,6 +307,7 @@ vi.mock("react-native", () => {
       },
       children,
     );
+  };
   return {
     AccessibilityInfo: { announceForAccessibility: mocks.announce },
     ActivityIndicator: () => createElement("i", { "data-loading": true }),
@@ -418,11 +447,6 @@ vi.mock("./native", () => ({
   useResolvedAppearance: () => "light",
   useThemedStyles: (createStyles: () => unknown) => createStyles(),
 }));
-vi.mock("./i18n", () => {
-  const t = (text: string, values?: Record<string, string | number>) =>
-    text.replace(/\{(\w+)\}/g, (match, key: string) => String(values?.[key] ?? match));
-  return { t, useI18n: () => ({ t }) };
-});
 vi.mock("../components/settings-group", () => ({
   SettingsGroup: ({
     label,
@@ -441,6 +465,8 @@ vi.mock("../components/settings-group", () => ({
       footer,
     ),
   SettingsLabel: ({ children }: { children: ReactNode }) => createElement("h2", {}, children),
+  SettingsSwitch: ({ label }: { label: string }) =>
+    createElement("button", { type: "button", role: "switch" }, label),
   SettingsFooter: ({ children }: { children: ReactNode }) => createElement("span", {}, children),
   SettingsRow: ({
     title,
@@ -498,13 +524,6 @@ vi.mock("../components/settings-group", () => ({
   },
 }));
 vi.mock("../components/bot-avatar", () => ({ BotAvatar: () => null }));
-vi.mock("./bot-avatar-edit", () => ({
-  avatarColor: (value: string) => value,
-  avatarShape: () => null,
-  isAvatarPhoto: () => false,
-  withAvatarColor: (_value: string, color: string) => color,
-  withAvatarShape: (value: string) => value,
-}));
 vi.mock("../components/computer-mode-picker", () => ({ ComputerModePicker: () => null }));
 vi.mock("../components/native-action-button", () => ({
   NativeActionButton: ({
@@ -549,16 +568,19 @@ vi.mock("../components/text-only-mark", () => ({
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
 vi.mock("@expo/ui/community/menu", () => ({
   MenuView: ({
+    ref,
     title,
     actions,
     onPressAction,
     children,
   }: {
+    ref?: Ref<{ show: () => void }>;
     title: string;
     actions: { id: string; title: string }[];
     onPressAction: (event: { nativeEvent: { event: string } }) => void;
     children: ReactNode;
   }) => {
+    useImperativeHandle(ref, () => ({ show: () => mocks.showMenu(title) }), [title]);
     mocks.menus.set(title, { actions, onPressAction });
     return createElement("section", { "data-menu": title }, children);
   },
@@ -822,11 +844,8 @@ describe("provider connection screen", () => {
     const keySection = buttonWithText("Replace API key")!.parentElement!;
     expect(keySection.firstElementChild?.textContent).toBe("API key");
     expect(buttonWithText("Replace API key")?.dataset.prominence).toBe("secondary");
-    const advanced = buttonWithText("Advanced")!;
-    expect(advanced.getAttribute("aria-expanded")).toBe("false");
-    act(() => advanced.click());
-    expect(advanced.getAttribute("aria-expanded")).toBe("true");
-    expect(advanced.dataset.chevron).toBe("down");
+    // A model's own limits live in its Manage model screen.
+    expect(buttonWithText("Advanced")).toBeUndefined();
   });
 
   it("reveals only the own-key controls behind server credentials", async () => {
@@ -903,73 +922,7 @@ describe("provider connection screen", () => {
   });
 });
 
-describe("provider connection limit saves", () => {
-  it("shows Save under Advanced only when connected limits differ and saves without replacing a draft key", async () => {
-    mocks.savedMaxTokens = 1000;
-    await renderConnection();
-    expect(buttonWithText("Replace API key")?.disabled).toBe(true);
-    editField("API key", "1234567");
-    expect(buttonWithText("Replace API key")?.disabled).toBe(true);
-    editField("API key", "fixture-replacement-key");
-    expect(buttonWithText("Replace API key")?.disabled).toBe(false);
-    act(() => buttonWithText("Advanced")!.click());
-    expect(buttonWithText("Save")).toBeUndefined();
-    editField("Maximum output tokens", "2000");
-    const save = buttonWithText("Save")!;
-    expect(save.dataset.prominence).toBe("secondary");
-    expect(save.previousElementSibling?.textContent).toContain("Maximum output tokens");
-    editField("Maximum output tokens", "1000");
-    expect(buttonWithText("Save")).toBeUndefined();
-    editField("Maximum output tokens", "2000");
-    await act(async () => buttonWithText("Save")!.click());
-    expect(mocks.rpc).toHaveBeenCalledWith("models/connect", {
-      provider: "openrouter",
-      modelId: "vendor/model-1",
-      makeDefault: false,
-      scope: "account",
-      maxTokens: 2000,
-      label: "OpenRouter",
-      // A save on a managed connection updates that connection only.
-      credentialId: CREDENTIAL_ID,
-    });
-    expect(buttonWithText("Save")).toBeUndefined();
-    const field = container.querySelector('input[aria-label="Maximum output tokens"]')!;
-    expect(field.parentElement?.nextElementSibling?.textContent).toBe("Saved.");
-    expect(container.querySelector<HTMLInputElement>('input[aria-label="API key"]')!.value).toBe(
-      "fixture-replacement-key",
-    );
-  });
-
-  it("shows Saving while the Advanced save is pending", async () => {
-    await renderConnection();
-    act(() => buttonWithText("Advanced")!.click());
-    editField("Maximum output tokens", "2000");
-    let finish!: () => void;
-    const pending = new Promise<void>((resolve) => {
-      finish = resolve;
-    });
-    mocks.rpc.mockImplementation((procedure) =>
-      procedure === "models/connect" ? pending : undefined,
-    );
-    await act(async () => buttonWithText("Save")!.click());
-    expect(buttonWithText("Saving…")?.disabled).toBe(true);
-    expect(buttonWithText("Replace API key")?.disabled).toBe(true);
-    await act(async () => finish());
-    expect(buttonWithText("Saving…")).toBeUndefined();
-    expect(container.textContent).toContain("Saved.");
-  });
-
-  it("keeps invalid limits feedback beside Advanced Save", async () => {
-    await renderConnection();
-    act(() => buttonWithText("Advanced")!.click());
-    editField("Maximum output tokens", "0");
-    await act(async () => buttonWithText("Save")!.click());
-    expect(mocks.rpc.mock.calls.some(([procedure]) => procedure === "models/connect")).toBe(false);
-    expect(buttonWithText("Save")?.nextElementSibling?.textContent).toContain(
-      "Enter a whole number",
-    );
-  });
-
+describe("provider connection settings saves", () => {
   it("edits a Workers AI account without a gateway or replacement key", async () => {
     mocks.workers = true;
     await renderConnection();
@@ -1043,6 +996,24 @@ describe("model role lists", () => {
       button.textContent?.includes(name),
     )!;
 
+  it("opens Android model options from accessibility activation", async () => {
+    mocks.platform = "android";
+    mocks.primary = model(1);
+    await renderModels();
+    const activate = mocks.rowAccessibilityActions.get("Model 1 (OpenRouter) options")!;
+    act(() => activate({ nativeEvent: { actionName: "activate" } }));
+    expect(mocks.showMenu).toHaveBeenCalledExactlyOnceWith("Model 1");
+  });
+
+  it("keeps the native menu outside the model picker's press target", async () => {
+    mocks.primary = model(1);
+    await renderModels();
+    const menu = section("Main model").querySelector('[data-menu="Model 1"]')!;
+    expect(menu.closest("button")).toBeNull();
+    act(() => rowButton("Main model", "Model 1").click());
+    expect(mocks.push).toHaveBeenCalledWith(expect.objectContaining({ pathname: "/model-picker" }));
+  });
+
   it("numbers the main model and its fallbacks, then offers Add fallback", async () => {
     mocks.primary = { ...model(1), thinkingLevel: "high" };
     mocks.backups = [model(2)];
@@ -1111,11 +1082,11 @@ describe("model role lists", () => {
     mocks.backups = [model(2), model(3)];
     await renderModels();
     const ids = (title: string) => mocks.menus.get(title)!.actions.map((action) => action.id);
-    expect(ids("Model 1")).toEqual(["thinking", "moveDown", "manage", "remove"]);
-    expect(ids("Model 2")).toEqual(["moveUp", "moveDown", "manage", "remove"]);
-    expect(ids("Model 3")).toEqual(["moveUp", "manage", "remove"]);
+    expect(ids("Model 1")).toEqual(["thinking", "moveDown", "manageModel", "manage", "remove"]);
+    expect(ids("Model 2")).toEqual(["moveUp", "moveDown", "manageModel", "manage", "remove"]);
+    expect(ids("Model 3")).toEqual(["moveUp", "manageModel", "manage", "remove"]);
     expect(rowButton("Main model", "Model 1").getAttribute("data-accessibility-actions")).toBe(
-      "Thinking: Default,Thinking: Low,Thinking: Medium,Thinking: High,Move down,Manage OpenRouter,Remove",
+      "Thinking: Default,Thinking: Low,Thinking: Medium,Thinking: High,Move down,Manage model,Manage provider,Remove",
     );
     await menuAction("Model 3", "moveUp");
     expect(rowTitles()).toEqual(["Model 1", "Model 3", "Model 2"]);
@@ -1685,6 +1656,11 @@ describe("several connections for one provider", () => {
     expect(
       [...section("Main model").querySelectorAll("button")].map((button) => button.textContent),
     ).toEqual(["1Model 1OpenRouter", "2Model 1OpenRouter (Work)", "Add fallback"]);
+    expect(
+      [...section("Main model").querySelectorAll('[role="button"]')].map((button) =>
+        button.getAttribute("aria-label"),
+      ),
+    ).toEqual(["Model 1 (OpenRouter) options", "Model 1 (OpenRouter, Work) options"]);
     const menu = [...mocks.menus.entries()].filter(([title]) => title === "Model 1");
     expect(menu).toHaveLength(1);
     await act(async () =>
@@ -1701,7 +1677,7 @@ describe("several connections for one provider", () => {
     await renderModels();
     expect(
       [...section("Providers").querySelectorAll("button")].map((button) => button.textContent),
-    ).toEqual(["OpenRouter", "OpenRouter (Work)", "Add provider"]);
+    ).toEqual(["OpenRouter11 models", "OpenRouter (Work)11 models", "Add provider"]);
     expect(mocks.menus.get("OpenRouter (Work)")!.actions.map((action) => action.title)).toEqual([
       "Rename",
       "Replace API key",

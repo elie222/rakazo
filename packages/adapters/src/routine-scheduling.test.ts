@@ -9,6 +9,8 @@ describe("routine scheduling", () => {
     const enqueue = vi.fn(async (_job: BackgroundJob) => undefined);
     const jobs: JobPublisher = {
       enqueue,
+      enqueueIn: async () => undefined,
+      cancelIn: async () => undefined,
       cancel: async () => undefined,
       close: async () => undefined,
     };
@@ -45,6 +47,8 @@ function pendingTimerFixture(reuse = true) {
     updatedAt: scheduledAt,
   };
   const tx = {
+    $queryRaw: vi.fn(async () => []),
+    space: { findUnique: vi.fn(async () => null) },
     computerExecutionLease: { findMany: vi.fn(async () => []) },
     computer: { findMany: vi.fn(async () => []) },
     routine: {
@@ -69,6 +73,7 @@ function pendingTimerFixture(reuse = true) {
     },
   };
   const prisma = {
+    user: { findUnique: vi.fn(async () => null) },
     routine: { findUnique: vi.fn(async () => routine) },
     bot: { findUnique: vi.fn(async () => ({ id: "bot-1", thread: { id: "thread-1" } })) },
     agentSkill: { findMany: vi.fn(async () => []) },

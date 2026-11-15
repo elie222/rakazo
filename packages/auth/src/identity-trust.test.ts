@@ -1,7 +1,7 @@
 import { createHash, createHmac, generateKeyPairSync, randomBytes, sign } from "node:crypto";
 import type { TransactionalEmail } from "@rakazo/adapter-kit";
 import type * as Db from "@rakazo/db";
-import { bootstrapUserSpace, recordSecurityEvent } from "@rakazo/db";
+import { bootstrapUserSpace, recordSecurityEvent, SpaceDeletionInProgressError } from "@rakazo/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AuthEnv } from "./index.js";
 import { CLIENT_IP_HEADER, createAuth } from "./index.js";
@@ -32,6 +32,7 @@ vi.mock("better-auth/adapters/prisma", async () => {
 vi.mock("@rakazo/db", async (original) => ({
   ...(await original<typeof Db>()),
   bootstrapUserSpace: vi.fn(async () => ({ spaceId: "space-1" })),
+  leaveInvitedSpaces: vi.fn(async () => ({ ownedOrganizationIds: [] })),
   recordSecurityEvent: vi.fn(async () => undefined),
 }));
 
@@ -51,7 +52,10 @@ function fixture({
   requestOrigin?: string;
   /** The provider accepts the message but never settles, like a hung SMTP connection. */
   stalledDelivery?: boolean;
-} & Pick<AuthEnv, "singleAccount" | "afterDeleteSession" | "afterReplaceSession"> = {}) {
+} & Pick<
+  AuthEnv,
+  "singleAccount" | "afterDeleteSession" | "afterReplaceSession" | "beforeDeleteUser" | "analytics"
+> = {}) {
   const data: Record<string, Record<string, unknown>[]> = {
     user: [],
     account: [],
@@ -271,6 +275,53 @@ function fixture({
 }
 
 beforeEach(() => vi.clearAllMocks());
+
+it("stores validated signup attribution once, hides it from auth responses, and captures it", async () => {
+  const analytics = { capture: vi.fn(), flush: vi.fn(async () => undefined) };
+  const f = fixture({ analytics });
+  const attribution = { surface: "web", utmSource: "community", utmCampaign: "launch" };
+  const response = await f.auth.handler(
+    new Request("http://auth.example.test/api/auth/sign-up/email", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        origin: "http://web.example.test",
+        cookie: `rakazo_signup_attribution=${encodeURIComponent(JSON.stringify(attribution))}`,
+        "x-rakazo-signup-surface": "android",
+      },
+      body: JSON.stringify({
+        email: "new@example.test",
+        password: "offline-password12",
+        name: "New User",
+      }),
+    }),
+  );
+  expect(response.status, await response.clone().text()).toBe(200);
+  expect(f.data.user![0]).toMatchObject({
+    signupSurface: "android",
+    signupUtmSource: "community",
+    signupUtmCampaign: "launch",
+  });
+  const body = await response.json();
+  expect(body).toHaveProperty("user.id");
+  expect(body).not.toHaveProperty("user.signupSurface");
+  expect(body).not.toHaveProperty("user.signupUtmSource");
+  expect(analytics.capture).toHaveBeenCalledWith(
+    expect.any(String),
+    {
+      name: "account_created",
+      ...attribution,
+      surface: "android",
+    },
+    { id: expect.any(String), at: expect.any(Date) },
+  );
+  await f.signin("new@example.test");
+  expect(f.data.user![0]).toMatchObject({
+    signupSurface: "android",
+    signupUtmSource: "community",
+    signupUtmCampaign: "launch",
+  });
+});
 
 describe("client address and security events", () => {
   const signInWith = (f: ReturnType<typeof fixture>, headers: Record<string, string>) =>
@@ -610,6 +661,19 @@ describe("session credentials", () => {
     const deleted = await f.request("/delete-user", { password: "offline-password12" }, token);
     expect(deleted.status).toBe(200);
     expect(f.data.user).toHaveLength(0);
+  });
+
+  it("answers a deletion already under way with a conflict and keeps the account", async () => {
+    const f = fixture({
+      delivery: false,
+      beforeDeleteUser: async () => {
+        throw new SpaceDeletionInProgressError();
+      },
+    });
+    const { token } = (await (await f.signup()).json()) as { token: string };
+    const response = await f.request("/delete-user", { password: "offline-password12" }, token);
+    expect(response.status).toBe(409);
+    expect(f.data.user).toHaveLength(1);
   });
 });
 

@@ -17,11 +17,13 @@ import {
 import type { PurchaseCardField } from "@rakazo/contracts";
 import { PurchaseIdInput, PurchaseRequestInput } from "@rakazo/contracts";
 import type { Purchase } from "@rakazo/db";
+import { recordPayment, releasePayment } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { cardRedactionForms } from "./bot-secrets.js";
 import type { PaymentWalletDeps } from "./payment-wallets.js";
 import { withPaymentWalletCredential } from "./payment-wallets.js";
 import { deleteSecretBestEffort } from "./secret-store-factory.js";
+import { releaseUnpaidPurchase, spendingRefusalError } from "./spending-gate.js";
 import type { SafeWebFetchOptions } from "./web-ssrf.js";
 
 export type PurchaseDeps = Omit<PaymentWalletDeps, "paymentWallet"> & {
@@ -237,6 +239,19 @@ export async function createPurchase(
     where: { operationKey: context.operationId },
   });
   if (existing) return purchaseView(ownedReplay(existing, context));
+  // Counted against the spending limit before the wallet owner is asked, so two requests waiting at
+  // once cannot both fit; released below or by the poller when no money moves.
+  const refusal = await recordPayment(deps.prisma, {
+    operationKey: context.operationId,
+    userId: context.userId,
+    spaceId: context.spaceId,
+    botId: context.botId,
+    threadId: run.threadId,
+    site: new URL(request.merchantUrl).host,
+    amount: request.amount,
+    currency: request.currency,
+  });
+  if (refusal) return { error: spendingRefusalError(refusal) };
   let snapshot: PurchaseSnapshot;
   try {
     // The idempotency key makes a replay after a crash reuse the same remote purchase.
@@ -254,8 +269,13 @@ export async function createPurchase(
       ),
     );
   } catch (error) {
+    // Only a wallet that turned the request down is known to hold nothing for it; after any other
+    // failure the purchase may exist under its idempotency key, so it keeps counting.
+    if (error instanceof PaymentWalletRequestRejected || error instanceof PaymentWalletDisconnected)
+      await releasePayment(deps.prisma, context.operationId);
     return providerError(error);
   }
+  await releaseUnpaidPurchase(deps.prisma, context.operationId, snapshot.status);
   const pending = PENDING_PURCHASE_STATUSES.has(snapshot.status);
   const thread = await deps.prisma.thread.findUniqueOrThrow({
     where: { id: run.threadId },
@@ -323,6 +343,7 @@ export async function recordSeenStatus(
     where: { id: purchase.id, updatedAt: purchase.updatedAt },
     data,
   });
+  if (saved.count) await releaseUnpaidPurchase(deps.prisma, purchase.operationKey, snapshot.status);
   if (saved.count && data.nextPollAt) await enqueuePurchasePoll(deps, purchase.id, data.nextPollAt);
   return { ...purchase, ...data };
 }

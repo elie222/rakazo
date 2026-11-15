@@ -48,7 +48,7 @@ describe("boxd computers", () => {
 
   it("boots the stock image and builds the snapshot once in the background when it is missing", async () => {
     const boxd = new FakeBoxd();
-    const provider = new BoxdSandboxProvider({ apiKey: "test" }, boxd.client());
+    const provider = new BoxdSandboxProvider({}, boxd.client());
 
     const computer = await provider.provision({ botId: "bot", homePath: "/unused" }, ctx);
     expect(boxd.machine(computer.providerRef).params).not.toHaveProperty("fromSnapshot");
@@ -254,7 +254,7 @@ describe("boxd computers", () => {
   it("does not rebuild a snapshot that is already ready", async () => {
     const boxd = new FakeBoxd();
     boxd.snapshots.set(BOXD_COMPUTER_SNAPSHOT, "ready");
-    const provider = new BoxdSandboxProvider({ apiKey: "test" }, boxd.client());
+    const provider = new BoxdSandboxProvider({}, boxd.client());
 
     expect(await provider.buildComputerSnapshot()).toEqual({
       name: BOXD_COMPUTER_SNAPSHOT,

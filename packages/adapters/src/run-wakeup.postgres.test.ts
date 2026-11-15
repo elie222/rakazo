@@ -22,8 +22,7 @@ import { RunJobPublisher, RunStarter, RunWorkerHost } from "./run-wakeup.js";
 import { GraphileJobPublisher } from "./wakeup.js";
 
 const url = process.env.DATABASE_URL;
-const describePostgres =
-  process.env.VERIFY_DATABASE === "1" && url ? describe.sequential : describe.skip;
+const describePostgres = process.env.VERIFY_DATABASE === "1" && url ? describe : describe.skip;
 
 describePostgres("direct run dispatch (PostgreSQL)", () => {
   let db: ReturnType<typeof createDb>;
@@ -83,7 +82,7 @@ describePostgres("direct run dispatch (PostgreSQL)", () => {
   const wait = async (assertion: () => Promise<void> | void) =>
     vi.waitFor(assertion, { timeout: 5_000, interval: 20 });
 
-  it("reports runs left unstarted, not retry backoff or waits on the bot's own earlier run", async () => {
+  it("reports runs left unstarted, not retry backoff, fresh resumes, or waits on the bot's own earlier run", async () => {
     const now = Date.now();
     const computer = await system.computer.create({
       data: {
@@ -100,6 +99,11 @@ describePostgres("direct run dispatch (PostgreSQL)", () => {
     const delayed = await createRun({ wakeAt: new Date(now - 45_000) });
     await system.run.updateMany({
       where: { id: { in: [retry.id, delayed.id] } },
+      data: { createdAt: new Date(now - 3_600_000), updatedAt: new Date(now - 3_600_000) },
+    });
+    const resumed = await createRun();
+    await system.run.update({
+      where: { id: resumed.id },
       data: { createdAt: new Date(now - 3_600_000) },
     });
     const lease = await system.computerExecutionLease.create({
@@ -176,7 +180,7 @@ describePostgres("direct run dispatch (PostgreSQL)", () => {
       await unblocked.stop();
       installLogger(createLogger({ service: "test", level: "off", sinks: [] }));
       await system.run.updateMany({
-        where: { id: { in: [owner.id, retry.id, delayed.id] } },
+        where: { id: { in: [owner.id, retry.id, delayed.id, resumed.id] } },
         data: { status: "cancelled" },
       });
       await system.computerExecutionLease.delete({ where: { id: lease.id } });
@@ -259,10 +263,6 @@ describePostgres("direct run dispatch (PostgreSQL)", () => {
       data: { computerId: computer.id },
     });
     const waiting = await createRun({ status: "waiting_takeover" });
-    await system.computer.update({
-      where: { id: computer.id },
-      data: { controlRunId: waiting.id },
-    });
     const lease = await system.computerExecutionLease.create({
       data: {
         computerId: computer.id,
@@ -295,9 +295,6 @@ describePostgres("direct run dispatch (PostgreSQL)", () => {
           where: { threadId: identity.threadId, clientNonce: `stuck-expired:${waiting.id}` },
         }),
       ).toBe(1);
-      expect(await system.computer.findUniqueOrThrow({ where: { id: computer.id } })).toMatchObject(
-        { controlRunId: null },
-      );
     } finally {
       await host.stop();
       await system.run.updateMany({
@@ -328,7 +325,6 @@ describePostgres("direct run dispatch (PostgreSQL)", () => {
       data: {
         controlHolder: "user",
         controlBotId: bot.id,
-        controlRunId: waiting.id,
         controlLeaseId: randomUUID(),
         controlLeaseExpiresAt: new Date(Date.now() + 60_000),
       },

@@ -2,7 +2,9 @@ import type { AgentRunRequest } from "@rakazo/adapter-kit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
 import { createRunExecutor } from "./executor.js";
-import { OAUTH_RECONNECT_REQUIRED_ERROR, serializeModelSecret } from "./pi-oauth.js";
+import { serializeModelSecret } from "./model-secret.js";
+import { OAUTH_RECONNECT_REQUIRED_ERROR } from "./pi-oauth.js";
+import { promptVersion } from "./prompt-version.js";
 import { withModelRoles } from "./testing/model-roles.js";
 
 vi.mock("./computer-lifecycle.js", async (importOriginal) => ({
@@ -110,8 +112,13 @@ async function runTurn({
       count: vi.fn(async () => 0),
     },
     userVoiceCredential: { count: vi.fn(async () => 0) },
+    $executeRaw: vi.fn(async () => 0),
     secret: {
       findFirst: vi.fn(
+        async (args: { where: { id: string } }) =>
+          state.secrets.find((row) => row.id === args.where.id) ?? null,
+      ),
+      findUnique: vi.fn(
         async (args: { where: { id: string } }) =>
           state.secrets.find((row) => row.id === args.where.id) ?? null,
       ),
@@ -131,6 +138,7 @@ async function runTurn({
     {
       $transaction: vi.fn(async (work: (client: typeof tx) => Promise<unknown>) => work(tx)),
       user: { findUnique: vi.fn(async () => null) },
+      spaceMember: { findUnique: async () => ({ id: "member-1" }) },
       run: {
         findUnique: vi.fn(async () => run),
         findUniqueOrThrow: vi.fn(async () => run),
@@ -215,6 +223,12 @@ async function runTurn({
       { userId: USER_ID, role: "main", position: 1, thinkingLevel: null, ...BACKUP },
     ],
   );
+  // The run's lease runs in a transaction too.
+  Object.assign(tx, {
+    $queryRaw: vi.fn(async () => []),
+    space: { findUnique: vi.fn(async () => null) },
+    run: prisma.run,
+  });
   const finalizeRun = vi.fn(async () => ({ continuationRunId: null }));
   const executor = createRunExecutor({
     prisma,
@@ -258,7 +272,11 @@ describe("a main model that cannot start runs on the member's backup", () => {
       apiKey: "fake-backup-key",
     });
     expect(request?.fallbackModels).toEqual([]);
-    expect(run).toMatchObject({ modelProvider: BACKUP.provider, modelId: BACKUP.modelId });
+    expect(run).toMatchObject({
+      modelProvider: BACKUP.provider,
+      modelId: BACKUP.modelId,
+      promptVersion: promptVersion(),
+    });
     expect(finalizeRun).not.toHaveBeenCalledWith(expect.objectContaining({ outcome: "failed" }));
   });
 

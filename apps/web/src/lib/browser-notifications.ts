@@ -1,5 +1,12 @@
 import type { ProductEvent } from "@rakazo/contracts";
-import { displayName, plainTextFromMarkdown } from "@rakazo/core";
+import {
+  displayName,
+  memberMessageAlerts,
+  messageUnreadFor,
+  payloadAuthor,
+  plainTextFromMarkdown,
+  TAKEOVER_COMPUTER_PENDING_STATE,
+} from "@rakazo/core";
 import { i18n } from "./i18n";
 
 export type BrowserNotificationPermission = "default" | "denied" | "granted";
@@ -44,14 +51,35 @@ export type BrowserNotificationContext = {
   windowFocused: boolean;
   permission: BrowserNotificationPermission;
   notifiedEventIds: ReadonlySet<string>;
+  /** The signed-in person: another member's message is news to them, their own is not. */
+  meId?: string;
 };
+
+/** A card that only asks for the screen shares the takeover alert's tag, so the two show as one
+ * notification; a viewer who gets no takeover alert still sees the card. */
+function pendingTakeoverOnly(event: Pick<ProductEvent, "type" | "payload">): boolean {
+  if (event.type !== "thread.message.created") return false;
+  const blocks = event.payload.blocks;
+  if (!Array.isArray(blocks) || blocks.length === 0) return false;
+  return blocks.every(
+    (block) =>
+      !!block &&
+      typeof block === "object" &&
+      "kind" in block &&
+      block.kind === "computer" &&
+      "state" in block &&
+      block.state === TAKEOVER_COMPUTER_PENDING_STATE,
+  );
+}
 
 export function shouldNotifyBrowser(
   event: Pick<ProductEvent, "id" | "type" | "threadId" | "seq" | "payload">,
   context: BrowserNotificationContext,
 ): boolean {
   const notifiable =
-    (event.type === "thread.message.created" && event.payload.role === "bot") ||
+    (event.type === "thread.message.created" &&
+      messageUnreadFor(event.payload, context.meId) &&
+      (event.payload.role === "bot" || memberMessageAlerts(event.payload))) ||
     event.type === "run.failed" ||
     event.type === "run.cancelled";
   return (
@@ -81,7 +109,10 @@ export function browserNotificationMessage(
       .filter(Boolean)
       .join("\n")
       .trim();
-    return { title: name, body: body || i18n._({ id: "Message", message: "Message" }) };
+    const text = body || i18n._({ id: "Message", message: "Message" });
+    // Another member's message says who wrote it, as their push does.
+    const author = event.payload.role === "user" ? payloadAuthor(event.payload).author : undefined;
+    return { title: name, body: author ? `${author.name}: ${text}` : text };
   }
   if (event.type === "run.failed") {
     return {
@@ -124,7 +155,8 @@ export function deliverBrowserNotification(
   if (context.permission === "default") return "pending";
   const message = browserNotificationMessage(event, botName);
   try {
-    context.show(message.title, message.body, event.threadId);
+    const tag = pendingTakeoverOnly(event) ? `${event.threadId}:takeover` : event.threadId;
+    context.show(message.title, message.body, tag);
     context.notifiedEventIds.add(event.id);
     return "delivered";
   } catch {

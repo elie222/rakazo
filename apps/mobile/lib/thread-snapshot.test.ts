@@ -1,6 +1,6 @@
 import { reduceLiveMessageBlocks, withLiveStreamingProgress } from "@rakazo/core";
 import { describe, expect, it } from "vitest";
-import type { MobileSnapshot } from "./api";
+import type { MobileSnapshot } from "./mobile-types";
 import { reconcileVisibleThreadSnapshot } from "./thread-snapshot";
 
 function snapshot(): MobileSnapshot {

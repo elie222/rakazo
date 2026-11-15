@@ -23,6 +23,7 @@ import {
   computerHomeKey,
   computerScopeKey,
   createDb,
+  createThreadEvents,
   LocalKeyProvider,
   legacyTeamHomeKey,
   lockSpaceForContentCreation,
@@ -35,8 +36,7 @@ import { deleteAccountContent } from "./account-deletion.js";
 import type { SpaceDeletionDeps } from "./space-deletion.js";
 
 const databaseUrl = process.env.DATABASE_URL;
-const describePostgres =
-  process.env.VERIFY_DATABASE && databaseUrl ? describe.sequential : describe.skip;
+const describePostgres = process.env.VERIFY_DATABASE && databaseUrl ? describe : describe.skip;
 
 describePostgres("account deletion on bot computers (PostgreSQL)", () => {
   let prisma: PrismaClient;
@@ -63,10 +63,12 @@ describePostgres("account deletion on bot computers (PostgreSQL)", () => {
         {
           ...(secrets ? { secrets } : {}),
           prisma,
+          memoryProviders: { resolve: async () => null },
           sandbox: sandbox as unknown as SandboxProvider,
           home,
           jobs: { cancel: vi.fn() } as unknown as JobPublisher,
           artifacts: { remove: vi.fn() } as unknown as ArtifactStore,
+          events: createThreadEvents(prisma),
           dataDir: root,
         },
         userId,
@@ -428,6 +430,10 @@ describePostgres("account deletion on bot computers (PostgreSQL)", () => {
     };
     await expect(deleteAccount(ids.leaver)).rejects.toThrow("provider unavailable");
     sandbox.failDestroy.clear();
+    // The retry may run on the previous release, which finds its claims by this exact token.
+    expect(await system.space.findUnique({ where: { id: ids.soloSpace } })).toMatchObject({
+      deletionClaimId: `account-deletion:${ids.leaver}`,
+    });
 
     await deleteAccount(ids.leaver);
 

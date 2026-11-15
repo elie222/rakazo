@@ -70,7 +70,7 @@ export function ComputerDeviceSettings() {
       {thisComputer ? (
         <SettingsRow
           label={
-            <Label htmlFor={switchId} className="text-[14px] font-normal text-foreground">
+            <Label htmlFor={switchId} className="text-body font-normal text-foreground">
               <Trans>Let bots use this computer</Trans>
             </Label>
           }
@@ -93,7 +93,7 @@ export function ComputerDeviceSettings() {
           label={
             <p className="flex min-w-0 items-baseline gap-2">
               <span className="truncate">{device.name}</span>
-              <span className="shrink-0 text-[12.5px] text-muted-foreground">
+              <span className="shrink-0 text-body-sm text-muted-foreground">
                 {device.connected ? <Trans>Connected</Trans> : <Trans>Offline</Trans>}
               </span>
             </p>
@@ -113,7 +113,7 @@ export function ComputerDeviceSettings() {
         />
       ))}
       {error ? (
-        <p role="alert" className="px-4 py-3 text-[12.5px] text-destructive">
+        <p role="alert" className="px-4 py-3 text-body-sm text-destructive">
           {error}
         </p>
       ) : null}

@@ -43,13 +43,21 @@ exit 1
 `,
       );
       chmodSync(path.join(bin, "docker"), 0o755);
+      // Nested vitest must not inherit the parent's VITEST_* / pool env — under sharding that
+      // leaves the child unable to resolve vitest/config and fails before the suite can run.
+      const childEnv: NodeJS.ProcessEnv = { ...process.env };
+      for (const key of Object.keys(childEnv)) {
+        if (key.startsWith("VITEST_") || key === "NODE_V8_COVERAGE") {
+          delete childEnv[key];
+        }
+      }
       const result = spawnSync(
         "pnpm",
         ["exec", "vitest", "run", "packages/testkit/src/compose.backup.test.ts"],
         {
           cwd: repoRoot,
           env: {
-            ...process.env,
+            ...childEnv,
             PATH: `${bin}${path.delimiter}${process.env.PATH}`,
             VERIFY_COMPOSE_BACKUP: "1",
             FAKE_DOCKER_LOG: log,

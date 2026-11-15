@@ -1,4 +1,10 @@
-import { SandboxAllowanceUsedError } from "@rakazo/adapter-kit";
+import {
+  SandboxAllowanceUsedError,
+  SandboxProviderAccountError,
+  SandboxRateLimitError,
+  SandboxUnavailableError,
+  SandboxUnresponsiveError,
+} from "@rakazo/adapter-kit";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
@@ -19,6 +25,8 @@ afterEach(() => {
   vi.useRealTimers();
   installLogger(createLogger({ service: "test", level: "off", sinks: [] }));
 });
+type Match = { status: string; updatedAt?: { lt: Date } };
+type Where = Match | { OR: Match[] };
 function fixture(status = "queued") {
   const row = {
     id: "update-1",
@@ -37,36 +45,57 @@ function fixture(status = "queued") {
       bots: [{ id: "bot-1", name: "Writer" }],
     },
   };
+  const rows = [row];
   const computer = {
     updateMany: vi.fn(async () => ({ count: 1 })),
+    findFirst: vi.fn(async () => null),
     findUniqueOrThrow: vi.fn(async () => row.computer),
   };
   const computerUpdate = {
     create: vi.fn(async () => row),
+    findUnique: vi.fn(async () => row),
     findUniqueOrThrow: vi.fn(async () => row),
-    findMany: vi.fn(async () => [row]),
+    findMany: vi.fn(async ({ where, take }: { where: Where; take: number }) =>
+      rows
+        .filter((each) =>
+          ("OR" in where ? where.OR : [where]).some(
+            (match) =>
+              match.status === each.status &&
+              (!match.updatedAt || each.updatedAt < match.updatedAt.lt),
+          ),
+        )
+        .sort((a, b) => a.updatedAt.getTime() - b.updatedAt.getTime())
+        .slice(0, take)
+        .map((each) => ({ ...each })),
+    ),
     updateMany: vi.fn(async ({ where, data }) => {
+      const target = where.id ? rows.find((each) => each.id === where.id) : row;
+      if (!target) return { count: 0 };
       if (
         where.status &&
         (typeof where.status === "string"
-          ? where.status !== row.status
-          : !where.status.in.includes(row.status))
+          ? where.status !== target.status
+          : !where.status.in.includes(target.status))
       )
         return { count: 0 };
-      Object.assign(row, data);
+      if (where.updatedAt && where.updatedAt.getTime() !== target.updatedAt.getTime())
+        return { count: 0 };
+      Object.assign(target, data);
       return { count: 1 };
     }),
   };
   const prisma = {
     $queryRaw: vi.fn(async () => []),
+    space: { findUnique: vi.fn(async () => null) },
     computer,
     bot: { findFirst: vi.fn(async () => ({ userId: "user" })) },
     computerUpdate,
     $transaction: vi.fn(async (fn) => fn(prisma)),
   };
   const jobs = { enqueue: vi.fn(async () => {}) };
-  const deps = { prisma, jobs } as unknown as Parameters<typeof performComputerUpdate>[0];
-  return { row, computer, computerUpdate, deps, jobs };
+  const events = { publishComputerUpdateChange: vi.fn(async (_spaceId: string) => {}) };
+  const deps = { prisma, jobs, events } as unknown as Parameters<typeof performComputerUpdate>[0];
+  return { row, rows, computer, computerUpdate, deps, jobs, events };
 }
 describe("background computer maintenance", () => {
   it("persists stages and releases its reservation only after completion; redelivery is harmless", async () => {
@@ -88,6 +117,44 @@ describe("background computer maintenance", () => {
     await performComputerUpdate(deps, row.id);
     expect(replacement).toHaveBeenCalledOnce();
   });
+  it("signals the Space when the update starts, at each stage, and when it ends", async () => {
+    const { row, deps, events } = fixture();
+    const signalledAt: string[] = [];
+    events.publishComputerUpdateChange.mockImplementation(async (spaceId) => {
+      expect(spaceId).toBe("space");
+      signalledAt.push(`${row.status}:${row.stage}`);
+    });
+    replacement.mockImplementationOnce(async (_deps, _id, _mode, _ctx, _holder, progress) => {
+      for (const stage of ["saving", "recreating"] as const) await progress?.(stage);
+      return {} as Awaited<ReturnType<typeof replaceComputer>>;
+    });
+    await performComputerUpdate(deps, row.id);
+    expect(signalledAt).toEqual([
+      "running:preparing",
+      "running:saving",
+      "running:recreating",
+      "completed:recreating",
+    ]);
+    await performComputerUpdate(deps, row.id);
+    expect(events.publishComputerUpdateChange).toHaveBeenCalledTimes(4);
+  });
+  it("signals the Space only when reconciliation changes an update", async () => {
+    const { row, deps, events } = fixture();
+    await reconcileComputerUpdates(deps);
+    expect(events.publishComputerUpdateChange).not.toHaveBeenCalled();
+    row.status = "running";
+    await reconcileComputerUpdates(deps);
+    expect(row.status).toBe("interrupted");
+    expect(events.publishComputerUpdateChange).toHaveBeenCalledExactlyOnceWith("space");
+  });
+  it("still signals committed reconciliation changes when a later step fails", async () => {
+    const { row, rows, deps, events, jobs } = fixture("running");
+    rows.push({ ...row, id: "update-2", status: "queued" });
+    jobs.enqueue.mockRejectedValueOnce(new Error("queue unavailable"));
+    await expect(reconcileComputerUpdates(deps)).rejects.toThrow("queue unavailable");
+    expect(row.status).toBe("interrupted");
+    expect(events.publishComputerUpdateChange).toHaveBeenCalledExactlyOnceWith("space");
+  });
   it("records a failure without exposing the provider error or replaying replacement", async () => {
     const { row, deps } = fixture();
     replacement.mockRejectedValueOnce(new Error("provider-private-detail"));
@@ -97,15 +164,21 @@ describe("background computer maintenance", () => {
     await performComputerUpdate(deps, row.id);
     expect(replacement).toHaveBeenCalledOnce();
   });
-  it("records a spent computer allowance as a warning, not an error report", async () => {
+  it.each([
+    ["a spent computer allowance", new SandboxAllowanceUsedError(), "warn"],
+    ["a provider outage", new SandboxUnresponsiveError("provider down"), "warn"],
+    ["a provider rate limit", new SandboxRateLimitError(), "warn"],
+    ["a computer that did not start", new SandboxUnavailableError(), "warn"],
+    ["an unpaid provider account", new SandboxProviderAccountError(), "error"],
+  ])("records %s as a %s", async (_, error, level) => {
     const sink = createTestSink();
     installLogger(createLogger({ service: "test", sinks: [sink] }));
     const { row, deps } = fixture();
-    replacement.mockRejectedValueOnce(new SandboxAllowanceUsedError());
+    replacement.mockRejectedValueOnce(error);
     await performComputerUpdate(deps, row.id);
     expect(row.status).toBe("failed");
     const logged = sink.events.filter((event) => event.message === "computer update failed");
-    expect(logged.map((event) => event.level)).toEqual(["warn"]);
+    expect(logged.map((event) => event.level)).toEqual([level]);
   });
   it("checks the computer for idle sleep again after a failed update", async () => {
     const { row, deps, jobs } = fixture();
@@ -152,6 +225,68 @@ describe("background computer maintenance", () => {
     expect(row.status).toBe("failed");
     expect(computer.updateMany).toHaveBeenCalledOnce();
   });
+  it("frees a computer whose interrupted update never settled", async () => {
+    const { row, deps, computer, jobs } = fixture("interrupted");
+    row.updatedAt = new Date(Date.now() - 61 * 60_000);
+    await reconcileComputerUpdates(deps);
+    expect(row.status).toBe("failed");
+    expect(computer.updateMany).toHaveBeenLastCalledWith({
+      where: { id: row.computerId, maintenanceId: row.id },
+      data: { maintenanceId: null },
+    });
+    expect(jobs.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ replaceKey: `computer.sleep:${row.computerId}` }),
+    );
+  });
+  it("keeps a recently interrupted update reserved", async () => {
+    const { row, deps, computer, jobs } = fixture("interrupted");
+    row.updatedAt = new Date(Date.now() - 59 * 60_000);
+    await reconcileComputerUpdates(deps);
+    expect(row.status).toBe("interrupted");
+    expect(computer.updateMany).not.toHaveBeenCalled();
+    expect(jobs.enqueue).not.toHaveBeenCalled();
+  });
+  it("keeps the outcome of a worker that settles before the release", async () => {
+    const { row, deps, computer, computerUpdate, jobs } = fixture("interrupted");
+    row.updatedAt = new Date(Date.now() - 61 * 60_000);
+    const select = computerUpdate.findMany.getMockImplementation();
+    let selected = 0;
+    computerUpdate.findMany.mockImplementation(async (args) => {
+      const found = (await select?.(args)) ?? [];
+      selected += found.length;
+      if (found.length) Object.assign(row, { status: "completed", updatedAt: new Date() });
+      return found;
+    });
+    await reconcileComputerUpdates(deps);
+    expect(selected).toBe(1);
+    expect(row.status).toBe("completed");
+    expect(computer.updateMany).not.toHaveBeenCalled();
+    expect(jobs.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("reaches stale and abandoned updates behind a backlog of queued ones", async () => {
+    const { row, rows, deps, jobs } = fixture("interrupted");
+    row.updatedAt = new Date(Date.now() - 61 * 60_000);
+    const reserving = { ...row, id: "update-2", status: "reserving", updatedAt: new Date(1) };
+    rows.push(reserving);
+    for (let i = 0; i < 101; i++)
+      rows.push({ ...row, id: `queued-${i}`, status: "queued", updatedAt: new Date(0) });
+    await reconcileComputerUpdates(deps);
+    expect(row.status).toBe("failed");
+    expect(reserving.status).toBe("failed");
+    expect(jobs.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "computer.update", payload: { updateId: "queued-0" } }),
+    );
+  });
+
+  it("frees an abandoned update even when republishing a queued one fails", async () => {
+    const { row, rows, deps, jobs } = fixture("interrupted");
+    row.updatedAt = new Date(Date.now() - 61 * 60_000);
+    rows.push({ ...row, id: "queued-0", status: "queued", updatedAt: new Date(0) });
+    jobs.enqueue.mockRejectedValue(new Error("queue unavailable"));
+    await expect(reconcileComputerUpdates(deps)).rejects.toThrow("queue unavailable");
+    expect(row.status).toBe("failed");
+  });
 
   it("rejects a busy computer before publishing an operation", async () => {
     const { row, deps, computer, jobs } = fixture();
@@ -180,7 +315,6 @@ describe("background computer maintenance", () => {
         where: expect.objectContaining({
           controlHolder: "user",
           controlBotId: "bot-1",
-          controlRunId: null,
           controlLeaseId: "lease-1",
         }),
         data: { controlHolder: "none" },
@@ -201,7 +335,6 @@ describe("background computer maintenance", () => {
         where: expect.objectContaining({
           maintenanceId: "update-1",
           controlHolder: "none",
-          controlRunId: null,
           OR: [{ controlLeaseId: "lease-1" }, { controlLeaseId: null }],
         }),
         data: expect.objectContaining({ controlLeaseId: null, controlBotId: null }),
@@ -213,6 +346,11 @@ describe("background computer maintenance", () => {
       expect.anything(),
       "lease-1",
     );
+    // The teaching recording made under the handed-back lease is saved as a draft.
+    expect(harness.events.draftRecordingsOfLease).toHaveBeenCalledWith({
+      spaceId: expect.any(String),
+      leaseId: "lease-1",
+    });
     expect(harness.jobs.enqueue).toHaveBeenCalledOnce();
   });
 
@@ -231,13 +369,11 @@ describe("background computer maintenance", () => {
         maintenanceId: "update-1",
         controlHolder: "none",
         controlLeaseId: "lease-1",
-        controlRunId: null,
       },
       data: {
         maintenanceId: null,
         controlHolder: "user",
         controlBotId: "bot-1",
-        controlRunId: null,
       },
     });
     expect(harness.computerUpdate.deleteMany).toHaveBeenCalledWith({
@@ -265,18 +401,6 @@ describe("background computer maintenance", () => {
       data: { state: "stopped", providerRef: null },
     });
     expect(harness.jobs.enqueue).toHaveBeenCalledOnce();
-  });
-
-  it("does not release a takeover a run is already waiting on", async () => {
-    const harness = takeoverQueue({ controlRunId: "run-1" });
-
-    await expect(queueComputerUpdate(harness.deps, "computer-1", "bot-1")).rejects.toThrow(
-      "Computer is busy",
-    );
-
-    expect(harness.computer.updateMany).not.toHaveBeenCalled();
-    expect(harness.setScreenControl).not.toHaveBeenCalled();
-    expect(harness.jobs.enqueue).not.toHaveBeenCalled();
   });
 
   it("aborts when the idle-takeover CAS loses to a waiting run", async () => {
@@ -334,13 +458,11 @@ describe("background computer maintenance", () => {
         maintenanceId: "update-1",
         controlHolder: "none",
         controlLeaseId: "lease-1",
-        controlRunId: null,
       },
       data: {
         maintenanceId: null,
         controlHolder: "user",
         controlBotId: "bot-1",
-        controlRunId: null,
       },
     });
     expect(harness.computerUpdate.deleteMany).toHaveBeenCalledWith({
@@ -367,15 +489,14 @@ describe("background computer maintenance", () => {
         maintenanceId: "update-1",
         controlHolder: "none",
         controlBotId: "bot-1",
-        controlRunId: null,
       },
       data: {
         maintenanceId: null,
         controlHolder: "none",
         controlLeaseId: null,
+        controlUserId: null,
         controlLeaseExpiresAt: null,
         controlBotId: null,
-        controlRunId: null,
       },
     });
     expect(harness.computer.updateMany).not.toHaveBeenCalledWith(
@@ -392,7 +513,6 @@ describe("background computer maintenance", () => {
     const harness = takeoverQueue({
       controlHolder: "none",
       controlBotId: null,
-      controlRunId: null,
     });
 
     await expect(queueComputerUpdate(harness.deps, "computer-1", "bot-1")).rejects.toThrow(
@@ -416,7 +536,6 @@ describe("background computer maintenance", () => {
         maintenanceId: row.id,
         controlHolder: "none",
         controlBotId: row.botId,
-        controlRunId: null,
         controlLeaseId: { not: null },
       },
       data: { maintenanceId: null, controlHolder: "user" },
@@ -436,7 +555,6 @@ describe("background computer maintenance", () => {
         maintenanceId: row.id,
         controlHolder: "none",
         controlBotId: row.botId,
-        controlRunId: null,
         controlLeaseId: { not: null },
       },
       data: { maintenanceId: null, controlHolder: "user" },
@@ -466,7 +584,6 @@ describe("background computer maintenance", () => {
         maintenanceId: "update-1",
         controlHolder: "none",
         controlBotId: "bot-1",
-        controlRunId: null,
         controlLeaseId: { not: null },
       },
       data: { maintenanceId: null, controlHolder: "user" },
@@ -485,23 +602,22 @@ describe("background computer maintenance", () => {
         id: "computer-1",
         controlLeaseId: "lease-1",
         controlBotId: "bot-1",
-        controlRunId: null,
         OR: [{ maintenanceId: "update-1" }, { maintenanceId: null, controlHolder: "user" }],
       },
       data: {
         maintenanceId: null,
         controlHolder: "none",
         controlLeaseId: null,
+        controlUserId: null,
         controlLeaseExpiresAt: null,
         controlBotId: null,
-        controlRunId: null,
       },
     });
     expect(harness.jobs.cancel).toHaveBeenCalledOnce();
     expect(harness.run.updateMany).not.toHaveBeenCalled();
   });
 
-  it("resumes a run that bound to a lease released after reconciliation", async () => {
+  it("clears a lease the provider released after reconciliation gave it back", async () => {
     const harness = takeoverQueue();
     let release!: () => void;
     const pending = new Promise<void>((resolve) => {
@@ -511,7 +627,6 @@ describe("background computer maintenance", () => {
     const work = queueComputerUpdate(harness.deps, "computer-1", "bot-1");
     await vi.waitFor(() => expect(harness.setScreenControl).toHaveBeenCalledOnce());
     await reconcileComputerUpdates(harness.deps);
-    harness.computerRow.controlRunId = "run-1";
 
     release();
     await expect(work).rejects.toThrow("Computer is busy");
@@ -522,44 +637,21 @@ describe("background computer maintenance", () => {
         id: "computer-1",
         controlLeaseId: "lease-1",
         controlBotId: "bot-1",
-        controlRunId: "run-1",
         OR: [{ maintenanceId: "update-1" }, { maintenanceId: null, controlHolder: "user" }],
       },
       data: {
         maintenanceId: null,
         controlHolder: "none",
         controlLeaseId: null,
+        controlUserId: null,
         controlLeaseExpiresAt: null,
         controlBotId: null,
-        controlRunId: null,
       },
     });
-    expect(harness.run.updateMany).toHaveBeenCalledWith({
-      where: {
-        id: "run-1",
-        spaceId: "space",
-        botId: "bot-1",
-        status: "waiting_takeover",
-      },
-      data: { status: "queued", checkpoint: "takeover" },
-    });
+    expect(harness.run.updateMany).not.toHaveBeenCalled();
     expect(harness.jobs.cancel).toHaveBeenCalledOnce();
     expect(harness.jobs.cancel.mock.invocationCallOrder[0] ?? 0).toBeGreaterThan(clearOrder);
-    expect(harness.jobs.enqueue).toHaveBeenCalledWith({
-      name: "run.continue",
-      payload: { runId: "run-1" },
-      replaceKey: "run:run-1",
-    });
-    expect(harness.jobs.enqueue).not.toHaveBeenCalledWith(
-      expect.objectContaining({ name: "computer.update" }),
-    );
-    expect(harness.events.append).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: "computer.takeover.released",
-        runId: "run-1",
-        payload: { holder: "none", leaseId: "lease-1", reason: "released" },
-      }),
-    );
+    expect(harness.jobs.enqueue).not.toHaveBeenCalled();
   });
 
   it("keeps takeover expiry when a late release cannot clear the lease", async () => {
@@ -573,7 +665,6 @@ describe("background computer maintenance", () => {
     await vi.waitFor(() => expect(harness.setScreenControl).toHaveBeenCalledOnce());
     await reconcileComputerUpdates(harness.deps);
     harness.computerRow.controlLeaseId = "lease-replaced";
-    harness.computerRow.controlRunId = "run-1";
 
     release();
     await expect(work).rejects.toThrow("Computer is busy");
@@ -602,15 +693,14 @@ describe("background computer maintenance", () => {
         maintenanceId: row.id,
         controlHolder: "none",
         controlBotId: row.botId,
-        controlRunId: null,
       },
       data: {
         maintenanceId: null,
         controlHolder: "none",
         controlLeaseId: null,
+        controlUserId: null,
         controlLeaseExpiresAt: null,
         controlBotId: null,
-        controlRunId: null,
       },
     });
     expect(computer.updateMany).not.toHaveBeenCalledWith(
@@ -670,7 +760,6 @@ function takeoverQueue(
   overrides: {
     controlHolder?: string;
     controlBotId?: string | null;
-    controlRunId?: string | null;
     providerRef?: string | null;
   } = {},
 ) {
@@ -686,7 +775,6 @@ function takeoverQueue(
     maintenanceId: null,
     controlHolder: "user",
     controlBotId: "bot-1" as string | null,
-    controlRunId: null as string | null,
     controlLeaseId: "lease-1" as string | null,
     controlLeaseExpiresAt: new Date("2026-01-01T00:00:00.000Z"),
     ...overrides,
@@ -701,15 +789,20 @@ function takeoverQueue(
     computer: { ...computerRow, bots: [{ id: "bot-1", name: "Writer" }] },
   };
   const computer = {
-    updateMany: vi.fn(async (_args?: { data?: { controlLeaseId?: string | null } }) => ({
-      count: 1,
-    })),
+    findFirst: vi.fn(async () => null),
+    updateMany: vi.fn(
+      async (args?: {
+        where?: { controlLeaseId?: unknown };
+        data?: { controlLeaseId?: string | null };
+      }) => {
+        const leaseId = args?.where?.controlLeaseId;
+        if (typeof leaseId === "string" && leaseId !== computerRow.controlLeaseId) {
+          return { count: 0 };
+        }
+        return { count: 1 };
+      },
+    ),
     findUniqueOrThrow: vi.fn(async () => computerRow),
-    findFirst: vi.fn(async (args?: { where?: { controlLeaseId?: string | null } }) => {
-      const leaseId = args?.where?.controlLeaseId;
-      if (leaseId && leaseId !== computerRow.controlLeaseId) return null;
-      return { controlRunId: computerRow.controlRunId };
-    }),
   };
   const run = {
     updateMany: vi.fn(async () => ({ count: 1 })),
@@ -744,9 +837,14 @@ function takeoverQueue(
   };
   const jobs = { enqueue: vi.fn(async () => {}), cancel: vi.fn(async () => {}) };
   const setScreenControl = vi.fn(async () => {});
-  const events = { append: vi.fn(async () => ({ threadId: "thread-1", seq: 1 })) };
+  const events = {
+    append: vi.fn(async () => ({ threadId: "thread-1", seq: 1 })),
+    draftRecordingsOfLease: vi.fn(async (): Promise<string[]> => []),
+    publishComputerUpdateChange: vi.fn(async () => {}),
+  };
   const deps = { prisma, jobs, sandbox: { setScreenControl }, events } as unknown as Parameters<
     typeof queueComputerUpdate
-  >[0];
+  >[0] &
+    Parameters<typeof reconcileComputerUpdates>[0];
   return { computer, computerRow, computerUpdate, deps, events, jobs, run, setScreenControl };
 }

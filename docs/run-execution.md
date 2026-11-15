@@ -43,13 +43,13 @@ existing dispatch and recovery behavior.
 Structured logs emit `run.execution_started`, `run.first_response`, and
 `run.finished`. Timing fields contain durations in milliseconds:
 
-| Field | Meaning |
-| --- | --- |
-| `run.pre_run_wait_ms` | Source message to run creation, including steering held behind earlier work. |
-| `run.queue_wait_ms` | Run creation to its first execution start. |
-| `run.first_response_ms` | Source message to first persisted visible reply text or reply card. |
-| `run.total_ms` | Source message to run completion or failure. |
-| `run.execution_wall_ms` | First execution start to completion, including retries and human waits. |
+| Field                   | Meaning                                                                      |
+| ----------------------- | ---------------------------------------------------------------------------- |
+| `run.pre_run_wait_ms`   | Source message to run creation, including steering held behind earlier work. |
+| `run.queue_wait_ms`     | Run creation to its first execution start.                                   |
+| `run.first_response_ms` | Source message to first persisted visible reply text or reply card.          |
+| `run.total_ms`          | Source message to run completion or failure.                                 |
+| `run.execution_wall_ms` | First execution start to completion, including retries and human waits.      |
 
 These are run-level measurements. Multiple steering messages can share one run;
 its selected source message defines the timing origin. When a run has no source

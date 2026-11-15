@@ -9,8 +9,8 @@ import type {
 } from "@rakazo/adapter-kit";
 import { getLogger } from "@rakazo/logging";
 import { catalogToolPrefix } from "./approval-effect.js";
-import { collectPages, filterCatalog } from "./composio-connector.js";
 import { resolveAccountToolCall, scopeConnectorTools } from "./connector-accounts.js";
+import { collectPages, filterCatalog } from "./connector-catalog.js";
 import {
   combineSignals,
   redactConnectorPayload,
@@ -143,6 +143,10 @@ export class PipedreamConnector implements ManagedConnectorProvider {
       })),
       query ?? "",
     );
+  }
+
+  async needsReconnect(context: AdapterContext, externalId: string): Promise<boolean> {
+    return approvedAccounts(context, externalId).length === 0;
   }
 
   async warmDirectory(): Promise<void> {

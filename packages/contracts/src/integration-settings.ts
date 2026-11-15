@@ -13,10 +13,12 @@ export const IntegrationProviderConfigSchema = z.discriminatedUnion("provider", 
 ]);
 export type IntegrationProviderConfig = z.infer<typeof IntegrationProviderConfigSchema>;
 export type IntegrationProviderId = z.infer<typeof IntegrationProviderIdSchema>;
+export function isIntegrationProviderId(value: string): value is IntegrationProviderId {
+  return IntegrationProviderIdSchema.safeParse(value).success;
+}
 export const IntegrationSetupStateSchema = z.object({
   canConfigure: z.boolean(),
   needsSetup: z.boolean(),
   webUrl: z.string().url(),
   providers: z.array(z.object({ id: IntegrationProviderIdSchema, configured: z.boolean() })),
 });
-export type IntegrationSetupState = z.infer<typeof IntegrationSetupStateSchema>;

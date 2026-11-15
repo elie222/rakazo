@@ -1,15 +1,22 @@
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import type { AgentRuntime, JobPublisher, NotificationProvider } from "@rakazo/adapter-kit";
-import { runJobKey } from "@rakazo/adapter-kit";
+import { historyCompactJob, runJobKey } from "@rakazo/adapter-kit";
 import {
   CapturingNotificationProvider,
   MessagingTeamChatEmulator,
   messageBot,
 } from "@rakazo/adapters";
-import type { MessageBlock, ModelConnectInput, RunStatus } from "@rakazo/contracts";
-import { ACTIVE_RUN_STATUSES, attachmentComputerPath, isTerminal } from "@rakazo/core";
+import type { MessageBlock, ModelConnectInput, ReplyMode, RunStatus } from "@rakazo/contracts";
+import {
+  ACTIVE_RUN_STATUSES,
+  attachmentComputerPath,
+  isTerminal,
+  splitToolHistory,
+} from "@rakazo/core";
 import type { createDb } from "@rakazo/db";
 import { createThreadEvents } from "@rakazo/db";
+import type { HostedApp } from "../apps/mcp-host.js";
+import { hostOverMcp } from "../apps/mcp-host.js";
 import { discardBotIntroRun } from "../discard-bot-intro.js";
 import { sessionCookieHeader } from "../index.js";
 import { asSystem } from "../system-db.js";
@@ -17,12 +24,15 @@ import type { EvalCase, Evidence, SettingsSnapshot } from "./cases.js";
 import { EMPTY_SETTINGS, wakesRoutines } from "./cases.js";
 import type { ClarificationBlock } from "./clarification.js";
 import { expectedClarificationText } from "./clarification.js";
+import { EvalFailure, judgeOutcome, observe, settle, withinDeadline } from "./grading.js";
+import type { HistoryMessage } from "./history-fixtures.js";
 import type { DiagnosticToolObservation, HistoryDiagnostic } from "./history-observer.js";
 import type { EvalJudge } from "./judge.js";
 import type { CacheDecisionMeasurement, EvalPricing } from "./measurement.js";
 import { measureCalls } from "./measurement.js";
 import type { FailureCategory, TrialResult } from "./report.js";
-import { emptyTrial, redact } from "./report.js";
+import { emptyTrial, evidenceSnapshot, redact } from "./report.js";
+import { browserScreen } from "./sandbox.js";
 import { EvalServices } from "./services.js";
 import type { RoutineEvidence } from "./silence.js";
 import { SilenceObserver } from "./silence-observer.js";
@@ -60,6 +70,7 @@ export type TrialOptions = {
   timeoutMs: number;
   judge?: EvalJudge;
   maxToolCalls: number;
+  replyMode?: ReplyMode;
   createApp: (
     services: EvalServices,
     messaging: MessagingTeamChatEmulator,
@@ -71,15 +82,6 @@ export type TrialOptions = {
   ) => Promise<EvalApp>;
 };
 const WAITING_STATUSES = ["waiting_input", "waiting_approval", "paused"];
-
-class EvalFailure extends Error {
-  constructor(
-    readonly category: FailureCategory,
-    message: string,
-  ) {
-    super(message);
-  }
-}
 
 /** No coaching retries: scenario setup turns are intentional steps, never repair prompts. */
 export async function runTrial(
@@ -96,6 +98,8 @@ export async function runTrial(
     capabilities: { groups: false },
   });
   scenario.configure?.(services);
+  const apps = scenario.apps?.(new Date()) ?? [];
+  const hostedApps: HostedApp[] = [];
   const notifications = new CapturingNotificationProvider();
   const realtime = new SilenceObserver();
   const routineRuns: RoutineEvidence[] = [];
@@ -122,6 +126,7 @@ export async function runTrial(
   let messagingAddress = "";
   let messagingOriginThreadId: string | null = null;
   const secrets = [options.connection.apiKey ?? "", options.connection.baseUrl ?? ""];
+
   let phase: FailureCategory = "harness";
   const seenTools = new Map<string, { name: string }>();
   let clearedToolCount = 0;
@@ -152,10 +157,12 @@ export async function runTrial(
     if (!db) return;
     const usage = await db.usageRecord.findMany({
       where: { OR: actorScopes(actors) },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     });
     for (const row of usage)
       seenUsage.set(row.id, {
         ...row,
+        modelId: row.model,
         operation:
           row.operationKind === "answer" && row.runId && setupRunIds.has(row.runId)
             ? "setup"
@@ -163,6 +170,11 @@ export async function runTrial(
       });
   };
   try {
+    for (const service of apps) {
+      const hosted = await hostOverMcp(service, randomBytes(24).toString("base64url"));
+      hostedApps.push(hosted);
+      secrets.push(hosted.token, hosted.endpoint);
+    }
     // A forced wake runs now; the agent is told it is the routine's due time instead.
     let clockShiftMs = 0;
     const now = () => new Date(Date.now() + clockShiftMs);
@@ -190,6 +202,15 @@ export async function runTrial(
       if (!signup.ok) throw new EvalFailure("harness", `Fixture signup failed (${signup.status})`);
       cookie = sessionCookieHeader(signup);
       await rpc(app, cookie, "models/connect", options.connection);
+      // Added the way a person adds a remote MCP server: an endpoint and a bearer token.
+      for (const [index, service] of apps.entries())
+        await rpc(app, cookie, "mcp/servers/create", {
+          transport: "streamable_http",
+          slug: service.kind,
+          name: service.displayName,
+          endpoint: hostedApps[index]!.endpoint,
+          secret: hostedApps[index]!.token,
+        });
       for (const provider of scenario.connections ?? ["GMAIL", "CRM", "GITHUB"])
         await rpc(app, cookie, "connections/begin", {
           connectorId: "composio",
@@ -215,6 +236,7 @@ export async function runTrial(
         botId,
         modelProvider: options.connection.provider,
         modelId: options.connection.modelId,
+        replyMode: options.replyMode,
       });
       // Direct synthetic fixture state, so setup never depends on the behavior under test.
       if (scenario.botSetup)
@@ -243,12 +265,14 @@ export async function runTrial(
           description: scenario.peer.description,
           instructions: scenario.peer.instructions,
           notifyOnFinish: false,
+          ...(scenario.peer.ownComputer ? { computerMode: "dedicated" } : {}),
         });
         await discardBotIntroRun(trial, cookie, created.id);
         await rpc(app, cookie, "bots/update", {
           botId: created.id,
           modelProvider: options.connection.provider,
           modelId: options.connection.modelId,
+          replyMode: options.replyMode,
         });
         peer = { id: created.id, name: scenario.peer.name };
       }
@@ -284,8 +308,34 @@ export async function runTrial(
       messaging.resetWitnesses();
       // Ask mode asks before any change, so the write stops at its approval card.
       if (scenario.approvalTool) await rpc(app, cookie, "autoReview/set", { mode: "ask" });
+      for (const tool of scenario.alwaysAllowTools ?? [])
+        await rpc(app, cookie, "approvalRules/set", {
+          effect: "always_allow",
+          matchKind: "tool",
+          matchValue: tool,
+        });
     };
     await setupActor();
+    if (scenario.computerFiles?.length) {
+      // Written through the same upload path as a person's file drop, under each owner's control.
+      for (const owner of [botId, peer?.id]) {
+        const files = scenario.computerFiles.filter(
+          (file) => (file.owner === "peer" ? peer?.id : botId) === owner,
+        );
+        if (!owner || !files.length) continue;
+        await rpc(app, cookie, "computer/boot", { botId: owner });
+        await rpc(app, cookie, "computer/takeover", { botId: owner });
+        for (const file of files)
+          await rpc(app, cookie, "computer/uploadFile", {
+            botId: owner,
+            path: file.path,
+            contentBase64: Buffer.from(file.content).toString("base64"),
+          });
+        await rpc(app, cookie, "computer/release", { botId: owner });
+      }
+      if (scenario.computerFiles.some((file) => file.owner === "peer") && !peer)
+        throw new EvalFailure("harness", "Peer computer files need the case's peer bot");
+    }
     if (scenario.routine) {
       await rpc(app, cookie, "routines/create", {
         botId,
@@ -335,14 +385,44 @@ export async function runTrial(
           size: artifact.size,
         });
       }
+      // A seeded step call that kept a screenshot names it `seed:screen-dark` or `seed:screen-light`;
+      // the screenshot is uploaded as the product stores one, and the call refers to it.
+      const screens = new Map<string, string>();
+      const seededSteps = new Map<number, NonNullable<HistoryMessage["steps"]>>();
+      for (const m of scenario.history.messages) {
+        if (!m.steps) continue;
+        const steps = [];
+        for (const step of m.steps) {
+          const calls = [];
+          for (const call of step.calls ?? []) {
+            const seed = /^seed:screen-(dark|light)$/.exec(call.image?.artifactId ?? "");
+            if (!seed) {
+              calls.push(call);
+              continue;
+            }
+            if (!screens.has(seed[1]!)) {
+              const artifact = await rpc<{ id: string }>(app, cookie, "artifacts/create", {
+                botId,
+                name: `screenshot-${seed[1]}.png`,
+                mimeType: "image/png",
+                contentBase64: Buffer.from(browserScreen(seed[1] === "dark")).toString("base64"),
+              });
+              screens.set(seed[1]!, artifact.id);
+            }
+            calls.push({ ...call, image: { artifactId: screens.get(seed[1]!)! } });
+          }
+          steps.push(step.calls ? { ...step, calls } : step);
+        }
+        seededSteps.set(m.seq, steps);
+      }
       // Direct synthetic fixture setup, never pay a model to author filler.
       for (let offset = 0; offset < scenario.history.messages.length; offset += 500) {
         await prisma.message.createMany({
-          data: scenario.history.messages.slice(offset, offset + 500).map((m) => ({
-            threadId: thread.id,
-            seq: m.seq,
-            role: m.role,
-            blocks: [
+          data: scenario.history.messages.slice(offset, offset + 500).map((m) => {
+            // Kept calls are stored apart from the blocks, as every product message write does.
+            const { blocks, toolHistory } = splitToolHistory([
+              // A reply that used tools stores its steps ahead of its text, as live replies do.
+              ...(m.steps ? [{ kind: "steps", steps: seededSteps.get(m.seq) ?? m.steps }] : []),
               ...(m.text ? [{ kind: "text", text: m.text }] : []),
               ...(files.has(m.seq) ? [files.get(m.seq)!] : []),
               ...(m.subagentResult
@@ -357,10 +437,17 @@ export async function runTrial(
                     },
                   ]
                 : []),
-            ],
-            createdAt: m.createdAt,
-            ...(m.role === "bot" ? { botId: botAuthor(m.author) } : {}),
-          })),
+            ] as MessageBlock[]);
+            return {
+              threadId: thread.id,
+              seq: m.seq,
+              role: m.role,
+              blocks,
+              ...(toolHistory ? { toolHistory: JSON.stringify(toolHistory) } : {}),
+              createdAt: m.createdAt,
+              ...(m.role === "bot" ? { botId: botAuthor(m.author) } : {}),
+            };
+          }),
         });
       }
       if (scenario.history.messages.some((m) => m.subagentResult)) {
@@ -422,6 +509,21 @@ export async function runTrial(
             : {}),
         },
       });
+      if (scenario.history.compact) {
+        // The product's own compaction job summarizes the oldest batch, paid like any turn's.
+        await trial.jobs.enqueue(historyCompactJob(thread.id, actors[actors.length - 1]!.userId));
+        if (!trial.awaitIdle) throw new EvalFailure("harness", "Compaction needs an idle queue");
+        await withinDeadline(trial.awaitIdle(), deadline);
+        const { historyCompactedUpToSeq } = await prisma.thread.findUniqueOrThrow({
+          where: { id: thread.id },
+          select: { historyCompactedUpToSeq: true },
+        });
+        if (historyCompactedUpToSeq === null)
+          throw new EvalFailure(
+            "harness",
+            "Seeded history was not compacted; only the current context strategy compacts",
+          );
+      }
     }
     if (scenario.taughtSkill) {
       // Human-authored fixture setup via the same API as the teaching UI; no model work is prefilled.
@@ -530,7 +632,13 @@ export async function runTrial(
           }));
       } else if ("fromPeer" in step) {
         if (!peer) throw new EvalFailure("harness", "A fromPeer step needs the case's peer bot");
-        await deliverPeerMessage(prisma, handles.jobs, peer, botId, step.fromPeer);
+        await deliverPeerMessage(
+          prisma,
+          handles.jobs,
+          peer,
+          botId,
+          step.fromPeer.replaceAll("{peerHome}", `bots/${peer.id}`),
+        );
         runId = await poll(
           async () =>
             (
@@ -777,8 +885,28 @@ export async function runTrial(
       if (unaddressedMessageId && group) {
         // Handoffs start more runs after the first one ends; wait until every member is done.
         const memberBotIds = [botId, ...group.memberIds.values()];
+        // The trial budget spans every member's work, not only the first run's turn, and the
+        // drain below runs that work, so it keeps checking while the drain is in flight.
+        const assertToolBudget = async () => {
+          if ((await countCurrentTools()) + clearedToolCount > options.maxToolCalls)
+            throw new EvalFailure("incomplete", "Tool call budget exceeded");
+        };
         const settled = await poll(async () => {
-          if (handles?.awaitIdle) await withinDeadline(handles.awaitIdle(), deadline);
+          await assertToolBudget();
+          if (handles?.awaitIdle) {
+            const drained = withinDeadline(handles.awaitIdle(), deadline);
+            // A budget failure abandons the drain; its own timeout must not crash the trial.
+            drained.catch(() => undefined);
+            while (
+              !(await Promise.race([
+                drained.then(() => true),
+                new Promise((resolve) => setTimeout(() => resolve(false), 200)),
+              ]))
+            )
+              await assertToolBudget();
+            // Work that ended between two checks still counts before grading and the judge.
+            await assertToolBudget();
+          }
           const runs = await prisma.run.findMany({
             where: { botId: { in: memberBotIds }, createdAt: { gte: new Date(requestStarted) } },
             select: { status: true, error: true },
@@ -851,9 +979,12 @@ export async function runTrial(
         const observed = realtime.events.filter((event) => event.runId === runId);
         routineRuns.push({
           text: lastText,
-          unread: (
-            await prisma.thread.findUniqueOrThrow({ where: { botId }, select: { unread: true } })
-          ).unread,
+          unread: Boolean(
+            await prisma.threadRead.findFirst({
+              where: { thread: { botId }, unread: true },
+              select: { userId: true },
+            }),
+          ),
           messages: messages.map((m) => m.blocks as RoutineEvidence["messages"][number]),
           progress: observed
             .filter((event) => event.type === "thread.progress")
@@ -906,19 +1037,41 @@ export async function runTrial(
       routines.length,
       await prisma.event.count({ where: { botId, type: "routine.created" } }),
     );
+    const deliveries = await deliveredBySubject(prisma, botId, [
+      ...(peer
+        ? [
+            (await prisma.thread.findUnique({ where: { botId: peer.id }, select: { id: true } }))
+              ?.id,
+          ]
+        : []),
+      group?.threadId,
+    ]);
     await captureTools();
     const finalStep = scenario.steps.length;
+    const historySummary =
+      scenario.history?.compact && seededThreadId
+        ? (
+            await prisma.thread.findUnique({
+              where: { id: seededThreadId },
+              select: { historyCompactionSummary: true },
+            })
+          )?.historyCompactionSummary
+        : undefined;
     const evidence: Evidence = {
       text: lastText,
+      ...(historySummary ? { historySummary } : {}),
       replies,
       memberReplies,
       routineRuns,
       peerExchanges,
+      ...(deliveries.length ? { deliveries } : {}),
+      ...(peer ? { peerHome: `bots/${peer.id}` } : {}),
       files,
       ...(Object.keys(seededAttachments).length ? { seededAttachments } : {}),
       records: services.records,
       notes: services.notes,
       calls: services.calls,
+      apps: Object.fromEntries(apps.map((service) => [service.kind, service])),
       routines,
       routinesCreated,
       memory: memories.map((m) => m.content).join("\n"),
@@ -953,36 +1106,27 @@ export async function runTrial(
         ...(peerExchanges.length ? { "peer-exchanges": JSON.stringify(peerExchanges) } : {}),
         ...(memberReplies ? { "member-replies": JSON.stringify(memberReplies) } : {}),
         ...(evidence.toolCalls.length ? { "tool-calls": JSON.stringify(evidence.toolCalls) } : {}),
+        ...(apps.length
+          ? {
+              "app-calls": JSON.stringify(
+                Object.fromEntries(apps.map((service) => [service.kind, service.calls])),
+              ),
+              "app-writes": JSON.stringify(
+                Object.fromEntries(apps.map((service) => [service.kind, service.writes])),
+              ),
+            }
+          : {}),
         "memory-snapshot": evidence.memory,
       }).map(([key, value]) => [key, value === null ? null : redact(value, secrets)]),
     );
-    if (scenario.judge && result.criteria.every((c) => c.pass)) {
-      if (!options.judge) throw new EvalFailure("incomplete", "Semantic grading requires a judge");
-      try {
-        const judgment = await withinDeadline(
-          options.judge(
-            scenario.judge(evidence),
-            AbortSignal.timeout(Math.max(1, deadline - Date.now())),
-          ),
-          deadline,
-        );
-        result.judgment = { pass: judgment.pass, reason: redact(judgment.reason, secrets) };
-        result.criteria.push({ id: "semantic-outcome", pass: judgment.pass });
-      } catch (error) {
-        throw new EvalFailure(
-          "incomplete",
-          `Judge unavailable: ${error instanceof Error ? error.message : "Unknown judge failure"}`,
-        );
-      }
-    }
-    result.status =
-      result.criteria.length > 0 && result.criteria.every((c) => c.pass) ? "passed" : "failed";
-    result.category = result.status === "passed" ? null : "agent";
-    result.reason = result.status === "passed" ? null : "Outcome criteria failed";
-    if (result.status === "failed" && handles.harnessIssues?.length) {
-      result.category = "harness";
-      result.reason = handles.harnessIssues.join(" ");
-    }
+    // Kept so a new rubric can grade the trial again without running the bot.
+    if (scenario.judge || scenario.observe) result.evidence = evidenceSnapshot(evidence, secrets);
+    const grading = { judge: options.judge, deadline, secrets };
+    await judgeOutcome(scenario, evidence, result, grading);
+    if (handles.harnessIssues?.length) result.harnessIssues = [...handles.harnessIssues];
+    settle(scenario, result, handles.harnessIssues ?? []);
+    const observations = await observe(scenario, evidence, grading);
+    if (observations) result.observations = observations;
   } catch (error) {
     result.status = "failed";
     result.category = error instanceof EvalFailure ? error.category : phase;
@@ -991,15 +1135,19 @@ export async function runTrial(
       secrets,
     );
   } finally {
+    if (!handles) await Promise.all(hostedApps.map((hosted) => hosted.close()));
     if (handles) {
       try {
-        if (handles.awaitIdle) await withinDeadline(handles.awaitIdle(), deadline);
+        // Stopping each bot covers only its own chat; a member's run can still wait in the
+        // group. Stop it before draining, so a failed trial does not pay for the member's
+        // remaining work while the drain waits for it; when the trial ended cleanly every
+        // member is already terminal and the stop changes nothing.
+        if (group) await rpc(handles.app, cookie, "threads/stop", { groupId: group.id });
       } catch {
         result.cleanupFailed = true;
       }
       try {
-        // Stopping each bot covers only its own chat; a member's run can still wait in the group.
-        if (group) await rpc(handles.app, cookie, "threads/stop", { groupId: group.id });
+        if (handles.awaitIdle) await withinDeadline(handles.awaitIdle(), deadline);
       } catch {
         result.cleanupFailed = true;
       }
@@ -1008,6 +1156,8 @@ export async function runTrial(
       } catch {
         result.cleanupFailed = true;
       }
+      // After the trial's work stopped, so no run is cut off mid-call.
+      await Promise.all(hostedApps.map((hosted) => hosted.close()));
       try {
         await handles.finalizeBackground?.();
       } catch {
@@ -1036,6 +1186,9 @@ export async function runTrial(
                 },
               }),
               summaryPresent: !!state.historyCompactionSummary?.trim(),
+              ...(scenario.history?.compact
+                ? { summary: redact(state.historyCompactionSummary ?? "", secrets) || null }
+                : {}),
               generation: state.historyCompactionGeneration,
             };
         }
@@ -1048,12 +1201,18 @@ export async function runTrial(
       await captureUsage().catch(() => {
         result.cleanupFailed = true;
       });
+      // Explicit pricing covers the eval model only; other models the product called
+      // during the trial are priced at their own reported or catalog-estimated charge.
+      const pricedModel = options.connection.modelId
+        ? { provider: options.connection.provider, modelId: options.connection.modelId }
+        : undefined;
       Object.assign(
         result,
         measureCalls(
           [...seenUsage.values()],
           options.pricing,
           options.connection.cacheCapabilities?.minimumTokens,
+          pricedModel,
         ),
       );
       result.stepAccounting = measureWorkflowSteps(
@@ -1061,6 +1220,7 @@ export async function runTrial(
         runSteps,
         options.pricing,
         options.connection.cacheCapabilities?.minimumTokens,
+        pricedModel,
       );
       result.cacheDecisions = handles.cacheDecisions ? [...handles.cacheDecisions] : [];
       result.historyDiagnostics = handles.historyDiagnostics ? [...handles.historyDiagnostics] : [];
@@ -1163,6 +1323,39 @@ async function deliverPeerMessage(
     { allowTerminalSource: true },
   );
   if (!sent.ok) throw new EvalFailure("harness", `Peer message was not delivered: ${sent.error}`);
+}
+
+/** Messages and handoffs the subject delivered into these threads, read from what was stored. */
+async function deliveredBySubject(
+  prisma: EvalApp["prisma"],
+  botId: string,
+  threadIds: Array<string | undefined>,
+): Promise<NonNullable<Evidence["deliveries"]>> {
+  const ids = threadIds.filter((id): id is string => Boolean(id));
+  if (!ids.length) return [];
+  const messages = await prisma.message.findMany({
+    where: { threadId: { in: ids } },
+    select: { blocks: true },
+    orderBy: { seq: "asc" },
+  });
+  return messages.flatMap((message) => {
+    const blocks = message.blocks as MessageBlock[];
+    const sent = blocks.find(
+      (block) =>
+        (block.kind === "bot_message_received" || block.kind === "handoff") &&
+        block.fromBotId === botId,
+    );
+    if (!sent || (sent.kind !== "bot_message_received" && sent.kind !== "handoff")) return [];
+    return [
+      {
+        kind: sent.kind === "handoff" ? ("handoff" as const) : ("message" as const),
+        text: sent.text,
+        files: blocks.flatMap((block) =>
+          (block.kind === "file" || block.kind === "image") && block.name ? [block.name] : [],
+        ),
+      },
+    ];
+  });
 }
 
 async function poll<T>(read: () => Promise<T | undefined>, deadline: number): Promise<T> {
@@ -1343,21 +1536,4 @@ export async function cleanupActors(
   }
   if (!stable) failures.push(new Error("Trial scope did not become idle"));
   if (failures.length) throw new Error("Trial work could not be stopped", { cause: failures });
-}
-
-async function withinDeadline<T>(work: Promise<T>, deadline: number): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    return await Promise.race([
-      work,
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(
-          () => reject(new Error("Background work exceeded trial deadline")),
-          Math.max(1, deadline - Date.now()),
-        );
-      }),
-    ]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
 }

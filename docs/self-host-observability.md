@@ -145,6 +145,7 @@ The API and worker append a row to `security_events` and write a `security.event
 
 - sign-up, sign-in, sign-out, and failed sign-in or sign-up
 - session revocation, password and passkey changes, and account deletion
+- accounts the identity provider deactivated or reactivated ([SCIM](./self-host-accounts.md#directory-provisioning-scim))
 - model, MCP, connector, voice, memory, and secret credentials created, changed, or removed
 - deployment settings changes, approval decisions, and approval policy changes
 - refused private or internal destinations (`egress.refused`) and auth rate-limit hits
@@ -281,9 +282,9 @@ check alerts when a sink is configured but the shipper is not running.
 Alert in the destination, not on the host. Starting points, written as Axiom APL here but plain
 filters in any log store:
 
-| Alert | Query |
-| --- | --- |
-| Login with an unnamed key | `where event == "ssh.login" and key_name == "unknown"` |
-| Watched file changed | `where event == "file.change"` outside your own deploys and maintenance |
+| Alert                               | Query                                                                                                 |
+| ----------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| Login with an unnamed key           | `where event == "ssh.login" and key_name == "unknown"`                                                |
+| Watched file changed                | `where event == "file.change"` outside your own deploys and maintenance                               |
 | Root use outside the deploy account | `where (event == "sudo.command" and user != "deploy") or event == "su" or event == "identity.change"` |
-| Shipping stopped | no `shipper.heartbeat` from a `host` for more than two heartbeat intervals |
+| Shipping stopped                    | no `shipper.heartbeat` from a `host` for more than two heartbeat intervals                            |

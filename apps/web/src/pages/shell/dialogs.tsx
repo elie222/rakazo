@@ -1,14 +1,7 @@
 import { Plural, Trans, useLingui } from "@lingui/react/macro";
 import type { AccountItem, Bot, BotSection } from "@rakazo/contracts";
+import { botRemovalWarning } from "@rakazo/i18n/bot-removal";
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
   Button,
   Checkbox,
   Dialog,
@@ -21,8 +14,11 @@ import {
   RadioGroup,
   RadioGroupItem,
 } from "@rakazo/ui-web";
+import { useQuery } from "@tanstack/react-query";
 import { Lock } from "lucide-react";
 import { useId, useState } from "react";
+import { ConfirmDialog } from "../../components/ConfirmDialog";
+import { useSpaceQueries } from "../../lib/query";
 import { errorText } from "../../lib/user-error";
 
 /** Each dialog is mounted only while open, so `open` is always true and the
@@ -108,7 +104,7 @@ export function NewSpaceDialog({
             {created.items.map((item) => (
               <div
                 key={key(item)}
-                className="flex items-center gap-3 rounded-lg px-1 py-1.5 text-[14px] text-foreground"
+                className="flex items-center gap-3 rounded-lg px-1 py-1.5 text-body text-foreground"
               >
                 <Checkbox
                   id={`new-space-item-${key(item)}`}
@@ -128,7 +124,7 @@ export function NewSpaceDialog({
               </div>
             ))}
           </div>
-          {error ? <p className="text-[13.5px] text-destructive">{error}</p> : null}
+          {error ? <p className="text-body text-destructive">{error}</p> : null}
           <DialogFooter>
             <Button disabled={saving} onClick={finish}>
               {saving ? <Trans>Saving…</Trans> : <Trans>Continue</Trans>}
@@ -152,7 +148,7 @@ export function NewSpaceDialog({
             <Trans>New space</Trans>
           </DialogTitle>
         </DialogHeader>
-        <label htmlFor={nameId} className="block text-[13.5px] text-foreground/75">
+        <label htmlFor={nameId} className="block text-body text-foreground/75">
           <Trans>Name</Trans>
           <Input
             id={nameId}
@@ -170,7 +166,7 @@ export function NewSpaceDialog({
             className="mt-2"
           />
         </label>
-        {error ? <p className="text-[13.5px] text-destructive">{error}</p> : null}
+        {error ? <p className="text-body text-destructive">{error}</p> : null}
         <DialogFooter>
           <Button variant="outline" disabled={saving} onClick={onCancel}>
             <Trans>Cancel</Trans>
@@ -224,7 +220,7 @@ export function NewBotSectionDialog({
               <Trans>Create a section and move {bot.name} into it.</Trans>
             </DialogDescription>
           </DialogHeader>
-          <label htmlFor={nameId} className="block text-[13.5px] text-foreground/75">
+          <label htmlFor={nameId} className="block text-body text-foreground/75">
             <Trans>Name</Trans>
             <Input
               id={nameId}
@@ -234,7 +230,7 @@ export function NewBotSectionDialog({
               className="mt-2"
             />
           </label>
-          {error ? <p className="text-[13.5px] text-destructive">{error}</p> : null}
+          {error ? <p className="text-body text-destructive">{error}</p> : null}
           <DialogFooter>
             <Button type="button" variant="outline" disabled={saving} onClick={onCancel}>
               <Trans>Cancel</Trans>
@@ -287,7 +283,7 @@ export function RenameBotSectionDialog({
               <Trans>Rename section</Trans>
             </DialogTitle>
           </DialogHeader>
-          <label htmlFor={nameId} className="block text-[13.5px] text-foreground/75">
+          <label htmlFor={nameId} className="block text-body text-foreground/75">
             <Trans>Name</Trans>
             <Input
               id={nameId}
@@ -298,7 +294,7 @@ export function RenameBotSectionDialog({
               autoFocus
             />
           </label>
-          {error ? <p className="text-[13.5px] text-destructive">{error}</p> : null}
+          {error ? <p className="text-body text-destructive">{error}</p> : null}
           <DialogFooter>
             <Button type="button" variant="outline" disabled={saving} onClick={onCancel}>
               <Trans>Cancel</Trans>
@@ -327,42 +323,33 @@ export function ClearConversationDialog({
   const [error, setError] = useState<string | null>(null);
 
   return (
-    <AlertDialog open onOpenChange={closeUnlessBusy(clearing, onCancel)}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle className="break-words">
-            <Trans>Clear {bot.name}’s conversation?</Trans>
-          </AlertDialogTitle>
-          <AlertDialogDescription>
-            <Trans>
-              This permanently removes every message and stops current work. The chat remains
-              available.
-            </Trans>
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        {error ? <p className="text-[13.5px] text-destructive">{error}</p> : null}
-        <AlertDialogFooter>
-          <AlertDialogCancel disabled={clearing}>
-            <Trans>Cancel</Trans>
-          </AlertDialogCancel>
-          <AlertDialogAction
-            variant="destructive"
-            disabled={clearing}
-            onClick={() => {
-              setClearing(true);
-              setError(null);
-              void onConfirm().catch((err: unknown) => {
-                setError(errorText(err, t`Could not clear conversation`));
-                setClearing(false);
-              });
-            }}
-          >
-            {clearing ? <Trans>Clearing…</Trans> : <Trans>Clear</Trans>}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+    <ConfirmDialog
+      onCancel={onCancel}
+      title={<Trans>Clear {bot.name}’s conversation?</Trans>}
+      description={
+        <Trans>
+          This permanently removes every message and stops current work. The chat remains available.
+        </Trans>
+      }
+      error={error}
+      busy={clearing}
+      onConfirm={() => {
+        setClearing(true);
+        setError(null);
+        void onConfirm().catch((err: unknown) => {
+          setError(errorText(err, t`Could not clear conversation`));
+          setClearing(false);
+        });
+      }}
+      confirmLabel={clearing ? <Trans>Clearing…</Trans> : <Trans>Clear</Trans>}
+    />
   );
+}
+
+/** The groups a failed preview cannot name, so Delete stays available. */
+function removedGroupsWarning(input: { failed: boolean; groups: readonly { name: string }[] }) {
+  const warning = botRemovalWarning(input.failed ? null : input.groups);
+  return warning ? <> {warning}</> : null;
 }
 
 export function DeleteBotDialog({
@@ -370,87 +357,88 @@ export function DeleteBotDialog({
   onCancel,
   onConfirm,
 }: {
-  bot: Bot;
+  bot: Pick<Bot, "id" | "name">;
   onCancel: () => void;
   onConfirm: (deleteMemories: boolean) => Promise<void>;
 }) {
   const { t } = useLingui();
+  const queries = useSpaceQueries();
   const [deleting, setDeleting] = useState(false);
   const [deleteMemories, setDeleteMemories] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const memoriesLabelId = useId();
+  // A failed read must not keep Delete disabled.
+  const preview = useQuery({
+    ...queries.bots.removePreview.queryOptions({ input: { botId: bot.id } }),
+    retry: false,
+  });
+  const groupWarning = removedGroupsWarning({
+    failed: preview.isError && !preview.isFetching,
+    groups: preview.data ?? [],
+  });
 
   return (
-    <AlertDialog open onOpenChange={closeUnlessBusy(deleting, onCancel)}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle className="break-words">
-            <Trans>Delete {bot.name}?</Trans>
-          </AlertDialogTitle>
-          <AlertDialogDescription>
-            <Trans>
-              Its conversation, files, and routines will be permanently deleted. Bots it created
-              stay in your list.
-            </Trans>
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <div className="space-y-2">
-          <p id={memoriesLabelId} className="mb-2 text-[13.5px] text-foreground/75">
-            <Trans>What about its memories?</Trans>
-          </p>
-          <RadioGroup
-            aria-labelledby={memoriesLabelId}
-            value={deleteMemories ? "delete" : "keep"}
-            onValueChange={(value) => setDeleteMemories(value === "delete")}
-          >
-            {/* biome-ignore lint/a11y/noLabelWithoutControl: the wrapped RadioGroupItem is the control. */}
-            <label className="flex cursor-pointer gap-3 rounded-lg border border-border p-3">
-              <RadioGroupItem value="keep" className="mt-0.5" />
-              <span>
-                <span className="block text-[14px] text-foreground">
-                  <Trans>Keep memories</Trans>
-                </span>
-                <span className="mt-0.5 block text-[12.5px] text-muted-foreground">
-                  <Trans>Move them to your shared memory.</Trans>
-                </span>
+    <ConfirmDialog
+      onCancel={onCancel}
+      title={<Trans>Delete {bot.name}?</Trans>}
+      description={
+        <>
+          <Trans>
+            Its conversation, files, and routines will be permanently deleted. Bots it created stay
+            in your list.
+          </Trans>
+          {groupWarning}
+        </>
+      }
+      error={error}
+      busy={deleting}
+      confirmDisabled={preview.isPending || preview.isFetching}
+      onConfirm={() => {
+        setDeleting(true);
+        setError(null);
+        void onConfirm(deleteMemories).catch((err: unknown) => {
+          setError(errorText(err, t`Could not delete bot`));
+          setDeleting(false);
+        });
+      }}
+      confirmLabel={deleting ? <Trans>Deleting…</Trans> : <Trans>Delete</Trans>}
+    >
+      <div className="space-y-2">
+        <p id={memoriesLabelId} className="mb-2 text-body text-foreground/75">
+          <Trans>What about its memories?</Trans>
+        </p>
+        <RadioGroup
+          aria-labelledby={memoriesLabelId}
+          value={deleteMemories ? "delete" : "keep"}
+          onValueChange={(value) => setDeleteMemories(value === "delete")}
+        >
+          {/* biome-ignore lint/a11y/noLabelWithoutControl: the wrapped RadioGroupItem is the control. */}
+          <label className="flex cursor-pointer gap-3 rounded-lg border border-border p-3">
+            <RadioGroupItem value="keep" className="mt-0.5" />
+            <span>
+              <span className="block text-body text-foreground">
+                <Trans>Keep memories</Trans>
               </span>
-            </label>
-            {/* biome-ignore lint/a11y/noLabelWithoutControl: the wrapped RadioGroupItem is the control. */}
-            <label className="flex cursor-pointer gap-3 rounded-lg border border-border p-3">
-              <RadioGroupItem value="delete" className="mt-0.5" />
-              <span>
-                <span className="block text-[14px] text-foreground">
-                  <Trans>Delete memories too</Trans>
-                </span>
-                <span className="mt-0.5 block text-[12.5px] text-muted-foreground">
-                  <Trans>This cannot be undone.</Trans>
-                </span>
+              <span className="mt-0.5 block text-body-sm text-muted-foreground">
+                <Trans>Move them to your shared memory.</Trans>
               </span>
-            </label>
-          </RadioGroup>
-        </div>
-        {error ? <p className="text-[13.5px] text-destructive">{error}</p> : null}
-        <AlertDialogFooter>
-          <AlertDialogCancel disabled={deleting}>
-            <Trans>Cancel</Trans>
-          </AlertDialogCancel>
-          <AlertDialogAction
-            variant="destructive"
-            disabled={deleting}
-            onClick={() => {
-              setDeleting(true);
-              setError(null);
-              void onConfirm(deleteMemories).catch((err: unknown) => {
-                setError(errorText(err, t`Could not delete bot`));
-                setDeleting(false);
-              });
-            }}
-          >
-            {deleting ? <Trans>Deleting…</Trans> : <Trans>Delete</Trans>}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+            </span>
+          </label>
+          {/* biome-ignore lint/a11y/noLabelWithoutControl: the wrapped RadioGroupItem is the control. */}
+          <label className="flex cursor-pointer gap-3 rounded-lg border border-border p-3">
+            <RadioGroupItem value="delete" className="mt-0.5" />
+            <span>
+              <span className="block text-body text-foreground">
+                <Trans>Delete memories too</Trans>
+              </span>
+              <span className="mt-0.5 block text-body-sm text-muted-foreground">
+                <Trans>This cannot be undone.</Trans>
+              </span>
+            </span>
+          </label>
+        </RadioGroup>
+      </div>
+    </ConfirmDialog>
   );
 }
 
@@ -514,48 +502,34 @@ export function DeleteItemDialog({
   const [error, setError] = useState<string | null>(null);
 
   return (
-    <AlertDialog open onOpenChange={closeUnlessBusy(deleting, onCancel)}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>{title ?? <Trans>Delete {item.name}?</Trans>}</AlertDialogTitle>
-          <AlertDialogDescription>
-            {description ?? <Trans>This cannot be undone.</Trans>}
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        {error ? <p className="text-[13.5px] text-destructive">{error}</p> : null}
-        <AlertDialogFooter>
-          <AlertDialogCancel disabled={deleting}>
-            <Trans>Cancel</Trans>
-          </AlertDialogCancel>
-          <AlertDialogAction
-            variant="destructive"
-            disabled={deleting}
-            onClick={() => {
-              setDeleting(true);
-              setError(null);
-              void onConfirm().catch((err: unknown) => {
-                setError(
-                  errorText(
-                    err,
-                    noun === "group"
-                      ? t`Could not delete group`
-                      : noun === "space"
-                        ? t`Could not delete space`
-                        : noun === "section"
-                          ? t`Could not delete section`
-                          : noun === "page"
-                            ? t`Could not delete page`
-                            : t`Could not delete routine`,
-                  ),
-                );
-                setDeleting(false);
-              });
-            }}
-          >
-            {deleting ? <Trans>Deleting…</Trans> : <Trans>Delete</Trans>}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+    <ConfirmDialog
+      onCancel={onCancel}
+      title={title ?? <Trans>Delete {item.name}?</Trans>}
+      description={description ?? <Trans>This cannot be undone.</Trans>}
+      error={error}
+      busy={deleting}
+      onConfirm={() => {
+        setDeleting(true);
+        setError(null);
+        void onConfirm().catch((err: unknown) => {
+          setError(
+            errorText(
+              err,
+              noun === "group"
+                ? t`Could not delete group`
+                : noun === "space"
+                  ? t`Could not delete space`
+                  : noun === "section"
+                    ? t`Could not delete section`
+                    : noun === "page"
+                      ? t`Could not delete page`
+                      : t`Could not delete routine`,
+            ),
+          );
+          setDeleting(false);
+        });
+      }}
+      confirmLabel={deleting ? <Trans>Deleting…</Trans> : <Trans>Delete</Trans>}
+    />
   );
 }

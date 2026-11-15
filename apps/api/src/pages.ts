@@ -3,8 +3,9 @@ import type { SecretStore } from "@rakazo/adapter-kit";
 import { forgetPageShareSecrets } from "@rakazo/adapters";
 import type { Actor, PageDetail, PageSummary, PageVisibility, SharedPage } from "@rakazo/contracts";
 import { pageShareTokenFromSlug, pageShareUrl } from "@rakazo/contracts";
-import type { PageShareSecret, PrismaClient } from "@rakazo/db";
-import { IsolationError, Prisma, runAsSystem } from "@rakazo/db";
+import { escapeSearchWildcards } from "@rakazo/core";
+import type { PageShareSecret, Prisma, PrismaClient } from "@rakazo/db";
+import { IsolationError, isRecordNotFound, runAsSystem } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 
 const PAGE_SHARE_SECRET_KIND = "page_share";
@@ -49,7 +50,7 @@ async function stillThere<T>(write: Promise<T>): Promise<T> {
   try {
     return await write;
   } catch (error) {
-    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {
+    if (isRecordNotFound(error)) {
       throw new IsolationError();
     }
     throw error;
@@ -119,7 +120,9 @@ export async function listPages(
     ...(input.groupId ? { groupId: input.groupId } : {}),
     ...(input.botId ? { botId: input.botId, ...(input.groupId ? {} : { groupId: null }) } : {}),
     ...(input.cursor ? { AND: [afterCursor(decodeCursor(input.cursor))] } : {}),
-    ...(input.query ? { title: { contains: input.query, mode: "insensitive" } } : {}),
+    ...(input.query
+      ? { title: { contains: escapeSearchWildcards(input.query), mode: "insensitive" } }
+      : {}),
   };
   const rows = await prisma.page.findMany({
     where,

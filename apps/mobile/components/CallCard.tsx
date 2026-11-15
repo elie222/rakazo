@@ -1,21 +1,22 @@
+import { ph } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
 import { accountDisplay } from "@rakazo/core";
 import { typeScale } from "@rakazo/ui-tokens";
 import { AudioModule } from "expo-audio";
 import { useKeepAwake } from "expo-keep-awake";
 import { useRouter } from "expo-router";
 import type { ComponentProps } from "react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Animated, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { useReducedMotion } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { rpc } from "../lib/api";
 import { startCallBackground, stopCallBackground } from "../lib/call-background";
 import type { CallPhase } from "../lib/call-session";
-import { endCall, toggleMute, toggleTranscript, useCallSession } from "../lib/call-session";
-import { useI18n } from "../lib/i18n";
+import { hangUp, toggleMute, toggleTranscript, useCallSession } from "../lib/call-session";
 import { useMobileTokens } from "../lib/native";
 import { currentSessionGeneration, subscribeSessionGeneration } from "../lib/session";
-import { setVoiceBackgroundPlayback } from "../lib/voice";
+import { getVoicePlaybackState, subscribeVoicePlayback } from "../lib/voice";
 import { BotAvatar } from "./bot-avatar";
 import { GlassIconButton } from "./glass-icon-button";
 import { GlassSurface } from "./glass-surface";
@@ -36,7 +37,8 @@ function KeepCallAwake() {
 
 export function CallCard() {
   const call = useCallSession();
-  const { t } = useI18n();
+  const playback = useSyncExternalStore(subscribeVoicePlayback, getVoicePlaybackState);
+  const { t } = useLingui();
   const tokens = useMobileTokens();
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -63,7 +65,7 @@ export function CallCard() {
       .then((me) => {
         // A sign-out while the request is in flight must not restore the old account's initial.
         if (generation !== currentSessionGeneration()) return;
-        cachedInitial = accountDisplay(me, t("You")).initial ?? "";
+        cachedInitial = accountDisplay(me, t`You`).initial ?? "";
         setInitial(cachedInitial);
       })
       .catch(() => undefined);
@@ -78,13 +80,6 @@ export function CallCard() {
       }),
     [],
   );
-
-  // A call keeps its replies playing while the screen is off.
-  useEffect(() => {
-    if (!onCall) return;
-    setVoiceBackgroundPlayback(true);
-    return () => setVoiceBackgroundPlayback(false);
-  }, [onCall]);
 
   // A microphone foreground service keeps the call alive when the display sleeps.
   // Start it only after the microphone permission is granted; retry when the call
@@ -132,10 +127,11 @@ export function CallCard() {
   }, [call?.botId, call?.botName, call?.phase]);
 
   if (!call) return null;
+  const recentExchanges = call.exchanges.slice(-TRANSCRIPT_LINES);
   return (
     <GlassSurface
       shape="roundedRectangle"
-      style={[styles.card, { top: insets.top + 52 }]}
+      style={[styles.card, { marginBottom: playback.status === "idle" ? insets.bottom + 8 : 0 }]}
       fallbackStyle={[
         styles.cardFallback,
         {
@@ -156,7 +152,7 @@ export function CallCard() {
         />
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={t("On a call with {name}", { name: call.botName })}
+          accessibilityLabel={t`On a call with ${ph({ name: call.botName })}`}
           onPress={() =>
             router.push({ pathname: "/thread", params: { botId: call.botId, name: call.botName } })
           }
@@ -172,7 +168,7 @@ export function CallCard() {
       </View>
       <View style={styles.actions}>
         <RoundButton
-          label={t("Settings")}
+          label={t`Settings`}
           ios="gearshape"
           android="settings-outline"
           color={tokens.foreground}
@@ -180,7 +176,7 @@ export function CallCard() {
           onPress={() => router.push("/voice")}
         />
         <RoundButton
-          label={t("Transcript")}
+          label={t`Transcript`}
           ios="captions.bubble"
           android="chatbox-outline"
           selected={call.transcriptOpen}
@@ -189,7 +185,7 @@ export function CallCard() {
           onPress={toggleTranscript}
         />
         <RoundButton
-          label={call.muted ? t("Unmute") : t("Mute")}
+          label={call.muted ? t`Unmute` : t`Mute`}
           ios={call.muted ? "mic.slash" : "mic"}
           android={call.muted ? "mic-off-outline" : "mic-outline"}
           selected={call.muted}
@@ -198,34 +194,35 @@ export function CallCard() {
           onPress={toggleMute}
         />
         <RoundButton
-          label={t("Hang up")}
+          label={t`Hang up`}
           ios="phone.down.fill"
-          android="call-outline"
+          android={{ material: "phone-hangup" }}
           color={tokens.destructiveForeground}
           border={tokens.destructiveFill}
           background={tokens.destructiveFill}
-          onPress={endCall}
+          onPress={hangUp}
         />
       </View>
       {call.transcriptOpen ? (
         <View style={[styles.transcript, { borderTopColor: tokens.border }]}>
-          {call.exchanges.slice(-TRANSCRIPT_LINES).map((exchange, index) => (
-            <Text
-              key={`${exchange.role}-${index + 1}-${exchange.text.slice(0, 24)}`}
-              numberOfLines={1}
-              style={[
-                styles.line,
-                { color: exchange.role === "bot" ? tokens.foreground : tokens.mutedForeground },
-              ]}
-            >
-              {exchange.text}
-            </Text>
-          ))}
-          {call.caption || call.heard ? (
-            <Text numberOfLines={1} style={[styles.line, { color: tokens.mutedForeground }]}>
-              {call.caption || call.heard}
-            </Text>
-          ) : null}
+          {Array.from({ length: TRANSCRIPT_LINES }, (_, index) => {
+            const exchange = recentExchanges[index];
+            return (
+              <Text
+                key={`transcript-${index + 1}`}
+                numberOfLines={1}
+                style={[
+                  styles.line,
+                  { color: exchange?.role === "bot" ? tokens.foreground : tokens.mutedForeground },
+                ]}
+              >
+                {exchange?.text || " "}
+              </Text>
+            );
+          })}
+          <Text numberOfLines={1} style={[styles.line, { color: tokens.mutedForeground }]}>
+            {call.caption || call.heard || " "}
+          </Text>
         </View>
       ) : null}
     </GlassSurface>
@@ -316,11 +313,11 @@ function Waveform({ phase }: { phase: CallPhase }) {
 
 const styles = StyleSheet.create({
   card: {
-    position: "absolute",
     alignSelf: "center",
     width: 320,
+    maxWidth: "100%",
+    marginTop: 8,
     padding: 12,
-    zIndex: 50,
   },
   cardFallback: {
     borderRadius: 18,

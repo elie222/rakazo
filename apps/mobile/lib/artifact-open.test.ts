@@ -32,7 +32,7 @@ vi.mock("expo-file-system", () => {
     }
   }
   class File extends Node {
-    write(value: string) {
+    writeSync(value: string) {
       state.files.set(this.uri, value);
     }
     textSync() {
@@ -57,11 +57,13 @@ vi.mock("expo-secure-store", () => ({
 }));
 vi.mock("react-native", () => ({ Image: { getSize: state.getSize } }));
 vi.mock("expo-sharing", () => ({ isAvailableAsync: vi.fn(), shareAsync: vi.fn() }));
-vi.mock("./i18n", () => ({ t: (value: string) => value }));
 vi.mock("./session", () => ({
   currentSessionGeneration: () => state.generation,
   loadSessionToken: async () => state.token,
 }));
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   rpc: state.rpc,
   currentApiBase: () => state.apiBase,

@@ -9,8 +9,7 @@ import {
 } from "./routine-backoff.js";
 
 const url = process.env.DATABASE_URL;
-const describePostgres =
-  process.env.VERIFY_DATABASE === "1" && url ? describe.sequential : describe.skip;
+const describePostgres = process.env.VERIFY_DATABASE === "1" && url ? describe : describe.skip;
 
 describePostgres("backing off a routine on refused model accounts (PostgreSQL)", () => {
   let db: ReturnType<typeof createDb>;
@@ -55,7 +54,10 @@ describePostgres("backing off a routine on refused model accounts (PostgreSQL)",
       },
     });
     const enqueue = vi.fn(async () => undefined);
-    const deps = { prisma: system, jobs: { enqueue, cancel: vi.fn(), close: vi.fn() } };
+    const deps = {
+      prisma: system,
+      jobs: { enqueue, enqueueIn: vi.fn(), cancelIn: vi.fn(), cancel: vi.fn(), close: vi.fn() },
+    };
     return { routine, deps, enqueue };
   }
 
@@ -64,7 +66,13 @@ describePostgres("backing off a routine on refused model accounts (PostgreSQL)",
     const now = new Date();
 
     await Promise.all(
-      Array.from({ length: 4 }, () => backOffRoutineAfterAccountError(deps, routine.id, now)),
+      Array.from({ length: 4 }, () =>
+        backOffRoutineAfterAccountError(
+          deps,
+          { routineId: routine.id, userId: routine.userId },
+          now,
+        ),
+      ),
     );
 
     const row = await system.routine.findUniqueOrThrow({ where: { id: routine.id } });
@@ -80,10 +88,13 @@ describePostgres("backing off a routine on refused model accounts (PostgreSQL)",
   it("returns a held routine to its cadence once a run gets through", async () => {
     const { routine, deps } = await fixture();
     for (let count = 0; count < 3; count++) {
-      await backOffRoutineAfterAccountError(deps, routine.id);
+      await backOffRoutineAfterAccountError(deps, {
+        routineId: routine.id,
+        userId: routine.userId,
+      });
     }
 
-    await clearRoutineBackoff(deps, routine.id);
+    await clearRoutineBackoff(deps, { routineId: routine.id, userId: routine.userId });
 
     const row = await system.routine.findUniqueOrThrow({ where: { id: routine.id } });
     expect(row.accountFailures).toBe(0);

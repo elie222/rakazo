@@ -27,7 +27,7 @@ async function loadAssignments(): Promise<Record<string, string>> {
 function saveAssignments(assignments: Record<string, string>): void {
   const file = assignmentsFile();
   if (!file.exists) file.create();
-  file.write(JSON.stringify(assignments));
+  file.writeSync(JSON.stringify(assignments));
 }
 
 // Serialize assignment updates so concurrent bots keep distinct voices.

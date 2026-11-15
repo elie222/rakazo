@@ -481,6 +481,7 @@ describe("ChatSdkMessagingSurface inbound", () => {
       participants: (raw) => (raw as { roster: string[] }).roster,
       channelName: () => "The Group",
       transport: () => "SMS",
+      rosterAt: () => new Date("2026-11-04T10:01:00.000Z"),
     });
     await surface.handleWebhook(
       "mock",
@@ -495,6 +496,7 @@ describe("ChatSdkMessagingSurface inbound", () => {
         channelName: "The Group",
         transport: "SMS",
         content: "group hello",
+        rosterAt: new Date("2026-11-04T10:01:00.000Z"),
       }),
     ]);
   });

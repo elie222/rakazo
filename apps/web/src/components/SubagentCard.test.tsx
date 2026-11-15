@@ -14,11 +14,14 @@ vi.mock("@rakazo/chat-ui/web", () => ({
 
 import { SubagentCard } from "./SubagentCard";
 
-function mountCard(block: Parameters<typeof SubagentCard>[0]["block"]) {
+function mountCard(
+  block: Parameters<typeof SubagentCard>[0]["block"],
+  onStop?: () => Promise<unknown>,
+) {
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
-  flushSync(() => root.render(<SubagentCard block={block} />));
+  flushSync(() => root.render(<SubagentCard block={block} onStop={onStop} />));
   const get = (id: string) => container.querySelector(`[data-testid="${id}"]`);
   const toggle = () => container.querySelector<HTMLButtonElement>("button[aria-expanded]");
   const click = () => flushSync(() => toggle()?.click());
@@ -126,5 +129,32 @@ describe("SubagentCard", () => {
     expect(saved.toggle()?.getAttribute("aria-expanded")).toBe("true");
     expect(saved.get("subagent-body")?.textContent).toBe("A long report");
     saved.unmount();
+  });
+
+  it("offers Stop only while a background helper runs", () => {
+    const onStop = vi.fn(async () => ({ ok: true }));
+    const stopButton = () =>
+      [...document.querySelectorAll("button")].find((button) => button.textContent === "Stop");
+    const running = mountCard({ ...finished, agentId: "bg-1", status: "running" }, onStop);
+    flushSync(() => stopButton()?.click());
+    expect(onStop).toHaveBeenCalledOnce();
+    expect(stopButton()?.disabled).toBe(true);
+    running.unmount();
+    for (const [block, stop] of [
+      [{ ...finished, agentId: "bg-2", status: "running" as const }, undefined],
+      [{ ...finished, agentId: "bg-3" }, onStop],
+    ] as const) {
+      const card = mountCard(block, stop);
+      expect(stopButton()).toBeUndefined();
+      card.unmount();
+    }
+  });
+
+  it("shows a stopped helper as stopped, not failed", () => {
+    const card = mountCard({ ...finished, agentId: "bg-4", status: "failed", result: "stopped" });
+    expect(card.toggle()?.textContent).toContain("Stopped");
+    expect(card.toggle()?.textContent).not.toContain("Failed");
+    expect(card.get("subagent-body")).toBeNull();
+    card.unmount();
   });
 });

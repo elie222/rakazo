@@ -1,20 +1,26 @@
-import { ACTIVE_RUN_STATUSES, BACKGROUND_RUN_TRIGGERS, plainTextFromMarkdown } from "@rakazo/core";
-
+import {
+  ACTIVE_RUN_STATUSES,
+  BACKGROUND_HELPER_TRIGGER,
+  BACKGROUND_RUN_TRIGGERS,
+  isDeliveryMessage,
+  plainTextFromMarkdown,
+} from "@rakazo/core";
 import type { PrismaClient } from "./client.js";
 import { Prisma } from "./client.js";
 
 export const activeRunStatuses = [...ACTIVE_RUN_STATUSES];
-const backgroundRunTriggers = [...BACKGROUND_RUN_TRIGGERS];
 const userVisibleBotRunTriggers = ["bot_message", ...BACKGROUND_RUN_TRIGGERS];
+const statusHiddenRunTriggers: string[] = [...BACKGROUND_RUN_TRIGGERS, BACKGROUND_HELPER_TRIGGER];
 
 /**
  * Active conversational/foreground runs for a bot's sidebar status. Background
- * ticket runs keep working silently, so they must not make the avatar spin.
+ * ticket runs keep working silently, and a background helper leaves its bot free,
+ * so neither makes the avatar spin.
  */
 export const activeRunSelection = {
   where: {
     status: { in: activeRunStatuses },
-    trigger: { notIn: backgroundRunTriggers },
+    trigger: { notIn: statusHiddenRunTriggers },
   },
   orderBy: { createdAt: "desc" as const },
   select: { status: true, threadId: true },
@@ -69,6 +75,8 @@ export async function withLatestBotRuns<T extends { thread: { id: string } | nul
 
 export function previewFromBlocks(blocks: unknown): string {
   const rows = Array.isArray(blocks) ? blocks : [];
+  // A delivery's text is the bot's prompt, hidden in chat.
+  if (isDeliveryMessage(rows)) return "";
   for (const block of rows) {
     if (
       block &&

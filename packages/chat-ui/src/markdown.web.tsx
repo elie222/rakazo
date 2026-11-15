@@ -30,6 +30,8 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
+  CopyTextFallback,
+  useCopyText,
 } from "@rakazo/ui-web";
 import { CheckIcon, CopyIcon, GlobeIcon, ImageIcon } from "./icons";
 import type { ChatMarkdownProps } from "./markdown";
@@ -80,30 +82,25 @@ function preserveSkippedTableText() {
 
 function CopyButton({ read, label }: { read: () => string; label: string }) {
   const copy = useMarkdownCopy();
-  const resetTimerRef = useRef<number | undefined>(undefined);
-  const [copied, setCopied] = useState(false);
-
-  const handleCopy = useCallback(() => {
-    if (!navigator.clipboard) return;
-    navigator.clipboard
-      .writeText(read())
-      .then(() => {
-        setCopied(true);
-        window.clearTimeout(resetTimerRef.current);
-        resetTimerRef.current = window.setTimeout(() => setCopied(false), 1500);
-      })
-      .catch(() => {});
-  }, [read]);
+  const [copied, copyText, copyFailed, resetCopy, failedText] = useCopyText();
 
   return (
-    <button
-      type="button"
-      className="rk-chat-markdown-copy"
-      onClick={handleCopy}
-      aria-label={copied ? copy.copied : label}
-    >
-      {copied ? <CheckIcon /> : <CopyIcon />}
-    </button>
+    <>
+      <button
+        type="button"
+        className="rk-chat-markdown-copy"
+        onClick={() => copyText(read())}
+        aria-label={copied ? copy.copied : label}
+      >
+        {copied ? <CheckIcon /> : <CopyIcon />}
+      </button>
+      <CopyTextFallback
+        open={copyFailed}
+        onOpenChange={resetCopy}
+        text={failedText}
+        label={label}
+      />
+    </>
   );
 }
 
@@ -779,7 +776,9 @@ const MarkdownBlock = memo(function MarkdownBlock({
   );
 });
 
-type SourceBlock = { start: number; source: string };
+// A block is keyed by its kind and how many of that kind precede it, as react-markdown keys
+// elements, so a table keeps its sort, page and dialog when text before it changes.
+type SourceBlock = { start: number; source: string; type: string; key: string };
 type SplitSource = { text: string; blocks: SourceBlock[] };
 
 const blockParser = unified().use(remarkParse).use(remarkGfm);
@@ -791,30 +790,37 @@ const definition = /\]:/;
  * one before it (a list continued after a blank line), so only those two are parsed again.
  */
 function splitSource(text: string, previous: SplitSource | undefined): SplitSource {
-  const whole = { text, blocks: [{ start: 0, source: text }] };
+  const whole = { text, blocks: [{ start: 0, source: text, type: "root", key: "root-0" }] };
   if (definition.test(text)) return whole;
   const kept = previous && text.startsWith(previous.text) ? previous.blocks.slice(0, -2) : [];
   const from = previous?.blocks[kept.length]?.start ?? 0;
   const tail = text.slice(from);
-  let starts: number[];
+  let parsed: { start: number; type: string }[];
   try {
-    starts = blockParser
-      .parse(tail)
-      .children.map((child, index) =>
-        index === 0 ? 0 : tail.lastIndexOf("\n", (child.position?.start.offset ?? 1) - 1) + 1,
-      );
+    parsed = blockParser.parse(tail).children.map((child, index) => ({
+      start: index === 0 ? 0 : tail.lastIndexOf("\n", (child.position?.start.offset ?? 1) - 1) + 1,
+      type: child.type,
+    }));
   } catch {
     return whole;
   }
-  if (starts.length === 0) starts = [0];
+  if (parsed.length === 0) parsed = [{ start: 0, type: "root" }];
+  const counts = new Map<string, number>();
+  for (const block of kept) counts.set(block.type, (counts.get(block.type) ?? 0) + 1);
   return {
     text,
     blocks: [
       ...kept,
-      ...starts.map((start, index) => ({
-        start: from + start,
-        source: tail.slice(start, starts[index + 1] ?? tail.length),
-      })),
+      ...parsed.map(({ start, type }, index) => {
+        const count = counts.get(type) ?? 0;
+        counts.set(type, count + 1);
+        return {
+          start: from + start,
+          source: tail.slice(start, parsed[index + 1]?.start ?? tail.length),
+          type,
+          key: `${type}-${count}`,
+        };
+      }),
     ],
   };
 }
@@ -847,7 +853,7 @@ export const ChatMarkdown = memo(function ChatMarkdown({
             <PlainTextOnFailure text={children}>
               {blocks ? (
                 blocks.map((block, index) => (
-                  <Fragment key={block.start}>
+                  <Fragment key={block.key}>
                     {/* The line break react-markdown puts between blocks, so the DOM matches. */}
                     {index > 0 ? "\n" : null}
                     <MarkdownBlock

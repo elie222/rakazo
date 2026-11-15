@@ -1,13 +1,15 @@
 // @vitest-environment jsdom
 
 import type { MessageBlock } from "@rakazo/contracts";
+import { separateAskAnswers } from "@rakazo/core";
 import type { ComponentProps, ReactNode, Ref } from "react";
 import { act, createContext } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { Linking } from "react-native";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { MobileMessage } from "./api";
+import type * as Api from "./api";
+import type { MobileMessage } from "./mobile-types";
 
 vi.mock("react-native", async () => {
   const { createElement, useImperativeHandle } = await import("react");
@@ -105,15 +107,36 @@ vi.mock("../components/native-symbol", () => ({
   NativeSymbol: ({ ios }: { ios: string }) => <i data-symbol={ios} />,
 }));
 vi.mock("../components/native-action-button", () => ({
-  NativeActionButton: ({ label }: { label: string }) => <button type="button">{label}</button>,
+  NativeActionButton: ({
+    label,
+    onPress,
+    disabled,
+    selected,
+  }: {
+    label: string;
+    onPress?: () => void;
+    disabled?: boolean;
+    selected?: boolean;
+  }) => (
+    <button
+      type="button"
+      onClick={onPress}
+      disabled={disabled}
+      aria-pressed={selected || undefined}
+    >
+      {label}
+    </button>
+  ),
 }));
 // Cards this file doesn't exercise; each has its own tests.
 vi.mock("../components/thread/ask-block", () => ({ AskBlock: () => null }));
 vi.mock("../components/AppConnectCard", () => ({ AppConnectCard: () => null }));
 vi.mock("../components/audio-attachment", () => ({ AudioAttachment: () => null }));
 vi.mock("../components/ChoiceCard", () => ({ ChoiceCard: () => null }));
+vi.mock("../components/ImportSetupCard", () => ({ ImportSetupCard: () => null }));
 vi.mock("../components/ComputerCard", () => ({ ComputerCard: () => null }));
 vi.mock("../components/pages/page-card", () => ({ PageCard: () => null }));
+vi.mock("../components/thread/mcp-app-card", () => ({ McpAppCard: () => null }));
 vi.mock("../components/inline-image-attachment", () => ({
   InlineImageAttachment: ({ name, onOpen }: { name: string; onOpen: () => void }) => (
     <button type="button" aria-label={name} onClick={onOpen} />
@@ -124,8 +147,14 @@ vi.mock("../components/change-undo", () => ({
   isUndoableChange: () => false,
 }));
 
+vi.mock("./api", async (original) => ({
+  ...(await original<typeof Api>()),
+  rpc: vi.fn(async () => ({ ok: true })),
+}));
+
 import { McpApprovalCard } from "../components/McpApprovalCard";
 import { MessageBubble } from "../components/thread/message-bubble";
+import { rpc } from "./api";
 
 type BubbleProps = ComponentProps<typeof MessageBubble>;
 
@@ -418,7 +447,11 @@ describe("thread cards", () => {
     ]);
   });
 
-  function renderAsk(ask: Partial<Extract<MessageBlock, { kind: "ask" }>>, canAnswer: boolean) {
+  function renderAsk(
+    ask: Partial<Extract<MessageBlock, { kind: "ask" }>>,
+    canAnswer: boolean,
+    separateAnswer?: string,
+  ) {
     const message = {
       id: "message-1",
       role: "bot",
@@ -427,6 +460,7 @@ describe("thread cards", () => {
           kind: "ask",
           text: longQuestion,
           status: "pending",
+          answerMessageId: "reply",
           actions: [
             { id: "yes", label: "Yes" },
             { id: "no", label: "No" },
@@ -442,6 +476,10 @@ describe("thread cards", () => {
           bots={[]}
           message={message}
           canAnswer={canAnswer}
+          separateAnswers={separateAskAnswers([
+            message,
+            { id: "reply", role: "user", blocks: [{ kind: "text", text: separateAnswer ?? "" }] },
+          ]).get(message.id)}
           onAnswer={async () => undefined}
           actionProps={{}}
         />,
@@ -473,6 +511,24 @@ describe("thread cards", () => {
       expect(container.querySelectorAll("button").length).toBe(doubleTapSurface ? 0 : 1);
     },
   );
+
+  it("keeps a custom choice answer unless a separate user message displays it", () => {
+    const ask = { status: "answered" as const, answer: "A different plan" };
+    expect(renderAsk(ask, false)?.textContent).toContain("A different plan");
+    expect(renderAsk(ask, false, "A different plan")?.textContent).not.toContain(
+      "A different plan",
+    );
+  });
+
+  it("keeps a selected choice summary even when the user message repeats its id", () => {
+    const card = renderAsk({ status: "answered", answer: "yes" }, false, "yes");
+    expect(card?.textContent).toContain("Yes");
+    expect(card?.textContent).not.toContain("Answered:");
+    const buttons = [...container.querySelectorAll("button")];
+    expect(buttons).toHaveLength(2);
+    expect(buttons.every((button) => button.disabled)).toBe(true);
+    expect(buttons[0]?.getAttribute("aria-pressed")).toBe("true");
+  });
 
   // The iOS message menu hosts each bubble without a definite width, so a percentage width
   // resolves against the card's own cap instead of the message column and overflows the screen.
@@ -558,6 +614,32 @@ describe("thread cards", () => {
     } as MobileMessage;
     act(() => root.render(<Bubble botId="bot-1" bots={[]} message={message} actionProps={{}} />));
     expect(container.textContent).toContain("Running");
+  });
+
+  it("stops a background helper from its saved card, and shows it as stopped", () => {
+    const helper = (id: string, status: "running" | "failed", result?: string) =>
+      ({
+        id,
+        role: "bot",
+        botId: "bot-1",
+        blocks: [{ kind: "subagent", agentId: id, name: "scout", task: "venues", status, result }],
+      }) as MobileMessage;
+    const stopButton = () =>
+      [...container.querySelectorAll("button")].find((node) => node.textContent === "Stop");
+    const show = (message: MobileMessage) =>
+      act(() => root.render(<Bubble botId="bot-1" bots={[]} message={message} actionProps={{}} />));
+    show(helper("subagent:live", "running"));
+    expect(stopButton()).toBeUndefined();
+    show(helper("card-1", "running"));
+    act(() => stopButton()?.click());
+    expect(rpc).toHaveBeenCalledExactlyOnceWith("threads/stopHelper", {
+      botId: "bot-1",
+      messageId: "card-1",
+    });
+    show(helper("card-1", "failed", "stopped"));
+    expect(container.textContent).toContain("Stopped");
+    expect(container.textContent).not.toContain("Failed");
+    expect(stopButton()).toBeUndefined();
   });
 
   it("folds a helper card to one line of the task until it is pressed, across its saved message", () => {

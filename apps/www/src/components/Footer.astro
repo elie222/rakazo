@@ -10,6 +10,7 @@ import {
   type Locale,
 } from "../i18n/locales";
 import { HUB_CARDS } from "../alternatives";
+import { ENTERPRISE_PATH } from "../enterprise";
 import { INTEGRATION_PLATFORMS_PATH } from "../integration-platforms/shared";
 import { SANDBOXES_PATH } from "../sandboxes";
 import { VOICE_PROVIDERS_PATH } from "../voice-providers/shared";
@@ -60,6 +61,7 @@ const columns: Array<{ heading: string; links: FooterLink[] }> = [
     links: [
       { href: "/download/", label: linkLabels.download },
       { href: SELF_HOST_GUIDE_PATH, label: linkLabels.docs },
+      { href: ENTERPRISE_PATH, label: linkLabels.enterprise },
       { href: SANDBOXES_PATH, label: linkLabels.sandboxes },
       { href: INTEGRATION_PLATFORMS_PATH, label: linkLabels.integrationPlatforms },
       { href: VOICE_PROVIDERS_PATH, label: linkLabels.voiceProviders },

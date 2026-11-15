@@ -159,6 +159,72 @@ describe("request_purchase", () => {
   });
 });
 
+describe("request_purchase with a spending limit", () => {
+  const limit = { amount: 5_000, currency: "usd", period: "week", startsAt: new Date(0) } as const;
+
+  it("counts the purchase before the wallet owner is asked, and refuses one that goes over", async () => {
+    const env = setup();
+    env.spending.limit = { ...limit };
+    await env.call("request_purchase", request);
+    expect(env.spending.payments).toEqual([
+      expect.objectContaining({
+        operationKey: "op-1",
+        site: "shop.example.test",
+        amount: 1999,
+        currency: "usd",
+        releasedAt: null,
+      }),
+    ]);
+    const over = await env.call("request_purchase", { ...request, amount: 3002 }, "op-2");
+    expect(over).toEqual({
+      error:
+        "This would go over the user's spending limit of $50.00 a week ($19.99 spent), so nothing was paid. Don't retry; tell the user.",
+    });
+    expect(env.wallet.created).toHaveLength(1);
+  });
+
+  it("refuses a purchase in another currency than the limit", async () => {
+    const env = setup();
+    env.spending.limit = { ...limit };
+    const result = await env.call("request_purchase", { ...request, currency: "cad" });
+    expect(result).toEqual({ error: expect.stringContaining("couldn't be read in USD") });
+    expect(env.wallet.created).toHaveLength(0);
+  });
+
+  it("keeps counting a purchase whose request failed without an answer", async () => {
+    const env = setup();
+    env.spending.limit = { ...limit };
+    env.wallet.createPurchase = async () => {
+      throw new Error("socket hang up");
+    };
+    await expect(env.call("request_purchase", request)).rejects.toThrow("socket hang up");
+    expect(env.spending.payments).toEqual([
+      expect.objectContaining({ operationKey: "op-1", releasedAt: null }),
+    ]);
+  });
+
+  it("stops counting a purchase the wallet refused or the owner denied", async () => {
+    const env = setup();
+    env.spending.limit = { ...limit };
+    env.wallet.createPurchase = async () => {
+      throw new PaymentWalletRequestRejected("Not available.");
+    };
+    await env.call("request_purchase", request);
+    expect(env.spending.payments).toEqual([
+      expect.objectContaining({ operationKey: "op-1", releasedAt: expect.any(Date) }),
+    ]);
+
+    const denied = setup();
+    denied.spending.limit = { ...limit };
+    await denied.call("request_purchase", request);
+    denied.wallet.snapshots.set("remote-op-1", { id: "remote-op-1", status: "denied" });
+    await denied.call("purchase_status", { id: "purchase-1" });
+    expect(denied.spending.payments).toEqual([
+      expect.objectContaining({ operationKey: "op-1", releasedAt: expect.any(Date) }),
+    ]);
+  });
+});
+
 describe("purchase_status", () => {
   it("shows the card summary once approved and never the number or code", async () => {
     const env = setup();

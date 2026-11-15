@@ -1,8 +1,6 @@
-import { runContinueJob } from "@rakazo/adapter-kit";
 import { BotSecretName, botSecretSubmissionSchema } from "@rakazo/contracts";
 import { createStreamingRedactor, displayName } from "@rakazo/core";
-import { runCodeKind, runLoginKind, runSecretKind } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
+import { runCodeKind, runLoginKind, runSecretKind, spaceIsShared } from "@rakazo/db";
 import {
   completeExternalEffect,
   replaceCompletedExternalEffectResult,
@@ -20,7 +18,9 @@ import {
   findSiteLogin,
   forgetBotSecret,
   generateBotSecret,
+  HIDDEN_ITEM,
   listBotSecrets,
+  loginToolHints,
   normalizeSecretDestination,
   oneTimeCodeRedactions,
   readRunCode,
@@ -29,9 +29,14 @@ import {
   resolveRequestSecretDestination,
   sameSecretDestination,
 } from "./bot-secrets.js";
-import { addRunSecrets, pauseForSecret, persistTurnCheckpoint } from "./run-context.js";
+import {
+  addRunSecrets,
+  pauseForSecret,
+  persistTurnCheckpoint,
+  recordVaultUse,
+} from "./run-context.js";
 import { recordEffect } from "./run-effects.js";
-import { renewRunLease } from "./run-lifecycle.js";
+import { enqueueSteeringContinuation, renewRunLease } from "./run-lifecycle.js";
 import { notifyRun, secretAskNotification } from "./run-notifications.js";
 import {
   commitConsumedRunSecret,
@@ -96,6 +101,7 @@ export const secretTools: ToolHandlers = {
         signal: context.signal,
         remote: deps.secretHttp,
         registerRedactions: (values) => addRunSecrets(ctx, values),
+        recordUse: (item, site) => recordVaultUse(ctx, call.name, item, site),
       });
       return call.finish(result);
     } catch {
@@ -108,7 +114,7 @@ export const secretTools: ToolHandlers = {
     const { reply } = ctx.state;
     const resolvedSecret = resolveRequestSecretDestination(args);
     if (resolvedSecret.error) return call.finish({ error: resolvedSecret.error });
-    const destination = resolvedSecret.destination;
+    let destination = resolvedSecret.destination;
     const connectionId = resolvedSecret.connectionId;
     const codeOrigin = resolvedSecret.oneTimeCodeOrigin;
     const loginFields =
@@ -117,8 +123,18 @@ export const secretTools: ToolHandlers = {
     // A saved login whose site was wrong is replaced only from a card answered for this site.
     let replaces: { id: string; origin: string } | undefined;
     if (destination) {
-      const saved = await findBotSecret(deps.prisma, run, destination.name);
+      const found = await findBotSecret(deps.prisma, run, destination.name);
+      if (found && "hidden" in found) return call.finish({ error: HIDDEN_ITEM });
+      const saved = found ?? undefined;
       const existing = saved?.destination;
+      // One of the login's other sites, which only its owner sets, is the same login: it is asked
+      // for and saved at its own site, so a bot can't move it.
+      if (
+        existing &&
+        saved.alsoOn.includes(destination.origin) &&
+        sameSecretDestination({ ...existing, origin: destination.origin }, destination)
+      )
+        destination = existing;
       // A login the person chose not to save stays with this run; the bot is told so it doesn't
       // say it was saved. Field labels only, never values.
       const runLogin =
@@ -152,7 +168,11 @@ export const secretTools: ToolHandlers = {
             fields: held.fields.map(({ label, hidden }) => ({ label, hidden })),
           }
         : existing && sameSecretDestination(existing, destination)
-          ? { saved: true, ...botSecretToolView(existing) }
+          ? {
+              saved: true,
+              ...botSecretToolView(existing),
+              ...(await loginToolHints(deps.prisma, deps.secretStore, run, existing.name)),
+            }
           : undefined;
       const submitted = botSecretSubmissionSchema({
         allowPrivateHttpOrigin: allowPrivateHttpSecretOrigins(),
@@ -169,7 +189,25 @@ export const secretTools: ToolHandlers = {
         !known && destination.auth.type === "login" && args.replace !== true
           ? await findSiteLogin(deps.prisma, run, destination.origin)
           : null;
-      if (siteLogin) return call.finish({ saved: true, ...botSecretToolView(siteLogin) });
+      if (siteLogin)
+        return call.finish({
+          saved: true,
+          ...botSecretToolView(siteLogin),
+          ...(await loginToolHints(deps.prisma, deps.secretStore, run, siteLogin.name)),
+        });
+      // A card shows neither a login's authenticator key nor its other sites, which only its
+      // owner sets, for the site it has. So a card never moves a login that has them: its
+      // owner changes the site in the Vault, where both are in sight.
+      if (replaces) {
+        const kept = await loginToolHints(deps.prisma, deps.secretStore, run, destination.name);
+        if (kept.alsoOn || kept.authenticatorCode)
+          return call.finish({
+            error:
+              `The login ${destination.name} has an authenticator key or other sites, which ` +
+              "only the user sets, so a card can't move it to another site. Ask the user to " +
+              "change its site in the Vault, or use another name for a different account.",
+          });
+      }
       // Action approval authorizes showing the card; it is not a credential submission.
       // Return the claim to intended so the answer transaction can approve the saved value.
       if (call.claimedEffect) {
@@ -363,6 +401,9 @@ export const secretTools: ToolHandlers = {
           ...(codeOrigin ? { oneTimeCode: { origin: codeOrigin } } : {}),
           ...(replaces ? { replaces } : {}),
           ...(loginFields?.labels ? { loginFields: loginFields.labels } : {}),
+          ...(loginFields && (await spaceIsShared(deps.prisma, run.spaceId))
+            ? { sharedBrowser: true as const }
+            : {}),
           purpose: codeOrigin
             ? "otp"
             : normalizeSecretAskPurpose(args.purpose ? String(args.purpose) : undefined),
@@ -373,11 +414,7 @@ export const secretTools: ToolHandlers = {
     if (!paused) {
       throw new Error("Could not pause this run for protected input; try sending again.");
     }
-    if (paused.continuationRunId) {
-      await deps.jobs
-        .enqueue(runContinueJob(paused.continuationRunId))
-        .catch((error) => getLogger().error("steering continuation enqueue", error));
-    }
+    await enqueueSteeringContinuation(deps, paused.continuationRunId);
     await notifyRun(deps, run, {
       kind: "help",
       ...secretAskNotification(displayName(bot.name, "Bot"), askText, ctx.secrets),

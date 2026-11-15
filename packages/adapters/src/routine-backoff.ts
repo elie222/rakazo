@@ -14,6 +14,13 @@ interface RoutineBackoffDeps {
   jobs: JobPublisher;
 }
 
+/**
+ * The routine a run belongs to, and who started it. A run started by someone other than the
+ * routine's owner, such as a member's test, used their accounts, so it says nothing about the
+ * owner's: it neither backs the schedule off nor clears it.
+ */
+export type RoutineRunRef = { routineId: string; userId: string };
+
 type RoutineSchedule = {
   active: boolean;
   crons: string[];
@@ -65,11 +72,11 @@ export function routineAccountBackoffMs(failures: number): number {
  */
 export async function backOffRoutineAfterAccountError(
   deps: RoutineBackoffDeps,
-  routineId: string,
+  run: RoutineRunRef,
   now = new Date(),
   resetAt?: Date,
 ): Promise<void> {
-  await updateSchedule(deps, routineId, "routine.backoff", (routine) => {
+  await updateSchedule(deps, run, "routine.backoff", (routine) => {
     const accountFailures = routine.accountFailures + 1;
     if (!routine.active || !routine.nextRunAt) return { accountFailures };
     const resumeAt = new Date(
@@ -93,18 +100,24 @@ export async function backOffRoutineAfterAccountError(
  */
 export async function clearRoutineBackoff(
   deps: RoutineBackoffDeps,
-  routineId: string,
+  run: RoutineRunRef,
   now = new Date(),
 ): Promise<void> {
   // Most completions have nothing to clear; skip the locked write for them.
   const held = await deps.prisma.routine
-    .count({ where: { id: routineId, accountFailures: { gt: 0 } } })
+    .count({
+      where: {
+        id: run.routineId,
+        accountFailures: { gt: 0 },
+        userId: run.userId,
+      },
+    })
     .catch((error: unknown) => {
       getLogger().error("routine.backoff_clear", error);
       return 0;
     });
   if (held === 0) return;
-  await updateSchedule(deps, routineId, "routine.backoff_clear", (routine) => {
+  await updateSchedule(deps, run, "routine.backoff_clear", (routine) => {
     if (routine.accountFailures === 0) return null;
     if (!routine.active || !routine.nextRunAt || routine.watch != null) {
       return { accountFailures: 0 };
@@ -122,10 +135,11 @@ export async function clearRoutineBackoff(
  */
 async function updateSchedule(
   deps: RoutineBackoffDeps,
-  routineId: string,
+  run: RoutineRunRef,
   logMessage: string,
   change: (routine: RoutineSchedule) => { accountFailures: number; nextRunAt?: Date } | null,
 ): Promise<void> {
+  const { routineId } = run;
   try {
     const nextRunAt = await deps.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       await tx.$queryRaw`SELECT id FROM routines WHERE id = ${routineId} FOR UPDATE`;
@@ -138,8 +152,10 @@ async function updateSchedule(
           watch: true,
           nextRunAt: true,
           accountFailures: true,
+          userId: true,
         },
       });
+      if (routine && routine.userId !== run.userId) return null;
       const data = routine ? change(routine) : null;
       if (!data) return null;
       await tx.routine.update({ where: { id: routineId }, data });

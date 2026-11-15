@@ -1,5 +1,9 @@
+import { generateKeyPairSync } from "node:crypto";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { loadEnv } from "./env.js";
+import { loadEnv, parseExtraAuthOrigins } from "./env.js";
 
 const base = {
   DATABASE_URL: "postgres://rakazo:rakazo@127.0.0.1:5433/rakazo",
@@ -49,10 +53,10 @@ describe("loadEnv", () => {
     expect(() => loadEnv({ ...base, MAX_UPLOAD_SIZE_MB: value })).toThrow("MAX_UPLOAD_SIZE_MB");
   });
   it("keeps the ticket board off unless explicitly enabled", () => {
-    expect(loadEnv(base).ticketBoardEnabled).toBe(false);
+    expect(loadEnv(base).deploymentLabs).toEqual([]);
     for (const value of ["false", "1", ""])
-      expect(loadEnv({ ...base, TICKET_BOARD_ENABLED: value }).ticketBoardEnabled).toBe(false);
-    expect(loadEnv({ ...base, TICKET_BOARD_ENABLED: "true" }).ticketBoardEnabled).toBe(true);
+      expect(loadEnv({ ...base, TICKET_BOARD_ENABLED: value }).deploymentLabs).toEqual([]);
+    expect(loadEnv({ ...base, TICKET_BOARD_ENABLED: "true" }).deploymentLabs).toEqual(["board"]);
   });
   it("loads operator menu links and refuses to start on a bad value", () => {
     expect(loadEnv(base).navLinks).toEqual([]);
@@ -387,6 +391,76 @@ describe("OIDC environment", () => {
   });
 });
 
+describe("social sign-in environment", () => {
+  const privateKey = generateKeyPairSync("ec", { namedCurve: "prime256v1" })
+    .privateKey.export({
+      type: "pkcs8",
+      format: "pem",
+    })
+    .toString();
+  const apple = {
+    APPLE_CLIENT_ID: "com.example.service",
+    APPLE_TEAM_ID: "TEAMID1234",
+    APPLE_KEY_ID: "KEYID12345",
+    APPLE_PRIVATE_KEY: privateKey,
+  };
+
+  it("leaves sign-in unchanged when no provider is configured", () => {
+    expect(loadEnv(base).social).toBeUndefined();
+  });
+
+  it("enables a provider only when its credentials are complete", () => {
+    expect(() => loadEnv({ ...base, GOOGLE_CLIENT_ID: "client" })).toThrow(/configured together/);
+    expect(() => loadEnv({ ...base, ...apple, APPLE_KEY_ID: undefined })).toThrow(
+      /configured together/,
+    );
+    expect(
+      loadEnv({ ...base, GOOGLE_CLIENT_ID: "client", GOOGLE_CLIENT_SECRET: "secret" }).social,
+    ).toEqual({
+      providers: [{ id: "google", name: "Google", clientId: "client", clientSecret: "secret" }],
+    });
+    expect(loadEnv({ ...base, ...apple }).social).toMatchObject({
+      providers: [
+        expect.objectContaining({
+          id: "apple",
+          clientId: "com.example.service",
+        }),
+      ],
+    });
+  });
+
+  it("reads the Apple private key from a file", () => {
+    const dir = mkdtempSync(join(tmpdir(), "rakazo-apple-"));
+    const file = join(dir, "key.p8");
+    try {
+      writeFileSync(file, privateKey);
+      expect(
+        loadEnv({ ...base, ...apple, APPLE_PRIVATE_KEY: undefined, APPLE_PRIVATE_KEY_FILE: file })
+          .social?.providers[0],
+      ).toMatchObject({ id: "apple" });
+      expect(() => loadEnv({ ...base, ...apple, APPLE_PRIVATE_KEY_FILE: file })).toThrow(
+        /not both/,
+      );
+      try {
+        loadEnv({
+          ...base,
+          ...apple,
+          APPLE_PRIVATE_KEY: undefined,
+          APPLE_PRIVATE_KEY_FILE: join(dir, "missing.p8"),
+        });
+        expect.unreachable("Missing private key must fail startup");
+      } catch (error) {
+        expect(error).toMatchObject({
+          message: "APPLE_PRIVATE_KEY_FILE could not be read",
+          cause: { code: "ENOENT", path: join(dir, "missing.p8") },
+        });
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("web origin", () => {
   it("drops trailing slashes so links never double up", () => {
     expect(loadEnv({ ...base, WEB_ORIGIN: "https://app.example.com/" }).webOrigin).toBe(
@@ -453,5 +527,48 @@ describe("web origin", () => {
     const load = () => loadEnv({ ...base, [name]: value });
     expect(load).toThrow(`${name} must be an absolute http(s) URL`);
     expect(load).not.toThrow(value);
+  });
+});
+
+describe("directory provisioning environment", () => {
+  it("stays off without a token and keeps a long one", () => {
+    expect(loadEnv(base).scimBearerToken).toBeUndefined();
+    expect(loadEnv({ ...base, SCIM_BEARER_TOKEN: " " }).scimBearerToken).toBeUndefined();
+    const token = "a".repeat(32);
+    expect(loadEnv({ ...base, SCIM_BEARER_TOKEN: ` ${token} ` }).scimBearerToken).toBe(token);
+  });
+  it.each(["a".repeat(31), `${"a".repeat(16)} ${"a".repeat(16)}`])(
+    "refuses a short or spaced token",
+    (token) => {
+      expect(() => loadEnv({ ...base, SCIM_BEARER_TOKEN: token })).toThrow("SCIM_BEARER_TOKEN");
+    },
+  );
+});
+
+describe("RAKAZO_EXTRA_AUTH_ORIGINS", () => {
+  it("is empty when unset or blank", () => {
+    expect(loadEnv(base).extraAuthOrigins).toEqual([]);
+    expect(parseExtraAuthOrigins(" , ")).toEqual([]);
+  });
+
+  it("keeps https origins and http on loopback or a private network, normalized", () => {
+    expect(
+      parseExtraAuthOrigins(
+        "https://host.tailnet.ts.net/, http://192.168.1.20:5173 ,http://100.64.1.2,http://localhost:5173,https://host.tailnet.ts.net",
+      ),
+    ).toEqual([
+      "https://host.tailnet.ts.net",
+      "http://192.168.1.20:5173",
+      "http://100.64.1.2",
+      "http://localhost:5173",
+    ]);
+  });
+
+  it("drops invalid entries", () => {
+    expect(
+      parseExtraAuthOrigins(
+        "http://example.com,ftp://host,rakazo://,not a url,https://host/path,https://u:p@host,*",
+      ),
+    ).toEqual([]);
   });
 });

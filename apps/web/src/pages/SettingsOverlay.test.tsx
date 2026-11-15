@@ -32,6 +32,7 @@ vi.mock("@rakazo/ui-web", () => ({
     "children"
   >) => <div {...props}>{children}</div>,
   DialogTitle: ({ children }: { children?: ReactNode }) => <h2>{children}</h2>,
+  DialogDescription: ({ children }: { children?: ReactNode }) => <p>{children}</p>,
 }));
 
 vi.mock("./AccountSettingsOverlay", () => ({
@@ -100,6 +101,7 @@ vi.mock("../components/ApprovalRulesSettings", () => ({
   ApprovalRulesSettings: recordScope("confirmations"),
 }));
 vi.mock("../components/VaultSettings", () => ({ VaultSettings: recordScope("vault") }));
+vi.mock("./LabsSettingsPanel", () => ({ LabsSettingsPanel: () => null }));
 vi.mock("../components/ComputersUnavailableHint", () => ({
   computersAreUnavailable: () => false,
 }));
@@ -124,11 +126,15 @@ async function render(props: Partial<React.ComponentProps<typeof SettingsOverlay
             onUsageOpen={() => undefined}
             timezone={null}
             onTimezoneChange={async () => undefined}
+            labs={[]}
+            labsAvailable={["board"]}
+            onLabsChange={async () => undefined}
             memoryConfig={null}
             onMemoryConfigChange={() => undefined}
             onClose={() => undefined}
             section="general"
             onSectionChange={() => undefined}
+            shellRpc={{} as never}
             {...next}
           />
         </QueryClientProvider>,
@@ -316,5 +322,37 @@ it("offers Wallet only when the deployment has a wallet provider", async () => {
     expect(shown()).toBe("wallet");
   } finally {
     await cleanup();
+  }
+});
+
+it("hides Labs when the deployment turns every feature on", async () => {
+  const { container, rerender, cleanup } = await render({ section: "labs", labsAvailable: [] });
+  const shown = () =>
+    container.querySelector("[data-settings-section]")?.getAttribute("data-settings-section");
+  try {
+    expect(container.querySelector('[data-testid="settings-nav-labs"]')).toBeNull();
+    expect(shown()).toBe("general");
+    await rerender({ section: "labs", labsAvailable: ["board"] });
+    expect(container.querySelector('[data-testid="settings-nav-labs"]')).not.toBeNull();
+    expect(shown()).toBe("labs");
+  } finally {
+    await cleanup();
+  }
+});
+
+it("says what a page is for only where its name does not", async () => {
+  const general = await render({ section: "general" });
+  try {
+    expect(general.container.querySelector("h2 + p")).toBeNull();
+  } finally {
+    await general.cleanup();
+  }
+  const voice = await render({ section: "voice" });
+  try {
+    expect(voice.container.querySelector("h2 + p")?.textContent).toBe(
+      "Calls, dictation, and replies read aloud.",
+    );
+  } finally {
+    await voice.cleanup();
   }
 });

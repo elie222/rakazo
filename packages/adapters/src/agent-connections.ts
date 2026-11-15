@@ -1,5 +1,5 @@
 import type { JobPublisher } from "@rakazo/adapter-kit";
-import { messagingDeliverJob, runContinueJob } from "@rakazo/adapter-kit";
+import { runContinueJob } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
 import {
   botMessageHopExhausted,
@@ -13,17 +13,21 @@ import {
   appendEventInTransaction,
   createThreadMessageInTransaction,
   crossSpaceCommunicationAllowed,
+  isUniqueViolation,
   runAsSystem,
+  THREAD_LOCK_TRANSACTION_OPTIONS,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { currentBotMessageHop } from "./bot-messages.js";
 import type { ExecutorDeps } from "./executor-deps.js";
+import type { MessagingDelivery } from "./messaging-delivery.js";
 import { runLeaseFor } from "./run-messages.js";
 
 export interface AgentConnectionDeps {
   prisma: PrismaClient;
   events: Pick<ThreadEvents, "sendUserMessage" | "notify">;
   jobs: Pick<JobPublisher, "enqueue">;
+  messagingDelivery?: Pick<MessagingDelivery, "recordIn" | "send">;
   runLease?: ExecutorDeps["runLease"];
 }
 
@@ -66,7 +70,8 @@ async function requestConnection(
   });
   // Connection invites are a messaging-surface feature; a bot whose owner
   // never messaged the deployment cannot open them.
-  if (!requesterIdentity) {
+  const delivery = deps.messagingDelivery;
+  if (!requesterIdentity || !delivery) {
     return { ok: false, error: "only chat-linked agents can use agent connections" };
   }
   // Scoped to the requester's own platform: addresses are only unique per
@@ -153,15 +158,15 @@ async function requestConnection(
           // Two first-time connects can both miss the pre-read; the unique key
           // serializes them. PostgreSQL aborts the interactive transaction on
           // P2002, so recovery must happen outside — rethrow a marker.
-          if (!isUniqueConstraintError(error)) throw error;
+          if (!isUniqueViolation(error)) throw error;
           throw new ConnectCreateRaceError();
         }
       }
-      // Fresh approval cycle: clear the old invite row or skipDuplicates would
-      // silently swallow the new request.
-      await tx.messagingOutbound.deleteMany({ where: { idempotencyKey: inviteKey } });
-      await tx.messagingOutbound.createMany({
-        data: [
+      // Fresh approval cycle: the old invite row would swallow the new request.
+      await delivery.recordIn(
+        tx,
+        { identityId: targetIdentity.id },
+        [
           {
             idempotencyKey: inviteKey,
             kind: "dm",
@@ -169,8 +174,8 @@ async function requestConnection(
             body: inviteBody,
           },
         ],
-        skipDuplicates: true,
-      });
+        { replace: true },
+      );
       return { ok: true as const, status: "pending" as const };
     });
 
@@ -192,9 +197,7 @@ async function requestConnection(
   if (!claimed.ok) return claimed;
   if (claimed.status !== "pending") return { ok: true, status: claimed.status };
 
-  await deps.jobs.enqueue(messagingDeliverJob()).catch((error) => {
-    getLogger().error("agent connection invite enqueue error", error);
-  });
+  await delivery.send([{ identityId: targetIdentity.id }]);
   return { ok: true, status: "pending" };
 }
 
@@ -448,13 +451,13 @@ async function deliverToConnectedAgent(
         targetEventSeq: inboundEvent.seq,
         senderEventSeq: outboundEvent.seq,
       };
-    });
+    }, THREAD_LOCK_TRANSACTION_OPTIONS);
   try {
     committed = await deliverTx();
   } catch (error) {
     // Two concurrent retries can both miss the in-transaction lookup; the
     // loser hits the unique key. Treat that as a successful replay.
-    if (deliveryKey && isUniqueConstraintError(error)) {
+    if (deliveryKey && isUniqueViolation(error)) {
       const winner = await deps.prisma.message.findUnique({
         where: { threadId_clientNonce: { threadId: targetThreadId, clientNonce: deliveryKey } },
         select: { id: true },
@@ -494,10 +497,6 @@ async function deliverToConnectedAgent(
     name: target.name,
     note: `Sent to ${target.name}. Delivery is async; a reply wakes you later as a new message.`,
   };
-}
-
-function isUniqueConstraintError(error: unknown) {
-  return Boolean(error && typeof error === "object" && "code" in error && error.code === "P2002");
 }
 
 /** Marker: unique create raced; recover outside the aborted PG transaction. */

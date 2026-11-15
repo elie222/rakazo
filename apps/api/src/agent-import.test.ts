@@ -45,7 +45,11 @@ function fakeDb(): never {
           },
       },
     );
-  return new Proxy({}, { get: (_, name: string) => model(name) }) as never;
+  // Raw statements (marking a chat unread for the Space's members) find nothing.
+  return new Proxy(
+    {},
+    { get: (_, name: string) => (name.startsWith("$") ? async () => [] : model(name)) },
+  ) as never;
 }
 
 const bot = { id: "bot-1", threadId: "thread-1", name: "Imported" } as Bot;

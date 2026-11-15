@@ -3,6 +3,7 @@ import { AgentImportSetupItemSchema } from "./agent-import-setup.js";
 import { botSecretDestinationSchema, LoginFieldLabels, OneTimeCodeTarget } from "./bot-secrets.js";
 import { Id, ThinkingLevelSchema } from "./ids.js";
 import { McpTransportSchema } from "./mcp.js";
+import { McpAppCspSchema } from "./mcp-app.js";
 import { PAGE_TITLE_MAX_LENGTH } from "./pages.js";
 
 export const ProductEventType = z.enum([
@@ -105,6 +106,21 @@ export const BotSettingsValuesSchema = z.object({
 });
 export type BotSettingsValues = z.infer<typeof BotSettingsValuesSchema>;
 
+/** A payment's order as read from the page: every value is page text, none of it checked. */
+export const AskReceipt = z.object({
+  /** The pay button's label. */
+  button: z.string().max(200).optional(),
+  items: z.array(z.object({ name: z.string().max(200), amount: z.string().max(100) })).max(30),
+  /** Order lines the card leaves out; `atLeast` when the page may list even more. */
+  more: z.object({ count: z.number().int().positive(), atLeast: z.boolean() }).optional(),
+  /** What is paid: the amount the button names, or else the page's total. */
+  amount: z.string().max(100).optional(),
+  amountSource: z.enum(["button", "page"]),
+  /** The page's total beside a button that names its own amount. */
+  total: z.string().max(100).optional(),
+});
+export type AskReceipt = z.infer<typeof AskReceipt>;
+
 export const MessageBlock = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("text"), text: z.string() }),
   z.object({
@@ -130,6 +146,8 @@ export const MessageBlock = z.discriminatedUnion("kind", [
       .optional(),
     detail: z.string().optional(),
     detailFormat: z.enum(["text", "code"]).optional(),
+    /** On a payment card, the order as the page shows it, drawn as a receipt in place of `detail`. */
+    receipt: AskReceipt.optional(),
     input: z.enum(["text", "secret"]).optional(),
     /** Why the secret is needed; drives field label on the masked card. */
     purpose: SecretAskPurpose.optional(),
@@ -143,10 +161,14 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     replaces: z.object({ id: z.string().max(64), origin: z.string().max(2048) }).optional(),
     /** The fields a login card asks for, by label; absent means DEFAULT_LOGIN_FIELD_LABELS. */
     loginFields: LoginFieldLabels.optional(),
+    /** On a login card in a shared Space: the site stays signed in for everyone in it. */
+    sharedBrowser: z.literal(true).optional(),
     /** On a fetch approval, the site an "always" answer allows. */
     site: z.string().optional(),
     status: z.enum(["pending", "answered"]).optional(),
     answer: z.string().optional(),
+    /** Composer message that durably records this answer; absent on older or card-only replies. */
+    answerMessageId: z.string().optional(),
     /** A secret request the user dismissed instead of answering. */
     dismissed: z.literal(true).optional(),
     /** A login the user used for this run only instead of saving it. */
@@ -216,6 +238,11 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     durationSeconds: z.number().int().nonnegative().optional(),
   }),
   z.object({ kind: z.literal("meta"), text: z.string() }),
+  /**
+   * Marks a user message as what woke the bot (a webhook, an email, a chat message). Its text
+   * block is the bot's full prompt, so chats, previews and search leave the message out.
+   */
+  z.object({ kind: z.literal("delivery") }),
   z.object({
     kind: z.literal("progress"),
     text: z.string(),
@@ -231,6 +258,14 @@ export const MessageBlock = z.discriminatedUnion("kind", [
         count: z.number().int().positive(),
         /** What the bot wrote just before this step, kept out of its reply. */
         note: z.string().optional(),
+        /** How many of this step's calls succeeded, failed, or were stopped before finishing. */
+        outcomes: z
+          .object({
+            succeeded: z.number().int().positive().optional(),
+            failed: z.number().int().positive().optional(),
+            stopped: z.number().int().positive().optional(),
+          })
+          .optional(),
       }),
     ),
     durationMs: z.number().int().nonnegative().optional(),
@@ -312,6 +347,21 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     size: z.number().int().nonnegative(),
   }),
   z.object({
+    /**
+     * An MCP server's app showing one tool call. The app's HTML is a hidden artifact; the
+     * arguments and result are what its view receives, the result as the bot got it (credentials
+     * redacted).
+     */
+    kind: z.literal("app"),
+    artifactId: Id,
+    server: z.string().max(200),
+    tool: z.string().max(200),
+    toolArguments: z.record(z.string(), z.any()),
+    toolResult: z.record(z.string(), z.any()),
+    csp: McpAppCspSchema.optional(),
+    prefersBorder: z.boolean().optional(),
+  }),
+  z.object({
     /** A page the bot saved. Title and version are as sent; read the page for its latest. */
     kind: z.literal("page"),
     pageId: Id,
@@ -360,6 +410,33 @@ export const MessageBlock = z.discriminatedUnion("kind", [
   }),
 ]);
 export type MessageBlock = z.infer<typeof MessageBlock>;
+
+/** One call a reply kept for the bot's later turns: what it was sent and what came back. */
+export const ToolStepCallSchema = z.object({
+  /** The call's arguments as JSON. */
+  arguments: z.string().optional(),
+  result: z.string().optional(),
+  /** The screenshot the call returned, kept as a hidden artifact runs read. */
+  image: z.object({ artifactId: z.string() }).optional(),
+  /** The call ended in an error; its result is that error. */
+  failed: z.literal(true).optional(),
+});
+export type ToolStepCall = z.infer<typeof ToolStepCallSchema>;
+
+/**
+ * What a bot reply's tool calls were sent and returned, for its later runs to replay. Stored
+ * encrypted beside the message, never in its blocks, so clients never receive it. One entry per
+ * step of the message's steps blocks, in order; null for a step whose calls were not all kept.
+ */
+export const ToolHistorySchema = z.object({
+  steps: z.array(z.object({ tool: z.string(), calls: z.array(ToolStepCallSchema) }).nullable()),
+});
+export type ToolHistory = z.infer<typeof ToolHistorySchema>;
+/** A step as a run replays it: what the UI shows, with its tool and kept calls when it has them. */
+export type HistoryToolStep = Extract<MessageBlock, { kind: "steps" }>["steps"][number] & {
+  tool?: string;
+  calls?: ToolStepCall[];
+};
 
 /**
  * Something the bot did on its computer, shown in the terminal's Activity view: a shell
@@ -415,7 +492,6 @@ export function hasThinkingActivityMarker(payload: Record<string, unknown>): pay
   const activity = payload.activity;
   return activity !== null && typeof activity === "object" && "thinking" in activity;
 }
-export type ThreadActivityPayload = z.infer<typeof ThreadActivityPayloadSchema>;
 
 export const ProductEventSchema = z
   .object({
@@ -437,11 +513,16 @@ export const ProductEventSchema = z
   });
 export type ProductEvent = z.infer<typeof ProductEventSchema>;
 
+/** The person who wrote a user message, when known. */
+export const MessageAuthorSchema = z.object({ id: Id, name: z.string() });
+export type MessageAuthor = z.infer<typeof MessageAuthorSchema>;
+
 export const ReplyPreviewSchema = z.object({
   role: MessageRole,
   /** The parent is a page card. */
   page: z.literal(true).optional(),
   botId: Id.optional(),
+  author: MessageAuthorSchema.optional(),
   text: z.string(),
   attachment: z
     .object({
@@ -461,6 +542,7 @@ export const ThreadMessageSchema = z.object({
   role: MessageRole,
   blocks: z.array(MessageBlock),
   botId: Id.optional(),
+  author: MessageAuthorSchema.optional(),
   replyToMessageId: Id.optional(),
   replyQuote: z.string().optional(),
   replyPreview: ReplyPreviewSchema.nullable().optional(),

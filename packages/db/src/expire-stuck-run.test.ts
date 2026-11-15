@@ -18,6 +18,7 @@ function tx(options?: {
   const events: Array<Record<string, unknown>> = [];
   const client = {
     $queryRaw: vi.fn(async () => []),
+    $executeRaw: vi.fn(async () => 0),
     externalEffect: {
       deleteMany: vi.fn(async () => ({ count: 0 })),
       updateMany: vi.fn(async () => ({ count: 1 })),
@@ -156,13 +157,6 @@ describe("expireStuckRun", () => {
         expect.objectContaining({ type: "run.cancelled", runId: "run-1" }),
       ]),
     );
-    expect(client.computer.updateMany).toHaveBeenCalledWith({
-      where: {
-        controlRunId: "run-1",
-        OR: [{ controlHolder: { not: "user" } }, { controlLeaseId: null }],
-      },
-      data: { controlRunId: null },
-    });
     expect(client.computerExecutionLease.updateMany).toHaveBeenCalledWith({
       where: { runId: "run-1" },
       data: { expiresAt: new Date(0) },
@@ -180,6 +174,46 @@ describe("expireStuckRun", () => {
           { userId: "user-1", spaceId: "space-1", kind: { startsWith: "run-login:run-1:" } },
         ],
       },
+    });
+  });
+
+  describe("a takeover wait whose bot's screen someone holds", () => {
+    function holdingScreen(controlUserId: string) {
+      const client = tx({ status: "waiting_takeover" });
+      client.$queryRaw.mockImplementation((async (sql: TemplateStringsArray) =>
+        sql.join("").includes('"controlLeaseId"')
+          ? [
+              {
+                botId: "bot-1",
+                userId: "user-1",
+                controlBotId: "bot-1",
+                controlLeaseId: "lease-1",
+                controlUserId,
+                computerUserId: "user-1",
+              },
+            ]
+          : []) as never);
+      return client;
+    }
+    const expire = (client: ReturnType<typeof tx>) =>
+      expireStuckRun(client as unknown as Prisma.TransactionClient, {
+        runId: "run-1",
+        threadId: "thread-1",
+        status: "waiting_takeover",
+        updatedAt,
+        now,
+      });
+
+    it("keeps waiting while the person it asked is on the screen", async () => {
+      const client = holdingScreen("user-1");
+      await expect(expire(client)).resolves.toBeNull();
+      expect(client.run.updateMany).not.toHaveBeenCalled();
+    });
+
+    it("ends the wait when only another member holds the screen", async () => {
+      const client = holdingScreen("user-2");
+      await expect(expire(client)).resolves.not.toBeNull();
+      expect(client.run.updateMany).toHaveBeenCalled();
     });
   });
 

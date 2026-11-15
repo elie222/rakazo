@@ -257,10 +257,9 @@ async function seedBenchmarkThread(prisma: PrismaClient) {
   if (!threadId) throw new Error("Benchmark onboarding did not create a thread");
   await prisma.$transaction([
     prisma.message.deleteMany({ where: { threadId } }),
-    prisma.thread.update({
-      where: { id: threadId },
-      data: { nextMessageSeq: 0, unread: false },
-    }),
+    prisma.thread.update({ where: { id: threadId }, data: { nextMessageSeq: 0 } }),
+    // The chat starts read for everyone.
+    prisma.threadRead.deleteMany({ where: { threadId } }),
   ]);
   for (let index = 0; index < 100; index += 1) {
     const role = index % 2 === 0 ? "user" : "bot";

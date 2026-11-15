@@ -1,20 +1,9 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  Button,
-  Field,
-  FieldLabel,
-  Input,
-} from "@rakazo/ui-web";
+import { canDeleteOrganization } from "@rakazo/core";
+import { Button, Field, FieldLabel, Input } from "@rakazo/ui-web";
 import { Plus } from "lucide-react";
 import { useEffect, useId, useState } from "react";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import { CreateOrganizationDialog } from "../components/CreateOrganizationDialog";
 import { SettingsGroup, SettingsRow } from "../components/SettingsRows";
 import type { Organization } from "../lib/organizations";
@@ -36,9 +25,7 @@ export function OrganizationSettingsPanel({
     <OrganizationSettings
       key={organization.id}
       organization={organization}
-      canDelete={
-        organization.canManage && organizations.filter((each) => each.canManage).length > 1
-      }
+      canDelete={canDeleteOrganization(organizations, organization)}
       onBusyChange={onBusyChange}
     />
   );
@@ -122,12 +109,12 @@ function OrganizationSettings({
                 }}
               />
             ) : (
-              <p className="break-words text-sm">{organization.name}</p>
+              <p className="break-words text-body">{organization.name}</p>
             )
           }
         >
           {error ? (
-            <p role="alert" className="pt-2 text-[12.5px] text-destructive">
+            <p role="alert" className="pt-2 text-body-sm text-destructive">
               {error}
             </p>
           ) : null}
@@ -153,17 +140,18 @@ function OrganizationSettings({
         <DeleteOrganizationDialog
           organization={organization}
           onCancel={() => setConfirmingDelete(false)}
-          onConfirm={async () => {
-            const { activeSpaceId } = await rpc.organizations.remove({
-              organizationId: organization.id,
-            });
-            if (!selectSpace(activeSpaceId)) clearSpaceSelection();
-            window.location.assign("/");
-          }}
+          onConfirm={() => removeOrganization(organization)}
         />
       ) : null}
     </div>
   );
+}
+
+/** Deletes it, then reloads into the Space the server chose. */
+export async function removeOrganization(organization: Organization): Promise<void> {
+  const { activeSpaceId } = await rpc.organizations.remove({ organizationId: organization.id });
+  if (!selectSpace(activeSpaceId)) clearSpaceSelection();
+  window.location.assign("/");
 }
 
 export function DeleteOrganizationDialog({
@@ -182,58 +170,35 @@ export function DeleteOrganizationDialog({
   const [error, setError] = useState<string | null>(null);
   const name = organization.name;
   return (
-    <AlertDialog
-      open
-      onOpenChange={(open) => {
-        if (!open && !deleting) onCancel();
+    <ConfirmDialog
+      onCancel={onCancel}
+      title={<Trans>Delete {organization.name}?</Trans>}
+      description={<Trans>This cannot be undone.</Trans>}
+      error={error}
+      busy={deleting}
+      confirmDisabled={typed !== name}
+      onConfirm={() => {
+        setDeleting(true);
+        setError(null);
+        void onConfirm().catch((reason: unknown) => {
+          setError(errorText(reason));
+          setDeleting(false);
+        });
       }}
+      confirmLabel={deleting ? <Trans>Deleting…</Trans> : <Trans>Delete</Trans>}
     >
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle className="break-words">
-            <Trans>Delete {organization.name}?</Trans>
-          </AlertDialogTitle>
-          <AlertDialogDescription>
-            <Trans>This cannot be undone.</Trans>
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <Field>
-          <FieldLabel htmlFor={confirmId} className="break-words">
-            {t`Type ${name} to confirm`}
-          </FieldLabel>
-          <Input
-            id={confirmId}
-            value={typed}
-            disabled={deleting}
-            autoComplete="off"
-            onChange={(event) => setTyped(event.target.value)}
-          />
-        </Field>
-        {error ? (
-          <p role="alert" className="text-[13.5px] text-destructive">
-            {error}
-          </p>
-        ) : null}
-        <AlertDialogFooter>
-          <AlertDialogCancel disabled={deleting}>
-            <Trans>Cancel</Trans>
-          </AlertDialogCancel>
-          <AlertDialogAction
-            variant="destructive"
-            disabled={deleting || typed !== name}
-            onClick={() => {
-              setDeleting(true);
-              setError(null);
-              void onConfirm().catch((reason: unknown) => {
-                setError(errorText(reason));
-                setDeleting(false);
-              });
-            }}
-          >
-            {deleting ? <Trans>Deleting…</Trans> : <Trans>Delete</Trans>}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+      <Field>
+        <FieldLabel htmlFor={confirmId} className="break-words">
+          {t`Type ${name} to confirm`}
+        </FieldLabel>
+        <Input
+          id={confirmId}
+          value={typed}
+          disabled={deleting}
+          autoComplete="off"
+          onChange={(event) => setTyped(event.target.value)}
+        />
+      </Field>
+    </ConfirmDialog>
   );
 }

@@ -151,7 +151,7 @@ function AccessGrantsPanel() {
           <Spinner className="size-5 text-muted-foreground" aria-label={t`Loading…`} />
         </div>
       ) : grants.isError ? (
-        <div role="alert" className="flex items-center gap-3 text-sm text-destructive">
+        <div role="alert" className="flex items-center gap-3 text-body text-destructive">
           {errorText(grants.error, t`Couldn't load grants`)}
           <Button variant="outline" size="sm" onClick={() => void grants.refetch()}>
             <Trans>Retry</Trans>
@@ -166,10 +166,10 @@ function AccessGrantsPanel() {
             <li
               key={item.id}
               aria-label={item.email}
-              className="flex items-center gap-3 px-4 py-3 text-[13px]"
+              className="flex items-center gap-3 px-4 py-3 text-body-sm"
             >
               <div className="min-w-0 flex-1">
-                <div className="truncate text-[14px] font-medium">{item.email}</div>
+                <div className="truncate text-body font-medium">{item.email}</div>
                 <div className="flex min-w-0 gap-3 text-muted-foreground">
                   {item.creditCents > 0 ? (
                     <span>{formatBillingAmount(item.creditCents, "usd", i18n.locale)}</span>

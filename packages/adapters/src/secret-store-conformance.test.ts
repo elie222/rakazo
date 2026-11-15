@@ -340,6 +340,39 @@ describe("Infisical lifecycle and REST", () => {
     await expect(pending).rejects.toThrow();
     await store.close();
   });
+  it("does not read oversized secret responses", async () => {
+    const fake = infisicalFake();
+    const writer = new InfisicalSecretStore(fake.options);
+    const missing = await writer.put("value", secretTestContext);
+    await writer.close();
+    fake.values.clear();
+    const cancels: unknown[] = [];
+    const fetcher: typeof fetch = async (input, init) => {
+      const response = await fake.fetcher(input, init);
+      if (String(input).includes("universal-auth/login")) return response;
+      const oversized = new Response(response.body, {
+        status: response.status,
+        headers: { "content-length": String(1024 * 1024 * 1024) },
+      });
+      cancels.push(vi.spyOn(oversized.body!, "cancel"));
+      return oversized;
+    };
+    const store = new InfisicalSecretStore({ ...fake.options, fetch: fetcher });
+    try {
+      await expect(store.put("private value", secretTestContext)).rejects.toThrow(
+        /^Secret storage is unavailable; retry later$/,
+      );
+      // An unreadable not-found body is misconfiguration, not a missing secret.
+      await expect(store.load(missing.ref, missing.id)).rejects.toMatchObject({
+        name: "SecretStoreUnavailableError",
+        status: 404,
+      });
+      expect(cancels).not.toHaveLength(0);
+      for (const cancel of cancels) expect(cancel).toHaveBeenCalledOnce();
+    } finally {
+      await store.close();
+    }
+  });
   it("times out requests without exposing fetch errors", async () => {
     const fake = infisicalFake();
     const fetcher: typeof fetch = (input, init) => {

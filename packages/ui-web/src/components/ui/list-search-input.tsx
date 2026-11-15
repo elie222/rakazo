@@ -26,7 +26,7 @@ export function ListSearchInput({
     autoComplete: "off",
     "data-slot": "input-group-control",
     className:
-      "min-w-0 flex-1 bg-transparent py-1 pr-2 text-sm outline-none disabled:cursor-not-allowed disabled:opacity-50",
+      "min-w-0 flex-1 bg-transparent py-1 pr-2 text-body outline-none disabled:cursor-not-allowed disabled:opacity-50",
   };
 
   return (

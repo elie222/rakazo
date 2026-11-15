@@ -16,6 +16,7 @@ import {
 } from "./openai-compatible-voice.js";
 import { OpenAIVoiceProvider } from "./openai-voice.js";
 import { SCRIPTED_VOICE_CATALOG_ENTRY, ScriptedVoiceProvider } from "./scripted-voice.js";
+import { XAI_VOICE_PROVIDER_ID, XaiVoiceProvider } from "./xai-voice.js";
 
 export const VOICE_CATALOG = [
   {
@@ -23,6 +24,7 @@ export const VOICE_CATALOG = [
     name: "ElevenLabs",
     description: "Highest quality and cloning. Flash v2.5 for conversational calls.",
     transcribe: true,
+    speechModel: true,
   },
   {
     id: "openai",
@@ -41,6 +43,15 @@ export const VOICE_CATALOG = [
     name: "Fish Audio",
     description: "Voice models, cloning, and expressive speech with optional transcription.",
     transcribe: true,
+    speechModel: true,
+    languages: true,
+  },
+  {
+    id: XAI_VOICE_PROVIDER_ID,
+    name: "xAI",
+    description: "Expressive Grok voices and transcription, with a key or a Grok sign-in.",
+    transcribe: true,
+    modelConnection: true,
   },
   {
     id: OPENAI_COMPATIBLE_VOICE_PROVIDER_ID,
@@ -100,6 +111,8 @@ export function createVoiceProvider(
       return new CartesiaVoiceProvider();
     case "fish-audio":
       return new FishAudioVoiceProvider();
+    case XAI_VOICE_PROVIDER_ID:
+      return new XaiVoiceProvider();
     case OPENAI_COMPATIBLE_VOICE_PROVIDER_ID:
       return new OpenAiCompatibleVoiceProvider({
         allowPrivateEndpoint: options.allowPrivateEndpoint,
@@ -114,7 +127,7 @@ export function createVoiceProvider(
       break;
   }
   throw new Error(
-    `Unknown voice provider "${kind}". Use elevenlabs | openai | cartesia | fish-audio | openai-compatible.`,
+    `Unknown voice provider "${kind}". Use elevenlabs | openai | cartesia | fish-audio | xai | openai-compatible.`,
   );
 }
 
@@ -132,5 +145,5 @@ export class NoVoiceConfigured extends Error {
   }
 }
 
-export { MAX_SPEAK_CHARS } from "./voice-http.js";
+export { isSpeechModelId, MAX_SPEAK_CHARS } from "./voice-http.js";
 export const MAX_TRANSCRIBE_BYTES = 8 * 1024 * 1024;

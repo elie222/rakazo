@@ -1,3 +1,4 @@
+import { ph, t } from "@lingui/core/macro";
 import * as Application from "expo-application";
 import Constants from "expo-constants";
 import * as Updates from "expo-updates";
@@ -19,8 +20,6 @@ export type AppVersionInfo = {
   nativeLabel: string | null;
   update: AppUpdateIdentity;
 };
-
-type Translate = (message: string, values?: Record<string, string | number>) => string;
 
 function readString(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
@@ -77,13 +76,13 @@ function resolveUpdateIdentity(): AppUpdateIdentity {
 }
 
 /** Human update line for the account footer (English source strings for i18n). */
-export function formatUpdateLabel(update: AppUpdateIdentity, t: Translate): string {
-  if (update.kind === "embedded") return t("Embedded");
+export function formatUpdateLabel(update: AppUpdateIdentity): string {
+  if (update.kind === "embedded") return t`Embedded`;
   const { id, channel, createdAt } = update;
-  if (channel && createdAt) return t("{channel} {id}, {date}", { channel, id, date: createdAt });
-  if (channel) return t("{channel} {id}", { channel, id });
-  if (createdAt) return t("OTA {id}, {date}", { id, date: createdAt });
-  return t("OTA {id}", { id });
+  if (channel && createdAt) return t`${channel} ${id}, ${ph({ date: createdAt })}`;
+  if (channel) return t`${channel} ${id}`;
+  if (createdAt) return t`OTA ${id}, ${ph({ date: createdAt })}`;
+  return t`OTA ${id}`;
 }
 
 export function getAppVersionInfo(): AppVersionInfo {

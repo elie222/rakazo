@@ -2,6 +2,9 @@ import { expect, it, vi } from "vitest";
 import { archivedChatCounts, loadAllArchivedChats, loadArchivedChats } from "./archived-chats";
 
 const rpc = vi.hoisted(() => vi.fn());
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   rpc,
   captureApiRequestContext: async () => ({

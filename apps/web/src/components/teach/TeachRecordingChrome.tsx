@@ -49,10 +49,10 @@ export function TeachRecordingChrome({
         data-testid="teach-recording-overlay"
         className="flex min-w-0 flex-1 flex-col gap-1 px-3"
       >
-        <div className="truncate text-[13px] text-foreground">
+        <div className="truncate text-body-sm text-foreground">
           <Trans>Recording: {recording.goal}</Trans>
         </div>
-        <div className="flex flex-wrap gap-x-2 text-[12px] text-muted-foreground">
+        <div className="flex flex-wrap gap-x-2 text-label text-muted-foreground">
           <span>
             <Trans>{remaining} left</Trans>
           </span>
@@ -60,7 +60,7 @@ export function TeachRecordingChrome({
             <Trans>Bot is watching, not acting</Trans>
           </span>
         </div>
-        <div className="text-[12px] text-muted-foreground">
+        <div className="text-label text-muted-foreground">
           <Trans>Use Protected input for passwords.</Trans>
         </div>
         {protectedInput}
@@ -73,10 +73,10 @@ export function TeachRecordingChrome({
       data-testid="teach-recording"
       className="rounded-[11px] border border-border bg-card px-3 py-3"
     >
-      <div className="text-[14px] text-foreground">
+      <div className="text-body text-foreground">
         <Trans>Recording: {recording.goal}</Trans>
       </div>
-      <div className="mt-1 flex flex-wrap gap-x-2 text-[13px] text-muted-foreground">
+      <div className="mt-1 flex flex-wrap gap-x-2 text-body-sm text-muted-foreground">
         <span>
           <Trans>{remaining} left</Trans>
         </span>
@@ -84,7 +84,7 @@ export function TeachRecordingChrome({
           <Trans>Bot is watching, not acting</Trans>
         </span>
       </div>
-      <div className="mt-2 text-[13px] text-muted-foreground">
+      <div className="mt-2 text-body-sm text-muted-foreground">
         <Trans>Use Protected input for passwords.</Trans>
       </div>
       <div className="mt-2">{protectedInput}</div>

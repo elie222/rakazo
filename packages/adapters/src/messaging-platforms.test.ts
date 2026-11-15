@@ -1,6 +1,7 @@
 import { splitMessage, WhatsAppApiError } from "@chat-adapter/whatsapp";
 import type { AdapterContext } from "@rakazo/adapter-kit";
 import { getLogger } from "@rakazo/logging";
+import { SendblueAdapter } from "chat-adapter-sendblue";
 import { describe, expect, it, vi } from "vitest";
 import { ChatSdkMessagingSurface } from "./chat-sdk-surface.js";
 import { Domain } from "./lark/thread-id.js";
@@ -408,6 +409,16 @@ describe("sendblue platform hooks", () => {
     expect(sendblue.channelName!(null)).toBeNull();
   });
 
+  it("takes the roster's time from the message's send time", () => {
+    expect(sendblue.rosterAt!({ date_sent: "2026-11-04T10:01:00.000Z" })).toEqual(
+      new Date("2026-11-04T10:01:00.000Z"),
+    );
+    expect(sendblue.rosterAt!({ date_sent: "not-a-date" })).toBeNull();
+    expect(sendblue.rosterAt!({ date_sent: 42 })).toBeNull();
+    expect(sendblue.rosterAt!({})).toBeNull();
+    expect(sendblue.rosterAt!(null)).toBeNull();
+  });
+
   it("accepts only supported per-message transports", () => {
     for (const service of ["iMessage", "SMS", "RCS"]) {
       expect(sendblue.transport!({ service })).toBe(service);
@@ -420,6 +431,19 @@ describe("sendblue platform hooks", () => {
   it("derives deterministic provider-prefixed direct thread ids", () => {
     expect(sendblue.directThreadId!("+15551234567")).toMatch(/^sendblue:/);
     expect(sendblue.adapter.isDM?.(sendblue.directThreadId!("+15551234567"))).toBe(true);
+  });
+
+  it("encodes thread ids exactly as the Sendblue adapter does before it loads", () => {
+    const sdk = SendblueAdapter.prototype;
+    const direct = { fromNumber: "+15550009999", contactNumber: "+15551234567" };
+    const group = { fromNumber: "+15550009999", groupId: "group-1" };
+    expect(sendblue.directThreadId!(direct.contactNumber)).toBe(sdk.encodeThreadId(direct));
+    for (const data of [direct, group]) {
+      const threadId = sdk.encodeThreadId(data);
+      expect(sendblue.adapter.encodeThreadId(data)).toBe(threadId);
+      expect(sendblue.adapter.decodeThreadId(threadId)).toEqual(sdk.decodeThreadId(threadId));
+    }
+    expect(sendblue.adapter.isDM?.(sdk.encodeThreadId(group))).toBe(false);
   });
 });
 

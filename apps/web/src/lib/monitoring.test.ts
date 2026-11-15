@@ -299,7 +299,7 @@ describe("browser monitoring", () => {
     });
   });
 
-  it("drops gateway answers during a deploy and failures from code that is not the app's", async () => {
+  it("drops gateway answers during a deploy, chunks that did not load, and failures from code that is not the app's", async () => {
     vi.resetModules();
     const fresh = await import("./monitoring");
     await fresh.startMonitoring(respond({ dsn: "https://key@errors.example.com/8" }));
@@ -314,6 +314,11 @@ describe("browser monitoring", () => {
         "NotFoundError",
       ),
       "Object Not Found Matching Id:1, MethodName:update, ParamCount:4",
+      new TypeError("Importing a module script failed."),
+      new TypeError(
+        "Failed to fetch dynamically imported module: https://app.example.com/assets/Settings-abc123.js",
+      ),
+      new TypeError("error loading dynamically imported module: https://app.example.com/a.js"),
     ])
       expect(beforeSend({}, { originalException }), String(originalException)).toBeNull();
     expect(

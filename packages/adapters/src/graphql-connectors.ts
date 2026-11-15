@@ -129,6 +129,20 @@ type GqlType = {
   possibleTypes?: GqlTypeRef[] | null;
 };
 
+function graphqlRequestHeaders(
+  url: URL,
+  publicHeaders: Record<string, string>,
+  auth: GraphqlConfig["auth"],
+  credential?: string,
+): Record<string, string> {
+  const headers = new Headers({ accept: "application/json", "content-type": "application/json" });
+  for (const [name, value] of Object.entries(publicHeaders)) headers.set(name, value);
+  const credentialHeaders: Record<string, string> = {};
+  applyCredential(url, credentialHeaders, auth, credential);
+  for (const [name, value] of Object.entries(credentialHeaders)) headers.set(name, value);
+  return Object.fromEntries(headers);
+}
+
 /** Introspect a GraphQL HTTP endpoint and persist query/mutation fields as tools. */
 export async function prepareGraphqlInstall(input: {
   source: string;
@@ -147,12 +161,7 @@ export async function prepareGraphqlInstall(input: {
   await assertSafeRemoteUrl(input.source, remote.resolveHostname, remote);
 
   const endpoint = new URL(input.source);
-  const requestHeaders: Record<string, string> = {
-    accept: "application/json",
-    "content-type": "application/json",
-    ...headers,
-  };
-  applyCredential(endpoint, requestHeaders, auth, input.credential);
+  const requestHeaders = graphqlRequestHeaders(endpoint, headers, auth, input.credential);
   const document = await introspectGraphqlEndpoint(endpoint, requestHeaders, input.signal, remote);
   const operations = importGraphqlSchema(document);
   const config = GraphqlConfigSchema.parse({ auth, headers, operations });
@@ -266,12 +275,7 @@ export async function executeGraphqlOperation(
 ): Promise<unknown> {
   assertNoSensitiveQuery(endpoint);
   const url = new URL(endpoint);
-  const headers: Record<string, string> = {
-    accept: "application/json",
-    "content-type": "application/json",
-    ...config.headers,
-  };
-  applyCredential(url, headers, config.auth, credential);
+  const headers = graphqlRequestHeaders(url, config.headers, config.auth, credential);
 
   const variableEntries = Object.entries(operation.variableTypes);
   const variableDefinitions = variableEntries
@@ -453,8 +457,21 @@ function graphqlTypeToJsonSchema(
 ): Record<string, unknown> {
   if (!type) return {};
   if (type.kind === "NON_NULL") {
-    return graphqlTypeToJsonSchema(type.ofType ?? undefined, typeMap, depth);
+    return graphqlNonNullTypeToJsonSchema(type.ofType ?? undefined, typeMap, depth);
   }
+  // GraphQL distinguishes an omitted input from an explicit null. Preserve that
+  // distinction for arguments, input fields and list items through tool validation.
+  return {
+    anyOf: [graphqlNonNullTypeToJsonSchema(type, typeMap, depth), { type: "null" }],
+  };
+}
+
+function graphqlNonNullTypeToJsonSchema(
+  type: GqlTypeRef | undefined,
+  typeMap: Map<string, GqlType>,
+  depth: number,
+): Record<string, unknown> {
+  if (!type) return {};
   if (type.kind === "LIST") {
     return {
       type: "array",

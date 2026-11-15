@@ -33,7 +33,7 @@ export function ConnectionModeFields({
               pressed={mode === option}
               disabled={busy}
               onPressedChange={() => onModeChange(option)}
-              className="text-[13px] aria-pressed:bg-background aria-pressed:shadow-sm"
+              className="text-body-sm aria-pressed:bg-background aria-pressed:shadow-sm"
             >
               {option === "cloud" ? <Trans>Cloud</Trans> : <Trans>Self-hosted</Trans>}
             </Toggle>

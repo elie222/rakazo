@@ -7,7 +7,12 @@ import { SandboxDamagedError } from "@rakazo/adapter-kit";
 import type * as Db from "@rakazo/db";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ComputerBusyError, provisionComputer, replaceComputer } from "./computer-lifecycle.js";
+import {
+  ComputerBusyError,
+  ComputerRecoveryRequiredError,
+  provisionComputer,
+  replaceComputer,
+} from "./computer-lifecycle.js";
 import { DesktopSandboxProvider } from "./desktop-sandbox.js";
 import { FakeSandboxProvider } from "./fake-sandbox.js";
 import { LocalAgentHomeStore } from "./home.js";
@@ -81,12 +86,16 @@ async function fixture(provider: "fake" | "desktop" = "fake") {
       Object.assign(row, { updatedAt: new Date(row.updatedAt.getTime() + 1) }, data),
     ),
   };
+  const prisma = {
+    computer,
+    computerExecutionLease: { findFirst: vi.fn().mockResolvedValue(null) },
+    run: { findFirst: vi.fn().mockResolvedValue(null) },
+    $queryRaw: vi.fn(async () => []),
+    space: { findUnique: vi.fn(async () => null) },
+    $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(prisma)),
+  };
   const deps = {
-    prisma: {
-      computer,
-      computerExecutionLease: { findFirst: vi.fn().mockResolvedValue(null) },
-      run: { findFirst: vi.fn().mockResolvedValue(null) },
-    } as unknown as PrismaClient,
+    prisma: prisma as unknown as PrismaClient,
     sandbox,
     home,
     jobs: {} as JobPublisher,
@@ -159,6 +168,21 @@ async function dockerBoot({
 }
 
 describe("computer recovery preserves live work", () => {
+  it("keeps a quarantined computer isolated and reports that recovery is required", async () => {
+    const { deps, row, computer } = await fixture();
+    row.state = "quarantined";
+    const provision = vi.spyOn(deps.sandbox, "provision");
+    const before = { ...row };
+
+    await expect(provisionComputer(deps, row.id, context)).rejects.toBeInstanceOf(
+      ComputerRecoveryRequiredError,
+    );
+    expect(row).toEqual(before);
+    expect(provision).not.toHaveBeenCalled();
+    expect(computer.update).not.toHaveBeenCalled();
+    expect(computer.updateMany).not.toHaveBeenCalled();
+  });
+
   it("brings an object-stored home into the local cache before a Docker computer boots on it", async () => {
     const { deps, row, root } = await fixture();
     row.state = "stopped";

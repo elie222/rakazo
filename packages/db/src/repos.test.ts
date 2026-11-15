@@ -29,7 +29,7 @@ const baseBot = {
   memoryScope: null as string | null,
   createdAt: new Date("2026-08-19T00:00:00.000Z"),
   updatedAt: new Date("2026-08-19T00:00:00.000Z"),
-  thread: { id: "thread-1", unread: false, messages: [], runs: [] },
+  thread: { id: "thread-1", reads: [{ unread: false }], messages: [], runs: [] },
   runs: [],
   computer: null,
 };
@@ -133,27 +133,41 @@ describe("createRepos.listBots", () => {
           .mockResolvedValueOnce([{ id: "peer-new" }])
           .mockResolvedValueOnce([{ id: "peer-old" }]),
       },
-      $queryRaw: vi.fn(async () => [
-        {
-          threadId: "thread-1",
-          seq: 30,
-          createdAt: new Date("2026-08-20T00:00:00.000Z"),
-          runId: "peer-new",
-          blocks: [{ kind: "text", text: "Hidden" }],
-        },
-      ]),
-      message: {
-        findMany: vi
-          .fn()
-          .mockResolvedValueOnce([
-            { seq: 20, runId: "peer-old", blocks: [{ kind: "text", text: "Also hidden" }] },
-            { seq: 19, runId: "user-old", blocks: [] },
-          ])
-          .mockResolvedValueOnce([
-            { seq: 10, runId: "peer-old", blocks: [{ kind: "text", text: "Still hidden" }] },
-            { seq: 9, runId: "user-old", blocks: [{ kind: "text", text: "Visible answer" }] },
-          ]),
-      },
+      $queryRaw: vi
+        .fn()
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([
+          {
+            threadId: "thread-1",
+            seq: 30,
+            createdAt: new Date("2026-08-20T00:00:00.000Z"),
+            runId: "peer-new",
+            blocks: [{ kind: "text", text: "Hidden" }],
+          },
+        ])
+        .mockResolvedValueOnce([
+          {
+            threadId: "thread-1",
+            seq: 20,
+            runId: "peer-old",
+            blocks: [{ kind: "text", text: "Also hidden" }],
+          },
+          { threadId: "thread-1", seq: 19, runId: "user-old", blocks: [] },
+        ])
+        .mockResolvedValueOnce([
+          {
+            threadId: "thread-1",
+            seq: 10,
+            runId: "peer-old",
+            blocks: [{ kind: "text", text: "Still hidden" }],
+          },
+          {
+            threadId: "thread-1",
+            seq: 9,
+            runId: "user-old",
+            blocks: [{ kind: "text", text: "Visible answer" }],
+          },
+        ]),
     };
 
     const bots = await createRepos(prisma as unknown as PrismaClient).listBots(actor);
@@ -167,7 +181,7 @@ describe("createRepos.listBots", () => {
       },
       select: { id: true, trigger: true },
     });
-    expect(prisma.message.findMany).toHaveBeenCalledTimes(2);
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(4);
   });
 
   it("keeps bot-to-bot run output out of sidebar previews", async () => {
@@ -312,22 +326,10 @@ describe("createRepos.listBots", () => {
   });
 
   it("scans older messages when the newest window is only peer output", async () => {
-    const messageFindMany = vi.fn(async () => [
-      { seq: 1, runId: "run-user", blocks: [{ kind: "text", text: "Older visible answer" }] },
-    ]);
-    const prisma = {
-      bot: {
-        findMany: vi.fn(async () => [
-          {
-            ...baseBot,
-            thread: { ...baseBot.thread, messages: [] },
-          },
-        ]),
-      },
-      run: {
-        findMany: vi.fn(async () => [{ id: "run-peer" }]),
-      },
-      $queryRaw: vi.fn(async () => [
+    const queryRaw = vi
+      .fn()
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
         {
           threadId: "thread-1",
           seq: 20,
@@ -335,63 +337,100 @@ describe("createRepos.listBots", () => {
           runId: "run-peer",
           blocks: [{ kind: "text", text: "Echoed peer reply" }],
         },
-      ]),
-      message: {
-        findMany: messageFindMany,
-      },
+      ])
+      .mockResolvedValueOnce([
+        {
+          threadId: "thread-1",
+          seq: 1,
+          runId: "run-user",
+          blocks: [{ kind: "text", text: "Older visible answer" }],
+        },
+      ]);
+    const prisma = {
+      bot: { findMany: vi.fn(async () => [baseBot]) },
+      run: { findMany: vi.fn(async () => [{ id: "run-peer" }]) },
+      $queryRaw: queryRaw,
     };
 
     await expect(createRepos(prisma as unknown as PrismaClient).listBots(actor)).resolves.toEqual([
       expect.objectContaining({ preview: "Older visible answer" }),
     ]);
-    expect(messageFindMany).toHaveBeenCalledWith({
-      where: { threadId: "thread-1", seq: { lt: 20 } },
-      orderBy: { seq: "desc" },
-      take: 16,
-    });
+    expect(queryRaw.mock.calls[2]?.[0].values).toEqual([["thread-1"], [20], 16]);
   });
 
   it("uses a visible message from the fourth older window for preview", async () => {
-    const peerWindows = [
-      [{ seq: 80, runId: "run-peer", blocks: [{ kind: "text", text: "peer 80" }] }],
-      [{ seq: 60, runId: "run-peer", blocks: [{ kind: "text", text: "peer 60" }] }],
-      [{ seq: 40, runId: "run-peer", blocks: [{ kind: "text", text: "peer 40" }] }],
-      [{ seq: 20, runId: "run-peer", blocks: [{ kind: "text", text: "peer 20" }] }],
-      [{ seq: 1, runId: "run-user", blocks: [{ kind: "text", text: "Fourth-window answer" }] }],
-    ];
-    let windowIndex = 0;
-    const messageFindMany = vi.fn(async () => {
-      windowIndex += 1;
-      return peerWindows[windowIndex] ?? [];
-    });
+    const pages = [80, 60, 40, 20].map((seq) => [
+      {
+        threadId: "thread-1",
+        seq,
+        runId: "run-peer",
+        blocks: [{ kind: "text", text: `peer ${seq}` }],
+      },
+    ]);
+    const queryRaw = vi.fn().mockResolvedValueOnce([]);
+    for (const page of pages) queryRaw.mockResolvedValueOnce(page);
+    queryRaw.mockResolvedValueOnce([
+      {
+        threadId: "thread-1",
+        seq: 1,
+        runId: "run-user",
+        blocks: [{ kind: "text", text: "Fourth-window answer" }],
+      },
+    ]);
     const prisma = {
-      bot: {
-        findMany: vi.fn(async () => [
-          {
-            ...baseBot,
-            thread: { ...baseBot.thread, messages: [] },
-          },
-        ]),
-      },
-      run: {
-        findMany: vi.fn(async () => [{ id: "run-peer" }]),
-      },
-      $queryRaw: vi.fn(async () =>
-        (peerWindows[0] ?? []).map((message) => ({
-          threadId: "thread-1",
-          createdAt: new Date("2026-08-20T00:00:00.000Z"),
-          ...message,
-        })),
-      ),
-      message: {
-        findMany: messageFindMany,
-      },
+      bot: { findMany: vi.fn(async () => [baseBot]) },
+      run: { findMany: vi.fn(async () => [{ id: "run-peer" }]) },
+      $queryRaw: queryRaw,
     };
 
     await expect(createRepos(prisma as unknown as PrismaClient).listBots(actor)).resolves.toEqual([
       expect.objectContaining({ preview: "Fourth-window answer" }),
     ]);
-    expect(messageFindMany).toHaveBeenCalledTimes(4);
+    expect(queryRaw).toHaveBeenCalledTimes(6);
+  });
+
+  it("loads the first candidate alone, then the rest of the page in one read", async () => {
+    const outline = (id: string, seq: number, kinds: string[]) => ({
+      id,
+      threadId: "thread-1",
+      seq,
+      role: "bot",
+      runId: null,
+      createdAt: new Date("2026-08-20T00:00:00.000Z"),
+      kinds,
+      blocks: null,
+    });
+    const messageFindMany = vi
+      .fn()
+      .mockResolvedValueOnce([{ id: "empty", blocks: [{ kind: "text", text: "" }] }])
+      .mockResolvedValueOnce([
+        { id: "file", blocks: [{ kind: "file", artifactId: "a", name: "a.pdf" }] },
+        { id: "answer", blocks: [{ kind: "text", text: "Answer" }] },
+        { id: "older", blocks: [{ kind: "text", text: "Older" }] },
+      ]);
+    const prisma = {
+      bot: { findMany: vi.fn(async () => [baseBot]) },
+      run: { findMany: vi.fn(async () => []) },
+      $queryRaw: vi
+        .fn()
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([
+          outline("prompt", 5, ["delivery"]),
+          outline("empty", 4, ["text"]),
+          outline("file", 3, ["file"]),
+          outline("answer", 2, ["text"]),
+          outline("older", 1, ["text"]),
+        ]),
+      message: { findMany: messageFindMany },
+    };
+
+    await expect(createRepos(prisma as unknown as PrismaClient).listBots(actor)).resolves.toEqual([
+      expect.objectContaining({ preview: "Answer" }),
+    ]);
+    expect(messageFindMany.mock.calls.map(([args]) => args.where.id.in)).toEqual([
+      ["empty"],
+      ["file", "answer", "older"],
+    ]);
   });
 
   it("dates the row by its newest message, not the bot's last settings write", async () => {
@@ -450,7 +489,7 @@ describe("createRepos.listSpaceBotsForSpaces", () => {
         parentBotId: null,
         thread: {
           id: "thread-2",
-          unread: true,
+          reads: [{ unread: true, snoozedUntil: new Date("2026-08-21T09:00:00.000Z") }],
           runs: [{ id: "run-failed", status: "failed" }],
         },
         runs: [{ status: "running", threadId: "group-thread" }],
@@ -478,7 +517,7 @@ describe("createRepos.listSpaceBotsForSpaces", () => {
         ]),
     } as unknown as PrismaClient);
 
-    await expect(repos.listSpaceBotsForSpaces(actor, ["ws-2"])).resolves.toEqual([
+    await expect(repos.listSpaceBotsForSpaces(["ws-2"], "user-1")).resolves.toEqual([
       {
         id: "bot-2",
         spaceId: "ws-2",
@@ -490,6 +529,7 @@ describe("createRepos.listSpaceBotsForSpaces", () => {
         pinned: true,
         sectionId: null,
         unread: true,
+        snoozedUntil: "2026-08-21T09:00:00.000Z",
         parentBotId: null,
         preview: "Waiting for a reply",
         status: "running",
@@ -506,9 +546,7 @@ describe("createRepos.listSpaceBotsForSpaces", () => {
         }),
       }),
     );
-    expect(query.where).toEqual(
-      expect.objectContaining({ spaceId: { in: ["ws-2"] }, userId: actor.userId }),
-    );
+    expect(query.where).toEqual(expect.objectContaining({ spaceId: { in: ["ws-2"] } }));
     expect(query.select).not.toHaveProperty("description");
     expect(query.select).not.toHaveProperty("instructions");
     expect(query.select).not.toHaveProperty("computer");

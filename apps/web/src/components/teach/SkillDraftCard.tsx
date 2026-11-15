@@ -26,7 +26,7 @@ function savedSnapshot(block: SkillDraftBlock): string | null {
 
 function fieldLabel(id: string, title: React.ReactNode) {
   return (
-    <Label htmlFor={id} className="mt-3 mb-1 text-[13px] font-normal text-muted-foreground">
+    <Label htmlFor={id} className="mt-3 mb-1 text-body-sm font-normal text-muted-foreground">
       {title}
     </Label>
   );
@@ -101,10 +101,10 @@ export function SkillDraftCard({
 
   return (
     <BuiCard data-testid="skill-draft-card" className="w-[520px] max-w-full px-5 py-4">
-      <div className="text-[15px] font-medium text-foreground">
+      <div className="text-body-lg font-medium text-foreground">
         <Trans>Draft skill</Trans>
       </div>
-      <div className="mt-1 text-[13.5px] text-muted-foreground">{block.goal}</div>
+      <div className="mt-1 text-body text-muted-foreground">{block.goal}</div>
       {fieldLabel(`${id}-name`, <Trans>Name</Trans>)}
       <Input
         id={`${id}-name`}
@@ -193,7 +193,7 @@ export function SkillDraftCard({
           <Trans>Add to routine</Trans>
         </Button>
       </div>
-      {error ? <p className="mt-2 text-xs text-destructive">{error}</p> : null}
+      {error ? <p className="mt-2 text-label text-destructive">{error}</p> : null}
     </BuiCard>
   );
 }

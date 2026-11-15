@@ -19,6 +19,8 @@ export interface EmulatorInboundInput {
   mediaUrl?: string;
   /** The network the message arrived on; iMessage unless set. */
   service?: "iMessage" | "SMS" | "RCS";
+  /** The send time to report; a strictly increasing one unless set. */
+  dateSent?: string;
 }
 
 /**
@@ -33,6 +35,7 @@ export class SendBlueEmulator {
   readonly typingIndicators: string[] = [];
   private handleCounter = 0;
   private failRemaining = 0;
+  private sentClock = 0;
 
   readonly fetch: typeof globalThis.fetch = async (input, init) => {
     const url = new URL(typeof input === "string" || input instanceof URL ? input : input.url);
@@ -90,6 +93,16 @@ export class SendBlueEmulator {
     return `emulated-handle-${this.handleCounter}`;
   }
 
+  /**
+   * Every inbound message a real provider delivers carries its own, later send
+   * time — rosters are ordered by it, so a repeated time would collide two
+   * distinct events. Advance a deterministic clock by a millisecond per message.
+   */
+  private nextDateSent(): string {
+    this.sentClock += 1;
+    return new Date(Date.parse("2026-01-01T00:00:00.000Z") + this.sentClock).toISOString();
+  }
+
   /** Next N send-message / send-group-message calls fail with HTTP 500. */
   failNextSends(count: number): void {
     this.failRemaining = count;
@@ -117,7 +130,7 @@ export class SendBlueEmulator {
         group_id: input.groupId ?? "",
         participants: input.participants ?? [input.fromNumber, this.phoneNumber],
         group_display_name: input.groupName ?? null,
-        date_sent: "2026-01-01T00:00:00.000Z",
+        date_sent: input.dateSent ?? this.nextDateSent(),
       }),
     });
   }

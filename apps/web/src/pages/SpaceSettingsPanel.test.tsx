@@ -45,6 +45,9 @@ vi.mock("@rakazo/ui-web", () => {
 vi.mock("./SpaceSettingOverrides", () => ({
   SpaceSettingOverrides: () => <div data-testid="space-setting-overrides" />,
 }));
+vi.mock("../components/SpaceMembersSettings", () => ({
+  SpaceMembersSettings: () => <div data-testid="space-members-settings" />,
+}));
 
 import { SpaceSettingsPanel } from "./SpaceSettingsPanel";
 
@@ -60,6 +63,7 @@ async function render(props: Partial<Props>) {
         space={{ id: "space-a", name: "Support", canRename: true, canDelete: true, botCount: 0 }}
         onRename={async () => undefined}
         onDelete={async () => undefined}
+        onLeft={() => undefined}
         onClose={() => undefined}
         {...props}
       />,

@@ -35,6 +35,11 @@ const EVENT_PAYLOAD_PLAIN_KEYS = new Set([
 interface FieldSpec {
   /** Present for JSON columns: the scalar keys kept queryable beside the sealed copy. */
   plainKeys?: ReadonlySet<string>;
+  /**
+   * Read only by code that selects it: reads leave it out by default (as searchTokens), and
+   * search never indexes it, so it never reaches a client through an ordinary read.
+   */
+  hidden?: boolean;
 }
 
 interface ModelSpec {
@@ -51,7 +56,7 @@ interface ModelSpec {
 export const ENCRYPTED_MODELS: Record<string, ModelSpec> = {
   Message: {
     table: "messages",
-    fields: { blocks: { plainKeys: MESSAGE_BLOCK_PLAIN_KEYS } },
+    fields: { blocks: { plainKeys: MESSAGE_BLOCK_PLAIN_KEYS }, toolHistory: { hidden: true } },
     space: { parent: "threads" },
     ownerRelation: "thread",
     searchTokens: true,
@@ -80,6 +85,14 @@ export const ENCRYPTED_MODELS: Record<string, ModelSpec> = {
     fields: { historyCompactionSummary: {} },
     space: { column: "spaceId" },
     ownerRelation: "user",
+  },
+  /** A bot's inbox. Recipients and file names stay plaintext; `key` and `messageId` are lookups. */
+  BotEmailMessage: {
+    table: "bot_email_messages",
+    fields: { fromAddress: {}, fromName: {}, subject: {}, text: {} },
+    space: { column: "spaceId" },
+    ownerRelation: "bot",
+    searchTokens: true,
   },
 };
 
@@ -139,6 +152,11 @@ export interface ContentEncryption {
    * (`threadId` for messages and events, `documentId` for revisions, `userId` otherwise).
    */
   openRows<T extends { id: string }>(model: keyof typeof ENCRYPTED_MODELS, rows: T[]): Promise<T[]>;
+  /**
+   * Seals a row for a raw SQL insert, as `create` would. The row needs its final `id`
+   * and the columns that name its owner and space.
+   */
+  sealRow<T extends { id: string }>(model: keyof typeof ENCRYPTED_MODELS, row: T): Promise<T>;
   /**
    * One token list per key version of the space; a match must contain every token
    * of one list. Empty when the space has no keys, so it has no encrypted rows.
@@ -234,6 +252,8 @@ export function withContentEncryption(prisma: PrismaClient, ring: ContentKeyRing
       if (spec) {
         const omit: RecordValue = isRecord(next.omit) ? { ...next.omit } : {};
         if (spec.searchTokens && omit.searchTokens === undefined) omit.searchTokens = true;
+        for (const [field, fieldSpec] of Object.entries(spec.fields))
+          if (fieldSpec.hidden && omit[field] === undefined) omit[field] = true;
         for (const column of contextColumns(spec))
           if (omit[column]) {
             delete omit[column];
@@ -341,6 +361,8 @@ export function withContentEncryption(prisma: PrismaClient, ring: ContentKeyRing
     if (!fields.length) return data;
     const key: DataKey = await ring.current(context.spaceId);
     const next = { ...data };
+    const words: string[] = [];
+    const strings: string[] = [];
     for (const field of fields) {
       const location: ContentLocation = {
         table: spec.table,
@@ -352,26 +374,33 @@ export function withContentEncryption(prisma: PrismaClient, ring: ContentKeyRing
       const plainKeys = spec.fields[field]!.plainKeys;
       let value = next[field];
       if (!plainKeys && isRecord(value) && "set" in value) value = value.set;
+      const indexed = !spec.fields[field]!.hidden;
       if (value === null) next[field] = null;
       else if (plainKeys) {
-        if (spec.searchTokens)
-          next.searchTokens = searchTokens(key, {
-            words: historySearchText(value as Prisma.JsonValue),
-            strings: stringsIn(value),
-          });
+        words.push(historySearchText(value as Prisma.JsonValue));
+        strings.push(...stringsIn(value));
         next[field] = sealJson(value, plainKeys, encrypt);
-      } else if (typeof value === "string") next[field] = encrypt(value);
-      else throw new Error(`Unsupported write to encrypted ${spec.table}.${field}`);
+      } else if (typeof value === "string") {
+        if (indexed) {
+          words.push(value);
+          strings.push(value);
+        }
+        next[field] = encrypt(value);
+      } else throw new Error(`Unsupported write to encrypted ${spec.table}.${field}`);
     }
+    // Tokens cover the fields written here: indexed models write all of them together.
+    if (spec.searchTokens && fields.some((field) => !spec.fields[field]!.hidden))
+      next.searchTokens = searchTokens(key, { words: words.join("\n"), strings });
     ring.remember(spec.table, rowId, context);
     return next;
   }
 
-  function touches(spec: ModelSpec, data: unknown): boolean {
+  function touches(spec: ModelSpec, data: unknown, options: { indexedOnly?: boolean } = {}) {
     const rows = Array.isArray(data) ? data : [data];
-    return rows.some(
-      (row) => isRecord(row) && Object.keys(spec.fields).some((field) => writable(row[field])),
-    );
+    const fields = Object.entries(spec.fields)
+      .filter(([, field]) => !options.indexedOnly || !field.hidden)
+      .map(([name]) => name);
+    return rows.some((row) => isRecord(row) && fields.some((field) => writable(row[field])));
   }
 
   function assertNoNestedEncryptedWrites(model: string, data: unknown) {
@@ -427,13 +456,32 @@ export function withContentEncryption(prisma: PrismaClient, ring: ContentKeyRing
    * a list), so search matches its text instead of tokens of what it used to say.
    */
   function plainWrite(spec: ModelSpec, operation: string, args: RecordValue): RecordValue {
+    args = inertPlaintext(spec, args);
     if (
       spec.searchTokens &&
       ["update", "updateMany", "updateManyAndReturn"].includes(operation) &&
-      touches(spec, args.data)
+      touches(spec, args.data, { indexedOnly: true })
     )
       return { ...args, data: { ...(args.data as RecordValue), searchTokens: { set: [] } } };
     return args;
+  }
+
+  /**
+   * Encryption off: text that merely looks like ciphertext (an email subject, say) would
+   * later be read as a value under a key that does not exist and fail every read of its
+   * row, so a zero-width space keeps it plaintext.
+   */
+  function inertPlaintext(spec: ModelSpec, args: RecordValue): RecordValue {
+    const inert = (row: unknown): unknown => {
+      if (!isRecord(row)) return row;
+      let out = row;
+      for (const [field, fieldSpec] of Object.entries(spec.fields))
+        if (!fieldSpec.plainKeys && ciphertextKeyId(row[field]))
+          out = { ...out, [field]: `\u200b${row[field]}` };
+      return out;
+    };
+    const data = Array.isArray(args.data) ? args.data.map(inert) : inert(args.data);
+    return data === args.data ? args : { ...args, data };
   }
 
   async function sealWrites(
@@ -492,6 +540,10 @@ export function withContentEncryption(prisma: PrismaClient, ring: ContentKeyRing
       await openAll(rows, { model, strip: [], relations: new Map() });
       return rows;
     },
+    async sealRow(model, row) {
+      if (!ring.encryptWrites) return row;
+      return (await sealCreate(ENCRYPTED_MODELS[model]!, row)) as typeof row;
+    },
     async messageSearchTokens(spaceId, query, domain) {
       const keys = await ring.allFresh(spaceId);
       return keys.map((key) => querySearchTokens(key, query, domain));
@@ -507,7 +559,14 @@ export function withContentEncryption(prisma: PrismaClient, ring: ContentKeyRing
         async $allOperations({ model, operation, args, query }) {
           if (model === "Space" && ["delete", "deleteMany"].includes(operation)) {
             const where = (args as RecordValue).where;
-            if (isRecord(where) && typeof where.id === "string") ring.forget(where.id);
+            if (isRecord(where) && typeof where.id === "string") {
+              ring.forget(where.id);
+              ring.forget(`vault:${where.id}`);
+            }
+          }
+          if (model === "User" && ["delete", "deleteMany"].includes(operation)) {
+            const where = (args as RecordValue).where;
+            if (isRecord(where) && typeof where.id === "string") ring.forget(`user:${where.id}`);
           }
           let next = await sealWrites(model, operation, (args ?? {}) as RecordValue);
           if (NO_ROWS.has(operation)) return query(next);

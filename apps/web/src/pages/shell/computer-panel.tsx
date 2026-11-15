@@ -5,7 +5,7 @@ import { BotAvatar, Button } from "@rakazo/ui-web";
 import { HardDrive, Maximize2, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { ComputersUnavailableHint } from "../../components/ComputersUnavailableHint";
-import { screenIframeSandbox } from "../../lib/computer-screen";
+import { screenFrames, screenIframeSandbox } from "../../lib/computer-screen";
 import { computerLabel, computerPlaceholder, DesktopKindEmptyState } from "./computer-view";
 
 type ComputerPanelProps = {
@@ -15,6 +15,7 @@ type ComputerPanelProps = {
   embeddedScreenUrl: string | null;
   /** Changes to load the screen again in a new frame. */
   screenFrameKey?: string;
+  heldScreen?: { url: string; key: string } | null;
   screenFrameRef: (frame: HTMLIFrameElement | null) => void;
   computerScreenError: ReactNode;
   computerBooting: ReactNode;
@@ -46,7 +47,7 @@ export function ComputerPanel({
       {warn && (
         <div
           data-testid="computer-disk-warning"
-          className="mt-2 flex items-center gap-2 rounded-[14px] border border-warning/40 py-1.5 ps-3 pe-1.5 text-sm"
+          className="mt-2 flex items-center gap-2 rounded-[14px] border border-warning/40 py-1.5 ps-3 pe-1.5 text-body"
         >
           <HardDrive aria-hidden size={15} strokeWidth={1.9} className="shrink-0 text-warning" />
           <span className="min-w-0 flex-1">
@@ -75,6 +76,7 @@ function ComputerPreview({
   computerOpen,
   embeddedScreenUrl,
   screenFrameKey,
+  heldScreen,
   screenFrameRef,
   computerScreenError,
   computerBooting,
@@ -113,12 +115,12 @@ function ComputerPreview({
           />
           <span
             aria-hidden
-            className="absolute -end-3 -top-2 text-[11px] font-medium leading-none text-muted-foreground/70"
+            className="absolute -end-3 -top-2 text-caption font-medium leading-none text-muted-foreground/70"
           >
             z<sup>z</sup>
           </span>
         </div>
-        <span className="text-sm text-muted-foreground">
+        <span className="text-body text-muted-foreground">
           <Trans>Asleep</Trans>
         </span>
         <Button variant="secondary" size="sm" data-testid="computer-preview-open" onClick={onOpen}>
@@ -142,28 +144,32 @@ function ComputerPreview({
       >
         {computerOpen ? (
           <div
-            className={`grid h-full place-items-center text-sm text-muted-foreground/80 ${hideOnHover}`}
+            className={`grid h-full place-items-center text-body text-muted-foreground/80 ${hideOnHover}`}
           >
             <Trans>Open in full window</Trans>
           </div>
         ) : computer?.kind === "desktop" ? (
           <DesktopKindEmptyState
-            className={`grid h-full place-items-center px-6 text-center text-sm text-muted-foreground/80 ${hideOnHover}`}
+            className={`grid h-full place-items-center px-6 text-center text-body text-muted-foreground/80 ${hideOnHover}`}
           />
         ) : computer?.state === "running" && embeddedScreenUrl && !computerScreenError ? (
-          <iframe
-            key={screenFrameKey}
-            title={t`Bot screen preview`}
-            ref={screenFrameRef}
-            src={embeddedScreenUrl}
-            sandbox={screenIframeSandbox(embeddedScreenUrl)}
-            className="h-full w-full border-0 bg-black"
-            allow="clipboard-read; clipboard-write"
-            style={{ pointerEvents: "none" }}
-          />
+          screenFrames(screenFrameKey, embeddedScreenUrl, heldScreen).map((frame) => (
+            <iframe
+              key={frame.key}
+              title={frame.held ? undefined : t`Bot screen preview`}
+              aria-hidden={frame.held || undefined}
+              tabIndex={frame.held ? -1 : undefined}
+              ref={frame.held ? undefined : screenFrameRef}
+              src={frame.url}
+              sandbox={screenIframeSandbox(frame.url)}
+              className={`h-full w-full border-0 bg-black${frame.held ? " absolute inset-0" : ""}`}
+              allow="clipboard-read; clipboard-write"
+              style={{ pointerEvents: "none" }}
+            />
+          ))
         ) : (
           <div
-            className={`grid h-full place-items-center px-6 text-center text-sm text-muted-foreground/80 ${hideOnHover}`}
+            className={`grid h-full place-items-center px-6 text-center text-body text-muted-foreground/80 ${hideOnHover}`}
           >
             {computerScreenError ??
               (showComputerRecoveryHint ? (
@@ -191,7 +197,7 @@ function ComputerPreview({
             aria-label={t`Open`}
             onClick={onOpen}
           >
-            <span className="inline-flex items-center gap-2 rounded-full bg-background px-3.5 py-2 text-[14px] text-foreground shadow-md">
+            <span className="inline-flex items-center gap-2 rounded-full bg-background px-3.5 py-2 text-body text-foreground shadow-md">
               <Maximize2 size={15} strokeWidth={1.9} aria-hidden />
               <Trans>Open</Trans>
             </span>

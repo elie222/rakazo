@@ -15,6 +15,7 @@ import { MEMORY_REVISION_CONFLICT_ERROR } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
 import { Prisma, withTransactionRetry } from "@rakazo/db";
 
+/** Memory is the Space's: every member's runs read and write the same documents. */
 export class MarkdownMemoryStore implements MemoryStore {
   constructor(private readonly prisma: PrismaClient) {}
 
@@ -31,7 +32,6 @@ export class MarkdownMemoryStore implements MemoryStore {
     const documents = await this.prisma.memoryDocument.findMany({
       where: {
         spaceId: context.spaceId,
-        userId: context.userId,
         scope: request.scope,
         ...(request.botId ? { botId: request.botId } : {}),
         ...(request.path ? { path: request.path } : {}),
@@ -56,7 +56,6 @@ export class MarkdownMemoryStore implements MemoryStore {
     const documents = await this.prisma.memoryDocument.findMany({
       where: {
         spaceId: context.spaceId,
-        userId: context.userId,
         ...(request.scope === "all" ? {} : { scope: request.scope }),
         ...(request.botId ? { botId: request.botId } : {}),
       },
@@ -80,7 +79,6 @@ export class MarkdownMemoryStore implements MemoryStore {
           const existing = await tx.memoryDocument.findFirst({
             where: {
               spaceId: context.spaceId,
-              userId: context.userId,
               scope: request.scope,
               botId: request.botId ?? null,
               path: request.path,
@@ -130,7 +128,6 @@ export class MarkdownMemoryStore implements MemoryStore {
       where: {
         ...(request.id ? { id: request.id } : {}),
         spaceId: context.spaceId,
-        userId: context.userId,
         scope: request.scope,
         botId: request.botId ?? null,
         path: request.path,

@@ -20,6 +20,13 @@ import {
 } from "./attachments.js";
 import { AuditEventListInputSchema, AuditEventPageSchema } from "./audit-events.js";
 import {
+  BillingClientSchema,
+  BillingStatusSchema,
+  ByokIntervalSchema,
+  ByokTierSchema,
+  ModelCreditAmountSchema,
+} from "./billing.js";
+import {
   BoardEventSchema,
   BoardSchema,
   CommentTicketInput,
@@ -34,16 +41,32 @@ import {
   UpdateTicketInput,
 } from "./board.js";
 import { BotAvatarSetSchema } from "./bot-avatar.js";
+import { BotEmailAddressesSchema, BotEmailAddressSchema, BotEmailNameSchema } from "./bot-email.js";
 import {
   BotSecretMetadata,
   BotSecretPutInput,
   LOGIN_FIELD_LIMIT,
   LoginFieldInput,
   StoredBotSecretName,
+  VAULT_ACTIVITY_LIMIT,
   VaultPutInput,
   VaultRevealed,
   VaultRevealInput,
+  VaultUse,
 } from "./bot-secrets.js";
+import {
+  BotTemplateListingSchema,
+  CreateBotFromTemplateInput,
+  CreateBotFromTemplateOutput,
+} from "./bot-template.js";
+import {
+  ComputerModeSchema,
+  ComputerProviderSettingsSchema,
+  ComputerProviderUpdateSchema,
+  ComputerReleaseReasonSchema,
+  ComputerStatusSchema,
+  ComputerUpdateSchema,
+} from "./computer.js";
 import {
   AccessGrantInputSchema,
   AccessGrantSchema,
@@ -62,23 +85,13 @@ import {
   ArtifactWithContentSchema,
   AvailabilityKindSchema,
   AvatarStyleSchema,
-  BillingClientSchema,
-  BillingStatusSchema,
-  BotMcpServerSchema,
   BotSchema,
   BotSectionName,
   BotSectionSchema,
-  ByokIntervalSchema,
-  ByokTierSchema,
+  CATALOG_SEARCH_QUERY_MAX_LENGTH,
   CapabilityInstallSchema,
   ChatAlertSchema,
   CONNECTION_LABEL_MAX_LENGTH,
-  ComputerModeSchema,
-  ComputerProviderSettingsSchema,
-  ComputerProviderUpdateSchema,
-  ComputerReleaseReasonSchema,
-  ComputerStatusSchema,
-  ComputerUpdateSchema,
   ConnectionCatalogItemSchema,
   ConnectionSchema,
   CreateAgentSkillInput,
@@ -93,8 +106,6 @@ import {
   GroupSchema,
   IncomingBotCallSchema,
   IntegrationCatalogResultSchema,
-  McpServerConfigInput,
-  McpServerSchema,
   MemoryDocumentSchema,
   MemoryPromptBudgetSchema,
   MemoryScopeSchema,
@@ -104,17 +115,7 @@ import {
   MessagingInstallationsStatusSchema,
   MessagingLinkedIdentitySchema,
   MessagingStatusSchema,
-  ModelApiProtocolSchema,
-  ModelBackupChoiceSchema,
-  ModelBackupListSchema,
-  ModelCatalogEntrySchema,
-  ModelConnectInputSchema,
-  ModelConnectionLabelSchema,
-  ModelConnectionTargetSchema,
-  ModelCredentialSchema,
-  ModelCreditAmountSchema,
-  ModelOAuthBeginSchema,
-  OPENAI_COMPATIBLE_PROVIDER_ID,
+  PlanLimitsSchema,
   PluginMarketplaceCatalogSchema,
   PluginPartSchema,
   PluginPreviewSchema,
@@ -124,6 +125,8 @@ import {
   REPLY_QUOTE_MAX_LENGTH,
   ReorderBotsInput,
   ROUTINE_MENTION_BATCH_MAX,
+  ROUTINE_TRIGGER_REQUIRED,
+  RoutineEmailSendersSchema,
   RoutineSchema,
   ScratchpadItemSchema,
   ScratchpadItemStatusSchema,
@@ -133,12 +136,15 @@ import {
   ServerUpdateStatusSchema,
   SignupSurveySchema,
   SkillPlaybookSchema,
-  SpaceAvailabilitySchema,
+  SpaceInviteLinkSchema,
+  SpaceInvitePreviewSchema,
+  SpaceMembersSchema,
   SpaceMemoryConfigSchema,
   SpaceNavigationSchema,
   SpaceSchema,
   TaughtSkillSchema,
   TeachRecordingEventSchema,
+  THREAD_MESSAGE_TEXT_MAX_LENGTH,
   ThreadMessagePageSchema,
   ThreadSnapshotSchema,
   TimeZoneSchema,
@@ -159,6 +165,26 @@ import {
   IntegrationProviderConfigSchema,
   IntegrationSetupStateSchema,
 } from "./integration-settings.js";
+import { LabFeatureSchema } from "./labs.js";
+import {
+  BotMcpServerSchema,
+  McpServerConfigInput,
+  McpServerSchema,
+  McpSourcePresetSchema,
+} from "./mcp.js";
+import {
+  ModelApiProtocolSchema,
+  ModelBackupChoiceSchema,
+  ModelBackupListSchema,
+  ModelCatalogEntrySchema,
+  ModelConnectInputSchema,
+  ModelConnectionLabelSchema,
+  ModelConnectionTargetSchema,
+  ModelCredentialSchema,
+  ModelOAuthBeginSchema,
+  ModelSettingsSaveSchema,
+  OPENAI_COMPATIBLE_PROVIDER_ID,
+} from "./model-connections.js";
 import { ModelHeadersSchema } from "./model-headers.js";
 import { ModelRoleSchema, ModelRoleUpdateSchema, ModelRoleViewSchema } from "./model-roles.js";
 import {
@@ -168,7 +194,12 @@ import {
   PageTitleSchema,
   PageVisibilitySchema,
 } from "./pages.js";
-import { PaymentWalletStatusSchema } from "./payments.js";
+import {
+  PaymentWalletStatusSchema,
+  SpendingLimitSchema,
+  SpendingPaymentSchema,
+  SpendingStatusSchema,
+} from "./payments.js";
 import { MessageReactionSchema } from "./reactions.js";
 import { RoutineWatchSchema } from "./routine-watch.js";
 import {
@@ -180,6 +211,8 @@ import {
 import { SearchQueryOutputSchema } from "./search.js";
 import { SecurityEventListInputSchema, SecurityEventSchema } from "./security-events.js";
 import { SettingsScopeSchema, SpaceSettingSchema, settingsScopeInput } from "./settings-scope.js";
+import { SpaceAvailabilitySchema } from "./space-availability.js";
+import { VaultImportInput, VaultImportResult } from "./vault-import.js";
 
 const botId = z.object({ botId: Id });
 const groupId = z.object({ groupId: Id });
@@ -210,7 +243,7 @@ const structuredMentionTarget = z.discriminatedUnion("kind", [
 
 const threadSendFields = threadTarget.safeExtend({
   imageHandling: z.enum(["confirm", "file"]).optional(),
-  text: z.string().optional(),
+  text: z.string().max(THREAD_MESSAGE_TEXT_MAX_LENGTH).optional(),
   artifactIds: z.array(Id).max(ATTACHMENT_COUNT_CEILING).optional(),
   /** Bare bot ids (legacy) or typed mention chips from the composer. */
   mentions: z
@@ -224,7 +257,7 @@ const threadSendFields = threadTarget.safeExtend({
   clientNonce: z.string().min(1).max(200).optional(),
 });
 
-const threadSendInput = threadSendFields.superRefine((input, ctx) => {
+export const threadSendInput = threadSendFields.superRefine((input, ctx) => {
   const text = input.text?.trim() ?? "";
   const artifactIds = input.artifactIds ?? [];
   if (!text && artifactIds.length === 0) {
@@ -307,6 +340,8 @@ export const appContract = {
           client: BillingClientSchema,
           /** Billing period of the own-key plan's checkout; monthly when omitted. */
           interval: ByokIntervalSchema.optional(),
+          /** The own-key plan's tier; Standard when omitted. */
+          tier: ByokTierSchema.optional(),
         }),
       )
       /** `url` is the checkout to pay for the own-key plan before it has access. */
@@ -366,13 +401,16 @@ export const appContract = {
             timezone: TimeZoneSchema.nullable().optional(),
             /** The language the app runs in, so emails can be written in it. */
             locale: AppLocaleSchema.optional(),
+            /** Replaces the account's Labs list. */
+            labs: z.array(LabFeatureSchema).optional(),
           })
           .refine(
             (input) =>
               input.avatarStyle !== undefined ||
               input.botAvatarSet !== undefined ||
               input.timezone !== undefined ||
-              input.locale !== undefined,
+              input.locale !== undefined ||
+              input.labs !== undefined,
             { message: "Nothing to update" },
           ),
       )
@@ -389,6 +427,29 @@ export const appContract = {
     remove: oc
       .input(z.object({ spaceId: Id }))
       .output(z.object({ ok: z.literal(true), activeSpaceId: Id })),
+    members: {
+      list: oc.input(z.object({ spaceId: Id })).output(SpaceMembersSchema),
+      /** Owner only. The removed person's bots, chats and routines stay with the space. */
+      remove: oc
+        .input(z.object({ spaceId: Id, userId: Id }))
+        .output(z.object({ ok: z.literal(true) })),
+      /** Members only; an owner deletes the space instead. */
+      leave: oc
+        .input(z.object({ spaceId: Id }))
+        .output(z.object({ ok: z.literal(true), activeSpaceId: Id })),
+    },
+    invites: {
+      /** Owner only. A new single-use link each call. */
+      create: oc.input(z.object({ spaceId: Id })).output(SpaceInviteLinkSchema),
+      preview: oc
+        .input(z.object({ token: z.string().min(1).max(200) }))
+        .output(SpaceInvitePreviewSchema),
+      accept: oc
+        .input(z.object({ token: z.string().min(1).max(200) }))
+        .output(z.object({ spaceId: Id })),
+      /** Owner only. Every unused link stops working, for one that went to the wrong place. */
+      cancel: oc.input(z.object({ spaceId: Id })).output(z.object({ ok: z.literal(true) })),
+    },
   },
   organizations: {
     list: oc.output(OrganizationListSchema),
@@ -533,6 +594,7 @@ export const appContract = {
     rename: oc
       .input(z.object({ credentialId: Id, label: ModelConnectionLabelSchema }))
       .output(z.object({ ok: z.literal(true) })),
+    saveModelSettings: oc.input(ModelSettingsSaveSchema).output(z.object({ ok: z.literal(true) })),
     /** Removes one connection, or every connection of the provider when older apps omit it. */
     disconnect: oc
       .input(z.object({ provider: z.string().trim().min(1), credentialId: Id.optional() }))
@@ -546,6 +608,8 @@ export const appContract = {
     importPreview: oc.input(AgentImportPreviewInput).output(AgentImportPlanSchema),
     importCreate: oc.input(AgentImportCreateInput).output(BotSchema),
     importSetupState: oc.input(AgentImportSetupStateInput).output(AgentImportSetupStateSchema),
+    templates: oc.output(z.array(BotTemplateListingSchema)),
+    createFromTemplate: oc.input(CreateBotFromTemplateInput).output(CreateBotFromTemplateOutput),
     duplicate: oc.input(botId).output(BotSchema),
     reorder: oc.input(ReorderBotsInput).output(z.object({ ok: z.literal(true) })),
     update: oc.input(UpdateBotInput).output(BotSchema),
@@ -564,7 +628,21 @@ export const appContract = {
     restore: oc.input(botId).output(z.object({ ok: z.literal(true) })),
     remove: oc
       .input(z.object({ botId: Id, deleteMemories: z.boolean().default(false) }))
-      .output(z.object({ ok: z.literal(true) })),
+      // Optional for clients talking to older servers; current servers return committed group IDs.
+      .output(
+        z.object({
+          ok: z.literal(true),
+          removedGroupIds: z.array(Id).optional(),
+          alreadyRemoved: z.boolean().optional(),
+        }),
+      ),
+    /** Groups this delete removes because fewer than two active bots would remain. */
+    removePreview: oc.input(botId).output(z.array(z.object({ id: Id, name: z.string() }))),
+    emailAddress: oc.input(botId).output(BotEmailAddressSchema),
+    emailAddresses: oc.output(BotEmailAddressesSchema),
+    claimEmailAddress: oc
+      .input(z.object({ botId: Id, name: BotEmailNameSchema }))
+      .output(z.object({ address: z.string() })),
     rotateWebhookSecret: oc.input(botId).output(
       z.object({
         secret: z.string(),
@@ -572,6 +650,7 @@ export const appContract = {
         webhookConfigured: z.literal(true),
       }),
     ),
+    revealWebhookSecret: oc.input(botId).output(z.object({ secret: z.string() })),
   },
   groups: {
     create: oc.input(CreateGroupInput).output(GroupSchema),
@@ -641,6 +720,10 @@ export const appContract = {
       )
       .output(z.object({ ok: z.literal(true), runIds: z.array(Id).optional() })),
     stop: oc.input(threadTarget).output(z.object({ ok: z.literal(true) })),
+    // Its own route, so a server without it refuses rather than stopping the whole chat.
+    stopHelper: oc
+      .input(threadTarget.safeExtend({ messageId: Id }))
+      .output(z.object({ ok: z.literal(true) })),
     followUp: oc
       .input(
         threadTarget.safeExtend({
@@ -740,6 +823,10 @@ export const appContract = {
     markUnread: oc
       .input(threadTarget.and(z.object({ messageId: Id.optional() })))
       .output(z.object({ ok: z.literal(true) })),
+    /** Hides the chat from the caller's list until `until`; null wakes it now. */
+    snooze: oc
+      .input(threadTarget.and(z.object({ until: z.iso.datetime({ offset: true }).nullable() })))
+      .output(z.object({ ok: z.literal(true) })),
   },
   computer: {
     status: oc.input(botId).output(ComputerStatusSchema),
@@ -760,6 +847,10 @@ export const appContract = {
         z.object({
           botId: Id,
           reason: ComputerReleaseReasonSchema.optional(),
+          /** The run a needs-you card answers; the release applies only while it waits on the caller. */
+          runId: Id.optional(),
+          /** The lease this page took; a late release from an old page leaves newer control alone. */
+          leaseId: Id.optional(),
         }),
       )
       .output(z.object({ ok: z.literal(true) })),
@@ -797,6 +888,16 @@ export const appContract = {
       .input(botId)
       .output(z.array(ComputerCommandSchema.extend({ createdAt: z.string() }))),
     screenUrl: oc.input(botId).output(z.object({ url: z.string().nullable() })),
+    /** A still of the screen as an image data URL, or null when the computer is not running. */
+    preview: oc
+      .input(
+        z.object({
+          botId: Id,
+          /** The run a needs-you card shows; no image once that run stops waiting. */
+          runId: Id.optional(),
+        }),
+      )
+      .output(z.object({ image: z.string().nullable() })),
     heartbeat: oc.input(botId).output(z.object({ ok: z.literal(true) })),
   },
   memory: {
@@ -866,6 +967,8 @@ export const appContract = {
               .regex(/^[a-z0-9._-]+$/i)
               .nullable()
               .optional(),
+            /** Null removes the email trigger. */
+            emailSenders: RoutineEmailSendersSchema.nullable().optional(),
             /** Null clears the routine's own model and runs it on the bot's. */
             modelProvider: z.string().trim().min(1).max(80).nullable().optional(),
             modelId: z.string().trim().min(1).max(200).nullable().optional(),
@@ -882,11 +985,12 @@ export const appContract = {
               value.webhookEnabled === false &&
               value.githubEnabled === false &&
               value.messageProvider === null &&
+              value.emailSenders === null &&
               value.watch === null
             ) {
               ctx.addIssue({
                 code: "custom",
-                message: "Add a schedule, webhook, GitHub, message, or change trigger",
+                message: ROUTINE_TRIGGER_REQUIRED,
                 path: ["crons"],
               });
             }
@@ -1020,10 +1124,11 @@ export const appContract = {
   },
   capabilities: {
     list: oc.output(z.array(CapabilityInstallSchema)),
+    sourcePresets: oc.output(z.array(McpSourcePresetSchema)),
     catalogSearch: oc
       .input(
         z.object({
-          query: z.string().trim().max(253).default(""),
+          query: z.string().trim().max(CATALOG_SEARCH_QUERY_MAX_LENGTH).default(""),
           usePublicCatalog: z.boolean().default(false),
         }),
       )
@@ -1206,9 +1311,14 @@ export const appContract = {
     status: oc.output(MessagingStatusSchema),
     link: {
       /** Issue a short-lived code the user sends to the line from a chat app. */
-      start: oc
-        .input(z.object({ botId: Id }))
-        .output(z.object({ code: z.string(), expiresAt: z.string() })),
+      start: oc.input(z.object({ botId: Id })).output(
+        z.object({
+          code: z.string(),
+          expiresAt: z.string(),
+          /** Others share the bot's Space, so they can read the chats this link brings in. */
+          shared: z.boolean().optional(),
+        }),
+      ),
     },
     identities: {
       setBot: oc
@@ -1287,6 +1397,8 @@ export const appContract = {
       .input(
         z.object({
           botId: Id.optional(),
+          /** Only files bots attached, leaving out uploads. */
+          madeByBots: z.boolean().optional(),
           cursor: z.string().optional(),
           limit: z.number().int().min(1).max(60).optional(),
         }),
@@ -1361,6 +1473,8 @@ export const appContract = {
   usage: {
     list: oc.output(z.array(UsageRecordSchema)),
     summary: oc.output(UsageSummarySchema),
+    /** Subscription sign-ins whose allowance could be read; others are left out. */
+    limits: oc.output(z.array(PlanLimitsSchema)),
   },
   export: {
     bot: oc.input(botId).output(ExportManifestSchema),
@@ -1371,11 +1485,15 @@ export const appContract = {
     accountToken: oc.output(z.object({ token: z.string() })),
   },
   notifications: {
-    /** Run alerts for the signed-in user's chats in this space, live while connected. */
+    /**
+     * Run alerts for the signed-in user's chats in this space, live while connected. `roster`
+     * says `spaces.list` may have changed, and `computerUpdates` that `computer.updates` may have;
+     * each is sent once when the stream opens.
+     */
     subscribe: oc.output(
       eventIterator(
         z.object({
-          type: z.enum(["alert", "heartbeat"]),
+          type: z.enum(["alert", "roster", "computerUpdates", "heartbeat"]),
           alert: ChatAlertSchema.optional(),
         }),
       ),
@@ -1418,6 +1536,28 @@ export const appContract = {
       )
       .output(z.object({ ok: z.literal(true) })),
     unregisterPush: oc.output(z.object({ ok: z.literal(true) })),
+    /**
+     * Keeps this phone's live status card of the user's bots at work up to date. `following` is
+     * false when the server cannot update the card or no bot is at work, so the app ends it.
+     * Omit `token` to check server support before creating a card; this does not follow work.
+     */
+    followWorkActivity: oc
+      .input(
+        z.object({
+          token: z
+            .string()
+            .regex(/^[a-fA-F0-9]{64,512}$/)
+            .optional(),
+        }),
+      )
+      .output(z.object({ following: z.boolean() })),
+    /**
+     * Lets the server start this phone's live status card when the user's bots get to work from
+     * another device. `token` is the phone's token for starting cards, again whenever it changes.
+     */
+    registerWorkActivityStarts: oc
+      .input(z.object({ token: z.string().regex(/^[a-fA-F0-9]{64,512}$/) }))
+      .output(z.object({ ok: z.literal(true) })),
   },
   search: {
     query: oc.input(z.object({ q: z.string().max(200) })).output(SearchQueryOutputSchema),
@@ -1435,6 +1575,16 @@ export const appContract = {
   runs: {
     list: oc.input(z.object({ filter: z.enum(["active", "recent"]) })).output(RunsListOutputSchema),
   },
+  /** The account's spending limit for payments its bots make. */
+  spendingLimit: {
+    get: oc.output(SpendingStatusSchema),
+    /** `null` removes the limit. */
+    set: oc
+      .input(z.object({ limit: SpendingLimitSchema.nullable() }).strict())
+      .output(SpendingStatusSchema),
+    /** The latest payments that count, newest first. */
+    payments: oc.output(z.array(SpendingPaymentSchema)),
+  },
   /** The signed-in user's wallet; absent when the deployment offers none. */
   paymentWallet: {
     status: oc.output(PaymentWalletStatusSchema),
@@ -1451,7 +1601,10 @@ export const appContract = {
         z
           .object({
             provider: z.string(),
-            /** Optional for a self-hosted server and for providers without keys. */
+            /**
+             * Optional for a self-hosted server, for providers without keys, and for a provider
+             * the account's model connection authenticates (the catalog's `modelConnection`).
+             */
             apiKey: z.string().max(4096).default(""),
             voiceId: z.string().max(120).optional(),
             speechModel: z.string().max(64).optional(),
@@ -1490,7 +1643,13 @@ export const appContract = {
       )
       .output(VoiceCredentialSchema),
     voices: oc
-      .input(settingsScopeInput.extend({ provider: z.string().optional() }))
+      .input(
+        settingsScopeInput.extend({
+          provider: z.string().optional(),
+          /** BCP-47 tag or ISO 639-1 code; providers narrow it to what they support. */
+          language: z.string().max(35).optional(),
+        }),
+      )
       .output(z.array(VoiceInfoSchema)),
     prepare: oc
       .input(
@@ -1518,6 +1677,10 @@ export const appContract = {
     put: oc.input(VaultPutInput).output(BotSecretMetadata),
     /** Needs a recent identity confirmation on this session (IDENTITY_CONFIRMATION_REQUIRED). */
     reveal: oc.input(VaultRevealInput).output(VaultRevealed),
+    import: oc.input(VaultImportInput).output(VaultImportResult),
+    activity: oc
+      .input(settingsScopeInput.extend({ name: StoredBotSecretName }))
+      .output(z.array(VaultUse).max(VAULT_ACTIVITY_LIMIT)),
     remove: oc
       .input(settingsScopeInput.extend({ name: StoredBotSecretName }))
       .output(z.object({ ok: z.literal(true) })),

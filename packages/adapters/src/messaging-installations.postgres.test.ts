@@ -16,7 +16,7 @@ import { EncryptedSecretStore } from "./secrets.js";
 import { SlackInstallProvider } from "./slack-install-provider.js";
 
 const describePostgres =
-  process.env.VERIFY_DATABASE && process.env.DATABASE_URL ? describe.sequential : describe.skip;
+  process.env.VERIFY_DATABASE && process.env.DATABASE_URL ? describe : describe.skip;
 describePostgres("messaging workspace installation (PostgreSQL)", () => {
   let prisma: PrismaClient;
   let close: () => Promise<void>;

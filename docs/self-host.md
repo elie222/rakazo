@@ -4,6 +4,8 @@ Run the API, worker, web app, database and bot computers on a machine you contro
 
 The signed-in product is a long-running API, a Graphile Worker, Postgres, and a computer provider (Docker supervisor, E2B, Daytona, CreateOS, or Boat). It is not a static site. The marketing site in `apps/www` can be hosted separately.
 
+English | [简体中文](./zh-CN/self-host.md)
+
 ## What you need
 
 - Docker Engine 26 or newer with the Compose plugin, curl and OpenSSL. Nothing else is needed for
@@ -29,6 +31,8 @@ the installer secret list, non-reuse rules, and recovery, see
 [Self-host secrets checklist](./self-host-secrets.md). To customize the public URL, image tag, or
 optional providers before startup, run `bash install-images.sh --prepare-only`, edit `.env`, then
 run `bash install-images.sh`. Flags may be combined in either order: `--prepare-only`, `--local`.
+When `RAKAZO_IMAGE_TAG` is a release such as `v0.8.0`, the installer downloads the Compose files
+from that release instead of `main`.
 
 `SANDBOX_PROVIDER` defaults to `docker`. The images Compose file runs a sandbox supervisor
 (from the app image, on the internal network only) and pulls `ghcr.io/elie222/rakazo/computer`.
@@ -50,6 +54,10 @@ there. Vite preview same-origin-proxies `/api` and `/rpc`, so do not expose `:31
 `BETTER_AUTH_URL`, `WEB_ORIGIN`, and `API_URL` to that same HTTPS origin, and set
 `RAKAZO_HOST` to its hostname (for example, `app.example.com`). Cookies and CORS follow those
 origins.
+
+To also reach the web app by other hostnames (a LAN IP or a tailnet name, for example), list
+them comma-separated in `RAKAZO_ALLOWED_HOSTS`. Vite preview rejects any other `Host` header, and
+the computer screen then stays blank.
 
 ```Caddyfile
 app.example.com {
@@ -94,7 +102,11 @@ Do not publish Postgres on a public interface.
 
 ## Local (source checkout)
 
-Same as the README quick start: `.env` from `.env.example`, `pnpm sandbox:build`, `pnpm dev`, then the URL it prints ([http://127.0.0.1:5173](http://127.0.0.1:5173) by default, or `http://localhost:5173` — both loopback hosts are trusted). Electron: `pnpm --filter @rakazo/desktop dev` while that stack is up, choosing **Existing instance** with that address. The desktop app's **This computer** option instead installs and runs the published images itself with Docker Compose (see [Published images](#published-images-no-checkout)), using port 45173 by default so it can run alongside `pnpm dev`. If that port is occupied, the app selects and remembers another loopback port. The managed API gets a Docker-assigned loopback port; all desktop traffic uses the web origin.
+Same as the README quick start: `.env` from `.env.example`, `pnpm sandbox:build`, `pnpm dev`, then the URL it prints ([http://127.0.0.1:5173](http://127.0.0.1:5173) by default, or `http://localhost:5173` — both loopback hosts are trusted). Electron: `pnpm --filter @rakazo/desktop dev` while that stack is up, choosing **Existing instance** with that address. The desktop app's **This computer** option manages a separate local stack, using port 45173 by default so it can run alongside `pnpm dev`. If that port is occupied, the app selects and remembers another loopback port. All desktop traffic uses the web origin.
+
+On Apple silicon Macs with macOS 26 or later, builds that include a server bundle can run this stack without Docker. Fresh setups use this path, downloading the server and computer runtime as needed. Existing Docker setups are offered a move while Docker is running; **Keep Docker** preserves the Docker path. Moving copies the bots and data and stops the old Docker stack without removing it. The Docker-free server stops when the desktop app quits.
+
+Other builds and platforms use Docker Compose and the published images (see [Published images](#published-images-no-checkout)); their managed API gets a Docker-assigned loopback port. These Docker containers keep running after the app quits. **Stop Local Stack** in the application menu stops the managed stack without quitting, for either runtime. Unpackaged development builds normally have no server bundle; use **Existing instance** for the source development stack.
 
 For source development in WSL, keep the checkout and `data` directory in the Linux filesystem (for example, `~/rakazo`), and run `pnpm dev` as your normal user. The host-run supervisor matches bot container UID/GID to that user. If Docker Desktop container IPs are unreachable, set `SANDBOX_CONTROL_VIA_LOOPBACK=true` in `.env`; this publishes the token-protected control service on a random loopback port. Leave this unset for the Compose-hosted supervisor.
 
@@ -111,6 +123,8 @@ Compose bot homes mount only their own subdirectory of the application volume us
   voice.
 - [Tools and integrations](./self-host-integrations.md): web search, memory, MCP servers,
   messaging apps, cloud coding agents and payments.
+- [Bot email addresses](./self-host-inbound-email.md): an address for each bot, so mail you
+  forward or CC to it starts its routines.
 - [Computer providers](./self-host-sandbox-providers.md) and
   [Docker computers](./self-host-docker-computers.md): where bot computers run and how they are
   limited.

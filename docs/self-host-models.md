@@ -3,16 +3,18 @@
 Choose the deployment's default model, connect local or OpenAI-compatible servers, and configure
 approvals, media generation and voice.
 
+English | [简体中文](./zh-CN/self-host-models.md)
+
 ## Deployment model
 
 The deployment model is used by anyone who has not connected a model of their own. `PI_DEFAULT_PROVIDER`
 picks the provider and `PI_DEFAULT_MODEL` the model:
 
-| `PI_DEFAULT_PROVIDER` | Key | Default model |
-| --- | --- | --- |
-| `openrouter` (default) | `OPENROUTER_API_KEY` | `openai/gpt-6-luna` |
-| `anthropic` | `ANTHROPIC_API_KEY` | `claude-sonnet-5` |
-| `deepseek` | `DEEPSEEK_API_KEY` | `deepseek-flash` |
+| `PI_DEFAULT_PROVIDER`  | Key                  | Default model                |
+| ---------------------- | -------------------- | ---------------------------- |
+| `openrouter` (default) | `OPENROUTER_API_KEY` | `anthropic/claude-haiku-5.5` |
+| `anthropic`            | `ANTHROPIC_API_KEY`  | `claude-sonnet-5`            |
+| `deepseek`             | `DEEPSEEK_API_KEY`   | `deepseek-flash`             |
 
 Pick a vision-capable model so screenshot computer tools stay available.
 
@@ -26,6 +28,9 @@ Google Vertex works the same way with `PI_DEFAULT_PROVIDER=google-vertex`, using
 application default credentials (`GOOGLE_APPLICATION_CREDENTIALS`, `GOOGLE_CLOUD_PROJECT`,
 `GOOGLE_CLOUD_LOCATION`). Runs on host credentials are billed to that cloud account.
 
+On a server only you use, the deployment model can also run through the
+[Claude Code CLI](#claude-code-cli) signed in on the host.
+
 The Compose files also pass the standard provider key variables the agent runtime reads itself
 (`OPENAI_API_KEY`, `GEMINI_API_KEY`, `MISTRAL_API_KEY`, `GROQ_API_KEY`, `XAI_API_KEY` and others) to
 the API and worker, for models that have no stored credential.
@@ -34,11 +39,13 @@ the API and worker, for models that have no stored credential.
 
 ## Approvals
 
-Approvals have three modes in **Settings → Approvals**: Never ask runs every action, Auto lets an
+Approvals have three modes in **Settings → Approvals**: Never ask skips ordinary approval prompts, Auto lets an
 approval model pass actions that fit the request, and Ask asks before any change. A space starts
 in Auto, which asks like Ask until an approval model is available. Each
 person can allow or block single tools and sites in every mode, and a space can customize its
 approvals apart from the account.
+All modes still enforce block rules and safety checks. Purchases always require a person's approval;
+unattended runs that cannot request approval refuse them.
 
 In **Settings → Models → Approval model**, each user can select a model
 from an existing connection and add ordered backups, independently of their main model. Personal
@@ -65,13 +72,26 @@ MLX, list its model IDs and an endpoint that both the API and worker processes c
 ```env
 RAKAZO_LOCAL_MODELS=qwen3:4b,llama3.1:8b,qwen3-vl
 RAKAZO_LOCAL_MODELS_URL=http://127.0.0.1:11434/v1
+# Optional: key for a server that requires one, sent as the bearer token.
+RAKAZO_LOCAL_MODELS_API_KEY=
 RAKAZO_LOCAL_CONTEXT_WINDOW=32768
 RAKAZO_LOCAL_MAX_TOKENS=4096
 # Optional: model ids on this endpoint that accept images (screenshot computer tools).
 RAKAZO_LOCAL_VISION_MODELS=qwen3-vl
 # Optional: model ids on this endpoint that accept OpenAI-style reasoning_effort.
 RAKAZO_LOCAL_REASONING_MODELS=qwen3:4b
+# Optional: prompt tokens per minute the server accepts (a rate-limited key or quota).
+RAKAZO_LOCAL_TOKENS_PER_MINUTE=200000
+# Optional: off when the server does not cache prompts.
+RAKAZO_LOCAL_PROMPT_CACHE=off
 ```
+
+Set `RAKAZO_LOCAL_MODELS_API_KEY` when the server requires a key, such as LiteLLM, vLLM started
+with `--api-key`, or a company gateway. Every request to `RAKAZO_LOCAL_MODELS_URL` then sends it as
+`Authorization: Bearer`; unset, requests carry the placeholder `local`. Like the other deployment
+keys, it stays on the API and worker and is redacted from run output. Use HTTPS unless the network
+is trusted. To make a local model the deployment model, set `PI_DEFAULT_PROVIDER=local`,
+`PI_DEFAULT_MODEL` to one of `RAKAZO_LOCAL_MODELS` and `PI_DEFAULT_CREDENTIALS=host`.
 
 A model in `RAKAZO_LOCAL_REASONING_MODELS` offers thinking levels and sends the chosen level as
 `reasoning_effort` (`medium` by default, `none` when thinking is off). Other local models never
@@ -82,6 +102,22 @@ connection sets its own max-tokens value. It never exceeds a quarter of
 `RAKAZO_LOCAL_CONTEXT_WINDOW`, so the prompt keeps the rest; a higher limit leaves less room for the
 prompt, so long chats are compacted sooner.
 
+A server behind a rate-limited key (a free tier, an organisation token quota) often answers `429`
+with a fixed `Retry-After` of a minute, so each rejected call costs a minute. Set
+`RAKAZO_LOCAL_TOKENS_PER_MINUTE` to the server's prompt-token limit and Rakazo paces calls to the
+local provider under it with a sliding one-minute window, waiting only as long as the window needs.
+The estimate is calibrated against the prompt tokens the server reports. Leave some headroom if
+other clients share the key; a `429` that still happens keeps the usual `Retry-After` handling.
+Unset, calls are sent as soon as they are ready. Like the other token limits, a value that is not
+a positive integer is rejected when the local provider is configured.
+
+Rakazo keeps a run's earlier messages unchanged between calls so a server's prompt cache keeps
+hitting, and trims old page state only when that saves more than the cache would. A server without
+prompt caching (several hosted gateways and confidential-compute endpoints report no cached
+tokens) gets nothing from that, and old page snapshots are only sent again on every call. Set
+`RAKAZO_LOCAL_PROMPT_CACHE=off` to declare this: stale page state is then trimmed once about 3,000
+tokens of it have built up. Unset, behaviour is unchanged.
+
 The loopback default is suitable when running Rakazo from a source checkout. From containers,
 prefer a stable LAN RFC1918 address (not Compose service DNS alone). On Docker Desktop,
 `host.docker.internal` also works.
@@ -91,6 +127,44 @@ bots run, or firewall / block that path. Linux does not get `host.docker.interna
 way by default.
 Only configure an endpoint you control: prompts, attachments, and tool results sent to that model
 leave Rakazo through this URL. Leave `RAKAZO_LOCAL_MODELS` blank to disable the provider.
+
+## Claude Code CLI
+
+With a Claude subscription, a server that only you use can run its deployment model through the
+official Claude Code CLI, signed in with your own account. For each model turn Rakazo starts the
+`claude` command installed on the server and reads its reply. Rakazo never reads, stores, forwards
+or refreshes your Claude sign-in, and every request to Anthropic is the CLI's own. Rakazo keeps the
+conversation, tools, memory and approvals: the CLI only answers as the model, with its own tools,
+settings, project files and saved sessions turned off.
+
+What it needs:
+
+- The API and worker running from a source checkout on the same machine as the CLI, as the same
+  OS user. The official Docker images and the desktop app's local stack do not include Claude
+  Code, and adding it to them is not supported.
+- Claude Code 2.1.280 or newer on that user's `PATH`, signed in once in a terminal as that user
+  with `claude auth login`. Rakazo has no Claude sign-in screen and accepts no Claude tokens, so
+  `claude setup-token` is not needed.
+- One account on the server. A Claude sign-in belongs to one person, so Rakazo refuses Claude Code
+  runs while the server has more than one account (people who only message bots from chat apps do
+  not count) or bills for model usage.
+
+```env
+PI_DEFAULT_PROVIDER=claude-code
+PI_DEFAULT_CREDENTIALS=host
+PI_DEFAULT_MODEL=claude-sonnet-5
+```
+
+Use a full model id the CLI accepts with `claude --model`, so Rakazo knows the model's context
+and output limits. Usage counts against your own Claude plan and its limits, which assume
+ordinary individual use; Rakazo shows no cost for these runs, and once the plan's limit is reached
+runs fail with a rate-limit error until it resets. Your use of Claude Code is covered by
+Anthropic's terms; see [Legal and compliance](https://code.claude.com/docs/en/legal-and-compliance).
+
+The CLI runs in an empty private temporary directory with an allowlisted environment. API keys and
+other server secrets, including `ANTHROPIC_API_KEY`, are never passed to it, so it always uses its
+own sign-in. Only the deployment model runs on Claude Code; it is not offered as a connection in
+**Settings → Models**.
 
 ## Ollama Cloud
 
@@ -106,9 +180,12 @@ are shown afterwards.
 Public hosts and ordinary hostnames need HTTPS when they receive an API key or custom headers,
 and must resolve only to public addresses. Set `RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=0` on the API
 and worker to block them.
-Literal private IP, loopback, and `host.docker.internal` targets do not, but only the deployment
-owner can use them, checked on save, on model discovery, and on every run. Set
-`MCP_ALLOW_PRIVATE_ENDPOINT=true` on the API and worker to allow them for every user.
+Literal private IP, loopback, and `host.docker.internal` targets do not, but they are refused
+unless `MCP_ALLOW_PRIVATE_ENDPOINT=true` is set on the API and worker, which allows them for every
+user. This is checked on save, on model discovery, and on every run.
+With the Docker images install and the desktop app, a `localhost` or `127.0.0.1` connection
+reaches the computer running Docker (through `host.docker.internal`). On Linux, the model server
+must listen on an address the Docker bridge can reach, not only `127.0.0.1`.
 For a self-hosted endpoint whose hostname resolves to private IPs, set
 `RAKAZO_OPENAI_COMPAT_PRIVATE_HOSTS=models.example.test,other.example.test` in the deployment
 environment for both API and worker, then recreate those containers. Entries are exact hostnames
@@ -128,8 +205,9 @@ managed endpoints, the deployment-wide fallback remains
 
 For servers that accept standard `reasoning_effort`, enable **Supports thinking** under
 **Advanced** when connecting. The setting is saved on the connection (no env var or restart).
-Existing connections default to disabled. Reconnect former Qwen-list or deployment-local models
-via **Settings → Models** and turn it on; the old environment list is no longer read.
+Existing connections default to disabled. Deployment-local models opt in through
+`RAKAZO_LOCAL_REASONING_MODELS`; reconnect through **Settings → Models** only to move to a personal
+connection.
 
 Enabled connections default to medium thinking. Web and desktop expose **Thinking** in a bot's
 advanced settings; mobile inherits the same backend policy. Rakazo sends standard
@@ -155,6 +233,31 @@ Cache warmth is advisory. Changing instructions or tools, context pressure,
 worker eviction, or a process restart can require fresh prompt processing.
 These settings do not create backend KV snapshots or keep a model loaded;
 the inference server is responsible for retention and conversation switching.
+
+## Paid data services
+
+Bots can look up paid data (map places, search results, work emails, people and company profiles,
+social posts, SEO data) through one deployment account. It is off by default. Configure the worker
+(and API for inline execution):
+
+```dotenv
+PAID_SERVICES_PROVIDER=treg
+PAID_SERVICES_API_KEY=replace-with-org-scoped-token
+```
+
+`PAID_SERVICES_PROVIDER` accepts `disabled` (the default), `treg`, or `fake` (for offline testing
+only). `PAID_SERVICES_BASE_URL` points at a self-hosted Treg instead of `https://treg.to`. Use an
+org-scoped token, and keep the account topped up or on automatic top-up: an empty balance makes
+every call fail.
+
+Bots get `service_search` and `service_call` in every run; `service_call` follows the bot's
+approval mode like other actions. Only read-only lookups are offered: actions on accounts, generation tasks, and services that need the account's own connections are left out.
+Each call has a cost ceiling the bot sets and the approval card shows (at most $2) that the
+provider enforces before it charges. When model credits are on, a call first holds that ceiling
+from the organization's credits and then settles to what the provider charged plus 20%, never
+above the ceiling; calls the provider does not bill are
+free. A call that may have run without an answer keeps its hold for the credit
+reconciler to flag. Every call appears in Usage under the `services` provider.
 
 ## Image and video generation
 

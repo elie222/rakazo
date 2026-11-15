@@ -1,338 +1,27 @@
-import { t } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
-import type {
-  ModelCatalogEntry,
-  ModelCredential,
-  Routine,
-  RoutineWatch,
-  RoutineWatchInput,
-} from "@rakazo/contracts";
-import { ROUTINE_WATCH_DEFAULT_MINUTES, ROUTINE_WATCH_MIN_MINUTES } from "@rakazo/contracts";
-import type { CronFreq, CronLabels, CronPreset } from "@rakazo/core";
-import {
-  credentialForModel,
-  cronFromPreset,
-  defaultCronPreset,
-  ENGLISH_CRON_LABELS,
-  formatCron,
-  isOneShotRoutineCrons,
-  presetFromCron,
-} from "@rakazo/core";
-import {
-  Button,
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
-  DropdownMenuTrigger,
-  Input,
-  NativeSelect,
-  NativeSelectOption,
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-  Switch,
-  Textarea,
-} from "@rakazo/ui-web";
+import type { Routine } from "@rakazo/contracts";
+import { cronFromPreset } from "@rakazo/core";
+import { Button, Input, Switch, Textarea } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
-import {
-  ChevronLeft,
-  Clock,
-  Eye,
-  GitBranch,
-  Globe,
-  MessageSquare,
-  Pause,
-  Plus,
-  SlidersHorizontal,
-  X,
-} from "lucide-react";
-import { useEffect, useId, useState } from "react";
-import { cronLabels } from "../lib/cron";
-import {
-  connectedModelOptions,
-  modelOptionKey,
-  parseModelOptionKey,
-  thinkingLevelLabel,
-} from "../lib/model-catalog";
+import { ChevronLeft, X } from "lucide-react";
+import { useId } from "react";
+import { useIdentityConfirmation } from "../components/ConfirmIdentityDialog";
 import { useSpaceQueries } from "../lib/query";
-import { rpc } from "../lib/rpc";
+import type { RoutineDraftState } from "../lib/routine-draft";
+import { routineNeedsOneShotArm } from "../lib/routine-draft";
 import { RoutineRunHistory } from "./RoutineRunHistory";
 import { RoutineSchedule } from "./RoutineSchedule";
-
-function toDatetimeLocalValue(date: Date): string {
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}
-
-function defaultArmRunAtLocal(): string {
-  return toDatetimeLocalValue(new Date(Date.now() + 60 * 60 * 1000));
-}
-
-export function routineNeedsOneShotArm(
-  routine: Pick<Routine, "nextRunAt" | "lastRunAt">,
-  crons: string[],
-) {
-  return isOneShotRoutineCrons(crons) && !routine.nextRunAt && !routine.lastRunAt;
-}
-
-const SCHEDULE_PRESETS: CronFreq[] = [
-  "Every hour",
-  "Every day",
-  "Weekdays",
-  "Every week",
-  "Every month",
-  "Interval",
-  "Advanced",
-];
-
-export type RoutineDraftState = {
-  name: string;
-  prompt: string;
-  schedules: CronPreset[];
-  webhookEnabled: boolean;
-  githubEnabled: boolean;
-  messageProvider: string | null;
-  active: boolean;
-  runAtLocal: string;
-  /** Empty runs this routine on the bot's model. */
-  modelKey: string;
-  thinkingLevel: string;
-  /** Null unless the routine starts when something changes. */
-  watch: RoutineWatchDraft | null;
-};
-
-/** The change trigger as the editor holds it: free text until saved. */
-export type RoutineWatchDraft = {
-  kind: RoutineWatch["kind"];
-  /** One path per line. */
-  paths: string;
-  command: string;
-  tool: string;
-  /** JSON object of arguments for the tool. */
-  args: string;
-  /** Comma-separated field names; see RoutineWatch.track. */
-  track: string;
-  everyMinutes: number;
-  loud: boolean;
-};
-
-export function emptyWatchDraft(): RoutineWatchDraft {
-  return {
-    kind: "files",
-    paths: "",
-    command: "",
-    tool: "",
-    args: "{}",
-    track: "",
-    everyMinutes: ROUTINE_WATCH_DEFAULT_MINUTES,
-    loud: false,
-  };
-}
-
-function watchDraftFromRoutine(watch: RoutineWatch | null): RoutineWatchDraft | null {
-  if (!watch) return null;
-  return {
-    kind: watch.kind,
-    paths: (watch.paths ?? []).join("\n"),
-    command: watch.command ?? "",
-    tool: watch.tool ?? "",
-    args: JSON.stringify(watch.args ?? {}),
-    track: (watch.track ?? []).join(", "),
-    everyMinutes: watch.everyMinutes,
-    loud: watch.loud,
-  };
-}
-
-/** The draft as the api takes it, or the reason it cannot be saved. */
-export function watchFromDraft(
-  draft: RoutineWatchDraft,
-): { watch: RoutineWatchInput } | { error: string } {
-  const base = { kind: draft.kind, everyMinutes: draft.everyMinutes, loud: draft.loud };
-  const fields = draft.track
-    .split(",")
-    .map((field) => field.trim())
-    .filter(Boolean);
-  const track = fields.length ? { track: fields } : {};
-  if (draft.kind === "files") {
-    const paths = draft.paths
-      .split("\n")
-      .map((path) => path.trim())
-      .filter(Boolean);
-    if (!paths.length) return { error: t`Add a file or folder to watch` };
-    return { watch: { ...base, paths } };
-  }
-  if (draft.kind === "command") {
-    if (!draft.command.trim()) return { error: t`Add a command to run` };
-    return { watch: { ...base, command: draft.command.trim(), ...track } };
-  }
-  if (!draft.tool.trim()) return { error: t`Pick a tool to check` };
-  let args: unknown;
-  try {
-    args = JSON.parse(draft.args.trim() || "{}");
-  } catch {
-    return { error: t`Tool arguments must be JSON` };
-  }
-  if (!args || typeof args !== "object" || Array.isArray(args)) {
-    return { error: t`Tool arguments must be a JSON object` };
-  }
-  return {
-    watch: { ...base, tool: draft.tool.trim(), args: args as Record<string, unknown>, ...track },
-  };
-}
-
-export function emptyRoutineDraft(): RoutineDraftState {
-  return {
-    name: "",
-    prompt: "",
-    schedules: [],
-    webhookEnabled: false,
-    githubEnabled: false,
-    messageProvider: null,
-    active: true,
-    runAtLocal: "",
-    modelKey: "",
-    thinkingLevel: "",
-    watch: null,
-  };
-}
-
-export function draftFromRoutine(routine: Routine): RoutineDraftState {
-  return {
-    name: routine.name,
-    prompt: routine.prompt,
-    schedules: routine.crons.map(presetFromCron),
-    webhookEnabled: routine.webhookEnabled,
-    githubEnabled: routine.githubEnabled,
-    messageProvider: routine.messageProvider,
-    active: routine.active,
-    runAtLocal: routineNeedsOneShotArm(routine, routine.crons) ? defaultArmRunAtLocal() : "",
-    modelKey:
-      routine.modelProvider && routine.modelId
-        ? modelOptionKey(routine.modelProvider, routine.modelId)
-        : "",
-    thinkingLevel: routine.thinkingLevel ?? "",
-    watch: watchDraftFromRoutine(routine.watch),
-  };
-}
-
-export function routineTriggerSummary(
-  routine: Routine,
-  labels: CronLabels = ENGLISH_CRON_LABELS,
-): string {
-  if (!routine.active) return t`Paused`;
-  const parts: string[] = [];
-  if (routine.webhookEnabled) parts.push(t`When a webhook fires`);
-  if (routine.githubEnabled) parts.push(t`Git event`);
-  if (routine.messageProvider === "slack") parts.push(t`Slack message`);
-  else if (routine.messageProvider === "teams") parts.push(t`Teams message`);
-  else if (routine.messageProvider) parts.push(t`Message event`);
-  for (const cron of routine.crons) parts.push(formatCron(cron, labels));
-  if (routine.watch) parts.push(t`When something changes`);
-  return parts.length > 0 ? parts.join(", ") : t`No trigger`;
-}
-
-export function RoutineList({
-  routines,
-  runningRoutineId,
-  onCreate,
-  onEdit,
-  onStop,
-}: {
-  routines: Routine[];
-  runningRoutineId?: string;
-  onCreate: () => void;
-  onEdit: (routine: Routine) => void;
-  onStop: () => void;
-}) {
-  const { t } = useLingui();
-  return (
-    <div>
-      <div className="mb-2 flex justify-end">
-        <Button
-          variant="secondary"
-          size="icon-sm"
-          data-testid="routine-create-button"
-          aria-label={t`Create Routine`}
-          title={t`Create Routine`}
-          onClick={onCreate}
-        >
-          <Plus strokeWidth={1.9} />
-        </Button>
-      </div>
-      {routines.map((routine) => (
-        <RoutineListRow
-          key={routine.id}
-          routine={routine}
-          running={runningRoutineId === routine.id}
-          onOpen={() => onEdit(routine)}
-          onStop={onStop}
-        />
-      ))}
-    </div>
-  );
-}
-
-function RoutineListRow({
-  routine,
-  running,
-  onOpen,
-  onStop,
-}: {
-  routine: Routine;
-  running: boolean;
-  onOpen: () => void;
-  onStop: () => void;
-}) {
-  const { i18n } = useLingui();
-  const scheduleLabels = cronLabels(i18n.locale);
-  return (
-    <div className="flex w-full items-center gap-2 rounded-xl px-2.5 py-2.5 hover:bg-accent">
-      <button
-        type="button"
-        onClick={onOpen}
-        className="flex min-w-0 flex-1 items-center gap-3 text-start"
-      >
-        <span className="grid h-5 w-5 place-items-center">
-          {routine.active ? (
-            <Clock size={16} strokeWidth={1.6} className="text-success" aria-hidden />
-          ) : (
-            <Pause size={14} className="text-muted-foreground" />
-          )}
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-[14.5px] font-medium text-foreground" dir="auto">
-            {routine.name}
-          </span>
-          <span className="flex min-w-0 gap-2 text-[12.5px] text-muted-foreground/80">
-            <span className="truncate">{routineTriggerSummary(routine, scheduleLabels)}</span>
-            {routine.modelProvider && routine.modelId ? (
-              <span className="truncate">{routine.modelId}</span>
-            ) : null}
-          </span>
-        </span>
-      </button>
-      {running ? (
-        <>
-          <span className="shrink-0 text-[12.5px] text-warning">
-            <Trans>Running</Trans>
-          </span>
-          <Button
-            size="xs"
-            onClick={onStop}
-            className="shrink-0 bg-warning/15 text-warning hover:bg-warning/25"
-          >
-            <Trans>Stop</Trans>
-          </Button>
-        </>
-      ) : null}
-    </div>
-  );
-}
+import { AddTriggerMenu } from "./routine-editor/add-trigger-menu";
+import { RoutineModelSettings } from "./routine-editor/model-settings";
+import {
+  EmailTriggerCard,
+  InboundTriggerCard,
+  MessageTriggerCard,
+  WatchTriggerCard,
+} from "./routine-editor/trigger-cards";
 
 export function RoutineEditor({
+  bot,
   draft,
   onChange,
   editing,
@@ -349,7 +38,10 @@ export function RoutineEditor({
   onTestRun,
   onDelete,
   onEnsureWebhook,
+  onRevealWebhook,
+  onHideWebhook,
 }: {
+  bot: { id: string; name: string };
   draft: RoutineDraftState;
   onChange: (next: RoutineDraftState) => void;
   editing: Routine | null;
@@ -366,9 +58,14 @@ export function RoutineEditor({
   onTestRun: () => void;
   onDelete: () => void;
   onEnsureWebhook: () => Promise<void>;
+  onRevealWebhook: () => Promise<void>;
+  onHideWebhook: () => void;
 }) {
   const { t } = useLingui();
   const fieldId = useId();
+  const { withIdentityConfirmation, identityDialog } = useIdentityConfirmation();
+  // Closing the confirmation is a choice, and other failures show as the editor's error.
+  const revealWebhook = () => void withIdentityConfirmation(onRevealWebhook).catch(() => undefined);
   const queries = useSpaceQueries();
   const scheduleStatus = useQuery({
     ...queries.routines.list.queryOptions({ input: { botId: editing?.botId ?? "" } }),
@@ -376,75 +73,23 @@ export function RoutineEditor({
     refetchInterval: 15_000,
     select: (routines) => routines.find((routine) => routine.id === editing?.id) ?? null,
   });
+  // Null when this server receives no email or the bot is another member's, which hides the trigger.
+  const email = useQuery(queries.bots.emailAddress.queryOptions({ input: { botId: bot.id } })).data;
   const scheduleDelayed =
     !scheduleStatus.isError &&
     (scheduleStatus.data === undefined
       ? editing?.scheduleDelayed
       : scheduleStatus.data?.scheduleDelayed);
-  const [credentials, setCredentials] = useState<ModelCredential[]>([]);
-  const [catalog, setCatalog] = useState<ModelCatalogEntry[]>([]);
-  useEffect(() => {
-    void Promise.all([rpc.models.credentials(), rpc.models.list()])
-      .then(([nextCredentials, nextCatalog]) => {
-        setCredentials(nextCredentials);
-        setCatalog(nextCatalog);
-      })
-      .catch(() => undefined);
-  }, []);
-  const modelOptions = connectedModelOptions(credentials, catalog);
-  const selectedModel = draft.modelKey ? parseModelOptionKey(draft.modelKey) : null;
-  const selectedEntry = selectedModel
-    ? catalog.find(
-        (entry) => entry.provider === selectedModel.provider && entry.id === selectedModel.modelId,
-      )
-    : undefined;
-  const selectedCredential = credentialForModel(
-    credentials,
-    selectedModel?.provider,
-    selectedModel?.modelId,
-  );
-  const thinkingOptions = (
-    selectedCredential?.thinkingLevels ??
-    selectedEntry?.thinkingLevels ??
-    []
-  ).filter((level) => level !== "off");
-  const defaultThinkingLevel = selectedCredential?.thinkingLevel ?? "medium";
-  const slackAvailable = messageProviders.includes("slack");
-  const slackDisabledReasonId = `${fieldId}-slack-disabled-reason`;
   const hasTriggers =
     draft.schedules.length > 0 ||
     draft.webhookEnabled ||
     draft.githubEnabled ||
     Boolean(draft.messageProvider) ||
+    Boolean(draft.emailSenders) ||
     Boolean(draft.watch);
   const canTest = Boolean(editing) && !saving && !running;
   const needsOneShotArm =
     editing != null && routineNeedsOneShotArm(editing, draft.schedules.map(cronFromPreset));
-
-  function addSchedule(freq: CronFreq) {
-    const base = defaultCronPreset();
-    const next: CronPreset =
-      freq === "Advanced" ? { ...base, freq, cron: cronFromPreset(base) } : { ...base, freq };
-    onChange({ ...draft, schedules: [...draft.schedules, next] });
-  }
-
-  async function addWebhook() {
-    onChange({ ...draft, webhookEnabled: true });
-    if (!webhook.configured) {
-      await onEnsureWebhook().catch(() => undefined);
-    }
-  }
-
-  async function addGithub() {
-    onChange({ ...draft, githubEnabled: true });
-    if (!webhook.configured) {
-      await onEnsureWebhook().catch(() => undefined);
-    }
-  }
-
-  function addMessageProvider(provider: string) {
-    onChange({ ...draft, messageProvider: provider });
-  }
 
   return (
     <div>
@@ -458,7 +103,7 @@ export function RoutineEditor({
         >
           <ChevronLeft />
         </Button>
-        <div className="text-[15.5px] font-medium text-foreground">
+        <div className="text-body-lg font-medium text-foreground">
           <Trans>Routine</Trans>
         </div>
         <Button
@@ -475,7 +120,7 @@ export function RoutineEditor({
       <div className="mb-5 flex items-center justify-between gap-3">
         <label
           htmlFor={`${fieldId}-active`}
-          className="flex items-center gap-2.5 text-sm text-foreground/75"
+          className="flex items-center gap-2.5 text-body text-foreground/75"
         >
           <Switch
             id={`${fieldId}-active`}
@@ -485,22 +130,25 @@ export function RoutineEditor({
           <Trans>Active</Trans>
         </label>
         <div className="flex items-center gap-2">
-          <Button variant="secondary" disabled={saving || running} onClick={onDelete}>
-            <Trans>Delete</Trans>
-          </Button>
+          {/* A draft is discarded by going back; only a saved routine can be deleted. */}
+          {editing ? (
+            <Button variant="secondary" disabled={saving || running} onClick={onDelete}>
+              <Trans>Delete</Trans>
+            </Button>
+          ) : null}
           <Button variant="secondary" disabled={!canTest} onClick={onTestRun}>
-            {running ? t`Running…` : t`Test run`}
+            {running ? t`Running…` : t`Run now`}
           </Button>
         </div>
       </div>
 
       {draft.active && scheduleDelayed ? (
-        <p role="status" className="mb-5 text-sm text-warning">
+        <p role="status" className="mb-5 text-body text-warning">
           <Trans>Schedule delayed</Trans>
         </p>
       ) : null}
 
-      <label htmlFor={`${fieldId}-name`} className="block text-sm text-muted-foreground">
+      <label htmlFor={`${fieldId}-name`} className="block text-body text-muted-foreground">
         <Trans>Name</Trans>
         <Input
           id={`${fieldId}-name`}
@@ -511,7 +159,7 @@ export function RoutineEditor({
         />
       </label>
 
-      <label htmlFor={`${fieldId}-prompt`} className="mt-5 block text-sm text-muted-foreground">
+      <label htmlFor={`${fieldId}-prompt`} className="mt-5 block text-body text-muted-foreground">
         <Trans>Instruction</Trans>
         <Textarea
           id={`${fieldId}-prompt`}
@@ -523,110 +171,28 @@ export function RoutineEditor({
         />
       </label>
 
-      <div className="mt-5 text-sm text-muted-foreground">
-        <div className="flex items-baseline gap-2">
+      <div className="mt-5 text-body text-muted-foreground">
+        <div className="flex items-center gap-2">
           <Trans>When to run</Trans>
-          <span className="text-xs text-muted-foreground/70">{timezone}</span>
-          <Popover>
-            <PopoverTrigger
-              render={
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  className="relative ml-auto text-muted-foreground"
-                  aria-label={t`Advanced`}
-                  title={t`Advanced`}
-                />
-              }
-            >
-              <SlidersHorizontal />
-              {draft.modelKey ? (
-                <span
-                  aria-hidden
-                  className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-muted-foreground"
-                />
-              ) : null}
-            </PopoverTrigger>
-            <PopoverContent align="end" className="w-96 max-w-[calc(100vw-2rem)] p-4">
-              <label htmlFor={`${fieldId}-model`} className="block text-sm text-muted-foreground">
-                <Trans>Model</Trans>
-                <NativeSelect
-                  id={`${fieldId}-model`}
-                  className="mt-2 w-full"
-                  value={draft.modelKey}
-                  onChange={(event) =>
-                    onChange({ ...draft, modelKey: event.target.value, thinkingLevel: "" })
-                  }
-                >
-                  <NativeSelectOption value="">{t`Bot's model`}</NativeSelectOption>
-                  {draft.modelKey &&
-                  !modelOptions.some((option) => option.key === draft.modelKey) ? (
-                    <NativeSelectOption value={draft.modelKey}>
-                      {selectedModel?.modelId ?? draft.modelKey}
-                    </NativeSelectOption>
-                  ) : null}
-                  {modelOptions.map((option) => (
-                    <NativeSelectOption key={option.key} value={option.key}>
-                      {option.label}
-                    </NativeSelectOption>
-                  ))}
-                </NativeSelect>
-              </label>
-
-              {thinkingOptions.length ? (
-                <label
-                  htmlFor={`${fieldId}-thinking`}
-                  className="mt-5 block text-sm text-muted-foreground"
-                >
-                  <Trans>Thinking</Trans>
-                  <NativeSelect
-                    id={`${fieldId}-thinking`}
-                    className="mt-2 w-full"
-                    value={draft.thinkingLevel}
-                    onChange={(event) => onChange({ ...draft, thinkingLevel: event.target.value })}
-                  >
-                    <NativeSelectOption value="">
-                      {t`Default (${thinkingLevelLabel(defaultThinkingLevel)})`}
-                    </NativeSelectOption>
-                    {thinkingOptions.map((level) => (
-                      <NativeSelectOption key={level} value={level}>
-                        {thinkingLevelLabel(level)}
-                      </NativeSelectOption>
-                    ))}
-                  </NativeSelect>
-                </label>
-              ) : null}
-            </PopoverContent>
-          </Popover>
+          <span className="text-label text-muted-foreground/70">{timezone}</span>
+          <RoutineModelSettings draft={draft} onChange={onChange} fieldId={fieldId} />
         </div>
 
         <div className="mt-2 space-y-2">
           {draft.schedules.map((preset, index) => (
-            <div key={index} className="relative">
-              <RoutineSchedule
-                value={preset}
-                onChange={(next) =>
-                  onChange({
-                    ...draft,
-                    schedules: draft.schedules.map((item, i) => (i === index ? next : item)),
-                  })
-                }
-              />
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                aria-label={t`Remove schedule`}
-                onClick={() =>
-                  onChange({
-                    ...draft,
-                    schedules: draft.schedules.filter((_, i) => i !== index),
-                  })
-                }
-                className="absolute top-2 right-2 text-muted-foreground"
-              >
-                <X />
-              </Button>
-            </div>
+            <RoutineSchedule
+              key={index}
+              value={preset}
+              onChange={(next) =>
+                onChange({
+                  ...draft,
+                  schedules: draft.schedules.map((item, i) => (i === index ? next : item)),
+                })
+              }
+              onRemove={() =>
+                onChange({ ...draft, schedules: draft.schedules.filter((_, i) => i !== index) })
+              }
+            />
           ))}
 
           {draft.webhookEnabled ? (
@@ -638,6 +204,8 @@ export function RoutineEditor({
               configured={webhook.configured}
               onRemove={() => onChange({ ...draft, webhookEnabled: false })}
               onRotate={() => void onEnsureWebhook()}
+              onReveal={revealWebhook}
+              onHide={onHideWebhook}
             />
           ) : null}
 
@@ -650,6 +218,8 @@ export function RoutineEditor({
               configured={webhook.configured}
               onRemove={() => onChange({ ...draft, githubEnabled: false })}
               onRotate={() => void onEnsureWebhook()}
+              onReveal={revealWebhook}
+              onHide={onHideWebhook}
             />
           ) : null}
 
@@ -669,8 +239,21 @@ export function RoutineEditor({
             />
           ) : null}
 
+          {/* Shown without email too, so a server that stopped receiving mail still lets it go. */}
+          {draft.emailSenders ? (
+            <EmailTriggerCard
+              key={bot.id}
+              bot={bot}
+              domain={email?.domain ?? null}
+              address={email?.address ?? null}
+              senders={draft.emailSenders}
+              onChange={(emailSenders) => onChange({ ...draft, emailSenders })}
+              onRemove={() => onChange({ ...draft, emailSenders: null })}
+            />
+          ) : null}
+
           {needsOneShotArm ? (
-            <label htmlFor={`${fieldId}-run-at`} className="block text-sm text-muted-foreground">
+            <label htmlFor={`${fieldId}-run-at`} className="block text-body text-muted-foreground">
               <Trans>Run at</Trans>
               <Input
                 id={`${fieldId}-run-at`}
@@ -684,69 +267,15 @@ export function RoutineEditor({
           ) : null}
         </div>
 
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            render={<Button variant="outline" className="mt-2 h-auto w-full rounded-xl py-3" />}
-          >
-            <Plus />
-            <Trans>Add trigger</Trans>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent side="top">
-            <DropdownMenuSub>
-              <DropdownMenuSubTrigger disabled={Boolean(draft.watch)}>
-                <Clock />
-                <Trans>On a schedule</Trans>
-              </DropdownMenuSubTrigger>
-              <DropdownMenuSubContent className="min-w-[170px]">
-                {SCHEDULE_PRESETS.map((freq) => (
-                  <DropdownMenuItem key={freq} onClick={() => addSchedule(freq)}>
-                    {schedulePresetLabel(freq)}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuSubContent>
-            </DropdownMenuSub>
-
-            <span className="block" title={slackAvailable ? undefined : t`Slack not enabled`}>
-              <DropdownMenuItem
-                disabled={draft.messageProvider === "slack" || !slackAvailable}
-                aria-describedby={slackAvailable ? undefined : slackDisabledReasonId}
-                onClick={() => addMessageProvider("slack")}
-              >
-                <MessageSquare />
-                <Trans>Slack message</Trans>
-              </DropdownMenuItem>
-              {!slackAvailable ? (
-                <span id={slackDisabledReasonId} className="sr-only">
-                  <Trans>Slack not enabled</Trans>
-                </span>
-              ) : null}
-            </span>
-
-            <DropdownMenuItem
-              disabled={Boolean(draft.watch) || draft.schedules.length > 0}
-              onClick={() => onChange({ ...draft, watch: emptyWatchDraft() })}
-            >
-              <Eye />
-              <Trans>When something changes</Trans>
-            </DropdownMenuItem>
-
-            <DropdownMenuItem disabled={draft.githubEnabled} onClick={() => void addGithub()}>
-              <GitBranch />
-              <Trans>Git event</Trans>
-            </DropdownMenuItem>
-
-            <DropdownMenuItem disabled={draft.webhookEnabled} onClick={() => void addWebhook()}>
-              <Globe />
-              <Trans>Webhook</Trans>
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-
-        {!hasTriggers ? (
-          <p className="mt-2 text-xs text-muted-foreground/70">
-            <Trans>Add a trigger to run this routine.</Trans>
-          </p>
-        ) : null}
+        <AddTriggerMenu
+          draft={draft}
+          onChange={onChange}
+          fieldId={fieldId}
+          messageProviders={messageProviders}
+          emailAvailable={Boolean(email)}
+          webhookConfigured={webhook.configured}
+          onEnsureWebhook={onEnsureWebhook}
+        />
       </div>
 
       <div className="mt-5">
@@ -755,302 +284,13 @@ export function RoutineEditor({
         </Button>
       </div>
       {error ? (
-        <p role="alert" className="mt-3 text-[13px] text-destructive">
+        <p role="alert" className="mt-3 text-body-sm text-destructive">
           {error}
         </p>
       ) : null}
 
       {editing ? <RoutineRunHistory key={editing.id} routineId={editing.id} /> : null}
+      {identityDialog}
     </div>
   );
-}
-
-function WatchTriggerCard({
-  watch,
-  state,
-  onChange,
-  onRemove,
-}: {
-  watch: RoutineWatchDraft;
-  state: Routine["watchState"];
-  onChange: (watch: RoutineWatchDraft) => void;
-  onRemove: () => void;
-}) {
-  const { t } = useLingui();
-  const id = useId();
-  const status = !state
-    ? null
-    : state.outcome === "failed"
-      ? t`Check failed: ${state.detail ?? ""}`
-      : state.outcome === "changed"
-        ? t`Last check ${new Date(state.checkedAt).toLocaleString()}: changed`
-        : t`Last check ${new Date(state.checkedAt).toLocaleString()}: no changes`;
-  return (
-    <div className="rounded-xl border border-border p-3" data-testid="routine-watch-card">
-      <div className="flex items-center gap-2.5 px-0.5">
-        <Eye size={16} strokeWidth={1.6} className="text-muted-foreground" aria-hidden />
-        <span className="flex-1 text-[14.5px] text-foreground">
-          <Trans>When something changes</Trans>
-        </span>
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          aria-label={t`Remove change trigger`}
-          onClick={onRemove}
-          className="text-muted-foreground"
-        >
-          <X />
-        </Button>
-      </div>
-      <div className="mt-3 space-y-3">
-        <NativeSelect
-          size="sm"
-          aria-label={t`What to watch`}
-          value={watch.kind}
-          onChange={(event) =>
-            onChange({ ...watch, kind: event.target.value as RoutineWatchDraft["kind"] })
-          }
-        >
-          <NativeSelectOption value="files">{t`Files or folders on the computer`}</NativeSelectOption>
-          <NativeSelectOption value="command">{t`A command's output`}</NativeSelectOption>
-          <NativeSelectOption value="tool">{t`An integration tool`}</NativeSelectOption>
-        </NativeSelect>
-        {watch.kind === "files" ? (
-          <Textarea
-            aria-label={t`Files or folders, one per line`}
-            placeholder={"inbox/\nreports/latest.csv"}
-            value={watch.paths}
-            onChange={(e) => onChange({ ...watch, paths: e.target.value })}
-            rows={3}
-          />
-        ) : null}
-        {watch.kind === "command" ? (
-          <Input
-            aria-label={t`Command`}
-            placeholder="curl -s https://example.com/status"
-            value={watch.command}
-            onChange={(e) => onChange({ ...watch, command: e.target.value })}
-            className="font-mono text-[13px]"
-          />
-        ) : null}
-        {watch.kind === "tool" ? (
-          <>
-            <Input
-              aria-label={t`Tool name`}
-              placeholder="brain_changed"
-              value={watch.tool}
-              onChange={(e) => onChange({ ...watch, tool: e.target.value })}
-              className="font-mono text-[13px]"
-            />
-            <Textarea
-              aria-label={t`Tool arguments (JSON)`}
-              value={watch.args}
-              onChange={(e) => onChange({ ...watch, args: e.target.value })}
-              rows={2}
-              className="font-mono text-[13px]"
-            />
-          </>
-        ) : null}
-        {watch.kind !== "files" ? (
-          <Input
-            aria-label={t`Fields that mark a change`}
-            placeholder={t`Fields to compare, e.g. id, modifiedTime (optional)`}
-            value={watch.track}
-            onChange={(e) => onChange({ ...watch, track: e.target.value })}
-            className="font-mono text-[13px]"
-          />
-        ) : null}
-        <label
-          htmlFor={`${id}-every`}
-          className="flex items-center gap-2 text-[13.5px] text-muted-foreground"
-        >
-          <Trans>Check every</Trans>
-          <Input
-            id={`${id}-every`}
-            type="number"
-            min={ROUTINE_WATCH_MIN_MINUTES}
-            max={1440}
-            value={watch.everyMinutes || ""}
-            onChange={(e) =>
-              onChange({
-                ...watch,
-                everyMinutes: Number(e.target.value),
-              })
-            }
-            onBlur={() =>
-              onChange({
-                ...watch,
-                everyMinutes: Math.min(
-                  1440,
-                  Math.max(ROUTINE_WATCH_MIN_MINUTES, Math.round(watch.everyMinutes)),
-                ),
-              })
-            }
-            className="h-8 w-20"
-          />
-          <Trans>minutes</Trans>
-        </label>
-        <label
-          htmlFor={`${id}-loud`}
-          className="flex items-center gap-2 text-[13.5px] text-muted-foreground"
-        >
-          <Switch
-            id={`${id}-loud`}
-            checked={watch.loud}
-            onCheckedChange={(loud) => onChange({ ...watch, loud })}
-          />
-          <Trans>Post "No changes" in chat</Trans>
-        </label>
-        {status ? (
-          <p
-            data-testid="routine-watch-status"
-            className={`text-[12.5px] ${state?.outcome === "failed" ? "text-destructive" : "text-muted-foreground/80"}`}
-          >
-            {status}
-          </p>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
-function MessageTriggerCard({ provider, onRemove }: { provider: string; onRemove: () => void }) {
-  const { t } = useLingui();
-  const label =
-    provider === "slack"
-      ? t`Slack message`
-      : provider === "teams"
-        ? t`Teams message`
-        : t`Message event`;
-  return (
-    <div className="rounded-xl border border-border p-3">
-      <div className="flex items-center gap-2.5 px-0.5">
-        <MessageSquare size={16} strokeWidth={1.6} className="text-muted-foreground" aria-hidden />
-        <span className="flex-1 text-[14.5px] text-foreground">{label}</span>
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          aria-label={t`Remove message trigger`}
-          onClick={onRemove}
-          className="text-muted-foreground"
-        >
-          <X />
-        </Button>
-      </div>
-      <p className="mt-2.5 text-[13.5px] text-muted-foreground/70">
-        <Trans>Runs when this bot receives a verified message from this provider.</Trans>
-      </p>
-    </div>
-  );
-}
-
-function InboundTriggerCard({
-  kind,
-  saved,
-  path,
-  secret,
-  configured,
-  onRemove,
-  onRotate,
-}: {
-  kind: "webhook" | "github";
-  saved: boolean;
-  path: string;
-  secret: string | null;
-  configured: boolean;
-  onRemove: () => void;
-  onRotate: () => void;
-}) {
-  const { t } = useLingui();
-  const pending = !saved;
-  const placeholder = t`Available after the routine is saved`;
-  // GitHub delivery URL and signature header are fixed by bot id / protocol, so show
-  // them before save. The shared secret still needs a saved routine to mint.
-  const postValue = kind === "github" || !pending ? path : placeholder;
-  const keyValue = pending
-    ? placeholder
-    : (secret ?? (configured ? t`Saved. Rotate to reveal.` : placeholder));
-  const headerValue =
-    kind === "github"
-      ? "X-Hub-Signature-256: sha256=…"
-      : pending
-        ? placeholder
-        : secret
-          ? `Authorization: Bearer ${secret}`
-          : configured
-            ? "Authorization: Bearer …"
-            : placeholder;
-  const cellClass =
-    "break-all rounded-lg bg-muted px-2.5 py-1.5 font-mono text-xs text-foreground/75";
-
-  return (
-    <div className="rounded-xl border border-border p-3">
-      <div className="flex items-center gap-2.5 px-0.5">
-        {kind === "github" ? (
-          <GitBranch size={16} strokeWidth={1.6} className="text-muted-foreground" aria-hidden />
-        ) : (
-          <Globe size={16} strokeWidth={1.6} className="text-muted-foreground" aria-hidden />
-        )}
-        <span className="flex-1 text-[14.5px] text-foreground">
-          {kind === "github" ? <Trans>Git event</Trans> : <Trans>When a webhook fires</Trans>}
-        </span>
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          aria-label={kind === "github" ? t`Remove Git event` : t`Remove webhook`}
-          onClick={onRemove}
-          className="text-muted-foreground"
-        >
-          <X />
-        </Button>
-      </div>
-      <div className="mt-2.5 space-y-2.5 text-[13.5px]">
-        <div className="block text-muted-foreground/70">
-          <Trans>POST to</Trans>
-          <div className={`mt-1 ${cellClass}`}>{postValue}</div>
-        </div>
-        <div className="flex items-center gap-2 text-muted-foreground/70">
-          <span className="shrink-0">
-            <Trans>key</Trans>
-          </span>
-          <div className={`min-w-0 flex-1 ${cellClass}`}>{keyValue}</div>
-        </div>
-        <div className="block text-muted-foreground/70">
-          <Trans>header</Trans>
-          <div className={`mt-1 ${cellClass}`}>{headerValue}</div>
-        </div>
-        {saved && configured && !secret ? (
-          <Button
-            variant="link"
-            size="xs"
-            onClick={onRotate}
-            className="px-0 text-muted-foreground"
-          >
-            <Trans>Rotate key</Trans>
-          </Button>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
-function schedulePresetLabel(freq: CronFreq): string {
-  switch (freq) {
-    case "Every hour":
-      return t`Every hour`;
-    case "Every day":
-      return t`Every day`;
-    case "Weekdays":
-      return t`Weekdays`;
-    case "Every week":
-      return t`Every week`;
-    case "Every month":
-      return t`Every month`;
-    case "Interval":
-      return t`Interval`;
-    case "Advanced":
-      return t`Advanced...`;
-    default:
-      return freq;
-  }
 }

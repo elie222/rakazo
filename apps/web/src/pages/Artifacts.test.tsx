@@ -44,10 +44,54 @@ vi.mock("@rakazo/ui-web", () => {
     BotAvatar: () => <span />,
     Spinner: (props: ComponentProps<"svg">) => <svg role="status" {...props} />,
     Button: (props: ComponentProps<"button">) => <button {...props} />,
+    buttonVariants: () => "",
+    Empty: Container,
+    EmptyDescription: Container,
+    EmptyHeader: Container,
+    EmptyMedia: Container,
+    EmptyTitle: Container,
+    ListSearchInput: ({
+      query,
+      setQuery,
+      label,
+    }: {
+      query: string;
+      setQuery: (query: string) => void;
+      label: string;
+    }) => (
+      <input aria-label={label} value={query} onChange={(event) => setQuery(event.target.value)} />
+    ),
     NativeSelect: (props: ComponentProps<"select">) => <select {...props} />,
     NativeSelectOption: (props: ComponentProps<"option">) => <option {...props} />,
-    parseBotAvatar: () => ({ color: undefined }),
-    resolvePersonaColorDef: () => ({ hex: "#000000" }),
+    OptionSelect: ({
+      options,
+      value,
+      onValueChange,
+      "aria-label": label,
+    }: {
+      options: { value: string; label: string }[];
+      value: string;
+      onValueChange: (value: string) => void;
+      "aria-label": string;
+    }) => (
+      <select
+        aria-label={label}
+        value={value}
+        onChange={(event) => onValueChange(event.target.value)}
+      >
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    ),
+    Select: Container,
+    SelectContent: Container,
+    SelectGroup: Container,
+    SelectItem: Container,
+    SelectTrigger: Container,
+    SelectValue: () => null,
     ToggleGroup: Container,
     ToggleGroupItem: Container,
     Tooltip: Container,
@@ -75,7 +119,7 @@ function artifact(name: string, id: string, createdAt = new Date().toISOString()
 }
 
 function typeSearch(container: HTMLElement, value: string) {
-  const input = container.querySelector("input[type='search']");
+  const input = container.querySelector("input[aria-label='Search artifacts']");
   if (!(input instanceof HTMLInputElement)) throw new Error("missing search input");
   const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
   setter?.call(input, value);
@@ -101,7 +145,11 @@ async function renderArtifacts() {
     ),
   );
   // Let query results reach the screen.
-  await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+  if (vi.isFakeTimers()) {
+    await act(async () => vi.advanceTimersByTimeAsync(0));
+  } else {
+    await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+  }
   return {
     container,
     async cleanup() {
@@ -121,7 +169,7 @@ it("opens the Artifacts screen and lists what listSpace returns", async () => {
   try {
     expect(page.container.textContent).toContain("Artifacts");
     expect(page.container.textContent).toContain("Q3 Content Calendar");
-    expect(page.container.querySelector("a[href='/app']")?.textContent).toContain("Bots");
+    expect(page.container.querySelector("a[href='/app']")?.getAttribute("aria-label")).toBe("Back");
     expect(page.container.querySelector("[data-testid='app-rail']")).toBeNull();
   } finally {
     await page.cleanup();
@@ -140,12 +188,10 @@ it("keeps loading later pages when search hides the current snapshot", async () 
   const page = await renderArtifacts();
   try {
     expect(page.container.textContent).toContain("Alpha notes");
-    const filters = [...page.container.querySelectorAll("button")].find((button) =>
-      button.textContent?.includes("Filters"),
-    );
-    expect(filters).toBeTruthy();
+    const search = page.container.querySelector<HTMLButtonElement>('button[aria-label="Search"]');
+    expect(search).toBeTruthy();
     await act(async () => {
-      filters?.click();
+      search?.click();
     });
     await act(async () => {
       typeSearch(page.container, "Beta");
@@ -184,11 +230,8 @@ it("still offers Load more when filters match nothing on the loaded page", async
   });
   const page = await renderArtifacts();
   try {
-    const filters = [...page.container.querySelectorAll("button")].find((button) =>
-      button.textContent?.includes("Filters"),
-    );
     await act(async () => {
-      filters?.click();
+      page.container.querySelector<HTMLButtonElement>('button[aria-label="Search"]')?.click();
     });
     await act(async () => {
       typeSearch(page.container, "Beta");
@@ -241,6 +284,46 @@ it("reopens with cached artifacts and refreshes them in the background", async (
     });
   } finally {
     await page.cleanup();
+    vi.unstubAllGlobals();
+  }
+});
+
+it.each([
+  ["today", new Date(2026, 10, 12, 23, 59, 59)],
+  ["week", new Date(2026, 10, 14, 23, 59, 59)],
+  ["month", new Date(2026, 10, 30, 23, 59, 59)],
+])("refreshes the %s filter at the local calendar boundary", async (filter, before) => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.useFakeTimers();
+  vi.setSystemTime(before);
+  api.listSpace.mockResolvedValue({
+    items: [artifact("Previous period file", "old", before.toISOString())],
+    nextCursor: null,
+  });
+  const page = await renderArtifacts();
+  try {
+    const select = page.container.querySelector<HTMLSelectElement>(
+      'select[aria-label="Filter by date"]',
+    );
+    expect(select).not.toBeNull();
+    await act(async () => {
+      if (select) select.value = filter;
+      select?.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(page.container.textContent).toContain("Previous period file");
+    await act(async () => vi.advanceTimersByTimeAsync(999));
+    expect(page.container.textContent).toContain("Previous period file");
+    await act(async () => vi.advanceTimersByTimeAsync(1));
+    expect(page.container.textContent).not.toContain("Previous period file");
+    await act(async () => {
+      if (select) select.value = "all";
+      select?.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(page.container.textContent).toContain("Previous period file");
+  } finally {
+    await page.cleanup();
+    queryClient.clear();
+    vi.useRealTimers();
     vi.unstubAllGlobals();
   }
 });

@@ -1,7 +1,11 @@
 import type { LoginFieldInput } from "@rakazo/contracts";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { hapticSuccess } from "./haptics";
 import type { ThreadAnswerContext } from "./thread-answer";
 import { answerThreadMessage } from "./thread-answer";
+
+vi.mock("./haptics", () => ({ hapticSuccess: vi.fn() }));
+beforeEach(() => vi.clearAllMocks());
 
 function setup(refresh: () => Promise<void>, overrides: Partial<ThreadAnswerContext> = {}) {
   const rpc = vi.fn(async (_proc: string, _body: Record<string, unknown>) => undefined as unknown);
@@ -11,6 +15,7 @@ function setup(refresh: () => Promise<void>, overrides: Partial<ThreadAnswerCont
     groupId: undefined,
     readOnly: false,
     isCurrentTarget: () => true,
+    isFocused: () => true,
     ...spies,
     ...overrides,
   };
@@ -48,6 +53,7 @@ describe("mobile ask answers", () => {
     // Saved to the Vault unless the person turned that off.
     expect(h.rpc.mock.lastCall![1]).not.toHaveProperty("remember");
     expect(h.refresh).toHaveBeenCalledTimes(1);
+    expect(hapticSuccess).toHaveBeenCalledTimes(1);
   });
 
   it("sends remember false for a login used for this run only", async () => {
@@ -106,13 +112,35 @@ describe("mobile ask answers", () => {
     h.rpc.mockRejectedValueOnce(new Error("offline"));
     await expect(h.answerMessage(message, "example-password")).rejects.toThrow("offline");
     expect(h.refresh).not.toHaveBeenCalled();
+    expect(hapticSuccess).not.toHaveBeenCalled();
   });
+
+  it.each([false, true])(
+    "uses navigation focus at answer completion (%s) while keeping the target refresh",
+    async (focusedAtCompletion) => {
+      let focused = !focusedAtCompletion;
+      let accept!: () => void;
+      const request = new Promise<void>((resolve) => {
+        accept = resolve;
+      });
+      const h = setup(async () => undefined, { isFocused: () => focused });
+      h.rpc.mockReturnValueOnce(request);
+      const saving = h.answerMessage(message, "yes");
+      expect(hapticSuccess).not.toHaveBeenCalled();
+      focused = focusedAtCompletion;
+      accept();
+      await saving;
+      expect(hapticSuccess).toHaveBeenCalledTimes(focusedAtCompletion ? 1 : 0);
+      expect(h.refresh).toHaveBeenCalledOnce();
+    },
+  );
 
   it("skips the refresh after the viewer has moved to another thread", async () => {
     const h = setup(async () => undefined, { isCurrentTarget: () => false });
     await h.answerMessage(message, "yes");
     expect(h.rpc).toHaveBeenCalledTimes(1);
     expect(h.refresh).not.toHaveBeenCalled();
+    expect(hapticSuccess).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -124,5 +152,6 @@ describe("mobile ask answers", () => {
     await h.answerMessage(target, "yes");
     expect(h.rpc).not.toHaveBeenCalled();
     expect(h.markRead).not.toHaveBeenCalled();
+    expect(hapticSuccess).not.toHaveBeenCalled();
   });
 });

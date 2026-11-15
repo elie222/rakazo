@@ -5,14 +5,17 @@ import { openThreadWindow, withLiveStreamingProgress } from "@rakazo/core";
 import { act, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { describe, expect, it, vi } from "vitest";
-import type { MobileSnapshot } from "./api";
 import { rpc } from "./api";
+import type { MobileSnapshot } from "./mobile-types";
 import { ThreadJumpAnchor } from "./thread-jump";
 import { ThreadScrollBehavior } from "./thread-scroll";
 import { reconcileVisibleThreadSnapshot } from "./thread-snapshot";
 import type { PinnedThreadWindow } from "./thread-window";
 import { applyThreadMessageJump } from "./thread-window";
 
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({ rpc: vi.fn() }));
 vi.mock("./integrations-cache", () => ({ isIntegrationsScopeCurrent: () => true }));
 vi.mock("./saved-chats", () => ({ liveSavedChatsScope: async () => ({}) }));

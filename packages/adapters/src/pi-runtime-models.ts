@@ -3,6 +3,7 @@ import type {
   Model,
   Models,
   ModelThinkingLevel,
+  MutableModels,
   ThinkingLevelMap,
 } from "@earendil-works/pi-ai";
 import { clampThinkingLevel } from "@earendil-works/pi-ai";
@@ -11,7 +12,7 @@ import type { AgentRunRequest } from "@rakazo/adapter-kit";
 import { canonicalPiProviderId, usableModelId } from "@rakazo/contracts";
 import { DEFAULT_OPENROUTER_MODEL_ID } from "./deployment-model.js";
 import { PiRuntimeCredentialStore, toOAuthCredential } from "./pi-credentials.js";
-import { liveModelSibling, withLiveImageInput } from "./pi-live-model.js";
+import { liveModelSibling, withLiveImageInput, withModelCapabilities } from "./pi-live-model.js";
 import { registerLocalProvider } from "./pi-local-provider.js";
 import { applyPiModelCompatibility } from "./pi-model-compat.js";
 import { CHATGPT_OAUTH_PROVIDER } from "./pi-oauth.js";
@@ -25,15 +26,19 @@ import {
   REASONING_MODEL_MAX_TOKENS,
   resolveCompletionMaxTokens,
 } from "./pi-runtime-limits.js";
+import { scopedRuntimeModels } from "./pi-runtime-scope.js";
 
 // Built on first use, not at module load: entry points call loadRootEnv() after
 // their imports, and ESM hoists those imports, so module-level env reads here
 // would run before .env is loaded and miss the local provider entirely.
 let catalogModelsCache: Models | undefined;
-function catalogModels(): Models {
-  catalogModelsCache ??= registerOpenAiCompatibleCatalog(
+export function createRuntimeModels(): MutableModels {
+  return registerOpenAiCompatibleCatalog(
     registerLocalProvider(applyPiModelCompatibility(builtinModels())),
   );
+}
+function catalogModels(): Models {
+  catalogModelsCache ??= createRuntimeModels();
   return catalogModelsCache;
 }
 
@@ -91,6 +96,7 @@ export function resolveRuntimeModel(modelConfig: AgentRunRequest["model"]): {
   const credentials = credentialStoreForRequest({ model: modelConfig }, provider);
   const models = modelsForRequest({ model: modelConfig }, provider, credentials);
   let model = models.getModel(provider, modelId);
+  const listed = model !== undefined;
   if (
     provider === "openrouter" &&
     !model &&
@@ -113,6 +119,9 @@ export function resolveRuntimeModel(modelConfig: AgentRunRequest["model"]): {
   }
   if (model && provider === CHATGPT_OAUTH_PROVIDER) {
     model = withLiveImageInput(model, modelConfig.acceptsImages);
+  }
+  if (model && !listed && provider !== OPENAI_COMPATIBLE_PROVIDER_ID) {
+    model = withModelCapabilities(model, modelConfig);
   }
   const apiKey = modelConfig.oauth
     ? undefined
@@ -137,6 +146,7 @@ function credentialStoreForRequest(
     toOAuthCredential(oauth.credential),
     persist ? (next) => persist(next) : undefined,
     oauth.retire,
+    oauth.refresh,
   );
 }
 
@@ -171,7 +181,7 @@ export function modelsForRequest(
       contextWindow: request.model.contextWindow,
     });
   }
-  return catalogModels();
+  return scopedRuntimeModels() ?? catalogModels();
 }
 
 export function modelForCompletion(model: Model<Api>, configuredMaxTokens?: number): Model<Api> {
@@ -228,22 +238,33 @@ export function withOutputBudget(
   };
 }
 
+/** "Unsupported reasoning effort", "invalid reasoning_effort", "reasoning effort is not supported". */
+const UNSUPPORTED_REASONING_EFFORT =
+  /\b(?:unsupported|invalid) reasoning[ _]effort\b|\breasoning[ _]effort\b[^.;:\n]{0,30}?\b(?:not supported|unsupported|invalid)\b/i;
+
 const REASONING_EFFORT_CHOICES =
-  /\breasoning_effort\b[\s\S]{0,120}?\b(?:one of|supported values are)\b([^.}"]*)/i;
+  /\breasoning_effort\b[\s\S]{0,120}?\b(?:one of|supported values)\b\s*(?:are|:)?\s*([^.}"]*)/i;
 
 /**
  * The thinking levels of a model whose endpoint rejected `reasoning_effort` and listed the values
  * it accepts, with the rest mapped out so the request clamps to an accepted one. Off sends no
- * effort when the endpoint refuses the off value. Undefined when the error lists nothing usable.
+ * effort when the endpoint refuses the off value, or refuses an effort without listing any.
+ * Undefined when the error gives nothing usable.
  */
 export function acceptedReasoningEfforts(
   model: Model<Api>,
   errorMessage: string | undefined,
 ): ThinkingLevelMap | undefined {
   const listed = errorMessage?.match(REASONING_EFFORT_CHOICES)?.[1]?.toLowerCase().match(/\w+/g);
-  if (!listed) return undefined;
-  const accepted = new Set(listed);
   const current = model.thinkingLevelMap ?? {};
+  if (!listed) {
+    // Some gateways refuse an effort without naming the accepted ones ("Unsupported reasoning
+    // effort"). The off value is the one a model most often lacks, so off then sends no effort.
+    return typeof current.off === "string" && UNSUPPORTED_REASONING_EFFORT.test(errorMessage ?? "")
+      ? { ...current, off: null }
+      : undefined;
+  }
+  const accepted = new Set(listed);
   const levels: ThinkingLevelMap = {};
   for (const level of ["minimal", "low", "medium", "high", "xhigh", "max"] as const) {
     const effort = current[level] ?? (level === "xhigh" || level === "max" ? null : level);

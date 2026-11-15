@@ -8,7 +8,7 @@ import {
   TICKET_STATUSES,
   TICKET_TITLE_MAX_LENGTH,
 } from "@rakazo/contracts";
-import { isRetryableError, retryDelayMs } from "@rakazo/core";
+import { isRetryableError, reconnectDelayMs, retryDelayMs } from "@rakazo/core";
 import { fetchFresh, writeSaved } from "@rakazo/core/query";
 import {
   Button,
@@ -67,6 +67,7 @@ export function BoardPage() {
         const controller = new AbortController();
         currentController = controller;
         let failure: unknown;
+        let opened = false;
         try {
           const stream = await rpc.boards.subscribe(undefined, {
             signal: controller.signal,
@@ -76,6 +77,7 @@ export function BoardPage() {
           if (!active) return;
           refreshComments();
           setError("");
+          opened = true;
           for await (const event of stream) {
             if (!active) return;
             refreshComments(event.ticketId);
@@ -89,7 +91,10 @@ export function BoardPage() {
         }
         if (!active || !isRetryableError(failure)) return;
         await new Promise<void>((resolve) => {
-          const timer = setTimeout(resolve, retryDelayMs(failure, 1_000));
+          const timer = setTimeout(
+            resolve,
+            opened ? reconnectDelayMs(failure) : retryDelayMs(failure, 1_000),
+          );
           cancelRetry = () => {
             clearTimeout(timer);
             resolve();
@@ -124,7 +129,7 @@ export function BoardPage() {
         </Button>
       </header>
       {error ? (
-        <p role="alert" className="px-4 py-2 text-sm text-destructive">
+        <p role="alert" className="px-4 py-2 text-body text-destructive">
           {error}
         </p>
       ) : null}
@@ -132,7 +137,7 @@ export function BoardPage() {
         <div data-testid="board-columns" className="flex min-h-full gap-3">
           {TICKET_STATUSES.map((status) => (
             <section key={status} className="min-w-40 flex-1 space-y-2">
-              <h2 className="px-1 text-sm font-medium">{statuses[status]}</h2>
+              <h2 className="px-1 text-body font-medium">{statuses[status]}</h2>
               {tickets
                 .filter((ticket) => ticket.status === status)
                 .map((ticket) => (
@@ -143,9 +148,9 @@ export function BoardPage() {
                     className="h-auto w-full flex-col items-start gap-1 whitespace-normal p-3 text-left font-normal"
                     onClick={() => setSelected(ticket)}
                   >
-                    <span className="text-xs text-muted-foreground">{ticket.ref}</span>
+                    <span className="text-label text-muted-foreground">{ticket.ref}</span>
                     <span>{ticket.title}</span>
-                    <span className="text-xs text-muted-foreground">
+                    <span className="text-label text-muted-foreground">
                       {bots.find((bot) => bot.id === ticket.assigneeBotId)?.name}
                     </span>
                   </Button>
@@ -154,7 +159,7 @@ export function BoardPage() {
           ))}
         </div>
         {tickets.length === 0 && !error ? (
-          <p className="pointer-events-none absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">
+          <p className="pointer-events-none absolute inset-0 flex items-center justify-center text-body text-muted-foreground">
             <Trans>No tickets yet</Trans>
           </p>
         ) : null}
@@ -275,7 +280,7 @@ function TicketDialog({
             void save();
           }}
         >
-          <label htmlFor={`${formId}-title`} className="block space-y-1 text-sm">
+          <label htmlFor={`${formId}-title`} className="block space-y-1 text-body">
             <span>
               <Trans>Title</Trans>
             </span>
@@ -287,7 +292,7 @@ function TicketDialog({
               required
             />
           </label>
-          <label htmlFor={`${formId}-description`} className="block space-y-1 text-sm">
+          <label htmlFor={`${formId}-description`} className="block space-y-1 text-body">
             <span>
               <Trans>Description</Trans>
             </span>
@@ -299,7 +304,7 @@ function TicketDialog({
               maxLength={TICKET_DESCRIPTION_MAX_LENGTH}
             />
           </label>
-          <label htmlFor={`${formId}-owner`} className="block space-y-1 text-sm">
+          <label htmlFor={`${formId}-owner`} className="block space-y-1 text-body">
             <span>
               <Trans>Owner</Trans>
             </span>
@@ -318,7 +323,7 @@ function TicketDialog({
             </NativeSelect>
           </label>
           {ticket ? (
-            <label htmlFor={`${formId}-status`} className="block space-y-1 text-sm">
+            <label htmlFor={`${formId}-status`} className="block space-y-1 text-body">
               <span>
                 <Trans>Status</Trans>
               </span>
@@ -336,7 +341,7 @@ function TicketDialog({
               </NativeSelect>
             </label>
           ) : null}
-          <label htmlFor={`${formId}-priority`} className="block space-y-1 text-sm">
+          <label htmlFor={`${formId}-priority`} className="block space-y-1 text-body">
             <span>
               <Trans>Priority</Trans>
             </span>
@@ -362,8 +367,8 @@ function TicketDialog({
         {ticket ? (
           <div data-testid="ticket-comments" className="space-y-3 border-t pt-3">
             {comments.map((row) => (
-              <div key={row.id} className="text-sm">
-                <div className="mb-1 flex items-center justify-between gap-3 text-xs text-muted-foreground">
+              <div key={row.id} className="text-body">
+                <div className="mb-1 flex items-center justify-between gap-3 text-label text-muted-foreground">
                   <span>{row.authorName}</span>
                   <time dateTime={row.createdAt}>{formatRelativeTime(row.createdAt)}</time>
                 </div>
@@ -392,7 +397,7 @@ function TicketDialog({
           </div>
         ) : null}
         {shownError ? (
-          <p role="alert" className="text-sm text-destructive">
+          <p role="alert" className="text-body text-destructive">
             {shownError}
           </p>
         ) : null}

@@ -1,7 +1,6 @@
 import type {
   CapabilityInstall,
   ConnectionCatalogItem,
-  McpServer,
   PluginMarketplaceEntry,
 } from "@rakazo/contracts";
 import { PluginPreviewSchema } from "@rakazo/contracts";
@@ -114,11 +113,6 @@ export function filterPlugins(
       (!category || entry.category === (category === OTHER_PLUGINS ? null : category)) &&
       matchesPluginQuery(entry, query, entry.category ? categoryLabel(entry.category) : ""),
   );
-}
-
-/** Signed in, or answering without a sign-in. */
-export function mcpServerReady(server: McpServer): boolean {
-  return server.oauthStatus === "connected" || server.health.status === "ok";
 }
 
 /** Skills an install added; none when only its connector was added. */

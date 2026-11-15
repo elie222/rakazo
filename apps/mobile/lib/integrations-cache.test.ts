@@ -18,6 +18,9 @@ const state = vi.hoisted(() => ({
   saved: vi.fn(),
   save: vi.fn(),
 }));
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   currentApiBase: () => state.base,
   selectedSpaceId: () => state.space,
@@ -49,7 +52,7 @@ vi.mock("expo-file-system", () => {
     textSync() {
       return state.files.get(this.uri);
     }
-    write(value: string) {
+    writeSync(value: string) {
       state.files.set(this.uri, value);
     }
   }

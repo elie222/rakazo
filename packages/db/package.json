@@ -25,12 +25,12 @@
     "@rakazo/core": "workspace:*",
     "@rakazo/logging": "workspace:*",
     "pg": "8.23.1",
-    "dotenv": "17.4.2"
+    "dotenv": "17.4.2",
+    "prisma": "7.10.1"
   },
   "devDependencies": {
     "@types/pg": "8.23.1",
-    "prisma": "7.10.1",
     "typescript": "7.0.2",
-    "vitest": "4.1.12"
+    "vitest": "5.1.0"
   }
 }

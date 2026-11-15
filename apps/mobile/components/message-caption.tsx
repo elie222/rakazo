@@ -2,22 +2,25 @@ import { ChatMarkdown, LinkifiedText } from "@rakazo/chat-ui/native";
 import { splitMentionText } from "@rakazo/core";
 import type { ColorTokens, ResolvedAppearance } from "@rakazo/ui-tokens";
 import { useContext } from "react";
-import type { MobileMessage } from "../lib/api";
 import {
   MessageMentionsContext,
   OpenPageContext,
   UserMentionsContext,
 } from "../lib/message-mentions";
+import type { MobileMessage } from "../lib/mobile-types";
 import { UserMention } from "./user-mention";
 
 export function MessageCaption({
   role,
+  received,
   text,
   tokens,
   colorScheme,
   streaming,
 }: {
   role: MobileMessage["role"];
+  /** Another person's message sits on the received surface. */
+  received?: boolean;
   text: string;
   tokens: ColorTokens;
   colorScheme: ResolvedAppearance;
@@ -30,8 +33,8 @@ export function MessageCaption({
   // Links stay the bubble's text colour (underlined): link blue is too faint on chatUser.
   return role === "user" ? (
     <LinkifiedText
-      color={tokens.chatUserForeground}
-      linkColor={tokens.chatUserForeground}
+      color={received ? tokens.foreground : tokens.chatUserForeground}
+      linkColor={received ? tokens.foreground : tokens.chatUserForeground}
       palette={tokens}
       renderText={
         userMentions

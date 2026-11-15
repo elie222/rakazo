@@ -35,6 +35,13 @@ const hotQueries = [
       ORDER BY "updatedAt", id LIMIT 100`,
   },
   {
+    name: "background-helper outcomes still to return",
+    index: "runs_helper_outcome_pending_idx",
+    sql: `SELECT id FROM runs WHERE trigger = 'helper' AND "botOutcomeReturnedAt" IS NULL
+      AND status IN ('completed', 'failed', 'cancelled') AND id <> $1
+      ORDER BY "updatedAt", id LIMIT 100`,
+  },
+  {
     name: "a bot thread's latest run",
     index: "runs_threadId_createdAt_id_idx",
     sql: `SELECT id FROM runs WHERE "threadId" = $1 AND trigger NOT IN ('bot_message', 'tickets')
@@ -44,8 +51,21 @@ const hotQueries = [
     name: "a user's latest finished run in a Space",
     index: "runs_recent_activity_idx",
     sql: `SELECT "completedAt" FROM runs WHERE "spaceId" = $1 AND "userId" = $1
-      AND status IN ('completed', 'failed', 'cancelled') AND trigger NOT IN ('tickets')
+      AND status IN ('completed', 'failed', 'cancelled')
+      AND trigger NOT IN ('tickets', 'helper', 'helper_result')
       AND "completedAt" IS NOT NULL ORDER BY "completedAt" DESC LIMIT 1`,
+  },
+  {
+    name: "computers bound to cancelled runs",
+    index: "computers_executionRunId_idx",
+    sql: `SELECT id FROM computers WHERE "executionRunId" IN ($1)`,
+  },
+  {
+    name: "control leases due to expire",
+    index: "computers_controlLeaseExpiresAt_id_idx",
+    sql: `SELECT id FROM computers WHERE "controlLeaseId" IS NOT NULL
+      AND ("controlLeaseExpiresAt" IS NULL OR "controlLeaseExpiresAt" <= now()) AND id <> $1
+      ORDER BY "controlLeaseExpiresAt", id LIMIT 100`,
   },
   {
     name: "a thread's messages after a cursor",

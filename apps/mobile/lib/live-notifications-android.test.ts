@@ -15,7 +15,7 @@ vi.mock("expo-notifications", () => ({
   dismissAllNotificationsAsync: vi.fn(),
 }));
 vi.mock("react-native", () => ({ Platform: { OS: "android" } }));
-vi.mock("./i18n", () => ({ getActiveUiLocale: () => "de", t: (text: string) => text }));
+vi.mock("./i18n", () => ({ getActiveUiLocale: () => "de" }));
 const store = vi.hoisted(() => new Map<string, string>());
 vi.mock("expo-secure-store", () => ({
   getItemAsync: async (key: string) => store.get(key) ?? null,
@@ -62,10 +62,20 @@ describe("Android live notification resume", () => {
   });
 
   it("does not resume for a public http server, an invalid URL, or no token", async () => {
-    await resumeLiveNotifications("http://app.example.test", "token-1", "space-1");
-    await resumeLiveNotifications("not a url", "token-1", "space-1");
-    await resumeLiveNotifications("https://app.example.test", "", "space-1");
+    await expect(
+      resumeLiveNotifications("http://app.example.test", "token-1", "space-1"),
+    ).resolves.toBe(false);
+    await expect(resumeLiveNotifications("not a url", "token-1", "space-1")).resolves.toBe(false);
+    await expect(resumeLiveNotifications("https://app.example.test", "", "space-1")).resolves.toBe(
+      false,
+    );
     expect(native.resume).not.toHaveBeenCalled();
+  });
+
+  it("reports that the native module now keeps the session", async () => {
+    await expect(
+      resumeLiveNotifications("https://app.example.test", "token-1", "space-1"),
+    ).resolves.toBe(true);
   });
 
   it("passes the muted bot to the native restart even without a thread id", async () => {

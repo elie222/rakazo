@@ -1,4 +1,4 @@
-import type { MobileBot } from "./api";
+import type { MobileBot } from "./mobile-types";
 
 export function retainUnchangedBotRoster(current: MobileBot[], next: MobileBot[]): MobileBot[] {
   // The RPC returns full Bot records, including arrays omitted from MobileBot.

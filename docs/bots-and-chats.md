@@ -15,6 +15,18 @@ sign-in or an app to connect.
 > One bot per job works best: an inbox bot, a research bot, a bot for one client. Each keeps its own
 > history and memory, so it gets better at that job over time.
 
+### Start from a template
+
+**Bot templates** are ready-made bots for common jobs: a morning briefing, inbox triage, pull
+request reviews, and a weekly digest of topics you follow. Open them with **Templates** in
+**Connect apps** or **Skills**. Each template shows an example of what the bot sends and everything it adds before you
+choose **Create bot**.
+
+A template adds the bot's instructions, a skill to your library, and a routine that stays paused
+until you turn it on. Nothing is connected for you: the new chat asks for the apps the bot works
+with, and it still works without them where it can. Creating the same template again opens the bot
+you already made.
+
 ## Talk to it
 
 Type in the composer and press Enter. You can keep chatting while a bot works, and **Stop** ends
@@ -28,8 +40,13 @@ the current run.
   part.
 - Hold the microphone to talk instead of typing. See [Voice and calls](./voice-and-calls.md).
 
-Bots reply with formatted text, tables, charts and files. Files they send open in a preview and can
-be downloaded. Every file a bot has sent is also listed under **Artifacts** in the account menu.
+Bots reply with formatted text, tables, charts, files and [pages](./pages.md). Files they send open
+in a preview and can be downloaded. Every file a bot has sent is also listed under **Artifacts** in
+the account menu. Bots can find files you sent them long ago, so "the lease I sent you" works
+without sending it again.
+
+When something is left open until a known time ("I'll send the contract on Friday"), the bot may
+set itself a follow-up for then. It stays quiet if the item is already done.
 
 When a bot needs something from you, it posts a card in the chat: a question, an
 [approval](./approvals.md), or a request to take over its screen. Cards never block the chat; you

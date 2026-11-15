@@ -6,14 +6,18 @@ import { cn } from "./lib/utils.js";
 const sectionHeadingVariants = cva("font-medium", {
   variants: {
     variant: {
-      title: "text-[15px] leading-[22px] text-foreground",
+      heading: "text-heading3 text-foreground",
+      title: "text-body-lg text-foreground",
       label: "text-label text-muted-foreground",
     },
   },
   defaultVariants: { variant: "title" },
 });
 
-/** Names a section within a page or panel; `label` is the quieter tier for side-panel groups. */
+/**
+ * Names a section within a page or panel; `heading` is the larger tier for settings sections and
+ * `label` the quieter tier for side-panel groups.
+ */
 function SectionHeading({
   as: Tag = "h3",
   variant,

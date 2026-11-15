@@ -17,11 +17,15 @@ import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   appendEventInTransaction,
   createThreadMessageInTransaction,
+  isUniqueViolation,
   runAsSystem,
+  THREAD_LOCK_TRANSACTION_OPTIONS,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { advisoryLock } from "./advisory-lock.js";
 import type { ExecutorDeps } from "./executor-deps.js";
-import { isUniqueViolation, publishMessage, runLeaseFor } from "./run-messages.js";
+import { publishMessage, runLeaseFor } from "./run-messages.js";
+import { sliceWellFormed } from "./utf8.js";
 
 const REASON_MAX = 120;
 const OPENING_MAX = 240;
@@ -66,8 +70,8 @@ export function newCallRequest(input: {
 }):
   | { error: string }
   | { callId: string; clientNonce: string; expiresAt: Date; blocks: MessageBlock[] } {
-  const reason = input.reason.trim().slice(0, REASON_MAX);
-  const opening = input.opening.trim().slice(0, OPENING_MAX);
+  const reason = sliceWellFormed(input.reason.trim(), REASON_MAX);
+  const opening = sliceWellFormed(input.opening.trim(), OPENING_MAX);
   if (!reason) return { error: "reason is required." };
   if (!opening) return { error: "opening is required." };
   const callId = randomUUID();
@@ -162,7 +166,7 @@ export async function settleCallRequest(
       botId: message.botId,
       botName: message.thread.bot?.name ?? "",
     };
-  });
+  }, THREAD_LOCK_TRANSACTION_OPTIONS);
   if (!result) return null;
   await deps.events.notify(input.threadId, result.eventSeq).catch(() => undefined);
   if (result.userId) {
@@ -203,7 +207,7 @@ export async function requestUserCall(
   // write here names the run's own thread.
   const result = await runAsSystem("check the call cooldown across the user's Spaces", () =>
     deps.prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`call:${run.userId}`}, 0))::text`;
+      await advisoryLock(tx, "call", run.userId, "joined");
       const target = await tx.thread.findFirst({
         where: {
           id: run.threadId,
@@ -252,7 +256,7 @@ export async function requestUserCall(
         firstResponseRunId: event.firstResponse ? run.id : undefined,
         botName: target.bot.name,
       };
-    }),
+    }, THREAD_LOCK_TRANSACTION_OPTIONS),
   );
   if ("error" in result) return result;
   await deps.events
@@ -358,12 +362,8 @@ export async function endCallFromTool(
   callEndRun: boolean,
 ) {
   const callId = callIdFromClientNonce(callClientNonceForRun);
-  const title = String(args.title ?? "")
-    .trim()
-    .slice(0, 40);
-  const farewell = String(args.farewell ?? "")
-    .trim()
-    .slice(0, 160);
+  const title = sliceWellFormed(String(args.title ?? "").trim(), 40);
+  const farewell = sliceWellFormed(String(args.farewell ?? "").trim(), 160);
   // The client may have hung up first and already closed the card: title that
   // marker instead of leaving a second one behind. The marker's deterministic
   // nonce is the idempotency key, so a resumed run cannot double-publish.

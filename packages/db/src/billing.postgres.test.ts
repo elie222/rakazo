@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   billingAccountForOrganization,
   createBillingAccount,
+  memberHasModelAccess,
   organizationForMember,
   organizationSeatCount,
   ownedBillingAccounts,
@@ -12,8 +13,7 @@ import type { PrismaClient } from "./client.js";
 import { createDb } from "./client.js";
 
 const databaseUrl = process.env.DATABASE_URL;
-const describePostgres =
-  process.env.VERIFY_DATABASE && databaseUrl ? describe.sequential : describe.skip;
+const describePostgres = process.env.VERIFY_DATABASE && databaseUrl ? describe : describe.skip;
 
 const snapshot: BillingSubscriptionSnapshot = {
   subscriptionId: "sub_1",
@@ -70,6 +70,11 @@ describePostgres("billing accounts (PostgreSQL)", () => {
     await prisma.organization.deleteMany({ where: { id: organizationId } });
     await prisma.user.deleteMany({ where: { id: { in: [ownerId, memberId] } } });
     await close();
+  });
+
+  it("reads model access from a whole run row, not just its key", async () => {
+    const run = { id: "run-1", spaceId, userId: memberId, botId: "bot-1" };
+    await expect(memberHasModelAccess(prisma, run)).resolves.toBe(false);
   });
 
   it("detects the organization owner from comma-separated roles", async () => {
