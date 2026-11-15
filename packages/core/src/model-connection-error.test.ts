@@ -45,7 +45,7 @@ describe("sanitizeModelConnectionError", () => {
     [
       "a password in a URL",
       `fetch https://user:${S}@models.example.com/v1 failed`,
-      "fetch https://user:•••@models.example.com/v1 failed",
+      "fetch https://•••@models.example.com/v1 failed",
     ],
     [
       "a token in a URL without a user name",
@@ -110,6 +110,15 @@ describe("sanitizeModelConnectionError", () => {
     expect(
       sanitizeModelConnectionError('bad api_key={"token":"AAAA1111","value":"BBBB2222"} sent'),
     ).toBe("bad api_key=••• sent");
+  });
+
+  it("redacts a key sent as the user name of a URL, with or without a password", () => {
+    expect(sanitizeModelConnectionError(`fetch https://${S}:@models.example.com/v1 failed`)).toBe(
+      "fetch https://•••@models.example.com/v1 failed",
+    );
+    expect(sanitizeModelConnectionError(`fetch https://${S}:x@models.example.com/v1 failed`)).toBe(
+      "fetch https://•••@models.example.com/v1 failed",
+    );
   });
 
   it("redacts the value of an indexed field", () => {

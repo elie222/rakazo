@@ -284,9 +284,10 @@ function assignedName(
   };
 }
 
+/** The user part of a URL, name and password both: a key is often sent as the name. */
 function userinfoSpan(at: number, userinfo: string): Span {
   const end = at + userinfo.length;
-  return { start: at + userinfo.indexOf(":") + 1, end, resume: end };
+  return { start: at, end, resume: end };
 }
 
 function redactCredentialShapes(text: string): string {
