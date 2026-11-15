@@ -18,7 +18,12 @@ import {
   incusTlsOptions,
   ociImageSource,
 } from "./incus-sandbox.js";
-import { assertSandboxWorkspaceContract, provisionPrepared } from "./sandbox-test-support.js";
+import {
+  assertSandboxWorkspaceContract,
+  provisionPrepared,
+  settleMachineCleanup,
+  untilAborted,
+} from "./sandbox-test-support.js";
 
 const context: AdapterContext = {
   operationId: "operation",
@@ -595,6 +600,75 @@ describe("IncusSandboxProvider", () => {
       ),
     ).rejects.toThrow("did not become ready");
     expect(fake.instances.size).toBe(0);
+  });
+
+  describe("a new instance that does not become ready", () => {
+    /**
+     * The instance never answers on its gateway. Stopping it fails `stopFailures` times, or with
+     * `stalled`, Incus answers nothing from the first stop on.
+     */
+    async function start(stopFailures: number, stalled = false) {
+      const fake = new FakeIncus((command) =>
+        command.some((arg) => arg.includes("/dev/tcp")) ? { code: 1 } : {},
+      );
+      const request = fake.request.bind(fake);
+      let stops = 0;
+      let stalledAt: number | undefined;
+      let endedAt = 0;
+      const unanswered: AbortSignal[] = [];
+      vi.spyOn(fake, "request").mockImplementation(async (method, path, body, signal) => {
+        if (method === "PUT" && path.includes("/state")) {
+          stops += 1;
+          if (stalled) stalledAt ??= Date.now();
+          else if (stops <= stopFailures) throw new IncusError("Instance is busy", 500);
+        }
+        if (stalledAt === undefined) return request(method, path, body, signal);
+        unanswered.push(signal);
+        return untilAborted(signal);
+      });
+      const outcome = await settleMachineCleanup(() =>
+        providerFor(fake, { readyTimeoutMs: 1 })
+          .provision({ botId: "bot-a", homePath: "/unused" }, context)
+          .finally(() => {
+            endedAt = Date.now();
+          }),
+      );
+      return {
+        ...outcome,
+        stops,
+        instances: [...fake.instances.keys()],
+        cleanupMs: endedAt - (stalledAt ?? endedAt),
+        stillOpen: unanswered.filter((signal) => !signal.aborted).length,
+      };
+    }
+
+    it("is removed, trying a failed removal again", async () => {
+      const { error, left, stops, instances } = await start(1);
+
+      expect(error).toMatchObject({ message: expect.stringContaining("did not become ready") });
+      expect(stops).toBe(2);
+      expect(instances).toEqual([]);
+      expect(left).toEqual([]);
+    });
+
+    it("is reported when it cannot be removed, and the start's own error stands", async () => {
+      const { error, left, stops, instances } = await start(4);
+
+      expect(error).toMatchObject({ message: expect.stringContaining("did not become ready") });
+      expect(stops).toBe(4);
+      expect(left).toEqual([{ provider: "incus", machineId: instances[0] }]);
+    });
+
+    it("is reported within the cleanup's 20 seconds when Incus stops answering", async () => {
+      const { error, left, stops, instances, cleanupMs, stillOpen } = await start(0, true);
+
+      expect(error).toMatchObject({ message: expect.stringContaining("did not become ready") });
+      // Each try is cut off after 10 seconds; a try used to wait a minute of its own.
+      expect(stops).toBe(2);
+      expect(cleanupMs).toBe(20_000);
+      expect(stillOpen).toBe(0);
+      expect(left).toEqual([{ provider: "incus", machineId: instances[0] }]);
+    });
   });
 
   it("rejects an instance that disappears while starting", async () => {

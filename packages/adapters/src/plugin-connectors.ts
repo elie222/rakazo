@@ -739,3 +739,13 @@ export function isTransientFetchError(error: unknown): boolean {
     error.message,
   );
 }
+
+/**
+ * Whether a failed plugin load is a fault in our own code. Loading parses the address, fetches
+ * it and parses what came back, and reads no store, so any other failure is about the source.
+ * The fetch client reports a network failure as a TypeError too, with the cause attached.
+ */
+export function isPluginLoadFault(error: unknown): boolean {
+  if (error instanceof TypeError) return error.cause === undefined;
+  return error instanceof ReferenceError || error instanceof RangeError;
+}
