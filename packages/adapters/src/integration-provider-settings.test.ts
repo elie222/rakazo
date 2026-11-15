@@ -81,6 +81,36 @@ describe("integration provider settings", () => {
       apiKey: "fake-replacement-key",
     });
   });
+  it("knows its own providers and reads any other id as unavailable", async () => {
+    const f = fixture();
+    const known = f.settings.providers().map((provider) => provider.describe().id);
+    expect(known.length).toBeGreaterThan(0);
+    for (const id of known) expect(f.settings.has(id)).toBe(true);
+    // A stored row for a provider this build no longer has is never read or built.
+    f.rows.set("a-provider-since-removed", { id: "a-provider-since-removed", ciphertext: "x" });
+    for (const id of ["a-provider-since-removed", "", "toString"]) {
+      expect(f.settings.has(id)).toBe(false);
+      await expect(f.settings.configured(id)).resolves.toBe(false);
+      await expect(f.settings.resolve(id)).resolves.toBeUndefined();
+    }
+    expect(f.prisma.integrationProviderConfig.findUnique).not.toHaveBeenCalled();
+    expect(f.factory).not.toHaveBeenCalled();
+  });
+  it("refuses to save an unknown provider or the wrong credentials, as the caller's mistake", async () => {
+    const f = fixture();
+    await expect(
+      f.settings.save({ provider: "a-provider-added-later", apiKey: "fake-key" }, context),
+    ).rejects.toMatchObject({
+      name: "ClientError",
+      kind: "BAD_REQUEST",
+      message: "Unknown integration provider",
+    });
+    const refused = f.settings.save({ provider: "composio", token: "fake-other-field" }, context);
+    await expect(refused).rejects.toMatchObject({ name: "ClientError", kind: "BAD_REQUEST" });
+    await expect(refused).rejects.not.toThrow(/fake-other-field/);
+    expect(f.factory).not.toHaveBeenCalled();
+    expect(f.rows.size).toBe(0);
+  });
   it("lists connected plugin slugs for the user, or none before setup", async () => {
     const f = fixture();
     expect(await f.settings.listConnectedPluginSlugs("user-1")).toEqual([]);

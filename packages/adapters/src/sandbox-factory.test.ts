@@ -1,7 +1,7 @@
-import { SandboxKind } from "@rakazo/contracts";
 import { describe, expect, it, vi } from "vitest";
 import { NO_SANDBOX_MESSAGE } from "./none-sandbox.js";
 import { createSandboxProvider } from "./sandbox-factory.js";
+import { knownSandboxKinds } from "./sandbox-kind-capabilities.js";
 
 const ctx = {
   operationId: "op",
@@ -154,8 +154,8 @@ describe("createSandboxProvider", () => {
   });
 
   it("accepts only sandbox kinds, including none", async () => {
-    expect(SandboxKind.options).toContain("none");
-    for (const kind of SandboxKind.options) {
+    expect(knownSandboxKinds).toContain("none");
+    for (const kind of knownSandboxKinds) {
       await expect(createSandboxProvider(kind, {})).resolves.toBeDefined();
     }
     await expect(createSandboxProvider("not-a-provider", {})).rejects.toThrow(

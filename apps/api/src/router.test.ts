@@ -3494,6 +3494,34 @@ describe("connections.begin", () => {
     return { call, jobs, tx, root, prisma, errors, warnings, events };
   }
 
+  it("answers a connector this build does not have with a client error", async () => {
+    const managed = vi.fn(() => undefined);
+    const begin = (deps: object, connectorId?: string) =>
+      beginConnection(
+        { connectors: { defaultConnectorId: "first-connector", managed }, ...deps } as never,
+        { actor: { spaceId: "workspace-1", userId: "user-1" } as Actor },
+        { connectorId, provider: "gmail", displayName: "Gmail" },
+      );
+    const refusal = { name: "ClientError", kind: "BAD_REQUEST" };
+    await expect(begin({}, "a-provider-since-removed")).rejects.toMatchObject({
+      ...refusal,
+      message: "Connector a-provider-since-removed is not configured",
+    });
+    expect(managed).toHaveBeenLastCalledWith("a-provider-since-removed");
+    // A request that names no connector means the one the server's registry calls the default.
+    await expect(begin({})).rejects.toMatchObject({
+      ...refusal,
+      message: "Connector first-connector is not configured",
+    });
+    expect(managed).toHaveBeenLastCalledWith("first-connector");
+    // Saved integration settings answer only for the providers they have.
+    const integrationSettings = { has: vi.fn(() => false), resolve: vi.fn() };
+    await expect(begin({ integrationSettings }, "a-provider-since-removed")).rejects.toMatchObject(
+      refusal,
+    );
+    expect(integrationSettings.resolve).not.toHaveBeenCalled();
+  });
+
   it("records the removal with the lost race and deletes the record once it is done", async () => {
     const cancelAuthorizationRequest = vi.fn(async () => undefined);
     const { call, jobs, tx, errors } = lostBegin({ cancelAuthorizationRequest }, "request-1");

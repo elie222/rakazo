@@ -1,4 +1,4 @@
-import type { AgentRunRequest, ComputerRef } from "@rakazo/adapter-kit";
+import type { AgentRunRequest } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
 import { disabledBuiltinToolSet } from "@rakazo/contracts";
 import {
@@ -771,7 +771,7 @@ export async function loadComputerInstructions(
           {
             id: storedComputer.providerRef ?? storedComputer.id,
             botId: storedComputer.homeKey,
-            kind: computerKind as ComputerRef["kind"],
+            kind: computerKind,
             providerRef: storedComputer.providerRef ?? "",
           },
           {

@@ -23,7 +23,7 @@ import {
   tryLockProviderConnectionScope,
 } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
-import { isIntegrationProviderId } from "@rakazo/contracts";
+import { ClientError } from "@rakazo/core";
 import { IsolationError, ProviderTransactionBusyError, recordSecurityEvent } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { RouterDeps } from "./router.js";
@@ -129,17 +129,17 @@ function cleanupBackupAt(): Date {
 export async function beginConnection(
   deps: RouterDeps,
   context: { actor: Actor; signal?: AbortSignal },
-  input: { connectorId: string; provider: string; displayName: string },
+  request: { connectorId?: string; provider: string; displayName: string },
 ) {
-  const connector =
-    deps.integrationSettings && isIntegrationProviderId(input.connectorId)
-      ? await deps.integrationSettings.resolve(input.connectorId)
-      : deps.connectors.managed(input.connectorId);
-  if (!connector) {
-    throw new ORPCError("BAD_REQUEST", {
-      message: `Connector ${input.connectorId} is not configured`,
-    });
-  }
+  const input = {
+    ...request,
+    connectorId: request.connectorId ?? deps.connectors.defaultConnectorId,
+  };
+  const connector = deps.integrationSettings?.has(input.connectorId)
+    ? await deps.integrationSettings.resolve(input.connectorId)
+    : deps.connectors.managed(input.connectorId);
+  if (!connector)
+    throw new ClientError("BAD_REQUEST", `Connector ${input.connectorId} is not configured`);
   // The row belongs to this attempt until a revoke takes it or a later begin reuses it.
   const attempt = randomUUID();
   // Share the revoke scope lock so a slug-wide remote delete cannot miss a

@@ -175,7 +175,7 @@ export class HostAwareSandbox implements SandboxProvider {
 
   async provisionKind() {
     const provider = (await this.hostEnabled()) ? this.host : this.isolated;
-    return provider.describe().id as ComputerRef["kind"];
+    return provider.describe().id;
   }
 
   async provision(

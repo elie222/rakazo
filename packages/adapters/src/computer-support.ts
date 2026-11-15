@@ -12,7 +12,7 @@ export function toComputerRef(computer: {
   return {
     id: computer.providerRef,
     botId: computer.homeKey,
-    kind: computer.kind as ComputerRef["kind"],
+    kind: computer.kind,
     providerRef: computer.providerRef,
   };
 }

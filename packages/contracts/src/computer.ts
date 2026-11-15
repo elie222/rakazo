@@ -44,6 +44,8 @@ export const ComputerStatusSchema = z.object({
   busyBotName: z.string().nullable(),
   canUpdate: z.boolean(),
   terminalAvailable: z.boolean(),
+  /** True when the computer is the person's own machine, which has no remote screen to show. */
+  runsOnUserMachine: z.boolean().optional(),
   /** Set only while the user should see that the disk is nearly full. */
   diskFullPercent: z.number().int().min(0).max(100).optional(),
   /** True when other people share the Space, and with it this computer and its browser sign-ins. */
