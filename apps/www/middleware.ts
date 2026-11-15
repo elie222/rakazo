@@ -44,7 +44,12 @@ export default function middleware(request: Request): Response {
     const staticMarkdown = getStaticMarkdownPath(url.pathname);
     if (staticMarkdown) {
       return rewrite(new URL(staticMarkdown, url), {
-        headers: { Link: AGENT_DISCOVERY_LINKS, Vary: VARY_HEADER },
+        headers: {
+          "Content-Language": "en",
+          "Content-Type": "text/markdown; charset=utf-8",
+          Link: AGENT_DISCOVERY_LINKS,
+          Vary: VARY_HEADER,
+        },
       });
     }
   }

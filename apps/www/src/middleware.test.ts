@@ -26,6 +26,7 @@ describe("middleware", () => {
       const response = middleware(request(path, "text/markdown"));
       expect(response.headers.get("x-middleware-rewrite")).toBe(`https://rakazo.com${file}`);
       expect(response.headers.get("vary")).toBe("Accept, Accept-Encoding");
+      expect(response.headers.get("content-type")).toBe("text/markdown; charset=utf-8");
     }
   });
 

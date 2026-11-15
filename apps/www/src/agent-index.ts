@@ -1,10 +1,17 @@
 import { getCollection } from "astro:content";
+import { getMarkdownAlternate } from "./agent-content";
 import { ALTERNATIVES, alternativePath } from "./alternatives";
 import { blogPostPath, sortPosts } from "./blog/markdown";
 import { DOCS_PAGES, docsPath } from "./docs";
+import {
+  GROK_ALTERNATIVE_DESCRIPTION,
+  GROK_ALTERNATIVE_H1,
+  GROK_ALTERNATIVE_PATH,
+} from "./grok-alternative";
+import { OPENCLAW_DESCRIPTION, OPENCLAW_H1 } from "./guide";
 import { INTEGRATION_PLATFORMS, integrationPlatformPath } from "./integration-platforms";
 import { SANDBOXES, sandboxPath } from "./sandboxes";
-import { SITE_URL } from "./site";
+import { OPENCLAW_ALTERNATIVE_PATH, SITE_URL } from "./site";
 import { VOICE_PROVIDERS, voiceProviderPath } from "./voice-providers";
 
 type AgentResource = { id: string; name: string; path: string; summary?: string };
@@ -62,13 +69,17 @@ Rakazo Cloud at https://app.rakazo.com is in beta. Self-hosting is also availabl
 `;
 
 function markdownPath(path: string): string {
-  return path === "/docs/" ? "/docs.md" : `${path.slice(0, -1)}.md`;
+  const markdown = getMarkdownAlternate(path);
+  if (!markdown) throw new Error(`No Markdown twin for ${path}`);
+  return markdown;
 }
 
 /** Every page with a Markdown twin that agents should be able to find, built from the page data. */
 export async function agentResourceGroups(): Promise<AgentResourceGroup[]> {
   const posts = sortPosts(await getCollection("blog"));
-  const docs = new Map((await getCollection("docs")).map((entry) => [entry.id, entry.data.description]));
+  const docs = new Map(
+    (await getCollection("docs")).map((entry) => [entry.id, entry.data.description]),
+  );
   return [
     {
       id: "blog",
@@ -83,12 +94,26 @@ export async function agentResourceGroups(): Promise<AgentResourceGroup[]> {
     {
       id: "comparison",
       heading: "Comparisons",
-      resources: ALTERNATIVES.map((page) => ({
-        id: page.slug,
-        name: page.h1,
-        path: alternativePath(page),
-        summary: page.summary,
-      })),
+      resources: [
+        {
+          id: "grok-bot-alternative",
+          name: GROK_ALTERNATIVE_H1,
+          path: GROK_ALTERNATIVE_PATH,
+          summary: GROK_ALTERNATIVE_DESCRIPTION,
+        },
+        {
+          id: "openclaw-alternative",
+          name: OPENCLAW_H1,
+          path: OPENCLAW_ALTERNATIVE_PATH,
+          summary: OPENCLAW_DESCRIPTION,
+        },
+        ...ALTERNATIVES.map((page) => ({
+          id: page.slug,
+          name: page.h1,
+          path: alternativePath(page),
+          summary: page.summary,
+        })),
+      ],
     },
     {
       id: "docs",

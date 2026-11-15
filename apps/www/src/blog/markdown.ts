@@ -17,6 +17,10 @@ export function blogPostPath(slug: string): string {
   return `/blog/${slug}/`;
 }
 
+export function blogPostMarkdownPath(slug: string): string {
+  return `/blog/${slug}.md`;
+}
+
 export function sortPosts(posts: readonly Post[]): Post[] {
   return [...posts].sort((a, b) => b.data.updated.getTime() - a.data.updated.getTime());
 }
@@ -24,7 +28,8 @@ export function sortPosts(posts: readonly Post[]): Post[] {
 /** Markdown twin of a blog post, for agents and `.md` requests. */
 export function blogPostMarkdown(post: Post): string {
   const { data } = post;
-  const row = (cells: readonly string[]) => `| ${cells.map((value) => cell(absolute(value))).join(" | ")} |`;
+  const row = (cells: readonly string[]) =>
+    `| ${cells.map((value) => cell(absolute(value))).join(" | ")} |`;
   return [
     `# ${data.title}`,
     "",
@@ -42,7 +47,7 @@ export function blogPostMarkdown(post: Post): string {
     `| ${data.comparison.columns.map(() => "---").join(" | ")} |`,
     ...data.comparison.rows.map((item) => row([item.topic, ...item.cells])),
     "",
-    absolute(post.body?.trim() ?? ""),
+    absolute(post.body?.trim() ?? "").replace(/(src|href)="\//g, `$1="${SITE_URL}/`),
     "",
     "## FAQ",
     "",
@@ -66,7 +71,7 @@ export function blogIndexMarkdown(posts: readonly Post[]): string {
     "",
     ...sortPosts(posts).map(
       (post) =>
-        `- [${post.data.title}](${SITE_URL}${blogPostPath(post.id)}) ([Markdown](${SITE_URL}/blog/${post.id}.md)): ${post.data.description} Updated ${formatPostDate(post.data.updated)}.`,
+        `- [${post.data.title}](${SITE_URL}${blogPostPath(post.id)}) ([Markdown](${SITE_URL}${blogPostMarkdownPath(post.id)})): ${post.data.description} Updated ${formatPostDate(post.data.updated)}.`,
     ),
     "",
   ].join("\n");
