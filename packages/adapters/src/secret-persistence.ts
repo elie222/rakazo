@@ -5,10 +5,10 @@ import { Prisma } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
 import type { SecretCleanup, SecretCleanupDeps } from "./secret-cleanup.js";
 import {
+  attemptSecretCleanup,
   cleanUpUnsavedSecret,
   finishSecretCleanup,
   recordSecretCleanup,
-  retrySecretCleanup,
   secretCleanupJob,
   secretIsHeld,
 } from "./secret-cleanup.js";
@@ -54,8 +54,8 @@ async function deleteUnreferenced(
     const cleanup = recorded?.get(row.ciphertext) ?? cleanupOf(row);
     if (!jobs || !store.isRemote(cleanup.ref)) {
       await bestEffort(
-        "delete an unreferenced secret",
-        retrySecretCleanup({ prisma, secrets: store }, cleanup),
+        "delete an unreferenced secret; nothing retries it",
+        attemptSecretCleanup({ prisma, secrets: store }, cleanup),
       );
       continue;
     }

@@ -233,6 +233,14 @@ export async function cleanUpUnsavedSecret(
   await finishSecretCleanup(deps, cleanup);
 }
 
+/** One attempt with nothing behind it: where there is no queue, the caller reports a failure. */
+export async function attemptSecretCleanup(
+  deps: Pick<SecretCleanupDeps, "prisma" | "secrets">,
+  cleanup: SecretCleanup,
+): Promise<void> {
+  await deleteUnreferencedSecret(deps, cleanup);
+}
+
 /** The job's attempt: a failure is logged with its kind and left to the queue's retries. */
 export async function retrySecretCleanup(
   deps: Pick<SecretCleanupDeps, "prisma" | "secrets">,

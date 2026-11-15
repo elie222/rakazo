@@ -1,8 +1,10 @@
 import type { BackgroundJob } from "@rakazo/adapter-kit";
 import { SecretNotFoundError } from "@rakazo/adapter-kit";
+import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { describe, expect, it, vi } from "vitest";
 import type { SecretCleanup, SecretCleanupDeps } from "./secret-cleanup.js";
 import {
+  attemptSecretCleanup,
   cleanUpUnsavedSecret,
   finishSecretCleanup,
   recordSecretCleanup,
@@ -116,6 +118,21 @@ describe("secret cleanup", () => {
     expect(f.jobs.enqueue).not.toHaveBeenCalled();
     expect(f.queued.size).toBe(0);
     await expect(retrySecretCleanup(f.deps, cleanup)).resolves.toBeUndefined();
+  });
+
+  it("leaves a one-shot attempt's failure to its caller, saying nothing about a retry", async () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
+    try {
+      const f = fixture();
+      f.secrets.delete.mockRejectedValue(new Error("secret store unavailable"));
+      await expect(attemptSecretCleanup(f.deps, cleanup)).rejects.toThrow("unavailable");
+      expect(sink.events).toEqual([]);
+      await expect(retrySecretCleanup(f.deps, cleanup)).rejects.toThrow("unavailable");
+      expect(sink.events.map((event) => event.message)).toEqual(["secret cleanup retry failed"]);
+    } finally {
+      installLogger(createLogger({ service: "test", level: "off", sinks: [] }));
+    }
   });
 
   it("still does not reject when the queue is unreachable too", async () => {
