@@ -8,8 +8,6 @@ import {
   ComputerBusyError,
   checkpointAndStopComputer,
   computerScreenUnavailableMessage,
-  computerSupportsTerminal,
-  computerSupportsUpdate,
   computerUpdateView,
   controlLeaseExpiresAt,
   diskUsedPercent,
@@ -25,6 +23,7 @@ import {
   resolveBotUploadPath,
   resolveBotWorkspaceCwd,
   resolveBotWorkspacePath,
+  sandboxKindCapabilities,
   scheduleComputerSleep,
   screenLeaseIdForRun,
   sleepDeferReason,
@@ -259,7 +258,7 @@ export function computerRoutes(ctx: RouterContext) {
         const bot = await repos.getBot(context.actor, input.botId);
         if (!bot.computer) throw new IsolationError();
         assertNotAnotherPersonsControl(bot.computer, context.actor);
-        if (!computerSupportsUpdate(bot.computer.kind))
+        if (!sandboxKindCapabilities(bot.computer.kind).inPlaceUpdate)
           throw new ORPCError("BAD_REQUEST", {
             message: "Computer recovery is not available on this device",
           });
@@ -271,7 +270,7 @@ export function computerRoutes(ctx: RouterContext) {
           throw error;
         } finally {
           // A refused start can still have dismissed earlier failures.
-          await deps.events.publishComputerUpdateChange?.(context.actor.spaceId);
+          await deps.events.publishSpaceChange?.(context.actor.spaceId, "computerUpdates");
         }
       }),
       reset: authed.computer.reset.handler(async ({ context, input }) =>
@@ -281,7 +280,7 @@ export function computerRoutes(ctx: RouterContext) {
         const bot = await repos.getBot(context.actor, input.botId);
         if (!bot.computer) throw new IsolationError();
         assertNotAnotherPersonsControl(bot.computer, context.actor);
-        if (!computerSupportsUpdate(bot.computer.kind))
+        if (!sandboxKindCapabilities(bot.computer.kind).inPlaceUpdate)
           throw new ORPCError("BAD_REQUEST", {
             message: "Computer update is not available on this device",
           });
@@ -292,7 +291,7 @@ export function computerRoutes(ctx: RouterContext) {
             throw new ORPCError("CONFLICT", { message: "Computer is busy" });
           throw error;
         } finally {
-          await deps.events.publishComputerUpdateChange?.(context.actor.spaceId);
+          await deps.events.publishSpaceChange?.(context.actor.spaceId, "computerUpdates");
         }
       }),
       updates: authed.computer.updates.handler(async ({ context }) => {
@@ -334,7 +333,7 @@ export function computerRoutes(ctx: RouterContext) {
           data: { status: "dismissed" },
         });
         if (dismissed.count > 0)
-          await deps.events.publishComputerUpdateChange?.(context.actor.spaceId);
+          await deps.events.publishSpaceChange?.(context.actor.spaceId, "computerUpdates");
         return { ok: true as const };
       }),
       dismissDiskWarning: authed.computer.dismissDiskWarning.handler(async ({ context, input }) => {
@@ -618,7 +617,7 @@ export function computerRoutes(ctx: RouterContext) {
           !computer?.providerRef ||
           computer.state !== "running" ||
           !deps.sandbox.connectTerminal ||
-          !computerSupportsTerminal(computer.kind)
+          !sandboxKindCapabilities(computer.kind).terminal
         ) {
           return { url: null };
         }

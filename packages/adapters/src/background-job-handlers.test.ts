@@ -65,6 +65,9 @@ describe("createBackgroundJobHandlers", () => {
     const continueRun = vi.fn(async () => {
       order.push("continue");
     });
+    const publishSpaceChange = vi.fn(async (_spaceId: string, kind: string) => {
+      order.push(`signal:${kind}`);
+    });
     const delivery = {
       deliverRun: vi.fn(async (runId: string, _options?: { progress?: boolean }) => {
         order.push(`deliver:${runId}`);
@@ -82,17 +85,18 @@ describe("createBackgroundJobHandlers", () => {
     const handlers = createBackgroundJobHandlers({
       executor: { continueRun },
       prisma: { run: owned() },
+      events: { publishSpaceChange },
       workerId: "worker-1",
       messagingDelivery: delivery,
       teamChat,
     } as unknown as Parameters<typeof createBackgroundJobHandlers>[0]);
-    return { handlers, delivery, teamChat, order };
+    return { handlers, delivery, teamChat, order, continueRun, publishSpaceChange };
   }
 
   it("sends what a run said once its turn ends, without failing the run when sending fails", async () => {
     const { handlers, delivery, order } = chatHandlers();
     await handlers["run.continue"]({ runId: "run-1" });
-    expect(order).toEqual(["continue", "deliver:run-1"]);
+    expect(order).toEqual(["continue", "signal:runs", "deliver:run-1"]);
 
     const failure = new Error("chat app unavailable");
     delivery.deliverRun.mockRejectedValueOnce(failure);
@@ -101,6 +105,13 @@ describe("createBackgroundJobHandlers", () => {
       "messaging reply delivery error",
       failure,
     );
+  });
+
+  it("signals the run's Space even when its turn throws", async () => {
+    const { handlers, continueRun, publishSpaceChange } = chatHandlers();
+    continueRun.mockRejectedValueOnce(new Error("setup failed"));
+    await expect(handlers["run.continue"]({ runId: "run-1" })).rejects.toThrow("setup failed");
+    expect(publishSpaceChange).toHaveBeenCalledExactlyOnceWith(owner.spaceId, "runs");
   });
 
   it("sends a recorded chat message from its backup job with the job's attempt", async () => {

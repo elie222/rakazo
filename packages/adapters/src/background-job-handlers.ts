@@ -53,13 +53,17 @@ type Tenant = { spaceId: string; userId: string };
  */
 function asOwner<Key, P extends Key>(
   owner: (payload: Key) => Promise<Tenant | null>,
-  handler: (payload: P, execution?: BackgroundJobExecution) => Promise<void>,
+  handler: (
+    payload: P,
+    execution: BackgroundJobExecution | undefined,
+    tenant: Tenant,
+  ) => Promise<void>,
 ): (payload: P, execution?: BackgroundJobExecution) => Promise<void> {
   return async (payload, execution) => {
     const tenant = await runAsSystem("find the tenant a background job acts for", () =>
       owner(payload),
     );
-    if (tenant) await runAsTenant(tenant, () => handler(payload, execution));
+    if (tenant) await runAsTenant(tenant, () => handler(payload, execution, tenant));
   };
 }
 
@@ -127,10 +131,15 @@ export function createBackgroundJobHandlers(deps: {
     )?.computer ?? null;
 
   return {
-    "run.continue": asOwner(run, async (payload, execution) => {
-      if (execution)
-        await deps.executor.continueRun(payload.runId, deps.workerId, execution.onRunStarted);
-      else await deps.executor.continueRun(payload.runId, deps.workerId);
+    "run.continue": asOwner(run, async (payload, execution, { spaceId }) => {
+      try {
+        if (execution)
+          await deps.executor.continueRun(payload.runId, deps.workerId, execution.onRunStarted);
+        else await deps.executor.continueRun(payload.runId, deps.workerId);
+      } finally {
+        // Whatever this turn did to its run (waited, paused, requeued, ended), apps read it again.
+        await deps.events.publishSpaceChange?.(spaceId, "runs");
+      }
       // The process that ran the turn sends what it said straight away. An ended run's reply
       // job, scheduled with its status, covers a failure here; it never fails the run.
       await delivery?.deliverRun(payload.runId).catch((error) => {
@@ -170,11 +179,21 @@ export function createBackgroundJobHandlers(deps: {
     "team_chat.ambient": async ({ conversationId }) => {
       await deps.teamChat?.ambientJob(conversationId);
     },
-    "routine.wakeup": asOwner(routine, async (payload) => {
-      await deps.executor.wakeRoutine(payload.routineId, payload.scheduledFor);
+    "routine.wakeup": asOwner(routine, async (payload, _execution, { spaceId }) => {
+      try {
+        await deps.executor.wakeRoutine(payload.routineId, payload.scheduledFor);
+      } finally {
+        // A wake moves the routine's next run, or pauses it, and may queue or coalesce runs.
+        await deps.events.publishSpaceChange?.(spaceId, "routines");
+        await deps.events.publishSpaceChange?.(spaceId, "runs");
+      }
     }),
-    "routine.retry": asOwner(run, async (payload) => {
-      await deps.executor.retryRoutineRun(payload.runId);
+    "routine.retry": asOwner(run, async (payload, _execution, { spaceId }) => {
+      try {
+        await deps.executor.retryRoutineRun(payload.runId);
+      } finally {
+        await deps.events.publishSpaceChange?.(spaceId, "runs");
+      }
     }),
     "computer.update": asOwner(updatedComputer, async ({ updateId }) => {
       await performComputerUpdate(deps, updateId);

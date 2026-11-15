@@ -1,4 +1,4 @@
-import { Trans } from "@lingui/react/macro";
+import { Trans, useLingui } from "@lingui/react/macro";
 import {
   Button,
   Field,
@@ -17,6 +17,21 @@ import { MemoryProviderAdvanced } from "./MemoryProviderAdvanced";
 import type { MemoryProviderConnectionDraft, MemoryProviderSettingsFormProps } from "./registry";
 
 type RecallBudget = "low" | "mid" | "high";
+
+function sameBanks(a: string, b: string): boolean {
+  const normalize = (value: string) =>
+    [
+      ...new Set(
+        value
+          .split(",")
+          .map((bank) => bank.trim())
+          .filter(Boolean),
+      ),
+    ]
+      .sort()
+      .join(",");
+  return normalize(a) === normalize(b);
+}
 
 function Segmented<T extends string>({
   label,
@@ -85,28 +100,42 @@ function SwitchRow({
 
 export function HindsightSettingsForm({
   busy,
+  current,
   onConnect,
   advancedSettings,
 }: MemoryProviderSettingsFormProps) {
+  const { t } = useLingui();
   const apiKeyId = useId();
   const recallBanksId = useId();
-  const [mode, setMode] = useState<ConnectionMode>("cloud");
-  const [baseUrl, setBaseUrl] = useState("");
+  const editing = current !== undefined;
+  const [mode, setMode] = useState<ConnectionMode>(current?.mode === "local" ? "local" : "cloud");
+  const [baseUrl, setBaseUrl] = useState(current?.baseUrl ?? "");
   const [apiKey, setApiKey] = useState("");
-  const [recallBanks, setRecallBanks] = useState("");
-  const [learn, setLearn] = useState(true);
-  const [autoRecall, setAutoRecall] = useState(true);
-  const [recallBudget, setRecallBudget] = useState<RecallBudget>("mid");
-  const [withFacts, setWithFacts] = useState(false);
-  const [skipUnrelated, setSkipUnrelated] = useState(false);
+  const [recallBanks, setRecallBanks] = useState(current?.recallBanks ?? "");
+  const [learn, setLearn] = useState(current?.retainConversations !== "false");
+  const [autoRecall, setAutoRecall] = useState(current?.autoRecall !== "false");
+  const [recallBudget, setRecallBudget] = useState<RecallBudget>(
+    current?.recallBudget === "low" || current?.recallBudget === "high"
+      ? current.recallBudget
+      : "mid",
+  );
+  const [withFacts, setWithFacts] = useState(current?.recallFacts === "true");
+  const [skipUnrelated, setSkipUnrelated] = useState(current?.skipUnrelated === "true");
   const key = apiKey.trim();
   const banks = recallBanks
     .split(",")
     .map((bank) => bank.trim())
     .filter(Boolean)
     .join(",");
-  // A self-hosted server runs without authentication by default.
-  const keyOptional = mode === "local";
+  // A self-hosted server runs without authentication by default. Editing keeps the stored key
+  // only while the host and the banks it can read are unchanged.
+  const keepsKey =
+    current !== undefined &&
+    mode === (current.mode === "local" ? "local" : "cloud") &&
+    (mode === "cloud" ||
+      baseUrl.trim().replace(/\/+$/, "") === (current.baseUrl ?? "").trim().replace(/\/+$/, "")) &&
+    sameBanks(banks, current.recallBanks ?? "");
+  const keyOptional = keepsKey || mode === "local";
   const ready =
     (key.length === 0 ? keyOptional : key.length >= 8) &&
     (mode === "cloud" || Boolean(baseUrl.trim()));
@@ -138,6 +167,7 @@ export function HindsightSettingsForm({
           value={apiKey}
           disabled={busy}
           onChange={(event) => setApiKey(event.target.value)}
+          placeholder={keepsKey && mode === "cloud" ? t`Saved` : undefined}
           type="password"
           autoComplete="new-password"
           maxLength={4096}
@@ -216,7 +246,17 @@ export function HindsightSettingsForm({
         disabled={busy || !ready}
         onClick={() => void connect()}
       >
-        {busy ? <Trans>Connecting…</Trans> : <Trans>Connect</Trans>}
+        {editing ? (
+          busy ? (
+            <Trans>Saving…</Trans>
+          ) : (
+            <Trans>Save</Trans>
+          )
+        ) : busy ? (
+          <Trans>Connecting…</Trans>
+        ) : (
+          <Trans>Connect</Trans>
+        )}
       </Button>
     </>
   );

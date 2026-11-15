@@ -663,6 +663,28 @@ describeIntegration("reusable credential lifecycle", () => {
     expect(JSON.stringify(events)).not.toContain("fake-import-pass");
   });
 
+  it("does not import a number or one-word host as a login site", async () => {
+    const seeded = await seedRun("vault-import-bare-host", "Sign in");
+    const row = { title: "", username: "alice", password: "fake-bare-host-pass" };
+    const result = await rpc(seeded.cookie, "vault/import", {
+      rows: [
+        { ...row, origin: "3.14" },
+        { ...row, origin: "localhost." },
+        { ...row, origin: "bare-host.example.test" },
+      ],
+    });
+    expect(result).toEqual({
+      added: 1,
+      skipped: { notHttps: 2, noPassword: 0, duplicate: 0, invalid: 0, limit: 0 },
+      notSaved: [
+        { index: 0, reason: "notHttps" },
+        { index: 1, reason: "notHttps" },
+      ],
+    });
+    const list = await rpc<Array<{ origin: string }>>(seeded.cookie, "vault/list", {});
+    expect(list.map((item) => item.origin)).toEqual(["https://bare-host.example.test"]);
+  });
+
   it("keeps a login's other sites and authenticator key through an older app's save", async () => {
     const seeded = await seedRun("vault-also-on", "Sign in");
     const login = { origin: "https://also.example.test", auth: { type: "login" } };

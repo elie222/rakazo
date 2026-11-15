@@ -221,6 +221,7 @@ export * from "./run-wakeup.js";
 export * from "./sandbox-allowance.js";
 export * from "./sandbox-errors.js";
 export * from "./sandbox-factory.js";
+export * from "./sandbox-kind-capabilities.js";
 export * from "./sandbox-provider-env.js";
 export * from "./schedule-tools.js";
 export * from "./scratchpad-context.js";
@@ -266,6 +267,7 @@ export {
 } from "./vault-values.js";
 export * from "./voice-factory.js";
 export * from "./voice-model-connection.js";
+export * from "./wake-run.js";
 export * from "./wakeup.js";
 export * from "./web-limits.js";
 export * from "./web-provider-factory.js";

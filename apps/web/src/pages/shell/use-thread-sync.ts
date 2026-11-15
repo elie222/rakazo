@@ -135,7 +135,18 @@ export function useThreadSync({
     computerOpenRef,
     computerBotIdRef,
     refreshComputerScreen,
+    isOwnControlEvent,
+    isOwnAnswer,
   } = computerState;
+  function readControlEventScreen(botId: string, event: ProductEvent) {
+    const own =
+      event.payload.answered === true
+        ? isOwnAnswer(botId)
+        : isOwnControlEvent(botId, event.type, event.payload.leaseId);
+    if (!own) void refreshComputerScreen(botId).catch(() => undefined);
+    return own;
+  }
+
   const threadRefreshEpoch = useRef(0);
   const groupRefreshEpoch = useRef(0);
   const [loadingOlder, setLoadingOlder] = useState(false);
@@ -233,7 +244,12 @@ export function useThreadSync({
     return snap;
   }
 
-  async function refreshThread(id: string, signal?: AbortSignal) {
+  /** `readScreen: false` leaves the screen to a caller that already reads it. */
+  async function refreshThread(
+    id: string,
+    signal?: AbortSignal,
+    { readScreen = true }: { readScreen?: boolean } = {},
+  ) {
     const readerEpoch = readerScrollEpoch.current;
     const preRequestElement = messageScroll.current;
     const stickToEnd = !preRequestElement || transcriptIsNearEnd(preRequestElement);
@@ -282,7 +298,7 @@ export function useThreadSync({
       fetchFresh(queryClient, queries.skills.list.queryOptions({ input: { botId: id } })).catch(
         () => null,
       ),
-      refreshComputerScreen(id).catch(() => null),
+      readScreen ? refreshComputerScreen(id).catch(() => null) : null,
     ]).then(([routines, skills]) => {
       if (
         activeBotId.current !== id ||
@@ -457,11 +473,17 @@ export function useThreadSync({
           // waiting_input: reconcile ask cards if a stale post-send refresh raced SSE.
           void snapshotRefresh.invalidate().catch(() => undefined);
         } else if (isComputerStatusEvent(event)) {
-          // In a shared Space the event does not say who took control; the snapshot does.
+          // This tab's own take or release already reads the new screen.
+          const own = readControlEventScreen(active.id, event);
+          // In a shared Space the event does not say who took control; the snapshot does. An own
+          // grant may still be someone else's while this tab's call is out, so it reconciles too.
           if (event.type === "computer.takeover.granted" && computerRef.current?.shared) {
-            void snapshotRefresh.invalidate().catch(() => undefined);
+            if (own)
+              void refreshThread(active.id, undefined, { readScreen: false }).catch(
+                () => undefined,
+              );
+            else void snapshotRefresh.invalidate().catch(() => undefined);
           }
-          void refreshComputerScreen(active.id).catch(() => undefined);
         }
         if (isRunTerminalEvent(event)) refreshRoutineHistory(event.runId);
       },
@@ -549,10 +571,10 @@ export function useThreadSync({
           // waiting_input: reconcile ask cards if a stale post-send refresh raced SSE.
           void snapshotRefresh.invalidate().catch(() => undefined);
         }
-        // The event does not say which tab sent it, so every tab showing this computer refreshes.
+        // The initiating tab already reads the screen; request answers do not change it.
         const computerBotId = computerBotIdRef.current;
         if (isComputerStatusEvent(event) && computerBotId && event.botId === computerBotId) {
-          void refreshComputerScreen(computerBotId).catch(() => undefined);
+          readControlEventScreen(computerBotId, event);
         }
         if (isRunTerminalEvent(event)) refreshRoutineHistory(event.runId);
       },

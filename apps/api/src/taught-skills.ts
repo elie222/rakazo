@@ -3,7 +3,6 @@ import { ORPCError } from "@orpc/server";
 import type { AgentHomeStore, JobPublisher, SandboxProvider } from "@rakazo/adapter-kit";
 import {
   createAdapterContext,
-  runContinueJob,
   skillTeachingExpireJob,
   skillTeachingExpireJobKey,
 } from "@rakazo/adapter-kit";
@@ -26,7 +25,9 @@ import {
   recordTeachingInputEvent,
   releaseComputerExecutionLease,
   releaseTeachingComputerControlForBot,
+  sandboxKindCapabilities,
   screenLeaseIdForRun,
+  wakeRun,
 } from "@rakazo/adapters";
 import type { Actor, MessageBlock, TaughtSkill } from "@rakazo/contracts";
 import type { SkillPlaybook, TeachRecordingEvent } from "@rakazo/core";
@@ -124,7 +125,7 @@ async function ensureGraphicalComputer(
   actor: Actor,
   bot: Awaited<ReturnType<ReturnType<typeof createRepos>["getBot"]>>,
 ) {
-  if (bot.computer?.kind === "desktop") {
+  if (sandboxKindCapabilities(bot.computer?.kind).runsOnUserMachine) {
     throw new ORPCError("BAD_REQUEST", {
       message: "Teaching needs a graphical sandbox computer, not a desktop host",
     });
@@ -170,7 +171,7 @@ async function ensureGraphicalComputer(
   if (!bot.computer?.providerRef || bot.computer.state !== "running") {
     throw new ORPCError("BAD_REQUEST", { message: "Computer must be running to teach" });
   }
-  if (bot.computer.kind === "desktop") {
+  if (sandboxKindCapabilities(bot.computer.kind).runsOnUserMachine) {
     throw new ORPCError("BAD_REQUEST", {
       message: "Teaching needs a graphical sandbox computer, not a desktop host",
     });
@@ -554,7 +555,7 @@ export function createTaughtSkillsService(deps: TaughtSkillsDeps) {
           trigger: "skill",
         },
       });
-      await deps.jobs.enqueue(runContinueJob(run.id));
+      await wakeRun(deps.jobs, run.id);
       return { runId: run.id };
     },
 

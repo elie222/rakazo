@@ -1,10 +1,8 @@
 import {
-  computerScreenSize,
-  computerSupportsTerminal,
-  computerSupportsUpdate,
   DISK_WARNING_PERCENT,
   diskUsedPercent,
   holdsUserControl,
+  sandboxKindCapabilities,
 } from "@rakazo/adapters";
 import type { ComputerStatus } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
@@ -12,7 +10,7 @@ import type { PrismaClient } from "@rakazo/db";
 
 /** What this bot is doing with its computer: which run holds it, and whether one waits for a person. */
 export async function resolveComputerWork(
-  prisma: PrismaClient,
+  prisma: Pick<PrismaClient, "computerExecutionLease" | "run">,
   input: {
     computerId: string | null | undefined;
     botId: string;
@@ -96,7 +94,7 @@ export function toComputerStatus(
                 computer?.state === "error"
               ? computer.state
               : "stopped";
-  const screen = computerScreenSize(computer?.kind);
+  const capabilities = sandboxKindCapabilities(kind);
   const diskPercent = computer ? diskUsedPercent(computer) : null;
   const diskFull =
     diskPercent !== null &&
@@ -114,12 +112,12 @@ export function toComputerStatus(
     controlBotId: computer?.controlBotId ?? null,
     takeoverRequested: work.takeoverRequested,
     screenAvailable: !computer?.maintenanceId && (state === "running" || state === "booting"),
-    screenWidth: screen.width,
-    screenHeight: screen.height,
+    screenWidth: capabilities.screen.width,
+    screenHeight: capabilities.screen.height,
     homeRevision: computer?.homeRevision ?? null,
     busyBotName: work.busyBotName,
-    canUpdate: computerSupportsUpdate(kind),
-    terminalAvailable: computerSupportsTerminal(kind),
+    canUpdate: capabilities.inPlaceUpdate,
+    terminalAvailable: capabilities.terminal,
     ...(diskFull ? { diskFullPercent: diskPercent } : {}),
   };
 }

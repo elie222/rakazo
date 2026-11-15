@@ -1,10 +1,11 @@
 import { ORPCError } from "@orpc/server";
-import { routineJobKey, routineWakeupJob, runContinueJob } from "@rakazo/adapter-kit";
+import { routineJobKey, routineWakeupJob } from "@rakazo/adapter-kit";
 import {
   finishRoutineHandover,
   parseRoutineWatch,
   stableStringify,
   validateRoutineWatch,
+  wakeRun,
 } from "@rakazo/adapters";
 import { canonicalPiProviderId, ROUTINE_TRIGGER_REQUIRED } from "@rakazo/contracts";
 import {
@@ -13,7 +14,6 @@ import {
   isOneShotRoutineCrons,
 } from "@rakazo/core";
 import { IsolationError, isRecordNotFound, Prisma } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
 import { assertEmailTrigger } from "../bot-email-address.js";
 import { assertRoutineModel } from "../model-pins.js";
 import { listRoutineRuns } from "../routine-runs.js";
@@ -382,11 +382,7 @@ export function routinesRoutes(ctx: RouterContext) {
           if (existing) return { runId: existing.id };
           throw error;
         }
-        // Keep enqueue outside the nonce-collision catch. The queued run is durable;
-        // log enqueue failures and still return success — the reconciler repairs a missed wake.
-        await deps.jobs.enqueue(runContinueJob(run.id)).catch((error) => {
-          getLogger().error("routine testRun enqueue", error);
-        });
+        await wakeRun(deps.jobs, run.id);
         return { runId: run.id };
       }),
     },

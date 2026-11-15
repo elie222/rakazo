@@ -4,11 +4,7 @@ import type {
   BackgroundJobPayloads,
   CloudAgentSnapshot,
 } from "@rakazo/adapter-kit";
-import {
-  CloudAgentRequestRejected,
-  CloudAgentRetryLater,
-  runContinueJob,
-} from "@rakazo/adapter-kit";
+import { CloudAgentRequestRejected, CloudAgentRetryLater } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
 import { cloudAgentHttpsUrl } from "@rakazo/core";
 import type { CloudAgent } from "@rakazo/db";
@@ -17,6 +13,7 @@ import { getLogger } from "@rakazo/logging";
 import type { CloudAgentDeps } from "./cloud-agent-service.js";
 import { cloudAgentBlock, cloudAgentFor, enqueueCloudAgent } from "./cloud-agent-service.js";
 import { cloudAgentLaunchSchema, cloudAgentPromptSchema } from "./cloud-agent-tools.js";
+import { wakeRun } from "./wake-run.js";
 
 const FOLLOWUP_SETTLE_MS = 5 * 60_000;
 
@@ -384,11 +381,6 @@ async function finishPoll(
   if (!committed) return;
   if (committed.seq !== undefined)
     await deps.events.notify(agent.threadId, committed.seq).catch(() => undefined);
-  if (committed.wakeRunId) {
-    // The existing run reconciler recovers a queued wake after an enqueue failure.
-    await deps.jobs.enqueue(runContinueJob(committed.wakeRunId)).catch(() => {
-      getLogger().warn("cloud agent wake deferred to reconciliation");
-    });
-  }
+  if (committed.wakeRunId) await wakeRun(deps.jobs, committed.wakeRunId);
   if (committed.nextPollAt) await enqueueCloudAgent(deps, agent.id, committed.nextPollAt);
 }

@@ -1,6 +1,5 @@
 import { randomBytes } from "node:crypto";
 import { ORPCError } from "@orpc/server";
-import { runContinueJob } from "@rakazo/adapter-kit";
 import {
   archiveBot,
   checkpointAndStopComputer,
@@ -28,6 +27,7 @@ import {
   UNSUPPORTED_ACCESS,
   VAULT_CHANGED,
   validateBotModelChange,
+  wakeRun,
 } from "@rakazo/adapters";
 import type {
   Actor,
@@ -435,7 +435,7 @@ export async function enqueueBotIntroRun(deps: RouterDeps, actor: Actor, bot: Bo
       select: { id: true },
     });
   }, THREAD_LOCK_TRANSACTION_OPTIONS);
-  if (run) await deps.jobs.enqueue(runContinueJob(run.id));
+  if (run) await wakeRun(deps.jobs, run.id);
 }
 
 export function botsRoutes(ctx: RouterContext) {
@@ -749,6 +749,7 @@ export function botsRoutes(ctx: RouterContext) {
             sandbox: deps.sandbox,
             home: deps.home,
             jobs: deps.jobs,
+            events: deps.events,
             artifacts: deps.artifacts,
             dataDir: deps.dataDir,
           },
