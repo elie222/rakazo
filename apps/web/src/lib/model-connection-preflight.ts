@@ -40,7 +40,8 @@ export function classifyModelConnectionFailure(
   } = {},
 ): ModelPreflightFailure {
   const message = messageFromError(error, context.secrets);
-  const lower = message.toLowerCase();
+  // Read from what the provider said: hiding a credential can take the word that names the failure.
+  const lower = (error instanceof Error ? error.message : String(error)).toLowerCase();
 
   if (context.modelId && context.discoveredModels && context.discoveredModels.length > 0) {
     const modelId = sanitizeModelConnectionError(context.modelId.trim(), context.secrets);

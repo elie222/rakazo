@@ -21,7 +21,7 @@ const NAME_QUOTE = "(?:\\\\{0,3}[\"'`])?";
 // A name matches from its credential word on, so a prefix such as `MY_` or `x-` costs no
 // scan, and each repeat is bounded or runs once per match: the search stays linear in the length
 // of the text.
-const NAMED_START = `(?:${CREDENTIAL_NAME}|(?<=[?&])key(?==))[A-Za-z0-9_-]{0,40}${NAME_QUOTE}([ \\t][A-Za-z]+)?${NAME_QUOTE}\\s*[:=](?!\\/\\/)\\s*`;
+const NAMED_START = `(?:${CREDENTIAL_NAME}|(?<=[?&])key(?==))[A-Za-z0-9_-]{0,40}(?:\\[[A-Za-z0-9_-]{0,20}\\])?${NAME_QUOTE}([ \\t][A-Za-z]+)?${NAME_QUOTE}\\s*[:=](?!\\/\\/)\\s*`;
 const NEXT_NAME = new RegExp(NAMED_START, "gi");
 const NAME_HERE = new RegExp(NAMED_START, "iy");
 
@@ -346,14 +346,22 @@ function knownSecretForms(secrets: ReadonlyArray<string | null | undefined>) {
       const json = JSON.stringify(value).slice(1, -1);
       forms.add(value).add(json).add(json.replaceAll("/", "\\/"));
       try {
-        const encoded = encodeURIComponent(value);
-        forms.add(encoded).add(encoded.replaceAll("%20", "+"));
+        // Form encoding also escapes the marks `encodeURIComponent` leaves as they are.
+        for (const encoded of [encodeURIComponent(value), strictlyEncoded(value)])
+          forms.add(encoded).add(encoded.replaceAll("%20", "+"));
       } catch {
         // A lone surrogate has no URL encoding.
       }
     }
   }
   return { anywhere: [...anywhere].map(foldAsciiCase), alone: [...alone] };
+}
+
+function strictlyEncoded(value: string): string {
+  return encodeURIComponent(value).replace(
+    /[!'()*~]/g,
+    (mark) => `%${mark.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
 }
 
 function redactKnownSecrets(text: string, secrets: ReadonlyArray<string | null | undefined>) {

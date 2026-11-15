@@ -22,6 +22,14 @@ describe("classifyModelConnectionFailure", () => {
     );
   });
 
+  it("reads the kind of failure from the provider's words, even ones the key repeats", () => {
+    const failure = classifyModelConnectionFailure(new Error("unauthorized: invalid key"), {
+      secrets: ["unauthorized"],
+    });
+    expect(failure.outcome).toBe("unauthorized");
+    expect(failure.message).toBe("•••: invalid key");
+  });
+
   it.each([
     ["rate_limit", "429 Too Many Requests"],
     ["rate_limit", "HTTP 429"],

@@ -106,6 +106,12 @@ describe("sanitizeModelConnectionError", () => {
     expect(sanitizeModelConnectionError(raw)).toBe(cleaned);
   });
 
+  it("redacts the value of an indexed field", () => {
+    expect(sanitizeModelConnectionError("bad api_keys[0]=EXAMPLE1placeholder2VALUE3 sent")).toBe(
+      "bad api_keys[0]=••• sent",
+    );
+  });
+
   it("redacts a value inside escaped JSON", () => {
     expect(sanitizeModelConnectionError(`{\\"api_key\\": \\"${S}\\", \\"code\\": 401}`)).toBe(
       '{\\"api_key\\": \\"•••\\", \\"code\\": 401}',
@@ -300,6 +306,12 @@ describe("sanitizeModelConnectionError", () => {
       expect(
         sanitizeModelConnectionError("rejected ABCDEFGHIJKLMNOP", ["Bearer ABCDEFGHIJKLMNOP"]),
       ).toBe("rejected •••");
+    });
+
+    it("redacts a known value written with every reserved mark escaped", () => {
+      expect(sanitizeModelConnectionError("rejected abcd%7Eefgh%21", ["abcd~efgh!"])).toBe(
+        "rejected •••",
+      );
     });
 
     it("keeps the second word of a two-word header value that is not a token", () => {
