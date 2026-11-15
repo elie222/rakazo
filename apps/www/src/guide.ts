@@ -231,21 +231,6 @@ export const COMPARISON_ROWS: readonly ComparisonRow[] = [
   },
 ];
 
-export function faqPageStructuredData(items: readonly FaqItem[]) {
-  return {
-    "@context": "https://schema.org",
-    "@type": "FAQPage",
-    mainEntity: items.map((item) => ({
-      "@type": "Question",
-      name: item.question,
-      acceptedAnswer: {
-        "@type": "Answer",
-        text: item.answer,
-      },
-    })),
-  };
-}
-
 function faqMarkdown(items: readonly FaqItem[]): string {
   return items.map((item) => `### ${item.question}\n\n${item.answer}`).join("\n\n");
 }

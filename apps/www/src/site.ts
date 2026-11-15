@@ -24,3 +24,5 @@ export const CHANGELOG_URL = "https://github.com/elie222/rakazo/releases";
 export const LATEST_RELEASE_URL = `${CHANGELOG_URL}/latest`;
 export const INBOX_ZERO_URL =
   "https://www.getinboxzero.com/?utm_source=rakazo&utm_medium=website&utm_campaign=footer";
+export const X_URL = "https://x.com/rakazobot";
+export const DISCORD_URL = "https://discord.gg/RWwKa2Sn7h";
