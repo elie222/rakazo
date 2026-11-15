@@ -53,6 +53,18 @@ export const ComputerStatusSchema = z.object({
 });
 export type ComputerStatus = z.infer<typeof ComputerStatusSchema>;
 
+/** A computer screen to load, and how its URL signs the viewer in. */
+export const ComputerScreenSchema = z.object({
+  url: z.string().nullable(),
+  /**
+   * Set when the URL signs in with a code that works once and ends the session an earlier code
+   * opened, so loading it a second time, or loading a newer one beside it, loses the screen.
+   * `screen` names what the URL shows apart from that code: URLs with the same value show the
+   * same screen. Absent when the URL can be loaded again, and from older servers.
+   */
+  singleUseSignIn: z.object({ screen: z.string() }).optional(),
+});
+
 export const ComputerReleaseReasonSchema = z.enum(["done", "skipped"]);
 export type ComputerReleaseReason = z.infer<typeof ComputerReleaseReasonSchema>;
 

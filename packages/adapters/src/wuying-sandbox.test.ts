@@ -319,6 +319,8 @@ describe("WuyingSandboxProvider", () => {
       region_id: "cn-hangzhou",
       auth_code: "one-time-code",
     });
+    // The app learns the code works once from this, never from the URL.
+    expect(screen.singleUseSignIn).toEqual({ screen: "ecd-fake:cn-hangzhou" });
   });
 
   it("removes only the computer's home, never the desktop", async () => {
