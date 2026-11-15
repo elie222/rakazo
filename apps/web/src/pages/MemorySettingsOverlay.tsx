@@ -240,7 +240,10 @@ export function MemorySettingsOverlay({
                     variant="ghost"
                     type="button"
                     disabled={busy}
-                    onClick={() => setEditingProvider(false)}
+                    onClick={() => {
+                      setEditingProvider(false);
+                      setError(null);
+                    }}
                     className="mt-5 ml-2"
                   >
                     <Trans>Cancel</Trans>
