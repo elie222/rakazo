@@ -538,7 +538,7 @@ it("retries without an error report while the paused action's tool is offline", 
   } finally {
     installLogger(createLogger({ service: "test", level: "off", sinks: [] }));
   }
-  expect(sink.events.filter((event) => event.message === "run setup failed")).toEqual([
+  expect(sink.events.filter((event) => event.message === "run.setup_failed")).toEqual([
     expect.objectContaining({ level: "warn" }),
   ]);
   expect(fake.stream).not.toHaveBeenCalled();
