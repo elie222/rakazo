@@ -1,7 +1,6 @@
 import type { JobPublisher } from "@rakazo/adapter-kit";
 import {
   messagingReplyJob,
-  runContinueJob,
   teamChatAmbientJob,
   teamChatEngageJob,
   teamChatEngageJobKey,
@@ -24,6 +23,7 @@ import {
 import { getLogger } from "@rakazo/logging";
 import { inboundDeliveryClientNonce, messagingWakeIdempotencyKey } from "./inbound-delivery.js";
 import type { TeamChatEngagementJudge } from "./team-chat-judge.js";
+import { wakeRun } from "./wake-run.js";
 
 /** A received message's run starts at once; its backup job takes over after this. */
 export const TEAM_CHAT_ENGAGE_BACKUP_MS = 60_000;
@@ -285,7 +285,7 @@ export class TeamChat {
     if (!sent.runId) throw new Error("Team chat message did not create an agent run");
     // A replayed send skipped its claim; one that committed without the link is linked now.
     await this.settle(message.id, from, link(sent.runId), { runId: null });
-    await this.deps.jobs.enqueue(runContinueJob(sent.runId));
+    await wakeRun(this.deps.jobs, sent.runId);
   }
 
   /**

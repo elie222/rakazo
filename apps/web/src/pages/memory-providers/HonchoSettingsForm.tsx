@@ -1,4 +1,4 @@
-import { Trans } from "@lingui/react/macro";
+import { Trans, useLingui } from "@lingui/react/macro";
 import { Button, Field, FieldError, FieldLabel, Input } from "@rakazo/ui-web";
 import { useId, useState } from "react";
 import type { ConnectionMode } from "./ConnectionModeFields";
@@ -14,27 +14,39 @@ function isReservedPeerId(value: string): boolean {
 
 export function HonchoSettingsForm({
   busy,
+  current,
   onConnect,
   advancedSettings,
 }: MemoryProviderSettingsFormProps) {
+  const { t } = useLingui();
+  const editing = current !== undefined;
   const apiKeyId = useId();
   const workspaceId = useId();
   const workspaceErrorId = useId();
-  const [mode, setMode] = useState<ConnectionMode>("cloud");
-  const [baseUrl, setBaseUrl] = useState("");
+  const [mode, setMode] = useState<ConnectionMode>(current?.mode === "local" ? "local" : "cloud");
+  const [baseUrl, setBaseUrl] = useState(current?.baseUrl ?? "");
   const userPeerId = useId();
   const userPeerErrorId = useId();
   const userPeerDescriptionId = useId();
-  const [userPeer, setUserPeer] = useState("");
+  const [userPeer, setUserPeer] = useState(current?.userPeerId ?? "");
   const [apiKey, setApiKey] = useState("");
-  const [workspace, setWorkspace] = useState("");
+  const [workspace, setWorkspace] = useState(current?.workspaceId ?? "");
+  const key = apiKey.trim();
   const workspaceValid = RESOURCE_ID_PATTERN.test(workspace.trim());
   const showUserPeer = workspace.trim().length > 0;
   const userPeerFormatValid = RESOURCE_ID_PATTERN.test(userPeer.trim());
   const userPeerReserved = isReservedPeerId(userPeer.trim());
   const userPeerValid = !showUserPeer || (userPeerFormatValid && !userPeerReserved);
+  // Editing keeps the stored key only while the host, workspace and user peer are unchanged.
+  const keepsKey =
+    current !== undefined &&
+    mode === (current.mode === "local" ? "local" : "cloud") &&
+    (mode === "cloud" ||
+      baseUrl.trim().replace(/\/+$/, "") === (current.baseUrl ?? "").trim().replace(/\/+$/, "")) &&
+    workspace.trim() === (current.workspaceId ?? "").trim() &&
+    (showUserPeer ? userPeer.trim() : "") === (current.userPeerId ?? "").trim();
   const ready =
-    apiKey.trim().length >= 8 &&
+    (key.length === 0 ? keepsKey : key.length >= 8) &&
     workspaceValid &&
     userPeerValid &&
     (mode === "cloud" || Boolean(baseUrl.trim()));
@@ -44,10 +56,11 @@ export function HonchoSettingsForm({
     const draft: MemoryProviderConnectionDraft = {
       settings: {
         ...(mode === "local" ? { mode, baseUrl: baseUrl.trim() } : {}),
+        ...(current?.reasoningLevel ? { reasoningLevel: current.reasoningLevel } : {}),
         ...(showUserPeer && userPeer.trim() ? { userPeerId: userPeer.trim() } : {}),
         ...(workspace.trim() ? { workspaceId: workspace.trim() } : {}),
       },
-      credentials: { apiKey: apiKey.trim() },
+      credentials: key ? { apiKey: key } : {},
     };
     if (await onConnect(draft)) setApiKey("");
   }
@@ -63,7 +76,7 @@ export function HonchoSettingsForm({
           value={apiKey}
           disabled={busy}
           onChange={(event) => setApiKey(event.target.value)}
-          placeholder={mode === "cloud" ? "hch-…" : undefined}
+          placeholder={keepsKey ? t`Saved` : mode === "cloud" ? "hch-…" : undefined}
           type="password"
           autoComplete="new-password"
           maxLength={4096}
@@ -143,7 +156,17 @@ export function HonchoSettingsForm({
         disabled={busy || !ready}
         onClick={() => void connect()}
       >
-        {busy ? <Trans>Connecting…</Trans> : <Trans>Connect</Trans>}
+        {editing ? (
+          busy ? (
+            <Trans>Saving…</Trans>
+          ) : (
+            <Trans>Save</Trans>
+          )
+        ) : busy ? (
+          <Trans>Connecting…</Trans>
+        ) : (
+          <Trans>Connect</Trans>
+        )}
       </Button>
     </>
   );

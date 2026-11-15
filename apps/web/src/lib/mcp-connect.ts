@@ -27,7 +27,7 @@ export async function connectMcpOauth(serverId: string): Promise<McpOauthResult>
   if (started.status !== "authorization_required") return started.status;
   const popup = window.open(
     started.authorizationUrl,
-    MCP_OAUTH_CHANNEL,
+    `${MCP_OAUTH_CHANNEL}:${started.sessionId}`,
     "popup,width=560,height=720",
   );
   if (!popup) {
@@ -35,18 +35,19 @@ export async function connectMcpOauth(serverId: string): Promise<McpOauthResult>
     window.location.assign(started.authorizationUrl);
     return "cancelled";
   }
-  return await new Promise<McpOauthResult>((resolve) => {
+  return await new Promise<McpOauthResult>((resolve, reject) => {
     const channel = new BroadcastChannel(MCP_OAUTH_CHANNEL);
     let settled = false;
     let pollTimer = 0;
     let timeoutTimer = 0;
-    const finish = (result: McpOauthResult) => {
+    const finish = (result: McpOauthResult | Error) => {
       if (settled) return;
       settled = true;
       window.clearInterval(pollTimer);
       window.clearTimeout(timeoutTimer);
       channel.close();
-      resolve(result);
+      if (result instanceof Error) reject(result);
+      else resolve(result);
     };
     // COOP makes an open popup read as closed, but it keeps focus until the
     // user really closes it.
@@ -58,7 +59,14 @@ export async function connectMcpOauth(serverId: string): Promise<McpOauthResult>
       finish("cancelled");
     }, MCP_OAUTH_TIMEOUT_MS);
     channel.onmessage = (event: MessageEvent) => {
-      if ((event.data as { type?: string } | null)?.type !== "mcp-oauth-complete") return;
+      const message = event.data as { type?: string; sessionId?: string; message?: string } | null;
+      if (message?.sessionId !== started.sessionId) return;
+      const type = message?.type;
+      if (type === "mcp-oauth-failed") {
+        finish(new Error(message?.message));
+        return;
+      }
+      if (type !== "mcp-oauth-complete") return;
       finish("connected");
     };
   });

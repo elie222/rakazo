@@ -4,12 +4,13 @@ import type {
   JobPublisher,
   MediaGenerationProvider,
 } from "@rakazo/adapter-kit";
-import { mediaPollJob, runContinueJob } from "@rakazo/adapter-kit";
+import { mediaPollJob } from "@rakazo/adapter-kit";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { generateMediaFromTool, MEDIA_JOB_KIND } from "./media-generation-tools.js";
 import { persistMessageInTransaction } from "./run-messages.js";
 import { attachWorkspaceFileToThread } from "./thread-artifacts.js";
+import { wakeRun } from "./wake-run.js";
 
 /** A short video takes minutes; one still unfinished after this is reported as failed. */
 export const MEDIA_POLL_DEADLINE_MS = 60 * 60_000;
@@ -285,15 +286,7 @@ export async function pollMediaVideo(deps: MediaVideoDeps, payload: { jobId: str
   }
   // Still running, briefly locked by another check, or a provider error: try again later.
   if (!settled) await scheduleMediaPoll(deps.jobs, job.id, job.createdAt);
-  // The run reconciler recovers a queued wake after an enqueue failure.
-  if (wakeRunId)
-    await deps.jobs.enqueue(runContinueJob(wakeRunId)).catch((error) => {
-      getLogger().warn("media.wake_deferred", {
-        "media.job_id": job.id,
-        "run.id": wakeRunId,
-        error,
-      });
-    });
+  if (wakeRunId) await wakeRun(deps.jobs, wakeRunId);
 }
 
 /** Queue one turn for the bot on the outcome, so it can follow up and the user is notified. */
