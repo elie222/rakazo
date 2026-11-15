@@ -3,6 +3,7 @@ import hashlib
 import importlib.util
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
 spec = importlib.util.spec_from_file_location("ios_release", Path(__file__).with_name("build-ios-release.py"))
 module = importlib.util.module_from_spec(spec)
@@ -49,6 +50,22 @@ class ProfileValidation(unittest.TestCase):
         self.profile["Entitlements"]["get-task-allow"] = True
         with self.assertRaises(ValueError):
             self.check_profile()
+
+
+class SigningDiagnostics(unittest.TestCase):
+    def test_wrong_password_error_names_the_secrets_without_revealing_command_or_output(self):
+        result = module.subprocess.CompletedProcess([], 1, "private identity", "MAC verification failed: private detail")
+        with patch.object(module.subprocess, "run", return_value=result):
+            with self.assertRaisesRegex(RuntimeError, "IOS_DISTRIBUTION_P12_PASSWORD") as error:
+                module.command(["security", "import", "private-file.p12", "-P", "private-password"])
+        self.assertNotIn("private", str(error.exception))
+
+    def test_other_signing_failures_identify_the_operation_without_raw_output(self):
+        result = module.subprocess.CompletedProcess([], 1, "private identity", "private detail")
+        with patch.object(module.subprocess, "run", return_value=result):
+            with self.assertRaisesRegex(RuntimeError, "security create-keychain") as error:
+                module.command(["security", "create-keychain", "-p", "private-password"])
+        self.assertNotIn("private", str(error.exception))
 
 
 if __name__ == "__main__":
