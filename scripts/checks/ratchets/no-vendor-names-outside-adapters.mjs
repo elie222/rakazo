@@ -20,6 +20,15 @@ export const exclude = [
   // the integrations catalog, and the settings another agent's import reads.
   "packages/core/src/{model-providers,messaging-providers,featured-connectors,plugin-catalog}.ts",
   "packages/core/src/agent-import/**",
+  // Composition roots wire vendors up and read their configuration, which AGENTS.md allows.
+  "apps/api/src/{app,env,index,monitoring,native-monitoring}.ts",
+  "apps/api/src/cli/**",
+  "apps/worker/src/index.ts",
+  // Build, deployment and tooling configuration.
+  "apps/*/{vite,playwright,metro,app}.config.{ts,js}",
+  "apps/desktop/scripts/**",
+  "infra/**",
+  "scripts/**",
   // The monitoring and logging sinks, which lint also lets load their vendor's SDK.
   "{apps/desktop/src,apps/web/src/lib,apps/mobile/lib}/monitoring.ts",
   "packages/logging/src/{sentry,axiom,axiom-sink}.ts",
