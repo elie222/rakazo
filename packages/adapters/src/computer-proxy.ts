@@ -51,6 +51,9 @@ export function computerProxyFromEnv(
   if (!type) {
     throw new Error(`${COMPUTER_PROXY_ENV} must start with http://, socks5:// or socks4://`);
   }
+  if ((url.pathname && url.pathname !== "/") || url.search || url.hash) {
+    throw new Error(`${COMPUTER_PROXY_ENV} must be just a scheme, credentials, host and port`);
+  }
   const port = Number(url.port || (type === "http" ? 80 : 1080));
   if (!url.hostname || !Number.isInteger(port) || port < 1 || port > 65_535) {
     throw new Error(`${COMPUTER_PROXY_ENV} needs a host and a valid port`);

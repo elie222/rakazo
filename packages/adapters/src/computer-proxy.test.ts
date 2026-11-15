@@ -47,6 +47,17 @@ describe("computerProxyFromEnv", () => {
     );
   });
 
+  it("rejects a path, query or fragment it would otherwise drop", () => {
+    for (const suffix of ["/endpoint", "?x=1", "#frag"]) {
+      expect(() =>
+        computerProxyFromEnv({ RAKAZO_COMPUTER_PROXY: `http://proxy.example.com:8080${suffix}` }),
+      ).toThrow(/must be just/);
+    }
+    expect(
+      computerProxyFromEnv({ RAKAZO_COMPUTER_PROXY: "http://proxy.example.com:8080/" })?.port,
+    ).toBe(8080);
+  });
+
   it("rejects a password without a username instead of dropping it", () => {
     expect(() => computerProxyFromEnv({ RAKAZO_COMPUTER_PROXY: "http://:secret@h:1" })).toThrow(
       /needs a username/,
