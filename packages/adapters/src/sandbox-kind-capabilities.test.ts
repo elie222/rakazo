@@ -21,7 +21,8 @@ type Row = [
   storedHomeIsBackup: boolean,
 ];
 
-// What the per-kind id lists in shared code answered before providers declared these themselves.
+// What the per-kind id lists in shared code answered before providers declared these themselves,
+// except boxd and railway: those lists had left out their terminal and stored team home.
 const EXPECTED: Record<SandboxKind, Row> = {
   none: [false, false, false, false, DEFAULT_SCREEN, "never", false, false],
   docker: [true, true, false, false, DEFAULT_SCREEN, "always", false, true],
@@ -30,9 +31,9 @@ const EXPECTED: Record<SandboxKind, Row> = {
   daytona: [true, true, false, false, DEFAULT_SCREEN, "never", true, false],
   createos: [false, true, false, false, DEFAULT_SCREEN, "never", true, false],
   boat: [true, true, false, false, LARGE_SCREEN, "never", true, false],
-  boxd: [false, true, false, false, DEFAULT_SCREEN, "never", false, false],
+  boxd: [true, true, false, false, DEFAULT_SCREEN, "never", true, false],
   instabox: [true, true, false, false, DEFAULT_SCREEN, "never", true, false],
-  railway: [false, true, false, false, DEFAULT_SCREEN, "never", false, false],
+  railway: [true, true, false, false, DEFAULT_SCREEN, "never", true, false],
   kubernetes: [true, true, false, false, DEFAULT_SCREEN, "optional", true, false],
   incus: [true, true, false, false, DEFAULT_SCREEN, "never", true, false],
   "local-vm": [true, true, false, false, DEFAULT_SCREEN, "never", true, false],
@@ -69,7 +70,7 @@ describe("sandbox kind capabilities", () => {
     expect(Object.keys(sandboxCapabilitiesByKind).sort()).toEqual([...SandboxKind.options].sort());
   });
 
-  it.each(SandboxKind.options)("%s keeps the values shared code used before", (kind) => {
+  it.each(SandboxKind.options)("%s declares the pinned values", (kind) => {
     expect(sandboxKindCapabilities(kind)).toEqual(capabilities(EXPECTED[kind]));
   });
 
