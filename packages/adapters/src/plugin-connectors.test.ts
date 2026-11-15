@@ -308,6 +308,14 @@ describe("portable plugin parser", () => {
     expect(read.data?.skills.map((s) => s.name)).toEqual(["example-skill"]);
     expect(saved.builtinNames).toEqual(["interrogate"]);
   });
+  it("classifies a root skill independently of nested catalog size", () => {
+    expect(
+      classifyPluginFiles([
+        "SKILL.md",
+        ...Array.from({ length: 501 }, (_, index) => `skills/skill${index}/SKILL.md`),
+      ]),
+    ).toEqual({ hasConnector: false, skillCount: 1 });
+  });
   it("tells from a file list whether every part installs", () => {
     const remote = JSON.stringify({
       mcpServers: { tools: { type: "http", url: "https://tools.example.test/mcp" } },

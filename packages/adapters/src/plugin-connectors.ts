@@ -878,7 +878,7 @@ export function classifyPluginFiles(
     const validSkills = selectedSkills.filter((path) => (sizes?.get(path) ?? 0) <= MAX_FILE_BYTES);
     if (
       paths.length > MAX_TREE_ENTRIES ||
-      skillPaths.length > MAX_CATALOG_SKILLS ||
+      selectedSkills.length > MAX_CATALOG_SKILLS ||
       !validSkills.length ||
       validSkills.reduce((sum, path) => sum + (sizes?.get(path) ?? 0), 0) > MAX_CATALOG_BYTES
     )

@@ -31,6 +31,14 @@ describe("referencedSkillResources", () => {
     expect(referencedSkillResources("Read ../shared.md and /shared.md", ["shared.md"])).toEqual([]);
     expect(referencedSkillResources("Read ./shared.md", ["shared.md"])).toEqual(["shared.md"]);
   });
+  it("preserves punctuation within resource names", () => {
+    expect(
+      referencedSkillResources("Read references/foo(bar).md and `references/run!`", [
+        "references/foo(bar).md",
+        "references/run!",
+      ]),
+    ).toEqual(["references/foo(bar).md", "references/run!"]);
+  });
   const paths = ["references/guide.md", "references/other.md", "src/main.ts"];
   it("includes a directory mentioned alongside an individual file", () => {
     expect(
