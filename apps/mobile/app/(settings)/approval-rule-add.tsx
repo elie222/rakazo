@@ -1,15 +1,17 @@
 import { useLingui } from "@lingui/react/macro";
 import type { ApprovalRuleChoice } from "@rakazo/core";
 import { approvalRuleChoices, listSearch } from "@rakazo/core";
+import { useQuery } from "@tanstack/react-query";
 import { useLocalSearchParams, useNavigation, useRouter } from "expo-router";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useLayoutEffect, useMemo, useState } from "react";
 import { ScrollView, StyleSheet, Text } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LoadFailure } from "../../components/load-failure";
 import { SettingsGroup, SettingsRow } from "../../components/settings-group";
 import { mobileTokens } from "../../lib/appearance";
 import { native, useThemedStyles } from "../../lib/native";
-import { settingsRpc, settingsTarget } from "../../lib/settings-target";
+import { queryClient, rpcQuery, rpcSave, useSave } from "../../lib/query";
+import { settingsTarget } from "../../lib/settings-target";
 import { useSideInsets } from "../../lib/side-insets";
 import { errorText } from "../../lib/user-error";
 
@@ -20,34 +22,40 @@ import { errorText } from "../../lib/user-error";
 export default function AddApprovalRule() {
   const { spaceId } = useLocalSearchParams<{ spaceId?: string }>();
   const target = useMemo(() => settingsTarget(spaceId), [spaceId]);
-  const rpc = useMemo(() => settingsRpc(target), [target]);
   const scope = target.scope;
   const { t } = useLingui();
   const router = useRouter();
   const navigation = useNavigation();
   const sideInsets = useSideInsets();
   const styles = useThemedStyles(createStyles);
-  const [choices, setChoices] = useState<ApprovalRuleChoice[] | null>(null);
+  const overrideSpace = target.scope === "space" ? target.spaceId : undefined;
+  const rulesRead = rpcQuery("approvalRules/list", { scope }, overrideSpace);
+  const rulesQuery = useQuery(rulesRead, queryClient);
+  const choices = useMemo(
+    () => (rulesQuery.data ? approvalRuleChoices(rulesQuery.data) : null),
+    [rulesQuery.data],
+  );
   const [query, setQuery] = useState("");
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [attempt, setAttempt] = useState(0);
-  // Set synchronously, so a second tap before the re-render can't save twice and go back twice.
-  const saving = useRef(false);
-
-  useEffect(() => {
-    let current = true;
-    void rpc("approvalRules/list", { scope })
-      .then((rules) => {
-        if (current) setChoices(approvalRuleChoices(rules));
-      })
-      .catch((err: unknown) => {
-        if (current) setError(errorText(err, t`Something went wrong. Try again.`));
-      });
-    return () => {
-      current = false;
-    };
-  }, [attempt, rpc, scope, t]);
+  const setRule = rpcSave("approvalRules/set", overrideSpace);
+  const add = useSave({
+    save: (choice: ApprovalRuleChoice) =>
+      setRule({
+        scope,
+        effect: "require_approval",
+        matchKind: choice.matchKind,
+        matchValue: choice.matchValue,
+      }),
+    onSaved: () => {
+      // Opened by a link as the first screen, there is nothing to go back to.
+      if (router.canGoBack()) router.back();
+      else router.replace({ pathname: "/approvals", params: spaceId ? { spaceId } : {} });
+    },
+  });
+  const pending = add.pending;
+  const loadError = rulesQuery.error
+    ? errorText(rulesQuery.error, t`Something went wrong. Try again.`)
+    : null;
+  const error = add.error ? errorText(add.error, t`Could not save that preference`) : loadError;
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -63,32 +71,6 @@ export default function AddApprovalRule() {
     });
   }, [navigation, t]);
 
-  const add = useCallback(
-    async (choice: ApprovalRuleChoice) => {
-      if (saving.current) return;
-      saving.current = true;
-      setPending(true);
-      setError(null);
-      try {
-        await rpc("approvalRules/set", {
-          scope,
-          effect: "require_approval",
-          matchKind: choice.matchKind,
-          matchValue: choice.matchValue,
-        });
-        // Opened by a link as the first screen, there is nothing to go back to.
-        if (router.canGoBack()) router.back();
-        else router.replace({ pathname: "/approvals", params: spaceId ? { spaceId } : {} });
-      } catch (err) {
-        setError(errorText(err, t`Could not save that preference`));
-      } finally {
-        saving.current = false;
-        setPending(false);
-      }
-    },
-    [router, rpc, scope, spaceId, t],
-  );
-
   const { visible } = listSearch(choices ?? [], query, {
     text: (choice) => [choice.label, choice.matchValue],
   });
@@ -97,7 +79,7 @@ export default function AddApprovalRule() {
       key={`${choice.matchKind}:${choice.matchValue}`}
       accessibilityRole="button"
       disabled={pending}
-      onPress={() => void add(choice)}
+      onPress={() => add.run(choice)}
       title={choice.label}
     />
   );
@@ -113,10 +95,7 @@ export default function AddApprovalRule() {
         {error && !choices ? (
           <LoadFailure
             message={error}
-            onRetry={() => {
-              setError(null);
-              setAttempt((count) => count + 1);
-            }}
+            onRetry={() => void queryClient.resetQueries({ queryKey: rulesRead.queryKey })}
           />
         ) : error ? (
           <Text accessibilityRole="alert" style={styles.error}>

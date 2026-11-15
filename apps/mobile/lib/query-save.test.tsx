@@ -30,11 +30,16 @@ function deferred<T>() {
 
 const save = vi.fn<(name: string) => Promise<string>>();
 const onSaved = vi.fn();
+const onFailed = vi.fn();
+let closesScreen = false;
 let screen: ReturnType<typeof useSave<string, string>> & { name: unknown };
 function Screen() {
   const read = rpcQuery("voice/status");
   const { data } = useQuery(read, queryClient);
-  screen = { ...useSave({ save, stale: [read.queryKey], onSaved }), name: data };
+  screen = {
+    ...useSave({ save, stale: [read.queryKey], onSaved, onFailed, closesScreen }),
+    name: data,
+  };
   return null;
 }
 
@@ -47,6 +52,8 @@ beforeEach(async () => {
   scope.rpc.mockReset().mockResolvedValue("Before");
   save.mockReset();
   onSaved.mockReset();
+  onFailed.mockReset();
+  closesScreen = false;
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
@@ -101,6 +108,7 @@ it("reports a save that failed and leaves the reads alone", async () => {
   expect(screen.error).toEqual(new Error("Name taken"));
   expect(screen.input).toBe("After");
   expect(onSaved).not.toHaveBeenCalled();
+  expect(onFailed.mock.calls).toEqual([[new Error("Name taken"), "After"]]);
   expect(cached()?.isInvalidated).toBe(false);
   expect(scope.rpc).toHaveBeenCalledTimes(1);
   await act(async () => screen.reset());
@@ -108,29 +116,90 @@ it("reports a save that failed and leaves the reads alone", async () => {
   expect(screen.error).toBeNull();
 });
 
-it("ignores a save that ends after the screen has gone, but still marks its reads stale", async () => {
-  const saving = deferred<string>();
-  save.mockReturnValue(saving.promise);
-  await act(async () => screen.run("After"));
-  await act(async () => root.render(null));
-  await act(async () => saving.resolve("After"));
-  await settle();
-  expect(onSaved).not.toHaveBeenCalled();
-  expect(cached()?.isInvalidated).toBe(true);
-});
-
-it.each([
+const outcomes = [
   ["succeeds", (saving: ReturnType<typeof deferred<string>>) => saving.resolve("After")],
   ["fails", (saving: ReturnType<typeof deferred<string>>) => saving.reject(new Error("late"))],
-])("shows nothing for a save that %s after the space changed", async (_outcome, finish) => {
-  const saving = deferred<string>();
-  save.mockReturnValue(saving.promise);
-  await act(async () => screen.run("After"));
-  scope.spaceId = "space-b";
-  await act(async () => finish(saving));
-  await settle();
-  expect(onSaved).not.toHaveBeenCalled();
-  expect(screen.pending).toBe(false);
-  expect(screen.error).toBeNull();
-  expect(screen.input).toBeUndefined();
+] as const;
+
+it("is pending in the render that follows the call, with no tick in between", () => {
+  save.mockReturnValue(deferred<string>().promise);
+  act(() => screen.run("After"));
+  expect(screen.pending).toBe(true);
+  expect(screen.input).toBe("After");
 });
+
+it("runs one save when called twice in the same tick, and again once that one has ended", async () => {
+  const saving = deferred<string>();
+  save.mockReturnValueOnce(saving.promise).mockResolvedValue("Again");
+  act(() => {
+    screen.run("After");
+    screen.run("Twice");
+  });
+  expect(save.mock.calls).toEqual([["After"]]);
+  await act(async () => saving.resolve("After"));
+  await settle();
+  expect(onSaved.mock.calls).toEqual([["After", "After"]]);
+  await act(async () => screen.run("Again"));
+  expect(save).toHaveBeenLastCalledWith("Again");
+});
+
+it("stays pending after a save that closes the screen, and takes no other save", async () => {
+  closesScreen = true;
+  await act(async () => root.render(<Screen />));
+  save.mockResolvedValue("After");
+  await act(async () => screen.run("After"));
+  await settle();
+  expect(onSaved).toHaveBeenCalledWith("After", "After");
+  expect(screen.pending).toBe(true);
+  act(() => screen.run("Again"));
+  expect(save).toHaveBeenCalledTimes(1);
+});
+
+it("offers a save that closes the screen again when it fails", async () => {
+  closesScreen = true;
+  await act(async () => root.render(<Screen />));
+  save.mockRejectedValueOnce(new Error("Name taken")).mockResolvedValue("After");
+  await act(async () => screen.run("After"));
+  await settle();
+  expect(screen.pending).toBe(false);
+  expect(screen.error).toEqual(new Error("Name taken"));
+  await act(async () => screen.run("After"));
+  expect(save).toHaveBeenCalledTimes(2);
+  expect(screen.error).toBeNull();
+});
+
+it.each(outcomes)(
+  "ignores a save that %s after the screen has gone, but still marks its reads stale",
+  async (outcome, finish) => {
+    const saving = deferred<string>();
+    save.mockReturnValue(saving.promise);
+    await act(async () => screen.run("After"));
+    await act(async () => root.render(null));
+    await act(async () => finish(saving));
+    await settle();
+    expect(onSaved).not.toHaveBeenCalled();
+    expect(onFailed).not.toHaveBeenCalled();
+    expect(cached()?.isInvalidated).toBe(outcome === "succeeds");
+  },
+);
+
+it.each(outcomes)(
+  "shows nothing for a save that %s after the space changed, and saves in the new space meanwhile",
+  async (_outcome, finish) => {
+    const saving = deferred<string>();
+    save.mockReturnValueOnce(saving.promise).mockReturnValue(deferred<string>().promise);
+    await act(async () => screen.run("After"));
+    scope.spaceId = "space-b";
+    await act(async () => root.render(<Screen />));
+    expect(screen.pending).toBe(false);
+    await act(async () => screen.run("Here"));
+    expect(save).toHaveBeenLastCalledWith("Here");
+    await act(async () => finish(saving));
+    await settle();
+    expect(onSaved).not.toHaveBeenCalled();
+    expect(onFailed).not.toHaveBeenCalled();
+    expect(screen.pending).toBe(true);
+    expect(screen.error).toBeNull();
+    expect(screen.input).toBe("Here");
+  },
+);

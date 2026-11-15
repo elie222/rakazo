@@ -39,8 +39,7 @@ export default function Language() {
   const error = change.error ? t`Could not change language` : null;
 
   function applyLocale(code: UiLocale) {
-    if (code === locale || saving) return;
-    change.run(code);
+    if (code !== locale) change.run(code);
   }
 
   return (

@@ -88,13 +88,8 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-async function settle() {
-  await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
-}
-/** A save reports back a tick after the tap that started it. */
 async function press(label: string) {
   await act(async () => row(label).click());
-  await settle();
 }
 const rowsDisabled = () =>
   [...container.querySelectorAll("button")].map((button) => button.disabled);
@@ -139,7 +134,6 @@ it.each(["ru", "de", "zh-TW"] as const)(
       finishSave();
       await vi.mocked(i18n.setUiLocale).mock.results[0]!.value;
     });
-    await settle();
     expect(i18n.getActiveUiLocale()).toBe(locale);
     expect(resumeLiveNotifications).toHaveBeenCalledWith("https://rakazo.test", "token", "space-1");
     expect(rpc).toHaveBeenCalledExactlyOnceWith("preferences/update", { locale });
@@ -166,7 +160,6 @@ function holdChange() {
   );
   return async (outcome?: Error) => {
     await act(async () => finish(outcome));
-    await settle();
   };
 }
 

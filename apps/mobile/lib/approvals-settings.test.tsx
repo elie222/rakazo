@@ -144,11 +144,22 @@ vi.mock("../components/settings-group", () => ({
     title,
     onPress,
     dimmed,
+    disabled,
   }: {
     title: string;
     onPress?: () => void;
     dimmed?: boolean;
-  }) => createElement("span", { onClick: onPress, "data-dimmed": dimmed || undefined }, title),
+    disabled?: boolean;
+  }) =>
+    createElement(
+      "span",
+      {
+        onClick: disabled ? undefined : onPress,
+        "data-dimmed": dimmed || undefined,
+        "data-disabled": disabled || undefined,
+      },
+      title,
+    ),
 }));
 
 let root: Root;
@@ -169,18 +180,19 @@ const rule = (overrides: Partial<Rule> & Pick<Rule, "id">): Rule => ({
   ...overrides,
 });
 
-async function settle() {
-  await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
-}
 async function render() {
   await act(async () => root.render(createElement(Approvals)));
-  await settle();
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
 }
-/** A save reports back a tick after the tap that started it. */
 async function press(node: HTMLElement | undefined) {
   await act(async () => node!.click());
-  await settle();
 }
+async function renderPicker() {
+  await act(async () => root.render(createElement(AddApprovalRule)));
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+}
+const tool = (label: string) =>
+  [...container.querySelectorAll("span")].find((node) => node.textContent === label);
 
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -326,7 +338,7 @@ it("offers a retry when the first load fails, then shows the rules", async () =>
 
 it("adds a tool from the picker, which searches and leaves out tools that have a rule", async () => {
   state.rules = [rule({ id: "blocked", effect: "deny", matchValue: "write_file" })];
-  await act(async () => root.render(createElement(AddApprovalRule)));
+  await renderPicker();
   const picker = () => [...container.querySelectorAll("span")].map((node) => node.textContent);
   expect(picker()).toContain("Shell");
   expect(picker()).not.toContain("Write file");
@@ -339,10 +351,7 @@ it("adds a tool from the picker, which searches and leaves out tools that have a
   expect(container.textContent).toContain("No matches");
 
   await act(async () => state.search!.onChangeText({ nativeEvent: { text: "shel" } }));
-  const shell = [...container.querySelectorAll("span")].find(
-    (node) => node.textContent === "Shell",
-  );
-  await act(async () => shell!.click());
+  await press(tool("Shell"));
   expect(state.rpc).toHaveBeenCalledWith("approvalRules/set", {
     scope: "account",
     effect: "require_approval",
@@ -353,13 +362,10 @@ it("adds a tool from the picker, which searches and leaves out tools that have a
 });
 
 it("saves once and goes back once when a tool is tapped twice", async () => {
-  await act(async () => root.render(createElement(AddApprovalRule)));
-  const shell = [...container.querySelectorAll("span")].find(
-    (node) => node.textContent === "Shell",
-  );
+  await renderPicker();
   await act(async () => {
-    shell!.click();
-    shell!.click();
+    tool("Shell")!.click();
+    tool("Shell")!.click();
   });
   expect(state.rpc.mock.calls.filter(([proc]) => proc === "approvalRules/set")).toHaveLength(1);
   expect(state.router.back).toHaveBeenCalledTimes(1);
@@ -368,17 +374,77 @@ it("saves once and goes back once when a tool is tapped twice", async () => {
 it("opens the rules after saving when the picker was the first screen", async () => {
   state.spaceId = "space-1";
   state.router.canGoBack.mockReturnValue(false);
-  await act(async () => root.render(createElement(AddApprovalRule)));
-  const shell = [...container.querySelectorAll("span")].find(
-    (node) => node.textContent === "Shell",
+  await renderPicker();
+  await press(tool("Shell"));
+  expect(state.rpc).toHaveBeenCalledWith(
+    "approvalRules/set",
+    { scope: "space", effect: "require_approval", matchKind: "tool", matchValue: "shell" },
+    { requestContext: { headers: { space: "space-1" } } },
   );
-  await act(async () => shell!.click());
   expect(state.router.back).not.toHaveBeenCalled();
   expect(state.router.replace).toHaveBeenCalledWith({
     pathname: "/approvals",
     params: { spaceId: "space-1" },
   });
 });
+
+it("offers a retry when the picker's tools fail to load", async () => {
+  state.rpc.mockImplementationOnce(async () => {
+    throw new Error("offline");
+  });
+  await renderPicker();
+  expect(container.textContent).toContain("Something went wrong. Try again.");
+  expect(tool("Shell")).toBeUndefined();
+
+  await act(async () => retry()!.click());
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+  expect(tool("Shell")).toBeDefined();
+  expect(retry()).toBeUndefined();
+  expect(container.textContent).not.toContain("Something went wrong. Try again.");
+});
+
+it("holds the picker while a tool saves, and shows a failed save until the next one starts", async () => {
+  await renderPicker();
+  const answers = state.rpc.getMockImplementation()!;
+  let finish = holdSave();
+  await press(tool("Shell"));
+  expect(container.querySelectorAll("span:not([data-disabled])")).toHaveLength(0);
+  await press(tool("Write file"));
+  expect(saves()).toHaveLength(1);
+
+  await act(async () => finish(new Error("offline")));
+  expect(container.textContent).toContain("Could not save that preference");
+  expect(container.querySelectorAll("span[data-disabled]")).toHaveLength(0);
+  expect(state.router.back).not.toHaveBeenCalled();
+
+  state.rpc.mockImplementation(answers);
+  finish = holdSave();
+  await press(tool("Shell"));
+  expect(container.textContent).not.toContain("Could not save that preference");
+  await act(async () => finish());
+  expect(saves()).toHaveLength(2);
+  expect(state.router.back).toHaveBeenCalledTimes(1);
+});
+
+it.each([
+  ["succeeds", undefined],
+  ["fails", new Error("offline")],
+])(
+  "leaves navigation alone when a tool's save %s after the picker has gone",
+  async (_how, outcome) => {
+    await renderPicker();
+    const finish = holdSave();
+    await press(tool("Shell"));
+    await act(async () => root.render(createElement("div")));
+    await act(async () => finish(outcome));
+    expect(state.router.back).not.toHaveBeenCalled();
+    expect(state.router.replace).not.toHaveBeenCalled();
+
+    await renderPicker();
+    expect(container.textContent).not.toContain("Could not save that preference");
+    expect(container.querySelectorAll("span[data-disabled]")).toHaveLength(0);
+  },
+);
 
 it("drops Never ask dimming when a later mode read fails", async () => {
   state.settings = { ...state.settings, mode: "never" };
@@ -469,7 +535,6 @@ it("does not start a second save while one runs", async () => {
   expect(saves()).toHaveLength(1);
 
   await act(async () => finish());
-  await settle();
   expect(rows()).toEqual(["Always allow: Send email", "Blocked: example.com"]);
   expect(container.querySelector("span[data-dimmed]")).toBeNull();
 });
@@ -481,7 +546,6 @@ it("shows no error for a save that fails after the screen has gone", async () =>
   await press(menuButton("example.com", "Blocked"));
   await act(async () => root.render(createElement("div")));
   await act(async () => finish(new Error("offline")));
-  await settle();
 
   await render();
   expect(rows()).toEqual(["Always allow: example.com"]);
@@ -502,7 +566,6 @@ it.each([
   expect(container.querySelector("span[data-dimmed]")).toBeNull();
 
   await act(async () => finish(outcome));
-  await settle();
   expect(rows()).toEqual(["Always allow: example.com"]);
   expect(container.textContent).not.toContain("Could not save that preference");
 });

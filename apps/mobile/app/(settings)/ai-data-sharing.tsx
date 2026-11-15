@@ -1,8 +1,9 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
-import type { AiConsentStatus } from "@rakazo/contracts";
+import type { AiRecipient } from "@rakazo/contracts";
 import { AI_PRIVACY_URL } from "@rakazo/contracts";
-import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useEffect } from "react";
 import { ActivityIndicator, Alert, Linking, ScrollView, StyleSheet } from "react-native";
 import {
   SettingsFooter,
@@ -17,56 +18,51 @@ import {
   aiPrivacyLinks,
   groupAiRecipients,
 } from "../../lib/ai-data-sharing";
-import { rpc } from "../../lib/api";
 import { native, useThemedStyles } from "../../lib/native";
+import { queryClient, rpcQuery, rpcSave, useSave } from "../../lib/query";
 import { useSideInsets } from "../../lib/side-insets";
 import { errorText } from "../../lib/user-error";
 
 export default function AiDataSharing() {
   const sideInsets = useSideInsets();
   const { t } = useLingui();
-  const [status, setStatus] = useState<AiConsentStatus | null>(null);
-  const [pending, setPending] = useState(false);
-  const [loadFailed, setLoadFailed] = useState(false);
-  const placeholder = aiDataSharingPlaceholder(status, loadFailed);
+  const statusRead = rpcQuery("aiConsent/status");
+  const { data, error: loadError, refetch } = useQuery(statusRead, queryClient);
+  const status = data ?? null;
+  const placeholder = aiDataSharingPlaceholder(status, Boolean(loadError));
   const styles = useThemedStyles(createStyles);
   const stacked = useStackedSettings();
-  const error = (cause: unknown) =>
-    Alert.alert(t`AI data sharing`, errorText(cause, t`Could not load permissions.`));
   useEffect(() => {
-    reload();
-  }, []);
+    if (!loadError) return;
+    Alert.alert(t`AI data sharing`, errorText(loadError, t`Could not load permissions.`), [
+      { text: t`Cancel`, style: "cancel" },
+      { text: t`Retry`, onPress: () => void refetch() },
+    ]);
+  }, [loadError, refetch, t]);
 
-  function reload() {
-    setLoadFailed(false);
-    void rpc("aiConsent/status")
-      .then(setStatus)
-      .catch((cause: unknown) => {
-        setLoadFailed(true);
-        Alert.alert(t`AI data sharing`, errorText(cause, t`Could not load permissions.`), [
-          { text: t`Cancel`, style: "cancel" },
-          { text: t`Retry`, onPress: reload },
-        ]);
-      });
-  }
-
-  function setAllowed(recipient: AiConsentStatus["recipients"][number], allowed: boolean) {
-    if (!status) return;
-    setPending(true);
-    void (async () => {
-      if (!allowed) setStatus(await rpc("aiConsent/revoke", { key: recipient.key }));
-      else if (await promptAiConsent(recipient, status.privacyUrl))
-        setStatus(
-          await rpc("aiConsent/allow", {
-            scope: status.scope,
-            version: status.version,
-            keys: [recipient.key],
-          }),
-        );
-    })()
-      .catch(error)
-      .finally(() => setPending(false));
-  }
+  const revoke = rpcSave("aiConsent/revoke");
+  const allow = rpcSave("aiConsent/allow");
+  const change = useSave({
+    save: async (ask: { recipient: AiRecipient; allowed: boolean } | "withdraw") => {
+      if (!status) return;
+      const saved =
+        ask === "withdraw"
+          ? await revoke({ key: null })
+          : !ask.allowed
+            ? await revoke({ key: ask.recipient.key })
+            : (await promptAiConsent(ask.recipient, status.privacyUrl))
+              ? await allow({
+                  scope: status.scope,
+                  version: status.version,
+                  keys: [ask.recipient.key],
+                })
+              : null;
+      if (saved) queryClient.setQueryData(statusRead.queryKey, saved);
+    },
+    onFailed: (cause) =>
+      Alert.alert(t`AI data sharing`, errorText(cause, t`Could not load permissions.`)),
+  });
+  const pending = change.pending;
 
   function requestWithdrawal() {
     Alert.alert(
@@ -74,17 +70,7 @@ export default function AiDataSharing() {
       t`New mobile actions won't send data to these services. Runs already in progress and routines keep going until you stop them.`,
       [
         { text: t`Cancel`, style: "cancel" },
-        {
-          text: t`Withdraw`,
-          style: "destructive",
-          onPress: () => {
-            setPending(true);
-            void rpc("aiConsent/revoke", { key: null })
-              .then(setStatus)
-              .catch(error)
-              .finally(() => setPending(false));
-          },
-        },
+        { text: t`Withdraw`, style: "destructive", onPress: () => change.run("withdraw") },
       ],
     );
   }
@@ -115,7 +101,7 @@ export default function AiDataSharing() {
                   detail={recipient.detail}
                   accessibilityLabel={t`Allow ${ph({ name: recipient.name })} on mobile`}
                   disabled={pending}
-                  onChange={(allowed) => setAllowed(recipient, allowed)}
+                  onChange={(allowed) => change.run({ recipient, allowed })}
                   value={recipient.allowed}
                 />
               ))}

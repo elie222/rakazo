@@ -1,7 +1,8 @@
 import { t } from "@lingui/core/macro";
 import type { RpcInput, RpcOutput, RpcPath } from "@rakazo/contracts";
 import type { DataTag, QueryFunction, QueryKey } from "@tanstack/react-query";
-import { QueryClient, useMutation } from "@tanstack/react-query";
+import { QueryClient } from "@tanstack/react-query";
+import { useEffect, useRef, useState } from "react";
 import type { RpcArgs } from "./api";
 import { captureApiRequestContext, currentApiBase, rpc, selectedSpaceId } from "./api";
 import { currentSessionGeneration } from "./session";
@@ -83,45 +84,68 @@ export function rpcSave<P extends RpcPath>(proc: P, spaceId?: string) {
 /**
  * One save and the reads it makes out of date. Only the save can fail it: once it succeeds those
  * reads are marked stale and read again, and a read that fails reports itself, never the save.
- * `pending` lasts until they are back, so a control never offers the old state in between.
+ * `pending` is set by the same update as the tap and lasts until those reads are back, so a
+ * control never offers the old state in between. `run` does nothing while a save is in flight,
+ * even for a second tap in the same tick.
  * A save that ends after the screen has gone, or after the server, session or space changed,
- * shows nothing and skips `onSaved`.
+ * shows nothing and skips `onSaved` and `onFailed`.
  */
 export function useSave<Input = void, Saved = unknown>(options: {
   save: (input: Input) => Promise<Saved>;
   stale?: readonly QueryKey[];
   onSaved?: (saved: Saved, input: Input) => unknown;
+  /** For an alert or undoing an optimistic change; `error` is for showing the failure inline. */
+  onFailed?: (error: Error, input: Input) => unknown;
+  /** `onSaved` leaves the screen, so a success stays pending instead of offering the controls again. */
+  closesScreen?: boolean;
 }) {
-  const mutation = useMutation(
-    {
-      mutationFn: async ({ input }: { input: Input; scope: string }) => {
-        const { save, stale = [] } = options;
-        const saved = await save(input);
-        await Promise.all(stale.map((queryKey) => queryClient.invalidateQueries({ queryKey })));
-        return saved;
-      },
-    },
-    queryClient,
+  type Sent = { input: Input; scope: string };
+  const [state, setState] = useState<{ sent: Sent; pending: boolean; error: Error | null } | null>(
+    null,
   );
-  const sent = mutation.variables;
-  const current = sent?.scope === spaceScope().join("\n");
+  // React state is a render behind; this is what a second call in the same tick is checked against.
+  const inFlight = useRef<Sent | null>(null);
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  const current = state?.sent.scope === spaceScope().join("\n") ? state : null;
   return {
     run(input: Input) {
       const scope = spaceScope().join("\n");
-      mutation.mutate(
-        { input, scope },
-        {
-          onSuccess: (saved) => {
-            if (spaceScope().join("\n") === scope) void options.onSaved?.(saved, input);
-          },
+      if (inFlight.current?.scope === scope) return;
+      const sent = { input, scope };
+      inFlight.current = sent;
+      setState({ sent, pending: true, error: null });
+      const { save, stale = [], onSaved, onFailed, closesScreen } = options;
+      const shown = () => mounted.current && spaceScope().join("\n") === scope;
+      const finish = (error: Error | null) => {
+        if (inFlight.current === sent) inFlight.current = null;
+        setState((now) => (now?.sent === sent ? { sent, pending: false, error } : now));
+      };
+      void (async () => {
+        const saved = await save(input);
+        await Promise.all(stale.map((queryKey) => queryClient.invalidateQueries({ queryKey })));
+        return saved;
+      })().then(
+        (saved) => {
+          if (!closesScreen || !shown()) finish(null);
+          if (shown()) void onSaved?.(saved, input);
+        },
+        (error: Error) => {
+          finish(error);
+          if (shown()) void onFailed?.(error, input);
         },
       );
     },
-    pending: current && mutation.isPending,
+    pending: current?.pending ?? false,
     /** What the pending or failed save was sent with. */
-    input: current ? sent.input : undefined,
-    error: current ? mutation.error : null,
-    reset: mutation.reset,
+    input: current?.sent.input,
+    error: current?.error ?? null,
+    reset: () => setState((now) => (now?.pending ? now : null)),
   };
 }
 

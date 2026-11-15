@@ -136,17 +136,12 @@ const spaceContext = {
 };
 let root: Root;
 let container: HTMLDivElement;
-async function settle() {
-  await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
-}
 async function render() {
   await act(async () => root.render(createElement(SpaceSettings)));
-  await settle();
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
 }
-/** A save reports back a tick after the tap that started it. */
 async function press(node: HTMLElement) {
   await act(async () => node.click());
-  await settle();
 }
 const control = (label: string) =>
   container.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`);
@@ -316,7 +311,6 @@ it("opens the Vault for the Space, and deletes its credentials only once confirm
 
   await act(async () => control("Customize Vault")!.click());
   await act(async () => alertButton("Delete").onPress?.());
-  await settle();
   expect(state.rpc).toHaveBeenCalledWith(
     "spaceSettings/setOverride",
     { setting: "credentials", enabled: false },
@@ -424,7 +418,6 @@ it("does not start a second save while one runs", async () => {
   expect(save.saves()).toBe(1);
 
   await act(async () => save.finish());
-  await settle();
   expect(control("Customize Models")?.checked).toBe(true);
   expect(control("Customize Voice")?.disabled).toBe(false);
 });
@@ -434,7 +427,6 @@ it("opens nothing when the save ends after the screen has gone", async () => {
   await press(control("Customize Models")!);
   await act(async () => root.render(createElement("div")));
   await act(async () => save.finish());
-  await settle();
   expect(state.push).not.toHaveBeenCalled();
 
   // The Space's list is its own, so the answer is still kept for the next visit.
@@ -450,7 +442,6 @@ it.each([
   await press(control("Customize Models")!);
   state.selectedSpace = "space-elsewhere";
   await act(async () => save.finish(outcome));
-  await settle();
   expect(state.push).not.toHaveBeenCalled();
   expect(container.textContent).not.toContain("Could not save that preference");
   expect(control("Customize Voice")?.disabled).toBe(false);

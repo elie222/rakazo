@@ -193,7 +193,7 @@ export default function ApprovalRules() {
                     colorScheme={colorScheme}
                     onPressAction={(event) => {
                       const action = event.nativeEvent.event;
-                      if (!pending && isRuleAction(action)) change.run({ rule, action });
+                      if (isRuleAction(action)) change.run({ rule, action });
                     }}
                     title={title}
                   >
