@@ -38,7 +38,9 @@ jobs:
           IOS_WIDGET_PROFILE_BASE64: ${{ secrets.IOS_WIDGET_PROFILE_BASE64 }}
           IOS_SHARE_PROFILE_BASE64: ${{ secrets.IOS_SHARE_PROFILE_BASE64 }}
           IOS_NOTIFICATION_PROFILE_BASE64: ${{ secrets.IOS_NOTIFICATION_PROFILE_BASE64 }}
-        run: node .github/builds/release-config.mjs ios
+        run: |
+          node .github/builds/release-config.mjs ios
+          python3 .github/builds/build-ios-release.py --validate-only
       - uses: ./.github/actions/setup-workspace
         with:
           filter: "@rakazo/mobile..."

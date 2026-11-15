@@ -12,6 +12,7 @@ import secrets
 import shlex
 import shutil
 import subprocess
+import sys
 import tempfile
 
 
@@ -25,7 +26,12 @@ def command(args):
     result = subprocess.run(args, capture_output=True, text=True)
     if result.returncode:
         # security's output can contain unmasked certificate/account details.
-        raise RuntimeError(f"{Path(args[0]).name} failed while preparing iOS signing")
+        operation = f"{Path(args[0]).name} {Path(args[1]).name}"
+        if args[:2] == ["security", "import"]:
+            if "MAC verification failed" in result.stderr:
+                raise RuntimeError("IOS_DISTRIBUTION_P12_BASE64 could not be unlocked: check IOS_DISTRIBUTION_P12_PASSWORD or the P12 export format")
+            raise RuntimeError("IOS_DISTRIBUTION_P12_BASE64 could not be imported; export a P12 containing the distribution certificate and private key")
+        raise RuntimeError(f"{operation} failed while preparing iOS signing (exit {result.returncode})")
     return result.stdout
 
 
@@ -104,6 +110,9 @@ def main():
                     raise ValueError("Refusing to replace an existing provisioning profile")
                 shutil.copyfile(encoded, destination)
                 installed.append(destination)
+        if "--validate-only" in sys.argv:
+            print("Distribution certificate and all four profiles validated successfully.", flush=True)
+            return
         mapping = temporary / "signing.json"
         mapping.write_text(json.dumps({"team": team, "identity": identity, "profiles": profiles}))
         command(["node", ".github/builds/configure-ios-signing.mjs", str(mapping)])
