@@ -172,7 +172,7 @@ export const selfHosted: VoiceProvider = {
     {
       heading: "What you can do with self-hosted voice in Rakazo",
       paragraphs: [
-        "Rakazo sends both speech and transcription to the one **Server URL** you enter. If that server does both, you get every voice feature in the [voice and calls guide](/docs/voice-and-calls/).",
+        "Rakazo sends speech and transcription to the **Server URL** you enter, or transcription to a separate **Transcription server URL** if you set one. If your servers do both, you get every voice feature in the [voice and calls guide](/docs/voice-and-calls/).",
       ],
       bullets: [
         "Talk instead of typing. Hold the mic in the composer and your server transcribes what you say.",
@@ -242,7 +242,7 @@ export const selfHosted: VoiceProvider = {
     {
       question: "Can I use a local Whisper server for speech to text?",
       answer:
-        "Yes, if it answers `/v1/audio/transcriptions` the way OpenAI does. Speaches and mlx-audio both do. Set **Transcription model** to the model name your server expects.",
+        "Yes, if it answers `/v1/audio/transcriptions` the way OpenAI does. Speaches and mlx-audio both do. Set **Transcription model** to the model name your server expects. If it runs apart from your speech server, enter its address as **Transcription server URL** and, if it needs one, its **Transcription API key**.",
     },
     {
       question: "Is self-hosting Whisper cheaper than the Whisper API?",
