@@ -796,7 +796,12 @@ export class WuyingSandboxProvider implements SandboxProvider {
     url.searchParams.set("desktop_id", this.options.desktopId);
     url.searchParams.set("region_id", this.options.regionId);
     url.searchParams.set("auth_code", authCode);
-    return { url: url.toString(), mimeType: "text/html", close: async () => undefined };
+    return {
+      url: url.toString(),
+      singleUseSignIn: { screen: `${this.options.desktopId}:${this.options.regionId}` },
+      mimeType: "text/html",
+      close: async () => undefined,
+    };
   }
 
   async sendInput(
