@@ -208,8 +208,13 @@ export class KubernetesSandboxProvider implements SandboxProvider {
       await this.waitForReady(podName, context.signal);
     } catch (error) {
       if (fresh) {
-        await deleteUnreferencedMachine("kubernetes", podName, (signal) =>
-          this.deletePod(podName, signal),
+        // Not recorded for a later delete: the pod carries its bot's fixed name, so that bot's
+        // next start reuses or deletes it, and a late delete by name could take the pod that
+        // start is reusing.
+        await deleteUnreferencedMachine(
+          undefined,
+          { provider: "kubernetes", machineId: podName },
+          (signal) => this.deletePod(podName, signal),
         );
       }
       throw error;

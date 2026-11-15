@@ -21,7 +21,7 @@ import {
   MAX_CREATEOS_SUCCESS_RESPONSE_BYTES,
 } from "./createos-sandbox.js";
 import { isSandboxGoneError } from "./sandbox-errors.js";
-import { settleMachineCleanup, untilAborted } from "./sandbox-test-support.js";
+import { MachineRecords, settleMachineCleanup, untilAborted } from "./sandbox-test-support.js";
 
 // Status polls wait a second between reads; the fakes below settle on the next read.
 vi.mock("node:timers/promises", async (importOriginal) => ({
@@ -1241,6 +1241,42 @@ describe("CreateOS sandbox lifecycle", () => {
         status: "creating",
       });
     });
+  });
+
+  it("records a new sandbox for its computer before waiting for it to start", async () => {
+    const plane = createosControlPlane();
+    const records = new MachineRecords();
+    let whenFirstPolled: ReturnType<MachineRecords["dueIn"]> | undefined;
+    const fetchImpl = (async (input: URL | RequestInfo, init?: RequestInit) => {
+      const route = `${init?.method ?? "GET"} ${new URL(String(input)).pathname}`;
+      if (route === "GET /v1/sandboxes/sbx-new-1") whenFirstPolled ??= records.dueIn();
+      return plane.fetchImpl(input, init);
+    }) as typeof fetch;
+    const provider = new CreateOSSandboxProvider({
+      apiKey: "test-key",
+      fetch: fetchImpl,
+      unreferencedMachines: records,
+    });
+
+    await provider.provision({ botId: "bot-a", homePath: "/unused" }, context);
+
+    expect(whenFirstPolled).toMatchObject([
+      { provider: "createos", machineId: "sbx-new-1", homeKey: "bot-a" },
+    ]);
+    expect(whenFirstPolled?.[0]?.dueInMs).toBeGreaterThan(15 * 60_000);
+  });
+
+  it("deletes a sandbox from its id alone, and counts one CreateOS no longer has as deleted", async () => {
+    const plane = createosControlPlane({ status: "running" });
+    const provider = new CreateOSSandboxProvider({ apiKey: "test-key", fetch: plane.fetchImpl });
+    const signal = AbortSignal.timeout(5_000);
+
+    await provider.deleteMachine({ provider: "createos", machineId: "sbx-1" }, signal);
+
+    expect(plane.status("sbx-1")).toBe("destroyed");
+    await expect(
+      provider.deleteMachine({ provider: "createos", machineId: "sbx-never-made" }, signal),
+    ).resolves.toBeUndefined();
   });
 });
 

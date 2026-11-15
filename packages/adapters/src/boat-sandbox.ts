@@ -29,6 +29,8 @@ import type {
   ScreenSession,
   StreamedPortableFile,
   TerminalRequest,
+  UnreferencedMachine,
+  UnreferencedMachineRecords,
   WorkspaceExportLimits,
 } from "@rakazo/adapter-kit";
 import {
@@ -69,7 +71,7 @@ import {
   VERIFY_LINUX_DESKTOP,
 } from "./linux-desktop.js";
 import { installAgentBrowserCommand, installPageBrowserCommand } from "./page-browser-install.js";
-import { deleteUnreferencedMachine } from "./sandbox-cleanup.js";
+import { deleteUnreferencedMachine, recordUnreferencedMachine } from "./sandbox-cleanup.js";
 import { sandboxCommandArgv } from "./sandbox-command-environment.js";
 import { abortedCommandEvents, timedOutCommandEvents } from "./sandbox-command-events.js";
 import { isSandboxGoneError, sandboxNotFoundError } from "./sandbox-errors.js";
@@ -253,7 +255,13 @@ export class BoatSandboxProvider implements SandboxProvider {
     warnMissingOnce: true,
   });
 
-  constructor(config: { apiKey: string; apiUrl?: string }, api?: BoatSandboxSdk) {
+  private readonly machines: UnreferencedMachineRecords | undefined;
+
+  constructor(
+    config: { apiKey: string; apiUrl?: string; unreferencedMachines?: UnreferencedMachineRecords },
+    api?: BoatSandboxSdk,
+  ) {
+    this.machines = config.unreferencedMachines;
     const gate = new BoatRequestGate();
     this.client = boatClient(api ?? createBoatSdk(config, gate), config.apiKey, gate);
   }
@@ -371,6 +379,8 @@ export class BoatSandboxProvider implements SandboxProvider {
       { createSandboxRequest: { ttlSeconds: BOAT_SNAPSHOT_BUILD_TTL_SECONDS, noEnv: true } },
       { signal },
     );
+    const machine = { provider: "boat", machineId: sandbox.id };
+    await recordUnreferencedMachine(this.machines, machine, BASE_SNAPSHOT_BUILD_TIMEOUT_MS);
     try {
       await this.ensureRunnable(sandbox.id, signal);
       for (const command of BOAT_COMPUTER_SETUP) {
@@ -393,8 +403,8 @@ export class BoatSandboxProvider implements SandboxProvider {
       }
       return { name, built: true };
     } finally {
-      await deleteUnreferencedMachine("boat", sandbox.id, (signal) =>
-        this.client.deleteSandbox(sandbox.id, { signal }),
+      await deleteUnreferencedMachine(this.machines, machine, (signal) =>
+        this.deleteMachine(machine, signal),
       );
     }
   }
@@ -818,6 +828,10 @@ export class BoatSandboxProvider implements SandboxProvider {
     } finally {
       this.forget(id);
     }
+  }
+
+  async deleteMachine(machine: UnreferencedMachine, signal: AbortSignal): Promise<void> {
+    await this.client.deleteSandbox(machine.machineId, { signal });
   }
 
   /**
