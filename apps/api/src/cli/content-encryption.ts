@@ -26,6 +26,7 @@ import {
   rotateSpaceDataKeys,
   runAsSystem,
 } from "@rakazo/db";
+import { bestEffort } from "@rakazo/logging";
 import { moveMcpArgsIntoSecrets } from "../mcp-args-migration.js";
 import { createSecretMigrationRepository } from "../secret-migration.js";
 
@@ -304,6 +305,6 @@ try {
   );
   process.exitCode = 1;
 } finally {
-  await prisma.$disconnect().catch(() => undefined);
-  await pool.end().catch(() => undefined);
+  await bestEffort("disconnect database client", prisma.$disconnect());
+  await bestEffort("close database pool", pool.end());
 }
