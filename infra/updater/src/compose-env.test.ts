@@ -60,6 +60,7 @@ const NOT_PASSED: Record<string, string> = {
   CLOUDFLARE_GATEWAY_ID: "written into Pi's environment from stored gateway settings",
   COMPOSE_PROJECT_NAME: "read by the updater sidecar, which has its own environment",
   RAKAZO_COMPOSE_PROJECT_NAME: "read by the updater sidecar, which has its own environment",
+  RAKAZO_COMPUTER_PROXY_CONFIG: "built by the API and passed only to the computer prepare command",
   RAKAZO_IMAGE_TAG: "read by deployment tooling and the updater sidecar, not app processes",
   RAKAZO_DEPLOYED_MIGRATIONS: "passed only to the migration CLI by the production deploy script",
   RAKAZO_IMAGE_TAG_PREVIOUS: "read by the updater sidecar, which has its own environment",
