@@ -2,7 +2,6 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { asSystem } from "@rakazo/db";
-import { sessionCookieHeader } from "@rakazo/testkit";
 import { expect, it } from "vitest";
 import { createApp } from "./app.js";
 
@@ -33,7 +32,10 @@ it.skipIf(!databaseUrl)(
         body: JSON.stringify({ email, password: "test-password-123", name: "Renewal tester" }),
       });
       expect(signup.status).toBeLessThan(400);
-      const cookie = sessionCookieHeader(signup);
+      const cookie = signup.headers
+        .getSetCookie()
+        .map((value) => value.split(";")[0])
+        .join("; ");
       const me = (headers: Record<string, string>) =>
         handles.app.request("/rpc/me", {
           method: "POST",
