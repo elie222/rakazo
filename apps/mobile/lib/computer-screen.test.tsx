@@ -566,9 +566,12 @@ describe("computer screen", () => {
     expect(screens[0]?.getAttribute("data-important")).toBe("no-hide-descendants");
     const buttons = takeControlButtons(view);
     expect(buttons).toHaveLength(2);
-    for (const button of buttons) expect(button.dataset.prominence).toBe("secondary");
-
+    // Secondary on the page; the full window's is the one primary action over the screen.
     const headerTakeControl = buttons.find((button) => fullWindow?.contains(button));
+    expect(headerTakeControl?.dataset.prominence).toBe("primary");
+    expect(buttons.find((button) => button !== headerTakeControl)?.dataset.prominence).toBe(
+      "secondary",
+    );
     expect(headerTakeControl).toBeDefined();
     respond({ ...botWorking, controlHolder: "user", controlBotId: "bot-1", busyBotName: null });
     await act(async () => headerTakeControl?.click());

@@ -31,14 +31,24 @@ export function ArchivedBotList({
   const sideInsets = useSideInsets();
   const { t } = useLingui();
   const scheme = useResolvedAppearance();
+  const divider = { borderTopWidth: 1, borderTopColor: native.separator };
   return (
     <ScrollView
       style={sideInsets}
       contentInsetAdjustmentBehavior="automatic"
-      contentContainerStyle={{ padding: 20 }}
+      contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 20 }}
     >
-      <View style={{ borderRadius: 14, backgroundColor: native.fill, overflow: "hidden" }}>
-        {bots.map((bot) => (
+      <View
+        style={{
+          borderRadius: 22,
+          borderCurve: "continuous",
+          borderWidth: 1,
+          borderColor: native.separator,
+          backgroundColor: native.groupedCell,
+          overflow: "hidden",
+        }}
+      >
+        {bots.map((bot, index) => (
           <LongPressMenu
             key={bot.id}
             colorScheme={scheme}
@@ -60,13 +70,7 @@ export function ArchivedBotList({
                 onPress={() => onOpen(bot)}
                 onLongPress={onLongPress}
                 accessibilityRole="button"
-                style={{
-                  minHeight: 54,
-                  paddingHorizontal: 16,
-                  flexDirection: "row",
-                  alignItems: "center",
-                  gap: 12,
-                }}
+                style={[row, index > 0 && divider]}
               >
                 <Text style={{ flex: 1, color: native.label, ...typeScale.cardTitle }}>
                   {bot.name}
@@ -76,7 +80,7 @@ export function ArchivedBotList({
             )}
           </LongPressMenu>
         ))}
-        {groups.map((group) => (
+        {groups.map((group, index) => (
           <MenuView
             key={`group-${group.id}`}
             colorScheme={scheme}
@@ -86,13 +90,7 @@ export function ArchivedBotList({
             <View
               accessible
               accessibilityLabel={`${group.name}, ${t`Group`}`}
-              style={{
-                minHeight: 54,
-                paddingHorizontal: 16,
-                flexDirection: "row",
-                alignItems: "center",
-                gap: 12,
-              }}
+              style={[row, (bots.length > 0 || index > 0) && divider]}
             >
               <NativeSymbol ios="person.2" android="people-outline" color={native.secondaryLabel} />
               <Text style={{ flex: 1, color: native.label, ...typeScale.cardTitle }}>
@@ -105,3 +103,12 @@ export function ArchivedBotList({
     </ScrollView>
   );
 }
+
+const row = {
+  minHeight: 60,
+  paddingStart: 20,
+  paddingEnd: 16,
+  flexDirection: "row",
+  alignItems: "center",
+  gap: 14,
+} as const;

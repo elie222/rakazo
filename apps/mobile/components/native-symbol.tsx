@@ -1,10 +1,12 @@
 import Ionicons from "@react-native-vector-icons/ionicons";
 import { MaterialDesignIcons } from "@react-native-vector-icons/material-design-icons";
+import { MaterialIcons } from "@react-native-vector-icons/material-icons";
 import type { SymbolWeight } from "expo-symbols";
 import { SymbolView } from "expo-symbols";
 import type { ComponentProps } from "react";
 import type { ColorValue } from "react-native";
 import { useMobileTokens } from "../lib/native";
+import { materialIconFor } from "./native-symbol-material";
 
 export function NativeSymbol({
   ios,
@@ -33,7 +35,11 @@ export function NativeSymbol({
       resizeMode="scaleAspectFit"
       fallback={
         typeof android === "string" ? (
-          <Ionicons name={android} size={size} color={tint} />
+          materialIconFor[android] ? (
+            <MaterialIcons name={materialIconFor[android]} size={size} color={tint} />
+          ) : (
+            <Ionicons name={android} size={size} color={tint} />
+          )
         ) : (
           <MaterialDesignIcons name={android.material} size={size} color={tint} />
         )

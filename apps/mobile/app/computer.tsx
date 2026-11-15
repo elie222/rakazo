@@ -12,6 +12,7 @@ import {
   screenProbeUrl,
   waitForScreenPage,
 } from "@rakazo/core";
+import { typeScale } from "@rakazo/ui-tokens";
 import { useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -49,6 +50,8 @@ import {
   nextLoadedScreenUrl,
   previewPlaceholder,
   retainScreenSource,
+  SCREEN_PAGE_CONTROLS_HIDDEN,
+  SCREEN_VIEWPORT_LOCK,
   screenPageState,
   screenPageStatus,
   screenStreamKey,
@@ -64,7 +67,6 @@ import {
 import { tabletopLayout } from "../lib/fold-layout";
 import { useFoldRegions } from "../lib/fold-regions";
 import { useMobileTokens } from "../lib/native";
-import { iosAtLeast } from "../lib/native-controls";
 import { useSideInsets } from "../lib/side-insets";
 import { stacksAtTextScale } from "../lib/text-scale";
 import { useComputerBoot } from "../lib/use-computer-boot";
@@ -78,6 +80,7 @@ export default function Computer() {
   const router = useRouter();
   const windowSize = useWindowDimensions();
   const stacked = stacksAtTextScale(windowSize.fontScale);
+  const landscape = windowSize.width > windowSize.height;
   const folds = useFoldRegions();
   const { botId, name: nameParam } = useLocalSearchParams<{ botId?: string; name?: string }>();
   const name = displayName(nameParam, t`Bot`);
@@ -432,6 +435,7 @@ export default function Computer() {
   const keyboardBar = hasControl ? (
     <ComputerKeyboardBar
       active={computerOpen && !releasing}
+      landscape={landscape}
       onCommand={(command) => {
         injectKeyboardCommands(keyboardGate.current.bridge.push(command));
       }}
@@ -469,7 +473,7 @@ export default function Computer() {
     // native keyboard bar, must never just dismiss the computer keyboard; only the bar closes it.
     <ScrollView
       style={[{ flex: 1, backgroundColor: tokens.background }, sideInsets]}
-      contentContainerStyle={{ padding: 24 }}
+      contentContainerStyle={{ padding: 16 }}
       contentInsetAdjustmentBehavior="automatic"
       keyboardShouldPersistTaps="always"
     >
@@ -517,7 +521,9 @@ export default function Computer() {
         style={{
           height: 360,
           minHeight: 220,
-          borderRadius: 14,
+          borderRadius: 22,
+          borderWidth: 1,
+          borderColor: tokens.border,
           overflow: "hidden",
           backgroundColor: tokens.card,
         }}
@@ -643,78 +649,15 @@ export default function Computer() {
             enabled={!tabletop}
             style={{ flex: 1, backgroundColor: tokens.background }}
           >
-            <SafeAreaView
-              edges={["top", "left", "right"]}
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: 12,
-                borderBottomWidth: iosAtLeast(26) ? 0 : 1,
-                borderBottomColor: tokens.border,
-                paddingHorizontal: 14,
-                paddingVertical: 4,
-              }}
+            {/* The bot's screen fills the window (the upper half on a tabletop fold) and the
+                controls float over it. */}
+            <View
+              style={
+                tabletop
+                  ? { position: "absolute", top: 0, left: 0, right: 0, height: tabletop.top }
+                  : StyleSheet.absoluteFill
+              }
             >
-              <View
-                style={{
-                  flex: 1,
-                  minWidth: 0,
-                  flexDirection: "row",
-                  alignItems: "center",
-                  gap: 8,
-                }}
-              >
-                <Text
-                  numberOfLines={1}
-                  style={{
-                    flexShrink: 1,
-                    color: tokens.foreground,
-                    fontSize: 15.5,
-                    fontWeight: "500",
-                  }}
-                >
-                  {label}
-                </Text>
-              </View>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                {hasControl ? (
-                  <ComputerReleaseActions
-                    takeoverRequested={computer?.takeoverRequested ?? false}
-                    onRelease={releaseComputer}
-                  />
-                ) : (
-                  <NativeActionButton
-                    label={t`Take control`}
-                    prominence="secondary"
-                    fill={false}
-                    style={{ alignSelf: "center" }}
-                    onPress={() =>
-                      void bootComputer({ takeControl: true, showProgress: false }).catch(
-                        () => undefined,
-                      )
-                    }
-                  />
-                )}
-                <GlassIconButton
-                  accessibilityLabel={t`Close computer`}
-                  onPress={() => setComputerOpen(false)}
-                  ios="xmark"
-                  android="close"
-                  size={36}
-                  iconSize={16}
-                />
-              </View>
-            </SafeAreaView>
-            {hasControl && computer?.shared ? (
-              <Text
-                testID="computer-shared-browser"
-                style={[styles.sharedBrowser, { color: tokens.mutedForeground }]}
-              >
-                {t`Sites you sign in to stay signed in for everyone in this space`}
-              </Text>
-            ) : null}
-            <View style={{ flex: 1, backgroundColor: tokens.card }}>
               {foreground && loadedScreenUrl ? (
                 <ScreenWebView
                   key={screenReload}
@@ -750,6 +693,73 @@ export default function Computer() {
                 </View>
               )}
             </View>
+            <SafeAreaView
+              edges={["top", "left", "right"]}
+              pointerEvents="box-none"
+              style={[styles.windowHeader, landscape && styles.windowHeaderLandscape]}
+            >
+              <GlassIconButton
+                accessibilityLabel={t`Close computer`}
+                onPress={() => setComputerOpen(false)}
+                ios="xmark"
+                android="close"
+                size={landscape ? 44 : 48}
+              />
+              <View
+                style={[
+                  styles.windowStatus,
+                  landscape && [
+                    styles.windowStatusPill,
+                    { backgroundColor: tokens.background, borderColor: tokens.border },
+                  ],
+                ]}
+              >
+                <View style={[styles.windowStatusText, !landscape && { flex: 1 }]}>
+                  {hasControl ? (
+                    <View style={[styles.controlDot, { backgroundColor: tokens.workingDot }]} />
+                  ) : null}
+                  <Text
+                    numberOfLines={1}
+                    style={{ flexShrink: 1, color: tokens.foreground, ...typeScale.secondary }}
+                  >
+                    {hasControl ? t`You’re in control` : label}
+                  </Text>
+                </View>
+                {hasControl ? (
+                  <ComputerReleaseActions
+                    takeoverRequested={computer?.takeoverRequested ?? false}
+                    onRelease={releaseComputer}
+                  />
+                ) : (
+                  <NativeActionButton
+                    label={t`Take control`}
+                    prominence="primary"
+                    style={{ alignSelf: "center" }}
+                    onPress={() =>
+                      void bootComputer({ takeControl: true, showProgress: false }).catch(
+                        () => undefined,
+                      )
+                    }
+                  />
+                )}
+              </View>
+              {/* Balances the close circle so the pill sits in the middle when sideways. */}
+              {landscape ? <View style={{ width: 44 }} /> : null}
+            </SafeAreaView>
+            {hasControl && computer?.shared ? (
+              <View pointerEvents="none" style={styles.sharedBrowserRow}>
+                <Text
+                  testID="computer-shared-browser"
+                  style={[
+                    styles.sharedBrowser,
+                    { color: tokens.mutedForeground, backgroundColor: tokens.background },
+                  ]}
+                >
+                  {t`Sites you sign in to stay signed in for everyone in this space`}
+                </Text>
+              </View>
+            ) : null}
+            <View pointerEvents="box-none" style={{ flex: 1 }} />
             {tabletop ? (
               // A fixed lower half, so the keyboard lifts the bar without pushing the desktop.
               <View style={{ height: windowSize.height - tabletop.top, paddingTop: tabletop.gap }}>
@@ -784,7 +794,7 @@ function ComputerReleaseActions({
           { label: t`Skip`, reason: "skipped" },
           { label: t`I’m done`, reason: "done", primary: true },
         ]
-      : [{ label: t`Hand back control` }];
+      : [{ label: t`Hand back control`, primary: true }];
   return (
     <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
       {actions.map((action) => (
@@ -792,7 +802,6 @@ function ComputerReleaseActions({
           key={action.label}
           label={action.label}
           prominence={action.primary ? "primary" : "secondary"}
-          fill={false}
           style={{ alignSelf: "center" }}
           onPress={() => void onRelease(action.reason)}
         />
@@ -849,7 +858,9 @@ function ScreenWebView({
       key={`${nativeKeyboard ? "keys" : "view"}:${sourceUrl.current}`}
       source={{ uri: sourceUrl.current }}
       injectedJavaScriptBeforeContentLoaded={
-        nativeKeyboard ? NATIVE_COMPUTER_KEYBOARD_BOOT : undefined
+        nativeKeyboard
+          ? `${SCREEN_VIEWPORT_LOCK}${SCREEN_PAGE_CONTROLS_HIDDEN}${NATIVE_COMPUTER_KEYBOARD_BOOT}`
+          : SCREEN_VIEWPORT_LOCK
       }
       injectedJavaScript={
         nativeKeyboard && keyboardSession ? computerKeyboardReadyProbe(keyboardSession) : undefined
@@ -887,6 +898,9 @@ function ScreenWebView({
       setSupportMultipleWindows={false}
       scrollEnabled={false}
       overScrollMode="never"
+      // The page never zooms; see SCREEN_VIEWPORT_LOCK.
+      setBuiltInZoomControls={false}
+      setDisplayZoomControls={false}
       onError={onError}
       onHttpError={onError}
       onRenderProcessGone={onRendererLost}
@@ -896,5 +910,40 @@ function ScreenWebView({
 }
 
 const styles = StyleSheet.create({
-  sharedBrowser: { fontSize: 12, paddingHorizontal: 14, paddingBottom: 4 },
+  sharedBrowser: {
+    ...typeScale.footnote,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 999,
+    overflow: "hidden",
+  },
+  sharedBrowserRow: { alignItems: "center", paddingHorizontal: 16 },
+  windowHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 8,
+  },
+  windowHeaderLandscape: { paddingHorizontal: 12, justifyContent: "space-between" },
+  windowStatus: { flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", gap: 10 },
+  // Sideways the status floats over the screen, so it carries its own surface.
+  windowStatusPill: {
+    flex: 0,
+    flexShrink: 1,
+    minHeight: 44,
+    paddingStart: 14,
+    paddingEnd: 4,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  windowStatusText: {
+    flexShrink: 1,
+    minWidth: 0,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  controlDot: { width: 8, height: 8, borderRadius: 4 },
 });

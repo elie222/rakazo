@@ -32,7 +32,6 @@ import { composerDraftScope } from "../../lib/composer-draft";
 import { useContentBottomInset } from "../../lib/content-bottom-inset";
 import { cronLabels } from "../../lib/cron";
 import { useUiLocale } from "../../lib/i18n";
-import { useThemedStyles } from "../../lib/native";
 import { useChatOnScreen } from "../../lib/page-card-detail";
 import { useInboxBot } from "../../lib/search-inbox";
 import { useSplitView } from "../../lib/split-view";
@@ -70,7 +69,6 @@ import { RunErrorSheet } from "../run-error-sheet";
 import { SelectTextSheet } from "../select-text-sheet";
 import { ThreadComposer } from "../thread-composer";
 import { ThreadErrorNotice, ThreadFetchErrorNotice } from "../thread-error-notice";
-import { createThreadHeaderStyles } from "../thread-header-styles";
 import { QuoteSheet } from "./quote-sheet";
 import { ThreadComposerDock } from "./thread-composer-dock";
 import { ThreadEdgeFade } from "./thread-edge-fade";
@@ -91,7 +89,6 @@ function isActiveStatus(status: string | undefined): boolean {
 export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string }) {
   useChatOnScreen();
   const tokens = mobileTokens();
-  const styles = useThemedStyles(createThreadHeaderStyles);
   const { t } = useLingui();
   const locale = useUiLocale();
   const focused = useIsFocused();
@@ -299,6 +296,18 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
       return [{ ...member, status: run.status }];
     });
   }, [inGroup, snap?.activeRuns, snap?.members, snap?.run]);
+  // The title's members carry their live run, so a bot asking or working leads its stack. A bot
+  // with several runs shows the one waiting on the user, else any active one.
+  const titleMembers = useMemo(() => {
+    const active = (snap?.activeRuns ?? (snap?.run ? [snap.run] : [])).filter((run) =>
+      isActiveStatus(run.status),
+    );
+    return groupMembers?.map((member) => {
+      const runs = active.filter((run) => run.botId === member.botId);
+      const status = (runs.find((run) => isRunWaitingOnUser(run.status)) ?? runs[0])?.status;
+      return { ...member, status };
+    });
+  }, [groupMembers, snap?.activeRuns, snap?.run]);
   // A bot waiting on the user (an ask card, a computer takeover) can still be stopped, but its
   // card is the state: no typing dots under it.
   const workingGroupBots = activeGroupBots.filter((bot) => isRunWorking(bot.status));
@@ -339,7 +348,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     displayName,
     titleBot,
     titleName,
-    groupMembers,
+    groupMembers: titleMembers,
     currentBotStatus,
     composingBots,
     onCleared: history.clear,
@@ -673,7 +682,6 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
               botId={botId}
               onCall={onCall}
               sending={attachments.shareImporting}
-              styles={styles}
               attachActions={attachments.attachActions}
               attachFrom={attachments.attachFrom}
               send={composer.send}

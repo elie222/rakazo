@@ -258,6 +258,22 @@ export default function SignIn() {
     }
   }
 
+  // Pill fields on the raised surface, 56pt tall.
+  const fieldShell = {
+    minHeight: 56,
+    borderRadius: 28,
+    borderWidth: 1,
+    borderColor: tokens.glassStroke,
+    // Inside the presented card the field drops to the page colour so it still reads as a field.
+    backgroundColor: presented ? tokens.background : tokens.card,
+  } as const;
+  const field = {
+    ...fieldShell,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    fontSize: 17,
+    color: tokens.foreground,
+  } as const;
   const custom = usesCustomApiBase(apiBase);
 
   return (
@@ -290,9 +306,10 @@ export default function SignIn() {
                         borderWidth: 1,
                         borderColor: tokens.border,
                         backgroundColor: tokens.card,
-                        borderRadius: 20,
-                        paddingHorizontal: 20,
-                        paddingTop: 16,
+                        borderRadius: 28,
+                        borderCurve: "continuous",
+                        paddingHorizontal: 24,
+                        paddingTop: 20,
                         paddingBottom: 24,
                       }
                     : undefined
@@ -439,10 +456,7 @@ export default function SignIn() {
                           onSubmitEditing={() => void submit()}
                           style={{
                             marginTop: 28,
-                            backgroundColor: tokens.muted,
-                            borderRadius: 13,
-                            padding: 16,
-                            color: tokens.foreground,
+                            ...field,
                           }}
                         />
                         {error ? (
@@ -535,10 +549,7 @@ export default function SignIn() {
                             onChangeText={setName}
                             style={{
                               marginTop: presented ? 20 : 28,
-                              backgroundColor: tokens.muted,
-                              borderRadius: 13,
-                              padding: 16,
-                              color: tokens.foreground,
+                              ...field,
                             }}
                           />
                         ) : null}
@@ -556,10 +567,7 @@ export default function SignIn() {
                           onBlur={() => setEmailBlurred(true)}
                           style={{
                             marginTop: mode === "up" ? 12 : presented ? 20 : 28,
-                            backgroundColor: tokens.muted,
-                            borderRadius: 13,
-                            padding: 16,
-                            color: tokens.foreground,
+                            ...field,
                           }}
                         />
                         {emailSuggestion && emailBlurred ? (
@@ -580,8 +588,7 @@ export default function SignIn() {
                               marginTop: 12,
                               flexDirection: "row",
                               alignItems: "center",
-                              backgroundColor: tokens.muted,
-                              borderRadius: 13,
+                              ...fieldShell,
                             }}
                           >
                             <TextInput
@@ -601,7 +608,10 @@ export default function SignIn() {
                               style={{
                                 flex: 1,
                                 minWidth: 0,
-                                padding: 16,
+                                minHeight: 56,
+                                paddingStart: 20,
+                                paddingVertical: 16,
+                                fontSize: 17,
                                 color: tokens.foreground,
                               }}
                             />
@@ -617,8 +627,8 @@ export default function SignIn() {
                               onPress={() => setPasswordVisible((visible) => !visible)}
                               style={{
                                 alignSelf: "center",
-                                minWidth: 44,
-                                minHeight: 44,
+                                minWidth: 48,
+                                minHeight: 48,
                                 marginRight: 4,
                               }}
                             />

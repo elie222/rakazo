@@ -250,7 +250,6 @@ const props: Omit<ComponentProps<typeof ThreadComposer>, "ref"> = {
   botId: "bot-1",
   onCall: false,
   sending: false,
-  styles: { circleButton: {}, composerFill: {} },
   attachActions: [],
   attachFrom: vi.fn(),
   send: vi.fn(async () => {}),
@@ -1348,7 +1347,7 @@ describe("thread composer isolation", () => {
         const fieldStyle = JSON.parse(field.dataset.style!);
         const wrapperStyle = JSON.parse(field.parentElement!.dataset.style!);
         // Padding belongs outside the native scroll viewport so it cannot scroll away.
-        expect(wrapperStyle.paddingVertical).toBe(11);
+        expect(wrapperStyle.paddingVertical).toBe(19);
         expect(fieldStyle.padding).toBe(0);
         expect(fieldStyle.paddingTop).toBeUndefined();
         expect(fieldStyle.paddingBottom).toBeUndefined();
@@ -1370,7 +1369,8 @@ describe("thread composer isolation", () => {
       const button = container.querySelector(`button[aria-label="${label}"]`)!;
       const pill = style(button.querySelector("[data-glass]")!);
       const capsule = style(button.closest('[data-glass="roundedRectangle"]')!);
-      const inset = (capsule.minHeight - pill.height) / 2;
+      // The capsule's 1pt border sits inside its height.
+      const inset = (capsule.minHeight - 2 - pill.height) / 2;
       expect(style(button).marginBottom).toBe(inset);
       expect(capsule.paddingEnd).toBe(inset);
     }

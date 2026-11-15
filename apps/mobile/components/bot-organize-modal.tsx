@@ -1,5 +1,6 @@
 import { useLingui } from "@lingui/react/macro";
 import { SNOOZE_PRESETS, snoozePresetTime } from "@rakazo/core";
+import { typeScale } from "@rakazo/ui-tokens";
 import type { ComponentRef, ReactNode } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ViewStyle } from "react-native";
@@ -214,7 +215,7 @@ export function BotOrganizeModal({
             label={mode === "rename" ? t`Save` : t`Create`}
             accessibilityLabel={mode === "rename" ? t`Save section name` : t`Create section`}
             fill={false}
-            style={{ alignSelf: "center" }}
+            style={{ alignSelf: "center", borderRadius: 24 }}
             disabled={
               saving || !name.trim() || (mode === "rename" && name.trim() === currentSection?.name)
             }
@@ -390,8 +391,8 @@ function createBotOrganizeStyles() {
     sheet: {
       maxHeight: "82%",
       flexShrink: 1,
-      borderTopLeftRadius: 22,
-      borderTopRightRadius: 22,
+      borderTopLeftRadius: 28,
+      borderTopRightRadius: 28,
       backgroundColor: native.fillPressed,
       paddingHorizontal: 16,
       paddingTop: 18,
@@ -406,18 +407,17 @@ function createBotOrganizeStyles() {
     },
     title: {
       color: native.label,
-      fontSize: 18,
-      fontWeight: "600",
-      paddingHorizontal: 8,
+      ...typeScale.headline,
+      paddingHorizontal: 16,
       paddingBottom: 10,
     },
     action: {
-      minHeight: 46,
+      minHeight: 52,
       flexDirection: "row",
       alignItems: "center",
-      gap: 12,
-      borderRadius: 11,
-      paddingHorizontal: 10,
+      gap: 14,
+      borderRadius: 26,
+      paddingHorizontal: 16,
     },
     pressed: {
       backgroundColor: native.fill,
@@ -425,13 +425,12 @@ function createBotOrganizeStyles() {
     actionLabel: {
       flex: 1,
       color: native.label,
-      fontSize: 16,
+      fontSize: 17,
     },
     sectionLabel: {
       color: native.secondaryLabel,
-      fontSize: 13,
-      fontWeight: "600",
-      paddingHorizontal: 10,
+      ...typeScale.caption,
+      paddingHorizontal: 16,
       paddingTop: 12,
       paddingBottom: 6,
     },
@@ -440,12 +439,12 @@ function createBotOrganizeStyles() {
       flexShrink: 1,
     },
     sectionOption: {
-      minHeight: 44,
+      minHeight: 48,
       flexDirection: "row",
       alignItems: "center",
-      gap: 12,
-      borderRadius: 11,
-      paddingHorizontal: 10,
+      gap: 14,
+      borderRadius: 24,
+      paddingHorizontal: 16,
     },
     newSectionRow: {
       flexDirection: "row",
@@ -462,20 +461,20 @@ function createBotOrganizeStyles() {
     },
     newSectionInput: {
       flex: 1,
-      height: 40,
-      borderRadius: 10,
+      height: 48,
+      borderRadius: 24,
       backgroundColor: native.fill,
       color: native.label,
-      paddingHorizontal: 12,
+      paddingHorizontal: 18,
       fontSize: 16,
     },
     destructive: { color: tokens.destructive },
     error: {
       color: tokens.destructive,
       fontSize: 13,
-      paddingHorizontal: 10,
+      paddingHorizontal: 16,
       paddingTop: 8,
     },
-    cancel: { marginTop: 14 },
+    cancel: { marginTop: 14, borderRadius: 24 },
   });
 }

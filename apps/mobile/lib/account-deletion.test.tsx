@@ -184,7 +184,7 @@ describe("passwordless account deletion", () => {
     expect(sheet.dataset.transparent).toBe("false");
     // The actions stay clear of the home indicator.
     const content = container.querySelector<HTMLElement>("[data-testid='sheet-content']")!;
-    expect(content.style.paddingBottom).toBe("52px");
+    expect(content.style.paddingBottom).toBe("58px");
     expect((sheet.firstElementChild as HTMLElement).style.paddingBottom).toBe("");
     expect(button("Delete").dataset.nativeAction).toBe("destructive");
     expect(button("Delete").disabled).toBe(true);

@@ -6,14 +6,12 @@ import type { CreateAction } from "./create-chooser";
 import { createMenuItems } from "./create-chooser";
 import { useUiLocale } from "./i18n";
 
-/** Liquid Glass home header: account on the left; activity, search and create on the right. */
+/** Liquid Glass home header: account on the left, create on the right. Activity and search sit in the bottom bar. */
 export function useHomeHeader({
   nativeHeader,
   ready,
   hasSession,
   initials,
-  activityMode,
-  toggleActivityMode,
   runCreateAction,
   headerTitle,
 }: {
@@ -21,8 +19,6 @@ export function useHomeHeader({
   ready: boolean;
   hasSession: boolean;
   initials: string;
-  activityMode: boolean;
-  toggleActivityMode: () => void;
   runCreateAction: (action: CreateAction) => void;
   headerTitle?: () => ReactNode;
 }) {
@@ -50,22 +46,6 @@ export function useHomeHeader({
       ],
       unstable_headerRightItems: () => [
         {
-          type: "button" as const,
-          label: t`Activity`,
-          accessibilityLabel: t`Activity`,
-          icon: { type: "sfSymbol" as const, name: activityMode ? "bell.fill" : "bell" },
-          selected: activityMode,
-          onPress: toggleActivityMode,
-        },
-        {
-          type: "button" as const,
-          label: t`Search`,
-          accessibilityLabel: t`Search`,
-          identifier: "home-search-button",
-          icon: { type: "sfSymbol" as const, name: "magnifyingglass" },
-          onPress: () => router.push("/search"),
-        },
-        {
           type: "menu" as const,
           label: t`Create`,
           accessibilityLabel: t`Create`,
@@ -87,8 +67,6 @@ export function useHomeHeader({
     ready,
     hasSession,
     initials,
-    activityMode,
-    toggleActivityMode,
     runCreateAction,
     headerTitle,
     router,

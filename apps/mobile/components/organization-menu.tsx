@@ -70,13 +70,13 @@ function createStyles() {
       gap: 4,
       maxWidth: 220,
       flexShrink: 1,
-      minHeight: 44,
+      minHeight: 48,
       paddingHorizontal: 8,
     },
     name: {
       color: native.label,
       ...typeScale.body,
-      fontWeight: "600",
+      fontWeight: "500",
       flexShrink: 1,
     },
   });

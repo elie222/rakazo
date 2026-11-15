@@ -428,9 +428,9 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
           style={{
             // No percentage width: the iOS menu host has no definite width to resolve it against.
             maxWidth: 576,
-            borderRadius: 18,
+            borderRadius: 22,
             backgroundColor: tokens.card,
-            paddingHorizontal: 16,
+            paddingHorizontal: 18,
             paddingVertical: 14,
           }}
         >
@@ -575,10 +575,10 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
     const hasInlineImages = attachments.some(isInlineImageBlock);
     const bubbleStyle = {
       maxWidth: "100%",
-      borderRadius: 20,
-      backgroundColor: outgoing ? tokens.chatUser : tokens.muted,
-      paddingHorizontal: 14,
-      paddingVertical: 12,
+      borderRadius: BUBBLE_RADIUS,
+      backgroundColor: outgoing ? tokens.chatUser : tokens.card,
+      paddingHorizontal: BUBBLE_PADDING_X,
+      paddingVertical: outgoing ? 12 : 14,
       gap: 8,
     } as const;
     return (
@@ -806,6 +806,8 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
 });
 
 const OPEN_BOT_ACTION = "open-bot:";
+const BUBBLE_RADIUS = 22;
+const BUBBLE_PADDING_X = 18;
 
 function MessageTextCard({
   message,
@@ -863,10 +865,10 @@ function MessageTextCard({
         flexShrink: 1,
         minWidth: 0,
         maxWidth: "100%",
-        backgroundColor: outgoing ? tokens.chatUser : tokens.muted,
-        paddingHorizontal: 14,
-        paddingVertical: 9,
-        borderRadius: 20,
+        backgroundColor: outgoing ? tokens.chatUser : tokens.card,
+        paddingHorizontal: BUBBLE_PADDING_X,
+        paddingVertical: outgoing ? 12 : 14,
+        borderRadius: BUBBLE_RADIUS,
       }}
     >
       {speaker ? (
@@ -932,10 +934,10 @@ function AgentEventLabel({
           style={{
             width: "100%",
             marginTop: 6,
-            borderRadius: 14,
+            borderRadius: BUBBLE_RADIUS,
             backgroundColor: tokens.card,
-            paddingHorizontal: 14,
-            paddingVertical: 10,
+            paddingHorizontal: BUBBLE_PADDING_X,
+            paddingVertical: 14,
           }}
         >
           <ChatMarkdown palette={tokens} colorScheme={colorScheme}>

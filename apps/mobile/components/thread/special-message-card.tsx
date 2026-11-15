@@ -2,7 +2,7 @@ import { useLingui } from "@lingui/react/macro";
 import { ChatMarkdown } from "@rakazo/chat-ui/native";
 import type { MessageBlock } from "@rakazo/contracts";
 import { cloudAgentHttpsUrl, helperCardState, displayName as safeDisplayName } from "@rakazo/core";
-import { typeScale } from "@rakazo/ui-tokens";
+import { fontWeight, typeScale } from "@rakazo/ui-tokens";
 import { useEffect, useRef, useState } from "react";
 import type { ViewInstance } from "react-native";
 import { Linking, Pressable, Text, View } from "react-native";
@@ -21,6 +21,7 @@ import { withUserBubble } from "../../lib/user-bubble";
 import { BotMention } from "../bot-mention";
 import { NativeActionButton } from "../native-action-button";
 import { NativeSymbol } from "../native-symbol";
+import { widgetCardSurface } from "../widget-card";
 import type { MessageActionProps } from "./message-bubble";
 import type { MessageRowActions } from "./message-row";
 
@@ -85,9 +86,8 @@ function HelperMessageCard({
       ref={helperCard}
       collapsable={false}
       style={{
+        ...widgetCardSurface(tokens),
         width: "90%",
-        borderRadius: 18,
-        backgroundColor: tokens.card,
       }}
     >
       <Pressable
@@ -113,7 +113,7 @@ function HelperMessageCard({
         }}
         accessibilityRole="button"
         accessibilityState={{ expanded: subagentOpen }}
-        style={{ paddingHorizontal: 16, paddingTop: 14, paddingBottom: 14, minHeight: 44 }}
+        style={{ paddingHorizontal: 14, paddingTop: 14, paddingBottom: 14, minHeight: 44 }}
       >
         <View ref={helperHeader} collapsable={false}>
           <View
@@ -144,6 +144,7 @@ function HelperMessageCard({
                       ? tokens.mutedForeground
                       : tokens.success,
                 ...typeScale.caption,
+                fontWeight: fontWeight.medium,
               }}
             >
               {running
@@ -181,7 +182,7 @@ function HelperMessageCard({
           prominence="secondary"
           size="compact"
           busy={stopping}
-          style={{ marginHorizontal: 16, marginBottom: 14 }}
+          style={{ marginHorizontal: 14, marginBottom: 14 }}
           onPress={() => {
             setStopping(true);
             // The card settles from the chat's events once the helper stops.
@@ -190,7 +191,7 @@ function HelperMessageCard({
         />
       ) : null}
       {subagentOpen && body ? (
-        <View style={{ paddingHorizontal: 16, paddingBottom: 14, marginTop: -6 }}>
+        <View style={{ paddingHorizontal: 14, paddingBottom: 14, marginTop: -6 }}>
           <ChatMarkdown palette={tokens} colorScheme={colorScheme} streaming={running}>
             {body}
           </ChatMarkdown>
@@ -232,10 +233,9 @@ export function SpecialMessageCard(props: SpecialMessageCardProps) {
         accessibilityLabel={`${title}: ${statusLabel}`}
         disabled={!href}
         style={{
+          ...widgetCardSurface(tokens),
           width: "90%",
-          borderRadius: 18,
-          backgroundColor: tokens.card,
-          paddingHorizontal: 16,
+          paddingHorizontal: 14,
           paddingVertical: 14,
         }}
       >
@@ -247,6 +247,7 @@ export function SpecialMessageCard(props: SpecialMessageCardProps) {
             style={{
               color: failed ? tokens.destructive : running ? tokens.warning : tokens.success,
               ...typeScale.caption,
+              fontWeight: fontWeight.medium,
             }}
           >
             {statusLabel}

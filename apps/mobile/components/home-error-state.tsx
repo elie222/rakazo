@@ -1,4 +1,5 @@
 import { useLingui } from "@lingui/react/macro";
+import { typeScale } from "@rakazo/ui-tokens";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { native, useResolvedAppearance, useThemedStyles } from "../lib/native";
 import type { LoadFailureKind } from "../lib/user-error";
@@ -85,14 +86,12 @@ function createStyles() {
     title: {
       marginTop: 4,
       color: native.label,
-      fontSize: 17,
-      fontWeight: "600",
+      ...typeScale.headline,
       textAlign: "center",
     },
     detail: {
       color: native.secondaryLabel,
-      fontSize: 15,
-      lineHeight: 20,
+      ...typeScale.secondary,
       textAlign: "center",
     },
     icon: { opacity: 0.75 },

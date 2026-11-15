@@ -6,7 +6,7 @@ import { useThemedStyles } from "../lib/native";
 import { BotAvatar } from "./bot-avatar";
 
 /** The avatar in a one-to-one chat's title capsule. */
-export const CHAT_TITLE_AVATAR_SIZE = 28;
+export const CHAT_TITLE_AVATAR_SIZE = 34;
 
 function createChatTitleAvatarStyles() {
   const size = CHAT_TITLE_AVATAR_SIZE;

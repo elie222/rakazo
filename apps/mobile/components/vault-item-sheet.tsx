@@ -9,11 +9,13 @@ import {
   vaultKind,
 } from "@rakazo/contracts";
 import { vaultBotsLine } from "@rakazo/i18n/vault";
+import { typeScale } from "@rakazo/ui-tokens";
 import * as Clipboard from "expo-clipboard";
 import { useState } from "react";
 import { Modal, Platform, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { formatActivityRelativeTime } from "../lib/activity";
+import { mobileTokens } from "../lib/appearance";
 import { native, useThemedStyles } from "../lib/native";
 import { siteHost } from "../lib/secret-destination";
 import { readableItem, vaultKindLabel, vaultKindSymbol } from "../lib/vault";
@@ -260,15 +262,16 @@ function createStyles() {
     heading: { flexDirection: "row", alignItems: "center", gap: 12 },
     headingText: { flex: 1 },
     tile: {
-      width: 44,
-      height: 44,
-      borderRadius: 11,
+      width: 52,
+      height: 52,
+      borderRadius: 26,
       alignItems: "center",
       justifyContent: "center",
-      backgroundColor: native.fill,
+      backgroundColor: mobileTokens().accent,
+      overflow: "hidden",
     },
-    title: { color: native.label, fontSize: 20, fontWeight: "600" },
-    kind: { color: native.secondaryLabel, fontSize: 15 },
-    unreadable: { color: native.secondaryLabel, fontSize: 15 },
+    title: { color: native.label, ...typeScale.title },
+    kind: { color: native.secondaryLabel, ...typeScale.secondary },
+    unreadable: { color: native.secondaryLabel, ...typeScale.secondary },
   });
 }

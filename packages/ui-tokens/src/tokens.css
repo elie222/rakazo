@@ -10,8 +10,8 @@
   --card-foreground: #f5f5f5;
   --popover: #232323;
   --popover-foreground: #f5f5f5;
-  --glass-fill: #2c2c2e;
-  --glass-stroke: #fcfcfc26;
+  --glass-fill: #242424;
+  --glass-stroke: #2f2f2f;
   --primary: #f5f5f5;
   --primary-foreground: #121212;
   --secondary: #f5f5f50a;
@@ -66,8 +66,8 @@
   --card-foreground: #1c1c1c;
   --popover: #ffffff;
   --popover-foreground: #1c1c1c;
-  --glass-fill: #ffffff;
-  --glass-stroke: #14141416;
+  --glass-fill: #ededed;
+  --glass-stroke: #e2e2e2;
   --primary: #1c1c1c;
   --primary-foreground: #fcfcfc;
   --secondary: #1c1c1c0f;

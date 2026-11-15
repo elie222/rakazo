@@ -8,11 +8,12 @@ import type { ViewProps } from "react-native";
 import { Linking, Text, View } from "react-native";
 import { rpc } from "../lib/api";
 import { appConnectPresentation } from "../lib/app-connect";
-import { native, useMobileTokens } from "../lib/native";
+import { useMobileTokens } from "../lib/native";
 import { useThreadReadOnly } from "../lib/thread-read-only";
 import { errorText } from "../lib/user-error";
 import { ConnectorIcon } from "./connector-icon";
 import { NativeActionButton } from "./native-action-button";
+import { widgetCardSurface } from "./widget-card";
 
 export function AppConnectCard({
   botId,
@@ -89,10 +90,9 @@ export function AppConnectCard({
     <View
       accessibilityLabel={t`${ph({ name: block.name })} connection`}
       style={{
+        ...widgetCardSurface(tokens),
         width: "100%",
-        borderRadius: 18,
-        backgroundColor: native.fill,
-        paddingHorizontal: 16,
+        paddingHorizontal: 14,
         paddingVertical: 14,
         gap: 8,
       }}

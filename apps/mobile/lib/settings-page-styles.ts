@@ -15,13 +15,13 @@ export function createSettingsPageStyles() {
       paddingHorizontal: 16,
       paddingTop: 16,
       paddingBottom: 32,
-      gap: 28,
+      gap: 24,
     },
     compactContent: {
       paddingHorizontal: 8,
     },
     section: {
-      gap: 7,
+      gap: 8,
     },
     error: {
       color: tokens.destructive,

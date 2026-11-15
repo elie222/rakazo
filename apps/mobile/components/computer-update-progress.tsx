@@ -62,13 +62,7 @@ export function ComputerUpdateProgress() {
               computerUpdates.open(update.id);
             }}
           >
-            <GlassSurface
-              style={styles.pill}
-              fallbackStyle={[
-                styles.pillFallback,
-                { backgroundColor: tokens.glassFill, borderColor: tokens.glassStroke },
-              ]}
-            >
+            <GlassSurface style={styles.pill}>
               {!computerUpdateNeedsAttention(update) ? (
                 <ActivityIndicator color={tokens.foreground} />
               ) : null}
@@ -170,7 +164,6 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 20,
   },
-  pillFallback: { borderWidth: 1, borderRadius: 14, paddingHorizontal: 12 },
   secondary: { fontSize: 12, textAlign: "center", marginTop: 3 },
   sheet: { flex: 1, padding: 24, gap: 24 },
   title: { fontSize: 22, fontWeight: "600" },

@@ -221,6 +221,6 @@ export default function SpaceMembersScreen() {
 function createStyles() {
   return StyleSheet.create({
     screen: { flex: 1, backgroundColor: native.groupedPage },
-    content: { padding: 20, gap: 28 },
+    content: { paddingHorizontal: 16, paddingVertical: 20, gap: 24 },
   });
 }

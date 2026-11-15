@@ -2,6 +2,7 @@ import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import type { MemoryDocument } from "@rakazo/contracts";
 import { isDeletableMemoryDocument } from "@rakazo/contracts";
+import { typeScale } from "@rakazo/ui-tokens";
 import type { NativeStackNavigationOptions } from "expo-router";
 import { useLocalSearchParams, useNavigation, usePreventRemove, useRouter } from "expo-router";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -253,17 +254,20 @@ export default function MemoryNoteScreen() {
 function createStyles() {
   return StyleSheet.create({
     screen: { flex: 1, backgroundColor: native.page },
-    content: { padding: 16, gap: 14 },
+    content: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 32, gap: 16 },
     editor: {
       minHeight: 320,
-      borderRadius: 12,
-      backgroundColor: native.fill,
+      borderRadius: 22,
+      borderCurve: "continuous",
+      borderWidth: 1,
+      borderColor: native.separator,
+      backgroundColor: native.groupedCell,
       color: native.label,
-      padding: 14,
-      fontSize: 15,
-      lineHeight: 21,
+      paddingHorizontal: 18,
+      paddingVertical: 16,
+      ...typeScale.body,
     },
-    secondary: { color: native.secondaryLabel, fontSize: 15 },
-    error: { color: mobileTokens().destructive, fontSize: 13 },
+    secondary: { color: native.secondaryLabel, ...typeScale.secondary, paddingHorizontal: 18 },
+    error: { color: mobileTokens().destructive, ...typeScale.caption, paddingHorizontal: 18 },
   });
 }

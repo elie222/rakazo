@@ -137,21 +137,12 @@ export function ThreadComposerDock({
               style={{
                 marginTop: 12,
                 borderRadius: 999,
-                paddingStart: 16,
+                paddingStart: 20,
                 paddingEnd: 10,
                 paddingVertical: 8,
                 flexDirection: "row",
                 alignItems: "center",
                 gap: 8,
-              }}
-              fallbackStyle={{
-                borderRadius: 14,
-                borderWidth: 1,
-                borderColor: tokens.glassStroke,
-                backgroundColor: tokens.glassFill,
-                paddingStart: 12,
-                paddingEnd: 12,
-                paddingVertical: 10,
               }}
             >
               <ComposerReplyPreview
@@ -196,7 +187,7 @@ export function ThreadComposerDock({
                   {attachment.previewUri ? (
                     <Image
                       source={{ uri: attachment.previewUri }}
-                      style={{ width: 28, height: 28, borderRadius: 6 }}
+                      style={{ width: 28, height: 28, borderRadius: 14 }}
                     />
                   ) : (
                     <NativeSymbol

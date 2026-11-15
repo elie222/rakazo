@@ -1,7 +1,8 @@
+import { tokensForAppearance } from "@rakazo/ui-tokens";
 import { lazy, Suspense } from "react";
 import { Platform, Switch } from "react-native";
 import { isComposeViewAvailable } from "../lib/compose-available";
-import { systemGreen, useResolvedAppearance } from "../lib/native";
+import { useResolvedAppearance } from "../lib/native";
 import type { NativeSwitchProps } from "../lib/native-controls";
 
 // Do not evaluate Expo UI's native view adapters until the running binary supports them.
@@ -18,15 +19,15 @@ export function NativeSwitch({
   thumbColor,
   tintColor,
 }: NativeSwitchProps) {
-  const scheme = useResolvedAppearance();
+  const tokens = tokensForAppearance(useResolvedAppearance());
   const fallback = (
     <Switch
       accessibilityHint={accessibilityHint}
       accessibilityLabel={accessibilityLabel}
       disabled={disabled}
       onValueChange={onValueChange}
-      thumbColor={thumbColor}
-      trackColor={trackColor ?? { true: tintColor ?? systemGreen(scheme) }}
+      thumbColor={thumbColor ?? (value ? tokens.primaryForeground : undefined)}
+      trackColor={trackColor ?? { true: tintColor ?? tokens.primary }}
       value={value}
     />
   );

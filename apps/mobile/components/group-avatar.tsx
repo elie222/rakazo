@@ -1,7 +1,7 @@
 import type { BotAvatarSet } from "@rakazo/contracts";
 import { memo } from "react";
-import type { ViewStyle } from "react-native";
 import { StyleSheet, Text, View } from "react-native";
+import { groupAvatarTiles } from "../lib/group-seats";
 import { native, useThemedStyles } from "../lib/native";
 import { BotAvatar } from "./bot-avatar";
 import { NativeSymbol } from "./native-symbol";
@@ -59,60 +59,50 @@ export const GroupAvatar = memo(function GroupAvatar({
     );
   }
 
-  const pair = members.length === 2;
-  const miniSize = Math.round(size * (pair ? 0.65 : 0.54));
-  const positions: ViewStyle[] = pair
-    ? [
-        { top: 0, left: 0 },
-        { right: 0, bottom: 0 },
-      ]
-    : [
-        { top: 0, left: (size - miniSize) / 2 },
-        { bottom: 0, left: 0 },
-        { right: 0, bottom: 0 },
-      ];
-  const visibleMembers = members.slice(0, pair || members.length === 3 ? members.length : 2);
-
+  const tiles = groupAvatarTiles(members, size);
   return (
-    <View style={{ width: size, height: size, position: "relative" }}>
-      {visibleMembers.map((member, index) => (
+    <View
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+      style={{ width: size, height: size }}
+    >
+      {tiles.map((tile, index) => (
         <View
-          key={member.botId ?? index}
+          key={tile.kind === "member" ? (tile.member.botId ?? index) : "more"}
           style={{
             position: "absolute",
-            ...positions[index],
-            zIndex: index + 1,
+            left: tile.left,
+            top: tile.top,
+            // The first tile sits above the rest.
+            zIndex: tiles.length - index,
           }}
         >
-          <BotAvatar
-            color={member.color}
-            avatarSet={member.avatarSet}
-            identity={member.botId ?? member.name}
-            size={miniSize}
-            status={member.status}
-          />
+          {tile.kind === "member" ? (
+            <BotAvatar
+              color={tile.member.color}
+              avatarSet={tile.member.avatarSet}
+              identity={tile.member.botId ?? tile.member.name}
+              size={tile.size}
+              status={tile.member.status}
+            />
+          ) : (
+            // A chip ringed in the page colour, so it reads apart from the faces it touches.
+            <View
+              style={[
+                styles.more,
+                { width: tile.size, height: tile.size, borderRadius: tile.size / 2 },
+              ]}
+            >
+              <Text
+                allowFontScaling={false}
+                style={[styles.moreText, { fontSize: Math.round(tile.size * 0.42) }]}
+              >
+                +{tile.count}
+              </Text>
+            </View>
+          )}
         </View>
       ))}
-      {members.length > 3 ? (
-        <View
-          style={{
-            position: "absolute",
-            right: 0,
-            bottom: 0,
-            zIndex: 3,
-            width: miniSize,
-            height: miniSize,
-            borderRadius: miniSize / 2,
-            backgroundColor: native.fillPressed,
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          <Text style={{ color: native.label, fontSize: 10, fontWeight: "600" }}>
-            +{members.length - 2}
-          </Text>
-        </View>
-      ) : null}
     </View>
   );
 });
@@ -124,5 +114,13 @@ function createGroupAvatarStyles() {
       alignItems: "center",
       justifyContent: "center",
     },
+    more: {
+      backgroundColor: native.fillPressed,
+      borderWidth: 2,
+      borderColor: native.page,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    moreText: { color: native.label, fontWeight: "500" },
   });
 }

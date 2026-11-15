@@ -217,7 +217,7 @@ it("draws the settings groups' divider between rows, not the system separator", 
     [
       { name: "frame", value: { height: 1 } },
       { name: "foregroundStyle", value: "dark-border" },
-      { name: "padding", value: { leading: 16 } },
+      { name: "padding", value: { leading: 20 } },
     ],
   ]);
   for (const row of swift.rows) {

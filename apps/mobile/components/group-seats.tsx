@@ -13,26 +13,10 @@ import type { ReactNode } from "react";
 import { memo, useId } from "react";
 import type { ColorValue } from "react-native";
 import { View } from "react-native";
-import Svg, {
-  Circle,
-  ClipPath,
-  Defs,
-  G,
-  Image,
-  Mask,
-  Path,
-  Rect,
-  Text as SvgText,
-} from "react-native-svg";
+import Svg, { Circle, ClipPath, Defs, G, Image, Mask, Path, Rect } from "react-native-svg";
 import { mobileBotAvatarPresentation } from "../lib/bot-avatar";
 import type { GroupSeat } from "../lib/group-seats";
-import {
-  GROUP_SEAT_SIZE,
-  groupSeatGap,
-  groupSeatStep,
-  groupSeats,
-  groupSeatsWidth,
-} from "../lib/group-seats";
+import { GROUP_SEAT_SIZE, groupSeatGap, groupSeatStep, groupSeatsWidth } from "../lib/group-seats";
 import { native, useMobileTokens, useResolvedAppearance } from "../lib/native";
 
 type SeatMember = { botId?: string; name?: string; color: string };
@@ -47,28 +31,27 @@ type SeatArt = {
 };
 
 /**
- * The group title's row of member faces: each seat overlaps the one before it, which is cut
- * away around it so the header shows through. Faces stay still here.
+ * The group title's stack of member faces: the first sits on top and each one after tucks
+ * under the one before it, cut away around it so the header shows through. Faces stay still.
  */
 export const GroupSeats = memo(function GroupSeats({
-  members,
+  seats,
   size = GROUP_SEAT_SIZE,
 }: {
-  members: readonly SeatMember[];
+  seats: readonly GroupSeat<SeatMember>[];
   size?: number;
 }) {
   const id = useId().replace(/:/g, "");
-  // Redraws the faint "+N" when the appearance changes.
+  // Redraws the faint "#" when the appearance changes.
   useResolvedAppearance();
   const page = useMobileTokens();
-  const seats = groupSeats(members);
   const step = groupSeatStep(size);
   const gap = groupSeatGap(size);
   const width = groupSeatsWidth(seats.length, size);
   const arts = seats.map((seat, index) =>
     seat.kind === "member"
       ? seatArt(seat.member, size, `${id}-${index}`, page)
-      : markArt(seat, size, native.systemTertiaryLabel),
+      : groupMarkArt(native.systemTertiaryLabel),
   );
   const placed = (index: number, art: SeatArt) => {
     const [x, y, units] = art.box;
@@ -83,10 +66,10 @@ export const GroupSeats = memo(function GroupSeats({
     >
       <Svg width={width} height={size}>
         <Defs>
-          {arts.slice(1).map((next, before) => (
+          {arts.slice(0, -1).map((above, index) => (
             <Mask
-              key={before}
-              id={`${id}-carve-${before}`}
+              key={index}
+              id={`${id}-carve-${index + 1}`}
               maskUnits="userSpaceOnUse"
               x={0}
               y={-size}
@@ -94,18 +77,18 @@ export const GroupSeats = memo(function GroupSeats({
               height={size * 3}
             >
               <Rect x={0} y={-size} width={width} height={size * 3} fill="white" />
-              <G transform={placed(before + 1, next)} strokeLinejoin="round">
-                {next.outline({
+              <G transform={placed(index, above)} strokeLinejoin="round">
+                {above.outline({
                   fill: "black",
                   stroke: "black",
-                  strokeWidth: (2 * gap * next.box[2]) / size,
+                  strokeWidth: (2 * gap * above.box[2]) / size,
                 })}
               </G>
             </Mask>
           ))}
         </Defs>
         {arts.map((art, index) => (
-          <G key={index} mask={arts[index + 1] ? `url(#${id}-carve-${index})` : undefined}>
+          <G key={index} mask={index > 0 ? `url(#${id}-carve-${index})` : undefined}>
             <G transform={placed(index, art)}>{art.face}</G>
           </G>
         ))}
@@ -114,40 +97,18 @@ export const GroupSeats = memo(function GroupSeats({
   );
 });
 
-/** The "+N" for members past the row, or the group's "#" mark: ink, no disc. */
-function markArt(
-  seat: Exclude<GroupSeat<SeatMember>, { kind: "member" }>,
-  size: number,
-  color: ColorValue,
-): SeatArt {
-  if (seat.kind === "group") {
-    // A hash about two thirds of the seat across, in a 24-unit box.
-    const hash = (paint: Paint) => (
-      <Path
-        d="M9.5 4L8 20M16 4L14.5 20M4.5 9H20M4 15H19.5"
-        fill="none"
-        stroke={paint.stroke ?? paint.fill}
-        strokeWidth={2 + (paint.strokeWidth ?? 0)}
-        strokeLinecap="round"
-      />
-    );
-    return { box: [0, 0, 24], outline: hash, face: hash({ fill: color }) };
-  }
-  const fontSize = Math.round(size * 0.74);
-  const label = (paint: Paint) => (
-    <SvgText
-      x={size / 2}
-      // Centre the figures' cap height in the seat.
-      y={size / 2 + fontSize * 0.36}
-      textAnchor="middle"
-      fontSize={fontSize}
-      fontWeight="600"
-      {...paint}
-    >
-      {`+${seat.count}`}
-    </SvgText>
+/** The group's "#" mark: ink, no disc, about two thirds of the seat across in a 24-unit box. */
+function groupMarkArt(color: ColorValue): SeatArt {
+  const hash = (paint: Paint) => (
+    <Path
+      d="M9.5 4L8 20M16 4L14.5 20M4.5 9H20M4 15H19.5"
+      fill="none"
+      stroke={paint.stroke ?? paint.fill}
+      strokeWidth={2 + (paint.strokeWidth ?? 0)}
+      strokeLinecap="round"
+    />
   );
-  return { box: [0, 0, size], outline: label, face: label({ fill: color }) };
+  return { box: [0, 0, 24], outline: hash, face: hash({ fill: color }) };
 }
 
 /** A still face in the member's shape: the same drawing as their avatar at rest. */

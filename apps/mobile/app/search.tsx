@@ -1,5 +1,5 @@
 import { useLingui } from "@lingui/react/macro";
-import { botColors, typeScale } from "@rakazo/ui-tokens";
+import { botColors, fontWeight, typeScale } from "@rakazo/ui-tokens";
 import type { NativeStackNavigationProp } from "expo-router";
 import { useFocusEffect, useNavigation, useRouter } from "expo-router";
 import {
@@ -51,6 +51,9 @@ const kindIcons = {
   link: { ios: "link", android: "link-outline" },
   routine: { ios: "clock.arrow.circlepath", android: "time-outline" },
 } as const;
+
+// Result rows match the inbox rows.
+const RESULT_AVATAR = 52;
 
 export default function SearchSheet() {
   const { t } = useLingui();
@@ -178,9 +181,6 @@ export default function SearchSheet() {
           accessibilityLabel={t`Close`}
           ios="xmark"
           android="close"
-          size={44}
-          color={tokens.foreground}
-          fallbackStyle={{ backgroundColor: tokens.muted }}
           onPress={() => {
             cancelOpen();
             router.back();
@@ -190,7 +190,7 @@ export default function SearchSheet() {
           <NativeSymbol
             ios="magnifyingglass"
             android="search"
-            size={17}
+            size={24}
             color={tokens.mutedForeground}
           />
           <TextInput
@@ -269,13 +269,14 @@ export default function SearchSheet() {
             style={({ pressed }) => [styles.row, pressed && styles.pressed]}
           >
             {item.group ? (
-              <GroupAvatar members={item.group.members} size={54} />
+              <GroupAvatar members={item.group.members} size={RESULT_AVATAR} />
             ) : item.bot ? (
               <BotAvatar
                 identity={item.bot.id}
                 color={item.bot.color || botColors[3]}
                 avatarSet={item.bot.avatarSet}
                 status={item.bot.status}
+                size={RESULT_AVATAR}
               />
             ) : (
               <View style={styles.neutralAvatar}>
@@ -305,37 +306,40 @@ function createStyles() {
   const tokens = mobileTokens();
   return StyleSheet.create({
     screen: { flex: 1, backgroundColor: native.page },
-    top: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 12 },
+    top: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 12 },
     fieldPill: {
       flex: 1,
+      height: 56,
       flexDirection: "row",
       alignItems: "center",
-      gap: 8,
-      borderRadius: 22,
-      paddingHorizontal: 12,
-      backgroundColor: tokens.muted,
+      gap: 12,
+      borderRadius: 28,
+      borderWidth: 1,
+      borderColor: tokens.glassStroke,
+      paddingHorizontal: 20,
+      backgroundColor: tokens.glassFill,
     },
     field: {
       flex: 1,
       minHeight: 44,
       paddingVertical: 10,
       color: native.label,
-      fontSize: 17,
+      fontSize: 18,
       writingDirection: "auto",
     },
     row: {
       flexDirection: "row",
       alignItems: "center",
-      paddingHorizontal: 16,
-      paddingVertical: 10,
-      gap: 12,
+      paddingHorizontal: 24,
+      paddingVertical: 12,
+      gap: 16,
     },
     pressed: { opacity: 0.55 },
     clear: { minWidth: 32, minHeight: 44, alignItems: "center", justifyContent: "center" },
     neutralAvatar: {
-      width: 54,
-      height: 54,
-      borderRadius: 27,
+      width: RESULT_AVATAR,
+      height: RESULT_AVATAR,
+      borderRadius: RESULT_AVATAR / 2,
       backgroundColor: tokens.muted,
       alignItems: "center",
       justifyContent: "center",
@@ -347,6 +351,7 @@ function createStyles() {
       flex: 1,
       color: native.label,
       ...typeScale.cardTitle,
+      fontWeight: fontWeight.regular,
       writingDirection: "auto",
     },
     time: { color: native.secondaryLabel, ...typeScale.caption },
@@ -355,8 +360,13 @@ function createStyles() {
       ...typeScale.secondary,
       writingDirection: "auto",
     },
-    empty: { color: native.secondaryLabel, fontSize: 16, paddingHorizontal: 20, paddingTop: 28 },
-    failure: { alignItems: "flex-start", gap: 12, paddingHorizontal: 20, paddingTop: 28 },
+    empty: {
+      color: native.secondaryLabel,
+      ...typeScale.secondary,
+      paddingHorizontal: 24,
+      paddingTop: 28,
+    },
+    failure: { alignItems: "flex-start", gap: 12, paddingHorizontal: 24, paddingTop: 28 },
     error: { color: tokens.destructive, fontSize: 14 },
   });
 }

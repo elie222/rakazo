@@ -1,7 +1,7 @@
 import { useLingui } from "@lingui/react/macro";
 import { useNavigation, useRoute, useRouter } from "expo-router";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Alert } from "react-native";
+import { Alert, Platform } from "react-native";
 import { mobileTokens } from "../../lib/appearance";
 import { notifyArchivedChatsChanged } from "../../lib/archived-chats";
 import { restoreArchivedBot } from "../../lib/bot-lifecycle";
@@ -98,7 +98,7 @@ export function useThreadHeader({
   useLayoutEffect(() => {
     navigation.setOptions({
       title: displayName || t`Thread`,
-      headerTitleAlign: "center",
+      headerTitleAlign: Platform.OS === "android" ? "left" : "center",
       ...threadEdgeOptions(),
       ...threadHeaderRight({
         inGroup,

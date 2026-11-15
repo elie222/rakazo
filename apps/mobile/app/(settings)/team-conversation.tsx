@@ -15,6 +15,7 @@ import {
   withRollupHours,
   withSenderMode,
 } from "@rakazo/core";
+import { typeScale } from "@rakazo/ui-tokens";
 import { useQuery } from "@tanstack/react-query";
 import type { NativeStackNavigationOptions } from "expo-router";
 import { useLocalSearchParams, useNavigation, useRouter } from "expo-router";
@@ -284,34 +285,42 @@ function RoomSettings({ conversationId }: { conversationId: string }) {
 
 function createStyles() {
   return StyleSheet.create({
-    content: { padding: 16, gap: 20 },
+    content: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 32, gap: 20 },
     labelRow: {
       flexDirection: "row",
       alignItems: "center",
       justifyContent: "space-between",
       minHeight: 32,
-      paddingHorizontal: 4,
+      paddingStart: 18,
+      paddingEnd: 4,
     },
-    label: { color: native.secondaryLabel, fontSize: 13 },
-    hint: { color: native.tertiaryLabel, fontSize: 13 },
+    label: { color: native.secondaryLabel, ...typeScale.caption },
+    hint: { color: native.tertiaryLabel, ...typeScale.caption },
     input: {
       marginTop: 8,
-      backgroundColor: native.fill,
-      borderRadius: 11,
-      padding: 14,
-      fontSize: 16,
+      backgroundColor: native.groupedCell,
+      borderRadius: 22,
+      borderCurve: "continuous",
+      borderWidth: 1,
+      borderColor: native.separator,
+      paddingHorizontal: 18,
+      paddingVertical: 16,
+      ...typeScale.body,
       minHeight: 140,
       textAlignVertical: "top",
     },
-    hours: { flexDirection: "row", alignItems: "center", gap: 6 },
+    hours: { flexDirection: "row", alignItems: "center", gap: 8 },
     hoursInput: {
-      minWidth: 48,
-      paddingVertical: 4,
-      paddingHorizontal: 8,
-      borderRadius: 8,
-      backgroundColor: native.fill,
+      minWidth: 56,
+      minHeight: 40,
+      paddingVertical: 6,
+      paddingHorizontal: 14,
+      borderRadius: 20,
+      borderWidth: 1,
+      borderColor: native.separator,
+      backgroundColor: native.page,
       textAlign: "right",
-      fontSize: 16,
+      ...typeScale.body,
     },
   });
 }

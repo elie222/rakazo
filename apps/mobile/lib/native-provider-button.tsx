@@ -51,7 +51,7 @@ export function NativeProviderButton({
             ? native.AppleAuthenticationButtonStyle.WHITE
             : native.AppleAuthenticationButtonStyle.BLACK
         }
-        cornerRadius={12}
+        cornerRadius={24}
         style={{ height: 48, width: "100%" }}
         onPress={() => {
           if (!disabled) onPress();

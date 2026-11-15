@@ -144,16 +144,16 @@ describe("ChoiceCard", () => {
       JSON.parse(view.querySelector<HTMLElement>(selector)?.dataset.style ?? "{}");
 
     expect(style('[role="header"]')).toMatchObject({
-      fontSize: 17,
-      lineHeight: 22,
+      fontSize: 18,
+      lineHeight: 24,
       fontWeight: "500",
     });
     const subtitle = [...view.querySelectorAll<HTMLElement>("span")].find(
       (span) => span.textContent === "Pick one to start.",
     );
     expect(JSON.parse(subtitle?.dataset.style ?? "{}")).toMatchObject({
-      fontSize: 15,
-      lineHeight: 19,
+      fontSize: 16,
+      lineHeight: 22,
     });
   });
 

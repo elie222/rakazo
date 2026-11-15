@@ -5,6 +5,7 @@ import { act, createElement } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { InboxBottomBar } from "../components/inbox-bottom-bar";
 import { InboxHeader } from "../components/inbox-header";
 // Activates the language the menus are translated into, as the app does at startup.
 import "./i18n";
@@ -69,17 +70,19 @@ vi.mock("./appearance", () => ({
   mobileTokens: () => ({}),
   resolveMobileAppearance: () => "light",
 }));
-vi.mock("./native", () => ({ native: {}, useThemedStyles: () => ({}) }));
+vi.mock("./native", () => ({
+  native: {},
+  useMobileTokens: () => ({ background: "#ffffff" }),
+  useThemedStyles: () => ({}),
+}));
 
 let root: Root;
 let container: HTMLDivElement;
-const toggleActivityMode = vi.fn();
 const runCreateAction = vi.fn();
 
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   header.push.mockReset();
-  toggleActivityMode.mockReset();
   runCreateAction.mockReset();
   container = document.createElement("div");
   document.body.append(container);
@@ -98,8 +101,6 @@ function renderHeader(platform: string) {
     root.render(
       <InboxHeader
         initials="A"
-        activityMode={false}
-        toggleActivityMode={toggleActivityMode}
         runCreateAction={runCreateAction}
         columnInsets={{ left: 0, right: 0 }}
       />,
@@ -114,12 +115,9 @@ it.each(["android", "ios"])("omits Artifacts from the %s fallback header", (plat
     Array.from(container.querySelectorAll("[aria-label]"), (node) =>
       node.getAttribute("aria-label"),
     ),
-  ).toEqual(["Account", "Activity", "Search", "Create"]);
+  ).toEqual(["Account", "Create"]);
   act(() => control("Account").click());
-  act(() => control("Search").click());
-  act(() => control("Activity").click());
-  expect(header.push.mock.calls).toEqual([["/account"], ["/search"]]);
-  expect(toggleActivityMode).toHaveBeenCalledOnce();
+  expect(header.push.mock.calls).toEqual([["/account"]]);
 });
 
 it.each(["android", "ios"])("creates from the %s menu", (platform) => {
@@ -127,3 +125,27 @@ it.each(["android", "ios"])("creates from the %s menu", (platform) => {
   for (const item of container.querySelectorAll("li")) act(() => item.click());
   expect(runCreateAction.mock.calls).toEqual([["bot"], ["group"], ["space"]]);
 });
+
+it.each(["android", "ios"])(
+  "opens search and the activity view from the %s bottom bar",
+  (platform) => {
+    header.platform.OS = platform;
+    const toggleActivityMode = vi.fn();
+    act(() =>
+      root.render(
+        <InboxBottomBar
+          activityMode={false}
+          toggleActivityMode={toggleActivityMode}
+          bottomInset={0}
+          columnInsets={{ left: 0, right: 0 }}
+        />,
+      ),
+    );
+    const control = (label: string) =>
+      container.querySelector<HTMLElement>(`[aria-label="${label}"]`)!;
+    act(() => control("Search").click());
+    act(() => control("Activity").click());
+    expect(header.push.mock.calls).toEqual([["/search"]]);
+    expect(toggleActivityMode).toHaveBeenCalledOnce();
+  },
+);

@@ -727,7 +727,7 @@ describe("native markdown prose fences", () => {
       expect(textStyle(html, draft)).toMatchObject({
         "data-color": lightTokens.foreground,
         "data-font-size": "17",
-        "data-line-height": "22",
+        "data-line-height": "25",
       });
       expect(textStyle(html, draft)["data-font-family"]).toBeUndefined();
     },
@@ -1130,7 +1130,7 @@ describe("native markdown lists", () => {
     expect(dots[0]?.hasAttribute("data-top")).toBe(false);
     const line = dots[0]?.parentElement?.querySelector("rn-text");
     expect(line?.textContent).toBe("\u200B");
-    expect(line?.getAttribute("data-line-height")).toBe("22");
+    expect(line?.getAttribute("data-line-height")).toBe("25");
     expect(line?.getAttribute("data-font-size")).toBe("17");
     // Markers sit back in the faint colour so the text leads.
     expect(dots[0]?.getAttribute("data-background-color")).toBe(darkTokens.faintForeground);
@@ -1269,22 +1269,22 @@ describe("native markdown lists", () => {
     },
   );
 
-  it("numbers ordered lists at 15pt in tabular figures", () => {
+  it("numbers ordered lists at 16pt in tabular figures", () => {
     const html = renderToStaticMarkup(<ChatMarkdown>{"9. nine\n10. ten"}</ChatMarkdown>);
     expect(textStyle(html, "10.")).toMatchObject({
-      "data-font-size": "15",
-      "data-line-height": "22",
+      "data-font-size": "16",
+      "data-line-height": "25",
       "data-font-variant": "tabular-nums",
     });
   });
 });
 
 describe("native markdown type", () => {
-  it("sets bot and user message text at 17pt on a 22pt line", () => {
+  it("sets bot and user message text at 17pt on a 25pt line", () => {
     const bot = renderToStaticMarkup(<ChatMarkdown>{"Plain reply."}</ChatMarkdown>);
     expect(textStyle(bot, "Plain reply.")).toMatchObject({
       "data-font-size": "17",
-      "data-line-height": "22",
+      "data-line-height": "25",
     });
     const user = renderToStaticMarkup(
       <LinkifiedText color={darkTokens.foreground} linkColor={darkTokens.link} palette={darkTokens}>
@@ -1293,11 +1293,11 @@ describe("native markdown type", () => {
     );
     expect(textStyle(user, "Plain message.")).toMatchObject({
       "data-font-size": "17",
-      "data-line-height": "22",
+      "data-line-height": "25",
     });
   });
 
-  it("draws headings and bold text in semibold", () => {
+  it("draws headings in medium and bold text in semibold", () => {
     const html = renderToStaticMarkup(
       <ChatMarkdown>
         {"# One\n\n## Two\n\n### Three\n\n#### Four\n\nSome **bold** text."}
@@ -1306,12 +1306,12 @@ describe("native markdown type", () => {
     const heading = (size: string, lineHeight: string) => ({
       "data-font-size": size,
       "data-line-height": lineHeight,
-      "data-font-weight": "600",
+      "data-font-weight": "500",
     });
-    expect(textStyle(html, "One")).toMatchObject(heading("22", "26"));
-    expect(textStyle(html, "Two")).toMatchObject(heading("19", "23"));
-    expect(textStyle(html, "Three")).toMatchObject(heading("17", "22"));
-    expect(textStyle(html, "Four")).toMatchObject(heading("15", "19"));
+    expect(textStyle(html, "One")).toMatchObject(heading("22", "28"));
+    expect(textStyle(html, "Two")).toMatchObject(heading("18", "24"));
+    expect(textStyle(html, "Three")).toMatchObject(heading("17", "25"));
+    expect(textStyle(html, "Four")).toMatchObject(heading("16", "22"));
     expect(textStyle(html, "bold")).toMatchObject({ "data-font-weight": "600" });
   });
 
@@ -1336,7 +1336,7 @@ describe("native markdown type", () => {
     expect(token?.hasAttribute("data-line-height")).toBe(false);
     expect(
       document.querySelector("rn-view[data-border-radius]")?.getAttribute("data-border-radius"),
-    ).toBe("10");
+    ).toBe("14");
   });
 
   it("sets table headers in medium and cells at 14pt on an 18pt line", () => {

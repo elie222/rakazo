@@ -2,7 +2,7 @@ import { Host, Switch } from "@expo/ui/jetpack-compose";
 import { alpha } from "@expo/ui/jetpack-compose/modifiers";
 import { tokensForAppearance } from "@rakazo/ui-tokens";
 import { Pressable, View } from "react-native";
-import { systemGreen, useResolvedAppearance } from "../lib/native";
+import { useResolvedAppearance } from "../lib/native";
 import type { NativeSwitchProps } from "../lib/native-controls";
 
 /** Loaded only when the running Android binary has the Compose host and switch. */
@@ -18,11 +18,13 @@ export default function ComposeSwitch({
 }: NativeSwitchProps) {
   const scheme = useResolvedAppearance();
   const tokens = tokensForAppearance(scheme);
-  const checkedTrack = trackColor?.true ?? tintColor ?? systemGreen(scheme);
-  const checkedThumb = thumbColor ?? tokens.faviconPlate;
+  // Material 3 in the app's monochrome: an on switch is the ink with a page-coloured thumb.
+  const checkedTrack = trackColor?.true ?? tintColor ?? tokens.primary;
+  const checkedThumb = thumbColor ?? tokens.primaryForeground;
   const uncheckedTrack = trackColor?.false ?? tokens.secondary;
   const uncheckedBorder = scheme === "light" ? tokens.ring : "transparent";
-  const uncheckedThumb = thumbColor ?? (scheme === "dark" ? tokens.mutedForeground : tokens.muted);
+  // Material 3: an unchecked thumb in the outline colour, so it reads on the light track.
+  const uncheckedThumb = thumbColor ?? (scheme === "dark" ? tokens.mutedForeground : tokens.ring);
 
   return (
     // Expo UI's description modifier exposes a separate node from Material's toggle state.

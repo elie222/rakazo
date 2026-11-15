@@ -1,4 +1,5 @@
 import { useLingui } from "@lingui/react/macro";
+import { typeScale } from "@rakazo/ui-tokens";
 import { StyleSheet, Text, View } from "react-native";
 import { useMobileTokens } from "../../lib/native";
 import { pageLoadProblem } from "../../lib/pages";
@@ -42,5 +43,5 @@ export function PageLoadFailure({
 
 const styles = StyleSheet.create({
   failure: { alignItems: "center", gap: 12 },
-  message: { fontSize: 15, textAlign: "center" },
+  message: { ...typeScale.secondary, textAlign: "center" },
 });

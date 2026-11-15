@@ -128,7 +128,7 @@ export function SocialSignInButtons({
 
 function providerStyle(variant: string | undefined, tokens: ReturnType<typeof useMobileTokens>) {
   return variant === "outline"
-    ? { backgroundColor: tokens.background, borderColor: tokens.border, color: tokens.foreground }
+    ? { backgroundColor: tokens.card, borderColor: tokens.glassStroke, color: tokens.foreground }
     : {
         backgroundColor: tokens.primary,
         borderColor: tokens.primary,
@@ -160,7 +160,7 @@ function Choice({
         flex: fill ? undefined : 1,
         alignSelf: fill ? "stretch" : undefined,
         minHeight: 48,
-        borderRadius: 12,
+        borderRadius: 24,
         borderWidth: 1,
         borderColor: style.borderColor,
         backgroundColor: style.backgroundColor,
@@ -173,7 +173,7 @@ function Choice({
       }}
     >
       {mark}
-      <Text numberOfLines={1} style={{ color: style.color, fontSize: 16, fontWeight: "600" }}>
+      <Text numberOfLines={1} style={{ color: style.color, fontSize: 16, fontWeight: "500" }}>
         {label}
       </Text>
     </Pressable>
@@ -203,13 +203,13 @@ function QuietChoice({
         alignItems: "center",
         gap: 6,
         marginTop: 10,
-        minHeight: 32,
-        paddingHorizontal: 8,
+        minHeight: 44,
+        paddingHorizontal: 12,
         opacity: disabled ? 0.45 : 1,
       }}
     >
       {mark}
-      <Text style={{ color: tokens.mutedForeground, fontSize: 14, fontWeight: "500" }}>
+      <Text style={{ color: tokens.mutedForeground, fontSize: 16, fontWeight: "500" }}>
         {label}
       </Text>
     </Pressable>

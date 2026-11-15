@@ -6,6 +6,7 @@ import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GroupSeats } from "../components/group-seats";
+import { groupTitleSeats } from "./group-seats";
 
 type Props = Record<string, unknown> & { children?: ReactNode; style?: unknown };
 
@@ -68,61 +69,46 @@ afterEach(() => {
 });
 
 function render(count: number) {
-  act(() =>
-    root.render(<GroupSeats members={Array.from({ length: count }, (_, i) => member(i))} />),
-  );
+  const { seats: placed } = groupTitleSeats(Array.from({ length: count }, (_, i) => member(i)));
+  act(() => root.render(<GroupSeats seats={placed} />));
   const svg = container.querySelector("svg-svg")!;
-  // The seats are the top-level groups; each but the last is cut by the one after it.
+  // The seats are the top-level groups; each but the first tucks under the one before it.
   const seats = Array.from(svg.children).filter((node) => node.tagName === "SVG-G");
   return { svg, seats, masks: svg.querySelectorAll("svg-mask") };
 }
 
 describe("GroupSeats", () => {
-  it("draws every member of a small group, each cut by the next", () => {
+  it("puts the first member on top, each after it cut by the one before", () => {
     const { svg, seats, masks } = render(3);
-    expect(svg.getAttribute("data-width")).toBe("63");
+    expect(svg.getAttribute("data-width")).toBe("78");
     expect(seats).toHaveLength(3);
     expect(masks).toHaveLength(2);
     expect(seats.map((seat) => seat.getAttribute("data-mask"))).toEqual([
-      expect.stringMatching(/carve-0\)$/),
-      expect.stringMatching(/carve-1\)$/),
       "undefined",
+      expect.stringMatching(/carve-1\)$/),
+      expect.stringMatching(/carve-2\)$/),
     ]);
+  });
+
+  it("draws only three faces for a bigger group; the count is the title's text, not a seat", () => {
+    const { svg, seats } = render(8);
+    expect(svg.getAttribute("data-width")).toBe("78");
+    expect(seats).toHaveLength(3);
     expect(svg.querySelector("svg-text")).toBeNull();
   });
 
-  it("draws three members and a +N in tertiary ink that also cuts the seat under it", () => {
-    const { svg, seats, masks } = render(8);
-    expect(svg.getAttribute("data-width")).toBe("80.5");
-    expect(seats).toHaveLength(4);
-    const labels = Array.from(svg.querySelectorAll("svg-text"));
-    expect(labels.map((label) => label.textContent)).toEqual(["+5", "+5"]);
-    // One label is the seat itself, the other the cut it makes in the seat before it.
-    expect(labels.map((label) => label.getAttribute("data-fill")).sort()).toEqual([
-      "black",
-      "tertiary",
-    ]);
-    // 21 pt semibold, centred in the 28 pt seat.
-    expect(labels[0]!.getAttribute("data-fontsize")).toBe("21");
-    expect(labels[0]!.getAttribute("data-fontweight")).toBe("600");
-    expect(masks).toHaveLength(3);
-    expect(masks[2]!.querySelector("svg-text")).not.toBeNull();
-  });
-
-  it("follows a lone member with the group's mark in tertiary ink, which cuts the face", () => {
+  it("follows a lone member with the group's mark in tertiary ink, cut by the face", () => {
     const { svg, seats, masks } = render(1);
-    expect(svg.getAttribute("data-width")).toBe("45.5");
+    expect(svg.getAttribute("data-width")).toBe("56");
     expect(seats).toHaveLength(2);
     expect(masks).toHaveLength(1);
-    expect(masks[0]!.querySelector("svg-path")).not.toBeNull();
     const mark = seats[1]!.querySelector("svg-path")!;
     expect(mark.getAttribute("data-stroke")).toBe("tertiary");
-    expect(svg.querySelector("svg-text")).toBeNull();
   });
 
   it("draws only the group's mark for a group with no members left", () => {
     const { svg, seats, masks } = render(0);
-    expect(svg.getAttribute("data-width")).toBe("28");
+    expect(svg.getAttribute("data-width")).toBe("34");
     expect(seats).toHaveLength(1);
     expect(masks).toHaveLength(0);
     expect(seats[0]!.querySelector("svg-path")!.getAttribute("data-stroke")).toBe("tertiary");
@@ -132,10 +118,12 @@ describe("GroupSeats", () => {
     act(() =>
       root.render(
         <GroupSeats
-          members={[
-            { botId: "bot-a", name: "A", color: "#3EC5A8" },
-            { botId: "bot-b", name: "B", color: "#F5A03C" },
-          ]}
+          seats={
+            groupTitleSeats([
+              { botId: "bot-a", name: "A", color: "#3EC5A8" },
+              { botId: "bot-b", name: "B", color: "#F5A03C" },
+            ]).seats
+          }
         />,
       ),
     );

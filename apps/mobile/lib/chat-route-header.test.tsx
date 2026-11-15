@@ -15,7 +15,7 @@ vi.mock("./appearance", () => ({ mobileTokens: () => ({ foreground: "#000" }) })
 vi.mock("./native-controls", () => ({ iosAtLeast: () => true }));
 vi.mock("./split-view", () => ({ setInboxHidden }));
 vi.mock("./thread-edges", () => ({ threadEdgeOptions: () => ({ headerTransparent: true }) }));
-vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
+vi.mock("../components/glass-icon-button", () => ({ GlassIconButton: () => null }));
 vi.mock("../components/chat-header-title", () => ({ ChatHeaderTitle: () => null }));
 vi.mock("../components/sheet-header", () => ({
   trailingHeaderOptions: (label: string) => ({

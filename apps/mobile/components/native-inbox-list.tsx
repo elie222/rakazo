@@ -16,6 +16,8 @@ export type NativeInboxListProps<Item> = {
   gutters: { left: number; right: number };
   /** The inbox column's insets in the screen or pane, safe area included, to centre the pills. */
   column: { left: number; right: number };
+  /** What floats over the list's end (the bottom bar), from the screen's bottom edge. */
+  bottomInset?: number;
   avatarViewport: AvatarViewport;
   onRefresh: () => Promise<void>;
   /** Unread and attention counts by row, for the pills that jump to rows out of view. */

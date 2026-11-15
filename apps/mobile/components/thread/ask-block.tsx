@@ -19,6 +19,7 @@ import { NativeSymbol } from "../native-symbol";
 import { SecretAskSheet } from "../secret-ask-sheet";
 import { VaultItemEditor } from "../vault-item-editor";
 import { VaultTile } from "../vault-tile";
+import { widgetCardSurface } from "../widget-card";
 import type { MessageActionProps } from "./message-bubble";
 
 export function AskBlock({
@@ -131,7 +132,7 @@ export function AskBlock({
       if (session === sheetSession.current) setSheetOpen(false);
     };
     return (
-      <View style={[askRowStyles.card, { backgroundColor: tokens.card }]}>
+      <View style={[askRowStyles.card, widgetCardSurface(tokens)]}>
         <View style={askRowStyles.row}>
           <VaultTile
             origin={itemType === "login" ? ask.credential.origin : undefined}
@@ -246,10 +247,9 @@ export function AskBlock({
   return (
     <View
       style={{
+        ...widgetCardSurface(tokens),
         width: secretInput ? "100%" : "90%",
-        borderRadius: 18,
-        backgroundColor: tokens.card,
-        paddingHorizontal: 16,
+        paddingHorizontal: 14,
         paddingVertical: 14,
         gap: 10,
       }}
@@ -313,7 +313,7 @@ export function AskBlock({
             style={[
               askInputStyles.field,
               secretInput ? { alignSelf: "stretch" } : undefined,
-              { borderColor: tokens.border, color: tokens.foreground },
+              { backgroundColor: tokens.secondary, color: tokens.foreground },
             ]}
           />
           <View style={askInputStyles.buttons}>
@@ -350,7 +350,7 @@ export function AskBlock({
 }
 
 const askRowStyles = StyleSheet.create({
-  card: { width: "100%", borderRadius: 18, paddingHorizontal: 14, paddingVertical: 12, gap: 8 },
+  card: { width: "100%", paddingHorizontal: 14, paddingVertical: 12, gap: 8 },
   row: { flexDirection: "row", alignItems: "center", gap: 12 },
   tile: { width: 34, height: 34, borderRadius: 9, alignItems: "center", justifyContent: "center" },
   text: { flex: 1, gap: 2 },
@@ -361,9 +361,8 @@ const askInputStyles = StyleSheet.create({
   field: {
     minHeight: 42,
     borderRadius: 12,
-    borderWidth: 1,
     paddingHorizontal: 12,
-    paddingVertical: 9,
+    paddingVertical: 10,
   },
   button: {
     flex: 1,

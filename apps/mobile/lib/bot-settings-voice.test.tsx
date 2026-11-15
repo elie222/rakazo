@@ -431,14 +431,14 @@ describe("bot settings device voice menu", () => {
       expect(JSON.parse(trigger.dataset.style!)).not.toHaveProperty("backgroundColor");
       expect(JSON.parse(trigger.querySelector("span")!.dataset.style!)).toMatchObject({
         color: "muted",
-        fontSize: 14,
+        fontSize: 16,
       });
       const heading = [...container.querySelectorAll('[role="header"]')].find(
         (node) => node.textContent === "Notifications",
       )!;
       expect(heading).toBeDefined();
       expect(JSON.parse((heading.parentElement as HTMLElement).dataset.style!)).toMatchObject({
-        gap: 7,
+        gap: 8,
       });
       expect(
         container.querySelector('[role="switch"][aria-label="When it finishes or needs input"]'),

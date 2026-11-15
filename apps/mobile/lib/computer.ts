@@ -17,6 +17,19 @@ export const SCREEN_URL_RETRY_DELAY_MS = 400;
  */
 export const SCREEN_URL_RENEW_MS = 50 * 60_000;
 
+/**
+ * Pins the screen page at its own size. The desktop already scales itself to fit, so a tap
+ * there is a click on the remote, never a web-view zoom: a double tap or a focused field
+ * otherwise zoomed the page past the desktop into its gray background.
+ */
+export const SCREEN_VIEWPORT_LOCK = `(function(){var content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no";function lock(){var head=document.head||document.documentElement;if(!head)return;var meta=document.querySelector('meta[name="viewport"]');if(!meta){meta=document.createElement("meta");meta.name="viewport";head.appendChild(meta);}if(meta.content!==content)meta.content=content;}lock();document.addEventListener("DOMContentLoaded",lock);})();true;`;
+
+/**
+ * Hides the screen page's own corner buttons (paste and the trackpad hand) while the app
+ * draws its keyboard bar, which already pastes; two sets of controls crowd the desktop.
+ */
+export const SCREEN_PAGE_CONTROLS_HIDDEN = `(function(){var style=document.createElement("style");style.textContent="#mobile-paste,#mobile-trackpad{display:none!important}";(document.head||document.documentElement).appendChild(style);})();true;`;
+
 export type ComputerStatus = ContractComputerStatus;
 
 export async function readScreenUrl(

@@ -144,15 +144,17 @@ function createStyles() {
   const tokens = mobileTokens();
   return StyleSheet.create({
     screen: { flex: 1, backgroundColor: native.page },
-    content: { padding: 20, gap: 12 },
+    content: { paddingHorizontal: 20, paddingVertical: 16, gap: 12 },
     input: {
-      minHeight: 48,
-      borderRadius: 12,
-      backgroundColor: native.fill,
+      minHeight: 56,
+      borderRadius: 28,
+      backgroundColor: tokens.card,
+      borderWidth: 1,
+      borderColor: tokens.glassStroke,
       color: native.label,
-      paddingHorizontal: 14,
+      paddingHorizontal: 20,
       paddingVertical: 12,
-      fontSize: 16,
+      fontSize: 17,
     },
     error: { color: tokens.destructive, fontSize: 14 },
   });

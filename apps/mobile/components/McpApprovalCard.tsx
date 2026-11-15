@@ -6,21 +6,27 @@ import { useEffect, useState } from "react";
 import type { ViewProps } from "react-native";
 import { Alert, StyleSheet, Text, View } from "react-native";
 import { rpc } from "../lib/api";
-import { native, useMobileTokens } from "../lib/native";
+import { useMobileTokens } from "../lib/native";
 import { useThreadReadOnly } from "../lib/thread-read-only";
 import { errorText } from "../lib/user-error";
 import { NativeActionButton } from "./native-action-button";
+import { widgetCardSurface } from "./widget-card";
 
 const styles = StyleSheet.create({
   actions: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  badge: { alignItems: "center", borderRadius: 8, height: 28, justifyContent: "center", width: 28 },
-  badgeText: { fontSize: 12, fontWeight: "600" },
+  badge: {
+    alignItems: "center",
+    borderRadius: 10,
+    height: 40,
+    justifyContent: "center",
+    width: 40,
+  },
+  badgeText: { fontSize: 15, fontWeight: "700" },
   card: {
     maxWidth: 576,
-    borderRadius: 18,
-    paddingHorizontal: 16,
+    paddingHorizontal: 14,
     paddingVertical: 14,
-    gap: 8,
+    gap: 10,
   },
   description: { ...typeScale.secondary, opacity: 0.75 },
   header: { alignItems: "center", flexDirection: "row", gap: 12 },
@@ -79,10 +85,10 @@ export function McpApprovalCard({
   return (
     <View
       accessibilityLabel={t`Connect MCP server ${ph({ name: block.name })}`}
-      style={[styles.card, { backgroundColor: native.fill }]}
+      style={[styles.card, widgetCardSurface(tokens)]}
     >
       <View style={styles.header}>
-        <View style={[styles.badge, { backgroundColor: native.fillPressed }]}>
+        <View style={[styles.badge, { backgroundColor: tokens.secondary }]}>
           <Text style={[styles.badgeText, { color: tokens.foreground }]}>M</Text>
         </View>
         <View style={styles.headline}>

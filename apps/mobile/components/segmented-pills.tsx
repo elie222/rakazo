@@ -16,7 +16,12 @@ export function SegmentedPills<T extends string>({
   return (
     <View
       accessibilityLabel={accessibilityLabel}
-      style={{ flexDirection: "row", padding: 2, borderRadius: 10, backgroundColor: tokens.accent }}
+      style={{
+        flexDirection: "row",
+        padding: 4,
+        borderRadius: 999,
+        backgroundColor: tokens.accent,
+      }}
     >
       {options.map((option) => {
         const selected = value === option.value;
@@ -31,8 +36,10 @@ export function SegmentedPills<T extends string>({
               flex: 1,
               alignItems: "center",
               backgroundColor: selected ? selectedFill : "transparent",
-              borderRadius: 8,
-              paddingVertical: 8,
+              borderRadius: 999,
+              minHeight: 40,
+              justifyContent: "center",
+              paddingHorizontal: 12,
               opacity: disabled ? 0.5 : 1,
             }}
           >

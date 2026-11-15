@@ -17,13 +17,14 @@ import { rpc } from "../lib/api";
 import type { ImportSetupBlock } from "../lib/import-setup";
 import { importSetupDetail } from "../lib/import-setup";
 import { threadCardWidth } from "../lib/message-presentation";
-import { native, useMobileTokens } from "../lib/native";
+import { useMobileTokens } from "../lib/native";
 import { useThreadReadOnly } from "../lib/thread-read-only";
 import { NativeActionButton } from "./native-action-button";
 import { NativeSymbol } from "./native-symbol";
+import { widgetCardSurface } from "./widget-card";
 
 const styles = StyleSheet.create({
-  card: { borderRadius: 18, paddingHorizontal: 16, paddingVertical: 14, gap: 4 },
+  card: { paddingHorizontal: 14, paddingVertical: 14, gap: 4 },
   complete: { flexDirection: "row", alignItems: "center", gap: 8 },
   title: typeScale.cardTitle,
   row: { flexDirection: "row", alignItems: "center", gap: 12, minHeight: 48, paddingVertical: 6 },
@@ -76,7 +77,8 @@ export function ImportSetupCard({
   if (retired) return null;
   const cardStyle = [
     styles.card,
-    { width: threadCardWidth(windowWidth), backgroundColor: native.fill },
+    widgetCardSurface(tokens),
+    { width: threadCardWidth(windowWidth) },
   ];
 
   if (isImportSetupComplete(block, state)) {
