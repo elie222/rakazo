@@ -1,10 +1,6 @@
 import { ORPCError } from "@orpc/server";
 import type { AdapterContext, SecretStore } from "@rakazo/adapter-kit";
-import {
-  isModelCredentialRejected,
-  isTransientModelError,
-  VoiceAccountError,
-} from "@rakazo/adapter-kit";
+import { SecretStoreUnavailableError, VoiceAccountError } from "@rakazo/adapter-kit";
 import {
   createVoiceProvider,
   isModelConnectionVoiceSecret,
@@ -271,15 +267,6 @@ export async function loadDefaultVoiceCredential(
   return loadVoiceCredential(deps, actor, undefined, scope, signal);
 }
 
-/** The provider refused to renew the linked sign-in, or was down or too slow to answer. */
-function signInRenewalFailed(error: unknown): boolean {
-  return (
-    isTransientModelError(error) ||
-    isModelCredentialRejected(error) ||
-    (error instanceof Error && error.name === "TimeoutError")
-  );
-}
-
 /** Keep refresh failures and linked-connection refusals safe for display. */
 export async function withVoiceConnection<T>(
   provider: string,
@@ -419,14 +406,16 @@ export async function persistVoiceCredential(
     if (error instanceof VoiceAccountError) throw new ClientError("BAD_REQUEST", error.message);
     // A cancelled request and a database outage are known by the error itself.
     if (input.signal?.aborted || isDatabaseUnavailable(error)) throw error;
-    // The failure's text can quote the provider, so only its kind is logged or reported.
-    const reason = error instanceof Error ? error.name : "unknown";
-    if (!signInRenewalFailed(error)) {
-      throw new Error(`Voice could not resolve the model connection (${reason})`);
+    if (error instanceof SecretStoreUnavailableError) {
+      throw new ClientError("SERVICE_UNAVAILABLE", "Service Unavailable", undefined, {
+        cause: error,
+      });
     }
+    // Whatever else kept the linked connection from being used, the member's next step is the
+    // same. The failure's text can quote the provider, so only its kind is logged.
     getLogger().warn("voice could not use the model connection", {
       provider: input.provider,
-      reason,
+      reason: error instanceof Error ? error.name : "unknown",
     });
     throw new ClientError(
       "BAD_REQUEST",

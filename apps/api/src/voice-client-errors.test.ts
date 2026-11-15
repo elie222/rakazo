@@ -1,3 +1,4 @@
+import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
 import * as adapters from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
@@ -147,19 +148,27 @@ describe("saving a voice connection linked to the model connection", () => {
     });
   });
 
-  it("reports a failure it does not recognise as a fault, by kind and without its text", async () => {
+  it("answers a failure it does not recognise the same way, quoting nothing from it", async () => {
     const failure = new RangeError('provider said {"access_token":"abc123"}', {
       cause: new Error("Authorization: Bearer abc123"),
     });
 
-    const thrown = await save(failure).catch((error: unknown) => error);
+    const thrown = (await save(failure).catch((error: unknown) => error)) as Error;
 
-    expect(thrown).toBeInstanceOf(Error);
-    expect(thrown).not.toHaveProperty("code", "BAD_REQUEST");
-    expect((thrown as Error).message).toBe(
-      "Voice could not resolve the model connection (RangeError)",
-    );
-    expect((thrown as Error).cause).toBeUndefined();
+    expect(thrown).toMatchObject({
+      code: "BAD_REQUEST",
+      message: "Couldn't use the xAI connection from Models. Try again.",
+    });
+    expect(thrown.cause).toBeUndefined();
+  });
+
+  it("answers a secret store outage as one to wait out", async () => {
+    const outage = new SecretStoreUnavailableError();
+
+    await expect(save(outage)).rejects.toMatchObject({
+      code: "SERVICE_UNAVAILABLE",
+      cause: outage,
+    });
   });
 
   it("lets a database outage through as itself, so the request is retried", async () => {
