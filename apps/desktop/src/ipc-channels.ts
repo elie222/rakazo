@@ -16,14 +16,22 @@ type BridgeMethod = (...args: never[]) => unknown;
  */
 export const REJECTS = Symbol("rejects");
 
+/**
+ * For a channel whose answer for nothing done is a value only the main process can read when
+ * the call arrives, such as the current update state: `handleIpc` takes a function that reads
+ * it, next to the handler.
+ */
+export const LIVE = Symbol("live");
+
 export type IpcChannel<Method extends BridgeMethod = BridgeMethod> = {
   readonly from: IpcWindow;
   /** Answered through `sendSync`, so the handler cannot wait for anything. */
   readonly sync?: true;
   /**
-   * What a refused caller is answered with: the bridge method's own answer for nothing done.
-   * The app's page is refused whenever its window is not the app window, as it is while
-   * another server is being opened, so this is what the page sees then.
+   * What a refused caller is answered with: the bridge method's own answer for nothing done,
+   * or `LIVE` when the registration reads it. The app's page is refused whenever its window is
+   * not the app window, as it is while another server is being opened, so this is what the
+   * page sees then.
    */
   readonly refused: unknown;
   /** Never set: carries the type of the bridge method the preload backs with this channel. */
@@ -36,6 +44,9 @@ const appPage = <Method extends BridgeMethod>(refused: Refused<Method>): IpcChan
   from: "app",
   refused,
 });
+const appPageLive = <Method extends BridgeMethod>(): IpcChannel<Method> & {
+  refused: typeof LIVE;
+} => ({ from: "app", refused: LIVE });
 const setupPage = <Method extends BridgeMethod>(refused: Refused<Method>): IpcChannel<Method> => ({
   from: "setup",
   refused,
@@ -74,10 +85,10 @@ export const ipcChannels = {
   "desktop.speech.abort": appPage<Desktop["speech"]["abort"]>(undefined),
   "desktop.speech.start": appPage<Desktop["speech"]["start"]>(false),
   "desktop.speech.stop": appPage<Desktop["speech"]["stop"]>(undefined),
-  "desktop.update.check": appPage<Desktop["update"]["check"]>(REJECTS),
-  "desktop.update.download": appPage<Desktop["update"]["download"]>(REJECTS),
-  "desktop.update.install": appPage<Desktop["update"]["install"]>(REJECTS),
-  "desktop.update.state": appPage<Desktop["update"]["state"]>(REJECTS),
+  "desktop.update.check": appPageLive<Desktop["update"]["check"]>(),
+  "desktop.update.download": appPageLive<Desktop["update"]["download"]>(),
+  "desktop.update.install": appPageLive<Desktop["update"]["install"]>(),
+  "desktop.update.state": appPageLive<Desktop["update"]["state"]>(),
   "desktop.window.close": appPage<Desktop["window"]["close"]>(undefined),
   "desktop.window.minimize": appPage<Desktop["window"]["minimize"]>(undefined),
   "desktop.window.state": appPage<Desktop["window"]["state"]>({
@@ -110,3 +121,10 @@ export type IpcIsSync<Name extends IpcChannelName> = (typeof ipcChannels)[Name] 
 }
   ? true
   : false;
+
+/** What `handleIpc` takes after the handler: the refused caller's answer, for a `LIVE` channel only. */
+export type IpcRefusedAnswer<Name extends IpcChannelName> = (typeof ipcChannels)[Name] extends {
+  refused: typeof LIVE;
+}
+  ? [refused: () => IpcResult<Name>]
+  : [];

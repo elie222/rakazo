@@ -1,14 +1,14 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import vm from "node:vm";
-import type { RakazoDesktop } from "@rakazo/contracts";
+import type { DesktopUpdateState, RakazoDesktop } from "@rakazo/contracts";
 import type { BrowserWindow, WebContents } from "electron";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { appWindowTargets, desktop } from "./desktop-state.js";
 import type { IpcCaller } from "./ipc.js";
 import { handleIpc, sentFrom } from "./ipc.js";
 import type { IpcChannel, IpcChannelName } from "./ipc-channels.js";
-import { ipcChannels, REJECTS } from "./ipc-channels.js";
+import { ipcChannels, LIVE, REJECTS } from "./ipc-channels.js";
 import { reportDesktopError } from "./monitoring.js";
 
 type Listener = (event: IpcCaller & { returnValue?: unknown }, ...args: unknown[]) => unknown;
@@ -72,12 +72,43 @@ function appBridge(caller: IpcCaller): RakazoDesktop {
   return bridge!;
 }
 
+const names = Object.keys(ipcChannels) as IpcChannelName[];
+const LIVE_ANSWER = { phase: "idle" };
+
+/** Registers any channel the way its registration must: a `LIVE` one with its refused answer. */
+function register(name: IpcChannelName, handler: (...args: never[]) => unknown) {
+  const untyped = handleIpc as (
+    name: IpcChannelName,
+    handler: unknown,
+    whenRefused?: () => unknown,
+  ) => void;
+  if (ipcChannels[name].refused === LIVE) untyped(name, handler, () => LIVE_ANSWER);
+  else untyped(name, handler);
+}
+
+/** Another server is opening: its window is the app window, and the one it replaces is kept. */
+function switchServer(previous: ReturnType<typeof fakeWindow>) {
+  const next = fakeWindow("https://next.example.com/app");
+  desktop.mainWindow = next.win;
+  appWindowTargets.set(next.win, "https://next.example.com");
+  desktop.replacedAppWindow = previous.win;
+  return next;
+}
+
+// Each test starts an hour on, so no test's reports are held back by an earlier one's.
+let clock = Date.now();
 beforeEach(() => {
+  clock += 60 * 60_000;
+  vi.useFakeTimers({ toFake: ["Date"], now: clock });
   mocks.invoke.clear();
   mocks.sync.clear();
   vi.mocked(reportDesktopError).mockClear();
   desktop.mainWindow = null;
+  desktop.replacedAppWindow = null;
   desktop.setupWindow = null;
+});
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe("sentFrom", () => {
@@ -142,9 +173,9 @@ describe("handleIpc", () => {
   it("refuses and reports every channel for any caller but its window's own page", () => {
     const { app, setup } = open();
     const handler = vi.fn();
-    for (const name of Object.keys(ipcChannels) as IpcChannelName[]) {
+    for (const name of names) {
       const { from, sync, refused }: IpcChannel = ipcChannels[name];
-      handleIpc(name, handler as never);
+      register(name, handler);
       const [own, other] = from === "app" ? [app, setup] : [setup, app];
       for (const [who, event] of [...strangers(own), ["the other window", other.event] as const]) {
         if (sync) {
@@ -156,7 +187,9 @@ describe("handleIpc", () => {
             `This page may not call ${name}.`,
           );
         } else {
-          expect(mocks.invoke.get(name)?.(event), `${name} from ${who}`).toBe(refused);
+          expect(mocks.invoke.get(name)?.(event), `${name} from ${who}`).toBe(
+            refused === LIVE ? LIVE_ANSWER : refused,
+          );
         }
       }
       expect(mocks.invoke.has(name)).toBe(!sync);
@@ -165,44 +198,52 @@ describe("handleIpc", () => {
     expect(handler).not.toHaveBeenCalled();
     // Reported once per channel, however often a page keeps calling.
     expect(vi.mocked(reportDesktopError).mock.calls).toEqual(
-      Object.keys(ipcChannels).map((name) => [
-        expect.any(Error),
-        "desktop.ipc",
-        { "ipc.channel": name },
-      ]),
+      names.map((name) => [expect.any(Error), "desktop.ipc", { "ipc.channel": name }]),
     );
   });
 
   it("rejects only on the channels whose page has to be told nothing happened", () => {
-    const rejecting = (Object.keys(ipcChannels) as IpcChannelName[]).filter(
-      (name) => ipcChannels[name].refused === REJECTS,
-    );
-    expect(rejecting).toEqual([
+    expect(names.filter((name) => ipcChannels[name].refused === REJECTS)).toEqual([
       "desktop.computer.requestAccess",
       "desktop.mcpBrowser.clear",
       "desktop.oauth.open",
-      "desktop.update.check",
-      "desktop.update.download",
-      "desktop.update.install",
-      "desktop.update.state",
       "desktop.setup.stack.start",
       "desktop.setup.stack.state",
       "desktop.setup.state",
     ]);
+    expect(names.filter((name) => ipcChannels[name].refused === LIVE)).toEqual([
+      "desktop.update.check",
+      "desktop.update.download",
+      "desktop.update.install",
+      "desktop.update.state",
+    ]);
+  });
+
+  it("answers a refused update call with the update state as it is then", async () => {
+    const { app } = open();
+    let state = { phase: "idle" } as DesktopUpdateState;
+    const act = vi.fn(() => ({ ...state, phase: "error" }) as DesktopUpdateState);
+    handleIpc("desktop.update.state", act, () => state);
+    handleIpc("desktop.update.check", act, () => state);
+    handleIpc("desktop.update.download", act, () => state);
+    handleIpc("desktop.update.install", act, () => state);
+    const page = appBridge(app.event);
+    switchServer(app);
+
+    for (const call of ["state", "check", "download", "install"] as const) {
+      state = { phase: "ready", availableVersion: call } as DesktopUpdateState;
+      await expect(page.update[call](), call).resolves.toBe(state);
+    }
+    expect(act).not.toHaveBeenCalled();
   });
 
   it("answers the app's own page while its window is not the app window, as it did before", async () => {
     const { app } = open();
-    for (const name of Object.keys(ipcChannels) as IpcChannelName[]) {
-      if (!ipcChannels[name].sync) handleIpc(name, (() => "handled") as never);
-    }
+    for (const name of names) if (!ipcChannels[name].sync) register(name, () => "handled");
     const page = appBridge(app.event);
     expect(await page.window.close()).toBe("handled");
 
-    // Another server is opening: its window is the app window now.
-    const next = fakeWindow("https://next.example.com/app");
-    desktop.mainWindow = next.win;
-    appWindowTargets.set(next.win, "https://next.example.com");
+    switchServer(app);
     // Dictation cleanup and the calls a page makes without waiting get an answer.
     await expect(page.speech!.stop(1)).resolves.toBeUndefined();
     await expect(page.speech!.abort(1)).resolves.toBeUndefined();
@@ -217,9 +258,11 @@ describe("handleIpc", () => {
     await expect(page.badge!.set(3)).resolves.toBe(false);
     await expect(page.clipboard!.writeText("text")).resolves.toBe(false);
     await expect(page.device!.setAllowed(true)).resolves.toBeNull();
-    // A sign-in that did not open and an update that was not read are failures their callers handle.
+    await expect(page.update.state()).resolves.toBe(LIVE_ANSWER);
+    // A sign-in that did not open is a failure its caller handles.
     await expect(page.oauth.open!("https://sign-in.invalid")).rejects.toThrow("may not call");
-    await expect(page.update.state()).rejects.toThrow("may not call");
+    // The page a switch replaces is expected to keep calling.
+    expect(reportDesktopError).not.toHaveBeenCalled();
   });
 
   it("rejects when the handler fails, whoever would have been refused", async () => {
@@ -233,23 +276,94 @@ describe("handleIpc", () => {
 
   it("reports a channel's refusals again once ten minutes have passed", () => {
     const { setup } = open();
-    const [name] = Object.keys(ipcChannels).filter(
-      (channel) => ipcChannels[channel as IpcChannelName].from === "app",
-    ) as IpcChannelName[];
-    handleIpc(name!, vi.fn() as never);
-    const refused = () => expect(mocks.invoke.get(name!)?.(setup.event)).toBe(false);
-    vi.useFakeTimers({ toFake: ["Date"], now: Date.now() + 60 * 60_000 });
-    try {
-      refused();
-      refused();
+    handleIpc("desktop.badge.set", vi.fn());
+    const refused = () => expect(mocks.invoke.get("desktop.badge.set")?.(setup.event)).toBe(false);
+    refused();
+    refused();
+    expect(reportDesktopError).toHaveBeenCalledTimes(1);
+
+    vi.setSystemTime(Date.now() + 10 * 60_000);
+    refused();
+    expect(reportDesktopError).toHaveBeenCalledTimes(2);
+  });
+
+  describe("while a server switch keeps the window it replaces", () => {
+    const badge = (event: IpcCaller) => mocks.invoke.get("desktop.badge.set")?.(event, 3);
+    function switching() {
+      const { app: previous, setup } = open();
+      const set = vi.fn(() => true);
+      handleIpc("desktop.badge.set", set);
+      return { previous, setup, set, next: switchServer(previous) };
+    }
+
+    it("refuses that window's own page without a report", () => {
+      const { previous, set } = switching();
+      expect(badge(previous.event)).toBe(false);
+      expect(set).not.toHaveBeenCalled();
+      expect(reportDesktopError).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      "its subframe",
+      "its frame that is gone",
+      "its page on another origin",
+      "another window showing the same page",
+      "the setup window",
+      "the next window before it shows its server",
+    ] as const)("refuses and reports %s", (who) => {
+      const { previous, setup, set, next } = switching();
+      const callers: Record<typeof who, () => IpcCaller> = {
+        "its subframe": () => ({ ...previous.event, senderFrame: { ...previous.frame } }) as never,
+        "its frame that is gone": () => ({ ...previous.event, senderFrame: null }),
+        "its page on another origin": () => {
+          previous.frame.url = "https://other.example.com/app/bot";
+          return previous.event;
+        },
+        "another window showing the same page": () => fakeWindow(previous.frame.url).event,
+        "the setup window": () => setup.event,
+        "the next window before it shows its server": () => {
+          next.frame.url = "about:blank";
+          return next.event;
+        },
+      };
+      expect(badge(callers[who]())).toBe(false);
+      expect(set).not.toHaveBeenCalled();
+      expect(reportDesktopError).toHaveBeenCalledTimes(1);
+    });
+
+    it("reports the same page again once the switch is over", () => {
+      const { previous, set } = switching();
+      expect(badge(previous.event)).toBe(false);
+      expect(reportDesktopError).not.toHaveBeenCalled();
+
+      // Committed: the window is destroyed and no longer tracked.
+      desktop.replacedAppWindow = null;
+      expect(badge(previous.event)).toBe(false);
       expect(reportDesktopError).toHaveBeenCalledTimes(1);
 
+      // A window that is gone explains nothing, even while it is still tracked.
       vi.setSystemTime(Date.now() + 10 * 60_000);
-      refused();
+      desktop.replacedAppWindow = Object.assign(previous.win, { isDestroyed: () => true });
+      expect(badge(previous.event)).toBe(false);
       expect(reportDesktopError).toHaveBeenCalledTimes(2);
-    } finally {
-      vi.useRealTimers();
-    }
+      expect(set).not.toHaveBeenCalled();
+    });
+
+    it("answers that page again once the switch is abandoned", () => {
+      const { previous, set } = switching();
+      desktop.mainWindow = previous.win;
+      desktop.replacedAppWindow = null;
+      expect(badge(previous.event)).toBe(true);
+      expect(set).toHaveBeenCalledWith(previous.event, 3);
+      expect(reportDesktopError).not.toHaveBeenCalled();
+    });
+
+    it("reports that window's page calling a setup channel", () => {
+      const { previous } = switching();
+      handleIpc("desktop.setup.quit", vi.fn());
+      expect(mocks.invoke.get("desktop.setup.quit")?.(previous.event)).toBeUndefined();
+      expect(reportDesktopError).toHaveBeenCalledTimes(1);
+    });
   });
 
   it("answers a synchronous channel through the event", () => {

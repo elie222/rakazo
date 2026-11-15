@@ -119,8 +119,6 @@ let monitoringSession: Session | undefined;
 let monitoringTargetUrl: string | undefined;
 let stopMonitoringSession: (() => void) | undefined;
 const appOpener = createAppOpener(openAppOnce);
-/** Prior app window kept until setup is persisted (or the switch is abandoned). */
-let pendingPreviousWindow: BrowserWindow | null = null;
 const reportsErrors = desktopReportsErrors(app.isPackaged);
 const updaterEnvironment = {
   // A `--dir` build has no update feed to read.
@@ -354,6 +352,9 @@ async function openAppOnce(targetUrl: string, switching: boolean) {
     );
     const created = createWindow(targetUrl, target.partition);
     win = created.win;
+    // Kept until the caller commits (after setup.json is written) or the switch is abandoned.
+    desktop.replacedAppWindow =
+      previous !== null && !previous.isDestroyed() && previous !== win ? previous : null;
     // On launch the window stays up: the web app shows its own loading, reconnecting or error
     // screen and recovers from it. Switching to a server that is not ready keeps the previous one.
     const state = await created.loaded;
@@ -372,17 +373,15 @@ async function openAppOnce(targetUrl: string, switching: boolean) {
     desktop.currentTargetUrl = targetUrl;
     activateDesktopMonitoring(targetUrl, target.value);
     desktop.setupError = null;
-    // Keep the previous window until the caller commits (after setup.json is written).
-    pendingPreviousWindow =
-      previous !== null && !previous.isDestroyed() && previous !== win ? previous : null;
-    if (pendingPreviousWindow !== null) pendingPreviousWindow.hide();
+    if (desktop.replacedAppWindow !== null && !desktop.replacedAppWindow.isDestroyed())
+      desktop.replacedAppWindow.hide();
     return true;
   } catch (error) {
     const closed = win?.isDestroyed() === true;
     if (!closed && !(error instanceof ServerUnavailable)) {
       reportDesktopError(error, "desktop.startup");
     }
-    pendingPreviousWindow = null;
+    desktop.replacedAppWindow = null;
     // Keep the previous app window so Cancel / close can restore it.
     if (previous !== null && !previous.isDestroyed()) desktop.mainWindow = previous;
     // Closing the window while it loads is the user leaving, not a failure to explain.
@@ -450,8 +449,8 @@ function deviceTokenCipher() {
 /** Drop the previous app window after the new server is opened and persisted. */
 function commitPendingAppSwitch() {
   syncHostComputerAccess();
-  const previous = pendingPreviousWindow;
-  pendingPreviousWindow = null;
+  const previous = desktop.replacedAppWindow;
+  desktop.replacedAppWindow = null;
   if (previous !== null && !previous.isDestroyed() && previous !== desktop.mainWindow)
     previous.destroy();
 }
@@ -463,8 +462,8 @@ function abandonPendingAppSwitch(
   previousSetup: DesktopSetup | null,
   previousUrl: string | null,
 ): "restored" | "kept" {
-  const previous = pendingPreviousWindow;
-  pendingPreviousWindow = null;
+  const previous = desktop.replacedAppWindow;
+  desktop.replacedAppWindow = null;
   if (previous !== null && !previous.isDestroyed()) {
     const failed = desktop.mainWindow;
     if (failed !== null && !failed.isDestroyed() && failed !== previous) failed.destroy();
@@ -909,10 +908,11 @@ app.whenReady().then(async () => {
       fullScreen: win?.isFullScreen() ?? false,
     };
   });
-  handleIpc("desktop.update.state", () => desktop.desktopUpdater.state());
-  handleIpc("desktop.update.check", () => desktop.desktopUpdater.check(true));
-  handleIpc("desktop.update.download", () => desktop.desktopUpdater.download());
-  handleIpc("desktop.update.install", () => installUpdate());
+  const updateState = () => desktop.desktopUpdater.state();
+  handleIpc("desktop.update.state", updateState, updateState);
+  handleIpc("desktop.update.check", () => desktop.desktopUpdater.check(true), updateState);
+  handleIpc("desktop.update.download", () => desktop.desktopUpdater.download(), updateState);
+  handleIpc("desktop.update.install", () => installUpdate(), updateState);
   registerSetupIpc({
     userDataDir,
     appOpener,
