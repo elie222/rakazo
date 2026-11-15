@@ -181,7 +181,11 @@ async function main(args) {
   const rules = await loadRules();
   const found = scan(rules, repoFiles());
   if (args[0] === "--tighten") {
+    if (args[1] && !rules.some((rule) => rule.name === args[1]))
+      throw new Error(`No rule named ${args[1]} in scripts/checks/ratchets/`);
     for (const rule of rules) {
+      // With a name, only that rule: a PR then leaves the baselines it did not work on alone.
+      if (args[1] && rule.name !== args[1]) continue;
       if (!existsSync(rule.baselinePath)) continue;
       writeFileSync(
         rule.baselinePath,
@@ -202,7 +206,9 @@ async function main(args) {
     writeFileSync(rule.baselinePath, formatBaseline(counts));
     return;
   }
-  throw new Error("Usage: node scripts/checks/ratchets.mjs --tighten | --freeze <rule-name>");
+  throw new Error(
+    "Usage: node scripts/checks/ratchets.mjs --tighten [rule-name] | --freeze <rule-name>",
+  );
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
