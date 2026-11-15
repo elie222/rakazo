@@ -3,8 +3,15 @@ export const message =
 
 export const include = ["**/*.prompt.ts", "packages/adapters/src/messaging-delivery.ts"];
 
-const LABEL = /\b(?:senderName|fromLabel|channelName|channel\.name)\b/;
-const SANITIZED_CALL = "sanitizeMessagingLabel(";
+const LABEL = /\b(?:senderName|fromLabel|channelName)\b|\bchannel\s*\.\s*name\b/;
+const SANITIZED_NAME = "sanitizeMessagingLabel";
+
+/** The `(` after the name at `index` when only whitespace separates them, or -1. */
+function callOpenAt(text, index) {
+  let cursor = index + SANITIZED_NAME.length;
+  while (cursor < text.length && /\s/.test(text[cursor])) cursor += 1;
+  return text[cursor] === "(" ? cursor : -1;
+}
 
 /** The index of the quote that closes the string at `index`, or -1 when the file is malformed. */
 function quoteEnd(text, index) {
@@ -190,17 +197,18 @@ function unsanitized(body) {
       index = end + 1;
       continue;
     }
-    const at = body.indexOf(SANITIZED_CALL, index);
+    const at = body.indexOf(SANITIZED_NAME, index);
     if (at === -1) {
       rest += body.slice(index);
       break;
     }
-    const end = callEnd(body, at + SANITIZED_CALL.length - 1);
+    const open = callOpenAt(body, at);
+    const end = open === -1 ? -1 : callEnd(body, open);
     // A name that merely ends in the call, like `mySanitizeMessagingLabel(`, is not the sanitizer.
     const standalone = at === 0 || !/[A-Za-z0-9_$.]/.test(body[at - 1]);
     if (!standalone || end === -1) {
-      rest += body.slice(index, at + SANITIZED_CALL.length);
-      index = at + SANITIZED_CALL.length;
+      rest += body.slice(index, at + SANITIZED_NAME.length);
+      index = at + SANITIZED_NAME.length;
       continue;
     }
     rest += body.slice(index, at);
