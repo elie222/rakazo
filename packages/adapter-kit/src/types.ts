@@ -253,6 +253,28 @@ export interface SnapshotRef {
   createdAt: string;
 }
 
+/**
+ * What every computer of one kind can do. A provider declares these once and they never vary by
+ * configuration, so shared code can read them from a stored kind without a provider instance.
+ */
+export interface SandboxKindCapabilities {
+  /** A person can open a shell on the computer. */
+  terminal: boolean;
+  /** The computer can be replaced by one on the current image, keeping its files. */
+  inPlaceUpdate: boolean;
+  /** Commands run in the host's own shell rather than bash on Linux. */
+  nativeShell: boolean;
+  /** The computer is the user's own machine, which costs nothing and owns its own lifetime. */
+  runsOnUserMachine: boolean;
+  screen: { width: number; height: number };
+  /** Whether the computer works in the server's home directory itself rather than a copy. */
+  serverHomeMount: "always" | "optional" | "never";
+  /** Only the server writes a Team Computer's stored home, so the server may edit it directly. */
+  serverOwnsStoredTeamHome: boolean;
+  /** The computer works in a copy on a host that outlives it; the stored home only backs it up. */
+  storedHomeIsBackup: boolean;
+}
+
 export interface SandboxCapabilities {
   graphical: boolean;
   pty: boolean;
