@@ -79,7 +79,8 @@ describe("notifications.subscribe", () => {
     }
   });
 
-  it("keeps streaming alerts when roster signals fail", async () => {
+  it("keeps streaming alerts for half a minute after roster signals fail, then ends", async () => {
+    vi.useFakeTimers();
     const controller = new AbortController();
     const followChatAlerts = vi.fn(async function* () {
       await new Promise((resolve) => setTimeout(resolve, 0));
@@ -95,9 +96,25 @@ describe("notifications.subscribe", () => {
     );
     try {
       const iterator = (await client.notifications.subscribe())[Symbol.asyncIterator]();
-      expect((await iterator.next()).value).toEqual({ type: "alert", alert });
+      const first = iterator.next();
+      await vi.advanceTimersByTimeAsync(0);
+      expect((await first).value).toEqual({ type: "alert", alert });
+      let ended = false;
+      const drained = (async () => {
+        try {
+          while (!(await iterator.next()).done);
+        } finally {
+          ended = true;
+        }
+      })();
+      drained.catch(() => {});
+      await vi.advanceTimersByTimeAsync(29_000);
+      expect(ended).toBe(false);
+      await vi.advanceTimersByTimeAsync(1_000);
+      await expect(drained).rejects.toThrow("roster lookup failed");
     } finally {
       controller.abort();
+      vi.useRealTimers();
     }
   });
 
