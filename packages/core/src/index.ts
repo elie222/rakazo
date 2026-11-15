@@ -22,6 +22,7 @@ export * from "./bot-messages.prompt.js";
 export * from "./bot-sections.js";
 export * from "./bot-sender-name.js";
 export * from "./bot-templates.js";
+export * from "./bot-work-log.js";
 export * from "./call-nonce.js";
 export * from "./call-request.js";
 export * from "./call-session.js";

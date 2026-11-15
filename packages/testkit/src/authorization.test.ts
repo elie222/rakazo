@@ -78,6 +78,74 @@ describeWithDatabase("API authorization and resource isolation", () => {
     rmSync(dataDir, { recursive: true, force: true });
   });
 
+  it("joins each work log row to the command of its own run", async () => {
+    const owner = await signup(app, `work-log-${stamp}@rakazo.test`, "Owner");
+    const actor = await rpc<Actor>(app, owner, "me");
+    const bot = await rpc<Bot>(app, owner, "bots/create", botInput("Logger"));
+    const thread = await db.thread.findUniqueOrThrow({ where: { botId: bot.id } });
+    const task = await db.task.create({
+      data: {
+        spaceId: actor.spaceId,
+        userId: actor.userId,
+        botId: bot.id,
+        threadId: thread.id,
+        prompt: "log",
+        status: "completed",
+      },
+    });
+    const event = { spaceId: actor.spaceId, threadId: thread.id, botId: bot.id };
+    const runIds: string[] = [];
+    for (const [index, command] of ["echo first", "echo second"].entries()) {
+      const run = await db.run.create({
+        data: {
+          ...event,
+          userId: actor.userId,
+          taskId: task.id,
+          status: "completed",
+          trigger: "user",
+        },
+      });
+      runIds.push(run.id);
+      // Both runs name their call the same, as two runs of one provider can.
+      await db.event.create({
+        data: {
+          ...event,
+          runId: run.id,
+          seq: 5000 + index * 2,
+          type: "agent.tool.called",
+          payload: { name: "shell", executionId: "call-1" },
+        },
+      });
+      await db.event.create({
+        data: {
+          ...event,
+          runId: run.id,
+          seq: 5001 + index * 2,
+          type: "computer.command",
+          payload: {
+            executionId: "call-1",
+            kind: "shell",
+            command,
+            cwd: "/work",
+            status: "done",
+            exitCode: 0,
+            output: "",
+          },
+        },
+      });
+    }
+    const log = await rpc<Array<{ runId: string; action?: { command: string } }>>(
+      app,
+      owner,
+      "bots/workLog",
+      { botId: bot.id },
+    );
+    expect(log.map((entry) => [entry.runId, entry.action?.command])).toEqual([
+      [runIds[1], "echo second"],
+      [runIds[0], "echo first"],
+    ]);
+  });
+
   it("keeps another member's routine test run keys apart from a send's", async () => {
     const owner = await signup(app, `routine-keys-owner-${stamp}@rakazo.test`, "Owner");
     const peer = await signup(app, `routine-keys-peer-${stamp}@rakazo.test`, "Peer");
@@ -278,6 +346,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["bots/list"],
       ["bots/listArchived"],
       ["bots/get", { botId: "missing-bot" }],
+      ["bots/workLog", { botId: "missing-bot" }],
       ["bots/create", botInput("Unauthenticated")],
       ["bots/duplicate", { botId: "missing-bot" }],
       ["bots/importPreview", { files: [{ path: "SOUL.md", content: "Calm." }] }],
@@ -700,6 +769,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
 
     const botIdCalls: Array<[string, unknown]> = [
       ["bots/get", { botId: ownerBot.id }],
+      ["bots/workLog", { botId: ownerBot.id }],
       ["bots/duplicate", { botId: ownerBot.id }],
       ["bots/update", { botId: ownerBot.id, name: "Stolen Bot" }],
       ["bots/archive", { botId: ownerBot.id }],

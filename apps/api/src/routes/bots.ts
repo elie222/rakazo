@@ -42,8 +42,11 @@ import type {
 import {
   AUTHENTICATOR_KEY_UNREADABLE,
   BLOCKED_ITEM_ANSWER,
+  BOT_WORK_LOG_LIMIT,
   BotSecretAuth,
+  ComputerCommandSchema,
   encodeLoginSecret,
+  foldComputerCommands,
   noneSkipped,
   resolveBotAvatarSet,
   UNCHOSEN_ITEM_ANSWER,
@@ -436,6 +439,59 @@ export function botsRoutes(ctx: RouterContext) {
         const found = (await repos.listBots(context.actor)).find((bot) => bot.id === input.botId);
         if (!found) throw new IsolationError();
         return found;
+      }),
+      workLog: authed.bots.workLog.handler(async ({ context, input }) => {
+        const bot = await repos.getBot(context.actor, input.botId);
+        const where = { spaceId: context.actor.spaceId, botId: bot.id };
+        const calls = await deps.prisma.event.findMany({
+          where: { ...where, type: "agent.tool.called" },
+          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+          take: BOT_WORK_LOG_LIMIT,
+          select: { id: true, runId: true, createdAt: true, payload: true },
+        });
+        const runIds = [...new Set(calls.flatMap((call) => (call.runId ? [call.runId] : [])))];
+        const actions = await deps.prisma.event.findMany({
+          where: {
+            ...where,
+            type: "computer.command",
+            runId: { in: runIds },
+          },
+          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+          take: BOT_WORK_LOG_LIMIT * 4,
+          select: { runId: true, payload: true },
+        });
+        // Two runs can name a call the same, so an action is told apart by its run too.
+        const byRunExecution = new Map(
+          foldComputerCommands(
+            actions.reverse().flatMap((event) => {
+              const parsed = ComputerCommandSchema.safeParse(event.payload);
+              return parsed.success
+                ? [{ ...parsed.data, executionId: `${event.runId}/${parsed.data.executionId}` }]
+                : [];
+            }),
+          ).map((action) => [action.executionId, action]),
+        );
+        return calls.map((call) => {
+          const payload = call.payload as { name?: unknown; executionId?: unknown };
+          const action =
+            typeof payload.executionId === "string"
+              ? byRunExecution.get(`${call.runId}/${payload.executionId}`)
+              : undefined;
+          return {
+            id: call.id,
+            createdAt: call.createdAt.toISOString(),
+            runId: call.runId,
+            tool: String(payload.name ?? ""),
+            ...(action
+              ? {
+                  action: {
+                    ...action,
+                    executionId: action.executionId.slice(call.runId!.length + 1),
+                  },
+                }
+              : {}),
+          };
+        });
       }),
       create: authed.bots.create.handler(async ({ context, input }) => {
         // Older apps always send Original, which would pin every new bot to it.

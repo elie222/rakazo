@@ -171,6 +171,15 @@ describe.skipIf(!databaseAvailable)("offline Pi product journey", () => {
           exitCode: 0,
         }),
       ]);
+      const workLog = await rpc<Array<{ tool: string; runId: string; action?: { kind: string } }>>(
+        handles.app,
+        cookie,
+        "bots/workLog",
+        { botId: bot.id },
+      );
+      expect(workLog.map((entry) => entry.action?.kind)).toEqual(["shell", "write_file"]);
+      expect(workLog.map((entry) => entry.runId)).toEqual([sent.runId, sent.runId]);
+      expect(workLog[1]?.tool).toBe("write_file");
     } finally {
       try {
         await stop?.();

@@ -183,6 +183,20 @@ export default function BotProfile() {
           onPress={() => router.push({ pathname: "/artifacts", params: { botId } })}
         />
         <SettingsRow
+          key="logs"
+          accessibilityRole="button"
+          chevron="right"
+          title={t`Logs`}
+          leading={
+            <NativeSymbol
+              ios="list.bullet.rectangle"
+              android="list-outline"
+              color={tokens.mutedForeground}
+            />
+          }
+          onPress={() => router.push({ pathname: "/bot-logs", params: { botId } })}
+        />
+        <SettingsRow
           key="computer"
           accessibilityRole="button"
           chevron="right"
