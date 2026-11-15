@@ -313,8 +313,15 @@ describe("portable plugin parser", () => {
       mcpServers: { tools: { type: "http", url: "https://tools.example.test/mcp" } },
     });
     expect(
-      classifyPluginFiles(["mcp.json", "skills/a/SKILL.md", "agents/b.md", "README.md"], remote),
+      classifyPluginFiles(
+        ["plugin.json", "mcp.json", "skills/a/SKILL.md", "agents/b.md", "README.md"],
+        remote,
+      ),
     ).toEqual({ hasConnector: true, skillCount: 2 });
+    expect(classifyPluginFiles(["mcp.json", "SKILL.md", "skills/a/SKILL.md"], remote)).toEqual({
+      hasConnector: false,
+      skillCount: 1,
+    });
     expect(classifyPluginFiles(["skills/a/SKILL.md", "hooks/hooks.json"])).toEqual({
       hasConnector: false,
       skillCount: 1,

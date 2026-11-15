@@ -302,6 +302,7 @@ describe("marketplace service", () => {
         source: name,
       })),
       tree: [
+        "drive/plugin.json",
         "drive/mcp.json",
         "drive/skills/find/SKILL.md",
         "relay/mcp.json",

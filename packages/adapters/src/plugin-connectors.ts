@@ -873,8 +873,7 @@ export function classifyPluginFiles(
   const hasManifest = paths.some((path) => MANIFESTS.includes(path));
   if (!hasManifest && paths.some((path) => HIDDEN_PLUGIN_MANIFEST.test(path))) return "incomplete";
   const skillPaths = paths.filter(isSkillDocumentPath);
-  const hasMcpConfig = paths.some((path) => path === "mcp.json" || path === ".mcp.json");
-  if (!hasManifest && !hasMcpConfig && skillPaths.length > 0) {
+  if (!hasManifest && skillPaths.length > 0) {
     const selectedSkills = skillPaths.includes("SKILL.md") ? ["SKILL.md"] : skillPaths;
     const validSkills = selectedSkills.filter((path) => (sizes?.get(path) ?? 0) <= MAX_FILE_BYTES);
     if (
