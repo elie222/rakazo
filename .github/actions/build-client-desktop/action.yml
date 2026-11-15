@@ -1,0 +1,15 @@
+name: Build desktop client
+description: Compile the shared renderer and desktop application for independent client releases.
+runs:
+  using: composite
+  steps:
+    - uses: ./.github/actions/setup-workspace
+      with:
+        electron: "true"
+        filter: "*"
+    - shell: bash
+      env:
+        DATABASE_URL: postgres://rakazo:rakazo@127.0.0.1:5433/rakazo
+      run: pnpm db:generate
+    - shell: bash
+      run: pnpm --filter @rakazo/web build && pnpm --filter @rakazo/desktop build

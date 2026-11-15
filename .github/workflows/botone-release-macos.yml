@@ -1,0 +1,80 @@
+name: BotONE macOS release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Signed and notarized macOS installers
+    runs-on: macos-26
+    timeout-minutes: 120
+    env:
+      EXPO_PUBLIC_API_URL: ${{ vars.EXPO_PUBLIC_API_URL || secrets.EXPO_PUBLIC_API_URL }}
+      BOTONE_DESKTOP_APP_ID: ${{ vars.BOTONE_DESKTOP_APP_ID }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+      - name: Validate macOS release configuration
+        env: &mac-signing
+          CSC_LINK: ${{ secrets.MACOS_DEVELOPER_ID_P12_BASE64 || secrets.DESKTOP_MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MACOS_DEVELOPER_ID_P12_PASSWORD || secrets.DESKTOP_MAC_CSC_KEY_PASSWORD }}
+          APPLE_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID || secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID || secrets.APPLE_API_ISSUER }}
+          APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+          APPLE_API_KEY: ${{ runner.temp }}/botone-notary-key.p8
+        run: node .github/builds/release-config.mjs macos
+      - uses: ./.github/actions/build-client-desktop
+      - name: Package signed and notarized universal macOS app
+        env: *mac-signing
+        run: |
+          set -euo pipefail
+          umask 077
+          node -e 'require("node:fs").writeFileSync(process.env.APPLE_API_KEY, Buffer.from(process.env.APP_STORE_CONNECT_API_KEY_BASE64, "base64"), { mode: 0o600 })'
+          pnpm --filter @rakazo/desktop exec electron-builder \
+            --config ../../.github/builds/desktop-release.cjs --mac --universal --publish never
+      - name: Verify signature, notarization, and packaged server
+        run: |
+          set -euo pipefail
+          app="apps/desktop/out/mac-universal/BotONE.app"
+          codesign --verify --deep --strict "$app"
+          xcrun stapler validate "$app"
+          spctl --assess --type execute "$app"
+          test ! -e "$app/Contents/Resources/app-update.yml"
+          node .github/builds/verify-desktop-server.mjs "$app/Contents/Resources/app.asar"
+      - name: Retain macOS installers
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: botone-macos-release-${{ github.run_number }}
+          path: |
+            apps/desktop/out/*.dmg
+            apps/desktop/out/*.zip
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+      - name: Remove notarization key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/botone-notary-key.p8"
+
+  publish:
+    name: Publish macOS downloads
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/publish-client-release
+        with:
+          platform: macos
+          artifact: botone-macos-release-${{ github.run_number }}
+          signing: Developer ID signed and notarized. Download updates manually from this repository.

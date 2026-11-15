@@ -1,0 +1,89 @@
+name: BotONE Android release
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_number:
+        description: Version code (empty uses the workflow run number)
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Signed Android APK and AAB
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      CI: "1"
+      EXPO_NO_TELEMETRY: "1"
+      EXPO_PUBLIC_API_URL: ${{ vars.EXPO_PUBLIC_API_URL || secrets.EXPO_PUBLIC_API_URL }}
+      BOTONE_MOBILE_APP_ID: ${{ vars.BOTONE_MOBILE_APP_ID }}
+      BUILD_NUMBER: ${{ inputs.build_number || github.run_number }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+      - name: Validate signing configuration and prepare mobile identity
+        env: &android-signing
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: node .github/builds/release-config.mjs android
+      - uses: ./.github/actions/setup-workspace
+        with:
+          filter: "@rakazo/mobile..."
+      - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@48b5f213c81028ace310571dc5ec0fbbca0b2947 # v4.4.3
+      - name: Generate Android project
+        run: pnpm --filter @rakazo/mobile exec expo prebuild --platform android --no-install
+      - name: Configure release keystore
+        env: *android-signing
+        run: node .github/builds/configure-android-signing.mjs
+      - name: Build signed APK and AAB
+        working-directory: apps/mobile/android
+        env: *android-signing
+        run: ./gradlew :app:assembleRelease :app:bundleRelease --no-daemon
+      - name: Verify APK signature
+        run: |
+          set -euo pipefail
+          signer=$(find "$ANDROID_HOME/build-tools" -name apksigner | sort -V | tail -n 1)
+          "$signer" verify apps/mobile/android/app/build/outputs/apk/release/app-release.apk
+      - name: Retain Android packages
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: botone-android-release-${{ github.run_number }}
+          path: |
+            apps/mobile/android/app/build/outputs/apk/release/*.apk
+            apps/mobile/android/app/build/outputs/bundle/release/*.aab
+          if-no-files-found: error
+          retention-days: 7
+      - name: Remove keystore
+        if: always()
+        run: rm -f "$RUNNER_TEMP/botone-release.jks"
+
+  publish:
+    name: Publish Android downloads
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/publish-client-release
+        with:
+          platform: android
+          artifact: botone-android-release-${{ github.run_number }}
+          signing: Signed with the configured release key. The AAB remains in Actions artifacts; no store submission is performed.
