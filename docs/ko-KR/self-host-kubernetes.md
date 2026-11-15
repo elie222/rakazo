@@ -191,7 +191,8 @@ kubectl -n rakazo wait --for=condition=complete job/rakazo-bootstrap --timeout=3
 | `RAKAZO_PRIVATE_UPSTREAM` | 외부 입구만 접근 가능한 ingress 주소와 포트             |
 | `RAKAZO_AUTH_UPSTREAM`    | 같은 ingress로 전달하는 비공개 oauth2-proxy 주소와 포트 |
 
-서로 배타적인 두 `handle` 경로 중 하나가 요청을 받습니다. 화면 경로도 전체 URL을
+서로 배타적인 세 `handle` 경로(화면, 선택적 네이티브 키, 기본 로그인)가 요청을 받습니다.
+선택적 `RAKAZO_NATIVE_ACCESS_KEY` 설정은 아래 네이티브 클라이언트 절을 참고하세요. 화면 경로도 전체 URL을
 유지하며 WebSocket을 전달합니다. 예외를 `/novnc/*`, `/api/*`, 도메인 전체로
 넓히지 마세요. 생략하는 것은 외부 쿠키 검사뿐이며 Rakazo 화면 권한 검사는 남습니다.
 
@@ -350,19 +351,29 @@ ConfigMap이나 키가 없으면 보호장치 없이 진행하는 대신 Job이 
 이미지를 갱신하고 예제 디렉터리에서 foundation 단계를 적용한 뒤 다음을 실행하세요.
 완료된 Job의 로그를 보관한 다음 Job을 교체합니다.
 
+실패한 Job은 먼저 로그를 보관하고 원인과 Prisma 마이그레이션 상태를 확인하세요.
+미완료 기록이 있으면 부분 적용된 변경을 복구하거나 되돌린 뒤 Prisma의
+`migrate resolve --rolled-back <migration-name>`으로 재시도 가능한 상태를 만드세요.
+이미 완전히 적용했다면 검증 후 `--applied`로 해결하세요. 기록이 없다면 원인만
+수정하면 됩니다. 복구가 끝난 실패 Job만 수동으로 삭제하고 migrate 단계를 다시
+적용하세요. 실행 중인 Job은 삭제하지 마세요.
+
+
+
 ```sh
-# Proceed only when the Job is terminal; never delete a running Job.
-terminal=$(kubectl -n rakazo get job rakazo-migrate -o jsonpath='{.status.conditions[?(@.status=="True")].type}')
-case "$terminal" in
-  Complete|Failed) ;;
-  *) echo "Migration is not terminal; stop here."; exit 1 ;;
-esac
-# For Failed, inspect the logs and fix the cause before deleting and retrying.
-kubectl -n rakazo logs job/rakazo-migrate > migration-previous.log
-# 위 두 명령이 성공한 경우에만 계속하세요. 실행 중인 Job은 삭제하지 마세요.
-kubectl -n rakazo delete job rakazo-migrate
-kubectl apply -k . -l rakazo.example/phase=migrate
-kubectl -n rakazo wait --for=condition=complete job/rakazo-migrate --timeout=300s
+(
+  set -eu
+  # Proceed only when the Job is terminal; never delete a running Job.
+  terminal=$(kubectl -n rakazo get job rakazo-migrate -o jsonpath='{.status.conditions[?(@.status=="True")].type}')
+  case "$terminal" in
+    Complete) ;;
+    *) echo "Stop: inspect and recover the migration before replacing this Job."; exit 1 ;;
+  esac
+  kubectl -n rakazo logs job/rakazo-migrate > migration-previous.log
+  kubectl -n rakazo delete job rakazo-migrate
+  kubectl apply -k . -l rakazo.example/phase=migrate
+  kubectl -n rakazo wait --for=condition=complete job/rakazo-migrate --timeout=300s
+)
 ```
 
 새 Job의 성공을 확인한 다음 앱을 배포하세요. 완료된 옛 Job을 재적용한다고 새 마이그레이션이 실행되지는 않습니다.

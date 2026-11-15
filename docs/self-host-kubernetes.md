@@ -195,11 +195,14 @@ Keep outer login on normal pages and API requests. Route **only**
 capability. Keep `SCREEN_PROXY_SECRET` identical in API and web, and distinct from
 the app auth secret. Do not relax frame sandboxing or `X-Frame-Options`.
 
-The [Caddy example](./examples/kubernetes/Caddyfile.edge.example) uses two exclusive
-[`handle` routes](https://caddyserver.com/docs/caddyfile/directives/handle):
+The [Caddy example](./examples/kubernetes/Caddyfile.edge.example) uses three exclusive
+[`handle` routes](https://caddyserver.com/docs/caddyfile/directives/handle): screen,
+optional native key (see the native-client section below), and default login.
+Configure:
 
 - `RAKAZO_PRIVATE_UPSTREAM`: your edge-only ingress, including its port.
 - `RAKAZO_AUTH_UPSTREAM`: your local oauth2-proxy, forwarding to that same ingress.
+- `RAKAZO_NATIVE_ACCESS_KEY`: optional dedicated native key, described below.
 - `RAKAZO_PUBLIC_HOST`: the public domain, for example `app.example.com`.
 
 Set these in the Caddy process environment. The matcher preserves the full path;
@@ -383,19 +386,29 @@ Update the pinned images. From the example directory, after applying the foundat
 phase, archive the terminal migration Job's logs and remove that Job before
 creating its replacement:
 
+For a failed Job, save its logs and inspect the cause and Prisma migration state
+first. If an unfinished migration record exists, repair or revert partial changes,
+then use Prisma `migrate resolve --rolled-back <migration-name>` before retrying.
+If you completed the migration manually, verify it and resolve it with `--applied`
+instead. Failures before a migration was recorded need only the underlying cause
+fixed. After recovery, manually delete only the terminal failed Job and reapply the
+migrate phase. Never delete a running Job. Deleting a Job does not resolve database
+migration records.
+
 ```sh
-# Proceed only when the Job is terminal; never delete a running Job.
-terminal=$(kubectl -n rakazo get job rakazo-migrate -o jsonpath='{.status.conditions[?(@.status=="True")].type}')
-case "$terminal" in
-  Complete|Failed) ;;
-  *) echo "Migration is not terminal; stop here."; exit 1 ;;
-esac
-# For Failed, inspect the logs and fix the cause before deleting and retrying.
-kubectl -n rakazo logs job/rakazo-migrate > migration-previous.log
-# Continue only if the terminal check and log capture succeed.
-kubectl -n rakazo delete job rakazo-migrate
-kubectl apply -k . -l rakazo.example/phase=migrate
-kubectl -n rakazo wait --for=condition=complete job/rakazo-migrate --timeout=300s
+(
+  set -eu
+  # Proceed only when the Job is terminal; never delete a running Job.
+  terminal=$(kubectl -n rakazo get job rakazo-migrate -o jsonpath='{.status.conditions[?(@.status=="True")].type}')
+  case "$terminal" in
+    Complete) ;;
+    *) echo "Stop: inspect and recover the migration before replacing this Job."; exit 1 ;;
+  esac
+  kubectl -n rakazo logs job/rakazo-migrate > migration-previous.log
+  kubectl -n rakazo delete job rakazo-migrate
+  kubectl apply -k . -l rakazo.example/phase=migrate
+  kubectl -n rakazo wait --for=condition=complete job/rakazo-migrate --timeout=300s
+)
 ```
 
 Roll out the app only after the replacement succeeds. Jobs have immutable Pod
