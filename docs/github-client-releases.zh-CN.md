@@ -7,7 +7,7 @@
 | BotONE Android release | 正式密钥签名 APK、AAB | APK 上传独立 GitHub Release；APK/AAB 保留在 Actions 7 天 |
 | BotONE iOS release | App Store Connect 分发签名 IPA | 仅 Actions，保留 30 天；不上传 GitHub Releases |
 | BotONE macOS release | Developer ID 签名、公证的 Universal DMG、ZIP | 独立 GitHub Release；Actions 7 天 |
-| BotONE Windows release | Authenticode 签名并带时间戳的 x64 EXE | 独立 GitHub Release；Actions 7 天 |
+| BotONE Windows release | 暂未签名的 x64 EXE | 独立 GitHub Release；Actions 7 天 |
 
 Android/iOS 的 `build_number` 可留空，默认使用该 workflow 的运行编号。更新已有商店构建时填写比已上传版本更大的编号。IPA 供后续上传 App Store Connect/TestFlight，不能直接安装到普通 iPhone。
 
@@ -60,20 +60,6 @@ Android/iOS 的 `build_number` 可留空，默认使用该 workflow 的运行编
 
 ### Windows
 
-沿用上游的 Azure Artifact Signing 配置。
-
-Repository Secrets：
-
-- `DESKTOP_WIN_AZURE_CLIENT_ID`
-- `DESKTOP_WIN_AZURE_TENANT_ID`
-
-Repository Variables：
-
-- `DESKTOP_WIN_SIGNING_ENDPOINT`
-- `DESKTOP_WIN_SIGNING_ACCOUNT`
-- `DESKTOP_WIN_SIGNING_PROFILE`
-- `DESKTOP_WIN_PUBLISHER`
-
-Azure 应用需通过 GitHub OIDC 授权访问签名证书配置；信任对应仓库的 `desktop-release` environment 身份。工作流使用该 environment 获取令牌，但以上参数可以放在 Repository 层。缺少凭据或签名校验失败会阻止发布。
+当前暂不签名，仅需配置通用的 `EXPO_PUBLIC_API_URL` 和 `BOTONE_DESKTOP_APP_ID`，无需 Azure 签名参数或 `desktop-release` environment。生成的 EXE 上传独立 GitHub Release，并注明未签名；Windows 可能显示未知发布者或 SmartScreen 提示。
 
 这些流程不需要 `EXPO_TOKEN`、`DESKTOP_PUBLISH_ENABLED` 或 `MOBILE_PUBLISH_ENABLED`。

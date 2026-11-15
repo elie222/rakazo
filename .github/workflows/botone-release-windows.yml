@@ -8,23 +8,15 @@ permissions:
 
 jobs:
   build:
-    name: Signed Windows installer
+    name: Unsigned Windows installer
     runs-on: windows-2022
     timeout-minutes: 90
-    environment: desktop-release
-    permissions:
-      contents: read
-      id-token: write
     defaults:
       run:
         shell: bash
     env:
       EXPO_PUBLIC_API_URL: ${{ vars.EXPO_PUBLIC_API_URL || secrets.EXPO_PUBLIC_API_URL }}
       BOTONE_DESKTOP_APP_ID: ${{ vars.BOTONE_DESKTOP_APP_ID }}
-      SIGNING_ENDPOINT: ${{ vars.DESKTOP_WIN_SIGNING_ENDPOINT }}
-      SIGNING_ACCOUNT: ${{ vars.DESKTOP_WIN_SIGNING_ACCOUNT }}
-      SIGNING_PROFILE: ${{ vars.DESKTOP_WIN_SIGNING_PROFILE }}
-      SIGNING_PUBLISHER: ${{ vars.DESKTOP_WIN_PUBLISHER }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
@@ -33,37 +25,20 @@ jobs:
         with:
           node-version: 24
       - name: Validate Windows release configuration
-        env:
-          AZURE_CLIENT_ID: ${{ secrets.DESKTOP_WIN_AZURE_CLIENT_ID }}
-          AZURE_TENANT_ID: ${{ secrets.DESKTOP_WIN_AZURE_TENANT_ID }}
         run: node .github/builds/release-config.mjs windows
       - uses: ./.github/actions/build-client-desktop
-      - name: Authenticate Windows signing
-        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
-        with:
-          client-id: ${{ secrets.DESKTOP_WIN_AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.DESKTOP_WIN_AZURE_TENANT_ID }}
-          allow-no-subscriptions: true
-      - name: Package signed Windows installer
+      - name: Package unsigned Windows installer
         run: |
           set -euo pipefail
           pnpm --filter @rakazo/desktop exec electron-builder \
             --config ../../.github/builds/desktop-release.cjs --win --x64 --publish never \
-            "-c.win.azureSignOptions.endpoint=$SIGNING_ENDPOINT" \
-            "-c.win.azureSignOptions.codeSigningAccountName=$SIGNING_ACCOUNT" \
-            "-c.win.azureSignOptions.certificateProfileName=$SIGNING_PROFILE" \
-            "-c.win.azureSignOptions.publisherName=$SIGNING_PUBLISHER"
-      - name: Verify Windows signatures and packaged server
+            -c.forceCodeSigning=false -c.win.signExecutable=false
+      - name: Verify Windows installer and packaged server
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
           $executables = @(Get-ChildItem "apps/desktop/out/*.exe"; Get-ChildItem "apps/desktop/out/win-unpacked/BotONE.exe")
           if ($executables.Count -lt 2) { throw "Missing installer or application." }
-          foreach ($executable in $executables) {
-            $signature = Get-AuthenticodeSignature $executable.FullName
-            if ($signature.Status -ne "Valid" -or -not $signature.TimeStamperCertificate) { throw "Invalid or untimestamped signature." }
-            if ($signature.SignerCertificate.GetNameInfo("SimpleName", $false) -ne $env:SIGNING_PUBLISHER) { throw "Unexpected signing publisher." }
-          }
           if (Test-Path "apps/desktop/out/win-unpacked/resources/app-update.yml") { throw "Unexpected automatic update feed." }
           node .github/builds/verify-desktop-server.mjs apps/desktop/out/win-unpacked/resources/app.asar
           if ($LASTEXITCODE -ne 0) { throw "Packaged server verification failed." }
@@ -91,4 +66,4 @@ jobs:
         with:
           platform: windows
           artifact: botone-windows-release-${{ github.run_number }}
-          signing: Authenticode signed and timestamped. Download updates manually from this repository.
+          signing: Unsigned installer. Download updates manually from this repository.

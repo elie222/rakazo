@@ -83,14 +83,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       "ANDROID_KEY_ALIAS",
       "ANDROID_KEY_PASSWORD",
     ],
-    windows: [
-      "AZURE_CLIENT_ID",
-      "AZURE_TENANT_ID",
-      "SIGNING_ENDPOINT",
-      "SIGNING_ACCOUNT",
-      "SIGNING_PROFILE",
-      "SIGNING_PUBLISHER",
-    ],
+    windows: [],
   }[platform];
   if (!required) throw new Error("Unknown release platform.");
   for (const name of required) {

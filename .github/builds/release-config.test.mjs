@@ -1,8 +1,27 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 import { mobileReleaseConfig, releaseIdentifier, releaseServer } from "./release-config.mjs";
+
+test("Windows releases validate their application settings without signing credentials", () => {
+  const script = fileURLToPath(new URL("./release-config.mjs", import.meta.url));
+  const env = {
+    BOTONE_DESKTOP_APP_ID: "work.example.desktop",
+    EXPO_PUBLIC_API_URL: "https://app.example.com",
+  };
+  const valid = spawnSync(process.execPath, [script, "windows"], { env, encoding: "utf8" });
+  assert.equal(valid.status, 0, valid.stderr);
+  for (const name of Object.keys(env)) {
+    const invalid = spawnSync(process.execPath, [script, "windows"], {
+      env: { ...env, [name]: "" },
+      encoding: "utf8",
+    });
+    assert.notEqual(invalid.status, 0);
+  }
+});
 
 test("release configuration rejects credential-bearing and non-origin server addresses", () => {
   assert.equal(releaseServer("https://app.example.com/"), "https://app.example.com");
