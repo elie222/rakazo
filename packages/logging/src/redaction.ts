@@ -199,11 +199,12 @@ const urlRun = (stops: string) => String.raw`(?:(?!:\/\/)[^${stops}])`;
 // The password in `scheme://user:password@host`, whatever characters it holds: up to the last `@`
 // before the URL stops, even when that takes a path with an `@` in it. A password that holds a
 // quote runs past it to the first `@`, for a short way only so the text after a URL without
-// credentials stays. A number that ends where a URL or its sentence can is a port, a letter
+// credentials stays. A number that ends where a URL or its sentence can is a port, unless an
+// `@` follows before the host could have ended, which makes it the start of a password; a letter
 // before a path is a drive, and a colon that opens a URL this rule has taken the credentials out
 // of opens that URL still.
 const URL_CREDENTIALS = new RegExp(
-  String.raw`(:\/\/(?![A-Za-z]:[\\/])[^:[${URL_END}]*:)(?!\d{1,5}[.:!]*(?:[${URL_END}]|$))` +
+  String.raw`(:\/\/(?![A-Za-z]:[\\/])[^:[${URL_END}]*:)(?!\d{1,5}[.:!]*(?:[/?#${URL_STOP}]|$|[,;)\]}&](?![^/?#${URL_STOP}]*@)))` +
     String.raw`(?!\/\/[^:[${URL_END}]*:${REDACTED_MARK}@)` +
     `(?:${urlRun(URL_STOP)}*@|${urlRun("\\s")}{0,128}?@)`,
   "g",
@@ -213,7 +214,9 @@ const sharePath = (slash: string) =>
   `${slash}(?:api${slash}v1${slash}pages${slash}shared|p)${slash}`;
 const SLASH = String.raw`\/`;
 const ENCODED_SLASH = "%(?:25)*2F";
-const SHARE_TOKEN = String.raw`[^/?#&%\s"'<>()[\]{},;:\x60]+`;
+// A token may hold percent-encoded characters; only an encoded `/`, `?`, `#` or `&` ends it, as
+// the plain one does.
+const SHARE_TOKEN = String.raw`(?:[^/?#&%\s"'<>()[\]{},;:\x60]|%(?!(?:25)*(?:2F|3F|23|26))[0-9A-F]{2})+`;
 // Where a share path starts: after an origin, a locale, any character a path segment cannot hold,
 // or the token of the link before it, so links in a row all go at once.
 const shareLink = (slash: string, origin: string) =>

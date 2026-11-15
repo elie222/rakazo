@@ -599,6 +599,38 @@ describe("redaction", () => {
     ).toBe("next=https%3A%2F%2Fapp.example.com%3A8443%2Fp%2F[Redacted]");
   });
 
+  it("redacts a shared page's link whose token holds percent-encoded characters", () => {
+    const rest = "m9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyZm9";
+    // An encoded first character, with and without a title before the token.
+    expect(redactSensitiveText(`https://host/p/%5A${rest}`)).toBe("https://host/p/[Redacted]");
+    expect(redactSensitiveText(`https://host/p/plan-%5A${rest}`)).toBe("https://host/p/[Redacted]");
+    expect(redactSensitiveText(`/api/v1/pages/shared/Z${rest}%2D%5F`)).toBe(
+      "/api/v1/pages/shared/[Redacted]",
+    );
+    // An encoded separator still ends the token, as a plain one does.
+    expect(redactSensitiveText(`/p/Z${rest}%3Ffrom=mail`)).toBe("/p/[Redacted]%3Ffrom=mail");
+    expect(redactSensitiveText(`next=%2Fp%2FZ${rest}%26from=mail`)).toBe(
+      "next=%2Fp%2F[Redacted]%26from=mail",
+    );
+  });
+
+  it("redacts a URL password that starts with digits, and leaves a port alone", () => {
+    expect(redactSensitiveText("postgres://app:1234;hunter2secret@db:5432/app")).toBe(
+      "postgres://app:[Redacted]@db:5432/app",
+    );
+    expect(redactSensitiveText("redis://:99)hunter2secret@cache:6379")).toBe(
+      "redis://:[Redacted]@cache:6379",
+    );
+    for (const text of [
+      "http://localhost:3000/users/42",
+      "http://localhost:3000/packages/@scope/name",
+      "listening on http://localhost:3000, see the docs",
+      "http://localhost:3000?next=a@b",
+      "(http://db:5432) refused",
+    ])
+      expect(redactSensitiveText(text)).toBe(text);
+  });
+
   it("redacts a value and a path whole when a name in them holds a space", () => {
     expect(redactSensitiveText("PASSWORD_FILE=C:\\Users\\Jane Doe\\pw.txt")).toBe(
       "PASSWORD_FILE=[Redacted]",
