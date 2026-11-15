@@ -51,6 +51,7 @@ import { removeAgentHome, removeAgentHomeFolders } from "./home.js";
 import type { MemoryProviderResolver } from "./memory-provider-factory.js";
 import { forgetPageShareSecrets } from "./page-share-secrets.js";
 import { removePiBotSessions } from "./pi-session.js";
+import { promptCredentialOfRun } from "./run-prompt-credential.js";
 import { isSandboxGoneError } from "./sandbox-errors.js";
 
 export function confirmSpawnedBotName(confirmName: string, botName: string) {
@@ -205,6 +206,7 @@ async function ensureSpawnRun(
           userId: input.userId,
           status: "queued",
           trigger: "spawn",
+          promptCredentialId: await promptCredentialOfRun(tx, input.sourceRunId),
           clientNonce,
         },
       });

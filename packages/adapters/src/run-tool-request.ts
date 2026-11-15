@@ -713,7 +713,10 @@ async function prepareOwnBotUpdate(
     return refusal("instructions_contain_credentials", "Instructions cannot contain credentials.");
   request.args = { ...args, instructions };
   if (unguarded) return undefined;
-  if (!["created", "routine"].includes(run.trigger) && !ctx.source.ownerStartedRun)
+  // A routine prompt an API key wrote is the key's words, and needs bots:write to change these.
+  const trustedTrigger =
+    run.trigger === "created" || (run.trigger === "routine" && !run.promptCredentialId);
+  if (!trustedTrigger && !ctx.source.ownerStartedRun)
     return refusal(
       "instructions_run_not_owner_started",
       "Instruction changes are blocked for runs someone else started.",

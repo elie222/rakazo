@@ -114,6 +114,7 @@ model User {
   devices                     UserDevice[]
 
   @@unique([email])
+  serviceCredentials ServiceCredential[]
   @@map("user")
   messagingInstallations MessagingInstallation[]
   messagingInstallSessions MessagingInstallSession[]
@@ -697,6 +698,7 @@ model Space {
   agentSkillSpaces            AgentSkillSpace[]
   mcpServerSpaces             McpServerSpace[]
   capabilityInstallSpaces     CapabilityInstallSpace[]
+  serviceCredentials ServiceCredential[]
 
   @@unique([id, organizationId])
   @@index([organizationId, createdAt])
@@ -900,6 +902,68 @@ model FeedbackReport {
   @@index([userId, createdAt])
   @@index([createdAt])
   @@map("feedback_reports")
+}
+
+model ServiceCredential {
+  id              String    @id @default(cuid())
+  userId          String
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  spaceId         String
+  space           Space     @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  name            String
+  /// SHA-256 of the token, which is 256 random bits and is shown once.
+  tokenHash       String    @unique
+  tokenPrefix     String
+  scopes          String[]
+  /// The bots it may reach. Empty means every bot the user has in the space.
+  botIds          String[]
+  expiresAt       DateTime
+  revokedAt       DateTime?
+  lastUsedAt      DateTime?
+  windowStartedAt DateTime  @default(now())
+  windowCount     Int       @default(0)
+  createdAt       DateTime  @default(now())
+
+  idempotencyKeys ServiceIdempotencyKey[]
+  eventStreams    ServiceEventStream[]
+
+  @@index([userId, spaceId])
+  @@map("service_credentials")
+}
+
+/// One open event stream, held by whichever server serves it. Counting live rows caps a key's
+/// streams across every instance; a server that dies stops renewing, and its rows lapse.
+model ServiceEventStream {
+  id           String            @id @default(cuid())
+  userId       String
+  spaceId      String
+  credentialId String
+  credential   ServiceCredential @relation(fields: [credentialId], references: [id], onDelete: Cascade)
+  expiresAt    DateTime
+  createdAt    DateTime          @default(now())
+
+  @@index([credentialId])
+  @@map("service_event_streams")
+}
+
+/// A write an API key made under an Idempotency-Key, so a retry returns the first answer.
+model ServiceIdempotencyKey {
+  id             String            @id @default(cuid())
+  userId         String
+  spaceId        String
+  credentialId   String
+  credential     ServiceCredential @relation(fields: [credentialId], references: [id], onDelete: Cascade)
+  key            String
+  requestHash    String
+  /// Null until the write has finished.
+  responseStatus Int?
+  responseBody   Json?
+  expiresAt      DateTime
+  createdAt      DateTime          @default(now())
+
+  @@unique([credentialId, key])
+  @@index([expiresAt])
+  @@map("service_idempotency_keys")
 }
 
 /// A site one user opens from chat links without the external-link prompt, in every space.
@@ -1257,6 +1321,10 @@ model Run {
   userId               String
   status               String
   trigger              String
+  /// The API key that wrote any of the instructions this run follows: the key that sent its
+  /// prompt, or the one on the routine it fired (Routine.promptCredentialId at that moment), or
+  /// the one on the run that started it. Set once, so a later edit cannot change it.
+  promptCredentialId   String?
   modelProvider        String?
   modelId              String?
   thinkingLevel        String?
@@ -1326,6 +1394,8 @@ model SteeringMessage {
   run       Run?     @relation(fields: [runId], references: [id], onDelete: SetNull)
   /// Set when a pending row must resume as this trigger so its reply can be delivered.
   originTrigger String?
+  /// The API key that wrote the instructions this waiting message carries, for the run it starts.
+  promptCredentialId String?
   /// Model agreed for an inbound delivery that had to wait. Empty follows the bot.
   modelProvider String?
   modelId       String?
@@ -1366,6 +1436,9 @@ model CloudAgent {
   messageId           String?
   remoteId            String?
   latestRunId         String?
+  /// The API key behind the run that launched or followed up this agent, if any. Copied to the run
+  /// that wakes when it finishes, so the key's instructions keep their mark.
+  promptCredentialId  String?
   title               String
   status              String   @default("running")
   url                 String   @default("")
@@ -1458,6 +1531,9 @@ model Purchase {
   botId        String
   threadId     String
   threadGeneration Int
+  /// The API key behind the run that made this purchase, if any. Copied to the run that wakes on
+  /// a status change, so the key's instructions keep their mark.
+  promptCredentialId String?
   provider     String
   remoteId     String
   merchantName String
@@ -1520,6 +1596,9 @@ model Routine {
   thread         Thread?   @relation(fields: [threadId], references: [id], onDelete: SetNull)
   name           String
   prompt         String
+  /// The API key that last wrote the prompt; null once the person writes it in the app. A key's
+  /// text is never the person's word, so its runs get no owner trust.
+  promptCredentialId String?
   crons          String[]
   timezone       String    @default("UTC")
   active         Boolean   @default(false)

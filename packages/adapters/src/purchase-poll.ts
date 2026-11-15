@@ -159,6 +159,7 @@ async function settle(
         taskId: task.id,
         status: "queued",
         trigger: "purchase",
+        promptCredentialId: purchase.promptCredentialId,
         clientNonce,
       },
     });

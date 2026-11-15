@@ -168,6 +168,7 @@ function mutationDeps() {
     board: { update: vi.fn(async () => ({ nextNumber: 2 })) },
     ticket: {
       findFirst: vi.fn(async () => current),
+      findUnique: vi.fn(async () => current),
       create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
         current = ticket(data);
         return current;
@@ -367,6 +368,25 @@ describe("ticket mutations", () => {
       data: expect.objectContaining({ body: "Ready", ticketId: "t1" }),
     });
     expect(s.changes).toHaveBeenCalledWith(expect.objectContaining({ wakeAssignee: false }));
+  });
+  it("refuses a limited key once the locked ticket belongs to a bot outside its list", async () => {
+    const s = mutationDeps();
+    // The ticket was reassigned to bot-1 after the key's check, before these writes took the lock.
+    const limited = { spaceId: "ws", userId: "user-1", id: "t1", assigneeBotIds: ["bot-2"] };
+    expect(await updateTicket(s.deps, { ...limited, title: "Changed" })).toEqual({
+      error: "Ticket not found.",
+    });
+    expect(await commentTicket(s.deps, { ...limited, body: "Hi" })).toEqual({
+      error: "Ticket not found.",
+    });
+    expect(s.tx.ticket.update).not.toHaveBeenCalled();
+    expect(s.tx.ticketComment.create).not.toHaveBeenCalled();
+    expect(s.tx.$queryRaw).toHaveBeenCalledTimes(2);
+    expect(s.changes).not.toHaveBeenCalled();
+    // Within its list, both go ahead.
+    const allowed = { ...limited, assigneeBotIds: ["bot-1"] };
+    expect(await updateTicket(s.deps, { ...allowed, title: "Changed" })).toHaveProperty("ticket");
+    expect(await commentTicket(s.deps, { ...allowed, body: "Hi" })).toHaveProperty("comment");
   });
   it("reads tickets with their comments", async () => {
     const s = mutationDeps();

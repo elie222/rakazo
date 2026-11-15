@@ -28,6 +28,11 @@ async function resolveSpaceBoard(
   return found;
 }
 
+/** A bot-limited key reaches only tickets assigned to its bots; no key, or no list, reaches all. */
+function keyBotIds(origin: { botIds: readonly string[] } | undefined) {
+  return origin?.botIds.length ? origin.botIds : undefined;
+}
+
 export function boardsRoutes(ctx: RouterContext) {
   const { deps, repos, boardEnabled, ticketDeps } = ctx;
   return {
@@ -149,6 +154,7 @@ export function boardsRoutes(ctx: RouterContext) {
           spaceId: context.actor.spaceId,
           userId: context.actor.userId,
           ownerBotId: input.assigneeBotId,
+          promptCredentialId: context.serviceOrigin?.credentialId ?? null,
         });
         if ("error" in result) throw new ORPCError("BAD_REQUEST", { message: result.error });
         return result.ticket;
@@ -160,6 +166,8 @@ export function boardsRoutes(ctx: RouterContext) {
           spaceId: context.actor.spaceId,
           userId: context.actor.userId,
           ownerBotId: input.assigneeBotId,
+          promptCredentialId: context.serviceOrigin?.credentialId ?? null,
+          assigneeBotIds: keyBotIds(context.serviceOrigin),
         });
         if ("error" in result) throw new ORPCError("BAD_REQUEST", { message: result.error });
         return result.ticket;
@@ -169,6 +177,8 @@ export function boardsRoutes(ctx: RouterContext) {
           ...input,
           spaceId: context.actor.spaceId,
           userId: context.actor.userId,
+          promptCredentialId: context.serviceOrigin?.credentialId ?? null,
+          assigneeBotIds: keyBotIds(context.serviceOrigin),
         });
         if ("error" in result) throw new ORPCError("BAD_REQUEST", { message: result.error });
         return result.ticket;
@@ -179,6 +189,7 @@ export function boardsRoutes(ctx: RouterContext) {
           body: input.body,
           spaceId: context.actor.spaceId,
           userId: context.actor.userId,
+          assigneeBotIds: keyBotIds(context.serviceOrigin),
         });
         if ("error" in result) throw new ORPCError("BAD_REQUEST", { message: result.error });
         return result.comment;

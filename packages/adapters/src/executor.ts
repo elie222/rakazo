@@ -910,7 +910,9 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         // The send decided whether the message named this member; one it named nobody for
         // reached every member, and each may end its turn without a reply.
         const groupReplyOptional =
-          Boolean(thread.groupId) && run.trigger === "user" && run.groupReplyOptional;
+          Boolean(thread.groupId) &&
+          (run.trigger === "user" || run.trigger === "service") &&
+          run.groupReplyOptional;
         const allowSilentPeerMessage = botMessageAllowsSilence(
           peerMessage?.intent,
           peerMessage?.repliesToRequest,
@@ -1429,6 +1431,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             hasMessagingIdentity,
             crossSpaceCommunication: bot.crossSpaceCommunication === true,
             trigger: run.trigger,
+            promptCredentialId: run.promptCredentialId,
           })
             ? agentConnectionTools.filter((tool) => !disabledBuiltinTools.has(tool.name))
             : []),
@@ -1911,6 +1914,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
               },
               prompt,
               ...(speakers &&
+              // A key's prompt is not the person's words, so it carries no speaker label.
               (run.trigger === "user" ||
                 (run.trigger === "follow_up" && sourceMessage?.role === "user"))
                 ? { promptSpeaker: personSpeaker(people, run.userId) }

@@ -499,6 +499,55 @@ describePostgres("cloud agent lifecycle and recovery (PostgreSQL + Cursor emulat
     });
   });
 
+  it("wakes with the mark of a key behind the launch or a follow-up, and keeps it", async () => {
+    const h = await setup();
+    const as =
+      (promptCredentialId: string | null, overrides: Partial<typeof h.context> = {}) =>
+      (name: string, args: Record<string, unknown>) =>
+        runAsSystem("agent run tool call", () =>
+          executeCloudAgentTool(
+            h.deps,
+            { ...h.context, ...overrides },
+            { ...h.run, promptCredentialId },
+            `cloud_agent_${name}`,
+            args,
+          ),
+        );
+    const launched = await as("key-1")("launch", {
+      prompt: "Add README",
+      repository: "https://github.com/example/demo",
+      openPr: true,
+    });
+    if (!("id" in launched)) throw new Error("Launch failed");
+    const id = launched.id;
+    await h.poll(id);
+    await h.finish(id);
+    // The person's own follow-up does not clear the key's mark.
+    await as(null)("reply", { id, prompt: "Add tests" });
+    await h.poll(id);
+    h.wire.complete((await h.state(id)).remoteId!);
+    await h.poll(id);
+    expect((await h.wakes()).map((run) => run.promptCredentialId)).toEqual(["key-1", "key-1"]);
+
+    // An agent the person launched is marked from a key's follow-up on.
+    const own = await as(null, { operationId: randomUUID() })("launch", {
+      prompt: "Add CI",
+      repository: "https://github.com/example/demo",
+      openPr: true,
+    });
+    if (!("id" in own)) throw new Error("Launch failed");
+    await h.poll(own.id);
+    await h.finish(own.id);
+    await as("key-2")("reply", { id: own.id, prompt: "Add tests" });
+    await h.poll(own.id);
+    h.wire.complete((await h.state(own.id)).remoteId!);
+    await h.poll(own.id);
+    const ownWakes = (await h.wakes())
+      .filter((run) => run.clientNonce?.includes(own.id))
+      .sort((a, b) => (a.clientNonce ?? "").localeCompare(b.clientNonce ?? ""));
+    expect(ownWakes.map((run) => run.promptCredentialId)).toEqual([null, "key-2"]);
+  });
+
   it("cancels the known follow-up run even when latest agent metadata is stale", async () => {
     const h = await setup();
     const id = await h.launch();

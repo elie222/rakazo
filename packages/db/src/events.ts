@@ -199,6 +199,8 @@ export interface SendUserMessageInput {
   createRun?: boolean;
   /** When true, start a new run even if the bot is already busy (team-chat delivery). */
   allowParallelRun?: boolean;
+  /** The API key that wrote any of the instructions this message delivers; marks its run. */
+  promptCredentialId?: string | null;
   /** Model every routine in an inbound delivery agreed on. */
   modelPin?: {
     modelProvider: string;
@@ -548,6 +550,7 @@ export async function sendUserMessage(
             userId: input.userId,
             status: "queued",
             trigger: input.trigger,
+            ...(input.promptCredentialId ? { promptCredentialId: input.promptCredentialId } : {}),
             clientNonce: input.clientNonce ? `send:${message.id}` : undefined,
             sourceMessageId: message.id,
             ...(input.modelPin
@@ -575,6 +578,7 @@ export async function sendUserMessage(
             ...(input.trigger === "messaging" || input.trigger === "webhook"
               ? { originTrigger: input.trigger }
               : {}),
+            ...(input.promptCredentialId ? { promptCredentialId: input.promptCredentialId } : {}),
             ...(input.modelPin
               ? {
                   modelProvider: input.modelPin.modelProvider,

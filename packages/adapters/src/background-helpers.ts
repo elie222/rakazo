@@ -26,6 +26,7 @@ import type { ExecutorDeps } from "./executor-deps.js";
 import { helperResultText, MAX_PARALLEL_SUBAGENTS } from "./pi-runtime-subagent.js";
 import type { RunContext } from "./run-context.js";
 import { runLeaseFor } from "./run-messages.js";
+import { promptCredentialOfRun } from "./run-prompt-credential.js";
 
 const RESULT_LIMIT = 12_000;
 
@@ -148,6 +149,7 @@ export async function startBackgroundHelper(
         userId: run.userId,
         status: "queued",
         trigger: BACKGROUND_HELPER_TRIGGER,
+        promptCredentialId: await promptCredentialOfRun(tx, run.id),
         sourceMessageId: message.id,
         clientNonce,
         ...(input.modelProvider
@@ -272,6 +274,7 @@ export async function returnHelperOutcome(
         userId: run.userId,
         status: "queued",
         trigger: HELPER_RESULT_TRIGGER,
+        promptCredentialId: await promptCredentialOfRun(tx, run.id),
         clientNonce: `helper-result:${run.id}`,
       },
       select: { id: true },

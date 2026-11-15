@@ -71,7 +71,7 @@ export async function executeCloudAgentTool(
   /** `deployment`: the deployment's connection when the run's own is the user's environment. */
   deps: CloudAgentDeps & { deployment?: CloudAgentConnection | null },
   context: AdapterContext & { botId: string },
-  run: { id: string; threadId: string },
+  run: { id: string; threadId: string; promptCredentialId?: string | null },
   name: string,
   args: Record<string, unknown>,
 ) {
@@ -110,6 +110,7 @@ export async function executeCloudAgentTool(
           threadId: run.threadId,
           title: request.prompt.split(/\r?\n/, 1)[0]!.slice(0, 80),
           launchRequest: request,
+          promptCredentialId: run.promptCredentialId ?? null,
         },
       });
       const blocks = [cloudAgentBlock(created)];
@@ -196,6 +197,8 @@ export async function executeCloudAgentTool(
           version: { increment: 1 },
           nextPollAt: new Date(),
           errorCount: 0,
+          // A key's follow-up marks the agent; a later unmarked one does not clear it.
+          ...(run.promptCredentialId ? { promptCredentialId: run.promptCredentialId } : {}),
         },
       });
       if (!updated.count) return { error: "Cloud agent changed; check its status and try again." };

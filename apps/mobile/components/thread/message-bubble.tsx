@@ -740,6 +740,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
     (block): block is Extract<MessageBlock, { kind: "import_setup" }> =>
       block.kind === "import_setup",
   );
+  const serviceOrigin = message.blocks.find((block) => block.kind === "service_origin");
   return (
     <View style={{ gap: 8, width: "100%" }}>
       {segments.map((segment, index) => (
@@ -798,6 +799,17 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
           onAccessibilityAction={actionProps.onAccessibilityAction}
         />
       ))}
+      {serviceOrigin?.kind === "service_origin" ? (
+        <Text
+          style={{
+            color: tokens.mutedForeground,
+            ...typeScale.footnote,
+            alignSelf: outgoing ? "flex-end" : "flex-start",
+          }}
+        >
+          {t`Sent with the API key ${serviceOrigin.name}`}
+        </Text>
+      ) : null}
     </View>
   );
 });

@@ -56,7 +56,7 @@ export function connectorTrustKeys(
 export function createRunTrustLoaders(
   deps: ExecutorDeps,
   input: {
-    run: { userId: string; spaceId: string; trigger: string };
+    run: { userId: string; spaceId: string; trigger: string; promptCredentialId: string | null };
     runId: string;
     botId: string;
     taskPrompt: string;
@@ -110,8 +110,8 @@ export function createRunTrustLoaders(
   };
   // The owner's own words for this run: the message they sent (in Rakazo or their own chat app),
   // or the instructions of the routine that started it. Never a bot, channel or webhook message,
-  // or a tool result. These name the sites a run is given, and are all Auto Review sees of a new
-  // site's run and of a memory save after outside content.
+  // an API key's text, or a tool result. These name the sites a run is given, and are all Auto
+  // Review sees of a new site's run and of a memory save after outside content.
   let ownerWordsPromise: Promise<string> | undefined;
   const loadOwnerWords = () => {
     ownerWordsPromise ??= (async () => {
@@ -128,10 +128,17 @@ export function createRunTrustLoaders(
           .join("\n");
       }
       // Saved when the routine fired, so a later edit cannot change what this run judges.
-      if (run.trigger === "routine") return routineTaskInstructions(taskPrompt);
+      if (run.trigger === "routine") {
+        return run.promptCredentialId ? "" : routineTaskInstructions(taskPrompt);
+      }
       if (run.trigger === "webhook") {
         const routines = await deps.prisma.routine.findMany({
-          where: { botId: botId, spaceId: run.spaceId, userId: run.userId },
+          where: {
+            botId: botId,
+            spaceId: run.spaceId,
+            userId: run.userId,
+            promptCredentialId: null,
+          },
           select: { name: true, prompt: true },
         });
         return inboundRoutinePrompts(taskPrompt, routines).join("\n\n");

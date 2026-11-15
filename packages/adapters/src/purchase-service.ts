@@ -149,7 +149,7 @@ export function walletSupports(provider: PaymentWalletProvider, kind: PurchaseCr
 export async function executePurchaseTool(
   deps: PurchaseDeps,
   context: AdapterContext & { botId: string },
-  run: { threadId: string },
+  run: { threadId: string; promptCredentialId?: string | null },
   name: string,
   args: Record<string, unknown>,
 ) {
@@ -194,7 +194,7 @@ async function requestPurchase(
   deps: PurchaseDeps,
   provider: PaymentWalletProvider,
   context: AdapterContext & { botId: string },
-  run: { threadId: string },
+  run: { threadId: string; promptCredentialId?: string | null },
   args: Record<string, unknown>,
 ) {
   const parsed = PurchaseRequestInput.safeParse(args);
@@ -223,7 +223,7 @@ export async function createPurchase(
   deps: PurchaseDeps,
   provider: PaymentWalletProvider,
   context: AdapterContext & { botId: string },
-  run: { threadId: string },
+  run: { threadId: string; promptCredentialId?: string | null },
   request: {
     credential: PurchaseCredential;
     amount: number;
@@ -292,6 +292,7 @@ export async function createPurchase(
         botId: context.botId,
         threadId: run.threadId,
         threadGeneration: thread.historyCompactionGeneration,
+        promptCredentialId: run.promptCredentialId ?? null,
         provider: provider.describe().id,
         remoteId: snapshot.id,
         credentialType: request.credential.kind,

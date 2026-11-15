@@ -9,6 +9,8 @@ export type TicketChange = {
   ticketId: string;
   assigneeBotId: string | null;
   wakeAssignee: boolean;
+  /** The API key behind the change, if any, so the wake it causes keeps the key's mark. */
+  promptCredentialId?: string | null;
 };
 export type TicketChangeNotifier = (change: TicketChange) => Promise<void>;
 
@@ -30,6 +32,7 @@ export function createTicketChangeNotifier(deps: {
         spaceId: change.spaceId,
         ticketId: change.ticketId,
         botId: change.assigneeBotId,
+        promptCredentialId: change.promptCredentialId ?? null,
       });
     }
   };

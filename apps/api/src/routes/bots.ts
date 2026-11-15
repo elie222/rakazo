@@ -80,6 +80,11 @@ import { createBotFromTemplate, listBotTemplates } from "../bot-templates.js";
 import { requireIdentityConfirmation } from "../identity-confirmation.js";
 import { managedAppCatalog } from "../onboarding.js";
 import type { RouterDeps } from "../router.js";
+import {
+  createServiceCredential,
+  listServiceCredentials,
+  revokeServiceCredential,
+} from "../service-credentials.js";
 import { purgeClearedThreadMemory } from "../thread-memory.js";
 import { loadMessagePage } from "../thread-message-pages.js";
 import type { RouterContext } from "./context.js";
@@ -1017,6 +1022,19 @@ export function botsRoutes(ctx: RouterContext) {
       remove: authed.agentSecrets.remove.handler(async ({ context, input }) =>
         deleteAgentSecret({ prisma: deps.prisma, secrets: deps.secrets }, context.actor, input.id),
       ),
+    },
+    serviceCredentials: {
+      list: authed.serviceCredentials.list.handler(({ context }) =>
+        listServiceCredentials(deps.prisma, context.actor),
+      ),
+      create: authed.serviceCredentials.create.handler(async ({ context, input }) => {
+        await requireIdentityConfirmation(deps.auth, context);
+        return createServiceCredential(deps.prisma, context.actor, input);
+      }),
+      revoke: authed.serviceCredentials.revoke.handler(async ({ context, input }) => {
+        await revokeServiceCredential(deps.prisma, context.actor, input.id);
+        return { ok: true as const };
+      }),
     },
     vault: {
       list: authed.vault.list.handler(async ({ context, input }) => {

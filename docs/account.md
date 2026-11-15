@@ -30,6 +30,8 @@ instead of a password. Some actions, such as exporting data, ask you to confirm 
 show only after you confirm it's you.
 You can add one, replace its value, or remove it. See [Reusable credentials](./bot-secrets.md).
 
+API keys let a program work with your bots. See [Service API](./service-api.md).
+
 ## Organizations
 
 Keep work and personal use apart, each with its own bots and billing. Choose

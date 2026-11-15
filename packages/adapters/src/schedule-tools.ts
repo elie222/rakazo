@@ -490,6 +490,8 @@ export async function createScheduleFromTool(
     target?: { botId: string; threadId: string };
     name: string;
     prompt: string;
+    /** The API key behind the run that asked, so the routine stays marked as that key's. */
+    promptCredentialId?: string | null;
     timezone?: string;
     schedule: Record<string, unknown>;
   },
@@ -533,6 +535,7 @@ export async function createScheduleFromTool(
         threadId: routineThreadId,
         name,
         prompt,
+        promptCredentialId: input.promptCredentialId ?? null,
         crons: [resolved.cron],
         timezone,
         notify: true,
@@ -673,6 +676,7 @@ async function createWatchFromTool(
     threadId: string;
     name: string;
     prompt: string;
+    promptCredentialId?: string | null;
     timezone?: string;
     schedule: Record<string, unknown>;
   },
@@ -702,6 +706,7 @@ async function createWatchFromTool(
         threadId: input.threadId,
         name: input.name,
         prompt: input.prompt,
+        promptCredentialId: input.promptCredentialId ?? null,
         crons: [],
         timezone,
         notify: true,
@@ -836,6 +841,8 @@ export async function updateScheduleFromTool(
     routineId: string;
     name?: string;
     prompt?: string;
+    /** The API key behind the run that asked, so a prompt it rewrites is marked as that key's. */
+    promptCredentialId?: string | null;
     active?: boolean;
     timezone?: string;
     schedule: Record<string, unknown>;
@@ -948,6 +955,10 @@ export async function updateScheduleFromTool(
         : { userId: input.userId, watchState: Prisma.DbNull }),
       ...(name === undefined ? {} : { name }),
       ...(prompt === undefined ? {} : { prompt }),
+      // A bot's rewrite never clears a key's mark: only the person's own edit does.
+      ...(prompt !== undefined && input.promptCredentialId
+        ? { promptCredentialId: input.promptCredentialId }
+        : {}),
       ...(timingChanged ? { crons, timezone, active, nextRunAt } : {}),
     },
   });

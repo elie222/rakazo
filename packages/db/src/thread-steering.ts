@@ -28,7 +28,7 @@ export interface ClaimedSteeringMessage {
    * Who sent it: the run's own person (in the app or a connected chat), another member of the
    * chat, someone else in a connected chat, or a webhook.
    */
-  origin: "user" | "member" | "messaging" | "webhook";
+  origin: "user" | "member" | "messaging" | "webhook" | "service";
 }
 
 export async function claimSteering(
@@ -154,11 +154,14 @@ async function claimSteeringOnce(
       origin:
         item.originTrigger === "webhook"
           ? ("webhook" as const)
-          : sentByRunPerson(item)
-            ? ("user" as const)
-            : item.originTrigger === "messaging"
-              ? ("messaging" as const)
-              : ("member" as const),
+          : // Sent with one of the person's keys: their row, but not their words.
+            item.originTrigger === "service"
+            ? ("service" as const)
+            : sentByRunPerson(item)
+              ? ("user" as const)
+              : item.originTrigger === "messaging"
+                ? ("messaging" as const)
+                : ("member" as const),
     }));
   }, THREAD_LOCK_TRANSACTION_OPTIONS);
 }
@@ -238,8 +241,17 @@ export async function createPendingSteeringRun(
   const origin = pending.some((item) => steeringOrigin(item) === "private")
     ? "private"
     : steeringOrigin(pending[0]!);
-  const userId = pending.find((item) => steeringOrigin(item) === origin)!.userId;
-  const batch = pending.filter((item) => steeringOrigin(item) === origin && item.userId === userId);
+  const first = pending.find((item) => steeringOrigin(item) === origin)!;
+  const { userId } = first;
+  // One key too: the run is marked with the key behind its instructions, so instructions from
+  // another key, or none, wait for a continuation of their own.
+  const promptCredentialId = first.promptCredentialId ?? null;
+  const batch = pending.filter(
+    (item) =>
+      steeringOrigin(item) === origin &&
+      item.userId === userId &&
+      (item.promptCredentialId ?? null) === promptCredentialId,
+  );
   const source = batch.at(-1)!;
   const modelPin = continuationModelPin(batch);
   const task = await tx.task.create({
@@ -249,7 +261,7 @@ export async function createPendingSteeringRun(
       threadId: input.threadId,
       userId,
       prompt:
-        origin === "webhook"
+        origin === "webhook" || origin === "service"
           ? blocksToAgentHistoryText(source.message.blocks as MessageBlock[])
           : STEERING_CONTINUATION_PROMPT,
       status: "queued",
@@ -267,14 +279,15 @@ export async function createPendingSteeringRun(
       // from the app; one direct-line delivery keeps it messaging, so it is never owner-started.
       // Rows queued before origins were recorded are recognized by their channel message.
       trigger:
-        origin === "webhook"
-          ? "webhook"
+        origin === "webhook" || origin === "service"
+          ? origin
           : origin === "private" &&
               batch.every(
                 (item) => item.originTrigger === null && !hasChannelMessage(item.message.blocks),
               )
             ? "follow_up"
             : "messaging",
+      promptCredentialId,
       sourceMessageId: source.message.id,
       ...(modelPin ?? {}),
     },
@@ -283,6 +296,14 @@ export async function createPendingSteeringRun(
     where: { id: { in: batch.map((item) => item.id) }, runId: null },
     data: { runId: run.id, claimedAt: null },
   });
+  // A steering row is deleted once answered, and only the newest message is the run's source. This
+  // is what still names the run for the others when a service caller asks later.
+  if (origin === "service") {
+    await tx.message.updateMany({
+      where: { id: { in: batch.map((item) => item.message.id) }, runId: null },
+      data: { runId: run.id },
+    });
+  }
   return run.id;
 }
 
@@ -318,7 +339,9 @@ function steeringOrigin(item: {
   originTrigger: string | null;
   message: { blocks: unknown };
 }): string {
-  if (item.originTrigger === "webhook") return "webhook";
+  if (item.originTrigger === "webhook" || item.originTrigger === "service") {
+    return item.originTrigger;
+  }
   if (item.originTrigger !== "messaging") return "private";
   const channelId = messagingChannelId(item.message.blocks as MessageBlock[] | undefined);
   return channelId ? `channel:${channelId}` : "private";

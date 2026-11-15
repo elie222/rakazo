@@ -216,7 +216,9 @@ export function threadsRoutes(ctx: RouterContext) {
           yield event;
         }
       }),
-      send: authed.threads.send.handler(({ context, input }) => send(context.actor, input)),
+      send: authed.threads.send.handler(({ context, input }) =>
+        send(context.actor, { ...input, serviceOrigin: context.serviceOrigin }),
+      ),
       sendWithRoutines: authed.threads.sendWithRoutines.handler(async ({ context, input }) => {
         const { actor } = context;
         // The same checks as routines/testRun, all before anything is written.

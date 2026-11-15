@@ -37,6 +37,61 @@ type Tenant = {
 function rowsFor(t: Tenant, tag: string): Array<[string, Record<string, unknown>]> {
   return [
     [
+      "serviceCredential",
+      {
+        userId: t.userId,
+        spaceId: t.spaceId,
+        name: `key-${tag}`,
+        tokenHash: `hash-${t.userId}-${tag}`,
+        tokenPrefix: "rks_x",
+        scopes: ["bots:read"],
+        botIds: [],
+        expiresAt: new Date(Date.now() + 60_000),
+      },
+    ],
+    [
+      "serviceIdempotencyKey",
+      {
+        userId: t.userId,
+        spaceId: t.spaceId,
+        key: `retry-${tag}`,
+        requestHash: "hash",
+        expiresAt: new Date(Date.now() + 60_000),
+        credential: {
+          create: {
+            userId: t.userId,
+            spaceId: t.spaceId,
+            name: `retried-${tag}`,
+            tokenHash: `retried-${t.userId}-${tag}`,
+            tokenPrefix: "rks_x",
+            scopes: ["bots:read"],
+            botIds: [],
+            expiresAt: new Date(Date.now() + 60_000),
+          },
+        },
+      },
+    ],
+    [
+      "serviceEventStream",
+      {
+        userId: t.userId,
+        spaceId: t.spaceId,
+        expiresAt: new Date(Date.now() + 60_000),
+        credential: {
+          create: {
+            userId: t.userId,
+            spaceId: t.spaceId,
+            name: `streaming-${tag}`,
+            tokenHash: `streaming-${t.userId}-${tag}`,
+            tokenPrefix: "rks_x",
+            scopes: ["bots:read"],
+            botIds: [],
+            expiresAt: new Date(Date.now() + 60_000),
+          },
+        },
+      },
+    ],
+    [
       "spaceModelRoleChoice",
       {
         spaceId: t.spaceId,

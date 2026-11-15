@@ -369,6 +369,7 @@ async function finishPoll(
             taskId: task.id,
             status: "queued",
             trigger: "cloud_agent",
+            promptCredentialId: saved.promptCredentialId,
             clientNonce: `cloud-agent-wake-run:${agent.id}:${saved.generation}`,
           },
         });

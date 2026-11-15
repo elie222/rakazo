@@ -30,6 +30,7 @@ export async function findPendingRoutineTick(
     userId: string;
     threadId: string;
     prompt: string;
+    promptCredentialId?: string | null;
     modelProvider?: string;
     modelId?: string;
     thinkingLevel?: string | null;
@@ -46,6 +47,8 @@ export async function findPendingRoutineTick(
     userId: config.userId,
     threadId: config.threadId,
     trigger: "routine",
+    // The same text from a key and from the person are different work.
+    promptCredentialId: config.promptCredentialId ?? null,
     status: "queued",
     retryOfRunId: null,
     sourceMessageId: null,

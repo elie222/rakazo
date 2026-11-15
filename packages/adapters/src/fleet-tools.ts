@@ -37,6 +37,7 @@ import { resolveModelChoice } from "./model-choice.js";
 import type { BotModelChangeDeps } from "./model-selection.js";
 import { validateBotModelChange } from "./model-selection.js";
 import { listPiCatalog, scriptedCatalogEntry } from "./pi-models.js";
+import { promptCredentialOfRun } from "./run-prompt-credential.js";
 import type { ScheduleToolDeps } from "./schedule-tools.js";
 import {
   compactScheduleInput,
@@ -1054,6 +1055,7 @@ export async function createChildRoutine(
     target: { botId: child.id, threadId: child.thread.id },
     name,
     prompt,
+    promptCredentialId: await promptCredentialOfRun(deps.prisma, run.runId),
     ...(pinnedTimezone === undefined ? {} : { timezone: pinnedTimezone }),
     schedule,
   });

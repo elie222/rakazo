@@ -203,7 +203,7 @@ export async function createRoutineTestRun(
   });
   const currentModel = await tx.routine.findUnique({
     where: { id: routine.id },
-    select: { modelProvider: true, modelId: true, thinkingLevel: true },
+    select: { modelProvider: true, modelId: true, thinkingLevel: true, promptCredentialId: true },
   });
   if (!currentModel) throw new IsolationError();
   return tx.run.create({
@@ -216,6 +216,7 @@ export async function createRoutineTestRun(
       status: "queued",
       trigger: "routine",
       routineId: routine.id,
+      promptCredentialId: currentModel.promptCredentialId,
       ...routineRunModelPin(currentModel),
       clientNonce: nonce,
     },

@@ -97,7 +97,7 @@ async function finishStatusChange(
 }
 
 /**
- * Ends what a deactivated account had going: sign-ins, paired computers, notification
+ * Ends what a deactivated account had going: sign-ins, API keys, paired computers, notification
  * registrations, views of its bots' screens, runs, and membership of other people's Spaces. Its
  * own bots, chats, memory, files and connections stay. Sign-in and new runs are refused separately for as long as the account
  * stays deactivated. Every step is tried even when an earlier one fails, and running it again
@@ -112,6 +112,12 @@ export async function endDeactivatedAccess(deps: AccountStatusDeps, userId: stri
     () => prisma.callPushDevice.deleteMany({ where: { userId } }),
     // A pending code would otherwise link a chat app to the account after this.
     () => prisma.messagingLinkCode.deleteMany({ where: { userId } }),
+    // API keys act as the account; reactivating it does not bring them back.
+    () =>
+      prisma.serviceCredential.updateMany({
+        where: { userId, revokedAt: null },
+        data: { revokedAt: new Date() },
+      }),
     // Screen links issued before now stop working; people still allowed get new ones.
     () =>
       prisma.bot.updateMany({ where: { userId }, data: { screenGeneration: { increment: 1 } } }),

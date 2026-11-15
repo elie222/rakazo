@@ -173,6 +173,7 @@ export const taskTools: ToolHandlers = {
         description: args.description !== undefined ? String(args.description) : undefined,
         priority: args.priority !== undefined ? String(args.priority) : undefined,
         ownerBotId: args.ownerBotId !== undefined ? String(args.ownerBotId) : undefined,
+        promptCredentialId: run.promptCredentialId,
       }),
     );
   },
@@ -190,6 +191,7 @@ export const taskTools: ToolHandlers = {
         priority: args.priority !== undefined ? String(args.priority) : undefined,
         status: args.status !== undefined ? String(args.status) : undefined,
         ownerBotId: args.ownerBotId !== undefined ? String(args.ownerBotId) : undefined,
+        promptCredentialId: run.promptCredentialId,
       }),
     );
   },
@@ -216,6 +218,7 @@ export const taskTools: ToolHandlers = {
       botId: bot.id,
       userId: run.userId,
       threadId: thread.id,
+      promptCredentialId: run.promptCredentialId,
       ...scheduleCreateFields(args),
     });
     return call.finish(created);
@@ -233,6 +236,7 @@ export const taskTools: ToolHandlers = {
         routineId: String(args.routineId ?? ""),
         name: isScheduleValueProvided(args.name) ? String(args.name) : undefined,
         prompt: isScheduleValueProvided(args.prompt) ? String(args.prompt) : undefined,
+        promptCredentialId: run.promptCredentialId,
         active: typeof args.active === "boolean" ? args.active : undefined,
         timezone: isScheduleValueProvided(args.timezone) ? String(args.timezone) : undefined,
         schedule: compactScheduleInput(scheduleTimingArgs(args)),

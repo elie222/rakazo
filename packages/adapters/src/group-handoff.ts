@@ -22,6 +22,7 @@ import {
 import { getLogger } from "@rakazo/logging";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { runLeaseFor } from "./run-messages.js";
+import { promptCredentialOfRun } from "./run-prompt-credential.js";
 
 export async function handoffToGroupBot(
   deps: Pick<ExecutorDeps, "prisma" | "events" | "jobs" | "runLease">,
@@ -203,6 +204,7 @@ export async function handoffToGroupBot(
         userId: run.userId,
         status: "queued",
         trigger: "follow_up",
+        promptCredentialId: await promptCredentialOfRun(tx, run.id),
         sourceMessageId: message.id,
       },
     });

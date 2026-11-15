@@ -27,6 +27,7 @@ export type WebhookEvents = {
     trigger: "webhook";
     clientNonce?: string;
     allowParallelRun?: boolean;
+    promptCredentialId?: string | null;
     modelPin?: {
       modelProvider: string;
       modelId: string;
@@ -274,6 +275,7 @@ export async function deliverWebhookEvent(
       modelProvider: string | null;
       modelId: string | null;
       thinkingLevel: string | null;
+      promptCredentialId: string | null;
     }>;
     source: InboundSource;
     idempotencyKey?: string;
@@ -316,6 +318,9 @@ export async function deliverWebhookEvent(
     ],
     prompt: promptText,
     trigger: "webhook",
+    // One routine an API key wrote marks the whole run as following a key's instructions.
+    promptCredentialId:
+      input.routines.find((routine) => routine.promptCredentialId)?.promptCredentialId ?? null,
     clientNonce,
     ...(input.allowParallelRun ? { allowParallelRun: true } : {}),
     ...(input.claim ? { claim: input.claim } : {}),
