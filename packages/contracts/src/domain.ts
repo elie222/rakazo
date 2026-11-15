@@ -1555,6 +1555,8 @@ export const AppBootstrapSchema = z.object({
   spaces: z.array(SpaceSchema),
   /** Set when the requested bot is the caller's but lives in another of their Spaces. */
   botSpaceId: Id.optional(),
+  /** Set when the requested group is one the caller can open in another of their Spaces. */
+  groupSpaceId: Id.optional(),
 });
 export type AppBootstrap = z.infer<typeof AppBootstrapSchema>;
 
