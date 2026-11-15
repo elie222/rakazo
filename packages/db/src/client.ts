@@ -1,7 +1,7 @@
 import { PrismaPg } from "@prisma/adapter-pg";
 import type { KeyProvider } from "@rakazo/adapter-kit";
 import { resolveContentEncryption } from "@rakazo/core";
-import { getLogger } from "@rakazo/logging";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import type { PoolClient } from "pg";
 import { Pool } from "pg";
 import { withContentEncryption } from "./content-encryption.js";
@@ -109,7 +109,7 @@ export function createDb(
   installSaturationReport(keyPool, keyPool.options.application_name);
   const end = pool.end.bind(pool) as () => Promise<void>;
   pool.end = (async () => {
-    await keyPool.end().catch(() => undefined);
+    await bestEffort("close content key database pool", keyPool.end());
     await end();
   }) as Pool["end"];
   const contentKeys = new ContentKeyRing(
