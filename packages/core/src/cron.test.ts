@@ -28,9 +28,13 @@ import {
   zonedDateTime,
 } from "./cron.js";
 import {
+  clockChange,
+  firstReads,
+  hasRead,
   inRepeatedSpan,
   localTime,
-  nearClockChange,
+  startOfLocalDay,
+  wallClock,
   zonedInstant,
 } from "./time-zones.test-support.js";
 
@@ -1013,29 +1017,31 @@ describe("nextCronDate properties", () => {
     .tuple(field(0, 59), field(0, 23), field(1, 28), field(1, 12), field(0, 7))
     .map((fields) => fields.join(" "));
 
-  it("finds a run strictly after the given time for any schedule and zone, outside a repeated hour", () => {
+  it("finds a run strictly after the given time, never in the second pass of a repeated hour, for any schedule and zone", () => {
     fc.assert(
       fc.property(expression, zonedInstant, (cron, { timeZone, at }) => {
-        fc.pre(!inRepeatedSpan(at, timeZone));
-        expect(nextCronDate(cron, at, timeZone).getTime()).toBeGreaterThan(at.getTime());
+        const next = nextCronDate(cron, at, timeZone);
+        expect(next.getTime()).toBeGreaterThan(at.getTime());
+        expect(inRepeatedSpan(next, timeZone)).toBe(false);
       }),
       { seed: 42, numRuns: 150 },
     );
   });
 
-  it("runs a daily schedule within 25 hours, at its wall-clock time when no clock change is near", () => {
+  it("runs a daily schedule the next time the clock first reads its time, or first reads past a time the clocks skip", () => {
     fc.assert(
       fc.property(
-        fc.integer({ min: 0, max: 23 }),
-        fc.integer({ min: 0, max: 59 }),
         zonedInstant,
-        (hour, minute, { timeZone, at }) => {
-          fc.pre(!inRepeatedSpan(at, timeZone));
-          const next = nextCronDate(`${minute} ${hour} * * *`, at, timeZone);
-          expect(next.getTime() - at.getTime()).toBeLessThanOrEqual(25 * HOUR);
-          if (nearClockChange(next, timeZone)) return;
-          const local = localTime(next, timeZone);
-          expect([local.hour, local.minute, local.second]).toEqual([hour, minute, 0]);
+        fc.oneof({ weight: 3, arbitrary: fc.nat(120) }, fc.nat(1439)),
+        ({ timeZone, at }, minutesAhead) => {
+          const time = (Math.floor(wallClock(at, timeZone) / 60_000) + minutesAhead) % 1440;
+          const cron = `${time % 60} ${Math.floor(time / 60)} * * *`;
+          const next = nextCronDate(cron, at, timeZone);
+          const read = wallClock(next, timeZone);
+          const due = read - (read % DAY) + time * 60_000;
+          expect(next.getTime()).toBeGreaterThan(at.getTime());
+          expect(firstReads(next, due, timeZone)).toBe(true);
+          expect(hasRead(at, due - DAY, timeZone)).toBe(true);
         },
       ),
       { seed: 42, numRuns: 150 },
@@ -1048,14 +1054,46 @@ describe("nextRoutineRunDate properties", () => {
     fc.integer({ min: -4 * DAY, max: 4 * DAY }),
     fc.integer({ min: -400 * DAY, max: 400 * DAY }),
   );
+  // A day interval counts the first instant of a local day as midnight, wherever the clocks put it.
+  const timeOfDay = (at: Date, timeZone: string) =>
+    localTime(new Date(at.getTime() - 1), timeZone).dayNumber < localTime(at, timeZone).dayNumber
+      ? 0
+      : wallClock(at, timeZone) % DAY;
+  const skippedMidnight = clockChange.filter(
+    ({ timeZone, at }) => timeOfDay(at, timeZone) === 0 && wallClock(at, timeZone) % DAY !== 0,
+  );
+  // The anchor is up to three intervals before `at`, so a run falls due on the day of `at`.
+  const dayInterval = (instant: typeof zonedInstant) =>
+    fc
+      .tuple(unevenIntervalOf("days"), instant, fc.nat(3))
+      .map(([{ n, cron }, { timeZone, at }, intervals]) => ({
+        n,
+        cron,
+        timeZone,
+        at,
+        anchor: new Date(at.getTime() - intervals * n * DAY),
+      }));
+  const anchoredAnywhere = dayInterval(zonedInstant);
+  const anchoredAtStartOfDay = dayInterval(fc.oneof(skippedMidnight, zonedInstant)).map((run) => ({
+    ...run,
+    anchor: startOfLocalDay(run.anchor, run.timeZone),
+  }));
+  const stepRuns = (cron: string, anchor: Date, timeZone: string, count: number) => {
+    let last = anchor;
+    const runs = [last];
+    for (let run = 0; run < count; run++) {
+      last = nextRoutineRunDate(cron, last, last, timeZone);
+      runs.push(last);
+    }
+    return { runs, last };
+  };
 
-  it("is strictly after both the anchor and now for every interval, outside a repeated hour", () => {
+  it("is strictly after both the anchor and now for every interval", () => {
     fc.assert(
       fc.property(intervalPreset, zonedInstant, lateness, ({ cron }, { timeZone, at }, late) => {
-        const from = new Date(Math.max(at.getTime(), at.getTime() + late));
-        fc.pre(!inRepeatedSpan(from, timeZone));
-        const next = nextRoutineRunDate(cron, at, new Date(at.getTime() + late), timeZone);
-        expect(next.getTime()).toBeGreaterThan(from.getTime());
+        const now = new Date(at.getTime() + late);
+        const next = nextRoutineRunDate(cron, at, now, timeZone);
+        expect(next.getTime()).toBeGreaterThan(Math.max(at.getTime(), now.getTime()));
       }),
       { seed: 42, numRuns: 150 },
     );
@@ -1080,57 +1118,78 @@ describe("nextRoutineRunDate properties", () => {
     );
   });
 
-  it("lands a day interval a whole number of intervals of local days after the anchor, at the anchor's wall-clock time", () => {
+  it("lands a day interval on the first time after now that is a whole number of intervals of local days after the anchor, at the anchor's wall-clock time, or at midnight for an anchor where a skipped midnight lands", () => {
     fc.assert(
       fc.property(
-        unevenIntervalOf("days"),
-        zonedInstant,
-        lateness,
-        ({ n, cron }, { timeZone, at }, late) => {
-          const from = new Date(Math.max(at.getTime(), at.getTime() + late));
-          const next = nextRoutineRunDate(cron, at, new Date(at.getTime() + late), timeZone);
-          const anchor = localTime(at, timeZone);
-          const local = localTime(next, timeZone);
-          const days = local.dayNumber - anchor.dayNumber;
-          expect(days).toBeGreaterThan(0);
-          expect(days % n).toBe(0);
-          expect(local.dayNumber - localTime(from, timeZone).dayNumber).toBeLessThanOrEqual(n);
+        fc.oneof(anchoredAtStartOfDay, anchoredAnywhere),
+        fc.oneof(fc.integer({ min: -2 * DAY, max: 0 }), lateness),
+        ({ n, cron, timeZone, at, anchor }, late) => {
+          const now = new Date(at.getTime() + late);
+          const from = new Date(Math.max(anchor.getTime(), now.getTime()));
+          const next = nextRoutineRunDate(cron, anchor, now, timeZone);
+          const anchorRead = wallClock(anchor, timeZone);
+          const time = timeOfDay(anchor, timeZone);
+          const firstDay = anchorRead - (anchorRead % DAY);
+          const intervals = Math.floor((wallClock(next, timeZone) - firstDay - time) / (n * DAY));
+          const due = firstDay + intervals * n * DAY + time;
+          expect(intervals).toBeGreaterThan(0);
+          expect(firstReads(next, due, timeZone)).toBe(true);
           expect(next.getTime()).toBeGreaterThan(from.getTime());
-          if (nearClockChange(next, timeZone)) return;
-          expect([local.hour, local.minute, local.second, next.getMilliseconds()]).toEqual([
-            anchor.hour,
-            anchor.minute,
-            anchor.second,
-            at.getMilliseconds(),
-          ]);
+          expect(intervals === 1 || hasRead(from, due - n * DAY, timeZone)).toBe(true);
         },
       ),
       { seed: 42, numRuns: 100 },
     );
   });
 
-  it("catches up after missed runs to where running every interval would land, when no run is moved by a clock change", () => {
+  it("catches up after missed runs to where running every interval would land, for minute and hour intervals", () => {
     fc.assert(
       fc.property(
-        unevenIntervalOf("minutes", "hours", "days"),
+        unevenIntervalOf("minutes", "hours"),
         zonedInstant,
         fc.integer({ min: 0, max: 8 }),
-        ({ unit, cron }, { timeZone, at }, missed) => {
-          const anchor = localTime(at, timeZone);
-          let last = at;
-          for (let run = 0; run < missed; run++) {
-            last = nextRoutineRunDate(cron, last, last, timeZone);
-            const local = localTime(last, timeZone);
-            fc.pre(
-              unit !== "days" || (local.hour === anchor.hour && local.minute === anchor.minute),
-            );
-          }
+        ({ cron }, { timeZone, at }, missed) => {
+          const { last } = stepRuns(cron, at, timeZone, missed);
           expect(nextRoutineRunDate(cron, at, last, timeZone)).toEqual(
             nextRoutineRunDate(cron, last, last, timeZone),
           );
         },
       ),
-      { seed: 42, numRuns: 100 },
+      { seed: 42, numRuns: 50 },
+    );
+  });
+
+  it("catches up to where running every interval would land for a day interval anchored at the start of a local day, across clock changes", () => {
+    fc.assert(
+      fc.property(
+        anchoredAtStartOfDay,
+        fc.integer({ min: 0, max: 4 }),
+        ({ cron, timeZone, anchor }, missed) => {
+          const { last } = stepRuns(cron, anchor, timeZone, missed);
+          expect(nextRoutineRunDate(cron, anchor, last, timeZone)).toEqual(
+            nextRoutineRunDate(cron, last, last, timeZone),
+          );
+        },
+      ),
+      { seed: 42, numRuns: 50 },
+    );
+  });
+
+  it("catches up to where running every interval would land for a day interval anchored at any time, while every run keeps the anchor's time of day", () => {
+    fc.assert(
+      fc.property(
+        anchoredAnywhere,
+        fc.integer({ min: 0, max: 4 }),
+        ({ cron, timeZone, anchor }, missed) => {
+          const { runs, last } = stepRuns(cron, anchor, timeZone, missed);
+          const time = timeOfDay(anchor, timeZone);
+          fc.pre(runs.every((run) => timeOfDay(run, timeZone) === time));
+          expect(nextRoutineRunDate(cron, anchor, last, timeZone)).toEqual(
+            nextRoutineRunDate(cron, last, last, timeZone),
+          );
+        },
+      ),
+      { seed: 42, numRuns: 50 },
     );
   });
 });
