@@ -302,8 +302,8 @@ Mobile build and release instructions live in [docs/mobile-release.md](./docs/mo
 
 The web (and Electron-hosted) UI supports English, Deutsch, 한국어, Türkçe, हिन्दी,
 Português (Brasil), 简体中文, 繁體中文, Español, Русский, Français, עברית, Nederlands, 日本語, and Polski under
-**Settings → Language**. The Expo app ships English, 简体中文, 繁體中文, Русский, Deutsch,
-Nederlands, 日本語, Español, and Polski catalogs, and **Account → Language** lists all nine. A device language or
+**Settings → Language**. The Expo app ships the same 15 languages under
+**Account → Language**. A device language or
 `EXPO_PUBLIC_DEFAULT_UI_LOCALE` still selects the starting catalog before a saved choice.
 Native Electron setup and menus also support the web UI's languages, following the saved app
 choice or, on first launch, the system language. The marketing homepage (`apps/www`) offers all
@@ -345,6 +345,7 @@ Chinese guides cover [self-hosting](./docs/zh-CN/self-host.md), [models](./docs/
 - [Tools and integrations](./docs/self-host-integrations.md)
 - [Computer providers](./docs/self-host-sandbox-providers.md)
 - [Docker computers](./docs/self-host-docker-computers.md)
+- [Kubernetes / k3s installation](./docs/self-host-kubernetes.md) ([한국어](./docs/ko-KR/self-host-kubernetes.md))
 - [Storage and encryption](./docs/self-host-storage.md)
 - [Production deployment](./docs/self-host-production.md)
 - [Backup and restore](./docs/self-host-backups.md)

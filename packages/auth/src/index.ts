@@ -1,7 +1,7 @@
 import { expo } from "@better-auth/expo";
 import { passkey } from "@better-auth/passkey";
 import type { ProductAnalytics, TransactionalEmailProvider } from "@rakazo/adapter-kit";
-import { SignupAttribution } from "@rakazo/contracts";
+import { LAST_SIGN_IN_COOKIE, SignupAttribution } from "@rakazo/contracts";
 import {
   displayName,
   emailAllowed,
@@ -29,7 +29,7 @@ import {
   getOAuthState,
 } from "better-auth/api";
 import { parseSetCookieHeader } from "better-auth/cookies";
-import { emailOTP, organization } from "better-auth/plugins";
+import { emailOTP, lastLoginMethod, organization } from "better-auth/plugins";
 import {
   ACCOUNT_EXPORT_TOKEN_PREFIX,
   consumeAccountExportToken,
@@ -539,6 +539,8 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
             }) as BetterAuthPlugin,
           ]
         : []),
+      // Marks the method on the sign-in page; written only alongside a new session cookie.
+      lastLoginMethod({ cookieName: LAST_SIGN_IN_COOKIE }),
       organization({
         allowUserToCreateOrganization: false,
         disableOrganizationDeletion: true,

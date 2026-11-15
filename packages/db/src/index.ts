@@ -59,13 +59,14 @@ export * from "./sandbox-allowance.js";
 export * from "./scope.js";
 export * from "./security-events.js";
 export * from "./sessions.js";
+export * from "./space-changes.js";
 export * from "./space-members.js";
 export * from "./space-settings.js";
 export * from "./spaces.js";
 export * from "./spending.js";
 export * from "./teaching-recordings.js";
 export * from "./thread-ask.js";
-export { primaryActiveRun } from "./thread-listing.js";
+export { botRunStatuses, primaryActiveRun } from "./thread-listing.js";
 export * from "./thread-reads.js";
 export type { ClaimedSteeringMessage, ClaimSteeringInput } from "./thread-steering.js";
 export {

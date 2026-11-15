@@ -41,8 +41,12 @@ export type PiCatalogEntry = {
   signIn?: ModelOAuthSignInMode;
   reasoning?: boolean;
   thinkingLevels?: ThinkingLevel[];
+  defaultCapabilities?: { images?: boolean; reasoning?: boolean; thinkingLevels?: ThinkingLevel[] };
   /** The model reads images. Left out where a connection setting decides it. */
   images?: boolean;
+  /** The model card's context window and output ceiling. */
+  contextWindow?: number;
+  maxTokens?: number;
   placeholder?: boolean;
   /** Provider models share one pinned HTTPS models-list base URL. */
   catalogProbe?: boolean;
@@ -61,7 +65,8 @@ const RECOMMENDED_MODEL_IDS: Readonly<Record<string, string>> = {
   openai: "gpt-6-luna",
   openrouter: "anthropic/claude-haiku-5.5",
   anthropic: "claude-haiku-5-5",
-  google: "gemini-3.8-flash",
+  google: "gemini-4-hydrogen",
+  "google-vertex": "gemini-4-hydrogen",
   groq: "openai/gpt-oss-120b",
   minimax: "MiniMax-M3",
 };
@@ -314,7 +319,10 @@ function buildPiCatalog(): PiCatalogEntry[] {
       ),
     );
     const modelIds = providerModels.map((model) => model.id);
-    const routingFields = cloudflareRoutingFields(provider.id);
+    const routingFields =
+      provider.id === "google-vertex"
+        ? (["projectId", "region"] as ("projectId" | "region")[])
+        : cloudflareRoutingFields(provider.id);
     for (const model of providerModels) {
       if (!catalogModelServesAgents(model)) hiddenCatalogKeys.add(`${provider.id}:${model.id}`);
       if (maximumModelCallCost(model.cost, 0, 0) !== undefined)
@@ -340,7 +348,11 @@ function buildPiCatalog(): PiCatalogEntry[] {
         // Its image support is the connection's own setting, not the catalog's.
         ...(provider.id === OPENAI_COMPATIBLE_PROVIDER_ID
           ? { placeholder: true, endpointPresets: COMPATIBLE_ENDPOINT_PRESETS }
-          : { images: model.input.includes("image") }),
+          : {
+              images: model.input.includes("image"),
+              contextWindow: model.contextWindow,
+              maxTokens: model.maxTokens,
+            }),
         ...(probeBaseUrl ? { catalogProbe: true } : {}),
         ...(routingFields ? { routingFields } : {}),
       });

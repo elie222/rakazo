@@ -38,7 +38,7 @@ export default function SpendingLimitSettings() {
   const [draft, setDraft] = useState<string | null>(null);
   // Bumped by saves, so a read started before one cannot overwrite its result.
   const generation = useRef(0);
-  // Bumped by each read, so a slower earlier list cannot replace a newer one.
+  // Bumped by each reload and blur, so stale reads cannot replace current results.
   const listReads = useRef(0);
 
   const reload = useCallback(() => {
@@ -46,11 +46,14 @@ export default function SpendingLimitSettings() {
     const read = ++listReads.current;
     void rpc("spendingLimit/get")
       .then((next) => {
-        if (started !== generation.current) return;
+        if (started !== generation.current || read !== listReads.current) return;
         setStatus(next);
         setLoadError(null);
       })
-      .catch((err) => setLoadError(errorText(err, t`Something went wrong. Try again.`)));
+      .catch((err) => {
+        if (started !== generation.current || read !== listReads.current) return;
+        setLoadError(errorText(err, t`Something went wrong. Try again.`));
+      });
     // The list is extra: without it the limit can still be set.
     void rpc("spendingLimit/payments")
       .then((next) => {
@@ -58,7 +61,14 @@ export default function SpendingLimitSettings() {
       })
       .catch(() => undefined);
   }, [t]);
-  useFocusEffect(reload);
+  useFocusEffect(
+    useCallback(() => {
+      reload();
+      return () => {
+        listReads.current += 1;
+      };
+    }, [reload]),
+  );
 
   const limit = status?.limit ?? null;
 

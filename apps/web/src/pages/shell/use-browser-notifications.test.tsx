@@ -78,7 +78,7 @@ const rpc = {
 const noBots: Bot[] = [];
 const bots = [{ id: "bot-b", name: "Scout", notifyOnFinish: true } as Bot];
 const groups: Array<{ id: string; snoozedUntil?: string | null }> = [{ id: "group-g" }];
-const roster = { changed: vi.fn(), lost: vi.fn() };
+const roster = { changed: vi.fn() };
 
 function Harness({ botId, groupId }: { botId?: string; groupId?: string }) {
   hook = useBrowserNotifications(
@@ -242,18 +242,13 @@ describe("useBrowserNotifications chat alerts", () => {
     expect(shown()).toHaveLength(1);
   });
 
-  it("passes roster signals on, and says when the stream that carries them drops", async () => {
+  it("passes roster signals on", async () => {
     roster.changed.mockClear();
-    roster.lost.mockClear();
     await open({ botId: "bot-a" });
     streams[0]!.push({ type: "roster" });
     streams[0]!.push({ type: "heartbeat" });
     await flush();
     expect(roster.changed).toHaveBeenCalledTimes(1);
-    expect(roster.lost).not.toHaveBeenCalled();
-    streams[0]!.fail(new Error("network"));
-    await flush();
-    expect(roster.lost).toHaveBeenCalledTimes(1);
     expect(shown()).toEqual([]);
   });
 
@@ -330,6 +325,22 @@ describe("useBrowserNotifications chat alerts", () => {
     root = createRoot(document.createElement("div"));
   });
 
+  it("preserves a question and reply while permission is pending", async () => {
+    FakeNotification.permission = "default";
+    visible = false;
+    await open({ botId: "bot-b" });
+    for (const event of [
+      reply("ask-pending", [{ kind: "ask", text: "Which repo?", status: "pending" }]),
+      reply("reply-pending", [{ kind: "text", text: "Saturday works." }]),
+    ]) {
+      act(() => hook.notifyBrowserForEvent(event, "thread-b", 4, true, "Scout", true, undefined));
+    }
+    expect(shown()).toEqual([]);
+    FakeNotification.permission = "granted";
+    act(() => hook.flushPendingBrowserNotifications());
+    expect(shown().map((notification) => notification[2])).toEqual(["thread-b:ask", "thread-b"]);
+  });
+
   it("drops a notification held for permission when the shell unmounts first", async () => {
     FakeNotification.permission = "default";
     visible = false;
@@ -402,7 +413,7 @@ describe("useBrowserNotifications chat alerts", () => {
         "group-g",
       ),
     );
-    expect(shown().map((row) => row[2])).toEqual(["thread-b", "thread-g"]);
+    expect(shown().map((row) => row[2])).toEqual(["thread-b:ask", "thread-g:ask"]);
     bots[0] = { id: "bot-b", name: "Scout", notifyOnFinish: true, snoozedUntil: earlier } as Bot;
     groups[0] = { id: "group-g", snoozedUntil: earlier };
     act(() =>

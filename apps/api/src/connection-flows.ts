@@ -362,7 +362,7 @@ export async function completeConnection(
   let connectedNow = false;
   if (settling(existing)) {
     // Hold the provider lock across remote completion, account-id resolution,
-    // providerRef persistence, and any overlapping revokeUnreferenced cleanup
+    // providerRef persistence, and any overlapping revokeUnreferencedAccounts cleanup
     // so a concurrent begin-loss cleanup cannot delete the account we are about
     // to persist. Clients poll, so while another call holds the slot or the lock,
     // report the row as it is instead of waiting on a pooled connection.

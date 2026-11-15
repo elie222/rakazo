@@ -13,6 +13,10 @@ Open **Settings → Models**. Under **Add provider**, pick a provider and connec
   machine. Paste the address, choose **Find models**, and pick one. Under **Advanced** you can set
   its context limit, whether it supports images, and its reasoning effort.
 
+For project-scoped connections, enter the **Project ID** and **Region** alongside the API key.
+Use the region where your model is available; the form starts with `global`. These settings
+belong to each connection and are used both when checking the key and when running a bot.
+
 Connected providers are listed under **Providers** and are available in every [space](./spaces.md).
 
 Have a ChatGPT, Claude, OpenCode, or other plan? See [Model subscriptions](./model-subscriptions.md)

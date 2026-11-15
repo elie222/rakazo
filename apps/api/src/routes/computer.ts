@@ -5,11 +5,9 @@ import { computerControlExpireJobKey } from "@rakazo/adapter-kit";
 import type { ComputerExecutionLease } from "@rakazo/adapters";
 import {
   applyTeachingDesktopInput,
-  COMPUTER_SCREEN_UNAVAILABLE,
   ComputerBusyError,
   checkpointAndStopComputer,
-  computerSupportsTerminal,
-  computerSupportsUpdate,
+  computerScreenUnavailableMessage,
   computerUpdateView,
   controlLeaseExpiresAt,
   diskUsedPercent,
@@ -25,6 +23,7 @@ import {
   resolveBotUploadPath,
   resolveBotWorkspaceCwd,
   resolveBotWorkspacePath,
+  sandboxKindCapabilities,
   scheduleComputerSleep,
   screenLeaseIdForRun,
   sleepDeferReason,
@@ -259,7 +258,7 @@ export function computerRoutes(ctx: RouterContext) {
         const bot = await repos.getBot(context.actor, input.botId);
         if (!bot.computer) throw new IsolationError();
         assertNotAnotherPersonsControl(bot.computer, context.actor);
-        if (!computerSupportsUpdate(bot.computer.kind))
+        if (!sandboxKindCapabilities(bot.computer.kind).inPlaceUpdate)
           throw new ORPCError("BAD_REQUEST", {
             message: "Computer recovery is not available on this device",
           });
@@ -269,6 +268,9 @@ export function computerRoutes(ctx: RouterContext) {
           if (error instanceof ComputerBusyError)
             throw new ORPCError("CONFLICT", { message: "Computer is busy" });
           throw error;
+        } finally {
+          // A refused start can still have dismissed earlier failures.
+          await deps.events.publishSpaceChange?.(context.actor.spaceId, "computerUpdates");
         }
       }),
       reset: authed.computer.reset.handler(async ({ context, input }) =>
@@ -278,7 +280,7 @@ export function computerRoutes(ctx: RouterContext) {
         const bot = await repos.getBot(context.actor, input.botId);
         if (!bot.computer) throw new IsolationError();
         assertNotAnotherPersonsControl(bot.computer, context.actor);
-        if (!computerSupportsUpdate(bot.computer.kind))
+        if (!sandboxKindCapabilities(bot.computer.kind).inPlaceUpdate)
           throw new ORPCError("BAD_REQUEST", {
             message: "Computer update is not available on this device",
           });
@@ -288,6 +290,8 @@ export function computerRoutes(ctx: RouterContext) {
           if (error instanceof ComputerBusyError)
             throw new ORPCError("CONFLICT", { message: "Computer is busy" });
           throw error;
+        } finally {
+          await deps.events.publishSpaceChange?.(context.actor.spaceId, "computerUpdates");
         }
       }),
       updates: authed.computer.updates.handler(async ({ context }) => {
@@ -317,7 +321,7 @@ export function computerRoutes(ctx: RouterContext) {
         throw new ORPCError("FORBIDDEN");
       }),
       dismissUpdate: authed.computer.dismissUpdate.handler(async ({ context, input }) => {
-        await deps.prisma.computerUpdate.updateMany({
+        const dismissed = await deps.prisma.computerUpdate.updateMany({
           where: {
             id: input.id,
             status: "failed",
@@ -328,6 +332,8 @@ export function computerRoutes(ctx: RouterContext) {
           },
           data: { status: "dismissed" },
         });
+        if (dismissed.count > 0)
+          await deps.events.publishSpaceChange?.(context.actor.spaceId, "computerUpdates");
         return { ok: true as const };
       }),
       dismissDiskWarning: authed.computer.dismissDiskWarning.handler(async ({ context, input }) => {
@@ -611,7 +617,7 @@ export function computerRoutes(ctx: RouterContext) {
           !computer?.providerRef ||
           computer.state !== "running" ||
           !deps.sandbox.connectTerminal ||
-          !computerSupportsTerminal(computer.kind)
+          !sandboxKindCapabilities(computer.kind).terminal
         ) {
           return { url: null };
         }
@@ -680,7 +686,7 @@ export function computerRoutes(ctx: RouterContext) {
           )
           .catch(async (error: unknown) => {
             if (isComputerScreenUnavailable(error)) {
-              throw new ORPCError("CONFLICT", { message: COMPUTER_SCREEN_UNAVAILABLE });
+              throw new ORPCError("CONFLICT", { message: computerScreenUnavailableMessage(error) });
             }
             return clearGoneSandbox(deps, computer, error);
           });

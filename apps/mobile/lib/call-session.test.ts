@@ -1,7 +1,10 @@
+import type { AiConsentStatus } from "@rakazo/contracts";
+import { AI_CONSENT_REQUIRED } from "@rakazo/contracts";
 import {
   AiConsentBlocked,
   CALL_FAREWELL_TIMEOUT_MS,
   callIdFromClientNonce,
+  ensureAiDataConsent,
   INTERIM_BARGE_IN_MS,
 } from "@rakazo/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -11,6 +14,7 @@ vi.mock("./haptics", () => ({ hapticImpact: vi.fn(), hapticSuccess: vi.fn() }));
 
 import type { CallClip, CallDeps, CallEnded, DictationHandlers } from "./call-session";
 import {
+  ECHO_GUARD_MS,
   ExpectedTurnFailure,
   endCall,
   endCallBeforeSessionEnd,
@@ -720,6 +724,115 @@ describe("mobile call session", () => {
       vi.unstubAllGlobals();
       await saveServerHeaders(server, {});
     }
+  });
+
+  describe("voice consent before a recorded clip is uploaded", () => {
+    const server = "https://api.example.test";
+    let allowed = false;
+    const prompt = vi.fn<(...args: unknown[]) => Promise<boolean>>();
+    const allow = vi.fn(async () => {
+      allowed = true;
+    });
+    const fetchImpl = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit) =>
+        new Response(JSON.stringify({ text: "transcribed words" })),
+    );
+
+    beforeEach(() => {
+      allowed = false;
+      prompt.mockReset();
+      allow.mockClear();
+      fetchImpl.mockClear();
+      vi.mocked(reportMobileError).mockClear();
+      vi.stubGlobal("fetch", fetchImpl);
+      // The real disclosure flow, with the server's status and the user's answer faked.
+      vi.mocked(ensureVoiceConsent).mockImplementation(() =>
+        ensureAiDataConsent({
+          uses: ["voice"],
+          status: async (): Promise<AiConsentStatus> => ({
+            scope: "space",
+            version: "v1",
+            recipients: [{ key: "voice", name: "Voice", use: "voice", detail: "Audio", allowed }],
+          }),
+          prompt,
+          allow,
+        }),
+      );
+    });
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+      vi.mocked(ensureVoiceConsent).mockReset();
+    });
+
+    function ungreetedCall() {
+      const fake = fakes();
+      const { transcribe: _transcribe, ...deps } = fake.deps;
+      startCall(
+        {
+          botId: "bot-1",
+          botName: "Ada",
+          requestContext: {
+            apiBase: server,
+            headers: { authorization: "Bearer token" },
+            sessionGeneration: currentSessionGeneration(),
+          },
+        },
+        deps,
+      );
+      return fake;
+    }
+
+    it("holds the upload until the caller allows the recipient", async () => {
+      const answer = deferred<boolean>();
+      prompt.mockReturnValueOnce(answer.promise);
+      const fake = ungreetedCall();
+      await flush();
+      fake.say("spoken words");
+      await flush();
+
+      expect(prompt).toHaveBeenCalledOnce();
+      expect(fetchImpl).not.toHaveBeenCalled();
+
+      answer.resolve(true);
+      await flush();
+      await flush();
+      expect(allow).toHaveBeenCalledOnce();
+      expect(fetchImpl).toHaveBeenCalledOnce();
+      expect(fake.send).toHaveBeenCalledWith("bot-1", "transcribed words", expect.any(String));
+    });
+
+    it("mutes without uploading when the caller refuses, as for speech", async () => {
+      prompt.mockResolvedValueOnce(false);
+      const fake = ungreetedCall();
+      await flush();
+      fake.say("spoken words");
+      await flush();
+      await flush();
+
+      expect(fetchImpl).not.toHaveBeenCalled();
+      expect(fake.send).not.toHaveBeenCalled();
+      expect(fake.recordings).toHaveLength(1);
+      expect(reportMobileError).not.toHaveBeenCalled();
+      expect(getSnapshot()).toMatchObject({
+        phase: "listening",
+        muted: true,
+        caption: AI_CONSENT_REQUIRED,
+      });
+    });
+
+    it("uploads without asking again once the recipient is allowed", async () => {
+      allowed = true;
+      const fake = ungreetedCall();
+      await flush();
+      fake.say("spoken words");
+      await flush();
+      await flush();
+
+      expect(prompt).not.toHaveBeenCalled();
+      expect(fetchImpl).toHaveBeenCalledOnce();
+      expect(fake.send).toHaveBeenCalledWith("bot-1", "transcribed words", expect.any(String));
+    });
   });
 
   it("mutes after a consent refusal instead of reopening the microphone or resending", async () => {
@@ -1845,6 +1958,163 @@ describe("mobile call session on a timer", () => {
     fake.speeches[1]?.resolve();
     await tick();
     expect(getSnapshot()).toBeNull();
+  });
+
+  describe("Android echo guard and playback mic isolation", () => {
+    beforeEach(() => {
+      device.os = "android";
+    });
+    afterEach(() => {
+      device.os = "ios";
+    });
+
+    it("closes on-device dictation during playback and waits ECHO_GUARD_MS before reopening", async () => {
+      const fake = fakes({ onDevice: true });
+      startCall({ botId: "bot-1", botName: "Ada", transcribe: false }, fake.deps);
+      await tick();
+      expect(fake.signals).toHaveLength(1);
+      expect(fake.signals[0]?.aborted).toBe(false);
+
+      fake.hear("status please");
+      await tick();
+      fake.replyWith(
+        "message-1",
+        "I checked the staging deploy logs and all integration tests are green today.",
+      );
+      await tick();
+      expect(getSnapshot()?.phase).toBe("speaking");
+      // Playback did not open a new dictation session while speaking on Android.
+      expect(fake.signals).toHaveLength(1);
+      expect(fake.signals[0]?.aborted).toBe(true);
+
+      // Late interim or final events during Android playback must not barge in or reopen the mic.
+      fake.interim("unrelated noisy room chatter over speaker");
+      await tick(INTERIM_BARGE_IN_MS);
+      expect(fake.stopSpeaking).not.toHaveBeenCalled();
+      fake.hear("I checked the staging deploy logs and all integration tests are green");
+      await tick();
+      expect(fake.send).toHaveBeenCalledTimes(1);
+      expect(fake.signals).toHaveLength(1);
+
+      fake.speeches[0]?.resolve();
+      await tick(ECHO_GUARD_MS - 1);
+      expect(getSnapshot()?.phase).toBe("speaking");
+      expect(fake.signals).toHaveLength(1);
+
+      await tick(1);
+      expect(getSnapshot()?.phase).toBe("listening");
+      expect(fake.signals).toHaveLength(2);
+      expect(fake.signals[1]?.aborted).toBe(false);
+    });
+
+    it("waits ECHO_GUARD_MS after playback before opening recording fallback on Android", async () => {
+      const fake = fakes();
+      startCall({ botId: "bot-1", botName: "Ada" }, fake.deps);
+      await tick();
+      expect(fake.recordings).toHaveLength(1);
+
+      fake.say("hello");
+      await tick();
+      fake.replyWith("message-1", "Hello there.");
+      await tick();
+      expect(fake.recordings).toHaveLength(1);
+
+      fake.speeches[0]?.resolve();
+      await tick(ECHO_GUARD_MS - 1);
+      expect(fake.recordings).toHaveLength(1);
+      expect(getSnapshot()?.phase).toBe("speaking");
+
+      await tick(1);
+      expect(fake.recordings).toHaveLength(2);
+      expect(getSnapshot()?.phase).toBe("listening");
+    });
+
+    it.each([false, true])(
+      "keeps the mic closed after a late send failure (guard: %s)",
+      async (duringGuard) => {
+        const fake = fakes({ onDevice: true });
+        const pending = deferred<string | undefined>();
+        fake.deps.send = () => pending.promise;
+        startCall({ botId: "bot-1", botName: "Ada", transcribe: false }, fake.deps);
+        await tick();
+        fake.hear("hello");
+        await tick();
+        fake.replyWith("message-1", "Hello there.");
+        await tick();
+        if (duringGuard) {
+          fake.speeches[0]?.resolve();
+          await tick(200);
+        }
+        pending.reject(new Error("send disconnected"));
+        await tick();
+        expect(getSnapshot()?.phase).toBe("speaking");
+        expect(fake.signals).toHaveLength(1);
+        if (!duringGuard) fake.speeches[0]?.resolve();
+        await tick(ECHO_GUARD_MS);
+        expect(getSnapshot()?.phase).toBe("listening");
+        expect(fake.signals).toHaveLength(2);
+      },
+    );
+
+    it("handles mute and unmute cleanly across the Android echo guard window", async () => {
+      const fake = fakes({ onDevice: true });
+      startCall({ botId: "bot-1", botName: "Ada", transcribe: false }, fake.deps);
+      await tick();
+      fake.hear("hello");
+      await tick();
+      fake.replyWith("message-1", "Hi there.");
+      await tick();
+
+      fake.speeches[0]?.resolve();
+      await tick(200);
+      toggleMute();
+      await tick(ECHO_GUARD_MS);
+      // Guard transitions to listening while keeping the mic closed because muted is true.
+      expect(getSnapshot()).toMatchObject({ phase: "listening", muted: true });
+      expect(fake.signals).toHaveLength(1);
+
+      toggleMute();
+      await tick();
+      expect(getSnapshot()).toMatchObject({ phase: "listening", muted: false });
+      expect(fake.signals).toHaveLength(2);
+    });
+
+    it("cancels the pending Android echo guard on hang-up and on a follow-up reply", async () => {
+      const fake = fakes({ onDevice: true });
+      startCall({ botId: "bot-1", botName: "Ada", transcribe: false }, fake.deps);
+      await tick();
+      fake.hear("hello");
+      await tick();
+      fake.replyWith("message-1", "First part.");
+      await tick();
+
+      fake.speeches[0]?.resolve();
+      await tick(200);
+      // A second reply supersedes the pending guard immediately.
+      fake.replyWith("message-2", "Second part.");
+      await tick(ECHO_GUARD_MS);
+      expect(getSnapshot()?.phase).toBe("speaking");
+      expect(fake.signals).toHaveLength(1);
+
+      fake.speeches[1]?.resolve();
+      await tick(200);
+      endCall();
+      await tick(ECHO_GUARD_MS);
+      expect(getSnapshot()).toBeNull();
+      expect(fake.signals).toHaveLength(1);
+    });
+
+    it("hangs up immediately after a farewell on Android without waiting out the echo guard", async () => {
+      const fake = fakes({ onDevice: true });
+      const id = startCall({ botId: "bot-1", botName: "Ada", transcribe: false }, fake.deps);
+      await tick();
+      fake.endedCall(id, "Goodbye.");
+      await tick();
+
+      fake.speeches[0]?.resolve();
+      await tick(0);
+      expect(getSnapshot()).toBeNull();
+    });
   });
 
   it("retries the first snapshot load instead of losing the feed", async () => {

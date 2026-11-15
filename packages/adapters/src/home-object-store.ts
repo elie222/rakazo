@@ -8,6 +8,7 @@ import type {
   ObjectStorage,
   PortableFile,
 } from "@rakazo/adapter-kit";
+import { retry } from "@rakazo/core";
 import type { ContentKeyRing, ContentLocation, DataKey, PrismaClient } from "@rakazo/db";
 import {
   ContentDecryptionError,
@@ -29,6 +30,7 @@ import {
   unpackHome,
 } from "./home-archive.js";
 import { objectStorageConfigFromEnv, S3ObjectStorage } from "./s3-object-storage.js";
+import { sandboxKindCapabilities } from "./sandbox-kind-capabilities.js";
 
 const HOMES_PREFIX = "homes/";
 const SWEEP_INTERVAL_MS = 60 * 60_000;
@@ -193,16 +195,13 @@ export class ObjectAgentHomeStore extends LocalAgentHomeStore {
    * over from them. A Docker computer's mounted copy is never replaced, so that still fails.
    */
   override async removeFolders(botId: string, parent: string, names: readonly string[]) {
-    for (let attempt = 1; ; attempt++) {
-      try {
-        return await this.removeFoldersOnce(botId, parent, names);
-      } catch (error) {
-        const superseded =
-          error instanceof StaleHomeCacheError || error instanceof HomeSaveConflictError;
-        if (!superseded || attempt >= REMOVE_FOLDERS_ATTEMPTS || (await this.isLiveCache(botId)))
-          throw error;
-      }
-    }
+    return retry(() => this.removeFoldersOnce(botId, parent, names), {
+      attempts: REMOVE_FOLDERS_ATTEMPTS,
+      delayMs: 0,
+      retryable: async (error) =>
+        (error instanceof StaleHomeCacheError || error instanceof HomeSaveConflictError) &&
+        !(await this.isLiveCache(botId)),
+    });
   }
 
   private async removeFoldersOnce(botId: string, parent: string, names: readonly string[]) {
@@ -282,7 +281,7 @@ export class ObjectAgentHomeStore extends LocalAgentHomeStore {
     let evicted = 0;
     for (const botId of homes) {
       const kind = kinds.get(botId);
-      if (!kind || kind === "docker") continue;
+      if (!kind || sandboxKindCapabilities(kind).serverHomeMount === "always") continue;
       if (await this.evictCache(botId, { idleBefore: now - IDLE_CACHE_MS })) evicted += 1;
     }
     return evicted;
@@ -379,7 +378,7 @@ export class ObjectAgentHomeStore extends LocalAgentHomeStore {
 
   private async isLiveCache(botId: string) {
     const kind = (await this.records.kinds([botId])).get(botId);
-    return kind === undefined || kind === "docker";
+    return kind === undefined || sandboxKindCapabilities(kind).serverHomeMount === "always";
   }
 
   private async hasCache(botId: string) {

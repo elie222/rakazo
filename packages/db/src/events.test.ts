@@ -134,7 +134,7 @@ describe("finalizeRun", () => {
         .fn()
         .mockRejectedValueOnce(conflict)
         .mockImplementation(async (operation: (client: typeof tx) => unknown) => operation(tx));
-      const publish = vi.fn(async () => undefined);
+      const publish = vi.fn(async (_topic: string, _payload: string) => undefined);
 
       await expect(
         finalizeRun(
@@ -158,7 +158,10 @@ describe("finalizeRun", () => {
         where: { runId: "run-1", kind: "runtime_checkpoint", status: "runtime_checkpoint" },
       });
       expect(createEvent).toHaveBeenCalledOnce();
-      expect(publish).toHaveBeenCalledOnce();
+      expect(publish.mock.calls.map(([topic]) => topic)).toEqual([
+        "thread:thread-1",
+        "space-changes:space-1",
+      ]);
       // A finished run never resumes to read a waiting secret answer.
       expect(tx.secret.deleteMany).toHaveBeenCalledWith({
         where: {

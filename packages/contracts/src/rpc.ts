@@ -165,6 +165,7 @@ import {
   IntegrationProviderConfigSchema,
   IntegrationSetupStateSchema,
 } from "./integration-settings.js";
+import { LabFeatureSchema } from "./labs.js";
 import {
   BotMcpServerSchema,
   McpServerConfigInput,
@@ -181,6 +182,7 @@ import {
   ModelConnectionTargetSchema,
   ModelCredentialSchema,
   ModelOAuthBeginSchema,
+  ModelSettingsSaveSchema,
   OPENAI_COMPATIBLE_PROVIDER_ID,
 } from "./model-connections.js";
 import { ModelHeadersSchema } from "./model-headers.js";
@@ -287,6 +289,10 @@ const threadSendWithRoutinesInput = threadSendFields.safeExtend({
   routineIds: z.array(Id).min(1).max(64),
 });
 
+/** What a Space change signal tells apps to read again; each is a `notifications.subscribe` frame. */
+export const SpaceChangeKind = z.enum(["computerUpdates", "runs", "routines"]);
+export type SpaceChangeKind = z.infer<typeof SpaceChangeKind>;
+
 const spaceName = z.string().trim().min(1).max(60);
 const organizationName = spaceName;
 /** Every organization the signed-in user belongs to, and which one the current Space belongs to. */
@@ -338,6 +344,8 @@ export const appContract = {
           client: BillingClientSchema,
           /** Billing period of the own-key plan's checkout; monthly when omitted. */
           interval: ByokIntervalSchema.optional(),
+          /** The own-key plan's tier; Standard when omitted. */
+          tier: ByokTierSchema.optional(),
         }),
       )
       /** `url` is the checkout to pay for the own-key plan before it has access. */
@@ -397,13 +405,16 @@ export const appContract = {
             timezone: TimeZoneSchema.nullable().optional(),
             /** The language the app runs in, so emails can be written in it. */
             locale: AppLocaleSchema.optional(),
+            /** Replaces the account's Labs list. */
+            labs: z.array(LabFeatureSchema).optional(),
           })
           .refine(
             (input) =>
               input.avatarStyle !== undefined ||
               input.botAvatarSet !== undefined ||
               input.timezone !== undefined ||
-              input.locale !== undefined,
+              input.locale !== undefined ||
+              input.labs !== undefined,
             { message: "Nothing to update" },
           ),
       )
@@ -587,6 +598,7 @@ export const appContract = {
     rename: oc
       .input(z.object({ credentialId: Id, label: ModelConnectionLabelSchema }))
       .output(z.object({ ok: z.literal(true) })),
+    saveModelSettings: oc.input(ModelSettingsSaveSchema).output(z.object({ ok: z.literal(true) })),
     /** Removes one connection, or every connection of the provider when older apps omit it. */
     disconnect: oc
       .input(z.object({ provider: z.string().trim().min(1), credentialId: Id.optional() }))
@@ -620,7 +632,14 @@ export const appContract = {
     restore: oc.input(botId).output(z.object({ ok: z.literal(true) })),
     remove: oc
       .input(z.object({ botId: Id, deleteMemories: z.boolean().default(false) }))
-      .output(z.object({ ok: z.literal(true) })),
+      // Optional for clients talking to older servers; current servers return committed group IDs.
+      .output(
+        z.object({
+          ok: z.literal(true),
+          removedGroupIds: z.array(Id).optional(),
+          alreadyRemoved: z.boolean().optional(),
+        }),
+      ),
     /** Groups this delete removes because fewer than two active bots would remain. */
     removePreview: oc.input(botId).output(z.array(z.object({ id: Id, name: z.string() }))),
     emailAddress: oc.input(botId).output(BotEmailAddressSchema),
@@ -914,6 +933,15 @@ export const appContract = {
       .output(SpaceMemoryConfigSchema),
     setDefaultScope: oc
       .input(z.object({ defaultMemoryScope: MemoryScopeSchema }))
+      .output(SpaceMemoryConfigSchema),
+    /** Change a connected provider's settings; credentials left out keep the stored ones. */
+    updateProvider: oc
+      .input(
+        z.object({
+          settings: z.record(z.string(), z.string()),
+          credentials: z.record(z.string(), z.string()).default({}),
+        }),
+      )
       .output(SpaceMemoryConfigSchema),
     disconnectProvider: oc.output(z.object({ ok: z.literal(true) })),
   },
@@ -1472,12 +1500,14 @@ export const appContract = {
   notifications: {
     /**
      * Run alerts for the signed-in user's chats in this space, live while connected. `roster`
-     * says `spaces.list` may have changed.
+     * says `spaces.list` may have changed, `computerUpdates` that `computer.updates` may have,
+     * `runs` that `runs.list` and `routines.history` may have, and `routines` that `routines.list`
+     * may have; each is sent once when the stream opens.
      */
     subscribe: oc.output(
       eventIterator(
         z.object({
-          type: z.enum(["alert", "roster", "heartbeat"]),
+          type: z.enum(["alert", "roster", ...SpaceChangeKind.options, "heartbeat"]),
           alert: ChatAlertSchema.optional(),
         }),
       ),
@@ -1594,6 +1624,10 @@ export const appContract = {
             speechModel: z.string().max(64).optional(),
             /** Self-hosted (OpenAI-compatible) server address and model ids. */
             baseUrl: z.string().max(2048).optional(),
+            /** Blank means the server at `baseUrl` transcribes; omitted keeps the saved one. */
+            sttBaseUrl: z.string().max(2048).optional(),
+            /** Sent only to the transcription server; blank keeps the saved one. */
+            sttApiKey: z.string().max(4096).optional(),
             ttsModel: z.string().max(200).optional(),
             sttModel: z.string().max(200).optional(),
             /** Where the connection becomes the default voice. */

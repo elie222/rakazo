@@ -14,6 +14,7 @@ import {
   DEFAULT_COMPATIBLE_TTS_MODEL,
   OPENAI_COMPATIBLE_PROVIDER_ID,
 } from "@rakazo/contracts";
+import { deadlineSignal } from "@rakazo/core";
 import {
   assertAllowedOpenAiCompatibleUrl,
   assertHttpsForKeyedOpenAiCompatibleUrl,
@@ -26,7 +27,6 @@ import {
   readVoiceJson,
   readVoiceText,
   speechUploadName,
-  voiceDeadline,
   voiceHttpError,
   voiceLanguageHint,
   voiceRequestError,
@@ -53,7 +53,11 @@ const MAX_VOICE_LABEL_LENGTH = 120;
 export interface OpenAiCompatibleVoiceSecret {
   kind: "openai_compatible";
   baseUrl: string;
+  /** An explicit transcription server. Absent when transcription inherits the main connection. */
+  sttBaseUrl?: string;
   apiKey?: string;
+  /** Sent only to `sttBaseUrl`; `apiKey` never reaches the transcription server. */
+  sttApiKey?: string;
   ttsModel: string;
   sttModel: string;
 }
@@ -69,14 +73,18 @@ function modelIdOrDefault(value: string | undefined, fallback: string, label: st
 
 /**
  * Validate the connection form and return the secret plaintext to store. The base URL
- * gets /v1 like model connections do; public hosts stay behind the same gate. Blank
- * fields keep the previous key and models, but only for the same server, so a key is
- * never carried to a new address.
+ * gets /v1 like model connections do; public hosts stay behind the same gate, and so
+ * does a separate transcription server, which has its own key. Blank fields keep the
+ * previous keys and models, but only for the same server, so a key is never carried to
+ * a new address. An omitted transcription server keeps the previous one; blank means the
+ * main server transcribes.
  */
 export function serializeOpenAiCompatibleVoiceSecret(
   input: {
     baseUrl: string;
+    sttBaseUrl?: string;
     apiKey?: string;
+    sttApiKey?: string;
     ttsModel?: string;
     sttModel?: string;
   },
@@ -87,22 +95,54 @@ export function serializeOpenAiCompatibleVoiceSecret(
   const baseUrl = normalizeOpenAiCompatibleBaseUrl(input.baseUrl);
   const previous = previousPlaintext ? tryParseSecret(previousPlaintext) : undefined;
   const same = previous?.baseUrl === baseUrl ? previous : undefined;
+  // The transcription server and its key belong together, whatever happens to the main one.
+  const sttInput = input.sttBaseUrl === undefined ? previous?.sttBaseUrl : input.sttBaseUrl.trim();
+  let sttUrl: URL | undefined;
+  try {
+    sttUrl = sttInput ? assertAllowedOpenAiCompatibleUrl(sttInput, policy) : undefined;
+  } catch (error) {
+    throw new Error(
+      `Transcription server URL: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  const sttBaseUrl = sttInput ? normalizeOpenAiCompatibleBaseUrl(sttInput) : undefined;
+  const sameStt =
+    previous && (previous.sttBaseUrl ?? previous.baseUrl) === (sttBaseUrl ?? baseUrl)
+      ? previous
+      : undefined;
   const apiKey = input.apiKey?.trim() || same?.apiKey;
-  if (apiKey && !API_KEY_PATTERN.test(apiKey)) {
-    throw new Error("That API key has characters a key cannot contain.");
+  const sttApiKey = sttBaseUrl
+    ? input.sttApiKey?.trim() ||
+      (previous?.sttBaseUrl === sttBaseUrl ? previous.sttApiKey : undefined)
+    : undefined;
+  for (const key of [apiKey, sttApiKey]) {
+    if (key && !API_KEY_PATTERN.test(key)) {
+      throw new Error("That API key has characters a key cannot contain.");
+    }
   }
   assertHttpsForKeyedOpenAiCompatibleUrl(url, apiKey);
+  if (sttUrl) {
+    try {
+      assertHttpsForKeyedOpenAiCompatibleUrl(sttUrl, sttApiKey);
+    } catch (error) {
+      throw new Error(
+        `Transcription server URL: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
   const secret: OpenAiCompatibleVoiceSecret = {
     kind: "openai_compatible",
     baseUrl,
+    ...(sttBaseUrl ? { sttBaseUrl: sttBaseUrl } : {}),
     ...(apiKey ? { apiKey } : {}),
+    ...(sttApiKey ? { sttApiKey } : {}),
     ttsModel: modelIdOrDefault(
       input.ttsModel || same?.ttsModel,
       DEFAULT_COMPATIBLE_TTS_MODEL,
       "Speech",
     ),
     sttModel: modelIdOrDefault(
-      input.sttModel || same?.sttModel,
+      input.sttModel || sameStt?.sttModel,
       DEFAULT_COMPATIBLE_STT_MODEL,
       "Transcription",
     ),
@@ -132,7 +172,13 @@ export function parseOpenAiCompatibleVoiceSecret(plaintext: string): OpenAiCompa
   return {
     kind: "openai_compatible",
     baseUrl: record.baseUrl,
+    ...(typeof record.sttBaseUrl === "string" && record.sttBaseUrl
+      ? { sttBaseUrl: record.sttBaseUrl }
+      : {}),
     ...(typeof record.apiKey === "string" && record.apiKey ? { apiKey: record.apiKey } : {}),
+    ...(typeof record.sttApiKey === "string" && record.sttApiKey
+      ? { sttApiKey: record.sttApiKey }
+      : {}),
     ttsModel: typeof record.ttsModel === "string" ? record.ttsModel : DEFAULT_COMPATIBLE_TTS_MODEL,
     sttModel: typeof record.sttModel === "string" ? record.sttModel : DEFAULT_COMPATIBLE_STT_MODEL,
   };
@@ -141,6 +187,8 @@ export function parseOpenAiCompatibleVoiceSecret(plaintext: string): OpenAiCompa
 /** The non-secret part of a saved connection, for settings and disclosures. */
 export interface OpenAiCompatibleVoiceServer {
   endpoint: string;
+  /** Empty when the main server transcribes. */
+  sttEndpoint: string;
   ttsModel: string;
   sttModel: string;
 }
@@ -154,6 +202,7 @@ export function openAiCompatibleVoiceServer(
   try {
     return {
       endpoint: normalizeOpenAiCompatibleBaseUrl(secret.baseUrl),
+      sttEndpoint: secret.sttBaseUrl ? normalizeOpenAiCompatibleBaseUrl(secret.sttBaseUrl) : "",
       ttsModel: secret.ttsModel,
       sttModel: secret.sttModel,
     };
@@ -274,14 +323,18 @@ export function parseCompatibleVoiceList(body: unknown): VoiceInfo[] {
 }
 
 function headers(secret: OpenAiCompatibleVoiceSecret, extra?: Record<string, string>) {
+  return bearer(secret.apiKey, extra);
+}
+
+function bearer(apiKey: string | undefined, extra?: Record<string, string>) {
   return {
-    ...(secret.apiKey ? { authorization: `Bearer ${secret.apiKey}` } : {}),
+    ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}),
     ...extra,
   };
 }
 
-function endpoint(secret: OpenAiCompatibleVoiceSecret, path: string): string {
-  return `${normalizeOpenAiCompatibleBaseUrl(secret.baseUrl)}/${path}`;
+function endpoint(secret: OpenAiCompatibleVoiceSecret, path: string, baseUrl = secret.baseUrl) {
+  return `${normalizeOpenAiCompatibleBaseUrl(baseUrl)}/${path}`;
 }
 
 /**
@@ -315,7 +368,7 @@ export class OpenAiCompatibleVoiceProvider implements VoiceProvider {
     } catch (error) {
       return { ok: false, message: (error as Error).message };
     }
-    const signal = voiceDeadline(context.signal, VERIFY_DEADLINE_MS);
+    const signal = deadlineSignal(VERIFY_DEADLINE_MS, context.signal);
     const origin = new URL(secret.baseUrl).origin;
     try {
       let res = await this.fetch(endpoint(secret, "models"), {
@@ -351,7 +404,7 @@ export class OpenAiCompatibleVoiceProvider implements VoiceProvider {
         `${endpoint(secret, "audio/voices")}?model=${encodeURIComponent(secret.ttsModel)}`,
         {
           headers: headers(secret),
-          signal: voiceDeadline(context.signal, LIST_VOICES_DEADLINE_MS),
+          signal: deadlineSignal(LIST_VOICES_DEADLINE_MS, context.signal),
         },
       );
       if (!res.ok) {
@@ -370,7 +423,7 @@ export class OpenAiCompatibleVoiceProvider implements VoiceProvider {
 
   async synthesize(request: VoiceSynthesizeRequest, context: AdapterContext): Promise<SpeechClip> {
     const secret = parseOpenAiCompatibleVoiceSecret(request.apiKey);
-    const signal = voiceDeadline(request.signal ?? context.signal, SPEAK_DEADLINE_MS);
+    const signal = deadlineSignal(SPEAK_DEADLINE_MS, request.signal ?? context.signal);
     const langCode = kokoroLangCode(request.voiceId);
     const res = await this.fetch(endpoint(secret, "audio/speech"), {
       method: "POST",
@@ -400,6 +453,7 @@ export class OpenAiCompatibleVoiceProvider implements VoiceProvider {
     context: AdapterContext,
   ): Promise<{ text: string }> {
     const secret = parseOpenAiCompatibleVoiceSecret(request.apiKey);
+    const apiKey = secret.sttBaseUrl ? secret.sttApiKey : secret.apiKey;
     const form = new FormData();
     form.set("model", secret.sttModel);
     // mlx-audio streams NDJSON unless asked for the OpenAI shape.
@@ -411,16 +465,17 @@ export class OpenAiCompatibleVoiceProvider implements VoiceProvider {
       new Blob([new Uint8Array(request.audio)], { type: request.mimeType || "audio/webm" }),
       speechUploadName(request.mimeType),
     );
-    const res = await this.fetch(endpoint(secret, "audio/transcriptions"), {
+    const url = endpoint(secret, "audio/transcriptions", secret.sttBaseUrl);
+    const res = await this.fetch(url, {
       method: "POST",
-      headers: headers(secret),
+      headers: bearer(apiKey),
       body: form,
-      signal: voiceDeadline(request.signal ?? context.signal, TRANSCRIBE_DEADLINE_MS),
+      signal: deadlineSignal(TRANSCRIBE_DEADLINE_MS, request.signal ?? context.signal),
     });
     const raw = await readVoiceText(res);
     const type = mediaType(res);
     if (!res.ok) {
-      throw serverError(res.status, "transcribing", parseJson(raw), secret.apiKey);
+      throw serverError(res.status, "transcribing", parseJson(raw), apiKey);
     }
     if (type && type !== "text/plain" && type !== "application/json") {
       throw new Error(`${PROVIDER_NAME} did not return a transcript.`);

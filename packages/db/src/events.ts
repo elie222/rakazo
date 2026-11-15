@@ -1,5 +1,5 @@
 import type { ProductAnalytics, RealtimeFanout } from "@rakazo/adapter-kit";
-import type { ChatAlert, MessageBlock, ProductEvent } from "@rakazo/contracts";
+import type { ChatAlert, MessageBlock, ProductEvent, SpaceChangeKind } from "@rakazo/contracts";
 import {
   AnalyticsTrigger,
   hasThinkingActivityMarker,
@@ -52,6 +52,7 @@ import { createRowId } from "./row-id.js";
 import { deleteRunSecretsInTransaction } from "./run-secrets.js";
 import { isRunResponse, readRunTimingFields } from "./run-timing.js";
 import { RUN_TURN_CHECKPOINT_KIND } from "./run-turn-checkpoint.js";
+import { followSpaceChanges, publishSpaceChange } from "./space-changes.js";
 import { SpaceDeletionInProgressError, spaceTakesWork } from "./spaces.js";
 import { draftRecordingsOfLease } from "./teaching-recordings.js";
 import type { AnswerRunInput, PauseRunForInput, RunSecretWriter } from "./thread-ask.js";
@@ -113,6 +114,8 @@ export interface ThreadEvents {
   ): AsyncGenerator<ChatAlert>;
   publishRosterChange?(change: RosterChange): Promise<void>;
   followRosterChanges?(userId: string, signal?: AbortSignal): AsyncGenerator<void>;
+  publishSpaceChange?(spaceId: string, kind: SpaceChangeKind): Promise<void>;
+  followSpaceChanges?(spaceId: string, signal?: AbortSignal): AsyncGenerator<SpaceChangeKind>;
   answerRunInput(input: AnswerRunInput): Promise<boolean>;
   append(input: AppendEventInput): Promise<ProductEvent>;
   claimSteering(input: ClaimSteeringInput): Promise<ClaimedSteeringMessage[]>;
@@ -246,7 +249,9 @@ export function createThreadEvents(
     ...(realtime && {
       followRosterChanges: (userId, signal) =>
         followRosterChanges(realtime, userId, () => loadRosterScope(prisma, userId), signal),
+      followSpaceChanges: (spaceId, signal) => followSpaceChanges(realtime, spaceId, signal),
     }),
+    publishSpaceChange: (spaceId, kind) => publishSpaceChange(realtime, spaceId, kind),
     answerRunInput: (input) => answerRunInput(prisma, input, realtime, options.runSecretWriter),
     append: (input) => appendEvent(prisma, input, realtime, options.analytics),
     claimSteering: (input) => claimSteering(prisma, input),
@@ -271,7 +276,7 @@ export async function clearThread(
   realtime?: RealtimeFanout,
 ): Promise<ClearThreadResult> {
   const committed = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-    // Group before thread, the order every group writer uses (see lockOwnedGroup).
+    // Group before thread, the order every group writer uses (see lockSpaceGroup).
     if (input.groupId) {
       await tx.$queryRaw`
         SELECT id FROM chat_groups
@@ -382,6 +387,8 @@ export async function clearThread(
     };
   }, THREAD_LOCK_TRANSACTION_OPTIONS);
   await notifyRealtime(realtime, committed.event.threadId, committed.event.seq);
+  if (committed.cancelledRunIds.length > 0)
+    await publishSpaceChange(realtime, input.spaceId, "runs");
   if (!input.groupId && committed.userId)
     await realtime?.publish(`incoming-calls:${committed.userId}`, "").catch(() => undefined);
   // Legacy execution bindings point at runs of pre-lease releases, which kept writing
@@ -615,6 +622,7 @@ export async function sendUserMessage(
     // The event is durable; subscribers recover it from their persisted cursor.
     getLogger().error("user message realtime notification", error);
   });
+  if (committed.run) await publishSpaceChange(realtime, input.spaceId, "runs");
   return {
     messageId: committed.message.id,
     seq: committed.message.seq,
@@ -737,6 +745,7 @@ export async function finalizeRun(
   const committed = await withTransactionRetry(() => finalizeRunOnce(prisma, input));
   if (!committed) return false;
   await notifyRealtime(realtime, committed.threadId, committed.seq);
+  await publishSpaceChange(realtime, input.spaceId, "runs");
   const timing = await readRunTimingFields(prisma, input.runId);
   if (committed.firstResponse) {
     getLogger().info("run.first_response", { "run.id": input.runId, ...timing });

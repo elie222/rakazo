@@ -483,7 +483,7 @@ describe("destroyBot", () => {
       $transaction: transaction,
     } as unknown as PrismaClient;
 
-    await destroyBot(
+    const result = await destroyBot(
       {
         prisma,
         sandbox: {} as SandboxProvider,
@@ -502,6 +502,7 @@ describe("destroyBot", () => {
       { deleteMemories: false },
     );
 
+    expect(result).toEqual({ removedGroupIds: [], alreadyRemoved: true });
     expect(transaction).toHaveBeenCalledOnce();
     expect(createDeletion).not.toHaveBeenCalled();
     expect(deleteBot).not.toHaveBeenCalled();
@@ -826,7 +827,8 @@ describe("destroyBot", () => {
     },
   );
 
-  it("names the same groups deleting the bot dissolves", async () => {
+  const cases = ["unchanged", "changed", "preview-failed", "empty"];
+  it.each(cases)("returns committed group IDs (%s)", async (scenario) => {
     // group-1 has one other active member, group-2 keeps two, group-3's other member is archived.
     const groups = [
       {
@@ -861,7 +863,29 @@ describe("destroyBot", () => {
     ];
     const deleteGroups = vi.fn().mockResolvedValue({ count: 2 });
     const findGroups = vi.fn().mockResolvedValue(groups);
-    const findGroupsDuringDelete = vi.fn().mockResolvedValue(groups);
+    const committedGroups =
+      scenario === "empty"
+        ? []
+        : scenario === "changed"
+          ? groups.map((group) => ({
+              ...group,
+              members:
+                group.id === "group-1"
+                  ? groups[1]!.members
+                  : group.id === "group-2"
+                    ? groups[0]!.members
+                    : group.members,
+            }))
+          : groups;
+    const expectedIds =
+      scenario === "empty"
+        ? []
+        : scenario === "changed"
+          ? ["group-2", "group-3"]
+          : ["group-1", "group-3"];
+    const findGroupsDuringDelete = vi.fn().mockResolvedValue(committedGroups);
+    if (scenario === "preview-failed")
+      findGroups.mockRejectedValueOnce(new Error("preview unavailable"));
     const prisma = {
       chatGroup: { findMany: findGroups },
       computer: { findUnique: vi.fn().mockResolvedValue(null) },
@@ -900,8 +924,8 @@ describe("destroyBot", () => {
       ),
     } as unknown as PrismaClient;
 
-    const removed = await groupsRemovedByDeletingBot(prisma, "bot-1");
-    await destroyBot(
+    const preview = await groupsRemovedByDeletingBot(prisma, "bot-1").catch(() => null);
+    const removed = await destroyBot(
       {
         prisma,
         sandbox: {} as SandboxProvider,
@@ -919,11 +943,18 @@ describe("destroyBot", () => {
       { deleteMemories: true },
     );
 
-    expect(removed).toEqual([
-      { id: "group-1", name: "Alpha" },
-      { id: "group-3", name: "Gamma" },
-    ]);
-    expect(deleteGroups).toHaveBeenCalledWith({ where: { id: { in: ["group-1", "group-3"] } } });
+    expect(preview).toEqual(
+      scenario === "preview-failed"
+        ? null
+        : [
+            { id: "group-1", name: "Alpha" },
+            { id: "group-3", name: "Gamma" },
+          ],
+    );
+    expect(removed).toEqual({ removedGroupIds: expectedIds });
+    if (expectedIds.length)
+      expect(deleteGroups).toHaveBeenCalledWith({ where: { id: { in: expectedIds } } });
+    else expect(deleteGroups).not.toHaveBeenCalled();
     const previewWhere = findGroups.mock.calls[0]?.[0].where;
     const deleteWhere = findGroupsDuringDelete.mock.calls[0]?.[0].where;
     expect(previewWhere).toEqual(deleteWhere);
@@ -1697,7 +1728,7 @@ describe("destroyBot", () => {
       await cleanupStarted;
       await vi.advanceTimersByTimeAsync(10_000);
 
-      await expect(deleting).resolves.toBeUndefined();
+      await expect(deleting).resolves.toEqual({ removedGroupIds: [] });
       expect(prisma.$transaction).toHaveBeenCalled();
       expect(commandSignal?.aborted).toBe(true);
     } finally {
@@ -1755,7 +1786,7 @@ describe("destroyBot", () => {
           { deleteMemories: true },
         );
         await vi.advanceTimersByTimeAsync(5_000);
-        await expect(deleting).resolves.toBeUndefined();
+        await expect(deleting).resolves.toEqual({ removedGroupIds: [] });
         return { profileAttempts, events: sink.events };
       } finally {
         vi.useRealTimers();
@@ -1811,7 +1842,7 @@ describe("destroyBot", () => {
         context,
         { deleteMemories: true },
       ),
-    ).resolves.toBeUndefined();
+    ).resolves.toEqual({ removedGroupIds: [] });
     expect(prisma.$transaction).toHaveBeenCalled();
   });
 
@@ -1986,6 +2017,66 @@ describe("destroyBot", () => {
       await rm(root, { recursive: true, force: true });
     }
   });
+
+  it.each(["boxd", "railway"])(
+    "removes the deleted bot's folder and profile from a stopped %s Team Computer's stored home",
+    async (kind) => {
+      const root = await mkdtemp(path.join(tmpdir(), "rakazo-team-stored-home-"));
+      try {
+        const home = new LocalAgentHomeStore(root);
+        const teamHome = home.pathFor("team-workspace-1");
+        await seedFile(teamHome, "bots/bot-1/private.txt", "stored-gone");
+        await seedFile(teamHome, "bots/bot-2/private.txt", "stored-keep");
+        await seedProfile(teamHome, "bot-1", "stored-gone");
+        await seedProfile(teamHome, "bot-2", "stored-keep");
+        const execute = vi.fn();
+        const team = {
+          id: "team-computer",
+          homeKey: "team-workspace-1",
+          kind,
+          providerRef: "machine-1",
+          scope: "team",
+          state: "stopped",
+        };
+
+        await destroyBot(
+          {
+            prisma: deletionPrisma(team),
+            sandbox: {
+              releaseScreen: vi.fn().mockResolvedValue(undefined),
+              execute,
+            } as unknown as SandboxProvider,
+            home,
+            jobs: { cancel: vi.fn() } as unknown as JobPublisher,
+          },
+          {
+            id: "bot-1",
+            spaceId: "workspace-1",
+            userId: "user-1",
+            name: "Researcher",
+            archivedAt: null,
+            computerId: team.id,
+          },
+          context,
+          { deleteMemories: true },
+        );
+
+        expect(execute).not.toHaveBeenCalled();
+        await expect(access(path.join(teamHome, "bots", "bot-1"))).rejects.toThrow();
+        await expect(
+          access(path.join(teamHome, ".browser-profiles", profileDirectory("bot-1"))),
+        ).rejects.toThrow();
+        await expect(readFile(path.join(teamHome, "bots/bot-2/private.txt"), "utf8")).resolves.toBe(
+          "stored-keep",
+        );
+        await expect(readFile(profileCookies(teamHome, "bot-2"), "utf8")).resolves.toBe(
+          "stored-keep",
+        );
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
+    },
+  );
 
   it("unlinks a symlinked bot folder instead of following it into another bot's folder", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "rakazo-team-folder-symlink-"));

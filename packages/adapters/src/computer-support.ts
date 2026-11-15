@@ -2,17 +2,6 @@ import { createHash } from "node:crypto";
 import path from "node:path";
 import type { ComputerAction, ComputerObservation, ComputerRef } from "@rakazo/adapter-kit";
 import type { ComputerMode } from "@rakazo/contracts";
-import { DEFAULT_COMPUTER_SCREEN } from "@rakazo/core";
-
-/** The boat image ships a 1080p screen; every other sandbox uses the core default. */
-const BOAT_COMPUTER_SCREEN = { width: 1920, height: 1080 } as const;
-
-export function computerScreenSize(kind: string | null | undefined): {
-  width: number;
-  height: number;
-} {
-  return kind === "boat" ? BOAT_COMPUTER_SCREEN : DEFAULT_COMPUTER_SCREEN;
-}
 
 export function toComputerRef(computer: {
   homeKey: string;
@@ -112,12 +101,6 @@ export function teamBotWorkspaceDirectory(botId: string): string {
   return path.posix.join("bots", normalizeWorkspacePath(botId));
 }
 
-export function teamWorkspaceInstruction(botId: string): string {
-  const home = teamBotWorkspaceDirectory(botId);
-  const sharedFromShell = `${path.posix.relative(home, "shared")}/`;
-  return `Your Team Computer home is ${home}. Relative file paths and shell working directories start there. Put intentionally shared work under shared/. File tools resolve shared/ and bots/ from the Team root, but shell commands do not: from your home, a shell command reaches shared work as ${sharedFromShell}, and a shell cwd of shared starts in it. Other bots' folders are visible under bots/; treat them as their working areas.`;
-}
-
 export function resolveBotWorkspacePath(
   scope: ComputerMode,
   botId: string,
@@ -136,8 +119,12 @@ export function resolveBotWorkspaceCwd(
   botId: string,
   requestedCwd: string | undefined,
 ): string | undefined {
-  if (scope !== "team")
-    return requestedCwd === undefined ? undefined : expandHomePrefix(requestedCwd);
+  if (scope !== "team") {
+    if (requestedCwd === undefined) return undefined;
+    const expanded = expandHomePrefix(requestedCwd);
+    if (expanded === requestedCwd) return requestedCwd;
+    return stripVirtualWorkspaceRoot(expanded) || undefined;
+  }
   if (!requestedCwd || requestedCwd === ".") return teamBotWorkspaceDirectory(botId);
   if (path.posix.isAbsolute(requestedCwd) || path.win32.isAbsolute(requestedCwd))
     return requestedCwd;

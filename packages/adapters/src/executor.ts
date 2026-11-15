@@ -1,7 +1,7 @@
 import type { AgentRunRequest, ComputerRef, SemanticMemoryProvider } from "@rakazo/adapter-kit";
-import { DEFAULT_CONTEXT_STRATEGY, runContinueJob } from "@rakazo/adapter-kit";
+import { DEFAULT_CONTEXT_STRATEGY } from "@rakazo/adapter-kit";
 import type { MessageBlock, RunStatus } from "@rakazo/contracts";
-import { disabledBuiltinToolSet } from "@rakazo/contracts";
+import { disabledBuiltinToolSet, hasLab, resolveLabs } from "@rakazo/contracts";
 import {
   BACKGROUND_HELPER_TRIGGER,
   botMessageAllowsSilence,
@@ -29,7 +29,9 @@ import {
   cancelDeactivatedAccountRuns,
   cancelRunsInTransaction,
   createPendingSteeringRun,
+  databaseOutage,
   effectiveMemoryScope,
+  isDatabaseUnavailable,
   isPartialReplyClientNonce,
   loadRunHistoryMessages,
   loadRunTurnCheckpoint,
@@ -37,13 +39,14 @@ import {
   RunHistoryWriteError,
   readRunTimingFields,
   recordUsage,
+  retryWhileDatabaseUnavailable,
   settleReleasedTakeoverCards,
   teamChatRunFromOwner,
 } from "@rakazo/db";
 import { enrichLogContext, getLogger } from "@rakazo/logging";
-import { formatAgentEnvironmentInstruction } from "./agent-environment.js";
+import { formatAgentEnvironmentInstruction } from "./agent-environment.prompt.js";
 import { createApprovedEffectReplayQueue } from "./approval-effect.js";
-import { PARTIAL_REPLY_NOTE } from "./automated-messages.js";
+import { PARTIAL_REPLY_NOTE } from "./automated-messages.prompt.js";
 import { backgroundHelpersAllowed } from "./background-helpers.js";
 import { loadBotMessageContext } from "./bot-messages.js";
 import {
@@ -53,8 +56,8 @@ import {
   loadRunLoginRedactions,
 } from "./bot-secrets.js";
 import { createBrowserProvider } from "./browser-provider-factory.js";
+import { agentConnectionTools, builtinAgentTools } from "./builtin.tool-definition.js";
 import { partitionTools } from "./builtin-tool-bridge.js";
-import { agentConnectionTools, builtinAgentTools } from "./builtin-tools.js";
 import { USER_CLOUD_AGENT_KEY_PREFIX } from "./cloud-agent-factory.js";
 import { cloudAgentForActor } from "./cloud-agent-service.js";
 import { mergeConnectedPlugins, needsLivePluginSync } from "./composio-connector.js";
@@ -65,6 +68,7 @@ import {
   acquireComputerExecutionLease,
   acquireDedicatedScreenLeaseFence,
   ComputerBusyError,
+  EXECUTION_LEASE_MS,
   provisionComputer,
   releaseComputerExecutionLease,
   renewComputerExecutionLease,
@@ -76,7 +80,7 @@ import {
   PINNED_COMPUTER_MODEL_LOST_RUN_ERROR,
   resolveComputerRunModel,
 } from "./computer-model-settings.js";
-import { teamWorkspaceInstruction } from "./computer-support.js";
+import { teamWorkspaceInstruction } from "./computer-support.prompt.js";
 import { checkpointRunComputerWorkspace } from "./computer-workspace.js";
 import {
   connectedContext,
@@ -84,19 +88,21 @@ import {
   persistLivePluginConnections,
   selectRunConnections,
 } from "./connection-context.js";
-import { formatCurrentTimeInstruction } from "./current-time.js";
+import { formatCurrentTimeInstruction } from "./current-time.prompt.js";
 import { resolveDeploymentModel } from "./deployment-model.js";
 import type { ExecutorDeps } from "./executor-deps.js";
 import type { FleetRun } from "./fleet-tools.js";
 import { loadBotGroupDirectory, loadGroupContext } from "./group-handoff.js";
 import {
-  formatCompactedSummary,
-  formatRecalledMemory,
   historyWindowSize,
   LEGACY_HISTORY_WINDOW_SIZE,
-  MAX_RECALLED_MEMORIES,
   selectCompactedHistory,
 } from "./history-compaction.js";
+import {
+  formatCompactedSummary,
+  formatRecalledMemory,
+  MAX_RECALLED_MEMORIES,
+} from "./history-compaction.prompt.js";
 import {
   historySpeaker,
   loadSpacePeople,
@@ -114,7 +120,6 @@ import {
   runModelChoice,
 } from "./model-selection.js";
 import { modelAcceptsImageInput } from "./model-vision.js";
-import { usesNativeShell } from "./native-shell.js";
 import { createPaidServiceProvider } from "./paid-services-factory.js";
 import { paymentWalletConnected } from "./payment-wallets.js";
 import { restoreComputerModels } from "./pi-runtime-computer-mode.js";
@@ -126,7 +131,8 @@ import {
   messageToAgentHistoryText,
 } from "./reply-context.js";
 import { backOffRoutineAfterAccountError } from "./routine-backoff.js";
-import { lateRoutineRunDueAt, lateRoutineRunInstruction } from "./routine-lateness.js";
+import { lateRoutineRunDueAt } from "./routine-lateness.js";
+import { lateRoutineRunInstruction } from "./routine-lateness.prompt.js";
 import { lazyRunComputer } from "./run-computer.js";
 import type {
   RunComputerUseState,
@@ -149,7 +155,7 @@ import {
   threadContextForRun,
   userTurnInstructions,
   voiceCallInstruction,
-} from "./run-instructions.js";
+} from "./run-instructions.prompt.js";
 import {
   claimRun,
   createRunWorkspaceCheckpoint,
@@ -177,7 +183,7 @@ import {
   runAllowsSilentEmpty,
   runReplyGuidance,
   runReplyMode,
-} from "./run-replies.js";
+} from "./run-replies.prompt.js";
 import {
   notifyRoutineRetryAttemptsExhausted,
   retryRoutineRun,
@@ -195,15 +201,22 @@ import { historyMyChatsAllowed } from "./run-tools-memory.js";
 import type { UserComputerState } from "./run-tools-user-computer.js";
 import { USER_COMPUTER_SHELL_TOOL, userComputerOwner } from "./run-tools-user-computer.js";
 import { createRunTrustLoaders } from "./run-trust.js";
-import { completeRun, consumeRunEvents, failRun, handoffEndedTurn } from "./run-turn.js";
+import {
+  completeRun,
+  consumeRunEvents,
+  failRun,
+  handoffEndedTurn,
+  requeueRunAfterDatabaseOutage,
+} from "./run-turn.js";
 import {
   claimRunSteering,
   loadCurrentTurnImages,
-  missingTurnImagesInstruction,
   RECENT_TURN_IMAGE_TURNS,
   withLatestStepScreenshot,
   withRecentTurnImages,
 } from "./run-turn-images.js";
+import { missingTurnImagesInstruction } from "./run-turn-images.prompt.js";
+import { sandboxKindCapabilities } from "./sandbox-kind-capabilities.js";
 import { loadAgentScratchpadContext } from "./scratchpad-context.js";
 import { inferScript } from "./scripted-runtime.js";
 import { loadSharedSpaceNote } from "./shared-space-note.js";
@@ -217,18 +230,20 @@ import {
   takeoverCheckpointOf,
   takeoverContinuePlan,
 } from "./takeover-resume.js";
-import { TASK_CATALOG_GUIDANCE } from "./task-catalog.js";
+import { TASK_CATALOG_GUIDANCE } from "./task-catalog.prompt.js";
 import { parsePlaybook } from "./teaching-session.js";
 import {
   createEarlierFileQueue,
-  currentTurnFilesInstruction,
   listCurrentTurnFiles,
   listRecentThreadFiles,
   materializeCurrentTurnFiles,
   materializeEarlierFiles,
   materializeRecentThreadFiles,
-  recentThreadFilesInstruction,
 } from "./thread-artifacts.js";
+import {
+  currentTurnFilesInstruction,
+  recentThreadFilesInstruction,
+} from "./thread-artifacts.prompt.js";
 import { loadAgentTicketContext } from "./ticket-context.js";
 import { appendToolCompletionAudit, toolCompletionOutcome } from "./tool-completion-audit.js";
 import { toolResultFingerprint } from "./tool-loop.js";
@@ -238,6 +253,7 @@ import {
   runReplaysToolHistory,
 } from "./tool-step-calls.js";
 import { restoreTurnCheckpoint } from "./turn-checkpoint.js";
+import { wakeRun } from "./wake-run.js";
 import { createWebProvider } from "./web-provider-factory.js";
 
 /** Same reach as the MCP connector: usable servers assigned to the bot or shared with every bot. */
@@ -259,6 +275,8 @@ async function verbatimMcpServersForRun(
   return { ids: servers.map((server) => server.id), slugs: servers.map((server) => server.slug) };
 }
 
+const RUN_HEARTBEAT_MS = 60_000;
+
 export function createRunExecutor(executorDeps: ExecutorDeps) {
   const contextStrategy = executorDeps.contextStrategy ?? DEFAULT_CONTEXT_STRATEGY;
   const web = executorDeps.web ?? createWebProvider();
@@ -277,11 +295,15 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
   // owns the run finalizes it. A fenced-out attempt must not end the run's
   // state while a newer attempt of this run still needs it; whether it may end
   // it depends on the run row, not on this attempt. A rejected finalizeRun left
-  // the run unfinished, so its state survives the retry.
+  // the run unfinished, so its state survives the retry. The write is fenced by the
+  // lease, so it waits out a database failover instead of losing the run's outcome.
   const events: ThreadEvents = {
     ...executorDeps.events,
     finalizeRun: async (input) => {
-      const result = await executorDeps.events.finalizeRun(input);
+      const result = await retryWhileDatabaseUnavailable(
+        () => executorDeps.events.finalizeRun(input),
+        { source: "run finalize", signal: executorDeps.shutdownSignal },
+      );
       if (result || (await runEndedForThisWorker(executorDeps.prisma, input))) {
         endRunConnectorState(input.runId);
       }
@@ -335,6 +357,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
 
       const claimed = await claimRun(deps, run, workerId);
       if (!claimed) return;
+      await deps.events.publishSpaceChange?.(run.spaceId, "runs");
       const { fence, current } = claimed;
       const leaseTarget = await deps.prisma.bot.findUniqueOrThrow({
         where: { id: run.botId },
@@ -460,6 +483,8 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         completed: false,
         lastCheckAt: 0,
         retainComputer: false,
+        renewedAt: Date.now(),
+        handedBack: false,
       };
       const computerUse: RunComputerUseState = {
         reason: "none",
@@ -479,17 +504,26 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         ])
           .then(([runRenewed, computerRenewed]) => {
             if (lease.completed) return;
-            if (!runRenewed || !computerRenewed) {
-              lease.valid = false;
-              runAbortController?.abort();
+            if (runRenewed && computerRenewed) {
+              lease.renewedAt = Date.now();
+              return;
             }
+            lease.valid = false;
+            runAbortController?.abort();
           })
-          .catch(() => {
+          .catch((error) => {
             if (lease.completed) return;
+            // Both leases outlast a short failover; the next beat renews them. Once they could
+            // have expired, another worker may claim the run, so this attempt stops.
+            if (
+              databaseOutage.failed(error, "run lease renewal") &&
+              Date.now() < lease.renewedAt + EXECUTION_LEASE_MS - RUN_HEARTBEAT_MS
+            )
+              return;
             lease.valid = false;
             runAbortController?.abort();
           });
-      }, 60_000);
+      }, RUN_HEARTBEAT_MS);
       heartbeat.unref?.();
       const stopHeartbeatAfterCompletion = () => {
         lease.completed = true;
@@ -563,7 +597,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         const channelId = messagingChannelId(sourceBlocks);
         const messagingChannelRun = isMessagingChannelRun(run.trigger, sourceBlocks);
         const [
-          bot,
+          { bot, ownerLabs },
           thread,
           messages,
           peerMessage,
@@ -580,10 +614,20 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           runLoginRedactions,
           runCodeRedactions,
         ] = await Promise.all([
-          deps.prisma.bot.findUniqueOrThrow({
-            where: { id: run.botId },
-            include: { computer: true },
-          }),
+          deps.prisma.bot
+            .findUniqueOrThrow({
+              where: { id: run.botId },
+              include: { computer: true },
+            })
+            .then(async (bot) => ({
+              bot,
+              ownerLabs: (
+                await deps.prisma.user.findUnique({
+                  where: { id: bot.userId },
+                  select: { labs: true },
+                })
+              )?.labs,
+            })),
           deps.prisma.thread.findUniqueOrThrow({
             where: { id: run.threadId },
             include: {
@@ -639,6 +683,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           fromUser: messages.find((message) => message.id === run.sourceMessageId)?.role === "user",
           nonOwnerChat: nonOwnerChatRun,
         });
+        const ticketBoardEnabled = hasLab(resolveLabs(ownerLabs, deps.deploymentLabs), "board");
         const historySearchBeforeSeq =
           contextStrategy !== "current" && run.sourceMessageId
             ? (messages.find((message) => message.id === run.sourceMessageId)?.seq ??
@@ -922,7 +967,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                 spaceId: run.spaceId,
                 botId: bot.id,
               }),
-          nonOwnerChatRun || !deps.ticketBoardEnabled
+          nonOwnerChatRun || !ticketBoardEnabled
             ? Promise.resolve(undefined)
             : loadAgentTicketContext(deps, {
                 spaceId: run.spaceId,
@@ -1176,7 +1221,8 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           .filter(Boolean)
           .join("\n\n");
         const graphical =
-          computerKind !== "desktop" && deps.sandbox.describe().capabilities.graphical;
+          !sandboxKindCapabilities(computerKind).runsOnUserMachine &&
+          deps.sandbox.describe().capabilities.graphical;
         // Gate on the pair written to the run row above; re-deriving it would drop the
         // deployment fallback and gate a vision-capable default as text-only.
         const modelSeesImages = modelAcceptsImageInput(
@@ -1231,7 +1277,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           id: runModelId,
           ...(credential ? { connectionId: credential.id } : {}),
           ...resolvedModelRunFields(resolved),
-          thinkingLevel: thinkingLevel ?? resolved.thinkingLevel ?? null,
+          thinkingLevel: thinkingLevel ?? null,
         };
         // Saved identities win on resume, including when the setting was cleared meanwhile.
         const computerModel =
@@ -1345,7 +1391,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         );
         const builtins = [
           ...selectBuiltinToolsForRun({
-            ticketBoardEnabled: deps.ticketBoardEnabled,
+            ticketBoardEnabled,
             // A call rings the bot's own person, whose chat it is; other members of a shared
             // Space reach it by message for now.
             phoneCallsEnabled: deps.phoneCallsEnabled && run.userId === bot.userId,
@@ -1449,23 +1495,22 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           disabledBuiltinTools,
           new Set(tools.map((tool) => tool.name)),
         );
-        const hostEnvironment =
-          computerKind && usesNativeShell(computerKind)
-            ? await deps.sandbox
-                .environment?.(
-                  {
-                    id: storedComputer.providerRef ?? storedComputer.id,
-                    botId: storedComputer.homeKey,
-                    kind: computerKind as ComputerRef["kind"],
-                    providerRef: storedComputer.providerRef ?? "",
-                  },
-                  {
-                    ...context,
-                    signal: AbortSignal.any([context.signal, AbortSignal.timeout(2000)]),
-                  },
-                )
-                .catch(() => undefined)
-            : undefined;
+        const hostEnvironment = sandboxKindCapabilities(computerKind).nativeShell
+          ? await deps.sandbox
+              .environment?.(
+                {
+                  id: storedComputer.providerRef ?? storedComputer.id,
+                  botId: storedComputer.homeKey,
+                  kind: computerKind as ComputerRef["kind"],
+                  providerRef: storedComputer.providerRef ?? "",
+                },
+                {
+                  ...context,
+                  signal: AbortSignal.any([context.signal, AbortSignal.timeout(2000)]),
+                },
+              )
+              .catch(() => undefined)
+          : undefined;
         const hostInstruction = hostEnvironment
           ? hostComputerInstruction(computerKind, hostEnvironment)
           : undefined;
@@ -2096,6 +2141,10 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
               caughtError = completionError;
             }
           }
+          if (isDatabaseUnavailable(caughtError)) {
+            await requeueRunAfterDatabaseOutage(ctx);
+            return;
+          }
           await failRun(ctx, caughtError, {
             ownCredential: resolved.ownCredential,
             active: activeModel,
@@ -2184,6 +2233,6 @@ async function cancelRunOfFormerMember(
   });
   if (!cancelled) return true;
   await deps.events.notify(run.threadId, cancelled.seq).catch(() => undefined);
-  if (cancelled.continuationId) await deps.jobs.enqueue(runContinueJob(cancelled.continuationId));
+  if (cancelled.continuationId) await wakeRun(deps.jobs, cancelled.continuationId);
   return true;
 }
