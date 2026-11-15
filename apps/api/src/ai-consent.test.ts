@@ -278,6 +278,33 @@ it("discloses the self-hosted voice origin without its encrypted key", async () 
   expect(JSON.stringify(status)).not.toContain("apiKey");
 });
 
+it("discloses a separate self-hosted transcription server as its own recipient", async () => {
+  const { deps, actor } = setup();
+  vi.mocked(deps.prisma.userVoicePreference.findFirst).mockResolvedValue({
+    credential: { provider: "openai-compatible", secretId: "voice-secret" },
+    voiceId: "af_heart",
+  } as never);
+  deps.prisma.secret.findFirst = vi
+    .fn()
+    .mockResolvedValue({ id: "voice-secret", ciphertext: "encrypted-fixture" });
+  deps.secrets = {
+    load: vi.fn().mockResolvedValue(
+      JSON.stringify({
+        kind: "openai_compatible",
+        baseUrl: "http://100.64.0.10:8810/v1",
+        sttBaseUrl: "http://100.64.0.11:9000/v1",
+        ttsModel: "kokoro",
+        sttModel: "whisper-1",
+      }),
+    ),
+    put: vi.fn(),
+  } as never;
+  const status = await aiConsentStatus(deps, actor, { uses: ["voice"] });
+  expect(status.recipients).toHaveLength(2);
+  expect(JSON.stringify(status)).toContain("http://100.64.0.10:8810");
+  expect(JSON.stringify(status)).toContain("http://100.64.0.11:9000");
+});
+
 it("discloses the Space's own voices where it overrides voice", async () => {
   const { deps, actor } = setup();
   Object.assign(deps.prisma, {

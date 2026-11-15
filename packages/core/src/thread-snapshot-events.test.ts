@@ -504,6 +504,7 @@ describe("thread event reduction", () => {
     expect(isThreadSnapshotEvent(event({ type: "computer.takeover.requested" }))).toBe(true);
     expect(isThreadSnapshotEvent(event({ type: "computer.takeover.released" }))).toBe(true);
     expect(isThreadSnapshotEvent(event({ type: "agent.tool.completed" }))).toBe(true);
+    expect(isThreadSnapshotEvent({ type: "thread.message.reaction" })).toBe(false);
   });
 
   it("keeps the routine name from run.started so the working line can name it", () => {
@@ -511,7 +512,7 @@ describe("thread event reduction", () => {
       snapshot([]),
       event({
         type: "run.started",
-        seq: 3,
+        seq: 4,
         runId: "run-1",
         payload: { trigger: "routine", routineId: "routine-1", routineName: "Daily check" },
       }),
@@ -524,7 +525,7 @@ describe("thread event reduction", () => {
 
     const resumed = reduceThreadSnapshot(
       started,
-      event({ type: "run.started", seq: 4, runId: "run-1", payload: { trigger: "routine" } }),
+      event({ type: "run.started", seq: 5, runId: "run-1", payload: { trigger: "routine" } }),
     );
     expect(resumed?.run?.routineName).toBe("Daily check");
   });
@@ -535,7 +536,7 @@ describe("thread event reduction", () => {
       initial,
       event({
         type: "run.started",
-        seq: 3,
+        seq: 4,
         runId: "run-1",
         payload: { trigger: "user" },
       }),
@@ -553,13 +554,13 @@ describe("thread event reduction", () => {
       started,
       event({
         type: "thread.progress",
-        seq: 4,
+        seq: 5,
         runId: "run-1",
         payload: { delta: "still working" },
       }),
     );
     expect(progressed?.run?.id).toBe("run-1");
-    expect(progressed?.cursor).toBe(4);
+    expect(progressed?.cursor).toBe(5);
   });
 
   it.each([undefined, "group-1"])(
@@ -1563,7 +1564,7 @@ describe("stale helper projection", () => {
       id: "fixture",
       threadId: "thread-1",
       runId: "run-1",
-      seq: 1,
+      seq: 4,
       createdAt: "2026-01-01T00:00:00.000Z",
     };
     const helper = { agentId: "helper", name: "Helper", task: "Check", status: "running" };
@@ -1571,17 +1572,17 @@ describe("stale helper projection", () => {
       snapshot([]),
       event({ ...base, type: "thread.subagent", payload: helper }),
     );
-    next = reduceThreadSnapshot(next, event({ ...base, seq: 2, type, payload: {} }));
+    next = reduceThreadSnapshot(next, event({ ...base, seq: 5, type, payload: {} }));
     expect(next?.messages.find((m) => m.id === "subagent:helper")?.blocks[0]).toMatchObject({
       status: "failed",
       result: "stopped",
     });
-    next = reduceThreadSnapshot(next, event({ ...base, seq: 3, type: "run.started", payload: {} }));
+    next = reduceThreadSnapshot(next, event({ ...base, seq: 6, type: "run.started", payload: {} }));
     next = reduceThreadSnapshot(
       next,
       event({
         ...base,
-        seq: 4,
+        seq: 7,
         type: "thread.subagent",
         payload: { ...helper, agentId: "resumed" },
       }),
@@ -1592,6 +1593,64 @@ describe("stale helper projection", () => {
     expect(next?.messages.find((m) => m.id === "subagent:resumed")?.blocks[0]).toMatchObject({
       status: "running",
     });
+  });
+});
+
+describe("events the snapshot already covers", () => {
+  it("keeps its cursor on a late event, so an older refresh stays rejected", () => {
+    const current = { ...snapshot([]), cursor: 10 };
+
+    const next = reduceThreadSnapshot(current, event({ type: "agent.tool.completed", seq: 5 }));
+
+    expect(next).toBe(current);
+    expect(mergeThreadSnapshot(next, { ...snapshot([]), cursor: 8 })).toBe(current);
+  });
+
+  it.each(["run.waiting_input", "run.started", "computer.takeover.requested"] as const)(
+    "keeps a finished run finished when its %s arrives late",
+    (type) => {
+      const run = threadRun("run-1");
+      const working = { ...snapshot([]), cursor: 10, run, activeRuns: [run] };
+      const finished = reduceThreadSnapshot(working, event({ type: "run.completed", seq: 12 }));
+      expect(activeThreadRuns(finished)).toEqual([]);
+
+      expect(reduceThreadSnapshot(finished, event({ type, seq: 11 }))).toBe(finished);
+    },
+  );
+
+  it("applies a repeated event once", () => {
+    const delta = event({ type: "thread.progress", seq: 4, payload: { delta: "Checking " } });
+    const once = reduceThreadSnapshot(snapshot([]), delta);
+
+    expect(once?.messages).toHaveLength(1);
+    expect(reduceThreadSnapshot(once, delta)).toBe(once);
+  });
+
+  it("keeps a group member's status from the snapshot when its run's events arrive late", () => {
+    const run = threadRun("run-1", "bot-member");
+    const member = { botId: "bot-member", name: "Member", color: "#8B5CF6" };
+    const group = { ...snapshot([]), botId: undefined, groupId: "group-1" };
+    const started = event({ type: "run.started", seq: 11, botId: "bot-member", runId: run.id });
+    const completed = event({ type: "run.completed", seq: 12, botId: "bot-member", runId: run.id });
+
+    const working: ThreadSnapshot = {
+      ...group,
+      cursor: 11,
+      members: [{ ...member, status: "running" }],
+      run,
+      activeRuns: [run],
+    };
+    expect(reduceThreadSnapshot(working, started)).toBe(working);
+    expect(reduceThreadSnapshot(working, completed)?.members?.[0]?.status).toBe("idle");
+
+    const finished: ThreadSnapshot = {
+      ...group,
+      cursor: 12,
+      members: [{ ...member, status: "idle" }],
+      activeRuns: [],
+    };
+    expect(reduceThreadSnapshot(finished, started)).toBe(finished);
+    expect(reduceThreadSnapshot(finished, completed)).toBe(finished);
   });
 });
 

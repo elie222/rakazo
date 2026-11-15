@@ -109,6 +109,7 @@ export class InstaboxSandboxProvider extends RemoteDesktopSandboxProvider {
       sdk: sdk ?? instaboxSdk(options.apiKey, options.onUnsafeStop),
       // Commands past their deadline come back as exit 124, never as an error.
       isTimeoutError: () => false,
+      pageBrowser: true,
     });
   }
 }

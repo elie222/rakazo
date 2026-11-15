@@ -88,6 +88,13 @@ export default function SettingsLayout() {
       <Stack.Screen name="model-connection" options={glassHeaderOptions(t`Model`)} />
       <Stack.Screen name="model-settings" options={glassHeaderOptions(t`Model`)} />
       <Stack.Screen name="billing" options={glassHeaderOptions(t`Billing`)} />
+      <Stack.Screen
+        name="computers"
+        options={{
+          ...glassHeaderOptions(t`Computers`),
+          contentStyle: { backgroundColor: native.groupedPage },
+        }}
+      />
       <Stack.Screen name="models" options={glassHeaderOptions(t`Models`)} />
       <Stack.Screen name="voice" options={glassHeaderOptions(t`Voice`)} />
       <Stack.Screen name="wallet" options={glassHeaderOptions(t`Wallet`)} />

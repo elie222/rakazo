@@ -35,10 +35,27 @@ PRD="$(git rev-parse --show-toplevel)/.agents/skills/pr-watch/pr-digest"
   change the approach instead of repeating it. Stop and ask when progress needs
   a maintainer decision or access you do not have. Report what was tried and
   what remains unresolved.
-- Repeated base updates can also create a loop. If main keeps advancing before
-  checks finish, explain the cycle and ask for a merge strategy rather than
-  indefinitely merging and restarting CI. Preserve the user's current-base
-  requirement unless they change it.
+- Keep the PR head stable while CI and review run. Being behind the base alone
+  is not a reason to merge it or restart checks.
+- Once checks and reviews finish, fetch the base and review changes since the
+  PR's merge base for interactions with this PR. AI reviewers must assess the
+  combined behavior, including related changes in different files: authorization,
+  secret handling, validation, sandbox boundaries, migrations, dependencies and CI
+  can interact without a textual conflict. Read the relevant implementations;
+  passing checks and separate PR approvals do not establish combined safety.
+- If the base changes are unrelated, merge the reviewed, green head when branch
+  protection and user instructions permit. For conflicts or a plausible material
+  interaction, merge the base, review the combined diff and run affected checks;
+  push and wait for required CI and automated review on that head. Do not restart
+  this cycle for unrelated base advances. Ask when an interaction needs judgment
+  or cannot be adequately verified.
+- Enforced branch protection and explicit current-base requirements still apply.
+  Check base freshness after CI finishes, not on each notification. If that
+  requirement repeatedly restarts CI, ask once for permission to use this
+  interaction-based policy and reuse the answer. Never bypass required checks.
+  Prefer GitHub's merge queue when configured; it tests combined changes but
+  does not replace the interaction review above. Merge base updates; never
+  rebase or force-push without authorization.
 
 ## The cycle
 

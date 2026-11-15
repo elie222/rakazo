@@ -1,7 +1,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { Bot, Group, RunActivityRow, RunStatus } from "@rakazo/contracts";
-import { activitySections, isRetryableError } from "@rakazo/core";
+import { activitySections } from "@rakazo/core";
 import {
   BotAvatar,
   Button,
@@ -71,13 +71,9 @@ export function ActivityList({
 }: ActivityListProps) {
   const { t } = useLingui();
   const queries = useSpaceQueries();
-  // Polls while open; a refused request (signed out, forbidden) stops polling.
-  const poll = {
-    refetchInterval: (query: { state: { error: unknown } }) =>
-      query.state.error && !isRetryableError(query.state.error) ? false : 15_000,
-  } as const;
-  const active = useQuery(queries.runs.list.queryOptions({ input: { filter: "active" }, ...poll }));
-  const recent = useQuery(queries.runs.list.queryOptions({ input: { filter: "recent" }, ...poll }));
+  const live = { refetchOnWindowFocus: "always" } as const;
+  const active = useQuery(queries.runs.list.queryOptions({ input: { filter: "active" }, ...live }));
+  const recent = useQuery(queries.runs.list.queryOptions({ input: { filter: "recent" }, ...live }));
   const activeRuns = active.data?.runs ?? NO_RUNS;
   const recentRuns = recent.data?.runs ?? NO_RUNS;
   // "Try again" shows its progress in place of the error it answers.

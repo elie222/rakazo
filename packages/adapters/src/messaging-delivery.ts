@@ -13,7 +13,6 @@ import {
   messagingSendJob,
   messagingSendJobKey,
   RetryJobLaterError,
-  runContinueJob,
 } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
 import {
@@ -44,6 +43,7 @@ import { MessagingSendError } from "./chat-sdk-surface.js";
 import { splitOutboundBody } from "./messaging-platforms.js";
 import { resolveMessagingThreadId } from "./team-chat-messaging.js";
 import { isUserProgressClientNonce } from "./user-progress.js";
+import { wakeRun } from "./wake-run.js";
 
 /**
  * Margin under vendor consecutive-outbound caps (sendblue enforces one hard):
@@ -1038,9 +1038,7 @@ export class MessagingDelivery {
               throw error;
             });
           if (sent?.runId) {
-            await jobs.enqueue(runContinueJob(sent.runId)).catch((error) => {
-              getLogger().error("messaging peer wake enqueue error", error);
-            });
+            await wakeRun(jobs, sent.runId);
           }
           continue;
         }

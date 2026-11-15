@@ -207,7 +207,11 @@ export function cancelThreadRuns(
 
 /** Stop's after-commit half: wakes subscribers, settles stopped helpers' cards, and tears down the cancelled runs' computer work. */
 export async function finishThreadStop(
-  deps: { prisma: PrismaClient; sandbox: SandboxProvider; events: Pick<ThreadEvents, "notify"> },
+  deps: {
+    prisma: PrismaClient;
+    sandbox: SandboxProvider;
+    events: Pick<ThreadEvents, "notify" | "publishSpaceChange">;
+  },
   actor: Pick<Actor, "spaceId" | "userId">,
   target: { threadId: string },
   {
@@ -224,6 +228,7 @@ export async function finishThreadStop(
       getLogger().error("thread stop realtime notification", error);
     });
   }
+  if (runIds.length > 0) await deps.events.publishSpaceChange?.(actor.spaceId, "runs");
   // Settle each stopped helper's card now rather than at the next reconciliation.
   for (const helper of stoppedHelpers) {
     await returnHelperOutcome(deps, helper, { status: "stopped", text: "" }).catch((error) => {

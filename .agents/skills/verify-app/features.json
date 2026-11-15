@@ -393,6 +393,7 @@
       "mobile": ["voice"],
       "desktop": null,
       "evidence": [
+        "apps/web/e2e/voice-settings.spec.ts",
         "apps/web/e2e/call-controls.spec.ts",
         "apps/web/e2e/incoming-call.spec.ts",
         "apps/web/e2e/call-approval-prompt.spec.ts",
@@ -556,7 +557,15 @@
       "id": "account-settings",
       "name": "Settings",
       "web": ["?settings=general"],
-      "mobile": ["account", "general", "profile", "change-password", "language", "ai-data-sharing"],
+      "mobile": [
+        "account",
+        "general",
+        "profile",
+        "change-password",
+        "language",
+        "ai-data-sharing",
+        "computers"
+      ],
       "desktop": null,
       "evidence": [
         "apps/web/e2e/settings-shell.spec.ts",

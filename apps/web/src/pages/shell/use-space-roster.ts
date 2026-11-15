@@ -76,6 +76,8 @@ export function useSpaceRoster({
   routeBotId.current = botId;
   const routeGroupId = useRef<string | undefined>(groupId);
   routeGroupId.current = groupId;
+  /** Whether the switch to another space that has begun is still on its way; null between switches. */
+  const switchingSpace = useRef<(() => boolean) | null>(null);
 
   const refreshBots = useCallback(
     async (includeArchived = false, replaceBotOrder = false) => {
@@ -140,6 +142,8 @@ export function useSpaceRoster({
         navigate("/onboarding", { replace: true });
         return;
       }
+      // The chat a switch is opening is in the other space's roster, and moving the route cancels it.
+      if (switchingSpace.current?.()) return;
       const currentGroupId = routeGroupId.current;
       if (currentGroupId) {
         if (!groupList.some((group) => group.id === currentGroupId)) {
@@ -153,6 +157,24 @@ export function useSpaceRoster({
       }
     },
     [navigate],
+  );
+
+  /**
+   * Leaves the route alone while `live` says a switch to another space is on its way. The switch
+   * calls the returned function when it is over; one that stayed in this space has its route
+   * checked then, since nothing repaired it meanwhile.
+   */
+  const beginSpaceSwitch = useCallback(
+    (live: () => boolean) => {
+      switchingSpace.current = live;
+      return (leftSpace: boolean) => {
+        // A newer switch has taken over, and checks the route when it ends.
+        if (switchingSpace.current !== live) return;
+        switchingSpace.current = null;
+        if (!leftSpace) void refreshBots().catch(() => undefined);
+      };
+    },
+    [refreshBots],
   );
 
   const flushBotOrder = useCallback(async () => {
@@ -230,6 +252,7 @@ export function useSpaceRoster({
     initialRoutingPending,
     routeBotId,
     routeGroupId,
+    beginSpaceSwitch,
     refreshBots,
     reorderRosterBot,
     addCreatedBot,

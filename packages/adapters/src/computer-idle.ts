@@ -263,6 +263,7 @@ export async function stopCancelledGroupRuns(
     prisma: PrismaClient;
     jobs: Pick<JobPublisher, "cancel">;
     sandbox: Pick<SandboxProvider, "execute" | "cancelRunWork" | "releaseScreen">;
+    events?: Pick<ThreadEvents, "publishSpaceChange">;
   },
   actor: { spaceId: string; userId: string },
   cancelled: {
@@ -277,6 +278,8 @@ export async function stopCancelledGroupRuns(
     >;
   },
 ): Promise<void> {
+  if (cancelled.cancelledRunIds.length > 0)
+    await deps.events?.publishSpaceChange?.(actor.spaceId, "runs");
   await Promise.all(
     cancelled.cancelledRunIds.map((runId) =>
       deps.jobs.cancel(runJobKey(runId)).catch(() => undefined),
