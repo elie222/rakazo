@@ -5,6 +5,7 @@ import {
   extractForcedSkillName,
   extractRoutineSkillMentions,
   findSkillByName,
+  formatForcedSkillPrompt,
   formatSkillsCatalogInstruction,
   mergeBuiltinSkills,
   parseSkillMd,
@@ -616,6 +617,30 @@ describe("skill prompt helpers", () => {
     expect(line).toContain("- Daily standup: Prepare standup notes");
     expect(line).toContain("skill_read");
     expect(line).toContain("Prefer matching skills");
+  });
+
+  it("renders the whole catalog instruction and a forced skill prompt", () => {
+    expect(
+      formatSkillsCatalogInstruction([
+        { name: "Standup", description: "Prepare standup notes", source: "user", readOnly: false },
+        { name: "Review", description: "Review a change", source: "builtin", readOnly: true },
+      ]),
+    ).toBe(
+      [
+        "Available Claude Agent Skills (SKILL.md recipes shared across assistants; generic how-tos, not account-specific routines). The Pi runtime already understands this format; we persist and inject them:",
+        "- Standup: Prepare standup notes",
+        "- Review: Review a change",
+        "When a skill matches the user's request, call skill_read for that name and follow it immediately. Prefer matching skills over improvising multi-step recipes.",
+        "Users can force a skill with /Name in the composer. Routines may mention a skill as @Name — that loads the skill at fire time.",
+        "Create a skill with skill_create when a multi-step task is worth repeating (or when asked). After creating one, mention /Name so the user can open it.",
+        "Only skill_update / skill_delete user-created skills (not builtin or plugin).",
+      ].join("\n"),
+    );
+    expect(formatSkillsCatalogInstruction([])).toBeUndefined();
+    expect(formatForcedSkillPrompt("Standup", " body \n", " rest ")).toBe(
+      "Use skill: Standup\n\nbody\n\nrest",
+    );
+    expect(formatForcedSkillPrompt("Standup", "body")).toBe("Use skill: Standup\n\nbody");
   });
 });
 
