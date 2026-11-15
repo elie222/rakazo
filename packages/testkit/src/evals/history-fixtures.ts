@@ -2,7 +2,7 @@ import type { HistoryToolStep } from "@rakazo/contracts";
 import type { Criterion } from "./cases.js";
 import type { JudgeInput } from "./judge.js";
 
-export const HISTORY_FIXTURE_VERSION = "history-v1-seed-73";
+export const HISTORY_FIXTURE_VERSION = "history-v2-seed-73";
 export type HistoryMessage = {
   seq: number;
   role: "user" | "bot";

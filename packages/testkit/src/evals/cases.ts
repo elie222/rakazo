@@ -414,6 +414,7 @@ export const EVAL_CASES: EvalCase[] = [
     grade: (e) => [
       check("retrieved-inbox", read(e, "GMAIL_LIST_MESSAGES")),
       check("urgent-items-saved", Boolean(file(e, "results/urgent.txt"))),
+      check("invoice-reference", /INV-42/.test(file(e, "results/urgent.txt"))),
       noWrites(e),
     ],
     judge: (e) => judgeInput("urgent-items", { file: file(e, "results/urgent.txt") }),

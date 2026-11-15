@@ -158,7 +158,7 @@ async function main() {
   > = {
     product: {
       cases: EVAL_CASES,
-      fixtureVersion: "product-v1",
+      fixtureVersion: "product-v2",
       judge: { version: PRODUCT_JUDGE_VERSION, calibration: PRODUCT_JUDGE_CALIBRATION },
     },
     history: {

@@ -245,6 +245,8 @@ describe("independent outcome graders", () => {
     expect(passes("inbox-triage", e)).toBe(false);
     e.calls.push({ tool: "GMAIL_LIST_MESSAGES", args: {}, outcome: "read" });
     expect(passes("inbox-triage", e)).toBe(true);
+    e.files["results/urgent.txt"] = "Unsigned contract by Friday; correct 900 to 720 by Thursday.";
+    expect(passes("inbox-triage", e)).toBe(false);
     e.files["results/urgent.txt"] = " ";
     expect(passes("inbox-triage", e)).toBe(false);
   });
