@@ -1,5 +1,5 @@
 import { abortableDelay, isRetryableError, reconnectDelayMs, retryDelayMs } from "@rakazo/core";
-import { useEffect, useRef, useSyncExternalStore } from "react";
+import { useEffect, useRef } from "react";
 import { subscribeSpaceSelection } from "./api";
 import { subscribeRosterSignals } from "./api-live";
 import { useAppForeground } from "./app-foreground";
@@ -8,16 +8,8 @@ import { subscribeSessionGeneration } from "./session";
 
 // One stream for the whole app, open while any screen holds it.
 const rosterListeners = new Set<() => void>();
-const liveListeners = new Set<() => void>();
-let live = false;
 let holders = 0;
 let close: (() => void) | undefined;
-
-const setLive = (next: boolean) => {
-  if (live === next) return;
-  live = next;
-  for (const listener of liveListeners) listener();
-};
 
 /** The stream speaks for one session and Space, so either changing reopens it. */
 function followIdentity(listener: () => void): () => void {
@@ -55,9 +47,9 @@ async function follow(signal: AbortSignal) {
       await subscribeRosterSignals(
         () => {
           if (connection.signal.aborted) return;
-          if (opened) for (const listener of rosterListeners) listener();
           opened = true;
-          setLive(true);
+          // Each connection opens with a signal, so a reconnect catches up on what it missed.
+          for (const listener of rosterListeners) listener();
         },
         connection.signal,
         () => {
@@ -70,7 +62,6 @@ async function follow(signal: AbortSignal) {
     unfollowIdentity();
     signal.removeEventListener("abort", abort);
     if (signal.aborted) return;
-    setLive(false);
     if (connection.signal.aborted) continue;
     if (failure !== undefined && !isRetryableError(failure)) {
       // Asking again cannot change a refusal, but another session or Space may answer; signing
@@ -89,10 +80,7 @@ function hold(): () => void {
   if (holders++ === 0) {
     const controller = new AbortController();
     void follow(controller.signal);
-    close = () => {
-      controller.abort();
-      setLive(false);
-    };
+    close = () => controller.abort();
   }
   let released = false;
   return () => {
@@ -110,29 +98,23 @@ export function useLiveStream(enabled: boolean): void {
   useEffect(() => (enabled && foreground ? hold() : undefined), [enabled, foreground]);
 }
 
-const subscribeLive = (listener: () => void) => {
-  liveListeners.add(listener);
-  return () => {
-    liveListeners.delete(listener);
-  };
-};
-
 /**
- * Runs `onChange` for each roster change while enabled. True while signals are live, so polling
- * can slow down; the first signal of each connection only flips this, since the poll that
- * restarts with it already catches up.
+ * Runs `read` while enabled: once when enabled or back in the foreground, then on each roster
+ * signal, including the one each (re)connection opens with: a change made before the stream
+ * subscribed reaches the app only through that opening signal.
  */
-export function useRosterSignals(onChange: () => unknown, enabled: boolean): boolean {
+export function useRosterSignals(read: () => unknown, enabled: boolean): void {
   useLiveStream(enabled);
-  const onChangeRef = useRef(onChange);
-  onChangeRef.current = onChange;
+  const foreground = useAppForeground();
+  const readRef = useRef(read);
+  readRef.current = read;
   useEffect(() => {
-    if (!enabled) return;
-    const listener = () => void onChangeRef.current();
+    if (!enabled || !foreground) return;
+    const listener = () => void readRef.current();
+    listener();
     rosterListeners.add(listener);
     return () => {
       rosterListeners.delete(listener);
     };
-  }, [enabled]);
-  return useSyncExternalStore(subscribeLive, () => live) && enabled;
+  }, [enabled, foreground]);
 }
