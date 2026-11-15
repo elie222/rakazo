@@ -637,6 +637,17 @@ describe("redaction", () => {
     expect(KEYED_SECRET_PATTERN_LENGTH).toBeLessThan(20_000);
   });
 
+  it("leaves a snake_case name that only starts like a key, and still redacts a key", () => {
+    for (const text of [
+      'violates check constraint "ck_orders_amount_positive"',
+      "duplicate key value violates unique constraint ak_users_email",
+    ])
+      expect(redactSensitiveText(text)).toBe(text);
+    expect(redactSensitiveText("denied ak_hunter2_secret here")).toBe("denied [Redacted] here");
+    expect(redactSensitiveText("denied ck_Ab-Cd_efGH here")).toBe("denied [Redacted] here");
+    expect(redactSensitiveText("denied ak_secretvaluehere now")).toBe("denied [Redacted] now");
+  });
+
   it("leaves an error's name and a file path that hold a secret word as they are", () => {
     for (const text of [
       "CredentialsProviderError: Could not load credentials from any providers",

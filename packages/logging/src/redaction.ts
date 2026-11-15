@@ -249,8 +249,10 @@ const EMAIL = new RegExp(String.raw`${EMAIL_LOCAL}+@[A-Z0-9.${WORLD}-]+\.[A-Z${W
 const EMAILS = new RegExp(`(?<!${EMAIL_LOCAL})(?:${EMAIL.source})+`, "gi");
 
 // A hyphenated key or a signed token may follow an underscore, but never a letter or digit:
-// `task-1234` is a word.
-const BARE_SECRET = /(?:(?:(?<![A-Za-z0-9])sk-|\bsk_)[A-Za-z0-9_-]{8,}|\b[ac]k_[A-Za-z0-9_-]+)\b/g;
+// `task-1234` is a word. After a two-letter prefix, underscores and hyphens belong to a key only
+// when a digit or capital shows it is random: `ck_orders_amount_positive` names a constraint.
+const BARE_SECRET =
+  /(?:(?:(?<![A-Za-z0-9])sk-|\bsk_)[A-Za-z0-9_-]{8,}|\b[ac]k_(?:(?=[a-z_-]*[A-Z0-9])[A-Za-z0-9_-]+|[A-Za-z0-9]+))\b/g;
 // Consume failed JWT headers once; keys within a failed header still need redaction.
 const BARE_SECRET_CANDIDATE = new RegExp(
   String.raw`${BARE_SECRET.source}|(?<![A-Za-z0-9])eyJ[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)?\b`,
