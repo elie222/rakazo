@@ -15,6 +15,7 @@ import { getLogger, runCorrelatedJob, unwrapJobPayload, wrapJobPayload } from "@
 import type { JobHelpers, Runner, WorkerUtils } from "graphile-worker";
 import { consoleLogFactory, Logger, makeWorkerUtils, run } from "graphile-worker";
 import type { Pool } from "pg";
+import { recordConnectionCleanupAttemptsExhausted } from "./connection-cleanup.js";
 import { recordHistoryCompactAttemptsExhausted } from "./history-compaction.js";
 import { RunExecutionHost } from "./run-execution.js";
 
@@ -478,6 +479,7 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
     });
     runner.events.on("job:failed", ({ job, error }) => {
       recordHistoryCompactAttemptsExhausted(job, error);
+      recordConnectionCleanupAttemptsExhausted(job, error);
     });
     if (this.stopping) {
       await runner.stop().catch(() => undefined);

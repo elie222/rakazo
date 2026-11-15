@@ -973,6 +973,18 @@ export interface BackgroundJobPayloads {
   "secret.cleanup": { kind: SecretCleanupKind; recordId: string; ref: string };
   /** The previous release's `secret.cleanup` for a messaging installation. */
   "messaging.credential-cleanup": { installationId: string; ref: string };
+  /**
+   * Backup for removing an authorization a connection flow left at the provider with no local
+   * row. `ref` names one authorization request or account; without it, the app's accounts that
+   * no local row references.
+   */
+  "connection.cleanup": {
+    spaceId: string;
+    userId: string;
+    connectorId: string;
+    provider: string;
+    ref?: string;
+  };
   /** Deletes a provider machine once no stored computer points at it and none may still keep it. */
   "computer.machine-cleanup": UnreferencedMachine;
   /** Backup for answering one inbound team-chat message, and the end of its routine routing. */
