@@ -34,6 +34,29 @@ describe("bootstrap upload configuration", () => {
   );
 });
 
+describe("the first load of a group link", () => {
+  it("asks which Space holds the group, and asks again for another group", async () => {
+    vi.stubGlobal("window", { location: { pathname: "/app/g/group-1" } });
+    const first = { me: {}, groupSpaceId: "space-b" } as Awaited<ReturnType<typeof rpc.bootstrap>>;
+    vi.mocked(rpc.bootstrap).mockReset().mockResolvedValue(first);
+    const { takeInitialBootstrap } = await import("./bootstrap");
+    expect(rpc.bootstrap).toHaveBeenCalledWith({ groupId: "group-1" });
+    await expect(takeInitialBootstrap(undefined, "group-1")).resolves.toEqual(first);
+    expect(rpc.bootstrap).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not answer for a group it did not ask about", async () => {
+    vi.stubGlobal("window", { location: { pathname: "/app/g/group-1" } });
+    vi.mocked(rpc.bootstrap)
+      .mockReset()
+      .mockResolvedValue({ me: {} } as Awaited<ReturnType<typeof rpc.bootstrap>>);
+    const { takeInitialBootstrap } = await import("./bootstrap");
+    await takeInitialBootstrap(undefined, "group-2");
+    expect(rpc.bootstrap).toHaveBeenLastCalledWith({ groupId: "group-2" });
+    expect(rpc.bootstrap).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe("switching spaces in place", () => {
   it("loads the other space under its own header and leaves it for the shell", async () => {
     vi.stubGlobal("window", { location: { pathname: "/sign-in" } });

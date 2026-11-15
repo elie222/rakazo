@@ -104,7 +104,10 @@ describe("provisionMessagingIdentity create race", () => {
           .mockImplementationOnce(async () => null)
           .mockImplementationOnce(async () => winner),
         create: vi.fn(async () => {
-          throw new Error("Unique constraint failed on the fields: (`provider`,`address`)");
+          throw Object.assign(
+            new Error("Unique constraint failed on the fields: (`provider`,`address`)"),
+            { code: "P2002" },
+          );
         }),
       },
       user: {
@@ -266,6 +269,14 @@ describe("messaging identity isolation", () => {
     f.prisma.user.create.mockRejectedValueOnce(new Error("database unavailable"));
     await expect(f.provision("sendblue", "+15550001111")).rejects.toThrow("database unavailable");
     expect(f.prisma.messagingIdentity.create).not.toHaveBeenCalled();
+  });
+
+  it("propagates a failed identity write instead of looking for a race winner", async () => {
+    const f = fixture();
+    f.prisma.messagingIdentity.create.mockRejectedValueOnce(new Error("connection reset"));
+    await expect(f.provision("sendblue", "+15550001111")).rejects.toThrow("connection reset");
+    // Only the lookup before the write: no second read for a winner that does not exist.
+    expect(f.prisma.messagingIdentity.findUnique).toHaveBeenCalledTimes(1);
   });
 });
 

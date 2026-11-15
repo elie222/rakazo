@@ -958,6 +958,283 @@ describe("Composer", () => {
     expect(second.value).toBe("unsent thought");
   });
 
+  it.each(["Enter", "Tab", "pointer"])(
+    "restores the slash action caret before trailing text with %s and inserts there next",
+    (method) => {
+      const onSlashAction = vi.fn();
+      const textarea = renderComposer(vi.fn(), { onSlashAction });
+      type(textarea, "/settings trailing text");
+      act(() => {
+        textarea.focus();
+        textarea.setSelectionRange(9, 9);
+        document.dispatchEvent(new Event("selectionchange", { bubbles: true }));
+      });
+      const option = container?.querySelector<HTMLButtonElement>('[role="option"]');
+      expect(option?.textContent).toContain("Settings");
+      if (method === "pointer") act(() => option?.click());
+      else
+        act(() =>
+          textarea.dispatchEvent(new KeyboardEvent("keydown", { key: method, bubbles: true })),
+        );
+      expect(onSlashAction).toHaveBeenCalledExactlyOnceWith("chat-settings");
+      expect(textarea.value).toBe("trailing text");
+      expect([textarea.selectionStart, textarea.selectionEnd]).toEqual([0, 0]);
+      expect(document.activeElement).toBe(textarea);
+      const start = textarea.selectionStart;
+      type(
+        textarea,
+        `${textarea.value.slice(0, start)}next ${textarea.value.slice(textarea.selectionEnd)}`,
+      );
+      expect(textarea.value).toBe("next trailing text");
+    },
+  );
+
+  it.each(["Enter", "Tab"])("picks the highlighted slash row with %s instead of sending", (key) => {
+    const onSend = vi.fn().mockResolvedValue(true);
+    const onSlashAction = vi.fn();
+    const textarea = renderComposer(onSend, { onSlashAction });
+    const press = (name: string) =>
+      act(() => textarea.dispatchEvent(new KeyboardEvent("keydown", { key: name, bubbles: true })));
+    type(textarea, "/s");
+    const selected = () =>
+      container?.querySelector('[data-testid="slash-picker"] [aria-selected="true"]');
+    expect(selected()?.getAttribute("aria-label")).toBe("Skill summarize");
+    expect(textarea.getAttribute("aria-activedescendant")).toBe(selected()?.id);
+    press(key);
+    expect(onSend).not.toHaveBeenCalled();
+    expect(textarea.value).toBe("");
+    expect(container?.querySelector('[aria-label="Remove skill summarize"]')).not.toBeNull();
+
+    act(() =>
+      container?.querySelector<HTMLButtonElement>('[aria-label="Remove skill summarize"]')?.click(),
+    );
+    type(textarea, "/s");
+    press("ArrowDown");
+    expect(selected()?.getAttribute("aria-label")).toBe("Chat Settings");
+    press(key);
+    expect(onSlashAction).toHaveBeenCalledWith("chat-settings");
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it("keeps the highlighted slash row when skills refresh and on Ctrl/Cmd+Enter", () => {
+    const onSend = vi.fn().mockResolvedValue(true);
+    const onSlashAction = vi.fn();
+    const textarea = renderComposer(onSend, { onSlashAction, enterToSend: false });
+    const press = (init: KeyboardEventInit) =>
+      act(() => textarea.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, ...init })));
+    type(textarea, "/s");
+    press({ key: "ArrowDown" });
+    rerenderComposer({ agentSkills: [] });
+    expect(
+      container
+        ?.querySelector('[data-testid="slash-picker"] [aria-selected="true"]')
+        ?.getAttribute("aria-label"),
+    ).toBe("Chat Settings");
+    const ctrlTab = new KeyboardEvent("keydown", {
+      key: "Tab",
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    act(() => textarea.dispatchEvent(ctrlTab));
+    expect(ctrlTab.defaultPrevented).toBe(false);
+    expect(textarea.value).toBe("/s");
+    for (const init of [
+      { key: "ArrowDown", shiftKey: true },
+      { key: "Escape", ctrlKey: true },
+    ]) {
+      const modified = new KeyboardEvent("keydown", { ...init, bubbles: true, cancelable: true });
+      act(() => textarea.dispatchEvent(modified));
+      expect(modified.defaultPrevented).toBe(false);
+    }
+    expect(
+      container?.querySelector('[data-testid="slash-picker"]')?.getAttribute("aria-label"),
+    ).toBe("Command menu");
+    press({ key: "Enter", metaKey: true });
+    expect(onSlashAction).toHaveBeenCalledWith("chat-settings");
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it("attaches a skill picked mid-message as the chip, keeping the words around it", async () => {
+    const onSend = vi.fn().mockResolvedValue(true);
+    const textarea = renderComposer(onSend);
+    const picker = () => container?.querySelector('[data-testid="slash-picker"]');
+    type(textarea, "@Bo");
+    pressEnter(textarea);
+    type(textarea, "@Bob please /sum");
+    expect(picker()).not.toBeNull();
+    pressEnter(textarea);
+    expect(onSend).not.toHaveBeenCalled();
+    expect(textarea.value).toBe("@Bob please ");
+    expect(textarea.selectionStart).toBe(12);
+    expect(container?.querySelector("[data-testid='skill-chip']")?.textContent).toBe("summarize");
+    // One skill per message: another / offers nothing once the draft has one.
+    type(textarea, "@Bob please /s");
+    expect(picker()).toBeNull();
+    type(textarea, "@Bob please check the notes");
+    pressEnter(textarea);
+    await act(async () => {});
+    expect(onSend).toHaveBeenCalledWith(
+      "/summarize\n@Bob please check the notes",
+      [bob],
+      expect.any(String),
+    );
+  });
+
+  it("sends a / in ordinary prose as typed instead of picking a row", async () => {
+    const onSend = vi.fn().mockResolvedValue(true);
+    const onSlashAction = vi.fn();
+    const releaseNotes = { ...summarize, id: "skill-2", name: "release-notes" };
+    const textarea = renderComposer(onSend, {
+      onSlashAction,
+      agentSkills: [summarize, releaseNotes],
+    });
+    const picker = () => container?.querySelector('[data-testid="slash-picker"]');
+    for (const text of [
+      "should we ship it, yes / no",
+      "salt / pepper / set",
+      "where is /usage",
+      "is it 1 /",
+      "see https://x.com/sum",
+      "and/sum",
+    ]) {
+      type(textarea, text);
+      expect(picker()).toBeNull();
+      pressEnter(textarea);
+      await act(async () => {});
+      expect(onSend).toHaveBeenLastCalledWith(text, [], expect.any(String));
+    }
+    expect(onSlashAction).not.toHaveBeenCalled();
+    // Mid-message only skill names match; descriptions stay a start-of-draft aid.
+    type(textarea, "please /docu");
+    expect(picker()).toBeNull();
+    type(textarea, "/docu");
+    expect(picker()?.querySelector('[aria-label="Skill summarize"]')).not.toBeNull();
+  });
+
+  it("removes only / through the caret, and takes the chip after blank lines", async () => {
+    const onSend = vi.fn().mockResolvedValue(true);
+    const textarea = renderComposer(onSend);
+    const chip = () => container?.querySelector("[data-testid='skill-chip']");
+    act(() => textarea.focus());
+    const pickAt = (text: string, caret: number) => {
+      type(textarea, text);
+      act(() => {
+        textarea.setSelectionRange(caret, caret);
+        document.dispatchEvent(new Event("selectionchange", { bubbles: true }));
+      });
+      pressEnter(textarea);
+    };
+    pickAt("please /sum, thanks", 11);
+    expect(textarea.value).toBe("please , thanks");
+    expect(chip()?.textContent).toBe("summarize");
+    act(() =>
+      container?.querySelector<HTMLButtonElement>('[aria-label="Remove skill summarize"]')?.click(),
+    );
+    pickAt("/sum，总结一下", 4);
+    expect(textarea.value).toBe("，总结一下");
+    expect(chip()?.textContent).toBe("summarize");
+    act(() =>
+      container?.querySelector<HTMLButtonElement>('[aria-label="Remove skill summarize"]')?.click(),
+    );
+    pickAt("\n/sum", 5);
+    expect(textarea.value).toBe("");
+    expect(chip()).not.toBeNull();
+    type(textarea, "the notes");
+    pressEnter(textarea);
+    await act(async () => {});
+    expect(onSend).toHaveBeenCalledWith("/summarize\nthe notes", [], expect.any(String));
+  });
+
+  it("keeps slash Escape dismissal through a delayed native selection event", async () => {
+    const onSend = vi.fn().mockResolvedValue(true);
+    const textarea = renderComposer(onSend);
+    act(() => textarea.focus());
+    type(textarea, "please /sum");
+    act(() => {
+      textarea.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      textarea.dispatchEvent(new KeyboardEvent("keyup", { key: "Escape", bubbles: true }));
+      document.dispatchEvent(new Event("selectionchange", { bubbles: true }));
+    });
+    expect(container?.querySelector('[data-testid="slash-picker"]')).toBeNull();
+    pressEnter(textarea);
+    await act(async () => {});
+    expect(onSend).toHaveBeenCalledWith("please /sum", [], expect.any(String));
+  });
+
+  it("turns a skill picked at the start of a longer draft into the chip, keeping the rest", async () => {
+    const onSend = vi.fn().mockResolvedValue(true);
+    const textarea = renderComposer(onSend);
+    type(textarea, "@Bo");
+    pressEnter(textarea);
+    type(textarea, "@Bob the notes");
+    act(() => {
+      textarea.setSelectionRange(0, 0);
+      document.dispatchEvent(new Event("selectionchange", { bubbles: true }));
+    });
+    type(textarea, "/sum @Bob the notes");
+    act(() => {
+      textarea.setSelectionRange(4, 4);
+      document.dispatchEvent(new Event("selectionchange", { bubbles: true }));
+    });
+    pressEnter(textarea);
+    expect(container?.querySelector("[data-testid='skill-chip']")?.textContent).toBe("summarize");
+    expect(textarea.value).toBe("@Bob the notes");
+    expect(container?.querySelector('[data-testid="mention-chip"]')?.textContent).toBe("@Bob");
+    pressEnter(textarea);
+    await act(async () => {});
+    expect(onSend).toHaveBeenCalledWith("/summarize\n@Bob the notes", [bob], expect.any(String));
+  });
+
+  it("picks into a restored mid-message draft at its query, not the mount caret", () => {
+    const draftKey = "bot:restored-slash";
+    type(renderComposer(vi.fn(), { draftKey }), "please /sum");
+    act(() => root?.unmount());
+    container?.remove();
+    const textarea = renderComposer(vi.fn(), { draftKey });
+    act(() =>
+      container?.querySelector<HTMLButtonElement>("button[aria-label='Skill summarize']")?.click(),
+    );
+    expect(textarea.value).toBe("please ");
+    expect(container?.querySelector("[data-testid='skill-chip']")?.textContent).toBe("summarize");
+  });
+
+  it("lets Shift+Tab leave the field while the slash menu is open", () => {
+    const textarea = renderComposer(vi.fn());
+    type(textarea, "/s");
+    const shiftTab = new KeyboardEvent("keydown", {
+      key: "Tab",
+      shiftKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    act(() => textarea.dispatchEvent(shiftTab));
+    expect(shiftTab.defaultPrevented).toBe(false);
+    expect(textarea.value).toBe("/s");
+    expect(container?.querySelector("[data-testid='skill-chip']")).toBeNull();
+  });
+
+  it("refreshes skills only for a menu opened at the start of the draft", () => {
+    const onSlashOpen = vi.fn();
+    const textarea = renderComposer(vi.fn(), { onSlashOpen });
+    type(textarea, "please /sum");
+    expect(container?.querySelector('[data-testid="slash-picker"]')).not.toBeNull();
+    expect(onSlashOpen).not.toHaveBeenCalled();
+    type(textarea, "");
+    type(textarea, "/");
+    expect(onSlashOpen).toHaveBeenCalledOnce();
+  });
+
+  it("sends a slash draft as typed when no row matches", async () => {
+    const onSend = vi.fn().mockResolvedValue(true);
+    const textarea = renderComposer(onSend);
+    type(textarea, "/zzz");
+    expect(container?.querySelector('[data-testid="slash-picker"]')).toBeNull();
+    pressEnter(textarea);
+    await act(async () => {});
+    expect(onSend).toHaveBeenCalledWith("/zzz", [], expect.any(String));
+  });
+
   it("keeps Enter as newline and Ctrl+Enter as send when enter-to-send is off", async () => {
     const onSend = vi.fn().mockResolvedValue(true);
     const textarea = renderComposer(onSend, {

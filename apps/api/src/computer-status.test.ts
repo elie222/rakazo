@@ -104,6 +104,18 @@ describe("toComputerStatus", () => {
     });
   });
 
+  it.each(["boxd", "railway"])("offers the terminal on a %s computer", (kind) => {
+    expect(
+      toComputerStatus("bot-1", {
+        kind,
+        state: "running",
+        scope: "team",
+        controlHolder: "none",
+        homeRevision: "r1",
+      }).terminalAvailable,
+    ).toBe(true);
+  });
+
   it("hides update on desktop computers", () => {
     expect(
       toComputerStatus("bot-1", {
