@@ -1,5 +1,5 @@
 const assert = require("node:assert");
-const { toLines, diffLines, diffStats } = require("./diff.cjs");
+const { toLines, diffLines, diffStats, MAX_LCS_CELLS } = require("./diff.cjs");
 
 function test(name, fn) {
   try {
@@ -63,12 +63,68 @@ test("diff identical: all context", () => {
   const t = "a\nb\n";
   const d = diffLines(t, t);
   assert.ok(d.every((x) => x.type === "ctx"));
-  assert.deepStrictEqual(diffStats(t, t), { add: 0, del: 0, kind: "modified" });
+  assert.deepStrictEqual(diffStats(t, t), { add: 0, del: 0, kind: "unchanged" });
 });
 
 test("diff empty new file: no lines", () => {
   assert.deepStrictEqual(diffLines(null, ""), []);
   assert.deepStrictEqual(diffStats(null, ""), { add: 0, del: 0, kind: "new" });
+});
+
+test("diff: adding only the final newline is a change", () => {
+  const d = diffLines("a", "a\n");
+  assert.deepStrictEqual(
+    d.map((r) => r.type),
+    ["del", "add"],
+  );
+  assert.strictEqual(d[0].noEol, true);
+  assert.strictEqual(d[1].noEol, undefined);
+  assert.deepStrictEqual(diffStats("a", "a\n"), { add: 1, del: 1, kind: "modified" });
+  assert.deepStrictEqual(diffStats("a\n", "a"), { add: 1, del: 1, kind: "modified" });
+});
+
+test("diff: same text without final newline is unchanged", () => {
+  assert.deepStrictEqual(diffStats("a\nb", "a\nb"), { add: 0, del: 0, kind: "unchanged" });
+});
+
+test("diff: only the last line changes when neither side ends in a newline", () => {
+  const d = diffLines("a\nb", "a\nc");
+  assert.deepStrictEqual(
+    d.map((r) => `${r.type}:${r.text}`),
+    ["ctx:a", "del:b", "add:c"],
+  );
+});
+
+test("diff: trimmed prefix and suffix keep correct line numbers", () => {
+  const d = diffLines("a\nb\nc\nd\n", "a\nb\nX\nY\nd\n");
+  assert.deepStrictEqual(d, [
+    { type: "ctx", a: 1, b: 1, text: "a" },
+    { type: "ctx", a: 2, b: 2, text: "b" },
+    { type: "del", a: 3, b: null, text: "c" },
+    { type: "add", a: null, b: 3, text: "X" },
+    { type: "add", a: null, b: 4, text: "Y" },
+    { type: "ctx", a: 4, b: 5, text: "d" },
+  ]);
+});
+
+test("diff: a one-line edit in a huge file stays line-level and fast", () => {
+  const lines = Array.from({ length: 50000 }, (_, i) => `line ${i}`);
+  const edited = lines.slice();
+  edited[25000] = "changed";
+  const t0 = Date.now();
+  const stats = diffStats(`${lines.join("\n")}\n`, `${edited.join("\n")}\n`);
+  assert.deepStrictEqual(stats, { add: 1, del: 1, kind: "modified" });
+  assert.ok(Date.now() - t0 < 2000);
+});
+
+test("diff: huge unrelated files fall back to a coarse removed/added block", () => {
+  const side = Math.ceil(Math.sqrt(MAX_LCS_CELLS)) + 10;
+  const a = Array.from({ length: side }, (_, i) => `a${i}`).join("\n");
+  const b = Array.from({ length: side }, (_, i) => `b${i}`).join("\n");
+  const d = diffLines(a, b);
+  assert.strictEqual(d.filter((r) => r.type === "del").length, side);
+  assert.strictEqual(d.filter((r) => r.type === "add").length, side);
+  assert.ok(d.every((r) => r.type !== "ctx"));
 });
 
 if (process.exitCode) process.exit(1);
