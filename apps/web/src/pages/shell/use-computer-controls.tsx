@@ -23,6 +23,7 @@ import {
 import { errorText } from "../../lib/user-error";
 import type { ComputerState } from "./use-computer";
 
+/** Booting, opening, taking over and releasing the computer, and what its views show. */
 export function useComputerControls({
   rpc,
   state,
@@ -87,6 +88,7 @@ export function useComputerControls({
     computerVisible,
     refreshComputerScreen,
     refreshOwnControlScreen,
+    ownControlLease,
     expectOwnAnswer,
     expectOwnControlEvent,
     forgetOwnControlEvent,
@@ -387,7 +389,7 @@ export function useComputerControls({
     // Hand back and I'm done end whatever control this person holds on the bot's screen. Nothing
     // changes here until the server answers; the screen then follows its state.
     try {
-      const leaseId = computerRef.current?.controlLeaseId;
+      const leaseId = computerRef.current?.controlLeaseId ?? ownControlLease(botId);
       if (leaseId) expectOwnControlEvent(botId, "computer.takeover.released", leaseId);
       if (reason !== undefined) expectOwnAnswer(botId);
       await rpc.computer.release({ botId, reason }).catch(async (error) => {
@@ -414,7 +416,9 @@ export function useComputerControls({
     reason: ComputerReleaseReason,
   ) {
     const leaseId =
-      computerRef.current?.botId === botId ? computerRef.current.controlLeaseId : undefined;
+      computerRef.current?.botId === botId
+        ? (computerRef.current.controlLeaseId ?? ownControlLease(botId))
+        : ownControlLease(botId);
     if (leaseId) expectOwnControlEvent(botId, "computer.takeover.released", leaseId);
     expectOwnAnswer(botId);
     await rpc.computer.release({ botId, runId, reason }).catch(async (error) => {

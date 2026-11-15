@@ -61,6 +61,7 @@ export function useComputerState({
         botId: string;
         type: string;
         leaseId?: string;
+        receivedLeaseId?: string;
         until: number;
         screen?: Promise<unknown>;
         consumed?: boolean;
@@ -454,12 +455,12 @@ export function useComputerState({
     for (const [id, change] of ownControlChange.current) {
       if (Date.now() > change.until) ownControlChange.current.delete(id);
     }
-    const pending = ownControlChange.current.get(botId);
+    const pending = ownControlChange.current.get(`${botId}:${type}`);
     const screen =
       leaseId !== undefined && pending?.leaseId === undefined && pending?.type === type
         ? pending.screen
         : undefined;
-    ownControlChange.current.set(botId, {
+    ownControlChange.current.set(`${botId}:${type}`, {
       botId,
       type,
       leaseId,
@@ -471,7 +472,8 @@ export function useComputerState({
   /** A take or release that failed changed nothing; an event it held back still gets its read. */
   async function forgetOwnControlEvent(botId: string) {
     ownAnswers.current.delete(botId);
-    ownControlChange.current.delete(botId);
+    ownControlChange.current.delete(`${botId}:computer.takeover.granted`);
+    ownControlChange.current.delete(`${botId}:computer.takeover.released`);
     // Only the bot on screen; another bot's read would discard the shown bot's own read.
     if ((computerBotIdRef.current ?? activeBotId.current) === botId) {
       await refreshComputerScreen(botId).catch(() => undefined);
@@ -480,20 +482,19 @@ export function useComputerState({
 
   /** True once for the live event of a control change this tab asked for. */
   function isOwnControlEvent(botId: string, type: string, leaseId?: unknown) {
-    const own = ownControlChange.current.get(botId);
-    // A release that sent no event must not swallow the release after someone's later grant.
-    if (own?.botId === botId && own.type !== type && type === "computer.takeover.granted") {
-      ownControlChange.current.delete(botId);
-    }
+    const own = ownControlChange.current.get(`${botId}:${type}`);
+    if (type === "computer.takeover.granted")
+      ownControlChange.current.delete(`${botId}:computer.takeover.released`);
     if (!own || own.botId !== botId || own.type !== type || Date.now() > own.until) return false;
     if (own.leaseId !== undefined && own.leaseId !== leaseId) return false;
     if (own.consumed) return false;
     if (own.type === "computer.takeover.granted" && own.leaseId === undefined) {
+      own.receivedLeaseId = typeof leaseId === "string" ? leaseId : undefined;
       own.consumed = true;
       own.screen ??= refreshComputerScreen(botId).catch(() => null);
       return true;
     }
-    ownControlChange.current.delete(botId);
+    ownControlChange.current.delete(`${botId}:${type}`);
     return true;
   }
 
@@ -510,8 +511,13 @@ export function useComputerState({
     return until !== undefined && Date.now() <= until;
   }
 
+  function ownControlLease(botId: string) {
+    const own = ownControlChange.current.get(`${botId}:computer.takeover.granted`);
+    return own && Date.now() <= own.until ? (own.leaseId ?? own.receivedLeaseId) : undefined;
+  }
+
   function refreshOwnControlScreen(botId: string) {
-    const own = ownControlChange.current.get(botId);
+    const own = ownControlChange.current.get(`${botId}:computer.takeover.granted`);
     const screen = own && Date.now() <= own.until ? own.screen : undefined;
     if (own) own.screen = undefined;
     return screen ?? refreshComputerScreen(botId);
@@ -560,6 +566,7 @@ export function useComputerState({
     resetScreenReconnect,
     computerVisible,
     refreshComputerScreen,
+    ownControlLease,
     expectOwnAnswer,
     isOwnAnswer,
     refreshOwnControlScreen,
@@ -571,5 +578,4 @@ export function useComputerState({
 
 export type ComputerState = ReturnType<typeof useComputerState>;
 
-/** Booting, opening, taking over and releasing the computer, and what its views show. */
 export { useComputerControls } from "./use-computer-controls";

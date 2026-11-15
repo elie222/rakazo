@@ -417,6 +417,17 @@ it("lets this tab's own take or release skip one matching live event", () => {
   expect(state.isOwnControlEvent("bot-1", "computer.takeover.released", "lease-3")).toBe(false);
 });
 
+it("keeps a quick release expectation when the take response arrives", async () => {
+  await act(async () => {
+    state.expectOwnControlEvent("bot-1", "computer.takeover.granted");
+    state.isOwnControlEvent("bot-1", "computer.takeover.granted", "lease-1");
+    expect(state.ownControlLease("bot-1")).toBe("lease-1");
+    state.expectOwnControlEvent("bot-1", "computer.takeover.released", "lease-1");
+    state.expectOwnControlEvent("bot-1", "computer.takeover.granted", "lease-1");
+    expect(state.isOwnControlEvent("bot-1", "computer.takeover.released", "lease-1")).toBe(true);
+  });
+});
+
 it("reuses the early grant screen read after the takeover response", async () => {
   screenUrl.mockClear();
   await act(async () => {
