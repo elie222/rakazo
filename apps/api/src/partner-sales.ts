@@ -76,14 +76,12 @@ export function createPartnerSales(deps: {
           if (outcome === "not_found") {
             if (Date.now() - sale.createdAt.getTime() < EARNINGS_SETTLE_MS)
               throw new Error(`Partner earnings for ${payment.invoiceId} are not created yet`);
-            // A sale the program confirmed may still gain earnings; one it never confirmed after a
-            // day has none to withdraw.
-            if (sale.reportedAt) {
-              getLogger().warn("partner earnings to withdraw not found yet", {
-                "billing.invoice_id": payment.invoiceId,
-              });
-              continue;
-            }
+            // Even an unconfirmed send may still create earnings, so the sale stays open and every
+            // later event for the customer looks again.
+            getLogger().warn("partner earnings to withdraw not found yet", {
+              "billing.invoice_id": payment.invoiceId,
+            });
+            continue;
           }
           if (outcome === "already_paid")
             getLogger().error("partner commission was paid out before its refund; recover it", {

@@ -249,7 +249,7 @@ dbTests("partner program sales", () => {
     expect(program.refundSale).toHaveBeenCalledTimes(2);
   });
 
-  it("closes a refunded sale the program never confirmed once a day has passed", async () => {
+  it("keeps looking for earnings of a refunded sale the program never confirmed", async () => {
     const organizationId = await organization("never-confirmed", "click_15");
     const program = fakeProgram();
     let payments = [paid("in_never_confirmed")];
@@ -268,7 +268,7 @@ dbTests("partner program sales", () => {
     program.refundSale.mockResolvedValue("not_found");
     await sales.report("cus_never_confirmed", organizationId);
     await sales.report("cus_never_confirmed", organizationId);
-    expect(program.refundSale).toHaveBeenCalledTimes(1);
+    expect(program.refundSale).toHaveBeenCalledTimes(2);
   });
 
   it("reopens a sale refunded while it was being sent, so its earnings are withdrawn", async () => {
