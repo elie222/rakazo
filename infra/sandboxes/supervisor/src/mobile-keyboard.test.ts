@@ -680,7 +680,7 @@ describe("mobile trackpad touches", () => {
       fixture.touch("touchend", 2, 50, 250, [second]);
       fixture.touch("touchend", 3, 90, 250);
       expect(mouseDowns(fixture)).toHaveLength(1);
-      expect(mouseDowns(fixture)[0].button).toBe(2);
+      expect(mouseDowns(fixture)[0]?.button).toBe(2);
     });
   });
 
