@@ -27,7 +27,7 @@ export async function connectMcpOauth(serverId: string): Promise<McpOauthResult>
   if (started.status !== "authorization_required") return started.status;
   const popup = window.open(
     started.authorizationUrl,
-    MCP_OAUTH_CHANNEL,
+    `${MCP_OAUTH_CHANNEL}:${started.sessionId}`,
     "popup,width=560,height=720",
   );
   if (!popup) {

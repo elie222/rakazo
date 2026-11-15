@@ -103,6 +103,11 @@ it("cancels once the popup is closed and the app has focus again", async () => {
   const { channels } = popupFlow({ focused: true });
   const flow = connectMcpOauth("server");
   await vi.advanceTimersByTimeAsync(500);
+  expect(window.open).toHaveBeenCalledWith(
+    "https://identity.example.test/authorize",
+    "rakazo-mcp-oauth:session",
+    "popup,width=560,height=720",
+  );
   await expect(flow).resolves.toBe("cancelled");
   expect(channels[0]?.close).toHaveBeenCalledOnce();
   expect(vi.getTimerCount()).toBe(0);

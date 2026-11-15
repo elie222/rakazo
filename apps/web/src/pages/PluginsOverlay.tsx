@@ -10,9 +10,9 @@ import { MCP_OAUTH_CLIENT_REQUIRED, mcpServerConnection } from "@rakazo/contract
 import {
   CONNECTION_CATALOG_PAGE_SIZE,
   catalogItemKey,
+  customMcpServerInput,
   installedPluginParts,
   managedAppFor,
-  newClientId,
 } from "@rakazo/core";
 import {
   Button,
@@ -270,13 +270,7 @@ export function PluginsOverlay({
     try {
       // OAuth is the MCP server itself signing in, so it is saved first and then authorized.
       if (sourceKind === "mcp" && authType === "oauth") {
-        const endpoint = sourceUrl.trim();
-        const server = await rpc.mcp.servers.create({
-          slug: `integration-${newClientId().slice(0, 8)}`,
-          name,
-          transport: "streamable_http",
-          endpoint,
-        });
+        const server = await rpc.mcp.servers.create(customMcpServerInput(name, sourceUrl));
         savedForOauth = true;
         setPending(null);
         sourceForm.setCredential("");

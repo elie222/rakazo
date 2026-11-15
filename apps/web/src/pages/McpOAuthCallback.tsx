@@ -39,7 +39,7 @@ export function McpOAuthCallbackPage() {
         const channel = new BroadcastChannel(POPUP_NAME);
         channel.postMessage({ type: "mcp-oauth-complete", sessionId: state });
         channel.close();
-        if (window.name === POPUP_NAME) {
+        if (window.name.startsWith(`${POPUP_NAME}:`)) {
           setDone(true);
           window.close();
           return;
@@ -48,7 +48,7 @@ export function McpOAuthCallbackPage() {
       })
       .catch((err: unknown) => fail(errorText(err, t`Could not complete OAuth`)));
   }, [navigate, params, t]);
-  const showReturn = Boolean(error) && window.name !== POPUP_NAME;
+  const showReturn = Boolean(error) && !window.name.startsWith(`${POPUP_NAME}:`);
   return (
     <div className="grid min-h-screen place-items-center bg-background p-6 text-center">
       <div>
