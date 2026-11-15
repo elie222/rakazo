@@ -3,7 +3,7 @@ import { WhatsAppAdapter } from "@chat-adapter/whatsapp";
 import { ConsoleLogger, convertEmojiPlaceholders, markdownToPlainText } from "chat";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { splitOutboundBody } from "./messaging-platforms.js";
+import { splitOutboundBody, telegramFallbackText } from "./messaging-platforms.js";
 
 const LIMIT = 4096;
 
@@ -66,7 +66,10 @@ function deliver(provider: Provider, body: string): Delivery[] {
   if (!delivery) {
     delivery = splitOutboundBody(provider, body).map((part) => {
       const sent = sentText(provider, part);
-      const fallback = provider === "telegram" ? markdownToPlainText(part) : "";
+      const fallback =
+        provider === "telegram"
+          ? convertEmojiPlaceholders(telegramFallbackText(part), "gchat")
+          : "";
       return { part, sent, fallback, ...view(provider, sent) };
     });
     deliveries.set(key, delivery);
@@ -244,8 +247,61 @@ const formattedReply: fc.Arbitrary<Reply> = fc
     code: blocks.flatMap((piece) => piece.code ?? []),
   }));
 
+const DOCS = "https://example.com/docs/start";
+const SITE = "https://example.org/a_b?x=1";
+const CHART = "https://example.com/chart.png";
+const DEFINITIONS = `[docs]: ${DOCS} "The docs"\n[site]: ${SITE}\n[chart]: <${CHART}>`;
+const FOOTNOTE = "[^1]: Where the claim comes from.";
+
+/** A link, image or footnote marker: how it is written, what plain text shows, its address. */
+type Linked = { markdown: string; text: string; address?: string };
+const labelled = (write: (label: string) => string, address: string) =>
+  words(4).map((label): Linked => ({ markdown: write(label), text: label, address }));
+const linked: fc.Arbitrary<Linked> = fc.oneof(
+  { weight: 8, arbitrary: words(12).map((text): Linked => ({ markdown: text, text })) },
+  { weight: 2, arbitrary: labelled((label) => `[${label}](${DOCS})`, DOCS) },
+  { weight: 2, arbitrary: labelled((label) => `[${label}][docs]`, DOCS) },
+  { weight: 2, arbitrary: labelled((label) => `[**${label}**][DOCS]`, DOCS) },
+  { weight: 1, arbitrary: labelled((label) => `![${label}][chart]`, CHART) },
+  {
+    weight: 1,
+    arbitrary: fc.constant<Linked>({ markdown: "[site]", text: "site", address: SITE }),
+  },
+  { weight: 1, arbitrary: fc.constant<Linked>({ markdown: "a claim[^1]", text: "a claim[^1]" }) },
+);
+// Longer than one message, so no part can hold it as a link.
+const oversized = fc
+  .tuple(fc.constantFrom("0", "😀", "👍🏽"), fc.noBias(fc.integer({ min: 4097, max: 6000 })))
+  .map(([unit, length]): Linked => {
+    const markdown = `[here](https://example.com/${unit.repeat(Math.ceil(length / unit.length))})`;
+    return { markdown, text: markdown };
+  });
+const linkedBlock = fc
+  .tuple(
+    fc.constantFrom("", "", "", "## ", "- ", "> "),
+    upTo(fc.oneof({ weight: 100, arbitrary: linked }, { weight: 1, arbitrary: oversized }), 30),
+  )
+  .map(([prefix, items]) => ({
+    markdown: prefix + items.map((item) => item.markdown).join(" "),
+    text: items.map((item) => item.text).join(" "),
+    addresses: items.flatMap((item) => item.address ?? []),
+  }));
+const linkedBlocks = (min: number, max: number) =>
+  fc.array(linkedBlock, { minLength: min, maxLength: max }).map((blocks) => ({
+    // The definitions sit at the end, away from most of the references that need them.
+    body: [...blocks.map((block) => block.markdown), DEFINITIONS, FOOTNOTE].join("\n\n"),
+    text: [...blocks.map((block) => block.text), FOOTNOTE].join("\n"),
+    addresses: blocks.flatMap((block) => block.addresses),
+  }));
+/** Replies with labelled links, reference-style links and images, footnotes and long addresses. */
+const linkedReply = linkedBlocks(6, 10).filter(({ body }) => body.length > LIMIT);
+const shortLinkedReply = linkedBlocks(1, 3).filter(({ body }) => body.length < 1500);
+
+const count = (text: string, wanted: string) => text.split(wanted).length - 1;
+
 const reply = fc.oneof(plainReply, formattedReply);
-const runs = { seed: 42, numRuns: 10 };
+// A failure is reported as found: shrinking splits thousands more replies and cannot be timed out.
+const runs = { seed: 42, numRuns: 10, endOnFailure: true };
 
 describe.each<Provider>(["telegram", "whatsapp"])(
   "splitOutboundBody properties for %s",
@@ -257,6 +313,57 @@ describe.each<Provider>(["telegram", "whatsapp"])(
             expect(part.length).toBeLessThanOrEqual(LIMIT);
             expect(sent.length).toBeLessThanOrEqual(LIMIT);
             expect(fallback.length).toBeLessThanOrEqual(LIMIT);
+          }
+        }),
+        runs,
+      );
+    });
+
+    it("returns a reply that fits one message as it was written", () => {
+      fc.assert(
+        fc.property(shortLinkedReply, ({ body }) => {
+          expect(splitOutboundBody(provider, body)).toEqual([body]);
+        }),
+        runs,
+      );
+    });
+
+    it("delivers a reply with links, references and footnotes once and in order", () => {
+      fc.assert(
+        fc.property(linkedReply, ({ body, text }) => {
+          const delivery = deliver(provider, body);
+          expect(delivery.length).toBeGreaterThan(1);
+          for (const { part, sent, fallback } of delivery) {
+            for (const queued of [part, sent, fallback]) {
+              expect(queued.length).toBeLessThanOrEqual(LIMIT);
+              expect(/[\uD800-\uDFFF]/u.test(queued)).toBe(false);
+            }
+            expect(markdownToPlainText(part).trim()).not.toBe("");
+          }
+          // Each part's own plain text: a label for a link, and the written text for a footnote
+          // or for an address too long to send as a link.
+          const shown = delivery.map(({ part }) => markdownToPlainText(part));
+          expect(shown.join("").replace(/\s+/g, "")).toBe(text.replace(/\s+/g, ""));
+        }),
+        runs,
+      );
+    });
+
+    it("gives every link its address in the part that shows it", () => {
+      fc.assert(
+        fc.property(linkedReply, ({ body, addresses }) => {
+          const delivery = deliver(provider, body);
+          for (const { part } of delivery) {
+            // No reference is left for a definition in another part, and no definition is sent.
+            expect(part).not.toMatch(/\]\[|^\[(?:docs|site|chart)\]:/m);
+          }
+          for (const address of [DOCS, SITE, CHART]) {
+            const written = addresses.filter((each) => each === address).length;
+            expect(count(delivery.map(({ sent }) => sent).join("\n"), address)).toBe(written);
+            if (provider === "telegram") {
+              const fallback = delivery.map((part) => part.fallback).join("\n");
+              expect(count(fallback, `(${address})`)).toBe(written);
+            }
           }
         }),
         runs,

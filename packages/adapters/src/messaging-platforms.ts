@@ -1,12 +1,19 @@
 import { createHash } from "node:crypto";
-import type { TelegramAdapter } from "@chat-adapter/telegram";
-import { createTelegramAdapter, TelegramFormatConverter } from "@chat-adapter/telegram";
+import { TelegramAdapter, TelegramFormatConverter } from "@chat-adapter/telegram";
 import { createWhatsAppAdapter, WhatsAppAdapter, WhatsAppApiError } from "@chat-adapter/whatsapp";
 import type { HttpInstance } from "@larksuiteoapi/node-sdk";
 import type { MessagingInboundMessage, MessagingOutboundStatus } from "@rakazo/adapter-kit";
 import { getLogger } from "@rakazo/logging";
-import type { Adapter } from "chat";
-import { ConsoleLogger, convertEmojiPlaceholders, parseMarkdown, toPlainText } from "chat";
+import type { Adapter, AdapterPostableMessage, CardElement, Root } from "chat";
+import {
+  ConsoleLogger,
+  convertEmojiPlaceholders,
+  isLinkNode,
+  parseMarkdown,
+  text,
+  toPlainText,
+  walkAst,
+} from "chat";
 import type { SendblueAdapterConfig, SendblueThreadId } from "chat-adapter-sendblue";
 import type { ClientOptions as SendblueClientOptions } from "sendblue";
 import type { MessagingPlatform } from "./chat-sdk-surface.js";
@@ -505,13 +512,51 @@ export function splitOutboundBody(provider: string, body: string): string[] {
 const telegramFormat = new TelegramFormatConverter();
 
 /**
+ * The plain text sent when Telegram rejects a reply's formatting. Plain text drops the address of
+ * a link or image, so each is written after its label first. `ast` is rewritten.
+ */
+export function telegramFallbackText(
+  markdown: string,
+  ast: Root = parseMarkdown(markdown),
+): string {
+  const plainText = toPlainText(
+    walkAst(ast, (node) => {
+      const link = isLinkNode(node);
+      if (!link && node.type !== "image") return node;
+      const label = link
+        ? toPlainText({ type: "root", children: [{ type: "paragraph", children: node.children }] })
+        : (node.alt ?? "");
+      if (!label) return text(node.url);
+      const bare = node.url.replace(/^(?:https?:\/\/|mailto:)/, "");
+      if (label === node.url || label === bare || label === bare.replace(/\/$/, "")) {
+        return text(label);
+      }
+      return text(`${label} (${node.url})`);
+    }),
+  );
+  return plainText.trim() ? plainText : markdown;
+}
+
+/** The adapter builds its plain-text fallback itself; this is its one seam for that text. */
+class TelegramAdapterWithLinkAddresses extends TelegramAdapter {
+  protected override renderPlainTextMessage(
+    message: AdapterPostableMessage,
+    card: CardElement | null,
+  ): string {
+    return !card && typeof message === "object" && "markdown" in message
+      ? telegramFallbackText(message.markdown)
+      : super.renderPlainTextMessage(message, card);
+  }
+}
+
+/**
  * Both texts the adapter may send for a Markdown part, as it renders them: MarkdownV2, and the
  * plain text it falls back to when Telegram rejects that. It truncates either past the limit.
  */
 function telegramPayloads(markdown: string): string[] {
   const ast = parseMarkdown(markdown);
-  const plainText = toPlainText(ast);
-  return [telegramFormat.fromAst(ast), plainText.trim() ? plainText : markdown].map((text) =>
+  // The fallback rewrites the tree, so the formatted text is rendered first.
+  return [telegramFormat.fromAst(ast), telegramFallbackText(markdown, ast)].map((text) =>
     convertEmojiPlaceholders(text, "gchat"),
   );
 }
@@ -592,7 +637,7 @@ function telegramAdapter(
   secretToken: string,
   options: { pollInboundMessages?: boolean },
 ) {
-  return createTelegramAdapter({
+  return new TelegramAdapterWithLinkAddresses({
     botToken,
     secretToken,
     // Auto mode long-polls when no webhook is registered, for deployments

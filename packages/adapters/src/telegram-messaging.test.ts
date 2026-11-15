@@ -50,15 +50,13 @@ function createSurface(sendErrors: string[] = []) {
       });
     }),
   );
-  const adapter = createTelegramAdapter({
-    botToken: "test-token",
-    secretToken: "test-webhook-secret",
-    mode: "webhook",
-  });
-  const surface = new ChatSdkMessagingSurface([
-    { provider: "telegram", capabilities: { direct: true, groups: false, receipt: null }, adapter },
-  ]);
-  return { surface, sends, threadId: adapter.encodeThreadId({ chatId: "123" }) };
+  const surface = new ChatSdkMessagingSurface(
+    messagingPlatformsFromEnv({
+      telegramBotToken: "test-token",
+      telegramWebhookSecret: "test-webhook-secret",
+    }),
+  );
+  return { surface, sends, threadId: "telegram:123" };
 }
 
 afterEach(() => vi.unstubAllGlobals());
@@ -191,6 +189,42 @@ describe("Telegram messaging Markdown", () => {
     expect(sends[0]).toMatchObject({ parse_mode: "MarkdownV2", text: "*bold*\\!" });
     expect(sends[1]).toMatchObject({ text: "bold!" });
     expect(sends[1]).not.toHaveProperty("parse_mode");
+  });
+
+  it("keeps a link's address when a reply is sent as plain text", async () => {
+    const { surface, sends, threadId } = createSurface(["Bad Request: can't parse entities"]);
+
+    await surface.sendToThread(
+      {
+        threadId,
+        body: "Read [the docs](https://example.com/docs) or https://example.com/faq. ![A chart](https://example.com/chart.png)",
+      },
+      context,
+    );
+
+    expect(sends[1]).toEqual({
+      chat_id: "123",
+      text: "Read the docs (https://example.com/docs) or https://example.com/faq. A chart (https://example.com/chart.png)",
+    });
+  });
+
+  it("keeps every part of a long reply within one message when sent as plain text", async () => {
+    const rows = Array.from(
+      { length: 90 },
+      (_, row) => `- [Article ${row}](https://example.com/articles/${row}/${"path/".repeat(8)})`,
+    );
+    const parts = splitOutboundBody("telegram", rows.join("\n"));
+    const { surface, sends, threadId } = createSurface(
+      parts.flatMap(() => ["Bad Request: can't parse entities", ""]),
+    );
+    for (const part of parts) await surface.sendToThread({ threadId, body: part }, context);
+
+    const fallback = sends.filter((send) => !send.parse_mode).map(({ text }) => text);
+    expect(fallback).toHaveLength(parts.length);
+    expect(fallback.every((text) => text.length <= 4096 && !text.includes("…"))).toBe(true);
+    for (const [row] of rows.entries()) {
+      expect(fallback.join("\n")).toContain(`Article ${row} (https://example.com/articles/${row}/`);
+    }
   });
 
   it("propagates unrelated send failures without a duplicate plain-text attempt", async () => {

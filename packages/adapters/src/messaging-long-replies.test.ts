@@ -1,5 +1,7 @@
 import type { AdapterContext } from "@rakazo/adapter-kit";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import type { TestSink } from "@rakazo/logging";
+import { createLogger, createTestSink, getLogger, installLogger } from "@rakazo/logging";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ChatSdkMessagingSurface } from "./chat-sdk-surface.js";
 import { messagingPlatformsFromEnv, splitOutboundBody } from "./messaging-platforms.js";
 
@@ -85,12 +87,32 @@ function prose(sent: string): string {
   return sent.replace(/```[^\n]*\n[\s\S]*?\n```/g, "");
 }
 
+/** What a person reads in a sent message: a link by its label, without the platform's escapes. */
+function visibleText(provider: Provider, sent: string): string {
+  const labelled =
+    provider === "telegram"
+      ? sent.replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+      : sent.replace(/<(https?:[^>\s]+)>/g, "$1");
+  return labelled.replace(/\\/g, "");
+}
+
 const filler = Array.from(
   { length: 160 },
   (_, line) => `Sentence ${line} of the reply fills it past one message.`,
 ).join("\n\n");
 
-afterEach(() => vi.unstubAllGlobals());
+const logger = getLogger();
+let logs: TestSink;
+
+beforeEach(() => {
+  logs = createTestSink();
+  installLogger(createLogger({ service: "test", sinks: [logs] }));
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  installLogger(logger);
+});
 
 describe("a Telegram reply longer than one message", () => {
   it("shows a code block as written, indentation kept", async () => {
@@ -240,5 +262,90 @@ describe.each<Provider>(["telegram", "whatsapp"])("a long %s reply's parts", (pr
 
     expect(sends).toHaveLength(1);
     expect(sends[0]?.replace(/\\/g, "")).toBe(body);
+    expect(logs.events).toHaveLength(1);
+    expect(logs.events[0]).toMatchObject({
+      level: "warn",
+      message: "sending a whole reply as literal text: splitting its Markdown failed",
+      error: { name: "RangeError", stack: expect.stringContaining("RangeError") },
+    });
+  });
+
+  it("writes reference-style links and images inline, so each part has their addresses", async () => {
+    const body = [
+      "Read [the docs][docs] and see ![the chart][chart].",
+      "> A quote that cites [the docs][docs].",
+      filler,
+      "- Then [the docs][docs] again, and [the site].",
+      '[docs]: https://example.com/docs "Docs"\n[chart]: https://example.com/chart.png',
+      "[the site]: https://example.com/",
+      "> [quoted]: https://example.com/quoted",
+    ].join("\n\n");
+    const sends = await deliver(provider, body);
+
+    expect(sends.length).toBeGreaterThan(1);
+    expect(sends[0]).toContain("Read [the docs](https://example.com/docs");
+    expect(sends[0]).toContain("[the chart](https://example.com/chart.png)");
+    expect(sends[0]).toContain("cites [the docs](https://example.com/docs");
+    expect(sends.at(-1)).toContain("Then [the docs](https://example.com/docs");
+    expect(sends.at(-1)).toContain("[the site](https://example.com/)");
+    // No reference is left without its definition, and no definition is sent as text.
+    for (const sent of sends) expect(sent).not.toMatch(/\]\[|\]:/);
+    expect(logs.events).toEqual([]);
+  });
+
+  it("sends no definition that nothing refers to", async () => {
+    const sends = await deliver(provider, `${filler}\n\n[unused]: https://example.com/unused`);
+
+    expect(sends.length).toBeGreaterThan(1);
+    expect(sends.join("\n")).not.toContain("unused");
+    expect(sends.join("\n")).toContain("Sentence 159 of the reply");
+  });
+
+  it("keeps a footnote's marker and text as they were written", async () => {
+    const sends = await deliver(
+      provider,
+      `A claim.[^1]\n\n${filler}\n\n[^1]: The source of *the claim*.\n\n    Its second paragraph.`,
+    );
+
+    expect(sends.length).toBeGreaterThan(1);
+    expect(sends[0]?.replace(/\\/g, "")).toContain("A claim.[^1]");
+    expect(sends.at(-1)?.replace(/\\/g, "")).toContain(
+      "[^1]: The source of _the claim_.\n\nIts second paragraph.",
+    );
+  });
+
+  it.each([
+    ["a link", "[here]("],
+    ["an image", "![here]("],
+  ])(
+    "sends only %s too long for one message as the text it was written as",
+    async (_name, open) => {
+      const sends = await deliver(
+        provider,
+        `**Before** it.\n\n1. One\n2. See ${open}https://example.com/${"z".repeat(5000)}) for more\n3. **Three**\n\n**After** it.`,
+      );
+
+      expect(sends.every((sent) => sent.length <= LIMIT)).toBe(true);
+      expect(sends[0]).toContain("*Before* it");
+      expect(sends.at(-1)).toContain("*Three*");
+      expect(sends.at(-1)).toContain("*After* it");
+      const shown = sends.map((sent) => visibleText(provider, sent)).join("");
+      expect(shown).toContain(`${open}https://example.com/zzz`);
+      expect(shown.match(/z/g)).toHaveLength(5000);
+      expect(shown).toContain("zzz) for more");
+      expect(logs.events).toEqual([]);
+    },
+  );
+
+  it("cuts an address too long for one message between whole characters", async () => {
+    const written = `[here](https://example.com/${"😀".repeat(2500)})`;
+    const sends = await deliver(provider, written);
+
+    expect(sends.length).toBeGreaterThan(1);
+    for (const sent of sends) {
+      expect(sent.length).toBeLessThanOrEqual(LIMIT);
+      expect(/[\uD800-\uDFFF]/u.test(sent)).toBe(false);
+    }
+    expect(sends.map((sent) => visibleText(provider, sent)).join("")).toBe(written);
   });
 });

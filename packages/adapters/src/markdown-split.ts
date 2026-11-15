@@ -18,6 +18,11 @@ interface Node {
   position?: { start: { offset?: number }; end: { offset?: number } };
   ordered?: boolean | null;
   start?: number | null;
+  identifier?: string;
+  label?: string | null;
+  url?: string;
+  title?: string | null;
+  alt?: string | null;
 }
 
 /** Puts a piece of a node into a part, as that part's whole tree. */
@@ -40,21 +45,103 @@ export function splitMarkdown(body: string, platform: MessageLimit): string[] {
   if (!body.trim()) return [];
   try {
     if (fitsMessage(body, platform)) return [body];
-    return splitTree(body, parseMarkdown(body) as Node, platform);
+    return splitTree(body, inlineReferences(parseMarkdown(body) as Node), platform);
   } catch (error) {
-    // The renderers recurse once per nesting level, so hundreds of nested markers overflow the
-    // stack. The reply goes out as the text it was written as instead of failing to send.
-    getLogger().warn("sending a reply as plain text: its Markdown could not be rendered", {
-      error: String(error),
+    // The parser and renderers recurse once per nesting level, so hundreds of nested markers
+    // overflow the stack. The reply goes out as the text it was written as instead of failing.
+    getLogger().warn("sending a whole reply as literal text: splitting its Markdown failed", {
+      error,
     });
-    const text: Node = { type: "text", value: body };
-    const literal: Node = { type: "root", children: [{ type: "paragraph", children: [text] }] };
-    return splitTree(body, literal, platform);
+    return splitTree(body, { type: "root", children: [paragraph(text(body))] }, platform);
   }
 }
 
 function asRoot(node: Node): Root {
   return node as unknown as Root;
+}
+
+function text(value: string): Node {
+  return { type: "text", value };
+}
+
+function paragraph(...children: Node[]): Node {
+  return { type: "paragraph", children };
+}
+
+/**
+ * Writes reference-style links and images as inline ones and drops their definitions: each part
+ * is parsed alone, without a definition that landed in another part. Footnotes have no inline
+ * form and no platform shows them as footnotes, so their markers and text stay as written.
+ */
+function inlineReferences(root: Node): Node {
+  const definitions = new Map<string, Node>();
+  const collect = (node: Node) => {
+    if (node.type === "definition" && node.identifier && !definitions.has(node.identifier))
+      definitions.set(node.identifier, node);
+    for (const child of node.children ?? []) collect(child);
+  };
+  collect(root);
+
+  const inline = (node: Node): Node[] => {
+    const children = () => (node.children ?? []).flatMap(inline);
+    const definition = definitions.get(node.identifier ?? "");
+    const marker = () => text(`[^${node.label ?? node.identifier}]`);
+    switch (node.type) {
+      case "definition":
+        return [];
+      case "linkReference":
+        if (!definition) return [node];
+        return [
+          { type: "link", url: definition.url, title: definition.title, children: children() },
+        ];
+      case "imageReference":
+        if (!definition) return [node];
+        return [{ type: "image", url: definition.url, title: definition.title, alt: node.alt }];
+      case "footnoteReference":
+        return [marker()];
+      case "footnoteDefinition": {
+        // Its blocks are indented in the source, so they are written out again, not copied.
+        const blocks = children().map((block) => ({ ...block, position: undefined }));
+        const [first, ...rest] = blocks;
+        return first?.type === "paragraph"
+          ? [paragraph(marker(), text(": "), ...(first.children ?? [])), ...rest]
+          : [paragraph(marker(), text(":")), ...blocks];
+      }
+    }
+    if (!node.children) return [node];
+    const changed = children();
+    if (
+      changed.length === node.children.length &&
+      changed.every((child, index) => child === node.children?.[index])
+    )
+      return [node];
+    // A quote or list item that held only definitions has nothing left to show.
+    if (changed.length === 0 && node !== root) return [];
+    // Without its position the block is written out again instead of copied from the source.
+    return [{ ...node, children: changed, position: undefined }];
+  };
+  return inline(root)[0] ?? root;
+}
+
+/** The types whose children are inline content, and those whose children are blocks. */
+const INLINE_PARENTS = new Set([
+  "paragraph",
+  "heading",
+  "emphasis",
+  "strong",
+  "delete",
+  "link",
+  "tableCell",
+]);
+const BLOCK_PARENTS = new Set(["root", "blockquote", "listItem"]);
+
+/** `child` as the Markdown text it is written as, in place of it under `parent`. */
+function literal(parent: Node, child: Node): Node | null {
+  const inline = INLINE_PARENTS.has(parent.type);
+  if (child.type === "text" || !(inline || BLOCK_PARENTS.has(parent.type))) return null;
+  const block = inline ? paragraph(child) : child;
+  const written = text(stringifyMarkdown(asRoot({ type: "root", children: [block] })).trimEnd());
+  return inline ? written : paragraph(written);
 }
 
 function fitsMessage(markdown: string, { limit, sent }: MessageLimit): boolean {
@@ -69,14 +156,20 @@ function splitTree(source: string, root: Node, platform: MessageLimit): string[]
   const sourceOf = (block: Node) =>
     source.slice(block.position?.start.offset, block.position?.end.offset);
 
+  const written = new WeakMap<Node, string>();
   /** A whole block keeps its source text; only a piece of one is written out again. */
   const serialize = (part: Node): string =>
     (part.children ?? [])
-      .map((block) =>
-        whole.has(block)
-          ? sourceOf(block)
-          : stringifyMarkdown(asRoot({ type: "root", children: [block] })).trimEnd(),
-      )
+      .map((block) => {
+        let markdown = written.get(block);
+        if (markdown === undefined) {
+          markdown = whole.has(block)
+            ? sourceOf(block)
+            : stringifyMarkdown(asRoot({ type: "root", children: [block] })).trimEnd();
+          written.set(block, markdown);
+        }
+        return markdown;
+      })
       .join("\n\n");
   // A node is never written out shorter than its text, so most candidates that do not fit are
   // ruled out by adding lengths up, without writing them out and rendering them.
@@ -123,14 +216,21 @@ function splitTree(source: string, root: Node, platform: MessageLimit): string[]
       const endsHere =
         begun &&
         (serialize(lead(here(null))).length >= limit / 2 || fits(alone(piece([next], count))));
-      const cut = endsHere
-        ? { head: null, rest: next }
-        : take(
-            next,
-            (head) => lead(here(head)),
-            (rest) => alone(piece([rest], count)),
-            begun,
-          );
+      const inside = (child: Node) =>
+        take(
+          child,
+          (head) => lead(here(head)),
+          (rest) => alone(piece([rest], count)),
+          begun,
+        );
+      let cut = endsHere ? { head: null, rest: next } : inside(next);
+      if (!cut.head && !begun) {
+        // Nothing of `next` fits a part of its own, such as a link whose address is longer than a
+        // message. Only it is sent as the text it was written as, which splits anywhere.
+        const asText = literal(node, next);
+        if (asText) cut = inside(asText);
+        if (!cut.head) return { head: null, rest: node };
+      }
       const after = children.slice(count + 1);
       return {
         head: here(cut.head),
