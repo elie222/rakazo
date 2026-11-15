@@ -2,10 +2,8 @@ import { randomUUID } from "node:crypto";
 import { ORPCError } from "@orpc/server";
 import type { SandboxProvider } from "@rakazo/adapter-kit";
 import { computerControlExpireJobKey } from "@rakazo/adapter-kit";
-import type { ComputerExecutionLease } from "@rakazo/adapters";
 import {
   applyTeachingDesktopInput,
-  ComputerBusyError,
   checkpointAndStopComputer,
   computerScreenUnavailableMessage,
   computerUpdateView,
@@ -29,6 +27,7 @@ import {
   sleepDeferReason,
   toComputerRef,
   touchRunningComputer,
+  WorkspacePathError,
 } from "@rakazo/adapters";
 import {
   attachmentMaxBytes,
@@ -36,7 +35,12 @@ import {
   ComputerCommandSchema,
   foldComputerCommands,
 } from "@rakazo/contracts";
-import { ACTIVE_RUN_STATUSES, COMPUTER_USING_RUNS, scrollDirection } from "@rakazo/core";
+import {
+  ACTIVE_RUN_STATUSES,
+  ClientError,
+  COMPUTER_USING_RUNS,
+  scrollDirection,
+} from "@rakazo/core";
 import { addScreenProxyCapability } from "@rakazo/core/node/screen-capability";
 import type { ComputerRunEnd } from "@rakazo/db";
 import {
@@ -100,19 +104,11 @@ export function computerRoutes(ctx: RouterContext) {
         }
         const ctx = computerContext(context.actor, bot.id, "boot");
         const manualRunId = `boot:${randomUUID()}`;
-        let lease: ComputerExecutionLease | null;
-        try {
-          lease = await acquireBootLease(deps.prisma, {
-            computerId: bot.computer.id,
-            runId: manualRunId,
-            botId: bot.id,
-          });
-        } catch (error) {
-          if (error instanceof ComputerBusyError) {
-            throw new ORPCError("CONFLICT", { message: "Computer is busy" });
-          }
-          throw error;
-        }
+        const lease = await acquireBootLease(deps.prisma, {
+          computerId: bot.computer.id,
+          runId: manualRunId,
+          botId: bot.id,
+        });
         const computerId = bot.computer.id;
         try {
           await getLogger().withContext({ reason: "manual" }, () =>
@@ -123,9 +119,6 @@ export function computerRoutes(ctx: RouterContext) {
           );
           scheduleComputerSleep(deps.jobs, bot.computer.id);
         } catch (error) {
-          if (error instanceof ComputerBusyError) {
-            throw new ORPCError("CONFLICT", { message: "Computer is busy" });
-          }
           // The bot was deleted or moved to another computer while this boot waited.
           if (isRecordNotFound(error)) {
             throw new ORPCError("NOT_FOUND", { message: "Computer no longer exists" });
@@ -264,10 +257,6 @@ export function computerRoutes(ctx: RouterContext) {
           });
         try {
           return await queueComputerUpdate(deps, bot.computer.id, bot.id, "recover");
-        } catch (error) {
-          if (error instanceof ComputerBusyError)
-            throw new ORPCError("CONFLICT", { message: "Computer is busy" });
-          throw error;
         } finally {
           // A refused start can still have dismissed earlier failures.
           await deps.events.publishSpaceChange?.(context.actor.spaceId, "computerUpdates");
@@ -286,10 +275,6 @@ export function computerRoutes(ctx: RouterContext) {
           });
         try {
           return await queueComputerUpdate(deps, bot.computer.id, bot.id);
-        } catch (error) {
-          if (error instanceof ComputerBusyError)
-            throw new ORPCError("CONFLICT", { message: "Computer is busy" });
-          throw error;
         } finally {
           await deps.events.publishSpaceChange?.(context.actor.spaceId, "computerUpdates");
         }
@@ -496,8 +481,9 @@ export function computerRoutes(ctx: RouterContext) {
             });
           try {
             content = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-          } catch {
-            throw new ORPCError("BAD_REQUEST", { message: "file is not a text file" });
+          } catch (error) {
+            if (!(error instanceof TypeError)) throw error;
+            throw new ClientError("BAD_REQUEST", "file is not a text file");
           }
         } else {
           try {
@@ -578,9 +564,9 @@ export function computerRoutes(ctx: RouterContext) {
         try {
           storedPath = resolveBotUploadPath(parseComputerMode(computer.scope), bot.id, input.path);
         } catch (error) {
-          if (error instanceof Error && /escapes/i.test(error.message)) {
-            throw new ORPCError("BAD_REQUEST", { message: error.message });
-          }
+          // This path is the caller's own, so leaving the workspace is theirs to fix.
+          if (error instanceof WorkspacePathError)
+            throw new ClientError("BAD_REQUEST", error.message);
           throw error;
         }
         await deps.sandbox.writeFile(

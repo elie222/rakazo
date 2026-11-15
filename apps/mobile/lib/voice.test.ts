@@ -4,11 +4,13 @@ import * as SecureStore from "expo-secure-store";
 import * as Speech from "expo-speech";
 import { Platform } from "react-native";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { captureApiRequestContext, currentApiBase, rpc } from "./api";
+import { promptAiConsent } from "./ai-consent";
+import { allowPromptedAiConsent, captureApiRequestContext, currentApiBase, rpc } from "./api";
 import { DEVICE_VOICE_KEY } from "./device-voice";
 import {
   activateVoiceAudio,
   createSpeechOwner,
+  ensureVoiceConsent,
   getVoicePlaybackState,
   pauseVoicePlayback,
   playSpeechClip,
@@ -66,6 +68,7 @@ vi.mock("./api-auth", () => ({}));
 vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   aiConsentCoalesceKey: vi.fn(() => "test-consent-context"),
+  allowPromptedAiConsent: vi.fn(async () => undefined),
   authHeaders: vi.fn(),
   captureApiRequestContext: vi.fn(),
   currentApiBase: vi.fn(() => "https://api.example"),
@@ -121,6 +124,28 @@ describe("mobile speech", () => {
     vi.useRealTimers();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+  });
+
+  it("saves an allowed voice prompt the way that tells the permissions screen", async () => {
+    const recipient = { key: "speech", name: "Speech", use: "voice", detail: "", allowed: false };
+    vi.mocked(rpc).mockResolvedValue({
+      scope: "account-space",
+      version: "2026-09-14",
+      recipients: [recipient],
+    } as never);
+    vi.mocked(promptAiConsent).mockResolvedValue(true);
+    const requestContext = { apiBase: "https://support.example", headers: {} };
+
+    await ensureVoiceConsent(requestContext, "space");
+    expect(allowPromptedAiConsent).toHaveBeenCalledWith(
+      {
+        scope: "account-space",
+        version: "2026-09-14",
+        keys: ["speech"],
+        settingsScope: "space",
+      },
+      requestContext,
+    );
   });
 
   it("keeps every request on the server and space captured before preparation", async () => {

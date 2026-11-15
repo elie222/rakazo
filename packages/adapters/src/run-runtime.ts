@@ -288,6 +288,7 @@ export function createRunRuntime(
     deploymentModelConfigured: env.deploymentModelConfigured,
     messagingDelivery,
     teamChat,
+    connectors: connectors.stack.connector,
     cloudAgent: deps.cloudAgent,
     userCloudAgents: connectors.userCloudAgents,
     paymentWallet: deps.paymentWallet,

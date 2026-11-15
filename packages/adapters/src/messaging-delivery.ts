@@ -104,6 +104,9 @@ export type OutboundLane = { identityId: string } | { identityId: null; threadId
 
 export type OutboundRow = Omit<Prisma.MessagingOutboundCreateManyInput, "createdAt">;
 
+/** One reply's rows: its text, split into message-sized parts, and its files. */
+type ReplyRows = { parts: OutboundRow[]; files: OutboundRow[] };
+
 type LaneRow = {
   id: string;
   idempotencyKey: string;
@@ -866,34 +869,61 @@ export class MessagingDelivery {
     const rowsByMessage = messages.map((message) => {
       const body = extractText(message.blocks, linkedPages, { asks });
       const parts = body ? splitOutboundBody(identity.provider, body) : [];
-      return [
-        ...parts.map((part, index) => ({
+      return {
+        parts: parts.map((part, index) => ({
           idempotencyKey: index === 0 ? `msg:${message.id}` : `msg:${message.id}:${index + 1}`,
           kind: "dm",
           identityId: identity.id,
           body: part,
           sourceMessageId: message.id,
         })),
-        ...(sendsFiles ? extractArtifactIds(message.blocks) : []).map((artifactId) => ({
+        files: (sendsFiles ? extractArtifactIds(message.blocks) : []).map((artifactId) => ({
           idempotencyKey: `msg:${message.id}:file:${artifactId}`,
           kind: "dm",
           identityId: identity.id,
           body: "",
           sourceMessageId: message.id,
         })),
-      ];
+      };
     });
+    const sends = (reply: ReplyRows) => reply.parts.length + reply.files.length > 0;
     const held = progress
       ? rowsByMessage.findIndex(
-          (rows, index) =>
-            rows.length > 0 && !isUserProgressClientNonce(messages[index]!.clientNonce),
+          (reply, index) =>
+            sends(reply) && !isUserProgressClientNonce(messages[index]!.clientNonce),
         )
       : -1;
-    const rows = (held === -1 ? rowsByMessage : rowsByMessage.slice(0, held)).flat();
-    if (rows.length === 0) return undefined;
+    const replies = held === -1 ? rowsByMessage : rowsByMessage.slice(0, held);
+    if (!replies.some(sends)) return undefined;
     const lane = { identityId: identity.id };
-    await this.deps.prisma.$transaction((tx) => this.recordIn(tx, lane, rows));
+    await this.recordReplies(lane, replies);
     return lane;
+  }
+
+  /**
+   * Records each reply's parts, then its files. A reply's parts are recorded together, so a reply
+   * whose first part is recorded has them all and gets no more: a release that splits replies at
+   * other points would otherwise queue parts that repeat text already sent.
+   */
+  private async recordReplies(lane: OutboundLane, replies: ReplyRows[]): Promise<void> {
+    await this.deps.prisma.$transaction(async (tx) => {
+      await lockLane(tx, lane);
+      const recorded = await tx.messagingOutbound.findMany({
+        where: {
+          idempotencyKey: { in: replies.flatMap(({ parts }) => parts[0]?.idempotencyKey ?? []) },
+        },
+        select: { idempotencyKey: true },
+      });
+      const split = new Set(recorded.map((row) => row.idempotencyKey));
+      await this.recordIn(
+        tx,
+        lane,
+        replies.flatMap(({ parts, files }) => [
+          ...(parts[0] && split.has(parts[0].idempotencyKey) ? [] : parts),
+          ...files,
+        ]),
+      );
+    });
   }
 
   /**
@@ -942,20 +972,18 @@ export class MessagingDelivery {
     // One row per platform-sized part, like the DM path: the adapter truncates an oversized body
     // instead of failing, which would drop the reply's tail.
     const lane = { identityId: null, threadId: channel.threadId };
-    await prisma.$transaction((tx) =>
-      this.recordIn(
-        tx,
-        lane,
-        messages.flatMap(({ message, text }) =>
-          splitOutboundBody(identity.provider, `${fromLabel}: ${text}`).map((part, index) => ({
-            idempotencyKey: index === 0 ? `msg:${message.id}` : `msg:${message.id}:${index + 1}`,
-            kind: "group",
-            threadId: channel.threadId,
-            body: part,
-            sourceMessageId: message.id,
-          })),
-        ),
-      ),
+    await this.recordReplies(
+      lane,
+      messages.map(({ message, text }) => ({
+        parts: splitOutboundBody(identity.provider, `${fromLabel}: ${text}`).map((part, index) => ({
+          idempotencyKey: index === 0 ? `msg:${message.id}` : `msg:${message.id}:${index + 1}`,
+          kind: "group",
+          threadId: channel.threadId,
+          body: part,
+          sourceMessageId: message.id,
+        })),
+        files: [],
+      })),
     );
     const hop = nextBotMessageHop(channelBlock.hop);
     const peers = await prisma.messagingChannelMember.findMany({

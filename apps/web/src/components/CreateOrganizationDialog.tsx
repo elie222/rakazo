@@ -13,8 +13,7 @@ import {
 } from "@rakazo/ui-web";
 import { useId, useState } from "react";
 import { openOrganizationSpace, organizationsQuery } from "../lib/organizations";
-import { queryClient, useQueryUserId } from "../lib/query";
-import { rpc } from "../lib/rpc";
+import { useQueryUserId, useSave } from "../lib/query";
 import { errorText } from "../lib/user-error";
 
 /** Creates an organization and moves into it, where onboarding sets up its first bot. */
@@ -30,29 +29,19 @@ export function CreateOrganizationDialog({
   const userId = useQueryUserId();
   const nameId = useId();
   const [name, setName] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function create() {
-    const trimmed = name.trim();
-    if (!trimmed || saving) return;
-    setSaving(true);
-    setError(null);
-    try {
-      const created = await rpc.organizations.create({ name: trimmed });
-      await queryClient
-        .fetchQuery({ ...organizationsQuery(userId), staleTime: 0 })
-        .catch(() => undefined);
+  const create = useSave({
+    save: (trimmed: string, rpc) => rpc.organizations.create({ name: trimmed }),
+    stale: [organizationsQuery(userId).queryKey],
+    closesScreen: true,
+    onSaved: async (created) => {
       // The new organization is listed even if this device cannot switch into it.
       if (
         !(await openOrganizationSpace(userId, created.defaultSpaceId, "/onboarding", openSpaceChat))
       )
         window.location.assign("/");
-    } catch (reason) {
-      setError(errorText(reason));
-      setSaving(false);
-    }
-  }
+    },
+  });
+  const saving = create.pending;
 
   return (
     <Dialog
@@ -62,7 +51,7 @@ export function CreateOrganizationDialog({
         onOpenChange(next);
         if (!next) {
           setName("");
-          setError(null);
+          create.reset();
         }
       }}
     >
@@ -76,7 +65,8 @@ export function CreateOrganizationDialog({
           className="contents"
           onSubmit={(event) => {
             event.preventDefault();
-            void create();
+            const trimmed = name.trim();
+            if (trimmed) create.run(trimmed);
           }}
         >
           <Field>
@@ -90,11 +80,11 @@ export function CreateOrganizationDialog({
               disabled={saving}
               onChange={(event) => {
                 setName(event.target.value);
-                setError(null);
+                create.reset();
               }}
               autoFocus
             />
-            <FieldError>{error}</FieldError>
+            <FieldError>{create.error ? errorText(create.error) : null}</FieldError>
           </Field>
           <DialogFooter>
             <Button type="submit" disabled={saving || !name.trim()}>

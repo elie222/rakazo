@@ -14,7 +14,7 @@ Each bot keeps its own memory, computer and instructions; the group only shares 
 
 - With no mention, the first bot in the group answers and can bring in the others.
 - **@Name** wakes that bot. Mention several to wake them all.
-- **@everyone** wakes every bot in the group.
+- **@everyone** (or **@all**, **@所有人**) wakes every bot in the group.
 
 To rename the group or change who is in it, open **Group settings** from the group's header.
 **Delete group** removes the group chat.

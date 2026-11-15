@@ -85,6 +85,7 @@ import type {
   StreamedPortableFile,
   TerminalRequest,
   TransactionalEmail,
+  UnreferencedMachine,
   VoiceCapabilities,
   VoiceInfo,
   VoiceSynthesizeRequest,
@@ -259,6 +260,23 @@ export interface SandboxProvider {
     options?: { discardUnsaved?: boolean },
   ): Promise<void>;
   destroy(computer: ComputerRef, context: AdapterContext): Promise<void>;
+  /**
+   * Deletes a machine no stored computer points at, from its id alone. Resolves once it is gone,
+   * which includes never having existed; rejects when the provider could not be asked.
+   */
+  deleteMachine?(machine: UnreferencedMachine, signal: AbortSignal): Promise<void>;
+}
+
+/**
+ * Where a provider records the machines no stored computer points at, so that one it could not
+ * delete, or one left by a process that died, is deleted later. Supplied where providers are
+ * built; a provider built without it only deletes and logs.
+ */
+export interface UnreferencedMachineRecords {
+  /** Records the machine, or moves its record: it is deleted at `deleteAt` unless a computer stores it first. */
+  record(machine: UnreferencedMachine, deleteAt: Date): Promise<void>;
+  /** Drops the record of a machine that is gone. */
+  clear(machine: UnreferencedMachine): Promise<void>;
 }
 
 export interface ConnectorProvider {
@@ -302,7 +320,12 @@ export interface ManagedConnectorProvider
   listReconnectRefs?(context: AdapterContext): Promise<string[]>;
   connectionReady(context: AdapterContext, externalId: string): Promise<boolean>;
   warmDirectory?(): Promise<void>;
-  /** Map a begin() state or stored ref to the concrete remote account id, skipping excluded ids. */
+  /**
+   * Map a begin() state or stored ref to the concrete remote account id, skipping excluded ids.
+   * A connector without `cancelAuthorizationRequest` must reject here when the provider could
+   * not be asked: connection cleanup removes an authorization through this lookup then, and
+   * reads undefined as nothing left to remove.
+   */
   resolveConnectedAccountId?(
     userId: string,
     slug: string,

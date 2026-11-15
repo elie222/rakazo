@@ -1,4 +1,10 @@
-import type { AdapterContext, ComputerRef, SandboxProvider } from "@rakazo/adapter-kit";
+import type {
+  AdapterContext,
+  ComputerRef,
+  SandboxProvider,
+  UnreferencedMachine,
+  UnreferencedMachineRecords,
+} from "@rakazo/adapter-kit";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { expect, vi } from "vitest";
 
@@ -12,6 +18,27 @@ export function fakeDeadlineSignals() {
     );
     return controller.signal;
   });
+}
+
+/** The records a provider is built with, kept in memory: each machine's delete time, until cleared. */
+export class MachineRecords implements UnreferencedMachineRecords {
+  readonly due = new Map<string, { machine: UnreferencedMachine; deleteAt: Date }>();
+
+  async record(machine: UnreferencedMachine, deleteAt: Date) {
+    this.due.set(machine.machineId, { machine, deleteAt });
+  }
+
+  async clear(machine: UnreferencedMachine) {
+    this.due.delete(machine.machineId);
+  }
+
+  /** The recorded machines, each with how long after `since` its delete is due. */
+  dueIn(since = Date.now()) {
+    return [...this.due.values()].map(({ machine, deleteAt }) => ({
+      ...machine,
+      dueInMs: deleteAt.getTime() - since,
+    }));
+  }
 }
 
 /** A request answered only by its signal ending it, as one to a provider that stalls is. */

@@ -1,5 +1,8 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
+// A sandboxed preload can only require electron, so channels are named here as literals.
+// ipc-channels.ts lists who may call each one; ipc-channels.test.ts fails when the two disagree.
+
 /** Listen for a main-process signal without handing the IPC event to the renderer. */
 function subscribe(channel) {
   return (listener) => {

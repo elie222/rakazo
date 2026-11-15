@@ -27,6 +27,8 @@ import { pollCloudAgent } from "./cloud-agent-poll.js";
 import { expireComputerControl, scheduleComputerControlExpiry } from "./computer-control.js";
 import { rateLimitEnds, scheduleComputerSleep, sleepComputerIfIdle } from "./computer-idle.js";
 import { performComputerUpdate } from "./computer-update.js";
+import { retryConnectionCleanup } from "./connection-cleanup.js";
+import type { ConnectorRegistry } from "./connector-registry.js";
 import {
   abandonRetainedConversation,
   retainRunConversation,
@@ -36,6 +38,7 @@ import { retryConversationMemoryPurge } from "./conversation-memory-cleanup.js";
 import type { createRunExecutor } from "./executor.js";
 import type { ExpoPushProvider } from "./expo-push.js";
 import { compactHistory } from "./history-compaction.js";
+import { retryMachineCleanup } from "./machine-cleanup.js";
 import { pollMediaVideo } from "./media-video-poll.js";
 import type { MemoryProviderResolver } from "./memory-provider-factory.js";
 import type { MessagingDelivery } from "./messaging-delivery.js";
@@ -94,6 +97,7 @@ export function createBackgroundJobHandlers(deps: {
   deploymentModelConfigured?: boolean;
   messagingDelivery?: MessagingDelivery;
   teamChat?: TeamChat;
+  connectors?: Pick<ConnectorRegistry, "managed">;
   cloudAgent?: CloudAgentConnection | null;
   userCloudAgents?: UserCloudAgents;
   paymentWallet?: PaymentWalletProvider | null;
@@ -156,6 +160,21 @@ export function createBackgroundJobHandlers(deps: {
     },
     "secret.cleanup": async (cleanup) => {
       await retrySecretCleanup(cleanupDeps, cleanup);
+    },
+    "connection.cleanup": asOwner(
+      async (payload: BackgroundJobPayloads["connection.cleanup"]) => payload,
+      async (payload) => {
+        // Fail rather than finish, so the queue keeps the job for a process that has connectors.
+        if (!deps.connectors) throw new Error("connection cleanup has no connector registry");
+        await retryConnectionCleanup(
+          { prisma: deps.prisma, connectors: deps.connectors, jobs: deps.jobs },
+          payload,
+        );
+      },
+    ),
+    // The machine belongs to no Space: nothing stores it.
+    "computer.machine-cleanup": async (machine, _execution, attempt) => {
+      await retryMachineCleanup(deps, machine, attempt);
     },
     // The previous release's jobs, drained once by this one.
     "messaging.credential-cleanup": async ({ installationId, ref }) => {

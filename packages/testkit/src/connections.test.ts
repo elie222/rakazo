@@ -1,11 +1,14 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { connectionCleanupJob, connectionCleanupJobKey } from "@rakazo/adapter-kit";
+import type { InMemoryJobQueue } from "@rakazo/adapters";
 import {
   ComposioConnector,
   EncryptedSecretStore,
   FakeComposioClient,
   InstalledConnectorProvider,
+  lockProviderConnectionScope,
   PipedreamConnector,
   ThirdPartyConnectorEmulator,
 } from "@rakazo/adapters";
@@ -32,6 +35,7 @@ describeWithDatabase("Composio catalog reconciliation", () => {
   let app: App;
   let fake: FakeComposioClient;
   let composio: ComposioConnector;
+  let pipedream: PipedreamConnector;
   let thirdParties: ThirdPartyConnectorEmulator;
   let connectionOrdinal = 0;
   const stamp = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -42,7 +46,7 @@ describeWithDatabase("Composio catalog reconciliation", () => {
     fake = new FakeComposioClient();
     composio = new ComposioConnector({ client: fake });
     thirdParties = new ThirdPartyConnectorEmulator();
-    const pipedream = new PipedreamConnector(
+    pipedream = new PipedreamConnector(
       {
         clientId: "fake-client-id",
         clientSecret: "fake-client-secret",
@@ -206,6 +210,557 @@ describeWithDatabase("Composio catalog reconciliation", () => {
         connectorId: "composio",
       }),
     ).resolves.toContainEqual(expect.objectContaining({ slug: "GMAIL", connected: false }));
+  });
+
+  it("removes the authorization of a begin that lost its row once the provider answers again", async () => {
+    const cookie = await signup(app, `lost-begin-${stamp}@rakazo.test`, "Lost Begin");
+    const actor = await rpc<Actor>(app, cookie, "me");
+    const begin = composio.begin.bind(composio);
+    vi.spyOn(composio, "begin").mockImplementation(async (request, context) => {
+      const started = await begin(request, context);
+      // The connection is removed while the provider is still answering.
+      await asSystem(handles.prisma).connection.updateMany({
+        where: { spaceId: actor.spaceId, userId: actor.userId, provider: "GMAIL" },
+        data: { status: "revoked" },
+      });
+      return started;
+    });
+    const cancel = composio.cancelAuthorizationRequest.bind(composio);
+    const cancelled = vi
+      .spyOn(composio, "cancelAuthorizationRequest")
+      .mockImplementation(cancel)
+      .mockRejectedValueOnce(new Error("provider unavailable"));
+
+    await expect(
+      rpc(app, cookie, "connections/begin", {
+        connectorId: "composio",
+        provider: "GMAIL",
+        displayName: "Gmail",
+      }),
+    ).rejects.toThrow();
+
+    // The failed removal went to its backup job, which the queue ran.
+    await vi.waitFor(() => expect(cancelled).toHaveBeenCalledTimes(2), { timeout: 10_000 });
+    await vi.waitFor(
+      async () => expect(await composio.listConnectedAccountIds(actor.userId, "GMAIL")).toEqual([]),
+      { timeout: 10_000 },
+    );
+  });
+
+  /** The queued cleanup for `cleanup`, while the test's in-memory queue still holds one. */
+  const queuedCleanup = (cleanup: Parameters<typeof connectionCleanupJobKey>[0]) =>
+    (handles.jobs as unknown as InMemoryJobQueue).keyedJob(connectionCleanupJobKey(cleanup));
+  const cleanupFailures = () =>
+    handles.backgroundFailures?.().find((failure) => failure.name === "connection.cleanup")
+      ?.count ?? 0;
+  /** Runs the queued cleanup as the queue does once it is due. */
+  async function runCleanupNow(cleanup: Parameters<typeof connectionCleanupJob>[0]) {
+    await handles.jobs.enqueue(connectionCleanupJob(cleanup));
+    await handles.awaitIdle?.();
+  }
+
+  it("removes the authorization when saving a begin's result fails, once the provider answers again", async () => {
+    const cookie = await signup(app, `unsaved-begin-${stamp}@rakazo.test`, "Unsaved Begin");
+    const actor = await rpc<Actor>(app, cookie, "me");
+    const begin = composio.begin.bind(composio);
+    vi.spyOn(composio, "begin").mockImplementation(async (request, context) => {
+      const started = await begin(request, context);
+      await asSystem(handles.prisma).connection.updateMany({
+        where: { spaceId: actor.spaceId, userId: actor.userId, provider: "GMAIL" },
+        data: { status: "revoked" },
+      });
+      return started;
+    });
+    // Recording the lost race fails, which fails the transaction that was to save the result.
+    vi.spyOn(handles.jobs, "enqueueIn").mockRejectedValueOnce(new Error("queue unavailable"));
+    const cancel = composio.cancelAuthorizationRequest.bind(composio);
+    const cancelled = vi
+      .spyOn(composio, "cancelAuthorizationRequest")
+      .mockImplementation(cancel)
+      .mockRejectedValueOnce(new Error("provider unavailable"));
+
+    await expect(
+      rpc(app, cookie, "connections/begin", {
+        connectorId: "composio",
+        provider: "GMAIL",
+        displayName: "Gmail",
+      }),
+    ).rejects.toThrow();
+
+    await vi.waitFor(() => expect(cancelled).toHaveBeenCalledTimes(2), { timeout: 10_000 });
+    await vi.waitFor(
+      async () => expect(await composio.listConnectedAccountIds(actor.userId, "GMAIL")).toEqual([]),
+      { timeout: 10_000 },
+    );
+  });
+
+  it("leaves a busy scope alone, removes the authorization once it is free, and can run again", async () => {
+    const cookie = await signup(app, `busy-cleanup-${stamp}@rakazo.test`, "Busy Cleanup");
+    const actor = await rpc<Actor>(app, cookie, "me");
+    await connectRemote(composio, actor, "GMAIL");
+    const [ref] = await composio.listConnectedAccountIds(actor.userId, "GMAIL");
+    const cleanup = {
+      spaceId: actor.spaceId,
+      userId: actor.userId,
+      connectorId: "composio",
+      provider: "GMAIL",
+      ref: ref!,
+    };
+    const cancelled = vi.spyOn(composio, "cancelAuthorizationRequest");
+    const failures = cleanupFailures();
+
+    // Another flow holds this user's scope for the app, as it does across its provider call.
+    let lockTaken = () => {};
+    const locked = new Promise<void>((resolve) => {
+      lockTaken = resolve;
+    });
+    let release = () => {};
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const holder = runAsSystem("hold a connection scope", () =>
+      handles.prisma.$transaction(
+        async (tx) => {
+          await lockProviderConnectionScope(tx, actor, "composio", "GMAIL");
+          lockTaken();
+          await released;
+        },
+        { timeout: 30_000 },
+      ),
+    );
+    await locked;
+    try {
+      await runCleanupNow(cleanup);
+      expect(cancelled).not.toHaveBeenCalled();
+      // Not a failed try: it waits under its own key for a little later.
+      expect(cleanupFailures()).toBe(failures);
+      expect(queuedCleanup(cleanup)?.availableAt?.getTime()).toBeGreaterThan(Date.now());
+    } finally {
+      release();
+      await holder;
+    }
+
+    await runCleanupNow(cleanup);
+    expect(await composio.listConnectedAccountIds(actor.userId, "GMAIL")).toEqual([]);
+    expect(queuedCleanup(cleanup)).toBeUndefined();
+
+    // A removal that already happened is safe to repeat.
+    await runCleanupNow(cleanup);
+    expect(cancelled).toHaveBeenCalledTimes(2);
+    expect(cleanupFailures()).toBe(failures);
+  });
+
+  it("keeps the cleanup of a lost begin until a sibling has saved its account", async () => {
+    const cookie = await signup(app, `sibling-cleanup-${stamp}@rakazo.test`, "Sibling Cleanup");
+    const actor = await rpc<Actor>(app, cookie, "me");
+    const cleanup = {
+      spaceId: actor.spaceId,
+      userId: actor.userId,
+      connectorId: "pipedream",
+      provider: "linear",
+    };
+    const swept = vi.spyOn(pipedream, "revokeUnreferencedAccounts");
+    const deletions = () =>
+      thirdParties.records.filter(
+        (record) =>
+          record.provider === "pipedream" &&
+          record.operation === "revoke" &&
+          record.app === "linear",
+      ).length;
+    const deleted = deletions();
+    const start = () =>
+      rpc<{ connectionId: string }>(app, cookie, "connections/begin", {
+        connectorId: "pipedream",
+        provider: "linear",
+        displayName: "Linear",
+      });
+
+    // A sibling is still connecting: its row names the app, not yet an account.
+    const sibling = await start();
+    const begin = pipedream.begin.bind(pipedream);
+    vi.spyOn(pipedream, "begin").mockImplementationOnce(async (request, context) => {
+      const started = await begin(request, context);
+      // The second connection is removed while the provider is still answering.
+      await asSystem(handles.prisma).connection.updateMany({
+        where: {
+          spaceId: actor.spaceId,
+          userId: actor.userId,
+          provider: "linear",
+          id: { not: sibling.connectionId },
+        },
+        data: { status: "revoked" },
+      });
+      return started;
+    });
+    await expect(start()).rejects.toThrow();
+
+    // Which accounts are in use cannot be told yet, so nothing is deleted and the job stays.
+    expect(swept).not.toHaveBeenCalled();
+    expect(queuedCleanup(cleanup)).toBeDefined();
+    await runCleanupNow(cleanup);
+    expect(swept).not.toHaveBeenCalled();
+
+    await expect(
+      rpc<{ status: string }>(app, cookie, "connections/complete", {
+        connectionId: sibling.connectionId,
+      }),
+    ).resolves.toMatchObject({ status: "connected" });
+
+    await runCleanupNow(cleanup);
+    expect(swept).toHaveBeenCalledWith("linear", ["account-linear"], expect.anything());
+    expect(queuedCleanup(cleanup)).toBeUndefined();
+    // The sibling's own account is kept.
+    expect(deletions()).toBe(deleted);
+  });
+
+  /** One connected Gmail account, with what its row and the provider hold for it. */
+  async function connectedGmail(label: string) {
+    const cookie = await signup(app, `${label}-${stamp}@rakazo.test`, label);
+    const actor = await rpc<Actor>(app, cookie, "me");
+    const { connectionId } = await rpc<{ connectionId: string }>(app, cookie, "connections/begin", {
+      connectorId: "composio",
+      provider: "GMAIL",
+      displayName: "Gmail",
+    });
+    const row = await asSystem(handles.prisma).connection.findUniqueOrThrow({
+      where: { id: connectionId },
+      select: { providerRef: true },
+    });
+    const cleanup = {
+      spaceId: actor.spaceId,
+      userId: actor.userId,
+      connectorId: "composio",
+      provider: "GMAIL",
+      ref: row.providerRef!,
+    };
+    const remote = () => composio.listConnectedAccountIds(actor.userId, "GMAIL");
+    const status = async () => (await statuses([connectionId]))[0]?.status;
+    return { cookie, actor, connectionId, cleanup, remote, status };
+  }
+
+  it("leaves the authorization to its row when a begin's save turns out to have landed", async () => {
+    const cookie = await signup(app, `landed-save-${stamp}@rakazo.test`, "Landed Save");
+    const actor = await rpc<Actor>(app, cookie, "me");
+    const own = { spaceId: actor.spaceId, userId: actor.userId, provider: "GMAIL" };
+    const cancelled = vi.spyOn(composio, "cancelAuthorizationRequest");
+    const begin = composio.begin.bind(composio);
+    let state = "";
+    vi.spyOn(composio, "begin").mockImplementation(async (request, context) => {
+      const started = await begin(request, context);
+      state = started.state;
+      await asSystem(handles.prisma).connection.updateMany({
+        where: own,
+        data: { status: "revoked" },
+      });
+      return started;
+    });
+    // Saving reports a failure, yet the row holds the result: a commit whose answer was lost.
+    vi.spyOn(handles.jobs, "enqueueIn").mockImplementationOnce(async () => {
+      await asSystem(handles.prisma).connection.updateMany({
+        where: own,
+        data: { status: "connected", providerRef: state },
+      });
+      throw new Error("connection lost at commit");
+    });
+
+    await expect(
+      rpc(app, cookie, "connections/begin", {
+        connectorId: "composio",
+        provider: "GMAIL",
+        displayName: "Gmail",
+      }),
+    ).rejects.toThrow();
+    await handles.awaitIdle?.();
+
+    // The removal read the row under the provider lock and found the authorization in use.
+    expect(cancelled).not.toHaveBeenCalled();
+    expect(await composio.listConnectedAccountIds(actor.userId, "GMAIL")).toEqual([state]);
+    const cleanup = { ...own, connectorId: "composio", ref: state };
+
+    // The job reads it the same way. (This queue cannot delete a job inside a transaction.)
+    await runCleanupNow(cleanup);
+    expect(cancelled).not.toHaveBeenCalled();
+    expect(await composio.listConnectedAccountIds(actor.userId, "GMAIL")).toEqual([state]);
+    expect(queuedCleanup(cleanup)).toBeUndefined();
+  });
+
+  it("never removes an account a lost begin was answered with while another row uses it", async () => {
+    const { cookie, actor, connectionId, cleanup, remote, status } =
+      await connectedGmail("shared-answer");
+    const cancelled = vi.spyOn(composio, "cancelAuthorizationRequest");
+    // The provider answers the second begin with the account the first connection uses, and
+    // the second connection is removed while it does.
+    vi.spyOn(composio, "begin").mockImplementationOnce(async () => {
+      await asSystem(handles.prisma).connection.updateMany({
+        where: {
+          spaceId: actor.spaceId,
+          userId: actor.userId,
+          provider: "GMAIL",
+          id: { not: connectionId },
+        },
+        data: { status: "revoked" },
+      });
+      return { authorizationUrl: null, state: cleanup.ref };
+    });
+
+    await expect(
+      rpc(app, cookie, "connections/begin", {
+        connectorId: "composio",
+        provider: "GMAIL",
+        displayName: "Gmail again",
+      }),
+    ).rejects.toThrow();
+    await handles.awaitIdle?.();
+
+    expect(cancelled).not.toHaveBeenCalled();
+    expect(await remote()).toEqual([cleanup.ref]);
+    expect(await status()).toBe("connected");
+
+    await runCleanupNow(cleanup);
+    expect(cancelled).not.toHaveBeenCalled();
+    expect(await remote()).toEqual([cleanup.ref]);
+    expect(queuedCleanup(cleanup)).toBeUndefined();
+  });
+
+  /**
+   * The next begin's save reports a failure after the provider answered. Its row is left
+   * `saved`, as by a commit whose answer was lost, or holding nothing, as by a save that never
+   * ran. Returns what the provider answered with.
+   */
+  function failNextBeginSave(
+    connector: ComposioConnector | PipedreamConnector,
+    own: { spaceId: string; userId: string; provider: string },
+    left: "saved" | "unsaved",
+  ) {
+    const rows = asSystem(handles.prisma).connection;
+    const answer = { state: "" };
+    let attempt: unknown;
+    const begin = connector.begin.bind(connector);
+    vi.spyOn(connector, "begin").mockImplementationOnce(async (request, context) => {
+      const started = await begin(request, context);
+      answer.state = started.state;
+      const row = await rows.findFirstOrThrow({ where: { ...own, status: "pending" } });
+      attempt = (row.metadata as { attempt?: unknown }).attempt;
+      // Taking the row for a moment makes the save record the lost race, which then fails it.
+      await rows.updateMany({ where: own, data: { status: "revoked" } });
+      // A browser authorization: a saved row stays pending until the user has authorized.
+      return { ...started, authorizationUrl: "https://provider.example.test/authorize" };
+    });
+    vi.spyOn(handles.jobs, "enqueueIn").mockImplementationOnce(async () => {
+      await rows.updateMany({
+        where: own,
+        data:
+          left === "saved"
+            ? {
+                status: "pending",
+                providerRef: answer.state,
+                metadata: { state: answer.state, attempt: attempt as string },
+              }
+            : { status: "pending" },
+      });
+      throw new Error("connection lost at commit");
+    });
+    return answer;
+  }
+
+  it("keeps a saved authorization on its row when the save reports a failure, so a later begin cannot drop it", async () => {
+    const cookie = await signup(app, `saved-row-${stamp}@rakazo.test`, "Saved Row");
+    const actor = await rpc<Actor>(app, cookie, "me");
+    const own = { spaceId: actor.spaceId, userId: actor.userId, provider: "GMAIL" };
+    const cancelled = vi.spyOn(composio, "cancelAuthorizationRequest");
+    const answer = failNextBeginSave(composio, own, "saved");
+    const start = () =>
+      rpc<{ connectionId: string }>(app, cookie, "connections/begin", {
+        connectorId: "composio",
+        provider: "GMAIL",
+        displayName: "Gmail",
+      });
+    const rows = () =>
+      asSystem(handles.prisma).connection.findMany({
+        where: own,
+        select: { id: true, status: true, providerRef: true },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      });
+
+    await expect(start()).rejects.toThrow();
+    await handles.awaitIdle?.();
+
+    // The row is what the save made it, not a failed row a later begin would reuse.
+    const [saved] = await rows();
+    expect(answer.state).not.toBe("");
+    expect(saved).toMatchObject({ status: "pending", providerRef: answer.state });
+    expect(cancelled).not.toHaveBeenCalled();
+    expect(await composio.listConnectedAccountIds(actor.userId, "GMAIL")).toEqual([answer.state]);
+
+    const next = await start();
+    expect(next.connectionId).not.toBe(saved!.id);
+    expect(await rows()).toContainEqual(saved);
+
+    // Its job finds the authorization in use too.
+    await runCleanupNow({ ...own, connectorId: "composio", ref: answer.state });
+    expect(cancelled).not.toHaveBeenCalled();
+    expect(await composio.listConnectedAccountIds(actor.userId, "GMAIL")).toContain(answer.state);
+  });
+
+  it("removes what a failed begin left under the app's name although its own row is still there", async () => {
+    const cookie = await signup(app, `own-row-${stamp}@rakazo.test`, "Own Row");
+    const actor = await rpc<Actor>(app, cookie, "me");
+    const own = { spaceId: actor.spaceId, userId: actor.userId, provider: "linear" };
+    const cleanup = { ...own, connectorId: "pipedream" };
+    const swept = vi.spyOn(pipedream, "revokeUnreferencedAccounts");
+    const failures = cleanupFailures();
+    failNextBeginSave(pipedream, own, "unsaved");
+
+    await expect(
+      rpc(app, cookie, "connections/begin", {
+        connectorId: "pipedream",
+        provider: "linear",
+        displayName: "Linear",
+      }),
+    ).rejects.toThrow();
+
+    // Nothing was saved, so the begin's row is failed with no reference and owns no account:
+    // the removal does not wait for it.
+    await expect(
+      asSystem(handles.prisma).connection.findMany({
+        where: own,
+        select: { status: true, providerRef: true },
+      }),
+    ).resolves.toEqual([{ status: "error", providerRef: null }]);
+    expect(swept).toHaveBeenCalledTimes(1);
+    expect(swept).toHaveBeenCalledWith("linear", [], expect.anything());
+
+    // Neither does its job, which finishes instead of waiting for the row to go.
+    await runCleanupNow(cleanup);
+    expect(swept).toHaveBeenCalledTimes(2);
+    expect(cleanupFailures()).toBe(failures);
+    expect(queuedCleanup(cleanup)).toBeUndefined();
+  });
+
+  it("keeps the cleanup another begin recorded for the same app when its own removal finishes", async () => {
+    const cookie = await signup(app, `shared-key-${stamp}@rakazo.test`, "Shared Key");
+    const actor = await rpc<Actor>(app, cookie, "me");
+    const cleanup = {
+      spaceId: actor.spaceId,
+      userId: actor.userId,
+      connectorId: "pipedream",
+      provider: "linear",
+    };
+    const begin = pipedream.begin.bind(pipedream);
+    vi.spyOn(pipedream, "begin").mockImplementationOnce(async (request, context) => {
+      const started = await begin(request, context);
+      // The connection is removed while the provider is still answering.
+      await asSystem(handles.prisma).connection.updateMany({
+        where: { spaceId: actor.spaceId, userId: actor.userId, provider: "linear" },
+        data: { status: "revoked" },
+      });
+      return started;
+    });
+    const sweep = pipedream.revokeUnreferencedAccounts.bind(pipedream);
+    const otherDueAt = new Date(Date.now() + 5 * 60_000);
+    const swept = vi
+      .spyOn(pipedream, "revokeUnreferencedAccounts")
+      .mockImplementationOnce(async (slug, keep, context) => {
+        await sweep(slug, keep, context);
+        // Another begin records its cleanup after this one listed the accounts. Both name
+        // only the app, so they share one job.
+        await handles.jobs.enqueue(connectionCleanupJob(cleanup, otherDueAt));
+      });
+
+    await expect(
+      rpc(app, cookie, "connections/begin", {
+        connectorId: "pipedream",
+        provider: "linear",
+        displayName: "Linear",
+      }),
+    ).rejects.toThrow();
+
+    expect(swept).toHaveBeenCalledTimes(1);
+    // The other begin's record is still there, to run when it is due.
+    expect(queuedCleanup(cleanup)?.availableAt).toEqual(otherDueAt);
+    await runCleanupNow(cleanup);
+    expect(swept).toHaveBeenCalledTimes(2);
+    expect(queuedCleanup(cleanup)).toBeUndefined();
+  });
+
+  it("finishes a superseded connection's failed removal from its job", async () => {
+    const { cookie, connectionId, cleanup, remote } = await connectedGmail("superseded");
+    // Revoked with its authorization still at the provider, as after an uncertain removal.
+    await asSystem(handles.prisma).connection.update({
+      where: { id: connectionId },
+      data: { status: "revoked" },
+    });
+    const cancel = composio.cancelAuthorizationRequest.bind(composio);
+    const cancelled = vi
+      .spyOn(composio, "cancelAuthorizationRequest")
+      .mockImplementation(cancel)
+      .mockRejectedValueOnce(new Error("provider unavailable"));
+
+    await expect(
+      rpc<{ status: string }>(app, cookie, "connections/complete", { connectionId }),
+    ).resolves.toMatchObject({ status: "revoked" });
+
+    // The poll's removal failed; the job it recorded removed the authorization.
+    await vi.waitFor(() => expect(cancelled).toHaveBeenCalledTimes(2), { timeout: 10_000 });
+    await vi.waitFor(async () => expect(await remote()).toEqual([]), { timeout: 10_000 });
+    await handles.awaitIdle?.();
+    expect(queuedCleanup(cleanup)).toBeUndefined();
+  });
+
+  it("keeps a connection whose removal the provider refused, and removes it on the next try", async () => {
+    const { cookie, connectionId, cleanup, remote, status } = await connectedGmail("refused");
+    const revoke = composio.revoke.bind(composio);
+    vi.spyOn(composio, "revoke")
+      .mockImplementation(revoke)
+      .mockRejectedValueOnce(new Error("403 forbidden"));
+
+    await expect(rpc(app, cookie, "connections/revoke", { connectionId })).rejects.toThrow();
+    // Nothing was removed, so the row is as it was: the record of the authorization.
+    expect(await status()).toBe("connected");
+    expect(await remote()).toEqual([cleanup.ref]);
+    expect(queuedCleanup(cleanup)).toBeUndefined();
+
+    await rpc(app, cookie, "connections/revoke", { connectionId });
+    expect(await status()).toBe("revoked");
+    expect(await remote()).toEqual([]);
+  });
+
+  it("leaves an uncertain removal to a job that commits with the revoked connection", async () => {
+    const { cookie, connectionId, remote, status } = await connectedGmail("uncertain");
+    const cancelled = vi.spyOn(composio, "cancelAuthorizationRequest");
+    // The provider call times out after the delete may have been sent.
+    vi.spyOn(composio, "revoke").mockRejectedValueOnce(new Error("fetch failed"));
+
+    await expect(rpc(app, cookie, "connections/revoke", { connectionId })).rejects.toThrow();
+    expect(await status()).toBe("revoked");
+
+    await vi.waitFor(() => expect(cancelled).toHaveBeenCalledTimes(1), { timeout: 10_000 });
+    await vi.waitFor(async () => expect(await remote()).toEqual([]), { timeout: 10_000 });
+  });
+
+  it("removes a shared account only with the last connection that refers to it", async () => {
+    const { cookie, actor, connectionId, cleanup, remote, status } =
+      await connectedGmail("shared-account");
+    const sibling = await asSystem(handles.prisma).connection.create({
+      data: {
+        spaceId: actor.spaceId,
+        userId: actor.userId,
+        connectorId: "composio",
+        provider: "GMAIL",
+        displayName: "Same account",
+        status: "connected",
+        providerRef: cleanup.ref,
+      },
+    });
+    const revoked = vi.spyOn(composio, "revoke");
+
+    await rpc(app, cookie, "connections/revoke", { connectionId });
+    expect(await status()).toBe("revoked");
+    expect(revoked).not.toHaveBeenCalled();
+    expect(await remote()).toEqual([cleanup.ref]);
+
+    await rpc(app, cookie, "connections/revoke", { connectionId: sibling.id });
+    expect(await remote()).toEqual([]);
   });
 
   it("marks a connected account Composio reports dead as needing reconnect", async () => {

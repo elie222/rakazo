@@ -1,7 +1,7 @@
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
-import type { IpcMainInvokeEvent, WebContents } from "electron";
+import type { WebContents } from "electron";
 import { describe, expect, it, vi } from "vitest";
 import { createSystemSpeech, SPEECH_EVENT_CHANNEL } from "./system-speech.js";
 
@@ -17,16 +17,11 @@ function fakeChild() {
 type FakeChild = ReturnType<typeof fakeChild>;
 
 function setup(url = "https://app.example.com") {
-  const frame = { url: `${url}/app/bot` };
   const contents = Object.assign(new EventEmitter(), {
-    mainFrame: frame,
     isDestroyed: () => false,
     send: vi.fn(),
   });
-  const event = {
-    sender: contents as unknown as WebContents,
-    senderFrame: frame,
-  } as IpcMainInvokeEvent;
+  const event = { sender: contents as unknown as WebContents };
   const target = {
     webContents: contents as unknown as WebContents,
     url,
@@ -42,7 +37,7 @@ function setup(url = "https://app.example.com") {
     contents.send.mock.calls
       .filter(([channel]) => channel === SPEECH_EVENT_CHANNEL)
       .map(([, message]) => message);
-  return { contents, event, frame, speech, spawn, children, sent };
+  return { contents, event, speech, spawn, children, sent };
 }
 
 const flush = () => new Promise((resolve) => setImmediate(resolve));
@@ -91,13 +86,8 @@ describe("desktop system speech", () => {
     ]);
   });
 
-  it("refuses other windows, subframes, other origins, odd languages and sessions", () => {
-    const { event, frame, speech, spawn } = setup();
-    expect(speech.start({ ...event, sender: {} as WebContents }, "en-US", 1)).toBe(false);
-    expect(speech.start({ ...event, senderFrame: null }, "en-US", 1)).toBe(false);
-    expect(
-      speech.start({ ...event, senderFrame: { ...frame } } as IpcMainInvokeEvent, "en-US", 1),
-    ).toBe(false);
+  it("refuses odd languages and sessions", () => {
+    const { event, speech, spawn } = setup();
     for (const language of [
       "",
       "e",
@@ -115,8 +105,6 @@ describe("desktop system speech", () => {
     for (const session of [0, -1, 1.5, Number.NaN, "1", null]) {
       expect(speech.start(event, "en-US", session)).toBe(false);
     }
-    Object.assign(frame, { url: "https://other.example.com" });
-    expect(speech.start(event, "en-US", 1)).toBe(false);
     expect(spawn).not.toHaveBeenCalled();
   });
 
@@ -154,7 +142,8 @@ describe("desktop system speech", () => {
     const child = children[0]!;
     speech.stop(event, 2);
     speech.abort(event, 2);
-    speech.stop({ ...event, senderFrame: null }, 1);
+    speech.stop({ sender: {} as WebContents }, 1);
+    speech.abort({ sender: {} as WebContents }, 1);
     expect(child.stdin.write).not.toHaveBeenCalled();
     expect(child.kill).not.toHaveBeenCalled();
 

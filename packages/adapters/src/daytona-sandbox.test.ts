@@ -25,7 +25,7 @@ import { DaytonaSandboxProvider } from "./daytona-sandbox.js";
 import { desktopCommandResponder } from "./linux-desktop.test-support.js";
 import { installPageBrowserCommand } from "./page-browser-install.js";
 import { isSandboxGoneError } from "./sandbox-errors.js";
-import { settleMachineCleanup } from "./sandbox-test-support.js";
+import { MachineRecords, settleMachineCleanup } from "./sandbox-test-support.js";
 
 const context = {
   operationId: "test",
@@ -831,14 +831,17 @@ describe("DaytonaSandboxProvider", () => {
     const timeout = new DaytonaTimeoutError(
       "Failed to create and start sandbox within 120 seconds",
     );
-    async function start(fixture: ReturnType<typeof daytonaFixture>) {
+    async function start(fixture: ReturnType<typeof daytonaFixture>, records?: MachineRecords) {
       fixture.create.mockImplementationOnce(async (params) => {
         fixture.remote.name = params.name;
         fixture.remote.missing = false;
         fixture.remote.state = "creating";
         throw timeout;
       });
-      const provider = new DaytonaSandboxProvider({}, fixture.client);
+      const provider = new DaytonaSandboxProvider(
+        { unreferencedMachines: records },
+        fixture.client,
+      );
       const outcome = await settleMachineCleanup(() =>
         provider.provision({ botId: "bot-a", homePath: "/unused" }, context),
       );
@@ -869,6 +872,52 @@ describe("DaytonaSandboxProvider", () => {
       expect(fixture.deleteSandbox).toHaveBeenNthCalledWith(1, 10);
       expect(left).toEqual([{ provider: "daytona", machineId: name }]);
     });
+
+    it("is handed to the records by name when it cannot be deleted", async () => {
+      const fixture = daytonaFixture();
+      fixture.deleteSandbox.mockRejectedValue(new Error("connection reset"));
+      const records = new MachineRecords();
+
+      const { name } = await start(fixture, records);
+
+      expect([...records.due.values()].map((entry) => entry.machine)).toEqual([
+        { provider: "daytona", machineId: name, homeKey: "bot-a" },
+      ]);
+    });
+  });
+
+  it("records a new sandbox for its computer, under the id that computer will store", async () => {
+    const fixture = daytonaFixture({ createdId: "daytona-new" });
+    const records = new MachineRecords();
+    const provider = new DaytonaSandboxProvider({ unreferencedMachines: records }, fixture.client);
+
+    const computer = await provider.provision({ botId: "bot-a", homePath: "/unused" }, context);
+
+    expect(computer.providerRef).toBe("daytona-new");
+    expect(records.dueIn()).toMatchObject([
+      { provider: "daytona", machineId: "daytona-new", homeKey: "bot-a" },
+    ]);
+    expect(records.dueIn()[0]?.dueInMs).toBeGreaterThan(15 * 60_000);
+  });
+
+  it("deletes a sandbox from its id or name alone, and counts one already gone as deleted", async () => {
+    const fixture = daytonaFixture({ state: "started" });
+    const provider = new DaytonaSandboxProvider({}, fixture.client);
+    const signal = AbortSignal.timeout(5_000);
+    const byId = { provider: "daytona", machineId: fixture.remote.id };
+
+    await provider.deleteMachine(byId, signal);
+
+    expect(fixture.remote.missing).toBe(true);
+    await expect(provider.deleteMachine(byId, signal)).resolves.toBeUndefined();
+
+    Object.assign(fixture.remote, { missing: false, name: "rakazo-created-under" });
+    await provider.deleteMachine(
+      { provider: "daytona", machineId: "rakazo-created-under" },
+      signal,
+    );
+
+    expect(fixture.remote.missing).toBe(true);
   });
 
   it("surfaces a create that Daytona rejected without leaving anything to delete", async () => {
