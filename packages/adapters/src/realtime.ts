@@ -1,5 +1,6 @@
 import type { RealtimeFanout } from "@rakazo/adapter-kit";
 import { DATABASE_KEEPALIVE } from "@rakazo/db";
+import { bestEffort } from "@rakazo/logging";
 import type { Notification } from "pg";
 import { Client } from "pg";
 
@@ -195,7 +196,7 @@ export class PostgresRealtimeFanout implements RealtimeFanout {
 
   private async disposeClient(client: RealtimeListenerClient): Promise<void> {
     client.removeAllListeners();
-    await client.end().catch(() => undefined);
+    await bestEffort("close realtime listener connection", client.end());
   }
 }
 

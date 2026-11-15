@@ -841,7 +841,7 @@ export default function Integrations() {
         oauthBrowserOpen.current = true;
         await Linking.openURL(result.authorizationUrl);
       } else {
-        await refresh();
+        await retryRefresh(isCurrent);
       }
     } catch (reason) {
       if (isCurrent()) setMcpError(errorText(reason, t`Could not start MCP OAuth`));
@@ -893,7 +893,7 @@ export default function Integrations() {
       setCredential("");
       setSourceKind(null);
       setAdding(null);
-      await refresh();
+      await retryRefresh(isCurrent);
       if (created) await authorizeMcp(created.id);
     } catch (reason) {
       if (isCurrent()) setSourceError(errorText(reason, t`Could not add source`));
