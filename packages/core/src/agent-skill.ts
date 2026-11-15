@@ -257,7 +257,7 @@ export function skillCatalogLine(entry: Pick<SkillCatalogEntry, "name" | "descri
 
 export function formatSkillsCatalogInstruction(entries: SkillCatalogEntry[]): string | undefined {
   if (entries.length === 0) return undefined;
-  const lines = entries.slice(0, 50).map(skillCatalogLine).join("\n");
+  const lines = entries.map(skillCatalogLine).join("\n");
   return [
     "Available Claude Agent Skills (SKILL.md recipes shared across assistants; generic how-tos, not account-specific routines). The Pi runtime already understands this format; we persist and inject them:",
     lines,

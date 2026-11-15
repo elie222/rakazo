@@ -958,7 +958,7 @@ export async function previewPluginInstall(options: {
 /** Public preview deliberately excludes skill bodies and all header values. */
 export function pluginPreviewDto(plugin: ParsedPlugin): PluginPreview {
   return {
-    format: plugin.format,
+    format: plugin.format === "agent-skills" ? "agent-plugins" : plugin.format,
     name: plugin.name,
     version: plugin.version,
     description: plugin.description,
