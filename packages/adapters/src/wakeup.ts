@@ -344,7 +344,8 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
           gaveUpOnWork = busy;
           session.abandon();
         },
-        busy ? drainMs : idleMs,
+        // The drain bound is one budget from the stop signal, however often work comes back.
+        busy ? Math.max(0, started + drainMs - Date.now()) : idleMs,
       );
     };
     this.onWorkChanged = arm;

@@ -232,6 +232,34 @@ describe("GraphileJobWorkerHost stop", () => {
     }
   });
 
+  it("keeps one drain budget when a claim arrives after the running job finished", async () => {
+    vi.useFakeTimers();
+    run.mockResolvedValueOnce(stalledRunner().runner);
+    const host = new GraphileJobWorkerHost({} as Pool, {
+      concurrency: 2,
+      idleStopTimeoutMs: IDLE_MS,
+      drainTimeoutMs: DRAIN_MS,
+    });
+    const release = deferred();
+    const target = handlers();
+    target["computer.sleep"] = async (payload) => {
+      if ((payload as { computerId: string }).computerId === "first") await release.promise;
+      else await new Promise<void>(() => undefined);
+    };
+    await host.start(target);
+    const taskList = run.mock.calls[0]![0].taskList;
+    const first = taskList["computer.sleep"]({ computerId: "first" }, helpers);
+    const stopped = settles(host.stop());
+    await vi.advanceTimersByTimeAsync(DRAIN_MS - 1_000);
+    release.resolve();
+    await first;
+    // A late claim lands in the idle window and never finishes.
+    const late = taskList["computer.sleep"]({ computerId: "late" }, helpers).catch(() => undefined);
+    await vi.advanceTimersByTimeAsync(1_000 + IDLE_MS);
+    expect(stopped.settled).toBe(true);
+    await late;
+  });
+
   it("fails a claim delivered after the stop deadline without starting its handler", async () => {
     vi.useFakeTimers();
     run.mockResolvedValueOnce(stalledRunner().runner);
