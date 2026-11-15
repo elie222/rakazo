@@ -1,14 +1,11 @@
 ---
 import { getCollection, render } from "astro:content";
 import type { CollectionEntry } from "astro:content";
-import type { BlogCategory } from "../../blog/indexability";
-import {
-  BLOG_CATEGORIES,
-  CATEGORY_LABEL,
-  categoryIsIndexed,
-  categoryPath,
-} from "../../blog/indexability";
+import type { BlogCategory } from "../../blog/categories";
+import { BLOG_CATEGORIES, CATEGORY_LABEL, categoryPath } from "../../blog/categories";
+import { categoryIsIndexed } from "../../blog/indexability";
 import { formatPostDate, isoDate } from "../../blog/format";
+import { sortPosts } from "../../blog/markdown";
 import { blogPostStructuredData } from "../../blog/structured-data";
 import ComparisonTable from "../../components/ComparisonTable.astro";
 import FaqList from "../../components/FaqList.astro";
@@ -50,9 +47,7 @@ if (props.kind === "post") {
   category = props.category;
 }
 
-const posts = (await getCollection("blog")).sort(
-  (a, b) => b.data.updated.getTime() - a.data.updated.getTime(),
-);
+const posts = sortPosts(await getCollection("blog"));
 const categoryPosts = category ? posts.filter((entry) => entry.data.category === category) : [];
 const indexed = category ? categoryIsIndexed(category) : true;
 const toc = [
@@ -90,6 +85,7 @@ const structuredData = post
       structuredData={structuredData}
       ogImage={ogPublicPath(blogOgId(post.id))}
       ogType="article"
+      markdownAlternate={`/blog/${post.id}.md`}
     >
       <p class="alt-crumb">
         <a href="/blog/">Blog</a>
