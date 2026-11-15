@@ -182,6 +182,7 @@ async function main(args) {
   const found = scan(rules, repoFiles());
   if (args[0] === "--tighten") {
     // An empty name is still a name: `--tighten "$RULE"` with RULE unset must not sweep every rule.
+    if (args.length > 2) throw new Error("--tighten takes one rule name; run it once per rule");
     const named = args.length > 1 ? args[1] : undefined;
     if (named !== undefined && !rules.some((rule) => rule.name === named))
       throw new Error(`No rule named "${named}" in scripts/checks/ratchets/`);
