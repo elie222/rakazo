@@ -4,13 +4,13 @@ import { act } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useLiveStream, useRosterSignals } from "./roster-signals";
+import { useLiveStream, useRosterSignals, useSpaceChanges } from "./roster-signals";
 
 const streams = vi.hoisted(
   () =>
     [] as Array<{
       signal: () => void;
-      computerUpdates: () => void;
+      change: (kind: string) => void;
       end: () => void;
       fail: (error: unknown) => void;
     }>,
@@ -49,12 +49,12 @@ vi.mock("./api-live", () => ({
   subscribeRosterSignals: (
     onSignal: () => void,
     signal: AbortSignal,
-    onComputerUpdates: () => void,
+    onSpaceChange: (kind: string) => void,
   ) =>
     new Promise<void>((resolve, reject) => {
       streams.push({
         signal: onSignal,
-        computerUpdates: onComputerUpdates,
+        change: onSpaceChange,
         end: resolve,
         fail: reject,
       });
@@ -72,6 +72,10 @@ const appState = vi.hoisted(() => ({
 }));
 function Harness({ onChange, enabled }: { onChange: () => void; enabled: boolean }) {
   useRosterSignals(onChange, enabled);
+  return null;
+}
+function Changes({ kind, onChange }: { kind: "runs" | "routines"; onChange: () => void }) {
+  useSpaceChanges(kind, onChange, true);
   return null;
 }
 function Stream() {
@@ -138,8 +142,39 @@ describe("useRosterSignals", () => {
 
   it("passes computer update signals on", async () => {
     await act(async () => root.render(<Harness enabled onChange={vi.fn()} />));
-    await act(async () => streams[0]!.computerUpdates());
+    await act(async () => streams[0]!.change("computerUpdates"));
     expect(computerUpdates.signalled).toHaveBeenCalledOnce();
+  });
+
+  it("holds the stream and reads on each change of its own kind", async () => {
+    const runs = vi.fn();
+    const routines = vi.fn();
+    await act(async () =>
+      root.render(
+        <>
+          <Changes kind="runs" onChange={runs} />
+          <Changes kind="routines" onChange={routines} />
+        </>,
+      ),
+    );
+    expect(streams).toHaveLength(1);
+    await act(async () => streams[0]!.change("runs"));
+    await act(async () => streams[0]!.change("runs"));
+    expect(runs).toHaveBeenCalledTimes(2);
+    expect(routines).not.toHaveBeenCalled();
+    await act(async () => streams[0]!.change("routines"));
+    expect(routines).toHaveBeenCalledOnce();
+    await act(() => vi.advanceTimersByTimeAsync(120_000));
+    expect(runs).toHaveBeenCalledTimes(2);
+  });
+
+  it("reads again when the app returns to the foreground", async () => {
+    const runs = vi.fn();
+    await act(async () => root.render(<Changes kind="runs" onChange={runs} />));
+    await act(async () => appState.set("background"));
+    expect(runs).not.toHaveBeenCalled();
+    await act(async () => appState.set("active"));
+    expect(runs).toHaveBeenCalledOnce();
   });
 
   it("shares one stream, held open by the update progress off the inbox", async () => {
@@ -178,7 +213,7 @@ describe("useRosterSignals", () => {
       for (const listener of spaceSelection) listener();
     });
     expect(streams).toHaveLength(2);
-    await act(async () => old.computerUpdates());
+    await act(async () => old.change("computerUpdates"));
     expect(computerUpdates.signalled).not.toHaveBeenCalled();
     expect(spaceSelection.size).toBe(1);
   });

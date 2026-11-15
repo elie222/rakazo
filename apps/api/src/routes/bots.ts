@@ -749,6 +749,7 @@ export function botsRoutes(ctx: RouterContext) {
             sandbox: deps.sandbox,
             home: deps.home,
             jobs: deps.jobs,
+            events: deps.events,
             artifacts: deps.artifacts,
             dataDir: deps.dataDir,
           },

@@ -350,6 +350,7 @@ async function expireOne(
   await deps.events?.notify(run.threadId, expired.seq).catch((error) => {
     getLogger().error("stuck work realtime notification", error);
   });
+  await deps.events?.publishSpaceChange?.(run.spaceId, "runs");
   if (expired.continuationRunId) await wakeRun(deps.jobs, expired.continuationRunId);
   if (!noticesEnabled(run)) return;
   const stopped = stuckWorkStoppedNotification(run.status, run.bot.name);
