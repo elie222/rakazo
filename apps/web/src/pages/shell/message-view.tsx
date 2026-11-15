@@ -21,6 +21,7 @@ import { CloudAgentCard } from "../../components/CloudAgentCard";
 import { ComputerCard } from "../../components/ComputerCard";
 import { McpAppCard } from "../../components/McpAppCard";
 import { PageBlockCard } from "../../components/pages/PageBlockCard";
+import { PlacesCard } from "../../components/places/PlacesCard";
 import { SubagentCard } from "../../components/SubagentCard";
 import {
   LIVE_TOOL_STEP_WINDOW,
@@ -500,6 +501,13 @@ export const MessageView = memo(function MessageView({
                 block={block}
                 updated={isPageSuperseded?.(message.id, block) ?? false}
               />
+            );
+          }
+          if (block.kind === "places") {
+            return (
+              <div key={i} className="flex justify-start">
+                <PlacesCard card={block.card} />
+              </div>
             );
           }
           if (block.kind === "chart") {

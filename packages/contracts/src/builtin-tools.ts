@@ -54,6 +54,7 @@ export const BUILTIN_TOOL_NAMES = [
   "save_shared_memory",
   "web_search",
   "web_fetch",
+  "places_search",
   "service_search",
   "service_call",
   "cloud_agent_launch",

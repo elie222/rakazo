@@ -93,6 +93,69 @@ const ChartBlock = z
     });
   });
 
+/** Most places one card shows. */
+export const PLACES_MAX_RESULTS = 20;
+
+/**
+ * Places a bot looked up, as the card shows them. Coordinates are WGS84 degrees; distance is
+ * metres from `centre`, when the search had one. Clients build their own maps links from the
+ * coordinates, so none travel in the block.
+ */
+export const PlacesCardSchema = z.object({
+  /** What was searched for, as the bot asked. */
+  query: z.string().min(1).max(200),
+  /** The point the search was around and distances are measured from. */
+  centre: z
+    .object({
+      latitude: z.number().min(-90).max(90),
+      longitude: z.number().min(-180).max(180),
+    })
+    .optional(),
+  places: z
+    .array(
+      z.object({
+        id: z.string().min(1).max(100),
+        name: z.string().min(1).max(200),
+        /** A plain category such as "Pharmacy" or "Museum". */
+        category: z.string().max(100).optional(),
+        address: z.string().max(300).optional(),
+        latitude: z.number().min(-90).max(90),
+        longitude: z.number().min(-180).max(180),
+        distanceM: z.number().int().min(0).optional(),
+        /** Opening hours as the data source writes them; shown as text, never interpreted. */
+        hours: z.string().max(300).optional(),
+      }),
+    )
+    .min(1)
+    .max(PLACES_MAX_RESULTS),
+  /** Where a web map's tiles come from; omitted when the card should not draw tiles. */
+  map: z
+    .object({
+      /** An https template with {z}, {x} and {y}. */
+      tileUrl: z
+        .string()
+        .max(500)
+        .refine(
+          (url) =>
+            url.startsWith("https://") &&
+            ["{z}", "{x}", "{y}"].every((part) => url.includes(part)) &&
+            URL.canParse(url.replace(/\{[xyz]\}/g, "0")),
+        ),
+      /** Credit for the tiles, drawn on the map. */
+      attribution: z.string().max(200),
+    })
+    .optional(),
+  /** Credit for the place data; the link is only ever https. */
+  attribution: z.object({
+    name: z.string().max(100),
+    url: z
+      .string()
+      .max(500)
+      .refine((url) => url.startsWith("https://") && URL.canParse(url)),
+  }),
+});
+export type PlacesCard = z.infer<typeof PlacesCardSchema>;
+
 export const SecretAskPurpose = z.enum(["otp", "password", "api_key"]);
 export type SecretAskPurpose = z.infer<typeof SecretAskPurpose>;
 
@@ -367,6 +430,11 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     pageId: Id,
     version: z.number().int().positive(),
     title: z.string().max(PAGE_TITLE_MAX_LENGTH),
+  }),
+  z.object({
+    /** Places the bot looked up, shown as a card with a map and a list. */
+    kind: z.literal("places"),
+    card: PlacesCardSchema,
   }),
   z.object({
     kind: z.literal("handoff"),

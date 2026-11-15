@@ -27,6 +27,24 @@ servers. Anonymous access is rate limited per IP address; set `KEENABLE_API_KEY`
 worker to send a key and lift those limits. Errors, per-bot disabled tools and the way back to
 the default work as described for Parallel.
 
+## Places
+
+The builtin `places_search` tool finds places ("pharmacies near Lisbon", "where is this address")
+and shows a card with a list and, where a map is available, a map. It uses the keyless
+[Nominatim](https://nominatim.org) search over OpenStreetMap data, which needs no account or API
+key; only the search text, place name and coordinates the bot asks about leave your server.
+
+The public Nominatim service is for light use only. The worker already spaces its requests to
+one per second, identifies itself in the User-Agent and remembers answers for ten minutes; set
+`PLACES_CONTACT` to an email address or URL so its operators can reach you. For anything beyond
+light use, run your own Nominatim and set `PLACES_NOMINATIM_URL` to its `/search` endpoint.
+
+The web card shows the list alone until you set `PLACES_TILE_URL` to the tile template of a
+provider you may use (`https://tiles.example.com/{z}/{x}/{y}.png`) and `PLACES_TILE_ATTRIBUTION`
+to its credit. The public OpenStreetMap tile servers do not allow this kind of distribution, so
+nothing is configured by default. The browser loads the tiles itself, so only tile positions reach
+the tile server. The iOS app draws its map with Apple Maps and needs no configuration.
+
 ## Self-hosted memory
 
 Supermemory, Honcho and Hindsight can run on your own network. In **Settings → Memory**, open **Advanced**, choose **Self-hosted**

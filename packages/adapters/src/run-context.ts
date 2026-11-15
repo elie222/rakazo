@@ -6,6 +6,7 @@ import type {
   ConnectorTool,
   MediaGenerationProvider,
   PaidServiceProvider,
+  PlacesProvider,
   SandboxProvider,
   SemanticMemoryProvider,
   WebProvider,
@@ -289,6 +290,7 @@ export type RunTrust = ReturnType<typeof createRunTrustLoaders> & {
 
 export interface RunProviders {
   web: WebProvider;
+  places: PlacesProvider;
   mediaGeneration: MediaGenerationProvider | undefined;
   paidServices: PaidServiceProvider | undefined;
   browser: BrowserProvider;

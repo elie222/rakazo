@@ -576,3 +576,47 @@ it("retains legacy unknown-field stripping for model connections", () => {
     apiKey: "fake-key",
   });
 });
+
+describe("places block", () => {
+  const card = {
+    query: "pharmacy",
+    places: [{ id: "node1", name: "Farmácia Central", latitude: 38.72, longitude: -9.14 }],
+    attribution: {
+      name: "© OpenStreetMap contributors",
+      url: "https://www.openstreetmap.org/copyright",
+    },
+  };
+
+  it("accepts a card and refuses empty or oversized lists, bad coordinates and unsafe links", () => {
+    expect(MessageBlock.safeParse({ kind: "places", card }).success).toBe(true);
+    expect(MessageBlock.safeParse({ kind: "places", card: { ...card, places: [] } }).success).toBe(
+      false,
+    );
+    const many = Array.from({ length: 21 }, (_, i) => ({ ...card.places[0]!, id: `n${i}` }));
+    expect(
+      MessageBlock.safeParse({ kind: "places", card: { ...card, places: many } }).success,
+    ).toBe(false);
+    const bad = [{ ...card.places[0]!, latitude: 91 }];
+    expect(MessageBlock.safeParse({ kind: "places", card: { ...card, places: bad } }).success).toBe(
+      false,
+    );
+    expect(
+      MessageBlock.safeParse({
+        kind: "places",
+        card: { ...card, attribution: { name: "x", url: "javascript:alert(1)" } },
+      }).success,
+    ).toBe(false);
+    expect(
+      MessageBlock.safeParse({
+        kind: "places",
+        card: { ...card, map: { tileUrl: "http://tiles.test/{z}/{x}/{y}.png", attribution: "x" } },
+      }).success,
+    ).toBe(false);
+    expect(
+      MessageBlock.safeParse({
+        kind: "places",
+        card: { ...card, map: { tileUrl: "https://tiles.test/{z}/{x}/{y}.png", attribution: "x" } },
+      }).success,
+    ).toBe(true);
+  });
+});

@@ -1,4 +1,4 @@
-import type { ComputerSize } from "@rakazo/contracts";
+import type { ComputerSize, PlacesCard } from "@rakazo/contracts";
 import type {
   AdapterContext,
   AdapterDescriptor,
@@ -698,6 +698,29 @@ export interface WebFetchProvider {
 /** Convenience when one adapter owns both search and fetch. */
 export interface WebProvider extends WebSearchProvider, WebFetchProvider {
   describe(): AdapterDescriptor<WebSearchCapabilities & WebFetchCapabilities>;
+}
+
+/** What to look for, and optionally where. */
+export interface PlacesRequest {
+  /** A kind of place ("pharmacy"), a name ("Louvre"), or an address. */
+  query: string;
+  /** A place name to search around, as a person would write it ("Lisbon"). */
+  near?: string;
+  latitude?: number;
+  longitude?: number;
+  /** Most places wanted, 1 to 20. */
+  limit?: number;
+  signal?: AbortSignal;
+}
+
+/**
+ * Provider-neutral place search. Builtin `places_search` routes here so the data source (keyless
+ * OpenStreetMap Nominatim by default) can be swapped without changing the tool or the card. A
+ * provider throws an Error whose message is safe to show the bot when it cannot answer.
+ */
+export interface PlacesProvider {
+  describe(): AdapterDescriptor<{ keyless: boolean }>;
+  search(request: PlacesRequest, context: AdapterContext): Promise<PlacesCard>;
 }
 
 /**

@@ -126,6 +126,7 @@ import { modelAcceptsImageInput } from "./model-vision.js";
 import { createPaidServiceProvider } from "./paid-services-factory.js";
 import { paymentWalletConnected } from "./payment-wallets.js";
 import { restoreComputerModels } from "./pi-runtime-computer-mode.js";
+import { createPlacesProvider } from "./places-provider-factory.js";
 import { promptVersion } from "./prompt-version.js";
 import { loadPurchaseRedactions } from "./purchase-service.js";
 import {
@@ -283,6 +284,7 @@ const RUN_HEARTBEAT_MS = 60_000;
 export function createRunExecutor(executorDeps: ExecutorDeps) {
   const contextStrategy = executorDeps.contextStrategy ?? DEFAULT_CONTEXT_STRATEGY;
   const web = executorDeps.web ?? createWebProvider();
+  const places = executorDeps.places ?? createPlacesProvider();
   const mediaGeneration = executorDeps.mediaGeneration ?? createMediaGenerationProvider();
   const paidServices = executorDeps.paidServices ?? createPaidServiceProvider();
   const browser =
@@ -1603,7 +1605,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
 
         const ctx: RunContext = {
           deps,
-          providers: { web, mediaGeneration, paidServices, browser, cloudAgent },
+          providers: { web, places, mediaGeneration, paidServices, browser, cloudAgent },
           run,
           runId,
           workerId,

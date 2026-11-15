@@ -13,6 +13,7 @@ import type {
   NotificationProvider,
   PaidServiceProvider,
   PaymentWalletProvider,
+  PlacesProvider,
   SandboxProvider,
   SecretStore,
   TransactionalEmailProvider,
@@ -73,6 +74,8 @@ export interface ExecutorDeps {
   listConnectedPluginSlugs?: (userId: string) => Promise<string[]>;
   /** Builtin web_search / web_fetch. Defaults to keyless HTTP when omitted. */
   web?: WebProvider;
+  /** Builtin places_search. Defaults to keyless OpenStreetMap Nominatim when omitted. */
+  places?: PlacesProvider;
   mediaGeneration?: MediaGenerationProvider;
   paidServices?: PaidServiceProvider;
   /** Page browser (DOM refs) on the bot computer. Defaults to the sandbox live browser when supported. */
