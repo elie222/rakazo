@@ -117,7 +117,7 @@ Rakazo is the open source version of this shape. It is Apache-2.0, and it is in 
 
 Like Grok Bot, it is just chat once it is running. You create named bots and manage each one from its conversation. Each bot keeps memory, routines, and history. Routines are readable Markdown and can run on a schedule, so a morning brief is a routine you write, not a fixed feature. A bot can pause for approval at a boundary you set, and actions are recorded in an audit log.
 
-The model is yours. You can sign in with an eligible ChatGPT plan, bring an API key for OpenAI, Anthropic, Google, or OpenRouter, or connect a local server such as Ollama. Each bot can use a different model. For Claude models, use an Anthropic API key; a Claude subscription does not include API credit. See [Model subscriptions](/docs/model-subscriptions/) for provider restrictions.
+The model is yours. You can sign in with an eligible ChatGPT plan, bring an API key for OpenAI, Anthropic, Google, or OpenRouter, or connect a local server such as Ollama. Each bot can use a different model. To use a Claude Pro or Max plan, self-host Rakazo from a source checkout for yourself and run it through the official Claude Code CLI, signed in with your account. Otherwise use an Anthropic API key. See [Model subscriptions](/docs/model-subscriptions/) for details.
 
 The computer is yours too. Local Docker is the default. E2B, Daytona, CreateOS, and Boat are optional. Team computers are shared, and private computers are isolated. Connector credentials are encrypted on your server and are never returned by the API.
 
