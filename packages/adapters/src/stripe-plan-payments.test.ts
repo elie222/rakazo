@@ -9,9 +9,9 @@ function provider(routes: Record<string, unknown>) {
     fetch: vi.fn(async (input) => {
       const url = new URL(String(input));
       paths.push(`${url.pathname}${url.search}`);
-      const invoice = url.searchParams.get("invoice");
+      const scope = url.searchParams.get("invoice") ?? url.searchParams.get("payment_intent");
       return Response.json({
-        data: routes[`${url.pathname}${invoice ? `?${invoice}` : ""}`] ?? [],
+        data: routes[`${url.pathname}${scope ? `?${scope}` : ""}`] ?? [],
         has_more: false,
       });
     }),
@@ -75,7 +75,7 @@ describe("Stripe own-key plan payments", () => {
     expect(paths.every((path) => path.includes("created[gte]=1790000000"))).toBe(true);
   });
 
-  it("marks an invoice reversed only when every payment on it was refunded or disputed", async () => {
+  it("marks an invoice reversed only when every payment on it was refunded or lost a dispute", async () => {
     const invoice = (id: string) => ({
       id,
       currency: "usd",
@@ -90,6 +90,8 @@ describe("Stripe own-key plan payments", () => {
         invoice("in_disputed"),
         invoice("in_kept"),
         invoice("in_partly"),
+        invoice("in_dispute_won"),
+        invoice("in_dispute_open"),
       ],
       "/v1/charges": [
         { id: "ch_1", payment_intent: "pi_refunded", disputed: false, refunded: true },
@@ -97,6 +99,17 @@ describe("Stripe own-key plan payments", () => {
         { id: "ch_3", payment_intent: "pi_kept", disputed: false, refunded: false },
         { id: "ch_4", payment_intent: "pi_partly_refunded", disputed: false, refunded: true },
         { id: "ch_5", payment_intent: "pi_partly_kept", disputed: false, refunded: false },
+        { id: "ch_6", payment_intent: "pi_won", disputed: true, refunded: false },
+        { id: "ch_7", payment_intent: "pi_open", disputed: true, refunded: false },
+      ],
+      "/v1/disputes?pi_disputed": [{ id: "dp_1", status: "lost" }],
+      "/v1/disputes?pi_won": [{ id: "dp_2", status: "won" }],
+      "/v1/disputes?pi_open": [{ id: "dp_3", status: "under_review" }],
+      "/v1/invoice_payments?in_dispute_won": [
+        { id: "ip_6", payment: { payment_intent: "pi_won" } },
+      ],
+      "/v1/invoice_payments?in_dispute_open": [
+        { id: "ip_7", payment: { payment_intent: "pi_open" } },
       ],
       "/v1/invoice_payments?in_refunded": [
         { id: "ip_1", payment: { payment_intent: "pi_refunded" } },
@@ -116,6 +129,8 @@ describe("Stripe own-key plan payments", () => {
       ["in_disputed", true],
       ["in_kept", false],
       ["in_partly", false],
+      ["in_dispute_won", false],
+      ["in_dispute_open", false],
     ]);
   });
 });

@@ -1647,7 +1647,7 @@ export interface BillingPlanPayment {
   currency: string;
   createdAt: Date;
   paidAt: Date;
-  /** Every payment on it refunded in full, or disputed. */
+  /** Every payment on it refunded in full, or lost to a dispute. */
   reversed: boolean;
 }
 

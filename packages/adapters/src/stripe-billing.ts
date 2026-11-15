@@ -636,9 +636,26 @@ export class StripeBillingProvider implements BillingProvider {
         }),
       ),
     ]);
+    // A dispute counts once lost: one the business wins keeps the payment, and the program
+    // cannot take back a withdrawal.
+    const lostDisputeIntents = new Set<string>();
+    for (const intent of new Set(
+      charges.filter((charge) => charge.disputed).map((charge) => charge.payment_intent),
+    )) {
+      if (!intent) continue;
+      const disputes = await this.listPages(
+        `/v1/disputes?payment_intent=${encodeURIComponent(intent)}`,
+        z.object({ status: z.string() }),
+      );
+      if (disputes.some((dispute) => dispute.status === "lost")) lostDisputeIntents.add(intent);
+    }
     const reversedIntents = new Set(
       charges
-        .filter((charge) => charge.payment_intent && (charge.disputed || charge.refunded))
+        .filter(
+          (charge) =>
+            charge.payment_intent &&
+            (charge.refunded || lostDisputeIntents.has(charge.payment_intent)),
+        )
         .map((charge) => charge.payment_intent),
     );
     const payments: BillingPlanPayment[] = [];
