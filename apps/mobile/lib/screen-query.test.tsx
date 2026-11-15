@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { flush } from "@rakazo/core/test-async";
 import { act, useEffect } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
@@ -50,7 +51,7 @@ afterEach(async () => {
 
 async function render(props: { focused: boolean } & Options) {
   await act(async () => root.render(<Screen {...props} />));
-  await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+  await act(flush);
 }
 
 it("reads once on opening, and again each time the screen gains focus", async () => {

@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 
 import { GROUP_MEMBER_MAX } from "@rakazo/contracts";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import { notifyManager } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { act } from "react";
@@ -441,53 +443,47 @@ it.each([false, true])("back keeps picks (hardware: %s)", async (hardware) => {
   expect(hardwareBack.current).toBeUndefined();
 });
 it("disables submission while pending and shows errors inline for retry", async () => {
-  let reject!: (reason: Error) => void;
-  rpc.mockImplementation(async (procedure: string) =>
-    procedure === "bots/list"
-      ? bots
-      : new Promise((_resolve, fail) => {
-          reject = fail;
-        }),
-  );
+  let held!: Deferred<never>;
+  rpc.mockImplementation(async (procedure: string) => {
+    if (procedure === "bots/list") return bots;
+    held = deferred<never>();
+    return held.promise;
+  });
   await start();
   await pickPair();
   await click("Skip");
   expect(button("Creating…")?.disabled).toBe(true);
   expect(hapticSuccess).not.toHaveBeenCalled();
-  await act(async () => reject(new Error("Could not create group")));
+  await act(async () => held.reject(new Error("Could not create group")));
   expect(container.textContent).toContain("Could not create group");
   expect(button("Skip")?.disabled).toBe(false);
   expect(hapticSuccess).not.toHaveBeenCalled();
 });
 
 it("does not confirm group creation after the session changes", async () => {
-  let finish!: (group: { id: string; name: string }) => void;
-  rpc.mockImplementation(async (procedure: string) =>
-    procedure === "bots/list"
-      ? bots
-      : new Promise((resolve) => {
-          finish = resolve;
-        }),
-  );
+  let finish!: Deferred<{ id: string; name: string }>;
+  rpc.mockImplementation(async (procedure: string) => {
+    if (procedure === "bots/list") return bots;
+    finish = deferred<{ id: string; name: string }>();
+    return finish.promise;
+  });
   await start();
   await pickPair();
   await click("Skip");
   session.generation += 1;
-  await act(async () => finish({ id: "group-1", name: "Created" }));
+  await act(async () => finish.resolve({ id: "group-1", name: "Created" }));
   expect(hapticSuccess).not.toHaveBeenCalled();
 });
 it.each(["header", "native header", "hardware"])(
   "blocks %s back while creating and allows it after failure",
   async (control) => {
     nativeHeader.current = control === "native header";
-    let reject!: (reason: Error) => void;
-    rpc.mockImplementation(async (procedure: string) =>
-      procedure === "bots/list"
-        ? bots
-        : new Promise((_resolve, fail) => {
-            reject = fail;
-          }),
-    );
+    let pending!: Deferred<never>;
+    rpc.mockImplementation(async (procedure: string) => {
+      if (procedure === "bots/list") return bots;
+      pending = deferred<never>();
+      return pending.promise;
+    });
     await start();
     await pickPair();
     await click("Skip");
@@ -506,7 +502,7 @@ it.each(["header", "native header", "hardware"])(
       { name: "Writer, Researcher", botIds: ["bot-2", "bot-1"] },
       sentFor("space-1"),
     );
-    await act(async () => reject(new Error("Could not create group")));
+    await act(async () => pending.reject(new Error("Could not create group")));
     await pressBack();
     expect(button("Remove Writer")).toBeDefined();
     expect(button("Remove Researcher")).toBeDefined();
@@ -519,19 +515,17 @@ it("closes a standalone deep link to home", async () => {
 });
 
 it("does not confirm group creation after its screen loses focus", async () => {
-  let finish!: (group: { id: string; name: string }) => void;
-  rpc.mockImplementation(async (procedure: string) =>
-    procedure === "bots/list"
-      ? bots
-      : new Promise((resolve) => {
-          finish = resolve;
-        }),
-  );
+  let finish!: Deferred<{ id: string; name: string }>;
+  rpc.mockImplementation(async (procedure: string) => {
+    if (procedure === "bots/list") return bots;
+    finish = deferred<{ id: string; name: string }>();
+    return finish.promise;
+  });
   await start();
   await pickPair();
   await click("Skip");
   session.focused = false;
-  await act(async () => finish({ id: "group-1", name: "Created" }));
+  await act(async () => finish.resolve({ id: "group-1", name: "Created" }));
   expect(hapticSuccess).not.toHaveBeenCalled();
   // The group exists, so it is still listed and opened.
   expect(addToSearchInbox).toHaveBeenCalledOnce();
@@ -542,15 +536,13 @@ it("does not confirm group creation after its screen loses focus", async () => {
 });
 
 function pendingCreation() {
-  let finish!: (group: { id: string; name: string }) => void;
-  rpc.mockImplementation(async (procedure: string) =>
-    procedure === "bots/list"
-      ? bots
-      : new Promise((resolve) => {
-          finish = resolve;
-        }),
-  );
-  return (group = { id: "group-1", name: "Created" }) => finish(group);
+  let finish!: Deferred<{ id: string; name: string }>;
+  rpc.mockImplementation(async (procedure: string) => {
+    if (procedure === "bots/list") return bots;
+    finish = deferred<{ id: string; name: string }>();
+    return finish.promise;
+  });
+  return (group = { id: "group-1", name: "Created" }) => finish.resolve(group);
 }
 
 it("creates one group when Create is tapped twice in one tick", async () => {
@@ -610,17 +602,15 @@ it("reads the bots for the selected space, afresh on each visit", async () => {
   expect(button("Writer")).toBeDefined();
   await act(async () => root.unmount());
   root = createRoot(container);
-  let answer!: (list: MobileBot[]) => void;
-  rpc.mockImplementation(
-    () =>
-      new Promise((resolve) => {
-        answer = resolve;
-      }),
-  );
+  let answer!: Deferred<MobileBot[]>;
+  rpc.mockImplementation(() => {
+    answer = deferred<MobileBot[]>();
+    return answer.promise;
+  });
   await start();
   // An earlier visit's list is not what this one picks from.
   expect(button("Writer")).toBeUndefined();
-  await act(async () => answer([bots[2]!]));
+  await act(async () => answer.resolve([bots[2]!]));
   expect(button("Support")).toBeDefined();
   expect(button("Writer")).toBeUndefined();
   expect(botReads()).toHaveLength(2);

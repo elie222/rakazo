@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import type { ReactNode } from "react";
 import { act, createElement } from "react";
 import type { Root } from "react-dom/client";
@@ -201,13 +203,11 @@ it("lets a member leave and returns home in their own space", async () => {
 });
 
 it("retries a failed first load without reopening the members screen", async () => {
-  let finishRetry!: (value: unknown) => void;
-  rpc.mockRejectedValueOnce(new Error("Offline")).mockImplementationOnce(
-    () =>
-      new Promise((resolve) => {
-        finishRetry = resolve;
-      }),
-  );
+  let finishRetry!: Deferred<unknown>;
+  rpc.mockRejectedValueOnce(new Error("Offline")).mockImplementationOnce(() => {
+    finishRetry = deferred<unknown>();
+    return finishRetry.promise;
+  });
   await act(async () => root.render(createElement(SpaceMembersScreen)));
   expect(host.textContent).toContain("Offline");
   expect(buttonNamed("Retry")).toBeDefined();
@@ -218,7 +218,7 @@ it("retries a failed first load without reopening the members screen", async () 
   expect(rpc).toHaveBeenCalledTimes(2);
   expect(rpc).toHaveBeenLastCalledWith("spaces/members/list", { spaceId: "space-shared" });
   await act(async () =>
-    finishRetry({ spaceName: "Home", members: [owner, member], canManage: true }),
+    finishRetry.resolve({ spaceName: "Home", members: [owner, member], canManage: true }),
   );
   expect(host.textContent).toContain("Ada Lovelace");
   expect(buttonNamed("Invite")).toBeDefined();

@@ -1,3 +1,4 @@
+import { deferred } from "@rakazo/core/test-async";
 import * as Notifications from "expo-notifications";
 import * as SecureStore from "expo-secure-store";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -484,19 +485,16 @@ describe("verified integration session scope", () => {
     expect(disk.has("rakazo.integrations-scope")).toBe(false);
   });
   it("serializes an in-flight scope write before sign-out deletes it", async () => {
-    let release!: () => void;
-    const pending = new Promise<void>((resolve) => {
-      release = resolve;
-    });
+    const pending = deferred();
     vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
-      if (key === "rakazo.integrations-scope") await pending;
+      if (key === "rakazo.integrations-scope") await pending.promise;
       disk.set(key, value);
     });
     const saving = saveVerifiedIntegrationsScope(currentSessionGeneration(), scope);
     await Promise.resolve();
     await Promise.resolve();
     const clearing = clearSessionToken();
-    release();
+    pending.resolve();
     await Promise.all([saving, clearing]);
     expect(disk.has("rakazo.integrations-scope")).toBe(false);
     expect(await loadVerifiedIntegrationsScope()).toBeNull();

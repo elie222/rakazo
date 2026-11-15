@@ -1,3 +1,5 @@
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import { getArtifactById } from "./artifacts";
 
 vi.mock("./ai-consent", () => ({ promptAiConsent: vi.fn() }));
@@ -767,22 +769,20 @@ describe("mobile API requests", () => {
     });
     await loadApiBase();
 
-    let resolveRetry!: (value: Response) => void;
+    let resolveRetry!: Deferred<Response>;
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(rpcErrorResponse(401, "UNAUTHORIZED", "Unauthorized"))
-      .mockImplementationOnce(
-        () =>
-          new Promise<Response>((resolve) => {
-            resolveRetry = resolve;
-          }),
-      );
+      .mockImplementationOnce(() => {
+        resolveRetry = deferred<Response>();
+        return resolveRetry.promise;
+      });
     vi.stubGlobal("fetch", fetchMock);
 
     const pending = rpc("spaces/list");
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
     await expect(selectSpace("space-new")).resolves.toBe(true);
-    resolveRetry(jsonResponse({ json: { spaces: [] } }));
+    resolveRetry.resolve(jsonResponse({ json: { spaces: [] } }));
 
     await expect(pending).resolves.toEqual({ spaces: [] });
     expect(selectedSpaceId()).toBe("space-new");
@@ -800,22 +800,20 @@ describe("mobile API requests", () => {
     });
     await loadApiBase();
 
-    let resolveRetry!: (value: Response) => void;
+    let resolveRetry!: Deferred<Response>;
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(rpcErrorResponse(401, "UNAUTHORIZED", "Unauthorized"))
-      .mockImplementationOnce(
-        () =>
-          new Promise<Response>((resolve) => {
-            resolveRetry = resolve;
-          }),
-      );
+      .mockImplementationOnce(() => {
+        resolveRetry = deferred<Response>();
+        return resolveRetry.promise;
+      });
     vi.stubGlobal("fetch", fetchMock);
 
     const pending = rpc("spaces/list");
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
     await expect(selectSpace("space-new")).resolves.toBe(true);
-    resolveRetry(rpcErrorResponse(401, "UNAUTHORIZED", "Unauthorized"));
+    resolveRetry.resolve(rpcErrorResponse(401, "UNAUTHORIZED", "Unauthorized"));
 
     await expect(pending).rejects.toThrow("Unauthorized");
     expect(selectedSpaceId()).toBe("space-new");
@@ -834,20 +832,18 @@ describe("mobile API requests", () => {
     await loadApiBase();
     expect(selectedSpaceId()).toBe("space-a");
 
-    let resolveStale!: (value: Response) => void;
-    const fetchMock = vi.fn().mockImplementationOnce(
-      () =>
-        new Promise<Response>((resolve) => {
-          resolveStale = resolve;
-        }),
-    );
+    let resolveStale!: Deferred<Response>;
+    const fetchMock = vi.fn().mockImplementationOnce(() => {
+      resolveStale = deferred<Response>();
+      return resolveStale.promise;
+    });
     vi.stubGlobal("fetch", fetchMock);
 
     const stale = rpc("bots/list");
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     expect(fetchMock.mock.calls[0]![1].headers["x-rakazo-space-id"]).toBe("space-a");
     await expect(selectSpace("space-b")).resolves.toBe(true);
-    resolveStale(rpcErrorResponse(401, "UNAUTHORIZED", "Unauthorized"));
+    resolveStale.resolve(rpcErrorResponse(401, "UNAUTHORIZED", "Unauthorized"));
 
     // The stale request fails without probing or touching the new selection;
     // Space B's own requests run recovery if B is itself inaccessible.
@@ -869,13 +865,11 @@ describe("mobile API requests", () => {
     await loadApiBase();
     expect(selectedSpaceId()).toBe("space-a");
 
-    let resolveStale!: (value: Response) => void;
-    const fetchMock = vi.fn().mockImplementationOnce(
-      () =>
-        new Promise<Response>((resolve) => {
-          resolveStale = resolve;
-        }),
-    );
+    let resolveStale!: Deferred<Response>;
+    const fetchMock = vi.fn().mockImplementationOnce(() => {
+      resolveStale = deferred<Response>();
+      return resolveStale.promise;
+    });
     vi.stubGlobal("fetch", fetchMock);
 
     const stale = rpc("bots/list");
@@ -883,7 +877,7 @@ describe("mobile API requests", () => {
     expect(fetchMock.mock.calls[0]![1].headers["x-rakazo-space-id"]).toBe("space-a");
     await expect(selectSpace("space-b")).resolves.toBe(true);
     await expect(selectSpace("space-a")).resolves.toBe(true);
-    resolveStale(rpcErrorResponse(401, "UNAUTHORIZED", "Unauthorized"));
+    resolveStale.resolve(rpcErrorResponse(401, "UNAUTHORIZED", "Unauthorized"));
 
     // ID-only matching would treat this obsolete Space A response as current
     // after A → B → A; the selection epoch must keep recovery from clearing
@@ -1023,12 +1017,11 @@ describe("mobile API requests", () => {
     await loadApiBase();
     const rejected = vi.fn();
     const unsubscribe = subscribeSessionRejected(rejected);
-    let resolveChange!: (response: Response) => void;
+    let resolveChange!: Deferred<Response>;
     const fetchMock = vi.fn(async (url: string | URL | Request) => {
       if (String(url).endsWith("/api/auth/change-password")) {
-        return new Promise<Response>((resolve) => {
-          resolveChange = resolve;
-        });
+        resolveChange = deferred<Response>();
+        return resolveChange.promise;
       }
       return rpcErrorResponse(401, "UNAUTHORIZED", "Unauthorized");
     });
@@ -1041,7 +1034,7 @@ describe("mobile API requests", () => {
       await expect(rpc("bots/list")).rejects.toThrow("Unauthorized");
       const accountResult = await fetchAuthenticatedAccountJson("/api/devices", {}, {});
       expect(accountResult.response.status).toBe(401);
-      resolveChange(jsonResponse({ token: "rotated-token", user: { id: "user-1" } }));
+      resolveChange.resolve(jsonResponse({ token: "rotated-token", user: { id: "user-1" } }));
       await pending;
 
       expect(rejected).not.toHaveBeenCalled();

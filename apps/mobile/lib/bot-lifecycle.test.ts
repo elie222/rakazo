@@ -1,4 +1,6 @@
 import { i18n } from "@lingui/core";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { rpc, alert, removeFromSearchInbox, captureApiRequestContext } = vi.hoisted(() => ({
@@ -164,17 +166,15 @@ describe("bot deletion preview", () => {
   });
 
   it("waits for the preview before offering destructive choices", async () => {
-    let resolve!: (value: unknown[]) => void;
-    rpc.mockImplementationOnce(
-      () =>
-        new Promise((done) => {
-          resolve = done;
-        }),
-    );
+    let held!: Deferred<unknown[]>;
+    rpc.mockImplementationOnce(() => {
+      held = deferred<unknown[]>();
+      return held.promise;
+    });
     const pending = confirmDeleteBot({ id: "bot-fixture", name: "Fixture" }, vi.fn());
     expect(alert).not.toHaveBeenCalled();
     await vi.waitFor(() => expect(rpc).toHaveBeenCalledOnce());
-    resolve([]);
+    held.resolve([]);
     await pending;
     expect(alert).toHaveBeenCalledOnce();
     expect(rpc).toHaveBeenCalledOnce();
@@ -248,20 +248,18 @@ it.each(["cancel", "dismiss", "success", "failure", "stale"] as const)(
 it("pins default preview and deletion to the initial Space despite selection changes", async () => {
   const context = { apiBase: "https://example.test", headers: { "x-rakazo-space-id": "space-a" } };
   captureApiRequestContext.mockResolvedValueOnce(context);
-  let finish!: (groups: unknown[]) => void;
-  rpc.mockImplementationOnce(
-    () =>
-      new Promise((resolve) => {
-        finish = resolve;
-      }),
-  );
+  let finish!: Deferred<unknown[]>;
+  rpc.mockImplementationOnce(() => {
+    finish = deferred<unknown[]>();
+    return finish.promise;
+  });
   const pending = confirmDeleteBot({ id: "fixture", name: "Fixture" }, vi.fn());
   await vi.waitFor(() => expect(rpc).toHaveBeenCalledOnce());
   captureApiRequestContext.mockResolvedValue({
     ...context,
     headers: { "x-rakazo-space-id": "space-b" },
   });
-  finish([]);
+  finish.resolve([]);
   await pending;
   alert.mock.calls[0]![2][1].onPress();
   await vi.waitFor(() => expect(rpc).toHaveBeenCalledTimes(2));
@@ -330,18 +328,16 @@ it("does not update a replacement session after deletion completes", async () =>
     headers: {},
     sessionGeneration: 2,
   });
-  let resolve!: (value: unknown) => void;
-  rpc.mockResolvedValueOnce([]).mockImplementationOnce(
-    () =>
-      new Promise((done) => {
-        resolve = done;
-      }),
-  );
+  let pending!: Deferred<unknown>;
+  rpc.mockResolvedValueOnce([]).mockImplementationOnce(() => {
+    pending = deferred<unknown>();
+    return pending.promise;
+  });
   const deleted = vi.fn();
   await confirmDeleteBot({ id: "bot-fixture", name: "Fixture" }, deleted);
   alert.mock.calls[0]![2][1].onPress();
   session.generation = 3;
-  resolve({ ok: true, removedGroupIds: [] });
+  pending.resolve({ ok: true, removedGroupIds: [] });
   await Promise.resolve();
   expect(deleted).not.toHaveBeenCalled();
   expect(removeFromSearchInbox).not.toHaveBeenCalled();

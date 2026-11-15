@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import type { ReactNode } from "react";
 import { act, useEffect } from "react";
 import type { Root } from "react-dom/client";
@@ -275,19 +277,17 @@ it("opens a group after switching spaces and keeps the sheet on switch failure",
   });
 });
 it("ignores stale server responses and restores chats when cleared", async () => {
-  let resolve!: (hits: (typeof message)[]) => void;
-  state.search.mockImplementationOnce(
-    () =>
-      new Promise((done) => {
-        resolve = done;
-      }),
-  );
+  let held!: Deferred<(typeof message)[]>;
+  state.search.mockImplementationOnce(() => {
+    held = deferred<(typeof message)[]>();
+    return held.promise;
+  });
   await type("first");
   await act(async () => vi.advanceTimersByTime(200));
   await type("second");
   await act(async () => vi.advanceTimersByTime(200));
   expect(container.textContent).toContain("No results");
-  await act(async () => resolve([message]));
+  await act(async () => held.resolve([message]));
   expect(row("Found note, Message")).toBeNull();
   await type("");
   expect(row("Scout, Bot")).not.toBeNull();
@@ -392,19 +392,16 @@ it("clears the Android field and restores inbox chats", async () => {
 it.each(["space switch", "keyboard dismiss"] as const)(
   "cancels navigation when closed during a pending %s",
   async (stage) => {
-    let resolve!: () => void;
-    const pending = new Promise<void>((done) => {
-      resolve = done;
-    });
+    const pending = deferred();
     if (stage === "space switch") {
       state.selectSpace.mockImplementationOnce(async (id: string) => {
         state.spaceId = id;
-        await pending;
+        await pending.promise;
         state.persistedSpaceId = id;
         return true;
       });
     } else {
-      state.dismiss.mockReturnValueOnce(pending);
+      state.dismiss.mockReturnValueOnce(pending.promise);
     }
     const focus = vi.spyOn(container.querySelector("input")!, "focus");
     await act(async () => row("Team, Group").click());
@@ -414,7 +411,7 @@ it.each(["space switch", "keyboard dismiss"] as const)(
     await act(async () =>
       container.querySelector<HTMLButtonElement>('[data-testid="search-sheet-close"]')!.click(),
     );
-    await act(async () => resolve());
+    await act(async () => pending.resolve());
     act(() => vi.advanceTimersByTime(350));
     expect(focus).not.toHaveBeenCalled();
     expect(state.replace).not.toHaveBeenCalled();
@@ -429,26 +426,23 @@ it.each(
     ["space switch", "keyboard dismiss"].map((stage) => ({ event, stage })),
   ),
 )("cancels pending $stage on $event and restores the space", async ({ event, stage }) => {
-  let resolve!: () => void;
-  const pending = new Promise<void>((done) => {
-    resolve = done;
-  });
+  const pending = deferred();
   if (stage === "space switch") {
     state.selectSpace.mockImplementationOnce(async (id: string) => {
       state.spaceId = id;
-      await pending;
+      await pending.promise;
       state.persistedSpaceId = id;
       return true;
     });
   } else {
-    state.dismiss.mockReturnValueOnce(pending);
+    state.dismiss.mockReturnValueOnce(pending.promise);
   }
   await act(async () => row("Team, Group").click());
   act(() => {
     if (event === "unmount") root.unmount();
     else state.lifecycle.get(event)!();
   });
-  await act(async () => resolve());
+  await act(async () => pending.resolve());
   expect(state.replace).not.toHaveBeenCalled();
   expect(state.spaceId).toBe("space-a");
   expect(state.persistedSpaceId).toBe("space-a");
@@ -457,24 +451,21 @@ it.each(
 it.each(["space switch", "keyboard dismiss"])(
   "cancels a pending %s as soon as a native dismissal starts",
   async (stage) => {
-    let resolve!: () => void;
-    const pending = new Promise<void>((done) => {
-      resolve = done;
-    });
+    const pending = deferred();
     if (stage === "space switch") {
       state.selectSpace.mockImplementationOnce(async (id: string) => {
         state.spaceId = id;
-        await pending;
+        await pending.promise;
         state.persistedSpaceId = id;
         return true;
       });
     } else {
-      state.dismiss.mockReturnValueOnce(pending);
+      state.dismiss.mockReturnValueOnce(pending.promise);
     }
     await act(async () => row("Team, Group").click());
     // The sheet is still focused: blur only follows once the dismissal animation ends.
     act(() => state.transitionStart?.({ data: { closing: true } }));
-    await act(async () => resolve());
+    await act(async () => pending.resolve());
     expect(state.replace).not.toHaveBeenCalled();
     expect(state.spaceId).toBe("space-a");
     expect(state.persistedSpaceId).toBe("space-a");
@@ -499,17 +490,18 @@ it("keeps the selected space when successful navigation removes the sheet", asyn
 it.each(["space-c", "space-b"])(
   "does not restore over a newer pending selection of %s after closing during keyboard dismissal",
   async (nextSpace) => {
-    let dismiss!: () => void;
-    state.dismiss.mockReturnValueOnce(new Promise<void>((resolve) => (dismiss = resolve)));
+    const dismiss = deferred();
+    state.dismiss.mockReturnValueOnce(dismiss.promise);
     await act(async () => row("Team, Group").click());
     expect(state.spaceId).toBe("space-b");
     await act(async () =>
       container.querySelector<HTMLButtonElement>('[data-testid="search-sheet-close"]')!.click(),
     );
 
-    let finishCleanup!: () => void;
+    let finishCleanup!: Deferred;
     state.selectSpace.mockImplementationOnce(async (id: string) => {
-      await new Promise<void>((resolve) => (finishCleanup = resolve));
+      finishCleanup = deferred();
+      await finishCleanup.promise;
       state.spaceId = id;
       state.persistedSpaceId = id;
       return true;
@@ -517,11 +509,11 @@ it.each(["space-c", "space-b"])(
     const homeSelection = selectSpace(nextSpace);
     // Home has started selecting, but storage cleanup still leaves B in memory.
     expect(state.spaceId).toBe("space-b");
-    await act(async () => dismiss());
+    await act(async () => dismiss.resolve());
     expect(state.selectSpace.mock.calls).toEqual([["space-b"], [nextSpace]]);
     expect(state.replace).not.toHaveBeenCalled();
     await act(async () => {
-      finishCleanup();
+      finishCleanup.resolve();
       expect(await homeSelection).toBe(true);
     });
     expect(state.spaceId).toBe(nextSpace);
@@ -537,23 +529,23 @@ it.each(
 )(
   "skips stale navigation after a newer pending $nextSpace selection during $stage",
   async ({ stage, nextSpace }) => {
-    let finishOpen!: () => void;
-    const pending = new Promise<void>((resolve) => (finishOpen = resolve));
+    const pending = deferred();
     if (stage === "space switch") {
       state.selectSpace.mockImplementationOnce(async (id: string) => {
         state.spaceId = id;
-        await pending;
+        await pending.promise;
         state.persistedSpaceId = id;
         return true;
       });
     } else {
-      state.dismiss.mockReturnValueOnce(pending);
+      state.dismiss.mockReturnValueOnce(pending.promise);
     }
     await act(async () => row("Team, Group").click());
 
-    let finishCleanup!: () => void;
+    let finishCleanup!: Deferred;
     state.selectSpace.mockImplementationOnce(async (id: string) => {
-      await new Promise<void>((resolve) => (finishCleanup = resolve));
+      finishCleanup = deferred();
+      await finishCleanup.promise;
       state.spaceId = id;
       state.persistedSpaceId = id;
       return true;
@@ -561,13 +553,13 @@ it.each(
     const homeSelection = selectSpace(nextSpace);
     // The newer request owns the selection even while B remains active.
     expect(state.spaceId).toBe("space-b");
-    await act(async () => finishOpen());
+    await act(async () => pending.resolve());
     expect(state.replace).not.toHaveBeenCalled();
     expect(state.selectSpace.mock.calls).toEqual([["space-b"], [nextSpace]]);
     expect(state.alert).not.toHaveBeenCalled();
     if (stage === "space switch") expect(state.dismiss).not.toHaveBeenCalled();
     await act(async () => {
-      finishCleanup();
+      finishCleanup.resolve();
       expect(await homeSelection).toBe(true);
     });
     expect(state.spaceId).toBe(nextSpace);
@@ -583,18 +575,14 @@ it.each(
 it.each(["session", "server", "selection"])(
   "does not restore a cancelled attempt over a newer %s",
   async (changed) => {
-    let resolve!: () => void;
-    state.dismiss.mockReturnValueOnce(
-      new Promise<void>((done) => {
-        resolve = done;
-      }),
-    );
+    const held = deferred();
+    state.dismiss.mockReturnValueOnce(held.promise);
     await act(async () => row("Team, Group").click());
     act(() => state.lifecycle.get("blur")!());
     if (changed === "session") state.generation++;
     else if (changed === "server") state.apiBase = "https://other.example.test";
     else state.spaceId = "space-c";
-    await act(async () => resolve());
+    await act(async () => held.resolve());
     expect(state.replace).not.toHaveBeenCalled();
     expect(state.selectSpace).toHaveBeenCalledOnce();
   },
