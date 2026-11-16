@@ -32,6 +32,7 @@ import {
   collectNovncHtml,
   injectNovncStorageShim,
   isNovncPage,
+  isRakazoEmbedPage,
   MAX_NOVNC_HTML_BYTES,
   novncPageRequestHeaders,
   rewrittenNovncHeaders,
@@ -246,7 +247,10 @@ export function attachNovncProxy(server: WebServerHost, settings: WebServerSetti
               .then((html) => {
                 if (downstreamFinished || res.destroyed || res.writableEnded) return;
                 downstreamFinished = true;
-                const body = injectNovncStorageShim(html, { viewOnly: !target.interactive });
+                const body = injectNovncStorageShim(html, {
+                  viewOnly: !target.interactive,
+                  keyBridge: !isRakazoEmbedPage(target.path),
+                });
                 res.writeHead(incoming.statusCode ?? 502, rewrittenNovncHeaders(responseHeaders));
                 res.end(body);
               })
