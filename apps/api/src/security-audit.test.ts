@@ -76,8 +76,19 @@ describe("procedureSecurityEvent", () => {
         procedure: "voice.deployment.update",
         kind: "deployment_voice",
         provider: "elevenlabs",
+        voiceId: "voice-a",
+        keyReplaced: true,
       },
     });
+    expect(JSON.stringify(event)).not.toContain("test-voice-key");
+    // A blank key keeps the saved one: only the voice changed.
+    expect(
+      procedureSecurityEvent(
+        ["voice", "deployment", "update"],
+        { provider: "elevenlabs", apiKey: "", voiceId: "voice-b" },
+        actor,
+      )?.metadata,
+    ).toMatchObject({ voiceId: "voice-b", keyReplaced: false });
   });
 
   it("records deployment model changes without a key or an endpoint", () => {

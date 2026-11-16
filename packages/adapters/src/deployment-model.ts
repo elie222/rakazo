@@ -527,16 +527,18 @@ export function describeDeploymentConnection(connection: DeploymentConnection) {
   };
 }
 
-/** Looks up a call's cost on the key that runs that provider now, when it can. */
+/**
+ * Looks up a call's cost on the operator's own key, when it can: the calls credits pay for run on
+ * it, even where an admin has connected the same provider (see `environmentRunModels`).
+ */
 export function deploymentModelUsageLookup(deps: {
-  prisma: PrismaClient;
   secretStore: Pick<SecretStore, "load">;
+  deploymentModels?: DeploymentModels;
 }): () => Promise<ModelUsageLookup | undefined> {
   return async () => {
-    const models = await loadDeploymentModels(deps.prisma);
     const secret = await deploymentConnectionSecret(
       deps.secretStore,
-      deploymentConnection(models, "openrouter"),
+      deploymentConnection(deps.deploymentModels ?? environmentDeploymentModels(), "openrouter"),
     );
     return secret?.kind === "api_key" ? new OpenRouterUsageLookup(secret.key) : undefined;
   };

@@ -10,6 +10,7 @@ import {
   callIsRinging,
   callRequestBlock,
   callRequestClientNonce,
+  deadlineSignal,
   phoneCallSettings,
   ringingCall,
 } from "@rakazo/core";
@@ -229,7 +230,7 @@ export async function requestUserCall(
       userId: run.userId,
       botId: run.botId,
       runId: run.id,
-      signal: AbortSignal.timeout(DEPLOYMENT_VOICE_CHECK_MS),
+      signal: deadlineSignal(DEPLOYMENT_VOICE_CHECK_MS),
     }))
   )
     return { error: NO_VOICE_REFUSAL };

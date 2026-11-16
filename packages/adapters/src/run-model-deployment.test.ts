@@ -4,6 +4,7 @@ import type { PrismaClient } from "@rakazo/db";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   DEFAULT_OPENROUTER_MODEL_ID,
+  deploymentModelUsageLookup,
   describeDeploymentConnection,
   environmentDeploymentModels,
 } from "./deployment-model.js";
@@ -351,5 +352,17 @@ describe("bot model changes", () => {
       ok: false,
       error: "Connect that model provider first",
     });
+  });
+});
+
+describe("credit cost lookups", () => {
+  it("look up costs on the operator's key, not an admin's connection for the provider", async () => {
+    const load = vi.fn(async () => "fixture-admin-key");
+    const lookup = await deploymentModelUsageLookup({
+      secretStore: { load },
+      deploymentModels: environmentDeploymentModels({ OPENROUTER_API_KEY: "fixture-operator-key" }),
+    })();
+    expect(lookup).toBeDefined();
+    expect(load).not.toHaveBeenCalled();
   });
 });

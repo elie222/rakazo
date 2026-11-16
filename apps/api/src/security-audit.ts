@@ -61,7 +61,7 @@ export const AUDITED_PROCEDURES: Record<string, AuditedProcedure> = {
   "voice.deployment.update": {
     type: "credential.changed",
     kind: "deployment_voice",
-    fields: ["provider"],
+    fields: ["provider", "voiceId"],
   },
   "models.deployment.connect": {
     type: "credential.changed",
@@ -186,6 +186,9 @@ export function procedureSecurityEvent(
   )
     metadata[fields.open.open === true ? "openedProvider" : "closedProvider"] =
       fields.open.provider;
+  // Whether the shared voice's key was replaced, never the key itself; a blank one keeps it.
+  if (procedure === "voice.deployment.update")
+    metadata.keyReplaced = typeof fields.apiKey === "string" && fields.apiKey.trim() !== "";
   if (procedure === "mcp.assignments.approve") metadata.decision = "allow";
   if (procedure === "mcp.assignments.dismiss") metadata.decision = "deny";
   return { type: audited.type, userId: actor.userId, spaceId: actor.spaceId, metadata };
