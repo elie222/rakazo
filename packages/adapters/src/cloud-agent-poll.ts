@@ -18,6 +18,7 @@ import type { CloudAgentDeps } from "./cloud-agent-service.js";
 import { cloudAgentBlock, cloudAgentFor, enqueueCloudAgent } from "./cloud-agent-service.js";
 import { cloudAgentLaunchSchema, cloudAgentPromptSchema } from "./cloud-agent-tools.js";
 import { wakeRun } from "./wake-run.js";
+import { cloudAgentWakePrompt } from "./wakes.prompt.js";
 
 const FOLLOWUP_SETTLE_MS = 5 * 60_000;
 
@@ -354,14 +355,13 @@ async function finishPoll(
       }
       if (terminal && saved.wakeGeneration < saved.generation) {
         // Provider text is untrusted. Wake with local identity and status only.
-        const summary = `Cloud agent ${agent.id} is ${status}. Use cloud_agent_status to inspect its result.`;
         const task = await tx.task.create({
           data: {
             spaceId: agent.spaceId,
             botId: agent.botId,
             threadId: agent.threadId,
             userId: agent.userId,
-            prompt: summary,
+            prompt: cloudAgentWakePrompt(agent.id, status),
             status: "queued",
           },
         });

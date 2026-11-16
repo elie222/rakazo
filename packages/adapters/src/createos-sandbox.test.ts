@@ -9,6 +9,7 @@ import {
   browserProfilePathForScreen,
   DEFAULT_DESKTOP_ENV,
 } from "@rakazo/core/node/desktop-runtime";
+import { deferred } from "@rakazo/core/test-async";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   CHROME_OWNS_DEBUG_PORT_SCRIPT,
@@ -779,18 +780,17 @@ describe("CreateOSSandboxProvider", () => {
   });
 
   it("deletes a screen only after its in-flight connection finishes", async () => {
-    let openGate: () => void = () => undefined;
-    const connectGate = new Promise<void>((resolve) => {
-      openGate = resolve;
-    });
-    let markHeld: () => void = () => undefined;
-    const held = new Promise<void>((resolve) => {
-      markHeld = resolve;
-    });
+    const connectGate = deferred();
+    const held = deferred();
     const fixture = createosFixture({
       connectionUrl: "https://sandbox.app.sb.createos.sh/vnc.html",
       annotateScreen: true,
-      holdConnect: { screenId: "screen-1", hit: 2, gate: connectGate, onHold: () => markHeld() },
+      holdConnect: {
+        screenId: "screen-1",
+        hit: 2,
+        gate: connectGate.promise,
+        onHold: () => held.resolve(),
+      },
     });
     const target = provider(fixture);
     const botA = { ...context, botId: "bot-a" };
@@ -799,14 +799,14 @@ describe("CreateOSSandboxProvider", () => {
     await target.connectScreen(computer, { view: "stream" }, botA);
     await target.connectScreen(computer, { view: "stream" }, botB);
     const reconnecting = target.connectScreen(computer, { view: "stream" }, botB);
-    await held;
+    await held.promise;
     const releasing = target.releaseScreen(computer, botB);
     await vi.waitFor(() => {
       expect(fixture.execs.some((exec) => exec.command.includes("begin-release"))).toBe(true);
     });
     expect(fixture.events.some((event) => event.startsWith("delete:"))).toBe(false);
 
-    openGate();
+    connectGate.resolve();
     const session = await reconnecting;
     await releasing;
 

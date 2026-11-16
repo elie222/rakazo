@@ -1,5 +1,10 @@
 import type { SignupAttribution as Attribution } from "@rakazo/contracts";
-import { SIGNUP_ATTRIBUTION_COOKIE, SignupAttribution } from "@rakazo/contracts";
+import {
+  PARTNER_CLICK_COOKIE,
+  PartnerClickId,
+  SIGNUP_ATTRIBUTION_COOKIE,
+  SignupAttribution,
+} from "@rakazo/contracts";
 import { getDomain } from "tldts";
 import { signupAttributionFromCookie } from "./signup-attribution.js";
 
@@ -37,5 +42,24 @@ export function rememberSignupAttribution(browser: {
     document.cookie = `${SIGNUP_ATTRIBUTION_COOKIE}=${encodeURIComponent(JSON.stringify(next))}; Path=/; Max-Age=2592000; SameSite=Lax${url.protocol === "https:" ? "; Secure" : ""}${domain ? `; Domain=${domain}` : ""}`;
   } catch {
     // Optional measurement must not prevent navigation or authentication when cookies are blocked.
+  }
+}
+
+/**
+ * Keeps the latest partner link click, named by the program's `parameter`, for the signup that
+ * credits the partner. The program's own window decides commission, so this only needs to outlast it.
+ */
+export function rememberPartnerClick(
+  browser: { location: { href: string }; document: { cookie: string } },
+  parameter: string,
+): void {
+  try {
+    const url = new URL(browser.location.href);
+    const click = PartnerClickId.safeParse(url.searchParams.get(parameter));
+    if (!click.success) return;
+    const domain = getDomain(url.hostname, { allowPrivateDomains: true });
+    browser.document.cookie = `${PARTNER_CLICK_COOKIE}=${click.data}; Path=/; Max-Age=7776000; SameSite=Lax${url.protocol === "https:" ? "; Secure" : ""}${domain ? `; Domain=${domain}` : ""}`;
+  } catch {
+    // Optional measurement must not prevent navigation when cookies are blocked.
   }
 }

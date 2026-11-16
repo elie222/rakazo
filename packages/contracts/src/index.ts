@@ -40,6 +40,7 @@ export * from "./nav-links.js";
 export * from "./network-host.js";
 export * from "./openai-compatible-ui.js";
 export * from "./pages.js";
+export * from "./partner-click.js";
 export * from "./payments.js";
 export * from "./provider-settings.js";
 export * from "./reactions.js";

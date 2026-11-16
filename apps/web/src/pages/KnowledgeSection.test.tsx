@@ -2,7 +2,7 @@
 
 import { ORPCError } from "@orpc/client";
 import type { AgentSkillCatalogEntry } from "@rakazo/contracts";
-import { deferred } from "@rakazo/core/test-async";
+import { deferred, flush } from "@rakazo/core/test-async";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
@@ -77,7 +77,7 @@ afterEach(() => {
 });
 
 async function settle() {
-  await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+  await act(flush);
 }
 
 async function show(root: Root, node: ReactNode) {
@@ -95,11 +95,8 @@ it("disables skill rows while a completed save is refreshing the catalog", async
     description: "Greet politely",
     content: "Hello",
   };
-  let finishRefresh!: (value: (typeof skill)[]) => void;
-  const refresh = new Promise<(typeof skill)[]>((resolve) => {
-    finishRefresh = resolve;
-  });
-  api.list.mockResolvedValueOnce([skill]).mockReturnValueOnce(refresh);
+  const refresh = deferred<(typeof skill)[]>();
+  api.list.mockResolvedValueOnce([skill]).mockReturnValueOnce(refresh.promise);
   api.create.mockResolvedValue(skill);
   api.get.mockResolvedValue(skill);
   const container = document.createElement("div");
@@ -121,13 +118,13 @@ it("disables skill rows while a completed save is refreshing the catalog", async
     expect(button("greeting").disabled).toBe(true);
     await act(async () => button("greeting").click());
     expect(api.get).not.toHaveBeenCalled();
-    await act(async () => finishRefresh([skill]));
+    await act(async () => refresh.resolve([skill]));
     expect(button("greeting").disabled).toBe(false);
     await act(async () => button("greeting").click());
     expect(container.querySelector("textarea")?.value).toBe("Hello");
   } finally {
     await act(async () => {
-      finishRefresh([skill]);
+      refresh.resolve([skill]);
       root.unmount();
     });
     container.remove();
@@ -417,10 +414,10 @@ it("opens skills from the composer's cached list and saves back into it", async 
   });
   const sharedKey = spaceQueries(null, null).agentSkills.list.queryKey();
   queryClient.setQueryData(sharedKey, [entry("cached", "cached-skill")]);
-  let resolveRead: (skills: AgentSkillCatalogEntry[]) => void = () => undefined;
+  const resolveRead = deferred<AgentSkillCatalogEntry[]>();
   api.list
     .mockReset()
-    .mockImplementationOnce(() => new Promise((resolve) => (resolveRead = resolve)))
+    .mockImplementationOnce(() => resolveRead.promise)
     .mockResolvedValueOnce([entry("cached", "cached-skill"), entry("new", "new-skill")]);
   api.create.mockReset().mockResolvedValue(entry("new", "new-skill"));
   const host = document.createElement("div");
@@ -434,7 +431,7 @@ it("opens skills from the composer's cached list and saves back into it", async 
     await act(async () => button("New skill")!.click());
     await act(async () => button("Save")!.click());
     await settle();
-    await act(async () => resolveRead([entry("cached", "cached-skill")]));
+    await act(async () => resolveRead.resolve([entry("cached", "cached-skill")]));
     await settle();
     expect(button("new-skill")).toBeTruthy();
     expect(queryClient.getQueryData(sharedKey)?.map((skill) => skill.id)).toEqual([

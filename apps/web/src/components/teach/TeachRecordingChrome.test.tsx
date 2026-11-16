@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import type { TaughtSkill } from "@rakazo/contracts";
+import { deferred } from "@rakazo/core/test-async";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -182,11 +183,8 @@ it("keeps protected input when the sandbox request fails", async () => {
 
 it("drops a queued protected submit when recording ends or the skill changes", async () => {
   const botId = "bot-queued";
-  let release!: () => void;
-  const gate = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  const blocked = enqueueTeachComputerInput(botId, () => gate);
+  const gate = deferred();
+  const blocked = enqueueTeachComputerInput(botId, () => gate.promise);
   const view = await renderChrome(recording("skill-a"), botId);
   try {
     await typeProtected(view.container, "pw-fixture");
@@ -197,7 +195,7 @@ it("drops a queued protected submit when recording ends or the skill changes", a
 
     await view.rerender(recording("skill-b"));
     await act(async () => {
-      release();
+      gate.resolve();
       await blocked;
       await enqueueTeachComputerInput(botId, async () => undefined);
     });
@@ -216,7 +214,7 @@ it("drops a queued protected submit when recording ends or the skill changes", a
       payload: { text: "next-fixture", sensitive: true, skillId: "skill-b" },
     });
   } finally {
-    release();
+    gate.resolve();
     await blocked.catch(() => undefined);
     await view.cleanup();
   }
@@ -224,11 +222,8 @@ it("drops a queued protected submit when recording ends or the skill changes", a
 
 it("drops a queued protected submit when the chrome unmounts", async () => {
   const botId = "bot-unmount";
-  let release!: () => void;
-  const gate = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  const blocked = enqueueTeachComputerInput(botId, () => gate);
+  const gate = deferred();
+  const blocked = enqueueTeachComputerInput(botId, () => gate.promise);
   const view = await renderChrome(recording("skill-unmount"), botId);
   await typeProtected(view.container, "pw-fixture");
   await act(async () => {
@@ -236,7 +231,7 @@ it("drops a queued protected submit when the chrome unmounts", async () => {
   });
   await view.cleanup();
   await act(async () => {
-    release();
+    gate.resolve();
     await blocked;
     await enqueueTeachComputerInput(botId, async () => undefined);
   });

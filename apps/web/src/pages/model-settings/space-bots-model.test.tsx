@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { deferred } from "@rakazo/core/test-async";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -144,13 +145,11 @@ it("drops switched bots even when the refresh after the switch fails", async () 
 });
 
 it("ignores a bot list that a newer one replaced", async () => {
-  let finishFirst: (value: typeof list) => void = () => {};
-  bots.list
-    .mockImplementationOnce(() => new Promise((resolve) => (finishFirst = resolve)))
-    .mockResolvedValue(following);
+  const finishFirst = deferred<typeof list>();
+  bots.list.mockImplementationOnce(() => finishFirst.promise).mockResolvedValue(following);
   const { host, rerender, unmount } = await render();
   await rerender("s:a:two");
-  await act(async () => finishFirst(list));
+  await act(async () => finishFirst.resolve(list));
   expect(host.textContent).toBe("");
   expect(toast).not.toHaveBeenCalled();
   unmount();

@@ -26,8 +26,9 @@ export function mountBillingRoutes(
     const parsed = deps.provider.parseWebhook(raw, c.req.raw.headers);
     if (parsed === null) return c.json({ error: "Invalid signature" }, 400);
     if (parsed === "ignored") return c.json({ ok: true });
+    let customerId: string | null;
     try {
-      const customerId =
+      customerId =
         "customerId" in parsed
           ? parsed.customerId
           : await deps.provider.customerForPayment(parsed.paymentId);
@@ -36,6 +37,15 @@ export function mountBillingRoutes(
       // A non-2xx makes the provider retry the delivery.
       getLogger().error("billing webhook sync failed", error);
       return c.json({ error: "Sync failed" }, 500);
+    }
+    if (!customerId) return c.json({ ok: true });
+    try {
+      await deps.billing.reportPartnerSales(customerId);
+    } catch (error) {
+      // Withdrawing a partner payout on a refunded payment must not be dropped, so the delivery is
+      // retried, as it is when its payments could not be read.
+      getLogger().error("partner program reconciliation failed", error);
+      return c.json({ error: "Partner program sync failed" }, 500);
     }
     return c.json({ ok: true });
   });

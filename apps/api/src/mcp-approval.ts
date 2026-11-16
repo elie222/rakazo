@@ -10,6 +10,7 @@ import {
   withTransactionRetry,
 } from "@rakazo/db";
 import { requireBotThread } from "./bot-thread.js";
+import { mcpConnectedPrompt } from "./hidden-turns.prompt.js";
 
 export type McpApprovalDeps = {
   prisma: PrismaClient;
@@ -273,10 +274,6 @@ export async function dismissMcpServerApprovals(
   );
   for (const event of seqs) await deps.events.notify(event.threadId, event.seq);
   return seqs;
-}
-
-function mcpConnectedPrompt(name: string): string {
-  return `The user just connected the MCP server ${JSON.stringify(name)} from its approval card, so its tools are available now. Carry on with what they asked for. If nothing is left to do, confirm in one short sentence.`;
 }
 
 /** Approving a card in a chat is the user's turn: queue a hidden-prompt run (like

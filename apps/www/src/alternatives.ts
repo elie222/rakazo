@@ -1,6 +1,6 @@
 import { OPENCLAW_H1 } from "./guide";
 import { GROK_ALTERNATIVE_H1, GROK_ALTERNATIVE_PATH } from "./grok-alternative";
-import { DOCS_URL, GITHUB_URL, OPENCLAW_ALTERNATIVE_PATH } from "./site";
+import { GITHUB_URL, OPENCLAW_ALTERNATIVE_PATH, SELF_HOST_GUIDE_PATH, SITE_URL } from "./site";
 
 export const ROUNDUP_UPDATED = "October 24, 2026";
 
@@ -841,7 +841,7 @@ export function alternativeMarkdown(alternative: Alternative): string {
     "",
     GET_STARTED.copy,
     "",
-    `- [${GET_STARTED.docsLabel}](${DOCS_URL})`,
+    `- [${GET_STARTED.docsLabel}](${SITE_URL}${SELF_HOST_GUIDE_PATH})`,
     `- [${GET_STARTED.githubLabel}](${GITHUB_URL})`,
     "",
     "## FAQ",

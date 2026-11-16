@@ -7,6 +7,7 @@ import type {
   SandboxProvider,
 } from "@rakazo/adapter-kit";
 import { memoryRetainTurnJob, SandboxUnresponsiveError } from "@rakazo/adapter-kit";
+import { deferred } from "@rakazo/core/test-async";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { currentDbContext } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
@@ -491,27 +492,21 @@ describe("memory.retain-turn", () => {
     const pending = { ...identity, generation: 3, checks: 0, unconfirmed: true as const };
     const recovery = memoryRetainTurnJob("run-1", [], { pending });
     durable.set(recovery.replaceKey!, recovery);
-    let entered!: () => void;
-    let finish!: (result: { settled: boolean }) => void;
-    const started = new Promise<void>((resolve) => {
-      entered = resolve;
-    });
-    const slow = new Promise<{ settled: boolean }>((resolve) => {
-      finish = resolve;
-    });
+    const started = deferred();
+    const slow = deferred<{ settled: boolean }>();
     vi.mocked(settleRetainedConversation).mockImplementationOnce(async () => {
-      entered();
-      return slow;
+      started.resolve();
+      return slow.promise;
     });
     const running = handle({ runId: "run-1", pending });
-    await started;
+    await started.promise;
     vi.mocked(retainRunConversation).mockResolvedValueOnce({
       pending: { ...identity, generation: 3, token: "op-1" },
     });
     await handle({ runId: "run-1" });
     expect(jobs.cancel).toHaveBeenCalledWith(recovery.replaceKey);
     expect(durable.has(recovery.replaceKey!)).toBe(false);
-    finish({ settled: false });
+    slow.resolve({ settled: false });
     await running;
     expect(durable.get("memory.retain-turn:run-1:settle")).toMatchObject({
       payload: { pending: { token: "op-1" } },
