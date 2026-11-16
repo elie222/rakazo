@@ -46,6 +46,7 @@ import {
   partialReplyClientNonce,
   RunHistoryWriteError,
 } from "./messages.js";
+import { followOrganizationChanges, publishOrganizationChange } from "./organization-changes.js";
 import { isRecordNotFound } from "./prisma-errors.js";
 import type { RosterChange } from "./roster-changes.js";
 import { followRosterChanges, loadRosterScope, publishRosterChange } from "./roster-changes.js";
@@ -117,6 +118,11 @@ export interface ThreadEvents {
   followRosterChanges?(userId: string, signal?: AbortSignal): AsyncGenerator<void>;
   publishSpaceChange?(spaceId: string, kind: SpaceChangeKind): Promise<void>;
   followSpaceChanges?(spaceId: string, signal?: AbortSignal): AsyncGenerator<SpaceChangeKind>;
+  publishOrganizationChange?(
+    organizationId: string,
+    alsoUserIds?: readonly string[],
+  ): Promise<void>;
+  followOrganizationChanges?(userId: string, signal?: AbortSignal): AsyncGenerator<void>;
   answerRunInput(input: AnswerRunInput): Promise<boolean>;
   append(input: AppendEventInput): Promise<ProductEvent>;
   claimSteering(input: ClaimSteeringInput): Promise<ClaimedSteeringMessage[]>;
@@ -251,8 +257,12 @@ export function createThreadEvents(
       followRosterChanges: (userId, signal) =>
         followRosterChanges(realtime, userId, () => loadRosterScope(prisma, userId), signal),
       followSpaceChanges: (spaceId, signal) => followSpaceChanges(realtime, spaceId, signal),
+      followOrganizationChanges: (userId, signal) =>
+        followOrganizationChanges(realtime, userId, signal),
     }),
     publishSpaceChange: (spaceId, kind) => publishSpaceChange(realtime, spaceId, kind),
+    publishOrganizationChange: (organizationId, alsoUserIds) =>
+      publishOrganizationChange(prisma, realtime, organizationId, alsoUserIds),
     answerRunInput: (input) => answerRunInput(prisma, input, realtime, options.runSecretWriter),
     append: (input) => appendEvent(prisma, input, realtime, options.analytics),
     claimSteering: (input) => claimSteering(prisma, input),
@@ -396,26 +406,6 @@ export async function clearThread(
     await publishSpaceChange(realtime, input.spaceId, "runs");
   if (!input.groupId && committed.userId)
     await realtime?.publish(`incoming-calls:${committed.userId}`, "").catch(() => undefined);
-  // Legacy execution bindings point at runs of pre-lease releases, which kept writing
-  // Computer.executionRunId. Clearing them inside the transaction reaches for the
-  // computer row while holding the thread row. This statement holds no other row, so it can
-  // wait out any holder.
-  // The clear is already committed: a failed sweep leaves a stale binding for the idle pass
-  // to clear, and must not report the clear itself as failed.
-  if (committed.cancelledRunIds.length > 0) {
-    await withTransactionRetry(() =>
-      prisma.computer.updateMany({
-        where: { executionRunId: { in: committed.cancelledRunIds } },
-        data: {
-          executionRunId: null,
-          executionBotId: null,
-          executionLeaseExpiresAt: null,
-        },
-      }),
-    ).catch((error: unknown) => {
-      getLogger().error("legacy computer binding sweep after thread clear", error);
-    });
-  }
   return {
     event: mapProductEvent(committed.event),
     cancelledRunIds: committed.cancelledRunIds,

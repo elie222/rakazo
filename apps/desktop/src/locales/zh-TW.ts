@@ -205,8 +205,6 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Docker is installed but not running. Open it to continue.":
     "Docker 已安裝但未執行。開啟它即可繼續。",
   "Starting {app}…": "正在啟動 {app}…",
-  "Waiting for Docker Desktop…": "正在等待 Docker Desktop…",
-  "Waiting for Docker…": "正在等待 Docker…",
   "Docker is installed but not running. Start the Docker service to continue.":
     "Docker 已安裝但未執行。請啟動 Docker 服務以繼續。",
 };

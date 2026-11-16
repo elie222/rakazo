@@ -13,12 +13,7 @@ import {
   SCRIPTED_VOICE_ID,
   ScriptedVoiceProvider,
 } from "./scripted-voice.js";
-import {
-  createVoiceProvider,
-  isVoiceProviderId,
-  listVoiceCatalog,
-  VOICE_CATALOG,
-} from "./voice-factory.js";
+import { createVoiceProvider, isVoiceProviderId, listVoiceCatalog } from "./voice-factory.js";
 import { MAX_VOICE_JSON_BYTES } from "./voice-http.js";
 import { XaiVoiceProvider } from "./xai-voice.js";
 
@@ -31,10 +26,10 @@ const ctx = {
 };
 
 const macOs = vi.hoisted(() => ({ available: false }));
-vi.mock("./macos-voice.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof MacOsVoice>()),
-  macOsSayAvailable: () => macOs.available,
-}));
+vi.mock("./macos-voice.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof MacOsVoice>();
+  return { ...actual, macOsVoice: { ...actual.macOsVoice, available: () => macOs.available } };
+});
 
 const previousRuntime = process.env.AGENT_RUNTIME;
 
@@ -51,7 +46,7 @@ describe("createVoiceProvider", () => {
   it("exposes the hosted catalog behind one factory", () => {
     process.env.AGENT_RUNTIME = "pi";
     vi.stubEnv("RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC", "0");
-    expect(VOICE_CATALOG.map((entry) => entry.id)).toEqual([
+    expect(listVoiceCatalog({ allowPrivateEndpoint: true }).map((entry) => entry.id)).toEqual([
       "elevenlabs",
       "openai",
       "cartesia",

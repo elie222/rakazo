@@ -74,6 +74,7 @@ import type { RouterContext } from "./context.js";
 import { HEARTBEAT, meDto, mergeStreams, withHeartbeats } from "./shared.js";
 
 const ROSTER_CHANGED = Symbol("roster changed");
+const ORGANIZATIONS_CHANGED = Symbol("organizations changed");
 
 const SIGNAL_FAILURE_HOLD_MS = 30_000;
 
@@ -366,7 +367,12 @@ export function accountRoutes(ctx: RouterContext) {
     },
     notifications: {
       subscribe: authed.notifications.subscribe.handler(async function* ({ context }) {
-        const { followChatAlerts, followRosterChanges, followSpaceChanges } = deps.events;
+        const {
+          followChatAlerts,
+          followOrganizationChanges,
+          followRosterChanges,
+          followSpaceChanges,
+        } = deps.events;
         if (!followChatAlerts) throw new ORPCError("NOT_FOUND");
         const { spaceId, userId } = context.actor;
         const rosterChanges = async function* (
@@ -397,16 +403,30 @@ export function accountRoutes(ctx: RouterContext) {
             throw error;
           }
         };
+        const organizationChanges = async function* (
+          signal: AbortSignal,
+        ): AsyncGenerator<typeof ORGANIZATIONS_CHANGED> {
+          if (!followOrganizationChanges) return;
+          try {
+            for await (const _ of followOrganizationChanges(userId, signal))
+              yield ORGANIZATIONS_CHANGED;
+          } catch (error) {
+            await abortableDelay(SIGNAL_FAILURE_HOLD_MS, signal);
+            throw error;
+          }
+        };
         const frames = withHeartbeats(context, (signal) =>
           mergeStreams(
             followChatAlerts(userId, spaceId, signal),
             rosterChanges(signal),
             spaceChanges(signal),
+            organizationChanges(signal),
           ),
         );
         for await (const next of frames) {
           if (next === HEARTBEAT) yield { type: "heartbeat" as const };
           else if (next === ROSTER_CHANGED) yield { type: "roster" as const };
+          else if (next === ORGANIZATIONS_CHANGED) yield { type: "organizations" as const };
           else if ("spaceChange" in next) yield { type: next.spaceChange };
           else if (next.spaceId === spaceId) yield { type: "alert" as const, alert: next };
         }

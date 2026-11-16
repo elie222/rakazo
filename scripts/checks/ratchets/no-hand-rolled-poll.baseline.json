@@ -1,5 +1,4 @@
 {
-  "apps/api/src/billing.ts": 1,
   "infra/sandboxes/supervisor/src/readiness.ts": 1,
   "packages/adapters/src/apple-container-sandbox.ts": 1,
   "packages/adapters/src/boat-sandbox.ts": 2,

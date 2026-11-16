@@ -197,7 +197,11 @@ jobs:
   screenshot-source:
     name: Mark E2E publication finished
     needs: [result, publish]
-    if: always() && needs.result.result == 'success' && github.event.workflow_run.event == 'pull_request'
+    # E2E skips only pull requests with no web UI change, which pr-screenshots.yml would skip anyway.
+    if: >-
+      always() && needs.result.result == 'success' &&
+      needs.result.outputs.result != 'skipped' &&
+      github.event.workflow_run.event == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:

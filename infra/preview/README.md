@@ -2,7 +2,7 @@
 
 Every pull request that changes the app gets its own live copy at `https://rakazo-pr-<number>.fly.dev`,
 linked from a comment on the pull request and updated on each push. Sign in with
-`preview@example.com` / `rakazo-preview-demo`.
+`preview@example.com` / `rakazo-preview-demo` (the sign-in page has a button for it), or sign up.
 
 A preview is one Fly.io machine holding Postgres and the whole app, with every outside service
 emulated: scripted model replies, fake computers, and emulated billing and cloud agents. Fly's

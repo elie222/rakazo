@@ -763,6 +763,12 @@ export class StoredMcpOAuthProvider implements OAuthClientProvider {
     await this.persist(true);
   }
   async redirectToAuthorization(url: URL): Promise<void> {
+    if (!this.options.onAuthorization) {
+      // Runtime re-auth needs the user, who starts a fresh sign-in that checks its own URL;
+      // drop the dead tokens so status reads "reconnect".
+      await this.invalidateCredentials("tokens");
+      throw new McpReauthorizationRequiredError(this.serverId);
+    }
     let authorizationUrl: URL;
     try {
       authorizationUrl = validateUrl(url, {
@@ -771,9 +777,6 @@ export class StoredMcpOAuthProvider implements OAuthClientProvider {
         maxUrlLength: MAX_AUTHORIZATION_URL_LENGTH,
       });
     } catch (error) {
-      if (!this.options.onAuthorization) {
-        await this.invalidateCredentials("tokens");
-      }
       throw new McpOAuthRefusedError(error instanceof Error ? error.message : String(error), {
         cause: error,
       });
@@ -785,20 +788,12 @@ export class StoredMcpOAuthProvider implements OAuthClientProvider {
     }
     requestOfflineAccess(authorizationUrl, this.material.oauth?.discoveryState);
     // Configured parameters are added after validation; keep the final URL within bounds too.
-    if (authorizationUrl.href.length > MAX_AUTHORIZATION_URL_LENGTH) {
-      if (!this.options.onAuthorization) await this.invalidateCredentials("tokens");
+    if (authorizationUrl.href.length > MAX_AUTHORIZATION_URL_LENGTH)
       throw new McpOAuthRefusedError(
         `MCP authorization URL exceeds ${MAX_AUTHORIZATION_URL_LENGTH} characters`,
       );
-    }
     this.authorizationUrl = authorizationUrl;
-    if (this.options.onAuthorization) {
-      this.options.onAuthorization(authorizationUrl);
-      return;
-    }
-    // Runtime re-auth needs the user; drop the dead tokens so status reads "reconnect".
-    await this.invalidateCredentials("tokens");
-    throw new McpReauthorizationRequiredError(this.serverId);
+    this.options.onAuthorization(authorizationUrl);
   }
   async saveCodeVerifier(value: string): Promise<void> {
     this.oauth().codeVerifier = value;

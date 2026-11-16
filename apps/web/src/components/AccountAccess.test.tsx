@@ -2,11 +2,11 @@
 import type { AccountSecurity } from "@rakazo/contracts";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
-import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { fetchAccountSecurity, requestAccountDeletionCode } from "../lib/account-security";
 import { authClient } from "../lib/auth";
 import { readComposerDraft, writeComposerDraft } from "../lib/composer-draft";
+import { createQueryRoot as createRoot } from "../lib/query-root.test-support";
 import { hasSignedInBefore, rememberSignedIn } from "../lib/returning-user";
 import { runSsoFlow } from "../lib/sso-flow";
 import { AccountAccess, LinkSsoRow } from "./AccountAccess";
