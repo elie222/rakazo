@@ -131,6 +131,13 @@ describeRunsList("runs.list activity tracker", () => {
     await expect(
       prisma.user.update({ where: { id: user.id }, data: { quietHoursStart: 3 } }),
     ).rejects.toThrow();
+    // Nor hours without a timezone, however two saves interleave.
+    await expect(
+      prisma.user.update({
+        where: { id: user.id },
+        data: { quietHoursStart: 22, quietHoursEnd: 7, timezone: null },
+      }),
+    ).rejects.toThrow();
   });
 
   it("never returns runs from another workspace", async () => {
