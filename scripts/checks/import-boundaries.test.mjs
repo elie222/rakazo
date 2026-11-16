@@ -3,6 +3,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { builtinModules } from "node:module";
 import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
@@ -84,6 +85,10 @@ const RULES = {
     title: "declared workspace dependencies are imported",
     fix: "Nothing in this package imports it. Remove it from this package.json.",
   },
+  lazy: {
+    title: "a package loaded with import() is never imported statically",
+    fix: "Optional packages load only once configured (AGENTS.md). Import it with import() where it is needed, or with import type for types; a dev script or test may import it statically.",
+  },
 };
 
 const REGEX_LITERAL = String.raw`(?<=(?:[(,=:\[!&|?{;>]|return)\s*)\/(?![/*])(?:\\.|\[(?:\\.|[^\]\\\n])*\]|[^/\\\n[])+\/`;
@@ -107,14 +112,71 @@ const TOKEN = new RegExp(
   "g",
 );
 
-/** The specifier of every import, re-export, import() and require() in a source text. */
-function extractSpecifiers(source) {
-  const specifiers = [];
+/**
+ * Every import, re-export, import() and require() in a source text, in order. `kind` is "type"
+ * for a type-only import or export, "dynamic" for import(), and "static" otherwise.
+ */
+function extractImports(source) {
+  const imports = [];
   for (const match of source.matchAll(TOKEN)) {
     const specifier = match[1] ?? match[2] ?? match[3];
-    if (specifier) specifiers.push(specifier);
+    if (!specifier) continue;
+    const kind = match[1]
+      ? /^(?:import|export)\s+type\b/.test(match[0])
+        ? "type"
+        : "static"
+      : match[0].startsWith("import")
+        ? // `typeof import("pkg")` is a type query: it loads nothing.
+          /\btypeof\s*$/.test(source.slice(Math.max(0, match.index - 16), match.index))
+          ? "type"
+          : "dynamic"
+        : "static";
+    imports.push({ specifier, kind });
   }
-  return specifiers;
+  return imports;
+}
+
+/** The specifier of every import, re-export, import() and require() in a source text. */
+function extractSpecifiers(source) {
+  return extractImports(source).map(({ specifier }) => specifier);
+}
+
+/** The npm package a bare specifier names, or undefined for paths, builtins and workspace code. */
+function externalPackage(specifier) {
+  if (/^[./]/.test(specifier) || specifier.startsWith("node:") || specifier.startsWith(SCOPE)) {
+    return undefined;
+  }
+  const name = specifier.split("/", specifier.startsWith("@") ? 2 : 1).join("/");
+  return builtinModules.includes(name) ? undefined : name;
+}
+
+/**
+ * Shipped code that statically imports a package other shipped code loads with import(). The
+ * dynamic import is what keeps an optional vendor SDK out of processes that never configure it,
+ * and one static import anywhere loads it everywhere.
+ */
+function findEagerImports(sources) {
+  // Client bundles split code with import() for load time, not to leave a package out.
+  const client = [...CLIENT_CODE, ...BUNDLED, "apps/www"];
+  const shipped = sources.filter(
+    ({ file }) =>
+      !isTestCode(file) &&
+      !/(?:^|\/)scripts\//.test(file) &&
+      !client.some((dir) => file.startsWith(`${dir}/`)),
+  );
+  const lazy = new Set(
+    shipped.flatMap(({ imports }) =>
+      imports
+        .filter(({ kind }) => kind === "dynamic")
+        .map(({ specifier }) => externalPackage(specifier)),
+    ),
+  );
+  lazy.delete(undefined);
+  return shipped.flatMap(({ file, imports }) =>
+    imports
+      .filter(({ kind, specifier }) => kind === "static" && lazy.has(externalPackage(specifier)))
+      .map(({ specifier }) => ({ rule: "lazy", file, specifier })),
+  );
 }
 
 function describeWorkspace(dir, manifest) {
@@ -242,11 +304,14 @@ const tracked = execFileSync("git", ["ls-files", "-z"], {
   .filter(Boolean);
 const sources = tracked
   .filter((file) => SOURCE_FILE.test(file))
-  .map((file) => ({
-    file,
-    specifiers: extractSpecifiers(readFileSync(path.join(root, file), "utf8")),
-  }));
-const violations = findViolations(sources, loadWorkspaces(tracked));
+  .map((file) => {
+    const imports = extractImports(readFileSync(path.join(root, file), "utf8"));
+    return { file, imports, specifiers: imports.map(({ specifier }) => specifier) };
+  });
+const violations = [
+  ...findViolations(sources, loadWorkspaces(tracked)),
+  ...findEagerImports(sources),
+];
 const allowlist = JSON.parse(readFileSync(path.join(root, ALLOWLIST_FILE), "utf8"));
 
 for (const [rule, { title, fix }] of Object.entries(RULES)) {
@@ -393,4 +458,24 @@ test("resolves specifiers to packages and reports each rule", () => {
       "unused: packages/ui-web/package.json -> @rakazo/contracts",
     ],
   );
+});
+
+test("flags a static import of a package that server code loads with import()", () => {
+  const source = (file, text) => ({ file, imports: extractImports(text) });
+  const sources = [
+    source("packages/adapters/src/vendor.ts", 'const sdk = await import("@vendor/sdk/client");'),
+    source("packages/adapters/src/eager.ts", 'import { Client } from "@vendor/sdk";'),
+    source("packages/adapters/src/types.ts", 'import type { Client } from "@vendor/sdk";'),
+    source("packages/adapters/src/vendor.test.ts", 'import { Client } from "@vendor/sdk";'),
+    source("packages/ui-tokens/scripts/build.ts", 'import { Client } from "@vendor/sdk";'),
+    source("packages/adapters/src/node.ts", 'await import("node:fs"); import fs from "node:fs";'),
+    source("apps/web/src/chart.tsx", 'await import("charts"); import "charts/style.css";'),
+    source("apps/web/src/table.tsx", 'import { draw } from "charts";'),
+    // A type query loads nothing, so it does not make "pg" a lazily loaded package.
+    source("packages/db/src/pool.ts", 'type Pg = typeof import("pg");'),
+    source("packages/db/src/client.ts", 'import { Pool } from "pg";'),
+  ];
+  assert.deepEqual(findEagerImports(sources).map(entry), [
+    "packages/adapters/src/eager.ts -> @vendor/sdk",
+  ]);
 });
