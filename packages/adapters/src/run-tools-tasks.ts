@@ -234,6 +234,7 @@ export const taskTools: ToolHandlers = {
         name: isScheduleValueProvided(args.name) ? String(args.name) : undefined,
         prompt: isScheduleValueProvided(args.prompt) ? String(args.prompt) : undefined,
         active: typeof args.active === "boolean" ? args.active : undefined,
+        silent: typeof args.silent === "boolean" ? args.silent : undefined,
         timezone: isScheduleValueProvided(args.timezone) ? String(args.timezone) : undefined,
         schedule: compactScheduleInput(scheduleTimingArgs(args)),
       }),

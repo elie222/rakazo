@@ -227,6 +227,7 @@ export function RoutineEditor({
             <WatchTriggerCard
               watch={draft.watch}
               state={editing?.watch ? editing.watchState : null}
+              silent={draft.silent}
               onChange={(watch) => onChange({ ...draft, watch })}
               onRemove={() => onChange({ ...draft, watch: null })}
             />

@@ -7,6 +7,7 @@ import {
   isTerminal,
   nextFence,
   redactSecrets,
+  SILENT_ROUTINE_TRIGGER,
   truncatePlainText,
   userRunError,
 } from "@rakazo/core";
@@ -24,6 +25,7 @@ import { withComputerScreenAvailability } from "./computer-screens.js";
 import type { ExecutorDeps } from "./executor-deps.js";
 import type { RunComputerUseState, RunLeaseState } from "./run-context.js";
 import { notifyRun } from "./run-notifications.js";
+import { notifyFailedRoutineRun } from "./run-routines.js";
 import type { TakeoverResumeCheckpoint } from "./takeover-resume.js";
 import { continueRunClaimFence, TAKEOVER_RESUME_CHECKPOINTS } from "./takeover-resume.js";
 import { wakeRun } from "./wake-run.js";
@@ -122,6 +124,12 @@ export async function failRunBeforeTurn(
     await returnHelperOutcome(deps, run, { status: "failed", text: message }).catch((error) =>
       getLogger().error("background helper failure return", error),
     );
+  } else if (run.trigger === SILENT_ROUTINE_TRIGGER) {
+    await notifyFailedRoutineRun(
+      deps,
+      { ...run, error: message },
+      { inChat: Boolean(failed.continuationRunId) },
+    ).catch((error) => getLogger().error("silent routine failure notice", error));
   } else if (!failed.continuationRunId) {
     await notifyRun(deps, run, {
       kind: "failure",

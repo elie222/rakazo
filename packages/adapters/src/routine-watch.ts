@@ -24,8 +24,10 @@ import type { ComputerMode, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   appendEventInTransaction,
   createThreadMessageInTransaction,
+  isUniqueViolation,
   listApprovalRules,
   parseComputerMode,
+  withTransactionRetry,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import {
@@ -824,7 +826,7 @@ export type RoutineWatchTickDeps = RoutineWatchDeps & {
   jobs: JobPublisher;
 };
 
-type TickRoutine = RoutineWatchTarget & { name: string };
+type TickRoutine = RoutineWatchTarget & { name: string; silent?: boolean };
 
 export type RoutineWatchTick =
   | { run: false }
@@ -886,7 +888,7 @@ export async function tickRoutineWatch(
       if (deferred.count === 1) {
         await deps.jobs.enqueue(routineWakeupJob(routine.id, retryAt));
         if (watch?.kind === "http" && previous?.retrying !== true) {
-          await postRoutineWatchMessage(deps, {
+          await postRoutineMessage(deps, {
             spaceId: routine.spaceId,
             ...target,
             role: "system",
@@ -913,7 +915,7 @@ export async function tickRoutineWatch(
     });
     if (paused.count === 1) {
       await deps.jobs.cancel(routineJobKey(routine.id)).catch(() => undefined);
-      await postRoutineWatchMessage(deps, {
+      await postRoutineMessage(deps, {
         spaceId: routine.spaceId,
         ...target,
         role: "bot",
@@ -939,8 +941,19 @@ export async function tickRoutineWatch(
     data: { nextRunAt, watchState: outcome.state },
   });
   if (claimed.count !== 1) return { run: false };
-  if (watch.loud) {
-    await postRoutineWatchMessage(deps, {
+  // Silent is read again now, not taken from before the check, so turning it on meanwhile keeps
+  // this line out of the chat too.
+  const posts =
+    watch.loud &&
+    !routine.silent &&
+    !(
+      await deps.prisma.routine.findUnique({
+        where: { id: routine.id },
+        select: { silent: true },
+      })
+    )?.silent;
+  if (posts) {
+    await postRoutineMessage(deps, {
       spaceId: routine.spaceId,
       ...target,
       role: "system",
@@ -955,7 +968,7 @@ export async function tickRoutineWatch(
 }
 
 /** A line in the routine's thread without a model run. */
-export async function postRoutineWatchMessage(
+export async function postRoutineMessage(
   deps: Pick<RoutineWatchDeps, "prisma" | "events">,
   input: {
     spaceId: string;
@@ -963,6 +976,15 @@ export async function postRoutineWatchMessage(
     botId: string;
     role: "bot" | "system";
     text: string;
+    /** Makes the line idempotent: a second post with it adds nothing to the thread. */
+    clientNonce?: string;
+    /** Marks the chat unread, which a status line otherwise does not. */
+    markUnread?: boolean;
+    /**
+     * For a caller that retries: a line that can't be written throws instead of being skipped.
+     * One an earlier attempt wrote under the same clientNonce counts as written.
+     */
+    required?: boolean;
   },
 ): Promise<void> {
   const blocks =
@@ -970,25 +992,34 @@ export async function postRoutineWatchMessage(
       ? [{ kind: "text" as const, text: input.text }]
       : [{ kind: "meta" as const, text: input.text }];
   try {
-    const seq = await deps.prisma.$transaction(async (tx) => {
-      const message = await createThreadMessageInTransaction(tx, {
-        threadId: input.threadId,
-        botId: input.botId,
-        role: input.role,
-        blocks,
-      });
-      const event = await appendEventInTransaction(tx, {
-        spaceId: input.spaceId,
-        threadId: input.threadId,
-        botId: input.botId,
-        type: "thread.message.created",
-        payload: { messageId: message.id, role: input.role, blocks },
-      });
-      return event.seq;
-    });
+    // A write that conflicts with another in the chat tries again, as a sent message does.
+    const seq = await withTransactionRetry(() =>
+      deps.prisma.$transaction(async (tx) => {
+        const message = await createThreadMessageInTransaction(tx, {
+          threadId: input.threadId,
+          botId: input.botId,
+          role: input.role,
+          blocks,
+          clientNonce: input.clientNonce,
+          ...(input.markUnread === undefined ? {} : { markUnread: input.markUnread }),
+        });
+        const event = await appendEventInTransaction(tx, {
+          spaceId: input.spaceId,
+          threadId: input.threadId,
+          botId: input.botId,
+          type: "thread.message.created",
+          payload: { messageId: message.id, role: input.role, blocks },
+        });
+        return event.seq;
+      }),
+    );
     if (seq !== undefined) await deps.events.notify(input.threadId, seq).catch(() => undefined);
-  } catch {
+  } catch (error) {
+    // Already in the chat from an earlier attempt.
+    if (input.clientNonce && isUniqueViolation(error)) return;
+    if (input.required) throw error;
     // Best effort: the routine's state is already saved.
+    getLogger().error("routine status line", error);
   }
 }
 

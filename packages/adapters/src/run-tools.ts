@@ -1,5 +1,9 @@
 import type { AgentToolExecutionObserver } from "@rakazo/adapter-kit";
-import { BACKGROUND_HELPER_TRIGGER, toolResultTaintsRun } from "@rakazo/core";
+import {
+  BACKGROUND_HELPER_TRIGGER,
+  SILENT_ROUTINE_TRIGGER,
+  toolResultTaintsRun,
+} from "@rakazo/core";
 import { isTerminatingReplyResult } from "./approval-effect.js";
 import { IMAGE_RETURNING_COMPUTER_TOOLS } from "./model-vision.js";
 import { MODEL_CANNOT_SEE_MESSAGE } from "./model-vision.prompt.js";
@@ -12,6 +16,7 @@ import { prepareToolRequest, resolveToolRequest } from "./run-tool-request.js";
 import {
   BUILTIN_AGENT_TOOL_NAMES,
   PAGE_BROWSER_TOOL_NAMES,
+  SILENT_ROUTINE_WITHHELD_TOOLS,
   SUBAGENT_HIDDEN_TOOLS,
 } from "./run-tool-selection.js";
 import { computerTools, pageBrowserTool } from "./run-tools-computer.js";
@@ -148,6 +153,16 @@ async function dispatchTool(
       refusal(
         "helper_tool_unavailable",
         `${name} is not available to a subagent. Say in your result what the parent should do.`,
+      ),
+    );
+  }
+  // Withheld from a silent routine's offered tools, and refused here too, as a runtime can
+  // still emit any name.
+  if (ctx.run.trigger === SILENT_ROUTINE_TRIGGER && SILENT_ROUTINE_WITHHELD_TOOLS.has(name)) {
+    return refuse(
+      refusal(
+        "silent_routine_tool_unavailable",
+        `${name} is not available to a silent routine, as it would post in a chat. Don't retry; put it in your reply, which the routine's run history keeps.`,
       ),
     );
   }

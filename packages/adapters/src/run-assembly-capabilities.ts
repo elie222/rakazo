@@ -6,6 +6,7 @@ import {
   HELPER_RESULT_TRIGGER,
   isCallClientNonce,
   isOwnerStartedRun,
+  isRoutineRunTrigger,
   messagingChannelPrivacyBlock,
   messagingDmSurfaceNote,
   nonOwnerChatPrivacyBlock,
@@ -150,7 +151,7 @@ export async function startTurnModel(
       { attemptId: attempt.id, workerId, fence },
       message,
     );
-    if (failed && accountFailure && run.trigger === "routine" && run.routineId) {
+    if (failed && accountFailure && isRoutineRunTrigger(run.trigger) && run.routineId) {
       await backOffRoutineAfterAccountError(deps, {
         routineId: run.routineId,
         userId: run.userId,

@@ -259,6 +259,7 @@ export function routinesRoutes(ctx: RouterContext) {
               timezone: input.timezone,
               active: input.active,
               notify: input.notify,
+              silent: input.silent,
               webhookEnabled: input.webhookEnabled,
               githubEnabled: input.githubEnabled,
               messageProvider: input.messageProvider,
@@ -361,7 +362,7 @@ export function routinesRoutes(ctx: RouterContext) {
                   select: { id: true },
                 })
               : null;
-            return existing ?? createRoutineTestRun(tx, context.actor, target, prompt, nonce);
+            return existing ?? createRoutineTestRun(tx, context.actor, target, prompt, nonce, true);
           });
         } catch (error) {
           const existing = await findExisting();

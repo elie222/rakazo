@@ -275,6 +275,9 @@ describe("filterBuiltinToolsForThread", () => {
     expect(filterBuiltinToolsForRun(withUpdate, "routine").map((tool) => tool.name)).not.toContain(
       "schedule_update",
     );
+    expect(
+      filterBuiltinToolsForRun(withUpdate, "silent_routine").map((tool) => tool.name),
+    ).not.toContain("schedule_update");
     expect(filterBuiltinToolsForRun(withUpdate, "user").map((tool) => tool.name)).toEqual(
       withUpdate.map((tool) => tool.name),
     );
@@ -551,6 +554,37 @@ describe("schedule tool persistence", () => {
         data: expect.objectContaining({ timezone, nextRunAt: new Date(nextRunAt) }),
       }),
     );
+  });
+
+  it("creates a silent routine when asked, and says so", async () => {
+    const create = vi.fn(async (args: { data: Record<string, unknown> }) => ({
+      id: "routine-1",
+      ...args.data,
+    }));
+    const deps = {
+      prisma: { routine: { create, findMany: noRoutines } },
+      events: { append: vi.fn(async () => undefined) },
+      jobs: { enqueue: vi.fn(async () => undefined) },
+    } as unknown as Parameters<typeof createScheduleFromTool>[0];
+    const fields = scheduleCreateFields({
+      name: "Board tidy",
+      prompt: "Archive done tickets",
+      timezone: "UTC",
+      cron: "0 7 * * *",
+      silent: true,
+    });
+    const result = await createScheduleFromTool(deps, {
+      spaceId: "ws-1",
+      botId: "bot-1",
+      userId: "user-1",
+      threadId: "thread-1",
+      ...fields,
+    });
+    expect(result).toMatchObject({ ok: true, silent: true });
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ silent: true }) }),
+    );
+    expect(scheduleCreateFields({ name: "a", prompt: "b", cron: "0 7 * * *" }).silent).toBe(false);
   });
 
   it("createScheduleFromTool creates the routine for the target bot and thread", async () => {
@@ -1285,6 +1319,14 @@ describe("updateScheduleFromTool", () => {
     });
   });
 
+  it("turns a routine silent without touching its timing", async () => {
+    const { updateMany, enqueue, cancel, update } = setup();
+    await expect(update({ silent: true })).resolves.toMatchObject({ ok: true, silent: true });
+    expect(updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: { silent: true } }));
+    expect(enqueue).not.toHaveBeenCalled();
+    expect(cancel).not.toHaveBeenCalled();
+  });
+
   it("pauses with active false and cancels the wakeup", async () => {
     const { updateMany, cancel, enqueue, update } = setup();
     await expect(update({ active: false })).resolves.toMatchObject({
@@ -1361,7 +1403,7 @@ describe("updateScheduleFromTool", () => {
     });
     await expect(update({ schedule: { cron: "0 9 * * *" } })).resolves.toEqual({
       error:
-        "This routine is a watch: it checks every watch.everyMinutes minutes and has no schedule, so schedule_update can only change its name, prompt or active. The user can change how often it checks in the routine's settings on the web. Do not cancel and recreate it for this.",
+        "This routine is a watch: it checks every watch.everyMinutes minutes and has no schedule, so schedule_update can only change its name, prompt, active or silent. The user can change how often it checks in the routine's settings on the web. Do not cancel and recreate it for this.",
     });
     await expect(update({ name: "Inbox" })).resolves.toMatchObject({ ok: true, name: "Inbox" });
   });

@@ -1,6 +1,6 @@
 import type { AgentContextStrategy } from "@rakazo/adapter-kit";
 import type { RunStatus } from "@rakazo/contracts";
-import { BACKGROUND_HELPER_TRIGGER, isTerminal } from "@rakazo/core";
+import { BACKGROUND_HELPER_TRIGGER, isRoutineRunTrigger, isTerminal } from "@rakazo/core";
 import {
   accountDeactivated,
   appendEventInTransaction,
@@ -236,7 +236,7 @@ async function startClaimedAttempt(
   const executionStartedAt = current.startedAt ?? new Date();
   // Classified with the first start, so a retry, resume or later schedule edit keeps it.
   let firstLateSince: Date | undefined;
-  if (!current.startedAt && run.trigger === "routine" && run.routineId && run.clientNonce) {
+  if (!current.startedAt && isRoutineRunTrigger(run.trigger) && run.routineId && run.clientNonce) {
     try {
       const routine = await deps.prisma.routine.findUnique({
         where: { id: run.routineId },

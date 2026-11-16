@@ -312,7 +312,8 @@ async function savePage(ctx: RunContext, call: ToolCall) {
   const linkText = saved.title.replace(/[\\[\]]/g, "\\$&");
   try {
     // A routine speaks only through its final reply, which may be silence, so refreshing a
-    // page it already showed posts no card; its first save still does.
+    // page it already showed posts no card; its first save still does. A silent routine's card
+    // goes to its run history instead of the chat.
     if (!page || run.trigger !== "routine") await publishMessage(deps, run, "bot", [block]);
   } catch (error) {
     // The page is saved; only its card in the chat is missing, so the bot can still link it.

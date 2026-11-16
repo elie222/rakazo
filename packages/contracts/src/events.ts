@@ -27,6 +27,8 @@ export const ProductEventType = z.enum([
   "run.completed",
   "run.failed",
   "run.cancelled",
+  /** A silent routine run's reply, kept for its run history; never sent to the chat. */
+  "run.reply",
   "computer.status",
   "computer.takeover.requested",
   "computer.takeover.granted",

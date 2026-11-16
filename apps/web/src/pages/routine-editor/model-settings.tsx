@@ -1,7 +1,14 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { ModelCatalogEntry, ModelCredential } from "@rakazo/contracts";
-import { credentialForModel, modelThinkingLevels } from "@rakazo/core";
-import { Button, OptionSelect, Popover, PopoverContent, PopoverTrigger } from "@rakazo/ui-web";
+import { credentialForModel, modelThinkingLevels, routineOffersSilent } from "@rakazo/core";
+import {
+  Button,
+  OptionSelect,
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+  Switch,
+} from "@rakazo/ui-web";
 import { SlidersHorizontal } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
@@ -12,7 +19,10 @@ import {
 import type { RoutineDraftState } from "../../lib/routine-draft";
 import { rpc } from "../../lib/rpc";
 
-/** The advanced popover that picks a model and thinking level for this routine. */
+/**
+ * The advanced popover: this routine's model and thinking level and, once it runs on its own
+ * (a schedule or a change check), whether those runs stay out of the chat.
+ */
 export function RoutineModelSettings({
   draft,
   onChange,
@@ -51,6 +61,7 @@ export function RoutineModelSettings({
     selectedModel?.modelId,
   ).filter((level) => level !== "off");
   const defaultThinkingLevel = selectedCredential?.thinkingLevel ?? "medium";
+  const offersSilent = routineOffersSilent(draft);
 
   return (
     <Popover>
@@ -66,7 +77,7 @@ export function RoutineModelSettings({
         }
       >
         <SlidersHorizontal />
-        {draft.modelKey ? (
+        {draft.modelKey || draft.silent ? (
           <span
             aria-hidden
             className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-muted-foreground"
@@ -110,6 +121,20 @@ export function RoutineModelSettings({
                 })),
               ]}
             />
+          </label>
+        ) : null}
+
+        {offersSilent ? (
+          <label
+            htmlFor={`${fieldId}-silent`}
+            className="mt-5 flex items-center gap-2 text-body text-muted-foreground"
+          >
+            <Switch
+              id={`${fieldId}-silent`}
+              checked={draft.silent}
+              onCheckedChange={(silent) => onChange({ ...draft, silent })}
+            />
+            <Trans>Silent</Trans>
           </label>
         ) : null}
       </PopoverContent>

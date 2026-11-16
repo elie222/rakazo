@@ -17,6 +17,7 @@ function context(
   existing?: { currentVersion: number; visibility?: "private" | "link" },
   secrets: string[] = [],
   skipApprovals = false,
+  trigger = "user",
 ) {
   const prisma = {
     page: {
@@ -36,7 +37,14 @@ function context(
   };
   return {
     deps: { prisma },
-    run: { id: "run-1", spaceId: "space-1", userId: "user-1", threadId: "t-1", botId: "bot-1" },
+    run: {
+      id: "run-1",
+      spaceId: "space-1",
+      userId: "user-1",
+      threadId: "t-1",
+      botId: "bot-1",
+      trigger,
+    },
     bot: { id: "bot-1" },
     thread: { groupId: null },
     secrets,
@@ -71,6 +79,22 @@ describe("save_page", () => {
     expect(result).toMatchObject({ pageId: "page-1", version: 1, title: "Plan" });
     expect(result.error).toMatch(/saved, but its card could not be posted/);
     expect(result.error).toContain("[Plan](page:page-1)");
+  });
+
+  it("hands a silent routine's page card to publishMessage, which keeps it for run history", async () => {
+    const tx = { page: { create: vi.fn(async () => ({ id: "page-1", title: "Plan" })) } };
+    const ctx = context(tx, undefined, [], false, "silent_routine");
+    const result = (await pageTools.save_page!(
+      ctx,
+      call({ title: "Plan", source: source("Plan") }),
+    )) as Record<string, unknown>;
+    expect(result).toMatchObject({ pageId: "page-1", version: 1, title: "Plan" });
+    expect(publishMessage).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ trigger: "silent_routine" }),
+      "bot",
+      [expect.objectContaining({ kind: "page", pageId: "page-1" })],
+    );
   });
 
   it("taints the run when it reads a page's stored source, but not when it saves one", async () => {
