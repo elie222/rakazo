@@ -292,6 +292,60 @@ describePostgres("withLease (PostgreSQL)", () => {
     expect(signal.aborted).toBe(false);
   });
 
+  it("starts no work when the lease lapsed before a slow take was confirmed", async () => {
+    const key = nextKey();
+    const taking = deferred();
+    const proceed = deferred();
+    const client = intercepting(async (sql) => {
+      if (sql.includes("INSERT INTO")) {
+        taking.resolve();
+        await proceed.promise;
+      } else if (sql.trimStart().startsWith("UPDATE")) {
+        // The answer to the take arrived after the lease it made had already lapsed.
+        await lapse(key);
+      }
+    });
+    const work = vi.fn(async () => undefined);
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+    const running = withLease(client, key, { ttlMs: TTL_MS }, work);
+    running.catch(() => undefined);
+    await taking.promise;
+    vi.setSystemTime(Date.now() + TTL_MS * 1.5);
+    proceed.resolve();
+    await expect(running).rejects.toBeInstanceOf(LeaseLostError);
+    expect(work).not.toHaveBeenCalled();
+  });
+
+  it("keeps a lease whose renewal hook answers after the old deadline but before the new one", async () => {
+    const key = nextKey();
+    const hooked = deferred();
+    const proceed = deferred<boolean>();
+    let calls = 0;
+    const onRenew = vi.fn(async () => {
+      calls += 1;
+      if (calls > 1) return true;
+      hooked.resolve();
+      return proceed.promise;
+    });
+    const started = deferred<AbortSignal>();
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+    const running = withLease(prisma(), key, { ttlMs: TTL_MS, onRenew }, (lease) => {
+      started.resolve(lease.signal);
+      return new Promise((_, reject) =>
+        lease.signal.addEventListener("abort", () => reject(lease.signal.reason)),
+      );
+    });
+    running.catch(() => undefined);
+    const signal = await started.promise;
+    await vi.advanceTimersByTimeAsync(TTL_MS / 5);
+    await hooked.promise;
+    // Past the deadline the lease had before this renewal, still inside the one it set.
+    await vi.advanceTimersByTimeAsync(TTL_MS * 0.7);
+    proceed.resolve(true);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(signal.aborted).toBe(false);
+  });
+
   it("stops renewing only once a renewal in flight lands, and runs no hook after the work", async () => {
     const key = nextKey();
     const renewing = deferred();

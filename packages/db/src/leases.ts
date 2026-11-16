@@ -54,13 +54,21 @@ export async function withLease<T>(
   work: (lease: HeldLease) => Promise<T>,
 ): Promise<T> {
   options.signal?.throwIfAborted();
+  // The database set the expiry somewhere between sending the take and its answer, so the lease
+  // is only known to last from when the take was sent.
+  let takenAt = Date.now();
   const fence = await takeLease(prisma, key, options.ttlMs);
   if (fence === undefined) throw new LeaseHeldError(key);
-  // The database set the expiry when the take ran, so time spent waiting for it is not the lease's.
-  const takenAt = Date.now();
   if (options.signal?.aborted) {
     await bestEffort(`release lease ${key}`, releaseLease(prisma, key, fence));
     throw options.signal.reason;
+  }
+  // A slow answer leaves too little of that to rely on: renewing proves the lease is still held
+  // and counts from now, and a lease that lapsed meanwhile starts no work.
+  if (Date.now() - takenAt > options.ttlMs / 5) {
+    const confirmedAt = Date.now();
+    if (!(await renewLease(prisma, key, fence, options.ttlMs))) throw new LeaseLostError(key);
+    takenAt = confirmedAt;
   }
   const lost = new AbortController();
   const stopRenewing = new AbortController();
@@ -157,44 +165,55 @@ async function keepRenewed(
 ): Promise<void> {
   const everyMs = options.ttlMs / 5;
   let keptUntil = takenAt + options.ttlMs - everyMs;
-  const renew = async () => {
-    if (!(await renewLease(prisma, key, fence, options.ttlMs))) return false;
-    if (stop.aborted) return true;
-    return (await options.onRenew?.()) ?? true;
-  };
-  for (;;) {
-    await abortableDelay(everyMs, stop);
-    if (stop.aborted) return;
-    const sentAt = Date.now();
+  /** Runs `attempt` until it answers or the holder's own deadline passes; undefined once stopped. */
+  const untilDeadline = async <R>(attempt: () => Promise<R>): Promise<R | undefined> => {
     const deadline = requestDeadline(
-      Math.max(0, keptUntil - sentAt),
+      Math.max(0, keptUntil - Date.now()),
       `Lost the lease on ${key}`,
       stop,
     );
-    const renewal = retry(renew, {
+    const running = retry(attempt, {
       attempts: Number.POSITIVE_INFINITY,
       retryable: () => !deadline.signal.aborted,
       signal: deadline.signal,
       onRetry: (error) => getLogger().warn("lease renewal failed", { key, error }),
     });
     try {
-      const renewed = await withAbort(renewal, deadline.signal);
+      return await withAbort(running, deadline.signal);
+    } catch (error) {
+      // `retry` settles only once its try in flight does.
+      if (stop.aborted) {
+        await Promise.allSettled([running]);
+        return undefined;
+      }
+      throw error;
+    } finally {
+      deadline.dispose();
+    }
+  };
+  for (;;) {
+    await abortableDelay(everyMs, stop);
+    if (stop.aborted) return;
+    const sentAt = Date.now();
+    try {
+      const renewed = await untilDeadline(() => renewLease(prisma, key, fence, options.ttlMs));
       if (stop.aborted) return;
       if (!renewed) {
         lost.abort(new LeaseLostError(key));
         return;
       }
+      // The database has extended it, so the hook runs against the new deadline, not the old one.
       keptUntil = sentAt + options.ttlMs - everyMs;
-    } catch (error) {
-      if (stop.aborted) {
-        // `retry` settles only once its try in flight does.
-        await Promise.allSettled([renewal]);
+      if (!options.onRenew) continue;
+      const kept = await untilDeadline(options.onRenew);
+      if (stop.aborted) return;
+      if (!kept) {
+        lost.abort(new LeaseLostError(key));
         return;
       }
+    } catch (error) {
       lost.abort(new LeaseLostError(key, { cause: error }));
       return;
-    } finally {
-      deadline.dispose();
     }
   }
 }
