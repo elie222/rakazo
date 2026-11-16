@@ -414,6 +414,21 @@ describe("setup", () => {
     expect(element<HTMLButtonElement>("continue").disabled).toBe(false);
   });
 
+  it("names only the Docker app it is starting", async () => {
+    const ui = await boot(null, ENGLISH, "darwin");
+    selectMode("new");
+    submitForm();
+    const starting = { ...stackState("docker-not-running"), message: "Starting OrbStack…" };
+    ui.startResult.resolve(starting);
+    await flush();
+    ui.resolveStackState(starting);
+    await flush();
+
+    expect(element("stack-phase").textContent).toBe("Starting OrbStack…");
+    expect(element("stack-hint").hidden).toBe(true);
+    expect(element("continue").hidden).toBe(true);
+  });
+
   it("offers the Docker Desktop download as a next step, not an error", async () => {
     const ui = await boot(null, ENGLISH, "darwin");
     selectMode("new");
@@ -430,8 +445,6 @@ describe("setup", () => {
     expect(element("stack-phase").textContent).toBe(missing.message);
     expect(element("stack-phase").hasAttribute("data-tone")).toBe(false);
     expect(element("stack-hint").hidden).toBe(false);
-    expect(element("stack-waiting").hidden).toBe(false);
-    expect(element("stack-waiting").textContent).toContain("Waiting for Docker Desktop…");
     expect(element("continue").textContent).toBe("Download Docker Desktop");
     expect(element<HTMLButtonElement>("continue").disabled).toBe(false);
 
@@ -468,7 +481,7 @@ describe("setup", () => {
     ui.resolveStackState(stackState("preparing"));
     await flush();
     expect(element("stack-phase").textContent).toBe("Getting ready…");
-    expect(element("stack-waiting").hidden).toBe(true);
+    expect(element("stack-hint").hidden).toBe(true);
     expect(element<HTMLButtonElement>("continue").disabled).toBe(true);
   });
 

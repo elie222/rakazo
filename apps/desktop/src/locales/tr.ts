@@ -217,8 +217,6 @@ export const TR_MESSAGES: Record<string, string> = {
   "Docker is installed but not running. Open it to continue.":
     "Docker yüklü ama çalışmıyor. Devam etmek için açın.",
   "Starting {app}…": "{app} başlatılıyor…",
-  "Waiting for Docker Desktop…": "Docker Desktop bekleniyor…",
-  "Waiting for Docker…": "Docker bekleniyor…",
   "Docker is installed but not running. Start the Docker service to continue.":
     "Docker yüklü ama çalışmıyor. Devam etmek için Docker hizmetini başlatın.",
 };
