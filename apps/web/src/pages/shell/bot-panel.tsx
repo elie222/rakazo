@@ -690,7 +690,7 @@ export function BotSettings({
               aria-expanded={settingsOpen}
               aria-controls={`${ids}-settings`}
               onClick={() => setSettingsOpen((open) => !open)}
-              className="flex items-center gap-1 rounded-sm outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+              className="-my-2 flex min-h-10 w-full items-center gap-1 rounded-sm outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
             >
               <Trans>Settings</Trans>
               <ChevronDown
