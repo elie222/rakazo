@@ -218,12 +218,14 @@ replace_worker() {
     finish_draining worker
     live=""
   fi
+  # No bare return: inside the rollback, which runs from the ERR trap, bash before 5.3 returns the
+  # status of the command that failed the deploy, and errexit then ends the rollback here.
   if [[ -z "${live}" ]]; then
     compose "${UP_TIMEOUT}" up -d --no-deps --wait worker
-    return
+  else
+    start_beside worker "${live}" "${WORKER_REPLICAS}"
+    drain_containers "${live}" SIGTERM
   fi
-  start_beside worker "${live}" "${WORKER_REPLICAS}"
-  drain_containers "${live}" SIGTERM
 }
 
 # Replaces the API, web and worker without a gap: new containers start beside the running
