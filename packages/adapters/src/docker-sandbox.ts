@@ -27,10 +27,12 @@ import { COMPUTER_UNRESPONSIVE_ERROR } from "@rakazo/contracts";
 import {
   boundedSandboxCommandTimeoutMs,
   cancelResponseBody,
+  ResponseTooLargeError,
   requestDeadline,
   resolveSupervisorToken,
 } from "@rakazo/core";
 import { outgoingCorrelationHeaders } from "@rakazo/logging";
+import { ComputerScreenUnavailableError } from "./computer-screens.js";
 import {
   boundedComputerActions,
   clampRounded,
@@ -92,7 +94,7 @@ async function readSandboxJson<T>(
   try {
     bytes = await readBodyCapped(res, maxBytes, readSignal);
   } catch (error) {
-    if (error instanceof Error && error.message === "Response is too large") {
+    if (error instanceof ResponseTooLargeError) {
       throw new Error(`sandbox response exceeds ${maxBytes} bytes`, { cause: error });
     }
     throw error;
@@ -380,9 +382,7 @@ export class DockerSandboxProvider implements SandboxProvider {
       const detail = await safeBody(res, context.signal);
       if (/cannot allocate another screen/i.test(detail)) {
         const limit = /\(limit (\d+)\)/i.exec(detail)?.[1];
-        throw new Error(
-          `This Team Computer cannot allocate another screen${limit ? ` (limit ${limit})` : ""}.`,
-        );
+        throw new ComputerScreenUnavailableError(limit ? Number(limit) : null);
       }
       // A container that stopped under a "running" row (host reboot, docker stop) has no
       // screen to show; report it gone so the caller offers a boot instead of a blank error.

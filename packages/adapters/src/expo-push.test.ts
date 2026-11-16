@@ -1,4 +1,5 @@
 import type { BackgroundJob, JobPublisher } from "@rakazo/adapter-kit";
+import { ResponseTooLargeError } from "@rakazo/core";
 import { deferred } from "@rakazo/core/test-async";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -1006,4 +1007,31 @@ it("falls back to the small avatar when no larger one fit the payload", async ()
     String((fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].body),
   );
   expect(request.data.sender).toEqual({ botId: "bot", name: "Marketing", avatar: "small" });
+});
+
+describe("oversized Expo push answers", () => {
+  const send = async (response: Response) => {
+    const tokens = new MemoryPushTokenStore();
+    await tokens.save("user-1", "ExponentPushToken[test]");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response));
+    return new ExpoPushProvider(tokens).send(
+      { kind: "completion", title: "done", body: "ok", botId: "b", threadId: "t" },
+      notifyContext,
+    );
+  };
+
+  it("refuses a streamed answer over the cap as too large", async () => {
+    const failure = send(new Response(new Uint8Array(MAX_EXPO_PUSH_RESPONSE_BYTES + 1)));
+    await expect(failure).rejects.toBeInstanceOf(ResponseTooLargeError);
+    await expect(failure).rejects.toThrow("Expo push response is too large.");
+  });
+
+  it("does not call another read failure too large", async () => {
+    const body = new ReadableStream({
+      pull: (controller) => controller.error(new Error("Response is too large")),
+    });
+    const failure = send(new Response(body));
+    await expect(failure).rejects.toThrow("Response is too large");
+    await expect(failure).rejects.not.toBeInstanceOf(ResponseTooLargeError);
+  });
 });

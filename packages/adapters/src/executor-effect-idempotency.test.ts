@@ -5,7 +5,7 @@ import type {
   MemoryReadRequest,
   MemorySnapshot,
 } from "@rakazo/adapter-kit";
-import { MEMORY_REVISION_CONFLICT_ERROR } from "@rakazo/adapter-kit";
+import { MemoryRevisionConflictError } from "@rakazo/adapter-kit";
 import {
   legacyScopedToolEffectIdempotencyKey,
   toolEffectIdempotencyKey,
@@ -563,7 +563,7 @@ describe("mutating tool effect idempotency keys", () => {
         revision: 1,
         updatedAt: new Date(0).toISOString(),
       });
-      throw new Error(MEMORY_REVISION_CONFLICT_ERROR);
+      throw new MemoryRevisionConflictError();
     });
     f.setCalls([
       {
