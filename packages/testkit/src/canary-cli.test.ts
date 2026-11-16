@@ -20,6 +20,7 @@ const credentialNames = [
   "BOAT_API_KEY",
   "BOXD_API_KEY",
   "INSTABOX_API_KEY",
+  "KOSA8_API_KEY",
   "NOVITA_API_KEY",
   "CREATEOS_SANDBOX_API_KEY",
   "OPENROUTER_API_KEY",

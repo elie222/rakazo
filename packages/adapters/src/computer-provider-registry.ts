@@ -6,6 +6,7 @@ import { createosComputerSettings } from "./createos-settings.js";
 import { daytonaComputerSettings } from "./daytona-settings.js";
 import { e2bComputerSettings } from "./e2b-settings.js";
 import { instaboxComputerSettings } from "./instabox-settings.js";
+import { kosa8ComputerSettings } from "./kosa8-settings.js";
 import { novitaComputerSettings } from "./novita-settings.js";
 import { railwayComputerSettings } from "./railway-settings.js";
 import { wuyingComputerSettings } from "./wuying-settings.js";
@@ -19,6 +20,7 @@ export const computerProviderRegistry: readonly SettingsComputerProvider[] = [
   boatComputerSettings,
   boxdComputerSettings,
   instaboxComputerSettings,
+  kosa8ComputerSettings,
   railwayComputerSettings,
 ];
 export function computerProviderDescriptor(id: string) {

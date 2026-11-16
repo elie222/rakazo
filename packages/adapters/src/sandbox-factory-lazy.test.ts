@@ -60,7 +60,7 @@ describe("optional provider loading", () => {
     ).toBe("docker");
     expect((await createRunSandbox("none", {})).describe().id).toBe("none");
     expect((await createSandboxProvider("wuying", {})).describe().id).toBe("none");
-    for (const kind of ["daytona", "boat", "boxd", "instabox"]) {
+    for (const kind of ["daytona", "boat", "boxd", "instabox", "kosa8"]) {
       expect((await createSandboxProvider(kind, {})).describe().id).toBe("none");
     }
   });

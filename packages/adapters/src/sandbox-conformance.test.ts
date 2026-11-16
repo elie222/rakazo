@@ -12,6 +12,7 @@ import { toComputerRef } from "./computer-support.js";
 import { DesktopSandboxProvider } from "./desktop-sandbox.js";
 import { FakeSandboxProvider } from "./fake-sandbox.js";
 import { emulatedInstabox } from "./instabox-sandbox.test-support.js";
+import { emulatedKosa8 } from "./kosa8-sandbox.test-support.js";
 import { emulatedNovita } from "./novita-sandbox.test-support.js";
 import { assertSandboxWorkspaceContract, provisionPrepared } from "./sandbox-test-support.js";
 import { FakeWuyingDesktop } from "./wuying-sandbox.test-support.js";
@@ -40,32 +41,36 @@ async function drain(provider: SandboxProvider, computer: ComputerRef) {
 }
 
 describe("sandbox conformance", () => {
-  it("runs the same graphical command across fake, Boat, boxd, Novita, instabox, and desktop", async () => {
+  it("runs the same graphical command across fake, Boat, boxd, Novita, instabox, kosa8, and desktop", async () => {
     const fake = new FakeSandboxProvider();
     const boat = fakeBoat();
     const novita = emulatedNovita().provider();
     const desktop = new DesktopSandboxProvider();
     const boxd = fakeBoxdProvider();
     const instabox = emulatedInstabox().provider();
+    const kosa8 = emulatedKosa8().provider();
     const a = await provisionPrepared(fake, { botId: "bot-a", homePath: "/tmp/a" }, ctx);
     const b = await provisionPrepared(boat, { botId: "bot-b", homePath: "/tmp/b" }, ctx);
     const c = await provisionPrepared(desktop, { botId: "bot-c", homePath: "/tmp/c" }, ctx);
     const d = await provisionPrepared(novita, { botId: "bot-d", homePath: "/tmp/d" }, ctx);
     const e = await provisionPrepared(boxd, { botId: "bot-e", homePath: "/tmp/e" }, ctx);
     const f = await provisionPrepared(instabox, { botId: "bot-f", homePath: "/tmp/f" }, ctx);
+    const g = await provisionPrepared(kosa8, { botId: "bot-g", homePath: "/tmp/g" }, ctx);
     expect(await drain(fake, a)).toContain("graphical-ok");
     expect(await drain(boat, b)).toContain("graphical-ok");
     expect(await drain(desktop, c)).toContain("graphical-ok");
     expect(await drain(novita, d)).toContain("graphical-ok");
     expect(await drain(boxd, e)).toContain("graphical-ok");
     expect(await drain(instabox, f)).toContain("graphical-ok");
-    expect(new Set([a.id, b.id, c.id, d.id, e.id, f.id]).size).toBe(6);
+    expect(await drain(kosa8, g)).toContain("graphical-ok");
+    expect(new Set([a.id, b.id, c.id, d.id, e.id, f.id, g.id]).size).toBe(7);
     await fake.destroy(a, ctx);
     await boat.destroy(b, ctx);
     await desktop.destroy(c, ctx);
     await novita.destroy(d, ctx);
     await boxd.destroy(e, ctx);
     await instabox.destroy(f, ctx);
+    await kosa8.destroy(g, ctx);
   });
 
   it("offers the same observation, action, and workspace contract across providers", async () => {
@@ -75,6 +80,7 @@ describe("sandbox conformance", () => {
       fakeBoxdProvider(),
       emulatedNovita().provider(),
       emulatedInstabox().provider(),
+      emulatedKosa8().provider(),
       new DesktopSandboxProvider(),
       new FakeWuyingDesktop().provider(),
     ];

@@ -13,6 +13,7 @@ export function resolveSandboxProvider(source: NodeJS.ProcessEnv = process.env):
   if (requested === "boat" && !boatApiKeyFromEnv(source)) return "none";
   if (requested === "boxd" && !optional(source.BOXD_API_KEY)) return "none";
   if (requested === "instabox" && !optional(source.INSTABOX_API_KEY)) return "none";
+  if (requested === "kosa8" && !optional(source.KOSA8_API_KEY)) return "none";
   if (
     requested === "wuying" &&
     [
@@ -75,6 +76,8 @@ export function sandboxProviderOptionsFromEnv(
   | "boxdApiKey"
   | "boxdOrg"
   | "instaboxApiKey"
+  | "kosa8ApiKey"
+  | "kosa8ApiUrl"
   | "kubernetesNamespace"
   | "kubernetesRuntimeClassName"
   | "kubernetesComputerImage"
@@ -129,6 +132,8 @@ export function sandboxProviderOptionsFromEnv(
     boxdApiKey: optional(source.BOXD_API_KEY),
     boxdOrg: optional(source.BOXD_ORG),
     instaboxApiKey: optional(source.INSTABOX_API_KEY),
+    kosa8ApiKey: optional(source.KOSA8_API_KEY),
+    kosa8ApiUrl: optional(source.KOSA8_API_URL),
     kubernetesNamespace: optional(source.KUBERNETES_SANDBOX_NAMESPACE),
     kubernetesRuntimeClassName: optional(source.KUBERNETES_SANDBOX_RUNTIME_CLASS_NAME),
     kubernetesComputerImage: optional(source.KUBERNETES_SANDBOX_COMPUTER_IMAGE),

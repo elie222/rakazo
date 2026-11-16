@@ -92,7 +92,7 @@ deterministic execution tests, computer replay, and real-model quality evals.
 ## Optional live-provider checks
 
 The default Playwright suite uses the fake sandbox. To run the same scripted-agent suite against
-real computers, set the matching `E2B_API_KEY`, `NOVITA_API_KEY`, `DAYTONA_API_KEY`, `BOAT_API_KEY`, `BOXD_API_KEY`, or `INSTABOX_API_KEY` and choose a provider:
+real computers, set the matching `E2B_API_KEY`, `NOVITA_API_KEY`, `DAYTONA_API_KEY`, `BOAT_API_KEY`, `BOXD_API_KEY`, `INSTABOX_API_KEY`, or `KOSA8_API_KEY` and choose a provider:
 
 ```bash
 pnpm test:e2e -- --sandbox=e2b
@@ -101,6 +101,7 @@ pnpm test:e2e -- --sandbox=daytona
 pnpm test:e2e -- --sandbox=boat
 pnpm test:e2e -- --sandbox=boxd
 pnpm test:e2e -- --sandbox=instabox
+pnpm test:e2e -- --sandbox=kosa8
 ```
 
 For Novita, build the [computer template](docs/self-host-sandbox-providers.md#novita-computer-template) first.

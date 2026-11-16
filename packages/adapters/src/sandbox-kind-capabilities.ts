@@ -11,6 +11,7 @@ import { e2bSandboxCapabilities } from "./e2b-capabilities.js";
 import { fakeSandboxCapabilities } from "./fake-capabilities.js";
 import { incusSandboxCapabilities } from "./incus-capabilities.js";
 import { instaboxSandboxCapabilities } from "./instabox-capabilities.js";
+import { kosa8SandboxCapabilities } from "./kosa8-capabilities.js";
 import { kubernetesSandboxCapabilities } from "./kubernetes-capabilities.js";
 import { noneSandboxCapabilities } from "./none-capabilities.js";
 import { novitaSandboxCapabilities } from "./novita-capabilities.js";
@@ -31,6 +32,7 @@ export const sandboxCapabilitiesByKind = {
   boat: boatSandboxCapabilities,
   boxd: boxdSandboxCapabilities,
   instabox: instaboxSandboxCapabilities,
+  kosa8: kosa8SandboxCapabilities,
   railway: railwaySandboxCapabilities,
   kubernetes: kubernetesSandboxCapabilities,
   incus: incusSandboxCapabilities,

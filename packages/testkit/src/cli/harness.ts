@@ -31,9 +31,13 @@ const agentRuntime = runtimeArg?.slice("--runtime=".length) ?? "scripted";
 if (Number(integration) + Number(e2e) !== 1) {
   throw new Error("Pass exactly one of --integration or --e2e");
 }
-if (!["fake", "e2b", "novita", "daytona", "boat", "boxd", "instabox"].includes(sandboxProvider)) {
+if (
+  !["fake", "e2b", "novita", "daytona", "boat", "boxd", "instabox", "kosa8"].includes(
+    sandboxProvider,
+  )
+) {
   throw new Error(
-    'Sandbox must be "fake", "e2b", "novita", "daytona", "boat", "boxd", or "instabox"',
+    'Sandbox must be "fake", "e2b", "novita", "daytona", "boat", "boxd", "instabox", or "kosa8"',
   );
 }
 if (integration && sandboxProvider !== "fake") {
@@ -59,6 +63,9 @@ if (sandboxProvider === "boxd" && !process.env.BOXD_API_KEY) {
 }
 if (sandboxProvider === "instabox" && !process.env.INSTABOX_API_KEY) {
   throw new Error("INSTABOX_API_KEY is required when --sandbox=instabox");
+}
+if (sandboxProvider === "kosa8" && !process.env.KOSA8_API_KEY) {
+  throw new Error("KOSA8_API_KEY is required when --sandbox=kosa8");
 }
 
 async function main() {
@@ -308,7 +315,14 @@ async function main() {
               {
                 id: computer.providerRef!,
                 botId: computer.homeKey,
-                kind: computer.kind as "e2b" | "novita" | "daytona" | "boat" | "boxd" | "instabox",
+                kind: computer.kind as
+                  | "e2b"
+                  | "novita"
+                  | "daytona"
+                  | "boat"
+                  | "boxd"
+                  | "instabox"
+                  | "kosa8",
                 providerRef: computer.providerRef!,
               },
               {
@@ -340,7 +354,7 @@ async function main() {
 type AppHandles = Awaited<ReturnType<typeof createApp>>;
 
 async function managedComputers(handles: AppHandles, runAsSystem: typeof RunAsSystem) {
-  if (!["e2b", "novita", "daytona", "boat", "boxd", "instabox"].includes(sandboxProvider))
+  if (!["e2b", "novita", "daytona", "boat", "boxd", "instabox", "kosa8"].includes(sandboxProvider))
     return [];
   // Outside a tenant or system context the runtime login reads no rows, and nothing is destroyed.
   return runAsSystem("e2e cleanup of real test sandboxes", () =>

@@ -83,6 +83,20 @@ describe("resolveSandboxProvider", () => {
     });
   });
 
+  it("keeps kosa8 when its API key is set", () => {
+    expect(resolveSandboxProvider({ SANDBOX_PROVIDER: "kosa8" })).toBe("none");
+    const env = {
+      SANDBOX_PROVIDER: "kosa8",
+      KOSA8_API_KEY: "test-kosa8-key",
+      KOSA8_API_URL: "https://kosa8.test",
+    };
+    expect(resolveSandboxProvider(env)).toBe("kosa8");
+    expect(sandboxProviderOptionsFromEnv(env)).toMatchObject({
+      kosa8ApiKey: "test-kosa8-key",
+      kosa8ApiUrl: "https://kosa8.test",
+    });
+  });
+
   it("keeps CreateOS when its API key is set", () => {
     expect(
       resolveSandboxProvider({

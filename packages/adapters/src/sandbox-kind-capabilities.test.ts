@@ -34,6 +34,7 @@ const EXPECTED: Record<KnownSandboxKind, Row> = {
   boat: [true, true, false, false, LARGE_SCREEN, "never", true, false],
   boxd: [true, true, false, false, DEFAULT_SCREEN, "never", true, false],
   instabox: [true, true, false, false, DEFAULT_SCREEN, "never", true, false],
+  kosa8: [true, true, false, false, DEFAULT_SCREEN, "never", true, false],
   railway: [true, true, false, false, DEFAULT_SCREEN, "never", true, false],
   kubernetes: [true, true, false, false, DEFAULT_SCREEN, "optional", true, false],
   incus: [true, true, false, false, DEFAULT_SCREEN, "never", true, false],

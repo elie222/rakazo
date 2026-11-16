@@ -42,6 +42,8 @@ export interface SandboxProviderOptions {
   boxdApiKey?: string;
   boxdOrg?: string;
   instaboxApiKey?: string;
+  kosa8ApiKey?: string;
+  kosa8ApiUrl?: string;
   kubernetesNamespace?: string;
   kubernetesRuntimeClassName?: string;
   kubernetesComputerImage?: string;
@@ -147,6 +149,16 @@ export async function createSandboxProvider(
       const { InstaboxSandboxProvider } = await import("./instabox-sandbox.js");
       return new InstaboxSandboxProvider({
         apiKey: opts.instaboxApiKey,
+        onUnsafeStop: opts.onUnsafeStop,
+        unreferencedMachines: opts.unreferencedMachines,
+      });
+    }
+    case "kosa8": {
+      if (!opts.kosa8ApiKey?.trim()) return missingRemoteKey("kosa8", "KOSA8_API_KEY");
+      const { Kosa8SandboxProvider } = await import("./kosa8-sandbox.js");
+      return new Kosa8SandboxProvider({
+        apiKey: opts.kosa8ApiKey,
+        apiUrl: opts.kosa8ApiUrl,
         onUnsafeStop: opts.onUnsafeStop,
         unreferencedMachines: opts.unreferencedMachines,
       });

@@ -14,7 +14,7 @@ keep their computer. Private Computers count toward `SANDBOX_MAX_COMPUTERS_PER_U
 | ------------------------------------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
 | Local Docker computers                                  | `SANDBOX_PROVIDER=docker`                                                | `SANDBOX_SUPERVISOR_TOKEN`, computer image, Docker socket for supervisor                                                              |
 | UI only, no computers                                   | `SANDBOX_PROVIDER=none`                                                  | No provider credential; published-images Compose still requires `SANDBOX_SUPERVISOR_TOKEN`                                            |
-| Managed remote desktop                                  | `e2b` / `novita` / `daytona` / `createos` / `boat` / `boxd` / `instabox` | `SANDBOX_SUPERVISOR_TOKEN` (published-images Compose), matching API key (and optional URL knobs for Daytona/CreateOS/Boat)            |
+| Managed remote desktop                                  | `e2b` / `novita` / `daytona` / `createos` / `boat` / `boxd` / `instabox` / `kosa8` | `SANDBOX_SUPERVISOR_TOKEN` (published-images Compose), matching API key (and optional URL knobs for Daytona/CreateOS/Boat/kosa8)            |
 | One pod per computer on your own cluster                | `SANDBOX_PROVIDER=kubernetes`                                            | API and worker running in the cluster, a namespace and a Role that can create, read, delete and exec into pods                        |
 | One app container per computer on your own Incus server | `SANDBOX_PROVIDER=incus`                                                 | Incus API address, a client certificate restricted to one project, and a route from the API, worker and web to the computers' network |
 | One VM per computer on an Apple silicon Mac             | `SANDBOX_PROVIDER=local-vm`                                              | macOS 26 or newer and Apple's `container` runtime with its system service started                                                     |
@@ -462,6 +462,7 @@ Set `SANDBOX_PROVIDER` to exactly one of:
 | `boat`     | `BOAT_API_KEY`                                   | Optional `BOAT_API_URL` (see `.env.example`)                                                                                                                                                                                                              |
 | `boxd`     | `BOXD_API_KEY`                                   | Optional `BOXD_ORG` to create computers in a boxd organization                                                                                                                                                                                            |
 | `instabox` | `INSTABOX_API_KEY`                               | Computers start in the key's organization; see [instabox computers](#instabox-computers)                                                                                                                                                                  |
+| `kosa8`    | `KOSA8_API_KEY`                                  | Optional `KOSA8_API_URL`; see [kosa8 computers](#kosa8-computers) |
 | `createos` | `CREATEOS_SANDBOX_API_KEY`                       | Optional `CREATEOS_SANDBOX_BASE_URL`, `CREATEOS_SANDBOX_SHAPE`, `CREATEOS_SANDBOX_ROOTFS`                                                                                                                                                                 |
 | `railway`  | `RAILWAY_API_TOKEN` and `RAILWAY_ENVIRONMENT_ID` | Optional `RAILWAY_SANDBOX_REGION`; `RAILWAY_MAX_WORKSPACE_FILE_BYTES` (default 64 MiB) caps each workspace file Rakazo reads or saves. Railway supplies the environment ID when Rakazo runs there; see the [Railway template](../infra/railway/README.md) |
 | `wuying`   | `WUYING_*` (below)                               | One existing Wuying cloud computer (Windows)                                                                                                                                                                                                              |
@@ -472,7 +473,7 @@ the web UI. They require egress to the provider. For air-gapped hosts prefer
 
 A run starts its computer only when it first uses a computer tool. With idle sleep on,
 a computer suspends after `SANDBOX_IDLE_MS` idle. On providers that bill while running
-(E2B, Daytona, Boat, boxd, instabox, CreateOS, Railway), it also suspends after `COMPUTER_MAX_ACTIVE_MS`
+(E2B, Daytona, Boat, boxd, instabox, kosa8, CreateOS, Railway), it also suspends after `COMPUTER_MAX_ACTIVE_MS`
 (default 2 hours) up in one stretch, even with background work or an open screen, unless
 a run is executing on it, a user is in control of its screen, or a coding agent CLI (Codex,
 Claude Code, OpenCode) wrote its session within the last `SANDBOX_IDLE_MS`. An agent waiting
@@ -642,6 +643,25 @@ Large and xlarge need an instabox plan that offers that size; otherwise the comp
 the size it can have. A stopped computer moves to its plan's size when it next starts, which
 restarts it, so its running programs end. A running computer keeps its size.
 
+### kosa8 computers
+
+kosa8 computers are microVMs in the API key's kosa8 Cloud organization, each with its own
+kernel, running kosa8's Ubuntu 24.04 image. The first computer of each size installs the desktop
+tools and Chrome itself, a few minutes, while one build saves a snapshot,
+`rakazo-computer-<hash>-<size>`, in the background; later computers of that size start from it
+in about a second.
+
+The desktop is served on the computer's public HTTPS address; every screen and terminal still
+needs its own token, which the desktop gateway checks. Stopping a computer puts it to sleep with
+its memory, so programs it was running continue when it wakes. kosa8 also puts a computer to
+sleep after 30 idle minutes, later than the default `SANDBOX_IDLE_MS`, so Rakazo normally stops
+it first. The computer's home is kept under `/workspace`, the part of its disk kosa8's file API
+reaches.
+
+New computers start at the computer size of the space's plan. Large and xlarge need a kosa8
+plan that offers that size; otherwise the computer start fails as a size that is not available.
+A computer keeps the size it started at.
+
 ## Verify a provider change
 
 After changing provider or keys (from the published-images drop directory that
@@ -652,7 +672,7 @@ docker compose --env-file .env -f docker-compose.images.yml up -d
 curl -fsS http://127.0.0.1:3100/internal/health
 ```
 
-Confirm `sandbox` equals the intended provider (`e2b`, `novita`, `daytona`, `boat`, `boxd`, or `instabox`).
+Confirm `sandbox` equals the intended provider (`e2b`, `novita`, `daytona`, `boat`, `boxd`, `instabox`, or `kosa8`).
 HTTP 200 alone does not verify a remote provider: a missing API key falls back to `sandbox: "none"`.
 A present but invalid key still reports the selected provider. Open a bot's computer to verify
 provisioning and desktop access.

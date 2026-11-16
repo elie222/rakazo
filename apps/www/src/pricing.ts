@@ -70,6 +70,7 @@ const SANDBOX_PROVIDERS = [
   "Daytona",
   "E2B",
   "InstaBox",
+  "kosa8",
   "Novita",
   "Railway",
   "Wuying",
