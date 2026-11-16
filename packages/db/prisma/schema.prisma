@@ -803,9 +803,6 @@ model DeploymentSettings {
   id                              String   @id @default("default")
   /// Deprecated: retained for rolling-release compatibility; never authorizes app users.
   ownerUserId                     String?
-  signupsEnabled                  Boolean  @default(true)
-  signupAllowlist                 String   @default("")
-  signupPolicyInitialized         Boolean  @default(false)
   defaultModelProvider            String?
   defaultModelId                  String?
   deploymentModelCredentialCipher String?

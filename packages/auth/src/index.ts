@@ -233,7 +233,7 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('rakazo:single-account'))`;
       if (await hasAdmittedAccount(tx, userId)) return false;
       // Committed before the lock is released, so the next signup sees it.
-      await bootstrapUserSpace(prisma, { id: userId }, env);
+      await bootstrapUserSpace(prisma, { id: userId });
       return true;
     });
   /** The directory provisioned this account, so it is admitted whatever the signup policy. */
@@ -825,7 +825,7 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
                   message: "Registration is closed",
                 });
               }
-              if (!env.singleAccount) await bootstrapUserSpace(prisma, user, env);
+              if (!env.singleAccount) await bootstrapUserSpace(prisma, user);
               else if (!(await admitSoleAccount(user.id)))
                 throw new APIError("FORBIDDEN", {
                   code: "REGISTRATION_CLOSED",

@@ -18,10 +18,7 @@ it.skipIf(!testDatabase)(
       data: { id: randomUUID(), name: "Private Person", email: `${randomUUID()}@example.test` },
     });
     try {
-      const { spaceId } = await bootstrapUserSpace(prisma, user, {
-        signupsEnabled: "true",
-        signupAllowlist: "",
-      });
+      const { spaceId } = await bootstrapUserSpace(prisma, user);
       const bot = await prisma.bot.create({
         data: { spaceId, userId: user.id, name: "Secret Bot", color: "#000000" },
       });

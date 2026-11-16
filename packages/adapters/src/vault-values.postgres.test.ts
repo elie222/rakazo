@@ -105,11 +105,7 @@ describePostgres("vault values under the content keys (PostgreSQL)", () => {
     plain = createDb(url!, { keyProvider, encryptContent: false });
     system = asSystem(sealing.prisma);
     scope = await runAsSystem("vault values fixture", () =>
-      provisionMessagingIdentity(
-        sealing.prisma,
-        { provider: "email", address },
-        { signupsEnabled: undefined, signupAllowlist: undefined },
-      ),
+      provisionMessagingIdentity(sealing.prisma, { provider: "email", address }),
     );
     context = {
       operationId: "vault-values",
@@ -231,11 +227,7 @@ describePostgres("vault values under the content keys (PostgreSQL)", () => {
     // Its own member, so the vault has no key yet and the save prepares the older format.
     const raceAddress = `vault-race-${randomUUID()}@rakazo.test`;
     const race = await runAsSystem("vault race fixture", () =>
-      provisionMessagingIdentity(
-        sealing.prisma,
-        { provider: "email", address: raceAddress },
-        { signupsEnabled: undefined, signupAllowlist: undefined },
-      ),
+      provisionMessagingIdentity(sealing.prisma, { provider: "email", address: raceAddress }),
     );
     const applicationName = `vault-race-${randomUUID()}`;
     const migrating = createDb(url!, { keyProvider, encryptContent: true, applicationName });
@@ -307,11 +299,7 @@ describePostgres("vault values under the content keys (PostgreSQL)", () => {
   it("gives vault keys a new version and moves items under it", async () => {
     const rotateAddress = `vault-rotate-${randomUUID()}@rakazo.test`;
     const member = await runAsSystem("vault rotation fixture", () =>
-      provisionMessagingIdentity(
-        sealing.prisma,
-        { provider: "email", address: rotateAddress },
-        { signupsEnabled: undefined, signupAllowlist: undefined },
-      ),
+      provisionMessagingIdentity(sealing.prisma, { provider: "email", address: rotateAddress }),
     );
     try {
       await runAsTenant(member, () =>
@@ -369,11 +357,7 @@ describePostgres("vault values under the content keys (PostgreSQL)", () => {
   it("moves items to a version another process rotated to while this one had the old one cached", async () => {
     const raceAddress = `vault-stale-${randomUUID()}@rakazo.test`;
     const member = await runAsSystem("vault stale key fixture", () =>
-      provisionMessagingIdentity(
-        sealing.prisma,
-        { provider: "email", address: raceAddress },
-        { signupsEnabled: undefined, signupAllowlist: undefined },
-      ),
+      provisionMessagingIdentity(sealing.prisma, { provider: "email", address: raceAddress }),
     );
     // A second process, with its own key cache.
     const other = createDb(url!, { keyProvider, encryptContent: true });
@@ -437,11 +421,7 @@ describePostgres("vault values under the content keys (PostgreSQL)", () => {
   it("saves with the newest key after another process rotates a cached vault", async () => {
     const windowAddress = `vault-window-${randomUUID()}@rakazo.test`;
     const member = await runAsSystem("vault key window fixture", () =>
-      provisionMessagingIdentity(
-        sealing.prisma,
-        { provider: "email", address: windowAddress },
-        { signupsEnabled: undefined, signupAllowlist: undefined },
-      ),
+      provisionMessagingIdentity(sealing.prisma, { provider: "email", address: windowAddress }),
     );
     // A second process, with its own key cache.
     const other = createDb(url!, { keyProvider, encryptContent: true });
@@ -496,11 +476,7 @@ describePostgres("vault values under the content keys (PostgreSQL)", () => {
   it("leaves items in the previous format to migrate when re-encrypting, creating no vault key", async () => {
     const oldAddress = `vault-old-format-${randomUUID()}@rakazo.test`;
     const member = await runAsSystem("vault old format fixture", () =>
-      provisionMessagingIdentity(
-        sealing.prisma,
-        { provider: "email", address: oldAddress },
-        { signupsEnabled: undefined, signupAllowlist: undefined },
-      ),
+      provisionMessagingIdentity(sealing.prisma, { provider: "email", address: oldAddress }),
     );
     try {
       await runAsTenant(member, () =>
@@ -575,11 +551,7 @@ describePostgres("vault values under the content keys (PostgreSQL)", () => {
     async (_command, mode, state) => {
       const goneAddress = `vault-gone-${randomUUID()}@rakazo.test`;
       const doomed = await runAsSystem("vault deletion fixture", () =>
-        provisionMessagingIdentity(
-          sealing.prisma,
-          { provider: "email", address: goneAddress },
-          { signupsEnabled: undefined, signupAllowlist: undefined },
-        ),
+        provisionMessagingIdentity(sealing.prisma, { provider: "email", address: goneAddress }),
       );
       const remove = async () => {
         await system.messagingIdentity.deleteMany({ where: { address: goneAddress } });
@@ -669,11 +641,7 @@ describePostgres("vault values under the content keys (PostgreSQL)", () => {
     const [doomed, kept] = await runAsSystem("vault rotation fixture", () =>
       Promise.all(
         addresses.map((address) =>
-          provisionMessagingIdentity(
-            sealing.prisma,
-            { provider: "email", address },
-            { signupsEnabled: undefined, signupAllowlist: undefined },
-          ),
+          provisionMessagingIdentity(sealing.prisma, { provider: "email", address }),
         ),
       ),
     );
@@ -740,11 +708,7 @@ describePostgres("vault values under the content keys (PostgreSQL)", () => {
     async (_site, answer, mode) => {
       const address = `vault-interrupt-${randomUUID()}@rakazo.test`;
       const member = await runAsSystem("vault interruption fixture", () =>
-        provisionMessagingIdentity(
-          sealing.prisma,
-          { provider: "email", address },
-          { signupsEnabled: undefined, signupAllowlist: undefined },
-        ),
+        provisionMessagingIdentity(sealing.prisma, { provider: "email", address }),
       );
       const scope = `user:${member.userId}`;
       // Its own process, with nothing cached; the key manager is the suite's, stubbed.
@@ -851,11 +815,7 @@ describePostgres("vault values under the content keys (PostgreSQL)", () => {
     // Its own member, with both vault keys, so it does not depend on the tests before it.
     const shredAddress = `vault-shred-${randomUUID()}@rakazo.test`;
     const member = await runAsSystem("vault shred fixture", () =>
-      provisionMessagingIdentity(
-        sealing.prisma,
-        { provider: "email", address: shredAddress },
-        { signupsEnabled: undefined, signupAllowlist: undefined },
-      ),
+      provisionMessagingIdentity(sealing.prisma, { provider: "email", address: shredAddress }),
     );
     try {
       const ring = contentEncryptionOf(sealing.prisma)!.ring;
