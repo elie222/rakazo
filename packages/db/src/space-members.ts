@@ -176,13 +176,13 @@ export async function listSpaceMembers(
 
 /**
  * Owner only: adds someone who is already a full member of the Space's organization, so nobody
- * outside it joins without an invite link.
+ * outside it joins without an invite link. False when they already belonged to it.
  */
 export async function addSpaceMember(
   prisma: PrismaClient,
   input: SpaceRef & { memberUserId: string },
-): Promise<void> {
-  await prisma.$transaction(async (tx) => {
+): Promise<boolean> {
+  return prisma.$transaction(async (tx) => {
     // Under the lock a deletion and a handover take, so the owner and the Space are current.
     await lockSpaceDeletion(tx, input.spaceId);
     await requireSpaceOwner(tx, input);
@@ -208,7 +208,7 @@ export async function addSpaceMember(
       where: { spaceId_userId: { spaceId: input.spaceId, userId: input.memberUserId } },
       select: { id: true },
     });
-    if (already) return;
+    if (already) return false;
     const count = await tx.spaceMember.count({
       where: { organizationId: space.organizationId, userId: input.memberUserId },
     });
@@ -225,6 +225,7 @@ export async function addSpaceMember(
       },
       update: {},
     });
+    return true;
   });
 }
 

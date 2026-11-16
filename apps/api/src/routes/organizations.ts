@@ -129,25 +129,23 @@ export function organizationsRoutes(ctx: RouterContext) {
               "seat count after a removal",
               deps.billing?.syncSeats(input.organizationId),
             );
-            const departures = await leaveOrganizationSpaces(
+            await leaveOrganizationSpaces(
               deps.prisma,
               {
                 organizationId: input.organizationId,
                 userId: input.userId,
                 removedBy: context.actor.userId,
               },
-              (departure) =>
-                afterSpaceDeparture(
+              async (departure) => {
+                await afterSpaceDeparture(
                   deps,
                   { spaceId: departure.spaceId, userId: context.actor.userId },
                   departure,
-                ),
+                );
+                // Whoever took the Space over sees it change, as when they leave it.
+                void deps.events?.publishRosterChange?.({ spaceIds: [departure.spaceId] });
+              },
             );
-            // Whoever took over one of their Spaces sees it change, as when they leave it.
-            if (departures.length)
-              void deps.events?.publishRosterChange?.({
-                spaceIds: departures.map((departure) => departure.spaceId),
-              });
             await forgetRevokedMember(deps.prisma, ref);
             await recordAuditEvent({
               action: "organization.member.removed",
@@ -265,24 +263,25 @@ async function sendInvitation(
   inviterId: string,
   invitation: { email: string; organizationName: string; inviterName: string; url: string },
 ): Promise<boolean> {
-  // The invitee's own language when they have an account here, else the inviter's.
-  const [invitee, inviter] = await Promise.all([
-    deps.prisma.user.findFirst({
-      where: { email: { equals: invitation.email, mode: "insensitive" } },
-      select: { locale: true },
-    }),
-    deps.prisma.user.findUnique({ where: { id: inviterId }, select: { locale: true } }),
-  ]);
-  const message = await organizationInvitationEmail(
-    invitation.email,
-    invitation,
-    emailLocale(invitee?.locale ?? inviter?.locale),
-  );
-  return email.send(message).then(
-    () => true,
-    (error: unknown) => {
-      deps.onEmailError?.(error);
-      return false;
-    },
-  );
+  // The invitation is saved by now: whatever stops the email, the inviter still gets the link.
+  try {
+    // The invitee's own language when they have an account here, else the inviter's.
+    const [invitee, inviter] = await Promise.all([
+      deps.prisma.user.findFirst({
+        where: { email: { equals: invitation.email, mode: "insensitive" } },
+        select: { locale: true },
+      }),
+      deps.prisma.user.findUnique({ where: { id: inviterId }, select: { locale: true } }),
+    ]);
+    const message = await organizationInvitationEmail(
+      invitation.email,
+      invitation,
+      emailLocale(invitee?.locale ?? inviter?.locale),
+    );
+    await email.send(message);
+    return true;
+  } catch (error) {
+    deps.onEmailError?.(error);
+    return false;
+  }
 }

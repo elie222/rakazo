@@ -113,11 +113,10 @@ export function organizationRole(role: string): OrganizationRole {
 
 /** Serializes one organization's membership changes, so each check holds until it commits. */
 async function lockOrganizationMembers(tx: Prisma.TransactionClient, organizationId: string) {
-  await tx.$queryRaw(Prisma.sql`
-    SELECT pg_advisory_xact_lock(hashtextextended(${`organization-members:${organizationId}`}, 0))::text AS "lock"
-  `);
+  await lockKey(tx, `organization-members:${organizationId}`);
 }
 
+/** Holds a transaction-scoped lock on `key` until the transaction ends. */
 async function memberRole(
   db: Pick<PrismaClient, "member">,
   organizationId: string,

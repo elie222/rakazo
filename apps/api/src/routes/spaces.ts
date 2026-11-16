@@ -154,17 +154,18 @@ export function spacesRoutes(ctx: RouterContext) {
         ),
         add: authed.spaces.members.add.handler(({ context, input }) =>
           asMemberOf(deps.prisma, context.actor, input.spaceId, async () => {
-            await addSpaceMember(deps.prisma, {
+            const added = await addSpaceMember(deps.prisma, {
               spaceId: input.spaceId,
               userId: context.actor.userId,
               memberUserId: input.userId,
             });
-            await recordAuditEvent({
-              action: "space.member.added",
-              actor: { type: "user", id: context.actor.userId },
-              spaceId: input.spaceId,
-              target: { type: "user", id: input.userId },
-            });
+            if (added)
+              await recordAuditEvent({
+                action: "space.member.added",
+                actor: { type: "user", id: context.actor.userId },
+                spaceId: input.spaceId,
+                target: { type: "user", id: input.userId },
+              });
             return { ok: true as const };
           }),
         ),

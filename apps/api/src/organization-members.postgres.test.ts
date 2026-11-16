@@ -559,9 +559,8 @@ describePostgres("organization members and invitations (PostgreSQL)", () => {
     ).resolves.toEqual({ userId: owner.id });
     expect(syncSeats).toHaveBeenCalledWith(organizationId);
     // Whoever took over one of their Spaces is told, like everyone left in each.
-    expect(publishRosterChange).toHaveBeenCalledWith({
-      spaceIds: expect.arrayContaining([ownSpaceId, team]),
-    });
+    for (const spaceId of [ownSpaceId, team])
+      expect(publishRosterChange).toHaveBeenCalledWith({ spaceIds: [spaceId] });
     expect((await call(memberActor, "organizations/members/list", { organizationId })).status).toBe(
       404,
     );
