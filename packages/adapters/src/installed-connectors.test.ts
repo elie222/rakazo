@@ -2064,6 +2064,21 @@ describe("OpenAPI connector import", () => {
     await expect(failed).rejects.toMatchObject({ name: "ConnectionSetupError" });
   });
 
+  it.each([
+    ["an expired certificate", "CERT_HAS_EXPIRED", "certificate has expired"],
+    ["a self-signed certificate", "DEPTH_ZERO_SELF_SIGNED_CERT", "self-signed certificate"],
+  ])("answers %s at the source as a setup error", async (_label, code, message) => {
+    const tlsFailure = Object.assign(new Error(message), { code });
+    const failed = prepareApiInstall({
+      source: "https://93.184.216.34/openapi.json",
+      config: { openApi: true, auth: { type: "none" } },
+      remote: {
+        fetch: vi.fn().mockRejectedValue(new TypeError("fetch failed", { cause: tlsFailure })),
+      },
+    });
+    await expect(failed).rejects.toMatchObject({ name: "ConnectionSetupError" });
+  });
+
   it("refuses credentials embedded in a persisted MCP URL", async () => {
     await expect(
       verifyMcpInstall({

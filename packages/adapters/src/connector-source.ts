@@ -5,9 +5,13 @@ import { ConnectionSetupError } from "@rakazo/contracts";
 import { sanitizeIntegrationError } from "./composio-connector.js";
 import { sanitizeConnectorError } from "./connector-safety.js";
 import { McpResponseTooLargeError } from "./mcp-response-limit.js";
-import { ConnectorRedirectError, RemoteRequestSentError } from "./remote-mcp.js";
+import {
+  ConnectorRedirectError,
+  RemoteRequestSentError,
+  TLS_CERTIFICATE_CODES,
+} from "./remote-mcp.js";
 
-/** Socket and DNS failures reaching the host the person entered. */
+/** Socket, DNS and TLS failures reaching the host the person entered. */
 const UNREACHABLE_CODES = new Set([
   "ENOTFOUND",
   "EAI_AGAIN",
@@ -23,6 +27,7 @@ const UNREACHABLE_CODES = new Set([
   "UND_ERR_CONNECT_TIMEOUT",
   "UND_ERR_HEADERS_TIMEOUT",
   "UND_ERR_BODY_TIMEOUT",
+  ...TLS_CERTIFICATE_CODES,
 ]);
 const MAX_CAUSE_DEPTH = 5;
 
@@ -59,8 +64,8 @@ function isSourceFailure(error: unknown): boolean {
   );
 }
 
-/** The request never got an answer from the host: it could not be reached, dropped the
- * connection, or was too slow for the request's own deadline. */
+/** The request never got an answer from the host: it could not be reached, failed TLS
+ * verification, dropped the connection, or was too slow for the request's own deadline. */
 export function isUnreachableHost(error: unknown, depth = 0): boolean {
   if (depth > MAX_CAUSE_DEPTH || !(error instanceof Error)) return false;
   if (

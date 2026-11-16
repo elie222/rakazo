@@ -805,6 +805,21 @@ export function createPrivateNetworkFetch(
 
 const MAX_CAUSE_DEPTH = 5;
 
+/** The server's certificate failed the client's own checks during the handshake. */
+export const TLS_CERTIFICATE_CODES: ReadonlySet<string> = new Set([
+  "CERT_HAS_EXPIRED",
+  "CERT_NOT_YET_VALID",
+  "CERT_REVOKED",
+  "CERT_UNTRUSTED",
+  "CERT_SIGNATURE_FAILURE",
+  "DEPTH_ZERO_SELF_SIGNED_CERT",
+  "SELF_SIGNED_CERT_IN_CHAIN",
+  "UNABLE_TO_GET_ISSUER_CERT",
+  "UNABLE_TO_GET_ISSUER_CERT_LOCALLY",
+  "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+  "ERR_TLS_CERT_ALTNAME_INVALID",
+]);
+
 /**
  * Codes that prove no connection was made, whichever call failed: the name did not resolve, the
  * connection was not made in time, or the server's certificate failed the client's own checks
@@ -817,17 +832,7 @@ const NEVER_CONNECTED_CODES = new Set([
   "EAI_FAIL",
   "ENODATA",
   "UND_ERR_CONNECT_TIMEOUT",
-  "CERT_HAS_EXPIRED",
-  "CERT_NOT_YET_VALID",
-  "CERT_REVOKED",
-  "CERT_UNTRUSTED",
-  "CERT_SIGNATURE_FAILURE",
-  "DEPTH_ZERO_SELF_SIGNED_CERT",
-  "SELF_SIGNED_CERT_IN_CHAIN",
-  "UNABLE_TO_GET_ISSUER_CERT",
-  "UNABLE_TO_GET_ISSUER_CERT_LOCALLY",
-  "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
-  "ERR_TLS_CERT_ALTNAME_INVALID",
+  ...TLS_CERTIFICATE_CODES,
 ]);
 
 /** Any socket error, but only from the connect call: once connected the same codes say nothing. */
