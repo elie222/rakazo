@@ -51,6 +51,22 @@ export function moveAccepted(input: StackFacts): boolean {
   return input.dockerStack && input.dockerInstalled && input.choice === "native";
 }
 
+/**
+ * Settles an unanswered move the first time This computer's stack is needed, which may be after
+ * launch when the person switches to it. Asked at most once per launch; a decided stack is kept.
+ */
+export function settleStackWhenNeeded(
+  choice: StackChoice | "ask",
+  ask: () => Promise<StackChoice>,
+  use: (choice: StackChoice) => Promise<void>,
+): () => Promise<void> {
+  let settling: Promise<void> | undefined = choice === "ask" ? undefined : Promise.resolve();
+  return () => {
+    settling ??= ask().then(use);
+    return settling;
+  };
+}
+
 export function stackExists(stackDir: string, exists: (file: string) => boolean) {
   return {
     dockerStack: exists(path.join(stackDir, STACK_COMPOSE_FILE)),

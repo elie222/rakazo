@@ -52,6 +52,7 @@ import {
   moveAccepted,
   moveDockerStack,
   readStackChoice,
+  settleStackWhenNeeded,
   stackExists,
   writeStackChoice,
 } from "./docker-move.js";
@@ -75,6 +76,7 @@ import {
   stackDir,
   stackResourceDir,
 } from "./local-stack.js";
+import type { ServerBundle } from "./mac-runtime.js";
 import { nativeStackEligible, readServerBundle } from "./mac-runtime.js";
 import {
   configureDesktopMonitoring,
@@ -227,7 +229,6 @@ async function probeServer(
  */
 async function offerDockerMove(userStackDir: string): Promise<StackChoice> {
   if (
-    desktop.currentSetup?.mode !== "new" ||
     !(await dockerRunning({
       stackDir: userStackDir,
       platform: process.platform,
@@ -663,14 +664,8 @@ app.whenReady().then(async () => {
   const stacks = stackExists(userStackDir, existsSync);
   // Installed but not running keeps the Docker path; no Docker at all leaves nothing to keep.
   const dockerInstalled = resolveDockerBinary(process.platform, process.env, existsSync) !== null;
-  let choice = chooseStack({
+  const choice = chooseStack({
     eligible: serverBundle !== null,
-    ...stacks,
-    dockerInstalled,
-    choice: await readStackChoice(userStackDir),
-  });
-  if (choice === "ask") choice = await offerDockerMove(userStackDir);
-  const moving = moveAccepted({
     ...stacks,
     dockerInstalled,
     choice: await readStackChoice(userStackDir),
@@ -683,26 +678,34 @@ app.whenReady().then(async () => {
     run: runDocker,
     sleep: defaultSleep,
   };
+  const nativeStack = async (bundle: ServerBundle) => {
+    const moving = moveAccepted({
+      ...stacks,
+      dockerInstalled,
+      choice: await readStackChoice(userStackDir),
+    });
+    return new NativeStackController({
+      hostComputer: desktop.hostComputer?.connection,
+      stackDir: userStackDir,
+      resourceDir,
+      localWebUrl,
+      imageTag,
+      serverBundle: bundle,
+      nodeBinary: process.execPath,
+      env: process.env,
+      uid: process.getuid?.() ?? 0,
+      run: runDocker,
+      fetch: (url, init) => net.fetch(url, { ...init, bypassCustomProtocolHandlers: true }),
+      exists: existsSync,
+      probe,
+      randomHex,
+      onState,
+      importFromDocker: moving ? (target) => moveDockerStack(moveDeps, target) : undefined,
+    });
+  };
   desktop.localStack =
     choice === "native" && serverBundle !== null
-      ? new NativeStackController({
-          hostComputer: desktop.hostComputer?.connection,
-          stackDir: userStackDir,
-          resourceDir,
-          localWebUrl,
-          imageTag,
-          serverBundle,
-          nodeBinary: process.execPath,
-          env: process.env,
-          uid: process.getuid?.() ?? 0,
-          run: runDocker,
-          fetch: (url, init) => net.fetch(url, { ...init, bypassCustomProtocolHandlers: true }),
-          exists: existsSync,
-          probe,
-          randomHex,
-          onState,
-          importFromDocker: moving ? (target) => moveDockerStack(moveDeps, target) : undefined,
-        })
+      ? await nativeStack(serverBundle)
       : new LocalStackController({
           hostComputer: desktop.hostComputer?.connection,
           platform: process.platform,
@@ -720,6 +723,15 @@ app.whenReady().then(async () => {
           // A confirmed reuse changes no phase; the menu must hear about it separately.
           onReuseConfirmed: () => stopStackMenu.reuseConfirmed(),
         });
+  const settleLocalStack = settleStackWhenNeeded(
+    choice,
+    () => offerDockerMove(userStackDir),
+    async (settled) => {
+      if (settled === "native" && serverBundle !== null)
+        desktop.localStack = await nativeStack(serverBundle);
+    },
+  );
+  if (desktop.currentSetup?.mode === "new") await settleLocalStack();
   const target = resolveStartupTarget({
     envUrl: process.env.RAKAZO_WEB_URL,
     saved: desktop.currentSetup,
@@ -898,6 +910,7 @@ app.whenReady().then(async () => {
     commitPendingAppSwitch,
     abandonPendingAppSwitch,
     recoverFromCrashedSave,
+    settleLocalStack,
   });
 
   // Register before startup awaits so macOS dock clicks during probe/open are handled.
