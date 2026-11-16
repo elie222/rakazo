@@ -2,7 +2,7 @@ import { t } from "@lingui/core/macro";
 import type { RpcInput, RpcOutput, RpcPath } from "@rakazo/contracts";
 import type { DataTag, QueryFunction, QueryKey } from "@tanstack/react-query";
 import { QueryClient } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ApiRequestContext, RpcArgs } from "./api";
 import { captureApiRequestContext, currentApiBase, rpc, selectedSpaceId } from "./api";
 import { currentSessionGeneration } from "./session";
@@ -162,6 +162,14 @@ export function useSave<Input = void, Saved = unknown>(options: {
     };
   }, []);
   const current = saves[scopeKey()];
+  /** Forgets a finished save's error for the scope shown; the same function on every render. */
+  const reset = useCallback(() => {
+    const scope = shownScope.current();
+    setSaves((now) => {
+      const { [scope]: shown, ...rest } = now;
+      return shown && !shown.pending ? rest : now;
+    });
+  }, []);
   return {
     run(input: Input) {
       const scope = scopeKey();
@@ -207,13 +215,7 @@ export function useSave<Input = void, Saved = unknown>(options: {
     /** What the pending or failed save was sent with. */
     input: current?.input,
     error: current?.error ?? null,
-    reset: () => {
-      const scope = scopeKey();
-      setSaves((now) => {
-        const { [scope]: shown, ...rest } = now;
-        return shown && !shown.pending ? rest : now;
-      });
-    },
+    reset,
   };
 }
 
