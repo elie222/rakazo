@@ -36,6 +36,7 @@ import {
   branchDatabaseName,
   branchDatabaseOwner,
 } from "./dev-branch-databases.ts";
+import { applyProxyEnv } from "./dev-proxy-env.mjs";
 import { runPnpm, spawnPnpm } from "./pnpm.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -416,6 +417,9 @@ function generateClientIfStale(env) {
 }
 
 const env = { ...process.env, COREPACK_ENABLE_DOWNLOAD_PROMPT: "0" };
+// Node reads the proxy switch and URLs before a service can load `.env`, so a proxy set there
+// reaches the services from here.
+applyProxyEnv(env, fileEnv);
 
 let ports = null;
 if (!setting("WEB_PORT") && !setting("API_PORT")) {
