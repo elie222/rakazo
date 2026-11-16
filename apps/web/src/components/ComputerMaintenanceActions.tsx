@@ -2,6 +2,7 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import type { ComputerStatus } from "@rakazo/contracts";
 import { Button } from "@rakazo/ui-web";
 import { useState } from "react";
+import { computerUpdates } from "../lib/computer-updates";
 import { useSave } from "../lib/query";
 import { errorText } from "../lib/user-error";
 import { ConfirmDialog } from "./ConfirmDialog";
@@ -25,7 +26,9 @@ export function ComputerMaintenanceActions({
   const { t } = useLingui();
   const repair = useSave({
     save: async (action: Action, rpc) => {
-      await rpc.computer[action]({ botId });
+      if (action === "recover")
+        await computerUpdates.start(botId, "recover", (id) => rpc.computer.recover({ botId: id }));
+      else await rpc.computer.reset({ botId });
       setConfirming(false);
       await onChanged();
     },

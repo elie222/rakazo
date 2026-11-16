@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
-import type { ComputerStatus } from "@rakazo/contracts";
+import type { ComputerStatus, ComputerUpdate } from "@rakazo/contracts";
 import { deferred } from "@rakazo/core/test-async";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { computerUpdates } from "../lib/computer-updates";
 import { ComputerMaintenanceActions } from "./ComputerMaintenanceActions";
 
 vi.mock("@lingui/react/macro", () => ({
@@ -34,7 +35,13 @@ vi.mock("./ConfirmDialog", () => ({
 const computer = vi.hoisted(() => ({ recover: vi.fn(), reset: vi.fn() }));
 vi.mock("../lib/rpc", () => {
   const rpc = { computer };
-  return { rpc, rpcForSpace: () => rpc, createSpaceRpc: () => rpc, selectedSpaceId: () => null };
+  return {
+    rpc,
+    rpcForSpace: () => rpc,
+    createSpaceRpc: () => rpc,
+    selectedSpaceId: () => null,
+    SPACE_SELECTED_EVENT: "space-selected",
+  };
 });
 
 let host: HTMLDivElement;
@@ -81,8 +88,10 @@ it("hides the rows when the shared status belongs to another bot's computer", as
   expect(labels()).toEqual([]);
 });
 
+const recovery = { id: "update-recover", action: "recover" } as ComputerUpdate;
+
 it("recovers once, holding the controls until the computer is read again", async () => {
-  const recovered = deferred<void>();
+  const recovered = deferred<ComputerUpdate>();
   computer.recover.mockReturnValueOnce(recovered.promise);
   const onChanged = vi.fn(async () => {});
   await render(status("bot-settings"), onChanged);
@@ -95,10 +104,21 @@ it("recovers once, holding the controls until the computer is read again", async
   expect(computer.recover).toHaveBeenCalledExactlyOnceWith({ botId: "bot-settings" });
   expect(host.querySelector<HTMLButtonElement>("button")?.disabled).toBe(true);
 
-  await act(async () => recovered.resolve());
+  await act(async () => recovered.resolve(recovery));
   expect(onChanged).toHaveBeenCalledOnce();
   expect(host.querySelector('[data-testid="confirm"]')).toBeNull();
   expect(host.querySelector<HTMLButtonElement>("button")?.disabled).toBe(false);
+});
+
+it("opens the progress of the recovery it starts", async () => {
+  computer.recover.mockResolvedValueOnce(recovery);
+  await render(status("bot-settings"));
+  await click("Recover computer");
+  await click("Confirm");
+  expect(computerUpdates.getSnapshot()).toMatchObject({
+    updates: [recovery],
+    openId: "update-recover",
+  });
 });
 
 it("keeps the confirmation open with the reason when the reset fails", async () => {
