@@ -241,9 +241,13 @@ describe("notifications in a shared Space", () => {
     expect(unhidden).toEqual([]);
 
     const help = deps({ members: shared });
+    const publishRosterChange = vi.fn(async () => undefined);
+    Object.assign(help.value.events, { publishRosterChange });
     await notifyRun(help.value, run, { ...message, kind: "help" });
     expect(recipients(help.send)).toEqual(["user-1"]);
     expect(unhidden).toEqual(["user-1"]);
+    // Open apps read their list again, so the chat shows up without a reload.
+    expect(publishRosterChange).toHaveBeenCalledExactlyOnceWith({ userIds: ["user-1"] });
   });
 
   it("brings back a hidden chat whose bot is silent by its own switch, without a push", async () => {

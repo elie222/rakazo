@@ -158,8 +158,11 @@ function readyStuckRun(
 }
 
 /** Reminders are for the person whose run it is, as its questions are. */
-function readStuckOwner(prisma: PrismaClient, run: StuckCandidate) {
-  return readOwnerHold(prisma, run, chatMutedByDefault(run.thread.groupId ? null : run.bot));
+function readStuckOwner(
+  deps: { prisma: PrismaClient; events?: ThreadEvents },
+  run: StuckCandidate,
+) {
+  return readOwnerHold(deps, run, chatMutedByDefault(run.thread.groupId ? null : run.bot));
 }
 
 type StuckNoticePayload = {
@@ -215,7 +218,7 @@ async function remindStuckRun(
   // sweep can still remind during this same wait. The question itself already brought a hidden
   // chat back, so only the reminder that is sent does it again: a sweep that sends nothing
   // leaves a chat the person hid again as they left it.
-  const owner = await readStuckOwner(deps.prisma, run);
+  const owner = await readStuckOwner(deps, run);
   if (!deps.notifications || !owner.hears) return;
   if (!(await pushCanDeliver(deps.notifications, run.userId))) return;
   const claimId = await withTransactionRetry(() =>
@@ -341,7 +344,7 @@ async function expireOne(
 ) {
   // Read before the run expires: a failed lookup then leaves the run for the next sweep, which
   // retries the notice with it.
-  const owner = await readStuckOwner(deps.prisma, run);
+  const owner = await readStuckOwner(deps, run);
   const expired = await withTransactionRetry(() =>
     deps.prisma.$transaction(
       (tx) =>

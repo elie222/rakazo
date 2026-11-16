@@ -69,29 +69,32 @@ async function runNotice(
  * still comes back.
  */
 async function ownerHearsRun(
-  prisma: PrismaClient,
+  deps: Pick<ExecutorDeps, "prisma" | "events">,
   run: { threadId: string; userId: string },
   mutedByDefault: boolean,
 ): Promise<boolean> {
-  const owner = await readOwnerHold(prisma, run, mutedByDefault);
+  const owner = await readOwnerHold(deps, run, mutedByDefault);
   await owner.reveal();
   return owner.hears;
 }
 
 /**
  * Whether the run's owner hears its chat, read now. `reveal` brings the chat back if it is
- * hidden, so a caller can read before a change it can't undo and reveal after it.
+ * hidden, so a caller can read before a change it can't undo and reveal after it, and tells the
+ * owner's open apps to read their list again.
  */
 export async function readOwnerHold(
-  prisma: PrismaClient,
+  deps: { prisma: PrismaClient; events?: Pick<ThreadEvents, "publishRosterChange"> },
   run: { threadId: string; userId: string },
   mutedByDefault: boolean,
 ) {
-  const hold = (await chatHoldsFor(prisma, run.threadId, [run.userId])).get(run.userId);
+  const hold = (await chatHoldsFor(deps.prisma, run.threadId, [run.userId])).get(run.userId);
   return {
     hears: ownerHearsChat(hold?.muted, mutedByDefault),
     reveal: async () => {
-      if (hold?.hidden) await unhideChatFor(prisma, run.threadId, run.userId);
+      if (!hold?.hidden) return;
+      await unhideChatFor(deps.prisma, run.threadId, run.userId);
+      await deps.events?.publishRosterChange?.({ userIds: [run.userId] });
     },
   };
 }
@@ -140,11 +143,9 @@ export async function notifyRun(
   // Checked even without a way to alert anyone, so a hidden chat still comes back when it needs them.
   if (
     message.kind !== "completion" &&
-    !(await ownerHearsRun(
-      deps.prisma,
-      run,
-      notice.routineNotify === null && notice.mutedByDefault,
-    ).catch(lookup("run owner notification lookup", true)))
+    !(await ownerHearsRun(deps, run, notice.routineNotify === null && notice.mutedByDefault).catch(
+      lookup("run owner notification lookup", true),
+    ))
   )
     return;
   if (!canAlert) return;
