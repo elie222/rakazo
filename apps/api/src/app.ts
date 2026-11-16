@@ -95,7 +95,7 @@ import {
   PLUGIN_SUBMISSIONS_PATH,
   SERVER_BUILD_HEADER,
 } from "@rakazo/contracts";
-import { encryptionKeyWarning, signupPolicyFromEnv } from "@rakazo/core";
+import { encryptionKeyWarning } from "@rakazo/core";
 import type { Pool, PrismaClient } from "@rakazo/db";
 import {
   configureProviderTransactionPool,
@@ -334,22 +334,6 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     runSecretWriter: createRunSecretWriter(secrets),
   });
   const boardEvents = createBoardEvents(realtime);
-  const environmentSignupPolicy = signupPolicyFromEnv(env);
-  // Mirror the env policy for the previous release during a rolling deploy.
-  await prisma.deploymentSettings.upsert({
-    where: { id: "default" },
-    create: {
-      id: "default",
-      signupsEnabled: environmentSignupPolicy.enabled,
-      signupAllowlist: environmentSignupPolicy.allowlist.join(","),
-      signupPolicyInitialized: true,
-    },
-    update: {
-      signupsEnabled: environmentSignupPolicy.enabled,
-      signupAllowlist: environmentSignupPolicy.allowlist.join(","),
-      signupPolicyInitialized: true,
-    },
-  });
 
   const jobKind = env.wakeupDriver;
   const inMemoryJobs = jobKind === "memory" ? new InMemoryJobQueue() : undefined;
