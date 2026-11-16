@@ -47,6 +47,7 @@ import {
   createRunSecretWriter,
   createSecretStore,
   createTicketChangeNotifier,
+  defaultOnlyDeploymentModels,
   drainRuns,
   EmailEmulator,
   ExpoPushProvider,
@@ -283,6 +284,29 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     ...envOverrides
   } = overrides;
   const env = { ...loadEnv(process.env), ...envOverrides };
+  // A default model key or switch set here, rather than in the environment, holds for the
+  // deployment's models too, which runs read.
+  if (
+    !envOverrides.deploymentModels &&
+    (envOverrides.deploymentModelKey !== undefined ||
+      envOverrides.deploymentModelConfigured !== undefined)
+  ) {
+    const given = defaultOnlyDeploymentModels({
+      ...env.deploymentModels.default,
+      key: env.deploymentModelKey,
+      configured: env.deploymentModelConfigured,
+    });
+    env.deploymentModels = {
+      ...env.deploymentModels,
+      default: given.default,
+      connections: [
+        ...given.connections,
+        ...env.deploymentModels.connections.filter(
+          (connection) => connection.provider !== given.default.provider,
+        ),
+      ],
+    };
+  }
   const runtimeEnv: RunRuntimeEnv = { ...env, inboundEmailDomain: env.inboundEmail?.domain };
   const logger = loggerOverride ?? createServiceLogger({ service: SERVICE_NAMES.api });
   installLogger(logger);
