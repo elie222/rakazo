@@ -551,14 +551,9 @@ it.each(["resolve", "reject"] as const)(
       { id: "bot-1", name: "Chief" },
       { id: "bot-2", name: "Team" },
     ]);
-    let resolve!: (value: { code: string; expiresAt: string }) => void;
-    let reject!: (error: Error) => void;
-    messaging.link.start.mockImplementationOnce(() => {
-      const pending = deferred<{ code: string; expiresAt: string }>();
-      resolve = pending.resolve;
-      reject = pending.reject;
-      return pending.promise;
-    });
+
+    const pending = deferred<{ code: string; expiresAt: string }>();
+    messaging.link.start.mockReturnValueOnce(pending.promise);
     await renderOverlay();
     await act(async () => {
       telegramItem()?.click();
@@ -571,8 +566,11 @@ it.each(["resolve", "reject"] as const)(
     });
     await act(async () => {
       if (outcome === "resolve")
-        resolve({ code: "OLD-CODE", expiresAt: new Date(Date.now() + 20_000).toISOString() });
-      else reject(new Error("old request failed"));
+        pending.resolve({
+          code: "OLD-CODE",
+          expiresAt: new Date(Date.now() + 20_000).toISOString(),
+        });
+      else pending.reject(new Error("old request failed"));
     });
     expect(container.textContent).not.toContain("OLD-CODE");
     expect(container.textContent).not.toContain("Couldn't update messaging settings");
@@ -584,12 +582,9 @@ it.each(["resolve", "reject"] as const)(
 
 it("does not issue another code while one request is in flight", async () => {
   messaging.status.mockResolvedValue(statusWith([]));
-  let resolve!: (value: { code: string; expiresAt: string }) => void;
-  messaging.link.start.mockImplementationOnce(() => {
-    const pending = deferred<{ code: string; expiresAt: string }>();
-    resolve = pending.resolve;
-    return pending.promise;
-  });
+
+  const pending = deferred<{ code: string; expiresAt: string }>();
+  messaging.link.start.mockReturnValueOnce(pending.promise);
   await renderOverlay();
   await act(async () => {
     telegramItem()?.click();
@@ -597,26 +592,26 @@ it("does not issue another code while one request is in flight", async () => {
   });
   expect(messaging.link.start).toHaveBeenCalledTimes(1);
   await act(async () =>
-    resolve({ code: "ONE-CODE", expiresAt: new Date(Date.now() + 20_000).toISOString() }),
+    pending.resolve({ code: "ONE-CODE", expiresAt: new Date(Date.now() + 20_000).toISOString() }),
   );
   expect(container.textContent).toContain("ONE-CODE");
 });
 
 it("ignores a code that arrives after the panel closes", async () => {
   messaging.status.mockResolvedValue(statusWith([]));
-  let resolve!: (value: { code: string; expiresAt: string }) => void;
-  messaging.link.start.mockImplementationOnce(() => {
-    const pending = deferred<{ code: string; expiresAt: string }>();
-    resolve = pending.resolve;
-    return pending.promise;
-  });
+
+  const pending = deferred<{ code: string; expiresAt: string }>();
+  messaging.link.start.mockReturnValueOnce(pending.promise);
   await renderOverlay();
   await act(async () => telegramItem()?.click());
   const reads = messaging.status.mock.calls.length;
   await act(async () => root.unmount());
   root = createRoot(container);
   await act(async () =>
-    resolve({ code: "CLOSED-CODE", expiresAt: new Date(Date.now() + 20_000).toISOString() }),
+    pending.resolve({
+      code: "CLOSED-CODE",
+      expiresAt: new Date(Date.now() + 20_000).toISOString(),
+    }),
   );
   expect(messaging.status).toHaveBeenCalledTimes(reads);
   expect(container.textContent).toBe("");
@@ -637,19 +632,11 @@ it.each([false, true])(
       { id: "bot-2", name: "Team" },
     ];
     api.bots.list.mockResolvedValue(bots);
-    let loadBots!: (value: typeof bots) => void;
-    if (initialLoad)
-      api.bots.list.mockImplementationOnce(() => {
-        const pending = deferred<typeof bots>();
-        loadBots = pending.resolve;
-        return pending.promise;
-      });
-    let resolve!: (value: { code: string; expiresAt: string }) => void;
-    messaging.link.start.mockImplementationOnce(() => {
-      const pending = deferred<{ code: string; expiresAt: string }>();
-      resolve = pending.resolve;
-      return pending.promise;
-    });
+    const loadingBots = deferred<typeof bots>();
+    if (initialLoad) api.bots.list.mockReturnValueOnce(loadingBots.promise);
+
+    const pending = deferred<{ code: string; expiresAt: string }>();
+    messaging.link.start.mockReturnValueOnce(pending.promise);
     await renderOverlay();
     await act(async () =>
       [...container.querySelectorAll("button")]
@@ -662,12 +649,15 @@ it.each([false, true])(
       select.dispatchEvent(new Event("change", { bubbles: true }));
     };
     if (initialLoad) {
-      await act(async () => loadBots(bots));
+      await act(async () => loadingBots.resolve(bots));
       await act(async () => vi.advanceTimersByTimeAsync(0));
     }
     await act(async () => pick("bot-2"));
     await act(async () =>
-      resolve({ code: "WORKSPACE-CODE", expiresAt: new Date(Date.now() + 20_000).toISOString() }),
+      pending.resolve({
+        code: "WORKSPACE-CODE",
+        expiresAt: new Date(Date.now() + 20_000).toISOString(),
+      }),
     );
     expect(container.textContent).toContain("WORKSPACE-CODE");
     expect(messaging.link.start).toHaveBeenCalledWith({ botId: "workspace-bot" });
