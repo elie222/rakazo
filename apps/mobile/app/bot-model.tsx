@@ -3,7 +3,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useMemo } from "react";
 import { ModelPickerList } from "../components/model-picker-list";
 import { chatModelPickerChoices } from "../lib/chat-model";
-import { accountRpcQuery, rpcQuery } from "../lib/query";
+import { rpcQuery } from "../lib/query";
 import { useScreenQuery } from "../lib/screen-query";
 import { errorText } from "../lib/user-error";
 
@@ -11,7 +11,8 @@ export default function BotModelScreen() {
   const { t } = useLingui();
   const router = useRouter();
   const { botId, value = "" } = useLocalSearchParams<{ botId: string; value?: string }>();
-  const me = useScreenQuery(accountRpcQuery("me"));
+  // The "Space default" row names the selected Space's model, so this read is the Space's.
+  const me = useScreenQuery(rpcQuery("me"));
   const catalog = useScreenQuery(rpcQuery("models/list"));
   const credentials = useScreenQuery(rpcQuery("models/credentials"));
   const choices = useMemo(
