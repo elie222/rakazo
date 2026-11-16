@@ -57,6 +57,7 @@ import {
   runCodeSpentKind,
   runLoginKind,
   settingsTarget,
+  TransactionConflictError,
   withTransactionRetry,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -789,25 +790,25 @@ export async function findSiteLogin(prisma: PrismaClient, scope: BotSecretScope,
 }
 
 /**
- * The value as it is saved: a login, card or contact in its current shape, so every reader gets
- * one form. Throws when the value is not one of its kind.
+ * Reads a value the person gave. One that isn't of its kind is theirs to fix, named without
+ * quoting it: a parse error can repeat the value.
  */
-/**
- * Reads a login the person gave. What can't be read is theirs to fix, named without quoting it:
- * a parse error can repeat the value.
- */
-function readLoginValue<T>(read: () => T): T {
+function readGivenValue<T>(read: () => T, refusal: (issues: z.ZodError["issues"]) => string): T {
   try {
     return read();
   } catch (error) {
     if (!(error instanceof SyntaxError || error instanceof z.ZodError)) throw error;
-    const issues = error instanceof z.ZodError ? error.issues : [];
-    throw new VaultItemRefusedError(
-      issues.some((issue) => issue.path[0] === "otp")
-        ? AUTHENTICATOR_KEY_UNREADABLE
-        : "A website login needs a label and a value for every field",
-    );
+    throw new VaultItemRefusedError(refusal(error instanceof z.ZodError ? error.issues : []));
   }
+}
+
+/** Reads a login the person gave, refusing one without a label and value for every field. */
+function readLoginValue<T>(read: () => T): T {
+  return readGivenValue(read, (issues) =>
+    issues.some((issue) => issue.path[0] === "otp")
+      ? AUTHENTICATOR_KEY_UNREADABLE
+      : "A website login needs a label and a value for every field",
+  );
 }
 
 /** A login read from an export, as it is saved. */
@@ -815,19 +816,28 @@ export function importedLoginValue(login: Parameters<typeof encodeLoginSecret>[0
   return readLoginValue(() => encodeLoginSecret(login));
 }
 
+/**
+ * The value as it is saved: a login, card or contact in its current shape, so every reader gets
+ * one form. Throws when the value is not one of its kind.
+ */
 export function canonicalSecretValue(destination: BotSecretDestination, plaintext: string): string {
+  const { type } = destination.auth;
   // Saved in its current shape, also when an older app sends a username and password.
-  if (destination.auth.type === "login") {
-    const { fields, otp } = readLoginValue(() => decodeLoginSecret(plaintext));
-    return encodeLoginSecret(otp ? { fields, otp } : { fields });
-  }
-  try {
-    if (destination.auth.type === "card") return encodeCardSecret(JSON.parse(plaintext));
-    if (destination.auth.type === "contact") return encodeContactSecret(JSON.parse(plaintext));
-  } catch {
-    // The parse error may quote the value, so only the kind is named.
-    throw new VaultItemRefusedError(`Invalid ${destination.auth.type}`);
-  }
+  if (type === "login")
+    return readLoginValue(() => {
+      const { fields, otp } = decodeLoginSecret(plaintext);
+      return encodeLoginSecret(otp ? { fields, otp } : { fields });
+    });
+  if (type === "card")
+    return readGivenValue(
+      () => encodeCardSecret(JSON.parse(plaintext)),
+      () => "Invalid card",
+    );
+  if (type === "contact")
+    return readGivenValue(
+      () => encodeContactSecret(JSON.parse(plaintext)),
+      () => "Invalid contact",
+    );
   return plaintext;
 }
 
@@ -953,7 +963,7 @@ export async function prepareBotSecret(input: {
       if (await hiddenFromBot(tx, scope, destination.name))
         throw new VaultItemRefusedError(hiddenAnswer(current?.policy));
       if (JSON.stringify(await vaultFields(tx, scope)) !== JSON.stringify(vault)) {
-        throw Object.assign(new Error("Vault changed while saving; retry"), { code: "P2034" });
+        throw new TransactionConflictError(VAULT_CHANGED);
       }
       if (await repeats(tx)) throw new LoginAlreadySavedError();
       validate(current, await tx.vaultCredential.count({ where: vault }));
@@ -969,7 +979,7 @@ export async function prepareBotSecret(input: {
         (keepsKey && current?.ciphertext !== existing?.ciphertext) ||
         (current && ciphertextKeyId(current.ciphertext) !== ciphertextKeyId(existing!.ciphertext))
       )
-        throw Object.assign(new Error("Credential changed while saving; retry"), { code: "P2034" });
+        throw new TransactionConflictError("Credential changed while saving; retry");
       const labelled = {
         // Its owner's own save may carry a fixed key, so its codes are typed again. A save a bot
         // started, such as a login card answered in chat, shows no key and keeps the saved one:

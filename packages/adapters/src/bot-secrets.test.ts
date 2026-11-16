@@ -4,7 +4,7 @@ import { redactSecrets } from "@rakazo/core";
 import type { Deferred } from "@rakazo/core/test-async";
 import { deferred, flush } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
-import { installAuditEventStore } from "@rakazo/db";
+import { installAuditEventStore, TransactionConflictError } from "@rakazo/db";
 import * as Logging from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -1120,6 +1120,21 @@ describe("vault refusals", () => {
       expect((caught as Error).message).not.toContain("fake-value");
     }
     expect(() => normalizeSecretDestination({ name: "x" })).toThrow(VaultItemRefusedError);
+  });
+
+  it("refuses a legacy login with a blank username", () => {
+    const legacy = JSON.stringify({ username: " ", password: "fake-password" });
+    expect(() => canonicalSecretValue(login, legacy)).toThrow(
+      new VaultItemRefusedError("A website login needs a label and a value for every field"),
+    );
+  });
+
+  it("lets a failure that isn't about the value propagate", () => {
+    const fault = new TypeError("fault");
+    vi.spyOn(JSON, "parse").mockImplementationOnce(() => {
+      throw fault;
+    });
+    expect(() => canonicalSecretValue({ ...login, auth: { type: "card" } }, "{}")).toThrow(fault);
   });
 });
 
@@ -2290,7 +2305,7 @@ describe("replacing a saved login's site", () => {
     const toOther = await prepare(db, other, "fake-password-other", { replaces: before.id });
     await commit(db, toLogin);
     // It keeps whatever key is saved, so a value saved since sends it back to be prepared again.
-    await expect(commit(db, toOther)).rejects.toMatchObject({ code: "P2034" });
+    await expect(commit(db, toOther)).rejects.toBeInstanceOf(TransactionConflictError);
     await commit(db, await prepare(db, other, "fake-password-other", { replaces: before.id }));
     expect(db.rows()).toHaveLength(1);
     const [row] = db.rows();
