@@ -1,4 +1,5 @@
 import { VoiceAccountError } from "@rakazo/adapter-kit";
+import { MAX_VOICE_AUDIO_BYTES } from "@rakazo/core";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CartesiaVoiceProvider } from "./cartesia-voice.js";
@@ -13,7 +14,7 @@ import {
   ScriptedVoiceProvider,
 } from "./scripted-voice.js";
 import { createVoiceProvider, isVoiceProviderId, listVoiceCatalog } from "./voice-factory.js";
-import { MAX_SYNTHESIZED_AUDIO_BYTES, MAX_VOICE_JSON_BYTES } from "./voice-http.js";
+import { MAX_VOICE_JSON_BYTES } from "./voice-http.js";
 import { XaiVoiceProvider } from "./xai-voice.js";
 
 const ctx = {
@@ -836,7 +837,7 @@ describe("hosted voice response limits", () => {
         vi.fn().mockResolvedValue({
           ok: true,
           headers: new Headers({
-            "content-length": String(MAX_SYNTHESIZED_AUDIO_BYTES + 1),
+            "content-length": String(MAX_VOICE_AUDIO_BYTES + 1),
           }),
           body: { cancel },
         }),

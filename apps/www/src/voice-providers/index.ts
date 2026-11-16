@@ -10,24 +10,24 @@ import { selfHosted } from "./self-hosted";
 import {
   ALL_PRICING_SOURCES,
   CARTESIA_RANGE,
-  TRANSCRIPTION_HOURLY,
-  WORKLOAD_NAMES,
-  transcriptionRange,
+  count,
+  millions,
+  perHourOfSpeech,
   RATES,
+  speechHourCost,
+  TRANSCRIPTION_HOURLY,
+  transcriptionRange,
+  usd,
   VOICE_DOC,
   VOICE_DOCS_PATH,
   VOICE_PROVIDERS_PATH,
   VOICE_PROVIDERS_UPDATED,
-  WORKLOAD,
-  WORKLOAD_COST,
-  count,
-  millions,
-  perHourOfSpeech,
-  speechHourCost,
-  usd,
   voicePriceTable,
   voiceProviderPath,
   voiceWorkloadTable,
+  WORKLOAD,
+  WORKLOAD_COST,
+  WORKLOAD_NAMES,
 } from "./shared";
 import type { VoiceProvider } from "./types";
 
@@ -52,7 +52,9 @@ const TRANSCRIPTION_HEAVY = (Object.keys(WORKLOAD_COST) as (keyof typeof WORKLOA
 const TRANSCRIPTION_RANGE = transcriptionRange();
 
 function listed(names: readonly string[]): string {
-  return names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names.at(-1)}` : (names[0] ?? "");
+  return names.length > 1
+    ? `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`
+    : (names[0] ?? "");
 }
 
 const BILL_ADVICE = `Speech is usually the larger charge, so how much your bots say matters more than how much you say${TRANSCRIPTION_HEAVY.length ? `. The exception is where a free speech allowance covers most of the month, as with ${listed(TRANSCRIPTION_HEAVY)} here, which leaves transcription as the main cost` : ""}. In Chrome on a desktop or in the mobile app, your device often does the transcription for free. A self-hosted Rakazo can also set \`VOICE_SUMMARY_MIN_CHARS\` so long replies are read as a short summary instead of in full.`;
@@ -62,7 +64,10 @@ const UNDER_A_DOLLAR = [
   { name: "[Fish Audio](/voice-providers/fish-audio/)", hour: speechHourCost(RATES.fish) },
   { name: "xAI", hour: speechHourCost(RATES.xai) },
   { name: "[OpenAI](/voice-providers/openai/)", hour: RATES.openaiMiniTtsMinute * 60 },
-  { name: "[ElevenLabs](/voice-providers/elevenlabs/)", hour: speechHourCost(RATES.elevenlabsFlash) },
+  {
+    name: "[ElevenLabs](/voice-providers/elevenlabs/)",
+    hour: speechHourCost(RATES.elevenlabsFlash),
+  },
   {
     name: "[Cartesia](/voice-providers/cartesia/)",
     hour: speechHourCost(CARTESIA_RANGE.low),
@@ -97,10 +102,7 @@ const HUB_SECTIONS: readonly ArticleSection[] = [
   },
   {
     heading: "What a talking AI agent costs a month",
-    paragraphs: [
-      WORKLOAD,
-      BILL_ADVICE,
-    ],
+    paragraphs: [WORKLOAD, BILL_ADVICE],
     table: voiceWorkloadTable("One bot, 30 minutes of speech and 30 of transcription a day", [
       "macos",
       "selfHosted",
@@ -236,8 +238,7 @@ export const VOICE_PROVIDERS_HUB = {
     },
     {
       question: "Which text to speech API is free?",
-      answer:
-        `macOS voices and open models such as Kokoro are free to run yourself. Among hosted APIs, Google gives ${millions(RATES.googleFreeChars)} Chirp 3 HD characters a month, Azure ${millions(RATES.azureFreeChars)}, ElevenLabs ${count(RATES.elevenlabsPlans.free.credits)} credits for non-commercial use, and Cartesia ${count(RATES.cartesiaFreeCredits)} credits. Fish Audio's free plan covers its app only; its API is pay as you go.`,
+      answer: `macOS voices and open models such as Kokoro are free to run yourself. Among hosted APIs, Google gives ${millions(RATES.googleFreeChars)} Chirp 3 HD characters a month, Azure ${millions(RATES.azureFreeChars)}, ElevenLabs ${count(RATES.elevenlabsPlans.free.credits)} credits for non-commercial use, and Cartesia ${count(RATES.cartesiaFreeCredits)} credits. Fish Audio's free plan covers its app only; its API is pay as you go.`,
     },
     {
       question: "What is the most accurate speech to text API?",
@@ -246,13 +247,11 @@ export const VOICE_PROVIDERS_HUB = {
     },
     {
       question: "Is there an API that can convert audio to text?",
-      answer:
-        `Yes, many: ${listed(Object.keys(TRANSCRIPTION_HOURLY))} all do. Across the models and modes on this page, prices run from about ${usd(TRANSCRIPTION_RANGE.low.price)} an hour (${TRANSCRIPTION_RANGE.low.name}) to ${usd(TRANSCRIPTION_RANGE.high.price)} (${TRANSCRIPTION_RANGE.high.name}). In Rakazo, ElevenLabs, OpenAI, Fish Audio, xAI and self-hosted servers transcribe what you say.`,
+      answer: `Yes, many: ${listed(Object.keys(TRANSCRIPTION_HOURLY))} all do. Across the models and modes on this page, prices run from about ${usd(TRANSCRIPTION_RANGE.low.price)} an hour (${TRANSCRIPTION_RANGE.low.name}) to ${usd(TRANSCRIPTION_RANGE.high.price)} (${TRANSCRIPTION_RANGE.high.name}). In Rakazo, ElevenLabs, OpenAI, Fish Audio, xAI and self-hosted servers transcribe what you say.`,
     },
     {
       question: "Is the Whisper API free?",
-      answer:
-        `No. OpenAI charges ${usd(RATES.openaiWhisperHour)} an hour for Whisper, and it shuts down on February 26, 2027. The Whisper model itself is open source, so you can run it free on your own hardware and connect it to Rakazo as a [self-hosted](/voice-providers/self-hosted/) server.`,
+      answer: `No. OpenAI charges ${usd(RATES.openaiWhisperHour)} an hour for Whisper, and it shuts down on February 26, 2027. The Whisper model itself is open source, so you can run it free on your own hardware and connect it to Rakazo as a [self-hosted](/voice-providers/self-hosted/) server.`,
     },
     {
       question: "Is Deepgram text to speech?",
@@ -310,9 +309,7 @@ export function voiceProviderLink(provider: VoiceProvider): ArticleLink {
 }
 
 export function otherVoiceProviders(provider: VoiceProvider): ArticleLink[] {
-  return VOICE_PROVIDERS.filter((other) => other.slug !== provider.slug).map(
-    voiceProviderLink,
-  );
+  return VOICE_PROVIDERS.filter((other) => other.slug !== provider.slug).map(voiceProviderLink);
 }
 
 /** Markdown twin of a voice provider page, for agents and `.md` requests. */

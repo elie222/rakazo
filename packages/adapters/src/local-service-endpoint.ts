@@ -88,7 +88,7 @@ export function assertLocalServiceBaseUrlSync(baseUrl: string): void {
 
 /**
  * Local mode accepts loopback or a private-network host (Compose DNS, RFC1918, LAN suffixes).
- * Public hosts stay rejected. Private hosts require operator authorization.
+ * Public hosts stay rejected. Loopback and private hosts require operator authorization.
  * Returns the pinned addresses for a hostname, or undefined when the host needs no DNS pin.
  */
 export async function pinLocalServiceHost(
@@ -101,10 +101,10 @@ export async function pinLocalServiceHost(
 ): Promise<ResolvedAddress[] | undefined> {
   assertLocalServiceBaseUrlSync(baseUrl);
   const host = hostnameOf(parseServiceBaseUrl(baseUrl));
-  if (isLocalhostOrLoopbackIp(host)) return undefined;
   if (options.allowPrivateEndpoint !== true) {
     throw egressRefused(host, new MemoryProviderPrivateEndpointRequiredError());
   }
+  if (isLocalhostOrLoopbackIp(host)) return undefined;
   if (ipVersion(host) !== 0) return undefined;
   const resolve = options.resolveHostname ?? defaultResolveHostname;
   let addresses: ResolvedAddress[];

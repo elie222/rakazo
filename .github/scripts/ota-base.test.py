@@ -301,6 +301,10 @@ class OtaBaseStepTests(OtaBaseTestCase):
         response_file.write_text(response)
         (stub / "curl").write_text(
             "#!/usr/bin/env bash\n"
+            'while (( $# )); do\n'
+            '  if [[ "$1" == "--data" ]]; then printf \'%s\' "$2" > "${OTA_CURL_REQUEST_FILE:?}"; break; fi\n'
+            '  shift\n'
+            'done\n'
             '[[ -n "${OTA_CURL_FAIL:-}" ]] && exit 1\n'
             'cat "${OTA_CURL_RESPONSE_FILE:?}"\n'
         )
@@ -309,6 +313,7 @@ class OtaBaseStepTests(OtaBaseTestCase):
             os.environ,
             PATH=f"{stub}:{os.environ['PATH']}",
             OTA_CURL_RESPONSE_FILE=str(response_file),
+            OTA_CURL_REQUEST_FILE=str(stub / "request"),
             EXPO_TOKEN="test-token",
             GITHUB_SHA=self.repo.head,
             GITHUB_STEP_SUMMARY=str(stub / "summary"),
@@ -325,6 +330,9 @@ class OtaBaseStepTests(OtaBaseTestCase):
             stderr=subprocess.DEVNULL,
         )
         publish = (stub / "output").read_text().strip()
+        request = json.loads((stub / "request").read_text())
+        self.assertEqual(request["variables"]["runtime"], RUNTIME)
+        self.assertIn("filter: { runtimeVersions: [$runtime] }", request["query"])
         self.assertIn(publish, ("publish=true", "publish=false"))
         return publish, (stub / "summary").read_text()
 
