@@ -14,6 +14,7 @@ import {
   leaveOrganizationSpaces,
   OrganizationAdminRequiredError,
   OwnedOrganizationHasMembersError,
+  publishOrganizationChange,
   revokeOrganizationMember,
 } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -33,6 +34,13 @@ describePostgres("organization members and invitations (PostgreSQL)", () => {
   let handler: RPCHandler<Record<string, unknown>>;
   const syncSeats = vi.fn(async (_organizationId: string) => undefined);
   const publishRosterChange = vi.fn(async (_change: unknown) => undefined);
+  /** The topics organization signals went to, as the fanout received them. */
+  const organizationSignals: string[] = [];
+  const fanout = {
+    publish: async (topic: string) => {
+      organizationSignals.push(topic);
+    },
+  };
   const sent: TransactionalEmail[] = [];
   const email = {
     send: vi.fn(async (message: TransactionalEmail) => {
@@ -148,6 +156,8 @@ describePostgres("organization members and invitations (PostgreSQL)", () => {
         ...createThreadEvents(prisma),
         notify: vi.fn(async () => undefined),
         publishRosterChange,
+        publishOrganizationChange: (organizationId: string, alsoUserIds?: readonly string[]) =>
+          publishOrganizationChange(prisma, fanout as never, organizationId, alsoUserIds),
       },
       env: {
         agentRuntime: "scripted",
@@ -718,5 +728,46 @@ describePostgres("organization members and invitations (PostgreSQL)", () => {
     await expect(
       system.spaceMember.count({ where: { organizationId, userId: member.id } }),
     ).resolves.toBe(0);
+  });
+
+  it("signals each member, and only them, after every change to the members", async () => {
+    const owner = await person("owner");
+    const alice = await person("alice");
+    const bob = await person("bob");
+    const organizationId = owner.organizationId;
+    const topic = (who: Person) => `organization-changes:${who.id}`;
+    const signalled = async (action: () => Promise<unknown>, expected: Person[]) => {
+      organizationSignals.length = 0;
+      await action();
+      await vi.waitFor(() =>
+        expect([...new Set(organizationSignals)].sort()).toEqual(expected.map(topic).sort()),
+      );
+    };
+
+    // Exactly the members hear each change: never the invitee, nor anyone removed earlier.
+    // Accepting signals the member who joined as well as the ones already there.
+    await signalled(() => join(owner, alice), [owner, alice]);
+    let invitationId = "";
+    await signalled(async () => {
+      invitationId = await invite(owner, organizationId, bob.email);
+    }, [owner, alice]);
+    await signalled(
+      () =>
+        call(owner.actor, "organizations/members/setRole", {
+          organizationId,
+          userId: alice.id,
+          role: "admin",
+        }),
+      [owner, alice],
+    );
+    // Someone removed hears it too, so their own list drops the organization.
+    await signalled(
+      () => call(owner.actor, "organizations/members/remove", { organizationId, userId: alice.id }),
+      [owner, alice],
+    );
+    await signalled(
+      () => call(owner.actor, "organizations/invitations/cancel", { organizationId, invitationId }),
+      [owner],
+    );
   });
 });
