@@ -2,6 +2,8 @@ import type { AgentRunRequest } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
 import { disabledBuiltinToolSet } from "@rakazo/contracts";
 import {
+  BACKGROUND_HELPER_TRIGGER,
+  HELPER_RESULT_TRIGGER,
   isCallClientNonce,
   isOwnerStartedRun,
   messagingChannelPrivacyBlock,
@@ -11,11 +13,16 @@ import {
 import { availableInSpace, parseComputerMode } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { createApprovedEffectReplayQueue } from "./approval-effect.js";
+import { backgroundHelpersAllowed } from "./background-helpers.js";
 import { agentConnectionTools, builtinAgentTools } from "./builtin.tool-definition.js";
 import { USER_CLOUD_AGENT_KEY_PREFIX } from "./cloud-agent-factory.js";
 import { diskNoteInstruction, recordComputerDisk } from "./computer-disk.js";
 import { scheduleComputerSleep } from "./computer-idle.js";
-import { provisionComputer } from "./computer-lifecycle.js";
+import {
+  provisionComputer,
+  screenLeaseIdForRun,
+  waitForRunComputerLease,
+} from "./computer-lifecycle.js";
 import { resolveComputerRunModel } from "./computer-model-settings.js";
 import { teamWorkspaceInstruction } from "./computer-support.prompt.js";
 import { checkpointRunComputerWorkspace } from "./computer-workspace.js";
@@ -241,6 +248,20 @@ export async function prepareRunComputer(
   const earlierFiles = createEarlierFileQueue();
   const runComputer = lazyRunComputer(
     async () => {
+      if (!hold.computerLease) {
+        hold.computerLease = await waitForRunComputerLease(
+          deps.prisma,
+          {
+            computerId: storedComputer.id,
+            botId: bot.id,
+            runId,
+            workerId: hold.workerId,
+            runFence: hold.fence,
+          },
+          context.signal,
+        );
+        context.screenLeaseId = screenLeaseIdForRun(hold.computerLease, runId, hold.fence);
+      }
       getLogger().info("computer.requested");
       const computer = await provisionComputer(deps, storedComputer.id, context, "bot");
       earlierFiles.computerStarted();
@@ -393,16 +414,17 @@ export async function resolveRunCapabilities(
     resolveCheckpointModel,
     storedTurnCheckpoint,
   } = parts.saved;
-  const { bot, messagingChannelRun, nonOwnerChatRun, thread } = parts.records;
+  const { bot, messagingChannelRun, nonOwnerChatRun, conversationRun, conversationThread, origin } =
+    parts.records;
   const { cloudAgentPromise } = parts.connected;
   const { people } = parts.thread;
   const { credential, resolved, runModelId, runModelProvider, scripted, thinkingLevel } =
     parts.model;
   const { graphical, modelSeesImages } = parts.computer;
-  const groupContext = thread.groupId
+  const groupContext = conversationThread.groupId
     ? await loadGroupContext(
         deps.prisma,
-        thread.groupId,
+        conversationThread.groupId,
         { id: bot.id, name: bot.name },
         Boolean(people),
       )
@@ -488,7 +510,10 @@ export async function resolveRunCapabilities(
   // Calls carry no schema flag: the sending client encodes them in the clientNonce.
   const sourceClientNonce = sourceMessage?.clientNonce ?? null;
   // A follow-up can be queued by a bot (group handoffs); only the user's own counts.
-  const ownerStartedRun = isOwnerStartedRun(run.trigger, sourceMessage?.role === "user");
+  const ownerStartedRun = isOwnerStartedRun(
+    conversationRun.trigger,
+    (origin?.sourceMessage ?? sourceMessage)?.role === "user",
+  );
   // A hang-up run has no source message: its own nonce carries the call it closes.
   const callEndRun = run.trigger === "call_end";
   const callClientNonceForRun = callEndRun ? run.clientNonce : sourceClientNonce;
@@ -514,11 +539,11 @@ export async function resolveRunCapabilities(
     Boolean(botEmail) &&
     run.userId === bot.userId &&
     run.trigger !== "bot_message" &&
-    !thread.groupId &&
+    !conversationThread.groupId &&
     !nonOwnerChatRun;
   const userComputerOwnerId = userComputerOwner({
-    trigger: run.trigger,
-    sourceRole: sourceMessage?.role,
+    trigger: conversationRun.trigger,
+    sourceRole: (origin?.sourceMessage ?? sourceMessage)?.role,
     messagingChannelRun: nonOwnerChatRun,
     runUserId: run.userId,
     botUserId: bot.userId,
@@ -608,7 +633,7 @@ export async function selectRunTools(
     nonOwnerChatRun,
     sourceBlocks,
     task,
-    thread,
+    conversationThread,
     ticketBoardEnabled,
     unknownChannelSourceId,
   } = parts.records;
@@ -639,7 +664,7 @@ export async function selectRunTools(
       historyRetrievalEnabled: contextStrategy !== "current" && !unknownChannelSourceId,
       graphicalToolsAllowed,
       pageBrowserAllowed,
-      groupId: thread.groupId,
+      groupId: conversationThread.groupId,
       trigger: run.trigger,
       semanticMemoryEnabled,
       semanticMemoryForgets: Boolean(semanticMemory?.forget),
@@ -663,7 +688,9 @@ export async function selectRunTools(
       emailInbox,
       emailClaimable: Boolean(deps.inboundEmailDomain) && !emailName && run.userId === bot.userId,
       emailSend: Boolean(deps.email),
-    }),
+    }).filter(
+      (tool) => tool.name !== "run_subagent" || backgroundHelpersAllowed({ trigger: run.trigger }),
+    ),
     // Cross-owner agent connections only exist for chat-linked bots. The chat link is its
     // creator's, and a connected agent's messages run as them, so only their runs may
     // open, approve or use one.
@@ -703,6 +730,8 @@ export async function selectRunTools(
   // connectorReadRequiresApproval; approvals from earlier attempts are read back from effects.
   const searchResultUrls = new Set<string>();
   const initiallyTainted =
+    run.trigger === BACKGROUND_HELPER_TRIGGER ||
+    run.trigger === HELPER_RESULT_TRIGGER ||
     !ownerStartedRun ||
     Boolean(turnCheckpoint) ||
     Boolean(checkpointLoadError) ||

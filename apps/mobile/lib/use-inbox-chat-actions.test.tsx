@@ -130,6 +130,8 @@ async function handlers(
       current().runRowAction(kind, chat as MobileBot, action),
     editSectionFromMenu: (...args: Parameters<Actions["editSectionFromMenu"]>) =>
       current().editSectionFromMenu(...args),
+    promptRenameSection: (...args: Parameters<Actions["promptRenameSection"]>) =>
+      current().promptRenameSection(...args),
     updateChat: (
       kind: "bot" | "group",
       chat: Chat,
@@ -360,6 +362,31 @@ it("creates and renames a section from the row menu in the chat's own space", as
       }),
     ],
   ]);
+});
+
+it("renames a section from its heading with the name prompt and reloads the inbox", async () => {
+  const h = await handlers(async () => ({ ok: true }));
+  h.promptRenameSection({ id: "s1", name: "Work" });
+  const options = vi.mocked(promptSectionName).mock.calls.at(-1)![0];
+  expect(options).toMatchObject({ title: "Rename section", defaultValue: "Work" });
+  options.onSubmit("Home");
+  await vi.waitFor(() => expect(h.loadBots).toHaveBeenCalledTimes(1));
+  expect(vi.mocked(rpc).mock.calls.at(-1)!.slice(0, 2)).toEqual([
+    "botSections/update",
+    { sectionId: "s1", name: "Home" },
+  ]);
+});
+
+it("tells the user when a heading rename is refused", async () => {
+  const h = await handlers(async () => {
+    throw new Error("refused");
+  });
+  h.promptRenameSection({ id: "s1", name: "Work" });
+  vi.mocked(promptSectionName).mock.calls.at(-1)![0].onSubmit("Home");
+  await vi.waitFor(() =>
+    expect(session.alert).toHaveBeenCalledWith("Could not rename section", "Try again."),
+  );
+  expect(h.loadBots).not.toHaveBeenCalled();
 });
 
 it("hides an archived chat at the tap and keeps it hidden from a reload until it settles", async () => {

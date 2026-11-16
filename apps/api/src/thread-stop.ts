@@ -15,6 +15,7 @@ import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   appendEventInTransaction,
   clearEndedRunState,
+  conversationRunsWhere,
   createThreadMessageInTransaction,
   expireComputerExecutionLeases,
   THREAD_LOCK_TRANSACTION_OPTIONS,
@@ -77,7 +78,7 @@ export function cancelThreadRuns(
       where: {
         ...(helperMessageId
           ? { ...helpers, sourceMessageId: helperMessageId }
-          : { OR: [{ threadId: target.threadId }, helpers] }),
+          : conversationRunsWhere(target.threadId)),
         status: { in: [...ACTIVE_RUN_STATUSES] },
       },
       data: { status: "cancelled", completedAt: new Date() },

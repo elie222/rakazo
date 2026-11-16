@@ -19,6 +19,57 @@ import {
 } from "./thread-snapshot-events.js";
 
 describe("thread event reduction", () => {
+  it("keeps a helper approval answerable and clears its wait when answered", () => {
+    const initial = snapshot([]);
+    const created = reduceThreadSnapshot(initial, {
+      type: "thread.message.created",
+      threadId: initial.threadId,
+      runId: "helper-1",
+      payload: {
+        messageId: "helper-ask",
+        role: "bot",
+        blocks: [
+          { kind: "ask", text: "Review action", status: "pending", approvalEffectId: "effect" },
+        ],
+      },
+    });
+    const waiting = reduceThreadSnapshot(created, {
+      type: "run.waiting_input",
+      threadId: initial.threadId,
+      runId: "helper-1",
+      payload: { userId: "owner", trigger: "helper" },
+    });
+    expect(answerableAskMessageIds(waiting)).toEqual(new Set(["helper-ask"]));
+    expect(waiting?.activeRuns?.[0]?.trigger).toBe("helper");
+    const started = reduceThreadSnapshot(waiting, {
+      type: "run.started",
+      threadId: initial.threadId,
+      runId: "parent-1",
+      payload: { trigger: "user" },
+    });
+    expect(answerableAskMessageIds(started)).toEqual(new Set(["helper-ask"]));
+    const answered = reduceThreadSnapshot(started, {
+      type: "thread.message.updated",
+      threadId: initial.threadId,
+      runId: "helper-1",
+      payload: {
+        messageId: "helper-ask",
+        blocks: [
+          {
+            kind: "ask",
+            text: "Review action",
+            status: "answered",
+            answer: "allow",
+            approvalEffectId: "effect",
+          },
+        ],
+      },
+    });
+    expect(answerableAskMessageIds(answered).size).toBe(0);
+    expect(answered?.activeRuns?.map((run) => run.id)).toEqual(["parent-1"]);
+    expect(answered?.run?.id).toBe("parent-1");
+  });
+
   it("shows a committed direct send as queued before its snapshot refresh returns", () => {
     const initial = snapshot([message("user-1", [{ kind: "text", text: "Continue" }], 4)]);
 

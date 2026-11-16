@@ -606,7 +606,10 @@ function SpaceShell() {
       ? snapshot
       : null;
   const currentRuns = activeThreadRuns(activeSnapshot);
-  const answerableAskIds = useMemo(() => answerableAskMessageIds(activeSnapshot), [activeSnapshot]);
+  const answerableAskIds = useMemo(
+    () => answerableAskMessageIds(activeSnapshot, userId),
+    [activeSnapshot, userId],
+  );
   const dismissableAskIds = useMemo(
     () => dismissableAskMessageIds(activeSnapshot, userId),
     [activeSnapshot, userId],

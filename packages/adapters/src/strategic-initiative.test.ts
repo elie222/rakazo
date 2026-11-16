@@ -233,7 +233,7 @@ describe("reconcileStrategicInitiatives", () => {
                   status: {
                     in: ["queued", "leased", "running", "waiting_input", "waiting_takeover"],
                   },
-                  trigger: { not: "helper" },
+                  OR: expect.arrayContaining([{ trigger: { not: "helper" } }]),
                 },
               ]),
             },
