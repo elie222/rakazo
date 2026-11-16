@@ -470,44 +470,55 @@ export function createUpdaterApp(
     };
   }
 
-  /** Never infer running code from a moving tag in .env: inspect each running API instead. */
-  async function requireStableRunningImage(releases: readonly RemoteRelease[]) {
-    const containers = await run(
-      "docker",
-      [
-        "ps",
-        "--filter",
-        `label=com.docker.compose.project=${config.projectName}`,
-        "--filter",
-        "label=com.docker.compose.service=api",
-        "--format",
-        "{{.ID}}",
-      ],
-      { cwd: config.deployDir, timeoutMs: DEFAULT_TIMEOUT_MS },
-    );
-    const ids = containers.stdout.trim().split(/\s+/);
-    if (!containers.ok || ids.length === 0 || ids.some((id) => !/^[0-9a-f]{12,64}$/.test(id))) {
-      throw new UpdateRefused(
-        "Could not identify the running API; scheduled updates were refused.",
+  /** Check all application processes; computer is a completed pull/build stub, not a runtime. */
+  async function requireStableRunningImages(releases: readonly RemoteRelease[]) {
+    const commits: Array<string | null> = [];
+    for (const service of config.updateServices.filter((service) => service !== "computer")) {
+      const containers = await run(
+        "docker",
+        [
+          "ps",
+          "--filter",
+          `label=com.docker.compose.project=${config.projectName}`,
+          "--filter",
+          `label=com.docker.compose.service=${service}`,
+          "--format",
+          "{{.ID}}",
+        ],
+        { cwd: config.deployDir, timeoutMs: DEFAULT_TIMEOUT_MS },
       );
-    }
-    const commits: string[] = [];
-    for (const id of ids) {
-      const source = await run("docker", ["exec", id, "node", "-p", "process.env.GIT_SHA"], {
-        cwd: config.deployDir,
-        timeoutMs: DEFAULT_TIMEOUT_MS,
-      });
-      const commit = source.stdout.trim();
-      if (
-        !source.ok ||
-        !isGitCommit(commit) ||
-        selectLatestRelease(releases.filter((release) => release.commit === commit)) === null
-      ) {
+      const ids = containers.stdout.trim() === "" ? [] : containers.stdout.trim().split(/\s+/);
+      if (!containers.ok || ids.some((id) => !/^[0-9a-f]{12,64}$/.test(id))) {
         throw new UpdateRefused(
-          "The running API could not be verified as a published stable release. Scheduled updates were refused to avoid downgrading an edge or unknown build. Review release notes and migrate to stable manually first.",
+          `Could not identify the running ${service}; scheduled updates were refused.`,
         );
       }
-      commits.push(commit);
+      if (ids.length === 0) {
+        if (service === "api") {
+          throw new UpdateRefused(
+            "Could not identify the running API; scheduled updates were refused.",
+          );
+        }
+        // A stable API establishes the source baseline; missing peer services need reconciliation.
+        commits.push(null);
+      }
+      for (const id of ids) {
+        const source = await run("docker", ["exec", id, "node", "-p", "process.env.GIT_SHA"], {
+          cwd: config.deployDir,
+          timeoutMs: DEFAULT_TIMEOUT_MS,
+        });
+        const commit = source.stdout.trim();
+        if (
+          !source.ok ||
+          !isGitCommit(commit) ||
+          selectLatestRelease(releases.filter((release) => release.commit === commit)) === null
+        ) {
+          throw new UpdateRefused(
+            `The running ${service} could not be verified as a published stable release. Scheduled updates were refused to avoid downgrading an edge or unknown build. Review release notes and migrate to stable manually first.`,
+          );
+        }
+        commits.push(commit);
+      }
     }
     return commits;
   }
@@ -576,7 +587,7 @@ export function createUpdaterApp(
     if (decision.strategy === "pull") {
       const target = await resolveRelease(request.repoUrl);
       if (scheduled) {
-        const running = await requireStableRunningImage(target.releases);
+        const running = await requireStableRunningImages(target.releases);
         if (running.every((commit) => commit === target.commit)) {
           return rememberRun(upToDateRecord(request, tags.currentTag, "pull", target.commit));
         }
@@ -584,7 +595,7 @@ export function createUpdaterApp(
       targetTag = target.imageTag;
       targetCommit = target.commit;
       releaseTag = target.releaseTag;
-      if (targetTag === tags.currentTag) {
+      if (!scheduled && targetTag === tags.currentTag) {
         return rememberRun(upToDateRecord(request, targetTag, "pull", targetCommit));
       }
     } else {
@@ -750,7 +761,8 @@ export function createUpdaterApp(
         await writeEnvAssignments({
           ...missingSecretAssignments(await readEnvFile()),
           [IMAGE_TAG_ENV]: toTag,
-          [PREVIOUS_IMAGE_TAG_ENV]: input.fromTag,
+          [PREVIOUS_IMAGE_TAG_ENV]:
+            input.fromTag === toTag ? (input.originalPreviousTag ?? input.fromTag) : input.fromTag,
         });
       } catch {
         record.error = "Could not persist the target image tag in the deployment environment.";

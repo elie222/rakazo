@@ -165,6 +165,53 @@ describe("updater HTTP surface", () => {
     expect(deployments()).toHaveLength(deployed);
   });
 
+  it.each(["worker", "web", "supervisor", "missing-worker"])(
+    "reconciles %s even when the API and environment are already current",
+    async (outdated) => {
+      const env = `RAKAZO_IMAGE_TAG=sha-${targetCommit}\nRAKAZO_IMAGE_TAG_PREVIOUS=sha-${currentCommit}\n`;
+      const fixture = await deployment(env);
+      fixture.config.updateServices = ["api", "worker", "web", "supervisor", "computer"];
+      const ids = {
+        api: "a".repeat(12),
+        worker: "b".repeat(12),
+        web: "c".repeat(12),
+        supervisor: "d".repeat(12),
+      };
+      let reconciled = false;
+      const calls: string[][] = [];
+      const run: UpdaterCommandRunner = async (command, args) => {
+        calls.push(args);
+        if (command === "git")
+          return ok(`${currentCommit}\trefs/tags/v1.0.0\n${targetCommit}\trefs/tags/v1.1.0\n`);
+        if (args[0] === "ps") {
+          const service = Object.keys(ids).find((name) =>
+            args.includes(`label=com.docker.compose.service=${name}`),
+          );
+          if (!service) throw new Error("Only application runtimes should be inspected");
+          if (outdated === "missing-worker" && service === "worker" && !reconciled) return ok();
+          return ok(ids[service as keyof typeof ids]);
+        }
+        if (args[0] === "exec") {
+          const old = outdated === "missing-worker" ? "worker" : outdated;
+          return ok(
+            !reconciled && args[1] === ids[old as keyof typeof ids] ? currentCommit : targetCommit,
+          );
+        }
+        if (args.includes("up")) reconciled = true;
+        return ok();
+      };
+      const subject = createUpdaterApp(fixture.config, { run });
+      await applyStableUpdate(subject);
+      expect(reconciled).toBe(true);
+      expect(calls.filter((args) => args.includes("up"))).toHaveLength(1);
+      expect(await readFile(fixture.config.envFile, "utf8")).toContain(
+        `RAKAZO_IMAGE_TAG_PREVIOUS=sha-${currentCommit}`,
+      );
+      await applyStableUpdate(subject);
+      expect(calls.filter((args) => args.includes("up"))).toHaveLength(1);
+    },
+  );
+
   it.each(["latest", "local"])("accepts a current stable build stamped under %s", async (tag) => {
     const fixture = await deployment(`RAKAZO_IMAGE_TAG=${tag}\n`);
     fixture.config.autoUpdateIntervalMs = 6 * 3_600_000;

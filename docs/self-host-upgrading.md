@@ -346,8 +346,10 @@ operation reverses database migrations.
 Application updates do not replace the updater itself, Compose files, Postgres major versions or
 existing bot computer containers. Review release notes for changes requiring manual setup and
 keep database backups: application-image recovery never reverses database migrations.
-Scheduling verifies the source commit of every running API against the official stable release
-tags before pulling or recreating anything. An `edge`, prerelease or unknown build cannot be
+Scheduling verifies the source commit of every running application service in the update plan
+against the official stable release tags before pulling or recreating anything. A current API
+alone is insufficient: outdated or missing peer services are reconciled, preserving the previous
+release pin when the selected release has not changed. An `edge`, prerelease or unknown build cannot be
 unattendedly replaced by an older stable release, even if `.env` was edited to say `latest`.
 Existing edge installations must review release notes and migrate to a compatible stable release
 manually before scheduling can proceed. Cloud CI deployment triggers remain unchanged.
