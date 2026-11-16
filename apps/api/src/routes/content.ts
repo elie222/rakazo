@@ -276,14 +276,17 @@ export function contentRoutes(ctx: RouterContext) {
           BOOL_AND(u."costUsd" IS NOT NULL) AS "costComplete"
         `;
 
-        const [totalsRows, modelRows, timeRows, botRows, modelOptionRows] = await Promise.all([
-          deps.prisma.$queryRaw<TotalsRow[]>(Prisma.sql`
+        const [totalsRows, modelRows, timeRows, botRows, modelOptionRows] =
+          await deps.prisma.$transaction(
+            (tx) =>
+              Promise.all([
+                tx.$queryRaw<TotalsRow[]>(Prisma.sql`
             SELECT ${totalsSelect}
             FROM usage_records u
             WHERE u."spaceId" = ${where.spaceId} AND u."userId" = ${where.userId}
               ${rangeFilter} ${modelFilter} ${botFilter}
           `),
-          deps.prisma.$queryRaw<ModelRow[]>(Prisma.sql`
+                tx.$queryRaw<ModelRow[]>(Prisma.sql`
             SELECT u.provider, u.model, ${totalsSelect}
             FROM usage_records u
             WHERE u."spaceId" = ${where.spaceId} AND u."userId" = ${where.userId}
@@ -291,7 +294,7 @@ export function contentRoutes(ctx: RouterContext) {
             GROUP BY u.provider, u.model
             ORDER BY COALESCE(SUM(u."totalTokens"), 0) DESC, COUNT(*) DESC
           `),
-          deps.prisma.$queryRaw<TimeRow[]>(Prisma.sql`
+                tx.$queryRaw<TimeRow[]>(Prisma.sql`
             SELECT to_char(u."createdAt" AT TIME ZONE 'UTC' AT TIME ZONE ${timezone}, 'YYYY-MM-DD') AS bucket,
               COUNT(*)::bigint AS "modelCalls",
               SUM(u."inputTokens")::double precision AS "inputTokens",
@@ -308,8 +311,8 @@ export function contentRoutes(ctx: RouterContext) {
             GROUP BY bucket
             ORDER BY bucket ASC
           `),
-          // The selectors list everything used in the range, so any bot/model pair stays selectable.
-          deps.prisma.$queryRaw<BotRow[]>(Prisma.sql`
+                // The selectors list everything used in the range, so any bot/model pair stays selectable.
+                tx.$queryRaw<BotRow[]>(Prisma.sql`
             SELECT u."botId" AS "botId",
               COALESCE(b.name, bd.name) AS name,
               (b.id IS NULL) AS deleted,
@@ -323,7 +326,7 @@ export function contentRoutes(ctx: RouterContext) {
             GROUP BY u."botId", b.id, b.name, bd.name
             ORDER BY COALESCE(SUM(u."totalTokens"), 0) DESC, COUNT(*) DESC
           `),
-          deps.prisma.$queryRaw<{ provider: string; model: string }[]>(Prisma.sql`
+                tx.$queryRaw<{ provider: string; model: string }[]>(Prisma.sql`
             SELECT u.provider, u.model
             FROM usage_records u
             WHERE u."spaceId" = ${where.spaceId} AND u."userId" = ${where.userId}
@@ -331,7 +334,9 @@ export function contentRoutes(ctx: RouterContext) {
             GROUP BY u.provider, u.model
             ORDER BY COALESCE(SUM(u."totalTokens"), 0) DESC, COUNT(*) DESC
           `),
-        ]);
+              ]),
+            { isolationLevel: "RepeatableRead" },
+          );
 
         const rawTotals =
           totalsRows[0] ??
