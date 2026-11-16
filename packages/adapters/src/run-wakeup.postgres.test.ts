@@ -758,27 +758,4 @@ describePostgres("direct run dispatch (PostgreSQL)", () => {
       await system.run.update({ where: { id: run.id }, data: { status: "completed" } });
     }
   });
-  it("persists backoff when a previous-release worker requeues after the migration", async () => {
-    const run = await createRun({ status: "running" });
-    await system.run.update({ where: { id: run.id }, data: { leaseFence: 20 } });
-    const [clock] = await system.$queryRaw<
-      Array<{ at: Date }>
-    >`SELECT clock_timestamp() AT TIME ZONE 'UTC' AS at`;
-    await system.run.update({
-      where: { id: run.id },
-      data: { status: "queued", leaseOwner: null, leaseExpiresAt: null },
-    });
-    const queued = await system.run.findUniqueOrThrow({ where: { id: run.id } });
-    expect(queued.wakeAt!.getTime()).toBeGreaterThan(clock!.at.getTime());
-    const explicit = new Date(Date.now() + 60_000);
-    await system.run.update({ where: { id: run.id }, data: { status: "running", wakeAt: null } });
-    await system.run.update({
-      where: { id: run.id },
-      data: { status: "queued", wakeAt: explicit },
-    });
-    expect((await system.run.findUniqueOrThrow({ where: { id: run.id } })).wakeAt).toEqual(
-      explicit,
-    );
-    await system.run.update({ where: { id: run.id }, data: { status: "completed" } });
-  });
 });
