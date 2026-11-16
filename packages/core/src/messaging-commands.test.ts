@@ -1,3 +1,4 @@
+import { expectLinearTime } from "@rakazo/contracts/test-timing";
 import { describe, expect, it } from "vitest";
 import { parseMessagingCommand } from "./messaging-commands.js";
 
@@ -13,9 +14,7 @@ describe("parseMessagingCommand", () => {
   });
 
   it("stays fast on a long run of punctuation", () => {
-    const started = performance.now();
-    expect(parseMessagingCommand(`${"!".repeat(100_000)}a`)).toBeNull();
-    expect(performance.now() - started).toBeLessThan(500);
+    expectLinearTime(() => expect(parseMessagingCommand(`${"!".repeat(200_000)}a`)).toBeNull());
   });
 
   it("reads a bare stop or stop now, ignoring case, spacing and closing punctuation", () => {

@@ -1,3 +1,4 @@
+import { expectLinearTime } from "@rakazo/contracts/test-timing";
 import { describe, expect, it } from "vitest";
 import { hostSite, normalizedHttpUrl, registrableDomain, sitesInText, urlSite } from "./egress.js";
 
@@ -62,9 +63,7 @@ describe("sitesInText", () => {
   });
 
   it("stays fast on a link full of punctuation", () => {
-    const started = performance.now();
-    sitesInText(`https://example.com/${"!".repeat(100_000)}a`);
-    expect(performance.now() - started).toBeLessThan(500);
+    expectLinearTime(() => sitesInText(`https://example.com/${"!".repeat(200_000)}a`));
   });
 
   it("finds links and bare domains the person wrote", () => {

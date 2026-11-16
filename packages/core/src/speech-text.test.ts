@@ -1,3 +1,4 @@
+import { expectLinearTime } from "@rakazo/contracts/test-timing";
 import fc from "fast-check";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -41,10 +42,9 @@ describe("speakable", () => {
   it("says the file, not the path to it", () => {
     expect(speakable("I changed server/drivers/acp/core.ts today")).toBe("I changed core.ts today");
     expect(speakable("open @scope/pkg/src/index.ts, ok")).toBe("open index.ts, ok");
-    const run = "a/".repeat(20_000);
-    const started = performance.now();
-    expect(speakable(run)).toBe(run);
-    expect(performance.now() - started).toBeLessThan(500);
+    const run = "a/".repeat(100_000);
+    expectLinearTime(() => expect(speakable(run)).toBe(run));
+    expect(speakable(`see ${"a/".repeat(300)}file.ts now`)).toBe("see file.ts now");
   });
 
   it("keeps short inline code but not long snippets", () => {

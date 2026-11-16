@@ -8,6 +8,7 @@ import {
   withConnectionName,
 } from "./model-backups.js";
 import type { ModelBackupChoice, ModelCatalogEntry, ModelCredential } from "./model-connections.js";
+import { expectLinearTime } from "./timing.test-support.js";
 
 const catalog: ModelCatalogEntry[] = [
   {
@@ -397,8 +398,6 @@ describe("withConnectionName", () => {
   });
 
   it("stays fast on a long name full of brackets", () => {
-    const started = performance.now();
-    withConnectionName("M", `a (${"a (".repeat(50_000)}`);
-    expect(performance.now() - started).toBeLessThan(500);
+    expectLinearTime(() => withConnectionName("M", `a (${"a (".repeat(100_000)}`));
   });
 });

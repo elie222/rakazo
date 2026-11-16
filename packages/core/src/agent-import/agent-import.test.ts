@@ -1,5 +1,6 @@
 import type { AgentImportFile } from "@rakazo/contracts";
 import { BOT_INSTRUCTIONS_MAX_LENGTH } from "@rakazo/contracts";
+import { expectLinearTime } from "@rakazo/contracts/test-timing";
 import { describe, expect, it } from "vitest";
 import { parseSkillMd } from "../agent-skill.js";
 import {
@@ -1009,14 +1010,12 @@ describe("dotenv parsing", () => {
   });
 
   it.each([
-    `A=${"\t".repeat(50_000)}x`,
-    `A='${"'#".repeat(50_000)}x`,
-    `A="${'"#'.repeat(50_000)}x`,
-    `A=x${"\t".repeat(50_000)}x`,
+    `A=${"\t".repeat(200_000)}x`,
+    `A='${"'#".repeat(100_000)}x`,
+    `A="${'"#'.repeat(100_000)}x`,
+    `A=x${"\t".repeat(200_000)}x`,
   ])("reads a long adversarial line quickly", (line) => {
-    const started = performance.now();
-    parseDotEnv(line);
-    expect(performance.now() - started).toBeLessThan(500);
+    expectLinearTime(() => parseDotEnv(line));
   });
 });
 
@@ -1028,10 +1027,8 @@ describe("renameSkillMd", () => {
   });
 
   it("stays fast on a long indented block", () => {
-    const content = `---\nname: >\n${"\t".repeat(100_000)}\u2028\n---\n`;
-    const started = performance.now();
-    renameSkillMd(content, "New");
-    expect(performance.now() - started).toBeLessThan(500);
+    const content = `---\nname: >\n${"\t".repeat(200_000)}\u2028\n---\n`;
+    expectLinearTime(() => renameSkillMd(content, "New"));
   });
 });
 

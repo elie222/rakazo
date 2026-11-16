@@ -10,6 +10,7 @@ import {
   parseCardExpiry,
   VaultPutInput,
 } from "./bot-secrets.js";
+import { expectLinearTime } from "./timing.test-support.js";
 import {
   otherSiteOrigin,
   otherSitesText,
@@ -56,9 +57,7 @@ describe("cards", () => {
   });
 
   it("rejects a long run of spaces quickly", () => {
-    const started = performance.now();
-    expect(parseCardExpiry(`1${" ".repeat(100_000)}x`)).toBeUndefined();
-    expect(performance.now() - started).toBeLessThan(500);
+    expectLinearTime(() => expect(parseCardExpiry(`1${" ".repeat(200_000)}x`)).toBeUndefined());
   });
 });
 

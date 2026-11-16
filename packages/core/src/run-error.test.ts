@@ -4,6 +4,7 @@ import {
   COMPUTER_RATE_LIMIT_ERROR,
   COMPUTER_UNRESPONSIVE_ERROR,
 } from "@rakazo/contracts";
+import { expectLinearTime } from "@rakazo/contracts/test-timing";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   APPROVED_ACTION_NOT_RUN_ERROR,
@@ -1009,7 +1010,7 @@ it("reads a reset date after spacing and a separator, and stays fast on long spa
   ).toMatchObject({
     resetAt: Date.parse("2099-01-01"),
   });
-  const started = performance.now();
-  normalizeRunError(`429: weekly limit reached, resets${" \t".repeat(50_000)}x`);
-  expect(performance.now() - started).toBeLessThan(500);
+  expectLinearTime(() =>
+    normalizeRunError(`429: weekly limit reached, resets${" \t".repeat(100_000)}x`),
+  );
 });
