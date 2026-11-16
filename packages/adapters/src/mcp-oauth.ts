@@ -766,7 +766,9 @@ export class StoredMcpOAuthProvider implements OAuthClientProvider {
       if (!this.options.onAuthorization) {
         await this.invalidateCredentials("tokens");
       }
-      throw error;
+      throw new McpOAuthRefusedError(error instanceof Error ? error.message : String(error), {
+        cause: error,
+      });
     }
     const extra = this.material.oauthClient?.authorization_params;
     if (extra) {
@@ -777,7 +779,9 @@ export class StoredMcpOAuthProvider implements OAuthClientProvider {
     // Configured parameters are added after validation; keep the final URL within bounds too.
     if (authorizationUrl.href.length > MAX_AUTHORIZATION_URL_LENGTH) {
       if (!this.options.onAuthorization) await this.invalidateCredentials("tokens");
-      throw new Error(`MCP authorization URL exceeds ${MAX_AUTHORIZATION_URL_LENGTH} characters`);
+      throw new McpOAuthRefusedError(
+        `MCP authorization URL exceeds ${MAX_AUTHORIZATION_URL_LENGTH} characters`,
+      );
     }
     this.authorizationUrl = authorizationUrl;
     if (this.options.onAuthorization) {
@@ -941,8 +945,12 @@ function oauthFetch(
       const sdk = sanitizeConnectorError(error, secrets);
       const surfaced = rejection ? formatOAuthRejection(rejection, sdk, secrets) : undefined;
       getLogger().warn(`${message}: ${surfaced ?? sdk}`);
-      // Only a server's own answer is a refusal: a failure after a successful answer is ours.
-      if (!lastAnswerFailed && !(error instanceof OAuthError))
+      // Only a server's own answer, or a sign-in link we refused, is a refusal; anything else after a successful answer is ours.
+      if (
+        !lastAnswerFailed &&
+        !(error instanceof OAuthError) &&
+        !(error instanceof McpOAuthRefusedError)
+      )
         return new Error(`${message}: ${sdk}`);
       return new McpOAuthRefusedError(surfaced ? `${message}: ${surfaced}` : message, {
         cause: error,

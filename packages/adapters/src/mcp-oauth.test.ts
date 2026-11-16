@@ -3349,6 +3349,33 @@ describe("MCP OAuth", () => {
       expect(url.searchParams.get("client_id")).toBe("registered-client");
     });
 
+    it.each([
+      ["the issued link is refused", { scope: "x".repeat(MAX_AUTHORIZATION_URL_LENGTH) }],
+      [
+        "the configured parameters push the link past the limit",
+        { authorization_params: `login_hint=${"y".repeat(MAX_AUTHORIZATION_URL_LENGTH)}` },
+      ],
+    ])("answers a sign-in link we refuse as a refusal when %s", async (_name, client) => {
+      nonRegisteringAuthServer(() => undefined, { challenge: false });
+      const { broker } = brokerWithMaterial({ oauthClient: { ...oauthClient, ...client } });
+
+      const error = await broker
+        .begin({
+          serverId: "server-1",
+          spaceId: "workspace-1",
+          userId: "user-1",
+          redirectUri: "https://app.example.test/mcp/oauth/callback",
+        })
+        .then(
+          () => null,
+          (caught: unknown) => caught,
+        );
+
+      expect(error).toBeInstanceOf(McpOAuthRefusedError);
+      expect((error as Error).message).toBe("Could not start MCP OAuth");
+      expect((error as Error).cause).toBeInstanceOf(McpOAuthRefusedError);
+    });
+
     it("treats the client secret as a credential that must never be shown", () => {
       expect(oauthMaterialSecrets({ oauthClient })).toContain("registered-secret");
       expect(oauthMaterialSecrets({ oauthClient })).not.toContain("registered-client");
