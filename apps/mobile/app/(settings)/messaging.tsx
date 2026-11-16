@@ -15,6 +15,7 @@ import { MenuPicker, MenuPickerMenu } from "../../components/menu-picker";
 import { NativeActionButton } from "../../components/native-action-button";
 import { NativeSymbol } from "../../components/native-symbol";
 import { SettingsGroup, SettingsRow } from "../../components/settings-group";
+import { selectedSpaceId, subscribeSpaceSelection } from "../../lib/api";
 import { mobileTokens } from "../../lib/appearance";
 import { native, useThemedStyles } from "../../lib/native";
 import type { SaveSend } from "../../lib/query";
@@ -34,6 +35,8 @@ export default function MessagingSettings() {
   const session = useSyncExternalStore(subscribeSessionGeneration, currentSessionGeneration);
   const linkGuard = useMemo(() => createMessagingLinkGuard(linkScope, session), [session]);
   const issuingLink = useSyncExternalStore(linkGuard.subscribe, linkGuard.isPending);
+  // Re-rendered on a Space switch, so the reads below are for the Space now selected.
+  useSyncExternalStore(subscribeSpaceSelection, selectedSpaceId);
   // Requests are answered from what is on screen, so each visit reads everything afresh.
   const definitions = [
     formRead(rpcQuery("bots/list")),

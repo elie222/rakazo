@@ -21,6 +21,7 @@ vi.mock("./api", () => ({
   rpc: vi.fn(),
   currentApiBase: () => "https://app.example.test",
   selectedSpaceId: () => "space-1",
+  subscribeSpaceSelection: () => () => undefined,
   captureApiRequestContext: async () => ({
     apiBase: "https://app.example.test",
     sessionGeneration: session.generation,
