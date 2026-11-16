@@ -1,7 +1,7 @@
 import type { JobPublisher, JobTransaction } from "@rakazo/adapter-kit";
 import { billingSeatsJob, billingSeatsJobKey } from "@rakazo/adapter-kit";
 import type { PrismaClient, SeatChange } from "@rakazo/db";
-import { whileSeatsAre } from "@rakazo/db";
+import { settleSeatCount } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
 import type { BillingService } from "./billing.js";
 
@@ -38,9 +38,10 @@ export async function recordSeatChangeAhead(
 }
 
 /**
- * After the change commits: recount now. Success removes the backup unless membership changed
- * again since the count; a failure is logged and hands the recount to the backup at once.
- * Never rejects, so the seat count cannot change the caller's outcome.
+ * After the change commits: recount now. Success removes the backup while the count still holds.
+ * When membership moved meanwhile, or the recount failed, the backup runs now instead, since a
+ * recount racing this one may already have removed it. Never rejects, so the seat count cannot
+ * change the caller's outcome.
  */
 export async function syncSeatsAfterChange(
   deps: SeatSyncDeps,
@@ -59,9 +60,11 @@ export async function syncSeatsAfterChange(
     return;
   }
   await bestEffort(
-    "delete the seat count's backup job",
-    whileSeatsAre(deps.prisma, organizationId, seats, (tx) =>
-      deps.jobs.cancelIn(tx, billingSeatsJobKey(organizationId)),
+    "settle the seat count's backup job",
+    settleSeatCount(deps.prisma, organizationId, seats, (tx, current) =>
+      current
+        ? deps.jobs.cancelIn(tx, billingSeatsJobKey(organizationId))
+        : deps.jobs.enqueueIn(tx, billingSeatsJob(organizationId)),
     ),
   );
 }

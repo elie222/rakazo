@@ -321,7 +321,7 @@ describePostgres("organization members and invitations (PostgreSQL)", () => {
     );
   });
 
-  it("leaves the seat count to its backup when the recount fails or is overtaken", async () => {
+  it("runs the seat count's backup now when the recount fails or is overtaken", async () => {
     const owner = await person("owner");
     const failed = await person("failed");
     const overtaken = await person("overtaken");
@@ -342,7 +342,9 @@ describePostgres("organization members and invitations (PostgreSQL)", () => {
     });
     expect(cancelJobIn).not.toHaveBeenCalledWith(expect.anything(), key);
 
-    // A count taken before another change landed leaves that change's backup in place.
+    // A count taken before another change landed runs the backup now, in case a racing
+    // recount removed it.
+    recordJob.mockClear();
     syncSeats.mockResolvedValueOnce(2);
     const second = await invite(owner, organizationId, overtaken.email);
     expect(
@@ -350,6 +352,11 @@ describePostgres("organization members and invitations (PostgreSQL)", () => {
         .status,
     ).toBe(200);
     expect(cancelJobIn).not.toHaveBeenCalledWith(expect.anything(), key);
+    expect(recordJob).toHaveBeenLastCalledWith(expect.anything(), {
+      name: "billing.seats",
+      payload: { organizationId },
+      replaceKey: key,
+    });
   });
 
   it("refuses expired, cancelled and unverified acceptances", async () => {

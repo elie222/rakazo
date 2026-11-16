@@ -1261,7 +1261,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         await stopHomeRetention?.();
         await stopOrganizationDeletions();
         await reconciler?.stop();
-        await apiJobHost?.stop();
+        await bestEffort("stop the billing job host", apiJobHost?.stop());
         await oauthTokenUpgrade;
         await mcpArgsMove;
         await runsStopped;

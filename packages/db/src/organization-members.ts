@@ -601,20 +601,19 @@ export async function revokeOrganizationMember(
 }
 
 /**
- * Runs `settle` only while the organization still has `seats` billable members, holding the lock
- * every join and removal takes. A change that landed after `seats` was counted keeps its backup.
- * `null` means the organization has no seat billing, which no change alters.
+ * Runs `settle` under the lock every join and removal takes, saying whether the organization
+ * still has the `seats` billable members a recount billed. `null` means the organization has no
+ * seat billing, which no change alters.
  */
-export async function whileSeatsAre(
+export async function settleSeatCount(
   prisma: PrismaClient,
   organizationId: string,
   seats: number | null,
-  settle: (tx: Prisma.TransactionClient) => Promise<void>,
+  settle: (tx: Prisma.TransactionClient, current: boolean) => Promise<void>,
 ): Promise<void> {
   await prisma.$transaction(async (tx) => {
     await lockOrganizationMembers(tx, organizationId);
-    if (seats === null || (await organizationSeatCount(tx, organizationId)) === seats)
-      await settle(tx);
+    await settle(tx, seats === null || (await organizationSeatCount(tx, organizationId)) === seats);
   });
 }
 
