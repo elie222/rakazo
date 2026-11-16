@@ -53,7 +53,8 @@ const root = new URL("../../", import.meta.url);
 const features = pickFeatures(parseFeatures(readFileSync(new URL("PRODUCT.md", root), "utf8")), {
   count: workers,
   names: (env.QA_FEATURES ?? "")
-    .split(",")
+    // Section names can contain commas ("Connections, skills, and plugins").
+    .split(/[;\n]/)
     .map((s) => s.trim())
     .filter(Boolean),
   week: isoWeek(new Date()),
@@ -249,7 +250,10 @@ const lines = [
   "",
   "| Feature | Bugs | Stopped |",
   "| --- | --- | --- |",
-  ...results.map((r) => `| ${r.feature} | ${r.findings.length} | ${r.stopped} |`),
+  ...results.map(
+    (r) =>
+      `| ${r.feature} | ${r.findings.length} | ${String(r.stopped).replace(/\s+/g, " ").replaceAll("|", "\\|")} |`,
+  ),
 ];
 writeFileSync(join(outDir, "summary.md"), `${lines.join("\n")}\n`);
 console.log(lines.join("\n"));

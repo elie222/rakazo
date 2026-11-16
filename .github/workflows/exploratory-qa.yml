@@ -32,7 +32,7 @@ on:
         required: false
         default: "15"
       features:
-        description: Comma-separated PRODUCT.md section names; empty picks this week's rotation
+        description: PRODUCT.md section names separated by semicolons; empty picks this week's rotation
         required: false
         default: ""
 
