@@ -2683,6 +2683,17 @@ describe("PiOAuthLogins across API processes", () => {
     await a.logins.abortAll();
   });
 
+  it("refuses to start a device-code sign-in whose lease cannot be taken", async () => {
+    const { rows, prisma, store } = handoffStore();
+    const a = deviceCodeProcess(store);
+    prisma.$queryRaw.mockRejectedValueOnce(new Error("database unavailable"));
+    await expect(
+      a.logins.begin({ ...member, provider: CHATGPT_OAUTH_PROVIDER, persist: keep }),
+    ).rejects.toThrow(/Could not save/);
+    expect(a.stopped).toBe(true);
+    expect(rows.size).toBe(0);
+  });
+
   it("stops a device-code sign-in cancelled on another process", async () => {
     vi.useFakeTimers();
     const { rows, store } = handoffStore();

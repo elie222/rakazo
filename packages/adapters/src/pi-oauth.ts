@@ -842,7 +842,10 @@ export class PiOAuthLogins<T = unknown> {
       });
     });
     session.stored = true;
-    if (mode === "device-code") await this.holdLease(session);
+    if (mode === "device-code" && !(await this.holdLease(session))) {
+      await this.forgetRow(session);
+      throw new ModelSignInError(SIGN_IN_SAVE_FAILED);
+    }
     // Cancelled, replaced or disconnected while saving: no process may resume it.
     if (this.pending.get(session.id) !== session) await this.forgetRow(session);
   }
