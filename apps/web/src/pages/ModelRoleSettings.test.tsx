@@ -166,6 +166,13 @@ describe("shared role editor", () => {
     expect(saved.primary).toBeNull();
     expect(container.querySelector('[data-testid="model-role-default"]')).not.toBeNull();
   });
+  it("does not show the unconfigured label before the first load", async () => {
+    const hold = new Promise<never>(() => undefined);
+    api.role.mockReturnValue(hold);
+    api.forRole.mockReturnValue(hold);
+    await render();
+    expect(container.textContent).not.toContain("Deployment default");
+  });
   it("reopens on the cached list while it refreshes", async () => {
     saved = { primary: chat, backups: [mini] };
     await render();

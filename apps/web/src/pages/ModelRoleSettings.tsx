@@ -300,7 +300,8 @@ export function ModelRoleSettings({
             {ordered ? number(0) : null}
             <RoleModelPicker
               trigger={pickerTrigger(
-                deployment ? modelLabel(deployment) : defaultLabel,
+                // Blank until loaded, so an unloaded role never reads as unconfigured.
+                !settings ? "\u00a0" : deployment ? modelLabel(deployment) : defaultLabel,
                 deployment ? providerName(deployment) : undefined,
               )}
               label={t`Change ${title}`}
