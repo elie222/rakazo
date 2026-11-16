@@ -2,8 +2,8 @@ import { useLingui } from "@lingui/react/macro";
 import type { MessageBlock } from "@rakazo/contracts";
 import { useState } from "react";
 import { Alert, Text, View } from "react-native";
-import { rpc } from "../lib/api";
 import { useMobileTokens } from "../lib/native";
+import { useSave } from "../lib/query";
 import { errorText } from "../lib/user-error";
 import { NativeActionButton } from "./native-action-button";
 
@@ -19,23 +19,27 @@ export function isUndoableChange(block: MessageBlock): boolean {
 export function ChangeUndo({ block }: { block: AskBlock }) {
   const { t } = useLingui();
   const tokens = useMobileTokens();
-  const [pending, setPending] = useState(false);
   const [restored, setRestored] = useState(false);
   const { instructionUpdate, settingsUpdate } = block;
-  const undo = () =>
-    instructionUpdate?.undoVersionId
-      ? rpc("bots/restoreInstructions", {
+  const undo = useSave({
+    save: async (_, send) => {
+      if (instructionUpdate?.undoVersionId)
+        await send("bots/restoreInstructions", {
           botId: instructionUpdate.botId,
           versionId: instructionUpdate.undoVersionId,
           expectedInstructions: instructionUpdate.after,
           undo: true,
-        })
-      : settingsUpdate &&
-        rpc("bots/update", {
+        });
+      else if (settingsUpdate)
+        await send("bots/update", {
           botId: settingsUpdate.botId,
           ...settingsUpdate.before,
           expectedSettings: settingsUpdate.after,
         });
+    },
+    onSaved: () => setRestored(true),
+    onFailed: (error) => Alert.alert(errorText(error)),
+  });
   return (
     <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
       <Text style={{ color: tokens.foreground }}>
@@ -45,18 +49,8 @@ export function ChangeUndo({ block }: { block: AskBlock }) {
         label={restored ? t`Restored` : t`Undo`}
         prominence="plain"
         size="compact"
-        disabled={pending || restored}
-        onPress={async () => {
-          setPending(true);
-          try {
-            await undo();
-            setRestored(true);
-          } catch (error) {
-            Alert.alert(errorText(error));
-          } finally {
-            setPending(false);
-          }
-        }}
+        disabled={undo.pending || restored}
+        onPress={() => undo.run()}
       />
     </View>
   );

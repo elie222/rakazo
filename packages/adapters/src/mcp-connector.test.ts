@@ -1134,6 +1134,36 @@ describe("MCP connector session cache", () => {
       }
     });
 
+    it("warns when the server changed after the run read it", async () => {
+      const server = { ...SERVER, secretId: "old" };
+      const connector = new McpConnector(
+        {
+          botMcpServer: { findMany: vi.fn(async () => [{ ...ASSIGNMENT, server }]) },
+          // A reconnect replaced the secret and bumped the revision this run still holds.
+          mcpServer: {
+            ...NO_SHARED_SERVERS,
+            findFirst: vi.fn(async () => null),
+            updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+          },
+          secret: { findFirst: vi.fn(async () => null) },
+        } as never,
+        {} as never,
+        { network: TEST_NETWORK },
+      );
+      const error = vi.spyOn(getLogger(), "error");
+      const warn = vi.spyOn(getLogger(), "warn");
+      try {
+        expect(await connector.discoverTools(context)).toEqual(unavailableOnly());
+        expect(error).not.toHaveBeenCalled();
+        expect(warn).toHaveBeenCalledWith("mcp discovery failed for server demo", {
+          reason: "MCP server changed while connecting",
+        });
+      } finally {
+        vi.restoreAllMocks();
+        await connector.close();
+      }
+    });
+
     it("warns when the host no longer resolves, and waits for a new address", async () => {
       vi.stubGlobal("fetch", mcpFetch({ failNext: false, initializations: 0 }));
       const resolveHostname = vi.fn(async () => {
@@ -2446,7 +2476,11 @@ describe("MCP connector session cache", () => {
               ) => Promise<unknown>;
             }
           ).connectSession(assignment.server, context, () => undefined),
-        ).rejects.toThrow("MCP server secret is unavailable");
+        ).rejects.toThrow(
+          scenario === "changed configuration"
+            ? "MCP server changed while connecting"
+            : "Secret changed during MCP connection; retry",
+        );
         expect(prisma.mcpServer.findFirst).toHaveBeenCalledWith(
           expect.objectContaining({ where: expect.objectContaining({ revision: 1 }) }),
         );

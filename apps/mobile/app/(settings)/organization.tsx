@@ -1,7 +1,7 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
-import { canDeleteOrganization } from "@rakazo/core";
-import { useLocalSearchParams } from "expo-router";
+import { canDeleteOrganization, canManageOrganizationMembers } from "@rakazo/core";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";
 import { ActivityIndicator, ScrollView, StyleSheet, Text } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -23,6 +23,7 @@ import { errorText } from "../../lib/user-error";
 
 export default function OrganizationSettings() {
   const { t } = useLingui();
+  const router = useRouter();
   const sideInsets = useSideInsets();
   const styles = useThemedStyles(createStyles);
   const query = useOrganizations();
@@ -109,6 +110,26 @@ export default function OrganizationSettings() {
           ) : (
             <SettingsRow key="name" title={current.name} />
           )}
+        </SettingsGroup>
+        <SettingsGroup>
+          <SettingsRow
+            key="members"
+            accessibilityRole="button"
+            title={t`Members`}
+            // Alone in it, its owner is offered to invite someone instead of a count of one.
+            value={
+              current.memberCount === 1 && canManageOrganizationMembers(current)
+                ? t`Invite people`
+                : String(current.memberCount)
+            }
+            chevron="right"
+            onPress={() =>
+              router.push({
+                pathname: "/organization-members",
+                params: { organizationId: current.id },
+              })
+            }
+          />
         </SettingsGroup>
         {canDelete ? (
           <SettingsGroup>
