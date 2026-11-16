@@ -13,7 +13,8 @@ import type {
   VoiceSynthesizeRequest,
   VoiceVerifyResult,
 } from "@rakazo/adapter-kit";
-import { MAX_SPEAK_CHARS, MAX_SYNTHESIZED_AUDIO_BYTES } from "./voice-http.js";
+import { MAX_VOICE_AUDIO_BYTES } from "@rakazo/core";
+import { MAX_SPEAK_CHARS } from "./voice-http.js";
 
 export const MACOS_VOICE_PROVIDER_ID = "macos";
 const SAY_BIN = "/usr/bin/say";
@@ -124,7 +125,7 @@ export class MacOsVoiceProvider implements VoiceProvider {
           timeoutMs: SPEAK_TIMEOUT_MS,
         },
       );
-      if ((await stat(file)).size > MAX_SYNTHESIZED_AUDIO_BYTES) {
+      if ((await stat(file)).size > MAX_VOICE_AUDIO_BYTES) {
         throw new Error("Voice response is too large.");
       }
       return { bytes: new Uint8Array(await readFile(file)), mimeType: "audio/wav" };
