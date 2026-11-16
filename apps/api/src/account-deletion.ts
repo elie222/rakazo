@@ -6,9 +6,10 @@ import {
   removeDeletedBotsFromLegacyTeamHome,
   toComputerRef,
 } from "@rakazo/adapters";
-import { anySignal, requestDeadline, withAbort } from "@rakazo/core";
-import type { Prisma, ThreadEvents } from "@rakazo/db";
+import { requestDeadline } from "@rakazo/core";
+import type { HeldLease, Prisma, ThreadEvents } from "@rakazo/db";
 import {
+  assertLeaseHeld,
   claimOrganizationForDeletion,
   claimSpacesLeavingWithAccount,
   deleteClaimedSpace,
@@ -16,6 +17,7 @@ import {
   deletePageShareSecrets,
   expireSpaceDeletionClaims,
   keepOrganizationTrialUse,
+  LeaseHeldError,
   leaveInvitedSpaces,
   listStalledOrganizationDeletions,
   recordAuditEvent,
@@ -24,7 +26,9 @@ import {
   restoreSpaceDeletionClaims,
   runAsSystem,
   SPACE_DELETION_CLAIM_TIMEOUT_MS,
+  SpaceDeletionInProgressError,
   setOrganizationDeletionLease,
+  withLease,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { BillingService } from "./billing.js";
@@ -110,14 +114,13 @@ type OrganizationDeletionDeps = SpaceDeletionDeps & {
 /** Bounds one attempt. Providers may ignore the abort signal, so without it a hung teardown would
  * keep renewing the lease and no later attempt could resume. */
 const ORGANIZATION_DELETION_TIMEOUT_MS = 15 * 60_000;
-const LEASE_RENEWAL_MS = SPACE_DELETION_CLAIM_TIMEOUT_MS / 5;
-const LEASE_KEPT_MS = SPACE_DELETION_CLAIM_TIMEOUT_MS - LEASE_RENEWAL_MS;
 
 /**
  * Claiming hides the organization from the owner's list. Its subscriptions are cancelled before
  * anything is destroyed, and a billing failure releases the claim, so the organization stays as it
  * was; any later failure leaves the Spaces claimed, and deleting again, or the sweep once the lease
- * lapses, finishes. The attempt renews its lease while it runs, so no other attempt overlaps it.
+ * lapses, finishes. One attempt at a time holds the organization's lease, and renewing it keeps
+ * the Spaces' claim fresh too, since space and account deletion still judge a claim by its age.
  * Audit events keep no foreign key to their organization, so the record outlives it.
  */
 export async function deleteOrganization(
@@ -130,51 +133,37 @@ export async function deleteOrganization(
     where: { id: organizationId },
     select: { name: true },
   });
-  const { claimId, spaceIds, fresh } = await claimOrganizationForDeletion(deps.prisma, {
-    userId,
-    organizationId,
-  });
-  // Once another attempt may take the claim over, this one is cancelled: when a renewal finds the
-  // claim taken, or when no renewal has landed for nearly the whole lease, one interval short of it.
-  const lease = new AbortController();
-  const loseLease = () => lease.abort(new Error("Organization deletion lost its claim"));
-  let expiry: ReturnType<typeof setTimeout> | undefined;
-  const keepLeaseFor = (from: number) => {
-    clearTimeout(expiry);
-    expiry = setTimeout(loseLease, from + LEASE_KEPT_MS - Date.now());
-  };
-  keepLeaseFor(Date.now());
-  let renewing: Promise<void> | undefined;
-  const renew = async () => {
-    const at = new Date();
-    if (await setOrganizationDeletionLease(deps.prisma, { organizationId, claimId, at })) {
-      keepLeaseFor(at.getTime());
-      return;
-    }
-    clearInterval(renewal);
-    // No Space left means this attempt deleted them, and only its file cleanup and record remain,
-    // still under the overall deadline; any left are another attempt's.
-    if (await deps.prisma.space.count({ where: { organizationId } })) loseLease();
-    else clearTimeout(expiry);
-  };
-  const renewal = setInterval(() => {
-    renewing ??= renew()
-      .catch((error) => getLogger().error("organization deletion lease renewal failed", error))
-      .finally(() => {
-        renewing = undefined;
-      });
-  }, LEASE_RENEWAL_MS);
   const deadline = requestDeadline(
     ORGANIZATION_DELETION_TIMEOUT_MS,
     "Organization deletion timed out",
-    signal ? anySignal([signal, lease.signal]) : lease.signal,
+    signal,
   );
-  const operationId = `organization-delete:${organizationId}`;
+  let claim: Awaited<ReturnType<typeof claimOrganizationForDeletion>> | undefined;
   let billingCancelled = false;
-  // Work cut off by the deadline or a lost lease that resumes later starts nothing new: a later
-  // attempt may own it.
-  const stillLeased = () => deadline.signal.throwIfAborted();
-  const work = async () => {
+  let leaseSignal: AbortSignal | undefined;
+  const keepClaim = async () => {
+    if (!claim) return true;
+    const at = new Date();
+    if (
+      await setOrganizationDeletionLease(deps.prisma, {
+        organizationId,
+        claimId: claim.claimId,
+        at,
+      })
+    )
+      return true;
+    // No Space left means this attempt deleted them, and only its file cleanup and record remain,
+    // still under the overall deadline; any left are another attempt's.
+    return (await deps.prisma.space.count({ where: { organizationId } })) === 0;
+  };
+  const operationId = `organization-delete:${organizationId}`;
+  const work = async (lease: HeldLease) => {
+    leaseSignal = lease.signal;
+    claim = await claimOrganizationForDeletion(deps.prisma, { userId, organizationId });
+    const { claimId, spaceIds } = claim;
+    // Work cut off by the deadline or a lost lease that resumes later starts nothing new: a later
+    // attempt may own it.
+    const stillLeased = () => lease.signal.throwIfAborted();
     await keepOrganizationTrialUse(deps.prisma, organizationId);
     stillLeased();
     await deps.billing?.cancelForDeletedOrganization(organizationId);
@@ -192,7 +181,7 @@ export async function deleteOrganization(
       artifacts.map(({ spaceId, storageKey }) =>
         deps.artifacts.remove(
           storageKey,
-          adapterContext(operationId, userId, spaceId, undefined, deadline.signal),
+          adapterContext(operationId, userId, spaceId, undefined, lease.signal),
         ),
       ),
     );
@@ -204,10 +193,13 @@ export async function deleteOrganization(
       organizationId,
       bots: inOrganization,
       computers: inOrganization,
-      signal: deadline.signal,
+      signal: lease.signal,
     });
     stillLeased();
-    await deleteEmptyOrganization(deps.prisma, organizationId);
+    await deps.prisma.$transaction(async (tx) => {
+      await assertLeaseHeld(tx, lease);
+      await deleteEmptyOrganization(tx, organizationId);
+    });
     await recordAuditEvent({
       action: "organization.deleted",
       actor: { type: "user", id: userId },
@@ -216,14 +208,19 @@ export async function deleteOrganization(
     });
   };
   try {
-    await withAbort(work(), deadline.signal);
+    await withLease(
+      deps.prisma,
+      `organization-deletion:${organizationId}`,
+      { ttlMs: SPACE_DELETION_CLAIM_TIMEOUT_MS, signal: deadline.signal, onRenew: keepClaim },
+      work,
+    );
   } catch (error) {
-    clearInterval(renewal);
-    await renewing;
-    // Work cut off by the deadline or a lost lease may still be running, so the lease is left to
-    // lapse or to the attempt that took it. Otherwise nothing is left running and the next attempt
-    // may start at once.
-    if (!deadline.signal.aborted) {
+    if (error instanceof LeaseHeldError) throw new SpaceDeletionInProgressError();
+    // Work cut off by the deadline or a lost lease may still be running, so the claim is left to
+    // lapse or to the attempt that took it. Otherwise the work has settled and renewal stopped, so
+    // nothing is left running and the next attempt may start at once.
+    if (claim && !leaseSignal?.aborted) {
+      const { claimId, fresh } = claim;
       if (fresh && !billingCancelled)
         await releaseOrganizationDeletionClaim(deps.prisma, { organizationId, claimId });
       else
@@ -235,8 +232,6 @@ export async function deleteOrganization(
     }
     throw error;
   } finally {
-    clearInterval(renewal);
-    clearTimeout(expiry);
     deadline.dispose();
   }
 }

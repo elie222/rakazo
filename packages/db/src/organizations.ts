@@ -273,7 +273,7 @@ export async function listStalledOrganizationDeletions(
 
 /** Deletes the organization once its Spaces are gone; the rest of its rows go by cascade. */
 export async function deleteEmptyOrganization(
-  prisma: PrismaClient,
+  prisma: Pick<Prisma.TransactionClient, "organization">,
   organizationId: string,
 ): Promise<void> {
   const { count } = await prisma.organization.deleteMany({

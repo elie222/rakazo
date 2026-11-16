@@ -24,6 +24,7 @@ import {
   extendByokFreePeriod,
   IsolationError,
   installAuditEventStore,
+  LeaseLostError,
   LocalKeyProvider,
   personalOrganizationIds,
   requireMembership,
@@ -133,6 +134,14 @@ describePostgres("organizations (PostgreSQL)", () => {
   afterAll(async () => {
     if (!db) return;
     installAuditEventStore(undefined);
+    const created = await system.auditEvent.findMany({
+      where: { actorId: { in: users }, action: "organization.created" },
+      select: { organizationId: true },
+    });
+    const leaseKeys = created.map(
+      ({ organizationId }) => `organization-deletion:${organizationId}`,
+    );
+    await system.$executeRaw`DELETE FROM "leases" WHERE "key" = ANY(${leaseKeys})`;
     await system.auditEvent.deleteMany({ where: { actorId: { in: users } } });
     await system.organization.deleteMany({
       where: { members: { some: { userId: { in: users } } } },
@@ -419,18 +428,30 @@ describePostgres("organizations (PostgreSQL)", () => {
   const sweep = (signal = new AbortController().signal) =>
     finishStalledOrganizationDeletions(deps())(signal);
 
-  /** Polls with real timers, which the lease tests leave unfaked. */
+  /** Polls on immediates, which the lease tests leave unfaked while they fake timeouts. */
   async function until(check: () => Promise<boolean> | boolean) {
-    for (let attempt = 0; attempt < 500; attempt++) {
+    const giveUpAt = performance.now() + 5_000;
+    while (performance.now() < giveUpAt) {
       if (await check()) return;
-      await new Promise((resolve) => setTimeout(resolve, 10));
+      await new Promise(setImmediate);
     }
     throw new Error("condition not reached");
   }
 
+  /** Lapses an attempt's lease and its Spaces' claim, as if it had stopped renewing them. */
+  async function lapse(organizationId: string) {
+    await system.space.updateMany({
+      where: { organizationId },
+      data: { deletingAt: new Date(Date.now() - 10 * 60_000) },
+    });
+    await system.$executeRaw`
+      UPDATE "leases" SET "expiresAt" = now() - interval '10 minutes'
+      WHERE "key" = ${`organization-deletion:${organizationId}`}`;
+  }
+
   /**
    * Ages the attempt's lease past the claim timeout, as if it had last been renewed minutes ago,
-   * then lets one renewal fire on the faked interval and waits for it to land.
+   * then lets one renewal fire on the faked timeout and waits for it to land.
    */
   async function outlastClaimTimeout(organizationId: string) {
     const aged = new Date(Date.now() - 10 * 60_000);
@@ -466,6 +487,85 @@ describePostgres("organizations (PostgreSQL)", () => {
     await expect(deletedAudits(work.id)).resolves.toBe(1);
   });
 
+  it("finishes a deletion whose process crashed midway, once its lease lapses", async () => {
+    const ada = await signup();
+    const work = await client(ada).organizations.create({ name: "Work" });
+    const ref = `sb-crash-${suffix}`;
+    await botWithComputer(work.id, ada.userId, ref);
+    // A process claimed the organization under its lease, then died before tearing anything down.
+    await runAsSystem("a deletion attempt that crashed", () =>
+      claimOrganizationForDeletion(system, { userId: ada.userId, organizationId: work.id }),
+    );
+    await system.$executeRaw`
+      INSERT INTO "leases" ("key", "fence", "expiresAt")
+      VALUES (${`organization-deletion:${work.id}`}, 1, now() + interval '5 minutes')`;
+    await system.space.updateMany({
+      where: { organizationId: work.id },
+      data: { deletingAt: new Date(Date.now() - 10 * 60_000) },
+    });
+
+    // Its claim looks stale, but its lease has not lapsed yet: the sweep leaves it alone.
+    await sweep();
+    expect(sandbox.started).not.toContain(ref);
+    await expect(
+      system.organization.findUnique({ where: { id: work.id } }),
+    ).resolves.not.toBeNull();
+
+    await lapse(work.id);
+    await sweep();
+
+    await expect(system.organization.findUnique({ where: { id: work.id } })).resolves.toBeNull();
+    expect(sandbox.destroyed).toEqual([ref]);
+    await expect(deletedAudits(work.id)).resolves.toBe(1);
+  });
+
+  it("never runs beside the previous release's attempt on the same organization", async () => {
+    const ada = await signup();
+    const work = await client(ada).organizations.create({ name: "Work" });
+    const other = await client(ada).organizations.create({ name: "Other" });
+    const leaseKey = `organization-deletion:${work.id}`;
+
+    // The previous release claims without a lease row; a live claim refuses this release's attempt,
+    // which gives its own lease straight back.
+    await runAsSystem("the previous release's attempt", () =>
+      claimOrganizationForDeletion(system, { userId: ada.userId, organizationId: work.id }),
+    );
+    await expect(client(ada).organizations.remove({ organizationId: work.id })).rejects.toThrow(
+      "already in progress",
+    );
+    const [lease] = await system.$queryRaw<Array<{ free: boolean }>>`
+      SELECT "expiresAt" <= now() AS free FROM "leases" WHERE "key" = ${leaseKey}`;
+    expect(lease?.free).toBe(true);
+
+    // This release's attempt keeps its Spaces' claim fresh, so the previous release's is refused.
+    const called = deferred();
+    const held = deferred();
+    const current = runAsSystem("this release's attempt", () =>
+      deleteOrganization(
+        {
+          ...deps(),
+          billing: {
+            cancelForDeletedOrganization: async () => {
+              called.resolve();
+              await held.promise;
+            },
+          },
+        } as Parameters<typeof deleteOrganization>[0],
+        ada.userId,
+        other.id,
+      ),
+    );
+    await called.promise;
+    await expect(
+      runAsSystem("the previous release's attempt", () =>
+        claimOrganizationForDeletion(system, { userId: ada.userId, organizationId: other.id }),
+      ),
+    ).rejects.toThrow("already in progress");
+    held.resolve();
+    await current;
+    await expect(system.organization.findUnique({ where: { id: other.id } })).resolves.toBeNull();
+  });
+
   it("starts no second deletion beside a request whose provider call outlasts the claim timeout", async () => {
     const ada = await signup();
     const work = await client(ada).organizations.create({ name: "Work" });
@@ -473,7 +573,7 @@ describePostgres("organizations (PostgreSQL)", () => {
     await botWithComputer(work.id, ada.userId, ref);
     const cancel = vi.spyOn(billing, "cancelForDeletedOrganization");
     const release = sandbox.hold(ref);
-    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     try {
       const removing = client(ada).organizations.remove({ organizationId: work.id });
       await until(() => sandbox.started.includes(ref));
@@ -502,7 +602,7 @@ describePostgres("organizations (PostgreSQL)", () => {
     await failRemoval(ada, work.id, ref);
     const cancel = vi.spyOn(billing, "cancelForDeletedOrganization");
     const release = sandbox.hold(ref);
-    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     try {
       const first = sweep();
       await until(() => sandbox.started.includes(ref));
@@ -582,10 +682,7 @@ describePostgres("organizations (PostgreSQL)", () => {
     deadline.abort(new Error("Organization deletion timed out"));
     await expect(late).rejects.toThrow("timed out");
     // Its lease lapses, and a retry takes over and starts tearing the bot down.
-    await system.space.updateMany({
-      where: { organizationId: work.id },
-      data: { deletingAt: new Date(Date.now() - 10 * 60_000) },
-    });
+    await lapse(work.id);
     const release = sandbox.hold(ref);
     const retry = client(ada).organizations.remove({ organizationId: work.id });
     await until(() => sandbox.started.includes(ref));
@@ -610,7 +707,7 @@ describePostgres("organizations (PostgreSQL)", () => {
     await botWithComputer(work.id, ada.userId, ref);
     const called = deferred();
     const held = deferred();
-    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     try {
       const stale = runAsSystem("an attempt whose renewals stopped landing", () =>
         deleteOrganization(
@@ -630,23 +727,20 @@ describePostgres("organizations (PostgreSQL)", () => {
       stale.catch(() => undefined);
       await called.promise;
       // Its lease lapses, and a retry takes the claim over and starts tearing the bot down.
-      await system.space.updateMany({
-        where: { organizationId: work.id },
-        data: { deletingAt: new Date(Date.now() - 10 * 60_000) },
-      });
+      await lapse(work.id);
       const release = sandbox.hold(ref);
       const retry = client(ada).organizations.remove({ organizationId: work.id });
       await until(() => sandbox.started.includes(ref));
 
-      // The first attempt's next renewal finds the claim taken; then its billing call returns.
+      // The first attempt's next renewal finds the lease taken; then its billing call returns.
+      const stopped = expect(stale).rejects.toBeInstanceOf(LeaseLostError);
       await vi.advanceTimersByTimeAsync(60_000);
-      await new Promise((resolve) => setTimeout(resolve, 200));
+      await stopped;
       held.resolve();
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      await new Promise(setImmediate);
       expect(sandbox.started.filter((started) => started === ref)).toHaveLength(1);
       release();
       await retry;
-      await expect(stale).rejects.toThrow("lost its claim");
     } finally {
       vi.useRealTimers();
     }
@@ -838,10 +932,7 @@ describePostgres("organizations (PostgreSQL)", () => {
     );
     await placed.promise;
     // Its lease lapses, as if it had stopped renewing it.
-    await system.space.updateMany({
-      where: { organizationId: work.id },
-      data: { deletingAt: new Date(Date.now() - 10 * 60_000) },
-    });
+    await lapse(work.id);
 
     // Another attempt takes the claim over and gets stuck destroying the bot.
     await expect(client(ada).organizations.remove({ organizationId: work.id })).rejects.toThrow(
@@ -1109,7 +1200,8 @@ function recordingQueries(
   return new Proxy(prisma, {
     get(target, model, receiver) {
       const delegate = Reflect.get(target, model, receiver);
-      if (typeof model !== "string" || model.startsWith("$") || typeof delegate !== "object")
+      // Raw queries read the client's internals (`_extensions` and the like) through the proxy.
+      if (typeof model !== "string" || /^[$_]/.test(model) || typeof delegate !== "object")
         return delegate;
       return new Proxy(delegate, {
         get(methods, method, methodsReceiver) {
