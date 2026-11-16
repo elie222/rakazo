@@ -56,3 +56,21 @@ Runtime CPU and launch measurements are informational until enough samples exist
 Bundle sizes are deterministic enough for automated regression checks. Keep hardware, platform, and
 build mode fixed. A comparison that intentionally changes Electron or renderer mode measures the
 combined migration result; it cannot attribute the change to either layer in isolation.
+
+## Web performance scorecard
+
+`pnpm perf:web-chat` measures the production web build against a seeded chat in headless Chromium,
+offline like the desktop benchmark. Besides scrolling and streaming, it times what people feel:
+first paint and a usable chat on a cold open, opening another chat, switching back to a loaded
+one, opening a chat in another Space, main-thread work per keystroke and per resize step, idle
+main-thread CPU, and JS heap. Each run starts with unrecorded warmups.
+
+```sh
+pnpm perf:web-chat --label=local --sizes=100 --samples=5
+pnpm perf:web-chat check .context/performance/web-chat-local.json
+```
+
+`check` holds the medians of the largest thread size to fixed lines (one frame, 16 ms, for input
+work; 100 ms for opening and switching) and exits non-zero when one is over. The nightly
+verification workflow runs both on a GitHub-hosted Ubuntu runner, writes the table to the job
+summary, and keeps the JSON report as an artifact. Desktop and mobile are not on the scorecard yet.

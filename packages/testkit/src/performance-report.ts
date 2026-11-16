@@ -208,3 +208,46 @@ function percentile(sorted: number[], quantile: number) {
   const weight = index - lower;
   return sorted[lower]! * (1 - weight) + sorted[upper]! * weight;
 }
+
+export interface BudgetRow {
+  title: string;
+  unit: string;
+  budget: number;
+  median: number | undefined;
+  p95: number | undefined;
+  over: boolean;
+}
+
+/**
+ * Holds each metric's median across samples to a fixed line. A missing metric counts as over:
+ * a scenario that stopped reporting must not pass silently.
+ */
+export function checkBudgets(
+  summary: Partial<Record<string, NumericSummary>>,
+  budgets: ReadonlyArray<{ key: string; title: string; unit: string; budget: number }>,
+): BudgetRow[] {
+  return budgets.map(({ key, title, unit, budget }) => {
+    const median = summary[key]?.median;
+    return {
+      title,
+      unit,
+      budget,
+      median,
+      p95: summary[key]?.p95,
+      over: median === undefined || median > budget,
+    };
+  });
+}
+
+export function renderBudgetTable(rows: BudgetRow[]) {
+  const value = (number: number | undefined, unit: string) =>
+    number === undefined ? "missing" : `${roundMetric(number, 1)} ${unit}`;
+  return [
+    "| Metric | Median | p95 | Budget | |",
+    "| --- | ---: | ---: | ---: | --- |",
+    ...rows.map(
+      (row) =>
+        `| ${row.title} | ${value(row.median, row.unit)} | ${value(row.p95, row.unit)} | ${value(row.budget, row.unit)} | ${row.over ? "over" : "ok"} |`,
+    ),
+  ].join("\n");
+}

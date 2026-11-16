@@ -5,9 +5,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
+  checkBudgets,
   parsePerformanceReport,
   parseTcpPort,
   percentageDelta,
+  renderBudgetTable,
   roundMetric,
   summarize,
 } from "./performance-report.js";
@@ -138,4 +140,29 @@ describe("performance comparison table", () => {
       }
     },
   );
+});
+
+describe("performance budgets", () => {
+  const budgets = [
+    { key: "switchMs", title: "Switch", unit: "ms", budget: 100 },
+    { key: "typingMs", title: "Typing", unit: "ms", budget: 16 },
+    { key: "idlePercent", title: "Idle", unit: "%", budget: 2 },
+  ];
+
+  it("flags a median past its line and a metric that stopped reporting", () => {
+    const rows = checkBudgets(
+      {
+        switchMs: { count: 3, min: 40, median: 60, p95: 140, max: 150 },
+        typingMs: { count: 3, min: 10, median: 17, p95: 18, max: 18 },
+      },
+      budgets,
+    );
+
+    expect(rows.map((row) => [row.title, row.over])).toEqual([
+      ["Switch", false],
+      ["Typing", true],
+      ["Idle", true],
+    ]);
+    expect(renderBudgetTable(rows)).toContain("| Idle | missing | missing | 2 % | over |");
+  });
 });
