@@ -373,6 +373,7 @@ describePostgres("shared spaces: invites and membership (PostgreSQL)", () => {
       data: {
         spaceId: home,
         userId: invitee.id,
+        connectorId: "composio",
         provider: "gmail",
         displayName: "Gmail",
         status: "connected",
@@ -427,6 +428,7 @@ describePostgres("shared spaces: invites and membership (PostgreSQL)", () => {
       data: {
         spaceId: invitee.spaceId,
         userId: invitee.id,
+        connectorId: "composio",
         provider: "gmail",
         displayName: "Gmail",
         status: "connected",
