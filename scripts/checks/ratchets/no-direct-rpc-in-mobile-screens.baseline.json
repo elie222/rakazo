@@ -1,7 +1,6 @@
 {
   "apps/mobile/app/(settings)/account.tsx": 5,
   "apps/mobile/app/(settings)/archived-bots.tsx": 3,
-  "apps/mobile/app/(settings)/billing.tsx": 10,
   "apps/mobile/app/(settings)/integrations.tsx": 17,
   "apps/mobile/app/(settings)/memory-note.tsx": 3,
   "apps/mobile/app/(settings)/messaging.tsx": 14,
@@ -17,7 +16,6 @@
   "apps/mobile/app/bot-settings.tsx": 14,
   "apps/mobile/app/computer.tsx": 7,
   "apps/mobile/app/pages.tsx": 1,
-  "apps/mobile/app/paywall.tsx": 5,
   "apps/mobile/app/peer-chat.tsx": 1,
   "apps/mobile/app/routine.tsx": 1,
   "apps/mobile/app/sign-in.tsx": 1,
