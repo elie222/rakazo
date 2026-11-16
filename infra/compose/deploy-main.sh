@@ -139,15 +139,17 @@ start_beside() {
 # executing get a few minutes to end their turn (RUN_DRAIN_MS). A replaced API does the same with
 # its chat turns once it has stopped taking requests (see retire_api). A restart policy of "no"
 # keeps Docker from starting one again and marks it as draining for later runs. Prints the
-# containers of a service that are live, or draining (still finishing, or exited and not yet
-# removed).
+# containers of a service that are live (running and not draining), or draining (still finishing,
+# or exited and not yet removed).
 service_containers() {
   local ids
   ids="$(compose 1m ps --all --quiet "$1")"
   [[ -n "${ids}" ]] || return 0
   # shellcheck disable=SC2086 # one container ID per word
-  sudo docker inspect --format '{{.Id}} {{.HostConfig.RestartPolicy.Name}}' ${ids} |
-    awk -v wanted="$2" '($2 == "no" ? "draining" : "live") == wanted { print $1 }'
+  sudo docker inspect --format '{{.Id}} {{.HostConfig.RestartPolicy.Name}} {{.State.Running}}' ${ids} |
+    awk -v wanted="$2" '
+      $2 == "no" && wanted == "draining" { print $1 }
+      $2 != "no" && $3 == "true" && wanted == "live" { print $1 }'
 }
 
 # Waits for draining containers to exit and removes them, the worker's and then the API's unless

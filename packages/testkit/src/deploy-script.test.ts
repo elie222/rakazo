@@ -9,7 +9,8 @@ const COMPOSE = "docker compose --env-file .env -f infra/compose/docker-compose.
 const APP_IMAGE = "ghcr.example.test/rakazo/app:local";
 // Each rolled service gains a new container, which must pass its health check before the old
 // one stops; the rest of the stack is reconciled afterwards.
-const RESTART_POLICIES = "docker inspect --format {{.Id}} {{.HostConfig.RestartPolicy.Name}}";
+const RESTART_POLICIES =
+  "docker inspect --format {{.Id}} {{.HostConfig.RestartPolicy.Name}} {{.State.Running}}";
 const DRAIN_SIGNAL =
   'docker inspect --format {{index .Config.Labels "org.rakazo.run-drain-signal"}}';
 const startBeside = (service: string) => [
@@ -169,7 +170,8 @@ if [[ "$1" == tag && -n "\${FAIL_TAG:-}" ]]; then exit 1; fi
 containers="$COMMAND_LOG.containers"
 if [[ ! -e "$containers" ]]; then
   : >"$containers"
-  [[ -n "\${FRESH:-}" ]] || printf '%s unless-stopped running\n' api-old web-old worker-old >"$containers"
+  [[ -z "\${STOPPED_API:-}" ]] || echo "api-stopped unless-stopped exited" >"$containers"
+  [[ -n "\${FRESH:-}" ]] || printf '%s unless-stopped running\n' api-old web-old worker-old >>"$containers"
   [[ -z "\${EXTRA_WORKER:-}" ]] || echo "worker-older no \${EXTRA_WORKER}" >>"$containers"
   [[ -z "\${EXTRA_API:-}" ]] || echo "api-older no \${EXTRA_API}" >>"$containers"
 fi
@@ -201,7 +203,9 @@ if [[ "$1" == inspect && "$*" == *run-drain-signal* ]]; then
   exit 0
 fi
 if [[ "$1" == inspect && "$*" == *RestartPolicy* ]]; then
-  for name in "\${@:4}"; do grep "^$name " "$containers"; done
+  for name in "\${@:4}"; do
+    grep "^$name " "$containers" | awk '{ print $1, $2, ($3 == "exited" ? "false" : "true") }'
+  done
   exit 0
 fi
 if [[ "$1" == inspect ]]; then echo "\${CONTAINER_HEALTH:-running healthy}"; fi
@@ -671,6 +675,17 @@ describe("production deploy script", () => {
     expect(commands.slice(0, 3)).toEqual([
       `${COMPOSE} ps --all --quiet api`,
       `${RESTART_POLICIES} api-old api-older`,
+      "docker inspect --format {{.Image}} api-old",
+    ]);
+  });
+
+  it("rolls back to the serving API's image, not a stopped one's", () => {
+    const deploy = fixture();
+    commit(deploy.upstream, "next");
+    expect(deploy.run({ STOPPED_API: "1" }).status).toBe(0);
+    expect(rollout(deploy.commands()).slice(0, 3)).toEqual([
+      `${COMPOSE} ps --all --quiet api`,
+      `${RESTART_POLICIES} api-stopped api-old`,
       "docker inspect --format {{.Image}} api-old",
     ]);
   });

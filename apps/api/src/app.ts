@@ -1181,7 +1181,6 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         auth.disposeOidcDiscovery();
         await userDeviceHub?.close();
         await oauthLogins.abortAll();
-        await messagingRuntime?.stop();
         await stopReferralEmails?.();
         await stopHomeRetention?.();
         await stopOrganizationDeletions();
@@ -1189,6 +1188,8 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         await oauthTokenUpgrade;
         await mcpArgsMove;
         await runsStopped;
+        // After the runs: a draining turn's reply would start the chat surfaces again.
+        await messagingRuntime?.stop();
         await requestsSettled;
         await botEmail?.drain?.();
         await email?.drain?.();
