@@ -4,8 +4,9 @@ import { AGENT_IMPORT_PROMPT, GROK_BOT_EXPORT_PROMPT } from "@rakazo/core";
 import { Button, CopyTextFallback, Textarea, useCopyText } from "@rakazo/ui-web";
 import { ArrowLeft, X } from "lucide-react";
 import type { ReactNode } from "react";
-import { useId, useRef, useState } from "react";
+import { useCallback, useId, useState } from "react";
 import { rpc } from "../../lib/rpc";
+import { useEventListener } from "../../lib/use-event-listener";
 import { AgentImportPlanReview, headingClass, sectionClass } from "./agent-import-plan";
 import { useAgentImportSource } from "./use-agent-import-source";
 
@@ -43,7 +44,8 @@ function PromptReplySection({
   children?: ReactNode;
 }) {
   const { t } = useLingui();
-  const fileInput = useRef<HTMLInputElement>(null);
+  const [fileInput, setFileInput] = useState<HTMLInputElement | null>(null);
+  useEventListener(fileInput, "cancel", onCancelRead);
   // Unmounted while the preview is open, so a copy that fails then never greets the return.
   const [copied, copy, copyFailed, resetCopy] = useCopyText();
   return (
@@ -67,15 +69,7 @@ function PromptReplySection({
         className="mt-3"
       />
       <input
-        ref={(node) => {
-          fileInput.current = node;
-          if (!node) return;
-          node.addEventListener("cancel", onCancelRead);
-          return () => {
-            node.removeEventListener("cancel", onCancelRead);
-            fileInput.current = null;
-          };
-        }}
+        ref={setFileInput}
         type="file"
         multiple={multiple}
         accept={accept}
@@ -90,7 +84,7 @@ function PromptReplySection({
         <Button disabled={!reply.trim() || busy} onClick={onContinue}>
           <Trans>Continue</Trans>
         </Button>
-        <Button variant="outline" disabled={busy} onClick={() => fileInput.current?.click()}>
+        <Button variant="outline" disabled={busy} onClick={() => fileInput?.click()}>
           <Trans>Choose file</Trans>
         </Button>
       </div>
@@ -108,7 +102,7 @@ export function AgentImportForm({
 }) {
   const { t } = useLingui();
   const ids = useId();
-  const folderInput = useRef<HTMLInputElement>(null);
+  const [folderInput, setFolderInput] = useState<HTMLInputElement | null>(null);
   const source = useAgentImportSource();
   const {
     files,
@@ -140,7 +134,13 @@ export function AgentImportForm({
     modelUsable,
     ready,
   } = source;
-  const archiveInput = useRef<HTMLInputElement>(null);
+  const [archiveInput, setArchiveInput] = useState<HTMLInputElement | null>(null);
+  useEventListener(folderInput, "cancel", stopReading);
+  useEventListener(archiveInput, "cancel", stopReading);
+  const folderRef = useCallback((node: HTMLInputElement | null) => {
+    node?.setAttribute("webkitdirectory", "");
+    setFolderInput(node);
+  }, []);
   const [computerMode, setComputerMode] = useState<ComputerMode>("team");
   const [reply, setReply] = useState("");
   const [grokReply, setGrokReply] = useState("");
@@ -242,16 +242,7 @@ export function AgentImportForm({
               <Trans>OpenClaw or Hermes</Trans>
             </h3>
             <input
-              ref={(node) => {
-                folderInput.current = node;
-                if (!node) return;
-                node.setAttribute("webkitdirectory", "");
-                node.addEventListener("cancel", stopReading);
-                return () => {
-                  node.removeEventListener("cancel", stopReading);
-                  folderInput.current = null;
-                };
-              }}
+              ref={folderRef}
               type="file"
               data-testid="agent-import-folder"
               className="hidden"
@@ -261,15 +252,7 @@ export function AgentImportForm({
               }}
             />
             <input
-              ref={(node) => {
-                archiveInput.current = node;
-                if (!node) return;
-                node.addEventListener("cancel", stopReading);
-                return () => {
-                  node.removeEventListener("cancel", stopReading);
-                  archiveInput.current = null;
-                };
-              }}
+              ref={setArchiveInput}
               type="file"
               accept=".zip,.tar.gz,.tgz,application/zip,application/gzip"
               data-testid="agent-import-archive"
@@ -280,18 +263,10 @@ export function AgentImportForm({
               }}
             />
             <div className="mt-2 flex gap-2">
-              <Button
-                variant="outline"
-                disabled={busy}
-                onClick={() => folderInput.current?.click()}
-              >
+              <Button variant="outline" disabled={busy} onClick={() => folderInput?.click()}>
                 <Trans>Choose folder</Trans>
               </Button>
-              <Button
-                variant="outline"
-                disabled={busy}
-                onClick={() => archiveInput.current?.click()}
-              >
+              <Button variant="outline" disabled={busy} onClick={() => archiveInput?.click()}>
                 <Trans>Choose backup</Trans>
               </Button>
             </div>

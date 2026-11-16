@@ -6,6 +6,7 @@ import {
   resolveMcpOAuthFileTemplate,
   resolveMcpOAuthTemplate,
 } from "./mcp.js";
+import { expectLinearTime } from "./timing.test-support.js";
 
 describe("MCP OAuth env references", () => {
   it("finds the referenced fields and flags unknown ones", () => {
@@ -18,6 +19,12 @@ describe("MCP OAuth env references", () => {
       unknown: ["id_token"],
     });
     expect(mcpOAuthEnvReferences("plain-value")).toEqual({ fields: [], unknown: [] });
+    expectLinearTime(() =>
+      expect(mcpOAuthEnvReferences(`{{oauth.${"\t".repeat(200_000)}x`)).toEqual({
+        fields: [],
+        unknown: [],
+      }),
+    );
   });
 
   it("never interprets references inside substituted credentials", () => {

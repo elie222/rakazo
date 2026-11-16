@@ -152,7 +152,9 @@ async function loadSentry(fetchImpl: typeof fetch): Promise<typeof SentryReact |
         ),
       // A stale chunk the recovery reload is about to fix is not an error worth reporting.
       beforeSend: (event, hint) =>
-        recoveringByReload() || isNotAppBug(hint?.originalException)
+        recoveringByReload() ||
+        isErrorlessWindowError(event, hint?.originalException) ||
+        isNotAppBug(hint?.originalException)
           ? null
           : sanitizeMonitoringEvent(event, userId),
     });
@@ -176,6 +178,19 @@ const INJECTED =
  */
 const CHUNK_LOAD =
   /^(?:Failed to fetch dynamically imported module|Importing a module script failed|error loading dynamically imported module)/;
+
+/**
+ * A window error event that carries no error object, as a ResizeObserver loop notice does, has
+ * nothing to trace; errors the app throws always carry one.
+ */
+function isErrorlessWindowError(event: SentryReact.ErrorEvent, error: unknown): boolean {
+  return (
+    error == null &&
+    (event.exception?.values ?? []).some(
+      (value) => value.mechanism?.type === "auto.browser.global_handlers.onerror",
+    )
+  );
+}
 
 /**
  * The network rather than the code (offline, a timeout or cancellation, a gateway answer while the

@@ -1,5 +1,6 @@
 import { ORPCError, ValidationError } from "@orpc/server";
 import {
+  ConnectorAuthUnavailableError,
   SandboxAllowanceUsedError,
   SandboxDamagedError,
   SandboxRateLimitError,
@@ -8,6 +9,7 @@ import {
   VoiceAccountError,
 } from "@rakazo/adapter-kit";
 import { ComputerRecoveryRequiredError } from "@rakazo/adapters";
+import { ConnectionSetupError } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
 import { databaseOutage, IsolationError, ProviderTransactionBusyError } from "@rakazo/db";
 import { enrichLogContext, getLogContext, getLogger } from "@rakazo/logging";
@@ -79,6 +81,13 @@ export function handleRpcError(
     // An outage the caller is told to wait out is still reported, unless its thrower logged it.
     logUnexpectedRpcError(answer, path);
     throw answer;
+  }
+  // What the person entered for a connection, or how their server answered its check.
+  if (error instanceof ConnectionSetupError) {
+    throw new ORPCError("BAD_REQUEST", { message: error.message, cause: error });
+  }
+  if (error instanceof ConnectorAuthUnavailableError) {
+    throw new ORPCError(error.code, { status: 400, message: error.message, cause: error });
   }
   // The user's own voice account refused the request: theirs to fix.
   if (error instanceof VoiceAccountError) {

@@ -1367,6 +1367,9 @@ importers:
         specifier: workspace:*
         version: link:../db
     devDependencies:
+      '@rakazo/core':
+        specifier: workspace:*
+        version: link:../core
       typescript:
         specifier: 7.0.2
         version: 7.0.2
@@ -1395,6 +1398,9 @@ importers:
         specifier: 3.35.1
         version: 3.35.1
     devDependencies:
+      '@rakazo/core':
+        specifier: workspace:*
+        version: link:../core
       '@types/react':
         specifier: 19.3.0
         version: 19.3.0

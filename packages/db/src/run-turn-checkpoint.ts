@@ -1,6 +1,7 @@
 import type { PrismaClient } from "./client.js";
 import { ciphertextKeyId, decryptText, encryptText } from "./content-crypto.js";
 import { contentEncryptionOf } from "./content-encryption.js";
+import type { JsonColumnRow } from "./json-column.js";
 
 // A reserved effect kind/status keeps transcripts out of approval queues and
 // client events while reusing run/space cascades and latest-only upsert storage.
@@ -12,6 +13,12 @@ const locationOf = (runId: string) => ({
   rowId: keyOf(runId),
   owner: runId,
 });
+
+/** The row holding a run's saved turn, for reporting a part of it this release cannot read. */
+export function runTurnCheckpointRow(runId: string): JsonColumnRow {
+  const { table, column, rowId } = locationOf(runId);
+  return { table, column, id: rowId };
+}
 
 export async function loadRunTurnCheckpoint(
   prisma: PrismaClient,
