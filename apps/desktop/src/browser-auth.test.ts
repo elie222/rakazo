@@ -84,10 +84,12 @@ describe("system browser authentication", () => {
       const localCallback = callback.replace("127.0.0.1", "localhost");
       authorization.searchParams.set("redirect_uri", localCallback);
       const listen = Server.prototype.listen;
+      const requested: unknown[] = [];
       vi.spyOn(Server.prototype, "listen").mockImplementation(function (
         this: Server,
         ...args: unknown[]
       ) {
+        requested.push(args[1]);
         if (args[1] === unavailable) {
           queueMicrotask(() =>
             this.emit("error", Object.assign(new Error("Unavailable"), { code: "EADDRNOTAVAIL" })),
@@ -95,7 +97,7 @@ describe("system browser authentication", () => {
           return this;
         }
         // The remaining family binds the IPv4 loopback, so the test does not need the host to
-        // have IPv6: what it checks is that sign-in carries on with one family refused.
+        // have IPv6. The requested addresses are checked below; binding them is the kernel's job.
         return Reflect.apply(listen, this, [args[0], "127.0.0.1", ...args.slice(2)]);
       });
       await openBrowserAuth(authorization.href, options);
@@ -111,6 +113,8 @@ describe("system browser authentication", () => {
           },
         ).on("error", reject);
       });
+      // Both families were asked for, so the one left is the real other family.
+      expect(requested.toSorted()).toEqual(["127.0.0.1", "::1"]);
       expect(status).toBe(200);
       expect(options.onCallback).toHaveBeenCalledOnce();
     },
