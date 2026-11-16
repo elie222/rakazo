@@ -114,6 +114,9 @@ describe("pluginSite", () => {
       "https://sentry.io",
     );
     expect(pluginSite(entry({ name: "a", homepage: "https://github.com/acme/plugin" }))).toBeNull();
+    expect(
+      pluginSite(entry({ name: "a", homepage: "https://github.com./acme/plugin" })),
+    ).toBeNull();
     expect(pluginSite(entry({ name: "a", homepage: "https://docs.github.com/acme" }))).toBeNull();
     expect(pluginSite(entry({ name: "a", homepage: "https://notgithub.com/acme" }))).toBe(
       "https://notgithub.com",

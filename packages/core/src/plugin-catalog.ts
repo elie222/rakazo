@@ -258,8 +258,10 @@ export function pluginSite(
   if (domain) return `https://${domain}`;
   try {
     if (!entry.homepage) return null;
-    const { hostname, origin } = new URL(entry.homepage);
-    return hostname === "github.com" || hostname.endsWith(".github.com") ? null : origin;
+    const url = new URL(entry.homepage);
+    // A fully qualified name ends in a dot; it is still GitHub.
+    const host = url.hostname.replace(/\.$/, "");
+    return host === "github.com" || host.endsWith(".github.com") ? null : url.origin;
   } catch {
     return null;
   }
