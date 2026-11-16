@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dropUnchangedOwnBotArgs } from "./update-bot-patch.js";
+import { dropUnchangedOwnBotArgs, ignoredFieldsNote } from "./update-bot-patch.js";
 
 const current = {
   name: "Helper",
@@ -8,7 +8,6 @@ const current = {
   color: "#22C55E",
   notifyOnFinish: false,
   dailyCheckIns: false,
-  modelId: null,
   thinkingLevel: "high",
   autoSpeak: false,
   voiceId: null,
@@ -36,12 +35,35 @@ describe("dropUnchangedOwnBotArgs", () => {
     ).toEqual({});
   });
 
-  it("treats the model and thinking this run uses as the bot's own when it is on the defaults", () => {
+  it("treats every name of the current model and the run's thinking as no change", () => {
+    const names = ["gpt-fixture", "openai-compatible/gpt-fixture", "gpt-fixture (Compatible)"];
+    for (const model of [...names, "GPT-fixture (compatible)"])
+      expect(
+        dropUnchangedOwnBotArgs(
+          { model, thinkingLevel: "medium" },
+          { ...current, thinkingLevel: null },
+          names,
+          "medium",
+        ),
+      ).toEqual({});
+  });
+
+  it("keeps the same model id at another provider", () => {
+    expect(
+      dropUnchangedOwnBotArgs({ model: "openrouter/gpt-fixture" }, current, [
+        "gpt-fixture",
+        "openai-compatible/gpt-fixture",
+      ]),
+    ).toEqual({ model: "openrouter/gpt-fixture" });
+  });
+
+  it("treats default thinking as no change for a bot without its own level", () => {
     expect(
       dropUnchangedOwnBotArgs(
-        { model: "openai-compatible/gpt-fixture", thinkingLevel: "medium" },
+        { thinkingLevel: "default" },
         { ...current, thinkingLevel: null },
-        { modelId: "gpt-fixture", thinkingLevel: "medium" },
+        [],
+        "medium",
       ),
     ).toEqual({});
   });
@@ -60,6 +82,7 @@ describe("dropUnchangedOwnBotArgs", () => {
       dropUnchangedOwnBotArgs(
         { thinkingLevel: "max", readAloud: true, use_attached_image: true, model: "gpt-fixture" },
         current,
+        ["openai-compatible/gpt-other", "gpt-other"],
       ),
     ).toEqual({
       thinkingLevel: "max",
@@ -67,5 +90,19 @@ describe("dropUnchangedOwnBotArgs", () => {
       use_attached_image: true,
       model: "gpt-fixture",
     });
+  });
+});
+
+describe("ignoredFieldsNote", () => {
+  it("names a bounded number of fields with short previews", () => {
+    const fields = Object.fromEntries(
+      Array.from({ length: 12 }, (_, i) => [`field${i}`, "x".repeat(5000)]),
+    );
+    const note = ignoredFieldsNote({ ...fields, blank: "", none: null });
+    expect(note).toContain("field0=");
+    expect(note).toContain("and 4 more");
+    expect(note).not.toContain("blank");
+    expect(note!.length).toBeLessThan(1000);
+    expect(ignoredFieldsNote({ name: "" })).toBeUndefined();
   });
 });

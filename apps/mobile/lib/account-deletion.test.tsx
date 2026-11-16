@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import type { AccountSecurity } from "@rakazo/contracts";
+import { deferred } from "@rakazo/core/test-async";
 import { tokensForAppearance } from "@rakazo/ui-tokens";
 import type { ReactNode } from "react";
 import { act, createElement } from "react";
@@ -8,7 +9,7 @@ import { createRoot } from "react-dom/client";
 import { Platform } from "react-native";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAccountDeletion } from "../components/account-deletion";
-import { deleteAccount, fetchAccountSecurity, requestAccountDeletionCode } from "./api";
+import { deleteAccount, fetchAccountSecurity, requestAccountDeletionCode } from "./api-auth";
 import { replaceWithSignIn } from "./auth-routing";
 import { forgetSignedIn } from "./returning-user";
 import { continueWithSso } from "./sso";
@@ -107,7 +108,7 @@ vi.mock("../components/native-action-button", () => ({
       label,
     ),
 }));
-vi.mock("./api", () => ({
+vi.mock("./api-auth", () => ({
   fetchAccountSecurity: vi.fn(),
   deleteAccount: vi.fn(),
   requestAccountDeletionCode: vi.fn(),
@@ -119,10 +120,6 @@ vi.mock("./native", () => ({
 }));
 vi.mock("./auth-routing", () => ({ replaceWithSignIn: vi.fn() }));
 vi.mock("./delete-account-prompt", () => ({ promptAccountDeletion: vi.fn(() => false) }));
-vi.mock("./i18n", () => ({
-  t: (text: string) => text,
-  useI18n: () => ({ t: (text: string) => text }),
-}));
 vi.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({ bottom: 34 }) }));
 vi.mock("./returning-user", () => ({ forgetSignedIn: vi.fn() }));
 vi.mock("./sso", () => ({ continueWithSso: vi.fn() }));
@@ -225,18 +222,14 @@ describe("passwordless account deletion", () => {
 
   it("cannot be swiped away while a deletion is in flight", async () => {
     vi.mocked(continueWithSso).mockResolvedValue(true);
-    let fail!: (error: Error) => void;
-    vi.mocked(deleteAccount).mockReturnValue(
-      new Promise((_, reject) => {
-        fail = reject;
-      }) as never,
-    );
+    const fail = deferred<never>();
+    vi.mocked(deleteAccount).mockReturnValue(fail.promise as never);
     await open();
     await click("Sign in again");
     vi.mocked(fetchAccountSecurity).mockResolvedValue({ ...passwordless, freshOidcAuth: true });
     await click("Delete");
     expect(container.querySelector("section")!.dataset.swipe).toBe("false");
-    await act(async () => fail(new Error("offline")));
+    await act(async () => fail.reject(new Error("offline")));
     expect(container.querySelector("section")!.dataset.swipe).toBe("true");
   });
 
@@ -284,6 +277,21 @@ describe("passwordless account deletion", () => {
     expect(deleteAccount).not.toHaveBeenCalled();
     // The field switched to the password mode; the code must not sit in it as a password.
     expect(input.value).toBe("");
+    expect(button("Delete").disabled).toBe(true);
+  });
+
+  it.each(["google", "apple"])("hides unsupported linked %s deletion confirmation", async (id) => {
+    vi.mocked(fetchAccountSecurity).mockResolvedValue({
+      ...passwordless,
+      hasPassword: false,
+      sso: null,
+      ssoLinked: false,
+      emailDeletion: false,
+      linkedProviderIds: [id],
+    });
+    await open();
+    expect(document.body.textContent).not.toContain("Continue with Provider");
+    expect(continueWithSso).not.toHaveBeenCalled();
     expect(button("Delete").disabled).toBe(true);
   });
 });

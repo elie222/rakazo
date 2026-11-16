@@ -1,5 +1,4 @@
 import { Plural, Trans, useLingui } from "@lingui/react/macro";
-import { isOllamaCloudBaseUrl } from "@rakazo/contracts";
 import { Button, Disclosure, Input } from "@rakazo/ui-web";
 import { Check, Copy } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -18,14 +17,17 @@ export function ConnectionControls({
   beginSelectedSubscriptionSignIn,
   busy,
   cancelOAuthAttempt,
-  cloudflareRoutingReady,
+  routingReady,
   codeCopied,
   connectKey,
   copyOAuthCode,
   credential,
   gatewayId,
-  isCloudflare,
-  isCloudflareGateway,
+  projectId,
+  region,
+  needsRouting,
+  needsGateway,
+  needsProject,
   isOpenAiCompatible,
   oauth,
   oauthPending,
@@ -39,6 +41,8 @@ export function ConnectionControls({
   selected,
   setAccountId,
   setGatewayId,
+  setProjectId,
+  setRegion,
   setPasteCode,
   submitOAuthCode,
   subscriptionSignIn,
@@ -53,14 +57,17 @@ export function ConnectionControls({
   | "beginSelectedSubscriptionSignIn"
   | "busy"
   | "cancelOAuthAttempt"
-  | "cloudflareRoutingReady"
+  | "routingReady"
   | "codeCopied"
   | "connectKey"
   | "copyOAuthCode"
   | "credential"
   | "gatewayId"
-  | "isCloudflare"
-  | "isCloudflareGateway"
+  | "projectId"
+  | "region"
+  | "needsRouting"
+  | "needsGateway"
+  | "needsProject"
   | "isOpenAiCompatible"
   | "oauth"
   | "oauthPending"
@@ -74,6 +81,8 @@ export function ConnectionControls({
   | "selected"
   | "setAccountId"
   | "setGatewayId"
+  | "setProjectId"
+  | "setRegion"
   | "setPasteCode"
   | "submitOAuthCode"
   | "subscriptionSignIn"
@@ -258,32 +267,33 @@ export function ConnectionControls({
         </Disclosure>
       ) : acceptsKey ? (
         <div className="mt-5 first:mt-0">
-          {isCloudflare ? (
+          {needsRouting ? (
             <>
-              <label
-                className="block text-body text-muted-foreground"
-                htmlFor="cloudflare-account-id"
-              >
-                <Trans>Account ID</Trans>
+              <label className="block text-body text-muted-foreground" htmlFor="model-account-id">
+                {needsProject ? <Trans>Project ID</Trans> : <Trans>Account ID</Trans>}
                 <Input
-                  id="cloudflare-account-id"
-                  value={accountId}
-                  onChange={(event) => setAccountId(event.target.value)}
+                  id="model-account-id"
+                  value={needsProject ? projectId : accountId}
+                  onChange={(event) =>
+                    (needsProject ? setProjectId : setAccountId)(event.target.value)
+                  }
                   autoComplete="off"
                   spellCheck={false}
                   className="mt-2 h-10 text-foreground"
                 />
               </label>
-              {isCloudflareGateway ? (
+              {needsGateway || needsProject ? (
                 <label
                   className="mt-4 block text-body text-muted-foreground"
-                  htmlFor="cloudflare-gateway-id"
+                  htmlFor="model-gateway-id"
                 >
-                  <Trans>Gateway ID</Trans>
+                  {needsProject ? <Trans>Region</Trans> : <Trans>Gateway ID</Trans>}
                   <Input
-                    id="cloudflare-gateway-id"
-                    value={gatewayId}
-                    onChange={(event) => setGatewayId(event.target.value)}
+                    id="model-gateway-id"
+                    value={needsProject ? region : gatewayId}
+                    onChange={(event) =>
+                      (needsProject ? setRegion : setGatewayId)(event.target.value)
+                    }
                     autoComplete="off"
                     spellCheck={false}
                     className="mt-2 h-10 text-foreground"
@@ -294,7 +304,7 @@ export function ConnectionControls({
           ) : null}
           {acceptsKey ? (
             <label
-              className={`block text-body text-muted-foreground ${isCloudflare ? "mt-4" : ""}`}
+              className={`block text-body text-muted-foreground ${needsRouting ? "mt-4" : ""}`}
               htmlFor="model-api-key"
             >
               {credential?.hasKey ? (
@@ -334,7 +344,7 @@ export function ConnectionControls({
               type="button"
               variant="secondary"
               size="sm"
-              disabled={busy || !cloudflareRoutingReady || apiKey.trim().length < 8}
+              disabled={busy || !routingReady || apiKey.trim().length < 8}
               onClick={() => void connectKey()}
             >
               {pending === "connect" ? (
@@ -366,21 +376,21 @@ export function ConnectionControls({
 
 export function CompatibleKeyControls({
   apiKey,
-  baseUrl,
   busy,
   connectKey,
   credential,
+  endpointPreset,
   isOpenAiCompatible,
   openAiCompatibleReady,
   pending,
   updateApiKey,
 }: Pick<
   ModelSettingsState,
-  | "baseUrl"
   | "apiKey"
   | "busy"
   | "connectKey"
   | "credential"
+  | "endpointPreset"
   | "isOpenAiCompatible"
   | "openAiCompatibleReady"
   | "pending"
@@ -389,17 +399,20 @@ export function CompatibleKeyControls({
   const { t } = useLingui();
   return isOpenAiCompatible ? (
     <div className="mt-5">
-      <CompatibleKeyField baseUrl={baseUrl} className="block text-body text-muted-foreground">
+      <CompatibleKeyField
+        keyRequired={Boolean(endpointPreset)}
+        className="block text-body text-muted-foreground"
+      >
         <Input
           aria-label={t`API key`}
           value={apiKey}
           onChange={(event) => updateApiKey(event.target.value)}
-          required={isOllamaCloudBaseUrl(baseUrl)}
+          required={Boolean(endpointPreset)}
           placeholder={
-            isOllamaCloudBaseUrl(baseUrl)
-              ? t`Ollama API key`
-              : credential?.hasKey
-                ? t`Paste a replacement key`
+            credential?.hasKey
+              ? t`Paste a replacement key`
+              : endpointPreset
+                ? undefined
                 : t`Optional`
           }
           type="password"

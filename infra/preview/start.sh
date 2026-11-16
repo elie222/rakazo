@@ -43,8 +43,10 @@ init_database() {
   pwfile=$(mktemp)
   printf '%s\n' "$PG_OWNER_PASSWORD" > "$pwfile"
   chown postgres "$pwfile"
+  # The image sets no locale, so name one: initdb would otherwise pick SQL_ASCII, which rejects
+  # characters outside ASCII that migrations and user text rely on.
   as_postgres "$PG_BIN/initdb" -D "$PGDATA" -U rakazo --auth=scram-sha-256 --pwfile="$pwfile" \
-    > /dev/null
+    --encoding=UTF8 --locale=C.UTF-8 > /dev/null
   rm -f "$pwfile"
 }
 

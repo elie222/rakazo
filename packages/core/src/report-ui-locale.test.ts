@@ -1,20 +1,17 @@
 import { expect, it } from "vitest";
+import { deferred } from "./async.test-support.js";
 import { reportUiLocale } from "./ui-locale.js";
 
 it("repairs an older startup write that lands after a language choice", async () => {
   let locale = "en";
   let saved = "es";
-  let finishStartup: () => void = () => {};
+  const startupWrite = deferred();
   const writes: string[] = [];
   const startup = reportUiLocale(
     () => locale,
     async (value) => {
       writes.push(value);
-      if (writes.length === 1) {
-        await new Promise<void>((resolve) => {
-          finishStartup = resolve;
-        });
-      }
+      if (writes.length === 1) await startupWrite.promise;
       saved = value;
     },
   );
@@ -25,7 +22,7 @@ it("repairs an older startup write that lands after a language choice", async ()
       saved = value;
     },
   );
-  finishStartup();
+  startupWrite.resolve();
   await startup;
   expect(saved).toBe("de");
   expect(writes).toEqual(["en", "de"]);

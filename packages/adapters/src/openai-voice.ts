@@ -9,13 +9,14 @@ import type {
   VoiceTranscribeRequest,
   VoiceVerifyResult,
 } from "@rakazo/adapter-kit";
+import { deadlineSignal } from "@rakazo/core";
 import {
   readVoiceAudio,
   readVoiceJson,
   requireOk,
   speechUploadName,
   verifyVoiceHttpGet,
-  voiceDeadline,
+  voiceLanguageHint,
   voiceRequestError,
 } from "./voice-http.js";
 
@@ -23,7 +24,7 @@ const API = "https://api.openai.com/v1";
 const TTS_MODEL = "gpt-4o-mini-tts";
 const STT_MODEL = "gpt-4o-mini-transcribe";
 
-const OPENAI_VOICES: VoiceInfo[] = [
+export const OPENAI_VOICES: VoiceInfo[] = [
   { id: "alloy", label: "Alloy", description: "Neutral" },
   { id: "ash", label: "Ash", description: "Clear" },
   { id: "ballad", label: "Ballad", description: "Warm" },
@@ -63,7 +64,7 @@ export class OpenAIVoiceProvider implements VoiceProvider {
   }
 
   async synthesize(request: VoiceSynthesizeRequest, context: AdapterContext): Promise<SpeechClip> {
-    const signal = voiceDeadline(request.signal ?? context.signal, 60_000);
+    const signal = deadlineSignal(60_000, request.signal ?? context.signal);
     const res = await fetch(`${API}/audio/speech`, {
       method: "POST",
       headers: {
@@ -88,6 +89,8 @@ export class OpenAIVoiceProvider implements VoiceProvider {
   ): Promise<{ text: string }> {
     const form = new FormData();
     form.set("model", STT_MODEL);
+    const language = voiceLanguageHint(request.language);
+    if (language?.length === 2) form.set("language", language);
     form.set(
       "file",
       new Blob([new Uint8Array(request.audio)], { type: request.mimeType || "audio/webm" }),
@@ -97,7 +100,7 @@ export class OpenAIVoiceProvider implements VoiceProvider {
       method: "POST",
       headers: { authorization: `Bearer ${request.apiKey}` },
       body: form,
-      signal: voiceDeadline(request.signal ?? context.signal, 60_000),
+      signal: deadlineSignal(60_000, request.signal ?? context.signal),
     });
     const body = await readVoiceJson(res, { requireValid: res.ok });
     if (!res.ok) throw voiceRequestError(res.status, "OpenAI", "transcribing", body);

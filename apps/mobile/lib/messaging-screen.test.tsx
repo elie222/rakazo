@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import type { ReactNode } from "react";
 import { act, useEffect } from "react";
 import type { Root } from "react-dom/client";
@@ -10,6 +12,9 @@ import MessagingSettings from "../app/(settings)/messaging";
 import { rpc } from "./api";
 
 const appState = vi.hoisted(() => ({ change: undefined as ((state: string) => void) | undefined }));
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({ rpc: vi.fn() }));
 vi.mock("./appearance", () => ({ mobileTokens: () => ({}) }));
 vi.mock("./native", () => ({
@@ -18,12 +23,6 @@ vi.mock("./native", () => ({
 }));
 vi.mock("./user-error", () => ({
   errorText: (_: unknown, fallback = "Something went wrong. Try again.") => fallback,
-}));
-vi.mock("./i18n", () => ({
-  useI18n: () => ({
-    t: (message: string, values: Record<string, string> = {}) =>
-      message.replace(/\{(\w+)\}/g, (_, key: string) => values[key] ?? ""),
-  }),
 }));
 const push = vi.fn();
 vi.mock("expo-router", () => ({
@@ -404,13 +403,12 @@ it("clears an old load error once a later load succeeds", async () => {
 it("keeps a failed action's error when a refresh that was pending then succeeds", async () => {
   await act(async () => root.render(<MessagingSettings />));
   const answer = async (path: string) => (responses[path] ?? { ok: true }) as never;
-  let finishRefresh!: () => void;
+  let finishRefresh!: Deferred;
   vi.mocked(rpc).mockImplementation(async (path: string) => {
     if (path === "messaging/channels/respond") throw new Error("offline");
     if (path === "bots/list") {
-      await new Promise<void>((resolve) => {
-        finishRefresh = resolve;
-      });
+      finishRefresh = deferred();
+      await finishRefresh.promise;
     }
     return answer(path);
   });
@@ -419,6 +417,6 @@ it("keeps a failed action's error when a refresh that was pending then succeeds"
   await press("Family", "Approve");
   expect(container.textContent).toContain("Something went wrong. Try again.");
 
-  await act(async () => finishRefresh());
+  await act(async () => finishRefresh.resolve());
   expect(container.textContent).toContain("Something went wrong. Try again.");
 });

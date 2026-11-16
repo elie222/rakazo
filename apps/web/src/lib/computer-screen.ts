@@ -5,12 +5,14 @@ import { errorText } from "./user-error";
 
 export interface ComputerScreenResult {
   url: string | null;
+  /** The server's word that this URL signs in once; absent for a URL that can be loaded again. */
+  singleUseSignIn?: { screen: string };
   error: string | null;
 }
 
 /** Only the latest request for the visible computer may replace its screen or error. */
 export async function loadComputerScreen(options: {
-  load: () => Promise<{ url: string | null }>;
+  load: () => Promise<Pick<ComputerScreenResult, "url" | "singleUseSignIn">>;
   isCurrent: () => boolean;
   commit: (result: ComputerScreenResult) => void;
   fallbackError: string;
@@ -18,7 +20,7 @@ export async function loadComputerScreen(options: {
   let result: ComputerScreenResult;
   try {
     const screen = await options.load();
-    result = { url: screen.url, error: null };
+    result = { url: screen.url, singleUseSignIn: screen.singleUseSignIn, error: null };
   } catch (error) {
     result = {
       url: null,
@@ -56,26 +58,6 @@ export function embeddableScreenUrl(url: string | null): string | null {
   }
 }
 
-/**
- * An embedded screen URL carries a one-time login code, so every read of it differs. Reloading the
- * frame for a new code would open a second session that signs the first one out; the screen keeps
- * the URL it connected with until the desktop or the view changes.
- */
-export function sameEmbeddedComputerScreen(current: string | null, next: string | null): boolean {
-  if (!current || !next) return false;
-  try {
-    const a = new URL(current);
-    const b = new URL(next);
-    if (a.protocol === "http:" || a.protocol === "https:" || a.protocol !== b.protocol)
-      return false;
-    return ["desktop_id", "region_id", "view_only"].every(
-      (name) => a.searchParams.get(name) === b.searchParams.get(name),
-    );
-  } catch {
-    return false;
-  }
-}
-
 export function screenIframeSandbox(url: string | null) {
   if (!url) return undefined;
   try {
@@ -102,6 +84,27 @@ export async function bootComputerOnce<T>(
   } finally {
     if (inFlight.get(botId) === token) inFlight.delete(botId);
   }
+}
+
+/** A proxied screen's policy and expiry, which its capability path carries in the clear. */
+export function proxiedScreenCapability(
+  url: string | null,
+): { policy: "view" | "control"; expiresAt: number } | null {
+  const match = url ? /\/novnc\/session\/(view|control)\/(\d+)\./.exec(url) : null;
+  return match ? { policy: match[1] as "view" | "control", expiresAt: Number(match[2]) } : null;
+}
+
+/**
+ * The frames a screen draws. A held predecessor comes first, so React keeps its element in place
+ * (a moved iframe reloads), then the live frame.
+ */
+export function screenFrames(
+  key: string | undefined,
+  url: string,
+  held: { url: string; key: string } | null | undefined,
+): Array<{ key: string; url: string; held: boolean }> {
+  const live = { key: key ?? "screen", url, held: false };
+  return held ? [{ ...held, held: true }, live] : [live];
 }
 
 /** Only pages the web proxy serves carry the shim that reports their state to the app. */

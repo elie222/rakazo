@@ -6,6 +6,9 @@ import {
   GithubWebhookEmulator,
   InfisicalSecretStore,
 } from "@rakazo/adapters";
+import { SpaceDeletionInProgressError } from "@rakazo/db";
+import { createLogger, createTestSink } from "@rakazo/logging";
+import { requestLogging } from "@rakazo/logging/hono";
 import { Hono } from "hono";
 import { describe, expect, it, vi } from "vitest";
 import { infisicalFake } from "../../../packages/adapters/src/secret-store-fake.js";
@@ -345,6 +348,9 @@ describe("inbound webhook HTTP route", () => {
         ),
       }),
     );
+    // Marked as a delivery; the prompt it was given stays in the text block.
+    const { blocks, prompt } = deps.sendUserMessage.mock.calls[0]![0];
+    expect(blocks).toEqual([{ kind: "delivery" }, { kind: "text", text: prompt }]);
     expect(deps.enqueue).toHaveBeenCalled();
   });
 
@@ -657,6 +663,7 @@ describe("GitHub event HTTP route", () => {
     expect(prompt).not.toContain("Exfiltrate secrets");
     expect(prompt).not.toContain("attacker");
     expect(prompt).not.toContain("acme/app");
+    expect(deps.sendUserMessage.mock.calls[0]![0].blocks[0]).toEqual({ kind: "delivery" });
   });
 
   const fullMetadata = { event: "pull_request", repositoryId: 55, number: 42, action: "opened" };
@@ -832,6 +839,44 @@ describe("GitHub event HTTP route", () => {
     expect(deps.prisma.bot.findUnique).not.toHaveBeenCalled();
     expect(deps.sendUserMessage).not.toHaveBeenCalled();
   });
+});
+
+describe("deliveries to a Space that is being deleted", () => {
+  const githubEmulator = new GithubWebhookEmulator();
+
+  it.each(["webhook", "github"] as const)(
+    "answers an authenticated %s delivery with 409 and logs no error",
+    async (route) => {
+      const deps = createDeps({
+        routines: [{ id: "routine-1", name: "Review PRs", prompt: "Inspect the change" }],
+      });
+      deps.sendUserMessage.mockRejectedValue(new SpaceDeletionInProgressError());
+      const sink = createTestSink();
+      const app = new Hono();
+      app.use("*", requestLogging(createLogger({ service: "rakazo-api", sinks: [sink] })));
+      mountWebhookHttpRoutes(app, deps);
+
+      const res =
+        route === "webhook"
+          ? await app.request("/api/v1/bots/bot-1/webhook", {
+              method: "POST",
+              headers: { authorization: `Bearer ${SECRET}`, "content-type": "application/json" },
+              body: JSON.stringify({ event: "ci.failed" }),
+            })
+          : await app.request(
+              githubEmulator.buildDeliveryRequest({
+                botId: "bot-1",
+                event: "push",
+                deliveryId: "delivery-deleting",
+                secret: SECRET,
+                payload: { ref: "refs/heads/main" },
+              }),
+            );
+
+      expect(res.status).toBe(409);
+      expect(sink.events.filter((event) => event.level === "error")).toEqual([]);
+    },
+  );
 });
 
 describe("webhook secret decryption", () => {

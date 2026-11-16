@@ -1,10 +1,11 @@
 import { globSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { lingui } from "@lingui/vite-plugin";
 import { defineConfig } from "vitest/config";
 
 const include = [
-  ".agents/skills/pr-watch/*.test.ts",
+  ".agents/skills/*/*.test.ts",
   "packages/*/src/**/*.test.{ts,tsx}",
   "infra/sandboxes/supervisor/src/**/*.test.ts",
   "infra/updater/src/**/*.test.ts",
@@ -32,6 +33,9 @@ const isolated = include
   );
 
 export default defineConfig({
+  // Mobile imports its translation catalogs as `.po` files.
+  // Some runs start outside the repo, so the config is named rather than searched for.
+  plugins: [lingui({ configPath: path.join(root, "lingui.config.ts") })],
   resolve: {
     alias: [
       {
@@ -49,6 +53,12 @@ export default defineConfig({
         find: /^@lingui\/core\/macro$/,
         replacement: fileURLToPath(
           new URL("./packages/testkit/src/lingui-core-macro.ts", import.meta.url),
+        ),
+      },
+      {
+        find: /^@lingui\/react\/macro$/,
+        replacement: fileURLToPath(
+          new URL("./packages/testkit/src/lingui-react-macro.ts", import.meta.url),
         ),
       },
       // Native-only transitive deps of the renderer contain uncompiled Flow

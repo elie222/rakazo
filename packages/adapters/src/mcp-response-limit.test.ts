@@ -3,7 +3,7 @@ import { limitMcpResponseBody, McpResponseTooLargeError } from "./mcp-response-l
 
 const MAX = 64;
 
-function streamed(chunks: string[], headers: Record<string, string>): Response {
+function streamed(chunks: string[], headers: Record<string, string>, status = 200): Response {
   const encoder = new TextEncoder();
   return new Response(
     new ReadableStream({
@@ -12,7 +12,7 @@ function streamed(chunks: string[], headers: Record<string, string>): Response {
         controller.close();
       },
     }),
-    { headers },
+    { headers, status },
   );
 }
 
@@ -79,6 +79,17 @@ describe("limitMcpResponseBody", () => {
   it("counts both bytes of each CRLF toward the event limit", async () => {
     const lines = "data:0\r\n".repeat(Math.ceil(MAX / 8) + 1);
     const limited = limitMcpResponseBody(streamed([`${lines}\r\n`], sse), streamRequest, MAX);
+    await expect(limited.text()).rejects.toThrow(McpResponseTooLargeError);
+  });
+
+  it("limits a failed response as one body, even when it is a stream of small events", async () => {
+    // The MCP SDK reads a failed response whole with text(), so per-event limits would not bound it.
+    const event = `data: ${"x".repeat(20)}\n\n`;
+    const limited = limitMcpResponseBody(
+      streamed([event, event, event], sse, 500),
+      streamRequest,
+      MAX,
+    );
     await expect(limited.text()).rejects.toThrow(McpResponseTooLargeError);
   });
 

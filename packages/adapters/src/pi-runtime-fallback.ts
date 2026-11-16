@@ -25,6 +25,7 @@ import {
 } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import { ModelImageLimitError, pruneForRebuild } from "./context-pruning.js";
+import { ContextBudgetError } from "./context-selection.js";
 import { groqRequestContextWindow } from "./groq-request-budget.js";
 import { estimateModelContextTokens } from "./model-context.js";
 import { IMAGE_RETURNING_COMPUTER_TOOLS } from "./model-vision.js";
@@ -56,8 +57,12 @@ import {
   withoutThinkingBlocks,
   withoutThinkingFrom,
 } from "./thinking-signatures.js";
+import type { PacerSlot } from "./token-pacer.js";
+import { pacerTokensPerMinute, sharedTokenPacer } from "./token-pacer.js";
 
 const MODEL_PROVIDER_RETRY_DELAYS_MS = [2_000, 8_000, 20_000] as const;
+/** Same-model repeats of a call that ended normally with nothing to show, before a backup. */
+const EMPTY_REPLY_RETRIES = 2;
 
 /** Why a reply ended before the model finished it. */
 export type CutReplyReason = "connection" | "limit";
@@ -81,8 +86,20 @@ export interface FallbackStreamState {
   cutReplies?: WeakMap<AssistantMessage["content"], CutReplyReason>;
   /** The next call continues a cut reply, so a dropped connection there is not continued again. */
   continuingCutReply?: boolean;
+  /**
+   * Whether an empty reply now would leave the user with nothing at all. Such a reply is repeated
+   * and then tried on the backups. Once the run has shown text or run tools, the runtime handles
+   * an empty reply itself, so it passes through. Absent where nothing repeats one (subagents).
+   */
+  retriesEmptyReply?(): boolean;
   onSwitch(target: RuntimeModelTarget): Promise<void>;
   onContextLimit(contextWindow: number): void;
+  /**
+   * The context a backup's own context policy would send on its first call. The policy shortens
+   * older tool results and drops older turns to fit the backup's window, so a backup is judged on
+   * that, not on a transcript sized for the primary. Throws ContextBudgetError when nothing fits.
+   */
+  prepareForTarget?(target: RuntimeModelTarget, context: TranscriptContext): TranscriptContext;
   isProviderFailure(message: AssistantMessage): boolean;
   /** Set once a provider rejected replayed thinking signatures; see thinking-signatures.ts. */
   dropThinkingBlocks?: boolean;
@@ -104,24 +121,37 @@ export interface FallbackStreamState {
 }
 
 /**
+ * Whether reply text counts as shown. With `blankIsEmpty`, whitespace-only text does not: a call
+ * whose empty reply is repeated holds it back, so a blank reply can still be discarded.
+ */
+function isShownText(text: string, blankIsEmpty: boolean): boolean {
+  return (blankIsEmpty ? text.trim() : text).length > 0;
+}
+
+/**
  * Reply text or a tool call. Thinking alone is never shown or run, so a call that has only
  * thought can be retried from scratch with its thinking discarded.
  */
-function assistantHasVisibleOutput(message: AssistantMessage): boolean {
+function assistantHasVisibleOutput(message: AssistantMessage, blankIsEmpty = false): boolean {
   return message.content.some(
-    (part) => part.type === "toolCall" || (part.type === "text" && part.text.length > 0),
+    (part) =>
+      part.type === "toolCall" || (part.type === "text" && isShownText(part.text, blankIsEmpty)),
   );
 }
 
-function eventHasVisibleOutput(event: AssistantMessageEvent): boolean {
-  if (event.type === "toolcall_start" || event.type === "toolcall_end") return true;
-  if (event.type === "text_delta" || event.type === "toolcall_delta") {
-    if (event.delta.length > 0) return true;
-  }
-  if (event.type === "text_end" && event.content.length > 0) return true;
-  if (event.type === "done") return assistantHasVisibleOutput(event.message);
-  if (event.type === "error") return assistantHasVisibleOutput(event.error);
-  return assistantHasVisibleOutput(event.partial);
+/**
+ * Reply text the user is shown as it streams. Thinking and tool calls are held back until the
+ * call ends: no tool runs before then and nothing renders a tool call's arguments, so a call that
+ * fails before any text can be retried from scratch with its partial tool calls discarded. With
+ * `blankIsEmpty`, whitespace-only text is held back too.
+ */
+function eventHasVisibleText(
+  event: Exclude<AssistantMessageEvent, { type: "done" } | { type: "error" }>,
+  blankIsEmpty = false,
+): boolean {
+  if (event.type === "text_delta") return isShownText(event.delta, blankIsEmpty);
+  if (event.type === "text_end") return isShownText(event.content, blankIsEmpty);
+  return isShownText(assistantText(event.partial), blankIsEmpty);
 }
 
 export const MAX_SELF_RECOVERIES_PER_RUN = 3;
@@ -233,6 +263,7 @@ function fallbackIncompatibility(
   context: TranscriptContext,
   options: ModelsSimpleStreamOptions | undefined,
   tools: readonly ConnectorTool[],
+  prepareForTarget?: FallbackStreamState["prepareForTarget"],
 ): string | undefined {
   // The backup's own context policy prunes on its first call; judge what it would send. Too
   // many user images for its limit throws, and the caller skips the backup.
@@ -241,9 +272,12 @@ function fallbackIncompatibility(
       ...context,
       messages: pruneForRebuild(context.messages, candidate.config.maxImagesPerPrompt),
     };
+    if (prepareForTarget) context = prepareForTarget(candidate, context);
   } catch (error) {
     if (error instanceof ModelImageLimitError)
       return "The request exceeds the backup model's image limit.";
+    if (error instanceof ContextBudgetError)
+      return "Conversation exceeds the backup model's context limit.";
     throw error;
   }
   const inputTokens = estimateModelContextTokens(context, estimatePiImageTokens);
@@ -259,8 +293,14 @@ function fallbackIncompatibility(
   // small input-relative margin, not a fixed 4096 tokens that would exclude
   // otherwise usable small-context models on short turns.
   const contextSafetyMargin = Math.max(256, Math.ceil(inputTokens * 0.1));
-  if (candidate.model.contextWindow <= inputTokens + outputTokens + contextSafetyMargin)
-    return "Conversation exceeds the backup model's context limit.";
+  // A context the backup's own policy prepared was sized against the output reserve the send
+  // uses, so it is judged by that accounting with no extra margin. A policy that keeps the
+  // transcript as is still has to fit.
+  const exceedsWindow = prepareForTarget
+    ? candidate.model.contextWindow <
+      inputTokens + effectiveOutputReserve(candidate.model.contextWindow, outputTokens)
+    : candidate.model.contextWindow <= inputTokens + outputTokens + contextSafetyMargin;
+  if (exceedsWindow) return "Conversation exceeds the backup model's context limit.";
   const imageCount = contextImageCount(context);
   if (
     (imageCount > 0 || tools.some((tool) => IMAGE_RETURNING_COMPUTER_TOOLS.has(tool.name))) &&
@@ -401,6 +441,7 @@ export function fallbackAwareModelStream(
           requestContext(true),
           options,
           state.request.tools,
+          state.prepareForTarget,
         );
         if (incompatibility) {
           skip(incompatibility);
@@ -423,6 +464,14 @@ export function fallbackAwareModelStream(
     }
     return undefined;
   };
+  /** Moves the run to the next usable backup; false when none is left. */
+  const switchToNext = async (current: RuntimeModelTarget): Promise<boolean> => {
+    const next = await resolveNext(current);
+    if (!next || signalAborted()) return false;
+    state.messagesBeforeSwitch = context.messages.length;
+    await state.onSwitch(next);
+    return true;
+  };
   const run = async () => {
     let buffered: AssistantMessageEvent[] = [];
     let retries = 0;
@@ -435,9 +484,22 @@ export function fallbackAwareModelStream(
     let firstRetryableError: Extract<AssistantMessageEvent, { type: "error" }> | undefined;
     // Set once this call has been repeated after spending its output budget on nothing visible.
     let lengthRecovered = false;
+    let emptyRetries = 0;
     let outputBudget = state.nextCallRecovery?.maxTokens;
     let thinkingOverride = state.nextCallRecovery?.thinkingLevel;
     state.nextCallRecovery = undefined;
+    /**
+     * Clears what one model spent or learned on this call, after a switch to a backup: a raised
+     * budget, lower thinking level, sizing retry, length recovery or empty-reply repeats fitted the
+     * failed model, and the backup gets its own.
+     */
+    const resetForBackup = () => {
+      outputBudget = undefined;
+      thinkingOverride = undefined;
+      sizingFailure = undefined;
+      lengthRecovered = false;
+      emptyRetries = 0;
+    };
     const continuingCutReply = Boolean(state.continuingCutReply);
     state.continuingCutReply = false;
     while (!signalAborted()) {
@@ -465,6 +527,9 @@ export function fallbackAwareModelStream(
       };
       lastPartial = undefined;
       let sawVisibleOutput = false;
+      // A call whose empty reply would be repeated holds back whitespace-only text until real
+      // output arrives, so a blank reply can still be discarded and repeated.
+      const blankIsEmpty = state.retriesEmptyReply?.() === true;
       let restart = false;
       let stream: AssistantMessageEventStream;
       // A backup runs at its own effort, never the main model's.
@@ -484,6 +549,27 @@ export function fallbackAwareModelStream(
         sentTarget.model.contextWindow,
         operatorMaxTokens(sentTarget.model),
       );
+      // Wait only as long as RAKAZO_LOCAL_TOKENS_PER_MINUTE needs (token-pacer.ts).
+      let paceSlot: PacerSlot | undefined;
+      const paceLimit = pacerTokensPerMinute(target.config.provider);
+      if (paceLimit !== undefined) {
+        const paced = await sharedTokenPacer.acquire(
+          `${target.config.provider}|${sentTarget.model.baseUrl}`,
+          estimateModelContextTokens(requestContext(), estimatePiImageTokens),
+          paceLimit,
+          signal,
+        );
+        paceSlot = paced.slot;
+        // Time spent pacing is not model time: keep it out of the request budget.
+        startedAt += paced.waitedMs;
+        if (paced.waitedMs >= 1_000) {
+          getLogger().info("model.pacer.wait", {
+            runId: state.request.runId,
+            provider: target.config.provider,
+            waitedMs: paced.waitedMs,
+          });
+        }
+      }
       try {
         const apiKey = target.credentials?.accessToken ?? target.apiKey;
         const reasoning = thinkingLevel === "off" ? undefined : thinkingLevel;
@@ -498,16 +584,22 @@ export function fallbackAwareModelStream(
               : attemptOptions,
         );
       } catch (error) {
+        paceSlot?.release();
         finishWithThrownError(target, error);
         return;
       }
       try {
         for await (const event of stream) {
+          if (event.type === "error") paceSlot?.release();
+          if (event.type === "done") {
+            paceSlot?.settle(event.message.usage.input + event.message.usage.cacheRead);
+          }
           if (event.type === "error") {
             recordFailure(target, event.error.errorMessage ?? "Model request failed.");
             let terminalEvent = event;
             let requestLimitTooSmall = false;
-            const hasTerminalVisibleOutput = assistantHasVisibleOutput(event.error);
+            // A failed call runs none of its tool calls, so only text counts as shown.
+            const hasTerminalVisibleOutput = isShownText(assistantText(event.error), blankIsEmpty);
             if (
               !sawVisibleOutput &&
               !hasTerminalVisibleOutput &&
@@ -626,15 +718,10 @@ export function fallbackAwareModelStream(
                 target.config.provider,
                 terminalEvent.error.errorMessage ?? "Model request failed.",
               );
-              const next = await resolveNext(target);
+              const switched = await switchToNext(target);
               if (failIfAborted(target)) return;
-              if (next) {
-                state.messagesBeforeSwitch = context.messages.length;
-                await state.onSwitch(next);
-                if (failIfAborted(target)) return;
-                // A raised budget or lower thinking level fitted the failed model, not this one.
-                outputBudget = undefined;
-                thinkingOverride = undefined;
+              if (switched) {
+                resetForBackup();
                 buffered = [];
                 restart = true;
                 break;
@@ -804,6 +891,45 @@ export function fallbackAwareModelStream(
               restart = true;
               break;
             }
+            if (
+              event.message.stopReason === "stop" &&
+              !sawVisibleOutput &&
+              blankIsEmpty &&
+              !assistantHasVisibleOutput(event.message, true) &&
+              !signalAborted()
+            ) {
+              // An empty or thinking-only reply is a provider glitch, not an answer. Repeat the
+              // call from the same context with backoff, then try the backups; only when every
+              // attempt is empty does the reply pass through. Its thinking is discarded with
+              // `buffered`, so nothing of a repeated call reaches the transcript.
+              getLogger().info("model.empty_reply", {
+                runId: state.request.runId,
+                provider: target.config.provider,
+                model: target.config.id,
+                retries: emptyRetries,
+              });
+              // A cancellation while waiting must not carry the discarded call's thinking.
+              lastPartial = undefined;
+              if (emptyRetries < EMPTY_REPLY_RETRIES) {
+                await abortableDelay(MODEL_PROVIDER_RETRY_DELAYS_MS[emptyRetries] ?? 0, signal);
+                if (failIfAborted(target)) return;
+                emptyRetries += 1;
+                // The empty call finished, so the next one gets its own request window.
+                startedAt = Date.now();
+                buffered = [];
+                restart = true;
+                break;
+              }
+              const switched = await switchToNext(target);
+              if (failIfAborted(target)) return;
+              if (switched) {
+                resetForBackup();
+                startedAt = Date.now();
+                buffered = [];
+                restart = true;
+                break;
+              }
+            }
             for (const pending of buffered) output.push(pending);
             buffered = [];
             output.push(event);
@@ -814,7 +940,7 @@ export function fallbackAwareModelStream(
             ...event.partial,
             content: event.partial.content.map((part) => ({ ...part })),
           };
-          if (eventHasVisibleOutput(event)) {
+          if (eventHasVisibleText(event, blankIsEmpty)) {
             sawVisibleOutput = true;
             for (const pending of buffered) output.push(pending);
             buffered = [];

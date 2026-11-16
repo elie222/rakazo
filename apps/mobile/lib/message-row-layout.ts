@@ -1,6 +1,6 @@
 import { isApprovalAskBlock, isSecretAskBlock } from "@rakazo/core";
-import type { MobileMessage } from "./api";
 import { isCenteredAgentEvent, THREAD_COLUMN_GUTTER } from "./message-presentation";
+import type { MobileMessage } from "./mobile-types";
 
 const COLUMN_PADDING = THREAD_COLUMN_GUTTER * 2;
 
@@ -24,6 +24,7 @@ export function messageRowLayout(
       block.kind === "app_connect" ||
       block.kind === "mcp_approval" ||
       block.kind === "app" ||
+      block.kind === "page" ||
       (block.kind === "ask" &&
         block.status !== "answered" &&
         Boolean(block.actions?.length) &&

@@ -1,4 +1,4 @@
-import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Actor } from "@rakazo/contracts";
@@ -11,6 +11,7 @@ import {
   parseEntryName,
   readArchive,
   remapIds,
+  SPOOL_PREFIX,
 } from "./account-import.js";
 import {
   buildArchive,
@@ -339,6 +340,28 @@ describe("account import archive", () => {
         }),
       ).rejects.toThrow("not a readable Rakazo export");
       expect(await readdir(dir)).toEqual([]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("never writes an entry through a file planted at the spill path", async () => {
+    const dir = await spoolDir();
+    try {
+      const victim = join(dir, "victim");
+      await writeFile(victim, "keep");
+      const bytes = buildArchive([["manifest.json", "{}"]]);
+      async function* planting(): AsyncIterable<Uint8Array> {
+        yield bytes.subarray(0, 4);
+        // The spool exists now: plant a link where its spill will be opened.
+        const spool = (await readdir(dir)).find((name) => name.startsWith(SPOOL_PREFIX));
+        await symlink(victim, join(dir, `${spool}.entry`));
+        yield bytes.subarray(4);
+      }
+      await expect(
+        readArchive(planting(), limits, new RecordingSink(), { spoolDir: dir }),
+      ).rejects.toThrow("EEXIST");
+      expect(await readFile(victim, "utf8")).toBe("keep");
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

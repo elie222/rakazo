@@ -15,6 +15,18 @@ sign-in or an app to connect.
 > One bot per job works best: an inbox bot, a research bot, a bot for one client. Each keeps its own
 > history and memory, so it gets better at that job over time.
 
+### Start from a template
+
+**Bot templates** are ready-made bots for common jobs: a morning briefing, inbox triage, pull
+request reviews, and a weekly digest of topics you follow. Open them with **Templates** in
+**Connect apps** or **Skills**. Each template shows an example of what the bot sends and everything it adds before you
+choose **Create bot**.
+
+A template adds the bot's instructions, a skill to your library, and a routine that stays paused
+until you turn it on. Nothing is connected for you: the new chat asks for the apps the bot works
+with, and it still works without them where it can. Creating the same template again opens the bot
+you already made.
+
 ## Talk to it
 
 Type in the composer and press Enter. You can keep chatting while a bot works, and **Stop** ends
@@ -73,6 +85,6 @@ Right-click a bot in the sidebar to **Pin** it, **Move to** a section, **Mark as
 
 - **Search** in the sidebar searches bots and conversations. Press Cmd+K (Ctrl+K on Windows and
   Linux) to jump to any bot.
-- **Activity** in the sidebar lists every run, with filters for status and date. Use it to find a
-  run that failed or is waiting on you.
+- **Activity** in the sidebar lists every run, with search by bot name and filters for status
+  and date. Use it to find a run that failed or is waiting on you.
 - **Artifacts** in the account menu lists every file bots have made, with search and a date filter.

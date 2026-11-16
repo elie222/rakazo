@@ -30,11 +30,13 @@ vi.mock("./call-sounds", () => ({
 }));
 vi.mock("./voice", () => ({
   createSpeechOwner: () => Symbol("SpeechOwner"),
+  setCallAudio: vi.fn(async () => undefined),
+  setDictationAudio: vi.fn(async () => undefined),
   speakText: vi.fn(),
   stopSpeaking: vi.fn(),
 }));
 
-import { resetApiBase, saveApiBase } from "./api";
+import { resetApiBase, saveApiBase } from "./api-server";
 import type { CallDeps } from "./call-session";
 import { startCall } from "./call-session";
 import { currentSessionGeneration, saveSessionToken } from "./session";

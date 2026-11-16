@@ -10,6 +10,7 @@ import type {
   VoiceVerifyResult,
 } from "@rakazo/adapter-kit";
 import { VoiceAccountError } from "@rakazo/adapter-kit";
+import { deadlineSignal } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import {
   isSpeechModelId,
@@ -17,7 +18,6 @@ import {
   readVoiceJson,
   speechUploadName,
   verifyVoiceHttpGet,
-  voiceDeadline,
   voiceLanguageHint,
   voiceRequestError,
 } from "./voice-http.js";
@@ -47,7 +47,7 @@ export class FishAudioVoiceProvider implements VoiceProvider {
       id: "fish-audio",
       contractVersion: "1",
       adapterVersion: "0.1.0",
-      capabilities: { catalog: true, synthesize: true, transcribe: true },
+      capabilities: { catalog: true, synthesize: true, transcribe: true, languages: true },
     };
   }
 
@@ -61,17 +61,23 @@ export class FishAudioVoiceProvider implements VoiceProvider {
   }
 
   /** Return user-owned then bounded public Fish Audio voices as Rakazo choices. */
-  async listVoices(apiKey: string, context: AdapterContext): Promise<VoiceInfo[]> {
+  async listVoices(
+    apiKey: string,
+    context: AdapterContext,
+    options: { language?: string } = {},
+  ): Promise<VoiceInfo[]> {
     const controller = new AbortController();
-    const signal = voiceDeadline(
-      AbortSignal.any([context.signal, controller.signal]),
+    const signal = deadlineSignal(
       LIST_VOICES_DEADLINE_MS,
+      AbortSignal.any([context.signal, controller.signal]),
     );
     const listContext = { ...context, signal };
+    // Fish's catalog filter matches the lowercase primary subtag ("de-DE" → "de").
+    const language = options.language?.split("-")[0]?.toLowerCase() || undefined;
     try {
       const [publicModels, ownModels] = await Promise.all([
-        fetchModels(apiKey, listContext, false),
-        fetchModels(apiKey, listContext, true),
+        fetchModels(apiKey, listContext, false, language),
+        fetchModels(apiKey, listContext, true, undefined),
       ]);
       const seen = new Set<string>();
       return [...ownModels, ...publicModels]
@@ -88,7 +94,7 @@ export class FishAudioVoiceProvider implements VoiceProvider {
   }
 
   async synthesize(request: VoiceSynthesizeRequest, context: AdapterContext): Promise<SpeechClip> {
-    const signal = voiceDeadline(request.signal ?? context.signal, 60_000);
+    const signal = deadlineSignal(60_000, request.signal ?? context.signal);
     const model = resolveFishSpeechModel(request.model);
     const res = await fetch(`${API}/v1/tts`, {
       method: "POST",
@@ -134,7 +140,7 @@ export class FishAudioVoiceProvider implements VoiceProvider {
       method: "POST",
       headers: { ...fishAudioHeaders(request.apiKey), model },
       body: form,
-      signal: voiceDeadline(request.signal ?? context.signal, 60_000),
+      signal: deadlineSignal(60_000, request.signal ?? context.signal),
     });
     const body = await readFishResponse(res);
     if (!res.ok) rejectFish(res.status, "transcribing", body, request.apiKey);
@@ -146,6 +152,7 @@ async function fetchModels(
   apiKey: string,
   context: AdapterContext,
   own: boolean,
+  language?: string,
 ): Promise<Array<Record<string, unknown>>> {
   const maxPages = own ? OWN_MODEL_PAGES : PUBLIC_MODEL_PAGES;
   const models: Array<Record<string, unknown>> = [];
@@ -154,7 +161,7 @@ async function fetchModels(
   while (pageNumber <= maxPages) {
     // Only prefetch public pages backed by a known total, within the existing cap.
     const pending = Array.from({ length: Math.min(batchSize, maxPages - pageNumber + 1) }, (_, i) =>
-      fetchModelPage(apiKey, context, own, pageNumber + i).then(
+      fetchModelPage(apiKey, context, own, pageNumber + i, language).then(
         (page) => ({ page }),
         (error: unknown) => ({ error }),
       ),
@@ -188,6 +195,7 @@ async function fetchModelPage(
   context: AdapterContext,
   own: boolean,
   pageNumber: number,
+  language?: string,
 ) {
   context.signal.throwIfAborted();
   const params = new URLSearchParams({
@@ -196,6 +204,7 @@ async function fetchModelPage(
     sort_by: "score",
   });
   if (own) params.set("self", "true");
+  else if (language) params.set("language", language);
   const res = await fetch(`${API}/model?${params}`, {
     headers: fishAudioHeaders(apiKey),
     signal: context.signal,

@@ -2,14 +2,14 @@ import { onError } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/fetch";
 import { SandboxDamagedError } from "@rakazo/adapter-kit";
 import type * as Adapters from "@rakazo/adapters";
-import { ComputerBusyError } from "@rakazo/adapters";
+import { ComputerBusyError, ComputerRecoveryRequiredError } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { Prisma } from "@rakazo/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { handleRpcError } from "./app.js";
 import type { RouterDeps } from "./router.js";
 import { createRouter } from "./router.js";
+import { handleRpcError } from "./rpc-errors.js";
 
 const lifecycle = vi.hoisted(() => ({
   realAcquire: undefined as typeof Adapters.acquireComputerExecutionLease | undefined,
@@ -195,6 +195,27 @@ describe("computer boot", () => {
     const response = await boot(prisma);
 
     expect(response?.status).toBe(404);
+    expect(lifecycle.provisionComputer).toHaveBeenCalledOnce();
+    expect(lifecycle.releaseComputerExecutionLease).toHaveBeenCalledOnce();
+  });
+
+  it("returns the quarantine recovery instruction over RPC without starting the computer", async () => {
+    const error = new ComputerRecoveryRequiredError();
+    lifecycle.provisionComputer.mockRejectedValue(error);
+    const prisma = {
+      spaceMember: { count: vi.fn(async () => 1) },
+      bot: {
+        findFirst: vi.fn().mockResolvedValue({
+          ...stoppedBot,
+          computer: { ...stoppedBot.computer, state: "quarantined" },
+        }),
+      },
+    } as unknown as PrismaClient;
+
+    const response = await boot(prisma);
+
+    expect(response?.status).toBe(409);
+    expect(await response?.text()).toContain(error.message);
     expect(lifecycle.provisionComputer).toHaveBeenCalledOnce();
     expect(lifecycle.releaseComputerExecutionLease).toHaveBeenCalledOnce();
   });

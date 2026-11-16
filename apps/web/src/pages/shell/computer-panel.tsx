@@ -5,7 +5,8 @@ import { BotAvatar, Button } from "@rakazo/ui-web";
 import { HardDrive, Maximize2, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { ComputersUnavailableHint } from "../../components/ComputersUnavailableHint";
-import { screenIframeSandbox } from "../../lib/computer-screen";
+import { runsOnUserMachine } from "../../lib/computer-sandbox";
+import { screenFrames, screenIframeSandbox } from "../../lib/computer-screen";
 import { computerLabel, computerPlaceholder, DesktopKindEmptyState } from "./computer-view";
 
 type ComputerPanelProps = {
@@ -15,6 +16,7 @@ type ComputerPanelProps = {
   embeddedScreenUrl: string | null;
   /** Changes to load the screen again in a new frame. */
   screenFrameKey?: string;
+  heldScreen?: { url: string; key: string } | null;
   screenFrameRef: (frame: HTMLIFrameElement | null) => void;
   computerScreenError: ReactNode;
   computerBooting: ReactNode;
@@ -75,6 +77,7 @@ function ComputerPreview({
   computerOpen,
   embeddedScreenUrl,
   screenFrameKey,
+  heldScreen,
   screenFrameRef,
   computerScreenError,
   computerBooting,
@@ -94,7 +97,7 @@ function ComputerPreview({
     !computerBooting &&
     !computerScreenError &&
     !showComputerRecoveryHint &&
-    computer?.kind !== "desktop" &&
+    !runsOnUserMachine(computer) &&
     (!computer || computer.state === "stopped" || computer.state === "suspended");
   if (idle) {
     return (
@@ -146,21 +149,25 @@ function ComputerPreview({
           >
             <Trans>Open in full window</Trans>
           </div>
-        ) : computer?.kind === "desktop" ? (
+        ) : runsOnUserMachine(computer) ? (
           <DesktopKindEmptyState
             className={`grid h-full place-items-center px-6 text-center text-body text-muted-foreground/80 ${hideOnHover}`}
           />
         ) : computer?.state === "running" && embeddedScreenUrl && !computerScreenError ? (
-          <iframe
-            key={screenFrameKey}
-            title={t`Bot screen preview`}
-            ref={screenFrameRef}
-            src={embeddedScreenUrl}
-            sandbox={screenIframeSandbox(embeddedScreenUrl)}
-            className="h-full w-full border-0 bg-black"
-            allow="clipboard-read; clipboard-write"
-            style={{ pointerEvents: "none" }}
-          />
+          screenFrames(screenFrameKey, embeddedScreenUrl, heldScreen).map((frame) => (
+            <iframe
+              key={frame.key}
+              title={frame.held ? undefined : t`Bot screen preview`}
+              aria-hidden={frame.held || undefined}
+              tabIndex={frame.held ? -1 : undefined}
+              ref={frame.held ? undefined : screenFrameRef}
+              src={frame.url}
+              sandbox={screenIframeSandbox(frame.url)}
+              className={`h-full w-full border-0 bg-black${frame.held ? " absolute inset-0" : ""}`}
+              allow="clipboard-read; clipboard-write"
+              style={{ pointerEvents: "none" }}
+            />
+          ))
         ) : (
           <div
             className={`grid h-full place-items-center px-6 text-center text-body text-muted-foreground/80 ${hideOnHover}`}

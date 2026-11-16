@@ -1,4 +1,5 @@
 import { setImmediate } from "node:timers/promises";
+import { deferred } from "@rakazo/core/test-async";
 import * as SecureStore from "expo-secure-store";
 import { openAuthSessionAsync } from "expo-web-browser";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -14,6 +15,8 @@ import {
   saveSessionToken,
 } from "./session";
 import { continueWithSso } from "./sso";
+
+vi.mock("react-native", () => ({ Platform: { OS: "ios" } }));
 
 const { saved, selectedSpace } = vi.hoisted(() => ({
   saved: new Map<string, string>(),
@@ -31,9 +34,10 @@ vi.mock("expo-secure-store", () => ({
 vi.mock("./live-notifications", () => ({ stopLiveNotifications: vi.fn(async () => undefined) }));
 vi.mock("./network-cache", () => ({ clearNetworkCache: vi.fn() }));
 vi.mock("./thread-feedback", () => ({ clearFailedSends: vi.fn() }));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   authHeaders: async () => ({ authorization: "Bearer session-a" }),
-  clearSpace: async () => true,
   currentApiBase: () => "https://app.example.test",
   selectedSpaceId: () => selectedSpace.id,
   captureApiRequestContext: async () => ({
@@ -43,20 +47,14 @@ vi.mock("./api", () => ({
   }),
   fetchMobileJson: vi.fn(),
 }));
-vi.mock("./i18n", () => ({ t: (text: string) => text }));
+vi.mock("./api-server", () => ({
+  clearSpace: async () => true,
+}));
 vi.mock("expo-web-browser", () => ({ openAuthSessionAsync: vi.fn() }));
 
 registerSessionDiskCache((sameAccount?: boolean) => {
   if (!sameAccount) return clearLastBot();
 });
-
-function deferred() {
-  let resolve!: () => void;
-  const promise = new Promise<void>((done) => {
-    resolve = done;
-  });
-  return { promise, resolve };
-}
 
 describe("last bot shortcut target", () => {
   beforeEach(async () => {
@@ -79,6 +77,17 @@ describe("last bot shortcut target", () => {
     await saveLastBotId("writer", null);
     expect(await loadLastBotId()).toBe("writer");
     expect(JSON.parse(saved.get("rakazo.last_bot_id") ?? "null").spaceId).toBeNull();
+  });
+
+  it("does not carry a chat saved without a Space into a later explicit Space", async () => {
+    selectedSpace.id = null;
+    await saveLastBotId("writer", null);
+    expect(await loadLastBotId()).toBe("writer");
+
+    selectedSpace.id = "space-a";
+    expect(await loadLastBotId()).toBe("");
+    selectedSpace.id = null;
+    expect(await loadLastBotId()).toBe("writer");
   });
 
   it("keeps the later chat when the first identity response is delayed", async () => {

@@ -10,7 +10,7 @@ import { createRouter } from "./router.js";
 // The runtime login, so row-level security applies exactly as it does in a deployment.
 const enabled = process.env.VERIFY_DATABASE === "1" && Boolean(process.env.DATABASE_URL);
 
-describe.skipIf(!enabled).sequential("board prefix rename (PostgreSQL)", () => {
+describe.skipIf(!enabled)("board prefix rename (PostgreSQL)", () => {
   let db: ReturnType<typeof createDb>;
   let prisma: PrismaClient;
   let actor: Actor;
@@ -21,13 +21,9 @@ describe.skipIf(!enabled).sequential("board prefix rename (PostgreSQL)", () => {
   const spaceId = `board-rename-space-${suffix}`;
 
   const client = () =>
-    createRouterClient(
-      createRouter({
-        prisma,
-        env: { ticketBoardEnabled: true },
-      } as unknown as RouterDeps),
-      { context: { actor } },
-    );
+    createRouterClient(createRouter({ prisma, env: {} } as unknown as RouterDeps), {
+      context: { actor },
+    });
 
   beforeAll(() =>
     runAsSystem("board rename fixture", async () => {
@@ -39,6 +35,7 @@ describe.skipIf(!enabled).sequential("board prefix rename (PostgreSQL)", () => {
           name: "Board rename",
           email: `${userId}@rakazo.test`,
           emailVerified: false,
+          labs: ["board"],
         },
       });
       await prisma.organization.create({

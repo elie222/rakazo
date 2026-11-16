@@ -6,13 +6,13 @@ import type { PrismaClient } from "@rakazo/db";
 import { asSystem, createDb, createGroupRepos, createRepos, runAsTenant } from "@rakazo/db";
 import { MarkdownMemoryStore } from "@rakazo/memory";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { handleRpcError } from "./app.js";
 import type { RouterDeps } from "./router.js";
 import { createRouter } from "./router.js";
+import { handleRpcError } from "./rpc-errors.js";
 import { resolveThreadTarget, sendThreadMessage } from "./thread-target.js";
 
 const describePostgres =
-  process.env.VERIFY_DATABASE && process.env.DATABASE_URL ? describe.sequential : describe.skip;
+  process.env.VERIFY_DATABASE && process.env.DATABASE_URL ? describe : describe.skip;
 
 describePostgres("shared space content (PostgreSQL)", () => {
   let db: ReturnType<typeof createDb>;

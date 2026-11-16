@@ -55,6 +55,8 @@ internal class PollCompletions(private val seen: MutableSet<String>) {
         handleUnseenCompletion(run.runId, seen) {
           when {
             !run.notificationsEnabled || isOpenThread(run) -> true
+            // Only the server knows which agent-to-agent replies the user reads; it pushes those.
+            run.trigger == "bot_message" && run.status == "completed" -> true
             run.status == "failed" && settings.needsAttention -> {
               attention(run)
               true

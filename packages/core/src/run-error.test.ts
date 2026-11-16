@@ -1,4 +1,9 @@
-import { COMPUTER_RATE_LIMIT_ERROR } from "@rakazo/contracts";
+import {
+  COMPUTER_ALLOWANCE_USED_ERROR,
+  COMPUTER_PROVIDER_UNAVAILABLE_ERROR,
+  COMPUTER_RATE_LIMIT_ERROR,
+  COMPUTER_UNRESPONSIVE_ERROR,
+} from "@rakazo/contracts";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   APPROVED_ACTION_NOT_RUN_ERROR,
@@ -8,16 +13,55 @@ import {
   MISSING_MODEL_RUN_ERROR,
   MISSING_TOOL_FINAL_RESPONSE_ERROR,
   MODEL_CONTEXT_TOO_SMALL_ERROR,
+  MODEL_CREDIT_CAP_REACHED_ERROR,
+  MODEL_CREDITS_EXHAUSTED_ERROR,
   MODEL_IMAGE_INPUT_ERROR,
   MODEL_OUTPUT_CUT_ERROR,
   MODEL_OUTPUT_LIMIT_ERROR,
   MODEL_REQUEST_LIMIT_ERROR,
   MODEL_REQUIRED_SEND_ERROR,
+  MODEL_UNPRICED_FOR_CREDITS_ERROR,
   modelFallbackFailure,
   normalizeRunError,
   userRunError,
   VERBATIM_TOOL_RESULT_TOO_LARGE_ERROR,
 } from "./run-error.js";
+
+/** The classification alone, without the provider's own status and message. */
+function classify(details: string) {
+  const {
+    status: _status,
+    providerMessage: _message,
+    ...classification
+  } = normalizeRunError(details);
+  return classification;
+}
+
+it("returns the provider's status and the message unwrapped from its envelope", () => {
+  expect(normalizeRunError('403: {"error":{"message":"Weekly key limit exceeded"}}')).toMatchObject(
+    { status: 403, providerMessage: "Weekly key limit exceeded" },
+  );
+  const plain = normalizeRunError("Request timed out.");
+  expect(plain.status).toBeUndefined();
+  expect(plain.providerMessage).toBe("Request timed out.");
+});
+
+it("keeps the provider's status and message on unusable-output errors", () => {
+  expect(
+    normalizeRunError('403: {"error":{"message":"Provider returned an empty response"}}'),
+  ).toMatchObject({
+    kind: "output",
+    status: 403,
+    providerMessage: "Provider returned an empty response",
+  });
+});
+
+it("reads a limit period and reset date from top-level envelope fields", () => {
+  const error = normalizeRunError(
+    '402: {"error":{"message":"Usage limit exceeded","limit":"weekly","reset_at":"2099-01-01"}}',
+  );
+  expect(error).toMatchObject({ period: "weekly", resetAt: Date.parse("2099-01-01") });
+});
 
 describe("normalizeRunError", () => {
   beforeEach(() => {
@@ -62,22 +106,47 @@ describe("normalizeRunError", () => {
       "Your model provider rejected the API key. Check your connection settings.",
     ],
     [
+      "400 checking third-party user token: Personal Access Tokens are not supported for this endpoint",
+      "Your model provider rejected the API key. Check your connection settings.",
+    ],
+    [
       '404: {"error":{"message":"Model fake-model does not exist"}}',
       "Your model provider can't run this model.",
     ],
     ['{"error":{"code":"model_not_found"}}', "Your model provider can't run this model."],
     [
+      '400 {"status":400,"title":"Bad Request","detail":"Function id \'example-function\': DEGRADED function cannot be invoked"}',
+      "Your model provider can't run this model.",
+    ],
+    [
       '400: {"message":"Model example is not a chat model; call /v1/example instead of /v1/chat/completions","type":"invalid_request_error"}',
       "Your model provider can't run this model.",
+    ],
+    [
+      'openai-compatible API error (400): {"message":"example:27b is a decision model and only supports /v1/example (ref: <ref-id>)","type":"invalid_request_error","param":null,"code":null}',
+      "Your model provider can't run this model.",
+    ],
+    [
+      "Prompt tokens limit exceeded: 11298 > 992. To increase, visit https://openrouter.ai/settings/credits and upgrade to a paid account",
+      "Your OpenRouter reached its credit limit.",
     ],
     [
       '400: {"type":"server_error","message":"Upstream request failed: This example model requires Global regions. Select Global in your workspace\'s Privacy settings to use it."}',
       "Your model provider can't run this model.",
     ],
+    [
+      '400: {"type":"invalid_request_error","message":"This example model is hosted outside Europe and the United States. Select Global in your workspace\'s privacy settings to use it."}',
+      "Your model provider can't run this model.",
+    ],
+    ["SAFETY margin exceeded", "The model provider returned an error."],
     ["Request timed out", "Your model provider took too long to respond. Try again."],
     [
       '504: {"message":"Gateway error"}',
       "Your model provider took too long to respond. Try again.",
+    ],
+    [
+      '403: {"message":"This model requires you to upgrade to a paid plan"}',
+      "Your model provider denied access to this model.",
     ],
     [
       '403: {"message":"Policy blocked the request"}',
@@ -98,6 +167,7 @@ describe("normalizeRunError", () => {
       "Your OpenRouter key hit its weekly limit.",
     ],
     ["", "The model provider returned an error."],
+    ["Internal server error", "Something went wrong. Try again."],
   ])("normalizes %s", (details, summary) => {
     expect(normalizeRunError(details)).toMatchObject({ summary, details });
   });
@@ -207,7 +277,7 @@ describe("normalizeRunError", () => {
       ["Model stream ended without a terminal event", tookTooLong],
       ["Request timed out.", tookTooLong],
     ])("summarizes %s without recovery advice", (details, summary) => {
-      expect(normalizeRunError(details)).toEqual({
+      expect(classify(details)).toEqual({
         summary,
         details,
         ...(summary === tooLong ? { kind: "context" } : {}),
@@ -225,7 +295,7 @@ describe("normalizeRunError", () => {
       "getaddrinfo EAI_AGAIN vllm",
       "Connection refused",
     ])("says an unreachable provider %s should be checked", (details) => {
-      expect(normalizeRunError(details)).toEqual({
+      expect(classify(details)).toEqual({
         summary: "Your model provider couldn't be reached. Check that it's running.",
         details,
       });
@@ -408,14 +478,42 @@ describe("normalizeRunError", () => {
       "Parsing failed. The model generated output that could not be parsed. Please adjust your prompt. See 'failed_generation' for more details.",
       '400 {"type":"error","error":{"type":"api_error","message":"Upstream request failed: [api_error] Upstream response was not valid JSON"}}',
       "Codex error: This content was flagged for possible cybersecurity risk. If this seems wrong, try rephrasing your request.",
+      "Cyber safeguards flagged this message. If this is legitimate security work, you can apply for the Cyber Verification Program: https://support.claude.com/en/articles/<article-id>",
+      "This request triggered cyber-related safeguards. To learn about the Cyber Verification Program, see https://support.claude.com/en/articles/<article-id>",
+      "SAFETY",
+      "PROHIBITED_CONTENT",
+      '400: {"code":"data_inspection_failed","param":null,"message":"Input text data may contain inappropriate content.","type":"data_inspection_failed"}',
       MODEL_OUTPUT_LIMIT_ERROR,
       "Upstream error from Example: HttpError: HTTP 400: Tool calls cutoff by max_tokens.",
     ])("calls unusable model output what it is: %s", (details) => {
-      expect(normalizeRunError(details)).toEqual({
+      expect(classify(details)).toEqual({
         summary: "The model returned an unusable response. Try again.",
         details,
         kind: "output",
         recovery: "model",
+      });
+    });
+
+    it("shows an operator cap without suggesting buying credits or changing connections", () => {
+      expect(normalizeRunError(MODEL_CREDIT_CAP_REACHED_ERROR)).toEqual({
+        summary: MODEL_CREDIT_CAP_REACHED_ERROR,
+        details: MODEL_CREDIT_CAP_REACHED_ERROR,
+      });
+    });
+
+    it("keeps the advice when Rakazo credits run out", () => {
+      expect(normalizeRunError(MODEL_CREDITS_EXHAUSTED_ERROR)).toEqual({
+        summary: MODEL_CREDITS_EXHAUSTED_ERROR,
+        details: MODEL_CREDITS_EXHAUSTED_ERROR,
+        recovery: "connection",
+      });
+    });
+
+    it("sends a model credits cannot price to the member's own connection", () => {
+      expect(normalizeRunError(MODEL_UNPRICED_FOR_CREDITS_ERROR)).toEqual({
+        summary: MODEL_UNPRICED_FOR_CREDITS_ERROR,
+        details: MODEL_UNPRICED_FOR_CREDITS_ERROR,
+        recovery: "connection",
       });
     });
 
@@ -442,8 +540,20 @@ describe("normalizeRunError", () => {
       '400: {"message":"Unsupported model parameter: fixture_option"}',
       '400: {"message":"Unknown model setting: fixture_option"}',
       "TypeError: Cannot read properties of undefined (reading 'content')",
+      '400 {"message":"Provider returned error","code":400,"metadata":{"raw":"{}","provider_name":""}}',
     ])("leaves requests we built and unknown shapes unattributed: %s", (details) => {
       expect(normalizeRunError(details).kind).toBeUndefined();
+    });
+
+    it.each([
+      '400 {"message":"Provider returned error","code":400,"metadata":{"raw":"{\\"error\\":{\\"message\\":\\"example upstream failure\\"}}","provider_name":"ExampleUpstream","is_byok":false}}',
+      '400 {"type":"error","error":{"type":"invalid_request_error","message":"Invalid effort level: max"},"request_id":"req_example"}',
+    ])("suggests another model when the provider refuses this one's request: %s", (details) => {
+      expect(normalizeRunError(details)).toMatchObject({
+        summary: "The model provider returned an error.",
+        recovery: "model",
+        status: 400,
+      });
     });
   });
 });
@@ -603,8 +713,10 @@ it.each([
       reason: "fake-diagnostic",
     })),
   );
+  // The listed details replace the primary's own message.
+  const { providerMessage: _message, ...primary } = normalizeRunError(primaryError);
   expect(normalizeRunError(details)).toEqual({
-    ...normalizeRunError(primaryError),
+    ...primary,
     details: [
       primaryError,
       ...statuses.map(() => "fake-provider fake-model: fake-diagnostic"),
@@ -623,10 +735,19 @@ it.each([
   });
 });
 
-it("shows the computer rate limit as written", () => {
-  expect(normalizeRunError(COMPUTER_RATE_LIMIT_ERROR)).toEqual({
-    summary: COMPUTER_RATE_LIMIT_ERROR,
-    details: COMPUTER_RATE_LIMIT_ERROR,
+it.each([
+  COMPUTER_RATE_LIMIT_ERROR,
+  COMPUTER_PROVIDER_UNAVAILABLE_ERROR,
+  COMPUTER_UNRESPONSIVE_ERROR,
+])("shows the computer error %j as written", (message) => {
+  expect(normalizeRunError(message)).toEqual({ summary: message, details: message });
+});
+
+it("sends spent computer hours to billing", () => {
+  expect(normalizeRunError(COMPUTER_ALLOWANCE_USED_ERROR)).toEqual({
+    summary: COMPUTER_ALLOWANCE_USED_ERROR,
+    details: COMPUTER_ALLOWANCE_USED_ERROR,
+    recovery: "plan",
   });
 });
 

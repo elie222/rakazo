@@ -7,6 +7,8 @@ import {
   screenPorts,
 } from "@rakazo/core/node/desktop-runtime";
 import type Docker from "dockerode";
+import type { ComputerLocale } from "./computer-locale.js";
+import { computerLocaleEnv } from "./computer-locale.js";
 
 /**
  * The computer image. RAKAZO_COMPUTER_IMAGE_TAG is appended the way Compose does, so a
@@ -246,6 +248,38 @@ export function computerDnsMatches(current: string[] | null | undefined, desired
   const have = current ?? [];
   const want = desired ?? [];
   return have.length === want.length && have.every((server, index) => server === want[index]);
+}
+
+/**
+ * Host GPUs every computer may compute on, from SANDBOX_COMPUTER_COMPUTE_GPUS: `all` or a
+ * positive count, as in `docker run --gpus`. Unset gives computers no GPU. Returns Docker's
+ * device count, where -1 means all.
+ */
+export function resolveComputerComputeGpus(
+  value = process.env.SANDBOX_COMPUTER_COMPUTE_GPUS,
+): number | undefined {
+  const raw = (value ?? "").trim();
+  if (!raw) return undefined;
+  if (raw === "all") return -1;
+  const count = /^[1-9]\d*$/.test(raw) ? Number(raw) : Number.NaN;
+  if (!Number.isSafeInteger(count))
+    throw new Error(
+      `Unsupported SANDBOX_COMPUTER_COMPUTE_GPUS: "${raw}" (expected all or a positive count)`,
+    );
+  return count;
+}
+
+/**
+ * Whether a container was created with the configured GPUs. Devices are fixed when a container
+ * is created, so turning the setting on or off, or changing the count, replaces the computer.
+ */
+export function computerComputeGpusMatch(
+  current: Docker.DeviceRequest[] | null | undefined,
+  desired?: number,
+) {
+  const requests = current ?? [];
+  if (desired === undefined) return requests.length === 0;
+  return requests.length === 1 && requests[0]?.Count === desired;
 }
 
 /** A host directory mounted into every computer (SANDBOX_COMPUTER_MOUNTS). */
@@ -581,6 +615,9 @@ export interface ComputerCreateInput {
   publishControlPort?: boolean;
   dns?: string[];
   mounts?: ComputerMount[];
+  /** Docker's GPU device count, where -1 means all (see resolveComputerComputeGpus). */
+  computeGpus?: number;
+  locale?: ComputerLocale;
 }
 
 interface PointerInput {
@@ -612,6 +649,7 @@ export function containerCreateOptions(input: ComputerCreateInput) {
       "NPM_CONFIG_PREFIX=/home/rakazo/.local",
       "PIP_USER=1",
       ...(input.controlToken ? [`RAKAZO_COMPUTER_CONTROL_TOKEN=${input.controlToken}`] : []),
+      ...computerLocaleEnv(input.locale),
     ],
     Labels: {
       "rakazo.managed": "true",
@@ -651,6 +689,10 @@ export function containerCreateOptions(input: ComputerCreateInput) {
       AutoRemove: false,
       NetworkMode: input.networkMode ?? "bridge",
       ...(input.dns ? { Dns: input.dns } : {}),
+      // No driver named: Docker picks whichever one on the host provides GPUs.
+      ...(input.computeGpus !== undefined
+        ? { DeviceRequests: [{ Count: input.computeGpus, Capabilities: [["gpu"]] }] }
+        : {}),
     },
     WorkingDir: "/home/rakazo",
   };

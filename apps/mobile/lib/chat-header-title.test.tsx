@@ -6,8 +6,8 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { ChatTitle } from "../components/chat-header-title";
 import { ChatHeaderTitle, publishChatTitle } from "../components/chat-header-title";
-import type { MobileBot } from "./api";
 import type { InboxSpace } from "./inbox-spaces";
+import type { MobileBot } from "./mobile-types";
 import { setSearchInbox } from "./search-inbox";
 
 const push = vi.hoisted(() => vi.fn());
@@ -51,7 +51,9 @@ vi.mock("../components/chat-title-label", () => ({
 }));
 vi.mock("../components/thread-header-styles", () => ({ createThreadHeaderStyles: () => ({}) }));
 vi.mock("./native", () => ({ useThemedStyles: () => ({}) }));
-vi.mock("./i18n", () => ({ useI18n: () => ({ t: (text: string) => text }) }));
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({ currentApiBase: () => "http://api.test" }));
 vi.mock("./session", () => ({
   currentSessionGeneration: () => 1,

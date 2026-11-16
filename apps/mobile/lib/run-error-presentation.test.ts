@@ -1,6 +1,17 @@
+import type { BillingStatus } from "@rakazo/contracts";
+import { computerHoursOut } from "@rakazo/contracts";
 import { normalizeRunError } from "@rakazo/core";
 import { describe, expect, it } from "vitest";
-import { parseRunDiagnostic, runErrorActionLabel } from "./run-error-presentation";
+import {
+  computerHoursOutCopy,
+  runErrorActionLabel,
+  runErrorDiagnostic,
+  runErrorWhatHappened,
+} from "./run-error-presentation";
+
+function parseRunDiagnostic(raw: string, locale: string, now = Date.now()) {
+  return runErrorDiagnostic(normalizeRunError(raw, undefined, locale, now), locale);
+}
 
 describe("readable provider diagnostics", () => {
   it.each(["", "403: "])("parses JSON with prefix %s", (prefix) => {
@@ -59,7 +70,6 @@ it.each(["2026-10-19T00:00:00Z", "2026-10-20T00:00:00Z"])(
 );
 
 describe("the one recovery action", () => {
-  const t = (message: string) => message;
   it.each([
     ['402: {"message":"You have no credits remaining."}', "Change model"],
     ['403: {"type":"FreeTierError","message":"Only usable inside its own app."}', "Change model"],
@@ -72,6 +82,24 @@ describe("the one recovery action", () => {
     ["Request timed out.", null],
     ['429: {"message":"Too many requests"}', null],
   ])("labels %s", (details, label) => {
-    expect(runErrorActionLabel(t, normalizeRunError(details))).toBe(label);
+    expect(runErrorActionLabel(normalizeRunError(details))).toBe(label);
+  });
+});
+
+describe("computer hours out", () => {
+  it.each([
+    ["trialing", false, "Your trial's computer hours are used up.", "Start plan now"],
+    ["trialing", true, "Cancelled trials have no computer hours.", "Renew plan"],
+    ["active", false, "This month's computer hours are used up.", "Upgrade"],
+  ] as const)("names why a %s plan (cancelling: %s) ran out", (state, cancel, summary, action) => {
+    const status = { state, cancelAtPeriodEnd: cancel } as BillingStatus;
+    expect(computerHoursOutCopy(computerHoursOut(status))).toEqual({ summary, action });
+  });
+
+  it("leaves the headline to explain spent hours", () => {
+    const error = normalizeRunError("No computer hours left.");
+    expect(error.recovery).toBe("plan");
+    expect(runErrorWhatHappened(error)).toBeNull();
+    expect(runErrorActionLabel(error)).toBeNull();
   });
 });

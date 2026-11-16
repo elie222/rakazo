@@ -1,16 +1,16 @@
 import type { MenuAction } from "@expo/ui/community/menu";
+import { t } from "@lingui/core/macro";
 import type { OrganizationList } from "@rakazo/contracts";
 import { organizationLandingSpaceId, organizationOfSpace } from "@rakazo/core";
 import { useQuery } from "@tanstack/react-query";
 import { router } from "expo-router";
+import { selectedSpaceId } from "./api";
 import {
   adoptDeletedSpaceFallback,
   loadOrganizationSpaces,
   rememberOrganizationSpace,
-  selectedSpaceId,
   selectSpace,
-} from "./api";
-import { t } from "./i18n";
+} from "./api-server";
 import { queryClient, removeSpaceQueries, rpcQuery } from "./query";
 
 export type Organization = OrganizationList["organizations"][number];
@@ -175,7 +175,7 @@ export async function leaveDeletedOrganization(
   const selected =
     (await selectSpace(activeSpaceId).catch(() => false)) ||
     (await adoptDeletedSpaceFallback(activeSpaceId));
-  if (!selected) throw new Error(t("Could not switch spaces"));
+  if (!selected) throw new Error(t`Could not switch spaces`);
   removeSpaceQueries(deleted.spaceIds);
   void refreshOrganizations();
   noteOrganizationSwitch();

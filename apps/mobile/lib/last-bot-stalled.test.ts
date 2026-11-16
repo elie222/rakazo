@@ -1,3 +1,4 @@
+import { deferred } from "@rakazo/core/test-async";
 import * as SecureStore from "expo-secure-store";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type * as LastBot from "./last-bot";
@@ -9,6 +10,9 @@ vi.mock("expo-secure-store", () => ({
   setItemAsync: vi.fn(),
   deleteItemAsync: vi.fn(),
 }));
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   currentApiBase: () => "https://app.example.test",
   captureApiRequestContext: async () => ({
@@ -67,16 +71,13 @@ async function stall(operation: "write" | "delete") {
       key === "rakazo.last_bot_id" ? new Promise<void>(() => {}) : remove(key),
     );
   } else {
-    let started!: () => void;
-    const writing = new Promise<void>((resolve) => {
-      started = resolve;
-    });
+    const writing = deferred();
     vi.mocked(SecureStore.setItemAsync).mockImplementationOnce(() => {
-      started();
+      writing.resolve();
       return new Promise<void>(() => {});
     });
     void lastBot.saveLastBotId("unfinished", "space-a");
-    await writing;
+    await writing.promise;
   }
 }
 

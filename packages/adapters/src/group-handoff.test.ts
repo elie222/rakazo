@@ -18,6 +18,7 @@ function harness(
   const runCreate = vi.fn(async () => ({ id: "run-b" }));
   const messageCreate = vi.fn(async (_args: unknown) => ({ id: "message-1" }));
   const tx = {
+    $executeRaw: vi.fn(async () => 0),
     $queryRaw: vi.fn(async (..._args: unknown[]) => [{ id: "group-1" }]),
     chatGroup: {
       findFirst: vi.fn(async () => ({

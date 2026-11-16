@@ -1,15 +1,21 @@
 import {
   abortableDelay,
   createRefreshCoalescer,
+  errorStatus,
   isRetryableError,
   isRunTerminalEvent,
+  messageUnreadFor,
+  reconnectDelayMs,
+  reduceThreadSnapshot,
+  rememberTerminalRun,
   retryDelayMs,
 } from "@rakazo/core";
 import type { RefObject } from "react";
 import { useEffect, useRef } from "react";
-import type { MobileSnapshot } from "./api";
-import { applyMobileThreadEvent, rpc, subscribeThread } from "./api";
+import { rpc } from "./api";
+import { subscribeThread } from "./api-live";
 import { getHapticsEnabled, hapticSuccess } from "./haptics";
+import type { MobileSnapshot } from "./mobile-types";
 import { currentSessionGeneration } from "./session";
 import type { ThreadJumpAnchor } from "./thread-jump";
 import type { PinnedThreadWindow } from "./thread-window";
@@ -35,6 +41,7 @@ export function useThreadLiveSubscription({
   focused = false,
   readOnly,
   sessionEpoch,
+  userId,
   messageId,
   historyEpoch,
   expandedHistoryThread,
@@ -42,6 +49,7 @@ export function useThreadLiveSubscription({
   jumpScrollTarget,
   jumpAnchor,
   snapRef,
+  terminalRunIds,
   readVisibleTarget,
   showSavedThread,
   refresh,
@@ -56,6 +64,8 @@ export function useThreadLiveSubscription({
   focused?: boolean;
   readOnly: boolean;
   sessionEpoch: number;
+  /** The signed-in person: another member's message is new to them, their own is not. */
+  userId: string;
   /** A pending search jump, which loads its own page instead of the latest one. */
   messageId?: string;
   historyEpoch: RefObject<number>;
@@ -64,6 +74,7 @@ export function useThreadLiveSubscription({
   jumpScrollTarget: RefObject<string | null>;
   jumpAnchor: RefObject<ThreadJumpAnchor>;
   snapRef: RefObject<MobileSnapshot | null>;
+  terminalRunIds: RefObject<Set<string>>;
   readVisibleTarget: RefObject<string | null>;
   showSavedThread: (signal: AbortSignal) => void;
   refresh: () => Promise<MobileSnapshot | undefined>;
@@ -214,6 +225,7 @@ export function useThreadLiveSubscription({
               cursor = Math.max(cursor, event.seq ?? -1);
               retryMs = 250;
               liveCursor.current = cursor;
+              rememberTerminalRun(terminalRunIds.current, event);
               if (
                 event.type === "run.completed" &&
                 event.runId &&
@@ -240,13 +252,16 @@ export function useThreadLiveSubscription({
                   historyEpoch.current += 1;
                 }
                 const previous = snapRef.current;
-                const reduced = applyMobileThreadEvent(previous, event);
+                const reduced = reduceThreadSnapshot(previous, event);
                 if (reduced !== previous) commitSnap(reduced);
               }
               if (event.type === "bot.updated") {
                 void refreshMentionBots();
               }
-              if (event.type === "thread.message.created" && event.payload?.role === "bot") {
+              if (
+                event.type === "thread.message.created" &&
+                messageUnreadFor(event.payload ?? {}, userId)
+              ) {
                 readVisibleTarget.current = null;
                 markReadIfVisible();
               }
@@ -273,6 +288,12 @@ export function useThreadLiveSubscription({
         }
         // A 4xx other than 408/429 is the server's answer; reconnecting only polls it.
         if (abort.signal.aborted || !isRetryableError(failure)) break;
+        // Ended without the server's answer: most likely closed under it, as a deploy closes
+        // every client's stream at once.
+        if (errorStatus(failure) === undefined) {
+          await abortableDelay(reconnectDelayMs(failure), abort.signal);
+          if (abort.signal.aborted || sessionGeneration !== currentSessionGeneration()) break;
+        }
         let refreshFailure: unknown;
         if (!jumpScrollTarget.current && !expandedHistoryThread.current) {
           refreshFailure = await refresh().then(
@@ -294,7 +315,16 @@ export function useThreadLiveSubscription({
       snapshotRefresh.dispose();
       abort.abort();
     };
-  }, [botId, groupId, foreground, readOnly, markReadIfVisible, refreshMentionBots, sessionEpoch]);
+  }, [
+    botId,
+    groupId,
+    foreground,
+    readOnly,
+    markReadIfVisible,
+    refreshMentionBots,
+    sessionEpoch,
+    userId,
+  ]);
 
   return liveSubscribed;
 }

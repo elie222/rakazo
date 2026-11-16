@@ -7,8 +7,7 @@ import { MarkdownMemoryStore } from "./index.js";
 const databaseUrl = process.env.DATABASE_URL;
 // Agent runs save memory in the worker, outside any request.
 const MEMORY_SAVE = "agent run memory save";
-const describePostgres =
-  process.env.VERIFY_DATABASE && databaseUrl ? describe.sequential : describe.skip;
+const describePostgres = process.env.VERIFY_DATABASE && databaseUrl ? describe : describe.skip;
 
 describePostgres("memory commits (PostgreSQL)", () => {
   const context: AdapterContext = {

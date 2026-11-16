@@ -1,28 +1,27 @@
 import { createHash } from "node:crypto";
-import { createSlackAdapter } from "@chat-adapter/slack";
-import type { TelegramAdapter } from "@chat-adapter/telegram";
-import {
-  createTelegramAdapter,
-  escapeMarkdownV2,
-  TelegramFormatConverter,
-} from "@chat-adapter/telegram";
-import {
-  createWhatsAppAdapter,
-  splitMessage,
-  WhatsAppAdapter,
-  WhatsAppApiError,
-} from "@chat-adapter/whatsapp";
+import { TelegramAdapter, TelegramFormatConverter } from "@chat-adapter/telegram";
+import { createWhatsAppAdapter, WhatsAppAdapter, WhatsAppApiError } from "@chat-adapter/whatsapp";
 import type { HttpInstance } from "@larksuiteoapi/node-sdk";
 import type { MessagingInboundMessage, MessagingOutboundStatus } from "@rakazo/adapter-kit";
 import { getLogger } from "@rakazo/logging";
-import type { Adapter } from "chat";
-import { ConsoleLogger, convertEmojiPlaceholders, markdownToPlainText } from "chat";
-import { createSendblueAdapter } from "chat-adapter-sendblue";
+import type { Adapter, AdapterPostableMessage, CardElement, Root } from "chat";
+import {
+  ConsoleLogger,
+  convertEmojiPlaceholders,
+  isLinkNode,
+  parseMarkdown,
+  text,
+  toPlainText,
+  walkAst,
+} from "chat";
+import type { SendblueAdapterConfig, SendblueThreadId } from "chat-adapter-sendblue";
 import type { ClientOptions as SendblueClientOptions } from "sendblue";
 import type { MessagingPlatform } from "./chat-sdk-surface.js";
 import { boundInboundMarkdown } from "./chat-sdk-surface.js";
 import { LazyLarkAdapter } from "./lark/lazy-adapter.js";
 import { Domain } from "./lark/thread-id.js";
+import { lazyChatAdapter } from "./lazy-chat-adapter.js";
+import { splitMarkdown } from "./markdown-split.js";
 import { LazyPhotonAdapter } from "./photon/lazy-adapter.js";
 import { isVitestRuntime } from "./test-runtime.js";
 
@@ -39,6 +38,9 @@ export interface MessagingEnvironmentValues {
   sendbluePhoneNumber?: string | undefined;
   slackBotToken?: string | undefined;
   slackSigningSecret?: string | undefined;
+  teamsAppId?: string | undefined;
+  teamsAppPassword?: string | undefined;
+  teamsAppTenantId?: string | undefined;
   whatsappAccessToken?: string | undefined;
   whatsappPhoneNumberId?: string | undefined;
   whatsappAppSecret?: string | undefined;
@@ -73,6 +75,9 @@ export function messagingEnvFromProcess(
     sendbluePhoneNumber: clean(env.SENDBLUE_PHONE_NUMBER),
     slackBotToken: clean(env.SLACK_BOT_TOKEN),
     slackSigningSecret: clean(env.SLACK_SIGNING_SECRET),
+    teamsAppId: clean(env.TEAMS_APP_ID),
+    teamsAppPassword: clean(env.TEAMS_APP_PASSWORD),
+    teamsAppTenantId: clean(env.TEAMS_APP_TENANT_ID),
     whatsappAccessToken: clean(env.WHATSAPP_ACCESS_TOKEN),
     whatsappPhoneNumberId: clean(env.WHATSAPP_PHONE_NUMBER_ID),
     whatsappAppSecret: clean(env.WHATSAPP_APP_SECRET),
@@ -189,7 +194,7 @@ export function messagingPlatformsFromEnv(
     env.sendbluePhoneNumber
   ) {
     const lineNumber = env.sendbluePhoneNumber;
-    const adapter = createSendblueAdapter({
+    const config: Partial<SendblueAdapterConfig> = {
       apiKey: env.sendblueApiKeyId,
       apiSecret: env.sendblueApiSecret,
       defaultFromNumber: lineNumber,
@@ -199,27 +204,37 @@ export function messagingPlatformsFromEnv(
       ...(env.apiUrl?.startsWith("https://")
         ? { statusCallbackUrl: new URL("/api/v1/messaging/webhook/sendblue", env.apiUrl).href }
         : {}),
-    });
+    };
     // chat@4.39 derives thread.isDM solely from the optional Adapter.isDM
     // hook, and chat-adapter-sendblue@0.2.0 omits it — without this every
     // 1:1 message would route as a group. Derive it from the thread id.
-    // The SDK's own retries (twice, no idempotency key) would duplicate
-    // texts and stall the outbox drain; the outbox owns retries instead.
-    Object.assign(adapter, {
-      isDM: (threadId: string) => !adapter.decodeThreadId(threadId).groupId,
-      sdk: adapter.getSdk().withOptions({
-        maxRetries: 0,
-        timeout: MESSAGING_SEND_TIMEOUT_MS,
-        ...options.sendblueTransport,
-      }),
-    });
+    const isDM = (threadId: string) => !decodeSendblueThreadId(threadId).groupId;
+    const adapter = lazyChatAdapter(
+      "sendblue",
+      async () => {
+        const { createSendblueAdapter } = await import("chat-adapter-sendblue");
+        const sendblue = createSendblueAdapter(config);
+        // The SDK's own retries (twice, no idempotency key) would duplicate
+        // texts and stall the outbox drain; the outbox owns retries instead.
+        Object.assign(sendblue, {
+          isDM,
+          sdk: sendblue.getSdk().withOptions({
+            maxRetries: 0,
+            timeout: MESSAGING_SEND_TIMEOUT_MS,
+            ...options.sendblueTransport,
+          }),
+        });
+        return sendblue;
+      },
+      { encodeThreadId: encodeSendblueThreadId, decodeThreadId: decodeSendblueThreadId, isDM },
+    );
     platforms.push({
       provider: "sendblue",
       capabilities: { direct: true, groups: true, receipt: "typing" },
       adapter,
       address: lineNumber,
       directThreadId: (address) =>
-        adapter.encodeThreadId({ fromNumber: lineNumber, contactNumber: address }),
+        encodeSendblueThreadId({ fromNumber: lineNumber, contactNumber: address }),
       peekStatuses: parseSendblueStatuses,
       participants: (raw) => sendblueParticipants(raw, lineNumber),
       rosterAt: (raw) => sendblueRosterAt(raw),
@@ -229,7 +244,7 @@ export function messagingPlatformsFromEnv(
   }
 
   if (env.slackBotToken && env.slackSigningSecret) {
-    const adapter = createSlackAdapter({
+    const config = {
       botToken: env.slackBotToken,
       signingSecret: env.slackSigningSecret,
       // WebClient defaults to ten retries over ~30 minutes with no timeout,
@@ -240,16 +255,21 @@ export function messagingPlatformsFromEnv(
         rejectRateLimitedCalls: true,
         timeout: MESSAGING_SEND_TIMEOUT_MS,
       },
+    };
+    const adapter = lazyChatAdapter("slack", async () => {
+      const { createSlackAdapter } = await import("@chat-adapter/slack");
+      const slack = createSlackAdapter(config);
+      boundInboundMarkdown(slack);
+      // Slack's reactions.add fails with already_reacted when a replayed inbound reacts twice.
+      const addReaction = slack.addReaction.bind(slack);
+      Object.assign(slack, {
+        addReaction: (threadId, messageId, emoji) =>
+          addReaction(threadId, messageId, emoji).catch((error: unknown) => {
+            if (slackPlatformError(error) !== "already_reacted") throw error;
+          }),
+      } satisfies Pick<Adapter, "addReaction">);
+      return slack;
     });
-    boundInboundMarkdown(adapter);
-    // Slack's reactions.add fails with already_reacted when a replayed inbound reacts twice.
-    const addReaction = adapter.addReaction.bind(adapter);
-    Object.assign(adapter, {
-      addReaction: (threadId, messageId, emoji) =>
-        addReaction(threadId, messageId, emoji).catch((error: unknown) => {
-          if (slackPlatformError(error) !== "already_reacted") throw error;
-        }),
-    } satisfies Pick<Adapter, "addReaction">);
     platforms.push({
       provider: "slack",
       capabilities: { direct: true, groups: true, receipt: "reaction" },
@@ -257,6 +277,27 @@ export function messagingPlatformsFromEnv(
       enrichTeamRoom: enrichSlackTeamRoom,
       redeliveryKeys: slackRedeliveryKeys,
       isPermanentSendError: (error) => SLACK_PERMANENT_ERRORS.has(slackPlatformError(error) ?? ""),
+    });
+  }
+
+  // Single-tenant credentials keep enterprise installations scoped to their tenant.
+  // Channels and group chats stay disabled until their room semantics are mapped.
+  if (env.teamsAppId && env.teamsAppPassword && env.teamsAppTenantId) {
+    const config = {
+      appId: env.teamsAppId,
+      appPassword: env.teamsAppPassword,
+      appTenantId: env.teamsAppTenantId,
+      appType: "SingleTenant" as const,
+    };
+    platforms.push({
+      provider: "teams",
+      capabilities: { direct: true, groups: false, receipt: "typing" },
+      adapter: lazyChatAdapter("teams", async () => {
+        const { createTeamsAdapter } = await import("@chat-adapter/teams");
+        const adapter = createTeamsAdapter(config);
+        boundInboundMarkdown(adapter);
+        return adapter;
+      }),
     });
   }
 
@@ -322,20 +363,23 @@ export function messagingPlatformsFromEnv(
   // token the adapter accepts unsigned webhook posts. Encrypt key and
   // domain are optional (event encryption / open.feishu.cn vs open.larksuite.com).
   if (env.larkAppId && env.larkAppSecret && env.larkVerificationToken) {
+    // Webhook-only: ws/long-connection incoming would consume events so
+    // the HTTP webhook at /api/v1/messaging/webhook/lark never sees them.
+    const adapter = new LazyLarkAdapter({
+      ...(options.larkTransport ? { httpInstance: options.larkTransport } : {}),
+      appId: env.larkAppId,
+      appSecret: env.larkAppSecret,
+      verificationToken: env.larkVerificationToken,
+      // Explicit defaults prevent the adapter from rereading untrimmed process.env values.
+      encryptKey: env.larkEncryptKey ?? "",
+      domain: env.larkDomain?.toLowerCase() === "lark" ? Domain.Lark : Domain.Feishu,
+    });
     platforms.push({
       provider: "lark",
       capabilities: { direct: true, groups: false, receipt: null },
-      // Webhook-only: ws/long-connection incoming would consume events so
-      // the HTTP webhook at /api/v1/messaging/webhook/lark never sees them.
-      adapter: new LazyLarkAdapter({
-        ...(options.larkTransport ? { httpInstance: options.larkTransport } : {}),
-        appId: env.larkAppId,
-        appSecret: env.larkAppSecret,
-        verificationToken: env.larkVerificationToken,
-        // Explicit defaults prevent the adapter from rereading untrimmed process.env values.
-        encryptKey: env.larkEncryptKey ?? "",
-        domain: env.larkDomain?.toLowerCase() === "lark" ? Domain.Lark : Domain.Feishu,
-      }),
+      adapter,
+      postOnce: (threadId, message, idempotencyKey) =>
+        adapter.postMessage(threadId, message, idempotencyKey),
     });
   }
 
@@ -404,6 +448,24 @@ export function isMessagingSurfaceEnabled(
 /** Bounds one vendor send so a hung request cannot stall the sequential outbox drain. */
 const MESSAGING_SEND_TIMEOUT_MS = 10_000;
 
+/** chat-adapter-sendblue's thread ids, available before its module loads. */
+function encodeSendblueThreadId({ fromNumber, contactNumber, groupId }: SendblueThreadId): string {
+  const from = Buffer.from(fromNumber).toString("base64url");
+  if (groupId) return `sendblue:${from}:g:${Buffer.from(groupId).toString("base64url")}`;
+  return `sendblue:${from}:${Buffer.from(contactNumber ?? "").toString("base64url")}`;
+}
+
+function decodeSendblueThreadId(threadId: string): SendblueThreadId {
+  const [prefix, from, rest, group] = threadId.split(":");
+  if (prefix !== "sendblue" || from === undefined || rest === undefined) {
+    throw new Error(`Invalid Sendblue thread ID: ${threadId}`);
+  }
+  const fromNumber = Buffer.from(from, "base64url").toString();
+  return rest === "g" && group
+    ? { fromNumber, groupId: Buffer.from(group, "base64url").toString() }
+    : { fromNumber, contactNumber: Buffer.from(rest, "base64url").toString() };
+}
+
 /** Slack errors a retry cannot fix: the bot cannot reach the channel or its token is dead. */
 const SLACK_PERMANENT_ERRORS = new Set([
   "channel_not_found",
@@ -437,49 +499,66 @@ function withTelegramRedelivery(adapter: TelegramAdapter) {
 
 /** Split before enqueueing so retries only resend the parts that failed. */
 export function splitOutboundBody(provider: string, body: string): string[] {
-  if (provider === "whatsapp") return splitWhatsAppPart(body);
-  if (provider !== "telegram" && !provider.startsWith("telegram-")) return [body];
-
-  return splitTelegramPart(body);
-}
-
-/** Split like the SDK, which counts UTF-16 units, but never end a part on half an emoji. */
-function splitKeepingPairs(body: string): string[] {
-  const parts: string[] = [];
-  let rest = body;
-  while (rest.length > MESSAGE_PART_LIMIT) {
-    // The SDK's first part only depends on the first MESSAGE_PART_LIMIT units.
-    const [first = ""] = splitMessage(rest.slice(0, MESSAGE_PART_LIMIT + 1));
-    const part = first.length > 1 && /[\uD800-\uDBFF]$/.test(first) ? first.slice(0, -1) : first;
-    parts.push(part);
-    rest = rest.slice(part.length).trimStart();
-  }
-  return rest || parts.length === 0 ? [...parts, rest] : parts;
+  if (!body.trim()) return [];
+  const sent =
+    provider === "whatsapp"
+      ? whatsappPayloads
+      : provider === "telegram" || provider.startsWith("telegram-")
+        ? telegramPayloads
+        : undefined;
+  return sent ? splitMarkdown(body, { limit: MESSAGE_PART_LIMIT, sent }) : [body];
 }
 
 const telegramFormat = new TelegramFormatConverter();
 
-function splitTelegramPart(body: string, literal = false): string[] {
-  const markdown = literal ? escapeMarkdownV2(body) : body;
-  const plainText = literal ? body : markdownToPlainText(body);
-  // The adapter truncates *after* rendering and emoji conversion, including
-  // its plain-text fallback. Measure both payloads in UTF-16 units as it does.
-  const payloads = [telegramFormat.fromMarkdown(markdown), plainText.trim() ? plainText : markdown];
-  if (
-    markdown.length <= MESSAGE_PART_LIMIT &&
-    payloads.every((text) => convertEmojiPlaceholders(text, "gchat").length <= MESSAGE_PART_LIMIT)
-  ) {
-    return [markdown];
+/**
+ * The plain text sent when Telegram rejects a reply's formatting. Plain text drops the address of
+ * a link or image, so each is written after its label first. `ast` is rewritten.
+ */
+export function telegramFallbackText(
+  markdown: string,
+  ast: Root = parseMarkdown(markdown),
+): string {
+  const plainText = toPlainText(
+    walkAst(ast, (node) => {
+      const link = isLinkNode(node);
+      if (!link && node.type !== "image") return node;
+      const label = link
+        ? toPlainText({ type: "root", children: [{ type: "paragraph", children: node.children }] })
+        : (node.alt ?? "");
+      if (!label) return text(node.url);
+      const bare = node.url.replace(/^(?:https?:\/\/|mailto:)/, "");
+      if (label === node.url || label === bare || label === bare.replace(/\/$/, "")) {
+        return text(label);
+      }
+      return text(`${label} (${node.url})`);
+    }),
+  );
+  return plainText.trim() ? plainText : markdown;
+}
+
+/** The adapter builds its plain-text fallback itself; this is its one seam for that text. */
+class TelegramAdapterWithLinkAddresses extends TelegramAdapter {
+  protected override renderPlainTextMessage(
+    message: AdapterPostableMessage,
+    card: CardElement | null,
+  ): string {
+    return !card && typeof message === "object" && "markdown" in message
+      ? telegramFallbackText(message.markdown)
+      : super.renderPlainTextMessage(message, card);
   }
+}
 
-  // Parse before splitting: cutting Markdown can turn code into prose and
-  // consume literal backslashes. Oversized formatted replies use escaped text.
-  if (!literal && plainText !== body) return splitTelegramPart(plainText, true);
-
-  const parts = splitKeepingPairs(body);
-  if (parts.length > 1) return parts.flatMap((part) => splitTelegramPart(part, literal));
-
-  return halve(body).flatMap((half) => splitTelegramPart(half, literal));
+/**
+ * Both texts the adapter may send for a Markdown part, as it renders them: MarkdownV2, and the
+ * plain text it falls back to when Telegram rejects that. It truncates either past the limit.
+ */
+function telegramPayloads(markdown: string): string[] {
+  const ast = parseMarkdown(markdown);
+  // The fallback rewrites the tree, so the formatted text is rendered first.
+  return [telegramFormat.fromAst(ast), telegramFallbackText(markdown, ast)].map((text) =>
+    convertEmojiPlaceholders(text, "gchat"),
+  );
 }
 
 /** Exposes the adapter's Markdown rendering, which the package does not export. */
@@ -491,7 +570,11 @@ class WhatsAppRenderer extends WhatsAppAdapter {
 
 let whatsappRenderer: WhatsAppRenderer | undefined;
 
-function splitWhatsAppPart(body: string): string[] {
+/**
+ * The text the adapter sends for a Markdown part. Past the limit it splits the rendered text
+ * again, outside the queue's per-part retries and through any formatting.
+ */
+function whatsappPayloads(markdown: string): string[] {
   whatsappRenderer ??= new WhatsAppRenderer({
     accessToken: "",
     appSecret: "",
@@ -500,22 +583,7 @@ function splitWhatsAppPart(body: string): string[] {
     userName: "",
     verifyToken: "",
   });
-  // The adapter re-splits anything that renders past the limit, outside the
-  // queue's per-part retries and without keeping UTF-16 pairs together.
-  if (whatsappRenderer.render(body).length <= MESSAGE_PART_LIMIT) return [body];
-
-  const parts = splitKeepingPairs(body);
-  return (parts.length > 1 ? parts : halve(body)).flatMap(splitWhatsAppPart);
-}
-
-/** Refines chunks that only grow beyond the limit during rendering. */
-function halve(body: string): string[] {
-  const midpoint = Math.floor(body.length / 2);
-  const prefix = body.slice(0, midpoint);
-  let boundary = Math.max(prefix.lastIndexOf("\n"), prefix.lastIndexOf(" "));
-  if (boundary < midpoint / 2) boundary = midpoint;
-  if (/[\uD800-\uDBFF]/.test(body[boundary - 1]!)) boundary--;
-  return [body.slice(0, boundary), body.slice(boundary)];
+  return [whatsappRenderer.render(markdown)];
 }
 
 /** Sendblue reports outbound delivery as webhooks the Chat SDK ignores. */
@@ -569,7 +637,7 @@ function telegramAdapter(
   secretToken: string,
   options: { pollInboundMessages?: boolean },
 ) {
-  return createTelegramAdapter({
+  return new TelegramAdapterWithLinkAddresses({
     botToken,
     secretToken,
     // Auto mode long-polls when no webhook is registered, for deployments

@@ -1,12 +1,22 @@
 import { setTimeout as sleep } from "node:timers/promises";
-import { BOT_EMAIL_NAME_TAKEN, BotEmailNameSchema } from "@rakazo/contracts";
-import { attachmentComputerPath, redactSecrets } from "@rakazo/core";
-import { claimBotEmailName } from "@rakazo/db";
+import {
+  BOT_EMAIL_NAME_TAKEN,
+  BotEmailNameSchema,
+  BotEmailRecipientSchema,
+} from "@rakazo/contracts";
+import { attachmentComputerPath, matchesSearchQuery, redactSecrets } from "@rakazo/core";
+import {
+  claimBotEmailName,
+  contentEncryptionOf,
+  reserveBotEmailSend,
+  storedEmailAttachments,
+} from "@rakazo/db";
 import { z } from "zod";
 import { redactConnectorPayload } from "./connector-safety.js";
 import type { RunContext } from "./run-context.js";
 import { isRunTainted, refuseOwnerSettingsChange } from "./run-context.js";
 import type { ToolCall, ToolHandlers } from "./run-tool-gate.js";
+import { argsError } from "./tool-args.js";
 
 /** Longest a read_email call waits for mail to arrive, well inside a run's lease renewal. */
 export const READ_EMAIL_MAX_WAIT_SECONDS = 120;
@@ -16,6 +26,9 @@ const PREVIEW_CHARS = 160;
 const POLL_MS = 3_000;
 /** Emails one delete_email call removes. */
 const DELETE_EMAIL_MAX_IDS = 50;
+/** Emails a search fetches to check once decrypted, as blind-index matches can be false. */
+const SEARCH_CANDIDATES = 100;
+const SEARCHED_FIELDS = ["fromAddress", "fromName", "subject", "text"] as const;
 
 const ReadEmailSchema = z
   .object({
@@ -35,18 +48,31 @@ const DeleteEmailSchema = z
   })
   .strict();
 
-/** A tool call's argument problems, on one line. */
-function argsError(error: z.ZodError): string {
-  return error.issues
-    .map((issue) => `${issue.path.join(".") || "input"}: ${issue.message}`)
-    .join(" ");
-}
-
 function sender(email: { fromName: string; fromAddress: string }): string {
   return email.fromName ? `${email.fromName} <${email.fromAddress}>` : email.fromAddress;
 }
 
-type SavedFile = { name: string; artifactId?: string; mimeType?: string; size?: number };
+/**
+ * Plaintext mail matches the query inside any field. Encrypted mail matches on blind-index
+ * prefix tokens and is checked against its decrypted fields afterwards (`check`), so text inside
+ * a word only matches mail that is still plaintext, as in Space search.
+ */
+async function emailQuery(ctx: RunContext, query: string) {
+  const plaintext = SEARCHED_FIELDS.map((field) => ({
+    [field]: { contains: query, mode: "insensitive" as const },
+  }));
+  const encryption = contentEncryptionOf(ctx.deps.prisma);
+  const keyTokens = encryption
+    ? await encryption.messageSearchTokens(ctx.bot.spaceId, query, "prefix")
+    : [];
+  // No keys: nothing in the Space was ever encrypted.
+  if (!keyTokens.length) return { where: { OR: plaintext }, check: false };
+  const tokenSets = keyTokens.filter((tokens) => tokens.length);
+  // No term long enough to be indexed: check the newest mail.
+  if (!tokenSets.length) return { where: {}, check: true };
+  const encrypted = tokenSets.map((tokens) => ({ searchTokens: { hasEvery: tokens } }));
+  return { where: { OR: [...encrypted, ...plaintext] }, check: true };
+}
 
 async function readEmail(ctx: RunContext, call: ToolCall) {
   const parsed = ReadEmailSchema.safeParse(call.args);
@@ -67,7 +93,7 @@ async function readEmail(ctx: RunContext, call: ToolCall) {
     // Masked whole before paging, so a secret split across two pages is still caught.
     const body = redactSecrets(email.text, ctx.secrets);
     const text = body.slice(offset, offset + TEXT_PAGE_CHARS);
-    const files = email.attachments as SavedFile[];
+    const files = storedEmailAttachments(email);
     const kept = files.flatMap((file) =>
       file.artifactId && file.mimeType
         ? [
@@ -128,20 +154,23 @@ async function readEmail(ctx: RunContext, call: ToolCall) {
           },
         }
       : {}),
-    ...(input.query
-      ? {
-          OR: (["fromAddress", "fromName", "subject", "text"] as const).map((field) => ({
-            [field]: { contains: input.query, mode: "insensitive" as const },
-          })),
-        }
-      : {}),
   };
-  const list = () =>
-    deps.prisma.botEmailMessage.findMany({
-      where,
+  const limit = input.limit ?? 10;
+  // After since: the newest email already looked at, so candidates a search checked and dropped
+  // are not checked again by this wait or by a caller following nextSince.
+  let checkedTo: Date | undefined;
+  // Asked again on every look: a Space's first key can appear while the bot waits.
+  const list = async () => {
+    const search = input.query ? await emailQuery(ctx, input.query) : undefined;
+    const found = await deps.prisma.botEmailMessage.findMany({
+      where: {
+        ...where,
+        ...(checkedTo ? { receivedAt: { ...where.receivedAt, gt: checkedTo } } : {}),
+        ...search?.where,
+      },
       // After since, oldest first, so following nextSince reads every new email in order.
       orderBy: { receivedAt: input.since ? ("asc" as const) : ("desc" as const) },
-      take: input.limit ?? 10,
+      take: search?.check ? SEARCH_CANDIDATES : limit,
       select: {
         id: true,
         fromAddress: true,
@@ -154,6 +183,15 @@ async function readEmail(ctx: RunContext, call: ToolCall) {
         attachments: true,
       },
     });
+    if (!search?.check) return found;
+    const matches = found.filter((email) =>
+      matchesSearchQuery(input.query!, ...SEARCHED_FIELDS.map((field) => email[field])),
+    );
+    if (input.since)
+      checkedTo =
+        (matches.length >= limit ? matches[limit - 1] : found.at(-1))?.receivedAt ?? checkedTo;
+    return matches.slice(0, limit);
+  };
   let emails = await list();
   const deadline = startedAt + (input.waitSeconds ?? 0) * 1000;
   // The last look lands on the deadline, so a wait shorter than one poll still waits.
@@ -168,7 +206,7 @@ async function readEmail(ctx: RunContext, call: ToolCall) {
   // Where the next look starts, on the inbox's own clock: the newest email shown here, or the
   // caller's since when nothing new arrived.
   const newest = input.since ? emails.at(-1) : emails[0];
-  const nextSince = newest?.receivedAt.toISOString() ?? input.since;
+  const nextSince = (checkedTo ?? newest?.receivedAt)?.toISOString() ?? input.since;
   const listed = emails.map((email) => ({
     id: email.id,
     from: sender(email),
@@ -179,8 +217,8 @@ async function readEmail(ctx: RunContext, call: ToolCall) {
       .slice(0, PREVIEW_CHARS)
       .replace(/\s+/g, " ")
       .trim(),
-    ...((email.attachments as SavedFile[]).length
-      ? { files: (email.attachments as SavedFile[]).length }
+    ...(storedEmailAttachments(email).length
+      ? { files: storedEmailAttachments(email).length }
       : {}),
   }));
   return call.finish({
@@ -197,7 +235,7 @@ async function deleteEmail(ctx: RunContext, call: ToolCall) {
   }
   const { deps, bot, run } = ctx;
   if (run.userId !== bot.userId) return call.finish({ error: "Only the bot's owner can do that." });
-  // Only mail it received: what the bot sent counts toward the daily sending limit.
+  // Only mail it received: the bot's own sent mail stays as its record of what went out.
   const { count } = await deps.prisma.botEmailMessage.deleteMany({
     where: { id: { in: [...new Set(parsed.data.ids)] }, botId: bot.id, sent: false },
   });
@@ -239,26 +277,14 @@ async function claimEmailAddress(ctx: RunContext, call: ToolCall) {
   return call.finish({ address: `${parsed.data}@${domain}` });
 }
 
-/** Emails one bot sends a day at most, so a looping bot cannot spam from the shared domain. */
-export const SEND_EMAIL_DAILY_LIMIT = 50;
-/** Across all of one owner's bots, so more bots never mean more mail from the shared domain. */
-export const SEND_EMAIL_OWNER_DAILY_LIMIT = 200;
 const SEND_RECIPIENTS_MAX = 10;
 const SEND_TEXT_MAX_CHARS = 20_000;
 const SUBJECT_MAX_CHARS = 500;
-const DAY_MS = 24 * 60 * 60 * 1000;
 const MAX_REFERENCES = 20;
 
-const Recipients = z.union([z.email(), z.array(z.email())]).transform((value) =>
-  // Only the domain is case-insensitive; the part before the @ goes out exactly as given.
-  (Array.isArray(value) ? value : [value]).map((address) => {
-    const at = address.trim().lastIndexOf("@");
-    return `${address.trim().slice(0, at)}@${address
-      .trim()
-      .slice(at + 1)
-      .toLowerCase()}`;
-  }),
-);
+const Recipients = z
+  .union([BotEmailRecipientSchema, z.array(BotEmailRecipientSchema)])
+  .transform((value) => (Array.isArray(value) ? value : [value]));
 const SendEmailSchema = z
   .object({
     to: Recipients.refine((list) => list.length > 0, "Name at least one recipient."),
@@ -302,7 +328,15 @@ async function sendEmail(ctx: RunContext, call: ToolCall) {
   const original = input.inReplyTo
     ? await deps.prisma.botEmailMessage.findFirst({
         where: { id: input.inReplyTo, botId: bot.id },
-        select: { subject: true, messageId: true, references: true },
+        select: {
+          subject: true,
+          messageId: true,
+          references: true,
+          fromAddress: true,
+          verified: true,
+          sent: true,
+          receivedAt: true,
+        },
       })
     : null;
   if (input.inReplyTo && !original) {
@@ -349,20 +383,31 @@ async function sendEmail(ctx: RunContext, call: ToolCall) {
       id: earlier.id,
     });
   }
-  const today = { sent: true, receivedAt: { gte: new Date(Date.now() - DAY_MS) } };
-  const [mine, owners] = await Promise.all([
-    deps.prisma.botEmailMessage.count({ where: { ...today, botId: bot.id } }),
-    deps.prisma.botEmailMessage.count({ where: { ...today, bot: { userId: bot.userId } } }),
-  ]);
-  if (mine >= SEND_EMAIL_DAILY_LIMIT) {
-    return call.finish({
-      error: "You've sent as many emails today as you can. Try again tomorrow.",
-    });
-  }
-  if (owners >= SEND_EMAIL_OWNER_DAILY_LIMIT) {
-    return call.finish({
-      error: "You've sent as many emails today as your owner's bots can. Try again tomorrow.",
-    });
+  // Only a recent, authenticated incoming message authorizes a reply recipient.
+  // A sent copy, forged message, or caller-supplied address can never grant that permission.
+  const verifiedReplySender =
+    original?.verified &&
+    !original.sent &&
+    original.receivedAt.getTime() >= Date.now() - 30 * 24 * 60 * 60 * 1000 &&
+    original.fromAddress.split("@").at(-1)?.toLowerCase() !== domain.toLowerCase()
+      ? original.fromAddress
+      : undefined;
+  const reserved = await reserveBotEmailSend(deps.prisma, {
+    userId: bot.userId,
+    botId: bot.id,
+    recipients: [...input.to, ...cc],
+    verifiedReplySender,
+  });
+  if (typeof reserved === "string") {
+    const errors = {
+      limit: "Your account has reached its email allowance for the last 24 hours. Try again later.",
+      too_many:
+        "This email has more recipients than your account's allowance. Send to fewer recipients.",
+      disabled: "Email sending is paused for this account.",
+      unverified: "Verify your account email before sending.",
+      recipient: "This recipient isn't approved for this account.",
+    };
+    return call.finish({ error: errors[reserved] });
   }
   // Saved before it goes: a retry after a crash finds it and never sends the email twice.
   const row = await deps.prisma.botEmailMessage.create({
@@ -394,7 +439,8 @@ async function sendEmail(ctx: RunContext, call: ToolCall) {
     });
   } catch (error) {
     await deps.prisma.botEmailMessage.delete({ where: { id: row.id } }).catch(() => undefined);
-    // Most failures are refusals, but one can come after the provider took the email.
+    // Most failures are refusals, but one can come after the provider took the email, so the
+    // reserved send keeps counting toward the daily limits either way.
     return call.finish({
       error: `Sending failed (${error instanceof Error ? error.message : String(error)}). It most likely did not go out.`,
     });

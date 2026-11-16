@@ -1,11 +1,12 @@
 import type { MenuAction } from "@expo/ui/community/menu";
+import { ph, t } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
 import { attachmentMaxBytes, attachmentMaxCount } from "@rakazo/contracts";
 import { attachmentsForThread } from "@rakazo/core";
 import type { RefObject } from "react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ThreadComposerHandle } from "../components/thread-composer";
 import type { ComposerDraftScope } from "./composer-draft";
-import { t, useI18n } from "./i18n";
 import {
   isIncomingShareCurrent,
   releaseIncomingShareFiles,
@@ -65,16 +66,17 @@ function clearRetainedAttachments() {
 registerSessionDiskCache(clearRetainedAttachments);
 
 function formatAttachmentSkip(item: { name: string; reason: string }): string {
-  const name = item.name === "camera" ? t("Camera") : item.name;
-  if (item.reason === "permission denied") return t("{name} (permission denied)", { name });
+  const name = item.name === "camera" ? t`Camera` : item.name;
+  if (item.reason === "permission denied") return t`${name} (permission denied)`;
   if (item.reason.startsWith("over "))
-    return t("{name} (over {limit})", { name, limit: item.reason.slice(5) });
-  if (item.reason === "unsupported type") return t("{name} (unsupported type)", { name });
+    return t`${name} (over ${ph({ limit: item.reason.slice(5) })})`;
+  if (item.reason === "unsupported type") return t`${name} (unsupported type)`;
   const maxMatch = /^max (\d+) attachments$/.exec(item.reason);
   if (maxMatch) {
-    return t("{name} (max {count} attachments)", { name, count: maxMatch[1] ?? "" });
+    return t`${name} (max ${ph({ count: maxMatch[1] ?? "" })} attachments)`;
   }
-  return `${name} (${t(item.reason)})`;
+  if (item.reason === "could not read") return t`${name} (could not read)`;
+  return `${name} (${item.reason})`;
 }
 
 /** The composer's draft attachments, kept per chat, from the picker menu or a file drop. */
@@ -92,7 +94,7 @@ export function useThreadAttachments({
   /** The chat's draft key; unsent attachments stay under it between visits to the chat. */
   draftScope?: ComposerDraftScope;
 }) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const threadKey = groupId ?? botId;
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>(() =>
     draftScope ? (retainedDraftAttachments.get(retainedScopeKey(draftScope)) ?? []) : [],
@@ -144,9 +146,9 @@ export function useThreadAttachments({
   }, [pendingAttachments, draftScope, uploadConfig]);
 
   const attachActions: MenuAction[] = [
-    { id: "library", title: t("Photo library"), image: "photo.on.rectangle" },
-    { id: "camera", title: t("Camera"), image: "camera" },
-    { id: "file", title: t("File"), image: "doc" },
+    { id: "library", title: t`Photo library`, image: "photo.on.rectangle" },
+    { id: "camera", title: t`Camera`, image: "camera" },
+    { id: "file", title: t`File`, image: "doc" },
   ];
 
   function attachFrom(source: string) {
@@ -177,7 +179,7 @@ export function useThreadAttachments({
       );
     } catch (error) {
       // A picker that fails to open reports it instead of rejecting unhandled.
-      setAttachmentNotice(errorText(error, t("Could not attach files")));
+      setAttachmentNotice(errorText(error, t`Could not attach files`));
       return;
     }
     if ((groupId ?? botId) !== targetKey) return;
@@ -206,9 +208,7 @@ export function useThreadAttachments({
     ];
     setAttachmentNotice(
       skipped.length
-        ? t("Skipped {items}", {
-            items: skipped.map((item) => formatAttachmentSkip(item)).join(", "),
-          })
+        ? t`Skipped ${ph({ items: skipped.map((item) => formatAttachmentSkip(item)).join(", ") })}`
         : null,
     );
   }
@@ -229,6 +229,7 @@ export function useThreadAttachments({
 
   return {
     pendingAttachments,
+    pendingAttachmentsRef,
     setPendingAttachments,
     activePendingAttachments,
     attachmentNotice,
@@ -255,12 +256,24 @@ export function useIncomingShareImport({
   threadKey: string | undefined;
   uploadConfig?: { maxUploadSizeBytes?: number; maxAttachmentsPerMessage?: number };
 }) {
-  const { importingShare, setShareImporting, setPendingAttachments, setAttachmentNotice } =
-    attachments;
+  const {
+    importingShare,
+    pendingAttachmentsRef,
+    setShareImporting,
+    setPendingAttachments,
+    setAttachmentNotice,
+  } = attachments;
   // The share a settings refresh interrupted. It is retried on its own, so a
   // share that arrived in the meantime is left for the picker, not taken here.
   const interruptedShare = useRef<{ generation: number } | null>(null);
   const [retryTick, setRetryTick] = useState(0);
+  // A warm link to another chat commits before this effect's cleanup runs; a read that settles
+  // in between must not land in the state the new chat is about to replace. Set at commit, so a
+  // render of another chat that React discards leaves the committed chat's read in place.
+  const committedThread = useRef(threadKey);
+  useLayoutEffect(() => {
+    committedThread.current = threadKey;
+  }, [threadKey]);
   useEffect(() => {
     if (!threadKey || readOnly || !uploadConfig || importingShare.current) return;
     const interrupted = interruptedShare.current;
@@ -282,32 +295,50 @@ export function useIncomingShareImport({
           attachmentMaxBytes(uploadConfig),
           attachmentMaxCount(uploadConfig),
         );
-        if (!active || !isIncomingShareCurrent(share)) {
+        if (!active || committedThread.current !== threadKey || !isIncomingShareCurrent(share)) {
           retryIncomingShare(share);
           return;
         }
         if (result.failedFiles.length)
           retryIncomingShare({ ...share, text: "", files: result.failedFiles });
-        setPendingAttachments((current) => [
-          ...current,
-          ...result.attachments.map((attachment) => ({ ...attachment, threadKey })),
-        ]);
+        // A drop or a picker opened before the import can add files while it reads, so the
+        // room left is settled against the draft as it is now, as in addAttachments.
+        const maxCount = attachmentMaxCount(uploadConfig);
+        const room = Math.max(
+          0,
+          maxCount - attachmentsForThread(pendingAttachmentsRef.current, threadKey).length,
+        );
+        const accepted = result.attachments
+          .slice(0, room)
+          .map((attachment) => ({ ...attachment, threadKey }));
+        if (accepted.length) {
+          pendingAttachmentsRef.current = [...pendingAttachmentsRef.current, ...accepted];
+          setPendingAttachments((current) => [...current, ...accepted]);
+        }
+        const skipped = [
+          ...result.skipped,
+          ...result.attachments.slice(room).map((attachment) => ({
+            name: attachment.name,
+            reason: attachmentCountSkipReason(maxCount),
+          })),
+        ];
         setAttachmentNotice(
-          result.skipped.length
-            ? t("Skipped {items}", {
-                items: result.skipped.map((item) => formatAttachmentSkip(item)).join(", "),
-              })
+          skipped.length
+            ? t`Skipped ${ph({ items: skipped.map((item) => formatAttachmentSkip(item)).join(", ") })}`
             : null,
         );
         if (share.text) composerRef.current?.insert(share.text);
         // A file that became an attachment keeps its share copy until that attachment is sent
         // or removed; the rest are done (a retried one stays with its share).
-        result.sources.forEach((uri, index) => {
-          const id = result.attachments[index]?.id;
+        const sources = result.sources.slice(0, accepted.length);
+        sources.forEach((uri, index) => {
+          const id = accepted[index]?.id;
           if (id) retainedShareCopies.set(id, uri);
         });
-        const imported = new Set(result.sources);
-        releaseIncomingShareFiles(share.files.filter((file) => !imported.has(file.uri)));
+        // A copy an unsent attachment still owns stays, even when this share left its file out:
+        // the share extension reuses a file's name for its copy.
+        const owned = new Set(retainedShareCopies.values());
+        releaseIncomingShareFiles(share.files.filter((file) => !owned.has(file.uri)));
       } finally {
         importingShare.current = false;
         setShareImporting(false);

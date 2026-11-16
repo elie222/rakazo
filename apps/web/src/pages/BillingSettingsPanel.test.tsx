@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { flush } from "@rakazo/core/test-async";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -56,6 +57,7 @@ vi.mock("@rakazo/ui-web", () => {
   };
 });
 
+import { createSpaceRpc } from "../lib/rpc";
 import { BillingSettingsPanel } from "./BillingSettingsPanel";
 
 /** A trialing own-key plan whose trial can be ended from the panel. */
@@ -111,8 +113,8 @@ it("sends the panel's confirmations to the space it opened for", async () => {
   document.body.append(container);
   const root = createRoot(container);
   await act(async () => {
-    root.render(<BillingSettingsPanel />);
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    root.render(<BillingSettingsPanel client={createSpaceRpc("space-a")} />);
+    await flush();
   });
 
   // The panel loaded this organization's status.
@@ -134,9 +136,39 @@ it("sends the panel's confirmations to the space it opened for", async () => {
   expect(container.textContent).toMatch(/charged \$20(\.00)? today/);
   await act(async () => {
     button(container, "Start plan").click();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flush();
   });
 
+  const endTrial = requests.find(({ url }) => url.endsWith("/billing/endTrial"));
+  expect(endTrial).toMatchObject({ spaceId: "space-a" });
+  act(() => root.unmount());
+  container.remove();
+});
+
+it("acts on the window's space when another tab switched before the panel opened", async () => {
+  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  // This window shows space-a; another tab selected space-b before Billing opened here.
+  const client = createSpaceRpc("space-a");
+  localStorage.setItem("rakazo:space-id", "space-b");
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  await act(async () => {
+    root.render(<BillingSettingsPanel client={client} />);
+    await flush();
+  });
+  expect(requests[0]).toMatchObject({
+    url: expect.stringContaining("/billing/status"),
+    spaceId: "space-a",
+  });
+
+  await act(async () => {
+    button(container, "Start plan now").click();
+  });
+  await act(async () => {
+    button(container, "Start plan").click();
+    await flush();
+  });
   const endTrial = requests.find(({ url }) => url.endsWith("/billing/endTrial"));
   expect(endTrial).toMatchObject({ spaceId: "space-a" });
   act(() => root.unmount());

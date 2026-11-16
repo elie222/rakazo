@@ -1,32 +1,23 @@
-import type { Routine, RoutineEmailSenders, RpcInput } from "@rakazo/contracts";
-import type { CronPreset } from "@rakazo/core";
-import { cronFromPreset, isOneShotRoutineCrons, presetFromCron } from "@rakazo/core";
+import type { Routine, RpcInput } from "@rakazo/contracts";
+import type { RoutineDraft } from "@rakazo/core";
+import { cronFromPreset, draftFromRoutine, isOneShotRoutineCrons } from "@rakazo/core";
+import type { RoutineWebTrigger } from "./routine";
 import { routineTriggerNames } from "./routine";
 
 /**
- * What the mobile editor changes. Webhook, Git, message and change triggers and the routine's
- * own model stay as they were: an update never sends them, so the server keeps them.
+ * The editor's draft. A web-only trigger is left out until the person removes it here, so a
+ * draft only ever turns one off.
  */
-export type RoutineDraft = {
-  name: string;
-  prompt: string;
-  schedules: CronPreset[];
-  /** Whose mail starts the routine; null without an email trigger. */
-  emailSenders: RoutineEmailSenders | null;
-  active: boolean;
-};
+export type MobileRoutineDraft = RoutineDraft & Partial<Pick<Routine, RoutineWebTrigger>>;
 
-export function emptyRoutineDraft(): RoutineDraft {
-  return { name: "", prompt: "", schedules: [], emailSenders: null, active: true };
-}
-
-export function draftFromRoutine(routine: Routine): RoutineDraft {
+/** The routine as this draft would leave it, for the triggers mobile can only remove. */
+export function routineWithDraftTriggers(routine: Routine, draft: MobileRoutineDraft): Routine {
   return {
-    name: routine.name,
-    prompt: routine.prompt,
-    schedules: routine.crons.map(presetFromCron),
-    emailSenders: routine.emailSenders,
-    active: routine.active,
+    ...routine,
+    ...(draft.webhookEnabled === false ? { webhookEnabled: false } : {}),
+    ...(draft.githubEnabled === false ? { githubEnabled: false } : {}),
+    ...(draft.messageProvider === null ? { messageProvider: null } : {}),
+    ...(draft.watch === null ? { watch: null } : {}),
   };
 }
 
@@ -39,8 +30,11 @@ function sameCrons(a: string[], b: string[]): boolean {
   return a.length === b.length && a.every((cron, index) => cron === b[index]);
 }
 
-/** What an update would change, compared as the editor writes it. */
-function routineChanges(draft: RoutineDraft, routine: Routine) {
+/**
+ * What an update would change, compared as the editor writes it. Web-only triggers are sent
+ * only when removed here, and the routine's own model never is, so the server keeps them.
+ */
+function routineChanges(draft: MobileRoutineDraft, routine: Routine) {
   const crons = draft.schedules.map(cronFromPreset);
   // A schedule merely opened is not a change, even when the editor would spell it differently.
   const savedCrons = draftFromRoutine(routine).schedules.map(cronFromPreset);
@@ -50,11 +44,15 @@ function routineChanges(draft: RoutineDraft, routine: Routine) {
     ...(!routineScheduleLocked(routine) && !sameCrons(crons, savedCrons) ? { crons } : {}),
     ...(draft.emailSenders !== routine.emailSenders ? { emailSenders: draft.emailSenders } : {}),
     ...(draft.active !== routine.active ? { active: draft.active } : {}),
+    ...(draft.webhookEnabled === false && routine.webhookEnabled ? { webhookEnabled: false } : {}),
+    ...(draft.githubEnabled === false && routine.githubEnabled ? { githubEnabled: false } : {}),
+    ...(draft.messageProvider === null && routine.messageProvider ? { messageProvider: null } : {}),
+    ...(draft.watch === null && routine.watch ? { watch: null } : {}),
   };
 }
 
 /** Whether there is anything to save: a change to the routine, or anything in a new one. */
-export function routineDraftChanged(draft: RoutineDraft, routine: Routine | null): boolean {
+export function routineDraftChanged(draft: MobileRoutineDraft, routine: Routine | null): boolean {
   if (!routine) {
     return Boolean(
       draft.name.trim() || draft.prompt.trim() || draft.schedules.length || draft.emailSenders,
@@ -74,7 +72,7 @@ export type RoutineSaveRequest =
  * stale draft never undoes a pause or edit made elsewhere since it opened.
  */
 export function routineSaveRequest(
-  draft: RoutineDraft,
+  draft: MobileRoutineDraft,
   routine: Routine | null,
   botId: string,
   timezone: string,
@@ -86,7 +84,8 @@ export function routineSaveRequest(
   const crons = draft.schedules.map(cronFromPreset);
   // Triggers this editor doesn't show still count; the email one counts as the draft has it.
   const otherTriggers = routine
-    ? routineTriggerNames({ ...routine, emailSenders: null }).length > 0
+    ? routineTriggerNames({ ...routineWithDraftTriggers(routine, draft), emailSenders: null })
+        .length > 0
     : false;
   if (!crons.length && !draft.emailSenders && !otherTriggers) return { error: "trigger" };
   if (!routine) {

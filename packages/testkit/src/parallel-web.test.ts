@@ -37,6 +37,8 @@ function executorFixture(
     leaseFence: 0,
   };
   const prisma = {
+    $queryRaw: vi.fn(async () => []),
+    space: { findUnique: vi.fn(async () => null) },
     user: {
       findUnique: vi.fn<
         (args: { select?: Record<string, boolean> }) => Promise<{ timezone: string } | null>

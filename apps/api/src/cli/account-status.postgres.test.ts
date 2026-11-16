@@ -7,7 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 const run = promisify(execFile);
 const databaseUrl = process.env.VERIFY_DATABASE === "1" ? process.env.DATABASE_URL : undefined;
-const describePostgres = databaseUrl ? describe.sequential : describe.skip;
+const describePostgres = databaseUrl ? describe : describe.skip;
 
 describePostgres("the operator's account status command (PostgreSQL)", { timeout: 120_000 }, () => {
   let db: ReturnType<typeof createDb>;

@@ -5,8 +5,9 @@ import { runAsSystem } from "./row-security.js";
 import { homeOrganizationId } from "./spaces.js";
 
 /**
- * Counts the unread chats the inbox lists: every chat in each Space the sidebar shows around
- * this one, those of the user's own organization and those shared with them as a guest.
+ * Counts the chats unread for this person that the inbox lists: every chat in each Space the
+ * sidebar shows around this one, those of the user's own organization and those shared with
+ * them as a guest.
  */
 export function countUnreadInboxChats(
   prisma: PrismaClient,
@@ -24,7 +25,10 @@ export function countUnreadInboxChats(
       )
       SELECT count(*)::int AS count FROM threads t
       JOIN member_spaces m ON m."spaceId" = t."spaceId"
-      WHERE t.unread
+      JOIN thread_reads r ON r."threadId" = t.id AND r."userId" = ${userId}
+      WHERE r.unread
+        -- A snoozed chat leaves the inbox until it wakes, so it doesn't count either.
+        AND (r."snoozedUntil" IS NULL OR r."snoozedUntil" <= now())
         AND t."externalConversationId" IS NULL
         AND (
           EXISTS (SELECT 1 FROM bots b WHERE b.id = t."botId"

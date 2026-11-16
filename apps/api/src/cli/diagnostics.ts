@@ -1,9 +1,11 @@
 // `docker compose exec api node dist/cli/diagnostics.js`: a redacted report for a support issue.
+
 import { readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { contentKeyProviderFromEnv, unwrapEnvFromKeyManager } from "@rakazo/adapters";
 import type { PrismaClient } from "@rakazo/db";
 import { createDb, runAsSystem } from "@rakazo/db";
+import { bestEffort } from "@rakazo/logging";
 import type { DiagnosticsInput } from "../diagnostics.js";
 import { renderDiagnostics } from "../diagnostics.js";
 import type { AppEnv } from "../env.js";
@@ -40,8 +42,8 @@ async function report(): Promise<string> {
   try {
     return renderDiagnostics(await runAsSystem("diagnostics report", () => collect(env, prisma)));
   } finally {
-    await prisma.$disconnect().catch(() => undefined);
-    await pool.end().catch(() => undefined);
+    await bestEffort("disconnect database client", prisma.$disconnect());
+    await bestEffort("close database pool", pool.end());
   }
 }
 
@@ -59,7 +61,7 @@ async function collect(env: AppEnv, prisma: PrismaClient): Promise<DiagnosticsIn
       mcpStdioEnabled: env.mcpStdioEnabled,
       mcpStdioAllowedCommands: env.mcpStdioAllowedCommands,
       mcpAllowPrivateEndpoint: env.mcpAllowPrivateEndpoint,
-      ticketBoardEnabled: env.ticketBoardEnabled,
+      deploymentLabs: env.deploymentLabs,
       userDevicesEnabled: env.userDevicesEnabled,
       phoneCallsEnabled: env.phoneCallsEnabled,
       secretStore: process.env.SECRET_STORE?.trim() || "encrypted",

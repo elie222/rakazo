@@ -14,6 +14,7 @@ import {
   deleteClaimedSpace,
   deleteEmptyOrganization,
   deletePageShareSecrets,
+  expireSpaceDeletionClaims,
   keepOrganizationTrialUse,
   leaveInvitedSpaces,
   listStalledOrganizationDeletions,
@@ -42,7 +43,10 @@ export async function deleteAccountContent(
   },
   userId: string,
 ): Promise<void> {
-  const { claimId, spaceIds, takenOver } = await claimSpacesLeavingWithAccount(deps.prisma, userId);
+  const { claimId, attemptId, spaceIds, takenOver } = await claimSpacesLeavingWithAccount(
+    deps.prisma,
+    userId,
+  );
   try {
     // Cancel under the claims, so a checkout opened while another organization's cancellation
     // waits is refused by the deletion check instead of outliving the account.
@@ -50,26 +54,32 @@ export async function deleteAccountContent(
   } catch (error) {
     // Nothing was destroyed yet, so the account stays as it was: give back only what this
     // attempt claimed, keeping claims an earlier attempt left and other deletions' markers.
-    await restoreSpaceDeletionClaims(deps.prisma, claimId, takenOver);
+    await restoreSpaceDeletionClaims(deps.prisma, { claimId, attemptId }, takenOver);
     throw error;
   }
-  // Then leave other people's Spaces, so what this account made there passes to their owners
-  // instead of being torn down with it. None of them is claimed above: each keeps another full
-  // member. As after leaving: tell members, stop the cancelled runs' work, free held screens,
-  // and start others' waiting follow-ups.
-  await leaveInvitedSpaces(deps.prisma, userId, (departure) =>
-    afterSpaceDeparture(deps, { spaceId: departure.spaceId, userId }, departure),
-  );
   const leaving = { OR: [{ userId }, { spaceId: { in: spaceIds } }] };
-  await deleteClaimedSpaces(deps, {
-    userId,
-    operationId: `account-delete:${userId}`,
-    claimId,
-    spaceIds,
-    soleMemberId: userId,
-    bots: leaving,
-    computers: leaving,
-  });
+  try {
+    // Then leave other people's Spaces, so what this account made there passes to their owners
+    // instead of being torn down with it. None of them is claimed above: each keeps another full
+    // member. As after leaving: tell members, stop the cancelled runs' work, free held screens,
+    // and start others' waiting follow-ups.
+    await leaveInvitedSpaces(deps.prisma, userId, (departure) =>
+      afterSpaceDeparture(deps, { spaceId: departure.spaceId, userId }, departure),
+    );
+    await deleteClaimedSpaces(deps, {
+      userId,
+      operationId: `account-delete:${userId}`,
+      claimId,
+      spaceIds,
+      soleMemberId: userId,
+      bots: leaving,
+      computers: leaving,
+    });
+  } catch (error) {
+    // Nothing of this attempt is left running, so a retry takes its claims over at once.
+    await expireSpaceDeletionClaims(deps.prisma, { claimId, attemptId });
+    throw error;
+  }
 
   // Pages in Spaces that stay go with the user row; their links' tokens leave the store now.
   const memberPageSecrets = await deps.prisma.$transaction((tx) =>

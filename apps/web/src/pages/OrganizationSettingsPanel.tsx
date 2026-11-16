@@ -1,25 +1,14 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  Button,
-  Field,
-  FieldLabel,
-  Input,
-} from "@rakazo/ui-web";
+import { canDeleteOrganization } from "@rakazo/core";
+import { Button, Field, FieldLabel, Input } from "@rakazo/ui-web";
 import { Plus } from "lucide-react";
 import { useEffect, useId, useState } from "react";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import { CreateOrganizationDialog } from "../components/CreateOrganizationDialog";
 import { SettingsGroup, SettingsRow } from "../components/SettingsRows";
 import type { Organization } from "../lib/organizations";
 import { organizationsQuery, useOrganizations } from "../lib/organizations";
-import { queryClient, useQueryUserId } from "../lib/query";
+import { useQueryUserId, useSave } from "../lib/query";
 import { clearSpaceSelection, rpc, selectSpace } from "../lib/rpc";
 import { errorText } from "../lib/user-error";
 
@@ -36,9 +25,7 @@ export function OrganizationSettingsPanel({
     <OrganizationSettings
       key={organization.id}
       organization={organization}
-      canDelete={
-        organization.canManage && organizations.filter((each) => each.canManage).length > 1
-      }
+      canDelete={canDeleteOrganization(organizations, organization)}
       onBusyChange={onBusyChange}
     />
   );
@@ -56,33 +43,28 @@ function OrganizationSettings({
   const userId = useQueryUserId();
   const nameId = useId();
   const [draft, setDraft] = useState(organization.name);
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const rename = useSave({
+    save: (name: string, rpc) =>
+      rpc.organizations.rename({ organizationId: organization.id, name }),
+    stale: [organizationsQuery(userId).queryKey],
+    onSaved: (_renamed, name) => setDraft(name),
+  });
+  const pending = rename.pending;
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [creating, setCreating] = useState(false);
   useEffect(() => {
     onBusyChange?.(pending);
   }, [pending, onBusyChange]);
 
-  async function save() {
+  function save() {
     const trimmed = draft.trim();
     if (pending) return;
     if (!trimmed || trimmed === organization.name) {
       setDraft(organization.name);
-      setError(null);
+      rename.reset();
       return;
     }
-    setPending(true);
-    setError(null);
-    try {
-      await rpc.organizations.rename({ organizationId: organization.id, name: trimmed });
-      setDraft(trimmed);
-      await queryClient.invalidateQueries({ queryKey: organizationsQuery(userId).queryKey });
-    } catch (reason) {
-      setError(errorText(reason));
-    } finally {
-      setPending(false);
-    }
+    rename.run(trimmed);
   }
 
   return (
@@ -108,16 +90,16 @@ function OrganizationSettings({
                 disabled={pending}
                 onChange={(event) => {
                   setDraft(event.target.value);
-                  setError(null);
+                  rename.reset();
                 }}
-                onBlur={() => void save()}
+                onBlur={save}
                 onKeyDown={(event) => {
                   if (event.key === "Escape") event.stopPropagation();
                   if (event.nativeEvent.isComposing || event.keyCode === 229) return;
                   if (event.key === "Enter") event.currentTarget.blur();
                   if (event.key === "Escape") {
                     setDraft(organization.name);
-                    setError(null);
+                    rename.reset();
                   }
                 }}
               />
@@ -126,9 +108,9 @@ function OrganizationSettings({
             )
           }
         >
-          {error ? (
+          {rename.error ? (
             <p role="alert" className="pt-2 text-body-sm text-destructive">
-              {error}
+              {errorText(rename.error)}
             </p>
           ) : null}
         </SettingsRow>
@@ -153,17 +135,18 @@ function OrganizationSettings({
         <DeleteOrganizationDialog
           organization={organization}
           onCancel={() => setConfirmingDelete(false)}
-          onConfirm={async () => {
-            const { activeSpaceId } = await rpc.organizations.remove({
-              organizationId: organization.id,
-            });
-            if (!selectSpace(activeSpaceId)) clearSpaceSelection();
-            window.location.assign("/");
-          }}
+          onConfirm={() => removeOrganization(organization)}
         />
       ) : null}
     </div>
   );
+}
+
+/** Deletes it, then reloads into the Space the server chose. */
+export async function removeOrganization(organization: Organization): Promise<void> {
+  const { activeSpaceId } = await rpc.organizations.remove({ organizationId: organization.id });
+  if (!selectSpace(activeSpaceId)) clearSpaceSelection();
+  window.location.assign("/");
 }
 
 export function DeleteOrganizationDialog({
@@ -182,58 +165,35 @@ export function DeleteOrganizationDialog({
   const [error, setError] = useState<string | null>(null);
   const name = organization.name;
   return (
-    <AlertDialog
-      open
-      onOpenChange={(open) => {
-        if (!open && !deleting) onCancel();
+    <ConfirmDialog
+      onCancel={onCancel}
+      title={<Trans>Delete {organization.name}?</Trans>}
+      description={<Trans>This cannot be undone.</Trans>}
+      error={error}
+      busy={deleting}
+      confirmDisabled={typed !== name}
+      onConfirm={() => {
+        setDeleting(true);
+        setError(null);
+        void onConfirm().catch((reason: unknown) => {
+          setError(errorText(reason));
+          setDeleting(false);
+        });
       }}
+      confirmLabel={deleting ? <Trans>Deleting…</Trans> : <Trans>Delete</Trans>}
     >
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle className="break-words">
-            <Trans>Delete {organization.name}?</Trans>
-          </AlertDialogTitle>
-          <AlertDialogDescription>
-            <Trans>This cannot be undone.</Trans>
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <Field>
-          <FieldLabel htmlFor={confirmId} className="break-words">
-            {t`Type ${name} to confirm`}
-          </FieldLabel>
-          <Input
-            id={confirmId}
-            value={typed}
-            disabled={deleting}
-            autoComplete="off"
-            onChange={(event) => setTyped(event.target.value)}
-          />
-        </Field>
-        {error ? (
-          <p role="alert" className="text-body text-destructive">
-            {error}
-          </p>
-        ) : null}
-        <AlertDialogFooter>
-          <AlertDialogCancel disabled={deleting}>
-            <Trans>Cancel</Trans>
-          </AlertDialogCancel>
-          <AlertDialogAction
-            variant="destructive"
-            disabled={deleting || typed !== name}
-            onClick={() => {
-              setDeleting(true);
-              setError(null);
-              void onConfirm().catch((reason: unknown) => {
-                setError(errorText(reason));
-                setDeleting(false);
-              });
-            }}
-          >
-            {deleting ? <Trans>Deleting…</Trans> : <Trans>Delete</Trans>}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+      <Field>
+        <FieldLabel htmlFor={confirmId} className="break-words">
+          {t`Type ${name} to confirm`}
+        </FieldLabel>
+        <Input
+          id={confirmId}
+          value={typed}
+          disabled={deleting}
+          autoComplete="off"
+          onChange={(event) => setTyped(event.target.value)}
+        />
+      </Field>
+    </ConfirmDialog>
   );
 }

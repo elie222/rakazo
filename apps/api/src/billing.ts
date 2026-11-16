@@ -5,6 +5,7 @@ import type {
   BillingPrice,
   BillingProvider,
   BillingSubscriptionSnapshot,
+  PartnerProgram,
   ProductAnalytics,
   SandboxProvider,
 } from "@rakazo/adapter-kit";
@@ -12,9 +13,16 @@ import {
   BillingCheckoutCompletedError,
   BillingCustomerNotFoundError,
   BillingNoMonthlyCreditsError,
+  BillingPaymentNotCompletedError,
 } from "@rakazo/adapter-kit";
 import { sandboxAllowance, sandboxHoursLeft } from "@rakazo/adapters";
-import type { Actor, BillingStatus, ByokInterval, ByokTier } from "@rakazo/contracts";
+import type {
+  Actor,
+  AnalyticsEvent,
+  BillingStatus,
+  ByokInterval,
+  ByokTier,
+} from "@rakazo/contracts";
 import {
   BYOK_TIERS,
   ByokTierSchema,
@@ -23,7 +31,7 @@ import {
   sandboxAllowanceHours,
   TRIAL_DAYS,
 } from "@rakazo/contracts";
-import type { BillingAccount, PrismaClient } from "@rakazo/db";
+import type { BillingAccount, Prisma, PrismaClient } from "@rakazo/db";
 import {
   billingAccountForOrganization,
   byokFreeUntil,
@@ -35,13 +43,14 @@ import {
   extendByokTrialCheckout,
   hasBillingAccess,
   hasModelAccess,
+  isLockTimeout,
+  lockCheckoutLease,
   MICROS_PER_DOLLAR,
   needsBillingPortal,
   organizationForMember,
   organizationOwnerHadTrial,
   organizationSeatCount,
   ownedBillingAccounts,
-  reconcileCreditPurchase,
   releaseByokTrialCheckout,
   releaseByokTrialCheckouts,
   releaseCheckoutLease,
@@ -49,9 +58,13 @@ import {
   replaceBillingCustomer,
   reserveByokTrialCheckout,
   syncBillingSnapshot,
+  syncCreditPurchases,
+  unexpiredCreditAccount,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { applyAccessGrants } from "./access-grants.js";
+import { createExperiments } from "./experiments.js";
+import { createPartnerSales } from "./partner-sales.js";
 import { createReferrals } from "./referrals.js";
 
 export { TRIAL_DAYS };
@@ -62,6 +75,9 @@ const CHECKOUT_LEASE_MS = 120_000;
 const CHECKOUT_LEASE_POLL_MS = 250;
 /** Keeps a held lease valid through a provider operation longer than one lease period. */
 const CHECKOUT_LEASE_RENEW_MS = CHECKOUT_LEASE_MS / 4;
+/** Runs `write` in one transaction while this request still holds the checkout lease. */
+type UnderLease = <R>(write: (tx: Prisma.TransactionClient) => Promise<R>) => Promise<R>;
+
 /** Stripe returns here after checkout; served by the API through the web origin. */
 export const BILLING_RETURN_PATH = "/api/v1/billing/return";
 
@@ -78,6 +94,7 @@ export interface BillingService {
     funding: "byok" | "credits",
     client?: BillingClient,
     interval?: ByokInterval,
+    tier?: ByokTier,
   ): Promise<{ ok: true; url?: string }>;
   purchaseCredits(
     actor: Actor,
@@ -98,6 +115,12 @@ export interface BillingService {
   changeTier(actor: Actor, tier: ByokTier): Promise<void>;
   /** Re-fetches the customer's subscription from the provider and overwrites the stored snapshot. */
   sync(customerId: string): Promise<void>;
+  /**
+   * Reports the customer's plan payments to the partner program and withdraws reversed ones, also
+   * for a customer whose organization was deleted. Rejects when a withdrawal failed or the
+   * payments could not be read; a failed sale report is left for the next event.
+   */
+  reportPartnerSales(customerId: string): Promise<void>;
   /** Syncs the actor's organization, e.g. on return from checkout before the webhook lands. */
   syncForActor(actor: Actor): Promise<void>;
   /** Pushes the organization's member count to the provider. Call when members change. */
@@ -118,6 +141,22 @@ function byokTrialAvailable(
   ownerHadOne: boolean,
 ) {
   return !ownerHadOne && !account?.subscribedAt && !credits.byokFreeUntil;
+}
+
+type PlanTerms = Omit<Extract<AnalyticsEvent, { name: "checkout_opened" }>, "name">;
+
+/** The plan a subscription bills, as analytics reports it; monthly credits include own-key. */
+function planTerms(live: BillingSubscriptionSnapshot): PlanTerms | null {
+  if (live.creditAmountCents)
+    return { plan: "credits", interval: "month", amountCents: live.creditAmountCents };
+  if (live.byokPlan && live.byokPriceCents)
+    return {
+      plan: "own_key",
+      tier: live.byokTier ?? "standard",
+      interval: live.byokInterval ?? "month",
+      amountCents: live.byokPriceCents,
+    };
+  return null;
 }
 
 /** A subscriber keeps the own-key price they signed up at until the subscription ends. */
@@ -158,14 +197,18 @@ export function createBillingService(deps: {
   /** The session cookie lives on the web origin, which also proxies /api to this server. */
   webOrigin: string;
   analytics?: ProductAnalytics;
+  experiments?: ReturnType<typeof createExperiments>;
+  partnerProgram?: PartnerProgram;
 }): BillingService {
   const { prisma, provider } = deps;
+  const experiments = deps.experiments ?? createExperiments(undefined);
   const appUrl = `${deps.webOrigin}/app`;
   const returnUrl = `${deps.webOrigin}${BILLING_RETURN_PATH}`;
   /** A mobile checkout returns through the API either way, which hands back to the app. */
   const mobileReturnUrl = `${returnUrl}?client=mobile`;
   const modelCredits = provider.describe().capabilities.modelCredits === true;
   const referrals = createReferrals(deps);
+  const partnerSales = createPartnerSales({ ...deps, program: deps.partnerProgram });
   let cachedPrice: { value: BillingPrice; expiresAt: number } | undefined;
 
   async function price(): Promise<BillingPrice | null> {
@@ -210,11 +253,10 @@ export function createBillingService(deps: {
     if (modelCredits && provider.listCreditPurchases) {
       const account = await prisma.billingAccount.findUnique({ where: { customerId } });
       if (account) {
-        let added = false;
-        for (const purchase of await provider.listCreditPurchases(customerId)) {
-          if ((await reconcileCreditPurchase(prisma, account.organizationId, purchase)) > 0)
-            added = true;
-        }
+        const listCreditPurchases = provider.listCreditPurchases.bind(provider);
+        const added = await syncCreditPurchases(prisma, account.organizationId, () =>
+          listCreditPurchases(customerId),
+        );
         await prisma.modelCreditAccount.updateMany({
           where: {
             organizationId: account.organizationId,
@@ -237,7 +279,16 @@ export function createBillingService(deps: {
       return;
     }
     const live = snapshot;
-    if (live) await reportCancellation(previous, live);
+    // Measurement never decides whether a paid plan activates.
+    if (live)
+      try {
+        await reportCancellation(previous, live);
+        await reportPlanChange(previous, live);
+      } catch (error) {
+        getLogger().warn("billing analytics failed", {
+          "error.message": error instanceof Error ? error.message : String(error),
+        });
+      }
     if (live && hasBillingAccess(live.status))
       await referrals.settle(previous.organizationId, live.cardFingerprint);
     if (!modelCredits || !live) return;
@@ -277,17 +328,48 @@ export function createBillingService(deps: {
         live.cancellationComment === (previous.cancellationComment ?? undefined))
     )
       return;
-    const owner = await prisma.member.findFirst({
-      where: { organizationId: previous.organizationId, role: { contains: "owner" } },
-      orderBy: { createdAt: "asc" },
-      select: { userId: true },
-    });
+    const owner = await ownerUserId(previous.organizationId);
     if (!owner) return;
-    analytics.capture(owner.userId, {
+    analytics.capture(owner, {
       name: "subscription_cancel_feedback",
       ...(live.cancellationReason ? { reason: live.cancellationReason } : {}),
       commented: Boolean(live.cancellationComment),
     });
+  }
+
+  /**
+   * Reports a new subscription, or the end of its trial, when a sync records it. Concurrent syncs
+   * can both see the change, so each event carries the subscription and a time from its snapshot,
+   * which the analytics provider deduplicates on.
+   */
+  async function reportPlanChange(previous: BillingAccount, live: BillingSubscriptionSnapshot) {
+    const { analytics } = deps;
+    const same = live.subscriptionId === previous.subscriptionId;
+    // A checkout whose first payment was still pending syncs as incomplete before it starts.
+    const started = hasBillingAccess(live.status) && (!same || previous.status === "incomplete");
+    const trialEnded = same && previous.status === "trialing" && live.status !== "trialing";
+    const terms = planTerms(live);
+    if (!analytics || !terms || !(started || trialEnded)) return;
+    const owner = await ownerUserId(previous.organizationId);
+    if (!owner) return;
+    const at = (started ? live.currentPeriodStartsAt : live.trialEndsAt) ?? new Date();
+    analytics.capture(
+      owner,
+      started
+        ? { name: "subscription_started", ...terms, trial: live.status === "trialing" }
+        : { name: "trial_ended", ...terms, converted: live.status === "active" },
+      { id: live.subscriptionId, at },
+      experiments.tags("plan-layout", previous.organizationId),
+    );
+  }
+
+  async function ownerUserId(organizationId: string) {
+    const owner = await prisma.member.findFirst({
+      where: { organizationId, role: { contains: "owner" } },
+      orderBy: { createdAt: "asc" },
+      select: { userId: true },
+    });
+    return owner?.userId;
   }
 
   async function cancel(account: BillingAccount) {
@@ -326,21 +408,27 @@ export function createBillingService(deps: {
   async function openCheckout(
     actor: Actor,
     account: BillingAccount,
-    call: (customerId: string) => Promise<{ url: string }>,
+    call: (customerId: string, underLease: UnderLease) => Promise<{ url: string }>,
   ) {
     // Opening another recurring checkout expires the old one.
-    return withCheckoutLease(account.organizationId, async () => {
+    return withCheckoutLease(account.organizationId, async (underLease) => {
       // The entry check ran before this request waited for the lease, and a deletion's
       // cancellation holds the same lease: re-check, so no session opens that the
       // cancellation cannot see and the organization cannot outlive.
       if (await organizationBeingDeleted(account.organizationId))
         throw new ORPCError("CONFLICT", { message: "Organization is being deleted" });
-      return withLiveCustomer(actor, account, call);
+      return withLiveCustomer(actor, account, (customerId) => call(customerId, underLease));
     });
   }
 
-  /** Runs `work` holding the organization's checkout lease, one at a time across API instances. */
-  async function withCheckoutLease<T>(organizationId: string, work: () => Promise<T>) {
+  /**
+   * Runs `work` holding the organization's checkout lease, one at a time across API instances.
+   * `underLease` runs writes that must not outlive the lease.
+   */
+  async function withCheckoutLease<T>(
+    organizationId: string,
+    work: (underLease: UnderLease) => Promise<T>,
+  ) {
     const deadline = Date.now() + CHECKOUT_LEASE_MS;
     let leaseId = await claimCheckoutLease(prisma, organizationId, CHECKOUT_LEASE_MS);
     while (!leaseId) {
@@ -357,8 +445,21 @@ export function createBillingService(deps: {
       CHECKOUT_LEASE_RENEW_MS,
     );
     renew.unref();
+    // The lease row stays locked until the writes commit, so no claimant takes it meanwhile.
+    const busy = () => new ORPCError("CONFLICT", { message: "Billing is busy; try again shortly" });
+    const underLease: UnderLease = (write) =>
+      prisma
+        .$transaction(async (tx) => {
+          if (!(await lockCheckoutLease(tx, organizationId, leaseId))) throw busy();
+          return write(tx);
+        })
+        .catch((error: unknown) => {
+          // A write that waited too long on another lock rolled back: busy, like a lost lease.
+          if (isLockTimeout(error)) throw busy();
+          throw error;
+        });
     try {
-      const result = await work();
+      const result = await work(underLease);
       // Renewal keeps the lease unless the database refused every attempt for a whole lease
       // period. A cancellation that still took the lease over expired the sessions open at
       // that moment, so a session created after it must not be handed back.
@@ -401,13 +502,24 @@ export function createBillingService(deps: {
       organizationOwnerHadTrial(prisma, organizationId, "byok"),
     ]);
     try {
-      return await openCheckout(actor, account, async (customerId) => {
-        // One trial per owner: reserve inside the organization's checkout lease, so overlapping
-        // requests of the same organization cannot interleave their holds; the lease already
-        // serializes their provider calls.
-        const hold = byokTrialAvailable(account, credits, hadTrial)
-          ? await reserveByokTrialCheckout(prisma, organizationId)
-          : null;
+      const session = await openCheckout(actor, account, async (customerId, underLease) => {
+        // Expire the open sessions first: once none is payable none holds the trial, so a
+        // failure after this step gives this attempt's hold back in full. A failure while
+        // expiring keeps the earlier hold, since its session may still be payable.
+        await provider.expireOpenCheckouts(customerId);
+        // A session paid before it could be expired leaves a subscription whose webhook may
+        // not have arrived: record it, using up the owners' trial, while the earlier hold
+        // still protects it. A failed sync keeps that hold.
+        await sync(customerId);
+        // One trial per owner: the sync can outlast the lease, after which a newer request
+        // may hold a newer session's hold, so release and reserve only while the lease is
+        // still this request's and its row stays locked.
+        const hold = await underLease(async (tx) => {
+          await releaseByokTrialCheckouts(tx, organizationId);
+          return byokTrialAvailable(account, credits, hadTrial)
+            ? reserveByokTrialCheckout(tx, organizationId)
+            : null;
+        });
         let session: { url: string };
         try {
           session = await provider.createByokCheckout!({
@@ -420,8 +532,8 @@ export function createBillingService(deps: {
             cancelUrl: client === "mobile" ? mobileReturnUrl : appUrl,
           });
         } catch (error) {
-          // No session came out of this attempt, so its hold goes back; an earlier or newer
-          // payable session's hold keeps its own expiry and survives.
+          // No session came out of this attempt, so its hold goes back; a newer payable
+          // session's hold keeps its own expiry and survives.
           if (hold && !(error instanceof BillingCheckoutCompletedError))
             await releaseByokTrialCheckout(prisma, organizationId, hold);
           throw error;
@@ -431,6 +543,13 @@ export function createBillingService(deps: {
         if (hold) await extendByokTrialCheckout(prisma, organizationId, hold);
         return session;
       });
+      deps.analytics?.capture(
+        actor.userId,
+        { name: "checkout_opened", plan: "own_key", tier, interval, amountCents },
+        undefined,
+        experiments.tags("plan-layout", organizationId),
+      );
+      return session;
     } catch (error) {
       if (!(error instanceof BillingCheckoutCompletedError)) throw error;
       await sync(account.customerId);
@@ -495,8 +614,10 @@ export function createBillingService(deps: {
   return {
     modelCreditsEnabled: modelCredits,
     referralsEnabled: referrals.enabled,
-    async selectFunding(actor, funding, client, interval) {
+    async selectFunding(actor, funding, client, interval, tier) {
       const { organizationId } = await managedOrganization(actor);
+      // Choosing credits must see the balance left after any lapsed monthly credits expire.
+      if (funding === "credits") await expireModelCredits(prisma, organizationId);
       const account = await creditAccount(prisma, organizationId);
       const subscription = await billingAccountForOrganization(prisma, organizationId);
       if (
@@ -513,7 +634,7 @@ export function createBillingService(deps: {
         funding === "byok" &&
         !hasModelAccess({ ...account, mode: "byok" }, subscription?.status ?? null)
       )
-        return { ok: true, ...(await byokCheckout(actor, organizationId, client, interval)) };
+        return { ok: true, ...(await byokCheckout(actor, organizationId, client, interval, tier)) };
       await prisma.modelCreditAccount.update({
         where: { organizationId },
         data: {
@@ -543,6 +664,18 @@ export function createBillingService(deps: {
           where: { organizationId },
           data: { pendingCreditCheckout: true },
         });
+        if (input.monthly)
+          deps.analytics?.capture(
+            actor.userId,
+            {
+              name: "checkout_opened",
+              plan: "credits",
+              interval: "month",
+              amountCents: input.amountCents,
+            },
+            undefined,
+            experiments.tags("plan-layout", organizationId),
+          );
         return checkout;
       } catch (error) {
         if (error instanceof BillingCheckoutCompletedError)
@@ -561,6 +694,8 @@ export function createBillingService(deps: {
       try {
         await provider.setMonthlyCredits(account.customerId, amountCents);
       } catch (error) {
+        if (error instanceof BillingPaymentNotCompletedError)
+          throw new ORPCError("PAYMENT_REQUIRED", { status: 402, message: error.message });
         if (!(error instanceof BillingNoMonthlyCreditsError)) throw error;
         // The plan ended after the page loaded; syncing lets the next status offer Subscribe.
         await sync(account.customerId);
@@ -577,9 +712,8 @@ export function createBillingService(deps: {
           await applyAccessGrants(prisma, { ...actor, organizationId }).catch((error) =>
             getLogger().error("access grant failed", error),
           );
-        await expireModelCredits(prisma, organizationId);
         const [credits, account, computerAllowance, days, hadTrial] = await Promise.all([
-          creditAccount(prisma, organizationId),
+          unexpiredCreditAccount(prisma, organizationId),
           billingAccountForOrganization(prisma, organizationId),
           deps.sandbox ? sandboxAllowance({ prisma, sandbox: deps.sandbox }, organizationId) : null,
           trialDays(organizationId),
@@ -612,6 +746,10 @@ export function createBillingService(deps: {
           byokAnnualPriceCents: byokTierPriceCents(tier, "year"),
           byokTier: tier,
           ...(offers.length ? { byokTiers: offers } : {}),
+          // New organizations only, so a returning subscriber's choice stays out of the comparison.
+          ...(offers.length > 1 && !account?.subscribedAt && experiments.running("plan-layout")
+            ? { planLayout: experiments.variant("plan-layout", organizationId) }
+            : {}),
           byokFreeUntil: freeUntil?.toISOString() ?? null,
           canManage: isOwner,
           trialAvailable:
@@ -633,6 +771,7 @@ export function createBillingService(deps: {
           cancelAtPeriodEnd: account?.cancelAtPeriodEnd ?? false,
           hasCustomer: Boolean(account),
           computerHoursLeft: computerAllowance && sandboxHoursLeft(computerAllowance),
+          computerHoursResetAt: computerAllowance?.resetsAt?.toISOString() ?? null,
           referral: await referrals.status(organizationId, isOwner),
         };
       }
@@ -718,7 +857,12 @@ export function createBillingService(deps: {
       const { organizationId } = await managedOrganization(actor);
       const account = await billingAccountForOrganization(prisma, organizationId);
       if (!account) throw new ORPCError("NOT_FOUND", { message: "No billing account" });
-      await provider.endTrial(account.customerId);
+      try {
+        await provider.endTrial(account.customerId);
+      } catch (error) {
+        if (!(error instanceof BillingPaymentNotCompletedError)) throw error;
+        throw new ORPCError("PAYMENT_REQUIRED", { status: 402, message: error.message });
+      }
       await sync(account.customerId);
     },
 
@@ -744,6 +888,13 @@ export function createBillingService(deps: {
     },
 
     sync,
+    async reportPartnerSales(customerId) {
+      const account = await prisma.billingAccount.findUnique({
+        where: { customerId },
+        select: { organizationId: true },
+      });
+      await partnerSales.report(customerId, account?.organizationId ?? null);
+    },
 
     async syncForActor(actor) {
       const { organizationId } = await organization(actor);

@@ -1,6 +1,6 @@
 import type { OrganizationList } from "@rakazo/contracts";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { adoptDeletedSpaceFallback } from "./api";
+import { adoptDeletedSpaceFallback } from "./api-server";
 import type { Organization } from "./organizations";
 import {
   activeOrganization,
@@ -22,20 +22,23 @@ const state = vi.hoisted(() => ({
 }));
 
 vi.mock("expo-router", () => ({ router: state.router }));
-vi.mock("./api", () => ({
+vi.mock("./api-server", () => ({
   adoptDeletedSpaceFallback: vi.fn(async () => true),
-  captureApiRequestContext: async () => ({ apiBase: "https://app.example.test", headers: {} }),
-  currentApiBase: () => "https://app.example.test",
   loadOrganizationSpaces: async () => state.remembered,
   rememberOrganizationSpace: vi.fn(async (organizationId: string, spaceId: string) => {
     state.remembered = { ...state.remembered, [organizationId]: spaceId };
   }),
-  rpc: state.rpc,
-  selectedSpaceId: () => state.selected,
   selectSpace: state.selectSpace,
 }));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
+vi.mock("./api", () => ({
+  captureApiRequestContext: async () => ({ apiBase: "https://app.example.test", headers: {} }),
+  currentApiBase: () => "https://app.example.test",
+  rpc: state.rpc,
+  selectedSpaceId: () => state.selected,
+}));
 vi.mock("./session", () => ({ currentSessionGeneration: () => 1 }));
-vi.mock("./i18n", () => ({ t: (text: string) => text }));
 
 const work: Organization = {
   id: "org-work",

@@ -8,10 +8,16 @@ import type {
   ThreadSnapshot,
 } from "@rakazo/contracts";
 import {
+  activeThreadRuns,
   anySignal,
   createRefreshCoalescer,
   isRunTerminalEvent,
   isRunWorking,
+  isThreadSnapshotEvent,
+  messageUnreadFor,
+  reconcileRefreshedThread,
+  reduceThreadSnapshot,
+  rememberTerminalRun,
   runThreadSubscription,
 } from "@rakazo/core";
 import { fetchFresh } from "@rakazo/core/query";
@@ -28,13 +34,9 @@ import type { SpaceQueries } from "../../lib/query";
 import { queryClient } from "../../lib/query";
 import type { createSpaceRpc } from "../../lib/rpc";
 import {
-  activeThreadRuns,
   isComputerStatusEvent,
-  isThreadSnapshotEvent,
   prependThreadMessagePage,
-  reconcileRefreshedThread,
   reduceComputerStatus,
-  reduceThreadSnapshot,
 } from "../../lib/thread-events";
 import {
   firstVisibleTranscriptRow,
@@ -87,6 +89,7 @@ export function useThreadSync({
   notifyBrowserForEvent,
   markBotReadIfVisible,
   markGroupReadOnReply,
+  meId,
 }: {
   rpc: ReturnType<typeof createSpaceRpc>;
   queries: SpaceQueries;
@@ -105,6 +108,8 @@ export function useThreadSync({
   notifyBrowserForEvent: ReturnType<typeof useBrowserNotifications>["notifyBrowserForEvent"];
   markBotReadIfVisible: (botId: string) => void;
   markGroupReadOnReply: (groupId: string) => void;
+  /** The signed-in person: another member's message is new to them, their own is not. */
+  meId: string | undefined;
 }) {
   const {
     snapshot,
@@ -130,10 +135,36 @@ export function useThreadSync({
     computerOpenRef,
     computerBotIdRef,
     refreshComputerScreen,
+    isOwnControlEvent,
+    isOwnAnswer,
   } = computerState;
+  function readControlEventScreen(botId: string, event: ProductEvent) {
+    const own =
+      event.payload.answered === true
+        ? isOwnAnswer(botId)
+        : isOwnControlEvent(botId, event.type, event.payload.leaseId);
+    if (!own) void refreshComputerScreen(botId).catch(() => undefined);
+    return own;
+  }
+
   const threadRefreshEpoch = useRef(0);
   const groupRefreshEpoch = useRef(0);
   const [loadingOlder, setLoadingOlder] = useState(false);
+  const readerScrollEpoch = useRef(0);
+  const pendingSnaps = useRef(new Set<number>());
+  useEffect(() => {
+    const onScroll = (event: Event) => {
+      if (event.target === messageScroll.current) readerScrollEpoch.current += 1;
+    };
+    document.addEventListener("scroll", onScroll, true);
+    return () => {
+      document.removeEventListener("scroll", onScroll, true);
+      readerScrollEpoch.current += 1;
+      for (const frame of pendingSnaps.current) window.cancelAnimationFrame(frame);
+      pendingSnaps.current.clear();
+    };
+  }, [messageScroll]);
+
   // A very fast run can finish over SSE while its threads.send response is still
   // returning. Do not let that late receipt resurrect terminal work as queued.
   const terminalRunReceipts = useRef(new Set<string>());
@@ -150,17 +181,36 @@ export function useThreadSync({
     const queuedElement = messageScroll.current;
     if (!queuedElement) return;
     const queuedScrollTop = queuedElement.scrollTop;
-    window.requestAnimationFrame(() => {
+    const epoch = historyEpoch.current;
+    const readerEpoch = readerScrollEpoch.current;
+    const botId = activeBotId.current;
+    const groupId = activeGroupId.current;
+    const frame = window.requestAnimationFrame(() => {
+      pendingSnaps.current.delete(frame);
+      if (
+        epoch !== historyEpoch.current ||
+        readerEpoch !== readerScrollEpoch.current ||
+        botId !== activeBotId.current ||
+        groupId !== activeGroupId.current
+      )
+        return;
       const element = messageScroll.current;
+      if (!element) return;
       if (transcriptCanSnapAfterFrame(element, queuedElement, queuedScrollTop)) {
-        queuedElement.scrollTop = queuedElement.scrollHeight;
+        element.scrollTop = element.scrollHeight;
+      } else if (element !== queuedElement && !queuedElement.isConnected) {
+        // A bot switch remounts the transcript, so the queued element is the
+        // detached one. The scroll epoch still guards the replacement's reader position.
+        element.scrollTop = element.scrollHeight;
       }
     });
+    pendingSnaps.current.add(frame);
   }
 
   async function refreshGroupThread(id: string, signal?: AbortSignal) {
-    const scrollElement = messageScroll.current;
-    const stickToEnd = !scrollElement || transcriptIsNearEnd(scrollElement);
+    const readerEpoch = readerScrollEpoch.current;
+    const preRequestElement = messageScroll.current;
+    const stickToEnd = !preRequestElement || transcriptIsNearEnd(preRequestElement);
     markOnce("rk:renderer:thread-request-start");
     const request = ++groupRefreshEpoch.current;
     const snap = await rpc.threads.get({ groupId: id }, signal ? { signal } : undefined);
@@ -172,6 +222,11 @@ export function useThreadSync({
       computerRef.current,
       expandedHistoryThread.current === snap.threadId,
     );
+    // Re-read the scroller: the await gave a chat switch time to remount the
+    // transcript, so the pre-request element may now be detached. The replacement
+    // can start at the top; only stick if no scroll occurred during the load.
+    const scrollElement = messageScroll.current;
+    const transcriptRemounted = scrollElement !== null && scrollElement !== preRequestElement;
     webLogoAvatarActivity.reconcile(snap);
     commitSnapshot(reconciled.snapshot);
     if (!computerOpenRef.current) commitComputer(null);
@@ -180,7 +235,8 @@ export function useThreadSync({
     // Keep the search-jump viewport; expandedHistoryThread merge still accepts live messages.
     if (
       stickToEnd &&
-      (!scrollElement || transcriptIsNearEnd(scrollElement)) &&
+      readerEpoch === readerScrollEpoch.current &&
+      (transcriptRemounted || !scrollElement || transcriptIsNearEnd(scrollElement)) &&
       expandedHistoryThread.current !== snap.threadId
     ) {
       snapTranscriptToEndAfterFrame();
@@ -188,9 +244,15 @@ export function useThreadSync({
     return snap;
   }
 
-  async function refreshThread(id: string, signal?: AbortSignal) {
-    const scrollElement = messageScroll.current;
-    const stickToEnd = !scrollElement || transcriptIsNearEnd(scrollElement);
+  /** `readScreen: false` leaves the screen to a caller that already reads it. */
+  async function refreshThread(
+    id: string,
+    signal?: AbortSignal,
+    { readScreen = true }: { readScreen?: boolean } = {},
+  ) {
+    const readerEpoch = readerScrollEpoch.current;
+    const preRequestElement = messageScroll.current;
+    const stickToEnd = !preRequestElement || transcriptIsNearEnd(preRequestElement);
     markOnce("rk:renderer:thread-request-start");
     const epoch = historyEpoch.current;
     const request = ++threadRefreshEpoch.current;
@@ -205,6 +267,11 @@ export function useThreadSync({
     ) {
       return snap;
     }
+    // Re-read the scroller: the await gave a bot switch time to remount the
+    // transcript, so the pre-request element may now be detached. The replacement
+    // can start at the top; only stick if no scroll occurred during the load.
+    const scrollElement = messageScroll.current;
+    const transcriptRemounted = scrollElement !== null && scrollElement !== preRequestElement;
     const reconciled = reconcileRefreshedThread(
       snapshotRef.current,
       snap,
@@ -217,7 +284,8 @@ export function useThreadSync({
     cacheComputerFor(id, { computer: reconciled.computer });
     if (
       stickToEnd &&
-      (!scrollElement || transcriptIsNearEnd(scrollElement)) &&
+      readerEpoch === readerScrollEpoch.current &&
+      (transcriptRemounted || !scrollElement || transcriptIsNearEnd(scrollElement)) &&
       expandedHistoryThread.current !== snap.threadId
     ) {
       snapTranscriptToEndAfterFrame();
@@ -230,7 +298,7 @@ export function useThreadSync({
       fetchFresh(queryClient, queries.skills.list.queryOptions({ input: { botId: id } })).catch(
         () => null,
       ),
-      refreshComputerScreen(id).catch(() => null),
+      readScreen ? refreshComputerScreen(id).catch(() => null) : null,
     ]).then(([routines, skills]) => {
       if (
         activeBotId.current !== id ||
@@ -360,13 +428,7 @@ export function useThreadSync({
         ),
       beforeEvent: (event) => {
         webLogoAvatarActivity.apply(avatarSource, event);
-        if (isRunTerminalEvent(event) && event.runId) {
-          terminalRunReceipts.current.add(event.runId);
-          if (terminalRunReceipts.current.size > 100) {
-            const oldest = terminalRunReceipts.current.values().next().value;
-            if (oldest !== undefined) terminalRunReceipts.current.delete(oldest);
-          }
-        }
+        rememberTerminalRun(terminalRunReceipts.current, event);
       },
       applyEvent: (event) =>
         applyThreadEvent(event, commitSnapshot, commitComputer, snapshotRef, computerRef),
@@ -401,7 +463,7 @@ export function useThreadSync({
           if (blocks.some((block) => block.kind === "child_bot")) {
             void sidebarRefresh.invalidate().catch(() => undefined);
           }
-          if (event.payload.role === "bot") markBotReadIfVisible(active.id);
+          if (messageUnreadFor(event.payload, meId)) markBotReadIfVisible(active.id);
         }
         if (
           isRunTerminalEvent(event) ||
@@ -411,11 +473,17 @@ export function useThreadSync({
           // waiting_input: reconcile ask cards if a stale post-send refresh raced SSE.
           void snapshotRefresh.invalidate().catch(() => undefined);
         } else if (isComputerStatusEvent(event)) {
-          // In a shared Space the event does not say who took control; the snapshot does.
+          // This tab's own take or release already reads the new screen.
+          const own = readControlEventScreen(active.id, event);
+          // In a shared Space the event does not say who took control; the snapshot does. An own
+          // grant may still be someone else's while this tab's call is out, so it reconciles too.
           if (event.type === "computer.takeover.granted" && computerRef.current?.shared) {
-            void snapshotRefresh.invalidate().catch(() => undefined);
+            if (own)
+              void refreshThread(active.id, undefined, { readScreen: false }).catch(
+                () => undefined,
+              );
+            else void snapshotRefresh.invalidate().catch(() => undefined);
           }
-          void refreshComputerScreen(active.id).catch(() => undefined);
         }
         if (isRunTerminalEvent(event)) refreshRoutineHistory(event.runId);
       },
@@ -428,7 +496,7 @@ export function useThreadSync({
       const left = snapshotRef.current;
       if (left?.botId === active.id && !left.groupId) queryClient.setQueryData(threadKey, left);
     };
-  }, [active?.id, markBotReadIfVisible, notifyBrowserForEvent]);
+  }, [active?.id, markBotReadIfVisible, notifyBrowserForEvent, meId]);
 
   useEffect(() => {
     if (!groupId || !activeGroup) return;
@@ -481,7 +549,7 @@ export function useThreadSync({
           true,
           groupId,
         );
-        if (event.type === "thread.message.created" && event.payload.role === "bot") {
+        if (event.type === "thread.message.created" && messageUnreadFor(event.payload, meId)) {
           markGroupReadOnReply(groupId);
         }
         if (event.type === "thread.message.created") {
@@ -503,6 +571,11 @@ export function useThreadSync({
           // waiting_input: reconcile ask cards if a stale post-send refresh raced SSE.
           void snapshotRefresh.invalidate().catch(() => undefined);
         }
+        // The initiating tab already reads the screen; request answers do not change it.
+        const computerBotId = computerBotIdRef.current;
+        if (isComputerStatusEvent(event) && computerBotId && event.botId === computerBotId) {
+          readControlEventScreen(computerBotId, event);
+        }
         if (isRunTerminalEvent(event)) refreshRoutineHistory(event.runId);
       },
     });
@@ -514,7 +587,7 @@ export function useThreadSync({
       const left = snapshotRef.current;
       if (left?.groupId === groupId) queryClient.setQueryData(threadKey, left);
     };
-  }, [activeGroup?.id, groupId, notifyBrowserForEvent, markGroupReadOnReply]);
+  }, [activeGroup?.id, groupId, notifyBrowserForEvent, markGroupReadOnReply, meId]);
 
   // Memoized children take these, so they stay referentially stable across renders.
   const refreshThreadRef = useRef(refreshThread);

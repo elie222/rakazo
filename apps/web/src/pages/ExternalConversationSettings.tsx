@@ -21,6 +21,7 @@ import {
   Input,
   NativeSelect,
   NativeSelectOption,
+  SectionHeading,
   Select,
   SelectContent,
   SelectGroup,
@@ -90,9 +91,9 @@ export function ExternalConversationSettings({
   return (
     <div data-testid="external-conversation-settings">
       <div className="mb-6">
-        <h2 className="truncate text-heading3 font-medium text-foreground" dir="auto">
+        <SectionHeading as="h2" variant="heading" className="truncate" dir="auto">
           {conversation.displayName || t`External conversation`}
-        </h2>
+        </SectionHeading>
         <p className="mt-1 truncate text-body-sm text-muted-foreground">
           {conversation.participantNames.join(", ")}
         </p>

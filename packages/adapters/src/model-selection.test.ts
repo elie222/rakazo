@@ -4,7 +4,9 @@ import { credentialForModel } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import { selectConfiguredModel } from "./model-roles.js";
+import { serializeModelSecret } from "./model-secret.js";
 import {
+  connectedModelSeesImages,
   connectionServesModel,
   defaultCatalogModelId,
   enabledOpenAiCompatibleModelIds,
@@ -26,7 +28,6 @@ import { listAvailablePiCatalog } from "./pi-catalog-availability.js";
 import type { CodexLiveCatalog } from "./pi-codex-catalog.js";
 import { liveCatalogEntry, providerCatalogCache } from "./pi-live-catalog.js";
 import { listPiCatalog } from "./pi-models.js";
-import { serializeModelSecret } from "./pi-oauth.js";
 
 function credential(provider: string, defaultModel: string | null) {
   return {
@@ -43,6 +44,35 @@ function credential(provider: string, defaultModel: string | null) {
 }
 
 const bot = { modelProvider: "bot-provider", modelId: "bot-model", thinkingLevel: "high" };
+
+it.each([
+  { bundled: true, catalogImages: undefined, expected: true },
+  { bundled: false, catalogImages: true, expected: true },
+  { bundled: false, catalogImages: false, expected: false },
+])(
+  "uses known image capabilities without decrypting, bundled: $bundled, answer: $catalogImages",
+  async ({ bundled, catalogImages, expected }) => {
+    const entry = bundled
+      ? listPiCatalog().find((model) => model.provider === "anthropic" && model.images)!
+      : { provider: "zai", id: "listed-model-fixture" };
+    const findFirst = vi.fn(async () => ({ ciphertext: "sealed-fixture" }));
+    const load = vi.fn(async () => {
+      throw new SecretStoreUnavailableError();
+    });
+    await expect(
+      connectedModelSeesImages(
+        { prisma: { secret: { findFirst } } as never, secretStore: { load } },
+        "user-1",
+        entry.provider,
+        entry.id,
+        credential(entry.provider, entry.id),
+        catalogImages,
+      ),
+    ).resolves.toBe(expected);
+    expect(findFirst).not.toHaveBeenCalled();
+    expect(load).not.toHaveBeenCalled();
+  },
+);
 
 describe("routine model pin", () => {
   const routine = {
@@ -217,7 +247,10 @@ describe("space catalog auth", () => {
     const preferenceFindMany = vi.fn().mockResolvedValue(options.preferences);
     const secretFindMany = vi.fn().mockResolvedValue(options.secrets);
     const prisma = {
-      userModelCredential: { findMany: credentialFindMany },
+      userModelCredential: {
+        findMany: credentialFindMany,
+        findFirst: vi.fn().mockResolvedValue(null),
+      },
       userModelPreference: { findMany: preferenceFindMany },
       secret: { findMany: secretFindMany },
     } as unknown as PrismaClient;
@@ -244,7 +277,7 @@ describe("space catalog auth", () => {
         preferences: [],
         secrets: [{ id: "personal-secret", ciphertext: "fixture-ciphertext" }],
       });
-      // A balance does not replace a key the member connected outside credits mode.
+      // Funding never replaces a key the member connected.
       Object.assign(prisma.userModelCredential, {
         findFirst: vi.fn().mockResolvedValue({ id: "personal" }),
       });
@@ -258,15 +291,9 @@ describe("space catalog auth", () => {
       const load = vi.fn().mockResolvedValue("fixture-personal-key");
       const auth = await modelCredentialAuthKindsForSpace(prisma, { load }, scope, "openrouter");
       expect(auth.byProvider.openrouter).toBe("api_key");
-      if (mode === "credits") {
-        expect(auth.managedProvider).toBe("openrouter");
-        expect(auth.secretIdByProvider?.openrouter).toBeUndefined();
-        expect(load).not.toHaveBeenCalled();
-      } else {
-        expect(auth.managedProvider).toBeUndefined();
-        expect(auth.secretIdByProvider?.openrouter).toBe("personal-secret");
-        expect(load).toHaveBeenCalledOnce();
-      }
+      expect(auth.managedProvider).toBeUndefined();
+      expect(auth.secretIdByProvider?.openrouter).toBe("personal-secret");
+      expect(load).toHaveBeenCalledOnce();
     } finally {
       vi.unstubAllEnvs();
     }

@@ -42,6 +42,18 @@ GIT_SHA=$(git rev-parse HEAD) docker compose --env-file .env -f infra/compose/do
 不使用 Compose 的源码部署，应拉取代码，带 `GIT_SHA=$(git rev-parse HEAD)` 重新构建，执行 `pnpm db:migrate`，
 然后重启 API 和 worker。
 
+更新器容器（sidecar）使用自己的镜像和标签，因此升级应用时不会重建执行更新的进程。
+需要升级更新器时，明确把 `RAKAZO_UPDATER_IMAGE_TAG` 设为完整的 `sha-<提交号>` 标签，再运行：
+
+```bash
+docker compose --env-file .env -f infra/compose/docker-compose.prod.yml pull updater
+docker compose --env-file .env -f infra/compose/docker-compose.prod.yml \
+  up -d --wait --pull never updater
+```
+
+更新器的 `/apply` 和 `/rollback` 在重建失败时会尽量重新部署缓存中的旧镜像；
+如果这也失败，会报告运行时可能处于混合版本。
+
 ## 独立数据库登录身份
 
 使用独立应用数据库角色的版本需要 `.env` 中的 `POSTGRES_APP_PASSWORD`。
@@ -84,8 +96,31 @@ sudo RAKAZO_DEPLOY_DIR="$PWD" infra/compose/upgrade-postgres.sh infra/compose/do
 如需回滚应立即进行，并暂停自动部署；只有确认不再需要回滚时才能清理旧卷。
 完整迁移与清理说明见[Postgres 18 升级（英文）](../self-host-upgrading.md#upgrading-to-postgres-18)。
 
-跨越 `20260830200000_space_scope_names_and_user_credentials` 的旧安装，还需按
-[空间隐私边界迁移检查（英文）](../self-host-upgrading.md#space-privacy-boundary-migration)验证凭据归属，不能跳过停机要求。
+## 空间隐私边界迁移
+
+跨越迁移 `20260830200000_space_scope_names_and_user_credentials` 的旧安装，必须先确认每个现有模型和语音凭据
+仍属于其空间成员。以下查询使用迁移前的 `workspaceId` 列名，结果必须为零行：
+
+```sql
+SELECT 'model' AS credential_type, credential."id", credential."userId",
+       credential."workspaceId" AS "spaceId"
+FROM "user_model_credentials" AS credential
+LEFT JOIN "space_members" AS membership
+  ON membership."spaceId" = credential."workspaceId"
+ AND membership."userId" = credential."userId"
+WHERE membership."id" IS NULL
+UNION ALL
+SELECT 'voice', credential."id", credential."userId", credential."workspaceId"
+FROM "user_voice_credentials" AS credential
+LEFT JOIN "space_members" AS membership
+  ON membership."spaceId" = credential."workspaceId"
+ AND membership."userId" = credential."userId"
+WHERE membership."id" IS NULL;
+```
+
+该迁移会重命名 API 和 worker 使用的列，因此必须协调切换，不能在线滚动迁移。
+停止旧的 API 和 worker，应用迁移后同时启动新版本。迁移的锁等待有上限：
+遇到竞争时会让迁移失败，而不是让应用流量无限排队。
 
 ## 镜像标签与回滚
 
@@ -93,9 +128,16 @@ sudo RAKAZO_DEPLOY_DIR="$PWD" infra/compose/upgrade-postgres.sh infra/compose/do
 自动更新器选择最新稳定源码标签，但部署对应的完整 `sha-` 镜像，不使用可移动的 `latest` 或次版本标签。
 注册表标签本身不是内容摘要；需要固定内容的运维人员，可在自动更新器之外使用经过验证的镜像摘要。
 
+从自己的 fork 部署时，必须把 `RAKAZO_IMAGE` 和 `RAKAZO_UPDATER_IMAGE` 指向自己的命名空间；
+fork 的 CI 无法把镜像发布到别人的命名空间。应用和更新器分别用 `RAKAZO_IMAGE_TAG` 与
+`RAKAZO_UPDATER_IMAGE_TAG` 固定，不能靠 `latest` 之类的可移动标签完成可重复升级。
+
+首次填充注册表时，可手动运行发布工作流或推送 `v*` 标签。手动运行生成 `sha-<完整提交号>`；
+只有不带预发布后缀的稳定 `vX.Y.Z` 标签会生成 `latest`。自动更新器会忽略预发布版本，
+在存在稳定 `vX.Y.Z` 之前拒绝使用官方更新路径。
+
 更新器回滚只使用本机缓存，不从注册表重新拉取。因此接受下一次更新前不要清理上一个应用镜像，
 缓存缺失时回滚会拒绝继续，而不会在旧标签下拉取可能已变化的内容。
-完整发布机制见[镜像与标签（英文）](../self-host-upgrading.md#published-images-and-tags)。
 
 ## 可选自动更新器
 
@@ -112,11 +154,58 @@ docker compose --env-file .env -f infra/compose/docker-compose.prod.yml \
 迁移顺序由 API 对 `migrate` 的依赖控制。
 拉取失败不影响正在运行的服务；重建失败会尽可能恢复旧环境和缓存镜像，但不会撤销迁移。
 
+更新器在私有 `control` 网络的 `http://updater:7092` 上提供 `/health`、`/state`、`/plan`、`/apply`
+和 `/rollback`。除 `/health` 外，所有接口都要求 `RAKAZO_UPDATER_TOKEN`；仅部署工具应调用它们。
+普通应用账号没有更新接口，应用 API 也不会拿到更新令牌。
+
+官方路径会用 `git ls-remote --tags` 找到最新稳定发布及其源码提交，把对应的完整
+`sha-<提交号>` 镜像标签写入 `.env`，把旧标签保存在 `RAKAZO_IMAGE_TAG_PREVIOUS`，
+显式拉取新镜像后执行 `up -d --wait --pull never`，服务器不构建镜像。
+Fork 模式没有已发布镜像，会快进 `RAKAZO_DEPLOY_DIR` 中的代码并执行 `up -d --build`，
+因此会花几分钟在服务器上构建。只应把 Fork 模式指向自己掌控且审查过的仓库，因为它会通过
+root 权限等价的 Docker 套接字执行该 Compose 文件。
+
+更新和回滚一次只运行一个。Fork 构建失败还会恢复更新前的分支和提交；即使代码已成功检出但合并失败也一样。
+Git 远端只接受 `https://` 和 `ssh://`，且只允许快进合并；工作树有未提交或未跟踪文件时会在执行前拒绝继续。
+
 **更新器持有 Docker 套接字，权限相当于宿主机 root。** 它只在私有控制网络提供带令牌验证的接口；
 不要将其端口对外发布。普通应用账号没有更新接口，应用 API 也不持有更新令牌。
-Fork 模式会在服务器构建仓库，只能指向自己掌控且审查过的代码。
+更新器容器没有发布任何宿主机端口，未接入 Caddy，进程环境只包含更新器设置；
+应用密钥留在 Compose 读取的挂载 `.env` 中，不会加载到更新器容器。API、worker 和 web 仍没有 Docker 套接字。
+`RAKAZO_UPDATER_TOKEN` 还必须不同于 `BETTER_AUTH_SECRET`、`SANDBOX_SUPERVISOR_TOKEN` 和
+`SCREEN_PROXY_SECRET`；不需要自动更新时可一直保持该 profile 关闭。
 
 `RAKAZO_DEPLOY_DIR` 必须是 Docker 守护进程看到的实际路径，宿主机与更新器内使用同一路径。
-Linux 默认是 `/srv/rakazo`；Docker Desktop 的路径可能与终端中的路径不同，
-必须先验证挂载。多个 Compose 叠加文件和额外服务也须显式配置，详见
-[更新器部署路径与权限（英文）](../self-host-upgrading.md#the-deploy-directory-must-be-one-path)。
+生产 Compose 默认两侧都是 `/srv/rakazo`；其他目录必须显式设置。Linux 上守护进程共享宿主文件系统，
+通常填写代码检出目录即可。Docker Desktop 的守护进程运行在虚拟机中，路径会不同：
+Windows 的 `C:` 通常对应 `/run/desktop/mnt/host/c`，所以 `C:\Users\you\rakazo` 应设为
+`RAKAZO_DEPLOY_DIR=/run/desktop/mnt/host/c/Users/you/rakazo`。
+不要填写 Windows 原生路径（守护进程会因盘符冒号拒绝），也不要使用 `/mnt/c/...`；
+后者可能静默挂载为空目录。部署前先验证：
+
+```bash
+docker compose --env-file .env -f infra/compose/docker-compose.prod.yml \
+  --profile updater run --rm updater \
+  sh -c 'git -C "$RAKAZO_DEPLOY_DIR" log --oneline -1'
+```
+
+命令必须打印代码检出的当前 HEAD。宿主 Git 使用 `core.autocrlf=true` 不影响 `/apply`，
+更新器会忽略仅由 CR 引起的差异。使用自定义 `-p` 项目名时，还要让更新器看到同一个项目名：
+生产 Compose 会传递 `COMPOSE_PROJECT_NAME`；独立运行更新器时可设置 `RAKAZO_COMPOSE_PROJECT_NAME`，
+最后才回退到 `rakazo-prod`。否则更新器可能避开原部署，另起一个带空 Postgres 卷的第二个项目。
+
+叠加其他 Compose 文件时，用 `RAKAZO_COMPOSE_FILE` 按相同顺序列出全部文件，分隔符与 Compose 的
+`COMPOSE_FILE` 一致（默认 `:`，或由 `COMPOSE_PATH_SEPARATOR` 指定）：
+
+```env
+RAKAZO_COMPOSE_FILE=infra/compose/docker-compose.prod.yml:infra/compose/docker-compose.prod.docker.yml
+```
+
+每个文件都会单独校验，且必须位于 `RAKAZO_DEPLOY_DIR` 内。如果叠加文件新增了使用应用镜像的服务，
+把该服务加入逗号分隔的 `RAKAZO_UPDATE_SERVICES`，让它随应用一起拉取、重建和回滚，例如：
+
+```env
+RAKAZO_UPDATE_SERVICES=supervisor
+```
+
+这些名称只会追加到内置的 `api`、`worker`、`web`，不会替换核心服务，因此不会因配置遗漏而跳过更新。

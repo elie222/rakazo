@@ -1,11 +1,13 @@
 // @vitest-environment jsdom
 import type { MessageBlock } from "@rakazo/contracts";
+import { deferred } from "@rakazo/core/test-async";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 import { rpc } from "./api";
 import { hapticImpact, hapticSuccess } from "./haptics";
 import * as feedbackModule from "./thread-feedback";
+import { startWorkActivity } from "./work-activity";
 
 const navigation = vi.hoisted(() => ({
   focused: true,
@@ -20,21 +22,25 @@ vi.mock("expo-router", () => ({
   useRouter: () => ({ push: vi.fn() }),
   useNavigation: () => navigation,
 }));
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   currentApiBase: () => "https://app.example",
-  loadSessionToken: async () => "token",
   rpc: vi.fn(),
   selectedSpaceId: () => null,
 }));
-vi.mock("./i18n", () => ({ t: (text: string) => text, useI18n: () => ({ t: (s: string) => s }) }));
 vi.mock("./live-notifications", () => ({ resumeLiveNotifications: async () => undefined }));
 vi.mock("./focus-prompt", () => ({ cancelFocusPrompt: () => undefined }));
 vi.mock("./unsent-sends", () => ({ prepareUnsentSends: async () => undefined }));
 vi.mock("./session", () => ({
+  loadSessionToken: async () => "token",
+
   currentSessionGeneration: () => 1,
   registerSessionDiskCache: () => undefined,
 }));
 vi.mock("./page-runtime", () => ({ loadPageRuntime: async () => "" }));
+vi.mock("./work-activity", () => ({ startWorkActivity: vi.fn() }));
 
 const { useThreadSend } = await import("./thread-send");
 const { deliverSend } = feedbackModule;
@@ -177,19 +183,48 @@ it("taps only valid sends and confirms delivery only for the visible chat", asyn
   }
 });
 
+it("shows the bots at work outside the app once the server accepts a run", async () => {
+  let delivered!: Parameters<typeof feedbackModule.subscribeDelivered>[0];
+  const subscription = vi
+    .spyOn(feedbackModule, "subscribeDelivered")
+    .mockImplementation((listener) => {
+      delivered = listener;
+      return () => {};
+    });
+  const view = await chat([]);
+  vi.mocked(startWorkActivity).mockClear();
+  try {
+    const payload = { originThreadKey: "bot-1", botTarget: "bot-1", plan: {} };
+    delivered({ payload, spaceId: "space-1" } as never);
+    expect(startWorkActivity).not.toHaveBeenCalled();
+    // From a chat the user has left, too: the card is for when they are elsewhere.
+    navigation.focused = false;
+    delivered({
+      payload,
+      spaceId: "space-1",
+      acceptedRun: { runId: "run-1", taskId: "task-1" },
+    } as never);
+    expect(startWorkActivity).toHaveBeenCalledWith({
+      title: "",
+      spaceId: "space-1",
+      target: { botId: "bot-1" },
+    });
+  } finally {
+    navigation.focused = true;
+    await act(async () => view.root.unmount());
+    subscription.mockRestore();
+  }
+});
+
 it("does not confirm a card answer accepted after navigation leaves the mounted chat", async () => {
-  let accept!: () => void;
-  vi.mocked(rpc).mockReturnValueOnce(
-    new Promise<void>((resolve) => {
-      accept = resolve;
-    }) as never,
-  );
+  const accept = deferred();
+  vi.mocked(rpc).mockReturnValueOnce(accept.promise as never);
   const view = await chat([]);
   vi.mocked(hapticSuccess).mockClear();
   try {
     const saving = view.sender().answer({ id: "ask-1", runId: "run-1" } as never, "yes");
     navigation.focused = false;
-    accept();
+    accept.resolve();
     await saving;
     expect(hapticSuccess).not.toHaveBeenCalled();
     navigation.focused = true;

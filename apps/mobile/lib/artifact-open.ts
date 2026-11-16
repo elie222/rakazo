@@ -1,3 +1,4 @@
+import { t } from "@lingui/core/macro";
 import { Directory, File, Paths } from "expo-file-system";
 import * as Sharing from "expo-sharing";
 import { Image } from "react-native";
@@ -6,7 +7,6 @@ import { captureApiRequestContext, currentApiBase, rpc, selectedSpaceId } from "
 import { artifactCacheSession } from "./artifact-cache-session";
 import { artifactCacheFileName, artifactShareFileName } from "./artifact-file";
 import { ARTIFACT_DOWNLOAD_TIMEOUT_MS } from "./artifacts";
-import { t } from "./i18n";
 import type { ImageSize } from "./inline-image";
 import { createKeyedPromiseCache } from "./inline-image";
 import { currentSessionGeneration, loadSessionToken } from "./session";
@@ -21,7 +21,7 @@ export function writeArtifactCacheFile(
 ): File {
   const file = new File(Paths.cache, artifactCacheFileName(artifactId, mimeType));
   file.create({ overwrite: true });
-  file.write(contentBase64, { encoding: "base64" });
+  file.writeSync(contentBase64, { encoding: "base64" });
   return file;
 }
 
@@ -131,9 +131,9 @@ async function cacheMobileArtifact(
   // Invalidate first so an interrupted overwrite cannot leave valid metadata for wrong bytes.
   if (metadata.exists) metadata.delete();
   file.create({ overwrite: true });
-  file.write(artifact.contentBase64, { encoding: "base64" });
+  file.writeSync(artifact.contentBase64, { encoding: "base64" });
   metadata.create({ overwrite: true });
-  metadata.write(JSON.stringify({ key }));
+  metadata.writeSync(JSON.stringify({ key }));
   return file;
 }
 
@@ -247,5 +247,5 @@ async function shareNamedFile(source: File, mimeType: string, name: string): Pro
     await Sharing.shareAsync(shared.uri, { mimeType });
     return;
   }
-  throw new Error(t("Saved {name} locally", { name }));
+  throw new Error(t`Saved ${name} locally`);
 }

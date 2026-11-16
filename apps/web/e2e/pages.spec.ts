@@ -62,9 +62,10 @@ test("a week calendar keeps its days aligned in a desktop two-column page", asyn
   const source = `function CalendarPage() {
     return <Page width="wide" title="Calendar layout">
       <Grid columns={2}>
-        <Section heading="Week"><WeekView week="2026-11-09" start={8} end={18} events={[
+        <Section heading="Week"><WeekView week="2026-11-09" events={[
           { date: "2026-11-09", start: 9, end: 10, title: "Monday event" },
-          { date: "2026-11-15", start: 9.5, end: 10.5, title: "Sunday event" }
+          { date: "2026-11-15", start: 9.5, end: 10.5, title: "Sunday event" },
+          { date: "2026-11-16", start: 22, end: 23, title: "Next week event" }
         ]} /></Section>
         <Section heading="Day"><DayView start={8} end={18} events={[
           { start: 9.5, end: 10.5, title: "Day event" }
@@ -96,6 +97,7 @@ test("a week calendar keeps its days aligned in a desktop two-column page", asyn
       heads,
       columns,
       weekGrid: rect(week.querySelector(".rk-cal-columns")!),
+      weekHeight: week.querySelector(".rk-cal-body")!.getBoundingClientRect().height,
       weekScroll: { client: week.clientWidth, scroll: week.scrollWidth },
       sunday: rect(sunday),
       sundayText: sunday.textContent,
@@ -120,14 +122,89 @@ test("a week calendar keeps its days aligned in a desktop two-column page", asyn
     expect(layout.columns[i]!.y).toBeCloseTo(layout.columns[0]!.y, 0);
     expect(Math.abs(layout.heads[i]!.x - layout.columns[i]!.x)).toBeLessThanOrEqual(1);
   }
+  expect(layout.weekHeight).toBeCloseTo(88, 0);
+  await expect(frame.getByText("Next week event")).toHaveCount(0);
   expect(layout.sundayText).toContain("Sunday event");
-  expect(layout.sunday.y - layout.columns[6]!.y).toBeCloseTo(67, 0);
+  expect(layout.sunday.y - layout.columns[6]!.y).toBeCloseTo(23, 0);
   expect(layout.dayColumns).toHaveLength(1);
   expect(layout.dayColumns[0]!.width).toBeCloseTo(layout.dayGrid.width - 1, 0);
   expect(layout.dayEvent.y - layout.dayColumns[0]!.y).toBeCloseTo(67, 0);
   expect(layout.dayText).toContain("Day event");
   expect(layout.dayText).toContain("9:30");
   await captureScreenshot(page, testInfo, "page-calendar-two-columns");
+});
+
+test("shared page contents jump below the header and copy fallback", async ({
+  page,
+  browser,
+}, testInfo) => {
+  await signup(page, `pages-anchor-${Date.now()}@rakazo.test`, "password12", "Page Reader");
+  await completeOnboarding(page);
+  const title = "Reading guide";
+  const source = `export default function Guide() {
+    return <Page title="Reading guide">
+      <TableOfContents items={[{ label: "Details", id: "details" }]} />
+      <Section heading="Introduction">{Array.from({ length: 30 }, (_, i) => <Text key={i}>An example paragraph before the destination.</Text>)}</Section>
+      <Section heading="Details" id="details">{Array.from({ length: 30 }, (_, i) => <Text key={i}>An example paragraph after the destination.</Text>)}</Section>
+    </Page>;
+  }`;
+  await send(page, `call save_page with ${JSON.stringify({ title, source })}\nthen say Done.`);
+  const card = page.getByTestId("page-card");
+  await expect(card).toHaveCount(1, { timeout: 30_000 });
+  await card.getByRole("button", { name: `Open ${title}` }).click();
+  await page.getByTestId("page-view").getByRole("button", { name: "Share" }).click();
+  const share = page.getByTestId("page-share");
+  await share.getByRole("radio", { name: /Anyone with the link/ }).click();
+  const link = share.getByRole("link", { name: "Open link" });
+  await expect(link).toBeVisible();
+  const visitor = await browser.newContext({ reducedMotion: "reduce" });
+  const outside = await visitor.newPage();
+  await outside.setViewportSize({ width: 1280, height: 720 });
+  await outside.goto((await link.getAttribute("href"))!);
+  const frame = pageFrame(outside, title);
+  const target = frame.getByRole("heading", { name: "Details", exact: true });
+  const jump = async () => {
+    await frame.getByRole("link", { name: "Details", exact: true }).click();
+    const header = (await outside.locator("header").boundingBox())!;
+    // Nested-frame scrolling rounds fractional CSS coordinates. Allow one pixel, not an
+    // obscured heading (the original layout placed it at the top of the viewport).
+    await expect
+      .poll(async () => (await target.boundingBox())?.y ?? -Infinity)
+      .toBeGreaterThanOrEqual(header.y + header.height - 1);
+    await expect.poll(async () => (await target.boundingBox())?.y ?? Infinity).toBeLessThan(300);
+    expect(await outside.evaluate(() => window.scrollY)).toBe(0);
+  };
+  await jump();
+  await captureScreenshot(outside, testInfo, "page-public-contents-jump");
+  // A failed clipboard write leaves the manual-copy prompt outside the page's scroll area.
+  await outside.evaluate(() => {
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText: () => Promise.reject(new Error("denied")) },
+      configurable: true,
+    });
+    document.execCommand = () => false;
+  });
+  await outside.getByRole("button", { name: "Copy link" }).click();
+  const fallback = outside.getByRole("textbox", { name: "Page link" });
+  await expect(fallback).toBeVisible();
+  await jump();
+  const fallbackBox = (await fallback.boundingBox())!;
+  expect((await target.boundingBox())!.y).toBeGreaterThanOrEqual(
+    fallbackBox.y + fallbackBox.height - 1,
+  );
+  await captureScreenshot(outside, testInfo, "page-public-contents-copy-fallback");
+  await outside.setViewportSize({ width: 320, height: 120 });
+  await target.scrollIntoViewIfNeeded();
+  await expect(target).toBeInViewport();
+  await captureScreenshot(outside, testInfo, "page-public-short-viewport");
+  await outside.setViewportSize({ width: 1280, height: 720 });
+  await outside.emulateMedia({ media: "print" });
+  await expect(outside.locator("header")).toBeHidden();
+  await expect(fallback).toBeHidden();
+  expect(
+    await outside.locator("[data-page-print]").evaluate((shell) => shell.scrollHeight),
+  ).toBeGreaterThan(720);
+  await visitor.close();
 });
 
 test("a bot's page shows in its reply, opens full screen, is shared by link and updates", async ({
@@ -376,6 +453,15 @@ test("a bot's page shows in its reply, opens full screen, is shared by link and 
     page,
     `call save_page with ${JSON.stringify({ pageId, title: "Signups dashboard", source: dashboard("1.9%") })}\nthen say Updated [Signups dashboard](page:${pageId}) with the new churn figure.`,
   );
+  // Anyone with the link would see the change at once, so the bot asks first. The sidebar's
+  // unread preview can show the same words, so look for the card in the transcript.
+  await expect(
+    page.getByTestId("transcript").getByText("Update shared page “Signups dashboard”?"),
+  ).toBeVisible({
+    timeout: 30_000,
+  });
+  await captureScreenshot(page, testInfo, "page-shared-update-approval");
+  await page.getByRole("button", { name: "Allow once", exact: true }).click();
   await expect(card).toHaveCount(2, { timeout: 30_000 });
   await expect(card.first()).toContainText("Updated below");
   await expect(card.last()).not.toContainText("Updated below");
@@ -481,6 +567,63 @@ async function closePage(page: Page) {
   await expect(page.getByTestId("page-view")).toBeHidden();
 }
 
+test("in the macOS app a page's top row sits below the window controls and its close button clicks", async ({
+  page,
+}, testInfo) => {
+  await page.addInitScript(() => localStorage.setItem("rakazo.uiAppearance", "dark"));
+  await page.setViewportSize({ width: 1280, height: 860 });
+  await signup(page, `pages-mac-${Date.now()}@rakazo.test`, "password12", "Page Owner");
+  await completeOnboarding(page);
+  const title = "Test dashboard (example data)";
+  await send(
+    page,
+    `call save_page with ${JSON.stringify({ title, source: dashboard("2.1%") })}\nthen say done.`,
+  );
+  await expect(page.getByTestId("page-card")).toHaveCount(1, { timeout: 30_000 });
+  // The desktop app's bridge on macOS, whose traffic lights sit 16px in from the top left.
+  await page.addInitScript(() => {
+    (window as unknown as { rakazoDesktop: { platform: string } }).rakazoDesktop = {
+      platform: "darwin",
+    };
+  });
+  await page.reload();
+  await page
+    .getByTestId("page-card")
+    .getByRole("button", { name: `Open ${title}` })
+    .click();
+  const view = page.getByTestId("page-view");
+  await expect(
+    pageFrame(page, title).getByRole("heading", { name: "Test dashboard", level: 1 }),
+  ).toBeVisible();
+  const close = view.getByRole("button", { name: "Close page" });
+  // Below the 12px traffic lights at y 16, and outside the window's drag areas, which Electron
+  // applies through anything drawn over them. macOS draws the lights from x=16 to about x=68.
+  const box = await close.boundingBox();
+  expect(box!.y).toBeGreaterThanOrEqual(36);
+  // Close page must clear the 72px traffic-light strip (#3450).
+  expect(box!.x).toBeGreaterThanOrEqual(72);
+  for (const control of [
+    close,
+    view.getByRole("button", { name: title }),
+    view.getByRole("button", { name: "Share" }),
+  ]) {
+    expect(
+      await control.evaluate((el) => getComputedStyle(el).getPropertyValue("app-region")),
+    ).not.toBe("drag");
+  }
+  await captureScreenshot(page, testInfo, "page-full-screen-macos");
+  await close.click();
+  await expect(view).toBeHidden();
+
+  // #3757: on a narrow window the nav hamburger must clear the same traffic-light strip.
+  await page.setViewportSize({ width: 500, height: 860 });
+  const openNav = page.getByRole("button", { name: "Open navigation" });
+  await expect(openNav).toBeVisible();
+  const navBox = await openNav.boundingBox();
+  expect(navBox!.x).toBeGreaterThanOrEqual(72);
+  await captureScreenshot(page, testInfo, "open-navigation-macos");
+});
+
 test("a page's failures, a deleted page's card, and the Library's Share, search and rename", async ({
   page,
 }, testInfo) => {
@@ -582,6 +725,16 @@ test("a page's failures, a deleted page's card, and the Library's Share, search 
   await page.route("**/rpc/pages/rename", (route) => route.abort("failed"));
   await view.getByRole("button", { name: "Beta" }).click();
   await view.getByRole("textbox", { name: "Page title" }).fill("Gamma");
+  for (const composition of [{ isComposing: true }, { keyCode: 229 }]) {
+    for (const key of ["Enter", "Escape"]) {
+      await view.getByRole("textbox", { name: "Page title" }).dispatchEvent("keydown", {
+        key,
+        bubbles: true,
+        ...composition,
+      });
+      await expect(view.getByRole("textbox", { name: "Page title" })).toHaveValue("Gamma");
+    }
+  }
   await view.getByRole("textbox", { name: "Page title" }).press("Enter");
   await expect(view.getByRole("alert")).toHaveText("Could not rename this page. Try again.");
   await captureScreenshot(page, testInfo, "page-rename-error");
@@ -720,6 +873,18 @@ test("a page's failures, a deleted page's card, and the Library's Share, search 
   await library.getByRole("button", { name: "Actions for Alpha" }).click();
   await page.getByRole("menuitem", { name: "Rename" }).click();
   await library.getByRole("textbox", { name: "Page title" }).fill("Alpha renamed");
+  for (const composition of [{ isComposing: true }, { keyCode: 229 }]) {
+    for (const key of ["Enter", "Escape"]) {
+      await library.getByRole("textbox", { name: "Page title" }).dispatchEvent("keydown", {
+        key,
+        bubbles: true,
+        ...composition,
+      });
+      await expect(library.getByRole("textbox", { name: "Page title" })).toHaveValue(
+        "Alpha renamed",
+      );
+    }
+  }
   await captureScreenshot(page, testInfo, "page-library-rename");
   await library.getByRole("textbox", { name: "Page title" }).press("Enter");
   await expect(library.getByRole("button", { name: /^Alpha renamed/ })).toBeVisible();

@@ -4,7 +4,7 @@ import type { ComponentProps } from "react";
 import { createContext } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect, it, vi } from "vitest";
-import type { MobileBot, MobileSnapshot } from "./api";
+import type { MobileBot, MobileSnapshot } from "./mobile-types";
 
 vi.mock("react-native", () => ({
   Alert: { alert: vi.fn() },
@@ -56,6 +56,7 @@ vi.mock("../components/AppConnectCard", () => ({ AppConnectCard: () => null }));
 vi.mock("../components/audio-attachment", () => ({ AudioAttachment: () => null }));
 vi.mock("../components/bot-avatar", () => ({ BotAvatar: () => null }));
 vi.mock("../components/ChoiceCard", () => ({ ChoiceCard: () => null }));
+vi.mock("../components/ImportSetupCard", () => ({ ImportSetupCard: () => null }));
 vi.mock("../components/inline-image-attachment", () => ({ InlineImageAttachment: () => null }));
 vi.mock("../components/change-undo", () => ({
   ChangeUndo: () => null,
@@ -63,6 +64,7 @@ vi.mock("../components/change-undo", () => ({
 }));
 vi.mock("../components/McpApprovalCard", () => ({ McpApprovalCard: () => null }));
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
+vi.mock("../components/native-action-button", () => ({ NativeActionButton: () => null }));
 
 import { MessageBubble } from "../components/thread/message-bubble";
 

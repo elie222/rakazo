@@ -229,6 +229,22 @@ describe("reasoning efforts an endpoint refuses", () => {
     });
   });
 
+  it("reads a list that follows a colon instead of the word are", () => {
+    const levels = acceptedReasoningEfforts(
+      model({ off: "none" }),
+      `400: {"object":"error","message":"reasoning_effort 'medium' is not supported for this model; supported values: ['none', 'low', 'high', 'xhigh', 'max']","type":"invalid_request_invalid_args","code":"3051"}`,
+    );
+    expect(levels).toEqual({
+      off: "none",
+      minimal: null,
+      low: "low",
+      medium: null,
+      high: "high",
+      xhigh: null,
+      max: null,
+    });
+  });
+
   it("sends no effort for off when a gateway refuses an effort without listing any", () => {
     const levels = acceptedReasoningEfforts(
       model({ off: "none", xhigh: "xhigh", max: "max" }),
@@ -237,6 +253,17 @@ describe("reasoning efforts an endpoint refuses", () => {
     expect(levels).toEqual({ off: null, xhigh: "xhigh", max: "max" });
     expect(
       acceptedReasoningEfforts(model({}), "400: Unsupported reasoning effort"),
+    ).toBeUndefined();
+    for (const message of [
+      "400: Invalid reasoning effort",
+      "400: reasoning_effort is not supported for this model",
+    ])
+      expect(acceptedReasoningEfforts(model({ off: "none" }), message)).toEqual({ off: null });
+    expect(
+      acceptedReasoningEfforts(
+        model({ off: "none" }),
+        "400: reasoning_effort is supported; tool schema is invalid",
+      ),
     ).toBeUndefined();
   });
 

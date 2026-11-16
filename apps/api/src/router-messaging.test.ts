@@ -226,26 +226,28 @@ function messagingDeps(
         where,
       }: {
         where: {
-          idempotencyKey?: string;
-          status?: string;
-          OR?: Array<{ status?: string; providerHandle?: null }>;
+          idempotencyKey?: string | { in: string[] };
+          status?: string | { in: string[] };
+          OR?: Array<{ status?: string | { in: string[] }; providerHandle?: null }>;
         };
       }) => {
+        const matches = (value: unknown, condition: string | { in: string[] } | undefined) =>
+          condition === undefined ||
+          (typeof condition === "string"
+            ? value === condition
+            : condition.in.includes(value as string));
+        const clause = (
+          row: Record<string, unknown>,
+          part: { status?: string | { in: string[] }; providerHandle?: null },
+        ) =>
+          matches(row.status ?? "pending", part.status) &&
+          (!("providerHandle" in part) || row.providerHandle == null);
         let count = 0;
         for (let i = outboundRows.length - 1; i >= 0; i -= 1) {
           const row = outboundRows[i]!;
-          if (where.idempotencyKey && row.idempotencyKey !== where.idempotencyKey) continue;
-          if (where.status && row.status !== where.status) continue;
-          if (where.OR) {
-            const matches = where.OR.some((clause) => {
-              if (clause.status && row.status !== clause.status) return false;
-              if ("providerHandle" in clause && clause.providerHandle === null) {
-                return row.providerHandle == null;
-              }
-              return true;
-            });
-            if (!matches) continue;
-          }
+          if (!matches(row.idempotencyKey, where.idempotencyKey)) continue;
+          if (!matches(row.status ?? "pending", where.status)) continue;
+          if (where.OR && !where.OR.some((part) => clause(row, part))) continue;
           outboundRows.splice(i, 1);
           count += 1;
         }
@@ -260,9 +262,29 @@ function messagingDeps(
     async (fn: (tx: unknown) => Promise<unknown>) => fn(prisma),
   );
   const enqueue = vi.fn(async () => undefined);
+  // Records rows the way the delivery path does, in the caller's transaction.
+  const messagingDelivery = {
+    recordIn: vi.fn(
+      async (
+        tx: { messagingOutbound: typeof messagingOutbound },
+        _lane: unknown,
+        rows: Array<Record<string, unknown>>,
+        options: { replace?: boolean } = {},
+      ) => {
+        if (options.replace)
+          await tx.messagingOutbound.deleteMany({
+            where: { idempotencyKey: { in: rows.map((row) => row.idempotencyKey as string) } },
+          });
+        await tx.messagingOutbound.createMany({ data: rows });
+        return [];
+      },
+    ),
+    send: vi.fn(async () => undefined),
+  };
   const deps = {
     prisma,
     jobs: { enqueue },
+    messagingDelivery,
     env: {
       defaultProvider: "fake",
       defaultModel: "fake-model",
@@ -290,6 +312,7 @@ function messagingDeps(
     actor,
     outboundRows,
     enqueue,
+    messagingDelivery,
     handler: new RPCHandler(createRouter(deps)),
   };
 }
@@ -596,7 +619,7 @@ describe("messaging.connections", () => {
   });
 
   it("approves a pending incoming connection and notifies the requester", async () => {
-    const { handler, actor, prisma, outboundRows, enqueue } = messagingDeps();
+    const { handler, actor, prisma, outboundRows, messagingDelivery } = messagingDeps();
     const response = await call(handler, actor, "messaging/connections/respond", {
       connectionId: "ac-1",
       accept: true,
@@ -617,7 +640,7 @@ describe("messaging.connections", () => {
         identityId: "mi-9",
       }),
     ]);
-    expect(enqueue).toHaveBeenCalled();
+    expect(messagingDelivery.send).toHaveBeenCalledWith([{ identityId: "mi-9" }]);
   });
 
   it("rejects respond from the requester side", async () => {
@@ -671,7 +694,7 @@ describe("messaging.connections", () => {
     expect(prisma.messagingOutbound.deleteMany).toHaveBeenCalledWith({
       where: {
         idempotencyKey: "connect:bot-1:bot-9",
-        OR: [{ status: "pending" }, { status: "sent", providerHandle: null }],
+        OR: [{ status: { in: ["pending", "retry"] } }, { status: "sent", providerHandle: null }],
       },
     });
     expect(outboundRows).toEqual([
@@ -697,7 +720,7 @@ describe("messaging.connections", () => {
       kind: "dm",
       status: "sent",
       providerHandle: null,
-      body: "claimed by drain",
+      body: "claimed by a sender",
     });
     outboundRows.push({
       idempotencyKey: "connect:bot-1:bot-9-delivered",

@@ -1,6 +1,8 @@
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { MobileBot } from "./api";
-import { adoptDeletedSpaceFallback, rpc, selectedSpaceId, selectSpace } from "./api";
+import { rpc, selectedSpaceId } from "./api";
+import { adoptDeletedSpaceFallback, selectSpace } from "./api-server";
 import { activateUiLocale } from "./i18n";
 import type { InboxSpace } from "./inbox-spaces";
 import {
@@ -12,16 +14,22 @@ import {
   removeInboxSpace,
   retryInboxSpaceFallback,
   selectInboxSpace,
+  snoozedHeadingKey,
   spaceInboxItems,
 } from "./inbox-spaces";
 import { mobileLogoAvatarActivity } from "./logo-avatar-activity";
+import type { MobileBot } from "./mobile-types";
 import { offscreenUnreads } from "./offscreen-unreads";
 
-vi.mock("./api", () => ({
+vi.mock("./api-server", () => ({
   adoptDeletedSpaceFallback: vi.fn(),
+  selectSpace: vi.fn(),
+}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
+vi.mock("./api", () => ({
   rpc: vi.fn(),
   selectedSpaceId: vi.fn(),
-  selectSpace: vi.fn(),
 }));
 
 function space(overrides: Partial<InboxSpace> = {}): InboxSpace {
@@ -98,6 +106,44 @@ describe("spaceInboxItems", () => {
     } finally {
       activateUiLocale("en");
     }
+  });
+  it("moves snoozed chats under a folded Snoozed heading until they wake", () => {
+    const now = Date.parse("2026-11-07T12:00:00.000Z");
+    const input = space({
+      isDefault: true,
+      bots: [
+        { ...bot, id: "awake" },
+        { ...bot, id: "asleep", pinned: true, snoozedUntil: "2026-11-08T09:00:00.000Z" },
+        { ...bot, id: "woke", snoozedUntil: "2026-11-07T09:00:00.000Z" },
+        // A bot waiting on an answer stays snoozed.
+        {
+          ...bot,
+          id: "asking",
+          status: "waiting_input",
+          snoozedUntil: "2026-11-08T09:00:00.000Z",
+        },
+      ],
+    });
+    const key = snoozedHeadingKey(input.id);
+    const ids = (items: ReturnType<typeof spaceInboxItems>) =>
+      items.map((item) =>
+        item.type === "bot" ? item.bot.id : item.type === "heading" ? `#${item.title}` : "?",
+      );
+    expect(ids(spaceInboxItems([input], new Set(), undefined, now))).toEqual([
+      "awake",
+      "woke",
+      "#Snoozed",
+    ]);
+    expect(spaceInboxItems([input], new Set(), undefined, now).at(-1)).toMatchObject({
+      key,
+      collapsed: true,
+      count: 2,
+    });
+    expect(ids(spaceInboxItems([input], new Set([key]), undefined, now)).slice(-3)).toEqual([
+      "#Snoozed",
+      "asleep",
+      "asking",
+    ]);
   });
   it("keeps an empty space visible and selectable by its own id", () => {
     const empty = space();
@@ -334,18 +380,16 @@ describe("removeInboxSpace", () => {
   });
 
   it("awaits saving the server fallback before refreshing a deleted current space", async () => {
-    let finishSelection!: (saved: boolean) => void;
-    vi.mocked(selectSpace).mockImplementation(
-      () =>
-        new Promise((resolve) => {
-          finishSelection = resolve;
-        }),
-    );
+    let finishSelection!: Deferred<boolean>;
+    vi.mocked(selectSpace).mockImplementation(() => {
+      finishSelection = deferred<boolean>();
+      return finishSelection.promise;
+    });
     const refresh = vi.fn(async () => undefined);
     const removing = removeInboxSpace("space-work", refresh);
     await vi.waitFor(() => expect(selectSpace).toHaveBeenCalledWith("personal"));
     expect(refresh).not.toHaveBeenCalled();
-    finishSelection(true);
+    finishSelection.resolve(true);
     await expect(removing).resolves.toBeNull();
     expect(rpc).toHaveBeenCalledWith("spaces/remove", { spaceId: "space-work" });
     expect(refresh).toHaveBeenCalledOnce();
@@ -533,4 +577,13 @@ describe("inbox attention pills", () => {
       inboxSignal({ type: "bot", bot: { ...waiting, archivedAt: bot.updatedAt } }).attention,
     ).toBe(0);
   });
+});
+
+it("keeps a snoozed chat out of the off-screen unread pills", () => {
+  const later = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+  expect(inboxSignal({ type: "bot", bot: { ...bot, unread: true, snoozedUntil: later } })).toEqual({
+    unread: 0,
+    attention: 0,
+  });
+  expect(inboxSignal({ type: "bot", bot: { ...bot, unread: true } }).unread).toBe(1);
 });

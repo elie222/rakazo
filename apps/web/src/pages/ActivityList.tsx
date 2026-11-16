@@ -1,7 +1,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { Bot, Group, RunActivityRow, RunStatus } from "@rakazo/contracts";
-import { activitySections, isRetryableError } from "@rakazo/core";
+import { activitySections } from "@rakazo/core";
 import {
   BotAvatar,
   Button,
@@ -71,13 +71,9 @@ export function ActivityList({
 }: ActivityListProps) {
   const { t } = useLingui();
   const queries = useSpaceQueries();
-  // Polls while open; a refused request (signed out, forbidden) stops polling.
-  const poll = {
-    refetchInterval: (query: { state: { error: unknown } }) =>
-      query.state.error && !isRetryableError(query.state.error) ? false : 15_000,
-  } as const;
-  const active = useQuery(queries.runs.list.queryOptions({ input: { filter: "active" }, ...poll }));
-  const recent = useQuery(queries.runs.list.queryOptions({ input: { filter: "recent" }, ...poll }));
+  const live = { refetchOnWindowFocus: "always" } as const;
+  const active = useQuery(queries.runs.list.queryOptions({ input: { filter: "active" }, ...live }));
+  const recent = useQuery(queries.runs.list.queryOptions({ input: { filter: "recent" }, ...live }));
   const activeRuns = active.data?.runs ?? NO_RUNS;
   const recentRuns = recent.data?.runs ?? NO_RUNS;
   // "Try again" shows its progress in place of the error it answers.
@@ -111,9 +107,7 @@ export function ActivityList({
     groups,
   });
   // Filters narrow runs, so unread chats step aside and their matching runs stay in Recent.
-  const recentRows = filtersOn
-    ? filteredRecent.filter((run) => !sections.attention.includes(run))
-    : sections.recent;
+  const recentRows = filtersOn ? sections.settled : sections.recent;
   const botsById = useMemo(() => new Map(bots.map((bot) => [bot.id, bot])), [bots]);
   const section = (key: string, title: string, count: number, defaultOpen: boolean) => ({
     title,
@@ -136,14 +130,7 @@ export function ActivityList({
   const hasVisibleRuns = filteredActive.length > 0 || filteredRecent.length > 0;
 
   return (
-    <div
-      className={
-        hasAnyRuns || unreadCount > 0 || filtersOn || filtersExpanded
-          ? "mb-2 border-b border-border pb-2"
-          : undefined
-      }
-      data-testid="activity-list"
-    >
+    <div data-testid="activity-list">
       <ActivityFilters
         filters={filters}
         onChange={onFiltersChange}
@@ -164,6 +151,10 @@ export function ActivityList({
       ) : !error && filtersOn && hasAnyRuns && !hasVisibleRuns ? (
         <p className="px-2.5 py-2 text-body-sm text-muted-foreground/80" role="status">
           <Trans>No runs match these filters.</Trans>
+        </p>
+      ) : !error && !hasAnyRuns && unreadCount === 0 ? (
+        <p className="px-2.5 py-2 text-body-sm text-muted-foreground/80" role="status">
+          <Trans>No runs yet</Trans>
         </p>
       ) : null}
 

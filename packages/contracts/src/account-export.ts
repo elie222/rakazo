@@ -95,12 +95,14 @@ export const AccountExportRecordSchema = z.discriminatedUnion("type", [
     botIds: z.array(Id),
     createdAt: IsoDate,
   }),
-  /** A bot's or a group's conversation. */
+  /** A bot's or a group's conversation, or the thread a bot's background helper worked in. */
   z.object({
     type: z.literal("thread"),
     id: Id,
     botId: Id.nullable(),
     groupId: Id.nullable(),
+    /** Absent from archives written before helpers had threads. */
+    helperBotId: Id.nullable().optional(),
     historyCompactedUpToSeq: z.number().int().nullable(),
     historyCompactionSummary: z.string().nullable(),
     createdAt: IsoDate,
@@ -150,6 +152,8 @@ export const AccountExportRecordSchema = z.discriminatedUnion("type", [
     hash: z.string(),
     rootArtifactId: Id.nullable(),
     version: z.number().int().positive(),
+    /** A file a stranger emailed; absent from older archives. */
+    standalone: z.boolean().optional(),
     createdAt: IsoDate,
   }),
   z.object({

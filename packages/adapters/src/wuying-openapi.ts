@@ -1,4 +1,5 @@
 import { SandboxRateLimitError, SandboxUnresponsiveError } from "@rakazo/adapter-kit";
+import { sandboxNotFoundError } from "./sandbox-errors.js";
 
 /** Desktop states the ECD API reports; anything else is treated as in transition. */
 export type WuyingDesktopStatus = string;
@@ -144,9 +145,7 @@ export class WuyingOpenApi implements WuyingControlPlane {
       if (statusCode === 429 || (typeof code === "string" && code.startsWith("Throttling")))
         throw new SandboxRateLimitError();
       if (typeof code === "string" && /^(InvalidDesktop|DesktopNotFound|NotFound)/.test(code)) {
-        const missing = new Error(`Wuying ${action}: desktop not found`);
-        missing.name = "SandboxNotFoundError";
-        throw missing;
+        throw sandboxNotFoundError(`Wuying ${action}: desktop not found`);
       }
       // A refused AccessKey stays refused, so it is reported as such rather than as a retry.
       if (typeof code === "string" && /^(InvalidAccessKey|SignatureDoesNotMatch)/.test(code))

@@ -17,13 +17,14 @@ import {
 } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import type { ExecutorDeps } from "./executor-deps.js";
 import { InMemoryRealtimeFanout } from "./realtime.js";
+import { claimRun, requeueComputerRun, startNextWaitingRun } from "./run-lifecycle.js";
 import { RunJobPublisher, RunStarter, RunWorkerHost } from "./run-wakeup.js";
 import { GraphileJobPublisher } from "./wakeup.js";
 
 const url = process.env.DATABASE_URL;
-const describePostgres =
-  process.env.VERIFY_DATABASE === "1" && url ? describe.sequential : describe.skip;
+const describePostgres = process.env.VERIFY_DATABASE === "1" && url ? describe : describe.skip;
 
 describePostgres("direct run dispatch (PostgreSQL)", () => {
   let db: ReturnType<typeof createDb>;
@@ -53,7 +54,13 @@ describePostgres("direct run dispatch (PostgreSQL)", () => {
     }
   });
   async function createRun(
-    data: { status?: string; wakeAt?: Date; leaseExpiresAt?: Date; trigger?: string } = {},
+    data: {
+      status?: string;
+      wakeAt?: Date;
+      leaseExpiresAt?: Date;
+      trigger?: string;
+      botId?: string;
+    } = {},
   ) {
     const { userId, spaceId, botId, threadId } = identity;
     const task = await system.task.create({
@@ -83,7 +90,7 @@ describePostgres("direct run dispatch (PostgreSQL)", () => {
   const wait = async (assertion: () => Promise<void> | void) =>
     vi.waitFor(assertion, { timeout: 5_000, interval: 20 });
 
-  it("reports runs left unstarted, not retry backoff or waits on the bot's own earlier run", async () => {
+  it("reports runs left unstarted, not retry backoff, fresh resumes, or waits on the bot's own earlier run", async () => {
     const now = Date.now();
     const computer = await system.computer.create({
       data: {
@@ -100,6 +107,11 @@ describePostgres("direct run dispatch (PostgreSQL)", () => {
     const delayed = await createRun({ wakeAt: new Date(now - 45_000) });
     await system.run.updateMany({
       where: { id: { in: [retry.id, delayed.id] } },
+      data: { createdAt: new Date(now - 3_600_000), updatedAt: new Date(now - 3_600_000) },
+    });
+    const resumed = await createRun();
+    await system.run.update({
+      where: { id: resumed.id },
       data: { createdAt: new Date(now - 3_600_000) },
     });
     const lease = await system.computerExecutionLease.create({
@@ -176,7 +188,7 @@ describePostgres("direct run dispatch (PostgreSQL)", () => {
       await unblocked.stop();
       installLogger(createLogger({ service: "test", level: "off", sinks: [] }));
       await system.run.updateMany({
-        where: { id: { in: [owner.id, retry.id, delayed.id] } },
+        where: { id: { in: [owner.id, retry.id, delayed.id, resumed.id] } },
         data: { status: "cancelled" },
       });
       await system.computerExecutionLease.delete({ where: { id: lease.id } });
@@ -259,10 +271,6 @@ describePostgres("direct run dispatch (PostgreSQL)", () => {
       data: { computerId: computer.id },
     });
     const waiting = await createRun({ status: "waiting_takeover" });
-    await system.computer.update({
-      where: { id: computer.id },
-      data: { controlRunId: waiting.id },
-    });
     const lease = await system.computerExecutionLease.create({
       data: {
         computerId: computer.id,
@@ -295,9 +303,6 @@ describePostgres("direct run dispatch (PostgreSQL)", () => {
           where: { threadId: identity.threadId, clientNonce: `stuck-expired:${waiting.id}` },
         }),
       ).toBe(1);
-      expect(await system.computer.findUniqueOrThrow({ where: { id: computer.id } })).toMatchObject(
-        { controlRunId: null },
-      );
     } finally {
       await host.stop();
       await system.run.updateMany({
@@ -328,7 +333,6 @@ describePostgres("direct run dispatch (PostgreSQL)", () => {
       data: {
         controlHolder: "user",
         controlBotId: bot.id,
-        controlRunId: waiting.id,
         controlLeaseId: randomUUID(),
         controlLeaseExpiresAt: new Date(Date.now() + 60_000),
       },
@@ -566,6 +570,64 @@ describePostgres("direct run dispatch (PostgreSQL)", () => {
     }
   });
 
+  it("starts a run parked behind its bot's held computer when the computer is released, with no recovery scan", async () => {
+    const bot = await system.bot.create({
+      data: { spaceId: identity.spaceId, userId: identity.userId, name: "Parked", color: "ink" },
+    });
+    const holder = await createRun({ botId: bot.id, status: "running" });
+    const parked = await createRun({ botId: bot.id });
+    const starter = new RunStarter(new InMemoryRealtimeFanout());
+    const deps = {
+      prisma: system,
+      jobs: new RunJobPublisher(system, background(), starter),
+    } as unknown as ExecutorDeps;
+    const entered: string[] = [];
+    starter.attach({
+      "run.continue": async ({ runId }) => {
+        entered.push(runId);
+      },
+    } as BackgroundJobHandlers);
+    try {
+      const claimed = await claimRun(deps, parked, "worker");
+      await requeueComputerRun(deps, parked.id, "worker", claimed!.fence, null, false, true);
+      await startNextWaitingRun(deps, bot.id, holder.id);
+      await wait(() => expect(entered).toEqual([parked.id]));
+      const waiting = await system.run.findUniqueOrThrow({ where: { id: parked.id } });
+      expect(await claimRun(deps, waiting, "worker")).toBeDefined();
+    } finally {
+      await starter.stop();
+      await system.bot.delete({ where: { id: bot.id } });
+    }
+  });
+
+  it("leaves a run due when its takeover was answered while it was still pausing", async () => {
+    const run = await createRun({ status: "running" });
+    await system.run.update({
+      where: { id: run.id },
+      data: { leaseOwner: "worker", leaseFence: 1, checkpoint: "takeover" },
+    });
+    const attempt = await system.attempt.create({
+      data: { runId: run.id, fence: 1, status: "running" },
+    });
+    const paused = await runAsSystem("takeover pause fixture", () =>
+      createThreadEvents(db.prisma).pauseRunForTakeover({
+        spaceId: identity.spaceId,
+        threadId: identity.threadId,
+        botId: identity.botId,
+        runId: run.id,
+        attemptId: attempt.id,
+        leaseOwner: "worker",
+        leaseFence: 1,
+        reason: "fixture",
+      }),
+    );
+    expect(paused).toEqual({ continuationRunId: run.id });
+    const queued = await system.run.findUniqueOrThrow({ where: { id: run.id } });
+    expect(queued.status).toBe("queued");
+    expect(queued.wakeAt!.getTime()).toBeLessThanOrEqual(Date.now());
+    await system.run.update({ where: { id: run.id }, data: { status: "completed" } });
+  });
+
   it("commits first response timing with output, once across retries, and rolls both back on failure", async () => {
     const run = await createRun({ status: "running" });
     const input = {
@@ -695,28 +757,5 @@ describePostgres("direct run dispatch (PostgreSQL)", () => {
       await legacy.close();
       await system.run.update({ where: { id: run.id }, data: { status: "completed" } });
     }
-  });
-  it("persists backoff when a previous-release worker requeues after the migration", async () => {
-    const run = await createRun({ status: "running" });
-    await system.run.update({ where: { id: run.id }, data: { leaseFence: 20 } });
-    const [clock] = await system.$queryRaw<
-      Array<{ at: Date }>
-    >`SELECT clock_timestamp() AT TIME ZONE 'UTC' AS at`;
-    await system.run.update({
-      where: { id: run.id },
-      data: { status: "queued", leaseOwner: null, leaseExpiresAt: null },
-    });
-    const queued = await system.run.findUniqueOrThrow({ where: { id: run.id } });
-    expect(queued.wakeAt!.getTime()).toBeGreaterThan(clock!.at.getTime());
-    const explicit = new Date(Date.now() + 60_000);
-    await system.run.update({ where: { id: run.id }, data: { status: "running", wakeAt: null } });
-    await system.run.update({
-      where: { id: run.id },
-      data: { status: "queued", wakeAt: explicit },
-    });
-    expect((await system.run.findUniqueOrThrow({ where: { id: run.id } })).wakeAt).toEqual(
-      explicit,
-    );
-    await system.run.update({ where: { id: run.id }, data: { status: "completed" } });
   });
 });

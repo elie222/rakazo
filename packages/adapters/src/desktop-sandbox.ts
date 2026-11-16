@@ -29,6 +29,7 @@ import type {
   ScreenSession,
   WorkspaceDirectoryRequest,
 } from "@rakazo/adapter-kit";
+import { SandboxFileTooLargeError } from "@rakazo/adapter-kit";
 import { boundedSandboxCommandTimeoutMs } from "@rakazo/core";
 import {
   applyPlaceholderAction,
@@ -50,6 +51,7 @@ import {
 } from "./desktop-sandbox-win32-path.js";
 import { removeOwnedWorkspaceChildren } from "./desktop-workspace-cleanup.js";
 import { hostCommandEnvironment } from "./sandbox-command-environment.js";
+import { abortedCommandEvents } from "./sandbox-command-events.js";
 import {
   isTaggedCacheDirectory,
   shouldSkipPortableWorkspaceFile,
@@ -394,7 +396,7 @@ export class DesktopSandboxProvider implements SandboxProvider {
     const target = await localWorkspaceTarget(box.home, filePath, true);
     const info = await stat(target);
     if (options?.maxBytes !== undefined && info.size > options.maxBytes) {
-      throw new Error(`computer file exceeds ${options.maxBytes} bytes`);
+      throw new SandboxFileTooLargeError(options.maxBytes);
     }
     return new Uint8Array(await readFile(target));
   }
@@ -870,7 +872,7 @@ async function* walkDesktopWorkspace(
         yield* walkDesktopWorkspace(home, relative, maxFileBytes);
     } else if (info.isFile()) {
       if (maxFileBytes !== undefined && info.size > maxFileBytes)
-        throw new Error(`computer file exceeds ${maxFileBytes} bytes`);
+        throw new SandboxFileTooLargeError(maxFileBytes);
       yield {
         path: relative,
         content: new Uint8Array(await readFile(child)),
@@ -909,8 +911,7 @@ async function* streamLocalCommand(
   sweep: () => void,
 ): AsyncIterable<ProcessEvent> {
   if (signal.aborted) {
-    yield { type: "stderr", data: "command aborted\n" };
-    yield { type: "exit", code: 130 };
+    yield* abortedCommandEvents();
     return;
   }
   const direct = directCommandArgv(argv);

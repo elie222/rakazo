@@ -1,7 +1,7 @@
 import { ModelOutputError } from "@rakazo/adapter-kit";
 import { MISSING_TOOL_FINAL_RESPONSE_ERROR } from "@rakazo/core";
 import { describe, expect, it } from "vitest";
-import { runIdentityInstruction } from "./run-instructions.js";
+import { runIdentityInstruction } from "./run-instructions.prompt.js";
 import { mayOpenModelStream } from "./run-lifecycle.js";
 import {
   completionMarksUnread,
@@ -24,7 +24,7 @@ import {
   runReplyGuidance,
   runReplyMode,
   TICKET_SILENT_REPLY_GUIDANCE,
-} from "./run-replies.js";
+} from "./run-replies.prompt.js";
 import { handoffEndedTurn } from "./run-turn.js";
 import {
   couldBecomeNoResponse,
@@ -290,6 +290,11 @@ describe("background ticket runs", () => {
     expect(runSendsFinishNotification("user")).toBe(true);
     expect(runReplyGuidance("tickets")).toBe(TICKET_SILENT_REPLY_GUIDANCE);
     expect(runReplyGuidance("tickets")).toContain("ticket_comment");
+  });
+
+  it("sends no finish notice for a background helper; the turn passing on its result does", () => {
+    expect(runSendsFinishNotification("helper")).toBe(false);
+    expect(runSendsFinishNotification("helper_result")).toBe(true);
   });
 
   it("drops a tool-only ticket final so the transcript gets no bubble", () => {
@@ -614,6 +619,11 @@ describe("runReplyMode", () => {
     for (const trigger of ["routine", "reaction", "bot_message", "tickets", "created", "webhook"])
       expect(runReplyMode(trigger, "messages")).toBe("chat");
     expect(runReplyMode("user", "messages", new Set(["message_user"]))).toBe("chat");
+  });
+
+  it("keeps a background helper in chat mode, since it cannot message the person", () => {
+    expect(runReplyMode("helper", "messages")).toBe("chat");
+    expect(runReplyMode("helper_result", "messages")).toBe("messages");
   });
 
   it("gives each mode its own guidance", () => {

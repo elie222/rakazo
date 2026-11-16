@@ -1,12 +1,12 @@
+import { t } from "@lingui/core/macro";
 import { previewMessageText as previewText, resolvePersonaColorDef } from "@rakazo/core";
-import type { MobileBot, MobileMessage, MobileSnapshot } from "./api";
-import { t } from "./i18n";
+import type { MobileBot, MobileMessage, MobileSnapshot } from "./mobile-types";
 
 export function previewMessageText(message: MobileMessage): string {
   return previewText(message, {
-    photo: t("Photo"),
-    attachment: t("Attachment"),
-    message: t("Message"),
+    photo: t`Photo`,
+    attachment: t`Attachment`,
+    message: t`Message`,
   });
 }
 
@@ -22,3 +22,5 @@ export function speakerColorFor(
     members?.find((member) => member.botId === botId)?.color;
   return resolvePersonaColorDef(botId, raw).hex;
 }
+
+export { botDisplayName } from "@rakazo/core";

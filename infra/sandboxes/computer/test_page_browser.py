@@ -584,6 +584,15 @@ class PurchaseTest(unittest.TestCase):
         # An API that sends no total is not held to one.
         self.assertTrue(self.act([approved], pays(FakeAgentBrowser(), "e8", {**PAY, "total": "$9"}))["ok"])
 
+    def test_ambiguous_prices_never_authorize_a_purchase(self):
+        for key in ("amount", "total"):
+            buying = {**PAY, key: "?"}
+            step = {"approved": True, "site": "shop.example.test", **buying}
+            result = helper.purchase_refusal(step, "shop.example.test", buying, 0)
+            self.assertFalse(result["ok"])
+            self.assertNotIn("purchase", result)
+            self.assertIn("manually", result["error"])
+
     def test_an_earlier_click_runs_and_the_purchase_click_after_it_is_refused(self):
         browser = pays(FakeAgentBrowser())
         result = self.act([{"kind": "fill", "ref": "e2", "text": "Grace"}, {"kind": "click", "ref": "e8"}], browser)
@@ -699,6 +708,36 @@ class PurchaseTest(unittest.TestCase):
             self.assertEqual(json.loads(printed.call_args.args[0]),
                              {"ok": True, "site": "", "purchase": None, "url": listing[0]["url"] if listing else "",
                               "title": ""})
+
+
+class PurchaseSiteTest(unittest.TestCase):
+    """The world a check starts in, while the tab may be replacing its document."""
+
+    GONE = RuntimeError("Runtime.evaluate failed: {'code': -32000, 'message': 'Cannot find context with specified id'}")
+
+    def site(self, worlds):
+        """What site() answers, or raises, when world_in answers `worlds` in turn."""
+        found = object.__new__(RealPurchases)
+        found.client, found.session = Mock(), "page"
+        with patch.object(secrets, "main_frame", return_value={"id": "top"}), \
+                patch.object(secrets, "world_in", side_effect=worlds) as world_in, \
+                patch.object(secrets, "eval_json", return_value="tickets.example.test"), \
+                patch.object(helper.time, "sleep"):
+            try:
+                return found.site(), world_in.call_count
+            except RuntimeError as error:
+                return error, world_in.call_count
+
+    def test_a_document_replaced_while_the_check_starts_is_read_again(self):
+        self.assertEqual(self.site([self.GONE, 7]), ("tickets.example.test", 2))
+
+    def test_a_page_that_keeps_losing_its_document_still_fails_and_asks(self):
+        error, _ = self.site([self.GONE] * 10)
+        self.assertIs(error, self.GONE)
+
+    def test_another_failure_is_not_retried(self):
+        other = RuntimeError("Runtime.evaluate failed: too large")
+        self.assertEqual(self.site([other, 7]), (other, 1))
 
 
 class DesktopPurchaseTest(unittest.TestCase):
@@ -1115,6 +1154,28 @@ class AgentBrowserTest(unittest.TestCase):
         self.assertNotIn("private text", json.dumps(run.call_args.args))
         self.assertIn("private text", run.call_args.kwargs["input"])
         self.assertEqual(run.call_args.kwargs["cwd"], browser.home)
+
+    def test_replaces_its_settings_whole_while_another_call_reads_them(self):
+        # Every call on the computer, one per screen, writes the same settings file, and agent-browser
+        # refuses one it reads half written: the file another call has open must stay whole.
+        with tempfile.TemporaryDirectory() as temp, \
+                patch.object(helper.tempfile, "gettempdir", return_value=temp):
+            config = Path(helper.AgentBrowser(9222).config)
+            config.write_text('{"before": true}', encoding="utf-8")
+            with config.open(encoding="utf-8") as reading:
+                helper.AgentBrowser(9223)
+                self.assertEqual(reading.read(), '{"before": true}')
+            self.assertEqual(config.read_text(encoding="utf-8"), "{}")
+            self.assertEqual(os.listdir(config.parent), ["config.json"])
+
+    def test_leaves_no_staged_settings_file_when_the_swap_fails(self):
+        with tempfile.TemporaryDirectory() as temp, \
+                patch.object(helper.tempfile, "gettempdir", return_value=temp):
+            config = Path(helper.AgentBrowser(9222).config)
+            with patch.object(helper.os, "replace", side_effect=PermissionError("denied")):
+                with self.assertRaises(PermissionError):
+                    helper.AgentBrowser(9223)
+            self.assertEqual(os.listdir(config.parent), ["config.json"])
 
     def test_refuses_a_browser_agent_browser_started_itself(self):
         launched = [{"success": True, "result": {"lifecycle": {"launched": True}}}]

@@ -4,8 +4,8 @@ import type { ReactElement, ReactNode } from "react";
 import { useMemo } from "react";
 import type { ListRenderItem } from "react-native";
 import { ActivityIndicator, FlatList, Platform, ScrollView, StyleSheet, View } from "react-native";
-import type { MobileMessage } from "../../lib/api";
 import { mobileTokens } from "../../lib/appearance";
+import type { MobileMessage } from "../../lib/mobile-types";
 import type { ThreadColumnPadding } from "../../lib/thread-edges";
 import type { ThreadListScroll } from "../../lib/thread-list-scroll";
 import type { useThreadPaging } from "../../lib/thread-paging";
@@ -102,7 +102,7 @@ export function ThreadMessageList({
               paddingBottom: bottomInset + 12 + 44 + 16,
               ...columnPadding,
             }}
-            keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
+            keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "none"}
             maintainVisibleContentPosition={messageListPosition}
             scrollEventThrottle={16}
             {...pinnedListHandlers}
@@ -131,15 +131,15 @@ export function ThreadMessageList({
             // This callback tracks every row input, including reply, reaction and highlight state.
             extraData={renderMessageRow}
             style={styles.list}
-            // Swiping down hides the keyboard; on iOS it follows the finger.
-            keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
+            // On iOS a swipe down hides the keyboard, following the finger; Android keeps it open.
+            keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "none"}
             // Inverted, so the bottom padding is the visual top, clear of the transparent header.
             contentContainerStyle={listContentStyle}
             // Follow changes to the recovery card while already at the newest content.
             maintainVisibleContentPosition={liveMessageListPosition}
             scrollEventThrottle={16}
             {...scroll.liveListHandlers}
-            ListFooterComponent={loadEarlierControl}
+            ListFooterComponent={loadEarlierControl ?? undefined}
             ListHeaderComponent={
               <View onLayout={() => scroll.performScroll(behavior.current.onLayout())}>
                 {errorNotice}

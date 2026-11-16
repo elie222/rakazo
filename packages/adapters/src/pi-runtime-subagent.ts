@@ -2,7 +2,8 @@ import { Agent } from "@earendil-works/pi-agent-core";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import { isTerminatingReplyResult, terminatingReplyText } from "./approval-effect.js";
 import { withAutomatedLabels } from "./automated-messages.js";
-import { DELEGATION_TOOL_NAMES } from "./builtin-tools.js";
+import { helperResultLabel } from "./background-helpers.prompt.js";
+import { DELEGATION_TOOL_NAMES } from "./builtin.tool-definition.js";
 import { withCloudflareAuth } from "./cloudflare-ai-gateway.js";
 import { estimatePiImageTokens } from "./pi-image-context.js";
 import { COMPUTER_MODE_TOOLS } from "./pi-runtime-computer-mode.js";
@@ -26,8 +27,10 @@ import { conversationSessionId, reliableModelStream } from "./pi-runtime-stream.
 import type { ToolHost } from "./pi-runtime-tools.js";
 import { toAgentTools, toolCallBudgetExceededMessage } from "./pi-runtime-tools.js";
 import { observedPiStream } from "./pi-usage.js";
+import { subagentSystemPrompt } from "./runtime.prompt.js";
 import { createRuntimeContextPolicy } from "./runtime-context.js";
 import { deliverFinishedShells } from "./shell-command-stream.js";
+import { uniqueToolCallIdStream } from "./tool-call-ids.js";
 
 export const MAX_PARALLEL_SUBAGENTS = 4;
 
@@ -127,6 +130,8 @@ export async function executeSubagent(
   );
   const nestedHost: ToolHost = {
     ...host,
+    // The helper's transcript renames its own calls; they must not remap the main agent's ids.
+    providerToolCallIds: new Map(),
     activeModel: {
       config: requestModel,
       models: selectedModel.models,
@@ -233,11 +238,12 @@ export async function executeSubagent(
         requestModel.cacheCapabilities?.retentionMode,
       ),
   };
+  const toolCallIds = { used: new Set<string>(), provider: nestedHost.providerToolCallIds };
   nested = new Agent({
     finishTurn: async (turn, turnSignal) => {
       await deliverFinishedShells(
         (text) => {
-          nested.followUp({
+          nested.steer({
             role: "user",
             content: text,
             timestamp: Date.now(),
@@ -250,26 +256,20 @@ export async function executeSubagent(
     },
     sessionId: conversationSessionId(host.request.threadId, host.request.botId, agentId),
     streamFn: (_m, ctx, options) =>
-      fallbackAwareModelStream(
-        retryState,
-        ctx,
-        withAutomatedLabels({ ...options, fetch: host.modelFetch ?? options?.fetch }),
+      uniqueToolCallIdStream(
+        fallbackAwareModelStream(
+          retryState,
+          ctx,
+          withAutomatedLabels({ ...options, fetch: host.modelFetch ?? options?.fetch }),
+        ),
+        toolCallIds,
       ),
     getApiKey: async () =>
       hasBackups
         ? (selectedModel.credentials?.accessToken ?? selectedModel.apiKey)
         : selectedModel.apiKey,
     initialState: {
-      systemPrompt: [
-        `You are a Rakazo subagent named "${name}".`,
-        "You run inside the parent bot's turn — you are not a separate bot chat.",
-        "Complete the task and return a concise result. Do not spawn bots or further subagents.",
-        "Your task comes from the parent bot, not from the human user, and you cannot talk to the user: report your result back to the parent bot.",
-        "Messages marked as automated come from Rakazo, not from the user.",
-        extra,
-      ]
-        .filter(Boolean)
-        .join(" "),
+      systemPrompt: subagentSystemPrompt(name, extra),
       model: subagentModel,
       thinkingLevel: thinkingLevelFor(subagentModel, requestModel.thinkingLevel),
       tools: toAgentTools(childDefs, nestedHost),
@@ -381,7 +381,7 @@ export async function executeSubagent(
     const budgetMessage = budgetExceeded
       ? toolCallBudgetExceededMessage(host.toolCallBudget.limit)
       : undefined;
-    const label = `Result from your helper "${name}" (not a message from the user):\n`;
+    const label = helperResultLabel(name);
     // The parent clips label and result together, so the result gets what is left.
     const tail = budgetMessage ?? endedReply;
     const clipped = helperResultText(

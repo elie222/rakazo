@@ -64,7 +64,6 @@ export type OwnBotCurrentValues = {
   color: string;
   notifyOnFinish: boolean;
   dailyCheckIns: boolean;
-  modelId: string | null;
   thinkingLevel: string | null;
   autoSpeak: boolean;
   voiceId: string | null;
@@ -78,43 +77,64 @@ export type OwnBotCurrentValues = {
 export function dropUnchangedOwnBotArgs(
   args: Record<string, unknown>,
   current: OwnBotCurrentValues,
-  /** The model and thinking this run is using, which a bot on the defaults reports as its own. */
-  running: { modelId?: string | null; thinkingLevel?: string | null } = {},
+  /** Every way the model the bot runs on is written: its id, provider/id and its read label. */
+  currentModelNames: string[] = [],
+  /** The thinking level this run uses, which a bot on the default level reports as its own. */
+  runningThinkingLevel?: string | null,
 ): Record<string, unknown> {
-  const modelId = current.modelId ?? running.modelId ?? undefined;
-  const same: Record<string, unknown> = {
-    name: current.name,
-    description: current.description ?? "",
-    instructions: current.instructions,
-    color: current.color,
-    notifyOnFinish: current.notifyOnFinish,
-    notify_on_finish: current.notifyOnFinish,
-    dailyCheckIns: current.dailyCheckIns,
-    model: modelId,
-    thinkingLevel: current.thinkingLevel ?? running.thinkingLevel ?? "default",
-    readAloud: current.autoSpeak,
-    voice: current.voiceId ?? "default",
-    use_attached_image: false,
+  const same: Record<string, unknown[]> = {
+    name: [current.name],
+    description: [current.description ?? ""],
+    instructions: [current.instructions],
+    color: [current.color],
+    notifyOnFinish: [current.notifyOnFinish],
+    notify_on_finish: [current.notifyOnFinish],
+    dailyCheckIns: [current.dailyCheckIns],
+    model: currentModelNames.map((name) => name.toLowerCase()),
+    thinkingLevel: current.thinkingLevel
+      ? [current.thinkingLevel]
+      : ["default", ...(runningThinkingLevel ? [runningThinkingLevel] : [])],
+    readAloud: [current.autoSpeak],
+    voice: [current.voiceId ?? "default"],
+    use_attached_image: [false],
     // Reading from the start is the default, not a request to page.
-    instructions_offset: 0,
-    instructionsOffset: 0,
+    instructions_offset: [0],
+    instructionsOffset: [0],
   };
   const kept: Record<string, unknown> = {};
   for (const [key, raw] of Object.entries(args)) {
+    const values = same[key] ?? [];
     // Switches sometimes arrive as the text "true" or "false".
     const value =
-      typeof same[key] === "boolean" && (raw === "true" || raw === "false") ? raw === "true" : raw;
-    const repeated =
-      key in same &&
-      same[key] !== undefined &&
-      (typeof value === "string" && typeof same[key] === "string"
-        ? value.trim() === (same[key] as string).trim() ||
-          // A model may be named with its provider, e.g. "openai-compatible/gpt-fixture".
-          (key === "model" && value.trim().endsWith(`/${same[key] as string}`))
-        : value === same[key]);
+      typeof values[0] === "boolean" && (raw === "true" || raw === "false") ? raw === "true" : raw;
+    const compared =
+      typeof value !== "string"
+        ? value
+        : key === "model"
+          ? value.trim().toLowerCase()
+          : value.trim();
+    const repeated = values.some((known) =>
+      typeof known === "string" ? known.trim() === compared : known === compared,
+    );
     if (!repeated) kept[key] = value;
   }
   return kept;
+}
+
+/** How many ignored fields a paged read names, and how much of each value it shows. */
+const IGNORED_FIELDS_SHOWN = 8;
+const IGNORED_VALUE_PREVIEW = 60;
+
+/** The fields a paged read did not apply, bounded so the read keeps its own size budget. */
+export function ignoredFieldsNote(fields: Record<string, unknown>): string | undefined {
+  const given = Object.entries(fields).filter(([, value]) => argumentGiven(value));
+  if (!given.length) return undefined;
+  const shown = given.slice(0, IGNORED_FIELDS_SHOWN).map(([key, value]) => {
+    const json = JSON.stringify(value) ?? "";
+    return `${key}=${json.length > IGNORED_VALUE_PREVIEW ? `${json.slice(0, IGNORED_VALUE_PREVIEW)}…` : json}`;
+  });
+  const more = given.length - shown.length;
+  return `This was a read, so these were not applied: ${shown.join(", ")}${more > 0 ? ` and ${more} more` : ""}. To change one, call update_bot with just that field and no instructions_offset.`;
 }
 
 /** Providers send omitted optional fields as null or blank; only anything else counts as given. */

@@ -19,11 +19,14 @@ function allowanceDeps(input: {
     status: string;
     cancelAtPeriodEnd?: boolean;
     currentPeriodStartsAt?: Date | null;
+    currentPeriodEndsAt?: Date | null;
     byokInterval?: "month" | "year";
     byokTier?: ByokTier | null;
+    byokPriceCents?: number | null;
   };
   hours?: Array<{ kind: string; hours: number }>;
   sandbox?: Partial<SandboxProvider>;
+  granted?: { creditCents: number; since: Date };
 }) {
   const prisma = {
     deploymentSettings: {
@@ -40,9 +43,17 @@ function allowanceDeps(input: {
                 status: input.subscription?.status ?? null,
                 cancelAtPeriodEnd: input.subscription?.cancelAtPeriodEnd ?? false,
                 currentPeriodStartsAt: input.subscription?.currentPeriodStartsAt ?? null,
+                currentPeriodEndsAt: input.subscription?.currentPeriodEndsAt ?? null,
                 byokInterval: input.subscription?.byokInterval ?? null,
                 byokTier: input.subscription?.byokTier ?? null,
+                byokPriceCents: input.subscription?.byokPriceCents ?? null,
               },
+      }),
+    },
+    accessGrant: {
+      aggregate: vi.fn().mockResolvedValue({
+        _sum: { creditCents: input.granted?.creditCents ?? null },
+        _min: { appliedAt: input.granted?.since ?? null },
       }),
     },
     $queryRaw: vi.fn().mockResolvedValue(input.hours ?? []),
@@ -69,9 +80,10 @@ describe("computer allowance", () => {
       mode: "byok",
       hours: [{ kind: "daytona", hours: 2.5 }],
     });
-    expect(await sandboxAllowance(deps, "organization")).toEqual({
+    expect(await sandboxAllowance(deps, "organization", new Date("2026-03-17T08:30:00Z"))).toEqual({
       limitMicros: 5_000_000,
       usedMicros: 2.5 * SANDBOX_HOURLY_COST_MICROS,
+      resetsAt: new Date("2026-04-01T00:00:00Z"),
     });
   });
 
@@ -98,9 +110,80 @@ describe("computer allowance", () => {
     expect((await sandboxAllowance(deps, "organization"))?.limitMicros).toBe(10_000_000);
   });
 
+  it.each<[string | null, string]>([
+    ["credits", "a top-up switched its models to credits"],
+    [null, "it never chose how to pay for models"],
+  ])("keeps a paid own-key subscription's hours when its mode is %s (%s)", async (mode) => {
+    const { deps } = allowanceDeps({
+      billing: true,
+      mode,
+      subscription: { status: "active", byokTier: "pro", byokPriceCents: 4900 },
+    });
+    expect((await sandboxAllowance(deps, "organization"))?.limitMicros).toBe(20_000_000);
+  });
+
   it("gives nothing without a monthly plan", async () => {
     const { deps } = allowanceDeps({ billing: true, mode: "credits", creditAmountCents: null });
     expect((await sandboxAllowance(deps, "organization"))?.limitMicros).toBe(0);
+  });
+
+  it.each([
+    [null, null],
+    ["active", 0],
+    ["canceled", 5000],
+    ["unpaid", 5000],
+  ])(
+    "does not promise a credit allowance reset with status %s and amount %s",
+    async (status, amount) => {
+      const { deps } = allowanceDeps({
+        billing: true,
+        mode: "credits",
+        creditAmountCents: amount,
+        subscription: status ? { status } : undefined,
+      });
+      expect(
+        (await sandboxAllowance(deps, "organization", new Date("2026-03-17T08:30:00Z")))?.resetsAt,
+      ).toBeNull();
+    },
+  );
+
+  it("reports the reset for a live monthly credit plan", async () => {
+    const resetsAt = new Date("2026-04-20T14:00:00Z");
+    const { deps } = allowanceDeps({
+      billing: true,
+      mode: "credits",
+      creditAmountCents: 5000,
+      subscription: {
+        status: "active",
+        currentPeriodStartsAt: new Date("2026-03-20T14:00:00Z"),
+        currentPeriodEndsAt: resetsAt,
+      },
+    });
+    expect(
+      (await sandboxAllowance(deps, "organization", new Date("2026-04-01T00:00:00Z")))?.resetsAt,
+    ).toEqual(resetsAt);
+  });
+
+  it("gives granted credit without a monthly plan a fifth of it, once, since the first grant", async () => {
+    const since = new Date("2026-01-15T00:00:00.000Z");
+    const { deps, prisma } = allowanceDeps({
+      billing: true,
+      mode: "credits",
+      granted: { creditCents: 5000, since },
+    });
+    expect((await sandboxAllowance(deps, "organization"))?.limitMicros).toBe(10_000_000);
+    expect(prisma.$queryRaw.mock.calls[0]).toContainEqual(since);
+  });
+
+  it("does not add granted credit to a monthly credit plan", async () => {
+    const { deps, prisma } = allowanceDeps({
+      billing: true,
+      mode: "credits",
+      creditAmountCents: 2000,
+      granted: { creditCents: 5000, since: new Date() },
+    });
+    expect((await sandboxAllowance(deps, "organization"))?.limitMicros).toBe(4_000_000);
+    expect(prisma.accessGrant.aggregate).not.toHaveBeenCalled();
   });
 
   it("gives a trial $2 and a cancelled trial nothing", async () => {
@@ -163,6 +246,127 @@ describe("computer allowance", () => {
     expect(await since("2026-03-31T13:00:00.000Z")).toEqual(new Date("2026-02-28T14:00:00.000Z"));
     expect(await since("2026-03-31T14:00:00.000Z")).toEqual(new Date("2026-03-31T14:00:00.000Z"));
     expect(await since("2026-12-05T00:00:00.000Z")).toEqual(new Date("2026-11-30T14:00:00.000Z"));
+  });
+
+  it.each([
+    ["2026-01-31T15:00:00Z", "2026-02-28T14:00:00Z"],
+    ["2026-03-10T00:00:00Z", "2026-03-31T14:00:00Z"],
+    ["2026-03-31T14:00:00Z", "2026-04-30T14:00:00Z"],
+    ["2026-12-05T00:00:00Z", "2026-12-31T14:00:00Z"],
+  ])("reports the yearly plan's monthly reset at %s", async (now, expected) => {
+    const { deps } = allowanceDeps({
+      billing: true,
+      mode: "byok",
+      subscription: {
+        status: "active",
+        currentPeriodStartsAt: new Date("2026-01-31T14:00:00Z"),
+        currentPeriodEndsAt: new Date("2027-01-31T14:00:00Z"),
+        byokInterval: "year",
+      },
+    });
+    expect((await sandboxAllowance(deps, "organization", new Date(now)))?.resetsAt).toEqual(
+      new Date(expected),
+    );
+  });
+
+  it("uses the monthly subscription's period end for its reset", async () => {
+    const resetsAt = new Date("2026-04-20T14:00:00Z");
+    const { deps } = allowanceDeps({
+      billing: true,
+      mode: "byok",
+      subscription: {
+        status: "active",
+        currentPeriodStartsAt: new Date("2026-03-20T14:00:00Z"),
+        currentPeriodEndsAt: resetsAt,
+      },
+    });
+    expect(
+      (await sandboxAllowance(deps, "organization", new Date("2026-04-01T00:00:00Z")))?.resetsAt,
+    ).toEqual(resetsAt);
+  });
+
+  it("omits the reset when a monthly subscription's end is unavailable", async () => {
+    const periodStart = new Date("2026-03-20T14:00:00Z");
+    const { deps, prisma } = allowanceDeps({
+      billing: true,
+      mode: "byok",
+      subscription: {
+        status: "active",
+        byokInterval: "month",
+        currentPeriodStartsAt: periodStart,
+        currentPeriodEndsAt: null,
+      },
+    });
+    const allowance = await sandboxAllowance(
+      deps,
+      "organization",
+      new Date("2026-04-01T00:00:00Z"),
+    );
+    expect(prisma.$queryRaw.mock.calls[0]?.[3]).toEqual(periodStart);
+    expect(allowance?.resetsAt).toBeNull();
+  });
+
+  it.each([null, new Date("2026-05-20T14:00:00Z")])(
+    "keeps an annual plan's reset aligned with calendar-month usage when its start is %s",
+    async (currentPeriodStartsAt) => {
+      const { deps, prisma } = allowanceDeps({
+        billing: true,
+        mode: "byok",
+        subscription: {
+          status: "active",
+          currentPeriodStartsAt,
+          currentPeriodEndsAt: new Date("2027-01-20T14:00:00Z"),
+          byokInterval: "year",
+        },
+      });
+      const allowance = await sandboxAllowance(
+        deps,
+        "organization",
+        new Date("2026-04-10T00:00:00Z"),
+      );
+      expect(prisma.$queryRaw.mock.calls[0]?.[3]).toEqual(new Date("2026-04-01T00:00:00Z"));
+      expect(allowance?.resetsAt).toEqual(new Date("2026-05-01T00:00:00Z"));
+    },
+  );
+
+  it("does not promise a reset at the end of a trial or cancelled plan", async () => {
+    for (const status of ["trialing", "active"]) {
+      const { deps } = allowanceDeps({
+        billing: true,
+        mode: "byok",
+        subscription: {
+          status,
+          cancelAtPeriodEnd: true,
+          currentPeriodStartsAt: new Date("2026-03-20T14:00:00Z"),
+          currentPeriodEndsAt: new Date("2026-04-20T14:00:00Z"),
+        },
+      });
+      expect(
+        (await sandboxAllowance(deps, "organization", new Date("2026-04-01T00:00:00Z")))?.resetsAt,
+      ).toBeNull();
+    }
+  });
+
+  it("does not promise monthly resets on a yearly plan scheduled to cancel", async () => {
+    const { deps } = allowanceDeps({
+      billing: true,
+      mode: "byok",
+      subscription: {
+        status: "active",
+        byokInterval: "year",
+        byokTier: "max",
+        cancelAtPeriodEnd: true,
+        currentPeriodStartsAt: new Date("2026-01-20T14:00:00Z"),
+        currentPeriodEndsAt: new Date("2027-01-20T14:00:00Z"),
+      },
+    });
+    const allowance = await sandboxAllowance(
+      deps,
+      "organization",
+      new Date("2026-04-01T00:00:00Z"),
+    );
+    expect(allowance?.resetsAt).toBeNull();
+    expect(allowance?.limitMicros).toBe(40_000_000);
   });
 
   it("counts the calendar month without a live subscription", async () => {
@@ -257,12 +461,15 @@ describe("computer hours left", () => {
 describe("plan computer size", () => {
   function sizeFor(
     mode: string | null,
-    billing: { status: string | null; byokTier: string | null } | null,
+    billing: { status: string | null; byokTier: string | null; byokPriceCents?: number } | null,
   ) {
     const prisma = {
       space: {
         findUnique: vi.fn().mockResolvedValue({
-          organization: { modelCredits: mode ? { mode } : null, billing },
+          organization: {
+            modelCredits: mode ? { mode } : null,
+            billing: billing && { byokPriceCents: null, ...billing },
+          },
         }),
       },
     };
@@ -273,6 +480,9 @@ describe("plan computer size", () => {
     expect(await sizeFor("byok", { status: "active", byokTier: "pro" })).toBe("large");
     expect(await sizeFor("byok", { status: "trialing", byokTier: "max" })).toBe("xlarge");
     expect(await sizeFor("byok", { status: "active", byokTier: "standard" })).toBe("standard");
+    expect(
+      await sizeFor("credits", { status: "active", byokTier: "max", byokPriceCents: 9900 }),
+    ).toBe("xlarge");
   });
 
   it("keeps credits, lapsed plans and plans without a tier standard", async () => {

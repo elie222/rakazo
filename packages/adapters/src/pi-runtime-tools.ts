@@ -25,12 +25,17 @@ import {
   loginFieldLabelsArgument,
   oneTimeCodeArgument,
 } from "./bot-secrets.js";
-import { FIND_TOOL, findTools, partitionTools, USE_TOOL } from "./builtin-tool-bridge.js";
+import { FIND_TOOL, USE_TOOL } from "./builtin.tool-definition.js";
+import { findTools, partitionTools } from "./builtin-tool-bridge.js";
 import { shortenToolResultText } from "./context-selection.js";
 import type { PiAgentRuntimeOptions } from "./pi-runtime.js";
 import { COMPUTER_MODE_TOOLS } from "./pi-runtime-computer-mode.js";
 import { sanitizeSensitiveText } from "./pi-runtime-errors.js";
-import { clipToolResultContent, clipToolResultText } from "./pi-runtime-limits.js";
+import {
+  clipToolResultContent,
+  clipToolResultText,
+  TOOL_RESULT_TEXT_LIMIT,
+} from "./pi-runtime-limits.js";
 import type { RuntimeModelTarget } from "./pi-runtime-models.js";
 import { executeSubagent } from "./pi-runtime-subagent.js";
 import { parametersFor, prepareFleetArguments } from "./pi-runtime-tool-parameters.js";
@@ -38,6 +43,7 @@ import { recordPiTelemetryContent, withPiTelemetrySpan } from "./pi-telemetry.js
 import { VERBATIM_TOOL_RESULTS } from "./runtime-context.js";
 import { SCHEDULE_TOOL_NAMES } from "./schedule-tools.js";
 import type { FinishedShellCommand } from "./shell-command-stream.js";
+import { providerToolCallId } from "./tool-call-ids.js";
 import { textContentArg } from "./tool-text.js";
 import { isVerbatimMcpResult } from "./verbatim-mcp-result.js";
 import { positiveIntegerArg } from "./workspace-file-tools.js";
@@ -103,7 +109,11 @@ function useToolAgentTool(
           type: "tool",
           name: USE_TOOL,
           args: params as Record<string, unknown>,
-          executionId: JSON.stringify(["pi-tool", host.agentNamespace ?? "main", toolCallId]),
+          executionId: JSON.stringify([
+            "pi-tool",
+            host.agentNamespace ?? "main",
+            providerToolCallId(host.providerToolCallIds, toolCallId),
+          ]),
           response: host.modelResponses,
         });
         throw new Error(`${name} is not available. Use a name find_tool lists.`);
@@ -224,7 +234,7 @@ export function describeToolActivity(
     const text = sanitizeSensitiveText(String(value ?? ""))
       .replaceAll(/\s+/g, " ")
       .trim();
-    return text.length > ACTIVITY_DETAIL_LIMIT ? `${text.slice(0, ACTIVITY_DETAIL_LIMIT)}…` : text;
+    return clipToolResultText(text, ACTIVITY_DETAIL_LIMIT);
   };
   if (toolName === "shell") return `Running: ${detail(record.command)}`;
   if (toolName === "user_computer_shell")
@@ -261,6 +271,8 @@ export function describeToolActivity(
   if (toolName === "save_shared_memory") return `Saving shared memory: ${detail(record.path)}`;
   if (toolName === "web_search") return `Searching the web: ${detail(record.query)}`;
   if (toolName === "web_fetch") return `Reading page: ${detail(redactActivityUrl(record.url))}`;
+  if (toolName === "service_search") return `Finding a service: ${detail(record.query)}`;
+  if (toolName === "service_call") return `Using service: ${detail(record.service)}`;
   if (toolName === "skill_read")
     return record.file
       ? `Reading ${detail(record.file)} from ${detail(record.name)}`
@@ -453,6 +465,7 @@ function toAgentTool(
           instructions: raw.instructions ? String(raw.instructions) : "",
           model_provider: raw.model_provider ? String(raw.model_provider) : "",
           model_id: raw.model_id ? String(raw.model_id) : "",
+          ...(raw.background === true ? { background: true } : {}),
         };
       }
       if (tool.name === "spawn_bot") {
@@ -461,7 +474,8 @@ function toAgentTool(
           description: raw.description ? String(raw.description) : "",
           instructions: raw.instructions ? String(raw.instructions) : "",
           prompt: raw.prompt ? String(raw.prompt) : "",
-          computer_mode: raw.computer_mode ? String(raw.computer_mode) : "",
+          // Left out means Team; an empty string would fail the mode's enum.
+          ...(raw.computer_mode ? { computer_mode: String(raw.computer_mode) } : {}),
         };
       }
       if (tool.name === "update_bot" || FLEET_TOOL_NAMES.some((name) => name === tool.name)) {
@@ -498,14 +512,16 @@ function toAgentTool(
             isVerbatimMcpResult(name, callArgs, host.request.verbatimMcpServers);
           recordPiTelemetryContent(span, "pi.agent.tool.arguments", args);
           const rawCallId =
-            toolCallId || `${host.request.runId}:${tool.name}:${host.toolCallSeq.value++}`;
+            providerToolCallId(host.providerToolCallIds, toolCallId) ||
+            `${host.request.runId}:${tool.name}:${host.toolCallSeq.value++}`;
           // Backend idempotency includes the agent namespace; Pi wire IDs remain untouched.
           const executionId = JSON.stringify(["pi-tool", host.agentNamespace ?? "main", rawCallId]);
           // A sequential tail cannot start after its preceding call pauses.
           // This makes the saved sequential tail safe to resolve on resume.
           if (host.pausePending)
             return { content: [], details: { skipped: true }, terminate: true };
-          if (host.depth === 0) await host.captureCheckpoint?.(rawCallId, executionId);
+          if (host.depth === 0)
+            await host.captureCheckpoint?.(toolCallId || rawCallId, executionId);
           if (host.pausePending)
             return { content: [], details: { skipped: true }, terminate: true };
           if (!beginToolCall(host)) {
@@ -612,7 +628,8 @@ function toAgentTool(
                   details: found,
                 };
               }
-              if (tool.name === "run_subagent") {
+              // A background helper is its own run, which the executor starts like any tool effect.
+              if (tool.name === "run_subagent" && args.background !== true) {
                 const result = await executeSubagent(host, executionId, args);
                 return {
                   content: [{ type: "text", text: result }],
@@ -739,14 +756,14 @@ export function serializeToolResult(
     if (!text) return "ok";
     // skill-tools.ts already bounds skill content; the context budget selector may still shorten it.
     if (
-      text.length <= 12_000 ||
+      text.length <= TOOL_RESULT_TEXT_LIMIT ||
       VERBATIM_TOOL_RESULTS.has(name) ||
       isVerbatimMcpResult(name, args, verbatimMcpServers)
     )
       return text;
     return (strategy ?? DEFAULT_CONTEXT_STRATEGY) === "current"
       ? clipToolResultText(text)
-      : shortenToolResultText(text, 12_000, { name, arguments: args });
+      : shortenToolResultText(text, TOOL_RESULT_TEXT_LIMIT, { name, arguments: args });
   } catch {
     return "ok";
   }
@@ -801,6 +818,8 @@ export interface ToolHost {
   toolCallBudget: ToolCallBudget;
   /** Shared fallback uniqueness when the model omits toolCallId (nested hosts reuse this). */
   toolCallSeq: { value: number };
+  /** Transcript tool call ids renamed for uniqueness, mapped to the id the provider sent. */
+  providerToolCallIds: Map<string, string>;
   abortTurn(): void;
   signal: AbortSignal;
   depth: number;
@@ -942,4 +961,58 @@ function beginToolCall(host: ToolHost): boolean {
 function endToolCall(host: ToolHost) {
   host.toolCallBudget.inFlight = Math.max(0, host.toolCallBudget.inFlight - 1);
   maybeAbortToolCallBudget(host);
+}
+
+export function createGate(max: number) {
+  let active = 0;
+  const waiters: Array<() => void> = [];
+  return {
+    async acquire() {
+      if (active >= max) {
+        await new Promise<void>((resolve) => {
+          waiters.push(resolve);
+        });
+      }
+      active += 1;
+    },
+    release() {
+      active = Math.max(0, active - 1);
+      waiters.shift()?.();
+    },
+  };
+}
+
+export function createQueue(): EventQueue {
+  const items: AgentRuntimeEvent[] = [];
+  let wake: (() => void) | undefined;
+  let closed = false;
+  let failure: Error | undefined;
+  return {
+    push(event) {
+      items.push(event);
+      wake?.();
+    },
+    fail(error) {
+      failure = error;
+      closed = true;
+      wake?.();
+    },
+    close() {
+      closed = true;
+      wake?.();
+    },
+    async *iterate() {
+      while (true) {
+        if (items.length) {
+          yield items.shift()!;
+          continue;
+        }
+        if (failure) throw failure;
+        if (closed) return;
+        await new Promise<void>((resolve) => {
+          wake = resolve;
+        });
+      }
+    },
+  };
 }

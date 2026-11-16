@@ -28,6 +28,16 @@ model User {
   name                        String
   email                       String
   emailVerified               Boolean                      @default(false)
+  /// Validated first-touch campaign labels and the client that created the account. Deleted with it.
+  signupSurface                String?
+  signupUtmSource              String?
+  signupUtmMedium              String?
+  signupUtmCampaign            String?
+  signupUtmContent             String?
+  signupUtmTerm                String?
+  signupReferringDomain        String?
+  /// The partner program click this account signed up from; its organizations' plan payments credit that partner.
+  signupPartnerClickId         String?
   image                       String?
   createdAt                   DateTime                     @default(now())
   updatedAt                   DateTime                     @updatedAt
@@ -39,6 +49,8 @@ model User {
   /// The app language last chosen, such as "es" or "pt-BR". Null until an app reports it;
   /// emails then follow the language of the browser that asked for them.
   locale                      String?
+  /// Labs features this person turned on, by contracts' LabFeature id. Unknown ids are ignored.
+  labs                        String[]                     @default([])
   marketingEmailOptOutAt      DateTime?
   /// When an organization this person owns first subscribed; uses up every trial kind.
   billingTrialUsedAt          DateTime?
@@ -51,6 +63,14 @@ model User {
   byokTrialCheckoutExpiresAt      DateTime?
   /// Set while the account may not sign in or run work; its content stays. Cleared to reactivate.
   deactivatedAt               DateTime?
+  /// Operator-set recorded hosted model usage ceiling, including pending reservations.
+  modelCreditCapMicros        BigInt?
+  /// Operator-controlled bot email allowance per rolling 24 hours. Zero pauses sending.
+  botEmailDailyLimit          Int                          @default(10)
+  /// Allows replies to authenticated incoming senders; never arbitrary outbound recipients.
+  botEmailRepliesEnabled      Boolean                      @default(false)
+  /// Operator-approved recipients for requested reports or other expected workflow mail.
+  botEmailAllowedRecipients   String[]                     @default([])
   sessions                    Session[]
   accounts                    Account[]
   scimSubject                 ScimSubject?
@@ -85,9 +105,12 @@ model User {
   ticketComments              TicketComment[]              @relation("TicketCommentAuthorUser")
   pushToken                   PushToken?
   callPushDevices             CallPushDevice[]
+  workActivityTokens          WorkActivityToken[]
+  workActivityStartTokens     WorkActivityStartToken[]
   trustedLinkSites            TrustedLinkSite[]
   feedbackReports             FeedbackReport[]
   emailSends                  EmailSend[]
+  botEmailSends               BotEmailSend[]
   signupSurvey                SignupSurvey?
   computerRuns                ComputerRun[]
   devices                     UserDevice[]
@@ -156,6 +179,42 @@ model CallPushDevice {
 
   @@index([userId, sessionId])
   @@map("call_push_devices")
+}
+
+/// A phone's live status card for the user's bots at work. Rows go once no bot is working.
+model WorkActivityToken {
+  tokenDigest String @id
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// The session that registered the card; the card ends with it. No FK, as for push tokens.
+  sessionId String
+  ciphertext String
+  /// A keyed digest of the last state sent, so unchanged work sends nothing.
+  lastState String?
+  /// Bots waiting on the user in that state, so a new question shows at once.
+  lastWaiting Int @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([sessionId])
+  @@map("work_activity_tokens")
+}
+
+/// A phone the server may start a live status card on when the user's bots get to work elsewhere.
+model WorkActivityStartToken {
+  tokenDigest String @id
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// The session that registered the phone; it starts no cards once that session ends. No FK, as for push tokens.
+  sessionId String
+  ciphertext String
+  /// The last card started on this phone, so each stretch of work starts at most one.
+  startedAt DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([sessionId])
+  @@map("work_activity_start_tokens")
 }
 
 model EmailSend {
@@ -482,6 +541,23 @@ model Referral {
   @@map("referrals")
 }
 
+/// A plan payment reported to the partner program, so each is reported, and refunded, once.
+/// Kept by billing customer, not organization: a refund after the account is deleted must still
+/// withdraw the commission.
+model PartnerSale {
+  invoiceId  String    @id
+  customerId       String
+  /// When the provider created the invoice, so a later refund check reads back far enough.
+  invoiceCreatedAt DateTime
+  createdAt        DateTime  @default(now())
+  /// When the sale was sent, set just before sending; cleared when the send failed so it is retried.
+  reportedAt       DateTime?
+  refundedAt       DateTime?
+
+  @@index([customerId])
+  @@map("partner_sales")
+}
+
 model AccessGrant {
   id             String    @id @default(cuid())
   email          String
@@ -587,6 +663,9 @@ model Space {
   createdAt                   DateTime                     @default(now())
   deletingAt                  DateTime?
   deletionClaimId             String?
+  /// The attempt holding the claim: every account deletion attempt shares one `deletionClaimId`,
+  /// so its rollback and handover touch only rows still carrying its own attempt id.
+  deletionAttemptId           String?
   memberships                 SpaceMember[]
   invites                     SpaceInvite[]
   bots                        Bot[]
@@ -627,6 +706,8 @@ model Space {
   chatGroups                  ChatGroup[]
   botSecrets                  BotSecret[]
   vaultCredentials            VaultCredential[]
+  vaultCredentialBots         VaultCredentialBot[]
+  vaultCredentialLimits       VaultCredentialLimit[]
   externalConversations       ExternalConversation[]
   agentSecrets                AgentSecret[]
   board                       Board?
@@ -674,6 +755,7 @@ model SpaceMember {
   aiDataConsents AiDataConsent[]
   modelRoleChoices SpaceModelRoleChoice[]
   settingOverrides SpaceSettingOverride[]
+  threadReads      ThreadRead[]
 
   @@unique([spaceId, userId])
   @@index([organizationId, userId])
@@ -783,6 +865,7 @@ model AuditEvent {
 
   @@index([organizationId, createdAt])
   @@index([createdAt])
+  @@index([targetType, targetId, createdAt])
   @@map("audit_events")
 }
 
@@ -933,7 +1016,8 @@ model Bot {
   children          Bot[]             @relation("BotChildren")
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
-  thread            Thread?
+  thread            Thread?           @relation("BotThread")
+  helperThreads     Thread[]          @relation("BotHelperThreads")
   computerId        String?
   computer          Computer?         @relation(fields: [computerId], references: [id], onDelete: SetNull)
   computerSwitching Boolean           @default(false)
@@ -962,6 +1046,7 @@ model Bot {
   runs              Run[]
   steeringMessages  SteeringMessage[]
   mcpServers        BotMcpServer[]
+  vaultCredentials  VaultCredentialBot[]
   agentImports      AgentImport[]
   groupMembers      ChatGroupMember[]
   botSecrets BotSecret[]
@@ -1054,7 +1139,10 @@ model Thread {
   spaceId                     String
   space                       Space      @relation(fields: [spaceId], references: [id], onDelete: Cascade)
   botId                       String?    @unique
-  bot                         Bot?       @relation(fields: [botId], references: [id], onDelete: Cascade)
+  bot                         Bot?       @relation("BotThread", fields: [botId], references: [id], onDelete: Cascade)
+  /// Set only on a background helper's own thread: the bot that started the helper owns it.
+  helperBotId                 String?
+  helperBot                   Bot?       @relation("BotHelperThreads", fields: [helperBotId], references: [id], onDelete: Cascade)
   groupId                     String?    @unique
   group                       ChatGroup? @relation(fields: [groupId], references: [id], onDelete: Cascade)
   externalConversationId      String?    @unique
@@ -1068,9 +1156,7 @@ model Thread {
   historyCompactionGeneration Int        @default(0)
   /// After a summary came back over the size limit, compaction waits until nextMessageSeq reaches this.
   historyCompactionRetryAfterSeq Int?
-  unread                      Boolean    @default(false)
-  /// Highest message seq the user has read; the "New" divider goes after it. -1 = none read.
-  lastReadSeq                 Int        @default(-1)
+  reads                       ThreadRead[]
   messages                    Message[]
   events                      Event[]
   tasks                       Task[]
@@ -1079,7 +1165,28 @@ model Thread {
 
   @@index([spaceId])
   @@index([spaceId, userId])
+  @@index([helperBotId])
   @@map("threads")
+}
+
+/// One member's personal state for a chat: how far they've read, and whether they've snoozed
+/// it. Named for its first use (reads). No row means caught up and not snoozed.
+/// Leaving the Space deletes it with the membership.
+model ThreadRead {
+  threadId    String
+  thread      Thread      @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  userId      String
+  spaceId     String
+  member      SpaceMember @relation(fields: [spaceId, userId], references: [spaceId, userId], onDelete: Cascade)
+  unread      Boolean     @default(false)
+  /// Highest message seq this member has read; the "New" divider goes after it. -1 = none read.
+  lastReadSeq Int         @default(-1)
+  /// Hidden from this member's chat list until then; once past, the chat shows as woken until opened.
+  snoozedUntil DateTime?
+
+  @@id([threadId, userId])
+  @@index([spaceId, userId])
+  @@map("thread_reads")
 }
 
 model Message {
@@ -1101,6 +1208,9 @@ model Message {
   clientNonce      String?
   /// Blind-index search tokens for the encrypted blocks; NULL until the row is encrypted.
   searchTokens     Int[]
+  /// A bot reply's tool calls as sent and returned (JSON, see ToolHistorySchema), encrypted like
+  /// the blocks. Only the bot's runs read it: message reads leave it out unless they select it.
+  toolHistory      String?
   sourceRuns            Run[]             @relation("RunSourceMessage")
   externalTranscriptFor  ExternalMessage?
   steeringMessages SteeringMessage[]
@@ -1111,6 +1221,7 @@ model Message {
   @@index([replyToMessageId])
   @@index([runId, seq])
   @@index([searchTokens], type: Gin)
+  // Partial index messages_tool_work_idx (bot replies that used tools) is created in SQL.
   @@map("messages")
 }
 
@@ -1173,6 +1284,8 @@ model Run {
   modelPinned          Boolean           @default(false)
   // A group message that named nobody reached this member; it may end without a reply.
   groupReplyOptional   Boolean           @default(false)
+  // The prompt and history replay version the run's latest attempt used, to compare outcomes across releases.
+  promptVersion        String?
   error                String?
   leaseOwner           String?
   leaseFence           Int               @default(0)
@@ -1194,8 +1307,8 @@ model Run {
   lateSince            DateTime?
   completedAt          DateTime?
   botOutcomeReturnedAt DateTime?
+  // What the run said is recorded for delivery to the chat app its turn came from.
   messagingMirroredAt  DateTime?
-  teamChatMirroredAt   DateTime?
   createdAt            DateTime          @default(now())
   updatedAt            DateTime          @updatedAt
   attempts             Attempt[]
@@ -1207,16 +1320,16 @@ model Run {
   @@index([status, wakeAt])
   @@index([status, leaseExpiresAt])
   @@index([status, updatedAt, id])
-  @@index([trigger, status, messagingMirroredAt, updatedAt])
-  @@index([trigger, status, teamChatMirroredAt, updatedAt])
   @@index([spaceId, botId])
   @@index([botId, createdAt])
   @@index([taskId])
   @@index([sourceMessageId])
   @@index([threadId, status, createdAt])
   @@index([threadId, createdAt, id])
+  @@index([userId, status, createdAt])
   // Partial index runs_recent_activity_idx (recent foreground activity) is created in SQL.
   // Partial index runs_bot_outcome_pending_idx (unreturned bot-message outcomes) is created in SQL.
+  // Partial index runs_helper_outcome_pending_idx (unreturned background-helper outcomes) is created in SQL.
   @@index([routineId])
   @@map("runs")
 }
@@ -1492,10 +1605,29 @@ model BotEmailMessage {
   /// Kept files ({ artifactId, name, mimeType, size }) and names of refused ones ({ name }).
   attachments Json      @default("[]")
   receivedAt  DateTime  @default(now())
+  /// Blind-index search tokens for the encrypted sender, subject and text; NULL until encrypted.
+  searchTokens Int[]
 
   @@unique([botId, key])
   @@index([botId, receivedAt])
   @@map("bot_email_messages")
+}
+
+/// One email a bot sent, for the daily send limits. Kept apart from the bot and its Space, so
+/// deleting a bot or spreading bots over Spaces never resets what its owner has sent.
+model BotEmailSend {
+  id     String   @id @default(cuid())
+  userId String
+  user   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// No relation: a deleted bot's sends still count toward its owner's limit.
+  botId  String
+  sentAt DateTime @default(now())
+  /// Envelope recipients reserved before delivery, including failed attempts. Legacy writers
+  /// omit the count and are conservatively charged the maximum envelope size.
+  recipientCount Int @default(10)
+
+  @@index([userId, sentAt])
+  @@map("bot_email_sends")
 }
 
 model ScratchpadItem {
@@ -1549,7 +1681,7 @@ model AgentImport {
   userId        String
   botId         String
   bot           Bot      @relation(fields: [botId], references: [id], onDelete: Cascade)
-  /// openclaw | hermes | document
+  /// openclaw | hermes | document | grok_bot
   source        String
   created       Json
   /// Idempotency: a retry with the same key and digest returns the same bot.
@@ -1562,7 +1694,7 @@ model AgentImport {
   @@map("agent_imports")
 }
 
-/// Claude Agent Skills: SKILL.md recipes shared across assistants (not per-bot).
+/// Skills: reusable how-to recipes shared across bots (not per-bot).
 /// Distinct from TaughtSkill (demo/record playbooks).
 model AgentSkill {
   id          String   @id @default(cuid())
@@ -1741,7 +1873,6 @@ model Computer {
   controlLeaseId          String?
   controlLeaseExpiresAt   DateTime?
   controlBotId            String?
-  controlRunId            String?
   /// The person holding user control. A Space's members share its computers, never a lease.
   controlUserId           String?
   controlFence            Int                      @default(0)
@@ -1766,6 +1897,7 @@ model Computer {
   homeDeletionNotice      HomeDeletionNotice?
 
   @@index([spaceId, scope])
+  @@index([executionRunId])
   @@map("computers")
 }
 
@@ -1855,6 +1987,8 @@ model Artifact {
   rootArtifact   Artifact?  @relation("ArtifactVersions", fields: [rootArtifactId], references: [id], onDelete: Cascade)
   versions       Artifact[] @relation("ArtifactVersions")
   version        Int        @default(1)
+  // A file a stranger emailed: its own family, never one a later upload of that name joins.
+  standalone     Boolean    @default(false)
   // Client-chosen per upload so a retried upload that already landed returns this row.
   clientNonce    String?
 
@@ -2062,18 +2196,25 @@ model McpOAuthSession {
   @@map("mcp_oauth_sessions")
 }
 
-/// A subscription sign-in waiting for its pasted code, so whichever API process
-/// receives the code can finish it. The ciphertext holds the PKCE verifier.
+/// A pending subscription sign-in and its outcome, so any API process can report,
+/// finish or cancel it. A pasted-code sign-in's ciphertext holds its PKCE verifier.
 model ModelOAuthSession {
-  id         String   @id
-  spaceId    String
-  space      Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
-  userId     String
-  provider   String
+  id             String    @id
+  spaceId        String
+  space          Space     @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  userId         String
+  provider       String
   /// The connection it signs in to; a newer sign-in for the same one replaces it.
-  scope      String
-  ciphertext String
-  createdAt  DateTime @default(now())
+  scope          String
+  ciphertext     String?
+  /// pending, saving, connected or failed.
+  status         String    @default("pending")
+  error          String?
+  /// The saved connection, once connected.
+  result         Json?
+  /// The process waiting on the provider renews this; a lapsed lease means it is gone.
+  leaseExpiresAt DateTime?
+  createdAt      DateTime  @default(now())
 
   @@index([userId, provider])
   @@index([scope])
@@ -2116,6 +2257,9 @@ model MessagingIdentity {
   verifiedAt           DateTime?
   lastInboundAt        DateTime?
   outboundSinceInbound Int       @default(0)
+  /// Provider handle of the reply that last released messages held behind the outbound cap.
+  /// A redelivery of that reply answers no request: it was sent before they went out.
+  capReleaseHandle     String?
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
 
@@ -2170,24 +2314,31 @@ model MessagingLinkCode {
   @@map("messaging_link_codes")
 }
 
+/// One outgoing chat message: the record of what was sent, in the order its conversation gets it.
 model MessagingOutbound {
-  id              String    @id @default(cuid())
-  idempotencyKey  String    @unique
+  id              String   @id @default(cuid())
+  idempotencyKey  String   @unique
+  /// dm, group, intro, or team (a team-chat reply).
   kind            String
-  /// DM rows resolve their thread through the identity at drain time.
+  /// DM rows resolve their thread through the identity when they are sent.
   identityId      String?
-  /// Group/intro rows post straight to this provider thread id.
+  /// Group, intro and team rows post straight to this provider thread id.
   threadId        String?
   body            String
-  status          String    @default("pending")
-  attempts        Int       @default(0)
-  nextAttemptAt   DateTime?
+  /// pending, retry (its backup job retries it), sent or failed. Sent with no providerHandle: in flight.
+  status          String   @default("pending")
   providerHandle  String?
+  /// Set while this release's claim is in flight. A stale claim without it is the previous
+  /// release's, which may well have gone out, so it is never sent again.
+  claimedAt       DateTime?
   sourceMessageId String?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  @@index([status, nextAttemptAt])
+  @@index([identityId, createdAt])
+  @@index([threadId, createdAt])
+  @@index([claimedAt])
+  @@index([status, updatedAt])
   @@map("messaging_outbound")
 }
 
@@ -2244,12 +2395,54 @@ model VaultCredential {
   origin     String
   auth       Json
   ciphertext String
+  policy     String   @default("allow")
+  /// Spaces where only the owner's bots in `bots` may use it; none chosen means none may.
+  limits     VaultCredentialLimit[]
+  bots       VaultCredentialBot[]
+  /// More HTTPS origins a login fills on, set only by its owner.
+  alsoOn     String[] @default([])
+  /// When a run used up its tries of this login's authenticator codes; none are typed until a save.
+  codesStoppedAt DateTime?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
   @@index([spaceId])
   // Unique index vault_credentials_userId_spaceId_name_key (NULLS NOT DISTINCT) is created in SQL.
   @@map("vault_credentials")
+}
+
+/// A bot its owner chose for a vault item. `spaceId` is the bot's Space, also for an item in the
+/// account vault, which each Space that uses it chooses its own bots for.
+model VaultCredentialBot {
+  id           String          @id @default(cuid())
+  credentialId String
+  credential   VaultCredential @relation(fields: [credentialId], references: [id], onDelete: Cascade)
+  botId        String
+  bot          Bot             @relation(fields: [botId], references: [id], onDelete: Cascade)
+  userId       String
+  spaceId      String
+  space        Space           @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  createdAt    DateTime        @default(now())
+
+  @@unique([credentialId, botId])
+  @@index([userId, spaceId, botId])
+  @@map("vault_credential_bots")
+}
+
+/// A Space where a vault item is limited to the bots chosen for it there. An item in the account
+/// vault is limited in each Space that uses it on its own.
+model VaultCredentialLimit {
+  id           String          @id @default(cuid())
+  credentialId String
+  credential   VaultCredential @relation(fields: [credentialId], references: [id], onDelete: Cascade)
+  userId       String
+  spaceId      String
+  space        Space           @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  createdAt    DateTime        @default(now())
+
+  @@unique([credentialId, spaceId])
+  @@index([userId, spaceId])
+  @@map("vault_credential_limits")
 }
 
 model ExternalConversation {
@@ -2292,22 +2485,20 @@ model ExternalMessage {
   batchContext           String?
   engagementReason       String?
   judgedAt               DateTime?
+  /// received, observed, deferred, running, delivered (its reply is recorded) or ignored.
   status                 String                @default("received")
   runId                  String?               @unique
   run                    Run?                  @relation(fields: [runId], references: [id], onDelete: SetNull)
   threadMessageId        String?               @unique
   threadMessage          Message?              @relation(fields: [threadMessageId], references: [id], onDelete: SetNull)
-  attempts               Int                   @default(0)
-  nextAttemptAt          DateTime?
-  lastError              String?
-  providerReplyHandle    String?
-  deliveredAt            DateTime?
   createdAt              DateTime              @default(now())
   updatedAt              DateTime              @updatedAt
 
   @@unique([externalConversationId, providerEventId])
-  @@index([status, nextAttemptAt])
+  @@index([externalConversationId, status, createdAt])
   @@index([externalConversationId, senderIsBot, createdAt])
+  @@index([externalConversationId, senderId, judgedAt])
+  @@index([status, updatedAt])
   @@map("external_messages")
 }
 
@@ -2405,6 +2596,10 @@ model ModelCreditAccount {
   balanceMicros         BigInt             @default(0)
   pendingCreditCheckout Boolean            @default(false)
   byokFreeUntil         DateTime?
+  /// Numbers each provider read of purchases in the order it started.
+  purchaseReadsStarted  BigInt             @default(0)
+  /// The newest read that applied every purchase it saw; older reads are skipped.
+  purchaseReadApplied   BigInt             @default(0)
   entries               ModelCreditEntry[]
   lots                  ModelCreditLot[]
   createdAt             DateTime           @default(now())
@@ -2420,6 +2615,10 @@ model ModelCreditEntry {
   account                ModelCreditAccount @relation(fields: [organizationId], references: [organizationId], onDelete: Cascade)
   source                 String             @unique
   amountMicros           BigInt
+  /// A purchase's paid credits an open dispute holds back; `amountMicros` excludes them.
+  disputedMicros         BigInt             @default(0)
+  /// The provider read that last changed this purchase; older reads are skipped.
+  purchaseRead           BigInt             @default(0)
   pending                Boolean            @default(false)
   callId                 String?            @unique
   userId                 String?
@@ -2461,6 +2660,8 @@ model BillingAuditEvent {
   createdAt         DateTime @default(now())
 
   @@index([organizationId, createdAt])
+  /// Balance verification sums an organization's journal from the index alone.
+  @@index([organizationId, amountMicros])
   @@index([callId, createdAt])
   @@map("billing_audit_events")
 }

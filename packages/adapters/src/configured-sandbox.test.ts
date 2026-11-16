@@ -195,6 +195,32 @@ describe("ConfiguredSandbox", () => {
     expect(findFirst).not.toHaveBeenCalled();
   });
 
+  it("deletes a machine through the connection saved for its kind, and never asks another kind's provider", async () => {
+    const describe = new FakeSandboxProvider().describe();
+    const deleteMachine = vi.fn(async () => undefined);
+    const saved = Object.assign(new FakeSandboxProvider(), {
+      describe: () => ({ ...describe, id: "desktop" }),
+      deleteMachine,
+    });
+    const primary = Object.assign(new FakeSandboxProvider(), { deleteMachine: vi.fn() });
+    const sandbox = new ConfiguredSandbox(
+      primary,
+      async () => ({ provider: "desktop", settings }),
+      { createProvider: async () => saved },
+    );
+    const signal = AbortSignal.timeout(5_000);
+    const machine = { provider: "desktop", machineId: "machine-1" };
+
+    await sandbox.deleteMachine(machine, signal);
+
+    expect(deleteMachine).toHaveBeenCalledWith(machine, signal);
+    // No connection for this kind: the default provider would report a machine it never had as gone.
+    await expect(
+      sandbox.deleteMachine({ provider: "incus", machineId: "rakazo-1" }, signal),
+    ).rejects.toThrow("No configured computer provider");
+    expect(primary.deleteMachine).not.toHaveBeenCalled();
+  });
+
   it("probes background work for providers without their own check", async () => {
     const { sandbox } = setup({ provider: "default", settings: null });
     const computer: ComputerRef = await sandbox.provision({ botId: "a", homePath: "/h" }, ctx);

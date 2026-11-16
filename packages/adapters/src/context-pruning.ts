@@ -1,9 +1,9 @@
 import type { Message } from "@earendil-works/pi-ai";
+import { SCREENSHOT_REMOVED_NOTE, STALE_PAGE_STATE_NOTE } from "./runtime-context.prompt.js";
 
 type ToolResultMessage = Extract<Message, { role: "toolResult" }>;
 
 const DEFAULT_COMPUTER_SCREENSHOTS_TO_KEEP = 2;
-const SCREENSHOT_REMOVED_NOTE = "[Older screenshot removed; observe again if needed]";
 
 export class ModelImageLimitError extends Error {}
 
@@ -26,8 +26,6 @@ const DEFAULT_PAGE_STATE_RESULTS_TO_KEEP = 3;
  * them saves nothing, and counting them would push real page state out of the kept set.
  */
 const STALE_PAGE_STATE_MIN_CHARS = 1_000;
-const STALE_PAGE_STATE_NOTE =
-  "[Earlier page state trimmed to save context. Facts you still need from that page should already be in your notes or tracker; otherwise take a fresh snapshot.]";
 
 /**
  * Replace all but the most recent large page-state tool results with a short note. The runtime

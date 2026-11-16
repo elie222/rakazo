@@ -373,6 +373,26 @@ class OtaBaseStepTests(OtaBaseTestCase):
         publish, _ = self.run_step(NO_UPDATES)
         self.assertEqual(publish, "publish=true")
 
+    def test_classifies_source_from_every_workspace_package_the_bundle_imports(self):
+        tokens = "packages/ui-tokens/src/index.ts"
+        icon = "packages/ui-tokens/assets/Rakazo.icon/icon.json"
+        eligible = "Mobile OTA eligible"
+        for files, expected, summary_line in (
+            ({tokens: "export const a = 1;\n"}, "publish=true", eligible),
+            # Token edits regenerate the stylesheet alongside the source.
+            ({tokens: "a = 2;\n", "packages/ui-tokens/src/tokens.css": ":root {}\n"}, "publish=true", eligible),
+            ({"packages/logging/src/monitoring.ts": "export const m = 1;\n"}, "publish=true", eligible),
+            ({icon: "{}\n"}, "publish=false", icon),
+            ({tokens: "export const a = 3;\n", SWIFT_FILE: "import UIKit\n"}, "publish=false", SWIFT_FILE),
+            ({"packages/db/src/client.ts": "export const db = 1;\n"}, "publish=false", "No mobile OTA needed"),
+        ):
+            with self.subTest(files=sorted(files)):
+                published = self.repo.head
+                self.repo.head = self.repo.commit("change a workspace package", files)
+                publish, summary = self.run_step(updates_response(update(published, RUNTIME)))
+                self.assertEqual(publish, expected)
+                self.assertIn(summary_line, summary)
+
 
 if __name__ == "__main__":
     unittest.main()

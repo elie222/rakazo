@@ -4,6 +4,7 @@ import type { SignupPolicyEnv } from "./bootstrap-user.js";
 import { bootstrapUserSpace } from "./bootstrap-user.js";
 import type { PrismaClient } from "./client.js";
 import { Prisma } from "./client.js";
+import { isUniqueViolation } from "./prisma-errors.js";
 import { createRepos } from "./repos.js";
 
 export interface MessagingIdentityRequest {
@@ -86,7 +87,7 @@ export async function provisionMessagingIdentity(
         },
       })
       .catch((error: unknown) => {
-        if (!isUniqueViolationError(error)) throw error;
+        if (!isUniqueViolation(error)) throw error;
         // Only join the internal identity key, never an email someone supplied.
         return prisma.user.findUniqueOrThrow({ where: { id } });
       });
@@ -142,7 +143,8 @@ export async function provisionMessagingIdentity(
         botId,
       },
     });
-  } catch {
+  } catch (error) {
+    if (!isUniqueViolation(error)) throw error;
     // A concurrent first-inbound won the (provider, address) race; report its result.
     const winner = await prisma.messagingIdentity.findUnique({ where });
     if (!winner) {
@@ -300,13 +302,9 @@ export async function redeemMessagingLinkCode(
     // botId is unique (one chat app per bot) and (provider, address) can race
     // a concurrent inbound; either way the code is spent and the sender can
     // request a fresh one.
-    if (isUniqueViolationError(error)) return null;
+    if (isUniqueViolation(error)) return null;
     throw error;
   }
-}
-
-function isUniqueViolationError(error: unknown): boolean {
-  return Boolean(error && typeof error === "object" && "code" in error && error.code === "P2002");
 }
 
 /** Run nonce of a team-chat message: `teamchat:<provider>:<provider event id>`. */

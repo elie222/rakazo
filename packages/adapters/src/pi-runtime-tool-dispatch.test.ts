@@ -1,6 +1,7 @@
 import type { AgentToolCompletion, ConnectorTool } from "@rakazo/adapter-kit";
+import { deferred } from "@rakazo/core/test-async";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { builtinAgentTools } from "./builtin-tools.js";
+import { builtinAgentTools } from "./builtin.tool-definition.js";
 
 const fakeAgentState = vi.hoisted(() => ({
   mode: "dispatch" as
@@ -11,6 +12,7 @@ const fakeAgentState = vi.hoisted(() => ({
     | "silent-continuation"
     | "subagent-limit"
     | "two-subagents"
+    | "background-subagent"
     | "parent-limit"
     | "parent-parallel"
     | "ask-pause"
@@ -64,7 +66,7 @@ vi.mock("@earendil-works/pi-agent-core", () => ({
     private readonly listeners: Array<(event: Record<string, unknown>) => void> = [];
     private readonly prepareNextTurnWithContext?: (input: {
       context: { messages: unknown[] };
-    }) => Promise<{ context?: { messages: unknown[] } } | undefined>;
+    }) => Promise<{ context?: { messages: unknown[] }; messages?: unknown[] } | undefined>;
     private readonly finishTurn?: (turn: unknown, signal?: AbortSignal) => Promise<unknown>;
     private aborted = false;
 
@@ -72,7 +74,7 @@ vi.mock("@earendil-works/pi-agent-core", () => ({
       initialState: { tools: typeof fakeAgentState.tools; messages: unknown[] };
       prepareNextTurnWithContext?: (input: {
         context: { messages: unknown[] };
-      }) => Promise<{ context?: { messages: unknown[] } } | undefined>;
+      }) => Promise<{ context?: { messages: unknown[] }; messages?: unknown[] } | undefined>;
       finishTurn?: (turn: unknown, signal?: AbortSignal) => Promise<unknown>;
     }) {
       this.tools = options.initialState.tools;
@@ -86,12 +88,18 @@ vi.mock("@earendil-works/pi-agent-core", () => ({
       this.listeners.push(listener);
     }
 
+    // Messages the hook returns are appended before the next request, like steered ones.
+    private async prepareNextTurn() {
+      const update = await this.prepareNextTurnWithContext?.({ context: { messages: [] } });
+      fakeAgentState.steeredMessages.push(...(update?.messages ?? []));
+    }
+
     async prompt(prompt: string, images?: unknown[]) {
       fakeAgentState.promptInputs.push(prompt);
       fakeAgentState.promptImages.push(images ?? []);
       if (fakeAgentState.mode === "answer-then-stop") {
         // The model answers the steered message in text and stops.
-        await this.prepareNextTurnWithContext?.({ context: { messages: [] } });
+        await this.prepareNextTurn();
         await this.finishTurn?.({
           message: {
             role: "assistant",
@@ -105,12 +113,8 @@ vi.mock("@earendil-works/pi-agent-core", () => ({
         return;
       }
       if (fakeAgentState.mode === "empty" || fakeAgentState.mode === "two-boundaries") {
-        await this.prepareNextTurnWithContext?.({ context: { messages: [] } });
-        if (fakeAgentState.mode === "two-boundaries") {
-          await this.prepareNextTurnWithContext?.({
-            context: { messages: [] },
-          });
-        }
+        await this.prepareNextTurn();
+        if (fakeAgentState.mode === "two-boundaries") await this.prepareNextTurn();
         fakeAgentState.preparedMessages = [...fakeAgentState.steeredMessages];
         return;
       }
@@ -381,6 +385,13 @@ vi.mock("@earendil-works/pi-agent-core", () => ({
       }
 
       const delegation = this.tools.find((tool) => tool.name === "run_subagent");
+      if (delegation && fakeAgentState.mode === "background-subagent") {
+        const args = { name: "scout", task: "compare the venues", background: true };
+        this.emit({ type: "tool_execution_start", toolName: delegation.name, args });
+        // Pi prepares the model's arguments before it runs the tool.
+        await delegation.execute("delegate-bg", delegation.prepareArguments?.(args) ?? args);
+        return;
+      }
       if (delegation && fakeAgentState.mode === "two-subagents") {
         await Promise.all(
           ["a", "b"].map((name) => {
@@ -482,9 +493,9 @@ import { MISSING_TOOL_FINAL_RESPONSE_ERROR, PiAgentRuntime } from "./pi-runtime.
 import { providerFailureText } from "./pi-runtime-errors.js";
 import { TOOL_RESULT_TEXT_LIMIT } from "./pi-runtime-limits.js";
 import { maxToolCallsPerTurn } from "./pi-runtime-tools.js";
+import { midTaskMessageFromPrompt, midTaskMessagePrompt } from "./run-replies.prompt.js";
 import { toolCompletionAuditPayload } from "./tool-completion-audit.js";
 import { serializeTurnCheckpoint } from "./turn-checkpoint.js";
-import { midTaskMessageFromPrompt, midTaskMessagePrompt } from "./user-progress.js";
 
 const destinationTool: ConnectorTool = {
   name: "destination.write",
@@ -1074,6 +1085,48 @@ describe("Pi connector tool dispatch", () => {
     );
   });
 
+  it("creates a bot when the model leaves out the optional computer_mode", async () => {
+    const spawnBotTool = builtinAgentTools.find((tool) => tool.name === "spawn_bot");
+    if (!spawnBotTool) throw new Error("missing spawn_bot");
+    fakeAgentState.invoke = {
+      name: "use_tool",
+      args: { name: "spawn_bot", arguments: { name: "Scout" } },
+    };
+    const executeTool = vi.fn(async () => ({ ok: true }));
+    const runtime = new PiAgentRuntime();
+
+    for await (const _event of runtime.run(
+      {
+        botId: "b",
+        threadId: "t",
+        runId: "r",
+        prompt: "create a bot named Scout",
+        instructions: "",
+        history: [],
+        tools: [spawnBotTool],
+        model: { provider: "test", id: "dispatch-test-model" },
+        executeTool,
+      },
+      {
+        operationId: "1",
+        traceId: "1",
+        spaceId: "w",
+        userId: "u",
+        signal: new AbortController().signal,
+      },
+    )) {
+      // Exhaust the runtime event stream so tool execution completes.
+    }
+
+    expect(executeTool).toHaveBeenCalledWith(
+      "spawn_bot",
+      { name: "Scout", description: "", instructions: "", prompt: "" },
+      JSON.stringify(["pi-tool", "main", "call-1"]),
+      undefined,
+      { onShellStillRunning: expect.any(Function) },
+    );
+  });
+
   it("passes update_bot's read offset through the use_tool wrapper", async () => {
     const updateBotTool = builtinAgentTools.find((tool) => tool.name === "update_bot");
     if (!updateBotTool) throw new Error("missing update_bot");
@@ -1258,11 +1311,8 @@ describe("Pi connector tool dispatch", () => {
   });
 
   it("does not wait for a slow tool completion hook", async () => {
-    let resolveAudit!: () => void;
-    const audit = new Promise<void>((resolve) => {
-      resolveAudit = resolve;
-    });
-    const onToolCompleted = vi.fn(() => audit);
+    const audit = deferred();
+    const onToolCompleted = vi.fn(() => audit.promise);
     let settled = false;
     const runtime = new PiAgentRuntime();
     const run = (async () => {
@@ -1298,7 +1348,7 @@ describe("Pi connector tool dispatch", () => {
       expect(settled).toBe(true);
       expect(onToolCompleted).toHaveBeenCalledOnce();
     } finally {
-      resolveAudit();
+      audit.resolve();
       await run;
     }
   });
@@ -2234,6 +2284,48 @@ describe("Pi connector tool dispatch", () => {
           "I stopped after reaching the limit of 80 tool calls in this turn. Send another message to continue.",
       }),
     );
+  });
+
+  it("hands a background helper to the executor instead of running it inside the turn", async () => {
+    fakeAgentState.mode = "background-subagent";
+    const executeTool = vi.fn(async () => ({ ok: true, name: "scout" }));
+    const runtime = new PiAgentRuntime();
+    const events: unknown[] = [];
+    for await (const event of runtime.run(
+      {
+        botId: "b",
+        threadId: "t",
+        runId: "background-helper",
+        prompt: "look into the venues in the background",
+        instructions: "",
+        history: [],
+        tools: [
+          {
+            name: "run_subagent",
+            description: "Delegate work",
+            inputSchema: { type: "object", properties: {} },
+          },
+        ],
+        model: { provider: "test", id: "dispatch-test-model" },
+        executeTool,
+      },
+      {
+        operationId: "bg",
+        traceId: "bg",
+        spaceId: "w",
+        userId: "u",
+        signal: new AbortController().signal,
+      },
+    ))
+      events.push(event);
+    const calls = executeTool.mock.calls as unknown as unknown[][];
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.slice(0, 2)).toEqual([
+      "run_subagent",
+      expect.objectContaining({ name: "scout", task: "compare the venues", background: true }),
+    ]);
+    // No helper ran inside this turn.
+    expect(events.filter((event) => (event as { type?: string }).type === "subagent")).toEqual([]);
   });
 
   it("caps a parent and two concurrent subagents at one total, then gives a later run a fresh budget", async () => {

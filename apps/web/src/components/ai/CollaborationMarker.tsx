@@ -20,7 +20,7 @@ export function CollaborationMarker({
 }) {
   const parts = splitPeerLabel(label, peerName);
   return (
-    <div className="flex min-w-0 max-w-full justify-center py-1">
+    <div className="flex min-w-0 max-w-full justify-center">
       <button
         type="button"
         data-testid="peer-receipt-chip"

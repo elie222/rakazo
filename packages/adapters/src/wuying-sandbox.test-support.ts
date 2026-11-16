@@ -20,6 +20,8 @@ export class FakeWuyingDesktop implements WuyingDesktopTools, WuyingControlPlane
    * code once the provider has looked for the exit file `polls` times; null never exits.
    */
   background?: { stdout: string; stderr?: string; code: number | null; polls?: number };
+  /** Answers file reads without the file's size, which the gateway may leave out. */
+  omitReadSize = false;
   /** SendKeys strings the desktop received, in order. */
   readonly sentKeys: string[] = [];
   /** The PowerShell command text of the last background run. */
@@ -120,7 +122,7 @@ export class FakeWuyingDesktop implements WuyingDesktopTools, WuyingControlPlane
         return result({
           data: slice.toString(args.encoding === "base64" ? "base64" : "utf8"),
           bytes_read: slice.length,
-          size: entry.content.length,
+          ...(this.omitReadSize ? {} : { size: entry.content.length }),
           truncated: offset + slice.length < entry.content.length,
         });
       }

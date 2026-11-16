@@ -1,4 +1,9 @@
 import type { ActionApprovalRule as StoredActionApprovalRule } from "@rakazo/contracts";
+import { BUILTIN_TOOL_NAMES } from "@rakazo/contracts";
+
+export { isSecretAskBlock } from "./ask-kind.js";
+
+import { humanizeToolName } from "./events.js";
 
 const APPROVAL_EXEMPT_TOOLS = new Set([
   "computer_observe",
@@ -30,9 +35,42 @@ const APPROVAL_EXEMPT_TOOLS = new Set([
   "request_purchase",
 ]);
 
+/**
+ * Built-ins that only look, or only speak to the owner: free even when outside text started the
+ * run. Anything else, new tools included, is gated there (see outsideRunToolRequiresApproval).
+ */
+const OUTSIDE_RUN_SAFE_BUILTIN_TOOLS = new Set([
+  "ask_user",
+  "attach_file",
+  "browser_snapshot",
+  "cloud_agent_status",
+  "computer_observe",
+  "list_files",
+  "list_fleet",
+  "list_secrets",
+  "message_user",
+  "purchase_status",
+  "read_email",
+  "read_file",
+  "read_history",
+  "recall_memory",
+  "reflect_memory",
+  "request_takeover",
+  "run_subagent",
+  "schedule_list",
+  "scratchpad_list",
+  "search_history",
+  "service_search",
+  "skill_read",
+  "task_catalog",
+  "web_fetch",
+  "web_search",
+]);
+
 const APPROVAL_REQUIRED_BUILTIN_TOOLS = new Set([
   "generate_image",
   "generate_video",
+  "service_call",
   "archive_bot",
   "secret_request",
   "forget_secret",
@@ -58,27 +96,6 @@ const EXPLICIT_APPROVAL_BUILTIN_TOOLS = new Set([
   "create_space",
   "set_child_instructions",
   "set_child_bot_model",
-]);
-
-const UNATTENDED_SAFE_BUILTIN_TOOLS = new Set([
-  "browser_snapshot",
-  "cloud_agent_status",
-  "computer_observe",
-  "list_files",
-  "list_fleet",
-  "list_secrets",
-  "purchase_status",
-  "read_email",
-  "read_file",
-  "recall_memory",
-  "request_takeover",
-  "run_subagent",
-  "task_catalog",
-  "schedule_list",
-  "scratchpad_list",
-  "skill_read",
-  "web_fetch",
-  "web_search",
 ]);
 
 const READ_ONLY_CONNECTOR_PATTERN = /(^|[_-])(get|list|search|find|read)([_-]|$)/i;
@@ -168,6 +185,15 @@ export function toolRequiresApproval(
 }
 
 /**
+ * A run a webhook or an email started carries text someone else may have written, so a built-in
+ * that changes something is gated there even if the owner's own runs never ask for it. It is gated
+ * like any other consequential action: Always allow, the approval model or Never ask can pass it.
+ */
+export function outsideRunToolRequiresApproval(trigger: string, toolName: string): boolean {
+  return trigger === "webhook" && !OUTSIDE_RUN_SAFE_BUILTIN_TOOLS.has(toolName);
+}
+
+/**
  * Whether this call repeats one of `denied`, the requests a person denied for this tool earlier in
  * the run. A Composio multi-execute repeats only when it shares an inner tool slug. Telling the
  * model not to retry did not stop it.
@@ -207,19 +233,6 @@ export function isOwnerStartedRun(trigger: string, followUpFromUser: boolean): b
   return trigger === "user" || trigger === "call_end";
 }
 
-/** External webhook runs may inspect state unattended, but side effects always need the owner. */
-export function unattendedTriggerToolRequiresApproval(
-  trigger: string,
-  toolName: string,
-  viaConnector: boolean,
-  readOnly?: boolean,
-): boolean {
-  if (trigger !== "webhook") return false;
-  return viaConnector
-    ? connectorToolRequiresApproval(toolName, readOnly)
-    : !UNATTENDED_SAFE_BUILTIN_TOOLS.has(toolName);
-}
-
 /**
  * Tools whose results bring in nothing from outside during the run: confirmations of the bot's own
  * writes, the owner's answers, and the product's own saved state (memory, skills, history), which
@@ -245,6 +258,7 @@ const OWN_STATE_RESULT_TOOLS = new Set([
   "message_user",
   "read_history",
   "recall_memory",
+  "reflect_memory",
   "remember",
   "render_plot",
   "request_secret",
@@ -282,6 +296,21 @@ export function connectorReadRequiresApproval(input: {
   connectorTrusted: boolean;
 }): boolean {
   return input.tainted && !input.connectorTrusted;
+}
+
+const MEMORY_WRITE_TOOLS = new Set(["remember", "save_memory", "save_shared_memory"]);
+
+/**
+ * A memory save goes through the run's approval mode like any consequential action whenever the
+ * run's current action permissions are reduced: fresh outside input entered it, or someone other
+ * than the owner started it. Saved notes, summaries and recall are derived data and add no prompt
+ * by themselves. The predicate is only checked for a memory write.
+ */
+export async function memoryWriteNeedsApproval(
+  toolName: string,
+  actionTainted: () => Promise<boolean>,
+): Promise<boolean> {
+  return MEMORY_WRITE_TOOLS.has(toolName) && (await actionTainted());
 }
 
 /**
@@ -629,14 +658,6 @@ export function applyJudgeDecision(input: {
  */
 export const CARD_TITLE_ESCAPED_CHARACTERS = "[\\\\`*_[\\]<>~|]";
 
-export function isSecretAskBlock(block: {
-  kind: string;
-  input?: string;
-  approvalEffectId?: string;
-}): boolean {
-  return block.kind === "ask" && block.input === "secret" && !block.approvalEffectId;
-}
-
 export function isApprovalAskBlock(block: {
   kind: string;
   approvalEffectId?: string;
@@ -667,4 +688,58 @@ export function receiptItems<Item extends { name: string }>(
       (label) => name.startsWith(label) && !/^[\p{L}\p{N}]/u.test(name.slice(label.length)),
     );
   });
+}
+
+/** The order rule lists group by: what goes through, what asks, what is refused. */
+export const APPROVAL_RULE_EFFECTS = ["always_allow", "require_approval", "deny"] as const;
+
+/** Whether a rule with this effect does anything in this mode: Never ask honours only blocks. */
+export function approvalRuleApplies(
+  mode: ApprovalMode | null | undefined,
+  effect: ActionApprovalRule["effect"],
+): boolean {
+  return mode !== "never" || effect === "deny";
+}
+
+/**
+ * The effects a person can switch a rule to. An older category rule can only be removed, and a tool
+ * a person approves every time cannot be allowed, though it can still be blocked.
+ */
+export function approvalRuleEffectChoices(
+  rule: ActionApprovalRule,
+): ReadonlyArray<ActionApprovalRule["effect"]> {
+  if (rule.matchKind === "category") return [];
+  if (rule.matchKind === "tool" && toolRequiresExplicitApproval(rule.matchValue)) {
+    return APPROVAL_RULE_EFFECTS.filter((effect) => effect !== "always_allow");
+  }
+  return APPROVAL_RULE_EFFECTS;
+}
+
+/** A site reads as itself; a tool, app or older category by its name. */
+export function approvalRuleLabel(rule: ActionApprovalRule): string {
+  return rule.matchKind === "site" ? rule.matchValue : humanizeToolName(rule.matchValue);
+}
+
+/** A built-in tool a person can add a rule for. */
+export type ApprovalRuleChoice = { matchKind: "tool"; matchValue: string; label: string };
+
+/**
+ * What the rule picker lists: every built-in tool that has no rule yet, by name. Apps are left out:
+ * an app rule matches a kind guessed from the action's name, which some providers' actions lack.
+ */
+export function approvalRuleChoices(
+  rules: ReadonlyArray<ActionApprovalRule>,
+): ApprovalRuleChoice[] {
+  const taken = new Set(
+    rules.filter((rule) => rule.matchKind === "tool").map((rule) => rule.matchValue.toLowerCase()),
+  );
+  return BUILTIN_TOOL_NAMES.filter((name) => !taken.has(name))
+    .map(
+      (name): ApprovalRuleChoice => ({
+        matchKind: "tool",
+        matchValue: name,
+        label: humanizeToolName(name),
+      }),
+    )
+    .sort((a, b) => a.label.localeCompare(b.label));
 }

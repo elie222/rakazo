@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildApprovalAskBlock } from "./approval-ask.js";
 import { redactToolArgsForReview } from "./auto-review.js";
 import { requestWithBotSecret } from "./bot-secrets.js";
-import { sanitizeComposioError } from "./composio-connector.js";
+import { sanitizeIntegrationError } from "./composio-connector.js";
 import { redactConnectorPayload, sanitizeConnectorError } from "./connector-safety.js";
 import { McpConnector } from "./mcp-connector.js";
 import type { OAuthMaterial } from "./mcp-oauth.js";
@@ -192,7 +192,7 @@ describe("secrets model-visibility conformance", () => {
 
   describe("bot secret_request boundary", () => {
     it("never returns bot-secret plaintext in the tool result", async () => {
-      const scope = { userId: "user-1", spaceId: "space-1", botId: "bot-1" };
+      const scope = { userId: "user-1", spaceId: "space-1" };
       const destination: BotSecretDestination = {
         name: "example_api",
         origin: "https://api.example.test",
@@ -448,7 +448,7 @@ describe("secrets model-visibility conformance", () => {
 
   describe("Composio pattern redaction", () => {
     it("redacts API keys and Bearer tokens from connector errors", () => {
-      const message = sanitizeComposioError(
+      const message = sanitizeIntegrationError(
         "denied ak_secretvaluehere COMPOSIO_API_KEY=ak_shouldnotleak Bearer tok_abc",
       );
       expect(message).not.toContain("ak_secretvaluehere");

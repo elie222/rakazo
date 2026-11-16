@@ -1,7 +1,7 @@
-import { runContinueJob } from "@rakazo/adapter-kit";
 import type { BotMessageIntent, MessageBlock } from "@rakazo/contracts";
 import {
   BOT_MESSAGE_MAX_LENGTH,
+  BOT_MESSAGE_TOO_LONG,
   botMessageContext,
   botMessageHopExhausted,
   buildBotMessageWakePrompt,
@@ -13,12 +13,16 @@ import type { PrismaClient } from "@rakazo/db";
 import {
   appendEventInTransaction,
   createThreadMessageInTransaction,
+  isUniqueViolation,
+  spaceTakesWork,
+  storedMessageBlocks,
   THREAD_LOCK_TRANSACTION_OPTIONS,
   withTransactionRetry,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { runLeaseFor } from "./run-messages.js";
+import { wakeRun } from "./wake-run.js";
 
 /**
  * The hop the current run sits at, read back from the message that woke this
@@ -33,7 +37,7 @@ export async function currentBotMessageHop(
     where: { id: sourceMessageId },
     select: { blocks: true },
   });
-  const blocks = Array.isArray(source?.blocks) ? (source.blocks as MessageBlock[]) : [];
+  const blocks = source ? storedMessageBlocks({ id: sourceMessageId, blocks: source.blocks }) : [];
   return botMessageContext(blocks)?.hop ?? 0;
 }
 
@@ -44,15 +48,13 @@ export async function loadBotMessageContext(
   if (!sourceMessageId) return undefined;
   const source = await prisma.message.findUnique({
     where: { id: sourceMessageId },
-    select: { blocks: true, replyTo: { select: { blocks: true } } },
+    select: { blocks: true, replyTo: { select: { id: true, blocks: true } } },
   });
   const context = botMessageContext(
-    Array.isArray(source?.blocks) ? (source.blocks as MessageBlock[]) : [],
+    source ? storedMessageBlocks({ id: sourceMessageId, blocks: source.blocks }) : [],
   );
   if (!context) return undefined;
-  const replyBlocks = Array.isArray(source?.replyTo?.blocks)
-    ? (source.replyTo.blocks as MessageBlock[])
-    : [];
+  const replyBlocks = source?.replyTo ? storedMessageBlocks(source.replyTo) : [];
   const repliesToRequest =
     (context.intent === "result" || context.intent === "status" || context.intent === "fyi") &&
     replyBlocks.some(
@@ -89,10 +91,7 @@ export async function messageBot(
   const message = String(input.message ?? "").trim();
   if (!message) return { ok: false as const, error: "message is required" };
   if (message.length > BOT_MESSAGE_MAX_LENGTH) {
-    return {
-      ok: false as const,
-      error: `message exceeds the ${BOT_MESSAGE_MAX_LENGTH} character limit`,
-    };
+    return { ok: false as const, error: BOT_MESSAGE_TOO_LONG };
   }
 
   const sourceContext = await loadBotMessageContext(deps.prisma, run.sourceMessageId);
@@ -169,6 +168,8 @@ export async function messageBot(
   try {
     committed = await withTransactionRetry(() =>
       deps.prisma.$transaction(async (tx) => {
+        if (!(await spaceTakesWork(tx, run.spaceId)))
+          return { ok: false as const, error: "this Space is being deleted" };
         for (const threadId of [run.threadId, targetThreadId].sort()) {
           await tx.$queryRaw`SELECT id FROM threads WHERE id = ${threadId} FOR UPDATE`;
         }
@@ -296,7 +297,7 @@ export async function messageBot(
   } catch (error) {
     // Two concurrent retries can both miss the in-transaction lookup; the
     // loser hits the unique key. Treat that as a successful replay.
-    if (deliveryKey && isUniqueConstraintError(error)) {
+    if (deliveryKey && isUniqueViolation(error)) {
       const winner = await deps.prisma.message.findUnique({
         where: { threadId_clientNonce: { threadId: targetThreadId, clientNonce: deliveryKey } },
         select: { id: true },
@@ -314,10 +315,7 @@ export async function messageBot(
   await deps.events.notify(run.threadId, committed.senderEventSeq).catch((error) => {
     getLogger().error("bot message sender echo notification", error);
   });
-  await deps.jobs.enqueue(runContinueJob(committed.runId)).catch((error) => {
-    // The queued run is durable; the job reconciler repairs a missed wake.
-    getLogger().error("bot message enqueue", error);
-  });
+  await wakeRun(deps.jobs, committed.runId);
   return {
     ok: true as const,
     botId: target.id,
@@ -356,12 +354,12 @@ export async function returnBotMessageOutcome(
   }
   const sent = await deps.prisma.message.findMany({
     where: { threadId: run.threadId, runId: run.id },
-    select: { blocks: true },
+    select: { id: true, blocks: true },
   });
   // Only an explicit result counts as a terminal outcome. Interim message_bot
   // status updates must not suppress the automatic final return.
   const alreadyReturned = sent.some((message) =>
-    (Array.isArray(message.blocks) ? (message.blocks as MessageBlock[]) : []).some(
+    storedMessageBlocks(message).some(
       (block) =>
         block.kind === "bot_message_sent" &&
         block.toBotId === source.fromBotId &&
@@ -411,8 +409,4 @@ async function markBotOutcomeReturned(prisma: PrismaClient, runId: string) {
     },
     data: { botOutcomeReturnedAt: new Date() },
   });
-}
-
-function isUniqueConstraintError(error: unknown) {
-  return Boolean(error && typeof error === "object" && "code" in error && error.code === "P2002");
 }

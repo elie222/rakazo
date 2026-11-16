@@ -1,23 +1,23 @@
+import { useLingui } from "@lingui/react/macro";
 import type { ModelHeaderRow } from "@rakazo/contracts";
 import { serverHeadersFromRows } from "@rakazo/contracts";
 import { Stack, useRouter } from "expo-router";
-import { useEffect, useRef, useState } from "react";
+import { useContext, useEffect, useRef, useState } from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, Text, TextInput } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { HeaderRowsEditor } from "../components/header-rows-editor";
 import { NativeActionButton } from "../components/native-action-button";
 import { cancelHeaderOptions, trailingHeaderOptions } from "../components/sheet-header";
+import { currentApiBase } from "../lib/api";
+import { resetApiBase, saveApiBase } from "../lib/api-server";
+import { CallKeyboardContext } from "../lib/call-keyboard-context";
 import {
   apiBaseWarning,
-  currentApiBase,
   defaultApiBase,
   normalizeApiBase,
   probeApiBase,
-  resetApiBase,
-  saveApiBase,
   usesCustomApiBase,
-} from "../lib/api";
-import { useI18n } from "../lib/i18n";
+} from "../lib/endpoint";
 import { useMobileTokens } from "../lib/native";
 import { serverHeaders } from "../lib/server-headers";
 import { useSideInsets } from "../lib/side-insets";
@@ -25,8 +25,9 @@ import { confirmUnsentSendLoss } from "../lib/unsent-send-warning";
 import { errorText } from "../lib/user-error";
 
 export default function ServerScreen() {
+  const call = useContext(CallKeyboardContext);
   const sideInsets = useSideInsets();
-  const { t } = useI18n();
+  const { t } = useLingui();
   const tokens = useMobileTokens();
   const router = useRouter();
   const current = currentApiBase();
@@ -116,16 +117,13 @@ export default function ServerScreen() {
     <SafeAreaView edges={["bottom"]} style={{ flex: 1, backgroundColor: tokens.background }}>
       <Stack.Screen
         options={{
-          title: t("Server"),
-          ...cancelHeaderOptions(t("Cancel"), close),
-          ...trailingHeaderOptions(
-            pending ? t("Checking…") : t("Save"),
-            () => void save(),
-            pending,
-          ),
+          title: t`Server`,
+          ...cancelHeaderOptions(t`Cancel`, close),
+          ...trailingHeaderOptions(pending ? t`Checking…` : t`Save`, () => void save(), pending),
         }}
       />
       <KeyboardAvoidingView
+        enabled={!call}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         style={{ flex: 1 }}
       >
@@ -137,7 +135,7 @@ export default function ServerScreen() {
         >
           <TextInput
             testID="server-address"
-            accessibilityLabel={t("Server")}
+            accessibilityLabel={t`Server`}
             autoCapitalize="none"
             autoComplete="off"
             autoCorrect={false}
@@ -177,7 +175,7 @@ export default function ServerScreen() {
           {usesCustomApiBase(current) || draft.trim() !== current ? (
             <NativeActionButton
               disabled={pending}
-              label={t("Use default server")}
+              label={t`Use default server`}
               onPress={() => void restoreDefault()}
               prominence="plain"
               style={{ marginTop: 28, alignSelf: "center" }}

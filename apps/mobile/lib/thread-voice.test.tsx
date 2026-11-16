@@ -4,11 +4,11 @@ import { act, createElement } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { MobileBot, MobileMessage, MobileSnapshot } from "./api";
-import { blockText } from "./api";
 import type { CallState } from "./call-session";
 import { getSnapshot as getCallSnapshot, startCall } from "./call-session";
 import { loadCallGreetingEnabled } from "./call-sounds";
+import type { MobileBot, MobileMessage, MobileSnapshot } from "./mobile-types";
+import { blockText } from "./mobile-types";
 import { clearSessionToken, currentSessionGeneration, saveSessionToken } from "./session";
 import { useAutoSpeakReply, useSpeakMessages, useThreadVoiceCall } from "./thread-voice";
 import { speakQueue, speakText } from "./voice";
@@ -31,8 +31,13 @@ vi.mock("./live-notifications", () => ({ stopLiveNotifications: vi.fn(async () =
 vi.mock("./thread-feedback", () => ({ clearFailedSends: vi.fn() }));
 vi.mock("./network-cache", () => ({ clearNetworkCache: vi.fn() }));
 // Signed out, every request fails; device voice needs none of them to start the microphone.
-vi.mock("./api", () => ({
+vi.mock("./mobile-types", () => ({
   blockText: vi.fn(),
+}));
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
+vi.mock("./api", () => ({
   captureApiRequestContext: vi.fn(async () => ({
     apiBase: "https://api.example.test",
     headers: { "x-rakazo-space-id": "space-riley" },
@@ -50,7 +55,6 @@ vi.mock("./call-session", () => ({
 vi.mock("./call-sounds", () => ({ loadCallGreetingEnabled: vi.fn(async () => true) }));
 vi.mock("./device-voice", () => ({ loadDeviceVoiceEnabled: async () => true }));
 vi.mock("./dictation", () => ({ available: async () => true }));
-vi.mock("./i18n", () => ({ useI18n: () => ({ t: (text: string) => text }) }));
 vi.mock("./voice", () => ({
   speakQueue: vi.fn(async () => true),
   speakText: vi.fn(async () => true),
@@ -123,7 +127,7 @@ describe("useThreadVoiceCall hand-over", () => {
     await flush();
     expect(startCall).toHaveBeenCalledOnce();
     expect(startCall).toHaveBeenCalledWith(
-      expect.objectContaining({ botId: "riley", greeting: "Hello, {bot} here." }),
+      expect.objectContaining({ botId: "riley", greeting: "Hello, Riley here." }),
     );
   });
   it("starts an outgoing call pinned to the Space it starts in", async () => {
@@ -164,7 +168,7 @@ describe("useThreadVoiceCall hand-over", () => {
     render("riley");
     await flush();
     expect(startCall).toHaveBeenCalledWith(
-      expect.objectContaining({ botId: "riley", greeting: "Hello, {bot} here." }),
+      expect.objectContaining({ botId: "riley", greeting: "Hello, Riley here." }),
     );
   });
 

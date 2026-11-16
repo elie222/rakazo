@@ -1,11 +1,13 @@
 import { i18n } from "@lingui/core";
 import { useLingui } from "@lingui/react/macro";
+import { computerHoursOut } from "@rakazo/contracts";
 import { isModelRequiredSendError, normalizeRunError } from "@rakazo/core";
+import { translateRunError } from "@rakazo/i18n/run-error";
 import { Button } from "@rakazo/ui-web";
 import { FileIcon, X } from "lucide-react";
 import type { RefObject } from "react";
 import { useEffect, useId, useRef } from "react";
-import { translateRunError } from "../../lib/run-error";
+import { useBilling } from "../../components/SubscriptionGate";
 
 export function ComposerError({
   sendError,
@@ -16,6 +18,7 @@ export function ComposerError({
   onRunErrorPresented,
   onOpenModels,
   onOpenConnections,
+  onOpenBilling,
   onDismissError,
   textareaRef,
 }: {
@@ -28,10 +31,12 @@ export function ComposerError({
   onRunErrorPresented: (runId: string) => void;
   onOpenModels: () => void;
   onOpenConnections: () => void;
+  onOpenBilling: () => void;
   onDismissError: () => void;
   textareaRef: RefObject<HTMLTextAreaElement | null>;
 }) {
   const { t } = useLingui();
+  const billing = useBilling().status;
   const runErrorRef = useRef<HTMLDivElement>(null);
   const fileNoteId = useId();
   const presentedRunErrorIdRef = useRef<string | null>(null);
@@ -116,6 +121,15 @@ export function ComposerError({
     : null;
   // The one action that fixes the failure; a transient one already says to try again.
   const recovery = sendError ? undefined : normalizedRunError?.recovery;
+  const hoursOut = recovery === "plan" && billing ? computerHoursOut(billing) : null;
+  const hoursOutSummary =
+    hoursOut === "trial"
+      ? t`Your trial's computer hours are used up.`
+      : hoursOut === "cancelled_trial"
+        ? t`Cancelled trials have no computer hours.`
+        : hoursOut === "plan"
+          ? t`This month's computer hours are used up.`
+          : null;
   const recoveryAction =
     recovery === "model"
       ? { label: t`Choose a model`, onClick: onOpenModels }
@@ -124,7 +138,17 @@ export function ComposerError({
             label: normalizedRunError?.kind === "auth" ? t`Replace key` : t`Connect a model`,
             onClick: onOpenConnections,
           }
-        : null;
+        : hoursOut && billing?.canManage
+          ? {
+              label:
+                hoursOut === "trial"
+                  ? t`Start plan now`
+                  : hoursOut === "cancelled_trial"
+                    ? t`Renew plan`
+                    : t`Upgrade`,
+              onClick: onOpenBilling,
+            }
+          : null;
 
   const warning = Boolean(sendError) && imageConfirmation;
   return sendError || runError ? (
@@ -145,7 +169,7 @@ export function ComposerError({
             {sendError}
           </button>
         ) : (
-          (sendError ?? normalizedRunError?.summary ?? null)
+          (sendError ?? hoursOutSummary ?? normalizedRunError?.summary ?? null)
         )}
         {warning && onSendAsFile ? (
           <div className="mt-2 flex flex-wrap gap-2">

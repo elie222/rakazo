@@ -8,10 +8,12 @@ import {
   attachmentMaxCount,
   attachmentSizeLabel,
   isAttachmentAudioMimeType,
-  MCP_APP_MIME_TYPE,
+  isStepScreenshotMimeType,
+  STEP_SCREENSHOT_MIME_TYPES,
 } from "@rakazo/contracts";
 import {
   AttachmentValidationError,
+  ClientError,
   decodeAttachmentBase64,
   inferAttachmentMimeType,
   messageBlockForArtifact,
@@ -19,7 +21,13 @@ import {
   validateAttachmentMimeType,
 } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
-import { IsolationError, Prisma, withResolvedArtifactVersion } from "@rakazo/db";
+import {
+  HIDDEN_ARTIFACT_MIME_TYPES,
+  IsolationError,
+  isRecordNotFound,
+  Prisma,
+  withResolvedArtifactVersion,
+} from "@rakazo/db";
 
 export async function createOwnedArtifact(
   deps: {
@@ -67,13 +75,20 @@ export async function storeInboundAttachment(
     attachment: MessagingInboundAttachment;
     clientNonce: string;
     downloadDeadline?: number;
+    /** Stored as a file of its own, never as the next version of one with the same name. */
+    standalone?: boolean;
   },
 ): Promise<StoredInboundAttachment> {
   const replayed = await findReplayedArtifact(deps.prisma, owner, input);
   if (replayed) return createdArtifact(replayed);
   const { attachment } = input;
   const name = attachment.name.slice(0, ARTIFACT_NAME_MAX_LENGTH);
-  const mimeType = inferAttachmentMimeType(name, attachment.mimeType) ?? attachment.mimeType;
+  // Some providers (e.g. WhatsApp voice notes) report a MIME type with
+  // parameters, such as "audio/ogg; codecs=opus". Strip them before
+  // inferring/validating so the base type is matched against the allowlist.
+  const reportedType =
+    attachment.mimeType.split(";")[0]?.trim().toLowerCase() || attachment.mimeType;
+  const mimeType = inferAttachmentMimeType(name, reportedType) ?? reportedType;
   validateAttachmentMimeType(mimeType);
   const maxBytes = deps.maxUploadSizeBytes ?? ATTACHMENT_MAX_BYTES;
   const tooLarge = new AttachmentValidationError(
@@ -101,6 +116,7 @@ export async function storeInboundAttachment(
     mimeType,
     bytes,
     clientNonce: input.clientNonce,
+    standalone: input.standalone,
   });
   // The replay return above carries no bytes; callers treat them as optional.
   return { ...stored, bytes };
@@ -119,6 +135,7 @@ async function storeOwnedArtifact(
     mimeType: string;
     bytes: Uint8Array;
     clientNonce?: string;
+    standalone?: boolean;
   },
 ) {
   const { mimeType, bytes } = input;
@@ -149,8 +166,9 @@ async function storeOwnedArtifact(
           size: bytes.byteLength,
           hash,
           storageKey: stored.id,
-          rootArtifactId,
-          version,
+          ...(input.standalone
+            ? { rootArtifactId: null, version: 1, standalone: true }
+            : { rootArtifactId, version }),
           clientNonce: input.clientNonce,
         },
       });
@@ -274,6 +292,8 @@ async function readArtifact(
   },
   contextBotId: string,
 ) {
+  // A reply's kept screenshot is for the bot's own later runs, never for a person's client.
+  if (isStepScreenshotMimeType(row.mimeType)) throw new IsolationError();
   const bytes = await artifacts.get(
     row.storageKey,
     createAdapterContext(actor, contextBotId, `artifact-get:${row.id}`),
@@ -308,9 +328,9 @@ type ListSpaceRow = {
   versionCount: bigint | number;
 };
 
-export class ArtifactListCursorError extends Error {
+export class ArtifactListCursorError extends ClientError {
   constructor() {
-    super("Invalid artifact cursor");
+    super("BAD_REQUEST", "Invalid artifact cursor");
     this.name = "ArtifactListCursorError";
   }
 }
@@ -400,7 +420,7 @@ export async function listSpaceArtifacts(
     WITH scoped AS (
       SELECT * FROM "artifacts"
       WHERE "spaceId" = ${actor.spaceId} ${botFilter}
-        AND "createdAt" <= ${asOf} AND "mimeType" <> ${MCP_APP_MIME_TYPE}
+        AND "createdAt" <= ${asOf} AND "mimeType" NOT IN (${Prisma.join(HIDDEN_ARTIFACT_MIME_TYPES)})
     ),
     latest AS (
       SELECT DISTINCT ON (COALESCE("rootArtifactId", id))
@@ -456,13 +476,16 @@ export async function listSpaceArtifacts(
   };
 }
 
+const NOT_STEP_SCREENSHOT = { mimeType: { notIn: STEP_SCREENSHOT_MIME_TYPES } };
+
 export async function listArtifactVersions(
   deps: { prisma: Pick<PrismaClient, "artifact"> },
   actor: Actor,
   input: { familyId: string },
 ) {
   const anchor = await deps.prisma.artifact.findFirst({
-    where: { id: input.familyId, spaceId: actor.spaceId },
+    // A reply's kept screenshot is the bot's own, not a file a person manages.
+    where: { id: input.familyId, spaceId: actor.spaceId, ...NOT_STEP_SCREENSHOT },
     select: { id: true, rootArtifactId: true },
   });
   if (!anchor) throw new IsolationError();
@@ -491,7 +514,7 @@ export async function deleteArtifactFamily(
   input: { familyId: string },
 ) {
   const anchor = await deps.prisma.artifact.findFirst({
-    where: { id: input.familyId, spaceId: actor.spaceId },
+    where: { id: input.familyId, spaceId: actor.spaceId, ...NOT_STEP_SCREENSHOT },
     select: { id: true, rootArtifactId: true, botId: true },
   });
   if (!anchor) throw new IsolationError();
@@ -546,7 +569,7 @@ async function deleteArtifactRootIfChildless(
     try {
       await tx.artifact.delete({ where: { id: root.id } });
     } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {
+      if (isRecordNotFound(error)) {
         outcome = "gone";
         return;
       }
@@ -593,7 +616,7 @@ async function deleteArtifactRowIfPresent(
   try {
     await prisma.artifact.delete({ where: { id } });
   } catch (error) {
-    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") return;
+    if (isRecordNotFound(error)) return;
     throw error;
   }
 }

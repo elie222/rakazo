@@ -269,6 +269,25 @@ describe("sending files to another bot", () => {
     expect(mocks.handoffToGroupBot).not.toHaveBeenCalled();
   });
 
+  it("refuses an oversized message before copying any file", async () => {
+    const { ctx } = context("computer-servo");
+    for (const tool of ["message_bot", "handoff_to_bot"] as const) {
+      await expect(
+        messagingTools[tool]!(
+          ctx,
+          callWith(tool, { message: "x".repeat(8_001), files: ["site.zip"] }),
+        ),
+      ).resolves.toEqual({
+        error:
+          "message exceeds the 8000 character limit. Nothing was sent. Save long content to a file and send it with files instead of splitting it across messages.",
+      });
+    }
+    expect(mocks.readWorkspaceFile).not.toHaveBeenCalled();
+    expect(mocks.saveWorkspaceFile).not.toHaveBeenCalled();
+    expect(mocks.messageBot).not.toHaveBeenCalled();
+    expect(mocks.handoffToGroupBot).not.toHaveBeenCalled();
+  });
+
   it("refuses a message the shared file list would push over the limit", async () => {
     const { ctx } = context("computer-team");
     const list = "\n\nFiles on our shared computer:\n- bots/bot-coder/site";

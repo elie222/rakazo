@@ -1,10 +1,10 @@
+import { useLingui } from "@lingui/react/macro";
 import type { MessageBlock } from "@rakazo/contracts";
 import { typeScale } from "@rakazo/ui-tokens";
 import { useRef, useState } from "react";
 import type { ViewProps } from "react-native";
 import { Alert, Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { rpc } from "../lib/api";
-import { useI18n } from "../lib/i18n";
 import {
   choiceCardOptions,
   DISMISSED_CHOICE_ANSWER_ID,
@@ -61,7 +61,7 @@ export function ChoiceCard({
   accessibilityActions?: ViewProps["accessibilityActions"];
   onAccessibilityAction?: ViewProps["onAccessibilityAction"];
 }) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const readOnly = useThreadReadOnly();
   const tokens = useMobileTokens();
   const { width: windowWidth } = useWindowDimensions();
@@ -87,7 +87,7 @@ export function ChoiceCard({
       setLocalAnswerId(optionId);
       if (optionId === DISMISSED_CHOICE_ANSWER_ID) onDismissed?.();
     } catch (reason) {
-      Alert.alert(t("Could not complete action"), errorText(reason, t("Please try again.")));
+      Alert.alert(t`Could not complete action`, errorText(reason, t`Please try again.`));
     } finally {
       pending.current = false;
       setBusy(false);
@@ -124,7 +124,7 @@ export function ChoiceCard({
         {!readOnly && !answerId ? (
           <GlassIconButton
             testID="choice-card-dismiss"
-            accessibilityLabel={t("Dismiss")}
+            accessibilityLabel={t`Dismiss`}
             ios="xmark"
             android="close"
             size={30}

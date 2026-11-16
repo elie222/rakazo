@@ -1,4 +1,5 @@
 import type { JobPublisher } from "@rakazo/adapter-kit";
+import { flush } from "@rakazo/core/test-async";
 import type * as Db from "@rakazo/db";
 import type { PrismaClient } from "@rakazo/db";
 import { memberHasModelAccess } from "@rakazo/db";
@@ -20,6 +21,8 @@ function publisher() {
   const enqueue = vi.fn(async () => undefined);
   const jobs: JobPublisher = {
     enqueue,
+    enqueueIn: async () => undefined,
+    cancelIn: async () => undefined,
     cancel: async () => undefined,
     close: async () => undefined,
   };
@@ -212,6 +215,34 @@ describe("reconcileStrategicInitiatives", () => {
     );
   });
 
+  it("treats a bot whose only active run is a background helper as free", async () => {
+    const { prisma } = strategicPrisma({ bots: [] });
+    await reconcileStrategicInitiatives({
+      prisma,
+      jobs: publisher().jobs,
+      now: new Date(),
+      pageSize: 10,
+    });
+    expect(prisma.bot.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          runs: {
+            none: {
+              OR: expect.arrayContaining([
+                {
+                  status: {
+                    in: ["queued", "leased", "running", "waiting_input", "waiting_takeover"],
+                  },
+                  trigger: { not: "helper" },
+                },
+              ]),
+            },
+          },
+        }),
+      }),
+    );
+  });
+
   it("skips bots without a thread", async () => {
     const now = new Date("2026-11-02T12:00:00.000Z");
     const stale = new Date("2026-11-01T00:00:00.000Z");
@@ -327,8 +358,6 @@ describe("strategic initiative tool guard", () => {
     ).toEqual(["ask_user", "computer_shell"]);
   });
 });
-
-const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 const candidate = {
   id: "bot-1",
@@ -464,17 +493,17 @@ it.each(["owner", "billing"])("throttles bots skipped for %s for an hour", async
     now: () => now,
   });
   await reconcile();
-  await settle();
+  await flush();
   const calls = vi.mocked(prisma.bot.findMany).mock.calls.length;
   now = new Date(now.getTime() + 30_000);
   await reconcile();
   now = new Date("2026-11-02T12:59:59Z");
   await reconcile();
-  await settle();
+  await flush();
   expect(prisma.bot.findMany).toHaveBeenCalledTimes(calls);
   now = new Date("2026-11-02T13:00:00Z");
   await reconcile();
-  await settle();
+  await flush();
   expect(prisma.bot.findMany).toHaveBeenCalledTimes(calls * 2);
   expect(enqueue).not.toHaveBeenCalled();
   vi.mocked(memberHasModelAccess).mockReset().mockResolvedValue(true);
@@ -496,9 +525,9 @@ it("retries a failed sweep on the next pass", async () => {
   const { jobs } = publisher();
   const reconcile = createStrategicInitiativeReconciler({ prisma, jobs, billingEnabled: false });
   await reconcile();
-  await settle();
+  await flush();
   await reconcile();
-  await settle();
+  await flush();
   expect(prisma.bot.findMany).toHaveBeenCalledTimes(2);
 });
 
@@ -510,7 +539,7 @@ it("reads the worker model-credit billing flag from deployment settings", async 
   vi.mocked(memberHasModelAccess).mockResolvedValueOnce(false);
   const { jobs, enqueue } = publisher();
   await createStrategicInitiativeReconciler({ prisma, jobs })();
-  await settle();
+  await flush();
   expect(prisma.deploymentSettings.findUnique).toHaveBeenCalledWith({
     where: { id: "default" },
     select: { modelCreditsEnabled: true },

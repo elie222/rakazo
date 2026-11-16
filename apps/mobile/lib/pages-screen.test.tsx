@@ -86,12 +86,6 @@ vi.mock("../components/native-action-button", () => ({
 }));
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
 vi.mock("./activity", () => ({ formatActivityRelativeTime: () => "now" }));
-vi.mock("./i18n", () => ({
-  useI18n: () => ({
-    t: (text: string, values?: Record<string, string>) =>
-      text.replace(/\{(\w+)\}/g, (_, key: string) => values?.[key] ?? key),
-  }),
-}));
 vi.mock("./native", () => ({
   native: {},
   useMobileTokens: () => ({}),
@@ -99,6 +93,9 @@ vi.mock("./native", () => ({
 }));
 vi.mock("./session", () => ({ registerSessionDiskCache: () => undefined }));
 vi.mock("./page-runtime", () => ({ loadPageRuntime: async () => "" }));
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   rpc: vi.fn(async (proc: string, input: Record<string, string>) => {
     const page = host.server.find((each) => each.id === input.pageId);

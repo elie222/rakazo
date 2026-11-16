@@ -3,8 +3,9 @@ import type { AdapterContext, ConnectorEvent } from "@rakazo/adapter-kit";
 import { ConnectorAuthUnavailableError } from "@rakazo/adapter-kit";
 import { CONNECTOR_AUTH_UNAVAILABLE } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
-import { ComposioConnector, createConnectorStack } from "./composio-connector.js";
+import { ComposioConnector } from "./composio-connector.js";
 import { FakeComposioClient } from "./composio-fake.js";
+import { createConnectorStack } from "./connector-registry.js";
 
 const USER = "user-1";
 
@@ -70,6 +71,42 @@ describe("ComposioConnector over the fake Composio client", () => {
     await expect(connector.catalog(context())).resolves.toHaveLength(6);
     await expect(connector.catalog(context(), "git")).resolves.toEqual([
       expect.objectContaining({ slug: "GITHUB", name: "GitHub", connected: false }),
+    ]);
+  });
+
+  it("hides apps nobody can sign in to until the project sets up their auth", async () => {
+    const fake = new FakeComposioClient([
+      { slug: "GMAIL", name: "Gmail", logo: null, noAuth: false },
+      { slug: "SHOPIFY", name: "Shopify", logo: null, noAuth: false, needsSignInSetup: true },
+    ]);
+    const hidden = new ComposioConnector({ client: fake });
+    await expect(hidden.catalog(context())).resolves.toEqual([
+      expect.objectContaining({ slug: "GMAIL" }),
+    ]);
+    await expect(connect(hidden, "SHOPIFY")).rejects.toBeInstanceOf(ConnectorAuthUnavailableError);
+
+    fake.authConfigs.list = async () => ({
+      items: [{ toolkit: { slug: "shopify" }, status: "ENABLED" }],
+      nextCursor: null,
+    });
+    await expect(new ComposioConnector({ client: fake }).catalog(context())).resolves.toEqual([
+      expect.objectContaining({ slug: "GMAIL" }),
+      expect.objectContaining({ slug: "SHOPIFY" }),
+    ]);
+    await expect(connect(new ComposioConnector({ client: fake }), "SHOPIFY")).resolves.toMatch(
+      /^ca_/,
+    );
+  });
+
+  it("lists every app when the sign-in lookup fails", async () => {
+    const fake = new FakeComposioClient([
+      { slug: "SHOPIFY", name: "Shopify", logo: null, noAuth: false, needsSignInSetup: true },
+    ]);
+    fake.authConfigs.list = async () => {
+      throw new Error("auth configs unavailable");
+    };
+    await expect(new ComposioConnector({ client: fake }).catalog(context())).resolves.toEqual([
+      expect.objectContaining({ slug: "SHOPIFY" }),
     ]);
   });
 

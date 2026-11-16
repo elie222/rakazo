@@ -1,46 +1,89 @@
+import { useLingui } from "@lingui/react/macro";
 import { GROUP_MEMBER_MAX, GROUP_MEMBER_MIN, GROUP_NAME_MAX_LENGTH } from "@rakazo/contracts";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useState } from "react";
+import { useContext, useEffect, useRef, useState } from "react";
 import { ScrollView, Text, TextInput } from "react-native";
 import { BotMemberPicker } from "../components/bot-member-picker";
 import { glassHeaderOptions } from "../components/glass-title";
 import { NativeActionButton } from "../components/native-action-button";
-import type { MobileBot, MobileGroup } from "../lib/api";
-import { rpc } from "../lib/api";
-import { notifyArchivedChatsChanged } from "../lib/archived-chats";
+import { rpc, selectedSpaceId } from "../lib/api";
+import { notifyArchivedChatsChanged, onArchivedChatsChanged } from "../lib/archived-chats";
 import { confirmDeleteGroup } from "../lib/bot-lifecycle";
-import { useI18n } from "../lib/i18n";
+import { CallKeyboardContext } from "../lib/call-keyboard-context";
+import type { MobileBot, MobileGroup } from "../lib/mobile-types";
 import { native, useMobileTokens } from "../lib/native";
 import { useSideInsets } from "../lib/side-insets";
 import { errorText } from "../lib/user-error";
 
 export default function GroupSettingsScreen() {
+  const rootAvoidsKeyboard = useContext(CallKeyboardContext);
   const sideInsets = useSideInsets();
-  const { t } = useI18n();
+  const { t } = useLingui();
   const tokens = useMobileTokens();
   const router = useRouter();
   const { groupId } = useLocalSearchParams<{ groupId: string }>();
   const [group, setGroup] = useState<MobileGroup | null>(null);
   const [bots, setBots] = useState<MobileBot[]>([]);
   const [name, setName] = useState("");
+  const deselected = useRef(new Set<string>());
   const [selected, setSelected] = useState<string[]>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
   useEffect(() => {
     if (!groupId) return;
-    void Promise.all([
-      rpc("groups/list").then((groups) => groups.find((row) => row.id === groupId) ?? null),
-      rpc("bots/list"),
-    ])
-      .then(([nextGroup, nextBots]) => {
-        if (!nextGroup) throw new Error(t("Group not found"));
+    deselected.current.clear();
+    const spaceId = selectedSpaceId();
+    let generation = 0;
+    let baseline: MobileGroup | null = null;
+    async function load() {
+      if (selectedSpaceId() !== spaceId) return;
+      const request = ++generation;
+      try {
+        const [groups, nextBots] = await Promise.all([rpc("groups/list"), rpc("bots/list")]);
+        if (request !== generation || selectedSpaceId() !== spaceId) return;
+        const nextGroup = groups.find((row) => row.id === groupId);
+        if (!nextGroup) throw new Error(t`Group not found`);
+        const ids = new Set([
+          ...nextBots.map((bot) => bot.id),
+          ...nextGroup.members.map((member) => member.botId),
+        ]);
+        const previousMembers = new Set(baseline?.members.map((member) => member.botId));
+        const initial = baseline === null;
+        const previousName = baseline?.name;
+        baseline = nextGroup;
+        setLoadError(null);
         setGroup(nextGroup);
-        setName(nextGroup.name);
-        setSelected(nextGroup.members.map((member) => member.botId));
+        setName((previous) => (initial || previous === previousName ? nextGroup.name : previous));
+        setSelected((previous) =>
+          initial
+            ? nextGroup.members.map((member) => member.botId)
+            : [
+                ...new Set([
+                  ...nextGroup.members
+                    .filter(
+                      (member) =>
+                        !deselected.current.has(member.botId) &&
+                        (!previousMembers.has(member.botId) || previous.includes(member.botId)),
+                    )
+                    .map((member) => member.botId),
+                  ...previous.filter((id) => !previousMembers.has(id) && ids.has(id)),
+                ]),
+              ],
+        );
         setBots(nextBots.filter((bot) => !bot.archivedAt));
-      })
-      .catch((err) => setError(errorText(err, t("Could not load group"))));
+      } catch (err) {
+        if (request === generation && selectedSpaceId() === spaceId)
+          setLoadError(errorText(err, t`Could not load group`));
+      }
+    }
+    void load();
+    const unsubscribe = onArchivedChatsChanged(() => void load());
+    return () => {
+      generation++;
+      unsubscribe();
+    };
   }, [groupId]);
 
   async function save() {
@@ -48,14 +91,22 @@ export default function GroupSettingsScreen() {
     setPending(true);
     setError(null);
     try {
-      const input: { groupId: string; name?: string; botIds?: string[] } = { groupId };
+      const input: {
+        groupId: string;
+        name?: string;
+        botIds?: string[];
+        expectedBotIds?: string[];
+      } = { groupId };
       if (name.trim() !== group.name) input.name = name.trim();
       const memberIds = group.members.map((member) => member.botId).join(",");
-      if (selected.join(",") !== memberIds) input.botIds = selected;
+      if (selected.join(",") !== memberIds) {
+        input.botIds = selected;
+        input.expectedBotIds = group.members.map((member) => member.botId);
+      }
       if (input.name || input.botIds) await rpc("groups/update", input);
       router.back();
     } catch (err) {
-      setError(errorText(err, t("Could not save group")));
+      setError(errorText(err, t`Could not save group`));
     } finally {
       setPending(false);
     }
@@ -71,21 +122,21 @@ export default function GroupSettingsScreen() {
 
   return (
     <>
-      <Stack.Screen options={glassHeaderOptions(t("Group settings"))} />
+      <Stack.Screen options={glassHeaderOptions(t`Group settings`)} />
       <ScrollView
         style={[{ flex: 1, backgroundColor: tokens.background }, sideInsets]}
         contentContainerStyle={{ padding: 24 }}
-        automaticallyAdjustKeyboardInsets
+        automaticallyAdjustKeyboardInsets={!rootAvoidsKeyboard}
         contentInsetAdjustmentBehavior="automatic"
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
       >
-        <Text style={{ color: tokens.mutedForeground, fontSize: 14 }}>{t("Name")}</Text>
+        <Text style={{ color: tokens.mutedForeground, fontSize: 14 }}>{t`Name`}</Text>
         <TextInput
           value={name}
           onChangeText={setName}
           maxLength={GROUP_NAME_MAX_LENGTH}
-          placeholder={t("Group name")}
+          placeholder={t`Group name`}
           placeholderTextColor={tokens.mutedForeground}
           returnKeyType="done"
           style={{
@@ -102,14 +153,22 @@ export default function GroupSettingsScreen() {
             key={group.id}
             bots={bots}
             selected={selected}
-            onChange={setSelected}
+            onChange={(next) => {
+              for (const id of selected) {
+                if (!next.includes(id)) deselected.current.add(id);
+              }
+              for (const id of next) deselected.current.delete(id);
+              setSelected(next);
+            }}
             onOpenBot={(bot) =>
               router.push({ pathname: "/bot-profile", params: { botId: bot.id, name: bot.name } })
             }
             disabled={pending}
           />
         ) : null}
-        {error ? <Text style={{ color: tokens.destructive, marginTop: 12 }}>{error}</Text> : null}
+        {error || loadError ? (
+          <Text style={{ color: tokens.destructive, marginTop: 12 }}>{error ?? loadError}</Text>
+        ) : null}
         <NativeActionButton
           disabled={
             !name.trim() ||
@@ -117,19 +176,19 @@ export default function GroupSettingsScreen() {
             selected.length > GROUP_MEMBER_MAX ||
             pending
           }
-          label={pending ? t("Saving…") : t("Save")}
+          label={pending ? t`Saving…` : t`Save`}
           onPress={() => void save()}
           style={{ marginTop: 24 }}
         />
         {groupId ? (
           <NativeActionButton
-            label={t("Pages")}
+            label={t`Pages`}
             onPress={() => router.push({ pathname: "/pages", params: { groupId } })}
             style={{ marginTop: 16 }}
           />
         ) : null}
         <NativeActionButton
-          label={t("Delete group")}
+          label={t`Delete group`}
           onPress={remove}
           prominence="destructive"
           style={{ marginTop: 16 }}

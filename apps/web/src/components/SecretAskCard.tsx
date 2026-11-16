@@ -7,6 +7,7 @@ import {
   normalizeOneTimeCode,
   vaultKind,
 } from "@rakazo/contracts";
+import { secretAnswerErrorText } from "@rakazo/i18n/vault";
 import { Button, Input } from "@rakazo/ui-web";
 import { Check } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -102,9 +103,9 @@ export function SecretAskCard({ block, canAnswer, canDismiss, onAnswer, onDismis
     if (submitting || answer.length === 0) return;
     try {
       await send(answer);
-    } catch {
-      // A secret answer's failure may echo the secret, so never show its message.
-      setError(t`Could not submit this answer`);
+    } catch (err) {
+      // A secret answer's failure may echo the secret, so only a known fixed message shows.
+      setError(secretAnswerErrorText(err, t`Could not submit this answer`));
     }
   }
 
@@ -166,7 +167,7 @@ export function SecretAskCard({ block, canAnswer, canDismiss, onAnswer, onDismis
             : undefined,
         onDismiss: canDismiss ? dismiss : undefined,
         onSave: saveForm,
-        failureText: () => t`Could not submit this answer`,
+        failureText: (err: unknown) => secretAnswerErrorText(err, t`Could not submit this answer`),
       }
     : undefined;
 
@@ -176,6 +177,7 @@ export function SecretAskCard({ block, canAnswer, canDismiss, onAnswer, onDismis
         <VaultTile
           kind={block.credential ? vaultKind(block.credential.auth.type) : null}
           title={form === "login" && block.credential ? siteHost(block.credential.origin) : ""}
+          origin={form === "login" ? block.credential?.origin : undefined}
         />
         <div className="min-w-0 flex-1">
           <div className="text-body-lg font-medium leading-[1.4] text-foreground">

@@ -15,7 +15,7 @@ const starsLabel = await githubStarsLabel();
     <Header starsLabel={starsLabel} />
     <main id="main" class="privacy-copy">
       <h1>Privacy</h1>
-      <p><strong>Last updated: September 14, 2026</strong></p>
+      <p><strong>Last updated: November 13, 2026</strong></p>
       <p>
         This policy explains how Inbox Zero Inc. (“Inbox Zero,” “we,” or “us”) handles personal information
         when you use the Rakazo mobile app, a Rakazo service that we host, or rakazo.com. A third party that
@@ -38,6 +38,11 @@ const starsLabel = await githubStarsLabel();
           Technical information needed to operate and secure the service, such as IP address, user agent,
           session records, device push token, timestamps, and diagnostic information.
         </li>
+        <li>
+          A cookie shared across our marketing site and app stores campaign tags and the referring
+          domain for up to 30 days. At signup, we save this information and your signup platform with
+          your account and include it in pseudonymous product analytics.
+        </li>
       </ul>
 
       <h2>How we use information</h2>
@@ -47,6 +52,7 @@ const starsLabel = await githubStarsLabel();
         <li>Authenticate you and synchronize your account across supported clients.</li>
         <li>Run the bots, routines, connections, and notifications you request.</li>
         <li>Respond to support requests and comply with legal obligations.</li>
+        <li>Understand how people find Rakazo and which platforms they use to sign up.</li>
       </ul>
 
       <h2>Service providers and AI processing</h2>
@@ -78,12 +84,13 @@ const starsLabel = await githubStarsLabel();
         <li>
           <strong>Voice:</strong> recorded audio is sent to your selected transcription service;
           text you choose to play, including bot responses, is sent for speech generation. Supported
-          voice services include OpenAI, ElevenLabs, Cartesia, and Fish Audio. Microphone access
-          and permission to share with an AI service are separate choices.
+          voice services include OpenAI, ElevenLabs, Cartesia, Fish Audio, and xAI. Microphone
+          access and permission to share with an AI service are separate choices.
         </li>
         <li>
-          <strong>Memory:</strong> when Supermemory is configured, conversation summaries, saved
-          memories, search queries, and bot and Space identifiers are sent to store and retrieve context. Self-hosted memory
+          <strong>Memory:</strong> when Supermemory or Hindsight Cloud is configured, conversations,
+          names of conversation participants and bots, saved memories, search queries,
+          and bot and Space identifiers are sent to store and retrieve context. Self-hosted memory
           is processed by the server shown in your permission screen.
         </li>
       </ul>
@@ -110,8 +117,10 @@ const starsLabel = await githubStarsLabel();
         <a href="https://cursor.com/privacy">Cursor</a>,
         <a href="https://elevenlabs.io/privacy-policy">ElevenLabs</a>,
         <a href="https://cartesia.ai/legal/privacy">Cartesia</a>,
-        <a href="https://fish.audio/privacy/">Fish Audio</a>, and
-        <a href="https://supermemory.ai/privacy">Supermemory</a>.
+        <a href="https://fish.audio/privacy/">Fish Audio</a>,
+        <a href="https://x.ai/legal/privacy-policy">xAI</a>,
+        <a href="https://supermemory.ai/privacy">Supermemory</a>, and
+        <a href="https://vectorize.io/privacy">Hindsight</a>.
       </p>
       <p>
         Other services may host infrastructure, run sandboxes, deliver notifications, store data,

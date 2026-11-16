@@ -1,12 +1,18 @@
 import * as z from "zod";
 import { AgentImportStatusSchema } from "./agent-import-setup.js";
 import { BotAvatarSetSchema, BotAvatarValueSchema } from "./bot-avatar.js";
-import { BOT_DESCRIPTION_MAX_LENGTH, BOT_NAME_MAX_LENGTH, ComputerModeSchema } from "./domain.js";
+import { BOT_TEMPLATE_IMPORT_KEY_PREFIX } from "./bot-template.js";
+import { ComputerModeSchema } from "./computer.js";
+import { BOT_DESCRIPTION_MAX_LENGTH, BOT_NAME_MAX_LENGTH } from "./domain.js";
 
 export const AGENT_IMPORT_MAX_FILES = 500;
 export const AGENT_IMPORT_MAX_FILE_LENGTH = 100_000;
 export const AGENT_IMPORT_MAX_TOTAL_LENGTH = 4_000_000;
 export const AGENT_IMPORT_MAX_PATH_LENGTH = 300;
+/** The one path a Grok Bot import sends: the chosen Bot's export, rewritten as JSON. */
+export const GROK_BOT_EXPORT_PATH = "grok-bot-export.json";
+/** A Bot with many full-text skills writes more than one Markdown file may hold. */
+export const GROK_BOT_EXPORT_MAX_LENGTH = 1_000_000;
 
 /** The only non-Markdown files an import may send, optionally under the chosen folder's name. */
 const AGENT_IMPORT_CONFIG_PATH =
@@ -14,20 +20,34 @@ const AGENT_IMPORT_CONFIG_PATH =
 
 /** A relative Markdown or settings path: no absolute paths, no `..`, no empty segments. */
 export function isAgentImportPath(path: string): boolean {
+  if (path === GROK_BOT_EXPORT_PATH) return true;
   if (!path.toLowerCase().endsWith(".md") && !AGENT_IMPORT_CONFIG_PATH.test(path)) return false;
   if (path.startsWith("/") || path.includes("\\") || path.includes("\0")) return false;
   if (/^[A-Za-z]:/.test(path)) return false;
   return path.split("/").every((segment) => segment !== "" && segment !== "." && segment !== "..");
 }
 
-export const AgentImportFileSchema = z.strictObject({
-  path: z
-    .string()
-    .min(1)
-    .max(AGENT_IMPORT_MAX_PATH_LENGTH)
-    .refine(isAgentImportPath, "Only relative Markdown and agent settings files can be imported."),
-  content: z.string().max(AGENT_IMPORT_MAX_FILE_LENGTH),
-});
+export const AgentImportFileSchema = z
+  .strictObject({
+    path: z
+      .string()
+      .min(1)
+      .max(AGENT_IMPORT_MAX_PATH_LENGTH)
+      .refine(
+        isAgentImportPath,
+        "Only relative Markdown and agent settings files can be imported.",
+      ),
+    content: z.string().max(GROK_BOT_EXPORT_MAX_LENGTH),
+  })
+  .superRefine((file, ctx) => {
+    if (file.path !== GROK_BOT_EXPORT_PATH && file.content.length > AGENT_IMPORT_MAX_FILE_LENGTH) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["content"],
+        message: "The file is too large to import.",
+      });
+    }
+  });
 export type AgentImportFile = z.infer<typeof AgentImportFileSchema>;
 
 export const AgentImportFilesSchema = z
@@ -44,7 +64,13 @@ export const AgentImportFilesSchema = z
     }
   });
 
-export const AgentImportSourceSchema = z.enum(["openclaw", "hermes", "document"]);
+export const AgentImportSourceSchema = z.enum([
+  "openclaw",
+  "hermes",
+  "document",
+  "template",
+  "grok_bot",
+]);
 export type AgentImportSource = z.infer<typeof AgentImportSourceSchema>;
 
 /**
@@ -67,7 +93,6 @@ const warnings = z.array(AgentImportWarningSchema).default([]);
 const status = AgentImportStatusSchema.default({ kind: "ready" });
 
 export const AgentImportInstructionRoleSchema = z.enum(["persona", "working"]);
-export type AgentImportInstructionRole = z.infer<typeof AgentImportInstructionRoleSchema>;
 
 /** Unchanged from the template the source writes for a new agent. */
 const stock = z.boolean().default(false);
@@ -125,7 +150,6 @@ export const AgentImportModelSchema = z.object({
   /** `ready`: a connection exists; `needs_key`: only with this provider's key; `unknown`: not offered. */
   status: z.enum(["ready", "needs_key", "unknown"]),
 });
-export type AgentImportModel = z.infer<typeof AgentImportModelSchema>;
 
 export const AgentImportMcpServerSchema = z.object({
   id: z.string(),
@@ -138,7 +162,6 @@ export const AgentImportMcpServerSchema = z.object({
   warnings,
   status,
 });
-export type AgentImportMcpServer = z.infer<typeof AgentImportMcpServerSchema>;
 
 export const AgentImportRoutineSchema = z.object({
   id: z.string(),
@@ -148,7 +171,6 @@ export const AgentImportRoutineSchema = z.object({
   warnings,
   status,
 });
-export type AgentImportRoutine = z.infer<typeof AgentImportRoutineSchema>;
 
 export const AgentImportApiKeySchema = z.object({
   id: z.string(),
@@ -156,7 +178,6 @@ export const AgentImportApiKeySchema = z.object({
   title: z.string(),
   provider: z.string(),
 });
-export type AgentImportApiKey = z.infer<typeof AgentImportApiKeySchema>;
 
 export const AgentImportSkipReasonSchema = z.enum([
   "runtime",
@@ -167,6 +188,8 @@ export const AgentImportSkipReasonSchema = z.enum([
   "invalid_file",
   /** An unchanged default the source wrote when the agent was created. */
   "default",
+  /** A connected app with no server address to carry over: connect it again here. */
+  "reconnect",
 ]);
 export type AgentImportSkipReason = z.infer<typeof AgentImportSkipReasonSchema>;
 
@@ -205,7 +228,6 @@ export const AgentImportSelectionSchema = z.strictObject({
   routines: selectedIds.max(AGENT_IMPORT_MAX_FILES).default([]),
   apiKeys: selectedIds.max(AGENT_IMPORT_MAX_FILES).default([]),
 });
-export type AgentImportSelection = z.infer<typeof AgentImportSelectionSchema>;
 
 /** API keys and credential values are read only when the user opted in. */
 const includeSecrets = z.boolean().default(false);
@@ -227,13 +249,22 @@ export const AgentImportPreviewInput = z.strictObject({
 
 export const AgentImportCreateInput = z.strictObject({
   /** Chosen by the client once per import, so a retried create returns the same bot. */
-  importKey: z.string().trim().min(8).max(100).optional(),
+  importKey: z
+    .string()
+    .trim()
+    .min(8)
+    .max(100)
+    .refine(
+      (key) => !key.startsWith(BOT_TEMPLATE_IMPORT_KEY_PREFIX),
+      "That import key is reserved.",
+    )
+    .optional(),
   files: AgentImportFilesSchema,
   includeSecrets,
   skillFiles,
   name: z.string().trim().min(1).max(BOT_NAME_MAX_LENGTH),
   description: z.string().trim().max(BOT_DESCRIPTION_MAX_LENGTH).default(""),
-  computerMode: ComputerModeSchema.default("team"),
+  computerMode: ComputerModeSchema.optional(),
   /** Portable appearance when supplied by an exported profile; without it, the owner's set applies. */
   color: BotAvatarValueSchema.optional(),
   avatarSet: BotAvatarSetSchema.optional(),

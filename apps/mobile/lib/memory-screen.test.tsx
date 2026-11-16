@@ -1,10 +1,12 @@
 // @vitest-environment jsdom
+import { deferred, flush } from "@rakazo/core/test-async";
 import type { ReactNode } from "react";
 import { act, useEffect } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import MemoryScreen from "../app/(settings)/memory";
+import { queryClient } from "./query";
 
 const mocks = vi.hoisted(() => ({
   push: vi.fn(),
@@ -17,8 +19,16 @@ vi.mock("./native", () => ({
   native: {},
   useThemedStyles: (create: () => unknown) => create(),
 }));
-vi.mock("./i18n", () => ({ t: mocks.t, useI18n: () => ({ t: mocks.t }) }));
-vi.mock("./api", () => ({ rpc: mocks.rpc }));
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
+vi.mock("./api", () => ({
+  currentApiBase: () => "https://app.example.test",
+  selectedSpaceId: () => "space-fixture",
+  captureApiRequestContext: async () => ({ apiBase: "https://app.example.test", headers: {} }),
+  rpc: (method: string, input: unknown) => mocks.rpc(method, input),
+}));
+vi.mock("./session", () => ({ currentSessionGeneration: () => 1 }));
 vi.mock("expo-router", () => ({
   useRouter: () => ({ push: mocks.push }),
   useFocusEffect: (effect: () => (() => void) | undefined) => useEffect(effect, [effect]),
@@ -70,6 +80,7 @@ let container: HTMLDivElement;
 let root: Root;
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  queryClient.clear();
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
@@ -81,9 +92,12 @@ afterEach(async () => {
   vi.clearAllMocks();
 });
 
+async function settle() {
+  await act(flush);
+}
 async function render() {
   await act(async () => root.render(<MemoryScreen />));
-  await act(async () => undefined);
+  await settle();
 }
 
 it("lists the space's shared notes and opens one in the editor", async () => {
@@ -106,20 +120,25 @@ it("says when nothing is remembered, and retries a failed load", async () => {
   expect(container.textContent).toContain("offline");
   const retry = [...container.querySelectorAll("button")].find((b) => b.textContent === "Retry");
   await act(async () => retry?.click());
+  await settle();
   expect(container.textContent).toContain("Nothing remembered yet");
   expect(container.textContent).not.toContain("offline");
 });
 
 it("keeps the newest list when an earlier load finishes last", async () => {
-  let finishFirst!: (docs: unknown[]) => void;
+  const finishFirst = deferred<unknown[]>();
   mocks.rpc
-    .mockReturnValueOnce(new Promise((resolve) => (finishFirst = resolve)))
+    .mockResolvedValueOnce([{ id: "old", path: "deleted.md" }])
+    .mockReturnValueOnce(finishFirst.promise)
     .mockResolvedValueOnce([]);
   await render();
-  await act(async () =>
-    container.querySelector<HTMLButtonElement>('[aria-label="Refresh"]')?.click(),
-  );
+  const refresh = () =>
+    container.querySelector<HTMLButtonElement>('[aria-label="Refresh"]')?.click();
+  await act(async () => refresh());
+  await act(async () => refresh());
+  await settle();
   expect(container.textContent).toContain("Nothing remembered yet");
-  await act(async () => finishFirst([{ id: "old", path: "deleted.md" }]));
+  await act(async () => finishFirst.resolve([{ id: "old", path: "deleted.md" }]));
+  await settle();
   expect(container.textContent).not.toContain("deleted.md");
 });

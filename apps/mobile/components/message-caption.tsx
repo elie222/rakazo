@@ -2,12 +2,12 @@ import { ChatMarkdown, LinkifiedText } from "@rakazo/chat-ui/native";
 import { splitMentionText } from "@rakazo/core";
 import type { ColorTokens, ResolvedAppearance } from "@rakazo/ui-tokens";
 import { useContext } from "react";
-import type { MobileMessage } from "../lib/api";
 import {
   MessageMentionsContext,
   OpenPageContext,
   UserMentionsContext,
 } from "../lib/message-mentions";
+import type { MobileMessage } from "../lib/mobile-types";
 import { UserMention } from "./user-mention";
 
 export function MessageCaption({

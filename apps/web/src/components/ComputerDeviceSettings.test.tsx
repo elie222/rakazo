@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+import { i18n } from "@lingui/core";
+import { I18nProvider } from "@lingui/react";
 import type { RakazoDesktop } from "@rakazo/contracts";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
@@ -44,8 +46,19 @@ vi.mock("../lib/rpc", () => ({ rpc: { me: vi.fn() } }));
 
 let host: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
+const initialDocument = window.location.href;
+
+function pointDocumentAt(url: string) {
+  const dom = (globalThis as { jsdom?: { reconfigure: (settings: { url: string }) => void } })
+    .jsdom;
+  if (!dom) throw new Error("Expected the jsdom environment");
+  dom.reconfigure({ url });
+}
 
 beforeEach(() => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  i18n.load("en", {});
+  i18n.activate("en");
   vi.clearAllMocks();
   host = document.createElement("div");
   document.body.append(host);
@@ -56,6 +69,8 @@ afterEach(async () => {
   await act(async () => root.unmount());
   host.remove();
   delete window.rakazoDesktop;
+  if (window.location.href !== initialDocument) pointDocumentAt(initialDocument);
+  vi.unstubAllGlobals();
 });
 
 const laptop = { deviceId: "d1", name: "Laptop", connected: true };
@@ -65,16 +80,27 @@ function desktopWith(device: NonNullable<RakazoDesktop["device"]>) {
   window.rakazoDesktop = { platform: "darwin", device } as RakazoDesktop;
 }
 
+/** The web build compiles macros onto the real hook, which throws without this provider. */
+function renderSettings() {
+  return act(async () =>
+    root.render(
+      <I18nProvider i18n={i18n}>
+        <ComputerDeviceSettings />
+      </I18nProvider>,
+    ),
+  );
+}
+
 it("stays hidden without any computer", async () => {
   vi.mocked(listUserDevices).mockResolvedValue([]);
-  await act(async () => root.render(<ComputerDeviceSettings />));
+  await renderSettings();
   expect(host.innerHTML).toBe("");
 });
 
 it("lists computers with their status and removes one", async () => {
   vi.mocked(listUserDevices).mockResolvedValueOnce([laptop, desk]).mockResolvedValueOnce([laptop]);
   vi.mocked(removeUserDevice).mockResolvedValue();
-  await act(async () => root.render(<ComputerDeviceSettings />));
+  await renderSettings();
   expect(host.textContent).toContain("LaptopConnected");
   expect(host.textContent).toContain("Desk PCOffline");
   expect(host.querySelector("input")).toBeNull();
@@ -97,7 +123,7 @@ it("turns this computer on and off through the desktop app only", async () => {
     }),
   };
   desktopWith(device);
-  await act(async () => root.render(<ComputerDeviceSettings />));
+  await renderSettings();
   const toggle = host.querySelector<HTMLInputElement>('[data-testid="this-computer-toggle"]')!;
   expect(host.textContent).toContain("Let bots use this computer");
   expect(toggle.checked).toBe(false);
@@ -112,7 +138,7 @@ it("turns this computer on and off through the desktop app only", async () => {
 it("reports a failed removal", async () => {
   vi.mocked(listUserDevices).mockResolvedValue([laptop]);
   vi.mocked(removeUserDevice).mockRejectedValue(new Error("offline"));
-  await act(async () => root.render(<ComputerDeviceSettings />));
+  await renderSettings();
   await act(async () =>
     host.querySelector<HTMLButtonElement>('[aria-label="Remove Laptop"]')?.click(),
   );
@@ -121,7 +147,7 @@ it("reports a failed removal", async () => {
 
 it("shows every connected computer as connected", async () => {
   vi.mocked(listUserDevices).mockResolvedValue([laptop, { ...desk, connected: true }]);
-  await act(async () => root.render(<ComputerDeviceSettings />));
+  await renderSettings();
   expect(host.textContent).toContain("LaptopConnected");
   expect(host.textContent).toContain("Desk PCConnected");
 });
@@ -135,7 +161,7 @@ it("stays off and reports it when turning this computer on fails", async () => {
     }),
   };
   desktopWith(device);
-  await act(async () => root.render(<ComputerDeviceSettings />));
+  await renderSettings();
   const toggle = host.querySelector<HTMLInputElement>('[data-testid="this-computer-toggle"]')!;
   await act(async () => toggle.click());
   expect(device.setAllowed).toHaveBeenCalledWith(true);
@@ -163,7 +189,7 @@ it("turns this computer on and off for the app-managed local server", async () =
     computer,
     device: { state: async () => null, setAllowed: vi.fn() },
   } as unknown as RakazoDesktop;
-  await act(async () => root.render(<ComputerDeviceSettings />));
+  await renderSettings();
   const toggle = host.querySelector<HTMLInputElement>('[data-testid="this-computer-toggle"]')!;
   expect(toggle.checked).toBe(false);
 
@@ -187,7 +213,7 @@ it("stays hidden on a server that does not run bots on this computer", async () 
     computer: { managesHostChoice: true },
     device: { state: async () => null },
   } as unknown as RakazoDesktop;
-  await act(async () => root.render(<ComputerDeviceSettings />));
+  await renderSettings();
   expect(host.innerHTML).toBe("");
 });
 
@@ -211,11 +237,42 @@ it("keeps the local switch when a later profile read fails", async () => {
     computer,
     device: { state: async () => null, setAllowed: vi.fn() },
   } as unknown as RakazoDesktop;
-  await act(async () => root.render(<ComputerDeviceSettings />));
+  await renderSettings();
   await act(async () =>
     host.querySelector<HTMLInputElement>('[data-testid="this-computer-toggle"]')!.click(),
   );
   const toggle = host.querySelector<HTMLInputElement>('[data-testid="this-computer-toggle"]');
   expect(toggle?.checked).toBe(true);
   expect(host.querySelector('[role="alert"]')?.textContent).toBe("Could not change");
+});
+
+it("explains that plain HTTP does not pair this computer", async () => {
+  pointDocumentAt("http://192.168.1.20:5173/");
+  vi.mocked(listUserDevices).mockResolvedValue([]);
+  const setAllowed = vi.fn();
+  desktopWith({ state: async () => null, setAllowed });
+  await renderSettings();
+  expect(host.querySelector('[data-testid="computer-devices"]')).not.toBeNull();
+  expect(host.textContent).toContain("Plain HTTP does not pair");
+  expect(host.querySelector('[data-testid="this-computer-toggle"]')).toBeNull();
+  expect(setAllowed).not.toHaveBeenCalled();
+});
+
+it("explains plain HTTP next to another computer without a switch", async () => {
+  pointDocumentAt("http://192.168.1.20:5173/");
+  vi.mocked(listUserDevices).mockResolvedValue([laptop]);
+  const setAllowed = vi.fn();
+  desktopWith({ state: async () => null, setAllowed });
+  await renderSettings();
+  expect(host.textContent).toContain("Plain HTTP does not pair");
+  expect(host.textContent).toContain("LaptopConnected");
+  expect(host.querySelector('[data-testid="this-computer-toggle"]')).toBeNull();
+  expect(setAllowed).not.toHaveBeenCalled();
+});
+
+it("stays hidden in a browser on plain HTTP", async () => {
+  pointDocumentAt("http://192.168.1.20:5173/");
+  vi.mocked(listUserDevices).mockResolvedValue([]);
+  await renderSettings();
+  expect(host.innerHTML).toBe("");
 });

@@ -1,17 +1,24 @@
 // @vitest-environment jsdom
 
 import * as core from "@rakazo/core";
-import { AiConsentBlocked, MODEL_REQUIRED_SEND_ERROR, resolveComposerSendPlan } from "@rakazo/core";
+import {
+  AiConsentBlocked,
+  MODEL_REQUIRED_SEND_ERROR,
+  reduceThreadSnapshot,
+  resolveComposerSendPlan,
+} from "@rakazo/core";
+import { deferred } from "@rakazo/core/test-async";
 import { router } from "expo-router";
 import type { ReactNode } from "react";
 import { act, createElement, useMemo } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
-import { ActionSheetIOS, Alert, Platform } from "react-native";
+import { Alert, Platform } from "react-native";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FailedSendBubble } from "../components/failed-send-bubble";
-import type { MobileSnapshot, rpc } from "./api";
-import { applyMobileThreadEvent } from "./api";
+import type { rpc } from "./api";
+import { showIOSActionSheet } from "./ios-action-sheet";
+import type { MobileSnapshot } from "./mobile-types";
 import { filterPickedAttachments } from "./pick-attachments-filter";
 import type { ComposerSnapshot, SendAttempt, SendPayload } from "./thread-feedback";
 import {
@@ -59,19 +66,15 @@ vi.mock("react-native", () => ({
       children,
     ),
   Platform: { OS: "ios" },
-  ActionSheetIOS: { showActionSheetWithOptions: vi.fn() },
   Alert: { alert: vi.fn() },
 }));
+vi.mock("./ios-action-sheet", () => ({ showIOSActionSheet: vi.fn() }));
 vi.mock("expo-router", () => ({ router: { push: vi.fn() } }));
 vi.mock("expo-secure-store", () => ({}));
 vi.mock("./live-notifications", () => ({ resumeLiveNotifications: vi.fn() }));
 vi.mock("./network-cache", () => ({ clearNetworkCache: vi.fn() }));
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
 vi.mock("./native", () => ({ useMobileTokens: () => ({}) }));
-vi.mock("./i18n", () => ({
-  t: (text: string) => text,
-  useI18n: () => ({ t: (text: string) => text }),
-}));
 
 let feedback: ReturnType<typeof useThreadFeedback>;
 let nonces = 0;
@@ -408,16 +411,13 @@ describe("scoped mobile outbox", () => {
     disk.save.mockImplementationOnce(() => {
       throw new Error("OUTBOX_STORAGE_UNAVAILABLE");
     });
-    let releaseUpload!: (value: { id: string }) => void;
-    const held = new Promise<{ id: string }>((resolve) => {
-      releaseUpload = resolve;
-    });
+    const held = deferred<{ id: string }>();
     let heldOnce = false;
     request.mockImplementation(async (proc: string) => {
       if (proc === "artifacts/create") {
         if (!heldOnce) {
           heldOnce = true;
-          return held;
+          return held.promise;
         }
         return { id: "artifact-b" };
       }
@@ -450,7 +450,7 @@ describe("scoped mobile outbox", () => {
     // attachments the running delivery is uploading.
     feedback.sendAttempt(payload("Second"));
     await act(async () => {
-      releaseUpload({ id: "artifact-a" });
+      held.resolve({ id: "artifact-a" });
       await sending;
     });
     const uploads = request.mock.calls
@@ -464,16 +464,13 @@ describe("scoped mobile outbox", () => {
     // The sending attempt's own admission and the saves while it queues and turns pending
     // fail; the disk answers afterwards, clearing the in-memory bytes, as it does.
     const written = diskFolders(() => ++admissions <= 3);
-    let releaseUpload!: (value: { id: string }) => void;
-    const held = new Promise<{ id: string }>((resolve) => {
-      releaseUpload = resolve;
-    });
+    const held = deferred<{ id: string }>();
     let heldOnce = false;
     request.mockImplementation(async (proc: string) => {
       if (proc === "artifacts/create") {
         if (!heldOnce) {
           heldOnce = true;
-          return held;
+          return held.promise;
         }
         return { id: "artifact-b" };
       }
@@ -491,7 +488,7 @@ describe("scoped mobile outbox", () => {
     expect(written.get(attempt.clientNonce)).toEqual(["fake"]);
     expect(disk.save).toHaveBeenCalledWith([attempt, second]);
     await act(async () => {
-      releaseUpload({ id: "artifact-a" });
+      held.resolve({ id: "artifact-a" });
       await sending;
     });
     expect(attempt.acceptedSeq).toBe(42);
@@ -811,8 +808,10 @@ describe("scoped mobile outbox", () => {
     request
       .mockResolvedValueOnce({ id: "artifact-a" })
       .mockResolvedValueOnce({ routineRunIds: ["run-earlier"] })
-      .mockResolvedValueOnce({ seq: 7 });
+      .mockResolvedValueOnce({ seq: 7, runId: "run-1", taskId: "task-1" });
     expect(await deliverSend(sendPayload, attempt, request as unknown as typeof rpc)).toBe(7);
+    // The thread shows the accepted run as queued before its refresh returns.
+    expect(attempt.acceptedRun).toEqual({ runId: "run-1", taskId: "task-1" });
     const [, combined, sent] = request.mock.calls;
     expect(combined?.[0]).toBe("threads/sendWithRoutines");
     expect(sent?.[0]).toBe("threads/send");
@@ -887,9 +886,7 @@ describe("scoped mobile outbox", () => {
           .dispatchEvent(new MouseEvent("contextmenu", { bubbles: true })),
       );
       if (os === "ios") {
-        const [options, choose] = vi
-          .mocked(ActionSheetIOS.showActionSheetWithOptions)
-          .mock.calls.at(-1)!;
+        const [options, choose] = vi.mocked(showIOSActionSheet).mock.calls.at(-1)!;
         expect(options.options).toEqual(["Send as file", "Delete", "Cancel"]);
         expect(options.message).toContain(fileNote);
         await act(async () => {
@@ -930,9 +927,7 @@ describe("scoped mobile outbox", () => {
       });
       act(() => container.querySelector("button")!.click());
       if (os === "ios") {
-        const [options, choose] = vi
-          .mocked(ActionSheetIOS.showActionSheetWithOptions)
-          .mock.calls.at(-1)!;
+        const [options, choose] = vi.mocked(showIOSActionSheet).mock.calls.at(-1)!;
         expect(options.options).toEqual(["Send as file", "Try again", "Cancel"]);
         expect(options.message).toBe(
           `Image input is not configured for this model.\n\n${fileNote}`,
@@ -1006,9 +1001,7 @@ describe("scoped mobile outbox", () => {
           .dispatchEvent(new MouseEvent("contextmenu", { bubbles: true })),
       );
       if (os === "ios") {
-        const [options, choose] = vi
-          .mocked(ActionSheetIOS.showActionSheetWithOptions)
-          .mock.calls.at(-1)!;
+        const [options, choose] = vi.mocked(showIOSActionSheet).mock.calls.at(-1)!;
         expect(options.options).toEqual(["Add model", "Delete", "Cancel"]);
         expect(options.message).toBeUndefined();
         expect(options.cancelButtonIndex).toBe(2);
@@ -1057,9 +1050,7 @@ describe("scoped mobile outbox", () => {
         .dispatchEvent(new MouseEvent("contextmenu", { bubbles: true })),
     );
     if (os === "ios") {
-      const [options, choose] = vi
-        .mocked(ActionSheetIOS.showActionSheetWithOptions)
-        .mock.calls.at(-1)!;
+      const [options, choose] = vi.mocked(showIOSActionSheet).mock.calls.at(-1)!;
       expect(options.options).toEqual(["Try again", "Delete", "Cancel"]);
       expect(options.cancelButtonIndex).toBe(2);
       expect(options.destructiveButtonIndex).toBe(1);
@@ -1094,9 +1085,7 @@ describe("scoped mobile outbox", () => {
         .querySelector("button")!
         .dispatchEvent(new MouseEvent("contextmenu", { bubbles: true })),
     );
-    const [options, choose] = vi
-      .mocked(ActionSheetIOS.showActionSheetWithOptions)
-      .mock.calls.at(-1)!;
+    const [options, choose] = vi.mocked(showIOSActionSheet).mock.calls.at(-1)!;
     expect(options.options).toEqual(["Try again", "Delete", "Cancel"]);
     expect(options.message).toBeUndefined();
     act(() => choose(0));
@@ -1397,7 +1386,7 @@ describe("a send and its echo", () => {
   /** The live (or replayed) event for the stored message; its own event seq differs. */
   function echo(eventSeq = 9) {
     show(
-      applyMobileThreadEvent(chat, {
+      reduceThreadSnapshot(chat, {
         type: "thread.message.created",
         seq: eventSeq,
         payload: {
@@ -1534,7 +1523,7 @@ describe("a send and its echo", () => {
     });
     expect(attempt.state).toBe("failed");
     show(
-      applyMobileThreadEvent(chat, {
+      reduceThreadSnapshot(chat, {
         type: "thread.message.created",
         seq: 9,
         payload: { messageId: "message-41", seq: 41, role: "bot", blocks: [] },

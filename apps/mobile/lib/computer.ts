@@ -1,10 +1,9 @@
+import { ph, t } from "@lingui/core/macro";
 import type { ComputerMode, ComputerStatus as ContractComputerStatus } from "@rakazo/contracts";
 import { isLocalhostOrLoopbackIp, isPrivateNetworkHost } from "@rakazo/contracts";
 import type { ScreenPageState } from "@rakazo/core";
 import { isRetryableError, SCREEN_PAGE_STATES } from "@rakazo/core";
-import { t } from "./i18n";
 
-export const COMPUTER_HEARTBEAT_MS = 60_000;
 /**
  * Computer lifecycle calls create, start or stop a container (booting, switching between the
  * Team and a Private computer); give them far more than an ordinary RPC.
@@ -177,28 +176,21 @@ export function previewPlaceholder(
   name: string,
   mode?: ComputerMode,
 ): string {
-  if (state === "booting" || booting) return t("Booting live desktop…");
+  if (state === "booting" || booting) return t`Booting live desktop…`;
   if (state === "running") return computerLabel(mode, name);
-  if (state === "suspended") return t("Computer is asleep. Take control to wake it.");
-  if (state === "error") return t("Computer failed to boot");
-  return t("Computer is stopped");
+  if (state === "suspended") return t`Computer is asleep. Take control to wake it.`;
+  if (state === "error") return t`Computer failed to boot`;
+  return t`Computer is stopped`;
 }
 
-export function controlLabel(computer: ComputerStatus | null, name: string, botId?: string) {
-  if (computer?.busyBotName) return t("{name} is using it", { name: computer.busyBotName });
-  if (
-    computer?.controlHolder === "user" &&
-    computer.controlBotId === botId &&
-    !computer.controlledByOther
-  ) {
-    return t("You have control");
-  }
-  if (computer?.state === "suspended") return t("Asleep");
+export function controlLabel(computer: ComputerStatus | null, name: string) {
+  if (computer?.busyBotName) return t`${ph({ name: computer.busyBotName })} is using it`;
+  if (computer?.state === "suspended") return t`Asleep`;
   return computerLabel(computer?.mode, name);
 }
 
 export function computerLabel(mode: ComputerMode | undefined, name: string) {
-  return mode === "dedicated" ? t("{name}’s computer", { name }) : t("Team Computer");
+  return mode === "dedicated" ? t`${name}’s computer` : t`Team Computer`;
 }
 
 /**

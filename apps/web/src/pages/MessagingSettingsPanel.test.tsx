@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { deferred } from "@rakazo/core/test-async";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
@@ -92,14 +93,6 @@ const identity = {
 
 function statusWith(identities: (typeof identity)[]) {
   return { enabled: true, providers: ["telegram"], openSignup: false, identities };
-}
-
-function pendingStatus() {
-  let resolve!: (status: ReturnType<typeof statusWith>) => void;
-  const promise = new Promise<ReturnType<typeof statusWith>>((done) => {
-    resolve = done;
-  });
-  return { promise, resolve };
 }
 
 let container: HTMLDivElement;
@@ -227,7 +220,7 @@ it("keeps the detected identity when refreshing other lists fails", async () => 
 it("waits for a pending poll to settle before scheduling another", async () => {
   messaging.status.mockResolvedValue(statusWith([]));
   await startLink();
-  const pending = pendingStatus();
+  const pending = deferred<ReturnType<typeof statusWith>>();
   messaging.status.mockReturnValueOnce(pending.promise);
   const calls = messaging.status.mock.calls.length;
   await act(async () => vi.advanceTimersByTimeAsync(9_000));
@@ -243,7 +236,7 @@ it("waits for a pending poll to settle before scheduling another", async () => {
 it("ignores a previous code's pending response after issuing a new code", async () => {
   messaging.status.mockResolvedValue(statusWith([]));
   await startLink();
-  const pending = pendingStatus();
+  const pending = deferred<ReturnType<typeof statusWith>>();
   messaging.status.mockReturnValueOnce(pending.promise);
   await act(async () => vi.advanceTimersByTimeAsync(3_000));
   await act(async () => telegramItem()?.click());
@@ -258,7 +251,7 @@ it("ignores a previous code's pending response after issuing a new code", async 
 it("ignores a pending response after expiry", async () => {
   messaging.status.mockResolvedValue(statusWith([]));
   await startLink();
-  const pending = pendingStatus();
+  const pending = deferred<ReturnType<typeof statusWith>>();
   messaging.status.mockReturnValueOnce(pending.promise);
   await act(async () => vi.advanceTimersByTimeAsync(20_000));
   const calls = messaging.status.mock.calls.length;
@@ -356,7 +349,7 @@ it("reopens with cached chat apps and refreshes them in the background", async (
   expect(container.textContent).toContain("424242");
   await reopen();
 
-  const pending = pendingStatus();
+  const pending = deferred<ReturnType<typeof statusWith>>();
   messaging.status.mockReturnValueOnce(pending.promise);
   await renderOverlay();
   // Painted from the cache while the refresh is still out.
@@ -382,7 +375,7 @@ it("keeps an unlink when an older status read lands after it", async () => {
   await renderOverlay();
   await reopen();
 
-  const older = pendingStatus();
+  const older = deferred<ReturnType<typeof statusWith>>();
   messaging.status.mockReturnValueOnce(older.promise).mockResolvedValue(statusWith([]));
   messaging.identities.unlink.mockResolvedValue({ ok: true });
   await renderOverlay();
@@ -418,9 +411,9 @@ it("keeps a removed Slack workspace gone when an older read lands after it", asy
   expect(container.textContent).toContain("Acme HQ, Chief");
   await reopen();
 
-  let answerOlder!: (value: typeof workspace) => void;
+  const answerOlder = deferred<typeof workspace>();
   messaging.installations.list
-    .mockReturnValueOnce(new Promise((done) => (answerOlder = done)) as never)
+    .mockReturnValueOnce(answerOlder.promise as never)
     .mockResolvedValue({ available: true, installations: [] });
   messaging.installations.remove.mockResolvedValue({ ok: true });
   await renderOverlay();
@@ -431,7 +424,7 @@ it("keeps a removed Slack workspace gone when an older read lands after it", asy
   await act(async () => remove.click());
   await act(async () => vi.advanceTimersByTimeAsync(0));
   expect(container.textContent).not.toContain("Acme HQ");
-  await act(async () => answerOlder(workspace));
+  await act(async () => answerOlder.resolve(workspace));
   await act(async () => vi.advanceTimersByTimeAsync(20));
   expect(container.textContent).not.toContain("Acme HQ");
 });

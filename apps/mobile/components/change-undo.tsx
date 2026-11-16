@@ -1,8 +1,8 @@
+import { useLingui } from "@lingui/react/macro";
 import type { MessageBlock } from "@rakazo/contracts";
 import { useState } from "react";
 import { Alert, Text, View } from "react-native";
 import { rpc } from "../lib/api";
-import { useI18n } from "../lib/i18n";
 import { useMobileTokens } from "../lib/native";
 import { errorText } from "../lib/user-error";
 import { NativeActionButton } from "./native-action-button";
@@ -17,7 +17,7 @@ export function isUndoableChange(block: MessageBlock): boolean {
 }
 
 export function ChangeUndo({ block }: { block: AskBlock }) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const tokens = useMobileTokens();
   const [pending, setPending] = useState(false);
   const [restored, setRestored] = useState(false);
@@ -39,10 +39,10 @@ export function ChangeUndo({ block }: { block: AskBlock }) {
   return (
     <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
       <Text style={{ color: tokens.foreground }}>
-        {instructionUpdate ? t("Instructions updated") : t("Settings updated")}
+        {instructionUpdate ? t`Instructions updated` : t`Settings updated`}
       </Text>
       <NativeActionButton
-        label={t(restored ? "Restored" : "Undo")}
+        label={restored ? t`Restored` : t`Undo`}
         prominence="plain"
         size="compact"
         disabled={pending || restored}

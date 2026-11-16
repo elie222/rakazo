@@ -1,8 +1,5 @@
 import type { PrismaClient } from "./client.js";
-
-function isUniqueViolation(error: unknown): boolean {
-  return Boolean(error && typeof error === "object" && "code" in error && error.code === "P2002");
-}
+import { isUniqueViolation } from "./prisma-errors.js";
 
 /**
  * Give the bot `name` for good. A name is never reissued, even after its bot is deleted, so mail

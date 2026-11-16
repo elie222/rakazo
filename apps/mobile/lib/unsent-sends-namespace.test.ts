@@ -26,6 +26,9 @@ vi.mock("react-native", () => ({
   AppState: { addEventListener: () => ({ remove: () => {} }) },
 }));
 vi.mock("expo-router", () => ({ router: { push: vi.fn() } }));
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   captureApiRequestContext: async () => ({ headers: {} }),
   currentApiBase: () => "https://api.example.test",
@@ -58,7 +61,6 @@ vi.mock("./session", () => ({
   }),
   subscribeSessionGeneration: () => () => {},
 }));
-vi.mock("./i18n", () => ({ t: (message: string) => message }));
 
 it("keeps a password change's unsent messages retryable when a namespace rewrite fails", async () => {
   const rpc = vi.mocked((await import("./api")).rpc);

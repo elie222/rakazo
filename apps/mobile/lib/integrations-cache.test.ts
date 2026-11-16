@@ -1,3 +1,4 @@
+import { deferred } from "@rakazo/core/test-async";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { IntegrationsCacheScope } from "./integrations-cache";
 import {
@@ -18,6 +19,9 @@ const state = vi.hoisted(() => ({
   saved: vi.fn(),
   save: vi.fn(),
 }));
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   currentApiBase: () => state.base,
   selectedSpaceId: () => state.space,
@@ -49,7 +53,7 @@ vi.mock("expo-file-system", () => {
     textSync() {
       return state.files.get(this.uri);
     }
-    write(value: string) {
+    writeSync(value: string) {
       state.files.set(this.uri, value);
     }
   }
@@ -151,16 +155,12 @@ describe("integration disk cache", () => {
   it.each(["session", "space"])(
     "rejects identity that returns after a %s change",
     async (change) => {
-      let resolve!: (value: unknown) => void;
-      state.rpc.mockReturnValue(
-        new Promise((done) => {
-          resolve = done;
-        }),
-      );
+      const held = deferred<unknown>();
+      state.rpc.mockReturnValue(held.promise);
       const pending = integrationsCacheScope();
       if (change === "session") state.generation += 1;
       else state.space = "space-b";
-      resolve({ userId: "user-a", spaceId: "space-a" });
+      held.resolve({ userId: "user-a", spaceId: "space-a" });
       await expect(pending).rejects.toThrow("Could not load integrations");
     },
   );

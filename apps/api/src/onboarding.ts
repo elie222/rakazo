@@ -1,16 +1,13 @@
 import type { ConnectorRegistry } from "@rakazo/adapters";
-import type { Actor, MessageBlock } from "@rakazo/contracts";
-import {
-  appConnectCard,
-  connectedAppBlocks,
-  matchAppCatalog,
-  matchesAppConnection,
-} from "@rakazo/core";
+import type { Actor, ConnectionCatalogItem, MessageBlock } from "@rakazo/contracts";
+import { appConnectCard, connectedAppBlock, matchAppCatalog } from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   appendEventInTransaction,
+  changeMessageBlocks,
   createThreadMessageInTransaction,
   IsolationError,
+  storedMessageBlocks,
   THREAD_LOCK_TRANSACTION_OPTIONS,
 } from "@rakazo/db";
 import { requireBotThread } from "./bot-thread.js";
@@ -93,6 +90,39 @@ async function post(
   return committed.message.id;
 }
 
+/** Every managed provider's apps; a provider that fails or takes over 15s is left out. */
+export async function managedAppCatalog(
+  connectors: ConnectorRegistry,
+  actor: Actor,
+  operationId: string,
+  botId?: string,
+  timeoutMs = 15_000,
+): Promise<ConnectionCatalogItem[]> {
+  const signal = AbortSignal.timeout(timeoutMs);
+  // A provider may ignore the signal, so the wait itself gives up when it fires.
+  const givenUp = new Promise<ConnectionCatalogItem[]>((resolve) => {
+    signal.addEventListener("abort", () => resolve([]), { once: true });
+  });
+  const catalogs = await Promise.all(
+    connectors.managedProviders().map((provider) =>
+      Promise.race([
+        provider
+          .catalog({
+            operationId,
+            traceId: operationId,
+            spaceId: actor.spaceId,
+            userId: actor.userId,
+            botId,
+            signal,
+          })
+          .catch(() => []),
+        givenUp,
+      ]),
+    ),
+  );
+  return catalogs.flat();
+}
+
 /** Sentinel answerId for a focus card the user dismissed without choosing. */
 export const FOCUS_DISMISSED_ANSWER_ID = "_dismissed";
 
@@ -137,12 +167,11 @@ export async function promptFocus(
     await tx.$executeRaw`SELECT id FROM threads WHERE id = ${thread.id} FOR UPDATE`;
     const recent = await tx.message.findMany({
       where: { threadId: thread.id },
-      select: { role: true, blocks: true },
+      select: { id: true, role: true, blocks: true },
       orderBy: { createdAt: "asc" },
     });
     if (recent.some((message) => message.role === "user")) return null;
-    if (recent.some((message) => messageHasChoiceOrAsk(message.blocks as MessageBlock[])))
-      return null;
+    if (recent.some((message) => messageHasChoiceOrAsk(storedMessageBlocks(message)))) return null;
     // A bot whose creation intro is running asks what it is for itself (see enqueueBotIntroRun).
     const intro = await tx.run.findFirst({
       where: {
@@ -185,16 +214,16 @@ export async function dismissFocus(
       where: { threadId: thread.id },
       orderBy: { createdAt: "asc" },
     });
-    const pending = recent.find((message) =>
-      messageHasPendingChoice(message.blocks as MessageBlock[]),
-    );
+    const pending = recent.find((message) => messageHasPendingChoice(storedMessageBlocks(message)));
     if (!pending) return null;
-    const blocks = (pending.blocks as MessageBlock[]).map((block) =>
+    const next = changeMessageBlocks(pending, (block) =>
       block.kind === "choice" && !block.answerId
         ? { ...block, answerId: FOCUS_DISMISSED_ANSWER_ID }
         : block,
     );
-    await tx.message.update({ where: { id: pending.id }, data: { blocks } });
+    if (!next) return null;
+    const { blocks } = next;
+    await tx.message.update({ where: { id: pending.id }, data: { blocks: next.stored } });
     const event = await appendEventInTransaction(tx, {
       spaceId: target.spaceId,
       threadId: target.threadId,
@@ -225,14 +254,14 @@ export async function chooseFocus(
       where: { threadId: thread.id },
       orderBy: { createdAt: "asc" },
     });
-    const pending = recent.find((message) =>
-      messageHasPendingChoice(message.blocks as MessageBlock[]),
-    );
+    const pending = recent.find((message) => messageHasPendingChoice(storedMessageBlocks(message)));
     if (!pending) return null;
-    const blocks = (pending.blocks as MessageBlock[]).map((block) =>
+    const next = changeMessageBlocks(pending, (block) =>
       block.kind === "choice" ? { ...block, answerId: option.id } : block,
     );
-    await tx.message.update({ where: { id: pending.id }, data: { blocks } });
+    if (!next) return null;
+    const { blocks } = next;
+    await tx.message.update({ where: { id: pending.id }, data: { blocks: next.stored } });
     const event = await appendEventInTransaction(tx, {
       spaceId: target.spaceId,
       threadId: target.threadId,
@@ -259,23 +288,7 @@ export async function chooseFocus(
     false,
   );
 
-  const providers = deps.connectors.managedProviders();
-  const catalog = (
-    await Promise.all(
-      providers.map((provider) =>
-        provider
-          .catalog({
-            operationId: "onboarding.choose",
-            traceId: "onboarding.choose",
-            spaceId: actor.spaceId,
-            userId: actor.userId,
-            botId: bot.id,
-            signal: AbortSignal.timeout(15_000),
-          })
-          .catch(() => []),
-      ),
-    )
-  ).flat();
+  const catalog = await managedAppCatalog(deps.connectors, actor, "onboarding.choose", bot.id);
   const cards: MessageBlock[] = option.apps.flatMap((slug) => {
     const entry = matchAppCatalog(catalog, slug);
     return entry ? [appConnectCard(entry)] : [];
@@ -308,7 +321,7 @@ export async function markAppConnected(
   actor: Actor,
   botId: string,
   provider: string,
-  connectorId = "composio",
+  connectorId = deps.connectors.defaultConnectorId,
   threadId?: string,
   messageId?: string,
 ): Promise<void> {
@@ -366,21 +379,16 @@ export async function markAppConnected(
     const messages = [...new Map([...first, ...latest, ...own].map((m) => [m.id, m])).values()];
     const events = [];
     for (const message of messages) {
-      const blocks = message.blocks as MessageBlock[];
-      if (
-        !blocks.some(
-          (block) =>
-            matchesAppConnection(block, connectorId, entry.slug) && block.status !== "connected",
-        )
-      )
-        continue;
-      const next = connectedAppBlocks(blocks, connectorId, entry.slug);
-      await tx.message.update({ where: { id: message.id }, data: { blocks: next } });
+      const next = changeMessageBlocks(message, (block) =>
+        connectedAppBlock(block, connectorId, entry.slug, deps.connectors.defaultConnectorId),
+      );
+      if (!next) continue;
+      await tx.message.update({ where: { id: message.id }, data: { blocks: next.stored } });
       events.push(
         await appendEventInTransaction(tx, {
           ...target,
           type: "thread.message.updated",
-          payload: { messageId: message.id, role: "bot", blocks: next },
+          payload: { messageId: message.id, role: "bot", blocks: next.blocks },
         }),
       );
     }

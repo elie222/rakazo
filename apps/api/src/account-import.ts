@@ -25,7 +25,7 @@ import {
   attachmentSizeLabel,
   resolveBotAvatarSet,
 } from "@rakazo/contracts";
-import { organicAvatarFamily } from "@rakazo/core";
+import { organicAvatarFamily, STOPPED_HELPER_RESULT } from "@rakazo/core";
 import {
   createRepos,
   createSpaceForMember,
@@ -36,7 +36,7 @@ import {
   runAsTenant,
   SpaceLimitError,
 } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import { pageViewerCode } from "@rakazo/page-kit/compile";
 import { checkPageSource } from "@rakazo/page-kit/validate";
 import type { Hono } from "hono";
@@ -145,7 +145,8 @@ async function spoolBody(
   spoolDir = tmpdir(),
 ): Promise<{ handle: FileHandle; path: string }> {
   const spoolPath = path.join(spoolDir, `${SPOOL_PREFIX}${randomUUID()}`);
-  const handle = await open(spoolPath, "w+", 0o600);
+  // Exclusive: the temp dir is shared, so a file or link already at the path is never reused.
+  const handle = await open(spoolPath, "wx+", 0o600);
   let size = 0;
   try {
     for await (const chunk of body) {
@@ -154,8 +155,8 @@ async function spoolBody(
       await handle.write(chunk);
     }
   } catch (error) {
-    await handle.close().catch(() => undefined);
-    await rm(spoolPath, { force: true }).catch(() => undefined);
+    await bestEffort("close import spool file", handle.close());
+    await bestEffort("delete import spool file", rm(spoolPath, { force: true }));
     throw error;
   }
   return { handle, path: spoolPath };
@@ -189,7 +190,7 @@ export async function readArchive(
       // the sink ever sees the entry — and heap stays bounded no matter
       // how large the entry is.
       const spillPath = `${spool.path}.entry`;
-      const spill = await open(spillPath, "w+", 0o600);
+      const spill = await open(spillPath, "wx+", 0o600);
       try {
         const entry = parseEntryName(zipEntry.name, index++);
         const maxBytes = entryLimit(entry, limits);
@@ -238,8 +239,8 @@ export async function readArchive(
       } catch (error) {
         failure ??= error;
       } finally {
-        await spill.close().catch(() => undefined);
-        await rm(spillPath, { force: true }).catch(() => undefined);
+        await bestEffort("close import spill file", spill.close());
+        await bestEffort("delete import spill file", rm(spillPath, { force: true }));
       }
       if (failure) throw failure;
     }
@@ -248,8 +249,8 @@ export async function readArchive(
     if (error instanceof ZipFormatError) throw unreadable();
     throw error;
   } finally {
-    await spool.handle.close().catch(() => undefined);
-    await rm(spool.path, { force: true }).catch(() => undefined);
+    await bestEffort("close import spool file", spool.handle.close());
+    await bestEffort("delete import spool file", rm(spool.path, { force: true }));
   }
 }
 
@@ -270,6 +271,20 @@ function remapPageLinks(value: unknown, ids: ReadonlyMap<string, string>): unkno
       Object.entries(value).map(([key, item]) => [key, remapPageLinks(item, ids)]),
     );
   return value;
+}
+
+/** No run comes across with an archive, so a helper card still working there shows as stopped. */
+function settleRunningHelpers(blocks: unknown[]): unknown[] {
+  return blocks.map((block) =>
+    block &&
+    typeof block === "object" &&
+    "kind" in block &&
+    block.kind === "subagent" &&
+    "status" in block &&
+    block.status === "running"
+      ? { ...block, status: "failed", result: STOPPED_HELPER_RESULT }
+      : block,
+  );
 }
 
 /** Replaces every string that is exactly a mapped id; ids are random, so text never collides. */
@@ -475,7 +490,10 @@ class AccountImporter implements ArchiveSink {
             : [],
         ),
       );
-      await rm(space.tempDir, { recursive: true, force: true }).catch(() => undefined);
+      await bestEffort(
+        "delete import temp directory",
+        rm(space.tempDir, { recursive: true, force: true }),
+      );
     }
     for (const created of [...this.created].reverse()) {
       const owner = { spaceId: this.actor.spaceId, userId: this.actor.userId };
@@ -612,6 +630,25 @@ class AccountImporter implements ArchiveSink {
         return;
       }
       case "thread": {
+        if (record.helperBotId) {
+          // A helper's thread is one of many per bot, so it gets a new row rather than the bot's.
+          const helperBotId = space.bots.get(record.helperBotId)?.id;
+          if (!helperBotId) throw missingRecord();
+          if (space.ids.has(record.id)) throw unreadable();
+          const thread = await prisma.thread.create({
+            data: {
+              spaceId,
+              userId,
+              helperBotId,
+              historyCompactedUpToSeq: record.historyCompactedUpToSeq,
+              historyCompactionSummary: record.historyCompactionSummary,
+              createdAt: new Date(record.createdAt),
+            },
+          });
+          space.ids.set(record.id, thread.id);
+          space.threadSeqs.set(thread.id, -1);
+          return;
+        }
         const threadId = record.botId
           ? space.bots.get(record.botId)?.threadId
           : record.groupId
@@ -929,9 +966,8 @@ class AccountImporter implements ArchiveSink {
         threadId,
         seq: record.seq,
         role: record.role,
-        blocks: remapPageLinks(
-          remapIds(record.blocks, space.ids),
-          space.ids,
+        blocks: settleRunningHelpers(
+          remapPageLinks(remapIds(record.blocks, space.ids), space.ids) as unknown[],
         ) as Prisma.InputJsonValue,
         botId: space.optional(record.botId),
         replyToMessageId: space.optional(record.replyToMessageId),
@@ -946,7 +982,7 @@ class AccountImporter implements ArchiveSink {
       if (lastSeq < 0) continue;
       await this.deps.prisma.thread.update({
         where: { id: threadId },
-        data: { nextMessageSeq: lastSeq + 1, lastReadSeq: lastSeq, unread: false },
+        data: { nextMessageSeq: lastSeq + 1 },
       });
     }
   }
@@ -1036,6 +1072,7 @@ class AccountImporter implements ArchiveSink {
           storageKey: stored.storageKey,
           rootArtifactId: space.optional(record.rootArtifactId),
           version: record.version,
+          standalone: record.standalone === true,
           createdAt: new Date(record.createdAt),
         });
       }

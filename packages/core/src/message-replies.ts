@@ -1,7 +1,23 @@
 import type { MessageAuthor, MessageBlock, ReplyPreview } from "@rakazo/contracts";
 import { MessageAuthorSchema, ReplyPreviewSchema } from "@rakazo/contracts";
+import { isQuestionAskBlock } from "./ask-kind.js";
 import { displayName } from "./display-name.js";
 import { plainTextFromMarkdown } from "./markdown-plain.js";
+import { messageReaction } from "./message-reactions.js";
+import { isDeliveryMessage } from "./message-visibility.js";
+
+/** Bound the source considered when deriving a reply excerpt. */
+export const MAX_QUOTABLE_SOURCE_LENGTH = 100_000;
+
+/** The first nonblank reply line, capped without splitting a surrogate pair. */
+export function compactReplyExcerpt(text: string): string {
+  const first = text
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .find(Boolean);
+  const excerpt = (first ?? "").slice(0, 280);
+  return /[\uD800-\uDBFF]$/u.test(excerpt) ? excerpt.slice(0, -1) : excerpt;
+}
 
 type ReplyMetadata = {
   replyToMessageId?: string;
@@ -41,6 +57,47 @@ export function otherAuthor(
   meId: string | undefined,
 ): MessageAuthor | undefined {
   return author && meId && author.id !== meId ? author : undefined;
+}
+
+/**
+ * A message that leaves the chat unread for this viewer until they read it: a bot's, or one
+ * someone else in the space wrote. Their own never does. Takes a stored message or a live
+ * event's payload.
+ */
+export function messageUnreadFor(
+  message: { role?: unknown; author?: unknown },
+  meId: string | undefined,
+) {
+  return (
+    message.role === "bot" ||
+    (message.role === "user" && Boolean(otherAuthor(payloadAuthor(message).author, meId)))
+  );
+}
+
+/**
+ * Whether a person's message alerts the rest of the space, by push or on the desktop: typed
+ * text does; a spoken call turn, a reaction or a file sent alone does not.
+ */
+export function memberMessageAlerts(message: {
+  callId?: unknown;
+  blocks?: unknown;
+  replyToMessageId?: unknown;
+}): boolean {
+  const blocks = (Array.isArray(message.blocks) ? message.blocks : []) as MessageBlock[];
+  const replyToMessageId =
+    typeof message.replyToMessageId === "string" ? message.replyToMessageId : undefined;
+  return (
+    typeof message.callId !== "string" &&
+    !messageReaction({ role: "user", blocks, replyToMessageId }) &&
+    blocks.some(
+      (block) =>
+        block &&
+        typeof block === "object" &&
+        "text" in block &&
+        typeof block.text === "string" &&
+        block.text.trim() !== "",
+    )
+  );
 }
 
 export function replyLineText(quote?: string, preview?: string, fallback?: string): string {
@@ -97,6 +154,7 @@ export function previewMessageText(
   message: { role: string; blocks: MessageBlock[] },
   labels: { photo: string; attachment: string; message: string },
 ): string {
+  if (isDeliveryMessage(message.blocks)) return labels.message;
   const text = message.blocks
     .map((block) => {
       if (block.kind === "channel_message") return block.text;
@@ -110,6 +168,12 @@ export function previewMessageText(
     .join(" ")
     .trim();
   if (text) return text;
+  for (const block of message.blocks) {
+    if (block.kind === "ask" && isQuestionAskBlock(block)) {
+      const excerpt = compactReplyExcerpt(block.text.slice(0, MAX_QUOTABLE_SOURCE_LENGTH));
+      if (excerpt) return excerpt;
+    }
+  }
   const attachment = replyAttachment(message.blocks);
   if (attachment)
     return attachment.kind === "image" ? labels.photo : attachment.name || labels.attachment;

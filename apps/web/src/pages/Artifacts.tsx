@@ -6,14 +6,6 @@ import { artifactPreviewKind } from "@rakazo/contracts";
 import { artifactTypeLabel } from "@rakazo/core";
 import { writeSaved } from "@rakazo/core/query";
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
   BotAvatar,
   Button,
   buttonVariants,
@@ -56,43 +48,33 @@ import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { VideoPreview } from "../components/ArtifactFileCard";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import { IconTooltip } from "../components/IconTooltip";
 import { PdfViewer } from "../components/PdfViewer";
 import { SandboxedHtmlViewer } from "../components/SandboxedHtmlViewer";
 import { decodeArtifactBase64, downloadArtifactBytes } from "../lib/artifact-open";
 import { takeInitialBootstrap } from "../lib/bootstrap";
 import { desktopBridge } from "../lib/desktop";
-import { useSpaceQueries } from "../lib/query";
+import { useSave, useSpaceQueries } from "../lib/query";
 import { formatRelativeTime } from "../lib/relative-time";
-import { rpc } from "../lib/rpc";
+import { createStoredPreference } from "../lib/stored-preference";
 import { useObjectUrl } from "../lib/use-object-url";
 import { errorText } from "../lib/user-error";
+import { useRedrawAtMidnight } from "./shell/use-redraw-at-midnight";
 import { WindowChrome } from "./WindowChrome";
 
 type ViewMode = "grid" | "list";
 type DateFilter = "all" | "today" | "week" | "month";
-const VIEW_MODE_STORAGE_KEY = "rakazo:artifacts-view-mode";
+const viewModePreference = createStoredPreference<ViewMode>({
+  key: "rakazo:artifacts-view-mode",
+  parse: (raw) => (raw === "list" ? "list" : "grid"),
+  serialize: (mode) => mode,
+});
 const LIST_PAGE_SIZE = 60;
 
 type ArtifactSummary = Artifact & { versionCount: number };
 
 const NO_BOTS: Bot[] = [];
-
-function readViewMode(): ViewMode {
-  try {
-    return window.localStorage.getItem(VIEW_MODE_STORAGE_KEY) === "list" ? "list" : "grid";
-  } catch {
-    return "grid";
-  }
-}
-
-function writeViewMode(mode: ViewMode): void {
-  try {
-    window.localStorage.setItem(VIEW_MODE_STORAGE_KEY, mode);
-  } catch {
-    // Preference only; ignore storage failures.
-  }
-}
 
 function matchesCalendarDateFilter(iso: string, filter: DateFilter, now: Date): boolean {
   if (filter === "all") return true;
@@ -110,16 +92,15 @@ function matchesCalendarDateFilter(iso: string, filter: DateFilter, now: Date): 
 export function ArtifactsPage() {
   const { artifactId } = useParams<{ artifactId?: string }>();
   const navigate = useNavigate();
+  const today = useRedrawAtMidnight();
   const { t } = useLingui();
   const [activeBotId, setActiveBotId] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<ViewMode>(readViewMode);
+  const viewMode = viewModePreference.use();
   const [searchQuery, setSearchQuery] = useState("");
   const [dateFilter, setDateFilter] = useState<DateFilter>("all");
   const [madeByBots, setMadeByBots] = useState(false);
   const [maximized, setMaximized] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<ArtifactSummary | null>(null);
-  const [deleteBusy, setDeleteBusy] = useState(false);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const queries = useSpaceQueries();
   const queryClient = useQueryClient();
@@ -178,7 +159,8 @@ export function ArtifactsPage() {
         (item.description?.toLowerCase().includes(query) ?? false)
       );
     });
-  }, [items, searchQuery, dateFilter]);
+    // `today` is listed so the midnight tick invalidates cached date filters.
+  }, [items, searchQuery, dateFilter, today]);
 
   const clientFilterActive = searchQuery.trim().length > 0 || dateFilter !== "all";
   const autoFetchedCursorRef = useRef<string | null>(null);
@@ -196,37 +178,25 @@ export function ArtifactsPage() {
     void loadMore();
   }, [clientFilterActive, nextCursor, loadingMore, items, filteredItems]);
 
-  function setMode(mode: ViewMode) {
-    setViewMode(mode);
-    writeViewMode(mode);
-  }
-
-  async function confirmDelete() {
-    if (!pendingDelete) return;
-    setDeleteBusy(true);
-    setDeleteError(null);
-    try {
-      await rpc.artifacts.remove({ artifactId: pendingDelete.id });
+  const remove = useSave({
+    save: async (artifact: ArtifactSummary, rpc) => {
+      await rpc.artifacts.remove({ artifactId: artifact.id });
+      // Gone from this list at once, even when reading it again fails.
       await writeSaved(queryClient, listingOptions.queryKey, (current) => ({
         pages: (current?.pages ?? []).map((page) => ({
           ...page,
-          items: page.items.filter((item) => item.id !== pendingDelete.id),
+          items: page.items.filter((item) => item.id !== artifact.id),
         })),
         pageParams: current?.pageParams ?? [],
       }));
-      // Listings for other bots may hold it too; they refresh when next shown.
-      void queryClient.invalidateQueries({
-        queryKey: queries.artifacts.listSpace.key(),
-        refetchType: "none",
-      });
-      if (artifactId === pendingDelete.id) navigate("/app/artifacts");
+    },
+    // Listings for other bots may hold it too.
+    stale: [queries.artifacts.listSpace.key()],
+    onSaved: (_removed, artifact) => {
+      if (artifactId === artifact.id) navigate("/app/artifacts");
       setPendingDelete(null);
-    } catch (error) {
-      setDeleteError(errorText(error, t`Could not delete this artifact.`));
-    } finally {
-      setDeleteBusy(false);
-    }
-  }
+    },
+  });
 
   const serverFilterActive = activeBotId !== null || madeByBots;
   const filtersActive = serverFilterActive || clientFilterActive;
@@ -305,7 +275,7 @@ export function ArtifactsPage() {
               <ToggleGroup
                 value={[viewMode]}
                 onValueChange={([next]) => {
-                  if (next) setMode(next as ViewMode);
+                  if (next) viewModePreference.set(next as ViewMode);
                 }}
                 spacing={1}
                 className="h-8 rounded-lg border border-input p-0.5"
@@ -378,43 +348,27 @@ export function ArtifactsPage() {
       </div>
 
       {pendingDelete ? (
-        <AlertDialog
-          open
-          onOpenChange={(open) => {
-            if (!open && !deleteBusy) setPendingDelete(null);
+        <ConfirmDialog
+          onCancel={() => {
+            setPendingDelete(null);
+            remove.reset();
           }}
-        >
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>
-                <Trans>Delete "{pendingDelete.name}"?</Trans>
-              </AlertDialogTitle>
-              <AlertDialogDescription>
-                {pendingDelete.versionCount > 1 ? (
-                  <Trans>
-                    This deletes all {pendingDelete.versionCount} versions of this artifact. This
-                    can't be undone.
-                  </Trans>
-                ) : (
-                  <Trans>This can't be undone.</Trans>
-                )}
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            {deleteError ? <p className="text-body text-destructive">{deleteError}</p> : null}
-            <AlertDialogFooter>
-              <AlertDialogCancel disabled={deleteBusy}>
-                <Trans>Cancel</Trans>
-              </AlertDialogCancel>
-              <AlertDialogAction
-                variant="destructive"
-                disabled={deleteBusy}
-                onClick={() => void confirmDelete()}
-              >
-                {deleteBusy ? <Trans>Deleting…</Trans> : <Trans>Delete</Trans>}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+          title={<Trans>Delete "{pendingDelete.name}"?</Trans>}
+          description={
+            pendingDelete.versionCount > 1 ? (
+              <Trans>
+                This deletes all {pendingDelete.versionCount} versions of this artifact. This can't
+                be undone.
+              </Trans>
+            ) : (
+              <Trans>This can't be undone.</Trans>
+            )
+          }
+          error={remove.error ? errorText(remove.error, t`Could not delete this artifact.`) : null}
+          busy={remove.pending}
+          onConfirm={() => remove.run(pendingDelete)}
+          confirmLabel={remove.pending ? <Trans>Deleting…</Trans> : <Trans>Delete</Trans>}
+        />
       ) : null}
     </div>
   );

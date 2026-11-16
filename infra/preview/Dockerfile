@@ -10,7 +10,7 @@ USER root
 RUN mkdir -p /etc/postgresql-common/createcluster.d \
   && echo "create_main_cluster = false" > /etc/postgresql-common/createcluster.d/preview.conf \
   && apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates gosu postgresql-common tini \
+  && apt-get install -y --no-install-recommends ca-certificates curl gosu postgresql-common tini \
   && /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y \
   && apt-get install -y --no-install-recommends postgresql-18 \
   && rm -rf /var/lib/apt/lists/*

@@ -6,8 +6,7 @@ import { createDb } from "./client.js";
 import { installDbContext, runAsSystem, runAsTenant } from "./row-security.js";
 
 const databaseUrl = process.env.DATABASE_URL;
-const describePostgres =
-  process.env.VERIFY_DATABASE && databaseUrl ? describe.sequential : describe.skip;
+const describePostgres = process.env.VERIFY_DATABASE && databaseUrl ? describe : describe.skip;
 
 /** One deadline for every poll of a barrier, inside the transactions' 20s budget. */
 const BARRIER_POLL_BUDGET_MS = 4_000;

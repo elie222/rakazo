@@ -1,7 +1,7 @@
-import { runContinueJob } from "@rakazo/adapter-kit";
 import { MessageBlock } from "@rakazo/contracts";
 import {
   BOT_MESSAGE_MAX_LENGTH,
+  BOT_MESSAGE_TOO_LONG,
   botMessageContext,
   botMessageHopExhausted,
   nextBotMessageHop,
@@ -21,6 +21,7 @@ import {
 import { getLogger } from "@rakazo/logging";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { runLeaseFor } from "./run-messages.js";
+import { wakeRun } from "./wake-run.js";
 
 export async function handoffToGroupBot(
   deps: Pick<ExecutorDeps, "prisma" | "events" | "jobs" | "runLease">,
@@ -42,9 +43,10 @@ export async function handoffToGroupBot(
   },
 ) {
   const text = input.message.trim();
-  if (!text || text.length > BOT_MESSAGE_MAX_LENGTH) {
+  if (!text) {
     return { error: `message must contain 1 to ${BOT_MESSAGE_MAX_LENGTH} characters` } as const;
   }
+  if (text.length > BOT_MESSAGE_MAX_LENGTH) return { error: BOT_MESSAGE_TOO_LONG } as const;
   const committed = await deps.prisma.$transaction(async (tx) => {
     try {
       await lockSpaceGroup(tx, run, groupId);
@@ -233,10 +235,7 @@ export async function handoffToGroupBot(
   await deps.events.notify(committed.threadId, committed.eventSeq).catch((error) => {
     getLogger().error("group handoff realtime notification", error);
   });
-  await deps.jobs.enqueue(runContinueJob(committed.runId)).catch((error) => {
-    // The queued run is durable and the job reconciler will repair a missed immediate wake.
-    getLogger().error("group handoff enqueue", error);
-  });
+  await wakeRun(deps.jobs, committed.runId);
   return {
     ok: true,
     botId: committed.botId,
