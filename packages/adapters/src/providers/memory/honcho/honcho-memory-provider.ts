@@ -8,6 +8,16 @@ import type {
   SemanticMemoryResult,
   SemanticMemorySaveRequest,
 } from "@rakazo/adapter-kit";
+import {
+  assertLocalServiceBaseUrlSync,
+  LocalServiceHost,
+  localServiceTrust,
+  localServiceTrustSettings,
+  parseServiceBaseUrl,
+  pinLocalServiceHost,
+} from "../../../local-service-endpoint.js";
+import type { ResolveHostname } from "../../../network-address.js";
+import { truncateUtf8 } from "../../../utf8.js";
 import type { HonchoConnectionConfig, HonchoReasoningLevel } from "./honcho-client.js";
 import {
   createHonchoConclusions,
@@ -24,16 +34,6 @@ import {
   probeHonchoAdminKey,
   queryHonchoConclusions,
 } from "./honcho-client.js";
-import {
-  assertLocalServiceBaseUrlSync,
-  LocalServiceHost,
-  localServiceTrust,
-  localServiceTrustSettings,
-  parseServiceBaseUrl,
-  pinLocalServiceHost,
-} from "./local-service-endpoint.js";
-import type { ResolveHostname } from "./network-address.js";
-import { truncateUtf8 } from "./utf8.js";
 
 export const HONCHO_PROVIDER_ID = "honcho";
 
