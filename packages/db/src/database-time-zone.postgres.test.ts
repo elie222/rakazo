@@ -9,7 +9,7 @@ import { deployMigrations } from "./deferred-migrations.js";
 const ownerUrl = process.env.DATABASE_MIGRATION_URL ?? process.env.DATABASE_URL;
 const dbTests = process.env.VERIFY_DATABASE && ownerUrl ? describe : describe.skip;
 const dbPackageDir = fileURLToPath(new URL("..", import.meta.url));
-const MIGRATION = "20261225120000_database_time_zone_utc";
+const MIGRATION = "20261225130000_database_time_zone_utc";
 
 dbTests("database time zone", () => {
   const database = `time_zone_${process.pid}_${Date.now()}`;
