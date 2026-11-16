@@ -15,8 +15,8 @@ import {
   ModelCreditAmountSchema,
 } from "@rakazo/contracts";
 import { writeSaved } from "@rakazo/core/query";
-import { useRouter } from "expo-router";
-import { useEffect, useState } from "react";
+import { useIsFocused, useRouter } from "expo-router";
+import { useEffect, useRef, useState } from "react";
 import { Alert, ScrollView, Share, StyleSheet } from "react-native";
 import { SettingsGroup, SettingsRow, useStackedSettings } from "../../components/settings-group";
 import { selectedSpaceId } from "../../lib/api";
@@ -64,8 +64,11 @@ export default function BillingScreen() {
     );
   }, [status, space]);
   const { error: readError, errorUpdatedAt } = statusQuery;
+  // A read that fails after leaving the screen must not alert over the page now shown.
+  const focused = useRef(false);
+  focused.current = useIsFocused();
   useEffect(() => {
-    if (readError) Alert.alert(t`Could not load billing`);
+    if (readError && focused.current) Alert.alert(t`Could not load billing`);
   }, [readError, errorUpdatedAt, t]);
   const change = useSave({
     target,

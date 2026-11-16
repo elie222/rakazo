@@ -11,6 +11,7 @@ import { queryClient } from "./query";
 
 const mocks = vi.hoisted(() => ({
   selectedSpace: "space-1",
+  focused: true,
   rpc: vi.fn(),
   alert: vi.fn(),
   openAuthSessionAsync: vi.fn(async () => ({ type: "dismiss" })),
@@ -22,6 +23,7 @@ vi.mock("./settings-sheet", () => ({ openFromSettingsSheet: vi.fn() }));
 vi.mock("expo-web-browser", () => ({ openAuthSessionAsync: mocks.openAuthSessionAsync }));
 vi.mock("expo-router", () => ({
   useRouter: () => ({ replace: vi.fn() }),
+  useIsFocused: () => mocks.focused,
   useFocusEffect: (callback: () => undefined | (() => void)) => {
     useEffect(() => callback(), [callback]);
   },
@@ -96,6 +98,7 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   queryClient.clear();
   mocks.selectedSpace = "space-1";
+  mocks.focused = true;
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
@@ -150,4 +153,18 @@ it("says the card was not charged when the server refuses payment", async () => 
   await act(async () => button("Manage billing").click());
   await vi.waitFor(() => expect(mocks.alert).toHaveBeenCalledWith("Your card was not charged"));
   expect(button("Manage billing").disabled).toBe(false);
+});
+
+it("does not alert over another page when the status read fails after leaving", async () => {
+  const read = deferred<typeof status>();
+  mocks.rpc.mockImplementation(async (method: string) => {
+    if (method === "billing/status") return read.promise;
+    throw new Error(`Unexpected ${method}`);
+  });
+  await render();
+  mocks.focused = false;
+  await render();
+  await act(async () => read.reject(new Error("offline")));
+  await act(async () => queryClient.cancelQueries());
+  expect(mocks.alert).not.toHaveBeenCalled();
 });
