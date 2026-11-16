@@ -1,11 +1,10 @@
 import type { JobPublisher } from "@rakazo/adapter-kit";
 import { runForgetSecretsJob } from "@rakazo/adapter-kit";
 import { idleRunSecretsAfterMs } from "@rakazo/core";
-import type { PrismaClient } from "@rakazo/db";
-import { forgetIdleRunSecrets } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
+import { expireWaitHoldingSecrets } from "./stuck-work.js";
 
-/** A paused run keeps its run-only logins and codes only until the expiry, though its question stays open. */
+/** A paused run may keep its run-only logins and codes only until the expiry. */
 export async function scheduleRunSecretsExpiry(jobs: JobPublisher, runId: string): Promise<void> {
   await bestEffort(
     "run secrets expiry schedule",
@@ -14,13 +13,9 @@ export async function scheduleRunSecretsExpiry(jobs: JobPublisher, runId: string
 }
 
 export async function expireRunSecrets(
-  deps: { prisma: PrismaClient; jobs: JobPublisher },
+  deps: Parameters<typeof expireWaitHoldingSecrets>[0],
   runId: string,
 ): Promise<void> {
-  const later = await forgetIdleRunSecrets(
-    deps.prisma,
-    runId,
-    new Date(Date.now() - idleRunSecretsAfterMs()),
-  );
-  if (later) await deps.jobs.enqueue(runForgetSecretsJob(runId, later.retryAfter));
+  const later = await expireWaitHoldingSecrets(deps, runId);
+  if (later) await deps.jobs.enqueue(runForgetSecretsJob(runId, later));
 }

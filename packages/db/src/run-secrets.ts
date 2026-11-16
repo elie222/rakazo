@@ -35,20 +35,22 @@ export async function deleteRunSecretsInTransaction(
   runs: ReadonlyArray<{ id: string; userId: string; spaceId: string }>,
 ): Promise<void> {
   if (runs.length === 0) return;
-  await tx.secret.deleteMany({
-    where: {
-      OR: runs.flatMap((run) => [
-        { userId: run.userId, spaceId: run.spaceId, kind: runSecretKind(run.id) },
-        { userId: run.userId, spaceId: run.spaceId, kind: runCodeKind(run.id) },
-        { userId: run.userId, spaceId: run.spaceId, kind: runCodeSpentKind(run.id) },
-        {
-          userId: run.userId,
-          spaceId: run.spaceId,
-          kind: { startsWith: runLoginKind(run.id, "") },
-        },
-      ]),
-    },
-  });
+  await tx.secret.deleteMany({ where: runSecretsWhere(runs) });
+}
+
+function runSecretsWhere(runs: ReadonlyArray<{ id: string; userId: string; spaceId: string }>) {
+  return {
+    OR: runs.flatMap((run) => [
+      { userId: run.userId, spaceId: run.spaceId, kind: runSecretKind(run.id) },
+      { userId: run.userId, spaceId: run.spaceId, kind: runCodeKind(run.id) },
+      { userId: run.userId, spaceId: run.spaceId, kind: runCodeSpentKind(run.id) },
+      {
+        userId: run.userId,
+        spaceId: run.spaceId,
+        kind: { startsWith: runLoginKind(run.id, "") },
+      },
+    ]),
+  };
 }
 
 /**
@@ -87,28 +89,12 @@ export async function clearEndedRunState(
   await deleteRunSecretsInTransaction(prisma, runs);
 }
 
-/**
- * A question stays open, but what its run took to sign in does not: once the run has waited on
- * someone since `olderThan`, drop its run-only answers, logins and codes. The run resumes without
- * them and asks again if it still needs one. Returns when to look again if the run is still
- * waiting but was paused more recently, or undefined when there is nothing left to do.
- */
-export async function forgetIdleRunSecrets(
-  prisma: PrismaClient,
-  runId: string,
-  olderThan: Date,
-): Promise<{ retryAfter: Date } | undefined> {
-  return prisma.$transaction(async (tx) => {
-    // Locking the row keeps an answer from resuming the run mid-delete.
-    const [run] = await tx.$queryRaw<
-      Array<{ id: string; userId: string; spaceId: string; updatedAt: Date }>
-    >`SELECT id, "userId", "spaceId", "updatedAt" FROM runs
-      WHERE id = ${runId} AND status = 'waiting_input' FOR UPDATE`;
-    if (!run) return undefined;
-    if (run.updatedAt > olderThan) {
-      return { retryAfter: new Date(run.updatedAt.getTime() + (Date.now() - olderThan.getTime())) };
-    }
-    await deleteRunSecretsInTransaction(tx, [run]);
-    return undefined;
-  });
+/** Whether a run still holds an answer, login or code it took only for itself. */
+export async function runHoldsOwnSecrets(
+  prisma: Pick<PrismaClient, "secret">,
+  run: { id: string; userId: string; spaceId: string },
+): Promise<boolean> {
+  return Boolean(
+    await prisma.secret.findFirst({ where: runSecretsWhere([run]), select: { id: true } }),
+  );
 }

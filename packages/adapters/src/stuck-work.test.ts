@@ -5,7 +5,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ExpoPushProvider } from "./expo-push.js";
 import { createJobReconciler } from "./job-reconciler.js";
 import { MemoryPushTokenStore } from "./push-token-store.test-support.js";
-import { reconcileStuckWork, STUCK_NOTICE_CLAIM_TTL_MS } from "./stuck-work.js";
+import {
+  expireWaitHoldingSecrets,
+  reconcileStuckWork,
+  STUCK_NOTICE_CLAIM_TTL_MS,
+} from "./stuck-work.js";
 
 const now = new Date("2026-09-28T16:00:00.000Z");
 const budget = { timeout: 20_000 };
@@ -755,3 +759,38 @@ function expireClient(run: ReturnType<typeof candidate>, options?: { cancelled?:
     ),
   });
 }
+
+describe("expireWaitHoldingSecrets", () => {
+  function waitingPrisma(hours: number, holdsSecret: boolean) {
+    return {
+      run: {
+        findUnique: vi.fn(async () => ({ ...candidate("queued", hours), status: "waiting_input" })),
+      },
+      secret: { findFirst: vi.fn(async () => (holdsSecret ? { id: "secret-1" } : null)) },
+      $transaction: vi.fn(async () => null),
+    };
+  }
+  const expire = (prisma: ReturnType<typeof waitingPrisma>) =>
+    expireWaitHoldingSecrets(
+      { prisma: prisma as unknown as PrismaClient, jobs: publisher().jobs, now },
+      "run-1",
+    );
+
+  it("looks again at the expiry while the question is younger", async () => {
+    const prisma = waitingPrisma(1, true);
+    await expect(expire(prisma)).resolves.toEqual(age(1 - 24));
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("leaves an old question open when its run holds no login or code of its own", async () => {
+    const prisma = waitingPrisma(30, false);
+    await expect(expire(prisma)).resolves.toBeUndefined();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("ends an old question whose run still holds a login or code of its own", async () => {
+    const prisma = waitingPrisma(30, true);
+    await expect(expire(prisma)).resolves.toBeUndefined();
+    expect(prisma.$transaction).toHaveBeenCalledOnce();
+  });
+});

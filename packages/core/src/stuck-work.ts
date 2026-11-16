@@ -22,7 +22,7 @@ function stuckWorkMsFromEnv(raw: string | undefined, fallback: number): number {
     : fallback;
 }
 
-/** How long a run waiting on an answer keeps the logins and codes it took for itself. */
+/** How long a run waiting on an answer may keep the logins and codes it took for itself. */
 export function idleRunSecretsAfterMs(): number {
   return stuckWorkMsFromEnv(process.env.STUCK_WORK_EXPIRE_AFTER_MS, STUCK_WORK_EXPIRE_AFTER_MS);
 }
@@ -41,6 +41,8 @@ export const STUCK_WORK_NOTICE = "stuck";
 /** A question holds nothing, so it stays open until someone answers it. */
 export const STUCK_WORK_STATUSES = ["queued", "waiting_takeover"] as const;
 export type StuckWorkStatus = (typeof STUCK_WORK_STATUSES)[number];
+/** A question ends only when its run holds a login or code it took for itself; see idleRunSecretsAfterMs. */
+export type ExpirableWaitStatus = StuckWorkStatus | "waiting_input";
 
 export type StuckWorkAction = "notify" | "expire" | "none";
 
@@ -85,23 +87,21 @@ export function stuckWorkExpiredNonce(runId: string): string {
 }
 
 /** Status line left in the thread when the wait is cancelled. */
-export function stuckWorkStatusMessage(status: StuckWorkStatus): string {
+export function stuckWorkStatusMessage(status: ExpirableWaitStatus): string {
   switch (status) {
     case "queued":
       return "Stopped. This stayed queued without starting.";
+    case "waiting_input":
+      return "Stopped. This was still waiting for an answer.";
     case "waiting_takeover":
       return "Stopped. This was still waiting for you on the screen.";
   }
 }
 
-/** Questions cancelled before they stopped expiring still carry this line. */
-const RETIRED_STUCK_WORK_MESSAGES = ["Stopped. This was still waiting for an answer."];
-
 export function stuckWorkStatusMessages(): readonly string[] {
-  return [
-    ...STUCK_WORK_STATUSES.map((status) => stuckWorkStatusMessage(status)),
-    ...RETIRED_STUCK_WORK_MESSAGES,
-  ];
+  return [...STUCK_WORK_STATUSES, "waiting_input" as const].map((status) =>
+    stuckWorkStatusMessage(status),
+  );
 }
 
 export type StuckAttentionKind = "help" | "takeover" | "failure";
@@ -128,7 +128,7 @@ export function stuckWorkReminder(
 }
 
 export function stuckWorkStoppedNotification(
-  status: StuckWorkStatus,
+  status: ExpirableWaitStatus,
   botName: string,
 ): { kind: "failure"; title: string; body: string } {
   return {

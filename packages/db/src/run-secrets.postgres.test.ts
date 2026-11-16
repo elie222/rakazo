@@ -4,8 +4,8 @@ import { createDb } from "./client.js";
 import { asSystem } from "./row-security.js";
 import {
   deleteRunSecretsInTransaction,
-  forgetIdleRunSecrets,
   runCodeKind,
+  runHoldsOwnSecrets,
   runLoginKind,
   runSecretKind,
 } from "./run-secrets.js";
@@ -84,65 +84,20 @@ describePostgres("run secret cleanup (PostgreSQL)", () => {
     ]);
   });
 
-  it("drops the logins and codes of a run that has waited a day, and keeps everything else", async () => {
-    const day = 24 * 60 * 60 * 1000;
-    const now = new Date();
-    const old = new Date(now.getTime() - 2 * day);
-    const bot = await prisma.bot.create({
-      data: { spaceId, userId: ownerId, name: "Waiter", color: "blue" },
-    });
-    const thread = await prisma.thread.create({
-      data: { spaceId, botId: bot.id, userId: ownerId },
-    });
-    const run = async (status: "waiting_input" | "running", updatedAt: Date) => {
-      const task = await prisma.task.create({
-        data: { spaceId, botId: bot.id, threadId: thread.id, userId: ownerId, prompt: "p", status },
-      });
-      const created = await prisma.run.create({
-        data: {
-          spaceId,
-          botId: bot.id,
-          threadId: thread.id,
-          taskId: task.id,
-          userId: ownerId,
-          status,
-          trigger: "user",
-        },
-      });
-      await prisma.$executeRaw`UPDATE runs SET "updatedAt" = ${updatedAt} WHERE id = ${created.id}`;
-      return created.id;
-    };
-    const idle = await run("waiting_input", old);
-    const recent = await run("waiting_input", now);
-    const working = await run("running", old);
-    const kinds = [
-      runLoginKind(idle, "example-login"),
-      runCodeKind(idle),
-      runLoginKind(recent, "example-login"),
-      runLoginKind(working, "example-login"),
-    ];
+  it("tells which runs still hold a login or code they took for themselves", async () => {
+    const owner = { userId: ownerId, spaceId };
     await prisma.secret.createMany({
-      data: kinds.map((kind) => ({
-        userId: ownerId,
-        spaceId,
-        kind,
-        ciphertext: "fake-ciphertext",
-      })),
+      data: [
+        { ...owner, kind: runLoginKind("run-login-holder", "example-login") },
+        { ...owner, kind: runCodeKind("run-code-holder") },
+        { userId: otherId, spaceId, kind: runCodeKind("run-other-user") },
+      ].map((row) => ({ ...row, ciphertext: "fake-ciphertext" })),
     });
 
-    const cutoff = new Date(now.getTime() - day);
-    await expect(forgetIdleRunSecrets(prisma, idle, cutoff)).resolves.toBeUndefined();
-    // Paused again since: look again a day after that pause.
-    const later = await forgetIdleRunSecrets(prisma, recent, cutoff);
-    expect(later?.retryAfter.getTime()).toBeGreaterThan(now.getTime() + day - 60_000);
-    await expect(forgetIdleRunSecrets(prisma, working, cutoff)).resolves.toBeUndefined();
-
-    const left = await prisma.secret.findMany({
-      where: { spaceId, kind: { in: kinds } },
-      select: { kind: true },
-    });
-    expect(left.map((row) => row.kind).sort()).toEqual(
-      [runLoginKind(recent, "example-login"), runLoginKind(working, "example-login")].sort(),
-    );
+    const holds = (id: string) => runHoldsOwnSecrets(prisma, { id, ...owner });
+    await expect(holds("run-login-holder")).resolves.toBe(true);
+    await expect(holds("run-code-holder")).resolves.toBe(true);
+    await expect(holds("run-other-user")).resolves.toBe(false);
+    await expect(holds("run-login")).resolves.toBe(false);
   });
 });

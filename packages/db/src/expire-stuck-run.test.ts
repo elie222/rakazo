@@ -11,7 +11,7 @@ function tx(options?: {
   sibling?: boolean;
   steering?: boolean;
   openCardEffectId?: string;
-  status?: "queued" | "waiting_takeover";
+  status?: "queued" | "waiting_input" | "waiting_takeover";
 }) {
   let reads = 0;
   const messages: Array<Record<string, unknown>> = [];
@@ -214,6 +214,21 @@ describe("expireStuckRun", () => {
       const client = holdingScreen("user-2");
       await expect(expire(client)).resolves.not.toBeNull();
       expect(client.run.updateMany).toHaveBeenCalled();
+    });
+  });
+
+  it("denies the effect behind an unanswered approval card", async () => {
+    const client = tx({ status: "waiting_input", openCardEffectId: "effect-1" });
+    await expireStuckRun(client as unknown as Prisma.TransactionClient, {
+      runId: "run-1",
+      threadId: "thread-1",
+      status: "waiting_input",
+      updatedAt,
+      now,
+    });
+    expect(client.externalEffect.updateMany).toHaveBeenCalledWith({
+      where: { id: { in: ["effect-1"] }, runId: { in: ["run-1"] }, status: "intended" },
+      data: { status: "denied" },
     });
   });
 

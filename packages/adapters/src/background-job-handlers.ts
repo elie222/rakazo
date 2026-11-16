@@ -246,7 +246,7 @@ export function createBackgroundJobHandlers(deps: {
       await expireTaughtSkillTeaching(deps, payload.skillId);
     }),
     "run.forget-secrets": asOwner(run, async ({ runId }) => {
-      await expireRunSecrets(deps, runId);
+      await expireRunSecrets({ ...deps, now: new Date() }, runId);
     }),
     "call.expire": asOwner(thread, async (payload) => {
       await settleCallRequest(deps, { ...payload, from: ["ringing"], status: "missed" });
