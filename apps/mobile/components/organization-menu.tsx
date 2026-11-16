@@ -2,11 +2,14 @@ import { MenuView } from "@expo/ui/community/menu";
 import { useLingui } from "@lingui/react/macro";
 import type { OrganizationList } from "@rakazo/contracts";
 import { typeScale } from "@rakazo/ui-tokens";
+import type { ReactNode } from "react";
+import { useState } from "react";
 import { Alert, StyleSheet, Text, View } from "react-native";
 import { resolveMobileAppearance } from "../lib/appearance";
 import { native, useThemedStyles } from "../lib/native";
 import {
   activeOrganization,
+  organizationActions,
   organizationForAction,
   organizationSwitchActions,
   switchOrganization,
@@ -60,6 +63,64 @@ export function OrganizationTitleMenu({ list }: { list: OrganizationList | undef
     </MenuView>
   );
 }
+
+const NEW_ORGANIZATION = "new-organization";
+const ORGANIZATION_SETTINGS = "organization-settings";
+
+/**
+ * Wraps the account's organization row: a menu that switches organization, starts a new one,
+ * or opens the active one's settings.
+ */
+export function OrganizationRowMenu({
+  list,
+  onCreate,
+  onSettings,
+  children,
+}: {
+  list: OrganizationList;
+  onCreate: () => void;
+  onSettings: () => void;
+  children: ReactNode;
+}) {
+  const { t } = useLingui();
+  const onSwitch = useOrganizationMenuAction(list);
+  const active = activeOrganization(list);
+  // Native menu hosts size to their contents, so measure outside the host.
+  const [width, setWidth] = useState<number>();
+  return (
+    <View
+      onLayout={(event) => setWidth(event.nativeEvent.layout.width)}
+      style={rowMenuStyles.fullWidth}
+    >
+      <MenuView
+        style={rowMenuStyles.fullWidth}
+        actions={[
+          {
+            id: "organizations",
+            title: "",
+            displayInline: true,
+            subactions: organizationActions(list),
+          },
+          { id: NEW_ORGANIZATION, title: t`New organization`, image: "plus" },
+          { id: ORGANIZATION_SETTINGS, title: t`Organization settings`, image: "gearshape" },
+        ]}
+        colorScheme={resolveMobileAppearance()}
+        onPressAction={({ nativeEvent }) => {
+          const action = nativeEvent.event;
+          if (action === NEW_ORGANIZATION) onCreate();
+          else if (action === ORGANIZATION_SETTINGS) onSettings();
+          else if (organizationForAction(list, action)?.id !== active?.id) onSwitch(action);
+        }}
+      >
+        <View style={[rowMenuStyles.fullWidth, { width }]}>{children}</View>
+      </MenuView>
+    </View>
+  );
+}
+
+const rowMenuStyles = StyleSheet.create({
+  fullWidth: { alignSelf: "stretch" },
+});
 
 function createStyles() {
   return StyleSheet.create({

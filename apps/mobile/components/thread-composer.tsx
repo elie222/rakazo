@@ -2,6 +2,7 @@ import type { MenuAction } from "@expo/ui/community/menu";
 import { MenuView } from "@expo/ui/community/menu";
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
+import { useTimeout } from "@rakazo/chat-ui/hooks";
 import type { AgentSkillCatalogEntry } from "@rakazo/contracts";
 import type {
   buildComposerMentionOptions,
@@ -191,20 +192,19 @@ export function ThreadComposer({
   // Saving waits for a pause in typing; closing the conversation or leaving the app saves at once.
   // Set while the composer holds text that storage does not have yet.
   const pendingSave = useRef<(() => boolean) | null>(null);
-  const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   function flushDraftSave() {
-    clearTimeout(saveTimer.current);
     // A failed save stays pending, so the next flush retries it.
     if (pendingSave.current?.()) pendingSave.current = null;
   }
   useEffect(() => {
     if (!draftScope) return;
     pendingSave.current = () => writeComposerDraft(draftScope, draft, mentionBindings);
-    clearTimeout(saveTimer.current);
     // An emptied composer, such as after a send, forgets the draft right away.
     if (!draft) flushDraftSave();
-    else saveTimer.current = setTimeout(flushDraftSave, DRAFT_SAVE_DELAY_MS);
   }, [draftScope, draft, mentionBindings]);
+  // Each edit starts the pause again.
+  const draftEdit = useMemo(() => ({}), [draftScope, draft, mentionBindings]);
+  useTimeout(flushDraftSave, draftScope && draft ? DRAFT_SAVE_DELAY_MS : null, draftEdit);
   useEffect(() => {
     if (!draft) onEmptied?.();
   }, [draft, onEmptied]);
