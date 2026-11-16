@@ -3,15 +3,16 @@ import {
   computerControlExpireJobKey,
   isSandboxProviderOutage,
   SandboxAllowanceUsedError,
+  WorkspaceTooLargeError,
 } from "@rakazo/adapter-kit";
 import type { ComputerUpdate } from "@rakazo/contracts";
 import { ComputerUpdateSchema } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES, computerUsingRuns } from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import { draftRecordingsOfLeaseInTransaction, spaceTakesWork } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import { endTeachingWithLease, revokeScreenControl } from "./computer-control.js";
-import { scheduleComputerSleep } from "./computer-idle.js";
+import { announceUnsavedHome, scheduleComputerSleep } from "./computer-idle.js";
 import {
   ComputerBusyError,
   ComputerSpaceDeletingError,
@@ -558,12 +559,22 @@ export async function performComputerUpdate(deps: Deps, updateId: string) {
         data: { status: "queued" },
       });
     } else {
-      if (error instanceof SandboxAllowanceUsedError || isSandboxProviderOutage(error)) {
+      if (
+        error instanceof SandboxAllowanceUsedError ||
+        error instanceof WorkspaceTooLargeError ||
+        isSandboxProviderOutage(error)
+      ) {
         getLogger().warn("computer update failed", {
           updateId,
           computerId: update.computerId,
           reason: error.message,
         });
+        // Replacing the computer would lose files it cannot save, so it keeps running as it is.
+        if (error instanceof WorkspaceTooLargeError)
+          await bestEffort(
+            "tell the computer's bots it is too large to save",
+            announceUnsavedHome(deps, update.computer, error),
+          );
       } else {
         getLogger().error("computer update failed", error, {
           updateId,
