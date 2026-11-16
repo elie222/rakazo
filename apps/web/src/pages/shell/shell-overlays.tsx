@@ -199,15 +199,15 @@ export function SettingsOverlays({
             const save = quietHoursSave(quietHours, bootstrapMe?.timezone, localTimezone());
             if (!save) throw new Error("No timezone to read quiet hours in");
             const nextMe = await rpc.preferences.update(save);
+            // A server without quiet hours leaves them out, which hides the switch again.
             setBootstrapMe((prev) =>
               prev
-                ? {
-                    ...prev,
-                    quietHours: nextMe.quietHours ?? null,
-                    timezone: nextMe.timezone ?? null,
-                  }
+                ? { ...prev, quietHours: nextMe.quietHours, timezone: nextMe.timezone ?? null }
                 : nextMe,
             );
+            // Saving the device's timezone too moves the usage days, as a timezone save does.
+            if (save.timezone)
+              void queryClient.invalidateQueries({ queryKey: queries.usage.breakdown.key() });
           }}
           botAvatarSet={bootstrapMe?.botAvatarSet}
           onBotAvatarSetChange={async (botAvatarSet) => {
