@@ -2,7 +2,13 @@ import { randomUUID } from "node:crypto";
 import type { Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { computerProviderDescriptors } from "../../../packages/adapters/src/fake-computer-settings.test-support";
-import { captureScreenshot, completeOnboarding, openUserSettings, signup } from "./helpers";
+import {
+  captureScreenshot,
+  chooseOption,
+  completeOnboarding,
+  openUserSettings,
+  signup,
+} from "./helpers";
 
 async function adminComputers(route: Route) {
   const response = await route.fetch();
@@ -42,14 +48,14 @@ test("an admin selects a computer provider and sees its fields", async ({ page }
   await page.reload();
   const settings = await openUserSettings(page, "computer");
   const form = settings.getByTestId("computer-provider-settings");
-  await form.getByLabel("New computers run on").selectOption("desktop");
+  await chooseOption(form.getByLabel("New computers run on"), "Test desktop");
   await form.getByLabel("Desktop ID").fill("ecd-example");
   await form.getByLabel("End user ID").fill("example-user");
   await form.getByLabel("Region").fill("cn-hangzhou");
   await form.getByLabel("Gateway URL").fill("https://gateway.example.com/mcp");
   await expect(form.getByLabel("Access key secret")).toHaveAttribute("type", "password");
   await captureScreenshot(page, testInfo, "computer-provider-settings");
-  await form.getByLabel("New computers run on").selectOption("test-cloud");
+  await chooseOption(form.getByLabel("New computers run on"), "Test cloud");
   await expect(form.getByLabel("API key")).toBeVisible();
   await expect(form.getByLabel("Desktop ID")).toHaveCount(0);
 });
