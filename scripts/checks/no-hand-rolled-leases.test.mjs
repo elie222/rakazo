@@ -19,9 +19,6 @@ const EXISTING = new Set([
   "Run.leaseExpiresAt",
   "SteeringMessage.claimedAt",
   "Attempt.fence",
-  "Computer.controlLeaseId",
-  "Computer.controlLeaseExpiresAt",
-  "Computer.controlFence",
   "Computer.executionLeaseExpiresAt",
   "Computer.executionFence",
   "HomeDeletionNotice.claimId",
@@ -35,6 +32,12 @@ const EXISTING = new Set([
   "CloudAgent.leaseExpiresAt",
   // The primitive's own table.
   "Lease.fence",
+  // Not long work in one process, so not for `withLease`: a person's page holds computer control
+  // across requests, heartbeats renew it on any instance, and a lapsed one still counts until the
+  // computer stops taking that person's input.
+  "Computer.controlLeaseId",
+  "Computer.controlLeaseExpiresAt",
+  "Computer.controlFence",
 ]);
 
 const LEASE_LIKE = /(?<!re)lease|claim|attempt|fence|lockedAt/i;
