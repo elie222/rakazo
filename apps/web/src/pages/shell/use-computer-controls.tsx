@@ -20,6 +20,7 @@ import {
   screenMissing,
   userHoldsComputerControl,
 } from "../../lib/thread-events";
+import { useEventListener } from "../../lib/use-event-listener";
 import { errorText } from "../../lib/user-error";
 import type { ComputerState } from "./use-computer";
 
@@ -241,15 +242,10 @@ export function useComputerControls({
     }).catch(() => undefined);
   }, [computerBlockedByRun]);
 
-  useEffect(() => {
-    if (!computerOpen) return;
-    function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape" && !event.isComposing && event.keyCode !== 229)
-        setComputerOpen(false);
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [computerOpen]);
+  useEventListener(computerOpen ? window : null, "keydown", (event) => {
+    if (event.key === "Escape" && !event.isComposing && event.keyCode !== 229)
+      setComputerOpen(false);
+  });
 
   const hasControl = userHoldsComputerControl(computer, computerBot?.id);
   useEffect(() => {

@@ -11,6 +11,7 @@ import { X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { ArtifactTarget } from "../../lib/artifact-open";
 import { useArtifactImage } from "../../lib/use-artifact-image";
+import { useEventListener } from "../../lib/use-event-listener";
 
 function ReplyThumbnail({
   attachment,
@@ -109,21 +110,17 @@ export function ComposerReplyPreview({
   onDismiss: () => void;
 }) {
   const { t } = useLingui();
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (
-        event.key === "Escape" &&
-        !event.defaultPrevented &&
-        !event.isComposing &&
-        event.keyCode !== 229
-      ) {
-        event.preventDefault();
-        onDismiss();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onDismiss]);
+  useEventListener(window, "keydown", (event) => {
+    if (
+      event.key === "Escape" &&
+      !event.defaultPrevented &&
+      !event.isComposing &&
+      event.keyCode !== 229
+    ) {
+      event.preventDefault();
+      onDismiss();
+    }
+  });
   return (
     <div
       data-testid="reply-chip"

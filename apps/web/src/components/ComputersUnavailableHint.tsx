@@ -1,4 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
+import { useTimeout } from "@rakazo/chat-ui/hooks";
 import { Button, buttonVariants, Spinner } from "@rakazo/ui-web";
 import { useEffect, useRef, useState } from "react";
 import type { SandboxAvailabilityPhase } from "../lib/computer-sandbox";
@@ -45,14 +46,13 @@ export function ComputersUnavailableHint({
     setProvider(initialProvider);
   }, [initialProvider]);
 
-  useEffect(() => {
-    if (phase !== "recovered") return;
-    const timer = window.setTimeout(() => {
+  useTimeout(
+    () => {
       onRecoveryDismissedRef.current?.();
       setPhase("idle");
-    }, 4000);
-    return () => window.clearTimeout(timer);
-  }, [phase]);
+    },
+    phase === "recovered" ? 4000 : null,
+  );
 
   const unavailable = computersAreUnavailable(provider);
 
