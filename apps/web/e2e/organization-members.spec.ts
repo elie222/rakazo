@@ -119,7 +119,7 @@ test("an owner invites someone to the organization, who joins with a private Spa
 
   // Someone from outside is invited by email, told first that they will see this Space alone.
   const outsiderEmail = `space-guest-${stamp}@rakazo.test`;
-  await spaceSettings.getByRole("button", { name: "Invite" }).click();
+  await spaceSettings.getByRole("button", { name: "Invite", exact: true }).click();
   await ownerPage.getByRole("menuitem", { name: "Invite by email" }).click();
   await spaceSettings.getByRole("textbox", { name: "Email" }).fill(outsiderEmail);
   await expect(spaceSettings.getByText("Not in Acme. They'll only see this Space.")).toBeVisible();
