@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import type { ComputerStatus } from "@rakazo/contracts";
+import { deferred } from "@rakazo/core/test-async";
 import { notifyManager } from "@tanstack/react-query";
 import { act, createElement, useEffect } from "react";
 import type { Root } from "react-dom/client";
@@ -36,7 +37,10 @@ vi.mock("./computer-updates", () => ({
 vi.mock("expo-router", () => ({
   useFocusEffect: (effect: () => void) => useEffect(effect, [effect]),
 }));
-vi.mock("react-native", () => ({ Alert: { alert } }));
+vi.mock("react-native", () => ({
+  Alert: { alert },
+  AppState: { currentState: "active", addEventListener: () => ({ remove: () => undefined }) },
+}));
 vi.mock("../components/settings-group", () => ({
   SettingsRow: ({
     title,
@@ -136,21 +140,21 @@ describe("computer maintenance rows", () => {
   });
 
   it("ignores a status read that a newer one superseded", async () => {
-    const reads: Array<(value: ComputerStatus) => void> = [];
-    rpc.mockImplementation(
-      () =>
-        new Promise((resolve) => {
-          reads.push(resolve);
-        }),
-    );
+    const opening = deferred<ComputerStatus>();
+    const older = deferred<ComputerStatus>();
+    const newer = deferred<ComputerStatus>();
+    rpc
+      .mockReturnValueOnce(opening.promise)
+      .mockReturnValueOnce(older.promise)
+      .mockReturnValueOnce(newer.promise);
     await act(async () => root.render(createElement(Rows)));
-    await act(async () => reads[0]!(status({ busyBotName: "Other" })));
+    await act(async () => opening.resolve(status({ busyBotName: "Other" })));
     // A finished update re-reads status while the previous re-read is still out.
     const listener = subscribe.mock.lastCall![0] as () => void;
     await act(async () => listener());
     await act(async () => listener());
-    await act(async () => reads[2]!(status({ busyBotName: null })));
-    await act(async () => reads[1]!(status({ busyBotName: "Other" })));
+    await act(async () => newer.resolve(status({ busyBotName: null })));
+    await act(async () => older.resolve(status({ busyBotName: "Other" })));
     expect(button("Recover computer")!.disabled).toBe(false);
   });
 
@@ -175,6 +179,52 @@ describe("computer maintenance rows", () => {
       { botId: "bot-fixture" },
       { requestContext: expect.objectContaining({ headers: { "x-rakazo-space-id": "space-1" } }) },
     );
+  });
+
+  it("recovers another Space's computer without showing its progress in the selected one", async () => {
+    rpc.mockImplementation(async (procedure: string) =>
+      procedure === "computer/status" ? status({}) : undefined,
+    );
+    await act(async () => root.render(createElement(Rows)));
+    selection.space = "space-2";
+    await act(async () => button("Recover computer")!.click());
+    const recover = alert.mock.lastCall![2].find(
+      (action: { text: string }) => action.text === "Recover computer",
+    );
+    await act(async () => recover.onPress());
+    expect(start).not.toHaveBeenCalled();
+    expect(rpc).toHaveBeenCalledWith(
+      "computer/recover",
+      { botId: "bot-fixture" },
+      { requestContext: expect.objectContaining({ headers: { "x-rakazo-space-id": "space-1" } }) },
+    );
+  });
+
+  it("offers no repair from an earlier visit's status until it is read again", async () => {
+    rpc.mockResolvedValue(status({ canUpdate: false }));
+    await act(async () => root.render(createElement(Rows)));
+    expect(button("Reset computer")).toBeDefined();
+    await act(async () => root.unmount());
+    // The computer recovered elsewhere; the return visit's read is still out.
+    const reread = deferred<ComputerStatus>();
+    rpc.mockReturnValue(reread.promise);
+    root = createRoot(container);
+    await act(async () => root.render(createElement(Rows)));
+    expect(container.querySelectorAll("button")).toHaveLength(0);
+    await act(async () => reread.resolve(status({ state: "running" })));
+    expect(container.querySelectorAll("button")).toHaveLength(0);
+  });
+
+  it("disables the repair while its status is read again", async () => {
+    rpc.mockResolvedValue(status({ canUpdate: false }));
+    await act(async () => root.render(createElement(Rows)));
+    const reread = deferred<ComputerStatus>();
+    rpc.mockReturnValue(reread.promise);
+    const listener = subscribe.mock.lastCall![0] as () => void;
+    await act(async () => listener());
+    expect(button("Reset computer")!.disabled).toBe(true);
+    await act(async () => reread.resolve(status({ canUpdate: false })));
+    expect(button("Reset computer")!.disabled).toBe(false);
   });
 
   it("shows nothing while the computer is not broken", async () => {

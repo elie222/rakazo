@@ -1223,14 +1223,29 @@ export class BoatSandboxProvider implements SandboxProvider {
         signal: downloadSignal,
       });
     } catch {
-      if (downloadSignal.aborted) throw downloadSignal.reason;
-      throw new SandboxUnresponsiveError("Boat file download failed");
+      throw downloadFailure(signal, timeout);
     }
     if (!response.ok) {
       await response.body?.cancel().catch(() => undefined);
       throw transferError("download", response.status);
     }
-    return response;
+    if (!response.body) return response;
+    // The body keeps arriving long after the headers, so a dropped connection or this download's
+    // own time limit can still end it there.
+    const reader = response.body.getReader();
+    const body = new ReadableStream<Uint8Array>({
+      async pull(controller) {
+        try {
+          const { done, value } = await reader.read();
+          if (done) controller.close();
+          else controller.enqueue(value);
+        } catch {
+          controller.error(downloadFailure(signal, timeout));
+        }
+      },
+      cancel: (reason) => reader.cancel(reason),
+    });
+    return new Response(body, { status: response.status, headers: response.headers });
   }
 
   private async runCommand(
@@ -1435,6 +1450,18 @@ export class BoatSandboxProvider implements SandboxProvider {
     this.prepared.delete(id);
     this.preparations.delete(id);
   }
+}
+
+/**
+ * A signed download that ended without its file. The caller's cancellation stays as it is; Boat
+ * not delivering in time or dropping the connection is reported as unresponsive, without the
+ * transport error, which can carry the signed URL.
+ */
+function downloadFailure(signal: AbortSignal | undefined, timeout: AbortSignal): unknown {
+  if (signal?.aborted) return signal.reason;
+  return new SandboxUnresponsiveError(
+    timeout.aborted ? "Boat file download timed out" : "Boat file download failed",
+  );
 }
 
 /** Why a setup command failed, without its full output: a timeout, or the exit code and last line. */

@@ -157,6 +157,14 @@ it("creates once on a double tap, through the save's send, and holds the form me
   expect(button("Creating…")?.disabled).toBe(true);
 });
 
+it("names the Space it creates in, so the chat and model check use it too", async () => {
+  await start();
+  expect(askForModelBeforeFirstBot).toHaveBeenCalledWith("space-1", expect.any(Function));
+  await act(async () => button("Create")!.click());
+  const [{ spaceId }] = createInboxBot.mock.calls[0] as [{ spaceId?: string }];
+  expect(spaceId).toBe("space-1");
+});
+
 it("keeps sending the new bot's onboarding to its Space after another is selected", async () => {
   await start();
   await act(async () => button("Create")!.click());
@@ -208,4 +216,24 @@ it("ignores Cancel from the Create tap on, before the screen shows it", async ()
   });
   expect(createInboxBot).toHaveBeenCalledOnce();
   expect(router.back).not.toHaveBeenCalled();
+});
+
+it("lets Cancel close the screen after a create fails once another Space is selected", async () => {
+  await start();
+  await act(async () => button("Create")!.click());
+  selected.spaceId = "space-2";
+  await act(async () => root.render(<NewBot />));
+  await act(async () => creating.reject(new Error("Name taken")));
+  expect(button("Create")?.disabled).toBe(false);
+  header.cancel();
+  expect(router.back).toHaveBeenCalledOnce();
+});
+
+it("closes when the Space changed during the create", async () => {
+  await start();
+  await act(async () => button("Create")!.click());
+  selected.spaceId = "space-2";
+  await act(async () => root.render(<NewBot />));
+  await act(async () => creating.resolve("stale"));
+  expect(router.back).toHaveBeenCalledOnce();
 });

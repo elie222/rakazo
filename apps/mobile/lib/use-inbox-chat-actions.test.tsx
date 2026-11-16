@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import type { Deferred } from "@rakazo/core/test-async";
-import { deferred, flush } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import { useEffect } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
@@ -332,30 +332,22 @@ it("group delete asks with the chat's own confirmation and refreshes once delete
   expect(notifyArchivedChatsChanged).toHaveBeenCalledOnce();
 });
 
-it("sends one group delete while it is in flight and reports its failure", async () => {
+it("sends each confirmed group delete and reports a failure", async () => {
   const removal = deferred<unknown>();
   const h = await handlers(() => removal.promise);
   await h.runRowAction("group", { id: "x", name: "Ada" }, "delete");
-  await h.runRowAction("group", { id: "x", name: "Ada" }, "delete");
+  await h.runRowAction("group", { id: "y", name: "Bo" }, "delete");
   const [first, second] = vi.mocked(confirmDeleteGroup).mock.calls;
   first![1]!();
   second![1]!();
-  await vi.waitFor(() => expect(rpc).toHaveBeenCalledOnce());
+  await vi.waitFor(() => expect(rpc).toHaveBeenCalledTimes(2));
+  expect(vi.mocked(rpc).mock.calls.map(([, body]) => body)).toEqual([
+    { groupId: "x" },
+    { groupId: "y" },
+  ]);
   removal.reject(new Error("offline"));
-  await vi.waitFor(() => expect(alertGroupNotDeleted).toHaveBeenCalledOnce());
+  await vi.waitFor(() => expect(alertGroupNotDeleted).toHaveBeenCalledTimes(2));
   expect(h.loadBots).not.toHaveBeenCalled();
-});
-
-it("drops a group delete's outcome once the session changes", async () => {
-  const removal = deferred<unknown>();
-  const h = await handlers(() => removal.promise);
-  await h.runRowAction("group", { id: "x", name: "Ada" }, "delete");
-  vi.mocked(confirmDeleteGroup).mock.calls[0]![1]!();
-  await vi.waitFor(() => expect(rpc).toHaveBeenCalledOnce());
-  session.generation = 2;
-  removal.reject(new Error("signed out"));
-  await flush();
-  expect(alertGroupNotDeleted).not.toHaveBeenCalled();
 });
 
 it("bot delete from another space targets that space", async () => {

@@ -445,7 +445,7 @@ export function normalizeRunError(
     summary = translate(RUN_ERROR_LIMIT_MESSAGES[kind][period], { provider });
     const reset =
       message.match(
-        /\bresets?(?:\s+at|\s+on)?\s*[:=]?\s*(\d{4}-\d{2}-\d{2}(?:T[\d:.]+Z)?)/i,
+        /\bresets?(?:\s+(?:at|on))?\s*(?:[:=]\s*)?(\d{4}-\d{2}-\d{2}(?:T[\d:.]+Z)?)/i,
       )?.[1] ??
       metadata.reset_at ??
       metadata.reset ??

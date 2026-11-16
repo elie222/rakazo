@@ -23,7 +23,10 @@ async function firstBotModelGate(spaceId: string | undefined, send: SaveSend) {
     isFirstBot && (await send("me", undefined).catch(() => null))?.needsModel,
   );
   const modelSpaceId =
-    needsModel && spaceId && (await send("spaceSettings/overrides", undefined)).includes("models")
+    needsModel &&
+    spaceId &&
+    // Unknown overrides open the account's model settings rather than failing the create.
+    (await send("spaceSettings/overrides", undefined).catch(() => null))?.includes("models")
       ? spaceId
       : undefined;
   return { isFirstBot, needsModel, modelSpaceId };

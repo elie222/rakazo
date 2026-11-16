@@ -827,7 +827,7 @@ async function announceSuspended(
 }
 
 /** System notes reach users and the bot through the existing thread history. */
-async function announceUnsavedHome(
+export async function announceUnsavedHome(
   deps: { prisma: PrismaClient; events: ThreadEvents },
   computer: { id: string; spaceId: string; homeRevisionAt: Date | null; runningSince: Date | null },
   error: WorkspaceTooLargeError,

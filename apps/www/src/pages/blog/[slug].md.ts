@@ -1,5 +1,5 @@
-import type { APIRoute, GetStaticPaths } from "astro";
 import { getCollection } from "astro:content";
+import type { APIRoute, GetStaticPaths } from "astro";
 import { markdownResponse } from "../../agent-content";
 import { blogPostMarkdown } from "../../blog/markdown";
 
