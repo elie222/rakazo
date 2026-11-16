@@ -19,6 +19,7 @@ on:
       - ".dockerignore"
       - ".github/workflows/publish-server-image.yml"
       - ".github/actions/publish-image/**"
+      - ".github/actions/setup-trivy/**"
       - "infra/compose/**"
       - "infra/sandboxes/**"
       - "infra/updater/**"
