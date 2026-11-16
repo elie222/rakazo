@@ -48,6 +48,7 @@ const DEAD_JOB_PRUNE_MAX_BATCHES = 50;
  */
 export const ABANDONED_LAST_ATTEMPT_MS = 3 * 60 * 60 * 1000 + 50 * 60 * 1000;
 const ABANDONED_LAST_ATTEMPT_BATCH = 100;
+const ABANDONED_LAST_ATTEMPT_MAX_BATCHES = 10;
 export const ABANDONED_LAST_ATTEMPT_ERROR = "The worker stopped during the last attempt";
 
 /**
@@ -73,7 +74,7 @@ export function createDeadJobPruner(
   return async () => {
     // Every tick, so a dead last attempt is caught in the minutes before the queue frees it; a
     // failure here never holds up the pruning below.
-    await bestEffort("fail abandoned last attempts", failAbandonedLastAttempts(pool));
+    await bestEffort("fail abandoned last attempts", failAbandonedLastAttemptBatches(pool));
     const now = Date.now();
     if (lastRun !== undefined && now - lastRun < intervalMs) return;
     lastRun = now;
@@ -120,8 +121,15 @@ export function createDeadJobPruner(
   };
 }
 
+/** Up to a thousand a tick, so even a large crash backlog is reached before the queue frees it. */
+async function failAbandonedLastAttemptBatches(pool: Pick<Pool, "query">): Promise<void> {
+  for (let batch = 0; batch < ABANDONED_LAST_ATTEMPT_MAX_BATCHES; batch += 1) {
+    if ((await failAbandonedLastAttempts(pool)) < ABANDONED_LAST_ATTEMPT_BATCH) return;
+  }
+}
+
 /** Reports before it fails, so a crash in between repeats a report rather than losing one. */
-async function failAbandonedLastAttempts(pool: Pick<Pool, "query">): Promise<void> {
+async function failAbandonedLastAttempts(pool: Pick<Pool, "query">): Promise<number> {
   const { rows } = await pool.query<GaveUpJob>(
     `select jobs.id, tasks.identifier as task_identifier, jobs.payload, jobs.attempts,
        jobs.max_attempts, jobs.created_at
@@ -133,7 +141,7 @@ async function failAbandonedLastAttempts(pool: Pick<Pool, "query">): Promise<voi
      limit $2`,
     [ABANDONED_LAST_ATTEMPT_MS, ABANDONED_LAST_ATTEMPT_BATCH],
   );
-  if (rows.length === 0) return;
+  if (rows.length === 0) return 0;
   for (const job of rows) recordJobGaveUp(job, new Error(ABANDONED_LAST_ATTEMPT_ERROR));
   await pool.query(
     `update graphile_worker._private_jobs
@@ -142,4 +150,5 @@ async function failAbandonedLastAttempts(pool: Pick<Pool, "query">): Promise<voi
        and locked_at < now() - $2::int * interval '1 millisecond'`,
     [rows.map((job) => job.id), ABANDONED_LAST_ATTEMPT_MS, ABANDONED_LAST_ATTEMPT_ERROR],
   );
+  return rows.length;
 }
