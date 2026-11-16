@@ -37,14 +37,14 @@ export function spaceInvitationEmail(
   locale = "en",
 ): Promise<TransactionalEmail> {
   const say = emailText(locale);
-  const values = { inviter: invitation.inviterName, organization: invitation.spaceName };
+  const values = { inviter: invitation.inviterName, space: invitation.spaceName };
   return message(
     to,
     locale,
-    say("{inviter} invited you to {organization} on Rakazo", values),
+    say("{inviter} invited you to {space} on Rakazo", values),
     <>
-      <Text>{say("{inviter} invited you to join {organization} on Rakazo.", values)}</Text>
-      <Button href={invitation.url}>{say("Join {organization}", values)}</Button>
+      <Text>{say("{inviter} invited you to join {space} on Rakazo.", values)}</Text>
+      <Button href={invitation.url}>{say("Join {space}", values)}</Button>
       <FinePrint>{say("This invitation expires in 7 days.")}</FinePrint>
     </>,
   );

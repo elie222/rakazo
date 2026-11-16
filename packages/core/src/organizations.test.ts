@@ -79,6 +79,7 @@ describe("spaceInvitee", () => {
       "@example.test",
       "a@b@example.test",
       "a b@c.de",
+      `${"a".repeat(250)}@b.cd`,
     ])
       expect(spaceInvitee(list, partial)).toBeNull();
     expect(spaceInvitee(list, " ANA@example.test ")).toEqual({ kind: "member" });

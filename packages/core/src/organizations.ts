@@ -53,7 +53,8 @@ export function spaceInvitee(
   // Split, not a regular expression, so a long pasted string costs linear time.
   const [local, domain = "", extra] = address.split("@");
   const dot = domain.lastIndexOf(".");
-  if (!local || extra !== undefined || /\s/.test(address)) return null;
+  // The invite takes at most 254 characters, the longest address mail can carry.
+  if (!local || extra !== undefined || address.length > 254 || /\s/.test(address)) return null;
   if (dot < 1 || dot === domain.length - 1) return null;
   const owns = (person: { email: string }) => person.email.toLowerCase() === address;
   if (list.members.some(owns)) return { kind: "member" };
