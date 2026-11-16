@@ -29,9 +29,14 @@ exchange; it is view-only.
 Bots decide whom to ask from each bot's **How other bots see it** description in its settings
 under **Advanced**. Keep it to one line about what the bot is for.
 
-By default bots only talk to bots in the same [space](./spaces.md). Turn on
-**Allow cross-space bot communication** in a bot's settings under **Permissions** to let it reach
-bots in your other spaces.
+A bot messages your other bots (**Messaged** / **Message from**) only inside its own
+[space](./spaces.md).
+
+**Allow cross-space bot communication** in a bot's settings under **Permissions** does not change
+that. It applies to bots linked to [chat apps](./messaging-apps.md). With it off, such a bot cannot
+connect with another person's bot at all. With it on, it can connect with, and message, a bot in
+another space, once that bot's setting is on and its owner approves. In a linked chat-app group,
+replies also reach members' bots in other spaces only when both bots have it on.
 
 ## Subagents
 
