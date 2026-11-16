@@ -29,7 +29,6 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
   SectionHeading,
-  Spinner,
 } from "@rakazo/ui-web";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { GripVertical, MoreHorizontal, Plus } from "lucide-react";
@@ -512,9 +511,6 @@ export function ModelRoleSettings({
         ) : null}
       </ol>
       {panel}
-      {state.busy && !settings ? (
-        <Spinner className="mt-3" aria-label={t`Loading model catalog…`} />
-      ) : null}
       {state.error ? (
         <div role="alert" className="mt-2 text-body text-destructive">
           {state.error}
