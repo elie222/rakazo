@@ -1,3 +1,6 @@
+import { readdirSync, readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import type { Prisma, PrismaClient } from "./client.js";
 import {
@@ -489,5 +492,38 @@ describe("local history retrieval", () => {
     await expect(searchHistory(prisma, scope, { query: "x", beforeSeq: -1 })).rejects.toThrow();
     await expect(searchHistory(prisma, scope, { query: " " })).rejects.toThrow();
     expect(mock.$queryRaw).not.toHaveBeenCalled();
+  });
+});
+
+describe("history search index", () => {
+  const migrationsDir = fileURLToPath(new URL("../prisma/migrations", import.meta.url));
+  const migrations = readdirSync(migrationsDir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort()
+    .map((name) => readFileSync(path.join(migrationsDir, name, "migration.sql"), "utf8"));
+  const squash = (text: string) => text.replace(/\s+/g, " ").trim();
+
+  /** The expression of the one history search index no later migration dropped. */
+  function liveIndexExpression(): string {
+    const live = new Map<string, string>();
+    for (const sql of migrations) {
+      for (const [, name, expression] of sql.matchAll(
+        /CREATE INDEX (?:CONCURRENTLY )?"(messages_history_search\w*)" ON "messages"\s+USING GIN \(to_tsvector\('simple', ([\s\S]*?)\)\);/g,
+      ))
+        live.set(name!, squash(expression!));
+      for (const [, name] of sql.matchAll(/DROP INDEX (?:CONCURRENTLY )?(?:IF EXISTS )?"(\w+)"/g))
+        live.delete(name!);
+    }
+    expect([...live.keys()]).toHaveLength(1);
+    return [...live.values()][0]!;
+  }
+
+  it("searches with the live index's own expression, so Postgres can use it", async () => {
+    const { mock, prisma } = db();
+    mock.$queryRaw.mockResolvedValue([]);
+    await searchHistory(prisma, scope, { query: "exports", limit: 2 });
+    const query = squash(sql(mock).sql.replaceAll("m.blocks", "blocks"));
+    expect(query).toContain(`to_tsvector('simple', ${liveIndexExpression()})`);
   });
 });
