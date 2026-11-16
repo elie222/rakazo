@@ -4,6 +4,7 @@ import {
   FieldLabel,
   NativeSelect,
   NativeSelectOption,
+  SectionHeading,
   ToggleGroup,
   ToggleGroupItem,
 } from "@rakazo/ui-web";
@@ -170,9 +171,9 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
 
       {overTime.length > 0 ? (
         <div className="rounded-xl border border-border px-4 py-3">
-          <p className="mb-3 text-body-sm text-muted-foreground">
+          <SectionHeading variant="label" className="mb-3">
             <Trans>Usage over time</Trans>
-          </p>
+          </SectionHeading>
           <div className="flex h-28 items-end gap-1">
             {overTime.map((point, index) => {
               const unknown = point.totalTokens == null;

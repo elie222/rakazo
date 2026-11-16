@@ -23,6 +23,7 @@ vi.mock("@rakazo/ui-web", async (importOriginal) => ({
   FieldLabel: ({ children }: { children?: ReactNode }) => <span>{children}</span>,
   NativeSelect: (props: React.ComponentProps<"select">) => <select {...props} />,
   NativeSelectOption: (props: React.ComponentProps<"option">) => <option {...props} />,
+  SectionHeading: (await importOriginal<typeof UiWeb>()).SectionHeading,
   ToggleGroup: (await importOriginal<typeof UiWeb>()).ToggleGroup,
   ToggleGroupItem: (await importOriginal<typeof UiWeb>()).ToggleGroupItem,
 }));

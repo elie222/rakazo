@@ -172,7 +172,7 @@ describeBreakdown("usage.breakdown", () => {
     ]);
     // Every day of the range is a point; quiet days are zero.
     expect(month.overTimeUnit).toBe("day");
-    expect(month.overTime).toHaveLength(31);
+    expect(month.overTime).toHaveLength(30);
     const active = month.overTime.filter((p) => p.modelCalls > 0);
     expect(active.map((p) => [p.modelCalls, p.totalTokens])).toEqual([
       [1, 1100],
@@ -289,6 +289,21 @@ describeBreakdown("usage.breakdown", () => {
     expect(long.overTime.reduce((sum, p) => sum + p.modelCalls, 0)).toBe(3);
     expect(long.overTime.length).toBeGreaterThanOrEqual(4);
     expect(long.overTime.every((p) => p.date.endsWith("-01"))).toBe(true);
+
+    await prisma.usageRecord.createMany({
+      data: [6, 29].flatMap((days) => [
+        record(localMidnight - days * DAY - 1000),
+        record(localMidnight - days * DAY + 1000),
+      ]),
+    });
+    const week = await rpc<UsageBreakdown>(app, cookie, "usage/breakdown", { range: "7d" });
+    expect(week.overTime).toHaveLength(7);
+    expect(week.totals.modelCalls).toBe(3);
+    expect(week.overTime[0]?.modelCalls).toBe(1);
+    const month = await rpc<UsageBreakdown>(app, cookie, "usage/breakdown", { range: "30d" });
+    expect(month.overTime).toHaveLength(30);
+    expect(month.totals.modelCalls).toBe(5);
+    expect(month.overTime[0]?.modelCalls).toBe(1);
   });
 });
 

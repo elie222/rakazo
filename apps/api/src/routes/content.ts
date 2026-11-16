@@ -2,7 +2,13 @@ import type { UsageOperationKind } from "@rakazo/adapter-kit";
 import { planLimitsReader, readMemberPlanLimits, resolveBotWorkspacePath } from "@rakazo/adapters";
 import type { ExportManifest } from "@rakazo/contracts";
 import { attachmentMaxBytes, resolveBotAvatarSet } from "@rakazo/contracts";
-import { AttachmentValidationError, ClientError, validTimezoneOrUtc } from "@rakazo/core";
+import {
+  AttachmentValidationError,
+  ClientError,
+  validTimezoneOrUtc,
+  wallClock,
+  zonedDateTime,
+} from "@rakazo/core";
 import { IsolationError, LISTED_ARTIFACT, Prisma, parseComputerMode } from "@rakazo/db";
 import {
   createOwnedArtifact,
@@ -204,14 +210,17 @@ export function contentRoutes(ctx: RouterContext) {
           select: { timezone: true },
         });
         const timezone = validTimezoneOrUtc(member?.timezone ?? "UTC");
-        const rollingDays = { "7d": 7, "30d": 30 }[input.range as "7d" | "30d"];
-        const since = rollingDays ? new Date(now.getTime() - rollingDays * 86_400_000) : null;
-        const rangeFilter =
-          input.range === "today"
-            ? Prisma.sql`AND u."createdAt" >= (date_trunc('day', now() AT TIME ZONE ${timezone}) AT TIME ZONE ${timezone}) AT TIME ZONE 'UTC'`
-            : rollingDays
-              ? Prisma.sql`AND u."createdAt" >= ${since}::timestamp(3)`
-              : Prisma.empty;
+        const localDay = (at: Date) => wallClock(at, timezone).slice(0, 10);
+        const days = input.range === "today" ? 1 : input.range === "7d" ? 7 : 30;
+        const firstDate = new Date(`${localDay(now)}T00:00:00Z`);
+        firstDate.setUTCDate(firstDate.getUTCDate() - days + 1);
+        const since =
+          input.range === "all"
+            ? null
+            : zonedDateTime(firstDate.toISOString().slice(0, 10), timezone)!;
+        const rangeFilter = since
+          ? Prisma.sql`AND u."createdAt" >= ${since}::timestamp(3)`
+          : Prisma.empty;
         const modelFilter =
           input.provider && input.model
             ? Prisma.sql`AND u.provider = ${input.provider} AND u.model = ${input.model}`
@@ -357,13 +366,6 @@ export function contentRoutes(ctx: RouterContext) {
           });
         })();
 
-        const localDay = (at: Date) =>
-          new Intl.DateTimeFormat("en-CA", {
-            timeZone: timezone,
-            year: "numeric",
-            month: "2-digit",
-            day: "2-digit",
-          }).format(at);
         const nextDay = (day: string) =>
           new Date(Date.parse(`${day}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
         const points = new Map(
