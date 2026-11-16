@@ -5,6 +5,7 @@ import { containsSecret, redactSecrets } from "@rakazo/core";
 import type { Deferred } from "@rakazo/core/test-async";
 import { deferred, flush } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
+import * as Logging from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   kickModelCredentialRefresh,
@@ -2575,6 +2576,29 @@ describe("PiOAuthLogins across API processes", () => {
     await slowToStart.abortAll();
   });
 
+  it("keeps a sign-in's row alive past a slow lease take", async () => {
+    vi.useFakeTimers();
+    const { rows, prisma, store } = handoffStore();
+    const before = apiProcess(store);
+    const started = await before.logins.begin({ ...member, provider: "anthropic", persist: keep });
+    await before.logins.abortAll();
+    const resumed = new PiOAuthLogins<string>(async (_provider, _type, interaction) => {
+      interaction.notify({
+        type: "auth_url",
+        url: "https://claude.ai/oauth/authorize?code=true",
+        instructions: "open",
+      });
+      return oauthCred({ access: await interaction.prompt({ type: "manual_code", message: "" }) });
+    }, store);
+    prisma.$queryRaw.mockImplementationOnce(async () => {
+      vi.setSystemTime(Date.now() + 40_000);
+      return [{ fence: 1n }];
+    });
+    await resumed.submit(started.loginId, member, "the-code", keep);
+    expect(rows.get(started.loginId)?.leaseExpiresAt?.getTime()).toBe(Date.now() + 30_000);
+    await resumed.abortAll();
+  });
+
   it("lets one process take the code, and drops the sign-in when cancelled or disconnected", async () => {
     const { rows, store } = handoffStore();
     const local = apiProcess(store);
@@ -2709,6 +2733,36 @@ describe("PiOAuthLogins across API processes", () => {
     expect(a.stopped).toBe(false);
     await vi.advanceTimersByTimeAsync(SIGN_IN_LEASE_RENEW_MS);
     expect(a.stopped).toBe(true);
+  });
+
+  it("logs a lost lease that stops a device-code sign-in", async () => {
+    vi.useFakeTimers();
+    const errors: unknown[][] = [];
+    const logger = new Proxy(
+      {},
+      {
+        get:
+          (_target, level) =>
+          (...args: unknown[]) => {
+            if (level === "error") errors.push(args);
+          },
+      },
+    ) as ReturnType<typeof Logging.getLogger>;
+    const spy = vi.spyOn(Logging, "getLogger").mockReturnValue(logger);
+    try {
+      const { prisma, store } = handoffStore();
+      const a = deviceCodeProcess(store);
+      await a.logins.begin({ ...member, provider: CHATGPT_OAUTH_PROVIDER, persist: keep });
+      prisma.$queryRaw.mockRejectedValue(new Error("database unavailable"));
+      await vi.advanceTimersByTimeAsync(SIGN_IN_LEASE_RENEW_MS * 5);
+      expect(a.stopped).toBe(true);
+      expect(errors).toContainEqual([
+        "model sign-in lease lost",
+        expect.objectContaining({ cause: expect.any(Error) }),
+      ]);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("does not save a sign-in cancelled elsewhere before its owner noticed", async () => {

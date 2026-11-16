@@ -967,21 +967,24 @@ export class PiOAuthLogins<T = unknown> {
     const ended = deferred<void>();
     const hold: HeldSignIn = { taken: taken.promise, end: () => ended.resolve() };
     session.lease = hold;
-    const takeSentAt = Date.now();
     void withLease(
       handoff.prisma,
       `model-sign-in:${session.id}`,
       { ttlMs: SIGN_IN_LEASE_MS, onRenew: () => this.renewRow(session) },
       async (lease) => {
-        // The first renewal is a fifth of the lease away; a slow take could outlast the row by then.
-        if (!(await this.renewRow(session, takeSentAt))) throw new LeaseLostError(lease.key);
+        // Counted from now, not from the take: a slow take must not leave the row lapsing first.
+        if (!(await this.renewRow(session))) throw new LeaseLostError(lease.key);
         taken.resolve(lease);
         await ended.promise;
       },
     ).catch((error: unknown) => {
       taken.resolve(undefined);
       if (session.lease !== hold) return;
-      if (!(error instanceof LeaseLostError)) getLogger().error("model sign-in lease lost", error);
+      if (!(error instanceof LeaseLostError)) {
+        getLogger().error("model sign-in lease not taken", error);
+      } else if (error.cause !== undefined) {
+        getLogger().error("model sign-in lease lost", error);
+      }
       if (session.state === "pending") {
         session.abort.abort(new Error("Sign-in cancelled."));
         this.detachSession(session);
@@ -996,13 +999,13 @@ export class PiOAuthLogins<T = unknown> {
   }
 
   /** False once the sign-in was cancelled, replaced or disconnected on another process. */
-  private async renewRow(session: Session<T>, from = Date.now()): Promise<boolean> {
+  private async renewRow(session: Session<T>): Promise<boolean> {
     const handoff = this.handoff;
     if (!handoff) return true;
     const renewed = await runAsTenant({ userId: session.userId, spaceId: session.spaceId }, () =>
       handoff.prisma.modelOAuthSession.updateMany({
         where: { ...rowOf(session), status: { in: ["pending", "saving"] } },
-        data: { leaseExpiresAt: leaseEnd(from) },
+        data: { leaseExpiresAt: leaseEnd() },
       }),
     );
     return renewed.count > 0 || session.state !== "pending";
@@ -1399,8 +1402,8 @@ function unclaimedRow(ref: RowRef) {
   return { ...rowOf(ref), status: "pending", leaseExpiresAt: null };
 }
 
-function leaseEnd(from = Date.now()): Date {
-  return new Date(from + SIGN_IN_LEASE_MS);
+function leaseEnd(): Date {
+  return new Date(Date.now() + SIGN_IN_LEASE_MS);
 }
 
 function pastedCodeCutoff(): Date {
