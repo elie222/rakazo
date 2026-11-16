@@ -2,7 +2,7 @@
 import type { Alternative } from "../alternatives";
 import { GET_STARTED, OPEN_SOURCE_REASONS } from "../alternatives";
 import { ogPublicPath } from "../og-pages";
-import { DOCS_URL, GITHUB_URL } from "../site";
+import { GITHUB_URL, SELF_HOST_GUIDE_PATH } from "../site";
 import { vsCard } from "../vs-points";
 import Button from "./Button.astro";
 import InlineCode from "./InlineCode.astro";
@@ -76,7 +76,7 @@ const card = vsCard(page.slug);
   <h2>{GET_STARTED.heading}</h2>
   <p>{GET_STARTED.copy}</p>
   <div class="alt-actions">
-    <Button href={DOCS_URL} external>{GET_STARTED.docsLabel}</Button>
+    <Button href={SELF_HOST_GUIDE_PATH}>{GET_STARTED.docsLabel}</Button>
     <Button href={GITHUB_URL} variant="secondary" external>{GET_STARTED.githubLabel}</Button>
   </div>
 

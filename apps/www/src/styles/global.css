@@ -5552,3 +5552,12 @@ td:last-child .pricing-hint__tip {
 .sandbox-section code {
   overflow-wrap: anywhere;
 }
+
+.selfhost__intro .section-heading a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.selfhost__intro .section-heading a:hover {
+  text-decoration: underline;
+}
