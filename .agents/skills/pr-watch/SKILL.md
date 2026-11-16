@@ -49,10 +49,18 @@ PRD="$(git rev-parse --show-toplevel)/.agents/skills/pr-watch/pr-digest"
   push and wait for required CI and automated review on that head. Do not restart
   this cycle for unrelated base advances. Ask when an interaction needs judgment
   or cannot be adequately verified.
-- Enforced branch protection and explicit current-base requirements still apply.
-  Check base freshness after CI finishes, not on each notification. If that
-  requirement repeatedly restarts CI, ask once for permission to use this
-  interaction-based policy and reuse the answer. Never bypass required checks.
+- Approval to get a PR reviewed, green and merged authorizes routine base-update
+  decisions. Do not pause monitoring or ask for a merge strategy merely because
+  the base advanced, even repeatedly. Review the interaction and proceed: merge
+  the tested head for unrelated advances, or update the base and verify material
+  interactions. Explicit user conditions remain binding: when the user requires
+  the current base, merge it and rerun the affected checks and required CI,
+  continuing without another permission request if it advances again. Do not
+  reinterpret that condition as permission to merge behind the base. Ask only
+  for a concrete unresolved
+  product, security or compatibility decision, or missing access. State that
+  decision and your recommendation, rather than asking permission to continue.
+  Enforced branch protection still applies. Never bypass required checks.
   Prefer GitHub's merge queue when configured; it tests combined changes but
   does not replace the interaction review above. Merge base updates; never
   rebase or force-push without authorization.
