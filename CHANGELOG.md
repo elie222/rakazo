@@ -29,6 +29,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Organization owners and admins can invite people, change member roles and remove members from Settings > Organization > Members. Each new member gets a private Space; joining does not reveal anyone else's Spaces. Paid organization seats follow membership, and removing a member keeps their work in the organization.
 - Optional conversation memory can learn from direct and group chats, recall facts and answer questions from a bot's own memory. Memory is isolated by default; choosing **Shared** pools learned conversations, including direct chats, within the Space. Connected memory providers can be edited without disconnecting ([memory](docs/memory.md)).
 - Vault items can limit which bots use them, ask before each use, hold additional login sites and authenticator keys, and show usage history. Import saved logins from CSV ([reusable credentials](docs/bot-secrets.md)).
 - Each connected model has its own context and output limits, image support and thinking settings, with a searchable model list and individual settings pages. Connections can also supply project and region routing where required ([models](docs/models.md)).
@@ -66,10 +67,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Renewed sessions send the refreshed cookie, keeping people signed in. Email sign-in works with browser Back, and model subscription sign-in works across multiple API instances.
 - Model calls retry empty, thinking-only, interrupted and unfinished replies, including failures during tool calls. Tool results retain unique call identities, and incompatible encrypted reasoning can be retried without it.
 - Tool-server connections recover when credentials rotate, keep refreshed sign-ins after an uncertain save, allow longer tool calls and retain healthy sessions after tool errors.
+- Tool-server connections also retry when credentials are replaced before connecting; editing a server mid-run makes it unavailable for that turn instead of failing the run with an internal error.
 - Speech playback retries with a supported voice when a server rejects the chosen one. Delayed chat-app connection codes cannot link the wrong bot after switching bots.
 - OpenAPI tools preserve integer types, numeric bounds, minimum string lengths, nested parameter definitions, server-variable defaults and form query encoding. GraphQL headers are merged without case-related duplicates.
 - Long messaging-app replies preserve formatting and link destinations when split. Group mentions accept `@all` and `@所有人`, rich-text mentions retain names, and inserted bot mentions preserve code source.
 - Linked chats open in the correct Space and organization without an older read cancelling navigation. Repeated live events cannot make a finished chat appear active again, and Open work drafts survive the last saved item being removed.
+- Old uploads stop being listed and copied to the computer after several text-only turns; files from older history remain available on demand.
 - Failed computer starts clean up machines they leave behind, retry failed deletion and preserve recovery instructions. Remote computer deletion cleans saved bot files, and taking or releasing control avoids a duplicate screen read.
 - Runs waiting for their bot's computer start when it becomes free, and finished runs stop leaving computers shown as busy. Backup jobs run at the intended instant regardless of the database timezone, and setup failures retry promptly.
 - Routine next-run times stay correct across daylight-saving changes. Archived bots keep finished runs, and duplicate exact bot names are rejected.
