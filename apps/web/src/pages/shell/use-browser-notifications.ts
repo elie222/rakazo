@@ -4,6 +4,7 @@ import type { RefObject } from "react";
 import { useCallback, useEffect, useRef } from "react";
 import {
   browserNotificationTag,
+  chatMuted,
   deliverBrowserNotification as deliverNativeBrowserNotification,
   shouldNotifyBrowser,
 } from "../../lib/browser-notifications";
@@ -59,12 +60,6 @@ function snoozedOrdinaryReply(
     !!chat &&
     chatSnoozed(chat, Date.now())
   );
-}
-
-/** Muted for this member; a server without per-member mutes reports a bot's own switch. */
-function chatMuted(chat: Bot | Group): boolean {
-  if (chat.muted !== undefined && chat.muted !== null) return chat.muted;
-  return "notifyOnFinish" in chat ? !chat.notifyOnFinish : false;
 }
 
 // A click must not reach a shell that has gone, so the shell closes what it showed.
