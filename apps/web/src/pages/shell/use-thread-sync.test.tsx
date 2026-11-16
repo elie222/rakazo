@@ -626,18 +626,19 @@ it.each([false, true])(
     const input = syncInput({ inGroup: false, get, commitSnapshot: vi.fn() });
     let state!: ReturnType<typeof useComputerState>;
     let controls!: ReturnType<typeof useComputerControls>;
+    let sync!: ReturnType<typeof useThreadSync>;
     function Probe() {
       state = useComputerState({
         rpc: rpc as never,
-        panel: "computer",
+        panel: "settings",
         activeId: "bot-1",
         activeBotId: input.activeBotId,
       });
-      const sync = useThreadSync({ ...input, rpc: rpc as never, computerState: state });
+      sync = useThreadSync({ ...input, rpc: rpc as never, computerState: state });
       controls = useComputerControls({
         rpc: rpc as never,
         state,
-        panel: "computer",
+        panel: "settings",
         active: bot as never,
         bots: [bot as never],
         botsRef: { current: [bot as never] },
@@ -653,6 +654,11 @@ it.each([false, true])(
     }
     const root = createRoot(document.createElement("div"));
     await act(async () => root.render(createElement(Probe)));
+    // The full computer window is open on the running computer, its screen read.
+    await act(async () => state.setComputerOpen(true));
+    await act(async () => {
+      await sync.refreshThread("bot-1");
+    });
     await flush();
     expect(state.screenUrl).toBe("https://screen.test/before");
     // After the takeover's own read, any further read fails.

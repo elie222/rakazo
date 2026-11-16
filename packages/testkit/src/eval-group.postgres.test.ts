@@ -1,6 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { deferred } from "@rakazo/core/test-async";
 import { describe, expect, it, vi } from "vitest";
 import type { EvalCase } from "./evals/cases.js";
 import type { EvalJudge } from "./evals/judge.js";
@@ -190,10 +191,7 @@ describe.skipIf(!databaseAvailable)("group eval tool budget", () => {
     // drain is waiting, so the test does not depend on how fast Mika is: then only a check
     // after the drain can see the breach before grading.
     const realSetTimeout = globalThis.setTimeout;
-    let drainWaiting!: () => void;
-    const memberGate = new Promise<void>((resolve) => {
-      drainWaiting = resolve;
-    });
+    const memberGate = deferred();
     const drainChecks = vi.spyOn(globalThis, "setTimeout").mockImplementation(((
       callback: (...args: unknown[]) => void,
       delay?: number,
@@ -201,7 +199,7 @@ describe.skipIf(!databaseAvailable)("group eval tool budget", () => {
     ) => {
       if (delay !== 200 || String(callback) !== "() => resolve(false)")
         return realSetTimeout(callback, delay, ...args);
-      drainWaiting();
+      memberGate.resolve();
       return realSetTimeout(() => undefined, 0);
     }) as typeof setTimeout);
     let graded = false;
@@ -210,7 +208,7 @@ describe.skipIf(!databaseAvailable)("group eval tool budget", () => {
       const { result } = await runGroupBudgetTrial({
         memberTools: 4,
         memberCallMs: 0,
-        memberGate,
+        memberGate: memberGate.promise,
         grade: () => {
           graded = true;
           return [{ id: "answered", pass: true }];

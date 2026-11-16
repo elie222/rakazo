@@ -1,3 +1,4 @@
+import { deferred } from "@rakazo/core/test-async";
 import type { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { PrismaClient } from "./client.js";
@@ -54,11 +55,7 @@ describePostgres("group and thread lock order (PostgreSQL)", { concurrent: false
       }
     };
     const identity = await runAsSystem("test fixture", () =>
-      provisionMessagingIdentity(
-        prisma,
-        { provider: "sendblue", address },
-        { signupsEnabled: undefined, signupAllowlist: undefined },
-      ),
+      provisionMessagingIdentity(prisma, { provider: "sendblue", address }),
     );
     provisioned = true;
     ({ userId, spaceId } = identity);
@@ -111,14 +108,8 @@ describePostgres("group and thread lock order (PostgreSQL)", { concurrent: false
 
   it("a group writer and a thread writer both commit", async () => {
     const probe = await connectProbe();
-    let locked!: (xactId: string) => void;
-    const threadLocked = new Promise<string>((resolve) => {
-      locked = resolve;
-    });
-    let proceed!: () => void;
-    const resumed = new Promise<void>((resolve) => {
-      proceed = resolve;
-    });
+    const threadLocked = deferred<string>();
+    const resumed = deferred();
     let threadWriter: Promise<unknown> = Promise.resolve();
     let groupWriter: Promise<unknown> = Promise.resolve();
     try {
@@ -132,8 +123,8 @@ describePostgres("group and thread lock order (PostgreSQL)", { concurrent: false
           });
           const rows = await tx.$queryRaw<Array<{ xactId: string }>>`
             SELECT pg_current_xact_id()::text AS "xactId"`;
-          locked(rows[0]?.xactId ?? "");
-          await resumed;
+          threadLocked.resolve(rows[0]?.xactId ?? "");
+          await resumed.promise;
           await appendEventInTransaction(tx, {
             spaceId,
             threadId,
@@ -147,7 +138,7 @@ describePostgres("group and thread lock order (PostgreSQL)", { concurrent: false
       threadWriter.catch(() => undefined);
       // A thread writer that fails before it holds the lock reports its error, not a timeout.
       const xactId = await Promise.race([
-        threadLocked,
+        threadLocked.promise,
         threadWriter.then(() => {
           throw new Error("the thread writer finished before it held the thread lock");
         }),
@@ -168,14 +159,14 @@ describePostgres("group and thread lock order (PostgreSQL)", { concurrent: false
         if (Date.now() >= deadline) throw new Error("the group writer never queued on the thread");
         await sleep(WAIT_INTERVAL_MS);
       }
-      proceed();
+      resumed.resolve();
 
       // A deadlock aborts one of the two, so both committing is the whole check; the
       // database-wide deadlock counter would also count other test files' transactions.
       const settled = await Promise.allSettled([threadWriter, groupWriter]);
       expect(settled.map((result) => result.status)).toEqual(["fulfilled", "fulfilled"]);
     } finally {
-      proceed();
+      resumed.resolve();
       await Promise.allSettled([threadWriter, groupWriter]);
       probe.release();
     }

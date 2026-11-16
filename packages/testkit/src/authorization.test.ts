@@ -2418,9 +2418,6 @@ describeWithDatabase("API authorization and resource isolation", () => {
         apiKey: "fake-key",
       });
     }
-    expect(
-      await handles.prisma.deploymentSettings.findUniqueOrThrow({ where: { id: "default" } }),
-    ).toMatchObject({ signupsEnabled: true, signupAllowlist: "" });
   });
 });
 

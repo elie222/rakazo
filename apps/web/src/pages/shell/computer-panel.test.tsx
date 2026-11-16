@@ -62,8 +62,6 @@ async function render(
         bot={bot}
         computer={status}
         computerOpen={false}
-        embeddedScreenUrl="https://screen.example.test/"
-        screenFrameRef={() => undefined}
         computerScreenError={null}
         computerBooting={null}
         booting={false}
@@ -107,11 +105,21 @@ it.each([null, computer("stopped"), computer("suspended")])(
   },
 );
 
+it("shows a running computer awake with an Open button and no live screen", async () => {
+  const onOpen = await render(computer("running"));
+  expect(container.querySelector("iframe")).toBeNull();
+  expect(container.querySelector('[data-state="running"]')?.textContent).toContain("Awake");
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('[data-testid="computer-preview-open"]')?.click(),
+  );
+  expect(onOpen).toHaveBeenCalledOnce();
+});
+
 it("shows the person's own machine from what the server says", async () => {
   await render({ ...computer("running"), kind: "desktop", runsOnUserMachine: false });
-  expect(container.querySelector("iframe")).not.toBeNull();
+  expect(container.querySelector('[data-state="running"]')).not.toBeNull();
   await render({ ...computer("running"), kind: "any-kind", runsOnUserMachine: true });
-  expect(container.querySelector("iframe")).toBeNull();
+  expect(container.querySelector('[data-state="running"]')).toBeNull();
   expect(container.textContent).toContain("This bot runs on this computer");
   await render({ ...computer("stopped"), kind: "any-kind", runsOnUserMachine: true });
   expect(container.querySelector('[data-state="idle"]')).toBeNull();
@@ -119,7 +127,7 @@ it("shows the person's own machine from what the server says", async () => {
 
 it("still shows the person's own machine when an older server names it only by kind", async () => {
   await render({ ...computer("running"), kind: "desktop" });
-  expect(container.querySelector("iframe")).toBeNull();
+  expect(container.querySelector('[data-state="running"]')).toBeNull();
   expect(container.textContent).toContain("This bot runs on this computer");
 });
 
@@ -127,13 +135,7 @@ it("shows a computer of a kind this build does not know like any other", async (
   await render({ ...computer("stopped"), kind: "a-provider-since-removed" });
   expect(container.querySelector('[data-state="idle"]')?.textContent).toContain("Asleep");
   await render({ ...computer("running"), kind: "a-provider-since-removed" });
-  expect(container.querySelector("iframe")).not.toBeNull();
-});
-
-it("previews a running computer's screen", async () => {
-  await render(computer("running"));
-  expect(container.querySelector('[data-state="idle"]')).toBeNull();
-  expect(container.querySelector("iframe")).not.toBeNull();
+  expect(container.querySelector('[data-state="running"]')?.textContent).toContain("Awake");
 });
 
 it.each([computer("running"), computer("suspended")])(
@@ -158,17 +160,6 @@ it("holds Clean up while a clean up is being sent", async () => {
     container.querySelector('[data-testid="computer-disk-warning"]')?.querySelectorAll("button") ??
     [];
   expect(cleanUp?.hasAttribute("disabled")).toBe(true);
-});
-
-it("keeps the live screen mounted while the disk warning comes and goes", async () => {
-  const disk = { onCleanUpDisk: vi.fn(), onDismissDiskWarning: vi.fn() };
-  await render(computer("running"), vi.fn(), disk);
-  const frame = container.querySelector("iframe");
-  await render({ ...computer("running"), diskFullPercent: 93 }, vi.fn(), disk);
-  expect(container.querySelector('[data-testid="computer-disk-warning"]')).not.toBeNull();
-  expect(container.querySelector("iframe")).toBe(frame);
-  await render(computer("running"), vi.fn(), disk);
-  expect(container.querySelector("iframe")).toBe(frame);
 });
 
 it("shows no disk warning while the disk has room", async () => {
