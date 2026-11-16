@@ -51,7 +51,7 @@ export function useRoutineEditor({
     null,
   );
   const untilNextHide = useMemo(
-    () => (nextHide === null ? null : Math.max(nextHide - Date.now(), 0)),
+    () => (nextHide === null ? null : Math.max(nextHide - performance.now(), 0)),
     [nextHide],
   );
   useTimeout(
@@ -59,7 +59,7 @@ export function useRoutineEditor({
       setRevealedWebhookSecrets((current) =>
         Object.fromEntries(
           Object.entries(current).filter(
-            ([, { hideAt }]) => hideAt !== nextHide && hideAt > Date.now(),
+            ([, { hideAt }]) => hideAt !== nextHide && hideAt > performance.now(),
           ),
         ),
       ),
@@ -89,11 +89,12 @@ export function useRoutineEditor({
       return result.secret;
     });
   // A key on screen, new or read back, hides again after a while, as the Vault's values do.
-  // Each bot has its own timer, so a late result for one bot never cancels another's.
+  // Each bot's key keeps its own hide time, on a clock a system time change cannot move, and one
+  // timer hides whichever is due first, so a late result for one bot never cancels another's.
   function showWebhookSecret(botId: string, secret: string) {
     setRevealedWebhookSecrets((current) => ({
       ...current,
-      [botId]: { secret, hideAt: Date.now() + REVEAL_MS },
+      [botId]: { secret, hideAt: performance.now() + REVEAL_MS },
     }));
   }
   function hideWebhookSecret(botId: string) {
