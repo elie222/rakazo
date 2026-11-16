@@ -31,6 +31,8 @@ function executorWith(
   billingEnabled = false,
   /** A member connection of the provider whose secret row is gone. */
   orphanedConnection?: string,
+  /** Hosted model credits the member's organization holds. */
+  credits: { mode: string; balanceMicros: bigint } | null = null,
 ) {
   const orphan = orphanedConnection
     ? {
@@ -51,6 +53,12 @@ function executorWith(
     deploymentModels: environmentDeploymentModels(environment),
     prisma: {
       user: { findUnique: vi.fn(async () => null) },
+      space: {
+        findFirst: vi.fn(async () => ({ organization: { modelCredits: credits } })),
+        findUnique: vi.fn(async () => ({ organizationId: "fixture-org" })),
+      },
+      member: { findUnique: vi.fn(async () => ({ role: "owner" })) },
+      modelCreditAccount: { upsert: vi.fn(async () => credits) },
       spaceSettingOverride: { findUnique: vi.fn(async () => null) },
       userModelRoleChoice: { findMany: vi.fn(async () => []) },
       spaceModelRoleChoice: { findMany: vi.fn(async () => []) },
@@ -118,6 +126,23 @@ describe("deployment-served models at run time", () => {
     await expect(
       executor.resolveConnectedModel(scope, "anthropic", "claude-opus-4-5"),
     ).rejects.toThrow("Connect that model provider first");
+  });
+
+  it("runs hosted credits on the operator's key even when an admin connected that provider", async () => {
+    const environment = { OPENROUTER_API_KEY: "fixture-openrouter-key" };
+    for (const [name, value] of Object.entries(environment)) vi.stubEnv(name, value);
+    const { executor, load } = executorWith(
+      { modelConnections: [{ provider: "openrouter", ciphertext: "cipher-openrouter" }] },
+      environment,
+      true,
+      undefined,
+      { mode: "credits", balanceMicros: 1_000_000n },
+    );
+    await expect(
+      executor.resolveConnectedModel(scope, "openrouter", DEFAULT_OPENROUTER_MODEL_ID),
+    ).resolves.toMatchObject({ provider: "openrouter", apiKey: "fixture-openrouter-key" });
+    // The credits pay for the operator's account, so the admin's key is never read.
+    expect(load).not.toHaveBeenCalledWith("cipher-openrouter", expect.anything());
   });
 
   it("lets a member's approval model run on a model the deployment serves", async () => {

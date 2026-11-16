@@ -198,6 +198,31 @@ describe("deploymentVoiceId", () => {
     await deploymentVoiceId({ provider: "openai", voiceId: "" }, "key-b", { listVoices }, context);
     expect(listVoices).toHaveBeenCalledTimes(2);
   });
+
+  it("lists again after a minute, so a voice deleted at the provider gives way", async () => {
+    vi.useFakeTimers();
+    try {
+      const listVoices = vi
+        .fn()
+        .mockResolvedValueOnce([{ id: "deleted", label: "Deleted" }])
+        .mockResolvedValue([{ id: "current", label: "Current" }]);
+      const unnamed = { provider: "openai", voiceId: "" };
+      await expect(deploymentVoiceId(unnamed, "key-ttl", { listVoices }, context)).resolves.toBe(
+        "deleted",
+      );
+      vi.advanceTimersByTime(59_000);
+      await expect(deploymentVoiceId(unnamed, "key-ttl", { listVoices }, context)).resolves.toBe(
+        "deleted",
+      );
+      vi.advanceTimersByTime(2_000);
+      await expect(deploymentVoiceId(unnamed, "key-ttl", { listVoices }, context)).resolves.toBe(
+        "current",
+      );
+      expect(listVoices).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe("deploymentVoiceSpeaks", () => {

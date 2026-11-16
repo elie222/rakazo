@@ -88,17 +88,24 @@ export function runDeploymentModels(
   >,
   saved?: SavedDeploymentModels | null,
 ): Promise<DeploymentModels> {
-  const environment =
+  // A process told whether model credits bill knows better than the settings row it was given.
+  return loadDeploymentModels(deps.prisma, environmentRunModels(deps), saved, {
+    creditsOnly: deps.billingEnabled,
+  });
+}
+
+/** The environment's models as this process read them, before any admin setting. */
+function environmentRunModels(
+  deps: Pick<ExecutorDeps, "deploymentModels" | "deploymentModelKey" | "deploymentModelConfigured">,
+): DeploymentModels {
+  return (
     deps.deploymentModels ??
     defaultOnlyDeploymentModels({
       ...resolveDeploymentModel(),
       key: deps.deploymentModelKey,
       configured: Boolean(deps.deploymentModelConfigured),
-    });
-  // A process told whether model credits bill knows better than the settings row it was given.
-  return loadDeploymentModels(deps.prisma, environment, saved, {
-    creditsOnly: deps.billingEnabled,
-  });
+    })
+  );
 }
 
 /** The default model's provider while hosted credits pay for it. */
@@ -167,8 +174,9 @@ async function deploymentKeyFor(
   registerSecrets?: (values: string[]) => void,
   hostedCredits = false,
 ) {
-  const models = await runDeploymentModels(deps);
-  // Hosted credits, checked by the caller, fund their provider's models.
+  // Hosted credits, checked by the caller, fund their provider's models on the operator's own
+  // key, which an admin's connection for that provider must not replace.
+  const models = hostedCredits ? environmentRunModels(deps) : await runDeploymentModels(deps);
   const connection = entitledDeploymentConnection(models, {
     environmentProvider: environmentDefault(deps).provider,
     provider,

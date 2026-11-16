@@ -142,8 +142,11 @@ export async function deploymentVoiceSpeaks(
   return voiceId.length > 0;
 }
 
+/** How long a listed first voice is reused, so one deleted at the provider gives way soon. */
+const FIRST_VOICE_TTL_MS = 60_000;
+
 /** The last provider and key whose first voice was listed, kept as a digest. */
-let firstVoice: { digest: string; voiceId: string } | null = null;
+let firstVoice: { digest: string; voiceId: string; listedAt: number } | null = null;
 
 /** The deployment's voice, or its provider's first one when none was chosen. */
 export async function deploymentVoiceId(
@@ -154,9 +157,10 @@ export async function deploymentVoiceId(
 ): Promise<string> {
   if (voice.voiceId) return voice.voiceId;
   const digest = credentialDigest(`${voice.provider}\u0000${apiKey}`);
-  if (firstVoice?.digest === digest) return firstVoice.voiceId;
+  if (firstVoice?.digest === digest && Date.now() - firstVoice.listedAt < FIRST_VOICE_TTL_MS)
+    return firstVoice.voiceId;
   const [first] = await provider.listVoices(apiKey, context);
   if (!first) return "";
-  firstVoice = { digest, voiceId: first.id };
+  firstVoice = { digest, voiceId: first.id, listedAt: Date.now() };
   return first.id;
 }
