@@ -118,6 +118,9 @@ import {
   MessagingInstallationsStatusSchema,
   MessagingLinkedIdentitySchema,
   MessagingStatusSchema,
+  OrganizationInvitationPreviewSchema,
+  OrganizationMembersSchema,
+  OrganizationRoleSchema,
   PlanLimitsSchema,
   PluginMarketplaceCatalogSchema,
   PluginPartSchema,
@@ -311,10 +314,14 @@ export const OrganizationListSchema = z.object({
     z.object({
       id: Id,
       name: z.string(),
+      /** Where the user lands in it: its default Space if they belong to it, else their own. */
       defaultSpaceId: Id,
       spaceIds: z.array(Id),
       /** Whether the user owns it, so can rename or delete it. */
       canManage: z.boolean(),
+      role: OrganizationRoleSchema,
+      /** Everyone in it but guests, the user included. */
+      memberCount: z.number().int().positive(),
     }),
   ),
 });
@@ -442,6 +449,10 @@ export const appContract = {
       .output(z.object({ ok: z.literal(true), activeSpaceId: Id })),
     members: {
       list: oc.input(z.object({ spaceId: Id })).output(SpaceMembersSchema),
+      /** Owner only. Adds someone already in the Space's organization. */
+      add: oc
+        .input(z.object({ spaceId: Id, userId: Id }))
+        .output(z.object({ ok: z.literal(true) })),
       /** Owner only. The removed person's bots, chats and routines stay with the space. */
       remove: oc
         .input(z.object({ spaceId: Id, userId: Id }))
@@ -475,6 +486,35 @@ export const appContract = {
     remove: oc
       .input(z.object({ organizationId: Id }))
       .output(z.object({ ok: z.literal(true), activeSpaceId: Id })),
+    members: {
+      list: oc.input(z.object({ organizationId: Id })).output(OrganizationMembersSchema),
+      /** Owner and admins. The owner's role never changes. */
+      setRole: oc
+        .input(
+          z.object({
+            organizationId: Id,
+            userId: Id,
+            role: OrganizationRoleSchema.exclude(["owner"]),
+          }),
+        )
+        .output(z.object({ ok: z.literal(true) })),
+      /** Owner and admins. What the person made in shared Spaces stays there. */
+      remove: oc
+        .input(z.object({ organizationId: Id, userId: Id }))
+        .output(z.object({ ok: z.literal(true) })),
+    },
+    invitations: {
+      /** Owner and admins. Inviting the same address again renews its invitation. */
+      create: oc
+        .input(z.object({ organizationId: Id, email: z.email().max(254) }))
+        .output(z.object({ url: z.string().url(), emailed: z.boolean() })),
+      cancel: oc
+        .input(z.object({ organizationId: Id, invitationId: Id }))
+        .output(z.object({ ok: z.literal(true) })),
+      /** The invited person, signed in with the address it went to. */
+      preview: oc.input(z.object({ invitationId: Id })).output(OrganizationInvitationPreviewSchema),
+      accept: oc.input(z.object({ invitationId: Id })).output(z.object({ spaceId: Id })),
+    },
   },
   bootstrap: oc
     .input(z.object({ botId: Id.optional(), groupId: Id.optional() }))
