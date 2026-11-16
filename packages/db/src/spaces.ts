@@ -12,7 +12,7 @@ import { releasePendingSpacePayments } from "./spending.js";
 import { withTransactionRetry } from "./transaction-retry.js";
 
 /** Per member, per organization: one person cannot fan out unbounded boundaries. */
-const MAX_SPACES_PER_MEMBER = 32;
+export const MAX_SPACES_PER_MEMBER = 32;
 
 export class SpaceLimitError extends ClientError {
   constructor() {

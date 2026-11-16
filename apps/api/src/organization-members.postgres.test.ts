@@ -632,6 +632,14 @@ describePostgres("organization members and invitations (PostgreSQL)", () => {
         })
       ).status,
     ).toBe(404);
+    // Nor, owning a Space there, do they see or add the organization's people.
+    const ownSpaceId = memberActor.spaceId;
+    const ownList = await call(memberActor, "spaces/members/list", { spaceId: ownSpaceId });
+    expect(ownList.json.addable).toEqual([]);
+    expect(
+      (await call(memberActor, "spaces/members/add", { spaceId: ownSpaceId, userId: owner.id }))
+        .status,
+    ).toBe(403);
     const list = await call(memberActor, "organizations/list", {});
     expect(
       (list.json.organizations as Array<{ id: string }>).map((organization) => organization.id),

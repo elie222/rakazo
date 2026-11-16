@@ -12,8 +12,10 @@ import { OrganizationAdminRequiredError, organizationRole } from "./organization
 import { runAsSystem } from "./row-security.js";
 import {
   lockSpaceDeletion,
+  MAX_SPACES_PER_MEMBER,
   personalOrganizationIds,
   rehomeSharedItems,
+  SpaceLimitError,
   SpaceNotFoundError,
 } from "./spaces.js";
 import { activeRunStatuses } from "./thread-listing.js";
@@ -130,7 +132,9 @@ export async function listSpaceMembers(
       userId: true,
       role: true,
       space: { select: { name: true, organizationId: true } },
-      member: { select: { user: { select: { name: true, email: true, image: true } } } },
+      member: {
+        select: { role: true, user: { select: { name: true, email: true, image: true } } },
+      },
     },
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
   });
@@ -147,19 +151,24 @@ export async function listSpaceMembers(
     .sort((a, b) => Number(b.role === "owner") - Number(a.role === "owner"));
   const canManage = isOwnerRole(self.role);
   if (!canManage) return { spaceName: self.space.name, members, canManage, openInvites: 0 };
+  // Only a full member of the organization sees who else is in it: an owner whose removal is
+  // still finishing is a guest already.
+  const inOrganization = self.member.role !== GUEST_ROLE;
   const [openInvites, others] = await Promise.all([
     prisma.spaceInvite.count({
       where: { spaceId: input.spaceId, acceptedAt: null, expiresAt: { gt: new Date() } },
     }),
-    prisma.member.findMany({
-      where: {
-        organizationId: self.space.organizationId,
-        role: { not: GUEST_ROLE },
-        spaceMemberships: { none: { spaceId: input.spaceId } },
-      },
-      select: { userId: true, user: { select: { name: true, email: true, image: true } } },
-      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-    }),
+    inOrganization
+      ? prisma.member.findMany({
+          where: {
+            organizationId: self.space.organizationId,
+            role: { not: GUEST_ROLE },
+            spaceMemberships: { none: { spaceId: input.spaceId } },
+          },
+          select: { userId: true, user: { select: { name: true, email: true, image: true } } },
+          orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        })
+      : [],
   ]);
   const addable = others.map(({ userId, user }) => ({ userId, ...user }));
   return { spaceName: self.space.name, members, canManage, openInvites, addable };
@@ -182,13 +191,28 @@ export async function addSpaceMember(
       select: { organizationId: true, deletingAt: true },
     });
     if (!space || space.deletingAt) throw new SpaceNotFoundError();
-    // Locked, so a removal from the organization either finishes first or waits for this.
-    const [member] = await tx.$queryRaw<Array<{ role: string }>>`
-      SELECT role FROM "member"
-      WHERE "organizationId" = ${space.organizationId} AND "userId" = ${input.memberUserId}
+    // Locked, so a removal from the organization either finishes first or waits for this. Both
+    // people must still be full members: an owner whose removal is finishing adds nobody.
+    const rows = await tx.$queryRaw<Array<{ userId: string; role: string }>>`
+      SELECT "userId", role FROM "member"
+      WHERE "organizationId" = ${space.organizationId}
+        AND "userId" IN (${input.memberUserId}, ${input.userId})
+      ORDER BY "userId"
       FOR UPDATE
     `;
-    if (!member || member.role === GUEST_ROLE) throw new SpaceMemberNotFoundError();
+    const full = (userId: string) =>
+      rows.some((row) => row.userId === userId && row.role !== GUEST_ROLE);
+    if (!full(input.userId)) throw new SpaceOwnerRequiredError();
+    if (!full(input.memberUserId)) throw new SpaceMemberNotFoundError();
+    const already = await tx.spaceMember.findUnique({
+      where: { spaceId_userId: { spaceId: input.spaceId, userId: input.memberUserId } },
+      select: { id: true },
+    });
+    if (already) return;
+    const count = await tx.spaceMember.count({
+      where: { organizationId: space.organizationId, userId: input.memberUserId },
+    });
+    if (count >= MAX_SPACES_PER_MEMBER) throw new SpaceLimitError();
     await tx.spaceMember.upsert({
       where: { spaceId_userId: { spaceId: input.spaceId, userId: input.memberUserId } },
       create: {

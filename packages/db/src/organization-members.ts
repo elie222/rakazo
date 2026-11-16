@@ -5,7 +5,7 @@ import { GUEST_ROLE, isOwnerRole, LIVE_ORGANIZATION } from "./billing.js";
 import type { PrismaClient } from "./client.js";
 import { Prisma } from "./client.js";
 import { IsolationError } from "./scope.js";
-import { createOwnSpace, lockOrganizationSpaces } from "./spaces.js";
+import { createOwnSpace, lockOrganizationSpaces, MAX_SPACES_PER_MEMBER } from "./spaces.js";
 import { withTransactionRetry } from "./transaction-retry.js";
 
 export const ORGANIZATION_INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -476,11 +476,20 @@ export async function acceptOrganizationInvitation(
             where: { id: `default-space-member:${memberId}`, userId: input.userId },
           });
         }
-        const spaceId = await createOwnSpace(tx, {
-          organizationId,
-          userId: input.userId,
-          name: OWN_SPACE_NAME,
+        // A guest already in as many of its Spaces as anyone may be lands in the first of them.
+        const spaces = await tx.spaceMember.findMany({
+          where: { organizationId, userId: input.userId },
+          select: { spaceId: true },
+          orderBy: [{ createdAt: "asc" }, { id: "asc" }],
         });
+        const spaceId =
+          spaces.length >= MAX_SPACES_PER_MEMBER
+            ? spaces[0]!.spaceId
+            : await createOwnSpace(tx, {
+                organizationId,
+                userId: input.userId,
+                name: OWN_SPACE_NAME,
+              });
         return { organizationId, spaceId };
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
