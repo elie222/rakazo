@@ -7,6 +7,7 @@ import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 import PeerChat from "../app/peer-chat";
+import { queryClient } from "./query";
 
 const { rpc, back, scrollToEnd, scrollProps } = vi.hoisted(() => ({
   rpc: vi.fn(),
@@ -51,7 +52,17 @@ vi.mock("./artifact-open", () => ({ openMobileArtifact: vi.fn() }));
 vi.mock("./api-server", () => ({}));
 vi.mock("./api-auth", () => ({}));
 vi.mock("./api-live", () => ({}));
-vi.mock("./api", () => ({ rpc }));
+vi.mock("./api", () => ({
+  rpc,
+  currentApiBase: () => "https://app.example.test",
+  selectedSpaceId: () => "space-1",
+  captureApiRequestContext: async () => ({
+    apiBase: "https://app.example.test",
+    sessionGeneration: 1,
+    headers: { "x-rakazo-space-id": "space-1" },
+  }),
+}));
+vi.mock("./session", () => ({ currentSessionGeneration: () => 1 }));
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("./appearance", () => ({ mobileTokens: () => ({}) }));
 vi.mock("./native", () => ({
@@ -133,6 +144,7 @@ let root: Root | undefined;
 
 afterEach(() => {
   act(() => root?.unmount());
+  queryClient.clear();
   document.body.innerHTML = "";
   rpc.mockReset();
   back.mockReset();

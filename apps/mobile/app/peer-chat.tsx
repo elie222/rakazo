@@ -3,8 +3,9 @@ import { ChatMarkdown } from "@rakazo/chat-ui/native";
 import type { PeerConversation } from "@rakazo/core";
 import { displayName, loadPeerHistory, newestPageCards, peerConversations } from "@rakazo/core";
 import { typeScale } from "@rakazo/ui-tokens";
+import { useQuery } from "@tanstack/react-query";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useRef } from "react";
 import type { ScrollViewInstance } from "react-native";
 import {
   ActivityIndicator,
@@ -20,12 +21,12 @@ import { InlineImageAttachment } from "../components/inline-image-attachment";
 import { NativeActionButton } from "../components/native-action-button";
 import { NewestPageCards, PageCard } from "../components/pages/page-card";
 import { SheetCloseButton } from "../components/sheet-close-button";
-import { rpc } from "../lib/api";
 import { mobileTokens } from "../lib/appearance";
 import { openMobileArtifact } from "../lib/artifact-open";
 import { isInlineImageBlock } from "../lib/inline-image";
 import { native, useResolvedAppearance, useThemedStyles } from "../lib/native";
 import { useChatOnScreen } from "../lib/page-card-detail";
+import { queryClient, rpcQuery } from "../lib/query";
 import { useSideInsets } from "../lib/side-insets";
 import { errorText } from "../lib/user-error";
 
@@ -49,37 +50,41 @@ export default function PeerChat() {
   const botId = params.botId ?? "";
   const peerBotId = params.peerBotId ?? "";
   const botName = displayName(params.botName, t`Bot`);
-  const [state, setState] = useState<
-    { kind: "loading" } | { kind: "failed" } | { kind: "ready"; chat: PeerConversation | null }
-  >({ kind: "loading" });
-  const [attempt, setAttempt] = useState(0);
-  const retry = useCallback(() => setAttempt((value) => value + 1), []);
-  const scrollRef = useRef<ScrollViewInstance>(null);
-  const userScrolled = useRef(false);
-
-  useEffect(() => {
-    if (!botId || !peerBotId) return;
-    const abort = new AbortController();
-    setState({ kind: "loading" });
-    void loadPeerHistory({
-      signal: abort.signal,
-      loadPage: (before, signal) =>
-        rpc("threads/messages", { botId, before, includePeerRuns: true }, { signal }),
-    })
-      .then((messages) => {
-        if (abort.signal.aborted) return;
+  const pageRead = (before?: number) =>
+    rpcQuery("threads/messages", { botId, before, includePeerRuns: true });
+  const history = useQuery(
+    {
+      queryKey: [...pageRead().queryKey, "peer", peerBotId],
+      queryFn: async ({ signal }) => {
+        const messages = await loadPeerHistory({
+          signal,
+          // A page is only kept for the history it builds.
+          loadPage: (before) =>
+            queryClient.fetchQuery({ ...pageRead(before), staleTime: 0, gcTime: 0 }),
+        });
         const sources = messages.map((message) => ({
           ...message,
           createdAt: message.createdAt ?? "",
         }));
-        const chat = peerConversations(sources).find((entry) => entry.peerBotId === peerBotId);
-        setState({ kind: "ready", chat: chat ?? null });
-      })
-      .catch(() => {
-        if (!abort.signal.aborted) setState({ kind: "failed" });
-      });
-    return () => abort.abort();
-  }, [botId, peerBotId, attempt]);
+        return peerConversations(sources).find((entry) => entry.peerBotId === peerBotId) ?? null;
+      },
+      enabled: Boolean(botId && peerBotId),
+      gcTime: 0,
+    },
+    queryClient,
+  );
+  const { refetch } = history;
+  const retry = () => void refetch();
+  const state:
+    | { kind: "loading" }
+    | { kind: "failed" }
+    | { kind: "ready"; chat: PeerConversation | null } = history.isSuccess
+    ? { kind: "ready", chat: history.data }
+    : history.isError && !history.isFetching
+      ? { kind: "failed" }
+      : { kind: "loading" };
+  const scrollRef = useRef<ScrollViewInstance>(null);
+  const userScrolled = useRef(false);
 
   const chat = state.kind === "ready" ? state.chat : null;
   const newestPages = newestPageCards(
