@@ -87,7 +87,12 @@ import {
   SUBAGENT_JUDGE_VERSION,
 } from "../evals/subagents.js";
 import type { ObservedToolCall, ObservedToolList } from "../evals/tool-calls.js";
-import { loadToolChoiceCases, TOOL_CHOICE_FIXTURE_VERSION } from "../evals/tool-choice.js";
+import {
+  loadToolChoiceCases,
+  TOOL_CHOICE_FIXTURE_VERSION,
+  TOOL_CHOICE_JUDGE_CALIBRATION,
+  TOOL_CHOICE_JUDGE_VERSION,
+} from "../evals/tool-choice.js";
 import { TOOL_CHOICE_CASES } from "../evals/tool-choice-cases.js";
 import type { DiagnosticWireObservation } from "../evals/wire-observer.js";
 import { diagnosticWireFetch } from "../evals/wire-observer.js";
@@ -212,7 +217,11 @@ async function main() {
       cases: GROUP_ROUTING_EVAL_CASES,
       fixtureVersion: GROUP_ROUTING_FIXTURE_VERSION,
     },
-    "tool-choice": { cases: TOOL_CHOICE_CASES, fixtureVersion: TOOL_CHOICE_FIXTURE_VERSION },
+    "tool-choice": {
+      cases: TOOL_CHOICE_CASES,
+      fixtureVersion: TOOL_CHOICE_FIXTURE_VERSION,
+      judge: { version: TOOL_CHOICE_JUDGE_VERSION, calibration: TOOL_CHOICE_JUDGE_CALIBRATION },
+    },
     "bot-files": { cases: BOT_FILES_EVAL_CASES, fixtureVersion: BOT_FILES_FIXTURE_VERSION },
     apps: {
       cases: APPS_EVAL_CASES,

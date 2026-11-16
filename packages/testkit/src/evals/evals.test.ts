@@ -279,7 +279,7 @@ describe("independent outcome graders", () => {
     e.records[1]!.status = "active";
     expect(passes("crm-update", e)).toBe(false);
   });
-  it("requires grounded cross-system evidence and the ticket reference in the Slack reply", () => {
+  it("requires grounded cross-system evidence and leaves the reply's meaning to the judge", () => {
     const e = evidence();
     e.calls.push(
       {
@@ -314,11 +314,10 @@ describe("independent outcome graders", () => {
       ],
     };
     expect(passes("slack-customer-update", e)).toBe(true);
-    e.messaging.outbound[0]!.body =
-      "Casey Morgan owns the renewal, now in Negotiation. An urgent ticket covers the SSO incident.";
-    expect(passes("slack-customer-update", e)).toBe(false);
-    e.messaging.outbound[0]!.body =
-      "Casey Morgan owns the renewal, now in Negotiation. Urgent ticket ZD-1842 covers the SSO incident; engineering is testing a configuration fix.";
+    expect(EVAL_CASES.find((c) => c.id === "slack-customer-update")!.judge!(e).evidence).toEqual({
+      reply:
+        "Casey Morgan owns the renewal, now in Negotiation. Urgent ticket ZD-1842 covers the SSO incident; engineering is testing a configuration fix.",
+    });
     e.calls[1]!.args.accountId = "sf-fairhaven-logistics";
     expect(passes("slack-customer-update", e)).toBe(false);
   });

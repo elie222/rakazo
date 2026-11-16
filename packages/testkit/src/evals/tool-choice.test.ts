@@ -4,7 +4,13 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { Evidence } from "./cases.js";
 import { EMPTY_SETTINGS } from "./cases.js";
-import { gradeToolChoice, loadToolChoiceCases } from "./tool-choice.js";
+import {
+  gradeToolChoice,
+  loadToolChoiceCases,
+  TOOL_CHOICE_JUDGE_CALIBRATION,
+  TOOL_CHOICE_JUDGE_VERSION,
+  ToolChoiceCaseSchema,
+} from "./tool-choice.js";
 import { TOOL_CHOICE_CASES, TOOL_CHOICE_DEFINITIONS } from "./tool-choice-cases.js";
 
 function evidence(overrides: Partial<Evidence> = {}): Evidence {
@@ -190,5 +196,36 @@ describe("tool-choice grading", () => {
       ]),
     );
     expect(() => loadToolChoiceCases(file)).toThrow(/guard needs/);
+  });
+
+  it("sends prose settings to the judge instead of matching their wording", () => {
+    const scenario = TOOL_CHOICE_CASES.find((c) => c.id === "settings-instructions-add")!;
+    const input = scenario.judge!(
+      evidence({ settings: { ...EMPTY_SETTINGS, bot: { instructions: "Use short lists." } } }),
+    );
+    expect(input.rubric.startsWith(`${TOOL_CHOICE_JUDGE_VERSION}:`)).toBe(true);
+    expect(input.evidence).toMatchObject({
+      request: "Update your instructions so you always answer in bullet points.",
+      settings: { instructions: { saved: "Use short lists." } },
+    });
+    const base = { id: "x", area: "settings", kind: "guard", prompt: "p", purpose: "p" } as const;
+    expect(
+      ToolChoiceCaseSchema.safeParse({ ...base, expect: { bot: { instructions: "~bullet" } } })
+        .success,
+    ).toBe(false);
+    expect(
+      ToolChoiceCaseSchema.safeParse({
+        ...base,
+        expect: { calls: [{ tool: "update_bot", args: { description: "~metrics" } }] },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("calibrates the judge against passing and failing references", () => {
+    expect(new Set(TOOL_CHOICE_JUDGE_CALIBRATION.map((c) => c.pass))).toEqual(
+      new Set([true, false]),
+    );
+    for (const { input } of TOOL_CHOICE_JUDGE_CALIBRATION)
+      expect(input.rubric.startsWith(`${TOOL_CHOICE_JUDGE_VERSION}:`)).toBe(true);
   });
 });
