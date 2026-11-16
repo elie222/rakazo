@@ -6,7 +6,6 @@
   "apps/mobile/app/(settings)/memory-note.tsx": 3,
   "apps/mobile/app/(settings)/messaging.tsx": 14,
   "apps/mobile/app/(settings)/model-connection.tsx": 7,
-  "apps/mobile/app/(settings)/models.tsx": 2,
   "apps/mobile/app/(settings)/profile.tsx": 2,
   "apps/mobile/app/(settings)/vault.tsx": 11,
   "apps/mobile/app/(settings)/voice.tsx": 6,
@@ -25,7 +24,6 @@
   "apps/mobile/components/ComputerCard.tsx": 2,
   "apps/mobile/components/ImportSetupCard.tsx": 1,
   "apps/mobile/components/model-role-settings.tsx": 1,
-  "apps/mobile/components/space-bots-model.tsx": 1,
   "apps/mobile/components/thread/special-message-card.tsx": 1,
   "apps/mobile/components/thread/thread-screen.tsx": 2
 }
