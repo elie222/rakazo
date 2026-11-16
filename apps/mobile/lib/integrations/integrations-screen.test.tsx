@@ -138,10 +138,16 @@ vi.mock("../../components/native/native-action-button", () => ({
   ),
 }));
 vi.mock("react-native-svg", () => ({
-  SvgUri: ({ uri, onError }: { uri: string; onError: () => void }) => {
+  fetchText: async (uri: string) =>
+    uri.includes("styled.svg")
+      ? `<svg data-uri="${uri}"><line style="stroke-width:26.83px !important" /></svg>`
+      : `<svg data-uri="${uri}"/>`,
+  SvgXml: ({ xml, onError }: { xml: string | null; onError: () => void }) => {
+    if (!xml) return null;
+    const uri = /data-uri="([^"]*)"/.exec(xml)?.[1] ?? "";
     if (uri.includes("unrenderable"))
       throw new SyntaxError('Expected transform functions but "t" found.');
-    return createElement("svg", { "data-uri": uri, onClick: onError });
+    return createElement("svg", { "data-uri": uri, "data-xml": xml, onClick: onError });
   },
 }));
 vi.mock("react-native", () => {
@@ -324,7 +330,7 @@ it("ignores a refresh after its scope changes", async () => {
   expect(state.write).not.toHaveBeenCalled();
 });
 it.each(["https://example.test/logo.svg?version=1", "https://example.test/logo.SVG#icon"])(
-  "renders SVG catalog artwork with SvgUri: %s",
+  "renders SVG catalog artwork: %s",
   async (logo) => {
     await render(<ConnectorIcon name="Example" logo={logo} size={32} />);
     expect(container.querySelector("svg")?.getAttribute("data-uri")).toBe(logo);
@@ -337,6 +343,13 @@ it.each(["https://example.test/logo.svg?version=1", "https://example.test/logo.S
     expect(container.querySelector("svg")).not.toBeNull();
   },
 );
+it("removes inline CSS priority before passing artwork to the native SVG renderer", async () => {
+  await render(<ConnectorIcon name="Example" logo="https://example.test/styled.svg" />);
+  const xml = container.querySelector("svg")?.getAttribute("data-xml");
+  expect(xml).toContain("stroke-width:26.83px");
+  expect(xml).not.toContain("!important");
+});
+
 it("falls back when SVG artwork throws while rendering", async () => {
   const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
   try {
